@@ -1,0 +1,64 @@
+# === OS & System Files ===
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+*.log
+
+# === Environments & Secrets ===
+.env
+.env.local
+.env.*.local
+*.pem
+*.key
+*.cert
+.vscdb
+
+# === Node.js & Web Packages ===
+node_modules/
+jspm_packages/
+.npm
+.yarn-cache/
+.yarn/
+.pnpm-store/
+bun.lockb
+
+# === Python ===
+__pycache__/
+*.py[cod]
+*$py.class
+.Python
+env/
+venv/
+.venv/
+pip-log.txt
+pip-delete-this-directory.txt
+
+# === Java, C++, & Build Artifacts ===
+*.class
+*.jar
+*.war
+*.ear
+*.o
+*.obj
+*.out
+*.exe
+target/
+build/
+dist/
+out/
+.next/
+.nuxt/
+
+# === IDEs & Editors ===
+.vscode/
+!.vscode/extensions.json
+.idea/
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.swp

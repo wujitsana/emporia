@@ -1,0 +1,138 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>SRCL // Unified Mesh State Matrix Console</title>
+    <style>
+        body {
+            background-color: #050505;
+            color: #00ff66;
+            font-family: 'Courier New', Courier, monospace;
+            padding: 30px;
+            line-height: 1.4;
+            letter-spacing: -0.02em;
+        }
+        .container {
+            max-width: 1300px;
+            margin: 0 auto;
+            border: 1px solid #222;
+            background-color: #0c0c0c;
+            padding: 24px;
+        }
+        .header-bar {
+            border-bottom: 2px dashed #00ff66;
+            padding-bottom: 12px;
+            margin-bottom: 24px;
+        }
+        .matrix-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 24px;
+            margin-top: 24px;
+        }
+        .panel {
+            border: 1px solid #1a1a1a;
+            padding: 16px;
+            background-color: #080808;
+            max-height: 350px;
+            overflow-y: auto;
+        }
+        .grid-row {
+            display: flex;
+            border-bottom: 1px solid #151515;
+            padding: 6px 0;
+            font-size: 12px;
+        }
+        .col-header { color: #888; font-weight: bold; border-bottom: 1px solid #222; }
+        .text-white { color: #fff; }
+        .text-dim { color: #555; font-size: 11px; }
+        .status-indicator { animation: blinker 2s linear infinite; }
+        @keyframes blinker { 50% { opacity: 0; } }
+        h3 { margin-top: 0; margin-bottom: 12px; font-size: 13px; border-bottom: 1px solid #222; padding-bottom: 4px; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header-bar">
+            <div>✨ SRCL // AUTOMATED COGNITIVE NETWORK MATRIX v3.0.0</div>
+            <h1 style="margin: 6px 0; font-size: 18px;">📋 DECENTRALIZED MULTI-RELAY P2P DIRECTORY & GAME LEDGER</h1>
+            <div>📡 SYSTEM MESH GATEWAY: <span class="status-indicator" style="color: #00ff66;">● VERIFIED PRODUCTION METRICS ACTIVE (PORT 8088)</span></div>
+        </div>
+
+        <!-- Tier 1: System Node and Relay Registry Map Windows -->
+        <div class="matrix-grid" style="margin-top: 0; margin-bottom: 24px;">
+            <div class="panel" style="max-height: 200px;">
+                <h3 style="color: #00ff66;">👥 LIVE REGISTERED P2P AGENT NODES</h3>
+                <div class="grid-row col-header">
+                    <div style="width: 30%;">AGENT IDENTITY</div>
+                    <div style="width: 30%;">OPERATIONAL ROLE</div>
+                    <div style="width: 40%;">HARDWARE KEY ANCHOR PROOF</div>
+                </div>
+                <div id="agents-target">Scanning identity loops...</div>
+            </div>
+            <div class="panel" style="max-height: 200px;">
+                <h3 style="color: #ff3366;">🌐 VERIFIABLE NETWORK RELAY REGISTER (BFT PEERS)</h3>
+                <div class="grid-row col-header">
+                    <div style="width: 40%;">RELAY BASE DOMAIN ENDPOINT</div>
+                    <div style="width: 35%;">PUBLIC SIGNING SEAL</div>
+                    <div style="width: 25%; text-align: right;">MESH STATUS</div>
+                </div>
+                <div id="relays-target">Loading verifiable network rings...</div>
+            </div>
+        </div>
+
+        <!-- Tier 2: Multi-Turn Logs and Game Timelines -->
+        <div class="matrix-grid">
+            <div class="panel">
+                <h3 style="color: #00bbff;">💬 ACTIVE CONVERSATION B2B NEGOTIATIONS</h3>
+                <div id="chat-target">Awaiting text frame intercepts...</div>
+            </div>
+            <div class="panel">
+                <h3 style="color: #ffaa00;">♔ IMMUTABLE X402 TOURNAMENT GAME LEDGER</h3>
+                <div id="x402-target">Awaiting coordinate timelines...</div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        function updateMeshMonitor() {
+            fetch('/db/dump')
+                .then(r => r.json())
+                .then(db => {
+                    let aHtml = "";
+                    Object.keys(db.agents || {}).forEach(k => {
+                        let a = db.agents[k];
+                        aHtml += `<div class="grid-row"><div style="width: 30%;" class="text-white">${a.agent_id}</div><div style="width: 30%; color: #aaa;">${a.role}</div><div style="width: 40%;" class="text-dim">${a.public_key}</div></div>`;
+                    });
+                    document.getElementById("agents-target").innerHTML = aHtml || "<div class='text-dim'>No active nodes.</div>";
+
+                    let rHtml = "";
+                    (db.relay_registry || []).forEach(r => {
+                        rHtml += `<div class="grid-row"><div style="width: 40%;" class="text-white">${r.relay_url}</div><div style="width: 35%;" class="text-dim">${r.signing_seal}</div><div style="width: 25%; text-align: right; color: #00ff66;">${r.status}</div></div>`;
+                    });
+                    document.getElementById("relays-target").innerHTML = rHtml || "<div class='text-dim'>Registry empty.</div>";
+
+                    let cHtml = "";
+                    Object.keys(db.conversations || {}).forEach(k => {
+                        let c = db.conversations[k];
+                        cHtml += `<div style='margin-bottom:12px;'><b class='text-white'>📂 SESSION: ${c.session_id}</b>`;
+                        c.history.forEach(h => { cHtml += `<div style='margin-top:4px;'><span style='color:#00bbff;'>[${h.sender.split('_').pop()}]</span>: ${h.message} <i class='text-dim' style='font-size:10px;'>[Vector:${h.vector}]</i></div>`; });
+                        cHtml += `</div>`;
+                    });
+                    document.getElementById("chat-target").innerHTML = cHtml || "<div class='text-dim'>Awaiting dialogue...</div>";
+
+                    let xHtml = "";
+                    Object.keys(db.x402_ledger || {}).forEach(k => {
+                        let m = db.x402_ledger[k];
+                        xHtml += `<div style='margin-bottom:12px;'><b class='text-white'>♔ TOURNAMENT MATCH: ${m.match_id}</b> <span style='color:#ffaa00; font-size:11px;'>[Stripe Escrow: LOCKED]</span>`;
+                        m.timeline.forEach(t => { xHtml += `<div style='margin-top:4px; display:flex; justify-content:space-between;'><div><span style='color:#ffaa00;'>#${t.sequence}</span> ${t.actor.split('_').pop()} ➔ <b>${t.move}</b></div><div class='text-dim'>ROOT: ${t.state_root.substring(0,12)}...</div></div>`; });
+                        xHtml += `</div>`;
+                    });
+                    document.getElementById("x402-target").innerHTML = xHtml || "<div class='text-dim'>Awaiting coordinate moves...</div>";
+                }).catch(() => {});
+        }
+        updateMeshMonitor();
+        setInterval(updateMeshMonitor, 1500);
+    </script>
+</body>
+</html>

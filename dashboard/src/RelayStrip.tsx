@@ -1,0 +1,107 @@
+import BlockLoader from "@components/BlockLoader";
+import Text from "@components/Text";
+import type { RelayHealth } from "./hooks";
+import { toWsUrl } from "./hooks";
+import { resolveRelayUrl } from "./relayEnv";
+
+export function relayHost(url: string): string {
+  try {
+    return new URL(url).host;
+  } catch {
+    return url.replace(/^https?:\/\//, "").slice(0, 48);
+  }
+}
+
+export function relayWsOrigin(httpRelay?: string): string {
+  const relay = httpRelay && httpRelay.length > 0 ? httpRelay : resolveRelayUrl();
+  return toWsUrl(relay).replace(/\/$/, "");
+}
+
+export function relayEventsWsUrl(httpRelay?: string): string {
+  return `${relayWsOrigin(httpRelay)}/ws/events`;
+}
+
+function StatusChip({
+  ok,
+  label,
+  title,
+  livePulse,
+}: {
+  ok: boolean;
+  label: string;
+  title: string;
+  livePulse?: boolean;
+}) {
+  return (
+    <span className={`e-status-chip${ok ? " is-ok" : ""}`} title={title}>
+      {livePulse && ok ? (
+        <BlockLoader mode={0} />
+      ) : (
+        <span className="e-status-chip__dot" aria-hidden>
+          {ok ? "●" : "○"}
+        </span>
+      )}
+      {label}
+    </span>
+  );
+}
+
+/**
+ * Relay connectivity in the header.
+ * - REST / “API”: HTTP GET /health (relay up, version, guardrails).
+ * - events: WebSocket /ws/events (live session/listing/event pushes to the dashboard).
+ */
+export function RelayStrip({
+  relayUrl,
+  wsConnected,
+  health,
+  compact = false,
+  showWs = false,
+}: {
+  relayUrl: string;
+  wsConnected: boolean;
+  health: RelayHealth | null;
+  compact?: boolean;
+  showWs?: boolean;
+}) {
+  const online = health?.status === "ok";
+  const resolved = relayUrl && relayUrl.length > 0 ? relayUrl : resolveRelayUrl();
+  const host = relayHost(resolved);
+  const wsEvents = relayEventsWsUrl(resolved);
+
+  const meta = [health?.version ? `v${health.version}` : null, health?.guardrails_mode]
+    .filter(Boolean)
+    .join(" · ");
+
+  const restTitle = online
+    ? `Relay REST API is up (${resolved}/health)`
+    : health
+      ? `Relay HTTP unreachable (${resolved})`
+      : `Checking relay health…`;
+
+  const wsTitle = wsConnected
+    ? `Live event stream connected: ${wsEvents}`
+    : `Event stream offline — ${wsEvents}`;
+
+  if (compact) {
+    return (
+      <span className="e-relay-status e-relay-status--compact">
+        <span className="e-relay-status__host" title={resolved}>
+          {host}
+        </span>
+        <StatusChip ok={online} label="API" title={restTitle} />
+        <StatusChip ok={wsConnected} label="events" title={wsTitle} livePulse={wsConnected} />
+      </span>
+    );
+  }
+
+  return (
+    <span className="e-relay-status" title={resolved}>
+      <span className="e-relay-status__host">{host}</span>
+      {meta ? <span className="e-relay-status__meta">{meta}</span> : null}
+      <StatusChip ok={online} label="API" title={restTitle} />
+      <StatusChip ok={wsConnected} label="events" title={wsTitle} livePulse={wsConnected} />
+      {showWs ? <Text className="e-faint">{wsEvents}</Text> : null}
+    </span>
+  );
+}

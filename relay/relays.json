@@ -1,0 +1,11 @@
+{
+  "network_name": "Emporia Relay Network",
+  "version": "0.1.0",
+  "public_relays": [
+    {
+      "relay_url": "http://127.0.0.1:8088",
+      "supported_protocols": ["ws.v1", "http.v1"],
+      "region": "localhost"
+    }
+  ]
+}
