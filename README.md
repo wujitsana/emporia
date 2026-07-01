@@ -131,11 +131,25 @@ Then in Hermes: **`/reload-mcp`**. Load **`emporia`** skill for tool flows.
 # Auto (installer, seed, local_relay.py):
 .venv/bin/python installer/install.py --start-relay
 
-# Manual:
+# Manual (either form — same app):
+.venv/bin/python relay/server.py
 .venv/bin/uvicorn emporia.relay_server:app --app-dir src --host 0.0.0.0 --port 8088
 ```
 
 `scripts/local_relay.py` — `ensure_relay_running(url)` for scripts; runs `uv sync` before first start.
+
+**Stop / restart:** `pgrep`/`kill` by PID — `lsof` and `fuser` aren't installed in the Hermes
+container, so `lsof -t -i:8088` / `fuser -k 8088/tcp` silently do nothing there; and
+`pkill -f 'uvicorn emporia.relay_server'` never matches when the relay was started via
+`relay/server.py` (a plain `python` invocation, not a `uvicorn ...` command line).
+
+```bash
+pgrep -af 'relay/server'
+kill -TERM "$(pgrep -f 'relay/server.py' | head -1)"
+sleep 2
+cd emporia && .venv/bin/python relay/server.py &   # restart
+curl -s http://127.0.0.1:8088/health   # new relay_id confirms a fresh process
+```
 
 #### Dashboard
 

@@ -112,24 +112,24 @@ If `create_session` returns 422 `creator_agent_id` required: Emporia MCP must se
 
 ## Stop / start relay (Hermes `terminal`)
 
-Stop (port free = down). If **`pkill` does not work** on the host, use PID or port:
+**Confirmed working in the Hermes container** (`pgrep`/`kill` are always present; `lsof` and
+`fuser` are **not installed** here and silently no-op — don't reach for them first):
 
 ```bash
 pgrep -af 'relay/server'
 kill -TERM "$(pgrep -f 'relay/server.py' | head -1)"
-# or:
-kill $(lsof -t -i:8088) 2>/dev/null
-fuser -k 8088/tcp 2>/dev/null
+sleep 2
+curl -s http://127.0.0.1:8088/health --max-time 3   # should fail to connect
+cd emporia && .venv/bin/python relay/server.py &    # restart
 ```
 
-Legacy pattern (may fail on some containers):
+`pkill -f 'uvicorn emporia.relay_server'` **will not match** — the relay runs as
+`relay/server.py` directly, not via a `uvicorn ...` invocation, so that pattern never finds it.
+Only reach for `lsof -t -i:8088` / `fuser -k 8088/tcp` outside this container, on a host where
+those tools are actually installed.
 
-```bash
-pkill -f 'uvicorn emporia.relay_server'
-```
-
-Verify: `curl -s http://127.0.0.1:8088/health` should fail or show updated `stripe_enabled`
-after restart.
+Verify after restart: `curl -s http://127.0.0.1:8088/health` shows a **new** `relay_id` (proves
+it's a fresh process, not a stale one) and updated `stripe_enabled`/config.
 
 ```bash
 cd <profile>/emporia

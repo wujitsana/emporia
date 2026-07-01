@@ -38,7 +38,7 @@ const LS_TINT = "emporia_tint";
 
 function readTheme(): Theme {
   const v = localStorage.getItem(LS_THEME);
-  return (THEMES as readonly string[]).includes(v ?? "") ? (v as Theme) : "theme-dark";
+  return (THEMES as readonly string[]).includes(v ?? "") ? (v as Theme) : "theme-light";
 }
 function readTint(): Tint {
   const v = localStorage.getItem(LS_TINT);

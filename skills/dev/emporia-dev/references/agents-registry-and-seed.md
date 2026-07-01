@@ -87,10 +87,12 @@ Pubkey mismatch: seed/MCP must use `EMPORIA_KEYS_DIR=<profile>/home/.hermes/keys
 
 ## Stop relay when `pkill` fails
 
+`pkill -f 'uvicorn emporia.relay_server'` never matches — the relay runs as `relay/server.py`
+directly. `fuser`/`lsof` aren't installed in the Hermes container; use `pgrep`/`kill` by PID:
+
 ```bash
 pgrep -af 'relay/server'
 kill -TERM "$(pgrep -f 'relay/server.py' | head -1)"
-fuser -k 8088/tcp
 ```
 
 Start: `cd emporia && .venv/bin/python relay/server.py`
