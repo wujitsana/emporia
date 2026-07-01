@@ -12,6 +12,8 @@ Thumbs.db
 .env
 .env.local
 .env.*.local
+.local/
+var/
 *.pem
 *.key
 *.cert
@@ -55,6 +57,9 @@ dist/
 out/
 .next/
 .nuxt/
+
+# === Runtime Data ===
+logs/*.jsonl
 
 # === IDEs & Editors ===
 .vscode/

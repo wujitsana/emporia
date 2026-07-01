@@ -73,7 +73,7 @@ from emporia.env_config import env
 from emporia.module_sdk import MODULE_REGISTRY, SessionAction, SessionState
 
 RELAY_URL = env("RELAY_URL", "http://localhost:8088")
-LOG_DIR = Path(env("LOG_DIR", "./logs")).expanduser()
+LOG_DIR = Path(env("LOG_DIR", "./.local/logs")).expanduser()
 AGENT_ID = env("AGENT_ID", "")
 DISPLAY_NAME = env("DISPLAY_NAME", AGENT_ID)
 NOUS_JWT = env("NOUS_JWT", "")

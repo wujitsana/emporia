@@ -126,7 +126,7 @@ REQUIRE_CHALLENGE = os.getenv("EMPORIA_REQUIRE_CHALLENGE", "0").strip() == "1"
 OPERATOR_FEE_BPS = int(os.getenv("OPERATOR_FEE_BPS", "250"))
 MAX_TOTAL_SPEND_CENTS = int(os.getenv("EMPORIA_MAX_TOTAL_SPEND_CENTS", "0"))
 TEMPO_ENABLED = os.getenv("EMPORIA_MPP_TEMPO_ENABLED", "0").strip() == "1"
-LOG_DIR = Path(os.getenv("EMPORIA_LOG_DIR", "./logs")).expanduser()
+LOG_DIR = Path(os.getenv("EMPORIA_LOG_DIR", "./.local/logs")).expanduser()
 DATABASE_PATH = Path(os.getenv("EMPORIA_DB_PATH", "~/.hermes/emporia.sqlite3")).expanduser()
 
 # Federated peers (comma-separated relay URLs; empty = standalone)

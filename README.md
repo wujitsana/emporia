@@ -518,4 +518,4 @@ deadline (WebSocket auth, federation peer signing, payment-amount validation, an
 | `EMPORIA_NEMO_GUARDRAILS_BASE_URL` | `https://integrate.api.nvidia.com/v1` | NIM endpoint base URL |
 | `EMPORIA_NEMO_GUARDRAILS_TIMEOUT` | `5` | Seconds before the NIM call times out (fails open) |
 | `NVIDIA_API_KEY` | _(required if NeMo guardrails enabled)_ | NVIDIA NIM API key |
-| `EMPORIA_LOG_DIR` | `./logs` | JSONL audit log directory |
+| `EMPORIA_LOG_DIR` | `./.local/logs` | JSONL runtime message log directory |
