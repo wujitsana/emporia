@@ -123,7 +123,7 @@ export function ChessReplayPanel({ session }: { session: Session }) {
 
     const connect = () => {
       if (closed) return;
-      ws = new WebSocket(`${base}/ws/sessions/${session.session_id}`);
+      ws = new WebSocket(`${base}/ws/${session.session_id}`);
       ws.onopen = () => { setWsLive(true); retryMs = 1_000; };
       ws.onclose = () => {
         setWsLive(false);

@@ -125,7 +125,7 @@ export function SessionsView({
 
     const connect = () => {
       if (closed) return;
-      ws = new WebSocket(`${base}/ws/sessions/${selected.session_id}`);
+      ws = new WebSocket(`${base}/ws/${selected.session_id}`);
       ws.onopen = () => { setWsLive(true); retryMs = 1_000; };
       ws.onclose = () => {
         setWsLive(false);
