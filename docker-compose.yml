@@ -1,0 +1,109 @@
+# Emporia relay — Docker Compose stack.
+#
+# Base (always on): the relay itself, serving the REST/WS API + embedded
+# dashboard at http://<host>:8088/ui/. This is the only service most VPS
+# deployments need — port 8088, not 5173 (Vite dev, local-only, not built
+# into this image).
+#
+#   docker compose up -d relay
+#
+# Optional profiles (opt-in via `--profile`, off by default):
+#
+#   agent      — co-locate a Hermes agent container on the same host as the
+#                relay, so the operator's agent (with the `emporia` skill +
+#                MCP server) runs right next to the relay it manages. Pulls
+#                the official published image (`nousresearch/hermes-agent`)
+#                — no local Hermes build/checkout required. This repo's own
+#                Dockerfile is relay-only; it does not build the agent image.
+#                docker compose --profile agent up -d
+#
+#   nemoclaw   — run that same Hermes agent under NVIDIA NemoClaw's sandboxed
+#                execution layer instead of plain `docker run` (NemoClaw is
+#                specifically "NemoClaw for Hermes Agent" — it wraps the
+#                *agent* process, not the relay; the relay is our own code
+#                and doesn't need it the way an agent with broader tool
+#                access does). NOT verified end-to-end — see ROADMAP.md
+#                "Sandboxed remote deployment via NVIDIA NemoClaw" and
+#                confirm NemoClaw's own current image/CLI before using this
+#                for a real deployment. Different NVIDIA product from the
+#                NIM-backed guardrails check (EMPORIA_NEMO_GUARDRAILS_ENABLED)
+#                already live in the relay.
+#
+# Env: copy .env.example to .env next to this file (STRIPE_SECRET_KEY,
+# NVIDIA_API_KEY, EMPORIA_NOUS_JWT, etc. — see README.md "Environment
+# variables"). Keys/DB/logs persist in the `emporia-data` volume across
+# restarts — do not delete it or the relay's Ed25519 identity is lost.
+
+services:
+  relay:
+    build: .
+    image: emporia-relay
+    container_name: emporia-relay
+    restart: unless-stopped
+    ports:
+      - "${EMPORIA_RELAY_PORT:-8088}:8088"
+    env_file:
+      - .env
+    environment:
+      - EMPORIA_RELAY_PORT=8088
+    volumes:
+      - emporia-data:/data
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8088/health', timeout=3)"]
+      interval: 30s
+      timeout: 5s
+      start_period: 10s
+      retries: 3
+
+  # Optional: Hermes agent co-located with the relay (--profile agent).
+  # Pulls the real published image (docker pull nousresearch/hermes-agent —
+  # same image referenced by Hermes's own docker-compose.yml /
+  # docker-compose.windows.yml); override with HERMES_IMAGE for a local
+  # build/tag instead. Mounts this profile's directory (config.yaml,
+  # skills/, .env) as the agent's $HERMES_HOME. `network_mode: host`
+  # matches the official Hermes compose pattern so the agent's MCP
+  # subprocess can reach the relay at
+  # http://127.0.0.1:${EMPORIA_RELAY_PORT:-8088} without container
+  # networking gymnastics.
+  agent:
+    profiles: ["agent"]
+    image: ${HERMES_IMAGE:-nousresearch/hermes-agent:latest}
+    container_name: emporia-hermes-agent
+    restart: unless-stopped
+    network_mode: host
+    depends_on:
+      - relay
+    volumes:
+      - ${HERMES_PROFILE_DIR:-..}:/opt/data
+    environment:
+      - HERMES_UID=${HERMES_UID:-10000}
+      - HERMES_GID=${HERMES_GID:-10000}
+    command: ["gateway", "run"]
+
+  # Placeholder only — see the header comment. This is a *variant of the
+  # `agent` service above*, not the relay: same image/volumes, run under
+  # NemoClaw's sandboxed execution layer instead of plain `docker run`.
+  # Left commented so `docker compose --profile nemoclaw up` fails loudly
+  # instead of silently doing nothing, until NemoClaw's actual current
+  # image/CLI interface is confirmed and wired in for real.
+  # nemoclaw:
+  #   profiles: ["nemoclaw"]
+  #   image: ${HERMES_IMAGE:-nousresearch/hermes-agent:latest}
+  #   container_name: emporia-hermes-agent-nemoclaw
+  #   network_mode: host
+  #   depends_on:
+  #     - relay
+  #   volumes:
+  #     - ${HERMES_PROFILE_DIR:-..}:/opt/data
+  #   environment:
+  #     - HERMES_UID=${HERMES_UID:-10000}
+  #     - HERMES_GID=${HERMES_GID:-10000}
+  #     - NEMOCLAW_AGENT=hermes
+  #   # ... actual NemoClaw wrapping (sidecar / hardened entrypoint / network
+  #   # egress policy) per NemoClaw's own current deployment docs — not yet
+  #   # confirmed, see ROADMAP.md before uncommenting.
+  #   command: ["gateway", "run"]
+
+volumes:
+  emporia-data:
+    driver: local

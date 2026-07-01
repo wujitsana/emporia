@@ -186,7 +186,7 @@ class EmporiaAgent:
         """
         headers = {}
         if mpp_spt:
-            headers["Authorization"] = f'MPP-Stripe token="{mpp_spt}"'
+            headers["Authorization"] = f"Payment {mpp_spt}"
         resp = await self._client().post(
             f"{self.relay_url}/sessions/{session_id}/join",
             json={
@@ -396,7 +396,7 @@ class EmporiaAgent:
         """
         headers = {}
         if mpp_spt:
-            headers["Authorization"] = f'MPP-Stripe token="{mpp_spt}"'
+            headers["Authorization"] = f"Payment {mpp_spt}"
         resp = await self._client().post(
             f"{self.relay_url}/rooms/{room_id}/join",
             json={"agent_id": agent_id, "payment_intent_id": payment_intent_id},

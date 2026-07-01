@@ -35,6 +35,16 @@ export const TINT_COLORS: Record<Tint, string> = {
   "tint-pink": "#ff00ff",
 };
 
+export function toggleTheme(current: Theme): Theme {
+  return current === "theme-dark" ? "theme-light" : "theme-dark";
+}
+
+export function nextTint(current: Tint): Tint {
+  const i = TINTS.indexOf(current);
+  const next = i < 0 ? 0 : (i + 1) % TINTS.length;
+  return TINTS[next];
+}
+
 export function applyTheme(theme: Theme, tint: Tint) {
   const b = document.body;
   THEMES.forEach((t) => b.classList.remove(t));

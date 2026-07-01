@@ -43,6 +43,7 @@ def platform_fee(amount_cents: int) -> int:
     return fee if fee >= 1 else 0
 
 STRIPE_API_BASE = os.getenv("STRIPE_API_BASE", "https://api.stripe.com/v1")
+STRIPE_API_VERSION = os.getenv("STRIPE_API_VERSION", "2026-04-22.preview")
 OPERATOR_FEE_BPS = int(os.getenv("OPERATOR_FEE_BPS", "250"))  # 2.5%
 REQUEST_TIMEOUT = float(os.getenv("EMPORIA_HTTP_TIMEOUT", "30"))
 # Machine Payment Profile ID for the Stripe fiat MPP rail.
@@ -137,6 +138,37 @@ def extract_mpp_token(authorization_header: str | None) -> str | None:
     return raw or None
 
 
+async def create_test_spt(amount_cents: int, currency: str = "usd") -> dict[str, Any]:
+    """Mint a Stripe sandbox shared payment token for demo/bootstrap flows.
+
+    Requires a Stripe test secret key and the shared payment preview API version.
+    This is for local hackathon/demo automation only; production agents should
+    obtain SPTs through Link approval or another MPP wallet flow.
+    """
+    key = _stripe_key()
+    if not key.startswith("sk_test_"):
+        raise RuntimeError("create_test_spt requires a Stripe test secret key")
+    amount = f"{amount_cents / 100:.2f}"
+    async with httpx.AsyncClient(timeout=REQUEST_TIMEOUT) as client:
+        resp = await client.post(
+            f"{STRIPE_API_BASE}/test_helpers/shared_payment/granted_tokens",
+            auth=(key, ""),
+            headers={"Stripe-Version": STRIPE_API_VERSION},
+            data={
+                "payment_method": "pm_card_visa",
+                "usage_limits[amount]": amount,
+                "usage_limits[currency]": currency.lower(),
+            },
+        )
+        resp.raise_for_status()
+        token = resp.json()
+        return {
+            "id": token["id"],
+            "currency": currency.lower(),
+            "amount_cents": amount_cents,
+        }
+
+
 async def retrieve_spt(spt_id: str) -> dict[str, Any]:
     """Retrieve and validate a Stripe Shared Payment Token before charging.
 
@@ -155,7 +187,7 @@ async def retrieve_spt(spt_id: str) -> dict[str, Any]:
         resp = await client.get(
             f"{STRIPE_API_BASE}/shared_payment/granted_tokens/{spt_id}",
             auth=(key, ""),
-            headers={"Stripe-Version": "2026-04-22.preview"},
+            headers={"Stripe-Version": STRIPE_API_VERSION},
         )
         resp.raise_for_status()
         spt = resp.json()
@@ -177,6 +209,10 @@ async def confirm_spt(
     session_id: str,
     agent_id: str,
     service_type: str = "emporia:session",
+    *,
+    currency: str = "usd",
+    capture_method: str = "manual",
+    resource_type: str = "session",
 ) -> dict[str, Any]:
     """Create and confirm a PaymentIntent from a Stripe SPT (spt_xxx).
 
@@ -186,41 +222,57 @@ async def confirm_spt(
     Stripe clones a PaymentMethod from the grant; subsequent refunds/reporting
     behave as if the PaymentMethod was provided directly.
 
-    Call retrieve_spt() first to validate the token is active and covers the amount.
+    Before charging, the relay verifies that the SPT is still active and that
+    its usage limits cover this amount/currency.
     """
+    if not spt_token.startswith("spt_"):
+        raise ValueError("Expected a Stripe shared payment token (spt_xxx)")
+
+    spt = await retrieve_spt(spt_token)
+    if not spt.get("active"):
+        raise ValueError(
+            f"SPT is inactive: {spt.get('deactivated_reason') or 'deactivated'}"
+        )
+    spt_currency = (spt.get("currency") or currency).lower()
+    if spt_currency != currency.lower():
+        raise ValueError(
+            f"SPT currency mismatch: expected {currency.lower()}, got {spt_currency}"
+        )
+    max_amount_cents = int(spt.get("max_amount_cents") or 0)
+    if max_amount_cents and max_amount_cents < amount_cents:
+        raise ValueError(
+            f"SPT max_amount too small: need {amount_cents}, got {max_amount_cents}"
+        )
+
     key = _stripe_key()
+    metadata = {
+        "metadata[session_id]": session_id,
+        "metadata[buyer_agent_id]": agent_id,
+        "metadata[service_type]": service_type,
+        "metadata[protocol]": "emporia:v1+spt",
+        "metadata[resource_type]": resource_type,
+        "metadata[resource_id]": session_id,
+    }
+    if resource_type == "room":
+        metadata["metadata[room_id]"] = session_id
+    elif resource_type == "agora":
+        metadata["metadata[topic_id]"] = session_id
+
     async with httpx.AsyncClient(timeout=REQUEST_TIMEOUT) as client:
         resp = await client.post(
             f"{STRIPE_API_BASE}/payment_intents",
             auth=(key, ""),
-            headers={"Stripe-Version": "2026-04-22.preview"},
+            headers={"Stripe-Version": STRIPE_API_VERSION},
             data={
                 "amount": str(amount_cents),
-                "currency": "usd",
+                "currency": currency.lower(),
                 "confirm": "true",
+                "capture_method": capture_method,
                 "payment_method_data[shared_payment_granted_token]": spt_token,
-                "metadata[session_id]": session_id,
-                "metadata[buyer_agent_id]": agent_id,
-                "metadata[service_type]": service_type,
-                "metadata[protocol]": "emporia:v1+spt",
+                **metadata,
             },
         )
-        if not resp.is_success:
-            # Fallback: if caller passed a pi_xxx directly, treat as pre-confirmed
-            if spt_token.startswith("pi_"):
-                verify_resp = await client.get(
-                    f"{STRIPE_API_BASE}/payment_intents/{spt_token}",
-                    auth=(key, ""),
-                )
-                if verify_resp.is_success:
-                    pi = verify_resp.json()
-                    return {
-                        "status": pi.get("status"),
-                        "payment_intent_id": spt_token,
-                        "receipt": pi.get("latest_charge") or pi.get("id"),
-                        "via": "pi_direct",
-                    }
-            resp.raise_for_status()
+        resp.raise_for_status()
         pi = resp.json()
         return {
             "status": pi.get("status"),
@@ -248,6 +300,10 @@ async def create_stake_intent(
     seller_id: str,
     service_type: str,
     mode: str = "stripe_pi",
+    *,
+    capture_method: str = "manual",
+    currency: str = "usd",
+    resource_type: str = "session",
 ) -> dict[str, Any]:
     """Create a Stripe PaymentIntent for a session stake using manual capture (escrow).
 
@@ -268,20 +324,29 @@ async def create_stake_intent(
     else:
         pm_types = "card"
     async with httpx.AsyncClient(timeout=REQUEST_TIMEOUT) as client:
+        metadata = {
+            "metadata[session_id]": session_id,
+            "metadata[buyer_agent_id]": buyer_id,
+            "metadata[seller_agent_id]": seller_id,
+            "metadata[service_type]": service_type,
+            "metadata[mode]": mode,
+            "metadata[protocol]": "emporia:v1+escrow",
+            "metadata[resource_type]": resource_type,
+            "metadata[resource_id]": session_id,
+        }
+        if resource_type == "room":
+            metadata["metadata[room_id]"] = session_id
+        elif resource_type == "agora":
+            metadata["metadata[topic_id]"] = session_id
         resp = await client.post(
             f"{STRIPE_API_BASE}/payment_intents",
             auth=(key, ""),
             data={
                 "amount": str(amount_cents),
-                "currency": "usd",
+                "currency": currency.lower(),
                 "payment_method_types[]": pm_types,
-                "capture_method": "manual",
-                "metadata[session_id]": session_id,
-                "metadata[buyer_agent_id]": buyer_id,
-                "metadata[seller_agent_id]": seller_id,
-                "metadata[service_type]": service_type,
-                "metadata[mode]": mode,
-                "metadata[protocol]": "emporia:v1+escrow",
+                "capture_method": capture_method,
+                **metadata,
             },
         )
         resp.raise_for_status()
@@ -316,6 +381,8 @@ async def verify_payment_intent(payment_intent_id: str) -> dict[str, Any]:
             "payment_intent_id": payment_intent_id,
             "amount": pi.get("amount"),
             "currency": pi.get("currency"),
+            "capture_method": pi.get("capture_method"),
+            "metadata": pi.get("metadata") or {},
             "receipt": pi.get("latest_charge") or pi.get("id"),
         }
 

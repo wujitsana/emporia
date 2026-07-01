@@ -27,14 +27,14 @@ export function SectionTabs({
   badges?: Partial<Record<DashboardView, number>>;
 }) {
   const visibleNav = useVisibleNav();
-  const shellView = view === "fees" ? "overview" : view;
+  const tabView = view === "games" ? "sessions" : view;
   return (
     <nav
       className={`e-section-tabs e-section-tabs--${variant}`}
       aria-label="Sections"
     >
       {visibleNav.map((n) => {
-        const active = shellView === n.id;
+        const active = tabView === n.id;
         const badgeCount = badges[n.id] ?? 0;
         return (
           <button

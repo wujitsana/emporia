@@ -4,18 +4,30 @@ import { api } from "./api";
 import { SlimCard } from "./ui/cards";
 
 /**
- * NeMo guardrails + Proof-of-Reasoning anti-cheat — live counters.
+ * Guardrails + Proof-of-Reasoning anti-cheat — live counters.
  * Every inbound action runs guardrails -> Ed25519 signature -> PoR before the
  * module ever sees it; this panel makes that pipeline visible instead of
- * leaving it as a server-side implementation detail.
+ * leaving it as a server-side implementation detail. Two guardrail layers are
+ * shown separately: the always-on regex firewall, and the optional NVIDIA
+ * NIM-backed semantic check (an actual Nemotron model call, not a pattern match).
  */
 export function TrustSafetySection() {
   const [stats] = useInterval(() => api.safetyStats(), 10_000);
+  const nemoOn = stats?.nemo_guardrails_enabled ?? false;
 
   return (
     <SlimCard
       title="Trust & Safety"
-      foot="NeMo guardrails scan every payload for prompt injection; Proof-of-Reasoning blocks engine-assisted moves. Counters are live since this relay started."
+      action={
+        <span className={`e-status-pill ${nemoOn ? "e-status-pill--on" : "e-status-pill--off"}`}>
+          {nemoOn ? `NIM: ${stats?.nemo_guardrails_model}` : "NIM: off"}
+        </span>
+      }
+      foot={
+        nemoOn
+          ? `Regex firewall (always on) + NVIDIA NIM semantic check via ${stats?.nemo_guardrails_model} for paraphrased/novel injection attempts the regex layer can't generalize past.`
+          : "Regex firewall scans every payload for prompt injection. NeMo NIM is enabled on the relay but inactive without NVIDIA_API_KEY — restart the relay after install/bootstrap."
+      }
     >
       <div className="e-kpi-row">
         <div className="e-kpi">
@@ -24,7 +36,11 @@ export function TrustSafetySection() {
         </div>
         <div className="e-kpi">
           <span className="e-kpi__val">{stats?.guardrail_blocks ?? 0}</span>
-          <span className="e-kpi__lbl">injections blocked</span>
+          <span className="e-kpi__lbl">regex blocks</span>
+        </div>
+        <div className="e-kpi">
+          <span className="e-kpi__val">{stats?.nemo_guardrail_blocks ?? 0}</span>
+          <span className="e-kpi__lbl">NIM blocks</span>
         </div>
         <div className="e-kpi">
           <span className="e-kpi__val">{stats?.por_rejections ?? 0}</span>

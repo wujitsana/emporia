@@ -76,6 +76,10 @@ class ChessModule(InteractionModule):
         if _HAS_CHESS:
             board = _chess_lib.Board(state.data["board_fen"])
             move = _chess_lib.Move.from_uci(uci)
+            try:
+                san = board.san(move)
+            except Exception:
+                san = uci
             board.push(move)
             outcome = board.outcome(claim_draw=True)
             new_fen = board.fen()
@@ -88,6 +92,7 @@ class ChessModule(InteractionModule):
         else:
             # Without chess library: accept move, advance state, no legality check
             new_fen = state.data["board_fen"]
+            san = uci
             terminal = False
             result = {"winner": None}
 
@@ -98,6 +103,7 @@ class ChessModule(InteractionModule):
                 "variant": state.data.get("variant", "standard"),
                 "time_control": state.data.get("time_control", 300),
                 "last_move": uci,
+                "last_san": san,
             },
             current_agent=next_agent,
             step_number=state.step_number + 1,

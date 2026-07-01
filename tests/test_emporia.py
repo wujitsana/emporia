@@ -94,6 +94,30 @@ def test_health(client):
     assert "modules" in data
 
 
+def test_health_requires_stripe_profile_for_mpp(client):
+    with patch.dict(os.environ, {"STRIPE_SECRET_KEY": "sk_test_only", "STRIPE_PROFILE_ID": ""}, clear=False):
+        r = client.get("/health")
+    assert r.status_code == 200
+    data = r.json()
+    assert data["stripe_enabled"] is True
+    assert data["stripe_profile_ready"] is False
+    assert data["mpp_enabled"] is False
+    assert "stripe" not in data["payment_methods"]
+    assert "stripe_pi" in data["payment_rails"]
+
+
+@patch.dict(os.environ, {"STRIPE_SECRET_KEY": "sk_test_only", "STRIPE_PROFILE_ID": ""}, clear=False)
+def test_agent_profile_key_only_stripe_does_not_expose_mpp(client):
+    _register(client, "stripe_key_only_agent")
+    r = client.get("/agents/stripe_key_only_agent")
+    assert r.status_code == 200
+    data = r.json()
+    assert data["stripe_profile_ready"] is False
+    assert "stripe" not in data["payment_methods"]
+    assert "mpp" not in data["payment_rails"]
+    assert "stripe_pi" in data["payment_rails"]
+
+
 def test_agent_card_well_formed(client):
     # Register the test owner agent and expose it via env so the card endpoint serves it.
     _register(client, "test_relay_owner")
@@ -625,6 +649,222 @@ def test_stripe_key_not_set_raises():
         os.environ.pop("STRIPE_SECRET_KEY", None)
         with pytest.raises(RuntimeError, match="STRIPE_SECRET_KEY"):
             _stripe_key()
+
+
+def test_create_payment_intent_rejects_amount_mismatch(client):
+    _register(client, "pi_creator")
+    r = client.post("/sessions", json={
+        "module_type": "emporia:service:v1",
+        "creator_agent_id": "pi_creator",
+        "config": {"description": "Amount mismatch test"},
+        "payment_rules": {"mode": "stripe_link", "stake_per_participant": "1.00", "currency": "usd"},
+    })
+    session_id = r.json()["session_id"]
+
+    r2 = client.post("/payments/create-intent", json={
+        "session_id": session_id,
+        "amount_cents": 99,
+        "buyer_id": "pi_buyer",
+    })
+    assert r2.status_code == 400
+    assert "amount_cents must match relay pricing" in r2.text
+
+
+@patch("emporia.payments.verify_payment_intent", new_callable=AsyncMock)
+def test_join_session_rejects_underpaid_payment_intent(mock_verify, client):
+    _register(client, "underpay_creator")
+    _register(client, "underpay_joiner")
+    r = client.post("/sessions", json={
+        "module_type": "emporia:service:v1",
+        "creator_agent_id": "underpay_creator",
+        "config": {"description": "Underpayment test"},
+        "payment_rules": {"mode": "stripe_link", "stake_per_participant": "1.00", "currency": "usd"},
+    })
+    session_id = r.json()["session_id"]
+    mock_verify.return_value = {
+        "status": "requires_capture",
+        "payment_intent_id": "pi_underpay_test",
+        "amount": 1,
+        "currency": "usd",
+        "capture_method": "manual",
+        "metadata": {"resource_type": "session", "resource_id": session_id},
+    }
+
+    r2 = client.post(f"/sessions/{session_id}/join", json={
+        "agent_id": "underpay_joiner",
+        "payment_intent_id": "pi_underpay_test",
+    })
+    assert r2.status_code == 402
+    assert "amount mismatch" in r2.text
+    session = client.get(f"/sessions/{session_id}").json()
+    assert session["participants"] == ["underpay_creator"]
+
+
+@patch("emporia.payments.verify_payment_intent", new_callable=AsyncMock)
+def test_join_session_rejects_payment_intent_replay(mock_verify, client):
+    _register(client, "replay_creator")
+    _register(client, "replay_joiner")
+    r = client.post("/sessions", json={
+        "module_type": "emporia:service:v1",
+        "creator_agent_id": "replay_creator",
+        "config": {"description": "Replay test"},
+        "payment_rules": {"mode": "stripe_link", "stake_per_participant": "1.00", "currency": "usd"},
+    })
+    session_id = r.json()["session_id"]
+    mock_verify.return_value = {
+        "status": "requires_capture",
+        "payment_intent_id": "pi_replay_test",
+        "amount": 100,
+        "currency": "usd",
+        "capture_method": "manual",
+        "metadata": {"resource_type": "session", "resource_id": "sess_other"},
+    }
+
+    r2 = client.post(f"/sessions/{session_id}/join", json={
+        "agent_id": "replay_joiner",
+        "payment_intent_id": "pi_replay_test",
+    })
+    assert r2.status_code == 402
+    assert "not bound to this resource" in r2.text
+
+
+@patch("emporia.payments.verify_payment_intent", new_callable=AsyncMock)
+def test_join_room_rejects_uncaptured_payment_intent(mock_verify, client):
+    _register(client, "room_owner")
+    _register(client, "room_joiner")
+    r = client.post("/rooms", json={
+        "name": "Paid Room",
+        "creator_id": "room_owner",
+        "room_type": "private",
+        "gate_type": "stripe_payment",
+        "entry_fee_cents": 100,
+    })
+    room_id = r.json()["room_id"]
+    mock_verify.return_value = {
+        "status": "requires_capture",
+        "payment_intent_id": "pi_room_hold_test",
+        "amount": 100,
+        "currency": "usd",
+        "capture_method": "manual",
+        "metadata": {"resource_type": "room", "resource_id": room_id},
+    }
+
+    r2 = client.post(f"/rooms/{room_id}/join", json={
+        "agent_id": "room_joiner",
+        "payment_intent_id": "pi_room_hold_test",
+    })
+    assert r2.status_code == 402
+    assert "Payment not confirmed" in r2.text
+
+
+@patch("emporia.payments.verify_payment_intent", new_callable=AsyncMock)
+def test_agora_subscription_accepts_bound_payment_intent(mock_verify, client):
+    _register(client, "agora_owner")
+    _register(client, "agora_member")
+    r = client.post("/agoras/topics", json={
+        "name": "Paid Research",
+        "description": "Private research topic",
+        "visibility": "private",
+        "gate_type": "paid_invite",
+        "entry_fee_cents": 100,
+        "creator_id": "agora_owner",
+    })
+    assert r.status_code == 200, r.text
+    slug = r.json()["slug"]
+
+    r2 = client.post(f"/agoras/topics/{slug}/invite", json={
+        "agent_id": "agora_member",
+        "invited_by": "agora_owner",
+    })
+    assert r2.status_code == 200, r2.text
+    topic_id = r.json()["topic_id"]
+    mock_verify.return_value = {
+        "status": "succeeded",
+        "payment_intent_id": "pi_agora_paid_test",
+        "amount": 100,
+        "currency": "usd",
+        "capture_method": "automatic",
+        "metadata": {"resource_type": "agora", "resource_id": topic_id},
+    }
+
+    r3 = client.post(f"/agoras/topics/{slug}/subscribe", json={
+        "agent_id": "agora_member",
+        "payment_intent_id": "pi_agora_paid_test",
+    })
+    assert r3.status_code == 200, r3.text
+    assert r3.json()["gate_type"] == "paid_invite"
+
+
+def test_record_payment_is_idempotent_and_rejects_reuse():
+    from emporia.relay_server import record_payment
+
+    first = record_payment(
+        payment_intent_id="pi_idempotent_test",
+        agent_id="agent_payee",
+        amount_cents=100,
+        payment_type="session_stake",
+        session_id="sess_idempotent",
+        currency="usd",
+    )
+    second = record_payment(
+        payment_intent_id="pi_idempotent_test",
+        agent_id="agent_payee",
+        amount_cents=100,
+        payment_type="session_stake",
+        session_id="sess_idempotent",
+        currency="usd",
+    )
+    assert second["payment_id"] == first["payment_id"]
+
+    with pytest.raises(ValueError, match="already recorded"):
+        record_payment(
+            payment_intent_id="pi_idempotent_test",
+            agent_id="agent_payee",
+            amount_cents=100,
+            payment_type="session_stake",
+            session_id="sess_other",
+            currency="usd",
+        )
+
+
+@patch("emporia.relay_server.MAX_TOTAL_SPEND_CENTS", 150)
+@patch("emporia.payments.verify_payment_intent", new_callable=AsyncMock)
+def test_join_session_rejects_total_budget_exceeded(mock_verify, client):
+    from emporia.relay_server import record_payment
+
+    _register(client, "budget_creator")
+    _register(client, "budget_joiner")
+    r = client.post("/sessions", json={
+        "module_type": "emporia:service:v1",
+        "creator_agent_id": "budget_creator",
+        "config": {"description": "Budget test"},
+        "payment_rules": {"mode": "stripe_link", "stake_per_participant": "1.00", "currency": "usd"},
+    })
+    session_id = r.json()["session_id"]
+
+    record_payment(
+        payment_intent_id="pi_budget_existing",
+        agent_id="budget_joiner",
+        amount_cents=100,
+        payment_type="room_entry",
+        room_id="room_budget_existing",
+        currency="usd",
+    )
+    mock_verify.return_value = {
+        "status": "requires_capture",
+        "payment_intent_id": "pi_budget_next",
+        "amount": 100,
+        "currency": "usd",
+        "capture_method": "manual",
+        "metadata": {"resource_type": "session", "resource_id": session_id},
+    }
+
+    r2 = client.post(f"/sessions/{session_id}/join", json={
+        "agent_id": "budget_joiner",
+        "payment_intent_id": "pi_budget_next",
+    })
+    assert r2.status_code == 402
+    assert "spend limit exceeded" in r2.text
 
 
 # ============================================================================
@@ -1206,6 +1446,28 @@ def test_service_session_dispute_delivery_e2e(client):
     s = r.json()["settlements"][0]
     assert s["transfer_status"] == "refunded"
     assert s["platform_fee_cents"] == 0
+
+
+def test_stripe_profile_discovery_nested_id():
+    from emporia.stripe_profile_discovery import find_profile_id_in_data
+
+    assert (
+        find_profile_id_in_data({"settings": {"default_profile": "profile_test_abc123"}})
+        == "profile_test_abc123"
+    )
+    assert find_profile_id_in_data({"id": "profile_live_xyz"}) == "profile_live_xyz"
+
+
+def test_stripe_profile_discovery_skips_restricted_key():
+    from emporia.stripe_profile_discovery import (
+        discover_stripe_profile_id_from_api,
+        stripe_mpp_admin_notice,
+    )
+
+    assert discover_stripe_profile_id_from_api("rk_live_abc") is None
+    msg = stripe_mpp_admin_notice("rk_live_x", profile_ready=False)
+    assert msg and "ADMIN:" in msg and "rk_*" in msg
+    assert stripe_mpp_admin_notice("rk_live_x", profile_ready=True) is None
 
 
 def test_mpp_402_challenge_issued(client):

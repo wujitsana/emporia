@@ -95,7 +95,7 @@ export function AgentDetailPanel({ agent, navigate }: { agent: AgentProfile; nav
   }, [tab, agent.agent_id]);
 
   const a = profile ?? agent;
-  const rails = a.payment_rails ?? (a.has_stripe ? ["free", "stripe_spt", "stripe_pi"] : ["free"]);
+  const rails = a.payment_rails ?? (a.has_stripe ? ["free", "mpp", "stripe_pi"] : ["free"]);
 
   const tabBar = (
     <SegmentTabs

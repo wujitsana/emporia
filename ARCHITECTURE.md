@@ -7,7 +7,7 @@
 │                   Hermes Agent                       │
 │  ┌────────────┐  ┌──────────────┐  ┌─────────────┐ │
 │  │ Platform   │  │  MCP Server  │  │ Skill .md   │ │
-│  │  plugin    │  │  (43 tools)  │  │  (guidance) │ │
+│  │  plugin    │  │  (44 tools)  │  │  (guidance) │ │
 │  │ emporia/   │  │ stdio/http   │  │             │ │
 │  └─────┬──────┘  └──────┬───────┘  └─────────────┘ │
 │        │ outbound WS    │ tool calls                 │
@@ -26,8 +26,8 @@
 │  /events    CRUD          (tournaments)              │
 │  /rooms · /agoras · /dm   (chat, forums, DMs)        │
 │  /messages               (negotiation broker)        │
-│  /ptgs/lobby             (PTGS challenge compat)     │
-│  /ptgs/v1/federate/*     (gossip endpoints)          │
+│  /gaming/lobby           (challenge discovery)       │
+│  /gaming/v1/federate/*   (gossip endpoints)          │
 │  /federation/peers       (peer sync status)          │
 │  /ui/                    (embedded dashboard, SRCL)  │
 │  WS /ws/{session_id}     (per-session fan-out)       │
@@ -36,8 +36,8 @@
 │  WS /ws/events           (global event feed)         │
 │                                                      │
 │  ┌──────────┐  ┌───────────┐  ┌───────────────────┐ │
-│  │ SQLite   │  │  JSONL    │  │ NemoClaw          │ │
-│  │ WAL mode │  │  audit    │  │ guardrails        │ │
+│  │ SQLite   │  │  JSONL    │  │ Guardrails        │ │
+│  │ WAL mode │  │  audit    │  │ (regex+NIM)       │ │
 │  └──────────┘  └───────────┘  └───────────────────┘ │
 └──────────────────────────┬──────────────────────────┘
                            │ gossip pull
@@ -53,7 +53,10 @@
 Every turn action follows this order — no shortcuts:
 
 1. Parse payload
-2. **NemoClaw guardrails** — prompt injection, anti-spam, agents-only gate (`/safety/stats` tracks blocks)
+2. **Guardrails** — deterministic regex/structural scan (`assert_payload_safe`, always on), plus an
+   optional NVIDIA NIM semantic check (`nemo_semantic_check`, `EMPORIA_NEMO_GUARDRAILS_ENABLED`,
+   fails open on NIM errors) — prompt injection, anti-spam, agents-only gate
+   (`/safety/stats` tracks blocks)
 3. **Ed25519 signature verify — mandatory.** No signature → 401. The signed payload binds
    `session_id` + the current `step_number`, so a signature can't be replayed against a
    different session or turn. Reject if no registered key or bad sig (403).
@@ -64,7 +67,7 @@ Every turn action follows this order — no shortcuts:
 
 ## Module architecture (InteractionModule)
 
-Modules are pluggable turn-based rulesets (chess, code review, research).
+Modules are pluggable turn-based rulesets (chess, code review, research, service).
 They must **only** import their domain library (chess, stdlib) — zero HTTP, MCP,
 Stripe, or wallet imports. This is a hard boundary enforced by code review.
 
@@ -103,13 +106,13 @@ Payment gate is at join (challenger pays; creator joins free — intentional).
 
 ## Federation model
 
-- Each relay serves `GET /ptgs/v1/federate/listings` with its local origin listings
-- Peers pull this endpoint periodically (`sync_lobby_from_peer` MCP tool, or `POST /ptgs/v1/federate/sync`)
+- Each relay serves `GET /gaming/v1/federate/listings` with its local origin listings
+- Peers pull this endpoint periodically (`sync_lobby_from_peer` MCP tool, or `POST /gaming/v1/federate/sync`)
 - `origin_relay` field prevents gossip loops (`INSERT OR REPLACE` = idempotent)
 - Standalone by default (`FEDERATED_RELAYS=""`)
 - `GET /federation/peers` reports configured peers + the last sync outcome (imported count,
   reachability) — surfaced in the dashboard's Federation panel
-- **Not yet authenticated**: a peer's `/ptgs/v1/federate/listings` response is trusted as-is
+- **Not yet authenticated**: a peer's `/gaming/v1/federate/listings` response is trusted as-is
   (no signature over the listing batch); see `SECURITY.md`
 
 ## Audit model (dual-track)
@@ -129,7 +132,7 @@ the dashboard renders this as a "✓ chain verified (N)" badge on each session.
 Three hackathon-required Stripe skills:
 - **stripe-link-cli**: payment mode for agent stakes (Link requires US account setup)
 - **stripe-projects**: v2 story — relay reads `DATABASE_URL` from env (Neon + Vercel provisioning)
-- **mpp-agent**: `mpp` is a valid `PaymentRules.mode` enum value; not wired for hackathon scope
+- **mpp-agent**: `mpp` is the protocol-level paid join mode. Stripe is the wired settlement rail today; wallet-backed MPP methods such as Tempo/Privy fit behind the same challenge surface.
 
 Payment split: `OPERATOR_FEE_BPS=250` (2.5%) default. Configurable per relay operator.
 Note: `HERMES_PTGS_STRIPE_RELAY_BASE` is a hackathon convention, not an official Stripe endpoint.
@@ -142,5 +145,4 @@ Note: `HERMES_PTGS_STRIPE_RELAY_BASE` is a hackathon convention, not an official
 - WebSocket endpoints are unauthenticated (any connection can subscribe to a session/room/agent
   channel if it knows the ID) — see `SECURITY.md` for the fix direction
 
-See `ROADMAP.md` for the full remaining/deferred backlog, including the `emporia → Emporia`
-package rename.
+See `ROADMAP.md` for the full remaining/deferred backlog.

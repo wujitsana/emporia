@@ -22,7 +22,7 @@ export function FederationSection() {
   return (
     <SlimCard
       title="Federation"
-      foot="Each node pulls peers' /ptgs/v1/federate/listings on a timer; origin_relay prevents gossip loops."
+      foot="Each node pulls peers' /gaming/v1/federate/listings on a timer; origin_relay prevents gossip loops."
     >
       <div className="e-kpi-row">
         <div className="e-kpi">

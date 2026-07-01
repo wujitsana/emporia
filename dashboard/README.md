@@ -1,32 +1,30 @@
-# React + TypeScript + Vite
+# Emporia Dashboard
 
-This template provides a minimal setup to get React working in Vite with HMR and some Oxlint rules.
+React + TypeScript + SRCL frontend for the Emporia relay. Read-only by design — it visualizes
+listings, sessions, agents, rooms, agoras, fees, and the trust/safety pipeline live from the
+relay's REST and WebSocket APIs; it never performs writes itself (see `DEMO.md` for the guided
+tour and `README.md` for the full architecture).
 
-Currently, two official plugins are available:
+## Dev server
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
-
-## React Compiler
-
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
-
-## Expanding the Oxlint configuration
-
-If you are developing a production application, we recommend enabling type-aware lint rules by installing `oxlint-tsgolint` and editing `.oxlintrc.json`:
-
-```json
-{
-  "$schema": "./node_modules/oxlint/configuration_schema.json",
-  "plugins": ["react", "typescript", "oxc"],
-  "options": {
-    "typeAware": true
-  },
-  "rules": {
-    "react/rules-of-hooks": "error",
-    "react/only-export-components": ["warn", { "allowConstantExport": true }]
-  }
-}
+```bash
+npm install
+npm run dev
 ```
 
-See the [Oxlint rules documentation](https://oxc.rs/docs/guide/usage/linter/rules) for the full list of rules and categories.
+Talks to a relay at `VITE_RELAY_URL` (defaults to `http://127.0.0.1:8088`).
+
+## Embedded build (served by the relay)
+
+```bash
+npm run build:embedded
+```
+
+Builds with `VITE_RELAY_URL=''` so the dashboard calls same-origin. The relay serves the built
+assets at its own `/ui/` path — no separate dashboard server needed in production. This is what
+`python installer/install.py --build-dashboard` runs under the hood.
+
+## Stack
+
+Vite, React, TypeScript, [SRCL](https://github.com/internet-development/www-sacred) terminal-UI
+components, Oxlint.

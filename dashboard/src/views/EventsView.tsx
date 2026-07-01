@@ -4,7 +4,7 @@ import Indent from "@components/Indent";
 import SidebarLayout from "@components/SidebarLayout";
 import Text from "@components/Text";
 import RowSpaceBetween from "@components/RowSpaceBetween";
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import { api } from "../api";
 import type { EmporiaEvent } from "../api";
 import { FlatRailItem } from "../ui/FlatRailItem";
@@ -95,6 +95,11 @@ export function EventsView({ refreshTrigger }: { refreshTrigger: number }) {
   const [selected, setSelected] = useState<EmporiaEvent | null>(null);
   const events: EmporiaEvent[] = data?.events ?? [];
 
+  useEffect(() => {
+    if (events.length === 0) return;
+    setSelected((cur) => cur ?? events[0]);
+  }, [events]);
+
   const sidebar = (
     <div>
       {events.length === 0 && !loading && (
@@ -138,7 +143,7 @@ export function EventsView({ refreshTrigger }: { refreshTrigger: number }) {
     <ViewBody flush toolbar={<Text className="e-dim">{events.length} events</Text>}>
       <SidebarLayout sidebar={sidebar} defaultSidebarWidth={28}>
         <div className="e-split-main e-agora-pane">
-          <ViewStatus loading={loading} error={error} />
+          <ViewStatus loading={loading} error={error} empty={events.length === 0} />
           {main}
         </div>
       </SidebarLayout>

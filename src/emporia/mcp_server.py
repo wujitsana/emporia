@@ -1,4 +1,4 @@
-"""Emporia MCP Server — 41 tools via FastMCP (stdio/streamable-http/sse).
+"""Emporia MCP Server — 44 tools via FastMCP (stdio/streamable-http/sse).
 
 Tools:
   IDENTITY (2):
@@ -11,10 +11,10 @@ Tools:
   LISTINGS (2):
     create_listing, list_listings
 
-  SETTLEMENTS (1):
-    get_settlements
+  PAYMENTS (2):
+    create_payment_intent, get_settlements
 
-  LOBBY / FEDERATION (8):
+  LOBBY / FEDERATION (11):
     create_challenge, list_challenges, cleanup_expired_challenges,
     export_challenge, import_challenge, accept_challenge,
     discover_peer_lobby, sync_lobby_from_peer, publish_challenge_to_peer,
@@ -29,12 +29,16 @@ Tools:
   RELAY INFO (2):
     relay_payment_info, get_agent_profile
 
-  AGORAS (6):
-    create_agora_topic, list_agora_topics, subscribe_agora_topic,
-    create_agora_post, list_agora_posts, add_agora_comment
+  AGORAS (7):
+    create_agora_topic, list_agora_topics, invite_to_agora_topic,
+    subscribe_agora_topic, create_agora_post, list_agora_posts,
+    add_agora_comment
 
   DMs (3):
     send_dm, list_dm_threads, get_dm_messages
+
+  DASHBOARD AUTH (1):
+    sign_dashboard_challenge
 
 Stripped vs PTGS mcp_server.py:
   - Tools 13-14 (submit_turn_to_stripe_relay, send_turn_to_peer) — x402-gated
@@ -221,7 +225,7 @@ def register_agent(
         "challenge_id": ch["challenge_id"],
         "challenge_signature": sig_hex,
     }
-    jwt = nous_jwt or NOUS_JWT
+    jwt = nous_jwt or os.getenv("EMPORIA_NOUS_JWT", "") or NOUS_JWT
     if jwt:
         payload["identity_claims"] = [{"provider": "nous", "token": jwt}]
     try:
@@ -353,7 +357,7 @@ async def discover_peer_lobby(peer_relay_url: str) -> dict[str, Any]:
     read-only discovery must not trigger a payment. Now plain httpx.get().
     """
     try:
-        url = peer_relay_url.rstrip("/") + "/ptgs/lobby"
+        url = peer_relay_url.rstrip("/") + "/gaming/lobby"
         async with httpx.AsyncClient(timeout=15) as client:
             resp = await client.get(url, params={"status": "open"})
             resp.raise_for_status()
@@ -372,7 +376,7 @@ async def discover_peer_lobby(peer_relay_url: str) -> dict[str, Any]:
 async def sync_lobby_from_peer(peer_relay_url: str) -> dict[str, Any]:
     """Pull challenges from a peer relay and import them locally (federation gossip)."""
     try:
-        url = peer_relay_url.rstrip("/") + "/ptgs/lobby"
+        url = peer_relay_url.rstrip("/") + "/gaming/lobby"
         async with httpx.AsyncClient(timeout=15) as client:
             resp = await client.get(url, params={"status": "open"})
             resp.raise_for_status()
@@ -414,7 +418,7 @@ async def publish_challenge_to_peer(
         challenge = _game_registry.get_challenge(challenge_id)
         if not challenge:
             return {"error": f"Challenge not found: {challenge_id}", "success": False}
-        url = peer_relay_url.rstrip("/") + "/ptgs/lobby"
+        url = peer_relay_url.rstrip("/") + "/gaming/lobby"
         payload = {"challenge": challenge.to_dict()}
         async with httpx.AsyncClient(timeout=15) as client:
             resp = await client.post(url, json=payload)
@@ -570,37 +574,32 @@ def join_room(
     room_id: str,
     agent_id: str,
     payment_intent_id: str | None = None,
+    mpp_token: str = "",
 ) -> dict[str, Any]:
     """Join a room. Gate logic:
       open            — just join (public rooms only)
       invite          — must have been invited by creator first
-      stripe_payment  — provide payment_intent_id (confirmed via Stripe)
+      stripe_payment  — call create_payment_intent() first, pass the
+                        returned payment_intent_id here (verified against
+                        Stripe by the relay — not just checked for presence)
 
-    Returns current room state on success.
+    Returns current room state on success. Forwards to the relay's
+    POST /rooms/{id}/join so payment is actually verified server-side —
+    this used to write directly to the local room DB and only checked that
+    payment_intent_id was *non-empty*, never that it was a real, paid
+    PaymentIntent; that let any agent join a paid room for free.
     """
-    from emporia import rooms as r
-    from pathlib import Path
-    import os
-    db_path = Path(os.getenv("EMPORIA_DB_PATH", "~/.hermes/emporia_relay.sqlite3")).expanduser()
+    body: dict[str, Any] = {"agent_id": agent_id}
+    if payment_intent_id:
+        body["payment_intent_id"] = payment_intent_id
     try:
-        room = r.get_room(room_id, db_path=db_path)
-        if not room:
-            return {"error": f"Room not found: {room_id}", "success": False}
-        if r.is_member(room_id, agent_id, db_path=db_path):
-            return {"success": True, "status": "already_member", "room_id": room_id}
-        if room.gate_type == "invite" and not r.has_invite(room_id, agent_id, db_path=db_path):
-            return {"error": "No invite — ask the room creator", "success": False}
-        if room.gate_type == "stripe_payment":
-            if not payment_intent_id:
-                return {
-                    "error": f"payment_intent_id required ({room.entry_fee_cents} {room.currency} cents)",
-                    "success": False,
-                    "requires_payment": True,
-                    "entry_fee_cents": room.entry_fee_cents,
-                }
-            # Caller must confirm payment before calling join_room with payment_intent_id
-        r.add_member(room_id, agent_id, db_path=db_path)
-        return {"success": True, "status": "joined", "room_id": room_id}
+        r = httpx.post(f"{RELAY_URL}/rooms/{room_id}/join", json=body, timeout=15)
+        d = r.json()
+        if r.status_code == 200:
+            return {"success": True, **d}
+        if r.status_code == 402:
+            return {"error": "payment_required", "detail": d, "success": False, "requires_payment": True}
+        return {"error": f"Relay {r.status_code}", "detail": d, "success": False}
     except Exception as e:
         return {"error": str(e), "success": False}
 
@@ -739,18 +738,17 @@ def mark_inbox_read(agent_id: str, inbox_ids: list[str]) -> dict[str, Any]:
 
 @mcp.tool()
 def relay_payment_info() -> dict[str, Any]:
-    """Return what payment rails this relay accepts and operator fee settings.
+    """Return the relay's payment setup and available MPP methods.
 
-    Use this before creating a session or room to know which payment modes work:
-      free        — always available, no Stripe key needed
-      stripe_spt  — Stripe Shared Payment Token (spt_xxx from link-cli)
-      stripe_pi   — Standard Stripe PaymentIntent (pi_xxx, manual confirm)
-      stripe_connect — relay can receive & route payouts to winner Connected Accounts
+    Key fields:
+      payment_rails      — protocol-level rails (free, mpp, stripe_pi)
+      payment_methods    — concrete MPP methods currently configured (stripe, tempo)
+      mpp_enabled        — True when at least one MPP payment method is enabled
+      stripe_profile_id  — Stripe Machine Payments profile ID for fiat MPP
+      stripe_profile_ready — True when the relay has both a Stripe key and valid profile id
+      stripe_api_version — Stripe preview/API version expected by the relay
 
-    Also returns:
-      operator_fee_bps   — platform fee in basis points (250 = 2.5%)
-      stripe_enabled     — whether STRIPE_SECRET_KEY is set on this relay
-      stripe_profile_id  — Machine Payment Profile ID for MPP fiat rail (may be empty)
+    Also returns operator fee and relay-side spend caps for sessions, rooms, and Agoras.
     """
     try:
         r = httpx.get(f"{RELAY_URL}/health", timeout=10.0)
@@ -759,9 +757,16 @@ def relay_payment_info() -> dict[str, Any]:
             return {
                 "relay_url": RELAY_URL,
                 "stripe_enabled": h.get("stripe_enabled", False),
+                "mpp_enabled": h.get("mpp_enabled", False),
+                "tempo_enabled": h.get("tempo_enabled", False),
                 "operator_fee_bps": h.get("operator_fee_bps", 250),
                 "payment_rails": h.get("payment_rails", ["free"]),
+                "payment_methods": h.get("payment_methods", []),
                 "stripe_profile_id": h.get("stripe_profile_id", ""),
+                "stripe_profile_ready": h.get("stripe_profile_ready", False),
+                "stripe_api_version": h.get("stripe_api_version", ""),
+                "max_total_spend_cents": h.get("max_total_spend_cents"),
+                "stripe_mpp_admin_notice": h.get("stripe_mpp_admin_notice"),
             }
         return {"relay_url": RELAY_URL, "error": f"Relay error {r.status_code}"}
     except Exception as e:
@@ -772,13 +777,10 @@ def relay_payment_info() -> dict[str, Any]:
 def get_agent_profile(agent_id: str) -> dict[str, Any]:
     """Fetch the full profile for an agent registered on this relay.
 
-    Returns identity, trust tier, payment rails, and stats.
+    Returns identity, trust tier, payment rails, payment methods, and stats.
 
-    payment_rails — what this agent can use to pay on this relay:
-      free            — always present
-      stripe_spt      — if relay has STRIPE_SECRET_KEY set (agent provides spt_xxx)
-      stripe_pi       — if relay has STRIPE_SECRET_KEY set (agent provides pi_xxx)
-      stripe_connect  — if the agent has a Stripe Connected Account (can receive payouts)
+    payment_rails describes relay protocol support (free, mpp, stripe_pi, stripe_connect).
+    payment_methods describes concrete MPP methods available on this relay (stripe, tempo).
 
     trust_level:
       key_only      — registered with Ed25519 pubkey only
@@ -882,17 +884,22 @@ def invite_to_agora_topic(topic_slug: str, agent_id: str, invited_by: str) -> di
 
 
 @mcp.tool()
-def subscribe_agora_topic(topic_slug: str, agent_id: str) -> dict[str, Any]:
+def subscribe_agora_topic(topic_slug: str, agent_id: str, mpp_token: str = "", payment_intent_id: str = "") -> dict[str, Any]:
     """Subscribe to an Agora topic.
 
     open topics: subscribes immediately.
     invite / paid_invite topics: requires a prior invite from the creator.
-    paid_invite topics: relay returns 402 — use link-cli or pass an SPT via the Authorization header.
+    paid_invite topics: either provide an MPP token (`mpp_token`) or a bound PaymentIntent.
     """
     try:
+        headers = {"Authorization": f"Payment {mpp_token}"} if mpp_token else None
+        body: dict[str, Any] = {"agent_id": agent_id}
+        if payment_intent_id:
+            body["payment_intent_id"] = payment_intent_id
         r = httpx.post(
             f"{RELAY_URL}/agoras/topics/{topic_slug}/subscribe",
-            json={"agent_id": agent_id},
+            json=body,
+            headers=headers,
             timeout=10,
         )
         if r.status_code == 402:
@@ -1080,6 +1087,7 @@ def create_session(
                  'emporia:research:v1' | 'emporia:code-review:v1'
     agent_id: Defaults to EMPORIA_AGENT_ID env.
     payment_mode: 'free' | 'stripe_spt' | 'stripe_pi' | 'mpp'
+    The 'mpp' mode is protocol-level; the relay may satisfy it via Stripe or Tempo.
     config examples:
       chess   — {"time_control": 600}
       service — {"description": "...", "requirements": [...], "deadline_hours": 24}
@@ -1089,7 +1097,7 @@ def create_session(
         return {"error": "agent_id required (or set EMPORIA_AGENT_ID)", "success": False}
     body: dict[str, Any] = {
         "module_type": module_type,
-        "creator_id": aid,
+        "creator_agent_id": aid,
         "config": config or {},
         "payment_rules": {
             "mode": payment_mode,
@@ -1141,27 +1149,79 @@ def get_session(session_id: str) -> dict[str, Any]:
 
 
 @mcp.tool()
+def create_payment_intent(
+    amount_cents: int,
+    buyer_id: str = "",
+    session_id: str = "",
+    room_id: str = "",
+    seller_id: str = "relay",
+    service_type: str = "emporia:session",
+) -> dict[str, Any]:
+    """Create a Stripe PaymentIntent (manual-capture escrow hold) to fund a paid
+    session or room. Call this BEFORE join_session/join_room on a non-free
+    session — pass the returned payment_intent_id to that call.
+
+    On a relay running with a Stripe *test* key (sk_test_...), join_session/
+    join_room auto-confirm the intent server-side (no real card, no human
+    interaction) — the full stake→escrow→settle→payout cycle runs entirely
+    agent-to-agent. On a live key, the buyer needs a real payment method
+    already on file (Stripe Link / an SPT) — see relay_payment_info().
+
+    Args:
+        amount_cents: Stake amount in cents (e.g. 500 = $5.00).
+        buyer_id: Paying agent's ID. Defaults to EMPORIA_AGENT_ID.
+        session_id: Session this stake is for (mutually exclusive-ish with room_id).
+        room_id: Room this entry fee is for, if paying to join a room instead.
+        seller_id: Receiving party — usually left as "relay" (escrow/marketplace).
+        service_type: Free-form label stored in Stripe metadata.
+    """
+    bid = buyer_id or AGENT_ID
+    if not bid:
+        return {"error": "buyer_id required (or set EMPORIA_AGENT_ID)", "success": False}
+    body: dict[str, Any] = {
+        "amount_cents": amount_cents,
+        "buyer_id": bid,
+        "seller_id": seller_id,
+        "service_type": service_type,
+    }
+    if session_id:
+        body["session_id"] = session_id
+    if room_id:
+        body["room_id"] = room_id
+    try:
+        r = httpx.post(f"{RELAY_URL}/payments/create-intent", json=body, timeout=15)
+        d = r.json()
+        if r.status_code == 200:
+            return {"success": True, **d}
+        return {"error": f"Relay {r.status_code}", "detail": d, "success": False}
+    except Exception as e:
+        return {"error": str(e), "success": False}
+
+
+@mcp.tool()
 def join_session(
     session_id: str,
     agent_id: str = "",
     payment_intent_id: str = "",
+    mpp_token: str = "",
 ) -> dict[str, Any]:
     """Join an existing session as a participant.
 
     For free sessions: just pass session_id + agent_id.
-    For paid sessions: pre-create a PaymentIntent via /payments/create-intent
-    and pass payment_intent_id, OR let the relay issue an MPP 402 challenge
-    (client handles via link-cli / mppx).
+    For paid sessions: call create_payment_intent() first and pass the
+    returned payment_intent_id here, OR let the relay issue an MPP 402
+    challenge (client handles via link-cli / mppx).
     Creators are auto-joined at create_session time — don't call join for them.
     """
     aid = agent_id or AGENT_ID
     if not aid:
         return {"error": "agent_id required (or set EMPORIA_AGENT_ID)", "success": False}
     body: dict[str, Any] = {"agent_id": aid}
+    headers = {"Authorization": f"Payment {mpp_token}"} if mpp_token else None
     if payment_intent_id:
         body["payment_intent_id"] = payment_intent_id
     try:
-        r = httpx.post(f"{RELAY_URL}/sessions/{session_id}/join", json=body, timeout=10)
+        r = httpx.post(f"{RELAY_URL}/sessions/{session_id}/join", json=body, headers=headers, timeout=10)
         d = r.json()
         if r.status_code == 200:
             return {"success": True, **d}
@@ -1365,6 +1425,7 @@ def create_listing(
     listing_type: 'service' | 'room' (use create_room for rooms instead)
     module_type: e.g. 'emporia:service:v1' (omit for generic service)
     payment_mode: 'free' | 'stripe_spt' | 'stripe_pi' | 'mpp'
+    The 'mpp' mode is protocol-level; the relay may satisfy it via Stripe or Tempo.
     price_usd: Human-readable price e.g. '5.00' (ignored for free)
     """
     aid = agent_id or AGENT_ID

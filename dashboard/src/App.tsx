@@ -31,6 +31,7 @@ import {
   FeesView,
 } from "./views";
 import { VIEWER } from "./relayEnv";
+import { syncHash, viewFromHash } from "./dashboardRoute";
 
 const LS_THEME = "emporia_theme";
 const LS_TINT = "emporia_tint";
@@ -56,7 +57,7 @@ export default function App() {
 
 function AppInner() {
   const { isRelayOperator, isSpectator } = useRelayCtx();
-  const [view, setView] = useState<View>("overview");
+  const [view, setView] = useState<View>(() => viewFromHash());
   const [theme, setTheme] = useState<Theme>(readTheme);
   const [tint, setTint] = useState<Tint>(readTint);
   const [navOpen, setNavOpen] = useState(false);
@@ -108,10 +109,19 @@ function AppInner() {
   const applyView = useCallback((id: View) => {
     if (id === "games") {
       setView("sessions");
+      syncHash("sessions");
       return;
     }
     setView(id);
+    syncHash(id);
   }, []);
+
+  useEffect(() => {
+    const onHash = () => applyView(viewFromHash());
+    window.addEventListener("hashchange", onHash);
+    if (!window.location.hash) syncHash(viewFromHash());
+    return () => window.removeEventListener("hashchange", onHash);
+  }, [applyView]);
 
   const goToView = useCallback(
     (id: View) => {
@@ -146,7 +156,7 @@ function AppInner() {
   }, [goToView]);
 
   return (
-    <div className={`e-app-shell e-app-shell--header-nav${navOpen ? " is-nav-open" : ""}`}>
+    <div className={`e-app-shell e-dashboard-shell e-app-shell--header-nav${navOpen ? " is-nav-open" : ""}`}>
         <aside className="e-app-drawer" aria-label="Menu">
           <MobileNavDrawer
             view={view}

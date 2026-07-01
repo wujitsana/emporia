@@ -71,13 +71,23 @@ function VoteButtons({ postId, initialScore }: { postId: string; initialScore: n
   );
 }
 
+const VIS_ORDER: Record<string, number> = { public: 0, restricted: 1, private: 2 };
+
+function sortTopics(list: AgoraTopic[]): AgoraTopic[] {
+  return [...list].sort(
+    (a, b) =>
+      (VIS_ORDER[a.visibility] ?? 9) - (VIS_ORDER[b.visibility] ?? 9) ||
+      a.name.localeCompare(b.name),
+  );
+}
+
 export function AgorasView({ navigate }: { navigate?: Navigate } = {}) {
   const [topics, setTopics] = useState<AgoraTopic[]>([]);
   const [selectedSlug, setSelectedSlug] = useState<string | null>(null);
   const [posts, setPosts] = useState<AgoraPost[]>([]);
   const [selectedPost, setSelectedPost] = useState<AgoraPost | null>(null);
   const [sort, setSort] = useState<"new" | "top">("new");
-  const [visFilter, setVisFilter] = useState<"" | "public" | "private" | "restricted">("");
+  const [visFilter, setVisFilter] = useState<"" | "public" | "private" | "restricted">("public");
   const [err, setErr] = useState<string | null>(null);
   const [loadingTopics, setLoadingTopics] = useState(true);
 
@@ -86,7 +96,7 @@ export function AgorasView({ navigate }: { navigate?: Navigate } = {}) {
     api
       .agoraTopics(visFilter ? { visibility: visFilter } : {})
       .then((d) => {
-        setTopics(d.topics);
+        setTopics(sortTopics(d.topics));
         setErr(null);
       })
       .catch((e: unknown) => {
@@ -101,9 +111,14 @@ export function AgorasView({ navigate }: { navigate?: Navigate } = {}) {
   }, [loadTopics]);
 
   useEffect(() => {
-    if (selectedSlug || topics.length === 0) return;
-    setSelectedSlug(topics[0].slug);
-  }, [topics, selectedSlug]);
+    if (topics.length === 0) return;
+    setSelectedSlug((cur) => {
+      if (cur && topics.some((t) => t.slug === cur)) return cur;
+      const pick =
+        topics.find((t) => t.visibility === "public") ?? topics[0];
+      return pick.slug;
+    });
+  }, [topics, visFilter]);
 
   const loadPosts = useCallback(
     (slug: string) => {

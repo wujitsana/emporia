@@ -34,10 +34,18 @@ import { AgentMoireAvatar } from "../AgentMoireAvatar";
 import { PaymentsFeesSection } from "../PaymentsFeesSection";
 import { EMPTY_SEED_HINT } from "../navigation";
 import { FlatRailItem } from "../ui/FlatRailItem";
-import { ChessTransport, LiveMark, MoveIndex } from "../ui/chessControls";
+import { ChessReplayStatus, ChessSpeedSlider, ChessTransport } from "../ui/chessControls";
 import { RELAY, VIEWER } from "../relayEnv";
 import { fetchDashboardCounts, countCaptionForNav, subForNav } from "../dashboardCounts";
 import { STARTING_FEN, fenToBoard } from "../fen";
+import {
+  buildChessReplay,
+  chessSessionPlayable,
+  chessSides,
+  sessionIsActive,
+  shortAgent,
+} from "../chessReplay";
+import { ChessMoveLine, ChessPlayersBar } from "../ui/chessMatch";
 import type { Navigate } from "../navigation";
 import { ViewStatus } from "../ui/ViewStatus";
 import { ViewBody } from "../ui/layout";
@@ -61,11 +69,13 @@ export function SessionsView({
   initialSessionId: string | null;
 }) {
   const [data, loading, error] = useInterval(() => api.sessions(), 5_000, [refreshTrigger]);
-  const sessions: Session[] = data?.sessions ?? [];
+  const sessions: Session[] = (data?.sessions ?? []).filter(chessSessionPlayable);
   const [selected, setSelected] = useState<Session | null>(null);
   const [history, setHistory] = useState<string[]>([STARTING_FEN]);
+  const [sans, setSans] = useState<string[]>([]);
   const [idx, setIdx] = useState(0);
   const [replaying, setReplaying] = useState(false);
+  const [speed, setSpeed] = useState(700);
   const [wsLive, setWsLive] = useState(false);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
@@ -81,11 +91,31 @@ export function SessionsView({
     if (found && found.session_id !== selected?.session_id) setSelected(found);
   }, [initialSessionId, sessions]);
 
-  // Session WebSocket — reconnects; seeds FEN from init frame
   useEffect(() => {
-    if (!selected) return;
-    setHistory([STARTING_FEN]);
-    setIdx(0);
+    if (!selected || !selected.module_type.includes("chess")) return;
+    const fallback = (selected.state as { board_fen?: string } | undefined)?.board_fen;
+    let cancelled = false;
+    api.sessionActions(selected.session_id)
+      .then((r) => {
+        if (cancelled) return;
+        const built = buildChessReplay(r.actions, fallback);
+        setHistory(built.fens);
+        setSans(built.sans);
+        setIdx(Math.max(0, built.fens.length - 1));
+      })
+      .catch(() => {
+        if (!cancelled && fallback) {
+          setHistory([STARTING_FEN, fallback]);
+          setSans([]);
+          setIdx(1);
+        }
+      });
+    return () => { cancelled = true; };
+  }, [selected?.session_id, selected?.module_type]);
+
+  // Session WebSocket — live tail while active
+  useEffect(() => {
+    if (!selected || !sessionIsActive(selected.status)) return;
     setWsLive(false);
 
     const base = toWsUrl(RELAY);
@@ -103,13 +133,15 @@ export function SessionsView({
       };
       ws.onmessage = (e) => {
         const f = JSON.parse(e.data);
-        if (f.type === "init") {
-          // Seed current board position from the relay's init snapshot
-          const fen = f.session?.state?.board_fen;
-          if (fen) { setHistory([fen]); setIdx(0); }
-        } else if (f.type === "action_result" && f.new_state?.board_fen) {
-          setHistory((h) => [...h, f.new_state.board_fen]);
-          setIdx((i) => i + 1);
+        if (f.type === "action_result" && f.new_state?.board_fen) {
+          api.sessionActions(selected.session_id)
+            .then((r) => {
+              const built = buildChessReplay(r.actions, selected.state?.board_fen as string | undefined);
+              setHistory(built.fens);
+              setSans(built.sans);
+              setIdx(Math.max(0, built.fens.length - 1));
+            })
+            .catch(() => {});
         } else if (f.type === "session_completed") {
           setWsLive(false);
         }
@@ -127,7 +159,7 @@ export function SessionsView({
       ws?.close();
       if (timerRef.current) clearInterval(timerRef.current);
     };
-  }, [selected?.session_id]);
+  }, [selected?.session_id, selected?.status]);
 
   const startReplay = useCallback(() => {
     setIdx(0);
@@ -142,8 +174,8 @@ export function SessionsView({
         }
         return i + 1;
       });
-    }, 700);
-  }, [history.length]);
+    }, speed);
+  }, [history.length, speed]);
 
   const stopReplay = () => {
     if (timerRef.current) clearInterval(timerRef.current);
@@ -158,66 +190,91 @@ export function SessionsView({
       {sessions.length === 0 ? (
         <Indent><Text className="e-faint">No active sessions</Text></Indent>
       ) : (
-        sessions.map((s) => (
+        sessions.map((s) => {
+          const { white, black } = chessSides(s);
+          return (
           <FlatRailItem
             key={s.session_id}
             selected={selected?.session_id === s.session_id}
             onClick={() => setSelected(s)}
           >
             <RowSpaceBetween>
-              <Text>…{s.session_id.slice(-10)}</Text>
+              <Text>{shortAgent(white, 10)} v {shortAgent(black, 10)}</Text>
               <Text className="e-dim e-status-txt">{s.status}</Text>
             </RowSpaceBetween>
             <Text className="e-dim">
-              {s.module_type.replace("emporia:", "").replace(":v1", "")} · step {s.step_number}
+              {s.module_type.replace("emporia:", "").replace(":v1", "")} · {s.step_number} plies
             </Text>
           </FlatRailItem>
-        ))
+          );
+        })
       )}
     </>
   );
 
   return (
-    <ViewBody flush toolbar={wsLive && selected ? <LiveMark live /> : undefined}>
+    <ViewBody flush>
       <SidebarLayout sidebar={sidebar} defaultSidebarWidth={26}>
-        <Indent>
-          <br />
-          <ViewStatus loading={loading} error={error} />
+        <div className="e-split-main">
+          <Indent>
+            <ViewStatus loading={loading} error={error} />
+          </Indent>
           {!selected ? null : isChess ? (
-            <>
-              <RowSpaceBetween>
-                <Text style={{ fontSize: 13 }}>…{selected.session_id.slice(-14)}</Text>
-                <MoveIndex idx={idx} total={history.length} />
-              </RowSpaceBetween>
-              <br />
-              <Chessboard board={board} />
-              <br />
-              <ChessTransport
-                onPrev={() => setIdx(Math.max(0, idx - 1))}
-                onNext={() => setIdx(Math.min(history.length - 1, idx + 1))}
-                onReplayToggle={replaying ? stopReplay : startReplay}
-                replaying={replaying}
-                onLatest={() => { stopReplay(); setIdx(history.length - 1); }}
-              />
-              <br />
-              <RowSpaceBetween>
-                <Text className="e-dim">Turn: {selected.current_agent}</Text>
-                <Text className="e-dim">{selected.status}</Text>
-              </RowSpaceBetween>
-            </>
+            <div className="e-chess-main">
+              <div className="e-chess-column">
+                <div className="e-chess-stage">
+                  <Chessboard board={board} key={`${selected.session_id}-${idx}-${history[idx] ?? ""}`} />
+                  <ChessTransport
+                    onPrev={() => { stopReplay(); setIdx(Math.max(0, idx - 1)); }}
+                    onNext={() => { stopReplay(); setIdx(Math.min(history.length - 1, idx + 1)); }}
+                    onReplayToggle={replaying ? stopReplay : startReplay}
+                    replaying={replaying}
+                    onLatest={() => {
+                      stopReplay();
+                      setIdx(history.length - 1);
+                    }}
+                    status={
+                      <ChessReplayStatus live={wsLive} idx={idx} total={history.length} />
+                    }
+                  />
+                  <ChessSpeedSlider speed={speed} onSpeed={setSpeed} />
+                </div>
+                {sans.length > 0 ? (
+                  <div className="e-chess-moves-block">
+                    <ChessMoveLine
+                      sans={sans}
+                      idx={idx}
+                      onPick={(frame) => {
+                        stopReplay();
+                        setIdx(frame);
+                      }}
+                    />
+                  </div>
+                ) : null}
+                <ChessPlayersBar session={selected} />
+                <RowSpaceBetween className="e-chess-meta">
+                  <Text className="e-dim">
+                    turn · {selected.current_agent}{" "}
+                    {selected.current_agent === chessSides(selected).white ? "♔" : "♚"}
+                  </Text>
+                  <Text className="e-dim">{selected.status}</Text>
+                </RowSpaceBetween>
+              </div>
+            </div>
           ) : (
-            <MetaGrid
-              rows={[
-                ["Session", `…${selected.session_id.slice(-16)}`],
-                ["Module", selected.module_type.replace("emporia:", "")],
-                ["Status", selected.status],
-                ["Step", String(selected.step_number)],
-                ["Turn", selected.current_agent],
-              ]}
-            />
+            <Indent>
+              <MetaGrid
+                rows={[
+                  ["Session", `…${selected.session_id.slice(-16)}`],
+                  ["Module", selected.module_type.replace("emporia:", "")],
+                  ["Status", selected.status],
+                  ["Step", String(selected.step_number)],
+                  ["Turn", selected.current_agent],
+                ]}
+              />
+            </Indent>
           )}
-          <br />
-        </Indent>
+        </div>
       </SidebarLayout>
     </ViewBody>
   );

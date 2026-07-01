@@ -1,21 +1,34 @@
 """Emporia installer — wire Hermes profiles for MCP auto-registration.
 
-Usage (run from anywhere inside or above a profile):
+Usage (run from emporia repo root or inside a Hermes profile):
 
-    # Install into the profile you're currently running as
+    # ── Hermes: wire the profile you are running as (agent self-install) ──
     python installer/install.py --install-profile
+    python installer/install.py --install-profile --agent-id my_agent --relay-url http://127.0.0.1:8088
+    # → syncs Python deps, patches config.yaml + MCP, symlinks skill, optional local seed
+    # → then in Hermes: /reload-mcp
 
-    # Same, but explicit agent ID and relay
-    python installer/install.py --install-profile --agent-id my_agent --relay-url http://localhost:8088
-
-    # Create a brand-new agent profile, inheriting model + env from current profile
-    python installer/install.py --create-profile scout_agent
-
-    # Bootstrap two test profiles (alpha buyer + beta vendor)
+    # ── Full hackathon demo (multi-agent profiles + seed) ──
     python installer/install.py --bootstrap-test
+    # → creates alpha/beta/nemotron_strategist/stripe_escrow_bot profiles, starts relay, seeds
 
-    # Preview without writing
+    # ── Relay + dashboard + seed only (no Hermes profile changes) ──
+    python installer/install.py --local-demo
+    # Same as: --build-dashboard --start-relay --seed-only
+
+    python installer/install.py --seed-only          # re-populate demo content (starts relay if needed)
+    python installer/install.py --start-relay        # uv sync + background uvicorn
+    python installer/install.py --build-dashboard    # npm install + build:embedded → /ui/
+
+    # ── Other ──
+    python installer/install.py --create-profile scout_agent
     python installer/install.py --install-profile --dry-run
+
+Low-level scripts (same behavior, for automation):
+    scripts/local_relay.py          ensure_relay_running / start_relay
+    scripts/seed_demo_relay.py      demo agents, games, rooms, Agoras, DMs, events
+
+See README.md § Operations and docs/RUNBOOK.md.
 """
 
 from __future__ import annotations
@@ -24,8 +37,10 @@ import argparse
 import datetime
 import json
 import os
+import shutil
 import subprocess
 import sys
+import urllib.error
 import urllib.parse
 import urllib.request
 from pathlib import Path
@@ -59,25 +74,87 @@ MCP_TOOL_NAME = "emporia"
 _SAFE_ENV_KEYS = {
     "EMPORIA_RELAY_URL",
     "HERMES_AGENT_ID",
-    "NVIDIA_API_KEY",
     "OPENROUTER_API_KEY",
+    "STRIPE_PROFILE_ID",
+    "STRIPE_API_VERSION",
+    "EMPORIA_MPP_TEMPO_ENABLED",
+    "EMPORIA_MAX_TOTAL_SPEND_CENTS",
+    "EMPORIA_GUARDRAILS_MODE",
 }
+def _valid_stripe_profile_id(value: str | None) -> bool:
+    if not value:
+        return False
+    value = value.strip()
+    return value.startswith("profile_") or value.startswith("profile_test_")
+
+
 _SECRET_ENV_KEYS = {
     "STRIPE_SECRET_KEY",
+    "NVIDIA_API_KEY",
     "OPENAI_API_KEY",
     "ANTHROPIC_API_KEY",
     "NOUS_API_KEY",
     "EMPORIA_NOUS_JWT",
 }
 
+_PROVIDER_ENV_KEYS = ("NVIDIA_API_KEY", "STRIPE_SECRET_KEY", "STRIPE_PROFILE_ID")
+
+
+def _apply_guardrails_env(
+    env_block: dict[str, str],
+    *,
+    disabled: bool = False,
+    nvidia_api_key: str | None = None,
+) -> None:
+    """Regex enforce always (unless off); NeMo NIM only when NVIDIA_API_KEY is configured."""
+    if disabled:
+        env_block["EMPORIA_GUARDRAILS_MODE"] = "off"
+        env_block["EMPORIA_NEMO_GUARDRAILS_ENABLED"] = "0"
+        return
+    env_block.setdefault("EMPORIA_GUARDRAILS_MODE", "enforce")
+    if env_block.get("EMPORIA_GUARDRAILS_MODE", "enforce").lower() == "off":
+        env_block["EMPORIA_NEMO_GUARDRAILS_ENABLED"] = "0"
+        return
+    if nvidia_api_key:
+        env_block["NVIDIA_API_KEY"] = nvidia_api_key
+        env_block["EMPORIA_NEMO_GUARDRAILS_ENABLED"] = "1"
+    else:
+        env_block.pop("NVIDIA_API_KEY", None)
+        env_block["EMPORIA_NEMO_GUARDRAILS_ENABLED"] = "0"
+
+
+def _guardrails_env_lines(*, disabled: bool = False, nvidia_api_key: str | None = None) -> list[str]:
+    if disabled:
+        return ["EMPORIA_GUARDRAILS_MODE=off", "EMPORIA_NEMO_GUARDRAILS_ENABLED=0"]
+    nemo = "1" if nvidia_api_key else "0"
+    return ["EMPORIA_GUARDRAILS_MODE=enforce", f"EMPORIA_NEMO_GUARDRAILS_ENABLED={nemo}"]
+
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Nous token resolution
 # ─────────────────────────────────────────────────────────────────────────────
 
-def _find_auth_json() -> Path | None:
-    """Walk common locations to find auth.json."""
-    candidates = [
+def _find_auth_json(profile_dir: Path | None = None) -> Path | None:
+    """Walk common locations to find auth.json.
+
+    `hermes auth add nous` writes the live credential into the *active Hermes
+    profile's own* auth.json (`<profile_dir>/auth.json`) — not a data-root or
+    home-root file. That profile dir varies with `home_mode`: it can be
+    `/opt/data/profiles/<name>`, `~/profiles/<name>`, or `~/.hermes/profiles/<name>`.
+    Check the profile-scoped file first (most specific, most likely to be fresh),
+    then fall back to the legacy data-root/home-root locations.
+    """
+    if profile_dir is None:
+        profile_dir = find_profile_dir_from_cwd()
+        if profile_dir is None:
+            env_name = os.getenv("HERMES_PROFILE") or os.getenv("HERMES_AGENT_ID")
+            if env_name:
+                profile_dir = find_profile_dir_by_name(env_name)
+
+    candidates = []
+    if profile_dir:
+        candidates.append(profile_dir / "auth.json")
+    candidates += [
         Path(os.getenv("HERMES_DATA_DIR", "")) / "auth.json",
         Path("/opt/data/auth.json"),
         Path.home() / "auth.json",
@@ -138,29 +215,63 @@ def _try_refresh_nous(nous: dict, auth_path: Path) -> str | None:
         except Exception:
             pass  # auth.json update is best-effort
         return new_access
-    except Exception:
+    except urllib.error.HTTPError as e:
+        try:
+            detail = json.loads(e.read()).get("error_description", e.reason)
+        except Exception:
+            detail = e.reason
+        print(f"  Refresh failed: {e.code} {detail}")
+        return None
+    except Exception as e:
+        print(f"  Refresh failed: {type(e).__name__}: {e}")
         return None
 
 
-def resolve_nous_token(explicit: str | None = None) -> str | None:
+def _nous_access_token_expired(token: str, leeway_sec: int = 30) -> bool:
+    """True if JWT exp is in the past (signature not verified — expiry check only)."""
+    try:
+        import jwt
+
+        payload = jwt.decode(
+            token,
+            options={
+                "verify_signature": False,
+                "verify_aud": False,
+                "verify_iss": False,
+            },
+        )
+        exp = payload.get("exp")
+        if exp is None:
+            return False
+        return datetime.datetime.now(datetime.timezone.utc).timestamp() >= float(exp) - leeway_sec
+    except Exception:
+        return True
+
+
+def resolve_nous_token(
+    explicit: str | None = None, profile_dir: Path | None = None
+) -> str | None:
     """
     Return a valid Nous JWT.
 
-    Priority: --nous-token arg → EMPORIA_NOUS_JWT env → auth.json (with
+    Priority: --nous-token arg → non-expired EMPORIA_NOUS_JWT env → auth.json (with
     silent refresh if expired). Returns None if no token is available and
     prints a clear message so the caller can warn about key_only mode.
+
+    `profile_dir`: the active Hermes profile dir, if already known by the
+    caller (checked first by `_find_auth_json` — see its docstring for why).
     """
     # 1. Explicit CLI arg
     if explicit:
         return explicit
 
-    # 2. Env var (already refreshed/written by a previous run)
+    # 2. Env var only if not expired (stale profile .env must not block refresh)
     env_tok = os.getenv("EMPORIA_NOUS_JWT", "").strip()
-    if env_tok:
+    if env_tok and not _nous_access_token_expired(env_tok):
         return env_tok
 
     # 3. auth.json
-    auth_path = _find_auth_json()
+    auth_path = _find_auth_json(profile_dir)
     if not auth_path:
         return None
     try:
@@ -187,9 +298,13 @@ def resolve_nous_token(explicit: str | None = None) -> str | None:
             print("  Nous token refreshed.")
             return refreshed
 
-        print("  Nous token expired and silent refresh failed.")
-        print("  Run: hermes auth add nous")
-        print("  Then re-run installer to get nous_verified trust level.")
+        print("  Nous token expired and silent refresh failed (refresh_token itself may")
+        print("  be expired/revoked — this requires a human to re-approve, not something")
+        print("  this installer can do unattended). To restore nous_verified trust:")
+        print("    hermes auth add nous --type oauth --no-browser --manual-paste")
+        print("  This prints a URL + device code; open it, approve, then re-run the")
+        print("  installer (or `scripts/seed_demo_relay.py`) — no extra flags needed,")
+        print("  the fresh token will be picked up automatically.")
         return None
     except Exception:
         return None
@@ -207,15 +322,20 @@ def _hermes_profile_exists(name: str) -> bool:
 
 
 def _hermes_profile_create(name: str) -> None:
-    """Create the Hermes profile skeleton (idempotent via existence check)."""
+    """Create the Hermes profile skeleton (idempotent via existence check).
+
+    Uses --no-skills: Emporia profiles should carry only the skills they
+    actually need (emporia + payment skills), not the full bundled set —
+    see _install_payment_skill_links() for what gets provisioned instead.
+    """
     if _hermes_profile_exists(name):
         return
     try:
         subprocess.run(
-            ["hermes", "profile", "create", name],
+            ["hermes", "profile", "create", name, "--no-skills"],
             check=True, capture_output=True, timeout=15,
         )
-        print(f"  Created Hermes profile '{name}'")
+        print(f"  Created Hermes profile '{name}' (--no-skills)")
     except Exception as e:
         print(f"  Warning: hermes profile create failed: {e} — continuing")
 
@@ -301,6 +421,184 @@ def harvest_env(profile_dir: Path) -> dict[str, str]:
     return result
 
 
+def _yaml_env_scalar(value: Any) -> str:
+    if value is None:
+        return ""
+    if isinstance(value, str):
+        return value.strip()
+    return str(value).strip()
+
+
+def harvest_config_environment(profile_dir: Path) -> dict[str, str]:
+    """Hermes config.yaml `environment:` / top-level `env:` (non-empty values only)."""
+    path = profile_dir / "config.yaml"
+    if not path.exists():
+        return {}
+    data = load_yaml(path)
+    out: dict[str, str] = {}
+    for block_name in ("environment", "env"):
+        raw = data.get(block_name) or {}
+        if not isinstance(raw, dict):
+            continue
+        for k, v in raw.items():
+            s = _yaml_env_scalar(v)
+            if s:
+                out[str(k)] = s
+    return out
+
+
+def collect_upstream_env(profile_dir: Path) -> dict[str, str]:
+    """Walk parent directories for .env keys; closer ancestors override farther ones."""
+    profile_dir = profile_dir.resolve()
+    merged: dict[str, str] = {}
+    chain: list[Path] = []
+    current = profile_dir.parent
+    for _ in range(14):
+        if current == current.parent:
+            break
+        chain.append(current)
+        current = current.parent
+    for d in reversed(chain):
+        merged.update({k: v for k, v in harvest_env(d).items() if v})
+    merged.update(harvest_config_environment(profile_dir))
+    emporia_root = profile_dir / "emporia"
+    if emporia_root.is_dir():
+        merged.update({k: v for k, v in harvest_env(emporia_root).items() if v})
+    for k in _PROVIDER_ENV_KEYS:
+        if os.environ.get(k) and k not in merged:
+            merged[k] = os.environ[k].strip()
+    return merged
+
+
+def _prompt_optional_secret(label: str, hint: str) -> str | None:
+    if not sys.stdin.isatty():
+        return None
+    try:
+        import getpass
+
+        val = getpass.getpass(f"  {label} ({hint}; Enter to skip): ")
+        val = val.strip()
+        return val or None
+    except (EOFError, KeyboardInterrupt):
+        print()
+        return None
+
+
+def _prompt_optional_line(label: str, hint: str) -> str | None:
+    if not sys.stdin.isatty():
+        return None
+    try:
+        val = input(f"  {label} ({hint}; Enter to skip): ").strip()
+        return val or None
+    except (EOFError, KeyboardInterrupt):
+        print()
+        return None
+
+
+def resolve_provider_secrets(
+    profile_dir: Path,
+    *,
+    nvidia_api_key: str | None = None,
+    stripe_secret_key: str | None = None,
+    stripe_profile_id: str | None = None,
+    interactive: bool = True,
+    dry_run: bool = False,
+) -> tuple[str | None, str | None, str | None]:
+    """Resolve NVIDIA + Stripe from CLI, profile .env, parent .env, config, then prompt."""
+    local = harvest_env(profile_dir)
+    cfg_env = harvest_config_environment(profile_dir)
+    for k in _PROVIDER_ENV_KEYS:
+        if not local.get(k) and cfg_env.get(k):
+            local[k] = cfg_env[k]
+    upstream = collect_upstream_env(profile_dir)
+
+    def pick(key: str, cli: str | None) -> str | None:
+        if cli and cli.strip():
+            return cli.strip()
+        if local.get(key):
+            return local[key]
+        if upstream.get(key):
+            return upstream[key]
+        return None
+
+    nvidia = pick("NVIDIA_API_KEY", nvidia_api_key)
+    stripe = pick("STRIPE_SECRET_KEY", stripe_secret_key)
+    profile_cli = stripe_profile_id
+    if (profile_cli or "").strip().lower() == "auto":
+        profile_cli = None
+    profile = pick("STRIPE_PROFILE_ID", profile_cli)
+
+    if stripe and not profile:
+        api_ver = (
+            local.get("STRIPE_API_VERSION")
+            or upstream.get("STRIPE_API_VERSION")
+            or os.getenv("STRIPE_API_VERSION", "2026-04-22.preview")
+        )
+        try:
+            from emporia.stripe_profile_discovery import resolve_stripe_profile_id
+
+            resolved, note = resolve_stripe_profile_id(
+                stripe, profile_dir, api_version=api_ver
+            )
+            if resolved:
+                profile = resolved
+                print(f"  STRIPE_PROFILE_ID: auto-discovered ({note})")
+        except Exception as e:
+            print(f"  STRIPE_PROFILE_ID: auto-discover skipped ({type(e).__name__})")
+
+    if interactive and not dry_run:
+        if not nvidia:
+            print("  NVIDIA_API_KEY: not in profile, parent .env, or config — NeMo NIM stays off.")
+            nvidia = _prompt_optional_secret(
+                "NVIDIA_API_KEY",
+                "enables NeMo NIM guardrails on the relay",
+            )
+        if not stripe:
+            print("  STRIPE_SECRET_KEY: not found — paid Stripe sessions stay off.")
+            stripe = _prompt_optional_secret(
+                "STRIPE_SECRET_KEY",
+                "enables Stripe escrow / MPP on the relay",
+            )
+        if stripe and not profile:
+            print("  STRIPE_PROFILE_ID: not found — Stripe PI works; MPP seller mode needs profile_…")
+            profile = _prompt_optional_line(
+                "STRIPE_PROFILE_ID",
+                "Stripe Machine Payments profile id",
+            )
+
+    if profile and not _valid_stripe_profile_id(profile):
+        print(f"  WARNING: ignoring invalid STRIPE_PROFILE_ID={profile!r}")
+        profile = None
+
+    return nvidia, stripe, profile
+
+
+def _print_provider_status(
+    nvidia_api_key: str | None,
+    stripe_secret_key: str | None,
+    stripe_profile_id: str | None,
+) -> None:
+    if nvidia_api_key:
+        print("  NeMo NIM guardrails: on (NVIDIA_API_KEY copied to profile .env)")
+    else:
+        print("  NeMo NIM guardrails: off (no NVIDIA_API_KEY)")
+    if stripe_secret_key:
+        if stripe_profile_id:
+            print("  Stripe relay payments: on (secret key + STRIPE_PROFILE_ID — MPP seller ready)")
+        else:
+            print("  Stripe relay payments: on (secret key; PI only — no STRIPE_PROFILE_ID for MPP seller)")
+            try:
+                from emporia.stripe_profile_discovery import stripe_mpp_admin_notice
+
+                admin = stripe_mpp_admin_notice(stripe_secret_key, profile_ready=False)
+                if admin:
+                    print(f"  WARNING: {admin}")
+            except Exception:
+                pass
+    else:
+        print("  Stripe relay payments: off (no STRIPE_SECRET_KEY)")
+
+
 def _model_block(config: dict) -> dict | None:
     return config.get("model")
 
@@ -309,7 +607,18 @@ def _model_block(config: dict) -> dict | None:
 # MCP + platform entry builders
 # ─────────────────────────────────────────────────────────────────────────────
 
-def _mcp_entry(relay_url: str, agent_id: str = "", display_name: str = "") -> dict[str, Any]:
+def _profile_runtime_env(profile_dir: Path) -> dict[str, str]:
+    """Keys + DB paths so MCP matches Hermes profile home (same as seed script)."""
+    out: dict[str, str] = {}
+    keys = profile_dir / "home" / ".hermes" / "keys"
+    if keys.is_dir():
+        out["EMPORIA_KEYS_DIR"] = str(keys)
+    db = profile_dir / "home" / ".hermes" / "emporia.sqlite3"
+    out["EMPORIA_DB_PATH"] = str(db)
+    return out
+
+
+def _mcp_entry(relay_url: str, agent_id: str = "", display_name: str = "", profile_dir: Path | None = None) -> dict[str, Any]:
     env: dict[str, str] = {
         "EMPORIA_RELAY_URL": relay_url,
         "EMPORIA_MCP_TRANSPORT": "stdio",
@@ -318,6 +627,8 @@ def _mcp_entry(relay_url: str, agent_id: str = "", display_name: str = "") -> di
         env["EMPORIA_AGENT_ID"] = agent_id
     if display_name:
         env["EMPORIA_DISPLAY_NAME"] = display_name
+    if profile_dir:
+        env.update(_profile_runtime_env(profile_dir))
     return {
         "command": _venv_python(),
         "args": ["-m", "emporia.mcp_server"],
@@ -386,6 +697,11 @@ def install_into_profile(
     relay_url: str,
     agent_id: str,
     stripe_secret_key: str | None = None,
+    stripe_profile_id: str | None = None,
+    stripe_api_version: str | None = None,
+    nvidia_api_key: str | None = None,
+    tempo_enabled: bool = False,
+    max_budget_cents: int | None = None,
     nous_token: str | None = None,
     no_guardrails: bool = False,
     dry_run: bool = False,
@@ -403,18 +719,23 @@ def install_into_profile(
 
     # MCP entry
     mcp_servers = config.setdefault("mcp_servers", {})
+    runtime_env = _profile_runtime_env(profile_dir)
     if MCP_TOOL_NAME not in mcp_servers:
-        mcp_servers[MCP_TOOL_NAME] = _mcp_entry(relay_url, agent_id=agent_id)
+        mcp_servers[MCP_TOOL_NAME] = _mcp_entry(relay_url, agent_id=agent_id, profile_dir=profile_dir)
         changed = True
         print(f"  + mcp_servers.{MCP_TOOL_NAME}  (agent_id={agent_id!r})")
     else:
-        # Update agent_id in existing entry without clobbering rest of config
-        existing_env = mcp_servers[MCP_TOOL_NAME].get("env", {})
+        existing_env = dict(mcp_servers[MCP_TOOL_NAME].get("env", {}))
         if agent_id and existing_env.get("EMPORIA_AGENT_ID") != agent_id:
             existing_env["EMPORIA_AGENT_ID"] = agent_id
-            mcp_servers[MCP_TOOL_NAME]["env"] = existing_env
             changed = True
             print(f"  ~ mcp_servers.{MCP_TOOL_NAME}.env.EMPORIA_AGENT_ID = {agent_id!r}")
+        for k, v in runtime_env.items():
+            if existing_env.get(k) != v:
+                existing_env[k] = v
+                changed = True
+                print(f"  ~ mcp_servers.{MCP_TOOL_NAME}.env.{k}")
+        mcp_servers[MCP_TOOL_NAME]["env"] = existing_env
 
     # Platform entry
     platforms = config.setdefault("platforms", [])
@@ -425,18 +746,66 @@ def install_into_profile(
 
     # Env block
     env_block = config.setdefault("env", {})
-    if stripe_secret_key and "STRIPE_SECRET_KEY" not in env_block:
-        env_block["STRIPE_SECRET_KEY"] = stripe_secret_key
+    if stripe_secret_key:
+        if env_block.get("STRIPE_SECRET_KEY") != stripe_secret_key:
+            env_block["STRIPE_SECRET_KEY"] = stripe_secret_key
+            changed = True
+            print("  + env.STRIPE_SECRET_KEY")
+    elif "STRIPE_SECRET_KEY" in env_block:
+        env_block.pop("STRIPE_SECRET_KEY", None)
         changed = True
-        print("  + env.STRIPE_SECRET_KEY")
+        print("  ~ removed env.STRIPE_SECRET_KEY (not configured)")
+    if stripe_profile_id:
+        if not _valid_stripe_profile_id(stripe_profile_id):
+            print(f"  WARNING: ignoring invalid STRIPE_PROFILE_ID={stripe_profile_id!r} (expected profile_... or profile_test_...)")
+            stripe_profile_id = None
+        elif env_block.get("STRIPE_PROFILE_ID") != stripe_profile_id:
+            env_block["STRIPE_PROFILE_ID"] = stripe_profile_id
+            changed = True
+            print("  + env.STRIPE_PROFILE_ID")
+    elif "STRIPE_PROFILE_ID" in env_block and not stripe_secret_key:
+        env_block.pop("STRIPE_PROFILE_ID", None)
+        changed = True
+    if stripe_api_version and env_block.get("STRIPE_API_VERSION") != stripe_api_version:
+        env_block["STRIPE_API_VERSION"] = stripe_api_version
+        changed = True
+        print("  + env.STRIPE_API_VERSION")
+    if tempo_enabled and env_block.get("EMPORIA_MPP_TEMPO_ENABLED") != "1":
+        env_block["EMPORIA_MPP_TEMPO_ENABLED"] = "1"
+        changed = True
+        print("  + env.EMPORIA_MPP_TEMPO_ENABLED=1")
+    if max_budget_cents is not None:
+        if max_budget_cents > 0:
+            if env_block.get("EMPORIA_MAX_TOTAL_SPEND_CENTS") != str(max_budget_cents):
+                env_block["EMPORIA_MAX_TOTAL_SPEND_CENTS"] = str(max_budget_cents)
+                changed = True
+                print(f"  + total spend limit = {max_budget_cents} cents")
+        elif "EMPORIA_MAX_TOTAL_SPEND_CENTS" in env_block:
+            env_block.pop("EMPORIA_MAX_TOTAL_SPEND_CENTS", None)
+            changed = True
+            print("  ~ removed total spend limit (unlimited)")
     if nous_token and env_block.get("EMPORIA_NOUS_JWT") != nous_token:
         env_block["EMPORIA_NOUS_JWT"] = nous_token
         changed = True
         print("  + env.EMPORIA_NOUS_JWT  (Nous identity verified)")
+        mcp_env = mcp_servers[MCP_TOOL_NAME].setdefault("env", {})
+        if mcp_env.get("EMPORIA_NOUS_JWT") != nous_token:
+            mcp_env["EMPORIA_NOUS_JWT"] = nous_token
+            changed = True
+            print(f"  ~ mcp_servers.{MCP_TOOL_NAME}.env.EMPORIA_NOUS_JWT")
     if no_guardrails:
-        env_block["HERMES_PTGS_GUARDRAILS_MODE"] = "off"
+        _apply_guardrails_env(env_block, disabled=True)
         changed = True
-        print("  + env.HERMES_PTGS_GUARDRAILS_MODE=off")
+        print("  + guardrails disabled (EMPORIA_GUARDRAILS_MODE=off)")
+    else:
+        before = dict(env_block)
+        _apply_guardrails_env(env_block, disabled=False, nvidia_api_key=nvidia_api_key)
+        if env_block != before:
+            changed = True
+            if nvidia_api_key:
+                print("  + guardrails: regex enforce + NeMo NIM (NVIDIA_API_KEY set)")
+            else:
+                print("  + guardrails: regex enforce only (NeMo NIM off — no NVIDIA_API_KEY)")
 
     if changed:
         if not dry_run:
@@ -468,18 +837,54 @@ def install_into_profile(
     env_lines, c1 = _set_env_line(env_lines, "EMPORIA_AGENT_ID", agent_id)
     env_lines, c2 = _set_env_line(env_lines, "EMPORIA_RELAY_URL", relay_url)
     env_lines, _ = _set_env_line(env_lines, "EMPORIA_DB_PATH", db_path)
+    env_lines, _ = _set_env_line(env_lines, "STRIPE_API_VERSION", stripe_api_version or os.getenv("STRIPE_API_VERSION", "2026-04-22.preview"))
+    if stripe_secret_key:
+        env_lines, _ = _set_env_line(env_lines, "STRIPE_SECRET_KEY", stripe_secret_key)
+    else:
+        env_lines = [ln for ln in env_lines if not ln.startswith("STRIPE_SECRET_KEY=")]
+    if stripe_profile_id:
+        env_lines, _ = _set_env_line(env_lines, "STRIPE_PROFILE_ID", stripe_profile_id)
+    elif not stripe_secret_key:
+        env_lines = [ln for ln in env_lines if not ln.startswith("STRIPE_PROFILE_ID=")]
+    if nvidia_api_key:
+        env_lines, _ = _set_env_line(env_lines, "NVIDIA_API_KEY", nvidia_api_key)
+    else:
+        env_lines = [ln for ln in env_lines if not ln.startswith("NVIDIA_API_KEY=")]
+    if tempo_enabled:
+        env_lines, _ = _set_env_line(env_lines, "EMPORIA_MPP_TEMPO_ENABLED", "1")
+    if max_budget_cents is not None:
+        if max_budget_cents > 0:
+            env_lines, _ = _set_env_line(env_lines, "EMPORIA_MAX_TOTAL_SPEND_CENTS", str(max_budget_cents))
+        else:
+            env_lines = [ln for ln in env_lines if not ln.startswith("EMPORIA_MAX_TOTAL_SPEND_CENTS=")]
     if nous_token:
         env_lines, c3 = _set_env_line(env_lines, "EMPORIA_NOUS_JWT", nous_token)
     else:
         c3 = False
+    env_dirty = False
+    for line in _guardrails_env_lines(disabled=no_guardrails, nvidia_api_key=nvidia_api_key):
+        key, _, val = line.partition("=")
+        env_lines, ch = _set_env_line(env_lines, key, val)
+        env_dirty = env_dirty or ch
     # Export to current process so seed and any downstream scripts see it immediately
     os.environ["EMPORIA_AGENT_ID"] = agent_id
     os.environ["EMPORIA_RELAY_URL"] = relay_url
     os.environ["EMPORIA_DB_PATH"] = db_path
     if nous_token:
         os.environ["EMPORIA_NOUS_JWT"] = nous_token
+    if stripe_secret_key:
+        os.environ["STRIPE_SECRET_KEY"] = stripe_secret_key
+    elif "STRIPE_SECRET_KEY" in os.environ:
+        os.environ.pop("STRIPE_SECRET_KEY", None)
+    if nvidia_api_key:
+        os.environ["NVIDIA_API_KEY"] = nvidia_api_key
+    elif "NVIDIA_API_KEY" in os.environ:
+        os.environ.pop("NVIDIA_API_KEY", None)
+    for line in _guardrails_env_lines(disabled=no_guardrails, nvidia_api_key=nvidia_api_key):
+        key, _, val = line.partition("=")
+        os.environ[key] = val
 
-    if c1 or c2 or c3:
+    if c1 or c2 or c3 or env_dirty:
         if not dry_run:
             env_file.write_text("\n".join(env_lines) + "\n")
             print(f"  Updated: {env_file}")
@@ -499,6 +904,11 @@ def create_profile(
     relay_url: str,
     current_profile_dir: Path | None,
     stripe_secret_key: str | None = None,
+    stripe_profile_id: str | None = None,
+    stripe_api_version: str | None = None,
+    nvidia_api_key: str | None = None,
+    tempo_enabled: bool = False,
+    max_budget_cents: int | None = None,
     nous_token: str | None = None,
     inherit_env: bool = True,
     dry_run: bool = False,
@@ -540,15 +950,16 @@ def create_profile(
         if inherit_env:
             env_from_file = harvest_env(current_profile_dir)
             env_from_config = cur_config.get("env", {})
+            upstream = collect_upstream_env(current_profile_dir)
             for k in _SAFE_ENV_KEYS:
                 if k not in inherited_env:
-                    for src in (env_from_file, env_from_config):
+                    for src in (env_from_file, env_from_config, upstream):
                         if k in src:
                             inherited_env[k] = src[k]
                             break
             for k in _SECRET_ENV_KEYS:
                 if k not in inherited_env:
-                    for src in (env_from_file, env_from_config):
+                    for src in (env_from_file, env_from_config, upstream):
                         if k in src and src[k]:
                             inherited_env[k] = src[k]
                             break
@@ -574,10 +985,29 @@ def create_profile(
     env_block["EMPORIA_AGENT_ID"] = name
     if stripe_secret_key:
         env_block["STRIPE_SECRET_KEY"] = stripe_secret_key
-    elif "STRIPE_SECRET_KEY" not in env_block:
-        env_block["STRIPE_SECRET_KEY"] = ""
+    else:
+        env_block.pop("STRIPE_SECRET_KEY", None)
+    if stripe_profile_id and not _valid_stripe_profile_id(stripe_profile_id):
+        print(f"  WARNING: ignoring invalid STRIPE_PROFILE_ID={stripe_profile_id!r} (expected profile_... or profile_test_...)")
+        stripe_profile_id = None
+    if stripe_profile_id:
+        env_block["STRIPE_PROFILE_ID"] = stripe_profile_id
+    if stripe_api_version:
+        env_block["STRIPE_API_VERSION"] = stripe_api_version
+    if tempo_enabled:
+        env_block["EMPORIA_MPP_TEMPO_ENABLED"] = "1"
+    if max_budget_cents is not None and max_budget_cents > 0:
+        env_block["EMPORIA_MAX_TOTAL_SPEND_CENTS"] = str(max_budget_cents)
+    else:
+        env_block.pop("EMPORIA_MAX_TOTAL_SPEND_CENTS", None)
     if nous_token:
         env_block["EMPORIA_NOUS_JWT"] = nous_token
+    if nvidia_api_key:
+        env_block["NVIDIA_API_KEY"] = nvidia_api_key
+    elif not env_block.get("NVIDIA_API_KEY"):
+        env_block.pop("NVIDIA_API_KEY", None)
+    effective_nvidia = (env_block.get("NVIDIA_API_KEY") or "").strip() or None
+    _apply_guardrails_env(env_block, disabled=False, nvidia_api_key=effective_nvidia)
     env_block["EMPORIA_PUBLIC_KEY"] = pub_hex
     config["env"] = env_block
 
@@ -596,11 +1026,26 @@ def create_profile(
         f"EMPORIA_AGENT_ID={name}",
         f"EMPORIA_DB_PATH={db_path}",
         f"HERMES_AGENT_ID={name}",
+        f"STRIPE_API_VERSION={stripe_api_version or os.getenv('STRIPE_API_VERSION', '2026-04-22.preview')}",
     ]
+    if stripe_profile_id:
+        safe_env_lines.append(f"STRIPE_PROFILE_ID={stripe_profile_id}")
+    if tempo_enabled:
+        safe_env_lines.append("EMPORIA_MPP_TEMPO_ENABLED=1")
+    if max_budget_cents is not None and max_budget_cents > 0:
+        safe_env_lines.append(f"EMPORIA_MAX_TOTAL_SPEND_CENTS={max_budget_cents}")
     if nous_token:
         safe_env_lines.append(f"EMPORIA_NOUS_JWT={nous_token}")
+    nemo_key = effective_nvidia
+    safe_env_lines.extend(_guardrails_env_lines(disabled=False, nvidia_api_key=nemo_key))
+    if stripe_secret_key:
+        safe_env_lines.append(f"STRIPE_SECRET_KEY={stripe_secret_key}")
     for k in _SECRET_ENV_KEYS:
         if k in env_block and env_block[k] and k != "EMPORIA_NOUS_JWT":
+            if k == "STRIPE_SECRET_KEY" and not stripe_secret_key:
+                continue
+            if k == "NVIDIA_API_KEY" and not nemo_key:
+                continue
             safe_env_lines.append(f"{k}={env_block[k]}")
 
     # Export to current process so subsequent steps see the vars immediately
@@ -636,39 +1081,124 @@ def create_profile(
 # ─────────────────────────────────────────────────────────────────────────────
 
 def _start_relay(relay_url: str) -> bool:
-    """Start the relay in the background. Returns True if healthy within 8s."""
-    import time
-    src = _EMPORIA_DIR / "src"
-    port = relay_url.rstrip("/").rsplit(":", 1)[-1] if ":" in relay_url else "8088"
-    env = os.environ.copy()
-    log = open("/tmp/relay.log", "w")
-    subprocess.Popen(
-        [_venv_python(), "-m", "uvicorn",
-         "emporia.relay_server:app",
-         "--host", "0.0.0.0", "--port", port,
-         "--app-dir", str(src)],
-        cwd=str(_EMPORIA_DIR), env=env, stdout=log, stderr=log,
+    """Start the relay in the background. Returns True if healthy within ~12s."""
+    scripts = str(_EMPORIA_DIR / "scripts")
+    if scripts not in sys.path:
+        sys.path.insert(0, scripts)
+    from local_relay import ensure_relay_running
+
+    return ensure_relay_running(relay_url)
+
+
+def _ensure_project_dependencies(*, dry_run: bool = False) -> None:
+    """Sync emporia .venv (chess, fastapi, etc.) — idempotent."""
+    if dry_run:
+        print("  [dry-run] Would sync Python dependencies")
+        return
+    py = _venv_python()
+    uv = shutil.which("uv")
+    if uv:
+        subprocess.run([uv, "sync", "--directory", str(_EMPORIA_DIR)], cwd=str(_EMPORIA_DIR), check=False)
+    else:
+        subprocess.run(
+            [py, "-m", "pip", "install", "-e", str(_EMPORIA_DIR)],
+            cwd=str(_EMPORIA_DIR),
+            check=False,
+        )
+    chk = subprocess.run([py, "-c", "import chess"], capture_output=True)
+    if chk.returncode != 0:
+        subprocess.run([py, "-m", "pip", "install", "chess>=1.10.0"], check=False)
+
+
+def _build_dashboard_embedded(*, dry_run: bool = False) -> None:
+    """npm install + build:embedded so relay serves /ui/."""
+    dash = _EMPORIA_DIR / "dashboard"
+    if not dash.is_dir():
+        print("  dashboard/ not found — skip build")
+        return
+    if dry_run:
+        print("  [dry-run] Would run: cd dashboard && npm install && npm run build:embedded")
+        return
+    npm = shutil.which("npm")
+    if not npm:
+        print("  npm not on PATH — install Node.js or run: cd dashboard && npm run build:embedded")
+        return
+    print("Building embedded dashboard (relay /ui/)…")
+    subprocess.run([npm, "install"], cwd=str(dash), check=False)
+    r = subprocess.run([npm, "run", "build:embedded"], cwd=str(dash), check=False)
+    if r.returncode == 0:
+        print("  Dashboard built → open {}/ui/ after relay is up".format(DEFAULT_RELAY_URL.rstrip("/")))
+    else:
+        print("  Dashboard build failed — see output above")
+
+
+def _run_demo_seed(relay_url: str, *, dry_run: bool = False) -> None:
+    seed_script = _EMPORIA_DIR / "scripts" / "seed_demo_relay.py"
+    if not seed_script.exists() or dry_run:
+        if dry_run:
+            print("\n  [dry-run] Would run seed_demo_relay.py")
+        return
+    print("\nSeeding relay with demo content…")
+    if not _relay_healthy(relay_url):
+        print(f"  Relay not running — starting on {relay_url}…")
+        if not _start_relay(relay_url):
+            print(f"  Relay failed to start — run manually: python {seed_script}")
+            return
+    result = subprocess.run(
+        [_venv_python(), str(seed_script)],
+        capture_output=True,
+        text=True,
+        env=os.environ.copy(),
+        cwd=str(_EMPORIA_DIR),
     )
-    for _ in range(8):
-        time.sleep(1)
+    if result.returncode == 0:
         try:
-            urllib.request.urlopen(f"{relay_url}/health", timeout=2)
-            print(f"  Relay started on {relay_url}")
-            return True
+            import json as _json
+
+            summary = _json.loads(result.stdout)
+            print(f"  Seeded: {summary.get('seeded', {})}")
         except Exception:
-            pass
-    return False
+            print(result.stdout.strip())
+    else:
+        print(f"  Seed failed: {result.stderr[-500:]}")
+
+
+def _relay_healthy(relay_url: str, timeout: float = 3) -> bool:
+    try:
+        urllib.request.urlopen(f"{relay_url.rstrip('/')}/health", timeout=timeout)
+        return True
+    except Exception:
+        return False
+
+
+def _is_local_relay(relay_url: str) -> bool:
+    try:
+        host = urllib.parse.urlparse(relay_url).hostname or ""
+    except Exception:
+        return False
+    return host.lower() in ("localhost", "127.0.0.1", "::1", "")
 
 
 def bootstrap_test_profiles(
     relay_url: str,
     current_profile_dir: Path | None,
     stripe_secret_key: str | None = None,
+    stripe_profile_id: str | None = None,
+    stripe_api_version: str | None = None,
+    nvidia_api_key: str | None = None,
+    tempo_enabled: bool = False,
+    max_budget_cents: int | None = None,
     nous_token: str | None = None,
     dry_run: bool = False,
     dev_skills: bool = False,
 ) -> None:
     """Create all demo agent profiles (alpha, beta, nemotron_strategist, stripe_escrow_bot), then seed."""
+    if stripe_secret_key:
+        os.environ["STRIPE_SECRET_KEY"] = stripe_secret_key
+    elif not stripe_secret_key and "STRIPE_SECRET_KEY" not in os.environ:
+        os.environ.pop("STRIPE_SECRET_KEY", None)
+    if nvidia_api_key:
+        os.environ["NVIDIA_API_KEY"] = nvidia_api_key
     for name in ("alpha", "beta", "nemotron_strategist", "stripe_escrow_bot"):
         print(f"\nBootstrapping: {name}")
         create_profile(
@@ -676,6 +1206,11 @@ def bootstrap_test_profiles(
             relay_url=relay_url,
             current_profile_dir=current_profile_dir,
             stripe_secret_key=stripe_secret_key,
+            stripe_profile_id=stripe_profile_id,
+            stripe_api_version=stripe_api_version,
+            nvidia_api_key=nvidia_api_key,
+            tempo_enabled=tempo_enabled,
+            max_budget_cents=max_budget_cents,
             nous_token=nous_token,
             inherit_env=True,
             dry_run=dry_run,
@@ -690,34 +1225,7 @@ def bootstrap_test_profiles(
         write_dashboard_env(relay_url, operator_id, dry_run=dry_run)
 
     # Seed the relay with demo content
-    seed_script = _EMPORIA_DIR / "scripts" / "seed_demo_relay.py"
-    if not seed_script.exists() or dry_run:
-        if dry_run:
-            print("\n  [dry-run] Would run seed_demo_relay.py")
-        return
-    print("\nSeeding relay with demo content…")
-
-    # Start relay if not running
-    try:
-        urllib.request.urlopen(f"{relay_url}/health", timeout=3)
-    except Exception:
-        print(f"  Relay not running — starting on {relay_url}…")
-        if not _start_relay(relay_url):
-            print(f"  Relay failed to start — run manually: python {seed_script}")
-            return
-    result = subprocess.run(
-        [_venv_python(), str(seed_script)],
-        capture_output=True, text=True,
-    )
-    if result.returncode == 0:
-        try:
-            import json as _json
-            summary = _json.loads(result.stdout)
-            print(f"  Seeded: {summary.get('seeded', {})}")
-        except Exception:
-            print(result.stdout.strip())
-    else:
-        print(f"  Seed failed: {result.stderr[-500:]}")
+    _run_demo_seed(relay_url, dry_run=dry_run)
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -729,6 +1237,23 @@ _DEV_SKILL_SYMLINKS: list[tuple[str, str]] = [
     ("dev/emporia-dev", "software-development/emporia-dev"),
     ("dev/srcl-terminal-ui", "creative/srcl-terminal-ui"),
 ]
+
+# Payment skills every Emporia profile needs (mpp-agent, stripe-link-cli, stripe-projects).
+# `hermes skills install <name>` is registry-bound and can hang unattended — these are already
+# vendored locally under the Hermes install's optional-skills catalog, so symlink directly
+# (same idempotent pattern as the emporia/dev skill links below).
+_PAYMENT_SKILL_NAMES: list[str] = ["mpp-agent", "stripe-link-cli", "stripe-projects"]
+
+
+def _hermes_optional_skills_root() -> Path | None:
+    """Locate the Hermes install's optional-skills catalog (…/opt/hermes/optional-skills)."""
+    hermes_bin = shutil.which("hermes")
+    if not hermes_bin:
+        return None
+    # .venv/bin/hermes -> install root is three parents up
+    root = Path(hermes_bin).resolve().parent.parent.parent
+    candidate = root / "optional-skills"
+    return candidate if candidate.is_dir() else None
 
 
 def _install_skill_link(
@@ -742,13 +1267,21 @@ def _install_skill_link(
     Profile paths are symlinks to the repo — edits under emporia/skills/ are visible
     to Hermes immediately (no re-copy). Re-run installer to fix broken links after moves.
 
-    Always links the agent skill (`emporia`). Dev skills when dev_skills=True (--dev-skills).
+    Always links the agent skill (`emporia`) plus the payment skills Emporia needs
+    (mpp-agent, stripe-link-cli, stripe-projects) — self-heals on `--install-profile` too.
+    Dev skills only when dev_skills=True (--dev-skills).
     """
     skills_dir = profile_dir / "skills"
     links: list[tuple[Path, Path]] = [
         (_EMPORIA_DIR / "skills" / "emporia.md", skills_dir / "emporia.md"),
         (_EMPORIA_DIR / "skills" / "emporia", skills_dir / "emporia"),
     ]
+    optional_root = _hermes_optional_skills_root()
+    if optional_root:
+        for skill_name in _PAYMENT_SKILL_NAMES:
+            links.append(
+                (optional_root / "payments" / skill_name, skills_dir / "payments" / skill_name),
+            )
     if dev_skills:
         for src_rel, dst_rel in _DEV_SKILL_SYMLINKS:
             links.append(
@@ -765,6 +1298,10 @@ def _install_skill_link(
             skill_dst.parent.mkdir(parents=True, exist_ok=True)
         if skill_dst.exists() or skill_dst.is_symlink():
             if skill_dst.is_symlink() and skill_dst.resolve() == skill_src.resolve():
+                continue
+            if not skill_dst.is_symlink():
+                # Real directory/file already there (e.g. a hub-installed copy) — already
+                # present, leave it alone rather than unlink() a non-empty directory.
                 continue
             skill_dst.unlink()
         skill_dst.symlink_to(skill_src)
@@ -786,7 +1323,15 @@ def main() -> None:
     parser.add_argument("--create-profile", metavar="NAME",
                         help="Create a new agent profile named NAME")
     parser.add_argument("--bootstrap-test", action="store_true",
-                        help="Create alpha + beta demo agent profiles")
+                        help="Create alpha/beta/nemotron_strategist/stripe_escrow_bot profiles + seed")
+    parser.add_argument("--seed-only", action="store_true",
+                        help="Start local relay if needed and run scripts/seed_demo_relay.py")
+    parser.add_argument("--start-relay", action="store_true",
+                        help="Sync Python deps and start local relay (background uvicorn)")
+    parser.add_argument("--build-dashboard", action="store_true",
+                        help="npm install + build:embedded for relay /ui/")
+    parser.add_argument("--local-demo", action="store_true",
+                        help="Shorthand: --build-dashboard --start-relay --seed-only (no profile changes)")
     parser.add_argument("--relay-url", default=DEFAULT_RELAY_URL,
                         help=f"Relay URL (default: {DEFAULT_RELAY_URL})")
     parser.add_argument("--agent-id", default="",
@@ -794,12 +1339,24 @@ def main() -> None:
     parser.add_argument("--display-name", default="",
                         help="Display name for the agent (defaults to agent-id)")
     parser.add_argument("--stripe-secret-key", default=None,
-                        help="Stripe secret key to add to config env block")
+                        help="Stripe secret key (else profile/parent .env, config, or prompt)")
+    parser.add_argument("--nvidia-api-key", default=None,
+                        help="NVIDIA API key for NeMo NIM guardrails (else profile/parent .env, config, or prompt)")
+    parser.add_argument("--non-interactive", action="store_true",
+                        help="Do not prompt for missing NVIDIA/Stripe keys (leave features off)")
+    parser.add_argument("--stripe-profile-id", default=None,
+                        help="Stripe Machine Payments profile ID (profile_... / profile_test_...); use 'auto' to discover from env files or Stripe API (sk_* keys only)")
+    parser.add_argument("--stripe-api-version", default=os.getenv("STRIPE_API_VERSION", "2026-04-22.preview"),
+                        help="Stripe API version for SPT/MPP preview endpoints")
+    parser.add_argument("--tempo-enabled", action="store_true",
+                        help="Advertise Tempo as an available MPP payment method on the relay")
+    parser.add_argument("--max-budget-cents", type=int, default=int(os.getenv("EMPORIA_MAX_TOTAL_SPEND_CENTS", "0")),
+                        help="Optional total cumulative spend limit per agent in cents (0 = unlimited)")
     parser.add_argument("--nous-token", default=None, metavar="JWT",
                         help="Nous access JWT — stored as EMPORIA_NOUS_JWT; "
                              "enables nous_verified trust level on this relay")
     parser.add_argument("--no-guardrails", action="store_true",
-                        help="Set HERMES_PTGS_GUARDRAILS_MODE=off (testing only)")
+                        help="Set EMPORIA_GUARDRAILS_MODE=off (testing only)")
     parser.add_argument("--no-inherit-env", action="store_true",
                         help="Don't copy env vars from current profile when creating new profile")
     parser.add_argument("--dev-skills", action="store_true",
@@ -808,7 +1365,15 @@ def main() -> None:
                         help="Show what would change without writing")
     args = parser.parse_args()
 
-    if not any([args.install_profile, args.create_profile, args.bootstrap_test]):
+    if args.local_demo:
+        args.build_dashboard = True
+        args.start_relay = True
+        args.seed_only = True
+
+    ops_mode = any([args.seed_only, args.start_relay, args.build_dashboard])
+    profile_mode = any([args.install_profile, args.create_profile, args.bootstrap_test])
+
+    if not ops_mode and not profile_mode:
         parser.print_help()
         return
 
@@ -817,17 +1382,29 @@ def main() -> None:
         print("DRY RUN — no files will be written")
     print()
 
-    # Resolve Nous JWT once up front — all operations share the same token.
-    # Falls back to auth.json with silent refresh; warns if unavailable.
-    nous_token = resolve_nous_token(args.nous_token)
-    if nous_token:
-        print("  Nous token: ready (agents will register as nous_verified)")
-    else:
-        print("  Nous token: not available — agents will register as key_only (read-only trust)")
-        print("  To get nous_verified: run 'hermes auth add nous', then re-run installer")
-    print()
+    if ops_mode and not profile_mode:
+        if not args.dry_run:
+            _ensure_project_dependencies(dry_run=False)
+        if args.build_dashboard:
+            _build_dashboard_embedded(dry_run=args.dry_run)
+        if args.start_relay:
+            if args.dry_run:
+                print("  [dry-run] Would start relay")
+            elif _start_relay(args.relay_url):
+                print(f"  Relay ready: {args.relay_url.rstrip('/')}/health")
+                print(f"  Dashboard:   {args.relay_url.rstrip('/')}/ui/")
+            else:
+                print("  Relay failed to start")
+                sys.exit(1)
+        if args.seed_only:
+            _run_demo_seed(args.relay_url, dry_run=args.dry_run)
+        return
 
-    # Detect current profile (needed by all commands)
+    if not args.dry_run:
+        _ensure_project_dependencies(dry_run=False)
+
+    # Detect current profile first — Nous auth.json lives inside it (see
+    # _find_auth_json), so token resolution needs this to check the right file.
     # 1. Walk up from CWD
     current_profile_dir = find_profile_dir_from_cwd()
     # 2. Fall back to HERMES_PROFILE env var
@@ -840,6 +1417,19 @@ def main() -> None:
     else:
         print("No profile detected from CWD — using relay URL defaults")
 
+    # Resolve Nous JWT once up front — all operations share the same token.
+    # Falls back to auth.json with silent refresh; warns if unavailable.
+    nous_token = resolve_nous_token(args.nous_token, profile_dir=current_profile_dir)
+    if nous_token:
+        print("  Nous token: ready (agents will register as nous_verified)")
+    else:
+        print("  Nous token: not available — agents will register as key_only (read-only trust)")
+        print("  To enable nous_verified: hermes auth add nous --type oauth --no-browser --manual-paste")
+    print()
+
+    interactive = not args.non_interactive
+    secrets_dir = current_profile_dir or Path.cwd()
+
     if args.install_profile:
         if not current_profile_dir:
             print("ERROR: cannot find a config.yaml above CWD.")
@@ -847,23 +1437,33 @@ def main() -> None:
             print("or run from inside the emporia/ dir that lives in a profile.")
             sys.exit(1)
 
-        # Default agent-id to the profile dir name or env var
-        agent_id = (args.agent_id
-                    or os.getenv("HERMES_AGENT_ID")
-                    or current_profile_dir.name)
+        agent_id = (
+            args.agent_id
+            or os.getenv("HERMES_AGENT_ID")
+            or current_profile_dir.name
+        )
         print(f"Installing into: {current_profile_dir}  agent_id={agent_id!r}")
 
-        # Harvest Stripe key from .env if not passed
-        stripe_key = args.stripe_secret_key
-        if not stripe_key:
-            env_vars = harvest_env(current_profile_dir)
-            stripe_key = env_vars.get("STRIPE_SECRET_KEY") or None
+        nvidia_key, stripe_key, stripe_profile_id = resolve_provider_secrets(
+            current_profile_dir,
+            nvidia_api_key=args.nvidia_api_key,
+            stripe_secret_key=args.stripe_secret_key,
+            stripe_profile_id=args.stripe_profile_id,
+            interactive=interactive,
+            dry_run=args.dry_run,
+        )
+        _print_provider_status(nvidia_key, stripe_key, stripe_profile_id)
 
         install_into_profile(
             profile_dir=current_profile_dir,
             relay_url=args.relay_url,
             agent_id=agent_id,
             stripe_secret_key=stripe_key,
+            stripe_profile_id=stripe_profile_id,
+            stripe_api_version=args.stripe_api_version,
+            nvidia_api_key=nvidia_key,
+            tempo_enabled=args.tempo_enabled,
+            max_budget_cents=args.max_budget_cents,
             nous_token=nous_token,
             no_guardrails=args.no_guardrails,
             dry_run=args.dry_run,
@@ -876,13 +1476,29 @@ def main() -> None:
         if not args.dry_run:
             print("\nDone. Run /reload-mcp in Hermes to activate.")
             print(f"The agent will register as '{agent_id}' on next MCP load.")
+            if _is_local_relay(args.relay_url):
+                _run_demo_seed(args.relay_url)
 
     if args.create_profile:
+        nvidia_key, stripe_key, stripe_profile_id = resolve_provider_secrets(
+            secrets_dir,
+            nvidia_api_key=args.nvidia_api_key,
+            stripe_secret_key=args.stripe_secret_key,
+            stripe_profile_id=args.stripe_profile_id,
+            interactive=interactive,
+            dry_run=args.dry_run,
+        )
+        _print_provider_status(nvidia_key, stripe_key, stripe_profile_id)
         create_profile(
             name=args.create_profile,
             relay_url=args.relay_url,
             current_profile_dir=current_profile_dir,
-            stripe_secret_key=args.stripe_secret_key,
+            stripe_secret_key=stripe_key,
+            stripe_profile_id=stripe_profile_id,
+            stripe_api_version=args.stripe_api_version,
+            nvidia_api_key=nvidia_key,
+            tempo_enabled=args.tempo_enabled,
+            max_budget_cents=args.max_budget_cents,
             nous_token=nous_token,
             inherit_env=not args.no_inherit_env,
             dry_run=args.dry_run,
@@ -890,10 +1506,24 @@ def main() -> None:
         )
 
     if args.bootstrap_test:
+        nvidia_key, stripe_key, stripe_profile_id = resolve_provider_secrets(
+            secrets_dir,
+            nvidia_api_key=args.nvidia_api_key,
+            stripe_secret_key=args.stripe_secret_key,
+            stripe_profile_id=args.stripe_profile_id,
+            interactive=interactive,
+            dry_run=args.dry_run,
+        )
+        _print_provider_status(nvidia_key, stripe_key, stripe_profile_id)
         bootstrap_test_profiles(
             relay_url=args.relay_url,
             current_profile_dir=current_profile_dir,
-            stripe_secret_key=args.stripe_secret_key,
+            stripe_secret_key=stripe_key,
+            stripe_profile_id=stripe_profile_id,
+            stripe_api_version=args.stripe_api_version,
+            nvidia_api_key=nvidia_key,
+            tempo_enabled=args.tempo_enabled,
+            max_budget_cents=args.max_budget_cents,
             nous_token=nous_token,
             dry_run=args.dry_run,
             dev_skills=args.dev_skills,

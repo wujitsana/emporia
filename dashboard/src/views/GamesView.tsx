@@ -36,14 +36,21 @@ import { EMPTY_SEED_HINT } from "../navigation";
 import { FlatRailItem } from "../ui/FlatRailItem";
 import { SegmentTabs } from "../ui/SegmentTabs";
 import {
+  ChessReplayStatus,
   ChessSpeedSlider,
   ChessTransport,
-  LiveMark,
-  MoveIndex,
 } from "../ui/chessControls";
 import { RELAY, VIEWER } from "../relayEnv";
 import { fetchDashboardCounts, countCaptionForNav, subForNav } from "../dashboardCounts";
 import { STARTING_FEN, fenToBoard } from "../fen";
+import {
+  buildChessReplay,
+  chessSessionPlayable,
+  chessSides,
+  sessionIsActive,
+  shortAgent,
+} from "../chessReplay";
+import { ChessMoveLine, ChessPlayersBar } from "../ui/chessMatch";
 import type { Navigate } from "../navigation";
 import { ViewStatus } from "../ui/ViewStatus";
 import { ViewBody } from "../ui/layout";
@@ -71,31 +78,44 @@ export const GAME_TYPES = [
 
 export function ChessReplayPanel({ session }: { session: Session }) {
   const [actions, setActions] = React.useState<SessionAction[]>([]);
+  const [fens, setFens] = React.useState<string[]>([STARTING_FEN]);
+  const [sans, setSans] = React.useState<string[]>([]);
   const [idx, setIdx] = React.useState(0);
   const [replaying, setReplaying] = React.useState(false);
   const [speed, setSpeed] = React.useState(700);
   const [wsLive, setWsLive] = React.useState(false);
-  const [liveFens, setLiveFens] = React.useState<string[]>([]);
+  const [playable, setPlayable] = React.useState(true);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
-  // For completed sessions: fetch recorded actions
-  useEffect(() => {
-    if (session.status !== "active") {
-      api.sessionActions(session.session_id)
-        .then((r) => {
-          setActions(r.actions);
-          setIdx(Math.max(0, r.actions.length - 1));
-        })
-        .catch(() => {});
-    }
-  }, [session.session_id, session.status]);
+  const fallbackFen = (session.state as { board_fen?: string } | undefined)?.board_fen;
 
-  // For active sessions: subscribe via WS
-  useEffect(() => {
-    if (session.status !== "active") return;
-    const initialFen = (session.state as any)?.board_fen ?? STARTING_FEN;
-    setLiveFens([initialFen]);
+  const applyReplay = React.useCallback(
+    (acts: SessionAction[]) => {
+      const built = buildChessReplay(acts, fallbackFen);
+      setFens(built.fens);
+      setSans(built.sans);
+      setPlayable(built.playable);
+      setIdx(Math.max(0, built.fens.length - 1));
+    },
+    [fallbackFen],
+  );
 
+  useEffect(() => {
+    let cancelled = false;
+    api.sessionActions(session.session_id)
+      .then((r) => {
+        if (cancelled) return;
+        setActions(r.actions);
+        applyReplay(r.actions);
+      })
+      .catch(() => {
+        if (!cancelled) applyReplay([]);
+      });
+    return () => { cancelled = true; };
+  }, [session.session_id, applyReplay]);
+
+  useEffect(() => {
+    if (!sessionIsActive(session.status)) return;
     const base = toWsUrl(RELAY);
     let closed = false;
     let retryMs = 1_000;
@@ -111,12 +131,13 @@ export function ChessReplayPanel({ session }: { session: Session }) {
       };
       ws.onmessage = (e) => {
         const f = JSON.parse(e.data);
-        if (f.type === "init") {
-          const fen = f.session?.state?.board_fen;
-          if (fen) setLiveFens([fen]);
-        } else if (f.type === "action_result" && f.new_state?.board_fen) {
-          setLiveFens((h) => [...h, f.new_state.board_fen]);
-          setIdx((i) => i + 1);
+        if (f.type === "action_result" && f.new_state?.board_fen) {
+          api.sessionActions(session.session_id)
+            .then((r) => {
+              setActions(r.actions);
+              applyReplay(r.actions);
+            })
+            .catch(() => {});
         }
       };
     };
@@ -125,15 +146,15 @@ export function ChessReplayPanel({ session }: { session: Session }) {
       if (ws?.readyState === WebSocket.OPEN) ws.send('{"type":"ping"}');
     }, 20_000);
     return () => { closed = true; clearInterval(pingId); ws?.close(); };
-  }, [session.session_id, session.status]);
-
-  const fens: string[] = session.status === "active"
-    ? liveFens
-    : [STARTING_FEN, ...actions
-        .filter((a) => a.result?.new_state?.board_fen)
-        .map((a) => a.result!.new_state!.board_fen as string)];
+  }, [session.session_id, session.status, applyReplay]);
 
   const board = fenToBoard(fens[idx] ?? STARTING_FEN);
+  const moveLabel =
+    idx === 0
+      ? "start"
+      : sans[idx - 1]
+        ? `${sans[idx - 1]}`
+        : `ply ${idx}`;
 
   const startReplay = () => {
     setIdx(0);
@@ -156,63 +177,54 @@ export function ChessReplayPanel({ session }: { session: Session }) {
   };
 
   return (
-    <Indent>
-      <br />
-      <RowSpaceBetween>
-        <div>
-          <Text style={{ fontSize: 12, fontFamily: "var(--font-family-mono)" }}>
-            …{session.session_id.slice(-16)}
-          </Text>
-          <br />
-          <Text className="e-dim">
-            {session.participants.join(" vs ")}
-          </Text>
-        </div>
-        <div style={{ textAlign: "right" }}>
-          <LiveMark live={wsLive} />
-          <br />
-          <MoveIndex idx={idx} total={fens.length} />
-          <br />
-          <AuditBadge sessionId={session.session_id} />
-        </div>
-      </RowSpaceBetween>
-      <br />
-      <Chessboard board={board} />
-      <br />
-      <ChessTransport
-        onPrev={() => { stopReplay(); setIdx(Math.max(0, idx - 1)); }}
-        onNext={() => { stopReplay(); setIdx(Math.min(fens.length - 1, idx + 1)); }}
-        onReplayToggle={replaying ? stopReplay : startReplay}
-        replaying={replaying}
-        onLatest={() => { stopReplay(); setIdx(fens.length - 1); }}
-        latestLabel="latest"
-      />
-      <br />
-      <ChessSpeedSlider speed={speed} onSpeed={setSpeed} />
-      {actions.length > 0 && (
-        <>
-          <br />
-          <Divider />
-          <br />
-          <br />
-          <div style={{ fontSize: 11, fontFamily: "var(--font-family-mono)", opacity: 0.7, lineHeight: 1.6 }}>
-            {actions.map((a, i) => (
-              <span
-                key={a.action_id}
-                onClick={() => { stopReplay(); setIdx(i + 1); }}
-                style={{
-                  cursor: "pointer",
-                  marginRight: 8,
-                  color: i + 1 === idx ? "var(--theme-focused-foreground)" : "inherit",
-                }}
-              >
-                {i % 2 === 0 ? `${Math.floor(i / 2) + 1}.` : ""}{String(a.payload?.move ?? a.action_type).slice(0, 5)}
+    <div className="e-chess-main">
+      <div className="e-chess-column">
+        <div className="e-chess-stage">
+          <Chessboard board={board} key={`${session.session_id}-${idx}-${fens[idx] ?? ""}`} />
+          <ChessTransport
+            onPrev={() => {
+              stopReplay();
+              setIdx(Math.max(0, idx - 1));
+            }}
+            onNext={() => {
+              stopReplay();
+              setIdx(Math.min(fens.length - 1, idx + 1));
+            }}
+            onReplayToggle={replaying ? stopReplay : startReplay}
+            replaying={replaying}
+            onLatest={() => {
+              stopReplay();
+              setIdx(fens.length - 1);
+            }}
+            status={
+              <span className="e-chess-replay-status">
+                <ChessReplayStatus live={wsLive} idx={idx} total={fens.length} />
+                <span className="e-chess-ctrl-move">{moveLabel}</span>
+                <AuditBadge sessionId={session.session_id} />
               </span>
-            ))}
+            }
+          />
+          <ChessSpeedSlider speed={speed} onSpeed={setSpeed} />
+          {!playable ? (
+            <Text className="e-faint e-chess-warn">No legal moves in log — pick another session.</Text>
+          ) : null}
+        </div>
+        {sans.length > 0 ? (
+          <div className="e-chess-moves-block">
+            <Text className="e-dim e-chess-moves-label">moves · click to seek</Text>
+            <ChessMoveLine
+              sans={sans}
+              idx={idx}
+              onPick={(frame) => {
+                stopReplay();
+                setIdx(frame);
+              }}
+            />
           </div>
-        </>
-      )}
-    </Indent>
+        ) : null}
+        <ChessPlayersBar session={session} />
+      </div>
+    </div>
   );
 }
 
@@ -348,14 +360,14 @@ export function GamesView({
     [gameType],
   );
   const [historySessions, histLoading, histErr] = useInterval(
-    () => api.sessions({ module_type: gameType || undefined, status: "complete" }),
+    () => api.sessions({ module_type: gameType || undefined, status: "completed" }),
     10_000,
     [gameType],
   );
   const [selected, setSelected] = React.useState<Session | null>(null);
 
-  const live = liveSessions?.sessions ?? [];
-  const history = historySessions?.sessions ?? [];
+  const live = (liveSessions?.sessions ?? []).filter(chessSessionPlayable);
+  const history = (historySessions?.sessions ?? []).filter(chessSessionPlayable);
   const shown = liveTab === "live" ? live : history;
   const isChessSelected = selected?.module_type.includes("chess");
   const pollLoading = liveTab === "live" ? liveLoading : histLoading;
@@ -428,33 +440,33 @@ export function GamesView({
           </Text>
         </Indent>
       ) : (
-        shown.map((s) => (
+        shown.map((s) => {
+          const { white, black } = chessSides(s);
+          const st = s.state as { last_san?: string } | undefined;
+          const hint = st?.last_san ? `…${st.last_san}` : `${s.step_number} plies`;
+          return (
           <FlatRailItem
             key={s.session_id}
             selected={selected?.session_id === s.session_id}
             onClick={() => setSelected(s)}
           >
             <RowSpaceBetween>
-              <Text>…{s.session_id.slice(-10)}</Text>
+              <Text>{shortAgent(white, 10)} v {shortAgent(black, 10)}</Text>
               {liveTab === "live" && <Text className="e-dim e-status-txt">live</Text>}
             </RowSpaceBetween>
             <Text className="e-dim">
-              {s.module_type.replace("emporia:", "").replace(":v1", "")} · {s.step_number}m
+              {s.module_type.replace("emporia:", "").replace(":v1", "")} · {hint}
             </Text>
-            <Text className="e-faint">
-              {s.participants.slice(0, 2).map((p) => p.slice(0, 10)).join(" v ")}
-            </Text>
+            <Text className="e-faint">…{s.session_id.slice(-8)}</Text>
           </FlatRailItem>
-        ))
+          );
+        })
       )}
     </div>
   );
 
   return (
-    <ViewBody
-      flush
-      toolbar={live.length > 0 ? <span className="e-dim e-status-txt">live · {live.length}</span> : undefined}
-    >
+    <ViewBody flush>
       <SidebarLayout sidebar={sidebar} defaultSidebarWidth={28}>
         <div className="e-split-main">
           <Indent>

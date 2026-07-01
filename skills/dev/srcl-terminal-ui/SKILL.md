@@ -1,6 +1,6 @@
 ---
 name: srcl-terminal-ui
-description: Build and extend terminal-aesthetic React UIs with SRCL (www-sacred). Covers Vite wiring, theming, component catalog, and Emporia operator dashboard conventions.
+description: Use when building or extending terminal-aesthetic React UIs with SRCL (www-sacred) — Vite wiring, theming, component catalog, and the Emporia operator dashboard conventions specifically.
 version: 1.22.0
 author: Hermes Agent
 license: MIT
@@ -8,6 +8,7 @@ platforms: [linux]
 metadata:
   hermes:
     tags: [srcl, sacred, react, vite, terminal-ui, emporia, dashboard]
+    related_skills: [emporia-dev, dogfood]
 ---
 
 # SRCL (Sacred) terminal UI
@@ -86,7 +87,7 @@ Read `node_modules/srcl/components/AGENTS.md` for every component’s props and 
 
 ## Emporia dashboard (hackathon / demo video)
 
-Before recording `/ui/` for a submission reel, confirm **flat dark canvas**, square nav tabs, CommitMono, amber accent — not gray chip fills. Video **browser plates** stay ungraded; retro grain belongs on HyperFrames interstitials only (see **`emporia-dev`** → `references/hackathon-presentation-video.md`). specifics
+Before recording `/ui/` for a submission reel, confirm **flat dark canvas**, square nav tabs, CommitMono, amber accent — not gray chip fills. Video **browser plates** stay ungraded; retro grain belongs on HyperFrames interstitials only.
 
 | Item | Value |
 |------|--------|
@@ -143,7 +144,7 @@ When the user asks to audit or fix “lots of errors” on the Emporia UI:
 5. **P0 fixes:** selection `style` on `ActionListItem`; surface API errors on every view; remove swallowed `.catch(() => [])` without user-visible message.
 6. **P0 visible UX:** If the user still sees the old UI after refactors, apply `references/emporia-dashboard-ui-refresh.md` (not more invisible splits).
 
-## Pitfalls
+## Common Pitfalls
 
 - **New dashboard files must import SRCL via `@components/*`**, not `from "srcl"` — Vite aliases do not resolve a `srcl` barrel; `build:embedded` fails with Rolldown unresolved import (see `AppSidebar.tsx`).
 - **Sidebar master lists:** Do not use `ActionListItem` — use **`FlatRailItem`** with `selected={…}`. For main-pane `ActionListItem` rows only: no `className`/`isSelected`; use `style` + `listItemSelectStyle` if still needed.
@@ -194,10 +195,10 @@ When the user wants a **hackathon or submission video** that matches Nous/Sacred
 - **Hero footage** = live `http://localhost:8088/ui/` (embedded dashboard), not a separate motion template. Retro-modern **is** SRCL: `theme-dark`, CommitMono, flat canvas (`dashboard-flat.css`), amber accent `#f0a832`, `✶ Emporia`, square tabs — see `references/emporia-dashboard-flat-canvas.md` and `emporia-dashboard-cards-minimal.md`.
 - **Pre-record:** `npm run build:embedded`, dogfood pass per `references/emporia-dashboard-qa.md`; pipeline strip and Trust & Safety panel must be readable at 1080p.
 - **Do not** steer them toward `popular-web-designs` or glossy SaaS decks for this aesthetic.
-- **Full skills/providers/tour map:** `emporia-dev` → `references/hackathon-presentation-video.md`; on-screen steps in `emporia/DEMO.md`.
+- **On-screen tour steps:** `emporia/DEMO.md`.
 
 ## Related skills
 
 - **`dogfood`** (bundled) — browser QA workflow; Emporia sitemap is in `references/emporia-dashboard-qa.md` (dogfood skill itself is not editable here).
-- **`emporia-dev`** — `references/hackathon-presentation-video.md` for judge tracks and Hermes skill stack when planning the recording.
+- **`emporia-dev`** — repo/API/architecture reference when planning a recording.
 - **Messages UI:** `references/emporia-dashboard-patterns.md` — `MessagesView.tsx` (not CommsView).

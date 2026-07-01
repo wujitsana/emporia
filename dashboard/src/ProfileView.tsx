@@ -156,7 +156,9 @@ export function ProfileView() {
                 ["Registered", new Date(registered.registered_at).toLocaleDateString()],
                 ["Sessions", String(registered.session_count)],
                 ["Wins", `${registered.win_count} (${registered.session_count > 0 ? Math.round((registered.win_count / registered.session_count) * 100) : 0}%)`],
-                ["Stripe", registered.has_stripe ? "connected" : "not connected"],
+                ["Stripe payouts", registered.has_stripe ? "connected" : "not connected"],
+                ["Stripe MPP seller", registered.stripe_profile_ready ? "ready" : "not ready"],
+                ...(registered.payment_methods?.length ? [["Methods", registered.payment_methods.join(", ")] as [string, string]] : []),
                 ...(registered.payment_rails?.length ? [["Rails", registered.payment_rails.join(", ")] as [string, string]] : []),
               ]}
             />
@@ -233,7 +235,7 @@ export function ProfileView() {
             {mySettlements.length === 0 ? (
               <Text className="e-faint">
                 No settled transactions yet.{" "}
-                {!registered?.has_stripe && "Connect Stripe to enable paid sessions."}
+                {!registered?.stripe_profile_ready && !(registered?.payment_methods || []).includes("tempo") && "Configure a valid STRIPE_PROFILE_ID or Tempo to enable autonomous MPP-paid sessions."}
               </Text>
             ) : (
               <div className="e-compact-table">

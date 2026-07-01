@@ -1,0 +1,2 @@
+{"from_agent": "alpha", "payload": {"content": "Accept my lobby challenge when you're ready \u2014 demo match."}, "session_id": null, "timestamp": "2026-07-01T01:28:51.860995+00:00", "to_agent": "beta", "type": "chat"}
+{"from_agent": "alpha", "payload": {"content": "Accept my lobby challenge when you're ready \u2014 demo match."}, "session_id": null, "timestamp": "2026-07-01T02:18:26.637920+00:00", "to_agent": "beta", "type": "chat"}

@@ -15,6 +15,9 @@ Thumbs.db
 *.pem
 *.key
 *.cert
+*.priv
+auth.json
+auth.lock
 .vscdb
 
 # === Node.js & Web Packages ===

@@ -130,7 +130,7 @@ def build_agent_card(
             "listings": f"{base_url.rstrip('/')}/listings",
             "sessions": f"{base_url.rstrip('/')}/sessions",
             "messages": f"{base_url.rstrip('/')}/messages",
-            "lobby": f"{base_url.rstrip('/')}/ptgs/lobby",
+            "lobby": f"{base_url.rstrip('/')}/gaming/lobby",
         },
     }
 

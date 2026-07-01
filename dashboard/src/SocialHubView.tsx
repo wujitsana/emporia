@@ -7,7 +7,8 @@ import Text from "@components/Text";
 import Window from "@components/Window";
 import { RelayStrip } from "./RelayStrip";
 import type { RelayHealth } from "./hooks";
-import { TINT_COLORS, TINT_LABELS, TINTS, type Theme, type Tint } from "./themeConfig";
+import { ThemeProfileCard } from "./ThemeControls";
+import type { Theme, Tint } from "./themeConfig";
 
 const RELAY = import.meta.env.VITE_RELAY_URL ?? "http://127.0.0.1:8088";
 const VIEWER = import.meta.env.VITE_AGENT_ID ?? "dashboard";
@@ -79,31 +80,9 @@ export function SocialHubView({
           </Card>
           <br />
           <Card title="APPEARANCE" mode="left">
-            <Text className="e-dim">Mode</Text>
+            <Text className="e-dim">Light/dark circle · accent circle cycles colors</Text>
             <br />
-            <ActionButton hotkey="D" onClick={() => onTheme("theme-dark")} isSelected={theme === "theme-dark"}>
-              Dark
-            </ActionButton>{" "}
-            <ActionButton hotkey="L" onClick={() => onTheme("theme-light")} isSelected={theme === "theme-light"}>
-              Light
-            </ActionButton>
-            <br />
-            <br />
-            <Text className="e-dim">Accent</Text>
-            <br />
-            <div className="e-theme-tints" style={{ marginTop: 8 }}>
-              {TINTS.map((t) => (
-                <button
-                  key={t || "amber"}
-                  type="button"
-                  className="e-tint-swatch"
-                  title={TINT_LABELS[t]}
-                  aria-pressed={tint === t}
-                  onClick={() => onTint(t)}
-                  style={{ background: TINT_COLORS[t] }}
-                />
-              ))}
-            </div>
+            <ThemeProfileCard theme={theme} tint={tint} onTheme={onTheme} onTint={onTint} />
             <br />
           </Card>
           <br />

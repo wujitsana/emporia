@@ -8,7 +8,7 @@ Provides:
   - Agent-to-agent negotiation broker
   - A2A Agent Card at /.well-known/agent.json
   - WebSocket real-time updates (per-session + per-agent)
-  - NemoClaw guardrails on all inbound
+  - Guardrails on all inbound (deterministic regex firewall + optional NVIDIA NIM check)
   - Ed25519 identity verification
   - Stripe payment gate (when mode != free)
   - Anti-cheat: Proof-of-Reasoning + bot fingerprint rejection
@@ -16,7 +16,7 @@ Provides:
 
 Inbound processing order (hard contract):
   1. Parse payload
-  2. NemoClaw/guardrails scan
+  2. Guardrails scan
   3. Ed25519 signature verify
   4. Stripe payment gate (if mode != free)
   5. PoR density + fingerprint check
@@ -49,23 +49,44 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 from starlette.responses import JSONResponse
 
-from emporia.engine.game_registry import GameRegistry
-from emporia.engine.guardrails import assert_payload_safe
 
-# Load the nearest .env file so the relay can be started without manually
-# exporting env vars — the profile's .env is discovered by walking up.
+def _merge_dotenv(path: Path) -> None:
+    if not path.exists():
+        return
+    for line in path.read_text().splitlines():
+        line = line.strip()
+        if line and not line.startswith("#") and "=" in line:
+            k, _, v = line.partition("=")
+            key = k.strip()
+            val = v.strip().strip('"').strip("'")
+            if not val:
+                continue
+            if not os.environ.get(key):
+                os.environ[key] = val
+
+
 def _load_profile_dotenv() -> None:
-    for parent in Path(__file__).resolve().parents:
-        env_file = parent / ".env"
-        if env_file.exists():
-            for line in env_file.read_text().splitlines():
-                line = line.strip()
-                if line and not line.startswith("#") and "=" in line:
-                    k, _, v = line.partition("=")
-                    os.environ.setdefault(k.strip(), v.strip().strip('"').strip("'"))
+    """Load Hermes profile .env first, then emporia repo .env (setdefault semantics).
+
+    When emporia lives under profiles/<name>/emporia, the repo-level .env must not
+    shadow the profile — the old \"first .env wins\" walk stopped at emporia/.env.
+    """
+    here = Path(__file__).resolve()
+    for parent in here.parents:
+        if (parent / "config.yaml").exists():
+            _merge_dotenv(parent / ".env")
+            break
+    for parent in here.parents:
+        if (parent / "pyproject.toml").exists() and (parent / "src" / "emporia").is_dir():
+            _merge_dotenv(parent / ".env")
             break
 
+
 _load_profile_dotenv()
+
+from emporia.engine.game_registry import GameRegistry
+from emporia.engine import guardrails
+from emporia.engine.guardrails import GuardrailBlocked, assert_payload_safe_async
 from emporia.identity import build_agent_card, verify
 from emporia.module_sdk import (
     MODULE_REGISTRY,
@@ -103,6 +124,8 @@ WRITE_REQUIRES_NOUS = os.getenv("EMPORIA_WRITE_REQUIRES_NOUS", "0").strip() == "
 # Set EMPORIA_REQUIRE_CHALLENGE=1 to mandate Ed25519 proof-of-key-possession at registration.
 REQUIRE_CHALLENGE = os.getenv("EMPORIA_REQUIRE_CHALLENGE", "0").strip() == "1"
 OPERATOR_FEE_BPS = int(os.getenv("OPERATOR_FEE_BPS", "250"))
+MAX_TOTAL_SPEND_CENTS = int(os.getenv("EMPORIA_MAX_TOTAL_SPEND_CENTS", "0"))
+TEMPO_ENABLED = os.getenv("EMPORIA_MPP_TEMPO_ENABLED", "0").strip() == "1"
 LOG_DIR = Path(os.getenv("EMPORIA_LOG_DIR", "./logs")).expanduser()
 DATABASE_PATH = Path(os.getenv("EMPORIA_DB_PATH", "~/.hermes/emporia.sqlite3")).expanduser()
 
@@ -115,7 +138,56 @@ FEDERATED_RELAYS: list[str] = [
 # {peer_url: {"ok": bool, "imported": int, "synced_at": iso8601}}
 _FEDERATION_LAST_SYNC: dict[str, dict[str, Any]] = {}
 
+
+def _stripe_profile_id() -> str:
+    return (os.getenv("STRIPE_PROFILE_ID", "") or "").strip()
+
+
+def _stripe_profile_ready() -> bool:
+    profile_id = _stripe_profile_id()
+    return bool(os.getenv("STRIPE_SECRET_KEY")) and (
+        profile_id.startswith("profile_") or profile_id.startswith("profile_test_")
+    )
+
+
+def _stripe_mpp_admin_notice() -> str | None:
+    from emporia.stripe_profile_discovery import stripe_mpp_admin_notice
+
+    sk = (os.getenv("STRIPE_SECRET_KEY") or "").strip()
+    return stripe_mpp_admin_notice(sk, profile_ready=_stripe_profile_ready())
+
+def _docker_gateway_ip() -> str | None:
+    """Return this container's default-route gateway IP, if any.
+
+    In a Docker deployment, browser traffic to the dashboard is proxied in by
+    the host (e.g. Hermes's gateway process) and arrives at the relay with
+    the container's bridge gateway as the source IP — not 127.0.0.1. That
+    traffic never left the Docker host, so it's the correct "local" trust
+    boundary for this container, same as 127.0.0.1 is for a bare-metal
+    deployment. Determined from /proc/net/route (not guessed/hardcoded) so it
+    tracks whatever bridge network this container actually has.
+    """
+    try:
+        with open("/proc/net/route") as f:
+            for line in f.readlines()[1:]:
+                fields = line.split()
+                if len(fields) >= 3 and fields[1] == "00000000":  # default route
+                    import socket
+                    import struct
+                    return socket.inet_ntoa(struct.pack("<L", int(fields[2], 16)))
+    except Exception:
+        pass
+    return None
+
+
 _LOCALHOST_HOSTS = {"127.0.0.1", "::1", "localhost"}
+_docker_gw = _docker_gateway_ip()
+if _docker_gw:
+    _LOCALHOST_HOSTS.add(_docker_gw)
+# Explicit operator escape hatch for other proxy topologies (comma-separated IPs).
+_LOCALHOST_HOSTS.update(
+    h.strip() for h in os.getenv("EMPORIA_TRUSTED_LOCAL_HOSTS", "").split(",") if h.strip()
+)
 
 # ─── Dashboard JWT (HMAC-SHA256, stdlib only) ────────────────────────────────
 import base64
@@ -466,6 +538,7 @@ def init_db() -> None:
         """)
         # Schema migrations for existing DBs (idempotent ADD COLUMN)
         _migrate_authorized_agents(conn)
+        _migrate_payments(conn)
         # Rename aroga_* → agora_* if old names still exist (typo fix)
         _migrate_agora_tables(conn)
         # Rooms schema (separate DDL to keep clean)
@@ -494,6 +567,17 @@ def _migrate_agora_tables(conn: Any) -> None:
         conn.execute("ALTER TABLE agora_topics ADD COLUMN entry_fee_cents INTEGER NOT NULL DEFAULT 0")
 
 
+def _migrate_payments(conn: Any) -> None:
+    conn.execute(
+        "DELETE FROM payments WHERE rowid NOT IN ("
+        "SELECT MIN(rowid) FROM payments GROUP BY payment_intent_id)"
+    )
+    conn.execute(
+        "CREATE UNIQUE INDEX IF NOT EXISTS idx_payments_payment_intent_id "
+        "ON payments(payment_intent_id)"
+    )
+
+
 def _migrate_authorized_agents(conn: Any) -> None:
     existing = {
         row[1]
@@ -520,6 +604,68 @@ def _migrate_authorized_agents(conn: Any) -> None:
 # Payment helpers
 # ============================================================================
 
+def _payment_metadata_matches(
+    metadata: dict[str, Any],
+    *,
+    resource_type: str,
+    resource_id: str,
+) -> bool:
+    if metadata.get("resource_type") == resource_type and metadata.get("resource_id") == resource_id:
+        return True
+    legacy_key = {
+        "session": "session_id",
+        "room": "room_id",
+        "agora": "topic_id",
+    }.get(resource_type)
+    if legacy_key and metadata.get(legacy_key) == resource_id:
+        return True
+    service_type = metadata.get("service_type")
+    if resource_type == "room" and metadata.get("session_id") == resource_id:
+        return service_type == "emporia:room_entry"
+    if resource_type == "agora" and metadata.get("session_id") == resource_id:
+        return service_type == "emporia:agora_subscribe"
+    return False
+
+
+def _assert_payment_intent_matches(
+    payment: dict[str, Any],
+    *,
+    amount_cents: int,
+    currency: str,
+    resource_type: str,
+    resource_id: str,
+    expected_capture_method: str,
+    allowed_statuses: tuple[str, ...],
+) -> None:
+    status = payment.get("status")
+    if status not in allowed_statuses:
+        raise HTTPException(402, f"Payment not confirmed (status={status}).")
+    if int(payment.get("amount") or 0) != amount_cents:
+        raise HTTPException(
+            402,
+            f"Payment amount mismatch: expected {amount_cents}, got {payment.get('amount')}",
+        )
+    actual_currency = (payment.get("currency") or "usd").lower()
+    if actual_currency != currency.lower():
+        raise HTTPException(
+            402,
+            f"Payment currency mismatch: expected {currency.lower()}, got {actual_currency}",
+        )
+    actual_capture = (payment.get("capture_method") or "automatic").lower()
+    if actual_capture != expected_capture_method:
+        raise HTTPException(
+            402,
+            f"Payment capture_method mismatch: expected {expected_capture_method}, got {actual_capture}",
+        )
+    metadata = payment.get("metadata") or {}
+    if not _payment_metadata_matches(
+        metadata,
+        resource_type=resource_type,
+        resource_id=resource_id,
+    ):
+        raise HTTPException(402, "PaymentIntent is not bound to this resource")
+
+
 def record_payment(
     payment_intent_id: str,
     agent_id: str,
@@ -528,17 +674,66 @@ def record_payment(
     session_id: str | None = None,
     room_id: str | None = None,
     currency: str = "usd",
-) -> None:
-    payment_id = f"pay_{uuid.uuid4().hex[:16]}"
+) -> dict[str, Any]:
     with DB_LOCK, get_db() as conn:
+        existing = conn.execute(
+            "SELECT * FROM payments WHERE payment_intent_id = ?",
+            (payment_intent_id,),
+        ).fetchone()
+        if existing:
+            row = dict(existing)
+            if (
+                row.get("agent_id") == agent_id
+                and row.get("amount_cents") == amount_cents
+                and row.get("currency") == currency
+                and row.get("payment_type") == payment_type
+                and row.get("session_id") == session_id
+                and row.get("room_id") == room_id
+            ):
+                return row
+            raise ValueError(
+                f"PaymentIntent {payment_intent_id} is already recorded for a different payment"
+            )
+
+        payment_id = f"pay_{uuid.uuid4().hex[:16]}"
+        created_at = datetime.now(UTC).isoformat()
         conn.execute(
-            "INSERT OR IGNORE INTO payments "
+            "INSERT INTO payments "
             "(payment_id, session_id, room_id, agent_id, amount_cents, currency, "
             "payment_intent_id, payment_type, status, created_at) "
             "VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'confirmed', ?)",
             (payment_id, session_id, room_id, agent_id, amount_cents, currency,
-             payment_intent_id, payment_type, datetime.now(UTC).isoformat()),
+             payment_intent_id, payment_type, created_at),
         )
+        return {
+            "payment_id": payment_id,
+            "session_id": session_id,
+            "room_id": room_id,
+            "agent_id": agent_id,
+            "amount_cents": amount_cents,
+            "currency": currency,
+            "payment_intent_id": payment_intent_id,
+            "payment_type": payment_type,
+            "status": "confirmed",
+            "created_at": created_at,
+        }
+
+
+def get_agent_total_spend_cents(agent_id: str) -> int:
+    with DB_LOCK, get_db() as conn:
+        row = conn.execute(
+            "SELECT COALESCE(SUM(amount_cents), 0) AS total FROM payments WHERE agent_id = ?",
+            (agent_id,),
+        ).fetchone()
+    return int(row["total"] if row else 0)
+
+
+def _assert_agent_budget(agent_id: str, amount_cents: int) -> None:
+    if MAX_TOTAL_SPEND_CENTS <= 0:
+        return
+    current = get_agent_total_spend_cents(agent_id)
+    if current + amount_cents > MAX_TOTAL_SPEND_CENTS:
+        raise HTTPException(402, f"Agent spend limit exceeded: {current + amount_cents}>{MAX_TOTAL_SPEND_CENTS} cents")
 
 
 def get_session_payments(session_id: str) -> list[dict[str, Any]]:
@@ -753,17 +948,25 @@ AGENT_REGISTRY = AgentRegistry()
 # (the hash-chained audit log in session_audit.py is the durable record).
 SAFETY_STATS: dict[str, int] = {
     "guardrail_blocks": 0,
+    "nemo_guardrail_blocks": 0,
     "por_rejections": 0,
     "unsigned_actions_rejected": 0,
 }
 
 
-def _assert_payload_safe_counted(payload: dict[str, Any]) -> None:
-    """Wrap guardrails.assert_payload_safe to track block counts for the dashboard."""
+async def _assert_payload_safe_counted(payload: dict[str, Any]) -> None:
+    """Wrap guardrails.assert_payload_safe_async to track block counts for the
+    dashboard, distinguishing the always-on regex layer from the optional
+    NVIDIA NIM semantic layer via the structured GuardrailResult attached to
+    GuardrailBlocked (not by parsing the exception's message text — that broke
+    once already when the message wording changed)."""
     try:
-        assert_payload_safe(payload)
-    except PermissionError:
-        SAFETY_STATS["guardrail_blocks"] += 1
+        await assert_payload_safe_async(payload)
+    except GuardrailBlocked as e:
+        if e.result.matched_pattern == "nemo:semantic":
+            SAFETY_STATS["nemo_guardrail_blocks"] += 1
+        else:
+            SAFETY_STATS["guardrail_blocks"] += 1
         raise
 
 
@@ -918,6 +1121,11 @@ async def broadcast_to_agent(agent_id: str, message: dict[str, Any]) -> None:
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     init_db()
+    notice = _stripe_mpp_admin_notice()
+    if notice:
+        import logging
+
+        logging.getLogger("emporia.relay").warning("%s", notice)
     yield
 
 
@@ -1108,6 +1316,18 @@ async def health():
             session_count = row2["c"] if row2 else 0
     except Exception:
         pass
+    stripe_enabled = bool(os.getenv("STRIPE_SECRET_KEY"))
+    stripe_profile_ready = _stripe_profile_ready()
+    payment_methods = []
+    if stripe_profile_ready:
+        payment_methods.append("stripe")
+    if TEMPO_ENABLED:
+        payment_methods.append("tempo")
+    payment_rails = ["free"]
+    if payment_methods:
+        payment_rails.append("mpp")
+    if stripe_enabled:
+        payment_rails.append("stripe_pi")
     return {
         "status": "ok",
         "service": BRAND,
@@ -1116,27 +1336,43 @@ async def health():
         "modules": list(MODULE_REGISTRY.keys()),
         "listing_count": listing_count,
         "session_count": session_count,
-        "guardrails_mode": os.getenv("HERMES_PTGS_GUARDRAILS_MODE", "enforce"),
+        "guardrails_mode": guardrails.DEFAULT_MODE,
         "require_nous": REQUIRE_NOUS,
         "operator_fee_bps": OPERATOR_FEE_BPS,
-        "stripe_enabled": bool(os.getenv("STRIPE_SECRET_KEY")),
-        "stripe_profile_id": os.getenv("STRIPE_PROFILE_ID", ""),
-        "payment_rails": (
-            ["free", "stripe_spt", "stripe_pi"]
-            if os.getenv("STRIPE_SECRET_KEY")
-            else ["free"]
-        ),
+        "mpp_enabled": bool(payment_methods),
+        "payment_methods": payment_methods,
+        "stripe_enabled": stripe_enabled,
+        "stripe_profile_ready": stripe_profile_ready,
+        "stripe_profile_id": _stripe_profile_id(),
+        "stripe_api_version": os.getenv("STRIPE_API_VERSION", "2026-04-22.preview"),
+        "tempo_enabled": TEMPO_ENABLED,
+        "max_total_spend_cents": MAX_TOTAL_SPEND_CENTS,
+        "payment_rails": payment_rails,
+        "stripe_mpp_admin_notice": _stripe_mpp_admin_notice(),
+        "chess_lib": _chess_lib_available(),
     }
+
+
+def _chess_lib_available() -> bool:
+    try:
+        from emporia.modules import chess as _cm
+
+        return bool(getattr(_cm, "_HAS_CHESS", False))
+    except Exception:
+        return False
 
 
 @app.get("/safety/stats")
 async def safety_stats():
-    """Live NeMo guardrails + Proof-of-Reasoning rejection counters for the dashboard's
+    """Live guardrails + Proof-of-Reasoning rejection counters for the dashboard's
     Trust & Safety panel. Process-lifetime counts, not a persisted audit trail."""
     return {
-        "guardrails_mode": os.getenv("HERMES_PTGS_GUARDRAILS_MODE", "enforce"),
+        "guardrails_mode": guardrails.DEFAULT_MODE,
         "min_rationale_chars": MIN_RATIONALE_CHARS,
         "bot_fingerprints": list(BOT_FINGERPRINTS),
+        "nemo_guardrails_enabled": guardrails.NEMO_GUARDRAILS_ENABLED,
+        "nemo_guardrails_model": guardrails.NEMO_GUARDRAILS_MODEL if guardrails.NEMO_GUARDRAILS_ENABLED else None,
+        "nemo_guardrail_errors": guardrails.NEMO_STATS["errors"],
         **SAFETY_STATS,
     }
 
@@ -1181,7 +1417,7 @@ async def agent_card():
             "sessions": f"{RELAY_BASE_URL}/sessions",
             "inbox": f"{RELAY_BASE_URL}/inbox",
             "dm": f"{RELAY_BASE_URL}/dm",
-            "lobby": f"{RELAY_BASE_URL}/ptgs/lobby",
+            "lobby": f"{RELAY_BASE_URL}/gaming/lobby",
             "rooms": f"{RELAY_BASE_URL}/rooms",
             "agoras": f"{RELAY_BASE_URL}/agoras/topics",
             "payments": f"{RELAY_BASE_URL}/payments",
@@ -1501,13 +1737,22 @@ async def get_agent_profile(agent_id: str):
 
     has_stripe = bool(row["stripe_account_id"])
     stripe_enabled = bool(os.getenv("STRIPE_SECRET_KEY"))
+    stripe_profile_ready = _stripe_profile_ready()
 
     # Derive payment rails this agent can use on this relay
     payment_rails = ["free"]
-    if stripe_enabled:
-        payment_rails += ["stripe_spt", "stripe_pi"]
+    payment_methods = []
+    if stripe_profile_ready:
+        payment_methods.append("stripe")
+        payment_rails += ["mpp", "stripe_pi"]
         if has_stripe:
             payment_rails.append("stripe_connect")  # can receive payouts
+    elif stripe_enabled:
+        payment_rails.append("stripe_pi")
+    elif TEMPO_ENABLED:
+        payment_rails.append("mpp")
+    if TEMPO_ENABLED:
+        payment_methods.append("tempo")
 
     return {
         "agent_id": row["agent_id"],
@@ -1519,9 +1764,11 @@ async def get_agent_profile(agent_id: str):
         "is_active": bool(row["is_active"]),
         "has_stripe": has_stripe,
         "stripe_account_id": row["stripe_account_id"],
+        "stripe_profile_ready": stripe_profile_ready,
         "session_count": session_count,
         "win_count": win_count,
         "payment_rails": payment_rails,
+        "payment_methods": payment_methods,
     }
 
 
@@ -1642,16 +1889,62 @@ class CreatePaymentIntentRequest(BaseModel):
 
 @app.post("/payments/create-intent")
 async def create_payment_intent_endpoint(req: CreatePaymentIntentRequest):
-    """Create a Stripe PaymentIntent. Call this before joining a paid session or room.
+    """Create a Stripe PaymentIntent for a specific paid session or room.
     Returns payment_intent_id to pass to /sessions/{id}/join or /rooms/{id}/join."""
     from emporia.payments import create_stake_intent
+
+    if bool(req.session_id) == bool(req.room_id):
+        raise HTTPException(400, "Provide exactly one of session_id or room_id")
+
+    target_id = req.session_id or req.room_id or ""
+    expected_amount = 0
+    currency = "usd"
+    capture_method = "manual"
+    resource_type = "session"
+    service_type = req.service_type
+
+    if req.session_id:
+        session = load_session(req.session_id)
+        if not session:
+            raise HTTPException(404, "Session not found")
+        payment_rules = session.get("payment_rules", {})
+        stake = payment_rules.get("stake_per_participant", "0")
+        expected_amount = int(float(stake) * 100) if stake else 0
+        currency = (payment_rules.get("currency") or "usd").lower()
+        service_type = service_type or session.get("module_type") or "emporia:session"
+        if payment_rules.get("mode", "free") == "free" or expected_amount <= 0:
+            raise HTTPException(400, "Session does not require a paid stake")
+    else:
+        room = rooms_db.get_room(target_id, db_path=DATABASE_PATH)
+        if not room:
+            raise HTTPException(404, "Room not found")
+        expected_amount = int(room.entry_fee_cents or 0)
+        currency = (room.currency or "usd").lower()
+        capture_method = "automatic"
+        resource_type = "room"
+        if room.gate_type != "stripe_payment" or expected_amount <= 0:
+            raise HTTPException(400, "Room does not require a paid entry fee")
+        if service_type == "emporia:session":
+            service_type = "emporia:room_entry"
+
+    if req.amount_cents != expected_amount:
+        raise HTTPException(
+            400,
+            f"amount_cents must match relay pricing for this resource ({expected_amount})",
+        )
+
+    _assert_agent_budget(req.buyer_id, expected_amount)
+
     try:
         result = await create_stake_intent(
-            session_id=req.session_id or req.room_id or f"standalone_{uuid.uuid4().hex[:8]}",
-            amount_cents=req.amount_cents,
+            session_id=target_id,
+            amount_cents=expected_amount,
             buyer_id=req.buyer_id,
             seller_id=req.seller_id,
-            service_type=req.service_type,
+            service_type=service_type,
+            capture_method=capture_method,
+            currency=currency,
+            resource_type=resource_type,
         )
         return result
     except RuntimeError as e:
@@ -1761,7 +2054,10 @@ async def list_payment_records(session_id: str | None = None, room_id: str | Non
 @app.post("/listings")
 async def create_listing(req: CreateListingRequest):
     _require_registered(req.agent_id)
-    _assert_payload_safe_counted({"title": req.title, "description": req.description})
+    try:
+        await _assert_payload_safe_counted(req.model_dump())
+    except PermissionError as e:
+        raise HTTPException(403, str(e))
 
     listing_id = f"lst_{uuid.uuid4().hex[:16]}"
     now = datetime.now(UTC).isoformat()
@@ -1863,7 +2159,10 @@ async def get_listings(
 @app.post("/events")
 async def create_event(req: CreateEventRequest):
     _require_registered(req.organizer_id)
-    _assert_payload_safe_counted({"title": req.title, "description": req.description})
+    try:
+        await _assert_payload_safe_counted(req.model_dump())
+    except PermissionError as e:
+        raise HTTPException(403, str(e))
 
     event_id = f"evt_{uuid.uuid4().hex[:12]}"
     now = datetime.now(UTC).isoformat()
@@ -1926,7 +2225,7 @@ async def get_event(event_id: str):
 # Federation
 # ============================================================================
 
-@app.get("/ptgs/v1/federate/listings")
+@app.get("/gaming/v1/federate/listings")
 async def federated_listings_out():
     """Serve local listings for federation pull by peer relays."""
     with DB_LOCK, get_db() as conn:
@@ -1945,7 +2244,7 @@ async def _pull_federated_listings(peer_url: str) -> int:
     """Pull listings from a peer relay and upsert locally (federation gossip)."""
     try:
         async with httpx.AsyncClient(timeout=15) as client:
-            resp = await client.get(f"{peer_url.rstrip('/')}/ptgs/v1/federate/listings")
+            resp = await client.get(f"{peer_url.rstrip('/')}/gaming/v1/federate/listings")
             resp.raise_for_status()
             data = resp.json()
     except Exception as e:
@@ -2003,7 +2302,7 @@ async def _pull_federated_listings(peer_url: str) -> int:
     return imported
 
 
-@app.post("/ptgs/v1/federate/sync")
+@app.post("/gaming/v1/federate/sync")
 async def trigger_federation_sync():
     """Manually trigger a federation pull from all configured peers."""
     results = {}
@@ -2047,6 +2346,9 @@ async def create_session(req: CreateSessionRequest):
     payment_rules = req.payment_rules or module.PAYMENT_RULES.model_dump()
     if req.payment_rules:
         payment_rules = {**module.PAYMENT_RULES.model_dump(), **req.payment_rules}
+    mode = payment_rules.get("mode", "free")
+    stake = payment_rules.get("stake_per_participant", "0")
+    stake_cents = int(float(stake) * 100) if stake not in (None, "") else 0
 
     session_id = f"sess_{uuid.uuid4().hex[:12]}"
     now = datetime.now(UTC).isoformat()
@@ -2174,26 +2476,39 @@ async def join_session(session_id: str, req: JoinSessionRequest, request: Reques
     stake_paid = False
     if mode != "free" and stake not in ("0", "0.00", ""):
         amount_cents = int(float(stake) * 100) if stake else 0
+        currency = (payment_rules.get("currency") or "usd").lower()
         from emporia.payments import (
             build_mpp_challenge, extract_mpp_token, confirm_spt,
             verify_payment_intent, confirm_stripe_intent,
         )
+        _assert_agent_budget(req.agent_id, amount_cents)
 
         # ── MPP path: check Authorization header for SPT ──────────────────
         auth_header = request.headers.get("Authorization")
         spt_token = extract_mpp_token(auth_header)
 
         if spt_token:
-            # Agent paid via link-cli / mppx wallet — validate their SPT
             try:
                 result = await confirm_spt(
                     spt_token=spt_token,
                     amount_cents=amount_cents,
                     session_id=session_id,
                     agent_id=req.agent_id,
+                    service_type=s["module_type"],
+                    currency=currency,
+                    capture_method="manual",
+                    resource_type="session",
                 )
-                if result.get("status") not in ("succeeded", "requires_capture"):
-                    raise HTTPException(402, f"SPT payment not confirmed: {result.get('status')}")
+                result = await verify_payment_intent(result["payment_intent_id"])
+                _assert_payment_intent_matches(
+                    result,
+                    amount_cents=amount_cents,
+                    currency=currency,
+                    resource_type="session",
+                    resource_id=session_id,
+                    expected_capture_method="manual",
+                    allowed_statuses=("requires_capture",),
+                )
                 req.payment_intent_id = result["payment_intent_id"]
                 stake_paid = True
             except HTTPException:
@@ -2202,21 +2517,29 @@ async def join_session(session_id: str, req: JoinSessionRequest, request: Reques
                 raise HTTPException(402, f"SPT validation failed: {e}")
 
         elif req.payment_intent_id:
-            # ── Legacy path: pre-created PaymentIntent ────────────────────
             try:
                 result = await verify_payment_intent(req.payment_intent_id)
                 status = result.get("status")
-                if status not in ("succeeded", "requires_capture"):
-                    # Test mode only: relay auto-confirms for demo convenience
+                if status != "requires_capture":
                     if os.getenv("STRIPE_SECRET_KEY", "").startswith("sk_test_"):
-                        result = await confirm_stripe_intent(req.payment_intent_id)
+                        await confirm_stripe_intent(req.payment_intent_id)
+                        result = await verify_payment_intent(req.payment_intent_id)
                         status = result.get("status")
-                    if status not in ("succeeded", "requires_capture"):
+                    if status != "requires_capture":
                         raise HTTPException(
                             402,
                             f"Payment not confirmed (status={status}). "
                             "Confirm the PaymentIntent or use link-cli mpp pay.",
                         )
+                _assert_payment_intent_matches(
+                    result,
+                    amount_cents=amount_cents,
+                    currency=currency,
+                    resource_type="session",
+                    resource_id=session_id,
+                    expected_capture_method="manual",
+                    allowed_statuses=("requires_capture",),
+                )
                 stake_paid = True
             except HTTPException:
                 raise
@@ -2224,7 +2547,6 @@ async def join_session(session_id: str, req: JoinSessionRequest, request: Reques
                 raise HTTPException(402, f"Payment verification failed: {e}")
 
         else:
-            # ── No payment: issue MPP 402 challenge ───────────────────────
             challenge_headers = build_mpp_challenge(
                 amount_cents=amount_cents,
                 resource=f"emporia:session:{session_id}",
@@ -2251,6 +2573,7 @@ async def join_session(session_id: str, req: JoinSessionRequest, request: Reques
             amount_cents=amount_cents,
             payment_type="session_stake",
             session_id=session_id,
+            currency=currency,
         )
 
     participants = s["participants"] + [req.agent_id]
@@ -2320,9 +2643,9 @@ async def submit_action(session_id: str, req: SubmitActionRequest):
         "peer_text_rationale": req.peer_text_rationale,
     }
 
-    # 1. NemoClaw guardrails
+    # 1. Guardrails (regex firewall + optional NVIDIA NIM semantic check)
     try:
-        _assert_payload_safe_counted(full_payload)
+        await _assert_payload_safe_counted(full_payload)
     except PermissionError as e:
         raise HTTPException(403, str(e))
 
@@ -2605,7 +2928,10 @@ async def send_message(req: SendMessageRequest):
         if not AGENT_REGISTRY.verify_signature(req.from_agent, req.payload, req.signature):
             raise HTTPException(403, "Invalid signature")
 
-    _assert_payload_safe_counted(req.payload)
+    try:
+        await _assert_payload_safe_counted(req.payload)
+    except PermissionError as e:
+        raise HTTPException(403, str(e))
 
     msg_id = AGENT_REGISTRY.log_message(
         from_agent=req.from_agent,
@@ -2690,14 +3016,14 @@ async def ws_agent(ws: WebSocket, agent_id: str):
 
 
 # ============================================================================
-# Lobby (PTGS challenge discovery)
+# Lobby (gaming challenge discovery)
 # ============================================================================
 
 _game_registry = GameRegistry(DATABASE_PATH)
 
 
-@app.get("/ptgs/lobby")
-async def ptgs_lobby_get(status: str = "open", game_type: str | None = None):
+@app.get("/gaming/lobby")
+async def gaming_lobby_get(status: str = "open", game_type: str | None = None):
     challenges = [c.to_dict() for c in _game_registry.list_challenges(status)]
     if game_type:
         challenges = [c for c in challenges if c.get("game_type") == game_type]
@@ -2709,10 +3035,13 @@ async def ptgs_lobby_get(status: str = "open", game_type: str | None = None):
     }
 
 
-@app.post("/ptgs/lobby")
-async def ptgs_lobby_post(request_data: dict[str, Any]):
+@app.post("/gaming/lobby")
+async def gaming_lobby_post(request_data: dict[str, Any]):
     try:
-        _assert_payload_safe_counted(request_data)
+        await _assert_payload_safe_counted(request_data)
+    except PermissionError as e:
+        raise HTTPException(403, str(e))
+    try:
         challenge_payload = request_data.get("challenge", request_data)
         imported = _game_registry.import_challenge(challenge_payload)
         return {"ok": True, "challenge": imported.to_dict()}
@@ -2732,7 +3061,10 @@ async def ptgs_lobby_post(request_data: dict[str, Any]):
 @app.post("/rooms")
 async def create_room_endpoint(req: CreateRoomRequest):
     _require_registered(req.creator_id)
-    _assert_payload_safe_counted({"name": req.name, "description": req.description})
+    try:
+        await _assert_payload_safe_counted(req.model_dump())
+    except PermissionError as e:
+        raise HTTPException(403, str(e))
     if req.room_type not in ("public", "private"):
         raise HTTPException(400, "room_type must be 'public' or 'private'")
     if req.gate_type not in ("open", "invite", "stripe_payment"):
@@ -2813,17 +3145,18 @@ async def join_room(room_id: str, req: JoinRoomRequest, request: Request):
             raise HTTPException(403, "No invite — ask the room creator")
     elif room.gate_type == "stripe_payment":
         amount_cents = room.entry_fee_cents or 0
+        currency = (room.currency or "usd").lower()
         from emporia.payments import (
             build_mpp_challenge, extract_mpp_token, confirm_spt,
             verify_payment_intent, confirm_stripe_intent,
         )
+        _assert_agent_budget(req.agent_id, amount_cents)
 
         auth_header = request.headers.get("Authorization")
         spt_token = extract_mpp_token(auth_header)
         confirmed_pi: str | None = None
 
         if spt_token:
-            # Agent paid via link-cli / mppx wallet
             try:
                 result = await confirm_spt(
                     spt_token=spt_token,
@@ -2831,9 +3164,20 @@ async def join_room(room_id: str, req: JoinRoomRequest, request: Request):
                     session_id=room_id,
                     agent_id=req.agent_id,
                     service_type="emporia:room_entry",
+                    currency=currency,
+                    capture_method="automatic",
+                    resource_type="room",
                 )
-                if result.get("status") not in ("succeeded", "requires_capture"):
-                    raise HTTPException(402, f"SPT payment not confirmed: {result.get('status')}")
+                result = await verify_payment_intent(result["payment_intent_id"])
+                _assert_payment_intent_matches(
+                    result,
+                    amount_cents=amount_cents,
+                    currency=currency,
+                    resource_type="room",
+                    resource_id=room_id,
+                    expected_capture_method="automatic",
+                    allowed_statuses=("succeeded",),
+                )
                 confirmed_pi = result["payment_intent_id"]
             except HTTPException:
                 raise
@@ -2841,16 +3185,25 @@ async def join_room(room_id: str, req: JoinRoomRequest, request: Request):
                 raise HTTPException(402, f"SPT validation failed: {e}")
 
         elif req.payment_intent_id:
-            # Legacy: pre-created PaymentIntent
             try:
                 result = await verify_payment_intent(req.payment_intent_id)
                 status = result.get("status")
-                if status not in ("succeeded", "requires_capture"):
+                if status != "succeeded":
                     if os.getenv("STRIPE_SECRET_KEY", "").startswith("sk_test_"):
-                        result = await confirm_stripe_intent(req.payment_intent_id)
+                        await confirm_stripe_intent(req.payment_intent_id)
+                        result = await verify_payment_intent(req.payment_intent_id)
                         status = result.get("status")
-                    if status not in ("succeeded", "requires_capture"):
+                    if status != "succeeded":
                         raise HTTPException(402, f"Payment not confirmed (status={status}).")
+                _assert_payment_intent_matches(
+                    result,
+                    amount_cents=amount_cents,
+                    currency=currency,
+                    resource_type="room",
+                    resource_id=room_id,
+                    expected_capture_method="automatic",
+                    allowed_statuses=("succeeded",),
+                )
                 confirmed_pi = req.payment_intent_id
             except HTTPException:
                 raise
@@ -2858,7 +3211,6 @@ async def join_room(room_id: str, req: JoinRoomRequest, request: Request):
                 raise HTTPException(402, f"Payment verification failed: {e}")
 
         else:
-            # Issue MPP 402 challenge — agent retries with SPT
             challenge_headers = build_mpp_challenge(
                 amount_cents=amount_cents,
                 resource=f"emporia:room:{room_id}",
@@ -2879,13 +3231,13 @@ async def join_room(room_id: str, req: JoinRoomRequest, request: Request):
                 headers=challenge_headers,
             )
 
-        # Charged on entry — record immediately, then split 2.5% platform / 97.5% creator
         record_payment(
             payment_intent_id=confirmed_pi,
             agent_id=req.agent_id,
             amount_cents=amount_cents,
             payment_type="room_entry",
             room_id=room_id,
+            currency=currency,
         )
         from emporia.payments import platform_fee as _platform_fee
         platform_fee = _platform_fee(amount_cents)
@@ -2990,12 +3342,12 @@ async def send_room_message(room_id: str, req: SendRoomMessageRequest):
     if not AGENT_REGISTRY.check_rate_limit(req.sender_id):
         raise HTTPException(429, "Rate limit exceeded")
 
-    # Encrypted rooms: relay stores opaque ciphertext — never pass to NeMo.
+    # Encrypted rooms: relay stores opaque ciphertext — never scan it.
     # Ciphertext is binary/base64 and WILL false-positive on injection patterns.
     # Membership check above is the only gate; clients own key exchange + decryption.
     if not room.encrypted:
         try:
-            _assert_payload_safe_counted({"content": req.content})
+            await _assert_payload_safe_counted({"content": req.content})
         except PermissionError as e:
             raise HTTPException(403, str(e))
 
@@ -3142,6 +3494,7 @@ class AgoraVoteRequest(BaseModel):
 
 class AgoraSubscribeRequest(BaseModel):
     agent_id: str
+    payment_intent_id: str | None = None
 
 
 def _require_registered(agent_id: str) -> None:
@@ -3191,7 +3544,10 @@ def _slugify(name: str) -> str:
 @app.post("/agoras/topics")
 async def create_agora_topic(req: CreateAgoraTopicRequest):
     _require_registered(req.creator_id)
-    _assert_payload_safe_counted({"name": req.name, "description": req.description})
+    try:
+        await _assert_payload_safe_counted(req.model_dump())
+    except PermissionError as e:
+        raise HTTPException(403, str(e))
     if req.gate_type not in ("open", "invite", "paid_invite"):
         raise HTTPException(400, "gate_type must be open | invite | paid_invite")
     if req.gate_type == "paid_invite" and req.entry_fee_cents <= 0:
@@ -3317,10 +3673,13 @@ async def invite_to_agora_topic(slug: str, req: AgoraInviteRequest):
                 "INSERT INTO agora_invites (topic_id, agent_id, invited_by, created_at) VALUES (?,?,?,?)",
                 (row["topic_id"], req.agent_id, req.invited_by, now),
             )
-    # Add to inbox
-    _push_inbox(req.agent_id, "agora_invite", {
-        "topic_id": row["topic_id"], "slug": slug, "name": row["name"],
-        "gate_type": gate, "entry_fee_cents": row["entry_fee_cents"] if "entry_fee_cents" in row.keys() else 0,
+    await broadcast_to_agent(req.agent_id, {
+        "type": "agora_invite",
+        "topic_id": row["topic_id"],
+        "slug": slug,
+        "name": row["name"],
+        "gate_type": gate,
+        "entry_fee_cents": row["entry_fee_cents"] if "entry_fee_cents" in row.keys() else 0,
         "invited_by": req.invited_by,
     })
     return {"ok": True, "slug": slug, "agent_id": req.agent_id}
@@ -3361,20 +3720,62 @@ async def subscribe_agora_topic(slug: str, req: AgoraSubscribeRequest, request: 
                 build_mpp_challenge, extract_mpp_token, confirm_spt,
                 verify_payment_intent, confirm_stripe_intent,
             )
+            currency = "usd"
+            _assert_agent_budget(req.agent_id, entry_fee)
             auth_header = request.headers.get("Authorization")
             spt_token = extract_mpp_token(auth_header)
             if spt_token:
                 try:
-                    result = await confirm_spt(spt_token, entry_fee, topic_id, req.agent_id, "emporia:agora_subscribe")
-                    if result.get("status") not in ("succeeded", "requires_capture"):
-                        raise HTTPException(402, f"SPT payment not confirmed: {result.get('status')}")
+                    result = await confirm_spt(
+                        spt_token,
+                        entry_fee,
+                        topic_id,
+                        req.agent_id,
+                        "emporia:agora_subscribe",
+                        currency=currency,
+                        capture_method="automatic",
+                        resource_type="agora",
+                    )
+                    result = await verify_payment_intent(result["payment_intent_id"])
+                    _assert_payment_intent_matches(
+                        result,
+                        amount_cents=entry_fee,
+                        currency=currency,
+                        resource_type="agora",
+                        resource_id=topic_id,
+                        expected_capture_method="automatic",
+                        allowed_statuses=("succeeded",),
+                    )
                     confirmed_pi = result["payment_intent_id"]
                 except HTTPException:
                     raise
                 except Exception as e:
                     raise HTTPException(402, f"SPT validation failed: {e}")
-            elif req.payment_intent_id if hasattr(req, "payment_intent_id") else None:
-                pass  # handled below; AgoraSubscribeRequest doesn't have payment_intent_id yet
+            elif req.payment_intent_id:
+                try:
+                    result = await verify_payment_intent(req.payment_intent_id)
+                    status = result.get("status")
+                    if status != "succeeded":
+                        if os.getenv("STRIPE_SECRET_KEY", "").startswith("sk_test_"):
+                            await confirm_stripe_intent(req.payment_intent_id)
+                            result = await verify_payment_intent(req.payment_intent_id)
+                            status = result.get("status")
+                        if status != "succeeded":
+                            raise HTTPException(402, f"Payment not confirmed (status={status}).")
+                    _assert_payment_intent_matches(
+                        result,
+                        amount_cents=entry_fee,
+                        currency=currency,
+                        resource_type="agora",
+                        resource_id=topic_id,
+                        expected_capture_method="automatic",
+                        allowed_statuses=("succeeded",),
+                    )
+                    confirmed_pi = req.payment_intent_id
+                except HTTPException:
+                    raise
+                except Exception as e:
+                    raise HTTPException(402, f"Payment verification failed: {e}")
             else:
                 challenge_headers = build_mpp_challenge(entry_fee, f"emporia:agora:{topic_id}")
                 return JSONResponse(
@@ -3407,7 +3808,14 @@ async def subscribe_agora_topic(slug: str, req: AgoraSubscribeRequest, request: 
 
     # Record payment + split for paid_invite
     if confirmed_pi and entry_fee > 0:
-        record_payment(confirmed_pi, req.agent_id, entry_fee, "agora_subscribe", room_id=topic_id)
+        record_payment(
+            confirmed_pi,
+            req.agent_id,
+            entry_fee,
+            "agora_subscribe",
+            room_id=topic_id,
+            currency="usd",
+        )
         from emporia.payments import platform_fee as _platform_fee
         platform_fee = _platform_fee(entry_fee)
         creator_payout = entry_fee - platform_fee
@@ -3454,7 +3862,10 @@ async def unsubscribe_agora_topic(slug: str, agent_id: str, request: Request):
 @app.post("/agoras/topics/{slug}/posts")
 async def create_agora_post(slug: str, req: CreateAgoraPostRequest):
     _require_registered(req.author_id)
-    _assert_payload_safe_counted({"title": req.title, "content": req.content})
+    try:
+        await _assert_payload_safe_counted(req.model_dump())
+    except PermissionError as e:
+        raise HTTPException(403, str(e))
     now = datetime.now(UTC).isoformat()
     post_id = f"pst_{uuid.uuid4().hex[:12]}"
     with DB_LOCK, get_db() as conn:
@@ -3635,7 +4046,10 @@ async def delete_agora_post(post_id: str, agent_id: str):
 @app.post("/agoras/posts/{post_id}/comments")
 async def add_agora_comment(post_id: str, req: AddAgoraCommentRequest):
     _require_registered(req.author_id)
-    _assert_payload_safe_counted({"content": req.content})
+    try:
+        await _assert_payload_safe_counted(req.model_dump())
+    except PermissionError as e:
+        raise HTTPException(403, str(e))
     now = datetime.now(UTC).isoformat()
     comment_id = f"cmt_{uuid.uuid4().hex[:12]}"
     with DB_LOCK, get_db() as conn:
@@ -3842,7 +4256,10 @@ async def dm_start(req: DMStartRequest):
 async def dm_send(thread_id: str, req: DMSendRequest):
     """Send a message in a DM thread. Pushes inbox event to the recipient."""
     _require_registered(req.sender_id)
-    _assert_payload_safe_counted({"content": req.content})
+    try:
+        await _assert_payload_safe_counted(req.model_dump())
+    except PermissionError as e:
+        raise HTTPException(403, str(e))
     now = datetime.now(UTC).isoformat()
     message_id = f"dmm_{uuid.uuid4().hex[:12]}"
     with DB_LOCK, get_db() as conn:

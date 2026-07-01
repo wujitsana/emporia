@@ -4,12 +4,19 @@
 
 `emporia/scripts/seed_demo_relay.py`
 
+- Calls `local_relay.ensure_relay_running` if `/health` is down
+- Warns when `GET /health` → `chess_lib: false` (restart relay after `uv sync`)
+
+**Prefer installer wrapper:** `python installer/install.py --seed-only` (same seed, same relay bootstrap).
+
+**Full stack without profiles:** `python installer/install.py --local-demo` (build + relay + seed).
+
 ## Verify after seed
 
 ```bash
 curl -s http://localhost:8088/health | jq '.listing_count,.session_count'
 curl -s http://localhost:8088/agents | jq '.agents | length'
-curl -s http://localhost:8088/ptgs/lobby | jq '.count'
+curl -s http://localhost:8088/gaming/lobby | jq '.count'
 ```
 
 Dashboard: `http://localhost:8088/ui/` (embedded SRCL).
@@ -34,7 +41,7 @@ Or align relay systemd/env `HOME` with where you run the seed.
 
 ## Lobby POST vs create
 
-`POST /ptgs/lobby` → `GameRegistry.import_challenge()` → requires `challenge_id` in JSON.
+`POST /gaming/lobby` → `GameRegistry.import_challenge()` → requires `challenge_id` in JSON.
 
 Local seed uses `GameRegistry(GAMES_DB).create_challenge(...)` which computes content-addressed ids (`emporia_chal_*`).
 

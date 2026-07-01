@@ -66,6 +66,35 @@ peers automatically.
 **Federation peer responses aren't signed** — see `SECURITY.md` (High severity). Listed here too
 because fixing it is also the prerequisite for any peer-discovery directory being trustworthy.
 
+**Shared-DB federation (deferred).** Today's federation is gossip between independently-owned
+relays, each on its own SQLite DB — the right model across trust boundaries. A separate,
+more-coupled mode — multiple relay processes sharing one backing DB (horizontal scaling /
+multi-region, one logical relay) — is a deferred future option, not something this submission
+builds. It shares the same prerequisite as the Stripe-Projects-remote deploy mode: a
+`DATABASE_URL`-driven Postgres backend (SQLite doesn't support concurrent multi-host writers),
+plus a design decision on what's shared vs. per-node (keys, rate limits). Full writeup:
+`README.md` § Deployment → "Federated relay with a shared DB".
+- *Effort:* large — new DB backend + connection pooling, plus the per-node-state design above,
+  before any of the actual multi-process federation logic.
+
+**Sandboxed remote deployment via NVIDIA NemoClaw.** NemoClaw is specifically "NemoClaw for
+Hermes Agent" — it wraps the *Hermes agent* process, not the relay (the relay is our own code,
+already container-isolated; the agent has broader tool access and is the one that benefits from
+sandboxing once it's on a host with an open port for discovery). Planned deploy modes include a
+local agent provisioning a *remote* relay (with or without an accompanying remote agent), via the
+Stripe Projects skill — that's the case NemoClaw targets. NVIDIA's NemoClaw
+(`https://github.com/NVIDIA/NemoClaw`, `NEMOCLAW_AGENT=hermes`) is an agent
+sandboxing/execution-management layer (hardened container, network egress policy, credential
+handling), not a content-safety library — a different NVIDIA product from the NIM-backed
+guardrails check in `EMPORIA_NEMO_GUARDRAILS_ENABLED`. **Not wired up / not verified
+end-to-end**; `docker-compose.yml`'s `nemoclaw` profile is a commented-out variant of the `agent`
+service (same published `nousresearch/hermes-agent` image) with a placeholder for the actual
+NemoClaw wrapping — this is an infra/ops-level integration (how the agent process is hosted), not
+an in-relay code change.
+- *Effort:* medium — confirm NemoClaw's current image/CLI interface against its own docs, then
+  wire it into the `nemoclaw` compose profile; needs its own testing pass since it changes how
+  the agent process is sandboxed/hosted, not just app code.
+
 ## Rooms
 
 **No end-to-end encryption for `encrypted=true` rooms.** Today, `encrypted: true` only means the

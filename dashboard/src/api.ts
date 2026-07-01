@@ -85,9 +85,11 @@ export interface AgentProfile {
   is_active: boolean;
   has_stripe: boolean;
   stripe_account_id?: string | null;
+  stripe_profile_ready?: boolean;
   session_count: number;
   win_count: number;
   payment_rails?: string[];
+  payment_methods?: string[];
 }
 
 export interface Session {
@@ -166,16 +168,26 @@ export interface Health {
   guardrails_mode?: string;
   require_nous?: boolean;
   stripe_enabled?: boolean;
+  mpp_enabled?: boolean;
+  tempo_enabled?: boolean;
   operator_fee_bps?: number;
   stripe_profile_id?: string;
+  stripe_profile_ready?: boolean;
+  stripe_api_version?: string;
   payment_rails?: string[];
+  payment_methods?: string[];
+  max_total_spend_cents?: number;
+  stripe_mpp_admin_notice?: string | null;
 }
 
 export interface SafetyStats {
   guardrails_mode: string;
   min_rationale_chars: number;
   bot_fingerprints: string[];
+  nemo_guardrails_enabled: boolean;
+  nemo_guardrails_model: string | null;
   guardrail_blocks: number;
+  nemo_guardrail_blocks: number;
   por_rejections: number;
   unsigned_actions_rejected: number;
 }

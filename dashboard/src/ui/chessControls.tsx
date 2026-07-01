@@ -1,4 +1,11 @@
 import type { ReactNode } from "react";
+import {
+  IconPlay,
+  IconRefreshLatest,
+  IconStepNext,
+  IconStepPrev,
+  IconStop,
+} from "./chessIcons";
 
 type ChessTransportProps = {
   onPrev: () => void;
@@ -6,32 +13,40 @@ type ChessTransportProps = {
   onReplayToggle: () => void;
   replaying: boolean;
   onLatest: () => void;
-  latestLabel?: string;
+  /** Live / move counter — sits on the transport row (no extra view header). */
+  status?: ReactNode;
 };
 
-/** Flat chess transport — no SRCL ActionButton gray/secondary fills. */
-export function ChessTransport({
-  onPrev,
-  onNext,
-  onReplayToggle,
-  replaying,
-  onLatest,
-  latestLabel = "live",
-}: ChessTransportProps) {
+function IconBtn({
+  icon,
+  label,
+  onClick,
+}: {
+  icon: ReactNode;
+  label: string;
+  onClick: () => void;
+}) {
   return (
-    <div className="e-chess-ctrl-row">
-      <button type="button" className="e-ctrl-btn" onClick={onPrev}>
-        <kbd>←</kbd> prev
-      </button>
-      <button type="button" className="e-ctrl-btn" onClick={onNext}>
-        <kbd>→</kbd> next
-      </button>
-      <button type="button" className="e-ctrl-btn" onClick={onReplayToggle}>
-        <kbd>R</kbd> {replaying ? "stop" : "replay"}
-      </button>
-      <button type="button" className="e-ctrl-btn" onClick={onLatest}>
-        <kbd>L</kbd> {latestLabel}
-      </button>
+    <button type="button" className="e-chess-icon-btn" onClick={onClick} aria-label={label} title={label}>
+      <span className="e-chess-icon-btn__glyph">{icon}</span>
+    </button>
+  );
+}
+
+export function ChessTransport({ onPrev, onNext, onReplayToggle, replaying, onLatest, status }: ChessTransportProps) {
+  return (
+    <div className="e-chess-ctrl-row" role="toolbar" aria-label="Chess replay">
+      <div className="e-chess-ctrl-icons">
+        <IconBtn icon={<IconStepPrev />} label="Previous move" onClick={onPrev} />
+        <IconBtn icon={<IconStepNext />} label="Next move" onClick={onNext} />
+        <IconBtn
+          icon={replaying ? <IconStop /> : <IconPlay />}
+          label={replaying ? "Stop replay" : "Play replay"}
+          onClick={onReplayToggle}
+        />
+        <IconBtn icon={<IconRefreshLatest />} label="Jump to latest" onClick={onLatest} />
+      </div>
+      {status ? <div className="e-chess-ctrl-status">{status}</div> : null}
     </div>
   );
 }
@@ -44,10 +59,8 @@ export function ChessSpeedSlider({
   onSpeed: (ms: number) => void;
 }) {
   return (
-    <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-      <span className="e-dim" style={{ fontSize: "0.68rem" }}>
-        speed
-      </span>
+    <div className="e-chess-speed">
+      <span className="e-chess-speed__lbl">speed</span>
       <input
         type="range"
         min={200}
@@ -55,24 +68,39 @@ export function ChessSpeedSlider({
         step={100}
         value={speed}
         onChange={(e) => onSpeed(Number(e.target.value))}
-        style={{ width: 100, accentColor: "var(--theme-focused-foreground)" }}
+        className="e-chess-speed__range"
       />
-      <span className="e-dim" style={{ fontSize: "0.68rem" }}>
-        {speed}ms/move
-      </span>
+      <span className="e-chess-speed__lbl">{speed}ms/move</span>
     </div>
   );
 }
 
 export function LiveMark({ live }: { live?: boolean }) {
   if (!live) return null;
-  return <span className="e-dim e-status-txt">live</span>;
+  return <span className="e-chess-live-mark">live</span>;
 }
 
 export function MoveIndex({ idx, total }: { idx: number; total: number }) {
   return (
-    <span className="e-dim" style={{ fontSize: "0.68rem" }}>
-      move {idx + 1}/{total}
+    <span className="e-chess-move-idx">
+      {idx + 1}/{total}
+    </span>
+  );
+}
+
+export function ChessReplayStatus({
+  live,
+  idx,
+  total,
+}: {
+  live?: boolean;
+  idx: number;
+  total: number;
+}) {
+  return (
+    <span className="e-chess-replay-status">
+      {live ? <span className="e-chess-live-mark">live</span> : null}
+      <MoveIndex idx={idx} total={total} />
     </span>
   );
 }
