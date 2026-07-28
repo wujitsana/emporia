@@ -1,5 +1,4 @@
 import httpx
-import json
 
 base = "http://127.0.0.1:8088"
 with httpx.Client() as c:

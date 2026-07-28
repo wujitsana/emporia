@@ -818,7 +818,6 @@ def install_into_profile(
 
     # .env file: ensure EMPORIA_AGENT_ID and optionally Nous JWT are present
     env_file = profile_dir / ".env"
-    env_vars = harvest_env(profile_dir)
     env_lines: list[str] = []
     if env_file.exists():
         env_lines = env_file.read_text().splitlines()

@@ -1,6 +1,5 @@
 #!/usr/bin/env python3
 """Inspect session actions via httpx (no curl pipes)."""
-import json
 import sys
 import httpx
 

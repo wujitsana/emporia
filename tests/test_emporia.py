@@ -19,8 +19,8 @@ Run:
 
 from __future__ import annotations
 
-import json
 import os
+import shutil
 import sys
 import tempfile
 from pathlib import Path
@@ -34,8 +34,12 @@ _src = str(Path(__file__).parent.parent / "src")
 if _src not in sys.path:
     sys.path.insert(0, _src)
 
-os.environ.setdefault("EMPORIA_LOG_DIR", "/tmp/emporia_test_logs")
-os.environ.setdefault("EMPORIA_AUDIT_DIR", "/tmp/emporia_test_audit")
+# One throwaway root for every artifact this run writes (logs, audit, DB), honouring
+# TMPDIR so CI sandboxes and hosts without a writable /tmp both work. Removed by
+# _init_test_db's teardown.
+_test_root = Path(tempfile.mkdtemp(prefix="emporia_test_"))
+os.environ.setdefault("EMPORIA_LOG_DIR", str(_test_root / "logs"))
+os.environ.setdefault("EMPORIA_AUDIT_DIR", str(_test_root / "audit"))
 
 # Force permissive defaults for tests — profile .env may have stricter settings.
 # Individual tests that want to verify the gated behavior use patch.dict explicitly.
@@ -45,11 +49,10 @@ os.environ["EMPORIA_REQUIRE_CHALLENGE"] = "0"
 
 # Use a persistent temp file so TestClient requests share the same SQLite DB.
 # :memory: creates a new empty DB on every connect() call — unusable across requests.
-_test_db = tempfile.mktemp(suffix="_emporia_test.sqlite3")
+_test_db = str(_test_root / "emporia_test.sqlite3")
 os.environ["EMPORIA_DB_PATH"] = _test_db
 
 from emporia.relay_server import app, init_db
-from emporia import __version__
 
 
 @pytest.fixture(scope="session", autouse=True)
@@ -57,10 +60,7 @@ def _init_test_db():
     """Initialize the shared test DB once per session; clean up on exit."""
     init_db()
     yield
-    try:
-        os.unlink(_test_db)
-    except OSError:
-        pass
+    shutil.rmtree(_test_root, ignore_errors=True)
 
 
 @pytest.fixture(scope="session", autouse=True)
@@ -143,7 +143,6 @@ def test_modules_endpoint(client):
 def test_ed25519_sign_verify_roundtrip():
     from emporia.identity import generate_or_load_keypair, sign, verify
     with tempfile.TemporaryDirectory() as d:
-        key_path = Path(d) / "test.priv"
         with patch("emporia.identity.KEY_DIR", Path(d)):
             _, pub_bytes = generate_or_load_keypair("test_agent")
             pub_hex = pub_bytes.hex()
@@ -873,13 +872,11 @@ def test_join_session_rejects_total_budget_exceeded(mock_verify, client):
 
 def test_supported_modules():
     from emporia.module_sdk import MODULE_REGISTRY
-    import emporia.modules.chess  # trigger registration
     assert "emporia:chess:v1" in MODULE_REGISTRY
 
 
 def test_chess_module_initial_state():
     from emporia.module_sdk import get_interaction_module
-    import emporia.modules.chess
     module = get_interaction_module("emporia:chess:v1")
     state = module.initial_state(["white_agent", "black_agent"], {})
     assert state.current_agent == "white_agent"
@@ -1039,10 +1036,10 @@ def test_is_negotiation_room(rooms_db_path):
 
 
 def test_list_rooms_visibility(rooms_db_path):
-    from emporia.rooms import create_room, add_member, list_rooms
+    from emporia.rooms import create_room, list_rooms
     create_room("Public One", "agent_alice", room_type="public", db_path=rooms_db_path)
-    priv = create_room("Private One", "agent_alice", room_type="private",
-                       gate_type="invite", db_path=rooms_db_path)
+    create_room("Private One", "agent_alice", room_type="private",
+                gate_type="invite", db_path=rooms_db_path)
     # Non-member sees only public room
     visible = list_rooms(viewer_id="agent_stranger", db_path=rooms_db_path)
     names = [r.name for r in visible]
@@ -1216,14 +1213,12 @@ def test_room_private_not_visible_to_non_member(client):
 # ============================================================================
 
 def test_service_module_registered():
-    import emporia.modules.service  # trigger registration
     from emporia.module_sdk import MODULE_REGISTRY
     assert "emporia:service:v1" in MODULE_REGISTRY
 
 
 def test_service_module_state_machine():
     from emporia.module_sdk import get_interaction_module
-    import emporia.modules.service
 
     module = get_interaction_module("emporia:service:v1")
     participants = ["buyer_x", "seller_x"]
@@ -1269,7 +1264,6 @@ def test_service_module_state_machine():
 
 def test_service_module_dispute_path():
     from emporia.module_sdk import get_interaction_module, SessionAction
-    import emporia.modules.service
 
     module = get_interaction_module("emporia:service:v1")
     state = module.initial_state(["buyer_d", "seller_d"], {"description": "Bad job"})

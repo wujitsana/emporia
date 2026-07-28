@@ -26,7 +26,6 @@ Inbound processing order (hard contract):
 
 from __future__ import annotations
 
-import asyncio
 import json
 import os
 import secrets
@@ -42,8 +41,8 @@ from typing import Any
 
 import httpx
 import uvicorn
-from fastapi import FastAPI, Header, HTTPException, Request, WebSocket, WebSocketDisconnect
-from fastapi.responses import JSONResponse, RedirectResponse
+from fastapi import FastAPI, HTTPException, Request, WebSocket, WebSocketDisconnect
+from fastapi.responses import RedirectResponse
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
@@ -87,7 +86,7 @@ _load_profile_dotenv()
 from emporia.engine.game_registry import GameRegistry
 from emporia.engine import guardrails
 from emporia.engine.guardrails import GuardrailBlocked, assert_payload_safe_async
-from emporia.identity import build_agent_card, verify
+from emporia.identity import verify
 from emporia.module_sdk import (
     MODULE_REGISTRY,
     SessionAction,
@@ -2346,9 +2345,6 @@ async def create_session(req: CreateSessionRequest):
     payment_rules = req.payment_rules or module.PAYMENT_RULES.model_dump()
     if req.payment_rules:
         payment_rules = {**module.PAYMENT_RULES.model_dump(), **req.payment_rules}
-    mode = payment_rules.get("mode", "free")
-    stake = payment_rules.get("stake_per_participant", "0")
-    stake_cents = int(float(stake) * 100) if stake not in (None, "") else 0
 
     session_id = f"sess_{uuid.uuid4().hex[:12]}"
     now = datetime.now(UTC).isoformat()
@@ -2663,7 +2659,7 @@ async def submit_action(session_id: str, req: SubmitActionRequest):
 
     # 4. Proof-of-Reasoning density + bot fingerprint
     try:
-        rationale = validate_proof_of_reasoning(full_payload)
+        validate_proof_of_reasoning(full_payload)
     except PermissionError as e:
         raise HTTPException(403, str(e))
 

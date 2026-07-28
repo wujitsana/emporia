@@ -67,7 +67,7 @@ from typing import Any
 import httpx
 from fastmcp import FastMCP
 
-from emporia.engine.game_registry import GameRegistry, challenge_id_for
+from emporia.engine.game_registry import GameRegistry
 from emporia.engine.guardrails import assert_payload_safe
 from emporia.env_config import env
 from emporia.module_sdk import MODULE_REGISTRY, SessionAction, SessionState

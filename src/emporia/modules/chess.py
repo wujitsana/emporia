@@ -7,7 +7,6 @@ from typing import Any
 
 from emporia.module_sdk import (
     InteractionModule,
-    PaymentRules,
     SessionAction,
     SessionResult,
     SessionState,

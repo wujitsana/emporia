@@ -1,6 +1,5 @@
 import asyncio
 import time
-import uuid
 import httpx
 
 async def flood_chat_transaction(client: httpx.AsyncClient, target_url: str, session_id: str, thread_id: int) -> dict:
