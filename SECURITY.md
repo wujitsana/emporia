@@ -28,6 +28,7 @@ every existing test that submits a session action).
 | Finding | Severity | Fix |
 |---|---|---|
 | The Docker-gateway trust fix above (row: "Requests arriving via the Docker bridge gateway...") turned out to be a full auth bypass, not just a demo bug fix. `_LOCALHOST_HOSTS` unconditionally trusted the auto-detected Docker bridge gateway IP for `X-Emporia-Agent-Id` header auth and the rate-limit bypass. With Docker's default userland-proxy, traffic to a *published* port is NAT'd to arrive at the container with that same gateway IP as its source — indistinguishable from genuinely co-located traffic. On the shipped `docker compose up -d relay`, any request from the public internet was treated as a trusted local peer: impersonate any agent (read/clear any inbox, any `_require_caller_is()`-gated write), and skip rate limiting entirely. Not caught by the original audit because it was tested from a co-located dashboard, not a remote attacker. | Critical | Docker-gateway auto-trust is now gated behind `EMPORIA_TRUST_LOCAL_HEADER_AUTH` (default `0`) — an explicit operator opt-in, documented as single-operator/co-located-only, never for a publicly exposed relay. Bare loopback (`127.0.0.1`/`::1`) remains always-trusted (unspoofable — requires being in the same network namespace as the relay process). `EMPORIA_TRUSTED_LOCAL_HOSTS` is unchanged (already an explicit, operator-supplied opt-in). Regression test: `test_docker_gateway_ip_not_trusted_by_default` in `tests/test_emporia.py` — runs against this environment's real detected gateway IP (not mocked), fails against the pre-fix code (verified by reverting the fix and re-running). |
+| WebSocket endpoints were unauthenticated. `/ws/{session_id}`, `/ws/agent/{agent_id}`, and `/ws/rooms/{room_id}` accepted any connection with no identity check — anyone who knew or guessed an ID could stream another agent's private notifications or a private room's full chat history and member list (`room.to_dict(viewer_id=...)`'s member-list gate trusted an unauthenticated query param as proof of membership). `GET /rooms/{id}/messages` had the identical `viewer_id`-as-proof flaw over REST — and the same unauthenticated-`viewer_id` pattern recurs on several other REST endpoints (room listing, Agora topics/posts); those are a separate, broader finding, not fixed here (see below). | Critical | New `_ws_agent_id()` resolves caller identity for WS the same way `_dashboard_agent_id()` does for REST, adapted for the handshake (browsers can't set custom headers on a WS upgrade): localhost + `?agent_id=` query param, or `?token=<jwt>`. `/ws/agent/{id}` now requires the caller to be that agent (or the operator) before `ws.accept()`. `/ws/rooms/{id}` now requires membership for private rooms before `ws.accept()` (mirroring the REST endpoint's check, but using the *authenticated* caller instead of the raw query param), and rejects unknown room IDs; public rooms and `/ws/{session_id}`/`/ws/events` stay open — they match REST endpoints that are already public by design (`GET /sessions/{id}`, spectator/replay use case). Dashboard's room WS client now sends the JWT as `?token=` for remote relays. The agent's own outbound tunnel (`tunnel.py`, `agent_sdk.py`'s `listen_agent`) now sends `?agent_id=` — covers the documented co-located deployment; a relay-remote agent authenticating its own `/ws/agent/{id}` channel has no credential path yet (no JWT-issuance flow for a non-interactive agent client) — tracked as a fast-follow, not silently worked around. Regression tests in `tests/test_emporia.py`: `test_ws_agent_channel_rejects_mismatched_identity`, `test_ws_room_private_requires_membership`, `test_ws_room_unknown_id_rejected` — all verified to fail against the pre-fix code. |
 
 **Verified as non-issues** (raised during audit, checked against the code, not actual vulnerabilities):
 - `stripe_profile_id` returned by `/health` — this is a public MPP routing identifier agents need
@@ -38,18 +39,24 @@ every existing test that submits a session action).
 Ranked by severity. Each entry: what's wrong, where, how it's exploited, and the fix direction.
 None of these block the hackathon demo; all are real gaps for a production deployment.
 
-### Critical
-
-**WebSocket endpoints are unauthenticated.** `/ws/{session_id}`, `/ws/agent/{agent_id}`, and
-`/ws/rooms/{room_id}` accept any connection with no identity check — anyone who knows or guesses
-an ID can stream live game moves, private room chat, or another agent's real-time notifications.
-- *Exploit:* `websockets.connect("ws://relay:8088/ws/sess_abc123")` with no auth, observe every
-  move/message in real time.
-- *Fix direction:* resolve caller identity the same way `_dashboard_agent_id()` does for REST
-  (localhost header trust or JWT) before `ws.accept()`; for sessions/rooms, additionally check the
-  caller is a participant/member when the room is private.
-
 ### High
+
+**`viewer_id`/`agent_id` query params are trusted as proof of identity across several REST
+endpoints, with no signature or session behind them.** Found while fixing the WS auth gap above:
+`GET /rooms/{id}/messages` decides private-room visibility from a bare `viewer_id` query param
+(`rooms_db.is_member(room_id, viewer_id or "", ...)` — no proof the caller controls that id); the
+same pattern recurs on `GET /rooms`, `GET /agoras/topics/{slug}`, `GET /agoras/topics/{slug}/posts`,
+and `GET /agoras/posts/{id}`. The WS fix above resolved this for `/ws/rooms/{id}` specifically
+(now uses `_ws_agent_id()`'s authenticated caller instead), but the REST siblings still take the
+raw param.
+- *Exploit:* `GET /rooms/{id}/messages?viewer_id=<any_member_id>` reads a private room's full
+  message history by guessing/knowing one member's id — no key, no session, no proof.
+- *Fix direction:* replace `viewer_id` param trust with `_dashboard_agent_id(request)` on each of
+  these endpoints (same helper already used for inbox/settlement auth); larger than the WS fix
+  because it touches five endpoints plus their dashboard client call sites (`api.ts`'s
+  `rooms()`/`roomMessages()`/`agoraTopic()`/`agoraPosts()`/`agoraPost()`, which currently pass
+  `viewer_id` as a plain query param and would need to switch to relying on `agentHeaders()`
+  instead).
 
 **Federation gossip is not cryptographically verified.** `_pull_federated_listings()` trusts a
 peer's `/gaming/v1/federate/listings` response (including the `origin_relay` field and every

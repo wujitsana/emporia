@@ -270,6 +270,31 @@ def _dashboard_agent_id(request: Request) -> str | None:
     return None
 
 
+def _ws_agent_id(ws: WebSocket) -> str | None:
+    """
+    Resolve the connecting agent's identity for a WebSocket upgrade.
+
+    Same trust tiers as _dashboard_agent_id(), adapted for WS: browsers cannot set
+    custom headers (Authorization, X-Emporia-Agent-Id) on a WS handshake, so both
+    tiers are carried as query params instead:
+      - localhost + ?agent_id=<id>  → trusted (dashboard co-located with agent)
+      - ?token=<jwt>                 → verified via the same HMAC-SHA256 JWT used for
+                                        dashboard REST auth
+      - neither                      → None (unauthenticated)
+    """
+    host = ws.client.host if ws.client else ""
+    if host in _LOCALHOST_HOSTS:
+        qp_agent = ws.query_params.get("agent_id")
+        if qp_agent:
+            return qp_agent
+    token = ws.query_params.get("token")
+    if token:
+        payload = _jwt_decode(token)
+        if payload and payload.get("relay_id") == RELAY_ID:
+            return payload.get("agent_id") or None
+    return None
+
+
 def _require_caller_is(agent_id: str, request: Request) -> None:
     """Raise 403 unless the authenticated caller is `agent_id` or the relay operator.
 
@@ -2993,6 +3018,11 @@ async def get_messages(agent_id: str, session_id: str | None = None, limit: int 
 
 @app.websocket("/ws/{session_id}")
 async def ws_session(ws: WebSocket, session_id: str):
+    """Live session feed. Intentionally unauthenticated: GET /sessions/{id} and
+    GET /sessions/{id}/actions are already public over REST (spectator/replay use case —
+    the dashboard's game views connect here for any session, not just participants), so
+    this matches that visibility rather than being more restrictive than the REST API for
+    the same data."""
     await ws.accept()
     ws_connections[session_id].add(ws)
     try:
@@ -3012,6 +3042,13 @@ async def ws_session(ws: WebSocket, session_id: str):
 
 @app.websocket("/ws/agent/{agent_id}")
 async def ws_agent(ws: WebSocket, agent_id: str):
+    """Per-agent notification channel — private. Caller must be the agent itself (or the
+    relay operator); see _ws_agent_id()."""
+    caller = _ws_agent_id(ws)
+    owner = os.getenv("EMPORIA_AGENT_ID", "")
+    if caller != agent_id and not (owner and caller == owner):
+        await ws.close(code=1008)
+        return
     await ws.accept()
     key = f"agent:{agent_id}"
     ws_connections[key].add(ws)
@@ -3442,21 +3479,28 @@ async def get_room_messages(
 
 
 @app.websocket("/ws/rooms/{room_id}")
-async def ws_room(ws: WebSocket, room_id: str, agent_id: str | None = None):
-    """Real-time room channel. Sends last 20 messages on connect. Membership not re-checked
-    on WS upgrade — clients must call /rooms/{id}/join first."""
+async def ws_room(ws: WebSocket, room_id: str):
+    """Real-time room channel. Sends last 20 messages on connect. Private rooms require
+    the caller to be an authenticated member (see _ws_agent_id()) — public rooms are open
+    to any connection, matching GET /rooms/{id}/messages."""
+    room = rooms_db.get_room(room_id, db_path=DATABASE_PATH)
+    if not room:
+        await ws.close(code=1008)
+        return
+    caller = _ws_agent_id(ws)
+    if room.room_type == "private" and not rooms_db.is_member(room_id, caller or "", db_path=DATABASE_PATH):
+        await ws.close(code=1008)
+        return
     await ws.accept()
     key = f"room:{room_id}"
     ws_connections[key].add(ws)
     try:
-        room = rooms_db.get_room(room_id, db_path=DATABASE_PATH)
-        if room:
-            msgs = rooms_db.get_messages(room_id, limit=20, db_path=DATABASE_PATH)
-            await ws.send_json({
-                "type": "room_init",
-                "room": room.to_dict(viewer_id=agent_id),
-                "messages": [m.to_dict() for m in msgs],
-            })
+        msgs = rooms_db.get_messages(room_id, limit=20, db_path=DATABASE_PATH)
+        await ws.send_json({
+            "type": "room_init",
+            "room": room.to_dict(viewer_id=caller),
+            "messages": [m.to_dict() for m in msgs],
+        })
         while True:
             data = await ws.receive_text()
             try:

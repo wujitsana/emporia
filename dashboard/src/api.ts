@@ -13,10 +13,16 @@ const BASE = (() => {
 const AGENT_ID_HEADER = import.meta.env.VITE_AGENT_ID as string | undefined;
 const SESSION_TOKEN_KEY = "emporia_dashboard_token";
 
+/** The dashboard's JWT, if any — for callers that need it outside a fetch() header
+ * (e.g. WebSocket handshakes, which can't set custom headers from browser JS). */
+export function dashboardToken(): string | null {
+  return sessionStorage.getItem(SESSION_TOKEN_KEY);
+}
+
 function agentHeaders(): HeadersInit {
   const headers: Record<string, string> = {};
   if (AGENT_ID_HEADER) headers["x-emporia-agent-id"] = AGENT_ID_HEADER;
-  const jwt = sessionStorage.getItem(SESSION_TOKEN_KEY);
+  const jwt = dashboardToken();
   if (jwt) headers["authorization"] = `Bearer ${jwt}`;
   return headers;
 }

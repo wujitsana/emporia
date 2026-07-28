@@ -28,6 +28,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from fastapi.testclient import TestClient
+from starlette.websockets import WebSocketDisconnect
 
 # Allow running from repo root without installing
 _src = str(Path(__file__).parent.parent / "src")
@@ -1670,6 +1671,71 @@ def test_docker_gateway_ip_not_trusted_by_default():
     })
     r = client.get("/agents/gw_victim/inbox", headers={"x-emporia-agent-id": "gw_victim"})
     assert r.status_code == 403
+
+
+# ============================================================================
+# WebSocket auth
+# ============================================================================
+
+def test_ws_agent_channel_rejects_mismatched_identity(client):
+    """/ws/agent/{id} is a private per-agent notification channel — connecting must fail
+    unless the caller authenticates as that same agent (or the relay operator)."""
+    _register(client, "ws_owner")
+    _register(client, "ws_stranger")
+    # No identity at all
+    with pytest.raises(WebSocketDisconnect):
+        with client.websocket_connect("/ws/agent/ws_owner"):
+            pass
+    # Claiming a different agent_id than the channel being connected to
+    with pytest.raises(WebSocketDisconnect):
+        with client.websocket_connect("/ws/agent/ws_owner?agent_id=ws_stranger"):
+            pass
+    # Matching identity succeeds
+    with client.websocket_connect("/ws/agent/ws_owner?agent_id=ws_owner"):
+        pass  # connection accepted; nothing to receive without a broadcast
+
+
+def test_ws_room_private_requires_membership(client):
+    """/ws/rooms/{id} must reject non-members of a private room, but stay open to anyone
+    for a public room."""
+    _register(client, "wsroom_owner")
+    _register(client, "wsroom_member")
+    _register(client, "wsroom_stranger")
+    r = client.post("/rooms", json={
+        "name": "WS Private Room", "creator_id": "wsroom_owner",
+        "room_type": "private", "gate_type": "invite",
+    })
+    room_id = r.json()["room_id"]
+    client.post(f"/rooms/{room_id}/invite", json={
+        "invitee_id": "wsroom_member", "inviter_id": "wsroom_owner",
+    })
+    client.post(f"/rooms/{room_id}/join", json={"agent_id": "wsroom_member"})
+
+    # No identity — rejected
+    with pytest.raises(WebSocketDisconnect):
+        with client.websocket_connect(f"/ws/rooms/{room_id}"):
+            pass
+    # Authenticated but not a member — rejected
+    with pytest.raises(WebSocketDisconnect):
+        with client.websocket_connect(f"/ws/rooms/{room_id}?agent_id=wsroom_stranger"):
+            pass
+    # A real member — accepted, gets room_init
+    with client.websocket_connect(f"/ws/rooms/{room_id}?agent_id=wsroom_member") as ws:
+        frame = ws.receive_json()
+        assert frame["type"] == "room_init"
+
+    # Public room — open to anyone, no identity required
+    r2 = client.post("/rooms", json={"name": "WS Public Room", "creator_id": "wsroom_owner"})
+    pub_room_id = r2.json()["room_id"]
+    with client.websocket_connect(f"/ws/rooms/{pub_room_id}") as ws:
+        frame = ws.receive_json()
+        assert frame["type"] == "room_init"
+
+
+def test_ws_room_unknown_id_rejected(client):
+    with pytest.raises(WebSocketDisconnect):
+        with client.websocket_connect("/ws/rooms/sess_does_not_exist"):
+            pass
 
 
 # ============================================================================

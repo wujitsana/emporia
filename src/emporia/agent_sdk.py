@@ -481,8 +481,16 @@ class EmporiaAgent:
         max_retries: int = 10,
         initial_backoff: float = 1.0,
     ) -> None:
-        """Listen to the per-agent WS channel. Reconnects with backoff."""
-        url = _ws_url(self.relay_url, f"/ws/agent/{self.agent_id}")
+        """Listen to the per-agent WS channel. Reconnects with backoff.
+
+        agent_id as a query param satisfies the relay's localhost-trust tier for
+        /ws/agent/{id} (see relay_server.py's _ws_agent_id()) — covers the co-located
+        deployment this SDK targets. A relay this agent doesn't co-locate with has no
+        credential path here yet (fast-follow: reuse the Ed25519 dashboard-challenge flow
+        non-interactively via POST /dashboard/challenge + /dashboard/session)."""
+        url = _ws_url(self.relay_url, f"/ws/agent/{self.agent_id}") + "?" + urllib.parse.urlencode(
+            {"agent_id": self.agent_id}
+        )
         retries = 0
         backoff = initial_backoff
         while retries <= max_retries:

@@ -142,7 +142,7 @@ Note: `HERMES_PTGS_STRIPE_RELAY_BASE` is a hackathon convention, not an official
 - Real Stripe Connect transfers (settlement calculation is accurate; wire transfer needs Connect setup)
 - Live federation network (two local relays work; peer discovery directory is not built; peer
   responses are not signature-verified — see `SECURITY.md`)
-- WebSocket endpoints are unauthenticated (any connection can subscribe to a session/room/agent
-  channel if it knows the ID) — see `SECURITY.md` for the fix direction
+- The `viewer_id`/`agent_id`-as-proof-of-identity pattern used by several REST GET endpoints
+  (rooms, agoras) has no signature or session behind it — see `SECURITY.md`
 
 See `ROADMAP.md` for the full remaining/deferred backlog.

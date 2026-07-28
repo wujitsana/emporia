@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { resolveRelayUrl } from "./relayEnv";
+import { dashboardToken } from "./api";
 
 // ─── URL helpers ────────────────────────────────────────────────────────────
 
@@ -94,7 +95,13 @@ export function useRoomWs(
 
     const connect = () => {
       if (closed) return;
-      const ws = new WebSocket(`${base}/ws/rooms/${roomId}?agent_id=${encodeURIComponent(agentId)}`);
+      // agent_id is trusted only for co-located (localhost) connections; a remote relay
+      // authenticates private-room access via the dashboard JWT instead — see
+      // relay_server.py's _ws_agent_id().
+      const params = new URLSearchParams({ agent_id: agentId });
+      const token = dashboardToken();
+      if (token) params.set("token", token);
+      const ws = new WebSocket(`${base}/ws/rooms/${roomId}?${params.toString()}`);
       wsRef.current = ws;
 
       ws.onopen = () => { setConnected(true); retryMs = 1_000; };

@@ -21,7 +21,13 @@ from typing import Any, Awaitable, Callable
 def _ws_url(relay_url: str, agent_id: str) -> str:
     parsed = urllib.parse.urlparse(relay_url.rstrip("/"))
     ws_scheme = "wss" if parsed.scheme == "https" else "ws"
-    return parsed._replace(scheme=ws_scheme).geturl() + f"/ws/agent/{agent_id}"
+    # agent_id as a query param satisfies the relay's localhost-trust tier for /ws/agent/{id}
+    # (see relay_server.py's _ws_agent_id()) — covers the co-located deployment this tunnel
+    # is built for. A relay this agent doesn't co-locate with has no credential path here yet
+    # (the Ed25519 dashboard-challenge flow was built for a human-mediated browser dashboard,
+    # not this tunnel) — tracked as a fast-follow, not silently worked around.
+    query = urllib.parse.urlencode({"agent_id": agent_id})
+    return parsed._replace(scheme=ws_scheme).geturl() + f"/ws/agent/{agent_id}?{query}"
 
 
 async def maintain_relay_tunnel(

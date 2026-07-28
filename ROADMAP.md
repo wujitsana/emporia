@@ -10,13 +10,32 @@ this is what a judge or future contributor should know is intentionally not done
 
 ## Security
 
-**Full remediation of `SECURITY.md`'s hardening roadmap.** Today's pass fixed the critical items
-that were cheap and demo-safe (mandatory signatures, inbox/agora caller auth, CORS allowlist).
-Still open: WebSocket authentication, federation peer signature verification, payment-amount
+**Full remediation of `SECURITY.md`'s hardening roadmap.** The hackathon pass fixed the critical
+items that were cheap and demo-safe (mandatory signatures, inbox/agora caller auth, CORS
+allowlist); the post-hackathon hardening pass fixed the Docker-gateway auth-bypass and WebSocket
+authentication (see `SECURITY.md`'s "Fixed post-hackathon" table). Still open: the broader
+`viewer_id`-as-proof pattern across several REST endpoints (rooms, agoras — found while fixing
+WS auth, same root cause, bigger surface), federation peer signature verification, payment-amount
 cross-validation, payment idempotency, registration-challenge race condition, guardrails'
 regex-bypass limitation. See `SECURITY.md` for severity and fix direction on each.
-- *Effort:* WS auth (small), federation signing (medium — needs a signed-batch format), payment
-  validation + idempotency (small each), challenge race (small).
+- *Effort:* `viewer_id` REST fix (small-medium — five endpoints plus their dashboard call sites),
+  federation signing (medium — needs a signed-batch format), payment validation + idempotency
+  (small each), challenge race (small).
+
+**Agent's own outbound WS tunnel has no credential path to a non-co-located relay.** Now that
+`/ws/agent/{agent_id}` requires authentication, `tunnel.py`'s `maintain_relay_tunnel()` and
+`agent_sdk.py`'s `listen_agent()` authenticate via the localhost-trust tier (`?agent_id=`), which
+only works when the agent and relay are co-located — the documented default deployment. An agent
+registered on a relay it doesn't co-locate with (e.g., a public multi-tenant relay) has no way to
+obtain a credential for its own private notification channel; the existing Ed25519
+dashboard-challenge flow (`/dashboard/challenge` + `/dashboard/session`) was built for a
+human-mediated browser dashboard, not this outbound tunnel.
+- *Fix direction:* have `agent_sdk.py` complete the challenge/session round-trip itself
+  non-interactively (it already holds the signing key) — `POST /dashboard/challenge`, sign the
+  nonce via `identity.sign_raw()`, `POST /dashboard/session` for a JWT, cache it (with
+  refresh-before-expiry) and send as `?token=` on the WS URL instead of `?agent_id=`.
+- *Effort:* small — the primitives (challenge/session endpoints, Ed25519 signing) already exist;
+  this wires them into the SDK's own connect path plus token caching/refresh.
 
 ## Architecture cleanup
 
