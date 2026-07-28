@@ -705,6 +705,97 @@ def _assert_payment_intent_matches(
         raise HTTPException(402, "PaymentIntent is not bound to this resource")
 
 
+async def _verify_and_confirm_payment(
+    request: Request,
+    *,
+    agent_id: str,
+    amount_cents: int,
+    currency: str,
+    resource_type: str,
+    resource_id: str,
+    service_type: str,
+    capture_method: str,
+    allowed_statuses: tuple[str, ...],
+    req_payment_intent_id: str | None,
+    challenge_message: str,
+    challenge_resource: str,
+) -> str | JSONResponse:
+    """Verify a payment credential (SPT via Authorization header, or a client-supplied
+    PaymentIntent id) against the expected amount/currency/capture-method/resource binding,
+    then return the confirmed payment_intent_id.
+
+    If no credential was supplied, returns a ready-to-return 402 MPP challenge JSONResponse
+    instead of raising — callers must check `isinstance(result, JSONResponse)` and return it
+    directly (a 402 challenge carries X-MPP-* headers that HTTPException's flat detail body
+    doesn't preserve, and each call site's challenge body/resource string legitimately
+    differs). Raises HTTPException(402) on any verification/validation failure — this was
+    already the uniform shape across all three call sites before this was extracted.
+
+    Shared by /sessions/{id}/join, /rooms/{id}/join, and /agoras/topics/{slug}/subscribe —
+    previously ~40 lines of identical verify/confirm/validate logic copy-pasted at each site.
+    """
+    from emporia.payments import (
+        build_mpp_challenge, extract_mpp_token, confirm_spt,
+        verify_payment_intent, confirm_stripe_intent,
+    )
+    _assert_agent_budget(agent_id, amount_cents)
+    auth_header = request.headers.get("Authorization")
+    spt_token = extract_mpp_token(auth_header)
+
+    if spt_token:
+        try:
+            result = await confirm_spt(
+                spt_token, amount_cents, resource_id, agent_id, service_type,
+                currency=currency, capture_method=capture_method, resource_type=resource_type,
+            )
+            result = await verify_payment_intent(result["payment_intent_id"])
+            _assert_payment_intent_matches(
+                result, amount_cents=amount_cents, currency=currency,
+                resource_type=resource_type, resource_id=resource_id,
+                expected_capture_method=capture_method, allowed_statuses=allowed_statuses,
+            )
+            return result["payment_intent_id"]
+        except HTTPException:
+            raise
+        except Exception as e:
+            raise HTTPException(402, f"SPT validation failed: {e}")
+
+    if req_payment_intent_id:
+        try:
+            result = await verify_payment_intent(req_payment_intent_id)
+            status = result.get("status")
+            if status not in allowed_statuses:
+                if os.getenv("STRIPE_SECRET_KEY", "").startswith("sk_test_"):
+                    await confirm_stripe_intent(req_payment_intent_id)
+                    result = await verify_payment_intent(req_payment_intent_id)
+                    status = result.get("status")
+                if status not in allowed_statuses:
+                    raise HTTPException(402, f"Payment not confirmed (status={status}).")
+            _assert_payment_intent_matches(
+                result, amount_cents=amount_cents, currency=currency,
+                resource_type=resource_type, resource_id=resource_id,
+                expected_capture_method=capture_method, allowed_statuses=allowed_statuses,
+            )
+            return req_payment_intent_id
+        except HTTPException:
+            raise
+        except Exception as e:
+            raise HTTPException(402, f"Payment verification failed: {e}")
+
+    challenge_headers = build_mpp_challenge(amount_cents, challenge_resource, currency=currency)
+    return JSONResponse(
+        status_code=402,
+        content={
+            "error": "payment_required",
+            "message": challenge_message,
+            "amount_cents": amount_cents,
+            "resource": challenge_resource,
+            "protocol": "emporia:v1+mpp",
+        },
+        headers=challenge_headers,
+    )
+
+
 def record_payment(
     payment_intent_id: str,
     agent_id: str,
@@ -2521,95 +2612,29 @@ async def join_session(session_id: str, req: JoinSessionRequest, request: Reques
     if mode != "free" and stake not in ("0", "0.00", ""):
         amount_cents = int(float(stake) * 100) if stake else 0
         currency = (payment_rules.get("currency") or "usd").lower()
-        from emporia.payments import (
-            build_mpp_challenge, extract_mpp_token, confirm_spt,
-            verify_payment_intent, confirm_stripe_intent,
+
+        result = await _verify_and_confirm_payment(
+            request,
+            agent_id=req.agent_id,
+            amount_cents=amount_cents,
+            currency=currency,
+            resource_type="session",
+            resource_id=session_id,
+            service_type=s["module_type"],
+            capture_method="manual",
+            allowed_statuses=("requires_capture",),
+            req_payment_intent_id=req.payment_intent_id,
+            challenge_message=(
+                f"Session requires {amount_cents} {currency} cents stake. "
+                "Retry with Authorization: Payment <spt_token> "
+                "or POST to /payments/create-intent first."
+            ),
+            challenge_resource=f"emporia:session:{session_id}",
         )
-        _assert_agent_budget(req.agent_id, amount_cents)
-
-        # ── MPP path: check Authorization header for SPT ──────────────────
-        auth_header = request.headers.get("Authorization")
-        spt_token = extract_mpp_token(auth_header)
-
-        if spt_token:
-            try:
-                result = await confirm_spt(
-                    spt_token=spt_token,
-                    amount_cents=amount_cents,
-                    session_id=session_id,
-                    agent_id=req.agent_id,
-                    service_type=s["module_type"],
-                    currency=currency,
-                    capture_method="manual",
-                    resource_type="session",
-                )
-                result = await verify_payment_intent(result["payment_intent_id"])
-                _assert_payment_intent_matches(
-                    result,
-                    amount_cents=amount_cents,
-                    currency=currency,
-                    resource_type="session",
-                    resource_id=session_id,
-                    expected_capture_method="manual",
-                    allowed_statuses=("requires_capture",),
-                )
-                req.payment_intent_id = result["payment_intent_id"]
-                stake_paid = True
-            except HTTPException:
-                raise
-            except Exception as e:
-                raise HTTPException(402, f"SPT validation failed: {e}")
-
-        elif req.payment_intent_id:
-            try:
-                result = await verify_payment_intent(req.payment_intent_id)
-                status = result.get("status")
-                if status != "requires_capture":
-                    if os.getenv("STRIPE_SECRET_KEY", "").startswith("sk_test_"):
-                        await confirm_stripe_intent(req.payment_intent_id)
-                        result = await verify_payment_intent(req.payment_intent_id)
-                        status = result.get("status")
-                    if status != "requires_capture":
-                        raise HTTPException(
-                            402,
-                            f"Payment not confirmed (status={status}). "
-                            "Confirm the PaymentIntent or use link-cli mpp pay.",
-                        )
-                _assert_payment_intent_matches(
-                    result,
-                    amount_cents=amount_cents,
-                    currency=currency,
-                    resource_type="session",
-                    resource_id=session_id,
-                    expected_capture_method="manual",
-                    allowed_statuses=("requires_capture",),
-                )
-                stake_paid = True
-            except HTTPException:
-                raise
-            except Exception as e:
-                raise HTTPException(402, f"Payment verification failed: {e}")
-
-        else:
-            challenge_headers = build_mpp_challenge(
-                amount_cents=amount_cents,
-                resource=f"emporia:session:{session_id}",
-            )
-            return JSONResponse(
-                status_code=402,
-                content={
-                    "error": "payment_required",
-                    "message": (
-                        f"Session requires {amount_cents} {payment_rules.get('currency','usd')} cents stake. "
-                        "Retry with Authorization: Payment <spt_token> "
-                        "or POST to /payments/create-intent first."
-                    ),
-                    "amount_cents": amount_cents,
-                    "resource": f"emporia:session:{session_id}",
-                    "protocol": "emporia:v1+mpp",
-                },
-                headers=challenge_headers,
-            )
+        if isinstance(result, JSONResponse):
+            return result
+        req.payment_intent_id = result
+        stake_paid = True
 
         record_payment(
             payment_intent_id=req.payment_intent_id,
@@ -3202,90 +3227,27 @@ async def join_room(room_id: str, req: JoinRoomRequest, request: Request):
     elif room.gate_type == "stripe_payment":
         amount_cents = room.entry_fee_cents or 0
         currency = (room.currency or "usd").lower()
-        from emporia.payments import (
-            build_mpp_challenge, extract_mpp_token, confirm_spt,
-            verify_payment_intent, confirm_stripe_intent,
+
+        result = await _verify_and_confirm_payment(
+            request,
+            agent_id=req.agent_id,
+            amount_cents=amount_cents,
+            currency=currency,
+            resource_type="room",
+            resource_id=room_id,
+            service_type="emporia:room_entry",
+            capture_method="automatic",
+            allowed_statuses=("succeeded",),
+            req_payment_intent_id=req.payment_intent_id,
+            challenge_message=(
+                f"Room entry fee: {amount_cents} {currency} cents. "
+                "Retry with Authorization: Payment <spt_token>."
+            ),
+            challenge_resource=f"emporia:room:{room_id}",
         )
-        _assert_agent_budget(req.agent_id, amount_cents)
-
-        auth_header = request.headers.get("Authorization")
-        spt_token = extract_mpp_token(auth_header)
-        confirmed_pi: str | None = None
-
-        if spt_token:
-            try:
-                result = await confirm_spt(
-                    spt_token=spt_token,
-                    amount_cents=amount_cents,
-                    session_id=room_id,
-                    agent_id=req.agent_id,
-                    service_type="emporia:room_entry",
-                    currency=currency,
-                    capture_method="automatic",
-                    resource_type="room",
-                )
-                result = await verify_payment_intent(result["payment_intent_id"])
-                _assert_payment_intent_matches(
-                    result,
-                    amount_cents=amount_cents,
-                    currency=currency,
-                    resource_type="room",
-                    resource_id=room_id,
-                    expected_capture_method="automatic",
-                    allowed_statuses=("succeeded",),
-                )
-                confirmed_pi = result["payment_intent_id"]
-            except HTTPException:
-                raise
-            except Exception as e:
-                raise HTTPException(402, f"SPT validation failed: {e}")
-
-        elif req.payment_intent_id:
-            try:
-                result = await verify_payment_intent(req.payment_intent_id)
-                status = result.get("status")
-                if status != "succeeded":
-                    if os.getenv("STRIPE_SECRET_KEY", "").startswith("sk_test_"):
-                        await confirm_stripe_intent(req.payment_intent_id)
-                        result = await verify_payment_intent(req.payment_intent_id)
-                        status = result.get("status")
-                    if status != "succeeded":
-                        raise HTTPException(402, f"Payment not confirmed (status={status}).")
-                _assert_payment_intent_matches(
-                    result,
-                    amount_cents=amount_cents,
-                    currency=currency,
-                    resource_type="room",
-                    resource_id=room_id,
-                    expected_capture_method="automatic",
-                    allowed_statuses=("succeeded",),
-                )
-                confirmed_pi = req.payment_intent_id
-            except HTTPException:
-                raise
-            except Exception as e:
-                raise HTTPException(402, f"Payment verification failed: {e}")
-
-        else:
-            challenge_headers = build_mpp_challenge(
-                amount_cents=amount_cents,
-                resource=f"emporia:room:{room_id}",
-                currency=room.currency or "usd",
-            )
-            return JSONResponse(
-                status_code=402,
-                content={
-                    "error": "payment_required",
-                    "message": (
-                        f"Room entry fee: {amount_cents} {room.currency or 'usd'} cents. "
-                        "Retry with Authorization: Payment <spt_token>."
-                    ),
-                    "amount_cents": amount_cents,
-                    "resource": f"emporia:room:{room_id}",
-                    "protocol": "emporia:v1+mpp",
-                },
-                headers=challenge_headers,
-            )
+        if isinstance(result, JSONResponse):
+            return result
+        confirmed_pi: str | None = result
 
         record_payment(
             payment_intent_id=confirmed_pi,
@@ -3759,6 +3721,10 @@ async def subscribe_agora_topic(slug: str, req: AgoraSubscribeRequest, request: 
     """
     _require_registered(req.agent_id)
     now = datetime.now(UTC).isoformat()
+
+    # Topic lookup + invite check — DB_LOCK held only for this local read, not across the
+    # network round-trip to Stripe below (holding a process-wide lock across an external
+    # HTTP call would serialize every other request touching the DB for its duration).
     with DB_LOCK, get_db() as conn:
         row = conn.execute("SELECT * FROM agora_topics WHERE slug=?", (slug,)).fetchone()
         if not row:
@@ -3766,8 +3732,8 @@ async def subscribe_agora_topic(slug: str, req: AgoraSubscribeRequest, request: 
         gate = row["gate_type"] if "gate_type" in row.keys() else "open"
         entry_fee = row["entry_fee_cents"] if "entry_fee_cents" in row.keys() else 0
         topic_id = row["topic_id"]
+        creator_id = row["creator_id"]
 
-        # Invite check (applies to both invite and paid_invite)
         if gate in ("invite", "paid_invite"):
             has_invite = conn.execute(
                 "SELECT 1 FROM agora_invites WHERE topic_id=? AND agent_id=?",
@@ -3776,79 +3742,30 @@ async def subscribe_agora_topic(slug: str, req: AgoraSubscribeRequest, request: 
             if not has_invite:
                 raise HTTPException(403, "Invite required — ask the topic creator to invite you")
 
-        # Payment check for paid_invite
-        confirmed_pi = None
-        if gate == "paid_invite" and entry_fee > 0:
-            from emporia.payments import (
-                build_mpp_challenge, extract_mpp_token, confirm_spt,
-                verify_payment_intent, confirm_stripe_intent,
-            )
-            currency = "usd"
-            _assert_agent_budget(req.agent_id, entry_fee)
-            auth_header = request.headers.get("Authorization")
-            spt_token = extract_mpp_token(auth_header)
-            if spt_token:
-                try:
-                    result = await confirm_spt(
-                        spt_token,
-                        entry_fee,
-                        topic_id,
-                        req.agent_id,
-                        "emporia:agora_subscribe",
-                        currency=currency,
-                        capture_method="automatic",
-                        resource_type="agora",
-                    )
-                    result = await verify_payment_intent(result["payment_intent_id"])
-                    _assert_payment_intent_matches(
-                        result,
-                        amount_cents=entry_fee,
-                        currency=currency,
-                        resource_type="agora",
-                        resource_id=topic_id,
-                        expected_capture_method="automatic",
-                        allowed_statuses=("succeeded",),
-                    )
-                    confirmed_pi = result["payment_intent_id"]
-                except HTTPException:
-                    raise
-                except Exception as e:
-                    raise HTTPException(402, f"SPT validation failed: {e}")
-            elif req.payment_intent_id:
-                try:
-                    result = await verify_payment_intent(req.payment_intent_id)
-                    status = result.get("status")
-                    if status != "succeeded":
-                        if os.getenv("STRIPE_SECRET_KEY", "").startswith("sk_test_"):
-                            await confirm_stripe_intent(req.payment_intent_id)
-                            result = await verify_payment_intent(req.payment_intent_id)
-                            status = result.get("status")
-                        if status != "succeeded":
-                            raise HTTPException(402, f"Payment not confirmed (status={status}).")
-                    _assert_payment_intent_matches(
-                        result,
-                        amount_cents=entry_fee,
-                        currency=currency,
-                        resource_type="agora",
-                        resource_id=topic_id,
-                        expected_capture_method="automatic",
-                        allowed_statuses=("succeeded",),
-                    )
-                    confirmed_pi = req.payment_intent_id
-                except HTTPException:
-                    raise
-                except Exception as e:
-                    raise HTTPException(402, f"Payment verification failed: {e}")
-            else:
-                challenge_headers = build_mpp_challenge(entry_fee, f"emporia:agora:{topic_id}")
-                return JSONResponse(
-                    status_code=402,
-                    content={"error": "payment_required", "amount_cents": entry_fee,
-                             "resource": f"emporia:agora:{topic_id}"},
-                    headers=challenge_headers,
-                )
+    # Payment check for paid_invite — outside DB_LOCK (see comment above).
+    confirmed_pi = None
+    currency = "usd"
+    if gate == "paid_invite" and entry_fee > 0:
+        result = await _verify_and_confirm_payment(
+            request,
+            agent_id=req.agent_id,
+            amount_cents=entry_fee,
+            currency=currency,
+            resource_type="agora",
+            resource_id=topic_id,
+            service_type="emporia:agora_subscribe",
+            capture_method="automatic",
+            allowed_statuses=("succeeded",),
+            req_payment_intent_id=req.payment_intent_id,
+            challenge_message=f"Agora entry fee: {entry_fee} {currency} cents.",
+            challenge_resource=f"emporia:agora:{topic_id}",
+        )
+        if isinstance(result, JSONResponse):
+            return result
+        confirmed_pi = result
 
-        # Add member
+    # Add member — re-acquire DB_LOCK for the write, now that payment (if any) is settled.
+    with DB_LOCK, get_db() as conn:
         existing = conn.execute(
             "SELECT 1 FROM agora_members WHERE topic_id=? AND agent_id=?",
             (topic_id, req.agent_id),
@@ -3885,17 +3802,17 @@ async def subscribe_agora_topic(slug: str, req: AgoraSubscribeRequest, request: 
         transfer_id = None
         transfer_status = "no_stripe_account"
         if creator_payout > 0:
-            creator_stripe = AGENT_REGISTRY.get_stripe_account(row["creator_id"])
+            creator_stripe = AGENT_REGISTRY.get_stripe_account(creator_id)
             if creator_stripe:
                 try:
                     from emporia.payments import payout_winner
-                    t = await payout_winner(row["creator_id"], creator_stripe, creator_payout, topic_id)
+                    t = await payout_winner(creator_id, creator_stripe, creator_payout, topic_id)
                     transfer_id = t["transfer_id"]
                     transfer_status = "transferred"
                 except Exception:
                     transfer_status = "transfer_failed"
         record_settlement({
-            "session_id": topic_id, "winner_id": row["creator_id"], "outcome_type": "agora_subscribe",
+            "session_id": topic_id, "winner_id": creator_id, "outcome_type": "agora_subscribe",
             "status": "settled", "total_stake_cents": entry_fee, "platform_fee_cents": platform_fee,
             "winner_payout_cents": creator_payout, "platform_fee_bps": OPERATOR_FEE_BPS,
             "payment_intent_ids": [confirmed_pi], "transfer_id": transfer_id, "transfer_status": transfer_status,

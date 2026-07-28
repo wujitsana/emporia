@@ -139,7 +139,8 @@ Note: `HERMES_PTGS_STRIPE_RELAY_BASE` is a hackathon convention, not an official
 
 ## What was NOT built (honest scope)
 
-- Real Stripe Connect transfers (settlement calculation is accurate; wire transfer needs Connect setup)
+- Live-mode Stripe Connect onboarding (Account Links / KYC) — test-mode transfers work end-to-end
+  today via auto-provisioned test Connected Accounts; see `ROADMAP.md` § Payments
 - Live federation network (two local relays work; peer discovery directory is not built; peer
   responses are not signature-verified — see `SECURITY.md`)
 - The `viewer_id`/`agent_id`-as-proof-of-identity pattern used by several REST GET endpoints

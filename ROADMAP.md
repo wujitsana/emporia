@@ -13,15 +13,16 @@ this is what a judge or future contributor should know is intentionally not done
 **Full remediation of `SECURITY.md`'s hardening roadmap.** The hackathon pass fixed the critical
 items that were cheap and demo-safe (mandatory signatures, inbox/agora caller auth, CORS
 allowlist); the post-hackathon hardening pass fixed the Docker-gateway auth-bypass, WebSocket
-authentication, the registration-challenge TOCTOU race, and closed open registration by default
-(see `SECURITY.md`'s "Fixed post-hackathon" table). Still open: the broader `viewer_id`-as-proof
-pattern across several REST endpoints (rooms, agoras — found while fixing WS auth, same root
-cause, bigger surface), federation peer signature verification, payment-amount cross-validation,
-payment idempotency, guardrails' regex-bypass limitation. See `SECURITY.md` for severity and fix
-direction on each.
+authentication, the registration-challenge TOCTOU race, closed open registration by default, and
+deduplicated the payment verify/confirm path (see `SECURITY.md`'s "Fixed post-hackathon" table —
+that pass also found that two items previously listed here as open, payment-amount
+cross-validation and payment-recording idempotency, were already implemented; the roadmap here
+was stale, not the code — see `SECURITY.md`'s "Verified as non-issues"). Still open: the broader
+`viewer_id`-as-proof pattern across several REST endpoints (rooms, agoras — found while fixing WS
+auth, same root cause, bigger surface), federation peer signature verification, guardrails'
+regex-bypass limitation. See `SECURITY.md` for severity and fix direction on each.
 - *Effort:* `viewer_id` REST fix (small-medium — five endpoints plus their dashboard call sites),
-  federation signing (medium — needs a signed-batch format), payment validation + idempotency
-  (small each).
+  federation signing (medium — needs a signed-batch format).
 
 **Agent's own outbound WS tunnel has no credential path to a non-co-located relay.** Now that
 `/ws/agent/{agent_id}` requires authentication, `tunnel.py`'s `maintain_relay_tunnel()` and
@@ -40,6 +41,16 @@ human-mediated browser dashboard, not this outbound tunnel.
 
 ## Architecture cleanup
 
+**Done (post-hackathon hardening pass):** payment verify/confirm logic (SPT check, direct-PI
+check, cross-validation, MPP 402 challenge) was duplicated near-verbatim across session join,
+room join, and Agora subscribe. Extracted into a single `_verify_and_confirm_payment()` in
+`relay_server.py`. (The Agora path's `payment_intent_id` field this entry used to say was
+missing — it wasn't; that claim was already stale before this pass, see `SECURITY.md`.) Also
+fixed while touching this code: Agora subscribe held `DB_LOCK` across the Stripe network
+round-trip, serializing every other DB-touching request for its duration — split into two lock
+scopes, matching how session/room join already did it. See `SECURITY.md`'s "Fixed
+post-hackathon" table.
+
 **MCP server and `agent_sdk.py` independently re-implement the same relay calls.** Both wrap the
 same ~20 REST endpoints with separate HTTP client code; a bug fix (e.g. today's signature changes)
 has to be applied in both places by hand. `agent_sdk.py` already carries fixes the MCP layer
@@ -47,12 +58,6 @@ doesn't share (WS reconnect backoff, URL-scheme handling).
 - *Why deferred:* a real refactor (MCP tools delegate to `EmporiaAgent` methods) touches the
   request/response shape of every MCP tool — needs its own testing pass, too risky pre-deadline.
 - *Effort:* medium-large.
-
-**Payment verify/confirm logic is duplicated three times** (session join, room join, Agora
-subscribe) instead of one shared helper. The Agora path is also incomplete —
-`AgoraSubscribeRequest` has no `payment_intent_id` field, so the `stripe_pi` fallback there is a
-no-op; only the SPT/MPP rails work for paid Agora subscriptions today.
-- *Effort:* small (extract `_verify_and_confirm_payment()`, add the missing field).
 
 **Two independent `GameRegistry` instances** (MCP-local SQLite vs. relay) reconciled only by
 manual `export_challenge`/`import_challenge` MCP calls — no automatic sync, no conflict
@@ -69,11 +74,21 @@ participants/actions/payments/settlements/audit files together.
 
 ## Payments
 
-**Real Stripe Connect transfers are not wired up.** Settlement math (97.5%/2.5% split) is
-accurate and recorded, but the actual wire transfer to a winner's Connected Account needs Stripe
-Connect onboarding that wasn't built for hackathon scope — `transfer_status` stays
-`pending_connect` in test mode.
-- *Effort:* medium — Connect account onboarding flow + webhook handling for transfer completion.
+**Stripe Connect transfers work end-to-end in test mode; live mode has no onboarding path.**
+Correcting an earlier version of this entry that said transfers "are not wired up" — they are:
+`settle()`/`payout_winner()` (session outcomes) and the equivalent path in room/Agora entry-fee
+splits all call real Stripe Connect transfer APIs, and `register_agent()` auto-provisions each
+agent a test-mode Custom Connected Account with `transfers` capability
+(`create_connected_account()` — Stripe auto-approves Custom accounts in test mode, no manual
+verification needed) — `transfer_status` reaches `transferred`, not stuck at `pending_connect`,
+whenever the payee has an account. The actual gap is narrower and live-mode-only: that
+auto-provisioning is gated to `sk_test_` keys, so a real operator's agents have no way to obtain a
+*live* Connected Account — that requires Stripe's Account Links onboarding flow (redirect the
+agent's operator through Stripe-hosted KYC), which isn't built. `transfer_status` only stays
+`pending_connect` when the payee has no Connected Account at all — expected behavior, not a bug,
+in either mode.
+- *Effort:* medium — Account Links onboarding flow (redirect + return-URL handling) + webhook
+  handling for `account.updated` (capability becomes active asynchronously after real KYC).
 
 ## Federation
 

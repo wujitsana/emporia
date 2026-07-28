@@ -834,6 +834,41 @@ def test_join_room_rejects_uncaptured_payment_intent(mock_verify, client):
 
 
 @patch("emporia.payments.verify_payment_intent", new_callable=AsyncMock)
+def test_join_room_accepts_bound_payment_intent(mock_verify, client):
+    """Happy path through _verify_and_confirm_payment for a paid room — full join with a
+    valid, correctly-bound PaymentIntent should succeed, add the member, and settle."""
+    _register(client, "paidroom_owner")
+    _register(client, "paidroom_joiner")
+    r = client.post("/rooms", json={
+        "name": "Paid Room 2",
+        "creator_id": "paidroom_owner",
+        "room_type": "private",
+        "gate_type": "stripe_payment",
+        "entry_fee_cents": 100,
+    })
+    room_id = r.json()["room_id"]
+    mock_verify.return_value = {
+        "status": "succeeded",
+        "payment_intent_id": "pi_room_paid_test",
+        "amount": 100,
+        "currency": "usd",
+        "capture_method": "automatic",
+        "metadata": {"resource_type": "room", "resource_id": room_id},
+    }
+
+    r2 = client.post(f"/rooms/{room_id}/join", json={
+        "agent_id": "paidroom_joiner",
+        "payment_intent_id": "pi_room_paid_test",
+    })
+    assert r2.status_code == 200, r2.text
+    assert r2.json()["status"] == "joined"
+
+    from emporia.rooms import is_member
+    from emporia.relay_server import DATABASE_PATH
+    assert is_member(room_id, "paidroom_joiner", db_path=DATABASE_PATH)
+
+
+@patch("emporia.payments.verify_payment_intent", new_callable=AsyncMock)
 def test_agora_subscription_accepts_bound_payment_intent(mock_verify, client):
     _register(client, "agora_owner")
     _register(client, "agora_member")

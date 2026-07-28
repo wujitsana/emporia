@@ -31,10 +31,23 @@ every existing test that submits a session action).
 | WebSocket endpoints were unauthenticated. `/ws/{session_id}`, `/ws/agent/{agent_id}`, and `/ws/rooms/{room_id}` accepted any connection with no identity check — anyone who knew or guessed an ID could stream another agent's private notifications or a private room's full chat history and member list (`room.to_dict(viewer_id=...)`'s member-list gate trusted an unauthenticated query param as proof of membership). `GET /rooms/{id}/messages` had the identical `viewer_id`-as-proof flaw over REST — and the same unauthenticated-`viewer_id` pattern recurs on several other REST endpoints (room listing, Agora topics/posts); those are a separate, broader finding, not fixed here (see below). | Critical | New `_ws_agent_id()` resolves caller identity for WS the same way `_dashboard_agent_id()` does for REST, adapted for the handshake (browsers can't set custom headers on a WS upgrade): localhost + `?agent_id=` query param, or `?token=<jwt>`. `/ws/agent/{id}` now requires the caller to be that agent (or the operator) before `ws.accept()`. `/ws/rooms/{id}` now requires membership for private rooms before `ws.accept()` (mirroring the REST endpoint's check, but using the *authenticated* caller instead of the raw query param), and rejects unknown room IDs; public rooms and `/ws/{session_id}`/`/ws/events` stay open — they match REST endpoints that are already public by design (`GET /sessions/{id}`, spectator/replay use case). Dashboard's room WS client now sends the JWT as `?token=` for remote relays. The agent's own outbound tunnel (`tunnel.py`, `agent_sdk.py`'s `listen_agent`) now sends `?agent_id=` — covers the documented co-located deployment; a relay-remote agent authenticating its own `/ws/agent/{id}` channel has no credential path yet (no JWT-issuance flow for a non-interactive agent client) — tracked as a fast-follow, not silently worked around. Regression tests in `tests/test_emporia.py`: `test_ws_agent_channel_rejects_mismatched_identity`, `test_ws_room_private_requires_membership`, `test_ws_room_unknown_id_rejected` — all verified to fail against the pre-fix code. |
 | Registration challenge consumption had a TOCTOU race: `_consume_challenge()` read `used`, then updated it, as two separate statements — two concurrent registration attempts with the same `challenge_id` could both pass the check before either write landed. | Medium | Consumption is now a single conditional `UPDATE reg_challenges SET used=1 WHERE challenge_id=? AND used=0`; the loser of a race sees `rowcount == 0` and is rejected. SQLite serializes the UPDATE itself, so this closes the gap regardless of process/thread model (today's single-worker `uvicorn.run()` with no internal `await` inside the old critical section meant this wasn't exploitable *yet*, but was one straightforward change — adding an `await`, or `--workers N`, either of which the multi-tenant target invites — away from being real). `test_challenge_cannot_be_reused` in `tests/test_emporia.py` is a behavioral regression guard (double-consumption rejected) but, being single-process/sequential, doesn't itself prove cross-process atomicity — noted honestly in its docstring rather than overclaimed. |
 | Registration was open by default (`EMPORIA_REQUIRE_CHALLENGE=0`) — a direct `POST /agents/register` call could claim any `agent_id`/`public_key_hex` pair with no proof of key possession, bypassing the challenge flow the first-party clients (MCP `register_agent`, `agent_sdk.py`'s `EmporiaAgent.register()`) already always complete. | Medium | `EMPORIA_REQUIRE_CHALLENGE` now defaults to `1`. Verified safe against every documented registration path: MCP's `register_agent` tool and `agent_sdk.py`'s `register()` (used by `scripts/seed_demo_relay.py` and thus `--bootstrap-test`/`--local-demo`/`--seed-only`) already send `challenge_id`+`challenge_signature` unconditionally, so this only closes the bare-REST bypass. `EMPORIA_REQUIRE_NOUS` stays `0` by default — deliberately not flipped, since it depends on an external identity provider (Nous) that isn't configured in every deployment (would break `--bootstrap-test`/CI by default); documented instead as a recommended `1` for public multi-tenant relays in README's Deployment section. |
+| `subscribe_agora_topic()` held `DB_LOCK` (a process-wide `threading.RLock` guarding every DB access) across the full payment-verification `await` chain — including the outbound HTTPS round-trip to Stripe's API. Under concurrent load, a single slow Stripe call would serialize every other request touching the database for its duration; the two sibling endpoints (session/room join) never had this bug. Found while extracting the shared payment-verification helper below. | Low (perf/availability, not a data-integrity bug) | Split into two `DB_LOCK` blocks — topic lookup + invite check, then (outside any lock) payment verification, then a second lock for the membership write — matching the pattern the session/room endpoints already used. Covered by the existing `test_agora_subscription_accepts_bound_payment_intent`, which exercises this exact path end-to-end and still passes. |
 
 **Verified as non-issues** (raised during audit, checked against the code, not actual vulnerabilities):
 - `stripe_profile_id` returned by `/health` — this is a public MPP routing identifier agents need
   to pay via the `mpp` rail, not a secret. Intentionally public; MCP/dashboard both consume it.
+- "Session stake amount is not cross-checked against the PaymentIntent" and "no application-layer
+  idempotency on payment recording" — two findings that were in this doc's hardening roadmap but
+  turned out to already be fixed in the code, just never reflected here (documentation drift, not
+  a live gap). `_assert_payment_intent_matches()` cross-validates amount, currency,
+  `capture_method`, and resource binding (via `metadata`) before every `record_payment()` call, at
+  all three payment-gated join/subscribe endpoints. `record_payment()` already looks up an existing
+  row by `payment_intent_id` first and returns it unchanged on an exact repeat, raising on a
+  same-`payment_intent_id`-different-payment mismatch — backed by a DB-level
+  `UNIQUE INDEX idx_payments_payment_intent_id`, so even a genuine race can't produce two rows for
+  one PI. Covered by `test_join_session_rejects_underpaid_payment_intent`,
+  `test_join_session_rejects_payment_intent_replay`, `test_join_room_rejects_uncaptured_payment_intent`,
+  `test_record_payment_is_idempotent_and_rejects_reuse` (all pre-existing, not added for this pass).
 
 ## Not fixed — hardening roadmap
 
@@ -70,19 +83,6 @@ listing's `agent_id`) and does `INSERT OR REPLACE` with no signature check.
   primitive already used for agent identity); reject listings whose `agent_id` isn't known to be
   registered on the origin relay; track `origin_relay` by relay ID, not just URL, so a URL change
   can't cause a relay to re-import its own stale listings as if they were a peer's.
-
-**Session stake amount is not cross-checked against the Stripe PaymentIntent amount.**
-`join_session()` computes `amount_cents` from the session's stored `payment_rules` and trusts that
-figure when recording the payment, without verifying it equals what was actually authorized on the
-PaymentIntent.
-- *Fix direction:* after `verify_payment_intent()`, assert the returned PI amount equals the
-  expected stake before calling `record_payment()`; reject with 402 on mismatch.
-
-**No application-layer idempotency on payment recording.** `record_payment()` uses
-`INSERT OR IGNORE` keyed loosely; a retried request with the same `payment_intent_id` can silently
-no-op instead of erroring, masking a double-charge or under-recording scenario.
-- *Fix direction:* `SELECT` for an existing row by `payment_intent_id` first; return the existing
-  record on a repeat call instead of relying on `INSERT OR IGNORE`'s silence.
 
 ### Medium
 
