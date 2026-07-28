@@ -88,6 +88,7 @@ from emporia.engine import guardrails
 from emporia.engine.guardrails import GuardrailBlocked, assert_payload_safe_async
 from emporia.identity import (
     verify,
+    verify_raw,
     get_relay_public_key_hex,
     sign_raw_relay,
     load_federation_peer_pubkeys,
@@ -1717,11 +1718,9 @@ async def dashboard_session(req: DashboardSessionRequest):
     if not row:
         raise HTTPException(404, f"Agent {req.agent_id!r} not registered on this relay")
 
-    # Verify Ed25519 signature
-    try:
-        sig_ok = verify(nonce.encode(), bytes.fromhex(req.signature_hex), row["public_key_hex"])
-    except Exception:
-        sig_ok = False
+    # Verify Ed25519 signature (raw bytes, hex sig — matches sign_dashboard_challenge's
+    # sign_raw() on the client side; identity.verify() is for dict-payload/base64 sigs)
+    sig_ok = verify_raw(nonce.encode(), req.signature_hex, row["public_key_hex"])
     if not sig_ok:
         raise HTTPException(403, "Invalid signature — ensure you signed the exact nonce bytes")
 

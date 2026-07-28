@@ -171,6 +171,18 @@ def verify(payload: dict[str, Any], sig_b64: str, pubkey_hex: str) -> bool:
         return False
 
 
+def verify_raw(data: bytes, sig_hex: str, pubkey_hex: str) -> bool:
+    """Verify a hex Ed25519 signature over raw bytes. Counterpart to sign_raw()."""
+    try:
+        pub_bytes = bytes.fromhex(pubkey_hex)
+        sig_bytes = bytes.fromhex(sig_hex)
+        pub_key = ed25519.Ed25519PublicKey.from_public_bytes(pub_bytes)
+        pub_key.verify(sig_bytes, data)
+        return True
+    except Exception:
+        return False
+
+
 def verify_handshake_proof(challenge_frame: dict[str, Any], signature_hex: str) -> bool:
     """Verify a challenge-response handshake proof (hex signature over sorted JSON challenge)."""
     try:

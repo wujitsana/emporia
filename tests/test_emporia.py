@@ -2089,6 +2089,83 @@ def test_ws_agent_channel_header_auth_also_gated_by_flag():
 
 
 # ============================================================================
+# Dashboard JWT auth (the only auth tier that works over a real network — header
+# auth is loopback/Docker-gateway-only per EMPORIA_TRUST_LOCAL_HEADER_AUTH)
+# ============================================================================
+
+def _dashboard_jwt(client, agent_id: str) -> str:
+    """Full /dashboard/challenge -> sign_raw -> /dashboard/session round trip, returning
+    the issued Bearer token, exactly as sign_dashboard_challenge (mcp_server.py) does it."""
+    from emporia.identity import sign_raw
+    ch = client.post("/dashboard/challenge").json()
+    sig_hex = sign_raw(ch["nonce"].encode(), agent_id)
+    r = client.post("/dashboard/session", json={
+        "agent_id": agent_id,
+        "challenge_id": ch["challenge_id"],
+        "signature_hex": sig_hex,
+    })
+    assert r.status_code == 200, r.text
+    return r.json()["token"]
+
+
+def test_dashboard_jwt_round_trip_authenticates_with_header_auth_off():
+    """Regression for a dead code path: identity.verify() takes a base64 sig over a dict
+    payload, but dashboard_session() was calling it with a hex sig over raw bytes (the
+    shape sign_raw() actually produces) — bytes + str in the b64 decode raised TypeError,
+    swallowed by a bare except, so verify() returned False unconditionally and no dashboard
+    JWT could ever be issued. With EMPORIA_TRUST_LOCAL_HEADER_AUTH off (the real production
+    default), this was the *only* working auth path — so this bug meant no authentication
+    worked on a public relay at all. Uses the flag-off simulation from
+    test_header_auth_not_trusted_when_flag_off so the JWT path is exercised in isolation,
+    not incidentally alongside still-trusted loopback headers.
+    """
+    from emporia import relay_server
+
+    with patch.object(relay_server, "_HEADER_AUTH_TRUSTED_HOSTS", set()):
+        client = TestClient(app, client=("127.0.0.1", 51216))
+        _register_keyed(client, "jwt_owner")
+        token = _dashboard_jwt(client, "jwt_owner")
+
+        r = client.get("/agents/jwt_owner/inbox", headers={"Authorization": f"Bearer {token}"})
+        assert r.status_code == 200
+
+        r = client.get("/agents/jwt_owner/inbox")
+        assert r.status_code == 403
+
+
+def test_dashboard_jwt_rejects_wrong_key_signature():
+    from emporia import relay_server
+
+    with patch.object(relay_server, "_HEADER_AUTH_TRUSTED_HOSTS", set()):
+        client = TestClient(app, client=("127.0.0.1", 51216))
+        _register_keyed(client, "jwt_victim")
+        from emporia.identity import sign_raw
+        ch = client.post("/dashboard/challenge").json()
+        wrong_sig = sign_raw(ch["nonce"].encode(), "jwt_attacker")
+        r = client.post("/dashboard/session", json={
+            "agent_id": "jwt_victim",
+            "challenge_id": ch["challenge_id"],
+            "signature_hex": wrong_sig,
+        })
+        assert r.status_code == 403
+
+
+def test_dashboard_jwt_scoped_to_issuing_relay():
+    """A token's relay_id claim must match this relay's RELAY_ID — a token minted by a
+    different relay process (or a differently-configured test run) must not verify here."""
+    from emporia import relay_server
+
+    with patch.object(relay_server, "_HEADER_AUTH_TRUSTED_HOSTS", set()):
+        client = TestClient(app, client=("127.0.0.1", 51216))
+        _register_keyed(client, "jwt_cross_relay")
+        token = _dashboard_jwt(client, "jwt_cross_relay")
+
+        with patch.object(relay_server, "RELAY_ID", "a-different-relay-id"):
+            r = client.get("/agents/jwt_cross_relay/inbox", headers={"Authorization": f"Bearer {token}"})
+            assert r.status_code == 403
+
+
+# ============================================================================
 # WebSocket auth
 # ============================================================================
 
