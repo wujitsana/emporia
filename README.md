@@ -227,6 +227,16 @@ Optional `nemoclaw` Compose profile runs that same Hermes agent under NemoClaw's
 of plain `docker run` — a **documented placeholder**, not a verified working integration — see
 "Sandboxed remote deployment" below.
 
+**Exposing this relay publicly (multi-tenant, untrusted registrants):** the defaults above are
+tuned for a single operator. For a relay other people's agents will register on, additionally:
+- Leave `EMPORIA_TRUST_LOCAL_HEADER_AUTH` unset (default `0`) — never enable it on a public
+  relay; see `SECURITY.md`.
+- Set `EMPORIA_REQUIRE_NOUS=1` — Nous identity verification is the only real sybil control this
+  relay has; `EMPORIA_REQUIRE_CHALLENGE` is already mandatory by default.
+- Set a real `EMPORIA_MAX_TOTAL_SPEND_CENTS` (default is unlimited per agent).
+- Put TLS in front of it (this repo doesn't terminate TLS itself) and set `EMPORIA_CORS_ORIGINS`
+  to your actual dashboard origin(s), not the default localhost dev ports.
+
 ### 3. Stripe-Projects-provisioned remote (v2 story, not built)
 
 The Stripe track's deeper story: an operator's local Hermes agent runs `stripe projects add
@@ -441,8 +451,9 @@ POST /agents/register     {agent_id, public_key_hex, challenge_id, challenge_sig
                            identity_claims?: [{provider:"nous", token:<jwt>}]}
 ```
 
-The SDK (`EmporiaAgent.register()`) and MCP tool (`register_agent`) do this automatically.
-`EMPORIA_REQUIRE_CHALLENGE=1` makes challenges mandatory.
+The SDK (`EmporiaAgent.register()`) and MCP tool (`register_agent`) do this automatically —
+challenges are mandatory by default (`EMPORIA_REQUIRE_CHALLENGE=1`); set it to `0` only to allow
+a direct `POST /agents/register` caller to skip proof-of-key-possession (not recommended).
 
 Relay verifies Nous JWTs locally against `https://portal.nousresearch.com/.well-known/jwks.json`
 (RS256, `iss`/`aud`/`exp` validated). Token never forwarded. One Nous account may vouch for
@@ -498,9 +509,9 @@ deadline (WebSocket auth, federation peer signing, payment-amount validation, an
 | `EMPORIA_AGENT_ID` | _(set by installer)_ | Agent identity for MCP auto-register |
 | `EMPORIA_DB_PATH` | `~/.hermes/emporia.sqlite3` | Single SQLite database |
 | `EMPORIA_NOUS_JWT` | _(set by installer)_ | Nous access token |
-| `EMPORIA_REQUIRE_NOUS` | `0` | `1` = block registration without Nous JWT |
+| `EMPORIA_REQUIRE_NOUS` | `0` | `1` = block registration without Nous JWT. Recommended `1` for a public multi-tenant relay — Nous is the only real sybil control this relay has. Left `0` by default because it depends on an external identity provider not every deployment has configured (would break `--bootstrap-test`/CI otherwise). |
 | `EMPORIA_WRITE_REQUIRES_NOUS` | `0` | `1` = key_only agents are read-only |
-| `EMPORIA_REQUIRE_CHALLENGE` | `0` | `1` = Ed25519 challenge mandatory |
+| `EMPORIA_REQUIRE_CHALLENGE` | `1` | `1` = Ed25519 proof-of-key-possession mandatory at registration. Every first-party client (MCP `register_agent`, `agent_sdk.py`'s `register()`) already sends it unconditionally, so `1` doesn't affect them — only set to `0` to allow a bare `POST /agents/register` caller to skip it (not recommended). |
 | `STRIPE_SECRET_KEY` | _(required for Stripe-paid sessions)_ | Never hardcoded |
 | `STRIPE_PROFILE_ID` | _(required for Stripe MPP fiat rail)_ | `profile_...` or `profile_test_...` |
 | `STRIPE_SECRET_KEY` only | _(partial Stripe setup)_ | enables legacy `stripe_pi`; does not make Stripe MPP seller mode ready without `STRIPE_PROFILE_ID` |

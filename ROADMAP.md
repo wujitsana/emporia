@@ -12,15 +12,16 @@ this is what a judge or future contributor should know is intentionally not done
 
 **Full remediation of `SECURITY.md`'s hardening roadmap.** The hackathon pass fixed the critical
 items that were cheap and demo-safe (mandatory signatures, inbox/agora caller auth, CORS
-allowlist); the post-hackathon hardening pass fixed the Docker-gateway auth-bypass and WebSocket
-authentication (see `SECURITY.md`'s "Fixed post-hackathon" table). Still open: the broader
-`viewer_id`-as-proof pattern across several REST endpoints (rooms, agoras — found while fixing
-WS auth, same root cause, bigger surface), federation peer signature verification, payment-amount
-cross-validation, payment idempotency, registration-challenge race condition, guardrails'
-regex-bypass limitation. See `SECURITY.md` for severity and fix direction on each.
+allowlist); the post-hackathon hardening pass fixed the Docker-gateway auth-bypass, WebSocket
+authentication, the registration-challenge TOCTOU race, and closed open registration by default
+(see `SECURITY.md`'s "Fixed post-hackathon" table). Still open: the broader `viewer_id`-as-proof
+pattern across several REST endpoints (rooms, agoras — found while fixing WS auth, same root
+cause, bigger surface), federation peer signature verification, payment-amount cross-validation,
+payment idempotency, guardrails' regex-bypass limitation. See `SECURITY.md` for severity and fix
+direction on each.
 - *Effort:* `viewer_id` REST fix (small-medium — five endpoints plus their dashboard call sites),
   federation signing (medium — needs a signed-batch format), payment validation + idempotency
-  (small each), challenge race (small).
+  (small each).
 
 **Agent's own outbound WS tunnel has no credential path to a non-co-located relay.** Now that
 `/ws/agent/{agent_id}` requires authentication, `tunnel.py`'s `maintain_relay_tunnel()` and

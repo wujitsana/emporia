@@ -120,8 +120,10 @@ RELAY_ID = os.getenv("EMPORIA_RELAY_ID", secrets.token_urlsafe(8))
 REQUIRE_NOUS = os.getenv("EMPORIA_REQUIRE_NOUS", "0").strip() == "1"
 # Set EMPORIA_WRITE_REQUIRES_NOUS=1 to restrict key_only agents to read-only (GET) access.
 WRITE_REQUIRES_NOUS = os.getenv("EMPORIA_WRITE_REQUIRES_NOUS", "0").strip() == "1"
-# Set EMPORIA_REQUIRE_CHALLENGE=1 to mandate Ed25519 proof-of-key-possession at registration.
-REQUIRE_CHALLENGE = os.getenv("EMPORIA_REQUIRE_CHALLENGE", "0").strip() == "1"
+# Set EMPORIA_REQUIRE_CHALLENGE=0 to allow registration without proof-of-key-possession
+# (default mandatory — every first-party client already completes the challenge round-trip
+# unconditionally, so this only weakens a direct REST caller's requirements; not recommended).
+REQUIRE_CHALLENGE = os.getenv("EMPORIA_REQUIRE_CHALLENGE", "1").strip() == "1"
 OPERATOR_FEE_BPS = int(os.getenv("OPERATOR_FEE_BPS", "250"))
 MAX_TOTAL_SPEND_CENTS = int(os.getenv("EMPORIA_MAX_TOTAL_SPEND_CENTS", "0"))
 TEMPO_ENABLED = os.getenv("EMPORIA_MPP_TEMPO_ENABLED", "0").strip() == "1"
@@ -1617,20 +1619,28 @@ async def create_registration_challenge():
 
 
 def _consume_challenge(challenge_id: str, public_key_hex: str, signature_hex: str) -> None:
-    """Verify and consume a registration challenge. Raises HTTPException on any failure."""
+    """Verify and consume a registration challenge. Raises HTTPException on any failure.
+
+    Consumption is a single conditional UPDATE (used=0 → used=1), not a separate
+    check-then-write — two concurrent requests racing the same challenge_id can't both
+    pass, because SQLite serializes the UPDATE itself; whichever loses sees rowcount==0.
+    """
     with DB_LOCK, get_db() as conn:
         row = conn.execute(
-            "SELECT nonce, expires_at, used FROM reg_challenges WHERE challenge_id = ?",
+            "SELECT nonce, expires_at FROM reg_challenges WHERE challenge_id = ?",
             (challenge_id,),
         ).fetchone()
         if not row:
             raise HTTPException(400, "Unknown challenge_id — request a new one via POST /agents/challenge")
-        if row["used"]:
-            raise HTTPException(400, "Challenge already used — request a new one")
         if datetime.fromisoformat(row["expires_at"]) < datetime.now(UTC):
             raise HTTPException(400, "Challenge expired — request a new one")
         nonce = row["nonce"]
-        conn.execute("UPDATE reg_challenges SET used = 1 WHERE challenge_id = ?", (challenge_id,))
+        cur = conn.execute(
+            "UPDATE reg_challenges SET used = 1 WHERE challenge_id = ? AND used = 0",
+            (challenge_id,),
+        )
+        if cur.rowcount == 0:
+            raise HTTPException(400, "Challenge already used — request a new one")
 
     # Verify Ed25519 signature of the nonce
     try:

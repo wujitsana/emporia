@@ -201,6 +201,82 @@ def test_register_agent_success(client):
     assert r.json()["status"] == "registered"
 
 
+def _signed_challenge(client, profile_id: str) -> dict:
+    """POST /agents/challenge, sign the nonce with a real Ed25519 key, and return the
+    challenge_id/signature/public_key_hex a real register_agent MCP call would send."""
+    from emporia.identity import generate_or_load_keypair, sign_raw
+    _, pub_bytes = generate_or_load_keypair(profile_id)
+    ch = client.post("/agents/challenge").json()
+    sig_hex = sign_raw(ch["nonce"].encode(), profile_id)
+    return {
+        "challenge_id": ch["challenge_id"],
+        "challenge_signature": sig_hex,
+        "public_key_hex": pub_bytes.hex(),
+    }
+
+
+def test_require_challenge_defaults_true_in_source():
+    """The test suite forces EMPORIA_REQUIRE_CHALLENGE=0 at import time (permissive
+    default for every other test), which masks the relay's actual default — this asserts
+    the source-level default directly, as a guard against silently flipping it back."""
+    import inspect
+    from emporia import relay_server
+    src = inspect.getsource(relay_server)
+    assert 'os.getenv("EMPORIA_REQUIRE_CHALLENGE", "1")' in src
+
+
+@patch("emporia.relay_server.REQUIRE_CHALLENGE", True)
+def test_register_agent_requires_challenge_when_mandatory(client):
+    r = client.post("/agents/register", json={
+        "agent_id": "no_challenge_agent",
+        "public_key_hex": "c" * 64,
+    })
+    assert r.status_code == 400
+
+
+@patch("emporia.relay_server.REQUIRE_CHALLENGE", True)
+def test_register_agent_with_valid_challenge_succeeds(client):
+    with tempfile.TemporaryDirectory() as d:
+        from emporia import identity
+        with patch.object(identity, "KEY_DIR", Path(d)):
+            proof = _signed_challenge(client, "challenge_agent")
+            r = client.post("/agents/register", json={"agent_id": "challenge_agent", **proof})
+            assert r.status_code == 200
+            assert r.json()["status"] == "registered"
+
+
+def test_challenge_cannot_be_reused(client):
+    """A challenge_id can only ever consume once — a second registration attempt reusing
+    it (even with a validly re-derived signature) is rejected as already-used.
+
+    Note: this exercises sequential double-consumption, which the pre-fix code already
+    rejected too (DB_LOCK serializes the whole check-then-write within one process) — it
+    does not by itself prove the TOCTOU race (SECURITY.md) is closed, since that only
+    manifests across multiple processes sharing one DB file, which this single-process
+    test suite doesn't exercise. Kept as a behavioral regression guard regardless."""
+    with tempfile.TemporaryDirectory() as d:
+        from emporia import identity
+        with patch.object(identity, "KEY_DIR", Path(d)):
+            proof = _signed_challenge(client, "reuse_agent")
+            r1 = client.post("/agents/register", json={"agent_id": "reuse_agent", **proof})
+            assert r1.status_code == 200
+            # Same challenge_id + signature again — must fail, not re-register/no-op
+            r2 = client.post("/agents/register", json={"agent_id": "reuse_agent_2", **proof})
+            assert r2.status_code == 400
+            assert "already used" in r2.json()["detail"].lower()
+
+
+def test_challenge_unknown_id_rejected(client):
+    r = client.post("/agents/register", json={
+        "agent_id": "ghost_agent",
+        "public_key_hex": "d" * 64,
+        "challenge_id": "ch_does_not_exist",
+        "challenge_signature": "00" * 64,
+    })
+    assert r.status_code == 400
+    assert "unknown challenge_id" in r.json()["detail"].lower()
+
+
 # ============================================================================
 # Listings
 # ============================================================================
