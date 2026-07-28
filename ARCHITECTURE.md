@@ -140,13 +140,25 @@ Payment gate is at join (challenger pays; creator joins free — intentional).
 
 ```
 private/session_id.jsonl  — full event log, never shared
-public/session_id.jsonl   — SHA-256 hash-chained receipts
+public/session_id.jsonl   — hash-chained receipts, each including the full action payload
   block_hash = SHA256(prev_hash:sender:action:payload:signature)
 ```
 
-Dispute resolution: share the public log; verifier recomputes the chain.
-`GET /sessions/{id}/audit` does this server-side and returns `{verified, message, chain}` —
-the dashboard renders this as a "✓ chain verified (N)" badge on each session.
+"Public" names the **chain-verification model**, not an access-control tier: the public log
+is a self-contained, independently-verifiable record (anyone holding a copy can recompute the
+hash chain without trusting the relay's word for it), which is what makes it useful for
+dispute resolution outside the relay — but it is not redacted. `log_public_receipt()`
+(`session_audit.py`) writes the full `payload` into each entry alongside the hash, so
+`GET /sessions/{id}/audit`'s content is exactly as sensitive as `GET /sessions/{id}/actions`
+and is gated the same way (`_session_viewer_allowed()` — public sessions readable by anyone,
+participants-only sessions require participation; see "Session content visibility" above).
+Dispute resolution still works the same way — the operator or a participant chooses to hand
+the log to an external verifier — that's now a deliberate disclosure decision by someone with
+read access, not something the relay does for anyone by default.
+
+`GET /sessions/{id}/audit` recomputes and verifies the chain server-side and returns
+`{verified, message, chain}` — the dashboard renders this as a "✓ chain verified (N)" badge on
+each session.
 
 ## Stripe integration
 
