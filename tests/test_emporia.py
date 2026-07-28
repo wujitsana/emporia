@@ -90,6 +90,27 @@ def client():
     return TestClient(app, client=("127.0.0.1", 51216))
 
 
+@pytest.fixture
+def prod_client():
+    """Simulates the real shipped-default production topology: header-auth trust is OFF
+    (EMPORIA_TRUST_LOCAL_HEADER_AUTH=0 is the default outside this test suite — see
+    test_header_auth_not_trusted_when_flag_off), so X-Emporia-Agent-Id is never trusted and
+    the *only* way to authenticate is the /dashboard/challenge -> Bearer JWT flow (bearer_for
+    below). Tests written against `client` alone exercise a permissive dev-loop configuration
+    that most of the codebase's real security properties never actually run under — this is
+    what closed that gap (see N1 review, "the suite tests a configuration we don't ship")."""
+    from emporia import relay_server
+    with patch.object(relay_server, "_HEADER_AUTH_TRUSTED_HOSTS", set()):
+        yield TestClient(app, client=("127.0.0.1", 51216))
+
+
+def bearer_for(client, agent_id: str) -> dict:
+    """Authorization header for `agent_id` via the real challenge/JWT round trip. The agent
+    must already be registered with a real keypair (_register_keyed) — the signature has to
+    verify against a key the relay actually has on file."""
+    return {"Authorization": f"Bearer {_dashboard_jwt(client, agent_id)}"}
+
+
 # ============================================================================
 # Health + Agent Card
 # ============================================================================
@@ -792,6 +813,158 @@ def test_ws_session_requires_participant_for_private_module(client):
     with client.websocket_connect(f"/ws/{session_id}?agent_id=vis_ws_buyer") as ws:
         frame = ws.receive_json()
         assert frame["type"] == "init"
+
+
+# ============================================================================
+# Session content visibility under real (JWT-only) production auth
+# ============================================================================
+# The tests above prove the visibility *rule* is correct against the `client` fixture,
+# which runs with header-auth trust on (matching the co-located dev-loop deployment, not
+# the shipped default). These re-run the same properties against `prod_client` — header
+# auth off, Bearer-JWT-only — the configuration N1-1 discovered had a dead auth path. See
+# "the suite tests a configuration we don't ship" in the N1 review.
+
+def test_service_session_requires_participant_under_prod_auth(prod_client):
+    _register_keyed(prod_client, "prodvis_buyer")
+    _register_keyed(prod_client, "prodvis_seller")
+    _register_keyed(prod_client, "prodvis_stranger")
+    r = prod_client.post("/sessions", json={
+        "module_type": "emporia:service:v1", "creator_agent_id": "prodvis_buyer",
+        "config": {"description": "Confidential work"},
+        "payment_rules": {"mode": "free"},
+    })
+    session_id = r.json()["session_id"]
+    prod_client.post(f"/sessions/{session_id}/join", json={"agent_id": "prodvis_seller"})
+
+    assert prod_client.get(f"/sessions/{session_id}").status_code == 403
+    r = prod_client.get(f"/sessions/{session_id}", headers=bearer_for(prod_client, "prodvis_stranger"))
+    assert r.status_code == 403
+    for agent in ("prodvis_buyer", "prodvis_seller"):
+        r = prod_client.get(f"/sessions/{session_id}", headers=bearer_for(prod_client, agent))
+        assert r.status_code == 200, agent
+
+
+def test_ws_session_requires_participant_under_prod_auth(prod_client):
+    _register_keyed(prod_client, "prodws_buyer")
+    _register_keyed(prod_client, "prodws_stranger")
+    r = prod_client.post("/sessions", json={
+        "module_type": "emporia:service:v1", "creator_agent_id": "prodws_buyer",
+        "config": {"description": "d"}, "payment_rules": {"mode": "free"},
+    })
+    session_id = r.json()["session_id"]
+
+    with pytest.raises(WebSocketDisconnect):
+        with prod_client.websocket_connect(f"/ws/{session_id}"):
+            pass
+    stranger_token = _dashboard_jwt(prod_client, "prodws_stranger")
+    with pytest.raises(WebSocketDisconnect):
+        with prod_client.websocket_connect(f"/ws/{session_id}?token={stranger_token}"):
+            pass
+    buyer_token = _dashboard_jwt(prod_client, "prodws_buyer")
+    with prod_client.websocket_connect(f"/ws/{session_id}?token={buyer_token}") as ws:
+        frame = ws.receive_json()
+        assert frame["type"] == "init"
+
+
+def test_agent_inbox_requires_own_bearer_under_prod_auth(prod_client):
+    """Regression proof at the fixture level for the bug N1-1 fixed: before that fix, this
+    failed even for the legitimate owner, since no JWT could ever be issued."""
+    _register_keyed(prod_client, "prodinbox_owner")
+    _register_keyed(prod_client, "prodinbox_stranger")
+    assert prod_client.get("/agents/prodinbox_owner/inbox").status_code == 403
+    r = prod_client.get(
+        "/agents/prodinbox_owner/inbox", headers=bearer_for(prod_client, "prodinbox_stranger")
+    )
+    assert r.status_code == 403
+    r = prod_client.get(
+        "/agents/prodinbox_owner/inbox", headers=bearer_for(prod_client, "prodinbox_owner")
+    )
+    assert r.status_code == 200
+
+
+# ============================================================================
+# Identity-as-proof regression guard (route-table introspection)
+# ============================================================================
+
+def test_no_new_identity_as_proof_query_params():
+    """Guard against reintroducing the class of bug where a REST endpoint trusts a bare
+    query param (viewer_id, agent_id, ...) as the caller's identity with no signature or
+    session behind it (see SECURITY.md, task #7 / N1 review R6).
+
+    _KNOWN_VIOLATIONS below is a closed, explicit snapshot of every such param on HEAD —
+    it does not grow silently. Fixing one at N1-6 means deleting its line here, which makes
+    the fix's own regression test (elsewhere) responsible for proving the replacement,
+    while this test starts protecting that endpoint against the bug coming back. Any
+    *other* route with an identity-like query param not in the allowlist fails this test —
+    that's the point: the introspection catches new instances by construction rather than
+    needing a bespoke test written per endpoint.
+
+    Endpoints that take agent_id/viewer_id purely as a genuine public lookup key (no auth
+    decision keyed on it) are not identity-as-proof and belong in _SAFE_LOOKUPS instead.
+    """
+    from emporia.relay_server import app
+
+    IDENTITY_LIKE = {
+        "viewer_id", "agent_id", "sender_id", "author_id", "voter_id",
+        "inviter_id", "kicker_id", "invited_by", "from_agent",
+    }
+    # Genuine authenticated call sites (verified via _dashboard_agent_id/_require_caller_is
+    # inline) or pure public-lookup keys — not identity-as-proof.
+    _SAFE_LOOKUPS = {
+        ("GET", "/payments/settlements"),  # agent_id: filter, but gated by inline auth check
+        ("DELETE", "/agoras/topics/{slug}/subscribe"),  # agent_id: _require_caller_is-checked
+    }
+    # Pre-existing violations tracked for N1-6 (task #7) — delete each line as it's fixed.
+    _KNOWN_VIOLATIONS = {
+        ("GET", "/messages"),
+        ("GET", "/rooms"),
+        ("GET", "/rooms/{room_id}"),
+        ("GET", "/rooms/{room_id}/messages"),
+        ("GET", "/agoras/topics/{slug}"),
+        ("GET", "/agoras/topics/{slug}/posts"),
+        ("GET", "/agoras/posts/{post_id}"),
+        ("DELETE", "/agoras/posts/{post_id}"),
+        ("GET", "/agoras/feed"),
+        ("GET", "/dm"),
+        ("GET", "/dm/{thread_id}/messages"),
+    }
+    allowed = _SAFE_LOOKUPS | _KNOWN_VIOLATIONS
+
+    violations = []
+    for route in app.routes:
+        path = getattr(route, "path", None)
+        dependant = getattr(route, "dependant", None)
+        methods = getattr(route, "methods", None)
+        if not path or not dependant or not methods:
+            continue
+        offending = {qp.name for qp in dependant.query_params if qp.name in IDENTITY_LIKE}
+        if not offending:
+            continue
+        for method in methods:
+            if (method, path) not in allowed:
+                violations.append((method, path, sorted(offending)))
+
+    assert not violations, (
+        f"New identity-as-proof query param(s) found: {violations}. "
+        "Use _dashboard_agent_id(request)/Bearer auth instead, or add to _SAFE_LOOKUPS "
+        "if this is a genuinely public lookup key with no auth decision keyed on it."
+    )
+
+    # The other direction: _KNOWN_VIOLATIONS must not silently drift out of date (route
+    # renamed/removed) — every entry should still name a real offending route.
+    still_present = set()
+    for route in app.routes:
+        path = getattr(route, "path", None)
+        dependant = getattr(route, "dependant", None)
+        methods = getattr(route, "methods", None)
+        if not path or not dependant or not methods:
+            continue
+        offending = {qp.name for qp in dependant.query_params if qp.name in IDENTITY_LIKE}
+        if offending:
+            for method in methods:
+                still_present.add((method, path))
+    stale = _KNOWN_VIOLATIONS - still_present
+    assert not stale, f"_KNOWN_VIOLATIONS entries no longer reproduce, remove them: {stale}"
 
 
 # ============================================================================
