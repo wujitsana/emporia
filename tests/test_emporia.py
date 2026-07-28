@@ -19,6 +19,7 @@ Run:
 
 from __future__ import annotations
 
+import json
 import os
 import shutil
 import sys
@@ -2163,6 +2164,41 @@ def test_dashboard_jwt_scoped_to_issuing_relay():
         with patch.object(relay_server, "RELAY_ID", "a-different-relay-id"):
             r = client.get("/agents/jwt_cross_relay/inbox", headers={"Authorization": f"Bearer {token}"})
             assert r.status_code == 403
+
+
+# ============================================================================
+# GET /agoras/topics — SQL injection via unauthenticated `visibility` query param
+# ============================================================================
+
+def test_agora_topics_visibility_rejects_sql_injection(client):
+    """`visibility` was interpolated directly into the SQL string (f"...visibility='{visibility}'"),
+    letting an anonymous caller UNION-select out of any table — e.g. authorized_agents'
+    public keys. Now bound as a parameter and validated against a fixed enum, so injection
+    payloads either 400 or are treated as a literal (never-matching) string value, not SQL."""
+    _register(client, "sqli_agent", pubkey="d" * 64)
+    payload = "public' UNION SELECT agent_id,agent_id,public_key_hex,'','','','',0,0,'','',0 FROM authorized_agents--"
+    r = client.get("/agoras/topics", params={"visibility": payload})
+    assert r.status_code == 400
+    for topic in r.json().get("topics", []):
+        assert "sqli_agent" not in json.dumps(topic)
+
+
+def test_agora_topics_unauthenticated_caller_never_sees_private_metadata(client):
+    _register(client, "secret_owner", pubkey="e" * 64)
+    r = client.post("/agoras/topics", json={
+        "name": "Secret Topic", "description": "shh", "visibility": "private",
+        "gate_type": "invite", "creator_id": "secret_owner",
+    })
+    assert r.status_code == 200, r.text
+    slug = r.json()["slug"]
+
+    r2 = client.get("/agoras/topics")
+    slugs = [t["slug"] for t in r2.json()["topics"]]
+    assert slug not in slugs
+
+    r3 = client.get("/agoras/topics", params={"visibility": "private"})
+    slugs3 = [t["slug"] for t in r3.json()["topics"]]
+    assert slug not in slugs3
 
 
 # ============================================================================

@@ -3716,6 +3716,9 @@ def _require_registered(agent_id: str) -> None:
             pass
 
 
+_AGORA_VISIBILITIES = {"public", "private", "restricted"}
+
+
 def _topic_can_read(visibility: str, agent_id: str | None, topic_id: str, conn: Any) -> bool:
     if visibility == "public":
         return True
@@ -3776,11 +3779,19 @@ async def create_agora_topic(req: CreateAgoraTopicRequest):
 
 @app.get("/agoras/topics")
 async def list_agora_topics(
+    request: Request,
     visibility: str | None = None,
     subscribed_by: str | None = None,
     sort: str = "new",
     limit: int = 50,
 ):
+    if visibility is not None and visibility not in _AGORA_VISIBILITIES:
+        raise HTTPException(400, f"visibility must be one of {sorted(_AGORA_VISIBILITIES)}")
+    caller = _dashboard_agent_id(request)
+    if not caller:
+        # Unauthenticated callers never see private/restricted topic metadata, regardless
+        # of what visibility filter they requested.
+        visibility = "public"
     with DB_LOCK, get_db() as conn:
         if subscribed_by:
             rows = conn.execute(
@@ -3790,12 +3801,17 @@ async def list_agora_topics(
                 (subscribed_by, min(limit, 200)),
             ).fetchall()
         else:
-            vis_clause = f"AND visibility='{visibility}'" if visibility else ""
             order = "post_count DESC, created_at DESC" if sort == "top" else "created_at DESC"
-            rows = conn.execute(
-                f"SELECT * FROM agora_topics WHERE 1=1 {vis_clause} ORDER BY {order} LIMIT ?",
-                (min(limit, 200),),
-            ).fetchall()
+            if visibility:
+                rows = conn.execute(
+                    f"SELECT * FROM agora_topics WHERE visibility=? ORDER BY {order} LIMIT ?",
+                    (visibility, min(limit, 200)),
+                ).fetchall()
+            else:
+                rows = conn.execute(
+                    f"SELECT * FROM agora_topics ORDER BY {order} LIMIT ?",
+                    (min(limit, 200),),
+                ).fetchall()
     topics = []
     for r in rows:
         topics.append({
