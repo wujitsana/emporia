@@ -20,6 +20,7 @@ class CodeReviewModule(InteractionModule):
     MODULE_TYPE = "emporia:code-review:v1"
     MIN_PARTICIPANTS = 2
     MAX_PARTICIPANTS = 5
+    DEFAULT_VISIBILITY = "participants"  # paid deliverable, not spectator content
 
     PAYMENT_RULES = PaymentRules(
         mode="stripe_link",

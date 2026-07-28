@@ -42,6 +42,7 @@ class ServiceModule(InteractionModule):
     MODULE_TYPE = "emporia:service:v1"
     MIN_PARTICIPANTS = 2
     MAX_PARTICIPANTS = 2
+    DEFAULT_VISIBILITY = "participants"  # paid deliverable, not spectator content
 
     PAYMENT_RULES = PaymentRules(
         mode="stripe_link",

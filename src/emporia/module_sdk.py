@@ -93,6 +93,15 @@ class InteractionModule(ABC):
 
     PAYMENT_RULES: PaymentRules = PaymentRules()
 
+    # Who can read a session's actions/state/audit when it has no linked room to inherit
+    # visibility from (see relay_server.py's _session_viewer_allowed()):
+    #   "public"       — anyone (default; matches the pre-existing behavior for modules that
+    #                     don't override this, e.g. spectator/replay use cases like chess)
+    #   "participants" — only session participants (or the relay operator). Modules whose
+    #                     PAYMENT_RULES charge for the work should set this — the session's
+    #                     action payload/artifacts *are* the delivered product.
+    DEFAULT_VISIBILITY: str = "public"
+
     def validate_participants(self, participants: list[str]) -> tuple[bool, str]:
         n = len(participants)
         if n < self.MIN_PARTICIPANTS:

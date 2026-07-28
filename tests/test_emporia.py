@@ -311,7 +311,11 @@ def _signed_action_body(
     """Build a /sessions/{id}/action request body signed for the session's current
     step_number, matching the relay's full_payload contract exactly."""
     from emporia.identity import sign
-    step_number = client.get(f"/sessions/{session_id}").json()["step_number"]
+    # x-emporia-agent-id: participants-only sessions (paid modules by default) now require
+    # the caller to be a participant to read step_number — agent_id here legitimately is one.
+    step_number = client.get(
+        f"/sessions/{session_id}", headers={"x-emporia-agent-id": agent_id}
+    ).json()["step_number"]
     signed_payload = {
         "session_id": session_id,
         "step_number": step_number,
@@ -332,7 +336,9 @@ def _signed_action_body(
 def _signed_confirm_delivery_body(client, session_id: str, agent_id: str, rationale: str) -> dict:
     """Sign a /sessions/{id}/confirm-delivery body (action_type='confirm', payload={})."""
     from emporia.identity import sign
-    step_number = client.get(f"/sessions/{session_id}").json()["step_number"]
+    step_number = client.get(
+        f"/sessions/{session_id}", headers={"x-emporia-agent-id": agent_id}
+    ).json()["step_number"]
     signed_payload = {
         "session_id": session_id, "step_number": step_number, "action_type": "confirm",
         "payload": {}, "agent_id": agent_id, "peer_text_rationale": rationale,
@@ -345,7 +351,9 @@ def _signed_dispute_delivery_body(
 ) -> dict:
     """Sign a /sessions/{id}/dispute-delivery body (action_type='dispute', payload={'reason'})."""
     from emporia.identity import sign
-    step_number = client.get(f"/sessions/{session_id}").json()["step_number"]
+    step_number = client.get(
+        f"/sessions/{session_id}", headers={"x-emporia-agent-id": agent_id}
+    ).json()["step_number"]
     signed_payload = {
         "session_id": session_id, "step_number": step_number, "action_type": "dispute",
         "payload": {"reason": reason}, "agent_id": agent_id, "peer_text_rationale": rationale,
@@ -642,6 +650,133 @@ def test_action_rejected_forged_signature(client):
 
 
 # ============================================================================
+# Session content visibility
+# ============================================================================
+
+def test_chess_session_readable_by_anyone(client):
+    """Chess's DEFAULT_VISIBILITY is "public" — no linked room, no participation
+    required to read actions/audit (spectator/replay use case)."""
+    _register(client, "vis_chess_owner")
+    r = client.post("/sessions", json={
+        "module_type": "emporia:chess:v1", "creator_agent_id": "vis_chess_owner",
+    })
+    session_id = r.json()["session_id"]
+    assert client.get(f"/sessions/{session_id}").status_code == 200
+    assert client.get(f"/sessions/{session_id}/actions").status_code == 200
+    assert client.get(f"/sessions/{session_id}/audit").status_code == 200
+
+
+def test_service_session_requires_participant(client):
+    """emporia:service:v1's DEFAULT_VISIBILITY is "participants" — the action payload
+    is the paid deliverable, so it must not be readable by a non-participant with no
+    linked room to inherit visibility from."""
+    _register(client, "vis_svc_buyer")
+    _register(client, "vis_svc_seller")
+    _register(client, "vis_svc_stranger")
+    r = client.post("/sessions", json={
+        "module_type": "emporia:service:v1", "creator_agent_id": "vis_svc_buyer",
+        "config": {"description": "Confidential work"},
+        "payment_rules": {"mode": "free"},
+    })
+    session_id = r.json()["session_id"]
+    client.post(f"/sessions/{session_id}/join", json={"agent_id": "vis_svc_seller"})
+
+    # No identity at all
+    assert client.get(f"/sessions/{session_id}").status_code == 403
+    assert client.get(f"/sessions/{session_id}/actions").status_code == 403
+    assert client.get(f"/sessions/{session_id}/audit").status_code == 403
+    assert client.get(f"/sessions/{session_id}/state").status_code == 403
+    # Authenticated but not a participant
+    r = client.get(f"/sessions/{session_id}", headers={"x-emporia-agent-id": "vis_svc_stranger"})
+    assert r.status_code == 403
+
+    # Either participant can read
+    for agent in ("vis_svc_buyer", "vis_svc_seller"):
+        r = client.get(f"/sessions/{session_id}", headers={"x-emporia-agent-id": agent})
+        assert r.status_code == 200, agent
+
+
+def test_session_visibility_room_inheritance_overrides_module_default(client):
+    """A linked room's type wins over the module's own DEFAULT_VISIBILITY in both
+    directions: a public room makes an otherwise-participants-only session readable by
+    anyone, and a private room makes an otherwise-public session participants-only."""
+    _register(client, "vis_room_owner")
+    _register(client, "vis_room_other")
+
+    # service (participants-only default) + public linked room -> public
+    r = client.post("/sessions", json={
+        "module_type": "emporia:service:v1", "creator_agent_id": "vis_room_owner",
+        "config": {"description": "d"}, "payment_rules": {"mode": "free"},
+    })
+    svc_session_id = r.json()["session_id"]
+    client.post("/rooms", json={
+        "name": "Public Linked Room", "creator_id": "vis_room_owner",
+        "room_type": "public", "gate_type": "open",
+        "linked_session_id": svc_session_id,
+    })
+    assert client.get(f"/sessions/{svc_session_id}").status_code == 200
+
+    # chess (public default) + private linked room -> participants-only
+    r = client.post("/sessions", json={
+        "module_type": "emporia:chess:v1", "creator_agent_id": "vis_room_owner",
+    })
+    chess_session_id = r.json()["session_id"]
+    client.post("/rooms", json={
+        "name": "Private Linked Room", "creator_id": "vis_room_owner",
+        "room_type": "private", "gate_type": "invite",
+        "linked_session_id": chess_session_id,
+    })
+    assert client.get(f"/sessions/{chess_session_id}").status_code == 403
+    r = client.get(
+        f"/sessions/{chess_session_id}", headers={"x-emporia-agent-id": "vis_room_owner"}
+    )
+    assert r.status_code == 200
+
+
+def test_list_sessions_filters_by_visibility(client):
+    """GET /sessions omits participants-only sessions the caller isn't part of, rather
+    than 403ing the whole listing."""
+    _register(client, "vis_list_buyer")
+    _register(client, "vis_list_stranger")
+    r = client.post("/sessions", json={
+        "module_type": "emporia:service:v1", "creator_agent_id": "vis_list_buyer",
+        "config": {"description": "d"}, "payment_rules": {"mode": "free"},
+    })
+    session_id = r.json()["session_id"]
+
+    ids_as_stranger = {
+        s["session_id"] for s in
+        client.get("/sessions", headers={"x-emporia-agent-id": "vis_list_stranger"}).json()["sessions"]
+    }
+    assert session_id not in ids_as_stranger
+    ids_as_buyer = {
+        s["session_id"] for s in
+        client.get("/sessions", headers={"x-emporia-agent-id": "vis_list_buyer"}).json()["sessions"]
+    }
+    assert session_id in ids_as_buyer
+
+
+def test_ws_session_requires_participant_for_private_module(client):
+    _register(client, "vis_ws_buyer")
+    _register(client, "vis_ws_stranger")
+    r = client.post("/sessions", json={
+        "module_type": "emporia:service:v1", "creator_agent_id": "vis_ws_buyer",
+        "config": {"description": "d"}, "payment_rules": {"mode": "free"},
+    })
+    session_id = r.json()["session_id"]
+
+    with pytest.raises(WebSocketDisconnect):
+        with client.websocket_connect(f"/ws/{session_id}"):
+            pass
+    with pytest.raises(WebSocketDisconnect):
+        with client.websocket_connect(f"/ws/{session_id}?agent_id=vis_ws_stranger"):
+            pass
+    with client.websocket_connect(f"/ws/{session_id}?agent_id=vis_ws_buyer") as ws:
+        frame = ws.receive_json()
+        assert frame["type"] == "init"
+
+
+# ============================================================================
 # Proof-of-Reasoning gate
 # ============================================================================
 
@@ -909,7 +1044,9 @@ def test_join_session_rejects_underpaid_payment_intent(mock_verify, client):
     })
     assert r2.status_code == 402
     assert "amount mismatch" in r2.text
-    session = client.get(f"/sessions/{session_id}").json()
+    session = client.get(
+        f"/sessions/{session_id}", headers={"x-emporia-agent-id": "underpay_creator"}
+    ).json()
     assert session["participants"] == ["underpay_creator"]
 
 

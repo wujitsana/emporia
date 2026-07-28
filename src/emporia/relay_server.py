@@ -331,6 +331,38 @@ def _require_caller_is(agent_id: str, request: Request) -> None:
     if caller != agent_id and not (owner and caller == owner):
         raise HTTPException(403, f"Not authorized to act as '{agent_id}'")
 
+
+def _session_visibility(session: dict[str, Any]) -> str:
+    """Resolve whether a session's content ("public" or "participants"-only).
+
+    Room-inheritance wins when a room links to this session (rooms.py's
+    get_room_for_session): public room → public, private room → participants-only,
+    regardless of the module's own default. No linked room → the module's
+    DEFAULT_VISIBILITY (module_sdk.py) — chess defaults "public" for the
+    spectator/replay use case; research/service/code-review default "participants"
+    since the session's action payload and artifacts are the paid deliverable.
+    """
+    room = rooms_db.get_room_for_session(session["session_id"], db_path=DATABASE_PATH)
+    if room:
+        return "public" if room.room_type == "public" else "participants"
+    try:
+        module = get_interaction_module(session["module_type"])
+    except ValueError:
+        return "participants"  # unknown module type — fail closed, not open
+    return module.DEFAULT_VISIBILITY
+
+
+def _session_viewer_allowed(session: dict[str, Any], caller: str | None) -> bool:
+    """True if `caller` may read this session's actions/state/audit — see
+    _session_visibility(). The relay operator can always read any session."""
+    if _session_visibility(session) == "public":
+        return True
+    if caller and caller in session.get("participants", []):
+        return True
+    owner = os.getenv("EMPORIA_AGENT_ID", "")
+    return bool(owner and caller == owner)
+
+
 # Anti-cheat configuration
 MIN_RATIONALE_CHARS = int(os.getenv("MIN_RATIONALE_CHARS", "15"))
 _DEFAULT_FINGERPRINTS = "stockfish,engine_move,eval_score:"
@@ -2611,7 +2643,7 @@ async def create_session(req: CreateSessionRequest):
 
 
 @app.get("/sessions")
-async def list_sessions(status: str | None = None, module_type: str | None = None):
+async def list_sessions(request: Request, status: str | None = None, module_type: str | None = None):
     with DB_LOCK, get_db() as conn:
         q = "SELECT * FROM sessions WHERE 1=1"
         params: list[Any] = []
@@ -2623,20 +2655,29 @@ async def list_sessions(status: str | None = None, module_type: str | None = Non
             params.append(module_type)
         q += " ORDER BY created_at DESC LIMIT 100"
         rows = conn.execute(q, params).fetchall()
-    return {"sessions": [_session_row_to_dict(r) for r in rows]}
+    caller = _dashboard_agent_id(request)
+    sessions = [_session_row_to_dict(r) for r in rows]
+    return {"sessions": [s for s in sessions if _session_viewer_allowed(s, caller)]}
 
 
 @app.get("/sessions/{session_id}")
-async def get_session(session_id: str):
+async def get_session(session_id: str, request: Request):
     s = load_session(session_id)
     if not s:
         raise HTTPException(404, "Session not found")
+    if not _session_viewer_allowed(s, _dashboard_agent_id(request)):
+        raise HTTPException(403, "Not a participant in this session")
     return s
 
 
 @app.get("/sessions/{session_id}/actions")
-async def get_session_actions(session_id: str):
+async def get_session_actions(session_id: str, request: Request):
     """Return all recorded actions for a session — used for board replay."""
+    s = load_session(session_id)
+    if not s:
+        raise HTTPException(404, "Session not found")
+    if not _session_viewer_allowed(s, _dashboard_agent_id(request)):
+        raise HTTPException(403, "Not a participant in this session")
     with DB_LOCK, get_db() as conn:
         rows = conn.execute(
             "SELECT action_id, agent_id, action_type, payload_json, result_json, created_at "
@@ -2660,14 +2701,22 @@ async def get_session_actions(session_id: str):
 
 
 @app.get("/sessions/{session_id}/audit")
-async def get_session_audit(session_id: str):
+async def get_session_audit(session_id: str, request: Request):
     """Public hash-chained receipt log + chain-integrity verification for a session.
 
     Surfaces the tamper-evident audit trail (session_audit.py) to the dashboard so
     judges can see the "verified" badge, not just trust that hashing happens.
+
+    "Public" is the chain-verification model (anyone with the log can recompute the
+    hashes), not the access model — the log itself contains the full action payload
+    (session_audit.py's log_public_receipt()), so this endpoint is gated the same as
+    /sessions/{id}/actions rather than actually being open to anyone.
     """
-    if not load_session(session_id):
+    s = load_session(session_id)
+    if not s:
         raise HTTPException(404, "Session not found")
+    if not _session_viewer_allowed(s, _dashboard_agent_id(request)):
+        raise HTTPException(403, "Not a participant in this session")
     ok, message = verify_chain(session_id)
     return {
         "session_id": session_id,
@@ -2883,7 +2932,8 @@ async def submit_action(session_id: str, req: SubmitActionRequest):
         "new_state": result.new_state.data if result.new_state else None,
     }
     await broadcast_to_session(session_id, action_event)
-    await broadcast_global(action_event)
+    if _session_visibility(s) == "public":
+        await broadcast_global(action_event)
 
     settlement_record: dict[str, Any] | None = None
     if is_over:
@@ -2951,7 +3001,8 @@ async def submit_action(session_id: str, req: SubmitActionRequest):
             "settlement": settlement_record,
         }
         await broadcast_to_session(session_id, terminal_event)
-        await broadcast_global(terminal_event)
+        if _session_visibility(s) == "public":
+            await broadcast_global(terminal_event)
 
     return {
         "success": True,
@@ -2965,10 +3016,12 @@ async def submit_action(session_id: str, req: SubmitActionRequest):
 
 
 @app.get("/sessions/{session_id}/state")
-async def get_session_state(session_id: str):
+async def get_session_state(session_id: str, request: Request):
     s = load_session(session_id)
     if not s:
         raise HTTPException(404, "Session not found")
+    if not _session_viewer_allowed(s, _dashboard_agent_id(request)):
+        raise HTTPException(403, "Not a participant in this session")
     return s
 
 
@@ -3143,15 +3196,17 @@ async def get_messages(agent_id: str, session_id: str | None = None, limit: int 
 
 @app.websocket("/ws/{session_id}")
 async def ws_session(ws: WebSocket, session_id: str):
-    """Live session feed. Intentionally unauthenticated: GET /sessions/{id} and
-    GET /sessions/{id}/actions are already public over REST (spectator/replay use case —
-    the dashboard's game views connect here for any session, not just participants), so
-    this matches that visibility rather than being more restrictive than the REST API for
-    the same data."""
+    """Live session feed. Gated the same way as GET /sessions/{id}/actions
+    (_session_viewer_allowed()) — public sessions (default, e.g. chess spectator/replay)
+    stay open to any connection; participants-only sessions (paid modules by default)
+    require the caller to be a participant or the operator."""
+    s = load_session(session_id)
+    if s and not _session_viewer_allowed(s, _ws_agent_id(ws)):
+        await ws.close(code=1008)
+        return
     await ws.accept()
     ws_connections[session_id].add(ws)
     try:
-        s = load_session(session_id)
         if s:
             await ws.send_json({"type": "init", "session": s})
         while True:

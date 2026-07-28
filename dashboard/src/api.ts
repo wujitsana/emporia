@@ -336,10 +336,16 @@ export const api = {
     const q = new URLSearchParams();
     if (params?.module_type) q.set("module_type", params.module_type);
     if (params?.status) q.set("status", params.status);
-    return get<{ sessions: Session[] }>(`/sessions${q.size ? `?${q}` : ""}`);
+    // agentScoped: participants-only sessions (paid modules by default) are filtered out
+    // server-side for callers who aren't a participant/operator — see
+    // relay_server.py's _session_viewer_allowed(). Public sessions (e.g. chess) are
+    // unaffected either way.
+    return get<{ sessions: Session[] }>(`/sessions${q.size ? `?${q}` : ""}`, { agentScoped: true });
   },
   sessionActions: (session_id: string) =>
-    get<{ session_id: string; actions: SessionAction[] }>(`/sessions/${session_id}/actions`),
+    get<{ session_id: string; actions: SessionAction[] }>(
+      `/sessions/${session_id}/actions`, { agentScoped: true }
+    ),
   events: () => get<{ events: EmporiaEvent[]; count: number }>("/events"),
   rooms: (viewer_id?: string) =>
     get<{ rooms: Room[]; count: number }>(
@@ -480,5 +486,6 @@ export const api = {
   // Trust & Safety / Federation / Audit
   safetyStats: () => get<SafetyStats>("/safety/stats"),
   federationPeers: () => get<FederationStatus>("/federation/peers"),
-  sessionAudit: (session_id: string) => get<SessionAudit>(`/sessions/${session_id}/audit`),
+  sessionAudit: (session_id: string) =>
+    get<SessionAudit>(`/sessions/${session_id}/audit`, { agentScoped: true }),
 };

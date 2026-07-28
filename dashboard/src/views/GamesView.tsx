@@ -17,7 +17,7 @@ import Text from "@components/Text";
 import Window from "@components/Window";
 import AlertBanner from "@components/AlertBanner";
 import React, { useCallback, useEffect, useRef, useState } from "react";
-import { api } from "../api";
+import { api, dashboardToken } from "../api";
 import type {
   AgentProfile,
   AgoraPost,
@@ -123,7 +123,12 @@ export function ChessReplayPanel({ session }: { session: Session }) {
 
     const connect = () => {
       if (closed) return;
-      ws = new WebSocket(`${base}/ws/${session.session_id}`);
+      // agent_id/token authenticate participants-only sessions (paid modules by default) —
+      // see relay_server.py's _session_viewer_allowed(). No-op for public sessions.
+      const params = new URLSearchParams({ agent_id: VIEWER });
+      const token = dashboardToken();
+      if (token) params.set("token", token);
+      ws = new WebSocket(`${base}/ws/${session.session_id}?${params.toString()}`);
       ws.onopen = () => { setWsLive(true); retryMs = 1_000; };
       ws.onclose = () => {
         setWsLive(false);

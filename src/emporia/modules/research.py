@@ -20,6 +20,7 @@ class ResearchModule(InteractionModule):
     MODULE_TYPE = "emporia:research:v1"
     MIN_PARTICIPANTS = 2
     MAX_PARTICIPANTS = 4
+    DEFAULT_VISIBILITY = "participants"  # paid deliverable, not spectator content
 
     PAYMENT_RULES = PaymentRules(
         mode="stripe_link",

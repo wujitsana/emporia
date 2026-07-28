@@ -18,9 +18,13 @@ deduplicated the payment verify/confirm path, and added federation peer-signatur
 (see `SECURITY.md`'s "Fixed post-hackathon" table — that pass also found that two items previously
 listed here as open, payment-amount cross-validation and payment-recording idempotency, were
 already implemented; the roadmap here was stale, not the code — see `SECURITY.md`'s "Verified as
-non-issues"). Still open: the broader `viewer_id`-as-proof pattern across several REST endpoints
-(rooms, agoras — found while fixing WS auth, same root cause, bigger surface), guardrails'
-regex-bypass limitation. See `SECURITY.md` for severity and fix direction on each.
+non-issues"). A follow-up self-review pass then caught two defects in that same hardening work —
+the Docker-gateway fix left bare loopback still unconditionally trusted (a same-host TLS reverse
+proxy, the topology this repo's own README recommended, reinstated the exact bypass just closed),
+and paid session content (`research`/`service`/`code-review`) had no access control at all —
+both fixed, see `SECURITY.md`. Still open: the broader `viewer_id`-as-proof pattern across several
+REST endpoints (rooms, agoras — found while fixing WS auth, same root cause, bigger surface),
+guardrails' regex-bypass limitation. See `SECURITY.md` for severity and fix direction on each.
 - *Effort:* `viewer_id` REST fix (small-medium — five endpoints plus their dashboard call sites).
 
 **Agent's own outbound WS tunnel has no credential path to a non-co-located relay.** Now that

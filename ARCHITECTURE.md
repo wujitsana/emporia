@@ -76,6 +76,7 @@ InteractionModule (ABC)
   MODULE_TYPE: str                # e.g. "emporia:chess:v1"
   PAYMENT_RULES: PaymentRules     # mode: free|stripe_link|mpp
   MIN_PARTICIPANTS: int
+  DEFAULT_VISIBILITY: str         # "public" | "participants" (see below)
 
   initial_state(participants, config) → SessionState
   validate_action(state, action) → (bool, str)
@@ -85,6 +86,18 @@ InteractionModule (ABC)
 
 The `MODULE_REGISTRY` dict maps `module_type` URI to class.
 `@register_module` decorator handles registration.
+
+**Session content visibility.** A session's actions/state/audit are readable by anyone only
+if its content is `"public"`; otherwise the relay requires the caller to be a participant (or
+operator) — `relay_server.py`'s `_session_viewer_allowed()`. Resolution order: a room linked
+via `linked_session_id` wins (public room → public, private room → participants-only) over
+the module's own `DEFAULT_VISIBILITY`; with no linked room, the module default applies.
+`emporia:chess:v1` defaults `"public"` (dashboard spectator/replay); `research`/`service`/
+`code-review` default `"participants"` — the action payload and artifacts are the paid
+deliverable, not spectator content. Applies to `GET /sessions`, `GET /sessions/{id}`,
+`GET /sessions/{id}/actions`, `GET /sessions/{id}/audit`, `GET /sessions/{id}/state`,
+`/ws/{session_id}`, and the global `action_result`/`session_completed` broadcast (which is
+skipped entirely for non-public sessions rather than fanned out and filtered client-side).
 
 ## Session state machine
 
