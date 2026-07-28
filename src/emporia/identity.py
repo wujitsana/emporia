@@ -33,10 +33,8 @@ def _key_path(profile_id: str) -> Path:
     return KEY_DIR / f"{safe}.priv"
 
 
-def generate_or_load_keypair(profile_id: str) -> tuple[ed25519.Ed25519PrivateKey, bytes]:
-    """Return (private_key, public_key_bytes), generating and persisting if needed."""
+def _load_or_generate_at(path: Path) -> tuple[ed25519.Ed25519PrivateKey, bytes]:
     KEY_DIR.mkdir(parents=True, exist_ok=True)
-    path = _key_path(profile_id)
     if path.exists():
         raw = path.read_bytes()
         priv = ed25519.Ed25519PrivateKey.from_private_bytes(raw)
@@ -53,10 +51,42 @@ def generate_or_load_keypair(profile_id: str) -> tuple[ed25519.Ed25519PrivateKey
     return priv, pub_bytes
 
 
+def generate_or_load_keypair(profile_id: str) -> tuple[ed25519.Ed25519PrivateKey, bytes]:
+    """Return (private_key, public_key_bytes), generating and persisting if needed."""
+    return _load_or_generate_at(_key_path(profile_id))
+
+
 def get_public_key_hex(profile_id: str) -> str:
     """Return the hex public key for a profile, generating the keypair if needed."""
     _, pub_bytes = generate_or_load_keypair(profile_id)
     return pub_bytes.hex()
+
+
+# Reserved path outside _key_path()'s sanitized profile_id → filename mapping, so no
+# agent-chosen agent_id (unrestricted free-form string) can ever collide with it —
+# _key_path() always strips leading/trailing underscores, so a leading-underscore
+# filename is unreachable from any sanitized profile_id.
+_RELAY_KEY_PATH_NAME = "_relay_identity.priv"
+
+
+def generate_or_load_relay_keypair() -> tuple[ed25519.Ed25519PrivateKey, bytes]:
+    """Return this relay's own persistent (private_key, public_key_bytes) — a single
+    identity for the relay process itself, distinct from any agent's keypair. Used to sign
+    outbound federation gossip batches so peers can verify authenticity/integrity
+    independent of which agent happens to be the relay operator.
+    """
+    return _load_or_generate_at(KEY_DIR / _RELAY_KEY_PATH_NAME)
+
+
+def get_relay_public_key_hex() -> str:
+    _, pub_bytes = generate_or_load_relay_keypair()
+    return pub_bytes.hex()
+
+
+def sign_raw_relay(data: bytes) -> str:
+    """Sign raw bytes with this relay's own Ed25519 key. Returns lowercase hex signature."""
+    priv, _ = generate_or_load_relay_keypair()
+    return priv.sign(data).hex()
 
 
 # ============================================================================

@@ -13,16 +13,15 @@ this is what a judge or future contributor should know is intentionally not done
 **Full remediation of `SECURITY.md`'s hardening roadmap.** The hackathon pass fixed the critical
 items that were cheap and demo-safe (mandatory signatures, inbox/agora caller auth, CORS
 allowlist); the post-hackathon hardening pass fixed the Docker-gateway auth-bypass, WebSocket
-authentication, the registration-challenge TOCTOU race, closed open registration by default, and
-deduplicated the payment verify/confirm path (see `SECURITY.md`'s "Fixed post-hackathon" table —
-that pass also found that two items previously listed here as open, payment-amount
-cross-validation and payment-recording idempotency, were already implemented; the roadmap here
-was stale, not the code — see `SECURITY.md`'s "Verified as non-issues"). Still open: the broader
-`viewer_id`-as-proof pattern across several REST endpoints (rooms, agoras — found while fixing WS
-auth, same root cause, bigger surface), federation peer signature verification, guardrails'
+authentication, the registration-challenge TOCTOU race, closed open registration by default,
+deduplicated the payment verify/confirm path, and added federation peer-signature verification
+(see `SECURITY.md`'s "Fixed post-hackathon" table — that pass also found that two items previously
+listed here as open, payment-amount cross-validation and payment-recording idempotency, were
+already implemented; the roadmap here was stale, not the code — see `SECURITY.md`'s "Verified as
+non-issues"). Still open: the broader `viewer_id`-as-proof pattern across several REST endpoints
+(rooms, agoras — found while fixing WS auth, same root cause, bigger surface), guardrails'
 regex-bypass limitation. See `SECURITY.md` for severity and fix direction on each.
-- *Effort:* `viewer_id` REST fix (small-medium — five endpoints plus their dashboard call sites),
-  federation signing (medium — needs a signed-batch format).
+- *Effort:* `viewer_id` REST fix (small-medium — five endpoints plus their dashboard call sites).
 
 **Agent's own outbound WS tunnel has no credential path to a non-co-located relay.** Now that
 `/ws/agent/{agent_id}` requires authentication, `tunnel.py`'s `maintain_relay_tunnel()` and
@@ -61,7 +60,9 @@ doesn't share (WS reconnect backoff, URL-scheme handling).
 
 **Two independent `GameRegistry` instances** (MCP-local SQLite vs. relay) reconciled only by
 manual `export_challenge`/`import_challenge` MCP calls — no automatic sync, no conflict
-resolution if two nodes mint the same challenge ID.
+resolution if two nodes mint the same challenge ID. The MCP `sync_lobby_from_peer` gossip path
+into this local registry also has no signature verification — same class of gap as the
+`/gaming/v1/federate/listings` finding fixed this pass, unfixed here; see `SECURITY.md` (High).
 - *Effort:* medium — would need either a single source of truth or a reconciliation pass.
 
 **Resource cleanup not implemented** (low risk for a demo, real for a long-running relay):
@@ -98,8 +99,12 @@ peers automatically.
 - *Effort:* medium-large — needs a design decision (centralized directory vs. DHT vs. seed-list
   gossip) before implementation.
 
-**Federation peer responses aren't signed** — see `SECURITY.md` (High severity). Listed here too
-because fixing it is also the prerequisite for any peer-discovery directory being trustworthy.
+**Done (post-hackathon hardening pass): federation peer responses are now signed.** The relay has
+its own persistent Ed25519 identity (`identity.generate_or_load_relay_keypair()`), used to sign
+the `/gaming/v1/federate/listings` batch; `_pull_federated_listings()` verifies the signature and
+pins each peer's key on first successful verification. See `SECURITY.md`'s "Fixed post-hackathon"
+table. This was also the prerequisite for peer-discovery directory trustworthiness noted above —
+still applies to whatever discovery mechanism eventually gets built.
 
 **Shared-DB federation (deferred).** Today's federation is gossip between independently-owned
 relays, each on its own SQLite DB — the right model across trust boundaries. A separate,

@@ -32,6 +32,7 @@ every existing test that submits a session action).
 | Registration challenge consumption had a TOCTOU race: `_consume_challenge()` read `used`, then updated it, as two separate statements — two concurrent registration attempts with the same `challenge_id` could both pass the check before either write landed. | Medium | Consumption is now a single conditional `UPDATE reg_challenges SET used=1 WHERE challenge_id=? AND used=0`; the loser of a race sees `rowcount == 0` and is rejected. SQLite serializes the UPDATE itself, so this closes the gap regardless of process/thread model (today's single-worker `uvicorn.run()` with no internal `await` inside the old critical section meant this wasn't exploitable *yet*, but was one straightforward change — adding an `await`, or `--workers N`, either of which the multi-tenant target invites — away from being real). `test_challenge_cannot_be_reused` in `tests/test_emporia.py` is a behavioral regression guard (double-consumption rejected) but, being single-process/sequential, doesn't itself prove cross-process atomicity — noted honestly in its docstring rather than overclaimed. |
 | Registration was open by default (`EMPORIA_REQUIRE_CHALLENGE=0`) — a direct `POST /agents/register` call could claim any `agent_id`/`public_key_hex` pair with no proof of key possession, bypassing the challenge flow the first-party clients (MCP `register_agent`, `agent_sdk.py`'s `EmporiaAgent.register()`) already always complete. | Medium | `EMPORIA_REQUIRE_CHALLENGE` now defaults to `1`. Verified safe against every documented registration path: MCP's `register_agent` tool and `agent_sdk.py`'s `register()` (used by `scripts/seed_demo_relay.py` and thus `--bootstrap-test`/`--local-demo`/`--seed-only`) already send `challenge_id`+`challenge_signature` unconditionally, so this only closes the bare-REST bypass. `EMPORIA_REQUIRE_NOUS` stays `0` by default — deliberately not flipped, since it depends on an external identity provider (Nous) that isn't configured in every deployment (would break `--bootstrap-test`/CI by default); documented instead as a recommended `1` for public multi-tenant relays in README's Deployment section. |
 | `subscribe_agora_topic()` held `DB_LOCK` (a process-wide `threading.RLock` guarding every DB access) across the full payment-verification `await` chain — including the outbound HTTPS round-trip to Stripe's API. Under concurrent load, a single slow Stripe call would serialize every other request touching the database for its duration; the two sibling endpoints (session/room join) never had this bug. Found while extracting the shared payment-verification helper below. | Low (perf/availability, not a data-integrity bug) | Split into two `DB_LOCK` blocks — topic lookup + invite check, then (outside any lock) payment verification, then a second lock for the membership write — matching the pattern the session/room endpoints already used. Covered by the existing `test_agora_subscription_accepts_bound_payment_intent`, which exercises this exact path end-to-end and still passes. |
+| Federation gossip was not cryptographically verified. `_pull_federated_listings()` trusted a peer's `/gaming/v1/federate/listings` response (including `origin_relay` and every listing's `agent_id`) wholesale and did `INSERT OR REPLACE` with no signature check — a malicious or compromised peer, or a MITM/DNS-hijacked connection to a legitimate one, could overwrite a listing with a scam description or post one under another agent's `agent_id` to capture payments meant for them. | High | The relay now has its own persistent Ed25519 identity (`identity.generate_or_load_relay_keypair()` — a dedicated key file outside the agent-keyfile namespace, so no agent-chosen `agent_id` can ever collide with it), distinct from any individual agent's key. `GET /gaming/v1/federate/listings` signs the batch (`origin_relay` + `listings`, canonical JSON) with this key; `_pull_federated_listings()` rejects any response missing a signature or failing verification. A peer's key is pinned on first successful verification (`_FEDERATION_PEER_PUBKEYS`, in-memory) and a later pull presenting a *different* key for the same peer URL is rejected rather than re-trusted — closes the "URL change re-imports stale/foreign listings" case from the original fix direction, using the relay's public key as a stable identity instead of the mutable `RELAY_BASE_URL`. Not implemented: rejecting listings whose `agent_id` isn't independently verified as registered on the origin (the signature already proves the batch is unaltered and genuinely from that origin relay, which already only serves listings created by agents it itself required to be registered — this would add defense-in-depth against a compromised-but-not-malicious origin, at the cost of an extra round-trip per pull; deferred, not silently dropped). Five new tests in `tests/test_emporia.py` (signed-output shape, valid-signature accept, unsigned reject, tampered-payload reject, key-rotation-without-repin reject) — all verified to fail against the pre-fix code. |
 
 **Verified as non-issues** (raised during audit, checked against the code, not actual vulnerabilities):
 - `stripe_profile_id` returned by `/health` — this is a public MPP routing identifier agents need
@@ -56,6 +57,24 @@ None of these block the hackathon demo; all are real gaps for a production deplo
 
 ### High
 
+**A second, unsigned peer-gossip path exists alongside the one fixed above.** Found while fixing
+federation peer-signature verification (see "Fixed post-hackathon"): that fix covers
+`_pull_federated_listings()` / `GET /gaming/v1/federate/listings` (marketplace listings, relay's
+own `listings` DB table), but the MCP `sync_lobby_from_peer` tool pulls `GET /gaming/lobby` (game
+challenges/lobby entries) from a peer and imports into the MCP-local `_game_registry` SQLite
+instance with the identical no-signature-check pattern the listings path had — same
+vulnerability class, different subsystem (this is also the split-brain `GameRegistry` gap
+`ROADMAP.md`'s Architecture cleanup section already tracks; the missing signature is the
+security-relevant half of that same finding).
+- *Exploit:* same shape as the listings finding — a malicious/compromised/MITM'd peer can inject
+  fabricated challenges into a relay's lobby.
+- *Fix direction:* extend the same relay-identity signing (`identity.generate_or_load_relay_keypair()`,
+  `sign_raw_relay()`) to `GET /gaming/lobby`'s response, and verify + pin in `sync_lobby_from_peer`
+  the same way `_pull_federated_listings()` now does. Not done in this pass — it's called from
+  `mcp_server.py`, a separate process from `relay_server.py`, so the relay would need to expose
+  its own public key over HTTP (e.g. add it to `/health` or a small dedicated endpoint) rather than
+  importing the signing helper directly.
+
 **`viewer_id`/`agent_id` query params are trusted as proof of identity across several REST
 endpoints, with no signature or session behind them.** Found while fixing the WS auth gap above:
 `GET /rooms/{id}/messages` decides private-room visibility from a bare `viewer_id` query param
@@ -73,16 +92,6 @@ raw param.
   `viewer_id` as a plain query param and would need to switch to relying on `agentHeaders()`
   instead).
 
-**Federation gossip is not cryptographically verified.** `_pull_federated_listings()` trusts a
-peer's `/gaming/v1/federate/listings` response (including the `origin_relay` field and every
-listing's `agent_id`) and does `INSERT OR REPLACE` with no signature check.
-- *Exploit:* a malicious or compromised peer relay can overwrite a legitimate listing with a scam
-  description, or post listings under another agent's `agent_id` to capture payments intended for
-  them.
-- *Fix direction:* require the peer relay's owner agent to sign the listings batch (Ed25519, same
-  primitive already used for agent identity); reject listings whose `agent_id` isn't known to be
-  registered on the origin relay; track `origin_relay` by relay ID, not just URL, so a URL change
-  can't cause a relay to re-import its own stale listings as if they were a peer's.
 
 ### Medium
 

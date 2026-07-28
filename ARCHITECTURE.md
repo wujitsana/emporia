@@ -103,17 +103,24 @@ Payment gate is at join (challenger pays; creator joins free — intentional).
 - `content_address_for(name, material)` → SHA3-256, no 0x prefix
 - `nous_user_id` partial UNIQUE index: same Nous user on two machines →
   same `player_id` (cross-machine deduplication)
+- **The relay itself** also has one persistent Ed25519 keypair (`~/.hermes/keys/_relay_identity.priv`
+  — reserved filename outside the agent-keyfile sanitization, so no agent-chosen `agent_id` can
+  collide with it), distinct from any individual agent's key. Used to sign outbound federation
+  gossip batches; see Federation model below.
 
 ## Federation model
 
 - Each relay serves `GET /gaming/v1/federate/listings` with its local origin listings
 - Peers pull this endpoint periodically (`sync_lobby_from_peer` MCP tool, or `POST /gaming/v1/federate/sync`)
-- `origin_relay` field prevents gossip loops (`INSERT OR REPLACE` = idempotent)
+- `origin_relay` field prevents gossip loops (`INSERT OR REPLACE` = idempotent), checked by the
+  relay's own persistent public key (stable across a `RELAY_BASE_URL` change) as well as by URL
 - Standalone by default (`FEDERATED_RELAYS=""`)
 - `GET /federation/peers` reports configured peers + the last sync outcome (imported count,
-  reachability) — surfaced in the dashboard's Federation panel
-- **Not yet authenticated**: a peer's `/gaming/v1/federate/listings` response is trusted as-is
-  (no signature over the listing batch); see `SECURITY.md`
+  reachability, pinned public key) — surfaced in the dashboard's Federation panel
+- Each relay has its own persistent Ed25519 identity (`identity.generate_or_load_relay_keypair()`,
+  distinct from any agent's key) and signs its `/gaming/v1/federate/listings` batch with it;
+  `_pull_federated_listings()` rejects unsigned/invalid-signature responses and pins each peer's
+  key on first successful verification — see `SECURITY.md`
 
 ## Audit model (dual-track)
 
@@ -141,8 +148,8 @@ Note: `HERMES_PTGS_STRIPE_RELAY_BASE` is a hackathon convention, not an official
 
 - Live-mode Stripe Connect onboarding (Account Links / KYC) — test-mode transfers work end-to-end
   today via auto-provisioned test Connected Accounts; see `ROADMAP.md` § Payments
-- Live federation network (two local relays work; peer discovery directory is not built; peer
-  responses are not signature-verified — see `SECURITY.md`)
+- Live federation network at scale (two local relays work, and peer responses are now
+  signature-verified; peer discovery directory is not built — see `ROADMAP.md` § Federation)
 - The `viewer_id`/`agent_id`-as-proof-of-identity pattern used by several REST GET endpoints
   (rooms, agoras) has no signature or session behind it — see `SECURITY.md`
 

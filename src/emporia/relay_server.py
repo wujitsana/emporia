@@ -86,7 +86,7 @@ _load_profile_dotenv()
 from emporia.engine.game_registry import GameRegistry
 from emporia.engine import guardrails
 from emporia.engine.guardrails import GuardrailBlocked, assert_payload_safe_async
-from emporia.identity import verify
+from emporia.identity import verify, get_relay_public_key_hex, sign_raw_relay
 from emporia.module_sdk import (
     MODULE_REGISTRY,
     SessionAction,
@@ -138,6 +138,13 @@ FEDERATED_RELAYS: list[str] = [
 # Last federation sync outcome per peer, for the dashboard's Federation panel.
 # {peer_url: {"ok": bool, "imported": int, "synced_at": iso8601}}
 _FEDERATION_LAST_SYNC: dict[str, dict[str, Any]] = {}
+
+# Trust-on-first-use pin of each peer's Ed25519 public key, keyed by peer_url. The first
+# successfully signature-verified pull from a peer pins its key; a later pull presenting a
+# different key for the same peer_url is rejected rather than silently trusted (guards
+# against a URL/DNS hijack swapping identities out from under an existing federation
+# relationship). In-memory only — resets on relay restart, same as _FEDERATION_LAST_SYNC.
+_FEDERATION_PEER_PUBKEYS: dict[str, str] = {}
 
 
 def _stripe_profile_id() -> str:
@@ -2363,23 +2370,49 @@ async def get_event(event_id: str):
 # Federation
 # ============================================================================
 
+def _federation_signable_bytes(origin_relay: str, listings: list[dict]) -> bytes:
+    """Canonical bytes signed over a federation listings batch. Must produce the exact
+    same output whether called on the freshly-built payload (serving side) or on the
+    same payload after a JSON round-trip over HTTP (pulling side) — sort_keys +
+    compact separators makes this deterministic regardless of dict insertion order."""
+    payload = {"origin_relay": origin_relay, "listings": listings}
+    return json.dumps(payload, sort_keys=True, separators=(",", ":")).encode("utf-8")
+
+
 @app.get("/gaming/v1/federate/listings")
 async def federated_listings_out():
-    """Serve local listings for federation pull by peer relays."""
+    """Serve local listings for federation pull by peer relays.
+
+    Signed with this relay's own Ed25519 key (persisted, distinct from any agent's key —
+    see identity.generate_or_load_relay_keypair()) so a pulling peer can verify the batch
+    actually came from here unaltered, rather than trusting the HTTP response wholesale.
+    """
     with DB_LOCK, get_db() as conn:
         rows = conn.execute(
             "SELECT * FROM listings WHERE (expires_at IS NULL OR expires_at > ?) "
             "AND origin_relay = ? ORDER BY created_at DESC LIMIT 200",
             (datetime.now(UTC).isoformat(), RELAY_BASE_URL),
         ).fetchall()
+    listings = [{**dict(r), "metadata": json.loads(r["metadata_json"])} for r in rows]
+    signature = sign_raw_relay(_federation_signable_bytes(RELAY_BASE_URL, listings))
     return {
         "origin_relay": RELAY_BASE_URL,
-        "listings": [{**dict(r), "metadata": json.loads(r["metadata_json"])} for r in rows],
+        "origin_public_key_hex": get_relay_public_key_hex(),
+        "signature": signature,
+        "listings": listings,
     }
 
 
 async def _pull_federated_listings(peer_url: str) -> int:
-    """Pull listings from a peer relay and upsert locally (federation gossip)."""
+    """Pull listings from a peer relay and upsert locally (federation gossip).
+
+    Rejects the batch unless it carries a valid Ed25519 signature from the peer's own
+    relay key (see federated_listings_out()) — an unsigned or badly-signed response is
+    trusted no further than any other unauthenticated internet traffic. A peer's key is
+    pinned on first successful verification (_FEDERATION_PEER_PUBKEYS) and any later pull
+    presenting a different key for the same peer_url is rejected rather than silently
+    re-trusted, so a URL/DNS hijack can't swap in a different signer unnoticed.
+    """
     try:
         async with httpx.AsyncClient(timeout=15) as client:
             resp = await client.get(f"{peer_url.rstrip('/')}/gaming/v1/federate/listings")
@@ -2395,8 +2428,43 @@ async def _pull_federated_listings(peer_url: str) -> int:
         return 0
 
     origin = data.get("origin_relay", peer_url)
-    # Skip our own relay to prevent loops
-    if origin == RELAY_BASE_URL:
+    listings = data.get("listings", [])
+    pubkey_hex = data.get("origin_public_key_hex", "")
+    signature_hex = data.get("signature", "")
+
+    def _reject(reason: str) -> int:
+        _FEDERATION_LAST_SYNC[peer_url] = {
+            "ok": False,
+            "imported": 0,
+            "error": reason,
+            "synced_at": datetime.now(UTC).isoformat(),
+        }
+        return 0
+
+    if not pubkey_hex or not signature_hex:
+        return _reject("peer response is unsigned — refusing to import (upgrade the peer relay)")
+    try:
+        from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
+        Ed25519PublicKey.from_public_bytes(bytes.fromhex(pubkey_hex)).verify(
+            bytes.fromhex(signature_hex),
+            _federation_signable_bytes(origin, listings),
+        )
+    except Exception:
+        return _reject("signature verification failed — batch may be tampered or corrupt")
+
+    pinned = _FEDERATION_PEER_PUBKEYS.get(peer_url)
+    if pinned and pinned != pubkey_hex:
+        return _reject(
+            f"peer key mismatch — pinned {pinned[:12]}..., got {pubkey_hex[:12]}... "
+            "(possible URL hijack; remove from FEDERATED_RELAYS and re-add to re-pin deliberately)"
+        )
+    _FEDERATION_PEER_PUBKEYS[peer_url] = pubkey_hex
+
+    # Skip our own relay to prevent loops. Checked by public key, not just URL — the key is
+    # a persistent identity tied to a key file, while RELAY_BASE_URL is an env var an
+    # operator can change; a URL-only check would miss "this is actually our own batch,
+    # reflected back by a peer" once the URL has drifted from what old listings recorded.
+    if origin == RELAY_BASE_URL or pubkey_hex == get_relay_public_key_hex():
         _FEDERATION_LAST_SYNC[peer_url] = {
             "ok": True,
             "imported": 0,
@@ -2406,7 +2474,7 @@ async def _pull_federated_listings(peer_url: str) -> int:
         return 0
 
     imported = 0
-    for listing in data.get("listings", []):
+    for listing in listings:
         if not listing.get("listing_id"):
             continue
         with DB_LOCK, get_db() as conn:
@@ -2463,7 +2531,11 @@ async def federation_peers():
         "relay_url": RELAY_BASE_URL,
         "standalone": not FEDERATED_RELAYS,
         "peers": [
-            {"url": peer, **_FEDERATION_LAST_SYNC.get(peer, {"ok": None, "imported": 0})}
+            {
+                "url": peer,
+                "pinned_public_key_hex": _FEDERATION_PEER_PUBKEYS.get(peer),
+                **_FEDERATION_LAST_SYNC.get(peer, {"ok": None, "imported": 0}),
+            }
             for peer in FEDERATED_RELAYS
         ],
         "imported_listing_count": imported_row["c"] if imported_row else 0,

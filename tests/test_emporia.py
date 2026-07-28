@@ -393,6 +393,136 @@ def test_listing_requires_authorized_agent(client):
 
 
 # ============================================================================
+# Federation
+# ============================================================================
+
+def test_federated_listings_out_is_signed(client):
+    """GET /gaming/v1/federate/listings must include a valid Ed25519 signature over its
+    own origin_relay + listings, verifiable with the included public key."""
+    from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
+    from emporia.relay_server import _federation_signable_bytes
+
+    r = client.get("/gaming/v1/federate/listings")
+    assert r.status_code == 200
+    data = r.json()
+    assert data["origin_public_key_hex"]
+    assert data["signature"]
+
+    pub = Ed25519PublicKey.from_public_bytes(bytes.fromhex(data["origin_public_key_hex"]))
+    signed_bytes = _federation_signable_bytes(data["origin_relay"], data["listings"])
+    pub.verify(bytes.fromhex(data["signature"]), signed_bytes)  # raises if invalid
+
+
+def _make_peer_batch(origin: str, listings: list[dict]) -> tuple[dict, str]:
+    """Build a self-consistent signed federation batch from a throwaway keypair, for
+    mocking a peer relay's response. Returns (batch_dict, public_key_hex)."""
+    from cryptography.hazmat.primitives.asymmetric import ed25519
+    from emporia.relay_server import _federation_signable_bytes
+
+    priv = ed25519.Ed25519PrivateKey.generate()
+    pub_hex = priv.public_key().public_bytes_raw().hex()
+    sig_hex = priv.sign(_federation_signable_bytes(origin, listings)).hex()
+    return (
+        {
+            "origin_relay": origin,
+            "origin_public_key_hex": pub_hex,
+            "signature": sig_hex,
+            "listings": listings,
+        },
+        pub_hex,
+    )
+
+
+def _mock_peer_response(batch: dict):
+    resp = MagicMock()
+    resp.raise_for_status = MagicMock()
+    resp.json = MagicMock(return_value=batch)
+    return resp
+
+
+@patch("httpx.AsyncClient.get", new_callable=AsyncMock)
+async def test_pull_federated_listings_accepts_valid_signature(mock_get):
+    from emporia.relay_server import _pull_federated_listings, _FEDERATION_PEER_PUBKEYS
+
+    listing = {
+        "listing_id": "lst_fed_valid_1", "title": "Peer listing", "description": "",
+        "listing_type": "service", "agent_id": "peer_agent", "payment_mode": "free",
+        "price_usd": "0", "module_type": None, "expires_at": None,
+        "metadata": {}, "created_at": "2026-01-01T00:00:00+00:00",
+    }
+    batch, pub_hex = _make_peer_batch("https://peer.example/relay", [listing])
+    mock_get.return_value = _mock_peer_response(batch)
+
+    _FEDERATION_PEER_PUBKEYS.pop("https://peer.example/relay", None)
+    imported = await _pull_federated_listings("https://peer.example/relay")
+    assert imported == 1
+    assert _FEDERATION_PEER_PUBKEYS["https://peer.example/relay"] == pub_hex
+
+
+@patch("httpx.AsyncClient.get", new_callable=AsyncMock)
+async def test_pull_federated_listings_rejects_unsigned(mock_get):
+    from emporia.relay_server import _pull_federated_listings, _FEDERATION_LAST_SYNC
+
+    mock_get.return_value = _mock_peer_response({
+        "origin_relay": "https://unsigned-peer.example",
+        "listings": [{"listing_id": "lst_unsigned", "agent_id": "x"}],
+    })
+    imported = await _pull_federated_listings("https://unsigned-peer.example")
+    assert imported == 0
+    assert _FEDERATION_LAST_SYNC["https://unsigned-peer.example"]["ok"] is False
+    assert "unsigned" in _FEDERATION_LAST_SYNC["https://unsigned-peer.example"]["error"]
+
+
+@patch("httpx.AsyncClient.get", new_callable=AsyncMock)
+async def test_pull_federated_listings_rejects_tampered_batch(mock_get):
+    """A signature valid for one payload must not verify against a different (tampered)
+    one — simulates a MITM or compromised-transport modification after signing."""
+    from emporia.relay_server import _pull_federated_listings, _FEDERATION_LAST_SYNC
+
+    listing = {
+        "listing_id": "lst_fed_tamper", "title": "Original title", "description": "",
+        "listing_type": "service", "agent_id": "peer_agent", "payment_mode": "free",
+        "price_usd": "0", "module_type": None, "expires_at": None,
+        "metadata": {}, "created_at": "2026-01-01T00:00:00+00:00",
+    }
+    batch, _ = _make_peer_batch("https://tamper-peer.example", [listing])
+    batch["listings"][0]["title"] = "Scam title — signature no longer matches"
+    mock_get.return_value = _mock_peer_response(batch)
+
+    imported = await _pull_federated_listings("https://tamper-peer.example")
+    assert imported == 0
+    assert _FEDERATION_LAST_SYNC["https://tamper-peer.example"]["ok"] is False
+    assert "signature" in _FEDERATION_LAST_SYNC["https://tamper-peer.example"]["error"]
+
+
+@patch("httpx.AsyncClient.get", new_callable=AsyncMock)
+async def test_pull_federated_listings_rejects_key_rotation_without_repin(mock_get):
+    """Once a peer's key is pinned, a later pull presenting a different (even validly
+    self-signed) key for the same peer_url must be rejected, not silently re-trusted."""
+    from emporia.relay_server import _pull_federated_listings, _FEDERATION_PEER_PUBKEYS
+
+    peer_url = "https://rotate-peer.example"
+    listing = {
+        "listing_id": "lst_fed_rotate", "title": "L", "description": "",
+        "listing_type": "service", "agent_id": "peer_agent", "payment_mode": "free",
+        "price_usd": "0", "module_type": None, "expires_at": None,
+        "metadata": {}, "created_at": "2026-01-01T00:00:00+00:00",
+    }
+    batch1, pub1 = _make_peer_batch(peer_url, [listing])
+    _FEDERATION_PEER_PUBKEYS.pop(peer_url, None)
+    mock_get.return_value = _mock_peer_response(batch1)
+    assert await _pull_federated_listings(peer_url) == 1
+    assert _FEDERATION_PEER_PUBKEYS[peer_url] == pub1
+
+    batch2, pub2 = _make_peer_batch(peer_url, [{**listing, "listing_id": "lst_fed_rotate_2"}])
+    assert pub2 != pub1
+    mock_get.return_value = _mock_peer_response(batch2)
+    imported2 = await _pull_federated_listings(peer_url)
+    assert imported2 == 0
+    assert _FEDERATION_PEER_PUBKEYS[peer_url] == pub1  # unchanged — still pinned to the original
+
+
+# ============================================================================
 # Events
 # ============================================================================
 
