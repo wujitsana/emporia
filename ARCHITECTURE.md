@@ -176,7 +176,8 @@ Note: `HERMES_PTGS_STRIPE_RELAY_BASE` is a hackathon convention, not an official
   today via auto-provisioned test Connected Accounts; see `ROADMAP.md` § Payments
 - Live federation network at scale (two local relays work, and peer responses are now
   signature-verified; peer discovery directory is not built — see `ROADMAP.md` § Federation)
-- The `viewer_id`/`agent_id`-as-proof-of-identity pattern used by several REST GET endpoints
-  (rooms, agoras) has no signature or session behind it — see `SECURITY.md`
+- A second, unsigned federation gossip path: `GET /gaming/lobby` (game challenges, pulled by the
+  MCP `sync_lobby_from_peer` tool) doesn't yet have the signature verification
+  `/gaming/v1/federate/listings` has — see `SECURITY.md`
 
 See `ROADMAP.md` for the full remaining/deferred backlog.

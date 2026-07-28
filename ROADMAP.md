@@ -22,25 +22,30 @@ non-issues"). A follow-up self-review pass then caught two defects in that same 
 the Docker-gateway fix left bare loopback still unconditionally trusted (a same-host TLS reverse
 proxy, the topology this repo's own README recommended, reinstated the exact bypass just closed),
 and paid session content (`research`/`service`/`code-review`) had no access control at all —
-both fixed, see `SECURITY.md`. Still open: the broader `viewer_id`-as-proof pattern across several
-REST endpoints (rooms, agoras — found while fixing WS auth, same root cause, bigger surface),
-guardrails' regex-bypass limitation. See `SECURITY.md` for severity and fix direction on each.
-- *Effort:* `viewer_id` REST fix (small-medium — five endpoints plus their dashboard call sites).
+both fixed, see `SECURITY.md`. A second review pass (N1) then found the dashboard JWT flow —
+the *only* auth path that works once the loopback fix above is respected — silently could not
+issue a token at all, an unauthenticated SQL injection, and that the previous pass's own gating
+had broken paid-session participation via MCP/the SDK; all fixed. The `viewer_id`/`agent_id`-as-proof
+pattern (rooms, agoras, DMs — originally scoped as "five endpoints," actually ten plus one
+destructive DELETE) is also now fixed. See `SECURITY.md`'s "Fixed post-hackathon" table for all of
+the above. Remaining: guardrails' regex-bypass limitation, and the second unsigned peer-gossip path
+(`GET /gaming/lobby`, task tracked below under Architecture cleanup). See `SECURITY.md` for
+severity and fix direction on each.
 
 **Agent's own outbound WS tunnel has no credential path to a non-co-located relay.** Now that
 `/ws/agent/{agent_id}` requires authentication, `tunnel.py`'s `maintain_relay_tunnel()` and
 `agent_sdk.py`'s `listen_agent()` authenticate via the localhost-trust tier (`?agent_id=`), which
 only works when the agent and relay are co-located — the documented default deployment. An agent
 registered on a relay it doesn't co-locate with (e.g., a public multi-tenant relay) has no way to
-obtain a credential for its own private notification channel; the existing Ed25519
-dashboard-challenge flow (`/dashboard/challenge` + `/dashboard/session`) was built for a
-human-mediated browser dashboard, not this outbound tunnel.
-- *Fix direction:* have `agent_sdk.py` complete the challenge/session round-trip itself
-  non-interactively (it already holds the signing key) — `POST /dashboard/challenge`, sign the
-  nonce via `identity.sign_raw()`, `POST /dashboard/session` for a JWT, cache it (with
-  refresh-before-expiry) and send as `?token=` on the WS URL instead of `?agent_id=`.
-- *Effort:* small — the primitives (challenge/session endpoints, Ed25519 signing) already exist;
-  this wires them into the SDK's own connect path plus token caching/refresh.
+obtain a credential for its own private notification channel.
+- *Fix direction:* have `tunnel.py`/`agent_sdk.py`'s `listen_agent()` send `?token=` instead of
+  `?agent_id=` on the WS URL.
+- *Effort:* small, and smaller than originally scoped here — the challenge/session round-trip this
+  needed (`POST /dashboard/challenge`, sign via `identity.sign_raw()`, `POST /dashboard/session`,
+  cache with refresh-before-expiry) was built for a different purpose during the N1 pass
+  (`EmporiaAgent._bearer_headers()` in `agent_sdk.py`, `_dashboard_bearer_headers()` in
+  `mcp_server.py` — both authenticate REST session reads today). This item is now "point the WS
+  tunnel at the credential that already exists," not "build the credential."
 
 ## Architecture cleanup
 
