@@ -2019,6 +2019,84 @@ def test_service_session_dispute_delivery_e2e(client):
     assert s["platform_fee_cents"] == 0
 
 
+# ============================================================================
+# MCP client paid-session auth (N1-3 regression: mcp_server.py sent no credential
+# on session reads, so under N0-2 gating a genuine participant in a paid session
+# couldn't even fetch step_number to sign their own turn)
+# ============================================================================
+
+class _ASGIHttpxAdapter:
+    """Redirects mcp_server.py's module-level httpx.get/post calls to an in-process
+    TestClient instead of a real socket, so an MCP-tool-level test exercises the real
+    relay auth/gating code (challenge issuance, JWT verification, session ACL) without
+    needing a live server on a real port — nothing else in this suite does that, and
+    mcp_server.py only ever calls httpx.get/.post (verified), so scoping the patch to
+    just those two attributes for the duration of one `with` block is safe."""
+
+    def __init__(self, test_client, base_url: str):
+        self._client = test_client
+        self._base = base_url.rstrip("/")
+
+    def get(self, url, **kwargs):
+        kwargs.pop("timeout", None)
+        return self._client.get(url[len(self._base):], **kwargs)
+
+    def post(self, url, **kwargs):
+        kwargs.pop("timeout", None)
+        return self._client.post(url[len(self._base):], **kwargs)
+
+
+def test_mcp_paid_session_full_turn_under_prod_auth(prod_client):
+    """Regression for R3: before N1-3, mcp_server.submit_action's pre-fetch of the
+    session (to read step_number for signing) sent no credential, so under N0-2's
+    participants-only gating for emporia:service:v1 it 403'd — a genuine participant
+    could not take a turn in a paid session via MCP at all. Runs the full seller
+    accept -> deliver -> buyer confirm-delivery flow entirely through the MCP tool
+    functions against prod_client (header-auth trust off, matching the shipped
+    default), proving _dashboard_bearer_headers() makes the pre-fetch succeed.
+    """
+    from emporia import mcp_server
+
+    _register_keyed(prod_client, "mcp_e2e_buyer")
+    _register_keyed(prod_client, "mcp_e2e_seller")
+
+    r = prod_client.post("/sessions", json={
+        "module_type": "emporia:service:v1",
+        "creator_agent_id": "mcp_e2e_buyer",
+        "config": {"description": "Write a haiku about distributed systems"},
+        "payment_rules": {"mode": "free"},
+    })
+    assert r.status_code == 200, r.text
+    session_id = r.json()["session_id"]
+    r = prod_client.post(f"/sessions/{session_id}/join", json={"agent_id": "mcp_e2e_seller"})
+    assert r.status_code == 200
+
+    adapter = _ASGIHttpxAdapter(prod_client, mcp_server.RELAY_URL)
+    with patch.object(mcp_server, "httpx", adapter):
+        r = mcp_server.submit_action(
+            session_id=session_id, action_type="accept", payload={},
+            rationale="Accepting haiku commission — technical theme, 5-7-5 structure.",
+            agent_id="mcp_e2e_seller",
+        )
+        assert r.get("success") is True, r
+
+        r = mcp_server.submit_action(
+            session_id=session_id, action_type="deliver",
+            payload={"deliverable": "Packets traverse / silent wires hum with load / logs remember all"},
+            rationale="Delivered haiku meeting 5-7-5 structure with distributed systems theme.",
+            agent_id="mcp_e2e_seller",
+        )
+        assert r.get("success") is True, r
+
+        r = mcp_server.confirm_delivery(
+            session_id=session_id, agent_id="mcp_e2e_buyer",
+            rationale="Haiku meets requirements: 5-7-5 structure confirmed, technical theme present.",
+        )
+        assert r.get("success") is True, r
+        assert r["is_terminal"] is True
+        assert r["outcome"]["winner"] == "mcp_e2e_seller"
+
+
 def test_stripe_profile_discovery_nested_id():
     from emporia.stripe_profile_discovery import find_profile_id_in_data
 

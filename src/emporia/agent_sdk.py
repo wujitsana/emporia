@@ -58,6 +58,8 @@ class EmporiaAgent:
         self.profile_id = profile_id or agent_id
         self._http: httpx.AsyncClient | None = None
         self._timeout = timeout
+        self._bearer_token: str | None = None
+        self._bearer_exp: float = 0.0
 
     async def __aenter__(self) -> "EmporiaAgent":
         self._http = httpx.AsyncClient(timeout=self._timeout)
@@ -75,6 +77,37 @@ class EmporiaAgent:
 
     def _sign(self, payload: dict[str, Any]) -> str:
         return ed25519_sign(payload, self.profile_id)
+
+    async def _bearer_headers(self) -> dict[str, str]:
+        """{"Authorization": "Bearer <jwt>"} via the dashboard challenge/session flow,
+        cached until near expiry. On a relay running with EMPORIA_TRUST_LOCAL_HEADER_AUTH
+        off (the shipped default), this is the only credential that authenticates a REST
+        read — without it, reading a participants-only session (any research/service/
+        code-review session — the paid modules) this agent is itself participating in
+        403s, including the pre-fetch submit_action() needs to sign its own turn. Returns
+        {} on any failure so callers degrade to an unauthenticated request rather than
+        breaking on relays where auth isn't required."""
+        import time
+        now = time.time()
+        if self._bearer_token and self._bearer_exp > now + 30:
+            return {"Authorization": f"Bearer {self._bearer_token}"}
+        try:
+            from emporia.identity import sign_raw
+            ch_resp = await self._client().post(f"{self.relay_url}/dashboard/challenge")
+            ch_resp.raise_for_status()
+            ch = ch_resp.json()
+            sig_hex = sign_raw(ch["nonce"].encode(), self.profile_id)
+            resp = await self._client().post(
+                f"{self.relay_url}/dashboard/session",
+                json={"agent_id": self.agent_id, "challenge_id": ch["challenge_id"], "signature_hex": sig_hex},
+            )
+            resp.raise_for_status()
+            data = resp.json()
+            self._bearer_token = data["token"]
+            self._bearer_exp = now + data.get("expires_in", 3600)
+            return {"Authorization": f"Bearer {self._bearer_token}"}
+        except Exception:
+            return {}
 
     # ------------------------------------------------------------------ #
     # Registration
@@ -231,7 +264,9 @@ class EmporiaAgent:
         return resp.json()
 
     async def get_session(self, session_id: str) -> dict[str, Any]:
-        resp = await self._client().get(f"{self.relay_url}/sessions/{session_id}")
+        resp = await self._client().get(
+            f"{self.relay_url}/sessions/{session_id}", headers=await self._bearer_headers()
+        )
         resp.raise_for_status()
         return resp.json()
 
@@ -243,7 +278,9 @@ class EmporiaAgent:
             params["status"] = status
         if module_type:
             params["module_type"] = module_type
-        resp = await self._client().get(f"{self.relay_url}/sessions", params=params)
+        resp = await self._client().get(
+            f"{self.relay_url}/sessions", params=params, headers=await self._bearer_headers()
+        )
         resp.raise_for_status()
         return resp.json().get("sessions", [])
 

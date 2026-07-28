@@ -91,6 +91,52 @@ _game_registry = GameRegistry(DB_PATH)
 
 
 # ============================================================================
+# Dashboard Bearer auth for our own outbound calls
+# ============================================================================
+# On a relay running with EMPORIA_TRUST_LOCAL_HEADER_AUTH off (the shipped default —
+# header trust is loopback/Docker-gateway-only), _dashboard_agent_id() only accepts a
+# Bearer JWT. Without one, our own reads of a participants-only session (any research/
+# service/code-review session — the paid modules) 403, including the pre-fetch this
+# process needs just to read step_number and sign its own turn. This obtains and caches
+# that token via the same challenge/sign_raw/session exchange sign_dashboard_challenge()
+# performs on behalf of a remote browser dashboard — this is the equivalent self-initiated
+# flow for MCP's own outbound HTTP calls.
+_dashboard_token_cache: dict[str, tuple[str, float]] = {}
+
+
+def _dashboard_bearer_headers(relay_url: str = "", agent_id: str = "") -> dict[str, str]:
+    """{"Authorization": "Bearer <jwt>"} for `agent_id` (default AGENT_ID), cached until
+    near expiry. Returns {} — not raises — on any failure (no local key, relay
+    unreachable, agent not registered yet), so callers degrade to the pre-N1-3 behavior
+    of an unauthenticated request rather than breaking calls to relays where auth isn't
+    required (header-trusted local dev loop, or a public session)."""
+    target = relay_url or RELAY_URL
+    aid = agent_id or AGENT_ID
+    if not aid:
+        return {}
+    cache_key = f"{target}|{aid}"
+    cached = _dashboard_token_cache.get(cache_key)
+    now = time.time()
+    if cached and cached[1] > now + 30:
+        return {"Authorization": f"Bearer {cached[0]}"}
+    try:
+        from emporia.identity import sign_raw
+        ch = httpx.post(f"{target}/dashboard/challenge", timeout=10).json()
+        sig_hex = sign_raw(ch["nonce"].encode(), aid)
+        r = httpx.post(
+            f"{target}/dashboard/session",
+            json={"agent_id": aid, "challenge_id": ch["challenge_id"], "signature_hex": sig_hex},
+            timeout=10,
+        )
+        r.raise_for_status()
+        data = r.json()
+        _dashboard_token_cache[cache_key] = (data["token"], now + data.get("expires_in", 3600))
+        return {"Authorization": f"Bearer {data['token']}"}
+    except Exception:
+        return {}
+
+
+# ============================================================================
 # Module auto-discovery
 # ============================================================================
 
@@ -1132,7 +1178,7 @@ def list_sessions(
     if status:
         params["status"] = status
     try:
-        r = httpx.get(f"{RELAY_URL}/sessions", params=params, timeout=10)
+        r = httpx.get(f"{RELAY_URL}/sessions", params=params, headers=_dashboard_bearer_headers(), timeout=10)
         return r.json() if r.status_code == 200 else {"error": f"Relay {r.status_code}", "detail": r.text}
     except Exception as e:
         return {"error": str(e)}
@@ -1142,7 +1188,9 @@ def list_sessions(
 def get_session(session_id: str) -> dict[str, Any]:
     """Fetch full session detail including current state, participants, and step number."""
     try:
-        r = httpx.get(f"{RELAY_URL}/sessions/{session_id}", timeout=10)
+        r = httpx.get(
+            f"{RELAY_URL}/sessions/{session_id}", headers=_dashboard_bearer_headers(), timeout=10
+        )
         return r.json() if r.status_code == 200 else {"error": f"Relay {r.status_code}", "detail": r.text}
     except Exception as e:
         return {"error": str(e)}
@@ -1264,7 +1312,9 @@ def submit_action(
     # can't be replayed against a different session or turn.
     from emporia.identity import sign as ed25519_sign
     try:
-        sess_r = httpx.get(f"{RELAY_URL}/sessions/{session_id}", timeout=10)
+        sess_r = httpx.get(
+            f"{RELAY_URL}/sessions/{session_id}", headers=_dashboard_bearer_headers(agent_id=aid), timeout=10
+        )
         sess_r.raise_for_status()
         step_number = sess_r.json()["step_number"]
     except Exception as e:
@@ -1312,7 +1362,9 @@ def confirm_delivery(
     effective_rationale = rationale or "Buyer confirmed delivery."
     from emporia.identity import sign as ed25519_sign
     try:
-        sess_r = httpx.get(f"{RELAY_URL}/sessions/{session_id}", timeout=10)
+        sess_r = httpx.get(
+            f"{RELAY_URL}/sessions/{session_id}", headers=_dashboard_bearer_headers(agent_id=aid), timeout=10
+        )
         sess_r.raise_for_status()
         step_number = sess_r.json()["step_number"]
     except Exception as e:
@@ -1356,7 +1408,9 @@ def dispute_delivery(
     effective_rationale = rationale or f"Dispute: {reason}"
     from emporia.identity import sign as ed25519_sign
     try:
-        sess_r = httpx.get(f"{RELAY_URL}/sessions/{session_id}", timeout=10)
+        sess_r = httpx.get(
+            f"{RELAY_URL}/sessions/{session_id}", headers=_dashboard_bearer_headers(agent_id=aid), timeout=10
+        )
         sess_r.raise_for_status()
         step_number = sess_r.json()["step_number"]
     except Exception as e:
