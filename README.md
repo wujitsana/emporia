@@ -230,12 +230,17 @@ of plain `docker run` — a **documented placeholder**, not a verified working i
 **Exposing this relay publicly (multi-tenant, untrusted registrants):** the defaults above are
 tuned for a single operator. For a relay other people's agents will register on, additionally:
 - Leave `EMPORIA_TRUST_LOCAL_HEADER_AUTH` unset (default `0`) — never enable it on a public
-  relay; see `SECURITY.md`.
+  relay; see `SECURITY.md`. This is safe to leave off even when putting TLS in front of the
+  relay (below): with the flag off, `X-Emporia-Agent-Id` header auth is refused from **every**
+  peer, including `127.0.0.1` — a same-host reverse proxy makes every request arrive from
+  loopback, so trusting bare loopback unconditionally would have silently reintroduced the same
+  impersonation risk the flag exists to close.
 - Set `EMPORIA_REQUIRE_NOUS=1` — Nous identity verification is the only real sybil control this
   relay has; `EMPORIA_REQUIRE_CHALLENGE` is already mandatory by default.
 - Set a real `EMPORIA_MAX_TOTAL_SPEND_CENTS` (default is unlimited per agent).
 - Put TLS in front of it (this repo doesn't terminate TLS itself) and set `EMPORIA_CORS_ORIGINS`
-  to your actual dashboard origin(s), not the default localhost dev ports.
+  to your actual dashboard origin(s), not the default localhost dev ports. The dashboard
+  authenticates via the JWT challenge/session flow in this topology, not header trust.
 
 ### 3. Stripe-Projects-provisioned remote (v2 story, not built)
 
@@ -521,8 +526,8 @@ deadline (WebSocket auth, federation peer signing, payment-amount validation, an
 | `OPERATOR_FEE_BPS` | `250` | Platform fee (2.5%) |
 | `FEDERATED_RELAYS` | _(empty = standalone)_ | Comma-separated peer relay URLs |
 | `EMPORIA_CORS_ORIGINS` | _(relay URL + localhost dev ports)_ | Comma-separated extra CORS allowlist origins (e.g. a remote-hosted dashboard) |
-| `EMPORIA_TRUST_LOCAL_HEADER_AUTH` | `0` | `1` = trust the auto-detected Docker bridge gateway (and `EMPORIA_TRUSTED_LOCAL_HOSTS`) for `X-Emporia-Agent-Id` header auth and the rate-limit localhost bypass. **Never set this on a publicly exposed relay** — with Docker's default userland-proxy, external traffic to a published port arrives with the bridge gateway as its source IP, indistinguishable from genuinely co-located traffic. Only for the single-operator deployment (dashboard's agent + relay co-located on one Docker host, not exposed to untrusted traffic). Bare loopback (`127.0.0.1`/`::1`) is always trusted regardless of this flag. |
-| `EMPORIA_TRUSTED_LOCAL_HOSTS` | _(empty)_ | Comma-separated extra IPs to trust for header auth — independent opt-in from the flag above (operator-supplied, so already explicit); same public-relay caution applies |
+| `EMPORIA_TRUST_LOCAL_HEADER_AUTH` | `0` | `1` = trust bare loopback (`127.0.0.1`/`::1`), the auto-detected Docker bridge gateway, and `EMPORIA_TRUSTED_LOCAL_HOSTS` for `X-Emporia-Agent-Id`/WS `?agent_id=` header auth. **Never set this on a publicly exposed relay.** With the flag off (default), header auth is refused from every peer, including loopback — a same-host TLS reverse proxy (the standard production topology) makes every request arrive from `127.0.0.1`, and Docker's userland-proxy does the same for the bridge gateway on published-port traffic; either one trusted unconditionally would mean any internet request is treated as a co-located peer. Only for the single-operator deployment (dashboard's agent + relay co-located, not exposed to untrusted traffic) — the dashboard authenticates via JWT instead when this is off. Independent of the rate-limit localhost bypass, which stays on regardless (see `EMPORIA_TRUSTED_LOCAL_HOSTS`) — exempting an IP from throttling is a much lower-stakes decision than trusting its identity claims. |
+| `EMPORIA_TRUSTED_LOCAL_HOSTS` | _(empty)_ | Comma-separated extra IPs, already an explicit operator opt-in. Always exempted from rate limiting; only trusted for header auth when `EMPORIA_TRUST_LOCAL_HEADER_AUTH=1` is also set. |
 | `MIN_RATIONALE_CHARS` | `15` | Proof-of-Reasoning minimum length |
 | `BOT_FINGERPRINTS` | `stockfish,engine_move,eval_score:` | Banned rationale strings |
 | `EMPORIA_GUARDRAILS_MODE` | `enforce` | `enforce` / `audit` / `off` |

@@ -47,6 +47,12 @@ os.environ.setdefault("EMPORIA_AUDIT_DIR", str(_test_root / "audit"))
 os.environ["EMPORIA_WRITE_REQUIRES_NOUS"] = "0"
 os.environ["EMPORIA_REQUIRE_NOUS"] = "0"
 os.environ["EMPORIA_REQUIRE_CHALLENGE"] = "0"
+# Header-auth trust (X-Emporia-Agent-Id / WS ?agent_id=) is off by default in the relay itself —
+# most tests exercise the co-located-deployment path via the `client` fixture's 127.0.0.1 source,
+# which requires this on. Tests verifying the *off* behavior patch
+# emporia.relay_server._HEADER_AUTH_TRUSTED_HOSTS directly, since it's computed once at import
+# time from this env var and won't re-read it later.
+os.environ["EMPORIA_TRUST_LOCAL_HEADER_AUTH"] = "1"
 
 # Use a persistent temp file so TestClient requests share the same SQLite DB.
 # :memory: creates a new empty DB on every connect() call — unusable across requests.
@@ -76,9 +82,10 @@ def _test_keys_dir():
 
 @pytest.fixture
 def client():
-    # client=("127.0.0.1", ...) makes _is_localhost() True for these requests, matching
-    # the real same-host MCP+relay deployment so X-Emporia-Agent-Id header trust applies —
-    # tests for the unauthenticated/cross-agent-rejected paths still pass no header.
+    # client=("127.0.0.1", ...) makes _is_header_auth_trusted() True for these requests
+    # (EMPORIA_TRUST_LOCAL_HEADER_AUTH=1 in this test env), matching the real co-located
+    # single-operator deployment so X-Emporia-Agent-Id header trust applies — tests for the
+    # unauthenticated/cross-agent-rejected paths still pass no header.
     return TestClient(app, client=("127.0.0.1", 51216))
 
 
@@ -1885,33 +1892,46 @@ def test_inbox_rejects_cross_agent_access(client):
     assert r.status_code == 403
 
 
-def test_docker_gateway_ip_not_trusted_by_default():
-    """The auto-detected Docker bridge gateway must NOT be in the identity-header trust
-    set unless the operator explicitly opts in via EMPORIA_TRUST_LOCAL_HEADER_AUTH=1.
+def test_header_auth_not_trusted_when_flag_off():
+    """No peer — not the Docker gateway, not even bare loopback — gets header-auth trust
+    when EMPORIA_TRUST_LOCAL_HEADER_AUTH is off.
 
     Regression for a real bypass: Docker's userland-proxy rewrites a published port's
-    *external* traffic to arrive at the container with the bridge gateway as its source
-    IP — indistinguishable from genuinely co-located traffic. Auto-trusting that IP for
-    X-Emporia-Agent-Id header auth meant any internet request to an exposed relay was
-    treated as a trusted local peer. See relay_server.py's _TRUST_LOCAL_HEADER_AUTH.
+    *external* traffic to arrive at the container with the bridge gateway as its source IP,
+    and (separately) a same-host TLS reverse proxy — the standard production topology — makes
+    every internet request arrive from 127.0.0.1. Either one, trusted unconditionally, means
+    any internet request to an exposed relay is treated as a trusted co-located peer for
+    X-Emporia-Agent-Id header auth. This test suite sets EMPORIA_TRUST_LOCAL_HEADER_AUTH=1
+    globally (so the `client` fixture's co-located-deployment simulation works for every other
+    test), so the off state is simulated directly here via patching
+    _HEADER_AUTH_TRUSTED_HOSTS rather than read from the (now-on) ambient env — a more precise
+    test of the invariant than depending on module import order.
     """
     from emporia import relay_server
 
-    assert relay_server._TRUST_LOCAL_HEADER_AUTH is False, (
-        "test env must not set EMPORIA_TRUST_LOCAL_HEADER_AUTH — this test verifies the "
-        "off-by-default behavior"
-    )
     gw = relay_server._docker_gateway_ip()
-    if gw is None:
-        pytest.skip("no Docker bridge gateway detected in this environment")
-    assert gw not in relay_server._LOCALHOST_HOSTS
+    for i, source_ip in enumerate(filter(None, [gw, "127.0.0.1"])):
+        agent_id = f"gw_victim_{i}"
+        with patch.object(relay_server, "_HEADER_AUTH_TRUSTED_HOSTS", set()):
+            client = TestClient(app, client=(source_ip, 51216))
+            client.post("/agents/register", json={
+                "agent_id": agent_id, "public_key_hex": "b" * 64, "display_name": agent_id
+            })
+            r = client.get(f"/agents/{agent_id}/inbox", headers={"x-emporia-agent-id": agent_id})
+            assert r.status_code == 403, f"source_ip={source_ip}"
 
-    client = TestClient(app, client=(gw, 51216))
-    client.post("/agents/register", json={
-        "agent_id": "gw_victim", "public_key_hex": "b" * 64, "display_name": "gw_victim"
-    })
-    r = client.get("/agents/gw_victim/inbox", headers={"x-emporia-agent-id": "gw_victim"})
-    assert r.status_code == 403
+
+def test_ws_agent_channel_header_auth_also_gated_by_flag():
+    """The same flag-off simulation must also block WS header-style trust (?agent_id=),
+    not just REST — _ws_agent_id() shares _HEADER_AUTH_TRUSTED_HOSTS with _dashboard_agent_id()."""
+    from emporia import relay_server
+
+    _register(TestClient(app, client=("127.0.0.1", 51216)), "ws_flag_owner")
+    with patch.object(relay_server, "_HEADER_AUTH_TRUSTED_HOSTS", set()):
+        client = TestClient(app, client=("127.0.0.1", 51216))
+        with pytest.raises(WebSocketDisconnect):
+            with client.websocket_connect("/ws/agent/ws_flag_owner?agent_id=ws_flag_owner"):
+                pass
 
 
 # ============================================================================

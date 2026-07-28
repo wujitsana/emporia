@@ -190,25 +190,38 @@ def _docker_gateway_ip() -> str | None:
 
 _LOCALHOST_HOSTS = {"127.0.0.1", "::1", "localhost"}
 
-# Auto-trusting the detected Docker bridge gateway is dangerous by default: with Docker's
-# default userland-proxy, traffic to a *published* port is NAT'd to arrive at the container
-# with that same gateway IP as the source — indistinguishable from genuinely co-located
-# traffic. Trusting it unconditionally means any request from the public internet to an
-# exposed relay is treated as a trusted local peer (X-Emporia-Agent-Id header accepted with
-# no proof of key possession, rate limiting skipped). Require an explicit operator opt-in;
-# this is for the single-operator co-located deployment (dashboard's agent + relay on one
-# Docker host, not exposed to untrusted traffic), never the default for a public relay.
-_TRUST_LOCAL_HEADER_AUTH = os.getenv("EMPORIA_TRUST_LOCAL_HEADER_AUTH", "0").strip() == "1"
-if _TRUST_LOCAL_HEADER_AUTH:
-    _docker_gw = _docker_gateway_ip()
-    if _docker_gw:
-        _LOCALHOST_HOSTS.add(_docker_gw)
-
-# Explicit operator escape hatch for other proxy topologies (comma-separated IPs) — already
-# an explicit opt-in (operator sets it directly), independent of the flag above.
-_LOCALHOST_HOSTS.update(
+# Rate-limit exemption is a much lower-stakes bypass than identity trust below — "don't
+# throttle this IP" grants nothing an attacker can act on. Bare loopback is always exempt;
+# an operator's own reverse-proxy/LB IPs (EMPORIA_TRUSTED_LOCAL_HOSTS) are an explicit opt-in
+# independent of the header-auth flag below.
+_RATE_LIMIT_EXEMPT_HOSTS: set[str] = set(_LOCALHOST_HOSTS)
+_RATE_LIMIT_EXEMPT_HOSTS.update(
     h.strip() for h in os.getenv("EMPORIA_TRUSTED_LOCAL_HOSTS", "").split(",") if h.strip()
 )
+
+# Header-based identity trust (X-Emporia-Agent-Id on REST, ?agent_id= on WS) must never be
+# inferred from a network address alone. Two ways that bites:
+#   1. Docker's default userland-proxy rewrites a *published* port's external traffic to
+#      arrive at the container with the bridge gateway as its source IP — indistinguishable
+#      from genuinely co-located traffic.
+#   2. A same-host TLS reverse proxy (nginx/Caddy in front of the relay on one VPS, the
+#      standard production topology) makes every internet request arrive from 127.0.0.1 —
+#      indistinguishable from a co-located dashboard/agent.
+# So this set requires an explicit operator opt-in and, with the flag off, is EMPTY —
+# header auth is fully dead regardless of network topology, including bare loopback. The
+# single-operator co-located deployment (dashboard's agent + relay on one host, not exposed
+# to untrusted traffic) sets the flag deliberately; a public relay never should.
+_TRUST_LOCAL_HEADER_AUTH = os.getenv("EMPORIA_TRUST_LOCAL_HEADER_AUTH", "0").strip() == "1"
+_HEADER_AUTH_TRUSTED_HOSTS: set[str] = set()
+if _TRUST_LOCAL_HEADER_AUTH:
+    _HEADER_AUTH_TRUSTED_HOSTS.update(_LOCALHOST_HOSTS)
+    _docker_gw = _docker_gateway_ip()
+    if _docker_gw:
+        _HEADER_AUTH_TRUSTED_HOSTS.add(_docker_gw)
+        _RATE_LIMIT_EXEMPT_HOSTS.add(_docker_gw)
+    _HEADER_AUTH_TRUSTED_HOSTS.update(
+        h.strip() for h in os.getenv("EMPORIA_TRUSTED_LOCAL_HOSTS", "").split(",") if h.strip()
+    )
 
 # ─── Dashboard JWT (HMAC-SHA256, stdlib only) ────────────────────────────────
 import base64
@@ -247,15 +260,18 @@ def _jwt_decode(token: str) -> dict | None:
     return payload
 
 
-def _is_localhost(request: Request) -> bool:
-    """True when the TCP connection comes from the local machine.
+def _is_header_auth_trusted(request: Request) -> bool:
+    """True when the TCP connection is from a peer allowed to claim identity via header.
 
-    Always reads request.client.host (the real TCP peer), never forwarded headers.
-    This means X-Forwarded-For: 127.0.0.1 from a remote client is ignored —
-    no localhost trust can be spoofed via headers.
+    Always reads request.client.host (the real TCP peer), never forwarded headers — so
+    X-Forwarded-For: 127.0.0.1 from a remote client is ignored. Checks
+    _HEADER_AUTH_TRUSTED_HOSTS, not bare loopback: with EMPORIA_TRUST_LOCAL_HEADER_AUTH off
+    (the default), this set is empty and every peer — including 127.0.0.1 — is untrusted for
+    header auth. See that flag's definition for why bare loopback isn't safe to trust
+    unconditionally (a same-host reverse proxy makes every request arrive from it).
     """
     host = request.client.host if request.client else ""
-    return host in _LOCALHOST_HOSTS
+    return host in _HEADER_AUTH_TRUSTED_HOSTS
 
 
 def _dashboard_agent_id(request: Request) -> str | None:
@@ -263,11 +279,11 @@ def _dashboard_agent_id(request: Request) -> str | None:
     Resolve the requesting agent for dashboard REST calls.
 
     Trust model:
-      - localhost + X-Emporia-Agent-Id header → trusted (dashboard co-located with agent)
-      - Authorization: Bearer <jwt>            → verified via HMAC-SHA256 JWT
-      - anything else                          → None (unauthenticated)
+      - trusted host + X-Emporia-Agent-Id header → trusted (co-located, EMPORIA_TRUST_LOCAL_HEADER_AUTH=1)
+      - Authorization: Bearer <jwt>                → verified via HMAC-SHA256 JWT
+      - anything else                              → None (unauthenticated)
     """
-    if _is_localhost(request):
+    if _is_header_auth_trusted(request):
         header_id = request.headers.get("x-emporia-agent-id")
         if header_id:
             return header_id
@@ -286,13 +302,13 @@ def _ws_agent_id(ws: WebSocket) -> str | None:
     Same trust tiers as _dashboard_agent_id(), adapted for WS: browsers cannot set
     custom headers (Authorization, X-Emporia-Agent-Id) on a WS handshake, so both
     tiers are carried as query params instead:
-      - localhost + ?agent_id=<id>  → trusted (dashboard co-located with agent)
-      - ?token=<jwt>                 → verified via the same HMAC-SHA256 JWT used for
-                                        dashboard REST auth
-      - neither                      → None (unauthenticated)
+      - trusted host + ?agent_id=<id>  → trusted (co-located, EMPORIA_TRUST_LOCAL_HEADER_AUTH=1)
+      - ?token=<jwt>                    → verified via the same HMAC-SHA256 JWT used for
+                                           dashboard REST auth
+      - neither                         → None (unauthenticated)
     """
     host = ws.client.host if ws.client else ""
-    if host in _LOCALHOST_HOSTS:
+    if host in _HEADER_AUTH_TRUSTED_HOSTS:
         qp_agent = ws.query_params.get("agent_id")
         if qp_agent:
             return qp_agent
@@ -1303,8 +1319,10 @@ async def rate_limit(request: Request, call_next):
     # If behind a trusted reverse proxy (nginx, Caddy), set TRUSTED_PROXY=1 and the proxy
     # must rewrite the source IP at TCP level or strip/replace the X-Real-IP header server-side.
     ip = (request.client.host if request.client else "unknown")
-    # Localhost and test client: no rate limiting
-    if ip in _LOCALHOST_HOSTS or ip == "testclient":
+    # Localhost, operator-listed proxy IPs, and test client: no rate limiting. Separate from
+    # _HEADER_AUTH_TRUSTED_HOSTS — exempting an IP from throttling is a much lower-stakes
+    # bypass than trusting it to claim any agent identity.
+    if ip in _RATE_LIMIT_EXEMPT_HOSTS or ip == "testclient":
         return await call_next(request)
     path = request.url.path
     bucket = "auth" if path in _AUTH_PATHS else ("write" if request.method not in ("GET", "HEAD") else "default")

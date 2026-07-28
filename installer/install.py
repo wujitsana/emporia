@@ -836,6 +836,12 @@ def install_into_profile(
     env_lines, c1 = _set_env_line(env_lines, "EMPORIA_AGENT_ID", agent_id)
     env_lines, c2 = _set_env_line(env_lines, "EMPORIA_RELAY_URL", relay_url)
     env_lines, _ = _set_env_line(env_lines, "EMPORIA_DB_PATH", db_path)
+    if _is_local_relay(relay_url):
+        # Single-operator co-located deployment — the case EMPORIA_TRUST_LOCAL_HEADER_AUTH
+        # exists for. Without it, the embedded dashboard's baked-in VITE_AGENT_ID header auth
+        # (write_dashboard_env(), below) gets refused by the relay's default-off trust set.
+        # Never written for a remote relay_url — that's someone else's relay to configure.
+        env_lines, _ = _set_env_line(env_lines, "EMPORIA_TRUST_LOCAL_HEADER_AUTH", "1")
     env_lines, _ = _set_env_line(env_lines, "STRIPE_API_VERSION", stripe_api_version or os.getenv("STRIPE_API_VERSION", "2026-04-22.preview"))
     if stripe_secret_key:
         env_lines, _ = _set_env_line(env_lines, "STRIPE_SECRET_KEY", stripe_secret_key)
