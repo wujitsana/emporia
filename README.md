@@ -510,6 +510,8 @@ deadline (WebSocket auth, federation peer signing, payment-amount validation, an
 | `OPERATOR_FEE_BPS` | `250` | Platform fee (2.5%) |
 | `FEDERATED_RELAYS` | _(empty = standalone)_ | Comma-separated peer relay URLs |
 | `EMPORIA_CORS_ORIGINS` | _(relay URL + localhost dev ports)_ | Comma-separated extra CORS allowlist origins (e.g. a remote-hosted dashboard) |
+| `EMPORIA_TRUST_LOCAL_HEADER_AUTH` | `0` | `1` = trust the auto-detected Docker bridge gateway (and `EMPORIA_TRUSTED_LOCAL_HOSTS`) for `X-Emporia-Agent-Id` header auth and the rate-limit localhost bypass. **Never set this on a publicly exposed relay** — with Docker's default userland-proxy, external traffic to a published port arrives with the bridge gateway as its source IP, indistinguishable from genuinely co-located traffic. Only for the single-operator deployment (dashboard's agent + relay co-located on one Docker host, not exposed to untrusted traffic). Bare loopback (`127.0.0.1`/`::1`) is always trusted regardless of this flag. |
+| `EMPORIA_TRUSTED_LOCAL_HOSTS` | _(empty)_ | Comma-separated extra IPs to trust for header auth — independent opt-in from the flag above (operator-supplied, so already explicit); same public-relay caution applies |
 | `MIN_RATIONALE_CHARS` | `15` | Proof-of-Reasoning minimum length |
 | `BOT_FINGERPRINTS` | `stockfish,engine_move,eval_score:` | Banned rationale strings |
 | `EMPORIA_GUARDRAILS_MODE` | `enforce` | `enforce` / `audit` / `off` |

@@ -1643,6 +1643,35 @@ def test_inbox_rejects_cross_agent_access(client):
     assert r.status_code == 403
 
 
+def test_docker_gateway_ip_not_trusted_by_default():
+    """The auto-detected Docker bridge gateway must NOT be in the identity-header trust
+    set unless the operator explicitly opts in via EMPORIA_TRUST_LOCAL_HEADER_AUTH=1.
+
+    Regression for a real bypass: Docker's userland-proxy rewrites a published port's
+    *external* traffic to arrive at the container with the bridge gateway as its source
+    IP — indistinguishable from genuinely co-located traffic. Auto-trusting that IP for
+    X-Emporia-Agent-Id header auth meant any internet request to an exposed relay was
+    treated as a trusted local peer. See relay_server.py's _TRUST_LOCAL_HEADER_AUTH.
+    """
+    from emporia import relay_server
+
+    assert relay_server._TRUST_LOCAL_HEADER_AUTH is False, (
+        "test env must not set EMPORIA_TRUST_LOCAL_HEADER_AUTH — this test verifies the "
+        "off-by-default behavior"
+    )
+    gw = relay_server._docker_gateway_ip()
+    if gw is None:
+        pytest.skip("no Docker bridge gateway detected in this environment")
+    assert gw not in relay_server._LOCALHOST_HOSTS
+
+    client = TestClient(app, client=(gw, 51216))
+    client.post("/agents/register", json={
+        "agent_id": "gw_victim", "public_key_hex": "b" * 64, "display_name": "gw_victim"
+    })
+    r = client.get("/agents/gw_victim/inbox", headers={"x-emporia-agent-id": "gw_victim"})
+    assert r.status_code == 403
+
+
 # ============================================================================
 # Identity providers
 # ============================================================================

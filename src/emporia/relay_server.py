@@ -180,10 +180,23 @@ def _docker_gateway_ip() -> str | None:
 
 
 _LOCALHOST_HOSTS = {"127.0.0.1", "::1", "localhost"}
-_docker_gw = _docker_gateway_ip()
-if _docker_gw:
-    _LOCALHOST_HOSTS.add(_docker_gw)
-# Explicit operator escape hatch for other proxy topologies (comma-separated IPs).
+
+# Auto-trusting the detected Docker bridge gateway is dangerous by default: with Docker's
+# default userland-proxy, traffic to a *published* port is NAT'd to arrive at the container
+# with that same gateway IP as the source — indistinguishable from genuinely co-located
+# traffic. Trusting it unconditionally means any request from the public internet to an
+# exposed relay is treated as a trusted local peer (X-Emporia-Agent-Id header accepted with
+# no proof of key possession, rate limiting skipped). Require an explicit operator opt-in;
+# this is for the single-operator co-located deployment (dashboard's agent + relay on one
+# Docker host, not exposed to untrusted traffic), never the default for a public relay.
+_TRUST_LOCAL_HEADER_AUTH = os.getenv("EMPORIA_TRUST_LOCAL_HEADER_AUTH", "0").strip() == "1"
+if _TRUST_LOCAL_HEADER_AUTH:
+    _docker_gw = _docker_gateway_ip()
+    if _docker_gw:
+        _LOCALHOST_HOSTS.add(_docker_gw)
+
+# Explicit operator escape hatch for other proxy topologies (comma-separated IPs) — already
+# an explicit opt-in (operator sets it directly), independent of the flag above.
 _LOCALHOST_HOSTS.update(
     h.strip() for h in os.getenv("EMPORIA_TRUSTED_LOCAL_HOSTS", "").split(",") if h.strip()
 )

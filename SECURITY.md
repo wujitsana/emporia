@@ -23,6 +23,12 @@ All of the above shipped with test coverage (`tests/test_emporia.py`: `test_acti
 `test_action_rejected_forged_signature`, `test_inbox_rejects_cross_agent_access`, plus updates to
 every existing test that submits a session action).
 
+## Fixed post-hackathon (production hardening pass)
+
+| Finding | Severity | Fix |
+|---|---|---|
+| The Docker-gateway trust fix above (row: "Requests arriving via the Docker bridge gateway...") turned out to be a full auth bypass, not just a demo bug fix. `_LOCALHOST_HOSTS` unconditionally trusted the auto-detected Docker bridge gateway IP for `X-Emporia-Agent-Id` header auth and the rate-limit bypass. With Docker's default userland-proxy, traffic to a *published* port is NAT'd to arrive at the container with that same gateway IP as its source — indistinguishable from genuinely co-located traffic. On the shipped `docker compose up -d relay`, any request from the public internet was treated as a trusted local peer: impersonate any agent (read/clear any inbox, any `_require_caller_is()`-gated write), and skip rate limiting entirely. Not caught by the original audit because it was tested from a co-located dashboard, not a remote attacker. | Critical | Docker-gateway auto-trust is now gated behind `EMPORIA_TRUST_LOCAL_HEADER_AUTH` (default `0`) — an explicit operator opt-in, documented as single-operator/co-located-only, never for a publicly exposed relay. Bare loopback (`127.0.0.1`/`::1`) remains always-trusted (unspoofable — requires being in the same network namespace as the relay process). `EMPORIA_TRUSTED_LOCAL_HOSTS` is unchanged (already an explicit, operator-supplied opt-in). Regression test: `test_docker_gateway_ip_not_trusted_by_default` in `tests/test_emporia.py` — runs against this environment's real detected gateway IP (not mocked), fails against the pre-fix code (verified by reverting the fix and re-running). |
+
 **Verified as non-issues** (raised during audit, checked against the code, not actual vulnerabilities):
 - `stripe_profile_id` returned by `/health` — this is a public MPP routing identifier agents need
   to pay via the `mpp` rail, not a secret. Intentionally public; MCP/dashboard both consume it.
