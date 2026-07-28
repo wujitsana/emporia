@@ -69,13 +69,24 @@ def get_public_key_hex(profile_id: str) -> str:
 _RELAY_KEY_PATH_NAME = "_relay_identity.priv"
 
 
+_RELAY_KEYPAIR_CACHE: tuple[ed25519.Ed25519PrivateKey, bytes] | None = None
+
+
 def generate_or_load_relay_keypair() -> tuple[ed25519.Ed25519PrivateKey, bytes]:
     """Return this relay's own persistent (private_key, public_key_bytes) — a single
     identity for the relay process itself, distinct from any agent's keypair. Used to sign
     outbound federation gossip batches so peers can verify authenticity/integrity
     independent of which agent happens to be the relay operator.
+
+    Cached after first load — unlike per-agent keypairs (which vary by profile_id and are
+    comparatively cold-path), this is called at least twice per federation-serve request
+    (get_relay_public_key_hex() + sign_raw_relay()), so re-reading the key file from disk
+    every call is pure overhead once the relay process has loaded it once.
     """
-    return _load_or_generate_at(KEY_DIR / _RELAY_KEY_PATH_NAME)
+    global _RELAY_KEYPAIR_CACHE
+    if _RELAY_KEYPAIR_CACHE is None:
+        _RELAY_KEYPAIR_CACHE = _load_or_generate_at(KEY_DIR / _RELAY_KEY_PATH_NAME)
+    return _RELAY_KEYPAIR_CACHE
 
 
 def get_relay_public_key_hex() -> str:
@@ -87,6 +98,42 @@ def sign_raw_relay(data: bytes) -> str:
     """Sign raw bytes with this relay's own Ed25519 key. Returns lowercase hex signature."""
     priv, _ = generate_or_load_relay_keypair()
     return priv.sign(data).hex()
+
+
+# ============================================================================
+# Federation peer key pinning (trust-on-first-use, persisted)
+# ============================================================================
+# Stored beside the relay's own key (same directory, same 0o600 model) so it survives
+# container recreation — the Docker deployment mounts KEY_DIR (/data/keys) as a durable
+# volume. Kept in this module rather than relay_server.py so the file path always tracks
+# KEY_DIR's live value (including test patches via patch.object(identity, "KEY_DIR", ...)),
+# the same reason generate_or_load_relay_keypair() lives here rather than in relay_server.py.
+
+_PEER_PUBKEYS_FILE_NAME = "federation_peer_pubkeys.json"
+
+
+def load_federation_peer_pubkeys() -> dict[str, str]:
+    """Return the persisted {peer_url: pubkey_hex} pin map, or {} if none exists yet."""
+    path = KEY_DIR / _PEER_PUBKEYS_FILE_NAME
+    try:
+        return json.loads(path.read_text())
+    except (FileNotFoundError, json.JSONDecodeError, OSError):
+        return {}
+
+
+def save_federation_peer_pubkeys(pubkeys: dict[str, str]) -> None:
+    """Persist the full {peer_url: pubkey_hex} pin map. Best-effort: a write failure
+    (read-only filesystem, permissions) degrades to in-memory-only pinning for this
+    process's lifetime rather than raising — pinning is a hardening measure, not a
+    correctness dependency the relay should crash over.
+    """
+    KEY_DIR.mkdir(parents=True, exist_ok=True)
+    path = KEY_DIR / _PEER_PUBKEYS_FILE_NAME
+    try:
+        path.write_text(json.dumps(pubkeys, sort_keys=True, indent=2))
+        path.chmod(0o600)
+    except OSError:
+        pass
 
 
 # ============================================================================

@@ -86,7 +86,13 @@ _load_profile_dotenv()
 from emporia.engine.game_registry import GameRegistry
 from emporia.engine import guardrails
 from emporia.engine.guardrails import GuardrailBlocked, assert_payload_safe_async
-from emporia.identity import verify, get_relay_public_key_hex, sign_raw_relay
+from emporia.identity import (
+    verify,
+    get_relay_public_key_hex,
+    sign_raw_relay,
+    load_federation_peer_pubkeys,
+    save_federation_peer_pubkeys,
+)
 from emporia.module_sdk import (
     MODULE_REGISTRY,
     SessionAction,
@@ -143,8 +149,21 @@ _FEDERATION_LAST_SYNC: dict[str, dict[str, Any]] = {}
 # successfully signature-verified pull from a peer pins its key; a later pull presenting a
 # different key for the same peer_url is rejected rather than silently trusted (guards
 # against a URL/DNS hijack swapping identities out from under an existing federation
-# relationship). In-memory only — resets on relay restart, same as _FEDERATION_LAST_SYNC.
+# relationship). Persisted to disk (identity.save_federation_peer_pubkeys(), beside the
+# relay's own key) so a restart doesn't reset trust-on-first-use back to
+# trust-on-first-use-again — the pin is the entire point. Loaded lazily on first actual
+# use rather than at module-import time: identity.KEY_DIR can be patched (e.g. by tests)
+# after this module is imported, and a lazy load correctly picks up whatever KEY_DIR is
+# live when federation code first runs, not whatever it was at import time.
 _FEDERATION_PEER_PUBKEYS: dict[str, str] = {}
+_FEDERATION_PEER_PUBKEYS_LOADED = False
+
+
+def _ensure_federation_pins_loaded() -> None:
+    global _FEDERATION_PEER_PUBKEYS_LOADED
+    if not _FEDERATION_PEER_PUBKEYS_LOADED:
+        _FEDERATION_PEER_PUBKEYS.update(load_federation_peer_pubkeys())
+        _FEDERATION_PEER_PUBKEYS_LOADED = True
 
 
 def _stripe_profile_id() -> str:
@@ -2502,13 +2521,16 @@ async def _pull_federated_listings(peer_url: str) -> int:
     except Exception:
         return _reject("signature verification failed — batch may be tampered or corrupt")
 
+    _ensure_federation_pins_loaded()
     pinned = _FEDERATION_PEER_PUBKEYS.get(peer_url)
     if pinned and pinned != pubkey_hex:
         return _reject(
             f"peer key mismatch — pinned {pinned[:12]}..., got {pubkey_hex[:12]}... "
             "(possible URL hijack; remove from FEDERATED_RELAYS and re-add to re-pin deliberately)"
         )
-    _FEDERATION_PEER_PUBKEYS[peer_url] = pubkey_hex
+    if pinned is None:
+        _FEDERATION_PEER_PUBKEYS[peer_url] = pubkey_hex
+        save_federation_peer_pubkeys(_FEDERATION_PEER_PUBKEYS)
 
     # Skip our own relay to prevent loops. Checked by public key, not just URL — the key is
     # a persistent identity tied to a key file, while RELAY_BASE_URL is an env var an
@@ -2571,6 +2593,7 @@ async def trigger_federation_sync():
 @app.get("/federation/peers")
 async def federation_peers():
     """Configured federation peers + last gossip-sync outcome, for the dashboard."""
+    _ensure_federation_pins_loaded()
     with DB_LOCK, get_db() as conn:
         imported_row = conn.execute(
             "SELECT COUNT(*) AS c FROM listings WHERE origin_relay IS NOT NULL "

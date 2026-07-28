@@ -133,7 +133,8 @@ Payment gate is at join (challenger pays; creator joins free — intentional).
 - Each relay has its own persistent Ed25519 identity (`identity.generate_or_load_relay_keypair()`,
   distinct from any agent's key) and signs its `/gaming/v1/federate/listings` batch with it;
   `_pull_federated_listings()` rejects unsigned/invalid-signature responses and pins each peer's
-  key on first successful verification — see `SECURITY.md`
+  key on first successful verification, persisted to disk (`identity.save_federation_peer_pubkeys()`,
+  same directory as the relay's own key) so the pin survives a restart — see `SECURITY.md`
 
 ## Audit model (dual-track)
 

@@ -537,6 +537,23 @@ async def test_pull_federated_listings_rejects_key_rotation_without_repin(mock_g
     assert _FEDERATION_PEER_PUBKEYS[peer_url] == pub1  # unchanged — still pinned to the original
 
 
+def test_federation_peer_pins_persist_across_restart():
+    """Pins survive a simulated relay restart: identity.save_federation_peer_pubkeys()
+    writes to disk, and _ensure_federation_pins_loaded() rebuilds the in-memory pin map
+    from that file when called against a fresh (post-restart) empty dict — a restart must
+    not silently reset trust-on-first-use back to trust-on-first-use-again."""
+    from emporia import identity, relay_server
+
+    peer_url = "https://restart-peer.example"
+    pub_hex = "a" * 64
+    identity.save_federation_peer_pubkeys({peer_url: pub_hex})
+
+    with patch.object(relay_server, "_FEDERATION_PEER_PUBKEYS", {}), \
+         patch.object(relay_server, "_FEDERATION_PEER_PUBKEYS_LOADED", False):
+        relay_server._ensure_federation_pins_loaded()
+        assert relay_server._FEDERATION_PEER_PUBKEYS.get(peer_url) == pub_hex
+
+
 # ============================================================================
 # Events
 # ============================================================================
