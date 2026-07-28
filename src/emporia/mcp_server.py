@@ -1452,7 +1452,10 @@ def abandon_session(
         return {"error": "agent_id required", "success": False}
     body: dict[str, Any] = {"agent_id": aid}
     try:
-        r = httpx.post(f"{RELAY_URL}/sessions/{session_id}/abandon", json=body, timeout=10)
+        r = httpx.post(
+            f"{RELAY_URL}/sessions/{session_id}/abandon",
+            json=body, headers=_dashboard_bearer_headers(agent_id=aid), timeout=10,
+        )
         d = r.json()
         return {"success": True, **d} if r.status_code == 200 else {"error": f"Relay {r.status_code}", "detail": d, "success": False}
     except Exception as e:

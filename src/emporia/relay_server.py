@@ -1986,8 +1986,10 @@ async def get_agent_profile(agent_id: str):
 
 
 @app.get("/agents/{agent_id}/sessions")
-async def get_agent_sessions(agent_id: str, status: str | None = None, limit: int = 50):
-    """Sessions this agent has participated in."""
+async def get_agent_sessions(agent_id: str, request: Request, status: str | None = None, limit: int = 50):
+    """Sessions this agent has participated in — same visibility rule as GET /sessions
+    (_session_viewer_allowed), so this can't be used to bypass participants-only gating
+    on a paid session just by knowing a co-participant's agent_id."""
     with DB_LOCK, get_db() as conn:
         q = ("SELECT s.* FROM sessions s "
              "JOIN participants p ON s.session_id = p.session_id "
@@ -1999,7 +2001,9 @@ async def get_agent_sessions(agent_id: str, status: str | None = None, limit: in
         q += " ORDER BY s.created_at DESC LIMIT ?"
         params.append(limit)
         rows = conn.execute(q, params).fetchall()
-    return {"agent_id": agent_id, "sessions": [_session_row_to_dict(r) for r in rows]}
+    caller = _dashboard_agent_id(request)
+    sessions = [_session_row_to_dict(r) for r in rows]
+    return {"agent_id": agent_id, "sessions": [s for s in sessions if _session_viewer_allowed(s, caller)]}
 
 
 @app.get("/agents/{agent_id}/listings")
@@ -2240,20 +2244,41 @@ async def get_settlement(session_id: str):
 
 
 @app.get("/payments/records")
-async def list_payment_records(session_id: str | None = None, room_id: str | None = None):
-    """List raw payment records (confirmed PaymentIntents)."""
+async def list_payment_records(
+    request: Request, session_id: str | None = None, room_id: str | None = None
+):
+    """List raw payment records (confirmed PaymentIntents).
+
+    Access rules mirror /payments/settlements:
+      - ?session_id=X → same visibility as the session (_session_viewer_allowed)
+      - ?room_id=X    → room members (or the relay operator)
+      - no filter     → relay operator only
+    """
+    caller = _dashboard_agent_id(request)
+    owner = os.getenv("EMPORIA_AGENT_ID", "")
+    is_owner = bool(owner and caller == owner)
     with DB_LOCK, get_db() as conn:
         if session_id:
+            s = load_session(session_id)
+            if not s or not _session_viewer_allowed(s, caller):
+                raise HTTPException(403, "Not authorized to view this session's payment records")
             rows = conn.execute(
                 "SELECT * FROM payments WHERE session_id = ? ORDER BY created_at DESC",
                 (session_id,),
             ).fetchall()
         elif room_id:
+            room = rooms_db.get_room(room_id, db_path=DATABASE_PATH)
+            if not room or not (
+                is_owner or (caller and rooms_db.is_member(room_id, caller, db_path=DATABASE_PATH))
+            ):
+                raise HTTPException(403, "Not authorized to view this room's payment records")
             rows = conn.execute(
                 "SELECT * FROM payments WHERE room_id = ? ORDER BY created_at DESC",
                 (room_id,),
             ).fetchall()
         else:
+            if not is_owner:
+                raise HTTPException(403, "Global payment records require relay operator access")
             rows = conn.execute(
                 "SELECT * FROM payments ORDER BY created_at DESC LIMIT 200"
             ).fetchall()
@@ -3098,7 +3123,7 @@ async def dispute_delivery(session_id: str, req: DisputeDeliveryRequest, request
 
 
 @app.post("/sessions/{session_id}/abandon")
-async def abandon_session(session_id: str, req: dict = None):
+async def abandon_session(session_id: str, request: Request, req: dict = None):
     """Mark a session abandoned and release all escrowed stake holds.
 
     Call this when a session cannot complete (both agents disconnected, timeout,
@@ -3109,6 +3134,10 @@ async def abandon_session(session_id: str, req: dict = None):
     s = load_session(session_id)
     if not s:
         raise HTTPException(404, "Session not found")
+    caller = _dashboard_agent_id(request)
+    owner = os.getenv("EMPORIA_AGENT_ID", "")
+    if not caller or (caller not in s["participants"] and caller != owner):
+        raise HTTPException(403, "Only a participant or the relay operator may abandon this session")
     if s["status"] == "complete":
         raise HTTPException(400, "Session already complete — cannot abandon")
 
@@ -3186,10 +3215,11 @@ async def send_message(req: SendMessageRequest):
 
 
 @app.get("/messages")
-async def get_messages(agent_id: str, session_id: str | None = None, limit: int = 50):
+async def get_messages(agent_id: str, request: Request, session_id: str | None = None, limit: int = 50):
     """Deprecated history view — use GET /inbox for live events, GET /dm for peer chat.
     Still returns the raw messages audit table for back-compat.
     """
+    _require_caller_is(agent_id, request)
     with DB_LOCK, get_db() as conn:
         if session_id:
             rows = conn.execute(

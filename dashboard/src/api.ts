@@ -364,8 +364,12 @@ export const api = {
     ),
   agentProfile: (agent_id: string) => get<AgentProfile>(`/agents/${encodeURIComponent(agent_id)}`),
   agentSessions: (agent_id: string, status?: string) =>
+    // Filtered server-side by the same _session_viewer_allowed() rule as GET /sessions
+    // (see the sessions() note above) — needs agentScoped so participants-only sessions
+    // this agent is actually part of still come back, rather than being silently dropped.
     get<{ agent_id: string; sessions: Session[] }>(
-      `/agents/${encodeURIComponent(agent_id)}/sessions${status ? `?status=${status}` : ""}`
+      `/agents/${encodeURIComponent(agent_id)}/sessions${status ? `?status=${status}` : ""}`,
+      { agentScoped: true }
     ),
   agentListings: (agent_id: string) =>
     get<{ agent_id: string; listings: Listing[] }>(

@@ -795,6 +795,37 @@ def test_list_sessions_filters_by_visibility(client):
     assert session_id in ids_as_buyer
 
 
+def test_agent_sessions_endpoint_filters_by_visibility(client):
+    """GET /agents/{agent_id}/sessions was a drop-in bypass of the GET /sessions gating
+    above (same _session_row_to_dict, including full `state`, with no auth check at all)
+    — anyone who knew a co-participant's agent_id read every paid session they were in.
+    Now filtered by the same _session_viewer_allowed rule as /sessions."""
+    _register(client, "vis_agsess_buyer")
+    _register(client, "vis_agsess_seller")
+    _register(client, "vis_agsess_stranger")
+    r = client.post("/sessions", json={
+        "module_type": "emporia:service:v1", "creator_agent_id": "vis_agsess_buyer",
+        "config": {"description": "Confidential work"}, "payment_rules": {"mode": "free"},
+    })
+    session_id = r.json()["session_id"]
+    client.post(f"/sessions/{session_id}/join", json={"agent_id": "vis_agsess_seller"})
+
+    r = client.get("/agents/vis_agsess_seller/sessions")
+    assert session_id not in {s["session_id"] for s in r.json()["sessions"]}
+
+    r = client.get(
+        "/agents/vis_agsess_seller/sessions",
+        headers={"x-emporia-agent-id": "vis_agsess_stranger"},
+    )
+    assert session_id not in {s["session_id"] for s in r.json()["sessions"]}
+
+    r = client.get(
+        "/agents/vis_agsess_seller/sessions",
+        headers={"x-emporia-agent-id": "vis_agsess_buyer"},
+    )
+    assert session_id in {s["session_id"] for s in r.json()["sessions"]}
+
+
 def test_ws_session_requires_participant_for_private_module(client):
     _register(client, "vis_ws_buyer")
     _register(client, "vis_ws_stranger")
@@ -913,10 +944,10 @@ def test_no_new_identity_as_proof_query_params():
     _SAFE_LOOKUPS = {
         ("GET", "/payments/settlements"),  # agent_id: filter, but gated by inline auth check
         ("DELETE", "/agoras/topics/{slug}/subscribe"),  # agent_id: _require_caller_is-checked
+        ("GET", "/messages"),  # agent_id: _require_caller_is-checked (N1-5)
     }
     # Pre-existing violations tracked for N1-6 (task #7) — delete each line as it's fixed.
     _KNOWN_VIOLATIONS = {
-        ("GET", "/messages"),
         ("GET", "/rooms"),
         ("GET", "/rooms/{room_id}"),
         ("GET", "/rooms/{room_id}/messages"),
@@ -965,6 +996,92 @@ def test_no_new_identity_as_proof_query_params():
                 still_present.add((method, path))
     stale = _KNOWN_VIOLATIONS - still_present
     assert not stale, f"_KNOWN_VIOLATIONS entries no longer reproduce, remove them: {stale}"
+
+
+# ============================================================================
+# Session-read bypass fixes (N1-5)
+# ============================================================================
+
+def test_messages_endpoint_requires_own_identity(client):
+    """GET /messages trusted its agent_id query param as identity with no auth check —
+    anyone could read any agent's full message payload history. Now uses
+    _require_caller_is, same as /agents/{id}/inbox."""
+    _register(client, "msgs_owner")
+    _register(client, "msgs_stranger")
+    assert client.get("/messages", params={"agent_id": "msgs_owner"}).status_code == 403
+    r = client.get(
+        "/messages", params={"agent_id": "msgs_owner"},
+        headers={"x-emporia-agent-id": "msgs_stranger"},
+    )
+    assert r.status_code == 403
+    r = client.get(
+        "/messages", params={"agent_id": "msgs_owner"},
+        headers={"x-emporia-agent-id": "msgs_owner"},
+    )
+    assert r.status_code == 200
+
+
+def test_payment_records_gated_by_session_visibility(client):
+    """GET /payments/records?session_id= had no auth at all. Now mirrors
+    /payments/settlements: same visibility as the session itself."""
+    _register(client, "pr_buyer")
+    _register(client, "pr_seller")
+    _register(client, "pr_stranger")
+    r = client.post("/sessions", json={
+        "module_type": "emporia:service:v1", "creator_agent_id": "pr_buyer",
+        "config": {"description": "d"}, "payment_rules": {"mode": "free"},
+    })
+    session_id = r.json()["session_id"]
+    client.post(f"/sessions/{session_id}/join", json={"agent_id": "pr_seller"})
+
+    assert client.get("/payments/records", params={"session_id": session_id}).status_code == 403
+    r = client.get(
+        "/payments/records", params={"session_id": session_id},
+        headers={"x-emporia-agent-id": "pr_stranger"},
+    )
+    assert r.status_code == 403
+    r = client.get(
+        "/payments/records", params={"session_id": session_id},
+        headers={"x-emporia-agent-id": "pr_buyer"},
+    )
+    assert r.status_code == 200
+
+
+def test_payment_records_unfiltered_requires_operator(client):
+    assert client.get("/payments/records").status_code == 403
+    _register(client, "pr_op")
+    with patch.dict(os.environ, {"EMPORIA_AGENT_ID": "pr_op"}):
+        r = client.get("/payments/records", headers={"x-emporia-agent-id": "pr_op"})
+    assert r.status_code == 200
+
+
+def test_abandon_session_requires_participant(client):
+    """POST /sessions/{id}/abandon had no auth at all — any anonymous caller could
+    abandon any session and cancel its escrowed payment holds. Now requires the caller
+    be a participant (or the relay operator)."""
+    _register(client, "aban_buyer")
+    _register(client, "aban_seller")
+    _register(client, "aban_stranger")
+    r = client.post("/sessions", json={
+        "module_type": "emporia:service:v1", "creator_agent_id": "aban_buyer",
+        "config": {"description": "d"}, "payment_rules": {"mode": "free"},
+    })
+    session_id = r.json()["session_id"]
+    client.post(f"/sessions/{session_id}/join", json={"agent_id": "aban_seller"})
+
+    assert client.post(f"/sessions/{session_id}/abandon", json={}).status_code == 403
+    r = client.post(
+        f"/sessions/{session_id}/abandon", json={},
+        headers={"x-emporia-agent-id": "aban_stranger"},
+    )
+    assert r.status_code == 403
+
+    r = client.post(
+        f"/sessions/{session_id}/abandon", json={},
+        headers={"x-emporia-agent-id": "aban_buyer"},
+    )
+    assert r.status_code == 200
+    assert r.json()["status"] == "abandoned"
 
 
 # ============================================================================
