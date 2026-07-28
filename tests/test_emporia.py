@@ -945,20 +945,13 @@ def test_no_new_identity_as_proof_query_params():
         ("GET", "/payments/settlements"),  # agent_id: filter, but gated by inline auth check
         ("DELETE", "/agoras/topics/{slug}/subscribe"),  # agent_id: _require_caller_is-checked
         ("GET", "/messages"),  # agent_id: _require_caller_is-checked (N1-5)
+        ("GET", "/agoras/feed"),  # agent_id: _require_caller_is-checked (N1-6)
+        ("DELETE", "/agoras/posts/{post_id}"),  # agent_id: _require_caller_is-checked (N1-6)
+        ("GET", "/dm"),  # agent_id: _require_caller_is-checked (N1-6)
+        ("GET", "/dm/{thread_id}/messages"),  # agent_id: _require_caller_is-checked (N1-6)
     }
     # Pre-existing violations tracked for N1-6 (task #7) — delete each line as it's fixed.
-    _KNOWN_VIOLATIONS = {
-        ("GET", "/rooms"),
-        ("GET", "/rooms/{room_id}"),
-        ("GET", "/rooms/{room_id}/messages"),
-        ("GET", "/agoras/topics/{slug}"),
-        ("GET", "/agoras/topics/{slug}/posts"),
-        ("GET", "/agoras/posts/{post_id}"),
-        ("DELETE", "/agoras/posts/{post_id}"),
-        ("GET", "/agoras/feed"),
-        ("GET", "/dm"),
-        ("GET", "/dm/{thread_id}/messages"),
-    }
+    _KNOWN_VIOLATIONS: set[tuple[str, str]] = set()
     allowed = _SAFE_LOOKUPS | _KNOWN_VIOLATIONS
 
     violations = []
@@ -1771,11 +1764,11 @@ def test_room_create_list_get(client):
     room = r.json()
     room_id = room["room_id"]
 
-    r2 = client.get("/rooms", params={"viewer_id": "room_alice"})
+    r2 = client.get("/rooms", headers={"x-emporia-agent-id": "room_alice"})
     assert r2.status_code == 200
     assert any(rm["room_id"] == room_id for rm in r2.json()["rooms"])
 
-    r3 = client.get(f"/rooms/{room_id}", params={"viewer_id": "room_alice"})
+    r3 = client.get(f"/rooms/{room_id}", headers={"x-emporia-agent-id": "room_alice"})
     assert r3.status_code == 200
     assert r3.json()["name"] == "Test Room"
 
@@ -1834,7 +1827,7 @@ def test_room_send_message(client):
     assert r2.json()["content"] == "Hello room!"
     assert r2.json()["chain_hash"] is not None
 
-    r3 = client.get(f"/rooms/{room_id}/messages", params={"viewer_id": "msg_alice"})
+    r3 = client.get(f"/rooms/{room_id}/messages", headers={"x-emporia-agent-id": "msg_alice"})
     assert r3.status_code == 200
     assert r3.json()["count"] >= 1
 
@@ -1891,15 +1884,150 @@ def test_room_encrypted_skips_guardrails(client):
 
 
 def test_room_private_not_visible_to_non_member(client):
+    """viewer_id used to be a bare, unauthenticated query param — this now proves the
+    replacement (_dashboard_agent_id(request)) actually distinguishes member from
+    stranger from anonymous, not just that a stranger who never had access still doesn't."""
     _register(client, "priv_owner")
     _register(client, "priv_stranger")
     client.post("/rooms", json={
         "name": "Secret Room", "creator_id": "priv_owner",
         "room_type": "private", "gate_type": "invite",
     })
-    r = client.get("/rooms", params={"viewer_id": "priv_stranger"})
-    names = [rm["name"] for rm in r.json()["rooms"]]
-    assert "Secret Room" not in names
+
+    r = client.get("/rooms")
+    assert "Secret Room" not in [rm["name"] for rm in r.json()["rooms"]]
+
+    r = client.get("/rooms", headers={"x-emporia-agent-id": "priv_stranger"})
+    assert "Secret Room" not in [rm["name"] for rm in r.json()["rooms"]]
+
+    r = client.get("/rooms", headers={"x-emporia-agent-id": "priv_owner"})
+    assert "Secret Room" in [rm["name"] for rm in r.json()["rooms"]]
+
+
+# ============================================================================
+# DM and agora identity-as-proof fixes (N1-6) — these read endpoints had zero
+# coverage before this pass; the impersonation bug itself was never tested.
+# ============================================================================
+
+def test_dm_requires_own_identity(client):
+    _register(client, "dm_alice")
+    _register(client, "dm_bob")
+    _register(client, "dm_mallory")
+    r = client.post("/dm/start", json={"from_agent": "dm_alice", "to_agent": "dm_bob"})
+    thread_id = r.json()["thread_id"]
+    client.post(f"/dm/{thread_id}/send", json={"sender_id": "dm_alice", "content": "hi bob"})
+
+    assert client.get("/dm", params={"agent_id": "dm_alice"}).status_code == 403
+    r = client.get(
+        "/dm", params={"agent_id": "dm_alice"}, headers={"x-emporia-agent-id": "dm_mallory"}
+    )
+    assert r.status_code == 403
+    r = client.get(
+        "/dm", params={"agent_id": "dm_alice"}, headers={"x-emporia-agent-id": "dm_alice"}
+    )
+    assert r.status_code == 200
+    assert any(t["thread_id"] == thread_id for t in r.json())
+
+    assert client.get(
+        f"/dm/{thread_id}/messages", params={"agent_id": "dm_alice"}
+    ).status_code == 403
+    r = client.get(
+        f"/dm/{thread_id}/messages", params={"agent_id": "dm_alice"},
+        headers={"x-emporia-agent-id": "dm_mallory"},
+    )
+    assert r.status_code == 403
+    r = client.get(
+        f"/dm/{thread_id}/messages", params={"agent_id": "dm_alice"},
+        headers={"x-emporia-agent-id": "dm_alice"},
+    )
+    assert r.status_code == 200
+    assert any(m["content"] == "hi bob" for m in r.json()["messages"])
+
+
+def test_agora_topic_and_posts_require_membership_for_private(client):
+    _register(client, "atp_owner")
+    _register(client, "atp_stranger")
+    r = client.post("/agoras/topics", json={
+        "name": "Private Circle", "description": "d", "visibility": "private",
+        "gate_type": "invite", "creator_id": "atp_owner",
+    })
+    slug = r.json()["slug"]
+    r2 = client.post(f"/agoras/topics/{slug}/posts", json={
+        "author_id": "atp_owner", "title": "secret post", "content": "top secret content",
+    })
+    assert r2.status_code == 200, r2.text
+    post_id = r2.json()["post_id"]
+
+    assert client.get(f"/agoras/topics/{slug}").status_code == 403
+    r = client.get(f"/agoras/topics/{slug}", headers={"x-emporia-agent-id": "atp_stranger"})
+    assert r.status_code == 403
+    r = client.get(f"/agoras/topics/{slug}", headers={"x-emporia-agent-id": "atp_owner"})
+    assert r.status_code == 200
+
+    assert client.get(f"/agoras/topics/{slug}/posts").status_code == 403
+    r = client.get(f"/agoras/topics/{slug}/posts", headers={"x-emporia-agent-id": "atp_owner"})
+    assert r.status_code == 200
+    assert any(p["post_id"] == post_id for p in r.json()["posts"])
+
+    assert client.get(f"/agoras/posts/{post_id}").status_code == 403
+    r = client.get(f"/agoras/posts/{post_id}", headers={"x-emporia-agent-id": "atp_owner"})
+    assert r.status_code == 200
+    assert r.json()["content"] == "top secret content"
+
+
+def test_agora_feed_requires_own_identity(client):
+    _register(client, "feed_owner")
+    _register(client, "feed_stranger")
+    r = client.post("/agoras/topics", json={
+        "name": "Feed Topic", "description": "d", "visibility": "public",
+        "gate_type": "open", "creator_id": "feed_owner",
+    })
+    slug = r.json()["slug"]
+    client.post(f"/agoras/topics/{slug}/posts", json={
+        "author_id": "feed_owner", "title": "hello", "content": "world",
+    })
+
+    assert client.get("/agoras/feed", params={"agent_id": "feed_owner"}).status_code == 403
+    r = client.get(
+        "/agoras/feed", params={"agent_id": "feed_owner"},
+        headers={"x-emporia-agent-id": "feed_stranger"},
+    )
+    assert r.status_code == 403
+    r = client.get(
+        "/agoras/feed", params={"agent_id": "feed_owner"},
+        headers={"x-emporia-agent-id": "feed_owner"},
+    )
+    assert r.status_code == 200
+    assert r.json()["count"] >= 1
+
+
+def test_delete_agora_post_requires_own_identity(client):
+    """DELETE /agoras/posts/{id} used to authorize the *claimed* agent_id in the query
+    string with no check the caller actually was that agent — anyone could soft-delete
+    any post by naming its author."""
+    _register(client, "del_author")
+    _register(client, "del_mallory")
+    r = client.post("/agoras/topics", json={
+        "name": "Delete Topic", "description": "d", "visibility": "public",
+        "gate_type": "open", "creator_id": "del_author",
+    })
+    slug = r.json()["slug"]
+    r2 = client.post(f"/agoras/topics/{slug}/posts", json={
+        "author_id": "del_author", "title": "mine", "content": "content",
+    })
+    post_id = r2.json()["post_id"]
+
+    r = client.delete(
+        f"/agoras/posts/{post_id}", params={"agent_id": "del_author"},
+        headers={"x-emporia-agent-id": "del_mallory"},
+    )
+    assert r.status_code == 403
+
+    r = client.delete(
+        f"/agoras/posts/{post_id}", params={"agent_id": "del_author"},
+        headers={"x-emporia-agent-id": "del_author"},
+    )
+    assert r.status_code == 200
 
 
 # ============================================================================

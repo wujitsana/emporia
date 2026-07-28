@@ -347,14 +347,9 @@ export const api = {
       `/sessions/${session_id}/actions`, { agentScoped: true }
     ),
   events: () => get<{ events: EmporiaEvent[]; count: number }>("/events"),
-  rooms: (viewer_id?: string) =>
-    get<{ rooms: Room[]; count: number }>(
-      `/rooms${viewer_id ? `?viewer_id=${encodeURIComponent(viewer_id)}` : ""}`
-    ),
-  roomMessages: (room_id: string, viewer_id?: string) =>
-    get<{ messages: RoomMessage[]; count: number }>(
-      `/rooms/${room_id}/messages${viewer_id ? `?viewer_id=${encodeURIComponent(viewer_id)}` : ""}`
-    ),
+  // viewer/member scoping now comes from the authenticated caller server-side
+  // (_dashboard_agent_id), not a client-supplied id — see relay N1-6.
+  rooms: () => get<{ rooms: Room[]; count: number }>("/rooms", { agentScoped: true }),
   sendRoomMessage: (room_id: string, sender_id: string, content: string, msg_type = "chat") =>
     post<RoomMessage>(`/rooms/${room_id}/message`, { sender_id, content, msg_type }),
   agentCard: () => get<{ agent_id: string; capabilities: string[] }>("/.well-known/agent.json"),
@@ -421,23 +416,29 @@ export const api = {
     if (params?.visibility) q.set("visibility", params.visibility);
     if (params?.subscribed_by) q.set("subscribed_by", params.subscribed_by);
     if (params?.sort) q.set("sort", params.sort);
-    return get<{ topics: AgoraTopic[]; count: number }>(`/agoras/topics${q.size ? `?${q}` : ""}`);
+    return get<{ topics: AgoraTopic[]; count: number }>(
+      `/agoras/topics${q.size ? `?${q}` : ""}`, { agentScoped: true }
+    );
   },
-  agoraTopic: (slug: string, viewer_id?: string) =>
-    get<AgoraTopic>(`/agoras/topics/${encodeURIComponent(slug)}${viewer_id ? `?viewer_id=${viewer_id}` : ""}`),
-  agoraPosts: (slug: string, params?: { sort?: string; flair?: string; viewer_id?: string }) => {
+  // viewer scoping now comes from the authenticated caller server-side, not a
+  // client-supplied viewer_id — see relay N1-6.
+  agoraTopic: (slug: string) =>
+    get<AgoraTopic>(`/agoras/topics/${encodeURIComponent(slug)}`, { agentScoped: true }),
+  agoraPosts: (slug: string, params?: { sort?: string; flair?: string }) => {
     const q = new URLSearchParams();
     if (params?.sort) q.set("sort", params.sort);
     if (params?.flair) q.set("flair", params.flair);
-    if (params?.viewer_id) q.set("viewer_id", params.viewer_id);
     return get<{ posts: AgoraPost[]; count: number; topic: { slug: string; name: string } }>(
-      `/agoras/topics/${encodeURIComponent(slug)}/posts${q.size ? `?${q}` : ""}`
+      `/agoras/topics/${encodeURIComponent(slug)}/posts${q.size ? `?${q}` : ""}`, { agentScoped: true }
     );
   },
-  agoraPost: (post_id: string, viewer_id?: string) =>
-    get<AgoraPost>(`/agoras/posts/${encodeURIComponent(post_id)}${viewer_id ? `?viewer_id=${viewer_id}` : ""}`),
+  agoraPost: (post_id: string) =>
+    get<AgoraPost>(`/agoras/posts/${encodeURIComponent(post_id)}`, { agentScoped: true }),
+  // agent_id must match the authenticated caller server-side now — see relay N1-6.
   agoraFeed: (agent_id: string, sort = "new") =>
-    get<{ posts: AgoraPost[]; count: number }>(`/agoras/feed?agent_id=${encodeURIComponent(agent_id)}&sort=${sort}`),
+    get<{ posts: AgoraPost[]; count: number }>(
+      `/agoras/feed?agent_id=${encodeURIComponent(agent_id)}&sort=${sort}`, { agentScoped: true }
+    ),
   createAgoraTopic: (body: {
     name: string;
     description?: string;
@@ -480,11 +481,13 @@ export const api = {
     post<{ message_id: string; thread_id: string; created_at: string }>(
       `/dm/${thread_id}/send`, { sender_id, content, msg_type }
     ),
+  // agent_id must match the authenticated caller server-side now — see relay N1-6.
   dmThreads: (agent_id: string) =>
-    get<DMThread[]>(`/dm?agent_id=${encodeURIComponent(agent_id)}`),
+    get<DMThread[]>(`/dm?agent_id=${encodeURIComponent(agent_id)}`, { agentScoped: true }),
   dmMessages: (thread_id: string, agent_id: string, limit = 100) =>
     get<{ thread_id: string; messages: DMMessage[] }>(
-      `/dm/${thread_id}/messages?agent_id=${encodeURIComponent(agent_id)}&limit=${limit}`
+      `/dm/${thread_id}/messages?agent_id=${encodeURIComponent(agent_id)}&limit=${limit}`,
+      { agentScoped: true }
     ),
 
   // Trust & Safety / Federation / Audit

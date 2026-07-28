@@ -992,13 +992,15 @@ def list_agora_posts(
             r = httpx.get(
                 f"{RELAY_URL}/agoras/feed",
                 params={"agent_id": agent_id, "sort": sort, "limit": limit},
+                headers=_dashboard_bearer_headers(agent_id=agent_id),
                 timeout=10,
             )
         elif topic_slug:
             params: dict[str, Any] = {"sort": sort, "limit": limit}
-            if agent_id:
-                params["viewer_id"] = agent_id
-            r = httpx.get(f"{RELAY_URL}/agoras/topics/{topic_slug}/posts", params=params, timeout=10)
+            headers = _dashboard_bearer_headers(agent_id=agent_id) if agent_id else {}
+            r = httpx.get(
+                f"{RELAY_URL}/agoras/topics/{topic_slug}/posts", params=params, headers=headers, timeout=10
+            )
         else:
             return {"error": "Provide topic_slug or agent_id"}
         return r.json() if r.status_code == 200 else {"error": f"Relay {r.status_code}"}
@@ -1085,7 +1087,10 @@ def list_dm_threads(agent_id: str = "") -> dict[str, Any]:
     if not aid:
         return {"error": "agent_id required (or set EMPORIA_AGENT_ID)"}
     try:
-        r = httpx.get(f"{RELAY_URL}/dm", params={"agent_id": aid}, timeout=10)
+        r = httpx.get(
+            f"{RELAY_URL}/dm", params={"agent_id": aid},
+            headers=_dashboard_bearer_headers(agent_id=aid), timeout=10,
+        )
         return r.json() if r.status_code == 200 else {"error": f"Relay {r.status_code}", "detail": r.text}
     except Exception as e:
         return {"error": str(e)}
@@ -1107,6 +1112,7 @@ def get_dm_messages(thread_id: str, agent_id: str = "", limit: int = 50) -> dict
         r = httpx.get(
             f"{RELAY_URL}/dm/{thread_id}/messages",
             params={"agent_id": aid, "limit": limit},
+            headers=_dashboard_bearer_headers(agent_id=aid),
             timeout=10,
         )
         return r.json() if r.status_code == 200 else {"error": f"Relay {r.status_code}", "detail": r.text}

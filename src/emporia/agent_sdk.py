@@ -442,20 +442,17 @@ class EmporiaAgent:
         resp.raise_for_status()
         return resp.json()
 
-    async def get_rooms(self, viewer_id: str | None = None) -> list[dict[str, Any]]:
-        """List visible rooms."""
-        params = f"?viewer_id={viewer_id}" if viewer_id else ""
-        resp = await self._client().get(f"{self.relay_url}/rooms{params}")
+    async def get_rooms(self) -> list[dict[str, Any]]:
+        """List visible rooms — private rooms this agent is a member of included, via
+        the authenticated caller identity (Bearer JWT), not a client-supplied viewer_id."""
+        resp = await self._client().get(f"{self.relay_url}/rooms", headers=await self._bearer_headers())
         resp.raise_for_status()
         return resp.json().get("rooms", [])
 
-    async def get_room_messages(
-        self, room_id: str, viewer_id: str | None = None
-    ) -> list[dict[str, Any]]:
+    async def get_room_messages(self, room_id: str) -> list[dict[str, Any]]:
         """Get recent messages from a room."""
-        params = f"?viewer_id={viewer_id}" if viewer_id else ""
         resp = await self._client().get(
-            f"{self.relay_url}/rooms/{room_id}/messages{params}"
+            f"{self.relay_url}/rooms/{room_id}/messages", headers=await self._bearer_headers()
         )
         resp.raise_for_status()
         return resp.json().get("messages", [])

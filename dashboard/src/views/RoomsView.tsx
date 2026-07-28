@@ -16,7 +16,7 @@ import { useInterval, useRoomWs, type WsMessage } from "../hooks";
 import type { Navigate } from "../navigation";
 
 export function RoomsView({ initialRoomId, navigate }: { initialRoomId: string | null; navigate?: Navigate }) {
-  const [data, loading, error] = useInterval(() => api.rooms(VIEWER), 8_000);
+  const [data, loading, error] = useInterval(() => api.rooms(), 8_000);
   const rooms: Room[] = data?.rooms ?? [];
   const [selected, setSelected] = useState<Room | null>(null);
   const endRef = useRef<HTMLDivElement>(null);

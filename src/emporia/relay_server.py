@@ -3383,10 +3383,11 @@ async def create_room_endpoint(req: CreateRoomRequest):
 
 @app.get("/rooms")
 async def list_rooms_endpoint(
-    viewer_id: str | None = None,
+    request: Request,
     room_type: str | None = None,
     limit: int = 50,
 ):
+    viewer_id = _dashboard_agent_id(request)
     room_list = rooms_db.list_rooms(
         viewer_id=viewer_id,
         room_type=room_type,
@@ -3400,7 +3401,8 @@ async def list_rooms_endpoint(
 
 
 @app.get("/rooms/{room_id}")
-async def get_room_endpoint(room_id: str, viewer_id: str | None = None):
+async def get_room_endpoint(room_id: str, request: Request):
+    viewer_id = _dashboard_agent_id(request)
     room = rooms_db.get_room(room_id, db_path=DATABASE_PATH)
     if not room:
         raise HTTPException(404, "Room not found")
@@ -3634,10 +3636,11 @@ async def send_room_message(room_id: str, req: SendRoomMessageRequest):
 @app.get("/rooms/{room_id}/messages")
 async def get_room_messages(
     room_id: str,
-    viewer_id: str | None = None,
+    request: Request,
     limit: int = 50,
     before: str | None = None,
 ):
+    viewer_id = _dashboard_agent_id(request)
     room = rooms_db.get_room(room_id, db_path=DATABASE_PATH)
     if not room:
         raise HTTPException(404, "Room not found")
@@ -3799,7 +3802,8 @@ async def create_agora_topic(req: CreateAgoraTopicRequest):
             if "UNIQUE" in str(exc):
                 raise HTTPException(409, f"Slug '{slug}' already taken")
             raise
-    await broadcast_global({"type": "agora_topic_created", "topic_id": topic_id, "slug": slug})
+    if req.visibility == "public":
+        await broadcast_global({"type": "agora_topic_created", "topic_id": topic_id, "slug": slug})
     return {
         "topic_id": topic_id, "slug": slug, "name": req.name,
         "visibility": req.visibility, "gate_type": req.gate_type,
@@ -3857,7 +3861,8 @@ async def list_agora_topics(
 
 
 @app.get("/agoras/topics/{slug}")
-async def get_agora_topic(slug: str, viewer_id: str | None = None):
+async def get_agora_topic(slug: str, request: Request):
+    viewer_id = _dashboard_agent_id(request)
     with DB_LOCK, get_db() as conn:
         row = conn.execute("SELECT * FROM agora_topics WHERE slug=?", (slug,)).fetchone()
         if not row:
@@ -4100,7 +4105,8 @@ async def create_agora_post(slug: str, req: CreateAgoraPostRequest):
         "title": req.title,
         "preview": req.content[:200] if req.content else "",
     }
-    await broadcast_global(event)
+    if row["visibility"] == "public":
+        await broadcast_global(event)
     # Push to each subscriber's inbox so offline agents catch it on next poll
     for sub in subscribers:
         await broadcast_to_agent(sub, event)
@@ -4110,11 +4116,12 @@ async def create_agora_post(slug: str, req: CreateAgoraPostRequest):
 @app.get("/agoras/topics/{slug}/posts")
 async def list_agora_posts(
     slug: str,
+    request: Request,
     sort: str = "new",
     flair: str | None = None,
-    viewer_id: str | None = None,
     limit: int = 50,
 ):
+    viewer_id = _dashboard_agent_id(request)
     with DB_LOCK, get_db() as conn:
         row = conn.execute("SELECT * FROM agora_topics WHERE slug=?", (slug,)).fetchone()
         if not row:
@@ -4149,7 +4156,8 @@ async def list_agora_posts(
 
 
 @app.get("/agoras/posts/{post_id}")
-async def get_agora_post(post_id: str, viewer_id: str | None = None):
+async def get_agora_post(post_id: str, request: Request):
+    viewer_id = _dashboard_agent_id(request)
     with DB_LOCK, get_db() as conn:
         p = conn.execute(
             "SELECT p.*, t.slug, t.name AS topic_name, t.visibility "
@@ -4220,7 +4228,8 @@ async def vote_agora_post(post_id: str, req: AgoraVoteRequest):
 
 
 @app.delete("/agoras/posts/{post_id}")
-async def delete_agora_post(post_id: str, agent_id: str):
+async def delete_agora_post(post_id: str, agent_id: str, request: Request):
+    _require_caller_is(agent_id, request)
     with DB_LOCK, get_db() as conn:
         p = conn.execute("SELECT author_id, topic_id FROM agora_posts WHERE post_id=?", (post_id,)).fetchone()
         if not p:
@@ -4303,8 +4312,9 @@ async def vote_agora_comment(comment_id: str, req: AgoraVoteRequest):
 
 
 @app.get("/agoras/feed")
-async def agora_feed(agent_id: str, sort: str = "new", limit: int = 50):
+async def agora_feed(agent_id: str, request: Request, sort: str = "new", limit: int = 50):
     """Posts from topics the agent subscribes to."""
+    _require_caller_is(agent_id, request)
     order = "p.vote_score DESC, p.created_at DESC" if sort == "top" else "p.created_at DESC"
     with DB_LOCK, get_db() as conn:
         posts = conn.execute(
@@ -4486,8 +4496,9 @@ async def dm_send(thread_id: str, req: DMSendRequest):
 
 
 @app.get("/dm")
-async def dm_list(agent_id: str, limit: int = 50):
+async def dm_list(agent_id: str, request: Request, limit: int = 50):
     """List DM threads for an agent, most recent first."""
+    _require_caller_is(agent_id, request)
     with DB_LOCK, get_db() as conn:
         rows = conn.execute(
             "SELECT t.*, "
@@ -4512,8 +4523,11 @@ async def dm_list(agent_id: str, limit: int = 50):
 
 
 @app.get("/dm/{thread_id}/messages")
-async def dm_messages(thread_id: str, agent_id: str, limit: int = 100, before: str | None = None):
+async def dm_messages(
+    thread_id: str, agent_id: str, request: Request, limit: int = 100, before: str | None = None
+):
     """Fetch messages in a DM thread. Agent must be a participant."""
+    _require_caller_is(agent_id, request)
     with DB_LOCK, get_db() as conn:
         thread = conn.execute(
             "SELECT * FROM dm_threads WHERE thread_id=?", (thread_id,)

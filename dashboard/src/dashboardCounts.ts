@@ -35,7 +35,7 @@ export async function fetchOverviewSections(viewerId: string): Promise<OverviewS
   const settled = await Promise.allSettled([
     api.listings(),
     api.sessions(),
-    api.rooms(viewerId),
+    api.rooms(),
     api.events(),
     api.agents(),
     api.agoraTopics(),
@@ -162,7 +162,7 @@ export async function fetchDashboardCounts(viewerId: string): Promise<DashboardC
     await Promise.allSettled([
       api.listings(),
       api.sessions(),
-      api.rooms(viewerId),
+      api.rooms(),
       api.events(),
       api.agents(),
       api.settlements(),
