@@ -318,6 +318,72 @@ def test_seeded_demo_agent_ids_still_validate(client):
         assert r.status_code == 200, (agent_id, r.text)
 
 
+# ============================================================================
+# N3-2 — POST /gaming/lobby authentication + ownership check (R1)
+# ============================================================================
+
+def _lobby_payload(challenge_id: str, creator_agent_id: str) -> dict:
+    return {
+        "challenge_id": challenge_id,
+        "game_type": "emporia:chess:v1",
+        "creator_agent_id": creator_agent_id,
+        "creator_gateway_url": "https://example.test/gw",
+        "payment_mode": "free",
+    }
+
+
+def test_gaming_lobby_post_requires_authentication(prod_client):
+    """Regression for N3-2 (R1): POST /gaming/lobby took a raw dict body with zero caller
+    authentication — any anonymous caller could publish a challenge attributed to any
+    agent. Confirms unauthenticated -> 401, authenticated as a real registered agent ->
+    200."""
+    _register_keyed(prod_client, "lobby_real_agent")
+
+    r = prod_client.post("/gaming/lobby", json=_lobby_payload("chal_n32_a", "some_victim"))
+    assert r.status_code == 401
+
+    r = prod_client.post(
+        "/gaming/lobby", json=_lobby_payload("chal_n32_b", "lobby_real_agent"),
+        headers=bearer_for(prod_client, "lobby_real_agent"),
+    )
+    assert r.status_code == 200
+    assert r.json()["challenge"]["creator_agent_id"] == "lobby_real_agent"
+
+
+def test_gaming_lobby_post_rejects_challenge_id_hijack(prod_client):
+    """Regression for N3-2 (R1): challenge_id is caller-supplied and GameRegistry._upsert
+    does `ON CONFLICT DO UPDATE` with no ownership check — reposting an existing
+    challenge_id under a different creator_agent_id used to silently overwrite it. Confirms
+    that's now rejected, while a same-creator repost (e.g. a legitimate status update)
+    still succeeds."""
+    _register_keyed(prod_client, "lobby_owner")
+    _register_keyed(prod_client, "lobby_attacker")
+
+    r = prod_client.post(
+        "/gaming/lobby", json=_lobby_payload("chal_n32_hijack", "lobby_owner"),
+        headers=bearer_for(prod_client, "lobby_owner"),
+    )
+    assert r.status_code == 200
+
+    # A different registered agent tries to overwrite the same challenge_id, claiming it
+    # as their own — rejected, even though they're a genuine authenticated caller now.
+    r = prod_client.post(
+        "/gaming/lobby", json=_lobby_payload("chal_n32_hijack", "lobby_attacker"),
+        headers=bearer_for(prod_client, "lobby_attacker"),
+    )
+    assert r.status_code == 403
+
+    # The original owner updating their own challenge (e.g. status change) still works.
+    payload = _lobby_payload("chal_n32_hijack", "lobby_owner")
+    payload["status"] = "cancelled"
+    r = prod_client.post(
+        "/gaming/lobby", json=payload,
+        headers=bearer_for(prod_client, "lobby_owner"),
+    )
+    assert r.status_code == 200
+    assert r.json()["challenge"]["status"] == "cancelled"
+
+
 def _signed_challenge(client, profile_id: str) -> dict:
     """POST /agents/challenge, sign the nonce with a real Ed25519 key, and return the
     challenge_id/signature/public_key_hex a real register_agent MCP call would send."""
@@ -1195,6 +1261,10 @@ def test_no_new_identity_as_proof_params():
         # WS: agent_id (path) — caller must be that agent or the operator, checked inline
         # via _ws_agent_id() before ws.accept().
         ("WS", "/ws/agent/{agent_id}"),
+        # creator_agent_id: a target/attribution field (whose challenge this is), not the
+        # actor — the actor is the authenticated caller, _require_registered-checked, plus
+        # an ownership check against any existing challenge_id (N3-2).
+        ("POST", "/gaming/lobby"),
     }
     # Pre-existing violations tracked for N2-4 (N2 review R1) — delete each line as its
     # tranche fixes it. Seeded from the full route-table sweep at review time; see
@@ -1211,9 +1281,6 @@ def test_no_new_identity_as_proof_params():
         ("POST", "/sessions/{session_id}/join"),
         ("POST", "/rooms/{room_id}/join"),
         ("POST", "/agoras/topics/{slug}/subscribe"),
-        # N3-2 fixes this: unauthenticated write, caller-chosen creator_agent_id, via a raw
-        # dict body that hid it from the guard until N3-1. See N3 review R1.
-        ("POST", "/gaming/lobby"),
         # N3-4 fixes this: no visibility filter at all, unlike the sibling
         # GET /agoras/topics/{slug}/posts — leaks private/restricted topic content to any
         # anonymous caller who knows an author's agent_id. See N3 review R3.

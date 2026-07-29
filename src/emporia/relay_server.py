@@ -3378,15 +3378,70 @@ async def gaming_lobby_get(status: str = "open", game_type: str | None = None):
     }
 
 
+class GamingLobbyChallengeRequest(BaseModel):
+    """Mirrors GameChallenge's fields (game_registry.py) for wire validation.
+
+    creator_agent_id is a TARGET/attribution field, not the actor — this endpoint is
+    peer-relay gossip (see below), so the agent a challenge is attributed to often isn't
+    registered on *this* relay at all. The actor is the authenticated caller, checked
+    separately below."""
+    challenge_id: str
+    game_type: str
+    creator_agent_id: str
+    creator_gateway_url: str
+    payment_mode: str = "free"
+    stake_amount: str = "0"
+    currency: str = "USD"
+    status: str = "open"
+    expires_at: str | None = None
+    origin_relay: str | None = None
+    metadata: dict[str, Any] = Field(default_factory=dict)
+
+
 @app.post("/gaming/lobby")
-async def gaming_lobby_post(request_data: dict[str, Any]):
+async def gaming_lobby_post(req: GamingLobbyChallengeRequest, request: Request):
+    """Import a challenge card into this relay's lobby.
+
+    N3-2 (N3 review R1): this endpoint used to take a raw `dict[str, Any]` body with zero
+    caller authentication — a raw body has no field names for the identity-as-proof guard
+    to introspect, which is exactly how it stayed unauthenticated through the whole N2
+    pass. Any anonymous caller could publish a challenge attributed to any agent, or
+    overwrite an existing challenge's status/metadata by reusing its challenge_id
+    (`ON CONFLICT DO UPDATE` in GameRegistry._upsert has no ownership check).
+
+    This is peer-relay gossip (mcp_server.py's publish_challenge_to_peer posts here), not
+    an individual agent acting on their own behalf — creator_agent_id typically names an
+    agent registered on the *origin* relay, not this one, so requiring
+    caller == creator_agent_id would make legitimate cross-relay gossip permanently
+    impossible. What this fix closes: (1) the caller must be a real, registered agent on
+    *this* relay — no more fully anonymous writes; (2) a challenge_id collision with an
+    existing row under a *different* creator_agent_id is rejected outright, closing the
+    overwrite-any-existing-challenge attack completely, independent of who's calling.
+
+    What this does NOT close: verifying that a claimed creator_agent_id genuinely belongs
+    to a legitimate peer relay's agent — that requires relay-to-relay trust (mirroring the
+    Ed25519 batch-signing already built for GET /gaming/v1/federate/listings), which is
+    task #8's job, still deferred. Until task #8 lands, publish_challenge_to_peer's
+    cross-relay flow has no credential path to a peer it isn't registered on and will get
+    401'd calling a relay that (correctly) now requires authentication — expected fallout,
+    not silently left insecure to keep it working.
+    """
+    caller = _dashboard_agent_id(request)
+    if not caller:
+        raise HTTPException(401, "Authentication required")
+    _require_registered(caller)
+    payload = req.model_dump()
     try:
-        await _assert_payload_safe_counted(request_data)
+        await _assert_payload_safe_counted(payload)
     except PermissionError as e:
         raise HTTPException(403, str(e))
+    existing = _game_registry.get_challenge(req.challenge_id)
+    if existing and existing.creator_agent_id != req.creator_agent_id:
+        raise HTTPException(
+            403, f"challenge_id '{req.challenge_id}' belongs to a different creator"
+        )
     try:
-        challenge_payload = request_data.get("challenge", request_data)
-        imported = _game_registry.import_challenge(challenge_payload)
+        imported = _game_registry.import_challenge(payload)
         return {"ok": True, "challenge": imported.to_dict()}
     except Exception as e:
         raise HTTPException(422, str(e))

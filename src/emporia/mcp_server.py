@@ -480,15 +480,24 @@ async def publish_challenge_to_peer(
     challenge_id: str,
     peer_relay_url: str,
 ) -> dict[str, Any]:
-    """Publish a local challenge to a peer relay (outbound gossip)."""
+    """Publish a local challenge to a peer relay (outbound gossip).
+
+    N3-2: the peer's POST /gaming/lobby now requires the caller to be a registered agent
+    on *that* relay — this endpoint has no credential for an arbitrary peer it isn't
+    registered on (relay-scoped Bearer JWTs can't cross relays by design), so this call
+    will 401 against any relay enforcing that check. Cross-relay gossip needs relay-to-relay
+    trust (mirroring the Ed25519 batch-signing already built for
+    GET /gaming/v1/federate/listings) — tracked as task #8, not yet built. Left failing
+    loudly (surfaced via the existing except/return-error wrapper below) rather than
+    silently broken.
+    """
     try:
         challenge = _game_registry.get_challenge(challenge_id)
         if not challenge:
             return {"error": f"Challenge not found: {challenge_id}", "success": False}
         url = peer_relay_url.rstrip("/") + "/gaming/lobby"
-        payload = {"challenge": challenge.to_dict()}
         async with httpx.AsyncClient(timeout=15) as client:
-            resp = await client.post(url, json=payload)
+            resp = await client.post(url, json=challenge.to_dict())
             resp.raise_for_status()
             data = resp.json()
         return {
