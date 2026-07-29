@@ -136,6 +136,27 @@ def _dashboard_bearer_headers(relay_url: str = "", agent_id: str = "") -> dict[s
         return {}
 
 
+def _invalidate_dashboard_bearer(relay_url: str = "", agent_id: str = "") -> None:
+    """Drop a cached token so the next _dashboard_bearer_headers() call re-authenticates.
+    Call after a request comes back 401/403 despite sending a cached token — expiry
+    early server-side, or a relay restart that rotated the JWT secret (now persisted,
+    see identity.load_or_generate_relay_jwt_secret, but keep this as defense-in-depth)."""
+    target = relay_url or RELAY_URL
+    aid = agent_id or AGENT_ID
+    _dashboard_token_cache.pop(f"{target}|{aid}", None)
+
+
+def _bearer_request(method: str, url: str, *, agent_id: str = "", **kwargs: Any) -> httpx.Response:
+    """httpx.{get,post,delete}(url, ...) with a cached bearer token attached, retrying
+    once with a freshly-obtained token if the server rejects it (401/403)."""
+    fn = getattr(httpx, method)
+    r = fn(url, headers=_dashboard_bearer_headers(agent_id=agent_id), **kwargs)
+    if r.status_code in (401, 403):
+        _invalidate_dashboard_bearer(agent_id=agent_id)
+        r = fn(url, headers=_dashboard_bearer_headers(agent_id=agent_id), **kwargs)
+    return r
+
+
 # ============================================================================
 # Module auto-discovery
 # ============================================================================
@@ -989,17 +1010,15 @@ def list_agora_posts(
     """List posts in a topic (topic_slug) or feed for an agent (agent_id). sort: new | top."""
     try:
         if agent_id and not topic_slug:
-            r = httpx.get(
-                f"{RELAY_URL}/agoras/feed",
-                params={"agent_id": agent_id, "sort": sort, "limit": limit},
-                headers=_dashboard_bearer_headers(agent_id=agent_id),
-                timeout=10,
+            r = _bearer_request(
+                "get", f"{RELAY_URL}/agoras/feed",
+                agent_id=agent_id, params={"agent_id": agent_id, "sort": sort, "limit": limit}, timeout=10,
             )
         elif topic_slug:
             params: dict[str, Any] = {"sort": sort, "limit": limit}
-            headers = _dashboard_bearer_headers(agent_id=agent_id) if agent_id else {}
-            r = httpx.get(
-                f"{RELAY_URL}/agoras/topics/{topic_slug}/posts", params=params, headers=headers, timeout=10
+            r = _bearer_request(
+                "get", f"{RELAY_URL}/agoras/topics/{topic_slug}/posts",
+                agent_id=agent_id, params=params, timeout=10,
             )
         else:
             return {"error": "Provide topic_slug or agent_id"}
@@ -1087,9 +1106,8 @@ def list_dm_threads(agent_id: str = "") -> dict[str, Any]:
     if not aid:
         return {"error": "agent_id required (or set EMPORIA_AGENT_ID)"}
     try:
-        r = httpx.get(
-            f"{RELAY_URL}/dm", params={"agent_id": aid},
-            headers=_dashboard_bearer_headers(agent_id=aid), timeout=10,
+        r = _bearer_request(
+            "get", f"{RELAY_URL}/dm", agent_id=aid, params={"agent_id": aid}, timeout=10,
         )
         return r.json() if r.status_code == 200 else {"error": f"Relay {r.status_code}", "detail": r.text}
     except Exception as e:
@@ -1109,11 +1127,9 @@ def get_dm_messages(thread_id: str, agent_id: str = "", limit: int = 50) -> dict
     if not aid:
         return {"error": "agent_id required (or set EMPORIA_AGENT_ID)"}
     try:
-        r = httpx.get(
-            f"{RELAY_URL}/dm/{thread_id}/messages",
-            params={"agent_id": aid, "limit": limit},
-            headers=_dashboard_bearer_headers(agent_id=aid),
-            timeout=10,
+        r = _bearer_request(
+            "get", f"{RELAY_URL}/dm/{thread_id}/messages",
+            agent_id=aid, params={"agent_id": aid, "limit": limit}, timeout=10,
         )
         return r.json() if r.status_code == 200 else {"error": f"Relay {r.status_code}", "detail": r.text}
     except Exception as e:
@@ -1184,7 +1200,7 @@ def list_sessions(
     if status:
         params["status"] = status
     try:
-        r = httpx.get(f"{RELAY_URL}/sessions", params=params, headers=_dashboard_bearer_headers(), timeout=10)
+        r = _bearer_request("get", f"{RELAY_URL}/sessions", params=params, timeout=10)
         return r.json() if r.status_code == 200 else {"error": f"Relay {r.status_code}", "detail": r.text}
     except Exception as e:
         return {"error": str(e)}
@@ -1194,9 +1210,7 @@ def list_sessions(
 def get_session(session_id: str) -> dict[str, Any]:
     """Fetch full session detail including current state, participants, and step number."""
     try:
-        r = httpx.get(
-            f"{RELAY_URL}/sessions/{session_id}", headers=_dashboard_bearer_headers(), timeout=10
-        )
+        r = _bearer_request("get", f"{RELAY_URL}/sessions/{session_id}", timeout=10)
         return r.json() if r.status_code == 200 else {"error": f"Relay {r.status_code}", "detail": r.text}
     except Exception as e:
         return {"error": str(e)}
@@ -1318,9 +1332,7 @@ def submit_action(
     # can't be replayed against a different session or turn.
     from emporia.identity import sign as ed25519_sign
     try:
-        sess_r = httpx.get(
-            f"{RELAY_URL}/sessions/{session_id}", headers=_dashboard_bearer_headers(agent_id=aid), timeout=10
-        )
+        sess_r = _bearer_request("get", f"{RELAY_URL}/sessions/{session_id}", agent_id=aid, timeout=10)
         sess_r.raise_for_status()
         step_number = sess_r.json()["step_number"]
     except Exception as e:
@@ -1368,9 +1380,7 @@ def confirm_delivery(
     effective_rationale = rationale or "Buyer confirmed delivery."
     from emporia.identity import sign as ed25519_sign
     try:
-        sess_r = httpx.get(
-            f"{RELAY_URL}/sessions/{session_id}", headers=_dashboard_bearer_headers(agent_id=aid), timeout=10
-        )
+        sess_r = _bearer_request("get", f"{RELAY_URL}/sessions/{session_id}", agent_id=aid, timeout=10)
         sess_r.raise_for_status()
         step_number = sess_r.json()["step_number"]
     except Exception as e:
@@ -1414,9 +1424,7 @@ def dispute_delivery(
     effective_rationale = rationale or f"Dispute: {reason}"
     from emporia.identity import sign as ed25519_sign
     try:
-        sess_r = httpx.get(
-            f"{RELAY_URL}/sessions/{session_id}", headers=_dashboard_bearer_headers(agent_id=aid), timeout=10
-        )
+        sess_r = _bearer_request("get", f"{RELAY_URL}/sessions/{session_id}", agent_id=aid, timeout=10)
         sess_r.raise_for_status()
         step_number = sess_r.json()["step_number"]
     except Exception as e:
@@ -1458,9 +1466,8 @@ def abandon_session(
         return {"error": "agent_id required", "success": False}
     body: dict[str, Any] = {"agent_id": aid}
     try:
-        r = httpx.post(
-            f"{RELAY_URL}/sessions/{session_id}/abandon",
-            json=body, headers=_dashboard_bearer_headers(agent_id=aid), timeout=10,
+        r = _bearer_request(
+            "post", f"{RELAY_URL}/sessions/{session_id}/abandon", agent_id=aid, json=body, timeout=10,
         )
         d = r.json()
         return {"success": True, **d} if r.status_code == 200 else {"error": f"Relay {r.status_code}", "detail": d, "success": False}

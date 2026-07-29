@@ -109,6 +109,23 @@ class EmporiaAgent:
         except Exception:
             return {}
 
+    def _invalidate_bearer(self) -> None:
+        """Drop the cached token so the next _bearer_headers() call re-authenticates.
+        Call after a request comes back 401/403 despite sending a cached token."""
+        self._bearer_token = None
+        self._bearer_exp = 0.0
+
+    async def _bearer_request(self, method: str, url: str, **kwargs: Any) -> httpx.Response:
+        """httpx.AsyncClient.{get,post,delete}(url, ...) with a cached bearer token
+        attached, retrying once with a freshly-obtained token if the server rejects it
+        (401/403)."""
+        fn = getattr(self._client(), method)
+        r = await fn(url, headers=await self._bearer_headers(), **kwargs)
+        if r.status_code in (401, 403):
+            self._invalidate_bearer()
+            r = await fn(url, headers=await self._bearer_headers(), **kwargs)
+        return r
+
     # ------------------------------------------------------------------ #
     # Registration
     # ------------------------------------------------------------------ #
@@ -264,9 +281,7 @@ class EmporiaAgent:
         return resp.json()
 
     async def get_session(self, session_id: str) -> dict[str, Any]:
-        resp = await self._client().get(
-            f"{self.relay_url}/sessions/{session_id}", headers=await self._bearer_headers()
-        )
+        resp = await self._bearer_request("get", f"{self.relay_url}/sessions/{session_id}")
         resp.raise_for_status()
         return resp.json()
 
@@ -278,9 +293,7 @@ class EmporiaAgent:
             params["status"] = status
         if module_type:
             params["module_type"] = module_type
-        resp = await self._client().get(
-            f"{self.relay_url}/sessions", params=params, headers=await self._bearer_headers()
-        )
+        resp = await self._bearer_request("get", f"{self.relay_url}/sessions", params=params)
         resp.raise_for_status()
         return resp.json().get("sessions", [])
 
@@ -445,15 +458,13 @@ class EmporiaAgent:
     async def get_rooms(self) -> list[dict[str, Any]]:
         """List visible rooms — private rooms this agent is a member of included, via
         the authenticated caller identity (Bearer JWT), not a client-supplied viewer_id."""
-        resp = await self._client().get(f"{self.relay_url}/rooms", headers=await self._bearer_headers())
+        resp = await self._bearer_request("get", f"{self.relay_url}/rooms")
         resp.raise_for_status()
         return resp.json().get("rooms", [])
 
     async def get_room_messages(self, room_id: str) -> list[dict[str, Any]]:
         """Get recent messages from a room."""
-        resp = await self._client().get(
-            f"{self.relay_url}/rooms/{room_id}/messages", headers=await self._bearer_headers()
-        )
+        resp = await self._bearer_request("get", f"{self.relay_url}/rooms/{room_id}/messages")
         resp.raise_for_status()
         return resp.json().get("messages", [])
 

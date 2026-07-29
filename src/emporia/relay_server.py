@@ -93,6 +93,7 @@ from emporia.identity import (
     sign_raw_relay,
     load_federation_peer_pubkeys,
     save_federation_peer_pubkeys,
+    load_or_generate_relay_jwt_secret,
 )
 from emporia.module_sdk import (
     MODULE_REGISTRY,
@@ -248,7 +249,6 @@ import base64
 import hashlib
 import hmac as _hmac
 
-_JWT_SECRET = secrets.token_bytes(32)   # rotates on relay restart
 _JWT_TTL_SECONDS = 3600                  # 1-hour sessions
 _CHALLENGE_STORE: dict[str, tuple[str, float]] = {}   # challenge_id → (nonce, expires_at)
 _PENDING_TOKENS: dict[str, str] = {}                  # challenge_id → jwt (consumed on poll)
@@ -258,7 +258,7 @@ _CHALLENGE_TTL = 300.0  # 5-minute window to complete sign
 def _jwt_encode(payload: dict) -> str:
     import json as _json
     body = base64.urlsafe_b64encode(_json.dumps(payload).encode()).rstrip(b"=").decode()
-    sig = _hmac.new(_JWT_SECRET, body.encode(), hashlib.sha256).hexdigest()
+    sig = _hmac.new(load_or_generate_relay_jwt_secret(), body.encode(), hashlib.sha256).hexdigest()
     return f"{body}.{sig}"
 
 
@@ -268,7 +268,7 @@ def _jwt_decode(token: str) -> dict | None:
         body, sig = token.rsplit(".", 1)
     except ValueError:
         return None
-    expected = _hmac.new(_JWT_SECRET, body.encode(), hashlib.sha256).hexdigest()
+    expected = _hmac.new(load_or_generate_relay_jwt_secret(), body.encode(), hashlib.sha256).hexdigest()
     if not _hmac.compare_digest(sig, expected):
         return None
     try:

@@ -14,6 +14,7 @@ import hashlib
 import json
 import os
 import re
+import secrets
 from pathlib import Path
 from typing import Any
 
@@ -98,6 +99,39 @@ def sign_raw_relay(data: bytes) -> str:
     """Sign raw bytes with this relay's own Ed25519 key. Returns lowercase hex signature."""
     priv, _ = generate_or_load_relay_keypair()
     return priv.sign(data).hex()
+
+
+# ============================================================================
+# Dashboard JWT HMAC secret (persisted, not per-process)
+# ============================================================================
+# Stored beside the relay's own key, same 0o600 model. Previously generated fresh via
+# secrets.token_bytes(32) at relay_server.py import time — meaning every relay restart
+# invalidated every outstanding dashboard/agent Bearer token relay-wide, and any
+# multi-worker deployment had each worker mint tokens the others couldn't verify. See
+# SECURITY.md. Lazily loaded and cached here (not at relay_server.py import time) for the
+# same import-order reason generate_or_load_relay_keypair() and the federation pins are —
+# tests patch identity.KEY_DIR via a fixture that runs after module import/collection.
+
+_JWT_SECRET_FILE_NAME = "_relay_jwt_secret.bin"
+_RELAY_JWT_SECRET_CACHE: bytes | None = None
+
+
+def load_or_generate_relay_jwt_secret() -> bytes:
+    """Return this relay's persistent JWT HMAC secret (32 raw bytes), generating and
+    persisting it on first use. Cached after first load — called on every JWT
+    encode/decode, so re-reading the file every request would be pure overhead."""
+    global _RELAY_JWT_SECRET_CACHE
+    if _RELAY_JWT_SECRET_CACHE is None:
+        KEY_DIR.mkdir(parents=True, exist_ok=True)
+        path = KEY_DIR / _JWT_SECRET_FILE_NAME
+        if path.exists():
+            _RELAY_JWT_SECRET_CACHE = path.read_bytes()
+        else:
+            secret = secrets.token_bytes(32)
+            path.write_bytes(secret)
+            path.chmod(0o600)
+            _RELAY_JWT_SECRET_CACHE = secret
+    return _RELAY_JWT_SECRET_CACHE
 
 
 # ============================================================================

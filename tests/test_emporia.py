@@ -24,6 +24,7 @@ import os
 import shutil
 import sys
 import tempfile
+import time
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -574,6 +575,37 @@ def test_federation_peer_pins_persist_across_restart():
          patch.object(relay_server, "_FEDERATION_PEER_PUBKEYS_LOADED", False):
         relay_server._ensure_federation_pins_loaded()
         assert relay_server._FEDERATION_PEER_PUBKEYS.get(peer_url) == pub_hex
+
+
+def test_relay_jwt_secret_persists_across_restart():
+    """Regression for N2-1: the JWT HMAC secret used to be secrets.token_bytes(32) at
+    relay_server.py import time — regenerated fresh every process start, invalidating
+    every outstanding dashboard/agent Bearer token relay-wide on every restart. Now
+    persisted to disk; a fresh (post-restart) empty in-process cache must load the same
+    bytes rather than minting a new secret."""
+    from emporia import identity
+
+    secret1 = identity.load_or_generate_relay_jwt_secret()
+    with patch.object(identity, "_RELAY_JWT_SECRET_CACHE", None):
+        secret2 = identity.load_or_generate_relay_jwt_secret()
+    assert secret1 == secret2
+
+
+def test_dashboard_jwt_survives_simulated_relay_restart():
+    """End-to-end proof: a token minted before a simulated restart (in-process JWT secret
+    cache cleared, forcing a reload from disk) still verifies after."""
+    from emporia import identity, relay_server
+
+    with patch.object(relay_server, "_HEADER_AUTH_TRUSTED_HOSTS", set()):
+        client = TestClient(app, client=("127.0.0.1", 51216))
+        _register_keyed(client, "restart_jwt_owner")
+        token = _dashboard_jwt(client, "restart_jwt_owner")
+
+        with patch.object(identity, "_RELAY_JWT_SECRET_CACHE", None):
+            r = client.get(
+                "/agents/restart_jwt_owner/inbox", headers={"Authorization": f"Bearer {token}"}
+            )
+            assert r.status_code == 200
 
 
 # ============================================================================
@@ -2340,6 +2372,56 @@ def test_mcp_paid_session_full_turn_under_prod_auth(prod_client):
         assert r.get("success") is True, r
         assert r["is_terminal"] is True
         assert r["outcome"]["winner"] == "mcp_e2e_seller"
+
+
+def test_mcp_bearer_request_recovers_from_stale_cached_token(prod_client):
+    """Regression for N2-1: _dashboard_bearer_headers() only ever refreshed on expiry, with
+    no path back from a token the server actually rejects — before the JWT secret was
+    persisted, every relay restart left every client's cache holding a token signed under
+    a dead secret for up to an hour. Poisons the cache directly (simulating exactly that)
+    and confirms _bearer_request notices the 401/403, drops the cache entry, and recovers
+    on retry rather than failing for the cache's remaining lifetime.
+    """
+    from emporia import mcp_server
+
+    _register_keyed(prod_client, "stale_token_agent")
+    cache_key = f"{mcp_server.RELAY_URL}|stale_token_agent"
+    mcp_server._dashboard_token_cache[cache_key] = ("bogus.stale.token", time.time() + 3600)
+    try:
+        adapter = _ASGIHttpxAdapter(prod_client, mcp_server.RELAY_URL)
+        with patch.object(mcp_server, "httpx", adapter):
+            r = mcp_server._bearer_request(
+                "get", f"{mcp_server.RELAY_URL}/agents/stale_token_agent/inbox",
+                agent_id="stale_token_agent", timeout=10,
+            )
+        assert r.status_code == 200
+        assert mcp_server._dashboard_token_cache[cache_key][0] != "bogus.stale.token"
+    finally:
+        mcp_server._dashboard_token_cache.pop(cache_key, None)
+
+
+def test_agent_sdk_bearer_request_retries_once_on_401():
+    """Same property as the MCP test above, for EmporiaAgent._bearer_request — unit-level
+    since agent_sdk.py has no ASGI-transport test harness: mocks the underlying HTTP call
+    to return 401 then 200, and asserts the cached token is cleared and the caller gets
+    the retry's response, not the stale 401."""
+    import asyncio
+    from emporia.agent_sdk import EmporiaAgent
+
+    agent = EmporiaAgent(relay_url="http://fake.invalid", agent_id="sdk_retry_agent", public_key_hex="ab" * 32)
+    agent._http = MagicMock()
+    agent._bearer_token = "stale-token"
+    agent._bearer_exp = time.time() + 3600
+    resp_401 = MagicMock(status_code=401)
+    resp_200 = MagicMock(status_code=200)
+    agent._http.get = AsyncMock(side_effect=[resp_401, resp_200])
+    agent._bearer_headers = AsyncMock(return_value={"Authorization": "Bearer x"})
+
+    result = asyncio.run(agent._bearer_request("get", "http://fake.invalid/sessions/s1"))
+
+    assert result is resp_200
+    assert agent._http.get.await_count == 2
+    assert agent._bearer_token is None  # _invalidate_bearer() actually ran
 
 
 def test_stripe_profile_discovery_nested_id():
