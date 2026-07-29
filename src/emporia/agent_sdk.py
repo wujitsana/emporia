@@ -310,11 +310,10 @@ class EmporiaAgent:
         msg_type: str,
         body: dict[str, Any],
         session_id: str | None = None,
-        sign_body: bool = True,
     ) -> dict[str, Any]:
         # Bug fix: renamed param from `payload` to `body` to avoid shadowing
         # the local `envelope` dict that wraps it.
-        signature = self._sign(body) if sign_body else None
+        # Signature is mandatory — the relay rejects an unsigned /messages POST (N2-5).
         resp = await self._bearer_request(
             "post", f"{self.relay_url}/messages",
             json={
@@ -322,7 +321,7 @@ class EmporiaAgent:
                 "session_id": session_id,
                 "type": msg_type,
                 "payload": body,
-                "signature": signature,
+                "signature": self._sign(body),
             },
         )
         resp.raise_for_status()
@@ -503,10 +502,14 @@ class EmporiaAgent:
         msg_type: str = "chat",
     ) -> dict[str, Any]:
         """Send a message to a room. Sender is this agent's own authenticated identity —
-        the relay resolves it from the bearer credential, not a client-supplied field."""
+        the relay resolves it from the bearer credential, not a client-supplied field.
+        Signature is mandatory — the relay rejects an unsigned POST (N2-5)."""
         resp = await self._bearer_request(
             "post", f"{self.relay_url}/rooms/{room_id}/message",
-            json={"content": content, "msg_type": msg_type},
+            json={
+                "content": content, "msg_type": msg_type,
+                "signature": self._sign({"content": content}),
+            },
         )
         resp.raise_for_status()
         return resp.json()

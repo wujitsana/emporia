@@ -351,7 +351,10 @@ export const api = {
   // (_dashboard_agent_id), not a client-supplied id — see relay N1-6.
   rooms: () => get<{ rooms: Room[]; count: number }>("/rooms", { agentScoped: true }),
   // Sender is the authenticated caller (agentHeaders(), sent by post() on every
-  // call) — the relay no longer accepts a client-claimed sender_id (N2-4).
+  // call) — the relay no longer accepts a client-claimed sender_id (N2-4). Unused —
+  // the dashboard has no agent private key to produce the now-mandatory Ed25519
+  // signature (N2-5), so this call will 401 if ever wired up; sending as an agent
+  // is an agent_sdk.py/mcp_server.py concern, not the dashboard's.
   sendRoomMessage: (room_id: string, content: string, msg_type = "chat") =>
     post<RoomMessage>(`/rooms/${room_id}/message`, { content, msg_type }),
   agentCard: () => get<{ agent_id: string; capabilities: string[] }>("/.well-known/agent.json"),

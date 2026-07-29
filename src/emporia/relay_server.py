@@ -3211,9 +3211,10 @@ async def send_message(req: SendMessageRequest, request: Request):
     _require_registered(caller)
     if not AGENT_REGISTRY.check_rate_limit(caller):
         raise HTTPException(429, "Rate limit exceeded")
-    if req.signature:
-        if not AGENT_REGISTRY.verify_signature(caller, req.payload, req.signature):
-            raise HTTPException(403, "Invalid signature")
+    if not req.signature:
+        raise HTTPException(401, "Signature required")
+    if not AGENT_REGISTRY.verify_signature(caller, req.payload, req.signature):
+        raise HTTPException(403, "Invalid signature")
 
     try:
         await _assert_payload_safe_counted(req.payload)
@@ -3597,9 +3598,10 @@ async def send_room_message(room_id: str, req: SendRoomMessageRequest, request: 
         except PermissionError as e:
             raise HTTPException(403, str(e))
 
-    if req.signature:
-        if not AGENT_REGISTRY.verify_signature(caller, {"content": req.content}, req.signature):
-            raise HTTPException(403, "Invalid message signature")
+    if not req.signature:
+        raise HTTPException(401, "Signature required")
+    if not AGENT_REGISTRY.verify_signature(caller, {"content": req.content}, req.signature):
+        raise HTTPException(403, "Invalid message signature")
 
     # Negotiation broker: route counter_offer/accept/reject in 2-member private rooms
     broker_response: dict[str, Any] | None = None
