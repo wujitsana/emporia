@@ -2484,6 +2484,57 @@ def test_agent_sdk_bearer_request_retries_once_on_401():
     assert agent._bearer_token is None  # _invalidate_bearer() actually ran
 
 
+def test_mcp_write_call_site_attaches_bearer_credential(prod_client):
+    """Regression for N2-3: before this fix, mcp_server's write-tool call sites
+    (join_room, create_listing, create_session, submit_action, DM/agora tools, ...) sent
+    plain httpx.post() with no credential at all — under a prod-configured relay (header
+    trust off, the shipped default) the caller was cryptographically anonymous on every
+    write. That's what made N2-4's server-side enforcement unshippable without breaking
+    these clients first (see the plan's "infrastructure, then clients, then enforcement"
+    ordering). create_listing is representative; proving the token cache gets populated
+    as a side effect of the call is proof a real bearer credential was attached, not just
+    that the call returned 200 (writes aren't caller-checked server-side yet — N2-4 — so a
+    200 alone wouldn't distinguish before/after this fix).
+    """
+    from emporia import mcp_server
+
+    _register_keyed(prod_client, "n23_writer")
+    cache_key = f"{mcp_server.RELAY_URL}|n23_writer"
+    assert cache_key not in mcp_server._dashboard_token_cache
+
+    adapter = _ASGIHttpxAdapter(prod_client, mcp_server.RELAY_URL)
+    with patch.object(mcp_server, "httpx", adapter):
+        result = mcp_server.create_listing(
+            title="Test listing", agent_id="n23_writer", description="d",
+        )
+
+    assert result.get("success") is True, result
+    assert cache_key in mcp_server._dashboard_token_cache
+
+
+def test_agent_sdk_write_call_site_attaches_bearer_credential():
+    """Same property as the MCP test above, for agent_sdk.py's write methods
+    (create_listing, create_session, submit_action, send_message, create_event,
+    create_payment_intent, join_room, send_room_message) — before this fix they called
+    self._client().post()/get() directly with no Authorization header. Mocks the
+    underlying HTTP call and _bearer_headers(), and asserts create_listing (representative)
+    actually goes through _bearer_request rather than posting directly.
+    """
+    import asyncio
+    from emporia.agent_sdk import EmporiaAgent
+
+    agent = EmporiaAgent(relay_url="http://fake.invalid", agent_id="sdk_writer", public_key_hex="ab" * 32)
+    agent._http = MagicMock()
+    resp = MagicMock(status_code=200)
+    resp.json.return_value = {"listing_id": "l1"}
+    agent._http.post = AsyncMock(return_value=resp)
+    agent._bearer_headers = AsyncMock(return_value={"Authorization": "Bearer x"})
+
+    asyncio.run(agent.create_listing(title="Test listing"))
+
+    agent._bearer_headers.assert_awaited()
+
+
 def test_stripe_profile_discovery_nested_id():
     from emporia.stripe_profile_discovery import find_profile_id_in_data
 

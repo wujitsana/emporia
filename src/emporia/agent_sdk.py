@@ -166,8 +166,8 @@ class EmporiaAgent:
         expires_in_hours: int = 72,
         metadata: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
-        resp = await self._client().post(
-            f"{self.relay_url}/listings",
+        resp = await self._bearer_request(
+            "post", f"{self.relay_url}/listings",
             json={
                 "title": title,
                 "description": description,
@@ -209,8 +209,8 @@ class EmporiaAgent:
         payment_rules: dict[str, Any] | None = None,
         gateway_url: str = "",
     ) -> dict[str, Any]:
-        resp = await self._client().post(
-            f"{self.relay_url}/sessions",
+        resp = await self._bearer_request(
+            "post", f"{self.relay_url}/sessions",
             json={
                 "module_type": module_type,
                 "config": config or {},
@@ -234,18 +234,23 @@ class EmporiaAgent:
         - payment_intent_id: a pre-created PaymentIntent ID (legacy path)
         Omit both to receive a 402 challenge with WWW-Authenticate headers.
         """
-        headers = {}
+        body = {
+            "agent_id": self.agent_id,
+            "agent_gateway_url": gateway_url,
+            "payment_intent_id": payment_intent_id,
+        }
         if mpp_spt:
-            headers["Authorization"] = f"Payment {mpp_spt}"
-        resp = await self._client().post(
-            f"{self.relay_url}/sessions/{session_id}/join",
-            json={
-                "agent_id": self.agent_id,
-                "agent_gateway_url": gateway_url,
-                "payment_intent_id": payment_intent_id,
-            },
-            headers=headers,
-        )
+            # Authorization carries the MPP payment credential here, not the caller's
+            # identity bearer token — the two share one header and can't both be sent.
+            resp = await self._client().post(
+                f"{self.relay_url}/sessions/{session_id}/join",
+                json=body,
+                headers={"Authorization": f"Payment {mpp_spt}"},
+            )
+        else:
+            resp = await self._bearer_request(
+                "post", f"{self.relay_url}/sessions/{session_id}/join", json=body,
+            )
         resp.raise_for_status()
         return resp.json()
 
@@ -273,8 +278,8 @@ class EmporiaAgent:
             "step_number": session["step_number"],
         }
         envelope["signature"] = self._sign(signed_payload)
-        resp = await self._client().post(
-            f"{self.relay_url}/sessions/{session_id}/action",
+        resp = await self._bearer_request(
+            "post", f"{self.relay_url}/sessions/{session_id}/action",
             json=envelope,
         )
         resp.raise_for_status()
@@ -312,8 +317,8 @@ class EmporiaAgent:
         # Bug fix: renamed param from `payload` to `body` to avoid shadowing
         # the local `envelope` dict that wraps it.
         signature = self._sign(body) if sign_body else None
-        resp = await self._client().post(
-            f"{self.relay_url}/messages",
+        resp = await self._bearer_request(
+            "post", f"{self.relay_url}/messages",
             json={
                 "from_agent": self.agent_id,
                 "to_agent": to_agent,
@@ -332,7 +337,7 @@ class EmporiaAgent:
         params: dict[str, Any] = {"agent_id": self.agent_id, "limit": limit}
         if session_id:
             params["session_id"] = session_id
-        resp = await self._client().get(f"{self.relay_url}/messages", params=params)
+        resp = await self._bearer_request("get", f"{self.relay_url}/messages", params=params)
         resp.raise_for_status()
         return resp.json().get("messages", [])
 
@@ -348,8 +353,8 @@ class EmporiaAgent:
         payment_mode: str = "free",
         entry_fee_usd: str = "0",
     ) -> dict[str, Any]:
-        resp = await self._client().post(
-            f"{self.relay_url}/events",
+        resp = await self._bearer_request(
+            "post", f"{self.relay_url}/events",
             json={
                 "title": title,
                 "description": description,
@@ -402,8 +407,8 @@ class EmporiaAgent:
         In test mode the relay auto-confirms via test_helpers — no card needed.
         Pass the returned payment_intent_id to join_session() or join_room().
         """
-        resp = await self._client().post(
-            f"{self.relay_url}/payments/create-intent",
+        resp = await self._bearer_request(
+            "post", f"{self.relay_url}/payments/create-intent",
             json={
                 "session_id": session_id,
                 "room_id": room_id,
@@ -417,8 +422,9 @@ class EmporiaAgent:
         return resp.json()
 
     async def get_settlements(self) -> dict[str, Any]:
-        """List all settlement records on this relay."""
-        resp = await self._client().get(f"{self.relay_url}/payments/settlements")
+        """List all settlement records on this relay. Unfiltered list requires the
+        caller to be the relay operator."""
+        resp = await self._bearer_request("get", f"{self.relay_url}/payments/settlements")
         resp.raise_for_status()
         return resp.json()
 
@@ -444,14 +450,17 @@ class EmporiaAgent:
         - payment_intent_id: pre-created PI (legacy path)
         Room entry is charged on join, not on leave.
         """
-        headers = {}
+        body = {"agent_id": agent_id, "payment_intent_id": payment_intent_id}
         if mpp_spt:
-            headers["Authorization"] = f"Payment {mpp_spt}"
-        resp = await self._client().post(
-            f"{self.relay_url}/rooms/{room_id}/join",
-            json={"agent_id": agent_id, "payment_intent_id": payment_intent_id},
-            headers=headers,
-        )
+            # Authorization carries the MPP payment credential here, not the caller's
+            # identity bearer token — the two share one header and can't both be sent.
+            resp = await self._client().post(
+                f"{self.relay_url}/rooms/{room_id}/join",
+                json=body,
+                headers={"Authorization": f"Payment {mpp_spt}"},
+            )
+        else:
+            resp = await self._bearer_request("post", f"{self.relay_url}/rooms/{room_id}/join", json=body)
         resp.raise_for_status()
         return resp.json()
 
@@ -476,8 +485,8 @@ class EmporiaAgent:
         msg_type: str = "chat",
     ) -> dict[str, Any]:
         """Send a message to a room."""
-        resp = await self._client().post(
-            f"{self.relay_url}/rooms/{room_id}/message",
+        resp = await self._bearer_request(
+            "post", f"{self.relay_url}/rooms/{room_id}/message",
             json={"sender_id": sender_id, "content": content, "msg_type": msg_type},
         )
         resp.raise_for_status()

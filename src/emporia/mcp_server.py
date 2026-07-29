@@ -660,7 +660,7 @@ def join_room(
     if payment_intent_id:
         body["payment_intent_id"] = payment_intent_id
     try:
-        r = httpx.post(f"{RELAY_URL}/rooms/{room_id}/join", json=body, timeout=15)
+        r = _bearer_request("post", f"{RELAY_URL}/rooms/{room_id}/join", agent_id=agent_id, json=body, timeout=15)
         d = r.json()
         if r.status_code == 200:
             return {"success": True, **d}
@@ -764,11 +764,9 @@ def get_inbox(agent_id: str, unread_only: bool = True) -> dict[str, Any]:
     """
     params: dict[str, Any] = {"unread_only": str(unread_only).lower()}
     try:
-        r = httpx.get(
-            f"{RELAY_URL}/agents/{agent_id}/inbox",
-            params=params,
-            headers={"X-Emporia-Agent-Id": agent_id},
-            timeout=10.0,
+        r = _bearer_request(
+            "get", f"{RELAY_URL}/agents/{agent_id}/inbox",
+            agent_id=agent_id, params=params, timeout=10.0,
         )
         if r.status_code == 200:
             return r.json()
@@ -786,11 +784,9 @@ def mark_inbox_read(agent_id: str, inbox_ids: list[str]) -> dict[str, Any]:
         inbox_ids: List of inbox_id strings to mark as read.
     """
     try:
-        r = httpx.post(
-            f"{RELAY_URL}/agents/{agent_id}/inbox/mark-read",
-            json=inbox_ids,
-            headers={"X-Emporia-Agent-Id": agent_id},
-            timeout=10.0,
+        r = _bearer_request(
+            "post", f"{RELAY_URL}/agents/{agent_id}/inbox/mark-read",
+            agent_id=agent_id, json=inbox_ids, timeout=10.0,
         )
         if r.status_code == 200:
             return r.json()
@@ -894,8 +890,9 @@ def create_agora_topic(
       private + paid_invite = paid membership club
     """
     try:
-        r = httpx.post(
-            f"{RELAY_URL}/agoras/topics",
+        r = _bearer_request(
+            "post", f"{RELAY_URL}/agoras/topics",
+            agent_id=creator_id,
             json={
                 "name": name, "creator_id": creator_id, "description": description,
                 "visibility": visibility, "gate_type": gate_type,
@@ -940,8 +937,9 @@ def invite_to_agora_topic(topic_slug: str, agent_id: str, invited_by: str) -> di
     to accept (and pay entry_fee_cents if gate_type is paid_invite).
     """
     try:
-        r = httpx.post(
-            f"{RELAY_URL}/agoras/topics/{topic_slug}/invite",
+        r = _bearer_request(
+            "post", f"{RELAY_URL}/agoras/topics/{topic_slug}/invite",
+            agent_id=invited_by,
             json={"agent_id": agent_id, "invited_by": invited_by},
             timeout=10,
         )
@@ -959,16 +957,23 @@ def subscribe_agora_topic(topic_slug: str, agent_id: str, mpp_token: str = "", p
     paid_invite topics: either provide an MPP token (`mpp_token`) or a bound PaymentIntent.
     """
     try:
-        headers = {"Authorization": f"Payment {mpp_token}"} if mpp_token else None
         body: dict[str, Any] = {"agent_id": agent_id}
         if payment_intent_id:
             body["payment_intent_id"] = payment_intent_id
-        r = httpx.post(
-            f"{RELAY_URL}/agoras/topics/{topic_slug}/subscribe",
-            json=body,
-            headers=headers,
-            timeout=10,
-        )
+        if mpp_token:
+            # Authorization carries the MPP payment credential here, not the caller's
+            # identity bearer token — the two share one header and can't both be sent.
+            r = httpx.post(
+                f"{RELAY_URL}/agoras/topics/{topic_slug}/subscribe",
+                json=body,
+                headers={"Authorization": f"Payment {mpp_token}"},
+                timeout=10,
+            )
+        else:
+            r = _bearer_request(
+                "post", f"{RELAY_URL}/agoras/topics/{topic_slug}/subscribe",
+                agent_id=agent_id, json=body, timeout=10,
+            )
         if r.status_code == 402:
             return {"error": "payment_required", "detail": r.json(), "hint": "Use link-cli or mppx to pay the entry fee, then retry with Authorization: Payment <spt>"}
         return r.json() if r.status_code == 200 else {"error": f"Relay {r.status_code}", "detail": r.text}
@@ -987,8 +992,9 @@ def create_agora_post(
 ) -> dict[str, Any]:
     """Create a post in an Agora topic. post_type: text | link | code | data."""
     try:
-        r = httpx.post(
-            f"{RELAY_URL}/agoras/topics/{topic_slug}/posts",
+        r = _bearer_request(
+            "post", f"{RELAY_URL}/agoras/topics/{topic_slug}/posts",
+            agent_id=author_id,
             json={
                 "author_id": author_id, "title": title, "content": content,
                 "post_type": post_type, "flair": flair or None,
@@ -1036,8 +1042,9 @@ def add_agora_comment(
 ) -> dict[str, Any]:
     """Add a comment to an Agora post. Set parent_comment_id to reply to a specific comment."""
     try:
-        r = httpx.post(
-            f"{RELAY_URL}/agoras/posts/{post_id}/comments",
+        r = _bearer_request(
+            "post", f"{RELAY_URL}/agoras/posts/{post_id}/comments",
+            agent_id=author_id,
             json={
                 "author_id": author_id, "content": content,
                 "parent_comment_id": parent_comment_id or None,
@@ -1071,8 +1078,9 @@ def send_dm(to_agent_id: str, content: str, from_agent_id: str = "", msg_type: s
         return {"error": "from_agent_id required (or set EMPORIA_AGENT_ID)"}
     try:
         # Get or create thread
-        start_r = httpx.post(
-            f"{RELAY_URL}/dm/start",
+        start_r = _bearer_request(
+            "post", f"{RELAY_URL}/dm/start",
+            agent_id=sender,
             json={"from_agent": sender, "to_agent": to_agent_id},
             timeout=10,
         )
@@ -1080,8 +1088,9 @@ def send_dm(to_agent_id: str, content: str, from_agent_id: str = "", msg_type: s
             return {"error": f"Could not start DM thread: {start_r.status_code}", "detail": start_r.text}
         thread_id = start_r.json()["thread_id"]
         # Send the message
-        send_r = httpx.post(
-            f"{RELAY_URL}/dm/{thread_id}/send",
+        send_r = _bearer_request(
+            "post", f"{RELAY_URL}/dm/{thread_id}/send",
+            agent_id=sender,
             json={"sender_id": sender, "content": content, "msg_type": msg_type},
             timeout=10,
         )
@@ -1174,7 +1183,7 @@ def create_session(
         },
     }
     try:
-        r = httpx.post(f"{RELAY_URL}/sessions", json=body, timeout=10)
+        r = _bearer_request("post", f"{RELAY_URL}/sessions", agent_id=aid, json=body, timeout=10)
         d = r.json()
         if r.status_code in (200, 201):
             return {"success": True, **d}
@@ -1257,7 +1266,7 @@ def create_payment_intent(
     if room_id:
         body["room_id"] = room_id
     try:
-        r = httpx.post(f"{RELAY_URL}/payments/create-intent", json=body, timeout=15)
+        r = _bearer_request("post", f"{RELAY_URL}/payments/create-intent", agent_id=bid, json=body, timeout=15)
         d = r.json()
         if r.status_code == 200:
             return {"success": True, **d}
@@ -1285,11 +1294,18 @@ def join_session(
     if not aid:
         return {"error": "agent_id required (or set EMPORIA_AGENT_ID)", "success": False}
     body: dict[str, Any] = {"agent_id": aid}
-    headers = {"Authorization": f"Payment {mpp_token}"} if mpp_token else None
     if payment_intent_id:
         body["payment_intent_id"] = payment_intent_id
     try:
-        r = httpx.post(f"{RELAY_URL}/sessions/{session_id}/join", json=body, headers=headers, timeout=10)
+        if mpp_token:
+            # Authorization carries the MPP payment credential here, not the caller's
+            # identity bearer token — the two share one header and can't both be sent.
+            r = httpx.post(
+                f"{RELAY_URL}/sessions/{session_id}/join", json=body,
+                headers={"Authorization": f"Payment {mpp_token}"}, timeout=10,
+            )
+        else:
+            r = _bearer_request("post", f"{RELAY_URL}/sessions/{session_id}/join", agent_id=aid, json=body, timeout=10)
         d = r.json()
         if r.status_code == 200:
             return {"success": True, **d}
@@ -1354,7 +1370,7 @@ def submit_action(
         "signature": ed25519_sign(signed_payload, aid),
     }
     try:
-        r = httpx.post(f"{RELAY_URL}/sessions/{session_id}/action", json=body, timeout=15)
+        r = _bearer_request("post", f"{RELAY_URL}/sessions/{session_id}/action", agent_id=aid, json=body, timeout=15)
         d = r.json()
         if r.status_code == 200:
             return {"success": True, **d}
@@ -1399,7 +1415,7 @@ def confirm_delivery(
         "signature": ed25519_sign(signed_payload, aid),
     }
     try:
-        r = httpx.post(f"{RELAY_URL}/sessions/{session_id}/confirm-delivery", json=body, timeout=15)
+        r = _bearer_request("post", f"{RELAY_URL}/sessions/{session_id}/confirm-delivery", agent_id=aid, json=body, timeout=15)
         d = r.json()
         return {"success": True, **d} if r.status_code == 200 else {"error": f"Relay {r.status_code}", "detail": d, "success": False}
     except Exception as e:
@@ -1444,7 +1460,7 @@ def dispute_delivery(
         "signature": ed25519_sign(signed_payload, aid),
     }
     try:
-        r = httpx.post(f"{RELAY_URL}/sessions/{session_id}/dispute-delivery", json=body, timeout=15)
+        r = _bearer_request("post", f"{RELAY_URL}/sessions/{session_id}/dispute-delivery", agent_id=aid, json=body, timeout=15)
         d = r.json()
         return {"success": True, **d} if r.status_code == 200 else {"error": f"Relay {r.status_code}", "detail": d, "success": False}
     except Exception as e:
@@ -1513,7 +1529,7 @@ def create_listing(
     if module_type:
         body["module_type"] = module_type
     try:
-        r = httpx.post(f"{RELAY_URL}/listings", json=body, timeout=10)
+        r = _bearer_request("post", f"{RELAY_URL}/listings", agent_id=aid, json=body, timeout=10)
         d = r.json()
         return {"success": True, **d} if r.status_code in (200, 201) else {"error": f"Relay {r.status_code}", "detail": d, "success": False}
     except Exception as e:
@@ -1559,7 +1575,8 @@ def get_settlements(session_id: str = "") -> dict[str, Any]:
         if session_id:
             r = httpx.get(f"{RELAY_URL}/payments/settlements/{session_id}", timeout=10)
         else:
-            r = httpx.get(f"{RELAY_URL}/payments/settlements", timeout=10)
+            # Unfiltered list requires the caller to be the relay operator.
+            r = _bearer_request("get", f"{RELAY_URL}/payments/settlements", agent_id=AGENT_ID, timeout=10)
         return r.json() if r.status_code == 200 else {"error": f"Relay {r.status_code}", "detail": r.text}
     except Exception as e:
         return {"error": str(e)}
