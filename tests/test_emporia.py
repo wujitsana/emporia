@@ -949,27 +949,53 @@ def test_agent_inbox_requires_own_bearer_under_prod_auth(prod_client):
 # Identity-as-proof regression guard (route-table introspection)
 # ============================================================================
 
-def test_no_new_identity_as_proof_query_params():
-    """Guard against reintroducing the class of bug where a REST endpoint trusts a bare
-    query param (viewer_id, agent_id, ...) as the caller's identity with no signature or
-    session behind it (see SECURITY.md, task #7 / N1 review R6).
+def _identity_like_offenders(dependant, identity_like: set[str]) -> set[str]:
+    """Names of identity-like fields a route accepts either as a bare query param or as a
+    field on a Pydantic request body. Covers both surfaces because a caller can plant an
+    unverified identity claim in either place — see N2 review R4: the query-param-only
+    version of this check was blind to the entire body-param surface, which is where 20 of
+    the 24 identity-as-proof violations found in the N1->N2 review actually lived.
+    """
+    offending = {qp.name for qp in dependant.query_params if qp.name in identity_like}
+    for bp in dependant.body_params:
+        model_fields = getattr(bp.field_info.annotation, "model_fields", None)
+        if not model_fields:
+            continue
+        offending |= {name for name in model_fields if name in identity_like}
+    return offending
 
-    _KNOWN_VIOLATIONS below is a closed, explicit snapshot of every such param on HEAD —
-    it does not grow silently. Fixing one at N1-6 means deleting its line here, which makes
+
+def test_no_new_identity_as_proof_params():
+    """Guard against reintroducing the class of bug where an endpoint trusts a bare
+    identity claim — a query param (viewer_id, agent_id, ...) or a Pydantic request-body
+    field (sender_id, voter_id, ...) — as the caller's identity with no signature or
+    session behind it (see SECURITY.md, task #7 / N1 review R6, N2 review R1/R4).
+
+    Covers *both* query params and body params (N2-2). The original version of this guard
+    only inspected `dependant.query_params`; FastAPI puts Pydantic bodies in
+    `dependant.body_params` instead, so it was structurally blind to every POST endpoint
+    that takes its identity claim as a body field — 20 of them, found in the N1->N2 review.
+    A guard scoped narrower than the class it claims to cover gives false assurance, which
+    is worse than no guard, so this version deliberately checks both surfaces.
+
+    _KNOWN_VIOLATIONS below is a closed, explicit snapshot of every such endpoint on HEAD —
+    it does not grow silently. Fixing one (N2-4) means deleting its line here, which makes
     the fix's own regression test (elsewhere) responsible for proving the replacement,
     while this test starts protecting that endpoint against the bug coming back. Any
-    *other* route with an identity-like query param not in the allowlist fails this test —
-    that's the point: the introspection catches new instances by construction rather than
-    needing a bespoke test written per endpoint.
+    *other* route with an identity-like param not in the allowlist fails this test — that's
+    the point: the introspection catches new instances by construction rather than needing
+    a bespoke test written per endpoint.
 
     Endpoints that take agent_id/viewer_id purely as a genuine public lookup key (no auth
-    decision keyed on it) are not identity-as-proof and belong in _SAFE_LOOKUPS instead.
+    decision keyed on it), or that bind the claim via a consumed challenge/signature, are
+    not identity-as-proof and belong in _SAFE_LOOKUPS instead.
     """
     from emporia.relay_server import app
 
     IDENTITY_LIKE = {
         "viewer_id", "agent_id", "sender_id", "author_id", "voter_id",
         "inviter_id", "kicker_id", "invited_by", "from_agent",
+        "organizer_id", "creator_id", "creator_agent_id", "buyer_id",
     }
     # Genuine authenticated call sites (verified via _dashboard_agent_id/_require_caller_is
     # inline) or pure public-lookup keys — not identity-as-proof.
@@ -981,9 +1007,42 @@ def test_no_new_identity_as_proof_query_params():
         ("DELETE", "/agoras/posts/{post_id}"),  # agent_id: _require_caller_is-checked (N1-6)
         ("GET", "/dm"),  # agent_id: _require_caller_is-checked (N1-6)
         ("GET", "/dm/{thread_id}/messages"),  # agent_id: _require_caller_is-checked (N1-6)
+        ("GET", "/listings"),  # creator_id: public discovery filter, no auth decision keyed on it
+        # Bootstrap endpoints: no credential can exist yet, identity is bound by a
+        # consumed registration/login challenge instead (see _consume_challenge).
+        ("POST", "/dashboard/session"),
+        ("POST", "/agents/register"),
+        # agent_id here is carried *inside* the mandatory signed payload
+        # (session_id+step_number+agent_id), not trusted as a bare claim.
+        ("POST", "/sessions/{session_id}/action"),
+        ("POST", "/sessions/{session_id}/confirm-delivery"),
+        ("POST", "/sessions/{session_id}/dispute-delivery"),
     }
-    # Pre-existing violations tracked for N1-6 (task #7) — delete each line as it's fixed.
-    _KNOWN_VIOLATIONS: set[tuple[str, str]] = set()
+    # Pre-existing violations tracked for N2-4 (N2 review R1) — delete each line as its
+    # tranche fixes it. Seeded from the full route-table sweep at review time; see
+    # /opt/data/.claude/plans/where-are-we-at-vivid-barto.md for the tranche breakdown.
+    _KNOWN_VIOLATIONS: set[tuple[str, str]] = {
+        ("POST", "/payments/create-intent"),
+        ("POST", "/listings"),
+        ("POST", "/events"),
+        ("POST", "/sessions"),
+        ("POST", "/sessions/{session_id}/join"),
+        ("POST", "/messages"),
+        ("POST", "/rooms"),
+        ("POST", "/rooms/{room_id}/join"),
+        ("POST", "/rooms/{room_id}/invite"),
+        ("POST", "/rooms/{room_id}/kick"),
+        ("POST", "/rooms/{room_id}/message"),
+        ("POST", "/agoras/topics"),
+        ("POST", "/agoras/topics/{slug}/invite"),
+        ("POST", "/agoras/topics/{slug}/subscribe"),
+        ("POST", "/agoras/topics/{slug}/posts"),
+        ("POST", "/agoras/posts/{post_id}/vote"),
+        ("POST", "/agoras/posts/{post_id}/comments"),
+        ("POST", "/agoras/comments/{comment_id}/vote"),
+        ("POST", "/dm/start"),
+        ("POST", "/dm/{thread_id}/send"),
+    }
     allowed = _SAFE_LOOKUPS | _KNOWN_VIOLATIONS
 
     violations = []
@@ -993,7 +1052,7 @@ def test_no_new_identity_as_proof_query_params():
         methods = getattr(route, "methods", None)
         if not path or not dependant or not methods:
             continue
-        offending = {qp.name for qp in dependant.query_params if qp.name in IDENTITY_LIKE}
+        offending = _identity_like_offenders(dependant, IDENTITY_LIKE)
         if not offending:
             continue
         for method in methods:
@@ -1001,13 +1060,14 @@ def test_no_new_identity_as_proof_query_params():
                 violations.append((method, path, sorted(offending)))
 
     assert not violations, (
-        f"New identity-as-proof query param(s) found: {violations}. "
+        f"New identity-as-proof param(s) found: {violations}. "
         "Use _dashboard_agent_id(request)/Bearer auth instead, or add to _SAFE_LOOKUPS "
         "if this is a genuinely public lookup key with no auth decision keyed on it."
     )
 
     # The other direction: _KNOWN_VIOLATIONS must not silently drift out of date (route
-    # renamed/removed) — every entry should still name a real offending route.
+    # renamed/removed, or fixed without deleting its line here) — every entry should still
+    # name a real offending route.
     still_present = set()
     for route in app.routes:
         path = getattr(route, "path", None)
@@ -1015,7 +1075,7 @@ def test_no_new_identity_as_proof_query_params():
         methods = getattr(route, "methods", None)
         if not path or not dependant or not methods:
             continue
-        offending = {qp.name for qp in dependant.query_params if qp.name in IDENTITY_LIKE}
+        offending = _identity_like_offenders(dependant, IDENTITY_LIKE)
         if offending:
             for method in methods:
                 still_present.add((method, path))
