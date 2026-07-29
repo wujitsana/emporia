@@ -3858,12 +3858,24 @@ async def list_agora_topics(
         visibility = "public"
     with DB_LOCK, get_db() as conn:
         if subscribed_by:
-            rows = conn.execute(
-                "SELECT t.* FROM agora_topics t "
-                "JOIN agora_members m ON t.topic_id=m.topic_id "
-                "WHERE m.agent_id=? ORDER BY t.created_at DESC LIMIT ?",
-                (subscribed_by, min(limit, 200)),
-            ).fetchall()
+            # Personal-resource read (this agent's own subscriptions) — the caller must
+            # be the agent asking, not just any authenticated agent (R2: this branch used
+            # to run an unfiltered join with no caller check at all).
+            _require_caller_is(subscribed_by, request)
+            if visibility:
+                rows = conn.execute(
+                    "SELECT t.* FROM agora_topics t "
+                    "JOIN agora_members m ON t.topic_id=m.topic_id "
+                    "WHERE m.agent_id=? AND t.visibility=? ORDER BY t.created_at DESC LIMIT ?",
+                    (subscribed_by, visibility, min(limit, 200)),
+                ).fetchall()
+            else:
+                rows = conn.execute(
+                    "SELECT t.* FROM agora_topics t "
+                    "JOIN agora_members m ON t.topic_id=m.topic_id "
+                    "WHERE m.agent_id=? ORDER BY t.created_at DESC LIMIT ?",
+                    (subscribed_by, min(limit, 200)),
+                ).fetchall()
         else:
             order = "post_count DESC, created_at DESC" if sort == "top" else "created_at DESC"
             if visibility:

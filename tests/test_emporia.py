@@ -1034,6 +1034,7 @@ def test_no_new_identity_as_proof_params():
         "viewer_id", "agent_id", "sender_id", "author_id", "voter_id",
         "inviter_id", "kicker_id", "invited_by", "from_agent",
         "organizer_id", "creator_id", "creator_agent_id", "buyer_id",
+        "subscribed_by",
     }
     # Genuine authenticated call sites (verified via _dashboard_agent_id/_require_caller_is
     # inline) or pure public-lookup keys — not identity-as-proof.
@@ -1045,6 +1046,7 @@ def test_no_new_identity_as_proof_params():
         ("DELETE", "/agoras/posts/{post_id}"),  # agent_id: _require_caller_is-checked (N1-6)
         ("GET", "/dm"),  # agent_id: _require_caller_is-checked (N1-6)
         ("GET", "/dm/{thread_id}/messages"),  # agent_id: _require_caller_is-checked (N1-6)
+        ("GET", "/agoras/topics"),  # subscribed_by: _require_caller_is-checked (N2-6)
         ("GET", "/listings"),  # creator_id: public discovery filter, no auth decision keyed on it
         # Bootstrap endpoints: no credential can exist yet, identity is bound by a
         # consumed registration/login challenge instead (see _consume_challenge).
@@ -2646,6 +2648,48 @@ def test_room_message_signature_mandatory(prod_client):
         headers=bearer_for(prod_client, "sig_room_owner"),
     )
     assert r.status_code == 200
+
+
+# ============================================================================
+# N2-6 — subscribed_by visibility leak in GET /agoras/topics (R2)
+# ============================================================================
+
+def test_agora_subscribed_by_requires_caller_match(prod_client):
+    """Regression for N2-6 (R2): GET /agoras/topics?subscribed_by=<agent> ran an
+    unfiltered join with no caller check at all — the unauthenticated-caller downgrade
+    (forcing visibility="public") only ever applied to the *other* branch of this
+    endpoint, so `?subscribed_by=<victim>` returned every private/restricted topic that
+    agent subscribes to, to anyone, no credential required. Confirms: unauthenticated ->
+    empty result (per the plan's stated verification, not 403 — _require_caller_is denies
+    with 403 for a mismatched caller, which None always is), and that a stranger
+    authenticated as themselves still can't read another agent's subscriptions.
+    """
+    _register_keyed(prod_client, "subby_victim")
+    _register_keyed(prod_client, "subby_stranger")
+
+    r = prod_client.post(
+        "/agoras/topics",
+        json={"name": "Subby Private Topic", "description": "d", "visibility": "private", "gate_type": "open"},
+        headers=bearer_for(prod_client, "subby_victim"),
+    )
+    slug = r.json()["slug"]
+    # Creator auto-subscribes, so subby_victim is already a member of this private topic.
+
+    r = prod_client.get("/agoras/topics?subscribed_by=subby_victim")
+    assert r.status_code == 403
+
+    r = prod_client.get(
+        "/agoras/topics?subscribed_by=subby_victim",
+        headers=bearer_for(prod_client, "subby_stranger"),
+    )
+    assert r.status_code == 403
+
+    r = prod_client.get(
+        "/agoras/topics?subscribed_by=subby_victim",
+        headers=bearer_for(prod_client, "subby_victim"),
+    )
+    assert r.status_code == 200
+    assert any(t["slug"] == slug for t in r.json()["topics"])
 
 
 def test_agora_topic_and_posts_require_membership_for_private(client):

@@ -916,14 +916,17 @@ def list_agora_topics(
     sort: str = "new",
     limit: int = 50,
 ) -> dict[str, Any]:
-    """List Agora topics. Filter by visibility (public/private/restricted) or subscription."""
+    """List Agora topics. Filter by visibility (public/private/restricted) or subscription.
+    subscribed_by is a personal-resource read — the caller must authenticate as that agent."""
     try:
         params: dict[str, Any] = {"sort": sort, "limit": limit}
         if visibility:
             params["visibility"] = visibility
         if subscribed_by:
             params["subscribed_by"] = subscribed_by
-        r = httpx.get(f"{RELAY_URL}/agoras/topics", params=params, timeout=10)
+            r = _bearer_request("get", f"{RELAY_URL}/agoras/topics", agent_id=subscribed_by, params=params, timeout=10)
+        else:
+            r = httpx.get(f"{RELAY_URL}/agoras/topics", params=params, timeout=10)
         return r.json() if r.status_code == 200 else {"error": f"Relay {r.status_code}"}
     except Exception as e:
         return {"error": str(e)}
