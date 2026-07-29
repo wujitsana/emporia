@@ -1075,45 +1075,76 @@ def test_agent_inbox_requires_own_bearer_under_prod_auth(prod_client):
 # ============================================================================
 
 def _identity_like_offenders(dependant, identity_like: set[str]) -> set[str]:
-    """Names of identity-like fields a route accepts either as a bare query param or as a
-    field on a Pydantic request body. Covers both surfaces because a caller can plant an
-    unverified identity claim in either place — see N2 review R4: the query-param-only
-    version of this check was blind to the entire body-param surface, which is where 20 of
-    the 24 identity-as-proof violations found in the N1->N2 review actually lived.
+    """Names of identity-like fields a route accepts as a bare query param, a PATH param,
+    or a field on a Pydantic request body — the three surfaces a caller can plant an
+    unverified identity claim on. Query+body coverage landed in N2-2 (N2 review R4); path
+    params are added in N3-1 (N3 review R4) — the *original* identity-as-proof Critical
+    (SECURITY.md's `GET /agents/{id}/inbox`) lived on a path param, and nothing prevented a
+    new `/agents/{agent_id}/<write>` route from regressing there.
+
+    A body whose annotation has no `model_fields` (a raw `dict`/`list` body, not a Pydantic
+    model) can't be introspected for field names at all — rather than silently skipping it
+    (which is exactly how `POST /gaming/lobby` hid an unauthenticated identity-claim write
+    through N2, see N3 review R1), such a body is itself flagged via the synthetic
+    `"<raw-body>"` marker so the route requires an explicit, reviewed _SAFE_LOOKUPS entry.
     """
     offending = {qp.name for qp in dependant.query_params if qp.name in identity_like}
+    offending |= {pp.name for pp in dependant.path_params if pp.name in identity_like}
     for bp in dependant.body_params:
         model_fields = getattr(bp.field_info.annotation, "model_fields", None)
-        if not model_fields:
+        if model_fields is None:
+            offending.add("<raw-body>")
             continue
         offending |= {name for name in model_fields if name in identity_like}
     return offending
 
 
+def _route_methods(route) -> set[str] | None:
+    """Like `route.methods`, but also covers WebSocket routes (N3-1) — `APIWebSocketRoute`
+    has no `.methods` attribute at all, so the guard's main loop used to `continue` past
+    every WS route without inspecting it. WS routes are keyed on the pseudo-method "WS" in
+    _SAFE_LOOKUPS/_KNOWN_VIOLATIONS. Note this only catches identity claims a WS route
+    *declares* as a path/query param — `_ws_agent_id()` reads `ws.query_params` and
+    `?token=` imperatively at handshake time, outside FastAPI's dependency introspection,
+    so this can only assert "this WS route's declared params were reviewed," not verify
+    the handshake logic itself.
+    """
+    from fastapi.routing import APIWebSocketRoute
+    if isinstance(route, APIWebSocketRoute):
+        return {"WS"}
+    return getattr(route, "methods", None)
+
+
 def test_no_new_identity_as_proof_params():
     """Guard against reintroducing the class of bug where an endpoint trusts a bare
-    identity claim — a query param (viewer_id, agent_id, ...) or a Pydantic request-body
-    field (sender_id, voter_id, ...) — as the caller's identity with no signature or
-    session behind it (see SECURITY.md, task #7 / N1 review R6, N2 review R1/R4).
+    identity claim — a query param (viewer_id, agent_id, ...), a PATH param, or a Pydantic
+    request-body field (sender_id, voter_id, ...) — as the caller's identity with no
+    signature or session behind it (see SECURITY.md, task #7 / N1 review R6, N2 review
+    R1/R4, N3 review R1/R4).
 
-    Covers *both* query params and body params (N2-2). The original version of this guard
-    only inspected `dependant.query_params`; FastAPI puts Pydantic bodies in
-    `dependant.body_params` instead, so it was structurally blind to every POST endpoint
-    that takes its identity claim as a body field — 20 of them, found in the N1->N2 review.
-    A guard scoped narrower than the class it claims to cover gives false assurance, which
-    is worse than no guard, so this version deliberately checks both surfaces.
+    Covers query params, path params, and body params, across HTTP and WebSocket routes.
+    Each surface was added after being found blind: N2-2 added body params (the original
+    guard only inspected `dependant.query_params`, structurally blind to every POST
+    endpoint carrying its identity claim as a body field — 20 of them, N1->N2 review); N3-1
+    added path params and WebSocket routes, plus flagging any body whose fields can't be
+    introspected (a raw `dict`/`list`, not a Pydantic model) rather than silently skipping
+    it — that blind spot is exactly how `POST /gaming/lobby` stayed an unauthenticated
+    identity-claim write through N2 (N3 review R1). A guard scoped narrower than the class
+    it claims to cover gives false assurance, which is worse than no guard — this version
+    deliberately checks every surface FastAPI's route introspection can see.
 
     _KNOWN_VIOLATIONS below is a closed, explicit snapshot of every such endpoint on HEAD —
-    it does not grow silently. Fixing one (N2-4) means deleting its line here, which makes
-    the fix's own regression test (elsewhere) responsible for proving the replacement,
-    while this test starts protecting that endpoint against the bug coming back. Any
-    *other* route with an identity-like param not in the allowlist fails this test — that's
-    the point: the introspection catches new instances by construction rather than needing
-    a bespoke test written per endpoint.
+    it does not grow silently. Fixing one (N2-4, N3-2, ...) means deleting its line here,
+    which makes the fix's own regression test (elsewhere) responsible for proving the
+    replacement, while this test starts protecting that endpoint against the bug coming
+    back. Any *other* route with an identity-like param not in the allowlist fails this
+    test — that's the point: the introspection catches new instances by construction
+    rather than needing a bespoke test written per endpoint.
 
     Endpoints that take agent_id/viewer_id purely as a genuine public lookup key (no auth
-    decision keyed on it), or that bind the claim via a consumed challenge/signature, are
-    not identity-as-proof and belong in _SAFE_LOOKUPS instead.
+    decision keyed on it), that bind the claim via a consumed challenge/signature, or whose
+    raw body has no identity claim in it despite being uninspectable, are not
+    identity-as-proof and belong in _SAFE_LOOKUPS instead.
     """
     from emporia.relay_server import app
 
@@ -1144,6 +1175,26 @@ def test_no_new_identity_as_proof_params():
         ("POST", "/sessions/{session_id}/action"),
         ("POST", "/sessions/{session_id}/confirm-delivery"),
         ("POST", "/sessions/{session_id}/dispute-delivery"),
+        # --- N3-1: path-param / raw-body / WS additions ---
+        # agent_id (path): existence lookup only, no auth decision keyed on it.
+        ("GET", "/agents/{agent_id}"),
+        # agent_id (path): a filter on whose sessions to list — per-session content
+        # visibility is separately gated by the authenticated caller via
+        # _session_viewer_allowed(), not by this path param.
+        ("GET", "/agents/{agent_id}/sessions"),
+        # agent_id (path): public listing discovery filter, same shape as GET /listings.
+        ("GET", "/agents/{agent_id}/listings"),
+        # agent_id (path): _require_caller_is-checked.
+        ("GET", "/agents/{agent_id}/inbox"),
+        # agent_id (path): _require_caller_is-checked. Body (inbox_ids: list[str]) is a
+        # raw list with no identity claim in it.
+        ("POST", "/agents/{agent_id}/inbox/mark-read"),
+        # Raw dict body (req: dict = None) is unused for identity — caller is resolved via
+        # _dashboard_agent_id(request) and checked against session participants inline.
+        ("POST", "/sessions/{session_id}/abandon"),
+        # WS: agent_id (path) — caller must be that agent or the operator, checked inline
+        # via _ws_agent_id() before ws.accept().
+        ("WS", "/ws/agent/{agent_id}"),
     }
     # Pre-existing violations tracked for N2-4 (N2 review R1) — delete each line as its
     # tranche fixes it. Seeded from the full route-table sweep at review time; see
@@ -1160,6 +1211,13 @@ def test_no_new_identity_as_proof_params():
         ("POST", "/sessions/{session_id}/join"),
         ("POST", "/rooms/{room_id}/join"),
         ("POST", "/agoras/topics/{slug}/subscribe"),
+        # N3-2 fixes this: unauthenticated write, caller-chosen creator_agent_id, via a raw
+        # dict body that hid it from the guard until N3-1. See N3 review R1.
+        ("POST", "/gaming/lobby"),
+        # N3-4 fixes this: no visibility filter at all, unlike the sibling
+        # GET /agoras/topics/{slug}/posts — leaks private/restricted topic content to any
+        # anonymous caller who knows an author's agent_id. See N3 review R3.
+        ("GET", "/agents/{agent_id}/posts"),
     }
     allowed = _SAFE_LOOKUPS | _KNOWN_VIOLATIONS
 
@@ -1167,7 +1225,7 @@ def test_no_new_identity_as_proof_params():
     for route in app.routes:
         path = getattr(route, "path", None)
         dependant = getattr(route, "dependant", None)
-        methods = getattr(route, "methods", None)
+        methods = _route_methods(route)
         if not path or not dependant or not methods:
             continue
         offending = _identity_like_offenders(dependant, IDENTITY_LIKE)
@@ -1190,7 +1248,7 @@ def test_no_new_identity_as_proof_params():
     for route in app.routes:
         path = getattr(route, "path", None)
         dependant = getattr(route, "dependant", None)
-        methods = getattr(route, "methods", None)
+        methods = _route_methods(route)
         if not path or not dependant or not methods:
             continue
         offending = _identity_like_offenders(dependant, IDENTITY_LIKE)
