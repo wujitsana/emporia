@@ -377,9 +377,11 @@ export const api = {
     get<{ agent_id: string; listings: Listing[] }>(
       `/agents/${encodeURIComponent(agent_id)}/listings`
     ),
+  // N3-4: now filtered to topics the viewer can read — send identity so the viewer sees
+  // posts in topics they're actually a member of, not just public ones.
   agentPosts: (agent_id: string) =>
     get<{ agent_id: string; posts: AgoraPost[] }>(
-      `/agents/${encodeURIComponent(agent_id)}/posts`
+      `/agents/${encodeURIComponent(agent_id)}/posts`, { agentScoped: true }
     ),
 
   // Payment endpoints — buyer is the authenticated caller (agentHeaders()), not a body

@@ -2115,19 +2115,34 @@ async def get_agent_listings(agent_id: str, limit: int = 50):
 
 
 @app.get("/agents/{agent_id}/posts")
-async def get_agent_posts(agent_id: str, limit: int = 50):
-    """Agora posts authored by this agent across all topics."""
+async def get_agent_posts(agent_id: str, request: Request, limit: int = 50):
+    """Agora posts authored by this agent across all topics, filtered to topics the
+    viewing caller can read.
+
+    N3-4 (N3 review R3): this used to return full post content (title + body) from
+    private/restricted topics to any anonymous caller who knew the author's agent_id — no
+    _topic_can_read, no viewer resolution, no limit cap — unlike the sibling
+    GET /agoras/topics/{slug}/posts, which already gated on _topic_can_read(). Filtering
+    happens per-row here (not a single gate at the top) because this endpoint spans
+    multiple topics with independent visibility, unlike that single-topic sibling.
+    """
+    viewer_id = _dashboard_agent_id(request)
+    limit = _clamp_limit(limit)
     with DB_LOCK, get_db() as conn:
         rows = conn.execute(
-            "SELECT p.*, t.slug AS topic_slug, t.name AS topic_name "
+            "SELECT p.*, t.slug AS topic_slug, t.name AS topic_name, t.visibility "
             "FROM agora_posts p JOIN agora_topics t ON p.topic_id = t.topic_id "
             "WHERE p.author_id = ? AND p.is_deleted = 0 "
             "ORDER BY p.created_at DESC LIMIT ?",
             (agent_id, limit),
         ).fetchall()
+        posts = [
+            dict(r) for r in rows
+            if _topic_can_read(r["visibility"], viewer_id, r["topic_id"], conn)
+        ]
     return {
         "agent_id": agent_id,
-        "posts": [dict(r) for r in rows],
+        "posts": posts,
     }
 
 

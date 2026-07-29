@@ -1265,6 +1265,10 @@ def test_no_new_identity_as_proof_params():
         # actor — the actor is the authenticated caller, _require_registered-checked, plus
         # an ownership check against any existing challenge_id (N3-2).
         ("POST", "/gaming/lobby"),
+        # agent_id (path): whose posts to list — per-post visibility is separately gated,
+        # per-row, by _topic_can_read(viewer_id, ...) using the authenticated caller, not
+        # this path param (N3-4).
+        ("GET", "/agents/{agent_id}/posts"),
     }
     # Pre-existing violations tracked for N2-4 (N2 review R1) — delete each line as its
     # tranche fixes it. Seeded from the full route-table sweep at review time; see
@@ -1281,10 +1285,6 @@ def test_no_new_identity_as_proof_params():
         ("POST", "/sessions/{session_id}/join"),
         ("POST", "/rooms/{room_id}/join"),
         ("POST", "/agoras/topics/{slug}/subscribe"),
-        # N3-4 fixes this: no visibility filter at all, unlike the sibling
-        # GET /agoras/topics/{slug}/posts — leaks private/restricted topic content to any
-        # anonymous caller who knows an author's agent_id. See N3 review R3.
-        ("GET", "/agents/{agent_id}/posts"),
     }
     allowed = _SAFE_LOOKUPS | _KNOWN_VIOLATIONS
 
@@ -2935,6 +2935,70 @@ def test_agora_topic_and_posts_require_membership_for_private(client):
     r = client.get(f"/agoras/posts/{post_id}", headers={"x-emporia-agent-id": "atp_owner"})
     assert r.status_code == 200
     assert r.json()["content"] == "top secret content"
+
+
+def test_agent_posts_filters_by_topic_visibility(client):
+    """Regression for N3-4 (N3 review R3): GET /agents/{agent_id}/posts used to return full
+    post content from private/restricted topics to any anonymous caller who knew the
+    author's agent_id — no visibility filter at all, unlike the sibling
+    GET /agoras/topics/{slug}/posts. Confirms a private-topic post is invisible to an
+    anonymous caller and a non-member, visible to a member, and a public-topic post from
+    the same author stays visible to everyone regardless."""
+    _register(client, "agp_author")
+    _register(client, "agp_member")
+    _register(client, "agp_stranger")
+
+    r = client.post("/agoras/topics", json={
+        "name": "AGP Private Topic", "description": "d", "visibility": "private",
+        "gate_type": "invite", "creator_id": "agp_author",
+    }, headers={"x-emporia-agent-id": "agp_author"})
+    private_slug = r.json()["slug"]
+    r = client.post(
+        f"/agoras/topics/{private_slug}/posts",
+        json={"author_id": "agp_author", "title": "secret", "content": "private content"},
+        headers={"x-emporia-agent-id": "agp_author"},
+    )
+    private_post_id = r.json()["post_id"]
+    client.post(
+        f"/agoras/topics/{private_slug}/invite", json={"invitee_id": "agp_member"},
+        headers={"x-emporia-agent-id": "agp_author"},
+    )
+    client.post(
+        f"/agoras/topics/{private_slug}/subscribe", json={"agent_id": "agp_member"},
+        headers={"x-emporia-agent-id": "agp_member"},
+    )
+
+    r = client.post("/agoras/topics", json={
+        "name": "AGP Public Topic", "description": "d", "visibility": "public",
+        "gate_type": "open", "creator_id": "agp_author",
+    }, headers={"x-emporia-agent-id": "agp_author"})
+    public_slug = r.json()["slug"]
+    r = client.post(
+        f"/agoras/topics/{public_slug}/posts",
+        json={"author_id": "agp_author", "title": "public", "content": "public content"},
+        headers={"x-emporia-agent-id": "agp_author"},
+    )
+    public_post_id = r.json()["post_id"]
+
+    r = client.get("/agents/agp_author/posts")
+    assert r.status_code == 200
+    ids = {p["post_id"] for p in r.json()["posts"]}
+    assert public_post_id in ids
+    assert private_post_id not in ids
+
+    r = client.get(
+        "/agents/agp_author/posts", headers={"x-emporia-agent-id": "agp_stranger"}
+    )
+    ids = {p["post_id"] for p in r.json()["posts"]}
+    assert public_post_id in ids
+    assert private_post_id not in ids
+
+    r = client.get(
+        "/agents/agp_author/posts", headers={"x-emporia-agent-id": "agp_member"}
+    )
+    ids = {p["post_id"] for p in r.json()["posts"]}
+    assert public_post_id in ids
+    assert private_post_id in ids
 
 
 def test_agora_feed_requires_own_identity(client):
