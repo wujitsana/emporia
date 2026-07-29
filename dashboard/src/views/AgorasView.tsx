@@ -48,7 +48,7 @@ function VoteButtons({ postId, initialScore }: { postId: string; initialScore: n
     setScore((s) => s + delta);
     setVoted(next);
     if (next !== null) {
-      api.voteAgoraPost(postId, voter, next).catch(() => {});
+      api.voteAgoraPost(postId, next).catch(() => {});
     }
   };
 

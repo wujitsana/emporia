@@ -2105,7 +2105,6 @@ async def mark_inbox_read(agent_id: str, inbox_ids: list[str], request: Request)
 
 class CreatePaymentIntentRequest(BaseModel):
     amount_cents: int
-    buyer_id: str
     session_id: str | None = None
     room_id: str | None = None
     seller_id: str = "relay"
@@ -2113,10 +2112,14 @@ class CreatePaymentIntentRequest(BaseModel):
 
 
 @app.post("/payments/create-intent")
-async def create_payment_intent_endpoint(req: CreatePaymentIntentRequest):
+async def create_payment_intent_endpoint(req: CreatePaymentIntentRequest, request: Request):
     """Create a Stripe PaymentIntent for a specific paid session or room.
     Returns payment_intent_id to pass to /sessions/{id}/join or /rooms/{id}/join."""
     from emporia.payments import create_stake_intent
+
+    caller = _dashboard_agent_id(request)
+    if not caller:
+        raise HTTPException(401, "Authentication required")
 
     if bool(req.session_id) == bool(req.room_id):
         raise HTTPException(400, "Provide exactly one of session_id or room_id")
@@ -2158,13 +2161,13 @@ async def create_payment_intent_endpoint(req: CreatePaymentIntentRequest):
             f"amount_cents must match relay pricing for this resource ({expected_amount})",
         )
 
-    _assert_agent_budget(req.buyer_id, expected_amount)
+    _assert_agent_budget(caller, expected_amount)
 
     try:
         result = await create_stake_intent(
             session_id=target_id,
             amount_cents=expected_amount,
-            buyer_id=req.buyer_id,
+            buyer_id=caller,
             seller_id=req.seller_id,
             service_type=service_type,
             capture_method=capture_method,
@@ -3737,7 +3740,6 @@ class AddAgoraCommentRequest(BaseModel):
     parent_comment_id: str | None = None
 
 class AgoraVoteRequest(BaseModel):
-    voter_id: str
     value: int  # 1 or -1
 
 class AgoraSubscribeRequest(BaseModel):
@@ -4221,29 +4223,32 @@ async def get_agora_post(post_id: str, request: Request):
 
 
 @app.post("/agoras/posts/{post_id}/vote")
-async def vote_agora_post(post_id: str, req: AgoraVoteRequest):
-    _require_registered(req.voter_id)
+async def vote_agora_post(post_id: str, req: AgoraVoteRequest, request: Request):
+    caller = _dashboard_agent_id(request)
+    if not caller:
+        raise HTTPException(401, "Authentication required")
+    _require_registered(caller)
     if req.value not in (1, -1):
         raise HTTPException(400, "value must be 1 or -1")
     now = datetime.now(UTC).isoformat()
     with DB_LOCK, get_db() as conn:
         existing = conn.execute(
             "SELECT value FROM agora_votes WHERE voter_id=? AND target_id=? AND target_type='post'",
-            (req.voter_id, post_id),
+            (caller, post_id),
         ).fetchone()
         if existing:
             delta = req.value - existing["value"]
             conn.execute(
                 "UPDATE agora_votes SET value=?, created_at=? "
                 "WHERE voter_id=? AND target_id=? AND target_type='post'",
-                (req.value, now, req.voter_id, post_id),
+                (req.value, now, caller, post_id),
             )
         else:
             delta = req.value
             conn.execute(
                 "INSERT INTO agora_votes (voter_id, target_id, target_type, value, created_at) "
                 "VALUES (?,?,?,?,?)",
-                (req.voter_id, post_id, "post", req.value, now),
+                (caller, post_id, "post", req.value, now),
             )
         if delta != 0:
             conn.execute(
@@ -4307,28 +4312,31 @@ async def add_agora_comment(post_id: str, req: AddAgoraCommentRequest, request: 
 
 
 @app.post("/agoras/comments/{comment_id}/vote")
-async def vote_agora_comment(comment_id: str, req: AgoraVoteRequest):
-    _require_registered(req.voter_id)
+async def vote_agora_comment(comment_id: str, req: AgoraVoteRequest, request: Request):
+    caller = _dashboard_agent_id(request)
+    if not caller:
+        raise HTTPException(401, "Authentication required")
+    _require_registered(caller)
     if req.value not in (1, -1):
         raise HTTPException(400, "value must be 1 or -1")
     now = datetime.now(UTC).isoformat()
     with DB_LOCK, get_db() as conn:
         existing = conn.execute(
             "SELECT value FROM agora_votes WHERE voter_id=? AND target_id=? AND target_type='comment'",
-            (req.voter_id, comment_id),
+            (caller, comment_id),
         ).fetchone()
         delta = req.value - (existing["value"] if existing else 0)
         if existing:
             conn.execute(
                 "UPDATE agora_votes SET value=?, created_at=? "
                 "WHERE voter_id=? AND target_id=? AND target_type='comment'",
-                (req.value, now, req.voter_id, comment_id),
+                (req.value, now, caller, comment_id),
             )
         else:
             conn.execute(
                 "INSERT INTO agora_votes (voter_id, target_id, target_type, value, created_at) "
                 "VALUES (?,?,?,?,?)",
-                (req.voter_id, comment_id, "comment", req.value, now),
+                (caller, comment_id, "comment", req.value, now),
             )
         if delta != 0:
             conn.execute(

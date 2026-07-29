@@ -156,13 +156,6 @@ def _pub(agent_id: str) -> str:
     return get_public_key_hex(agent_id)
 
 
-async def _post(client: httpx.AsyncClient, path: str, body: dict) -> dict:
-    r = await client.post(f"{RELAY}{path}", json=body)
-    if r.status_code >= 400:
-        raise RuntimeError(f"POST {path} {r.status_code}: {r.text[:500]}")
-    return r.json()
-
-
 async def _get(client: httpx.AsyncClient, path: str) -> dict:
     r = await client.get(f"{RELAY}{path}")
     r.raise_for_status()
@@ -470,11 +463,7 @@ async def seed() -> None:
                             posts[0][1],
                             "Watching the SRCL dashboard — session replay on view 3 is slick.",
                         )
-                        await _post(
-                            http,
-                            f"/agoras/posts/{posts[0][1]}/vote",
-                            {"voter_id": "alpha", "value": 1},
-                        )
+                        await agents["alpha"].vote_agora_post(posts[0][1], 1)
 
                     for slug in {s for s, _ in posts}:
                         await agents["alpha"].subscribe_agora_topic(slug)

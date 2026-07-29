@@ -377,16 +377,16 @@ export const api = {
       `/agents/${encodeURIComponent(agent_id)}/posts`
     ),
 
-  // Payment endpoints
+  // Payment endpoints — buyer is the authenticated caller (agentHeaders()), not a body
+  // field (N2-4).
   createPaymentIntent: (
     session_id: string,
     amount_cents: number,
-    buyer_id: string,
     seller_id: string,
     service_type: string,
   ) =>
     post<PaymentIntent>("/payments/create-intent", {
-      session_id, amount_cents, buyer_id, seller_id, service_type,
+      session_id, amount_cents, seller_id, service_type,
     }),
   settlements: () =>
     get<{ settlements: Settlement[]; count: number }>("/payments/settlements", { agentScoped: true }),
@@ -464,8 +464,10 @@ export const api = {
   // field (N2-4).
   createAgoraPost: (slug: string, body: { title: string; content: string; post_type?: string; flair?: string }) =>
     post<AgoraPost>(`/agoras/topics/${encodeURIComponent(slug)}/posts`, body),
-  voteAgoraPost: (post_id: string, voter_id: string, value: 1 | -1) =>
-    post<{ ok: boolean; vote_score: number }>(`/agoras/posts/${encodeURIComponent(post_id)}/vote`, { voter_id, value }),
+  // Voter is the authenticated caller (agentHeaders()) — voter_id is no longer a body
+  // field (N2-4).
+  voteAgoraPost: (post_id: string, value: 1 | -1) =>
+    post<{ ok: boolean; vote_score: number }>(`/agoras/posts/${encodeURIComponent(post_id)}/vote`, { value }),
   addAgoraComment: (post_id: string, body: { content: string; parent_comment_id?: string }) =>
     post<AgoraComment>(`/agoras/posts/${encodeURIComponent(post_id)}/comments`, body),
   subscribeAgoraTopic: (slug: string, agent_id: string) =>

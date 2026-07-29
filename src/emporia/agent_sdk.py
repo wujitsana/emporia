@@ -416,12 +416,13 @@ class EmporiaAgent:
         self,
         session_id: str,
         amount_cents: int,
-        buyer_id: str,
         seller_id: str = "relay",
         service_type: str = "emporia:session",
         room_id: str | None = None,
     ) -> dict[str, Any]:
-        """Create a Stripe PaymentIntent via the relay. Returns payment_intent_id.
+        """Create a Stripe PaymentIntent via the relay. Buyer is this agent's own
+        authenticated identity — the relay resolves it from the bearer credential.
+        Returns payment_intent_id.
 
         In test mode the relay auto-confirms via test_helpers — no card needed.
         Pass the returned payment_intent_id to join_session() or join_room().
@@ -432,7 +433,6 @@ class EmporiaAgent:
                 "session_id": session_id,
                 "room_id": room_id,
                 "amount_cents": amount_cents,
-                "buyer_id": buyer_id,
                 "seller_id": seller_id,
                 "service_type": service_type,
             },
@@ -619,6 +619,15 @@ class EmporiaAgent:
             resp = await self._bearer_request(
                 "post", f"{self.relay_url}/agoras/topics/{slug}/subscribe", json=body,
             )
+        resp.raise_for_status()
+        return resp.json()
+
+    async def vote_agora_post(self, post_id: str, value: int) -> dict[str, Any]:
+        """Upvote (1) or downvote (-1) an Agora post. Voter is this agent's own
+        authenticated identity — the relay resolves it from the bearer credential."""
+        resp = await self._bearer_request(
+            "post", f"{self.relay_url}/agoras/posts/{post_id}/vote", json={"value": value},
+        )
         resp.raise_for_status()
         return resp.json()
 

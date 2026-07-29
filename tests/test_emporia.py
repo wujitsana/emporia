@@ -1060,7 +1060,6 @@ def test_no_new_identity_as_proof_params():
     # tranche fixes it. Seeded from the full route-table sweep at review time; see
     # /opt/data/.claude/plans/where-are-we-at-vivid-barto.md for the tranche breakdown.
     _KNOWN_VIOLATIONS: set[tuple[str, str]] = {
-        ("POST", "/payments/create-intent"),
         # These three (N2-4 tranche 2) keep `agent_id` in the body on purpose — an MPP
         # payment credential (Authorization: Payment <token>) can't also carry a Bearer
         # identity, so the claim is still trusted, unenforced, on that one code path.
@@ -1072,8 +1071,6 @@ def test_no_new_identity_as_proof_params():
         ("POST", "/sessions/{session_id}/join"),
         ("POST", "/rooms/{room_id}/join"),
         ("POST", "/agoras/topics/{slug}/subscribe"),
-        ("POST", "/agoras/posts/{post_id}/vote"),
-        ("POST", "/agoras/comments/{comment_id}/vote"),
     }
     allowed = _SAFE_LOOKUPS | _KNOWN_VIOLATIONS
 
@@ -1451,11 +1448,11 @@ def test_create_payment_intent_rejects_amount_mismatch(client):
         headers={"x-emporia-agent-id": "pi_creator"})
     session_id = r.json()["session_id"]
 
-    r2 = client.post("/payments/create-intent", json={
-        "session_id": session_id,
-        "amount_cents": 99,
-        "buyer_id": "pi_buyer",
-    })
+    r2 = client.post(
+        "/payments/create-intent",
+        json={"session_id": session_id, "amount_cents": 99},
+        headers={"x-emporia-agent-id": "pi_creator"},
+    )
     assert r2.status_code == 400
     assert "amount_cents must match relay pricing" in r2.text
 
@@ -2492,6 +2489,72 @@ def test_attributed_content_creation_requires_authentication(prod_client):
     )
     assert r.status_code == 200
     assert r.json()["participants"] == ["attr_real"]
+
+
+# ============================================================================
+# N2-4 tranche 4 — caller-identity enforcement on integrity/economics
+# endpoints (votes, /payments/create-intent).
+# ============================================================================
+
+def test_vote_ballot_stuffing_closed(prod_client):
+    """Regression for N2-4 tranche 4 (R1) headline attack: POST /agoras/posts/{id}/vote
+    and /agoras/comments/{id}/vote deduped on PRIMARY KEY (voter_id, target_id) but
+    trusted a bare, attacker-chosen voter_id body field — enumerate GET /agents and
+    iterate, and a post's score rises by N with zero real distinct voters. voter_id is
+    now gone from the body; the relay resolves the voter from the authenticated caller,
+    so one caller can only ever cast one vote no matter how many times it POSTs.
+    """
+    _register_keyed(prod_client, "vote_author")
+    _register_keyed(prod_client, "vote_caller")
+
+    r = prod_client.post(
+        "/agoras/topics", json={"name": "Vote Topic", "description": "d"},
+        headers=bearer_for(prod_client, "vote_author"),
+    )
+    slug = r.json()["slug"]
+    r = prod_client.post(
+        f"/agoras/topics/{slug}/posts", json={"title": "t", "content": "c"},
+        headers=bearer_for(prod_client, "vote_author"),
+    )
+    post_id = r.json()["post_id"]
+
+    r = prod_client.post(f"/agoras/posts/{post_id}/vote", json={"value": 1})
+    assert r.status_code == 401
+
+    for _ in range(3):
+        r = prod_client.post(
+            f"/agoras/posts/{post_id}/vote", json={"value": 1},
+            headers=bearer_for(prod_client, "vote_caller"),
+        )
+        assert r.status_code == 200
+    # Same authenticated caller voting repeatedly updates its own single row
+    # (UPSERT on voter_id, target_id) — score never exceeds one real vote.
+    assert r.json()["vote_score"] == 1
+
+
+def test_create_payment_intent_requires_authentication(prod_client):
+    """Regression for N2-4 tranche 4 (R1): POST /payments/create-intent trusted a claimed
+    buyer_id body field with no registration check at all — burn any registered agent's
+    MAX_TOTAL_SPEND_CENTS budget by naming them as buyer_id repeatedly, so their real join
+    later 402s. buyer_id is now gone from the body; the relay resolves the buyer from the
+    authenticated caller, and _assert_agent_budget runs against that caller, not a claim.
+    """
+    _register_keyed(prod_client, "pi_auth_creator")
+
+    r = prod_client.post(
+        "/sessions",
+        json={
+            "module_type": "emporia:service:v1", "config": {},
+            "payment_rules": {"mode": "stripe_link", "stake_per_participant": "1.00", "currency": "usd"},
+        },
+        headers=bearer_for(prod_client, "pi_auth_creator"),
+    )
+    session_id = r.json()["session_id"]
+
+    r = prod_client.post("/payments/create-intent", json={
+        "session_id": session_id, "amount_cents": 100,
+    })
+    assert r.status_code == 401
 
 
 def test_agora_topic_and_posts_require_membership_for_private(client):

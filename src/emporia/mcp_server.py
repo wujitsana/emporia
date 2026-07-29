@@ -1257,7 +1257,6 @@ def create_payment_intent(
         return {"error": "buyer_id required (or set EMPORIA_AGENT_ID)", "success": False}
     body: dict[str, Any] = {
         "amount_cents": amount_cents,
-        "buyer_id": bid,
         "seller_id": seller_id,
         "service_type": service_type,
     }
