@@ -231,6 +231,93 @@ def test_register_agent_success(client):
     assert r.json()["status"] == "registered"
 
 
+# ============================================================================
+# N2-7 — minimal agent_id namespace hardening (R6)
+# ============================================================================
+
+def test_agent_id_rejects_cyrillic_homoglyph_of_existing_agent(client):
+    """Regression for N2-7 (R6): registration bound a keypair to a name but never
+    validated the name itself — a Cyrillic-а (U+0430) homoglyph of an existing agent_id
+    was free and legitimately claimable, indistinguishable at a glance from the real
+    agent everywhere the name is displayed (dashboard, GET /agents, federation). The
+    Cyrillic а isn't in the now-enforced [a-z0-9_-] charset, so it's rejected outright —
+    not accepted as a distinct name."""
+    r = client.post("/agents/register", json={
+        "agent_id": "stripe_official", "public_key_hex": "a" * 64,
+    })
+    assert r.status_code == 200
+
+    homoglyph = "stripe_officiаl"  # Cyrillic а (U+0430) in place of the Latin a
+    r = client.post("/agents/register", json={
+        "agent_id": homoglyph, "public_key_hex": "b" * 64,
+    })
+    assert r.status_code == 400
+    assert "agent_id" in r.text
+
+
+def test_agent_id_rejects_bad_charset_and_reserved_prefix(client):
+    # Uppercase is folded to lowercase, not rejected — a case-insensitive namespace,
+    # matching identity._key_path()'s own .lower(), so "Alice"/"alice" can't diverge into
+    # two distinct registrations.
+    r = client.post("/agents/register", json={
+        "agent_id": "Has-Uppercase", "public_key_hex": "c" * 64,
+    })
+    assert r.status_code == 200
+    assert r.json()["agent_id"] == "has-uppercase"
+
+    r = client.post("/agents/register", json={
+        "agent_id": "has spaces", "public_key_hex": "d" * 64,
+    })
+    assert r.status_code == 400
+
+    r = client.post("/agents/register", json={
+        "agent_id": "_shadow_relay", "public_key_hex": "e" * 64,
+    })
+    assert r.status_code == 400
+
+    r = client.post("/agents/register", json={
+        "agent_id": "ab", "public_key_hex": "f" * 64,  # below the 3-char minimum
+    })
+    assert r.status_code == 400
+
+
+def test_agent_id_nfkc_variant_collides_with_existing_name(client):
+    """A Unicode *compatibility* variant (full-width Latin, here) is not a cross-script
+    homoglyph — NFKC normalization folds it back to plain ASCII before validation, so it
+    collides with an existing name through the ordinary key-mismatch check rather than
+    silently registering as a distinct, confusable identity."""
+    r = client.post("/agents/register", json={
+        "agent_id": "nfkc_demo_agent", "public_key_hex": "1" * 64,
+    })
+    assert r.status_code == 200
+
+    fullwidth = "nfkc_demo_ａgent"  # fullwidth "ａ" (U+FF41), NFKC-folds to "a"
+    r = client.post("/agents/register", json={
+        "agent_id": fullwidth, "public_key_hex": "2" * 64,
+    })
+    assert r.status_code == 409
+    assert "already taken" in r.text
+
+
+def test_agent_id_legitimate_new_name_still_registers(client):
+    r = client.post("/agents/register", json={
+        "agent_id": "legit-new-agent_2", "public_key_hex": "3" * 64,
+    })
+    assert r.status_code == 200
+    assert r.json()["agent_id"] == "legit-new-agent_2"
+
+
+def test_seeded_demo_agent_ids_still_validate(client):
+    """The seed script's demo agent set must keep registering, or scripts/seed_demo_relay.py
+    and every fixture built on it break the moment this validator ships."""
+    from emporia.identity import get_public_key_hex
+    for agent_id in ["hackathon_hermes", "alpha", "beta", "nemotron_strategist", "stripe_escrow_bot"]:
+        r = client.post("/agents/register", json={
+            "agent_id": agent_id, "public_key_hex": get_public_key_hex(agent_id),
+        })
+        assert r.status_code == 200, (agent_id, r.text)
+
+
 def _signed_challenge(client, profile_id: str) -> dict:
     """POST /agents/challenge, sign the nonce with a real Ed25519 key, and return the
     challenge_id/signature/public_key_hex a real register_agent MCP call would send."""

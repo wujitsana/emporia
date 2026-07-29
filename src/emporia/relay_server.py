@@ -28,10 +28,12 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import secrets
 import sqlite3
 import threading
 import time
+import unicodedata
 import uuid
 from collections import defaultdict
 from contextlib import asynccontextmanager
@@ -996,6 +998,43 @@ def record_settlement(settlement: dict[str, Any]) -> None:
 # Agent Registry (rate limiter + Ed25519 auth)
 # ============================================================================
 
+# N2-7: minimal agent_id namespace hardening. Registration binds a keypair to a name
+# (_consume_challenge proves possession, the key-mismatch check below blocks takeover of
+# an existing name) but never validated the name itself — any charset, any length, no
+# normalization. On an open-registration relay, agent_id="stripe_official" or a
+# Cyrillic-а homoglyph of an existing agent was free and legitimately claimable.
+#
+# NFKC-normalizing before validating (rather than after) means Unicode *compatibility*
+# variants — full-width, fraktur, other "looks like ASCII but isn't" forms — collapse to
+# their canonical ASCII spelling first, so they collide with an existing name through the
+# ordinary key-mismatch check below rather than needing a separate confusable-skeleton
+# table. True cross-script homoglyphs (Cyrillic, Greek, ...) need no separate handling
+# either: they were never valid NFKC-compatibility variants of ASCII letters, so the
+# charset restriction below rejects them outright. Charset/length mirror
+# identity._key_path()'s own filename sanitization, so the id stored here always matches
+# the id its keyfile is named for.
+#
+# Deliberately NOT built here (see ROADMAP.md): a stable content-addressed id distinct
+# from this mutable display name, transfer/release semantics, or reserved/premium names
+# gated on trust_level — full namespace ownership is a bigger design than this warrants
+# before x402, so this stays scoped to charset/normalization/collision only.
+_AGENT_ID_RE = re.compile(r"^[a-z0-9][a-z0-9_-]{1,62}[a-z0-9]$")
+
+
+def _normalize_agent_id(agent_id: str) -> str:
+    """NFKC-normalize and validate a proposed agent_id. Raises ValueError with a message
+    safe to surface to the caller. The regex's required alnum first/last char already
+    rejects a leading '_' or '-', which is what keeps a registration from shadowing the
+    relay's own reserved '_relay_identity' keyfile name."""
+    normalized = unicodedata.normalize("NFKC", agent_id).strip().lower()
+    if not _AGENT_ID_RE.match(normalized):
+        raise ValueError(
+            "agent_id must be 3-64 chars, lowercase letters/digits/underscore/hyphen only, "
+            "and start and end with a letter or digit"
+        )
+    return normalized
+
+
 class AgentRegistry:
     def __init__(self) -> None:
         self.rate_limits: dict[str, list[float]] = defaultdict(list)
@@ -1010,6 +1049,7 @@ class AgentRegistry:
         identity_claims: list[dict] | None = None,
     ) -> dict:
         """Register an agent. Returns enriched profile dict with trust_level."""
+        agent_id = _normalize_agent_id(agent_id)
         if not public_key_hex:
             raise ValueError("public_key_hex is required — agents must register with an Ed25519 pubkey")
         # Validate Ed25519 pubkey: exactly 64 hex chars (32 bytes).

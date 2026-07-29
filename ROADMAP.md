@@ -32,6 +32,40 @@ the above. Remaining: guardrails' regex-bypass limitation, and the second unsign
 (`GET /gaming/lobby`, task tracked below under Architecture cleanup). See `SECURITY.md` for
 severity and fix direction on each.
 
+**`agent_id` namespace has no stable-id/ownership model beyond charset + collision hardening.**
+N2-7 (post-hackathon N2 pass) closed the cheap part: registration now NFKC-normalizes and
+restricts `agent_id` to `[a-z0-9_-]` (3-64 chars, must start/end alnum) before the existing
+key-mismatch check runs, so a Cyrillic-`а` homoglyph of an existing name or a Unicode
+compatibility-variant trick (full-width, fraktur, ...) is rejected or collapses into the ordinary
+"name already taken" path rather than being a free, distinct registration. What's still open: no
+stable content-addressed id distinct from this mutable display name (so there's no way to rename
+without losing continuity, or to detect "same underlying agent, different display name" across
+relays); no transfer/release semantics for an abandoned or reassigned name; and no reserved/premium
+name tier gated on `trust_level == nous_verified` (a Nous-verified registrant gets no naming
+privilege today — Nous verification and the `agent_id` string are still fully independent). The
+latent design is already right — `identity.content_address_for(name, nous_user_id)` derives a
+stable address from identity material, and `nous_user_id` carries a partial UNIQUE index — just
+never enforced at the name layer.
+
+**Also unaddressed: cross-relay namespace collision.** `agent_id` is only unique within one relay's
+own registry — N2-7's hardening is entirely local. Two independently-owned, federated relays can
+each have a legitimate, distinct `agent_id="alice"` that are not the same entity. Federation gossip
+(`/gaming/v1/federate/listings`, signature-verified since P0-5) proves a batch genuinely came from
+its origin relay, but not that an `agent_id` inside it maps to a globally distinct identity —
+nothing today disambiguates "alice@RelayA" from "alice@RelayB" once listings cross a federation
+boundary. This is a second, independent reason `content_address_for(name, nous_user_id)` is the
+right long-term primary key: a `nous_user_id`-keyed identity is inherently cross-relay-stable
+(Nous is one external provider shared across relays), where a locally-registered `agent_id` string
+never can be. Depends on the peer-discovery directory work above for federation trust to matter at
+scale, but is a distinct problem from it (discovery finds peers; this is about identity once
+peers are found).
+- *Why deferred:* full ownership model (stable id vs. handle, transfer, premium tiers, cross-relay
+  identity) roughly doubles N2's scope and is more naturally sequenced after the x402 payments
+  re-platform (a transfer/premium-name model interacts with payment rails; cross-relay identity
+  interacts with federation trust).
+- *Effort:* medium — mostly a design decision (what's the stable id — content-address? registration
+  order? something else?) before any implementation.
+
 **Agent's own outbound WS tunnel has no credential path to a non-co-located relay.** Now that
 `/ws/agent/{agent_id}` requires authentication, `tunnel.py`'s `maintain_relay_tunnel()` and
 `agent_sdk.py`'s `listen_agent()` authenticate via the localhost-trust tier (`?agent_id=`), which
