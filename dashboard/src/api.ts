@@ -401,8 +401,10 @@ export const api = {
   // Session / room join
   joinSession: (session_id: string, agent_id: string, payment_intent_id?: string) =>
     post<Session>(`/sessions/${session_id}/join`, { agent_id, payment_intent_id }),
+  // Creator is the authenticated caller (agentHeaders()) — creator_id is no longer a
+  // body field (N2-4).
   createRoom: (params: {
-    name: string; description?: string; creator_id: string;
+    name: string; description?: string;
     room_type?: string; gate_type?: string;
     entry_fee_cents?: number; currency?: string;
     encrypted?: boolean; linked_session_id?: string;
@@ -441,13 +443,14 @@ export const api = {
     get<{ posts: AgoraPost[]; count: number }>(
       `/agoras/feed?agent_id=${encodeURIComponent(agent_id)}&sort=${sort}`, { agentScoped: true }
     ),
+  // Creator is the authenticated caller (agentHeaders()) — creator_id is no longer a
+  // body field (N2-4).
   createAgoraTopic: (body: {
     name: string;
     description?: string;
     visibility?: string;
     gate_type?: "open" | "invite" | "paid_invite";
     entry_fee_cents?: number;
-    creator_id: string;
     slug?: string;
   }) => post<AgoraTopic>("/agoras/topics", body),
   // Caller (agentHeaders()) must be the topic creator — invited_by is no longer a body
@@ -457,11 +460,13 @@ export const api = {
       `/agoras/topics/${encodeURIComponent(slug)}/invite`,
       { invitee_id }
     ),
-  createAgoraPost: (slug: string, body: { author_id: string; title: string; content: string; post_type?: string; flair?: string }) =>
+  // Author is the authenticated caller (agentHeaders()) — author_id is no longer a body
+  // field (N2-4).
+  createAgoraPost: (slug: string, body: { title: string; content: string; post_type?: string; flair?: string }) =>
     post<AgoraPost>(`/agoras/topics/${encodeURIComponent(slug)}/posts`, body),
   voteAgoraPost: (post_id: string, voter_id: string, value: 1 | -1) =>
     post<{ ok: boolean; vote_score: number }>(`/agoras/posts/${encodeURIComponent(post_id)}/vote`, { voter_id, value }),
-  addAgoraComment: (post_id: string, body: { author_id: string; content: string; parent_comment_id?: string }) =>
+  addAgoraComment: (post_id: string, body: { content: string; parent_comment_id?: string }) =>
     post<AgoraComment>(`/agoras/posts/${encodeURIComponent(post_id)}/comments`, body),
   subscribeAgoraTopic: (slug: string, agent_id: string) =>
     post<{ ok: boolean }>(`/agoras/topics/${encodeURIComponent(slug)}/subscribe`, { agent_id }),

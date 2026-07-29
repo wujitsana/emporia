@@ -894,7 +894,7 @@ def create_agora_topic(
             "post", f"{RELAY_URL}/agoras/topics",
             agent_id=creator_id,
             json={
-                "name": name, "creator_id": creator_id, "description": description,
+                "name": name, "description": description,
                 "visibility": visibility, "gate_type": gate_type,
                 "entry_fee_cents": entry_fee_cents,
                 "slug": slug or None,
@@ -997,7 +997,7 @@ def create_agora_post(
             "post", f"{RELAY_URL}/agoras/topics/{topic_slug}/posts",
             agent_id=author_id,
             json={
-                "author_id": author_id, "title": title, "content": content,
+                "title": title, "content": content,
                 "post_type": post_type, "flair": flair or None,
             },
             timeout=10,
@@ -1047,7 +1047,7 @@ def add_agora_comment(
             "post", f"{RELAY_URL}/agoras/posts/{post_id}/comments",
             agent_id=author_id,
             json={
-                "author_id": author_id, "content": content,
+                "content": content,
                 "parent_comment_id": parent_comment_id or None,
             },
             timeout=10,
@@ -1175,7 +1175,6 @@ def create_session(
         return {"error": "agent_id required (or set EMPORIA_AGENT_ID)", "success": False}
     body: dict[str, Any] = {
         "module_type": module_type,
-        "creator_agent_id": aid,
         "config": config or {},
         "payment_rules": {
             "mode": payment_mode,
@@ -1519,7 +1518,6 @@ def create_listing(
     if not aid:
         return {"error": "agent_id required (or set EMPORIA_AGENT_ID)", "success": False}
     body: dict[str, Any] = {
-        "agent_id": aid,
         "title": title,
         "description": description,
         "listing_type": listing_type,

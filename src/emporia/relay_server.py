@@ -1432,7 +1432,6 @@ class CreateSessionRequest(BaseModel):
     module_type: str
     config: dict[str, Any] = Field(default_factory=dict)
     payment_rules: dict[str, Any] | None = None
-    creator_agent_id: str
     creator_gateway_url: str = ""
 
 
@@ -1462,7 +1461,6 @@ class CreateListingRequest(BaseModel):
     title: str
     description: str = ""
     listing_type: str = "service"
-    agent_id: str
     payment_mode: str = "free"
     price_usd: str = "0"
     module_type: str | None = None
@@ -1474,7 +1472,6 @@ class CreateEventRequest(BaseModel):
     title: str
     description: str = ""
     module_type: str
-    organizer_id: str
     payment_mode: str = "free"
     entry_fee_usd: str = "0"
 
@@ -1486,7 +1483,6 @@ class CreateRoomRequest(BaseModel):
     gate_type: str = "open"           # "open" | "invite" | "stripe_payment"
     entry_fee_cents: int = 0
     currency: str = "USD"
-    creator_id: str
     max_members: int | None = None
     encrypted: bool = False           # True → relay stores opaque ciphertext, skips guardrails
     linked_session_id: str | None = None  # link room to a game session
@@ -2302,8 +2298,11 @@ async def list_payment_records(
 # ============================================================================
 
 @app.post("/listings")
-async def create_listing(req: CreateListingRequest):
-    _require_registered(req.agent_id)
+async def create_listing(req: CreateListingRequest, request: Request):
+    caller = _dashboard_agent_id(request)
+    if not caller:
+        raise HTTPException(401, "Authentication required")
+    _require_registered(caller)
     try:
         await _assert_payload_safe_counted(req.model_dump())
     except PermissionError as e:
@@ -2319,7 +2318,7 @@ async def create_listing(req: CreateListingRequest):
             "INSERT INTO listings (listing_id, title, description, listing_type, agent_id, "
             "payment_mode, price_usd, module_type, origin_relay, expires_at, metadata_json, created_at) "
             "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-            (listing_id, req.title, req.description, req.listing_type, req.agent_id,
+            (listing_id, req.title, req.description, req.listing_type, caller,
              req.payment_mode, req.price_usd, req.module_type, RELAY_BASE_URL,
              expires_at, json.dumps(req.metadata), now),
         )
@@ -2328,7 +2327,7 @@ async def create_listing(req: CreateListingRequest):
         "listing_id": listing_id,
         "title": req.title,
         "module_type": req.module_type,
-        "agent_id": req.agent_id,
+        "agent_id": caller,
     })
     return {"listing_id": listing_id, "status": "created"}
 
@@ -2407,8 +2406,11 @@ async def get_listings(
 # ============================================================================
 
 @app.post("/events")
-async def create_event(req: CreateEventRequest):
-    _require_registered(req.organizer_id)
+async def create_event(req: CreateEventRequest, request: Request):
+    caller = _dashboard_agent_id(request)
+    if not caller:
+        raise HTTPException(401, "Authentication required")
+    _require_registered(caller)
     try:
         await _assert_payload_safe_counted(req.model_dump())
     except PermissionError as e:
@@ -2421,7 +2423,7 @@ async def create_event(req: CreateEventRequest):
             "INSERT INTO events (event_id, title, description, module_type, organizer_id, "
             "payment_mode, entry_fee_usd, status, bracket_json, participants_json, created_at, updated_at) "
             "VALUES (?, ?, ?, ?, ?, ?, ?, 'open', '{}', '[]', ?, ?)",
-            (event_id, req.title, req.description, req.module_type, req.organizer_id,
+            (event_id, req.title, req.description, req.module_type, caller,
              req.payment_mode, req.entry_fee_usd, now, now),
         )
     # Also create a listing for the event
@@ -2430,7 +2432,7 @@ async def create_event(req: CreateEventRequest):
             "INSERT INTO listings (listing_id, title, description, listing_type, agent_id, "
             "payment_mode, price_usd, module_type, origin_relay, expires_at, metadata_json, created_at) "
             "VALUES (?, ?, ?, 'event', ?, ?, ?, ?, ?, NULL, ?, ?)",
-            (f"lst_{event_id}", req.title, req.description or "", req.organizer_id,
+            (f"lst_{event_id}", req.title, req.description or "", caller,
              req.payment_mode, req.entry_fee_usd, req.module_type, RELAY_BASE_URL,
              json.dumps({"event_id": event_id}), now),
         )
@@ -2656,10 +2658,13 @@ async def federation_peers():
 # ============================================================================
 
 @app.post("/sessions")
-async def create_session(req: CreateSessionRequest):
+async def create_session(req: CreateSessionRequest, request: Request):
+    caller = _dashboard_agent_id(request)
+    if not caller:
+        raise HTTPException(401, "Authentication required")
     if req.module_type not in MODULE_REGISTRY:
         raise HTTPException(400, f"Unknown module: {req.module_type}")
-    _require_registered(req.creator_agent_id)
+    _require_registered(caller)
 
     module = get_interaction_module(req.module_type)
     payment_rules = req.payment_rules or module.PAYMENT_RULES.model_dump()
@@ -2668,7 +2673,7 @@ async def create_session(req: CreateSessionRequest):
 
     session_id = f"sess_{uuid.uuid4().hex[:12]}"
     now = datetime.now(UTC).isoformat()
-    state = module.initial_state([req.creator_agent_id], req.config)
+    state = module.initial_state([caller], req.config)
 
     save_session(
         session_id=session_id,
@@ -2679,15 +2684,15 @@ async def create_session(req: CreateSessionRequest):
         current_agent=state.current_agent,
         step_number=0,
         status="waiting",
-        participants=[req.creator_agent_id],
+        participants=[caller],
         created_at=now,
         updated_at=now,
     )
-    add_participant(session_id, req.creator_agent_id, stake_paid=False)
+    add_participant(session_id, caller, stake_paid=False)
     # Creator joins free; challenger pays — intentional design
-    open_dual_session(session_id, req.creator_agent_id, req.module_type)
+    open_dual_session(session_id, caller, req.module_type)
 
-    await broadcast_to_agent(req.creator_agent_id, {
+    await broadcast_to_agent(caller, {
         "type": "session_created",
         "session_id": session_id,
         "module_type": req.module_type,
@@ -2696,7 +2701,7 @@ async def create_session(req: CreateSessionRequest):
         "type": "session_created",
         "session_id": session_id,
         "module_type": req.module_type,
-        "creator_agent_id": req.creator_agent_id,
+        "creator_agent_id": caller,
     })
     return load_session(session_id)
 
@@ -3353,8 +3358,11 @@ async def gaming_lobby_post(request_data: dict[str, Any]):
 # ============================================================================
 
 @app.post("/rooms")
-async def create_room_endpoint(req: CreateRoomRequest):
-    _require_registered(req.creator_id)
+async def create_room_endpoint(req: CreateRoomRequest, request: Request):
+    caller = _dashboard_agent_id(request)
+    if not caller:
+        raise HTTPException(401, "Authentication required")
+    _require_registered(caller)
     try:
         await _assert_payload_safe_counted(req.model_dump())
     except PermissionError as e:
@@ -3374,7 +3382,7 @@ async def create_room_endpoint(req: CreateRoomRequest):
     try:
         room = rooms_db.create_room(
             name=req.name,
-            creator_id=req.creator_id,
+            creator_id=caller,
             room_type=req.room_type,
             gate_type=req.gate_type,
             entry_fee_cents=req.entry_fee_cents,
@@ -3392,7 +3400,7 @@ async def create_room_endpoint(req: CreateRoomRequest):
                 "name": room.name,
                 "creator_id": room.creator_id,
             })
-        return room.to_dict(viewer_id=req.creator_id)
+        return room.to_dict(viewer_id=caller)
     except Exception as e:
         raise HTTPException(422, str(e))
 
@@ -3716,18 +3724,15 @@ class CreateAgoraTopicRequest(BaseModel):
     visibility: str = "public"          # "public" | "restricted" | "private"
     gate_type: str = "open"             # "open" | "invite" | "paid_invite"
     entry_fee_cents: int = 0            # > 0 required when gate_type="paid_invite"
-    creator_id: str
     flair_options: list[str] = []
 
 class CreateAgoraPostRequest(BaseModel):
-    author_id: str
     title: str
     content: str
     post_type: str = "text"  # "text" | "link" | "code" | "data"
     flair: str | None = None
 
 class AddAgoraCommentRequest(BaseModel):
-    author_id: str
     content: str
     parent_comment_id: str | None = None
 
@@ -3788,8 +3793,11 @@ def _slugify(name: str) -> str:
 
 
 @app.post("/agoras/topics")
-async def create_agora_topic(req: CreateAgoraTopicRequest):
-    _require_registered(req.creator_id)
+async def create_agora_topic(req: CreateAgoraTopicRequest, request: Request):
+    caller = _dashboard_agent_id(request)
+    if not caller:
+        raise HTTPException(401, "Authentication required")
+    _require_registered(caller)
     try:
         await _assert_payload_safe_counted(req.model_dump())
     except PermissionError as e:
@@ -3809,12 +3817,12 @@ async def create_agora_topic(req: CreateAgoraTopicRequest):
                 "VALUES (?,?,?,?,?,?,?,?,?,?)",
                 (topic_id, slug, req.name, req.description, req.visibility,
                  req.gate_type, req.entry_fee_cents,
-                 req.creator_id, now, json.dumps(req.flair_options)),
+                 caller, now, json.dumps(req.flair_options)),
             )
             # Creator auto-subscribes as owner
             conn.execute(
                 "INSERT INTO agora_members (topic_id, agent_id, role, joined_at) VALUES (?,?,?,?)",
-                (topic_id, req.creator_id, "owner", now),
+                (topic_id, caller, "owner", now),
             )
         except Exception as exc:
             if "UNIQUE" in str(exc):
@@ -4074,8 +4082,11 @@ async def unsubscribe_agora_topic(slug: str, agent_id: str, request: Request):
 
 
 @app.post("/agoras/topics/{slug}/posts")
-async def create_agora_post(slug: str, req: CreateAgoraPostRequest):
-    _require_registered(req.author_id)
+async def create_agora_post(slug: str, req: CreateAgoraPostRequest, request: Request):
+    caller = _dashboard_agent_id(request)
+    if not caller:
+        raise HTTPException(401, "Authentication required")
+    _require_registered(caller)
     try:
         await _assert_payload_safe_counted(req.model_dump())
     except PermissionError as e:
@@ -4089,14 +4100,14 @@ async def create_agora_post(slug: str, req: CreateAgoraPostRequest):
         if row["visibility"] == "restricted":
             member = conn.execute(
                 "SELECT 1 FROM agora_members WHERE topic_id=? AND agent_id=?",
-                (row["topic_id"], req.author_id),
+                (row["topic_id"], caller),
             ).fetchone()
             if not member:
                 raise HTTPException(403, "Restricted topic — must be a member to post")
         conn.execute(
             "INSERT INTO agora_posts (post_id, topic_id, author_id, title, content, "
             "post_type, flair, created_at) VALUES (?,?,?,?,?,?,?,?)",
-            (post_id, row["topic_id"], req.author_id, req.title, req.content,
+            (post_id, row["topic_id"], caller, req.title, req.content,
              req.post_type, req.flair, now),
         )
         conn.execute(
@@ -4108,7 +4119,7 @@ async def create_agora_post(slug: str, req: CreateAgoraPostRequest):
             r["agent_id"]
             for r in conn.execute(
                 "SELECT agent_id FROM agora_members WHERE topic_id=? AND agent_id != ?",
-                (row["topic_id"], req.author_id),
+                (row["topic_id"], caller),
             ).fetchall()
         ]
         topic_name = row["name"]
@@ -4117,7 +4128,7 @@ async def create_agora_post(slug: str, req: CreateAgoraPostRequest):
         "post_id": post_id,
         "topic_slug": slug,
         "topic_name": topic_name,
-        "author_id": req.author_id,
+        "author_id": caller,
         "title": req.title,
         "preview": req.content[:200] if req.content else "",
     }
@@ -4126,7 +4137,7 @@ async def create_agora_post(slug: str, req: CreateAgoraPostRequest):
     # Push to each subscriber's inbox so offline agents catch it on next poll
     for sub in subscribers:
         await broadcast_to_agent(sub, event)
-    return {"post_id": post_id, "topic_slug": slug, "title": req.title, "author_id": req.author_id}
+    return {"post_id": post_id, "topic_slug": slug, "title": req.title, "author_id": caller}
 
 
 @app.get("/agoras/topics/{slug}/posts")
@@ -4262,8 +4273,11 @@ async def delete_agora_post(post_id: str, agent_id: str, request: Request):
 
 
 @app.post("/agoras/posts/{post_id}/comments")
-async def add_agora_comment(post_id: str, req: AddAgoraCommentRequest):
-    _require_registered(req.author_id)
+async def add_agora_comment(post_id: str, req: AddAgoraCommentRequest, request: Request):
+    caller = _dashboard_agent_id(request)
+    if not caller:
+        raise HTTPException(401, "Authentication required")
+    _require_registered(caller)
     try:
         await _assert_payload_safe_counted(req.model_dump())
     except PermissionError as e:
@@ -4284,12 +4298,12 @@ async def add_agora_comment(post_id: str, req: AddAgoraCommentRequest):
         conn.execute(
             "INSERT INTO agora_comments (comment_id, post_id, parent_comment_id, "
             "author_id, content, created_at) VALUES (?,?,?,?,?,?)",
-            (comment_id, post_id, req.parent_comment_id, req.author_id, req.content, now),
+            (comment_id, post_id, req.parent_comment_id, caller, req.content, now),
         )
         conn.execute(
             "UPDATE agora_posts SET comment_count=comment_count+1 WHERE post_id=?", (post_id,)
         )
-    return {"comment_id": comment_id, "post_id": post_id, "author_id": req.author_id}
+    return {"comment_id": comment_id, "post_id": post_id, "author_id": caller}
 
 
 @app.post("/agoras/comments/{comment_id}/vote")

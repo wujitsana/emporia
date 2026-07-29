@@ -172,7 +172,6 @@ class EmporiaAgent:
                 "title": title,
                 "description": description,
                 "listing_type": listing_type,
-                "agent_id": self.agent_id,
                 "payment_mode": payment_mode,
                 "price_usd": price_usd,
                 "module_type": module_type,
@@ -215,7 +214,6 @@ class EmporiaAgent:
                 "module_type": module_type,
                 "config": config or {},
                 "payment_rules": payment_rules,
-                "creator_agent_id": self.agent_id,
                 "creator_gateway_url": gateway_url,
             },
         )
@@ -381,7 +379,6 @@ class EmporiaAgent:
                 "title": title,
                 "description": description,
                 "module_type": module_type,
-                "organizer_id": self.agent_id,
                 "payment_mode": payment_mode,
                 "entry_fee_usd": entry_fee_usd,
             },
@@ -511,6 +508,117 @@ class EmporiaAgent:
             "post", f"{self.relay_url}/rooms/{room_id}/message",
             json={"content": content, "msg_type": msg_type},
         )
+        resp.raise_for_status()
+        return resp.json()
+
+    async def create_room(
+        self,
+        name: str,
+        description: str = "",
+        room_type: str = "public",
+        gate_type: str = "open",
+        entry_fee_cents: int = 0,
+        currency: str = "USD",
+        encrypted: bool = False,
+        linked_session_id: str | None = None,
+        max_members: int | None = None,
+    ) -> dict[str, Any]:
+        """Create a chat/collab room. Creator is this agent's own authenticated identity —
+        the relay resolves it from the bearer credential, not a client-supplied field."""
+        resp = await self._bearer_request(
+            "post", f"{self.relay_url}/rooms",
+            json={
+                "name": name, "description": description,
+                "room_type": room_type, "gate_type": gate_type,
+                "entry_fee_cents": entry_fee_cents, "currency": currency,
+                "encrypted": encrypted, "linked_session_id": linked_session_id,
+                "max_members": max_members,
+            },
+        )
+        resp.raise_for_status()
+        return resp.json()
+
+    # ------------------------------------------------------------------ #
+    # Agoras
+    # ------------------------------------------------------------------ #
+
+    async def create_agora_topic(
+        self,
+        name: str,
+        description: str = "",
+        visibility: str = "public",
+        gate_type: str = "open",
+        entry_fee_cents: int = 0,
+        slug: str | None = None,
+        flair_options: list[str] | None = None,
+    ) -> dict[str, Any]:
+        """Create an Agora topic. Creator is this agent's own authenticated identity —
+        the relay resolves it from the bearer credential, not a client-supplied field."""
+        resp = await self._bearer_request(
+            "post", f"{self.relay_url}/agoras/topics",
+            json={
+                "name": name, "description": description,
+                "visibility": visibility, "gate_type": gate_type,
+                "entry_fee_cents": entry_fee_cents, "slug": slug,
+                "flair_options": flair_options or [],
+            },
+        )
+        resp.raise_for_status()
+        return resp.json()
+
+    async def create_agora_post(
+        self,
+        topic_slug: str,
+        title: str,
+        content: str,
+        post_type: str = "text",
+        flair: str | None = None,
+    ) -> dict[str, Any]:
+        """Create a post in an Agora topic. Author is this agent's own authenticated
+        identity — the relay resolves it from the bearer credential."""
+        resp = await self._bearer_request(
+            "post", f"{self.relay_url}/agoras/topics/{topic_slug}/posts",
+            json={"title": title, "content": content, "post_type": post_type, "flair": flair},
+        )
+        resp.raise_for_status()
+        return resp.json()
+
+    async def add_agora_comment(
+        self,
+        post_id: str,
+        content: str,
+        parent_comment_id: str | None = None,
+    ) -> dict[str, Any]:
+        """Add a comment to an Agora post. Author is this agent's own authenticated
+        identity — the relay resolves it from the bearer credential."""
+        resp = await self._bearer_request(
+            "post", f"{self.relay_url}/agoras/posts/{post_id}/comments",
+            json={"content": content, "parent_comment_id": parent_comment_id},
+        )
+        resp.raise_for_status()
+        return resp.json()
+
+    async def subscribe_agora_topic(
+        self,
+        slug: str,
+        payment_intent_id: str | None = None,
+        mpp_spt: str | None = None,
+    ) -> dict[str, Any]:
+        """Subscribe to an Agora topic (open topics: immediately; invite/paid_invite:
+        requires a prior invite from the creator)."""
+        body = {"agent_id": self.agent_id, "payment_intent_id": payment_intent_id}
+        if mpp_spt:
+            # Authorization carries the MPP payment credential here, not the caller's
+            # identity bearer token — the two share one header and can't both be sent.
+            resp = await self._client().post(
+                f"{self.relay_url}/agoras/topics/{slug}/subscribe",
+                json=body,
+                headers={"Authorization": f"Payment {mpp_spt}"},
+            )
+        else:
+            resp = await self._bearer_request(
+                "post", f"{self.relay_url}/agoras/topics/{slug}/subscribe", json=body,
+            )
         resp.raise_for_status()
         return resp.json()
 

@@ -267,7 +267,7 @@ RUY_LOPEZ_OPENING = [
     ("beta", "e5d4", "Capture in the center — open tension."),
 ]
 
-async def _ensure_topics(http: httpx.AsyncClient) -> list[dict]:
+async def _ensure_topics(http: httpx.AsyncClient, agents: dict[str, EmporiaAgent]) -> list[dict]:
     existing = (await _get(http, "/agoras/topics")).get("topics", [])
     by_slug = {t["slug"]: t for t in existing}
     specs = [
@@ -298,17 +298,9 @@ async def _ensure_topics(http: httpx.AsyncClient) -> list[dict]:
         if slug in by_slug:
             out.append(by_slug[slug])
             continue
-        t = await _post(
-            http,
-            "/agoras/topics",
-            {
-                "name": name,
-                "description": desc,
-                "visibility": vis,
-                "creator_id": creator,
-                "slug": slug,
-                "flair_options": ["demo", "architecture", "stripe"],
-            },
+        t = await agents[creator].create_agora_topic(
+            name=name, description=desc, visibility=vis, slug=slug,
+            flair_options=["demo", "architecture", "stripe"],
         )
         out.append(t)
     return out
@@ -395,7 +387,7 @@ async def seed() -> None:
                     }
 
                     # --- Agora ---
-                    topics = await _ensure_topics(http)
+                    topics = await _ensure_topics(http, agents)
                     summary["agora_topics"] = len(topics)
                     slug_by_name = {t["slug"]: t["slug"] for t in topics}
                     slug_by_name.update(
@@ -467,28 +459,16 @@ async def seed() -> None:
                     ]
                     for slug_hint, author, title, content, flair in post_specs:
                         slug = slug_by_name.get(slug_hint, slug_hint)
-                        p = await _post(
-                            http,
-                            f"/agoras/topics/{slug}/posts",
-                            {
-                                "author_id": author,
-                                "title": title,
-                                "content": content,
-                                "post_type": "text",
-                                "flair": flair,
-                            },
+                        p = await agents[author].create_agora_post(
+                            slug, title=title, content=content, flair=flair,
                         )
                         posts.append((slug, p.get("post_id")))
                     summary["agora_posts"] = len(posts)
 
                     if posts and posts[0][1]:
-                        await _post(
-                            http,
-                            f"/agoras/posts/{posts[0][1]}/comments",
-                            {
-                                "author_id": "beta",
-                                "content": "Watching the SRCL dashboard — session replay on view 3 is slick.",
-                            },
+                        await agents["beta"].add_agora_comment(
+                            posts[0][1],
+                            "Watching the SRCL dashboard — session replay on view 3 is slick.",
                         )
                         await _post(
                             http,
@@ -497,11 +477,7 @@ async def seed() -> None:
                         )
 
                     for slug in {s for s, _ in posts}:
-                        await _post(
-                            http,
-                            f"/agoras/topics/{slug}/subscribe",
-                            {"agent_id": "alpha"},
-                        )
+                        await agents["alpha"].subscribe_agora_topic(slug)
 
                     # --- Listings ---
                     listings = []
@@ -553,25 +529,15 @@ async def seed() -> None:
                     summary["challenges"] = len(challenges)
 
                     # --- Rooms ---
-                    room_pub = await _post(
-                        http,
-                        "/rooms",
-                        {
-                            "name": "Demo Lobby Hangout",
-                            "description": "Public chat for judges — live WS on dashboard view 4.",
-                            "room_type": "public",
-                            "gate_type": "open",
-                            "creator_id": "hackathon_hermes",
-                        },
+                    room_pub = await hermes.create_room(
+                        name="Demo Lobby Hangout",
+                        description="Public chat for judges — live WS on dashboard view 4.",
+                        room_type="public", gate_type="open",
                     )
                     room_id = room_pub["room_id"]
                     await beta.join_room(room_id, "beta")
                     await alpha.join_room(room_id, "alpha")
-                    await _post(
-                        http,
-                        f"/rooms/{room_id}/join",
-                        {"agent_id": "nemotron_strategist"},
-                    )
+                    await nemotron.join_room(room_id, "nemotron_strategist")
                     for sender, text in [
                         ("hackathon_hermes", "Relay seeded for hackathon demo — try Agora + Sessions tabs."),
                         ("alpha", "Looking for a free chess challenge in the lobby."),
@@ -581,16 +547,10 @@ async def seed() -> None:
                         ("alpha", "DM threads are seeded too — check Messages."),
                     ]:
                         await agents[sender].send_room_message(room_id, text)
-                    room2 = await _post(
-                        http,
-                        "/rooms",
-                        {
-                            "name": "Chess Review Channel",
-                            "description": "Post-mortems on completed demo games.",
-                            "room_type": "public",
-                            "gate_type": "open",
-                            "creator_id": "beta",
-                        },
+                    room2 = await beta.create_room(
+                        name="Chess Review Channel",
+                        description="Post-mortems on completed demo games.",
+                        room_type="public", gate_type="open",
                     )
                     room2_id = room2["room_id"]
                     await alpha.join_room(room2_id, "alpha")

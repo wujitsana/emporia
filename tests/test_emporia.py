@@ -398,7 +398,8 @@ def test_create_listing(client):
         "price_usd": "0",
         "module_type": "emporia:chess:v1",
         "expires_in_hours": 24,
-    })
+    },
+        headers={"x-emporia-agent-id": "listing_agent"})
     assert r.status_code == 200
     assert "listing_id" in r.json()
 
@@ -413,7 +414,8 @@ def test_listing_discover(client):
         "price_usd": "10",
         "module_type": "emporia:code-review:v1",
         "expires_in_hours": 48,
-    })
+    },
+        headers={"x-emporia-agent-id": "disco_agent"})
     r = client.get("/listings", params={"module_type": "emporia:code-review:v1"})
     assert r.status_code == 200
     listings = r.json()["listings"]
@@ -426,7 +428,8 @@ def test_listing_requires_authorized_agent(client):
         "agent_id": "unregistered_xyz",
         "listing_type": "service",
         "expires_in_hours": 24,
-    })
+    },
+        headers={"x-emporia-agent-id": "unregistered_xyz"})
     assert r.status_code == 403
 
 
@@ -620,7 +623,8 @@ def test_create_event(client):
         "organizer_id": "event_organizer",
         "payment_mode": "free",
         "entry_fee_usd": "0",
-    })
+    },
+        headers={"x-emporia-agent-id": "event_organizer"})
     assert r.status_code == 200
     assert "event_id" in r.json()
 
@@ -640,7 +644,8 @@ def test_create_session_unknown_module(client):
     r = client.post("/sessions", json={
         "module_type": "emporia:nonexistent:v1",
         "creator_agent_id": "sess_agent",
-    })
+    },
+        headers={"x-emporia-agent-id": "sess_agent"})
     assert r.status_code == 400
 
 
@@ -649,7 +654,8 @@ def test_create_session_chess(client):
     r = client.post("/sessions", json={
         "module_type": "emporia:chess:v1",
         "creator_agent_id": "chess_creator",
-    })
+    },
+        headers={"x-emporia-agent-id": "chess_creator"})
     assert r.status_code == 200
     sess = r.json()
     assert sess["module_type"] == "emporia:chess:v1"
@@ -664,7 +670,8 @@ def test_session_join_and_action(client):
     r = client.post("/sessions", json={
         "module_type": "emporia:chess:v1",
         "creator_agent_id": "c_creator_2",
-    })
+    },
+        headers={"x-emporia-agent-id": "c_creator_2"})
     assert r.status_code == 200
     session_id = r.json()["session_id"]
     # Join
@@ -691,7 +698,8 @@ def test_action_rejected_missing_signature(client):
     r = client.post("/sessions", json={
         "module_type": "emporia:chess:v1",
         "creator_agent_id": "unsig_creator",
-    })
+    },
+        headers={"x-emporia-agent-id": "unsig_creator"})
     session_id = r.json()["session_id"]
     client.post(
         f"/sessions/{session_id}/join", json={"agent_id": "unsig_joiner"},
@@ -714,7 +722,8 @@ def test_action_rejected_forged_signature(client):
     r = client.post("/sessions", json={
         "module_type": "emporia:chess:v1",
         "creator_agent_id": "forge_creator",
-    })
+    },
+        headers={"x-emporia-agent-id": "forge_creator"})
     session_id = r.json()["session_id"]
     client.post(
         f"/sessions/{session_id}/join", json={"agent_id": "forge_joiner"},
@@ -739,7 +748,8 @@ def test_chess_session_readable_by_anyone(client):
     _register(client, "vis_chess_owner")
     r = client.post("/sessions", json={
         "module_type": "emporia:chess:v1", "creator_agent_id": "vis_chess_owner",
-    })
+    },
+        headers={"x-emporia-agent-id": "vis_chess_owner"})
     session_id = r.json()["session_id"]
     assert client.get(f"/sessions/{session_id}").status_code == 200
     assert client.get(f"/sessions/{session_id}/actions").status_code == 200
@@ -757,7 +767,8 @@ def test_service_session_requires_participant(client):
         "module_type": "emporia:service:v1", "creator_agent_id": "vis_svc_buyer",
         "config": {"description": "Confidential work"},
         "payment_rules": {"mode": "free"},
-    })
+    },
+        headers={"x-emporia-agent-id": "vis_svc_buyer"})
     session_id = r.json()["session_id"]
     client.post(
         f"/sessions/{session_id}/join", json={"agent_id": "vis_svc_seller"},
@@ -790,25 +801,29 @@ def test_session_visibility_room_inheritance_overrides_module_default(client):
     r = client.post("/sessions", json={
         "module_type": "emporia:service:v1", "creator_agent_id": "vis_room_owner",
         "config": {"description": "d"}, "payment_rules": {"mode": "free"},
-    })
+    },
+        headers={"x-emporia-agent-id": "vis_room_owner"})
     svc_session_id = r.json()["session_id"]
     client.post("/rooms", json={
         "name": "Public Linked Room", "creator_id": "vis_room_owner",
         "room_type": "public", "gate_type": "open",
         "linked_session_id": svc_session_id,
-    })
+    },
+        headers={"x-emporia-agent-id": "vis_room_owner"})
     assert client.get(f"/sessions/{svc_session_id}").status_code == 200
 
     # chess (public default) + private linked room -> participants-only
     r = client.post("/sessions", json={
         "module_type": "emporia:chess:v1", "creator_agent_id": "vis_room_owner",
-    })
+    },
+        headers={"x-emporia-agent-id": "vis_room_owner"})
     chess_session_id = r.json()["session_id"]
     client.post("/rooms", json={
         "name": "Private Linked Room", "creator_id": "vis_room_owner",
         "room_type": "private", "gate_type": "invite",
         "linked_session_id": chess_session_id,
-    })
+    },
+        headers={"x-emporia-agent-id": "vis_room_owner"})
     assert client.get(f"/sessions/{chess_session_id}").status_code == 403
     r = client.get(
         f"/sessions/{chess_session_id}", headers={"x-emporia-agent-id": "vis_room_owner"}
@@ -824,7 +839,8 @@ def test_list_sessions_filters_by_visibility(client):
     r = client.post("/sessions", json={
         "module_type": "emporia:service:v1", "creator_agent_id": "vis_list_buyer",
         "config": {"description": "d"}, "payment_rules": {"mode": "free"},
-    })
+    },
+        headers={"x-emporia-agent-id": "vis_list_buyer"})
     session_id = r.json()["session_id"]
 
     ids_as_stranger = {
@@ -850,7 +866,8 @@ def test_agent_sessions_endpoint_filters_by_visibility(client):
     r = client.post("/sessions", json={
         "module_type": "emporia:service:v1", "creator_agent_id": "vis_agsess_buyer",
         "config": {"description": "Confidential work"}, "payment_rules": {"mode": "free"},
-    })
+    },
+        headers={"x-emporia-agent-id": "vis_agsess_buyer"})
     session_id = r.json()["session_id"]
     client.post(
         f"/sessions/{session_id}/join", json={"agent_id": "vis_agsess_seller"},
@@ -879,7 +896,8 @@ def test_ws_session_requires_participant_for_private_module(client):
     r = client.post("/sessions", json={
         "module_type": "emporia:service:v1", "creator_agent_id": "vis_ws_buyer",
         "config": {"description": "d"}, "payment_rules": {"mode": "free"},
-    })
+    },
+        headers={"x-emporia-agent-id": "vis_ws_buyer"})
     session_id = r.json()["session_id"]
 
     with pytest.raises(WebSocketDisconnect):
@@ -910,7 +928,8 @@ def test_service_session_requires_participant_under_prod_auth(prod_client):
         "module_type": "emporia:service:v1", "creator_agent_id": "prodvis_buyer",
         "config": {"description": "Confidential work"},
         "payment_rules": {"mode": "free"},
-    })
+    },
+        headers=bearer_for(prod_client, "prodvis_buyer"))
     session_id = r.json()["session_id"]
     prod_client.post(
         f"/sessions/{session_id}/join", json={"agent_id": "prodvis_seller"},
@@ -931,7 +950,8 @@ def test_ws_session_requires_participant_under_prod_auth(prod_client):
     r = prod_client.post("/sessions", json={
         "module_type": "emporia:service:v1", "creator_agent_id": "prodws_buyer",
         "config": {"description": "d"}, "payment_rules": {"mode": "free"},
-    })
+    },
+        headers=bearer_for(prod_client, "prodws_buyer"))
     session_id = r.json()["session_id"]
 
     with pytest.raises(WebSocketDisconnect):
@@ -1041,12 +1061,6 @@ def test_no_new_identity_as_proof_params():
     # /opt/data/.claude/plans/where-are-we-at-vivid-barto.md for the tranche breakdown.
     _KNOWN_VIOLATIONS: set[tuple[str, str]] = {
         ("POST", "/payments/create-intent"),
-        ("POST", "/listings"),
-        ("POST", "/events"),
-        ("POST", "/sessions"),
-        ("POST", "/rooms"),
-        ("POST", "/agoras/topics"),
-        ("POST", "/agoras/topics/{slug}/posts"),
         # These three (N2-4 tranche 2) keep `agent_id` in the body on purpose — an MPP
         # payment credential (Authorization: Payment <token>) can't also carry a Bearer
         # identity, so the claim is still trusted, unenforced, on that one code path.
@@ -1059,7 +1073,6 @@ def test_no_new_identity_as_proof_params():
         ("POST", "/rooms/{room_id}/join"),
         ("POST", "/agoras/topics/{slug}/subscribe"),
         ("POST", "/agoras/posts/{post_id}/vote"),
-        ("POST", "/agoras/posts/{post_id}/comments"),
         ("POST", "/agoras/comments/{comment_id}/vote"),
     }
     allowed = _SAFE_LOOKUPS | _KNOWN_VIOLATIONS
@@ -1134,7 +1147,8 @@ def test_payment_records_gated_by_session_visibility(client):
     r = client.post("/sessions", json={
         "module_type": "emporia:service:v1", "creator_agent_id": "pr_buyer",
         "config": {"description": "d"}, "payment_rules": {"mode": "free"},
-    })
+    },
+        headers={"x-emporia-agent-id": "pr_buyer"})
     session_id = r.json()["session_id"]
     client.post(
         f"/sessions/{session_id}/join", json={"agent_id": "pr_seller"},
@@ -1172,7 +1186,8 @@ def test_abandon_session_requires_participant(client):
     r = client.post("/sessions", json={
         "module_type": "emporia:service:v1", "creator_agent_id": "aban_buyer",
         "config": {"description": "d"}, "payment_rules": {"mode": "free"},
-    })
+    },
+        headers={"x-emporia-agent-id": "aban_buyer"})
     session_id = r.json()["session_id"]
     client.post(
         f"/sessions/{session_id}/join", json={"agent_id": "aban_seller"},
@@ -1204,7 +1219,8 @@ def test_action_rejected_short_rationale(client):
     r = client.post("/sessions", json={
         "module_type": "emporia:chess:v1",
         "creator_agent_id": "por_creator",
-    })
+    },
+        headers={"x-emporia-agent-id": "por_creator"})
     session_id = r.json()["session_id"]
     client.post(
         f"/sessions/{session_id}/join", json={"agent_id": "por_joiner"},
@@ -1224,7 +1240,8 @@ def test_action_rejected_bot_fingerprint(client):
     r = client.post("/sessions", json={
         "module_type": "emporia:chess:v1",
         "creator_agent_id": "fp_creator",
-    })
+    },
+        headers={"x-emporia-agent-id": "fp_creator"})
     session_id = r.json()["session_id"]
     client.post(
         f"/sessions/{session_id}/join", json={"agent_id": "fp_joiner"},
@@ -1430,7 +1447,8 @@ def test_create_payment_intent_rejects_amount_mismatch(client):
         "creator_agent_id": "pi_creator",
         "config": {"description": "Amount mismatch test"},
         "payment_rules": {"mode": "stripe_link", "stake_per_participant": "1.00", "currency": "usd"},
-    })
+    },
+        headers={"x-emporia-agent-id": "pi_creator"})
     session_id = r.json()["session_id"]
 
     r2 = client.post("/payments/create-intent", json={
@@ -1451,7 +1469,8 @@ def test_join_session_rejects_underpaid_payment_intent(mock_verify, client):
         "creator_agent_id": "underpay_creator",
         "config": {"description": "Underpayment test"},
         "payment_rules": {"mode": "stripe_link", "stake_per_participant": "1.00", "currency": "usd"},
-    })
+    },
+        headers={"x-emporia-agent-id": "underpay_creator"})
     session_id = r.json()["session_id"]
     mock_verify.return_value = {
         "status": "requires_capture",
@@ -1484,7 +1503,8 @@ def test_join_session_rejects_payment_intent_replay(mock_verify, client):
         "creator_agent_id": "replay_creator",
         "config": {"description": "Replay test"},
         "payment_rules": {"mode": "stripe_link", "stake_per_participant": "1.00", "currency": "usd"},
-    })
+    },
+        headers={"x-emporia-agent-id": "replay_creator"})
     session_id = r.json()["session_id"]
     mock_verify.return_value = {
         "status": "requires_capture",
@@ -1514,7 +1534,8 @@ def test_join_room_rejects_uncaptured_payment_intent(mock_verify, client):
         "room_type": "private",
         "gate_type": "stripe_payment",
         "entry_fee_cents": 100,
-    })
+    },
+        headers={"x-emporia-agent-id": "room_owner"})
     room_id = r.json()["room_id"]
     mock_verify.return_value = {
         "status": "requires_capture",
@@ -1546,7 +1567,8 @@ def test_join_room_accepts_bound_payment_intent(mock_verify, client):
         "room_type": "private",
         "gate_type": "stripe_payment",
         "entry_fee_cents": 100,
-    })
+    },
+        headers={"x-emporia-agent-id": "paidroom_owner"})
     room_id = r.json()["room_id"]
     mock_verify.return_value = {
         "status": "succeeded",
@@ -1581,7 +1603,8 @@ def test_agora_subscription_accepts_bound_payment_intent(mock_verify, client):
         "gate_type": "paid_invite",
         "entry_fee_cents": 100,
         "creator_id": "agora_owner",
-    })
+    },
+        headers={"x-emporia-agent-id": "agora_owner"})
     assert r.status_code == 200, r.text
     slug = r.json()["slug"]
 
@@ -1653,7 +1676,8 @@ def test_join_session_rejects_total_budget_exceeded(mock_verify, client):
         "creator_agent_id": "budget_creator",
         "config": {"description": "Budget test"},
         "payment_rules": {"mode": "stripe_link", "stake_per_participant": "1.00", "currency": "usd"},
-    })
+    },
+        headers={"x-emporia-agent-id": "budget_creator"})
     session_id = r.json()["session_id"]
 
     record_payment(
@@ -1888,7 +1912,8 @@ def test_room_create_list_get(client):
         "name": "Test Room",
         "creator_id": "room_alice",
         "room_type": "public",
-    })
+    },
+        headers={"x-emporia-agent-id": "room_alice"})
     assert r.status_code == 200
     room = r.json()
     room_id = room["room_id"]
@@ -1905,7 +1930,8 @@ def test_room_create_list_get(client):
 def test_room_join_open(client):
     _register(client, "room_owner")
     _register(client, "room_joiner")
-    r = client.post("/rooms", json={"name": "Open Room", "creator_id": "room_owner"})
+    r = client.post("/rooms", json={"name": "Open Room", "creator_id": "room_owner"},
+        headers={"x-emporia-agent-id": "room_owner"})
     room_id = r.json()["room_id"]
 
     r2 = client.post(
@@ -1922,7 +1948,8 @@ def test_room_join_invite_gate_no_invite(client):
     r = client.post("/rooms", json={
         "name": "Invite Room", "creator_id": "inv_owner",
         "room_type": "private", "gate_type": "invite",
-    })
+    },
+        headers={"x-emporia-agent-id": "inv_owner"})
     room_id = r.json()["room_id"]
     r2 = client.post(
         f"/rooms/{room_id}/join", json={"agent_id": "inv_nobody"},
@@ -1937,7 +1964,8 @@ def test_room_invite_then_join(client):
     r = client.post("/rooms", json={
         "name": "Invite2 Room", "creator_id": "inv2_owner",
         "room_type": "private", "gate_type": "invite",
-    })
+    },
+        headers={"x-emporia-agent-id": "inv2_owner"})
     room_id = r.json()["room_id"]
     r2 = client.post(
         f"/rooms/{room_id}/invite", json={"invitee_id": "inv2_guest"},
@@ -1955,7 +1983,8 @@ def test_room_invite_then_join(client):
 def test_room_send_message(client):
     _register(client, "msg_alice")
     _register(client, "msg_bob")
-    r = client.post("/rooms", json={"name": "Chat", "creator_id": "msg_alice"})
+    r = client.post("/rooms", json={"name": "Chat", "creator_id": "msg_alice"},
+        headers={"x-emporia-agent-id": "msg_alice"})
     room_id = r.json()["room_id"]
     client.post(
         f"/rooms/{room_id}/join", json={"agent_id": "msg_bob"},
@@ -1978,7 +2007,8 @@ def test_room_send_message(client):
 def test_room_kick(client):
     _register(client, "kick_owner")
     _register(client, "kick_target")
-    r = client.post("/rooms", json={"name": "Kickable", "creator_id": "kick_owner"})
+    r = client.post("/rooms", json={"name": "Kickable", "creator_id": "kick_owner"},
+        headers={"x-emporia-agent-id": "kick_owner"})
     room_id = r.json()["room_id"]
     client.post(
         f"/rooms/{room_id}/join", json={"agent_id": "kick_target"},
@@ -2002,7 +2032,8 @@ def test_room_kick(client):
 
 def test_room_guardrails_blocks_injection(client):
     _register(client, "injection_sender")
-    r = client.post("/rooms", json={"name": "Clean Room", "creator_id": "injection_sender"})
+    r = client.post("/rooms", json={"name": "Clean Room", "creator_id": "injection_sender"},
+        headers={"x-emporia-agent-id": "injection_sender"})
     room_id = r.json()["room_id"]
     r2 = client.post(
         f"/rooms/{room_id}/message",
@@ -2018,7 +2049,8 @@ def test_room_encrypted_skips_guardrails(client):
     r = client.post("/rooms", json={
         "name": "Encrypted Room", "creator_id": "enc_alice",
         "room_type": "private", "gate_type": "invite", "encrypted": True,
-    })
+    },
+        headers={"x-emporia-agent-id": "enc_alice"})
     room_id = r.json()["room_id"]
     client.post(
         f"/rooms/{room_id}/invite", json={"invitee_id": "enc_bob"},
@@ -2048,7 +2080,8 @@ def test_room_private_not_visible_to_non_member(client):
     client.post("/rooms", json={
         "name": "Secret Room", "creator_id": "priv_owner",
         "room_type": "private", "gate_type": "invite",
-    })
+    },
+        headers={"x-emporia-agent-id": "priv_owner"})
 
     r = client.get("/rooms")
     assert "Secret Room" not in [rm["name"] for rm in r.json()["rooms"]]
@@ -2156,7 +2189,8 @@ def test_room_message_caller_must_be_sender(prod_client):
     _register_keyed(prod_client, "rmsg_owner")
     _register_keyed(prod_client, "rmsg_member")
 
-    r = prod_client.post("/rooms", json={"name": "N2-4 T1 Room", "creator_id": "rmsg_owner"})
+    r = prod_client.post("/rooms", json={"name": "N2-4 T1 Room", "creator_id": "rmsg_owner"},
+        headers=bearer_for(prod_client, "rmsg_owner"))
     room_id = r.json()["room_id"]
     prod_client.post(
         f"/rooms/{room_id}/join", json={"agent_id": "rmsg_member"},
@@ -2235,7 +2269,8 @@ def test_room_invite_requires_caller_be_creator(prod_client):
     r = prod_client.post("/rooms", json={
         "name": "N2-4 T2 Invite Room", "creator_id": "rinv_creator",
         "room_type": "private", "gate_type": "invite",
-    })
+    },
+        headers=bearer_for(prod_client, "rinv_creator"))
     room_id = r.json()["room_id"]
 
     r = prod_client.post(f"/rooms/{room_id}/invite", json={"invitee_id": "rinv_guest"})
@@ -2265,7 +2300,8 @@ def test_room_kick_requires_caller_be_creator(prod_client):
     _register_keyed(prod_client, "rkick_impostor")
     _register_keyed(prod_client, "rkick_target")
 
-    r = prod_client.post("/rooms", json={"name": "Room Alpha Beta", "creator_id": "rkick_creator"})
+    r = prod_client.post("/rooms", json={"name": "Room Alpha Beta", "creator_id": "rkick_creator"},
+        headers=bearer_for(prod_client, "rkick_creator"))
     room_id = r.json()["room_id"]
     prod_client.post(
         f"/rooms/{room_id}/join", json={"agent_id": "rkick_target"},
@@ -2301,7 +2337,8 @@ def test_agora_invite_requires_caller_be_creator(prod_client):
     r = prod_client.post("/agoras/topics", json={
         "name": "N2-4 T2 Topic", "description": "d", "visibility": "private",
         "gate_type": "invite", "creator_id": "ainv_creator",
-    })
+    },
+        headers=bearer_for(prod_client, "ainv_creator"))
     slug = r.json()["slug"]
 
     r = prod_client.post(f"/agoras/topics/{slug}/invite", json={"invitee_id": "ainv_guest"})
@@ -2334,7 +2371,8 @@ def test_join_and_subscribe_reject_impersonated_agent_id(prod_client):
     r = prod_client.post("/sessions", json={
         "module_type": "emporia:chess:v1", "creator_agent_id": "impj_real",
         "config": {}, "payment_rules": {"mode": "free"},
-    })
+    },
+        headers=bearer_for(prod_client, "impj_real"))
     session_id = r.json()["session_id"]
     r = prod_client.post(
         f"/sessions/{session_id}/join", json={"agent_id": "impj_victim"},
@@ -2342,7 +2380,8 @@ def test_join_and_subscribe_reject_impersonated_agent_id(prod_client):
     )
     assert r.status_code == 403
 
-    r = prod_client.post("/rooms", json={"name": "N2-4 T2 Join Room", "creator_id": "impj_real"})
+    r = prod_client.post("/rooms", json={"name": "N2-4 T2 Join Room", "creator_id": "impj_real"},
+        headers=bearer_for(prod_client, "impj_real"))
     room_id = r.json()["room_id"]
     r = prod_client.post(
         f"/rooms/{room_id}/join", json={"agent_id": "impj_victim"},
@@ -2358,7 +2397,8 @@ def test_join_and_subscribe_reject_impersonated_agent_id(prod_client):
     r = prod_client.post("/agoras/topics", json={
         "name": "N2-4 T2 Sub Topic", "description": "d", "visibility": "public",
         "gate_type": "open", "creator_id": "impj_real",
-    })
+    },
+        headers=bearer_for(prod_client, "impj_real"))
     slug = r.json()["slug"]
     r = prod_client.post(
         f"/agoras/topics/{slug}/subscribe", json={"agent_id": "impj_victim"},
@@ -2367,17 +2407,106 @@ def test_join_and_subscribe_reject_impersonated_agent_id(prod_client):
     assert r.status_code == 403
 
 
+# ============================================================================
+# N2-4 tranche 3 — caller-identity enforcement on attributed-content
+# endpoints (/listings, /events, /rooms, /agoras/topics, posts, comments, and
+# /sessions — same "attributed content" shape, folded in here though the plan
+# didn't name it explicitly). Each used to trust a claimed
+# agent_id/organizer_id/creator_id/author_id/creator_agent_id body field with
+# no check the caller controlled that identity — publish a listing, event,
+# room, topic, post, or session attributed to any registered agent. Every
+# field is now gone from its request model; the relay resolves the creator
+# from the authenticated caller.
+# ============================================================================
+
+def test_attributed_content_creation_requires_authentication(prod_client):
+    """Regression for N2-4 tranche 3 (R1): confirms unauthenticated -> 401 and that the
+    stored/broadcast attribution is the real authenticated caller, not a client-claimed
+    field, across /listings, /events, /rooms, /agoras/topics, and /sessions."""
+    _register_keyed(prod_client, "attr_real")
+
+    r = prod_client.post("/listings", json={"title": "Forged listing"})
+    assert r.status_code == 401
+    r = prod_client.post(
+        "/listings", json={"title": "Real listing"},
+        headers=bearer_for(prod_client, "attr_real"),
+    )
+    assert r.status_code in (200, 201)
+
+    r = prod_client.post("/events", json={"title": "Forged event", "module_type": "emporia:chess:v1"})
+    assert r.status_code == 401
+    r = prod_client.post(
+        "/events", json={"title": "Real event", "module_type": "emporia:chess:v1"},
+        headers=bearer_for(prod_client, "attr_real"),
+    )
+    assert r.status_code in (200, 201)
+
+    r = prod_client.post("/rooms", json={"name": "Forged Room"})
+    assert r.status_code == 401
+    r = prod_client.post(
+        "/rooms", json={"name": "Real Room"},
+        headers=bearer_for(prod_client, "attr_real"),
+    )
+    assert r.status_code == 200
+    assert r.json()["creator_id"] == "attr_real"
+
+    r = prod_client.post("/agoras/topics", json={"name": "Forged Topic", "description": "d"})
+    assert r.status_code == 401
+    r = prod_client.post(
+        "/agoras/topics", json={"name": "Real Topic", "description": "d"},
+        headers=bearer_for(prod_client, "attr_real"),
+    )
+    assert r.status_code == 200
+    slug = r.json()["slug"]
+
+    r = prod_client.post(
+        f"/agoras/topics/{slug}/posts",
+        json={"title": "Forged post", "content": "c"},
+    )
+    assert r.status_code == 401
+    r = prod_client.post(
+        f"/agoras/topics/{slug}/posts", json={"title": "Real post", "content": "c"},
+        headers=bearer_for(prod_client, "attr_real"),
+    )
+    assert r.status_code == 200
+    assert r.json()["author_id"] == "attr_real"
+    post_id = r.json()["post_id"]
+
+    r = prod_client.post(f"/agoras/posts/{post_id}/comments", json={"content": "Forged comment"})
+    assert r.status_code == 401
+    r = prod_client.post(
+        f"/agoras/posts/{post_id}/comments", json={"content": "Real comment"},
+        headers=bearer_for(prod_client, "attr_real"),
+    )
+    assert r.status_code == 200
+    assert r.json()["author_id"] == "attr_real"
+
+    r = prod_client.post("/sessions", json={
+        "module_type": "emporia:chess:v1", "config": {}, "payment_rules": {"mode": "free"},
+    })
+    assert r.status_code == 401
+    r = prod_client.post(
+        "/sessions",
+        json={"module_type": "emporia:chess:v1", "config": {}, "payment_rules": {"mode": "free"}},
+        headers=bearer_for(prod_client, "attr_real"),
+    )
+    assert r.status_code == 200
+    assert r.json()["participants"] == ["attr_real"]
+
+
 def test_agora_topic_and_posts_require_membership_for_private(client):
     _register(client, "atp_owner")
     _register(client, "atp_stranger")
     r = client.post("/agoras/topics", json={
         "name": "Private Circle", "description": "d", "visibility": "private",
         "gate_type": "invite", "creator_id": "atp_owner",
-    })
+    },
+        headers={"x-emporia-agent-id": "atp_owner"})
     slug = r.json()["slug"]
     r2 = client.post(f"/agoras/topics/{slug}/posts", json={
         "author_id": "atp_owner", "title": "secret post", "content": "top secret content",
-    })
+    },
+        headers={"x-emporia-agent-id": "atp_owner"})
     assert r2.status_code == 200, r2.text
     post_id = r2.json()["post_id"]
 
@@ -2404,11 +2533,13 @@ def test_agora_feed_requires_own_identity(client):
     r = client.post("/agoras/topics", json={
         "name": "Feed Topic", "description": "d", "visibility": "public",
         "gate_type": "open", "creator_id": "feed_owner",
-    })
+    },
+        headers={"x-emporia-agent-id": "feed_owner"})
     slug = r.json()["slug"]
     client.post(f"/agoras/topics/{slug}/posts", json={
         "author_id": "feed_owner", "title": "hello", "content": "world",
-    })
+    },
+        headers={"x-emporia-agent-id": "feed_owner"})
 
     assert client.get("/agoras/feed", params={"agent_id": "feed_owner"}).status_code == 403
     r = client.get(
@@ -2433,11 +2564,13 @@ def test_delete_agora_post_requires_own_identity(client):
     r = client.post("/agoras/topics", json={
         "name": "Delete Topic", "description": "d", "visibility": "public",
         "gate_type": "open", "creator_id": "del_author",
-    })
+    },
+        headers={"x-emporia-agent-id": "del_author"})
     slug = r.json()["slug"]
     r2 = client.post(f"/agoras/topics/{slug}/posts", json={
         "author_id": "del_author", "title": "mine", "content": "content",
-    })
+    },
+        headers={"x-emporia-agent-id": "del_author"})
     post_id = r2.json()["post_id"]
 
     r = client.delete(
@@ -2602,7 +2735,8 @@ def test_service_session_confirm_delivery_e2e(client):
             "requirements": ["5-7-5 syllable structure", "technical theme"],
         },
         "payment_rules": {"mode": "free"},
-    })
+    },
+        headers={"x-emporia-agent-id": "e2e_buyer"})
     assert r.status_code == 200, r.text
     session_id = r.json()["session_id"]
 
@@ -2659,7 +2793,8 @@ def test_service_session_dispute_delivery_e2e(client):
         "creator_agent_id": "e2e_buyer2",
         "config": {"description": "Translate a sentence to French"},
         "payment_rules": {"mode": "free"},
-    })
+    },
+        headers={"x-emporia-agent-id": "e2e_buyer2"})
     assert r.status_code == 200
     session_id = r.json()["session_id"]
 
@@ -2739,7 +2874,8 @@ def test_mcp_paid_session_full_turn_under_prod_auth(prod_client):
         "creator_agent_id": "mcp_e2e_buyer",
         "config": {"description": "Write a haiku about distributed systems"},
         "payment_rules": {"mode": "free"},
-    })
+    },
+        headers=bearer_for(prod_client, "mcp_e2e_buyer"))
     assert r.status_code == 200, r.text
     session_id = r.json()["session_id"]
     r = prod_client.post(
@@ -2915,7 +3051,8 @@ def test_mpp_402_challenge_issued(client):
             "stake_per_participant": "1.00",
             "currency": "usd",
         },
-    })
+    },
+        headers={"x-emporia-agent-id": "mpp_creator"})
     assert r.status_code == 200
     session_id = r.json()["session_id"]
 
@@ -3020,7 +3157,8 @@ def test_inbox_receives_room_invite(client):
         "creator_id": "ibx_creator",
         "room_type": "private",
         "gate_type": "invite",
-    })
+    },
+        headers={"x-emporia-agent-id": "ibx_creator"})
     assert r.status_code == 200
     room_id = r.json()["room_id"]
 
@@ -3220,7 +3358,8 @@ def test_agora_topics_unauthenticated_caller_never_sees_private_metadata(client)
     r = client.post("/agoras/topics", json={
         "name": "Secret Topic", "description": "shh", "visibility": "private",
         "gate_type": "invite", "creator_id": "secret_owner",
-    })
+    },
+        headers={"x-emporia-agent-id": "secret_owner"})
     assert r.status_code == 200, r.text
     slug = r.json()["slug"]
 
@@ -3264,7 +3403,8 @@ def test_ws_room_private_requires_membership(client):
     r = client.post("/rooms", json={
         "name": "WS Private Room", "creator_id": "wsroom_owner",
         "room_type": "private", "gate_type": "invite",
-    })
+    },
+        headers={"x-emporia-agent-id": "wsroom_owner"})
     room_id = r.json()["room_id"]
     client.post(
         f"/rooms/{room_id}/invite", json={"invitee_id": "wsroom_member"},
@@ -3289,7 +3429,8 @@ def test_ws_room_private_requires_membership(client):
         assert frame["type"] == "room_init"
 
     # Public room — open to anyone, no identity required
-    r2 = client.post("/rooms", json={"name": "WS Public Room", "creator_id": "wsroom_owner"})
+    r2 = client.post("/rooms", json={"name": "WS Public Room", "creator_id": "wsroom_owner"},
+        headers={"x-emporia-agent-id": "wsroom_owner"})
     pub_room_id = r2.json()["room_id"]
     with client.websocket_connect(f"/ws/rooms/{pub_room_id}") as ws:
         frame = ws.receive_json()
