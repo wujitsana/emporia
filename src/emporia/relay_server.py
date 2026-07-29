@@ -370,6 +370,21 @@ def _require_caller_unless_mpp_payment(agent_id: str, request: Request) -> None:
     _require_caller_is(agent_id, request)
 
 
+_MAX_LIMIT = 200
+
+
+def _clamp_limit(limit: int, max_limit: int = _MAX_LIMIT) -> int:
+    """Bound a caller-supplied `limit` query param to [1, max_limit] (N3-6). Several
+    LIMIT-bearing endpoints already did this inline as `min(limit, 200)`; 8 others took
+    `limit: int` with no cap at all — an uncapped limit is both a DoS lever (unbounded
+    result set / row-scan) and, on GET /agents specifically, the mechanism that turned an
+    N+1 per-row query loop into an unbounded one (N3 review O1). Also floors at 1 so a
+    caller can't pass 0 or a negative number to `LIMIT` (SQLite treats a negative LIMIT as
+    "no limit," which would silently defeat the whole point of this clamp).
+    """
+    return min(max(limit, 1), max_limit)
+
+
 def _session_visibility(session: dict[str, Any]) -> str:
     """Resolve whether a session's content ("public" or "participants"-only).
 
@@ -553,6 +568,7 @@ def init_db() -> None:
             CREATE INDEX IF NOT EXISTS idx_events_status ON events(status);
             CREATE INDEX IF NOT EXISTS idx_payments_session ON payments(session_id);
             CREATE INDEX IF NOT EXISTS idx_settlements_session ON settlements(session_id);
+            CREATE INDEX IF NOT EXISTS idx_settlements_winner ON settlements(winner_id);
             CREATE INDEX IF NOT EXISTS idx_participants_agent ON participants(agent_id);
         """)
         conn.execute("""
@@ -1932,8 +1948,19 @@ async def register_agent(req: RegisterAgentRequest):
 
 
 @app.get("/agents")
-async def list_agents(limit: int = 100, search: str | None = None):
-    """List registered agents. Optional ?search= filters by agent_id or display_name."""
+async def list_agents(request: Request, limit: int = 100, search: str | None = None):
+    """List registered agents. Optional ?search= filters by agent_id or display_name.
+
+    N3-3 (N3 review R2): this was the identity-enumeration primitive the N2 review itself
+    named as the reason every write-endpoint identity-as-proof attack was reachable
+    (unauthenticated, uncapped `limit`) — N2 fixed every consumer of an enumerated identity
+    and never closed the enumerator. Now requires an authenticated caller; agent discovery
+    is a legitimate feature, so this makes it authenticated rather than removed.
+    """
+    caller = _dashboard_agent_id(request)
+    if not caller:
+        raise HTTPException(401, "Authentication required")
+    limit = _clamp_limit(limit)
     with DB_LOCK, get_db() as conn:
         if search:
             pattern = f"%{search}%"
@@ -1951,16 +1978,32 @@ async def list_agents(limit: int = 100, search: str | None = None):
                 "FROM authorized_agents ORDER BY registered_at DESC LIMIT ?",
                 (limit,),
             ).fetchall()
+
+        # N3-3 (N3 review O1): was a per-row COUNT(*) x2 loop — 1 + 2N queries, N extra
+        # DB_LOCK acquisitions, uncapped by the (now-fixed) unbounded limit above. Two
+        # GROUP BY aggregates over just the returned agent_ids instead, one lock
+        # acquisition regardless of row count.
+        agent_ids = [row["agent_id"] for row in rows]
+        session_counts: dict[str, int] = {}
+        win_counts: dict[str, int] = {}
+        if agent_ids:
+            placeholders = ",".join("?" * len(agent_ids))
+            for r in conn.execute(
+                f"SELECT agent_id, COUNT(*) AS c FROM participants "
+                f"WHERE agent_id IN ({placeholders}) GROUP BY agent_id",
+                agent_ids,
+            ).fetchall():
+                session_counts[r["agent_id"]] = r["c"]
+            for r in conn.execute(
+                f"SELECT winner_id, COUNT(*) AS c FROM settlements "
+                f"WHERE winner_id IN ({placeholders}) GROUP BY winner_id",
+                agent_ids,
+            ).fetchall():
+                win_counts[r["winner_id"]] = r["c"]
+
     agents = []
     for row in rows:
         agent_id = row["agent_id"]
-        with DB_LOCK, get_db() as conn:
-            session_count = conn.execute(
-                "SELECT COUNT(*) FROM participants WHERE agent_id = ?", (agent_id,)
-            ).fetchone()[0]
-            win_count = conn.execute(
-                "SELECT COUNT(*) FROM settlements WHERE winner_id = ?", (agent_id,)
-            ).fetchone()[0]
         agents.append({
             "agent_id": agent_id,
             "display_name": row["display_name"] or agent_id,
@@ -1970,8 +2013,8 @@ async def list_agents(limit: int = 100, search: str | None = None):
             "registered_at": row["registered_at"],
             "is_active": bool(row["is_active"]),
             "has_stripe": bool(row["stripe_account_id"]),
-            "session_count": session_count,
-            "win_count": win_count,
+            "session_count": session_counts.get(agent_id, 0),
+            "win_count": win_counts.get(agent_id, 0),
         })
     return {"agents": agents, "count": len(agents)}
 

@@ -358,9 +358,11 @@ export const api = {
   sendRoomMessage: (room_id: string, content: string, msg_type = "chat") =>
     post<RoomMessage>(`/rooms/${room_id}/message`, { content, msg_type }),
   agentCard: () => get<{ agent_id: string; capabilities: string[] }>("/.well-known/agent.json"),
+  // N3-3: GET /agents now requires an authenticated caller (it was the unauthenticated
+  // identity-enumeration primitive N2's review named but never closed).
   agents: (search?: string) =>
     get<{ agents: AgentProfile[]; count: number }>(
-      `/agents${search ? `?search=${encodeURIComponent(search)}` : ""}`
+      `/agents${search ? `?search=${encodeURIComponent(search)}` : ""}`, { agentScoped: true }
     ),
   agentProfile: (agent_id: string) => get<AgentProfile>(`/agents/${encodeURIComponent(agent_id)}`),
   agentSessions: (agent_id: string, status?: string) =>

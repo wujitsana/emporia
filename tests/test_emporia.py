@@ -3980,7 +3980,8 @@ def test_nous_portability_same_user_two_profiles(client):
 
 def test_agents_list_includes_trust_fields(client):
     """GET /agents includes trust_level and providers_verified for each agent."""
-    r = client.get("/agents")
+    _register(client, "agents_list_viewer")
+    r = client.get("/agents", headers={"x-emporia-agent-id": "agents_list_viewer"})
     assert r.status_code == 200
     agents = r.json()["agents"]
     assert len(agents) > 0
@@ -3988,3 +3989,82 @@ def test_agents_list_includes_trust_fields(client):
         assert "trust_level" in a
         assert "providers_verified" in a
         assert isinstance(a["providers_verified"], list)
+
+
+# ============================================================================
+# N3-3 — GET /agents authentication + limit clamp + N+1 fix (R2, O1)
+# ============================================================================
+
+def test_agents_list_requires_authentication(prod_client):
+    """Regression for N3-3 (R2): GET /agents — the identity-enumeration primitive the N2
+    review itself named as the reason every other N2 write-endpoint attack was reachable —
+    was unauthenticated with an uncapped limit. Confirms unauthenticated -> 401,
+    authenticated -> 200."""
+    _register_keyed(prod_client, "agents_enum_caller")
+
+    r = prod_client.get("/agents")
+    assert r.status_code == 401
+
+    r = prod_client.get("/agents", headers=bearer_for(prod_client, "agents_enum_caller"))
+    assert r.status_code == 200
+
+
+def test_agents_list_limit_is_clamped(prod_client):
+    """Regression for N3-3 (O1): `limit` used to flow unbounded into `LIMIT ?` — a request
+    for an absurd limit must not error and must not be taken at face value server-side."""
+    _register_keyed(prod_client, "agents_limit_caller")
+    r = prod_client.get(
+        "/agents", params={"limit": 999999999},
+        headers=bearer_for(prod_client, "agents_limit_caller"),
+    )
+    assert r.status_code == 200
+
+
+def test_clamp_limit_bounds():
+    from emporia.relay_server import _clamp_limit
+    assert _clamp_limit(50) == 50
+    assert _clamp_limit(999999) == 200
+    assert _clamp_limit(0) == 1
+    assert _clamp_limit(-5) == 1
+    assert _clamp_limit(999999, max_limit=50) == 50
+
+
+def test_agents_list_session_and_win_counts_correct(prod_client):
+    """Regression for N3-3 (O1): the per-row COUNT(*) x2 loop (1 + 2N queries) was
+    rewritten to two GROUP BY aggregates. Confirms the rewrite produces the same per-agent
+    counts as the original implementation, not just that it doesn't crash."""
+    from emporia.relay_server import record_settlement
+
+    _register_keyed(prod_client, "agents_count_creator")
+    _register_keyed(prod_client, "agents_count_winner")
+
+    r = prod_client.post(
+        "/sessions",
+        json={"module_type": "emporia:chess:v1", "config": {}, "payment_rules": {"mode": "free"}},
+        headers=bearer_for(prod_client, "agents_count_creator"),
+    )
+    session_id = r.json()["session_id"]
+    r = prod_client.post(
+        f"/sessions/{session_id}/join", json={"agent_id": "agents_count_winner"},
+        headers=bearer_for(prod_client, "agents_count_winner"),
+    )
+    assert r.status_code == 200
+
+    record_settlement({
+        "session_id": session_id,
+        "winner_id": "agents_count_winner",
+        "total_stake_cents": 0,
+        "platform_fee_cents": 0,
+        "winner_payout_cents": 0,
+    })
+
+    r = prod_client.get(
+        "/agents", params={"search": "agents_count_"},
+        headers=bearer_for(prod_client, "agents_count_creator"),
+    )
+    assert r.status_code == 200
+    by_id = {a["agent_id"]: a for a in r.json()["agents"]}
+    assert by_id["agents_count_creator"]["session_count"] == 1
+    assert by_id["agents_count_creator"]["win_count"] == 0
+    assert by_id["agents_count_winner"]["session_count"] == 1
+    assert by_id["agents_count_winner"]["win_count"] == 1
