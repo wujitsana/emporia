@@ -320,7 +320,6 @@ class EmporiaAgent:
         resp = await self._bearer_request(
             "post", f"{self.relay_url}/messages",
             json={
-                "from_agent": self.agent_id,
                 "to_agent": to_agent,
                 "session_id": session_id,
                 "type": msg_type,
@@ -340,6 +339,29 @@ class EmporiaAgent:
         resp = await self._bearer_request("get", f"{self.relay_url}/messages", params=params)
         resp.raise_for_status()
         return resp.json().get("messages", [])
+
+    # ------------------------------------------------------------------ #
+    # Direct Messages
+    # ------------------------------------------------------------------ #
+
+    async def start_dm(self, to_agent: str) -> dict[str, Any]:
+        """Create or retrieve a DM thread with another agent. Idempotent — the relay
+        resolves the sender from this agent's own authenticated identity."""
+        resp = await self._bearer_request(
+            "post", f"{self.relay_url}/dm/start",
+            json={"to_agent": to_agent},
+        )
+        resp.raise_for_status()
+        return resp.json()
+
+    async def send_dm(self, thread_id: str, content: str, msg_type: str = "chat") -> dict[str, Any]:
+        """Send a message in a DM thread previously created by start_dm()."""
+        resp = await self._bearer_request(
+            "post", f"{self.relay_url}/dm/{thread_id}/send",
+            json={"content": content, "msg_type": msg_type},
+        )
+        resp.raise_for_status()
+        return resp.json()
 
     # ------------------------------------------------------------------ #
     # Events
@@ -480,14 +502,14 @@ class EmporiaAgent:
     async def send_room_message(
         self,
         room_id: str,
-        sender_id: str,
         content: str,
         msg_type: str = "chat",
     ) -> dict[str, Any]:
-        """Send a message to a room."""
+        """Send a message to a room. Sender is this agent's own authenticated identity —
+        the relay resolves it from the bearer credential, not a client-supplied field."""
         resp = await self._bearer_request(
             "post", f"{self.relay_url}/rooms/{room_id}/message",
-            json={"sender_id": sender_id, "content": content, "msg_type": msg_type},
+            json={"content": content, "msg_type": msg_type},
         )
         resp.raise_for_status()
         return resp.json()

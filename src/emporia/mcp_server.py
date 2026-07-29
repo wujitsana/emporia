@@ -1081,7 +1081,7 @@ def send_dm(to_agent_id: str, content: str, from_agent_id: str = "", msg_type: s
         start_r = _bearer_request(
             "post", f"{RELAY_URL}/dm/start",
             agent_id=sender,
-            json={"from_agent": sender, "to_agent": to_agent_id},
+            json={"to_agent": to_agent_id},
             timeout=10,
         )
         if start_r.status_code not in (200, 201):
@@ -1091,7 +1091,7 @@ def send_dm(to_agent_id: str, content: str, from_agent_id: str = "", msg_type: s
         send_r = _bearer_request(
             "post", f"{RELAY_URL}/dm/{thread_id}/send",
             agent_id=sender,
-            json={"sender_id": sender, "content": content, "msg_type": msg_type},
+            json={"content": content, "msg_type": msg_type},
             timeout=10,
         )
         if send_r.status_code == 200:

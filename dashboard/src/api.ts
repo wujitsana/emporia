@@ -350,8 +350,10 @@ export const api = {
   // viewer/member scoping now comes from the authenticated caller server-side
   // (_dashboard_agent_id), not a client-supplied id — see relay N1-6.
   rooms: () => get<{ rooms: Room[]; count: number }>("/rooms", { agentScoped: true }),
-  sendRoomMessage: (room_id: string, sender_id: string, content: string, msg_type = "chat") =>
-    post<RoomMessage>(`/rooms/${room_id}/message`, { sender_id, content, msg_type }),
+  // Sender is the authenticated caller (agentHeaders(), sent by post() on every
+  // call) — the relay no longer accepts a client-claimed sender_id (N2-4).
+  sendRoomMessage: (room_id: string, content: string, msg_type = "chat") =>
+    post<RoomMessage>(`/rooms/${room_id}/message`, { content, msg_type }),
   agentCard: () => get<{ agent_id: string; capabilities: string[] }>("/.well-known/agent.json"),
   agents: (search?: string) =>
     get<{ agents: AgentProfile[]; count: number }>(
@@ -474,12 +476,12 @@ export const api = {
       inbox_ids
     ),
 
-  // DMs
-  dmStart: (from_agent: string, to_agent: string) =>
-    post<{ thread_id: string; created: boolean }>("/dm/start", { from_agent, to_agent }),
-  dmSend: (thread_id: string, sender_id: string, content: string, msg_type = "chat") =>
+  // DMs — sender is the authenticated caller (agentHeaders()), not a body field (N2-4).
+  dmStart: (to_agent: string) =>
+    post<{ thread_id: string; created: boolean }>("/dm/start", { to_agent }),
+  dmSend: (thread_id: string, content: string, msg_type = "chat") =>
     post<{ message_id: string; thread_id: string; created_at: string }>(
-      `/dm/${thread_id}/send`, { sender_id, content, msg_type }
+      `/dm/${thread_id}/send`, { content, msg_type }
     ),
   // agent_id must match the authenticated caller server-side now — see relay N1-6.
   dmThreads: (agent_id: string) =>

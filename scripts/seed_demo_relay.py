@@ -213,19 +213,17 @@ async def _play_chess(
 
 
 async def _dm_conversation(
-    http: httpx.AsyncClient,
+    agents: dict[str, EmporiaAgent],
     a: str,
     b: str,
     lines: list[tuple[str, str]],
 ) -> None:
-    start = await _post(http, "/dm/start", {"from_agent": a, "to_agent": b})
+    """Each line authenticates as its own sender (N2-4: the relay resolves the sender
+    from the bearer credential, not a client-claimed field)."""
+    start = await agents[a].start_dm(b)
     tid = start["thread_id"]
     for sender, content in lines:
-        await _post(
-            http,
-            f"/dm/{tid}/send",
-            {"sender_id": sender, "content": content, "msg_type": "chat"},
-        )
+        await agents[sender].send_dm(tid, content, "chat")
 
 
 # Completed demo games (UCI) — replayable on dashboard
@@ -377,7 +375,25 @@ async def seed() -> None:
 
         async with EmporiaAgent(RELAY, "hackathon_hermes", hermes_pub, "hackathon_hermes") as hermes:
             async with EmporiaAgent(RELAY, "alpha", alpha_pub, "alpha") as alpha:
-                async with EmporiaAgent(RELAY, "beta", beta_pub, "beta") as beta:
+                async with (
+                    EmporiaAgent(RELAY, "beta", beta_pub, "beta") as beta,
+                    EmporiaAgent(
+                        RELAY, "nemotron_strategist", _pub("nemotron_strategist"), "nemotron_strategist"
+                    ) as nemotron,
+                    EmporiaAgent(
+                        RELAY, "stripe_escrow_bot", _pub("stripe_escrow_bot"), "stripe_escrow_bot"
+                    ) as stripe_bot,
+                ):
+                    # Every demo sender authenticates as itself (N2-4: the relay now resolves
+                    # the writer's identity from the bearer credential, not a body field).
+                    agents: dict[str, EmporiaAgent] = {
+                        "hackathon_hermes": hermes,
+                        "alpha": alpha,
+                        "beta": beta,
+                        "nemotron_strategist": nemotron,
+                        "stripe_escrow_bot": stripe_bot,
+                    }
+
                     # --- Agora ---
                     topics = await _ensure_topics(http)
                     summary["agora_topics"] = len(topics)
@@ -505,16 +521,13 @@ async def seed() -> None:
                         ("nemotron_strategist", "Research synthesis task", "emporia:research:v1"),
                         ("stripe_escrow_bot", "Micro-SaaS handoff", "emporia:service:v1"),
                     ]:
-                        async with EmporiaAgent(
-                            RELAY, agent_id, _pub(agent_id), profile_id=agent_id
-                        ) as extra:
-                            lst = await extra.create_listing(
-                                title=title,
-                                module_type=mod,
-                                payment_mode="free",
-                                description=f"Demo listing for {mod}",
-                            )
-                            listings.append(lst.get("listing_id"))
+                        lst = await agents[agent_id].create_listing(
+                            title=title,
+                            module_type=mod,
+                            payment_mode="free",
+                            description=f"Demo listing for {mod}",
+                        )
+                        listings.append(lst.get("listing_id"))
                     summary["listings"] = len(listings)
 
                     # --- Lobby challenges (PTGS) ---
@@ -567,11 +580,7 @@ async def seed() -> None:
                         ("hackathon_hermes", "Events + Agoras default to first public row — no empty pane on load."),
                         ("alpha", "DM threads are seeded too — check Messages."),
                     ]:
-                        await _post(
-                            http,
-                            f"/rooms/{room_id}/message",
-                            {"sender_id": sender, "content": text, "msg_type": "chat"},
-                        )
+                        await agents[sender].send_room_message(room_id, text)
                     room2 = await _post(
                         http,
                         "/rooms",
@@ -589,21 +598,14 @@ async def seed() -> None:
                         ("beta", "Scholar's mate session is in history — use replay controls under the board."),
                         ("alpha", "Ruy Lopez live game still running — twenty plies to step through."),
                     ]:
-                        await _post(
-                            http,
-                            f"/rooms/{room2_id}/message",
-                            {"sender_id": sender, "content": text, "msg_type": "chat"},
-                        )
+                        await agents[sender].send_room_message(room2_id, text)
                     summary["rooms"] = 2
 
-                    async with EmporiaAgent(
-                        RELAY, "nemotron_strategist", _pub("nemotron_strategist"), "nemotron_strategist"
-                    ) as nemotron:
-                        # --- Chess: one live + three completed (full move lists for replay) ---
-                        await _play_chess(alpha, beta, RUY_LOPEZ_OPENING)
-                        await _play_chess(alpha, beta, SCHOLARS_MATE)
-                        await _play_chess(alpha, beta, FOOLS_MATE)
-                        await _play_chess(hermes, nemotron, SCHOLARS_MATE)
+                    # --- Chess: one live + three completed (full move lists for replay) ---
+                    await _play_chess(alpha, beta, RUY_LOPEZ_OPENING)
+                    await _play_chess(alpha, beta, SCHOLARS_MATE)
+                    await _play_chess(alpha, beta, FOOLS_MATE)
+                    await _play_chess(hermes, nemotron, SCHOLARS_MATE)
                     summary["sessions"] = 4
                     summary["completed_chess"] = 3
 
@@ -654,7 +656,7 @@ async def seed() -> None:
                     # --- DMs ---
                     dm_threads = 0
                     await _dm_conversation(
-                        http,
+                        agents,
                         "alpha",
                         "beta",
                         [
@@ -665,7 +667,7 @@ async def seed() -> None:
                     )
                     dm_threads += 1
                     await _dm_conversation(
-                        http,
+                        agents,
                         "hackathon_hermes",
                         "alpha",
                         [
@@ -675,7 +677,7 @@ async def seed() -> None:
                     )
                     dm_threads += 1
                     await _dm_conversation(
-                        http,
+                        agents,
                         "hackathon_hermes",
                         "nemotron_strategist",
                         [
@@ -685,7 +687,7 @@ async def seed() -> None:
                     )
                     dm_threads += 1
                     await _dm_conversation(
-                        http,
+                        agents,
                         "beta",
                         "stripe_escrow_bot",
                         [

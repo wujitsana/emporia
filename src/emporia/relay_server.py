@@ -1435,7 +1435,6 @@ class SubmitActionRequest(BaseModel):
 
 
 class SendMessageRequest(BaseModel):
-    from_agent: str
     to_agent: str
     session_id: str | None = None
     type: str
@@ -1488,7 +1487,6 @@ class InviteToRoomRequest(BaseModel):
 
 
 class SendRoomMessageRequest(BaseModel):
-    sender_id: str
     content: str
     msg_type: str = "chat"            # "chat" | "collab" | "code" | "counter_offer" | "accept" | "reject"
     parent_message_id: str | None = None
@@ -3183,12 +3181,15 @@ VALID_MSG_TYPES = {"challenge", "counter_offer", "accept", "reject", "chat", "rp
 
 
 @app.post("/messages")
-async def send_message(req: SendMessageRequest):
-    _require_registered(req.from_agent)
-    if not AGENT_REGISTRY.check_rate_limit(req.from_agent):
+async def send_message(req: SendMessageRequest, request: Request):
+    caller = _dashboard_agent_id(request)
+    if not caller:
+        raise HTTPException(401, "Authentication required")
+    _require_registered(caller)
+    if not AGENT_REGISTRY.check_rate_limit(caller):
         raise HTTPException(429, "Rate limit exceeded")
     if req.signature:
-        if not AGENT_REGISTRY.verify_signature(req.from_agent, req.payload, req.signature):
+        if not AGENT_REGISTRY.verify_signature(caller, req.payload, req.signature):
             raise HTTPException(403, "Invalid signature")
 
     try:
@@ -3197,7 +3198,7 @@ async def send_message(req: SendMessageRequest):
         raise HTTPException(403, str(e))
 
     msg_id = AGENT_REGISTRY.log_message(
-        from_agent=req.from_agent,
+        from_agent=caller,
         to_agent=req.to_agent,
         session_id=req.session_id,
         msg_type=req.type,
@@ -3206,7 +3207,7 @@ async def send_message(req: SendMessageRequest):
     )
     await broadcast_to_agent(req.to_agent, {
         "type": req.type,
-        "from_agent": req.from_agent,
+        "from_agent": caller,
         "session_id": req.session_id,
         "payload": req.payload,
         "message_id": msg_id,
@@ -3549,14 +3550,17 @@ async def kick_from_room(room_id: str, req: KickFromRoomRequest):
 
 
 @app.post("/rooms/{room_id}/message")
-async def send_room_message(room_id: str, req: SendRoomMessageRequest):
+async def send_room_message(room_id: str, req: SendRoomMessageRequest, request: Request):
+    caller = _dashboard_agent_id(request)
+    if not caller:
+        raise HTTPException(401, "Authentication required")
     room = rooms_db.get_room(room_id, db_path=DATABASE_PATH)
     if not room:
         raise HTTPException(404, "Room not found")
-    _require_registered(req.sender_id)
-    if not rooms_db.is_member(room_id, req.sender_id, db_path=DATABASE_PATH):
+    _require_registered(caller)
+    if not rooms_db.is_member(room_id, caller, db_path=DATABASE_PATH):
         raise HTTPException(403, "Join the room first")
-    if not AGENT_REGISTRY.check_rate_limit(req.sender_id):
+    if not AGENT_REGISTRY.check_rate_limit(caller):
         raise HTTPException(429, "Rate limit exceeded")
 
     # Encrypted rooms: relay stores opaque ciphertext — never scan it.
@@ -3569,7 +3573,7 @@ async def send_room_message(room_id: str, req: SendRoomMessageRequest):
             raise HTTPException(403, str(e))
 
     if req.signature:
-        if not AGENT_REGISTRY.verify_signature(req.sender_id, {"content": req.content}, req.signature):
+        if not AGENT_REGISTRY.verify_signature(caller, {"content": req.content}, req.signature):
             raise HTTPException(403, "Invalid message signature")
 
     # Negotiation broker: route counter_offer/accept/reject in 2-member private rooms
@@ -3579,14 +3583,14 @@ async def send_room_message(room_id: str, req: SendRoomMessageRequest):
         try:
             offer_payload = json.loads(req.content) if req.content.strip().startswith("{") else {"text": req.content}
             constraints = req.negotiation_constraints or {}
-            decision, response = process_offer(req.sender_id, offer_payload, constraints)
+            decision, response = process_offer(caller, offer_payload, constraints)
             broker_response = {"decision": decision, "response": response}
         except Exception:
             pass  # non-JSON content — treat as plain chat
 
     msg = rooms_db.post_message(
         room_id=room_id,
-        sender_id=req.sender_id,
+        sender_id=caller,
         content=req.content,
         msg_type=req.msg_type,
         parent_message_id=req.parent_message_id,
@@ -3603,7 +3607,7 @@ async def send_room_message(room_id: str, req: SendRoomMessageRequest):
     with DB_LOCK, get_db() as conn:
         row = conn.execute("SELECT members_json FROM rooms WHERE room_id=?", (room_id,)).fetchone()
     members_json = row["members_json"] if row else "[]"
-    members = [m for m in json.loads(members_json) if m != req.sender_id]
+    members = [m for m in json.loads(members_json) if m != caller]
     for member in members:
         await broadcast_to_agent(member, event)
 
@@ -4420,25 +4424,26 @@ async def root_redirect():
 # ============================================================================
 
 class DMStartRequest(BaseModel):
-    from_agent: str
     to_agent: str
 
 
 class DMSendRequest(BaseModel):
-    sender_id: str
     content: str
     msg_type: str = "chat"
 
 
 @app.post("/dm/start")
-async def dm_start(req: DMStartRequest):
+async def dm_start(req: DMStartRequest, request: Request):
     """Create or retrieve a DM thread between two agents. Idempotent."""
-    _require_registered(req.from_agent)
+    caller = _dashboard_agent_id(request)
+    if not caller:
+        raise HTTPException(401, "Authentication required")
+    _require_registered(caller)
     _require_registered(req.to_agent)
-    if req.from_agent == req.to_agent:
+    if caller == req.to_agent:
         raise HTTPException(400, "Cannot DM yourself")
     # Canonical ordering so UNIQUE(agent_a, agent_b) always matches
-    a, b = sorted([req.from_agent, req.to_agent])
+    a, b = sorted([caller, req.to_agent])
     now = datetime.now(UTC).isoformat()
     thread_id = f"dm_{uuid.uuid4().hex[:12]}"
     with DB_LOCK, get_db() as conn:
@@ -4456,9 +4461,12 @@ async def dm_start(req: DMStartRequest):
 
 
 @app.post("/dm/{thread_id}/send")
-async def dm_send(thread_id: str, req: DMSendRequest):
+async def dm_send(thread_id: str, req: DMSendRequest, request: Request):
     """Send a message in a DM thread. Pushes inbox event to the recipient."""
-    _require_registered(req.sender_id)
+    caller = _dashboard_agent_id(request)
+    if not caller:
+        raise HTTPException(401, "Authentication required")
+    _require_registered(caller)
     try:
         await _assert_payload_safe_counted(req.model_dump())
     except PermissionError as e:
@@ -4471,22 +4479,22 @@ async def dm_send(thread_id: str, req: DMSendRequest):
         ).fetchone()
         if not thread:
             raise HTTPException(404, "DM thread not found")
-        if req.sender_id not in (thread["agent_a"], thread["agent_b"]):
+        if caller not in (thread["agent_a"], thread["agent_b"]):
             raise HTTPException(403, "Not a participant in this thread")
         conn.execute(
             "INSERT INTO dm_messages (message_id, thread_id, sender_id, content, msg_type, created_at) "
             "VALUES (?,?,?,?,?,?)",
-            (message_id, thread_id, req.sender_id, req.content, req.msg_type, now),
+            (message_id, thread_id, caller, req.content, req.msg_type, now),
         )
         conn.execute(
             "UPDATE dm_threads SET last_message_at=? WHERE thread_id=?", (now, thread_id)
         )
-        recipient = thread["agent_b"] if req.sender_id == thread["agent_a"] else thread["agent_a"]
+        recipient = thread["agent_b"] if caller == thread["agent_a"] else thread["agent_a"]
     event = {
         "type": "dm_received",
         "thread_id": thread_id,
         "message_id": message_id,
-        "sender_id": req.sender_id,
+        "sender_id": caller,
         "content": req.content,
         "msg_type": req.msg_type,
         "created_at": now,
