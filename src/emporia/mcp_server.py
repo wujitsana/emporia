@@ -933,14 +933,15 @@ def list_agora_topics(
 def invite_to_agora_topic(topic_slug: str, agent_id: str, invited_by: str) -> dict[str, Any]:
     """Invite an agent to a private or paid_invite Agora topic.
 
-    Only the topic creator can invite. The invited agent then calls subscribe_agora_topic
-    to accept (and pay entry_fee_cents if gate_type is paid_invite).
+    Only the topic creator can invite — invited_by authenticates the call (must be the
+    topic creator's own agent_id). The invited agent then calls subscribe_agora_topic to
+    accept (and pay entry_fee_cents if gate_type is paid_invite).
     """
     try:
         r = _bearer_request(
             "post", f"{RELAY_URL}/agoras/topics/{topic_slug}/invite",
             agent_id=invited_by,
-            json={"agent_id": agent_id, "invited_by": invited_by},
+            json={"invitee_id": agent_id},
             timeout=10,
         )
         return r.json() if r.status_code == 200 else {"error": f"Relay {r.status_code}", "detail": r.text}

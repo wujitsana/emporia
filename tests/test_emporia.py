@@ -668,7 +668,10 @@ def test_session_join_and_action(client):
     assert r.status_code == 200
     session_id = r.json()["session_id"]
     # Join
-    r = client.post(f"/sessions/{session_id}/join", json={"agent_id": "c_joiner_2"})
+    r = client.post(
+        f"/sessions/{session_id}/join", json={"agent_id": "c_joiner_2"},
+        headers={"x-emporia-agent-id": "c_joiner_2"},
+    )
     assert r.status_code == 200
     assert r.json()["status"] == "active"
     # Submit action (white's turn)
@@ -690,7 +693,10 @@ def test_action_rejected_missing_signature(client):
         "creator_agent_id": "unsig_creator",
     })
     session_id = r.json()["session_id"]
-    client.post(f"/sessions/{session_id}/join", json={"agent_id": "unsig_joiner"})
+    client.post(
+        f"/sessions/{session_id}/join", json={"agent_id": "unsig_joiner"},
+        headers={"x-emporia-agent-id": "unsig_joiner"},
+    )
     r = client.post(f"/sessions/{session_id}/action", json={
         "agent_id": "unsig_creator",
         "action_type": "move",
@@ -710,7 +716,10 @@ def test_action_rejected_forged_signature(client):
         "creator_agent_id": "forge_creator",
     })
     session_id = r.json()["session_id"]
-    client.post(f"/sessions/{session_id}/join", json={"agent_id": "forge_joiner"})
+    client.post(
+        f"/sessions/{session_id}/join", json={"agent_id": "forge_joiner"},
+        headers={"x-emporia-agent-id": "forge_joiner"},
+    )
     body = _signed_action_body(
         client, session_id, "forge_creator", "move", {"move": "e2e4"},
         "Control the center with the king's pawn opening",
@@ -750,7 +759,10 @@ def test_service_session_requires_participant(client):
         "payment_rules": {"mode": "free"},
     })
     session_id = r.json()["session_id"]
-    client.post(f"/sessions/{session_id}/join", json={"agent_id": "vis_svc_seller"})
+    client.post(
+        f"/sessions/{session_id}/join", json={"agent_id": "vis_svc_seller"},
+        headers={"x-emporia-agent-id": "vis_svc_seller"},
+    )
 
     # No identity at all
     assert client.get(f"/sessions/{session_id}").status_code == 403
@@ -840,7 +852,10 @@ def test_agent_sessions_endpoint_filters_by_visibility(client):
         "config": {"description": "Confidential work"}, "payment_rules": {"mode": "free"},
     })
     session_id = r.json()["session_id"]
-    client.post(f"/sessions/{session_id}/join", json={"agent_id": "vis_agsess_seller"})
+    client.post(
+        f"/sessions/{session_id}/join", json={"agent_id": "vis_agsess_seller"},
+        headers={"x-emporia-agent-id": "vis_agsess_seller"},
+    )
 
     r = client.get("/agents/vis_agsess_seller/sessions")
     assert session_id not in {s["session_id"] for s in r.json()["sessions"]}
@@ -897,7 +912,10 @@ def test_service_session_requires_participant_under_prod_auth(prod_client):
         "payment_rules": {"mode": "free"},
     })
     session_id = r.json()["session_id"]
-    prod_client.post(f"/sessions/{session_id}/join", json={"agent_id": "prodvis_seller"})
+    prod_client.post(
+        f"/sessions/{session_id}/join", json={"agent_id": "prodvis_seller"},
+        headers=bearer_for(prod_client, "prodvis_seller"),
+    )
 
     assert prod_client.get(f"/sessions/{session_id}").status_code == 403
     r = prod_client.get(f"/sessions/{session_id}", headers=bearer_for(prod_client, "prodvis_stranger"))
@@ -1026,15 +1044,20 @@ def test_no_new_identity_as_proof_params():
         ("POST", "/listings"),
         ("POST", "/events"),
         ("POST", "/sessions"),
-        ("POST", "/sessions/{session_id}/join"),
         ("POST", "/rooms"),
-        ("POST", "/rooms/{room_id}/join"),
-        ("POST", "/rooms/{room_id}/invite"),
-        ("POST", "/rooms/{room_id}/kick"),
         ("POST", "/agoras/topics"),
-        ("POST", "/agoras/topics/{slug}/invite"),
-        ("POST", "/agoras/topics/{slug}/subscribe"),
         ("POST", "/agoras/topics/{slug}/posts"),
+        # These three (N2-4 tranche 2) keep `agent_id` in the body on purpose — an MPP
+        # payment credential (Authorization: Payment <token>) can't also carry a Bearer
+        # identity, so the claim is still trusted, unenforced, on that one code path.
+        # _require_caller_unless_mpp_payment() now enforces it everywhere else (free join,
+        # or join with a pre-created payment_intent_id). Narrowed, not closed — closing
+        # the MPP path means binding a payment credential to a payer identity, which is
+        # payment-integrity work deferred to the x402 re-platform (plan P1 note: "payment
+        # is resource-bound, not identity-bound"). Stays here until that lands.
+        ("POST", "/sessions/{session_id}/join"),
+        ("POST", "/rooms/{room_id}/join"),
+        ("POST", "/agoras/topics/{slug}/subscribe"),
         ("POST", "/agoras/posts/{post_id}/vote"),
         ("POST", "/agoras/posts/{post_id}/comments"),
         ("POST", "/agoras/comments/{comment_id}/vote"),
@@ -1113,7 +1136,10 @@ def test_payment_records_gated_by_session_visibility(client):
         "config": {"description": "d"}, "payment_rules": {"mode": "free"},
     })
     session_id = r.json()["session_id"]
-    client.post(f"/sessions/{session_id}/join", json={"agent_id": "pr_seller"})
+    client.post(
+        f"/sessions/{session_id}/join", json={"agent_id": "pr_seller"},
+        headers={"x-emporia-agent-id": "pr_seller"},
+    )
 
     assert client.get("/payments/records", params={"session_id": session_id}).status_code == 403
     r = client.get(
@@ -1148,7 +1174,10 @@ def test_abandon_session_requires_participant(client):
         "config": {"description": "d"}, "payment_rules": {"mode": "free"},
     })
     session_id = r.json()["session_id"]
-    client.post(f"/sessions/{session_id}/join", json={"agent_id": "aban_seller"})
+    client.post(
+        f"/sessions/{session_id}/join", json={"agent_id": "aban_seller"},
+        headers={"x-emporia-agent-id": "aban_seller"},
+    )
 
     assert client.post(f"/sessions/{session_id}/abandon", json={}).status_code == 403
     r = client.post(
@@ -1177,7 +1206,10 @@ def test_action_rejected_short_rationale(client):
         "creator_agent_id": "por_creator",
     })
     session_id = r.json()["session_id"]
-    client.post(f"/sessions/{session_id}/join", json={"agent_id": "por_joiner"})
+    client.post(
+        f"/sessions/{session_id}/join", json={"agent_id": "por_joiner"},
+        headers={"x-emporia-agent-id": "por_joiner"},
+    )
     body = _signed_action_body(
         client, session_id, "por_creator", "move", {"move": "e2e4"}, "ok",  # too short
     )
@@ -1194,7 +1226,10 @@ def test_action_rejected_bot_fingerprint(client):
         "creator_agent_id": "fp_creator",
     })
     session_id = r.json()["session_id"]
-    client.post(f"/sessions/{session_id}/join", json={"agent_id": "fp_joiner"})
+    client.post(
+        f"/sessions/{session_id}/join", json={"agent_id": "fp_joiner"},
+        headers={"x-emporia-agent-id": "fp_joiner"},
+    )
     body = _signed_action_body(
         client, session_id, "fp_creator", "move", {"move": "e2e4"},
         "stockfish best move: e2e4 eval_score: 0.3",
@@ -1427,10 +1462,11 @@ def test_join_session_rejects_underpaid_payment_intent(mock_verify, client):
         "metadata": {"resource_type": "session", "resource_id": session_id},
     }
 
-    r2 = client.post(f"/sessions/{session_id}/join", json={
-        "agent_id": "underpay_joiner",
-        "payment_intent_id": "pi_underpay_test",
-    })
+    r2 = client.post(
+        f"/sessions/{session_id}/join",
+        json={"agent_id": "underpay_joiner", "payment_intent_id": "pi_underpay_test"},
+        headers={"x-emporia-agent-id": "underpay_joiner"},
+    )
     assert r2.status_code == 402
     assert "amount mismatch" in r2.text
     session = client.get(
@@ -1459,10 +1495,11 @@ def test_join_session_rejects_payment_intent_replay(mock_verify, client):
         "metadata": {"resource_type": "session", "resource_id": "sess_other"},
     }
 
-    r2 = client.post(f"/sessions/{session_id}/join", json={
-        "agent_id": "replay_joiner",
-        "payment_intent_id": "pi_replay_test",
-    })
+    r2 = client.post(
+        f"/sessions/{session_id}/join",
+        json={"agent_id": "replay_joiner", "payment_intent_id": "pi_replay_test"},
+        headers={"x-emporia-agent-id": "replay_joiner"},
+    )
     assert r2.status_code == 402
     assert "not bound to this resource" in r2.text
 
@@ -1488,10 +1525,11 @@ def test_join_room_rejects_uncaptured_payment_intent(mock_verify, client):
         "metadata": {"resource_type": "room", "resource_id": room_id},
     }
 
-    r2 = client.post(f"/rooms/{room_id}/join", json={
-        "agent_id": "room_joiner",
-        "payment_intent_id": "pi_room_hold_test",
-    })
+    r2 = client.post(
+        f"/rooms/{room_id}/join",
+        json={"agent_id": "room_joiner", "payment_intent_id": "pi_room_hold_test"},
+        headers={"x-emporia-agent-id": "room_joiner"},
+    )
     assert r2.status_code == 402
     assert "Payment not confirmed" in r2.text
 
@@ -1519,10 +1557,11 @@ def test_join_room_accepts_bound_payment_intent(mock_verify, client):
         "metadata": {"resource_type": "room", "resource_id": room_id},
     }
 
-    r2 = client.post(f"/rooms/{room_id}/join", json={
-        "agent_id": "paidroom_joiner",
-        "payment_intent_id": "pi_room_paid_test",
-    })
+    r2 = client.post(
+        f"/rooms/{room_id}/join",
+        json={"agent_id": "paidroom_joiner", "payment_intent_id": "pi_room_paid_test"},
+        headers={"x-emporia-agent-id": "paidroom_joiner"},
+    )
     assert r2.status_code == 200, r2.text
     assert r2.json()["status"] == "joined"
 
@@ -1546,10 +1585,10 @@ def test_agora_subscription_accepts_bound_payment_intent(mock_verify, client):
     assert r.status_code == 200, r.text
     slug = r.json()["slug"]
 
-    r2 = client.post(f"/agoras/topics/{slug}/invite", json={
-        "agent_id": "agora_member",
-        "invited_by": "agora_owner",
-    })
+    r2 = client.post(
+        f"/agoras/topics/{slug}/invite", json={"invitee_id": "agora_member"},
+        headers={"x-emporia-agent-id": "agora_owner"},
+    )
     assert r2.status_code == 200, r2.text
     topic_id = r.json()["topic_id"]
     mock_verify.return_value = {
@@ -1561,10 +1600,11 @@ def test_agora_subscription_accepts_bound_payment_intent(mock_verify, client):
         "metadata": {"resource_type": "agora", "resource_id": topic_id},
     }
 
-    r3 = client.post(f"/agoras/topics/{slug}/subscribe", json={
-        "agent_id": "agora_member",
-        "payment_intent_id": "pi_agora_paid_test",
-    })
+    r3 = client.post(
+        f"/agoras/topics/{slug}/subscribe",
+        json={"agent_id": "agora_member", "payment_intent_id": "pi_agora_paid_test"},
+        headers={"x-emporia-agent-id": "agora_member"},
+    )
     assert r3.status_code == 200, r3.text
     assert r3.json()["gate_type"] == "paid_invite"
 
@@ -1633,10 +1673,11 @@ def test_join_session_rejects_total_budget_exceeded(mock_verify, client):
         "metadata": {"resource_type": "session", "resource_id": session_id},
     }
 
-    r2 = client.post(f"/sessions/{session_id}/join", json={
-        "agent_id": "budget_joiner",
-        "payment_intent_id": "pi_budget_next",
-    })
+    r2 = client.post(
+        f"/sessions/{session_id}/join",
+        json={"agent_id": "budget_joiner", "payment_intent_id": "pi_budget_next"},
+        headers={"x-emporia-agent-id": "budget_joiner"},
+    )
     assert r2.status_code == 402
     assert "spend limit exceeded" in r2.text
 
@@ -1867,7 +1908,10 @@ def test_room_join_open(client):
     r = client.post("/rooms", json={"name": "Open Room", "creator_id": "room_owner"})
     room_id = r.json()["room_id"]
 
-    r2 = client.post(f"/rooms/{room_id}/join", json={"agent_id": "room_joiner"})
+    r2 = client.post(
+        f"/rooms/{room_id}/join", json={"agent_id": "room_joiner"},
+        headers={"x-emporia-agent-id": "room_joiner"},
+    )
     assert r2.status_code == 200
     assert r2.json()["status"] == "joined"
 
@@ -1880,7 +1924,10 @@ def test_room_join_invite_gate_no_invite(client):
         "room_type": "private", "gate_type": "invite",
     })
     room_id = r.json()["room_id"]
-    r2 = client.post(f"/rooms/{room_id}/join", json={"agent_id": "inv_nobody"})
+    r2 = client.post(
+        f"/rooms/{room_id}/join", json={"agent_id": "inv_nobody"},
+        headers={"x-emporia-agent-id": "inv_nobody"},
+    )
     assert r2.status_code == 403
 
 
@@ -1892,11 +1939,15 @@ def test_room_invite_then_join(client):
         "room_type": "private", "gate_type": "invite",
     })
     room_id = r.json()["room_id"]
-    r2 = client.post(f"/rooms/{room_id}/invite", json={
-        "invitee_id": "inv2_guest", "inviter_id": "inv2_owner",
-    })
+    r2 = client.post(
+        f"/rooms/{room_id}/invite", json={"invitee_id": "inv2_guest"},
+        headers={"x-emporia-agent-id": "inv2_owner"},
+    )
     assert r2.status_code == 200
-    r3 = client.post(f"/rooms/{room_id}/join", json={"agent_id": "inv2_guest"})
+    r3 = client.post(
+        f"/rooms/{room_id}/join", json={"agent_id": "inv2_guest"},
+        headers={"x-emporia-agent-id": "inv2_guest"},
+    )
     assert r3.status_code == 200
     assert r3.json()["status"] == "joined"
 
@@ -1906,7 +1957,10 @@ def test_room_send_message(client):
     _register(client, "msg_bob")
     r = client.post("/rooms", json={"name": "Chat", "creator_id": "msg_alice"})
     room_id = r.json()["room_id"]
-    client.post(f"/rooms/{room_id}/join", json={"agent_id": "msg_bob"})
+    client.post(
+        f"/rooms/{room_id}/join", json={"agent_id": "msg_bob"},
+        headers={"x-emporia-agent-id": "msg_bob"},
+    )
 
     r2 = client.post(
         f"/rooms/{room_id}/message", json={"content": "Hello room!"},
@@ -1926,11 +1980,15 @@ def test_room_kick(client):
     _register(client, "kick_target")
     r = client.post("/rooms", json={"name": "Kickable", "creator_id": "kick_owner"})
     room_id = r.json()["room_id"]
-    client.post(f"/rooms/{room_id}/join", json={"agent_id": "kick_target"})
+    client.post(
+        f"/rooms/{room_id}/join", json={"agent_id": "kick_target"},
+        headers={"x-emporia-agent-id": "kick_target"},
+    )
 
-    r2 = client.post(f"/rooms/{room_id}/kick", json={
-        "agent_id": "kick_target", "kicker_id": "kick_owner",
-    })
+    r2 = client.post(
+        f"/rooms/{room_id}/kick", json={"target_agent_id": "kick_target"},
+        headers={"x-emporia-agent-id": "kick_owner"},
+    )
     assert r2.status_code == 200
     assert r2.json()["status"] == "kicked"
 
@@ -1962,8 +2020,14 @@ def test_room_encrypted_skips_guardrails(client):
         "room_type": "private", "gate_type": "invite", "encrypted": True,
     })
     room_id = r.json()["room_id"]
-    client.post(f"/rooms/{room_id}/invite", json={"invitee_id": "enc_bob", "inviter_id": "enc_alice"})
-    client.post(f"/rooms/{room_id}/join", json={"agent_id": "enc_bob"})
+    client.post(
+        f"/rooms/{room_id}/invite", json={"invitee_id": "enc_bob"},
+        headers={"x-emporia-agent-id": "enc_alice"},
+    )
+    client.post(
+        f"/rooms/{room_id}/join", json={"agent_id": "enc_bob"},
+        headers={"x-emporia-agent-id": "enc_bob"},
+    )
 
     # "Ciphertext" that would fail guardrails if scanned as plaintext
     r2 = client.post(
@@ -2094,7 +2158,10 @@ def test_room_message_caller_must_be_sender(prod_client):
 
     r = prod_client.post("/rooms", json={"name": "N2-4 T1 Room", "creator_id": "rmsg_owner"})
     room_id = r.json()["room_id"]
-    prod_client.post(f"/rooms/{room_id}/join", json={"agent_id": "rmsg_member"})
+    prod_client.post(
+        f"/rooms/{room_id}/join", json={"agent_id": "rmsg_member"},
+        headers=bearer_for(prod_client, "rmsg_member"),
+    )
 
     r = prod_client.post(f"/rooms/{room_id}/message", json={"content": "hi"})
     assert r.status_code == 401
@@ -2143,6 +2210,161 @@ def test_dm_requires_authentication_and_sender_is_caller(prod_client):
     assert r.status_code == 200
     msgs = r.json()["messages"]
     assert any(m["sender_id"] == "dmauth_alice" and m["content"] == "hi bob" for m in msgs)
+
+
+# ============================================================================
+# N2-4 tranche 2 — caller-identity enforcement on access-control endpoints
+# (room/topic invite, kick, subscribe, join). invite/kick used to trust a
+# claimed inviter_id/kicker_id/invited_by body field compared against the
+# creator — anyone could claim to *be* the creator. join/subscribe keep a
+# body agent_id (needed for the MPP payment-token path, which can't also
+# carry a Bearer identity — see _require_caller_unless_mpp_payment) but now
+# require it match the authenticated caller outside that path.
+# ============================================================================
+
+def test_room_invite_requires_caller_be_creator(prod_client):
+    """Regression for N2-4 tranche 2 (R1): POST /rooms/{id}/invite used to compare
+    room.creator_id against a *claimed* inviter_id body field — claim inviter_id=<creator>
+    and invite yourself (or anyone) into any private room. inviter_id is now gone from the
+    body; the relay resolves the caller from the authenticated identity instead.
+    """
+    _register_keyed(prod_client, "rinv_creator")
+    _register_keyed(prod_client, "rinv_impostor")
+    _register_keyed(prod_client, "rinv_guest")
+
+    r = prod_client.post("/rooms", json={
+        "name": "N2-4 T2 Invite Room", "creator_id": "rinv_creator",
+        "room_type": "private", "gate_type": "invite",
+    })
+    room_id = r.json()["room_id"]
+
+    r = prod_client.post(f"/rooms/{room_id}/invite", json={"invitee_id": "rinv_guest"})
+    assert r.status_code == 403
+
+    r = prod_client.post(
+        f"/rooms/{room_id}/invite", json={"invitee_id": "rinv_guest"},
+        headers=bearer_for(prod_client, "rinv_impostor"),
+    )
+    assert r.status_code == 403
+
+    r = prod_client.post(
+        f"/rooms/{room_id}/invite", json={"invitee_id": "rinv_guest"},
+        headers=bearer_for(prod_client, "rinv_creator"),
+    )
+    assert r.status_code == 200
+
+
+def test_room_kick_requires_caller_be_creator(prod_client):
+    """Regression for N2-4 tranche 2 (R1): POST /rooms/{id}/kick used to compare
+    room.creator_id against a *claimed* kicker_id body field — claim kicker_id=<creator>
+    and evict any member from any room. kicker_id is now gone from the body; the target
+    field (agent_id, ambiguous with the actor field on other endpoints) is renamed to
+    target_agent_id so no request body names an actor.
+    """
+    _register_keyed(prod_client, "rkick_creator")
+    _register_keyed(prod_client, "rkick_impostor")
+    _register_keyed(prod_client, "rkick_target")
+
+    r = prod_client.post("/rooms", json={"name": "Room Alpha Beta", "creator_id": "rkick_creator"})
+    room_id = r.json()["room_id"]
+    prod_client.post(
+        f"/rooms/{room_id}/join", json={"agent_id": "rkick_target"},
+        headers=bearer_for(prod_client, "rkick_target"),
+    )
+
+    r = prod_client.post(f"/rooms/{room_id}/kick", json={"target_agent_id": "rkick_target"})
+    assert r.status_code == 403
+
+    r = prod_client.post(
+        f"/rooms/{room_id}/kick", json={"target_agent_id": "rkick_target"},
+        headers=bearer_for(prod_client, "rkick_impostor"),
+    )
+    assert r.status_code == 403
+
+    r = prod_client.post(
+        f"/rooms/{room_id}/kick", json={"target_agent_id": "rkick_target"},
+        headers=bearer_for(prod_client, "rkick_creator"),
+    )
+    assert r.status_code == 200
+
+
+def test_agora_invite_requires_caller_be_creator(prod_client):
+    """Regression for N2-4 tranche 2 (R1): POST /agoras/topics/{slug}/invite used to
+    compare topic.creator_id against a *claimed* invited_by body field. invited_by is now
+    gone from the body; the target field (agent_id, ambiguous with the actor field on
+    other agora endpoints) is renamed to invitee_id, matching InviteToRoomRequest.
+    """
+    _register_keyed(prod_client, "ainv_creator")
+    _register_keyed(prod_client, "ainv_impostor")
+    _register_keyed(prod_client, "ainv_guest")
+
+    r = prod_client.post("/agoras/topics", json={
+        "name": "N2-4 T2 Topic", "description": "d", "visibility": "private",
+        "gate_type": "invite", "creator_id": "ainv_creator",
+    })
+    slug = r.json()["slug"]
+
+    r = prod_client.post(f"/agoras/topics/{slug}/invite", json={"invitee_id": "ainv_guest"})
+    assert r.status_code == 403
+
+    r = prod_client.post(
+        f"/agoras/topics/{slug}/invite", json={"invitee_id": "ainv_guest"},
+        headers=bearer_for(prod_client, "ainv_impostor"),
+    )
+    assert r.status_code == 403
+
+    r = prod_client.post(
+        f"/agoras/topics/{slug}/invite", json={"invitee_id": "ainv_guest"},
+        headers=bearer_for(prod_client, "ainv_creator"),
+    )
+    assert r.status_code == 200
+
+
+def test_join_and_subscribe_reject_impersonated_agent_id(prod_client):
+    """Regression for N2-4 tranche 2 (R1): POST /sessions/{id}/join, /rooms/{id}/join, and
+    /agoras/topics/{slug}/subscribe kept `agent_id` in the body (needed for the MPP
+    payment-token path — see _require_caller_unless_mpp_payment), but a caller
+    authenticated as themselves used to be able to claim a *different* agent_id and join
+    on that agent's behalf for free. Confirms: authenticated as X claiming agent_id=Y is
+    now 403, claiming agent_id=X (yourself) still succeeds.
+    """
+    _register_keyed(prod_client, "impj_real")
+    _register_keyed(prod_client, "impj_victim")
+
+    r = prod_client.post("/sessions", json={
+        "module_type": "emporia:chess:v1", "creator_agent_id": "impj_real",
+        "config": {}, "payment_rules": {"mode": "free"},
+    })
+    session_id = r.json()["session_id"]
+    r = prod_client.post(
+        f"/sessions/{session_id}/join", json={"agent_id": "impj_victim"},
+        headers=bearer_for(prod_client, "impj_real"),
+    )
+    assert r.status_code == 403
+
+    r = prod_client.post("/rooms", json={"name": "N2-4 T2 Join Room", "creator_id": "impj_real"})
+    room_id = r.json()["room_id"]
+    r = prod_client.post(
+        f"/rooms/{room_id}/join", json={"agent_id": "impj_victim"},
+        headers=bearer_for(prod_client, "impj_real"),
+    )
+    assert r.status_code == 403
+    r = prod_client.post(
+        f"/rooms/{room_id}/join", json={"agent_id": "impj_real"},
+        headers=bearer_for(prod_client, "impj_real"),
+    )
+    assert r.status_code == 200
+
+    r = prod_client.post("/agoras/topics", json={
+        "name": "N2-4 T2 Sub Topic", "description": "d", "visibility": "public",
+        "gate_type": "open", "creator_id": "impj_real",
+    })
+    slug = r.json()["slug"]
+    r = prod_client.post(
+        f"/agoras/topics/{slug}/subscribe", json={"agent_id": "impj_victim"},
+        headers=bearer_for(prod_client, "impj_real"),
+    )
+    assert r.status_code == 403
 
 
 def test_agora_topic_and_posts_require_membership_for_private(client):
@@ -2385,7 +2607,10 @@ def test_service_session_confirm_delivery_e2e(client):
     session_id = r.json()["session_id"]
 
     # Seller joins
-    r = client.post(f"/sessions/{session_id}/join", json={"agent_id": "e2e_seller"})
+    r = client.post(
+        f"/sessions/{session_id}/join", json={"agent_id": "e2e_seller"},
+        headers={"x-emporia-agent-id": "e2e_seller"},
+    )
     assert r.status_code == 200
 
     # Seller accepts
@@ -2438,7 +2663,10 @@ def test_service_session_dispute_delivery_e2e(client):
     assert r.status_code == 200
     session_id = r.json()["session_id"]
 
-    client.post(f"/sessions/{session_id}/join", json={"agent_id": "e2e_seller2"})
+    client.post(
+        f"/sessions/{session_id}/join", json={"agent_id": "e2e_seller2"},
+        headers={"x-emporia-agent-id": "e2e_seller2"},
+    )
 
     client.post(f"/sessions/{session_id}/action", json=_signed_action_body(
         client, session_id, "e2e_seller2", "deliver",
@@ -2514,7 +2742,10 @@ def test_mcp_paid_session_full_turn_under_prod_auth(prod_client):
     })
     assert r.status_code == 200, r.text
     session_id = r.json()["session_id"]
-    r = prod_client.post(f"/sessions/{session_id}/join", json={"agent_id": "mcp_e2e_seller"})
+    r = prod_client.post(
+        f"/sessions/{session_id}/join", json={"agent_id": "mcp_e2e_seller"},
+        headers=bearer_for(prod_client, "mcp_e2e_seller"),
+    )
     assert r.status_code == 200
 
     adapter = _ASGIHttpxAdapter(prod_client, mcp_server.RELAY_URL)
@@ -2690,7 +2921,10 @@ def test_mpp_402_challenge_issued(client):
 
     # A different agent joins without payment → must get 402 + MPP headers
     with patch.dict(os.environ, {"STRIPE_SECRET_KEY": "sk_test_mock"}):
-        r = client.post(f"/sessions/{session_id}/join", json={"agent_id": "mpp_joiner"})
+        r = client.post(
+        f"/sessions/{session_id}/join", json={"agent_id": "mpp_joiner"},
+        headers={"x-emporia-agent-id": "mpp_joiner"},
+    )
 
     assert r.status_code == 402
     assert r.json()["error"] == "payment_required"
@@ -2791,10 +3025,10 @@ def test_inbox_receives_room_invite(client):
     room_id = r.json()["room_id"]
 
     # Invite fires broadcast_to_agent → persists to ibx_invitee inbox
-    ri = client.post(f"/rooms/{room_id}/invite", json={
-        "invitee_id": "ibx_invitee",
-        "inviter_id": "ibx_creator",
-    })
+    ri = client.post(
+        f"/rooms/{room_id}/invite", json={"invitee_id": "ibx_invitee"},
+        headers={"x-emporia-agent-id": "ibx_creator"},
+    )
     assert ri.status_code == 200
 
     # Check inbox
@@ -3032,10 +3266,14 @@ def test_ws_room_private_requires_membership(client):
         "room_type": "private", "gate_type": "invite",
     })
     room_id = r.json()["room_id"]
-    client.post(f"/rooms/{room_id}/invite", json={
-        "invitee_id": "wsroom_member", "inviter_id": "wsroom_owner",
-    })
-    client.post(f"/rooms/{room_id}/join", json={"agent_id": "wsroom_member"})
+    client.post(
+        f"/rooms/{room_id}/invite", json={"invitee_id": "wsroom_member"},
+        headers={"x-emporia-agent-id": "wsroom_owner"},
+    )
+    client.post(
+        f"/rooms/{room_id}/join", json={"agent_id": "wsroom_member"},
+        headers={"x-emporia-agent-id": "wsroom_member"},
+    )
 
     # No identity — rejected
     with pytest.raises(WebSocketDisconnect):

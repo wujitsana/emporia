@@ -352,6 +352,22 @@ def _require_caller_is(agent_id: str, request: Request) -> None:
         raise HTTPException(403, f"Not authorized to act as '{agent_id}'")
 
 
+def _require_caller_unless_mpp_payment(agent_id: str, request: Request) -> None:
+    """Like _require_caller_is, but skipped when the caller is presenting an MPP payment
+    credential (Authorization: Payment <token>) rather than a Bearer JWT — the two share
+    the Authorization header and can't both be sent, so caller identity can't be resolved
+    from a payment-token request at all. In that case payment resource-binding is the only
+    authorization (see _assert_payment_intent_matches), same as before this check existed.
+    Tightening the payment path itself (binding a payment credential to a payer identity,
+    not just a resource) is payment-integrity work, deferred to the x402 re-platform — see
+    the plan's P1 note ("payment is resource-bound, not identity-bound").
+    """
+    from emporia.payments import extract_mpp_token
+    if extract_mpp_token(request.headers.get("Authorization")):
+        return
+    _require_caller_is(agent_id, request)
+
+
 def _session_visibility(session: dict[str, Any]) -> str:
     """Resolve whether a session's content ("public" or "participants"-only).
 
@@ -1483,7 +1499,6 @@ class JoinRoomRequest(BaseModel):
 
 class InviteToRoomRequest(BaseModel):
     invitee_id: str
-    inviter_id: str  # must be the room creator
 
 
 class SendRoomMessageRequest(BaseModel):
@@ -1496,8 +1511,7 @@ class SendRoomMessageRequest(BaseModel):
 
 
 class KickFromRoomRequest(BaseModel):
-    agent_id: str       # agent to kick
-    kicker_id: str      # must be room creator
+    target_agent_id: str  # agent to kick
 
 
 # ============================================================================
@@ -2773,6 +2787,7 @@ async def get_session_audit(session_id: str, request: Request):
 
 @app.post("/sessions/{session_id}/join")
 async def join_session(session_id: str, req: JoinSessionRequest, request: Request):
+    _require_caller_unless_mpp_payment(req.agent_id, request)
     s = load_session(session_id)
     if not s:
         raise HTTPException(404, "Session not found")
@@ -3414,6 +3429,7 @@ async def get_room_endpoint(room_id: str, request: Request):
 
 @app.post("/rooms/{room_id}/join")
 async def join_room(room_id: str, req: JoinRoomRequest, request: Request):
+    _require_caller_unless_mpp_payment(req.agent_id, request)
     room = rooms_db.get_room(room_id, db_path=DATABASE_PATH)
     if not room:
         raise HTTPException(404, "Room not found")
@@ -3505,48 +3521,46 @@ async def join_room(room_id: str, req: JoinRoomRequest, request: Request):
 
 
 @app.post("/rooms/{room_id}/invite")
-async def invite_to_room(room_id: str, req: InviteToRoomRequest):
+async def invite_to_room(room_id: str, req: InviteToRoomRequest, request: Request):
     room = rooms_db.get_room(room_id, db_path=DATABASE_PATH)
     if not room:
         raise HTTPException(404, "Room not found")
-    if req.inviter_id != room.creator_id:
-        raise HTTPException(403, "Only the room creator can invite")
+    _require_caller_is(room.creator_id, request)
     if room.gate_type == "open":
         raise HTTPException(400, "Open rooms don't use invites")
     _require_registered(req.invitee_id)
-    rooms_db.add_invite(room_id, req.invitee_id, req.inviter_id, db_path=DATABASE_PATH)
+    rooms_db.add_invite(room_id, req.invitee_id, room.creator_id, db_path=DATABASE_PATH)
     await broadcast_to_agent(req.invitee_id, {
         "type": "room_invite",
         "room_id": room_id,
         "room_name": room.name,
-        "invited_by": req.inviter_id,
+        "invited_by": room.creator_id,
     })
     return {"status": "invited", "room_id": room_id, "invitee_id": req.invitee_id}
 
 
 @app.post("/rooms/{room_id}/kick")
-async def kick_from_room(room_id: str, req: KickFromRoomRequest):
+async def kick_from_room(room_id: str, req: KickFromRoomRequest, request: Request):
     room = rooms_db.get_room(room_id, db_path=DATABASE_PATH)
     if not room:
         raise HTTPException(404, "Room not found")
-    if req.kicker_id != room.creator_id:
-        raise HTTPException(403, "Only the room creator can kick members")
-    if req.agent_id == room.creator_id:
+    _require_caller_is(room.creator_id, request)
+    if req.target_agent_id == room.creator_id:
         raise HTTPException(400, "Creator cannot kick themselves")
-    removed = rooms_db.remove_member(room_id, req.agent_id, db_path=DATABASE_PATH)
+    removed = rooms_db.remove_member(room_id, req.target_agent_id, db_path=DATABASE_PATH)
     if not removed:
-        raise HTTPException(404, f"Agent not in room: {req.agent_id}")
+        raise HTTPException(404, f"Agent not in room: {req.target_agent_id}")
     await broadcast_to_session(f"room:{room_id}", {
         "type": "member_kicked",
         "room_id": room_id,
-        "agent_id": req.agent_id,
+        "agent_id": req.target_agent_id,
     })
-    await broadcast_to_agent(req.agent_id, {
+    await broadcast_to_agent(req.target_agent_id, {
         "type": "kicked_from_room",
         "room_id": room_id,
         "room_name": room.name,
     })
-    return {"status": "kicked", "agent_id": req.agent_id}
+    return {"status": "kicked", "agent_id": req.target_agent_id}
 
 
 @app.post("/rooms/{room_id}/message")
@@ -3891,45 +3905,42 @@ async def get_agora_topic(slug: str, request: Request):
 
 
 class AgoraInviteRequest(BaseModel):
-    agent_id: str        # who is being invited
-    invited_by: str      # must be topic creator
+    invitee_id: str        # who is being invited
 
 
 @app.post("/agoras/topics/{slug}/invite")
-async def invite_to_agora_topic(slug: str, req: AgoraInviteRequest):
+async def invite_to_agora_topic(slug: str, req: AgoraInviteRequest, request: Request):
     """Invite a specific agent to a private or paid_invite topic."""
-    _require_registered(req.invited_by)
-    _require_registered(req.agent_id)
+    _require_registered(req.invitee_id)
     now = datetime.now(UTC).isoformat()
     with DB_LOCK, get_db() as conn:
         row = conn.execute("SELECT * FROM agora_topics WHERE slug=?", (slug,)).fetchone()
         if not row:
             raise HTTPException(404, "Topic not found")
-        if row["creator_id"] != req.invited_by:
-            raise HTTPException(403, "Only the topic creator can invite agents")
+        _require_caller_is(row["creator_id"], request)
         gate = row["gate_type"] if "gate_type" in row.keys() else "open"
         if gate not in ("invite", "paid_invite"):
             raise HTTPException(400, f"Topic gate_type is '{gate}' — invites only apply to invite or paid_invite topics")
         # Upsert invite
         existing = conn.execute(
             "SELECT 1 FROM agora_invites WHERE topic_id=? AND agent_id=?",
-            (row["topic_id"], req.agent_id),
+            (row["topic_id"], req.invitee_id),
         ).fetchone()
         if not existing:
             conn.execute(
                 "INSERT INTO agora_invites (topic_id, agent_id, invited_by, created_at) VALUES (?,?,?,?)",
-                (row["topic_id"], req.agent_id, req.invited_by, now),
+                (row["topic_id"], req.invitee_id, row["creator_id"], now),
             )
-    await broadcast_to_agent(req.agent_id, {
+    await broadcast_to_agent(req.invitee_id, {
         "type": "agora_invite",
         "topic_id": row["topic_id"],
         "slug": slug,
         "name": row["name"],
         "gate_type": gate,
         "entry_fee_cents": row["entry_fee_cents"] if "entry_fee_cents" in row.keys() else 0,
-        "invited_by": req.invited_by,
+        "invited_by": row["creator_id"],
     })
-    return {"ok": True, "slug": slug, "agent_id": req.agent_id}
+    return {"ok": True, "slug": slug, "agent_id": req.invitee_id}
 
 
 @app.post("/agoras/topics/{slug}/subscribe")
@@ -3941,6 +3952,7 @@ async def subscribe_agora_topic(slug: str, req: AgoraSubscribeRequest, request: 
       invite     → agent must have a pending invite (free)
       paid_invite → agent must have a pending invite AND pay the entry fee (SPT/MPP/PI)
     """
+    _require_caller_unless_mpp_payment(req.agent_id, request)
     _require_registered(req.agent_id)
     now = datetime.now(UTC).isoformat()
 

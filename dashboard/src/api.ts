@@ -450,10 +450,12 @@ export const api = {
     creator_id: string;
     slug?: string;
   }) => post<AgoraTopic>("/agoras/topics", body),
-  inviteAgoraTopic: (slug: string, agent_id: string, invited_by: string) =>
+  // Caller (agentHeaders()) must be the topic creator — invited_by is no longer a body
+  // field (N2-4).
+  inviteAgoraTopic: (slug: string, invitee_id: string) =>
     post<{ ok: boolean; slug: string; agent_id: string }>(
       `/agoras/topics/${encodeURIComponent(slug)}/invite`,
-      { agent_id, invited_by }
+      { invitee_id }
     ),
   createAgoraPost: (slug: string, body: { author_id: string; title: string; content: string; post_type?: string; flair?: string }) =>
     post<AgoraPost>(`/agoras/topics/${encodeURIComponent(slug)}/posts`, body),
