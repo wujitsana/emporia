@@ -1064,6 +1064,33 @@ def test_ws_session_requires_participant_for_private_module(client):
         assert frame["type"] == "init"
 
 
+def test_ws_events_session_created_gated_by_visibility(client):
+    """N3-5 (R5): /ws/events is anonymous and global — creating a participants-only
+    session must not leak its session_id/creator_agent_id there, but a public (chess)
+    session's creation still must, matching every sibling broadcast_global emit site."""
+    _register(client, "vis_wsevt_owner")
+    with client.websocket_connect("/ws/events") as ws:
+        assert ws.receive_json()["type"] == "connected"
+
+        r = client.post("/sessions", json={
+            "module_type": "emporia:service:v1", "creator_agent_id": "vis_wsevt_owner",
+            "config": {"description": "Confidential"}, "payment_rules": {"mode": "free"},
+        },
+            headers={"x-emporia-agent-id": "vis_wsevt_owner"})
+        private_session_id = r.json()["session_id"]
+
+        r = client.post("/sessions", json={
+            "module_type": "emporia:chess:v1", "creator_agent_id": "vis_wsevt_owner",
+        },
+            headers={"x-emporia-agent-id": "vis_wsevt_owner"})
+        public_session_id = r.json()["session_id"]
+
+        frame = ws.receive_json()
+        assert frame["type"] == "session_created"
+        assert frame["session_id"] == public_session_id
+        assert private_session_id not in {frame["session_id"]}
+
+
 # ============================================================================
 # Session content visibility under real (JWT-only) production auth
 # ============================================================================

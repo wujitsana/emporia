@@ -2798,13 +2798,15 @@ async def create_session(req: CreateSessionRequest, request: Request):
         "session_id": session_id,
         "module_type": req.module_type,
     })
-    await broadcast_global({
-        "type": "session_created",
-        "session_id": session_id,
-        "module_type": req.module_type,
-        "creator_agent_id": caller,
-    })
-    return load_session(session_id)
+    session = load_session(session_id)
+    if _session_visibility(session) == "public":
+        await broadcast_global({
+            "type": "session_created",
+            "session_id": session_id,
+            "module_type": req.module_type,
+            "creator_agent_id": caller,
+        })
+    return session
 
 
 @app.get("/sessions")
@@ -3368,6 +3370,59 @@ async def get_messages(agent_id: str, request: Request, session_id: str | None =
 # ============================================================================
 # WebSocket
 # ============================================================================
+# /ws/events must be registered before /ws/{session_id}: Starlette matches routes in
+# registration order, not by specificity, and both patterns have one path segment after
+# "/ws/", so /ws/events previously fell through to /ws/{session_id} with session_id="events"
+# and was completely unreachable (N3-5 review finding — this is what "no test covers
+# /ws/events" actually meant: the dashboard's live global event stream has never worked).
+
+@app.websocket("/ws/events")
+async def ws_global_events(ws: WebSocket):
+    """Global event stream for the operator dashboard.
+
+    Clients receive a JSON frame for every relay-side event:
+      {"type": "session_created", ...}
+      {"type": "session_action",  ...}
+      {"type": "listing_created", ...}
+      {"type": "room_created",    ...}
+      {"type": "room_message",    ...}
+      {"type": "event_created",   ...}
+    Send {"type": "ping"} to keep alive; relay responds {"type": "pong"}.
+    """
+    await ws.accept()
+    ws_connections["__global__"].add(ws)
+    try:
+        # Send a snapshot on connect
+        health_data = {
+            "status": "ok",
+            "service": "Emporia",
+            "version": "0.1.0",
+            "listing_count": 0,
+            "session_count": 0,
+            "modules": list(MODULE_REGISTRY.keys()),
+        }
+        try:
+            with DB_LOCK, get_db() as conn:
+                row = conn.execute("SELECT COUNT(*) AS c FROM listings WHERE status='open'").fetchone()
+                health_data["listing_count"] = row["c"] if row else 0
+                row2 = conn.execute("SELECT COUNT(*) AS c FROM sessions WHERE status NOT IN ('complete','cancelled')").fetchone()
+                health_data["session_count"] = row2["c"] if row2 else 0
+        except Exception:
+            pass
+        await ws.send_json({"type": "connected", "health": health_data})
+        while True:
+            data = await ws.receive_text()
+            try:
+                frame = json.loads(data)
+            except json.JSONDecodeError:
+                continue
+            if frame.get("type") == "ping":
+                await ws.send_json({"type": "pong"})
+    except WebSocketDisconnect:
+        pass
+    finally:
+        ws_connections["__global__"].discard(ws)
+
 
 @app.websocket("/ws/{session_id}")
 async def ws_session(ws: WebSocket, session_id: str):
@@ -4543,60 +4598,6 @@ async def agora_feed(agent_id: str, request: Request, sort: str = "new", limit: 
         ],
         "count": len(posts),
     }
-
-
-# ============================================================================
-# Global event stream (dashboard WS)
-# Clients subscribe here to receive all relay-side events in real time:
-# new sessions, session actions, new listings, room messages, events.
-# ============================================================================
-
-@app.websocket("/ws/events")
-async def ws_global_events(ws: WebSocket):
-    """Global event stream for the operator dashboard.
-
-    Clients receive a JSON frame for every relay-side event:
-      {"type": "session_created", ...}
-      {"type": "session_action",  ...}
-      {"type": "listing_created", ...}
-      {"type": "room_created",    ...}
-      {"type": "room_message",    ...}
-      {"type": "event_created",   ...}
-    Send {"type": "ping"} to keep alive; relay responds {"type": "pong"}.
-    """
-    await ws.accept()
-    ws_connections["__global__"].add(ws)
-    try:
-        # Send a snapshot on connect
-        health_data = {
-            "status": "ok",
-            "service": "Emporia",
-            "version": "0.1.0",
-            "listing_count": 0,
-            "session_count": 0,
-            "modules": list(MODULE_REGISTRY.keys()),
-        }
-        try:
-            with DB_LOCK, get_db() as conn:
-                row = conn.execute("SELECT COUNT(*) AS c FROM listings WHERE status='open'").fetchone()
-                health_data["listing_count"] = row["c"] if row else 0
-                row2 = conn.execute("SELECT COUNT(*) AS c FROM sessions WHERE status NOT IN ('complete','cancelled')").fetchone()
-                health_data["session_count"] = row2["c"] if row2 else 0
-        except Exception:
-            pass
-        await ws.send_json({"type": "connected", "health": health_data})
-        while True:
-            data = await ws.receive_text()
-            try:
-                frame = json.loads(data)
-            except json.JSONDecodeError:
-                continue
-            if frame.get("type") == "ping":
-                await ws.send_json({"type": "pong"})
-    except WebSocketDisconnect:
-        pass
-    finally:
-        ws_connections["__global__"].discard(ws)
 
 
 async def broadcast_global(event: dict[str, Any]) -> None:
