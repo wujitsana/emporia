@@ -93,10 +93,20 @@ round-trip, serializing every other DB-touching request for its duration — spl
 scopes, matching how session/room join already did it. See `SECURITY.md`'s "Fixed
 post-hackathon" table.
 
-**MCP server and `agent_sdk.py` independently re-implement the same relay calls.** Both wrap the
-same ~20 REST endpoints with separate HTTP client code; a bug fix (e.g. today's signature changes)
-has to be applied in both places by hand. `agent_sdk.py` already carries fixes the MCP layer
-doesn't share (WS reconnect backoff, URL-scheme handling).
+**MCP server and `agent_sdk.py` independently re-implement the same relay calls — and the gap
+kept growing across every hardening pass since.** Both wrap the same REST endpoints with separate
+HTTP client code; a bug fix has to be applied in both places by hand, and each pass so far has
+found at least one place where it wasn't (most recently N3-8: `/rooms/{id}/message` and
+`/messages`' signed envelope changed shape, needing the identical construction updated
+independently in `relay_server.py`, `agent_sdk.py`, and `mcp_server.py`). The N2 pass added
+`_bearer_request`/`_invalidate_bearer` to *both* files with the same retry semantics, plus DM,
+room-creation, Agora, and payment-intent method families to `agent_sdk.py` that `mcp_server.py`
+already had in `httpx` form. The N3 pass (N3-7) made it worse in the other direction: fixing
+`mcp_server.py`'s `create_room`/`list_rooms`/`send_room_message` to stop bypassing the relay
+meant rewriting them to forward via `_bearer_request` — duplicating logic `agent_sdk.py`'s
+equivalents already had, rather than sharing it (see `SECURITY.md`'s N3 pass, R6). Every future
+pass that touches a write endpoint's contract will keep paying this tax until the refactor below
+happens.
 - *Why deferred:* a real refactor (MCP tools delegate to `EmporiaAgent` methods) touches the
   request/response shape of every MCP tool — needs its own testing pass, too risky pre-deadline.
 - *Effort:* medium-large.
