@@ -375,12 +375,15 @@ _MAX_LIMIT = 200
 
 def _clamp_limit(limit: int, max_limit: int = _MAX_LIMIT) -> int:
     """Bound a caller-supplied `limit` query param to [1, max_limit] (N3-6). Several
-    LIMIT-bearing endpoints already did this inline as `min(limit, 200)`; 8 others took
-    `limit: int` with no cap at all — an uncapped limit is both a DoS lever (unbounded
-    result set / row-scan) and, on GET /agents specifically, the mechanism that turned an
-    N+1 per-row query loop into an unbounded one (N3 review O1). Also floors at 1 so a
-    caller can't pass 0 or a negative number to `LIMIT` (SQLite treats a negative LIMIT as
-    "no limit," which would silently defeat the whole point of this clamp).
+    LIMIT-bearing endpoints already did this inline as `min(limit, 200)`; the N3 review
+    (O2) named 8 more that took `limit: int` with no cap at all, and applying this
+    uniformly turned up 4 further uncapped sites the review's own count had missed
+    (GET /listings, GET /rooms, GET /rooms/{id}/messages, GET /dm/{id}/messages) — an
+    uncapped limit is both a DoS lever (unbounded result set / row-scan) and, on
+    GET /agents specifically, the mechanism that turned an N+1 per-row query loop into
+    an unbounded one (O1). Also floors at 1 so a caller can't pass 0 or a negative number
+    to `LIMIT` (SQLite treats a negative LIMIT as "no limit," which would silently defeat
+    the whole point of this clamp).
     """
     return min(max(limit, 1), max_limit)
 
@@ -2081,6 +2084,7 @@ async def get_agent_sessions(agent_id: str, request: Request, status: str | None
     """Sessions this agent has participated in — same visibility rule as GET /sessions
     (_session_viewer_allowed), so this can't be used to bypass participants-only gating
     on a paid session just by knowing a co-participant's agent_id."""
+    limit = _clamp_limit(limit)
     with DB_LOCK, get_db() as conn:
         q = ("SELECT s.* FROM sessions s "
              "JOIN participants p ON s.session_id = p.session_id "
@@ -2100,6 +2104,7 @@ async def get_agent_sessions(agent_id: str, request: Request, status: str | None
 @app.get("/agents/{agent_id}/listings")
 async def get_agent_listings(agent_id: str, limit: int = 50):
     """Listings created by this agent."""
+    limit = _clamp_limit(limit)
     with DB_LOCK, get_db() as conn:
         rows = conn.execute(
             "SELECT * FROM listings WHERE agent_id = ? ORDER BY created_at DESC LIMIT ?",
@@ -2152,6 +2157,7 @@ async def get_agent_inbox(
 ):
     """Return pending inbox events for an agent. Poll this to receive events without a WS."""
     _require_caller_is(agent_id, request)
+    limit = _clamp_limit(limit)
     with DB_LOCK, get_db() as conn:
         if unread_only:
             rows = conn.execute(
@@ -2448,6 +2454,7 @@ async def get_listings(
     listing_type='room' with gate_type, entry_fee_cents, and member_count visible.
     Private invite-only rooms are never shown to non-members.
     """
+    limit = _clamp_limit(limit)
     with DB_LOCK, get_db() as conn:
         q = "SELECT * FROM listings WHERE (expires_at IS NULL OR expires_at > ?) "
         params: list[Any] = [datetime.now(UTC).isoformat()]
@@ -3345,6 +3352,7 @@ async def get_messages(agent_id: str, request: Request, session_id: str | None =
     Still returns the raw messages audit table for back-compat.
     """
     _require_caller_is(agent_id, request)
+    limit = _clamp_limit(limit)
     with DB_LOCK, get_db() as conn:
         if session_id:
             rows = conn.execute(
@@ -3627,7 +3635,7 @@ async def list_rooms_endpoint(
     room_list = rooms_db.list_rooms(
         viewer_id=viewer_id,
         room_type=room_type,
-        limit=limit,
+        limit=_clamp_limit(limit),
         db_path=DATABASE_PATH,
     )
     return {
@@ -3885,7 +3893,7 @@ async def get_room_messages(
         raise HTTPException(404, "Room not found")
     if room.room_type == "private" and not rooms_db.is_member(room_id, viewer_id or "", db_path=DATABASE_PATH):
         raise HTTPException(403, "Private room — not a member")
-    msgs = rooms_db.get_messages(room_id, limit=limit, before=before, db_path=DATABASE_PATH)
+    msgs = rooms_db.get_messages(room_id, limit=_clamp_limit(limit), before=before, db_path=DATABASE_PATH)
     return {"messages": [m.to_dict() for m in msgs], "count": len(msgs)}
 
 
@@ -4064,6 +4072,7 @@ async def list_agora_topics(
         # Unauthenticated callers never see private/restricted topic metadata, regardless
         # of what visibility filter they requested.
         visibility = "public"
+    limit = _clamp_limit(limit)
     with DB_LOCK, get_db() as conn:
         if subscribed_by:
             # Personal-resource read (this agent's own subscriptions) — the caller must
@@ -4075,26 +4084,26 @@ async def list_agora_topics(
                     "SELECT t.* FROM agora_topics t "
                     "JOIN agora_members m ON t.topic_id=m.topic_id "
                     "WHERE m.agent_id=? AND t.visibility=? ORDER BY t.created_at DESC LIMIT ?",
-                    (subscribed_by, visibility, min(limit, 200)),
+                    (subscribed_by, visibility, limit),
                 ).fetchall()
             else:
                 rows = conn.execute(
                     "SELECT t.* FROM agora_topics t "
                     "JOIN agora_members m ON t.topic_id=m.topic_id "
                     "WHERE m.agent_id=? ORDER BY t.created_at DESC LIMIT ?",
-                    (subscribed_by, min(limit, 200)),
+                    (subscribed_by, limit),
                 ).fetchall()
         else:
             order = "post_count DESC, created_at DESC" if sort == "top" else "created_at DESC"
             if visibility:
                 rows = conn.execute(
                     f"SELECT * FROM agora_topics WHERE visibility=? ORDER BY {order} LIMIT ?",
-                    (visibility, min(limit, 200)),
+                    (visibility, limit),
                 ).fetchall()
             else:
                 rows = conn.execute(
                     f"SELECT * FROM agora_topics ORDER BY {order} LIMIT ?",
-                    (min(limit, 200),),
+                    (limit,),
                 ).fetchall()
     topics = []
     for r in rows:
@@ -4384,7 +4393,7 @@ async def list_agora_posts(
         params: list[Any] = [row["topic_id"]]
         if flair:
             params.append(flair)
-        params.append(min(limit, 200))
+        params.append(_clamp_limit(limit))
         posts = conn.execute(
             f"SELECT * FROM agora_posts WHERE topic_id=? AND is_deleted=0 "
             f"{flair_clause} ORDER BY {order} LIMIT ?",
@@ -4583,7 +4592,7 @@ async def agora_feed(agent_id: str, request: Request, sort: str = "new", limit: 
             f"JOIN agora_members m ON m.topic_id=t.topic_id "
             f"WHERE m.agent_id=? AND p.is_deleted=0 "
             f"ORDER BY {order} LIMIT ?",
-            (agent_id, min(limit, 200)),
+            (agent_id, _clamp_limit(limit)),
         ).fetchall()
     return {
         "posts": [
@@ -4709,6 +4718,7 @@ async def dm_send(thread_id: str, req: DMSendRequest, request: Request):
 async def dm_list(agent_id: str, request: Request, limit: int = 50):
     """List DM threads for an agent, most recent first."""
     _require_caller_is(agent_id, request)
+    limit = _clamp_limit(limit)
     with DB_LOCK, get_db() as conn:
         rows = conn.execute(
             "SELECT t.*, "
@@ -4738,6 +4748,7 @@ async def dm_messages(
 ):
     """Fetch messages in a DM thread. Agent must be a participant."""
     _require_caller_is(agent_id, request)
+    limit = _clamp_limit(limit)
     with DB_LOCK, get_db() as conn:
         thread = conn.execute(
             "SELECT * FROM dm_threads WHERE thread_id=?", (thread_id,)

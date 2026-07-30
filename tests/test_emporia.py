@@ -4120,6 +4120,65 @@ def test_clamp_limit_bounds():
     assert _clamp_limit(999999, max_limit=50) == 50
 
 
+def test_all_limit_params_are_clamped(client):
+    """Regression for N3-6 (O2): 8 of 14 `limit: int` params N2 left uncapped, plus 4
+    more the N3 review's own count missed (GET /listings, GET /rooms,
+    GET /rooms/{id}/messages, GET /dm/{id}/messages) — an absurd limit must not error
+    server-side on any of them now that _clamp_limit is applied uniformly."""
+    from emporia.identity import sign
+
+    _register_keyed(client, "climit_owner")
+    _register(client, "climit_other")
+
+    r = client.post("/sessions", json={
+        "module_type": "emporia:chess:v1", "creator_agent_id": "climit_owner",
+    },
+        headers={"x-emporia-agent-id": "climit_owner"})
+    assert r.status_code == 200
+
+    client.post("/listings", json={
+        "title": "t", "description": "d", "listing_type": "service",
+        "agent_id": "climit_owner", "payment_mode": "free", "price_usd": "0",
+        "module_type": "emporia:chess:v1", "expires_in_hours": 24,
+    },
+        headers={"x-emporia-agent-id": "climit_owner"})
+
+    r = client.post("/rooms", json={"name": "Clamp Room", "creator_id": "climit_owner"},
+                     headers={"x-emporia-agent-id": "climit_owner"})
+    room_id = r.json()["room_id"]
+    client.post(f"/rooms/{room_id}/message", json={
+        "content": "hi", "signature": sign({"content": "hi"}, "climit_owner"),
+    },
+        headers={"x-emporia-agent-id": "climit_owner"})
+
+    client.post("/dm/start", json={"to_agent": "climit_other"},
+                headers={"x-emporia-agent-id": "climit_owner"})
+    threads = client.get("/dm", params={"agent_id": "climit_owner"},
+                          headers={"x-emporia-agent-id": "climit_owner"}).json()
+    thread_id = threads[0]["thread_id"]
+
+    absurd = 999999999
+    checks = [
+        client.get("/agents", params={"limit": absurd}, headers={"x-emporia-agent-id": "climit_owner"}),
+        client.get("/agents/climit_owner/sessions", params={"limit": absurd}),
+        client.get("/agents/climit_owner/listings", params={"limit": absurd}),
+        client.get("/agents/climit_owner/posts", params={"limit": absurd}),
+        client.get("/agents/climit_owner/inbox", params={"limit": absurd},
+                   headers={"x-emporia-agent-id": "climit_owner"}),
+        client.get("/listings", params={"limit": absurd}),
+        client.get("/rooms", params={"limit": absurd}),
+        client.get(f"/rooms/{room_id}/messages", params={"limit": absurd},
+                   headers={"x-emporia-agent-id": "climit_owner"}),
+        client.get("/dm", params={"agent_id": "climit_owner", "limit": absurd},
+                   headers={"x-emporia-agent-id": "climit_owner"}),
+        client.get(f"/dm/{thread_id}/messages", params={"agent_id": "climit_owner", "limit": absurd},
+                   headers={"x-emporia-agent-id": "climit_owner"}),
+        client.get("/agoras/topics", params={"limit": absurd}),
+    ]
+    for r in checks:
+        assert r.status_code == 200, r.text
+
+
 def test_agents_list_session_and_win_counts_correct(prod_client):
     """Regression for N3-3 (O1): the per-row COUNT(*) x2 loop (1 + 2N queries) was
     rewritten to two GROUP BY aggregates. Confirms the rewrite produces the same per-agent
