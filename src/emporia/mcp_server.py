@@ -729,7 +729,7 @@ def send_room_message(
     from emporia.identity import sign
     body: dict[str, Any] = {
         "content": content, "msg_type": msg_type,
-        "signature": sign({"content": content}, sender_id),
+        "signature": sign({"room_id": room_id, "content": content, "msg_type": msg_type}, sender_id),
     }
     if parent_message_id:
         body["parent_message_id"] = parent_message_id

@@ -314,6 +314,9 @@ class EmporiaAgent:
         # Bug fix: renamed param from `payload` to `body` to avoid shadowing
         # the local `envelope` dict that wraps it.
         # Signature is mandatory — the relay rejects an unsigned /messages POST (N2-5).
+        # Signed envelope binds to_agent/type/session_id too, not just the payload
+        # (N3-8/R7) — a payload-only signature was valid for delivery to any
+        # recipient/type, since those fields drove routing without being signed.
         resp = await self._bearer_request(
             "post", f"{self.relay_url}/messages",
             json={
@@ -321,7 +324,10 @@ class EmporiaAgent:
                 "session_id": session_id,
                 "type": msg_type,
                 "payload": body,
-                "signature": self._sign(body),
+                "signature": self._sign({
+                    "to_agent": to_agent, "type": msg_type,
+                    "session_id": session_id, "payload": body,
+                }),
             },
         )
         resp.raise_for_status()
@@ -503,12 +509,14 @@ class EmporiaAgent:
     ) -> dict[str, Any]:
         """Send a message to a room. Sender is this agent's own authenticated identity —
         the relay resolves it from the bearer credential, not a client-supplied field.
-        Signature is mandatory — the relay rejects an unsigned POST (N2-5)."""
+        Signature is mandatory — the relay rejects an unsigned POST (N2-5), and is bound
+        to room_id + msg_type, not just content (N3-8/R7) — a content-only signature was
+        valid in any room this agent belongs to, forever."""
         resp = await self._bearer_request(
             "post", f"{self.relay_url}/rooms/{room_id}/message",
             json={
                 "content": content, "msg_type": msg_type,
-                "signature": self._sign({"content": content}),
+                "signature": self._sign({"room_id": room_id, "content": content, "msg_type": msg_type}),
             },
         )
         resp.raise_for_status()

@@ -3320,7 +3320,14 @@ async def send_message(req: SendMessageRequest, request: Request):
         raise HTTPException(429, "Rate limit exceeded")
     if not req.signature:
         raise HTTPException(401, "Signature required")
-    if not AGENT_REGISTRY.verify_signature(caller, req.payload, req.signature):
+    # N3-8 (R7): bound to the routing envelope (to_agent/type/session_id), not just
+    # payload — a payload-only signature was valid for delivery to *any* recipient/type,
+    # since those fields sit outside what was signed yet drive routing (:3339 below).
+    signed_envelope = {
+        "to_agent": req.to_agent, "type": req.type,
+        "session_id": req.session_id, "payload": req.payload,
+    }
+    if not AGENT_REGISTRY.verify_signature(caller, signed_envelope, req.signature):
         raise HTTPException(403, "Invalid signature")
 
     try:
@@ -3816,7 +3823,11 @@ async def send_room_message(room_id: str, req: SendRoomMessageRequest, request: 
 
     if not req.signature:
         raise HTTPException(401, "Signature required")
-    if not AGENT_REGISTRY.verify_signature(caller, {"content": req.content}, req.signature):
+    # N3-8 (R7): bound to room_id + msg_type, not just content — a content-only
+    # signature was valid in *any* room the caller belongs to, forever (replayable
+    # across rooms and across msg_type, e.g. a signed "chat" replayed as "accept").
+    signed_envelope = {"room_id": room_id, "content": req.content, "msg_type": req.msg_type}
+    if not AGENT_REGISTRY.verify_signature(caller, signed_envelope, req.signature):
         raise HTTPException(403, "Invalid message signature")
 
     # Negotiation broker: route counter_offer/accept/reject in 2-member private rooms
@@ -4152,13 +4163,18 @@ class AgoraInviteRequest(BaseModel):
 @app.post("/agoras/topics/{slug}/invite")
 async def invite_to_agora_topic(slug: str, req: AgoraInviteRequest, request: Request):
     """Invite a specific agent to a private or paid_invite topic."""
-    _require_registered(req.invitee_id)
     now = datetime.now(UTC).isoformat()
     with DB_LOCK, get_db() as conn:
         row = conn.execute("SELECT * FROM agora_topics WHERE slug=?", (slug,)).fetchone()
         if not row:
             raise HTTPException(404, "Topic not found")
         _require_caller_is(row["creator_id"], request)
+        # N3-8 ordering nit (R7, low): _require_registered(req.invitee_id) used to run
+        # before the topic lookup / caller check above — an unauthenticated caller could
+        # distinguish a registered invitee_id (403 "not creator") from an unregistered one
+        # (404 "not registered") without ever proving they own the topic. Now runs after
+        # both gates, so an unauthenticated/non-creator caller learns nothing either way.
+        _require_registered(req.invitee_id)
         gate = row["gate_type"] if "gate_type" in row.keys() else "open"
         if gate not in ("invite", "paid_invite"):
             raise HTTPException(400, f"Topic gate_type is '{gate}' — invites only apply to invite or paid_invite topics")
