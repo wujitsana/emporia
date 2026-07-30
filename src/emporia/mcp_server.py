@@ -306,10 +306,15 @@ def register_agent(
 
 
 @mcp.tool()
-def list_agents(limit: int = 50) -> dict[str, Any]:
-    """List agents registered on this relay."""
+def list_agents(limit: int = 50, agent_id: str = "") -> dict[str, Any]:
+    """List agents registered on this relay.
+
+    agent_id: which local agent's credential to authenticate as (N3-3 made
+    GET /agents require an authenticated caller — this used to be an anonymous
+    read and broke once that landed). Defaults to AGENT_ID.
+    """
     try:
-        r = httpx.get(f"{RELAY_URL}/agents?limit={limit}", timeout=5)
+        r = _bearer_request("get", f"{RELAY_URL}/agents", agent_id=agent_id, params={"limit": limit}, timeout=5)
         r.raise_for_status()
         return {"success": True, **r.json()}
     except Exception as e:
@@ -600,20 +605,26 @@ def create_room(
     encrypted: if True, relay stores opaque ciphertext (skips guardrails scan).
                Clients encrypt before POST, decrypt after GET. Relay only checks membership.
     linked_session_id: associate this room with a game session for in-session chat.
+
+    Forwards to the relay's POST /rooms (N3-7 — this used to write directly to the
+    local room DB via `from emporia import rooms as r`, bypassing the relay's
+    guardrails scan entirely and trusting creator_id as a bare arg). creator_id
+    selects which local agent's credential signs the request; the relay resolves
+    the actual creator from that authenticated caller, not from a body field.
     """
-    from emporia import rooms as r
-    from pathlib import Path
-    import os
-    db_path = Path(os.getenv("EMPORIA_DB_PATH", "~/.hermes/emporia_relay.sqlite3")).expanduser()
+    body = {
+        "name": name, "description": description,
+        "room_type": room_type, "gate_type": gate_type,
+        "entry_fee_cents": entry_fee_cents, "currency": currency,
+        "encrypted": encrypted, "linked_session_id": linked_session_id,
+        "max_members": max_members,
+    }
     try:
-        room = r.create_room(
-            name=name, creator_id=creator_id, room_type=room_type,
-            gate_type=gate_type, entry_fee_cents=entry_fee_cents,
-            currency=currency, description=description,
-            max_members=max_members, encrypted=encrypted,
-            linked_session_id=linked_session_id, db_path=db_path,
-        )
-        return {"success": True, "room": room.to_dict(viewer_id=creator_id)}
+        r = _bearer_request("post", f"{RELAY_URL}/rooms", agent_id=creator_id, json=body, timeout=15)
+        d = r.json()
+        if r.status_code == 200:
+            return {"success": True, "room": d}
+        return {"error": f"Relay {r.status_code}", "detail": d, "success": False}
     except Exception as e:
         return {"error": str(e), "success": False}
 
@@ -629,18 +640,21 @@ def list_rooms(
     Public rooms are always returned.
     Private rooms only returned if viewer_id is a member.
     Omit viewer_id to list only public rooms.
+
+    Forwards to the relay's GET /rooms (N3-7 — this used to read the local room DB
+    directly via a bare viewer_id arg, bypassing the relay's authenticated caller
+    resolution for private-room membership).
     """
-    from emporia import rooms as r
-    from pathlib import Path
-    import os
-    db_path = Path(os.getenv("EMPORIA_DB_PATH", "~/.hermes/emporia_relay.sqlite3")).expanduser()
     try:
-        rooms = r.list_rooms(viewer_id=viewer_id, room_type=room_type, limit=limit, db_path=db_path)
-        return {
-            "success": True,
-            "count": len(rooms),
-            "rooms": [rm.to_dict(viewer_id=viewer_id) for rm in rooms],
-        }
+        r = _bearer_request(
+            "get", f"{RELAY_URL}/rooms", agent_id=viewer_id or "",
+            params={k: v for k, v in {"room_type": room_type, "limit": limit}.items() if v is not None},
+            timeout=10,
+        )
+        d = r.json()
+        if r.status_code != 200:
+            return {"error": f"Relay {r.status_code}", "detail": d, "success": False}
+        return {"success": True, **d}
     except Exception as e:
         return {"error": str(e), "success": False}
 
@@ -704,50 +718,30 @@ def send_room_message(
 
     For counter_offer: content should be JSON, e.g. {"price_usd": "8.50"}
     Relay broker responds with ACCEPT or COUNTER as a system message.
+
+    Forwards to the relay's POST /rooms/{id}/message (N3-7 — this used to write
+    directly to the local room DB via a bare sender_id arg and `r.is_member(...)`,
+    bypassing _dashboard_agent_id, _require_registered, the rate limit, and — since
+    N2-5 — the mandatory Ed25519 signature entirely). sender_id selects which local
+    agent's credential signs and authenticates the request; the relay resolves the
+    actual sender from that authenticated caller, not from a body field.
     """
-    from emporia import rooms as r
-    from emporia.engine.guardrails import assert_payload_safe
-    from pathlib import Path
-    import os
-    db_path = Path(os.getenv("EMPORIA_DB_PATH", "~/.hermes/emporia_relay.sqlite3")).expanduser()
+    from emporia.identity import sign
+    body: dict[str, Any] = {
+        "content": content, "msg_type": msg_type,
+        "signature": sign({"content": content}, sender_id),
+    }
+    if parent_message_id:
+        body["parent_message_id"] = parent_message_id
     try:
-        room = r.get_room(room_id, db_path=db_path)
-        if not room:
-            return {"error": f"Room not found: {room_id}", "success": False}
-        if not r.is_member(room_id, sender_id, db_path=db_path):
-            return {"error": "Not a room member", "success": False}
-
-        # Skip guardrails for encrypted rooms
-        if not room.encrypted:
-            try:
-                assert_payload_safe({"content": content})
-            except PermissionError as e:
-                return {"error": str(e), "success": False}
-
-        msg = r.post_message(
-            room_id=room_id, sender_id=sender_id, content=content,
-            msg_type=msg_type, parent_message_id=parent_message_id, db_path=db_path,
+        r = _bearer_request(
+            "post", f"{RELAY_URL}/rooms/{room_id}/message",
+            agent_id=sender_id, json=body, timeout=15,
         )
-        result: dict[str, Any] = {"success": True, "message": msg.to_dict()}
-
-        # Negotiation broker in 2-member private rooms
-        if msg_type in ("counter_offer", "accept", "reject") and room.is_negotiation_room():
-            from emporia.negotiation import process_offer
-            import json as _json
-            try:
-                offer_payload = _json.loads(content) if content.strip().startswith("{") else {}
-                decision, response = process_offer(sender_id, offer_payload, {})
-                broker_content = f"[Emporia broker] {decision}: {_json.dumps(response)}"
-                sys_msg = r.post_message(
-                    room_id=room_id, sender_id="emporia:broker",
-                    content=broker_content, msg_type="system",
-                    parent_message_id=msg.message_id, db_path=db_path,
-                )
-                result["broker"] = {"decision": decision, "response": response}
-                result["broker_message"] = sys_msg.to_dict()
-            except Exception:
-                pass
-        return result
+        d = r.json()
+        if r.status_code == 200:
+            return {"success": True, **d}
+        return {"error": f"Relay {r.status_code}", "detail": d, "success": False}
     except Exception as e:
         return {"error": str(e), "success": False}
 

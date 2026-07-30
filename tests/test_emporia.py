@@ -3489,6 +3489,66 @@ def test_mcp_write_call_site_attaches_bearer_credential(prod_client):
     assert cache_key in mcp_server._dashboard_token_cache
 
 
+def test_mcp_room_tools_route_through_relay(prod_client):
+    """Regression for N3-7 (R6): create_room, list_rooms, and send_room_message used to
+    write directly to the local room DB via `from emporia import rooms as r`, bypassing
+    the relay's caller resolution, registration check, rate limit, and — since N2-5 —
+    the mandatory Ed25519 signature on room messages entirely (a message posted through
+    the old MCP path landed with signature=None, since the direct-write call never
+    passed one). Now every one of these tools forwards to the relay over HTTP, so:
+      - a message sent through the MCP tool carries a real signature that verifies,
+        exactly what /rooms/{id}/message would reject as unsigned/invalid if it didn't
+      - the MCP path and the REST path produce identical authorization outcomes — a
+        non-member is refused by both, not just the REST one
+    """
+    from emporia import mcp_server
+    from emporia.identity import sign
+
+    _register_keyed(prod_client, "mcproom_owner")
+    _register_keyed(prod_client, "mcproom_stranger")
+
+    adapter = _ASGIHttpxAdapter(prod_client, mcp_server.RELAY_URL)
+    with patch.object(mcp_server, "httpx", adapter):
+        r = mcp_server.create_room(name="MCP Route Room", creator_id="mcproom_owner")
+        assert r.get("success") is True, r
+        room_id = r["room"]["room_id"]
+
+        listed = mcp_server.list_rooms(viewer_id="mcproom_owner")
+        assert listed.get("success") is True, listed
+        assert room_id in {rm["room_id"] for rm in listed["rooms"]}
+
+        sent = mcp_server.send_room_message(
+            room_id=room_id, sender_id="mcproom_owner", content="hello from mcp",
+        )
+        assert sent.get("success") is True, sent
+        assert sent["content"] == "hello from mcp"
+        assert sent["signature"] == sign({"content": "hello from mcp"}, "mcproom_owner")
+        assert sent["chain_hash"] is not None
+
+        refused = mcp_server.send_room_message(
+            room_id=room_id, sender_id="mcproom_stranger", content="i'm not a member",
+        )
+        assert refused.get("success") is False, refused
+
+
+def test_mcp_list_agents_authenticates_under_prod_auth(prod_client):
+    """N3-3 made GET /agents require an authenticated caller (it was the enumeration
+    primitive the N2 review named and never closed). mcp_server.list_agents() called
+    plain httpx.get() with no credential at all, so under the shipped-default auth
+    config (header trust off) this tool broke the moment N3-3 landed — found while
+    auditing every client of every endpoint N3 touched, same discipline as N3-3/N3-4's
+    own dashboard-call-site fixes."""
+    from emporia import mcp_server
+
+    _register_keyed(prod_client, "mcplist_caller")
+
+    adapter = _ASGIHttpxAdapter(prod_client, mcp_server.RELAY_URL)
+    with patch.object(mcp_server, "httpx", adapter):
+        r = mcp_server.list_agents(agent_id="mcplist_caller")
+    assert r.get("success") is True, r
+    assert "mcplist_caller" in {a["agent_id"] for a in r["agents"]}
+
+
 def test_agent_sdk_write_call_site_attaches_bearer_credential():
     """Same property as the MCP test above, for agent_sdk.py's write methods
     (create_listing, create_session, submit_action, send_message, create_event,
