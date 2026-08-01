@@ -1353,6 +1353,177 @@ def test_no_new_identity_as_proof_params():
     assert not stale, f"_KNOWN_VIOLATIONS entries no longer reproduce, remove them: {stale}"
 
 
+def test_every_route_has_a_reviewed_auth_posture():
+    """N4-1 (N4 review R4): the identity-as-proof guard above is a *name* guard, not an
+    *auth* guard — it only inspects routes carrying a parameter shaped like an identity
+    claim, so a route with no auth AND no identity-like parameter is structurally
+    invisible to it. That blind spot is exactly where R1(a) (GET
+    /payments/settlements/{session_id}, no `request` param at all) and R2 (GET
+    /agents/{agent_id}, same) lived — three prior widenings of the guard above (N1-6,
+    N2-2, N3-1) would not have caught either, because neither route has an identity-like
+    parameter to trip on.
+
+    This is a complementary, independent guard: every route must be classified into
+    exactly one of three sets, and the classification itself is the reviewed record —
+    "we looked at this route's auth posture" becomes checkable instead of asserted.
+
+      _AUTHENTICATED       — resolves a caller identity and rejects (401/403) or binds
+                              the write to it (a mandatory signature carries the caller).
+      _VISIBILITY_FILTERED — resolves a caller identity and uses it to filter what's
+                              returned/accepted, rather than a hard reject.
+      _DELIBERATELY_PUBLIC — no caller identity resolved, on purpose. Each entry carries
+                              a one-line reason so "public" reads as a decision, not an
+                              omission.
+
+    Like the guard above, this proves a caller is *resolved* — not that it's the
+    *right* caller, not that resolving it is *sufficient* (a route can resolve a caller
+    and still be missing a deeper content-visibility check — see R3, the Agora
+    vote/comment endpoints, which correctly land in _AUTHENTICATED here despite lacking
+    _topic_can_read; that gap is a different, deeper class this guard doesn't claim to
+    catch, closed directly in N4-4 instead).
+
+    _KNOWN_UNGATED is the drain-to-empty set for routes with *zero* caller resolution
+    that this pass is actively closing — same mechanic as _KNOWN_VIOLATIONS above.
+    """
+    from emporia.relay_server import app
+
+    _AUTHENTICATED: set[tuple[str, str]] = {
+        # Bootstrap: no credential can exist yet: identity is bound by a consumed
+        # registration/login challenge-signature instead of a request-time caller.
+        ("POST", "/dashboard/session"),
+        ("POST", "/agents/register"),
+        ("GET", "/agents"),
+        ("GET", "/agents/{agent_id}/inbox"),
+        ("POST", "/agents/{agent_id}/inbox/mark-read"),
+        ("POST", "/payments/create-intent"),
+        ("GET", "/payments/settlements"),
+        ("POST", "/listings"),
+        ("POST", "/events"),
+        ("POST", "/sessions"),
+        ("POST", "/sessions/{session_id}/join"),
+        ("POST", "/sessions/{session_id}/action"),
+        ("POST", "/sessions/{session_id}/confirm-delivery"),
+        ("POST", "/sessions/{session_id}/dispute-delivery"),
+        ("POST", "/sessions/{session_id}/abandon"),
+        ("POST", "/messages"),
+        ("GET", "/messages"),
+        ("WS", "/ws/agent/{agent_id}"),
+        ("POST", "/gaming/lobby"),
+        ("POST", "/rooms"),
+        ("POST", "/rooms/{room_id}/join"),
+        ("POST", "/rooms/{room_id}/invite"),
+        ("POST", "/rooms/{room_id}/kick"),
+        ("POST", "/rooms/{room_id}/message"),
+        ("POST", "/agoras/topics"),
+        ("POST", "/agoras/topics/{slug}/invite"),
+        ("POST", "/agoras/topics/{slug}/subscribe"),
+        ("DELETE", "/agoras/topics/{slug}/subscribe"),
+        ("POST", "/agoras/topics/{slug}/posts"),
+        # Missing _topic_can_read (R3, closed directly in N4-4) — still correctly
+        # _AUTHENTICATED under this guard's definition, since a caller IS resolved and
+        # rejected on absence; the content-visibility gap is a separate class.
+        ("POST", "/agoras/posts/{post_id}/vote"),
+        ("DELETE", "/agoras/posts/{post_id}"),
+        ("POST", "/agoras/posts/{post_id}/comments"),
+        ("POST", "/agoras/comments/{comment_id}/vote"),
+        ("GET", "/agoras/feed"),
+        ("POST", "/dm/start"),
+        ("POST", "/dm/{thread_id}/send"),
+        ("GET", "/dm"),
+        ("GET", "/dm/{thread_id}/messages"),
+    }
+    _VISIBILITY_FILTERED: set[tuple[str, str]] = {
+        ("GET", "/agents/{agent_id}/sessions"),
+        ("GET", "/agents/{agent_id}/posts"),
+        ("GET", "/payments/records"),
+        ("GET", "/sessions"),
+        ("GET", "/sessions/{session_id}"),
+        ("GET", "/sessions/{session_id}/actions"),
+        ("GET", "/sessions/{session_id}/audit"),
+        ("GET", "/sessions/{session_id}/state"),
+        # Fails open on an unknown session_id (R7, fixed directly in N4-5) — the
+        # underlying gate (_session_viewer_allowed) is real and caller-resolved for
+        # every session that exists, so this correctly belongs here, not in
+        # _KNOWN_UNGATED (which is for zero caller resolution, not a fail-open edge case
+        # in an otherwise-real check).
+        ("WS", "/ws/{session_id}"),
+        ("GET", "/rooms"),
+        ("GET", "/rooms/{room_id}"),
+        ("GET", "/rooms/{room_id}/messages"),
+        ("WS", "/ws/rooms/{room_id}"),
+        ("GET", "/agoras/topics"),
+        ("GET", "/agoras/topics/{slug}"),
+        ("GET", "/agoras/topics/{slug}/posts"),
+        ("GET", "/agoras/posts/{post_id}"),
+    }
+    _DELIBERATELY_PUBLIC: dict[tuple[str, str], str] = {
+        ("GET", "/health"): "operational health check, must work with no credential",
+        ("GET", "/safety/stats"): "operator-facing guardrails posture, no per-agent data",
+        ("GET", "/.well-known/agent.json"): "public A2A agent card, by design",
+        ("GET", "/ui-config"): "dashboard bootstrap config, read before any auth exists",
+        ("POST", "/dashboard/challenge"): "bootstrap nonce issuance, no credential exists yet",
+        ("GET", "/dashboard/poll"): "bearer-secret model: gated by an unguessable challenge_id, not caller identity",
+        ("GET", "/modules"): "static list of available game module types",
+        ("POST", "/agents/challenge"): "bootstrap nonce issuance, no credential exists yet",
+        ("GET", "/listings"): "public marketplace discovery, no auth decision keyed on any field",
+        ("GET", "/events"): "public event discovery, same shape as GET /listings",
+        ("GET", "/events/{event_id}"): "public event discovery, same shape as GET /listings",
+        ("GET", "/gaming/v1/federate/listings"): "public federation feed, integrity via relay signature not caller auth",
+        ("GET", "/federation/peers"): "operator topology disclosure — arguably should be operator-only, not tightened this pass",
+        ("GET", "/gaming/lobby"): "public lobby browse, matches GET /listings' discovery shape",
+        ("WS", "/ws/events"): "global public event stream by design (N0-2/N3-5) — content is gated per-event at broadcast time, not at connect time",
+        ("GET", "/"): "static redirect to /ui/",
+    }
+    # Zero caller resolution, actively being closed this pass — same drain-to-empty
+    # mechanic as _KNOWN_VIOLATIONS above. Delete a line (and add the route to its real
+    # permanent bucket above) as each fix lands; the guard's second assertion below
+    # catches an entry that stops reproducing without being deleted.
+    _KNOWN_UNGATED: set[tuple[str, str]] = {
+        ("GET", "/agents/{agent_id}"),  # R2 — N4-3
+        ("GET", "/agents/{agent_id}/listings"),  # R2 — N4-3
+        ("GET", "/payments/settlements/{session_id}"),  # R1(a) — N4-2
+        ("POST", "/gaming/v1/federate/sync"),  # R7 — N4-5
+    }
+
+    all_classified = (
+        _AUTHENTICATED | _VISIBILITY_FILTERED | set(_DELIBERATELY_PUBLIC) | _KNOWN_UNGATED
+    )
+    overlap = (
+        (_AUTHENTICATED & _VISIBILITY_FILTERED)
+        | (_AUTHENTICATED & set(_DELIBERATELY_PUBLIC))
+        | (_VISIBILITY_FILTERED & set(_DELIBERATELY_PUBLIC))
+        | ((_AUTHENTICATED | _VISIBILITY_FILTERED | set(_DELIBERATELY_PUBLIC)) & _KNOWN_UNGATED)
+    )
+    assert not overlap, f"Route(s) classified in more than one bucket: {overlap}"
+
+    unclassified = []
+    for route in app.routes:
+        path = getattr(route, "path", None)
+        dependant = getattr(route, "dependant", None)
+        methods = _route_methods(route)
+        if not path or not dependant or not methods:
+            continue
+        for method in methods:
+            if (method, path) not in all_classified:
+                unclassified.append((method, path))
+
+    assert not unclassified, (
+        f"Route(s) with no reviewed auth posture: {unclassified}. Classify each into "
+        "_AUTHENTICATED, _VISIBILITY_FILTERED, or _DELIBERATELY_PUBLIC (with a reason)."
+    )
+
+    # _KNOWN_UNGATED must not silently drift out of date (fixed without deleting its
+    # line here, or the route renamed/removed).
+    live_paths = {
+        (method, getattr(route, "path", None))
+        for route in app.routes
+        for method in (_route_methods(route) or set())
+        if getattr(route, "path", None) and getattr(route, "dependant", None)
+    }
+    stale = _KNOWN_UNGATED - live_paths
+    assert not stale, f"_KNOWN_UNGATED entries no longer exist as routes, remove them: {stale}"
+
+
 # ============================================================================
 # Session-read bypass fixes (N1-5)
 # ============================================================================
