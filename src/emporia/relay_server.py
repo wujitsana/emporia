@@ -4426,13 +4426,12 @@ async def create_agora_post(slug: str, req: CreateAgoraPostRequest, request: Req
         row = conn.execute("SELECT * FROM agora_topics WHERE slug=?", (slug,)).fetchone()
         if not row:
             raise HTTPException(404, "Topic not found")
-        if row["visibility"] == "restricted":
-            member = conn.execute(
-                "SELECT 1 FROM agora_members WHERE topic_id=? AND agent_id=?",
-                (row["topic_id"], caller),
-            ).fetchone()
-            if not member:
-                raise HTTPException(403, "Restricted topic — must be a member to post")
+        # N4-4 (N4 review R3): used to check membership only for visibility=="restricted",
+        # so any registered non-member could post into a "private" topic — the write side
+        # of a rule the read endpoints (list_agora_posts, get_agora_post) already enforce
+        # via _topic_can_read. Reuse that helper instead of a second, narrower rule.
+        if not _topic_can_read(row["visibility"], caller, row["topic_id"], conn):
+            raise HTTPException(403, "Private topic — must be a member to post")
         conn.execute(
             "INSERT INTO agora_posts (post_id, topic_id, author_id, title, content, "
             "post_type, flair, created_at) VALUES (?,?,?,?,?,?,?,?)",
@@ -4559,6 +4558,17 @@ async def vote_agora_post(post_id: str, req: AgoraVoteRequest, request: Request)
         raise HTTPException(400, "value must be 1 or -1")
     now = datetime.now(UTC).isoformat()
     with DB_LOCK, get_db() as conn:
+        # N4-4 (R3): this endpoint had no _topic_can_read check at all — any registered
+        # agent could vote on a post in a private/restricted topic they can't read.
+        post = conn.execute(
+            "SELECT p.topic_id, t.visibility FROM agora_posts p "
+            "JOIN agora_topics t ON p.topic_id=t.topic_id WHERE p.post_id=?",
+            (post_id,),
+        ).fetchone()
+        if not post:
+            raise HTTPException(404, "Post not found")
+        if not _topic_can_read(post["visibility"], caller, post["topic_id"], conn):
+            raise HTTPException(403, "Private topic")
         existing = conn.execute(
             "SELECT value FROM agora_votes WHERE voter_id=? AND target_id=? AND target_type='post'",
             (caller, post_id),
@@ -4625,6 +4635,10 @@ async def add_agora_comment(post_id: str, req: AddAgoraCommentRequest, request: 
         ).fetchone()
         if not p:
             raise HTTPException(404, "Post not found")
+        # N4-4 (R3): t.visibility was already selected above but never checked — any
+        # registered agent could comment into a private/restricted topic they can't read.
+        if not _topic_can_read(p["visibility"], caller, p["topic_id"], conn):
+            raise HTTPException(403, "Private topic")
         if p["is_locked"]:
             raise HTTPException(403, "Post is locked")
         conn.execute(
@@ -4648,6 +4662,19 @@ async def vote_agora_comment(comment_id: str, req: AgoraVoteRequest, request: Re
         raise HTTPException(400, "value must be 1 or -1")
     now = datetime.now(UTC).isoformat()
     with DB_LOCK, get_db() as conn:
+        # N4-4 (R3): sibling of vote_agora_post's fix above — no _topic_can_read check
+        # at all, so any registered agent could vote on a comment in a private/
+        # restricted topic they can't read.
+        comment = conn.execute(
+            "SELECT p.topic_id, t.visibility FROM agora_comments c "
+            "JOIN agora_posts p ON c.post_id=p.post_id "
+            "JOIN agora_topics t ON p.topic_id=t.topic_id WHERE c.comment_id=?",
+            (comment_id,),
+        ).fetchone()
+        if not comment:
+            raise HTTPException(404, "Comment not found")
+        if not _topic_can_read(comment["visibility"], caller, comment["topic_id"], conn):
+            raise HTTPException(403, "Private topic")
         existing = conn.execute(
             "SELECT value FROM agora_votes WHERE voter_id=? AND target_id=? AND target_type='comment'",
             (caller, comment_id),

@@ -1427,10 +1427,12 @@ def test_every_route_has_a_reviewed_auth_posture():
         ("POST", "/agoras/topics/{slug}/invite"),
         ("POST", "/agoras/topics/{slug}/subscribe"),
         ("DELETE", "/agoras/topics/{slug}/subscribe"),
+        # This route plus the four below were missing _topic_can_read entirely — fixed
+        # in N4-4 (R3), but were already correctly _AUTHENTICATED under this guard's
+        # definition even before that fix, since a caller was always resolved and
+        # rejected on absence; the content-visibility gap this guard doesn't claim to
+        # catch is a separate, deeper class.
         ("POST", "/agoras/topics/{slug}/posts"),
-        # Missing _topic_can_read (R3, closed directly in N4-4) — still correctly
-        # _AUTHENTICATED under this guard's definition, since a caller IS resolved and
-        # rejected on absence; the content-visibility gap is a separate class.
         ("POST", "/agoras/posts/{post_id}/vote"),
         ("DELETE", "/agoras/posts/{post_id}"),
         ("POST", "/agoras/posts/{post_id}/comments"),
@@ -3500,6 +3502,84 @@ def test_agent_posts_filters_by_topic_visibility(client):
     ids = {p["post_id"] for p in r.json()["posts"]}
     assert public_post_id in ids
     assert private_post_id in ids
+
+
+def test_agora_writes_gated_by_topic_visibility(client):
+    """Regression for N4 review R3: post vote, post comment, and comment vote had no
+    _topic_can_read check at all — any registered agent could vote on or comment into a
+    private topic's content they couldn't even read. create_agora_post checked
+    membership only for visibility=="restricted", not "private", so any registered
+    non-member could post into a private topic too. Confirms a non-member is refused on
+    all four writes and a real member (and the author) can perform them."""
+    _register(client, "agw_owner")
+    _register(client, "agw_member")
+    _register(client, "agw_stranger")
+
+    r = client.post("/agoras/topics", json={
+        "name": "AGW Private Topic", "description": "d", "visibility": "private",
+        "gate_type": "invite", "creator_id": "agw_owner",
+    }, headers={"x-emporia-agent-id": "agw_owner"})
+    slug = r.json()["slug"]
+    client.post(
+        f"/agoras/topics/{slug}/invite", json={"invitee_id": "agw_member"},
+        headers={"x-emporia-agent-id": "agw_owner"},
+    )
+    client.post(
+        f"/agoras/topics/{slug}/subscribe", json={"agent_id": "agw_member"},
+        headers={"x-emporia-agent-id": "agw_member"},
+    )
+
+    # Posting: non-member refused, member (and author) allowed.
+    r = client.post(
+        f"/agoras/topics/{slug}/posts",
+        json={"author_id": "agw_stranger", "title": "x", "content": "x"},
+        headers={"x-emporia-agent-id": "agw_stranger"},
+    )
+    assert r.status_code == 403, r.text
+    r = client.post(
+        f"/agoras/topics/{slug}/posts",
+        json={"author_id": "agw_owner", "title": "secret", "content": "secret content"},
+        headers={"x-emporia-agent-id": "agw_owner"},
+    )
+    assert r.status_code == 200, r.text
+    post_id = r.json()["post_id"]
+
+    # Voting on the post: non-member refused, member allowed.
+    r = client.post(
+        f"/agoras/posts/{post_id}/vote", json={"value": 1},
+        headers={"x-emporia-agent-id": "agw_stranger"},
+    )
+    assert r.status_code == 403, r.text
+    r = client.post(
+        f"/agoras/posts/{post_id}/vote", json={"value": 1},
+        headers={"x-emporia-agent-id": "agw_member"},
+    )
+    assert r.status_code == 200, r.text
+
+    # Commenting: non-member refused, member allowed.
+    r = client.post(
+        f"/agoras/posts/{post_id}/comments", json={"content": "sneaking a look"},
+        headers={"x-emporia-agent-id": "agw_stranger"},
+    )
+    assert r.status_code == 403, r.text
+    r = client.post(
+        f"/agoras/posts/{post_id}/comments", json={"content": "legit reply"},
+        headers={"x-emporia-agent-id": "agw_member"},
+    )
+    assert r.status_code == 200, r.text
+    comment_id = r.json()["comment_id"]
+
+    # Voting on the comment: non-member refused, member allowed.
+    r = client.post(
+        f"/agoras/comments/{comment_id}/vote", json={"value": 1},
+        headers={"x-emporia-agent-id": "agw_stranger"},
+    )
+    assert r.status_code == 403, r.text
+    r = client.post(
+        f"/agoras/comments/{comment_id}/vote", json={"value": 1},
+        headers={"x-emporia-agent-id": "agw_member"},
+    )
+    assert r.status_code == 200, r.text
 
 
 def test_agora_feed_requires_own_identity(client):
