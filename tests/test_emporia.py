@@ -791,6 +791,37 @@ def test_list_events(client):
     assert "events" in r.json()
 
 
+def test_events_limit_is_clamped(client):
+    """Regression for N4 review R7: GET /events had no `limit` param at all — every
+    event, with full bracket + participant lists, in one unbounded query. An absurd
+    limit must not error server-side."""
+    r = client.get("/events", params={"limit": 999999999})
+    assert r.status_code == 200
+
+
+def test_federation_sync_requires_operator(prod_client):
+    """Regression for N4 review R7: POST /gaming/v1/federate/sync had no `request`
+    param at all — an anonymous caller could fan out an outbound HTTP pull to every
+    configured peer on demand. Now requires the relay operator identity, matching every
+    other operator-only maintenance action."""
+    _register_keyed(prod_client, "n45_sync_caller")
+    _register_keyed(prod_client, "n45_sync_owner")
+
+    r = prod_client.post("/gaming/v1/federate/sync")
+    assert r.status_code == 403
+
+    r = prod_client.post(
+        "/gaming/v1/federate/sync", headers=bearer_for(prod_client, "n45_sync_caller")
+    )
+    assert r.status_code == 403
+
+    with patch.dict(os.environ, {"EMPORIA_AGENT_ID": "n45_sync_owner"}):
+        r = prod_client.post(
+            "/gaming/v1/federate/sync", headers=bearer_for(prod_client, "n45_sync_owner")
+        )
+    assert r.status_code == 200
+
+
 # ============================================================================
 # Session Lifecycle
 # ============================================================================
@@ -1065,6 +1096,17 @@ def test_ws_session_requires_participant_for_private_module(client):
     with client.websocket_connect(f"/ws/{session_id}?agent_id=vis_ws_buyer") as ws:
         frame = ws.receive_json()
         assert frame["type"] == "init"
+
+
+def test_ws_session_rejects_unknown_session_id(client):
+    """Regression for N4 review R7: `if s and not _session_viewer_allowed(...)` failed
+    OPEN on an unknown session_id — s was falsy, so the gate was skipped entirely and
+    the connection was accepted and registered into ws_connections[session_id], where
+    it would receive anything later broadcast to that key. ws_room already rejects an
+    unknown room_id the same way; this now matches."""
+    with pytest.raises(WebSocketDisconnect):
+        with client.websocket_connect("/ws/sess_does_not_exist"):
+            pass
 
 
 def test_ws_events_session_created_gated_by_visibility(client):
@@ -1405,6 +1447,9 @@ def test_every_route_has_a_reviewed_auth_posture():
         ("GET", "/agents/{agent_id}/inbox"),
         ("POST", "/agents/{agent_id}/inbox/mark-read"),
         ("POST", "/payments/create-intent"),
+        # Closed in N4-5 (R7) — was _KNOWN_UNGATED. Operator-only, not just any
+        # authenticated caller.
+        ("POST", "/gaming/v1/federate/sync"),
         ("GET", "/payments/settlements"),
         ("POST", "/listings"),
         ("POST", "/events"),
@@ -1493,9 +1538,9 @@ def test_every_route_has_a_reviewed_auth_posture():
     # mechanic as _KNOWN_VIOLATIONS above. Delete a line (and add the route to its real
     # permanent bucket above) as each fix lands; the guard's second assertion below
     # catches an entry that stops reproducing without being deleted.
-    _KNOWN_UNGATED: set[tuple[str, str]] = {
-        ("POST", "/gaming/v1/federate/sync"),  # R7 — N4-5
-    }
+    # Empty: all four routes seeded here at the start of N4 (R1(a)/R2, N4-2/N4-3;
+    # R7, N4-5) have been closed and moved to their permanent bucket above.
+    _KNOWN_UNGATED: set[tuple[str, str]] = set()
 
     all_classified = (
         _AUTHENTICATED | _VISIBILITY_FILTERED | set(_DELIBERATELY_PUBLIC) | _KNOWN_UNGATED

@@ -2606,14 +2606,22 @@ async def create_event(req: CreateEventRequest, request: Request):
 
 
 @app.get("/events")
-async def list_events(status: str | None = None):
+async def list_events(status: str | None = None, limit: int = 50):
+    """N4-5 (N4 review R7): previously had no `limit` param at all — every event, with
+    full bracket + participant lists, in one unbounded query. Public discovery stays
+    public (same shape as GET /listings); this just caps the row scan, matching every
+    other list endpoint after N3-6."""
+    limit = _clamp_limit(limit)
     with DB_LOCK, get_db() as conn:
         if status:
             rows = conn.execute(
-                "SELECT * FROM events WHERE status = ? ORDER BY created_at DESC", (status,)
+                "SELECT * FROM events WHERE status = ? ORDER BY created_at DESC LIMIT ?",
+                (status, limit),
             ).fetchall()
         else:
-            rows = conn.execute("SELECT * FROM events ORDER BY created_at DESC").fetchall()
+            rows = conn.execute(
+                "SELECT * FROM events ORDER BY created_at DESC LIMIT ?", (limit,)
+            ).fetchall()
     return {
         "events": [
             {
@@ -2785,8 +2793,19 @@ async def _pull_federated_listings(peer_url: str) -> int:
 
 
 @app.post("/gaming/v1/federate/sync")
-async def trigger_federation_sync():
-    """Manually trigger a federation pull from all configured peers."""
+async def trigger_federation_sync(request: Request):
+    """Manually trigger a federation pull from all configured peers.
+
+    N4-5 (N4 review R7): had no `request` param at all — an anonymous caller could fan
+    out an outbound HTTP pull to every configured peer on demand, free amplification and
+    an on-demand federated-state refresh with no caller check whatsoever. This is an
+    operator maintenance action, not an agent-facing one, so it requires the relay
+    operator identity rather than just any authenticated caller.
+    """
+    caller = _dashboard_agent_id(request)
+    owner = os.getenv("EMPORIA_AGENT_ID", "")
+    if not caller or not owner or caller != owner:
+        raise HTTPException(403, "Federation sync requires relay operator access")
     results = {}
     for peer in FEDERATED_RELAYS:
         count = await _pull_federated_listings(peer)
@@ -3508,16 +3527,25 @@ async def ws_session(ws: WebSocket, session_id: str):
     """Live session feed. Gated the same way as GET /sessions/{id}/actions
     (_session_viewer_allowed()) — public sessions (default, e.g. chess spectator/replay)
     stay open to any connection; participants-only sessions (paid modules by default)
-    require the caller to be a participant or the operator."""
+    require the caller to be a participant or the operator.
+
+    N4-5 (N4 review R7): used to fail OPEN on an unknown session_id — `if s and not
+    _session_viewer_allowed(...)` skipped the gate entirely when `s` was falsy, so an
+    unrecognized id was accepted and registered into ws_connections[session_id], where
+    it would receive anything later broadcast to that key. ws_room already rejects an
+    unknown room_id; this now matches that fail-closed shape.
+    """
     s = load_session(session_id)
-    if s and not _session_viewer_allowed(s, _ws_agent_id(ws)):
+    if not s:
+        await ws.close(code=1008)
+        return
+    if not _session_viewer_allowed(s, _ws_agent_id(ws)):
         await ws.close(code=1008)
         return
     await ws.accept()
     ws_connections[session_id].add(ws)
     try:
-        if s:
-            await ws.send_json({"type": "init", "session": s})
+        await ws.send_json({"type": "init", "session": s})
         while True:
             data = await ws.receive_text()
             msg = json.loads(data)
