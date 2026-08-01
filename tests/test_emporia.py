@@ -1581,6 +1581,74 @@ def test_every_route_has_a_reviewed_auth_posture():
     assert not stale, f"_KNOWN_UNGATED entries no longer exist as routes, remove them: {stale}"
 
 
+def _path_shadows(earlier_path: str, later_path: str) -> bool:
+    """True if `earlier_path`'s pattern matches every literal path `later_path`'s
+    pattern matches: same segment count, and each of earlier's segments is either a
+    `{param}` (matches anything) or identical to later's segment at that position. If
+    so, any request aimed at later_path would also match earlier_path — segment-for-
+    segment, not a regex reimplementation, since that's exactly the shape Starlette's
+    own path compilation produces for this route set (no multi-segment wildcards)."""
+    earlier_segs = earlier_path.strip("/").split("/")
+    later_segs = later_path.strip("/").split("/")
+    if len(earlier_segs) != len(later_segs):
+        return False
+    for e, l in zip(earlier_segs, later_segs):
+        if e.startswith("{") and e.endswith("}"):
+            continue
+        if e != l:
+            return False
+    return True
+
+
+def test_no_route_shadowing():
+    """N4-6 (N4 review R5): a route-shadowing guard. Starlette matches routes in
+    *registration* order, not by specificity. WebSocket routes match on path alone —
+    the first path-pattern match wins outright, with no method/partial-match fallback
+    to recover from a bad match. HTTP routes fall through to a later route only when an
+    earlier match was partial (path matched, method didn't); if both routes declare the
+    same method, the earlier one still wins.
+
+    N3-5 found `/ws/events` completely unreachable this way: `/ws/{session_id}`,
+    registered earlier in the file, has the same one-segment-after-`/ws/` shape and
+    matched `/ws/events` too — every connection attempt actually hit `/ws/{session_id}`
+    with `session_id="events"`. WS routing has no partial-match fallback to recover
+    from that, so it was a hard, silent dead route with zero test coverage catching it.
+
+    For every ordered pair of routes (earlier, later) of the same kind (both WS, or
+    both HTTP with overlapping declared methods), fails if the earlier route's path
+    pattern would swallow every request the later route is meant to receive — the
+    later route is then unreachable regardless of what it does. This is the guard the
+    N3-5 fix shipped without; it must pass today so a future addition shaped like
+    `/agents/me` or `/sessions/active` can't regress the same way silently.
+    """
+    from fastapi.routing import APIWebSocketRoute
+    from emporia.relay_server import app
+
+    routes = [
+        r for r in app.routes
+        if getattr(r, "path", None) and getattr(r, "dependant", None)
+    ]
+    violations = []
+    for i, earlier in enumerate(routes):
+        for later in routes[i + 1:]:
+            earlier_is_ws = isinstance(earlier, APIWebSocketRoute)
+            later_is_ws = isinstance(later, APIWebSocketRoute)
+            if earlier_is_ws != later_is_ws:
+                continue  # WS and HTTP routes are dispatched on separate scope types
+            if not earlier_is_ws:
+                earlier_methods = getattr(earlier, "methods", None) or set()
+                later_methods = getattr(later, "methods", None) or set()
+                if not (earlier_methods & later_methods):
+                    continue  # disjoint methods: earlier only partial-matches, no shadow
+            if _path_shadows(earlier.path, later.path):
+                violations.append((earlier.path, later.path))
+
+    assert not violations, (
+        f"Route(s) shadowed by an earlier, more general route (unreachable): "
+        f"{violations}. Register the more specific/static route first."
+    )
+
+
 # ============================================================================
 # Session-read bypass fixes (N1-5)
 # ============================================================================
