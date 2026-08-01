@@ -2023,8 +2023,18 @@ async def list_agents(request: Request, limit: int = 100, search: str | None = N
 
 
 @app.get("/agents/{agent_id}")
-async def get_agent_profile(agent_id: str):
-    """Return the full profile for a single agent — identity, trust, stats, payment rails."""
+async def get_agent_profile(agent_id: str, request: Request):
+    """Return the full profile for a single agent — identity, trust, stats, payment rails.
+
+    N4-3 (N4 review R2): this had no `request` param at all — the exact bug shape
+    GET /agents was gated for in N3-3 ("the enumeration primitive"), one route over, and
+    returning strictly more per-agent data (including the raw Stripe Connect account id)
+    than the now-gated list endpoint. Requires an authenticated caller, matching GET
+    /agents; agent discovery stays a feature, it just stops being anonymous.
+    """
+    caller = _dashboard_agent_id(request)
+    if not caller:
+        raise HTTPException(401, "Authentication required")
     with DB_LOCK, get_db() as conn:
         row = conn.execute(
             "SELECT agent_id, display_name, registered_at, is_active, stripe_account_id, "
@@ -2069,8 +2079,10 @@ async def get_agent_profile(agent_id: str):
         "providers_verified": json.loads(row["identity_providers_json"] or "[]"),
         "registered_at": row["registered_at"],
         "is_active": bool(row["is_active"]),
+        # N4-3 (R2): stripe_account_id (the raw Connect acct_... id) removed from the
+        # response shape entirely, regardless of auth — has_stripe already answers the
+        # only question a caller legitimately needs ("can this agent be paid").
         "has_stripe": has_stripe,
-        "stripe_account_id": row["stripe_account_id"],
         "stripe_profile_ready": stripe_profile_ready,
         "session_count": session_count,
         "win_count": win_count,
@@ -2102,8 +2114,15 @@ async def get_agent_sessions(agent_id: str, request: Request, status: str | None
 
 
 @app.get("/agents/{agent_id}/listings")
-async def get_agent_listings(agent_id: str, limit: int = 50):
-    """Listings created by this agent."""
+async def get_agent_listings(agent_id: str, request: Request, limit: int = 50):
+    """Listings created by this agent.
+
+    N4-3 (N4 review R2): had no `request` param — sibling of the GET /agents/{agent_id}
+    gap above. Requires an authenticated caller, matching that fix.
+    """
+    caller = _dashboard_agent_id(request)
+    if not caller:
+        raise HTTPException(401, "Authentication required")
     limit = _clamp_limit(limit)
     with DB_LOCK, get_db() as conn:
         rows = conn.execute(

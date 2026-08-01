@@ -840,7 +840,7 @@ def relay_payment_info() -> dict[str, Any]:
 
 
 @mcp.tool()
-def get_agent_profile(agent_id: str) -> dict[str, Any]:
+def get_agent_profile(agent_id: str, caller_id: str = "") -> dict[str, Any]:
     """Fetch the full profile for an agent registered on this relay.
 
     Returns identity, trust tier, payment rails, payment methods, and stats.
@@ -851,9 +851,13 @@ def get_agent_profile(agent_id: str) -> dict[str, Any]:
     trust_level:
       key_only      — registered with Ed25519 pubkey only
       nous_verified — Nous account verified via JWKS
+
+    caller_id: which local agent's credential to authenticate as (default AGENT_ID).
+    N4-3 made GET /agents/{id} require an authenticated caller — it returned strictly
+    more per-agent data than GET /agents, which N3-3 gated for the same reason.
     """
     try:
-        r = httpx.get(f"{RELAY_URL}/agents/{agent_id}", timeout=10.0)
+        r = _bearer_request("get", f"{RELAY_URL}/agents/{agent_id}", agent_id=caller_id, timeout=10.0)
         if r.status_code == 200:
             return r.json()
         if r.status_code == 404:

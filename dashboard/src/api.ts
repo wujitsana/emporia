@@ -90,7 +90,8 @@ export interface AgentProfile {
   registered_at: string;
   is_active: boolean;
   has_stripe: boolean;
-  stripe_account_id?: string | null;
+  // stripe_account_id removed from the relay response (N4-3/R2) — has_stripe above
+  // already answers the only question a caller legitimately needs.
   stripe_profile_ready?: boolean;
   session_count: number;
   win_count: number;
@@ -364,7 +365,9 @@ export const api = {
     get<{ agents: AgentProfile[]; count: number }>(
       `/agents${search ? `?search=${encodeURIComponent(search)}` : ""}`, { agentScoped: true }
     ),
-  agentProfile: (agent_id: string) => get<AgentProfile>(`/agents/${encodeURIComponent(agent_id)}`),
+  // N4-3: GET /agents/{id} now requires an authenticated caller, matching GET /agents.
+  agentProfile: (agent_id: string) =>
+    get<AgentProfile>(`/agents/${encodeURIComponent(agent_id)}`, { agentScoped: true }),
   agentSessions: (agent_id: string, status?: string) =>
     // Filtered server-side by the same _session_viewer_allowed() rule as GET /sessions
     // (see the sessions() note above) — needs agentScoped so participants-only sessions
@@ -373,9 +376,10 @@ export const api = {
       `/agents/${encodeURIComponent(agent_id)}/sessions${status ? `?status=${status}` : ""}`,
       { agentScoped: true }
     ),
+  // N4-3: same auth requirement as agentProfile above.
   agentListings: (agent_id: string) =>
     get<{ agent_id: string; listings: Listing[] }>(
-      `/agents/${encodeURIComponent(agent_id)}/listings`
+      `/agents/${encodeURIComponent(agent_id)}/listings`, { agentScoped: true }
     ),
   // N3-4: now filtered to topics the viewer can read — send identity so the viewer sees
   // posts in topics they're actually a member of, not just public ones.

@@ -140,7 +140,10 @@ def test_health_requires_stripe_profile_for_mpp(client):
 @patch.dict(os.environ, {"STRIPE_SECRET_KEY": "sk_test_only", "STRIPE_PROFILE_ID": ""}, clear=False)
 def test_agent_profile_key_only_stripe_does_not_expose_mpp(client):
     _register(client, "stripe_key_only_agent")
-    r = client.get("/agents/stripe_key_only_agent")
+    # N4-3: GET /agents/{id} now requires an authenticated caller.
+    r = client.get(
+        "/agents/stripe_key_only_agent", headers={"x-emporia-agent-id": "stripe_key_only_agent"}
+    )
     assert r.status_code == 200
     data = r.json()
     assert data["stripe_profile_ready"] is False
@@ -1269,13 +1272,15 @@ def test_no_new_identity_as_proof_params():
         ("POST", "/sessions/{session_id}/confirm-delivery"),
         ("POST", "/sessions/{session_id}/dispute-delivery"),
         # --- N3-1: path-param / raw-body / WS additions ---
-        # agent_id (path): existence lookup only, no auth decision keyed on it.
+        # agent_id (path): existence lookup only, no auth decision keyed on it — the
+        # caller is separately resolved via _dashboard_agent_id(request) (N4-3).
         ("GET", "/agents/{agent_id}"),
         # agent_id (path): a filter on whose sessions to list — per-session content
         # visibility is separately gated by the authenticated caller via
         # _session_viewer_allowed(), not by this path param.
         ("GET", "/agents/{agent_id}/sessions"),
-        # agent_id (path): public listing discovery filter, same shape as GET /listings.
+        # agent_id (path): a filter on whose listings to list, not identity-as-proof —
+        # the caller is separately resolved via _dashboard_agent_id(request) (N4-3).
         ("GET", "/agents/{agent_id}/listings"),
         # agent_id (path): _require_caller_is-checked.
         ("GET", "/agents/{agent_id}/inbox"),
@@ -1393,6 +1398,10 @@ def test_every_route_has_a_reviewed_auth_posture():
         ("POST", "/dashboard/session"),
         ("POST", "/agents/register"),
         ("GET", "/agents"),
+        # Closed in N4-3 (R2) — were _KNOWN_UNGATED. GET /agents/{agent_id} returned
+        # strictly more per-agent data than the now-gated GET /agents, one route over.
+        ("GET", "/agents/{agent_id}"),
+        ("GET", "/agents/{agent_id}/listings"),
         ("GET", "/agents/{agent_id}/inbox"),
         ("POST", "/agents/{agent_id}/inbox/mark-read"),
         ("POST", "/payments/create-intent"),
@@ -1483,8 +1492,6 @@ def test_every_route_has_a_reviewed_auth_posture():
     # permanent bucket above) as each fix lands; the guard's second assertion below
     # catches an entry that stops reproducing without being deleted.
     _KNOWN_UNGATED: set[tuple[str, str]] = {
-        ("GET", "/agents/{agent_id}"),  # R2 — N4-3
-        ("GET", "/agents/{agent_id}/listings"),  # R2 — N4-3
         ("POST", "/gaming/v1/federate/sync"),  # R7 — N4-5
     }
 
@@ -4666,6 +4673,57 @@ def test_agents_list_requires_authentication(prod_client):
     assert r.status_code == 200
 
 
+def test_agent_profile_requires_authentication_and_omits_stripe_account_id(prod_client):
+    """Regression for N4-3 (N4 review R2): GET /agents/{id} had no `request` param at
+    all — the exact primitive N3-3 gated GET /agents for ("the enumeration primitive"),
+    one route over, and returning strictly more per-agent data than that now-gated list
+    endpoint, including the raw Stripe Connect account id. Confirms unauthenticated ->
+    401, authenticated -> 200, and that stripe_account_id is gone from the response
+    shape entirely regardless of auth (has_stripe already answers the real question)."""
+    _register_keyed(prod_client, "n43_profile_owner")
+
+    r = prod_client.get("/agents/n43_profile_owner")
+    assert r.status_code == 401
+
+    r = prod_client.get(
+        "/agents/n43_profile_owner", headers=bearer_for(prod_client, "n43_profile_owner")
+    )
+    assert r.status_code == 200
+    assert "stripe_account_id" not in r.json()
+    assert "has_stripe" in r.json()
+
+
+def test_agent_listings_requires_authentication(prod_client):
+    """Regression for N4-3 (N4 review R2): GET /agents/{id}/listings had no `request`
+    param — same gap class as GET /agents/{id} above."""
+    _register_keyed(prod_client, "n43_listings_owner")
+
+    r = prod_client.get("/agents/n43_listings_owner/listings")
+    assert r.status_code == 401
+
+    r = prod_client.get(
+        "/agents/n43_listings_owner/listings",
+        headers=bearer_for(prod_client, "n43_listings_owner"),
+    )
+    assert r.status_code == 200
+
+
+def test_mcp_get_agent_profile_authenticates_under_prod_auth(prod_client):
+    """N4-3 made GET /agents/{id} require an authenticated caller.
+    mcp_server.get_agent_profile() called plain httpx.get() with no credential at all —
+    found auditing every client of the endpoint this fix touched, same discipline as
+    every prior pass's client-fallout sweep."""
+    from emporia import mcp_server
+
+    _register_keyed(prod_client, "n43_mcp_profile")
+
+    adapter = _ASGIHttpxAdapter(prod_client, mcp_server.RELAY_URL)
+    with patch.object(mcp_server, "httpx", adapter):
+        r = mcp_server.get_agent_profile("n43_mcp_profile", caller_id="n43_mcp_profile")
+    assert r.get("agent_id") == "n43_mcp_profile", r
+    assert "stripe_account_id" not in r
+
+
 def test_agents_list_limit_is_clamped(prod_client):
     """Regression for N3-3 (O1): `limit` used to flow unbounded into `LIMIT ?` — a request
     for an absurd limit must not error and must not be taken at face value server-side."""
@@ -4728,7 +4786,8 @@ def test_all_limit_params_are_clamped(client):
     checks = [
         client.get("/agents", params={"limit": absurd}, headers={"x-emporia-agent-id": "climit_owner"}),
         client.get("/agents/climit_owner/sessions", params={"limit": absurd}),
-        client.get("/agents/climit_owner/listings", params={"limit": absurd}),
+        client.get("/agents/climit_owner/listings", params={"limit": absurd},
+                   headers={"x-emporia-agent-id": "climit_owner"}),
         client.get("/agents/climit_owner/posts", params={"limit": absurd}),
         client.get("/agents/climit_owner/inbox", params={"limit": absurd},
                    headers={"x-emporia-agent-id": "climit_owner"}),
