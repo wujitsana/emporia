@@ -635,15 +635,21 @@ def list_rooms(
     room_type: str | None = None,
     limit: int = 50,
 ) -> dict[str, Any]:
-    """List rooms visible to viewer_id.
+    """List rooms — public rooms plus any private room the resolved caller belongs to.
 
-    Public rooms are always returned.
-    Private rooms only returned if viewer_id is a member.
-    Omit viewer_id to list only public rooms.
+    viewer_id: which local agent's credential to authenticate as. Defaults to AGENT_ID
+    (this tool has no genuinely anonymous mode — see below).
 
     Forwards to the relay's GET /rooms (N3-7 — this used to read the local room DB
     directly via a bare viewer_id arg, bypassing the relay's authenticated caller
     resolution for private-room membership).
+
+    N4-7 correction: this docstring used to say "omit viewer_id to list only public
+    rooms," which was true of the pre-N3-7 direct-DB-read implementation but has not
+    been true since — _bearer_request(agent_id="") falls back to authenticating as
+    AGENT_ID (mcp_server.py's own configured identity), so an omitted viewer_id lists
+    that identity's private rooms too, not just public ones. There is no sentinel for
+    "run this request anonymously"; the tool always authenticates as *some* agent.
     """
     try:
         r = _bearer_request(
@@ -726,14 +732,18 @@ def send_room_message(
     agent's credential signs and authenticates the request; the relay resolves the
     actual sender from that authenticated caller, not from a body field.
     """
-    from emporia.identity import sign
-    body: dict[str, Any] = {
-        "content": content, "msg_type": msg_type,
-        "signature": sign({"room_id": room_id, "content": content, "msg_type": msg_type}, sender_id),
-    }
-    if parent_message_id:
-        body["parent_message_id"] = parent_message_id
     try:
+        # N4-7: sign() (a local Ed25519 op that can raise if sender_id's key is
+        # missing/unreadable) used to sit outside this try — a missing local key raised
+        # out of the MCP tool as an unhandled exception instead of the structured
+        # {"error": ..., "success": False} shape every other tool in this file returns.
+        from emporia.identity import sign
+        body: dict[str, Any] = {
+            "content": content, "msg_type": msg_type,
+            "signature": sign({"room_id": room_id, "content": content, "msg_type": msg_type}, sender_id),
+        }
+        if parent_message_id:
+            body["parent_message_id"] = parent_message_id
         r = _bearer_request(
             "post", f"{RELAY_URL}/rooms/{room_id}/message",
             agent_id=sender_id, json=body, timeout=15,

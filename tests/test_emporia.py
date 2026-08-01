@@ -4206,6 +4206,54 @@ def test_mcp_room_tools_route_through_relay(prod_client):
         assert refused.get("success") is False, refused
 
 
+def test_mcp_list_rooms_omitted_viewer_id_lists_as_agent_id(prod_client):
+    """Regression for N4-7 (R6): list_rooms()'s docstring used to say "omit viewer_id
+    to list only public rooms" — true of the pre-N3-7 direct-DB-read implementation,
+    false since N3-7's rewrite: _bearer_request(agent_id="") falls back to
+    authenticating as AGENT_ID, so an omitted viewer_id lists that identity's private
+    rooms too. Confirms the (now-documented) actual behavior: a private room AGENT_ID
+    belongs to is returned even with viewer_id omitted."""
+    from emporia import mcp_server
+
+    _register_keyed(prod_client, "n47_room_owner")
+
+    adapter = _ASGIHttpxAdapter(prod_client, mcp_server.RELAY_URL)
+    with patch.object(mcp_server, "httpx", adapter), \
+         patch.object(mcp_server, "AGENT_ID", "n47_room_owner"):
+        r = mcp_server.create_room(
+            name="N47 Private Room", creator_id="n47_room_owner", room_type="private",
+            gate_type="invite",
+        )
+        assert r.get("success") is True, r
+        room_id = r["room"]["room_id"]
+
+        listed = mcp_server.list_rooms()
+    assert listed.get("success") is True, listed
+    assert room_id in {rm["room_id"] for rm in listed["rooms"]}
+
+
+def test_mcp_send_room_message_returns_structured_error_on_sign_failure(prod_client):
+    """Regression for N4-7 (R6): sign() sat outside send_room_message's try block — a
+    local signing failure (missing/unreadable key for sender_id) raised out of the MCP
+    tool as an unhandled exception instead of the structured {"error", "success": False}
+    shape every other tool in mcp_server.py guarantees its caller."""
+    from emporia import mcp_server
+
+    _register_keyed(prod_client, "n47_sign_fail_owner")
+
+    adapter = _ASGIHttpxAdapter(prod_client, mcp_server.RELAY_URL)
+    with patch.object(mcp_server, "httpx", adapter):
+        r = mcp_server.create_room(name="N47 Test Room", creator_id="n47_sign_fail_owner")
+        room_id = r["room"]["room_id"]
+
+        with patch("emporia.identity.sign", side_effect=RuntimeError("key unreadable")):
+            result = mcp_server.send_room_message(
+                room_id=room_id, sender_id="n47_sign_fail_owner", content="hi",
+            )
+    assert result.get("success") is False, result
+    assert "key unreadable" in result.get("error", "")
+
+
 def test_mcp_list_agents_authenticates_under_prod_auth(prod_client):
     """N3-3 made GET /agents require an authenticated caller (it was the enumeration
     primitive the N2 review named and never closed). mcp_server.list_agents() called
