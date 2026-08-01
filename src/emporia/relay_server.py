@@ -2283,6 +2283,34 @@ async def create_payment_intent_endpoint(req: CreatePaymentIntentRequest, reques
         raise HTTPException(402, str(e))
 
 
+def _settlement_resource_viewer_allowed(resource_id: str, caller: str | None, conn: Any) -> bool:
+    """A `settlements.session_id` column is overloaded across three resource kinds —
+    session escrow, room entry, Agora paid_invite subscription — since
+    record_settlement() keys every write on whatever id the call site passed as
+    "session_id" (`room_id` for room entry (`:3732`), `topic_id` for Agora (`:4306`)).
+    Resolve which kind a given id actually is and apply that resource's own visibility
+    rule; an id matching none of the three (garbage, or a resource since deleted) is
+    operator-only rather than assumed-public — this is the fix for N4 review R1(a):
+    GET /payments/settlements/{session_id} previously had no check of any kind, making
+    every resource's PaymentIntent ids anonymously readable regardless of kind.
+    """
+    owner = os.getenv("EMPORIA_AGENT_ID", "")
+    if owner and caller == owner:
+        return True
+    s = load_session(resource_id)
+    if s:
+        return _session_viewer_allowed(s, caller)
+    room = rooms_db.get_room(resource_id, db_path=DATABASE_PATH)
+    if room:
+        return bool(caller and rooms_db.is_member(resource_id, caller, db_path=DATABASE_PATH))
+    topic = conn.execute(
+        "SELECT visibility, topic_id FROM agora_topics WHERE topic_id=?", (resource_id,)
+    ).fetchone()
+    if topic:
+        return _topic_can_read(topic["visibility"], caller, topic["topic_id"], conn)
+    return False
+
+
 @app.get("/payments/settlements")
 async def list_settlements(
     request: Request,
@@ -2292,7 +2320,10 @@ async def list_settlements(
     """List settlement records.
 
     Access rules:
-      - ?session_id=X  → public (session outcome is not private)
+      - ?session_id=X  → the referenced resource's own visibility rule (see
+                          _settlement_resource_viewer_allowed) — not unconditionally
+                          public; N4 review R1(a) found a leaked PaymentIntent id here
+                          was one half of a working payment bypass for paid Agora topics.
       - ?agent_id=X    → requires dashboard auth (localhost or JWT); scoped to that agent
       - no filter      → requires dashboard auth AND relay operator identity
     """
@@ -2318,6 +2349,8 @@ async def list_settlements(
 
     with DB_LOCK, get_db() as conn:
         if session_id:
+            if not _settlement_resource_viewer_allowed(session_id, dashboard_id, conn):
+                raise HTTPException(403, "Not authorized to view this resource's settlement")
             rows = conn.execute(
                 "SELECT * FROM settlements WHERE session_id = ? ORDER BY created_at DESC",
                 (session_id,),
@@ -2342,8 +2375,14 @@ async def list_settlements(
 
 
 @app.get("/payments/settlements/{session_id}")
-async def get_settlement(session_id: str):
+async def get_settlement(session_id: str, request: Request):
+    """N4 review R1(a): previously took no `request` param at all — anonymously
+    readable regardless of the underlying resource's own visibility rule. See
+    _settlement_resource_viewer_allowed."""
+    caller = _dashboard_agent_id(request)
     with DB_LOCK, get_db() as conn:
+        if not _settlement_resource_viewer_allowed(session_id, caller, conn):
+            raise HTTPException(403, "Not authorized to view this resource's settlement")
         rows = conn.execute(
             "SELECT * FROM settlements WHERE session_id = ? ORDER BY created_at DESC",
             (session_id,),
@@ -2950,14 +2989,20 @@ async def join_session(session_id: str, req: JoinSessionRequest, request: Reques
         req.payment_intent_id = result
         stake_paid = True
 
-        record_payment(
-            payment_intent_id=req.payment_intent_id,
-            agent_id=req.agent_id,
-            amount_cents=amount_cents,
-            payment_type="session_stake",
-            session_id=session_id,
-            currency=currency,
-        )
+        # N4 review R1: record_payment() raises ValueError on a PaymentIntent id already
+        # recorded for a different payment (different agent/session/amount) — a replay
+        # attempt, not an internal error. Must surface as a rejected join, not a 500.
+        try:
+            record_payment(
+                payment_intent_id=req.payment_intent_id,
+                agent_id=req.agent_id,
+                amount_cents=amount_cents,
+                payment_type="session_stake",
+                session_id=session_id,
+                currency=currency,
+            )
+        except ValueError as e:
+            raise HTTPException(402, str(e))
 
     participants = s["participants"] + [req.agent_id]
     add_participant(session_id, req.agent_id, stake_paid=stake_paid)
@@ -3700,14 +3745,20 @@ async def join_room(room_id: str, req: JoinRoomRequest, request: Request):
             return result
         confirmed_pi: str | None = result
 
-        record_payment(
-            payment_intent_id=confirmed_pi,
-            agent_id=req.agent_id,
-            amount_cents=amount_cents,
-            payment_type="room_entry",
-            room_id=room_id,
-            currency=currency,
-        )
+        # N4 review R1: record_payment() raises ValueError on a replayed PaymentIntent
+        # id (already recorded for a different agent/room/amount) — surface as a
+        # rejected join, not a 500.
+        try:
+            record_payment(
+                payment_intent_id=confirmed_pi,
+                agent_id=req.agent_id,
+                amount_cents=amount_cents,
+                payment_type="room_entry",
+                room_id=room_id,
+                currency=currency,
+            )
+        except ValueError as e:
+            raise HTTPException(402, str(e))
         from emporia.payments import platform_fee as _platform_fee
         platform_fee = _platform_fee(amount_cents)
         creator_payout = amount_cents - platform_fee
@@ -4255,38 +4306,25 @@ async def subscribe_agora_topic(slug: str, req: AgoraSubscribeRequest, request: 
             return result
         confirmed_pi = result
 
-    # Add member — re-acquire DB_LOCK for the write, now that payment (if any) is settled.
-    with DB_LOCK, get_db() as conn:
-        existing = conn.execute(
-            "SELECT 1 FROM agora_members WHERE topic_id=? AND agent_id=?",
-            (topic_id, req.agent_id),
-        ).fetchone()
-        if not existing:
-            conn.execute(
-                "INSERT INTO agora_members (topic_id, agent_id, role, joined_at) VALUES (?,?,?,?)",
-                (topic_id, req.agent_id, "subscriber", now),
-            )
-            conn.execute(
-                "UPDATE agora_topics SET subscriber_count=subscriber_count+1 WHERE topic_id=?",
-                (topic_id,),
-            )
-            # Consume invite
-            if gate in ("invite", "paid_invite"):
-                conn.execute(
-                    "DELETE FROM agora_invites WHERE topic_id=? AND agent_id=?",
-                    (topic_id, req.agent_id),
-                )
-
-    # Record payment + split for paid_invite
+    # Record payment + split for paid_invite — BEFORE the membership write below.
+    # N4 review R1(b): this used to run after membership committed. get_db() returns a
+    # raw sqlite3.Connection whose `with` block commits on normal exit, so the add-member
+    # block below had already committed by the time record_payment() could reject a
+    # replayed PaymentIntent — unlike join_room/join_session, which both record payment
+    # first. A rejected replay left the caller a de-facto free member of a paid_invite
+    # topic; reordering closes that, matching both siblings.
     if confirmed_pi and entry_fee > 0:
-        record_payment(
-            confirmed_pi,
-            req.agent_id,
-            entry_fee,
-            "agora_subscribe",
-            room_id=topic_id,
-            currency="usd",
-        )
+        try:
+            record_payment(
+                confirmed_pi,
+                req.agent_id,
+                entry_fee,
+                "agora_subscribe",
+                room_id=topic_id,
+                currency="usd",
+            )
+        except ValueError as e:
+            raise HTTPException(402, str(e))
         from emporia.payments import platform_fee as _platform_fee
         platform_fee = _platform_fee(entry_fee)
         creator_payout = entry_fee - platform_fee
@@ -4308,6 +4346,29 @@ async def subscribe_agora_topic(slug: str, req: AgoraSubscribeRequest, request: 
             "winner_payout_cents": creator_payout, "platform_fee_bps": OPERATOR_FEE_BPS,
             "payment_intent_ids": [confirmed_pi], "transfer_id": transfer_id, "transfer_status": transfer_status,
         })
+
+    # Add member — re-acquire DB_LOCK for the write, now that payment (if any) is settled
+    # and recorded.
+    with DB_LOCK, get_db() as conn:
+        existing = conn.execute(
+            "SELECT 1 FROM agora_members WHERE topic_id=? AND agent_id=?",
+            (topic_id, req.agent_id),
+        ).fetchone()
+        if not existing:
+            conn.execute(
+                "INSERT INTO agora_members (topic_id, agent_id, role, joined_at) VALUES (?,?,?,?)",
+                (topic_id, req.agent_id, "subscriber", now),
+            )
+            conn.execute(
+                "UPDATE agora_topics SET subscriber_count=subscriber_count+1 WHERE topic_id=?",
+                (topic_id,),
+            )
+            # Consume invite
+            if gate in ("invite", "paid_invite"):
+                conn.execute(
+                    "DELETE FROM agora_invites WHERE topic_id=? AND agent_id=?",
+                    (topic_id, req.agent_id),
+                )
 
     return {"ok": True, "slug": slug, "agent_id": req.agent_id, "gate_type": gate}
 

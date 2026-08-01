@@ -1436,6 +1436,10 @@ def test_every_route_has_a_reviewed_auth_posture():
         ("GET", "/agents/{agent_id}/sessions"),
         ("GET", "/agents/{agent_id}/posts"),
         ("GET", "/payments/records"),
+        # Closed in N4-2 (R1(a)) — was _KNOWN_UNGATED; reuses the same
+        # three-tier rule as GET /payments/records via
+        # _settlement_resource_viewer_allowed.
+        ("GET", "/payments/settlements/{session_id}"),
         ("GET", "/sessions"),
         ("GET", "/sessions/{session_id}"),
         ("GET", "/sessions/{session_id}/actions"),
@@ -1481,7 +1485,6 @@ def test_every_route_has_a_reviewed_auth_posture():
     _KNOWN_UNGATED: set[tuple[str, str]] = {
         ("GET", "/agents/{agent_id}"),  # R2 — N4-3
         ("GET", "/agents/{agent_id}/listings"),  # R2 — N4-3
-        ("GET", "/payments/settlements/{session_id}"),  # R1(a) — N4-2
         ("POST", "/gaming/v1/federate/sync"),  # R7 — N4-5
     }
 
@@ -2071,6 +2074,179 @@ def test_record_payment_is_idempotent_and_rejects_reuse():
             session_id="sess_other",
             currency="usd",
         )
+
+
+# ============================================================================
+# N4-2 — paid-Agora payment bypass (R1)
+# ============================================================================
+
+@patch("emporia.payments.verify_payment_intent", new_callable=AsyncMock)
+def test_join_session_payment_intent_replay_returns_402(mock_verify, client):
+    """Regression for N4 review R1: record_payment() raises ValueError on a
+    PaymentIntent id already recorded for a different resource — a captured PI being
+    replayed against a second session. join_session never caught that ValueError, so a
+    replay attempt 500'd instead of being rejected as a payment failure."""
+    _register(client, "n42_sess_creator1")
+    _register(client, "n42_sess_creator2")
+    _register(client, "n42_sess_joiner1")
+    _register(client, "n42_sess_joiner2")
+
+    session_ids = []
+    for creator in ("n42_sess_creator1", "n42_sess_creator2"):
+        r = client.post("/sessions", json={
+            "module_type": "emporia:service:v1",
+            "creator_agent_id": creator,
+            "config": {"description": "d"},
+            "payment_rules": {"mode": "stripe_link", "stake_per_participant": "1.00", "currency": "usd"},
+        },
+            headers={"x-emporia-agent-id": creator})
+        session_ids.append(r.json()["session_id"])
+
+    mock_verify.side_effect = [
+        {
+            "status": "requires_capture", "payment_intent_id": "pi_n42_shared",
+            "amount": 100, "currency": "usd", "capture_method": "manual",
+            "metadata": {"resource_type": "session", "resource_id": session_ids[0]},
+        },
+        {
+            "status": "requires_capture", "payment_intent_id": "pi_n42_shared",
+            "amount": 100, "currency": "usd", "capture_method": "manual",
+            "metadata": {"resource_type": "session", "resource_id": session_ids[1]},
+        },
+    ]
+
+    r1 = client.post(
+        f"/sessions/{session_ids[0]}/join",
+        json={"agent_id": "n42_sess_joiner1", "payment_intent_id": "pi_n42_shared"},
+        headers={"x-emporia-agent-id": "n42_sess_joiner1"},
+    )
+    assert r1.status_code == 200, r1.text
+
+    r2 = client.post(
+        f"/sessions/{session_ids[1]}/join",
+        json={"agent_id": "n42_sess_joiner2", "payment_intent_id": "pi_n42_shared"},
+        headers={"x-emporia-agent-id": "n42_sess_joiner2"},
+    )
+    assert r2.status_code == 402, r2.text
+    assert "already recorded" in r2.text
+    session2 = client.get(
+        f"/sessions/{session_ids[1]}", headers={"x-emporia-agent-id": "n42_sess_creator2"}
+    ).json()
+    assert "n42_sess_joiner2" not in session2["participants"]
+
+
+@patch("emporia.payments.verify_payment_intent", new_callable=AsyncMock)
+def test_join_room_payment_intent_replay_returns_402(mock_verify, client):
+    """Same property as test_join_session_payment_intent_replay_returns_402 for
+    POST /rooms/{id}/join — a captured PI replayed against a second paid room."""
+    _register(client, "n42_room_owner1")
+    _register(client, "n42_room_owner2")
+    _register(client, "n42_room_joiner1")
+    _register(client, "n42_room_joiner2")
+
+    room_ids = []
+    for owner in ("n42_room_owner1", "n42_room_owner2"):
+        r = client.post("/rooms", json={
+            "name": "Paid Room", "creator_id": owner, "room_type": "private",
+            "gate_type": "stripe_payment", "entry_fee_cents": 100,
+        },
+            headers={"x-emporia-agent-id": owner})
+        room_ids.append(r.json()["room_id"])
+
+    mock_verify.side_effect = [
+        {
+            "status": "succeeded", "payment_intent_id": "pi_n42_room_shared",
+            "amount": 100, "currency": "usd", "capture_method": "automatic",
+            "metadata": {"resource_type": "room", "resource_id": room_ids[0]},
+        },
+        {
+            "status": "succeeded", "payment_intent_id": "pi_n42_room_shared",
+            "amount": 100, "currency": "usd", "capture_method": "automatic",
+            "metadata": {"resource_type": "room", "resource_id": room_ids[1]},
+        },
+    ]
+
+    r1 = client.post(
+        f"/rooms/{room_ids[0]}/join",
+        json={"agent_id": "n42_room_joiner1", "payment_intent_id": "pi_n42_room_shared"},
+        headers={"x-emporia-agent-id": "n42_room_joiner1"},
+    )
+    assert r1.status_code == 200, r1.text
+
+    r2 = client.post(
+        f"/rooms/{room_ids[1]}/join",
+        json={"agent_id": "n42_room_joiner2", "payment_intent_id": "pi_n42_room_shared"},
+        headers={"x-emporia-agent-id": "n42_room_joiner2"},
+    )
+    assert r2.status_code == 402, r2.text
+    assert "already recorded" in r2.text
+
+    from emporia.relay_server import DATABASE_PATH
+    from emporia.rooms import is_member
+    assert not is_member(room_ids[1], "n42_room_joiner2", db_path=DATABASE_PATH)
+
+
+@patch("emporia.payments.verify_payment_intent", new_callable=AsyncMock)
+def test_agora_paid_subscribe_composed_bypass_closed(mock_verify, client):
+    """Regression for N4 review R1 — the composed exploit: (a) GET
+    /payments/settlements/{session_id} had no auth of any kind and leaked a paid Agora
+    topic's PaymentIntent id to anyone who knew the topic_id, and (b)
+    subscribe_agora_topic wrote membership BEFORE recording payment (get_db()'s `with`
+    commits on normal exit), so a replayed PI's rejection came too late — the attacker
+    was already a committed member. Both must now be closed: the settlement read
+    requires authorization, and a replay is rejected before membership is written.
+    """
+    _register(client, "n42_agora_owner")
+    _register(client, "n42_agora_legit")
+    _register(client, "n42_agora_attacker")
+
+    r = client.post("/agoras/topics", json={
+        "name": "N42 Paid Research", "description": "d", "visibility": "private",
+        "gate_type": "paid_invite", "entry_fee_cents": 100, "creator_id": "n42_agora_owner",
+    },
+        headers={"x-emporia-agent-id": "n42_agora_owner"})
+    slug, topic_id = r.json()["slug"], r.json()["topic_id"]
+    for invitee in ("n42_agora_legit", "n42_agora_attacker"):
+        client.post(
+            f"/agoras/topics/{slug}/invite", json={"invitee_id": invitee},
+            headers={"x-emporia-agent-id": "n42_agora_owner"},
+        )
+
+    mock_verify.return_value = {
+        "status": "succeeded", "payment_intent_id": "pi_n42_agora_captured",
+        "amount": 100, "currency": "usd", "capture_method": "automatic",
+        "metadata": {"resource_type": "agora", "resource_id": topic_id},
+    }
+    r_legit = client.post(
+        f"/agoras/topics/{slug}/subscribe",
+        json={"agent_id": "n42_agora_legit", "payment_intent_id": "pi_n42_agora_captured"},
+        headers={"x-emporia-agent-id": "n42_agora_legit"},
+    )
+    assert r_legit.status_code == 200, r_legit.text
+
+    # (a) The settlement — and its payment_intent_ids — must not be anonymously
+    # readable. Pre-fix this was a bare 200 with the real PI id in the body.
+    leak = client.get(f"/payments/settlements/{topic_id}")
+    assert leak.status_code == 403, leak.text
+    leak_list = client.get("/payments/settlements", params={"session_id": topic_id})
+    assert leak_list.status_code == 403, leak_list.text
+
+    # (b) Even with the PI id in hand (e.g. leaked before this fix, or observed some
+    # other way), replaying it must be rejected BEFORE membership is granted.
+    r_attacker = client.post(
+        f"/agoras/topics/{slug}/subscribe",
+        json={"agent_id": "n42_agora_attacker", "payment_intent_id": "pi_n42_agora_captured"},
+        headers={"x-emporia-agent-id": "n42_agora_attacker"},
+    )
+    assert r_attacker.status_code == 402, r_attacker.text
+
+    from emporia.relay_server import get_db
+    with get_db() as conn:
+        row = conn.execute(
+            "SELECT 1 FROM agora_members WHERE topic_id=? AND agent_id=?",
+            (topic_id, "n42_agora_attacker"),
+        ).fetchone()
+    assert row is None, "attacker must not be a topic member after a rejected PI replay"
 
 
 @patch("emporia.relay_server.MAX_TOTAL_SPEND_CENTS", 150)
@@ -3566,8 +3742,12 @@ def test_service_session_confirm_delivery_e2e(client):
     assert data["outcome"]["winner"] == "e2e_seller"
     assert data["outcome"]["outcome_type"] == "won"
 
-    # Settlement recorded
-    r = client.get(f"/payments/settlements/{session_id}")
+    # Settlement recorded. emporia:service:v1 defaults to participants-only visibility
+    # (N4-2/R1(a): GET /payments/settlements/{id} now reuses the resource's own
+    # visibility rule instead of being unconditionally public), so read as a participant.
+    r = client.get(
+        f"/payments/settlements/{session_id}", headers={"x-emporia-agent-id": "e2e_buyer"}
+    )
     assert r.status_code == 200
     settlements = r.json()["settlements"]
     assert len(settlements) >= 1
@@ -3612,8 +3792,10 @@ def test_service_session_dispute_delivery_e2e(client):
     assert data["outcome"]["outcome_type"] == "refund"
     assert data["outcome"]["winner"] == "e2e_buyer2"
 
-    # Settlement shows refund
-    r = client.get(f"/payments/settlements/{session_id}")
+    # Settlement shows refund (participants-only visibility, see comment above)
+    r = client.get(
+        f"/payments/settlements/{session_id}", headers={"x-emporia-agent-id": "e2e_buyer2"}
+    )
     assert r.status_code == 200
     s = r.json()["settlements"][0]
     assert s["transfer_status"] == "refunded"
@@ -3840,6 +4022,37 @@ def test_mcp_list_agents_authenticates_under_prod_auth(prod_client):
         r = mcp_server.list_agents(agent_id="mcplist_caller")
     assert r.get("success") is True, r
     assert "mcplist_caller" in {a["agent_id"] for a in r["agents"]}
+
+
+def test_mcp_get_settlements_authenticates_under_prod_auth(prod_client):
+    """N4-2 (R1(a)) made GET /payments/settlements/{session_id} apply the resource's
+    own visibility rule instead of returning settlements unconditionally.
+    mcp_server.get_settlements(session_id=...) called plain httpx.get() with no
+    credential at all, so a participant checking their own participants-only session's
+    settlement via MCP would now 403 — found auditing every client of the endpoint this
+    fix touched, same discipline as every prior pass's client-fallout sweep."""
+    from emporia import mcp_server
+    from emporia.relay_server import record_settlement
+
+    _register_keyed(prod_client, "mcpsettle_buyer")
+    r = prod_client.post("/sessions", json={
+        "module_type": "emporia:service:v1", "creator_agent_id": "mcpsettle_buyer",
+        "config": {"description": "d"}, "payment_rules": {"mode": "free"},
+    },
+        headers=bearer_for(prod_client, "mcpsettle_buyer"))
+    session_id = r.json()["session_id"]
+    record_settlement({
+        "session_id": session_id, "winner_id": "mcpsettle_buyer", "outcome_type": "won",
+        "status": "settled", "total_stake_cents": 0, "platform_fee_cents": 0,
+        "winner_payout_cents": 0, "platform_fee_bps": 0,
+        "payment_intent_ids": [], "transfer_id": None, "transfer_status": "no_stripe_account",
+    })
+
+    adapter = _ASGIHttpxAdapter(prod_client, mcp_server.RELAY_URL)
+    with patch.object(mcp_server, "AGENT_ID", "mcpsettle_buyer"), patch.object(mcp_server, "httpx", adapter):
+        r = mcp_server.get_settlements(session_id=session_id)
+    assert r.get("settlements"), r
+    assert r["settlements"][0]["winner_id"] == "mcpsettle_buyer"
 
 
 def test_agent_sdk_write_call_site_attaches_bearer_credential():

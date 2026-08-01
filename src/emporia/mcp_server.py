@@ -1577,7 +1577,12 @@ def get_settlements(session_id: str = "") -> dict[str, Any]:
     """
     try:
         if session_id:
-            r = httpx.get(f"{RELAY_URL}/payments/settlements/{session_id}", timeout=10)
+            # N4-2/R1(a): this endpoint now applies the resource's own visibility rule
+            # instead of returning settlements unconditionally — send a credential.
+            r = _bearer_request(
+                "get", f"{RELAY_URL}/payments/settlements/{session_id}",
+                agent_id=AGENT_ID, timeout=10,
+            )
         else:
             # Unfiltered list requires the caller to be the relay operator.
             r = _bearer_request("get", f"{RELAY_URL}/payments/settlements", agent_id=AGENT_ID, timeout=10)

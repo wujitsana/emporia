@@ -453,11 +453,16 @@ class EmporiaAgent:
         return resp.json()
 
     async def get_session_settlement(self, session_id: str) -> dict[str, Any] | None:
-        """Get the settlement record for a specific completed session."""
-        resp = await self._client().get(
-            f"{self.relay_url}/payments/settlements/{session_id}"
+        """Get the settlement record for a specific completed session.
+
+        Sends this agent's bearer credential (N4-2/R1(a)): the relay now applies the
+        resource's own visibility rule instead of returning settlements
+        unconditionally, since an anonymous read of this endpoint was one half of a
+        working payment bypass for paid Agora topics."""
+        resp = await self._bearer_request(
+            "get", f"{self.relay_url}/payments/settlements/{session_id}"
         )
-        if resp.status_code == 404:
+        if resp.status_code in (403, 404):
             return None
         resp.raise_for_status()
         return resp.json()

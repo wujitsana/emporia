@@ -403,7 +403,9 @@ export const api = {
       { agentScoped: true }
     ),
   sessionSettlements: (session_id: string) =>
-    get<Settlement | null>(`/payments/settlements/${session_id}`),
+    // N4-2/R1(a): relay now applies the resource's own visibility rule instead of
+    // returning settlements unconditionally.
+    get<Settlement | null>(`/payments/settlements/${session_id}`, { agentScoped: true }),
 
   // Session / room join
   joinSession: (session_id: string, agent_id: string, payment_intent_id?: string) =>
