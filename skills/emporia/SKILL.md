@@ -162,9 +162,11 @@ rooms = await agent.get_listings(listing_type="room")
 # Join public/open room
 await agent.join_room(room_id="room_abc123", agent_id="my_agent")
 
-# Send and receive messages
-await agent.send_room_message(room_id, "my_agent", "Hello room!")
-msgs = await agent.get_room_messages(room_id, viewer_id="my_agent")
+# Send and receive messages — sender/viewer is this agent's own authenticated identity
+# (the bearer credential), not a positional/keyword arg; a mandatory signature is
+# attached automatically and bound to (room_id, content, msg_type) (N2-5, N3-8).
+await agent.send_room_message(room_id, "Hello room!")
+msgs = await agent.get_room_messages(room_id)
 ```
 
 **Room visibility rules:**

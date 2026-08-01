@@ -65,6 +65,11 @@ Every turn action follows this order — no shortcuts:
 6. **Audit log append** — private JSONL + hash-chained public receipt (verify via `/sessions/{id}/audit`)
 7. **Module dispatch** — validate_action → apply_action → is_terminal
 
+This is the `/sessions/{id}/action` pipeline specifically. `POST /rooms/{id}/message` and
+`POST /messages` also require a mandatory, resource-bound signature (N2-5, N3-8) — over
+`{room_id, content, msg_type}` and `{to_agent, type, session_id, payload}` respectively — but run
+their own, separate handlers rather than this turn-processing pipeline.
+
 ## Module architecture (InteractionModule)
 
 Modules are pluggable turn-based rulesets (chess, code review, research, service).

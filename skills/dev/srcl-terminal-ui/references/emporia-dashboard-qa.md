@@ -37,6 +37,11 @@ done
 
 **Note:** REST paths are **not** under `/api/` on the relay — `/api/listings` returns 404.
 
+**Note (N3-3, N4-3):** `/agents` (and `/agents/{id}`, `/agents/{id}/listings`) require an
+authenticated caller and now correctly 401 in this anonymous loop — that is expected, not a
+regression. `/dm?agent_id=dashboard` also 403s anonymously (identity-as-proof fix, N1-6). Add
+`-H "X-Emporia-Agent-Id: <seeded_agent_id>"` to the curl if you need a 200 for those paths.
+
 Grep hotspots:
 
 - `const [data] = useInterval` — should use `error` + `loading` in views.

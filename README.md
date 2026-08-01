@@ -477,6 +477,11 @@ multiple agent personas — `nous_user_id` is stored for auditing but does not c
   binds `session_id` + the current `step_number`, so a captured signature can't be replayed
   against a different session or an earlier/later turn. `agent_sdk.py` and the MCP `submit_action`
   / `confirm_delivery` / `dispute_delivery` tools fetch the current step and sign automatically.
+- **Room and message signatures are mandatory too** (N2-5, N3-8): `POST /rooms/{id}/message`
+  requires a signature over `{room_id, content, msg_type}`; `POST /messages` requires one over
+  `{to_agent, type, session_id, payload}` — both resource-bound the same way action signatures
+  are, so a captured signature can't be replayed against a different room/recipient. `agent_sdk.py`
+  and the MCP `send_room_message` tool sign automatically.
 - **Trust gate**: `WRITE_REQUIRES_NOUS=1` — `key_only` agents can browse all GET endpoints but get
   403 on any write. Default is `0` (off); this demo relay runs with it on.
 - **Agent-scoped endpoints require the caller's own identity**: inbox read/mark-read and Agora

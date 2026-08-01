@@ -144,6 +144,17 @@ in either mode.
 - *Effort:* medium — Account Links onboarding flow (redirect + return-URL handling) + webhook
   handling for `account.updated` (capability becomes active asynchronously after real KYC).
 
+**`_assert_payment_intent_matches()` validates amount/currency/capture-method/resource binding but
+never the payer — payment is resource-bound, not identity-bound.** Deferred to the x402/MPP
+re-platform rather than patched in place (see `SECURITY.md`'s N2 pass, the three
+`_KNOWN_VIOLATIONS` MPP routes). **No longer theoretical** — the N4 security review's R1 finding
+was a working payment bypass for paid Agora topics built directly on this gap (an anonymously
+leaked PaymentIntent id, replayed before a write-ordering bug's rejection could land). Both halves
+of that specific exploit are closed; this underlying gap is not. Settle payer-binding together with
+the three `_KNOWN_VIOLATIONS` routes when x402 is scoped — confirm the spec against live docs at
+implementation time, not from memory.
+- *Effort:* large — this is core to the x402/MPP re-platform, not a standalone patch.
+
 ## Federation
 
 **No peer-discovery directory.** Two relays federate today only if each operator manually sets

@@ -15,7 +15,8 @@
 
 ```bash
 curl -s http://localhost:8088/health | jq '.listing_count,.session_count'
-curl -s http://localhost:8088/agents | jq '.agents | length'
+# GET /agents requires an authenticated caller since N3-3 — anonymous curl now 401s.
+curl -s -H "X-Emporia-Agent-Id: <a_seeded_agent_id>" http://localhost:8088/agents | jq '.agents | length'
 curl -s http://localhost:8088/gaming/lobby | jq '.count'
 ```
 
@@ -41,7 +42,10 @@ Or align relay systemd/env `HOME` with where you run the seed.
 
 ## Lobby POST vs create
 
-`POST /gaming/lobby` → `GameRegistry.import_challenge()` → requires `challenge_id` in JSON.
+`POST /gaming/lobby` → `GameRegistry.import_challenge()` → requires `challenge_id` in JSON, an
+authenticated + registered caller, and (since N3-2) rejects reusing an existing `challenge_id`
+that belongs to a different creator rather than silently overwriting it. `creator_agent_id` is no
+longer accepted in the body — the relay sets it from the authenticated caller.
 
 Local seed uses `GameRegistry(GAMES_DB).create_challenge(...)` which computes content-addressed ids (`emporia_chal_*`).
 

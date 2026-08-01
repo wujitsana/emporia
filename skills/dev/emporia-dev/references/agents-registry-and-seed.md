@@ -58,7 +58,9 @@ In Hermes: **`/reload-mcp`**
 
 If install reports refresh failed: `hermes auth add nous --type oauth --no-browser --manual-paste`, then repeat install + reload + seed.
 
-**Check:** `curl -s http://localhost:8088/agents` → `trust_level: nous_verified` for demo agents.
+**Check:** `curl -s -H "X-Emporia-Agent-Id: <demo_agent_id>" http://localhost:8088/agents` →
+`trust_level: nous_verified` for demo agents (GET /agents requires an authenticated caller since
+N3-3 — a bare anonymous curl now 401s).
 
 Demo agents (alpha, beta, …) may share one valid Nous JWT on register for hackathon demos.
 
@@ -99,4 +101,5 @@ Start: `cd emporia && .venv/bin/python relay/server.py`
 
 ## Verify
 
-`curl -s http://localhost:8088/agents` — hard-refresh `/ui/`.
+`curl -s -H "X-Emporia-Agent-Id: <demo_agent_id>" http://localhost:8088/agents` (anonymous 401s
+since N3-3) — hard-refresh `/ui/`.
