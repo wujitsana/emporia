@@ -2306,12 +2306,22 @@ def _settlement_resource_viewer_allowed(resource_id: str, caller: str | None, co
     """A `settlements.session_id` column is overloaded across three resource kinds —
     session escrow, room entry, Agora paid_invite subscription — since
     record_settlement() keys every write on whatever id the call site passed as
-    "session_id" (`room_id` for room entry (`:3732`), `topic_id` for Agora (`:4306`)).
+    "session_id" (`room_id` for room entry (`:3829`), `topic_id` for Agora (`:4390`)).
     Resolve which kind a given id actually is and apply that resource's own visibility
     rule; an id matching none of the three (garbage, or a resource since deleted) is
     operator-only rather than assumed-public — this is the fix for N4 review R1(a):
     GET /payments/settlements/{session_id} previously had no check of any kind, making
     every resource's PaymentIntent ids anonymously readable regardless of kind.
+
+    N5 review R1: the Agora branch used to key on `visibility` alone, via
+    `_topic_can_read`. But `visibility` and `gate_type` are independent fields
+    (CreateAgoraTopicRequest) — a topic can be `visibility="public"` (publicly
+    discoverable) and still `gate_type="paid_invite"` (a paywall). `_topic_can_read`
+    returns True unconditionally for public topics, so a paid topic's PaymentIntent
+    ids were anonymously readable whenever it was also publicly listed — the natural
+    paid-community configuration. The paywall is `gate_type`/`entry_fee_cents`, so a
+    paid topic requires membership regardless of `visibility`; only an unpaid topic
+    falls back to the topic's own read rule.
     """
     owner = os.getenv("EMPORIA_AGENT_ID", "")
     if owner and caller == owner:
@@ -2323,9 +2333,19 @@ def _settlement_resource_viewer_allowed(resource_id: str, caller: str | None, co
     if room:
         return bool(caller and rooms_db.is_member(resource_id, caller, db_path=DATABASE_PATH))
     topic = conn.execute(
-        "SELECT visibility, topic_id FROM agora_topics WHERE topic_id=?", (resource_id,)
+        "SELECT visibility, gate_type, entry_fee_cents, topic_id FROM agora_topics WHERE topic_id=?",
+        (resource_id,),
     ).fetchone()
     if topic:
+        is_paid = topic["gate_type"] == "paid_invite" or (topic["entry_fee_cents"] or 0) > 0
+        if is_paid:
+            if not caller:
+                return False
+            member = conn.execute(
+                "SELECT 1 FROM agora_members WHERE topic_id=? AND agent_id=?",
+                (topic["topic_id"], caller),
+            ).fetchone()
+            return bool(member)
         return _topic_can_read(topic["visibility"], caller, topic["topic_id"], conn)
     return False
 
@@ -4135,6 +4155,8 @@ async def create_agora_topic(req: CreateAgoraTopicRequest, request: Request):
         raise HTTPException(400, "gate_type must be open | invite | paid_invite")
     if req.gate_type == "paid_invite" and req.entry_fee_cents <= 0:
         raise HTTPException(400, "paid_invite topics require entry_fee_cents > 0")
+    if req.visibility not in _AGORA_VISIBILITIES:
+        raise HTTPException(400, f"visibility must be one of {sorted(_AGORA_VISIBILITIES)}")
     topic_id = f"tpc_{uuid.uuid4().hex[:12]}"
     slug = req.slug or _slugify(req.name)
     now = datetime.now(UTC).isoformat()
