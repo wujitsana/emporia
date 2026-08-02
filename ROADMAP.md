@@ -155,6 +155,24 @@ the three `_KNOWN_VIOLATIONS` routes when x402 is scoped — confirm the spec ag
 implementation time, not from memory.
 - *Effort:* large — this is core to the x402/MPP re-platform, not a standalone patch.
 
+**`record_settlement()`'s `INSERT OR IGNORE` is idempotency theatre — it can never actually
+conflict.** It mints a fresh UUID primary key on every call before the insert, so the "OR IGNORE"
+clause has no key to collide on. `payout_winner()` is a real Stripe transfer with no idempotency
+key of its own. The N5 security review's R2 finding (a retry after a mid-flight crash could reach
+`payout_winner` twice for one payment, in both `subscribe_agora_topic` and `join_room`) was fixed
+with ordering + an early already-member/already-subscribed short-circuit — deliberately not with
+real idempotency, which is properly x402/P1-scoped payment-core work rather than a standalone
+patch here. The ordering fix closes the double-payout window for a crash that happens *after*
+membership commits; a crash between the membership commit and the payout can still leave a payout
+un-fired (the creator doesn't get paid), which real idempotency would also need to address via
+retry/reconciliation, not just prevention. (O2 in the N5 security review.)
+- *Fix direction:* Stripe idempotency keys on the `payout_winner()` transfer call, and a
+  genuinely-unique key for `record_settlement()` (e.g. hash of `payment_intent_id` + resource id,
+  or an `INSERT ... ON CONFLICT` on that composite rather than the UUID PK) so a replayed
+  settlement write is a real no-op instead of always inserting a new row.
+- *Effort:* medium — settle alongside the payer-binding gap above; both are x402/P1 payment-core
+  work and share the same call sites.
+
 ## Federation
 
 **No peer-discovery directory.** Two relays federate today only if each operator manually sets

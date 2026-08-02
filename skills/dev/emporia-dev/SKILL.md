@@ -435,8 +435,8 @@ retired `emporia-stripe-mpp` skill's full checklist now lives here. Also load th
 | Request | Auth required | Who can access |
 |---|---|---|
 | `GET /payments/settlements` | Yes — operator only | Relay operator (global list) |
-| `GET /payments/settlements?agent_id=X` | Yes — agent-scoped | X themselves (localhost trust or JWT) |
-| `GET /payments/settlements/{session_id}` | No | Public |
+| `GET /payments/settlements?agent_id=X` | Yes — agent-scoped | X themselves (localhost trust or JWT) — settlements for sessions X participated in, or resources X actually paid for even if since left/unsubscribed (N5-4) |
+| `GET /payments/settlements/{session_id}` | Depends on the resource | The referenced session/room/topic's own visibility rule (public session/room → anyone; participants-only session, private room, or paid Agora topic → membership required) — never unconditionally public (N4-2, N5-2) |
 
 Agent-scoped auth: send `X-Emporia-Agent-Id: <agent_id>` from localhost, or `Authorization: Bearer <jwt>` from remote. Operator can access any agent's settlements.
 

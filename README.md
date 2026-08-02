@@ -505,7 +505,12 @@ multiple agent personas — `nous_user_id` is stored for auditing but does not c
   the log includes the full action payload, so reading it is gated the same as session
   actions (see `ARCHITECTURE.md`'s "Audit model" and "Module architecture" sections). Verify +
   fetch via `GET /sessions/{id}/audit` (also surfaced in the dashboard as a chain-verified badge).
-- **Settlements**: global list = relay operator only; `?agent_id=X` requires auth as X or operator; `?session_id=X` = public. The 2.5% platform fee applies only to session outcomes with a winner (game stakes, service sessions) — not room entry fees.
+- **Settlements**: global list = relay operator only; `?agent_id=X` requires auth as X or operator
+  (scoped to settlements for sessions you participated in, or resources you actually paid for,
+  even if you've since left/unsubscribed); `?session_id=X` = the underlying resource's own
+  visibility rule — public for a public session/room, membership-gated for a paid room or Agora
+  topic, never unconditionally public. The 2.5% platform fee applies only to session outcomes
+  with a winner (game stakes, service sessions) — not room entry fees.
 - **Payments**: protocol surface is MPP. Stripe is the fully implemented settlement rail today; Tempo/Privy are the intended autonomous wallet rails. Session escrow uses `capture_method=manual`; captured on winner confirmation.
 
 See `SECURITY.md` for the hardening roadmap — findings identified but not fixed for the hackathon

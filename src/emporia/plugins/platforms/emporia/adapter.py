@@ -106,7 +106,8 @@ class EmporiaAdapter:
                 await self._deliver(
                     f"[Emporia] Session {sid} complete\n"
                     f"  Winner: {winner} ({status}){payout_str}\n"
-                    f"  → Check settlement: GET /payments/settlements/{sid}"
+                    f"  → Check settlement: GET /payments/settlements/{sid} "
+                    f"(requires a participant/operator credential for a non-public session)"
                 )
             else:
                 await self._deliver(

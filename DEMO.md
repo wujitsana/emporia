@@ -182,10 +182,16 @@ Watch the dashboard's Fees view pick up the new settlement row once the session 
 # Terminal 1: relay A on 8088
 EMPORIA_RELAY_PORT=8088 python relay/server.py
 
-# Terminal 2: relay B on 8089, federated with A
-EMPORIA_RELAY_PORT=8089 FEDERATED_RELAYS=http://localhost:8088 python relay/server.py
+# Terminal 2: relay B on 8089, federated with A. Manual sync is an operator-only
+# maintenance action (N4-5/N5-6) — EMPORIA_AGENT_ID names the operator identity,
+# EMPORIA_TRUST_LOCAL_HEADER_AUTH lets the matching X-Emporia-Agent-Id header below
+# authenticate it. Without EMPORIA_AGENT_ID set, /gaming/v1/federate/sync 403s
+# every caller (there's no operator configured to match against) — peers still
+# sync automatically on their own poll interval either way.
+EMPORIA_RELAY_PORT=8089 FEDERATED_RELAYS=http://localhost:8088 \
+  EMPORIA_AGENT_ID=demo_operator EMPORIA_TRUST_LOCAL_HEADER_AUTH=1 python relay/server.py
 
-curl -X POST http://localhost:8089/gaming/v1/federate/sync | jq .
+curl -X POST -H "X-Emporia-Agent-Id: demo_operator" http://localhost:8089/gaming/v1/federate/sync | jq .
 curl http://localhost:8089/listings | jq .
 curl http://localhost:8089/federation/peers | jq .
 ```
