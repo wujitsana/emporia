@@ -5474,6 +5474,42 @@ def test_listen_session_sends_bearer_token_when_available():
     assert "token=jwt.fake.token" in captured_url["url"], captured_url
 
 
+def test_listen_session_refreshes_token_on_each_reconnect():
+    """N7 review R5: the connect URL — and the bearer token embedded in it — used
+    to be built once, before the retry loop, then replayed unchanged on every
+    reconnect attempt. _bearer_token_value() caches with a 30s expiry margin
+    specifically because tokens expire (~1h); a long-lived listener reconnecting
+    after expiry was replaying a dead JWT on every retry instead of refreshing it.
+    Mocks _bearer_token_value() to return a different token per call (as it
+    legitimately would once the cached one expires) and asserts each connection
+    attempt's URL carries the token that was current *at that attempt*, not
+    whatever was current when the loop started."""
+    import asyncio
+    from emporia.agent_sdk import EmporiaAgent
+    from websockets.exceptions import ConnectionClosedError
+
+    agent = EmporiaAgent(relay_url="http://fake.invalid", agent_id="sdk_ws_refresh", public_key_hex="ab" * 32)
+    agent._bearer_token_value = AsyncMock(side_effect=["jwt.attempt.1", "jwt.attempt.2"])
+    captured_urls = []
+
+    def _capture(url, *a, **kw):
+        captured_urls.append(url)
+        raise ConnectionClosedError(None, None)
+
+    async def _run():
+        with patch("emporia.agent_sdk.websockets.connect", side_effect=_capture):
+            with pytest.raises(RuntimeError, match="max retries"):
+                await agent.listen_session("sess_x", on_message=AsyncMock(),
+                    max_retries=1, initial_backoff=0.01)
+
+    asyncio.run(_run())
+    assert len(captured_urls) == 2, captured_urls
+    assert "token=jwt.attempt.1" in captured_urls[0], captured_urls
+    assert "token=jwt.attempt.2" in captured_urls[1], captured_urls
+    assert captured_urls[0] != captured_urls[1], \
+        "each reconnect attempt must rebuild the URL, not replay the first one's"
+
+
 def test_stream_session_events_wraps_connection_failure():
     """N5 review R6: stream_session_events had no exception handling at all — a
     rejected handshake or disconnect propagated as a raw low-level exception."""

@@ -698,13 +698,22 @@ class EmporiaAgent:
         regardless of the caller's actual participation) — see _ws_auth_params()
         for why both `agent_id` and `token` are sent (N6 review R4: `agent_id`
         alone is inert on the shipped default config).
+
+        N7 review R5: the connect URL — and the bearer token embedded in it — used
+        to be built once, before the retry loop, then replayed unchanged on every
+        reconnect. _bearer_token_value() caches with a margin specifically because
+        tokens expire (~1h); a long-lived listener that reconnects after expiry
+        was replaying a dead JWT on every attempt, exhausting the whole backoff
+        budget on what was really a token-refresh problem. Rebuilt fresh inside
+        the loop instead — _bearer_token_value() already handles the caching and
+        renewal, so this costs nothing extra when the cached token is still valid.
         """
-        url = _ws_url(self.relay_url, f"/ws/{session_id}") + "?" + urllib.parse.urlencode(
-            await self._ws_auth_params()
-        )
         retries = 0
         backoff = initial_backoff
         while retries <= max_retries:
+            url = _ws_url(self.relay_url, f"/ws/{session_id}") + "?" + urllib.parse.urlencode(
+                await self._ws_auth_params()
+            )
             try:
                 async with websockets.connect(url) as ws:
                     retries = 0
@@ -747,13 +756,16 @@ class EmporiaAgent:
         _ws_agent_id() — covers the co-located deployment this SDK targets) and
         `token` (a bearer JWT via the Ed25519 dashboard-challenge flow, which works
         on any config — N6 review R4: `agent_id` alone did nothing on the shipped
-        default of EMPORIA_TRUST_LOCAL_HEADER_AUTH=0)."""
-        url = _ws_url(self.relay_url, f"/ws/agent/{self.agent_id}") + "?" + urllib.parse.urlencode(
-            await self._ws_auth_params()
-        )
+        default of EMPORIA_TRUST_LOCAL_HEADER_AUTH=0). N7 review R5: rebuilt fresh
+        on every reconnect attempt rather than once before the loop, so a token
+        that expired between the original connect and a later reconnect gets
+        refreshed instead of replayed dead — see listen_session's docstring."""
         retries = 0
         backoff = initial_backoff
         while retries <= max_retries:
+            url = _ws_url(self.relay_url, f"/ws/agent/{self.agent_id}") + "?" + urllib.parse.urlencode(
+                await self._ws_auth_params()
+            )
             try:
                 async with websockets.connect(url) as ws:
                     retries = 0
@@ -784,6 +796,11 @@ class EmporiaAgent:
         context. Wrapped into a RuntimeError, matching the other two WS methods'
         contract, minus the retry (this method is intentionally single-pass). See
         _ws_auth_params() for the credential sent (N6 review R4).
+
+        Unlike listen_session/listen_agent (N7 review R5), the connect URL is
+        built once, not per reconnect attempt — correctly so, since this method
+        makes exactly one connection and never retries; there is no later attempt
+        for a cached token to go stale before.
         """
         url = _ws_url(self.relay_url, f"/ws/{session_id}") + "?" + urllib.parse.urlencode(
             await self._ws_auth_params()
