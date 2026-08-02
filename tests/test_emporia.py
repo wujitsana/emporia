@@ -3011,30 +3011,47 @@ def test_settlement_co_payer_cannot_see_others_payment_intent_ids_room(client):
     rooms_db.add_member(room_id, payer_a, db_path=DATABASE_PATH)
     rooms_db.add_member(room_id, payer_b, db_path=DATABASE_PATH)
     pi_a, pi_b = "pi_n6co_room_a", "pi_n6co_room_b"
-    for payer, pi in ((payer_a, pi_a), (payer_b, pi_b)):
+    tr_a, tr_b = "tr_n6co_room_a", "tr_n6co_room_b"
+    for payer, pi, tr in ((payer_a, pi_a, tr_a), (payer_b, pi_b, tr_b)):
         record_settlement({
             "session_id": room_id, "winner_id": owner, "outcome_type": "room_entry",
             "status": "settled", "total_stake_cents": 100, "platform_fee_cents": 0,
             "winner_payout_cents": 100, "platform_fee_bps": 0,
-            "payment_intent_ids": [pi], "transfer_id": None,
-            "transfer_status": "no_stripe_account",
+            "payment_intent_ids": [pi], "transfer_id": tr,
+            "transfer_status": "transferred", "payer_id": payer,
         })
 
     own = client.get("/payments/settlements", params={"agent_id": payer_a},
         headers={"x-emporia-agent-id": payer_a})
     assert own.status_code == 200, own.text
-    leaked_pis = {pid for s in own.json()["settlements"] for pid in s["payment_intent_ids"]}
+    own_settlements = own.json()["settlements"]
+    leaked_pis = {pid for s in own_settlements for pid in s["payment_intent_ids"]}
     assert pi_b not in leaked_pis, \
         f"agent_id={payer_a}'s own settlement query must not include payer B's " \
         f"payment_intent_ids — leaked: {leaked_pis}"
+    assert pi_a in leaked_pis, \
+        f"agent_id={payer_a}'s own settlement query must still include their own " \
+        f"payment_intent_id — got: {leaked_pis}"
+    leaked_transfers = {s["transfer_id"] for s in own_settlements}
+    assert tr_b not in leaked_transfers, \
+        f"agent_id={payer_a}'s own settlement query must not include payer B's " \
+        f"transfer_id (N7 review R4) — leaked: {leaked_transfers}"
+    assert tr_a in leaked_transfers, \
+        f"agent_id={payer_a}'s own settlement query must still include their own " \
+        f"transfer_id — got: {leaked_transfers}"
 
     by_resource = client.get("/payments/settlements", params={"session_id": room_id},
         headers={"x-emporia-agent-id": payer_a})
     assert by_resource.status_code == 200, by_resource.text
-    leaked_pis_2 = {pid for s in by_resource.json()["settlements"] for pid in s["payment_intent_ids"]}
+    by_resource_settlements = by_resource.json()["settlements"]
+    leaked_pis_2 = {pid for s in by_resource_settlements for pid in s["payment_intent_ids"]}
     assert pi_b not in leaked_pis_2, \
         f"?session_id={room_id} as payer A must not include payer B's " \
         f"payment_intent_ids — leaked: {leaked_pis_2}"
+    b_row = next(s for s in by_resource_settlements if s["payer_id"] == payer_b)
+    assert b_row["transfer_id"] == "[redacted]", \
+        f"?session_id={room_id} as payer A must see payer B's transfer_id redacted, " \
+        f"not exposed (N7 review R4) — got: {b_row['transfer_id']}"
 
 
 def test_settlement_agent_id_query_does_not_drop_owned_rows_past_candidate_limit(client):
@@ -3246,7 +3263,13 @@ def test_settlement_co_payer_cannot_see_others_payment_intent_ids_agora(mock_ver
     _register(client, owner)
     _register(client, payer_a)
     _register(client, payer_b)
-    mock_payout.return_value = {"transfer_id": "tr_n6co_agora"}
+    # Distinct transfer_id per subscriber (not a shared value) so the transfer_id
+    # redaction assertion below actually distinguishes "payer A's own" from
+    # "payer B's, must be hidden" rather than trivially matching either way.
+    mock_payout.side_effect = [
+        {"transfer_id": "tr_n6co_agora_a"},
+        {"transfer_id": "tr_n6co_agora_b"},
+    ]
 
     r = client.post("/agoras/topics", json={
         "name": "N6 Co-Payer Topic", "description": "d", "visibility": "public",
@@ -3283,10 +3306,33 @@ def test_settlement_co_payer_cannot_see_others_payment_intent_ids_agora(mock_ver
     own = client.get("/payments/settlements", params={"agent_id": payer_a},
         headers={"x-emporia-agent-id": payer_a})
     assert own.status_code == 200, own.text
-    leaked_pis = {pid for s in own.json()["settlements"] for pid in s["payment_intent_ids"]}
+    own_settlements = own.json()["settlements"]
+    leaked_pis = {pid for s in own_settlements for pid in s["payment_intent_ids"]}
     assert "pi_n6co_agora_b" not in leaked_pis, \
         f"agent_id={payer_a}'s own settlement query must not include payer B's " \
         f"payment_intent_ids — leaked: {leaked_pis}"
+    leaked_transfers = {s["transfer_id"] for s in own_settlements}
+    assert "tr_n6co_agora_b" not in leaked_transfers, \
+        f"agent_id={payer_a}'s own settlement query must not include payer B's " \
+        f"transfer_id (N7 review R4) — leaked: {leaked_transfers}"
+    assert "tr_n6co_agora_a" in leaked_transfers, \
+        f"agent_id={payer_a}'s own settlement query must still include their own " \
+        f"transfer_id — got: {leaked_transfers}"
+
+    # ?agent_id= already fully excludes non-owned rows via payer_id (N7-2) — it
+    # never needs to redact anything, only omit. transfer_id redaction (N7-4) only
+    # actually matters on ?session_id=/{id}, which returns every row for a
+    # resource the caller may see, redacting the ones they don't own.
+    by_resource = client.get(f"/payments/settlements/{topic_id}",
+        headers={"x-emporia-agent-id": payer_a})
+    assert by_resource.status_code == 200, by_resource.text
+    b_row = next(s for s in by_resource.json()["settlements"] if s["payer_id"] == payer_b)
+    assert b_row["transfer_id"] == "[redacted]", \
+        f"/payments/settlements/{topic_id} as payer A must see payer B's transfer_id " \
+        f"redacted, not exposed (N7 review R4) — got: {b_row['transfer_id']}"
+    a_row = next(s for s in by_resource.json()["settlements"] if s["payer_id"] == payer_a)
+    assert a_row["transfer_id"] == "tr_n6co_agora_a", \
+        f"payer A must still see their own transfer_id unredacted — got: {a_row['transfer_id']}"
 
 
 def test_settlement_redaction_does_not_blind_the_operator(client):

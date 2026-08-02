@@ -2477,11 +2477,21 @@ def _caller_owns_settlement_row(
 def _settlement_row_dict(
     row: Any, caller: str | None, participant_session_ids: set[str]
 ) -> dict[str, Any]:
-    """Settlement row as JSON, with `payment_intent_ids` redacted to `["[redacted]"]`
-    unless `caller` is the relay operator or owns this specific row (see
-    _caller_owns_settlement_row). Used by every settlement read path so a caller
-    authorized to see a resource's settlements (via _settlement_resource_viewer_allowed)
-    doesn't also see every other payer's PaymentIntent ids on that resource."""
+    """Settlement row as JSON, with `payment_intent_ids`/`transfer_id` redacted to
+    `"[redacted]"` unless `caller` is the relay operator or owns this specific row
+    (see _caller_owns_settlement_row). Used by every settlement read path so a
+    caller authorized to see a resource's settlements (via
+    _settlement_resource_viewer_allowed) doesn't also see every other payer's
+    opaque per-transaction identifiers on that resource.
+
+    N7 review R4: the original N6-2 redaction covered payment_intent_ids but not
+    transfer_id — the Stripe transfer object id for that specific payer's payout,
+    1:1 with their payment — so a co-payer still got a per-transaction Stripe
+    identifier out of the same response N6-2 was written to lock down.
+    `total_stake_cents`/`winner_payout_cents` are left alone: room/topic entry
+    fees are uniform, so a co-payer's amount is already public from the resource's
+    own fee — only the opaque identifiers need covering.
+    """
     d = {**dict(row), "payment_intent_ids": json.loads(row["payment_intent_ids"])}
     owner = _relay_operator_id()
     if owner and caller == owner:
@@ -2489,6 +2499,8 @@ def _settlement_row_dict(
     if _caller_owns_settlement_row(row, caller, participant_session_ids):
         return d
     d["payment_intent_ids"] = ["[redacted]"]
+    if d.get("transfer_id"):
+        d["transfer_id"] = "[redacted]"
     return d
 
 
