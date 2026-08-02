@@ -508,11 +508,13 @@ multiple agent personas — `nous_user_id` is stored for auditing but does not c
 - **Settlements**: global list = relay operator only; `?agent_id=X` requires auth as X or operator
   (scoped to settlements for sessions you participated in, or resources you actually paid for,
   even if you've since left/unsubscribed — and, since rooms/Agora topics write one settlement row
-  *per payer*, only rows X actually owns, not every row on a resource X paid for); `?session_id=X`
-  = the underlying resource's own visibility rule — public for a public session/room,
-  membership-gated for a paid room or Agora topic, never unconditionally public — but rows you
-  don't own have `payment_intent_ids` redacted rather than exposed just because you can see the
-  resource. The 2.5% platform fee applies only to session outcomes with a winner (game stakes,
+  *per payer*, only rows X actually owns via a real `payer_id` column, not every row on a resource
+  X paid for); `?session_id=X` = the underlying resource's own visibility rule — public for a
+  public session/room, membership-gated for a paid room or Agora topic, never unconditionally
+  public — but rows you don't own have `payment_intent_ids`/`transfer_id` redacted rather than
+  exposed just because you can see the resource. `?session_id=X` and `GET
+  /payments/settlements/{id}` both accept `?limit=` (default 50) and report `has_more` — previously
+  unbounded. The 2.5% platform fee applies only to session outcomes with a winner (game stakes,
   service sessions) — not room entry fees.
 - **Payments**: protocol surface is MPP. Stripe is the fully implemented settlement rail today; Tempo/Privy are the intended autonomous wallet rails. Session escrow uses `capture_method=manual`; captured on winner confirmation.
 
