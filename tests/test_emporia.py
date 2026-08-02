@@ -5168,6 +5168,37 @@ def test_listen_session_sends_agent_id_credential():
     assert "agent_id=sdk_ws_creds" in captured_url["url"], captured_url
 
 
+def test_listen_session_sends_bearer_token_when_available():
+    """N6 review R4: agent_id alone is inert on the shipped default config
+    (EMPORIA_TRUST_LOCAL_HEADER_AUTH=0) — _ws_agent_id() only reads the agent_id
+    query param for a trusted host, which is empty by default, so a
+    participants-only session stayed unreachable from listen_session/listen_agent
+    despite N5-7 adding that param. ?token=<jwt> (via the same dashboard
+    challenge/session flow _bearer_headers() already uses for REST calls) works on
+    any config. This asserts it's actually sent, not just agent_id."""
+    import asyncio
+    from emporia.agent_sdk import EmporiaAgent
+
+    agent = EmporiaAgent(relay_url="http://fake.invalid", agent_id="sdk_ws_token", public_key_hex="ab" * 32)
+    agent._bearer_token_value = AsyncMock(return_value="jwt.fake.token")
+    captured_url = {}
+
+    def _capture(url, *a, **kw):
+        captured_url["url"] = url
+        from websockets.exceptions import ConnectionClosedError
+        raise ConnectionClosedError(None, None)
+
+    async def _run():
+        with patch("emporia.agent_sdk.websockets.connect", side_effect=_capture):
+            with pytest.raises(RuntimeError, match="max retries"):
+                await agent.listen_session("sess_x", on_message=AsyncMock(),
+                    max_retries=0, initial_backoff=0.01)
+
+    asyncio.run(_run())
+    assert "agent_id=sdk_ws_token" in captured_url["url"], captured_url
+    assert "token=jwt.fake.token" in captured_url["url"], captured_url
+
+
 def test_stream_session_events_wraps_connection_failure():
     """N5 review R6: stream_session_events had no exception handling at all — a
     rejected handshake or disconnect propagated as a raw low-level exception."""

@@ -78,19 +78,17 @@ class EmporiaAgent:
     def _sign(self, payload: dict[str, Any]) -> str:
         return ed25519_sign(payload, self.profile_id)
 
-    async def _bearer_headers(self) -> dict[str, str]:
-        """{"Authorization": "Bearer <jwt>"} via the dashboard challenge/session flow,
-        cached until near expiry. On a relay running with EMPORIA_TRUST_LOCAL_HEADER_AUTH
-        off (the shipped default), this is the only credential that authenticates a REST
-        read — without it, reading a participants-only session (any research/service/
-        code-review session — the paid modules) this agent is itself participating in
-        403s, including the pre-fetch submit_action() needs to sign its own turn. Returns
-        {} on any failure so callers degrade to an unauthenticated request rather than
-        breaking on relays where auth isn't required."""
+    async def _bearer_token_value(self) -> str | None:
+        """The raw JWT from the dashboard challenge/session flow, cached until near
+        expiry — the same credential _bearer_headers() wraps as an Authorization
+        header. Exposed separately (N6 review R4) so WS connect calls can use it
+        too: a WS handshake can't carry a custom Authorization header, only query
+        params, so listen_session/listen_agent/stream_session_events send this as
+        ?token= instead. Returns None on any failure."""
         import time
         now = time.time()
         if self._bearer_token and self._bearer_exp > now + 30:
-            return {"Authorization": f"Bearer {self._bearer_token}"}
+            return self._bearer_token
         try:
             from emporia.identity import sign_raw
             ch_resp = await self._client().post(f"{self.relay_url}/dashboard/challenge")
@@ -105,9 +103,35 @@ class EmporiaAgent:
             data = resp.json()
             self._bearer_token = data["token"]
             self._bearer_exp = now + data.get("expires_in", 3600)
-            return {"Authorization": f"Bearer {self._bearer_token}"}
+            return self._bearer_token
         except Exception:
-            return {}
+            return None
+
+    async def _bearer_headers(self) -> dict[str, str]:
+        """{"Authorization": "Bearer <jwt>"} via _bearer_token_value(). On a relay
+        running with EMPORIA_TRUST_LOCAL_HEADER_AUTH off (the shipped default), this
+        is the only credential that authenticates a REST read — without it, reading
+        a participants-only session (any research/service/code-review session — the
+        paid modules) this agent is itself participating in 403s, including the
+        pre-fetch submit_action() needs to sign its own turn. Returns {} on any
+        failure so callers degrade to an unauthenticated request rather than
+        breaking on relays where auth isn't required."""
+        token = await self._bearer_token_value()
+        return {"Authorization": f"Bearer {token}"} if token else {}
+
+    async def _ws_auth_params(self) -> dict[str, str]:
+        """Query params for a WS connect URL: `agent_id` (satisfies the relay's
+        localhost-trust tier — co-located deployment) plus `token` when a bearer
+        JWT is obtainable (works on any config, including the shipped default of
+        EMPORIA_TRUST_LOCAL_HEADER_AUTH=0, where `agent_id` alone is ignored — N6
+        review R4: listen_session/listen_agent sent only `agent_id`, so a
+        participants-only session was unreachable from the SDK on a default
+        install despite N5-7 adding the param)."""
+        params = {"agent_id": self.agent_id}
+        token = await self._bearer_token_value()
+        if token:
+            params["token"] = token
+        return params
 
     def _invalidate_bearer(self) -> None:
         """Drop the cached token so the next _bearer_headers() call re-authenticates.
@@ -669,13 +693,14 @@ class EmporiaAgent:
     ) -> None:
         """Listen to a session WS channel. Reconnects on disconnect with backoff.
 
-        Sends the same `?agent_id=` credential listen_agent() does (N5 review R6 —
-        this used to send none at all, so a participants-only session was
-        unreachable from here regardless of the caller's actual participation; see
-        relay_server.py's ws_session()/_ws_agent_id()).
+        Sends the same credential listen_agent() does (N5 review R6 — this used to
+        send none at all, so a participants-only session was unreachable from here
+        regardless of the caller's actual participation) — see _ws_auth_params()
+        for why both `agent_id` and `token` are sent (N6 review R4: `agent_id`
+        alone is inert on the shipped default config).
         """
         url = _ws_url(self.relay_url, f"/ws/{session_id}") + "?" + urllib.parse.urlencode(
-            {"agent_id": self.agent_id}
+            await self._ws_auth_params()
         )
         retries = 0
         backoff = initial_backoff
@@ -717,13 +742,14 @@ class EmporiaAgent:
     ) -> None:
         """Listen to the per-agent WS channel. Reconnects with backoff.
 
-        agent_id as a query param satisfies the relay's localhost-trust tier for
-        /ws/agent/{id} (see relay_server.py's _ws_agent_id()) — covers the co-located
-        deployment this SDK targets. A relay this agent doesn't co-locate with has no
-        credential path here yet (fast-follow: reuse the Ed25519 dashboard-challenge flow
-        non-interactively via POST /dashboard/challenge + /dashboard/session)."""
+        See _ws_auth_params(): sends both `agent_id` (satisfies the relay's
+        localhost-trust tier for /ws/agent/{id} — see relay_server.py's
+        _ws_agent_id() — covers the co-located deployment this SDK targets) and
+        `token` (a bearer JWT via the Ed25519 dashboard-challenge flow, which works
+        on any config — N6 review R4: `agent_id` alone did nothing on the shipped
+        default of EMPORIA_TRUST_LOCAL_HEADER_AUTH=0)."""
         url = _ws_url(self.relay_url, f"/ws/agent/{self.agent_id}") + "?" + urllib.parse.urlencode(
-            {"agent_id": self.agent_id}
+            await self._ws_auth_params()
         )
         retries = 0
         backoff = initial_backoff
@@ -756,10 +782,11 @@ class EmporiaAgent:
         (unauthorized/unknown session_id — see listen_session's docstring) or a
         disconnect propagated as a raw low-level exception with no SDK-level
         context. Wrapped into a RuntimeError, matching the other two WS methods'
-        contract, minus the retry (this method is intentionally single-pass).
+        contract, minus the retry (this method is intentionally single-pass). See
+        _ws_auth_params() for the credential sent (N6 review R4).
         """
         url = _ws_url(self.relay_url, f"/ws/{session_id}") + "?" + urllib.parse.urlencode(
-            {"agent_id": self.agent_id}
+            await self._ws_auth_params()
         )
         try:
             async with websockets.connect(url) as ws:
