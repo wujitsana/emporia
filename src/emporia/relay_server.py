@@ -2357,6 +2357,27 @@ def _settlement_resource_viewer_allowed(resource_id: str, caller: str | None, co
     return False
 
 
+def _require_operator(caller: str | None, action: str) -> None:
+    """Raise 403 for an operator-only maintenance action, with a reason that
+    distinguishes "no relay operator is configured at all" (EMPORIA_AGENT_ID unset —
+    no identity can ever satisfy this check) from "you aren't the configured
+    operator" (EMPORIA_AGENT_ID is set, but not to you). N5 review R5 found
+    trigger_federation_sync gave the same generic message either way, which reads
+    as "authenticate as the right agent" when the real problem — on a default
+    install, where EMPORIA_AGENT_ID is unset — is that the action is unreachable by
+    anyone, including whoever would become the operator by setting it.
+    """
+    owner = os.getenv("EMPORIA_AGENT_ID", "")
+    if not owner:
+        raise HTTPException(
+            403,
+            f"{action}: no relay operator is configured (EMPORIA_AGENT_ID unset) — "
+            "this action is unavailable on this relay"
+        )
+    if not caller or caller != owner:
+        raise HTTPException(403, f"{action}: relay operator access required")
+
+
 @app.get("/payments/settlements")
 async def list_settlements(
     request: Request,
@@ -2384,8 +2405,7 @@ async def list_settlements(
 
     # Unfiltered global list: operator only
     if not session_id and not agent_id:
-        if not dashboard_id or dashboard_id != owner:
-            raise HTTPException(403, "Global settlements require relay operator access")
+        _require_operator(dashboard_id, "Global settlements")
 
     # Agent-scoped: must be the agent themselves (via dashboard auth)
     if agent_id and not session_id:
@@ -2486,8 +2506,7 @@ async def list_payment_records(
                 (room_id,),
             ).fetchall()
         else:
-            if not is_owner:
-                raise HTTPException(403, "Global payment records require relay operator access")
+            _require_operator(caller, "Global payment records")
             rows = conn.execute(
                 "SELECT * FROM payments ORDER BY created_at DESC LIMIT 200"
             ).fetchall()
@@ -2836,11 +2855,14 @@ async def trigger_federation_sync(request: Request):
     an on-demand federated-state refresh with no caller check whatsoever. This is an
     operator maintenance action, not an agent-facing one, so it requires the relay
     operator identity rather than just any authenticated caller.
+
+    N5 review R5: on a default install EMPORIA_AGENT_ID is unset, so this — like the
+    other two operator-only actions in this file — was unreachable by anyone,
+    including whoever would become the operator by setting it, and said so with the
+    same generic message a wrong-identity caller gets. See _require_operator.
     """
     caller = _dashboard_agent_id(request)
-    owner = os.getenv("EMPORIA_AGENT_ID", "")
-    if not caller or not owner or caller != owner:
-        raise HTTPException(403, "Federation sync requires relay operator access")
+    _require_operator(caller, "Federation sync")
     results = {}
     for peer in FEDERATED_RELAYS:
         count = await _pull_federated_listings(peer)

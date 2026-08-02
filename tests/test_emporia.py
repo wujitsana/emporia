@@ -842,6 +842,33 @@ def test_federation_sync_requires_operator(prod_client):
     assert r.status_code == 200
 
 
+def test_operator_only_actions_distinguish_unconfigured_from_wrong_caller(monkeypatch, prod_client):
+    """N5 review R5: with EMPORIA_AGENT_ID unset, trigger_federation_sync 403'd every
+    caller — including whoever would become the operator by setting it — with the
+    same generic "requires relay operator access" message a wrong-identity caller
+    gets. That's still correct (fail closed: no operator configured means no one
+    may call this), but the message read as "authenticate as the right agent" when
+    the real problem is the action is unreachable by anyone. _require_operator now
+    distinguishes the two cases; this applies to all three operator-only endpoints
+    that share it (settlements, payment records, federation sync)."""
+    monkeypatch.delenv("EMPORIA_AGENT_ID", raising=False)
+    _register_keyed(prod_client, "n56_someone")
+
+    r = prod_client.post(
+        "/gaming/v1/federate/sync", headers=bearer_for(prod_client, "n56_someone")
+    )
+    assert r.status_code == 403
+    assert "no relay operator is configured" in r.text
+
+    with patch.dict(os.environ, {"EMPORIA_AGENT_ID": "n56_the_operator"}):
+        r2 = prod_client.post(
+            "/gaming/v1/federate/sync", headers=bearer_for(prod_client, "n56_someone")
+        )
+    assert r2.status_code == 403
+    assert "no relay operator is configured" not in r2.text
+    assert "relay operator access required" in r2.text
+
+
 # ============================================================================
 # Session Lifecycle
 # ============================================================================
