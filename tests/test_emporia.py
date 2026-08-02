@@ -2697,17 +2697,22 @@ def _settlement_matrix_session(client, module_type, payment_mode):
 
 
 def _settlement_matrix_agora(client, visibility, gate_type):
-    """Create an Agora topic with the given visibility/gate_type, invite+"pay" a
-    subscriber via a directly-recorded settlement (mirrors what subscribe_agora_topic
-    itself writes for paid_invite), and return (topic_id, payer_id, stranger_id)."""
-    from emporia.relay_server import record_settlement
+    """Create an Agora topic with the given visibility/gate_type, invite+subscribe a
+    payer (real membership, so the payer-can-read-own-receipt property is actually
+    exercised — N6 review R3: this used to skip the real subscribe and only invite,
+    so no test ever proved a payer could read their own Agora receipt), and directly
+    record a settlement (mirrors what subscribe_agora_topic itself writes for
+    paid_invite — avoids needing to mock a Stripe payment here). Returns
+    (topic_id, payer_id, stranger_id)."""
+    from emporia.relay_server import record_settlement, get_db, DB_LOCK
+    from datetime import datetime, UTC
     # Fixture names avoid the literal words "restricted"/"private" — the NeMo
     # guardrails semantic check has flagged those as prompt-injection false positives
     # in prior passes (N4's "N47 Sign Fail Room"); use an opaque tag instead.
     tag = {"public": "pub", "private": "priv", "restricted": "rest"}[visibility] + "_" + gate_type
-    owner = f"n5mat_ag_{tag}_owner"
-    payer = f"n5mat_ag_{tag}_payer"
-    stranger = f"n5mat_ag_{tag}_stranger"
+    owner = f"n6mat_ag_{tag}_owner"
+    payer = f"n6mat_ag_{tag}_payer"
+    stranger = f"n6mat_ag_{tag}_stranger"
     _register(client, owner)
     _register(client, payer)
     _register(client, stranger)
@@ -2718,10 +2723,24 @@ def _settlement_matrix_agora(client, visibility, gate_type):
     },
         headers={"x-emporia-agent-id": owner})
     assert r.status_code == 200, r.text
-    topic_id = r.json()["topic_id"]
+    topic_id, slug = r.json()["topic_id"], r.json()["slug"]
     if gate_type in ("invite", "paid_invite"):
-        client.post(f"/agoras/topics/{r.json()['slug']}/invite", json={"invitee_id": payer},
+        client.post(f"/agoras/topics/{slug}/invite", json={"invitee_id": payer},
             headers={"x-emporia-agent-id": owner})
+    if gate_type == "paid_invite":
+        # Real subscribe needs a mocked Stripe payment — out of scope for this
+        # visibility-only fixture. Grant membership directly instead, same
+        # simplification record_settlement below already makes for the payment
+        # itself (subscribe_agora_topic would have written both together).
+        with DB_LOCK, get_db() as conn:
+            conn.execute(
+                "INSERT INTO agora_members (topic_id, agent_id, role, joined_at) VALUES (?,?,?,?)",
+                (topic_id, payer, "subscriber", datetime.now(UTC).isoformat()),
+            )
+    else:
+        sub = client.post(f"/agoras/topics/{slug}/subscribe",
+            json={"agent_id": payer}, headers={"x-emporia-agent-id": payer})
+        assert sub.status_code == 200, sub.text
     record_settlement({
         "session_id": topic_id, "winner_id": owner, "outcome_type": "agora_subscribe",
         "status": "settled", "total_stake_cents": entry_fee, "platform_fee_cents": 0,
@@ -2732,6 +2751,51 @@ def _settlement_matrix_agora(client, visibility, gate_type):
     return topic_id, payer, stranger
 
 
+def _settlement_matrix_room(client, room_type, gate_type):
+    """Create a room with the given room_type/gate_type, add a payer as a member
+    (real /join for the free "open" gate; direct rooms_db.add_member for
+    "stripe_payment" to avoid mocking Stripe here — same simplification
+    _settlement_matrix_agora makes for paid_invite), and directly record a
+    settlement. Returns (room_id, payer_id, stranger_id).
+
+    room_type="public" only ever pairs with gate_type="open" — create_room rejects
+    any other combination (rooms.py: "Public rooms must use gate_type='open'"), so
+    there is no public+paid cell to cover; see
+    test_settlement_matrix_public_paid_room_is_unconstructible.
+    """
+    from emporia.relay_server import record_settlement, DATABASE_PATH
+    from emporia import rooms as rooms_db
+    tag = f"{room_type}_{gate_type}"
+    owner = f"n6mat_rm_{tag}_owner"
+    payer = f"n6mat_rm_{tag}_payer"
+    stranger = f"n6mat_rm_{tag}_stranger"
+    _register(client, owner)
+    _register(client, payer)
+    _register(client, stranger)
+    entry_fee = 100 if gate_type == "stripe_payment" else 0
+    body = {"name": f"Room Matrix {tag}", "creator_id": owner, "room_type": room_type,
+        "gate_type": gate_type}
+    if entry_fee:
+        body["entry_fee_cents"] = entry_fee
+    r = client.post("/rooms", json=body, headers={"x-emporia-agent-id": owner})
+    assert r.status_code == 200, r.text
+    room_id = r.json()["room_id"]
+    if gate_type == "open":
+        join = client.post(f"/rooms/{room_id}/join", json={"agent_id": payer},
+            headers={"x-emporia-agent-id": payer})
+        assert join.status_code == 200, join.text
+    else:
+        rooms_db.add_member(room_id, payer, db_path=DATABASE_PATH)
+    record_settlement({
+        "session_id": room_id, "winner_id": owner, "outcome_type": "room_entry",
+        "status": "settled", "total_stake_cents": entry_fee, "platform_fee_cents": 0,
+        "winner_payout_cents": entry_fee, "platform_fee_bps": 0,
+        "payment_intent_ids": [f"pi_{room_id}"], "transfer_id": None,
+        "transfer_status": "no_stripe_account",
+    })
+    return room_id, payer, stranger
+
+
 _SETTLEMENT_MATRIX_SESSION_CASES = [
     # (module_type, payment_mode, anon_can_read) — session visibility is decided by
     # the module's DEFAULT_VISIBILITY (no linked room in either case here).
@@ -2740,14 +2804,33 @@ _SETTLEMENT_MATRIX_SESSION_CASES = [
 ]
 
 _SETTLEMENT_MATRIX_AGORA_CASES = [
-    # (visibility, gate_type, anon_can_read) — the payer always must be able to read
-    # their own receipt; a stranger/anon must not when the topic is paid, regardless
-    # of visibility. This is the R1 matrix: visibility and gate_type are independent
-    # fields, so "public" alone must NOT imply "paid PaymentIntent ids are public."
+    # (visibility, gate_type, anon_can_read) — the full 3x3 cross product.
+    # visibility and gate_type are independent fields (this is the R1 matrix): a
+    # "public" topic must NOT imply "paid PaymentIntent ids are public" (the
+    # public+paid_invite cell). "open"/"invite" gates carry no entry fee in this
+    # fixture, so _settlement_resource_viewer_allowed's `is_paid` check is False for
+    # them and the topic's own visibility rule applies instead — public readable,
+    # private/restricted membership-gated — same as a topic with no money involved
+    # at all (an unpaid subscribe never actually calls record_settlement in
+    # production; this fixture writes one anyway purely to exercise the access rule).
     ("public", "open", True),
+    ("public", "invite", True),
     ("public", "paid_invite", False),   # <-- the R1 cell: must fail against pre-fix HEAD
+    ("private", "open", False),
+    ("private", "invite", False),
     ("private", "paid_invite", False),
     ("restricted", "open", False),
+    ("restricted", "invite", False),
+    ("restricted", "paid_invite", False),
+]
+
+_SETTLEMENT_MATRIX_ROOM_CASES = [
+    # (room_type, gate_type, anon_can_read) — public rooms are always free
+    # (gate_type="open"), so there is no public+paid cell; see
+    # _settlement_matrix_room's docstring and the dedicated unconstructible test.
+    ("public", "open", True),
+    ("private", "open", False),
+    ("private", "stripe_payment", False),
 ]
 
 
@@ -2777,7 +2860,12 @@ def test_settlement_visibility_matrix_agora(client, visibility, gate_type, anon_
     anon = client.get(f"/payments/settlements/{topic_id}")
     unrelated = client.get(f"/payments/settlements/{topic_id}",
         headers={"x-emporia-agent-id": stranger})
+    payer_r = client.get(f"/payments/settlements/{topic_id}",
+        headers={"x-emporia-agent-id": payer})
 
+    assert payer_r.status_code == 200, \
+        f"visibility={visibility} gate_type={gate_type}: the payer must always be able to " \
+        f"read their own receipt — {payer_r.status_code}: {payer_r.text}"
     if anon_can_read:
         assert anon.status_code == 200, anon.text
         assert unrelated.status_code == 200, unrelated.text
@@ -2788,6 +2876,245 @@ def test_settlement_visibility_matrix_agora(client, visibility, gate_type, anon_
         assert unrelated.status_code == 403, \
             f"visibility={visibility} gate_type={gate_type}: an uninvited stranger must not " \
             f"read a paid topic's settlement — {unrelated.status_code}: {unrelated.text}"
+
+
+@pytest.mark.parametrize("room_type,gate_type,anon_can_read", _SETTLEMENT_MATRIX_ROOM_CASES)
+def test_settlement_visibility_matrix_room(client, room_type, gate_type, anon_can_read):
+    """N6 review R3: the N5 plan required room coverage in this matrix; N5-1 shipped
+    with none, so N5-4's widening of the room branch (public rooms readable by
+    anyone) landed with zero test coverage."""
+    room_id, payer, stranger = _settlement_matrix_room(client, room_type, gate_type)
+
+    anon = client.get(f"/payments/settlements/{room_id}")
+    unrelated = client.get(f"/payments/settlements/{room_id}",
+        headers={"x-emporia-agent-id": stranger})
+    payer_r = client.get(f"/payments/settlements/{room_id}",
+        headers={"x-emporia-agent-id": payer})
+
+    assert payer_r.status_code == 200, \
+        f"room_type={room_type} gate_type={gate_type}: the payer must always be able to " \
+        f"read their own receipt — {payer_r.status_code}: {payer_r.text}"
+    if anon_can_read:
+        assert anon.status_code == 200, anon.text
+        assert unrelated.status_code == 200, unrelated.text
+    else:
+        assert anon.status_code == 403, \
+            f"room_type={room_type} gate_type={gate_type}: anonymous must not read a " \
+            f"private room's settlement — {anon.status_code}: {anon.text}"
+        assert unrelated.status_code == 403, \
+            f"room_type={room_type} gate_type={gate_type}: a non-member must not read a " \
+            f"private room's settlement — {unrelated.status_code}: {unrelated.text}"
+
+
+def test_settlement_matrix_public_paid_room_is_unconstructible(rooms_db_path):
+    """Documents why _SETTLEMENT_MATRIX_ROOM_CASES has no public+paid cell: it can't
+    exist. create_room enforces "public rooms must use gate_type='open'", so a
+    public room can never carry a payment for R1's co-payer leak to apply to."""
+    from emporia.rooms import create_room
+    with pytest.raises(ValueError):
+        create_room("N6 Unconstructible", "n6mat_unconstructible_owner", room_type="public",
+                    gate_type="stripe_payment", entry_fee_cents=100, db_path=rooms_db_path)
+
+
+def test_settlement_co_payer_cannot_see_others_payment_intent_ids_room(client):
+    """N6 review R1 — the proof: join_room writes one settlement row PER PAYER, all
+    keyed on the same room_id (session_id column). N5-4 widened ?agent_id= to join
+    through payments, which returns every settlement for every resource the caller
+    paid for — including OTHER PAYERS' rows on a shared paid room. This must fail
+    against pre-N6 HEAD: agent B's payment_intent_ids leak through agent A's own
+    ?agent_id=A request, and through the room's own ?session_id=/{room_id} reads."""
+    from emporia.relay_server import record_settlement, DATABASE_PATH
+    from emporia import rooms as rooms_db
+
+    owner = "n6co_room_owner"
+    payer_a = "n6co_room_payer_a"
+    payer_b = "n6co_room_payer_b"
+    _register(client, owner)
+    _register(client, payer_a)
+    _register(client, payer_b)
+
+    r = client.post("/rooms", json={
+        "name": "N6 Co-Payer Room", "creator_id": owner,
+        "room_type": "private", "gate_type": "stripe_payment", "entry_fee_cents": 100,
+    },
+        headers={"x-emporia-agent-id": owner})
+    assert r.status_code == 200, r.text
+    room_id = r.json()["room_id"]
+
+    rooms_db.add_member(room_id, payer_a, db_path=DATABASE_PATH)
+    rooms_db.add_member(room_id, payer_b, db_path=DATABASE_PATH)
+    pi_a, pi_b = "pi_n6co_room_a", "pi_n6co_room_b"
+    for payer, pi in ((payer_a, pi_a), (payer_b, pi_b)):
+        record_settlement({
+            "session_id": room_id, "winner_id": owner, "outcome_type": "room_entry",
+            "status": "settled", "total_stake_cents": 100, "platform_fee_cents": 0,
+            "winner_payout_cents": 100, "platform_fee_bps": 0,
+            "payment_intent_ids": [pi], "transfer_id": None,
+            "transfer_status": "no_stripe_account",
+        })
+
+    own = client.get("/payments/settlements", params={"agent_id": payer_a},
+        headers={"x-emporia-agent-id": payer_a})
+    assert own.status_code == 200, own.text
+    leaked_pis = {pid for s in own.json()["settlements"] for pid in s["payment_intent_ids"]}
+    assert pi_b not in leaked_pis, \
+        f"agent_id={payer_a}'s own settlement query must not include payer B's " \
+        f"payment_intent_ids — leaked: {leaked_pis}"
+
+    by_resource = client.get("/payments/settlements", params={"session_id": room_id},
+        headers={"x-emporia-agent-id": payer_a})
+    assert by_resource.status_code == 200, by_resource.text
+    leaked_pis_2 = {pid for s in by_resource.json()["settlements"] for pid in s["payment_intent_ids"]}
+    assert pi_b not in leaked_pis_2, \
+        f"?session_id={room_id} as payer A must not include payer B's " \
+        f"payment_intent_ids — leaked: {leaked_pis_2}"
+
+
+@patch("emporia.payments.payout_winner", new_callable=AsyncMock)
+@patch("emporia.payments.verify_payment_intent", new_callable=AsyncMock)
+def test_settlement_co_payer_cannot_see_others_payment_intent_ids_agora(mock_verify, mock_payout, client):
+    """Sibling of the room co-payer test for Agora — subscribe_agora_topic has the
+    identical one-row-per-payer shape."""
+    owner = "n6co_agora_owner"
+    payer_a = "n6co_agora_payer_a"
+    payer_b = "n6co_agora_payer_b"
+    _register(client, owner)
+    _register(client, payer_a)
+    _register(client, payer_b)
+    mock_payout.return_value = {"transfer_id": "tr_n6co_agora"}
+
+    r = client.post("/agoras/topics", json={
+        "name": "N6 Co-Payer Topic", "description": "d", "visibility": "public",
+        "gate_type": "paid_invite", "entry_fee_cents": 100, "creator_id": owner,
+    },
+        headers={"x-emporia-agent-id": owner})
+    assert r.status_code == 200, r.text
+    slug, topic_id = r.json()["slug"], r.json()["topic_id"]
+
+    with patch("emporia.relay_server.AGENT_REGISTRY.get_stripe_account", return_value="acct_n6co"):
+        mock_verify.return_value = {
+            "status": "succeeded", "payment_intent_id": "pi_n6co_agora_a",
+            "amount": 100, "currency": "usd", "capture_method": "automatic",
+            "metadata": {"resource_type": "agora", "resource_id": topic_id},
+        }
+        for invitee in (payer_a, payer_b):
+            client.post(f"/agoras/topics/{slug}/invite", json={"invitee_id": invitee},
+                headers={"x-emporia-agent-id": owner})
+        sub_a = client.post(f"/agoras/topics/{slug}/subscribe",
+            json={"agent_id": payer_a, "payment_intent_id": "pi_n6co_agora_a"},
+            headers={"x-emporia-agent-id": payer_a})
+        assert sub_a.status_code == 200, sub_a.text
+
+        mock_verify.return_value = {
+            "status": "succeeded", "payment_intent_id": "pi_n6co_agora_b",
+            "amount": 100, "currency": "usd", "capture_method": "automatic",
+            "metadata": {"resource_type": "agora", "resource_id": topic_id},
+        }
+        sub_b = client.post(f"/agoras/topics/{slug}/subscribe",
+            json={"agent_id": payer_b, "payment_intent_id": "pi_n6co_agora_b"},
+            headers={"x-emporia-agent-id": payer_b})
+        assert sub_b.status_code == 200, sub_b.text
+
+    own = client.get("/payments/settlements", params={"agent_id": payer_a},
+        headers={"x-emporia-agent-id": payer_a})
+    assert own.status_code == 200, own.text
+    leaked_pis = {pid for s in own.json()["settlements"] for pid in s["payment_intent_ids"]}
+    assert "pi_n6co_agora_b" not in leaked_pis, \
+        f"agent_id={payer_a}'s own settlement query must not include payer B's " \
+        f"payment_intent_ids — leaked: {leaked_pis}"
+
+
+def test_settlement_redaction_does_not_blind_the_operator(client):
+    """N6 review R1's redaction must not also blind the relay operator — a
+    redaction bug that hides other payers' PaymentIntent ids from everyone,
+    including the one caller who's supposed to see everything, would pass every
+    caller-side test above while breaking the operator's own audit view."""
+    from emporia.relay_server import record_settlement, DATABASE_PATH
+    from emporia import rooms as rooms_db
+
+    owner = "n6op_room_owner"
+    payer_a = "n6op_room_payer_a"
+    payer_b = "n6op_room_payer_b"
+    _register(client, owner)
+    _register(client, payer_a)
+    _register(client, payer_b)
+
+    r = client.post("/rooms", json={
+        "name": "N6 Operator Audit Room", "creator_id": owner,
+        "room_type": "private", "gate_type": "stripe_payment", "entry_fee_cents": 100,
+    },
+        headers={"x-emporia-agent-id": owner})
+    assert r.status_code == 200, r.text
+    room_id = r.json()["room_id"]
+
+    rooms_db.add_member(room_id, payer_a, db_path=DATABASE_PATH)
+    rooms_db.add_member(room_id, payer_b, db_path=DATABASE_PATH)
+    pi_a, pi_b = "pi_n6op_room_a", "pi_n6op_room_b"
+    for payer, pi in ((payer_a, pi_a), (payer_b, pi_b)):
+        record_settlement({
+            "session_id": room_id, "winner_id": owner, "outcome_type": "room_entry",
+            "status": "settled", "total_stake_cents": 100, "platform_fee_cents": 0,
+            "winner_payout_cents": 100, "platform_fee_bps": 0,
+            "payment_intent_ids": [pi], "transfer_id": None,
+            "transfer_status": "no_stripe_account",
+        })
+
+    with patch.dict(os.environ, {"EMPORIA_AGENT_ID": owner}):
+        as_operator = client.get("/payments/settlements", params={"session_id": room_id},
+            headers={"x-emporia-agent-id": owner})
+        assert as_operator.status_code == 200, as_operator.text
+        seen_pis = {pid for s in as_operator.json()["settlements"] for pid in s["payment_intent_ids"]}
+        assert {pi_a, pi_b} <= seen_pis, \
+            f"the relay operator must see every payer's PaymentIntent id unredacted, saw: {seen_pis}"
+
+        payments_view = client.get("/payments/records", params={"room_id": room_id},
+            headers={"x-emporia-agent-id": owner})
+        assert payments_view.status_code == 200, payments_view.text
+
+
+@patch("emporia.payments.payout_winner", new_callable=AsyncMock)
+@patch("emporia.payments.verify_payment_intent", new_callable=AsyncMock)
+def test_payment_records_redacts_other_payers_in_room(mock_verify, mock_payout, client):
+    """Sibling of the settlement co-payer tests for list_payment_records' ?room_id=
+    branch: a room member sees the room's payment activity exists, but another
+    payer's agent_id/payment_intent_id are redacted rather than fully exposed."""
+    owner = "n6pr_room_owner"
+    payer_a = "n6pr_room_payer_a"
+    payer_b = "n6pr_room_payer_b"
+    _register(client, owner)
+    _register(client, payer_a)
+    _register(client, payer_b)
+    mock_payout.return_value = {"transfer_id": "tr_n6pr_room"}
+
+    r = client.post("/rooms", json={
+        "name": "N6 Payment Records Room", "creator_id": owner,
+        "room_type": "private", "gate_type": "stripe_payment", "entry_fee_cents": 100,
+    },
+        headers={"x-emporia-agent-id": owner})
+    assert r.status_code == 200, r.text
+    room_id = r.json()["room_id"]
+
+    with patch("emporia.relay_server.AGENT_REGISTRY.get_stripe_account", return_value="acct_n6pr"):
+        for payer, pi in ((payer_a, "pi_n6pr_a"), (payer_b, "pi_n6pr_b")):
+            mock_verify.return_value = {
+                "status": "succeeded", "payment_intent_id": pi,
+                "amount": 100, "currency": "usd", "capture_method": "automatic",
+                "metadata": {"resource_type": "room", "resource_id": room_id},
+            }
+            jr = client.post(f"/rooms/{room_id}/join",
+                json={"agent_id": payer, "payment_intent_id": pi},
+                headers={"x-emporia-agent-id": payer})
+            assert jr.status_code == 200, jr.text
+
+    as_a = client.get("/payments/records", params={"room_id": room_id},
+        headers={"x-emporia-agent-id": payer_a})
+    assert as_a.status_code == 200, as_a.text
+    rows_by_pi = {p["payment_intent_id"]: p for p in as_a.json()["payments"]
+                  if p["payment_intent_id"] != "[redacted]"}
+    assert "pi_n6pr_a" in rows_by_pi, as_a.text
+    redacted = [p for p in as_a.json()["payments"] if p["payment_intent_id"] == "[redacted]"]
+    assert redacted, "payer B's row must appear redacted, not omitted, to a fellow room member"
+    assert all(p["agent_id"] == "[redacted]" for p in redacted)
 
 
 @patch("emporia.relay_server.MAX_TOTAL_SPEND_CENTS", 150)

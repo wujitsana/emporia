@@ -2357,6 +2357,72 @@ def _settlement_resource_viewer_allowed(resource_id: str, caller: str | None, co
     return False
 
 
+def _caller_owns_settlement_row(row: Any, caller: str | None, conn: Any) -> bool:
+    """True if `caller` may see this specific settlement row's PaymentIntent ids
+    unredacted — distinct from _settlement_resource_viewer_allowed, which decides
+    whether the caller may see the *resource*'s settlements at all.
+
+    A session's settlement is one aggregate row for the whole shared escrow —
+    _session_viewer_allowed's participant rule already governs whether the caller
+    reaches this row at all, and every participant may see the full PI list; that's
+    inherent to a shared escrow, not something this pass changes.
+
+    A room or Agora settlement is one row PER PAYER — join_room and
+    subscribe_agora_topic each call record_settlement once per subscriber, all
+    keyed on the same overloaded session_id. N5-4 widened `?agent_id=` to return
+    every settlement for every resource the caller paid for, without checking
+    which specific row was theirs on a shared paid room/topic — leaking co-payers'
+    PaymentIntent ids (N6 review R1). Ownership here is "one of this row's PIs is a
+    payment `caller` actually made" (payments.agent_id), not resource membership.
+    """
+    if not caller:
+        return False
+    resource_id = row["session_id"]
+    s = load_session(resource_id)
+    if s:
+        return caller in s.get("participants", [])
+    pi_ids = json.loads(row["payment_intent_ids"] or "[]")
+    if not pi_ids:
+        return False
+    placeholders = ",".join("?" for _ in pi_ids)
+    match = conn.execute(
+        f"SELECT 1 FROM payments WHERE agent_id = ? AND payment_intent_id IN ({placeholders})",
+        (caller, *pi_ids),
+    ).fetchone()
+    return bool(match)
+
+
+def _settlement_row_dict(row: Any, caller: str | None, conn: Any) -> dict[str, Any]:
+    """Settlement row as JSON, with `payment_intent_ids` redacted to `["[redacted]"]`
+    unless `caller` is the relay operator or owns this specific row (see
+    _caller_owns_settlement_row). Used by every settlement read path so a caller
+    authorized to see a resource's settlements (via _settlement_resource_viewer_allowed)
+    doesn't also see every other payer's PaymentIntent ids on that resource."""
+    d = {**dict(row), "payment_intent_ids": json.loads(row["payment_intent_ids"])}
+    owner = os.getenv("EMPORIA_AGENT_ID", "")
+    if owner and caller == owner:
+        return d
+    if _caller_owns_settlement_row(row, caller, conn):
+        return d
+    d["payment_intent_ids"] = ["[redacted]"]
+    return d
+
+
+def _redact_payment_row(row: Any, caller: str | None) -> dict[str, Any]:
+    """Raw payment row as JSON, with `agent_id`/`payment_intent_id` redacted unless
+    `caller` is the relay operator or the payer who made this specific payment.
+    Sibling of _settlement_row_dict for list_payment_records' ?room_id= branch."""
+    d = dict(row)
+    owner = os.getenv("EMPORIA_AGENT_ID", "")
+    if owner and caller == owner:
+        return d
+    if caller and d.get("agent_id") == caller:
+        return d
+    d["agent_id"] = "[redacted]"
+    d["payment_intent_id"] = "[redacted]"
+    return d
+
+
 def _require_operator(caller: str | None, action: str) -> None:
     """Raise 403 for an operator-only maintenance action, with a reason that
     distinguishes "no relay operator is configured at all" (EMPORIA_AGENT_ID unset —
@@ -2397,8 +2463,13 @@ async def list_settlements(
                           left (N5 review R3: the `participants` join alone had no rows for
                           room/Agora settlements at all, so a kicked room member or an agent
                           who unsubscribed from a topic they paid for had no path to their own
-                          receipt)
+                          receipt) — filtered to rows the agent actually owns (N6 review R1:
+                          N5-4's join matched any resource the agent paid for, not the
+                          specific settlement row that was theirs on a shared paid resource)
       - no filter      → requires dashboard auth AND relay operator identity
+
+    A caller authorized to see a resource's settlements (via ?session_id=, above) still only
+    sees `payment_intent_ids` on rows they own — see _settlement_row_dict.
     """
     dashboard_id = _dashboard_agent_id(request)
     owner = os.getenv("EMPORIA_AGENT_ID", "")
@@ -2427,8 +2498,9 @@ async def list_settlements(
                 "SELECT * FROM settlements WHERE session_id = ? ORDER BY created_at DESC",
                 (session_id,),
             ).fetchall()
+            settlements = [_settlement_row_dict(r, dashboard_id, conn) for r in rows]
         elif agent_id:
-            rows = conn.execute(
+            candidate_rows = conn.execute(
                 "SELECT DISTINCT s.* FROM settlements s "
                 "WHERE s.session_id IN ("
                 "  SELECT session_id FROM participants WHERE agent_id = ?"
@@ -2437,23 +2509,31 @@ async def list_settlements(
                 ") ORDER BY s.created_at DESC LIMIT 100",
                 (agent_id, agent_id),
             ).fetchall()
+            # Filter to rows `agent_id` actually owns — the query above matches any
+            # resource they paid for, not the specific row that's theirs on a
+            # shared paid room/topic (N6 review R1).
+            settlements = [
+                {**dict(r), "payment_intent_ids": json.loads(r["payment_intent_ids"])}
+                for r in candidate_rows
+                if _caller_owns_settlement_row(r, agent_id, conn)
+            ]
         else:
             rows = conn.execute(
                 "SELECT * FROM settlements ORDER BY created_at DESC LIMIT 100"
             ).fetchall()
-    return {
-        "settlements": [
-            {**dict(r), "payment_intent_ids": json.loads(r["payment_intent_ids"])}
-            for r in rows
-        ]
-    }
+            settlements = [
+                {**dict(r), "payment_intent_ids": json.loads(r["payment_intent_ids"])}
+                for r in rows
+            ]
+    return {"settlements": settlements}
 
 
 @app.get("/payments/settlements/{session_id}")
 async def get_settlement(session_id: str, request: Request):
     """N4 review R1(a): previously took no `request` param at all — anonymously
     readable regardless of the underlying resource's own visibility rule. See
-    _settlement_resource_viewer_allowed."""
+    _settlement_resource_viewer_allowed. Rows the caller doesn't own have
+    `payment_intent_ids` redacted — see _settlement_row_dict (N6 review R1)."""
     caller = _dashboard_agent_id(request)
     with DB_LOCK, get_db() as conn:
         if not _settlement_resource_viewer_allowed(session_id, caller, conn):
@@ -2462,14 +2542,10 @@ async def get_settlement(session_id: str, request: Request):
             "SELECT * FROM settlements WHERE session_id = ? ORDER BY created_at DESC",
             (session_id,),
         ).fetchall()
+        settlements = [_settlement_row_dict(r, caller, conn) for r in rows]
     if not rows:
         raise HTTPException(404, f"No settlement for session {session_id}")
-    return {
-        "settlements": [
-            {**dict(r), "payment_intent_ids": json.loads(r["payment_intent_ids"])}
-            for r in rows
-        ]
-    }
+    return {"settlements": settlements}
 
 
 @app.get("/payments/records")
@@ -2479,8 +2555,13 @@ async def list_payment_records(
     """List raw payment records (confirmed PaymentIntents).
 
     Access rules mirror /payments/settlements:
-      - ?session_id=X → same visibility as the session (_session_viewer_allowed)
-      - ?room_id=X    → room members (or the relay operator)
+      - ?session_id=X → same visibility as the session (_session_viewer_allowed); every
+                         participant sees every row, matching the shared-escrow model
+                         settlements use for sessions (not changed by N6 review R1)
+      - ?room_id=X    → room members (or the relay operator) may see the room's payment
+                         activity exists, but `agent_id`/`payment_intent_id` are redacted
+                         on rows that aren't the caller's own payment (N6 review R1 —
+                         sibling of the settlements redaction, same one-row-per-payer shape)
       - no filter     → relay operator only
     """
     caller = _dashboard_agent_id(request)
@@ -2495,6 +2576,7 @@ async def list_payment_records(
                 "SELECT * FROM payments WHERE session_id = ? ORDER BY created_at DESC",
                 (session_id,),
             ).fetchall()
+            payments = [dict(r) for r in rows]
         elif room_id:
             room = rooms_db.get_room(room_id, db_path=DATABASE_PATH)
             if not room or not (
@@ -2505,12 +2587,14 @@ async def list_payment_records(
                 "SELECT * FROM payments WHERE room_id = ? ORDER BY created_at DESC",
                 (room_id,),
             ).fetchall()
+            payments = [_redact_payment_row(r, caller) for r in rows]
         else:
             _require_operator(caller, "Global payment records")
             rows = conn.execute(
                 "SELECT * FROM payments ORDER BY created_at DESC LIMIT 200"
             ).fetchall()
-    return {"payments": [dict(r) for r in rows]}
+            payments = [dict(r) for r in rows]
+    return {"payments": payments}
 
 
 # ============================================================================
