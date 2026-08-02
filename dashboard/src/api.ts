@@ -400,16 +400,24 @@ export const api = {
       session_id, amount_cents, seller_id, service_type,
     }),
   settlements: () =>
-    get<{ settlements: Settlement[]; count: number }>("/payments/settlements", { agentScoped: true }),
+    get<{ settlements: Settlement[]; count: number; has_more: boolean }>(
+      "/payments/settlements", { agentScoped: true }
+    ),
   agentSettlements: (agent_id: string) =>
-    get<{ settlements: Settlement[]; count: number }>(
+    get<{ settlements: Settlement[]; count: number; has_more: boolean }>(
       `/payments/settlements?agent_id=${encodeURIComponent(agent_id)}`,
       { agentScoped: true }
     ),
   sessionSettlements: (session_id: string) =>
     // N4-2/R1(a): relay now applies the resource's own visibility rule instead of
-    // returning settlements unconditionally.
-    get<Settlement | null>(`/payments/settlements/${session_id}`, { agentScoped: true }),
+    // returning settlements unconditionally. N7 review R3: capped at `limit`
+    // (default 50) with `has_more` — was previously unbounded. The response is
+    // always the wrapped-array shape below, matching the other two settlement
+    // reads (this type was previously `Settlement | null`, which never matched
+    // what the endpoint actually returns).
+    get<{ settlements: Settlement[]; count: number; has_more: boolean }>(
+      `/payments/settlements/${session_id}`, { agentScoped: true }
+    ),
 
   // Session / room join
   joinSession: (session_id: string, agent_id: string, payment_intent_id?: string) =>

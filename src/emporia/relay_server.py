@@ -2533,6 +2533,7 @@ async def list_settlements(
     request: Request,
     session_id: str | None = None,
     agent_id: str | None = None,
+    limit: int = 50,
 ):
     """List settlement records.
 
@@ -2541,6 +2542,9 @@ async def list_settlements(
                           _settlement_resource_viewer_allowed) — not unconditionally
                           public; N4 review R1(a) found a leaked PaymentIntent id here
                           was one half of a working payment bypass for paid Agora topics.
+                          Capped by `limit` (default 50) with `has_more` in the response
+                          (N7 review R3 — this read every row for a resource with no cap
+                          at all, unlike every other list endpoint after N3-6/N4-5).
       - ?agent_id=X    → requires dashboard auth (localhost or JWT); scoped to settlement rows
                           X actually owns — X's own room/Agora payer_id, or a session X
                           participated in (N5 review R3 fixed the original "no path to your own
@@ -2556,6 +2560,7 @@ async def list_settlements(
     """
     dashboard_id = _dashboard_agent_id(request)
     owner = _relay_operator_id()
+    limit = _clamp_limit(limit)
 
     # Unfiltered global list: operator only
     if not session_id and not agent_id:
@@ -2573,14 +2578,16 @@ async def list_settlements(
         if dashboard_id != agent_id and dashboard_id != owner:
             raise HTTPException(403, "Cannot view another agent's settlements")
 
+    has_more = False
     with DB_LOCK, get_db() as conn:
         if session_id:
             if not _settlement_resource_viewer_allowed(session_id, dashboard_id, conn):
                 raise HTTPException(403, "Not authorized to view this resource's settlement")
-            rows = conn.execute(
-                "SELECT * FROM settlements WHERE session_id = ? ORDER BY created_at DESC",
-                (session_id,),
-            ).fetchall()
+            rows, has_more = _fetch_page(
+                conn,
+                "SELECT * FROM settlements WHERE session_id = ? ORDER BY created_at DESC LIMIT ?",
+                (session_id,), limit,
+            )
             participant_session_ids = _caller_participant_session_ids(dashboard_id, conn)
             settlements = [_settlement_row_dict(r, dashboard_id, participant_session_ids) for r in rows]
         elif agent_id:
@@ -2606,28 +2613,32 @@ async def list_settlements(
                 {**dict(r), "payment_intent_ids": json.loads(r["payment_intent_ids"])}
                 for r in rows
             ]
-    return {"settlements": settlements}
+    return {"settlements": settlements, "count": len(settlements), "has_more": has_more}
 
 
 @app.get("/payments/settlements/{session_id}")
-async def get_settlement(session_id: str, request: Request):
+async def get_settlement(session_id: str, request: Request, limit: int = 50):
     """N4 review R1(a): previously took no `request` param at all — anonymously
     readable regardless of the underlying resource's own visibility rule. See
     _settlement_resource_viewer_allowed. Rows the caller doesn't own have
-    `payment_intent_ids` redacted — see _settlement_row_dict (N6 review R1)."""
+    `payment_intent_ids`/`transfer_id` redacted — see _settlement_row_dict (N6
+    review R1). Capped by `limit` (default 50) with `has_more` in the response
+    (N7 review R3 — previously read every row for a resource with no cap at all)."""
     caller = _dashboard_agent_id(request)
+    limit = _clamp_limit(limit)
     with DB_LOCK, get_db() as conn:
         if not _settlement_resource_viewer_allowed(session_id, caller, conn):
             raise HTTPException(403, "Not authorized to view this resource's settlement")
-        rows = conn.execute(
-            "SELECT * FROM settlements WHERE session_id = ? ORDER BY created_at DESC",
-            (session_id,),
-        ).fetchall()
+        rows, has_more = _fetch_page(
+            conn,
+            "SELECT * FROM settlements WHERE session_id = ? ORDER BY created_at DESC LIMIT ?",
+            (session_id,), limit,
+        )
         participant_session_ids = _caller_participant_session_ids(caller, conn)
         settlements = [_settlement_row_dict(r, caller, participant_session_ids) for r in rows]
     if not rows:
         raise HTTPException(404, f"No settlement for session {session_id}")
-    return {"settlements": settlements}
+    return {"settlements": settlements, "count": len(settlements), "has_more": has_more}
 
 
 @app.get("/payments/records")

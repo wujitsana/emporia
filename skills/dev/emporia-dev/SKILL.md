@@ -436,10 +436,16 @@ retired `emporia-stripe-mpp` skill's full checklist now lives here. Also load th
 |---|---|---|
 | `GET /payments/settlements` | Yes — operator only | Relay operator (global list, unredacted) |
 | `GET /payments/settlements?agent_id=X` | Yes — agent-scoped | X themselves (localhost trust or JWT) — only settlement *rows* X actually owns: sessions X participated in, or a room/Agora row where X is the specific payer, even if X has since left/unsubscribed (N5-4, row-scoped in N6-2 — rooms/Agora write one row per payer, so N5-4's resource-level join alone returned co-payers' rows too) |
-| `GET /payments/settlements/{session_id}` | Depends on the resource | The referenced session/room/topic's own visibility rule (public session/room → anyone; participants-only session, private room, or paid Agora topic → membership required) — never unconditionally public (N4-2, N5-2). Rows the caller isn't the payer on have `payment_intent_ids` redacted rather than exposed, even when the caller can see the resource itself (N6-2) |
+| `GET /payments/settlements/{session_id}` | Depends on the resource | The referenced session/room/topic's own visibility rule (public session/room → anyone; participants-only session, private room, or paid Agora topic → membership required) — never unconditionally public (N4-2, N5-2). Rows the caller isn't the payer on have `payment_intent_ids`/`transfer_id` redacted rather than exposed, even when the caller can see the resource itself (N6-2, N7-4) |
 | `GET /payments/records?room_id=X` | Room members (or operator) | Sibling of the above for raw payment records — non-owned rows have `agent_id`/`payment_intent_id` redacted (N6-2) |
 
 Agent-scoped auth: send `X-Emporia-Agent-Id: <agent_id>` from localhost, or `Authorization: Bearer <jwt>` from remote. Operator can access any agent's settlements, unredacted, on every path above.
+
+**Pagination (N7 review R3):** `?session_id=` on `GET /payments/settlements` and
+`GET /payments/settlements/{session_id}` both take an optional `?limit=` (default 50, same clamp
+as every other list endpoint) — previously unbounded, reading every settlement row for a resource
+in one response regardless of size. The response carries `count` (rows returned, not a total) and
+`has_more` (whether more rows exist beyond `limit`) alongside `settlements`.
 
 ---
 

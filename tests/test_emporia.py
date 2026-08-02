@@ -3185,6 +3185,56 @@ def test_migrate_settlements_adds_and_backfills_payer_id():
         conn.close()
 
 
+def test_settlement_reads_report_has_more(client):
+    """N7 review R3: ?session_id= on GET /payments/settlements and
+    GET /payments/settlements/{session_id} both read every row for a resource
+    with no cap at all — unlike every other list endpoint after N3-6/N4-5. Now
+    routed through _fetch_page (N6-3's helper) with the same limit/has_more
+    contract. Checks the off-by-one every limit+1 scheme is prone to: has_more
+    False at exactly the true row count, True just below it — using the relay
+    operator so redaction doesn't affect which rows come back, only whether
+    has_more is computed correctly."""
+    from emporia.relay_server import record_settlement
+
+    owner = "n7page_room_owner"
+    _register(client, owner)
+    r = client.post("/rooms", json={
+        "name": "N7 Page Room", "creator_id": owner,
+        "room_type": "private", "gate_type": "stripe_payment", "entry_fee_cents": 100,
+    },
+        headers={"x-emporia-agent-id": owner})
+    assert r.status_code == 200, r.text
+    room_id = r.json()["room_id"]
+
+    for i in range(3):
+        record_settlement({
+            "session_id": room_id, "winner_id": owner, "outcome_type": "room_entry",
+            "status": "settled", "total_stake_cents": 100, "platform_fee_cents": 0,
+            "winner_payout_cents": 100, "platform_fee_bps": 0,
+            "payment_intent_ids": [f"pi_n7page_{i}"], "transfer_id": None,
+            "transfer_status": "no_stripe_account", "payer_id": f"n7page_payer_{i}",
+        })
+
+    with patch.dict(os.environ, {"EMPORIA_AGENT_ID": owner}):
+        truncated = client.get(f"/payments/settlements/{room_id}", params={"limit": 2},
+            headers={"x-emporia-agent-id": owner})
+        assert truncated.status_code == 200, truncated.text
+        assert len(truncated.json()["settlements"]) == 2
+        assert truncated.json()["has_more"] is True, truncated.text
+
+        exact = client.get(f"/payments/settlements/{room_id}", params={"limit": 3},
+            headers={"x-emporia-agent-id": owner})
+        assert exact.status_code == 200, exact.text
+        assert len(exact.json()["settlements"]) == 3
+        assert exact.json()["has_more"] is False, exact.text
+
+        # Same contract on ?session_id= via the list endpoint.
+        via_list = client.get("/payments/settlements", params={"session_id": room_id, "limit": 2},
+            headers={"x-emporia-agent-id": owner})
+        assert via_list.status_code == 200, via_list.text
+        assert via_list.json()["has_more"] is True, via_list.text
+
+
 @patch("emporia.payments.payout_winner", new_callable=AsyncMock)
 @patch("emporia.payments.verify_payment_intent", new_callable=AsyncMock)
 def test_settlement_co_payer_cannot_see_others_payment_intent_ids_agora(mock_verify, mock_payout, client):
