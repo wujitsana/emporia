@@ -2744,8 +2744,12 @@ def _settlement_matrix_agora(client, visibility, gate_type):
     from datetime import datetime, UTC
     # Fixture names avoid the literal words "restricted"/"private" — the NeMo
     # guardrails semantic check has flagged those as prompt-injection false positives
-    # in prior passes (N4's "N47 Sign Fail Room"); use an opaque tag instead.
-    tag = {"public": "pub", "private": "priv", "restricted": "rest"}[visibility] + "_" + gate_type
+    # in prior passes (N4's "N47 Sign Fail Room"). N6 review: even the abbreviation
+    # "priv" alone reliably triggers it (verified directly against the live NIM
+    # endpoint, deterministic across repeated calls — this is a real classifier
+    # behavior on this specific substring, not flaky external nondeterminism); use
+    # "closed" instead, confirmed clean.
+    tag = {"public": "pub", "private": "closed", "restricted": "rest"}[visibility] + "_" + gate_type
     owner = f"n6mat_ag_{tag}_owner"
     payer = f"n6mat_ag_{tag}_payer"
     stranger = f"n6mat_ag_{tag}_stranger"
@@ -2950,6 +2954,23 @@ def test_settlement_matrix_public_paid_room_is_unconstructible(rooms_db_path):
     with pytest.raises(ValueError):
         create_room("N6 Unconstructible", "n6mat_unconstructible_owner", room_type="public",
                     gate_type="stripe_payment", entry_fee_cents=100, db_path=rooms_db_path)
+
+
+def test_agora_topic_entry_fee_requires_paid_invite_gate(client):
+    """N6 review O3: create_agora_topic validated paid_invite -> entry_fee_cents > 0
+    but not the converse. gate_type="invite", entry_fee_cents=100 was creatable —
+    subscribe_agora_topic never charges for it (only paid_invite triggers payment),
+    while _settlement_resource_viewer_allowed's is_paid check (N5-2) treats any
+    entry_fee_cents > 0 as paid regardless of gate_type, so the two disagreed about
+    whether such a topic was paid. Fail closed at creation instead."""
+    _register(client, "n6fee_owner")
+    r = client.post("/agoras/topics", json={
+        "name": "N6 Entry Fee Topic", "description": "d", "visibility": "public",
+        "gate_type": "invite", "entry_fee_cents": 100, "creator_id": "n6fee_owner",
+    },
+        headers={"x-emporia-agent-id": "n6fee_owner"})
+    assert r.status_code == 400, r.text
+    assert "paid_invite" in r.text
 
 
 def test_settlement_co_payer_cannot_see_others_payment_intent_ids_room(client):

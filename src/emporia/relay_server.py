@@ -342,6 +342,15 @@ def _ws_agent_id(ws: WebSocket) -> str | None:
     return None
 
 
+def _relay_operator_id() -> str:
+    """The configured relay operator's agent_id, or "" if none is configured (N6
+    review O2: every "is this caller the operator?" check in this file re-read
+    os.getenv("EMPORIA_AGENT_ID", "") independently — a dozen call sites as of this
+    pass, up from the two the finding originally named, since N6-2's new redaction
+    helpers each added their own. One canonical definition instead."""
+    return os.getenv("EMPORIA_AGENT_ID", "")
+
+
 def _require_caller_is(agent_id: str, request: Request) -> None:
     """Raise 403 unless the authenticated caller is `agent_id` or the relay operator.
 
@@ -349,7 +358,7 @@ def _require_caller_is(agent_id: str, request: Request) -> None:
     agent_id with no other proof the caller actually controls that identity.
     """
     caller = _dashboard_agent_id(request)
-    owner = os.getenv("EMPORIA_AGENT_ID", "")
+    owner = _relay_operator_id()
     if caller != agent_id and not (owner and caller == owner):
         raise HTTPException(403, f"Not authorized to act as '{agent_id}'")
 
@@ -430,7 +439,7 @@ def _session_viewer_allowed(session: dict[str, Any], caller: str | None) -> bool
         return True
     if caller and caller in session.get("participants", []):
         return True
-    owner = os.getenv("EMPORIA_AGENT_ID", "")
+    owner = _relay_operator_id()
     return bool(owner and caller == owner)
 
 
@@ -588,6 +597,7 @@ def init_db() -> None:
             CREATE INDEX IF NOT EXISTS idx_settlements_session ON settlements(session_id);
             CREATE INDEX IF NOT EXISTS idx_settlements_winner ON settlements(winner_id);
             CREATE INDEX IF NOT EXISTS idx_participants_agent ON participants(agent_id);
+            CREATE INDEX IF NOT EXISTS idx_payments_agent ON payments(agent_id);
         """)
         conn.execute("""
             CREATE TABLE IF NOT EXISTS agent_inbox (
@@ -1675,7 +1685,7 @@ async def agent_card():
     peers can discover its pubkey and capabilities. In relay-only deployments
     (no env var) this endpoint returns 404 — federation peers use /health instead.
     """
-    owner = os.getenv("EMPORIA_AGENT_ID", "")
+    owner = _relay_operator_id()
     if not owner:
         raise HTTPException(404, "Relay-only mode: no owner agent configured "
                             "(set EMPORIA_AGENT_ID to expose an agent card)")
@@ -1721,7 +1731,7 @@ async def ui_config():
     Returns relay identity, feature flags, and live stats so the dashboard can
     show the operator's identity and relay health without baking these into the build.
     """
-    owner = os.getenv("EMPORIA_AGENT_ID", "")
+    owner = _relay_operator_id()
     with DB_LOCK, get_db() as conn:
         agent_count = conn.execute(
             "SELECT COUNT(*) FROM authorized_agents WHERE is_active = 1"
@@ -2340,7 +2350,7 @@ def _settlement_resource_viewer_allowed(resource_id: str, caller: str | None, co
     paid topic requires membership regardless of `visibility`; only an unpaid topic
     falls back to the topic's own read rule.
     """
-    owner = os.getenv("EMPORIA_AGENT_ID", "")
+    owner = _relay_operator_id()
     if owner and caller == owner:
         return True
     s = load_session(resource_id)
@@ -2416,7 +2426,7 @@ def _settlement_row_dict(row: Any, caller: str | None, conn: Any) -> dict[str, A
     authorized to see a resource's settlements (via _settlement_resource_viewer_allowed)
     doesn't also see every other payer's PaymentIntent ids on that resource."""
     d = {**dict(row), "payment_intent_ids": json.loads(row["payment_intent_ids"])}
-    owner = os.getenv("EMPORIA_AGENT_ID", "")
+    owner = _relay_operator_id()
     if owner and caller == owner:
         return d
     if _caller_owns_settlement_row(row, caller, conn):
@@ -2430,7 +2440,7 @@ def _redact_payment_row(row: Any, caller: str | None) -> dict[str, Any]:
     `caller` is the relay operator or the payer who made this specific payment.
     Sibling of _settlement_row_dict for list_payment_records' ?room_id= branch."""
     d = dict(row)
-    owner = os.getenv("EMPORIA_AGENT_ID", "")
+    owner = _relay_operator_id()
     if owner and caller == owner:
         return d
     if caller and d.get("agent_id") == caller:
@@ -2450,7 +2460,7 @@ def _require_operator(caller: str | None, action: str) -> None:
     install, where EMPORIA_AGENT_ID is unset — is that the action is unreachable by
     anyone, including whoever would become the operator by setting it.
     """
-    owner = os.getenv("EMPORIA_AGENT_ID", "")
+    owner = _relay_operator_id()
     if not owner:
         raise HTTPException(
             403,
@@ -2489,7 +2499,7 @@ async def list_settlements(
     sees `payment_intent_ids` on rows they own — see _settlement_row_dict.
     """
     dashboard_id = _dashboard_agent_id(request)
-    owner = os.getenv("EMPORIA_AGENT_ID", "")
+    owner = _relay_operator_id()
 
     # Unfiltered global list: operator only
     if not session_id and not agent_id:
@@ -2582,7 +2592,7 @@ async def list_payment_records(
       - no filter     → relay operator only
     """
     caller = _dashboard_agent_id(request)
-    owner = os.getenv("EMPORIA_AGENT_ID", "")
+    owner = _relay_operator_id()
     is_owner = bool(owner and caller == owner)
     with DB_LOCK, get_db() as conn:
         if session_id:
@@ -3510,7 +3520,7 @@ async def abandon_session(session_id: str, request: Request, req: dict = None):
     if not s:
         raise HTTPException(404, "Session not found")
     caller = _dashboard_agent_id(request)
-    owner = os.getenv("EMPORIA_AGENT_ID", "")
+    owner = _relay_operator_id()
     if not caller or (caller not in s["participants"] and caller != owner):
         raise HTTPException(403, "Only a participant or the relay operator may abandon this session")
     if s["status"] == "complete":
@@ -3726,7 +3736,7 @@ async def ws_agent(ws: WebSocket, agent_id: str):
     """Per-agent notification channel — private. Caller must be the agent itself (or the
     relay operator); see _ws_agent_id()."""
     caller = _ws_agent_id(ws)
-    owner = os.getenv("EMPORIA_AGENT_ID", "")
+    owner = _relay_operator_id()
     if caller != agent_id and not (owner and caller == owner):
         await ws.close(code=1008)
         return
@@ -4311,6 +4321,15 @@ async def create_agora_topic(req: CreateAgoraTopicRequest, request: Request):
         raise HTTPException(400, "gate_type must be open | invite | paid_invite")
     if req.gate_type == "paid_invite" and req.entry_fee_cents <= 0:
         raise HTTPException(400, "paid_invite topics require entry_fee_cents > 0")
+    if req.gate_type != "paid_invite" and req.entry_fee_cents > 0:
+        # N6 review O3: only the forward direction was checked. subscribe_agora_topic
+        # only ever charges for gate_type=="paid_invite" (:4548), but
+        # _settlement_resource_viewer_allowed's is_paid check (N5-2) also treats any
+        # entry_fee_cents > 0 as paid regardless of gate_type — an open/invite topic
+        # with a nonzero fee it never actually charges would gate its (nonexistent)
+        # settlement as if it were real money. Fail closed at creation instead of
+        # leaving the two checks free to disagree.
+        raise HTTPException(400, "entry_fee_cents > 0 requires gate_type=paid_invite")
     if req.visibility not in _AGORA_VISIBILITIES:
         raise HTTPException(400, f"visibility must be one of {sorted(_AGORA_VISIBILITIES)}")
     topic_id = f"tpc_{uuid.uuid4().hex[:12]}"
