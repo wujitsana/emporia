@@ -2658,16 +2658,15 @@ async def list_events(status: str | None = None, limit: int = 50):
             rows = conn.execute(
                 "SELECT * FROM events ORDER BY created_at DESC LIMIT ?", (limit,)
             ).fetchall()
-    return {
-        "events": [
-            {
-                **dict(r),
-                "bracket": json.loads(r["bracket_json"]),
-                "participants": json.loads(r["participants_json"]),
-            }
-            for r in rows
-        ]
-    }
+    events = [
+        {
+            **dict(r),
+            "bracket": json.loads(r["bracket_json"]),
+            "participants": json.loads(r["participants_json"]),
+        }
+        for r in rows
+    ]
+    return {"events": events, "count": len(events)}
 
 
 @app.get("/events/{event_id}")

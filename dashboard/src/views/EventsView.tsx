@@ -94,6 +94,9 @@ export function EventsView({ refreshTrigger }: { refreshTrigger: number }) {
   const [data, loading, error] = useInterval(() => api.events(), 10_000, [refreshTrigger]);
   const [selected, setSelected] = useState<EmporiaEvent | null>(null);
   const events: EmporiaEvent[] = data?.events ?? [];
+  // The relay caps this response at 50 by default (N4-5); `count` reflects the
+  // matched-row total before that cap, so a mismatch means older events are hidden.
+  const truncated = typeof data?.count === "number" && data.count > events.length;
 
   useEffect(() => {
     if (events.length === 0) return;
@@ -140,7 +143,11 @@ export function EventsView({ refreshTrigger }: { refreshTrigger: number }) {
   );
 
   return (
-    <ViewBody flush toolbar={<Text className="e-dim">{events.length} events</Text>}>
+    <ViewBody flush toolbar={
+      <Text className="e-dim">
+        {truncated ? `showing ${events.length} of ${data!.count} events` : `${events.length} events`}
+      </Text>
+    }>
       <SidebarLayout sidebar={sidebar} defaultSidebarWidth={28}>
         <div className="e-split-main e-agora-pane">
           <ViewStatus loading={loading} error={error} empty={events.length === 0} />

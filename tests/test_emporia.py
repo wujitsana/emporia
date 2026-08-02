@@ -800,6 +800,25 @@ def test_events_limit_is_clamped(client):
     assert r.status_code == 200
 
 
+def test_events_response_reports_count(client):
+    """N5 review R4/O3: N4-5 added a default limit=50 cap to GET /events but no
+    `count` field, unlike sibling list endpoints (/rooms, /agoras/topics/{slug}/posts)
+    — no client could detect truncation. dashboardCounts.ts's len() helper already
+    checked for `count` defensively (falling through to len(events) when absent), so
+    this alone silently fixes the dashboard's Overview KPI under-reporting min(actual,
+    50) as the total."""
+    _register(client, "n55_events_creator")
+    for i in range(3):
+        client.post("/events", json={
+            "title": f"N55 Events Count {i}", "module_type": "emporia:chess:v1",
+        },
+            headers={"x-emporia-agent-id": "n55_events_creator"})
+    r = client.get("/events", params={"limit": 2})
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert body["count"] == len(body["events"]) == 2, body
+
+
 def test_federation_sync_requires_operator(prod_client):
     """Regression for N4 review R7: POST /gaming/v1/federate/sync had no `request`
     param at all — an anonymous caller could fan out an outbound HTTP pull to every

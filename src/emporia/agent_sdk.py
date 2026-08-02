@@ -391,8 +391,13 @@ class EmporiaAgent:
         resp.raise_for_status()
         return resp.json()
 
-    async def get_events(self, status: str | None = None) -> list[dict[str, Any]]:
-        params: dict[str, Any] = {}
+    async def get_events(
+        self, status: str | None = None, limit: int = 50
+    ) -> list[dict[str, Any]]:
+        """The relay caps this at `limit` (default 50, matching the server-side default
+        added in N4-5) — the response also carries a `count` field so callers who need
+        more than the cap can detect truncation rather than silently under-reporting."""
+        params: dict[str, Any] = {"limit": limit}
         if status:
             params["status"] = status
         resp = await self._client().get(f"{self.relay_url}/events", params=params)
