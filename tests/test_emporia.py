@@ -2786,7 +2786,7 @@ def _settlement_matrix_agora(client, visibility, gate_type):
         "status": "settled", "total_stake_cents": entry_fee, "platform_fee_cents": 0,
         "winner_payout_cents": entry_fee, "platform_fee_bps": 0,
         "payment_intent_ids": [f"pi_{topic_id}"], "transfer_id": None,
-        "transfer_status": "no_stripe_account",
+        "transfer_status": "no_stripe_account", "payer_id": payer,
     })
     return topic_id, payer, stranger
 
@@ -2831,7 +2831,7 @@ def _settlement_matrix_room(client, room_type, gate_type):
         "status": "settled", "total_stake_cents": entry_fee, "platform_fee_cents": 0,
         "winner_payout_cents": entry_fee, "platform_fee_bps": 0,
         "payment_intent_ids": [f"pi_{room_id}"], "transfer_id": None,
-        "transfer_status": "no_stripe_account",
+        "transfer_status": "no_stripe_account", "payer_id": payer,
     })
     return room_id, payer, stranger
 
@@ -2906,6 +2906,11 @@ def test_settlement_visibility_matrix_agora(client, visibility, gate_type, anon_
     assert payer_r.status_code == 200, \
         f"visibility={visibility} gate_type={gate_type}: the payer must always be able to " \
         f"read their own receipt — {payer_r.status_code}: {payer_r.text}"
+    payer_pis = {pid for s in payer_r.json()["settlements"] for pid in s["payment_intent_ids"]}
+    assert "[redacted]" not in payer_pis, \
+        f"visibility={visibility} gate_type={gate_type}: the payer's own PaymentIntent id " \
+        f"must not be redacted on their own receipt (N7 review: payer_id must be set at " \
+        f"write time) — {payer_r.text}"
     if anon_can_read:
         assert anon.status_code == 200, anon.text
         assert unrelated.status_code == 200, unrelated.text
@@ -2934,6 +2939,11 @@ def test_settlement_visibility_matrix_room(client, room_type, gate_type, anon_ca
     assert payer_r.status_code == 200, \
         f"room_type={room_type} gate_type={gate_type}: the payer must always be able to " \
         f"read their own receipt — {payer_r.status_code}: {payer_r.text}"
+    payer_pis = {pid for s in payer_r.json()["settlements"] for pid in s["payment_intent_ids"]}
+    assert "[redacted]" not in payer_pis, \
+        f"room_type={room_type} gate_type={gate_type}: the payer's own PaymentIntent id must " \
+        f"not be redacted on their own receipt (N7 review: payer_id must be set at write " \
+        f"time) — {payer_r.text}"
     if anon_can_read:
         assert anon.status_code == 200, anon.text
         assert unrelated.status_code == 200, unrelated.text
@@ -3025,6 +3035,154 @@ def test_settlement_co_payer_cannot_see_others_payment_intent_ids_room(client):
     assert pi_b not in leaked_pis_2, \
         f"?session_id={room_id} as payer A must not include payer B's " \
         f"payment_intent_ids — leaked: {leaked_pis_2}"
+
+
+def test_settlement_agent_id_query_does_not_drop_owned_rows_past_candidate_limit(client):
+    """N7 review R1: N6-2's ownership filter runs `SELECT ... LIMIT 100` on
+    *candidate* rows (any resource the caller paid for, across all payers) and
+    only applies ownership afterward, in Python. On a shared paid room with more
+    settlement rows than the candidate limit, the caller's own older receipt can
+    fall off the end of the candidate window before the ownership filter ever
+    sees it — reintroducing, in narrower form, the exact "no path to your own
+    receipt" bug N5-4 was written to fix. Inserts rows directly (not through
+    record_settlement()/record_payment()) so created_at ordering is exact rather
+    than dependent on clock resolution across a tight loop."""
+    import uuid
+    from datetime import datetime, timedelta, UTC
+    from emporia.relay_server import DATABASE_PATH, get_db, DB_LOCK
+    from emporia import rooms as rooms_db
+
+    owner = "n7lim_room_owner"
+    payer_self = "n7lim_room_payer_self"
+    _register(client, owner)
+    _register(client, payer_self)
+
+    r = client.post("/rooms", json={
+        "name": "N7 Limit Room", "creator_id": owner,
+        "room_type": "private", "gate_type": "stripe_payment", "entry_fee_cents": 100,
+    },
+        headers={"x-emporia-agent-id": owner})
+    assert r.status_code == 200, r.text
+    room_id = r.json()["room_id"]
+    rooms_db.add_member(room_id, payer_self, db_path=DATABASE_PATH)
+
+    base = datetime(2020, 1, 1, tzinfo=UTC)
+    own_pi = "pi_n7lim_self"
+
+    def _insert(conn, agent_id, pi, ts):
+        conn.execute(
+            "INSERT INTO payments (payment_id, session_id, room_id, agent_id, amount_cents, "
+            "currency, payment_intent_id, payment_type, status, created_at) "
+            "VALUES (?, NULL, ?, ?, 100, 'usd', ?, 'room_entry', 'confirmed', ?)",
+            (f"pay_{uuid.uuid4().hex[:16]}", room_id, agent_id, pi, ts),
+        )
+        # payer_id mirrors what join_room itself now writes (N7 review R1/R2) —
+        # a direct INSERT bypassing record_settlement() must still set it, or this
+        # fixture no longer represents a real write.
+        conn.execute(
+            "INSERT INTO settlements (settlement_id, session_id, winner_id, total_stake_cents, "
+            "platform_fee_cents, winner_payout_cents, platform_fee_bps, payment_intent_ids, "
+            "transfer_id, transfer_status, status, created_at, payer_id) "
+            "VALUES (?, ?, ?, 100, 0, 100, 0, ?, NULL, 'no_stripe_account', 'settled', ?, ?)",
+            (f"stl_{uuid.uuid4().hex[:16]}", room_id, owner, json.dumps([pi]), ts, agent_id),
+        )
+
+    with DB_LOCK, get_db() as conn:
+        # The caller's own settlement — deliberately the OLDEST row on this resource.
+        _insert(conn, payer_self, own_pi, base.isoformat())
+        # 100 more co-payer settlements, all strictly newer — enough to fill the
+        # candidate query's LIMIT 100 on their own, pushing the caller's row out.
+        for i in range(100):
+            _insert(conn, f"n7lim_room_other_{i}", f"pi_n7lim_other_{i}",
+                    (base + timedelta(seconds=i + 1)).isoformat())
+
+    own = client.get("/payments/settlements", params={"agent_id": payer_self},
+        headers={"x-emporia-agent-id": payer_self})
+    assert own.status_code == 200, own.text
+    seen_pis = {pid for s in own.json()["settlements"] for pid in s["payment_intent_ids"]}
+    assert own_pi in seen_pis, \
+        "payer_self's own settlement (oldest of 101 rows on a shared paid room) must still be " \
+        "reachable via ?agent_id=self regardless of how many other payers' rows are newer — " \
+        f"got {len(seen_pis)} settlements back, own PaymentIntent id missing"
+
+
+def test_migrate_settlements_adds_and_backfills_payer_id():
+    """N7 review R1/R2/R6: payer_id is not blocked on a migration runner — this
+    codebase already has an additive-column migration pattern (gate_type/
+    entry_fee_cents on agora_topics, three columns on authorized_agents), and
+    _migrate_settlements follows it exactly. Exercises the migration itself
+    against a DB that predates the payer_id column, not just a fresh schema — a
+    migration that adds the column but leaves pre-existing rows NULL would
+    silently make every historical receipt unreachable via ?agent_id=, which is
+    R1 again by another route."""
+    import sqlite3
+    import tempfile
+    from emporia.relay_server import _migrate_settlements
+
+    with tempfile.NamedTemporaryFile(suffix=".sqlite3") as f:
+        conn = sqlite3.connect(f.name)
+        conn.row_factory = sqlite3.Row
+        conn.executescript("""
+            CREATE TABLE sessions (session_id TEXT PRIMARY KEY);
+            CREATE TABLE payments (
+                payment_id TEXT PRIMARY KEY, session_id TEXT, room_id TEXT,
+                agent_id TEXT NOT NULL, amount_cents INTEGER, currency TEXT,
+                payment_intent_id TEXT NOT NULL, payment_type TEXT, status TEXT,
+                created_at TEXT NOT NULL
+            );
+            CREATE TABLE settlements (
+                settlement_id TEXT PRIMARY KEY, session_id TEXT NOT NULL,
+                winner_id TEXT, total_stake_cents INTEGER, platform_fee_cents INTEGER,
+                winner_payout_cents INTEGER, platform_fee_bps INTEGER,
+                payment_intent_ids TEXT NOT NULL DEFAULT '[]',
+                transfer_id TEXT, transfer_status TEXT, status TEXT,
+                created_at TEXT NOT NULL
+            );
+        """)
+        # A real session's aggregate settlement (two participants' PIs) — must
+        # stay payer_id NULL, not get misattributed to whichever PI matches first.
+        conn.execute("INSERT INTO sessions (session_id) VALUES ('sess_legacy')")
+        conn.execute(
+            "INSERT INTO settlements (settlement_id, session_id, payment_intent_ids, created_at) "
+            "VALUES ('stl_sess', 'sess_legacy', ?, '2020-01-01')",
+            (json.dumps(["pi_sess_a", "pi_sess_b"]),),
+        )
+        # A pre-existing room settlement (predates payer_id) from a real payment —
+        # must be backfilled.
+        conn.execute(
+            "INSERT INTO payments (payment_id, session_id, room_id, agent_id, amount_cents, "
+            "currency, payment_intent_id, payment_type, status, created_at) "
+            "VALUES ('pay_1', NULL, 'room_legacy', 'legacy_payer', 100, 'usd', "
+            "'pi_room_legacy', 'room_entry', 'confirmed', '2020-01-01')"
+        )
+        conn.execute(
+            "INSERT INTO settlements (settlement_id, session_id, payment_intent_ids, created_at) "
+            "VALUES ('stl_room', 'room_legacy', ?, '2020-01-01')",
+            (json.dumps(["pi_room_legacy"]),),
+        )
+        conn.commit()
+
+        cols_before = {r[1] for r in conn.execute("PRAGMA table_info(settlements)").fetchall()}
+        assert "payer_id" not in cols_before, "test setup must predate the payer_id column"
+
+        _migrate_settlements(conn)
+        conn.commit()
+
+        cols_after = {r[1] for r in conn.execute("PRAGMA table_info(settlements)").fetchall()}
+        assert "payer_id" in cols_after
+
+        session_row = conn.execute(
+            "SELECT payer_id FROM settlements WHERE settlement_id = 'stl_sess'"
+        ).fetchone()
+        assert session_row["payer_id"] is None, \
+            "a session's aggregate settlement must stay payer_id NULL, not be misattributed"
+
+        room_row = conn.execute(
+            "SELECT payer_id FROM settlements WHERE settlement_id = 'stl_room'"
+        ).fetchone()
+        assert room_row["payer_id"] == "legacy_payer", \
+            "a pre-existing room settlement must be backfilled from its payments row"
+        conn.close()
 
 
 @patch("emporia.payments.payout_winner", new_callable=AsyncMock)

@@ -582,7 +582,8 @@ def init_db() -> None:
                 transfer_id TEXT,
                 transfer_status TEXT NOT NULL DEFAULT 'pending_connect',
                 status TEXT NOT NULL DEFAULT 'settled',
-                created_at TEXT NOT NULL
+                created_at TEXT NOT NULL,
+                payer_id TEXT
             );
 
             CREATE INDEX IF NOT EXISTS idx_sessions_status ON sessions(status);
@@ -596,6 +597,7 @@ def init_db() -> None:
             CREATE INDEX IF NOT EXISTS idx_payments_session ON payments(session_id);
             CREATE INDEX IF NOT EXISTS idx_settlements_session ON settlements(session_id);
             CREATE INDEX IF NOT EXISTS idx_settlements_winner ON settlements(winner_id);
+            CREATE INDEX IF NOT EXISTS idx_settlements_payer ON settlements(payer_id);
             CREATE INDEX IF NOT EXISTS idx_participants_agent ON participants(agent_id);
             CREATE INDEX IF NOT EXISTS idx_payments_agent ON payments(agent_id);
         """)
@@ -715,6 +717,7 @@ def init_db() -> None:
         # Schema migrations for existing DBs (idempotent ADD COLUMN)
         _migrate_authorized_agents(conn)
         _migrate_payments(conn)
+        _migrate_settlements(conn)
         # Rename aroga_* → agora_* if old names still exist (typo fix)
         _migrate_agora_tables(conn)
         # Rooms schema (separate DDL to keep clean)
@@ -752,6 +755,46 @@ def _migrate_payments(conn: Any) -> None:
         "CREATE UNIQUE INDEX IF NOT EXISTS idx_payments_payment_intent_id "
         "ON payments(payment_intent_id)"
     )
+
+
+def _migrate_settlements(conn: Any) -> None:
+    """Add `payer_id` if missing (N7 review R1/R2) and backfill existing rows.
+
+    A room or Agora settlement is one row per payer, written with exactly one
+    PaymentIntent id (join_room/subscribe_agora_topic both call record_settlement
+    with `"payment_intent_ids": [confirmed_pi]`); a session settlement is one
+    aggregate row for the whole shared escrow, with zero or more PIs across every
+    participant, and correctly has no single payer. Backfill only where both
+    signals agree: the row has exactly one PI (never true for a multi-participant
+    session escrow with more than one payer) AND its session_id doesn't match a
+    row in `sessions` at all (ruling out the common case of a 1-payer, 2-party
+    session too). Ambiguous or already-null-PI rows are left NULL, matching the
+    reads' own fallback to session-participant visibility.
+    """
+    settlement_cols = {r[1] for r in conn.execute("PRAGMA table_info(settlements)").fetchall()}
+    if "payer_id" not in settlement_cols:
+        conn.execute("ALTER TABLE settlements ADD COLUMN payer_id TEXT")
+    rows = conn.execute(
+        "SELECT settlement_id, session_id, payment_intent_ids FROM settlements "
+        "WHERE payer_id IS NULL"
+    ).fetchall()
+    for row in rows:
+        pi_ids = json.loads(row["payment_intent_ids"] or "[]")
+        if len(pi_ids) != 1:
+            continue
+        is_session = conn.execute(
+            "SELECT 1 FROM sessions WHERE session_id = ?", (row["session_id"],)
+        ).fetchone()
+        if is_session:
+            continue
+        payer = conn.execute(
+            "SELECT agent_id FROM payments WHERE payment_intent_id = ?", (pi_ids[0],)
+        ).fetchone()
+        if payer:
+            conn.execute(
+                "UPDATE settlements SET payer_id = ? WHERE settlement_id = ?",
+                (payer["agent_id"], row["settlement_id"]),
+            )
 
 
 def _migrate_authorized_agents(conn: Any) -> None:
@@ -1013,14 +1056,18 @@ def get_session_payments(session_id: str) -> list[dict[str, Any]]:
 
 
 def record_settlement(settlement: dict[str, Any]) -> None:
+    """`payer_id` (N7 review R1/R2) should be set for a room/Agora settlement — one
+    row per payer, see join_room/subscribe_agora_topic — and left unset (NULL) for
+    a session's aggregate escrow row, which has no single payer. See
+    _caller_owns_settlement_row for how reads use this column."""
     settlement_id = f"stl_{uuid.uuid4().hex[:16]}"
     with DB_LOCK, get_db() as conn:
         conn.execute(
             "INSERT OR IGNORE INTO settlements "
             "(settlement_id, session_id, winner_id, total_stake_cents, platform_fee_cents, "
             "winner_payout_cents, platform_fee_bps, payment_intent_ids, "
-            "transfer_id, transfer_status, status, created_at) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            "transfer_id, transfer_status, status, created_at, payer_id) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             (
                 settlement_id,
                 settlement["session_id"],
@@ -1034,6 +1081,7 @@ def record_settlement(settlement: dict[str, Any]) -> None:
                 settlement.get("transfer_status", "pending_connect"),
                 settlement.get("status", "settled"),
                 datetime.now(UTC).isoformat(),
+                settlement.get("payer_id"),
             ),
         )
 
@@ -2384,42 +2432,51 @@ def _settlement_resource_viewer_allowed(resource_id: str, caller: str | None, co
     return False
 
 
-def _caller_owns_settlement_row(row: Any, caller: str | None, conn: Any) -> bool:
+def _caller_participant_session_ids(caller: str | None, conn: Any) -> set[str]:
+    """The set of session_ids `caller` participates in, prefetched once per
+    request rather than resolved per settlement row. N7 review R2: the previous
+    per-row ownership check called load_session() for every row, and
+    load_session() opens a brand-new sqlite3.Connection (get_db() → connect +
+    PRAGMA journal_mode=WAL) on every call — an N-row settlement response cost up
+    to N fresh DB connections, the exact class of N+1 N3-3 (O1) fixed once already
+    for GET /agents."""
+    if not caller:
+        return set()
+    return {
+        r["session_id"]
+        for r in conn.execute(
+            "SELECT session_id FROM participants WHERE agent_id = ?", (caller,)
+        ).fetchall()
+    }
+
+
+def _caller_owns_settlement_row(
+    row: Any, caller: str | None, participant_session_ids: set[str]
+) -> bool:
     """True if `caller` may see this specific settlement row's PaymentIntent ids
     unredacted — distinct from _settlement_resource_viewer_allowed, which decides
     whether the caller may see the *resource*'s settlements at all.
 
-    A session's settlement is one aggregate row for the whole shared escrow —
-    _session_viewer_allowed's participant rule already governs whether the caller
-    reaches this row at all, and every participant may see the full PI list; that's
-    inherent to a shared escrow, not something this pass changes.
-
-    A room or Agora settlement is one row PER PAYER — join_room and
-    subscribe_agora_topic each call record_settlement once per subscriber, all
-    keyed on the same overloaded session_id. N5-4 widened `?agent_id=` to return
-    every settlement for every resource the caller paid for, without checking
-    which specific row was theirs on a shared paid room/topic — leaking co-payers'
-    PaymentIntent ids (N6 review R1). Ownership here is "one of this row's PIs is a
-    payment `caller` actually made" (payments.agent_id), not resource membership.
+    N7 review R1/R2: settlements now carries a real `payer_id` column (see
+    _migrate_settlements) instead of deriving ownership per-row from a
+    payments-table join. A room or Agora settlement is one row PER PAYER —
+    join_room and subscribe_agora_topic populate payer_id at write time — so
+    ownership there is a plain column comparison. A session's settlement is one
+    aggregate row for the whole shared escrow (payer_id stays NULL by design; see
+    _migrate_settlements), correctly visible to any participant — resolved
+    against the prefetched `participant_session_ids` (_caller_participant_session_ids)
+    rather than a per-row load_session() call.
     """
     if not caller:
         return False
-    resource_id = row["session_id"]
-    s = load_session(resource_id)
-    if s:
-        return caller in s.get("participants", [])
-    pi_ids = json.loads(row["payment_intent_ids"] or "[]")
-    if not pi_ids:
-        return False
-    placeholders = ",".join("?" for _ in pi_ids)
-    match = conn.execute(
-        f"SELECT 1 FROM payments WHERE agent_id = ? AND payment_intent_id IN ({placeholders})",
-        (caller, *pi_ids),
-    ).fetchone()
-    return bool(match)
+    if row["payer_id"] is not None:
+        return row["payer_id"] == caller
+    return row["session_id"] in participant_session_ids
 
 
-def _settlement_row_dict(row: Any, caller: str | None, conn: Any) -> dict[str, Any]:
+def _settlement_row_dict(
+    row: Any, caller: str | None, participant_session_ids: set[str]
+) -> dict[str, Any]:
     """Settlement row as JSON, with `payment_intent_ids` redacted to `["[redacted]"]`
     unless `caller` is the relay operator or owns this specific row (see
     _caller_owns_settlement_row). Used by every settlement read path so a caller
@@ -2429,7 +2486,7 @@ def _settlement_row_dict(row: Any, caller: str | None, conn: Any) -> dict[str, A
     owner = _relay_operator_id()
     if owner and caller == owner:
         return d
-    if _caller_owns_settlement_row(row, caller, conn):
+    if _caller_owns_settlement_row(row, caller, participant_session_ids):
         return d
     d["payment_intent_ids"] = ["[redacted]"]
     return d
@@ -2484,19 +2541,18 @@ async def list_settlements(
                           _settlement_resource_viewer_allowed) — not unconditionally
                           public; N4 review R1(a) found a leaked PaymentIntent id here
                           was one half of a working payment bypass for paid Agora topics.
-      - ?agent_id=X    → requires dashboard auth (localhost or JWT); scoped to that agent —
-                          settlements for sessions the agent participated in, OR resources
-                          (room/Agora) the agent actually paid to join, even if they've since
-                          left (N5 review R3: the `participants` join alone had no rows for
-                          room/Agora settlements at all, so a kicked room member or an agent
-                          who unsubscribed from a topic they paid for had no path to their own
-                          receipt) — filtered to rows the agent actually owns (N6 review R1:
-                          N5-4's join matched any resource the agent paid for, not the
-                          specific settlement row that was theirs on a shared paid resource)
+      - ?agent_id=X    → requires dashboard auth (localhost or JWT); scoped to settlement rows
+                          X actually owns — X's own room/Agora payer_id, or a session X
+                          participated in (N5 review R3 fixed the original "no path to your own
+                          receipt" gap; N6 review R1 found that fix's resource-level join leaked
+                          co-payers' rows; N7 review R1 found N6-2's own ownership filter applied
+                          LIMIT to *candidates* before filtering, so a caller's own older receipt
+                          could still fall off a busy shared resource — the predicate is now
+                          pushed into SQL so LIMIT applies to owned rows directly)
       - no filter      → requires dashboard auth AND relay operator identity
 
     A caller authorized to see a resource's settlements (via ?session_id=, above) still only
-    sees `payment_intent_ids` on rows they own — see _settlement_row_dict.
+    sees `payment_intent_ids`/`transfer_id` on rows they own — see _settlement_row_dict.
     """
     dashboard_id = _dashboard_agent_id(request)
     owner = _relay_operator_id()
@@ -2525,24 +2581,22 @@ async def list_settlements(
                 "SELECT * FROM settlements WHERE session_id = ? ORDER BY created_at DESC",
                 (session_id,),
             ).fetchall()
-            settlements = [_settlement_row_dict(r, dashboard_id, conn) for r in rows]
+            participant_session_ids = _caller_participant_session_ids(dashboard_id, conn)
+            settlements = [_settlement_row_dict(r, dashboard_id, participant_session_ids) for r in rows]
         elif agent_id:
-            candidate_rows = conn.execute(
-                "SELECT DISTINCT s.* FROM settlements s "
-                "WHERE s.session_id IN ("
-                "  SELECT session_id FROM participants WHERE agent_id = ?"
-                "  UNION "
-                "  SELECT COALESCE(session_id, room_id) FROM payments WHERE agent_id = ?"
-                ") ORDER BY s.created_at DESC LIMIT 100",
+            # Ownership predicate applied directly in SQL (N7 review R1) — payer_id
+            # covers room/Agora rows, the participants subquery covers a session's
+            # aggregate escrow row. LIMIT therefore bounds owned rows, not
+            # candidates-before-filtering.
+            rows = conn.execute(
+                "SELECT * FROM settlements WHERE payer_id = ? "
+                "OR session_id IN (SELECT session_id FROM participants WHERE agent_id = ?) "
+                "ORDER BY created_at DESC LIMIT 100",
                 (agent_id, agent_id),
             ).fetchall()
-            # Filter to rows `agent_id` actually owns — the query above matches any
-            # resource they paid for, not the specific row that's theirs on a
-            # shared paid room/topic (N6 review R1).
             settlements = [
                 {**dict(r), "payment_intent_ids": json.loads(r["payment_intent_ids"])}
-                for r in candidate_rows
-                if _caller_owns_settlement_row(r, agent_id, conn)
+                for r in rows
             ]
         else:
             rows = conn.execute(
@@ -2569,7 +2623,8 @@ async def get_settlement(session_id: str, request: Request):
             "SELECT * FROM settlements WHERE session_id = ? ORDER BY created_at DESC",
             (session_id,),
         ).fetchall()
-        settlements = [_settlement_row_dict(r, caller, conn) for r in rows]
+        participant_session_ids = _caller_participant_session_ids(caller, conn)
+        settlements = [_settlement_row_dict(r, caller, participant_session_ids) for r in rows]
     if not rows:
         raise HTTPException(404, f"No settlement for session {session_id}")
     return {"settlements": settlements}
@@ -4029,6 +4084,7 @@ async def join_room(room_id: str, req: JoinRoomRequest, request: Request):
             "payment_intent_ids": [confirmed_pi],
             "transfer_id": transfer_id,
             "transfer_status": transfer_status,
+            "payer_id": req.agent_id,
         })
 
     await broadcast_to_session(f"room:{room_id}", {
@@ -4631,6 +4687,7 @@ async def subscribe_agora_topic(slug: str, req: AgoraSubscribeRequest, request: 
             "status": "settled", "total_stake_cents": entry_fee, "platform_fee_cents": platform_fee,
             "winner_payout_cents": creator_payout, "platform_fee_bps": OPERATOR_FEE_BPS,
             "payment_intent_ids": [confirmed_pi], "transfer_id": transfer_id, "transfer_status": transfer_status,
+            "payer_id": req.agent_id,
         })
 
     return {"ok": True, "slug": slug, "agent_id": req.agent_id, "gate_type": gate}
