@@ -4745,6 +4745,87 @@ def test_agent_sdk_write_call_site_attaches_bearer_credential():
     agent._bearer_headers.assert_awaited()
 
 
+def _mock_ws_connect_raising(exc: Exception):
+    """A drop-in for websockets.connect() whose `async with` immediately raises
+    `exc` on __aenter__ — simulates a rejected handshake without a real socket."""
+    cm = MagicMock()
+    cm.__aenter__ = AsyncMock(side_effect=exc)
+    cm.__aexit__ = AsyncMock(return_value=False)
+    return MagicMock(return_value=cm)
+
+
+def test_listen_session_retries_on_rejected_handshake_then_raises_runtime_error():
+    """N5 review R6: ws_session() (N4-5) closes with 1008 *before* accept() on an
+    unauthorized/unknown session_id. Starlette surfaces a pre-accept close as a
+    rejected handshake, which websockets>=12 raises as InvalidStatus — a subclass of
+    InvalidHandshake, not ConnectionClosedError/OSError, the only classes
+    listen_session's retry loop caught before this fix. An uncaught InvalidStatus
+    used to propagate straight out, bypassing the documented
+    RuntimeError('max retries exhausted') contract this asserts."""
+    import asyncio
+    from emporia.agent_sdk import EmporiaAgent
+    from websockets.exceptions import InvalidStatus
+
+    agent = EmporiaAgent(relay_url="http://fake.invalid", agent_id="sdk_ws_agent", public_key_hex="ab" * 32)
+
+    async def _run():
+        with patch(
+            "emporia.agent_sdk.websockets.connect",
+            _mock_ws_connect_raising(InvalidStatus(MagicMock(status_code=1008))),
+        ):
+            with pytest.raises(RuntimeError, match="max retries"):
+                await agent.listen_session("sess_rejected", on_message=AsyncMock(),
+                    max_retries=1, initial_backoff=0.01)
+
+    asyncio.run(_run())
+
+
+def test_listen_session_sends_agent_id_credential():
+    """N5 review R6: listen_session sent no credential at all, unlike its sibling
+    listen_agent (which appends ?agent_id=) — a participants-only session was
+    unreachable from here regardless of the caller's actual participation."""
+    import asyncio
+    from emporia.agent_sdk import EmporiaAgent
+
+    agent = EmporiaAgent(relay_url="http://fake.invalid", agent_id="sdk_ws_creds", public_key_hex="ab" * 32)
+    captured_url = {}
+
+    def _capture(url, *a, **kw):
+        captured_url["url"] = url
+        from websockets.exceptions import ConnectionClosedError
+        raise ConnectionClosedError(None, None)
+
+    async def _run():
+        with patch("emporia.agent_sdk.websockets.connect", side_effect=_capture):
+            with pytest.raises(RuntimeError, match="max retries"):
+                await agent.listen_session("sess_x", on_message=AsyncMock(),
+                    max_retries=0, initial_backoff=0.01)
+
+    asyncio.run(_run())
+    assert "agent_id=sdk_ws_creds" in captured_url["url"], captured_url
+
+
+def test_stream_session_events_wraps_connection_failure():
+    """N5 review R6: stream_session_events had no exception handling at all — a
+    rejected handshake or disconnect propagated as a raw low-level exception."""
+    import asyncio
+    from emporia.agent_sdk import EmporiaAgent
+    from websockets.exceptions import InvalidStatus
+
+    agent = EmporiaAgent(relay_url="http://fake.invalid", agent_id="sdk_ws_stream", public_key_hex="ab" * 32)
+
+    async def _run():
+        with patch(
+            "emporia.agent_sdk.websockets.connect",
+            _mock_ws_connect_raising(InvalidStatus(MagicMock(status_code=1008))),
+        ):
+            with pytest.raises(RuntimeError, match="connection failed"):
+                async for _ in agent.stream_session_events("sess_rejected"):
+                    pass
+
+    asyncio.run(_run())
+
+
 def test_stripe_profile_discovery_nested_id():
     from emporia.stripe_profile_discovery import find_profile_id_in_data
 

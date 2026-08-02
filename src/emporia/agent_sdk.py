@@ -19,7 +19,7 @@ from typing import Any, AsyncIterator
 
 import httpx
 import websockets
-from websockets.exceptions import ConnectionClosedError
+from websockets.exceptions import ConnectionClosedError, InvalidHandshake
 
 from emporia.identity import sign as ed25519_sign
 
@@ -664,8 +664,16 @@ class EmporiaAgent:
         max_retries: int = 10,
         initial_backoff: float = 1.0,
     ) -> None:
-        """Listen to a session WS channel. Reconnects on disconnect with backoff."""
-        url = _ws_url(self.relay_url, f"/ws/{session_id}")
+        """Listen to a session WS channel. Reconnects on disconnect with backoff.
+
+        Sends the same `?agent_id=` credential listen_agent() does (N5 review R6 —
+        this used to send none at all, so a participants-only session was
+        unreachable from here regardless of the caller's actual participation; see
+        relay_server.py's ws_session()/_ws_agent_id()).
+        """
+        url = _ws_url(self.relay_url, f"/ws/{session_id}") + "?" + urllib.parse.urlencode(
+            {"agent_id": self.agent_id}
+        )
         retries = 0
         backoff = initial_backoff
         while retries <= max_retries:
@@ -679,7 +687,16 @@ class EmporiaAgent:
                         except json.JSONDecodeError:
                             msg = {"raw": raw}
                         await on_message(msg)
-            except (ConnectionClosedError, OSError) as e:
+            except (ConnectionClosedError, OSError, InvalidHandshake) as e:
+                # N5 review R6: ws_session() (N4-5) now closes with 1008 *before*
+                # accept() on an unauthorized/unknown session, which Starlette
+                # surfaces as a rejected handshake — websockets raises that as
+                # InvalidStatus (a subclass of InvalidHandshake), not
+                # ConnectionClosedError/OSError. Retrying on a rejection that will
+                # never succeed just burns the backoff budget, but that's the
+                # existing max_retries contract for every other failure here too;
+                # what mattered was reaching the documented RuntimeError instead of
+                # propagating raw.
                 if retries >= max_retries:
                     raise RuntimeError(
                         f"listen_session: max retries ({max_retries}) exhausted: {e}"
@@ -718,7 +735,7 @@ class EmporiaAgent:
                         except json.JSONDecodeError:
                             msg = {"raw": raw}
                         await on_message(msg)
-            except (ConnectionClosedError, OSError) as e:
+            except (ConnectionClosedError, OSError, InvalidHandshake) as e:
                 if retries >= max_retries:
                     raise RuntimeError(
                         f"listen_agent: max retries ({max_retries}) exhausted: {e}"
@@ -730,11 +747,23 @@ class EmporiaAgent:
     async def stream_session_events(
         self, session_id: str
     ) -> AsyncIterator[dict[str, Any]]:
-        """Async generator yielding session events (no reconnect — single pass)."""
-        url = _ws_url(self.relay_url, f"/ws/{session_id}")
-        async with websockets.connect(url) as ws:
-            async for raw in ws:
-                try:
-                    yield json.loads(raw)
-                except json.JSONDecodeError:
-                    yield {"raw": raw}
+        """Async generator yielding session events (no reconnect — single pass).
+
+        N5 review R6: had no exception handling at all — a rejected handshake
+        (unauthorized/unknown session_id — see listen_session's docstring) or a
+        disconnect propagated as a raw low-level exception with no SDK-level
+        context. Wrapped into a RuntimeError, matching the other two WS methods'
+        contract, minus the retry (this method is intentionally single-pass).
+        """
+        url = _ws_url(self.relay_url, f"/ws/{session_id}") + "?" + urllib.parse.urlencode(
+            {"agent_id": self.agent_id}
+        )
+        try:
+            async with websockets.connect(url) as ws:
+                async for raw in ws:
+                    try:
+                        yield json.loads(raw)
+                    except json.JSONDecodeError:
+                        yield {"raw": raw}
+        except (ConnectionClosedError, OSError, InvalidHandshake) as e:
+            raise RuntimeError(f"stream_session_events: connection failed: {e}") from e
