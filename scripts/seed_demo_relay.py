@@ -156,8 +156,8 @@ def _pub(agent_id: str) -> str:
     return get_public_key_hex(agent_id)
 
 
-async def _get(client: httpx.AsyncClient, path: str) -> dict:
-    r = await client.get(f"{RELAY}{path}")
+async def _get(client: httpx.AsyncClient, path: str, headers: dict | None = None) -> dict:
+    r = await client.get(f"{RELAY}{path}", headers=headers or {})
     r.raise_for_status()
     return r.json()
 
@@ -261,7 +261,18 @@ RUY_LOPEZ_OPENING = [
 ]
 
 async def _ensure_topics(http: httpx.AsyncClient, agents: dict[str, EmporiaAgent]) -> list[dict]:
-    existing = (await _get(http, "/agoras/topics")).get("topics", [])
+    # R7: this used to call _get() with no credential. GET /agoras/topics forces
+    # visibility="public" for anonymous callers (since N1-4), so the restricted
+    # "Chess PoR Lab" topic never showed up in `by_slug` below — the re-run then
+    # fell through to create_agora_topic, got 409 "Slug already taken", and
+    # raise_for_status() aborted the whole seed before listings/rooms/chess/events/
+    # DMs ran, despite this file's header claiming "safe to re-run". Any registered
+    # agent's credential works here: an authenticated caller with no explicit
+    # visibility filter sees every topic regardless of visibility (topic-level
+    # gating happens at read/subscribe time via _topic_can_read, not at list time).
+    any_agent = next(iter(agents.values()))
+    auth_headers = await any_agent._bearer_headers()
+    existing = (await _get(http, "/agoras/topics", headers=auth_headers)).get("topics", [])
     by_slug = {t["slug"]: t for t in existing}
     specs = [
         (
