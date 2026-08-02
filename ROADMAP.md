@@ -173,6 +173,26 @@ retry/reconciliation, not just prevention. (O2 in the N5 security review.)
 - *Effort:* medium — settle alongside the payer-binding gap above; both are x402/P1 payment-core
   work and share the same call sites.
 
+**`settlements` has no payer column — row-level ownership is resolved indirectly, via a join
+through `payments`.** N6-2 fixed a co-payer PaymentIntent leak (N5-4's `?agent_id=` join matched
+any *resource* a caller paid for, not the specific settlement *row* that was theirs, since
+rooms/Agora write one row per payer all keyed on the same overloaded `session_id`) by adding
+`_caller_owns_settlement_row()`: for a room/Agora row, "one of this row's `payment_intent_ids` is
+a payment the caller actually made," resolved by querying `payments.agent_id`. This works and is
+covered by tests, but a first-class `payer_id` column on `settlements` (populated at write time in
+`join_room`/`subscribe_agora_topic`, alongside `winner_id`) would make ownership a direct column
+comparison instead of an indirect join through PaymentIntent ids, and would remove the current
+implicit assumption that a settlement row's payer is fully recoverable from `payments` (true today,
+but not enforced by any constraint). Deliberately not done in N6 — needs the migration runner P4
+already tracks, and touches every `record_settlement()` call site.
+- *Fix direction:* add `payer_id TEXT` to `settlements`, backfilled for existing rows via the same
+  `payments` join `_caller_owns_settlement_row()` already does at read time; update the three
+  `record_settlement()` call sites (`join_room`, `subscribe_agora_topic`, the session
+  `settle()`/refund path — the last stays `NULL`, matching its aggregate-row-per-session model) to
+  populate it; simplify `_caller_owns_settlement_row()` to a column comparison once it exists.
+- *Effort:* medium — mechanical once the migration runner exists; blocked on that, not on payment
+  logic.
+
 ## Federation
 
 **No peer-discovery directory.** Two relays federate today only if each operator manually sets
