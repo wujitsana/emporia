@@ -803,10 +803,10 @@ def test_events_limit_is_clamped(client):
 def test_events_response_reports_count(client):
     """N5 review R4/O3: N4-5 added a default limit=50 cap to GET /events but no
     `count` field, unlike sibling list endpoints (/rooms, /agoras/topics/{slug}/posts)
-    — no client could detect truncation. dashboardCounts.ts's len() helper already
-    checked for `count` defensively (falling through to len(events) when absent), so
-    this alone silently fixes the dashboard's Overview KPI under-reporting min(actual,
-    50) as the total."""
+    — no client could detect truncation. `count` is the returned page size (see
+    test_events_response_reports_has_more for the field that actually signals
+    truncation — N6 review R2 found `count` alone can never do that, since it can
+    never exceed `limit`)."""
     _register(client, "n55_events_creator")
     for i in range(3):
         client.post("/events", json={
@@ -817,6 +817,42 @@ def test_events_response_reports_count(client):
     assert r.status_code == 200, r.text
     body = r.json()
     assert body["count"] == len(body["events"]) == 2, body
+
+
+def test_events_response_reports_has_more(client):
+    """N6 review R2: GET /events' `count` (added N5-5) is the returned page size,
+    which is capped at `limit` by construction — `count > len(events)` can never be
+    true, so N5-5's commit message claim that it "lets any client detect
+    truncation" doesn't hold, and the "showing N of M" branch it justified in
+    EventsView.tsx was unreachable dead code. `has_more` (via _fetch_page, one
+    extra row requested and sliced off) is the actual signal. Also checks the
+    off-by-one every limit+1 pagination scheme is prone to: has_more must be False
+    at exactly `limit` rows, not just below it."""
+    _register(client, "n6ev_creator")
+    for i in range(3):
+        client.post("/events", json={
+            "title": f"N6 Events HasMore {i}", "module_type": "emporia:chess:v1",
+        },
+            headers={"x-emporia-agent-id": "n6ev_creator"})
+
+    truncated = client.get("/events", params={"limit": 2})
+    assert truncated.status_code == 200, truncated.text
+    assert truncated.json()["has_more"] is True, truncated.text
+
+    # Exact boundary: the DB is shared with other tests in this run, so query the
+    # real total directly rather than assuming this test's 3 rows are the only
+    # ones — has_more must be False when limit == the true total, not just when
+    # limit is comfortably larger than it.
+    from emporia.relay_server import get_db, _MAX_LIMIT
+    with get_db() as conn:
+        total = conn.execute("SELECT COUNT(*) c FROM events").fetchone()["c"]
+    if total > _MAX_LIMIT:
+        pytest.skip(f"event count ({total}) exceeds _MAX_LIMIT ({_MAX_LIMIT}) — "
+                    "limit gets clamped, boundary case not reachable via the API")
+    exact = client.get("/events", params={"limit": total})
+    assert exact.status_code == 200, exact.text
+    assert len(exact.json()["events"]) == total
+    assert exact.json()["has_more"] is False, exact.text
 
 
 def test_federation_sync_requires_operator(prod_client):

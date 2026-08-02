@@ -94,9 +94,11 @@ export function EventsView({ refreshTrigger }: { refreshTrigger: number }) {
   const [data, loading, error] = useInterval(() => api.events(), 10_000, [refreshTrigger]);
   const [selected, setSelected] = useState<EmporiaEvent | null>(null);
   const events: EmporiaEvent[] = data?.events ?? [];
-  // The relay caps this response at 50 by default (N4-5); `count` reflects the
-  // matched-row total before that cap, so a mismatch means older events are hidden.
-  const truncated = typeof data?.count === "number" && data.count > events.length;
+  // The relay caps this response at 50 by default (N4-5). `count` is just the
+  // returned page size (== events.length always) — it can never signal
+  // truncation. `has_more` (N6 review R2) is the real signal: it's set by
+  // requesting one extra row server-side and checking whether it came back.
+  const truncated = data?.has_more === true;
 
   useEffect(() => {
     if (events.length === 0) return;
@@ -145,7 +147,7 @@ export function EventsView({ refreshTrigger }: { refreshTrigger: number }) {
   return (
     <ViewBody flush toolbar={
       <Text className="e-dim">
-        {truncated ? `showing ${events.length} of ${data!.count} events` : `${events.length} events`}
+        {truncated ? `showing ${events.length}+ events` : `${events.length} events`}
       </Text>
     }>
       <SidebarLayout sidebar={sidebar} defaultSidebarWidth={28}>

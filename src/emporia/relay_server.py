@@ -388,6 +388,21 @@ def _clamp_limit(limit: int, max_limit: int = _MAX_LIMIT) -> int:
     return min(max(limit, 1), max_limit)
 
 
+def _fetch_page(conn: Any, sql: str, params: tuple, limit: int) -> tuple[list, bool]:
+    """Run `sql` (a SELECT whose final `?` placeholder is the LIMIT) requesting
+    `limit + 1` rows, then slice back down to `limit` — returns (rows, has_more).
+    One query, no COUNT(*) scan.
+
+    N6 review R2: every list endpoint in this file returns `"count": len(rows)`,
+    which is the already-capped page size — it can never exceed `limit`, so it can
+    never actually signal truncation (N5-5 added `count` to GET /events with that
+    stated goal; it doesn't achieve it). `has_more` is the real signal.
+    """
+    rows = conn.execute(sql, (*params, limit + 1)).fetchall()
+    has_more = len(rows) > limit
+    return rows[:limit], has_more
+
+
 def _session_visibility(session: dict[str, Any]) -> str:
     """Resolve whether a session's content ("public" or "participants"-only).
 
@@ -1967,20 +1982,22 @@ async def list_agents(request: Request, limit: int = 100, search: str | None = N
     with DB_LOCK, get_db() as conn:
         if search:
             pattern = f"%{search}%"
-            rows = conn.execute(
+            rows, has_more = _fetch_page(
+                conn,
                 "SELECT agent_id, display_name, registered_at, is_active, stripe_account_id, "
                 "nous_user_id, trust_level, identity_providers_json "
                 "FROM authorized_agents WHERE agent_id LIKE ? OR display_name LIKE ? "
                 "ORDER BY registered_at DESC LIMIT ?",
-                (pattern, pattern, limit),
-            ).fetchall()
+                (pattern, pattern), limit,
+            )
         else:
-            rows = conn.execute(
+            rows, has_more = _fetch_page(
+                conn,
                 "SELECT agent_id, display_name, registered_at, is_active, stripe_account_id, "
                 "nous_user_id, trust_level, identity_providers_json "
                 "FROM authorized_agents ORDER BY registered_at DESC LIMIT ?",
-                (limit,),
-            ).fetchall()
+                (), limit,
+            )
 
         # N3-3 (N3 review O1): was a per-row COUNT(*) x2 loop — 1 + 2N queries, N extra
         # DB_LOCK acquisitions, uncapped by the (now-fixed) unbounded limit above. Two
@@ -2019,7 +2036,7 @@ async def list_agents(request: Request, limit: int = 100, search: str | None = N
             "session_count": session_counts.get(agent_id, 0),
             "win_count": win_counts.get(agent_id, 0),
         })
-    return {"agents": agents, "count": len(agents)}
+    return {"agents": agents, "count": len(agents), "has_more": has_more}
 
 
 @app.get("/agents/{agent_id}")
@@ -2749,18 +2766,24 @@ async def list_events(status: str | None = None, limit: int = 50):
     """N4-5 (N4 review R7): previously had no `limit` param at all — every event, with
     full bracket + participant lists, in one unbounded query. Public discovery stays
     public (same shape as GET /listings); this just caps the row scan, matching every
-    other list endpoint after N3-6."""
+    other list endpoint after N3-6.
+
+    N6 review R2: `count` (added N5-5) is the returned page size, not a total — it
+    can never exceed `limit`, so it could never actually signal truncation despite
+    that being N5-5's stated goal. `has_more` (via _fetch_page) is the real signal.
+    """
     limit = _clamp_limit(limit)
     with DB_LOCK, get_db() as conn:
         if status:
-            rows = conn.execute(
+            rows, has_more = _fetch_page(
+                conn,
                 "SELECT * FROM events WHERE status = ? ORDER BY created_at DESC LIMIT ?",
-                (status, limit),
-            ).fetchall()
+                (status,), limit,
+            )
         else:
-            rows = conn.execute(
-                "SELECT * FROM events ORDER BY created_at DESC LIMIT ?", (limit,)
-            ).fetchall()
+            rows, has_more = _fetch_page(
+                conn, "SELECT * FROM events ORDER BY created_at DESC LIMIT ?", (), limit,
+            )
     events = [
         {
             **dict(r),
@@ -2769,7 +2792,7 @@ async def list_events(status: str | None = None, limit: int = 50):
         }
         for r in rows
     ]
-    return {"events": events, "count": len(events)}
+    return {"events": events, "count": len(events), "has_more": has_more}
 
 
 @app.get("/events/{event_id}")

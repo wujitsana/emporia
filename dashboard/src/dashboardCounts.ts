@@ -147,8 +147,11 @@ export interface DashboardCounts {
   listings: number | null;
   sessions: number | null;
   rooms: number | null;
-  events: number | null;
-  agents: number | null;
+  /** "N+" (string) when the relay's has_more flag indicates more rows exist beyond
+   * its page cap — N6 review R2: `count` alone can never signal this, since it's
+   * always the returned page size. Only /events and /agents report has_more so far. */
+  events: number | string | null;
+  agents: number | string | null;
   settlements: number | null;
   agoraTopics: number | null;
   dmThreads: number | null;
@@ -170,13 +173,17 @@ export async function fetchDashboardCounts(viewerId: string): Promise<DashboardC
       api.dmThreads(viewerId),
     ]);
 
-  const len = (r: PromiseSettledResult<unknown>): number | null => {
+  // N6 review R2: `count` is always the returned page size (never a total), so it
+  // can never signal truncation by itself. `has_more` (so far only on /events and
+  // /agents) is the real signal — when present, render "N+" instead of a flat
+  // number that silently under-reports past the relay's page cap.
+  const len = (r: PromiseSettledResult<unknown>): number | string | null => {
     if (r.status !== "fulfilled") return null;
     const v = r.value;
     if (Array.isArray(v)) return v.length;
     if (v && typeof v === "object") {
       const o = v as Record<string, unknown>;
-      if (typeof o.count === "number") return o.count;
+      if (typeof o.count === "number") return o.has_more === true ? `${o.count}+` : o.count;
       if (Array.isArray(o.listings)) return o.listings.length;
       if (Array.isArray(o.sessions)) return o.sessions.length;
       if (Array.isArray(o.rooms)) return o.rooms.length;
@@ -257,7 +264,8 @@ export function countCaptionForNav(
   counts: DashboardCounts | null,
   online: boolean,
 ): string | null {
-  const n = (v: number | null | undefined) => (v != null && !Number.isNaN(v) ? v : null);
+  const n = (v: number | string | null | undefined) =>
+    v != null && (typeof v === "string" || !Number.isNaN(v)) ? v : null;
   switch (item.id) {
     case "overview":
       return online ? "Relay connected" : health ? "Relay unreachable" : null;

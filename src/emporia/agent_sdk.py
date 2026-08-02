@@ -395,8 +395,11 @@ class EmporiaAgent:
         self, status: str | None = None, limit: int = 50
     ) -> list[dict[str, Any]]:
         """The relay caps this at `limit` (default 50, matching the server-side default
-        added in N4-5) — the response also carries a `count` field so callers who need
-        more than the cap can detect truncation rather than silently under-reporting."""
+        added in N4-5). This method returns only the event list — the response also
+        carries `count` (the returned page size, not a total; see N6 review R2) and
+        `has_more` (whether more rows exist beyond `limit`), neither of which this
+        method exposes. Call `GET {relay_url}/events` directly if you need to detect
+        truncation rather than assuming a short list means there's nothing more."""
         params: dict[str, Any] = {"limit": limit}
         if status:
             params["status"] = status

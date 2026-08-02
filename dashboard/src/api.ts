@@ -347,7 +347,7 @@ export const api = {
     get<{ session_id: string; actions: SessionAction[] }>(
       `/sessions/${session_id}/actions`, { agentScoped: true }
     ),
-  events: () => get<{ events: EmporiaEvent[]; count: number }>("/events"),
+  events: () => get<{ events: EmporiaEvent[]; count: number; has_more: boolean }>("/events"),
   // viewer/member scoping now comes from the authenticated caller server-side
   // (_dashboard_agent_id), not a client-supplied id — see relay N1-6.
   rooms: () => get<{ rooms: Room[]; count: number }>("/rooms", { agentScoped: true }),
