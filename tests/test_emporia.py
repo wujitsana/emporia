@@ -2523,6 +2523,104 @@ def test_join_room_retry_does_not_double_pay(mock_verify, mock_payout, client):
     assert settlements["c"] == 1, "exactly one settlement row must exist after the retry"
 
 
+@patch("emporia.payments.payout_winner", new_callable=AsyncMock)
+@patch("emporia.payments.verify_payment_intent", new_callable=AsyncMock)
+def test_kicked_room_member_can_still_read_own_receipt(mock_verify, mock_payout, client):
+    """N5 review R3: the ?agent_id= branch of list_settlements only joined through
+    `participants`, which has no rows for room settlements at all — so there was
+    zero path to your own receipt for a room payment, and a kicked member lost even
+    the theoretical membership-based path. Now joins through `payments` too, which
+    has a real agent_id column populated by every recorded payment regardless of
+    current membership."""
+    _register(client, "n54_room_owner")
+    _register(client, "n54_room_payer")
+    _register(client, "n54_room_stranger")
+    mock_payout.return_value = {"transfer_id": "tr_n54_room"}
+
+    r = client.post("/rooms", json={
+        "name": "N54 Room Receipt Room", "creator_id": "n54_room_owner",
+        "room_type": "private", "gate_type": "stripe_payment", "entry_fee_cents": 100,
+    },
+        headers={"x-emporia-agent-id": "n54_room_owner"})
+    room_id = r.json()["room_id"]
+
+    with patch("emporia.relay_server.AGENT_REGISTRY.get_stripe_account", return_value="acct_n54_room"):
+        mock_verify.return_value = {
+            "status": "succeeded", "payment_intent_id": "pi_n54_room_receipt",
+            "amount": 100, "currency": "usd", "capture_method": "automatic",
+            "metadata": {"resource_type": "room", "resource_id": room_id},
+        }
+        r2 = client.post(
+            f"/rooms/{room_id}/join",
+            json={"agent_id": "n54_room_payer", "payment_intent_id": "pi_n54_room_receipt"},
+            headers={"x-emporia-agent-id": "n54_room_payer"},
+        )
+    assert r2.status_code == 200, r2.text
+
+    kicked = client.post(f"/rooms/{room_id}/kick", json={"target_agent_id": "n54_room_payer"},
+        headers={"x-emporia-agent-id": "n54_room_owner"})
+    assert kicked.status_code == 200, kicked.text
+
+    own_receipt = client.get("/payments/settlements", params={"agent_id": "n54_room_payer"},
+        headers={"x-emporia-agent-id": "n54_room_payer"})
+    assert own_receipt.status_code == 200, own_receipt.text
+    assert any(s["session_id"] == room_id for s in own_receipt.json()["settlements"]), \
+        "a kicked room member must still be able to read their own receipt"
+
+    stranger_view = client.get("/payments/settlements", params={"agent_id": "n54_room_payer"},
+        headers={"x-emporia-agent-id": "n54_room_stranger"})
+    assert stranger_view.status_code == 403, stranger_view.text
+
+
+@patch("emporia.payments.payout_winner", new_callable=AsyncMock)
+@patch("emporia.payments.verify_payment_intent", new_callable=AsyncMock)
+def test_unsubscribed_agora_member_can_still_read_own_receipt(mock_verify, mock_payout, client):
+    """Sibling of test_kicked_room_member_can_still_read_own_receipt for Agora: an
+    agent who unsubscribes from a paid_invite topic they paid for must still be able
+    to find their own settlement via ?agent_id=."""
+    _register(client, "n54_agora_owner")
+    _register(client, "n54_agora_payer")
+    _register(client, "n54_agora_stranger")
+    mock_payout.return_value = {"transfer_id": "tr_n54_agora"}
+
+    r = client.post("/agoras/topics", json={
+        "name": "N54 Agora Receipt Topic", "description": "d", "visibility": "private",
+        "gate_type": "paid_invite", "entry_fee_cents": 100, "creator_id": "n54_agora_owner",
+    },
+        headers={"x-emporia-agent-id": "n54_agora_owner"})
+    slug, topic_id = r.json()["slug"], r.json()["topic_id"]
+    client.post(f"/agoras/topics/{slug}/invite", json={"invitee_id": "n54_agora_payer"},
+        headers={"x-emporia-agent-id": "n54_agora_owner"})
+
+    with patch("emporia.relay_server.AGENT_REGISTRY.get_stripe_account", return_value="acct_n54_agora"):
+        mock_verify.return_value = {
+            "status": "succeeded", "payment_intent_id": "pi_n54_agora_receipt",
+            "amount": 100, "currency": "usd", "capture_method": "automatic",
+            "metadata": {"resource_type": "agora", "resource_id": topic_id},
+        }
+        r2 = client.post(
+            f"/agoras/topics/{slug}/subscribe",
+            json={"agent_id": "n54_agora_payer", "payment_intent_id": "pi_n54_agora_receipt"},
+            headers={"x-emporia-agent-id": "n54_agora_payer"},
+        )
+    assert r2.status_code == 200, r2.text
+
+    unsub = client.request("DELETE", f"/agoras/topics/{slug}/subscribe",
+        params={"agent_id": "n54_agora_payer"},
+        headers={"x-emporia-agent-id": "n54_agora_payer"})
+    assert unsub.status_code == 200, unsub.text
+
+    own_receipt = client.get("/payments/settlements", params={"agent_id": "n54_agora_payer"},
+        headers={"x-emporia-agent-id": "n54_agora_payer"})
+    assert own_receipt.status_code == 200, own_receipt.text
+    assert any(s["session_id"] == topic_id for s in own_receipt.json()["settlements"]), \
+        "an unsubscribed Agora member must still be able to read their own receipt"
+
+    stranger_view = client.get("/payments/settlements", params={"agent_id": "n54_agora_payer"},
+        headers={"x-emporia-agent-id": "n54_agora_stranger"})
+    assert stranger_view.status_code == 403, stranger_view.text
+
+
 def _settlement_matrix_session(client, module_type, payment_mode):
     """Create a session of the given module_type and directly record a settlement on
     it (no need to play a full game to terminal — record_settlement only cares about

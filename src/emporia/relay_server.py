@@ -2331,6 +2331,13 @@ def _settlement_resource_viewer_allowed(resource_id: str, caller: str | None, co
         return _session_viewer_allowed(s, caller)
     room = rooms_db.get_room(resource_id, db_path=DATABASE_PATH)
     if room:
+        # N5 review R3: this used to require membership unconditionally, stricter than
+        # the room's own read rule (rooms.py / list_rooms filtering, room_type=="public"
+        # → readable by anyone; only private rooms require membership). Public rooms
+        # can only ever be free (create_room rejects room_type="public" with a non-open
+        # gate_type), so this widening carries no payment-leak risk.
+        if room.room_type == "public":
+            return True
         return bool(caller and rooms_db.is_member(resource_id, caller, db_path=DATABASE_PATH))
     topic = conn.execute(
         "SELECT visibility, gate_type, entry_fee_cents, topic_id FROM agora_topics WHERE topic_id=?",
@@ -2363,7 +2370,13 @@ async def list_settlements(
                           _settlement_resource_viewer_allowed) — not unconditionally
                           public; N4 review R1(a) found a leaked PaymentIntent id here
                           was one half of a working payment bypass for paid Agora topics.
-      - ?agent_id=X    → requires dashboard auth (localhost or JWT); scoped to that agent
+      - ?agent_id=X    → requires dashboard auth (localhost or JWT); scoped to that agent —
+                          settlements for sessions the agent participated in, OR resources
+                          (room/Agora) the agent actually paid to join, even if they've since
+                          left (N5 review R3: the `participants` join alone had no rows for
+                          room/Agora settlements at all, so a kicked room member or an agent
+                          who unsubscribed from a topic they paid for had no path to their own
+                          receipt)
       - no filter      → requires dashboard auth AND relay operator identity
     """
     dashboard_id = _dashboard_agent_id(request)
@@ -2396,10 +2409,13 @@ async def list_settlements(
             ).fetchall()
         elif agent_id:
             rows = conn.execute(
-                "SELECT s.* FROM settlements s "
-                "JOIN participants p ON s.session_id = p.session_id "
-                "WHERE p.agent_id = ? ORDER BY s.created_at DESC LIMIT 100",
-                (agent_id,),
+                "SELECT DISTINCT s.* FROM settlements s "
+                "WHERE s.session_id IN ("
+                "  SELECT session_id FROM participants WHERE agent_id = ?"
+                "  UNION "
+                "  SELECT COALESCE(session_id, room_id) FROM payments WHERE agent_id = ?"
+                ") ORDER BY s.created_at DESC LIMIT 100",
+                (agent_id, agent_id),
             ).fetchall()
         else:
             rows = conn.execute(
