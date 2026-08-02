@@ -25,6 +25,7 @@ import shutil
 import sys
 import tempfile
 import time
+from contextlib import contextmanager
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -2369,6 +2370,157 @@ def test_agora_paid_subscribe_composed_bypass_closed(mock_verify, client):
             (topic_id, "n42_agora_attacker"),
         ).fetchone()
     assert row is None, "attacker must not be a topic member after a rejected PI replay"
+
+
+@contextmanager
+def _fail_once_on(get_conn_target: str, sql_fragment: str):
+    """Make the next sqlite3 statement containing `sql_fragment` raise, then let every
+    later statement through normally — simulates a crash mid-transaction (e.g. the
+    process dying, or an unrelated constraint error) right after the statements that
+    ran before it in program order have already committed. sqlite3.Connection is a C
+    type and can't be monkeypatched directly, so this wraps whatever connection
+    `get_conn_target` (e.g. "emporia.relay_server.get_db") hands out."""
+    import sqlite3
+    state = {"armed": True}
+
+    class _FlakyConn:
+        def __init__(self, real):
+            self._real = real
+
+        def execute(self, sql, *args, **kwargs):
+            if state["armed"] and sql_fragment in sql:
+                state["armed"] = False
+                raise sqlite3.OperationalError(f"simulated failure: {sql_fragment}")
+            return self._real.execute(sql, *args, **kwargs)
+
+        def __enter__(self):
+            self._real.__enter__()
+            return self
+
+        def __exit__(self, *exc):
+            return self._real.__exit__(*exc)
+
+        def __getattr__(self, name):
+            return getattr(self._real, name)
+
+    import importlib
+    module_path, func_name = get_conn_target.rsplit(".", 1)
+    orig_func = getattr(importlib.import_module(module_path), func_name)
+
+    def wrapped(*args, **kwargs):
+        return _FlakyConn(orig_func(*args, **kwargs))
+
+    with patch(get_conn_target, wrapped):
+        yield
+
+
+@patch("emporia.payments.payout_winner", new_callable=AsyncMock)
+@patch("emporia.payments.verify_payment_intent", new_callable=AsyncMock)
+def test_agora_subscribe_retry_does_not_double_pay(mock_verify, mock_payout, client):
+    """N5 review R2: subscribe_agora_topic used to write membership (and consume the
+    invite) AFTER payout_winner + record_settlement. record_payment() is genuinely
+    idempotent on a replayed PaymentIntent (returns the existing row rather than
+    raising), but payout_winner is a real, non-idempotent Stripe transfer. If the
+    membership write crashes (process death, unrelated DB error) after the payout has
+    already fired, the invite is still unconsumed and the caller isn't a member yet —
+    a retry re-passes the gate, record_payment replays idempotently, and (pre-fix)
+    payout_winner fires again. The fix moves membership+invite consumption before the
+    payout, so the crash now happens *before* any money moves, and the retry's
+    already_subscribed short-circuit (once membership is written) prevents a further
+    replay from doing anything at all. Asserts the property that matters: call count
+    across the crashed attempt + the retry, not either call's status code."""
+    _register(client, "n53_agora_owner")
+    _register(client, "n53_agora_payer")
+    mock_payout.return_value = {"transfer_id": "tr_n53_agora"}
+
+    r = client.post("/agoras/topics", json={
+        "name": "N53 Agora Retry Topic", "description": "d", "visibility": "public",
+        "gate_type": "paid_invite", "entry_fee_cents": 100, "creator_id": "n53_agora_owner",
+    },
+        headers={"x-emporia-agent-id": "n53_agora_owner"})
+    assert r.status_code == 200, r.text
+    slug, topic_id = r.json()["slug"], r.json()["topic_id"]
+    client.post(f"/agoras/topics/{slug}/invite", json={"invitee_id": "n53_agora_payer"},
+        headers={"x-emporia-agent-id": "n53_agora_owner"})
+
+    with patch("emporia.relay_server.AGENT_REGISTRY.get_stripe_account", return_value="acct_n53"):
+        mock_verify.return_value = {
+            "status": "succeeded", "payment_intent_id": "pi_n53_agora_retry",
+            "amount": 100, "currency": "usd", "capture_method": "automatic",
+            "metadata": {"resource_type": "agora", "resource_id": topic_id},
+        }
+        subscribe_body = {"agent_id": "n53_agora_payer", "payment_intent_id": "pi_n53_agora_retry"}
+
+        with _fail_once_on("emporia.relay_server.get_db", "INSERT INTO agora_members"):
+            with pytest.raises(Exception):  # the simulated crash propagates through TestClient
+                client.post(f"/agoras/topics/{slug}/subscribe", json=subscribe_body,
+                    headers={"x-emporia-agent-id": "n53_agora_payer"})
+
+        r2 = client.post(f"/agoras/topics/{slug}/subscribe", json=subscribe_body,
+            headers={"x-emporia-agent-id": "n53_agora_payer"})
+    assert r2.status_code == 200, r2.text
+
+    assert mock_payout.call_count == 1, \
+        f"payout_winner must fire exactly once across the crashed attempt + retry, fired {mock_payout.call_count}x"
+
+    from emporia.relay_server import get_db
+    with get_db() as conn:
+        settlements = conn.execute(
+            "SELECT COUNT(*) c FROM settlements WHERE session_id=?", (topic_id,)
+        ).fetchone()
+    assert settlements["c"] == 1, "exactly one settlement row must exist after the retry"
+
+
+@patch("emporia.payments.payout_winner", new_callable=AsyncMock)
+@patch("emporia.payments.verify_payment_intent", new_callable=AsyncMock)
+def test_join_room_retry_does_not_double_pay(mock_verify, mock_payout, client):
+    """Sibling of test_agora_subscribe_retry_does_not_double_pay: join_room has the
+    identical shape (payment recorded before membership, since N4's R1(b) fix), and
+    its pre-existing already_member short-circuit only catches a retry AFTER
+    add_member has already committed. Before this fix, add_member ran after
+    payout_winner + record_settlement, so a crash in add_member after a successful
+    payout left the retry free to re-pass the gate and pay out again. The fix moves
+    add_member before the payout, so the existing short-circuit now actually closes
+    the window — see _fail_once_on for how the crash is simulated."""
+    _register(client, "n53_room_owner")
+    _register(client, "n53_room_payer")
+    mock_payout.return_value = {"transfer_id": "tr_n53_room"}
+
+    r = client.post("/rooms", json={
+        "name": "N53 Room Retry Room", "creator_id": "n53_room_owner",
+        "room_type": "private", "gate_type": "stripe_payment", "entry_fee_cents": 100,
+    },
+        headers={"x-emporia-agent-id": "n53_room_owner"})
+    assert r.status_code == 200, r.text
+    room_id = r.json()["room_id"]
+
+    with patch("emporia.relay_server.AGENT_REGISTRY.get_stripe_account", return_value="acct_n53_room"):
+        mock_verify.return_value = {
+            "status": "succeeded", "payment_intent_id": "pi_n53_room_retry",
+            "amount": 100, "currency": "usd", "capture_method": "automatic",
+            "metadata": {"resource_type": "room", "resource_id": room_id},
+        }
+        join_body = {"agent_id": "n53_room_payer", "payment_intent_id": "pi_n53_room_retry"}
+
+        with _fail_once_on("emporia.rooms._connect", "UPDATE rooms SET members_json"):
+            with pytest.raises(Exception):  # the simulated crash propagates through TestClient
+                client.post(f"/rooms/{room_id}/join", json=join_body,
+                    headers={"x-emporia-agent-id": "n53_room_payer"})
+
+        r2 = client.post(f"/rooms/{room_id}/join", json=join_body,
+            headers={"x-emporia-agent-id": "n53_room_payer"})
+    assert r2.status_code == 200, r2.text
+    assert r2.json()["status"] == "joined", r2.text
+
+    assert mock_payout.call_count == 1, \
+        f"payout_winner must fire exactly once across the crashed attempt + retry, fired {mock_payout.call_count}x"
+
+    from emporia.relay_server import get_db
+    with get_db() as conn:
+        settlements = conn.execute(
+            "SELECT COUNT(*) c FROM settlements WHERE session_id=?", (room_id,)
+        ).fetchone()
+    assert settlements["c"] == 1, "exactly one settlement row must exist after the retry"
 
 
 def _settlement_matrix_session(client, module_type, payment_mode):

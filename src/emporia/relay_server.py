@@ -3784,6 +3784,9 @@ async def join_room(room_id: str, req: JoinRoomRequest, request: Request):
     if rooms_db.is_member(room_id, req.agent_id, db_path=DATABASE_PATH):
         return {"status": "already_member", "room_id": room_id}
 
+    confirmed_pi: str | None = None
+    amount_cents = 0
+    currency = "usd"
     if room.gate_type == "invite":
         if not rooms_db.has_invite(room_id, req.agent_id, db_path=DATABASE_PATH):
             raise HTTPException(403, "No invite — ask the room creator")
@@ -3826,12 +3829,26 @@ async def join_room(room_id: str, req: JoinRoomRequest, request: Request):
             )
         except ValueError as e:
             raise HTTPException(402, str(e))
+
+    # Membership grant — N5 review R2: this must commit before the payout below (and
+    # before returning) so that a retry after a mid-flight failure is caught by the
+    # already_member short-circuit above rather than re-entering payout work.
+    # record_payment (above) is genuinely idempotent on a replayed PaymentIntent, but
+    # payout_winner is a real, non-idempotent Stripe transfer — without this ordering
+    # a retry after the payout succeeded but before this response returned would
+    # replay record_payment idempotently (no error) and fire a second transfer.
+    try:
+        rooms_db.add_member(room_id, req.agent_id, db_path=DATABASE_PATH)
+    except ValueError as e:
+        raise HTTPException(403, str(e))
+
+    if room.gate_type == "stripe_payment" and confirmed_pi:
         from emporia.payments import platform_fee as _platform_fee
         platform_fee = _platform_fee(amount_cents)
         creator_payout = amount_cents - platform_fee
         transfer_id = None
         transfer_status = "no_stripe_account"
-        if confirmed_pi and creator_payout > 0:
+        if creator_payout > 0:
             creator_stripe = AGENT_REGISTRY.get_stripe_account(room.creator_id)
             if creator_stripe:
                 try:
@@ -3855,15 +3872,10 @@ async def join_room(room_id: str, req: JoinRoomRequest, request: Request):
             "platform_fee_cents": platform_fee,
             "winner_payout_cents": creator_payout,
             "platform_fee_bps": OPERATOR_FEE_BPS,
-            "payment_intent_ids": [confirmed_pi] if confirmed_pi else [],
+            "payment_intent_ids": [confirmed_pi],
             "transfer_id": transfer_id,
             "transfer_status": transfer_status,
         })
-
-    try:
-        rooms_db.add_member(room_id, req.agent_id, db_path=DATABASE_PATH)
-    except ValueError as e:
-        raise HTTPException(403, str(e))
 
     await broadcast_to_session(f"room:{room_id}", {
         "type": "member_joined",
@@ -4333,9 +4345,10 @@ async def subscribe_agora_topic(slug: str, req: AgoraSubscribeRequest, request: 
     _require_registered(req.agent_id)
     now = datetime.now(UTC).isoformat()
 
-    # Topic lookup + invite check — DB_LOCK held only for this local read, not across the
-    # network round-trip to Stripe below (holding a process-wide lock across an external
-    # HTTP call would serialize every other request touching the DB for its duration).
+    # Topic lookup + already-subscribed short-circuit + invite check — DB_LOCK held
+    # only for this local read, not across the network round-trip to Stripe below
+    # (holding a process-wide lock across an external HTTP call would serialize every
+    # other request touching the DB for its duration).
     with DB_LOCK, get_db() as conn:
         row = conn.execute("SELECT * FROM agora_topics WHERE slug=?", (slug,)).fetchone()
         if not row:
@@ -4344,6 +4357,19 @@ async def subscribe_agora_topic(slug: str, req: AgoraSubscribeRequest, request: 
         entry_fee = row["entry_fee_cents"] if "entry_fee_cents" in row.keys() else 0
         topic_id = row["topic_id"]
         creator_id = row["creator_id"]
+
+        # N5 review R2: check membership before any payment work, mirroring
+        # join_room's already_member short-circuit. Without this, a retry after a
+        # mid-flight failure (e.g. the membership write further below failed, or the
+        # response was lost after payout succeeded) would re-pass the invite gate and
+        # record_payment's idempotent replay, reaching payout_winner — a real,
+        # non-idempotent Stripe transfer — a second time.
+        already_member = conn.execute(
+            "SELECT 1 FROM agora_members WHERE topic_id=? AND agent_id=?",
+            (topic_id, req.agent_id),
+        ).fetchone()
+        if already_member:
+            return {"status": "already_subscribed", "slug": slug, "agent_id": req.agent_id, "gate_type": gate}
 
         if gate in ("invite", "paid_invite"):
             has_invite = conn.execute(
@@ -4375,7 +4401,7 @@ async def subscribe_agora_topic(slug: str, req: AgoraSubscribeRequest, request: 
             return result
         confirmed_pi = result
 
-    # Record payment + split for paid_invite — BEFORE the membership write below.
+    # Record payment — BEFORE the membership write below.
     # N4 review R1(b): this used to run after membership committed. get_db() returns a
     # raw sqlite3.Connection whose `with` block commits on normal exit, so the add-member
     # block below had already committed by the time record_payment() could reject a
@@ -4394,6 +4420,34 @@ async def subscribe_agora_topic(slug: str, req: AgoraSubscribeRequest, request: 
             )
         except ValueError as e:
             raise HTTPException(402, str(e))
+
+    # Add member + consume invite — N5 review R2: this must commit before the payout
+    # below, so that a retry lands on the already_member short-circuit above instead
+    # of re-entering payout work (payout_winner is a real, non-idempotent Stripe
+    # transfer; record_payment above is idempotent and would otherwise let a retry
+    # sail through to a second transfer). See join_room's identical restructuring.
+    with DB_LOCK, get_db() as conn:
+        existing = conn.execute(
+            "SELECT 1 FROM agora_members WHERE topic_id=? AND agent_id=?",
+            (topic_id, req.agent_id),
+        ).fetchone()
+        if not existing:
+            conn.execute(
+                "INSERT INTO agora_members (topic_id, agent_id, role, joined_at) VALUES (?,?,?,?)",
+                (topic_id, req.agent_id, "subscriber", now),
+            )
+            conn.execute(
+                "UPDATE agora_topics SET subscriber_count=subscriber_count+1 WHERE topic_id=?",
+                (topic_id,),
+            )
+            # Consume invite
+            if gate in ("invite", "paid_invite"):
+                conn.execute(
+                    "DELETE FROM agora_invites WHERE topic_id=? AND agent_id=?",
+                    (topic_id, req.agent_id),
+                )
+
+    if confirmed_pi and entry_fee > 0:
         from emporia.payments import platform_fee as _platform_fee
         platform_fee = _platform_fee(entry_fee)
         creator_payout = entry_fee - platform_fee
@@ -4415,29 +4469,6 @@ async def subscribe_agora_topic(slug: str, req: AgoraSubscribeRequest, request: 
             "winner_payout_cents": creator_payout, "platform_fee_bps": OPERATOR_FEE_BPS,
             "payment_intent_ids": [confirmed_pi], "transfer_id": transfer_id, "transfer_status": transfer_status,
         })
-
-    # Add member — re-acquire DB_LOCK for the write, now that payment (if any) is settled
-    # and recorded.
-    with DB_LOCK, get_db() as conn:
-        existing = conn.execute(
-            "SELECT 1 FROM agora_members WHERE topic_id=? AND agent_id=?",
-            (topic_id, req.agent_id),
-        ).fetchone()
-        if not existing:
-            conn.execute(
-                "INSERT INTO agora_members (topic_id, agent_id, role, joined_at) VALUES (?,?,?,?)",
-                (topic_id, req.agent_id, "subscriber", now),
-            )
-            conn.execute(
-                "UPDATE agora_topics SET subscriber_count=subscriber_count+1 WHERE topic_id=?",
-                (topic_id,),
-            )
-            # Consume invite
-            if gate in ("invite", "paid_invite"):
-                conn.execute(
-                    "DELETE FROM agora_invites WHERE topic_id=? AND agent_id=?",
-                    (topic_id, req.agent_id),
-                )
 
     return {"ok": True, "slug": slug, "agent_id": req.agent_id, "gate_type": gate}
 
