@@ -1042,6 +1042,54 @@ def test_sweep_task_starts_and_cancels_cleanly_on_shutdown():
     assert rs._SWEEP_TASK.cancelled()
 
 
+def test_sweep_loop_survives_and_recovers_from_a_failing_sweep():
+    """N12-1 (R1): the version of _sweep_loop that shipped in N11-3 had no exception
+    handling at all — one raise from _sweep_expired_state() would end the task for the
+    rest of the process's life, silently, with nothing left bounding the dicts it
+    exists to bound. Patches the interval down so the loop actually ticks within the
+    test, and _sweep_expired_state to fail once then succeed."""
+    from emporia import relay_server as rs
+
+    call_count = {"n": 0}
+
+    def _flaky():
+        call_count["n"] += 1
+        if call_count["n"] == 1:
+            raise RuntimeError("simulated sweep failure")
+        return {"rate_windows": 0, "pending_tokens": 0, "ws_connections": 0, "agent_rate_limits": 0}
+
+    rs.SWEEP_STATS["runs"] = 0
+    rs.SWEEP_STATS["consecutive_failures"] = 0
+    with patch.object(rs, "_sweep_expired_state", side_effect=_flaky), \
+         patch.object(rs, "_SWEEP_INTERVAL_SECONDS", 0.01):
+        with TestClient(app) as tc:
+            tc.get("/health")
+            deadline = time.time() + 3
+            while call_count["n"] < 2 and time.time() < deadline:
+                time.sleep(0.02)
+
+    assert call_count["n"] >= 2, "loop did not survive the first failure to attempt a second run"
+    assert rs.SWEEP_STATS["runs"] >= 1
+    assert rs.SWEEP_STATS["consecutive_failures"] == 0  # recovered on the successful run
+
+
+def test_sweep_task_shutdown_is_clean_after_a_sweep_failure():
+    """N12-1 (R1): before this fix, lifespan's `await _SWEEP_TASK` under
+    suppress(asyncio.CancelledError) would re-raise any *other* exception the sweep
+    loop had already died with — so a single bad sweep run would also break clean
+    shutdown on a relay that otherwise looked healthy. Exiting the TestClient context
+    below must not raise."""
+    from emporia import relay_server as rs
+
+    with patch.object(rs, "_sweep_expired_state", side_effect=RuntimeError("boom")), \
+         patch.object(rs, "_SWEEP_INTERVAL_SECONDS", 0.01):
+        with TestClient(app) as tc:
+            tc.get("/health")
+            time.sleep(0.1)
+
+    assert rs.SWEEP_STATS["consecutive_failures"] >= 1
+
+
 def test_agent_write_rate_limit_applies_from_localhost(client):
     """N11-4 (R4): per-agent write throttle must be enforced even from the `client`
     fixture's 127.0.0.1 source, which the global IP middleware exempts

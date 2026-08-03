@@ -1631,6 +1631,19 @@ async def rate_limit(request: Request, call_next):
 _SWEEP_INTERVAL_SECONDS = float(os.getenv("EMPORIA_SWEEP_INTERVAL_SECONDS", "300"))
 _SWEEP_TASK: asyncio.Task | None = None  # set/cancelled in lifespan(); exposed for tests/ops
 
+# Process-lifetime sweep health, surfaced read-only via GET /safety/stats (N12-1) — without
+# this there was no way to tell the sweep had ever run, which is exactly how a silent
+# failure (see _sweep_loop's docstring) would have stayed invisible on a relay meant to
+# run unattended for months. Counters only; never put exception text in here — this dict
+# is served on a _DELIBERATELY_PUBLIC route.
+SWEEP_STATS: dict[str, Any] = {
+    "runs": 0,
+    "last_run_at": None,
+    "last_error_at": None,
+    "consecutive_failures": 0,
+    "evicted": {"rate_windows": 0, "pending_tokens": 0, "ws_connections": 0, "agent_rate_limits": 0},
+}
+
 
 def _sweep_expired_state() -> dict[str, int]:
     """Evict empty/expired keys from every unbounded in-memory dict. Pure and
@@ -1682,10 +1695,35 @@ def _sweep_expired_state() -> dict[str, int]:
 
 async def _sweep_loop() -> None:
     """Runs _sweep_expired_state() on EMPORIA_SWEEP_INTERVAL_SECONDS (default 300s).
-    Started in lifespan() below; cancelled there on shutdown."""
+    Started in lifespan() below; cancelled there on shutdown.
+
+    N12-1: a raise out of _sweep_expired_state() must not end this loop for the rest of
+    the process's life, silently, with the dicts it exists to bound growing unchecked
+    from that point on — the first version of this loop had no exception handling at
+    all. Logged and counted in SWEEP_STATS, then the loop keeps going.
+    asyncio.CancelledError (shutdown, via lifespan's task.cancel()) is not swallowed
+    here — it must propagate so lifespan's own cancel+await sees a real cancellation,
+    not a task that already died for an unrelated reason.
+    """
+    import logging
+
+    logger = logging.getLogger("emporia.relay")
     while True:
         await asyncio.sleep(_SWEEP_INTERVAL_SECONDS)
-        _sweep_expired_state()
+        try:
+            removed = _sweep_expired_state()
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            logger.exception("Background sweep failed — will retry next interval")
+            SWEEP_STATS["last_error_at"] = datetime.now(UTC).isoformat()
+            SWEEP_STATS["consecutive_failures"] += 1
+            continue
+        SWEEP_STATS["runs"] += 1
+        SWEEP_STATS["last_run_at"] = datetime.now(UTC).isoformat()
+        SWEEP_STATS["consecutive_failures"] = 0
+        for key, count in removed.items():
+            SWEEP_STATS["evicted"][key] += count
 
 
 # ============================================================================
@@ -1867,6 +1905,7 @@ async def safety_stats():
         "nemo_guardrails_model": guardrails.NEMO_GUARDRAILS_MODEL if guardrails.NEMO_GUARDRAILS_ENABLED else None,
         "nemo_guardrail_errors": guardrails.NEMO_STATS["errors"],
         **SAFETY_STATS,
+        "sweep": SWEEP_STATS,
     }
 
 
