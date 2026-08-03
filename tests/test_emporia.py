@@ -3160,7 +3160,12 @@ def test_settlement_ownership_sql_matches_python_predicate(client):
     stakes are sharper than payer_id alone: the ?agent_id= branch never calls
     _settlement_row_dict at all (it trusts its WHERE clause to have already scoped
     to owned rows), so a false "owned" verdict leaks that row's real
-    payment_intent_ids and transfer_id too, not just payer_id."""
+    payment_intent_ids and transfer_id too, not just payer_id.
+
+    Exercises the real GET /payments/settlements?agent_id= endpoint (the actual
+    SQL predicate under test) rather than a copy of the query string in the test
+    — a hand-duplicated query can't detect drift in the very thing it's meant to
+    catch."""
     from emporia.relay_server import (
         record_settlement, get_db, DB_LOCK, _caller_owns_settlement_row,
     )
@@ -3193,18 +3198,19 @@ def test_settlement_ownership_sql_matches_python_predicate(client):
             (shared_id, other_payer),
         ).fetchone()
         assert row is not None, "test setup: settlement row must exist"
+        settlement_id = row["settlement_id"]
         python_owns = _caller_owns_settlement_row(row, caller, {shared_id})
-        sql_owns = conn.execute(
-            "SELECT 1 FROM settlements WHERE settlement_id = ? AND (payer_id = ? "
-            "OR session_id IN (SELECT session_id FROM participants WHERE agent_id = ?))",
-            (row["settlement_id"], caller, caller),
-        ).fetchone() is not None
+
+    resp = client.get("/payments/settlements", params={"agent_id": caller},
+        headers={"x-emporia-agent-id": caller})
+    assert resp.status_code == 200, resp.text
+    sql_owns = any(s["settlement_id"] == settlement_id for s in resp.json()["settlements"])
 
     assert sql_owns == python_owns, (
-        f"SQL ownership predicate and _caller_owns_settlement_row disagree for a "
-        f"non-null payer_id row whose session_id coincides with the caller's own "
-        f"participation — SQL says owned={sql_owns}, Python says owned={python_owns} "
-        f"(N8 review R4)"
+        f"?agent_id= and _caller_owns_settlement_row disagree for a non-null "
+        f"payer_id row whose session_id coincides with the caller's own "
+        f"participation — endpoint says owned={sql_owns}, Python says "
+        f"owned={python_owns} (N8 review R4)"
     )
 
 

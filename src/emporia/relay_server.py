@@ -2480,6 +2480,16 @@ def _caller_owns_settlement_row(
     _migrate_settlements), correctly visible to any participant — resolved
     against the prefetched `participant_session_ids` (_caller_participant_session_ids)
     rather than a per-row load_session() call.
+
+    N8 review R4/R5: list_settlements' `?agent_id=` branch re-expresses this exact
+    rule directly in SQL (`payer_id = ? OR (payer_id IS NULL AND session_id IN
+    (...))`) so the ownership filter runs in the database rather than after
+    fetching every candidate row. The two must stay in lockstep — change one,
+    change the other — or a row with someone else's payer_id whose session_id
+    happens to also be one of the caller's participant sessions gets a different
+    verdict from each. The agreement test
+    (test_settlement_ownership_sql_matches_python_predicate) is what catches that
+    drift.
     """
     if not caller:
         return False
@@ -2636,10 +2646,26 @@ async def list_settlements(
             # covers room/Agora rows, the participants subquery covers a session's
             # aggregate escrow row. LIMIT therefore bounds owned rows, not
             # candidates-before-filtering.
+            #
+            # N8 review R4/R5: this predicate must stay in lockstep with
+            # _caller_owns_settlement_row's Python rule — participation only
+            # decides ownership when payer_id IS NULL, never as an independent
+            # OR. The old unconditional `payer_id = ? OR session_id IN (...)` let
+            # a row with someone else's payer_id count as "owned" here whenever
+            # its session_id happened to also appear in the caller's own
+            # participants rows — a false-positive ownership verdict this branch
+            # trusts completely (unlike ?session_id=, it never calls
+            # _settlement_row_dict, since its WHERE clause is supposed to already
+            # be scoped to owned rows), so the row's real payment_intent_ids and
+            # transfer_id leaked, not just payer_id. If you change either this
+            # query or _caller_owns_settlement_row, change both — the agreement
+            # test (test_settlement_ownership_sql_matches_python_predicate) is
+            # what keeps them honest.
             rows, has_more = _fetch_page(
                 conn,
                 "SELECT * FROM settlements WHERE payer_id = ? "
-                "OR session_id IN (SELECT session_id FROM participants WHERE agent_id = ?) "
+                "OR (payer_id IS NULL AND session_id IN "
+                "(SELECT session_id FROM participants WHERE agent_id = ?)) "
                 "ORDER BY created_at DESC LIMIT ?",
                 (agent_id, agent_id), limit,
             )
