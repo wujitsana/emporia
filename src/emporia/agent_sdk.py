@@ -455,11 +455,11 @@ class EmporiaAgent:
         return resp.json().get("events", [])
 
     # ------------------------------------------------------------------ #
-    # Agent Card / Health
+    # Relay Descriptor / Health
     # ------------------------------------------------------------------ #
 
-    async def get_agent_card(self) -> dict[str, Any]:
-        resp = await self._client().get(f"{self.relay_url}/.well-known/agent.json")
+    async def get_relay_descriptor(self) -> dict[str, Any]:
+        resp = await self._client().get(f"{self.relay_url}/relay-card")
         resp.raise_for_status()
         return resp.json()
 

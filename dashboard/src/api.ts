@@ -358,7 +358,6 @@ export const api = {
   // is an agent_sdk.py/mcp_server.py concern, not the dashboard's.
   sendRoomMessage: (room_id: string, content: string, msg_type = "chat") =>
     post<RoomMessage>(`/rooms/${room_id}/message`, { content, msg_type }),
-  agentCard: () => get<{ agent_id: string; capabilities: string[] }>("/.well-known/agent.json"),
   // N3-3: GET /agents now requires an authenticated caller (it was the unauthenticated
   // identity-enumeration primitive N2's review named but never closed).
   agents: (search?: string) =>
