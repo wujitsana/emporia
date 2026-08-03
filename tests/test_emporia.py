@@ -647,7 +647,7 @@ def test_federated_listings_out_is_signed(client):
     """GET /gaming/v1/federate/listings must include a valid Ed25519 signature over its
     own origin_relay + listings, verifiable with the included public key."""
     from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
-    from emporia.relay_server import _federation_signable_bytes
+    from emporia.identity import federation_signable_bytes
 
     r = client.get("/gaming/v1/federate/listings")
     assert r.status_code == 200
@@ -656,25 +656,29 @@ def test_federated_listings_out_is_signed(client):
     assert data["signature"]
 
     pub = Ed25519PublicKey.from_public_bytes(bytes.fromhex(data["origin_public_key_hex"]))
-    signed_bytes = _federation_signable_bytes(data["origin_relay"], data["listings"])
+    signed_bytes = federation_signable_bytes(data["origin_relay"], "listings", data["listings"])
     pub.verify(bytes.fromhex(data["signature"]), signed_bytes)  # raises if invalid
 
 
-def _make_peer_batch(origin: str, listings: list[dict]) -> tuple[dict, str]:
+def _make_peer_batch(
+    origin: str, items: list[dict], key: str = "listings"
+) -> tuple[dict, str]:
     """Build a self-consistent signed federation batch from a throwaway keypair, for
-    mocking a peer relay's response. Returns (batch_dict, public_key_hex)."""
+    mocking a peer relay's response. `key` is the payload's item-list field name
+    ("listings" or "challenges" — see identity.federation_signable_bytes). Returns
+    (batch_dict, public_key_hex)."""
     from cryptography.hazmat.primitives.asymmetric import ed25519
-    from emporia.relay_server import _federation_signable_bytes
+    from emporia.identity import federation_signable_bytes
 
     priv = ed25519.Ed25519PrivateKey.generate()
     pub_hex = priv.public_key().public_bytes_raw().hex()
-    sig_hex = priv.sign(_federation_signable_bytes(origin, listings)).hex()
+    sig_hex = priv.sign(federation_signable_bytes(origin, key, items)).hex()
     return (
         {
             "origin_relay": origin,
             "origin_public_key_hex": pub_hex,
             "signature": sig_hex,
-            "listings": listings,
+            key: items,
         },
         pub_hex,
     )
@@ -767,6 +771,160 @@ async def test_pull_federated_listings_rejects_key_rotation_without_repin(mock_g
     imported2 = await _pull_federated_listings(peer_url)
     assert imported2 == 0
     assert _FEDERATION_PEER_PUBKEYS[peer_url] == pub1  # unchanged — still pinned to the original
+
+
+def _sample_challenge(challenge_id: str) -> dict:
+    return {
+        "challenge_id": challenge_id, "game_type": "emporia:chess:v1",
+        "creator_agent_id": "peer_agent", "creator_gateway_url": "https://peer.example/gw",
+        "payment_mode": "free", "stake_amount": "0", "currency": "USD", "status": "open",
+        "created_at": "2026-01-01T00:00:00+00:00", "expires_at": None,
+        "origin_relay": "https://peer.example/relay", "metadata": {},
+    }
+
+
+def test_federated_lobby_out_is_signed(client):
+    """N11-5 (R5, task #8): GET /gaming/v1/federate/lobby must include a valid Ed25519
+    signature over its own origin_relay + challenges, verifiable with the included
+    public key — the signed-pull counterpart to GET /gaming/v1/federate/listings."""
+    from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
+    from emporia.identity import federation_signable_bytes
+
+    r = client.get("/gaming/v1/federate/lobby")
+    assert r.status_code == 200
+    data = r.json()
+    assert data["origin_public_key_hex"]
+    assert data["signature"]
+
+    pub = Ed25519PublicKey.from_public_bytes(bytes.fromhex(data["origin_public_key_hex"]))
+    signed_bytes = federation_signable_bytes(data["origin_relay"], "challenges", data["challenges"])
+    pub.verify(bytes.fromhex(data["signature"]), signed_bytes)  # raises if invalid
+
+
+@patch("httpx.AsyncClient.get", new_callable=AsyncMock)
+async def test_pull_federated_lobby_accepts_valid_signature(mock_get):
+    from emporia.relay_server import _pull_federated_lobby, _FEDERATION_PEER_PUBKEYS
+
+    challenge = _sample_challenge("emporia_chal_fed_valid_1")
+    batch, pub_hex = _make_peer_batch(
+        "https://lobby-peer.example/relay", [challenge], key="challenges"
+    )
+    mock_get.return_value = _mock_peer_response(batch)
+
+    _FEDERATION_PEER_PUBKEYS.pop("https://lobby-peer.example/relay", None)
+    imported = await _pull_federated_lobby("https://lobby-peer.example/relay")
+    assert imported == 1
+    assert _FEDERATION_PEER_PUBKEYS["https://lobby-peer.example/relay"] == pub_hex
+
+
+@patch("httpx.AsyncClient.get", new_callable=AsyncMock)
+async def test_pull_federated_lobby_rejects_unsigned(mock_get):
+    from emporia.relay_server import _pull_federated_lobby, _FEDERATION_LOBBY_LAST_SYNC
+
+    mock_get.return_value = _mock_peer_response({
+        "origin_relay": "https://unsigned-lobby-peer.example",
+        "challenges": [_sample_challenge("emporia_chal_unsigned")],
+    })
+    imported = await _pull_federated_lobby("https://unsigned-lobby-peer.example")
+    assert imported == 0
+    assert _FEDERATION_LOBBY_LAST_SYNC["https://unsigned-lobby-peer.example"]["ok"] is False
+    assert "unsigned" in _FEDERATION_LOBBY_LAST_SYNC["https://unsigned-lobby-peer.example"]["error"]
+
+
+@patch("httpx.AsyncClient.get", new_callable=AsyncMock)
+async def test_pull_federated_lobby_rejects_tampered_batch(mock_get):
+    """A signature valid for one payload must not verify against a different (tampered)
+    one — simulates a MITM or compromised-transport modification after signing."""
+    from emporia.relay_server import _pull_federated_lobby, _FEDERATION_LOBBY_LAST_SYNC
+
+    challenge = _sample_challenge("emporia_chal_tamper")
+    batch, _ = _make_peer_batch(
+        "https://tamper-lobby-peer.example", [challenge], key="challenges"
+    )
+    batch["challenges"][0]["status"] = "closed"  # tamper: reopen->closed post-signature
+    mock_get.return_value = _mock_peer_response(batch)
+
+    imported = await _pull_federated_lobby("https://tamper-lobby-peer.example")
+    assert imported == 0
+    assert _FEDERATION_LOBBY_LAST_SYNC["https://tamper-lobby-peer.example"]["ok"] is False
+    assert "signature" in _FEDERATION_LOBBY_LAST_SYNC["https://tamper-lobby-peer.example"]["error"]
+
+
+@patch("httpx.AsyncClient.get", new_callable=AsyncMock)
+async def test_pull_federated_lobby_rejects_key_rotation_without_repin(mock_get):
+    """Once a peer's key is pinned, a later pull presenting a different (even validly
+    self-signed) key for the same peer_url must be rejected, not silently re-trusted.
+    Shares the pin store with listings (identity.py's file, keyed by peer_url) — a real
+    key rotation should be rejected here too, not just on the listings feed."""
+    from emporia.relay_server import _pull_federated_lobby, _FEDERATION_PEER_PUBKEYS
+
+    peer_url = "https://rotate-lobby-peer.example"
+    challenge = _sample_challenge("emporia_chal_rotate")
+    batch1, pub1 = _make_peer_batch(peer_url, [challenge], key="challenges")
+    _FEDERATION_PEER_PUBKEYS.pop(peer_url, None)
+    mock_get.return_value = _mock_peer_response(batch1)
+    assert await _pull_federated_lobby(peer_url) == 1
+    assert _FEDERATION_PEER_PUBKEYS[peer_url] == pub1
+
+    batch2, pub2 = _make_peer_batch(
+        peer_url, [_sample_challenge("emporia_chal_rotate_2")], key="challenges"
+    )
+    assert pub2 != pub1
+    mock_get.return_value = _mock_peer_response(batch2)
+    imported2 = await _pull_federated_lobby(peer_url)
+    assert imported2 == 0
+    assert _FEDERATION_PEER_PUBKEYS[peer_url] == pub1  # unchanged — still pinned to the original
+
+
+@patch("httpx.AsyncClient.get", new_callable=AsyncMock)
+async def test_mcp_sync_lobby_from_peer_accepts_valid_signature(mock_get):
+    """N11-5 (R5, task #8): the MCP tool must independently verify the signed
+    GET /gaming/v1/federate/lobby feed — it's a separate process/call site from the
+    relay's own _pull_federated_lobby, reusing identity.federation_signable_bytes so
+    the two don't grow into two subtly-different canonicalizers."""
+    from emporia import identity, mcp_server
+
+    challenge = _sample_challenge("emporia_chal_mcp_valid")
+    batch, pub_hex = _make_peer_batch(
+        "https://mcp-lobby-peer.example/relay", [challenge], key="challenges"
+    )
+    mock_get.return_value = _mock_peer_response(batch)
+
+    pins = identity.load_federation_peer_pubkeys()
+    pins.pop("https://mcp-lobby-peer.example/relay", None)
+    identity.save_federation_peer_pubkeys(pins)
+
+    result = await mcp_server.sync_lobby_from_peer("https://mcp-lobby-peer.example/relay")
+    assert result["success"] is True
+    assert result["imported"] == 1
+    assert identity.load_federation_peer_pubkeys()["https://mcp-lobby-peer.example/relay"] == pub_hex
+
+
+@patch("httpx.AsyncClient.get", new_callable=AsyncMock)
+async def test_mcp_sync_lobby_from_peer_rejects_unsigned(mock_get):
+    from emporia import mcp_server
+
+    mock_get.return_value = _mock_peer_response({
+        "origin_relay": "https://mcp-unsigned-peer.example",
+        "challenges": [_sample_challenge("emporia_chal_mcp_unsigned")],
+    })
+    result = await mcp_server.sync_lobby_from_peer("https://mcp-unsigned-peer.example")
+    assert result["success"] is False
+    assert "unsigned" in result["error"]
+
+
+async def test_mcp_publish_challenge_to_peer_is_retired():
+    """N11-5 (R5, task #8): push-model gossip can never authenticate — a relay-scoped
+    Bearer JWT doesn't cross relays, and the calling agent is by definition not
+    registered on an arbitrary peer it's pushing to. Kept registered (not deleted, to
+    avoid churning the '44 tools' count docs carry) but must return a clear, permanent
+    error rather than the confusing 401 it always produced before."""
+    from emporia import mcp_server
+
+    result = await mcp_server.publish_challenge_to_peer("some_challenge", "https://peer.example")
+    assert result["success"] is False
+    assert "retired" in result["error"]
+    assert "sync_lobby_from_peer" in result["error"]
 
 
 def test_federation_peer_pins_persist_across_restart():
@@ -1756,6 +1914,7 @@ def test_every_route_has_a_reviewed_auth_posture():
         ("GET", "/events"): "public event discovery, same shape as GET /listings",
         ("GET", "/events/{event_id}"): "public event discovery, same shape as GET /listings",
         ("GET", "/gaming/v1/federate/listings"): "public federation feed, integrity via relay signature not caller auth",
+        ("GET", "/gaming/v1/federate/lobby"): "public federation feed (N11-5), same shape as GET /gaming/v1/federate/listings",
         ("GET", "/federation/peers"): "operator topology disclosure — arguably should be operator-only, not tightened this pass",
         ("GET", "/gaming/lobby"): "public lobby browse, matches GET /listings' discovery shape",
         ("WS", "/ws/events"): "global public event stream by design (N0-2/N3-5) — content is gated per-event at broadcast time, not at connect time",

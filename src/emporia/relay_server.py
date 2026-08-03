@@ -98,6 +98,7 @@ from emporia.identity import (
     save_federation_peer_pubkeys,
     load_or_generate_relay_jwt_secret,
     build_relay_descriptor,
+    federation_signable_bytes,
 )
 from emporia.module_sdk import (
     MODULE_REGISTRY,
@@ -150,6 +151,10 @@ FEDERATED_RELAYS: list[str] = [
 # Last federation sync outcome per peer, for the dashboard's Federation panel.
 # {peer_url: {"ok": bool, "imported": int, "synced_at": iso8601}}
 _FEDERATION_LAST_SYNC: dict[str, dict[str, Any]] = {}
+
+# Same shape, for lobby-challenge gossip (N11-5) — kept separate from the listings
+# sync record above since the two feeds are pulled and can fail independently.
+_FEDERATION_LOBBY_LAST_SYNC: dict[str, dict[str, Any]] = {}
 
 # Trust-on-first-use pin of each peer's Ed25519 public key, keyed by peer_url. The first
 # successfully signature-verified pull from a peer pins its key; a later pull presenting a
@@ -3099,15 +3104,6 @@ async def get_event(event_id: str):
 # Federation
 # ============================================================================
 
-def _federation_signable_bytes(origin_relay: str, listings: list[dict]) -> bytes:
-    """Canonical bytes signed over a federation listings batch. Must produce the exact
-    same output whether called on the freshly-built payload (serving side) or on the
-    same payload after a JSON round-trip over HTTP (pulling side) — sort_keys +
-    compact separators makes this deterministic regardless of dict insertion order."""
-    payload = {"origin_relay": origin_relay, "listings": listings}
-    return json.dumps(payload, sort_keys=True, separators=(",", ":")).encode("utf-8")
-
-
 @app.get("/gaming/v1/federate/listings")
 async def federated_listings_out():
     """Serve local listings for federation pull by peer relays.
@@ -3123,7 +3119,7 @@ async def federated_listings_out():
             (datetime.now(UTC).isoformat(), RELAY_BASE_URL),
         ).fetchall()
     listings = [{**dict(r), "metadata": json.loads(r["metadata_json"])} for r in rows]
-    signature = sign_raw_relay(_federation_signable_bytes(RELAY_BASE_URL, listings))
+    signature = sign_raw_relay(federation_signable_bytes(RELAY_BASE_URL, "listings", listings))
     return {
         "origin_relay": RELAY_BASE_URL,
         "origin_public_key_hex": get_relay_public_key_hex(),
@@ -3176,7 +3172,7 @@ async def _pull_federated_listings(peer_url: str) -> int:
         from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
         Ed25519PublicKey.from_public_bytes(bytes.fromhex(pubkey_hex)).verify(
             bytes.fromhex(signature_hex),
-            _federation_signable_bytes(origin, listings),
+            federation_signable_bytes(origin, "listings", listings),
         )
     except Exception:
         return _reject("signature verification failed — batch may be tampered or corrupt")
@@ -3240,6 +3236,118 @@ async def _pull_federated_listings(peer_url: str) -> int:
     return imported
 
 
+@app.get("/gaming/v1/federate/lobby")
+async def federated_lobby_out():
+    """Serve local open lobby challenges for federation pull by peer relays — the
+    signed, machine-to-machine counterpart to the human/dashboard-facing
+    GET /gaming/lobby (unchanged; still public by design, see _DELIBERATELY_PUBLIC).
+
+    N11-5 (task #8, R5): lobby gossip used to be push-shaped
+    (mcp_server.publish_challenge_to_peer POSTing to a peer's /gaming/lobby), which
+    can never authenticate — the calling agent is by definition not registered on the
+    peer it's pushing to, and a relay-scoped Bearer JWT doesn't cross relays by design.
+    Inverted to the same signed-pull model GET /gaming/v1/federate/listings already
+    uses: signed with this relay's own persistent Ed25519 key (see
+    identity.generate_or_load_relay_keypair()), so a pulling peer can verify the batch
+    actually came from here.
+    """
+    challenges = [c.to_dict() for c in _game_registry.list_challenges("open")]
+    signature = sign_raw_relay(federation_signable_bytes(RELAY_BASE_URL, "challenges", challenges))
+    return {
+        "origin_relay": RELAY_BASE_URL,
+        "origin_public_key_hex": get_relay_public_key_hex(),
+        "signature": signature,
+        "challenges": challenges,
+    }
+
+
+async def _pull_federated_lobby(peer_url: str) -> int:
+    """Pull open lobby challenges from a peer relay and import them locally (signed
+    federation gossip) — the inbound half of task #8's fix. Mirrors
+    _pull_federated_listings exactly (signature verify, TOFU key pin, mismatch
+    rejection, self-origin skip by public key); see that function's docstring for the
+    full rationale on each step.
+    """
+    try:
+        async with httpx.AsyncClient(timeout=15) as client:
+            resp = await client.get(f"{peer_url.rstrip('/')}/gaming/v1/federate/lobby")
+            resp.raise_for_status()
+            data = resp.json()
+    except Exception as e:
+        _FEDERATION_LOBBY_LAST_SYNC[peer_url] = {
+            "ok": False,
+            "imported": 0,
+            "error": str(e),
+            "synced_at": datetime.now(UTC).isoformat(),
+        }
+        return 0
+
+    origin = data.get("origin_relay", peer_url)
+    challenges = data.get("challenges", [])
+    pubkey_hex = data.get("origin_public_key_hex", "")
+    signature_hex = data.get("signature", "")
+
+    def _reject(reason: str) -> int:
+        _FEDERATION_LOBBY_LAST_SYNC[peer_url] = {
+            "ok": False,
+            "imported": 0,
+            "error": reason,
+            "synced_at": datetime.now(UTC).isoformat(),
+        }
+        return 0
+
+    if not pubkey_hex or not signature_hex:
+        return _reject("peer response is unsigned — refusing to import (upgrade the peer relay)")
+    try:
+        from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
+        Ed25519PublicKey.from_public_bytes(bytes.fromhex(pubkey_hex)).verify(
+            bytes.fromhex(signature_hex),
+            federation_signable_bytes(origin, "challenges", challenges),
+        )
+    except Exception:
+        return _reject("signature verification failed — batch may be tampered or corrupt")
+
+    _ensure_federation_pins_loaded()
+    pinned = _FEDERATION_PEER_PUBKEYS.get(peer_url)
+    if pinned and pinned != pubkey_hex:
+        return _reject(
+            f"peer key mismatch — pinned {pinned[:12]}..., got {pubkey_hex[:12]}... "
+            "(possible URL hijack; remove from FEDERATED_RELAYS and re-add to re-pin deliberately)"
+        )
+    if pinned is None:
+        _FEDERATION_PEER_PUBKEYS[peer_url] = pubkey_hex
+        save_federation_peer_pubkeys(_FEDERATION_PEER_PUBKEYS)
+
+    # Skip our own relay to prevent loops — same by-public-key reasoning as
+    # _pull_federated_listings (RELAY_BASE_URL is an env var that can drift; the key is
+    # a persistent identity tied to a key file).
+    if origin == RELAY_BASE_URL or pubkey_hex == get_relay_public_key_hex():
+        _FEDERATION_LOBBY_LAST_SYNC[peer_url] = {
+            "ok": True,
+            "imported": 0,
+            "note": "skipped — peer reported our own relay as origin",
+            "synced_at": datetime.now(UTC).isoformat(),
+        }
+        return 0
+
+    imported = 0
+    for challenge in challenges:
+        if not challenge.get("challenge_id"):
+            continue
+        try:
+            _game_registry.import_challenge(challenge)
+            imported += 1
+        except Exception:
+            continue
+    _FEDERATION_LOBBY_LAST_SYNC[peer_url] = {
+        "ok": True,
+        "imported": imported,
+        "origin_relay": origin,
+        "synced_at": datetime.now(UTC).isoformat(),
+    }
+    return imported
+
+
 @app.post("/gaming/v1/federate/sync")
 async def trigger_federation_sync(request: Request):
     """Manually trigger a federation pull from all configured peers.
@@ -3258,10 +3366,11 @@ async def trigger_federation_sync(request: Request):
     caller = _dashboard_agent_id(request)
     _require_operator(caller, "Federation sync")
     results = {}
+    lobby_results = {}
     for peer in FEDERATED_RELAYS:
-        count = await _pull_federated_listings(peer)
-        results[peer] = count
-    return {"synced": results}
+        results[peer] = await _pull_federated_listings(peer)
+        lobby_results[peer] = await _pull_federated_lobby(peer)
+    return {"synced": results, "synced_lobby": lobby_results}
 
 
 @app.get("/federation/peers")
@@ -3282,6 +3391,7 @@ async def federation_peers():
                 "url": peer,
                 "pinned_public_key_hex": _FEDERATION_PEER_PUBKEYS.get(peer),
                 **_FEDERATION_LAST_SYNC.get(peer, {"ok": None, "imported": 0}),
+                "lobby_sync": _FEDERATION_LOBBY_LAST_SYNC.get(peer, {"ok": None, "imported": 0}),
             }
             for peer in FEDERATED_RELAYS
         ],

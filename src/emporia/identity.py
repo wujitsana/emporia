@@ -172,6 +172,24 @@ def save_federation_peer_pubkeys(pubkeys: dict[str, str]) -> None:
 
 
 # ============================================================================
+# Federation batch canonicalization (shared by relay_server.py and mcp_server.py)
+# ============================================================================
+
+def federation_signable_bytes(origin_relay: str, key: str, items: list[dict]) -> bytes:
+    """Canonical bytes signed over a federation batch (listings, lobby challenges, ...).
+
+    Must produce the exact same output whether called on the freshly-built payload
+    (serving side) or the same payload after a JSON round-trip over HTTP (pulling
+    side) — sort_keys + compact separators makes this deterministic regardless of dict
+    insertion order. `key` names the payload's item list field (e.g. "listings",
+    "challenges") so every federation feed shares this one canonicalizer rather than
+    each growing its own, subtly-different copy (N11-5, R5).
+    """
+    payload = {"origin_relay": origin_relay, key: items}
+    return json.dumps(payload, sort_keys=True, separators=(",", ":")).encode("utf-8")
+
+
+# ============================================================================
 # Signing / verification
 # ============================================================================
 

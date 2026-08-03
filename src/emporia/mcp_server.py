@@ -446,38 +446,94 @@ async def discover_peer_lobby(peer_relay_url: str) -> dict[str, Any]:
 
 @mcp.tool()
 async def sync_lobby_from_peer(peer_relay_url: str) -> dict[str, Any]:
-    """Pull challenges from a peer relay and import them locally (federation gossip)."""
+    """Pull open lobby challenges from a peer relay and import them locally — signed
+    federation gossip (N11-5, task #8's fix).
+
+    Used to pull GET /gaming/lobby (the dashboard/human-facing browse endpoint, never
+    signed) directly, with no way to trust a batch actually came from the relay it
+    claimed to. Now pulls the signed GET /gaming/v1/federate/lobby feed instead and
+    verifies it the same way the relay's own _pull_federated_lobby does: reject an
+    unsigned or badly-signed batch, trust-on-first-use pin the peer's key (persisted via
+    identity.py — shared with the relay's own listings/lobby pinning, since it's the
+    same relay identity either way), and reject a later pull presenting a different key
+    for an already-pinned peer_url rather than silently re-trusting it.
+    """
+    from emporia.identity import (
+        federation_signable_bytes,
+        get_relay_public_key_hex,
+        load_federation_peer_pubkeys,
+        save_federation_peer_pubkeys,
+        verify_raw,
+    )
+
     try:
-        url = peer_relay_url.rstrip("/") + "/gaming/lobby"
+        url = peer_relay_url.rstrip("/") + "/gaming/v1/federate/lobby"
         async with httpx.AsyncClient(timeout=15) as client:
-            resp = await client.get(url, params={"status": "open"})
+            resp = await client.get(url)
             resp.raise_for_status()
             data = resp.json()
-
-        imported_ids = []
-        skipped = 0
-        for ch_data in data.get("challenges", []):
-            try:
-                assert_payload_safe(ch_data)
-                # Skip our own relay's challenges to prevent loops
-                origin = ch_data.get("origin_relay", "")
-                local_url = os.getenv("EMPORIA_RELAY_URL", "")
-                if origin and local_url and origin == local_url:
-                    skipped += 1
-                    continue
-                imported = _game_registry.import_challenge(ch_data)
-                imported_ids.append(imported.challenge_id)
-            except Exception:
-                skipped += 1
-        return {
-            "success": True,
-            "peer_relay": peer_relay_url,
-            "imported": len(imported_ids),
-            "skipped": skipped,
-            "imported_ids": imported_ids,
-        }
     except Exception as e:
         return {"error": str(e), "success": False, "peer_relay": peer_relay_url}
+
+    origin = data.get("origin_relay", peer_relay_url)
+    challenges = data.get("challenges", [])
+    pubkey_hex = data.get("origin_public_key_hex", "")
+    signature_hex = data.get("signature", "")
+
+    if not pubkey_hex or not signature_hex:
+        return {
+            "error": "peer response is unsigned — refusing to import (upgrade the peer relay)",
+            "success": False, "peer_relay": peer_relay_url,
+        }
+    if not verify_raw(
+        federation_signable_bytes(origin, "challenges", challenges), signature_hex, pubkey_hex
+    ):
+        return {
+            "error": "signature verification failed — batch may be tampered or corrupt",
+            "success": False, "peer_relay": peer_relay_url,
+        }
+
+    pins = load_federation_peer_pubkeys()
+    pinned = pins.get(peer_relay_url)
+    if pinned and pinned != pubkey_hex:
+        return {
+            "error": (
+                f"peer key mismatch — pinned {pinned[:12]}..., got {pubkey_hex[:12]}... "
+                "(possible URL hijack; re-pin deliberately if this rotation is expected)"
+            ),
+            "success": False, "peer_relay": peer_relay_url,
+        }
+    if pinned is None:
+        pins[peer_relay_url] = pubkey_hex
+        save_federation_peer_pubkeys(pins)
+
+    # Skip our own relay to prevent loops — by public key as well as URL, same reasoning
+    # as the relay's own _pull_federated_listings/_pull_federated_lobby (RELAY_BASE_URL
+    # is an env var that can drift; the key is a persistent identity tied to a key file).
+    local_url = os.getenv("EMPORIA_RELAY_URL", "")
+    if origin == local_url or pubkey_hex == get_relay_public_key_hex():
+        return {
+            "success": True, "peer_relay": peer_relay_url,
+            "imported": 0, "skipped": 0, "imported_ids": [],
+            "note": "skipped — peer reported our own relay as origin",
+        }
+
+    imported_ids = []
+    skipped = 0
+    for ch_data in challenges:
+        try:
+            assert_payload_safe(ch_data)
+            imported = _game_registry.import_challenge(ch_data)
+            imported_ids.append(imported.challenge_id)
+        except Exception:
+            skipped += 1
+    return {
+        "success": True,
+        "peer_relay": peer_relay_url,
+        "imported": len(imported_ids),
+        "skipped": skipped,
+        "imported_ids": imported_ids,
+    }
 
 
 @mcp.tool()
@@ -485,34 +541,27 @@ async def publish_challenge_to_peer(
     challenge_id: str,
     peer_relay_url: str,
 ) -> dict[str, Any]:
-    """Publish a local challenge to a peer relay (outbound gossip).
+    """Retired (N11-5, task #8) — lobby gossip is pull-based now, not push-based.
 
-    N3-2: the peer's POST /gaming/lobby now requires the caller to be a registered agent
-    on *that* relay — this endpoint has no credential for an arbitrary peer it isn't
-    registered on (relay-scoped Bearer JWTs can't cross relays by design), so this call
-    will 401 against any relay enforcing that check. Cross-relay gossip needs relay-to-relay
-    trust (mirroring the Ed25519 batch-signing already built for
-    GET /gaming/v1/federate/listings) — tracked as task #8, not yet built. Left failing
-    loudly (surfaced via the existing except/return-error wrapper below) rather than
-    silently broken.
+    This tool could never have worked: a relay-scoped Bearer JWT doesn't cross relays
+    by design, and the calling agent is by definition not registered on an arbitrary
+    peer it's pushing to, so N3-2's auth requirement on the peer's POST /gaming/lobby
+    made every call 401 from day one. There's no credential a push model could ever
+    present here. Ask the peer relay's operator to pull from you instead — call
+    sync_lobby_from_peer(your_relay_url) on *their* side, which now verifies the batch
+    via the signed GET /gaming/v1/federate/lobby feed. Kept registered (not deleted) so
+    an agent still holding a reference to this tool gets an explanation instead of a
+    silent 401 or a missing-tool error.
     """
-    try:
-        challenge = _game_registry.get_challenge(challenge_id)
-        if not challenge:
-            return {"error": f"Challenge not found: {challenge_id}", "success": False}
-        url = peer_relay_url.rstrip("/") + "/gaming/lobby"
-        async with httpx.AsyncClient(timeout=15) as client:
-            resp = await client.post(url, json=challenge.to_dict())
-            resp.raise_for_status()
-            data = resp.json()
-        return {
-            "success": True,
-            "peer_relay": peer_relay_url,
-            "challenge_id": challenge_id,
-            "response": data,
-        }
-    except Exception as e:
-        return {"error": str(e), "success": False, "peer_relay": peer_relay_url}
+    return {
+        "error": (
+            "publish_challenge_to_peer is retired — lobby gossip is pull-based. "
+            "Ask the peer relay to call sync_lobby_from_peer(<your relay url>) instead."
+        ),
+        "success": False,
+        "peer_relay": peer_relay_url,
+        "challenge_id": challenge_id,
+    }
 
 
 @mcp.tool()
