@@ -62,7 +62,12 @@ peers are found).
 - *Why deferred:* full ownership model (stable id vs. handle, transfer, premium tiers, cross-relay
   identity) roughly doubles N2's scope and is more naturally sequenced after the x402 payments
   re-platform (a transfer/premium-name model interacts with payment rails; cross-relay identity
-  interacts with federation trust).
+  interacts with federation trust). A2A's arrival (N10, see `## Interop` below) added a third
+  concrete reason without changing the sequencing: a spec-conformant AgentCard built on `agent_id`
+  would publish a known-collision-prone, relay-local string to the outside world as if it were
+  stable and portable — precisely the promise A2A interoperability makes and this string can't keep.
+  Confirmed from Hermes's real AgentCard builder that A2A supplies no answer here either — no DID, no
+  pubkey, no `nous_user_id`, nothing identity-shaped in the schema at all.
 - *Effort:* medium — mostly a design decision (what's the stable id — content-address? registration
   order? something else?) before any implementation.
 
@@ -227,6 +232,43 @@ an in-relay code change.
 - *Effort:* medium — confirm NemoClaw's current image/CLI interface against its own docs, then
   wire it into the `nemoclaw` compose profile; needs its own testing pass since it changes how
   the agent process is sandboxed/hosted, not just app code.
+
+## Interop
+
+**The relay does not speak A2A (Agent2Agent), and deliberately won't for now.** Hermes added A2A
+support (v1.0, client + server) after this project started; `/.well-known/agent.json` had already
+borrowed A2A's URL convention and the term "Agent Card" for a custom, non-conformant document — never
+real A2A. Investigated (N10) rather than assumed: a relay is a service, not an agent, and its entire
+value is being the one enforced door every economically meaningful action passes through
+(`ARCHITECTURE.md`'s "Inbound processing order (hard contract)" — guardrails → signature → payment →
+proof-of-reasoning → audit, no shortcuts). A2A's default shape is the opposite: an individual agent
+becomes directly reachable, with no mandated intermediary — general-purpose agent-to-agent
+interoperability, a different problem than Emporia's shared-trust marketplace. A relay-side JSON-RPC
+adapter would be a second door into a building designed around one.
+
+**A2A reachability at the agent layer already surfaces Emporia's tools today, for free — no relay
+work exists or is needed for this.** Hermes ships a complete A2A v1.0 implementation
+(`/opt/hermes/plugins/platforms/a2a/`) separate from this repo. MCP servers register as toolset
+`mcp-{name}`, and Hermes's default (no `A2A_ADVERTISED_TOOLSETS` set) advertises every registered
+toolset as a Skill — so any Hermes agent with `mcp_servers.emporia` configured and A2A enabled
+already exposes Emporia's tools to A2A peers, with zero Emporia code involved. Whether to turn this
+on for a given agent is a security-posture decision (see `SECURITY.md`'s new threat-model note), now
+surfaced by the installer (N10-5) but not decided by it.
+
+**N10 fixed the one concrete defect this created: Emporia was squatting A2A's reserved discovery
+path with a document that wasn't a real Agent Card.** Confirmed via Hermes's own A2A client source,
+not assumed from the naming: a real A2A client's discovery fallback (`/.well-known/agent-card.json`
+→ `/.well-known/agent.json`) accepted Emporia's non-conformant 200 at face value instead of correctly
+concluding "not an A2A peer," then failed trying to POST JSON-RPC at the relay root. The descriptor
+moved to `GET /relay-card`; both well-known paths now hard-404. A compatibility alias at the old path
+was considered and rejected — an alias that still returns 200 leaves the exact defect open, just
+delayed.
+
+**A full relay-side A2A JSON-RPC server (real `skills`/`supportedInterfaces` AgentCard, Task
+lifecycle, SSE streaming, push webhooks) stays deferred**, and only becomes justified if the goal
+changes from "Hermes-operated agents for known relays" (current scope) to "non-Hermes, non-SDK agents
+must transact against Emporia directly" — effort comparable to the x402/MPP re-platform below.
+- *Effort:* large, same order as x402/MPP — not worth scoping until the goal actually changes.
 
 ## Rooms
 

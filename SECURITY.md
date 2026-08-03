@@ -351,6 +351,37 @@ unreachable through a client type that had never been told to expect it. Whether
 they're now supposed to is, again, for the next review to find out — but at minimum, that review will
 be able to trust `npm run typecheck:src` when it says clean.
 
+## Fixed post-hackathon (N10 pass — Emporia squatted A2A's reserved discovery path with a document that was never real A2A)
+
+Not a security review in the usual sense — this pass started from the user asking whether Emporia
+should adopt Hermes's newly-supported A2A (Agent2Agent) protocol. Reading the code first (not the
+naming) found `/.well-known/agent.json` was never real A2A: a custom, non-conformant document at
+A2A's URL convention, with no JSON-RPC surface behind it, no Task lifecycle, no `skills`/
+`supportedInterfaces`. Conclusion: full relay-side A2A conformance is not warranted given current
+scope (a mostly-closed set of known Hermes-operated agents) — a relay is a service, not an agent, and
+its whole value is being the one enforced door (`ARCHITECTURE.md`'s "Inbound processing order (hard
+contract)"); A2A's premise is direct agent-to-agent contact with no mandated intermediary, the
+opposite default. What *was* actionable: answering A2A's reserved discovery path with a non-conformant
+body is an active interop defect, traced through Hermes's own bundled A2A client
+(`/opt/hermes/plugins/platforms/a2a/tools.py`) rather than assumed — `_fetch_card()` falls back from
+`/.well-known/agent-card.json` (404) to `/.well-known/agent.json`, which Emporia answered with 200,
+so `_rpc_url()` finds no `supportedInterfaces`/`url` field and falls through to POSTing JSON-RPC at
+the relay root, which has no route registered and 405s. `a2a_discover()` rendered `Agent: ?`,
+`Skills (0)` instead of the clean 404 that means "not an A2A peer."
+
+| Finding | Severity | Fix |
+|---|---|---|
+| **`/.well-known/agent.json` (and the v1.0 canonical `/.well-known/agent-card.json`) answered A2A's reserved discovery path with a non-conformant document — worse than not answering, since a real A2A client's discovery fallback accepts the 200 at face value.** (R1 in the N10 review.) | Medium (interop) | Descriptor moved to `GET /relay-card`. Both well-known paths now hard-404 in every mode (owner and relay-only), with a detail pointing at the new path. No compatibility alias — an alias that still returns 200 would leave the defect open. Four new tests (both paths × both modes) confirmed to fail against pre-fix HEAD. |
+| **Two hand-written copies of the same descriptor had already drifted.** `identity.build_agent_card()` (dead outside its own unit test) and `relay_server.py`'s inline handler disagreed on fields, and the handler's own endpoint map named two routes that were never real: `inbox` (the real route is `/messages`) and a bare `/payments` (only `/payments/{create-intent,settlements,records}` exist). Same class of gap as N8-5/R4. (R2.) | Medium (our defect) | Unified into `identity.build_relay_descriptor()`, called from `/relay-card`; new test asserts the endpoint's response equals the builder's output for the same inputs, not just that the builder can be called. Both bogus endpoint keys fixed in the process. |
+| **Two client-side consumers pointed at the path being vacated, one of them dead weight.** `agent_sdk.py`'s `get_agent_card()` had zero in-repo callers; `dashboard/src/api.ts`'s `agentCard()` was defined but never called from any view, and its declared return type didn't match the real document anyway. (R3.) | Low | SDK method renamed to `get_relay_descriptor()`, repointed at `/relay-card`. Dashboard method deleted rather than repointed — nothing called it. |
+| **Seven comments/docstrings across the repo called the descriptor an "A2A Agent Card," including one referencing a file (`emporia/plugins/platforms/a2a/networking.py`) that has never existed in this repo's history** (inherited from the pre-hackathon PTGS ancestor project). This is why the gap had to be re-derived from source this pass rather than read off the docs. (R4, doc integrity.) | Low | All seven corrected or deleted; see commit history for the full list (`relay_server.py`, `identity.py`, `module_sdk.py`, `tunnel.py`, `ARCHITECTURE.md`, `SKILL.md`). |
+| **New surface, undocumented: enabling Hermes's A2A platform on a profile with `mcp_servers.emporia` configured makes Emporia's payment-capable MCP tools reachable by any authenticated A2A peer**, via Hermes's default "advertise all toolsets" behavior (`mcp-emporia` toolset). Inbound A2A text reaches the agent's reasoning loop through Hermes's own 8-pattern structural-injection filter, not Emporia's guardrails (regex firewall + optional NIM) — those only run inside relay endpoints. The installer wired `mcp_servers.emporia` with no awareness of this. (R5, posture.) | Medium | `install_into_profile()` now detects `gateway.platforms.a2a.enabled` on the target profile and prints a warning naming the exposure and the scoping knobs (`A2A_PEER_TOKENS`/`A2A_TRUSTED_PEERS`/`A2A_ADVERTISED_TOOLSETS`) — detection only, never writes/changes A2A config; posture stays the operator's decision. See the new threat-model note below for what is and isn't affected. |
+
+**Scope note:** this pass did not enable A2A on any live Hermes gateway, edit any profile
+`config.yaml`, or restart any gateway process — the interop defect (R1) was confirmed by reasoning
+from Hermes's A2A client source, not by executing it live against `hackathon_hermes` (whose config
+carries live Stripe/Nous credentials). See the new threat-model note below.
+
 Ranked by severity. Each entry: what's wrong, where, how it's exploited, and the fix direction.
 None of these block the hackathon demo; all are real gaps for a production deployment.
 
@@ -423,3 +454,18 @@ genuinely the whole gap for them.
 - **Each relay node is independently trusted** — there's no shared database; federation is
   gossip-based by design, which is why peer-signature verification (above) is the right fix rather
   than introducing a shared trust root.
+- **A2A reachability at the agent layer, if enabled, bypasses pre-screening of initial contact — not
+  enforcement on economic actions.** Hermes's A2A platform (bundled separately from this repo, at
+  `/opt/hermes/plugins/platforms/a2a/`) injects inbound task text into the agent's live reasoning
+  loop through its own `filter_inbound()`: 8 regex patterns for *structural* prompt-injection markers
+  (fake special tokens, role-prefix injection, "ignore previous instructions" phrasing) plus an
+  explicit untrusted-input frame — **not** Emporia's guardrails (deterministic regex firewall +
+  optional NVIDIA NIM check), which run only inside the relay's own endpoints and were never designed
+  to see A2A traffic. Confirmed directly: Emporia's own known trigger substring (`"priv"`) matches
+  none of the 8 patterns. The scope of this gap is narrower than "the relay's protections don't
+  apply": if the agent then acts on Emporia's behalf — creates a session, submits a payment-gated
+  action — that call still goes through Emporia's own MCP tools, which still hit the relay's normal
+  REST endpoints and the full guardrails/signature/payment/audit contract; the relay doesn't
+  distinguish a tool call triggered by an A2A message from one triggered by a human at a terminal.
+  Whether to expose this surface at all is a per-agent decision the installer now surfaces (N10-5)
+  but does not make.

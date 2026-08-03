@@ -125,6 +125,13 @@ Payment gate is at join (challenger pays; creator joins free — intentional).
   — reserved filename outside the agent-keyfile sanitization, so no agent-chosen `agent_id` can
   collide with it), distinct from any individual agent's key. Used to sign outbound federation
   gossip batches; see Federation model below.
+- **`GET /relay-card` is Emporia's own relay descriptor, not an A2A Agent Card.** It borrowed A2A's
+  URL convention and vocabulary early on but was never protocol-conformant (no `skills`, no
+  `supportedInterfaces`, no JSON-RPC endpoint behind it) — N10 moved it off A2A's reserved discovery
+  path (`/.well-known/agent[-card].json`, which now hard-404s) once that squatting turned out to
+  actively break Hermes's real A2A client's discovery fallback. See `ROADMAP.md`'s `## Interop`
+  section for the full reasoning on why the relay doesn't speak A2A. Also note `agent_id` here is a
+  per-relay-local handle, not a stable cross-relay identity — see `ROADMAP.md`'s `## Naming` section.
 
 ## Federation model
 
