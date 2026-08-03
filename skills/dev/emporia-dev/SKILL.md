@@ -554,7 +554,7 @@ src/emporia/
   env_config.py            EMPORIA_* env helpers (MCP core vars)
   module_sdk.py            InteractionModule base, SessionState/Action/Result, MODULE_REGISTRY
   agent_sdk.py             Python SDK — auto-challenge on register(), all relay endpoints
-  identity.py              Ed25519 keypair, sign/verify/sign_raw, Agent Card, content-address
+  identity.py              Ed25519 keypair, sign/verify/sign_raw, relay descriptor, content-address
   payments.py              Stripe SPT/PI/escrow/settle/refund + MPP 402 challenge helpers
   negotiation.py           Midpoint counter-offer algorithm (5 message types)
   session_audit.py         SHA-256 hash-chained public receipt log + private event log

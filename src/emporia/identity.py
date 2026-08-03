@@ -1,7 +1,8 @@
 """Ed25519 identity module for Emporia.
 
-Provides keypair generation/loading, payload signing/verification, Agent Card
-construction, and content-address derivation. No blockchain, no wallets.
+Provides keypair generation/loading, payload signing/verification, the relay
+descriptor (not an A2A Agent Card — see build_relay_descriptor()), and
+content-address derivation. No blockchain, no wallets.
 
 Private keys are stored locally at ~/.hermes/keys/{profile_id}.priv (raw bytes,
 0o600 permissions). They never touch the relay and are never committed to git.

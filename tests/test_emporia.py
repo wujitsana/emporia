@@ -1,7 +1,7 @@
 """Emporia test suite.
 
 Covers (per plan):
-  - Agent Card well-formed + publicKey field
+  - Relay descriptor well-formed + publicKey field
   - Ed25519 sign/verify round-trip
   - Relay rejects unsigned/forged actions
   - Guardrails blocks injection including nested keys
@@ -114,7 +114,7 @@ def bearer_for(client, agent_id: str) -> dict:
 
 
 # ============================================================================
-# Health + Agent Card
+# Health + Relay Descriptor
 # ============================================================================
 
 def test_health(client):
