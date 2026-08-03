@@ -27,7 +27,10 @@ jobs:
         run: uv run python -m ruff check src/ tests/ installer/ scripts/ relay/
 
       - name: Pytest
-        run: uv run python -m pytest tests/test_emporia.py -q
+        # No path: pyproject.toml's [tool.pytest.ini_options] testpaths = ["tests"] is the
+        # single source of truth for what runs. Naming a file here let tests/test_installer.py
+        # (added N10-5) go uncollected in CI while passing locally — N11-1.
+        run: uv run python -m pytest -q
 
   dashboard-typecheck:
     runs-on: ubuntu-latest
