@@ -713,6 +713,11 @@ def init_db() -> None:
                 expires_at TEXT NOT NULL,
                 used INTEGER NOT NULL DEFAULT 0
             );
+
+            CREATE TABLE IF NOT EXISTS schema_migrations (
+                key TEXT PRIMARY KEY,
+                applied_at TEXT NOT NULL
+            );
         """)
         # Schema migrations for existing DBs (idempotent ADD COLUMN)
         _migrate_authorized_agents(conn)
@@ -768,47 +773,72 @@ def _migrate_settlements(conn: Any) -> None:
     signals agree: the row has exactly one PI (never true for a multi-participant
     session escrow with more than one payer) AND its session_id doesn't match a
     row in `sessions` at all (ruling out the common case of a 1-payer, 2-party
-    session too). Ambiguous or already-null-PI rows are left NULL, matching the
-    reads' own fallback to session-participant visibility.
+    session too). Ambiguous or already-null-PI rows are left NULL.
 
-    N8 review R3: the backfill loop below used to run unconditionally on every
-    call, not just the one that adds the column — but a session's aggregate row
-    legitimately keeps payer_id NULL forever, so `WHERE payer_id IS NULL` never
-    empties out, and every relay startup re-scanned every session settlement ever
-    written (JSON parse + a `sessions` lookup per row) only to change nothing. Now
-    it runs exactly once, inside the same guard as the ALTER TABLE. Tradeoff: a
-    crash mid-backfill leaves some room/Agora rows with payer_id still NULL, with
-    no retry on the next startup (the guard sees the column already exists). This
-    is acceptable — unlike a botched schema change, a row stuck at NULL degrades
-    safely to the existing participants-set fallback (_caller_owns_settlement_row)
-    rather than becoming unreadable or misattributed. A real migration-version
-    table would make this resumable instead of best-effort — deferred, no such
-    table exists in this codebase today.
+    N8 review R3 (fixed the every-startup rescan) then N9 review R2 (fixed what
+    that fix broke): a session's aggregate row legitimately keeps payer_id NULL
+    forever, so a naive `WHERE payer_id IS NULL` backfill scan never empties out
+    and would re-scan every session settlement ever written on every startup. N8
+    stopped that by running the backfill only inside `if "payer_id" not in
+    settlement_cols`, alongside the ADD COLUMN — but that conflated "has the
+    column been added" with "has the backfill finished," and removed the only
+    retry. Concretely: Python's sqlite3 module commits `ALTER TABLE` immediately,
+    independent of the surrounding `with conn:` block, while the backfill's
+    UPDATEs share one implicit transaction with everything after them — so a
+    crash mid-backfill (verified empirically: kill the process between the ALTER
+    and the loop's completion) leaves the column present but every legacy
+    room/Agora row still `payer_id IS NULL`, permanently, since the next startup's
+    guard sees the column and never re-enters. And unlike N8-4's docstring
+    claimed, that is NOT a safe degradation: `add_participant()` is called only
+    from session joins (`:3186`, `:3356`), so a room/Agora row's session_id never
+    appears in `participants` — such a row satisfies neither arm of
+    `_caller_owns_settlement_row` and becomes visible only to the relay operator,
+    unreachable by its actual payer.
+
+    Driven off `schema_migrations` instead: the backfill runs once — on whichever
+    startup finds no `settlements_payer_id_backfill` row — and the completion
+    marker is only inserted after the loop finishes, in the same implicit
+    transaction as the UPDATEs it's marking complete. A crash before that marker
+    commits rolls the whole batch back together (nothing partially applied), so
+    the next startup retries cleanly instead of silently giving up.
     """
     settlement_cols = {r[1] for r in conn.execute("PRAGMA table_info(settlements)").fetchall()}
     if "payer_id" not in settlement_cols:
         conn.execute("ALTER TABLE settlements ADD COLUMN payer_id TEXT")
-        rows = conn.execute(
-            "SELECT settlement_id, session_id, payment_intent_ids FROM settlements "
-            "WHERE payer_id IS NULL"
-        ).fetchall()
-        for row in rows:
-            pi_ids = json.loads(row["payment_intent_ids"] or "[]")
-            if len(pi_ids) != 1:
-                continue
-            is_session = conn.execute(
-                "SELECT 1 FROM sessions WHERE session_id = ?", (row["session_id"],)
-            ).fetchone()
-            if is_session:
-                continue
-            payer = conn.execute(
-                "SELECT agent_id FROM payments WHERE payment_intent_id = ?", (pi_ids[0],)
-            ).fetchone()
-            if payer:
-                conn.execute(
-                    "UPDATE settlements SET payer_id = ? WHERE settlement_id = ?",
-                    (payer["agent_id"], row["settlement_id"]),
-                )
+
+    backfill_key = "settlements_payer_id_backfill"
+    already_done = conn.execute(
+        "SELECT 1 FROM schema_migrations WHERE key = ?", (backfill_key,)
+    ).fetchone()
+    if already_done:
+        return
+
+    rows = conn.execute(
+        "SELECT settlement_id, session_id, payment_intent_ids FROM settlements "
+        "WHERE payer_id IS NULL"
+    ).fetchall()
+    for row in rows:
+        pi_ids = json.loads(row["payment_intent_ids"] or "[]")
+        if len(pi_ids) != 1:
+            continue
+        is_session = conn.execute(
+            "SELECT 1 FROM sessions WHERE session_id = ?", (row["session_id"],)
+        ).fetchone()
+        if is_session:
+            continue
+        payer = conn.execute(
+            "SELECT agent_id FROM payments WHERE payment_intent_id = ?", (pi_ids[0],)
+        ).fetchone()
+        if payer:
+            conn.execute(
+                "UPDATE settlements SET payer_id = ? WHERE settlement_id = ?",
+                (payer["agent_id"], row["settlement_id"]),
+            )
+
+    conn.execute(
+        "INSERT OR IGNORE INTO schema_migrations (key, applied_at) VALUES (?, ?)",
+        (backfill_key, datetime.now(UTC).isoformat()),
+    )
 
 
 def _migrate_authorized_agents(conn: Any) -> None:

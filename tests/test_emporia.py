@@ -3315,6 +3315,9 @@ def test_migrate_settlements_adds_and_backfills_payer_id():
                 transfer_id TEXT, transfer_status TEXT, status TEXT,
                 created_at TEXT NOT NULL
             );
+            CREATE TABLE schema_migrations (
+                key TEXT PRIMARY KEY, applied_at TEXT NOT NULL
+            );
         """)
         # A real session's aggregate settlement (two participants' PIs) — must
         # stay payer_id NULL, not get misattributed to whichever PI matches first.
@@ -3360,22 +3363,112 @@ def test_migrate_settlements_adds_and_backfills_payer_id():
         assert room_row["payer_id"] == "legacy_payer", \
             "a pre-existing room settlement must be backfilled from its payments row"
 
-        # N8 review R3: a second call on an already-migrated DB must do no per-row
-        # work at all — the backfill loop belongs inside the same one-time guard as
-        # the ALTER TABLE, not run unconditionally on every relay startup forever
-        # (session settlements keep payer_id NULL by design, so the old
-        # unconditional `WHERE payer_id IS NULL` scan never emptied out and
-        # re-scanned every session settlement ever written, every startup).
-        # set_trace_callback observes every SQL statement sqlite3 actually runs —
-        # a more direct assertion than re-checking the (unchanged) end state.
+        # N8 review R3 (then N9 review R2, which changed *how* this is enforced —
+        # see _migrate_settlements' docstring): a second call on an already-
+        # migrated DB must do no per-row work at all, not run unconditionally on
+        # every relay startup forever (session settlements keep payer_id NULL by
+        # design, so an unconditional `WHERE payer_id IS NULL` scan never empties
+        # out). Driven off the `schema_migrations` completion marker rather than
+        # the column's mere presence, so this assertion still holds after the
+        # marker is set. set_trace_callback observes every SQL statement sqlite3
+        # actually runs — a more direct assertion than re-checking the (unchanged)
+        # end state.
         executed_sql: list[str] = []
         conn.set_trace_callback(lambda sql: executed_sql.append(sql))
         _migrate_settlements(conn)
         conn.set_trace_callback(None)
         assert not any("payer_id IS NULL" in s for s in executed_sql), \
             f"a second _migrate_settlements() call on an already-migrated DB re-ran " \
-            f"the backfill scan — it must only run once, inside the ALTER TABLE " \
-            f"guard (N8 review R3). Statements run: {executed_sql}"
+            f"the backfill scan — it must only run once (N8 review R3). " \
+            f"Statements run: {executed_sql}"
+
+        conn.close()
+
+
+def test_migrate_settlements_retries_backfill_after_crash_before_marker():
+    """N9 review R2: N8-4 conflated "the payer_id column exists" with "the
+    backfill finished," and removed the migration's only retry. Verified
+    empirically that these two facts can actually come apart: Python's sqlite3
+    module commits `ALTER TABLE ADD COLUMN` immediately, independent of the
+    surrounding `with conn:` block, while the backfill's UPDATEs share one
+    implicit transaction with whatever runs after them — so a process killed
+    between the ALTER and the loop's completion leaves the column present with
+    every legacy room/Agora row still `payer_id IS NULL`, and N8-4's guard
+    (`if "payer_id" not in settlement_cols`) never re-enters on the next startup.
+
+    N8-4's docstring called this a safe degradation ("falls back to the
+    participants-set fallback"). It isn't: add_participant() is only ever called
+    from session joins, so a room/Agora settlement's session_id never appears in
+    `participants` — such a row satisfies neither arm of
+    _caller_owns_settlement_row and becomes visible only to the relay operator,
+    permanently unreachable by the agent who actually paid.
+
+    Simulates exactly that crash window directly (column present, no
+    `schema_migrations` row, one unbackfilled legacy row) rather than a real
+    process kill, then asserts a call in that state still performs the backfill.
+    Must fail against N8-4's HEAD: the old column-presence guard skips the loop
+    entirely here, leaving payer_id NULL."""
+    import sqlite3
+    import tempfile
+    from emporia.relay_server import _migrate_settlements
+
+    with tempfile.NamedTemporaryFile(suffix=".sqlite3") as f:
+        conn = sqlite3.connect(f.name)
+        conn.row_factory = sqlite3.Row
+        conn.executescript("""
+            CREATE TABLE sessions (session_id TEXT PRIMARY KEY);
+            CREATE TABLE payments (
+                payment_id TEXT PRIMARY KEY, session_id TEXT, room_id TEXT,
+                agent_id TEXT NOT NULL, amount_cents INTEGER, currency TEXT,
+                payment_intent_id TEXT NOT NULL, payment_type TEXT, status TEXT,
+                created_at TEXT NOT NULL
+            );
+            CREATE TABLE settlements (
+                settlement_id TEXT PRIMARY KEY, session_id TEXT NOT NULL,
+                winner_id TEXT, total_stake_cents INTEGER, platform_fee_cents INTEGER,
+                winner_payout_cents INTEGER, platform_fee_bps INTEGER,
+                payment_intent_ids TEXT NOT NULL DEFAULT '[]',
+                transfer_id TEXT, transfer_status TEXT, status TEXT,
+                created_at TEXT NOT NULL, payer_id TEXT
+            );
+            CREATE TABLE schema_migrations (
+                key TEXT PRIMARY KEY, applied_at TEXT NOT NULL
+            );
+        """)
+        # payer_id already exists (as if ALTER TABLE already committed) and
+        # schema_migrations is empty (as if the process died before the backfill
+        # loop's completion marker committed) — the crash window itself.
+        conn.execute(
+            "INSERT INTO payments (payment_id, session_id, room_id, agent_id, amount_cents, "
+            "currency, payment_intent_id, payment_type, status, created_at) "
+            "VALUES ('pay_1', NULL, 'room_crash', 'crash_payer', 100, 'usd', "
+            "'pi_room_crash', 'room_entry', 'confirmed', '2020-01-01')"
+        )
+        conn.execute(
+            "INSERT INTO settlements (settlement_id, session_id, payment_intent_ids, created_at) "
+            "VALUES ('stl_crash', 'room_crash', ?, '2020-01-01')",
+            (json.dumps(["pi_room_crash"]),),
+        )
+        conn.commit()
+
+        cols = {r[1] for r in conn.execute("PRAGMA table_info(settlements)").fetchall()}
+        assert "payer_id" in cols, \
+            "test setup must simulate the post-ALTER, pre-backfill crash window"
+        marker = conn.execute(
+            "SELECT 1 FROM schema_migrations WHERE key = 'settlements_payer_id_backfill'"
+        ).fetchone()
+        assert marker is None, "test setup must simulate an unfinished backfill"
+
+        _migrate_settlements(conn)
+        conn.commit()
+
+        row = conn.execute(
+            "SELECT payer_id FROM settlements WHERE settlement_id = 'stl_crash'"
+        ).fetchone()
+        assert row["payer_id"] == "crash_payer", \
+            f"a call after the column exists but before the backfill marker is " \
+            f"set must still perform the backfill — got payer_id={row['payer_id']!r} " \
+            f"(N9 review R2: N8-4 removed this retry)"
 
         conn.close()
 
