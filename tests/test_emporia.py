@@ -3109,6 +3109,45 @@ def test_settlement_payer_id_redacted_for_non_owned_rows(client):
             f"got {b_row['payer_id']!r}"
 
 
+def test_settlement_payer_id_null_stays_null_for_session_rows(client):
+    """N8 review R1 verification: the payer_id redaction added to
+    _settlement_row_dict must guard on `is not None` — a session's aggregate
+    settlement row legitimately keeps payer_id NULL (one row for the whole shared
+    escrow, no single payer; see _migrate_settlements/_caller_owns_settlement_row),
+    and that must stay JSON null in the response, not get flattened into the
+    string "[redacted]" by a check that doesn't distinguish "no payer" from "a
+    payer I'm hiding"."""
+    from emporia.relay_server import record_settlement
+
+    creator = "n8pidnull_creator"
+    _register(client, creator)
+    r = client.post("/sessions", json={
+        "module_type": "emporia:service:v1",
+        "creator_agent_id": creator,
+        "config": {"description": "d"},
+        "payment_rules": {"mode": "free"},
+    },
+        headers={"x-emporia-agent-id": creator})
+    assert r.status_code == 200, r.text
+    session_id = r.json()["session_id"]
+    record_settlement({
+        "session_id": session_id, "winner_id": creator, "outcome_type": "won",
+        "status": "settled", "total_stake_cents": 0, "platform_fee_cents": 0,
+        "winner_payout_cents": 0, "platform_fee_bps": 0,
+        "payment_intent_ids": [f"pi_{session_id}"], "transfer_id": None,
+        "transfer_status": "no_stripe_account",
+        # payer_id intentionally omitted — stays NULL, the session-aggregate case.
+    })
+
+    resp = client.get(f"/payments/settlements/{session_id}",
+        headers={"x-emporia-agent-id": creator})
+    assert resp.status_code == 200, resp.text
+    row = resp.json()["settlements"][0]
+    assert row["payer_id"] is None, \
+        f"a session settlement's payer_id must stay null, not become the " \
+        f"redaction sentinel — got {row['payer_id']!r}"
+
+
 def test_settlement_ownership_sql_matches_python_predicate(client):
     """N8 review R4: the ?agent_id= SQL predicate (list_settlements) and
     _caller_owns_settlement_row's Python rule are two hand-written definitions of
@@ -3484,7 +3523,7 @@ def test_settlement_redaction_does_not_blind_the_operator(client):
             "status": "settled", "total_stake_cents": 100, "platform_fee_cents": 0,
             "winner_payout_cents": 100, "platform_fee_bps": 0,
             "payment_intent_ids": [pi], "transfer_id": None,
-            "transfer_status": "no_stripe_account",
+            "transfer_status": "no_stripe_account", "payer_id": payer,
         })
 
     with patch.dict(os.environ, {"EMPORIA_AGENT_ID": owner}):
@@ -3494,6 +3533,10 @@ def test_settlement_redaction_does_not_blind_the_operator(client):
         seen_pis = {pid for s in as_operator.json()["settlements"] for pid in s["payment_intent_ids"]}
         assert {pi_a, pi_b} <= seen_pis, \
             f"the relay operator must see every payer's PaymentIntent id unredacted, saw: {seen_pis}"
+        seen_payer_ids = {s["payer_id"] for s in as_operator.json()["settlements"]}
+        assert {payer_a, payer_b} <= seen_payer_ids, \
+            f"the relay operator must see every payer's payer_id unredacted too " \
+            f"(N8 review R1) — saw: {seen_payer_ids}"
 
         payments_view = client.get("/payments/records", params={"room_id": room_id},
             headers={"x-emporia-agent-id": owner})

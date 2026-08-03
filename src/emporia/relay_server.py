@@ -2491,6 +2491,15 @@ def _settlement_row_dict(
     `total_stake_cents`/`winner_payout_cents` are left alone: room/topic entry
     fees are uniform, so a co-payer's amount is already public from the resource's
     own fee — only the opaque identifiers need covering.
+
+    N8 review R1: `payer_id` itself — the column N7-2 added — was never redacted
+    either, so a caller authorized to see a resource's settlements got every
+    co-payer's identity along with everything else. `_redact_payment_row` already
+    treats `agent_id` as sensitive for the identical fact on the sibling
+    /payments/records?room_id= endpoint; the two must agree. Guarded on `is not
+    None` — a session's aggregate row legitimately keeps `payer_id` NULL (see
+    _migrate_settlements), and that must stay `null` in the response, not become
+    the string `"[redacted]"`.
     """
     d = {**dict(row), "payment_intent_ids": json.loads(row["payment_intent_ids"])}
     owner = _relay_operator_id()
@@ -2501,6 +2510,8 @@ def _settlement_row_dict(
     d["payment_intent_ids"] = ["[redacted]"]
     if d.get("transfer_id"):
         d["transfer_id"] = "[redacted]"
+    if d.get("payer_id") is not None:
+        d["payer_id"] = "[redacted]"
     return d
 
 
