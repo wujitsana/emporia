@@ -734,6 +734,19 @@ class EmporiaAgent:
                 # existing max_retries contract for every other failure here too;
                 # what mattered was reaching the documented RuntimeError instead of
                 # propagating raw.
+                #
+                # N8 review R5: a rejected handshake specifically (not an ordinary
+                # disconnect — ConnectionClosedError/OSError say nothing about the
+                # credential) invalidates the cached bearer token before retrying,
+                # mirroring _bearer_request's existing 401/403 handling. N7-5 made
+                # the connect URL rebuild every attempt, but _bearer_token_value()
+                # still serves the cached token until its own local expiry — that
+                # fixes a token that's merely gone stale locally, not one the relay
+                # actively rejects (revoked, wrong relay_id, secret rotated), which
+                # was replayed byte-identical on every attempt, burning the whole
+                # backoff budget on one dead credential.
+                if isinstance(e, InvalidHandshake):
+                    self._invalidate_bearer()
                 if retries >= max_retries:
                     raise RuntimeError(
                         f"listen_session: max retries ({max_retries}) exhausted: {e}"
@@ -777,6 +790,12 @@ class EmporiaAgent:
                             msg = {"raw": raw}
                         await on_message(msg)
             except (ConnectionClosedError, OSError, InvalidHandshake) as e:
+                # N8 review R5: see listen_session's docstring — a rejected
+                # handshake invalidates the cached bearer token before retrying,
+                # rather than replaying a relay-rejected credential unchanged on
+                # every attempt.
+                if isinstance(e, InvalidHandshake):
+                    self._invalidate_bearer()
                 if retries >= max_retries:
                     raise RuntimeError(
                         f"listen_agent: max retries ({max_retries}) exhausted: {e}"

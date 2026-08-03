@@ -5743,6 +5743,56 @@ def test_listen_session_refreshes_token_on_each_reconnect():
         "each reconnect attempt must rebuild the URL, not replay the first one's"
 
 
+def test_listen_session_invalidates_bearer_token_on_rejected_handshake():
+    """N8 review R5: N7-5 rebuilt the WS connect URL on every reconnect attempt,
+    but _bearer_token_value() still serves the cached token until its own local
+    expiry margin — that only helps a token that merely went stale locally. A
+    token the *relay* actively rejects (revoked, wrong relay_id, JWT secret
+    rotated) surfaces as a rejected handshake (InvalidHandshake/InvalidStatus),
+    and every rebuilt URL carried the same dead credential — the whole backoff
+    budget burned on one credential that was never going to work. Mirrors
+    _bearer_request's existing 401/403 -> _invalidate_bearer() precedent.
+
+    Asserts _invalidate_bearer is called on a rejected handshake but NOT on an
+    ordinary disconnect, which says nothing about the credential's validity."""
+    import asyncio
+    from emporia.agent_sdk import EmporiaAgent
+    from websockets.exceptions import InvalidStatus, ConnectionClosedError
+
+    agent = EmporiaAgent(relay_url="http://fake.invalid", agent_id="sdk_ws_invalidate",
+        public_key_hex="ab" * 32)
+    agent._invalidate_bearer = MagicMock()
+
+    async def _run_rejected():
+        with patch(
+            "emporia.agent_sdk.websockets.connect",
+            _mock_ws_connect_raising(InvalidStatus(MagicMock(status_code=1008))),
+        ):
+            with pytest.raises(RuntimeError, match="max retries"):
+                await agent.listen_session("sess_rejected", on_message=AsyncMock(),
+                    max_retries=1, initial_backoff=0.01)
+
+    asyncio.run(_run_rejected())
+    assert agent._invalidate_bearer.call_count >= 1, \
+        "a rejected handshake must invalidate the cached bearer token before retrying"
+
+    agent._invalidate_bearer.reset_mock()
+
+    async def _run_disconnect():
+        with patch(
+            "emporia.agent_sdk.websockets.connect",
+            _mock_ws_connect_raising(ConnectionClosedError(None, None)),
+        ):
+            with pytest.raises(RuntimeError, match="max retries"):
+                await agent.listen_session("sess_disconnect", on_message=AsyncMock(),
+                    max_retries=1, initial_backoff=0.01)
+
+    asyncio.run(_run_disconnect())
+    assert agent._invalidate_bearer.call_count == 0, \
+        "an ordinary disconnect says nothing about credential validity and must " \
+        "not invalidate the cached bearer token"
+
+
 def test_stream_session_events_wraps_connection_failure():
     """N5 review R6: stream_session_events had no exception handling at all — a
     rejected handshake or disconnect propagated as a raw low-level exception."""
