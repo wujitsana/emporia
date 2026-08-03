@@ -1347,6 +1347,20 @@ class AgentRegistry:
 
 AGENT_REGISTRY = AgentRegistry()
 
+
+def _enforce_agent_rate_limit(agent_id: str) -> None:
+    """Per-agent write throttle (N11-4). The identity-keyed complement to the global
+    IP middleware below — that middleware exempts localhost and the Docker gateway
+    (_RATE_LIMIT_EXEMPT_HOSTS), which is the *default co-located deployment's caller*,
+    so IP throttling alone enforces nothing there. Call immediately after resolving
+    and validating `agent_id` as the authenticated caller, before any write. Raises
+    429 if the agent has exceeded AGENT_REGISTRY.max_per_minute (RATE_LIMIT_PER_MINUTE)
+    writes in the trailing 60s.
+    """
+    if not AGENT_REGISTRY.check_rate_limit(agent_id):
+        raise HTTPException(429, "Rate limit exceeded — too many requests, slow down")
+
+
 # Live counters for the dashboard's Trust & Safety panel — process-lifetime,
 # reset on relay restart. Not persisted; this is a demo signal, not an audit log
 # (the hash-chained audit log in session_audit.py is the durable record).
@@ -2419,6 +2433,7 @@ async def get_agent_inbox(
 async def mark_inbox_read(agent_id: str, inbox_ids: list[str], request: Request):
     """Mark specific inbox events as read and auto-expire old read items (7+ days)."""
     _require_caller_is(agent_id, request)
+    _enforce_agent_rate_limit(agent_id)
     cutoff = (datetime.now(UTC) - timedelta(days=7)).isoformat()
     with DB_LOCK, get_db() as conn:
         placeholders = ",".join("?" * len(inbox_ids))
@@ -2455,6 +2470,7 @@ async def create_payment_intent_endpoint(req: CreatePaymentIntentRequest, reques
     caller = _dashboard_agent_id(request)
     if not caller:
         raise HTTPException(401, "Authentication required")
+    _enforce_agent_rate_limit(caller)
 
     if bool(req.session_id) == bool(req.room_id):
         raise HTTPException(400, "Provide exactly one of session_id or room_id")
@@ -2893,6 +2909,7 @@ async def create_listing(req: CreateListingRequest, request: Request):
     if not caller:
         raise HTTPException(401, "Authentication required")
     _require_registered(caller)
+    _enforce_agent_rate_limit(caller)
     try:
         await _assert_payload_safe_counted(req.model_dump())
     except PermissionError as e:
@@ -3002,6 +3019,7 @@ async def create_event(req: CreateEventRequest, request: Request):
     if not caller:
         raise HTTPException(401, "Authentication required")
     _require_registered(caller)
+    _enforce_agent_rate_limit(caller)
     try:
         await _assert_payload_safe_counted(req.model_dump())
     except PermissionError as e:
@@ -3283,6 +3301,7 @@ async def create_session(req: CreateSessionRequest, request: Request):
     if req.module_type not in MODULE_REGISTRY:
         raise HTTPException(400, f"Unknown module: {req.module_type}")
     _require_registered(caller)
+    _enforce_agent_rate_limit(caller)
 
     module = get_interaction_module(req.module_type)
     payment_rules = req.payment_rules or module.PAYMENT_RULES.model_dump()
@@ -3421,6 +3440,7 @@ async def join_session(session_id: str, req: JoinSessionRequest, request: Reques
     if req.agent_id in s["participants"]:
         raise HTTPException(400, "Already joined")
     _require_registered(req.agent_id)
+    _enforce_agent_rate_limit(req.agent_id)
 
     module = get_interaction_module(s["module_type"])
     valid, err = module.validate_participants(s["participants"] + [req.agent_id])
@@ -3557,6 +3577,10 @@ async def submit_action(session_id: str, req: SubmitActionRequest):
     if not AGENT_REGISTRY.verify_signature(req.agent_id, full_payload, req.signature):
         SAFETY_STATS["unsigned_actions_rejected"] += 1
         raise HTTPException(403, "Invalid signature")
+    # Rate-limit after signature verification, not before — keying on req.agent_id
+    # pre-signature would let a forged, unsigned request burn any agent's rate-limit
+    # budget with no credential at all.
+    _enforce_agent_rate_limit(req.agent_id)
 
     # 3. Stripe payment gate handled at join; per-turn PoR gate next
 
@@ -3782,6 +3806,7 @@ async def abandon_session(session_id: str, request: Request, req: dict = None):
     owner = _relay_operator_id()
     if not caller or (caller not in s["participants"] and caller != owner):
         raise HTTPException(403, "Only a participant or the relay operator may abandon this session")
+    _enforce_agent_rate_limit(caller)
     if s["status"] == "complete":
         raise HTTPException(400, "Session already complete — cannot abandon")
 
@@ -3832,8 +3857,7 @@ async def send_message(req: SendMessageRequest, request: Request):
     if not caller:
         raise HTTPException(401, "Authentication required")
     _require_registered(caller)
-    if not AGENT_REGISTRY.check_rate_limit(caller):
-        raise HTTPException(429, "Rate limit exceeded")
+    _enforce_agent_rate_limit(caller)
     if not req.signature:
         raise HTTPException(401, "Signature required")
     # N3-8 (R7): bound to the routing envelope (to_agent/type/session_id), not just
@@ -4083,6 +4107,7 @@ async def gaming_lobby_post(req: GamingLobbyChallengeRequest, request: Request):
     if not caller:
         raise HTTPException(401, "Authentication required")
     _require_registered(caller)
+    _enforce_agent_rate_limit(caller)
     payload = req.model_dump()
     try:
         await _assert_payload_safe_counted(payload)
@@ -4115,6 +4140,7 @@ async def create_room_endpoint(req: CreateRoomRequest, request: Request):
     if not caller:
         raise HTTPException(401, "Authentication required")
     _require_registered(caller)
+    _enforce_agent_rate_limit(caller)
     try:
         await _assert_payload_safe_counted(req.model_dump())
     except PermissionError as e:
@@ -4194,6 +4220,7 @@ async def join_room(room_id: str, req: JoinRoomRequest, request: Request):
     if not room:
         raise HTTPException(404, "Room not found")
     _require_registered(req.agent_id)
+    _enforce_agent_rate_limit(req.agent_id)
     if rooms_db.is_member(room_id, req.agent_id, db_path=DATABASE_PATH):
         return {"status": "already_member", "room_id": room_id}
 
@@ -4305,6 +4332,7 @@ async def invite_to_room(room_id: str, req: InviteToRoomRequest, request: Reques
     if not room:
         raise HTTPException(404, "Room not found")
     _require_caller_is(room.creator_id, request)
+    _enforce_agent_rate_limit(room.creator_id)
     if room.gate_type == "open":
         raise HTTPException(400, "Open rooms don't use invites")
     _require_registered(req.invitee_id)
@@ -4324,6 +4352,7 @@ async def kick_from_room(room_id: str, req: KickFromRoomRequest, request: Reques
     if not room:
         raise HTTPException(404, "Room not found")
     _require_caller_is(room.creator_id, request)
+    _enforce_agent_rate_limit(room.creator_id)
     if req.target_agent_id == room.creator_id:
         raise HTTPException(400, "Creator cannot kick themselves")
     removed = rooms_db.remove_member(room_id, req.target_agent_id, db_path=DATABASE_PATH)
@@ -4353,8 +4382,7 @@ async def send_room_message(room_id: str, req: SendRoomMessageRequest, request: 
     _require_registered(caller)
     if not rooms_db.is_member(room_id, caller, db_path=DATABASE_PATH):
         raise HTTPException(403, "Join the room first")
-    if not AGENT_REGISTRY.check_rate_limit(caller):
-        raise HTTPException(429, "Rate limit exceeded")
+    _enforce_agent_rate_limit(caller)
 
     # Encrypted rooms: relay stores opaque ciphertext — never scan it.
     # Ciphertext is binary/base64 and WILL false-positive on injection patterns.
@@ -4573,6 +4601,7 @@ async def create_agora_topic(req: CreateAgoraTopicRequest, request: Request):
     if not caller:
         raise HTTPException(401, "Authentication required")
     _require_registered(caller)
+    _enforce_agent_rate_limit(caller)
     try:
         await _assert_payload_safe_counted(req.model_dump())
     except PermissionError as e:
@@ -4724,6 +4753,7 @@ async def invite_to_agora_topic(slug: str, req: AgoraInviteRequest, request: Req
         if not row:
             raise HTTPException(404, "Topic not found")
         _require_caller_is(row["creator_id"], request)
+        _enforce_agent_rate_limit(row["creator_id"])
         # N3-8 ordering nit (R7, low): _require_registered(req.invitee_id) used to run
         # before the topic lookup / caller check above — an unauthenticated caller could
         # distinguish a registered invitee_id (403 "not creator") from an unregistered one
@@ -4766,6 +4796,7 @@ async def subscribe_agora_topic(slug: str, req: AgoraSubscribeRequest, request: 
     """
     _require_caller_unless_mpp_payment(req.agent_id, request)
     _require_registered(req.agent_id)
+    _enforce_agent_rate_limit(req.agent_id)
     now = datetime.now(UTC).isoformat()
 
     # Topic lookup + already-subscribed short-circuit + invite check — DB_LOCK held
@@ -4900,6 +4931,7 @@ async def subscribe_agora_topic(slug: str, req: AgoraSubscribeRequest, request: 
 @app.delete("/agoras/topics/{slug}/subscribe")
 async def unsubscribe_agora_topic(slug: str, agent_id: str, request: Request):
     _require_caller_is(agent_id, request)
+    _enforce_agent_rate_limit(agent_id)
     with DB_LOCK, get_db() as conn:
         row = conn.execute("SELECT topic_id FROM agora_topics WHERE slug=?", (slug,)).fetchone()
         if not row:
@@ -4921,6 +4953,7 @@ async def create_agora_post(slug: str, req: CreateAgoraPostRequest, request: Req
     if not caller:
         raise HTTPException(401, "Authentication required")
     _require_registered(caller)
+    _enforce_agent_rate_limit(caller)
     try:
         await _assert_payload_safe_counted(req.model_dump())
     except PermissionError as e:
@@ -5059,6 +5092,7 @@ async def vote_agora_post(post_id: str, req: AgoraVoteRequest, request: Request)
     if not caller:
         raise HTTPException(401, "Authentication required")
     _require_registered(caller)
+    _enforce_agent_rate_limit(caller)
     if req.value not in (1, -1):
         raise HTTPException(400, "value must be 1 or -1")
     now = datetime.now(UTC).isoformat()
@@ -5104,6 +5138,7 @@ async def vote_agora_post(post_id: str, req: AgoraVoteRequest, request: Request)
 @app.delete("/agoras/posts/{post_id}")
 async def delete_agora_post(post_id: str, agent_id: str, request: Request):
     _require_caller_is(agent_id, request)
+    _enforce_agent_rate_limit(agent_id)
     with DB_LOCK, get_db() as conn:
         p = conn.execute("SELECT author_id, topic_id FROM agora_posts WHERE post_id=?", (post_id,)).fetchone()
         if not p:
@@ -5125,6 +5160,7 @@ async def add_agora_comment(post_id: str, req: AddAgoraCommentRequest, request: 
     if not caller:
         raise HTTPException(401, "Authentication required")
     _require_registered(caller)
+    _enforce_agent_rate_limit(caller)
     try:
         await _assert_payload_safe_counted(req.model_dump())
     except PermissionError as e:
@@ -5163,6 +5199,7 @@ async def vote_agora_comment(comment_id: str, req: AgoraVoteRequest, request: Re
     if not caller:
         raise HTTPException(401, "Authentication required")
     _require_registered(caller)
+    _enforce_agent_rate_limit(caller)
     if req.value not in (1, -1):
         raise HTTPException(400, "value must be 1 or -1")
     now = datetime.now(UTC).isoformat()
@@ -5279,6 +5316,7 @@ async def dm_start(req: DMStartRequest, request: Request):
         raise HTTPException(401, "Authentication required")
     _require_registered(caller)
     _require_registered(req.to_agent)
+    _enforce_agent_rate_limit(caller)
     if caller == req.to_agent:
         raise HTTPException(400, "Cannot DM yourself")
     # Canonical ordering so UNIQUE(agent_a, agent_b) always matches
@@ -5306,6 +5344,7 @@ async def dm_send(thread_id: str, req: DMSendRequest, request: Request):
     if not caller:
         raise HTTPException(401, "Authentication required")
     _require_registered(caller)
+    _enforce_agent_rate_limit(caller)
     try:
         await _assert_payload_safe_counted(req.model_dump())
     except PermissionError as e:

@@ -884,6 +884,32 @@ def test_sweep_task_starts_and_cancels_cleanly_on_shutdown():
     assert rs._SWEEP_TASK.cancelled()
 
 
+def test_agent_write_rate_limit_applies_from_localhost(client):
+    """N11-4 (R4): per-agent write throttle must be enforced even from the `client`
+    fixture's 127.0.0.1 source, which the global IP middleware exempts
+    (_RATE_LIMIT_EXEMPT_HOSTS — the default co-located deployment's caller). A test
+    that only exercised a non-exempt IP could pass even if this check were never wired
+    into POST /listings at all — before N11-4, only /messages and
+    /rooms/{room_id}/message had it."""
+    from emporia import relay_server as rs
+
+    _register(client, "rate_limited_agent")
+    with patch.object(rs.AGENT_REGISTRY, "max_per_minute", 2):
+        for i in range(2):
+            r = client.post(
+                "/listings",
+                json={"title": f"listing {i}"},
+                headers={"x-emporia-agent-id": "rate_limited_agent"},
+            )
+            assert r.status_code == 200, r.text
+        r = client.post(
+            "/listings",
+            json={"title": "one too many"},
+            headers={"x-emporia-agent-id": "rate_limited_agent"},
+        )
+        assert r.status_code == 429
+
+
 # ============================================================================
 # Events
 # ============================================================================
