@@ -399,13 +399,19 @@ export const api = {
     post<PaymentIntent>("/payments/create-intent", {
       session_id, amount_cents, seller_id, service_type,
     }),
-  settlements: () =>
+  // N9 review R4: N8-3 changed this endpoint's default `limit` from a hardcoded
+  // 100 to 50, silently halving FeesView's effective page size (it passed none
+  // before N8-3 either, so it never had to think about the cap explicitly).
+  // Explicit `limit` here restores that page size rather than raising the
+  // relay-wide default, which is 50 on every other list endpoint in this file —
+  // making settlements the outlier at 100 would be the wrong fix.
+  settlements: (limit = 100) =>
     get<{ settlements: Settlement[]; count: number; has_more: boolean }>(
-      "/payments/settlements", { agentScoped: true }
+      `/payments/settlements?limit=${limit}`, { agentScoped: true }
     ),
-  agentSettlements: (agent_id: string) =>
+  agentSettlements: (agent_id: string, limit = 100) =>
     get<{ settlements: Settlement[]; count: number; has_more: boolean }>(
-      `/payments/settlements?agent_id=${encodeURIComponent(agent_id)}`,
+      `/payments/settlements?agent_id=${encodeURIComponent(agent_id)}&limit=${limit}`,
       { agentScoped: true }
     ),
   sessionSettlements: (session_id: string) =>

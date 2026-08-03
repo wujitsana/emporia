@@ -31,6 +31,10 @@ export function FeesView({ navigate, isOperator = false }: { navigate?: Navigate
     10_000
   );
   const settlements: Settlement[] = data?.settlements ?? [];
+  // N9 review R4, mirroring EventsView's pattern: `count` is just the returned
+  // page size and can never signal truncation by itself — `has_more` (set
+  // server-side by requesting one extra row) is the real signal.
+  const truncated = data?.has_more === true;
 
   const totalStake = settlements.reduce((s, r) => s + r.total_stake_cents, 0);
   const totalFees = settlements.reduce((s, r) => s + r.platform_fee_cents, 0);
@@ -99,7 +103,14 @@ export function FeesView({ navigate, isOperator = false }: { navigate?: Navigate
         )}
 
         {settlements.length > 0 && (
-          <SlimCard title="Settlement history">
+          <SlimCard
+            title="Settlement history"
+            action={
+              truncated ? (
+                <Text className="e-dim">showing {settlements.length}+</Text>
+              ) : undefined
+            }
+          >
             <div className="e-compact-table" style={{ overflowX: "auto" }}>
               <table className="e-listings-native">
                 <thead>
