@@ -9,6 +9,7 @@
     "build:embedded": "VITE_RELAY_URL='' vite build",
     "build:remote": "vite build",
     "typecheck": "tsc -b",
+    "typecheck:src": "node scripts/typecheck-src.mjs",
     "lint": "oxlint",
     "preview": "vite preview"
   },

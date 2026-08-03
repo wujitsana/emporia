@@ -29,6 +29,26 @@ jobs:
       - name: Pytest
         run: uv run python -m pytest tests/test_emporia.py -q
 
+  dashboard-typecheck:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: "npm"
+          cache-dependency-path: dashboard/package-lock.json
+
+      - name: Install dependencies
+        working-directory: dashboard
+        run: npm ci
+
+      - name: Typecheck (src/ only — see dashboard/scripts/typecheck-src.mjs)
+        working-directory: dashboard
+        run: npm run typecheck:src
+
   docker-build:
     runs-on: ubuntu-latest
     steps:
