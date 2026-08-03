@@ -139,6 +139,29 @@ class EmporiaAgent:
         self._bearer_token = None
         self._bearer_exp = 0.0
 
+    async def _invalidate_bearer_and_remint(self) -> None:
+        """Invalidate the cached bearer token and immediately attempt to mint a
+        fresh one, restoring the previous token if the re-mint itself fails.
+
+        N9 review O2: _bearer_token_value() fails open to `None` on any
+        exception (network error, relay-side auth outage, etc.) — a bare
+        _invalidate_bearer() call followed by a failed re-mint would leave the
+        cache empty, and every subsequent _ws_auth_params() call would then omit
+        `token` entirely, sending `agent_id` alone. `agent_id` alone is inert on
+        the shipped default config (EMPORIA_TRUST_LOCAL_HEADER_AUTH=0 — N6 review
+        R4), so a failed re-mint would turn a WS auth failure into something
+        strictly worse than doing nothing, exactly in the plausible case that the
+        relay's own auth service is what's actually down. Restoring the old
+        token on failure means a rejected-but-still-real credential keeps being
+        sent rather than nothing at all — no worse than before the invalidation
+        attempt, and still gives a later, successful re-mint the chance to fix
+        things.
+        """
+        old_token, old_exp = self._bearer_token, self._bearer_exp
+        self._invalidate_bearer()
+        if await self._bearer_token_value() is None:
+            self._bearer_token, self._bearer_exp = old_token, old_exp
+
     async def _bearer_request(self, method: str, url: str, **kwargs: Any) -> httpx.Response:
         """httpx.AsyncClient.{get,post,delete}(url, ...) with a cached bearer token
         attached, retrying once with a freshly-obtained token if the server rejects it
@@ -710,6 +733,7 @@ class EmporiaAgent:
         """
         retries = 0
         backoff = initial_backoff
+        remint_done_this_cycle = False
         while retries <= max_retries:
             url = _ws_url(self.relay_url, f"/ws/{session_id}") + "?" + urllib.parse.urlencode(
                 await self._ws_auth_params()
@@ -718,6 +742,7 @@ class EmporiaAgent:
                 async with websockets.connect(url) as ws:
                     retries = 0
                     backoff = initial_backoff
+                    remint_done_this_cycle = False
                     async for raw in ws:
                         try:
                             msg = json.loads(raw)
@@ -745,8 +770,22 @@ class EmporiaAgent:
                 # actively rejects (revoked, wrong relay_id, secret rotated), which
                 # was replayed byte-identical on every attempt, burning the whole
                 # backoff budget on one dead credential.
-                if isinstance(e, InvalidHandshake):
-                    self._invalidate_bearer()
+                #
+                # N9 review O2: re-minting on *every* rejection within the same
+                # cycle burns a full challenge+sign+session round trip per attempt
+                # even though only the first invalidation in a cycle can possibly
+                # help — ws_session() closes 1008 for an unauthorized session AND
+                # an unknown one (N5-7's own comment), so a listener pointed at a
+                # session it simply isn't in was re-minting up to max_retries
+                # times for a rejection no fresh token will ever fix. Throttled to
+                # once per cycle (reset alongside retries/backoff on a successful
+                # connect). _invalidate_bearer_and_remint also restores the old
+                # token if the re-mint itself fails, so a transient auth-service
+                # outage doesn't leave every later attempt sending no credential
+                # at all — see that method's docstring.
+                if isinstance(e, InvalidHandshake) and not remint_done_this_cycle:
+                    await self._invalidate_bearer_and_remint()
+                    remint_done_this_cycle = True
                 if retries >= max_retries:
                     raise RuntimeError(
                         f"listen_session: max retries ({max_retries}) exhausted: {e}"
@@ -775,6 +814,7 @@ class EmporiaAgent:
         refreshed instead of replayed dead — see listen_session's docstring."""
         retries = 0
         backoff = initial_backoff
+        remint_done_this_cycle = False
         while retries <= max_retries:
             url = _ws_url(self.relay_url, f"/ws/agent/{self.agent_id}") + "?" + urllib.parse.urlencode(
                 await self._ws_auth_params()
@@ -783,6 +823,7 @@ class EmporiaAgent:
                 async with websockets.connect(url) as ws:
                     retries = 0
                     backoff = initial_backoff
+                    remint_done_this_cycle = False
                     async for raw in ws:
                         try:
                             msg = json.loads(raw)
@@ -793,9 +834,13 @@ class EmporiaAgent:
                 # N8 review R5: see listen_session's docstring — a rejected
                 # handshake invalidates the cached bearer token before retrying,
                 # rather than replaying a relay-rejected credential unchanged on
-                # every attempt.
-                if isinstance(e, InvalidHandshake):
-                    self._invalidate_bearer()
+                # every attempt. N9 review O2: throttled to once per cycle and
+                # guarded against a failed re-mint dropping the credential
+                # entirely — see listen_session's docstring and
+                # _invalidate_bearer_and_remint.
+                if isinstance(e, InvalidHandshake) and not remint_done_this_cycle:
+                    await self._invalidate_bearer_and_remint()
+                    remint_done_this_cycle = True
                 if retries >= max_retries:
                     raise RuntimeError(
                         f"listen_agent: max retries ({max_retries}) exhausted: {e}"

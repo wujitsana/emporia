@@ -5912,6 +5912,69 @@ def test_listen_session_invalidates_bearer_token_on_rejected_handshake():
         "not invalidate the cached bearer token"
 
 
+def test_listen_session_re_mints_bearer_at_most_once_per_cycle():
+    """N9 review O2: N8-6 invalidated (and thus re-minted, via the next
+    _ws_auth_params() call) the bearer token on *every* InvalidHandshake, not
+    just the first since the last successful connection. ws_session() closes
+    1008 for an unauthorized session AND an unknown one (N5-7's own comment) —
+    a listener pointed at a session it simply isn't in, or that doesn't exist,
+    was re-minting a fresh JWT (a real challenge+sign+session round trip) on
+    every one of up to max_retries attempts, even though only the first
+    invalidation in a given cycle can possibly help; the rest just burn network
+    calls on a rejection no fresh token will ever fix. Asserts the
+    invalidate-and-remint helper runs at most once across repeated rejections
+    with no intervening successful connection."""
+    import asyncio
+    from emporia.agent_sdk import EmporiaAgent
+    from websockets.exceptions import InvalidStatus
+
+    agent = EmporiaAgent(relay_url="http://fake.invalid", agent_id="sdk_ws_remint_once",
+        public_key_hex="ab" * 32)
+    agent._invalidate_bearer_and_remint = AsyncMock()
+
+    async def _run():
+        with patch(
+            "emporia.agent_sdk.websockets.connect",
+            _mock_ws_connect_raising(InvalidStatus(MagicMock(status_code=1008))),
+        ):
+            with pytest.raises(RuntimeError, match="max retries"):
+                await agent.listen_session("sess_rejected", on_message=AsyncMock(),
+                    max_retries=4, initial_backoff=0.01)
+
+    asyncio.run(_run())
+    assert agent._invalidate_bearer_and_remint.call_count == 1, \
+        f"expected exactly one invalidate-and-remint across 5 rejections in the " \
+        f"same cycle (no intervening successful connect), got " \
+        f"{agent._invalidate_bearer_and_remint.call_count}"
+
+
+def test_invalidate_bearer_and_remint_restores_token_on_failed_remint():
+    """N9 review O2: _bearer_token_value() fails open to None on any exception
+    (network error, relay-side auth outage). A bare _invalidate_bearer() call
+    followed by a failed re-mint would leave the cache empty, and every
+    subsequent _ws_auth_params() call would then omit `token` entirely, sending
+    `agent_id` alone — inert on the shipped default config
+    (EMPORIA_TRUST_LOCAL_HEADER_AUTH=0, N6 review R4). That would turn a WS auth
+    failure into something strictly worse than doing nothing, exactly when the
+    relay's own auth service is what's actually down. Asserts a failed re-mint
+    restores the previously-cached token rather than leaving it empty."""
+    import asyncio
+    from emporia.agent_sdk import EmporiaAgent
+
+    agent = EmporiaAgent(relay_url="http://fake.invalid", agent_id="sdk_ws_remint_fail",
+        public_key_hex="ab" * 32)
+    agent._bearer_token = "jwt.still.valid.looking"
+    agent._bearer_exp = 9_999_999_999.0
+    agent._bearer_token_value = AsyncMock(return_value=None)
+
+    asyncio.run(agent._invalidate_bearer_and_remint())
+
+    assert agent._bearer_token == "jwt.still.valid.looking", \
+        "a failed re-mint must restore the previously-cached token, not leave it empty"
+    assert agent._bearer_exp == 9_999_999_999.0, \
+        "the restored token's expiry must be restored alongside it"
+
+
 def test_stream_session_events_wraps_connection_failure():
     """N5 review R6: stream_session_events had no exception handling at all — a
     rejected handshake or disconnect propagated as a raw low-level exception."""

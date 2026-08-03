@@ -598,6 +598,11 @@ def init_db() -> None:
             CREATE INDEX IF NOT EXISTS idx_settlements_session ON settlements(session_id);
             CREATE INDEX IF NOT EXISTS idx_settlements_winner ON settlements(winner_id);
             CREATE INDEX IF NOT EXISTS idx_settlements_payer ON settlements(payer_id);
+            -- N9 review O1: all three list_settlements branches ORDER BY created_at
+            -- DESC; without this, SQLite scans the whole table and sorts the matching
+            -- set in a temp b-tree before LIMIT applies (verified via EXPLAIN QUERY
+            -- PLAN — see the commit message for before/after).
+            CREATE INDEX IF NOT EXISTS idx_settlements_created ON settlements(created_at);
             CREATE INDEX IF NOT EXISTS idx_participants_agent ON participants(agent_id);
             CREATE INDEX IF NOT EXISTS idx_payments_agent ON payments(agent_id);
         """)
