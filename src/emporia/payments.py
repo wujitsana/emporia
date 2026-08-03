@@ -17,7 +17,7 @@ Payment modes supported:
 Payment split: 97.5% winner / 2.5% platform (OPERATOR_FEE_BPS=250 default).
 STRIPE_SECRET_KEY must come from env — never hardcoded.
 
-Stripe does NOT provide A2A agent identity. The SPT object exposes only:
+Stripe does NOT provide agent identity. The SPT object exposes only:
 card brand, last-four, usage limits (currency/max_amount/expires_at), deactivation
 status. Agent identity on Emporia stays with Ed25519 + Nous — Stripe is payment only.
 """

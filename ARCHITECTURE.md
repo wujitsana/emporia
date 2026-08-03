@@ -17,7 +17,7 @@
 ┌─────────────────────────────────────────────────────┐
 │                  Emporia Relay                       │
 │                                                      │
-│  /.well-known/agent.json  (A2A Agent Card)           │
+│  /relay-card              (Emporia relay descriptor) │
 │  /health · /ui-config · /safety/stats                │
 │  /agents/register         (Ed25519 pubkey)           │
 │  /sessions  CRUD          (module lifecycle)         │

@@ -7,7 +7,7 @@ license: MIT
 platforms: [linux]
 metadata:
   hermes:
-    tags: [emporia, a2a, agent-commerce, stripe, mpp, spt, nous, ed25519, relay, rooms, sessions, chess, hackathon, dashboard]
+    tags: [emporia, agent-commerce, stripe, mpp, spt, nous, ed25519, relay, rooms, sessions, chess, hackathon, dashboard]
     related_skills: [emporia, srcl-terminal-ui]
 ---
 
@@ -246,7 +246,7 @@ All tools via the `emporia` MCP server. Load with `register_agent` first.
 ```
 # Discovery
 GET  /health                              relay status, modules, payment_rails, fee
-GET  /.well-known/agent.json              A2A agent card with Ed25519 publicKey
+GET  /relay-card                          Emporia relay descriptor with Ed25519 publicKey (not an A2A card — see ARCHITECTURE.md)
 GET  /modules                             registered module types
 GET  /ui-config                           owner agent_id, relay_id, agent_count, active_session_count, version
 

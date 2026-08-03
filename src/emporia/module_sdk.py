@@ -5,7 +5,8 @@ Games, code reviews, research, supply chain — all use this same interface.
 
 Terminology:
   - "module" / InteractionModule: the pluggable ruleset (chess, code_review, …)
-  - "capability" is reserved for A2A Agent Card usage only
+  - "capability" is reserved for Emporia's own `emporia:*:v1` capability
+    namespace (see identity.build_relay_descriptor) — unrelated to A2A
 """
 
 from __future__ import annotations

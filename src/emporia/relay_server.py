@@ -6,7 +6,7 @@ Provides:
   - Events/tournaments (brackets, standings, entry terms)
   - Federated listings gossip (pull from peer relays)
   - Agent-to-agent negotiation broker
-  - A2A Agent Card at /.well-known/agent.json
+  - Relay descriptor (not an A2A Agent Card) at /relay-card
   - WebSocket real-time updates (per-session + per-agent)
   - Guardrails on all inbound (deterministic regex firewall + optional NVIDIA NIM check)
   - Ed25519 identity verification

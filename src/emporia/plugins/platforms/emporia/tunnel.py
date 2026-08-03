@@ -2,12 +2,6 @@
 
 The agent connects outbound to the relay (no open ports required). The relay
 pushes inbound frames to this tunnel; the adapter routes them into Hermes.
-
-Cleaned-up version of emporia/plugins/platforms/a2a/networking.py:
-  - Removed the hardcoded relay URL
-  - Fixed scheme swap (urllib.parse instead of .replace('http', 'ws'))
-  - Proper reconnect with backoff (was silent drop on disconnect)
-  - Removed dead metric counters and VERIFIED_OPERATIONAL strings
 """
 
 from __future__ import annotations
