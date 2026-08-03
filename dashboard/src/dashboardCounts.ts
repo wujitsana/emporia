@@ -130,7 +130,7 @@ export async function fetchOverviewSections(viewerId: string): Promise<OverviewS
           : ["No Agora topics"],
     },
     {
-      view: "dms",
+      view: "messages",
       lines:
         dms?.length
           ? dms.slice(0, MAX_LINES).map((d) =>
@@ -144,17 +144,21 @@ export async function fetchOverviewSections(viewerId: string): Promise<OverviewS
 }
 
 export interface DashboardCounts {
-  listings: number | null;
-  sessions: number | null;
-  rooms: number | null;
   /** "N+" (string) when the relay's has_more flag indicates more rows exist beyond
    * its page cap — N6 review R2: `count` alone can never signal this, since it's
-   * always the returned page size. Only /events and /agents report has_more so far. */
+   * always the returned page size. All eight fields below share the same `len()`
+   * helper and so carry the same type, but only /events, /agents, and (since N8-3)
+   * /payments/settlements actually report `has_more` today — the rest merge
+   * multiple sources or post-filter in Python and always resolve to a plain
+   * number (see the Deferred section of the N8/N9 review notes). */
+  listings: number | string | null;
+  sessions: number | string | null;
+  rooms: number | string | null;
   events: number | string | null;
   agents: number | string | null;
-  settlements: number | null;
-  agoraTopics: number | null;
-  dmThreads: number | null;
+  settlements: number | string | null;
+  agoraTopics: number | string | null;
+  dmThreads: number | string | null;
   modules: number | null;
   /** Emporia module sessions (chess, etc.) — used for Games, not raw /health modules. */
   gameSessions: number | null;
@@ -237,7 +241,7 @@ export function metricForNav(
       return String(counts?.agents ?? "—");
     case "agoras":
       return String(counts?.agoraTopics ?? "—");
-    case "dms":
+    case "messages":
       return String(counts?.dmThreads ?? "—");
     case "profile":
       return "◎";
@@ -293,7 +297,7 @@ export function countCaptionForNav(
       const c = n(counts?.agoraTopics);
       return c != null ? `${c} topic${c === 1 ? "" : "s"}` : null;
     }
-    case "dms": {
+    case "messages": {
       const c = n(counts?.dmThreads);
       return c != null ? `${c} thread${c === 1 ? "" : "s"}` : null;
     }

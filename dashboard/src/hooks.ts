@@ -148,6 +148,14 @@ export interface RelayHealth {
   guardrails_mode?: string;
   stripe_enabled?: boolean;
   operator_fee_bps?: number;
+  // Present on GET /health; absent from the smaller WS "connected" frame snapshot
+  // above (relay_server.py's ws_global handler sends only the first six fields).
+  require_nous?: boolean;
+  mpp_enabled?: boolean;
+  payment_methods?: string[];
+  stripe_profile_ready?: boolean;
+  max_total_spend_cents?: number;
+  stripe_mpp_admin_notice?: string | null;
 }
 
 export interface GlobalWsState {

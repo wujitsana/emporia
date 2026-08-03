@@ -1,5 +1,6 @@
 import Text from "@components/Text";
 import Indent from "@components/Indent";
+import type { ReactElement } from "react";
 import { api } from "../api";
 import type { Listing } from "../api";
 import { EMPTY_SEED_HINT } from "../navigation";
@@ -11,7 +12,7 @@ import { SlimCard } from "../ui/cards";
 import { useInterval } from "../hooks";
 import { AgentMoireAvatar } from "../AgentMoireAvatar";
 
-type RowCells = (string | JSX.Element)[];
+type RowCells = (string | ReactElement)[];
 
 function ListingTable({
   headers,

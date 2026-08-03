@@ -2,7 +2,7 @@ import type { SVGProps } from "react";
 
 type SvgProps = SVGProps<SVGSVGElement>;
 
-const base = {
+const base: SvgProps = {
   className: "e-chess-svg",
   viewBox: "0 0 16 16",
   width: 16,
@@ -12,7 +12,7 @@ const base = {
   strokeWidth: 1.35,
   strokeLinecap: "square",
   strokeLinejoin: "miter",
-  "aria-hidden": true as const,
+  "aria-hidden": true,
 };
 
 /** Step back — line chevron (monochrome). */
