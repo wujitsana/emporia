@@ -3048,10 +3048,125 @@ def test_settlement_co_payer_cannot_see_others_payment_intent_ids_room(client):
     assert pi_b not in leaked_pis_2, \
         f"?session_id={room_id} as payer A must not include payer B's " \
         f"payment_intent_ids — leaked: {leaked_pis_2}"
-    b_row = next(s for s in by_resource_settlements if s["payer_id"] == payer_b)
+    b_row = next(s for s in by_resource_settlements if s["payment_intent_ids"] == ["[redacted]"])
     assert b_row["transfer_id"] == "[redacted]", \
         f"?session_id={room_id} as payer A must see payer B's transfer_id redacted, " \
         f"not exposed (N7 review R4) — got: {b_row['transfer_id']}"
+
+
+def test_settlement_payer_id_redacted_for_non_owned_rows(client):
+    """N8 review R1: _settlement_row_dict redacts payment_intent_ids (N6-2) and
+    transfer_id (N7-4) on rows the caller doesn't own, but never touched payer_id
+    itself — the column N7-2 added two commits earlier in the same review.
+    _redact_payment_row, the sibling helper for /payments/records?room_id=,
+    already treats agent_id as sensitive for exactly this class of fact, and the
+    two endpoints are documented as mirroring each other. Must fail against
+    5aabb44: payer_b's payer_id comes back as their real agent_id, not
+    "[redacted]", on both ?session_id= and GET /payments/settlements/{id}."""
+    from emporia.relay_server import record_settlement, DATABASE_PATH
+    from emporia import rooms as rooms_db
+
+    owner = "n8pid_room_owner"
+    payer_a = "n8pid_room_payer_a"
+    payer_b = "n8pid_room_payer_b"
+    _register(client, owner)
+    _register(client, payer_a)
+    _register(client, payer_b)
+
+    r = client.post("/rooms", json={
+        "name": "N8 Redaction Room", "creator_id": owner,
+        "room_type": "private", "gate_type": "stripe_payment", "entry_fee_cents": 100,
+    },
+        headers={"x-emporia-agent-id": owner})
+    assert r.status_code == 200, r.text
+    room_id = r.json()["room_id"]
+
+    rooms_db.add_member(room_id, payer_a, db_path=DATABASE_PATH)
+    rooms_db.add_member(room_id, payer_b, db_path=DATABASE_PATH)
+    for payer, pi in ((payer_a, "pi_n8pid_a"), (payer_b, "pi_n8pid_b")):
+        record_settlement({
+            "session_id": room_id, "winner_id": owner, "outcome_type": "room_entry",
+            "status": "settled", "total_stake_cents": 100, "platform_fee_cents": 0,
+            "winner_payout_cents": 100, "platform_fee_bps": 0,
+            "payment_intent_ids": [pi], "transfer_id": None,
+            "transfer_status": "no_stripe_account", "payer_id": payer,
+        })
+
+    for path, params in (
+        (f"/payments/settlements/{room_id}", {}),
+        ("/payments/settlements", {"session_id": room_id}),
+    ):
+        resp = client.get(path, params=params, headers={"x-emporia-agent-id": payer_a})
+        assert resp.status_code == 200, resp.text
+        rows = resp.json()["settlements"]
+        a_row = next(s for s in rows if s["payment_intent_ids"] != ["[redacted]"])
+        b_row = next(s for s in rows if s["payment_intent_ids"] == ["[redacted]"])
+        assert a_row["payer_id"] == payer_a, \
+            f"{path}: the caller's own row must keep its real payer_id — got {a_row['payer_id']!r}"
+        assert b_row["payer_id"] == "[redacted]", \
+            f"{path}: a co-payer's row must have payer_id redacted, matching the sibling " \
+            f"/payments/records?room_id= endpoint's agent_id redaction (N8 review R1) — " \
+            f"got {b_row['payer_id']!r}"
+
+
+def test_settlement_ownership_sql_matches_python_predicate(client):
+    """N8 review R4: the ?agent_id= SQL predicate (list_settlements) and
+    _caller_owns_settlement_row's Python rule are two hand-written definitions of
+    "does this settlement row belong to this caller" that must agree. They diverge
+    for exactly one row shape: a non-null payer_id belonging to someone else, whose
+    session_id also happens to coincide with a session_id in the caller's own
+    participants rows. SQL currently says "owned" (the session_id-participation OR
+    clause applies unconditionally); Python says "not owned" (participation is
+    only ever consulted when payer_id IS NULL). Must fail against 5aabb44 — and the
+    stakes are sharper than payer_id alone: the ?agent_id= branch never calls
+    _settlement_row_dict at all (it trusts its WHERE clause to have already scoped
+    to owned rows), so a false "owned" verdict leaks that row's real
+    payment_intent_ids and transfer_id too, not just payer_id."""
+    from emporia.relay_server import (
+        record_settlement, get_db, DB_LOCK, _caller_owns_settlement_row,
+    )
+    from datetime import datetime, UTC
+
+    caller = "n8own_caller"
+    other_payer = "n8own_other_payer"
+    _register(client, caller)
+    _register(client, other_payer)
+
+    shared_id = "n8own_shared_session_id"
+
+    with DB_LOCK, get_db() as conn:
+        conn.execute(
+            "INSERT INTO participants (session_id, agent_id, joined_at) VALUES (?, ?, ?)",
+            (shared_id, caller, datetime.now(UTC).isoformat()),
+        )
+
+    record_settlement({
+        "session_id": shared_id, "winner_id": other_payer, "outcome_type": "room_entry",
+        "status": "settled", "total_stake_cents": 100, "platform_fee_cents": 0,
+        "winner_payout_cents": 100, "platform_fee_bps": 0,
+        "payment_intent_ids": ["pi_n8own_other"], "transfer_id": "tr_n8own_other",
+        "transfer_status": "transferred", "payer_id": other_payer,
+    })
+
+    with DB_LOCK, get_db() as conn:
+        row = conn.execute(
+            "SELECT * FROM settlements WHERE session_id = ? AND payer_id = ?",
+            (shared_id, other_payer),
+        ).fetchone()
+        assert row is not None, "test setup: settlement row must exist"
+        python_owns = _caller_owns_settlement_row(row, caller, {shared_id})
+        sql_owns = conn.execute(
+            "SELECT 1 FROM settlements WHERE settlement_id = ? AND (payer_id = ? "
+            "OR session_id IN (SELECT session_id FROM participants WHERE agent_id = ?))",
+            (row["settlement_id"], caller, caller),
+        ).fetchone() is not None
+
+    assert sql_owns == python_owns, (
+        f"SQL ownership predicate and _caller_owns_settlement_row disagree for a "
+        f"non-null payer_id row whose session_id coincides with the caller's own "
+        f"participation — SQL says owned={sql_owns}, Python says owned={python_owns} "
+        f"(N8 review R4)"
+    )
 
 
 def test_settlement_agent_id_query_does_not_drop_owned_rows_past_candidate_limit(client):
@@ -3326,11 +3441,13 @@ def test_settlement_co_payer_cannot_see_others_payment_intent_ids_agora(mock_ver
     by_resource = client.get(f"/payments/settlements/{topic_id}",
         headers={"x-emporia-agent-id": payer_a})
     assert by_resource.status_code == 200, by_resource.text
-    b_row = next(s for s in by_resource.json()["settlements"] if s["payer_id"] == payer_b)
+    b_row = next(s for s in by_resource.json()["settlements"]
+        if s["payment_intent_ids"] == ["[redacted]"])
     assert b_row["transfer_id"] == "[redacted]", \
         f"/payments/settlements/{topic_id} as payer A must see payer B's transfer_id " \
         f"redacted, not exposed (N7 review R4) — got: {b_row['transfer_id']}"
-    a_row = next(s for s in by_resource.json()["settlements"] if s["payer_id"] == payer_a)
+    a_row = next(s for s in by_resource.json()["settlements"]
+        if s["payment_intent_ids"] == ["pi_n6co_agora_a"])
     assert a_row["transfer_id"] == "tr_n6co_agora_a", \
         f"payer A must still see their own transfer_id unredacted — got: {a_row['transfer_id']}"
 
