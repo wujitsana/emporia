@@ -3148,69 +3148,95 @@ def test_settlement_payer_id_null_stays_null_for_session_rows(client):
         f"redaction sentinel — got {row['payer_id']!r}"
 
 
-def test_settlement_ownership_sql_matches_python_predicate(client):
-    """N8 review R4: the ?agent_id= SQL predicate (list_settlements) and
-    _caller_owns_settlement_row's Python rule are two hand-written definitions of
-    "does this settlement row belong to this caller" that must agree. They diverge
-    for exactly one row shape: a non-null payer_id belonging to someone else, whose
-    session_id also happens to coincide with a session_id in the caller's own
-    participants rows. SQL currently says "owned" (the session_id-participation OR
-    clause applies unconditionally); Python says "not owned" (participation is
-    only ever consulted when payer_id IS NULL). Must fail against 5aabb44 — and the
-    stakes are sharper than payer_id alone: the ?agent_id= branch never calls
-    _settlement_row_dict at all (it trusts its WHERE clause to have already scoped
-    to owned rows), so a false "owned" verdict leaks that row's real
-    payment_intent_ids and transfer_id too, not just payer_id.
+# (shape, payer_kind, session_participant, expected_owned) — payer_kind selects
+# who record_settlement's payer_id names: "caller", "other", or "none" (stays
+# NULL, the session-aggregate case). session_participant controls whether the
+# row's session_id is inserted into `participants` for the caller.
+_SETTLEMENT_OWNERSHIP_MATRIX = [
+    ("payer-owned", "caller", False, True),
+    # The exact N8 review R4 regression: a non-null payer_id belonging to
+    # someone else, whose session_id ALSO happens to be one of the caller's own
+    # participant sessions. SQL used to say owned (participation OR applied
+    # unconditionally); Python said not owned (participation only consulted
+    # when payer_id IS NULL).
+    ("payer-other", "other", True, False),
+    ("session-participant", "none", True, True),
+    ("session-non-participant", "none", False, False),
+]
+
+
+@pytest.mark.parametrize(
+    "shape,payer_kind,session_participant,expected_owned", _SETTLEMENT_OWNERSHIP_MATRIX
+)
+def test_settlement_ownership_matrix(client, shape, payer_kind, session_participant, expected_owned):
+    """N9 review R3: the N8-1 agreement test this replaces asserted only one of
+    the four row shapes the N8 plan actually specified — payer-other +
+    session-participant, both sides False == False. A regression that broke the
+    `payer_id = ?` arm outright (the arm that delivers every room/Agora receipt
+    — by far the more consequential of the two) would still satisfy
+    False == False on that single case and pass green. Parametrized over all
+    four shapes so at least one cell (payer-owned, session-participant) exercises
+    True == True, proving the matrix can actually catch a broken "owned" arm,
+    not only a broken "not owned" one.
 
     Exercises the real GET /payments/settlements?agent_id= endpoint (the actual
-    SQL predicate under test) rather than a copy of the query string in the test
-    — a hand-duplicated query can't detect drift in the very thing it's meant to
-    catch."""
+    SQL predicate under test) rather than a copy of the query string in the
+    test — a hand-duplicated query can't detect drift in the thing it exists to
+    guard. Each cell asserts three things: the Python helper's verdict matches
+    what's expected, the endpoint's verdict matches what's expected, and the two
+    agree with each other — so a mutation of either the SQL predicate or
+    _caller_owns_settlement_row that changes any cell's outcome fails here."""
     from emporia.relay_server import (
-        record_settlement, get_db, DB_LOCK, _caller_owns_settlement_row,
+        record_settlement, get_db, DB_LOCK,
+        _caller_owns_settlement_row, _caller_participant_session_ids,
     )
     from datetime import datetime, UTC
 
-    caller = "n8own_caller"
-    other_payer = "n8own_other_payer"
+    tag = shape.replace("-", "_")
+    caller = f"n9own_caller_{tag}"
+    other_payer = f"n9own_other_{tag}"
     _register(client, caller)
     _register(client, other_payer)
 
-    shared_id = "n8own_shared_session_id"
+    session_id = f"n9own_session_{tag}"
 
-    with DB_LOCK, get_db() as conn:
-        conn.execute(
-            "INSERT INTO participants (session_id, agent_id, joined_at) VALUES (?, ?, ?)",
-            (shared_id, caller, datetime.now(UTC).isoformat()),
-        )
+    if session_participant:
+        with DB_LOCK, get_db() as conn:
+            conn.execute(
+                "INSERT INTO participants (session_id, agent_id, joined_at) VALUES (?, ?, ?)",
+                (session_id, caller, datetime.now(UTC).isoformat()),
+            )
 
+    payer_id = {"caller": caller, "other": other_payer, "none": None}[payer_kind]
     record_settlement({
-        "session_id": shared_id, "winner_id": other_payer, "outcome_type": "room_entry",
+        "session_id": session_id, "winner_id": other_payer, "outcome_type": "room_entry",
         "status": "settled", "total_stake_cents": 100, "platform_fee_cents": 0,
         "winner_payout_cents": 100, "platform_fee_bps": 0,
-        "payment_intent_ids": ["pi_n8own_other"], "transfer_id": "tr_n8own_other",
-        "transfer_status": "transferred", "payer_id": other_payer,
+        "payment_intent_ids": [f"pi_{session_id}"], "transfer_id": f"tr_{session_id}",
+        "transfer_status": "transferred", "payer_id": payer_id,
     })
 
     with DB_LOCK, get_db() as conn:
         row = conn.execute(
-            "SELECT * FROM settlements WHERE session_id = ? AND payer_id = ?",
-            (shared_id, other_payer),
+            "SELECT * FROM settlements WHERE session_id = ?", (session_id,),
         ).fetchone()
         assert row is not None, "test setup: settlement row must exist"
         settlement_id = row["settlement_id"]
-        python_owns = _caller_owns_settlement_row(row, caller, {shared_id})
+        participant_session_ids = _caller_participant_session_ids(caller, conn)
+        python_owns = _caller_owns_settlement_row(row, caller, participant_session_ids)
 
     resp = client.get("/payments/settlements", params={"agent_id": caller},
         headers={"x-emporia-agent-id": caller})
     assert resp.status_code == 200, resp.text
     sql_owns = any(s["settlement_id"] == settlement_id for s in resp.json()["settlements"])
 
+    assert python_owns == expected_owned, \
+        f"{shape}: _caller_owns_settlement_row says owned={python_owns}, expected {expected_owned}"
+    assert sql_owns == expected_owned, \
+        f"{shape}: ?agent_id= endpoint says owned={sql_owns}, expected {expected_owned}"
     assert sql_owns == python_owns, (
-        f"?agent_id= and _caller_owns_settlement_row disagree for a non-null "
-        f"payer_id row whose session_id coincides with the caller's own "
-        f"participation — endpoint says owned={sql_owns}, Python says "
-        f"owned={python_owns} (N8 review R4)"
+        f"{shape}: ?agent_id= and _caller_owns_settlement_row disagree — "
+        f"endpoint says owned={sql_owns}, Python says owned={python_owns} (N9 review R3)"
     )
 
 
