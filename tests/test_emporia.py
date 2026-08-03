@@ -153,16 +153,58 @@ def test_agent_profile_key_only_stripe_does_not_expose_mpp(client):
     assert "stripe_pi" in data["payment_rails"]
 
 
-def test_agent_card_well_formed(client):
-    # Register the test owner agent and expose it via env so the card endpoint serves it.
+def test_relay_card_well_formed(client):
+    # Register the test owner agent and expose it via env so the descriptor endpoint serves it.
     _register(client, "test_relay_owner")
     with patch.dict(os.environ, {"EMPORIA_AGENT_ID": "test_relay_owner"}):
-        r = client.get("/.well-known/agent.json")
+        r = client.get("/relay-card")
     assert r.status_code == 200
     card = r.json()
     assert "agent_id" in card
     assert "capabilities" in card
     assert "publicKey" in card or "public_key" in card.get("security", {})
+
+
+def test_relay_card_uses_shared_builder(client):
+    """N10-2 (R2): the endpoint's response must equal identity.build_relay_descriptor()'s
+    output for the same inputs — a single definition, not two hand-written copies that can
+    drift (same class of gap as N8-5/R4)."""
+    from emporia.identity import build_relay_descriptor
+
+    pub_hex = "c" * 64
+    _register(client, "test_relay_owner_2", pubkey=pub_hex)
+    with patch.dict(os.environ, {"EMPORIA_AGENT_ID": "test_relay_owner_2"}):
+        r = client.get("/relay-card")
+    assert r.status_code == 200
+    expected = build_relay_descriptor(
+        agent_id="test_relay_owner_2",
+        base_url=r.json()["base_url"],
+        public_key_hex=pub_hex,
+        display_name=r.json()["display_name"],
+        capabilities=r.json()["capabilities"],
+    )
+    assert r.json() == expected
+
+
+@pytest.mark.parametrize("path", ["/.well-known/agent.json", "/.well-known/agent-card.json"])
+def test_a2a_well_known_paths_404_in_owner_mode(client, path):
+    """N10-1 (R1): Emporia squatted A2A's reserved discovery path with a non-conformant
+    document, which is worse than not answering — a real A2A client's discovery fallback
+    (agent-card.json -> agent.json, see Hermes's tools.py:_fetch_card) would accept the 200
+    at face value instead of correctly concluding 'not an A2A peer'. Both paths must 404
+    even when an owner agent is configured (i.e. even when /relay-card serves 200)."""
+    _register(client, "test_relay_owner_404")
+    with patch.dict(os.environ, {"EMPORIA_AGENT_ID": "test_relay_owner_404"}):
+        r = client.get(path)
+    assert r.status_code == 404
+    assert "/relay-card" in r.json()["detail"]
+
+
+@pytest.mark.parametrize("path", ["/.well-known/agent.json", "/.well-known/agent-card.json"])
+def test_a2a_well_known_paths_404_in_relay_only_mode(client, path):
+    r = client.get(path)
+    assert r.status_code == 404
+    assert "/relay-card" in r.json()["detail"]
 
 
 def test_modules_endpoint(client):
@@ -205,12 +247,19 @@ def test_content_address_no_0x_prefix():
     assert len(addr) == 40  # last 20 bytes of SHA3-256, hex-encoded
 
 
-def test_build_agent_card():
-    from emporia.identity import build_agent_card
-    card = build_agent_card("test_agent", "http://localhost:8088", ["emporia:chess:v1"])
+def test_build_relay_descriptor():
+    from emporia.identity import build_relay_descriptor
+    card = build_relay_descriptor(
+        agent_id="test_agent",
+        base_url="http://localhost:8088",
+        public_key_hex="a" * 64,
+        capabilities=["emporia:chess:v1"],
+    )
     assert card["agent_id"] == "test_agent"
     assert "emporia:chess:v1" in card["capabilities"]
-    assert "publicKey" in card
+    assert card["publicKey"] == "a" * 64
+    assert card["endpoints"]["messages"] == "http://localhost:8088/messages"
+    assert "inbox" not in card["endpoints"]  # was a bogus route (R2), never real
 
 
 # ============================================================================
@@ -1602,7 +1651,9 @@ def test_every_route_has_a_reviewed_auth_posture():
     _DELIBERATELY_PUBLIC: dict[tuple[str, str], str] = {
         ("GET", "/health"): "operational health check, must work with no credential",
         ("GET", "/safety/stats"): "operator-facing guardrails posture, no per-agent data",
-        ("GET", "/.well-known/agent.json"): "public A2A agent card, by design",
+        ("GET", "/relay-card"): "public Emporia relay descriptor, by design (not an A2A card)",
+        ("GET", "/.well-known/agent.json"): "N10: hard-404 by design, not an A2A peer — see a2a_well_known_not_supported()",
+        ("GET", "/.well-known/agent-card.json"): "N10: hard-404 by design, not an A2A peer — see a2a_well_known_not_supported()",
         ("GET", "/ui-config"): "dashboard bootstrap config, read before any auth exists",
         ("POST", "/dashboard/challenge"): "bootstrap nonce issuance, no credential exists yet",
         ("GET", "/dashboard/poll"): "bearer-secret model: gated by an unguessable challenge_id, not caller identity",

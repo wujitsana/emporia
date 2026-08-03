@@ -231,29 +231,39 @@ def verify_handshake_proof(challenge_frame: dict[str, Any], signature_hex: str) 
 
 
 # ============================================================================
-# Agent Card (A2A /.well-known/agent.json convention)
+# Relay descriptor — Emporia's own document, NOT an A2A Agent Card. It does not
+# live at A2A's reserved discovery path (/.well-known/agent[-card].json — see
+# relay_server.py's a2a_well_known_not_supported()) and does not validate
+# against the A2A AgentCard schema (no `skills`, no `supportedInterfaces`, no
+# JSON-RPC endpoint behind it). Served at GET /relay-card.
 # ============================================================================
 
-def build_agent_card(
+def build_relay_descriptor(
     agent_id: str,
     base_url: str,
+    public_key_hex: str,
+    display_name: str | None = None,
     capabilities: list[str] | None = None,
-    profile_id: str | None = None,
 ) -> dict[str, Any]:
-    """Build an A2A-compatible Agent Card with Ed25519 public key."""
-    pub_hex = get_public_key_hex(profile_id or agent_id)
+    """Build Emporia's relay descriptor: the owner agent's identity, capability
+    list, and endpoint map, as served at GET /relay-card."""
+    base = base_url.rstrip("/")
     return {
         "version": "1.0",
         "agent_id": agent_id,
-        "base_url": base_url.rstrip("/"),
-        "publicKey": pub_hex,
+        "display_name": display_name or agent_id,
+        "base_url": base,
+        "publicKey": public_key_hex,
         "publicKeyEncoding": "ed25519-raw-hex",
         "capabilities": capabilities or [],
         "endpoints": {
-            "listings": f"{base_url.rstrip('/')}/listings",
-            "sessions": f"{base_url.rstrip('/')}/sessions",
-            "messages": f"{base_url.rstrip('/')}/messages",
-            "lobby": f"{base_url.rstrip('/')}/gaming/lobby",
+            "listings": f"{base}/listings",
+            "sessions": f"{base}/sessions",
+            "messages": f"{base}/messages",
+            "dm": f"{base}/dm",
+            "lobby": f"{base}/gaming/lobby",
+            "rooms": f"{base}/rooms",
+            "agoras": f"{base}/agoras/topics",
         },
     }
 

@@ -96,6 +96,7 @@ from emporia.identity import (
     load_federation_peer_pubkeys,
     save_federation_peer_pubkeys,
     load_or_generate_relay_jwt_secret,
+    build_relay_descriptor,
 )
 from emporia.module_sdk import (
     MODULE_REGISTRY,
@@ -1773,19 +1774,23 @@ async def safety_stats():
     }
 
 
-@app.get("/.well-known/agent.json")
-async def agent_card():
-    """Serve the owner agent's A2A card when EMPORIA_AGENT_ID is set.
+@app.get("/relay-card")
+async def relay_card():
+    """Serve the owner agent's relay descriptor when EMPORIA_AGENT_ID is set.
 
     The relay itself is not an agent. When running locally under an owning agent
-    (EMPORIA_AGENT_ID=hackathon_hermes) the card advertises that agent so
+    (EMPORIA_AGENT_ID=hackathon_hermes) the descriptor advertises that agent so
     peers can discover its pubkey and capabilities. In relay-only deployments
     (no env var) this endpoint returns 404 — federation peers use /health instead.
+
+    This is Emporia's own document, not an A2A Agent Card — it does not live at
+    A2A's reserved discovery path and does not validate against the A2A schema.
+    See ARCHITECTURE.md's Identity model section.
     """
     owner = _relay_operator_id()
     if not owner:
         raise HTTPException(404, "Relay-only mode: no owner agent configured "
-                            "(set EMPORIA_AGENT_ID to expose an agent card)")
+                            "(set EMPORIA_AGENT_ID to expose a relay descriptor)")
     with DB_LOCK, get_db() as conn:
         row = conn.execute(
             "SELECT public_key_hex, display_name FROM authorized_agents WHERE agent_id=?",
@@ -1800,25 +1805,31 @@ async def agent_card():
         "emporia:federation:v1",
         *MODULE_REGISTRY.keys(),
     ]
-    return {
-        "version": "1.0",
-        "agent_id": owner,
-        "display_name": row["display_name"] or owner,
-        "base_url": RELAY_BASE_URL,
-        "publicKey": row["public_key_hex"],
-        "publicKeyEncoding": "ed25519-raw-hex",
-        "capabilities": capabilities,
-        "endpoints": {
-            "listings": f"{RELAY_BASE_URL}/listings",
-            "sessions": f"{RELAY_BASE_URL}/sessions",
-            "inbox": f"{RELAY_BASE_URL}/inbox",
-            "dm": f"{RELAY_BASE_URL}/dm",
-            "lobby": f"{RELAY_BASE_URL}/gaming/lobby",
-            "rooms": f"{RELAY_BASE_URL}/rooms",
-            "agoras": f"{RELAY_BASE_URL}/agoras/topics",
-            "payments": f"{RELAY_BASE_URL}/payments",
-        },
-    }
+    return build_relay_descriptor(
+        agent_id=owner,
+        base_url=RELAY_BASE_URL,
+        public_key_hex=row["public_key_hex"],
+        display_name=row["display_name"] or owner,
+        capabilities=capabilities,
+    )
+
+
+@app.get("/.well-known/agent.json")
+@app.get("/.well-known/agent-card.json")
+async def a2a_well_known_not_supported():
+    """Emporia does not speak A2A. These are A2A's reserved discovery paths
+
+    (v0.2 legacy and v1.0 canonical respectively) — answering them with a
+    non-conformant document is worse than not answering at all, since an A2A
+    client's discovery fallback (agent-card.json -> agent.json) would accept
+    the 200 at face value instead of correctly concluding "not an A2A peer".
+    See /relay-card for Emporia's own (non-A2A) relay descriptor.
+    """
+    raise HTTPException(
+        404,
+        "Not an A2A agent. Emporia's relay descriptor is at /relay-card "
+        "(not an A2A Agent Card — see ARCHITECTURE.md's Identity model section).",
+    )
 
 
 @app.get("/ui-config")
