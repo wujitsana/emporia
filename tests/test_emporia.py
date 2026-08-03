@@ -3353,6 +3353,24 @@ def test_migrate_settlements_adds_and_backfills_payer_id():
         ).fetchone()
         assert room_row["payer_id"] == "legacy_payer", \
             "a pre-existing room settlement must be backfilled from its payments row"
+
+        # N8 review R3: a second call on an already-migrated DB must do no per-row
+        # work at all — the backfill loop belongs inside the same one-time guard as
+        # the ALTER TABLE, not run unconditionally on every relay startup forever
+        # (session settlements keep payer_id NULL by design, so the old
+        # unconditional `WHERE payer_id IS NULL` scan never emptied out and
+        # re-scanned every session settlement ever written, every startup).
+        # set_trace_callback observes every SQL statement sqlite3 actually runs —
+        # a more direct assertion than re-checking the (unchanged) end state.
+        executed_sql: list[str] = []
+        conn.set_trace_callback(lambda sql: executed_sql.append(sql))
+        _migrate_settlements(conn)
+        conn.set_trace_callback(None)
+        assert not any("payer_id IS NULL" in s for s in executed_sql), \
+            f"a second _migrate_settlements() call on an already-migrated DB re-ran " \
+            f"the backfill scan — it must only run once, inside the ALTER TABLE " \
+            f"guard (N8 review R3). Statements run: {executed_sql}"
+
         conn.close()
 
 

@@ -770,31 +770,45 @@ def _migrate_settlements(conn: Any) -> None:
     row in `sessions` at all (ruling out the common case of a 1-payer, 2-party
     session too). Ambiguous or already-null-PI rows are left NULL, matching the
     reads' own fallback to session-participant visibility.
+
+    N8 review R3: the backfill loop below used to run unconditionally on every
+    call, not just the one that adds the column — but a session's aggregate row
+    legitimately keeps payer_id NULL forever, so `WHERE payer_id IS NULL` never
+    empties out, and every relay startup re-scanned every session settlement ever
+    written (JSON parse + a `sessions` lookup per row) only to change nothing. Now
+    it runs exactly once, inside the same guard as the ALTER TABLE. Tradeoff: a
+    crash mid-backfill leaves some room/Agora rows with payer_id still NULL, with
+    no retry on the next startup (the guard sees the column already exists). This
+    is acceptable — unlike a botched schema change, a row stuck at NULL degrades
+    safely to the existing participants-set fallback (_caller_owns_settlement_row)
+    rather than becoming unreadable or misattributed. A real migration-version
+    table would make this resumable instead of best-effort — deferred, no such
+    table exists in this codebase today.
     """
     settlement_cols = {r[1] for r in conn.execute("PRAGMA table_info(settlements)").fetchall()}
     if "payer_id" not in settlement_cols:
         conn.execute("ALTER TABLE settlements ADD COLUMN payer_id TEXT")
-    rows = conn.execute(
-        "SELECT settlement_id, session_id, payment_intent_ids FROM settlements "
-        "WHERE payer_id IS NULL"
-    ).fetchall()
-    for row in rows:
-        pi_ids = json.loads(row["payment_intent_ids"] or "[]")
-        if len(pi_ids) != 1:
-            continue
-        is_session = conn.execute(
-            "SELECT 1 FROM sessions WHERE session_id = ?", (row["session_id"],)
-        ).fetchone()
-        if is_session:
-            continue
-        payer = conn.execute(
-            "SELECT agent_id FROM payments WHERE payment_intent_id = ?", (pi_ids[0],)
-        ).fetchone()
-        if payer:
-            conn.execute(
-                "UPDATE settlements SET payer_id = ? WHERE settlement_id = ?",
-                (payer["agent_id"], row["settlement_id"]),
-            )
+        rows = conn.execute(
+            "SELECT settlement_id, session_id, payment_intent_ids FROM settlements "
+            "WHERE payer_id IS NULL"
+        ).fetchall()
+        for row in rows:
+            pi_ids = json.loads(row["payment_intent_ids"] or "[]")
+            if len(pi_ids) != 1:
+                continue
+            is_session = conn.execute(
+                "SELECT 1 FROM sessions WHERE session_id = ?", (row["session_id"],)
+            ).fetchone()
+            if is_session:
+                continue
+            payer = conn.execute(
+                "SELECT agent_id FROM payments WHERE payment_intent_id = ?", (pi_ids[0],)
+            ).fetchone()
+            if payer:
+                conn.execute(
+                    "UPDATE settlements SET payer_id = ? WHERE settlement_id = ?",
+                    (payer["agent_id"], row["settlement_id"]),
+                )
 
 
 def _migrate_authorized_agents(conn: Any) -> None:
