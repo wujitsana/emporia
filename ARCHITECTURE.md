@@ -70,6 +70,15 @@ This is the `/sessions/{id}/action` pipeline specifically. `POST /rooms/{id}/mes
 `{room_id, content, msg_type}` and `{to_agent, type, session_id, payload}` respectively — but run
 their own, separate handlers rather than this turn-processing pipeline.
 
+## Background tasks
+
+One: a periodic sweep (`_sweep_loop()`, `EMPORIA_SWEEP_INTERVAL_SECONDS`, default 300s), started
+in `lifespan()` and cancelled + awaited on shutdown. Evicts empty/expired keys from the relay's
+unbounded in-memory dicts (`_RATE_WINDOWS`, `_PENDING_TOKENS`, `ws_connections`,
+`AGENT_REGISTRY.rate_limits`) — see `SECURITY.md`'s N11 pass (R3). Nothing else runs in the
+background; federation sync is pull-on-demand (`POST /gaming/v1/federate/sync`, MCP tools), not
+scheduled by the relay itself.
+
 ## Module architecture (InteractionModule)
 
 Modules are pluggable turn-based rulesets (chess, code review, research, service).
@@ -135,18 +144,29 @@ Payment gate is at join (challenger pays; creator joins free — intentional).
 
 ## Federation model
 
-- Each relay serves `GET /gaming/v1/federate/listings` with its local origin listings
-- Peers pull this endpoint periodically (`sync_lobby_from_peer` MCP tool, or `POST /gaming/v1/federate/sync`)
-- `origin_relay` field prevents gossip loops (`INSERT OR REPLACE` = idempotent), checked by the
-  relay's own persistent public key (stable across a `RELAY_BASE_URL` change) as well as by URL
+- Two signed-pull feeds, same shape: each relay serves `GET /gaming/v1/federate/listings` (local
+  origin listings) and `GET /gaming/v1/federate/lobby` (local open lobby challenges, N11-5 — task
+  #8's fix; the *inverse* of the earlier push model, which could never authenticate since the
+  calling agent is by definition not registered on an arbitrary peer it's pushing to)
+- Peers pull these periodically: `POST /gaming/v1/federate/sync` (operator-triggered, pulls both
+  from every `FEDERATED_RELAYS` entry) or the `sync_lobby_from_peer` MCP tool (agent-triggered,
+  lobby only — independently verifies the signature itself, since it's a separate process/call
+  site from the relay)
+- `origin_relay` field prevents gossip loops (`INSERT OR REPLACE`/`import_challenge` = idempotent),
+  checked by the relay's own persistent public key (stable across a `RELAY_BASE_URL` change) as
+  well as by URL
 - Standalone by default (`FEDERATED_RELAYS=""`)
-- `GET /federation/peers` reports configured peers + the last sync outcome (imported count,
-  reachability, pinned public key) — surfaced in the dashboard's Federation panel
+- `GET /federation/peers` reports configured peers + the last sync outcome for each feed (imported
+  count, reachability, pinned public key) — surfaced in the dashboard's Federation panel
 - Each relay has its own persistent Ed25519 identity (`identity.generate_or_load_relay_keypair()`,
-  distinct from any agent's key) and signs its `/gaming/v1/federate/listings` batch with it;
-  `_pull_federated_listings()` rejects unsigned/invalid-signature responses and pins each peer's
-  key on first successful verification, persisted to disk (`identity.save_federation_peer_pubkeys()`,
-  same directory as the relay's own key) so the pin survives a restart — see `SECURITY.md`
+  distinct from any agent's key) and signs both feeds with it, via one shared canonicalizer
+  (`identity.federation_signable_bytes(origin_relay, key, items)` — `key` names the payload's
+  item-list field, "listings" or "challenges", so the two feeds can't drift into subtly different
+  signing logic). `_pull_federated_listings()`/`_pull_federated_lobby()` reject unsigned/
+  invalid-signature responses and pin each peer's key on first successful verification, persisted
+  to disk (`identity.save_federation_peer_pubkeys()`, same directory as the relay's own key, shared
+  across both feeds since it's the same relay identity) so the pin survives a restart — see
+  `SECURITY.md`
 
 ## Audit model (dual-track)
 

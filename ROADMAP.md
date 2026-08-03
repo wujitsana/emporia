@@ -28,9 +28,10 @@ issue a token at all, an unauthenticated SQL injection, and that the previous pa
 had broken paid-session participation via MCP/the SDK; all fixed. The `viewer_id`/`agent_id`-as-proof
 pattern (rooms, agoras, DMs — originally scoped as "five endpoints," actually ten plus one
 destructive DELETE) is also now fixed. See `SECURITY.md`'s "Fixed post-hackathon" table for all of
-the above. Remaining: guardrails' regex-bypass limitation, and the second unsigned peer-gossip path
-(`GET /gaming/lobby`, task tracked below under Architecture cleanup). See `SECURITY.md` for
-severity and fix direction on each.
+the above. An N11 pass then closed the second unsigned peer-gossip path (task #8 — lobby gossip
+inverted from push to signed pull, same model `GET /gaming/v1/federate/listings` already used; see
+`SECURITY.md`'s N11 section). Remaining: guardrails' regex-bypass limitation. See `SECURITY.md` for
+severity and fix direction.
 
 **`agent_id` namespace has no stable-id/ownership model beyond charset + collision hardening.**
 N2-7 (post-hackathon N2 pass) closed the cheap part: registration now NFKC-normalizes and
@@ -118,18 +119,26 @@ happens.
 
 **Two independent `GameRegistry` instances** (MCP-local SQLite vs. relay) reconciled only by
 manual `export_challenge`/`import_challenge` MCP calls — no automatic sync, no conflict
-resolution if two nodes mint the same challenge ID. The MCP `sync_lobby_from_peer` gossip path
-into this local registry also has no signature verification — same class of gap as the
-`/gaming/v1/federate/listings` finding fixed this pass, unfixed here; see `SECURITY.md` (High).
+resolution if two nodes mint the same challenge ID. **Done (N11-5, task #8): the MCP
+`sync_lobby_from_peer` gossip path into this local registry now verifies a signed batch** from
+`GET /gaming/v1/federate/lobby` before importing — same signature/TOFU-pin model
+`/gaming/v1/federate/listings` already used, reusing one shared canonicalizer
+(`identity.federation_signable_bytes`) rather than growing a second copy. `publish_challenge_to_peer`
+(the push-model half, which could never authenticate) is retired in place. See `SECURITY.md`'s N11
+section. What's still open here is the automatic-sync/conflict-resolution gap itself, not the
+signing.
 - *Effort:* medium — would need either a single source of truth or a reconciliation pass.
 
-**Resource cleanup not implemented** (low risk for a demo, real for a long-running relay):
-dead WebSocket connections are only pruned on a failed send, not proactively; the per-agent
-rate-limit dict and dashboard `_PENDING_TOKENS` map never evict entries for agents/challenges that
-go idle. No cascade-delete path exists for an admin to remove a session and its
-participants/actions/payments/settlements/audit files together.
-- *Effort:* small each — periodic sweep tasks, a TTL on pending tokens, an admin-only cleanup
-  endpoint.
+**Resource cleanup — done (N11-3).** ~~dead WebSocket connections are only pruned on a failed
+send, not proactively~~ — that claim was stale: every WS handler already discards its own socket
+via `finally` on disconnect. The real gap was that `ws_connections`, `_RATE_WINDOWS`, the
+per-agent rate-limit dict, and dashboard `_PENDING_TOKENS` all left their *key* behind once its
+value emptied out or expired — one permanent entry per IP/session/agent/challenge ever seen, for
+the life of a process meant to run for months. `_sweep_expired_state()` (the relay's first
+background task, run on `EMPORIA_SWEEP_INTERVAL_SECONDS`, default 300s) now evicts all four. No
+cascade-delete path exists for an admin to remove a session and its
+participants/actions/payments/settlements/audit files together — that piece is still open.
+- *Effort:* small — an admin-only cleanup endpoint.
 
 ## Payments
 
