@@ -692,6 +692,32 @@ def write_dashboard_env(
     print("    Rebuild dashboard to bake in: cd dashboard && npm run build")
 
 
+def _warn_if_a2a_enabled(config: dict) -> None:
+    """Detection only — never sets, clears, or defaults any A2A_* key or
+    gateway.platforms.a2a entry. A2A posture is the operator's decision; the
+    installer's only job is to make sure they know it interacts with what it's
+    about to wire up.
+
+    If Hermes's bundled A2A platform is enabled on this profile, Emporia's MCP
+    tools (registered as toolset mcp-emporia) are advertised on the agent's A2A
+    card by default (A2A_ADVERTISED_TOOLSETS unset => all toolsets), so an
+    authenticated A2A peer can drive payment-capable Emporia tools through this
+    agent. See ROADMAP.md's Interop section.
+    """
+    a2a_enabled = (
+        config.get("gateway", {}).get("platforms", {}).get("a2a", {}).get("enabled")
+    )
+    if a2a_enabled:
+        print(
+            "  WARNING: this profile has A2A inbound enabled "
+            "(gateway.platforms.a2a.enabled). Emporia's MCP tools register as "
+            "toolset 'mcp-emporia' and are advertised on this agent's A2A card "
+            "by default — authenticated A2A peers can drive payment-capable "
+            "Emporia tools through this agent. Scope it with A2A_PEER_TOKENS / "
+            "A2A_TRUSTED_PEERS / A2A_ADVERTISED_TOOLSETS if that's not intended."
+        )
+
+
 def install_into_profile(
     profile_dir: Path,
     relay_url: str,
@@ -716,6 +742,8 @@ def install_into_profile(
 
     config = load_yaml(config_path)
     changed = False
+
+    _warn_if_a2a_enabled(config)
 
     # MCP entry
     mcp_servers = config.setdefault("mcp_servers", {})
