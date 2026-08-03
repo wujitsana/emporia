@@ -3406,6 +3406,55 @@ def test_settlement_reads_report_has_more(client):
         assert via_list.json()["has_more"] is True, via_list.text
 
 
+def test_settlement_agent_id_and_global_reads_report_has_more(client):
+    """N8 review R2: the ?agent_id= and unfiltered branches of list_settlements
+    were hardcoded to LIMIT 100, ignored the `limit` param N7-3 added to the
+    signature, and always reported has_more: false — N7-3 gave ?session_id= real
+    pagination and left these two on the exact defect class N6-3 existed to fix
+    (its own commit message said so, "for consistency"). Now routed through
+    _fetch_page like every other branch.
+
+    The ?agent_id= boundary is exactly checkable (payer is unique to this test, so
+    the row count is fully controlled) — mirrors N7-3's own has_more test:
+    True just below the true count, False exactly at it. The unfiltered branch is
+    operator-global and this suite shares one DB across tests (fixture names are
+    prefixed for uniqueness, not isolation), so its true row count isn't
+    controllable here — only the truncation direction (has_more True at a small
+    limit) is checked."""
+    from emporia.relay_server import record_settlement
+
+    payer = "n8hm_payer"
+    _register(client, payer)
+    for i in range(3):
+        record_settlement({
+            "session_id": f"n8hm_room_{i}", "winner_id": "n8hm_owner",
+            "outcome_type": "room_entry", "status": "settled",
+            "total_stake_cents": 100, "platform_fee_cents": 0,
+            "winner_payout_cents": 100, "platform_fee_bps": 0,
+            "payment_intent_ids": [f"pi_n8hm_{i}"], "transfer_id": None,
+            "transfer_status": "no_stripe_account", "payer_id": payer,
+        })
+
+    truncated = client.get("/payments/settlements", params={"agent_id": payer, "limit": 2},
+        headers={"x-emporia-agent-id": payer})
+    assert truncated.status_code == 200, truncated.text
+    assert len(truncated.json()["settlements"]) == 2
+    assert truncated.json()["has_more"] is True, truncated.text
+
+    exact = client.get("/payments/settlements", params={"agent_id": payer, "limit": 3},
+        headers={"x-emporia-agent-id": payer})
+    assert exact.status_code == 200, exact.text
+    assert len(exact.json()["settlements"]) == 3
+    assert exact.json()["has_more"] is False, exact.text
+
+    with patch.dict(os.environ, {"EMPORIA_AGENT_ID": payer}):
+        global_truncated = client.get("/payments/settlements", params={"limit": 1},
+            headers={"x-emporia-agent-id": payer})
+        assert global_truncated.status_code == 200, global_truncated.text
+        assert len(global_truncated.json()["settlements"]) == 1
+        assert global_truncated.json()["has_more"] is True, global_truncated.text
+
+
 @patch("emporia.payments.payout_winner", new_callable=AsyncMock)
 @patch("emporia.payments.verify_payment_intent", new_callable=AsyncMock)
 def test_settlement_co_payer_cannot_see_others_payment_intent_ids_agora(mock_verify, mock_payout, client):

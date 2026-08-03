@@ -2575,11 +2575,16 @@ async def list_settlements(
                           co-payers' rows; N7 review R1 found N6-2's own ownership filter applied
                           LIMIT to *candidates* before filtering, so a caller's own older receipt
                           could still fall off a busy shared resource — the predicate is now
-                          pushed into SQL so LIMIT applies to owned rows directly)
-      - no filter      → requires dashboard auth AND relay operator identity
+                          pushed into SQL so LIMIT applies to owned rows directly). Capped by
+                          `limit` (default 50) with `has_more` in the response (N8 review R2 —
+                          this and the unfiltered branch below were hardcoded to `LIMIT 100` and
+                          always reported `has_more: false`, reintroducing on these two branches
+                          the exact truncation-signal defect N6-3 fixed for ?session_id=)
+      - no filter      → requires dashboard auth AND relay operator identity. Same `limit`/
+                          `has_more` contract as the other two branches (N8 review R2)
 
     A caller authorized to see a resource's settlements (via ?session_id=, above) still only
-    sees `payment_intent_ids`/`transfer_id` on rows they own — see _settlement_row_dict.
+    sees `payment_intent_ids`/`transfer_id`/`payer_id` on rows they own — see _settlement_row_dict.
     """
     dashboard_id = _dashboard_agent_id(request)
     owner = _relay_operator_id()
@@ -2601,7 +2606,6 @@ async def list_settlements(
         if dashboard_id != agent_id and dashboard_id != owner:
             raise HTTPException(403, "Cannot view another agent's settlements")
 
-    has_more = False
     with DB_LOCK, get_db() as conn:
         if session_id:
             if not _settlement_resource_viewer_allowed(session_id, dashboard_id, conn):
@@ -2618,20 +2622,23 @@ async def list_settlements(
             # covers room/Agora rows, the participants subquery covers a session's
             # aggregate escrow row. LIMIT therefore bounds owned rows, not
             # candidates-before-filtering.
-            rows = conn.execute(
+            rows, has_more = _fetch_page(
+                conn,
                 "SELECT * FROM settlements WHERE payer_id = ? "
                 "OR session_id IN (SELECT session_id FROM participants WHERE agent_id = ?) "
-                "ORDER BY created_at DESC LIMIT 100",
-                (agent_id, agent_id),
-            ).fetchall()
+                "ORDER BY created_at DESC LIMIT ?",
+                (agent_id, agent_id), limit,
+            )
             settlements = [
                 {**dict(r), "payment_intent_ids": json.loads(r["payment_intent_ids"])}
                 for r in rows
             ]
         else:
-            rows = conn.execute(
-                "SELECT * FROM settlements ORDER BY created_at DESC LIMIT 100"
-            ).fetchall()
+            rows, has_more = _fetch_page(
+                conn,
+                "SELECT * FROM settlements ORDER BY created_at DESC LIMIT ?",
+                (), limit,
+            )
             settlements = [
                 {**dict(r), "payment_intent_ids": json.loads(r["payment_intent_ids"])}
                 for r in rows
