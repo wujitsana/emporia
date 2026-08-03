@@ -818,6 +818,73 @@ def test_dashboard_jwt_survives_simulated_relay_restart():
 
 
 # ============================================================================
+# Background sweep (N11-3)
+# ============================================================================
+
+def test_sweep_expired_state_removes_empty_and_expired_but_not_live_entries():
+    """N11-3 (R3): several in-memory dicts prune their contents but never drop the
+    now-empty key. The point of this test is the survival half, not just removal —
+    a sweep that clears everything would also pass a removal-only assertion."""
+    from collections import deque
+    from emporia import relay_server as rs
+
+    now = rs.time.time()
+    live_ip_key = ("1.2.3.4", "default")
+    empty_ip_key = ("5.6.7.8", "write")
+    rs._RATE_WINDOWS.clear()
+    rs._RATE_WINDOWS[live_ip_key] = deque([now])          # inside window — must survive
+    rs._RATE_WINDOWS[empty_ip_key] = deque([now - 9999])  # long past its window — must go
+
+    rs._PENDING_TOKENS.clear()
+    live_token = rs._jwt_encode({"agent_id": "a", "exp": int(now + 3600)})
+    expired_token = rs._jwt_encode({"agent_id": "b", "exp": int(now - 1)})
+    rs._PENDING_TOKENS["live_challenge"] = live_token
+    rs._PENDING_TOKENS["expired_challenge"] = expired_token
+
+    class _FakeWS:
+        pass
+
+    rs.ws_connections.clear()
+    rs.ws_connections["session:live"] = {_FakeWS()}
+    rs.ws_connections["session:empty"] = set()
+
+    rs.AGENT_REGISTRY.rate_limits.clear()
+    rs.AGENT_REGISTRY.rate_limits["live_agent"] = [now]
+    rs.AGENT_REGISTRY.rate_limits["idle_agent"] = [now - 9999]
+
+    removed = rs._sweep_expired_state()
+
+    assert removed == {
+        "rate_windows": 1, "pending_tokens": 1, "ws_connections": 1, "agent_rate_limits": 1,
+    }
+    # Removed:
+    assert empty_ip_key not in rs._RATE_WINDOWS
+    assert "expired_challenge" not in rs._PENDING_TOKENS
+    assert "session:empty" not in rs.ws_connections
+    assert "idle_agent" not in rs.AGENT_REGISTRY.rate_limits
+    # Survived — this is the half a removal-only test would miss:
+    assert live_ip_key in rs._RATE_WINDOWS
+    assert "live_challenge" in rs._PENDING_TOKENS
+    assert "session:live" in rs.ws_connections
+    assert "live_agent" in rs.AGENT_REGISTRY.rate_limits
+
+
+def test_sweep_task_starts_and_cancels_cleanly_on_shutdown():
+    """N11-3 (R3): lifespan() starts the sweep as a background task and must cancel +
+    await it on shutdown — an uncancelled task is exactly what this item exists to
+    prevent, and a shutdown that hangs on it would be the failure mode."""
+    from emporia import relay_server as rs
+
+    assert rs._SWEEP_TASK is None or rs._SWEEP_TASK.done()
+    with TestClient(app) as tc:
+        tc.get("/health")
+        assert rs._SWEEP_TASK is not None
+        assert not rs._SWEEP_TASK.done()
+    assert rs._SWEEP_TASK.done()
+    assert rs._SWEEP_TASK.cancelled()
+
+
+# ============================================================================
 # Events
 # ============================================================================
 

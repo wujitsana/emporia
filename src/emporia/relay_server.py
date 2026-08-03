@@ -26,6 +26,7 @@ Inbound processing order (hard contract):
 
 from __future__ import annotations
 
+import asyncio
 import json
 import os
 import re
@@ -36,7 +37,7 @@ import time
 import unicodedata
 import uuid
 from collections import defaultdict
-from contextlib import asynccontextmanager
+from contextlib import asynccontextmanager, suppress
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
@@ -1529,7 +1530,14 @@ async def lifespan(app: FastAPI):
         import logging
 
         logging.getLogger("emporia.relay").warning("%s", notice)
-    yield
+    global _SWEEP_TASK
+    _SWEEP_TASK = asyncio.create_task(_sweep_loop())
+    try:
+        yield
+    finally:
+        _SWEEP_TASK.cancel()
+        with suppress(asyncio.CancelledError):
+            await _SWEEP_TASK
 
 
 app = FastAPI(title="Emporia Relay", version="0.1.0", lifespan=lifespan)
@@ -1590,6 +1598,75 @@ async def rate_limit(request: Request, call_next):
         )
     q.append(now)
     return await call_next(request)
+
+
+# ============================================================================
+# Background sweep — the relay's only background task (N11-3)
+# ============================================================================
+# Several in-memory dicts prune their *contents* on natural access paths (a deque
+# drains on its own bucket's next request; a WS set discards its own entry on
+# disconnect via `finally`) but never drop the now-empty *key* — one permanent
+# key per IP/session/agent/challenge ever seen, for the life of a process meant
+# to run for months unattended. This sweep evicts those keys on an interval.
+
+_SWEEP_INTERVAL_SECONDS = float(os.getenv("EMPORIA_SWEEP_INTERVAL_SECONDS", "300"))
+_SWEEP_TASK: asyncio.Task | None = None  # set/cancelled in lifespan(); exposed for tests/ops
+
+
+def _sweep_expired_state() -> dict[str, int]:
+    """Evict empty/expired keys from every unbounded in-memory dict. Pure and
+    synchronous so it can be tested directly without running the async loop;
+    returns counts removed per dict for that purpose."""
+    now = time.time()
+    removed = {"rate_windows": 0, "pending_tokens": 0, "ws_connections": 0, "agent_rate_limits": 0}
+
+    # _RATE_WINDOWS: drain each key's deque against its own bucket's window (same logic
+    # the middleware applies per-request), then drop the key if nothing survived — a key
+    # for an IP that stopped sending requests is never touched by the middleware again.
+    for key in list(_RATE_WINDOWS.keys()):
+        _, bucket = key
+        _, window = _RATE_LIMITS[bucket]
+        q = _RATE_WINDOWS[key]
+        while q and q[0] < now - window:
+            q.popleft()
+        if not q:
+            del _RATE_WINDOWS[key]
+            removed["rate_windows"] += 1
+
+    # _PENDING_TOKENS: a JWT nobody polled for stays resident (and valid) past its own
+    # exp otherwise. _jwt_decode() already verifies signature + exp — reuse it rather
+    # than a second, unverified expiry check.
+    for challenge_id in [c for c, tok in _PENDING_TOKENS.items() if _jwt_decode(tok) is None]:
+        _PENDING_TOKENS.pop(challenge_id, None)
+        removed["pending_tokens"] += 1
+
+    # ws_connections: sockets are already discarded from their set on disconnect
+    # (every WS handler's `finally: ws_connections[key].discard(ws)`); this only drops
+    # the key once its set is empty.
+    for key in [k for k, conns in ws_connections.items() if not conns]:
+        del ws_connections[key]
+        removed["ws_connections"] += 1
+
+    # AGENT_REGISTRY.rate_limits: same shape as _RATE_WINDOWS above, but only pruned
+    # (via check_rate_limit) when that specific agent makes another call.
+    minute_ago = now - 60
+    for agent_id in list(AGENT_REGISTRY.rate_limits.keys()):
+        alive = [t for t in AGENT_REGISTRY.rate_limits[agent_id] if t > minute_ago]
+        if alive:
+            AGENT_REGISTRY.rate_limits[agent_id] = alive
+        else:
+            del AGENT_REGISTRY.rate_limits[agent_id]
+            removed["agent_rate_limits"] += 1
+
+    return removed
+
+
+async def _sweep_loop() -> None:
+    """Runs _sweep_expired_state() on EMPORIA_SWEEP_INTERVAL_SECONDS (default 300s).
+    Started in lifespan() below; cancelled there on shutdown."""
+    while True:
+        await asyncio.sleep(_SWEEP_INTERVAL_SECONDS)
+        _sweep_expired_state()
 
 
 # ============================================================================
