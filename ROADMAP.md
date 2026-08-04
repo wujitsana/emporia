@@ -131,7 +131,14 @@ a batch reusing an existing id under a different creator or a different `origin_
 peer it came from is rejected, closing the gap N11-5's signing alone had reopened (see
 `SECURITY.md`'s N12 pass). What's still open here is genuine automatic-sync/conflict-resolution —
 no merge logic if two relays *both* have legitimate standing to update the same challenge and
-diverge — not signing or ownership, which are now enforced.
+diverge — not signing or ownership, which are now enforced. **Narrower again after N14 (N14-1/
+N14-2): a stored row now always re-verifies.** Through N13, `import_challenge()` verified the raw
+incoming payload but stored a separately-normalized record, so a card with a legacy `payment_mode`
+or a missing `currency`/`created_at` could pass verification once, at import, and then never verify
+again — the export→import chain the module exists for was conditionally broken for exactly the
+cards most likely to hit it. Content-address verification now runs against the record that will
+actually be stored, and the method returns what `_upsert` actually persisted rather than what it
+constructed. See `SECURITY.md`'s N14 pass.
 - *Effort:* medium — would need either a single source of truth or a reconciliation pass.
 
 **Resource cleanup — done (N11-3).** ~~dead WebSocket connections are only pruned on a failed
@@ -146,6 +153,23 @@ participants/actions/payments/settlements/audit files together — that piece is
 - *Effort:* small — an admin-only cleanup endpoint.
 
 ## Payments
+
+**P1 entry point: the x402/MPP payments re-platform is the next block, now that N14 has closed the
+challenge-import/discovery hardening track (SECURITY.md's N2 through N14 passes).** Its scope per
+the user, ahead of P1's own review-and-plan round (do not start from this entry — confirm the x402
+spec against live docs at implementation time, not from memory, per N2):
+- **Survey payment rails broadly, not just Stripe** — evaluate x402 alongside other options before
+  committing to one implementation.
+- **`payment_mode="x402"` must mean the actual x402 protocol**, not be an alias for `"stripe_link"`.
+  `game_registry.py`'s `_normalize_payment_mode()` currently maps a legacy `"x402"` string straight
+  to `"stripe_link"` — that conflates a protocol that isn't built with the one that is, and the user
+  has said no backwards-compat shim is needed for the old alias; it can simply be removed. `PaymentMode`
+  (currently `"free" | "stripe_link" | "mpp"`) will need reshaping once x402 is real.
+- **Stripe Connect stays available but should not be the default/main payment mode** going forward —
+  revisit `_normalize_payment_mode()`'s no-mode-given default, which currently falls back to
+  `"stripe_link"` for any staked challenge.
+- The three tracked payment-core gaps below (payer-binding, settlement idempotency, the
+  `_KNOWN_VIOLATIONS` MPP routes) are P1-scoped work, not standalone patches.
 
 **Stripe Connect transfers work end-to-end in test mode; live mode has no onboarding path.**
 Correcting an earlier version of this entry that said transfers "are not wired up" — they are:

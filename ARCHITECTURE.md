@@ -193,7 +193,14 @@ Payment gate is at join (challenger pays; creator joins free — intentional).
   sent a batch*, not *what they were allowed to say about a row they didn't create*, so a signed
   peer could still rewrite or cancel a locally-created challenge by reusing its id until N12-3).
   Guardrails-scanned per item too (N12-6), same as every other write path — a valid signature
-  proves who sent a batch, not that its content is safe.
+  proves who sent a batch, not that its content is safe. **A stored challenge row always
+  re-verifies — invariant, not aspiration (N14-1).** `challenge_address()` is the one definition of
+  the content address, on the record that will actually be *stored*, shared by `create_challenge()`
+  (mint) and `import_challenge()` (verify) so they can't diverge; a non-canonical card — legacy
+  `payment_mode="x402"`, or one omitting `currency`/`created_at` — fails import outright with a
+  content-mismatch error rather than being silently normalized into a row whose own content no
+  longer matches its id (which is what happened through N13: verification hashed the raw payload,
+  storage wrote a normalized one, so a card verified once, at import, and never again).
 - Standalone by default (`FEDERATED_RELAYS=""`)
 - `GET /federation/peers` reports configured peers + the last sync outcome for each feed (imported
   count, reachability, pinned public key) — surfaced in the dashboard's Federation panel
