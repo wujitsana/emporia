@@ -56,6 +56,33 @@ def challenge_id_for(payload: Mapping[str, Any]) -> str:
     return f"emporia_chal_{digest[:24]}"
 
 
+def _recompute_challenge_id(data: Mapping[str, Any]) -> str:
+    """Re-derive challenge_id_for()'s hash from an imported/exported challenge dict
+    (N12-2) — the module docstring above has always promised importers "verify the
+    challenge_id by recomputing the hash"; import_challenge() never actually did.
+
+    Must reconstruct exactly the payload create_challenge() hashed: that function
+    hashes `metadata` *without* the nonce, then merges the nonce into the
+    stored/exported metadata afterward — so the nonce has to be split back out here
+    before re-hashing, or every genuine export would fail its own verification.
+    """
+    metadata = dict(data.get("metadata") or {})
+    nonce = metadata.pop("nonce", None)
+    payload = {
+        "game_type": data.get("game_type"),
+        "creator_agent_id": data.get("creator_agent_id"),
+        "creator_gateway_url": data.get("creator_gateway_url"),
+        "payment_mode": data.get("payment_mode"),
+        "stake_amount": str(data.get("stake_amount") or "0"),
+        "currency": data.get("currency"),
+        "created_at": data.get("created_at"),
+        "expires_at": data.get("expires_at"),
+        "metadata": metadata,
+        "nonce": nonce,
+    }
+    return challenge_id_for(payload)
+
+
 def _utc_now() -> str:
     return datetime.now(UTC).isoformat()
 
@@ -212,11 +239,20 @@ class GameRegistry:
                 ),
             )
 
-    def import_challenge(self, challenge: Mapping[str, Any] | str) -> GameChallenge:
+    def import_challenge(
+        self, challenge: Mapping[str, Any] | str, *, verify_id: bool = True
+    ) -> GameChallenge:
         data = json.loads(challenge) if isinstance(challenge, str) else dict(challenge)
         supplied_id = str(data.get("challenge_id") or "")
         if not supplied_id:
             raise ValueError("challenge must include challenge_id")
+        if verify_id:
+            expected_id = _recompute_challenge_id(data)
+            if expected_id != supplied_id:
+                raise ValueError(
+                    f"challenge_id does not match its content — expected {expected_id}, "
+                    f"got {supplied_id} (the batch may be tampered or corrupt)"
+                )
         imported = GameChallenge(
             challenge_id=supplied_id,
             game_type=str(data["game_type"]),

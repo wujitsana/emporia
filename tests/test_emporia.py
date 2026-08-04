@@ -375,14 +375,29 @@ def test_seeded_demo_agent_ids_still_validate(client):
 # N3-2 — POST /gaming/lobby authentication + ownership check (R1)
 # ============================================================================
 
-def _lobby_payload(challenge_id: str, creator_agent_id: str) -> dict:
-    return {
-        "challenge_id": challenge_id,
+def _lobby_payload(creator_agent_id: str, *, challenge_id: str | None = None) -> dict:
+    """N12-2: challenge_id must be a genuine content address (import_challenge() now
+    verifies it), so this always derives a real one from the payload unless the caller
+    explicitly overrides it — e.g. to simulate a forged/hijacked id that doesn't match
+    its own content. Fields here must match GamingLobbyChallengeRequest's own defaults
+    exactly (stake_amount/currency/etc.) since the server hashes req.model_dump(),
+    which fills those in even when the caller omits them."""
+    from emporia.engine.game_registry import _recompute_challenge_id
+
+    payload = {
         "game_type": "emporia:chess:v1",
         "creator_agent_id": creator_agent_id,
         "creator_gateway_url": "https://example.test/gw",
         "payment_mode": "free",
+        "stake_amount": "0",
+        "currency": "USD",
+        "status": "open",
+        "expires_at": None,
+        "origin_relay": None,
+        "metadata": {},
     }
+    payload["challenge_id"] = challenge_id or _recompute_challenge_id(payload)
+    return payload
 
 
 def test_gaming_lobby_post_requires_authentication(prod_client):
@@ -392,11 +407,11 @@ def test_gaming_lobby_post_requires_authentication(prod_client):
     200."""
     _register_keyed(prod_client, "lobby_real_agent")
 
-    r = prod_client.post("/gaming/lobby", json=_lobby_payload("chal_n32_a", "some_victim"))
+    r = prod_client.post("/gaming/lobby", json=_lobby_payload("some_victim"))
     assert r.status_code == 401
 
     r = prod_client.post(
-        "/gaming/lobby", json=_lobby_payload("chal_n32_b", "lobby_real_agent"),
+        "/gaming/lobby", json=_lobby_payload("lobby_real_agent"),
         headers=bearer_for(prod_client, "lobby_real_agent"),
     )
     assert r.status_code == 200
@@ -412,8 +427,10 @@ def test_gaming_lobby_post_rejects_challenge_id_hijack(prod_client):
     _register_keyed(prod_client, "lobby_owner")
     _register_keyed(prod_client, "lobby_attacker")
 
+    owner_payload = _lobby_payload("lobby_owner")
+    hijacked_id = owner_payload["challenge_id"]
     r = prod_client.post(
-        "/gaming/lobby", json=_lobby_payload("chal_n32_hijack", "lobby_owner"),
+        "/gaming/lobby", json=owner_payload,
         headers=bearer_for(prod_client, "lobby_owner"),
     )
     assert r.status_code == 200
@@ -421,13 +438,13 @@ def test_gaming_lobby_post_rejects_challenge_id_hijack(prod_client):
     # A different registered agent tries to overwrite the same challenge_id, claiming it
     # as their own — rejected, even though they're a genuine authenticated caller now.
     r = prod_client.post(
-        "/gaming/lobby", json=_lobby_payload("chal_n32_hijack", "lobby_attacker"),
+        "/gaming/lobby", json=_lobby_payload("lobby_attacker", challenge_id=hijacked_id),
         headers=bearer_for(prod_client, "lobby_attacker"),
     )
     assert r.status_code == 403
 
     # The original owner updating their own challenge (e.g. status change) still works.
-    payload = _lobby_payload("chal_n32_hijack", "lobby_owner")
+    payload = _lobby_payload("lobby_owner", challenge_id=hijacked_id)
     payload["status"] = "cancelled"
     r = prod_client.post(
         "/gaming/lobby", json=payload,
@@ -435,6 +452,59 @@ def test_gaming_lobby_post_rejects_challenge_id_hijack(prod_client):
     )
     assert r.status_code == 200
     assert r.json()["challenge"]["status"] == "cancelled"
+
+
+def test_import_challenge_verifies_genuine_round_trip():
+    """N12-2 (R4): game_registry.py's module docstring has always promised importers
+    "verify the challenge_id by recomputing the hash" — import_challenge() never
+    actually did. This proves the round trip works before anything else leans on the
+    check: create_challenge() -> to_dict() -> import_challenge() on a *second* registry
+    (simulating a fresh receiving relay) must verify and succeed."""
+    import tempfile
+    from emporia.engine.game_registry import GameRegistry
+
+    with tempfile.TemporaryDirectory() as tmp:
+        src = GameRegistry(Path(tmp) / "src.sqlite3")
+        dst = GameRegistry(Path(tmp) / "dst.sqlite3")
+        created = src.create_challenge(
+            game_type="emporia:chess:v1",
+            creator_agent_id="roundtrip_agent",
+            creator_gateway_url="https://roundtrip.example/gw",
+            payment_mode="free",
+            metadata={"note": "round trip"},
+        )
+        exported = created.to_dict()
+        imported = dst.import_challenge(exported)
+        assert imported.challenge_id == created.challenge_id
+        assert dst.get_challenge(created.challenge_id) is not None
+
+
+def test_import_challenge_rejects_tampered_content():
+    """N12-2 (R4): mutating any hashed field of an exported challenge after the fact
+    must be caught — this is exactly what made R2(a)/R3's tampering undetectable
+    before the fix (the address was decorative)."""
+    import tempfile
+    from emporia.engine.game_registry import GameRegistry
+
+    with tempfile.TemporaryDirectory() as tmp:
+        src = GameRegistry(Path(tmp) / "src2.sqlite3")
+        dst = GameRegistry(Path(tmp) / "dst2.sqlite3")
+        created = src.create_challenge(
+            game_type="emporia:chess:v1",
+            creator_agent_id="tamper_agent",
+            creator_gateway_url="https://tamper.example/gw",
+            payment_mode="free",
+        )
+        tampered = created.to_dict()
+        tampered["creator_agent_id"] = "attacker_agent"  # hashed field, mutated post-export
+
+        with pytest.raises(ValueError, match="challenge_id does not match"):
+            dst.import_challenge(tampered)
+
+        # verify_id=False remains available for callers that intentionally accept
+        # unverified content (none currently do; documents the escape hatch exists).
+        imported = dst.import_challenge(tampered, verify_id=False)
+        assert imported.creator_agent_id == "attacker_agent"
 
 
 def _signed_challenge(client, profile_id: str) -> dict:
@@ -773,14 +843,22 @@ async def test_pull_federated_listings_rejects_key_rotation_without_repin(mock_g
     assert _FEDERATION_PEER_PUBKEYS[peer_url] == pub1  # unchanged — still pinned to the original
 
 
-def _sample_challenge(challenge_id: str) -> dict:
-    return {
-        "challenge_id": challenge_id, "game_type": "emporia:chess:v1",
+def _sample_challenge(tag: str) -> dict:
+    """N12-2: challenge_id must be a genuine content address (import_challenge() now
+    verifies it). `tag` only needs to make separate calls produce distinct challenges —
+    it's folded into metadata (as the pre-nonce-split "nonce" field _recompute_challenge_id
+    expects) rather than used as the literal challenge_id."""
+    from emporia.engine.game_registry import _recompute_challenge_id
+
+    data = {
+        "game_type": "emporia:chess:v1",
         "creator_agent_id": "peer_agent", "creator_gateway_url": "https://peer.example/gw",
         "payment_mode": "free", "stake_amount": "0", "currency": "USD", "status": "open",
         "created_at": "2026-01-01T00:00:00+00:00", "expires_at": None,
-        "origin_relay": "https://peer.example/relay", "metadata": {},
+        "origin_relay": "https://peer.example/relay", "metadata": {"nonce": f"sample-{tag}"},
     }
+    data["challenge_id"] = _recompute_challenge_id(data)
+    return data
 
 
 def test_federated_lobby_out_is_signed(client):
