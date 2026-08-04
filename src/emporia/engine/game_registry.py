@@ -153,15 +153,20 @@ def _normalize_payment_mode(payment_mode: str | None, stake_amount: str | int | 
     if payment_mode:
         mode = payment_mode.strip().lower()
         if mode not in {"free", "stripe_link", "mpp"}:
-            # Legacy "x402" maps to stripe_link. N14-1: this mapping no longer makes a
-            # non-canonical *imported* card acceptable — payment_mode is part of the
-            # content address, and import now hashes the normalized record, so a card
-            # whose own id was computed over the raw "x402" fails verification rather
-            # than being stored as "stripe_link" with an id that can never re-verify.
-            # A sender that addresses its card as "stripe_link" and sends "x402" is
-            # still accepted, and its stored row re-verifies — which is the invariant.
+            # P1a-4 (R4): "x402" no longer aliases to stripe_link. The x402 protocol
+            # (HTTP-402-native, stablecoin-settled — https://x402.org) is not the same
+            # thing this relay's "stripe_link" mode settles, and the alias predates
+            # that distinction being drawn. No backwards-compat kept for it, per the
+            # user: a legacy card claiming "x402" was already unimportable as of
+            # N14-1 (payment_mode is part of the content address, so a card whose own
+            # id was computed over "x402" fails verification against the "stripe_link"
+            # this alias used to normalize it to). Naming the reason here rather than
+            # the generic message below, so it's informative once a real x402 rail
+            # exists to route to instead (P1b, not yet built).
             if mode == "x402":
-                return "stripe_link"
+                raise ValueError(
+                    "payment_mode 'x402' is not a settleable rail on this relay yet"
+                )
             raise ValueError("payment_mode must be 'free', 'stripe_link', or 'mpp'")
         return mode  # type: ignore[return-value]
     if stake_amount in (None, "", "0", 0):

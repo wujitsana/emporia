@@ -625,11 +625,15 @@ def _legacy_self_computed_id(
 
 
 def test_import_challenge_rejects_x402_payment_mode():
-    """N14-1 (R1): payment_mode is a hashed field. Before this fix, import_challenge()
+    """N14-1 (R1): payment_mode is a hashed field. Before that fix, import_challenge()
     hashed the raw payload — a card addressed with the literal "x402" string verified
     fine — then stored it normalized to "stripe_link", so the stored row's own content
-    no longer matched its id. Now the record is normalized *before* hashing, so this
-    same card is rejected outright instead of silently becoming unverifiable."""
+    no longer matched its id. N14-1 made the record normalize *before* hashing, so this
+    same card was rejected outright instead of silently becoming unverifiable — but
+    still silently *as* stripe_link. P1a-4 (R4) removed that "x402"→stripe_link alias
+    entirely (x402 the protocol is not what this relay's stripe_link mode settles), so
+    now the rejection happens even earlier, at normalization itself, with a message
+    naming the actual reason rather than surfacing as a generic content mismatch."""
     import tempfile
     from emporia.engine.game_registry import GameRegistry
 
@@ -652,8 +656,32 @@ def test_import_challenge_rejects_x402_payment_mode():
             currency="USD",
             created_at=created_at,
         )
-        with pytest.raises(ValueError, match="challenge_id does not match"):
+        with pytest.raises(ValueError, match="not a settleable rail"):
             dst.import_challenge(payload)
+
+
+def test_normalize_payment_mode_rejects_x402_outright():
+    """P1a-4 (R4): "x402" no longer silently aliases to "stripe_link" anywhere
+    normalization runs, not just on the import path — create_challenge() itself must
+    also reject it, since the two functions share this one normalizer. No backwards-
+    compat kept for the alias, per the user; a legacy "x402" card was already
+    unimportable as of N14-1, so this closes the same gap at the other entry point."""
+    from emporia.engine.game_registry import GameRegistry, _normalize_payment_mode
+    import tempfile
+
+    with pytest.raises(ValueError, match="not a settleable rail"):
+        _normalize_payment_mode("x402", "500")
+
+    with tempfile.TemporaryDirectory() as tmp:
+        reg = GameRegistry(Path(tmp) / "x402_create.sqlite3")
+        with pytest.raises(ValueError, match="not a settleable rail"):
+            reg.create_challenge(
+                game_type="emporia:chess:v1",
+                creator_agent_id="x402_create_agent",
+                creator_gateway_url="https://x402.example/gw",
+                payment_mode="x402",
+                stake_amount="500",
+            )
 
 
 def test_import_challenge_rejects_missing_currency():
