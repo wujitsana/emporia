@@ -154,22 +154,32 @@ participants/actions/payments/settlements/audit files together — that piece is
 
 ## Payments
 
-**P1 entry point: the x402/MPP payments re-platform is the next block, now that N14 has closed the
-challenge-import/discovery hardening track (SECURITY.md's N2 through N14 passes).** Its scope per
-the user, ahead of P1's own review-and-plan round (do not start from this entry — confirm the x402
-spec against live docs at implementation time, not from memory, per N2):
-- **Survey payment rails broadly, not just Stripe** — evaluate x402 alongside other options before
-  committing to one implementation.
-- **`payment_mode="x402"` must mean the actual x402 protocol**, not be an alias for `"stripe_link"`.
-  `game_registry.py`'s `_normalize_payment_mode()` currently maps a legacy `"x402"` string straight
-  to `"stripe_link"` — that conflates a protocol that isn't built with the one that is, and the user
-  has said no backwards-compat shim is needed for the old alias; it can simply be removed. `PaymentMode`
-  (currently `"free" | "stripe_link" | "mpp"`) will need reshaping once x402 is real.
+**P1b entry point: the x402 rail is the next block, now that P1a has hardened the rail-agnostic
+payment core (SECURITY.md's P1a pass).** x402 is confirmed (live docs, this pass) to be the
+Coinbase-originated, Linux-Foundation-formalized HTTP-402 protocol settled in stablecoins (USDC),
+distinct from Stripe's MPP, which `payments.py` already implements — the two share the "HTTP 402"
+mechanism, not a protocol. Scope per the user, ahead of P1b's own review-and-plan round (do not
+start from this entry — confirm the x402 spec against live docs again at implementation time, spec
+was still moving as of this review):
+- **x402 is additive, not a Stripe replacement.** Session escrow (`capture_method="manual"`,
+  hold-then-conditionally-release-minus-fee) has no analogue in x402's request-scoped settlement
+  model — it stays on Stripe. Scope x402 to the two `capture_method="automatic"` pay-to-access
+  routes first: `/rooms/{id}/join`, `/agoras/topics/{slug}/subscribe`.
+- **No Hermes x402 skill or implementation exists to reuse** (checked this pass). One relevant
+  first-party data point: Nous Portal's own inference API already accepts an x402 payment header
+  (Solana USDC, beta, anonymous, per-request) as an alternative to a static API key — Portal is the
+  x402 *consumer* side, Emporia would be the *resource server* side, no shared code, but it answers
+  the network question: **Solana USDC, not Base**, is the ecosystem-native choice here.
+- `payment_mode="x402"` — done in P1a-4: the old `"stripe_link"` alias is gone, `"x402"` now rejects
+  outright with a message naming the reason, and is deliberately not yet added to `PaymentMode`.
+  x402 v2 moved payment data into headers (`PAYMENT-REQUIRED`/`PAYMENT-SIGNATURE`/`PAYMENT-RESPONSE`,
+  deprecating `X-*` forms) — keep it a fully separate code path from `build_mpp_challenge()`'s Stripe
+  MPP headers, not one function with a flag.
 - **Stripe Connect stays available but should not be the default/main payment mode** going forward —
-  revisit `_normalize_payment_mode()`'s no-mode-given default, which currently falls back to
-  `"stripe_link"` for any staked challenge.
-- The three tracked payment-core gaps below (payer-binding, settlement idempotency, the
-  `_KNOWN_VIOLATIONS` MPP routes) are P1-scoped work, not standalone patches.
+  revisit `_normalize_payment_mode()`'s no-mode-given default (still `"stripe_link"` for any staked
+  challenge, left unchanged in P1a since there's no second rail to demote it to yet).
+- x402 v2's wallet-controlled sessions / `SIGN-IN-WITH-X` are the primitive that could finally close
+  the one payer-binding gap P1a left open — see the row below.
 
 **Stripe Connect transfers work end-to-end in test mode; live mode has no onboarding path.**
 Correcting an earlier version of this entry that said transfers "are not wired up" — they are:
@@ -187,34 +197,29 @@ in either mode.
 - *Effort:* medium — Account Links onboarding flow (redirect + return-URL handling) + webhook
   handling for `account.updated` (capability becomes active asynchronously after real KYC).
 
-**`_assert_payment_intent_matches()` validates amount/currency/capture-method/resource binding but
-never the payer — payment is resource-bound, not identity-bound.** Deferred to the x402/MPP
-re-platform rather than patched in place (see `SECURITY.md`'s N2 pass, the three
-`_KNOWN_VIOLATIONS` MPP routes). **No longer theoretical** — the N4 security review's R1 finding
-was a working payment bypass for paid Agora topics built directly on this gap (an anonymously
-leaked PaymentIntent id, replayed before a write-ordering bug's rejection could land). Both halves
-of that specific exploit are closed; this underlying gap is not. Settle payer-binding together with
-the three `_KNOWN_VIOLATIONS` routes when x402 is scoped — confirm the spec against live docs at
-implementation time, not from memory.
-- *Effort:* large — this is core to the x402/MPP re-platform, not a standalone patch.
+**`_assert_payment_intent_matches()` validated amount/currency/capture-method/resource binding but
+never the payer — done in P1a-1 for the authenticated path.** The N4 security review's R1 finding
+was a working payment bypass for paid Agora topics built directly on this gap. Both halves of that
+specific exploit were already closed; this underlying gap was not, until now: a payer check against
+`metadata[buyer_agent_id]` (already stamped by both PI-minting paths) closes it on the direct-
+`payment_intent_id` branch, where the caller is genuinely authenticated. **What's still open, and
+genuinely needs x402/P1b:** the MPP/SPT branch. `confirm_spt()` mints its PaymentIntent from the
+caller's own claimed, unverified `agent_id` in the same call — comparing them there is circular, not
+a fix, so the three `_KNOWN_VIOLATIONS` routes stay flagged for that branch specifically. x402 v2's
+wallet-controlled sessions could supply the verifiable-payer-identity credential this branch
+actually needs. See `SECURITY.md`'s P1a pass (R1) and the correction to N2's own row.
+- *Effort remaining:* large — payer-verified MPP/SPT credentials are core x402/P1b work, not a
+  standalone patch.
 
-**`record_settlement()`'s `INSERT OR IGNORE` is idempotency theatre — it can never actually
-conflict.** It mints a fresh UUID primary key on every call before the insert, so the "OR IGNORE"
-clause has no key to collide on. `payout_winner()` is a real Stripe transfer with no idempotency
-key of its own. The N5 security review's R2 finding (a retry after a mid-flight crash could reach
-`payout_winner` twice for one payment, in both `subscribe_agora_topic` and `join_room`) was fixed
-with ordering + an early already-member/already-subscribed short-circuit — deliberately not with
-real idempotency, which is properly x402/P1-scoped payment-core work rather than a standalone
-patch here. The ordering fix closes the double-payout window for a crash that happens *after*
-membership commits; a crash between the membership commit and the payout can still leave a payout
-un-fired (the creator doesn't get paid), which real idempotency would also need to address via
-retry/reconciliation, not just prevention. (O2 in the N5 security review.)
-- *Fix direction:* Stripe idempotency keys on the `payout_winner()` transfer call, and a
-  genuinely-unique key for `record_settlement()` (e.g. hash of `payment_intent_id` + resource id,
-  or an `INSERT ... ON CONFLICT` on that composite rather than the UUID PK) so a replayed
-  settlement write is a real no-op instead of always inserting a new row.
-- *Effort:* medium — settle alongside the payer-binding gap above; both are x402/P1 payment-core
-  work and share the same call sites.
+**~~`record_settlement()`'s `INSERT OR IGNORE` is idempotency theatre~~ — done in P1a-2/P1a-3.** It
+minted a fresh UUID primary key on every call before the insert, so `OR IGNORE` had no key to
+collide on, and `payout_winner()` had no idempotency key of its own. The N5 security review's R2
+finding (a retry after a mid-flight crash could reach `payout_winner` twice) was fixed with ordering
++ an early short-circuit — deliberately not with real idempotency at the time. Now real: a
+`dedupe_key` column (`session_id||':'||COALESCE(payer_id,'')`) with a UNIQUE index and
+`ON CONFLICT DO NOTHING` on `record_settlement()`'s insert, plus deterministic `Idempotency-Key`
+headers on `payout_winner()`'s transfer and `arbitrate_and_refund()`'s refund, derived from that
+same key. See `SECURITY.md`'s P1a pass (R2/R3).
 
 **~~`settlements` has no payer column~~ — done in N7-2.** This entry previously claimed a
 `payer_id` column was "blocked on the migration runner P4 already tracks." That was wrong — this

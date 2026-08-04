@@ -249,6 +249,20 @@ Three hackathon-required Stripe skills:
 Payment split: `OPERATOR_FEE_BPS=250` (2.5%) default. Configurable per relay operator.
 Note: `HERMES_PTGS_STRIPE_RELAY_BASE` is a hackathon convention, not an official Stripe endpoint.
 
+**PaymentIntent verification contract (P1a-1): resource-bound everywhere, payer-bound only on the
+authenticated path.** `_assert_payment_intent_matches()` checks status/amount/currency/capture-
+method/resource metadata on every call. Payer binding (`metadata[buyer_agent_id]`, stamped by both
+`create_stake_intent()` and `confirm_spt()`) is checked *only* on `_verify_and_confirm_payment()`'s
+direct-`payment_intent_id` branch — the one branch where `_require_caller_unless_mpp_payment()` has
+actually proven the caller's identity. The Authorization-header MPP/SPT branch cannot bind by the
+same mechanism: `confirm_spt()` mints its PaymentIntent from the caller's own claimed `agent_id` in
+the same call, so comparing the PI's payer metadata back against that claim would be circular. That
+branch stays resource-bound only, tracked in `ROADMAP.md` § Payments as work for the x402 rail
+(P1b) — a verifiable payer-identity credential is what actually closes it, not another comparison
+against the same self-report. Idempotency on the money-movement side (`record_settlement()`'s
+`dedupe_key`, `Idempotency-Key` on `payout_winner()`/`arbitrate_and_refund()`) is unconditional on
+every path, since replay risk there doesn't depend on how the caller authenticated.
+
 ## What was NOT built (honest scope)
 
 - Live-mode Stripe Connect onboarding (Account Links / KYC) — test-mode transfers work end-to-end
