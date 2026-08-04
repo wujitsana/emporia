@@ -4654,6 +4654,8 @@ async def join_room(room_id: str, req: JoinRoomRequest, request: Request):
                         stripe_account_id=creator_stripe,
                         amount_cents=creator_payout,
                         session_id=room_id,
+                        # Matches this same settlement's dedupe_key below (P1a-2).
+                        idempotency_key=f"emporia:payout:{room_id}:{req.agent_id}",
                     )
                     transfer_id = t["transfer_id"]
                     transfer_status = "transferred"
@@ -5272,7 +5274,11 @@ async def subscribe_agora_topic(slug: str, req: AgoraSubscribeRequest, request: 
             if creator_stripe:
                 try:
                     from emporia.payments import payout_winner
-                    t = await payout_winner(creator_id, creator_stripe, creator_payout, topic_id)
+                    t = await payout_winner(
+                        creator_id, creator_stripe, creator_payout, topic_id,
+                        # Matches this same settlement's dedupe_key below (P1a-2).
+                        idempotency_key=f"emporia:payout:{topic_id}:{req.agent_id}",
+                    )
                     transfer_id = t["transfer_id"]
                     transfer_status = "transferred"
                 except Exception:

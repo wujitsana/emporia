@@ -521,6 +521,10 @@ async def settle(
                 stripe_account_id=winner_stripe_account,
                 amount_cents=winner_payout_cents,
                 session_id=session_id,
+                # Matches record_settlement()'s dedupe_key shape for this session's
+                # aggregate row (payer_id NULL → empty suffix) — one payout per
+                # session settlement, so no payer disambiguation is needed here.
+                idempotency_key=f"emporia:payout:{session_id}:",
             )
             transfer_id = transfer["transfer_id"]
             transfer_status = "transferred"
@@ -580,18 +584,32 @@ async def payout_winner(
     stripe_account_id: str,
     amount_cents: int,
     session_id: str,
+    *,
+    idempotency_key: str,
 ) -> dict[str, Any]:
     """Transfer winner payout to their Stripe Connected Account.
 
     Platform keeps OPERATOR_FEE_BPS; this function transfers only the winner's
     net share. Requires the platform balance to have sufficient funds — in test mode
     the confirmed PaymentIntents fund the platform balance automatically.
+
+    `idempotency_key` (P1a-3, R3) is required, not defaulted: a Stripe Transfer
+    creates a *new* resource on every call with no state-machine check to fall back
+    on (unlike capture_payment_intent(), which is safe against a retry because
+    Stripe itself rejects capturing an already-captured PI) — a retry after a
+    timeout or mid-flight crash previously moved money twice. Callers must derive a
+    key deterministic from the logical payout, not random, so a genuine retry reuses
+    it and a different payout can't collide — see each call site for its own
+    derivation (settle() uses the session-level dedupe_key shape with no payer
+    suffix; the room/Agora call sites in relay_server.py include the paying agent,
+    matching record_settlement()'s own dedupe_key for that same settlement).
     """
     key = _stripe_key()
     async with httpx.AsyncClient(timeout=REQUEST_TIMEOUT) as client:
         resp = await client.post(
             f"{STRIPE_API_BASE}/transfers",
             auth=(key, ""),
+            headers={"Idempotency-Key": idempotency_key},
             data={
                 "amount": str(amount_cents),
                 "currency": "usd",
@@ -619,12 +637,20 @@ async def arbitrate_and_refund(
     charge_id: str,
     reason: str = "fraudulent",
 ) -> dict[str, Any]:
-    """Issue a Stripe refund when cheat detection or signature verification fails."""
+    """Issue a Stripe refund when cheat detection or signature verification fails.
+
+    Idempotency-Key (P1a-3, R3) derived deterministically from session_id + charge_id
+    — the same pair fully identifies "the refund for this charge" — so a retry
+    reuses it rather than risking a second real refund. Unlike payout_winner(), no
+    caller-supplied key is needed: every piece the key is built from is already this
+    function's own parameter.
+    """
     key = _stripe_key()
     async with httpx.AsyncClient(timeout=REQUEST_TIMEOUT) as client:
         resp = await client.post(
             f"{STRIPE_API_BASE}/refunds",
             auth=(key, ""),
+            headers={"Idempotency-Key": f"emporia:refund:{session_id}:{charge_id}"},
             data={
                 "charge": charge_id,
                 "reason": reason,

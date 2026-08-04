@@ -3110,6 +3110,68 @@ async def test_arbitrate_and_refund_mocked():
     assert result["status"] == "succeeded"
 
 
+@pytest.mark.asyncio
+async def test_payout_winner_sends_deterministic_idempotency_key():
+    """P1a-3 (R3): payout_winner()'s POST /transfers sent no Idempotency-Key at all —
+    a retry after a timeout or mid-flight crash could move money twice. The key must
+    be deterministic from the logical payout (not random), so a genuine retry of the
+    *same* payout reuses it and a genuinely *different* payout does not collide. The
+    bug is invisible from the response (a bare mock always returns 200), so this
+    asserts on the outgoing request header directly."""
+    from emporia.payments import payout_winner
+    mock_transfer = {"id": "tr_test_001"}
+    with patch.dict(os.environ, {"STRIPE_SECRET_KEY": "sk_test_mock"}):
+        with patch("httpx.AsyncClient.post", new_callable=AsyncMock) as mock_post:
+            mock_resp = MagicMock()
+            mock_resp.json.return_value = mock_transfer
+            mock_resp.raise_for_status = MagicMock()
+            mock_post.return_value = mock_resp
+
+            await payout_winner(
+                "winner_a", "acct_a", 100, "room_idem_test",
+                idempotency_key="emporia:payout:room_idem_test:payer_a",
+            )
+            await payout_winner(
+                "winner_a", "acct_a", 100, "room_idem_test",
+                idempotency_key="emporia:payout:room_idem_test:payer_a",
+            )
+            await payout_winner(
+                "winner_a", "acct_a", 100, "room_idem_test",
+                idempotency_key="emporia:payout:room_idem_test:payer_b",
+            )
+
+    keys = [call.kwargs["headers"]["Idempotency-Key"] for call in mock_post.call_args_list]
+    assert keys[0] == keys[1], \
+        f"two calls for the same logical payout must send the identical Idempotency-Key, got {keys}"
+    assert keys[0] != keys[2], \
+        f"two calls for genuinely different payouts must not share an Idempotency-Key, got {keys}"
+
+
+@pytest.mark.asyncio
+async def test_arbitrate_and_refund_sends_deterministic_idempotency_key():
+    """P1a-3 (R3): same property as payout_winner() for the refund call — derived
+    deterministically from session_id + charge_id, the two pieces that already fully
+    identify "the refund for this charge.\""""
+    from emporia.payments import arbitrate_and_refund
+    mock_refund = {"id": "re_test_002", "status": "succeeded"}
+    with patch.dict(os.environ, {"STRIPE_SECRET_KEY": "sk_test_mock"}):
+        with patch("httpx.AsyncClient.post", new_callable=AsyncMock) as mock_post:
+            mock_resp = MagicMock()
+            mock_resp.json.return_value = mock_refund
+            mock_resp.raise_for_status = MagicMock()
+            mock_post.return_value = mock_resp
+
+            await arbitrate_and_refund("sess_idem_test", "ch_idem_test")
+            await arbitrate_and_refund("sess_idem_test", "ch_idem_test")
+            await arbitrate_and_refund("sess_idem_test", "ch_idem_other")
+
+    keys = [call.kwargs["headers"]["Idempotency-Key"] for call in mock_post.call_args_list]
+    assert keys[0] == keys[1], \
+        f"two calls for the same charge must send the identical Idempotency-Key, got {keys}"
+    assert keys[0] != keys[2], \
+        f"two calls for different charges must not share an Idempotency-Key, got {keys}"
+
+
 def test_stripe_key_not_set_raises():
     from emporia.payments import _stripe_key
     with patch.dict(os.environ, {}, clear=True):
