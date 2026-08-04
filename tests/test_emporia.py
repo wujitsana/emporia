@@ -1318,6 +1318,61 @@ def test_agent_write_rate_limit_applies_from_localhost(client):
         assert r.status_code == 429
 
 
+def test_mpp_payment_path_does_not_rate_limit_unproven_identity(client):
+    """N12-5 (R5): the three routes guarded by _require_caller_unless_mpp_payment
+    (join_session, join_room, subscribe_agora_topic) skip identity verification by
+    design when an MPP payment credential is presented — the two share the
+    Authorization header, so identity genuinely can't be resolved on that branch.
+    N11-4 wired _enforce_agent_rate_limit(req.agent_id) into all three unconditionally,
+    keyed on that same unproven agent_id — letting an MPP-token holder burn any
+    registered agent's write budget just by naming them in the request body. Exercises
+    join_room: a flood of MPP-path requests naming a victim agent must never 429 (the
+    budget was never proven to be theirs to spend), while a genuinely authenticated
+    join from a *different* agent on the same route, same low limit, still does —
+    confirming the fix didn't just disable rate-limiting for the route altogether."""
+    from emporia import relay_server as rs
+
+    _register(client, "room_creator_mpp")
+    _register(client, "victim_agent_mpp")
+    _register(client, "control_agent_mpp")
+
+    def _open_room(name: str) -> str:
+        r = client.post(
+            "/rooms", json={"name": name},
+            headers={"x-emporia-agent-id": "room_creator_mpp"},
+        )
+        assert r.status_code == 200, r.text
+        return r.json()["room_id"]
+
+    # Rooms are created outside the low-limit patch below — POST /rooms itself is
+    # rate-limited per creator, and that's not what this test is about.
+    victim_room = _open_room("test room one")
+    room1 = _open_room("test room two")
+    room2 = _open_room("test room three")
+
+    with patch.object(rs.AGENT_REGISTRY, "max_per_minute", 1):
+        for _ in range(5):
+            r = client.post(
+                f"/rooms/{victim_room}/join",
+                json={"agent_id": "victim_agent_mpp"},
+                headers={"Authorization": "Payment fake_spt_test_token"},
+            )
+            assert r.status_code == 200, r.text
+
+        r = client.post(
+            f"/rooms/{room1}/join",
+            json={"agent_id": "control_agent_mpp"},
+            headers={"x-emporia-agent-id": "control_agent_mpp"},
+        )
+        assert r.status_code == 200, r.text
+        r = client.post(
+            f"/rooms/{room2}/join",
+            json={"agent_id": "control_agent_mpp"},
+            headers={"x-emporia-agent-id": "control_agent_mpp"},
+        )
+        assert r.status_code == 429
+
+
 # ============================================================================
 # Events
 # ============================================================================

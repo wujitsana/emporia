@@ -370,7 +370,7 @@ def _require_caller_is(agent_id: str, request: Request) -> None:
         raise HTTPException(403, f"Not authorized to act as '{agent_id}'")
 
 
-def _require_caller_unless_mpp_payment(agent_id: str, request: Request) -> None:
+def _require_caller_unless_mpp_payment(agent_id: str, request: Request) -> bool:
     """Like _require_caller_is, but skipped when the caller is presenting an MPP payment
     credential (Authorization: Payment <token>) rather than a Bearer JWT — the two share
     the Authorization header and can't both be sent, so caller identity can't be resolved
@@ -379,11 +379,18 @@ def _require_caller_unless_mpp_payment(agent_id: str, request: Request) -> None:
     Tightening the payment path itself (binding a payment credential to a payer identity,
     not just a resource) is payment-integrity work, deferred to the x402 re-platform — see
     the plan's P1 note ("payment is resource-bound, not identity-bound").
+
+    Returns whether `agent_id` was actually proven (N12-5, R5): callers use this to decide
+    whether it's safe to apply _enforce_agent_rate_limit(agent_id) — before this, all three
+    call sites threw the per-agent write budget at whatever agent_id the request body named,
+    even on the MPP-payment branch where that name was never verified, letting a payment-
+    token holder burn any registered agent's budget just by naming them.
     """
     from emporia.payments import extract_mpp_token
     if extract_mpp_token(request.headers.get("Authorization")):
-        return
+        return False
     _require_caller_is(agent_id, request)
+    return True
 
 
 _MAX_LIMIT = 200
@@ -3595,7 +3602,7 @@ async def get_session_audit(session_id: str, request: Request):
 
 @app.post("/sessions/{session_id}/join")
 async def join_session(session_id: str, req: JoinSessionRequest, request: Request):
-    _require_caller_unless_mpp_payment(req.agent_id, request)
+    identity_verified = _require_caller_unless_mpp_payment(req.agent_id, request)
     s = load_session(session_id)
     if not s:
         raise HTTPException(404, "Session not found")
@@ -3604,7 +3611,10 @@ async def join_session(session_id: str, req: JoinSessionRequest, request: Reques
     if req.agent_id in s["participants"]:
         raise HTTPException(400, "Already joined")
     _require_registered(req.agent_id)
-    _enforce_agent_rate_limit(req.agent_id)
+    # N12-5 (R5): identity_verified is False on the MPP-payment branch, where agent_id is
+    # an unproven claim — don't spend someone else's write budget on the strength of it.
+    if identity_verified:
+        _enforce_agent_rate_limit(req.agent_id)
 
     module = get_interaction_module(s["module_type"])
     valid, err = module.validate_participants(s["participants"] + [req.agent_id])
@@ -4381,12 +4391,15 @@ async def get_room_endpoint(room_id: str, request: Request):
 
 @app.post("/rooms/{room_id}/join")
 async def join_room(room_id: str, req: JoinRoomRequest, request: Request):
-    _require_caller_unless_mpp_payment(req.agent_id, request)
+    identity_verified = _require_caller_unless_mpp_payment(req.agent_id, request)
     room = rooms_db.get_room(room_id, db_path=DATABASE_PATH)
     if not room:
         raise HTTPException(404, "Room not found")
     _require_registered(req.agent_id)
-    _enforce_agent_rate_limit(req.agent_id)
+    # N12-5 (R5): identity_verified is False on the MPP-payment branch, where agent_id is
+    # an unproven claim — don't spend someone else's write budget on the strength of it.
+    if identity_verified:
+        _enforce_agent_rate_limit(req.agent_id)
     if rooms_db.is_member(room_id, req.agent_id, db_path=DATABASE_PATH):
         return {"status": "already_member", "room_id": room_id}
 
@@ -4960,9 +4973,12 @@ async def subscribe_agora_topic(slug: str, req: AgoraSubscribeRequest, request: 
       invite     → agent must have a pending invite (free)
       paid_invite → agent must have a pending invite AND pay the entry fee (SPT/MPP/PI)
     """
-    _require_caller_unless_mpp_payment(req.agent_id, request)
+    identity_verified = _require_caller_unless_mpp_payment(req.agent_id, request)
     _require_registered(req.agent_id)
-    _enforce_agent_rate_limit(req.agent_id)
+    # N12-5 (R5): identity_verified is False on the MPP-payment branch, where agent_id is
+    # an unproven claim — don't spend someone else's write budget on the strength of it.
+    if identity_verified:
+        _enforce_agent_rate_limit(req.agent_id)
     now = datetime.now(UTC).isoformat()
 
     # Topic lookup + already-subscribed short-circuit + invite check — DB_LOCK held
