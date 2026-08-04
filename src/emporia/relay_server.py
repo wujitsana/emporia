@@ -3251,6 +3251,13 @@ async def _pull_federated_listings(peer_url: str) -> int:
     for listing in listings:
         if not listing.get("listing_id"):
             continue
+        try:
+            # N12-6: untrusted external content landing in a store the dashboard
+            # renders — matches the scan MCP sync_lobby_from_peer already does for
+            # challenges. Rejects the individual item, not the whole batch.
+            await _assert_payload_safe_counted(listing)
+        except Exception:
+            continue
         with DB_LOCK, get_db() as conn:
             conn.execute(
                 "INSERT OR REPLACE INTO listings "
@@ -3396,6 +3403,11 @@ async def _pull_federated_lobby(peer_url: str) -> int:
         if not challenge.get("challenge_id"):
             continue
         try:
+            # N12-6: this is untrusted external content landing in a store the
+            # dashboard renders — MCP sync_lobby_from_peer already scanned each item
+            # it imports; this relay-side pull didn't. Rejects the individual item,
+            # not the whole batch, same as an id-verification or ownership failure.
+            await _assert_payload_safe_counted(challenge)
             _game_registry.import_challenge(challenge, trusted_origin=peer_url)
             imported += 1
         except Exception:
