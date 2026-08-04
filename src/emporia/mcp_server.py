@@ -523,7 +523,7 @@ async def sync_lobby_from_peer(peer_relay_url: str) -> dict[str, Any]:
     for ch_data in challenges:
         try:
             assert_payload_safe(ch_data)
-            imported = _game_registry.import_challenge(ch_data)
+            imported = _game_registry.import_challenge(ch_data, trusted_origin=peer_relay_url)
             imported_ids.append(imported.challenge_id)
         except Exception:
             skipped += 1

@@ -83,6 +83,14 @@ def _recompute_challenge_id(data: Mapping[str, Any]) -> str:
     return challenge_id_for(payload)
 
 
+class ChallengeOwnershipError(ValueError):
+    """Raised by import_challenge() when a challenge_id collides with an existing row
+    it isn't entitled to overwrite (N12-3, R3) — distinct from ValueError so callers that
+    care about the difference (POST /gaming/lobby maps this to 403, not the generic
+    422 an id-verification or malformed-payload failure gets) can catch it specifically.
+    """
+
+
 def _utc_now() -> str:
     return datetime.now(UTC).isoformat()
 
@@ -240,34 +248,78 @@ class GameRegistry:
             )
 
     def import_challenge(
-        self, challenge: Mapping[str, Any] | str, *, verify_id: bool = True
+        self,
+        challenge: Mapping[str, Any] | str,
+        *,
+        verify_id: bool = True,
+        trusted_origin: str | None = None,
     ) -> GameChallenge:
+        """N12-3 (R3): the ownership rule that used to live only in POST /gaming/lobby's
+        handler now lives here, so all four importers (that route, _pull_federated_lobby,
+        MCP import_challenge, MCP sync_lobby_from_peer) share one definition instead of
+        one enforcing it and three not.
+
+        `trusted_origin`, set only by the two peer-pull call sites (to the signature-
+        verified peer_url they just pulled from), closes a gap content-addressing alone
+        can't: `status` and `origin_relay` are deliberately excluded from the hash (so a
+        legitimate status update keeps its id), which means a peer can replay a locally-
+        or foreign-owned challenge's exact content with only `status` flipped and still
+        pass id verification *and* the creator_agent_id check below, since it's copying
+        the real creator's name verbatim, not claiming a different one. Rejecting any
+        update where the existing row's origin_relay doesn't match the peer we're
+        currently pulling from closes that, while still letting a peer refresh the
+        status of challenges it legitimately owns.
+
+        Ownership is checked *before* id verification, not after: content-addressing
+        means a payload claiming an existing id under a genuinely different
+        creator_agent_id can never verify anyway (creator_agent_id is itself hashed),
+        so an ownership violation on a forged id would otherwise surface as a generic
+        "content does not match" instead of the more specific "wrong owner" — checking
+        ownership first keeps that distinction, on the raw claimed fields, without
+        needing the id to be valid first.
+        """
         data = json.loads(challenge) if isinstance(challenge, str) else dict(challenge)
         supplied_id = str(data.get("challenge_id") or "")
         if not supplied_id:
             raise ValueError("challenge must include challenge_id")
-        if verify_id:
-            expected_id = _recompute_challenge_id(data)
-            if expected_id != supplied_id:
-                raise ValueError(
-                    f"challenge_id does not match its content — expected {expected_id}, "
-                    f"got {supplied_id} (the batch may be tampered or corrupt)"
-                )
-        imported = GameChallenge(
-            challenge_id=supplied_id,
-            game_type=str(data["game_type"]),
-            creator_agent_id=str(data["creator_agent_id"]),
-            creator_gateway_url=str(data["creator_gateway_url"]),
-            payment_mode=_normalize_payment_mode(str(data.get("payment_mode") or "free"), data.get("stake_amount")),
-            stake_amount=str(data.get("stake_amount") or "0"),
-            currency=str(data.get("currency") or "USD"),
-            status=str(data.get("status") or "open"),  # type: ignore[arg-type]
-            created_at=str(data.get("created_at") or _utc_now()),
-            expires_at=data.get("expires_at"),
-            origin_relay=data.get("origin_relay"),
-            metadata=dict(data.get("metadata") or {}),
-        )
-        self._upsert(imported)
+        with self._lock:
+            existing = self.get_challenge(supplied_id)
+            if existing is not None:
+                new_creator = str(data.get("creator_agent_id") or "")
+                if existing.creator_agent_id != new_creator:
+                    raise ChallengeOwnershipError(
+                        f"challenge_id '{supplied_id}' belongs to a different creator"
+                    )
+                if trusted_origin is not None and existing.origin_relay != trusted_origin:
+                    raise ChallengeOwnershipError(
+                        f"challenge_id '{supplied_id}' is owned by a different origin "
+                        f"relay ({existing.origin_relay!r}) — a peer batch may not "
+                        "overwrite content it doesn't own"
+                    )
+            if verify_id:
+                expected_id = _recompute_challenge_id(data)
+                if expected_id != supplied_id:
+                    raise ValueError(
+                        f"challenge_id does not match its content — expected {expected_id}, "
+                        f"got {supplied_id} (the batch may be tampered or corrupt)"
+                    )
+            imported = GameChallenge(
+                challenge_id=supplied_id,
+                game_type=str(data["game_type"]),
+                creator_agent_id=str(data["creator_agent_id"]),
+                creator_gateway_url=str(data["creator_gateway_url"]),
+                payment_mode=_normalize_payment_mode(
+                    str(data.get("payment_mode") or "free"), data.get("stake_amount")
+                ),
+                stake_amount=str(data.get("stake_amount") or "0"),
+                currency=str(data.get("currency") or "USD"),
+                status=str(data.get("status") or "open"),  # type: ignore[arg-type]
+                created_at=str(data.get("created_at") or _utc_now()),
+                expires_at=data.get("expires_at"),
+                origin_relay=data.get("origin_relay"),
+                metadata=dict(data.get("metadata") or {}),
+            )
+            self._upsert(imported)
         return imported
 
     def get_challenge(self, challenge_id: str) -> GameChallenge | None:

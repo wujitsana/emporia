@@ -86,7 +86,7 @@ def _load_profile_dotenv() -> None:
 
 _load_profile_dotenv()
 
-from emporia.engine.game_registry import GameRegistry
+from emporia.engine.game_registry import ChallengeOwnershipError, GameRegistry
 from emporia.engine import guardrails
 from emporia.engine.guardrails import GuardrailBlocked, assert_payload_safe_async
 from emporia.identity import (
@@ -3374,7 +3374,7 @@ async def _pull_federated_lobby(peer_url: str) -> int:
         if not challenge.get("challenge_id"):
             continue
         try:
-            _game_registry.import_challenge(challenge)
+            _game_registry.import_challenge(challenge, trusted_origin=peer_url)
             imported += 1
         except Exception:
             continue
@@ -4251,6 +4251,11 @@ async def gaming_lobby_post(req: GamingLobbyChallengeRequest, request: Request):
     cross-relay flow has no credential path to a peer it isn't registered on and will get
     401'd calling a relay that (correctly) now requires authentication — expected fallout,
     not silently left insecure to keep it working.
+
+    N12-3 (R3): the ownership check that used to live inline here (a second copy of the
+    same rule, next to GameRegistry's own unenforced ON CONFLICT) now lives in
+    GameRegistry.import_challenge() itself, shared with the other three importers. This
+    handler just maps ChallengeOwnershipError to the same 403 it always returned.
     """
     caller = _dashboard_agent_id(request)
     if not caller:
@@ -4262,14 +4267,11 @@ async def gaming_lobby_post(req: GamingLobbyChallengeRequest, request: Request):
         await _assert_payload_safe_counted(payload)
     except PermissionError as e:
         raise HTTPException(403, str(e))
-    existing = _game_registry.get_challenge(req.challenge_id)
-    if existing and existing.creator_agent_id != req.creator_agent_id:
-        raise HTTPException(
-            403, f"challenge_id '{req.challenge_id}' belongs to a different creator"
-        )
     try:
         imported = _game_registry.import_challenge(payload)
         return {"ok": True, "challenge": imported.to_dict()}
+    except ChallengeOwnershipError as e:
+        raise HTTPException(403, str(e))
     except Exception as e:
         raise HTTPException(422, str(e))
 

@@ -955,6 +955,80 @@ async def test_pull_federated_lobby_rejects_key_rotation_without_repin(mock_get)
 
 
 @patch("httpx.AsyncClient.get", new_callable=AsyncMock)
+async def test_pull_federated_lobby_rejects_ownership_hijack_of_local_challenge(mock_get, prod_client):
+    """N12-3 (R3): _pull_federated_lobby used to bypass the ownership check
+    POST /gaming/lobby enforces — GameRegistry._upsert's ON CONFLICT DO UPDATE has no
+    ownership check of its own. Content-addressing (N12-2) already stops a peer from
+    claiming an existing id under a *different* creator_agent_id (creator_agent_id is
+    hashed, so that fails id verification) — but `status` is deliberately excluded from
+    the hash so a legitimate status update can keep its id, which means a peer can
+    replay a challenge's exact content, copying the real creator's name verbatim, with
+    only `status` flipped, and pass both id verification *and* a creator-only ownership
+    check. Proves that's rejected too, and the local row is completely unchanged
+    (status, not just the import count) — a test that only checked the return value
+    would miss _upsert having already fired."""
+    from emporia.relay_server import _FEDERATION_PEER_PUBKEYS, _game_registry, _pull_federated_lobby
+
+    _register_keyed(prod_client, "local_hijack_owner")
+    local_payload = _lobby_payload("local_hijack_owner")
+    r = prod_client.post(
+        "/gaming/lobby", json=local_payload,
+        headers=bearer_for(prod_client, "local_hijack_owner"),
+    )
+    assert r.status_code == 200
+    local_id = local_payload["challenge_id"]
+
+    replay = {**local_payload, "status": "cancelled"}  # exact content, only status flipped
+    peer_url = "https://hijack-peer.example/relay"
+    batch, _ = _make_peer_batch(peer_url, [replay], key="challenges")
+    _FEDERATION_PEER_PUBKEYS.pop(peer_url, None)
+    mock_get.return_value = _mock_peer_response(batch)
+
+    imported = await _pull_federated_lobby(peer_url)
+    assert imported == 0
+
+    still_local = _game_registry.get_challenge(local_id)
+    assert still_local.status == "open"
+    assert still_local.metadata == local_payload["metadata"]
+
+
+@patch("httpx.AsyncClient.get", new_callable=AsyncMock)
+async def test_mcp_sync_lobby_from_peer_rejects_ownership_hijack_of_local_challenge(mock_get, prod_client):
+    """N12-3 (R3): the same status-flip-replay hijack as
+    test_pull_federated_lobby_rejects_ownership_hijack_of_local_challenge, exercised
+    through the MCP sync_lobby_from_peer tool — a separate call site/process boundary
+    that must enforce the same rule, not just the relay's own pull path."""
+    from emporia import identity, mcp_server
+    from emporia.relay_server import _game_registry
+
+    _register_keyed(prod_client, "local_hijack_owner_mcp")
+    local_payload = _lobby_payload("local_hijack_owner_mcp")
+    r = prod_client.post(
+        "/gaming/lobby", json=local_payload,
+        headers=bearer_for(prod_client, "local_hijack_owner_mcp"),
+    )
+    assert r.status_code == 200
+    local_id = local_payload["challenge_id"]
+
+    replay = {**local_payload, "status": "cancelled"}
+    peer_url = "https://mcp-hijack-peer.example/relay"
+    batch, _ = _make_peer_batch(peer_url, [replay], key="challenges")
+    mock_get.return_value = _mock_peer_response(batch)
+
+    pins = identity.load_federation_peer_pubkeys()
+    pins.pop(peer_url, None)
+    identity.save_federation_peer_pubkeys(pins)
+
+    result = await mcp_server.sync_lobby_from_peer(peer_url)
+    assert result["success"] is True
+    assert result["imported"] == 0
+    assert result["skipped"] == 1
+
+    still_local = _game_registry.get_challenge(local_id)
+    assert still_local.status == "open"
+
+
+@patch("httpx.AsyncClient.get", new_callable=AsyncMock)
 async def test_mcp_sync_lobby_from_peer_accepts_valid_signature(mock_get):
     """N11-5 (R5, task #8): the MCP tool must independently verify the signed
     GET /gaming/v1/federate/lobby feed — it's a separate process/call site from the
