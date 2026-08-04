@@ -1116,6 +1116,45 @@ async def test_pull_federated_lobby_rejects_key_rotation_without_repin(mock_get)
 
 
 @patch("httpx.AsyncClient.get", new_callable=AsyncMock)
+async def test_relay_and_mcp_importers_agree_on_the_same_peer_identity(mock_get):
+    """N13-2 (R2): _pull_federated_lobby (relay_server.py) and sync_lobby_from_peer
+    (mcp_server.py) each normalized their own outbound fetch URL with .rstrip("/") but
+    stored the raw, un-normalized peer_url everywhere else (the pin-store key,
+    trusted_origin passed to import_challenge()) — independently of each other. The
+    two importers share one DB and one pin-store file, so a peer pulled by the relay
+    as "https://p/" and then synced by an agent's MCP call as "https://p" was treated
+    as two different origins: the peer's own second, entirely legitimate sync got
+    rejected by N12-3's ownership check as belonging to someone else, and the pin got
+    duplicated under a second key. Exact scenario from this finding — relay pulls with
+    a trailing slash first, an agent then calls the MCP tool without one."""
+    from emporia import identity, mcp_server
+    from emporia.relay_server import _FEDERATION_PEER_PUBKEYS, _pull_federated_lobby
+
+    challenge = _sample_challenge("cross_importer_peer")
+    batch, pub_hex = _make_peer_batch(
+        "https://cross-importer-peer.example/relay", [challenge], key="challenges"
+    )
+    mock_get.return_value = _mock_peer_response(batch)
+
+    _FEDERATION_PEER_PUBKEYS.pop("https://cross-importer-peer.example/relay", None)
+    _FEDERATION_PEER_PUBKEYS.pop("https://cross-importer-peer.example/relay/", None)
+    pins = identity.load_federation_peer_pubkeys()
+    pins.pop("https://cross-importer-peer.example/relay", None)
+    pins.pop("https://cross-importer-peer.example/relay/", None)
+    identity.save_federation_peer_pubkeys(pins)
+
+    imported = await _pull_federated_lobby("https://cross-importer-peer.example/relay/")
+    assert imported == 1
+
+    result = await mcp_server.sync_lobby_from_peer("https://cross-importer-peer.example/relay")
+    assert result["success"] is True
+    assert result["imported"] == 1, result  # accepted as the same peer, not a hijack
+
+    assert _FEDERATION_PEER_PUBKEYS.get("https://cross-importer-peer.example/relay") == pub_hex
+    assert "https://cross-importer-peer.example/relay/" not in _FEDERATION_PEER_PUBKEYS
+
+
+@patch("httpx.AsyncClient.get", new_callable=AsyncMock)
 async def test_pull_federated_lobby_rejects_ownership_hijack_of_local_challenge(mock_get, prod_client):
     """N12-3 (R3): _pull_federated_lobby used to bypass the ownership check
     POST /gaming/lobby enforces — GameRegistry._upsert's ON CONFLICT DO UPDATE has no

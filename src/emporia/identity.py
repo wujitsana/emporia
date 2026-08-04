@@ -171,6 +171,51 @@ def save_federation_peer_pubkeys(pubkeys: dict[str, str]) -> None:
         pass
 
 
+def normalize_peer_url(url: str) -> str:
+    """Canonical form for a peer relay URL used as a dict key or stored value in
+    federation state (N13-2, R2).
+
+    Both `_pull_federated_listings`/`_pull_federated_lobby` (relay_server.py) and
+    `sync_lobby_from_peer` (mcp_server.py) build their outbound request URL with
+    `.rstrip("/")`, but every *stored* value derived from their `peer_url` parameter —
+    the pin-store key, `trusted_origin` passed to `import_challenge()`, the
+    `_FEDERATION_*_LAST_SYNC` dict key — used the raw, un-normalized parameter. A peer
+    configured or called as `"https://p/"` and the same peer called as `"https://p"`
+    landed as two different keys for the same relay, which meant a peer's own later,
+    legitimate re-sync could be rejected by N12-3's ownership check as belonging to a
+    "different origin relay."
+
+    Strips only surrounding whitespace and a trailing slash — that's the demonstrated
+    failure mode. Does not lower-case scheme/host: no live case-sensitivity bug was
+    found, and normalizing case risks new drift for a URL with a case-sensitive path
+    segment, for no demonstrated benefit.
+    """
+    return url.strip().rstrip("/")
+
+
+def normalize_peer_pubkey_keys(pins: dict[str, str]) -> tuple[dict[str, str], bool]:
+    """Re-key an already-loaded {peer_url: pubkey_hex} pin map to normalize_peer_url()'s
+    form (N13-2). Returns (migrated_map, changed) so a caller only re-persists when the
+    key shape actually moved — corrects a pin file written before this fix, where a
+    peer could have been pinned under an un-normalized key (e.g. a trailing slash).
+
+    If two raw keys normalize to the same value (only reachable via the pre-fix bug
+    this migrates away from — self-healing after this fix ships), the entry that
+    sorts later wins, matching this file's own sort_keys=True on-disk order; this is
+    not treated as an ambiguous/tampered state requiring a human decision, since both
+    raw keys came from this relay's own prior pinning of what was, in reality, the
+    same peer.
+    """
+    migrated: dict[str, str] = {}
+    changed = False
+    for raw_key in sorted(pins):
+        key = normalize_peer_url(raw_key)
+        if key != raw_key:
+            changed = True
+        migrated[key] = pins[raw_key]
+    return migrated, changed
+
+
 # ============================================================================
 # Federation batch canonicalization (shared by relay_server.py and mcp_server.py)
 # ============================================================================

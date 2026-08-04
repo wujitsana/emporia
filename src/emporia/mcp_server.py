@@ -457,17 +457,27 @@ async def sync_lobby_from_peer(peer_relay_url: str) -> dict[str, Any]:
     identity.py — shared with the relay's own listings/lobby pinning, since it's the
     same relay identity either way), and reject a later pull presenting a different key
     for an already-pinned peer_url rather than silently re-trusting it.
+
+    N13-2 (R2): peer_relay_url is normalized on entry — the relay's own
+    _pull_federated_lobby did too (fetch URL) but not everywhere it stored/compared a
+    peer identity (pin key, trusted_origin), so the same peer called here with a
+    differently-slashed URL than the relay used internally could get pinned twice and
+    have its own legitimate re-sync rejected as a different origin by N12-3's
+    ownership check. See identity.normalize_peer_url().
     """
     from emporia.identity import (
         federation_signable_bytes,
         get_relay_public_key_hex,
         load_federation_peer_pubkeys,
+        normalize_peer_pubkey_keys,
+        normalize_peer_url,
         save_federation_peer_pubkeys,
         verify_raw,
     )
 
+    peer_relay_url = normalize_peer_url(peer_relay_url)
     try:
-        url = peer_relay_url.rstrip("/") + "/gaming/v1/federate/lobby"
+        url = peer_relay_url + "/gaming/v1/federate/lobby"
         async with httpx.AsyncClient(timeout=15) as client:
             resp = await client.get(url)
             resp.raise_for_status()
@@ -493,7 +503,9 @@ async def sync_lobby_from_peer(peer_relay_url: str) -> dict[str, Any]:
             "success": False, "peer_relay": peer_relay_url,
         }
 
-    pins = load_federation_peer_pubkeys()
+    # N13-2 (R2): migrate any pin written under a pre-fix, un-normalized key (e.g. a
+    # trailing slash) — this file is shared with the relay's own pin store.
+    pins, pins_changed = normalize_peer_pubkey_keys(load_federation_peer_pubkeys())
     pinned = pins.get(peer_relay_url)
     if pinned and pinned != pubkey_hex:
         return {
@@ -505,13 +517,16 @@ async def sync_lobby_from_peer(peer_relay_url: str) -> dict[str, Any]:
         }
     if pinned is None:
         pins[peer_relay_url] = pubkey_hex
+        pins_changed = True
+    if pins_changed:
         save_federation_peer_pubkeys(pins)
 
     # Skip our own relay to prevent loops — by public key as well as URL, same reasoning
     # as the relay's own _pull_federated_listings/_pull_federated_lobby (RELAY_BASE_URL
     # is an env var that can drift; the key is a persistent identity tied to a key file).
-    local_url = os.getenv("EMPORIA_RELAY_URL", "")
-    if origin == local_url or pubkey_hex == get_relay_public_key_hex():
+    # Both sides normalized (N13-2, R2).
+    local_url = normalize_peer_url(os.getenv("EMPORIA_RELAY_URL", ""))
+    if normalize_peer_url(origin) == local_url or pubkey_hex == get_relay_public_key_hex():
         return {
             "success": True, "peer_relay": peer_relay_url,
             "imported": 0, "skipped": 0, "imported_ids": [],

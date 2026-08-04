@@ -99,6 +99,8 @@ from emporia.identity import (
     load_or_generate_relay_jwt_secret,
     build_relay_descriptor,
     federation_signable_bytes,
+    normalize_peer_url,
+    normalize_peer_pubkey_keys,
 )
 from emporia.module_sdk import (
     MODULE_REGISTRY,
@@ -143,9 +145,11 @@ TEMPO_ENABLED = os.getenv("EMPORIA_MPP_TEMPO_ENABLED", "0").strip() == "1"
 LOG_DIR = Path(os.getenv("EMPORIA_LOG_DIR", "./.local/logs")).expanduser()
 DATABASE_PATH = Path(os.getenv("EMPORIA_DB_PATH", "~/.hermes/emporia.sqlite3")).expanduser()
 
-# Federated peers (comma-separated relay URLs; empty = standalone)
+# Federated peers (comma-separated relay URLs; empty = standalone). Normalized
+# (N13-2, R2) so these entries agree with the keys _pull_federated_listings/
+# _pull_federated_lobby actually store under — see identity.normalize_peer_url().
 FEDERATED_RELAYS: list[str] = [
-    u.strip() for u in os.getenv("FEDERATED_RELAYS", "").split(",") if u.strip()
+    normalize_peer_url(u) for u in os.getenv("FEDERATED_RELAYS", "").split(",") if u.strip()
 ]
 
 # Last federation sync outcome per peer, for the dashboard's Federation panel.
@@ -173,7 +177,13 @@ _FEDERATION_PEER_PUBKEYS_LOADED = False
 def _ensure_federation_pins_loaded() -> None:
     global _FEDERATION_PEER_PUBKEYS_LOADED
     if not _FEDERATION_PEER_PUBKEYS_LOADED:
-        _FEDERATION_PEER_PUBKEYS.update(load_federation_peer_pubkeys())
+        # N13-2 (R2): migrate any pin written under a pre-fix, un-normalized key (e.g.
+        # a trailing slash) so it's reachable under the same key _pull_federated_*
+        # now always look up.
+        migrated, changed = normalize_peer_pubkey_keys(load_federation_peer_pubkeys())
+        _FEDERATION_PEER_PUBKEYS.update(migrated)
+        if changed:
+            save_federation_peer_pubkeys(_FEDERATION_PEER_PUBKEYS)
         _FEDERATION_PEER_PUBKEYS_LOADED = True
 
 
@@ -3184,9 +3194,10 @@ async def _pull_federated_listings(peer_url: str) -> int:
     presenting a different key for the same peer_url is rejected rather than silently
     re-trusted, so a URL/DNS hijack can't swap in a different signer unnoticed.
     """
+    peer_url = normalize_peer_url(peer_url)  # N13-2 (R2): one identity for this peer
     try:
         async with httpx.AsyncClient(timeout=15) as client:
-            resp = await client.get(f"{peer_url.rstrip('/')}/gaming/v1/federate/listings")
+            resp = await client.get(f"{peer_url}/gaming/v1/federate/listings")
             resp.raise_for_status()
             data = resp.json()
     except Exception as e:
@@ -3238,7 +3249,9 @@ async def _pull_federated_listings(peer_url: str) -> int:
     # a persistent identity tied to a key file, while RELAY_BASE_URL is an env var an
     # operator can change; a URL-only check would miss "this is actually our own batch,
     # reflected back by a peer" once the URL has drifted from what old listings recorded.
-    if origin == RELAY_BASE_URL or pubkey_hex == get_relay_public_key_hex():
+    # Both sides normalized (N13-2, R2) — a trailing-slash mismatch between a peer's
+    # self-reported origin_relay and our own RELAY_BASE_URL must not defeat this check.
+    if normalize_peer_url(origin) == normalize_peer_url(RELAY_BASE_URL) or pubkey_hex == get_relay_public_key_hex():
         _FEDERATION_LAST_SYNC[peer_url] = {
             "ok": True,
             "imported": 0,
@@ -3336,9 +3349,10 @@ async def _pull_federated_lobby(peer_url: str) -> int:
     rejection, self-origin skip by public key); see that function's docstring for the
     full rationale on each step.
     """
+    peer_url = normalize_peer_url(peer_url)  # N13-2 (R2): one identity for this peer
     try:
         async with httpx.AsyncClient(timeout=15) as client:
-            resp = await client.get(f"{peer_url.rstrip('/')}/gaming/v1/federate/lobby")
+            resp = await client.get(f"{peer_url}/gaming/v1/federate/lobby")
             resp.raise_for_status()
             data = resp.json()
     except Exception as e:
@@ -3388,8 +3402,8 @@ async def _pull_federated_lobby(peer_url: str) -> int:
 
     # Skip our own relay to prevent loops — same by-public-key reasoning as
     # _pull_federated_listings (RELAY_BASE_URL is an env var that can drift; the key is
-    # a persistent identity tied to a key file).
-    if origin == RELAY_BASE_URL or pubkey_hex == get_relay_public_key_hex():
+    # a persistent identity tied to a key file). Both sides normalized (N13-2, R2).
+    if normalize_peer_url(origin) == normalize_peer_url(RELAY_BASE_URL) or pubkey_hex == get_relay_public_key_hex():
         _FEDERATION_LOBBY_LAST_SYNC[peer_url] = {
             "ok": True,
             "imported": 0,
