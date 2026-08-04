@@ -376,28 +376,41 @@ def test_seeded_demo_agent_ids_still_validate(client):
 # ============================================================================
 
 def _lobby_payload(creator_agent_id: str, *, challenge_id: str | None = None) -> dict:
-    """N13-1 (R5): derives the payload from a genuine GameRegistry.create_challenge()
-    export (relay_server's own _game_registry — the same registry POST /gaming/lobby
-    writes to) rather than hand-building a dict and computing its own id from that same
-    dict. The latter is exactly how N13-1's own regression shipped invisibly:
-    GamingLobbyChallengeRequest was missing `created_at`, and the old version of this
-    helper independently hashed a dict that was *also* missing `created_at`, so the two
-    omissions silently agreed with each other instead of exposing the mismatch a real
-    create_challenge() export (which always has created_at) would have caught.
+    """Builds a genuine, correctly-addressed challenge card *without* touching the
+    relay's own `_game_registry` (N14-3, R3) — the previous version called
+    `_game_registry.create_challenge()` to derive the payload, which wrote a row into
+    the very registry POST /gaming/lobby writes to before the test ever posted
+    anything, so every test using this helper silently exercised the `ON CONFLICT`
+    update path, never a fresh insert — the one path the endpoint exists for and the
+    one N13-1's own regression test also missed (see R3 in the N14 plan).
+
+    Hand-builds the record and hashes it directly, same technique as
+    `_sample_challenge()` (kept as a separate helper rather than reused directly since
+    that one hardcodes a peer creator/origin_relay for federation tests, not a locally-
+    authored lobby card). N13-1 (R5)'s original concern about a hand-built helper
+    silently agreeing with a hand-built server-side omission (both once independently
+    missing `created_at`) still applies here in principle — this dict is kept in the
+    same explicit, complete shape `_sample_challenge()` uses precisely so a future field
+    added to the real content address doesn't have a second place to silently miss it.
     `challenge_id` can still be overridden to simulate a forged/hijacked id that
     deliberately doesn't match its own content."""
-    from emporia.relay_server import _game_registry
+    import secrets
+    from datetime import UTC, datetime
 
-    challenge = _game_registry.create_challenge(
-        game_type="emporia:chess:v1",
-        creator_agent_id=creator_agent_id,
-        creator_gateway_url="https://example.test/gw",
-        payment_mode="free",
-    )
-    payload = challenge.to_dict()
+    from emporia.engine.game_registry import _recompute_challenge_id
+
+    data = {
+        "game_type": "emporia:chess:v1",
+        "creator_agent_id": creator_agent_id,
+        "creator_gateway_url": "https://example.test/gw",
+        "payment_mode": "free", "stake_amount": "0", "currency": "USD", "status": "open",
+        "created_at": datetime.now(UTC).isoformat(), "expires_at": None,
+        "origin_relay": None, "metadata": {"nonce": secrets.token_urlsafe(12)},
+    }
+    data["challenge_id"] = _recompute_challenge_id(data)
     if challenge_id is not None:
-        payload["challenge_id"] = challenge_id
-    return payload
+        data["challenge_id"] = challenge_id
+    return data
 
 
 def test_gaming_lobby_post_accepts_a_genuine_create_challenge_export(prod_client):
@@ -427,6 +440,35 @@ def test_gaming_lobby_post_accepts_a_genuine_create_challenge_export(prod_client
     )
     assert r.status_code == 200, r.text
     assert r.json()["challenge"]["challenge_id"] == challenge.challenge_id
+
+
+def test_gaming_lobby_post_accepts_a_genuinely_foreign_card_fresh_insert(prod_client):
+    """N14-3 (R3): POST /gaming/lobby exists to import a card that originated
+    *elsewhere* — every prior test of the accept path (this file's
+    test_gaming_lobby_post_accepts_a_genuine_create_challenge_export included) built its
+    card via `_game_registry.create_challenge()`, which inserts the row into the very
+    registry this endpoint writes to *before* the POST ever happens — so the endpoint's
+    own `_upsert()` always took the `ON CONFLICT DO UPDATE` path, never a fresh INSERT.
+    `_lobby_payload()` no longer has that side effect either (N14-3) — this test
+    confirms the row genuinely does not exist beforehand, then posts a card built
+    without touching `_game_registry` at all, and asserts both a 200 and that the row
+    now exists with the posted content."""
+    _register_keyed(prod_client, "genuinely_foreign_agent")
+    from emporia.relay_server import _game_registry
+
+    payload = _lobby_payload("genuinely_foreign_agent")
+    assert _game_registry.get_challenge(payload["challenge_id"]) is None
+
+    r = prod_client.post(
+        "/gaming/lobby", json=payload,
+        headers=bearer_for(prod_client, "genuinely_foreign_agent"),
+    )
+    assert r.status_code == 200, r.text
+    assert r.json()["challenge"]["challenge_id"] == payload["challenge_id"]
+
+    stored = _game_registry.get_challenge(payload["challenge_id"])
+    assert stored is not None
+    assert stored.creator_agent_id == "genuinely_foreign_agent"
 
 
 def test_gaming_lobby_post_requires_authentication(prod_client):
