@@ -752,6 +752,7 @@ def init_db() -> None:
         _migrate_authorized_agents(conn)
         _migrate_payments(conn)
         _migrate_settlements(conn)
+        _migrate_settlement_dedupe_key(conn)
         # Rename aroga_* → agora_* if old names still exist (typo fix)
         _migrate_agora_tables(conn)
         # Rooms schema (separate DDL to keep clean)
@@ -867,6 +868,68 @@ def _migrate_settlements(conn: Any) -> None:
     conn.execute(
         "INSERT OR IGNORE INTO schema_migrations (key, applied_at) VALUES (?, ?)",
         (backfill_key, datetime.now(UTC).isoformat()),
+    )
+
+
+def _migrate_settlement_dedupe_key(conn: Any) -> None:
+    """Add `dedupe_key` and a UNIQUE index on it (P1a-2, R2) so record_settlement()'s
+    `INSERT OR IGNORE` can actually collide on a replay.
+
+    It never could before: a fresh UUID `settlement_id` was minted immediately before
+    every insert, so `OR IGNORE` had no key to conflict on and a replayed settlement
+    always inserted a new row. `session_id` alone isn't the real natural key — it's
+    overloaded across three resource kinds (see
+    `_settlement_resource_viewer_allowed()`'s docstring) and a session's own aggregate
+    escrow row legitimately has zero-or-more payers, one row for the whole resource,
+    not one per payer, with `payer_id` correctly NULL. The real key is
+    `(session_id, payer_id)` — stored as `dedupe_key = session_id || ':' ||
+    COALESCE(payer_id, '')` rather than a bare `UNIQUE(session_id, payer_id)`, because
+    SQLite treats every NULL as distinct from every other NULL in a UNIQUE index, which
+    would not dedupe session-escrow rows (all sharing `payer_id IS NULL`) at all — the
+    exact case that matters most.
+
+    Deliberately follows `_migrate_payments()`'s pattern immediately above (delete
+    duplicates, then create the index, unconditionally on every startup — no
+    `schema_migrations` marker) rather than `_migrate_settlements()`'s own pattern
+    (marker-gated, run once). Not the same pitfall N9 review R2 fixed there: that
+    marker exists because a session's row keeps `payer_id IS NULL` *forever*, so a
+    naive `WHERE payer_id IS NULL` backfill scan never empties out. `dedupe_key` is
+    different — every row, including session-escrow ones, gets a non-NULL value once
+    computed, so `WHERE dedupe_key IS NULL` legitimately matches nothing on every
+    startup after the first, same as `_migrate_payments()`'s own per-startup DELETE
+    matching nothing once the table is clean.
+
+    Pre-existing duplicate rows (a settlement already double-inserted by the bug this
+    fixes) are deleted, keeping the earliest by rowid — the same choice
+    `_migrate_payments()` already makes for duplicate `payment_intent_id` rows just
+    above. Safe here for the same reason: a duplicate is redundant bookkeeping of the
+    *same* settlement (a retry recomputes identical amounts from the same session/payer
+    inputs), not a second, different financial event. Logged via `print()` (this
+    module's existing migration-logging convention) before deleting, so a run that
+    unexpectedly hits this is auditable rather than silent.
+    """
+    cols = {r[1] for r in conn.execute("PRAGMA table_info(settlements)").fetchall()}
+    if "dedupe_key" not in cols:
+        conn.execute("ALTER TABLE settlements ADD COLUMN dedupe_key TEXT")
+    conn.execute(
+        "UPDATE settlements SET dedupe_key = session_id || ':' || COALESCE(payer_id, '') "
+        "WHERE dedupe_key IS NULL"
+    )
+    dupes = conn.execute(
+        "SELECT dedupe_key, COUNT(*) c, GROUP_CONCAT(settlement_id) ids "
+        "FROM settlements GROUP BY dedupe_key HAVING c > 1"
+    ).fetchall()
+    for row in dupes:
+        print(
+            f"[migrate] settlements: dedupe_key {row['dedupe_key']!r} has {row['c']} "
+            f"duplicate rows ({row['ids']}) — keeping the earliest, removing the rest"
+        )
+    conn.execute(
+        "DELETE FROM settlements WHERE rowid NOT IN "
+        "(SELECT MIN(rowid) FROM settlements GROUP BY dedupe_key)"
+    )
+    conn.execute(
+        "CREATE UNIQUE INDEX IF NOT EXISTS idx_settlements_dedupe_key ON settlements(dedupe_key)"
     )
 
 
@@ -1164,18 +1227,30 @@ def record_settlement(settlement: dict[str, Any]) -> None:
     """`payer_id` (N7 review R1/R2) should be set for a room/Agora settlement — one
     row per payer, see join_room/subscribe_agora_topic — and left unset (NULL) for
     a session's aggregate escrow row, which has no single payer. See
-    _caller_owns_settlement_row for how reads use this column."""
+    _caller_owns_settlement_row for how reads use this column.
+
+    P1a-1 (R2): idempotency now runs on `dedupe_key` (`session_id||':'||
+    COALESCE(payer_id,'')`, see `_migrate_settlement_dedupe_key()`), not
+    `settlement_id` — a fresh UUID minted right before every insert meant the old
+    `INSERT OR IGNORE` had no key that could ever actually collide, so a replayed
+    settlement always inserted a new row. A genuine replay of the same logical
+    settlement now does nothing past the first write.
+    """
     settlement_id = f"stl_{uuid.uuid4().hex[:16]}"
+    session_id = settlement["session_id"]
+    payer_id = settlement.get("payer_id")
+    dedupe_key = f"{session_id}:{payer_id or ''}"
     with DB_LOCK, get_db() as conn:
         conn.execute(
-            "INSERT OR IGNORE INTO settlements "
+            "INSERT INTO settlements "
             "(settlement_id, session_id, winner_id, total_stake_cents, platform_fee_cents, "
             "winner_payout_cents, platform_fee_bps, payment_intent_ids, "
-            "transfer_id, transfer_status, status, created_at, payer_id) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            "transfer_id, transfer_status, status, created_at, payer_id, dedupe_key) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) "
+            "ON CONFLICT(dedupe_key) DO NOTHING",
             (
                 settlement_id,
-                settlement["session_id"],
+                session_id,
                 settlement.get("winner_id"),
                 settlement.get("total_stake_cents", 0),
                 settlement.get("platform_fee_cents", 0),
@@ -1186,7 +1261,8 @@ def record_settlement(settlement: dict[str, Any]) -> None:
                 settlement.get("transfer_status", "pending_connect"),
                 settlement.get("status", "settled"),
                 datetime.now(UTC).isoformat(),
-                settlement.get("payer_id"),
+                payer_id,
+                dedupe_key,
             ),
         )
 
