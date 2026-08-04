@@ -855,6 +855,39 @@ async def test_pull_federated_listings_scans_each_item_rejects_only_the_bad_one(
 
 
 @patch("httpx.AsyncClient.get", new_callable=AsyncMock)
+async def test_pull_federated_listings_caps_inbound_batch_size(mock_get):
+    """N13-3 (R3): the outbound feed caps at 200 (federated_listings_out), but the
+    inbound accept side didn't mirror it — _pull_federated_listings processed
+    whatever a peer sent, with no cap. One signed batch from a compromised or hostile
+    configured peer was unbounded CPU, unbounded DB writes, and (with NIM guardrails
+    enabled) unbounded paid LLM calls, since N12-6 added a full scan per item.
+    Confirms the import loop processes at most 200 items from an oversized batch and
+    flags the truncation in the sync record, which GET /federation/peers surfaces."""
+    from emporia.relay_server import _FEDERATION_LAST_SYNC, _FEDERATION_PEER_PUBKEYS, _pull_federated_listings
+
+    peer_url = "https://oversized-listings-peer.example/relay"
+    listings = [
+        {
+            "listing_id": f"lst_oversized_{i}", "title": f"listing {i}", "description": "",
+            "listing_type": "service", "agent_id": "peer_agent", "payment_mode": "free",
+            "price_usd": "0", "module_type": None, "expires_at": None,
+            "metadata": {}, "created_at": "2026-01-01T00:00:00+00:00",
+        }
+        for i in range(210)
+    ]
+    batch, _ = _make_peer_batch(peer_url, listings)
+    _FEDERATION_PEER_PUBKEYS.pop(peer_url, None)
+    mock_get.return_value = _mock_peer_response(batch)
+
+    imported = await _pull_federated_listings(peer_url)
+    assert imported == 200
+
+    record = _FEDERATION_LAST_SYNC[peer_url]
+    assert record["truncated"] is True
+    assert record["peer_batch_size"] == 210
+
+
+@patch("httpx.AsyncClient.get", new_callable=AsyncMock)
 async def test_pull_federated_listings_rejects_unsigned(mock_get):
     from emporia.relay_server import _pull_federated_listings, _FEDERATION_LAST_SYNC
 
@@ -1038,6 +1071,31 @@ async def test_pull_federated_lobby_scans_each_item_rejects_only_the_bad_one(moc
 
     assert _game_registry.get_challenge(clean["challenge_id"]) is not None
     assert _game_registry.get_challenge(unsafe["challenge_id"]) is None
+
+
+@patch("httpx.AsyncClient.get", new_callable=AsyncMock)
+async def test_pull_federated_lobby_caps_inbound_batch_size(mock_get):
+    """N13-3 (R3): the outbound feed caps at 200 (federated_lobby_out, N12-4), but the
+    inbound accept side didn't mirror it — _pull_federated_lobby processed whatever a
+    peer sent, with no cap. One signed batch from a compromised or hostile configured
+    peer was unbounded CPU, unbounded DB writes, and (with NIM guardrails enabled)
+    unbounded paid LLM calls, since N12-6 added a full scan per item. Confirms the
+    import loop processes at most 200 items from an oversized batch and flags the
+    truncation in the sync record, which GET /federation/peers surfaces."""
+    from emporia.relay_server import _FEDERATION_LOBBY_LAST_SYNC, _FEDERATION_PEER_PUBKEYS, _pull_federated_lobby
+
+    peer_url = "https://oversized-lobby-peer.example/relay"
+    challenges = [_sample_challenge(f"oversized_{i}") for i in range(210)]
+    batch, _ = _make_peer_batch(peer_url, challenges, key="challenges")
+    _FEDERATION_PEER_PUBKEYS.pop(peer_url, None)
+    mock_get.return_value = _mock_peer_response(batch)
+
+    imported = await _pull_federated_lobby(peer_url)
+    assert imported == 200
+
+    record = _FEDERATION_LOBBY_LAST_SYNC[peer_url]
+    assert record["truncated"] is True
+    assert record["peer_batch_size"] == 210
 
 
 @patch("httpx.AsyncClient.get", new_callable=AsyncMock)

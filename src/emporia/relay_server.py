@@ -3260,6 +3260,17 @@ async def _pull_federated_listings(peer_url: str) -> int:
         }
         return 0
 
+    # N13-3 (R3): cap what we accept, mirroring the LIMIT this relay already applies to
+    # what it serves (federated_listings_out). Applied after signature verification
+    # (which covers the full, untruncated list) so this never invalidates a genuinely
+    # signed batch; only caps the unbounded CPU/DB-write/guardrails-scan (N12-6,
+    # including paid NIM calls when enabled) cost of importing it. A peer oversending
+    # isn't silently dropped — noted in the sync record below, which
+    # GET /federation/peers already surfaces.
+    peer_batch_size = len(listings)
+    if peer_batch_size > _MAX_LIMIT:
+        listings = listings[:_MAX_LIMIT]
+
     imported = 0
     for listing in listings:
         if not listing.get("listing_id"):
@@ -3293,12 +3304,16 @@ async def _pull_federated_listings(peer_url: str) -> int:
                 ),
             )
         imported += 1
-    _FEDERATION_LAST_SYNC[peer_url] = {
+    sync_record: dict[str, Any] = {
         "ok": True,
         "imported": imported,
         "origin_relay": origin,
         "synced_at": datetime.now(UTC).isoformat(),
     }
+    if peer_batch_size > _MAX_LIMIT:
+        sync_record["truncated"] = True
+        sync_record["peer_batch_size"] = peer_batch_size
+    _FEDERATION_LAST_SYNC[peer_url] = sync_record
     return imported
 
 
@@ -3412,6 +3427,17 @@ async def _pull_federated_lobby(peer_url: str) -> int:
         }
         return 0
 
+    # N13-3 (R3): cap what we accept, mirroring the LIMIT this relay already applies to
+    # what it serves (federated_lobby_out, N12-4). Applied after signature verification
+    # (which covers the full, untruncated list — federation_signable_bytes was computed
+    # over it above) so this never invalidates a genuinely signed batch; only caps the
+    # unbounded CPU/DB-write/guardrails-scan (N12-6, including paid NIM calls when
+    # enabled) cost of importing it. A peer oversending isn't silently dropped — noted
+    # in the sync record below, which GET /federation/peers already surfaces.
+    peer_batch_size = len(challenges)
+    if peer_batch_size > _MAX_LIMIT:
+        challenges = challenges[:_MAX_LIMIT]
+
     imported = 0
     for challenge in challenges:
         if not challenge.get("challenge_id"):
@@ -3426,12 +3452,16 @@ async def _pull_federated_lobby(peer_url: str) -> int:
             imported += 1
         except Exception:
             continue
-    _FEDERATION_LOBBY_LAST_SYNC[peer_url] = {
+    sync_record: dict[str, Any] = {
         "ok": True,
         "imported": imported,
         "origin_relay": origin,
         "synced_at": datetime.now(UTC).isoformat(),
     }
+    if peer_batch_size > _MAX_LIMIT:
+        sync_record["truncated"] = True
+        sync_record["peer_batch_size"] = peer_batch_size
+    _FEDERATION_LOBBY_LAST_SYNC[peer_url] = sync_record
     return imported
 
 
