@@ -110,15 +110,14 @@ def _challenge_record_from_payload(
     """
     if not data.get("created_at"):
         raise ValueError("challenge must include created_at — it is part of the content address")
+    mode = _normalize_payment_mode(str(data.get("payment_mode") or "free"), data.get("stake_amount"))
     return GameChallenge(
         challenge_id=challenge_id,
         game_type=str(data["game_type"]),
         creator_agent_id=str(data["creator_agent_id"]),
         creator_gateway_url=str(data["creator_gateway_url"]),
-        payment_mode=_normalize_payment_mode(
-            str(data.get("payment_mode") or "free"), data.get("stake_amount")
-        ),
-        stake_amount=str(data.get("stake_amount") or "0"),
+        payment_mode=mode,
+        stake_amount=_normalize_stake_amount(mode, data.get("stake_amount")),
         currency=str(data.get("currency") or "USD"),
         status=str(data.get("status") or "open"),  # type: ignore[arg-type]
         created_at=str(data["created_at"]),
@@ -172,6 +171,20 @@ def _normalize_payment_mode(payment_mode: str | None, stake_amount: str | int | 
     if stake_amount in (None, "", "0", 0):
         return "free"
     return "stripe_link"
+
+
+def _normalize_stake_amount(mode: PaymentMode, stake_amount: str | int | None) -> str:
+    """A free challenge always stores stake_amount="0" (P1a-5, R5) — this was
+    create_challenge()'s own rule, but _challenge_record_from_payload() didn't apply
+    it, so a hand-built payload could mint payment_mode="free" with a nonzero
+    stake_amount, importable and re-verifiable, but not mintable through
+    create_challenge() itself: the two record constructors could disagree on a field
+    N14-1 unified everything else around. Inert today (free mode never triggers a
+    payment gate regardless of stake_amount), but it's exactly the class of mint/
+    import divergence N14-1 exists to eliminate, one field further in — sharing this
+    with create_challenge() means it can't reopen the same way twice.
+    """
+    return "0" if mode == "free" else str(stake_amount or "0")
 
 
 class GameRegistry:
@@ -244,7 +257,7 @@ class GameRegistry:
         if not game_type or not creator_agent_id or not creator_gateway_url:
             raise ValueError("game_type, creator_agent_id, and creator_gateway_url are required")
         mode = _normalize_payment_mode(payment_mode, stake_amount)
-        amount = "0" if mode == "free" else str(stake_amount or "0")
+        amount = _normalize_stake_amount(mode, stake_amount)
         created_at = _utc_now()
         expires_at = (
             (datetime.now(UTC) + timedelta(seconds=expires_in_seconds)).isoformat()

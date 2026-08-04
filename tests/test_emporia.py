@@ -684,6 +684,47 @@ def test_normalize_payment_mode_rejects_x402_outright():
             )
 
 
+def test_import_free_challenge_zeroes_stake_amount_like_create_challenge():
+    """P1a-5 (R5): create_challenge() has always zeroed stake_amount for a free
+    challenge (amount = "0" if mode == "free" else ...), but
+    _challenge_record_from_payload() didn't apply the same rule — a hand-built
+    payload could mint payment_mode="free" with a nonzero stake_amount, hashed and
+    stored exactly as given, importable and re-verifiable, but not something
+    create_challenge() itself could ever produce. Both constructors now share
+    _normalize_stake_amount(), so import zeroes it the same way mint does."""
+    import tempfile
+    from emporia.engine.game_registry import GameRegistry, _recompute_challenge_id, challenge_address
+
+    with tempfile.TemporaryDirectory() as tmp:
+        reg = GameRegistry(Path(tmp) / "stake_zero.sqlite3")
+
+        minted = reg.create_challenge(
+            game_type="emporia:chess:v1",
+            creator_agent_id="stake_zero_mint_agent",
+            creator_gateway_url="https://stake-zero.example/gw",
+            payment_mode="free",
+            stake_amount="500",
+        )
+        assert minted.stake_amount == "0", "create_challenge() must still zero a free stake"
+
+        raw = {
+            "game_type": "emporia:chess:v1",
+            "creator_agent_id": "stake_zero_import_agent",
+            "creator_gateway_url": "https://stake-zero.example/gw",
+            "payment_mode": "free",
+            "stake_amount": "500",
+            "currency": "USD",
+            "created_at": _utc_now_for_test(),
+        }
+        raw["challenge_id"] = _recompute_challenge_id(raw)
+        imported = reg.import_challenge(raw)
+
+        assert imported.stake_amount == "0", \
+            f"import_challenge() must zero a free stake the same way create_challenge() " \
+            f"does, got {imported.stake_amount!r}"
+        assert challenge_address(imported) == imported.challenge_id
+
+
 def test_import_challenge_rejects_missing_currency():
     """N14-1 (R1): currency is a hashed field. Before this fix, a card whose own id was
     computed over a payload omitting `currency` (raw None) verified fine, then got
