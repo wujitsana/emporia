@@ -3171,7 +3171,7 @@ async def federated_listings_out():
     with DB_LOCK, get_db() as conn:
         rows = conn.execute(
             "SELECT * FROM listings WHERE (expires_at IS NULL OR expires_at > ?) "
-            "AND origin_relay = ? ORDER BY created_at DESC LIMIT 200",
+            f"AND origin_relay = ? ORDER BY created_at DESC LIMIT {_MAX_LIMIT}",
             (datetime.now(UTC).isoformat(), RELAY_BASE_URL),
         ).fetchall()
     listings = [{**dict(r), "metadata": json.loads(r["metadata_json"])} for r in rows]
@@ -3346,7 +3346,8 @@ async def federated_lobby_out():
     grows by creating challenges (same class as N4-5, N7-3).
     """
     challenges = [
-        c.to_dict() for c in _game_registry.list_challenges("open", origin_relay=None, limit=200)
+        c.to_dict()
+        for c in _game_registry.list_challenges("open", origin_relay=None, limit=_MAX_LIMIT)
     ]
     signature = sign_raw_relay(federation_signable_bytes(RELAY_BASE_URL, "challenges", challenges))
     return {
