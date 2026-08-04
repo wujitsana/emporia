@@ -376,28 +376,57 @@ def test_seeded_demo_agent_ids_still_validate(client):
 # ============================================================================
 
 def _lobby_payload(creator_agent_id: str, *, challenge_id: str | None = None) -> dict:
-    """N12-2: challenge_id must be a genuine content address (import_challenge() now
-    verifies it), so this always derives a real one from the payload unless the caller
-    explicitly overrides it — e.g. to simulate a forged/hijacked id that doesn't match
-    its own content. Fields here must match GamingLobbyChallengeRequest's own defaults
-    exactly (stake_amount/currency/etc.) since the server hashes req.model_dump(),
-    which fills those in even when the caller omits them."""
-    from emporia.engine.game_registry import _recompute_challenge_id
+    """N13-1 (R5): derives the payload from a genuine GameRegistry.create_challenge()
+    export (relay_server's own _game_registry — the same registry POST /gaming/lobby
+    writes to) rather than hand-building a dict and computing its own id from that same
+    dict. The latter is exactly how N13-1's own regression shipped invisibly:
+    GamingLobbyChallengeRequest was missing `created_at`, and the old version of this
+    helper independently hashed a dict that was *also* missing `created_at`, so the two
+    omissions silently agreed with each other instead of exposing the mismatch a real
+    create_challenge() export (which always has created_at) would have caught.
+    `challenge_id` can still be overridden to simulate a forged/hijacked id that
+    deliberately doesn't match its own content."""
+    from emporia.relay_server import _game_registry
 
-    payload = {
-        "game_type": "emporia:chess:v1",
-        "creator_agent_id": creator_agent_id,
-        "creator_gateway_url": "https://example.test/gw",
-        "payment_mode": "free",
-        "stake_amount": "0",
-        "currency": "USD",
-        "status": "open",
-        "expires_at": None,
-        "origin_relay": None,
-        "metadata": {},
-    }
-    payload["challenge_id"] = challenge_id or _recompute_challenge_id(payload)
+    challenge = _game_registry.create_challenge(
+        game_type="emporia:chess:v1",
+        creator_agent_id=creator_agent_id,
+        creator_gateway_url="https://example.test/gw",
+        payment_mode="free",
+    )
+    payload = challenge.to_dict()
+    if challenge_id is not None:
+        payload["challenge_id"] = challenge_id
     return payload
+
+
+def test_gaming_lobby_post_accepts_a_genuine_create_challenge_export(prod_client):
+    """N13-1 (R1): POST /gaming/lobby rejected every genuine challenge card with a 422.
+    GamingLobbyChallengeRequest had no `created_at` field, so req.model_dump() silently
+    dropped it — one of the fields _recompute_challenge_id() hashes (N12-2) — and the
+    id a real create_challenge() computed (with a real created_at) never matched what
+    this endpoint recomputed (with created_at=None). Deliberately does NOT use
+    _lobby_payload() — that helper independently derives from the same
+    create_challenge() export this test does, so using it here would just be testing
+    the helper against itself again, the exact blind spot that let this regression
+    ship invisibly in the first place. Posts a raw create_challenge().to_dict() export
+    directly and asserts it's accepted, with its id unchanged."""
+    _register_keyed(prod_client, "genuine_card_agent")
+    from emporia.relay_server import _game_registry
+
+    challenge = _game_registry.create_challenge(
+        game_type="emporia:chess:v1",
+        creator_agent_id="genuine_card_agent",
+        creator_gateway_url="https://genuine.example/gw",
+        payment_mode="free",
+        metadata={"note": "a real card"},
+    )
+    r = prod_client.post(
+        "/gaming/lobby", json=challenge.to_dict(),
+        headers=bearer_for(prod_client, "genuine_card_agent"),
+    )
+    assert r.status_code == 200, r.text
+    assert r.json()["challenge"]["challenge_id"] == challenge.challenge_id
 
 
 def test_gaming_lobby_post_requires_authentication(prod_client):
@@ -444,8 +473,11 @@ def test_gaming_lobby_post_rejects_challenge_id_hijack(prod_client):
     assert r.status_code == 403
 
     # The original owner updating their own challenge (e.g. status change) still works.
-    payload = _lobby_payload("lobby_owner", challenge_id=hijacked_id)
-    payload["status"] = "cancelled"
+    # Reuses owner_payload's exact content — status is excluded from the content
+    # address, but every other field must still match, so re-minting via
+    # _lobby_payload() here (a fresh random card) would produce a payload that no
+    # longer matches hijacked_id's real content.
+    payload = {**owner_payload, "status": "cancelled"}
     r = prod_client.post(
         "/gaming/lobby", json=payload,
         headers=bearer_for(prod_client, "lobby_owner"),

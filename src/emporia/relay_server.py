@@ -4247,11 +4247,21 @@ class GamingLobbyChallengeRequest(BaseModel):
     creator_agent_id is a TARGET/attribution field, not the actor — this endpoint is
     peer-relay gossip (see below), so the agent a challenge is attributed to often isn't
     registered on *this* relay at all. The actor is the authenticated caller, checked
-    separately below."""
+    separately below.
+
+    N13-1 (R1): created_at is required, not optional — it was missing entirely until
+    this fix, which meant req.model_dump() silently fed import_challenge() a payload
+    missing one of the fields _recompute_challenge_id() hashes (N12-2), so every
+    genuine challenge card (whose id was computed *with* a real created_at by
+    create_challenge()) recomputed to a different id here and was rejected with a 422.
+    A default (e.g. None) would have papered over that by making a mismatched-content
+    payload verify against itself rather than surfacing the missing field.
+    """
     challenge_id: str
     game_type: str
     creator_agent_id: str
     creator_gateway_url: str
+    created_at: str
     payment_mode: str = "free"
     stake_amount: str = "0"
     currency: str = "USD"
