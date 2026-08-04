@@ -75,9 +75,14 @@ their own, separate handlers rather than this turn-processing pipeline.
 One: a periodic sweep (`_sweep_loop()`, `EMPORIA_SWEEP_INTERVAL_SECONDS`, default 300s), started
 in `lifespan()` and cancelled + awaited on shutdown. Evicts empty/expired keys from the relay's
 unbounded in-memory dicts (`_RATE_WINDOWS`, `_PENDING_TOKENS`, `ws_connections`,
-`AGENT_REGISTRY.rate_limits`) — see `SECURITY.md`'s N11 pass (R3). Nothing else runs in the
-background; federation sync is pull-on-demand (`POST /gaming/v1/federate/sync`, MCP tools), not
-scheduled by the relay itself.
+`AGENT_REGISTRY.rate_limits`) — see `SECURITY.md`'s N11 pass (R3). A single failed sweep no longer
+ends the task for the rest of the process's life (N12-1, R1): each run is wrapped so an exception
+is logged and counted rather than propagated, while `asyncio.CancelledError` (shutdown) still
+propagates normally. Outcomes (run count, last run/error timestamps, consecutive-failure count,
+cumulative evictions per dict) are process-lifetime counters in `SWEEP_STATS`, surfaced read-only
+via `GET /safety/stats` — see `SECURITY.md`'s N12 pass (R6). Nothing else runs in the background;
+federation sync is pull-on-demand (`POST /gaming/v1/federate/sync`, MCP tools), not scheduled by
+the relay itself.
 
 ## Module architecture (InteractionModule)
 
@@ -147,14 +152,34 @@ Payment gate is at join (challenger pays; creator joins free — intentional).
 - Two signed-pull feeds, same shape: each relay serves `GET /gaming/v1/federate/listings` (local
   origin listings) and `GET /gaming/v1/federate/lobby` (local open lobby challenges, N11-5 — task
   #8's fix; the *inverse* of the earlier push model, which could never authenticate since the
-  calling agent is by definition not registered on an arbitrary peer it's pushing to)
+  calling agent is by definition not registered on an arbitrary peer it's pushing to). **Own-origin
+  only, deliberately — neither feed relays a peer's own imports back out** (no multi-hop gossip
+  model; revisit only alongside peer discovery). `federated_lobby_out` filters to
+  `origin_relay IS NULL` — for challenges (unlike listings) that's the actual "created here, never
+  imported" invariant, since nothing stamps a challenge's `origin_relay` to this relay's own
+  `RELAY_BASE_URL` at creation the way `POST /listings` does. Both feeds cap at `LIMIT 200`
+  (N12-4, R2 — the lobby feed didn't originally have either the filter or the cap).
 - Peers pull these periodically: `POST /gaming/v1/federate/sync` (operator-triggered, pulls both
   from every `FEDERATED_RELAYS` entry) or the `sync_lobby_from_peer` MCP tool (agent-triggered,
   lobby only — independently verifies the signature itself, since it's a separate process/call
   site from the relay)
 - `origin_relay` field prevents gossip loops (`INSERT OR REPLACE`/`import_challenge` = idempotent),
   checked by the relay's own persistent public key (stable across a `RELAY_BASE_URL` change) as
-  well as by URL
+  well as by URL. On the challenge side, `import_challenge()` stamps every peer-pulled challenge's
+  `origin_relay` to the signature-verified peer URL it was actually pulled from, overriding
+  whatever the payload itself claims — otherwise an imported challenge with no self-reported origin
+  would be indistinguishable from a genuinely local one, defeating the own-origin filter above
+  (N12-4, R2a).
+- A pulling peer verifies, per item, before trusting it: the batch signature (both feeds), the
+  `challenge_id` content address — re-derived via `challenge_id_for()`, rejecting a payload whose
+  id doesn't match its own content (challenges only; listings have no content-addressing) — and
+  ownership, rejecting a `challenge_id` that already exists locally under a different creator, or
+  (for peer-pulled content specifically) under a different `origin_relay` than the peer it came
+  from (N12-2/N12-3, R3/R4 — this closes a real hole: N11-5's signed-pull fix authenticated *who
+  sent a batch*, not *what they were allowed to say about a row they didn't create*, so a signed
+  peer could still rewrite or cancel a locally-created challenge by reusing its id until N12-3).
+  Guardrails-scanned per item too (N12-6), same as every other write path — a valid signature
+  proves who sent a batch, not that its content is safe.
 - Standalone by default (`FEDERATED_RELAYS=""`)
 - `GET /federation/peers` reports configured peers + the last sync outcome for each feed (imported
   count, reachability, pinned public key) — surfaced in the dashboard's Federation panel
@@ -206,10 +231,13 @@ Note: `HERMES_PTGS_STRIPE_RELAY_BASE` is a hackathon convention, not an official
 
 - Live-mode Stripe Connect onboarding (Account Links / KYC) — test-mode transfers work end-to-end
   today via auto-provisioned test Connected Accounts; see `ROADMAP.md` § Payments
-- Live federation network at scale (two local relays work, and peer responses are now
-  signature-verified; peer discovery directory is not built — see `ROADMAP.md` § Federation)
-- A second, unsigned federation gossip path: `GET /gaming/lobby` (game challenges, pulled by the
-  MCP `sync_lobby_from_peer` tool) doesn't yet have the signature verification
-  `/gaming/v1/federate/listings` has — see `SECURITY.md`
+- Live federation network at scale (two local relays work, both feeds are signature-verified,
+  content-addressed, and ownership-checked per item; peer discovery directory is not built — see
+  `ROADMAP.md` § Federation)
+- Multi-hop gossip — both feeds are own-origin only by deliberate choice, not a relay/rebroadcast
+  model; a relay never re-serves a challenge or listing it merely imported from another peer
+- Automatic conflict resolution beyond last-write-under-the-same-owner — `GameRegistry` has no
+  merge/reconciliation logic if two relays diverge on a challenge they both legitimately have
+  standing to update; see `ROADMAP.md`'s Architecture cleanup section
 
 See `ROADMAP.md` for the full remaining/deferred backlog.

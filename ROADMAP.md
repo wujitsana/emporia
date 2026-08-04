@@ -125,8 +125,13 @@ resolution if two nodes mint the same challenge ID. **Done (N11-5, task #8): the
 `/gaming/v1/federate/listings` already used, reusing one shared canonicalizer
 (`identity.federation_signable_bytes`) rather than growing a second copy. `publish_challenge_to_peer`
 (the push-model half, which could never authenticate) is retired in place. See `SECURITY.md`'s N11
-section. What's still open here is the automatic-sync/conflict-resolution gap itself, not the
-signing.
+section. **Narrower again after N12 (N12-2/N12-3): a signed batch can no longer rewrite or cancel
+a challenge it doesn't own** — `challenge_id` is now content-addressed and verified on import, and
+a batch reusing an existing id under a different creator or a different `origin_relay` than the
+peer it came from is rejected, closing the gap N11-5's signing alone had reopened (see
+`SECURITY.md`'s N12 pass). What's still open here is genuine automatic-sync/conflict-resolution —
+no merge logic if two relays *both* have legitimate standing to update the same challenge and
+diverge — not signing or ownership, which are now enforced.
 - *Effort:* medium — would need either a single source of truth or a reconciliation pass.
 
 **Resource cleanup — done (N11-3).** ~~dead WebSocket connections are only pruned on a failed
