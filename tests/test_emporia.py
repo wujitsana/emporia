@@ -3255,7 +3255,10 @@ def test_join_room_accepts_bound_payment_intent(mock_verify, client):
         "amount": 100,
         "currency": "usd",
         "capture_method": "automatic",
-        "metadata": {"resource_type": "room", "resource_id": room_id},
+        "metadata": {
+            "resource_type": "room", "resource_id": room_id,
+            "buyer_agent_id": "paidroom_joiner",
+        },
     }
 
     r2 = client.post(
@@ -3299,7 +3302,10 @@ def test_agora_subscription_accepts_bound_payment_intent(mock_verify, client):
         "amount": 100,
         "currency": "usd",
         "capture_method": "automatic",
-        "metadata": {"resource_type": "agora", "resource_id": topic_id},
+        "metadata": {
+            "resource_type": "agora", "resource_id": topic_id,
+            "buyer_agent_id": "agora_member",
+        },
     }
 
     r3 = client.post(
@@ -3309,6 +3315,78 @@ def test_agora_subscription_accepts_bound_payment_intent(mock_verify, client):
     )
     assert r3.status_code == 200, r3.text
     assert r3.json()["gate_type"] == "paid_invite"
+
+
+# ============================================================================
+# P1a-1 — bind a payment to its payer, not just its resource (R1)
+# ============================================================================
+
+@patch("emporia.payments.verify_payment_intent", new_callable=AsyncMock)
+def test_join_room_rejects_payment_intent_from_different_payer(mock_verify, client):
+    """P1a-1 (R1): _assert_payment_intent_matches() checked amount/currency/capture-
+    method/resource but never who paid. A correctly-bound, fully valid PaymentIntent
+    id — genuinely paid for by one registered agent — could be presented by a second
+    registered agent on the direct-payment_intent_id branch (where the caller *is*
+    authenticated) and pass every prior check. The N4 review's R1 was a working
+    exploit built on this gap. Both PI-minting paths already stamp
+    metadata[buyer_agent_id]; this is the first check that reads it."""
+    _register(client, "payer_owner")
+    _register(client, "payer_owner2")
+    _register(client, "payer_impersonator")
+    r = client.post("/rooms", json={
+        "name": "Payer Binding Room", "creator_id": "payer_owner2", "room_type": "private",
+        "gate_type": "stripe_payment", "entry_fee_cents": 100,
+    },
+        headers={"x-emporia-agent-id": "payer_owner2"})
+    room_id = r.json()["room_id"]
+    mock_verify.return_value = {
+        "status": "succeeded", "payment_intent_id": "pi_payer_binding_test",
+        "amount": 100, "currency": "usd", "capture_method": "automatic",
+        "metadata": {
+            "resource_type": "room", "resource_id": room_id,
+            "buyer_agent_id": "payer_owner",
+        },
+    }
+
+    r2 = client.post(
+        f"/rooms/{room_id}/join",
+        json={"agent_id": "payer_impersonator", "payment_intent_id": "pi_payer_binding_test"},
+        headers={"x-emporia-agent-id": "payer_impersonator"},
+    )
+    assert r2.status_code == 402, r2.text
+    assert "not bound to this payer" in r2.text
+
+    from emporia.relay_server import DATABASE_PATH
+    from emporia.rooms import is_member
+    assert not is_member(room_id, "payer_impersonator", db_path=DATABASE_PATH)
+
+
+@patch("emporia.payments.verify_payment_intent", new_callable=AsyncMock)
+def test_join_room_rejects_payment_intent_missing_payer_metadata(mock_verify, client):
+    """P1a-1 (R1): a PI with no buyer_agent_id at all must be rejected when a payer is
+    expected, not waved through as if unclaimed metadata were trustworthy. Emporia
+    stamps this field on every PI it accepts — "absent" means "not ours.\""""
+    _register(client, "no_payer_meta_owner")
+    _register(client, "no_payer_meta_joiner")
+    r = client.post("/rooms", json={
+        "name": "No Payer Metadata Room", "creator_id": "no_payer_meta_owner",
+        "room_type": "private", "gate_type": "stripe_payment", "entry_fee_cents": 100,
+    },
+        headers={"x-emporia-agent-id": "no_payer_meta_owner"})
+    room_id = r.json()["room_id"]
+    mock_verify.return_value = {
+        "status": "succeeded", "payment_intent_id": "pi_no_payer_meta_test",
+        "amount": 100, "currency": "usd", "capture_method": "automatic",
+        "metadata": {"resource_type": "room", "resource_id": room_id},
+    }
+
+    r2 = client.post(
+        f"/rooms/{room_id}/join",
+        json={"agent_id": "no_payer_meta_joiner", "payment_intent_id": "pi_no_payer_meta_test"},
+        headers={"x-emporia-agent-id": "no_payer_meta_joiner"},
+    )
+    assert r2.status_code == 402, r2.text
+    assert "not bound to this payer" in r2.text
 
 
 def test_record_payment_is_idempotent_and_rejects_reuse():
@@ -3352,7 +3430,16 @@ def test_join_session_payment_intent_replay_returns_402(mock_verify, client):
     """Regression for N4 review R1: record_payment() raises ValueError on a
     PaymentIntent id already recorded for a different resource — a captured PI being
     replayed against a second session. join_session never caught that ValueError, so a
-    replay attempt 500'd instead of being rejected as a payment failure."""
+    replay attempt 500'd instead of being rejected as a payment failure.
+
+    P1a-1 (R1): joiner2 now gets rejected one check earlier than record_payment's own
+    replay defense — the payer-binding check added in _assert_payment_intent_matches()
+    catches "this PI belongs to joiner1" before record_payment() ever runs, since a
+    genuine PI's metadata carries the real payer (buyer_agent_id) throughout its
+    lifetime, so replaying it against a second resource doesn't change who it's bound
+    to. Same outcome (402, never joined) via a more precise mechanism; record_payment()'s
+    own dedupe-by-id defense stays covered directly by
+    test_record_payment_is_idempotent_and_rejects_reuse."""
     _register(client, "n42_sess_creator1")
     _register(client, "n42_sess_creator2")
     _register(client, "n42_sess_joiner1")
@@ -3373,12 +3460,18 @@ def test_join_session_payment_intent_replay_returns_402(mock_verify, client):
         {
             "status": "requires_capture", "payment_intent_id": "pi_n42_shared",
             "amount": 100, "currency": "usd", "capture_method": "manual",
-            "metadata": {"resource_type": "session", "resource_id": session_ids[0]},
+            "metadata": {
+                "resource_type": "session", "resource_id": session_ids[0],
+                "buyer_agent_id": "n42_sess_joiner1",
+            },
         },
         {
             "status": "requires_capture", "payment_intent_id": "pi_n42_shared",
             "amount": 100, "currency": "usd", "capture_method": "manual",
-            "metadata": {"resource_type": "session", "resource_id": session_ids[1]},
+            "metadata": {
+                "resource_type": "session", "resource_id": session_ids[1],
+                "buyer_agent_id": "n42_sess_joiner1",
+            },
         },
     ]
 
@@ -3395,7 +3488,7 @@ def test_join_session_payment_intent_replay_returns_402(mock_verify, client):
         headers={"x-emporia-agent-id": "n42_sess_joiner2"},
     )
     assert r2.status_code == 402, r2.text
-    assert "already recorded" in r2.text
+    assert "not bound to this payer" in r2.text
     session2 = client.get(
         f"/sessions/{session_ids[1]}", headers={"x-emporia-agent-id": "n42_sess_creator2"}
     ).json()
@@ -3405,7 +3498,9 @@ def test_join_session_payment_intent_replay_returns_402(mock_verify, client):
 @patch("emporia.payments.verify_payment_intent", new_callable=AsyncMock)
 def test_join_room_payment_intent_replay_returns_402(mock_verify, client):
     """Same property as test_join_session_payment_intent_replay_returns_402 for
-    POST /rooms/{id}/join — a captured PI replayed against a second paid room."""
+    POST /rooms/{id}/join — a captured PI replayed against a second paid room. See that
+    test's docstring for why joiner2 is now caught by the P1a-1 payer-binding check
+    rather than record_payment()'s own dedupe-by-id defense."""
     _register(client, "n42_room_owner1")
     _register(client, "n42_room_owner2")
     _register(client, "n42_room_joiner1")
@@ -3424,12 +3519,18 @@ def test_join_room_payment_intent_replay_returns_402(mock_verify, client):
         {
             "status": "succeeded", "payment_intent_id": "pi_n42_room_shared",
             "amount": 100, "currency": "usd", "capture_method": "automatic",
-            "metadata": {"resource_type": "room", "resource_id": room_ids[0]},
+            "metadata": {
+                "resource_type": "room", "resource_id": room_ids[0],
+                "buyer_agent_id": "n42_room_joiner1",
+            },
         },
         {
             "status": "succeeded", "payment_intent_id": "pi_n42_room_shared",
             "amount": 100, "currency": "usd", "capture_method": "automatic",
-            "metadata": {"resource_type": "room", "resource_id": room_ids[1]},
+            "metadata": {
+                "resource_type": "room", "resource_id": room_ids[1],
+                "buyer_agent_id": "n42_room_joiner1",
+            },
         },
     ]
 
@@ -3446,7 +3547,7 @@ def test_join_room_payment_intent_replay_returns_402(mock_verify, client):
         headers={"x-emporia-agent-id": "n42_room_joiner2"},
     )
     assert r2.status_code == 402, r2.text
-    assert "already recorded" in r2.text
+    assert "not bound to this payer" in r2.text
 
     from emporia.relay_server import DATABASE_PATH
     from emporia.rooms import is_member
@@ -3482,7 +3583,10 @@ def test_agora_paid_subscribe_composed_bypass_closed(mock_verify, client):
     mock_verify.return_value = {
         "status": "succeeded", "payment_intent_id": "pi_n42_agora_captured",
         "amount": 100, "currency": "usd", "capture_method": "automatic",
-        "metadata": {"resource_type": "agora", "resource_id": topic_id},
+        "metadata": {
+            "resource_type": "agora", "resource_id": topic_id,
+            "buyer_agent_id": "n42_agora_legit",
+        },
     }
     r_legit = client.post(
         f"/agoras/topics/{slug}/subscribe",
@@ -3591,7 +3695,10 @@ def test_agora_subscribe_retry_does_not_double_pay(mock_verify, mock_payout, cli
         mock_verify.return_value = {
             "status": "succeeded", "payment_intent_id": "pi_n53_agora_retry",
             "amount": 100, "currency": "usd", "capture_method": "automatic",
-            "metadata": {"resource_type": "agora", "resource_id": topic_id},
+            "metadata": {
+                "resource_type": "agora", "resource_id": topic_id,
+                "buyer_agent_id": "n53_agora_payer",
+            },
         }
         subscribe_body = {"agent_id": "n53_agora_payer", "payment_intent_id": "pi_n53_agora_retry"}
 
@@ -3642,7 +3749,10 @@ def test_join_room_retry_does_not_double_pay(mock_verify, mock_payout, client):
         mock_verify.return_value = {
             "status": "succeeded", "payment_intent_id": "pi_n53_room_retry",
             "amount": 100, "currency": "usd", "capture_method": "automatic",
-            "metadata": {"resource_type": "room", "resource_id": room_id},
+            "metadata": {
+                "resource_type": "room", "resource_id": room_id,
+                "buyer_agent_id": "n53_room_payer",
+            },
         }
         join_body = {"agent_id": "n53_room_payer", "payment_intent_id": "pi_n53_room_retry"}
 
@@ -3692,7 +3802,10 @@ def test_kicked_room_member_can_still_read_own_receipt(mock_verify, mock_payout,
         mock_verify.return_value = {
             "status": "succeeded", "payment_intent_id": "pi_n54_room_receipt",
             "amount": 100, "currency": "usd", "capture_method": "automatic",
-            "metadata": {"resource_type": "room", "resource_id": room_id},
+            "metadata": {
+                "resource_type": "room", "resource_id": room_id,
+                "buyer_agent_id": "n54_room_payer",
+            },
         }
         r2 = client.post(
             f"/rooms/{room_id}/join",
@@ -3740,7 +3853,10 @@ def test_unsubscribed_agora_member_can_still_read_own_receipt(mock_verify, mock_
         mock_verify.return_value = {
             "status": "succeeded", "payment_intent_id": "pi_n54_agora_receipt",
             "amount": 100, "currency": "usd", "capture_method": "automatic",
-            "metadata": {"resource_type": "agora", "resource_id": topic_id},
+            "metadata": {
+                "resource_type": "agora", "resource_id": topic_id,
+                "buyer_agent_id": "n54_agora_payer",
+            },
         }
         r2 = client.post(
             f"/agoras/topics/{slug}/subscribe",
@@ -4691,7 +4807,10 @@ def test_settlement_co_payer_cannot_see_others_payment_intent_ids_agora(mock_ver
         mock_verify.return_value = {
             "status": "succeeded", "payment_intent_id": "pi_n6co_agora_a",
             "amount": 100, "currency": "usd", "capture_method": "automatic",
-            "metadata": {"resource_type": "agora", "resource_id": topic_id},
+            "metadata": {
+                "resource_type": "agora", "resource_id": topic_id,
+                "buyer_agent_id": payer_a,
+            },
         }
         for invitee in (payer_a, payer_b):
             client.post(f"/agoras/topics/{slug}/invite", json={"invitee_id": invitee},
@@ -4704,7 +4823,10 @@ def test_settlement_co_payer_cannot_see_others_payment_intent_ids_agora(mock_ver
         mock_verify.return_value = {
             "status": "succeeded", "payment_intent_id": "pi_n6co_agora_b",
             "amount": 100, "currency": "usd", "capture_method": "automatic",
-            "metadata": {"resource_type": "agora", "resource_id": topic_id},
+            "metadata": {
+                "resource_type": "agora", "resource_id": topic_id,
+                "buyer_agent_id": payer_b,
+            },
         }
         sub_b = client.post(f"/agoras/topics/{slug}/subscribe",
             json={"agent_id": payer_b, "payment_intent_id": "pi_n6co_agora_b"},
@@ -4824,7 +4946,10 @@ def test_payment_records_redacts_other_payers_in_room(mock_verify, mock_payout, 
             mock_verify.return_value = {
                 "status": "succeeded", "payment_intent_id": pi,
                 "amount": 100, "currency": "usd", "capture_method": "automatic",
-                "metadata": {"resource_type": "room", "resource_id": room_id},
+                "metadata": {
+                    "resource_type": "room", "resource_id": room_id,
+                    "buyer_agent_id": payer,
+                },
             }
             jr = client.post(f"/rooms/{room_id}/join",
                 json={"agent_id": payer, "payment_intent_id": pi},

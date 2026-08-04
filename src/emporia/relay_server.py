@@ -928,7 +928,20 @@ def _assert_payment_intent_matches(
     resource_id: str,
     expected_capture_method: str,
     allowed_statuses: tuple[str, ...],
+    expected_payer_agent_id: str | None = None,
 ) -> None:
+    """`expected_payer_agent_id` (P1a-1, R1): a PaymentIntent used to be verified as
+    bound to a *resource* but never to a *payer* — any registered agent presenting a
+    valid, correctly-bound PI id passed every check here, including one they didn't
+    pay for. Both PI-minting paths (`create_stake_intent`, `confirm_spt`) already stamp
+    `metadata[buyer_agent_id]`; this was simply never read. Only
+    `_verify_and_confirm_payment()`'s direct-`payment_intent_id` branch passes this —
+    the caller is authenticated there, so the check is real. The SPT branch mints the
+    PI from the caller's own claimed `agent_id` in the same call, so comparing them
+    would be circular; deliberately left `None` (skipped) on that branch. A PI with no
+    `buyer_agent_id` at all is rejected outright when a payer is expected — Emporia
+    stamps every PI it accepts, so "absent" means "not ours," not "trust it anyway."
+    """
     status = payment.get("status")
     if status not in allowed_statuses:
         raise HTTPException(402, f"Payment not confirmed (status={status}).")
@@ -956,12 +969,17 @@ def _assert_payment_intent_matches(
         resource_id=resource_id,
     ):
         raise HTTPException(402, "PaymentIntent is not bound to this resource")
+    if expected_payer_agent_id is not None:
+        actual_payer = metadata.get("buyer_agent_id")
+        if actual_payer != expected_payer_agent_id:
+            raise HTTPException(402, "PaymentIntent is not bound to this payer")
 
 
 async def _verify_and_confirm_payment(
     request: Request,
     *,
     agent_id: str,
+    identity_verified: bool,
     amount_cents: int,
     currency: str,
     resource_type: str,
@@ -986,6 +1004,13 @@ async def _verify_and_confirm_payment(
 
     Shared by /sessions/{id}/join, /rooms/{id}/join, and /agoras/topics/{slug}/subscribe —
     previously ~40 lines of identical verify/confirm/validate logic copy-pasted at each site.
+
+    `identity_verified` (P1a-1, R1): whether `agent_id` was actually proven, i.e. the
+    caller's own `_require_caller_unless_mpp_payment()` return value — threaded through
+    explicitly rather than re-derived from `extract_mpp_token()` here, so the guarantee
+    is carried, not inferred from two functions happening to test the same condition.
+    Only the direct-`payment_intent_id` branch below uses it to bind the PI to a payer;
+    see that branch's own comment for why the SPT branch can't.
     """
     from emporia.payments import (
         build_mpp_challenge, extract_mpp_token, confirm_spt,
@@ -1002,6 +1027,9 @@ async def _verify_and_confirm_payment(
                 currency=currency, capture_method=capture_method, resource_type=resource_type,
             )
             result = await verify_payment_intent(result["payment_intent_id"])
+            # No expected_payer_agent_id: confirm_spt() mints this PI from the very
+            # agent_id this request claimed, so comparing them would be circular and
+            # prove nothing — see _assert_payment_intent_matches()'s docstring.
             _assert_payment_intent_matches(
                 result, amount_cents=amount_cents, currency=currency,
                 resource_type=resource_type, resource_id=resource_id,
@@ -1024,10 +1052,14 @@ async def _verify_and_confirm_payment(
                     status = result.get("status")
                 if status not in allowed_statuses:
                     raise HTTPException(402, f"Payment not confirmed (status={status}).")
+            # The caller *is* authenticated on this branch (reachable only when
+            # extract_mpp_token() is falsy, the exact condition identity_verified
+            # reflects), so binding to agent_id here is real, not circular.
             _assert_payment_intent_matches(
                 result, amount_cents=amount_cents, currency=currency,
                 resource_type=resource_type, resource_id=resource_id,
                 expected_capture_method=capture_method, allowed_statuses=allowed_statuses,
+                expected_payer_agent_id=(agent_id if identity_verified else None),
             )
             return req_payment_intent_id
         except HTTPException:
@@ -3691,6 +3723,7 @@ async def join_session(session_id: str, req: JoinSessionRequest, request: Reques
         result = await _verify_and_confirm_payment(
             request,
             agent_id=req.agent_id,
+            identity_verified=identity_verified,
             amount_cents=amount_cents,
             currency=currency,
             resource_type="session",
@@ -4483,6 +4516,7 @@ async def join_room(room_id: str, req: JoinRoomRequest, request: Request):
         result = await _verify_and_confirm_payment(
             request,
             agent_id=req.agent_id,
+            identity_verified=identity_verified,
             amount_cents=amount_cents,
             currency=currency,
             resource_type="room",
@@ -5089,6 +5123,7 @@ async def subscribe_agora_topic(slug: str, req: AgoraSubscribeRequest, request: 
         result = await _verify_and_confirm_payment(
             request,
             agent_id=req.agent_id,
+            identity_verified=identity_verified,
             amount_cents=entry_fee,
             currency=currency,
             resource_type="agora",
