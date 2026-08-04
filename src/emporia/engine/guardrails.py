@@ -4,16 +4,19 @@ Protects the relay from adversarial prompt-injection and exploit text before
 the protocol kernel processes any turn. Anti-cheat (bot fingerprints, PoR
 density) is handled separately in the relay.
 
-Two layers, both opt-out, neither replacing the other:
+Two layers:
   1. Deterministic regex firewall (`scan_payload`/`assert_payload_safe`) — always
-     on, zero-latency, offline-safe. The baseline.
+     on, zero-latency, offline-safe, opt-out only. The baseline.
   2. Optional NVIDIA NIM-backed semantic check (`nemo_semantic_check`,
      `assert_payload_safe_async`) — an LLM call to an NVIDIA-hosted Nemotron
      model that classifies SAFE/BLOCK for things regex can't generalize past
-     (paraphrased jailbreaks, novel phrasing). On by default for demo installs
-     (EMPORIA_NEMO_GUARDRAILS_ENABLED=0 to disable) since it adds network
-     latency and a new failure mode; fails open on NIM errors/timeouts so a
-     NIM outage degrades to "deterministic-only", not "relay broken".
+     (paraphrased jailbreaks, novel phrasing). **Off by default, opt-in**
+     (EMPORIA_NEMO_GUARDRAILS_ENABLED=1 to enable — the code default here is "0",
+     and nothing in the installer auto-enables it purely from an NVIDIA_API_KEY
+     being present). It's a real per-write cost when on: up to
+     `_NEMO_MAX_CANDIDATES` (6) LLM calls per scanned payload, one per text field,
+     against a paid API — not just added latency. Fails open on NIM errors/timeouts
+     so a NIM outage degrades to "deterministic-only", not "relay broken".
 """
 
 from __future__ import annotations

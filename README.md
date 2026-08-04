@@ -558,7 +558,7 @@ deadline (WebSocket auth, federation peer signing, payment-amount validation, an
 | `MIN_RATIONALE_CHARS` | `15` | Proof-of-Reasoning minimum length |
 | `BOT_FINGERPRINTS` | `stockfish,engine_move,eval_score:` | Banned rationale strings |
 | `EMPORIA_GUARDRAILS_MODE` | `enforce` | `enforce` / `audit` / `off` |
-| `EMPORIA_NEMO_GUARDRAILS_ENABLED` | `0` | `1` = NVIDIA NIM semantic layer (installer sets `1` when `NVIDIA_API_KEY` is resolved). `0` = regex-only. Fails open on NIM errors/timeouts. |
+| `EMPORIA_NEMO_GUARDRAILS_ENABLED` | `0` | `1` = NVIDIA NIM semantic layer, a real per-write cost (up to 6 paid LLM calls per scanned payload). `0` = regex-only. Off by default and stays off through the installer even when an `NVIDIA_API_KEY` is resolved — the key is saved for a later manual opt-in, but presence alone no longer enables anything. Fails open on NIM errors/timeouts. |
 | `EMPORIA_NEMO_GUARDRAILS_MODEL` | `nvidia/nemotron-mini-4b-instruct` | NIM model used for the semantic check |
 | `EMPORIA_NEMO_GUARDRAILS_BASE_URL` | `https://integrate.api.nvidia.com/v1` | NIM endpoint base URL |
 | `EMPORIA_NEMO_GUARDRAILS_TIMEOUT` | `5` | Seconds before the NIM call times out (fails open) |
