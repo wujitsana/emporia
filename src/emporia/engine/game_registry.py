@@ -26,6 +26,8 @@ DEFAULT_DB_PATH = Path(
 PaymentMode = Literal["free", "stripe_link", "mpp"]
 ChallengeStatus = Literal["open", "accepted", "closed", "expired"]
 
+_UNSET: Any = object()  # distinguishes "no filter" from an explicit origin_relay=None filter
+
 
 @dataclass(frozen=True)
 class GameChallenge:
@@ -316,7 +318,15 @@ class GameRegistry:
                 status=str(data.get("status") or "open"),  # type: ignore[arg-type]
                 created_at=str(data.get("created_at") or _utc_now()),
                 expires_at=data.get("expires_at"),
-                origin_relay=data.get("origin_relay"),
+                # N12-4 (R2a): when we independently know who we're pulling from
+                # (trusted_origin, set by the two peer-pull call sites to the
+                # signature-verified peer_url), that's authoritative over whatever
+                # origin_relay the payload itself claims — including claiming none at
+                # all. Trusting a self-reported origin_relay here is how an imported
+                # challenge could end up with origin_relay=None (indistinguishable from
+                # a genuinely local one) and then get re-served, signed, by
+                # federated_lobby_out as if authored on this relay.
+                origin_relay=trusted_origin if trusted_origin is not None else data.get("origin_relay"),
                 metadata=dict(data.get("metadata") or {}),
             )
             self._upsert(imported)
@@ -340,15 +350,40 @@ class GameRegistry:
             )
             return int(cursor.rowcount or 0)
 
-    def list_challenges(self, status: str | None = "open") -> list[GameChallenge]:
+    def list_challenges(
+        self,
+        status: str | None = "open",
+        *,
+        origin_relay: str | None = _UNSET,  # type: ignore[assignment]
+        limit: int | None = None,
+    ) -> list[GameChallenge]:
+        """`origin_relay` is unset by default (no filter — every caller before N12-4 gets
+        every challenge regardless of origin, e.g. the human/dashboard-facing
+        GET /gaming/lobby and the MCP list_challenges tool). Pass it explicitly —
+        including `None` — to filter: `origin_relay=None` means "genuinely local, never
+        imported," which is the invariant this schema actually uses (unlike listings,
+        nothing ever stamps a challenge's origin_relay to this relay's own
+        RELAY_BASE_URL at creation — see import_challenge()'s trusted_origin handling),
+        so it needs SQL's NULL-safe `IS`, not `=`, to match correctly.
+        """
         self.expire_challenges()
+        clauses: list[str] = []
+        params: list[Any] = []
+        if status:
+            clauses.append("status = ?")
+            params.append(status)
+        if origin_relay is not _UNSET:
+            clauses.append("origin_relay IS ?")
+            params.append(origin_relay)
+        query = "SELECT * FROM challenges"
+        if clauses:
+            query += " WHERE " + " AND ".join(clauses)
+        query += " ORDER BY created_at DESC"
+        if limit:
+            query += " LIMIT ?"
+            params.append(limit)
         with self._lock, self._connect() as conn:
-            if status:
-                rows = conn.execute(
-                    "SELECT * FROM challenges WHERE status = ? ORDER BY created_at DESC", (status,)
-                ).fetchall()
-            else:
-                rows = conn.execute("SELECT * FROM challenges ORDER BY created_at DESC").fetchall()
+            rows = conn.execute(query, params).fetchall()
         return [self._row_to_challenge(row) for row in rows]
 
     def accept_challenge(self, challenge_id: str, accepter_agent_id: str) -> GameChallenge:

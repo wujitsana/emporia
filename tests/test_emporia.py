@@ -880,6 +880,56 @@ def test_federated_lobby_out_is_signed(client):
 
 
 @patch("httpx.AsyncClient.get", new_callable=AsyncMock)
+async def test_federated_lobby_out_excludes_foreign_origin_challenges(mock_get, client):
+    """N12-4 (R2a): federated_lobby_out used to re-serve, signed as if authored here,
+    any challenge this relay had merely imported from another peer — the signature
+    attests transport, not authorship, but the pulling side reads it as authorship,
+    which is exactly what would let a two-hop peer chain quietly grow into unbounded
+    multi-hop gossip despite the user's explicit own-origin-only decision for this
+    feed. Pulls one genuinely foreign challenge in, then confirms it never appears back
+    out of this relay's own feed, while a real local challenge does."""
+    from emporia.relay_server import _game_registry, _pull_federated_lobby
+
+    local = _game_registry.create_challenge(
+        game_type="emporia:chess:v1",
+        creator_agent_id="scope_local_agent",
+        creator_gateway_url="https://scope-local.example/gw",
+        payment_mode="free",
+    )
+
+    foreign_peer = "https://scope-foreign-peer.example/relay"
+    foreign_challenge = _sample_challenge("scope_foreign")
+    batch, _ = _make_peer_batch(foreign_peer, [foreign_challenge], key="challenges")
+    mock_get.return_value = _mock_peer_response(batch)
+    assert await _pull_federated_lobby(foreign_peer) == 1
+
+    r = client.get("/gaming/v1/federate/lobby")
+    assert r.status_code == 200
+    ids = {c["challenge_id"] for c in r.json()["challenges"]}
+    assert local.challenge_id in ids
+    assert foreign_challenge["challenge_id"] not in ids
+
+
+def test_federated_lobby_out_caps_at_200(client):
+    """N12-4 (R2b): federated_listings_out caps at LIMIT 200 on a public unauthenticated
+    endpoint whose size an attacker can grow by creating challenges (same class as
+    N4-5, N7-3) — federated_lobby_out never had a matching cap. Confirms the feed
+    doesn't grow unbounded."""
+    from emporia.relay_server import _game_registry
+
+    for i in range(210):
+        _game_registry.create_challenge(
+            game_type="emporia:chess:v1",
+            creator_agent_id=f"limit_test_agent_{i}",
+            creator_gateway_url="https://limit-test.example/gw",
+            payment_mode="free",
+        )
+    r = client.get("/gaming/v1/federate/lobby")
+    assert r.status_code == 200
+    assert len(r.json()["challenges"]) <= 200
+
+
+@patch("httpx.AsyncClient.get", new_callable=AsyncMock)
 async def test_pull_federated_lobby_accepts_valid_signature(mock_get):
     from emporia.relay_server import _pull_federated_lobby, _FEDERATION_PEER_PUBKEYS
 

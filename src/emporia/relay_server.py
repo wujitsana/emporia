@@ -3289,8 +3289,23 @@ async def federated_lobby_out():
     uses: signed with this relay's own persistent Ed25519 key (see
     identity.generate_or_load_relay_keypair()), so a pulling peer can verify the batch
     actually came from here.
+
+    N12-4 (R2): this used to diverge from federated_listings_out in two ways it
+    shouldn't have. (a) No origin filter — this relay would sign and re-serve
+    challenges it had merely imported from another peer, so the signature attested
+    transport while a pulling peer read it as authorship; own-origin-only was the
+    user's explicit choice for this feed (no multi-hop relay model). `origin_relay=None`
+    is the actual "genuinely local, never imported" invariant for challenges — unlike
+    listings, nothing stamps a challenge's origin_relay to this relay's own
+    RELAY_BASE_URL at creation, and import_challenge() now stamps every peer-pulled
+    challenge with the verified peer_url regardless of what it claims about itself, so
+    None only ever means "created here." (b) No LIMIT, unlike listings' 200 — an
+    unbounded response on a public unauthenticated endpoint whose size an attacker
+    grows by creating challenges (same class as N4-5, N7-3).
     """
-    challenges = [c.to_dict() for c in _game_registry.list_challenges("open")]
+    challenges = [
+        c.to_dict() for c in _game_registry.list_challenges("open", origin_relay=None, limit=200)
+    ]
     signature = sign_raw_relay(federation_signable_bytes(RELAY_BASE_URL, "challenges", challenges))
     return {
         "origin_relay": RELAY_BASE_URL,
