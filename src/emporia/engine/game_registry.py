@@ -2,7 +2,9 @@
 
 Content-addressed and local-first. A node creates an open challenge, exports it
 as canonical JSON, and shares it through any channel. Another node imports the
-challenge and verifies the challenge_id by recomputing the hash.
+challenge and verifies the challenge_id by recomputing the hash — over the record
+that will actually be stored, so a re-exported stored row always re-verifies (N14-1;
+see challenge_address()).
 
 Free games are first-class: payment_mode="free" never triggers payment gates.
 """
@@ -15,7 +17,7 @@ import os
 import secrets
 import sqlite3
 import threading
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, replace
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any, Literal, Mapping
@@ -58,31 +60,81 @@ def challenge_id_for(payload: Mapping[str, Any]) -> str:
     return f"emporia_chal_{digest[:24]}"
 
 
-def _recompute_challenge_id(data: Mapping[str, Any]) -> str:
-    """Re-derive challenge_id_for()'s hash from an imported/exported challenge dict
-    (N12-2) — the module docstring above has always promised importers "verify the
-    challenge_id by recomputing the hash"; import_challenge() never actually did.
+def challenge_address(challenge: GameChallenge) -> str:
+    """The content address of a challenge *record* — the single definition of what the
+    address covers (N14-1).
 
-    Must reconstruct exactly the payload create_challenge() hashed: that function
-    hashes `metadata` *without* the nonce, then merges the nonce into the
-    stored/exported metadata afterward — so the nonce has to be split back out here
-    before re-hashing, or every genuine export would fail its own verification.
+    Derived from create_challenge()'s own hashed payload, which is the only authority:
+    every GameChallenge field except `challenge_id` (excluded by challenge_id_for),
+    `status`, and `origin_relay` — the three that are deliberately mutable so a
+    legitimate status change or a peer-origin stamp keeps the same address. `metadata`
+    is hashed *without* the nonce and stored *with* it merged in, so the nonce is split
+    back out here.
+
+    Both create_challenge() and import_challenge() address records through this one
+    function, so "the id we mint", "the id we verify against", and "the content we
+    store" cannot diverge. Before N14-1 they could: import_challenge() hashed the raw
+    incoming payload but stored a normalized one, so a row whose payment_mode/currency/
+    created_at got defaulted or rewritten on the way in verified exactly once — at
+    import — and never again.
     """
-    metadata = dict(data.get("metadata") or {})
+    metadata = dict(challenge.metadata or {})
     nonce = metadata.pop("nonce", None)
-    payload = {
-        "game_type": data.get("game_type"),
-        "creator_agent_id": data.get("creator_agent_id"),
-        "creator_gateway_url": data.get("creator_gateway_url"),
-        "payment_mode": data.get("payment_mode"),
-        "stake_amount": str(data.get("stake_amount") or "0"),
-        "currency": data.get("currency"),
-        "created_at": data.get("created_at"),
-        "expires_at": data.get("expires_at"),
-        "metadata": metadata,
-        "nonce": nonce,
-    }
-    return challenge_id_for(payload)
+    return challenge_id_for(
+        {
+            "game_type": challenge.game_type,
+            "creator_agent_id": challenge.creator_agent_id,
+            "creator_gateway_url": challenge.creator_gateway_url,
+            "payment_mode": challenge.payment_mode,
+            "stake_amount": challenge.stake_amount,
+            "currency": challenge.currency,
+            "created_at": challenge.created_at,
+            "expires_at": challenge.expires_at,
+            "metadata": metadata,
+            "nonce": nonce,
+        }
+    )
+
+
+def _challenge_record_from_payload(
+    data: Mapping[str, Any], *, challenge_id: str, origin_relay: str | None
+) -> GameChallenge:
+    """Build the exact record that would be *stored* for `data`, normalization and
+    defaults applied (N14-1).
+
+    Shared by import_challenge() and _recompute_challenge_id() so verification always
+    hashes the record that will actually be written, never the raw payload it came from.
+    `created_at` is required rather than defaulted to now(): it is part of the address,
+    so defaulting it would make the resulting id nondeterministic and turn a missing
+    field into a baffling content-mismatch instead of a clear one.
+    """
+    if not data.get("created_at"):
+        raise ValueError("challenge must include created_at — it is part of the content address")
+    return GameChallenge(
+        challenge_id=challenge_id,
+        game_type=str(data["game_type"]),
+        creator_agent_id=str(data["creator_agent_id"]),
+        creator_gateway_url=str(data["creator_gateway_url"]),
+        payment_mode=_normalize_payment_mode(
+            str(data.get("payment_mode") or "free"), data.get("stake_amount")
+        ),
+        stake_amount=str(data.get("stake_amount") or "0"),
+        currency=str(data.get("currency") or "USD"),
+        status=str(data.get("status") or "open"),  # type: ignore[arg-type]
+        created_at=str(data["created_at"]),
+        expires_at=data.get("expires_at"),
+        origin_relay=origin_relay,
+        metadata=dict(data.get("metadata") or {}),
+    )
+
+
+def _recompute_challenge_id(data: Mapping[str, Any]) -> str:
+    """Content address of the record `data` would be stored as. Thin wrapper over
+    challenge_address() — kept because callers (and tests) hold raw dicts rather than
+    GameChallenge records."""
+    return challenge_address(
+        _challenge_record_from_payload(data, challenge_id="", origin_relay=None)
+    )
 
 
 class ChallengeOwnershipError(ValueError):
@@ -101,7 +153,13 @@ def _normalize_payment_mode(payment_mode: str | None, stake_amount: str | int | 
     if payment_mode:
         mode = payment_mode.strip().lower()
         if mode not in {"free", "stripe_link", "mpp"}:
-            # Accept legacy "x402" from imported cards as stripe_link
+            # Legacy "x402" maps to stripe_link. N14-1: this mapping no longer makes a
+            # non-canonical *imported* card acceptable — payment_mode is part of the
+            # content address, and import now hashes the normalized record, so a card
+            # whose own id was computed over the raw "x402" fails verification rather
+            # than being stored as "stripe_link" with an id that can never re-verify.
+            # A sender that addresses its card as "stripe_link" and sends "x402" is
+            # still accepted, and its stored row re-verifies — which is the invariant.
             if mode == "x402":
                 return "stripe_link"
             raise ValueError("payment_mode must be 'free', 'stripe_link', or 'mpp'")
@@ -190,21 +248,13 @@ class GameRegistry:
         )
         nonce = secrets.token_urlsafe(12)
         meta = dict(metadata or {})
-        payload = {
-            "game_type": game_type,
-            "creator_agent_id": creator_agent_id,
-            "creator_gateway_url": creator_gateway_url,
-            "payment_mode": mode,
-            "stake_amount": amount,
-            "currency": currency,
-            "created_at": created_at,
-            "expires_at": expires_at,
-            "metadata": meta,
-            "nonce": nonce,
-        }
-        challenge_id = challenge_id_for(payload)
-        challenge = GameChallenge(
-            challenge_id=challenge_id,
+        # N14-1: address the fully-built record via challenge_address() rather than
+        # hashing a separately-assembled payload here. The old shape kept two field
+        # lists — one hashed, one stored — that had to be maintained in agreement by
+        # hand; routing both through one function is what makes "a stored row always
+        # re-verifies" structural instead of a convention.
+        draft = GameChallenge(
+            challenge_id="",
             game_type=game_type,
             creator_agent_id=creator_agent_id,
             creator_gateway_url=creator_gateway_url,
@@ -217,6 +267,7 @@ class GameRegistry:
             origin_relay=origin_relay,
             metadata={**meta, "nonce": nonce},
         )
+        challenge = replace(draft, challenge_id=challenge_address(draft))
         self._upsert(challenge)
         return challenge
 
@@ -279,6 +330,15 @@ class GameRegistry:
         "content does not match" instead of the more specific "wrong owner" — checking
         ownership first keeps that distinction, on the raw claimed fields, without
         needing the id to be valid first.
+
+        N14-1 (R1): the record is built *before* verification, and verification hashes
+        that record — not the raw payload it came from. The old order (hash the payload,
+        then build a normalized record from it) meant any field normalization or
+        defaulting applied on the way in produced a stored row whose own content no
+        longer hashed to its stored id: it verified exactly once, at import, and never
+        again, which silently broke the export→import chain this module exists for.
+        Verifying what will actually be stored makes "a stored row always re-verifies"
+        an invariant rather than an aspiration.
         """
         data = json.loads(challenge) if isinstance(challenge, str) else dict(challenge)
         supplied_id = str(data.get("challenge_id") or "")
@@ -298,37 +358,29 @@ class GameRegistry:
                         f"relay ({existing.origin_relay!r}) — a peer batch may not "
                         "overwrite content it doesn't own"
                     )
+            # N12-4 (R2a): when we independently know who we're pulling from
+            # (trusted_origin, set by the two peer-pull call sites to the
+            # signature-verified peer_url), that's authoritative over whatever
+            # origin_relay the payload itself claims — including claiming none at
+            # all. Trusting a self-reported origin_relay here is how an imported
+            # challenge could end up with origin_relay=None (indistinguishable from
+            # a genuinely local one) and then get re-served, signed, by
+            # federated_lobby_out as if authored on this relay. origin_relay is not
+            # part of the address, so overriding it here can't affect verification.
+            imported = _challenge_record_from_payload(
+                data,
+                challenge_id=supplied_id,
+                origin_relay=(
+                    trusted_origin if trusted_origin is not None else data.get("origin_relay")
+                ),
+            )
             if verify_id:
-                expected_id = _recompute_challenge_id(data)
+                expected_id = challenge_address(imported)
                 if expected_id != supplied_id:
                     raise ValueError(
                         f"challenge_id does not match its content — expected {expected_id}, "
                         f"got {supplied_id} (the batch may be tampered or corrupt)"
                     )
-            imported = GameChallenge(
-                challenge_id=supplied_id,
-                game_type=str(data["game_type"]),
-                creator_agent_id=str(data["creator_agent_id"]),
-                creator_gateway_url=str(data["creator_gateway_url"]),
-                payment_mode=_normalize_payment_mode(
-                    str(data.get("payment_mode") or "free"), data.get("stake_amount")
-                ),
-                stake_amount=str(data.get("stake_amount") or "0"),
-                currency=str(data.get("currency") or "USD"),
-                status=str(data.get("status") or "open"),  # type: ignore[arg-type]
-                created_at=str(data.get("created_at") or _utc_now()),
-                expires_at=data.get("expires_at"),
-                # N12-4 (R2a): when we independently know who we're pulling from
-                # (trusted_origin, set by the two peer-pull call sites to the
-                # signature-verified peer_url), that's authoritative over whatever
-                # origin_relay the payload itself claims — including claiming none at
-                # all. Trusting a self-reported origin_relay here is how an imported
-                # challenge could end up with origin_relay=None (indistinguishable from
-                # a genuinely local one) and then get re-served, signed, by
-                # federated_lobby_out as if authored on this relay.
-                origin_relay=trusted_origin if trusted_origin is not None else data.get("origin_relay"),
-                metadata=dict(data.get("metadata") or {}),
-            )
             self._upsert(imported)
         return imported
 

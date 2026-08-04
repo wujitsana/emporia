@@ -539,6 +539,179 @@ def test_import_challenge_rejects_tampered_content():
         assert imported.creator_agent_id == "attacker_agent"
 
 
+def _utc_now_for_test() -> str:
+    from datetime import UTC, datetime
+
+    return datetime.now(UTC).isoformat()
+
+
+def _legacy_self_computed_id(
+    *,
+    game_type: str,
+    creator_agent_id: str,
+    creator_gateway_url: str,
+    payment_mode,
+    stake_amount=None,
+    currency=None,
+    created_at=None,
+    expires_at=None,
+    metadata=None,
+    nonce=None,
+) -> str:
+    """Hashes fields exactly the way the *pre-N14-1* `_recompute_challenge_id()` did:
+    raw `payment_mode`/`currency`/`created_at` values, un-normalized, with only
+    `stake_amount` stringified. Simulates a card whose sender addressed it over the raw
+    payload — accepted by the old verify-then-normalize order, but silently rewritten
+    (and thus permanently unverifiable) once N14-1's normalize-then-verify order took
+    over, or rejected outright once the new order runs first at import."""
+    from emporia.engine.game_registry import challenge_id_for
+
+    return challenge_id_for(
+        {
+            "game_type": game_type,
+            "creator_agent_id": creator_agent_id,
+            "creator_gateway_url": creator_gateway_url,
+            "payment_mode": payment_mode,
+            "stake_amount": str(stake_amount or "0"),
+            "currency": currency,
+            "created_at": created_at,
+            "expires_at": expires_at,
+            "metadata": dict(metadata or {}),
+            "nonce": nonce,
+        }
+    )
+
+
+def test_import_challenge_rejects_x402_payment_mode():
+    """N14-1 (R1): payment_mode is a hashed field. Before this fix, import_challenge()
+    hashed the raw payload — a card addressed with the literal "x402" string verified
+    fine — then stored it normalized to "stripe_link", so the stored row's own content
+    no longer matched its id. Now the record is normalized *before* hashing, so this
+    same card is rejected outright instead of silently becoming unverifiable."""
+    import tempfile
+    from emporia.engine.game_registry import GameRegistry
+
+    with tempfile.TemporaryDirectory() as tmp:
+        dst = GameRegistry(Path(tmp) / "dst.sqlite3")
+        created_at = _utc_now_for_test()
+        payload = {
+            "game_type": "emporia:chess:v1",
+            "creator_agent_id": "x402_agent",
+            "creator_gateway_url": "https://x402.example/gw",
+            "payment_mode": "x402",
+            "currency": "USD",
+            "created_at": created_at,
+        }
+        payload["challenge_id"] = _legacy_self_computed_id(
+            game_type=payload["game_type"],
+            creator_agent_id=payload["creator_agent_id"],
+            creator_gateway_url=payload["creator_gateway_url"],
+            payment_mode="x402",
+            currency="USD",
+            created_at=created_at,
+        )
+        with pytest.raises(ValueError, match="challenge_id does not match"):
+            dst.import_challenge(payload)
+
+
+def test_import_challenge_rejects_missing_currency():
+    """N14-1 (R1): currency is a hashed field. Before this fix, a card whose own id was
+    computed over a payload omitting `currency` (raw None) verified fine, then got
+    stored with currency defaulted to "USD" — a stored row that no longer matched its
+    own id. Now the default is applied *before* hashing, so this same card is rejected
+    outright instead of silently becoming unverifiable."""
+    import tempfile
+    from emporia.engine.game_registry import GameRegistry
+
+    with tempfile.TemporaryDirectory() as tmp:
+        dst = GameRegistry(Path(tmp) / "dst2.sqlite3")
+        created_at = _utc_now_for_test()
+        payload = {
+            "game_type": "emporia:chess:v1",
+            "creator_agent_id": "no_currency_agent",
+            "creator_gateway_url": "https://no-currency.example/gw",
+            "payment_mode": "free",
+            "created_at": created_at,
+            # deliberately no "currency" key
+        }
+        payload["challenge_id"] = _legacy_self_computed_id(
+            game_type=payload["game_type"],
+            creator_agent_id=payload["creator_agent_id"],
+            creator_gateway_url=payload["creator_gateway_url"],
+            payment_mode="free",
+            currency=None,
+            created_at=created_at,
+        )
+        with pytest.raises(ValueError, match="challenge_id does not match"):
+            dst.import_challenge(payload)
+
+
+def test_import_challenge_rejects_missing_created_at():
+    """N14-1 (R1): created_at is a hashed field that's never defaulted (defaulting it to
+    now() would make the id nondeterministic). Before this fix, a card whose own id was
+    computed over a payload omitting `created_at` (raw None) verified fine, then got
+    stored under a fabricated now() timestamp — a stored row that could never re-verify.
+    Now a missing created_at is rejected outright, loudly, at import."""
+    import tempfile
+    from emporia.engine.game_registry import GameRegistry
+
+    with tempfile.TemporaryDirectory() as tmp:
+        dst = GameRegistry(Path(tmp) / "dst3.sqlite3")
+        payload = {
+            "game_type": "emporia:chess:v1",
+            "creator_agent_id": "no_created_at_agent",
+            "creator_gateway_url": "https://no-created-at.example/gw",
+            "payment_mode": "free",
+            "currency": "USD",
+            # deliberately no "created_at" key
+        }
+        payload["challenge_id"] = _legacy_self_computed_id(
+            game_type=payload["game_type"],
+            creator_agent_id=payload["creator_agent_id"],
+            creator_gateway_url=payload["creator_gateway_url"],
+            payment_mode="free",
+            currency="USD",
+            created_at=None,
+        )
+        with pytest.raises(ValueError, match="created_at"):
+            dst.import_challenge(payload)
+
+
+def test_import_challenge_stored_row_reverifies_on_second_generation_import():
+    """N14-1 (R1): the invariant a single round trip can't prove. A stored row must
+    itself re-export and re-import cleanly — not just the payload create_challenge()
+    originally produced. create_challenge() -> import (registry #2) -> re-export the
+    *stored* row -> import again (registry #3) must succeed, proving import_challenge()
+    verifies against what it will actually persist, not the payload it received. A
+    create_challenge()-sourced card is already canonical, so — unlike the three
+    rejection tests above — this specific assertion holds under both the old and new
+    ordering; it's regression coverage for the refactor's structure (one hash
+    definition shared by mint, verify, and every re-import), not a test that a
+    non-canonical card gets caught, which is what the rejection tests are for."""
+    import tempfile
+    from emporia.engine.game_registry import GameRegistry
+
+    with tempfile.TemporaryDirectory() as tmp:
+        src = GameRegistry(Path(tmp) / "gen1.sqlite3")
+        second = GameRegistry(Path(tmp) / "gen2.sqlite3")
+        third = GameRegistry(Path(tmp) / "gen3.sqlite3")
+        created = src.create_challenge(
+            game_type="emporia:chess:v1",
+            creator_agent_id="secondgen_agent",
+            creator_gateway_url="https://secondgen.example/gw",
+            payment_mode="free",
+            metadata={"note": "second generation"},
+        )
+        first_import = second.import_challenge(created.to_dict())
+        assert first_import.challenge_id == created.challenge_id
+
+        stored = second.get_challenge(created.challenge_id)
+        assert stored is not None
+        second_import = third.import_challenge(stored.to_dict())
+        assert second_import.challenge_id == created.challenge_id
+        assert third.get_challenge(created.challenge_id) is not None
+
+
 def _signed_challenge(client, profile_id: str) -> dict:
     """POST /agents/challenge, sign the nonce with a real Ed25519 key, and return the
     challenge_id/signature/public_key_hex a real register_agent MCP call would send."""
