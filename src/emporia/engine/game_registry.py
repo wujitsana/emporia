@@ -339,6 +339,21 @@ class GameRegistry:
         again, which silently broke the export→import chain this module exists for.
         Verifying what will actually be stored makes "a stored row always re-verifies"
         an invariant rather than an aspiration.
+
+        N14-2 (R2): returns the row re-read from storage after _upsert, not the
+        `imported` record built above. `_upsert`'s `ON CONFLICT DO UPDATE` only touches
+        `status` and `metadata_json` — deliberately: `origin_relay` stays whatever it was
+        set to on the row's first insert. A conflicting import can legitimately change
+        `status` (e.g. a peer refreshing one of its own challenges), but content-
+        addressing plus the ownership checks above mean it can never legitimately need
+        to change who a challenge is attributed to (creator_agent_id, hashed) or where it
+        came from (origin_relay, checked against trusted_origin above whenever that's
+        known) — so nothing depends on origin_relay being conflict-updatable, and
+        leaving it out keeps a locally-owned row (origin_relay=None, no trusted_origin to
+        check it against — e.g. a same-creator repost through POST /gaming/lobby) from
+        having its origin silently rewritten by whatever the payload happens to claim.
+        Before this fix the method returned the object it *constructed*, which on a
+        conflicting import could claim an origin_relay the DB never actually wrote.
         """
         data = json.loads(challenge) if isinstance(challenge, str) else dict(challenge)
         supplied_id = str(data.get("challenge_id") or "")
@@ -382,7 +397,13 @@ class GameRegistry:
                         f"got {supplied_id} (the batch may be tampered or corrupt)"
                     )
             self._upsert(imported)
-        return imported
+            stored = self.get_challenge(imported.challenge_id)
+            if stored is None:
+                raise RuntimeError(
+                    f"import_challenge: '{imported.challenge_id}' vanished immediately "
+                    "after being upserted — this should be unreachable"
+                )
+        return stored
 
     def get_challenge(self, challenge_id: str) -> GameChallenge | None:
         self.expire_challenges()

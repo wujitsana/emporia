@@ -712,6 +712,37 @@ def test_import_challenge_stored_row_reverifies_on_second_generation_import():
         assert third.get_challenge(created.challenge_id) is not None
 
 
+def test_import_challenge_returns_persisted_origin_relay_not_claimed_one():
+    """N14-2 (R2): import_challenge() used to return the object it *constructed*, not
+    what _upsert() actually wrote. _upsert()'s ON CONFLICT DO UPDATE only touches status
+    and metadata_json — origin_relay is fixed at first insert, deliberately (see
+    import_challenge()'s N14-2 docstring section) — so a conflicting same-id import
+    whose payload claims a different origin_relay must report back the DB's real
+    (unchanged) value, not the claimed one the row never actually took."""
+    import tempfile
+    from emporia.engine.game_registry import GameRegistry
+
+    with tempfile.TemporaryDirectory() as tmp:
+        reg = GameRegistry(Path(tmp) / "origin_honesty.sqlite3")
+        created = reg.create_challenge(
+            game_type="emporia:chess:v1",
+            creator_agent_id="origin_honesty_agent",
+            creator_gateway_url="https://origin-honesty.example/gw",
+            payment_mode="free",
+        )
+        assert created.origin_relay is None
+
+        # Re-import the exact same content, this time claiming a different origin_relay.
+        # origin_relay isn't hashed, so this doesn't affect id verification; trusted_origin
+        # is left unset (simulating a same-creator repost, e.g. via POST /gaming/lobby,
+        # not a peer pull), so the ownership check doesn't reject it either.
+        claim = {**created.to_dict(), "origin_relay": "https://claimed-origin.example"}
+        result = reg.import_challenge(claim)
+
+        assert result.origin_relay is None  # the DB's real value, not the claimed one
+        assert reg.get_challenge(created.challenge_id).origin_relay is None
+
+
 def _signed_challenge(client, profile_id: str) -> dict:
     """POST /agents/challenge, sign the nonce with a real Ed25519 key, and return the
     challenge_id/signature/public_key_hex a real register_agent MCP call would send."""
