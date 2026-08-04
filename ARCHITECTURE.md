@@ -158,7 +158,12 @@ Payment gate is at join (challenger pays; creator joins free — intentional).
   `origin_relay IS NULL` — for challenges (unlike listings) that's the actual "created here, never
   imported" invariant, since nothing stamps a challenge's `origin_relay` to this relay's own
   `RELAY_BASE_URL` at creation the way `POST /listings` does. Both feeds cap at `LIMIT 200`
-  (N12-4, R2 — the lobby feed didn't originally have either the filter or the cap).
+  (N12-4, R2 — the lobby feed didn't originally have either the filter or the cap). The pull side
+  mirrors the same cap on *accept*, not just serve: `_pull_federated_listings()`/
+  `_pull_federated_lobby()` truncate an oversized signed batch to 200 items after verifying its
+  signature (N13-3, R3 — the outbound cap alone left accepting a peer's batch unbounded, and N12-6's
+  per-item guardrails scan, including paid NIM calls when enabled, made that a real cost, not just
+  an unbounded response).
 - Peers pull these periodically: `POST /gaming/v1/federate/sync` (operator-triggered, pulls both
   from every `FEDERATED_RELAYS` entry) or the `sync_lobby_from_peer` MCP tool (agent-triggered,
   lobby only — independently verifies the signature itself, since it's a separate process/call
@@ -170,6 +175,15 @@ Payment gate is at join (challenger pays; creator joins free — intentional).
   whatever the payload itself claims — otherwise an imported challenge with no self-reported origin
   would be indistinguishable from a genuinely local one, defeating the own-origin filter above
   (N12-4, R2a).
+- **One normalized identity per peer, shared across every importer** (`identity.normalize_peer_url()`
+  — strips whitespace and a trailing slash only, N13-2, R2). The relay's two pull functions and the
+  MCP `sync_lobby_from_peer` tool each build their outbound fetch URL with `.rstrip("/")` but used to
+  store the raw `peer_url` everywhere else (the pin key, `trusted_origin`, `FEDERATED_RELAYS`
+  entries) — since the two importers share one DB and one pin file, a peer pulled by the relay as
+  `"https://p/"` and synced by an agent as `"https://p"` looked like two different origins, and the
+  peer's own second, legitimate sync got rejected by the ownership check above as a hijack. Applied
+  at every point a peer URL becomes a dict key or stored value, including the self-origin-loop
+  comparison (`origin == RELAY_BASE_URL`) below.
 - A pulling peer verifies, per item, before trusting it: the batch signature (both feeds), the
   `challenge_id` content address — re-derived via `challenge_id_for()`, rejecting a payload whose
   id doesn't match its own content (challenges only; listings have no content-addressing) — and
@@ -190,8 +204,9 @@ Payment gate is at join (challenger pays; creator joins free — intentional).
   signing logic). `_pull_federated_listings()`/`_pull_federated_lobby()` reject unsigned/
   invalid-signature responses and pin each peer's key on first successful verification, persisted
   to disk (`identity.save_federation_peer_pubkeys()`, same directory as the relay's own key, shared
-  across both feeds since it's the same relay identity) so the pin survives a restart — see
-  `SECURITY.md`
+  across both feeds since it's the same relay identity) so the pin survives a restart — keyed by the
+  normalized peer URL above; `identity.normalize_peer_pubkey_keys()` migrates a pin file written
+  under a pre-N13-2 un-normalized key on its very next load — see `SECURITY.md`
 
 ## Audit model (dual-track)
 
