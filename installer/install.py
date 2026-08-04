@@ -106,28 +106,37 @@ def _apply_guardrails_env(
     disabled: bool = False,
     nvidia_api_key: str | None = None,
 ) -> None:
-    """Regex enforce always (unless off); NeMo NIM only when NVIDIA_API_KEY is configured."""
+    """Regex enforce always (unless off); NeMo NIM stays off by default.
+
+    NeMo NIM used to auto-enable the moment an NVIDIA_API_KEY was resolved from
+    anywhere (CLI, profile .env, parent .env, or config) — including a leftover
+    hackathon-sponsor key nobody meant to keep spending. Every guardrails-scanned
+    write fans out into a NIM API call once it's on, so that was a real, unadvertised
+    recurring cost on every fresh install *and* every routine re-run. NEMO is now
+    only ever written "0" here; a resolved key is still stored (so a deliberate
+    EMPORIA_NEMO_GUARDRAILS_ENABLED=1 later doesn't require re-entering it), but
+    presence of the key alone no longer turns anything on.
+    """
     if disabled:
         env_block["EMPORIA_GUARDRAILS_MODE"] = "off"
         env_block["EMPORIA_NEMO_GUARDRAILS_ENABLED"] = "0"
+        env_block.pop("NVIDIA_API_KEY", None)
         return
     env_block.setdefault("EMPORIA_GUARDRAILS_MODE", "enforce")
-    if env_block.get("EMPORIA_GUARDRAILS_MODE", "enforce").lower() == "off":
-        env_block["EMPORIA_NEMO_GUARDRAILS_ENABLED"] = "0"
-        return
     if nvidia_api_key:
         env_block["NVIDIA_API_KEY"] = nvidia_api_key
-        env_block["EMPORIA_NEMO_GUARDRAILS_ENABLED"] = "1"
     else:
         env_block.pop("NVIDIA_API_KEY", None)
-        env_block["EMPORIA_NEMO_GUARDRAILS_ENABLED"] = "0"
+    env_block["EMPORIA_NEMO_GUARDRAILS_ENABLED"] = "0"
 
 
 def _guardrails_env_lines(*, disabled: bool = False, nvidia_api_key: str | None = None) -> list[str]:
+    """`nvidia_api_key` no longer decides NEMO enablement (see _apply_guardrails_env) —
+    kept as a parameter so call sites don't need to change, but NEMO is always "0" here.
+    The key itself, if resolved, is still written separately by the caller."""
     if disabled:
         return ["EMPORIA_GUARDRAILS_MODE=off", "EMPORIA_NEMO_GUARDRAILS_ENABLED=0"]
-    nemo = "1" if nvidia_api_key else "0"
-    return ["EMPORIA_GUARDRAILS_MODE=enforce", f"EMPORIA_NEMO_GUARDRAILS_ENABLED={nemo}"]
+    return ["EMPORIA_GUARDRAILS_MODE=enforce", "EMPORIA_NEMO_GUARDRAILS_ENABLED=0"]
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -551,7 +560,8 @@ def resolve_provider_secrets(
             print("  NVIDIA_API_KEY: not in profile, parent .env, or config — NeMo NIM stays off.")
             nvidia = _prompt_optional_secret(
                 "NVIDIA_API_KEY",
-                "enables NeMo NIM guardrails on the relay",
+                "lets you opt into NeMo NIM guardrails later (off by default; adds a paid "
+                "API call per scanned write)",
             )
         if not stripe:
             print("  STRIPE_SECRET_KEY: not found — paid Stripe sessions stay off.")
@@ -579,7 +589,8 @@ def _print_provider_status(
     stripe_profile_id: str | None,
 ) -> None:
     if nvidia_api_key:
-        print("  NeMo NIM guardrails: on (NVIDIA_API_KEY copied to profile .env)")
+        print("  NeMo NIM guardrails: off by default (NVIDIA_API_KEY saved to profile .env — "
+              "set EMPORIA_NEMO_GUARDRAILS_ENABLED=1 there to opt in)")
     else:
         print("  NeMo NIM guardrails: off (no NVIDIA_API_KEY)")
     if stripe_secret_key:
@@ -831,7 +842,8 @@ def install_into_profile(
         if env_block != before:
             changed = True
             if nvidia_api_key:
-                print("  + guardrails: regex enforce + NeMo NIM (NVIDIA_API_KEY set)")
+                print("  + guardrails: regex enforce (NeMo NIM off by default — NVIDIA_API_KEY "
+                      "saved; set EMPORIA_NEMO_GUARDRAILS_ENABLED=1 to opt in)")
             else:
                 print("  + guardrails: regex enforce only (NeMo NIM off — no NVIDIA_API_KEY)")
 
@@ -1374,7 +1386,8 @@ def main() -> None:
     parser.add_argument("--stripe-secret-key", default=None,
                         help="Stripe secret key (else profile/parent .env, config, or prompt)")
     parser.add_argument("--nvidia-api-key", default=None,
-                        help="NVIDIA API key for NeMo NIM guardrails (else profile/parent .env, config, or prompt)")
+                        help="NVIDIA API key for NeMo NIM guardrails, saved but off by default — "
+                        "set EMPORIA_NEMO_GUARDRAILS_ENABLED=1 to opt in (else profile/parent .env, config, or prompt)")
     parser.add_argument("--non-interactive", action="store_true",
                         help="Do not prompt for missing NVIDIA/Stripe keys (leave features off)")
     parser.add_argument("--stripe-profile-id", default=None,
