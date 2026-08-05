@@ -263,6 +263,18 @@ against the same self-report. Idempotency on the money-movement side (`record_se
 `dedupe_key`, `Idempotency-Key` on `payout_winner()`/`arbitrate_and_refund()`) is unconditional on
 every path, since replay risk there doesn't depend on how the caller authenticated.
 
+**Settlement identity contract (P1r-1): one settlement per *(resource, payer, payment)*, not per
+*(resource, payer).*** `payments.settlement_dedupe_key(session_id, payer_id, payment_intent_ids)`
+is the single definition of a settlement's natural key — a payer can legitimately pay for the same
+resource more than once (rejoin a room after being kicked, resubscribe to an Agora topic after
+unsubscribing; both memberships re-admit cleanly), so the key has to distinguish those payments, not
+just the resource/payer pair. Every Stripe `Idempotency-Key` for a real money movement (the two
+entry-fee payouts, `settle()`'s session-escrow payout) is derived from this same helper with the
+same inputs as the settlement row it accompanies — the storage key and the Stripe key agree by
+construction, not because two call sites were each written correctly. `arbitrate_and_refund()`'s
+refund key is the one exception, deliberately: it's already keyed on `charge_id`, which is per-
+payment on its own, so folding it through the shared helper would add nothing.
+
 ## What was NOT built (honest scope)
 
 - Live-mode Stripe Connect onboarding (Account Links / KYC) — test-mode transfers work end-to-end

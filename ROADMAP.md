@@ -154,8 +154,12 @@ participants/actions/payments/settlements/audit files together — that piece is
 
 ## Payments
 
-**P1b entry point: the x402 rail is the next block, now that P1a has hardened the rail-agnostic
-payment core (SECURITY.md's P1a pass).** x402 is confirmed (live docs, this pass) to be the
+**P1b entry point: the x402 rail is the next block, now that P1a and its self-review, P1r, have
+hardened the rail-agnostic payment core (SECURITY.md's P1a and P1r passes).** P1r found and fixed
+two regressions P1a itself shipped — the settlement dedupe key and the payout idempotency keys were
+keyed on *(resource, payer)*, not *(resource, payer, payment)*, silently dropping a payer's second
+genuine payment for the same resource; see the corrected entry below. x402 is confirmed (live docs,
+this pass) to be the
 Coinbase-originated, Linux-Foundation-formalized HTTP-402 protocol settled in stablecoins (USDC),
 distinct from Stripe's MPP, which `payments.py` already implements — the two share the "HTTP 402"
 mechanism, not a protocol. Scope per the user, ahead of P1b's own review-and-plan round (do not
@@ -211,15 +215,19 @@ actually needs. See `SECURITY.md`'s P1a pass (R1) and the correction to N2's own
 - *Effort remaining:* large — payer-verified MPP/SPT credentials are core x402/P1b work, not a
   standalone patch.
 
-**~~`record_settlement()`'s `INSERT OR IGNORE` is idempotency theatre~~ — done in P1a-2/P1a-3.** It
-minted a fresh UUID primary key on every call before the insert, so `OR IGNORE` had no key to
-collide on, and `payout_winner()` had no idempotency key of its own. The N5 security review's R2
-finding (a retry after a mid-flight crash could reach `payout_winner` twice) was fixed with ordering
-+ an early short-circuit — deliberately not with real idempotency at the time. Now real: a
-`dedupe_key` column (`session_id||':'||COALESCE(payer_id,'')`) with a UNIQUE index and
-`ON CONFLICT DO NOTHING` on `record_settlement()`'s insert, plus deterministic `Idempotency-Key`
-headers on `payout_winner()`'s transfer and `arbitrate_and_refund()`'s refund, derived from that
-same key. See `SECURITY.md`'s P1a pass (R2/R3).
+**~~`record_settlement()`'s `INSERT OR IGNORE` is idempotency theatre~~ — done in P1a-2/P1a-3, then
+corrected in P1r-1/P1r-2.** It minted a fresh UUID primary key on every call before the insert, so
+`OR IGNORE` had no key to collide on, and `payout_winner()` had no idempotency key of its own. The
+N5 security review's R2 finding (a retry after a mid-flight crash could reach `payout_winner` twice)
+was fixed with ordering + an early short-circuit — deliberately not with real idempotency at the
+time. P1a-2/P1a-3 made it real, but keyed only on `session_id||':'||COALESCE(payer_id,'')` —
+*(resource, payer)*, not *(resource, payer, payment)* — so a payer's second genuine payment for the
+same resource (rejoin after a kick, resubscribe after an unsubscribe) collided with their first and
+was silently dropped, taking the second payout with it. P1r-1 fixed the key itself
+(`payments.settlement_dedupe_key()`, folding a hashed digest of `payment_intent_ids` into the key);
+P1r-2 rewired every `Idempotency-Key` derivation (payout ×2, `settle()`'s refund payout) through the
+same helper so storage and Stripe agree by construction. See `SECURITY.md`'s P1a pass (R2/R3) and
+P1r pass (R1/R3).
 
 **~~`settlements` has no payer column~~ — done in N7-2.** This entry previously claimed a
 `payer_id` column was "blocked on the migration runner P4 already tracks." That was wrong — this
