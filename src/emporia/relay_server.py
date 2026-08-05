@@ -2849,6 +2849,26 @@ def _caller_owns_settlement_row(
     return row["session_id"] in participant_session_ids
 
 
+# P1r-3 (R2): every settlements column the API is allowed to return, and every
+# column that is storage-only bookkeeping. _settlement_row_dict() used to build
+# its response with `{**dict(row), ...}` — every column, unconditionally — which
+# is why N6-2, N7-R4, N8-R1 and now P1r-3 are four separate patches to the same
+# function for the same class of bug: each added column leaks by default unless
+# someone remembers to redact it. `dedupe_key` (P1a-2) embeds `payer_id` in
+# plaintext and was never redacted, undoing N8-R1's redaction of that same field.
+# Classifying every column here — enforced by
+# test_settlement_public_and_internal_columns_cover_the_schema, which fails the
+# suite the moment PRAGMA table_info(settlements) gains a column not listed in
+# either set — turns "did I remember to redact this" from a habit into a check.
+_SETTLEMENT_PUBLIC_COLUMNS = frozenset({
+    "settlement_id", "session_id", "winner_id", "total_stake_cents",
+    "platform_fee_cents", "winner_payout_cents", "platform_fee_bps",
+    "payment_intent_ids", "transfer_id", "transfer_status", "status",
+    "created_at", "payer_id",
+})
+_SETTLEMENT_INTERNAL_COLUMNS = frozenset({"dedupe_key"})
+
+
 def _settlement_row_dict(
     row: Any, caller: str | None, participant_session_ids: set[str]
 ) -> dict[str, Any]:
@@ -2875,8 +2895,14 @@ def _settlement_row_dict(
     None` — a session's aggregate row legitimately keeps `payer_id` NULL (see
     _migrate_settlements), and that must stay `null` in the response, not become
     the string `"[redacted]"`.
+
+    P1r-3 (R2): built from `_SETTLEMENT_PUBLIC_COLUMNS` only, not `{**dict(row)}`
+    — see that set's own comment. `dedupe_key` (`_SETTLEMENT_INTERNAL_COLUMNS`)
+    embeds `payer_id` in plaintext (P1r-1) and must never reach a response; it
+    was leaking here from the moment P1a-2 added the column.
     """
-    d = {**dict(row), "payment_intent_ids": json.loads(row["payment_intent_ids"])}
+    d = {k: v for k, v in dict(row).items() if k in _SETTLEMENT_PUBLIC_COLUMNS}
+    d["payment_intent_ids"] = json.loads(row["payment_intent_ids"])
     owner = _relay_operator_id()
     if owner and caller == owner:
         return d

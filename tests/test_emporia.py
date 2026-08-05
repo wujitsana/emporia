@@ -4536,6 +4536,79 @@ def test_settlement_payer_id_redacted_for_non_owned_rows(client):
             f"got {b_row['payer_id']!r}"
 
 
+def test_settlement_public_and_internal_columns_cover_the_schema():
+    """P1r-3 (R2): _settlement_row_dict() used to build its response with
+    `{**dict(row), ...}` — every column, unconditionally — which is why N6-2,
+    N7-R4, N8-R1 and P1r-3 are four separate patches to the same function for the
+    same class of bug: each column added to `settlements` (most recently
+    `dedupe_key`, P1a-2) leaked by default unless someone remembered to add a
+    redaction for it. `_SETTLEMENT_PUBLIC_COLUMNS ∪ _SETTLEMENT_INTERNAL_COLUMNS`
+    must equal the table's actual columns, so a future column that nobody
+    classifies fails this test instead of silently reaching the API."""
+    from emporia.relay_server import (
+        _SETTLEMENT_PUBLIC_COLUMNS, _SETTLEMENT_INTERNAL_COLUMNS, get_db,
+    )
+
+    with get_db() as conn:
+        actual = {r[1] for r in conn.execute("PRAGMA table_info(settlements)").fetchall()}
+    classified = _SETTLEMENT_PUBLIC_COLUMNS | _SETTLEMENT_INTERNAL_COLUMNS
+    assert actual == classified, \
+        f"settlements columns and the public/internal classification have drifted — " \
+        f"unclassified: {actual - classified}, stale: {classified - actual}"
+    assert not (_SETTLEMENT_PUBLIC_COLUMNS & _SETTLEMENT_INTERNAL_COLUMNS), \
+        "a column cannot be both public and internal"
+
+
+def test_settlement_row_dict_never_leaks_internal_columns_to_a_co_payer(client):
+    """P1r-3 (R2): the leak itself, and the general form of it. Scans the *whole*
+    serialized settlement object for a co-payer's row rather than checking one
+    named field — a named-field check is exactly what missed `dedupe_key`
+    (`dedupe_key='room_id:payer_b:...'` embeds payer_b's id verbatim, right next
+    to a correctly-redacted `payer_id: '[redacted]'`), and would miss the next
+    leaking column the same way. Must fail pre-fix: `dedupe_key` appears in the
+    response and contains payer_b's agent_id."""
+    from emporia.relay_server import record_settlement, DATABASE_PATH
+    from emporia import rooms as rooms_db
+
+    owner = "p1r3_leak_owner"
+    payer_a = "p1r3_leak_payer_a"
+    payer_b = "p1r3_leak_payer_b"
+    _register(client, owner)
+    _register(client, payer_a)
+    _register(client, payer_b)
+
+    r = client.post("/rooms", json={
+        "name": "P1r3 Leak Room", "creator_id": owner,
+        "room_type": "private", "gate_type": "stripe_payment", "entry_fee_cents": 100,
+    },
+        headers={"x-emporia-agent-id": owner})
+    assert r.status_code == 200, r.text
+    room_id = r.json()["room_id"]
+
+    rooms_db.add_member(room_id, payer_a, db_path=DATABASE_PATH)
+    rooms_db.add_member(room_id, payer_b, db_path=DATABASE_PATH)
+    for payer, pi in ((payer_a, "pi_p1r3_leak_a"), (payer_b, "pi_p1r3_leak_b")):
+        record_settlement({
+            "session_id": room_id, "winner_id": owner, "outcome_type": "room_entry",
+            "status": "settled", "total_stake_cents": 100, "platform_fee_cents": 0,
+            "winner_payout_cents": 100, "platform_fee_bps": 0,
+            "payment_intent_ids": [pi], "transfer_id": None,
+            "transfer_status": "no_stripe_account", "payer_id": payer,
+        })
+
+    resp = client.get(f"/payments/settlements/{room_id}", headers={"x-emporia-agent-id": payer_a})
+    assert resp.status_code == 200, resp.text
+    rows = resp.json()["settlements"]
+    b_row = next(s for s in rows if s["payer_id"] == "[redacted]")
+
+    assert "dedupe_key" not in b_row, \
+        f"an internal storage column reached the API response — {b_row.keys()}"
+    serialized = json.dumps(b_row)
+    assert payer_b not in serialized, \
+        f"payer B's agent_id must not appear anywhere in a co-payer's serialized " \
+        f"settlement row, in any field — got: {serialized}"
+
+
 def test_settlement_payer_id_null_stays_null_for_session_rows(client):
     """N8 review R1 verification: the payer_id redaction added to
     _settlement_row_dict must guard on `is not None` — a session's aggregate
