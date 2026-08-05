@@ -25,12 +25,45 @@ status. Agent identity on Emporia stays with Ed25519 + Nous — Stripe is paymen
 from __future__ import annotations
 
 import base64
+import hashlib
 import json
 import os
 import secrets
+from collections.abc import Sequence
 from typing import Any
 
 import httpx
+
+
+def settlement_dedupe_key(
+    session_id: str, payer_id: str | None, payment_intent_ids: Sequence[str]
+) -> str:
+    """The natural key for a settlement: one row per (resource, payer, payment) —
+    not per (resource, payer), which is what P1a-2 shipped and P1r-1 corrects.
+
+    A payer can legitimately pay the same resource more than once (join a paid
+    room, get kicked, rejoin; unsubscribe from a paid Agora topic, get
+    re-invited, resubscribe — both membership paths re-admit cleanly after
+    removal). Keying on `(session_id, payer_id)` alone collapsed two genuinely
+    different payments into one settlement row and, downstream, one Stripe
+    payout — proved end-to-end via the HTTP API this pass: two real charges,
+    one settlement, one transfer.
+
+    `payment_intent_ids` is folded in via a short SHA-256 digest rather than
+    joined in raw, for two reasons: (1) Stripe caps `Idempotency-Key` at 255
+    chars, and a session-escrow row's PI list is unbounded across participants;
+    (2) a fixed-width digest keeps every caller's key the same shape regardless
+    of how many PIs are involved. The list is sorted before hashing so a
+    session row's multi-PI dedupe key doesn't depend on insertion order.
+
+    Used both as `settlements.dedupe_key` (the storage-level natural key) and,
+    by every payout/refund call site, as the base of that operation's Stripe
+    `Idempotency-Key` — so the two agree by construction instead of by two
+    people separately getting the shape right.
+    """
+    digest = hashlib.sha256(",".join(sorted(payment_intent_ids)).encode()).hexdigest()[:16]
+    return f"{session_id}:{payer_id or ''}:{digest}"
+
 
 def platform_fee(amount_cents: int) -> int:
     """2.5% platform fee in cents. Only collected when the rounded amount is ≥ 1¢.

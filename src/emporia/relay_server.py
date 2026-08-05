@@ -872,49 +872,78 @@ def _migrate_settlements(conn: Any) -> None:
 
 
 def _migrate_settlement_dedupe_key(conn: Any) -> None:
-    """Add `dedupe_key` and a UNIQUE index on it (P1a-2, R2) so record_settlement()'s
-    `INSERT OR IGNORE` can actually collide on a replay.
+    """Add `dedupe_key` and a UNIQUE index on it, and (re)compute it from
+    `settlement_dedupe_key()` (P1r-1, R1) so record_settlement()'s
+    `INSERT OR IGNORE` can actually collide on a replay — and *only* a replay.
 
-    It never could before: a fresh UUID `settlement_id` was minted immediately before
-    every insert, so `OR IGNORE` had no key to conflict on and a replayed settlement
-    always inserted a new row. `session_id` alone isn't the real natural key — it's
-    overloaded across three resource kinds (see
-    `_settlement_resource_viewer_allowed()`'s docstring) and a session's own aggregate
-    escrow row legitimately has zero-or-more payers, one row for the whole resource,
-    not one per payer, with `payer_id` correctly NULL. The real key is
-    `(session_id, payer_id)` — stored as `dedupe_key = session_id || ':' ||
-    COALESCE(payer_id, '')` rather than a bare `UNIQUE(session_id, payer_id)`, because
-    SQLite treats every NULL as distinct from every other NULL in a UNIQUE index, which
-    would not dedupe session-escrow rows (all sharing `payer_id IS NULL`) at all — the
-    exact case that matters most.
+    `session_id` alone isn't the real natural key — it's overloaded across three
+    resource kinds (see `_settlement_resource_viewer_allowed()`'s docstring) and a
+    session's own aggregate escrow row legitimately has zero-or-more payers, one
+    row for the whole resource, not one per payer, with `payer_id` correctly
+    NULL. P1a-2 keyed on `(session_id, payer_id)` alone, stored as `dedupe_key =
+    session_id || ':' || COALESCE(payer_id, '')`; P1r-1 found that this collapses
+    a payer's second genuine payment for the same resource (rejoin after a kick,
+    resubscribe after an unsubscribe) into their first, so the key now also folds
+    in a digest of `payment_intent_ids` — see `settlement_dedupe_key()`'s
+    docstring for the full shape.
 
-    Deliberately follows `_migrate_payments()`'s pattern immediately above (delete
-    duplicates, then create the index, unconditionally on every startup — no
-    `schema_migrations` marker) rather than `_migrate_settlements()`'s own pattern
-    (marker-gated, run once). Not the same pitfall N9 review R2 fixed there: that
-    marker exists because a session's row keeps `payer_id IS NULL` *forever*, so a
-    naive `WHERE payer_id IS NULL` backfill scan never empties out. `dedupe_key` is
-    different — every row, including session-escrow ones, gets a non-NULL value once
-    computed, so `WHERE dedupe_key IS NULL` legitimately matches nothing on every
-    startup after the first, same as `_migrate_payments()`'s own per-startup DELETE
-    matching nothing once the table is clean.
+    A stored column (not a bare `UNIQUE(session_id, payer_id, ...)`) is still
+    required: SQLite treats every NULL as distinct from every other NULL in a
+    UNIQUE index, which would not dedupe session-escrow rows (all sharing
+    `payer_id IS NULL`) at all — the exact case that matters most.
 
-    Pre-existing duplicate rows (a settlement already double-inserted by the bug this
-    fixes) are deleted, keeping the earliest by rowid — the same choice
-    `_migrate_payments()` already makes for duplicate `payment_intent_id` rows just
-    above. Safe here for the same reason: a duplicate is redundant bookkeeping of the
-    *same* settlement (a retry recomputes identical amounts from the same session/payer
-    inputs), not a second, different financial event. Logged via `print()` (this
-    module's existing migration-logging convention) before deleting, so a run that
-    unexpectedly hits this is auditable rather than silent.
+    **Marker-gated one-shot, not P1a-2's unconditional every-startup rewrite.**
+    Every existing row's key was computed under the old 2-part shape and must be
+    rewritten once under the new 3-part one — not just backfilled where NULL,
+    since these rows already have a (stale) non-NULL value. Follows
+    `_migrate_settlements()`'s own pattern for exactly the reason its docstring
+    gives: an unconditional per-startup rewrite here would be harmless once
+    settled, but there is no cheap "already correct" check short of recomputing
+    every row's key and comparing, so gate it explicitly instead of relying on
+    that coincidence. Order matters and mirrors the docstring's reasoning
+    end-to-end: drop the old index (a value this migration is about to write may
+    already exist as some *other* row's stale value, and the old index would
+    reject that write) → recompute every row's key from its own
+    payment_intent_ids/payer_id/session_id → delete genuine duplicates (rows that
+    still collide after moving to the strictly finer key — recomputing can only
+    split old groups apart, never merge them, so this should find nothing; kept
+    as a backstop rather than assumed) → recreate the index → set the marker.
+    `ALTER TABLE` commits immediately in Python's sqlite3 regardless of the
+    surrounding `with conn:` (the N9-R2 lesson); the marker row shares its
+    transaction with the rewrite/delete so a crash before it commits retries the
+    whole batch next startup instead of leaving a mix of old- and new-shape keys.
+
+    Pre-existing genuine duplicates (both rows keying identically even under the
+    finer key — a true replay of the same payment, double-inserted by the bug
+    P1a-2 fixed) are deleted, keeping the earliest by rowid, logged via `print()`
+    first so an unexpected hit is auditable.
     """
+    from emporia.payments import settlement_dedupe_key
+
     cols = {r[1] for r in conn.execute("PRAGMA table_info(settlements)").fetchall()}
     if "dedupe_key" not in cols:
         conn.execute("ALTER TABLE settlements ADD COLUMN dedupe_key TEXT")
-    conn.execute(
-        "UPDATE settlements SET dedupe_key = session_id || ':' || COALESCE(payer_id, '') "
-        "WHERE dedupe_key IS NULL"
-    )
+
+    marker_key = "settlements_dedupe_key_payment_scoped"
+    already_done = conn.execute(
+        "SELECT 1 FROM schema_migrations WHERE key = ?", (marker_key,)
+    ).fetchone()
+    if already_done:
+        return
+
+    conn.execute("DROP INDEX IF EXISTS idx_settlements_dedupe_key")
+
+    rows = conn.execute(
+        "SELECT settlement_id, session_id, payer_id, payment_intent_ids FROM settlements"
+    ).fetchall()
+    for row in rows:
+        pi_ids = json.loads(row["payment_intent_ids"] or "[]")
+        new_key = settlement_dedupe_key(row["session_id"], row["payer_id"], pi_ids)
+        conn.execute(
+            "UPDATE settlements SET dedupe_key = ? WHERE settlement_id = ?",
+            (new_key, row["settlement_id"]),
+        )
+
     dupes = conn.execute(
         "SELECT dedupe_key, COUNT(*) c, GROUP_CONCAT(settlement_id) ids "
         "FROM settlements GROUP BY dedupe_key HAVING c > 1"
@@ -930,6 +959,10 @@ def _migrate_settlement_dedupe_key(conn: Any) -> None:
     )
     conn.execute(
         "CREATE UNIQUE INDEX IF NOT EXISTS idx_settlements_dedupe_key ON settlements(dedupe_key)"
+    )
+    conn.execute(
+        "INSERT OR IGNORE INTO schema_migrations (key, applied_at) VALUES (?, ?)",
+        (marker_key, datetime.now(UTC).isoformat()),
     )
 
 
@@ -1229,17 +1262,27 @@ def record_settlement(settlement: dict[str, Any]) -> None:
     a session's aggregate escrow row, which has no single payer. See
     _caller_owns_settlement_row for how reads use this column.
 
-    P1a-1 (R2): idempotency now runs on `dedupe_key` (`session_id||':'||
-    COALESCE(payer_id,'')`, see `_migrate_settlement_dedupe_key()`), not
-    `settlement_id` — a fresh UUID minted right before every insert meant the old
-    `INSERT OR IGNORE` had no key that could ever actually collide, so a replayed
-    settlement always inserted a new row. A genuine replay of the same logical
-    settlement now does nothing past the first write.
+    P1a-1 (R2): idempotency runs on `dedupe_key`, not `settlement_id` — a fresh
+    UUID minted right before every insert meant the old `INSERT OR IGNORE` had no
+    key that could ever actually collide, so a replayed settlement always
+    inserted a new row.
+
+    P1r-1 (R1): `dedupe_key` is now `settlement_dedupe_key(session_id, payer_id,
+    payment_intent_ids)` — payment-scoped, not just payer-scoped. The P1a-2 shape
+    (`session_id||':'||COALESCE(payer_id,'')`) treated a payer's second genuine
+    payment for the same resource (rejoin after a kick, resubscribe after an
+    unsubscribe — both supported flows) as a replay of their first, silently
+    dropping the settlement row for real money already taken. See
+    `settlement_dedupe_key()`'s docstring for the full shape and why it's hashed.
     """
+    from emporia.payments import settlement_dedupe_key
+
     settlement_id = f"stl_{uuid.uuid4().hex[:16]}"
     session_id = settlement["session_id"]
     payer_id = settlement.get("payer_id")
-    dedupe_key = f"{session_id}:{payer_id or ''}"
+    dedupe_key = settlement_dedupe_key(
+        session_id, payer_id, settlement.get("payment_intent_ids", [])
+    )
     with DB_LOCK, get_db() as conn:
         conn.execute(
             "INSERT INTO settlements "

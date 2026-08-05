@@ -4808,85 +4808,188 @@ def test_migrate_settlements_retries_backfill_after_crash_before_marker():
         conn.close()
 
 
-def test_migrate_settlement_dedupe_key_backfills_dedupes_and_indexes():
-    """P1a-2 (R2): _migrate_settlement_dedupe_key() must (a) backfill dedupe_key for
-    every existing row — session-escrow rows (payer_id NULL) included, using the
-    COALESCE(payer_id, '') shape, not left NULL — (b) collapse a pre-existing
-    duplicate pair (as record_settlement()'s pre-fix INSERT OR IGNORE could produce)
-    down to one row, keeping the earliest, and (c) leave a real UNIQUE index behind so
-    a later INSERT ... ON CONFLICT(dedupe_key) can actually collide. Exercises the
-    migration against a DB that predates the column, not just a fresh schema — same
-    discipline as test_migrate_settlements_adds_and_backfills_payer_id."""
+def _dedupe_key_test_conn():
+    """Shared fixture setup for the _migrate_settlement_dedupe_key() tests below —
+    a DB that predates the dedupe_key column, with a schema_migrations table
+    (P1r-1 made this migration marker-gated, so it now needs one)."""
     import sqlite3
-    import tempfile
+
+    conn = sqlite3.connect(":memory:")
+    conn.row_factory = sqlite3.Row
+    conn.executescript("""
+        CREATE TABLE settlements (
+            settlement_id TEXT PRIMARY KEY, session_id TEXT NOT NULL,
+            winner_id TEXT, total_stake_cents INTEGER, platform_fee_cents INTEGER,
+            winner_payout_cents INTEGER, platform_fee_bps INTEGER,
+            payment_intent_ids TEXT NOT NULL DEFAULT '[]',
+            transfer_id TEXT, transfer_status TEXT, status TEXT,
+            created_at TEXT NOT NULL, payer_id TEXT
+        );
+        CREATE TABLE schema_migrations (
+            key TEXT PRIMARY KEY, applied_at TEXT NOT NULL
+        );
+    """)
+    return conn
+
+
+def test_migrate_settlement_dedupe_key_backfills_dedupes_and_indexes():
+    """P1r-1 (R1): _migrate_settlement_dedupe_key() must (a) compute a dedupe_key
+    for every existing row — session-escrow rows (payer_id NULL) included, using
+    the COALESCE(payer_id, '') shape, not left NULL — (b) collapse a pre-existing
+    *genuine* duplicate pair (same session/payer/payment_intent_ids, as pre-fix
+    record_settlement()'s old INSERT OR IGNORE could produce) down to one row,
+    keeping the earliest, and (c) leave a real UNIQUE index behind so a later
+    INSERT ... ON CONFLICT(dedupe_key) can actually collide. Exercises the
+    migration against a DB that predates the column, not just a fresh schema —
+    same discipline as test_migrate_settlements_adds_and_backfills_payer_id."""
+    import sqlite3
     from emporia.relay_server import _migrate_settlement_dedupe_key
 
-    with tempfile.NamedTemporaryFile(suffix=".sqlite3") as f:
-        conn = sqlite3.connect(f.name)
-        conn.row_factory = sqlite3.Row
-        conn.executescript("""
-            CREATE TABLE settlements (
-                settlement_id TEXT PRIMARY KEY, session_id TEXT NOT NULL,
-                winner_id TEXT, total_stake_cents INTEGER, platform_fee_cents INTEGER,
-                winner_payout_cents INTEGER, platform_fee_bps INTEGER,
-                payment_intent_ids TEXT NOT NULL DEFAULT '[]',
-                transfer_id TEXT, transfer_status TEXT, status TEXT,
-                created_at TEXT NOT NULL, payer_id TEXT
-            );
-        """)
-        # A session-escrow row (payer_id NULL) — must get a non-NULL dedupe_key.
+    conn = _dedupe_key_test_conn()
+    # A session-escrow row (payer_id NULL) — must get a non-NULL dedupe_key.
+    conn.execute(
+        "INSERT INTO settlements (settlement_id, session_id, payment_intent_ids, created_at) "
+        "VALUES ('stl_dk_sess', 'sess_dk_legacy', '[]', '2020-01-01')"
+    )
+    # A genuine pre-existing duplicate: the same session/payer/PI recorded twice,
+    # as pre-fix record_settlement() could produce on a replay. 'stl_dk_a' must
+    # survive (earlier rowid); 'stl_dk_b' must be removed.
+    conn.execute(
+        "INSERT INTO settlements (settlement_id, session_id, payer_id, payment_intent_ids, "
+        "created_at) VALUES ('stl_dk_a', 'room_dk_dup', 'dk_payer', '[\"pi_dk\"]', '2020-01-01')"
+    )
+    conn.execute(
+        "INSERT INTO settlements (settlement_id, session_id, payer_id, payment_intent_ids, "
+        "created_at) VALUES ('stl_dk_b', 'room_dk_dup', 'dk_payer', '[\"pi_dk\"]', '2020-01-02')"
+    )
+    conn.commit()
+
+    cols_before = {r[1] for r in conn.execute("PRAGMA table_info(settlements)").fetchall()}
+    assert "dedupe_key" not in cols_before, "test setup must predate the dedupe_key column"
+
+    _migrate_settlement_dedupe_key(conn)
+    conn.commit()
+
+    cols_after = {r[1] for r in conn.execute("PRAGMA table_info(settlements)").fetchall()}
+    assert "dedupe_key" in cols_after
+
+    sess_row = conn.execute(
+        "SELECT dedupe_key FROM settlements WHERE settlement_id = 'stl_dk_sess'"
+    ).fetchone()
+    assert sess_row["dedupe_key"] is not None and sess_row["dedupe_key"].startswith("sess_dk_legacy::"), \
+        f"a session-escrow row's dedupe_key must fold payer_id IS NULL into '', not stay NULL " \
+        f"— got {sess_row['dedupe_key']!r}"
+
+    dup_rows = conn.execute(
+        "SELECT settlement_id FROM settlements WHERE session_id = 'room_dk_dup'"
+    ).fetchall()
+    assert [r["settlement_id"] for r in dup_rows] == ["stl_dk_a"], \
+        f"duplicate rows must collapse to the earliest, got {[r['settlement_id'] for r in dup_rows]}"
+
+    index_exists = conn.execute(
+        "SELECT 1 FROM sqlite_master WHERE type='index' AND name='idx_settlements_dedupe_key'"
+    ).fetchone()
+    assert index_exists, "a UNIQUE index on dedupe_key must exist after migration"
+
+    a_key = conn.execute(
+        "SELECT dedupe_key FROM settlements WHERE settlement_id = 'stl_dk_a'"
+    ).fetchone()["dedupe_key"]
+    with pytest.raises(sqlite3.IntegrityError):
         conn.execute(
-            "INSERT INTO settlements (settlement_id, session_id, payment_intent_ids, created_at) "
-            "VALUES ('stl_dk_sess', 'sess_dk_legacy', '[]', '2020-01-01')"
+            "INSERT INTO settlements (settlement_id, session_id, payer_id, dedupe_key, "
+            "payment_intent_ids, created_at) "
+            "VALUES ('stl_dk_c', 'room_dk_dup', 'dk_payer', ?, '[\"pi_dk\"]', '2020-01-03')",
+            (a_key,),
         )
-        # A genuine pre-existing duplicate: the same (session_id, payer_id) recorded
-        # twice, as pre-fix record_settlement() could produce on a replay. 'stl_dk_a'
-        # must survive (earlier rowid); 'stl_dk_b' must be removed.
-        conn.execute(
-            "INSERT INTO settlements (settlement_id, session_id, payer_id, payment_intent_ids, "
-            "created_at) VALUES ('stl_dk_a', 'room_dk_dup', 'dk_payer', '[\"pi_dk\"]', '2020-01-01')"
-        )
-        conn.execute(
-            "INSERT INTO settlements (settlement_id, session_id, payer_id, payment_intent_ids, "
-            "created_at) VALUES ('stl_dk_b', 'room_dk_dup', 'dk_payer', '[\"pi_dk\"]', '2020-01-02')"
-        )
-        conn.commit()
 
-        cols_before = {r[1] for r in conn.execute("PRAGMA table_info(settlements)").fetchall()}
-        assert "dedupe_key" not in cols_before, "test setup must predate the dedupe_key column"
+    conn.close()
 
-        _migrate_settlement_dedupe_key(conn)
-        conn.commit()
 
-        cols_after = {r[1] for r in conn.execute("PRAGMA table_info(settlements)").fetchall()}
-        assert "dedupe_key" in cols_after
+def test_migrate_settlement_dedupe_key_distinguishes_second_payment_from_same_payer():
+    """P1r-1 (R1): the bug this pass fixes. P1a-2's dedupe_key
+    (session_id||':'||COALESCE(payer_id,'')) is keyed on (resource, payer) only,
+    so a payer's second *genuine* payment for the same resource — rejoin after a
+    kick, resubscribe after an unsubscribe, both supported flows — collided with
+    their first and was silently dropped. Two settlement rows for the same
+    session/payer but *different* payment_intent_ids must produce two distinct
+    dedupe_keys, and both rows must survive the migration. Must fail pre-fix (the
+    old 2-part key made both rows collide, dropping one at migration time — and
+    dropping the second one's INSERT even earlier, at record_settlement())."""
+    from emporia.relay_server import _migrate_settlement_dedupe_key
 
-        sess_row = conn.execute(
-            "SELECT dedupe_key FROM settlements WHERE settlement_id = 'stl_dk_sess'"
-        ).fetchone()
-        assert sess_row["dedupe_key"] == "sess_dk_legacy:", \
-            "a session-escrow row's dedupe_key must fold payer_id IS NULL into '', not stay NULL"
+    conn = _dedupe_key_test_conn()
+    conn.execute(
+        "INSERT INTO settlements (settlement_id, session_id, payer_id, payment_intent_ids, "
+        "created_at) VALUES ('stl_rejoin_1', 'room_rejoin', 'rejoin_payer', '[\"pi_JOIN_ONE\"]', "
+        "'2020-01-01')"
+    )
+    conn.execute(
+        "INSERT INTO settlements (settlement_id, session_id, payer_id, payment_intent_ids, "
+        "created_at) VALUES ('stl_rejoin_2', 'room_rejoin', 'rejoin_payer', '[\"pi_JOIN_TWO\"]', "
+        "'2020-01-02')"
+    )
+    conn.commit()
 
-        dup_rows = conn.execute(
-            "SELECT settlement_id FROM settlements WHERE session_id = 'room_dk_dup'"
-        ).fetchall()
-        assert [r["settlement_id"] for r in dup_rows] == ["stl_dk_a"], \
-            f"duplicate rows must collapse to the earliest, got {[r['settlement_id'] for r in dup_rows]}"
+    _migrate_settlement_dedupe_key(conn)
+    conn.commit()
 
-        index_exists = conn.execute(
-            "SELECT 1 FROM sqlite_master WHERE type='index' AND name='idx_settlements_dedupe_key'"
-        ).fetchone()
-        assert index_exists, "a UNIQUE index on dedupe_key must exist after migration"
+    rows = conn.execute(
+        "SELECT settlement_id, dedupe_key FROM settlements WHERE session_id = 'room_rejoin' "
+        "ORDER BY settlement_id"
+    ).fetchall()
+    assert [r["settlement_id"] for r in rows] == ["stl_rejoin_1", "stl_rejoin_2"], \
+        f"a payer's second genuine payment must not be dropped as a duplicate of the first, " \
+        f"got surviving rows {[r['settlement_id'] for r in rows]}"
+    assert rows[0]["dedupe_key"] != rows[1]["dedupe_key"], \
+        f"different payment_intent_ids for the same (session, payer) must produce different " \
+        f"dedupe_keys, got the same key {rows[0]['dedupe_key']!r} for both"
 
-        with pytest.raises(sqlite3.IntegrityError):
-            conn.execute(
-                "INSERT INTO settlements (settlement_id, session_id, payer_id, dedupe_key, "
-                "payment_intent_ids, created_at) "
-                "VALUES ('stl_dk_c', 'room_dk_dup', 'dk_payer', 'room_dk_dup:dk_payer', '[]', "
-                "'2020-01-03')"
-            )
+    conn.close()
 
-        conn.close()
+
+def test_migrate_settlement_dedupe_key_rewrites_stale_two_part_keys_once():
+    """P1r-1 (R1): pre-existing rows carry the *old* 2-part dedupe_key shape
+    (session_id||':'||COALESCE(payer_id,'')), written either by hand here to
+    simulate a DB that already ran the P1a-2 migration, or genuinely by that
+    migration before this pass shipped. The rewrite must replace every row's key
+    with the new 3-part shape derived from its own payment_intent_ids — and, like
+    _migrate_settlements' payer_id backfill, do this exactly once: a second call
+    must not re-scan or rewrite anything already migrated (checked via
+    set_trace_callback, mirroring test_migrate_settlements_adds_and_backfills_payer_id)."""
+    from emporia.relay_server import _migrate_settlement_dedupe_key
+
+    conn = _dedupe_key_test_conn()
+    conn.execute("ALTER TABLE settlements ADD COLUMN dedupe_key TEXT")
+    conn.execute(
+        "INSERT INTO settlements (settlement_id, session_id, payer_id, payment_intent_ids, "
+        "created_at, dedupe_key) VALUES ('stl_stale', 'room_stale', 'stale_payer', "
+        "'[\"pi_stale\"]', '2020-01-01', 'room_stale:stale_payer')"
+    )
+    conn.execute(
+        "CREATE UNIQUE INDEX idx_settlements_dedupe_key ON settlements(dedupe_key)"
+    )
+    conn.commit()
+
+    _migrate_settlement_dedupe_key(conn)
+    conn.commit()
+
+    row = conn.execute(
+        "SELECT dedupe_key FROM settlements WHERE settlement_id = 'stl_stale'"
+    ).fetchone()
+    assert row["dedupe_key"] != "room_stale:stale_payer", \
+        "a stale 2-part key must be rewritten to the new 3-part (payment-scoped) shape"
+    assert row["dedupe_key"].startswith("room_stale:stale_payer:"), \
+        f"the rewritten key must keep the session/payer prefix, got {row['dedupe_key']!r}"
+
+    executed_sql: list[str] = []
+    conn.set_trace_callback(lambda sql: executed_sql.append(sql))
+    _migrate_settlement_dedupe_key(conn)
+    conn.set_trace_callback(None)
+    assert not any("UPDATE settlements SET dedupe_key" in s for s in executed_sql), \
+        f"a second call on an already-migrated DB must not rewrite anything again. " \
+        f"Statements run: {executed_sql}"
+
+    conn.close()
 
 
 def test_record_settlement_is_idempotent():
@@ -4913,6 +5016,67 @@ def test_record_settlement_is_idempotent():
             ("room_p1a2_dedupe_test", "p1a2_dedupe_payer"),
         ).fetchone()
     assert rows["c"] == 1, "a replayed settlement must not insert a second row"
+
+
+def test_record_settlement_records_second_genuine_payment_from_same_payer():
+    """P1r-1 (R1): the case R3 flagged as missing entirely. The same payer can
+    legitimately pay for the same resource twice — join a paid room, get kicked,
+    rejoin — and each payment must get its own settlement row. P1a-2's
+    (session_id, payer_id)-only dedupe_key silently dropped the second one via
+    INSERT OR IGNORE, with no error and no visible symptom short of the missing
+    row: proved end-to-end via the HTTP API (join/kick/rejoin) during the P1r
+    review — both payments recorded in `payments`, only one settlement. Must fail
+    pre-fix (would find 1, not 2)."""
+    from emporia.relay_server import record_settlement, get_db
+
+    base = {
+        "session_id": "room_p1r1_rejoin_test", "payer_id": "p1r1_rejoin_payer",
+        "winner_id": None, "total_stake_cents": 100, "platform_fee_cents": 5,
+        "winner_payout_cents": 95, "platform_fee_bps": 500,
+        "transfer_status": "transferred", "status": "settled",
+    }
+    record_settlement({**base, "payment_intent_ids": ["pi_JOIN_ONE"], "transfer_id": "tr_join_one"})
+    record_settlement({**base, "payment_intent_ids": ["pi_JOIN_TWO"], "transfer_id": "tr_join_two"})
+
+    with get_db() as conn:
+        rows = conn.execute(
+            "SELECT payment_intent_ids FROM settlements WHERE session_id = ? AND payer_id = ? "
+            "ORDER BY created_at",
+            ("room_p1r1_rejoin_test", "p1r1_rejoin_payer"),
+        ).fetchall()
+    assert len(rows) == 2, \
+        f"a payer's second genuine payment for the same resource must get its own " \
+        f"settlement row, not be dropped as a replay of the first — got {len(rows)} row(s)"
+    assert json.loads(rows[0]["payment_intent_ids"]) == ["pi_JOIN_ONE"]
+    assert json.loads(rows[1]["payment_intent_ids"]) == ["pi_JOIN_TWO"]
+
+
+def test_record_settlement_session_escrow_dedupes_regardless_of_pi_order():
+    """P1r-1 (R1): the session-escrow instance of the same idempotency guarantee,
+    with the added wrinkle that a session's aggregate row can carry more than one
+    payment_intent_id (one per participant) — settlement_dedupe_key() sorts them
+    before hashing so a retry that happens to serialize the same PI set in a
+    different order still collides, rather than looking like a different payment."""
+    from emporia.relay_server import record_settlement, get_db
+
+    payload = {
+        "session_id": "sess_p1r1_order_test", "payer_id": None,
+        "winner_id": "p1r1_winner", "total_stake_cents": 200, "platform_fee_cents": 10,
+        "winner_payout_cents": 190, "platform_fee_bps": 500,
+        "payment_intent_ids": ["pi_alpha", "pi_beta"], "transfer_id": "tr_order_test",
+        "transfer_status": "transferred", "status": "settled",
+    }
+    record_settlement(payload)
+    record_settlement({**payload, "payment_intent_ids": ["pi_beta", "pi_alpha"]})
+
+    with get_db() as conn:
+        rows = conn.execute(
+            "SELECT COUNT(*) c FROM settlements WHERE session_id = ? AND payer_id IS NULL",
+            ("sess_p1r1_order_test",),
+        ).fetchone()
+    assert rows["c"] == 1, \
+        f"the same PI set in a different order must still dedupe as the same payment, " \
+        f"got {rows['c']} rows"
 
 
 def test_settlement_reads_report_has_more(client):
