@@ -5138,6 +5138,61 @@ def test_migrate_settlement_dedupe_key_distinguishes_second_payment_from_same_pa
     conn.close()
 
 
+def test_collapse_duplicate_settlements_treats_null_dedupe_keys_as_distinct():
+    """P1r-4 (R4): `GROUP BY dedupe_key` folds every NULL into a single group,
+    unlike `UNIQUE`, which treats each NULL as distinct from every other NULL.
+    An ungated `GROUP BY dedupe_key HAVING c > 1` would see three NULL-key rows
+    as one duplicate group of three and delete all but one of them — even though
+    none of them are actually duplicates of each other. Calls
+    _collapse_duplicate_settlements_by_dedupe_key() directly (bypassing
+    _migrate_settlement_dedupe_key()'s recompute loop, which today always gives
+    every row a non-NULL key before this runs) so the guard itself is exercised
+    rather than asserting on a path that can't reach it. Must fail pre-fix: all
+    but one of the three NULL-key rows would be deleted."""
+    from emporia.relay_server import _collapse_duplicate_settlements_by_dedupe_key
+
+    conn = _dedupe_key_test_conn()
+    conn.execute("ALTER TABLE settlements ADD COLUMN dedupe_key TEXT")
+    for i in range(3):
+        conn.execute(
+            "INSERT INTO settlements (settlement_id, session_id, payment_intent_ids, "
+            "created_at, dedupe_key) VALUES (?, ?, '[]', ?, NULL)",
+            (f"stl_null_{i}", f"sess_null_{i}", f"2020-01-0{i + 1}"),
+        )
+    # A genuine duplicate pair with a real (non-NULL) dedupe_key, to confirm the
+    # guard doesn't also suppress the collapse this function exists to do.
+    conn.execute(
+        "INSERT INTO settlements (settlement_id, session_id, payment_intent_ids, "
+        "created_at, dedupe_key) VALUES ('stl_dup_a', 'room_dup', '[]', '2020-01-01', "
+        "'room_dup::samekey')"
+    )
+    conn.execute(
+        "INSERT INTO settlements (settlement_id, session_id, payment_intent_ids, "
+        "created_at, dedupe_key) VALUES ('stl_dup_b', 'room_dup', '[]', '2020-01-02', "
+        "'room_dup::samekey')"
+    )
+    conn.commit()
+
+    _collapse_duplicate_settlements_by_dedupe_key(conn)
+    conn.commit()
+
+    null_rows = conn.execute(
+        "SELECT settlement_id FROM settlements WHERE dedupe_key IS NULL"
+    ).fetchall()
+    assert {r["settlement_id"] for r in null_rows} == {"stl_null_0", "stl_null_1", "stl_null_2"}, \
+        f"NULL-dedupe_key rows are not duplicates of each other and must all survive, " \
+        f"got {[r['settlement_id'] for r in null_rows]}"
+
+    dup_rows = conn.execute(
+        "SELECT settlement_id FROM settlements WHERE session_id = 'room_dup'"
+    ).fetchall()
+    assert [r["settlement_id"] for r in dup_rows] == ["stl_dup_a"], \
+        f"a genuine (non-NULL-key) duplicate pair must still collapse to the earliest, " \
+        f"got {[r['settlement_id'] for r in dup_rows]}"
+
+    conn.close()
+
+
 def test_migrate_settlement_dedupe_key_rewrites_stale_two_part_keys_once():
     """P1r-1 (R1): pre-existing rows carry the *old* 2-part dedupe_key shape
     (session_id||':'||COALESCE(payer_id,'')), written either by hand here to

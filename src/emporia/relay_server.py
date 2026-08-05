@@ -944,9 +944,37 @@ def _migrate_settlement_dedupe_key(conn: Any) -> None:
             (new_key, row["settlement_id"]),
         )
 
+    _collapse_duplicate_settlements_by_dedupe_key(conn)
+    conn.execute(
+        "CREATE UNIQUE INDEX IF NOT EXISTS idx_settlements_dedupe_key ON settlements(dedupe_key)"
+    )
+    conn.execute(
+        "INSERT OR IGNORE INTO schema_migrations (key, applied_at) VALUES (?, ?)",
+        (marker_key, datetime.now(UTC).isoformat()),
+    )
+
+
+def _collapse_duplicate_settlements_by_dedupe_key(conn: Any) -> None:
+    """Delete every settlements row that shares its `dedupe_key` with an earlier
+    one, keeping the earliest by rowid. Split out of
+    `_migrate_settlement_dedupe_key()` so this specific piece — a true replay of
+    the same payment, double-inserted by the bug P1a-2 fixed — is independently
+    testable, including the guard below in isolation from the recompute loop
+    that (today) always precedes it.
+
+    P1r-4 (R4): guarded on `dedupe_key IS NOT NULL` at both the scan and the
+    delete. `GROUP BY` folds every NULL into a single group — unlike `UNIQUE`,
+    which treats each NULL as distinct — so an ungated `GROUP BY dedupe_key`
+    would treat any NULL-key rows as one duplicate group and delete all but one
+    of them. `_migrate_settlement_dedupe_key()`'s recompute loop gives every row
+    a non-NULL key before calling this, so the guard is unreachable via that
+    caller today; kept because these two NULL semantics disagreeing is exactly
+    the kind of mismatch that has bitten this table before (N8-R3/N9-R2), and
+    because this function may gain other callers.
+    """
     dupes = conn.execute(
         "SELECT dedupe_key, COUNT(*) c, GROUP_CONCAT(settlement_id) ids "
-        "FROM settlements GROUP BY dedupe_key HAVING c > 1"
+        "FROM settlements WHERE dedupe_key IS NOT NULL GROUP BY dedupe_key HAVING c > 1"
     ).fetchall()
     for row in dupes:
         print(
@@ -954,15 +982,8 @@ def _migrate_settlement_dedupe_key(conn: Any) -> None:
             f"duplicate rows ({row['ids']}) — keeping the earliest, removing the rest"
         )
     conn.execute(
-        "DELETE FROM settlements WHERE rowid NOT IN "
-        "(SELECT MIN(rowid) FROM settlements GROUP BY dedupe_key)"
-    )
-    conn.execute(
-        "CREATE UNIQUE INDEX IF NOT EXISTS idx_settlements_dedupe_key ON settlements(dedupe_key)"
-    )
-    conn.execute(
-        "INSERT OR IGNORE INTO schema_migrations (key, applied_at) VALUES (?, ?)",
-        (marker_key, datetime.now(UTC).isoformat()),
+        "DELETE FROM settlements WHERE dedupe_key IS NOT NULL AND rowid NOT IN "
+        "(SELECT MIN(rowid) FROM settlements WHERE dedupe_key IS NOT NULL GROUP BY dedupe_key)"
     )
 
 
