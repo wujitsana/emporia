@@ -3217,6 +3217,45 @@ async def test_payout_winner_sends_deterministic_idempotency_key():
 
 
 @pytest.mark.asyncio
+async def test_settle_derives_payout_idempotency_key_from_payment_intent_ids():
+    """P1r-2 (R1): settle()'s payout_winner() call previously derived its
+    Idempotency-Key from session_id alone (`f"emporia:payout:{session_id}:"`)
+    with no payment digest — the same (resource, payer)-not-(resource, payer,
+    payment) gap fixed at the room/Agora call sites, here in its session-escrow
+    form. Now derived via settlement_dedupe_key() like every other site, so two
+    settle() calls for the same session but a genuinely different PI set don't
+    collide. Filters mock_post's calls down to the /transfers ones (settle() also
+    calls capture_payment_intent() per PI first, which sends no Idempotency-Key
+    at all — captures are safe to retry via Stripe's own state check, see that
+    function's docstring)."""
+    from emporia.payments import settle
+    mock_transfer = {"id": "tr_settle_test"}
+    with patch.dict(os.environ, {"STRIPE_SECRET_KEY": "sk_test_mock"}):
+        with patch("httpx.AsyncClient.post", new_callable=AsyncMock) as mock_post:
+            mock_resp = MagicMock()
+            mock_resp.json.return_value = mock_transfer
+            mock_resp.raise_for_status = MagicMock()
+            mock_post.return_value = mock_resp
+
+            await settle("sess_settle_idem", "winner_settle", 200, ["pi_settle_a"], "acct_settle")
+            await settle("sess_settle_idem", "winner_settle", 200, ["pi_settle_a"], "acct_settle")
+            await settle("sess_settle_idem", "winner_settle", 200, ["pi_settle_b"], "acct_settle")
+
+    keys = [
+        call.kwargs["headers"]["Idempotency-Key"]
+        for call in mock_post.call_args_list
+        if "Idempotency-Key" in call.kwargs.get("headers", {})
+    ]
+    assert len(keys) == 3, f"expected exactly 3 transfer calls (one per settle()), got {keys}"
+    assert keys[0] == keys[1], \
+        f"two settle() calls for the same session and same PI set must send the identical " \
+        f"Idempotency-Key, got {keys}"
+    assert keys[0] != keys[2], \
+        f"two settle() calls for the same session but a genuinely different PI set must not " \
+        f"share an Idempotency-Key, got {keys}"
+
+
+@pytest.mark.asyncio
 async def test_arbitrate_and_refund_sends_deterministic_idempotency_key():
     """P1a-3 (R3): same property as payout_winner() for the refund call — derived
     deterministically from session_id + charge_id, the two pieces that already fully
@@ -3906,6 +3945,85 @@ def test_join_room_retry_does_not_double_pay(mock_verify, mock_payout, client):
             "SELECT COUNT(*) c FROM settlements WHERE session_id=?", (room_id,)
         ).fetchone()
     assert settlements["c"] == 1, "exactly one settlement row must exist after the retry"
+
+
+@patch("emporia.payments.payout_winner", new_callable=AsyncMock)
+@patch("emporia.payments.verify_payment_intent", new_callable=AsyncMock)
+def test_join_kick_rejoin_records_both_payments_and_pays_out_both(mock_verify, mock_payout, client):
+    """P1r-1/P1r-2 (R1): the exact scenario that proved the bug this pass fixes.
+    Join a paid room, get kicked, rejoin with a *different* PaymentIntent — both
+    are real payments and both must be recorded, settled, and paid out
+    separately. Pre-fix: both joins returned 200 and both payments were recorded
+    in `payments`, but the second settlement silently collided with the first's
+    dedupe_key (payer-only, no payment digest) and was dropped, and both
+    payout_winner() calls sent the identical Idempotency-Key — so against real
+    Stripe the room creator would be paid once for two paid joins. Must fail
+    pre-fix (2 payments but only 1 settlement, and keys[0] == keys[1])."""
+    _register(client, "p1r_room_owner")
+    _register(client, "p1r_room_payer")
+    mock_payout.return_value = {"transfer_id": "tr_p1r_rejoin"}
+
+    r = client.post("/rooms", json={
+        "name": "P1r Rejoin Room", "creator_id": "p1r_room_owner",
+        "room_type": "private", "gate_type": "stripe_payment", "entry_fee_cents": 100,
+    },
+        headers={"x-emporia-agent-id": "p1r_room_owner"})
+    assert r.status_code == 200, r.text
+    room_id = r.json()["room_id"]
+
+    with patch("emporia.relay_server.AGENT_REGISTRY.get_stripe_account", return_value="acct_p1r_rejoin"):
+        mock_verify.return_value = {
+            "status": "succeeded", "payment_intent_id": "pi_JOIN_ONE",
+            "amount": 100, "currency": "usd", "capture_method": "automatic",
+            "metadata": {
+                "resource_type": "room", "resource_id": room_id,
+                "buyer_agent_id": "p1r_room_payer",
+            },
+        }
+        r1 = client.post(f"/rooms/{room_id}/join",
+            json={"agent_id": "p1r_room_payer", "payment_intent_id": "pi_JOIN_ONE"},
+            headers={"x-emporia-agent-id": "p1r_room_payer"})
+        assert r1.status_code == 200, r1.text
+
+        kicked = client.post(f"/rooms/{room_id}/kick",
+            json={"target_agent_id": "p1r_room_payer"},
+            headers={"x-emporia-agent-id": "p1r_room_owner"})
+        assert kicked.status_code == 200, kicked.text
+
+        mock_verify.return_value = {
+            "status": "succeeded", "payment_intent_id": "pi_JOIN_TWO",
+            "amount": 100, "currency": "usd", "capture_method": "automatic",
+            "metadata": {
+                "resource_type": "room", "resource_id": room_id,
+                "buyer_agent_id": "p1r_room_payer",
+            },
+        }
+        r2 = client.post(f"/rooms/{room_id}/join",
+            json={"agent_id": "p1r_room_payer", "payment_intent_id": "pi_JOIN_TWO"},
+            headers={"x-emporia-agent-id": "p1r_room_payer"})
+        assert r2.status_code == 200, r2.text
+
+    from emporia.relay_server import get_db
+    with get_db() as conn:
+        payments = conn.execute(
+            "SELECT payment_intent_id FROM payments WHERE room_id=? ORDER BY payment_intent_id",
+            (room_id,),
+        ).fetchall()
+        settlements = conn.execute(
+            "SELECT payment_intent_ids FROM settlements WHERE session_id=? ORDER BY created_at",
+            (room_id,),
+        ).fetchall()
+    assert [p["payment_intent_id"] for p in payments] == ["pi_JOIN_ONE", "pi_JOIN_TWO"], \
+        "both real payments must be recorded regardless of the settlement bug"
+    assert len(settlements) == 2, \
+        f"both joins are genuine payments and must each get their own settlement row, " \
+        f"got {len(settlements)}"
+
+    assert mock_payout.call_count == 2, \
+        f"the creator must be paid out for both joins, payout fired {mock_payout.call_count}x"
+    keys = [call.kwargs["idempotency_key"] for call in mock_payout.call_args_list]
+    assert keys[0] != keys[1], \
+        f"two genuinely different payouts must not share an Idempotency-Key, got {keys}"
 
 
 @patch("emporia.payments.payout_winner", new_callable=AsyncMock)

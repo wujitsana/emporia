@@ -4691,14 +4691,17 @@ async def join_room(room_id: str, req: JoinRoomRequest, request: Request):
             creator_stripe = AGENT_REGISTRY.get_stripe_account(room.creator_id)
             if creator_stripe:
                 try:
-                    from emporia.payments import payout_winner
+                    from emporia.payments import payout_winner, settlement_dedupe_key
                     t = await payout_winner(
                         winner_id=room.creator_id,
                         stripe_account_id=creator_stripe,
                         amount_cents=creator_payout,
                         session_id=room_id,
-                        # Matches this same settlement's dedupe_key below (P1a-2).
-                        idempotency_key=f"emporia:payout:{room_id}:{req.agent_id}",
+                        # Matches this same settlement's dedupe_key below — same
+                        # helper, same inputs, by construction (P1r-2, R1).
+                        idempotency_key="emporia:payout:" + settlement_dedupe_key(
+                            room_id, req.agent_id, [confirmed_pi]
+                        ),
                     )
                     transfer_id = t["transfer_id"]
                     transfer_status = "transferred"
@@ -5316,11 +5319,14 @@ async def subscribe_agora_topic(slug: str, req: AgoraSubscribeRequest, request: 
             creator_stripe = AGENT_REGISTRY.get_stripe_account(creator_id)
             if creator_stripe:
                 try:
-                    from emporia.payments import payout_winner
+                    from emporia.payments import payout_winner, settlement_dedupe_key
                     t = await payout_winner(
                         creator_id, creator_stripe, creator_payout, topic_id,
-                        # Matches this same settlement's dedupe_key below (P1a-2).
-                        idempotency_key=f"emporia:payout:{topic_id}:{req.agent_id}",
+                        # Matches this same settlement's dedupe_key below — same
+                        # helper, same inputs, by construction (P1r-2, R1).
+                        idempotency_key="emporia:payout:" + settlement_dedupe_key(
+                            topic_id, req.agent_id, [confirmed_pi]
+                        ),
                     )
                     transfer_id = t["transfer_id"]
                     transfer_status = "transferred"

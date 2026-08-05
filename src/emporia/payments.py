@@ -470,6 +470,13 @@ async def capture_payment_intent(payment_intent_id: str) -> dict[str, Any]:
     Called at session end to convert authorized holds into captured funds.
     The relay must capture before it can transfer winnings via Connect.
     Safe to call on already-captured PIs (Stripe is idempotent on capture).
+
+    P1r-2 (R1) checked this call for the same missing-Idempotency-Key gap
+    P1a-3/P1r-2 fixed on the transfer/refund calls, and found it doesn't apply:
+    a capture acts on a specific, already-existing PaymentIntent resource (the
+    `payment_intent_unexpected_state` branch above already treats a re-capture
+    as a no-op success) rather than minting a new resource on every call the way
+    a Transfer or Refund does — there's nothing for a second call to duplicate.
     """
     key = _stripe_key()
     async with httpx.AsyncClient(timeout=REQUEST_TIMEOUT) as client:
@@ -554,10 +561,16 @@ async def settle(
                 stripe_account_id=winner_stripe_account,
                 amount_cents=winner_payout_cents,
                 session_id=session_id,
-                # Matches record_settlement()'s dedupe_key shape for this session's
-                # aggregate row (payer_id NULL → empty suffix) — one payout per
-                # session settlement, so no payer disambiguation is needed here.
-                idempotency_key=f"emporia:payout:{session_id}:",
+                # Matches record_settlement()'s dedupe_key for this session's
+                # aggregate row — same helper, same inputs (payer_id NULL, this
+                # settlement's own PI list), by construction (P1r-2, R1). P1a-3's
+                # `f"emporia:payout:{session_id}:"` carried no PI digest, so a
+                # second genuine settle() for the same session (which shouldn't
+                # happen, but nothing enforced it) would have collided with the
+                # first's payout instead of being rejected on its own terms.
+                idempotency_key="emporia:payout:" + settlement_dedupe_key(
+                    session_id, None, payment_intent_ids
+                ),
             )
             transfer_id = transfer["transfer_id"]
             transfer_status = "transferred"
@@ -677,6 +690,12 @@ async def arbitrate_and_refund(
     reuses it rather than risking a second real refund. Unlike payout_winner(), no
     caller-supplied key is needed: every piece the key is built from is already this
     function's own parameter.
+
+    P1r-2 (R1) re-checked this key against the same (resource, payer)-vs-
+    (resource, payer, payment) gap found in the payout keys, and left it
+    unchanged: `charge_id` is already per-payment (Stripe mints a distinct charge
+    per PaymentIntent), so this key was never coarser than the thing it
+    identifies, unlike `payout_winner()`'s pre-P1r-2 keys.
     """
     key = _stripe_key()
     async with httpx.AsyncClient(timeout=REQUEST_TIMEOUT) as client:
