@@ -40,7 +40,7 @@ from collections import defaultdict
 from contextlib import asynccontextmanager, suppress
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import httpx
 import uvicorn
@@ -117,6 +117,14 @@ from emporia.session_audit import (
 )
 from emporia import rooms as rooms_db
 from emporia import entitlements
+
+if TYPE_CHECKING:
+    # Type-only — every real (runtime) reference to emporia.payments stays a
+    # function-local import (L2, this file's own discipline): 69 test
+    # @patch("emporia.payments.X") decorators only intercept because nothing
+    # here imports these names at module scope. A TYPE_CHECKING import is
+    # erased before runtime, so it can't affect that.
+    from emporia.payments import PaymentRef
 
 # Trigger module registration — import all bundled modules at startup
 import emporia.modules.chess  # noqa: F401
@@ -1209,10 +1217,13 @@ async def _verify_and_confirm_payment(
     req_payment_intent_id: str | None,
     challenge_message: str,
     challenge_resource: str,
-) -> str | JSONResponse:
+) -> "PaymentRef | JSONResponse":
     """Verify a payment credential (SPT via Authorization header, or a client-supplied
     PaymentIntent id) against the expected amount/currency/capture-method/resource binding,
-    then return the confirmed payment_intent_id.
+    then return a `PaymentRef` — the confirmed reference, tagged with the rail it was
+    verified on (P3, item 3). This is the one funnel that mints a `PaymentRef`; every
+    downstream persistence point (record_payment, entitlements.grant, record_settlement)
+    gets its `rail` from here rather than assuming one.
 
     If no credential was supplied, returns a ready-to-return 402 MPP challenge JSONResponse
     instead of raising — callers must check `isinstance(result, JSONResponse)` and return it
@@ -1232,8 +1243,8 @@ async def _verify_and_confirm_payment(
     see that branch's own comment for why the SPT branch can't.
     """
     from emporia.payments import (
-        build_mpp_challenge, extract_mpp_token, confirm_spt,
-        verify_payment_intent, confirm_stripe_intent,
+        RAIL_STRIPE, build_mpp_challenge, extract_mpp_token, confirm_spt,
+        verify_payment_intent, confirm_stripe_intent, PaymentRef,
     )
     _assert_agent_budget(agent_id, amount_cents)
     auth_header = request.headers.get("Authorization")
@@ -1254,7 +1265,7 @@ async def _verify_and_confirm_payment(
                 resource_type=resource_type, resource_id=resource_id,
                 expected_capture_method=capture_method, allowed_statuses=allowed_statuses,
             )
-            return result["payment_intent_id"]
+            return PaymentRef(RAIL_STRIPE, result["payment_intent_id"])
         except HTTPException:
             raise
         except Exception as e:
@@ -1280,7 +1291,7 @@ async def _verify_and_confirm_payment(
                 expected_capture_method=capture_method, allowed_statuses=allowed_statuses,
                 expected_payer_agent_id=(agent_id if identity_verified else None),
             )
-            return req_payment_intent_id
+            return PaymentRef(RAIL_STRIPE, req_payment_intent_id)
         except HTTPException:
             raise
         except Exception as e:
@@ -1308,7 +1319,20 @@ def record_payment(
     session_id: str | None = None,
     room_id: str | None = None,
     currency: str = "usd",
+    *,
+    rail: str,
 ) -> dict[str, Any]:
+    """P3 (item 3): `rail` is required and keyword-only, same posture as
+    `entitlements.grant()` — every real call site now has a `PaymentRef` to
+    thread it from (all three routes that reach this function verify a
+    payment via `_verify_and_confirm_payment()` first), so there is no
+    legitimate caller left to silently default for, unlike
+    `record_settlement()` (session escrow's aggregate settlement has no
+    single `PaymentRef` and stays out of scope this pass).
+    """
+    from emporia.payments import KNOWN_RAILS
+    if rail not in KNOWN_RAILS:
+        raise ValueError(f"Unknown payment rail {rail!r}, expected one of {sorted(KNOWN_RAILS)}")
     with DB_LOCK, get_db() as conn:
         existing = conn.execute(
             "SELECT * FROM payments WHERE payment_intent_id = ?",
@@ -1323,6 +1347,7 @@ def record_payment(
                 and row.get("payment_type") == payment_type
                 and row.get("session_id") == session_id
                 and row.get("room_id") == room_id
+                and row.get("rail") == rail
             ):
                 return row
             raise ValueError(
@@ -1334,10 +1359,10 @@ def record_payment(
         conn.execute(
             "INSERT INTO payments "
             "(payment_id, session_id, room_id, agent_id, amount_cents, currency, "
-            "payment_intent_id, payment_type, status, created_at) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'confirmed', ?)",
+            "payment_intent_id, payment_type, status, created_at, rail) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'confirmed', ?, ?)",
             (payment_id, session_id, room_id, agent_id, amount_cents, currency,
-             payment_intent_id, payment_type, created_at),
+             payment_intent_id, payment_type, created_at, rail),
         )
         return {
             "payment_id": payment_id,
@@ -1350,6 +1375,7 @@ def record_payment(
             "payment_type": payment_type,
             "status": "confirmed",
             "created_at": created_at,
+            "rail": rail,
         }
 
 
@@ -4050,7 +4076,8 @@ async def join_session(session_id: str, req: JoinSessionRequest, request: Reques
         )
         if isinstance(result, JSONResponse):
             return result
-        req.payment_intent_id = result
+        payment_ref = result
+        req.payment_intent_id = payment_ref.reference
         stake_paid = True
 
         # N4 review R1: record_payment() raises ValueError on a PaymentIntent id already
@@ -4064,6 +4091,7 @@ async def join_session(session_id: str, req: JoinSessionRequest, request: Reques
                 payment_type="session_stake",
                 session_id=session_id,
                 currency=currency,
+                rail=payment_ref.rail,
             )
         except ValueError as e:
             raise HTTPException(402, str(e))
@@ -4828,7 +4856,7 @@ async def join_room(room_id: str, req: JoinRoomRequest, request: Request):
                                 db_path=DATABASE_PATH):
         raise HTTPException(403, "Removed from this room")
 
-    confirmed_pi: str | None = None
+    confirmed_pi = None  # PaymentRef | None — imported function-local, see L2
     amount_cents = 0
     currency = "usd"
     if room.gate_type == "invite":
@@ -4877,12 +4905,13 @@ async def join_room(room_id: str, req: JoinRoomRequest, request: Request):
             # rejected join, not a 500.
             try:
                 record_payment(
-                    payment_intent_id=confirmed_pi,
+                    payment_intent_id=confirmed_pi.reference,
                     agent_id=req.agent_id,
                     amount_cents=amount_cents,
                     payment_type="room_entry",
                     room_id=room_id,
                     currency=currency,
+                    rail=confirmed_pi.rail,
                 )
             except ValueError as e:
                 raise HTTPException(402, str(e))
@@ -4904,10 +4933,9 @@ async def join_room(room_id: str, req: JoinRoomRequest, request: Request):
         # payout below — mirrors record_payment's placement relative to payout
         # for the same "commit the durable record before the non-idempotent
         # Stripe call" reason.
-        from emporia.payments import RAIL_STRIPE
         entitlements.grant(
-            "room", room_id, req.agent_id, confirmed_pi,
-            room.access_duration_days, rail=RAIL_STRIPE, db_path=DATABASE_PATH,
+            "room", room_id, req.agent_id, confirmed_pi.reference,
+            room.access_duration_days, rail=confirmed_pi.rail, db_path=DATABASE_PATH,
         )
         from emporia.payments import platform_fee as _platform_fee
         platform_fee = _platform_fee(amount_cents)
@@ -4925,9 +4953,10 @@ async def join_room(room_id: str, req: JoinRoomRequest, request: Request):
                         amount_cents=creator_payout,
                         session_id=room_id,
                         # Matches this same settlement's dedupe_key below — same
-                        # helper, same inputs, by construction (P1r-2, R1).
+                        # helper, same inputs, by construction (P1r-2, R1). L1:
+                        # only the bare reference reaches the hash, never the rail.
                         idempotency_key="emporia:payout:" + settlement_dedupe_key(
-                            room_id, req.agent_id, [confirmed_pi]
+                            room_id, req.agent_id, [confirmed_pi.reference]
                         ),
                     )
                     transfer_id = t["transfer_id"]
@@ -4943,10 +4972,11 @@ async def join_room(room_id: str, req: JoinRoomRequest, request: Request):
             "platform_fee_cents": platform_fee,
             "winner_payout_cents": creator_payout,
             "platform_fee_bps": OPERATOR_FEE_BPS,
-            "payment_intent_ids": [confirmed_pi],
+            "payment_intent_ids": [confirmed_pi.reference],
             "transfer_id": transfer_id,
             "transfer_status": transfer_status,
             "payer_id": req.agent_id,
+            "rail": confirmed_pi.rail,
         })
 
     await broadcast_to_session(f"room:{room_id}", {
@@ -5740,12 +5770,13 @@ async def subscribe_agora_topic(slug: str, req: AgoraSubscribeRequest, request: 
     if confirmed_pi and entry_fee > 0:
         try:
             record_payment(
-                confirmed_pi,
+                confirmed_pi.reference,
                 req.agent_id,
                 entry_fee,
                 "agora_subscribe",
                 room_id=topic_id,
                 currency="usd",
+                rail=confirmed_pi.rail,
             )
         except ValueError as e:
             raise HTTPException(402, str(e))
@@ -5780,10 +5811,9 @@ async def subscribe_agora_topic(slug: str, req: AgoraSubscribeRequest, request: 
         # P2-4 (R1): record the entitlement this payment just bought — see
         # join_room's identical restructuring and entitlements.py's module
         # docstring.
-        from emporia.payments import RAIL_STRIPE
         entitlements.grant(
-            "agora", topic_id, req.agent_id, confirmed_pi,
-            access_duration_days, rail=RAIL_STRIPE, db_path=DATABASE_PATH,
+            "agora", topic_id, req.agent_id, confirmed_pi.reference,
+            access_duration_days, rail=confirmed_pi.rail, db_path=DATABASE_PATH,
         )
         from emporia.payments import platform_fee as _platform_fee
         platform_fee = _platform_fee(entry_fee)
@@ -5798,9 +5828,10 @@ async def subscribe_agora_topic(slug: str, req: AgoraSubscribeRequest, request: 
                     t = await payout_winner(
                         creator_id, creator_stripe, creator_payout, topic_id,
                         # Matches this same settlement's dedupe_key below — same
-                        # helper, same inputs, by construction (P1r-2, R1).
+                        # helper, same inputs, by construction (P1r-2, R1). L1:
+                        # only the bare reference reaches the hash, never the rail.
                         idempotency_key="emporia:payout:" + settlement_dedupe_key(
-                            topic_id, req.agent_id, [confirmed_pi]
+                            topic_id, req.agent_id, [confirmed_pi.reference]
                         ),
                     )
                     transfer_id = t["transfer_id"]
@@ -5811,8 +5842,8 @@ async def subscribe_agora_topic(slug: str, req: AgoraSubscribeRequest, request: 
             "session_id": topic_id, "winner_id": creator_id, "outcome_type": "agora_subscribe",
             "status": "settled", "total_stake_cents": entry_fee, "platform_fee_cents": platform_fee,
             "winner_payout_cents": creator_payout, "platform_fee_bps": OPERATOR_FEE_BPS,
-            "payment_intent_ids": [confirmed_pi], "transfer_id": transfer_id, "transfer_status": transfer_status,
-            "payer_id": req.agent_id,
+            "payment_intent_ids": [confirmed_pi.reference], "transfer_id": transfer_id,
+            "transfer_status": transfer_status, "payer_id": req.agent_id, "rail": confirmed_pi.rail,
         })
 
     return {"ok": True, "slug": slug, "agent_id": req.agent_id, "gate_type": gate}

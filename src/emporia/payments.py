@@ -30,6 +30,7 @@ import json
 import os
 import secrets
 from collections.abc import Sequence
+from dataclasses import dataclass
 from typing import Any
 
 import httpx
@@ -92,6 +93,30 @@ def platform_fee(amount_cents: int) -> int:
 # turns out to be needed — not guessed at here ahead of time.
 RAIL_STRIPE = "stripe"
 KNOWN_RAILS = frozenset({RAIL_STRIPE})
+
+
+@dataclass(frozen=True)
+class PaymentRef:
+    """A verified payment reference, tagged with the rail it was verified on.
+
+    Returned by `_verify_and_confirm_payment()` (relay_server.py) — the single
+    funnel all three paid routes (session join, room join, Agora subscribe)
+    call to turn a client-supplied credential into a confirmed payment. Before
+    P3 that funnel returned a bare `str` (the Stripe PaymentIntent id), so
+    every downstream persistence point (record_payment, entitlements.grant,
+    record_settlement) had no rail to record even after their own schema grew
+    a `rail` column for exactly this purpose (item 2).
+
+    `reference` is deliberately the *only* thing that ever reaches
+    `settlement_dedupe_key()` or a Stripe `Idempotency-Key` — see that
+    function's own docstring. The rail tag must never be folded into the
+    hashed string: every settlement's `dedupe_key` and every payout/refund
+    idempotency key derived from it would silently change value the moment it
+    did, breaking in-flight idempotency guarantees for existing rows.
+    """
+
+    rail: str
+    reference: str
 
 
 STRIPE_API_BASE = os.getenv("STRIPE_API_BASE", "https://api.stripe.com/v1")

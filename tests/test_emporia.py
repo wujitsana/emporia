@@ -3255,6 +3255,137 @@ async def test_settle_derives_payout_idempotency_key_from_payment_intent_ids():
         f"share an Idempotency-Key, got {keys}"
 
 
+def test_settlement_dedupe_key_never_hashes_the_rail_tag():
+    """P3, landmine L1: settlement_dedupe_key() is both settlements.dedupe_key
+    (a UNIQUE index, ON CONFLICT target) and the base of every Stripe
+    Idempotency-Key for real money movement — so if PaymentRef's rail tag
+    ever reached the hashed string, every one of those would silently change
+    value, breaking in-flight idempotency and requiring a unique-index
+    rebuild. The function's own signature only ever took bare reference
+    strings and hasn't changed; this pins its output for a fixed input to a
+    known value computed independently (hashlib, not this function) so any
+    future change to what gets hashed — including accidentally passing a
+    PaymentRef instead of unwrapping it first — fails this test rather than
+    silently producing a different (but still 16-hex-char, still
+    plausible-looking) key."""
+    import hashlib
+
+    from emporia.payments import settlement_dedupe_key
+
+    session_id, payer_id, pi_ids = "room_p3_l1_pin", "payer_p3_l1_pin", ["pi_p3_l1_pin"]
+    expected_digest = hashlib.sha256(",".join(sorted(pi_ids)).encode()).hexdigest()[:16]
+    expected = f"{session_id}:{payer_id}:{expected_digest}"
+
+    assert settlement_dedupe_key(session_id, payer_id, pi_ids) == expected == \
+        "room_p3_l1_pin:payer_p3_l1_pin:defef4dc9df8fbc5", \
+        "settlement_dedupe_key()'s output for a fixed input must never drift — " \
+        "if this fails, something now hashes more than the bare reference string"
+
+
+@patch("emporia.payments.refund_payment_intent", new_callable=AsyncMock)
+@patch("emporia.payments.reverse_transfer", new_callable=AsyncMock)
+@patch("emporia.payments.payout_winner", new_callable=AsyncMock)
+@patch("emporia.payments.verify_payment_intent", new_callable=AsyncMock)
+def test_room_join_payout_idempotency_key_unaffected_by_paymentref_rail_tag(
+    mock_verify, mock_payout, mock_reverse, mock_refund, client
+):
+    """P3, landmine L1, integration-level: join_room's payout call derives its
+    Idempotency-Key from settlement_dedupe_key(room_id, agent_id,
+    [confirmed_pi.reference]) — PaymentRef.reference, not the PaymentRef
+    object itself and not PaymentRef.rail. Proves the actual idempotency key
+    sent to Stripe on a real (mocked) paid-room join matches the same value
+    settlement_dedupe_key() itself produces for the bare id, pinning that the
+    PaymentRef wrapper introduced in this pass changed nothing about what
+    reaches Stripe."""
+    from emporia.payments import settlement_dedupe_key
+
+    owner, payer = "p3_l1_owner", "p3_l1_payer"
+    _register(client, owner)
+    _register(client, payer)
+    mock_payout.return_value = {"transfer_id": "tr_p3_l1"}
+
+    r = client.post("/rooms", json={
+        "name": "P3 L1 Room", "creator_id": owner,
+        "room_type": "private", "gate_type": "paid", "entry_fee_cents": 100,
+    },
+        headers={"x-emporia-agent-id": owner})
+    assert r.status_code == 200, r.text
+    room_id = r.json()["room_id"]
+
+    mock_verify.return_value = {
+        "status": "succeeded", "payment_intent_id": "pi_p3_l1",
+        "amount": 100, "currency": "usd", "capture_method": "automatic",
+        "metadata": {"resource_type": "room", "resource_id": room_id, "buyer_agent_id": payer},
+    }
+    with patch("emporia.relay_server.AGENT_REGISTRY.get_stripe_account", return_value="acct_p3_l1"):
+        joined = client.post(f"/rooms/{room_id}/join",
+            json={"agent_id": payer, "payment_intent_id": "pi_p3_l1"},
+            headers={"x-emporia-agent-id": payer})
+    assert joined.status_code == 200, joined.text
+
+    mock_payout.assert_called_once()
+    actual_key = mock_payout.call_args.kwargs["idempotency_key"]
+    expected_key = "emporia:payout:" + settlement_dedupe_key(room_id, payer, ["pi_p3_l1"])
+    assert actual_key == expected_key, \
+        f"payout idempotency key must be derived from the bare reference alone, " \
+        f"got {actual_key!r}, expected {expected_key!r}"
+
+
+@patch("emporia.payments.payout_winner", new_callable=AsyncMock)
+@patch("emporia.payments.verify_payment_intent", new_callable=AsyncMock)
+def test_room_join_persists_rail_to_all_three_tables(mock_verify, mock_payout, client):
+    """P3 (item 3): the PaymentRef minted by _verify_and_confirm_payment()
+    must actually reach storage on all three payment-bearing tables via a
+    real (mocked-Stripe) paid-room join — payments.rail (record_payment),
+    access_entitlements.rail (entitlements.grant), and settlements.rail
+    (record_settlement) must each read back 'stripe', not the column's bare
+    DDL default going unexercised."""
+    from emporia.relay_server import get_db, DATABASE_PATH
+    from emporia import rooms as rooms_db
+
+    owner, payer = "p3_rail_owner", "p3_rail_payer"
+    _register(client, owner)
+    _register(client, payer)
+    mock_payout.return_value = {"transfer_id": "tr_p3_rail"}
+
+    r = client.post("/rooms", json={
+        "name": "P3 Rail Room", "creator_id": owner,
+        "room_type": "private", "gate_type": "paid", "entry_fee_cents": 100,
+    },
+        headers={"x-emporia-agent-id": owner})
+    assert r.status_code == 200, r.text
+    room_id = r.json()["room_id"]
+
+    mock_verify.return_value = {
+        "status": "succeeded", "payment_intent_id": "pi_p3_rail",
+        "amount": 100, "currency": "usd", "capture_method": "automatic",
+        "metadata": {"resource_type": "room", "resource_id": room_id, "buyer_agent_id": payer},
+    }
+    with patch("emporia.relay_server.AGENT_REGISTRY.get_stripe_account", return_value="acct_p3_rail"):
+        joined = client.post(f"/rooms/{room_id}/join",
+            json={"agent_id": payer, "payment_intent_id": "pi_p3_rail"},
+            headers={"x-emporia-agent-id": payer})
+    assert joined.status_code == 200, joined.text
+    assert rooms_db.is_member(room_id, payer, db_path=DATABASE_PATH)
+
+    with get_db() as conn:
+        payment_rail = conn.execute(
+            "SELECT rail FROM payments WHERE payment_intent_id = 'pi_p3_rail'"
+        ).fetchone()
+        settlement_rail = conn.execute(
+            "SELECT rail FROM settlements WHERE session_id = ? AND payer_id = ?",
+            (room_id, payer),
+        ).fetchone()
+        entitlement_rail = conn.execute(
+            "SELECT rail FROM access_entitlements WHERE resource_type='room' "
+            "AND resource_id=? AND agent_id=?",
+            (room_id, payer),
+        ).fetchone()
+    assert payment_rail["rail"] == "stripe", "payments.rail must be persisted"
+    assert settlement_rail["rail"] == "stripe", "settlements.rail must be persisted"
+    assert entitlement_rail["rail"] == "stripe", "access_entitlements.rail must be persisted"
+
+
 @pytest.mark.asyncio
 async def test_arbitrate_and_refund_sends_deterministic_idempotency_key():
     """P1a-3 (R3): same property as payout_winner() for the refund call — derived
@@ -3569,6 +3700,7 @@ def test_record_payment_is_idempotent_and_rejects_reuse():
         payment_type="session_stake",
         session_id="sess_idempotent",
         currency="usd",
+        rail="stripe",
     )
     second = record_payment(
         payment_intent_id="pi_idempotent_test",
@@ -3577,6 +3709,7 @@ def test_record_payment_is_idempotent_and_rejects_reuse():
         payment_type="session_stake",
         session_id="sess_idempotent",
         currency="usd",
+        rail="stripe",
     )
     assert second["payment_id"] == first["payment_id"]
 
@@ -3588,6 +3721,7 @@ def test_record_payment_is_idempotent_and_rejects_reuse():
             payment_type="session_stake",
             session_id="sess_other",
             currency="usd",
+            rail="stripe",
         )
 
 
@@ -7277,6 +7411,7 @@ def test_join_session_rejects_total_budget_exceeded(mock_verify, client):
         payment_type="room_entry",
         room_id="room_budget_existing",
         currency="usd",
+        rail="stripe",
     )
     mock_verify.return_value = {
         "status": "requires_capture",
