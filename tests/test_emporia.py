@@ -5238,6 +5238,46 @@ def test_migrate_settlement_dedupe_key_rewrites_stale_two_part_keys_once():
     conn.close()
 
 
+def test_migrate_settlement_dedupe_key_restores_index_on_every_startup():
+    """P2-1 (R3): P1r-1 restructured this migration into a marker-gated one-shot
+    but left `CREATE UNIQUE INDEX` *inside* the gated block, so it only ever runs
+    once — same regression class as N8-R3 (an unconditional-per-startup fix
+    turned into a marker-gated one that then only did part of its job once).
+    Proved live: drop the index after the marker is already set (schema rebuild,
+    manual intervention, a future migration that rebuilds the table — SQLite's
+    standard ALTER-by-rebuild recipe drops every index), call
+    _migrate_settlement_dedupe_key() again — pre-fix it returns immediately at
+    the marker check and the index stays gone, so a subsequent record_settlement()
+    dies with 'ON CONFLICT clause does not match any PRIMARY KEY or UNIQUE
+    constraint' — money already moved, no settlement row, a 500. Must fail
+    pre-fix: the index is still absent after the second call."""
+    from emporia.relay_server import _migrate_settlement_dedupe_key
+
+    conn = _dedupe_key_test_conn()
+    _migrate_settlement_dedupe_key(conn)
+    conn.commit()
+    index_exists = conn.execute(
+        "SELECT 1 FROM sqlite_master WHERE type='index' AND name='idx_settlements_dedupe_key'"
+    ).fetchone()
+    assert index_exists, "test setup: first call must create the index"
+
+    conn.execute("DROP INDEX idx_settlements_dedupe_key")
+    conn.commit()
+
+    _migrate_settlement_dedupe_key(conn)
+    conn.commit()
+
+    index_exists = conn.execute(
+        "SELECT 1 FROM sqlite_master WHERE type='index' AND name='idx_settlements_dedupe_key'"
+    ).fetchone()
+    assert index_exists, (
+        "the unique index must be restored on every startup, not just the first — "
+        "a marker-gated migration that skips re-asserting its own index leaves "
+        "record_settlement()'s ON CONFLICT(dedupe_key) with nothing to conflict on"
+    )
+    conn.close()
+
+
 def test_record_settlement_is_idempotent():
     """P1a-2 (R2): record_settlement()'s INSERT OR IGNORE could never actually
     collide — settlement_id is a fresh UUID minted immediately before every insert, so

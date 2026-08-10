@@ -917,6 +917,16 @@ def _migrate_settlement_dedupe_key(conn: Any) -> None:
     finer key — a true replay of the same payment, double-inserted by the bug
     P1a-2 fixed) are deleted, keeping the earliest by rowid, logged via `print()`
     first so an unexpected hit is auditable.
+
+    P2-1 (R3): only the rewrite/collapse above is marker-gated — the
+    `CREATE UNIQUE INDEX` itself runs on *every* call, gated branch or not
+    (`IF NOT EXISTS` makes the already-present case free). P1r-1 put the index
+    creation inside the gated block, so once the marker was set the index was
+    never asserted again; losing it after that point (a schema rebuild, manual
+    `DROP INDEX`, any future migration that rebuilds this table — SQLite's
+    standard ALTER-by-rebuild recipe drops every index) left it gone permanently,
+    and every `record_settlement()` after that failed with `OperationalError`
+    since `ON CONFLICT(dedupe_key)` had nothing to conflict on.
     """
     from emporia.payments import settlement_dedupe_key
 
@@ -929,6 +939,18 @@ def _migrate_settlement_dedupe_key(conn: Any) -> None:
         "SELECT 1 FROM schema_migrations WHERE key = ?", (marker_key,)
     ).fetchone()
     if already_done:
+        # P2-1 (R3): asserted unconditionally, every startup — mirrors P1a-2's
+        # original every-startup CREATE INDEX. Only the one-shot rewrite/collapse
+        # below is marker-gated; the index itself must never depend on the marker,
+        # or a rebuild/manual DROP INDEX after the marker is set (SQLite's
+        # standard ALTER-by-rebuild recipe drops every index) permanently starves
+        # record_settlement()'s ON CONFLICT(dedupe_key) of anything to conflict
+        # on — proved live: drop the index post-marker, restart, every settlement
+        # insert after that dies with "ON CONFLICT clause does not match any
+        # PRIMARY KEY or UNIQUE constraint".
+        conn.execute(
+            "CREATE UNIQUE INDEX IF NOT EXISTS idx_settlements_dedupe_key ON settlements(dedupe_key)"
+        )
         return
 
     conn.execute("DROP INDEX IF EXISTS idx_settlements_dedupe_key")
