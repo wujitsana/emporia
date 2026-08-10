@@ -2053,13 +2053,13 @@ class CreateRoomRequest(BaseModel):
     name: str
     description: str = ""
     room_type: str = "public"         # "public" | "private"
-    gate_type: str = "open"           # "open" | "invite" | "stripe_payment"
+    gate_type: str = "open"           # "open" | "invite" | "paid"
     entry_fee_cents: int = 0
     currency: str = "USD"
     max_members: int | None = None
     encrypted: bool = False           # True → relay stores opaque ciphertext, skips guardrails
     linked_session_id: str | None = None  # link room to a game session
-    # P2-3: how long one payment's access lasts for a stripe_payment room. None
+    # P2-3: how long one payment's access lasts for a paid room. None
     # (default) = no expiry — access lasts as long as the room does. Ignored for
     # non-paid rooms (membership there was never entitlement-gated).
     access_duration_days: int | None = None
@@ -2067,7 +2067,7 @@ class CreateRoomRequest(BaseModel):
 
 class JoinRoomRequest(BaseModel):
     agent_id: str
-    payment_intent_id: str | None = None  # required for stripe_payment gate
+    payment_intent_id: str | None = None  # required for paid gate
 
 
 class InviteToRoomRequest(BaseModel):
@@ -2809,7 +2809,7 @@ async def create_payment_intent_endpoint(req: CreatePaymentIntentRequest, reques
         currency = (room.currency or "usd").lower()
         capture_method = "automatic"
         resource_type = "room"
-        if room.gate_type != "stripe_payment" or expected_amount <= 0:
+        if room.gate_type != "paid" or expected_amount <= 0:
             raise HTTPException(400, "Room does not require a paid entry fee")
         if service_type == "emporia:session":
             service_type = "emporia:room_entry"
@@ -3334,7 +3334,7 @@ async def get_listings(
     # Surface rooms as browsable listings so agents can discover them
     if include_rooms and listing_type in (None, "room"):
         room_list = rooms_db.list_rooms(room_type="public", limit=limit, db_path=DATABASE_PATH)
-        # Also include paid private rooms (stripe_payment gate) — agents need to know they exist
+        # Also include paid private rooms (paid gate) — agents need to know they exist
         paid_private = rooms_db.list_rooms(room_type="private", limit=limit, db_path=DATABASE_PATH)
         for room in room_list + paid_private:
             if room.gate_type == "invite":
@@ -3347,13 +3347,18 @@ async def get_listings(
                 "agent_id": room.creator_id,
                 "room_type": room.room_type,
                 "gate_type": room.gate_type,
-                "entry_fee_cents": room.entry_fee_cents if room.gate_type == "stripe_payment" else 0,
+                "entry_fee_cents": room.entry_fee_cents if room.gate_type == "paid" else 0,
                 "currency": room.currency,
                 "member_count": len(room.members),
                 "max_members": room.max_members,
                 "encrypted": room.encrypted,
-                "payment_mode": "stripe_link" if room.gate_type == "stripe_payment" else "free",
-                "price_usd": f"{room.entry_fee_cents / 100:.2f}" if room.gate_type == "stripe_payment" else "0",
+                # payment_mode is a *different* vocabulary (listings/events axis,
+                # PaymentMode in engine/game_registry.py) — "stripe_link" here is
+                # that axis's own value, deliberately not renamed by the P3 gate_type
+                # rename. Reconciling the two vocabularies is out of scope (see
+                # ROADMAP.md's P3 section).
+                "payment_mode": "stripe_link" if room.gate_type == "paid" else "free",
+                "price_usd": f"{room.entry_fee_cents / 100:.2f}" if room.gate_type == "paid" else "0",
                 "created_at": room.created_at,
                 "metadata": {"linked_session_id": room.linked_session_id},
             })
@@ -4685,12 +4690,12 @@ async def create_room_endpoint(req: CreateRoomRequest, request: Request):
         raise HTTPException(403, str(e))
     if req.room_type not in ("public", "private"):
         raise HTTPException(400, "room_type must be 'public' or 'private'")
-    if req.gate_type not in ("open", "invite", "stripe_payment"):
-        raise HTTPException(400, "gate_type must be 'open', 'invite', or 'stripe_payment'")
+    if req.gate_type not in ("open", "invite", "paid"):
+        raise HTTPException(400, "gate_type must be 'open', 'invite', or 'paid'")
     if req.room_type == "public" and req.gate_type != "open":
         raise HTTPException(400, "Public rooms must use gate_type='open'")
-    if req.gate_type == "stripe_payment" and req.entry_fee_cents <= 0:
-        raise HTTPException(400, "stripe_payment rooms require entry_fee_cents > 0")
+    if req.gate_type == "paid" and req.entry_fee_cents <= 0:
+        raise HTTPException(400, "paid rooms require entry_fee_cents > 0")
     if req.access_duration_days is not None and req.access_duration_days <= 0:
         raise HTTPException(400, "access_duration_days must be a positive integer or omitted")
     if req.linked_session_id:
@@ -4787,7 +4792,7 @@ async def join_room(room_id: str, req: JoinRoomRequest, request: Request):
     if room.gate_type == "invite":
         if not rooms_db.has_invite(room_id, req.agent_id, db_path=DATABASE_PATH):
             raise HTTPException(403, "No invite — ask the room creator")
-    elif room.gate_type == "stripe_payment":
+    elif room.gate_type == "paid":
         amount_cents = room.entry_fee_cents or 0
         currency = (room.currency or "usd").lower()
 
@@ -4852,7 +4857,7 @@ async def join_room(room_id: str, req: JoinRoomRequest, request: Request):
     except ValueError as e:
         raise HTTPException(403, str(e))
 
-    if room.gate_type == "stripe_payment" and confirmed_pi:
+    if room.gate_type == "paid" and confirmed_pi:
         # P2-4 (R1): record the entitlement this payment just bought, before the
         # payout below — mirrors record_payment's placement relative to payout
         # for the same "commit the durable record before the non-idempotent
@@ -5058,7 +5063,7 @@ async def _refund_kicked_room_payer(room_id: str, agent_id: str) -> dict[str, An
 async def kick_from_room(room_id: str, req: KickFromRoomRequest, request: Request):
     """P2-6/P2r-1 (R2/R1): a kick is a permanent removal, not a temporary one —
     by product decision, kicked means out, on every room type. remove_member()
-    alone was not enforceable: a stripe_payment room's kicked payer could
+    alone was not enforceable: a paid room's kicked payer could
     rejoin by replaying their PaymentIntent (closed by P2-4's entitlement
     check), and an invite-gated room's kicked invitee could rejoin because
     add_invite()/has_invite() never consumed the invite on join.

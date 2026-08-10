@@ -3381,7 +3381,7 @@ def test_join_room_rejects_uncaptured_payment_intent(mock_verify, client):
         "name": "Paid Room",
         "creator_id": "room_owner",
         "room_type": "private",
-        "gate_type": "stripe_payment",
+        "gate_type": "paid",
         "entry_fee_cents": 100,
     },
         headers={"x-emporia-agent-id": "room_owner"})
@@ -3414,7 +3414,7 @@ def test_join_room_accepts_bound_payment_intent(mock_verify, client):
         "name": "Paid Room 2",
         "creator_id": "paidroom_owner",
         "room_type": "private",
-        "gate_type": "stripe_payment",
+        "gate_type": "paid",
         "entry_fee_cents": 100,
     },
         headers={"x-emporia-agent-id": "paidroom_owner"})
@@ -3505,7 +3505,7 @@ def test_join_room_rejects_payment_intent_from_different_payer(mock_verify, clie
     _register(client, "payer_impersonator")
     r = client.post("/rooms", json={
         "name": "Payer Binding Room", "creator_id": "payer_owner2", "room_type": "private",
-        "gate_type": "stripe_payment", "entry_fee_cents": 100,
+        "gate_type": "paid", "entry_fee_cents": 100,
     },
         headers={"x-emporia-agent-id": "payer_owner2"})
     room_id = r.json()["room_id"]
@@ -3540,7 +3540,7 @@ def test_join_room_rejects_payment_intent_missing_payer_metadata(mock_verify, cl
     _register(client, "no_payer_meta_joiner")
     r = client.post("/rooms", json={
         "name": "No Payer Metadata Room", "creator_id": "no_payer_meta_owner",
-        "room_type": "private", "gate_type": "stripe_payment", "entry_fee_cents": 100,
+        "room_type": "private", "gate_type": "paid", "entry_fee_cents": 100,
     },
         headers={"x-emporia-agent-id": "no_payer_meta_owner"})
     room_id = r.json()["room_id"]
@@ -3680,7 +3680,7 @@ def test_join_room_payment_intent_replay_returns_402(mock_verify, client):
     for owner in ("n42_room_owner1", "n42_room_owner2"):
         r = client.post("/rooms", json={
             "name": "Paid Room", "creator_id": owner, "room_type": "private",
-            "gate_type": "stripe_payment", "entry_fee_cents": 100,
+            "gate_type": "paid", "entry_fee_cents": 100,
         },
             headers={"x-emporia-agent-id": owner})
         room_ids.append(r.json()["room_id"])
@@ -3909,7 +3909,7 @@ def test_join_room_retry_does_not_double_pay(mock_verify, mock_payout, client):
 
     r = client.post("/rooms", json={
         "name": "N53 Room Retry Room", "creator_id": "n53_room_owner",
-        "room_type": "private", "gate_type": "stripe_payment", "entry_fee_cents": 100,
+        "room_type": "private", "gate_type": "paid", "entry_fee_cents": 100,
     },
         headers={"x-emporia-agent-id": "n53_room_owner"})
     assert r.status_code == 200, r.text
@@ -3974,7 +3974,7 @@ def test_rejoin_after_entitlement_expires_charges_again_with_its_own_settlement(
 
     r = client.post("/rooms", json={
         "name": "P2-4 Expiry Room", "creator_id": "p24_expiry_owner",
-        "room_type": "private", "gate_type": "stripe_payment", "entry_fee_cents": 100,
+        "room_type": "private", "gate_type": "paid", "entry_fee_cents": 100,
         "access_duration_days": 1,
     },
         headers={"x-emporia-agent-id": "p24_expiry_owner"})
@@ -4068,7 +4068,7 @@ def test_rejoin_within_entitlement_window_is_free_and_pays_out_once(mock_verify,
 
     r = client.post("/rooms", json={
         "name": "P2-4 Free Rejoin Room", "creator_id": "p24_free_owner",
-        "room_type": "private", "gate_type": "stripe_payment", "entry_fee_cents": 100,
+        "room_type": "private", "gate_type": "paid", "entry_fee_cents": 100,
     },
         headers={"x-emporia-agent-id": "p24_free_owner"})
     assert r.status_code == 200, r.text
@@ -4131,7 +4131,7 @@ def test_rejoin_within_entitlement_window_ignores_a_replayed_payment_intent(
 
     r = client.post("/rooms", json={
         "name": "P2-4 Replay Rejoin Room", "creator_id": "p24_replay_owner",
-        "room_type": "private", "gate_type": "stripe_payment", "entry_fee_cents": 100,
+        "room_type": "private", "gate_type": "paid", "entry_fee_cents": 100,
     },
         headers={"x-emporia-agent-id": "p24_replay_owner"})
     assert r.status_code == 200, r.text
@@ -4420,7 +4420,7 @@ def test_agora_subscribe_stranger_without_invite_or_entitlement_still_refused(cl
 @patch("emporia.payments.payout_winner", new_callable=AsyncMock)
 @patch("emporia.payments.verify_payment_intent", new_callable=AsyncMock)
 def test_expired_room_entitlement_blocks_private_room_read_over_http(mock_verify, mock_payout, client):
-    """P2-5, HTTP-level: a private stripe_payment room whose member's
+    """P2-5, HTTP-level: a private paid room whose member's
     entitlement has expired must actually deny GET /rooms/{id} through the
     real request path, not just at the rooms.is_member() unit level. Backdates
     the entitlement's expires_at directly (deterministic, no sleep)."""
@@ -4434,7 +4434,7 @@ def test_expired_room_entitlement_blocks_private_room_read_over_http(mock_verify
 
     r = client.post("/rooms", json={
         "name": "P2-5 Expiry Room", "creator_id": "p25_room_owner",
-        "room_type": "private", "gate_type": "stripe_payment", "entry_fee_cents": 100,
+        "room_type": "private", "gate_type": "paid", "entry_fee_cents": 100,
         "access_duration_days": 1,
     },
         headers={"x-emporia-agent-id": "p25_room_owner"})
@@ -4493,7 +4493,7 @@ def test_expired_room_entitlement_drops_out_of_room_listing_and_roster(
 
     r = client.post("/rooms", json={
         "name": "P2r-4 Listing Room", "creator_id": "p2r4_owner",
-        "room_type": "private", "gate_type": "stripe_payment", "entry_fee_cents": 100,
+        "room_type": "private", "gate_type": "paid", "entry_fee_cents": 100,
         "access_duration_days": 1,
     },
         headers={"x-emporia-agent-id": "p2r4_owner"})
@@ -4548,7 +4548,7 @@ def test_current_member_and_creator_unaffected_by_listing_expiry_check(
 
     r = client.post("/rooms", json={
         "name": "P2r-4 Scope Room", "creator_id": "p2r4_scope_owner",
-        "room_type": "private", "gate_type": "stripe_payment", "entry_fee_cents": 100,
+        "room_type": "private", "gate_type": "paid", "entry_fee_cents": 100,
     },
         headers={"x-emporia-agent-id": "p2r4_scope_owner"})
     assert r.status_code == 200, r.text
@@ -4662,7 +4662,7 @@ def test_expired_room_entitlement_drops_settlement_session_view_but_keeps_own_re
     mock_verify, mock_payout, client
 ):
     """P2-5: _settlement_resource_viewer_allowed() routes a private
-    stripe_payment room's ?session_id= access through rooms.is_member(), so an
+    paid room's ?session_id= access through rooms.is_member(), so an
     expired entitlement must also revoke that membership-gated view of the
     resource's full settlement history — while the payer's own receipt stays
     reachable via the separate ?agent_id= path (payments-join, not
@@ -4679,7 +4679,7 @@ def test_expired_room_entitlement_drops_settlement_session_view_but_keeps_own_re
 
     r = client.post("/rooms", json={
         "name": "P2-5 Settlement View Room", "creator_id": "p25_view_owner",
-        "room_type": "private", "gate_type": "stripe_payment", "entry_fee_cents": 100,
+        "room_type": "private", "gate_type": "paid", "entry_fee_cents": 100,
         "access_duration_days": 1,
     },
         headers={"x-emporia-agent-id": "p25_view_owner"})
@@ -4736,7 +4736,7 @@ def test_kicked_room_member_can_still_read_own_receipt(mock_verify, mock_payout,
 
     r = client.post("/rooms", json={
         "name": "N54 Room Receipt Room", "creator_id": "n54_room_owner",
-        "room_type": "private", "gate_type": "stripe_payment", "entry_fee_cents": 100,
+        "room_type": "private", "gate_type": "paid", "entry_fee_cents": 100,
     },
         headers={"x-emporia-agent-id": "n54_room_owner"})
     room_id = r.json()["room_id"]
@@ -4777,7 +4777,7 @@ def test_kicked_room_member_can_still_read_own_receipt(mock_verify, mock_payout,
 def test_kicked_payer_cannot_rejoin_with_a_fresh_payment(mock_verify, mock_payout, client):
     """P2-6 (R2): a kick is permanent, by product decision — the user's own
     words: 'if someone gets kicked from a room they shouldn't be allowed
-    back in.' Before this, a kicked payer in a stripe_payment room could
+    back in.' Before this, a kicked payer in a paid room could
     rejoin by presenting a fresh, genuinely valid PaymentIntent — remove_member()
     alone never recorded that they'd been kicked, so join_room()'s gate had
     nothing to check against. Must fail pre-fix: the second join succeeds and
@@ -4790,7 +4790,7 @@ def test_kicked_payer_cannot_rejoin_with_a_fresh_payment(mock_verify, mock_payou
 
     r = client.post("/rooms", json={
         "name": "P2-6 Kick Room", "creator_id": "p26_kick_owner",
-        "room_type": "private", "gate_type": "stripe_payment", "entry_fee_cents": 100,
+        "room_type": "private", "gate_type": "paid", "entry_fee_cents": 100,
     },
         headers={"x-emporia-agent-id": "p26_kick_owner"})
     assert r.status_code == 200, r.text
@@ -4947,7 +4947,7 @@ def test_non_kicked_agent_can_still_join_the_room(mock_verify, mock_payout, clie
 
     r = client.post("/rooms", json={
         "name": "P2-6 Scope Room", "creator_id": "p26_scope_owner",
-        "room_type": "private", "gate_type": "stripe_payment", "entry_fee_cents": 100,
+        "room_type": "private", "gate_type": "paid", "entry_fee_cents": 100,
     },
         headers={"x-emporia-agent-id": "p26_scope_owner"})
     assert r.status_code == 200, r.text
@@ -4986,7 +4986,7 @@ def test_non_kicked_agent_can_still_join_the_room(mock_verify, mock_payout, clie
 
 def _p27_paid_room_with_kicked_payer(client, mock_verify, mock_payout, *, suffix: str):
     """Shared setup for the P2-7 refund-on-kick tests: register owner+payer,
-    create a stripe_payment room, join (transfer succeeds), return the ids the
+    create a paid room, join (transfer succeeds), return the ids the
     test needs. Not a fixture — needs mock_verify/mock_payout already active."""
     owner, payer = f"p27_owner_{suffix}", f"p27_payer_{suffix}"
     _register(client, owner)
@@ -4995,7 +4995,7 @@ def _p27_paid_room_with_kicked_payer(client, mock_verify, mock_payout, *, suffix
 
     r = client.post("/rooms", json={
         "name": f"P2-7 Room {suffix}", "creator_id": owner,
-        "room_type": "private", "gate_type": "stripe_payment", "entry_fee_cents": 100,
+        "room_type": "private", "gate_type": "paid", "entry_fee_cents": 100,
     },
         headers={"x-emporia-agent-id": owner})
     assert r.status_code == 200, r.text
@@ -5165,7 +5165,7 @@ def test_kick_refund_ids_redacted_for_a_co_payer(client):
 
     r = client.post("/rooms", json={
         "name": "P2r-3 Redact Room", "creator_id": owner,
-        "room_type": "private", "gate_type": "stripe_payment", "entry_fee_cents": 100,
+        "room_type": "private", "gate_type": "paid", "entry_fee_cents": 100,
     },
         headers={"x-emporia-agent-id": owner})
     assert r.status_code == 200, r.text
@@ -5465,7 +5465,7 @@ def _settlement_matrix_agora(client, visibility, gate_type):
 def _settlement_matrix_room(client, room_type, gate_type):
     """Create a room with the given room_type/gate_type, add a payer as a member
     (real /join for the free "open" gate; direct rooms_db.add_member for
-    "stripe_payment" to avoid mocking Stripe here — same simplification
+    "paid" to avoid mocking Stripe here — same simplification
     _settlement_matrix_agora makes for paid_invite), and directly record a
     settlement. Returns (room_id, payer_id, stranger_id).
 
@@ -5483,7 +5483,7 @@ def _settlement_matrix_room(client, room_type, gate_type):
     _register(client, owner)
     _register(client, payer)
     _register(client, stranger)
-    entry_fee = 100 if gate_type == "stripe_payment" else 0
+    entry_fee = 100 if gate_type == "paid" else 0
     body = {"name": f"Room Matrix {tag}", "creator_id": owner, "room_type": room_type,
         "gate_type": gate_type}
     if entry_fee:
@@ -5541,7 +5541,7 @@ _SETTLEMENT_MATRIX_ROOM_CASES = [
     # _settlement_matrix_room's docstring and the dedicated unconstructible test.
     ("public", "open", True),
     ("private", "open", False),
-    ("private", "stripe_payment", False),
+    ("private", "paid", False),
 ]
 
 
@@ -5634,7 +5634,7 @@ def test_settlement_matrix_public_paid_room_is_unconstructible(rooms_db_path):
     from emporia.rooms import create_room
     with pytest.raises(ValueError):
         create_room("N6 Unconstructible", "n6mat_unconstructible_owner", room_type="public",
-                    gate_type="stripe_payment", entry_fee_cents=100, db_path=rooms_db_path)
+                    gate_type="paid", entry_fee_cents=100, db_path=rooms_db_path)
 
 
 def test_agora_topic_entry_fee_requires_paid_invite_gate(client):
@@ -5720,7 +5720,7 @@ def test_settlement_co_payer_cannot_see_others_payment_intent_ids_room(client):
 
     r = client.post("/rooms", json={
         "name": "N6 Co-Payer Room", "creator_id": owner,
-        "room_type": "private", "gate_type": "stripe_payment", "entry_fee_cents": 100,
+        "room_type": "private", "gate_type": "paid", "entry_fee_cents": 100,
     },
         headers={"x-emporia-agent-id": owner})
     assert r.status_code == 200, r.text
@@ -5793,7 +5793,7 @@ def test_settlement_payer_id_redacted_for_non_owned_rows(client):
 
     r = client.post("/rooms", json={
         "name": "N8 Redaction Room", "creator_id": owner,
-        "room_type": "private", "gate_type": "stripe_payment", "entry_fee_cents": 100,
+        "room_type": "private", "gate_type": "paid", "entry_fee_cents": 100,
     },
         headers={"x-emporia-agent-id": owner})
     assert r.status_code == 200, r.text
@@ -5870,7 +5870,7 @@ def test_settlement_row_dict_never_leaks_internal_columns_to_a_co_payer(client):
 
     r = client.post("/rooms", json={
         "name": "P1r3 Leak Room", "creator_id": owner,
-        "room_type": "private", "gate_type": "stripe_payment", "entry_fee_cents": 100,
+        "room_type": "private", "gate_type": "paid", "entry_fee_cents": 100,
     },
         headers={"x-emporia-agent-id": owner})
     assert r.status_code == 200, r.text
@@ -5923,7 +5923,7 @@ def test_settlements_agent_id_and_unfiltered_branches_never_return_internal_colu
 
     r = client.post("/rooms", json={
         "name": "P2-2 Leak Room", "creator_id": owner,
-        "room_type": "private", "gate_type": "stripe_payment", "entry_fee_cents": 100,
+        "room_type": "private", "gate_type": "paid", "entry_fee_cents": 100,
     },
         headers={"x-emporia-agent-id": owner})
     assert r.status_code == 200, r.text
@@ -5982,7 +5982,7 @@ def test_settlements_agent_id_and_unfiltered_branches_return_refund_ids_in_plain
 
     r = client.post("/rooms", json={
         "name": "S2 Public Refund Ids Room", "creator_id": owner,
-        "room_type": "private", "gate_type": "stripe_payment", "entry_fee_cents": 100,
+        "room_type": "private", "gate_type": "paid", "entry_fee_cents": 100,
     },
         headers={"x-emporia-agent-id": owner})
     assert r.status_code == 200, r.text
@@ -6177,7 +6177,7 @@ def test_settlement_agent_id_query_does_not_drop_owned_rows_past_candidate_limit
 
     r = client.post("/rooms", json={
         "name": "N7 Limit Room", "creator_id": owner,
-        "room_type": "private", "gate_type": "stripe_payment", "entry_fee_cents": 100,
+        "room_type": "private", "gate_type": "paid", "entry_fee_cents": 100,
     },
         headers={"x-emporia-agent-id": owner})
     assert r.status_code == 200, r.text
@@ -6879,7 +6879,7 @@ def test_settlement_reads_report_has_more(client):
     _register(client, owner)
     r = client.post("/rooms", json={
         "name": "N7 Page Room", "creator_id": owner,
-        "room_type": "private", "gate_type": "stripe_payment", "entry_fee_cents": 100,
+        "room_type": "private", "gate_type": "paid", "entry_fee_cents": 100,
     },
         headers={"x-emporia-agent-id": owner})
     assert r.status_code == 200, r.text
@@ -7071,7 +7071,7 @@ def test_settlement_redaction_does_not_blind_the_operator(client):
 
     r = client.post("/rooms", json={
         "name": "N6 Operator Audit Room", "creator_id": owner,
-        "room_type": "private", "gate_type": "stripe_payment", "entry_fee_cents": 100,
+        "room_type": "private", "gate_type": "paid", "entry_fee_cents": 100,
     },
         headers={"x-emporia-agent-id": owner})
     assert r.status_code == 200, r.text
@@ -7122,7 +7122,7 @@ def test_payment_records_redacts_other_payers_in_room(mock_verify, mock_payout, 
 
     r = client.post("/rooms", json={
         "name": "N6 Payment Records Room", "creator_id": owner,
-        "room_type": "private", "gate_type": "stripe_payment", "entry_fee_cents": 100,
+        "room_type": "private", "gate_type": "paid", "entry_fee_cents": 100,
     },
         headers={"x-emporia-agent-id": owner})
     assert r.status_code == 200, r.text
@@ -7220,7 +7220,7 @@ def test_chess_module_initial_state():
 @pytest.fixture
 def rooms_db_path():
     """Isolated SQLite for room tests. Also inits the entitlements schema (P2-5)
-    — is_member() consults access_entitlements for stripe_payment rooms, mirroring
+    — is_member() consults access_entitlements for paid rooms, mirroring
     how init_db() bundles both schemas together for the real relay."""
     import tempfile
     with tempfile.NamedTemporaryFile(suffix=".sqlite3", delete=False) as f:
@@ -7271,9 +7271,9 @@ def test_create_encrypted_room(rooms_db_path):
 def test_create_paid_room(rooms_db_path):
     from emporia.rooms import create_room
     room = create_room("Premium Room", "agent_alice", room_type="private",
-                       gate_type="stripe_payment", entry_fee_cents=500,
+                       gate_type="paid", entry_fee_cents=500,
                        db_path=rooms_db_path)
-    assert room.gate_type == "stripe_payment"
+    assert room.gate_type == "paid"
     assert room.entry_fee_cents == 500
 
 
@@ -7281,7 +7281,7 @@ def test_paid_room_requires_fee(rooms_db_path):
     from emporia.rooms import create_room
     with pytest.raises(ValueError, match="entry_fee_cents"):
         create_room("Bad Paid Room", "agent_alice", room_type="private",
-                    gate_type="stripe_payment", entry_fee_cents=0,
+                    gate_type="paid", entry_fee_cents=0,
                     db_path=rooms_db_path)
 
 
@@ -7289,7 +7289,7 @@ def test_create_room_with_access_duration_days(rooms_db_path):
     """P2-3: access_duration_days is stored and round-trips through get_room()."""
     from emporia.rooms import create_room, get_room
     room = create_room("Monthly Room", "agent_alice", room_type="private",
-                       gate_type="stripe_payment", entry_fee_cents=500,
+                       gate_type="paid", entry_fee_cents=500,
                        access_duration_days=30, db_path=rooms_db_path)
     assert room.access_duration_days == 30
     fetched = get_room(room.room_id, db_path=rooms_db_path)
@@ -7301,7 +7301,7 @@ def test_create_room_default_access_duration_is_unlimited(rooms_db_path):
     some other sentinel that could be misread as 'instantly expired'."""
     from emporia.rooms import create_room
     room = create_room("Lifetime Room", "agent_alice", room_type="private",
-                       gate_type="stripe_payment", entry_fee_cents=500,
+                       gate_type="paid", entry_fee_cents=500,
                        db_path=rooms_db_path)
     assert room.access_duration_days is None
 
@@ -7312,11 +7312,11 @@ def test_create_room_rejects_non_positive_access_duration(rooms_db_path):
     from emporia.rooms import create_room
     with pytest.raises(ValueError, match="access_duration_days"):
         create_room("Bad Duration Room", "agent_alice", room_type="private",
-                    gate_type="stripe_payment", entry_fee_cents=500,
+                    gate_type="paid", entry_fee_cents=500,
                     access_duration_days=0, db_path=rooms_db_path)
     with pytest.raises(ValueError, match="access_duration_days"):
         create_room("Bad Duration Room 2", "agent_alice", room_type="private",
-                    gate_type="stripe_payment", entry_fee_cents=500,
+                    gate_type="paid", entry_fee_cents=500,
                     access_duration_days=-5, db_path=rooms_db_path)
 
 
@@ -7349,7 +7349,7 @@ def test_remove_member(rooms_db_path):
 
 def test_is_member_expired_entitlement_blocks_paid_room_access(rooms_db_path):
     """P2-5: is_member() must consult the entitlement's active window for a
-    stripe_payment room, not just membership. A member still present in
+    paid room, not just membership. A member still present in
     members_json whose entitlement has expired must read as not-a-member — the
     whole point of access_duration_days is that the window actually closes."""
     from emporia.rooms import create_room, add_member, is_member
@@ -7358,7 +7358,7 @@ def test_is_member_expired_entitlement_blocks_paid_room_access(rooms_db_path):
     from datetime import UTC, datetime, timedelta
 
     room = create_room("Expiring Paid Room", "agent_owner", room_type="private",
-                       gate_type="stripe_payment", entry_fee_cents=100,
+                       gate_type="paid", entry_fee_cents=100,
                        access_duration_days=1, db_path=rooms_db_path)
     add_member(room.room_id, "agent_payer", db_path=rooms_db_path)
     grant("room", room.room_id, "agent_payer", "pi_expiring", duration_days=1,
@@ -7380,7 +7380,7 @@ def test_is_member_expired_entitlement_blocks_paid_room_access(rooms_db_path):
 
 
 def test_is_member_free_room_member_unaffected_by_expiry_check(rooms_db_path):
-    """P2-5: expiry enforcement only applies to stripe_payment rooms — a free
+    """P2-5: expiry enforcement only applies to paid rooms — a free
     (open) room's membership has never involved an entitlement at all, and
     must never be affected by this check."""
     from emporia.rooms import create_room, add_member, is_member
@@ -7393,12 +7393,12 @@ def test_is_member_free_room_member_unaffected_by_expiry_check(rooms_db_path):
 
 def test_is_member_creator_unaffected_by_expiry_check(rooms_db_path):
     """P2-5: the room creator never paid to be in their own room and must
-    never expire out of it, even in a stripe_payment room with no entitlement
+    never expire out of it, even in a paid room with no entitlement
     row for them at all."""
     from emporia.rooms import create_room, is_member
 
     room = create_room("Owner's Paid Room", "agent_owner", room_type="private",
-                       gate_type="stripe_payment", entry_fee_cents=100,
+                       gate_type="paid", entry_fee_cents=100,
                        db_path=rooms_db_path)
     assert is_member(room.room_id, "agent_owner", db_path=rooms_db_path)
 
@@ -7411,7 +7411,7 @@ def test_is_member_grandfathers_paid_member_with_no_entitlement_row(rooms_db_pat
     from emporia.rooms import create_room, add_member, is_member
 
     room = create_room("Legacy Paid Room", "agent_owner", room_type="private",
-                       gate_type="stripe_payment", entry_fee_cents=100,
+                       gate_type="paid", entry_fee_cents=100,
                        db_path=rooms_db_path)
     add_member(room.room_id, "agent_legacy_payer", db_path=rooms_db_path)
     assert is_member(room.room_id, "agent_legacy_payer", db_path=rooms_db_path), \
@@ -7429,7 +7429,7 @@ def test_is_member_regrant_after_expiry_restores_access(rooms_db_path):
     from datetime import UTC, datetime, timedelta
 
     room = create_room("Regrant Room", "agent_owner", room_type="private",
-                       gate_type="stripe_payment", entry_fee_cents=100,
+                       gate_type="paid", entry_fee_cents=100,
                        access_duration_days=1, db_path=rooms_db_path)
     add_member(room.room_id, "agent_payer", db_path=rooms_db_path)
     grant("room", room.room_id, "agent_payer", "pi_first", duration_days=1,
@@ -7557,6 +7557,43 @@ def test_room_create_list_get(client):
     r3 = client.get(f"/rooms/{room_id}", headers={"x-emporia-agent-id": "room_alice"})
     assert r3.status_code == 200
     assert r3.json()["name"] == "Test Room"
+
+
+def test_room_gate_type_stripe_payment_is_rejected_paid_is_the_spelling(client):
+    """P3-1: `gate_type` used to bake a rail name into an agent-facing enum
+    ('stripe_payment') — actively wrong once a second rail exists, since a
+    room paid for over x402 would not be a "stripe_payment" room. Renamed to
+    'paid', breaking, no alias (explicit user decision — no backward
+    compatibility needed for this rename). The old spelling must now 400,
+    not silently normalize or keep working. Must fail pre-fix: pre-rename
+    code accepts 'stripe_payment' and rejects 'paid'."""
+    _register(client, "p3_gate_owner")
+
+    old_spelling = client.post("/rooms", json={
+        "name": "Old Spelling Room", "creator_id": "p3_gate_owner",
+        "room_type": "private", "gate_type": "stripe_payment", "entry_fee_cents": 100,
+    },
+        headers={"x-emporia-agent-id": "p3_gate_owner"})
+    assert old_spelling.status_code == 400, old_spelling.text
+    assert "paid" in old_spelling.json()["detail"], \
+        f"error message must name the current spelling — got {old_spelling.json()['detail']!r}"
+
+    new_spelling = client.post("/rooms", json={
+        "name": "New Spelling Room", "creator_id": "p3_gate_owner",
+        "room_type": "private", "gate_type": "paid", "entry_fee_cents": 100,
+    },
+        headers={"x-emporia-agent-id": "p3_gate_owner"})
+    assert new_spelling.status_code == 200, new_spelling.text
+    assert new_spelling.json()["gate_type"] == "paid"
+
+    # gate_type='paid' still requires a positive entry fee — the rename must not
+    # have loosened this validation.
+    no_fee = client.post("/rooms", json={
+        "name": "No Fee Paid Room", "creator_id": "p3_gate_owner",
+        "room_type": "private", "gate_type": "paid", "entry_fee_cents": 0,
+    },
+        headers={"x-emporia-agent-id": "p3_gate_owner"})
+    assert no_fee.status_code == 400, no_fee.text
 
 
 def test_room_join_open(client):
@@ -9143,7 +9180,7 @@ def test_mcp_create_room_passes_access_duration_days_through(prod_client):
     with patch.object(mcp_server, "httpx", adapter):
         r = mcp_server.create_room(
             name="MCP Duration Room", creator_id="mcproom_duration_owner",
-            room_type="private", gate_type="stripe_payment", entry_fee_cents=100,
+            room_type="private", gate_type="paid", entry_fee_cents=100,
             access_duration_days=30,
         )
     assert r.get("success") is True, r
@@ -9345,7 +9382,7 @@ def test_agent_sdk_create_room_forwards_access_duration_days():
     agent._bearer_headers = AsyncMock(return_value={"Authorization": "Bearer x"})
 
     asyncio.run(agent.create_room(
-        name="Expiring Room", gate_type="stripe_payment", entry_fee_cents=100,
+        name="Expiring Room", gate_type="paid", entry_fee_cents=100,
         access_duration_days=30,
     ))
 

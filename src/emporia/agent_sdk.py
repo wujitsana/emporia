@@ -529,7 +529,7 @@ class EmporiaAgent:
         payment_intent_id: str | None = None,
         mpp_spt: str | None = None,
     ) -> dict[str, Any]:
-        """Join a room. For stripe_payment gate rooms, provide either:
+        """Join a room. For paid gate rooms, provide either:
         - mpp_spt: SPT from link-cli/mppx — paid at entry, not exit
         - payment_intent_id: pre-created PI (legacy path)
         Room entry is charged on join, not on leave.
@@ -606,7 +606,7 @@ class EmporiaAgent:
         """Create a chat/collab room. Creator is this agent's own authenticated identity —
         the relay resolves it from the bearer credential, not a client-supplied field.
 
-        access_duration_days: for a stripe_payment room, how many days one payment's
+        access_duration_days: for a paid room, how many days one payment's
         access lasts before it must be renewed. Omit (None) for no expiry — access
         lasts as long as the room does. A member's access is checked on every
         request, not just at join time, so a lapsed window locks them out even if

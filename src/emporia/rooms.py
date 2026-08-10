@@ -4,7 +4,7 @@ Two access tiers:
   public   — visible to all; any registered agent can join; gate_type='open'
   private  — hidden from listing unless member; gated by:
                invite          — creator explicitly invites agent_ids
-               stripe_payment  — agent pays entry_fee_cents via Stripe PaymentIntent
+               paid            — agent pays entry_fee_cents to join (rail-tagged, P3)
 
 Three message types: chat, collab (structured work notes), code (fenced snippet).
 
@@ -49,7 +49,7 @@ ROOM_DB_PATH = Path(
 _LOCK = threading.RLock()
 
 RoomType = Literal["public", "private"]
-GateType = Literal["open", "invite", "stripe_payment"]
+GateType = Literal["open", "invite", "paid"]
 MsgType = Literal["chat", "collab", "code", "counter_offer", "accept", "reject", "system"]
 
 
@@ -259,8 +259,8 @@ def create_room(
 ) -> Room:
     if room_type == "public" and gate_type != "open":
         raise ValueError("Public rooms must use gate_type='open'")
-    if gate_type == "stripe_payment" and entry_fee_cents <= 0:
-        raise ValueError("stripe_payment gate requires entry_fee_cents > 0")
+    if gate_type == "paid" and entry_fee_cents <= 0:
+        raise ValueError("paid gate requires entry_fee_cents > 0")
     if access_duration_days is not None and access_duration_days <= 0:
         raise ValueError("access_duration_days must be a positive integer or None")
 
@@ -309,7 +309,7 @@ def list_rooms(
 
     Public rooms: always visible.
     Private rooms: visible only if viewer_id has *active* access (P2r-4, R4)
-    — see `_access_active()`. For most rooms (gate_type != stripe_payment)
+    — see `_access_active()`. For most rooms (gate_type != "paid")
     this is a plain membership check with no extra query; an entitlement
     lookup only happens for the private paid rooms in the listed page, not
     the whole table, so this stays a single extra round-trip per *paid* room
@@ -352,7 +352,7 @@ def _access_active(
     `GET /rooms/{id}` correctly 403'd them — the single-enforcement-point
     property `is_member()`'s own docstring claims wasn't actually true.
 
-    For a `stripe_payment` room, membership requires an *active* entitlement
+    For a `paid` room, membership requires an *active* entitlement
     — the whole point of `access_duration_days` is that a window that closes
     actually closes, not just that it stops future free rejoins (P2-4). Two
     exemptions, both intentional: the room creator (never paid to be there,
@@ -362,12 +362,12 @@ def _access_active(
     entitlements" must never be conflated with "entitlement lapsed."
 
     For any other gate_type, this is a pure in-memory check — no entitlement
-    query, hence no extra DB round-trip — since only `stripe_payment` rooms
+    query, hence no extra DB round-trip — since only `paid` rooms
     have an expiry concept at all.
     """
     if agent_id not in members:
         return False
-    if gate_type != "stripe_payment" or agent_id == creator_id:
+    if gate_type != "paid" or agent_id == creator_id:
         return True
     if entitlements.has_access("room", room_id, agent_id, db_path=db_path):
         return True
@@ -375,7 +375,7 @@ def _access_active(
 
 
 def is_member(room_id: str, agent_id: str, db_path: Path | None = None) -> bool:
-    """P2-5: for a `stripe_payment` room, membership requires an *active*
+    """P2-5: for a `paid` room, membership requires an *active*
     entitlement. `relay_server.py` has multiple call sites that gate access on
     room membership; routing expiry through this one function (and
     `_access_active()`, shared with `list_rooms()`/`Room.to_dict()`) means

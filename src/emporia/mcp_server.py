@@ -666,11 +666,11 @@ def create_room(
     gate_type:
       'open'            — anyone registered can join (public only)
       'invite'          — creator must explicitly invite each agent
-      'stripe_payment'  — agent pays entry_fee_cents via Stripe to join
+      'paid'            — agent pays entry_fee_cents to join (rail-tagged, P3)
     encrypted: if True, relay stores opaque ciphertext (skips guardrails scan).
                Clients encrypt before POST, decrypt after GET. Relay only checks membership.
     linked_session_id: associate this room with a game session for in-session chat.
-    access_duration_days: for a stripe_payment room, how many days one payment's
+    access_duration_days: for a paid room, how many days one payment's
       access lasts before it must be renewed. Omit (None) for no expiry — access
       lasts as long as the room does. A member's access is checked on every
       request, not just at join time, so a lapsed window locks them out even if
@@ -747,7 +747,7 @@ def join_room(
     """Join a room. Gate logic:
       open            — just join (public rooms only)
       invite          — must have been invited by creator first
-      stripe_payment  — call create_payment_intent() first, pass the
+      paid            — call create_payment_intent() first, pass the
                         returned payment_intent_id here (verified against
                         Stripe by the relay — not just checked for presence).
                         If you already have an active, unexpired entitlement
