@@ -721,6 +721,79 @@ async def arbitrate_and_refund(
         }
 
 
+async def refund_payment_intent(
+    payment_intent_id: str,
+    *,
+    reason: str = "requested_by_customer",
+    idempotency_key: str,
+) -> dict[str, Any]:
+    """Refund a payment directly by its PaymentIntent id (P2-7, kick-with-refund).
+
+    Distinct from `arbitrate_and_refund()`, which refunds by `charge_id` and
+    derives its own key from `(session_id, charge_id)`: this one's caller
+    (kicking a paying room/Agora member) has the settlement's
+    `payment_intent_id` on hand, not a charge id, and Stripe's refund API
+    accepts either identifier — no charge lookup needed. `idempotency_key` is
+    required, not derived here, so the caller can use the same
+    `settlement_dedupe_key()`-based key it uses for the matching
+    `reverse_transfer()` call, keeping the two halves of one kick-refund
+    identifiably paired.
+    """
+    key = _stripe_key()
+    async with httpx.AsyncClient(timeout=REQUEST_TIMEOUT) as client:
+        resp = await client.post(
+            f"{STRIPE_API_BASE}/refunds",
+            auth=(key, ""),
+            headers={"Idempotency-Key": idempotency_key},
+            data={
+                "payment_intent": payment_intent_id,
+                "reason": reason,
+                "metadata[protocol]": "emporia:v1",
+            },
+        )
+        resp.raise_for_status()
+        refund = resp.json()
+        return {
+            "payment_intent_id": payment_intent_id,
+            "refund_id": refund["id"],
+            "status": refund.get("status"),
+            "reason": reason,
+        }
+
+
+async def reverse_transfer(
+    transfer_id: str,
+    *,
+    idempotency_key: str,
+) -> dict[str, Any]:
+    """Reverse a Stripe Connect Transfer (P2-7, kick-with-refund).
+
+    A room/Agora entry fee moves in two hops: the payer's charge lands in the
+    platform balance, then `payout_winner()` transfers the creator's net share
+    (97.5%) out to their connected account. Refunding the original charge
+    without first clawing back the transfer would leave the platform eating
+    the creator's share out of its own pocket — refunding the payer doesn't
+    undo money that already left for someone else. This reverses that
+    transfer so the platform balance is whole again before the refund below
+    draws the payer's money back out of it.
+    """
+    key = _stripe_key()
+    async with httpx.AsyncClient(timeout=REQUEST_TIMEOUT) as client:
+        resp = await client.post(
+            f"{STRIPE_API_BASE}/transfers/{transfer_id}/reversals",
+            auth=(key, ""),
+            headers={"Idempotency-Key": idempotency_key},
+            data={"metadata[protocol]": "emporia:v1"},
+        )
+        resp.raise_for_status()
+        reversal = resp.json()
+        return {
+            "transfer_id": transfer_id,
+            "reversal_id": reversal["id"],
+            "status": reversal.get("status"),
+        }
+
+
 async def retry_with_stripe_auth(
     url: str,
     payload: dict[str, Any],

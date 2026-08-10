@@ -4612,6 +4612,160 @@ def test_non_kicked_agent_can_still_join_the_room(mock_verify, mock_payout, clie
         assert r2.status_code == 200, r2.text
 
 
+def _p27_paid_room_with_kicked_payer(client, mock_verify, mock_payout, *, suffix: str):
+    """Shared setup for the P2-7 refund-on-kick tests: register owner+payer,
+    create a stripe_payment room, join (transfer succeeds), return the ids the
+    test needs. Not a fixture — needs mock_verify/mock_payout already active."""
+    owner, payer = f"p27_owner_{suffix}", f"p27_payer_{suffix}"
+    _register(client, owner)
+    _register(client, payer)
+    mock_payout.return_value = {"transfer_id": f"tr_p27_{suffix}"}
+
+    r = client.post("/rooms", json={
+        "name": f"P2-7 Room {suffix}", "creator_id": owner,
+        "room_type": "private", "gate_type": "stripe_payment", "entry_fee_cents": 100,
+    },
+        headers={"x-emporia-agent-id": owner})
+    assert r.status_code == 200, r.text
+    room_id = r.json()["room_id"]
+
+    mock_verify.return_value = {
+        "status": "succeeded", "payment_intent_id": f"pi_p27_{suffix}",
+        "amount": 100, "currency": "usd", "capture_method": "automatic",
+        "metadata": {"resource_type": "room", "resource_id": room_id, "buyer_agent_id": payer},
+    }
+    joined = client.post(f"/rooms/{room_id}/join",
+        json={"agent_id": payer, "payment_intent_id": f"pi_p27_{suffix}"},
+        headers={"x-emporia-agent-id": payer})
+    assert joined.status_code == 200, joined.text
+    return owner, payer, room_id, f"tr_p27_{suffix}", f"pi_p27_{suffix}"
+
+
+@patch("emporia.payments.refund_payment_intent", new_callable=AsyncMock)
+@patch("emporia.payments.reverse_transfer", new_callable=AsyncMock)
+@patch("emporia.payments.payout_winner", new_callable=AsyncMock)
+@patch("emporia.payments.verify_payment_intent", new_callable=AsyncMock)
+def test_kick_with_refund_reverses_transfer_then_refunds_payment(
+    mock_verify, mock_payout, mock_reverse, mock_refund, client
+):
+    """P2-7: kick(refund=true) on a paying member must reverse the creator's
+    transfer *before* refunding the payer's charge — refunding first would
+    leave the platform eating the creator's already-paid-out share. Both
+    calls must carry a settlement_dedupe_key()-derived Idempotency-Key (the
+    same contract P1r-2 established for payout/refund elsewhere), and the
+    endpoint's own response must report the outcome."""
+    with patch("emporia.relay_server.AGENT_REGISTRY.get_stripe_account", return_value="acct_p27_refund"):
+        owner, payer, room_id, transfer_id, pi_id = _p27_paid_room_with_kicked_payer(
+            client, mock_verify, mock_payout, suffix="refund"
+        )
+        mock_reverse.return_value = {"transfer_id": transfer_id, "reversal_id": "trr_p27_refund"}
+        mock_refund.return_value = {"payment_intent_id": pi_id, "refund_id": "re_p27_refund"}
+
+        kicked = client.post(f"/rooms/{room_id}/kick",
+            json={"target_agent_id": payer, "refund": True},
+            headers={"x-emporia-agent-id": owner})
+    assert kicked.status_code == 200, kicked.text
+    body = kicked.json()
+    assert body["refund"] == {
+        "refunded": True, "refund_id": "re_p27_refund", "reversal_id": "trr_p27_refund",
+    }, body
+
+    mock_reverse.assert_called_once()
+    assert mock_reverse.call_args.args[0] == transfer_id
+    reversal_key = mock_reverse.call_args.kwargs["idempotency_key"]
+    assert reversal_key.startswith("emporia:reversal:")
+
+    mock_refund.assert_called_once()
+    assert mock_refund.call_args.args[0] == pi_id
+    refund_key = mock_refund.call_args.kwargs["idempotency_key"]
+    assert refund_key.startswith("emporia:refund:")
+    assert refund_key.removeprefix("emporia:refund:") == reversal_key.removeprefix("emporia:reversal:"), \
+        "the reversal and refund must be derived from the same settlement_dedupe_key(), " \
+        "identifying the same purchase"
+
+
+@patch("emporia.payments.refund_payment_intent", new_callable=AsyncMock)
+@patch("emporia.payments.reverse_transfer", new_callable=AsyncMock)
+@patch("emporia.payments.payout_winner", new_callable=AsyncMock)
+@patch("emporia.payments.verify_payment_intent", new_callable=AsyncMock)
+def test_kick_without_refund_flag_moves_no_money(
+    mock_verify, mock_payout, mock_reverse, mock_refund, client
+):
+    """P2-7: refund defaults to False — an ordinary kick must never touch
+    Stripe. Checks the default (omitted) and the explicit False both take
+    this path."""
+    with patch("emporia.relay_server.AGENT_REGISTRY.get_stripe_account", return_value="acct_p27_noref"):
+        owner, payer, room_id, _tr, _pi = _p27_paid_room_with_kicked_payer(
+            client, mock_verify, mock_payout, suffix="noref"
+        )
+        kicked = client.post(f"/rooms/{room_id}/kick",
+            json={"target_agent_id": payer},
+            headers={"x-emporia-agent-id": owner})
+    assert kicked.status_code == 200, kicked.text
+    assert kicked.json()["refund"] is None
+    mock_reverse.assert_not_called()
+    mock_refund.assert_not_called()
+
+
+@patch("emporia.payments.refund_payment_intent", new_callable=AsyncMock)
+@patch("emporia.payments.reverse_transfer", new_callable=AsyncMock)
+@patch("emporia.payments.payout_winner", new_callable=AsyncMock)
+@patch("emporia.payments.verify_payment_intent", new_callable=AsyncMock)
+def test_kick_refund_failure_still_leaves_agent_kicked_and_revoked(
+    mock_verify, mock_payout, mock_reverse, mock_refund, client
+):
+    """P2-7: a Stripe failure during the refund step must not undo the kick
+    that already happened — the agent stays removed and banned from
+    rejoining, and the failure is reported in the response rather than
+    raised."""
+    from emporia.entitlements import is_revoked
+    from emporia.relay_server import DATABASE_PATH
+    from emporia import rooms as rooms_db
+
+    mock_reverse.side_effect = RuntimeError("stripe reversal failed")
+    with patch("emporia.relay_server.AGENT_REGISTRY.get_stripe_account", return_value="acct_p27_fail"):
+        owner, payer, room_id, _tr, _pi = _p27_paid_room_with_kicked_payer(
+            client, mock_verify, mock_payout, suffix="fail"
+        )
+        kicked = client.post(f"/rooms/{room_id}/kick",
+            json={"target_agent_id": payer, "refund": True},
+            headers={"x-emporia-agent-id": owner})
+    assert kicked.status_code == 200, kicked.text
+    assert kicked.json()["refund"]["refunded"] is False
+    assert "transfer_reversal_failed" in kicked.json()["refund"]["reason"]
+    mock_refund.assert_not_called()
+
+    assert not rooms_db.is_member(room_id, payer, db_path=DATABASE_PATH)
+    assert is_revoked("room", room_id, payer, reason="kicked", db_path=DATABASE_PATH)
+
+
+def test_kick_with_refund_on_free_room_member_is_a_clean_noop(client):
+    """P2-7: kicking a member of a free (non-paid) room with refund=true must
+    not attempt any Stripe call or 500 — there is no settlement row to refund
+    against, and that's a legitimate, common case (most rooms aren't paid),
+    not an error."""
+    _register(client, "p27_free_owner")
+    _register(client, "p27_free_member")
+
+    r = client.post("/rooms", json={
+        "name": "P2-7 Free Room", "creator_id": "p27_free_owner",
+        "room_type": "public", "gate_type": "open",
+    },
+        headers={"x-emporia-agent-id": "p27_free_owner"})
+    assert r.status_code == 200, r.text
+    room_id = r.json()["room_id"]
+
+    joined = client.post(f"/rooms/{room_id}/join", json={"agent_id": "p27_free_member"},
+        headers={"x-emporia-agent-id": "p27_free_member"})
+    assert joined.status_code == 200, joined.text
+
+    kicked = client.post(f"/rooms/{room_id}/kick",
+        json={"target_agent_id": "p27_free_member", "refund": True},
+        headers={"x-emporia-agent-id": "p27_free_owner"})
+    assert kicked.status_code == 200, kicked.text
+    assert kicked.json()["refund"] == {"refunded": False, "reason": "no_payment_found"}
+
+
 @patch("emporia.payments.payout_winner", new_callable=AsyncMock)
 @patch("emporia.payments.verify_payment_intent", new_callable=AsyncMock)
 def test_unsubscribed_agora_member_can_still_read_own_receipt(mock_verify, mock_payout, client):

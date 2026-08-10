@@ -2064,6 +2064,9 @@ class SendRoomMessageRequest(BaseModel):
 
 class KickFromRoomRequest(BaseModel):
     target_agent_id: str  # agent to kick
+    # P2-7: the kicker's choice, per join — defaults to False so a kick alone
+    # never moves money. Revocation (P2-6) happens regardless of this flag.
+    refund: bool = False
 
 
 # ============================================================================
@@ -4893,6 +4896,68 @@ async def invite_to_room(room_id: str, req: InviteToRoomRequest, request: Reques
     return {"status": "invited", "room_id": room_id, "invitee_id": req.invitee_id}
 
 
+async def _refund_kicked_room_payer(room_id: str, agent_id: str) -> dict[str, Any]:
+    """P2-7: reverse-then-refund a kicked payer's room entry fee, when the
+    kicker asks for it.
+
+    A room entry fee moves in two hops by the time of a kick: the payer's
+    charge landed in the platform balance at join time, then payout_winner()
+    already transferred the creator's net share (97.5%) out to their
+    connected account. Refunding the original charge without first clawing
+    that transfer back would leave the platform eating the creator's share —
+    so the order here undoes both hops in reverse: reverse the transfer,
+    *then* refund the charge. Net effect: the payer is made whole, the
+    creator's payout is reversed, and the platform's 2.5% fee is simply never
+    kept — no separate "give back the fee" step, since reversing 100% of the
+    transfer plus refunding 100% of the charge already nets to zero for the
+    platform.
+
+    Looks up the *newest* settlement row for this (room, payer) pair — after
+    P2-4 there can be more than one if the payer was kicked, repurchased, and
+    is being kicked again; the most recent purchase is the one this kick is
+    actually undoing.
+
+    Returns an outcome dict rather than raising: a kick has already succeeded
+    by the time this runs, and a Stripe failure here must not read as the
+    kick itself having failed.
+    """
+    from emporia.payments import reverse_transfer, refund_payment_intent, settlement_dedupe_key
+
+    with DB_LOCK, get_db() as conn:
+        row = conn.execute(
+            "SELECT payment_intent_ids, transfer_id, transfer_status FROM settlements "
+            "WHERE session_id=? AND payer_id=? ORDER BY created_at DESC LIMIT 1",
+            (room_id, agent_id),
+        ).fetchone()
+    pi_ids = json.loads(row["payment_intent_ids"] or "[]") if row else []
+    if not row or not pi_ids:
+        return {"refunded": False, "reason": "no_payment_found"}
+
+    payment_intent_id = pi_ids[0]
+    dedupe_key = settlement_dedupe_key(room_id, agent_id, pi_ids)
+
+    reversal_id = None
+    if row["transfer_id"] and row["transfer_status"] == "transferred":
+        try:
+            reversal = await reverse_transfer(
+                row["transfer_id"], idempotency_key="emporia:reversal:" + dedupe_key
+            )
+            reversal_id = reversal["reversal_id"]
+        except Exception as e:
+            return {"refunded": False, "reason": f"transfer_reversal_failed: {e}"}
+
+    try:
+        refund = await refund_payment_intent(
+            payment_intent_id, idempotency_key="emporia:refund:" + dedupe_key
+        )
+    except Exception as e:
+        return {
+            "refunded": False, "reason": f"refund_failed: {e}", "reversal_id": reversal_id,
+        }
+
+    return {"refunded": True, "refund_id": refund["refund_id"], "reversal_id": reversal_id}
+
+
 @app.post("/rooms/{room_id}/kick")
 async def kick_from_room(room_id: str, req: KickFromRoomRequest, request: Request):
     """P2-6 (R2): a kick is a permanent revocation, not a temporary removal —
@@ -4921,6 +4986,14 @@ async def kick_from_room(room_id: str, req: KickFromRoomRequest, request: Reques
     entitlements.revoke("room", room_id, req.target_agent_id, reason="kicked",
                          db_path=DATABASE_PATH)
     rooms_db.remove_invite(room_id, req.target_agent_id, db_path=DATABASE_PATH)
+
+    # P2-7: revocation above happens unconditionally; the refund is a
+    # separate, optional, best-effort step on top of it. Its failure must not
+    # undo the kick or the revocation already committed.
+    refund_result = None
+    if req.refund:
+        refund_result = await _refund_kicked_room_payer(room_id, req.target_agent_id)
+
     await broadcast_to_session(f"room:{room_id}", {
         "type": "member_kicked",
         "room_id": room_id,
@@ -4931,7 +5004,7 @@ async def kick_from_room(room_id: str, req: KickFromRoomRequest, request: Reques
         "room_id": room_id,
         "room_name": room.name,
     })
-    return {"status": "kicked", "agent_id": req.target_agent_id}
+    return {"status": "kicked", "agent_id": req.target_agent_id, "refund": refund_result}
 
 
 @app.post("/rooms/{room_id}/message")
