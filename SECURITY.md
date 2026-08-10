@@ -648,6 +648,33 @@ The MCP tool surface (`mcp_server.py`) was also brought in line with the entitle
 `create_room`/`create_agora_topic` gained `access_duration_days`, and a new `kick_from_room` tool
 exposes the relay's kick endpoint to MCP-based agents for the first time (it previously had none).
 
+## Fixed post-hackathon (P2r-6 pass — the second P2r self-review, plus bringing the SDK in line with the entitlement model the way the MCP surface was last pass)
+
+Eighth consecutive pass in the streak (N12→N13→N14→P1a→P1r→P2→P2r→P2r-6). This time the self-review of
+P2r's own five fixes found one real gap (not five) — the other four held up under direct code
+inspection, not just their tests. The one real gap was in P2r-3's own refund-persistence fix: it
+closed the "Stripe moved money, nothing was recorded" class for a Stripe-side failure, but not for a
+*local* failure on top of a Stripe success. Alongside it, a second, independent thread checked whether
+`agent_sdk.py` — a second, non-MCP way for agents to talk to the relay — had the same alignment gap
+`mcp_server.py` had before last pass's fix. It did.
+
+| Finding | Severity | Fix |
+|---|---|---|
+| **`_refund_kicked_room_payer()`'s own DB writes were unguarded — a write failure after Stripe already moved money turned into an uncaught 500, misreporting a kick that had actually succeeded.** Neither of the two post-Stripe `with DB_LOCK, get_db() as conn:` blocks P2r-3 added was wrapped in `try/except`; a `sqlite3.OperationalError` (lock contention, disk full, anything) propagated straight through `kick_from_room()`'s own call site (also unguarded) into a 500. By that point the kick itself had already committed in an earlier, separate transaction, and Stripe had already refunded the payer and/or reversed the creator's transfer — real money moved, now unrecorded and reported as a failure to the caller. The exact "money moved, no record" class P2r-3 itself was written to close, reintroduced via an infra-failure path instead of missing code. (S1.) | Medium | Each of the two writes now independently wrapped in its own `try/except`. On failure, the function still returns the real Stripe outcome (`refunded`, `refund_id`, `reversal_id`) instead of raising, with a `persisted: False` marker added so an operator can find and reconcile it, logged via this file's existing `print()`-based convention. `kick_from_room()`'s call site needed no change once the function itself never raises — confirmed with a test that patches the write to raise after Stripe has already returned success and checks the endpoint still returns 200. |
+| **`agent_sdk.py`'s `create_room()`/`create_agora_topic()` dropped `access_duration_days`; there was no `kick_from_room` method at all; `join_room()`/`subscribe_agora_topic()`'s docstrings didn't mention the free-rejoin-within-entitlement-window behavior.** Read every method body, not just grepped for the field name: both create methods built their POST bodies field-by-field and simply omitted `access_duration_days`, so an SDK-based agent had no way to create an expiring-access room or topic — every one it created behaved as never-expiring, silently. `POST /rooms/{room_id}/kick` (fully implemented server-side since P2-6/P2r-1) had no SDK method reaching it at all, forcing an SDK-based room creator to hand-roll a raw `httpx` call, bypassing the SDK's own `_bearer_request` auth/retry machinery every other mutating call uses. Exact same class of gap `mcp_server.py` had before last pass. (S3.) | Medium | `access_duration_days` added to both create methods, forwarded through. New `kick_from_room(room_id, target_agent_id, refund=False)` method using `_bearer_request` — omits `creator_id` unlike the MCP tool of the same name, since `EmporiaAgent` is bound to one agent identity per instance and the caller is already implicit via the bearer credential (matches every other mutating SDK method's own convention). `join_room()`/`subscribe_agora_topic()` docstrings updated with the same free-rejoin note the MCP versions carry. Proved end-to-end with two real `EmporiaAgent` instances wired directly to the relay app via httpx's ASGI transport (the SDK has no existing ASGI-transport test harness the way `mcp_server.py` does): a kick reached through the SDK's own `kick_from_room()` blocks the target's own subsequent `join_room()` call with a 403. |
+
+Checked and confirmed clean (no finding, no fix needed): `entitlements.is_removed()`'s Agora wiring is
+genuinely dead code today (no Agora kick endpoint exists to call `record_removal("agora", ...)`,
+matching its own docstring's claim); `rooms._access_active()`'s three call sites all pass a
+consistent, correctly-scoped `db_path`; `record_removal()`'s "not reachable twice in practice" claim
+holds (`remove_member()` 404s a re-kick before it could run again); a removed/kicked agent's own-receipt
+visibility is unaffected (scoped by `payer_id`/`participants` SQL, never membership/removal state). A
+test-coverage blind spot was also closed with no source fix: no test proved `refund_id`/`reversal_id`
+were correctly returned in plaintext (by design) at `list_settlements()`'s `?agent_id=` and unfiltered-
+operator branches — the existing guard test only covers the *internal* column set (`dedupe_key`), which
+by definition can't catch a regression in these two public-by-design columns at those exact branches
+(the same blind spot P2-2 closed for `dedupe_key`, just not yet for the two newest columns).
+
 ## Threat model notes (by design, not gaps)
 
 - **Ed25519 = auth; the relay never holds private keys.** Keys live at `~/.hermes/keys/*.priv`,
