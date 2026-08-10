@@ -4747,42 +4747,54 @@ async def join_room(room_id: str, req: JoinRoomRequest, request: Request):
         amount_cents = room.entry_fee_cents or 0
         currency = (room.currency or "usd").lower()
 
-        result = await _verify_and_confirm_payment(
-            request,
-            agent_id=req.agent_id,
-            identity_verified=identity_verified,
-            amount_cents=amount_cents,
-            currency=currency,
-            resource_type="room",
-            resource_id=room_id,
-            service_type="emporia:room_entry",
-            capture_method="automatic",
-            allowed_statuses=("succeeded",),
-            req_payment_intent_id=req.payment_intent_id,
-            challenge_message=(
-                f"Room entry fee: {amount_cents} {currency} cents. "
-                "Retry with Authorization: Payment <spt_token>."
-            ),
-            challenge_resource=f"emporia:room:{room_id}",
-        )
-        if isinstance(result, JSONResponse):
-            return result
-        confirmed_pi: str | None = result
-
-        # N4 review R1: record_payment() raises ValueError on a replayed PaymentIntent
-        # id (already recorded for a different agent/room/amount) — surface as a
-        # rejected join, not a 500.
-        try:
-            record_payment(
-                payment_intent_id=confirmed_pi,
+        # P2-4 (R1): a payment buys access, not a single entry — see
+        # entitlements.py's module docstring. If this agent already has an
+        # active (not expired, not revoked) entitlement for this room, this is
+        # a free rejoin: skip the payment gate entirely, confirmed_pi stays
+        # None, and the payout/settlement block below (guarded on
+        # `confirmed_pi`) never fires. Before this, every join re-ran
+        # _verify_and_confirm_payment() and record_payment() (which is
+        # deliberately idempotent on a replayed PaymentIntent), so a rejoin
+        # with the same PI was free but still fired a second real
+        # payout_winner() call, and a rejoin with a *fresh* PI was a second
+        # real charge for one purchase.
+        if not entitlements.has_access("room", room_id, req.agent_id, db_path=DATABASE_PATH):
+            result = await _verify_and_confirm_payment(
+                request,
                 agent_id=req.agent_id,
+                identity_verified=identity_verified,
                 amount_cents=amount_cents,
-                payment_type="room_entry",
-                room_id=room_id,
                 currency=currency,
+                resource_type="room",
+                resource_id=room_id,
+                service_type="emporia:room_entry",
+                capture_method="automatic",
+                allowed_statuses=("succeeded",),
+                req_payment_intent_id=req.payment_intent_id,
+                challenge_message=(
+                    f"Room entry fee: {amount_cents} {currency} cents. "
+                    "Retry with Authorization: Payment <spt_token>."
+                ),
+                challenge_resource=f"emporia:room:{room_id}",
             )
-        except ValueError as e:
-            raise HTTPException(402, str(e))
+            if isinstance(result, JSONResponse):
+                return result
+            confirmed_pi = result
+
+            # N4 review R1: record_payment() raises ValueError on a replayed PaymentIntent
+            # id (already recorded for a different agent/room/amount) — surface as a
+            # rejected join, not a 500.
+            try:
+                record_payment(
+                    payment_intent_id=confirmed_pi,
+                    agent_id=req.agent_id,
+                    amount_cents=amount_cents,
+                    payment_type="room_entry",
+                    room_id=room_id,
+                    currency=currency,
+                )
+            except ValueError as e:
+                raise HTTPException(402, str(e))
 
     # Membership grant — N5 review R2: this must commit before the payout below (and
     # before returning) so that a retry after a mid-flight failure is caught by the
@@ -4797,6 +4809,14 @@ async def join_room(room_id: str, req: JoinRoomRequest, request: Request):
         raise HTTPException(403, str(e))
 
     if room.gate_type == "stripe_payment" and confirmed_pi:
+        # P2-4 (R1): record the entitlement this payment just bought, before the
+        # payout below — mirrors record_payment's placement relative to payout
+        # for the same "commit the durable record before the non-idempotent
+        # Stripe call" reason.
+        entitlements.grant(
+            "room", room_id, req.agent_id, confirmed_pi,
+            room.access_duration_days, db_path=DATABASE_PATH,
+        )
         from emporia.payments import platform_fee as _platform_fee
         platform_fee = _platform_fee(amount_cents)
         creator_payout = amount_cents - platform_fee
@@ -5339,6 +5359,9 @@ async def subscribe_agora_topic(slug: str, req: AgoraSubscribeRequest, request: 
         entry_fee = row["entry_fee_cents"] if "entry_fee_cents" in row.keys() else 0
         topic_id = row["topic_id"]
         creator_id = row["creator_id"]
+        access_duration_days = (
+            row["access_duration_days"] if "access_duration_days" in row.keys() else None
+        )
 
         # N5 review R2: check membership before any payment work, mirroring
         # join_room's already_member short-circuit. Without this, a retry after a
@@ -5353,18 +5376,28 @@ async def subscribe_agora_topic(slug: str, req: AgoraSubscribeRequest, request: 
         if already_member:
             return {"status": "already_subscribed", "slug": slug, "agent_id": req.agent_id, "gate_type": gate}
 
+        # P2-4 (R1): a payment buys access, not a single subscription — see
+        # entitlements.py's module docstring. An agent who paid once, later
+        # unsubscribed, and is now resubscribing within their access window
+        # needs neither a fresh invite nor a fresh charge: paying again would
+        # be double-charging one purchase, and requiring a fresh invite would
+        # make them re-collect permission for access they already bought.
+        already_entitled = gate == "paid_invite" and entitlements.has_access(
+            "agora", topic_id, req.agent_id, db_path=DATABASE_PATH
+        )
+
         if gate in ("invite", "paid_invite"):
             has_invite = conn.execute(
                 "SELECT 1 FROM agora_invites WHERE topic_id=? AND agent_id=?",
                 (topic_id, req.agent_id),
             ).fetchone()
-            if not has_invite:
+            if not has_invite and not already_entitled:
                 raise HTTPException(403, "Invite required — ask the topic creator to invite you")
 
     # Payment check for paid_invite — outside DB_LOCK (see comment above).
     confirmed_pi = None
     currency = "usd"
-    if gate == "paid_invite" and entry_fee > 0:
+    if gate == "paid_invite" and entry_fee > 0 and not already_entitled:
         result = await _verify_and_confirm_payment(
             request,
             agent_id=req.agent_id,
@@ -5431,6 +5464,13 @@ async def subscribe_agora_topic(slug: str, req: AgoraSubscribeRequest, request: 
                 )
 
     if confirmed_pi and entry_fee > 0:
+        # P2-4 (R1): record the entitlement this payment just bought — see
+        # join_room's identical restructuring and entitlements.py's module
+        # docstring.
+        entitlements.grant(
+            "agora", topic_id, req.agent_id, confirmed_pi,
+            access_duration_days, db_path=DATABASE_PATH,
+        )
         from emporia.payments import platform_fee as _platform_fee
         platform_fee = _platform_fee(entry_fee)
         creator_payout = entry_fee - platform_fee

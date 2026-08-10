@@ -3949,61 +3949,80 @@ def test_join_room_retry_does_not_double_pay(mock_verify, mock_payout, client):
 
 @patch("emporia.payments.payout_winner", new_callable=AsyncMock)
 @patch("emporia.payments.verify_payment_intent", new_callable=AsyncMock)
-def test_join_kick_rejoin_records_both_payments_and_pays_out_both(mock_verify, mock_payout, client):
-    """P1r-1/P1r-2 (R1): the exact scenario that proved the bug this pass fixes.
-    Join a paid room, get kicked, rejoin with a *different* PaymentIntent — both
-    are real payments and both must be recorded, settled, and paid out
-    separately. Pre-fix: both joins returned 200 and both payments were recorded
-    in `payments`, but the second settlement silently collided with the first's
-    dedupe_key (payer-only, no payment digest) and was dropped, and both
-    payout_winner() calls sent the identical Idempotency-Key — so against real
-    Stripe the room creator would be paid once for two paid joins. Must fail
-    pre-fix (2 payments but only 1 settlement, and keys[0] == keys[1])."""
-    _register(client, "p1r_room_owner")
-    _register(client, "p1r_room_payer")
-    mock_payout.return_value = {"transfer_id": "tr_p1r_rejoin"}
+def test_rejoin_after_entitlement_expires_charges_again_with_its_own_settlement(
+    mock_verify, mock_payout, client
+):
+    """P2-4 (R1): supersedes the pre-P2-4 test of the same scenario
+    (test_join_kick_rejoin_records_both_payments_and_pays_out_both, P1r-1/P1r-2),
+    whose premise — every rejoin is a second genuine payment — this pass retires
+    by product decision: a payment now buys access until it expires, so a
+    same-window rejoin is free (see
+    test_rejoin_within_entitlement_window_is_free_and_pays_out_once below). What
+    P1r-1's dedupe-key fix still needs covering is the case that *is* a second
+    genuine payment: rejoining *after* the entitlement's own window has closed.
+    That must charge again, producing its own settlement row and its own
+    distinct payout Idempotency-Key — exercising the exact
+    settlement_dedupe_key() machinery P1r-1 built, just reached through expiry
+    instead of a same-window replay."""
+    from emporia.relay_server import get_db, DATABASE_PATH
+    import sqlite3
+    from datetime import UTC, datetime, timedelta
+
+    _register(client, "p24_expiry_owner")
+    _register(client, "p24_expiry_payer")
+    mock_payout.return_value = {"transfer_id": "tr_p24_expiry"}
 
     r = client.post("/rooms", json={
-        "name": "P1r Rejoin Room", "creator_id": "p1r_room_owner",
+        "name": "P2-4 Expiry Room", "creator_id": "p24_expiry_owner",
         "room_type": "private", "gate_type": "stripe_payment", "entry_fee_cents": 100,
+        "access_duration_days": 1,
     },
-        headers={"x-emporia-agent-id": "p1r_room_owner"})
+        headers={"x-emporia-agent-id": "p24_expiry_owner"})
     assert r.status_code == 200, r.text
     room_id = r.json()["room_id"]
 
-    with patch("emporia.relay_server.AGENT_REGISTRY.get_stripe_account", return_value="acct_p1r_rejoin"):
+    with patch("emporia.relay_server.AGENT_REGISTRY.get_stripe_account", return_value="acct_p24_expiry"):
         mock_verify.return_value = {
-            "status": "succeeded", "payment_intent_id": "pi_JOIN_ONE",
+            "status": "succeeded", "payment_intent_id": "pi_EXPIRY_ONE",
             "amount": 100, "currency": "usd", "capture_method": "automatic",
             "metadata": {
                 "resource_type": "room", "resource_id": room_id,
-                "buyer_agent_id": "p1r_room_payer",
+                "buyer_agent_id": "p24_expiry_payer",
             },
         }
         r1 = client.post(f"/rooms/{room_id}/join",
-            json={"agent_id": "p1r_room_payer", "payment_intent_id": "pi_JOIN_ONE"},
-            headers={"x-emporia-agent-id": "p1r_room_payer"})
+            json={"agent_id": "p24_expiry_payer", "payment_intent_id": "pi_EXPIRY_ONE"},
+            headers={"x-emporia-agent-id": "p24_expiry_payer"})
         assert r1.status_code == 200, r1.text
 
-        kicked = client.post(f"/rooms/{room_id}/kick",
-            json={"target_agent_id": "p1r_room_payer"},
-            headers={"x-emporia-agent-id": "p1r_room_owner"})
-        assert kicked.status_code == 200, kicked.text
+        # Simulate the window closing: back-date the just-granted entitlement's
+        # expires_at, then remove membership the way a disconnect or kick would
+        # (direct DB manipulation — decoupled from kick_from_room()'s own
+        # semantics, which P2-6 changes).
+        conn = sqlite3.connect(DATABASE_PATH)
+        conn.execute(
+            "UPDATE access_entitlements SET expires_at = ? "
+            "WHERE resource_type='room' AND resource_id=? AND agent_id=?",
+            ((datetime.now(UTC) - timedelta(hours=1)).isoformat(), room_id, "p24_expiry_payer"),
+        )
+        conn.commit()
+        conn.close()
+        from emporia import rooms as rooms_db
+        rooms_db.remove_member(room_id, "p24_expiry_payer", db_path=DATABASE_PATH)
 
         mock_verify.return_value = {
-            "status": "succeeded", "payment_intent_id": "pi_JOIN_TWO",
+            "status": "succeeded", "payment_intent_id": "pi_EXPIRY_TWO",
             "amount": 100, "currency": "usd", "capture_method": "automatic",
             "metadata": {
                 "resource_type": "room", "resource_id": room_id,
-                "buyer_agent_id": "p1r_room_payer",
+                "buyer_agent_id": "p24_expiry_payer",
             },
         }
         r2 = client.post(f"/rooms/{room_id}/join",
-            json={"agent_id": "p1r_room_payer", "payment_intent_id": "pi_JOIN_TWO"},
-            headers={"x-emporia-agent-id": "p1r_room_payer"})
+            json={"agent_id": "p24_expiry_payer", "payment_intent_id": "pi_EXPIRY_TWO"},
+            headers={"x-emporia-agent-id": "p24_expiry_payer"})
         assert r2.status_code == 200, r2.text
 
-    from emporia.relay_server import get_db
     with get_db() as conn:
         payments = conn.execute(
             "SELECT payment_intent_id FROM payments WHERE room_id=? ORDER BY payment_intent_id",
@@ -4013,17 +4032,208 @@ def test_join_kick_rejoin_records_both_payments_and_pays_out_both(mock_verify, m
             "SELECT payment_intent_ids FROM settlements WHERE session_id=? ORDER BY created_at",
             (room_id,),
         ).fetchall()
-    assert [p["payment_intent_id"] for p in payments] == ["pi_JOIN_ONE", "pi_JOIN_TWO"], \
-        "both real payments must be recorded regardless of the settlement bug"
+    assert [p["payment_intent_id"] for p in payments] == ["pi_EXPIRY_ONE", "pi_EXPIRY_TWO"], \
+        "a rejoin after the entitlement window closes is a genuine second payment"
     assert len(settlements) == 2, \
-        f"both joins are genuine payments and must each get their own settlement row, " \
+        f"an expired-then-repurchased entitlement must get its own settlement row, " \
         f"got {len(settlements)}"
 
     assert mock_payout.call_count == 2, \
-        f"the creator must be paid out for both joins, payout fired {mock_payout.call_count}x"
+        f"the creator must be paid out for both the original purchase and the " \
+        f"post-expiry repurchase, payout fired {mock_payout.call_count}x"
     keys = [call.kwargs["idempotency_key"] for call in mock_payout.call_args_list]
     assert keys[0] != keys[1], \
         f"two genuinely different payouts must not share an Idempotency-Key, got {keys}"
+
+
+@patch("emporia.payments.payout_winner", new_callable=AsyncMock)
+@patch("emporia.payments.verify_payment_intent", new_callable=AsyncMock)
+def test_rejoin_within_entitlement_window_is_free_and_pays_out_once(mock_verify, mock_payout, client):
+    """P2-4 (R1): the case the whole pass is about. A payer joins a paid room,
+    is removed (kick, disconnect — modeled here as a direct remove_member() to
+    stay decoupled from kick_from_room()'s own semantics, which P2-6 changes),
+    and rejoins with no PaymentIntent at all while their entitlement is still
+    active. Must succeed for free, and the creator's payout must fire exactly
+    once total — not once per join. Must fail pre-fix: the rejoin either 402s
+    (no payment_intent_id supplied and _verify_and_confirm_payment has nothing
+    to confirm) or, if a stale PI were supplied instead, record_payment's
+    idempotent replay would let it through but payout_winner would still fire
+    a second real transfer."""
+    from emporia.relay_server import get_db, DATABASE_PATH
+    from emporia import rooms as rooms_db
+
+    _register(client, "p24_free_owner")
+    _register(client, "p24_free_payer")
+    mock_payout.return_value = {"transfer_id": "tr_p24_free"}
+
+    r = client.post("/rooms", json={
+        "name": "P2-4 Free Rejoin Room", "creator_id": "p24_free_owner",
+        "room_type": "private", "gate_type": "stripe_payment", "entry_fee_cents": 100,
+    },
+        headers={"x-emporia-agent-id": "p24_free_owner"})
+    assert r.status_code == 200, r.text
+    room_id = r.json()["room_id"]
+
+    with patch("emporia.relay_server.AGENT_REGISTRY.get_stripe_account", return_value="acct_p24_free"):
+        mock_verify.return_value = {
+            "status": "succeeded", "payment_intent_id": "pi_FREE_ONE",
+            "amount": 100, "currency": "usd", "capture_method": "automatic",
+            "metadata": {
+                "resource_type": "room", "resource_id": room_id,
+                "buyer_agent_id": "p24_free_payer",
+            },
+        }
+        r1 = client.post(f"/rooms/{room_id}/join",
+            json={"agent_id": "p24_free_payer", "payment_intent_id": "pi_FREE_ONE"},
+            headers={"x-emporia-agent-id": "p24_free_payer"})
+        assert r1.status_code == 200, r1.text
+
+        rooms_db.remove_member(room_id, "p24_free_payer", db_path=DATABASE_PATH)
+
+        # No payment_intent_id at all — the rejoin must not need one.
+        r2 = client.post(f"/rooms/{room_id}/join",
+            json={"agent_id": "p24_free_payer"},
+            headers={"x-emporia-agent-id": "p24_free_payer"})
+        assert r2.status_code == 200, r2.text
+
+    with get_db() as conn:
+        payments = conn.execute(
+            "SELECT payment_intent_id FROM payments WHERE room_id=?", (room_id,)
+        ).fetchall()
+        settlements = conn.execute(
+            "SELECT payment_intent_ids FROM settlements WHERE session_id=?", (room_id,)
+        ).fetchall()
+    assert [p["payment_intent_id"] for p in payments] == ["pi_FREE_ONE"], \
+        "a free rejoin must not create a second payment record"
+    assert len(settlements) == 1, \
+        f"a free rejoin must not create a second settlement, got {len(settlements)}"
+    assert mock_payout.call_count == 1, \
+        f"the creator must be paid out exactly once for one purchase, " \
+        f"payout fired {mock_payout.call_count}x across both joins"
+
+
+@patch("emporia.payments.payout_winner", new_callable=AsyncMock)
+@patch("emporia.payments.verify_payment_intent", new_callable=AsyncMock)
+def test_rejoin_within_entitlement_window_ignores_a_replayed_payment_intent(
+    mock_verify, mock_payout, client
+):
+    """P2-4 (R1): sibling of the free-rejoin test above, but the client (an
+    agent that doesn't yet know it doesn't need to) still supplies its old
+    PaymentIntent id on rejoin. The entitlement check must short-circuit before
+    that PI is ever looked at — still exactly one payout, one settlement, no
+    second call to verify_payment_intent for the rejoin."""
+    from emporia.relay_server import get_db, DATABASE_PATH
+    from emporia import rooms as rooms_db
+
+    _register(client, "p24_replay_owner")
+    _register(client, "p24_replay_payer")
+    mock_payout.return_value = {"transfer_id": "tr_p24_replay"}
+
+    r = client.post("/rooms", json={
+        "name": "P2-4 Replay Rejoin Room", "creator_id": "p24_replay_owner",
+        "room_type": "private", "gate_type": "stripe_payment", "entry_fee_cents": 100,
+    },
+        headers={"x-emporia-agent-id": "p24_replay_owner"})
+    assert r.status_code == 200, r.text
+    room_id = r.json()["room_id"]
+
+    with patch("emporia.relay_server.AGENT_REGISTRY.get_stripe_account", return_value="acct_p24_replay"):
+        mock_verify.return_value = {
+            "status": "succeeded", "payment_intent_id": "pi_REPLAY_ONE",
+            "amount": 100, "currency": "usd", "capture_method": "automatic",
+            "metadata": {
+                "resource_type": "room", "resource_id": room_id,
+                "buyer_agent_id": "p24_replay_payer",
+            },
+        }
+        r1 = client.post(f"/rooms/{room_id}/join",
+            json={"agent_id": "p24_replay_payer", "payment_intent_id": "pi_REPLAY_ONE"},
+            headers={"x-emporia-agent-id": "p24_replay_payer"})
+        assert r1.status_code == 200, r1.text
+        verify_calls_after_first_join = mock_verify.call_count
+
+        rooms_db.remove_member(room_id, "p24_replay_payer", db_path=DATABASE_PATH)
+
+        r2 = client.post(f"/rooms/{room_id}/join",
+            json={"agent_id": "p24_replay_payer", "payment_intent_id": "pi_REPLAY_ONE"},
+            headers={"x-emporia-agent-id": "p24_replay_payer"})
+        assert r2.status_code == 200, r2.text
+
+    assert mock_verify.call_count == verify_calls_after_first_join, \
+        "an entitled rejoin must not re-verify a PaymentIntent at all, even a stale one"
+    with get_db() as conn:
+        settlements = conn.execute(
+            "SELECT payment_intent_ids FROM settlements WHERE session_id=?", (room_id,)
+        ).fetchall()
+    assert len(settlements) == 1
+    assert mock_payout.call_count == 1
+
+
+@patch("emporia.payments.payout_winner", new_callable=AsyncMock)
+@patch("emporia.payments.verify_payment_intent", new_callable=AsyncMock)
+def test_agora_resubscribe_within_entitlement_window_is_free_and_needs_no_invite(
+    mock_verify, mock_payout, client
+):
+    """P2-4 (R1): the Agora sibling of test_rejoin_within_entitlement_window_is_free_
+    and_pays_out_once. subscribe_agora_topic() has the identical per-subscribe
+    payment-gate shape join_room() had, and Agora additionally has a *unilateral*
+    unsubscribe (DELETE /agoras/topics/{slug}/subscribe — no creator involvement
+    needed), so the free-resubscribe path is reachable by the paying agent alone.
+    A resubscribe within the entitlement window must need neither a fresh
+    PaymentIntent nor a fresh invite from the creator — the agent already bought
+    in. Must fail pre-fix: without an invite, the gate's `has_invite` check 403s
+    before payment is even considered; with a stale PI supplied instead, the
+    request would 200 but fire a second payout."""
+    from emporia.relay_server import get_db
+
+    _register(client, "p24_agora_owner")
+    _register(client, "p24_agora_payer")
+    mock_payout.return_value = {"transfer_id": "tr_p24_agora_free"}
+
+    r = client.post("/agoras/topics", json={
+        "name": "P2-4 Free Resubscribe Topic", "description": "d", "visibility": "public",
+        "gate_type": "paid_invite", "entry_fee_cents": 100, "creator_id": "p24_agora_owner",
+    },
+        headers={"x-emporia-agent-id": "p24_agora_owner"})
+    assert r.status_code == 200, r.text
+    slug, topic_id = r.json()["slug"], r.json()["topic_id"]
+    client.post(f"/agoras/topics/{slug}/invite", json={"invitee_id": "p24_agora_payer"},
+        headers={"x-emporia-agent-id": "p24_agora_owner"})
+
+    with patch("emporia.relay_server.AGENT_REGISTRY.get_stripe_account", return_value="acct_p24_agora"):
+        mock_verify.return_value = {
+            "status": "succeeded", "payment_intent_id": "pi_AGORA_FREE_ONE",
+            "amount": 100, "currency": "usd", "capture_method": "automatic",
+            "metadata": {
+                "resource_type": "agora", "resource_id": topic_id,
+                "buyer_agent_id": "p24_agora_payer",
+            },
+        }
+        r1 = client.post(f"/agoras/topics/{slug}/subscribe",
+            json={"agent_id": "p24_agora_payer", "payment_intent_id": "pi_AGORA_FREE_ONE"},
+            headers={"x-emporia-agent-id": "p24_agora_payer"})
+        assert r1.status_code == 200, r1.text
+
+        unsub = client.delete(f"/agoras/topics/{slug}/subscribe",
+            params={"agent_id": "p24_agora_payer"},
+            headers={"x-emporia-agent-id": "p24_agora_payer"})
+        assert unsub.status_code == 200, unsub.text
+
+        # No invite re-issued, no PaymentIntent supplied — must still succeed.
+        r2 = client.post(f"/agoras/topics/{slug}/subscribe",
+            json={"agent_id": "p24_agora_payer"},
+            headers={"x-emporia-agent-id": "p24_agora_payer"})
+        assert r2.status_code == 200, r2.text
+
+    with get_db() as conn:
+        settlements = conn.execute(
+            "SELECT payment_intent_ids FROM settlements WHERE session_id=?", (topic_id,)
+        ).fetchall()
+    assert len(settlements) == 1, \
+        f"a free resubscribe must not create a second settlement, got {len(settlements)}"
+    assert mock_payout.call_count == 1, \
+        f"the creator must be paid out exactly once for one purchase, " \
+        f"payout fired {mock_payout.call_count}x across both subscribes"
 
 
 @patch("emporia.payments.payout_winner", new_callable=AsyncMock)
