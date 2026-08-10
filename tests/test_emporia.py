@@ -9328,6 +9328,136 @@ def test_agent_sdk_write_call_site_attaches_bearer_credential():
     agent._bearer_headers.assert_awaited()
 
 
+def test_agent_sdk_create_room_forwards_access_duration_days():
+    """S3 (P2r-6): create_room()/create_agora_topic() used to omit
+    access_duration_days from their POST bodies entirely — an SDK-based agent
+    had no way to create an expiring-access room, silently. Mirrors the MCP
+    alignment fix (2f62750) for the SDK's own create_room. Must fail pre-fix:
+    the field is absent from the request body."""
+    import asyncio
+    from emporia.agent_sdk import EmporiaAgent
+
+    agent = EmporiaAgent(relay_url="http://fake.invalid", agent_id="sdk_room_creator", public_key_hex="ab" * 32)
+    agent._http = MagicMock()
+    resp = MagicMock(status_code=200)
+    resp.json.return_value = {"room_id": "room_1"}
+    agent._http.post = AsyncMock(return_value=resp)
+    agent._bearer_headers = AsyncMock(return_value={"Authorization": "Bearer x"})
+
+    asyncio.run(agent.create_room(
+        name="Expiring Room", gate_type="stripe_payment", entry_fee_cents=100,
+        access_duration_days=30,
+    ))
+
+    body = agent._http.post.call_args.kwargs["json"]
+    assert body["access_duration_days"] == 30, \
+        f"create_room() must forward access_duration_days, got body={body!r}"
+
+
+def test_agent_sdk_create_agora_topic_forwards_access_duration_days():
+    """S3 (P2r-6): same fix as create_room, for create_agora_topic(). Must fail
+    pre-fix: the field is absent from the request body."""
+    import asyncio
+    from emporia.agent_sdk import EmporiaAgent
+
+    agent = EmporiaAgent(relay_url="http://fake.invalid", agent_id="sdk_topic_creator", public_key_hex="ab" * 32)
+    agent._http = MagicMock()
+    resp = MagicMock(status_code=200)
+    resp.json.return_value = {"topic_id": "topic_1"}
+    agent._http.post = AsyncMock(return_value=resp)
+    agent._bearer_headers = AsyncMock(return_value={"Authorization": "Bearer x"})
+
+    asyncio.run(agent.create_agora_topic(
+        name="Expiring Topic", gate_type="paid_invite", entry_fee_cents=100,
+        access_duration_days=7,
+    ))
+
+    body = agent._http.post.call_args.kwargs["json"]
+    assert body["access_duration_days"] == 7, \
+        f"create_agora_topic() must forward access_duration_days, got body={body!r}"
+
+
+def test_agent_sdk_kick_from_room_posts_to_the_relay_kick_endpoint():
+    """S3 (P2r-6): before this fix, agent_sdk.py had no kick_from_room method at
+    all — POST /rooms/{id}/kick (fully implemented server-side since P2-6/P2r-1)
+    was unreachable from the SDK's own auth/retry machinery, forcing an
+    SDK-based room creator to hand-roll a raw httpx call. Asserts the new
+    method reaches the right URL with target_agent_id/refund in the body, via
+    _bearer_request like every other mutating SDK call. Must fail pre-fix:
+    EmporiaAgent has no kick_from_room attribute (AttributeError)."""
+    import asyncio
+    from emporia.agent_sdk import EmporiaAgent
+
+    agent = EmporiaAgent(relay_url="http://fake.invalid", agent_id="sdk_kicker", public_key_hex="ab" * 32)
+    agent._http = MagicMock()
+    resp = MagicMock(status_code=200)
+    resp.json.return_value = {"status": "kicked", "agent_id": "sdk_kick_target", "refund": None}
+    agent._http.post = AsyncMock(return_value=resp)
+    agent._bearer_headers = AsyncMock(return_value={"Authorization": "Bearer x"})
+
+    result = asyncio.run(agent.kick_from_room("room_1", "sdk_kick_target", refund=True))
+
+    assert agent._http.post.call_args.args[0] == "http://fake.invalid/rooms/room_1/kick"
+    body = agent._http.post.call_args.kwargs["json"]
+    assert body == {"target_agent_id": "sdk_kick_target", "refund": True}
+    agent._bearer_headers.assert_awaited()
+    assert result["status"] == "kicked"
+
+
+def test_agent_sdk_kicked_agents_own_rejoin_via_join_room_is_refused():
+    """S3 (P2r-6): end-to-end proof (real relay logic, via httpx's ASGI
+    transport against the actual app — agent_sdk.py has no existing
+    ASGI-transport harness the way mcp_server.py's tests do via
+    _ASGIHttpxAdapter, so this test builds its own EmporiaAgent instances
+    wired directly to the app) that a kick reached through the SDK's own
+    kick_from_room() actually sticks: the kicked agent's own subsequent
+    join_room() call — the SDK's real join path, not a mock — is refused
+    (403), the same permanent-ban contract P2-6/P2r-1 established at the
+    HTTP level. Must fail pre-fix: kick_from_room doesn't exist on
+    EmporiaAgent."""
+    import asyncio
+
+    import httpx as httpx_module
+
+    from emporia.agent_sdk import EmporiaAgent
+    from emporia.identity import get_public_key_hex
+    from emporia.relay_server import app as relay_app
+
+    def _wired(agent_id: str) -> EmporiaAgent:
+        a = EmporiaAgent(
+            relay_url="http://testserver", agent_id=agent_id,
+            public_key_hex=get_public_key_hex(agent_id),
+        )
+        a._http = httpx_module.AsyncClient(
+            transport=httpx_module.ASGITransport(app=relay_app), base_url="http://testserver",
+        )
+        return a
+
+    async def scenario():
+        owner = _wired("sdk_kick_e2e_owner")
+        target = _wired("sdk_kick_e2e_target")
+        try:
+            await owner.register()
+            await target.register()
+
+            room = await owner.create_room(name="SDK Kick E2E Room", room_type="private", gate_type="open")
+            room_id = room["room_id"]
+
+            await target.join_room(room_id, agent_id=target.agent_id)
+
+            kick_result = await owner.kick_from_room(room_id, target.agent_id)
+            assert kick_result["status"] == "kicked"
+
+            with pytest.raises(httpx_module.HTTPStatusError) as exc_info:
+                await target.join_room(room_id, agent_id=target.agent_id)
+            assert exc_info.value.response.status_code == 403
+        finally:
+            await owner._http.aclose()
+            await target._http.aclose()
+
+    asyncio.run(scenario())
+
+
 def _mock_ws_connect_raising(exc: Exception):
     """A drop-in for websockets.connect() whose `async with` immediately raises
     `exc` on __aenter__ — simulates a rejected handshake without a real socket."""

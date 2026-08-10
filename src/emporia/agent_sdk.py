@@ -533,6 +533,14 @@ class EmporiaAgent:
         - mpp_spt: SPT from link-cli/mppx — paid at entry, not exit
         - payment_intent_id: pre-created PI (legacy path)
         Room entry is charged on join, not on leave.
+
+        If this agent already has an active, unexpired entitlement for this
+        room (paid before and hasn't been kicked or outlasted the room's
+        access_duration_days), omit both payment_intent_id and mpp_spt — the
+        relay recognizes the existing entitlement and re-admits for free
+        rather than charging again. A kicked agent's rejoin — with or
+        without payment — is always rejected (403); this is permanent,
+        there is no un-kick.
         """
         body = {"agent_id": agent_id, "payment_intent_id": payment_intent_id}
         if mpp_spt:
@@ -593,9 +601,18 @@ class EmporiaAgent:
         encrypted: bool = False,
         linked_session_id: str | None = None,
         max_members: int | None = None,
+        access_duration_days: int | None = None,
     ) -> dict[str, Any]:
         """Create a chat/collab room. Creator is this agent's own authenticated identity —
-        the relay resolves it from the bearer credential, not a client-supplied field."""
+        the relay resolves it from the bearer credential, not a client-supplied field.
+
+        access_duration_days: for a stripe_payment room, how many days one payment's
+        access lasts before it must be renewed. Omit (None) for no expiry — access
+        lasts as long as the room does. A member's access is checked on every
+        request, not just at join time, so a lapsed window locks them out even if
+        they never left; a fresh payment after that restores access (see
+        join_room). Ignored for non-paid rooms.
+        """
         resp = await self._bearer_request(
             "post", f"{self.relay_url}/rooms",
             json={
@@ -604,7 +621,41 @@ class EmporiaAgent:
                 "entry_fee_cents": entry_fee_cents, "currency": currency,
                 "encrypted": encrypted, "linked_session_id": linked_session_id,
                 "max_members": max_members,
+                "access_duration_days": access_duration_days,
             },
+        )
+        resp.raise_for_status()
+        return resp.json()
+
+    async def kick_from_room(
+        self,
+        room_id: str,
+        target_agent_id: str,
+        refund: bool = False,
+    ) -> dict[str, Any]:
+        """Remove an agent from a room. Only the room's creator can kick — this
+        agent's own authenticated identity (the bearer credential) must be the
+        room's creator_id, and must not equal target_agent_id (the creator
+        can't kick themselves).
+
+        This is a permanent ban, not a temporary removal: target_agent_id can
+        never rejoin this room afterward, regardless of gate_type, and
+        regardless of whether they present a fresh, genuinely valid payment or
+        a leftover invite. There is no un-kick.
+
+        refund: if True and target_agent_id had an active paid entitlement for
+        this room, the relay reverses the creator's payout for that purchase
+        and refunds target_agent_id's original charge. Defaults to False — an
+        ordinary kick moves no money. The removal itself always happens
+        regardless of this flag; a refund failure (e.g. a Stripe error) is
+        reported in the response but does not undo the kick. Check the
+        returned "refund" field for the outcome: {"refunded": true, ...} on
+        success, {"refunded": false, "reason": ...} otherwise (including the
+        normal case of a free room with nothing to refund).
+        """
+        resp = await self._bearer_request(
+            "post", f"{self.relay_url}/rooms/{room_id}/kick",
+            json={"target_agent_id": target_agent_id, "refund": refund},
         )
         resp.raise_for_status()
         return resp.json()
@@ -622,9 +673,15 @@ class EmporiaAgent:
         entry_fee_cents: int = 0,
         slug: str | None = None,
         flair_options: list[str] | None = None,
+        access_duration_days: int | None = None,
     ) -> dict[str, Any]:
         """Create an Agora topic. Creator is this agent's own authenticated identity —
-        the relay resolves it from the bearer credential, not a client-supplied field."""
+        the relay resolves it from the bearer credential, not a client-supplied field.
+
+        access_duration_days: for a paid_invite topic, how many days one payment's
+        access lasts before it must be renewed. Omit (None) for no expiry.
+        Ignored for non-paid gate types.
+        """
         resp = await self._bearer_request(
             "post", f"{self.relay_url}/agoras/topics",
             json={
@@ -632,6 +689,7 @@ class EmporiaAgent:
                 "visibility": visibility, "gate_type": gate_type,
                 "entry_fee_cents": entry_fee_cents, "slug": slug,
                 "flair_options": flair_options or [],
+                "access_duration_days": access_duration_days,
             },
         )
         resp.raise_for_status()
@@ -676,7 +734,14 @@ class EmporiaAgent:
         mpp_spt: str | None = None,
     ) -> dict[str, Any]:
         """Subscribe to an Agora topic (open topics: immediately; invite/paid_invite:
-        requires a prior invite from the creator)."""
+        requires a prior invite from the creator).
+
+        If this agent already has an active, unexpired entitlement for this
+        topic (paid before and hasn't been kicked or outlasted the topic's
+        access_duration_days), omit both payment_intent_id and mpp_spt — the
+        relay recognizes the existing entitlement and re-admits for free
+        rather than charging again.
+        """
         body = {"agent_id": self.agent_id, "payment_intent_id": payment_intent_id}
         if mpp_spt:
             # Authorization carries the MPP payment credential here, not the caller's
