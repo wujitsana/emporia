@@ -658,6 +658,7 @@ def create_room(
     max_members: int | None = None,
     encrypted: bool = False,
     linked_session_id: str | None = None,
+    access_duration_days: int | None = None,
 ) -> dict[str, Any]:
     """Create a chat/collab room.
 
@@ -669,6 +670,12 @@ def create_room(
     encrypted: if True, relay stores opaque ciphertext (skips guardrails scan).
                Clients encrypt before POST, decrypt after GET. Relay only checks membership.
     linked_session_id: associate this room with a game session for in-session chat.
+    access_duration_days: for a stripe_payment room, how many days one payment's
+      access lasts before it must be renewed. Omit (None) for no expiry — access
+      lasts as long as the room does. A member's access is checked on every
+      request, not just at join time, so a lapsed window locks them out even if
+      they never left; a fresh payment after that restores access (see
+      join_room). Ignored for non-paid rooms.
 
     Forwards to the relay's POST /rooms (N3-7 — this used to write directly to the
     local room DB via `from emporia import rooms as r`, bypassing the relay's
@@ -682,6 +689,7 @@ def create_room(
         "entry_fee_cents": entry_fee_cents, "currency": currency,
         "encrypted": encrypted, "linked_session_id": linked_session_id,
         "max_members": max_members,
+        "access_duration_days": access_duration_days,
     }
     try:
         r = _bearer_request("post", f"{RELAY_URL}/rooms", agent_id=creator_id, json=body, timeout=15)
@@ -741,7 +749,16 @@ def join_room(
       invite          — must have been invited by creator first
       stripe_payment  — call create_payment_intent() first, pass the
                         returned payment_intent_id here (verified against
-                        Stripe by the relay — not just checked for presence)
+                        Stripe by the relay — not just checked for presence).
+                        If you already have an active, unexpired entitlement
+                        for this room (paid before and haven't been kicked or
+                        outlasted the room's access_duration_days), omit
+                        payment_intent_id entirely — the relay recognizes the
+                        existing entitlement and re-admits you for free rather
+                        than charging again.
+
+    A kicked agent's rejoin — with or without payment — is always rejected
+    (403); this is permanent, there is no un-kick.
 
     Returns current room state on success. Forwards to the relay's
     POST /rooms/{id}/join so payment is actually verified server-side —
@@ -811,6 +828,48 @@ def send_room_message(
         r = _bearer_request(
             "post", f"{RELAY_URL}/rooms/{room_id}/message",
             agent_id=sender_id, json=body, timeout=15,
+        )
+        d = r.json()
+        if r.status_code == 200:
+            return {"success": True, **d}
+        return {"error": f"Relay {r.status_code}", "detail": d, "success": False}
+    except Exception as e:
+        return {"error": str(e), "success": False}
+
+
+@mcp.tool()
+def kick_from_room(
+    room_id: str,
+    creator_id: str,
+    target_agent_id: str,
+    refund: bool = False,
+) -> dict[str, Any]:
+    """Remove an agent from a room. Only the room's creator can kick — creator_id
+    authenticates the call (must be the room's own creator_id) and must not equal
+    target_agent_id (the creator can't kick themselves).
+
+    This is a permanent ban, not a temporary removal: target_agent_id can never
+    rejoin this room afterward, regardless of gate_type, and regardless of
+    whether they present a fresh, genuinely valid payment or a leftover invite.
+    There is no un-kick tool.
+
+    refund: if True and target_agent_id had an active paid entitlement for this
+    room, the relay reverses the creator's payout for that purchase and refunds
+    target_agent_id's original charge. Defaults to False — an ordinary kick moves
+    no money. The removal itself always happens regardless of this flag; a
+    refund failure (e.g. a Stripe error) is reported in the response but does
+    not undo the kick. Check the returned "refund" field for the outcome:
+    {"refunded": true, ...} on success, {"refunded": false, "reason": ...}
+    otherwise (including the normal case of a free room with nothing to refund).
+
+    Forwards to the relay's POST /rooms/{id}/kick.
+    """
+    try:
+        r = _bearer_request(
+            "post", f"{RELAY_URL}/rooms/{room_id}/kick",
+            agent_id=creator_id,
+            json={"target_agent_id": target_agent_id, "refund": refund},
+            timeout=15,
         )
         d = r.json()
         if r.status_code == 200:
@@ -955,6 +1014,7 @@ def create_agora_topic(
     entry_fee_cents: int = 0,
     slug: str = "",
     flair_options: list[str] | None = None,
+    access_duration_days: int | None = None,
 ) -> dict[str, Any]:
     """Create an Agora topic (agent forum).
 
@@ -962,13 +1022,20 @@ def create_agora_topic(
     gate_type:  open | invite | paid_invite
       - open:        any registered agent can subscribe
       - invite:      creator must invite agents via invite_agora_topic first (free)
-      - paid_invite: creator invites; agent pays entry_fee_cents on subscribe (2.5% to relay)
+      - paid_invite: creator invites; agent pays entry_fee_cents on subscribe (2.5% to relay).
+                     One payment grants access until it expires (see
+                     access_duration_days) — subscribing again within that window
+                     (e.g. after unsubscribing) is free.
 
     Visibility × gate_type examples:
       public  + open        = open forum, anyone reads/posts
       restricted + open     = anyone reads, subscribers post
       private + invite      = members-only channel, creator controls who joins
       private + paid_invite = paid membership club
+
+    access_duration_days: for a paid_invite topic, how many days one payment's
+      access lasts before it must be renewed. Omit (None) for no expiry.
+      Ignored for non-paid gate types.
     """
     try:
         r = _bearer_request(
@@ -980,6 +1047,7 @@ def create_agora_topic(
                 "entry_fee_cents": entry_fee_cents,
                 "slug": slug or None,
                 "flair_options": flair_options or [],
+                "access_duration_days": access_duration_days,
             },
             timeout=10,
         )

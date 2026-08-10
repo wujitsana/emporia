@@ -8520,6 +8520,83 @@ def test_mcp_room_tools_route_through_relay(prod_client):
         assert refused.get("success") is False, refused
 
 
+def test_mcp_create_room_passes_access_duration_days_through(prod_client):
+    """P2r MCP alignment: create_room's access_duration_days param (added
+    alongside P2-3's entitlement model) must actually reach the relay, not be
+    silently dropped at the MCP boundary."""
+    from emporia import mcp_server
+
+    _register_keyed(prod_client, "mcproom_duration_owner")
+
+    adapter = _ASGIHttpxAdapter(prod_client, mcp_server.RELAY_URL)
+    with patch.object(mcp_server, "httpx", adapter):
+        r = mcp_server.create_room(
+            name="MCP Duration Room", creator_id="mcproom_duration_owner",
+            room_type="private", gate_type="stripe_payment", entry_fee_cents=100,
+            access_duration_days=30,
+        )
+    assert r.get("success") is True, r
+    assert r["room"]["access_duration_days"] == 30
+
+
+def test_mcp_create_agora_topic_passes_access_duration_days_through(prod_client):
+    """P2r MCP alignment: same property as the room test above, for
+    create_agora_topic's access_duration_days param — must actually reach the
+    relay and be stored, not silently dropped at the MCP boundary."""
+    from emporia import mcp_server
+    from emporia.relay_server import get_db
+
+    _register_keyed(prod_client, "mcpagora_duration_owner")
+
+    adapter = _ASGIHttpxAdapter(prod_client, mcp_server.RELAY_URL)
+    with patch.object(mcp_server, "httpx", adapter):
+        r = mcp_server.create_agora_topic(
+            name="MCP Duration Topic", creator_id="mcpagora_duration_owner",
+            gate_type="paid_invite", entry_fee_cents=100, access_duration_days=14,
+        )
+    assert "error" not in r, r
+
+    with get_db() as conn:
+        row = conn.execute(
+            "SELECT access_duration_days FROM agora_topics WHERE slug=?", (r["slug"],)
+        ).fetchone()
+    assert row["access_duration_days"] == 14
+
+
+def test_mcp_kick_from_room_bans_the_target(prod_client):
+    """P2r MCP alignment: kick_from_room is a new tool (none existed before —
+    the relay's POST /rooms/{id}/kick, made meaningful by P2-6/P2r-1, had no
+    MCP surface at all). Exercises the full round trip: join, kick, confirm
+    the ban actually sticks through the same MCP tools an agent would use to
+    try rejoining."""
+    from emporia import mcp_server
+
+    _register_keyed(prod_client, "mcpkick_owner")
+    _register_keyed(prod_client, "mcpkick_target")
+
+    adapter = _ASGIHttpxAdapter(prod_client, mcp_server.RELAY_URL)
+    with patch.object(mcp_server, "httpx", adapter):
+        r = mcp_server.create_room(
+            name="MCP Kick Room", creator_id="mcpkick_owner",
+            room_type="public", gate_type="open",
+        )
+        assert r.get("success") is True, r
+        room_id = r["room"]["room_id"]
+
+        joined = mcp_server.join_room(room_id=room_id, agent_id="mcpkick_target")
+        assert joined.get("success") is True, joined
+
+        kicked = mcp_server.kick_from_room(
+            room_id=room_id, creator_id="mcpkick_owner", target_agent_id="mcpkick_target",
+        )
+        assert kicked.get("success") is True, kicked
+        assert kicked["status"] == "kicked"
+        assert kicked["refund"] is None, "refund defaults to False and must move nothing"
+
+        rejoin = mcp_server.join_room(room_id=room_id, agent_id="mcpkick_target")
+        assert rejoin.get("success") is False, rejoin
+
+
 def test_mcp_list_rooms_omitted_viewer_id_lists_as_agent_id(prod_client):
     """Regression for N4-7 (R6): list_rooms()'s docstring used to say "omit viewer_id
     to list only public rooms" — true of the pre-N3-7 direct-DB-read implementation,
