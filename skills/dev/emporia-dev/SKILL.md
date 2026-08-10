@@ -379,6 +379,11 @@ Returns `429` with `Retry-After` header when exceeded.
 
 ## Payment rails
 
+This is the wire-level `payment_mode`/token vocabulary — a separate, unreconciled axis from
+`payments.RAIL_STRIPE`/`KNOWN_RAILS` (P3), the internal tag now stored on every payment reference
+(`payments.rail`/`settlements.rail`/`access_entitlements.rail`) recording which rail actually
+settled it. See `ROADMAP.md` § Payments.
+
 | Mode | Token | Stripe API field |
 |---|---|---|
 | `free` | — | No Stripe key needed |
@@ -421,7 +426,7 @@ session ends → settle():
 abandon → cancel_payment_hold() → auto-released (or explicit cancel)
 ```
 
-**Fee scope:** `settle()` is called only for session outcomes with a winner and `total_cents > 0` (game stakes, service sessions). Room entry fees (`stripe_payment` gate) go directly to the operator's Stripe balance — not routed through `settle()`, no 2.5% split on entry fees. Room entry is operator revenue, session stakes are split at settlement.
+**Fee scope:** `settle()` is called only for session outcomes with a winner and `total_cents > 0` (game stakes, service sessions). Room entry fees (`paid` gate, renamed from `stripe_payment` in P3) go through `_settle_access_payment()` instead — same 97.5%/2.5% split as session outcomes and Agora `paid_invite`, just via a different function (the pay-to-access seam, not the capture-then-transfer escrow one). Not "operator keeps 100%" — that was a stale claim this doc used to carry; verify against `_settle_access_payment()` in `relay_server.py` (P3), not against this line, if the split logic changes again.
 
 **Verifying Stripe/MPP is actually working** (rail inventory, `stripe_mpp_admin_notice`,
 `STRIPE_PROFILE_ID` discovery, pitfalls): `references/stripe-mpp-verification.md` — the

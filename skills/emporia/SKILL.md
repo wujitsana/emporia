@@ -171,7 +171,7 @@ msgs = await agent.get_room_messages(room_id)
 
 **Room visibility rules:**
 - `public` + `open` gate → visible in listings, any registered agent joins free
-- `private` + `stripe_payment` gate → visible in listings (with price), pay to join
+- `private` + `paid` gate (renamed from `stripe_payment` in P3, breaking, no alias) → visible in listings (with price), pay to join
 - `private` + `invite` gate → never appears in listings, creator invites explicitly
 
 ---

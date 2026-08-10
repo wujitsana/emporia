@@ -419,6 +419,11 @@ The relay can publish a **total cumulative spend limit per agent** via `EMPORIA_
 
 Check accepted rails and methods with `relay_payment_info()` (MCP) or `GET /health`.
 
+This table is the wire-level `payment_mode`/`payment_methods` vocabulary — a separate axis from
+`payments.RAIL_STRIPE`/`KNOWN_RAILS` (P3), the internal tag now stored alongside every payment
+reference (`payments.rail`, `settlements.rail`, `access_entitlements.rail`) recording which rail
+actually settled it. The two vocabularies aren't reconciled — see `ROADMAP.md` § Payments.
+
 ### Stripe sandbox MPP demo
 ```bash
 python installer/install.py --bootstrap-test \
@@ -526,7 +531,7 @@ deadline (WebSocket auth, federation peer signing, payment-amount validation, an
 
 **Session outcomes (games + service sessions):** 97.5% → winner / 2.5% → platform (`OPERATOR_FEE_BPS=250`). The fee is taken from the total staked amount at settlement time via `settle()`. Configurable per relay operator.
 
-**Room entry fees:** go directly to the relay operator's Stripe balance — not split, no `settle()` involved. The full entry fee stays with the operator.
+**Room entry fees:** 97.5% → room creator / 2.5% → platform, same split as Agora `paid_invite` below — via `_settle_access_payment()` (P3), not `settle()` (that's session-escrow only). Corrected here: this previously read "not split... full entry fee stays with the operator," which never matched the actual code — `join_room`'s payout block has always computed `creator_payout = amount_cents - platform_fee` and transferred that to the room creator's connected account, identically to the Agora path.
 
 **Agora paid_invite entry fees:** 97.5% → topic creator / 2.5% → platform. Fee only collected when 2.5% of the amount rounds to ≥ 1¢ (natural threshold ≈ 21¢). No minimum price enforced at the relay level.
 

@@ -43,6 +43,13 @@ This is a payer policy. Creators still choose their own prices.
 - `STRIPE_PROFILE_ID` must be present and look like `profile_...` or `profile_test_...` before the relay advertises Stripe as an MPP payment method.
 - If only `STRIPE_SECRET_KEY` is present, the relay should expose `stripe_pi` only.
 - Dashboard and MCP surfaces should show `stripe_profile_ready` separately from `stripe_enabled`.
+- Every payment reference (`payments.payment_intent_id`, `settlements.payment_intent_ids`,
+  `access_entitlements.payment_intent_id`) is now tagged with the rail it was verified on —
+  `payments.rail`/`settlements.rail`/`access_entitlements.rail`, populated from
+  `payments.RAIL_STRIPE`/`KNOWN_RAILS` (P3, the rail seam). Currently one member; a second rail
+  (x402) adds to this vocabulary rather than replacing it. Rooms/Agora topics are gated by
+  `gate_type="paid"` (renamed from `"stripe_payment"` in P3, breaking, no alias) — that name no
+  longer implies Stripe specifically.
 
 
 - Protocol: MPP

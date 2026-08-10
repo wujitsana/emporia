@@ -675,6 +675,66 @@ operator branches — the existing guard test only covers the *internal* column 
 by definition can't catch a regression in these two public-by-design columns at those exact branches
 (the same blind spot P2-2 closed for `dedupe_key`, just not yet for the two newest columns).
 
+## Fixed post-hackathon (P3 pass — the rail seam: make the payment reference rail-tagged and the settlement/payout step pluggable, no x402 code)
+
+The pass `ROADMAP.md` § Payments had been pointing at since P1a. Not a vulnerability-hunting pass —
+a planned seam, proven by leaving Stripe's behavior byte-for-byte unchanged — but it surfaced two
+genuine findings along the way, one of them a previously undocumented behavioral divergence.
+
+**Scope, five commits:** `gate_type: "stripe_payment"` renamed to `"paid"`, breaking, no alias (a
+rail name baked into an agent-facing enum was actively wrong under a second rail); a `rail` column
+added to `payments`, `settlements`, and `access_entitlements` — most glaringly
+`access_entitlements.payment_intent_id`, a column P2-3 created for a table meant to be rail-agnostic
+— with one canonical vocabulary (`payments.RAIL_STRIPE`/`KNOWN_RAILS`); `_verify_and_confirm_payment()`
+(the single funnel all three paid routes call) now returns a `PaymentRef(rail, reference)` instead of
+a bare string, threaded to every persistence point; the two near-identical copy-pasted payout blocks
+in `join_room`/`subscribe_agora_topic` collapsed into one `_settle_access_payment()` seam, drawn where
+custody actually splits (recording the settlement is rail-agnostic and always runs; the
+platform→creator transfer hop is Stripe-only and has no counterpart on the non-custodial rail the user
+chose for x402 — see `ROADMAP.md`); and `/health`/`GET /agents/{id}`'s independently hand-built
+`payment_rails`/`payment_methods` lists factored into one `_payment_rails()` helper.
+
+No migration: the operator started from a fresh DB for this pass, by decision, so `rail` lives only in
+each table's `CREATE TABLE` DDL. `init_db()` now fails loudly on startup (`_assert_not_pre_p3_schema`)
+if it finds an old-schema `settlements` table or a leftover `gate_type='stripe_payment'` room, rather
+than silently serving either — the latter would otherwise fall through every `gate_type == "paid"`
+check and the room would quietly become free.
+
+| Finding | Severity | Fix |
+|---|---|---|
+| **`/health` and `GET /agents/{id}`'s `payment_rails`/`payment_methods` formulas had already drifted apart.** Factoring the two hand-built lists into one `_payment_rails()` helper (item 5) surfaced a genuine, previously undocumented divergence: with `STRIPE_SECRET_KEY` set, the MPP profile not ready, and `EMPORIA_MPP_TEMPO_ENABLED=1`, `/health`'s independent `if payment_methods:` check includes `"mpp"` in `payment_rails` (`payment_methods=["tempo"]` is truthy), while `GET /agents/{id}`'s `elif` chain resolves `stripe_enabled` first and never reaches the tempo branch, silently omitting it. Both are pure advertisement — nothing in the payment path reads either list to route a charge — so this was never a live security gap, just a documentation-shaped one nobody had noticed. | Low | Not fixed — deliberately. Reconciling the two formulas is a behavior change, not a refactor, and "no wire change" was this item's whole contract. Both formulas are reproduced byte-for-byte inside the one shared function (`has_stripe=None` selects the relay-wide variant, `has_stripe=<bool>` the per-agent one), and the divergence itself is pinned by a test (`test_payment_rails_helper_pins_health_and_agent_variants_across_flag_combinations`) so a future change to either formula is deliberate rather than an unnoticed regression — the same `_KNOWN_VIOLATIONS`-style discipline this codebase already applies elsewhere. |
+
+Checked and confirmed clean (no finding, no fix needed, and not this pass's job to remove): the payment-layer
+audit that opened this pass found `arbitrate_and_refund()` (refund by charge id) has no production call
+site anywhere — only two tests exercise it — and `retry_with_stripe_auth()` has no caller at all,
+anywhere in `src/`, `tests/`, or `scripts/`; `relay_server.py` also references a `POST /payments/refund`
+endpoint in a comment that **does not exist** (the only `/payments/*` routes are `create-intent`,
+`settlements`, `settlements/{id}`, and `records`). All three are real, harmless dead-code/stale-comment
+findings, left in place — deleting them is a cleanup pass's job, not a seam pass's. `payment_rules["mode"]`
+and `gate_type`'s own listing-projection mapping (`payment_mode: "stripe_link" if gate_type == "paid"
+else "free"`) are a separate, pre-existing vocabulary (the `listings`/`events`/`PaymentMode` axis) that
+this pass's `gate_type` rename deliberately left untouched — reconciling the codebase's four independent
+payment vocabularies (`payment_mode`, `payment_rails`, `payment_methods`,
+`create_stake_intent(mode=)`) is recorded as open in `ROADMAP.md`, not this pass's scope.
+
+**`gate_type: "stripe_payment"` → `"paid"` is a breaking wire change, no backward compatibility.** By
+explicit user decision — no alias, no normalization, the old value now 400s outright — the same posture
+P1a-4 took removing the `x402`→`stripe_link` alias rather than keeping it. 52 test sites and every
+docstring across `rooms.py`/`relay_server.py`/`mcp_server.py`/`agent_sdk.py` updated in lockstep;
+`dashboard/src/api.ts` and `scripts/seed_demo_relay.py` had zero references to begin with (verified by
+grep before starting).
+
+**Landmine discipline, self-imposed and held:** `settlement_dedupe_key()` hashes payment id strings and
+is also the base of every Stripe `Idempotency-Key` for real money movement — `PaymentRef.reference`
+(never `.rail`, never the ref itself) is the only thing that ever reaches it, pinned by a test computing
+the expected digest independently via `hashlib`. Every `emporia.payments` import stays function-local
+(never hoisted to module scope), preserving the 69 test `@patch("emporia.payments.X")` decorators that
+only intercept because of that discipline — verified post-refactor via the existing tests' own
+`mock_payout.assert_called_once()`/`call_count` assertions, not just a green suite. `settlements`
+gaining a `rail` column correctly failed `test_settlement_public_and_internal_columns_cover_the_schema`
+until it was classified public and added to `record_settlement()`'s explicit column list, exactly as
+that guard test is designed to do.
+
 ## Threat model notes (by design, not gaps)
 
 - **Ed25519 = auth; the relay never holds private keys.** Keys live at `~/.hermes/keys/*.priv`,

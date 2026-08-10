@@ -154,19 +154,31 @@ participants/actions/payments/settlements/audit files together — that piece is
 
 ## Payments
 
-**P1b entry point: the x402 rail opens after P3, a rail-seam pass, now that P1a, P1r, P2, and P2r
-have hardened the rail-agnostic payment core (SECURITY.md's P1a/P1r/P2/P2r passes).** P1r found and
-fixed two regressions P1a itself shipped; P2 then found the premise underneath both was itself
-wrong — a room/Agora entry fee was charged *per join* when it should buy *access* until an optional
-window expires or the agent is kicked; **P2r then found five defects in P2's own eight commits**,
-two of them live product breakage (see SECURITY.md's P2r pass). The entry model is now correct.
-The payment plumbing is not yet ready for a second rail: "a payment" is spelled `payment_intent_id`
-in roughly 150 places across the codebase, including `access_entitlements.payment_intent_id`, a
-column P2-3 created *this arc* for the table meant to be rail-agnostic. **P3 (not yet planned in
-detail) is a seam pass with no x402 code** — make the payment reference rail-tagged and the
-settlement/payout step pluggable, proving it by leaving Stripe's behavior unchanged — so x402 lands
-as an additive rail instead of a fork of every call site. Sequencing: **P2r (done) → P3 (seam,
-unplanned) → P1b (x402, this entry).**
+**P1b entry point: the x402 rail opens now that P3, the rail-seam pass, is done** (SECURITY.md's
+P1a/P1r/P2/P2r/P2r-6/P3 passes hardened and then rail-tagged the payment core). P1r found and fixed
+two regressions P1a itself shipped; P2 then found the premise underneath both was itself wrong — a
+room/Agora entry fee was charged *per join* when it should buy *access* until an optional window
+expires or the agent is kicked; P2r found five defects in P2's own eight commits, two of them live
+product breakage; P2r-6 found one more (see SECURITY.md's respective passes). The entry model is
+now correct. **P3 then closed the seam**, five commits: `gate_type: "stripe_payment"` renamed to
+`"paid"` (breaking, no alias — a rail name baked into an agent-facing enum was actively wrong under
+a second rail); a `rail` column added to `payments`/`settlements`/`access_entitlements` — most
+glaringly `access_entitlements.payment_intent_id`, the column P2-3 created *that arc* for a table
+meant to be rail-agnostic — with one canonical vocabulary (`payments.RAIL_STRIPE`/`KNOWN_RAILS`);
+the single funnel `_verify_and_confirm_payment()` now returns a `PaymentRef(rail, reference)` instead
+of a bare string, threaded to every persistence point; the two copy-pasted room/Agora payout blocks
+collapsed into one `_settle_access_payment()` seam, drawn where custody actually splits; and
+`/health`/`GET /agents/{id}`'s independently hand-built `payment_rails` lists factored into one
+`_payment_rails()` helper (see SECURITY.md's P3 pass for the full findings, including a
+previously-undocumented divergence the last refactor surfaced and pinned rather than fixed).
+
+The "roughly 150 places" figure this entry used to carry was directionally right as an *identifier*
+count (156 in `src/`, confirmed by the audit that opened P3) but overstated the actual seam: only
+~30-35 of those are genuinely Stripe-coupled (essentially all of `payments.py`'s HTTP layer, plus a
+handful of capture-method/PI-status/Connect sites in `relay_server.py`). The other ~120 were always
+opaque tokens — stored, compared, redacted, never parsed — which is exactly why P3 could tag the
+reference at one funnel instead of touching 150 call sites. Sequencing: **P3 (done) → P1b (x402,
+this entry, next).**
 
 **Payout has no x402 analogue under the custody model chosen.** Decided this arc: x402 settles
 **direct to the creator, with the relay taking a cut — non-custodial**, not mirroring Stripe's
@@ -176,15 +188,22 @@ counterpart**: on x402 the payment *is* the settlement, the platform's fee must 
 payment request itself rather than deducted afterward, and `settlements.transfer_id`/
 `transfer_status` describe a Stripe-only hop. The open mechanism question this creates: a single
 x402 payment pays one `payTo`, so taking a cut without custody needs either two payment
-requirements, a splitter contract, or facilitator-side support — decide this alongside P3's design,
-not as an afterthought.
+requirements, a splitter contract, or facilitator-side support. Still open after P3 — P3's own
+`_settle_access_payment()` seam (SECURITY.md's P3 pass) draws the boundary (settlement recording is
+rail-agnostic and always runs; the transfer hop is Stripe-only and simply doesn't exist on a
+non-custodial rail) but deliberately doesn't guess at the mechanism, since there's nothing to
+dispatch to with one rail implemented — **P1b's to decide, not an afterthought.**
 
-**Composable payment options, on both sides.** Also decided this arc, as a design principle for P3
-and P1b: agents should not have a rail/chain dictated to them, and a relay operator should be able
-to declare what it accepts rather than the platform hardcoding one option. This maps directly onto
-x402 v2's actual `accepts` array in the 402 response — that array **is** the operator's declared
-acceptance list (chains/assets/rails), and the paying agent's wallet picks from it. If adopted, the
-non-custodial fee-split question above has to be solved per accepted option, not once.
+**Composable payment options, on both sides.** Also decided this arc, as a design principle for P1b:
+agents should not have a rail/chain dictated to them, and a relay operator should be able to declare
+what it accepts rather than the platform hardcoding one option. This maps directly onto x402 v2's
+actual `accepts` array in the 402 response — that array **is** the operator's declared acceptance
+list (chains/assets/rails), and the paying agent's wallet picks from it. P3 built the one place this
+lands (`_payment_rails()`, item 5, SECURITY.md's P3 pass) but deliberately didn't add an
+operator-config surface — with one rail implemented, a config could only ever say "stripe" (the
+codebase's own cautionary tale: `"tempo"` is already advertised in `payment_methods` with zero
+implementing code behind it). Still **P1b's to build**, once a real second rail exists to declare.
+If adopted, the non-custodial fee-split question above has to be solved per accepted option, not once.
 
 **A public paid Agora topic's entry fee currently gates nothing — resolve before scoping x402 to
 Agora subscriptions.** Pinned, not fixed, in P2r-5 (SECURITY.md's P2r pass, R5):

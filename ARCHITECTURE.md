@@ -249,6 +249,20 @@ Three hackathon-required Stripe skills:
 Payment split: `OPERATOR_FEE_BPS=250` (2.5%) default. Configurable per relay operator.
 Note: `HERMES_PTGS_STRIPE_RELAY_BASE` is a hackathon convention, not an official Stripe endpoint.
 
+**The rail seam (P3): a payment reference is now tagged with the rail it was verified on, not just an
+opaque Stripe id.** `payments.RAIL_STRIPE`/`KNOWN_RAILS` is the one canonical vocabulary (currently one
+member — a speculative second rail isn't guessed at ahead of P1b). `_verify_and_confirm_payment()` — the
+single funnel `/sessions/{id}/join`, `/rooms/{id}/join`, and `/agoras/topics/{slug}/subscribe` all call —
+returns a `payments.PaymentRef(rail, reference)` instead of a bare string, threaded to every persistence
+point (`record_payment`, `entitlements.grant`, `record_settlement`), each of which now carries a `rail`
+column. `_settle_access_payment()` is the shared settlement/payout seam for the two pay-to-access routes
+(room join, Agora subscribe), replacing what were two near-identical copy-pasted blocks; it draws the
+boundary where custody actually splits — recording the settlement is rail-agnostic and always runs, the
+platform→creator transfer hop is Stripe-only and simply has no counterpart on the non-custodial rail
+chosen for x402 (see `ROADMAP.md` § Payments). `settle()` (session escrow) stays outside this seam
+entirely — it has no x402 analogue and remains Stripe-only. See `SECURITY.md`'s P3 pass for the full
+scope, including the one prior-behavior divergence its own audit surfaced and pinned rather than fixed.
+
 **PaymentIntent verification contract (P1a-1): resource-bound everywhere, payer-bound only on the
 authenticated path.** `_assert_payment_intent_matches()` checks status/amount/currency/capture-
 method/resource metadata on every call. Payer binding (`metadata[buyer_agent_id]`, stamped by both
@@ -273,7 +287,10 @@ just the resource/payer pair. Every Stripe `Idempotency-Key` for a real money mo
 entry-fee payouts, `settle()`'s session-escrow payout, and P2-7's reversal/refund pair on a kick) is
 derived from this same helper with the same inputs as the settlement row it accompanies — the
 storage key and the Stripe key agree by construction, not because each call site was written
-correctly on its own. `arbitrate_and_refund()`'s refund key is the one exception, deliberately: it's already
+correctly on its own. **P3: only the bare reference string ever reaches this hash — never a
+`PaymentRef`, never its `.rail`.** The rail tag lives in its own column precisely so it never has to;
+folding it into the hashed input would change every existing `dedupe_key` and every derived
+Idempotency-Key the moment a second rail landed. `arbitrate_and_refund()`'s refund key is the one exception, deliberately: it's already
 keyed on `charge_id`, which is per-payment on its own, so folding it through the shared helper would
 add nothing. **Idempotency keys are a retry guard, not a permanent dedupe** — Stripe retains them for
 24 hours. The durable guard against a genuine second payout for one purchase is the access
@@ -285,10 +302,11 @@ expires or is revoked, not a single join.** P1a and P1r both assumed a room/Agor
 charged per join; P2 corrected that by product decision. `entitlements.py` — deliberately
 import-independent of `relay_server.py`, since `rooms.py` needs to reach it too — is the one
 definition:
-- `grant(resource_type, resource_id, agent_id, payment_intent_id, duration_days)` records a new,
-  append-only entitlement row. `duration_days=None` (set via `rooms.access_duration_days` /
+- `grant(resource_type, resource_id, agent_id, payment_intent_id, duration_days, *, rail)` records a
+  new, append-only entitlement row. `duration_days=None` (set via `rooms.access_duration_days` /
   `agora_topics.access_duration_days`, both creator-chosen at creation, both `NULL` by default) means
-  no expiry.
+  no expiry. `rail` is required and keyword-only (P3) — no caller silently inherits a default, and an
+  unrecognized value is rejected (`payments.KNOWN_RAILS`) before it can reach storage.
 - `has_access(...)` looks only at the *newest* row for a `(resource_type, resource_id, agent_id)`
   triple — a later grant supersedes an earlier expiry (a repurchase restores access), but nothing
   supersedes a removal (see below).
