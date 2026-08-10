@@ -4719,7 +4719,7 @@ async def create_room_endpoint(req: CreateRoomRequest, request: Request):
                 "name": room.name,
                 "creator_id": room.creator_id,
             })
-        return room.to_dict(viewer_id=caller)
+        return room.to_dict(viewer_id=caller, db_path=DATABASE_PATH)
     except Exception as e:
         raise HTTPException(422, str(e))
 
@@ -4738,7 +4738,7 @@ async def list_rooms_endpoint(
         db_path=DATABASE_PATH,
     )
     return {
-        "rooms": [r.to_dict(viewer_id=viewer_id) for r in room_list],
+        "rooms": [r.to_dict(viewer_id=viewer_id, db_path=DATABASE_PATH) for r in room_list],
         "count": len(room_list),
     }
 
@@ -4751,7 +4751,7 @@ async def get_room_endpoint(room_id: str, request: Request):
         raise HTTPException(404, "Room not found")
     if room.room_type == "private" and not rooms_db.is_member(room_id, viewer_id or "", db_path=DATABASE_PATH):
         raise HTTPException(403, "Private room — not a member")
-    return room.to_dict(viewer_id=viewer_id)
+    return room.to_dict(viewer_id=viewer_id, db_path=DATABASE_PATH)
 
 
 @app.post("/rooms/{room_id}/join")
@@ -5211,7 +5211,7 @@ async def ws_room(ws: WebSocket, room_id: str):
         msgs = rooms_db.get_messages(room_id, limit=20, db_path=DATABASE_PATH)
         await ws.send_json({
             "type": "room_init",
-            "room": room.to_dict(viewer_id=caller),
+            "room": room.to_dict(viewer_id=caller, db_path=DATABASE_PATH),
             "messages": [m.to_dict() for m in msgs],
         })
         while True:

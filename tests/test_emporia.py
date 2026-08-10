@@ -4473,6 +4473,136 @@ def test_expired_room_entitlement_blocks_private_room_read_over_http(mock_verify
 
 @patch("emporia.payments.payout_winner", new_callable=AsyncMock)
 @patch("emporia.payments.verify_payment_intent", new_callable=AsyncMock)
+def test_expired_room_entitlement_drops_out_of_room_listing_and_roster(
+    mock_verify, mock_payout, client
+):
+    """P2r-4 (R4): list_rooms() and Room.to_dict() compared against
+    room.members directly, bypassing is_member() entirely — so P2-5's own
+    "every membership-gated read routes through is_member()" claim wasn't
+    actually true for these two. Proved: GET /rooms/{id} correctly 403s an
+    expired member, but GET /rooms still returned the private room to them
+    with its full member roster. Must fail pre-fix: the room appears in the
+    listing and its 'members' field is not empty for the expired agent."""
+    from emporia.relay_server import DATABASE_PATH
+    import sqlite3
+    from datetime import UTC, datetime, timedelta
+
+    _register(client, "p2r4_owner")
+    _register(client, "p2r4_payer")
+    mock_payout.return_value = {"transfer_id": "tr_p2r4_list"}
+
+    r = client.post("/rooms", json={
+        "name": "P2r-4 Listing Room", "creator_id": "p2r4_owner",
+        "room_type": "private", "gate_type": "stripe_payment", "entry_fee_cents": 100,
+        "access_duration_days": 1,
+    },
+        headers={"x-emporia-agent-id": "p2r4_owner"})
+    assert r.status_code == 200, r.text
+    room_id = r.json()["room_id"]
+
+    with patch("emporia.relay_server.AGENT_REGISTRY.get_stripe_account", return_value="acct_p2r4_list"):
+        mock_verify.return_value = {
+            "status": "succeeded", "payment_intent_id": "pi_p2r4_list",
+            "amount": 100, "currency": "usd", "capture_method": "automatic",
+            "metadata": {
+                "resource_type": "room", "resource_id": room_id,
+                "buyer_agent_id": "p2r4_payer",
+            },
+        }
+        joined = client.post(f"/rooms/{room_id}/join",
+            json={"agent_id": "p2r4_payer", "payment_intent_id": "pi_p2r4_list"},
+            headers={"x-emporia-agent-id": "p2r4_payer"})
+        assert joined.status_code == 200, joined.text
+
+    still_listed = client.get("/rooms", headers={"x-emporia-agent-id": "p2r4_payer"})
+    assert still_listed.status_code == 200, still_listed.text
+    assert any(rm["room_id"] == room_id for rm in still_listed.json()["rooms"]), \
+        "test setup: an active member must see the room in the listing"
+
+    conn = sqlite3.connect(DATABASE_PATH)
+    conn.execute(
+        "UPDATE access_entitlements SET expires_at = ? "
+        "WHERE resource_type='room' AND resource_id=? AND agent_id='p2r4_payer'",
+        ((datetime.now(UTC) - timedelta(hours=1)).isoformat(), room_id),
+    )
+    conn.commit()
+    conn.close()
+
+    expired_listing = client.get("/rooms", headers={"x-emporia-agent-id": "p2r4_payer"})
+    assert expired_listing.status_code == 200, expired_listing.text
+    assert not any(rm["room_id"] == room_id for rm in expired_listing.json()["rooms"]), \
+        "an expired member must no longer see this private room in GET /rooms"
+
+
+@patch("emporia.payments.payout_winner", new_callable=AsyncMock)
+@patch("emporia.payments.verify_payment_intent", new_callable=AsyncMock)
+def test_current_member_and_creator_unaffected_by_listing_expiry_check(
+    mock_verify, mock_payout, client
+):
+    """P2r-4: sibling regression guard — an active (non-expired) member and
+    the room's creator must still see the private paid room in GET /rooms
+    with its full roster, both before and after the P2r-4 fix."""
+    _register(client, "p2r4_scope_owner")
+    _register(client, "p2r4_scope_payer")
+    mock_payout.return_value = {"transfer_id": "tr_p2r4_scope"}
+
+    r = client.post("/rooms", json={
+        "name": "P2r-4 Scope Room", "creator_id": "p2r4_scope_owner",
+        "room_type": "private", "gate_type": "stripe_payment", "entry_fee_cents": 100,
+    },
+        headers={"x-emporia-agent-id": "p2r4_scope_owner"})
+    assert r.status_code == 200, r.text
+    room_id = r.json()["room_id"]
+
+    with patch("emporia.relay_server.AGENT_REGISTRY.get_stripe_account", return_value="acct_p2r4_scope"):
+        mock_verify.return_value = {
+            "status": "succeeded", "payment_intent_id": "pi_p2r4_scope",
+            "amount": 100, "currency": "usd", "capture_method": "automatic",
+            "metadata": {
+                "resource_type": "room", "resource_id": room_id,
+                "buyer_agent_id": "p2r4_scope_payer",
+            },
+        }
+        joined = client.post(f"/rooms/{room_id}/join",
+            json={"agent_id": "p2r4_scope_payer", "payment_intent_id": "pi_p2r4_scope"},
+            headers={"x-emporia-agent-id": "p2r4_scope_payer"})
+        assert joined.status_code == 200, joined.text
+
+    payer_view = client.get("/rooms", headers={"x-emporia-agent-id": "p2r4_scope_payer"})
+    payer_room = next(rm for rm in payer_view.json()["rooms"] if rm["room_id"] == room_id)
+    assert payer_room["members"] == ["p2r4_scope_owner", "p2r4_scope_payer"]
+
+    owner_view = client.get("/rooms", headers={"x-emporia-agent-id": "p2r4_scope_owner"})
+    owner_room = next(rm for rm in owner_view.json()["rooms"] if rm["room_id"] == room_id)
+    assert owner_room["members"] == ["p2r4_scope_owner", "p2r4_scope_payer"]
+
+
+def test_free_room_member_unaffected_by_listing_expiry_check(client):
+    """P2r-4: an open (free) room's membership has no entitlement concept at
+    all — the listing/roster fix must not touch it."""
+    _register(client, "p2r4_free_owner")
+    _register(client, "p2r4_free_member")
+
+    r = client.post("/rooms", json={
+        "name": "P2r-4 Free Room", "creator_id": "p2r4_free_owner",
+        "room_type": "private", "gate_type": "invite",
+    },
+        headers={"x-emporia-agent-id": "p2r4_free_owner"})
+    assert r.status_code == 200, r.text
+    room_id = r.json()["room_id"]
+    client.post(f"/rooms/{room_id}/invite", json={"invitee_id": "p2r4_free_member"},
+        headers={"x-emporia-agent-id": "p2r4_free_owner"})
+    joined = client.post(f"/rooms/{room_id}/join", json={"agent_id": "p2r4_free_member"},
+        headers={"x-emporia-agent-id": "p2r4_free_member"})
+    assert joined.status_code == 200, joined.text
+
+    listed = client.get("/rooms", headers={"x-emporia-agent-id": "p2r4_free_member"})
+    room = next(rm for rm in listed.json()["rooms"] if rm["room_id"] == room_id)
+    assert room["members"] == ["p2r4_free_owner", "p2r4_free_member"]
+
+
+@patch("emporia.payments.payout_winner", new_callable=AsyncMock)
+@patch("emporia.payments.verify_payment_intent", new_callable=AsyncMock)
 def test_expired_agora_entitlement_blocks_private_topic_read_over_http(mock_verify, mock_payout, client):
     """P2-5, Agora sibling of the room HTTP-level expiry test — a private
     paid_invite topic's subscriber loses read access once their entitlement

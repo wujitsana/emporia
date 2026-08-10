@@ -131,10 +131,18 @@ class Room:
     updated_at: str
     access_duration_days: int | None = None
 
-    def to_dict(self, *, viewer_id: str | None = None) -> dict[str, Any]:
+    def to_dict(self, *, viewer_id: str | None = None, db_path: Path | None = None) -> dict[str, Any]:
         d = asdict(self)
-        # Hide full member list for private rooms unless viewer is a member
-        if self.room_type == "private" and viewer_id not in self.members:
+        # Hide full member list for private rooms unless viewer has active
+        # access (P2r-4, R4) — previously `viewer_id not in self.members`,
+        # which disclosed the full roster to a private paid room's member
+        # even after their entitlement expired (see _access_active()'s
+        # docstring, the module-level function this delegates to).
+        is_active = viewer_id is not None and _access_active(
+            self.room_id, self.gate_type, self.creator_id, self.members,
+            viewer_id, db_path=db_path,
+        )
+        if self.room_type == "private" and not is_active:
             d["members"] = []
             d["member_count"] = len(self.members)
             d["encrypted"] = self.encrypted
@@ -300,7 +308,12 @@ def list_rooms(
     """List rooms visible to viewer_id.
 
     Public rooms: always visible.
-    Private rooms: visible only if viewer_id is a member.
+    Private rooms: visible only if viewer_id has *active* access (P2r-4, R4)
+    — see `_access_active()`. For most rooms (gate_type != stripe_payment)
+    this is a plain membership check with no extra query; an entitlement
+    lookup only happens for the private paid rooms in the listed page, not
+    the whole table, so this stays a single extra round-trip per *paid* room
+    shown rather than per room total.
     """
     with _LOCK, _connect(db_path) as conn:
         rows = conn.execute(
@@ -314,25 +327,60 @@ def list_rooms(
             continue
         if room.room_type == "public":
             result.append(room)
-        elif viewer_id and viewer_id in room.members:
+        elif viewer_id and _access_active(
+            room.room_id, room.gate_type, room.creator_id, room.members, viewer_id, db_path=db_path
+        ):
             result.append(room)
     return result
 
 
+def _access_active(
+    room_id: str,
+    gate_type: str,
+    creator_id: str,
+    members: list[str],
+    agent_id: str,
+    db_path: Path | None = None,
+) -> bool:
+    """The expiry-aware access check itself (P2-5), factored out of
+    `is_member()` so a caller that already has a `Room` loaded —
+    `list_rooms()`, `Room.to_dict()` (P2r-4, R4) — doesn't re-fetch the row
+    from `rooms` just to ask the same question `is_member()` would. Those two
+    callers previously compared against `room.members` directly, bypassing
+    this check entirely: a private paid room's expired member still showed up
+    in `GET /rooms` with the room's full member roster, even though
+    `GET /rooms/{id}` correctly 403'd them — the single-enforcement-point
+    property `is_member()`'s own docstring claims wasn't actually true.
+
+    For a `stripe_payment` room, membership requires an *active* entitlement
+    — the whole point of `access_duration_days` is that a window that closes
+    actually closes, not just that it stops future free rejoins (P2-4). Two
+    exemptions, both intentional: the room creator (never paid to be there,
+    can't expire out of their own room) and, for anyone else, an agent with
+    no entitlement row at all for this resource — see
+    `entitlements.has_any_grant()`'s docstring for why "predates
+    entitlements" must never be conflated with "entitlement lapsed."
+
+    For any other gate_type, this is a pure in-memory check — no entitlement
+    query, hence no extra DB round-trip — since only `stripe_payment` rooms
+    have an expiry concept at all.
+    """
+    if agent_id not in members:
+        return False
+    if gate_type != "stripe_payment" or agent_id == creator_id:
+        return True
+    if entitlements.has_access("room", room_id, agent_id, db_path=db_path):
+        return True
+    return not entitlements.has_any_grant("room", room_id, agent_id, db_path=db_path)
+
+
 def is_member(room_id: str, agent_id: str, db_path: Path | None = None) -> bool:
     """P2-5: for a `stripe_payment` room, membership requires an *active*
-    entitlement — the whole point of `access_duration_days` is that a window
-    that closes actually closes, not just that it stops future free rejoins
-    (P2-4). `relay_server.py` has multiple call sites that gate access on room
-    membership; routing expiry through this one function means every one of
-    them enforces it automatically, instead of each needing its own copy of
-    the same check.
-
-    Two exemptions, both intentional: the room creator (never paid to be
-    there, can't expire out of their own room) and, for anyone else, an agent
-    with no entitlement row at all for this resource — see
-    `entitlements.has_any_grant()`'s docstring for why "predates entitlements"
-    must never be conflated with "entitlement lapsed."
+    entitlement. `relay_server.py` has multiple call sites that gate access on
+    room membership; routing expiry through this one function (and
+    `_access_active()`, shared with `list_rooms()`/`Room.to_dict()`) means
+    every one of them enforces it automatically, instead of each needing its
+    own copy of the same check.
     """
     with _LOCK, _connect(db_path) as conn:
         row = conn.execute(
@@ -341,13 +389,10 @@ def is_member(room_id: str, agent_id: str, db_path: Path | None = None) -> bool:
         ).fetchone()
     if not row:
         return False
-    if agent_id not in json.loads(row["members_json"] or "[]"):
-        return False
-    if row["gate_type"] != "stripe_payment" or agent_id == row["creator_id"]:
-        return True
-    if entitlements.has_access("room", room_id, agent_id, db_path=db_path):
-        return True
-    return not entitlements.has_any_grant("room", room_id, agent_id, db_path=db_path)
+    members = json.loads(row["members_json"] or "[]")
+    return _access_active(
+        room_id, row["gate_type"], row["creator_id"], members, agent_id, db_path=db_path
+    )
 
 
 def add_member(room_id: str, agent_id: str, db_path: Path | None = None) -> bool:
