@@ -154,31 +154,63 @@ participants/actions/payments/settlements/audit files together — that piece is
 
 ## Payments
 
-**P1b entry point: the x402 rail is the next block, now that P1a, its self-review P1r, and P2 have
-hardened the rail-agnostic payment core (SECURITY.md's P1a, P1r, and P2 passes).** P1r found and
-fixed two regressions P1a itself shipped — the settlement dedupe key and the payout idempotency keys
-were keyed on *(resource, payer)*, not *(resource, payer, payment)*, silently dropping a payer's
-second genuine payment for the same resource; see the corrected entry below. **P2 then found the
-premise underneath both passes was itself wrong**: a room/Agora entry fee was charged *per join*,
-when by product decision it should buy *access* until an optional window expires or the agent is
-kicked (`entitlements.py`; see SECURITY.md's P2 pass and ARCHITECTURE.md's access entitlement
-contract). x402 now has a better entry model to build on than either prior pass had — scope it to
-*buying an entitlement*, not to *paying per join*, when this block opens. x402 is confirmed (live
-docs, this pass) to be the
+**P1b entry point: the x402 rail opens after P3, a rail-seam pass, now that P1a, P1r, P2, and P2r
+have hardened the rail-agnostic payment core (SECURITY.md's P1a/P1r/P2/P2r passes).** P1r found and
+fixed two regressions P1a itself shipped; P2 then found the premise underneath both was itself
+wrong — a room/Agora entry fee was charged *per join* when it should buy *access* until an optional
+window expires or the agent is kicked; **P2r then found five defects in P2's own eight commits**,
+two of them live product breakage (see SECURITY.md's P2r pass). The entry model is now correct.
+The payment plumbing is not yet ready for a second rail: "a payment" is spelled `payment_intent_id`
+in roughly 150 places across the codebase, including `access_entitlements.payment_intent_id`, a
+column P2-3 created *this arc* for the table meant to be rail-agnostic. **P3 (not yet planned in
+detail) is a seam pass with no x402 code** — make the payment reference rail-tagged and the
+settlement/payout step pluggable, proving it by leaving Stripe's behavior unchanged — so x402 lands
+as an additive rail instead of a fork of every call site. Sequencing: **P2r (done) → P3 (seam,
+unplanned) → P1b (x402, this entry).**
+
+**Payout has no x402 analogue under the custody model chosen.** Decided this arc: x402 settles
+**direct to the creator, with the relay taking a cut — non-custodial**, not mirroring Stripe's
+"relay holds funds, then transfers out" flow. That means `payout_winner()` (a Stripe Connect
+transfer out of a relay-held balance) isn't a second-implementation problem, it has **no
+counterpart**: on x402 the payment *is* the settlement, the platform's fee must be enforced by the
+payment request itself rather than deducted afterward, and `settlements.transfer_id`/
+`transfer_status` describe a Stripe-only hop. The open mechanism question this creates: a single
+x402 payment pays one `payTo`, so taking a cut without custody needs either two payment
+requirements, a splitter contract, or facilitator-side support — decide this alongside P3's design,
+not as an afterthought.
+
+**Composable payment options, on both sides.** Also decided this arc, as a design principle for P3
+and P1b: agents should not have a rail/chain dictated to them, and a relay operator should be able
+to declare what it accepts rather than the platform hardcoding one option. This maps directly onto
+x402 v2's actual `accepts` array in the 402 response — that array **is** the operator's declared
+acceptance list (chains/assets/rails), and the paying agent's wallet picks from it. If adopted, the
+non-custodial fee-split question above has to be solved per accepted option, not once.
+
+**A public paid Agora topic's entry fee currently gates nothing — resolve before scoping x402 to
+Agora subscriptions.** Pinned, not fixed, in P2r-5 (SECURITY.md's P2r pass, R5):
+`_topic_can_read()` returns `True` unconditionally for `visibility="public"` topics before any
+entitlement check, and every paid topic in the seed script and the test suite uses that visibility
+— so a never-paid stranger can currently read and post on one. Whether `"public"` should mean
+"readable by anyone" or "readable by anyone who's paid" is a product decision nobody's been asked;
+x402 would be selling access on this exact route, so answer it before, not during, that pass.
+
+x402 is confirmed (live docs, checked in the P1a pass) to be the
 Coinbase-originated, Linux-Foundation-formalized HTTP-402 protocol settled in stablecoins (USDC),
 distinct from Stripe's MPP, which `payments.py` already implements — the two share the "HTTP 402"
 mechanism, not a protocol. Scope per the user, ahead of P1b's own review-and-plan round (do not
 start from this entry — confirm the x402 spec against live docs again at implementation time, spec
-was still moving as of this review):
+was still moving as of the P1a review):
 - **x402 is additive, not a Stripe replacement.** Session escrow (`capture_method="manual"`,
   hold-then-conditionally-release-minus-fee) has no analogue in x402's request-scoped settlement
   model — it stays on Stripe. Scope x402 to the two `capture_method="automatic"` pay-to-access
-  routes first: `/rooms/{id}/join`, `/agoras/topics/{slug}/subscribe`.
-- **No Hermes x402 skill or implementation exists to reuse** (checked this pass). One relevant
+  routes first: `/rooms/{id}/join`, `/agoras/topics/{slug}/subscribe`. After P2/P2r, both buy an
+  **entitlement** — a better fit for request-scoped settlement than per-join payment ever was.
+- **No Hermes x402 skill or implementation exists to reuse** (checked in the P1a pass). One relevant
   first-party data point: Nous Portal's own inference API already accepts an x402 payment header
   (Solana USDC, beta, anonymous, per-request) as an alternative to a static API key — Portal is the
   x402 *consumer* side, Emporia would be the *resource server* side, no shared code, but it answers
-  the network question: **Solana USDC, not Base**, is the ecosystem-native choice here.
+  the network question absent a chosen-by-the-payer model (see "composable payment options" above):
+  **Solana USDC, not Base**, is the ecosystem-native default if only one is offered.
 - `payment_mode="x402"` — done in P1a-4: the old `"stripe_link"` alias is gone, `"x402"` now rejects
   outright with a message naming the reason, and is deliberately not yet added to `PaymentMode`.
   x402 v2 moved payment data into headers (`PAYMENT-REQUIRED`/`PAYMENT-SIGNATURE`/`PAYMENT-RESPONSE`,

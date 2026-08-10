@@ -280,34 +280,52 @@ add nothing. **Idempotency keys are a retry guard, not a permanent dedupe** — 
 entitlement contract below (an active entitlement skips the payment gate entirely, so
 `payout_winner()` is never called a second time for it), not the Idempotency-Key alone.
 
-**Access entitlement contract (P2-3/P2-4/P2-5/P2-6): a payment buys access until it expires or is
-revoked, not a single join.** P1a and P1r both assumed a room/Agora entry fee was charged per join;
-P2 corrected that by product decision. `entitlements.py` — deliberately import-independent of
-`relay_server.py`, since `rooms.py` needs to reach it too — is the one definition:
+**Access entitlement contract (P2-3/P2-4/P2-5/P2-6, corrected in P2r): a payment buys access until it
+expires or is revoked, not a single join.** P1a and P1r both assumed a room/Agora entry fee was
+charged per join; P2 corrected that by product decision. `entitlements.py` — deliberately
+import-independent of `relay_server.py`, since `rooms.py` needs to reach it too — is the one
+definition:
 - `grant(resource_type, resource_id, agent_id, payment_intent_id, duration_days)` records a new,
   append-only entitlement row. `duration_days=None` (set via `rooms.access_duration_days` /
   `agora_topics.access_duration_days`, both creator-chosen at creation, both `NULL` by default) means
   no expiry.
 - `has_access(...)` looks only at the *newest* row for a `(resource_type, resource_id, agent_id)`
   triple — a later grant supersedes an earlier expiry (a repurchase restores access), but nothing
-  supersedes a `revoke(reason="kicked")`, since no code path grants a new entitlement to an agent
-  once that's run for them on that resource.
+  supersedes a removal (see below).
 - `join_room()`/`subscribe_agora_topic()` check `has_access()` before the payment gate; an active
-  entitlement skips it entirely, so a same-window rejoin is free and fires no second payout.
-  `kick_from_room()` calls `revoke(reason="kicked")`, and `join_room()` checks
-  `is_revoked(reason="kicked")` before the gate branch — a kick is permanent, by design; no un-ban
-  path exists.
-- `rooms.is_member()` and the Agora-side `_agora_is_member()` are where expiry is *enforced*, not
-  just recorded — every membership-gated read/write routes through one of these two functions, so
-  expiry closes access everywhere at once rather than needing per-endpoint checks. Both exempt the
-  resource's own creator and, separately, any agent with **no entitlement row at all** for that
-  resource (`has_any_grant()` false) — the grandfather case for membership predating P2-3, kept
-  distinct from an entitlement that actively lapsed.
-- Optional refund on kick (P2-7): the kicker's choice, `POST /rooms/{id}/kick {"refund": true}`,
-  default `false`. Revocation happens first and unconditionally; the refund — reverse the creator's
-  Connect transfer, then refund the payer's charge, in that order, so the platform doesn't end up
-  covering the creator's already-paid-out share — is a separate, best-effort step whose failure does
-  not undo the kick.
+  entitlement skips it entirely, so a same-window rejoin is free and fires no second payout. On
+  Agora, the *invite* waiver is a different, wider predicate — `has_any_grant()` ("ever held an
+  entitlement here"), not `has_access()` — since a renewal after expiry is not a fresh join and must
+  not need a fresh invite the creator already spent once (P2r-2).
+- **A kick's ban is `access_removals`/`record_removal()`/`is_removed()` — a separate table from
+  `access_entitlements`, not `revoke()`/`is_revoked()` (P2r-1).** The original design used
+  `revoke(reason="kicked")` alone; that only revokes an *entitlement*, so it wrote nothing for an
+  agent who never held one — every member of an `open` or `invite` room — and a kick from a free room
+  didn't stick. `kick_from_room()` now calls both `record_removal()` (the actual ban, unconditional,
+  works regardless of whether anything was ever paid) and `revoke(reason="kicked")` (ends any still-
+  active paid window). `join_room()` checks `is_removed(reason="kicked")` before the gate branch — a
+  kick is permanent, by design; no un-ban path exists. Kept as two tables rather than one, because
+  `has_any_grant()`'s entire job is distinguishing "never had an entitlement" (grandfathered) from
+  "had one that lapsed" (must be denied), and a tombstone entitlement row for a never-paid kicked
+  agent would make that distinction lie.
+- **Expiry is *enforced* by `rooms.is_member()`/`rooms._access_active()` and the Agora-side
+  `_agora_is_member()`.** Every room membership-gated read/write routes through `is_member()` or the
+  shared `_access_active()` helper (P2r-4 closed the gap where `list_rooms()`/`Room.to_dict()`
+  bypassed it by comparing the raw member list directly). Both exempt the resource's own creator and,
+  separately, any agent with **no entitlement row at all** for that resource (`has_any_grant()`
+  false) — the grandfather case for membership predating P2-3, kept distinct from an entitlement that
+  actively lapsed. **This enforcement does not reach a `visibility="public"` Agora topic at all** —
+  `_topic_can_read()` returns `True` unconditionally for public topics before any entitlement check,
+  so a public `paid_invite` topic's entry fee currently gates nothing for reads or posts. Pinned as a
+  recorded, decision-pending gap in P2r-5, not fixed — see `ROADMAP.md` § Payments.
+- Optional refund on kick (P2-7, persistence added in P2r-3): the kicker's choice,
+  `POST /rooms/{id}/kick {"refund": true}`, default `false`. Revocation happens first and
+  unconditionally; the refund — reverse the creator's Connect transfer, then refund the payer's
+  charge, in that order, so the platform doesn't end up covering the creator's already-paid-out share
+  — is a separate, best-effort step whose failure does not undo the kick. Every outcome is persisted
+  to `settlements.transfer_status`/`refund_id`/`reversal_id` and `payments.status` before returning,
+  including the partial-failure state (`'reversed_pending_refund'`) where the reversal succeeded but
+  the refund didn't.
 
 ## What was NOT built (honest scope)
 
