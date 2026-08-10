@@ -4563,6 +4563,67 @@ def test_kicked_invitee_cannot_rejoin_with_the_stale_invite(client):
     assert r2.status_code == 403, r2.text
 
 
+def test_kicked_agent_cannot_rejoin_a_free_open_room(client):
+    """P2r-1 (R1): the finding that falsifies P2-6's "kicked means out" claim.
+    P2-6 implemented the ban as entitlements.revoke(reason="kicked") — but
+    revoke() only has something to revoke if the agent held a paid
+    entitlement, and an `open` room (CreateRoomRequest's default gate_type)
+    never creates one. So a kicked open-room member's rejoin sailed straight
+    through: is_revoked() stayed False forever, since nothing was ever
+    revoked. Must fail pre-fix: the second join returns 200
+    {"status": "joined"}."""
+    _register(client, "p2r1_open_owner")
+    _register(client, "p2r1_open_target")
+
+    r = client.post("/rooms", json={
+        "name": "P2r-1 Open Kick Room", "creator_id": "p2r1_open_owner",
+        "room_type": "public", "gate_type": "open",
+    },
+        headers={"x-emporia-agent-id": "p2r1_open_owner"})
+    assert r.status_code == 200, r.text
+    room_id = r.json()["room_id"]
+
+    r1 = client.post(f"/rooms/{room_id}/join", json={"agent_id": "p2r1_open_target"},
+        headers={"x-emporia-agent-id": "p2r1_open_target"})
+    assert r1.status_code == 200, r1.text
+
+    kicked = client.post(f"/rooms/{room_id}/kick",
+        json={"target_agent_id": "p2r1_open_target"},
+        headers={"x-emporia-agent-id": "p2r1_open_owner"})
+    assert kicked.status_code == 200, kicked.text
+
+    r2 = client.post(f"/rooms/{room_id}/join", json={"agent_id": "p2r1_open_target"},
+        headers={"x-emporia-agent-id": "p2r1_open_target"})
+    assert r2.status_code == 403, r2.text
+
+
+def test_non_kicked_agent_can_still_join_a_free_open_room(client):
+    """P2r-1: sibling of the P2-6 scope test, for the open-room ban path
+    specifically — kicking one agent from a free room must not lock out
+    anyone else."""
+    _register(client, "p2r1_open_scope_owner")
+    _register(client, "p2r1_open_scope_kicked")
+    _register(client, "p2r1_open_scope_other")
+
+    r = client.post("/rooms", json={
+        "name": "P2r-1 Open Scope Room", "creator_id": "p2r1_open_scope_owner",
+        "room_type": "public", "gate_type": "open",
+    },
+        headers={"x-emporia-agent-id": "p2r1_open_scope_owner"})
+    assert r.status_code == 200, r.text
+    room_id = r.json()["room_id"]
+
+    client.post(f"/rooms/{room_id}/join", json={"agent_id": "p2r1_open_scope_kicked"},
+        headers={"x-emporia-agent-id": "p2r1_open_scope_kicked"})
+    client.post(f"/rooms/{room_id}/kick",
+        json={"target_agent_id": "p2r1_open_scope_kicked"},
+        headers={"x-emporia-agent-id": "p2r1_open_scope_owner"})
+
+    r2 = client.post(f"/rooms/{room_id}/join", json={"agent_id": "p2r1_open_scope_other"},
+        headers={"x-emporia-agent-id": "p2r1_open_scope_other"})
+    assert r2.status_code == 200, r2.text
+
+
 @patch("emporia.payments.payout_winner", new_callable=AsyncMock)
 @patch("emporia.payments.verify_payment_intent", new_callable=AsyncMock)
 def test_non_kicked_agent_can_still_join_the_room(mock_verify, mock_payout, client):
@@ -9718,6 +9779,47 @@ def test_entitlement_is_revoked_checks_reason(entitlements_db_path):
                            db_path=entitlements_db_path)
     assert is_revoked("room", "room_ent_ban", "ent_payer", db_path=entitlements_db_path), \
         "with no reason filter, any revocation counts"
+
+
+def test_entitlement_is_removed_works_with_no_entitlement_ever_existing(entitlements_db_path):
+    """P2r-1 (R1): the actual fix. is_removed() must record and detect a ban
+    for an agent who never had an access_entitlements row at all — the case
+    revoke()/is_revoked() cannot cover, since revoke() has nothing to revoke
+    for someone who never bought anything. Proves the ban mechanism itself,
+    independent of the relay-level join_room() wiring tested elsewhere."""
+    from emporia.entitlements import is_removed, record_removal, has_any_grant
+
+    assert not has_any_grant("room", "room_never_paid", "kicked_agent", db_path=entitlements_db_path), \
+        "test setup: this agent must never have an entitlement row"
+    assert not is_removed("room", "room_never_paid", "kicked_agent", db_path=entitlements_db_path)
+
+    record_removal("room", "room_never_paid", "kicked_agent", reason="kicked",
+                    removed_by="the_owner", db_path=entitlements_db_path)
+
+    assert is_removed("room", "room_never_paid", "kicked_agent", db_path=entitlements_db_path)
+    assert is_removed("room", "room_never_paid", "kicked_agent", reason="kicked",
+                       db_path=entitlements_db_path)
+    assert not is_removed("room", "room_never_paid", "kicked_agent", reason="some_other_reason",
+                           db_path=entitlements_db_path)
+    # And it must not create an entitlement row — has_any_grant() must stay False,
+    # or the grandfather logic elsewhere (P2-5) would misread a kicked-but-never-paid
+    # agent as "had a lapsed entitlement."
+    assert not has_any_grant("room", "room_never_paid", "kicked_agent", db_path=entitlements_db_path)
+
+
+def test_entitlement_is_removed_scoped_to_resource_and_agent(entitlements_db_path):
+    """P2r-1: a removal must not leak across resources or agents."""
+    from emporia.entitlements import is_removed, record_removal
+
+    record_removal("room", "room_a", "agent_x", reason="kicked", db_path=entitlements_db_path)
+
+    assert is_removed("room", "room_a", "agent_x", db_path=entitlements_db_path)
+    assert not is_removed("room", "room_b", "agent_x", db_path=entitlements_db_path), \
+        "a removal from one room must not ban the same agent from another"
+    assert not is_removed("room", "room_a", "agent_y", db_path=entitlements_db_path), \
+        "a removal must not ban a different agent from the same room"
+    assert not is_removed("agora", "room_a", "agent_x", db_path=entitlements_db_path), \
+        "resource_type must keep rooms and Agora topics in separate namespaces"
 
 
 def test_entitlement_resource_type_keeps_room_and_agora_separate(entitlements_db_path):

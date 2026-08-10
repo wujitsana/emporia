@@ -28,6 +28,22 @@ handling mirrors `rooms.py`'s own module-local `_connect()`/`_LOCK` rather than
 `relay_server.get_db()`/`DB_LOCK` — both ultimately point at the same
 `EMPORIA_DB_PATH` file (WAL mode makes that safe), but this module has no
 dependency on relay_server to share its lock object with.
+
+P2r-1: a kick's *ban* is `record_removal()`/`is_removed()`, a separate
+`access_removals` table — not `revoke()`/`is_revoked()` on `access_entitlements`.
+The original P2-6 ban check was `is_revoked(reason="kicked")`, which only ever
+returns True if there was an active *paid* entitlement to revoke in the first
+place — so on an `open` or `invite` room, where nothing was ever purchased,
+`revoke()` had nothing to revoke, wrote nothing, and a kicked agent walked
+straight back in. `revoke()` still runs on every kick (it ends the paid
+window, so a still-valid entitlement can't outlive the ban), but it is no
+longer what makes the ban stick — `record_removal()` is, unconditionally,
+regardless of whether this resource/agent pair ever had a payment at all.
+Kept as two separate tables rather than folding removal into
+`access_entitlements` as a special row: `has_any_grant()`'s entire job is
+distinguishing "never had an entitlement" (grandfathered) from "had one that
+lapsed" (must be denied), and a tombstone entitlement row for a never-paid
+kicked agent would make that distinction lie.
 """
 
 from __future__ import annotations
@@ -61,6 +77,19 @@ CREATE TABLE IF NOT EXISTS access_entitlements (
 
 CREATE INDEX IF NOT EXISTS idx_access_entitlements_lookup
     ON access_entitlements(resource_type, resource_id, agent_id);
+
+CREATE TABLE IF NOT EXISTS access_removals (
+    removal_id     TEXT PRIMARY KEY,
+    resource_type  TEXT NOT NULL,
+    resource_id    TEXT NOT NULL,
+    agent_id       TEXT NOT NULL,
+    removed_at     TEXT NOT NULL,
+    reason         TEXT NOT NULL,
+    removed_by     TEXT
+);
+
+CREATE INDEX IF NOT EXISTS idx_access_removals_lookup
+    ON access_removals(resource_type, resource_id, agent_id);
 """
 
 
@@ -188,13 +217,15 @@ def revoke(
     """Revoke this agent's current (newest, not-yet-revoked) grant for this
     resource. Returns False if there was nothing active to revoke — a caller
     with no entitlement row at all (a free-room member, someone who never paid)
-    is not an error case.
+    is not an error case, and is exactly the case `record_removal()`/
+    `is_removed()` exist to cover instead (P2r-1): this function alone cannot
+    make a ban stick for an agent who never had anything to revoke.
 
-    No un-revoke, no un-ban: this codebase has no path that grants access to an
-    agent this pass's `reason="kicked"` callers have revoked (see
-    `is_revoked()`), by product decision — a kick is meant to be final. If a
-    future pass adds a creator override, it belongs here as a new function, not
-    as a parameter that quietly reopens this one.
+    No un-revoke: this codebase has no path that grants a *new* entitlement to
+    an agent this pass's `reason="kicked"` callers have revoked (see
+    `is_revoked()`), by product decision. If a future pass adds a creator
+    override, it belongs here as a new function, not as a parameter that
+    quietly reopens this one.
     """
     with _LOCK, _connect(db_path) as conn:
         row = conn.execute(
@@ -222,13 +253,13 @@ def is_revoked(
 ) -> bool:
     """True if this agent has *ever* been revoked for this resource (optionally
     filtered to a specific `reason`, e.g. `"kicked"`). Checks every row, not
-    just the newest: this is a ban check, not an access check (that's
-    `has_access()`), and in this codebase nothing ever grants a new entitlement
-    to an agent once `revoke(reason="kicked")` has run for them on that
-    resource (P2-6's join-time ban check runs before the payment gate that
-    would otherwise create one) — so "any row revoked for this reason" and
-    "the newest row is revoked for this reason" agree in practice, but this
-    checks the former so the guarantee doesn't depend on that ordering holding.
+    just the newest: this is about a specific entitlement's history, not the
+    ban check (that's `is_removed()`, P2r-1) — `revoke()` still runs on every
+    kick to end the paid window, so this stays a meaningful, tested question
+    ("was there ever a revoked entitlement here"), but it is no longer what
+    join_room() consults to decide whether a kicked agent can rejoin: an agent
+    kicked from an `open` or `invite` room never had an entitlement to revoke
+    in the first place, and this would silently say "not revoked" for them.
     """
     with _LOCK, _connect(db_path) as conn:
         if reason is None:
@@ -242,6 +273,67 @@ def is_revoked(
                 "SELECT 1 FROM access_entitlements WHERE resource_type = ? "
                 "AND resource_id = ? AND agent_id = ? AND revoked_at IS NOT NULL "
                 "AND revoked_reason = ? LIMIT 1"
+            )
+            params = (resource_type, resource_id, agent_id, reason)
+        row = conn.execute(query, params).fetchone()
+    return row is not None
+
+
+def record_removal(
+    resource_type: str,
+    resource_id: str,
+    agent_id: str,
+    reason: str,
+    removed_by: str | None = None,
+    db_path: Path | None = None,
+) -> None:
+    """Record that this agent was removed from this resource — the actual ban
+    mechanism (P2r-1, R1). Unlike `revoke()`, this does not require an active
+    entitlement to exist: a kick from a free `open` room writes a row here too,
+    which is the whole point — `revoke()` alone silently did nothing for an
+    agent who never paid, so the ban never stuck outside a paid room. Always
+    inserts (append-only, same as `grant()`); a re-kick is not reachable in
+    practice (a removed agent can't rejoin to be kicked again — see
+    `is_removed()`), but this doesn't need to guard against it either way,
+    since a duplicate row changes nothing about the answer `is_removed()`
+    gives.
+    """
+    removal_id = f"rem_{uuid.uuid4().hex[:16]}"
+    with _LOCK, _connect(db_path) as conn:
+        conn.execute(
+            "INSERT INTO access_removals "
+            "(removal_id, resource_type, resource_id, agent_id, removed_at, reason, removed_by) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?)",
+            (removal_id, resource_type, resource_id, agent_id,
+             datetime.now(UTC).isoformat(), reason, removed_by),
+        )
+
+
+def is_removed(
+    resource_type: str,
+    resource_id: str,
+    agent_id: str,
+    reason: str | None = None,
+    db_path: Path | None = None,
+) -> bool:
+    """True if this agent has ever been removed from this resource (optionally
+    filtered to a specific `reason`). This is the ban check every gate type
+    must consult — `is_revoked()` only answers the question for agents who had
+    a paid entitlement to revoke, which a kicked agent in a free room never
+    did. No un-remove: same product decision as `revoke()`'s "no un-revoke",
+    stated again here because this is the function that actually enforces it.
+    """
+    with _LOCK, _connect(db_path) as conn:
+        if reason is None:
+            query = (
+                "SELECT 1 FROM access_removals WHERE resource_type = ? "
+                "AND resource_id = ? AND agent_id = ? LIMIT 1"
+            )
+            params = (resource_type, resource_id, agent_id)
+        else:
+            query = (
+                "SELECT 1 FROM access_removals WHERE resource_type = ? "
+                "AND resource_id = ? AND agent_id = ? AND reason = ? LIMIT 1"
             )
             params = (resource_type, resource_id, agent_id, reason)
         row = conn.execute(query, params).fetchone()
