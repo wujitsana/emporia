@@ -4737,6 +4737,13 @@ async def join_room(room_id: str, req: JoinRoomRequest, request: Request):
         _enforce_agent_rate_limit(req.agent_id)
     if rooms_db.is_member(room_id, req.agent_id, db_path=DATABASE_PATH):
         return {"status": "already_member", "room_id": room_id}
+    # P2-6 (R2): a kick is permanent — checked before the gate branch so a
+    # kicked agent can't buy or invite their way back in with a fresh
+    # PaymentIntent or a leftover invite. entitlements.revoke(reason="kicked")
+    # runs in kick_from_room(); this is the other half of that contract.
+    if entitlements.is_revoked("room", room_id, req.agent_id, reason="kicked",
+                                db_path=DATABASE_PATH):
+        raise HTTPException(403, "Removed from this room")
 
     confirmed_pi: str | None = None
     amount_cents = 0
@@ -4888,6 +4895,19 @@ async def invite_to_room(room_id: str, req: InviteToRoomRequest, request: Reques
 
 @app.post("/rooms/{room_id}/kick")
 async def kick_from_room(room_id: str, req: KickFromRoomRequest, request: Request):
+    """P2-6 (R2): a kick is a permanent revocation, not a temporary removal —
+    by product decision, kicked means out. remove_member() alone was not
+    enforceable: a stripe_payment room's kicked payer could rejoin by replaying
+    their PaymentIntent (R1, closed by P2-4's entitlement check) or, before
+    P2-3 existed at all, simply because nothing recorded that they'd been
+    kicked; an invite-gated room's kicked invitee could rejoin because
+    add_invite()/has_invite() never consumed the invite on join. Both gaps
+    close here: revoke() so entitlements.is_revoked(..., reason="kicked")
+    blocks the rejoin outright (checked by join_room()'s ban check, the first
+    thing it does after the already_member short-circuit), and
+    remove_invite() so a stale invite can't do the same job a stale
+    entitlement used to.
+    """
     room = rooms_db.get_room(room_id, db_path=DATABASE_PATH)
     if not room:
         raise HTTPException(404, "Room not found")
@@ -4898,6 +4918,9 @@ async def kick_from_room(room_id: str, req: KickFromRoomRequest, request: Reques
     removed = rooms_db.remove_member(room_id, req.target_agent_id, db_path=DATABASE_PATH)
     if not removed:
         raise HTTPException(404, f"Agent not in room: {req.target_agent_id}")
+    entitlements.revoke("room", room_id, req.target_agent_id, reason="kicked",
+                         db_path=DATABASE_PATH)
+    rooms_db.remove_invite(room_id, req.target_agent_id, db_path=DATABASE_PATH)
     await broadcast_to_session(f"room:{room_id}", {
         "type": "member_kicked",
         "room_id": room_id,

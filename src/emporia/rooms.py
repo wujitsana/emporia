@@ -407,6 +407,21 @@ def has_invite(room_id: str, agent_id: str, db_path: Path | None = None) -> bool
     return row is not None
 
 
+def remove_invite(room_id: str, agent_id: str, db_path: Path | None = None) -> None:
+    """P2-6: called on kick, so a stale invite can't undo the kick — without
+    this, an invite-gated room's `has_invite()` check would still pass for a
+    just-kicked agent, since add_invite()/has_invite() have no concept of
+    revocation of their own. Agora's equivalent (`DELETE FROM agora_invites`)
+    already runs unconditionally on every subscribe; this is the room-side
+    sibling, run specifically on kick rather than on every join, since a room's
+    own has_invite() check has no "consume on use" step to piggyback on."""
+    with _LOCK, _connect(db_path) as conn:
+        conn.execute(
+            "DELETE FROM room_invites WHERE room_id = ? AND invitee_id = ?",
+            (room_id, agent_id),
+        )
+
+
 # ============================================================================
 # Messages
 # ============================================================================

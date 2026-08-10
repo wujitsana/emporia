@@ -4463,6 +4463,157 @@ def test_kicked_room_member_can_still_read_own_receipt(mock_verify, mock_payout,
 
 @patch("emporia.payments.payout_winner", new_callable=AsyncMock)
 @patch("emporia.payments.verify_payment_intent", new_callable=AsyncMock)
+def test_kicked_payer_cannot_rejoin_with_a_fresh_payment(mock_verify, mock_payout, client):
+    """P2-6 (R2): a kick is permanent, by product decision — the user's own
+    words: 'if someone gets kicked from a room they shouldn't be allowed
+    back in.' Before this, a kicked payer in a stripe_payment room could
+    rejoin by presenting a fresh, genuinely valid PaymentIntent — remove_member()
+    alone never recorded that they'd been kicked, so join_room()'s gate had
+    nothing to check against. Must fail pre-fix: the second join succeeds and
+    fires a second payout."""
+    from emporia.relay_server import get_db
+
+    _register(client, "p26_kick_owner")
+    _register(client, "p26_kick_payer")
+    mock_payout.return_value = {"transfer_id": "tr_p26_kick"}
+
+    r = client.post("/rooms", json={
+        "name": "P2-6 Kick Room", "creator_id": "p26_kick_owner",
+        "room_type": "private", "gate_type": "stripe_payment", "entry_fee_cents": 100,
+    },
+        headers={"x-emporia-agent-id": "p26_kick_owner"})
+    assert r.status_code == 200, r.text
+    room_id = r.json()["room_id"]
+
+    with patch("emporia.relay_server.AGENT_REGISTRY.get_stripe_account", return_value="acct_p26_kick"):
+        mock_verify.return_value = {
+            "status": "succeeded", "payment_intent_id": "pi_p26_kick_one",
+            "amount": 100, "currency": "usd", "capture_method": "automatic",
+            "metadata": {
+                "resource_type": "room", "resource_id": room_id,
+                "buyer_agent_id": "p26_kick_payer",
+            },
+        }
+        r1 = client.post(f"/rooms/{room_id}/join",
+            json={"agent_id": "p26_kick_payer", "payment_intent_id": "pi_p26_kick_one"},
+            headers={"x-emporia-agent-id": "p26_kick_payer"})
+        assert r1.status_code == 200, r1.text
+
+        kicked = client.post(f"/rooms/{room_id}/kick",
+            json={"target_agent_id": "p26_kick_payer"},
+            headers={"x-emporia-agent-id": "p26_kick_owner"})
+        assert kicked.status_code == 200, kicked.text
+
+        mock_verify.return_value = {
+            "status": "succeeded", "payment_intent_id": "pi_p26_kick_two",
+            "amount": 100, "currency": "usd", "capture_method": "automatic",
+            "metadata": {
+                "resource_type": "room", "resource_id": room_id,
+                "buyer_agent_id": "p26_kick_payer",
+            },
+        }
+        r2 = client.post(f"/rooms/{room_id}/join",
+            json={"agent_id": "p26_kick_payer", "payment_intent_id": "pi_p26_kick_two"},
+            headers={"x-emporia-agent-id": "p26_kick_payer"})
+        assert r2.status_code == 403, r2.text
+
+    assert mock_payout.call_count == 1, \
+        f"a kicked payer's rejected rejoin must not trigger a second payout, " \
+        f"fired {mock_payout.call_count}x"
+    with get_db() as conn:
+        settlements = conn.execute(
+            "SELECT COUNT(*) c FROM settlements WHERE session_id=?", (room_id,)
+        ).fetchone()
+    assert settlements["c"] == 1
+
+
+def test_kicked_invitee_cannot_rejoin_with_the_stale_invite(client):
+    """P2-6 (R2): the invite-room half of R2. Before this, kick_from_room()
+    only called remove_member() — the invite row created before the kick was
+    never consumed, so a kicked invitee's has_invite() check still passed on
+    rejoin. Must fail pre-fix: the second join succeeds using the original
+    invite."""
+    _register(client, "p26_invite_owner")
+    _register(client, "p26_invite_target")
+
+    r = client.post("/rooms", json={
+        "name": "P2-6 Invite Kick Room", "creator_id": "p26_invite_owner",
+        "room_type": "private", "gate_type": "invite",
+    },
+        headers={"x-emporia-agent-id": "p26_invite_owner"})
+    assert r.status_code == 200, r.text
+    room_id = r.json()["room_id"]
+
+    invited = client.post(f"/rooms/{room_id}/invite",
+        json={"invitee_id": "p26_invite_target"},
+        headers={"x-emporia-agent-id": "p26_invite_owner"})
+    assert invited.status_code == 200, invited.text
+
+    r1 = client.post(f"/rooms/{room_id}/join", json={"agent_id": "p26_invite_target"},
+        headers={"x-emporia-agent-id": "p26_invite_target"})
+    assert r1.status_code == 200, r1.text
+
+    kicked = client.post(f"/rooms/{room_id}/kick",
+        json={"target_agent_id": "p26_invite_target"},
+        headers={"x-emporia-agent-id": "p26_invite_owner"})
+    assert kicked.status_code == 200, kicked.text
+
+    r2 = client.post(f"/rooms/{room_id}/join", json={"agent_id": "p26_invite_target"},
+        headers={"x-emporia-agent-id": "p26_invite_target"})
+    assert r2.status_code == 403, r2.text
+
+
+@patch("emporia.payments.payout_winner", new_callable=AsyncMock)
+@patch("emporia.payments.verify_payment_intent", new_callable=AsyncMock)
+def test_non_kicked_agent_can_still_join_the_room(mock_verify, mock_payout, client):
+    """P2-6: the ban check must be scoped to the specific (room, agent) pair —
+    kicking one agent must not lock out anyone else."""
+    _register(client, "p26_scope_owner")
+    _register(client, "p26_scope_kicked")
+    _register(client, "p26_scope_other")
+    mock_payout.return_value = {"transfer_id": "tr_p26_scope"}
+
+    r = client.post("/rooms", json={
+        "name": "P2-6 Scope Room", "creator_id": "p26_scope_owner",
+        "room_type": "private", "gate_type": "stripe_payment", "entry_fee_cents": 100,
+    },
+        headers={"x-emporia-agent-id": "p26_scope_owner"})
+    assert r.status_code == 200, r.text
+    room_id = r.json()["room_id"]
+
+    with patch("emporia.relay_server.AGENT_REGISTRY.get_stripe_account", return_value="acct_p26_scope"):
+        mock_verify.return_value = {
+            "status": "succeeded", "payment_intent_id": "pi_p26_scope_kicked",
+            "amount": 100, "currency": "usd", "capture_method": "automatic",
+            "metadata": {
+                "resource_type": "room", "resource_id": room_id,
+                "buyer_agent_id": "p26_scope_kicked",
+            },
+        }
+        r1 = client.post(f"/rooms/{room_id}/join",
+            json={"agent_id": "p26_scope_kicked", "payment_intent_id": "pi_p26_scope_kicked"},
+            headers={"x-emporia-agent-id": "p26_scope_kicked"})
+        assert r1.status_code == 200, r1.text
+
+        client.post(f"/rooms/{room_id}/kick", json={"target_agent_id": "p26_scope_kicked"},
+            headers={"x-emporia-agent-id": "p26_scope_owner"})
+
+        mock_verify.return_value = {
+            "status": "succeeded", "payment_intent_id": "pi_p26_scope_other",
+            "amount": 100, "currency": "usd", "capture_method": "automatic",
+            "metadata": {
+                "resource_type": "room", "resource_id": room_id,
+                "buyer_agent_id": "p26_scope_other",
+            },
+        }
+        r2 = client.post(f"/rooms/{room_id}/join",
+            json={"agent_id": "p26_scope_other", "payment_intent_id": "pi_p26_scope_other"},
+            headers={"x-emporia-agent-id": "p26_scope_other"})
+        assert r2.status_code == 200, r2.text
+
+
+@patch("emporia.payments.payout_winner", new_callable=AsyncMock)
+@patch("emporia.payments.verify_payment_intent", new_callable=AsyncMock)
 def test_unsubscribed_agora_member_can_still_read_own_receipt(mock_verify, mock_payout, client):
     """Sibling of test_kicked_room_member_can_still_read_own_receipt for Agora: an
     agent who unsubscribes from a paid_invite topic they paid for must still be able
