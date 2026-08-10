@@ -2860,11 +2860,12 @@ def _settlement_resource_viewer_allowed(resource_id: str, caller: str | None, co
         if is_paid:
             if not caller:
                 return False
-            member = conn.execute(
-                "SELECT 1 FROM agora_members WHERE topic_id=? AND agent_id=?",
-                (topic["topic_id"], caller),
-            ).fetchone()
-            return bool(member)
+            # P2-5: expiry-aware — a lapsed paid_invite entitlement no longer
+            # grants the membership-gated view of this resource's full
+            # settlement history (the caller's own receipt stays reachable via
+            # the separate ?agent_id= path regardless — see
+            # test_kicked_room_member_can_still_read_own_receipt's sibling).
+            return _agora_is_member(conn, topic["topic_id"], caller)
         return _topic_can_read(topic["visibility"], caller, topic["topic_id"], conn)
     return False
 
@@ -5120,15 +5121,43 @@ def _require_registered(agent_id: str) -> None:
 _AGORA_VISIBILITIES = {"public", "private", "restricted"}
 
 
+def _agora_is_member(conn: Any, topic_id: str, agent_id: str) -> bool:
+    """P2-5: Agora sibling of rooms.is_member()'s expiry enforcement — same
+    rule (a `paid_invite` topic's membership requires an *active* entitlement,
+    not just a still-present `agora_members` row), same two exemptions (the
+    topic owner/moderators, and an agent with no entitlement row at all for
+    this topic — grandfathered, see entitlements.has_any_grant()'s docstring).
+
+    Takes an already-open `conn` rather than owning its own connection, unlike
+    rooms.is_member() — every call site here already holds one via `with
+    DB_LOCK, get_db() as conn:`, and this must see that same transaction's
+    view of the row, not a second independent connection's.
+    """
+    member = conn.execute(
+        "SELECT role FROM agora_members WHERE topic_id=? AND agent_id=?",
+        (topic_id, agent_id),
+    ).fetchone()
+    if not member:
+        return False
+    if member["role"] in ("owner", "moderator"):
+        return True
+    topic = conn.execute(
+        "SELECT gate_type FROM agora_topics WHERE topic_id=?", (topic_id,)
+    ).fetchone()
+    gate = topic["gate_type"] if topic and "gate_type" in topic.keys() else "open"
+    if gate != "paid_invite":
+        return True
+    if entitlements.has_access("agora", topic_id, agent_id, db_path=DATABASE_PATH):
+        return True
+    return not entitlements.has_any_grant("agora", topic_id, agent_id, db_path=DATABASE_PATH)
+
+
 def _topic_can_read(visibility: str, agent_id: str | None, topic_id: str, conn: Any) -> bool:
     if visibility == "public":
         return True
     if not agent_id:
         return False
-    row = conn.execute(
-        "SELECT 1 FROM agora_members WHERE topic_id=? AND agent_id=?", (topic_id, agent_id)
-    ).fetchone()
-    return bool(row)
+    return _agora_is_member(conn, topic_id, agent_id)
 
 
 def _slugify(name: str) -> str:
@@ -5373,8 +5402,6 @@ async def subscribe_agora_topic(slug: str, req: AgoraSubscribeRequest, request: 
             "SELECT 1 FROM agora_members WHERE topic_id=? AND agent_id=?",
             (topic_id, req.agent_id),
         ).fetchone()
-        if already_member:
-            return {"status": "already_subscribed", "slug": slug, "agent_id": req.agent_id, "gate_type": gate}
 
         # P2-4 (R1): a payment buys access, not a single subscription — see
         # entitlements.py's module docstring. An agent who paid once, later
@@ -5385,6 +5412,20 @@ async def subscribe_agora_topic(slug: str, req: AgoraSubscribeRequest, request: 
         already_entitled = gate == "paid_invite" and entitlements.has_access(
             "agora", topic_id, req.agent_id, db_path=DATABASE_PATH
         )
+
+        # P2-5: "already a member" alone is no longer enough to short-circuit
+        # for free on a paid_invite topic — membership rows are never deleted
+        # on expiry (see rooms.is_member()'s docstring for why), so a member
+        # whose window has closed is still "already_member" here. Grandfather
+        # agents with no entitlement row at all (this membership predates
+        # entitlements existing). A non-paid topic's membership never expires,
+        # so the short-circuit is unconditional there.
+        if already_member and (
+            gate != "paid_invite"
+            or already_entitled
+            or not entitlements.has_any_grant("agora", topic_id, req.agent_id, db_path=DATABASE_PATH)
+        ):
+            return {"status": "already_subscribed", "slug": slug, "agent_id": req.agent_id, "gate_type": gate}
 
         if gate in ("invite", "paid_invite"):
             has_invite = conn.execute(

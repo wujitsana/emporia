@@ -159,6 +159,25 @@ def has_access(
     return True
 
 
+def has_any_grant(
+    resource_type: str, resource_id: str, agent_id: str, db_path: Path | None = None
+) -> bool:
+    """True if this agent has ever received a grant for this resource, active
+    or not. Exists to distinguish "this entitlement expired/was revoked"
+    (`has_access()` is False *and* this is True — access should now be denied)
+    from "this membership predates entitlements existing at all" (`has_access()`
+    is False *and* this is also False — a member added before P2-3 shipped, who
+    must not be locked out by expiry enforcement for a window that never
+    applied to them). See `rooms.is_member()` (P2-5), the only caller."""
+    with _LOCK, _connect(db_path) as conn:
+        row = conn.execute(
+            "SELECT 1 FROM access_entitlements "
+            "WHERE resource_type = ? AND resource_id = ? AND agent_id = ? LIMIT 1",
+            (resource_type, resource_id, agent_id),
+        ).fetchone()
+    return row is not None
+
+
 def revoke(
     resource_type: str,
     resource_id: str,

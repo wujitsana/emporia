@@ -4238,6 +4238,179 @@ def test_agora_resubscribe_within_entitlement_window_is_free_and_needs_no_invite
 
 @patch("emporia.payments.payout_winner", new_callable=AsyncMock)
 @patch("emporia.payments.verify_payment_intent", new_callable=AsyncMock)
+def test_expired_room_entitlement_blocks_private_room_read_over_http(mock_verify, mock_payout, client):
+    """P2-5, HTTP-level: a private stripe_payment room whose member's
+    entitlement has expired must actually deny GET /rooms/{id} through the
+    real request path, not just at the rooms.is_member() unit level. Backdates
+    the entitlement's expires_at directly (deterministic, no sleep)."""
+    import sqlite3
+    from emporia.relay_server import DATABASE_PATH
+    from datetime import UTC, datetime, timedelta
+
+    _register(client, "p25_room_owner")
+    _register(client, "p25_room_payer")
+    mock_payout.return_value = {"transfer_id": "tr_p25_room"}
+
+    r = client.post("/rooms", json={
+        "name": "P2-5 Expiry Room", "creator_id": "p25_room_owner",
+        "room_type": "private", "gate_type": "stripe_payment", "entry_fee_cents": 100,
+        "access_duration_days": 1,
+    },
+        headers={"x-emporia-agent-id": "p25_room_owner"})
+    assert r.status_code == 200, r.text
+    room_id = r.json()["room_id"]
+
+    with patch("emporia.relay_server.AGENT_REGISTRY.get_stripe_account", return_value="acct_p25_room"):
+        mock_verify.return_value = {
+            "status": "succeeded", "payment_intent_id": "pi_p25_room",
+            "amount": 100, "currency": "usd", "capture_method": "automatic",
+            "metadata": {
+                "resource_type": "room", "resource_id": room_id,
+                "buyer_agent_id": "p25_room_payer",
+            },
+        }
+        joined = client.post(f"/rooms/{room_id}/join",
+            json={"agent_id": "p25_room_payer", "payment_intent_id": "pi_p25_room"},
+            headers={"x-emporia-agent-id": "p25_room_payer"})
+        assert joined.status_code == 200, joined.text
+
+    still_in = client.get(f"/rooms/{room_id}", headers={"x-emporia-agent-id": "p25_room_payer"})
+    assert still_in.status_code == 200, still_in.text
+
+    conn = sqlite3.connect(DATABASE_PATH)
+    conn.execute(
+        "UPDATE access_entitlements SET expires_at = ? "
+        "WHERE resource_type='room' AND resource_id=? AND agent_id='p25_room_payer'",
+        ((datetime.now(UTC) - timedelta(hours=1)).isoformat(), room_id),
+    )
+    conn.commit()
+    conn.close()
+
+    expired = client.get(f"/rooms/{room_id}", headers={"x-emporia-agent-id": "p25_room_payer"})
+    assert expired.status_code == 403, expired.text
+
+
+@patch("emporia.payments.payout_winner", new_callable=AsyncMock)
+@patch("emporia.payments.verify_payment_intent", new_callable=AsyncMock)
+def test_expired_agora_entitlement_blocks_private_topic_read_over_http(mock_verify, mock_payout, client):
+    """P2-5, Agora sibling of the room HTTP-level expiry test — a private
+    paid_invite topic's subscriber loses read access once their entitlement
+    window closes."""
+    import sqlite3
+    from emporia.relay_server import DATABASE_PATH
+    from datetime import UTC, datetime, timedelta
+
+    _register(client, "p25_agora_owner")
+    _register(client, "p25_agora_payer")
+    mock_payout.return_value = {"transfer_id": "tr_p25_agora"}
+
+    r = client.post("/agoras/topics", json={
+        "name": "P2-5 Expiry Topic", "description": "d", "visibility": "private",
+        "gate_type": "paid_invite", "entry_fee_cents": 100, "creator_id": "p25_agora_owner",
+        "access_duration_days": 1,
+    },
+        headers={"x-emporia-agent-id": "p25_agora_owner"})
+    assert r.status_code == 200, r.text
+    slug, topic_id = r.json()["slug"], r.json()["topic_id"]
+    client.post(f"/agoras/topics/{slug}/invite", json={"invitee_id": "p25_agora_payer"},
+        headers={"x-emporia-agent-id": "p25_agora_owner"})
+
+    with patch("emporia.relay_server.AGENT_REGISTRY.get_stripe_account", return_value="acct_p25_agora"):
+        mock_verify.return_value = {
+            "status": "succeeded", "payment_intent_id": "pi_p25_agora",
+            "amount": 100, "currency": "usd", "capture_method": "automatic",
+            "metadata": {
+                "resource_type": "agora", "resource_id": topic_id,
+                "buyer_agent_id": "p25_agora_payer",
+            },
+        }
+        subscribed = client.post(f"/agoras/topics/{slug}/subscribe",
+            json={"agent_id": "p25_agora_payer", "payment_intent_id": "pi_p25_agora"},
+            headers={"x-emporia-agent-id": "p25_agora_payer"})
+        assert subscribed.status_code == 200, subscribed.text
+
+    still_in = client.get(f"/agoras/topics/{slug}", headers={"x-emporia-agent-id": "p25_agora_payer"})
+    assert still_in.status_code == 200, still_in.text
+
+    conn = sqlite3.connect(DATABASE_PATH)
+    conn.execute(
+        "UPDATE access_entitlements SET expires_at = ? "
+        "WHERE resource_type='agora' AND resource_id=? AND agent_id='p25_agora_payer'",
+        ((datetime.now(UTC) - timedelta(hours=1)).isoformat(), topic_id),
+    )
+    conn.commit()
+    conn.close()
+
+    expired = client.get(f"/agoras/topics/{slug}", headers={"x-emporia-agent-id": "p25_agora_payer"})
+    assert expired.status_code == 403, expired.text
+
+
+@patch("emporia.payments.payout_winner", new_callable=AsyncMock)
+@patch("emporia.payments.verify_payment_intent", new_callable=AsyncMock)
+def test_expired_room_entitlement_drops_settlement_session_view_but_keeps_own_receipt(
+    mock_verify, mock_payout, client
+):
+    """P2-5: _settlement_resource_viewer_allowed() routes a private
+    stripe_payment room's ?session_id= access through rooms.is_member(), so an
+    expired entitlement must also revoke that membership-gated view of the
+    resource's full settlement history — while the payer's own receipt stays
+    reachable via the separate ?agent_id= path (payments-join, not
+    membership-gated), exactly as it already does for a kicked member
+    (test_kicked_room_member_can_still_read_own_receipt). Both properties in
+    one test so a fix to one path can't accidentally regress the other."""
+    import sqlite3
+    from emporia.relay_server import DATABASE_PATH
+    from datetime import UTC, datetime, timedelta
+
+    _register(client, "p25_view_owner")
+    _register(client, "p25_view_payer")
+    mock_payout.return_value = {"transfer_id": "tr_p25_view"}
+
+    r = client.post("/rooms", json={
+        "name": "P2-5 Settlement View Room", "creator_id": "p25_view_owner",
+        "room_type": "private", "gate_type": "stripe_payment", "entry_fee_cents": 100,
+        "access_duration_days": 1,
+    },
+        headers={"x-emporia-agent-id": "p25_view_owner"})
+    assert r.status_code == 200, r.text
+    room_id = r.json()["room_id"]
+
+    with patch("emporia.relay_server.AGENT_REGISTRY.get_stripe_account", return_value="acct_p25_view"):
+        mock_verify.return_value = {
+            "status": "succeeded", "payment_intent_id": "pi_p25_view",
+            "amount": 100, "currency": "usd", "capture_method": "automatic",
+            "metadata": {
+                "resource_type": "room", "resource_id": room_id,
+                "buyer_agent_id": "p25_view_payer",
+            },
+        }
+        joined = client.post(f"/rooms/{room_id}/join",
+            json={"agent_id": "p25_view_payer", "payment_intent_id": "pi_p25_view"},
+            headers={"x-emporia-agent-id": "p25_view_payer"})
+        assert joined.status_code == 200, joined.text
+
+    conn = sqlite3.connect(DATABASE_PATH)
+    conn.execute(
+        "UPDATE access_entitlements SET expires_at = ? "
+        "WHERE resource_type='room' AND resource_id=? AND agent_id='p25_view_payer'",
+        ((datetime.now(UTC) - timedelta(hours=1)).isoformat(), room_id),
+    )
+    conn.commit()
+    conn.close()
+
+    session_view = client.get(f"/payments/settlements/{room_id}",
+        headers={"x-emporia-agent-id": "p25_view_payer"})
+    assert session_view.status_code == 403, session_view.text
+
+    own_receipt = client.get("/payments/settlements", params={"agent_id": "p25_view_payer"},
+        headers={"x-emporia-agent-id": "p25_view_payer"})
+    assert own_receipt.status_code == 200, own_receipt.text
+    assert any(s["session_id"] == room_id for s in own_receipt.json()["settlements"]), \
+        "an agent whose entitlement expired must still be able to read their own receipt"
+
+
+@patch("emporia.payments.payout_winner", new_callable=AsyncMock)
+@patch("emporia.payments.verify_payment_intent", new_callable=AsyncMock)
 def test_kicked_room_member_can_still_read_own_receipt(mock_verify, mock_payout, client):
     """N5 review R3: the ?agent_id= branch of list_settlements only joined through
     `participants`, which has no rows for room settlements at all — so there was
@@ -6069,7 +6242,9 @@ def test_chess_module_initial_state():
 
 @pytest.fixture
 def rooms_db_path():
-    """Isolated SQLite for room tests."""
+    """Isolated SQLite for room tests. Also inits the entitlements schema (P2-5)
+    — is_member() consults access_entitlements for stripe_payment rooms, mirroring
+    how init_db() bundles both schemas together for the real relay."""
     import tempfile
     with tempfile.NamedTemporaryFile(suffix=".sqlite3", delete=False) as f:
         path = Path(f.name)
@@ -6077,7 +6252,9 @@ def rooms_db_path():
     conn = sqlite3.connect(path)
     conn.row_factory = sqlite3.Row
     from emporia.rooms import init_rooms_schema
+    from emporia.entitlements import init_entitlements_schema
     init_rooms_schema(conn)
+    init_entitlements_schema(conn)
     conn.commit()
     conn.close()
     yield path
@@ -6191,6 +6368,109 @@ def test_remove_member(rooms_db_path):
     assert not is_member(room.room_id, "agent_bob", db_path=rooms_db_path)
     # Removing someone not in room → False
     assert not remove_member(room.room_id, "agent_nobody", db_path=rooms_db_path)
+
+
+def test_is_member_expired_entitlement_blocks_paid_room_access(rooms_db_path):
+    """P2-5: is_member() must consult the entitlement's active window for a
+    stripe_payment room, not just membership. A member still present in
+    members_json whose entitlement has expired must read as not-a-member — the
+    whole point of access_duration_days is that the window actually closes."""
+    from emporia.rooms import create_room, add_member, is_member
+    from emporia.entitlements import grant
+    import sqlite3
+    from datetime import UTC, datetime, timedelta
+
+    room = create_room("Expiring Paid Room", "agent_owner", room_type="private",
+                       gate_type="stripe_payment", entry_fee_cents=100,
+                       access_duration_days=1, db_path=rooms_db_path)
+    add_member(room.room_id, "agent_payer", db_path=rooms_db_path)
+    grant("room", room.room_id, "agent_payer", "pi_expiring", duration_days=1,
+          db_path=rooms_db_path)
+    assert is_member(room.room_id, "agent_payer", db_path=rooms_db_path), \
+        "a fresh grant must not be immediately blocked"
+
+    conn = sqlite3.connect(rooms_db_path)
+    conn.execute(
+        "UPDATE access_entitlements SET expires_at = ? "
+        "WHERE resource_type='room' AND resource_id=? AND agent_id='agent_payer'",
+        ((datetime.now(UTC) - timedelta(hours=1)).isoformat(), room.room_id),
+    )
+    conn.commit()
+    conn.close()
+
+    assert not is_member(room.room_id, "agent_payer", db_path=rooms_db_path), \
+        "a member whose entitlement window has closed must no longer read as a member"
+
+
+def test_is_member_free_room_member_unaffected_by_expiry_check(rooms_db_path):
+    """P2-5: expiry enforcement only applies to stripe_payment rooms — a free
+    (open) room's membership has never involved an entitlement at all, and
+    must never be affected by this check."""
+    from emporia.rooms import create_room, add_member, is_member
+
+    room = create_room("Free Room", "agent_owner", room_type="public",
+                       gate_type="open", db_path=rooms_db_path)
+    add_member(room.room_id, "agent_member", db_path=rooms_db_path)
+    assert is_member(room.room_id, "agent_member", db_path=rooms_db_path)
+
+
+def test_is_member_creator_unaffected_by_expiry_check(rooms_db_path):
+    """P2-5: the room creator never paid to be in their own room and must
+    never expire out of it, even in a stripe_payment room with no entitlement
+    row for them at all."""
+    from emporia.rooms import create_room, is_member
+
+    room = create_room("Owner's Paid Room", "agent_owner", room_type="private",
+                       gate_type="stripe_payment", entry_fee_cents=100,
+                       db_path=rooms_db_path)
+    assert is_member(room.room_id, "agent_owner", db_path=rooms_db_path)
+
+
+def test_is_member_grandfathers_paid_member_with_no_entitlement_row(rooms_db_path):
+    """P2-5: a member added directly (simulating a paid-room member who joined
+    before P2-3 shipped, so no entitlement row was ever created for them) must
+    not be locked out — has_any_grant() is False for them, which is the
+    grandfather signal, distinct from an entitlement that actively expired."""
+    from emporia.rooms import create_room, add_member, is_member
+
+    room = create_room("Legacy Paid Room", "agent_owner", room_type="private",
+                       gate_type="stripe_payment", entry_fee_cents=100,
+                       db_path=rooms_db_path)
+    add_member(room.room_id, "agent_legacy_payer", db_path=rooms_db_path)
+    assert is_member(room.room_id, "agent_legacy_payer", db_path=rooms_db_path), \
+        "a member with no entitlement row at all must be grandfathered in, not locked out"
+
+
+def test_is_member_regrant_after_expiry_restores_access(rooms_db_path):
+    """P2-5: a fresh grant (e.g. a repurchase after the window closed) must
+    restore is_member() to True — mirrors
+    test_entitlement_newest_grant_wins_over_older_revoke at the is_member()
+    level."""
+    from emporia.rooms import create_room, add_member, is_member
+    from emporia.entitlements import grant
+    import sqlite3
+    from datetime import UTC, datetime, timedelta
+
+    room = create_room("Regrant Room", "agent_owner", room_type="private",
+                       gate_type="stripe_payment", entry_fee_cents=100,
+                       access_duration_days=1, db_path=rooms_db_path)
+    add_member(room.room_id, "agent_payer", db_path=rooms_db_path)
+    grant("room", room.room_id, "agent_payer", "pi_first", duration_days=1,
+          db_path=rooms_db_path)
+    conn = sqlite3.connect(rooms_db_path)
+    conn.execute(
+        "UPDATE access_entitlements SET expires_at = ? "
+        "WHERE resource_type='room' AND resource_id=? AND agent_id='agent_payer'",
+        ((datetime.now(UTC) - timedelta(hours=1)).isoformat(), room.room_id),
+    )
+    conn.commit()
+    conn.close()
+    assert not is_member(room.room_id, "agent_payer", db_path=rooms_db_path)
+
+    grant("room", room.room_id, "agent_payer", "pi_second", duration_days=1,
+          db_path=rooms_db_path)
+    assert is_member(room.room_id, "agent_payer", db_path=rooms_db_path), \
+        "a fresh grant must restore access even though an earlier one expired"
 
 
 def test_invite_and_has_invite(rooms_db_path):

@@ -40,6 +40,8 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, Literal
 
+from emporia import entitlements
+
 ROOM_DB_PATH = Path(
     os.getenv("EMPORIA_DB_PATH", "~/.hermes/emporia_relay.sqlite3")
 ).expanduser()
@@ -318,13 +320,34 @@ def list_rooms(
 
 
 def is_member(room_id: str, agent_id: str, db_path: Path | None = None) -> bool:
+    """P2-5: for a `stripe_payment` room, membership requires an *active*
+    entitlement — the whole point of `access_duration_days` is that a window
+    that closes actually closes, not just that it stops future free rejoins
+    (P2-4). `relay_server.py` has multiple call sites that gate access on room
+    membership; routing expiry through this one function means every one of
+    them enforces it automatically, instead of each needing its own copy of
+    the same check.
+
+    Two exemptions, both intentional: the room creator (never paid to be
+    there, can't expire out of their own room) and, for anyone else, an agent
+    with no entitlement row at all for this resource — see
+    `entitlements.has_any_grant()`'s docstring for why "predates entitlements"
+    must never be conflated with "entitlement lapsed."
+    """
     with _LOCK, _connect(db_path) as conn:
         row = conn.execute(
-            "SELECT members_json FROM rooms WHERE room_id = ?", (room_id,)
+            "SELECT members_json, gate_type, creator_id FROM rooms WHERE room_id = ?",
+            (room_id,),
         ).fetchone()
     if not row:
         return False
-    return agent_id in json.loads(row["members_json"] or "[]")
+    if agent_id not in json.loads(row["members_json"] or "[]"):
+        return False
+    if row["gate_type"] != "stripe_payment" or agent_id == row["creator_id"]:
+        return True
+    if entitlements.has_access("room", room_id, agent_id, db_path=db_path):
+        return True
+    return not entitlements.has_any_grant("room", room_id, agent_id, db_path=db_path)
 
 
 def add_member(room_id: str, agent_id: str, db_path: Path | None = None) -> bool:
