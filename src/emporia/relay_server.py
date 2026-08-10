@@ -755,6 +755,7 @@ def init_db() -> None:
         _migrate_payments(conn)
         _migrate_settlements(conn)
         _migrate_settlement_dedupe_key(conn)
+        _migrate_settlement_refund_columns(conn)
         # Rename aroga_* → agora_* if old names still exist (typo fix)
         _migrate_agora_tables(conn)
         # Rooms schema (separate DDL to keep clean)
@@ -1032,6 +1033,26 @@ def _collapse_duplicate_settlements_by_dedupe_key(conn: Any) -> None:
         "DELETE FROM settlements WHERE dedupe_key IS NOT NULL AND rowid NOT IN "
         "(SELECT MIN(rowid) FROM settlements WHERE dedupe_key IS NOT NULL GROUP BY dedupe_key)"
     )
+
+
+def _migrate_settlement_refund_columns(conn: Any) -> None:
+    """Add `refund_id`/`reversal_id` to settlements (P2r-3, R3) — P2-7's
+    `_refund_kicked_room_payer()` called Stripe to reverse a transfer and
+    refund a charge but recorded neither outcome: `transfer_status` stayed
+    `'transferred'`, `payments.status` stayed `'confirmed'`, and the Stripe
+    refund/reversal ids weren't stored anywhere — money moved, no record,
+    the exact class of bug P1a-2 fixed for settlements in the first place,
+    reintroduced on the refund side by the pass that added refunds.
+
+    NULL on every row (existing or freshly inserted) means "no refund
+    happened" — the correct default, no backfill needed — so no marker gate,
+    same as `access_duration_days` (P2-3).
+    """
+    cols = {r[1] for r in conn.execute("PRAGMA table_info(settlements)").fetchall()}
+    if "refund_id" not in cols:
+        conn.execute("ALTER TABLE settlements ADD COLUMN refund_id TEXT")
+    if "reversal_id" not in cols:
+        conn.execute("ALTER TABLE settlements ADD COLUMN reversal_id TEXT")
 
 
 def _migrate_authorized_agents(conn: Any) -> None:
@@ -2940,7 +2961,7 @@ _SETTLEMENT_PUBLIC_COLUMNS = frozenset({
     "settlement_id", "session_id", "winner_id", "total_stake_cents",
     "platform_fee_cents", "winner_payout_cents", "platform_fee_bps",
     "payment_intent_ids", "transfer_id", "transfer_status", "status",
-    "created_at", "payer_id",
+    "created_at", "payer_id", "refund_id", "reversal_id",
 })
 _SETTLEMENT_INTERNAL_COLUMNS = frozenset({"dedupe_key"})
 
@@ -3009,6 +3030,12 @@ def _settlement_row_dict(
         d["transfer_id"] = "[redacted]"
     if d.get("payer_id") is not None:
         d["payer_id"] = "[redacted]"
+    # P2r-3 (R3): refund_id/reversal_id are per-payment Stripe identifiers,
+    # the same class N7-R4 already covers for transfer_id — redact alongside it.
+    if d.get("refund_id"):
+        d["refund_id"] = "[redacted]"
+    if d.get("reversal_id"):
+        d["reversal_id"] = "[redacted]"
     return d
 
 
@@ -4926,19 +4953,32 @@ async def _refund_kicked_room_payer(room_id: str, agent_id: str) -> dict[str, An
     Returns an outcome dict rather than raising: a kick has already succeeded
     by the time this runs, and a Stripe failure here must not read as the
     kick itself having failed.
+
+    P2r-3 (R3): every real-money outcome here is persisted before returning —
+    this used to only ever *read* the settlement row and call Stripe, so
+    afterward `transfer_status` still said `'transferred'`,
+    `payments.status` still said `'confirmed'`, and neither the refund nor
+    the reversal id was stored anywhere. Every settlement read path (the
+    payer's own receipt, the creator's, the operator's) served a record that
+    contradicted what actually happened at Stripe. A reversal that succeeds
+    followed by a refund that fails is its own persisted state
+    (`'reversed_pending_refund'`) rather than being indistinguishable from
+    "nothing happened" — an operator needs to see that a creator's payout was
+    already clawed back even though the payer hasn't been made whole yet.
     """
     from emporia.payments import reverse_transfer, refund_payment_intent, settlement_dedupe_key
 
     with DB_LOCK, get_db() as conn:
         row = conn.execute(
-            "SELECT payment_intent_ids, transfer_id, transfer_status FROM settlements "
-            "WHERE session_id=? AND payer_id=? ORDER BY created_at DESC LIMIT 1",
+            "SELECT settlement_id, payment_intent_ids, transfer_id, transfer_status "
+            "FROM settlements WHERE session_id=? AND payer_id=? ORDER BY created_at DESC LIMIT 1",
             (room_id, agent_id),
         ).fetchone()
     pi_ids = json.loads(row["payment_intent_ids"] or "[]") if row else []
     if not row or not pi_ids:
         return {"refunded": False, "reason": "no_payment_found"}
 
+    settlement_id = row["settlement_id"]
     payment_intent_id = pi_ids[0]
     dedupe_key = settlement_dedupe_key(room_id, agent_id, pi_ids)
 
@@ -4950,6 +4990,7 @@ async def _refund_kicked_room_payer(room_id: str, agent_id: str) -> dict[str, An
             )
             reversal_id = reversal["reversal_id"]
         except Exception as e:
+            # Nothing changed at Stripe — nothing to persist.
             return {"refunded": False, "reason": f"transfer_reversal_failed: {e}"}
 
     try:
@@ -4957,10 +4998,27 @@ async def _refund_kicked_room_payer(room_id: str, agent_id: str) -> dict[str, An
             payment_intent_id, idempotency_key="emporia:refund:" + dedupe_key
         )
     except Exception as e:
+        if reversal_id:
+            with DB_LOCK, get_db() as conn:
+                conn.execute(
+                    "UPDATE settlements SET transfer_status='reversed_pending_refund', "
+                    "reversal_id=? WHERE settlement_id=?",
+                    (reversal_id, settlement_id),
+                )
         return {
             "refunded": False, "reason": f"refund_failed: {e}", "reversal_id": reversal_id,
         }
 
+    with DB_LOCK, get_db() as conn:
+        conn.execute(
+            "UPDATE settlements SET transfer_status='refunded', refund_id=?, reversal_id=? "
+            "WHERE settlement_id=?",
+            (refund["refund_id"], reversal_id, settlement_id),
+        )
+        conn.execute(
+            "UPDATE payments SET status='refunded' WHERE payment_intent_id=?",
+            (payment_intent_id,),
+        )
     return {"refunded": True, "refund_id": refund["refund_id"], "reversal_id": reversal_id}
 
 

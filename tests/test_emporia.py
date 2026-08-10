@@ -4925,6 +4925,120 @@ def test_kick_with_refund_reverses_transfer_then_refunds_payment(
         "the reversal and refund must be derived from the same settlement_dedupe_key(), " \
         "identifying the same purchase"
 
+    # P2r-3 (R3): the outcome must be persisted, not just returned in the response.
+    from emporia.relay_server import get_db
+    with get_db() as conn:
+        settlement = conn.execute(
+            "SELECT transfer_status, refund_id, reversal_id FROM settlements "
+            "WHERE session_id=? AND payer_id=?", (room_id, payer),
+        ).fetchone()
+        payment = conn.execute(
+            "SELECT status FROM payments WHERE payment_intent_id=?", (pi_id,),
+        ).fetchone()
+    assert settlement["transfer_status"] == "refunded", \
+        f"settlement transfer_status must reflect the refund, got {settlement['transfer_status']!r}"
+    assert settlement["refund_id"] == "re_p27_refund"
+    assert settlement["reversal_id"] == "trr_p27_refund"
+    assert payment["status"] == "refunded", \
+        f"the payment row must reflect the refund, got {payment['status']!r}"
+
+
+def test_kick_refund_ids_redacted_for_a_co_payer(client):
+    """P2r-3 (R3): refund_id/reversal_id are per-payment Stripe identifiers,
+    the same class transfer_id already is (N7-R4) — a co-payer reading the
+    room's settlements must not see another payer's refund/reversal ids any
+    more than they'd see their transfer_id. Sets refund_id/reversal_id
+    directly on a record_settlement()-created row (mirrors
+    test_settlement_row_dict_never_leaks_internal_columns_to_a_co_payer's
+    setup) rather than driving a full kick+refund flow, since the property
+    under test is the redaction, not the refund mechanics."""
+    import sqlite3
+    from emporia.relay_server import record_settlement, DATABASE_PATH
+    from emporia import rooms as rooms_db
+
+    owner = "p2r3_redact_owner"
+    payer_a = "p2r3_redact_payer_a"
+    payer_b = "p2r3_redact_payer_b"
+    _register(client, owner)
+    _register(client, payer_a)
+    _register(client, payer_b)
+
+    r = client.post("/rooms", json={
+        "name": "P2r-3 Redact Room", "creator_id": owner,
+        "room_type": "private", "gate_type": "stripe_payment", "entry_fee_cents": 100,
+    },
+        headers={"x-emporia-agent-id": owner})
+    assert r.status_code == 200, r.text
+    room_id = r.json()["room_id"]
+
+    rooms_db.add_member(room_id, payer_a, db_path=DATABASE_PATH)
+    rooms_db.add_member(room_id, payer_b, db_path=DATABASE_PATH)
+    for payer, pi in ((payer_a, "pi_p2r3_redact_a"), (payer_b, "pi_p2r3_redact_b")):
+        record_settlement({
+            "session_id": room_id, "winner_id": owner, "outcome_type": "room_entry",
+            "status": "settled", "total_stake_cents": 100, "platform_fee_cents": 0,
+            "winner_payout_cents": 100, "platform_fee_bps": 0,
+            "payment_intent_ids": [pi], "transfer_id": f"tr_{pi}",
+            "transfer_status": "transferred", "payer_id": payer,
+        })
+    conn = sqlite3.connect(DATABASE_PATH)
+    conn.execute(
+        "UPDATE settlements SET transfer_status='refunded', refund_id=?, reversal_id=? "
+        "WHERE session_id=? AND payer_id=?",
+        ("re_p2r3_redact_b", "trr_p2r3_redact_b", room_id, payer_b),
+    )
+    conn.commit()
+    conn.close()
+
+    resp = client.get(f"/payments/settlements/{room_id}", headers={"x-emporia-agent-id": payer_a})
+    assert resp.status_code == 200, resp.text
+    rows = resp.json()["settlements"]
+    b_row = next(s for s in rows if s["payer_id"] == "[redacted]")
+
+    assert b_row["refund_id"] == "[redacted]", \
+        f"payer B's refund_id must be redacted for payer A, got {b_row['refund_id']!r}"
+    assert b_row["reversal_id"] == "[redacted]", \
+        f"payer B's reversal_id must be redacted for payer A, got {b_row['reversal_id']!r}"
+
+
+@patch("emporia.payments.refund_payment_intent", new_callable=AsyncMock)
+@patch("emporia.payments.reverse_transfer", new_callable=AsyncMock)
+@patch("emporia.payments.payout_winner", new_callable=AsyncMock)
+@patch("emporia.payments.verify_payment_intent", new_callable=AsyncMock)
+def test_kick_refund_partial_failure_records_reversal_without_refund(
+    mock_verify, mock_payout, mock_reverse, mock_refund, client
+):
+    """P2r-3 (R3): reversal succeeds, refund fails — a real intermediate state
+    (the creator's payout has genuinely been clawed back even though the
+    payer hasn't been made whole) that must be persisted distinctly from
+    "nothing happened," so an operator can see it and finish the refund
+    manually. Must fail pre-fix: nothing is written on any outcome, so the
+    settlement stays 'transferred' regardless."""
+    mock_refund.side_effect = RuntimeError("stripe refund failed")
+    with patch("emporia.relay_server.AGENT_REGISTRY.get_stripe_account", return_value="acct_p2r3_partial"):
+        owner, payer, room_id, transfer_id, pi_id = _p27_paid_room_with_kicked_payer(
+            client, mock_verify, mock_payout, suffix="partial"
+        )
+        mock_reverse.return_value = {"transfer_id": transfer_id, "reversal_id": "trr_p2r3_partial"}
+        kicked = client.post(f"/rooms/{room_id}/kick",
+            json={"target_agent_id": payer, "refund": True},
+            headers={"x-emporia-agent-id": owner})
+    assert kicked.status_code == 200, kicked.text
+    assert kicked.json()["refund"]["refunded"] is False
+    assert kicked.json()["refund"]["reversal_id"] == "trr_p2r3_partial"
+
+    from emporia.relay_server import get_db
+    with get_db() as conn:
+        settlement = conn.execute(
+            "SELECT transfer_status, refund_id, reversal_id FROM settlements "
+            "WHERE session_id=? AND payer_id=?", (room_id, payer),
+        ).fetchone()
+    assert settlement["transfer_status"] == "reversed_pending_refund", \
+        f"a successful reversal with a failed refund must be its own persisted " \
+        f"state, got {settlement['transfer_status']!r}"
+    assert settlement["reversal_id"] == "trr_p2r3_partial"
+    assert settlement["refund_id"] is None, "no refund happened — refund_id must stay NULL"
+
 
 @patch("emporia.payments.refund_payment_intent", new_callable=AsyncMock)
 @patch("emporia.payments.reverse_transfer", new_callable=AsyncMock)
