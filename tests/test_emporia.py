@@ -5073,6 +5073,76 @@ def test_kick_with_refund_reverses_transfer_then_refunds_payment(
         f"the payment row must reflect the refund, got {payment['status']!r}"
 
 
+@patch("emporia.payments.refund_payment_intent", new_callable=AsyncMock)
+@patch("emporia.payments.reverse_transfer", new_callable=AsyncMock)
+@patch("emporia.payments.payout_winner", new_callable=AsyncMock)
+@patch("emporia.payments.verify_payment_intent", new_callable=AsyncMock)
+def test_kick_refund_survives_a_db_write_failure_after_stripe_succeeds(
+    mock_verify, mock_payout, mock_reverse, mock_refund, client
+):
+    """S1: Stripe's refund+reversal succeed, but the settlement/payments write
+    that persists that outcome raises (lock contention, disk full, whatever).
+    Real money already moved -- the endpoint must still report 200 with the
+    true Stripe outcome (refunded, refund_id, reversal_id) plus
+    persisted=False, not 500 the caller into believing the kick itself
+    failed. Must fail pre-fix: today that write has no try/except, so the
+    exception propagates straight through kick_from_room() into a 500."""
+    import sqlite3
+
+    from emporia.relay_server import get_db as real_get_db
+
+    class _FailingConn:
+        def __init__(self, conn):
+            self._conn = conn
+
+        def execute(self, sql, *args, **kwargs):
+            if "UPDATE settlements SET transfer_status='refunded'" in sql:
+                raise sqlite3.OperationalError("database is locked")
+            return self._conn.execute(sql, *args, **kwargs)
+
+        def __enter__(self):
+            self._conn.__enter__()
+            return self
+
+        def __exit__(self, *exc):
+            return self._conn.__exit__(*exc)
+
+        def __getattr__(self, name):
+            return getattr(self._conn, name)
+
+    with patch("emporia.relay_server.AGENT_REGISTRY.get_stripe_account", return_value="acct_p2r6_s1"):
+        owner, payer, room_id, transfer_id, pi_id = _p27_paid_room_with_kicked_payer(
+            client, mock_verify, mock_payout, suffix="s1_write_fail"
+        )
+        mock_reverse.return_value = {"transfer_id": transfer_id, "reversal_id": "trr_s1"}
+        mock_refund.return_value = {"payment_intent_id": pi_id, "refund_id": "re_s1"}
+
+        with patch(
+            "emporia.relay_server.get_db",
+            side_effect=lambda: _FailingConn(real_get_db()),
+        ):
+            kicked = client.post(f"/rooms/{room_id}/kick",
+                json={"target_agent_id": payer, "refund": True},
+                headers={"x-emporia-agent-id": owner})
+
+    assert kicked.status_code == 200, kicked.text
+    body = kicked.json()["refund"]
+    assert body["refunded"] is True, \
+        "Stripe's refund genuinely succeeded -- the response must say so even though the local write failed"
+    assert body["refund_id"] == "re_s1"
+    assert body["reversal_id"] == "trr_s1"
+    assert body["persisted"] is False, \
+        "a failed local write must be surfaced, not silently swallowed"
+
+    # The kick itself (membership removal, ban, revoke) went through in an
+    # earlier, separate transaction -- unaffected by this later write failure.
+    from emporia.entitlements import is_revoked
+    from emporia.relay_server import DATABASE_PATH
+    from emporia import rooms as rooms_db
+    assert not rooms_db.is_member(room_id, payer, db_path=DATABASE_PATH)
+    assert is_revoked("room", room_id, payer, reason="kicked", db_path=DATABASE_PATH)
+
+
 def test_kick_refund_ids_redacted_for_a_co_payer(client):
     """P2r-3 (R3): refund_id/reversal_id are per-payment Stripe identifiers,
     the same class transfer_id already is (N7-R4) — a co-payer reading the

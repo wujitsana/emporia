@@ -4965,6 +4965,14 @@ async def _refund_kicked_room_payer(room_id: str, agent_id: str) -> dict[str, An
     (`'reversed_pending_refund'`) rather than being indistinguishable from
     "nothing happened" — an operator needs to see that a creator's payout was
     already clawed back even though the payer hasn't been made whole yet.
+
+    S1: the local write above can itself fail (lock contention, disk full)
+    after Stripe has already moved real money -- that must not read as the
+    kick having failed. Each write is independently wrapped; on write
+    failure the real Stripe outcome is still returned, with `persisted:
+    False` added so an operator can find and reconcile it, instead of the
+    exception propagating into a 500 for an operation that actually
+    succeeded.
     """
     from emporia.payments import reverse_transfer, refund_payment_intent, settlement_dedupe_key
 
@@ -4999,26 +5007,50 @@ async def _refund_kicked_room_payer(room_id: str, agent_id: str) -> dict[str, An
         )
     except Exception as e:
         if reversal_id:
-            with DB_LOCK, get_db() as conn:
-                conn.execute(
-                    "UPDATE settlements SET transfer_status='reversed_pending_refund', "
-                    "reversal_id=? WHERE settlement_id=?",
-                    (reversal_id, settlement_id),
+            try:
+                with DB_LOCK, get_db() as conn:
+                    conn.execute(
+                        "UPDATE settlements SET transfer_status='reversed_pending_refund', "
+                        "reversal_id=? WHERE settlement_id=?",
+                        (reversal_id, settlement_id),
+                    )
+            except Exception as persist_exc:
+                # S1: Stripe's reversal already happened — a local write failure
+                # on top of it must still report the reversal, not 500 and hide it.
+                print(
+                    f"_refund_kicked_room_payer: failed to persist "
+                    f"reversed_pending_refund for settlement {settlement_id}: {persist_exc}"
                 )
+                return {
+                    "refunded": False, "reason": f"refund_failed: {e}",
+                    "reversal_id": reversal_id, "persisted": False,
+                }
         return {
             "refunded": False, "reason": f"refund_failed: {e}", "reversal_id": reversal_id,
         }
 
-    with DB_LOCK, get_db() as conn:
-        conn.execute(
-            "UPDATE settlements SET transfer_status='refunded', refund_id=?, reversal_id=? "
-            "WHERE settlement_id=?",
-            (refund["refund_id"], reversal_id, settlement_id),
+    try:
+        with DB_LOCK, get_db() as conn:
+            conn.execute(
+                "UPDATE settlements SET transfer_status='refunded', refund_id=?, reversal_id=? "
+                "WHERE settlement_id=?",
+                (refund["refund_id"], reversal_id, settlement_id),
+            )
+            conn.execute(
+                "UPDATE payments SET status='refunded' WHERE payment_intent_id=?",
+                (payment_intent_id,),
+            )
+    except Exception as persist_exc:
+        # S1: refund + reversal already happened at Stripe — a local write
+        # failure on top of that must still report the real outcome, not 500.
+        print(
+            f"_refund_kicked_room_payer: failed to persist refund for "
+            f"settlement {settlement_id}: {persist_exc}"
         )
-        conn.execute(
-            "UPDATE payments SET status='refunded' WHERE payment_intent_id=?",
-            (payment_intent_id,),
-        )
+        return {
+            "refunded": True, "refund_id": refund["refund_id"], "reversal_id": reversal_id,
+            "persisted": False,
+        }
     return {"refunded": True, "refund_id": refund["refund_id"], "reversal_id": reversal_id}
 
 
