@@ -4236,6 +4236,187 @@ def test_agora_resubscribe_within_entitlement_window_is_free_and_needs_no_invite
         f"payout fired {mock_payout.call_count}x across both subscribes"
 
 
+def _p2r2_expire_agora_entitlement(topic_id: str, agent_id: str) -> None:
+    """Backdate an Agora entitlement's expires_at, deterministic (no sleep)."""
+    import sqlite3
+    from datetime import UTC, datetime, timedelta
+    from emporia.relay_server import DATABASE_PATH
+    conn = sqlite3.connect(DATABASE_PATH)
+    conn.execute(
+        "UPDATE access_entitlements SET expires_at = ? "
+        "WHERE resource_type='agora' AND resource_id=? AND agent_id=?",
+        ((datetime.now(UTC) - timedelta(hours=1)).isoformat(), topic_id, agent_id),
+    )
+    conn.commit()
+    conn.close()
+
+
+@patch("emporia.payments.payout_winner", new_callable=AsyncMock)
+@patch("emporia.payments.verify_payment_intent", new_callable=AsyncMock)
+def test_agora_renews_after_expiry_while_still_subscribed(mock_verify, mock_payout, client):
+    """P2r-2 (R2): the finding — before this, an expired paid_invite
+    subscriber had no path back in at all. P2-4's invite waiver was gated on
+    an *active* entitlement (already_entitled); once the window closed, the
+    original invite was already consumed (subscribe deletes it), so the
+    renewal request 403'd at the invite gate before payment was ever
+    considered — even holding a fresh, valid PaymentIntent. Must fail
+    pre-fix: the second subscribe (still a member, entitlement expired)
+    returns 403 'Invite required'."""
+    from emporia.relay_server import get_db
+
+    _register(client, "p2r2_still_owner")
+    _register(client, "p2r2_still_payer")
+    mock_payout.return_value = {"transfer_id": "tr_p2r2_still"}
+
+    r = client.post("/agoras/topics", json={
+        "name": "P2r-2 Still-Subscribed Renewal", "description": "d", "visibility": "public",
+        "gate_type": "paid_invite", "entry_fee_cents": 100, "creator_id": "p2r2_still_owner",
+        "access_duration_days": 30,
+    },
+        headers={"x-emporia-agent-id": "p2r2_still_owner"})
+    assert r.status_code == 200, r.text
+    slug, topic_id = r.json()["slug"], r.json()["topic_id"]
+    client.post(f"/agoras/topics/{slug}/invite", json={"invitee_id": "p2r2_still_payer"},
+        headers={"x-emporia-agent-id": "p2r2_still_owner"})
+
+    with patch("emporia.relay_server.AGENT_REGISTRY.get_stripe_account", return_value="acct_p2r2_still"):
+        mock_verify.return_value = {
+            "status": "succeeded", "payment_intent_id": "pi_p2r2_still_one",
+            "amount": 100, "currency": "usd", "capture_method": "automatic",
+            "metadata": {
+                "resource_type": "agora", "resource_id": topic_id,
+                "buyer_agent_id": "p2r2_still_payer",
+            },
+        }
+        first = client.post(f"/agoras/topics/{slug}/subscribe",
+            json={"agent_id": "p2r2_still_payer", "payment_intent_id": "pi_p2r2_still_one"},
+            headers={"x-emporia-agent-id": "p2r2_still_payer"})
+        assert first.status_code == 200, first.text
+
+        _p2r2_expire_agora_entitlement(topic_id, "p2r2_still_payer")
+
+        mock_verify.return_value = {
+            "status": "succeeded", "payment_intent_id": "pi_p2r2_still_two",
+            "amount": 100, "currency": "usd", "capture_method": "automatic",
+            "metadata": {
+                "resource_type": "agora", "resource_id": topic_id,
+                "buyer_agent_id": "p2r2_still_payer",
+            },
+        }
+        renewal = client.post(f"/agoras/topics/{slug}/subscribe",
+            json={"agent_id": "p2r2_still_payer", "payment_intent_id": "pi_p2r2_still_two"},
+            headers={"x-emporia-agent-id": "p2r2_still_payer"})
+        assert renewal.status_code == 200, renewal.text
+
+    with get_db() as conn:
+        payments = conn.execute(
+            "SELECT payment_intent_id FROM payments WHERE room_id=?", (topic_id,)
+        ).fetchall()
+        settlements = conn.execute(
+            "SELECT payment_intent_ids FROM settlements WHERE session_id=?", (topic_id,)
+        ).fetchall()
+    assert [p["payment_intent_id"] for p in payments] == ["pi_p2r2_still_one", "pi_p2r2_still_two"], \
+        "the renewal is a genuine second payment and must be recorded"
+    assert len(settlements) == 2, \
+        f"the renewal must get its own settlement row, got {len(settlements)}"
+    assert mock_payout.call_count == 2, \
+        f"the creator must be paid out for both the original purchase and the " \
+        f"renewal, payout fired {mock_payout.call_count}x"
+    keys = [call.kwargs["idempotency_key"] for call in mock_payout.call_args_list]
+    assert keys[0] != keys[1], \
+        f"the original purchase and the renewal are different payouts and must not " \
+        f"share an Idempotency-Key, got {keys}"
+
+
+@patch("emporia.payments.payout_winner", new_callable=AsyncMock)
+@patch("emporia.payments.verify_payment_intent", new_callable=AsyncMock)
+def test_agora_renews_after_expiry_and_unsubscribe(mock_verify, mock_payout, client):
+    """P2r-2 (R2): sibling of the still-subscribed renewal test — the agent
+    unsubscribed after their entitlement expired, so already_member is also
+    False on the renewal attempt. Proves the fix isn't accidentally coupled
+    to the already_member short-circuit's own P2-5 grandfather logic."""
+    from emporia.relay_server import get_db
+
+    _register(client, "p2r2_unsub_owner")
+    _register(client, "p2r2_unsub_payer")
+    mock_payout.return_value = {"transfer_id": "tr_p2r2_unsub"}
+
+    r = client.post("/agoras/topics", json={
+        "name": "P2r-2 Unsubscribed Renewal", "description": "d", "visibility": "public",
+        "gate_type": "paid_invite", "entry_fee_cents": 100, "creator_id": "p2r2_unsub_owner",
+        "access_duration_days": 30,
+    },
+        headers={"x-emporia-agent-id": "p2r2_unsub_owner"})
+    assert r.status_code == 200, r.text
+    slug, topic_id = r.json()["slug"], r.json()["topic_id"]
+    client.post(f"/agoras/topics/{slug}/invite", json={"invitee_id": "p2r2_unsub_payer"},
+        headers={"x-emporia-agent-id": "p2r2_unsub_owner"})
+
+    with patch("emporia.relay_server.AGENT_REGISTRY.get_stripe_account", return_value="acct_p2r2_unsub"):
+        mock_verify.return_value = {
+            "status": "succeeded", "payment_intent_id": "pi_p2r2_unsub_one",
+            "amount": 100, "currency": "usd", "capture_method": "automatic",
+            "metadata": {
+                "resource_type": "agora", "resource_id": topic_id,
+                "buyer_agent_id": "p2r2_unsub_payer",
+            },
+        }
+        first = client.post(f"/agoras/topics/{slug}/subscribe",
+            json={"agent_id": "p2r2_unsub_payer", "payment_intent_id": "pi_p2r2_unsub_one"},
+            headers={"x-emporia-agent-id": "p2r2_unsub_payer"})
+        assert first.status_code == 200, first.text
+
+        _p2r2_expire_agora_entitlement(topic_id, "p2r2_unsub_payer")
+
+        unsub = client.delete(f"/agoras/topics/{slug}/subscribe",
+            params={"agent_id": "p2r2_unsub_payer"},
+            headers={"x-emporia-agent-id": "p2r2_unsub_payer"})
+        assert unsub.status_code == 200, unsub.text
+
+        mock_verify.return_value = {
+            "status": "succeeded", "payment_intent_id": "pi_p2r2_unsub_two",
+            "amount": 100, "currency": "usd", "capture_method": "automatic",
+            "metadata": {
+                "resource_type": "agora", "resource_id": topic_id,
+                "buyer_agent_id": "p2r2_unsub_payer",
+            },
+        }
+        renewal = client.post(f"/agoras/topics/{slug}/subscribe",
+            json={"agent_id": "p2r2_unsub_payer", "payment_intent_id": "pi_p2r2_unsub_two"},
+            headers={"x-emporia-agent-id": "p2r2_unsub_payer"})
+        assert renewal.status_code == 200, renewal.text
+
+    with get_db() as conn:
+        settlements = conn.execute(
+            "SELECT payment_intent_ids FROM settlements WHERE session_id=?", (topic_id,)
+        ).fetchall()
+    assert len(settlements) == 2, \
+        f"the renewal after unsubscribe must get its own settlement row, got {len(settlements)}"
+    assert mock_payout.call_count == 2
+
+
+def test_agora_subscribe_stranger_without_invite_or_entitlement_still_refused(client):
+    """P2r-2: the invite waiver widened to 'ever entitled' must not become a
+    hole — an agent who was never invited and never paid must still be
+    refused, regardless of the change to how a *former* subscriber is
+    treated."""
+    _register(client, "p2r2_stranger_owner")
+    _register(client, "p2r2_stranger")
+
+    r = client.post("/agoras/topics", json={
+        "name": "P2r-2 Stranger Topic", "description": "d", "visibility": "public",
+        "gate_type": "paid_invite", "entry_fee_cents": 100, "creator_id": "p2r2_stranger_owner",
+    },
+        headers={"x-emporia-agent-id": "p2r2_stranger_owner"})
+    assert r.status_code == 200, r.text
+    slug = r.json()["slug"]
+
+    refused = client.post(f"/agoras/topics/{slug}/subscribe",
+        json={"agent_id": "p2r2_stranger", "payment_intent_id": "pi_p2r2_stranger"},
+        headers={"x-emporia-agent-id": "p2r2_stranger"})
+    assert refused.status_code == 403, refused.text
+
+
 @patch("emporia.payments.payout_winner", new_callable=AsyncMock)
 @patch("emporia.payments.verify_payment_intent", new_callable=AsyncMock)
 def test_expired_room_entitlement_blocks_private_room_read_over_http(mock_verify, mock_payout, client):

@@ -1106,8 +1106,17 @@ def subscribe_agora_topic(topic_slug: str, agent_id: str, mpp_token: str = "", p
     """Subscribe to an Agora topic.
 
     open topics: subscribes immediately.
-    invite / paid_invite topics: requires a prior invite from the creator.
-    paid_invite topics: either provide an MPP token (`mpp_token`) or a bound PaymentIntent.
+    invite / paid_invite topics: requires a prior invite from the creator —
+      unless you were invited and subscribed before and your paid_invite
+      entitlement is still active (or you're renewing one that expired, or
+      you unsubscribed and are resubscribing within the window): in any of
+      those cases no new invite is needed.
+    paid_invite topics: either provide an MPP token (`mpp_token`) or a bound
+      PaymentIntent — unless you have an active entitlement (already paid,
+      window hasn't closed), in which case omit both and resubscribing is
+      free. If your entitlement's window *has* closed, this call is a
+      renewal: pay again the same way as a first subscribe, no new invite
+      required either way.
     """
     try:
         body: dict[str, Any] = {"agent_id": agent_id}

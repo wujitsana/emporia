@@ -5525,6 +5525,27 @@ async def subscribe_agora_topic(slug: str, req: AgoraSubscribeRequest, request: 
         already_entitled = gate == "paid_invite" and entitlements.has_access(
             "agora", topic_id, req.agent_id, db_path=DATABASE_PATH
         )
+        # P2r-2 (R2): "ever held an entitlement here" — deliberately not the
+        # same predicate as already_entitled above. It covers the grandfather
+        # case in the already_member short-circuit below (P2-5) *and* the
+        # invite waiver just below that: once a paid_invite entitlement
+        # expires, the original invite is long gone (consumed on the first
+        # subscribe), so gating the invite waiver on an *active* entitlement
+        # left an expired subscriber with no path back in at all — 403
+        # "Invite required" even holding a fresh, valid PaymentIntent, since
+        # renewing is not joining fresh: the creator already invited this
+        # agent once and was paid for it.
+        ever_entitled = gate == "paid_invite" and entitlements.has_any_grant(
+            "agora", topic_id, req.agent_id, db_path=DATABASE_PATH
+        )
+
+        # P2r-1: Agora has no kick endpoint yet, so this is always False today
+        # — added anyway, at the same point join_room()'s ban check runs, so a
+        # future kick doesn't have to remember to add it (the join_room/
+        # subscribe_agora_topic drift N4-R1(b) already found once).
+        if entitlements.is_removed("agora", topic_id, req.agent_id, reason="kicked",
+                                    db_path=DATABASE_PATH):
+            raise HTTPException(403, "Removed from this topic")
 
         # P2-5: "already a member" alone is no longer enough to short-circuit
         # for free on a paid_invite topic — membership rows are never deleted
@@ -5536,7 +5557,7 @@ async def subscribe_agora_topic(slug: str, req: AgoraSubscribeRequest, request: 
         if already_member and (
             gate != "paid_invite"
             or already_entitled
-            or not entitlements.has_any_grant("agora", topic_id, req.agent_id, db_path=DATABASE_PATH)
+            or not ever_entitled
         ):
             return {"status": "already_subscribed", "slug": slug, "agent_id": req.agent_id, "gate_type": gate}
 
@@ -5545,7 +5566,7 @@ async def subscribe_agora_topic(slug: str, req: AgoraSubscribeRequest, request: 
                 "SELECT 1 FROM agora_invites WHERE topic_id=? AND agent_id=?",
                 (topic_id, req.agent_id),
             ).fetchone()
-            if not has_invite and not already_entitled:
+            if not has_invite and not ever_entitled:
                 raise HTTPException(403, "Invite required — ask the topic creator to invite you")
 
     # Payment check for paid_invite — outside DB_LOCK (see comment above).
