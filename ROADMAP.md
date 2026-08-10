@@ -154,12 +154,17 @@ participants/actions/payments/settlements/audit files together — that piece is
 
 ## Payments
 
-**P1b entry point: the x402 rail is the next block, now that P1a and its self-review, P1r, have
-hardened the rail-agnostic payment core (SECURITY.md's P1a and P1r passes).** P1r found and fixed
-two regressions P1a itself shipped — the settlement dedupe key and the payout idempotency keys were
-keyed on *(resource, payer)*, not *(resource, payer, payment)*, silently dropping a payer's second
-genuine payment for the same resource; see the corrected entry below. x402 is confirmed (live docs,
-this pass) to be the
+**P1b entry point: the x402 rail is the next block, now that P1a, its self-review P1r, and P2 have
+hardened the rail-agnostic payment core (SECURITY.md's P1a, P1r, and P2 passes).** P1r found and
+fixed two regressions P1a itself shipped — the settlement dedupe key and the payout idempotency keys
+were keyed on *(resource, payer)*, not *(resource, payer, payment)*, silently dropping a payer's
+second genuine payment for the same resource; see the corrected entry below. **P2 then found the
+premise underneath both passes was itself wrong**: a room/Agora entry fee was charged *per join*,
+when by product decision it should buy *access* until an optional window expires or the agent is
+kicked (`entitlements.py`; see SECURITY.md's P2 pass and ARCHITECTURE.md's access entitlement
+contract). x402 now has a better entry model to build on than either prior pass had — scope it to
+*buying an entitlement*, not to *paying per join*, when this block opens. x402 is confirmed (live
+docs, this pass) to be the
 Coinbase-originated, Linux-Foundation-formalized HTTP-402 protocol settled in stablecoins (USDC),
 distinct from Stripe's MPP, which `payments.py` already implements — the two share the "HTTP 402"
 mechanism, not a protocol. Scope per the user, ahead of P1b's own review-and-plan round (do not
@@ -227,7 +232,11 @@ was silently dropped, taking the second payout with it. P1r-1 fixed the key itse
 (`payments.settlement_dedupe_key()`, folding a hashed digest of `payment_intent_ids` into the key);
 P1r-2 rewired every `Idempotency-Key` derivation (payout ×2, `settle()`'s refund payout) through the
 same helper so storage and Stripe agree by construction. See `SECURITY.md`'s P1a pass (R2/R3) and
-P1r pass (R1/R3).
+P1r pass (R1/R3). **P2 correction:** "rejoin after a kick, resubscribe after an unsubscribe" as
+described here was itself the wrong premise — by product decision a rejoin/resubscribe within an
+active entitlement window is now *free*, not a second genuine payment; P1r-1's dedupe key still
+matters for the case that remains genuine (a rejoin *after* the window expires). See `SECURITY.md`'s
+P2 pass (R1) and `entitlements.py`.
 
 **~~`settlements` has no payer column~~ — done in N7-2.** This entry previously claimed a
 `payer_id` column was "blocked on the migration runner P4 already tracks." That was wrong — this

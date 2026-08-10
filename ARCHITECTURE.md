@@ -266,14 +266,48 @@ every path, since replay risk there doesn't depend on how the caller authenticat
 **Settlement identity contract (P1r-1): one settlement per *(resource, payer, payment)*, not per
 *(resource, payer).*** `payments.settlement_dedupe_key(session_id, payer_id, payment_intent_ids)`
 is the single definition of a settlement's natural key — a payer can legitimately pay for the same
-resource more than once (rejoin a room after being kicked, resubscribe to an Agora topic after
-unsubscribing; both memberships re-admit cleanly), so the key has to distinguish those payments, not
+resource more than once (a room's entitlement expires and the agent repurchases access; an Agora
+topic's paid_invite entitlement likewise lapses and is renewed — see the access entitlement contract
+below for when that's reachable at all after P2), so the key has to distinguish those payments, not
 just the resource/payer pair. Every Stripe `Idempotency-Key` for a real money movement (the two
-entry-fee payouts, `settle()`'s session-escrow payout) is derived from this same helper with the
-same inputs as the settlement row it accompanies — the storage key and the Stripe key agree by
-construction, not because two call sites were each written correctly. `arbitrate_and_refund()`'s
-refund key is the one exception, deliberately: it's already keyed on `charge_id`, which is per-
-payment on its own, so folding it through the shared helper would add nothing.
+entry-fee payouts, `settle()`'s session-escrow payout, and P2-7's reversal/refund pair on a kick) is
+derived from this same helper with the same inputs as the settlement row it accompanies — the
+storage key and the Stripe key agree by construction, not because each call site was written
+correctly on its own. `arbitrate_and_refund()`'s refund key is the one exception, deliberately: it's already
+keyed on `charge_id`, which is per-payment on its own, so folding it through the shared helper would
+add nothing. **Idempotency keys are a retry guard, not a permanent dedupe** — Stripe retains them for
+24 hours. The durable guard against a genuine second payout for one purchase is the access
+entitlement contract below (an active entitlement skips the payment gate entirely, so
+`payout_winner()` is never called a second time for it), not the Idempotency-Key alone.
+
+**Access entitlement contract (P2-3/P2-4/P2-5/P2-6): a payment buys access until it expires or is
+revoked, not a single join.** P1a and P1r both assumed a room/Agora entry fee was charged per join;
+P2 corrected that by product decision. `entitlements.py` — deliberately import-independent of
+`relay_server.py`, since `rooms.py` needs to reach it too — is the one definition:
+- `grant(resource_type, resource_id, agent_id, payment_intent_id, duration_days)` records a new,
+  append-only entitlement row. `duration_days=None` (set via `rooms.access_duration_days` /
+  `agora_topics.access_duration_days`, both creator-chosen at creation, both `NULL` by default) means
+  no expiry.
+- `has_access(...)` looks only at the *newest* row for a `(resource_type, resource_id, agent_id)`
+  triple — a later grant supersedes an earlier expiry (a repurchase restores access), but nothing
+  supersedes a `revoke(reason="kicked")`, since no code path grants a new entitlement to an agent
+  once that's run for them on that resource.
+- `join_room()`/`subscribe_agora_topic()` check `has_access()` before the payment gate; an active
+  entitlement skips it entirely, so a same-window rejoin is free and fires no second payout.
+  `kick_from_room()` calls `revoke(reason="kicked")`, and `join_room()` checks
+  `is_revoked(reason="kicked")` before the gate branch — a kick is permanent, by design; no un-ban
+  path exists.
+- `rooms.is_member()` and the Agora-side `_agora_is_member()` are where expiry is *enforced*, not
+  just recorded — every membership-gated read/write routes through one of these two functions, so
+  expiry closes access everywhere at once rather than needing per-endpoint checks. Both exempt the
+  resource's own creator and, separately, any agent with **no entitlement row at all** for that
+  resource (`has_any_grant()` false) — the grandfather case for membership predating P2-3, kept
+  distinct from an entitlement that actively lapsed.
+- Optional refund on kick (P2-7): the kicker's choice, `POST /rooms/{id}/kick {"refund": true}`,
+  default `false`. Revocation happens first and unconditionally; the refund — reverse the creator's
+  Connect transfer, then refund the payer's charge, in that order, so the platform doesn't end up
+  covering the creator's already-paid-out share — is a separate, best-effort step whose failure does
+  not undo the kick.
 
 ## What was NOT built (honest scope)
 
