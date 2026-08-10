@@ -2162,6 +2162,63 @@ class KickFromRoomRequest(BaseModel):
 # Health & Info
 # ============================================================================
 
+def _payment_rails(*, has_stripe: bool | None = None) -> tuple[list[str], list[str]]:
+    """The single definition for `payment_rails`/`payment_methods` (P3, item 5)
+    — previously two independently hand-built lists, one in `health()`, one in
+    `get_agent_profile()`. Pure advertisement: nothing in the payment path
+    reads either list to route a charge — this becomes the one place P1b
+    builds x402's `accepts` array from.
+
+    `has_stripe=None` selects the relay-wide variant (`GET /health`): no
+    agent-specific `stripe_connect` rail, "mpp" derived from whether any
+    payment method exists at all. `has_stripe=<bool>` selects the per-agent
+    variant (`GET /agents/{id}`): `stripe_connect` appended only when this
+    specific agent has a stored Connect account and the relay's MPP profile
+    is ready.
+
+    The two variants' formulas are preserved byte-for-byte as found, not
+    reconciled — "no wire change" is this item's whole contract, and they
+    were already, independently, not equivalent: with `STRIPE_SECRET_KEY`
+    set but the MPP profile not ready (`stripe_profile_ready=False`) and
+    `EMPORIA_MPP_TEMPO_ENABLED=1`, the relay-wide variant includes `"mpp"`
+    in `payment_rails` (payment_methods=["tempo"] is truthy) while the
+    per-agent variant's `elif` chain resolves `stripe_enabled` first and
+    never reaches the `elif TEMPO_ENABLED` branch — so it silently omits
+    `"mpp"`. Recorded in SECURITY.md's P3 section as a noted, unfixed
+    finding; both formulas are reproduced here exactly rather than unified.
+    """
+    stripe_enabled = bool(os.getenv("STRIPE_SECRET_KEY"))
+    stripe_profile_ready = _stripe_profile_ready()
+
+    if has_stripe is None:
+        payment_methods = []
+        if stripe_profile_ready:
+            payment_methods.append("stripe")
+        if TEMPO_ENABLED:
+            payment_methods.append("tempo")
+        payment_rails = ["free"]
+        if payment_methods:
+            payment_rails.append("mpp")
+        if stripe_enabled:
+            payment_rails.append("stripe_pi")
+        return payment_rails, payment_methods
+
+    payment_rails = ["free"]
+    payment_methods = []
+    if stripe_profile_ready:
+        payment_methods.append("stripe")
+        payment_rails += ["mpp", "stripe_pi"]
+        if has_stripe:
+            payment_rails.append("stripe_connect")  # can receive payouts
+    elif stripe_enabled:
+        payment_rails.append("stripe_pi")
+    elif TEMPO_ENABLED:
+        payment_rails.append("mpp")
+    if TEMPO_ENABLED:
+        payment_methods.append("tempo")
+    return payment_rails, payment_methods
+
+
 @app.get("/health")
 async def health():
     listing_count = 0
@@ -2181,16 +2238,7 @@ async def health():
         pass
     stripe_enabled = bool(os.getenv("STRIPE_SECRET_KEY"))
     stripe_profile_ready = _stripe_profile_ready()
-    payment_methods = []
-    if stripe_profile_ready:
-        payment_methods.append("stripe")
-    if TEMPO_ENABLED:
-        payment_methods.append("tempo")
-    payment_rails = ["free"]
-    if payment_methods:
-        payment_rails.append("mpp")
-    if stripe_enabled:
-        payment_rails.append("stripe_pi")
+    payment_rails, payment_methods = _payment_rails()
     return {
         "status": "ok",
         "service": BRAND,
@@ -2655,23 +2703,8 @@ async def get_agent_profile(agent_id: str, request: Request):
         ).fetchone()[0]
 
     has_stripe = bool(row["stripe_account_id"])
-    stripe_enabled = bool(os.getenv("STRIPE_SECRET_KEY"))
     stripe_profile_ready = _stripe_profile_ready()
-
-    # Derive payment rails this agent can use on this relay
-    payment_rails = ["free"]
-    payment_methods = []
-    if stripe_profile_ready:
-        payment_methods.append("stripe")
-        payment_rails += ["mpp", "stripe_pi"]
-        if has_stripe:
-            payment_rails.append("stripe_connect")  # can receive payouts
-    elif stripe_enabled:
-        payment_rails.append("stripe_pi")
-    elif TEMPO_ENABLED:
-        payment_rails.append("mpp")
-    if TEMPO_ENABLED:
-        payment_methods.append("tempo")
+    payment_rails, payment_methods = _payment_rails(has_stripe=has_stripe)
 
     return {
         "agent_id": row["agent_id"],

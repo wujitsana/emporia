@@ -153,6 +153,84 @@ def test_agent_profile_key_only_stripe_does_not_expose_mpp(client):
     assert "stripe_pi" in data["payment_rails"]
 
 
+def test_payment_rails_helper_pins_health_and_agent_variants_across_flag_combinations():
+    """P3 (item 5): /health and GET /agents/{id} used to hand-build
+    payment_rails/payment_methods independently — now both route through
+    the single _payment_rails() helper, with no wire change: each variant's
+    output is pinned exactly as it was before the refactor, across every
+    combination of the three flags (STRIPE_SECRET_KEY / stripe_profile_ready
+    / EMPORIA_MPP_TEMPO_ENABLED). Includes the one combination where the two
+    variants genuinely diverge (documented in the helper's own docstring and
+    SECURITY.md's P3 section, not fixed): stripe_enabled=True,
+    stripe_profile_ready=False, tempo=True — /health includes "mpp" in
+    payment_rails, /agents/{id} silently omits it. This test pins that
+    divergence too, so a future change to either formula is deliberate."""
+    from emporia.relay_server import _payment_rails
+
+    with patch("emporia.relay_server._stripe_profile_ready", return_value=False):
+        with patch.dict(os.environ, {"STRIPE_SECRET_KEY": ""}, clear=False):
+            with patch("emporia.relay_server.TEMPO_ENABLED", False):
+                assert _payment_rails() == (["free"], [])
+                assert _payment_rails(has_stripe=False) == (["free"], [])
+                assert _payment_rails(has_stripe=True) == (["free"], [])
+
+        with patch.dict(os.environ, {"STRIPE_SECRET_KEY": "sk_test_only"}, clear=False):
+            with patch("emporia.relay_server.TEMPO_ENABLED", False):
+                # stripe_enabled=True, stripe_profile_ready=False, tempo=False:
+                # the two variants agree.
+                assert _payment_rails() == (["free", "stripe_pi"], [])
+                assert _payment_rails(has_stripe=False) == (["free", "stripe_pi"], [])
+
+            with patch("emporia.relay_server.TEMPO_ENABLED", True):
+                # The documented divergence: stripe_enabled=True,
+                # stripe_profile_ready=False, tempo=True.
+                assert _payment_rails() == (["free", "mpp", "stripe_pi"], ["tempo"]), \
+                    "relay-wide variant must include 'mpp' here (payment_methods=['tempo'] is truthy)"
+                assert _payment_rails(has_stripe=False) == (["free", "stripe_pi"], ["tempo"]), \
+                    "per-agent variant's elif chain must still omit 'mpp' here — pinned, not fixed"
+
+    with patch("emporia.relay_server._stripe_profile_ready", return_value=True):
+        with patch.dict(os.environ, {"STRIPE_SECRET_KEY": "sk_test_only"}, clear=False):
+            with patch("emporia.relay_server.TEMPO_ENABLED", False):
+                assert _payment_rails() == (["free", "mpp", "stripe_pi"], ["stripe"])
+                assert _payment_rails(has_stripe=False) == (["free", "mpp", "stripe_pi"], ["stripe"])
+                assert _payment_rails(has_stripe=True) == (
+                    ["free", "mpp", "stripe_pi", "stripe_connect"], ["stripe"],
+                ), "stripe_connect only appears for an agent with a stored Connect account"
+
+            with patch("emporia.relay_server.TEMPO_ENABLED", True):
+                assert _payment_rails() == (["free", "mpp", "stripe_pi"], ["stripe", "tempo"])
+                assert _payment_rails(has_stripe=True) == (
+                    ["free", "mpp", "stripe_pi", "stripe_connect"], ["stripe", "tempo"],
+                )
+
+
+def test_health_and_agent_profile_route_through_the_shared_payment_rails_helper(client):
+    """P3 (item 5): HTTP-level confirmation that both endpoints actually call
+    _payment_rails() rather than each keeping its own inline copy — patches
+    the helper to a spy and confirms both routes invoke it with the
+    documented has_stripe contract (None for /health, an explicit bool for
+    /agents/{id})."""
+    from emporia import relay_server
+
+    _register(client, "p3_rails_spy_agent")
+    calls = []
+    real = relay_server._payment_rails
+
+    def spy(*, has_stripe=None):
+        calls.append(has_stripe)
+        return real(has_stripe=has_stripe)
+
+    with patch.object(relay_server, "_payment_rails", spy):
+        r1 = client.get("/health")
+        r2 = client.get("/agents/p3_rails_spy_agent",
+            headers={"x-emporia-agent-id": "p3_rails_spy_agent"})
+    assert r1.status_code == 200 and r2.status_code == 200
+    assert calls == [None, False], \
+        f"/health must call _payment_rails() with no has_stripe, /agents/{{id}} with an " \
+        f"explicit bool — got {calls}"
+
+
 def test_relay_card_well_formed(client):
     # Register the test owner agent and expose it via env so the descriptor endpoint serves it.
     _register(client, "test_relay_owner")
