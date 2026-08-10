@@ -5850,6 +5850,26 @@ def test_settlement_public_and_internal_columns_cover_the_schema():
         "a column cannot be both public and internal"
 
 
+def test_known_rails_covers_every_persisted_rail_value():
+    """P3 (item 2): `rail` is a new column on `payments`, `settlements`, and
+    `access_entitlements` — the one canonical tag for which payment rail a
+    reference belongs to. This is the `KNOWN_RAILS` analogue of the settlements
+    column-classification guard above: every distinct `rail` value actually
+    persisted in any of the three tables must be a member of
+    `payments.KNOWN_RAILS`, so an unrecognized rail string reaching storage
+    (a typo, a half-wired second rail) fails a test instead of silently
+    becoming a fact nobody notices."""
+    from emporia.payments import KNOWN_RAILS
+    from emporia.relay_server import get_db
+
+    with get_db() as conn:
+        for table in ("payments", "settlements", "access_entitlements"):
+            values = {r[0] for r in conn.execute(f"SELECT DISTINCT rail FROM {table}").fetchall()}
+            unknown = values - KNOWN_RAILS
+            assert not unknown, \
+                f"{table}.rail has unrecognized value(s) {unknown} — not in KNOWN_RAILS={sorted(KNOWN_RAILS)}"
+
+
 def test_settlement_row_dict_never_leaks_internal_columns_to_a_co_payer(client):
     """P1r-3 (R2): the leak itself, and the general form of it. Scans the *whole*
     serialized settlement object for a co-payer's row rather than checking one
@@ -6022,6 +6042,21 @@ def test_settlements_agent_id_and_unfiltered_branches_return_refund_ids_in_plain
         f"unfiltered (operator) branch must return refund_id in plaintext, got {op_row!r}"
     assert op_row["reversal_id"] == "trr_s2_pub", \
         f"unfiltered (operator) branch must return reversal_id in plaintext, got {op_row!r}"
+
+
+def test_record_settlement_rejects_unknown_rail():
+    """P3 (item 2): sibling of the entitlements.grant() rail validation — an
+    unrecognized `rail` value in a settlement dict must be rejected rather
+    than silently written to storage. Defaults to RAIL_STRIPE when omitted
+    (every caller today; PaymentRef threading lands in item 3), but a bad
+    explicit value must not reach the INSERT."""
+    from emporia.relay_server import record_settlement
+
+    with pytest.raises(ValueError, match="Unknown payment rail"):
+        record_settlement({
+            "session_id": "sess_badrail", "winner_id": "someone",
+            "payment_intent_ids": ["pi_badrail"], "rail": "totally_bogus_rail_xyz",
+        })
 
 
 def test_settlement_payer_id_null_stays_null_for_session_rows(client):
@@ -6737,6 +6772,71 @@ def test_migrate_agora_tables_adds_access_duration_days_column():
     conn.close()
 
 
+def test_assert_not_pre_p3_schema_rejects_db_missing_rail_column():
+    """P3: no ALTER/migration exists for `rail` — the operator is starting from
+    a fresh DB for this pass, by decision (see the P3 plan's "Migrations"
+    section), so `CREATE TABLE IF NOT EXISTS` silently does nothing against a
+    pre-P3 `settlements` table missing the column. Startup must fail loudly
+    on an old-schema DB rather than serve it. Must fail pre-fix:
+    _assert_not_pre_p3_schema doesn't exist."""
+    import sqlite3
+
+    from emporia.relay_server import _assert_not_pre_p3_schema
+
+    conn = sqlite3.connect(":memory:")
+    conn.row_factory = sqlite3.Row
+    conn.executescript("""
+        CREATE TABLE settlements (
+            settlement_id TEXT PRIMARY KEY, session_id TEXT NOT NULL, winner_id TEXT,
+            total_stake_cents INTEGER NOT NULL DEFAULT 0, platform_fee_cents INTEGER NOT NULL DEFAULT 0,
+            winner_payout_cents INTEGER NOT NULL DEFAULT 0, platform_fee_bps INTEGER NOT NULL DEFAULT 250,
+            payment_intent_ids TEXT NOT NULL DEFAULT '[]', transfer_id TEXT,
+            transfer_status TEXT NOT NULL DEFAULT 'pending_connect', status TEXT NOT NULL DEFAULT 'settled',
+            created_at TEXT NOT NULL, payer_id TEXT
+        );
+        CREATE TABLE rooms (room_id TEXT PRIMARY KEY, gate_type TEXT NOT NULL DEFAULT 'open');
+    """)
+    conn.commit()
+
+    cols = {r[1] for r in conn.execute("PRAGMA table_info(settlements)").fetchall()}
+    assert "rail" not in cols, "test setup must predate the rail column"
+
+    with pytest.raises(RuntimeError, match="predates the P3"):
+        _assert_not_pre_p3_schema(conn)
+    conn.close()
+
+
+def test_assert_not_pre_p3_schema_rejects_legacy_stripe_payment_room():
+    """P3: sibling of the missing-column check — a DB whose `settlements`
+    table already has `rail` (e.g. it was reseeded after P3 landed, then a
+    legacy room row survived some other way) but still carries a room with
+    the pre-rename `gate_type='stripe_payment'` value must also be rejected.
+    Without this, that room would silently fall through every
+    `gate_type == "paid"` check P3-1 introduced and become a free room. Must
+    fail pre-fix: _assert_not_pre_p3_schema doesn't exist."""
+    import sqlite3
+
+    from emporia.relay_server import _assert_not_pre_p3_schema
+
+    conn = sqlite3.connect(":memory:")
+    conn.row_factory = sqlite3.Row
+    conn.executescript("""
+        CREATE TABLE settlements (
+            settlement_id TEXT PRIMARY KEY, session_id TEXT NOT NULL,
+            rail TEXT NOT NULL DEFAULT 'stripe'
+        );
+        CREATE TABLE rooms (room_id TEXT PRIMARY KEY, gate_type TEXT NOT NULL DEFAULT 'open');
+    """)
+    conn.execute(
+        "INSERT INTO rooms (room_id, gate_type) VALUES ('room_legacy', 'stripe_payment')"
+    )
+    conn.commit()
+
+    with pytest.raises(RuntimeError, match="legacy gate_type='stripe_payment'"):
+        _assert_not_pre_p3_schema(conn)
+    conn.close()
+
+
 def test_migrate_settlement_dedupe_key_restores_index_on_every_startup():
     """P2-1 (R3): P1r-1 restructured this migration into a marker-gated one-shot
     but left `CREATE UNIQUE INDEX` *inside* the gated block, so it only ever runs
@@ -7362,7 +7462,7 @@ def test_is_member_expired_entitlement_blocks_paid_room_access(rooms_db_path):
                        access_duration_days=1, db_path=rooms_db_path)
     add_member(room.room_id, "agent_payer", db_path=rooms_db_path)
     grant("room", room.room_id, "agent_payer", "pi_expiring", duration_days=1,
-          db_path=rooms_db_path)
+          rail="stripe", db_path=rooms_db_path)
     assert is_member(room.room_id, "agent_payer", db_path=rooms_db_path), \
         "a fresh grant must not be immediately blocked"
 
@@ -7433,7 +7533,7 @@ def test_is_member_regrant_after_expiry_restores_access(rooms_db_path):
                        access_duration_days=1, db_path=rooms_db_path)
     add_member(room.room_id, "agent_payer", db_path=rooms_db_path)
     grant("room", room.room_id, "agent_payer", "pi_first", duration_days=1,
-          db_path=rooms_db_path)
+          rail="stripe", db_path=rooms_db_path)
     conn = sqlite3.connect(rooms_db_path)
     conn.execute(
         "UPDATE access_entitlements SET expires_at = ? "
@@ -7445,7 +7545,7 @@ def test_is_member_regrant_after_expiry_restores_access(rooms_db_path):
     assert not is_member(room.room_id, "agent_payer", db_path=rooms_db_path)
 
     grant("room", room.room_id, "agent_payer", "pi_second", duration_days=1,
-          db_path=rooms_db_path)
+          rail="stripe", db_path=rooms_db_path)
     assert is_member(room.room_id, "agent_payer", db_path=rooms_db_path), \
         "a fresh grant must restore access even though an earlier one expired"
 
@@ -10544,11 +10644,33 @@ def test_entitlement_grant_and_has_access(entitlements_db_path):
     from emporia.entitlements import grant, has_access
 
     assert not has_access("room", "room_ent_1", "ent_payer_a", db_path=entitlements_db_path)
-    grant("room", "room_ent_1", "ent_payer_a", "pi_ent_1", db_path=entitlements_db_path)
+    grant("room", "room_ent_1", "ent_payer_a", "pi_ent_1", rail="stripe", db_path=entitlements_db_path)
     assert has_access("room", "room_ent_1", "ent_payer_a", db_path=entitlements_db_path)
     # A different agent, or a different resource, must not be affected.
     assert not has_access("room", "room_ent_1", "ent_payer_b", db_path=entitlements_db_path)
     assert not has_access("room", "room_ent_2", "ent_payer_a", db_path=entitlements_db_path)
+
+
+def test_entitlement_grant_requires_rail_and_rejects_unknown_values(entitlements_db_path):
+    """P3 (item 2): `rail` is keyword-only and required on grant() — no
+    caller silently inherits a default. It's also validated, not just
+    accepted and stored: an unrecognized rail string (a typo, a half-wired
+    second rail) must be rejected at the one funnel that would let it reach
+    storage, the same way an unknown resource_type isn't validated because
+    nothing calls grant() with one, but a rail string arrives from a more
+    exposed surface as this pass's audit found. Confirmed by stubbing out the
+    real validation and observing a bogus rail would otherwise be silently
+    accepted — the required keyword-only param alone doesn't catch this,
+    only the check inside grant() does."""
+    from emporia.entitlements import grant
+
+    with pytest.raises(TypeError):
+        grant("room", "room_ent_norail", "ent_payer", "pi_ent_norail",
+              db_path=entitlements_db_path)  # no rail= at all
+
+    with pytest.raises(ValueError, match="Unknown payment rail"):
+        grant("room", "room_ent_badrail", "ent_payer", "pi_ent_badrail",
+              rail="totally_bogus_rail_xyz", db_path=entitlements_db_path)
 
 
 def test_entitlement_expires_after_duration(entitlements_db_path):
@@ -10559,7 +10681,7 @@ def test_entitlement_expires_after_duration(entitlements_db_path):
     from emporia.entitlements import grant, has_access
 
     ent = grant("room", "room_ent_exp", "ent_payer", "pi_ent_exp",
-                duration_days=1, db_path=entitlements_db_path)
+                duration_days=1, rail="stripe", db_path=entitlements_db_path)
     assert has_access("room", "room_ent_exp", "ent_payer", db_path=entitlements_db_path)
 
     # Backdate this grant's window to have closed 1 hour ago.
@@ -10581,7 +10703,7 @@ def test_entitlement_revoke_blocks_access(entitlements_db_path):
     """P2-3: revoke() ends access immediately, even with no expiry set."""
     from emporia.entitlements import grant, has_access, revoke
 
-    grant("room", "room_ent_rev", "ent_payer", "pi_ent_rev", db_path=entitlements_db_path)
+    grant("room", "room_ent_rev", "ent_payer", "pi_ent_rev", rail="stripe", db_path=entitlements_db_path)
     assert has_access("room", "room_ent_rev", "ent_payer", db_path=entitlements_db_path)
 
     revoked = revoke("room", "room_ent_rev", "ent_payer", reason="kicked",
@@ -10607,12 +10729,12 @@ def test_entitlement_newest_grant_wins_over_older_revoke(entitlements_db_path):
     grant for the same resource/agent was revoked."""
     from emporia.entitlements import grant, has_access, revoke
 
-    grant("room", "room_ent_newest", "ent_payer", "pi_ent_first", db_path=entitlements_db_path)
+    grant("room", "room_ent_newest", "ent_payer", "pi_ent_first", rail="stripe", db_path=entitlements_db_path)
     revoke("room", "room_ent_newest", "ent_payer", reason="expired_manually",
            db_path=entitlements_db_path)
     assert not has_access("room", "room_ent_newest", "ent_payer", db_path=entitlements_db_path)
 
-    grant("room", "room_ent_newest", "ent_payer", "pi_ent_second", db_path=entitlements_db_path)
+    grant("room", "room_ent_newest", "ent_payer", "pi_ent_second", rail="stripe", db_path=entitlements_db_path)
     assert has_access("room", "room_ent_newest", "ent_payer", db_path=entitlements_db_path), \
         "a later grant must restore access regardless of an earlier revoke"
 
@@ -10623,7 +10745,7 @@ def test_entitlement_is_revoked_checks_reason(entitlements_db_path):
     ever added) without conflating the two."""
     from emporia.entitlements import grant, is_revoked, revoke
 
-    grant("room", "room_ent_ban", "ent_payer", "pi_ent_ban", db_path=entitlements_db_path)
+    grant("room", "room_ent_ban", "ent_payer", "pi_ent_ban", rail="stripe", db_path=entitlements_db_path)
     assert not is_revoked("room", "room_ent_ban", "ent_payer", reason="kicked",
                            db_path=entitlements_db_path)
 
@@ -10684,6 +10806,6 @@ def test_entitlement_resource_type_keeps_room_and_agora_separate(entitlements_db
     codebase has been burned by overloading across resource kinds before."""
     from emporia.entitlements import grant, has_access
 
-    grant("room", "shared_id_123", "ent_payer", "pi_room", db_path=entitlements_db_path)
+    grant("room", "shared_id_123", "ent_payer", "pi_room", rail="stripe", db_path=entitlements_db_path)
     assert has_access("room", "shared_id_123", "ent_payer", db_path=entitlements_db_path)
     assert not has_access("agora", "shared_id_123", "ent_payer", db_path=entitlements_db_path)

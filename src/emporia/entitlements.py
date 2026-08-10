@@ -56,6 +56,8 @@ from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
+from emporia.payments import KNOWN_RAILS
+
 ENTITLEMENTS_DB_PATH = Path(
     os.getenv("EMPORIA_DB_PATH", "~/.hermes/emporia_relay.sqlite3")
 ).expanduser()
@@ -72,7 +74,8 @@ CREATE TABLE IF NOT EXISTS access_entitlements (
     granted_at         TEXT NOT NULL,
     expires_at         TEXT,
     revoked_at         TEXT,
-    revoked_reason     TEXT
+    revoked_reason     TEXT,
+    rail               TEXT NOT NULL DEFAULT 'stripe'
 );
 
 CREATE INDEX IF NOT EXISTS idx_access_entitlements_lookup
@@ -116,6 +119,7 @@ class Entitlement:
     expires_at: str | None
     revoked_at: str | None
     revoked_reason: str | None
+    rail: str
 
 
 def _row_to_entitlement(row: sqlite3.Row) -> Entitlement:
@@ -129,6 +133,7 @@ def _row_to_entitlement(row: sqlite3.Row) -> Entitlement:
         expires_at=row["expires_at"],
         revoked_at=row["revoked_at"],
         revoked_reason=row["revoked_reason"],
+        rail=row["rail"],
     )
 
 
@@ -138,6 +143,8 @@ def grant(
     agent_id: str,
     payment_intent_id: str | None,
     duration_days: int | None = None,
+    *,
+    rail: str,
     db_path: Path | None = None,
 ) -> Entitlement:
     """Record a new access grant. Always inserts — never updates an existing
@@ -146,7 +153,16 @@ def grant(
     the underlying resource does); a positive int sets `expires_at` that many
     days from now. Validate before calling: this trusts its caller on both
     `duration_days > 0` and PaymentIntent shape.
+
+    `rail` is required and keyword-only (P3) — deliberately not defaulted, so
+    every call site has to name the rail it verified the payment on rather
+    than one silently inheriting whatever the default happened to be. Must be
+    one of `payments.KNOWN_RAILS`; this is the funnel that would let an
+    unrecognized rail value reach storage, so it's asserted here rather than
+    trusted from the caller.
     """
+    if rail not in KNOWN_RAILS:
+        raise ValueError(f"Unknown payment rail {rail!r}, expected one of {sorted(KNOWN_RAILS)}")
     entitlement_id = f"ent_{uuid.uuid4().hex[:16]}"
     now = datetime.now(UTC)
     expires_at = (now + timedelta(days=duration_days)).isoformat() if duration_days else None
@@ -154,10 +170,10 @@ def grant(
         conn.execute(
             "INSERT INTO access_entitlements "
             "(entitlement_id, resource_type, resource_id, agent_id, payment_intent_id, "
-            "granted_at, expires_at, revoked_at, revoked_reason) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?, NULL, NULL)",
+            "granted_at, expires_at, revoked_at, revoked_reason, rail) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, NULL, NULL, ?)",
             (entitlement_id, resource_type, resource_id, agent_id, payment_intent_id,
-             now.isoformat(), expires_at),
+             now.isoformat(), expires_at, rail),
         )
         row = conn.execute(
             "SELECT * FROM access_entitlements WHERE entitlement_id = ?", (entitlement_id,)

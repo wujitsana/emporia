@@ -74,6 +74,26 @@ def platform_fee(amount_cents: int) -> int:
     fee = round(amount_cents * OPERATOR_FEE_BPS / 10000)
     return fee if fee >= 1 else 0
 
+
+# P3: the rail seam. "A payment" used to be spelled `payment_intent_id` even in
+# places meant to be rail-agnostic (access_entitlements.payment_intent_id, most
+# glaringly) — there was no way to say *which* rail a reference belongs to.
+# RAIL_STRIPE/KNOWN_RAILS is the one canonical vocabulary for that tag, lives
+# here (the payment-domain module) rather than in relay_server.py so
+# entitlements.py — which must stay import-independent of relay_server.py, see
+# its own module docstring — can import it too without a cycle
+# (entitlements -> payments is acyclic; payments never imports entitlements).
+#
+# Deliberately just a frozenset with one member, not a registry/dispatch table:
+# there is exactly one implemented rail. A speculative second entry would be
+# the same mistake this pass's own audit flagged elsewhere — "tempo" is
+# advertised in /health's payment_methods with zero implementing code behind
+# it. P1b (x402) adds the second rail and, with it, whatever dispatch actually
+# turns out to be needed — not guessed at here ahead of time.
+RAIL_STRIPE = "stripe"
+KNOWN_RAILS = frozenset({RAIL_STRIPE})
+
+
 STRIPE_API_BASE = os.getenv("STRIPE_API_BASE", "https://api.stripe.com/v1")
 STRIPE_API_VERSION = os.getenv("STRIPE_API_VERSION", "2026-04-22.preview")
 OPERATOR_FEE_BPS = int(os.getenv("OPERATOR_FEE_BPS", "250"))  # 2.5%

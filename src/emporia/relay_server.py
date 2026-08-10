@@ -592,7 +592,8 @@ def init_db() -> None:
                 payment_intent_id TEXT NOT NULL,
                 payment_type TEXT NOT NULL,
                 status TEXT NOT NULL DEFAULT 'confirmed',
-                created_at TEXT NOT NULL
+                created_at TEXT NOT NULL,
+                rail TEXT NOT NULL DEFAULT 'stripe'
             );
 
             CREATE TABLE IF NOT EXISTS settlements (
@@ -608,7 +609,8 @@ def init_db() -> None:
                 transfer_status TEXT NOT NULL DEFAULT 'pending_connect',
                 status TEXT NOT NULL DEFAULT 'settled',
                 created_at TEXT NOT NULL,
-                payer_id TEXT
+                payer_id TEXT,
+                rail TEXT NOT NULL DEFAULT 'stripe'
             );
 
             CREATE INDEX IF NOT EXISTS idx_sessions_status ON sessions(status);
@@ -764,6 +766,38 @@ def init_db() -> None:
         # Access entitlements (P2-3): what a payment actually buys — see
         # entitlements.py's module docstring
         entitlements.init_entitlements_schema(conn)
+        _assert_not_pre_p3_schema(conn)
+
+
+def _assert_not_pre_p3_schema(conn: Any) -> None:
+    """P3: `rail` (payments/settlements/access_entitlements) and the
+    `gate_type='paid'` rename (P3-1, was 'stripe_payment') both landed with
+    **no** `ALTER TABLE`/migration — by decision, since the operator is
+    starting from a fresh DB for this pass (see the P3 plan's "Migrations"
+    section). `CREATE TABLE IF NOT EXISTS` is a no-op against a table that
+    already exists, so an old-schema DB wouldn't get `rail` added, and worse:
+    a leftover `rooms.gate_type='stripe_payment'` row would silently fall
+    through every `gate_type == "paid"` check this pass introduced —
+    `rooms._access_active()` would take the *not-paid* branch, skip the
+    entitlement check entirely, and the room would quietly become free. Fail
+    loud on startup instead of serving that.
+    """
+    cols = {r[1] for r in conn.execute("PRAGMA table_info(settlements)").fetchall()}
+    if "rail" not in cols:
+        raise RuntimeError(
+            "This database predates the P3 rail-seam pass (settlements.rail is "
+            "missing). No migration is provided for it — delete the database "
+            "file and reseed."
+        )
+    legacy_gate = conn.execute(
+        "SELECT 1 FROM rooms WHERE gate_type = 'stripe_payment' LIMIT 1"
+    ).fetchone()
+    if legacy_gate:
+        raise RuntimeError(
+            "This database has a room with the legacy gate_type='stripe_payment' "
+            "(renamed to 'paid' in P3). No migration is provided for it — delete "
+            "the database file and reseed."
+        )
 
 
 def _migrate_agora_tables(conn: Any) -> None:
@@ -1364,11 +1398,14 @@ def record_settlement(settlement: dict[str, Any]) -> None:
     dropping the settlement row for real money already taken. See
     `settlement_dedupe_key()`'s docstring for the full shape and why it's hashed.
     """
-    from emporia.payments import settlement_dedupe_key
+    from emporia.payments import KNOWN_RAILS, RAIL_STRIPE, settlement_dedupe_key
 
     settlement_id = f"stl_{uuid.uuid4().hex[:16]}"
     session_id = settlement["session_id"]
     payer_id = settlement.get("payer_id")
+    rail = settlement.get("rail", RAIL_STRIPE)
+    if rail not in KNOWN_RAILS:
+        raise ValueError(f"Unknown payment rail {rail!r}, expected one of {sorted(KNOWN_RAILS)}")
     dedupe_key = settlement_dedupe_key(
         session_id, payer_id, settlement.get("payment_intent_ids", [])
     )
@@ -1377,8 +1414,8 @@ def record_settlement(settlement: dict[str, Any]) -> None:
             "INSERT INTO settlements "
             "(settlement_id, session_id, winner_id, total_stake_cents, platform_fee_cents, "
             "winner_payout_cents, platform_fee_bps, payment_intent_ids, "
-            "transfer_id, transfer_status, status, created_at, payer_id, dedupe_key) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) "
+            "transfer_id, transfer_status, status, created_at, payer_id, dedupe_key, rail) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) "
             "ON CONFLICT(dedupe_key) DO NOTHING",
             (
                 settlement_id,
@@ -1395,6 +1432,11 @@ def record_settlement(settlement: dict[str, Any]) -> None:
                 datetime.now(UTC).isoformat(),
                 payer_id,
                 dedupe_key,
+                # P3: an unrecognized value is rejected above rather than let
+                # through to storage; the default (no caller passes "rail" yet)
+                # is RAIL_STRIPE, threaded from PaymentRef.rail once callers
+                # carry one (item 3).
+                rail,
             ),
         )
 
@@ -2961,7 +3003,7 @@ _SETTLEMENT_PUBLIC_COLUMNS = frozenset({
     "settlement_id", "session_id", "winner_id", "total_stake_cents",
     "platform_fee_cents", "winner_payout_cents", "platform_fee_bps",
     "payment_intent_ids", "transfer_id", "transfer_status", "status",
-    "created_at", "payer_id", "refund_id", "reversal_id",
+    "created_at", "payer_id", "refund_id", "reversal_id", "rail",
 })
 _SETTLEMENT_INTERNAL_COLUMNS = frozenset({"dedupe_key"})
 
@@ -4862,9 +4904,10 @@ async def join_room(room_id: str, req: JoinRoomRequest, request: Request):
         # payout below — mirrors record_payment's placement relative to payout
         # for the same "commit the durable record before the non-idempotent
         # Stripe call" reason.
+        from emporia.payments import RAIL_STRIPE
         entitlements.grant(
             "room", room_id, req.agent_id, confirmed_pi,
-            room.access_duration_days, db_path=DATABASE_PATH,
+            room.access_duration_days, rail=RAIL_STRIPE, db_path=DATABASE_PATH,
         )
         from emporia.payments import platform_fee as _platform_fee
         platform_fee = _platform_fee(amount_cents)
@@ -5737,9 +5780,10 @@ async def subscribe_agora_topic(slug: str, req: AgoraSubscribeRequest, request: 
         # P2-4 (R1): record the entitlement this payment just bought — see
         # join_room's identical restructuring and entitlements.py's module
         # docstring.
+        from emporia.payments import RAIL_STRIPE
         entitlements.grant(
             "agora", topic_id, req.agent_id, confirmed_pi,
-            access_duration_days, db_path=DATABASE_PATH,
+            access_duration_days, rail=RAIL_STRIPE, db_path=DATABASE_PATH,
         )
         from emporia.payments import platform_fee as _platform_fee
         platform_fee = _platform_fee(entry_fee)
