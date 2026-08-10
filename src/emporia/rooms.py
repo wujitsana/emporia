@@ -70,7 +70,8 @@ CREATE TABLE IF NOT EXISTS rooms (
     encrypted INTEGER NOT NULL DEFAULT 0,
     linked_session_id TEXT,
     created_at TEXT NOT NULL,
-    updated_at TEXT NOT NULL
+    updated_at TEXT NOT NULL,
+    access_duration_days INTEGER
 );
 
 CREATE TABLE IF NOT EXISTS room_invites (
@@ -126,6 +127,7 @@ class Room:
     linked_session_id: str | None
     created_at: str
     updated_at: str
+    access_duration_days: int | None = None
 
     def to_dict(self, *, viewer_id: str | None = None) -> dict[str, Any]:
         d = asdict(self)
@@ -189,6 +191,7 @@ def _row_to_room(row: sqlite3.Row) -> Room:
         linked_session_id=row["linked_session_id"],
         created_at=row["created_at"],
         updated_at=row["updated_at"],
+        access_duration_days=row["access_duration_days"],
     )
 
 
@@ -241,12 +244,15 @@ def create_room(
     max_members: int | None = None,
     encrypted: bool = False,
     linked_session_id: str | None = None,
+    access_duration_days: int | None = None,
     db_path: Path | None = None,
 ) -> Room:
     if room_type == "public" and gate_type != "open":
         raise ValueError("Public rooms must use gate_type='open'")
     if gate_type == "stripe_payment" and entry_fee_cents <= 0:
         raise ValueError("stripe_payment gate requires entry_fee_cents > 0")
+    if access_duration_days is not None and access_duration_days <= 0:
+        raise ValueError("access_duration_days must be a positive integer or None")
 
     room_id = f"room_{uuid.uuid4().hex[:12]}"
     now = datetime.now(UTC).isoformat()
@@ -256,11 +262,13 @@ def create_room(
         conn.execute(
             "INSERT INTO rooms (room_id, name, description, room_type, gate_type, "
             "entry_fee_cents, currency, creator_id, members_json, max_members, "
-            "encrypted, linked_session_id, created_at, updated_at) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            "encrypted, linked_session_id, created_at, updated_at, "
+            "access_duration_days) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             (room_id, name, description, room_type, gate_type,
              entry_fee_cents, currency, creator_id, json.dumps(members),
-             max_members, int(encrypted), linked_session_id, now, now),
+             max_members, int(encrypted), linked_session_id, now, now,
+             access_duration_days),
         )
         row = conn.execute("SELECT * FROM rooms WHERE room_id = ?", (room_id,)).fetchone()
     return _row_to_room(row)

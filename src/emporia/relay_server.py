@@ -116,6 +116,7 @@ from emporia.session_audit import (
     verify_chain,
 )
 from emporia import rooms as rooms_db
+from emporia import entitlements
 
 # Trigger module registration — import all bundled modules at startup
 import emporia.modules.chess  # noqa: F401
@@ -657,7 +658,8 @@ def init_db() -> None:
                 created_at TEXT NOT NULL,
                 post_count INTEGER NOT NULL DEFAULT 0,
                 subscriber_count INTEGER NOT NULL DEFAULT 0,
-                flair_options TEXT NOT NULL DEFAULT '[]'
+                flair_options TEXT NOT NULL DEFAULT '[]',
+                access_duration_days INTEGER
             );
             CREATE TABLE IF NOT EXISTS agora_members (
                 topic_id TEXT NOT NULL,
@@ -757,6 +759,10 @@ def init_db() -> None:
         _migrate_agora_tables(conn)
         # Rooms schema (separate DDL to keep clean)
         rooms_db.init_rooms_schema(conn)
+        _migrate_rooms(conn)
+        # Access entitlements (P2-3): what a payment actually buys — see
+        # entitlements.py's module docstring
+        entitlements.init_entitlements_schema(conn)
 
 
 def _migrate_agora_tables(conn: Any) -> None:
@@ -779,6 +785,25 @@ def _migrate_agora_tables(conn: Any) -> None:
         conn.execute("ALTER TABLE agora_topics ADD COLUMN gate_type TEXT NOT NULL DEFAULT 'open'")
     if "entry_fee_cents" not in topic_cols:
         conn.execute("ALTER TABLE agora_topics ADD COLUMN entry_fee_cents INTEGER NOT NULL DEFAULT 0")
+    # P2-3: how long one payment's access lasts — NULL (the correct default for
+    # every pre-existing row) means no expiry, same meaning as for rooms
+    # (_migrate_rooms). No backfill needed: NULL is already the right value.
+    if "access_duration_days" not in topic_cols:
+        conn.execute("ALTER TABLE agora_topics ADD COLUMN access_duration_days INTEGER")
+
+
+def _migrate_rooms(conn: Any) -> None:
+    """Add `access_duration_days` to `rooms` (P2-3) — how long one payment's
+    access lasts. `rooms.py` has no migration mechanism of its own
+    (`init_rooms_schema()` is a bare `CREATE TABLE IF NOT EXISTS`), so this lives
+    here rather than there, called right after `rooms_db.init_rooms_schema(conn)`
+    in `init_db()`. `NULL` (the default `ADD COLUMN` gives every pre-existing
+    row) means no expiry — the correct value for every room created before this
+    pass, none of which had any concept of an access window — so no backfill is
+    needed, only the column."""
+    room_cols = {r[1] for r in conn.execute("PRAGMA table_info(rooms)").fetchall()}
+    if "access_duration_days" not in room_cols:
+        conn.execute("ALTER TABLE rooms ADD COLUMN access_duration_days INTEGER")
 
 
 def _migrate_payments(conn: Any) -> None:
@@ -2013,6 +2038,10 @@ class CreateRoomRequest(BaseModel):
     max_members: int | None = None
     encrypted: bool = False           # True → relay stores opaque ciphertext, skips guardrails
     linked_session_id: str | None = None  # link room to a game session
+    # P2-3: how long one payment's access lasts for a stripe_payment room. None
+    # (default) = no expiry — access lasts as long as the room does. Ignored for
+    # non-paid rooms (membership there was never entitlement-gated).
+    access_duration_days: int | None = None
 
 
 class JoinRoomRequest(BaseModel):
@@ -4631,6 +4660,8 @@ async def create_room_endpoint(req: CreateRoomRequest, request: Request):
         raise HTTPException(400, "Public rooms must use gate_type='open'")
     if req.gate_type == "stripe_payment" and req.entry_fee_cents <= 0:
         raise HTTPException(400, "stripe_payment rooms require entry_fee_cents > 0")
+    if req.access_duration_days is not None and req.access_duration_days <= 0:
+        raise HTTPException(400, "access_duration_days must be a positive integer or omitted")
     if req.linked_session_id:
         s = load_session(req.linked_session_id)
         if not s:
@@ -4647,6 +4678,7 @@ async def create_room_endpoint(req: CreateRoomRequest, request: Request):
             max_members=req.max_members,
             encrypted=req.encrypted,
             linked_session_id=req.linked_session_id,
+            access_duration_days=req.access_duration_days,
             db_path=DATABASE_PATH,
         )
         if req.room_type == "public":
@@ -5016,6 +5048,9 @@ class CreateAgoraTopicRequest(BaseModel):
     gate_type: str = "open"             # "open" | "invite" | "paid_invite"
     entry_fee_cents: int = 0            # > 0 required when gate_type="paid_invite"
     flair_options: list[str] = []
+    # P2-3: how long one payment's access lasts for a paid_invite topic. None
+    # (default) = no expiry.
+    access_duration_days: int | None = None
 
 class CreateAgoraPostRequest(BaseModel):
     title: str
@@ -5108,6 +5143,8 @@ async def create_agora_topic(req: CreateAgoraTopicRequest, request: Request):
         raise HTTPException(400, "entry_fee_cents > 0 requires gate_type=paid_invite")
     if req.visibility not in _AGORA_VISIBILITIES:
         raise HTTPException(400, f"visibility must be one of {sorted(_AGORA_VISIBILITIES)}")
+    if req.access_duration_days is not None and req.access_duration_days <= 0:
+        raise HTTPException(400, "access_duration_days must be a positive integer or omitted")
     topic_id = f"tpc_{uuid.uuid4().hex[:12]}"
     slug = req.slug or _slugify(req.name)
     now = datetime.now(UTC).isoformat()
@@ -5115,11 +5152,12 @@ async def create_agora_topic(req: CreateAgoraTopicRequest, request: Request):
         try:
             conn.execute(
                 "INSERT INTO agora_topics (topic_id, slug, name, description, visibility, "
-                "gate_type, entry_fee_cents, creator_id, created_at, flair_options) "
-                "VALUES (?,?,?,?,?,?,?,?,?,?)",
+                "gate_type, entry_fee_cents, creator_id, created_at, flair_options, "
+                "access_duration_days) "
+                "VALUES (?,?,?,?,?,?,?,?,?,?,?)",
                 (topic_id, slug, req.name, req.description, req.visibility,
                  req.gate_type, req.entry_fee_cents,
-                 caller, now, json.dumps(req.flair_options)),
+                 caller, now, json.dumps(req.flair_options), req.access_duration_days),
             )
             # Creator auto-subscribes as owner
             conn.execute(

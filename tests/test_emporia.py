@@ -5293,6 +5293,90 @@ def test_migrate_settlement_dedupe_key_rewrites_stale_two_part_keys_once():
     conn.close()
 
 
+def test_migrate_rooms_adds_access_duration_days_column():
+    """P2-3: _migrate_rooms() must add access_duration_days to a rooms table
+    that predates it (a DB created before this pass), without touching
+    existing rows' other columns. NULL is the correct backfilled value — every
+    pre-existing room had no concept of an access window."""
+    import sqlite3
+    from emporia.relay_server import _migrate_rooms
+
+    conn = sqlite3.connect(":memory:")
+    conn.row_factory = sqlite3.Row
+    conn.executescript("""
+        CREATE TABLE rooms (
+            room_id TEXT PRIMARY KEY, name TEXT NOT NULL,
+            description TEXT NOT NULL DEFAULT '', room_type TEXT NOT NULL DEFAULT 'public',
+            gate_type TEXT NOT NULL DEFAULT 'open', entry_fee_cents INTEGER NOT NULL DEFAULT 0,
+            currency TEXT NOT NULL DEFAULT 'USD', creator_id TEXT NOT NULL,
+            members_json TEXT NOT NULL DEFAULT '[]', max_members INTEGER,
+            encrypted INTEGER NOT NULL DEFAULT 0, linked_session_id TEXT,
+            created_at TEXT NOT NULL, updated_at TEXT NOT NULL
+        );
+    """)
+    conn.execute(
+        "INSERT INTO rooms (room_id, name, creator_id, created_at, updated_at) "
+        "VALUES ('room_legacy', 'Legacy Room', 'legacy_owner', '2020-01-01', '2020-01-01')"
+    )
+    conn.commit()
+
+    cols_before = {r[1] for r in conn.execute("PRAGMA table_info(rooms)").fetchall()}
+    assert "access_duration_days" not in cols_before
+
+    _migrate_rooms(conn)
+    conn.commit()
+
+    cols_after = {r[1] for r in conn.execute("PRAGMA table_info(rooms)").fetchall()}
+    assert "access_duration_days" in cols_after
+    row = conn.execute(
+        "SELECT access_duration_days, name FROM rooms WHERE room_id = 'room_legacy'"
+    ).fetchone()
+    assert row["access_duration_days"] is None
+    assert row["name"] == "Legacy Room"
+    conn.close()
+
+
+def test_migrate_agora_tables_adds_access_duration_days_column():
+    """P2-3: sibling of test_migrate_rooms_adds_access_duration_days_column for
+    agora_topics — _migrate_agora_tables() already extends this same idempotent
+    ADD COLUMN block for gate_type/entry_fee_cents; access_duration_days follows
+    the identical pattern."""
+    import sqlite3
+    from emporia.relay_server import _migrate_agora_tables
+
+    conn = sqlite3.connect(":memory:")
+    conn.row_factory = sqlite3.Row
+    conn.executescript("""
+        CREATE TABLE agora_topics (
+            topic_id TEXT PRIMARY KEY, slug TEXT UNIQUE NOT NULL, name TEXT NOT NULL,
+            description TEXT NOT NULL DEFAULT '', visibility TEXT NOT NULL DEFAULT 'public',
+            gate_type TEXT NOT NULL DEFAULT 'open', entry_fee_cents INTEGER NOT NULL DEFAULT 0,
+            creator_id TEXT NOT NULL, created_at TEXT NOT NULL,
+            post_count INTEGER NOT NULL DEFAULT 0, subscriber_count INTEGER NOT NULL DEFAULT 0,
+            flair_options TEXT NOT NULL DEFAULT '[]'
+        );
+    """)
+    conn.execute(
+        "INSERT INTO agora_topics (topic_id, slug, name, creator_id, created_at) "
+        "VALUES ('tpc_legacy', 'legacy-slug', 'Legacy Topic', 'legacy_owner', '2020-01-01')"
+    )
+    conn.commit()
+
+    cols_before = {r[1] for r in conn.execute("PRAGMA table_info(agora_topics)").fetchall()}
+    assert "access_duration_days" not in cols_before
+
+    _migrate_agora_tables(conn)
+    conn.commit()
+
+    cols_after = {r[1] for r in conn.execute("PRAGMA table_info(agora_topics)").fetchall()}
+    assert "access_duration_days" in cols_after
+    row = conn.execute(
+        "SELECT access_duration_days FROM agora_topics WHERE topic_id = 'tpc_legacy'"
+    ).fetchone()
+    assert row["access_duration_days"] is None
+    conn.close()
+
+
 def test_migrate_settlement_dedupe_key_restores_index_on_every_startup():
     """P2-1 (R3): P1r-1 restructured this migration into a marker-gated one-shot
     but left `CREATE UNIQUE INDEX` *inside* the gated block, so it only ever runs
@@ -5835,6 +5919,41 @@ def test_paid_room_requires_fee(rooms_db_path):
         create_room("Bad Paid Room", "agent_alice", room_type="private",
                     gate_type="stripe_payment", entry_fee_cents=0,
                     db_path=rooms_db_path)
+
+
+def test_create_room_with_access_duration_days(rooms_db_path):
+    """P2-3: access_duration_days is stored and round-trips through get_room()."""
+    from emporia.rooms import create_room, get_room
+    room = create_room("Monthly Room", "agent_alice", room_type="private",
+                       gate_type="stripe_payment", entry_fee_cents=500,
+                       access_duration_days=30, db_path=rooms_db_path)
+    assert room.access_duration_days == 30
+    fetched = get_room(room.room_id, db_path=rooms_db_path)
+    assert fetched.access_duration_days == 30
+
+
+def test_create_room_default_access_duration_is_unlimited(rooms_db_path):
+    """P2-3: omitting access_duration_days means no expiry — NULL, not 0 or
+    some other sentinel that could be misread as 'instantly expired'."""
+    from emporia.rooms import create_room
+    room = create_room("Lifetime Room", "agent_alice", room_type="private",
+                       gate_type="stripe_payment", entry_fee_cents=500,
+                       db_path=rooms_db_path)
+    assert room.access_duration_days is None
+
+
+def test_create_room_rejects_non_positive_access_duration(rooms_db_path):
+    """P2-3: 0 or negative must be rejected explicitly rather than silently
+    meaning 'expires immediately'."""
+    from emporia.rooms import create_room
+    with pytest.raises(ValueError, match="access_duration_days"):
+        create_room("Bad Duration Room", "agent_alice", room_type="private",
+                    gate_type="stripe_payment", entry_fee_cents=500,
+                    access_duration_days=0, db_path=rooms_db_path)
+    with pytest.raises(ValueError, match="access_duration_days"):
+        create_room("Bad Duration Room 2", "agent_alice", room_type="private",
+                    gate_type="stripe_payment", entry_fee_cents=500,
+                    access_duration_days=-5, db_path=rooms_db_path)
 
 
 def test_public_room_cannot_have_invite_gate(rooms_db_path):
@@ -8685,3 +8804,134 @@ def test_agents_list_session_and_win_counts_correct(prod_client):
     assert by_id["agents_count_creator"]["win_count"] == 0
     assert by_id["agents_count_winner"]["session_count"] == 1
     assert by_id["agents_count_winner"]["win_count"] == 1
+
+
+# ============================================================================
+# Access entitlements (P2-3) — data layer, direct (no HTTP)
+# ============================================================================
+
+@pytest.fixture
+def entitlements_db_path():
+    """Isolated SQLite for entitlement tests, mirroring rooms_db_path."""
+    import tempfile
+    with tempfile.NamedTemporaryFile(suffix=".sqlite3", delete=False) as f:
+        path = Path(f.name)
+    import sqlite3
+    conn = sqlite3.connect(path)
+    conn.row_factory = sqlite3.Row
+    from emporia.entitlements import init_entitlements_schema
+    init_entitlements_schema(conn)
+    conn.commit()
+    conn.close()
+    yield path
+    path.unlink(missing_ok=True)
+
+
+def test_entitlement_grant_and_has_access(entitlements_db_path):
+    """P2-3: a fresh grant with no duration is immediately active and never
+    expires."""
+    from emporia.entitlements import grant, has_access
+
+    assert not has_access("room", "room_ent_1", "ent_payer_a", db_path=entitlements_db_path)
+    grant("room", "room_ent_1", "ent_payer_a", "pi_ent_1", db_path=entitlements_db_path)
+    assert has_access("room", "room_ent_1", "ent_payer_a", db_path=entitlements_db_path)
+    # A different agent, or a different resource, must not be affected.
+    assert not has_access("room", "room_ent_1", "ent_payer_b", db_path=entitlements_db_path)
+    assert not has_access("room", "room_ent_2", "ent_payer_a", db_path=entitlements_db_path)
+
+
+def test_entitlement_expires_after_duration(entitlements_db_path):
+    """P2-3: a grant with duration_days set stops granting access once
+    expires_at has passed. Backdates granted_at directly (rather than sleeping)
+    to make the window deterministic."""
+    import sqlite3
+    from emporia.entitlements import grant, has_access
+
+    ent = grant("room", "room_ent_exp", "ent_payer", "pi_ent_exp",
+                duration_days=1, db_path=entitlements_db_path)
+    assert has_access("room", "room_ent_exp", "ent_payer", db_path=entitlements_db_path)
+
+    # Backdate this grant's window to have closed 1 hour ago.
+    from datetime import UTC, datetime, timedelta
+    past = (datetime.now(UTC) - timedelta(hours=1)).isoformat()
+    conn = sqlite3.connect(entitlements_db_path)
+    conn.execute(
+        "UPDATE access_entitlements SET expires_at = ? WHERE entitlement_id = ?",
+        (past, ent.entitlement_id),
+    )
+    conn.commit()
+    conn.close()
+
+    assert not has_access("room", "room_ent_exp", "ent_payer", db_path=entitlements_db_path), \
+        "access must stop once expires_at has passed"
+
+
+def test_entitlement_revoke_blocks_access(entitlements_db_path):
+    """P2-3: revoke() ends access immediately, even with no expiry set."""
+    from emporia.entitlements import grant, has_access, revoke
+
+    grant("room", "room_ent_rev", "ent_payer", "pi_ent_rev", db_path=entitlements_db_path)
+    assert has_access("room", "room_ent_rev", "ent_payer", db_path=entitlements_db_path)
+
+    revoked = revoke("room", "room_ent_rev", "ent_payer", reason="kicked",
+                      db_path=entitlements_db_path)
+    assert revoked is True
+    assert not has_access("room", "room_ent_rev", "ent_payer", db_path=entitlements_db_path)
+
+
+def test_entitlement_revoke_returns_false_when_nothing_active(entitlements_db_path):
+    """P2-3: revoking an agent with no entitlement row at all (a free-room
+    member, someone who never paid) is not an error — it's a no-op reported as
+    such, not raised."""
+    from emporia.entitlements import revoke
+
+    result = revoke("room", "room_ent_none", "never_paid", reason="kicked",
+                     db_path=entitlements_db_path)
+    assert result is False
+
+
+def test_entitlement_newest_grant_wins_over_older_revoke(entitlements_db_path):
+    """P2-3: has_access() consults only the newest row. A later, fresh grant
+    (e.g. a re-purchase after expiry) restores access even though an earlier
+    grant for the same resource/agent was revoked."""
+    from emporia.entitlements import grant, has_access, revoke
+
+    grant("room", "room_ent_newest", "ent_payer", "pi_ent_first", db_path=entitlements_db_path)
+    revoke("room", "room_ent_newest", "ent_payer", reason="expired_manually",
+           db_path=entitlements_db_path)
+    assert not has_access("room", "room_ent_newest", "ent_payer", db_path=entitlements_db_path)
+
+    grant("room", "room_ent_newest", "ent_payer", "pi_ent_second", db_path=entitlements_db_path)
+    assert has_access("room", "room_ent_newest", "ent_payer", db_path=entitlements_db_path), \
+        "a later grant must restore access regardless of an earlier revoke"
+
+
+def test_entitlement_is_revoked_checks_reason(entitlements_db_path):
+    """P2-3: is_revoked() is the ban check — filterable by reason, so a kick can
+    be distinguished from other revocations (e.g. an expiry sweep, if one is
+    ever added) without conflating the two."""
+    from emporia.entitlements import grant, is_revoked, revoke
+
+    grant("room", "room_ent_ban", "ent_payer", "pi_ent_ban", db_path=entitlements_db_path)
+    assert not is_revoked("room", "room_ent_ban", "ent_payer", reason="kicked",
+                           db_path=entitlements_db_path)
+
+    revoke("room", "room_ent_ban", "ent_payer", reason="kicked", db_path=entitlements_db_path)
+    assert is_revoked("room", "room_ent_ban", "ent_payer", reason="kicked",
+                       db_path=entitlements_db_path)
+    assert not is_revoked("room", "room_ent_ban", "ent_payer", reason="some_other_reason",
+                           db_path=entitlements_db_path)
+    assert is_revoked("room", "room_ent_ban", "ent_payer", db_path=entitlements_db_path), \
+        "with no reason filter, any revocation counts"
+
+
+def test_entitlement_resource_type_keeps_room_and_agora_separate(entitlements_db_path):
+    """P2-3: resource_type exists specifically so a room_id and a topic_id that
+    happened to collide (or, more realistically, so /agoras and /rooms) never
+    share an entitlement namespace — unlike settlements.session_id, which this
+    codebase has been burned by overloading across resource kinds before."""
+    from emporia.entitlements import grant, has_access
+
+    grant("room", "shared_id_123", "ent_payer", "pi_room", db_path=entitlements_db_path)
+    assert has_access("room", "shared_id_123", "ent_payer", db_path=entitlements_db_path)
+    assert not has_access("agora", "shared_id_123", "ent_payer", db_path=entitlements_db_path)
