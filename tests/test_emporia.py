@@ -4609,6 +4609,61 @@ def test_settlement_row_dict_never_leaks_internal_columns_to_a_co_payer(client):
         f"settlement row, in any field — got: {serialized}"
 
 
+def test_settlements_agent_id_and_unfiltered_branches_never_return_internal_columns(client):
+    """P2-2 (R4): P1r-3 classified `settlements` columns into
+    `_SETTLEMENT_PUBLIC_COLUMNS`/`_SETTLEMENT_INTERNAL_COLUMNS` and rebuilt
+    `_settlement_row_dict()` from the public set — but `list_settlements()`'s
+    `?agent_id=` branch and its unfiltered (operator) branch don't call
+    `_settlement_row_dict()` at all (their SQL is already ownership-scoped, so
+    they skip its per-row redaction on purpose — see the comment at
+    relay_server.py's `?agent_id=` branch). Both still built their response with
+    `{**dict(r), ...}`, the exact spread pattern P1r-3 fixed one call site of.
+    `test_settlement_public_and_internal_columns_cover_the_schema` stayed green
+    throughout — it only checks the two column *sets* cover the schema, not that
+    every read path uses them. Must fail pre-fix: `dedupe_key` appears in both
+    the ?agent_id= caller's own receipt and the operator's unfiltered listing."""
+    from emporia.relay_server import _SETTLEMENT_INTERNAL_COLUMNS, record_settlement, DATABASE_PATH
+    from emporia import rooms as rooms_db
+
+    owner = "p2_2_leak_owner"
+    payer = "p2_2_leak_payer"
+    _register(client, owner)
+    _register(client, payer)
+
+    r = client.post("/rooms", json={
+        "name": "P2-2 Leak Room", "creator_id": owner,
+        "room_type": "private", "gate_type": "stripe_payment", "entry_fee_cents": 100,
+    },
+        headers={"x-emporia-agent-id": owner})
+    assert r.status_code == 200, r.text
+    room_id = r.json()["room_id"]
+
+    rooms_db.add_member(room_id, payer, db_path=DATABASE_PATH)
+    record_settlement({
+        "session_id": room_id, "winner_id": owner, "outcome_type": "room_entry",
+        "status": "settled", "total_stake_cents": 100, "platform_fee_cents": 0,
+        "winner_payout_cents": 100, "platform_fee_bps": 0,
+        "payment_intent_ids": ["pi_p2_2_leak"], "transfer_id": None,
+        "transfer_status": "no_stripe_account", "payer_id": payer,
+    })
+
+    own_receipt = client.get("/payments/settlements", params={"agent_id": payer},
+        headers={"x-emporia-agent-id": payer})
+    assert own_receipt.status_code == 200, own_receipt.text
+    own_row = next(s for s in own_receipt.json()["settlements"] if s["session_id"] == room_id)
+    leaked = _SETTLEMENT_INTERNAL_COLUMNS & own_row.keys()
+    assert not leaked, \
+        f"?agent_id= branch returned internal column(s) {leaked} — {own_row.keys()}"
+
+    with patch.dict(os.environ, {"EMPORIA_AGENT_ID": owner}):
+        operator_view = client.get("/payments/settlements", headers={"x-emporia-agent-id": owner})
+    assert operator_view.status_code == 200, operator_view.text
+    op_row = next(s for s in operator_view.json()["settlements"] if s["session_id"] == room_id)
+    leaked = _SETTLEMENT_INTERNAL_COLUMNS & op_row.keys()
+    assert not leaked, \
+        f"unfiltered (operator) branch returned internal column(s) {leaked} — {op_row.keys()}"
+
+
 def test_settlement_payer_id_null_stays_null_for_session_rows(client):
     """N8 review R1 verification: the payer_id redaction added to
     _settlement_row_dict must guard on `is not None` — a session's aggregate

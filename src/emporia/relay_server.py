@@ -2912,6 +2912,27 @@ _SETTLEMENT_PUBLIC_COLUMNS = frozenset({
 _SETTLEMENT_INTERNAL_COLUMNS = frozenset({"dedupe_key"})
 
 
+def _settlement_public_dict(row: Any) -> dict[str, Any]:
+    """Project a `settlements` row down to `_SETTLEMENT_PUBLIC_COLUMNS`, with
+    `payment_intent_ids` decoded. The one place every settlement read path builds
+    its base dict from — P2-2 (R4): `_settlement_row_dict()` used this
+    projection, but `list_settlements()`'s `?agent_id=` and unfiltered-operator
+    branches still built their response with `{**dict(r), ...}` (every column,
+    including `dedupe_key`), which is the exact `{**dict(row)}` pattern P1r-3
+    fixed in `_settlement_row_dict()` and is why the guard test it added
+    (`test_settlement_public_and_internal_columns_cover_the_schema`) stayed green
+    while those two branches kept leaking: it checks that the two column *sets*
+    cover the schema, not that every call site actually uses them. Those two
+    branches don't call `_settlement_row_dict()` itself — their SQL is already
+    ownership-scoped (N8-R4/R5) and calling it would apply its per-row redaction
+    on top of rows that are supposed to come back unredacted — so the projection
+    alone is factored out here for both to share.
+    """
+    d = {k: v for k, v in dict(row).items() if k in _SETTLEMENT_PUBLIC_COLUMNS}
+    d["payment_intent_ids"] = json.loads(row["payment_intent_ids"])
+    return d
+
+
 def _settlement_row_dict(
     row: Any, caller: str | None, participant_session_ids: set[str]
 ) -> dict[str, Any]:
@@ -2944,8 +2965,7 @@ def _settlement_row_dict(
     embeds `payer_id` in plaintext (P1r-1) and must never reach a response; it
     was leaking here from the moment P1a-2 added the column.
     """
-    d = {k: v for k, v in dict(row).items() if k in _SETTLEMENT_PUBLIC_COLUMNS}
-    d["payment_intent_ids"] = json.loads(row["payment_intent_ids"])
+    d = _settlement_public_dict(row)
     owner = _relay_operator_id()
     if owner and caller == owner:
         return d
@@ -3089,20 +3109,14 @@ async def list_settlements(
                 "ORDER BY created_at DESC LIMIT ?",
                 (agent_id, agent_id), limit,
             )
-            settlements = [
-                {**dict(r), "payment_intent_ids": json.loads(r["payment_intent_ids"])}
-                for r in rows
-            ]
+            settlements = [_settlement_public_dict(r) for r in rows]
         else:
             rows, has_more = _fetch_page(
                 conn,
                 "SELECT * FROM settlements ORDER BY created_at DESC LIMIT ?",
                 (), limit,
             )
-            settlements = [
-                {**dict(r), "payment_intent_ids": json.loads(r["payment_intent_ids"])}
-                for r in rows
-            ]
+            settlements = [_settlement_public_dict(r) for r in rows]
     return {"settlements": settlements, "count": len(settlements), "has_more": has_more}
 
 
