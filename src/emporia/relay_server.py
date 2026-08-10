@@ -4829,6 +4829,99 @@ async def get_room_endpoint(room_id: str, request: Request):
     return room.to_dict(viewer_id=viewer_id, db_path=DATABASE_PATH)
 
 
+async def _settle_access_payment(
+    *,
+    resource_type: str,
+    resource_id: str,
+    outcome_type: str,
+    payer_id: str,
+    creator_id: str,
+    amount_cents: int,
+    payment_ref: "PaymentRef",
+    access_duration_days: int | None,
+) -> None:
+    """P3 (item 4): the pay-to-access settlement/payout seam, shared by
+    join_room() and subscribe_agora_topic() — before this they were
+    near-identical copy-pasted blocks (same fee split, same Connect account
+    lookup, same try/except around payout_winner, same record_settlement
+    shape; the only differences were cosmetic — kwargs vs. positional args
+    into payout_winner — and the resource ids/outcome_type strings).
+
+    Records the entitlement this payment just bought (P2-4), before the
+    payout — mirrors record_payment's placement relative to payout for the
+    same "commit the durable record before the non-idempotent Stripe call"
+    reason both join_room and subscribe_agora_topic already followed.
+
+    The seam is drawn where custody actually splits, not as a dispatch
+    table: recording the settlement (rail-agnostic, always runs) is
+    structurally separate from the platform→creator transfer hop
+    (Stripe-only, skipped via the `if creator_stripe:` guard and the
+    "no_stripe_account" sentinel below). Per the non-custodial x402 decision
+    (ROADMAP.md § Payments), `payout_winner()` has no counterpart at all on
+    a rail where the payment itself is the settlement — a real second rail
+    would skip this transfer entirely, not call into a different transfer
+    implementation, so there is nothing to dispatch to yet. See
+    payments.KNOWN_RAILS's own docstring for why a speculative registry
+    entry isn't here either.
+
+    settle() (session escrow, capture-then-transfer) is deliberately not
+    routed through here — escrow has no x402 analogue and stays Stripe-only
+    (ROADMAP.md § Payments), and its own "pending_connect" initial sentinel
+    stays distinct from this function's "no_stripe_account" for the same
+    condition; unifying the two is a behavior change, not this pass's job.
+
+    L2: `from emporia.payments import ...` stays function-local here, same
+    as the two call sites it replaces — 69 test
+    `@patch("emporia.payments.X")` decorators only intercept because nothing
+    in this file imports these names at module scope.
+    """
+    from emporia.payments import payout_winner, platform_fee as _platform_fee, settlement_dedupe_key
+
+    entitlements.grant(
+        resource_type, resource_id, payer_id, payment_ref.reference,
+        access_duration_days, rail=payment_ref.rail, db_path=DATABASE_PATH,
+    )
+    platform_fee = _platform_fee(amount_cents)
+    creator_payout = amount_cents - platform_fee
+    transfer_id = None
+    transfer_status = "no_stripe_account"
+    if creator_payout > 0:
+        creator_stripe = AGENT_REGISTRY.get_stripe_account(creator_id)
+        if creator_stripe:
+            try:
+                t = await payout_winner(
+                    winner_id=creator_id,
+                    stripe_account_id=creator_stripe,
+                    amount_cents=creator_payout,
+                    session_id=resource_id,
+                    # Matches this same settlement's dedupe_key below — same
+                    # helper, same inputs, by construction (P1r-2, R1). L1:
+                    # only the bare reference reaches the hash, never the rail.
+                    idempotency_key="emporia:payout:" + settlement_dedupe_key(
+                        resource_id, payer_id, [payment_ref.reference]
+                    ),
+                )
+                transfer_id = t["transfer_id"]
+                transfer_status = "transferred"
+            except Exception:
+                transfer_status = "transfer_failed"
+    record_settlement({
+        "session_id": resource_id,
+        "winner_id": creator_id,
+        "outcome_type": outcome_type,
+        "status": "settled",
+        "total_stake_cents": amount_cents,
+        "platform_fee_cents": platform_fee,
+        "winner_payout_cents": creator_payout,
+        "platform_fee_bps": OPERATOR_FEE_BPS,
+        "payment_intent_ids": [payment_ref.reference],
+        "transfer_id": transfer_id,
+        "transfer_status": transfer_status,
+        "payer_id": payer_id,
+        "rail": payment_ref.rail,
+    })
+
+
 @app.post("/rooms/{room_id}/join")
 async def join_room(room_id: str, req: JoinRoomRequest, request: Request):
     identity_verified = _require_caller_unless_mpp_payment(req.agent_id, request)
@@ -4929,55 +5022,16 @@ async def join_room(room_id: str, req: JoinRoomRequest, request: Request):
         raise HTTPException(403, str(e))
 
     if room.gate_type == "paid" and confirmed_pi:
-        # P2-4 (R1): record the entitlement this payment just bought, before the
-        # payout below — mirrors record_payment's placement relative to payout
-        # for the same "commit the durable record before the non-idempotent
-        # Stripe call" reason.
-        entitlements.grant(
-            "room", room_id, req.agent_id, confirmed_pi.reference,
-            room.access_duration_days, rail=confirmed_pi.rail, db_path=DATABASE_PATH,
+        await _settle_access_payment(
+            resource_type="room",
+            resource_id=room_id,
+            outcome_type="room_entry",
+            payer_id=req.agent_id,
+            creator_id=room.creator_id,
+            amount_cents=amount_cents,
+            payment_ref=confirmed_pi,
+            access_duration_days=room.access_duration_days,
         )
-        from emporia.payments import platform_fee as _platform_fee
-        platform_fee = _platform_fee(amount_cents)
-        creator_payout = amount_cents - platform_fee
-        transfer_id = None
-        transfer_status = "no_stripe_account"
-        if creator_payout > 0:
-            creator_stripe = AGENT_REGISTRY.get_stripe_account(room.creator_id)
-            if creator_stripe:
-                try:
-                    from emporia.payments import payout_winner, settlement_dedupe_key
-                    t = await payout_winner(
-                        winner_id=room.creator_id,
-                        stripe_account_id=creator_stripe,
-                        amount_cents=creator_payout,
-                        session_id=room_id,
-                        # Matches this same settlement's dedupe_key below — same
-                        # helper, same inputs, by construction (P1r-2, R1). L1:
-                        # only the bare reference reaches the hash, never the rail.
-                        idempotency_key="emporia:payout:" + settlement_dedupe_key(
-                            room_id, req.agent_id, [confirmed_pi.reference]
-                        ),
-                    )
-                    transfer_id = t["transfer_id"]
-                    transfer_status = "transferred"
-                except Exception:
-                    transfer_status = "transfer_failed"
-        record_settlement({
-            "session_id": room_id,
-            "winner_id": room.creator_id,
-            "outcome_type": "room_entry",
-            "status": "settled",
-            "total_stake_cents": amount_cents,
-            "platform_fee_cents": platform_fee,
-            "winner_payout_cents": creator_payout,
-            "platform_fee_bps": OPERATOR_FEE_BPS,
-            "payment_intent_ids": [confirmed_pi.reference],
-            "transfer_id": transfer_id,
-            "transfer_status": transfer_status,
-            "payer_id": req.agent_id,
-            "rail": confirmed_pi.rail,
-        })
 
     await broadcast_to_session(f"room:{room_id}", {
         "type": "member_joined",
@@ -5808,43 +5862,16 @@ async def subscribe_agora_topic(slug: str, req: AgoraSubscribeRequest, request: 
                 )
 
     if confirmed_pi and entry_fee > 0:
-        # P2-4 (R1): record the entitlement this payment just bought — see
-        # join_room's identical restructuring and entitlements.py's module
-        # docstring.
-        entitlements.grant(
-            "agora", topic_id, req.agent_id, confirmed_pi.reference,
-            access_duration_days, rail=confirmed_pi.rail, db_path=DATABASE_PATH,
+        await _settle_access_payment(
+            resource_type="agora",
+            resource_id=topic_id,
+            outcome_type="agora_subscribe",
+            payer_id=req.agent_id,
+            creator_id=creator_id,
+            amount_cents=entry_fee,
+            payment_ref=confirmed_pi,
+            access_duration_days=access_duration_days,
         )
-        from emporia.payments import platform_fee as _platform_fee
-        platform_fee = _platform_fee(entry_fee)
-        creator_payout = entry_fee - platform_fee
-        transfer_id = None
-        transfer_status = "no_stripe_account"
-        if creator_payout > 0:
-            creator_stripe = AGENT_REGISTRY.get_stripe_account(creator_id)
-            if creator_stripe:
-                try:
-                    from emporia.payments import payout_winner, settlement_dedupe_key
-                    t = await payout_winner(
-                        creator_id, creator_stripe, creator_payout, topic_id,
-                        # Matches this same settlement's dedupe_key below — same
-                        # helper, same inputs, by construction (P1r-2, R1). L1:
-                        # only the bare reference reaches the hash, never the rail.
-                        idempotency_key="emporia:payout:" + settlement_dedupe_key(
-                            topic_id, req.agent_id, [confirmed_pi.reference]
-                        ),
-                    )
-                    transfer_id = t["transfer_id"]
-                    transfer_status = "transferred"
-                except Exception:
-                    transfer_status = "transfer_failed"
-        record_settlement({
-            "session_id": topic_id, "winner_id": creator_id, "outcome_type": "agora_subscribe",
-            "status": "settled", "total_stake_cents": entry_fee, "platform_fee_cents": platform_fee,
-            "winner_payout_cents": creator_payout, "platform_fee_bps": OPERATOR_FEE_BPS,
-            "payment_intent_ids": [confirmed_pi.reference], "transfer_id": transfer_id,
-            "transfer_status": transfer_status, "payer_id": req.agent_id, "rail": confirmed_pi.rail,
-        })
 
     return {"ok": True, "slug": slug, "agent_id": req.agent_id, "gate_type": gate}
 
