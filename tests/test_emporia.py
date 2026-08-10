@@ -5955,6 +5955,75 @@ def test_settlements_agent_id_and_unfiltered_branches_never_return_internal_colu
         f"unfiltered (operator) branch returned internal column(s) {leaked} — {op_row.keys()}"
 
 
+def test_settlements_agent_id_and_unfiltered_branches_return_refund_ids_in_plaintext(client):
+    """S2 (P2r-6): `refund_id`/`reversal_id` are public columns
+    (`_SETTLEMENT_PUBLIC_COLUMNS`) at `list_settlements()`'s `?agent_id=` and
+    unfiltered-operator branches, by design — those branches' SQL is already
+    ownership/operator-scoped, so they return every public column in
+    plaintext for the owning caller (see `_settlement_public_dict`'s
+    docstring). `test_settlements_agent_id_and_unfiltered_branches_never_return_internal_columns`
+    only proves the *internal* set (`dedupe_key`) is excluded there — it can't
+    catch a regression that also excluded `refund_id`/`reversal_id` from those
+    same branches, since they're not internal. No source fix: this closes
+    that evidentiary blind spot for the two newest columns, the way P2-2
+    closed it for `dedupe_key`. `test_kick_refund_ids_redacted_for_a_co_payer`
+    covers the complementary case (a *non-owning* caller must see
+    `[redacted]`, via `_settlement_row_dict`) — this test is its sibling for
+    the two branches that skip that redaction on purpose."""
+    import sqlite3
+
+    from emporia.relay_server import record_settlement, DATABASE_PATH
+    from emporia import rooms as rooms_db
+
+    owner = "s2_pub_owner"
+    payer = "s2_pub_payer"
+    _register(client, owner)
+    _register(client, payer)
+
+    r = client.post("/rooms", json={
+        "name": "S2 Public Refund Ids Room", "creator_id": owner,
+        "room_type": "private", "gate_type": "stripe_payment", "entry_fee_cents": 100,
+    },
+        headers={"x-emporia-agent-id": owner})
+    assert r.status_code == 200, r.text
+    room_id = r.json()["room_id"]
+
+    rooms_db.add_member(room_id, payer, db_path=DATABASE_PATH)
+    record_settlement({
+        "session_id": room_id, "winner_id": owner, "outcome_type": "room_entry",
+        "status": "settled", "total_stake_cents": 100, "platform_fee_cents": 0,
+        "winner_payout_cents": 100, "platform_fee_bps": 0,
+        "payment_intent_ids": ["pi_s2_pub"], "transfer_id": "tr_s2_pub",
+        "transfer_status": "transferred", "payer_id": payer,
+    })
+    conn = sqlite3.connect(DATABASE_PATH)
+    conn.execute(
+        "UPDATE settlements SET transfer_status='refunded', refund_id=?, reversal_id=? "
+        "WHERE session_id=? AND payer_id=?",
+        ("re_s2_pub", "trr_s2_pub", room_id, payer),
+    )
+    conn.commit()
+    conn.close()
+
+    own_receipt = client.get("/payments/settlements", params={"agent_id": payer},
+        headers={"x-emporia-agent-id": payer})
+    assert own_receipt.status_code == 200, own_receipt.text
+    own_row = next(s for s in own_receipt.json()["settlements"] if s["session_id"] == room_id)
+    assert own_row["refund_id"] == "re_s2_pub", \
+        f"?agent_id= branch must return the owning payer's own refund_id in plaintext, got {own_row!r}"
+    assert own_row["reversal_id"] == "trr_s2_pub", \
+        f"?agent_id= branch must return the owning payer's own reversal_id in plaintext, got {own_row!r}"
+
+    with patch.dict(os.environ, {"EMPORIA_AGENT_ID": owner}):
+        operator_view = client.get("/payments/settlements", headers={"x-emporia-agent-id": owner})
+    assert operator_view.status_code == 200, operator_view.text
+    op_row = next(s for s in operator_view.json()["settlements"] if s["session_id"] == room_id)
+    assert op_row["refund_id"] == "re_s2_pub", \
+        f"unfiltered (operator) branch must return refund_id in plaintext, got {op_row!r}"
+    assert op_row["reversal_id"] == "trr_s2_pub", \
+        f"unfiltered (operator) branch must return reversal_id in plaintext, got {op_row!r}"
+
+
 def test_settlement_payer_id_null_stays_null_for_session_rows(client):
     """N8 review R1 verification: the payer_id redaction added to
     _settlement_row_dict must guard on `is not None` — a session's aggregate
