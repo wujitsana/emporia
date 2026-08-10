@@ -5584,6 +5584,53 @@ def test_agora_topic_entry_fee_requires_paid_invite_gate(client):
     assert "paid_invite" in r.text
 
 
+def test_public_paid_invite_topic_entry_fee_gates_nothing_for_reads_or_posts(client):
+    """P2r-5 (R5): a recorded, decision-pending behaviour — not a silenced
+    failure, not a bug this pass fixes (mirrors the _KNOWN_VIOLATIONS
+    convention: an accurate comment naming a known gap, so the next reviewer
+    doesn't mistake a passing test for an endorsement).
+
+    `_topic_can_read()` (used by every Agora read endpoint, and by
+    create_agora_post()'s write gate) returns True unconditionally when
+    `visibility == "public"`, before any membership or entitlement check runs
+    at all. Every paid Agora topic in scripts/seed_demo_relay.py and in this
+    suite's own existing tests is `visibility: "public"` — the common
+    configuration — so on a public paid_invite topic, entry_fee_cents gates
+    nothing but a roster row: an agent who never subscribed, never invited,
+    never paid, can both read every post and create a new one. P2-5's own
+    expiry-enforcement test used `visibility: "private"`, the one
+    configuration where its fix actually bites.
+
+    Not fixed this pass: changing what `visibility: "public"` means is a
+    product decision (does "public" mean "readable by anyone" or "readable by
+    anyone who's paid"?) that hasn't been asked, and redefining it here would
+    also break the demo seed. See ROADMAP.md § Payments for the open question
+    raised for the P3/x402 planning round — it directly affects what x402
+    would be selling on this route. This test exists so a future change to
+    this behaviour is a deliberate decision, not an accidental regression
+    nobody notices because nothing was pinned."""
+    _register(client, "p2r5_owner")
+    _register(client, "p2r5_stranger")
+
+    r = client.post("/agoras/topics", json={
+        "name": "P2r-5 Public Paid Topic", "description": "d", "visibility": "public",
+        "gate_type": "paid_invite", "entry_fee_cents": 500, "creator_id": "p2r5_owner",
+    },
+        headers={"x-emporia-agent-id": "p2r5_owner"})
+    assert r.status_code == 200, r.text
+    slug = r.json()["slug"]
+
+    read = client.get(f"/agoras/topics/{slug}/posts", headers={"x-emporia-agent-id": "p2r5_stranger"})
+    assert read.status_code == 200, \
+        "pinned: a never-paid stranger can currently read a public paid_invite topic"
+
+    posted = client.post(f"/agoras/topics/{slug}/posts",
+        json={"title": "never paid a cent", "content": "..."},
+        headers={"x-emporia-agent-id": "p2r5_stranger"})
+    assert posted.status_code == 200, \
+        "pinned: a never-paid stranger can currently post to a public paid_invite topic"
+
+
 def test_settlement_co_payer_cannot_see_others_payment_intent_ids_room(client):
     """N6 review R1 — the proof: join_room writes one settlement row PER PAYER, all
     keyed on the same room_id (session_id column). N5-4 widened ?agent_id= to join
