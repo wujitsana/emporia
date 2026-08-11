@@ -1283,7 +1283,7 @@ async def _verify_x402_payment(
     """
     from emporia.payments import (
         RAIL_X402, PaymentRef, x402_verify_payment, x402_settle_payment,
-        _x402_amount_atomic, _x402_asset_for,
+        x402_requirement, _x402_asset_for,
     )
 
     # P1br-1: unreachable via this function's one real call site as of that
@@ -1298,17 +1298,18 @@ async def _verify_x402_payment(
     accepted = x402_payload.get("accepted") or {}
     network = accepted.get("network")
     family = _x402_network_family(network) if network else None
-    expected = {
-        "scheme": "exact",
-        "network": network,
-        "amount": _x402_amount_atomic(amount_cents),
-        "asset": _x402_asset_for(network) if network else None,
-        "payTo": (
-            AGENT_REGISTRY.get_x402_pay_to(creator_id, family)
-            if creator_id and family else None
-        ),
-        "maxTimeoutSeconds": 300,
-    }
+    pay_to = (
+        AGENT_REGISTRY.get_x402_pay_to(creator_id, family)
+        if creator_id and family else None
+    )
+    asset = _x402_asset_for(network) if network else None
+    # P1br-2: same x402_requirement() build_x402_challenge() uses to build
+    # what this relay OFFERS — a single definition, so the two can never
+    # compute two different `scheme`/`maxTimeoutSeconds` for the same
+    # request. Tolerant of None network/asset/payTo (a missing or
+    # unresolvable field) so every mismatch is listed at once below, not
+    # just the first one that would otherwise raise.
+    expected = x402_requirement(network, amount_cents, asset, pay_to)
     mismatched = [
         field for field, want in expected.items()
         if want is None or accepted.get(field) != want

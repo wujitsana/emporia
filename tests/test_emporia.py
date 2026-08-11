@@ -10666,6 +10666,70 @@ def test_verify_x402_payment_currency_check_is_defense_in_depth():
     assert "currency=usd" in str(exc_info.value.detail)
 
 
+def test_x402_max_timeout_seconds_is_single_sourced():
+    """P1br-2: proof of single-sourcing, not just coincidental equality
+    between two hand-typed literals. Patch payments._X402_MAX_TIMEOUT_SECONDS
+    and confirm BOTH build_x402_challenge() and x402_requirement() (the same
+    helper _verify_x402_payment()'s expected-requirement reconstruction
+    calls) reflect the new value. Before this pass "scheme"/maxTimeoutSeconds
+    were separate hardcoded literals in payments.py and relay_server.py —
+    patching this one module-level constant would not have changed the
+    relay_server.py copy at all, since it didn't exist yet."""
+    from emporia import payments
+
+    with patch.object(payments, "_X402_MAX_TIMEOUT_SECONDS", 42):
+        with patch.dict(os.environ, _X402_ENV, clear=False):
+            offer = payments.build_x402_challenge(
+                250, "emporia:room:test", {"eip155:8453": "0x" + "aa" * 20}, currency="usd",
+            )
+        assert offer is not None
+        assert offer["body"]["accepts"][0]["maxTimeoutSeconds"] == 42
+
+        direct = payments.x402_requirement("eip155:8453", 250, "0xasset", "0xpayto")
+        assert direct["maxTimeoutSeconds"] == 42
+
+
+@patch("emporia.payments.x402_settle_payment", new_callable=AsyncMock)
+@patch("emporia.payments.x402_verify_payment", new_callable=AsyncMock)
+def test_x402_challenge_output_round_trips_through_verification_without_mismatch(
+    mock_verify, mock_settle, client,
+):
+    """P1br-2: build a real challenge via build_x402_challenge(), then feed
+    its own accepts[0] straight back through _verify_x402_payment() as the
+    client's claimed "accepted" object. This exercises the two ACTUAL code
+    paths end-to-end — the structural pin the review called for, since
+    asserting a literal like 300 is present in two places would not have
+    caught the original duplication (both literals already happened to
+    agree, by accident, before this fix)."""
+    import asyncio
+
+    from emporia.payments import build_x402_challenge
+    from emporia.relay_server import _verify_x402_payment, AGENT_REGISTRY
+
+    creator = "p1br2_roundtrip_creator"
+    _register(client, creator)
+    AGENT_REGISTRY.set_x402_pay_to(creator, "evm", "0x" + "aa" * 20)
+    mock_verify.return_value = {"isValid": True, "payer": "0x" + "11" * 20}
+    mock_settle.return_value = {
+        "success": True, "transaction": "0xroundtrip", "network": "eip155:8453",
+    }
+
+    with patch.dict(os.environ, _X402_ENV, clear=False):
+        offer = build_x402_challenge(
+            250, "emporia:room:test", {"eip155:8453": "0x" + "aa" * 20}, currency="usd",
+        )
+        assert offer is not None
+        accepted = offer["body"]["accepts"][0]
+
+        ref = asyncio.run(_verify_x402_payment(
+            {"accepted": accepted, "payload": {}},
+            creator_id=creator, amount_cents=250, currency="usd",
+            challenge_resource="emporia:room:test",
+        ))
+    assert ref.reference == "0xroundtrip"
+    mock_verify.assert_called_once()
+
+
 def test_x402_pay_to_by_network_excludes_unconfigured_or_walletless_networks(client):
     """P1b-4: a network the creator has no wallet for, or one not in
     EMPORIA_X402_NETWORKS at all, is silently excluded rather than raising —

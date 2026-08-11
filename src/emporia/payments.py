@@ -274,6 +274,41 @@ def _x402_amount_atomic(amount_cents: int) -> str:
     return str(amount_cents * (10 ** _USDC_DECIMALS) // 100)
 
 
+# x402 v2 spec's default; not currently configurable per network/operator.
+_X402_MAX_TIMEOUT_SECONDS = 300
+
+
+def x402_requirement(
+    network: str | None, amount_cents: int, asset: str | None, pay_to: str | None,
+) -> dict[str, Any]:
+    """One `accepts` entry / PaymentRequirements object — the single
+    definition of the x402 requirement shape, used identically by
+    build_x402_challenge() (below, what this relay *offers*) and
+    _verify_and_confirm_payment()'s x402 branch (relay_server.py, what a
+    submitted credential must *match*).
+
+    P1br-2: `"scheme": "exact"` and `maxTimeoutSeconds` used to be
+    duplicated literals at both call sites — change one without the other
+    and the resource-binding assertion silently rejects every payment,
+    with no test able to tell you why. Factored here so the two can never
+    drift apart; `_x402_amount_atomic()` was already shared, this widens
+    the shared surface to the whole object.
+
+    Deliberately tolerant of `None` inputs (a missing network/asset/payTo)
+    rather than raising — the verification caller builds a requirement from
+    a possibly-incomplete client claim specifically so it can list every
+    mismatched field at once, not just the first one that would raise.
+    """
+    return {
+        "scheme": "exact",
+        "network": network,
+        "amount": _x402_amount_atomic(amount_cents),
+        "asset": asset,
+        "payTo": pay_to,
+        "maxTimeoutSeconds": _X402_MAX_TIMEOUT_SECONDS,
+    }
+
+
 def build_x402_challenge(
     amount_cents: int,
     resource_url: str,
@@ -303,14 +338,7 @@ def build_x402_challenge(
         asset = _x402_asset_for(network)
         if not pay_to or not asset:
             continue
-        accepts.append({
-            "scheme": "exact",
-            "network": network,
-            "amount": _x402_amount_atomic(amount_cents),
-            "asset": asset,
-            "payTo": pay_to,
-            "maxTimeoutSeconds": 300,
-        })
+        accepts.append(x402_requirement(network, amount_cents, asset, pay_to))
     if not accepts:
         return None
     payment_required = {
