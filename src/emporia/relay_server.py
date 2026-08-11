@@ -1244,6 +1244,98 @@ def _x402_pay_to_by_network(creator_id: str | None) -> dict[str, str]:
     return result
 
 
+async def _verify_x402_payment(
+    x402_payload: dict[str, Any],
+    *,
+    creator_id: str | None,
+    amount_cents: int,
+    currency: str,
+    challenge_resource: str,
+) -> "PaymentRef":
+    """The x402 analogue of `_verify_and_confirm_payment()`'s SPT/direct-PI
+    branches — verify a client-supplied x402 credential against what this
+    relay actually requires for this resource, then settle it. Raises
+    HTTPException(402) on any binding/verification/settlement failure, the
+    same posture as the Stripe branches it sits beside.
+
+    The resource-binding assertion runs BEFORE any facilitator call — a
+    deliberate refinement of the plan's original verify-then-assert
+    ordering, made during implementation: asserting first is strictly
+    cheaper (no network round-trip on a doomed request) and strictly safer
+    — it never sends a `paymentRequirements` object to the facilitator that
+    this relay didn't itself construct, so a payer who edits
+    `accepted.payTo` to their own address is rejected locally rather than
+    reaching the facilitator with a claim the facilitator has no way to
+    know is wrong (verifying a signature's validity against a requirement
+    says nothing about whether that requirement is what *this resource*
+    actually charges).
+
+    Known gap, recorded rather than silently accepted (SECURITY.md): unlike
+    the Stripe branches, there is no pre-created object (a PaymentIntent) to
+    safely re-verify against on retry. If the relay crashes after
+    x402_settle_payment() succeeds but before record_payment() persists the
+    transaction, a client retry re-signs a fresh authorization (the original
+    nonce is now spent) and this function has no way to detect that the
+    resource was already paid for — record_payment()'s idempotency only
+    catches a replay of the *same* transaction hash, not a second genuinely
+    valid settlement for the same purchase. x402 has no Idempotency-Key
+    equivalent in its /settle contract to close this with.
+    """
+    from emporia.payments import (
+        RAIL_X402, PaymentRef, x402_verify_payment, x402_settle_payment,
+        _x402_amount_atomic, _x402_asset_for,
+    )
+
+    if currency != "usd":
+        raise HTTPException(402, "x402 only supports currency=usd on this relay")
+
+    accepted = x402_payload.get("accepted") or {}
+    network = accepted.get("network")
+    family = _x402_network_family(network) if network else None
+    expected = {
+        "scheme": "exact",
+        "network": network,
+        "amount": _x402_amount_atomic(amount_cents),
+        "asset": _x402_asset_for(network) if network else None,
+        "payTo": (
+            AGENT_REGISTRY.get_x402_pay_to(creator_id, family)
+            if creator_id and family else None
+        ),
+        "maxTimeoutSeconds": 300,
+    }
+    mismatched = [
+        field for field, want in expected.items()
+        if want is None or accepted.get(field) != want
+    ]
+    if mismatched:
+        raise HTTPException(
+            402,
+            f"x402 payment requirement mismatch on {mismatched} for "
+            f"resource {challenge_resource!r}",
+        )
+
+    try:
+        verify_result = await x402_verify_payment(x402_payload, expected)
+        if not verify_result.get("isValid"):
+            raise HTTPException(
+                402, f"x402 payment invalid: {verify_result.get('invalidReason', 'unknown')}"
+            )
+        settle_result = await x402_settle_payment(x402_payload, expected)
+        if not settle_result.get("success"):
+            raise HTTPException(
+                402, f"x402 settlement failed: {settle_result.get('errorReason', 'unknown')}"
+            )
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(402, f"x402 verification failed: {e}")
+
+    transaction = settle_result.get("transaction")
+    if not transaction:
+        raise HTTPException(402, "x402 settlement returned no transaction id")
+    return PaymentRef(RAIL_X402, transaction)
+
+
 async def _verify_and_confirm_payment(
     request: Request,
     *,
@@ -1285,15 +1377,25 @@ async def _verify_and_confirm_payment(
     Only the direct-`payment_intent_id` branch below uses it to bind the PI to a payer;
     see that branch's own comment for why the SPT branch can't.
 
-    `creator_id` (P1b-4): whose x402 wallet(s) to offer in the 402 challenge, if any.
-    None on the session-join route — session escrow stays Stripe-only (no x402
-    analogue), so it never builds an x402 challenge regardless of this being passed.
+    `creator_id` (P1b-4/5): whose x402 wallet(s) to offer in the 402 challenge and
+    verify a submitted x402 payment against. None on the session-join route —
+    session escrow stays Stripe-only (no x402 analogue), so neither ever fires
+    regardless of this being passed.
     """
     from emporia.payments import (
         RAIL_STRIPE, build_mpp_challenge, build_x402_challenge, extract_mpp_token,
-        confirm_spt, verify_payment_intent, confirm_stripe_intent, PaymentRef,
+        extract_x402_payload, confirm_spt, verify_payment_intent, confirm_stripe_intent,
+        PaymentRef,
     )
     _assert_agent_budget(agent_id, amount_cents)
+
+    x402_payload = extract_x402_payload(request.headers.get("PAYMENT-SIGNATURE"))
+    if x402_payload is not None:
+        return await _verify_x402_payment(
+            x402_payload, creator_id=creator_id, amount_cents=amount_cents,
+            currency=currency, challenge_resource=challenge_resource,
+        )
+
     auth_header = request.headers.get("Authorization")
     spt_token = extract_mpp_token(auth_header)
 

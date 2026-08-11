@@ -265,6 +265,15 @@ def build_mpp_challenge(amount_cents: int, resource: str, currency: str = "usd")
 _USDC_DECIMALS = 6
 
 
+def _x402_amount_atomic(amount_cents: int) -> str:
+    """USD cents -> atomic USDC units (6 decimals, 1:1 peg assumption — see
+    build_x402_challenge()'s docstring above). Shared with
+    _verify_and_confirm_payment()'s x402 branch (relay_server.py) so the
+    challenge and the later resource-binding assertion can never compute two
+    different numbers for the same amount_cents."""
+    return str(amount_cents * (10 ** _USDC_DECIMALS) // 100)
+
+
 def build_x402_challenge(
     amount_cents: int,
     resource_url: str,
@@ -297,7 +306,7 @@ def build_x402_challenge(
         accepts.append({
             "scheme": "exact",
             "network": network,
-            "amount": str(amount_cents * (10 ** _USDC_DECIMALS) // 100),
+            "amount": _x402_amount_atomic(amount_cents),
             "asset": asset,
             "payTo": pay_to,
             "maxTimeoutSeconds": 300,
@@ -313,6 +322,74 @@ def build_x402_challenge(
         "body": payment_required,
         "headers": {"PAYMENT-REQUIRED": _b64url(json.dumps(payment_required).encode())},
     }
+
+
+def extract_x402_payload(payment_signature_header: str | None) -> dict[str, Any] | None:
+    """Decode the client's retry credential from the PAYMENT-SIGNATURE header —
+    the x402 analogue of extract_mpp_token() above. Per the v2 spec this is
+    base64-encoded JSON: `{x402Version, resource?, accepted, payload,
+    extensions?}`. Returns None (not a raised error) for anything malformed —
+    the caller treats "no x402 credential" the same as "no credential at all"
+    and falls through to issuing a fresh 402 challenge, exactly like a missing
+    Authorization header does for MPP."""
+    if not payment_signature_header:
+        return None
+    raw = payment_signature_header.strip()
+    try:
+        padded = raw + "=" * (-len(raw) % 4)
+        decoded = json.loads(base64.urlsafe_b64decode(padded))
+    except Exception:
+        return None
+    if not isinstance(decoded, dict) or "accepted" not in decoded or "payload" not in decoded:
+        return None
+    return decoded
+
+
+async def x402_verify_payment(payment_payload: dict[str, Any], payment_requirements: dict[str, Any]) -> dict[str, Any]:
+    """POST to the configured facilitator's /verify — confirms the signed
+    payload actually satisfies `payment_requirements`, without moving funds
+    (free, per the x402 spec). Shaped like verify_payment_intent() above
+    (call the backend, return its response) so the same
+    @patch("emporia.payments.x402_verify_payment") test convention applies.
+
+    Callers must pass THEIR OWN server-computed `payment_requirements` here —
+    never the client's `payload_payload["accepted"]` as-is — see
+    _verify_and_confirm_payment()'s x402 branch for why: the requirement is
+    the resource-binding assertion, not a courtesy echo of the client's claim.
+    """
+    facilitator_url = _x402_facilitator_url()
+    async with httpx.AsyncClient(timeout=REQUEST_TIMEOUT) as client:
+        resp = await client.post(
+            f"{facilitator_url.rstrip('/')}/verify",
+            json={
+                "x402Version": 2,
+                "paymentPayload": payment_payload,
+                "paymentRequirements": payment_requirements,
+            },
+        )
+        resp.raise_for_status()
+        return resp.json()
+
+
+async def x402_settle_payment(payment_payload: dict[str, Any], payment_requirements: dict[str, Any]) -> dict[str, Any]:
+    """POST to the configured facilitator's /settle — executes the payment
+    on-chain. Real money moves here; unlike x402_verify_payment() this is not
+    free or idempotent from the facilitator's point of view. Only ever call
+    this after the resource-binding assertion has passed (see this module's
+    x402 section docstring and _verify_and_confirm_payment()'s x402 branch).
+    """
+    facilitator_url = _x402_facilitator_url()
+    async with httpx.AsyncClient(timeout=REQUEST_TIMEOUT) as client:
+        resp = await client.post(
+            f"{facilitator_url.rstrip('/')}/settle",
+            json={
+                "x402Version": 2,
+                "paymentPayload": payment_payload,
+                "paymentRequirements": payment_requirements,
+            },
+        )
+        resp.raise_for_status()
+        return resp.json()
 
 
 def extract_mpp_token(authorization_header: str | None) -> str | None:

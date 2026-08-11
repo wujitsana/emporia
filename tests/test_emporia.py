@@ -30,6 +30,7 @@ from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
+from fastapi import HTTPException
 from fastapi.testclient import TestClient
 from starlette.websockets import WebSocketDisconnect
 
@@ -1026,6 +1027,23 @@ def _register_keyed(client, agent_id: str) -> None:
     from emporia.identity import get_public_key_hex
     pub_hex = get_public_key_hex(agent_id)
     client.post("/agents/register", json={"agent_id": agent_id, "public_key_hex": pub_hex})
+
+
+def _x402_payment_signature_header(accepted: dict, payload: dict | None = None) -> str:
+    """Build a base64url-encoded PAYMENT-SIGNATURE header value — the x402
+    analogue of a real wallet's retry credential. `payload` defaults to a
+    minimal placeholder authorization block; tests that only exercise the
+    resource-binding assertion (not real facilitator behavior, always
+    mocked) don't need a genuinely valid signature."""
+    import base64 as _b64
+
+    body = {
+        "x402Version": 2,
+        "accepted": accepted,
+        "payload": payload or {"signature": "0xsig", "authorization": {}},
+    }
+    raw = _b64.urlsafe_b64encode(json.dumps(body).encode()).rstrip(b"=")
+    return raw.decode()
 
 
 def _signed_action_body(
@@ -10443,6 +10461,304 @@ def test_x402_pay_to_by_network_excludes_unconfigured_or_walletless_networks(cli
         assert _x402_pay_to_by_network(creator) == {}
 
     assert _x402_pay_to_by_network(None) == {}, "no creator_id (session escrow) must resolve to nothing"
+
+
+def test_extract_x402_payload_parses_valid_and_rejects_malformed():
+    """P1b-5: the x402 analogue of extract_mpp_token(). Anything malformed
+    returns None (not a raised error) so the caller falls through to issuing
+    a fresh 402 challenge, same as a missing Authorization header does."""
+    from emporia.payments import extract_x402_payload
+
+    assert extract_x402_payload(None) is None
+    assert extract_x402_payload("") is None
+    assert extract_x402_payload("not-valid-base64!!!") is None
+
+    import base64 as _b64
+    missing_accepted = _b64.urlsafe_b64encode(json.dumps({"x402Version": 2, "payload": {}}).encode()).decode()
+    assert extract_x402_payload(missing_accepted) is None
+
+    header = _x402_payment_signature_header({"network": "eip155:8453"})
+    decoded = extract_x402_payload(header)
+    assert decoded is not None
+    assert decoded["accepted"] == {"network": "eip155:8453"}
+
+
+_X402_ENV = {
+    "EMPORIA_X402_ENABLED": "1",
+    "EMPORIA_X402_FACILITATOR_URL": "https://facilitator.example.test",
+    "EMPORIA_X402_NETWORKS": "eip155:8453",
+    "EMPORIA_X402_ASSET_EIP155_8453": "0xUSDCFAKE",
+}
+
+
+@patch("emporia.payments.x402_settle_payment", new_callable=AsyncMock)
+@patch("emporia.payments.x402_verify_payment", new_callable=AsyncMock)
+def test_verify_x402_payment_rejects_wrong_payto_before_any_facilitator_call(mock_verify, mock_settle, client):
+    """P1b-5: the core security property — a payer who edits accepted.payTo to
+    their own address is rejected LOCALLY, before either facilitator call.
+    Proves the fail-closed ordering, not just the eventual rejection: if the
+    facilitator were called with the tampered payTo, this test would not be
+    able to tell a correctly-implemented relay from one that trusts the
+    client's claim outright."""
+    import asyncio
+
+    from emporia.relay_server import _verify_x402_payment, AGENT_REGISTRY
+
+    creator = "p1b5_payto_creator"
+    _register(client, creator)
+    AGENT_REGISTRY.set_x402_pay_to(creator, "evm", "0x" + "aa" * 20)
+
+    with patch.dict(os.environ, _X402_ENV, clear=False):
+        with pytest.raises(HTTPException) as exc_info:
+            asyncio.run(_verify_x402_payment(
+                {"accepted": {
+                    "scheme": "exact", "network": "eip155:8453", "amount": "2500000",
+                    "asset": "0xUSDCFAKE", "payTo": "0x" + "ff" * 20,  # attacker's own address
+                    "maxTimeoutSeconds": 300,
+                }, "payload": {}},
+                creator_id=creator, amount_cents=250, currency="usd",
+                challenge_resource="emporia:room:test",
+            ))
+    assert exc_info.value.status_code == 402
+    assert "mismatch" in str(exc_info.value.detail)
+    mock_verify.assert_not_called()
+    mock_settle.assert_not_called()
+
+
+@patch("emporia.payments.x402_settle_payment", new_callable=AsyncMock)
+@patch("emporia.payments.x402_verify_payment", new_callable=AsyncMock)
+def test_verify_x402_payment_rejects_tampered_amount(mock_verify, mock_settle, client):
+    """P1b-5: sibling of the payTo test — a payer who edits accepted.amount
+    down is caught the same way, before any facilitator call."""
+    import asyncio
+
+    from emporia.relay_server import _verify_x402_payment, AGENT_REGISTRY
+
+    creator = "p1b5_amount_creator"
+    _register(client, creator)
+    AGENT_REGISTRY.set_x402_pay_to(creator, "evm", "0x" + "aa" * 20)
+
+    with patch.dict(os.environ, _X402_ENV, clear=False):
+        with pytest.raises(HTTPException) as exc_info:
+            asyncio.run(_verify_x402_payment(
+                {"accepted": {
+                    "scheme": "exact", "network": "eip155:8453", "amount": "1",  # should be 2500000
+                    "asset": "0xUSDCFAKE", "payTo": "0x" + "aa" * 20,
+                    "maxTimeoutSeconds": 300,
+                }, "payload": {}},
+                creator_id=creator, amount_cents=250, currency="usd",
+                challenge_resource="emporia:room:test",
+            ))
+    assert exc_info.value.status_code == 402
+    mock_verify.assert_not_called()
+    mock_settle.assert_not_called()
+
+
+@patch("emporia.payments.x402_settle_payment", new_callable=AsyncMock)
+@patch("emporia.payments.x402_verify_payment", new_callable=AsyncMock)
+def test_verify_x402_payment_rejects_network_with_no_creator_wallet(mock_verify, mock_settle, client):
+    """P1b-5: a network the creator has no wallet for must be rejected even
+    if the client's accepted object is otherwise well-formed — matches
+    P1b-2's no-auto-provision posture; there's no payTo to compare against
+    at all."""
+    import asyncio
+
+    from emporia.relay_server import _verify_x402_payment
+
+    creator = "p1b5_nowallet_creator"
+    _register(client, creator)
+    # no wallet set for this creator
+
+    with patch.dict(os.environ, _X402_ENV, clear=False):
+        with pytest.raises(HTTPException) as exc_info:
+            asyncio.run(_verify_x402_payment(
+                {"accepted": {
+                    "scheme": "exact", "network": "eip155:8453", "amount": "2500000",
+                    "asset": "0xUSDCFAKE", "payTo": "0x" + "aa" * 20,
+                    "maxTimeoutSeconds": 300,
+                }, "payload": {}},
+                creator_id=creator, amount_cents=250, currency="usd",
+                challenge_resource="emporia:room:test",
+            ))
+    assert exc_info.value.status_code == 402
+    mock_verify.assert_not_called()
+
+
+@patch("emporia.payments.x402_settle_payment", new_callable=AsyncMock)
+@patch("emporia.payments.x402_verify_payment", new_callable=AsyncMock)
+def test_verify_x402_payment_rejects_when_facilitator_says_invalid(mock_verify, mock_settle, client):
+    """P1b-5: a correctly-bound requirement that the facilitator itself
+    rejects (bad signature, insufficient funds, ...) must 402 without ever
+    calling /settle."""
+    import asyncio
+
+    from emporia.relay_server import _verify_x402_payment, AGENT_REGISTRY
+
+    creator = "p1b5_invalid_creator"
+    _register(client, creator)
+    AGENT_REGISTRY.set_x402_pay_to(creator, "evm", "0x" + "aa" * 20)
+    mock_verify.return_value = {"isValid": False, "invalidReason": "insufficient_funds"}
+
+    with patch.dict(os.environ, _X402_ENV, clear=False):
+        with pytest.raises(HTTPException) as exc_info:
+            asyncio.run(_verify_x402_payment(
+                {"accepted": {
+                    "scheme": "exact", "network": "eip155:8453", "amount": "2500000",
+                    "asset": "0xUSDCFAKE", "payTo": "0x" + "aa" * 20,
+                    "maxTimeoutSeconds": 300,
+                }, "payload": {}},
+                creator_id=creator, amount_cents=250, currency="usd",
+                challenge_resource="emporia:room:test",
+            ))
+    assert exc_info.value.status_code == 402
+    assert "insufficient_funds" in str(exc_info.value.detail)
+    mock_verify.assert_called_once()
+    mock_settle.assert_not_called()
+
+
+@patch("emporia.payments.x402_settle_payment", new_callable=AsyncMock)
+@patch("emporia.payments.x402_verify_payment", new_callable=AsyncMock)
+def test_verify_x402_payment_rejects_when_settlement_fails(mock_verify, mock_settle, client):
+    """P1b-5: verify succeeds but /settle itself fails (e.g. the nonce was
+    spent between verify and settle) — must 402, not silently return success."""
+    import asyncio
+
+    from emporia.relay_server import _verify_x402_payment, AGENT_REGISTRY
+
+    creator = "p1b5_settlefail_creator"
+    _register(client, creator)
+    AGENT_REGISTRY.set_x402_pay_to(creator, "evm", "0x" + "aa" * 20)
+    mock_verify.return_value = {"isValid": True, "payer": "0x" + "11" * 20}
+    mock_settle.return_value = {"success": False, "errorReason": "expired"}
+
+    with patch.dict(os.environ, _X402_ENV, clear=False):
+        with pytest.raises(HTTPException) as exc_info:
+            asyncio.run(_verify_x402_payment(
+                {"accepted": {
+                    "scheme": "exact", "network": "eip155:8453", "amount": "2500000",
+                    "asset": "0xUSDCFAKE", "payTo": "0x" + "aa" * 20,
+                    "maxTimeoutSeconds": 300,
+                }, "payload": {}},
+                creator_id=creator, amount_cents=250, currency="usd",
+                challenge_resource="emporia:room:test",
+            ))
+    assert exc_info.value.status_code == 402
+    assert "expired" in str(exc_info.value.detail)
+
+
+@patch("emporia.payments.x402_settle_payment", new_callable=AsyncMock)
+@patch("emporia.payments.x402_verify_payment", new_callable=AsyncMock)
+def test_verify_x402_payment_happy_path_returns_payment_ref(mock_verify, mock_settle, client):
+    """P1b-5: the full success path — a correctly-bound requirement that the
+    facilitator both verifies and settles returns PaymentRef(RAIL_X402, tx)."""
+    import asyncio
+
+    from emporia.payments import RAIL_X402
+    from emporia.relay_server import _verify_x402_payment, AGENT_REGISTRY
+
+    creator = "p1b5_happy_creator"
+    _register(client, creator)
+    AGENT_REGISTRY.set_x402_pay_to(creator, "evm", "0x" + "aa" * 20)
+    mock_verify.return_value = {"isValid": True, "payer": "0x" + "11" * 20}
+    mock_settle.return_value = {"success": True, "transaction": "0xdeadbeef", "network": "eip155:8453"}
+
+    with patch.dict(os.environ, _X402_ENV, clear=False):
+        ref = asyncio.run(_verify_x402_payment(
+            {"accepted": {
+                "scheme": "exact", "network": "eip155:8453", "amount": "2500000",
+                "asset": "0xUSDCFAKE", "payTo": "0x" + "aa" * 20,
+                "maxTimeoutSeconds": 300,
+            }, "payload": {}},
+            creator_id=creator, amount_cents=250, currency="usd",
+            challenge_resource="emporia:room:test",
+        ))
+    assert ref.rail == RAIL_X402
+    assert ref.reference == "0xdeadbeef"
+    mock_verify.assert_called_once()
+    mock_settle.assert_called_once()
+    # both facilitator calls must receive OUR reconstructed requirement, not
+    # the client's raw `accepted` object (defense in depth — see the
+    # function's own docstring on why this matters).
+    sent_requirements = mock_verify.call_args[0][1]
+    assert sent_requirements["payTo"] == "0x" + "aa" * 20
+    assert sent_requirements["amount"] == "2500000"
+
+
+def test_record_payment_is_idempotent_for_x402_rail():
+    """P1b-5: the plan's stated replay-protection claim, confirmed rather
+    than assumed — a replayed x402 transaction hash hits record_payment()'s
+    existing UNIQUE-index idempotency exactly like a replayed Stripe
+    PaymentIntent id does, now that x402 is a KNOWN_RAILS member (item 3)."""
+    from emporia.relay_server import record_payment
+
+    first = record_payment(
+        payment_intent_id="0xreplayed_tx_hash", agent_id="p1b5_replay_payer",
+        amount_cents=250, payment_type="room_entry", room_id="room_p1b5_replay",
+        rail="x402",
+    )
+    second = record_payment(
+        payment_intent_id="0xreplayed_tx_hash", agent_id="p1b5_replay_payer",
+        amount_cents=250, payment_type="room_entry", room_id="room_p1b5_replay",
+        rail="x402",
+    )
+    assert first["payment_id"] == second["payment_id"], \
+        "an identical replay must return the existing row, not insert a duplicate"
+
+    with pytest.raises(ValueError, match="already recorded for a different payment"):
+        record_payment(
+            payment_intent_id="0xreplayed_tx_hash", agent_id="p1b5_replay_payer",
+            amount_cents=999,  # different amount — must be rejected, not silently accepted
+            payment_type="room_entry", room_id="room_p1b5_replay",
+            rail="x402",
+        )
+
+
+@patch("emporia.payments.x402_settle_payment", new_callable=AsyncMock)
+@patch("emporia.payments.x402_verify_payment", new_callable=AsyncMock)
+def test_room_join_via_x402_credential_persists_rail_x402(mock_verify, mock_settle, client):
+    """P1b-5: full HTTP round trip — a room join carrying a PAYMENT-SIGNATURE
+    header (not a payment_intent_id) is verified and settled via x402, and
+    the resulting payments row is tagged rail="x402". Settlement-shape
+    assertions (fee/payout semantics) are item 6's job, not this one's."""
+    owner = "p1b5_e2e_owner"
+    payer = "p1b5_e2e_payer"
+    _register(client, owner)
+    _register(client, payer)
+
+    wallet = client.post(f"/agents/{owner}/x402-wallet",
+        json={"network_family": "evm", "address": "0x" + "bb" * 20},
+        headers={"x-emporia-agent-id": owner})
+    assert wallet.status_code == 200, wallet.text
+
+    r = client.post("/rooms", json={
+        "name": "P1b-5 E2E Room", "creator_id": owner,
+        "room_type": "private", "gate_type": "paid", "entry_fee_cents": 250,
+    },
+        headers={"x-emporia-agent-id": owner})
+    assert r.status_code == 200, r.text
+    room_id = r.json()["room_id"]
+
+    mock_verify.return_value = {"isValid": True, "payer": "0x" + "cc" * 20}
+    mock_settle.return_value = {"success": True, "transaction": "0xp1b5_e2e_tx", "network": "eip155:8453"}
+
+    header = _x402_payment_signature_header({
+        "scheme": "exact", "network": "eip155:8453", "amount": "2500000",
+        "asset": "0xUSDCFAKE", "payTo": "0x" + "bb" * 20, "maxTimeoutSeconds": 300,
+    })
+
+    with patch.dict(os.environ, _X402_ENV, clear=False):
+        resp = client.post(f"/rooms/{room_id}/join", json={"agent_id": payer},
+            headers={"x-emporia-agent-id": payer, "PAYMENT-SIGNATURE": header})
+    assert resp.status_code == 200, resp.text
+
+    from emporia.relay_server import get_db
+    with get_db() as conn:
+        row = conn.execute(
+            "SELECT rail, payment_intent_id FROM payments WHERE payment_intent_id=?",
+            ("0xp1b5_e2e_tx",),
+        ).fetchone()
+    assert row is not None, "the x402 transaction must be persisted to payments"
+    assert row["rail"] == "x402"
 
 
 @pytest.mark.asyncio
