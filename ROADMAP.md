@@ -154,7 +154,7 @@ participants/actions/payments/settlements/audit files together — that piece is
 
 ## Payments
 
-**P1b entry point: the x402 rail opens now that P3, the rail-seam pass, is done** (SECURITY.md's
+**P1b, the x402 rail, is done** — built on P3, the rail-seam pass (SECURITY.md's
 P1a/P1r/P2/P2r/P2r-6/P3 passes hardened and then rail-tagged the payment core). P1r found and fixed
 two regressions P1a itself shipped; P2 then found the premise underneath both was itself wrong — a
 room/Agora entry fee was charged *per join* when it should buy *access* until an optional window
@@ -177,69 +177,82 @@ count (156 in `src/`, confirmed by the audit that opened P3) but overstated the 
 ~30-35 of those are genuinely Stripe-coupled (essentially all of `payments.py`'s HTTP layer, plus a
 handful of capture-method/PI-status/Connect sites in `relay_server.py`). The other ~120 were always
 opaque tokens — stored, compared, redacted, never parsed — which is exactly why P3 could tag the
-reference at one funnel instead of touching 150 call sites. Sequencing: **P3 (done) → P1b (x402,
-this entry, next).**
+reference at one funnel instead of touching 150 call sites. Sequencing: **P3 (done) → P1b (done, this
+entry) → next unnamed.**
 
-**Payout has no x402 analogue under the custody model chosen.** Decided this arc: x402 settles
-**direct to the creator, with the relay taking a cut — non-custodial**, not mirroring Stripe's
-"relay holds funds, then transfers out" flow. That means `payout_winner()` (a Stripe Connect
-transfer out of a relay-held balance) isn't a second-implementation problem, it has **no
-counterpart**: on x402 the payment *is* the settlement, the platform's fee must be enforced by the
-payment request itself rather than deducted afterward, and `settlements.transfer_id`/
-`transfer_status` describe a Stripe-only hop. The open mechanism question this creates: a single
-x402 payment pays one `payTo`, so taking a cut without custody needs either two payment
-requirements, a splitter contract, or facilitator-side support. Still open after P3 — P3's own
-`_settle_access_payment()` seam (SECURITY.md's P3 pass) draws the boundary (settlement recording is
-rail-agnostic and always runs; the transfer hop is Stripe-only and simply doesn't exist on a
-non-custodial rail) but deliberately doesn't guess at the mechanism, since there's nothing to
-dispatch to with one rail implemented — **P1b's to decide, not an afterthought.**
+**P1b shipped: x402 is a real, working second payment rail**, non-custodial, eight commits
+(SECURITY.md's P1b pass has the full findings). `_verify_and_confirm_payment()` gained an x402
+branch (`PAYMENT-SIGNATURE` header), reconstructing the relay's own expected `paymentRequirements`
+and asserting it against the client's claim *before* calling the facilitator — a tampered `payTo` or
+amount is rejected locally. The 402 challenge now offers both rails at once (existing MPP fields
+untouched; x402's payload nested under a nonclashing `"x402"` body key plus the spec-correct
+`PAYMENT-REQUIRED` header). Creators register a wallet per network family (`POST
+/agents/{id}/x402-wallet` — an EVM address and a Solana address are different key spaces, so this is
+keyed, not a single field). Advertised on `/health`, `GET /agents/{id}`, and (newly) `/relay-card`.
 
-**Composable payment options, on both sides.** Also decided this arc, as a design principle for P1b:
-agents should not have a rail/chain dictated to them, and a relay operator should be able to declare
-what it accepts rather than the platform hardcoding one option. This maps directly onto x402 v2's
-actual `accepts` array in the 402 response — that array **is** the operator's declared acceptance
-list (chains/assets/rails), and the paying agent's wallet picks from it. P3 built the one place this
-lands (`_payment_rails()`, item 5, SECURITY.md's P3 pass) but deliberately didn't add an
-operator-config surface — with one rail implemented, a config could only ever say "stripe" (the
-codebase's own cautionary tale: `"tempo"` is already advertised in `payment_methods` with zero
-implementing code behind it). Still **P1b's to build**, once a real second rail exists to declare.
-If adopted, the non-custodial fee-split question above has to be solved per accepted option, not once.
+**Payout has no x402 analogue under the custody model chosen — resolved for now, not permanently.**
+x402 settles direct to the creator's registered wallet; `payout_winner()` (a Stripe transfer out of a
+relay-held balance) has no counterpart and is never called on this branch. **The platform fee on
+x402 is 0%** — `payTo` is the creator's wallet, they receive 100%, `transfer_status="direct"` records
+that no transfer hop ever existed. This was the pragmatic call to ship a working rail rather than
+build a cross-chain splitter for a rail that didn't exist yet to declare requirements against.
+**Revisit when:** a splitter mechanism (or facilitator-side multi-recipient support) exists on both
+configured networks. **Named risk:** if x402 stays cheaper for agents than Stripe's 2.5%, volume
+could migrate off the fee-bearing rail — worth watching once real usage exists.
 
-**A public paid Agora topic's entry fee currently gates nothing — resolve before scoping x402 to
-Agora subscriptions.** Pinned, not fixed, in P2r-5 (SECURITY.md's P2r pass, R5):
-`_topic_can_read()` returns `True` unconditionally for `visibility="public"` topics before any
-entitlement check, and every paid topic in the seed script and the test suite uses that visibility
-— so a never-paid stranger can currently read and post on one. Whether `"public"` should mean
-"readable by anyone" or "readable by anyone who's paid" is a product decision nobody's been asked;
-x402 would be selling access on this exact route, so answer it before, not during, that pass.
+**Composable payment options — shipped.** `_payment_rails()` now includes `"x402"` in both variants
+whenever the rail is configured, built from `EMPORIA_X402_NETWORKS`/`EMPORIA_X402_ASSET_<NETWORK>` —
+the operator declares what's accepted, the 402's `accepts` array reflects exactly that, and the
+paying agent's wallet picks from it. Both Base and Solana are supported simultaneously (register
+both networks; see the corrected network-default note below) rather than one being hardcoded as *the*
+option.
 
-x402 is confirmed (live docs, checked in the P1a pass) to be the
-Coinbase-originated, Linux-Foundation-formalized HTTP-402 protocol settled in stablecoins (USDC),
-distinct from Stripe's MPP, which `payments.py` already implements — the two share the "HTTP 402"
-mechanism, not a protocol. Scope per the user, ahead of P1b's own review-and-plan round (do not
-start from this entry — confirm the x402 spec against live docs again at implementation time, spec
-was still moving as of the P1a review):
-- **x402 is additive, not a Stripe replacement.** Session escrow (`capture_method="manual"`,
-  hold-then-conditionally-release-minus-fee) has no analogue in x402's request-scoped settlement
-  model — it stays on Stripe. Scope x402 to the two `capture_method="automatic"` pay-to-access
-  routes first: `/rooms/{id}/join`, `/agoras/topics/{slug}/subscribe`. After P2/P2r, both buy an
-  **entitlement** — a better fit for request-scoped settlement than per-join payment ever was.
-- **No Hermes x402 skill or implementation exists to reuse** (checked in the P1a pass). One relevant
-  first-party data point: Nous Portal's own inference API already accepts an x402 payment header
-  (Solana USDC, beta, anonymous, per-request) as an alternative to a static API key — Portal is the
-  x402 *consumer* side, Emporia would be the *resource server* side, no shared code, but it answers
-  the network question absent a chosen-by-the-payer model (see "composable payment options" above):
-  **Solana USDC, not Base**, is the ecosystem-native default if only one is offered.
-- `payment_mode="x402"` — done in P1a-4: the old `"stripe_link"` alias is gone, `"x402"` now rejects
-  outright with a message naming the reason, and is deliberately not yet added to `PaymentMode`.
-  x402 v2 moved payment data into headers (`PAYMENT-REQUIRED`/`PAYMENT-SIGNATURE`/`PAYMENT-RESPONSE`,
-  deprecating `X-*` forms) — keep it a fully separate code path from `build_mpp_challenge()`'s Stripe
-  MPP headers, not one function with a flag.
+**A public paid Agora topic's entry fee gated nothing — resolved, provisionally.** Was pinned open by
+P2r-5 specifically to block x402 scoping onto Agora subscriptions until answered. P1b-1: paid topics
+now gate on the entitlement regardless of `visibility` — `"public"` comes to mean discoverable/listed,
+not readable, matching the rule `_settlement_resource_viewer_allowed()` already applied to the same
+topics (N5-R1) instead of contradicting it. **Revisit when:** there's real usage data on whether paid
+communities actually want a free-to-read shopfront (a "public" that's discoverable-but-gated is a
+narrower product than a fully open one, and nobody's validated agents want the narrower version).
+
+x402's governance and spec **moved since the P1a check — re-confirmed against live docs during P1b
+planning, corrections below.** It remains the HTTP-402 protocol settled in stablecoins (USDC),
+distinct from Stripe's MPP (the two share the "HTTP 402" mechanism, not a protocol):
+- **Governance actually moved, not just "formalized."** The canonical repo is now
+  `x402-foundation/x402` (`coinbase/x402` is an explicit development fork); the Linux Foundation
+  **operationally launched** the x402 Foundation 2026-07-14 under TSC-based open governance, 40
+  member orgs including Coinbase, Cloudflare, Circle, Stripe, Visa, Mastercard, Solana Foundation.
+  Coinbase contributed the protocol but no longer controls it.
+- **v2 shipped 2025-12-09** — CAIP-2 network ids, payment data moved into headers
+  (`PAYMENT-REQUIRED`/`PAYMENT-SIGNATURE`/`PAYMENT-RESPONSE`, deprecating `X-*` forms), restructured
+  `PaymentPayload`, per-request dynamic `payTo`, a plugin (`@x402`) SDK architecture. P1b implements
+  v2's header-based shape, not v1's.
+- **Corrected: "Solana USDC, not Base, is the ecosystem-native default" was wrong.** Recent volume
+  snapshots put Base and Solana roughly co-primary (Base larger in some snapshots, Solana in others);
+  neither is uniquely "the" default. P1b offers both — the `accepts` array exists precisely so a
+  payer's wallet picks whichever it holds, which is the actually-correct use of the protocol here
+  rather than picking one network as canonical. Nous Portal's own consumer-side precedent (Solana
+  USDC) is worth keeping as a tiebreaker where one must be picked, not as an exclusivity claim.
+- **No native multi-recipient settlement in the protocol or any facilitator** (confirmed against
+  live docs) — see the payout-mechanism note above; this is why the fee is 0% rather than split.
+- **The official Python package (`x402` on PyPI, x402 Foundation, MIT) was evaluated and deliberately
+  not taken as a dependency.** Its `PaymentMiddlewareASGI` runs blanket-early, before Emporia's own
+  auth/membership/entitlement checks — it would charge agents who already hold a valid entitlement,
+  the exact bug class P2 spent eight commits fixing. The wire format is small and fully specified;
+  P1b hand-rolls it with raw `httpx`, the same posture `payments.py` already takes toward Stripe
+  (`stripe>=9.0.0` is a declared dependency that's never imported).
+- `payment_mode="x402"` — still rejected at `_normalize_payment_mode()` (P1a-4's message), and
+  correctly so: that's the *session-escrow/stake-intent* vocabulary, a genuinely separate axis from
+  the pay-to-access rail P1b built. Session escrow (`capture_method="manual"`,
+  hold-then-conditionally-release) still has no x402 analogue and stays Stripe-only.
 - **Stripe Connect stays available but should not be the default/main payment mode** going forward —
-  revisit `_normalize_payment_mode()`'s no-mode-given default (still `"stripe_link"` for any staked
-  challenge, left unchanged in P1a since there's no second rail to demote it to yet).
-- x402 v2's wallet-controlled sessions / `SIGN-IN-WITH-X` are the primitive that could finally close
-  the one payer-binding gap P1a left open — see the row below.
+  `_normalize_payment_mode()`'s no-mode-given default is still `"stripe_link"`; revisiting it is not
+  yet urgent with only one pay-to-access rail's worth of real usage.
+- **x402 v2's `payer` field (returned by the facilitator's `/verify`) is a new opportunity to close
+  the payer-binding gap P1a left open** — P1b's `_verify_x402_payment()` doesn't use it for binding;
+  the three routes stay pinned in `_KNOWN_VIOLATIONS` pending that work. Binding a verified wallet
+  address to an Emporia `agent_id` is its own design question (does one agent get one wallet? can a
+  wallet be reused across agents? is the binding one-time or renewable?) — not taken up this pass.
 
 **Stripe Connect transfers work end-to-end in test mode; live mode has no onboarding path.**
 Correcting an earlier version of this entry that said transfers "are not wired up" — they are:

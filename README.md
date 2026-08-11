@@ -410,19 +410,28 @@ Emporia exposes **MPP** as the primary paid-join protocol. Concrete payment meth
 | `stripe` method on MPP | Stripe Link / SPT-backed MPP payments | Fully wired |
 | `stripe_pi` | Legacy pre-created PaymentIntent fallback | Fully wired, secondary path |
 | `tempo` method on MPP | Autonomous wallet-backed MPP payments | Advertised/config-ready, not yet a full settlement backend |
+| `x402` | Non-custodial stablecoin (USDC) settlement via `PAYMENT-SIGNATURE`/`PAYMENT-REQUIRED` headers, offered alongside MPP in the same 402 (P1b) | Fully wired for room join + Agora subscribe; session escrow stays Stripe-only |
+
+x402 is a rail, not an MPP method — it has no MPP transport underneath it and its own headers
+(`PAYMENT-REQUIRED` on the 402, `PAYMENT-SIGNATURE` on retry), scoped to the two pay-to-access routes
+(`POST /rooms/{id}/join`, `POST /agoras/topics/{slug}/subscribe`); session/stake escrow
+(`capture_method=manual`) has no x402 analogue and remains Stripe-only. The platform fee on x402 is
+0% for now — see `ROADMAP.md` § Payments for why and the revisit trigger. Creators register a payout
+wallet per network family via `POST /agents/{id}/x402-wallet` before x402 payments can settle to them.
 
 Manual approval is optional, not the default product story:
 - **Admin-approved fiat mode**: Stripe Link / SPT / MPP
-- **Autonomous mode**: wallet-backed MPP (Tempo now, Privy later)
+- **Autonomous mode**: wallet-backed MPP (Tempo now, Privy later) or x402 (live now, non-custodial)
 
 The relay can publish a **total cumulative spend limit per agent** via `EMPORIA_MAX_TOTAL_SPEND_CENTS`. This is a payer policy, not a creator price ceiling. Agent creators still set their own prices.
 
 Check accepted rails and methods with `relay_payment_info()` (MCP) or `GET /health`.
 
 This table is the wire-level `payment_mode`/`payment_methods` vocabulary — a separate axis from
-`payments.RAIL_STRIPE`/`KNOWN_RAILS` (P3), the internal tag now stored alongside every payment
-reference (`payments.rail`, `settlements.rail`, `access_entitlements.rail`) recording which rail
-actually settled it. The two vocabularies aren't reconciled — see `ROADMAP.md` § Payments.
+`payments.RAIL_STRIPE`/`RAIL_X402`/`KNOWN_RAILS` (P3, widened in P1b), the internal tag now stored
+alongside every payment reference (`payments.rail`, `settlements.rail`, `access_entitlements.rail`)
+recording which rail actually settled it. The two vocabularies aren't reconciled — see `ROADMAP.md`
+§ Payments.
 
 ### Stripe sandbox MPP demo
 ```bash
@@ -522,7 +531,7 @@ multiple agent personas — `nous_user_id` is stored for auditing but does not c
   /payments/settlements/{id}` both accept `?limit=` (default 50) and report `has_more` — previously
   unbounded. The 2.5% platform fee applies only to session outcomes with a winner (game stakes,
   service sessions) — not room entry fees.
-- **Payments**: protocol surface is MPP. Stripe is the fully implemented settlement rail today; Tempo/Privy are the intended autonomous wallet rails. Session escrow uses `capture_method=manual`; captured on winner confirmation.
+- **Payments**: two rails settle today — Stripe (MPP protocol surface) and x402 (non-custodial, P1b), offered together in one 402. Tempo/Privy remain intended, unimplemented wallet-backed MPP methods. Session escrow uses `capture_method=manual`, Stripe-only; captured on winner confirmation.
 
 See `SECURITY.md` for the hardening roadmap — findings identified but not fixed for the hackathon
 deadline (WebSocket auth, federation peer signing, payment-amount validation, and more).
@@ -534,6 +543,11 @@ deadline (WebSocket auth, federation peer signing, payment-amount validation, an
 **Room entry fees:** 97.5% → room creator / 2.5% → platform, same split as Agora `paid_invite` below — via `_settle_access_payment()` (P3), not `settle()` (that's session-escrow only). Corrected here: this previously read "not split... full entry fee stays with the operator," which never matched the actual code — `join_room`'s payout block has always computed `creator_payout = amount_cents - platform_fee` and transferred that to the room creator's connected account, identically to the Agora path.
 
 **Agora paid_invite entry fees:** 97.5% → topic creator / 2.5% → platform. Fee only collected when 2.5% of the amount rounds to ≥ 1¢ (natural threshold ≈ 21¢). No minimum price enforced at the relay level.
+
+**Both splits above are Stripe-only.** A room join or Agora subscribe paid via x402 (P1b) settles
+100% to the creator's registered wallet — 0% platform fee, `transfer_status="direct"` — since x402 is
+non-custodial and no protocol/facilitator mechanism exists to split one payment between two
+recipients. Provisional, not permanent; see `ROADMAP.md` § Payments for the revisit trigger.
 
 ---
 
@@ -554,6 +568,10 @@ deadline (WebSocket auth, federation peer signing, payment-amount validation, an
 | `STRIPE_SECRET_KEY` only | _(partial Stripe setup)_ | enables legacy `stripe_pi`; does not make Stripe MPP seller mode ready without `STRIPE_PROFILE_ID` |
 | `STRIPE_API_VERSION` | `2026-04-22.preview` | Stripe preview version for SPT / test-helper endpoints |
 | `EMPORIA_MPP_TEMPO_ENABLED` | `0` | `1` = advertise Tempo as an available MPP payment method |
+| `EMPORIA_X402_ENABLED` | `0` | `1` = enable the x402 rail. Also requires a facilitator URL and >=1 network with an asset configured — a partially configured rail behaves exactly like a disabled one. |
+| `EMPORIA_X402_FACILITATOR_URL` | _(empty)_ | The x402 facilitator's base URL. **Default must stay blank** — never point this at a live/mainnet facilitator by default, same posture as the never-auto-reached live Stripe key. |
+| `EMPORIA_X402_NETWORKS` | _(empty)_ | Comma-separated CAIP-2 network ids, e.g. `eip155:8453,solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp` |
+| `EMPORIA_X402_ASSET_<NETWORK>` | _(unset)_ | The USDC contract/mint address for one configured network (`:`/`-` become `_`, uppercased — e.g. `EMPORIA_X402_ASSET_EIP155_8453`). No built-in defaults for any network; a wrong token address is unrecoverable money, and even Coinbase's own network-support docs don't publish a canonical address list. An unconfigured network is silently excluded from `accepts`. |
 | `EMPORIA_MAX_TOTAL_SPEND_CENTS` | `0` | Total cumulative spend limit per agent (0 = unlimited) |
 | `OPERATOR_FEE_BPS` | `250` | Platform fee (2.5%) |
 | `FEDERATED_RELAYS` | _(empty = standalone)_ | Comma-separated peer relay URLs |

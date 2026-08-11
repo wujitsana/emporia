@@ -380,7 +380,8 @@ Returns `429` with `Retry-After` header when exceeded.
 ## Payment rails
 
 This is the wire-level `payment_mode`/token vocabulary — a separate, unreconciled axis from
-`payments.RAIL_STRIPE`/`KNOWN_RAILS` (P3), the internal tag now stored on every payment reference
+`payments.RAIL_STRIPE`/`RAIL_X402`/`KNOWN_RAILS` (P3 built the seam, P1b landed the second member),
+the internal tag now stored on every payment reference
 (`payments.rail`/`settlements.rail`/`access_entitlements.rail`) recording which rail actually
 settled it. See `ROADMAP.md` § Payments.
 
@@ -390,6 +391,10 @@ settled it. See `ROADMAP.md` § Payments.
 | `stripe_spt` | `spt_xxx` (link-cli) | `payment_method_data[shared_payment_granted_token]` |
 | `stripe_pi` | `pi_xxx` | Standard `POST /payment_intents` + `confirm=true` |
 | `mpp` | 402 challenge-response | `WWW-Authenticate: Payment id="chal_xxx", method="stripe", intent="charge"` |
+
+x402 (P1b) is not a `payment_mode` value — it's a `RAIL_X402` member reached via the
+`PAYMENT-SIGNATURE` header, a separate credential path from all four rows above. See the "x402 (P1b)"
+subsection below.
 
 ### SPT flow (Stripe Shared Payment Token)
 ```
@@ -407,6 +412,26 @@ build_mpp_challenge(amount_cents, resource)
 extract_mpp_token("Payment spt_xxx")             → "spt_xxx"
 extract_mpp_token("Payment <b64url_credential>") → spt_xxx decoded from mppx JSON
 ```
+
+### x402 (P1b) — non-custodial, own headers
+```python
+build_x402_challenge(amount_cents, resource_url, pay_to_by_network, currency="usd")
+→ {"body": {"x402Version": 2, "resource": {"url": ...}, "accepts": [...]},
+   "headers": {"PAYMENT-REQUIRED": "<b64url PaymentRequired>"}}
+
+extract_x402_payload(request.headers.get("PAYMENT-SIGNATURE"))
+→ {"x402Version": 2, "accepted": {...}, "payload": {...}} or None
+
+x402_verify_payment(payload, requirements)  → POST <facilitator>/verify  → {"isValid": bool, ...}
+x402_settle_payment(payload, requirements)  → POST <facilitator>/settle  → {"success": bool, "transaction": "0x...", ...}
+```
+`amount_cents` → atomic USDC units via `_x402_amount_atomic()` (6 decimals, 1:1 USD peg assumed —
+`payments._USDC_DECIMALS`). `_verify_x402_payment()` (`relay_server.py`) reconstructs the relay's own
+expected requirement (configured network/asset, exact atomic amount, the creator's *registered*
+`payTo` from `AGENT_REGISTRY.get_x402_pay_to()`) and compares it field-by-field against the client's
+`accepted` object **before** either facilitator call — never trust the client's claim as the
+authoritative requirement passed to `/verify`/`/settle`. No official `x402` PyPI package dependency;
+hand-rolled over raw `httpx`, same posture as Stripe.
 
 ### Test SPT (no real US Link account)
 ```bash
@@ -426,7 +451,7 @@ session ends → settle():
 abandon → cancel_payment_hold() → auto-released (or explicit cancel)
 ```
 
-**Fee scope:** `settle()` is called only for session outcomes with a winner and `total_cents > 0` (game stakes, service sessions). Room entry fees (`paid` gate, renamed from `stripe_payment` in P3) go through `_settle_access_payment()` instead — same 97.5%/2.5% split as session outcomes and Agora `paid_invite`, just via a different function (the pay-to-access seam, not the capture-then-transfer escrow one). Not "operator keeps 100%" — that was a stale claim this doc used to carry; verify against `_settle_access_payment()` in `relay_server.py` (P3), not against this line, if the split logic changes again.
+**Fee scope:** `settle()` is called only for session outcomes with a winner and `total_cents > 0` (game stakes, service sessions) — Stripe only, no x402 analogue. Room entry fees (`paid` gate, renamed from `stripe_payment` in P3) go through `_settle_access_payment()` instead — same 97.5%/2.5% split as session outcomes and Agora `paid_invite` **when paid via Stripe**; via x402 (P1b) that function branches on `payment_ref.rail`, skips `payout_winner()` entirely, and records `platform_fee_cents=0`/`transfer_status="direct"` — the creator's registered wallet receives 100%. Not "operator keeps 100%" — that was a stale claim this doc used to carry for the Stripe path; verify against `_settle_access_payment()` in `relay_server.py` (P3/P1b), not against this line, if the split logic changes again.
 
 **Verifying Stripe/MPP is actually working** (rail inventory, `stripe_mpp_admin_notice`,
 `STRIPE_PROFILE_ID` discovery, pitfalls): `references/stripe-mpp-verification.md` — the

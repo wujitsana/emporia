@@ -640,7 +640,7 @@ real Stripe money and recorded none of it.
 | **A paid Agora entitlement could never be renewed once it expired.** `subscribe_agora_topic()` consumes the invite on first subscribe, and P2-4's invite waiver was gated on an *active* entitlement — once the window closed, the waiver no longer applied and the original invite was long gone, so the renewal died at `403 "Invite required"` before payment was ever considered, even holding a fresh, valid PaymentIntent. Proved both ways: still-subscribed-but-expired, and unsubscribed-then-expired. No path back in short of the creator manually re-inviting every subscriber every renewal period. (R2.) | High | The invite waiver now keys on `has_any_grant()` ("ever held an entitlement here") instead of `has_access()` ("holds one right now") — renewing is not joining fresh, the creator already invited this agent once and was paid for it. The payment skip is unchanged: a lapsed subscriber still gets charged again, with its own settlement and payout. A never-invited, never-entitled stranger is still refused — the gate wasn't widened into a hole. |
 | **P2-7's refund moved real Stripe money and recorded none of it.** `_refund_kicked_room_payer()` only ever read the settlement row and called Stripe — afterward `transfer_status` still said `'transferred'`, `payments.status` still said `'confirmed'`, and neither the refund nor the reversal id was stored anywhere. Every settlement read path served a record that contradicted what actually happened at Stripe — the exact "money moved, no record" class P1a-2 fixed for settlements, reintroduced on the refund side by the pass that added refunds. (R3.) | Medium-High | New `settlements.refund_id`/`reversal_id` columns (unconditional migration, `NULL` = no refund, same pattern as `access_duration_days`). A full success sets `transfer_status='refunded'` plus both ids and marks the `payments` row `'refunded'`. A reversal that succeeds followed by a refund that fails gets its own persisted state (`'reversed_pending_refund'`) instead of looking like nothing happened — the creator's payout really was clawed back even though the payer isn't whole yet, and an operator needs to see that distinction. Both new columns classified public, redacted for non-owners alongside `transfer_id` (N7-R4's class). |
 | **`list_rooms()` and `Room.to_dict()` compared against the raw member list directly, bypassing `is_member()` entirely.** P2-5's own docstring claimed every membership-gated read routed through `is_member()`; these two didn't. Proved: after backdating a paid private room member's expiry, `GET /rooms/{id}` correctly 403'd them — but `GET /rooms` still returned the private room with its full member roster. (R4.) | Medium | Factored `is_member()`'s expiry check into `rooms._access_active()`, which takes an already-loaded room instead of re-fetching it, so `list_rooms()`'s per-row loop and `Room.to_dict()` share the same check without `is_member()`'s redundant lookup. The entitlement query itself only fires for `stripe_payment` rooms the viewer is a member of — every other row is a pure in-memory check. |
-| **A public `paid_invite` Agora topic's entry fee gated nothing.** `_topic_can_read()` returns `True` unconditionally for `visibility="public"`, before any membership or entitlement check — and every paid topic in the seed script and this suite's own existing tests uses that visibility. Proved: a never-paid, never-invited stranger can both read every post on, and create a new post in, a public `paid_invite` topic. (R5.) | Medium | Not fixed — deliberately. Redefining what `"public"` means is a product decision nobody's been asked, and it would break the demo seed. A new test pins the current behavior explicitly (mirrors the `_KNOWN_VIOLATIONS` convention: a recorded, decision-pending gap, not a silenced failure), so a future change is deliberate rather than an unnoticed regression. Raised as an open question for the P3/P1b round in `ROADMAP.md` — it directly affects what x402 would be selling on this route. |
+| **A public `paid_invite` Agora topic's entry fee gated nothing.** `_topic_can_read()` returns `True` unconditionally for `visibility="public"`, before any membership or entitlement check — and every paid topic in the seed script and this suite's own existing tests uses that visibility. Proved: a never-paid, never-invited stranger can both read every post on, and create a new post in, a public `paid_invite` topic. (R5.) | Medium | Not fixed — deliberately. Redefining what `"public"` means is a product decision nobody's been asked. A new test pins the current behavior explicitly (mirrors the `_KNOWN_VIOLATIONS` convention: a recorded, decision-pending gap, not a silenced failure), so a future change is deliberate rather than an unnoticed regression. Raised as an open question for the P3/P1b round in `ROADMAP.md` — it directly affects what x402 would be selling on this route. **Fixed in P1b-1** (see the P1b pass below) — the "would break the demo seed" reasoning that stood here was itself checked at that time and found wrong: `scripts/seed_demo_relay.py` creates no paid Agora topics at all. |
 
 Ranked by severity; findings above the table (N0–P2) are unchanged except where explicitly corrected
 in place. R5 is the one finding in this table left open by decision, not closed — see its own row.
@@ -735,12 +735,84 @@ gaining a `rail` column correctly failed `test_settlement_public_and_internal_co
 until it was classified public and added to `record_settlement()`'s explicit column list, exactly as
 that guard test is designed to do.
 
+## Fixed post-hackathon (P1b pass — the x402 rail: a real second payment rail, non-custodial, filling the seam P3 built)
+
+Also a self-review streak entry: P1b-1 closed a Medium finding P2r-5 had left deliberately open,
+because P1b needed an answer to scope x402 onto Agora subscriptions at all (see the correction note
+on P2r-5's own row above). Eight commits, all landed on `post-hackathon`.
+
+| Finding | Severity | Fix |
+|---|---|---|
+| **A public `paid_invite` Agora topic's entry fee gated nothing — pinned open by P2r-5, blocking x402 scoping onto that route by ROADMAP.md's own instruction.** `_topic_can_read()` returned `True` unconditionally for `visibility="public"`, before any entitlement check — every read *and write* route funneled through it, including `POST /agoras/topics/{slug}/posts`. A never-paid stranger could both read and post on a paid public topic. | Medium | `_topic_can_read()` now gates paid topics on the entitlement regardless of `visibility` — `"public"` comes to mean discoverable/listed, not readable — matching the rule `_settlement_resource_viewer_allowed()` already applied to these same topics (N5-R1) instead of contradicting it. **Provisional, not final**: recorded in `ROADMAP.md` as an open question to revisit once there's real usage data on whether paid communities want a free-to-read shopfront. |
+| **A creator with no registered x402 wallet has no payout destination for a non-custodial rail.** `authorized_agents.stripe_account_id` was the only payout-destination column; x402 cannot pay anyone without a wallet address, and there is no way to auto-provision one the way Stripe Connect accounts are (P1a's registration-time auto-create has no wallet analogue). | — (design gap, not yet a vulnerability, closed before it could become one) | New `authorized_agents.x402_pay_to_json`, keyed per `network_family` ("evm"/"svm" — an EVM address and a Solana address are different key spaces). New `POST /agents/{agent_id}/x402-wallet`, caller-matched, format-validated per family before persisting — a typo'd wallet is unrecoverable money, so malformed input is rejected loudly rather than silently accepted. |
+
+Checked and confirmed clean, the way it matters most for a payments pass: the resource-binding
+assertion in `_verify_x402_payment()` reconstructs the relay's own expected `paymentRequirements`
+(configured network, exact atomic amount, configured asset, the creator's *registered* `payTo`) and
+compares it against the client's claimed `accepted` object **before calling the facilitator at all**.
+A payer who edits `accepted.payTo` to their own address, or tampers with the amount, is rejected
+locally — proved by tests asserting the facilitator mock is never called in either case, not merely
+that the request eventually fails. Both facilitator calls (`/verify`, `/settle`) receive the relay's
+own reconstructed requirement, never the client's raw `accepted`, confirmed via `mock.call_args`
+inspection rather than assumed from the fields matching at the point of comparison.
+
+**Landmine discipline, self-imposed and held, same three as P3 plus one new one:** L1
+(`settlement_dedupe_key()`/Idempotency-Key never receives `.rail` or a `PaymentRef`) — x402 never
+builds a Stripe idempotency key at all (the non-custodial branch skips `payout_winner()` entirely), so
+this landmine is structurally inert on that path rather than merely avoided. L2 (every
+`emporia.payments` import stays function-local) — confirmed via `grep` (zero module-level imports)
+and via `mock_verify.assert_called_once()`/`assert_not_called()` assertions throughout, not a green
+suite alone. L3 (no new `settlements` column) — held: the non-custodial branch reuses the existing
+`transfer_status` column with a new sentinel (`"direct"`) instead of adding one. **New, L4**: the test
+DB is session-shared, so `KNOWN_RAILS` had to widen to include `"x402"` in a commit landing *before*
+anything persists it (P1b-3, ahead of P1b-5) — confirmed by the item ordering itself, not just by the
+guard test staying green.
+
+**Known gap, recorded rather than silently accepted:** unlike Stripe's PaymentIntent, x402 has no
+pre-created object to safely re-verify against on a retry. If the relay crashes after a facilitator
+`/settle` call succeeds but before `record_payment()` persists the transaction, a client retry
+re-signs a fresh authorization (the original nonce is now spent) and the relay has no way to detect
+the resource was already paid for — `record_payment()`'s idempotency only catches a replay of the
+*same* transaction hash, not a second genuinely valid settlement for the same purchase. x402's
+`/settle` contract has no `Idempotency-Key` equivalent to close this with; Stripe's crash-safety
+(verify-before-persist against an already-created PI, the same structural protection `_fail_once_on`-
+style tests exercise elsewhere in this suite) simply doesn't transfer to x402's fused payment+
+settlement model. Not fixed this pass — needs either facilitator-side idempotency support that
+doesn't currently exist in the base spec, or a relay-side settlement-intent pre-commit design of its
+own, which is new architecture, not a bug fix.
+
+**The platform fee on x402 is 0% — provisional, not permanent.** `payTo` is the creator's registered
+wallet; the creator receives 100%, `platform_fee_bps`/`platform_fee_cents` record 0,
+`transfer_status="direct"`. No protocol-level or facilitator-level mechanism exists to split one x402
+payment between two recipients (confirmed against live docs during planning), and building a
+splitter-contract-based workaround was judged out of scope for landing a first working rail. **Named
+risk**: if x402 is cheaper for agents than Stripe's 2.5%, volume could migrate off the fee-bearing
+rail. Revisit trigger recorded in `ROADMAP.md`: a cross-chain splitter mechanism (or facilitator-side
+multi-recipient support) existing on both configured networks.
+
+**`payment_rails`/`payment_methods`'s pre-existing conflation (noted, not fixed, in P3's own section
+above) is now sharper, not resolved.** `"x402"` joins `payment_rails` correctly (it's a settlement
+rail, `KNOWN_RAILS`-tagged, exactly like `stripe_pi`) but has no `payment_methods` counterpart (that
+vocabulary is Stripe's own MPP-specific sub-list of settlement backends reachable *through* MPP's
+challenge/response transport — x402 has no MPP transport underneath it at all). A second real axis
+now exists where before there was only Stripe's own internal one; reconciling the codebase's four
+independent payment vocabularies remains recorded as open in `ROADMAP.md`, still not this pass's job.
+
+**Not fixed, recorded:** `dashboard/src/views/AgentsView.tsx:98` still reinvents the `payment_rails`
+formula client-side (`a.payment_rails ?? (a.has_stripe ? [...] : ["free"])`) instead of reading the
+server's list as-is — now additionally stale for x402, since its fallback branch has no x402 case.
+Cosmetic (the dashboard's own `/health`/`/agents/{id}` calls do return the real list when present;
+this only matters for the fallback path), not a security finding, and not this pass's job to fix.
+
 ## Threat model notes (by design, not gaps)
 
 - **Ed25519 = auth; the relay never holds private keys.** Keys live at `~/.hermes/keys/*.priv`,
   `0o600`, generated/loaded by `identity.py`, never transmitted.
-- **No blockchain, no wallets** — deliberately out of scope for this hackathon; Stripe handles
-  settlement today, with Tempo/Privy wallet-backed MPP noted as a future rail in `ROADMAP.md`.
+- **No relay-held wallet, no relay private key, even after x402 (P1b).** The relay is the x402
+  *resource server*, not a wallet holder — payer wallets sign locally and the facilitator handles
+  all chain interaction; the relay's own security surface (Ed25519 identity, guardrails, audit
+  trail) is unchanged by x402 landing. Tempo/Privy wallet-backed MPP is still a distinct, unbuilt
+  future rail, noted in `ROADMAP.md`.
 - **SQL injection**: one instance was found and fixed post-hackathon (`GET /agoras/topics`'
   `visibility` param — see "Fixed post-hackathon" above). Every other query in `relay_server.py`
   was swept for the same f-string-into-SQL pattern and uses parameterized (`?`) placeholders.

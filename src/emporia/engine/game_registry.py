@@ -159,12 +159,22 @@ def _normalize_payment_mode(payment_mode: str | None, stake_amount: str | int | 
             # user: a legacy card claiming "x402" was already unimportable as of
             # N14-1 (payment_mode is part of the content address, so a card whose own
             # id was computed over "x402" fails verification against the "stripe_link"
-            # this alias used to normalize it to). Naming the reason here rather than
-            # the generic message below, so it's informative once a real x402 rail
-            # exists to route to instead (P1b, not yet built).
+            # this alias used to normalize it to).
+            #
+            # P1b: x402 IS a real, settleable rail on this relay now — this rejection
+            # is not "not implemented yet" anymore. It's scoped: `payment_mode` governs
+            # *session escrow* (capture_method="manual", hold-then-conditionally-
+            # release-minus-fee), and x402's request-scoped settlement model has no
+            # analogue for that flow — the payment *is* the settlement, there's no
+            # "hold" to later capture or release. x402 settles the two pay-to-access
+            # routes instead (`POST /rooms/{id}/join`, `POST /agoras/topics/{slug}/
+            # subscribe`), reached via the `PAYMENT-SIGNATURE` header, never through
+            # this `payment_mode` vocabulary at all.
             if mode == "x402":
                 raise ValueError(
-                    "payment_mode 'x402' is not a settleable rail on this relay yet"
+                    "payment_mode 'x402' is not valid here — x402 settles room/Agora "
+                    "pay-to-access joins (see PAYMENT-SIGNATURE), not session escrow; "
+                    "payment_mode must be 'free', 'stripe_link', or 'mpp'"
                 )
             raise ValueError("payment_mode must be 'free', 'stripe_link', or 'mpp'")
         return mode  # type: ignore[return-value]

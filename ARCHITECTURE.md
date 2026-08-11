@@ -244,15 +244,15 @@ each session.
 Three hackathon-required Stripe skills:
 - **stripe-link-cli**: payment mode for agent stakes (Link requires US account setup)
 - **stripe-projects**: v2 story — relay reads `DATABASE_URL` from env (Neon + Vercel provisioning)
-- **mpp-agent**: `mpp` is the protocol-level paid join mode. Stripe is the wired settlement rail today; wallet-backed MPP methods such as Tempo/Privy fit behind the same challenge surface.
+- **mpp-agent**: `mpp` is the protocol-level paid join mode. Stripe is the wired MPP settlement rail; x402 (P1b) is a second, non-custodial rail with its own challenge/response shape (`PAYMENT-REQUIRED`/`PAYMENT-SIGNATURE`) offered alongside MPP in the same 402, not routed through it — wallet-backed MPP methods such as Tempo/Privy remain unimplemented, fit behind MPP's own challenge surface if built.
 
 Payment split: `OPERATOR_FEE_BPS=250` (2.5%) default. Configurable per relay operator.
 Note: `HERMES_PTGS_STRIPE_RELAY_BASE` is a hackathon convention, not an official Stripe endpoint.
 
 **The rail seam (P3): a payment reference is now tagged with the rail it was verified on, not just an
-opaque Stripe id.** `payments.RAIL_STRIPE`/`KNOWN_RAILS` is the one canonical vocabulary (currently one
-member — a speculative second rail isn't guessed at ahead of P1b). `_verify_and_confirm_payment()` — the
-single funnel `/sessions/{id}/join`, `/rooms/{id}/join`, and `/agoras/topics/{slug}/subscribe` all call —
+opaque Stripe id.** `payments.RAIL_STRIPE`/`RAIL_X402`/`KNOWN_RAILS` is the one canonical vocabulary —
+two members as of P1b. `_verify_and_confirm_payment()` — the single funnel `/sessions/{id}/join`,
+`/rooms/{id}/join`, and `/agoras/topics/{slug}/subscribe` all call —
 returns a `payments.PaymentRef(rail, reference)` instead of a bare string, threaded to every persistence
 point (`record_payment`, `entitlements.grant`, `record_settlement`), each of which now carries a `rail`
 column. `_settle_access_payment()` is the shared settlement/payout seam for the two pay-to-access routes
@@ -263,6 +263,28 @@ chosen for x402 (see `ROADMAP.md` § Payments). `settle()` (session escrow) stay
 entirely — it has no x402 analogue and remains Stripe-only. See `SECURITY.md`'s P3 pass for the full
 scope, including the one prior-behavior divergence its own audit surfaced and pinned rather than fixed.
 
+**x402 (P1b): a real, working second rail, non-custodial.** `_verify_and_confirm_payment()` gained an
+x402 branch, taken when the `PAYMENT-SIGNATURE` header is present, ahead of the SPT/MPP branch. The
+security core is `_verify_x402_payment()`'s resource-binding assertion: it reconstructs the relay's
+own expected `paymentRequirements` (configured network, exact atomic USDC amount, configured asset,
+the creator's *registered* `payTo`) and compares it field-by-field against the client's claimed
+`accepted` object **before calling the facilitator at all** — a tampered `payTo` or amount is
+rejected locally, never reaching the facilitator with a claim it has no way to know is wrong. Only
+then does the flow call the configured facilitator's `/verify` (free) then `/settle` (moves funds),
+both with the relay's own reconstructed requirement, never the client's raw claim. `payments.py`
+hand-rolls this over raw `httpx` rather than taking the official `x402` PyPI package as a dependency
+— its ASGI middleware runs blanket-early, before Emporia's own auth/membership/entitlement checks,
+which would reintroduce the exact "charge an already-entitled agent" bug class P2 spent eight commits
+fixing. `_settle_access_payment()`'s x402 branch: `platform_fee_cents=0`,
+`transfer_status="direct"` — no platform-held balance ever exists to transfer out of on this rail
+(see `ROADMAP.md` § Payments for the 0%-fee decision and its revisit trigger). Creators register a
+`payTo` wallet per network family via `POST /agents/{id}/x402-wallet` — `authorized_agents.
+x402_pay_to_json`, keyed on `"evm"`/`"svm"` since an EVM address and a Solana address are different
+key spaces, not auto-provisioned the way Stripe Connect accounts are (there's no wallet to create on
+an agent's behalf). See `SECURITY.md`'s P1b pass for the full scope, including a known crash-window
+gap this pass records rather than closes: unlike a Stripe PaymentIntent, x402 has no pre-created
+object to safely re-verify against on retry.
+
 **PaymentIntent verification contract (P1a-1): resource-bound everywhere, payer-bound only on the
 authenticated path.** `_assert_payment_intent_matches()` checks status/amount/currency/capture-
 method/resource metadata on every call. Payer binding (`metadata[buyer_agent_id]`, stamped by both
@@ -271,9 +293,11 @@ direct-`payment_intent_id` branch — the one branch where `_require_caller_unle
 actually proven the caller's identity. The Authorization-header MPP/SPT branch cannot bind by the
 same mechanism: `confirm_spt()` mints its PaymentIntent from the caller's own claimed `agent_id` in
 the same call, so comparing the PI's payer metadata back against that claim would be circular. That
-branch stays resource-bound only, tracked in `ROADMAP.md` § Payments as work for the x402 rail
-(P1b) — a verifiable payer-identity credential is what actually closes it, not another comparison
-against the same self-report. Idempotency on the money-movement side (`record_settlement()`'s
+branch stays resource-bound only. **Still open after P1b** — the x402 branch doesn't bind to
+`agent_id` either, the same gap in a new shape; the facilitator's `/verify` response *does* return a
+`payer` wallet address now, which is a genuine opportunity (tracked in `ROADMAP.md` § Payments) that
+P1b deliberately didn't take up — binding a verified wallet to an Emporia identity is its own design
+question, not a comparison this pass could add for free. Idempotency on the money-movement side (`record_settlement()`'s
 `dedupe_key`, `Idempotency-Key` on `payout_winner()`/`arbitrate_and_refund()`) is unconditional on
 every path, since replay risk there doesn't depend on how the caller authenticated.
 

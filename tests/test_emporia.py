@@ -804,7 +804,7 @@ def test_import_challenge_rejects_x402_payment_mode():
             currency="USD",
             created_at=created_at,
         )
-        with pytest.raises(ValueError, match="not a settleable rail"):
+        with pytest.raises(ValueError, match="not valid here"):
             dst.import_challenge(payload)
 
 
@@ -817,12 +817,12 @@ def test_normalize_payment_mode_rejects_x402_outright():
     from emporia.engine.game_registry import GameRegistry, _normalize_payment_mode
     import tempfile
 
-    with pytest.raises(ValueError, match="not a settleable rail"):
+    with pytest.raises(ValueError, match="not valid here"):
         _normalize_payment_mode("x402", "500")
 
     with tempfile.TemporaryDirectory() as tmp:
         reg = GameRegistry(Path(tmp) / "x402_create.sqlite3")
-        with pytest.raises(ValueError, match="not a settleable rail"):
+        with pytest.raises(ValueError, match="not valid here"):
             reg.create_challenge(
                 game_type="emporia:chess:v1",
                 creator_agent_id="x402_create_agent",
