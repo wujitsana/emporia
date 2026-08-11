@@ -10730,6 +10730,77 @@ def test_x402_challenge_output_round_trips_through_verification_without_mismatch
     mock_verify.assert_called_once()
 
 
+@patch("emporia.payments.payout_winner", new_callable=AsyncMock)
+@patch("emporia.payments.verify_payment_intent", new_callable=AsyncMock)
+def test_agent_posts_reuses_one_connection_per_request_not_per_row(mock_verify, mock_payout, client):
+    """P1br-3: self-review finding — P1b-1's rewrite of _topic_can_read()
+    made a public *paid* Agora topic run the full entitlement check per
+    row (before P1b-1, public topics short-circuited to True with zero
+    queries). _agora_is_member() called entitlements.has_access(), which
+    opened its OWN sqlite connection — GET /agents/{id}/posts filters
+    per-row in a loop, so N visible posts meant N extra connections, not
+    counting has_any_grant()'s further potential connection.
+
+    Counted directly (entitlements._connect patched with a counting
+    wrapper), not timed — the point is the connection count stays constant
+    as the row count grows, not that it's fast. Must fail pre-fix with
+    count == 5 (one has_access() call per post row, each opening its own
+    connection); post-fix the caller's already-open request connection is
+    reused instead."""
+    from emporia import entitlements
+
+    owner = "p1br3_conn_owner"
+    viewer = "p1br3_conn_viewer"
+    _register(client, owner)
+    _register(client, viewer)
+
+    r = client.post("/agoras/topics", json={
+        "name": "P1br-3 Conn Topic", "description": "d", "visibility": "public",
+        "gate_type": "paid_invite", "entry_fee_cents": 100, "creator_id": owner,
+    },
+        headers={"x-emporia-agent-id": owner})
+    assert r.status_code == 200, r.text
+    slug, topic_id = r.json()["slug"], r.json()["topic_id"]
+
+    for i in range(5):
+        post = client.post(f"/agoras/topics/{slug}/posts",
+            json={"title": f"post {i}", "content": "..."},
+            headers={"x-emporia-agent-id": owner})
+        assert post.status_code == 200, post.text
+
+    client.post(f"/agoras/topics/{slug}/invite", json={"invitee_id": viewer},
+        headers={"x-emporia-agent-id": owner})
+    mock_payout.return_value = {"transfer_id": "tr_p1br3"}
+    mock_verify.return_value = {
+        "status": "succeeded", "payment_intent_id": "pi_p1br3_conn",
+        "amount": 100, "currency": "usd", "capture_method": "automatic",
+        "metadata": {"resource_type": "agora", "resource_id": topic_id, "buyer_agent_id": viewer},
+    }
+    with patch("emporia.relay_server.AGENT_REGISTRY.get_stripe_account", return_value="acct_p1br3"):
+        sub = client.post(f"/agoras/topics/{slug}/subscribe",
+            json={"agent_id": viewer, "payment_intent_id": "pi_p1br3_conn"},
+            headers={"x-emporia-agent-id": viewer})
+    assert sub.status_code == 200, sub.text
+
+    call_count = {"n": 0}
+    original_connect = entitlements._connect
+
+    def counting_connect(db_path=None):
+        call_count["n"] += 1
+        return original_connect(db_path)
+
+    with patch.object(entitlements, "_connect", side_effect=counting_connect):
+        resp = client.get(f"/agents/{owner}/posts", headers={"x-emporia-agent-id": viewer})
+    assert resp.status_code == 200, resp.text
+    assert len(resp.json()["posts"]) == 5, \
+        "sanity: all 5 posts must be visible to the entitled viewer"
+    assert call_count["n"] == 0, (
+        "expected zero entitlements._connect() calls — the viewer's active "
+        f"entitlement should be checked via the already-open request "
+        f"connection, got {call_count['n']} for 5 posts"
+    )
+
+
 def test_x402_pay_to_by_network_excludes_unconfigured_or_walletless_networks(client):
     """P1b-4: a network the creator has no wallet for, or one not in
     EMPORIA_X402_NETWORKS at all, is silently excluded rather than raising —

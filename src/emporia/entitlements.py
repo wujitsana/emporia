@@ -182,19 +182,38 @@ def grant(
 
 
 def has_access(
-    resource_type: str, resource_id: str, agent_id: str, db_path: Path | None = None
+    resource_type: str, resource_id: str, agent_id: str, db_path: Path | None = None,
+    *, conn: sqlite3.Connection | None = None,
 ) -> bool:
     """True if this agent's *newest* grant for this resource is neither revoked
     nor expired. Only the newest row is consulted — an old revoked or expired
     row never overrides a later, good grant, and a good-looking old row never
-    overrides a later revoke."""
-    with _LOCK, _connect(db_path) as conn:
-        row = conn.execute(
-            "SELECT expires_at, revoked_at FROM access_entitlements "
-            "WHERE resource_type = ? AND resource_id = ? AND agent_id = ? "
-            "ORDER BY granted_at DESC LIMIT 1",
-            (resource_type, resource_id, agent_id),
-        ).fetchone()
+    overrides a later revoke.
+
+    P1br-3: `conn`, if given, reuses an already-open connection instead of
+    opening a new one — `_agora_is_member()` (relay_server.py) passes its
+    own DB_LOCK-held connection down, since it's called per-row in the
+    Agora feed / a topic's post list and was opening up to two fresh
+    connections per row for a paid topic before this. Optional and
+    defaults to today's own-connection behavior, so no existing caller
+    needs to change.
+    """
+    if conn is not None:
+        with _LOCK:
+            row = conn.execute(
+                "SELECT expires_at, revoked_at FROM access_entitlements "
+                "WHERE resource_type = ? AND resource_id = ? AND agent_id = ? "
+                "ORDER BY granted_at DESC LIMIT 1",
+                (resource_type, resource_id, agent_id),
+            ).fetchone()
+    else:
+        with _LOCK, _connect(db_path) as owned:
+            row = owned.execute(
+                "SELECT expires_at, revoked_at FROM access_entitlements "
+                "WHERE resource_type = ? AND resource_id = ? AND agent_id = ? "
+                "ORDER BY granted_at DESC LIMIT 1",
+                (resource_type, resource_id, agent_id),
+            ).fetchone()
     if not row:
         return False
     if row["revoked_at"] is not None:
@@ -205,7 +224,8 @@ def has_access(
 
 
 def has_any_grant(
-    resource_type: str, resource_id: str, agent_id: str, db_path: Path | None = None
+    resource_type: str, resource_id: str, agent_id: str, db_path: Path | None = None,
+    *, conn: sqlite3.Connection | None = None,
 ) -> bool:
     """True if this agent has ever received a grant for this resource, active
     or not. Exists to distinguish "this entitlement expired/was revoked"
@@ -213,13 +233,26 @@ def has_any_grant(
     from "this membership predates entitlements existing at all" (`has_access()`
     is False *and* this is also False — a member added before P2-3 shipped, who
     must not be locked out by expiry enforcement for a window that never
-    applied to them). See `rooms.is_member()` (P2-5), the only caller."""
-    with _LOCK, _connect(db_path) as conn:
-        row = conn.execute(
-            "SELECT 1 FROM access_entitlements "
-            "WHERE resource_type = ? AND resource_id = ? AND agent_id = ? LIMIT 1",
-            (resource_type, resource_id, agent_id),
-        ).fetchone()
+    applied to them). See `rooms.is_member()` (P2-5) and `_agora_is_member()`
+    (relay_server.py, P2-5's Agora sibling), the two callers.
+
+    `conn` — see `has_access()`'s docstring; same optional reused-connection
+    parameter, same default.
+    """
+    if conn is not None:
+        with _LOCK:
+            row = conn.execute(
+                "SELECT 1 FROM access_entitlements "
+                "WHERE resource_type = ? AND resource_id = ? AND agent_id = ? LIMIT 1",
+                (resource_type, resource_id, agent_id),
+            ).fetchone()
+    else:
+        with _LOCK, _connect(db_path) as owned:
+            row = owned.execute(
+                "SELECT 1 FROM access_entitlements "
+                "WHERE resource_type = ? AND resource_id = ? AND agent_id = ? LIMIT 1",
+                (resource_type, resource_id, agent_id),
+            ).fetchone()
     return row is not None
 
 

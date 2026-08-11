@@ -3318,7 +3318,7 @@ def _settlement_resource_viewer_allowed(resource_id: str, caller: str | None, co
             # settlement history (the caller's own receipt stays reachable via
             # the separate ?agent_id= path regardless — see
             # test_kicked_room_member_can_still_read_own_receipt's sibling).
-            return _agora_is_member(conn, topic["topic_id"], caller)
+            return _agora_is_member(conn, topic["topic_id"], caller, gate_type=topic["gate_type"])
         return _topic_can_read(
             topic["visibility"], topic["gate_type"], topic["entry_fee_cents"],
             caller, topic["topic_id"], conn,
@@ -5845,7 +5845,7 @@ def _require_registered(agent_id: str) -> None:
 _AGORA_VISIBILITIES = {"public", "private", "restricted"}
 
 
-def _agora_is_member(conn: Any, topic_id: str, agent_id: str) -> bool:
+def _agora_is_member(conn: Any, topic_id: str, agent_id: str, *, gate_type: str) -> bool:
     """P2-5: Agora sibling of rooms.is_member()'s expiry enforcement — same
     rule (a `paid_invite` topic's membership requires an *active* entitlement,
     not just a still-present `agora_members` row), same two exemptions (the
@@ -5856,6 +5856,15 @@ def _agora_is_member(conn: Any, topic_id: str, agent_id: str) -> bool:
     rooms.is_member() — every call site here already holds one via `with
     DB_LOCK, get_db() as conn:`, and this must see that same transaction's
     view of the row, not a second independent connection's.
+
+    P1br-3: `gate_type` is required rather than re-queried — both call
+    sites already have it on hand (each is on a paid-topic branch that just
+    computed `_topic_is_paid()` from this exact value), so the re-query was
+    pure waste. `conn` is also now threaded into `has_access()`/
+    `has_any_grant()` (their new optional `conn=` param) instead of each
+    opening its own connection — this function runs per-row in the Agora
+    feed and a topic's post list, so a paid topic was opening up to two
+    extra sqlite connections per row before this.
     """
     member = conn.execute(
         "SELECT role FROM agora_members WHERE topic_id=? AND agent_id=?",
@@ -5865,15 +5874,11 @@ def _agora_is_member(conn: Any, topic_id: str, agent_id: str) -> bool:
         return False
     if member["role"] in ("owner", "moderator"):
         return True
-    topic = conn.execute(
-        "SELECT gate_type FROM agora_topics WHERE topic_id=?", (topic_id,)
-    ).fetchone()
-    gate = topic["gate_type"] if topic and "gate_type" in topic.keys() else "open"
-    if gate != "paid_invite":
+    if gate_type != "paid_invite":
         return True
-    if entitlements.has_access("agora", topic_id, agent_id, db_path=DATABASE_PATH):
+    if entitlements.has_access("agora", topic_id, agent_id, conn=conn):
         return True
-    return not entitlements.has_any_grant("agora", topic_id, agent_id, db_path=DATABASE_PATH)
+    return not entitlements.has_any_grant("agora", topic_id, agent_id, conn=conn)
 
 
 def _topic_is_paid(gate_type: str, entry_fee_cents: int | None) -> bool:
@@ -5900,7 +5905,7 @@ def _topic_can_read(
         return True
     if not agent_id:
         return False
-    return _agora_is_member(conn, topic_id, agent_id)
+    return _agora_is_member(conn, topic_id, agent_id, gate_type=gate_type)
 
 
 def _slugify(name: str) -> str:
