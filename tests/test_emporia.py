@@ -10761,6 +10761,64 @@ def test_room_join_via_x402_credential_persists_rail_x402(mock_verify, mock_sett
     assert row["rail"] == "x402"
 
 
+@patch("emporia.payments.payout_winner", new_callable=AsyncMock)
+@patch("emporia.payments.x402_settle_payment", new_callable=AsyncMock)
+@patch("emporia.payments.x402_verify_payment", new_callable=AsyncMock)
+def test_x402_room_join_settlement_is_non_custodial_direct_no_fee(mock_verify, mock_settle, mock_payout, client):
+    """P1b-6: an x402-paid room join records a settlement with
+    platform_fee_cents=0, winner_payout_cents == the full amount,
+    platform_fee_bps=0, transfer_id=None, transfer_status="direct" — and
+    payout_winner (the Stripe transfer) is never called at all, proving the
+    non-custodial branch genuinely skips the transfer hop rather than
+    attempting one that happens to no-op."""
+    owner = "p1b6_owner"
+    payer = "p1b6_payer"
+    _register(client, owner)
+    _register(client, payer)
+
+    wallet = client.post(f"/agents/{owner}/x402-wallet",
+        json={"network_family": "evm", "address": "0x" + "dd" * 20},
+        headers={"x-emporia-agent-id": owner})
+    assert wallet.status_code == 200, wallet.text
+
+    r = client.post("/rooms", json={
+        "name": "P1b-6 Room", "creator_id": owner,
+        "room_type": "private", "gate_type": "paid", "entry_fee_cents": 400,
+    },
+        headers={"x-emporia-agent-id": owner})
+    assert r.status_code == 200, r.text
+    room_id = r.json()["room_id"]
+
+    mock_verify.return_value = {"isValid": True, "payer": "0x" + "cc" * 20}
+    mock_settle.return_value = {"success": True, "transaction": "0xp1b6_tx", "network": "eip155:8453"}
+
+    header = _x402_payment_signature_header({
+        "scheme": "exact", "network": "eip155:8453", "amount": "4000000",
+        "asset": "0xUSDCFAKE", "payTo": "0x" + "dd" * 20, "maxTimeoutSeconds": 300,
+    })
+
+    with patch.dict(os.environ, _X402_ENV, clear=False):
+        resp = client.post(f"/rooms/{room_id}/join", json={"agent_id": payer},
+            headers={"x-emporia-agent-id": payer, "PAYMENT-SIGNATURE": header})
+    assert resp.status_code == 200, resp.text
+
+    from emporia.relay_server import get_db
+    with get_db() as conn:
+        row = conn.execute(
+            "SELECT platform_fee_cents, winner_payout_cents, platform_fee_bps, "
+            "transfer_id, transfer_status, rail FROM settlements WHERE session_id=?",
+            (room_id,),
+        ).fetchone()
+    assert row is not None
+    assert row["rail"] == "x402"
+    assert row["platform_fee_cents"] == 0
+    assert row["winner_payout_cents"] == 400
+    assert row["platform_fee_bps"] == 0
+    assert row["transfer_id"] is None
+    assert row["transfer_status"] == "direct"
+    mock_payout.assert_not_called()
+
+
 @pytest.mark.asyncio
 async def test_escrow_capture_and_transfer_mocked():
     """settle() captures PI first (escrow → platform), then transfers to winner."""

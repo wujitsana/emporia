@@ -5158,37 +5158,61 @@ async def _settle_access_payment(
     as the two call sites it replaces — 75 test
     `@patch("emporia.payments.X")` decorators only intercept because nothing
     in this file imports these names at module scope.
+
+    P1b-6: `payment_ref.rail == RAIL_X402` is the "a real second rail would
+    skip this transfer entirely" case the docstring above already
+    anticipated — x402 is non-custodial (the payment settles straight to
+    `payTo`, resolved and asserted in _verify_x402_payment() before this
+    function is ever reached), so there is no platform-held balance to take
+    a cut from or transfer out of. The platform fee is 0% on x402 for now —
+    a provisional decision, not a permanent one (see ROADMAP.md § Payments
+    for the revisit trigger: a cross-chain splitter mechanism). The Stripe
+    branch below is untouched, byte-for-byte.
     """
-    from emporia.payments import payout_winner, platform_fee as _platform_fee, settlement_dedupe_key
+    from emporia.payments import (
+        RAIL_X402, payout_winner, platform_fee as _platform_fee, settlement_dedupe_key,
+    )
 
     entitlements.grant(
         resource_type, resource_id, payer_id, payment_ref.reference,
         access_duration_days, rail=payment_ref.rail, db_path=DATABASE_PATH,
     )
-    platform_fee = _platform_fee(amount_cents)
-    creator_payout = amount_cents - platform_fee
-    transfer_id = None
-    transfer_status = "no_stripe_account"
-    if creator_payout > 0:
-        creator_stripe = AGENT_REGISTRY.get_stripe_account(creator_id)
-        if creator_stripe:
-            try:
-                t = await payout_winner(
-                    winner_id=creator_id,
-                    stripe_account_id=creator_stripe,
-                    amount_cents=creator_payout,
-                    session_id=resource_id,
-                    # Matches this same settlement's dedupe_key below — same
-                    # helper, same inputs, by construction (P1r-2, R1). L1:
-                    # only the bare reference reaches the hash, never the rail.
-                    idempotency_key="emporia:payout:" + settlement_dedupe_key(
-                        resource_id, payer_id, [payment_ref.reference]
-                    ),
-                )
-                transfer_id = t["transfer_id"]
-                transfer_status = "transferred"
-            except Exception:
-                transfer_status = "transfer_failed"
+    if payment_ref.rail == RAIL_X402:
+        platform_fee = 0
+        creator_payout = amount_cents
+        platform_fee_bps = 0
+        transfer_id = None
+        # "direct": no platform-held balance ever existed to transfer out of
+        # — distinct from "no_stripe_account" (Stripe, platform holds funds,
+        # simply has nowhere to send them) and "transferred"/"transfer_failed"
+        # (Stripe, a transfer was attempted). Not a failure state.
+        transfer_status = "direct"
+    else:
+        platform_fee_bps = OPERATOR_FEE_BPS
+        platform_fee = _platform_fee(amount_cents)
+        creator_payout = amount_cents - platform_fee
+        transfer_id = None
+        transfer_status = "no_stripe_account"
+        if creator_payout > 0:
+            creator_stripe = AGENT_REGISTRY.get_stripe_account(creator_id)
+            if creator_stripe:
+                try:
+                    t = await payout_winner(
+                        winner_id=creator_id,
+                        stripe_account_id=creator_stripe,
+                        amount_cents=creator_payout,
+                        session_id=resource_id,
+                        # Matches this same settlement's dedupe_key below — same
+                        # helper, same inputs, by construction (P1r-2, R1). L1:
+                        # only the bare reference reaches the hash, never the rail.
+                        idempotency_key="emporia:payout:" + settlement_dedupe_key(
+                            resource_id, payer_id, [payment_ref.reference]
+                        ),
+                    )
+                    transfer_id = t["transfer_id"]
+                    transfer_status = "transferred"
+                except Exception:
+                    transfer_status = "transfer_failed"
     record_settlement({
         "session_id": resource_id,
         "winner_id": creator_id,
@@ -5197,7 +5221,7 @@ async def _settle_access_payment(
         "total_stake_cents": amount_cents,
         "platform_fee_cents": platform_fee,
         "winner_payout_cents": creator_payout,
-        "platform_fee_bps": OPERATOR_FEE_BPS,
+        "platform_fee_bps": platform_fee_bps,
         "payment_intent_ids": [payment_ref.reference],
         "transfer_id": transfer_id,
         "transfer_status": transfer_status,
