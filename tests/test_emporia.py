@@ -6112,6 +6112,88 @@ def test_known_rails_covers_every_persisted_rail_value():
                 f"{table}.rail has unrecognized value(s) {unknown} — not in KNOWN_RAILS={sorted(KNOWN_RAILS)}"
 
 
+def test_known_rails_widens_to_include_x402():
+    """P1b-3: the second rail P3's seam was built for. KNOWN_RAILS must widen
+    to exactly {stripe, x402} — no silent removal of stripe, no accidental
+    third value."""
+    from emporia.payments import RAIL_STRIPE, RAIL_X402, KNOWN_RAILS
+
+    assert RAIL_X402 == "x402"
+    assert KNOWN_RAILS == frozenset({RAIL_STRIPE, RAIL_X402})
+
+
+def test_x402_config_accessors_require_all_three_before_enabling():
+    """P1b-3: enabled/facilitator_url/networks are lazy (re-read the env var on
+    every call, not an import-time constant — see TEMPO_ENABLED's cautionary
+    note in the P1b plan) and the rail is enabled only when the flag is set,
+    a facilitator URL is configured, AND at least one configured network
+    actually has an asset address set. A partially configured rail must stay
+    disabled rather than half-enabling and failing later — this is why the
+    flag alone, or the flag plus a facilitator with no usable network, must
+    both still read as disabled."""
+    from emporia import payments
+
+    with patch.dict(os.environ, {}, clear=True):
+        assert payments._x402_enabled() is False
+        assert payments._x402_facilitator_url() == ""
+        assert payments._x402_networks() == []
+
+    with patch.dict(os.environ, {
+        "EMPORIA_X402_ENABLED": "1",
+        "EMPORIA_X402_FACILITATOR_URL": "",
+        "EMPORIA_X402_NETWORKS": "eip155:8453",
+        "EMPORIA_X402_ASSET_EIP155_8453": "0xfake",
+    }, clear=False):
+        assert payments._x402_enabled() is False, "blank facilitator URL must disable the rail (L6)"
+
+    with patch.dict(os.environ, {
+        "EMPORIA_X402_ENABLED": "1",
+        "EMPORIA_X402_FACILITATOR_URL": "https://facilitator.example.test",
+        "EMPORIA_X402_NETWORKS": "eip155:8453",
+        # no EMPORIA_X402_ASSET_EIP155_8453 set
+    }, clear=False):
+        assert payments._x402_enabled() is False, \
+            "a configured network with no asset address must not count as usable"
+
+    with patch.dict(os.environ, {
+        "EMPORIA_X402_ENABLED": "0",
+        "EMPORIA_X402_FACILITATOR_URL": "https://facilitator.example.test",
+        "EMPORIA_X402_NETWORKS": "eip155:8453",
+        "EMPORIA_X402_ASSET_EIP155_8453": "0xfake",
+    }, clear=False):
+        assert payments._x402_enabled() is False, "the flag itself must be required, not inferred"
+
+    with patch.dict(os.environ, {
+        "EMPORIA_X402_ENABLED": "1",
+        "EMPORIA_X402_FACILITATOR_URL": "https://facilitator.example.test",
+        "EMPORIA_X402_NETWORKS": " eip155:8453 , solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp ",
+        "EMPORIA_X402_ASSET_EIP155_8453": "0xfake",
+    }, clear=False):
+        assert payments._x402_enabled() is True
+        assert payments._x402_facilitator_url() == "https://facilitator.example.test"
+        assert payments._x402_networks() == [
+            "eip155:8453", "solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp",
+        ], "network list must be CSV-split and whitespace-trimmed"
+
+
+def test_x402_asset_for_has_no_builtin_default_and_normalizes_env_name():
+    """P1b-3: no default USDC address for any network — a wrong token address
+    is unrecoverable money (same reasoning as item 2's wallet-format
+    validation), and Coinbase's own network-support docs don't publish a
+    canonical address list either. Only an explicit
+    EMPORIA_X402_ASSET_<NETWORK> override counts, with ':' and '-' normalized
+    to '_' and the network id uppercased."""
+    from emporia import payments
+
+    with patch.dict(os.environ, {}, clear=True):
+        assert payments._x402_asset_for("eip155:8453") is None
+        assert payments._x402_asset_for("solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp") is None
+
+    with patch.dict(os.environ, {"EMPORIA_X402_ASSET_EIP155_8453": "0xABCDEF"}, clear=False):
+        assert payments._x402_asset_for("eip155:8453") == "0xABCDEF"
+        assert payments._x402_asset_for("eip155:84532") is None
+
+
 def test_settlement_row_dict_never_leaks_internal_columns_to_a_co_payer(client):
     """P1r-3 (R2): the leak itself, and the general form of it. Scans the *whole*
     serialized settlement object for a co-payer's row rather than checking one

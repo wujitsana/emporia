@@ -28,6 +28,7 @@ import base64
 import hashlib
 import json
 import os
+import re
 import secrets
 from collections.abc import Sequence
 from dataclasses import dataclass
@@ -85,14 +86,16 @@ def platform_fee(amount_cents: int) -> int:
 # its own module docstring — can import it too without a cycle
 # (entitlements -> payments is acyclic; payments never imports entitlements).
 #
-# Deliberately just a frozenset with one member, not a registry/dispatch table:
-# there is exactly one implemented rail. A speculative second entry would be
-# the same mistake this pass's own audit flagged elsewhere — "tempo" is
-# advertised in /health's payment_methods with zero implementing code behind
-# it. P1b (x402) adds the second rail and, with it, whatever dispatch actually
-# turns out to be needed — not guessed at here ahead of time.
+# P1b: the second rail lands. RAIL_X402 is x402 (see the module docstring at
+# the top of this pass's x402_* functions below) — a request-scoped,
+# non-custodial stablecoin settlement, verified/settled via a facilitator
+# rather than a Stripe API call. KNOWN_RAILS widening to two members is the
+# whole point of P3's seam: every already-shipped `rail in KNOWN_RAILS` guard
+# (record_payment, record_settlement, entitlements.grant) picks this up with
+# no further change.
 RAIL_STRIPE = "stripe"
-KNOWN_RAILS = frozenset({RAIL_STRIPE})
+RAIL_X402 = "x402"
+KNOWN_RAILS = frozenset({RAIL_STRIPE, RAIL_X402})
 
 
 @dataclass(frozen=True)
@@ -126,6 +129,56 @@ REQUEST_TIMEOUT = float(os.getenv("EMPORIA_HTTP_TIMEOUT", "30"))
 # Machine Payment Profile ID for the Stripe fiat MPP rail.
 # Set via Stripe dashboard → Machine Payments → Profile. Used in mppStripe.charge().
 STRIPE_PROFILE_ID = os.getenv("STRIPE_PROFILE_ID", "")
+
+
+# ─── x402 config (P1b) ───────────────────────────────────────────────────────
+# Lazy accessors, not import-time module constants — mirrors relay_server.py's
+# _stripe_profile_ready() (re-read on every call, patchable via the env var
+# directly in tests) rather than TEMPO_ENABLED (an import-time constant that
+# forces tests to patch the module attribute instead). See the P1b plan's
+# config section for why that distinction matters here.
+
+def _x402_facilitator_url() -> str:
+    """L6: the default MUST stay blank — never a live/mainnet facilitator URL.
+    A blank facilitator disables the rail outright (see _x402_enabled()), the
+    same posture as the never-reached live rk_live_ Stripe key."""
+    return os.getenv("EMPORIA_X402_FACILITATOR_URL", "").strip()
+
+
+def _x402_networks() -> list[str]:
+    """CSV of CAIP-2 network ids, e.g. 'eip155:8453,solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp'."""
+    raw = os.getenv("EMPORIA_X402_NETWORKS", "").strip()
+    if not raw:
+        return []
+    return [n.strip() for n in raw.split(",") if n.strip()]
+
+
+def _x402_enabled() -> bool:
+    """The rail is enabled only when all three of the enabled flag, a
+    facilitator URL, and >=1 usable network (one with an asset configured)
+    are present. A partially configured rail behaves exactly like a disabled
+    one rather than failing halfway through building a 402 challenge."""
+    return (
+        os.getenv("EMPORIA_X402_ENABLED", "0").strip() == "1"
+        and bool(_x402_facilitator_url())
+        and any(_x402_asset_for(n) for n in _x402_networks())
+    )
+
+
+def _x402_asset_for(network: str) -> str | None:
+    """The USDC contract/mint address for a CAIP-2 network id — deliberately
+    **no built-in defaults**. A wrong token address is unrecoverable money,
+    the same reasoning item 2's wallet-format validation is built on, and
+    Coinbase's own network-support docs don't publish a canonical address
+    list either ("consult the token registry") — this was checked against
+    live docs during planning rather than assumed. The operator must set
+    EMPORIA_X402_ASSET_<NETWORK> explicitly (':' and '-' become '_',
+    uppercased) for each network they actually want advertised; an
+    unconfigured network is silently excluded from `accepts`, not guessed at.
+    """
+    env_name = "EMPORIA_X402_ASSET_" + re.sub(r"[:-]", "_", network.upper())
+    value = os.getenv(env_name, "").strip()
+    return value or None
 
 # Per-process secret for binding MPP challenges (32 random bytes).
 # The mppx library uses this to sign challenge payloads so they can't be replayed
