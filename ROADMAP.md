@@ -177,8 +177,8 @@ count (156 in `src/`, confirmed by the audit that opened P3) but overstated the 
 ~30-35 of those are genuinely Stripe-coupled (essentially all of `payments.py`'s HTTP layer, plus a
 handful of capture-method/PI-status/Connect sites in `relay_server.py`). The other ~120 were always
 opaque tokens — stored, compared, redacted, never parsed — which is exactly why P3 could tag the
-reference at one funnel instead of touching 150 call sites. Sequencing: **P3 (done) → P1b (done, this
-entry) → next unnamed.**
+reference at one funnel instead of touching 150 call sites. Sequencing: **P3 (done) → P1b (done) →
+P1br (done, the P1b self-review — see SECURITY.md) → next unnamed.**
 
 **P1b shipped: x402 is a real, working second payment rail**, non-custodial, eight commits
 (SECURITY.md's P1b pass has the full findings). `_verify_and_confirm_payment()` gained an x402
@@ -206,6 +206,15 @@ the operator declares what's accepted, the 402's `accepts` array reflects exactl
 paying agent's wallet picks from it. Both Base and Solana are supported simultaneously (register
 both networks; see the corrected network-default note below) rather than one being hardcoded as *the*
 option.
+
+**Corollary, made explicit in the P1br self-review: once a payer has picked, the relay doesn't get to
+override that pick.** P1b-5 shipped with a gap where a submitted `PAYMENT-SIGNATURE` credential that
+couldn't be honored (x402 disabled, or a route with no x402 analogue) fell through to try Stripe
+instead — silently substituting a rail the payer never chose. Fixed in P1br-1: the relay now declines
+explicitly (the same merged-402 shape, so the agent sees what's actually accepted and can retry) and
+never silently switches rails on the payer's behalf. **This rule applies to any future rail this
+codebase adds, not just x402** — worth remembering as a design constraint before it's tempting to
+"just fall through" again.
 
 **A public paid Agora topic's entry fee gated nothing — resolved, provisionally.** Was pinned open by
 P2r-5 specifically to block x402 scoping onto Agora subscriptions until answered. P1b-1: paid topics

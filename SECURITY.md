@@ -756,6 +756,15 @@ that the request eventually fails. Both facilitator calls (`/verify`, `/settle`)
 own reconstructed requirement, never the client's raw `accepted`, confirmed via `mock.call_args`
 inspection rather than assumed from the fields matching at the point of comparison.
 
+**Correction (P1br pass, self-review): this paragraph verified the inside of
+`_verify_x402_payment()` and missed that the outer gate deciding whether to call it at all had no
+equivalent check.** `_verify_and_confirm_payment()` routed to `_verify_x402_payment()` on the mere
+presence of a `PAYMENT-SIGNATURE` header — no `_x402_enabled()` check, no check that the route even
+had a `creator_id` to build a requirement against. A disabled relay, or session escrow (which never
+threads `creator_id`), still tried to verify and 402'd on an unrelated `payTo`/`asset` mismatch three
+layers down, silently swallowing the Stripe fallback by accident. Fixed in P1br-1 — see that pass's
+own row below.
+
 **Landmine discipline, self-imposed and held, same three as P3 plus one new one:** L1
 (`settlement_dedupe_key()`/Idempotency-Key never receives `.rail` or a `PaymentRef`) — x402 never
 builds a Stripe idempotency key at all (the non-custodial branch skips `payout_winner()` entirely), so
@@ -803,6 +812,31 @@ formula client-side (`a.payment_rails ?? (a.has_stripe ? [...] : ["free"])`) ins
 server's list as-is — now additionally stale for x402, since its fallback branch has no x402 case.
 Cosmetic (the dashboard's own `/health`/`/agents/{id}` calls do return the real list when present;
 this only matters for the fallback path), not a security finding, and not this pass's job to fix.
+
+## Fixed post-hackathon (P1br pass — the P1b self-review)
+
+The eleventh consecutive pass to find genuine defects in the immediately preceding pass's own shipped
+work (N12→N13→N14→P1a→P1r→P2→P2r→P2r-6→P3→P3r→P1b→**P1br**). Three commits, all landed on
+`post-hackathon`.
+
+**Coverage caveat, stated for the record:** three Explore audit agents were launched for this review
+and **all three died on a session limit before reporting anything.** The three findings below were
+found and verified by hand against the shipped code afterward. That is narrower coverage than a
+normal review round got — the next pass should not treat P1b as fully reviewed on the strength of
+this one, and a wider follow-up sweep of P1b (and this pass's own three commits) is still owed.
+
+| Finding | Severity | Fix |
+|---|---|---|
+| **The x402 branch never checked whether x402 was enabled.** `_verify_and_confirm_payment()` routed to `_verify_x402_payment()` on the mere presence of a `PAYMENT-SIGNATURE` header — the challenge side was correctly gated on `_x402_enabled()`, the credential side wasn't. A disabled relay, or a route with no `creator_id` (session escrow, which never threads one), still tried to verify and 402'd on an unrelated `payTo`/`asset` mismatch three layers down, silently substituting an unhelpful generic error for the real reason and, worse, meaning a client that always attaches the header could never reach the Stripe branches at all. | **High** (correctness/usability — it failed closed, no money moved, but by accident) | New `_x402_offer()` (the single source both the credential-honoring check and the eventual 402's `x402` body key now read from) gates entry into `_verify_x402_payment()`. When it can't apply, the credential is **declined explicitly** — same merged-402 shape as "no credential at all," with a reason in `message` — never silently routed to Stripe instead. Explicit product decision made during review: a submitted `PAYMENT-SIGNATURE` header is the payer choosing x402; silently substituting Stripe would override that choice (`ROADMAP.md`'s composable-payment-options principle, now stated as its own rule — see below). |
+| **The x402 requirement shape was duplicated between challenge and verification.** `"scheme": "exact"` and `maxTimeoutSeconds: 300` were separate hardcoded literals in `build_x402_challenge()` (payments.py) and `_verify_x402_payment()`'s expected-requirement reconstruction (relay_server.py) — `_x402_amount_atomic()`/`_x402_asset_for()` were already correctly shared, these two weren't. Change one copy without the other and the resource-binding assertion silently rejects every payment, with nothing pointing at why. | Medium (latent — nothing broken today, both copies happened to agree) | New `payments.x402_requirement()` is the one definition, called from both sites. Pinned two ways: a single-sourcing test that patches the module constant and confirms both call sites move together (the literal-equality form of this test would not have caught the original duplication), and a round-trip test that builds a real challenge and feeds its own output back through verification. |
+| **P1b-1 introduced a per-row N+1 on public paid Agora topics.** Before P1b-1, `_topic_can_read()` returned `True` immediately for any public topic — zero queries. After it, a public *paid* topic runs the full `_agora_is_member()` path per row: a redundant `gate_type` re-query (already available as a parameter), then `entitlements.has_access()`/`has_any_grant()`, each of which opened its **own** sqlite connection. `GET /agents/{id}/posts` and the Agora feed filter per row in a loop — confirmed directly (not estimated): 5 posts, 5 `entitlements._connect()` calls. | Medium (perf regression this pass caused; light traffic today, real at any scale) | `entitlements.has_access()`/`has_any_grant()` gain an optional `conn=` parameter (default: today's own-connection behavior, no existing caller changes) and `_agora_is_member()` threads its already-open connection through instead. `gate_type` is now a required parameter, not re-queried. Verified by counting connections directly (patched `entitlements._connect`), not by timing: 5 posts, 0 connections, post-fix. |
+
+**New design rule, stated explicitly rather than left implicit:** a payer's explicit choice of
+payment rail is honored or explicitly declined — **never silently substituted for another rail.**
+This derives from `ROADMAP.md`'s composable-payment-options principle (an operator declares what it
+accepts; a payer's wallet picks from it) but adds the corollary that principle didn't spell out: once
+a payer has picked, the relay doesn't get to override that pick either. Recorded in `ROADMAP.md` next
+to the principle it derives from, since the next rail this codebase adds will need the same rule.
 
 ## Threat model notes (by design, not gaps)
 
