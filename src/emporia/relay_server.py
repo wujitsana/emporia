@@ -1212,6 +1212,38 @@ def _assert_payment_intent_matches(
             raise HTTPException(402, "PaymentIntent is not bound to this payer")
 
 
+def _x402_network_family(network: str) -> str | None:
+    """CAIP-2 network id -> the wallet key space it needs (P1b-2's
+    network_family). Unrecognized network id namespaces resolve to None so a
+    misconfigured EMPORIA_X402_NETWORKS entry is silently excluded rather
+    than raising mid-request."""
+    if network.startswith("eip155:"):
+        return "evm"
+    if network.startswith("solana:"):
+        return "svm"
+    return None
+
+
+def _x402_pay_to_by_network(creator_id: str | None) -> dict[str, str]:
+    """Resolve which configured x402 networks this creator can actually
+    receive on. A network whose family the creator has no wallet for is
+    silently excluded — same no-auto-provision posture as P1b-2 (there's no
+    wallet to invent on the creator's behalf)."""
+    if not creator_id:
+        return {}
+    from emporia.payments import _x402_networks
+
+    result: dict[str, str] = {}
+    for network in _x402_networks():
+        family = _x402_network_family(network)
+        if not family:
+            continue
+        pay_to = AGENT_REGISTRY.get_x402_pay_to(creator_id, family)
+        if pay_to:
+            result[network] = pay_to
+    return result
+
+
 async def _verify_and_confirm_payment(
     request: Request,
     *,
@@ -1227,6 +1259,7 @@ async def _verify_and_confirm_payment(
     req_payment_intent_id: str | None,
     challenge_message: str,
     challenge_resource: str,
+    creator_id: str | None = None,
 ) -> "PaymentRef | JSONResponse":
     """Verify a payment credential (SPT via Authorization header, or a client-supplied
     PaymentIntent id) against the expected amount/currency/capture-method/resource binding,
@@ -1251,10 +1284,14 @@ async def _verify_and_confirm_payment(
     is carried, not inferred from two functions happening to test the same condition.
     Only the direct-`payment_intent_id` branch below uses it to bind the PI to a payer;
     see that branch's own comment for why the SPT branch can't.
+
+    `creator_id` (P1b-4): whose x402 wallet(s) to offer in the 402 challenge, if any.
+    None on the session-join route — session escrow stays Stripe-only (no x402
+    analogue), so it never builds an x402 challenge regardless of this being passed.
     """
     from emporia.payments import (
-        RAIL_STRIPE, build_mpp_challenge, extract_mpp_token, confirm_spt,
-        verify_payment_intent, confirm_stripe_intent, PaymentRef,
+        RAIL_STRIPE, build_mpp_challenge, build_x402_challenge, extract_mpp_token,
+        confirm_spt, verify_payment_intent, confirm_stripe_intent, PaymentRef,
     )
     _assert_agent_budget(agent_id, amount_cents)
     auth_header = request.headers.get("Authorization")
@@ -1308,15 +1345,29 @@ async def _verify_and_confirm_payment(
             raise HTTPException(402, f"Payment verification failed: {e}")
 
     challenge_headers = build_mpp_challenge(amount_cents, challenge_resource, currency=currency)
+    content: dict[str, Any] = {
+        "error": "payment_required",
+        "message": challenge_message,
+        "amount_cents": amount_cents,
+        "resource": challenge_resource,
+        "protocol": "emporia:v1+mpp",
+    }
+    # P1b-4: offer both rails in one 402 — every existing key above is
+    # untouched, so an MPP-only client sees byte-identical output. x402's own
+    # payload is nested under "x402" (not flattened) since its `resource`
+    # field is an object and would otherwise collide with the string
+    # "resource" key above; see build_x402_challenge()'s docstring.
+    if creator_id:
+        x402 = build_x402_challenge(
+            amount_cents, challenge_resource, _x402_pay_to_by_network(creator_id),
+            currency=currency,
+        )
+        if x402:
+            content["x402"] = x402["body"]
+            challenge_headers = {**challenge_headers, **x402["headers"]}
     return JSONResponse(
         status_code=402,
-        content={
-            "error": "payment_required",
-            "message": challenge_message,
-            "amount_cents": amount_cents,
-            "resource": challenge_resource,
-            "protocol": "emporia:v1+mpp",
-        },
+        content=content,
         headers=challenge_headers,
     )
 
@@ -1941,7 +1992,14 @@ app.add_middleware(
     allow_origins=sorted(_CORS_ORIGINS),
     allow_credentials=True,
     allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
-    allow_headers=["Content-Type", "Authorization", "X-Emporia-Agent-Id"],
+    # P1b-4: PAYMENT-SIGNATURE is the x402 retry header (the browser-wallet
+    # analogue of Authorization: Payment for MPP) — without it in
+    # allow_headers, a browser-based payer's retry is silently blocked by CORS
+    # before it ever reaches the route. PAYMENT-RESPONSE must be exposed for
+    # the same reason a JS client would otherwise be unable to read it off a
+    # cross-origin response at all.
+    allow_headers=["Content-Type", "Authorization", "X-Emporia-Agent-Id", "PAYMENT-SIGNATURE"],
+    expose_headers=["PAYMENT-RESPONSE"],
 )
 
 # ─── Rate limiting (sliding window, in-memory) ────────────────────────────────
@@ -5112,6 +5170,7 @@ async def join_room(room_id: str, req: JoinRoomRequest, request: Request):
                     "Retry with Authorization: Payment <spt_token>."
                 ),
                 challenge_resource=f"emporia:room:{room_id}",
+                creator_id=room.creator_id,
             )
             if isinstance(result, JSONResponse):
                 return result
@@ -5954,6 +6013,7 @@ async def subscribe_agora_topic(slug: str, req: AgoraSubscribeRequest, request: 
             req_payment_intent_id=req.payment_intent_id,
             challenge_message=f"Agora entry fee: {entry_fee} {currency} cents.",
             challenge_resource=f"emporia:agora:{topic_id}",
+            creator_id=creator_id,
         )
         if isinstance(result, JSONResponse):
             return result

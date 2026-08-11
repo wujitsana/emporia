@@ -239,6 +239,82 @@ def build_mpp_challenge(amount_cents: int, resource: str, currency: str = "usd")
     }
 
 
+# ─── x402 / 402 helpers (P1b) ────────────────────────────────────────────────
+# x402 v2 spec: https://github.com/x402-foundation/x402/blob/main/specs/x402-specification-v2.md
+# A sibling of build_mpp_challenge() above, not one function with a flag —
+# ROADMAP.md is explicit that x402 stays a fully separate code path from
+# Stripe MPP. The two protocols share only the "HTTP 402, structured
+# challenge, wallet retries" shape; everything else (transport, settlement
+# backend, credential format) differs.
+#
+# x402 v2 moved payment data into headers rather than a response body — the
+# PAYMENT-REQUIRED header below carries the base64-encoded, spec-correct
+# PaymentRequired object, which is what an x402-aware client is expected to
+# decode. It is also mirrored under a nested "x402" body key for a client
+# that inspects the JSON body instead — nested, not flattened to top-level
+# keys, because the existing MPP body already has a "resource" key (a plain
+# string, e.g. "emporia:room:{room_id}") and x402's own `resource` field is
+# an object; flattening the two would silently change the MPP body's
+# existing "resource" field's type out from under any client that has never
+# heard of x402.
+#
+# USDC uses 6 decimals on every network x402 supports today (confirmed
+# during P1b planning) — amount_cents (always USD cents in Emporia's own
+# convention) converts to atomic units assuming a 1:1 USDC/USD peg, the
+# standard assumption every USDC-based x402 integration makes.
+_USDC_DECIMALS = 6
+
+
+def build_x402_challenge(
+    amount_cents: int,
+    resource_url: str,
+    pay_to_by_network: dict[str, str],
+    currency: str = "usd",
+) -> dict[str, Any] | None:
+    """Build the x402 v2 `accepts` array plus the PAYMENT-REQUIRED header.
+
+    `pay_to_by_network` is `{CAIP-2 network id: creator's payTo address}`,
+    already resolved and filtered by the caller (relay_server.py — it needs
+    AGENT_REGISTRY, which this payment-domain module doesn't import; see
+    _x402_pay_to_by_network()). Only x402-enabled networks with both a
+    configured asset (_x402_asset_for) and a wallet for this creator make it
+    into `accepts`.
+
+    Returns None (offer nothing) when x402 isn't enabled, the currency isn't
+    "usd" (USDC's peg assumption above only holds for USD), or no network
+    has both a configured asset and a wallet for this creator — the caller
+    then omits x402 from the 402 entirely rather than sending an empty
+    `accepts` array.
+    """
+    if currency != "usd" or not _x402_enabled():
+        return None
+    accepts = []
+    for network in _x402_networks():
+        pay_to = pay_to_by_network.get(network)
+        asset = _x402_asset_for(network)
+        if not pay_to or not asset:
+            continue
+        accepts.append({
+            "scheme": "exact",
+            "network": network,
+            "amount": str(amount_cents * (10 ** _USDC_DECIMALS) // 100),
+            "asset": asset,
+            "payTo": pay_to,
+            "maxTimeoutSeconds": 300,
+        })
+    if not accepts:
+        return None
+    payment_required = {
+        "x402Version": 2,
+        "resource": {"url": resource_url},
+        "accepts": accepts,
+    }
+    return {
+        "body": payment_required,
+        "headers": {"PAYMENT-REQUIRED": _b64url(json.dumps(payment_required).encode())},
+    }
+
+
 def extract_mpp_token(authorization_header: str | None) -> str | None:
     """Extract SPT from Authorization header per Stripe MPP spec.
 

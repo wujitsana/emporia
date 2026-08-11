@@ -10324,6 +10324,127 @@ def test_mpp_402_challenge_issued(client):
     assert 'request="' in auth_header
 
 
+def test_room_join_402_is_byte_identical_when_x402_unconfigured(client):
+    """P1b-4: x402 disabled (the default — no env vars set) must produce the
+    exact same 402 body/headers as before this pass: no "x402" body key, no
+    PAYMENT-REQUIRED header, every existing MPP field untouched. This is the
+    item's whole contract — a client that has never heard of x402 must see
+    zero difference."""
+    owner = "p1b4_off_owner"
+    payer = "p1b4_off_payer"
+    _register(client, owner)
+    _register(client, payer)
+
+    r = client.post("/rooms", json={
+        "name": "P1b-4 Off Room", "creator_id": owner,
+        "room_type": "private", "gate_type": "paid", "entry_fee_cents": 250,
+    },
+        headers={"x-emporia-agent-id": owner})
+    assert r.status_code == 200, r.text
+    room_id = r.json()["room_id"]
+
+    with patch.dict(os.environ, {}, clear=False):
+        # explicitly ensure x402 reads as unconfigured regardless of the ambient environment
+        os.environ.pop("EMPORIA_X402_ENABLED", None)
+        resp = client.post(f"/rooms/{room_id}/join", json={"agent_id": payer},
+            headers={"x-emporia-agent-id": payer})
+
+    assert resp.status_code == 402, resp.text
+    body = resp.json()
+    assert set(body.keys()) == {"error", "message", "amount_cents", "resource", "protocol"}
+    assert body["resource"] == f"emporia:room:{room_id}"
+    assert body["protocol"] == "emporia:v1+mpp"
+    header_names = {k.lower() for k in resp.headers.keys()}
+    assert "payment-required" not in header_names
+    assert "www-authenticate" in header_names
+
+
+def test_room_join_402_offers_x402_alongside_mpp_when_configured(client):
+    """P1b-4: with x402 enabled and the creator holding a wallet for a
+    configured network, the 402 gains a nested "x402" body key and a
+    PAYMENT-REQUIRED header carrying the same payload base64-encoded — every
+    existing MPP field stays untouched alongside it (both rails, one 402).
+    Also pins the atomic-unit conversion: entry_fee_cents=250 ($2.50) at
+    USDC's 6 decimals is "2500000" atomic units, not "250" or "2.50"."""
+    import base64 as _b64
+    import json as _json
+
+    owner = "p1b4_on_owner"
+    payer = "p1b4_on_payer"
+    _register(client, owner)
+    _register(client, payer)
+
+    wallet = client.post(f"/agents/{owner}/x402-wallet",
+        json={"network_family": "evm", "address": "0x" + "cd" * 20},
+        headers={"x-emporia-agent-id": owner})
+    assert wallet.status_code == 200, wallet.text
+
+    r = client.post("/rooms", json={
+        "name": "P1b-4 On Room", "creator_id": owner,
+        "room_type": "private", "gate_type": "paid", "entry_fee_cents": 250,
+    },
+        headers={"x-emporia-agent-id": owner})
+    assert r.status_code == 200, r.text
+    room_id = r.json()["room_id"]
+
+    with patch.dict(os.environ, {
+        "EMPORIA_X402_ENABLED": "1",
+        "EMPORIA_X402_FACILITATOR_URL": "https://facilitator.example.test",
+        "EMPORIA_X402_NETWORKS": "eip155:8453",
+        "EMPORIA_X402_ASSET_EIP155_8453": "0xUSDCFAKE",
+    }, clear=False):
+        resp = client.post(f"/rooms/{room_id}/join", json={"agent_id": payer},
+            headers={"x-emporia-agent-id": payer})
+
+    assert resp.status_code == 402, resp.text
+    body = resp.json()
+    # existing MPP fields untouched
+    assert body["resource"] == f"emporia:room:{room_id}"
+    assert body["protocol"] == "emporia:v1+mpp"
+    assert body["amount_cents"] == 250
+
+    x402_body = body["x402"]
+    assert x402_body["x402Version"] == 2
+    assert x402_body["resource"] == {"url": f"emporia:room:{room_id}"}
+    assert x402_body["accepts"] == [{
+        "scheme": "exact",
+        "network": "eip155:8453",
+        "amount": "2500000",
+        "asset": "0xUSDCFAKE",
+        "payTo": "0x" + "cd" * 20,
+        "maxTimeoutSeconds": 300,
+    }]
+
+    header_names = {k.lower(): k for k in resp.headers.keys()}
+    assert "payment-required" in header_names, "PAYMENT-REQUIRED header must be present when x402 is offered"
+    decoded = _json.loads(_b64.urlsafe_b64decode(
+        resp.headers[header_names["payment-required"]] + "=="
+    ))
+    assert decoded == x402_body, "PAYMENT-REQUIRED header must carry the same payload as body['x402']"
+    assert "www-authenticate" in header_names, "MPP header must still be present alongside x402"
+
+
+def test_x402_pay_to_by_network_excludes_unconfigured_or_walletless_networks(client):
+    """P1b-4: a network the creator has no wallet for, or one not in
+    EMPORIA_X402_NETWORKS at all, is silently excluded rather than raising —
+    matches P1b-2's no-auto-provision posture."""
+    from emporia.relay_server import _x402_pay_to_by_network, AGENT_REGISTRY
+
+    creator = "p1b4_resolve_creator"
+    _register(client, creator)
+    AGENT_REGISTRY.set_x402_pay_to(creator, "evm", "0x" + "ef" * 20)
+
+    with patch.dict(os.environ, {"EMPORIA_X402_NETWORKS": "eip155:8453,solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp"}):
+        result = _x402_pay_to_by_network(creator)
+    assert result == {"eip155:8453": "0x" + "ef" * 20}, \
+        "solana network must be excluded — creator has no svm wallet"
+
+    with patch.dict(os.environ, {"EMPORIA_X402_NETWORKS": ""}):
+        assert _x402_pay_to_by_network(creator) == {}
+
+    assert _x402_pay_to_by_network(None) == {}, "no creator_id (session escrow) must resolve to nothing"
+
+
 @pytest.mark.asyncio
 async def test_escrow_capture_and_transfer_mocked():
     """settle() captures PI first (escrow → platform), then transfers to winner."""
