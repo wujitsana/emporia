@@ -2393,9 +2393,30 @@ def _payment_rails(*, has_stripe: bool | None = None) -> tuple[list[str], list[s
     never reaches the `elif TEMPO_ENABLED` branch — so it silently omits
     `"mpp"`. Recorded in SECURITY.md's P3 section as a noted, unfixed
     finding; both formulas are reproduced here exactly rather than unified.
+
+    P1b-7: `"x402"` joins `payment_rails` — deliberately not `payment_methods`,
+    which is Stripe's own MPP-specific sub-vocabulary (`stripe`/`tempo`,
+    both settlement backends reachable *through* MPP's challenge/response
+    transport). x402 is a rail exactly the way `stripe_pi`/`stripe_connect`
+    are: a settlement backend, `KNOWN_RAILS`-tagged, with no MPP transport
+    underneath it. Appended identically to both variants (unlike the two
+    pre-existing formulas above, there is nothing to preserve byte-for-byte
+    here — this is new). Advertised whenever the rail is enabled at all,
+    not filtered by whether *this specific* creator has a wallet set — the
+    per-creator/per-network filtering already happens where it has to,
+    in the 402 challenge itself (_x402_pay_to_by_network(), P1b-4);
+    advertising the rail is a relay-wide capability statement, closer to
+    "stripe_pi" (available if configured) than "stripe_connect" (this
+    agent specifically can receive payouts). This sharpens, rather than
+    resolves, the payment_rails/payment_methods conflation this docstring
+    already flags above — real now that a second axis (settlement rail vs.
+    negotiation transport) actually exists, still not this pass's job to
+    reconcile (ROADMAP.md).
     """
     stripe_enabled = bool(os.getenv("STRIPE_SECRET_KEY"))
     stripe_profile_ready = _stripe_profile_ready()
+    from emporia.payments import _x402_enabled
+    x402_enabled = _x402_enabled()
 
     if has_stripe is None:
         payment_methods = []
@@ -2408,6 +2429,8 @@ def _payment_rails(*, has_stripe: bool | None = None) -> tuple[list[str], list[s
             payment_rails.append("mpp")
         if stripe_enabled:
             payment_rails.append("stripe_pi")
+        if x402_enabled:
+            payment_rails.append("x402")
         return payment_rails, payment_methods
 
     payment_rails = ["free"]
@@ -2423,6 +2446,8 @@ def _payment_rails(*, has_stripe: bool | None = None) -> tuple[list[str], list[s
         payment_rails.append("mpp")
     if TEMPO_ENABLED:
         payment_methods.append("tempo")
+    if x402_enabled:
+        payment_rails.append("x402")
     return payment_rails, payment_methods
 
 
@@ -2446,6 +2471,7 @@ async def health():
     stripe_enabled = bool(os.getenv("STRIPE_SECRET_KEY"))
     stripe_profile_ready = _stripe_profile_ready()
     payment_rails, payment_methods = _payment_rails()
+    from emporia.payments import _x402_enabled, _x402_facilitator_url, _x402_networks
     return {
         "status": "ok",
         "service": BRAND,
@@ -2468,6 +2494,12 @@ async def health():
         "payment_rails": payment_rails,
         "stripe_mpp_admin_notice": _stripe_mpp_admin_notice(),
         "chess_lib": _chess_lib_available(),
+        # P1b-7: x402 has no per-agent variant (unlike stripe_connect) — the
+        # rail is either configured relay-wide or it isn't; which creators
+        # can actually receive on it is a 402-time detail, not a /health one.
+        "x402_enabled": _x402_enabled(),
+        "x402_networks": _x402_networks(),
+        "x402_facilitator": _x402_facilitator_url(),
     }
 
 
@@ -2527,13 +2559,23 @@ async def relay_card():
         "emporia:federation:v1",
         *MODULE_REGISTRY.keys(),
     ]
-    return build_relay_descriptor(
+    descriptor = build_relay_descriptor(
         agent_id=owner,
         base_url=RELAY_BASE_URL,
         public_key_hex=row["public_key_hex"],
         display_name=row["display_name"] or owner,
         capabilities=capabilities,
     )
+    # P1b-7: /relay-card advertised capabilities but no payment info at all —
+    # a peer discovering this relay had no way to learn what it accepts
+    # without a separate /health call. Reuses the same _payment_rails()
+    # seam as /health and GET /agents/{id} rather than a third hand-built
+    # list. build_relay_descriptor() (identity.py) stays payments-independent
+    # on purpose — merged in here instead of widening its signature.
+    payment_rails, payment_methods = _payment_rails()
+    descriptor["payment_rails"] = payment_rails
+    descriptor["payment_methods"] = payment_methods
+    return descriptor
 
 
 @app.get("/.well-known/agent.json")

@@ -154,6 +154,30 @@ def test_agent_profile_key_only_stripe_does_not_expose_mpp(client):
     assert "stripe_pi" in data["payment_rails"]
 
 
+def test_health_advertises_x402_config(client):
+    """P1b-7: /health gains x402_enabled/x402_networks/x402_facilitator —
+    disabled by default (matches the byte-identical-402 contract from
+    P1b-4), and reflects live config once enabled."""
+    r_off = client.get("/health")
+    assert r_off.status_code == 200
+    assert r_off.json()["x402_enabled"] is False
+    assert r_off.json()["x402_networks"] == []
+    assert r_off.json()["x402_facilitator"] == ""
+
+    with patch.dict(os.environ, {
+        "EMPORIA_X402_ENABLED": "1",
+        "EMPORIA_X402_FACILITATOR_URL": "https://facilitator.example.test",
+        "EMPORIA_X402_NETWORKS": "eip155:8453",
+        "EMPORIA_X402_ASSET_EIP155_8453": "0xUSDCFAKE",
+    }, clear=False):
+        r_on = client.get("/health")
+    assert r_on.status_code == 200
+    assert r_on.json()["x402_enabled"] is True
+    assert r_on.json()["x402_networks"] == ["eip155:8453"]
+    assert r_on.json()["x402_facilitator"] == "https://facilitator.example.test"
+    assert "x402" in r_on.json()["payment_rails"]
+
+
 def test_payment_rails_helper_pins_health_and_agent_variants_across_flag_combinations():
     """P3 (item 5): /health and GET /agents/{id} used to hand-build
     payment_rails/payment_methods independently — now both route through
@@ -205,6 +229,27 @@ def test_payment_rails_helper_pins_health_and_agent_variants_across_flag_combina
                     ["free", "mpp", "stripe_pi", "stripe_connect"], ["stripe", "tempo"],
                 )
 
+    # P1b-7 (L5): the widened matrix — "x402" joins payment_rails identically
+    # in both variants, unlike the pre-existing formulas above it doesn't
+    # need a documented divergence, since this is new code applied the same
+    # way to both. payment_methods is untouched either way (x402 has no MPP
+    # transport underneath it, so it was never a payment_methods candidate).
+    _x402_on = {
+        "EMPORIA_X402_ENABLED": "1",
+        "EMPORIA_X402_FACILITATOR_URL": "https://facilitator.example.test",
+        "EMPORIA_X402_NETWORKS": "eip155:8453",
+        "EMPORIA_X402_ASSET_EIP155_8453": "0xUSDCFAKE",
+    }
+    with patch("emporia.relay_server._stripe_profile_ready", return_value=False):
+        with patch.dict(os.environ, {"STRIPE_SECRET_KEY": "", **_x402_on}, clear=False):
+            with patch("emporia.relay_server.TEMPO_ENABLED", False):
+                assert _payment_rails() == (["free", "x402"], [])
+                assert _payment_rails(has_stripe=False) == (["free", "x402"], [])
+                assert _payment_rails(has_stripe=True) == (["free", "x402"], [])
+    # x402 disabled (no env vars set) must add nothing — the default case,
+    # already implicitly covered by every assertion above this block, which
+    # never sets EMPORIA_X402_ENABLED and never see "x402" in their output.
+
 
 def test_health_and_agent_profile_route_through_the_shared_payment_rails_helper(client):
     """P3 (item 5): HTTP-level confirmation that both endpoints actually call
@@ -247,8 +292,11 @@ def test_relay_card_well_formed(client):
 def test_relay_card_uses_shared_builder(client):
     """N10-2 (R2): the endpoint's response must equal identity.build_relay_descriptor()'s
     output for the same inputs — a single definition, not two hand-written copies that can
-    drift (same class of gap as N8-5/R4)."""
+    drift (same class of gap as N8-5/R4). P1b-7 adds payment_rails/payment_methods on top
+    of the shared builder's own output (identity.py stays payments-independent), so those
+    two keys are merged in separately here rather than expected to come from the builder."""
     from emporia.identity import build_relay_descriptor
+    from emporia.relay_server import _payment_rails
 
     pub_hex = "c" * 64
     _register(client, "test_relay_owner_2", pubkey=pub_hex)
@@ -262,7 +310,28 @@ def test_relay_card_uses_shared_builder(client):
         display_name=r.json()["display_name"],
         capabilities=r.json()["capabilities"],
     )
+    payment_rails, payment_methods = _payment_rails()
+    expected["payment_rails"] = payment_rails
+    expected["payment_methods"] = payment_methods
     assert r.json() == expected
+
+
+def test_relay_card_advertises_payment_rails(client):
+    """P1b-7: /relay-card advertised capabilities but no payment info at all —
+    a peer had no way to learn what this relay accepts without a separate
+    /health call. Reuses the same _payment_rails() seam as /health and
+    GET /agents/{id}, confirmed here by comparing against a direct call
+    rather than just checking the keys exist."""
+    from emporia.relay_server import _payment_rails
+
+    _register(client, "p1b7_relay_card_owner")
+    with patch.dict(os.environ, {"EMPORIA_AGENT_ID": "p1b7_relay_card_owner"}):
+        r = client.get("/relay-card")
+    assert r.status_code == 200
+    card = r.json()
+    expected_rails, expected_methods = _payment_rails()
+    assert card["payment_rails"] == expected_rails
+    assert card["payment_methods"] == expected_methods
 
 
 @pytest.mark.parametrize("path", ["/.well-known/agent.json", "/.well-known/agent-card.json"])

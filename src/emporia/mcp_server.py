@@ -940,12 +940,19 @@ def relay_payment_info() -> dict[str, Any]:
     """Return the relay's payment setup and available MPP methods.
 
     Key fields:
-      payment_rails      — protocol-level rails (free, mpp, stripe_pi)
-      payment_methods    — concrete MPP methods currently configured (stripe, tempo)
+      payment_rails      — settlement rails (free, mpp, stripe_pi, x402 — P1b)
+      payment_methods    — concrete MPP methods currently configured (stripe, tempo).
+                            Distinct axis from payment_rails: MPP methods are settlement
+                            backends reachable *through* Stripe's MPP challenge/response
+                            transport; x402 has no MPP transport underneath it, so it's
+                            a payment_rails member with no payment_methods counterpart.
       mpp_enabled        — True when at least one MPP payment method is enabled
       stripe_profile_id  — Stripe Machine Payments profile ID for fiat MPP
       stripe_profile_ready — True when the relay has both a Stripe key and valid profile id
       stripe_api_version — Stripe preview/API version expected by the relay
+      x402_enabled       — True when the x402 rail is configured (facilitator + >=1 usable network)
+      x402_networks      — configured CAIP-2 network ids (e.g. "eip155:8453", "solana:...")
+      x402_facilitator   — the configured facilitator base URL, or "" if unset
 
     Also returns operator fee and relay-side spend caps for sessions, rooms, and Agoras.
     """
@@ -966,6 +973,9 @@ def relay_payment_info() -> dict[str, Any]:
                 "stripe_api_version": h.get("stripe_api_version", ""),
                 "max_total_spend_cents": h.get("max_total_spend_cents"),
                 "stripe_mpp_admin_notice": h.get("stripe_mpp_admin_notice"),
+                "x402_enabled": h.get("x402_enabled", False),
+                "x402_networks": h.get("x402_networks", []),
+                "x402_facilitator": h.get("x402_facilitator", ""),
             }
         return {"relay_url": RELAY_URL, "error": f"Relay error {r.status_code}"}
     except Exception as e:
@@ -978,7 +988,7 @@ def get_agent_profile(agent_id: str, caller_id: str = "") -> dict[str, Any]:
 
     Returns identity, trust tier, payment rails, payment methods, and stats.
 
-    payment_rails describes relay protocol support (free, mpp, stripe_pi, stripe_connect).
+    payment_rails describes relay protocol support (free, mpp, stripe_pi, stripe_connect, x402).
     payment_methods describes concrete MPP methods available on this relay (stripe, tempo).
 
     trust_level:
