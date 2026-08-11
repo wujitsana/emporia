@@ -10511,6 +10511,161 @@ def test_room_join_402_offers_x402_alongside_mpp_when_configured(client):
     assert "www-authenticate" in header_names, "MPP header must still be present alongside x402"
 
 
+@patch("emporia.payments.x402_settle_payment", new_callable=AsyncMock)
+@patch("emporia.payments.x402_verify_payment", new_callable=AsyncMock)
+def test_x402_credential_declined_explicitly_when_x402_disabled(mock_verify, mock_settle, client):
+    """P1br-1: a real gap in P1b-5 — the x402 branch used to route on the
+    header's mere presence with no _x402_enabled() check, so a disabled
+    relay still tried to verify and 402'd three layers down on an unrelated
+    mismatch, silently swallowing the Stripe fallback. Now: a
+    PAYMENT-SIGNATURE header submitted while x402 is disabled is declined
+    explicitly (never routed into _verify_x402_payment at all — proven by
+    mock.assert_not_called(), not just the eventual response), and the
+    decline still carries the ordinary MPP headers so the agent can retry
+    with a method this relay actually supports. Not "fall through to
+    Stripe silently" — the payer explicitly chose x402; the relay doesn't
+    get to override that choice."""
+    owner = "p1br1_off_owner"
+    payer = "p1br1_off_payer"
+    _register(client, owner)
+    _register(client, payer)
+
+    r = client.post("/rooms", json={
+        "name": "P1br-1 Off Room", "creator_id": owner,
+        "room_type": "private", "gate_type": "paid", "entry_fee_cents": 250,
+    },
+        headers={"x-emporia-agent-id": owner})
+    assert r.status_code == 200, r.text
+    room_id = r.json()["room_id"]
+
+    header = _x402_payment_signature_header({
+        "scheme": "exact", "network": "eip155:8453", "amount": "2500000",
+        "asset": "0xUSDCFAKE", "payTo": "0x" + "aa" * 20, "maxTimeoutSeconds": 300,
+    })
+
+    with patch.dict(os.environ, {}, clear=False):
+        os.environ.pop("EMPORIA_X402_ENABLED", None)
+        resp = client.post(f"/rooms/{room_id}/join", json={"agent_id": payer},
+            headers={"x-emporia-agent-id": payer, "PAYMENT-SIGNATURE": header})
+
+    assert resp.status_code == 402, resp.text
+    body = resp.json()
+    assert "x402 payment declined" in body["message"]
+    assert "not enabled" in body["message"]
+    assert "x402" not in body, "nothing to offer — the x402 body key must be absent, not empty"
+    header_names = {k.lower() for k in resp.headers.keys()}
+    assert "www-authenticate" in header_names, "MPP fallback must still be offered"
+    assert "payment-required" not in header_names
+    mock_verify.assert_not_called()
+    mock_settle.assert_not_called()
+
+
+@patch("emporia.payments.x402_settle_payment", new_callable=AsyncMock)
+@patch("emporia.payments.x402_verify_payment", new_callable=AsyncMock)
+def test_x402_credential_declined_explicitly_on_session_join(mock_verify, mock_settle, client):
+    """P1br-1: session escrow has no x402 analogue — no creator_id is ever
+    threaded to _verify_and_confirm_payment on /sessions/{id}/join. A
+    PAYMENT-SIGNATURE header submitted there must be declined explicitly,
+    not routed into _verify_x402_payment (which would otherwise 402 on an
+    unrelated payTo mismatch, three layers away from the real reason: this
+    route just doesn't support x402 at all)."""
+    _register(client, "p1br1_session_creator")
+    _register(client, "p1br1_session_joiner")
+
+    r = client.post("/sessions", json={
+        "module_type": "emporia:service:v1",
+        "creator_agent_id": "p1br1_session_creator",
+        "config": {"description": "P1br-1 session decline test"},
+        "payment_rules": {"mode": "stripe_link", "stake_per_participant": "1.00", "currency": "usd"},
+    },
+        headers={"x-emporia-agent-id": "p1br1_session_creator"})
+    assert r.status_code == 200, r.text
+    session_id = r.json()["session_id"]
+
+    header = _x402_payment_signature_header({
+        "scheme": "exact", "network": "eip155:8453", "amount": "100000000",
+        "asset": "0xUSDCFAKE", "payTo": "0x" + "aa" * 20, "maxTimeoutSeconds": 300,
+    })
+
+    with patch.dict(os.environ, _X402_ENV, clear=False):
+        resp = client.post(f"/sessions/{session_id}/join",
+            json={"agent_id": "p1br1_session_joiner"},
+            headers={"x-emporia-agent-id": "p1br1_session_joiner", "PAYMENT-SIGNATURE": header})
+
+    assert resp.status_code == 402, resp.text
+    body = resp.json()
+    assert "x402 payment declined" in body["message"]
+    assert "no x402 payout wallet" in body["message"]
+    assert "x402" not in body
+    mock_verify.assert_not_called()
+    mock_settle.assert_not_called()
+
+
+@patch("emporia.payments.x402_settle_payment", new_callable=AsyncMock)
+@patch("emporia.payments.x402_verify_payment", new_callable=AsyncMock)
+def test_x402_credential_declined_explicitly_when_creator_has_no_wallet(mock_verify, mock_settle, client):
+    """P1br-1: x402 enabled relay-wide, but this creator never registered a
+    payout wallet. The credential must be declined explicitly (the same
+    merged-402 shape, re-advertising the Stripe MPP fallback), not routed
+    into _verify_x402_payment's generic requirement-mismatch path — that
+    path produces a flat HTTPException detail body with no MPP headers,
+    which would leave the agent with no visible way to retry."""
+    owner = "p1br1_nowallet_owner"
+    payer = "p1br1_nowallet_payer"
+    _register(client, owner)
+    _register(client, payer)
+    # no wallet registered for owner
+
+    r = client.post("/rooms", json={
+        "name": "P1br-1 No Wallet Room", "creator_id": owner,
+        "room_type": "private", "gate_type": "paid", "entry_fee_cents": 250,
+    },
+        headers={"x-emporia-agent-id": owner})
+    assert r.status_code == 200, r.text
+    room_id = r.json()["room_id"]
+
+    header = _x402_payment_signature_header({
+        "scheme": "exact", "network": "eip155:8453", "amount": "2500000",
+        "asset": "0xUSDCFAKE", "payTo": "0x" + "aa" * 20, "maxTimeoutSeconds": 300,
+    })
+
+    with patch.dict(os.environ, _X402_ENV, clear=False):
+        resp = client.post(f"/rooms/{room_id}/join", json={"agent_id": payer},
+            headers={"x-emporia-agent-id": payer, "PAYMENT-SIGNATURE": header})
+
+    assert resp.status_code == 402, resp.text
+    body = resp.json()
+    assert "x402 payment declined" in body["message"]
+    assert "x402" not in body
+    header_names = {k.lower() for k in resp.headers.keys()}
+    assert "www-authenticate" in header_names, "Stripe MPP fallback must still be offered"
+    mock_verify.assert_not_called()
+    mock_settle.assert_not_called()
+
+
+def test_verify_x402_payment_currency_check_is_defense_in_depth():
+    """P1br-1: _verify_x402_payment()'s own currency != 'usd' check is
+    unreachable via its one real call site as of this pass —
+    build_x402_challenge() already refuses non-usd currency before
+    _x402_offer() can be truthy, so _verify_and_confirm_payment() never
+    reaches _verify_x402_payment() with a non-usd currency in practice.
+    Confirmed here by calling it directly: the check still works
+    standalone rather than silently depending on a caller having already
+    filtered it out."""
+    import asyncio
+
+    from emporia.relay_server import _verify_x402_payment
+
+    with pytest.raises(HTTPException) as exc_info:
+        asyncio.run(_verify_x402_payment(
+            {"accepted": {}, "payload": {}},
+            creator_id="irrelevant", amount_cents=100, currency="eur",
+            challenge_resource="emporia:room:test",
+        ))
+    assert exc_info.value.status_code == 402
+    assert "currency=usd" in str(exc_info.value.detail)
+
+
 def test_x402_pay_to_by_network_excludes_unconfigured_or_walletless_networks(client):
     """P1b-4: a network the creator has no wallet for, or one not in
     EMPORIA_X402_NETWORKS at all, is silently excluded rather than raising —

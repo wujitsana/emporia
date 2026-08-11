@@ -1286,6 +1286,12 @@ async def _verify_x402_payment(
         _x402_amount_atomic, _x402_asset_for,
     )
 
+    # P1br-1: unreachable via this function's one real call site as of that
+    # pass — `_verify_and_confirm_payment()` only reaches here when
+    # `_x402_offer()` (== `build_x402_challenge()`) is truthy, and that
+    # function already refuses non-"usd" currency before returning anything.
+    # Kept as defense in depth: this function's contract shouldn't silently
+    # depend on a caller having already checked this.
     if currency != "usd":
         raise HTTPException(402, "x402 only supports currency=usd on this relay")
 
@@ -1381,19 +1387,75 @@ async def _verify_and_confirm_payment(
     verify a submitted x402 payment against. None on the session-join route —
     session escrow stays Stripe-only (no x402 analogue), so neither ever fires
     regardless of this being passed.
+
+    P1br-1: a `PAYMENT-SIGNATURE` credential is only ever routed to
+    `_verify_x402_payment()` when x402 can genuinely be offered for this
+    exact request (enabled, and this resource has something to offer via
+    `_x402_offer()` below). Otherwise the credential is **declined
+    explicitly** — never silently ignored in favor of the SPT/direct-PI
+    branches below. A `PAYMENT-SIGNATURE` header is the payer explicitly
+    choosing x402; falling through to Stripe would override that choice
+    (see `ROADMAP.md`'s composable-payment-options principle). This was a
+    real gap in P1b-5: the branch used to route on the header's mere
+    presence, with no `_x402_enabled()` check at all, so a disabled relay
+    or a route with no creator (session escrow) still tried to verify and
+    402'd three layers down on an unrelated `payTo`/`asset` mismatch,
+    swallowing the Stripe fallback by accident rather than by design.
     """
     from emporia.payments import (
         RAIL_STRIPE, build_mpp_challenge, build_x402_challenge, extract_mpp_token,
         extract_x402_payload, confirm_spt, verify_payment_intent, confirm_stripe_intent,
-        PaymentRef,
+        PaymentRef, _x402_enabled,
     )
     _assert_agent_budget(agent_id, amount_cents)
 
+    def _x402_offer() -> dict[str, Any] | None:
+        """What x402 currently offers for this exact request, or None if
+        nothing can be offered (disabled, no creator, no wallet, wrong
+        currency) — the single source both the credential-honoring check
+        below and the eventual 402's "x402" body key read from, so they
+        can never disagree about whether x402 applies here."""
+        if not creator_id:
+            return None
+        return build_x402_challenge(
+            amount_cents, challenge_resource, _x402_pay_to_by_network(creator_id),
+            currency=currency,
+        )
+
+    def _no_credential_402(message: str, offer: dict[str, Any] | None) -> JSONResponse:
+        challenge_headers = build_mpp_challenge(amount_cents, challenge_resource, currency=currency)
+        content: dict[str, Any] = {
+            "error": "payment_required",
+            "message": message,
+            "amount_cents": amount_cents,
+            "resource": challenge_resource,
+            "protocol": "emporia:v1+mpp",
+        }
+        # P1b-4: offer both rails in one 402 — every existing key above is
+        # untouched, so an MPP-only client sees byte-identical output. x402's
+        # own payload is nested under "x402" (not flattened) since its
+        # `resource` field is an object and would otherwise collide with the
+        # string "resource" key above; see build_x402_challenge()'s docstring.
+        if offer:
+            content["x402"] = offer["body"]
+            challenge_headers = {**challenge_headers, **offer["headers"]}
+        return JSONResponse(status_code=402, content=content, headers=challenge_headers)
+
     x402_payload = extract_x402_payload(request.headers.get("PAYMENT-SIGNATURE"))
     if x402_payload is not None:
-        return await _verify_x402_payment(
-            x402_payload, creator_id=creator_id, amount_cents=amount_cents,
-            currency=currency, challenge_resource=challenge_resource,
+        offer = _x402_offer()
+        if offer:
+            return await _verify_x402_payment(
+                x402_payload, creator_id=creator_id, amount_cents=amount_cents,
+                currency=currency, challenge_resource=challenge_resource,
+            )
+        reason = (
+            "x402 is not enabled on this relay" if not _x402_enabled()
+            else "no x402 payout wallet is registered for this resource "
+                 "(or this route has no x402 analogue, e.g. session escrow)"
+        )
+        return _no_credential_402(
+            f"x402 payment declined: {reason}. {challenge_message}", offer,
         )
 
     auth_header = request.headers.get("Authorization")
@@ -1446,32 +1508,7 @@ async def _verify_and_confirm_payment(
         except Exception as e:
             raise HTTPException(402, f"Payment verification failed: {e}")
 
-    challenge_headers = build_mpp_challenge(amount_cents, challenge_resource, currency=currency)
-    content: dict[str, Any] = {
-        "error": "payment_required",
-        "message": challenge_message,
-        "amount_cents": amount_cents,
-        "resource": challenge_resource,
-        "protocol": "emporia:v1+mpp",
-    }
-    # P1b-4: offer both rails in one 402 — every existing key above is
-    # untouched, so an MPP-only client sees byte-identical output. x402's own
-    # payload is nested under "x402" (not flattened) since its `resource`
-    # field is an object and would otherwise collide with the string
-    # "resource" key above; see build_x402_challenge()'s docstring.
-    if creator_id:
-        x402 = build_x402_challenge(
-            amount_cents, challenge_resource, _x402_pay_to_by_network(creator_id),
-            currency=currency,
-        )
-        if x402:
-            content["x402"] = x402["body"]
-            challenge_headers = {**challenge_headers, **x402["headers"]}
-    return JSONResponse(
-        status_code=402,
-        content=content,
-        headers=challenge_headers,
-    )
+    return _no_credential_402(challenge_message, _x402_offer())
 
 
 def record_payment(
