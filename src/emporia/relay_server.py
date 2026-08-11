@@ -2789,16 +2789,26 @@ async def get_agent_posts(agent_id: str, request: Request, limit: int = 50):
     limit = _clamp_limit(limit)
     with DB_LOCK, get_db() as conn:
         rows = conn.execute(
-            "SELECT p.*, t.slug AS topic_slug, t.name AS topic_name, t.visibility "
+            "SELECT p.*, t.slug AS topic_slug, t.name AS topic_name, t.visibility, "
+            "t.gate_type, t.entry_fee_cents "
             "FROM agora_posts p JOIN agora_topics t ON p.topic_id = t.topic_id "
             "WHERE p.author_id = ? AND p.is_deleted = 0 "
             "ORDER BY p.created_at DESC LIMIT ?",
             (agent_id, limit),
         ).fetchall()
-        posts = [
-            dict(r) for r in rows
-            if _topic_can_read(r["visibility"], viewer_id, r["topic_id"], conn)
-        ]
+        posts = []
+        for r in rows:
+            if not _topic_can_read(
+                r["visibility"], r["gate_type"], r["entry_fee_cents"],
+                viewer_id, r["topic_id"], conn,
+            ):
+                continue
+            post = dict(r)
+            # gate_type/entry_fee_cents were only added to the SELECT for the
+            # filter above (P1b-1) — not part of this endpoint's response shape.
+            post.pop("gate_type", None)
+            post.pop("entry_fee_cents", None)
+            posts.append(post)
     return {
         "agent_id": agent_id,
         "posts": posts,
@@ -2981,8 +2991,7 @@ def _settlement_resource_viewer_allowed(resource_id: str, caller: str | None, co
         (resource_id,),
     ).fetchone()
     if topic:
-        is_paid = topic["gate_type"] == "paid_invite" or (topic["entry_fee_cents"] or 0) > 0
-        if is_paid:
+        if _topic_is_paid(topic["gate_type"], topic["entry_fee_cents"]):
             if not caller:
                 return False
             # P2-5: expiry-aware — a lapsed paid_invite entitlement no longer
@@ -2991,7 +3000,10 @@ def _settlement_resource_viewer_allowed(resource_id: str, caller: str | None, co
             # the separate ?agent_id= path regardless — see
             # test_kicked_room_member_can_still_read_own_receipt's sibling).
             return _agora_is_member(conn, topic["topic_id"], caller)
-        return _topic_can_read(topic["visibility"], caller, topic["topic_id"], conn)
+        return _topic_can_read(
+            topic["visibility"], topic["gate_type"], topic["entry_fee_cents"],
+            caller, topic["topic_id"], conn,
+        )
     return False
 
 
@@ -5520,8 +5532,27 @@ def _agora_is_member(conn: Any, topic_id: str, agent_id: str) -> bool:
     return not entitlements.has_any_grant("agora", topic_id, agent_id, db_path=DATABASE_PATH)
 
 
-def _topic_can_read(visibility: str, agent_id: str | None, topic_id: str, conn: Any) -> bool:
-    if visibility == "public":
+def _topic_is_paid(gate_type: str, entry_fee_cents: int | None) -> bool:
+    """Whether a topic's entry fee actually gates it — same rule
+    `_settlement_resource_viewer_allowed()` already applies for settlement visibility
+    (N5-R1). Factored out so `_topic_can_read()` can apply it too (P1b-1)."""
+    return gate_type == "paid_invite" or (entry_fee_cents or 0) > 0
+
+
+def _topic_can_read(
+    visibility: str, gate_type: str, entry_fee_cents: int | None,
+    agent_id: str | None, topic_id: str, conn: Any,
+) -> bool:
+    """P1b-1: a paid topic gates its content regardless of `visibility` — `"public"`
+    means discoverable/listed, not readable. Before this, `visibility == "public"`
+    returned True unconditionally, before any entitlement check ran at all, so a
+    never-paid stranger could read (and, via create_agora_post's reuse of this
+    function, post to) any public paid_invite topic — pinned by
+    test_public_paid_invite_topic_entry_fee_gates_nothing_for_reads_or_posts until
+    this pass. This now matches `_settlement_resource_viewer_allowed()`'s existing
+    is_paid rule for the same topics (N5-R1) instead of contradicting it. Provisional
+    — see ROADMAP.md § Payments for the revisit trigger (real usage data)."""
+    if visibility == "public" and not _topic_is_paid(gate_type, entry_fee_cents):
         return True
     if not agent_id:
         return False
@@ -5663,7 +5694,9 @@ async def get_agora_topic(slug: str, request: Request):
         row = conn.execute("SELECT * FROM agora_topics WHERE slug=?", (slug,)).fetchone()
         if not row:
             raise HTTPException(404, "Topic not found")
-        if not _topic_can_read(row["visibility"], viewer_id, row["topic_id"], conn):
+        if not _topic_can_read(
+            row["visibility"], row["gate_type"], row["entry_fee_cents"], viewer_id, row["topic_id"], conn,
+        ):
             raise HTTPException(403, "Private topic — subscribe to access")
         member_role = None
         if viewer_id:
@@ -5949,7 +5982,9 @@ async def create_agora_post(slug: str, req: CreateAgoraPostRequest, request: Req
         # so any registered non-member could post into a "private" topic — the write side
         # of a rule the read endpoints (list_agora_posts, get_agora_post) already enforce
         # via _topic_can_read. Reuse that helper instead of a second, narrower rule.
-        if not _topic_can_read(row["visibility"], caller, row["topic_id"], conn):
+        if not _topic_can_read(
+            row["visibility"], row["gate_type"], row["entry_fee_cents"], caller, row["topic_id"], conn,
+        ):
             raise HTTPException(403, "Private topic — must be a member to post")
         conn.execute(
             "INSERT INTO agora_posts (post_id, topic_id, author_id, title, content, "
@@ -6000,7 +6035,9 @@ async def list_agora_posts(
         row = conn.execute("SELECT * FROM agora_topics WHERE slug=?", (slug,)).fetchone()
         if not row:
             raise HTTPException(404, "Topic not found")
-        if not _topic_can_read(row["visibility"], viewer_id, row["topic_id"], conn):
+        if not _topic_can_read(
+            row["visibility"], row["gate_type"], row["entry_fee_cents"], viewer_id, row["topic_id"], conn,
+        ):
             raise HTTPException(403, "Private topic — subscribe to access")
         order = "vote_score DESC, created_at DESC" if sort == "top" else "is_pinned DESC, created_at DESC"
         flair_clause = "AND flair=?" if flair else ""
@@ -6034,14 +6071,17 @@ async def get_agora_post(post_id: str, request: Request):
     viewer_id = _dashboard_agent_id(request)
     with DB_LOCK, get_db() as conn:
         p = conn.execute(
-            "SELECT p.*, t.slug, t.name AS topic_name, t.visibility "
+            "SELECT p.*, t.slug, t.name AS topic_name, t.visibility, "
+            "t.gate_type, t.entry_fee_cents "
             "FROM agora_posts p JOIN agora_topics t ON p.topic_id=t.topic_id "
             "WHERE p.post_id=? AND p.is_deleted=0",
             (post_id,),
         ).fetchone()
         if not p:
             raise HTTPException(404, "Post not found")
-        if not _topic_can_read(p["visibility"], viewer_id, p["topic_id"], conn):
+        if not _topic_can_read(
+            p["visibility"], p["gate_type"], p["entry_fee_cents"], viewer_id, p["topic_id"], conn,
+        ):
             raise HTTPException(403, "Private topic")
         comments = conn.execute(
             "SELECT * FROM agora_comments WHERE post_id=? AND is_deleted=0 ORDER BY created_at ASC",
@@ -6081,13 +6121,15 @@ async def vote_agora_post(post_id: str, req: AgoraVoteRequest, request: Request)
         # N4-4 (R3): this endpoint had no _topic_can_read check at all — any registered
         # agent could vote on a post in a private/restricted topic they can't read.
         post = conn.execute(
-            "SELECT p.topic_id, t.visibility FROM agora_posts p "
+            "SELECT p.topic_id, t.visibility, t.gate_type, t.entry_fee_cents FROM agora_posts p "
             "JOIN agora_topics t ON p.topic_id=t.topic_id WHERE p.post_id=?",
             (post_id,),
         ).fetchone()
         if not post:
             raise HTTPException(404, "Post not found")
-        if not _topic_can_read(post["visibility"], caller, post["topic_id"], conn):
+        if not _topic_can_read(
+            post["visibility"], post["gate_type"], post["entry_fee_cents"], caller, post["topic_id"], conn,
+        ):
             raise HTTPException(403, "Private topic")
         existing = conn.execute(
             "SELECT value FROM agora_votes WHERE voter_id=? AND target_id=? AND target_type='post'",
@@ -6150,7 +6192,7 @@ async def add_agora_comment(post_id: str, req: AddAgoraCommentRequest, request: 
     comment_id = f"cmt_{uuid.uuid4().hex[:12]}"
     with DB_LOCK, get_db() as conn:
         p = conn.execute(
-            "SELECT p.is_locked, t.visibility, t.topic_id "
+            "SELECT p.is_locked, t.visibility, t.topic_id, t.gate_type, t.entry_fee_cents "
             "FROM agora_posts p JOIN agora_topics t ON p.topic_id=t.topic_id "
             "WHERE p.post_id=? AND p.is_deleted=0",
             (post_id,),
@@ -6159,7 +6201,9 @@ async def add_agora_comment(post_id: str, req: AddAgoraCommentRequest, request: 
             raise HTTPException(404, "Post not found")
         # N4-4 (R3): t.visibility was already selected above but never checked — any
         # registered agent could comment into a private/restricted topic they can't read.
-        if not _topic_can_read(p["visibility"], caller, p["topic_id"], conn):
+        if not _topic_can_read(
+            p["visibility"], p["gate_type"], p["entry_fee_cents"], caller, p["topic_id"], conn,
+        ):
             raise HTTPException(403, "Private topic")
         if p["is_locked"]:
             raise HTTPException(403, "Post is locked")
@@ -6189,14 +6233,17 @@ async def vote_agora_comment(comment_id: str, req: AgoraVoteRequest, request: Re
         # at all, so any registered agent could vote on a comment in a private/
         # restricted topic they can't read.
         comment = conn.execute(
-            "SELECT p.topic_id, t.visibility FROM agora_comments c "
+            "SELECT p.topic_id, t.visibility, t.gate_type, t.entry_fee_cents FROM agora_comments c "
             "JOIN agora_posts p ON c.post_id=p.post_id "
             "JOIN agora_topics t ON p.topic_id=t.topic_id WHERE c.comment_id=?",
             (comment_id,),
         ).fetchone()
         if not comment:
             raise HTTPException(404, "Comment not found")
-        if not _topic_can_read(comment["visibility"], caller, comment["topic_id"], conn):
+        if not _topic_can_read(
+            comment["visibility"], comment["gate_type"], comment["entry_fee_cents"],
+            caller, comment["topic_id"], conn,
+        ):
             raise HTTPException(403, "Private topic")
         existing = conn.execute(
             "SELECT value FROM agora_votes WHERE voter_id=? AND target_id=? AND target_type='comment'",

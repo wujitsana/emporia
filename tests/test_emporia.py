@@ -5866,51 +5866,76 @@ def test_agora_topic_entry_fee_requires_paid_invite_gate(client):
     assert "paid_invite" in r.text
 
 
-def test_public_paid_invite_topic_entry_fee_gates_nothing_for_reads_or_posts(client):
-    """P2r-5 (R5): a recorded, decision-pending behaviour — not a silenced
-    failure, not a bug this pass fixes (mirrors the _KNOWN_VIOLATIONS
-    convention: an accurate comment naming a known gap, so the next reviewer
-    doesn't mistake a passing test for an endorsement).
+@patch("emporia.payments.payout_winner", new_callable=AsyncMock)
+@patch("emporia.payments.verify_payment_intent", new_callable=AsyncMock)
+def test_public_paid_invite_topic_entry_fee_gates_reads_and_posts(mock_verify, mock_payout, client):
+    """P1b-1: flips test_public_paid_invite_topic_entry_fee_gates_nothing_for_reads_or_posts
+    (P2r-5 R5's pin). Resolved in the P1b planning round: `visibility="public"` on a
+    paid_invite topic now means discoverable/listed, not readable — `_topic_can_read()`
+    checks the entitlement for paid topics regardless of visibility, matching the rule
+    `_settlement_resource_viewer_allowed()` already applied to these same topics (N5-R1)
+    instead of contradicting it. Provisional, not final — see ROADMAP.md § Payments for
+    the revisit trigger (real usage data on whether paid communities want a free-to-read
+    shopfront).
 
-    `_topic_can_read()` (used by every Agora read endpoint, and by
-    create_agora_post()'s write gate) returns True unconditionally when
-    `visibility == "public"`, before any membership or entitlement check runs
-    at all. Every paid Agora topic in scripts/seed_demo_relay.py and in this
-    suite's own existing tests is `visibility: "public"` — the common
-    configuration — so on a public paid_invite topic, entry_fee_cents gates
-    nothing but a roster row: an agent who never subscribed, never invited,
-    never paid, can both read every post and create a new one. P2-5's own
-    expiry-enforcement test used `visibility: "private"`, the one
-    configuration where its fix actually bites.
-
-    Not fixed this pass: changing what `visibility: "public"` means is a
-    product decision (does "public" mean "readable by anyone" or "readable by
-    anyone who's paid"?) that hasn't been asked, and redefining it here would
-    also break the demo seed. See ROADMAP.md § Payments for the open question
-    raised for the P3/x402 planning round — it directly affects what x402
-    would be selling on this route. This test exists so a future change to
-    this behaviour is a deliberate decision, not an accidental regression
-    nobody notices because nothing was pinned."""
-    _register(client, "p2r5_owner")
-    _register(client, "p2r5_stranger")
+    Covers: a never-paid stranger is now denied both read and write; the topic listing
+    itself stays visible (public still means discoverable); the creator (auto-subscribed
+    as owner) is unaffected; a paying member gets both read and write back."""
+    _register(client, "p1b1_owner")
+    _register(client, "p1b1_stranger")
+    _register(client, "p1b1_payer")
+    mock_payout.return_value = {"transfer_id": "tr_p1b1"}
 
     r = client.post("/agoras/topics", json={
-        "name": "P2r-5 Public Paid Topic", "description": "d", "visibility": "public",
-        "gate_type": "paid_invite", "entry_fee_cents": 500, "creator_id": "p2r5_owner",
+        "name": "P1b-1 Public Paid Topic", "description": "d", "visibility": "public",
+        "gate_type": "paid_invite", "entry_fee_cents": 500, "creator_id": "p1b1_owner",
     },
-        headers={"x-emporia-agent-id": "p2r5_owner"})
+        headers={"x-emporia-agent-id": "p1b1_owner"})
     assert r.status_code == 200, r.text
-    slug = r.json()["slug"]
+    slug, topic_id = r.json()["slug"], r.json()["topic_id"]
 
-    read = client.get(f"/agoras/topics/{slug}/posts", headers={"x-emporia-agent-id": "p2r5_stranger"})
-    assert read.status_code == 200, \
-        "pinned: a never-paid stranger can currently read a public paid_invite topic"
+    stranger_read = client.get(f"/agoras/topics/{slug}/posts",
+        headers={"x-emporia-agent-id": "p1b1_stranger"})
+    assert stranger_read.status_code == 403, stranger_read.text
 
-    posted = client.post(f"/agoras/topics/{slug}/posts",
+    stranger_post = client.post(f"/agoras/topics/{slug}/posts",
         json={"title": "never paid a cent", "content": "..."},
-        headers={"x-emporia-agent-id": "p2r5_stranger"})
-    assert posted.status_code == 200, \
-        "pinned: a never-paid stranger can currently post to a public paid_invite topic"
+        headers={"x-emporia-agent-id": "p1b1_stranger"})
+    assert stranger_post.status_code == 403, stranger_post.text
+
+    # "public" still means discoverable — the topic listing itself is unaffected.
+    listing = client.get("/agoras/topics", headers={"x-emporia-agent-id": "p1b1_stranger"})
+    assert listing.status_code == 200
+    assert any(t["slug"] == slug for t in listing.json()["topics"])
+
+    # the creator (auto-subscribed as owner on topic creation) is unaffected.
+    owner_read = client.get(f"/agoras/topics/{slug}/posts", headers={"x-emporia-agent-id": "p1b1_owner"})
+    assert owner_read.status_code == 200
+
+    # a paying member gets read and write back.
+    client.post(f"/agoras/topics/{slug}/invite", json={"invitee_id": "p1b1_payer"},
+        headers={"x-emporia-agent-id": "p1b1_owner"})
+    with patch("emporia.relay_server.AGENT_REGISTRY.get_stripe_account", return_value="acct_p1b1"):
+        mock_verify.return_value = {
+            "status": "succeeded", "payment_intent_id": "pi_p1b1_payer",
+            "amount": 500, "currency": "usd", "capture_method": "automatic",
+            "metadata": {
+                "resource_type": "agora", "resource_id": topic_id,
+                "buyer_agent_id": "p1b1_payer",
+            },
+        }
+        sub = client.post(f"/agoras/topics/{slug}/subscribe",
+            json={"agent_id": "p1b1_payer", "payment_intent_id": "pi_p1b1_payer"},
+            headers={"x-emporia-agent-id": "p1b1_payer"})
+        assert sub.status_code == 200, sub.text
+
+    payer_read = client.get(f"/agoras/topics/{slug}/posts", headers={"x-emporia-agent-id": "p1b1_payer"})
+    assert payer_read.status_code == 200, payer_read.text
+
+    payer_post = client.post(f"/agoras/topics/{slug}/posts",
+        json={"title": "paid up", "content": "..."},
+        headers={"x-emporia-agent-id": "p1b1_payer"})
+    assert payer_post.status_code == 200, payer_post.text
 
 
 def test_settlement_co_payer_cannot_see_others_payment_intent_ids_room(client):
