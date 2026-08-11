@@ -47,9 +47,10 @@ This is a payer policy. Creators still choose their own prices.
   `access_entitlements.payment_intent_id`) is now tagged with the rail it was verified on —
   `payments.rail`/`settlements.rail`/`access_entitlements.rail`, populated from
   `payments.RAIL_STRIPE`/`KNOWN_RAILS` (P3, the rail seam). Currently one member; a second rail
-  (x402) adds to this vocabulary rather than replacing it. Rooms/Agora topics are gated by
-  `gate_type="paid"` (renamed from `"stripe_payment"` in P3, breaking, no alias) — that name no
-  longer implies Stripe specifically.
+  (x402) adds to this vocabulary rather than replacing it. Rooms are gated by `gate_type="paid"`
+  (renamed from `"stripe_payment"` in P3, breaking, no alias) — that name no longer implies Stripe
+  specifically. Agora topics use a separate vocabulary, unaffected by the P3 rename
+  (`gate_type="paid_invite"`, not `"paid"`).
 
 
 - Protocol: MPP

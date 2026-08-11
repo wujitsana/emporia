@@ -728,7 +728,7 @@ grep before starting).
 is also the base of every Stripe `Idempotency-Key` for real money movement — `PaymentRef.reference`
 (never `.rail`, never the ref itself) is the only thing that ever reaches it, pinned by a test computing
 the expected digest independently via `hashlib`. Every `emporia.payments` import stays function-local
-(never hoisted to module scope), preserving the 69 test `@patch("emporia.payments.X")` decorators that
+(never hoisted to module scope), preserving the 75 test `@patch("emporia.payments.X")` decorators that
 only intercept because of that discipline — verified post-refactor via the existing tests' own
 `mock_payout.assert_called_once()`/`call_count` assertions, not just a green suite. `settlements`
 gaining a `rail` column correctly failed `test_settlement_public_and_internal_columns_cover_the_schema`

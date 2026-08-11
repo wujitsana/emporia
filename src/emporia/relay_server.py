@@ -120,7 +120,7 @@ from emporia import entitlements
 
 if TYPE_CHECKING:
     # Type-only — every real (runtime) reference to emporia.payments stays a
-    # function-local import (L2, this file's own discipline): 69 test
+    # function-local import (L2, this file's own discipline): 75 test
     # @patch("emporia.payments.X") decorators only intercept because nothing
     # here imports these names at module scope. A TYPE_CHECKING import is
     # erased before runtime, so it can't affect that.
@@ -1459,9 +1459,9 @@ def record_settlement(settlement: dict[str, Any]) -> None:
                 payer_id,
                 dedupe_key,
                 # P3: an unrecognized value is rejected above rather than let
-                # through to storage; the default (no caller passes "rail" yet)
-                # is RAIL_STRIPE, threaded from PaymentRef.rail once callers
-                # carry one (item 3).
+                # through to storage. _settle_access_payment() threads the
+                # real PaymentRef.rail here; other callers still fall back to
+                # the "rail" dict key's RAIL_STRIPE default.
                 rail,
             ),
         )
@@ -4904,7 +4904,7 @@ async def _settle_access_payment(
     condition; unifying the two is a behavior change, not this pass's job.
 
     L2: `from emporia.payments import ...` stays function-local here, same
-    as the two call sites it replaces — 69 test
+    as the two call sites it replaces — 75 test
     `@patch("emporia.payments.X")` decorators only intercept because nothing
     in this file imports these names at module scope.
     """
