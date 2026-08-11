@@ -514,7 +514,8 @@ def init_db() -> None:
                 stripe_account_id TEXT,
                 nous_user_id TEXT,
                 trust_level TEXT NOT NULL DEFAULT 'key_only',
-                identity_providers_json TEXT NOT NULL DEFAULT '[]'
+                identity_providers_json TEXT NOT NULL DEFAULT '[]',
+                x402_pay_to_json TEXT NOT NULL DEFAULT '{}'
             );
 
             CREATE TABLE IF NOT EXISTS sessions (
@@ -805,6 +806,15 @@ def _assert_not_pre_p3_schema(conn: Any) -> None:
             "This database has a room with the legacy gate_type='stripe_payment' "
             "(renamed to 'paid' in P3). No migration is provided for it — delete "
             "the database file and reseed."
+        )
+    # P1b-2: same fresh-DB posture, same reason — authorized_agents.x402_pay_to_json
+    # landed with no ALTER TABLE either.
+    agent_cols = {r[1] for r in conn.execute("PRAGMA table_info(authorized_agents)").fetchall()}
+    if "x402_pay_to_json" not in agent_cols:
+        raise RuntimeError(
+            "This database predates the P1b x402 pass (authorized_agents."
+            "x402_pay_to_json is missing). No migration is provided for it — "
+            "delete the database file and reseed."
         )
 
 
@@ -1611,6 +1621,38 @@ class AgentRegistry:
                 (stripe_account_id, agent_id),
             )
 
+    def get_x402_pay_to(self, agent_id: str, network_family: str) -> str | None:
+        """P1b-2: the x402 analogue of get_stripe_account — except one Stripe
+        Connect account serves every currency, while an EVM address and a
+        Solana address are different key spaces entirely, so wallets are keyed
+        per `network_family` ("evm" | "svm") rather than one column. Not
+        auto-provisioned like Connect: there's no wallet to create on an
+        agent's behalf, so this returns None until the agent sets one."""
+        try:
+            with DB_LOCK, get_db() as conn:
+                row = conn.execute(
+                    "SELECT x402_pay_to_json FROM authorized_agents WHERE agent_id = ?",
+                    (agent_id,),
+                ).fetchone()
+            if not row:
+                return None
+            return json.loads(row["x402_pay_to_json"] or "{}").get(network_family)
+        except Exception:
+            return None
+
+    def set_x402_pay_to(self, agent_id: str, network_family: str, address: str) -> None:
+        with DB_LOCK, get_db() as conn:
+            row = conn.execute(
+                "SELECT x402_pay_to_json FROM authorized_agents WHERE agent_id = ?",
+                (agent_id,),
+            ).fetchone()
+            wallets = json.loads(row["x402_pay_to_json"] or "{}") if row else {}
+            wallets[network_family] = address
+            conn.execute(
+                "UPDATE authorized_agents SET x402_pay_to_json = ? WHERE agent_id = ?",
+                (json.dumps(wallets), agent_id),
+            )
+
     def is_authorized(self, agent_id: str) -> bool:
         try:
             with DB_LOCK, get_db() as conn:
@@ -2067,6 +2109,11 @@ class RegisterAgentRequest(BaseModel):
     identity_claims: list[IdentityClaimRequest] = Field(default_factory=list)
     challenge_id: str = ""
     challenge_signature: str = ""  # hex Ed25519 sig of the nonce bytes
+
+
+class SetX402WalletRequest(BaseModel):
+    network_family: str  # "evm" | "svm"
+    address: str
 
 
 class CreateSessionRequest(BaseModel):
@@ -2866,6 +2913,38 @@ async def mark_inbox_read(agent_id: str, inbox_ids: list[str], request: Request)
             (cutoff,),
         )
     return {"ok": True, "marked": len(inbox_ids)}
+
+
+_X402_ADDRESS_PATTERNS = {
+    # P1b-2: an EVM address and a Solana address are different key spaces
+    # (secp256k1 vs. ed25519), so a wallet is set per network_family rather
+    # than as one universal address — see AGENT_REGISTRY.get/set_x402_pay_to.
+    "evm": re.compile(r"^0x[0-9a-fA-F]{40}$"),
+    "svm": re.compile(r"^[1-9A-HJ-NP-Za-km-z]{32,44}$"),  # base58, Bitcoin alphabet (no 0OIl)
+}
+
+
+@app.post("/agents/{agent_id}/x402-wallet")
+async def set_x402_wallet(agent_id: str, req: SetX402WalletRequest, request: Request):
+    """Register (or update) this agent's x402 `payTo` wallet address for one
+    network family. Unlike Stripe Connect (auto-provisioned at registration,
+    `:2586`), there is no wallet to create on an agent's behalf — this must be
+    called explicitly, and a wrong address is unrecoverable money, so the
+    format is validated and rejected loudly rather than accepted silently."""
+    _require_caller_is(agent_id, request)
+    _require_registered(agent_id)
+    _enforce_agent_rate_limit(agent_id)
+    pattern = _X402_ADDRESS_PATTERNS.get(req.network_family)
+    if pattern is None:
+        raise HTTPException(
+            400, f"network_family must be one of {sorted(_X402_ADDRESS_PATTERNS)}"
+        )
+    if not pattern.match(req.address):
+        raise HTTPException(
+            400, f"address does not look like a valid {req.network_family} wallet address"
+        )
+    AGENT_REGISTRY.set_x402_pay_to(agent_id, req.network_family, req.address)
+    return {"agent_id": agent_id, "network_family": req.network_family, "address": req.address}
 
 
 # ============================================================================

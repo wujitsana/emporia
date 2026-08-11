@@ -2618,6 +2618,9 @@ def test_no_new_identity_as_proof_params():
         # agent_id (path): _require_caller_is-checked. Body (inbox_ids: list[str]) is a
         # raw list with no identity claim in it.
         ("POST", "/agents/{agent_id}/inbox/mark-read"),
+        # agent_id (path): _require_caller_is-checked (P1b-2). network_family/address in
+        # the body carry no identity claim.
+        ("POST", "/agents/{agent_id}/x402-wallet"),
         # Raw dict body (req: dict = None) is unused for identity — caller is resolved via
         # _dashboard_agent_id(request) and checked against session participants inline.
         ("POST", "/sessions/{session_id}/abandon"),
@@ -2735,6 +2738,8 @@ def test_every_route_has_a_reviewed_auth_posture():
         ("GET", "/agents/{agent_id}/listings"),
         ("GET", "/agents/{agent_id}/inbox"),
         ("POST", "/agents/{agent_id}/inbox/mark-read"),
+        # P1b-2: _require_caller_is — a mismatched caller gets 403.
+        ("POST", "/agents/{agent_id}/x402-wallet"),
         ("POST", "/payments/create-intent"),
         # Closed in N4-5 (R7) — was _KNOWN_UNGATED. Operator-only, not just any
         # authenticated caller.
@@ -7072,6 +7077,83 @@ def test_assert_not_pre_p3_schema_rejects_legacy_stripe_payment_room():
     with pytest.raises(RuntimeError, match="legacy gate_type='stripe_payment'"):
         _assert_not_pre_p3_schema(conn)
     conn.close()
+
+
+def test_assert_not_pre_p3_schema_rejects_db_missing_x402_pay_to_column():
+    """P1b-2: sibling of the two P3 checks above — authorized_agents.x402_pay_to_json
+    landed with no ALTER TABLE either, same fresh-DB posture. Must fail pre-fix:
+    _assert_not_pre_p3_schema doesn't check for this column yet."""
+    import sqlite3
+
+    from emporia.relay_server import _assert_not_pre_p3_schema
+
+    conn = sqlite3.connect(":memory:")
+    conn.row_factory = sqlite3.Row
+    conn.executescript("""
+        CREATE TABLE settlements (
+            settlement_id TEXT PRIMARY KEY, session_id TEXT NOT NULL,
+            rail TEXT NOT NULL DEFAULT 'stripe'
+        );
+        CREATE TABLE rooms (room_id TEXT PRIMARY KEY, gate_type TEXT NOT NULL DEFAULT 'open');
+        CREATE TABLE authorized_agents (agent_id TEXT PRIMARY KEY);
+    """)
+    conn.commit()
+
+    cols = {r[1] for r in conn.execute("PRAGMA table_info(authorized_agents)").fetchall()}
+    assert "x402_pay_to_json" not in cols, "test setup must predate the x402_pay_to_json column"
+
+    with pytest.raises(RuntimeError, match="x402_pay_to_json"):
+        _assert_not_pre_p3_schema(conn)
+    conn.close()
+
+
+def test_set_x402_wallet_validates_format_and_requires_caller_match(client):
+    """P1b-2: the wallet endpoint rejects a mismatched caller, an unknown
+    network_family, and a malformed address for the claimed family — a typo'd
+    payTo address is unrecoverable money, so it must fail loudly, not silently
+    accept. A valid address for one family doesn't clobber a different
+    family's address for the same agent (they're independent key spaces)."""
+    _register(client, "p1b2_owner")
+    _register(client, "p1b2_other")
+
+    wrong_caller = client.post("/agents/p1b2_owner/x402-wallet",
+        json={"network_family": "evm", "address": "0x" + "ab" * 20},
+        headers={"x-emporia-agent-id": "p1b2_other"})
+    assert wrong_caller.status_code == 403, wrong_caller.text
+
+    unknown_family = client.post("/agents/p1b2_owner/x402-wallet",
+        json={"network_family": "bitcoin", "address": "irrelevant"},
+        headers={"x-emporia-agent-id": "p1b2_owner"})
+    assert unknown_family.status_code == 400, unknown_family.text
+
+    bad_evm = client.post("/agents/p1b2_owner/x402-wallet",
+        json={"network_family": "evm", "address": "not-an-address"},
+        headers={"x-emporia-agent-id": "p1b2_owner"})
+    assert bad_evm.status_code == 400, bad_evm.text
+
+    bad_svm = client.post("/agents/p1b2_owner/x402-wallet",
+        json={"network_family": "svm", "address": "short"},
+        headers={"x-emporia-agent-id": "p1b2_owner"})
+    assert bad_svm.status_code == 400, bad_svm.text
+
+    evm_addr = "0x" + "ab" * 20
+    good_evm = client.post("/agents/p1b2_owner/x402-wallet",
+        json={"network_family": "evm", "address": evm_addr},
+        headers={"x-emporia-agent-id": "p1b2_owner"})
+    assert good_evm.status_code == 200, good_evm.text
+
+    from emporia.relay_server import AGENT_REGISTRY
+    assert AGENT_REGISTRY.get_x402_pay_to("p1b2_owner", "evm") == evm_addr
+    assert AGENT_REGISTRY.get_x402_pay_to("p1b2_owner", "svm") is None
+
+    svm_addr = "1" * 32  # valid base58 shape (Solana's real System Program id)
+    good_svm = client.post("/agents/p1b2_owner/x402-wallet",
+        json={"network_family": "svm", "address": svm_addr},
+        headers={"x-emporia-agent-id": "p1b2_owner"})
+    assert good_svm.status_code == 200, good_svm.text
+    assert AGENT_REGISTRY.get_x402_pay_to("p1b2_owner", "evm") == evm_addr, \
+        "setting the svm wallet must not clobber the evm wallet for the same agent"
+    assert AGENT_REGISTRY.get_x402_pay_to("p1b2_owner", "svm") == svm_addr
 
 
 def test_migrate_settlement_dedupe_key_restores_index_on_every_startup():
