@@ -11217,6 +11217,196 @@ def test_verify_x402_payment_happy_path_returns_payment_ref(mock_verify, mock_se
     assert sent_requirements["amount"] == "2500000"
 
 
+# ============================================================================
+# x402 facilitator HTTP layer (P1brr-4, A4)
+#
+# Every x402 test above patches emporia.payments.x402_verify_payment /
+# x402_settle_payment wholesale — confirmed during the P1brr audit: no test
+# anywhere calls either function unpatched. So the two functions' own bodies
+# (the URL join, the outbound JSON keys, resp.json()) were entirely
+# unexercised; the suite would stay green with any of it wrong. These tests
+# patch httpx.AsyncClient.post instead — the pattern the Stripe tests above
+# already use — to cover that layer directly.
+#
+# The wire shape was re-verified against the x402 v2 specification during
+# this audit (2026-08-12) and is correct as shipped: `accepts` entries are
+# scheme/network/amount/asset/payTo/maxTimeoutSeconds (+ optional `extra`,
+# never sent here — see the note below); `resource` belongs only at the top
+# level of PaymentRequired, never nested in an `accepts` entry, which is how
+# build_x402_challenge() already builds it; /verify and /settle both take
+# {x402Version, paymentPayload, paymentRequirements}; /verify returns
+# {isValid, invalidReason?, payer}; /settle returns {success, errorReason?,
+# payer, transaction, network}. These tests do not change that shape.
+#
+# Known unknowns, recorded rather than silently treated as covered: the
+# optional spec field `extra` (EIP-712 domain material some `exact`-scheme
+# facilitators expect) is never sent by this relay, and no real facilitator
+# has ever been contacted — these mocks prove internal consistency with the
+# spec text, not interoperability with a live facilitator implementation.
+# ============================================================================
+
+@pytest.mark.asyncio
+async def test_x402_verify_payment_posts_spec_shape_to_facilitator():
+    """P1brr-4 (A4): x402_verify_payment()'s own body, never exercised by
+    any prior test (all wholesale-mock the function itself)."""
+    from emporia.payments import x402_verify_payment
+
+    payload = {"accepted": {"network": "eip155:8453"}, "payload": {"sig": "0xsig"}}
+    requirements = {
+        "scheme": "exact", "network": "eip155:8453", "amount": "2500000",
+        "asset": "0xUSDCFAKE", "payTo": "0x" + "aa" * 20, "maxTimeoutSeconds": 300,
+    }
+
+    with patch.dict(os.environ, {"EMPORIA_X402_FACILITATOR_URL": "https://fac.example.test/"}):
+        with patch("httpx.AsyncClient.post", new_callable=AsyncMock) as mock_post:
+            mock_resp = MagicMock()
+            mock_resp.json.return_value = {"isValid": True, "payer": "0x" + "11" * 20}
+            mock_resp.raise_for_status = MagicMock()
+            mock_post.return_value = mock_resp
+
+            result = await x402_verify_payment(payload, requirements)
+
+    assert result == {"isValid": True, "payer": "0x" + "11" * 20}
+    assert mock_post.call_args.args[0] == "https://fac.example.test/verify", \
+        "a trailing slash on the configured facilitator URL must be collapsed, not doubled"
+    body = mock_post.call_args.kwargs["json"]
+    assert set(body.keys()) == {"x402Version", "paymentPayload", "paymentRequirements"}, \
+        "must send exactly the three spec-defined keys, no more, no fewer"
+    assert body["x402Version"] == 2
+    assert body["paymentPayload"] == payload
+    assert body["paymentRequirements"] == requirements
+
+
+@pytest.mark.asyncio
+async def test_x402_settle_payment_posts_spec_shape_to_facilitator():
+    """P1brr-4 (A4): x402_settle_payment()'s own body — same coverage gap
+    as x402_verify_payment() above, real money moves through this one."""
+    from emporia.payments import x402_settle_payment
+
+    payload = {"accepted": {"network": "eip155:8453"}, "payload": {"sig": "0xsig"}}
+    requirements = {
+        "scheme": "exact", "network": "eip155:8453", "amount": "2500000",
+        "asset": "0xUSDCFAKE", "payTo": "0x" + "aa" * 20, "maxTimeoutSeconds": 300,
+    }
+
+    with patch.dict(os.environ, {"EMPORIA_X402_FACILITATOR_URL": "https://fac.example.test"}):
+        with patch("httpx.AsyncClient.post", new_callable=AsyncMock) as mock_post:
+            mock_resp = MagicMock()
+            mock_resp.json.return_value = {
+                "success": True, "payer": "0x" + "11" * 20,
+                "transaction": "0xsettled", "network": "eip155:8453",
+            }
+            mock_resp.raise_for_status = MagicMock()
+            mock_post.return_value = mock_resp
+
+            result = await x402_settle_payment(payload, requirements)
+
+    assert result["transaction"] == "0xsettled"
+    assert mock_post.call_args.args[0] == "https://fac.example.test/settle", \
+        "no trailing slash configured — must not become a double slash either"
+    body = mock_post.call_args.kwargs["json"]
+    assert set(body.keys()) == {"x402Version", "paymentPayload", "paymentRequirements"}
+    assert body["x402Version"] == 2
+    assert body["paymentPayload"] == payload
+    assert body["paymentRequirements"] == requirements
+
+
+@pytest.mark.asyncio
+async def test_x402_verify_payment_facilitator_error_surfaces_as_402(client):
+    """P1brr-4 (A4): a facilitator 5xx/timeout propagates out of
+    raise_for_status() and must surface as the documented 402 — the same
+    "infrastructure failure reported as a payment failure" convention the
+    Stripe branches already use (SPT validation failed / Payment
+    verification failed), not a 500. Exercises the real
+    x402_verify_payment() body (httpx mocked, not the function itself), so
+    this is the one test proving _verify_x402_payment()'s try/except
+    around the facilitator calls actually catches what raise_for_status()
+    raises."""
+    import httpx as httpx_module
+
+    from emporia.relay_server import _verify_x402_payment, AGENT_REGISTRY
+
+    creator = "p1brr4_facerr_creator"
+    _register(client, creator)
+    AGENT_REGISTRY.set_x402_pay_to(creator, "evm", "0x" + "aa" * 20)
+
+    with patch.dict(os.environ, _X402_ENV, clear=False):
+        with patch("httpx.AsyncClient.post", new_callable=AsyncMock) as mock_post:
+            mock_resp = MagicMock()
+            mock_resp.raise_for_status.side_effect = httpx_module.HTTPStatusError(
+                "facilitator unavailable",
+                request=MagicMock(), response=MagicMock(status_code=503),
+            )
+            mock_post.return_value = mock_resp
+
+            with pytest.raises(HTTPException) as exc_info:
+                await _verify_x402_payment(
+                    {"accepted": {
+                        "scheme": "exact", "network": "eip155:8453", "amount": "2500000",
+                        "asset": "0xUSDCFAKE", "payTo": "0x" + "aa" * 20,
+                        "maxTimeoutSeconds": 300,
+                    }, "payload": {}},
+                    creator_id=creator, amount_cents=250, currency="usd",
+                    challenge_resource="emporia:room:test",
+                )
+    assert exc_info.value.status_code == 402
+    assert "x402 verification failed" in str(exc_info.value.detail)
+
+
+@pytest.mark.asyncio
+async def test_verify_x402_payment_forwards_relay_computed_requirements_not_client_extra_field(client):
+    """P1brr-4 (A4): the resource-binding assertion's entire point is that
+    the facilitator sees what THIS relay computed the requirement to be,
+    never a courtesy echo of the client's own claim (x402_verify_payment()'s
+    docstring). The happy-path test above already confirms the two agree
+    on every field x402_requirement() defines — but a success case can't
+    distinguish "relay-computed object sent" from "client's accepted
+    object sent verbatim" by content alone once every checked field
+    matches. Give the client's `accepted` an extra key outside
+    x402_requirement()'s schema and confirm it never reaches the wire —
+    that only happens if the relay-computed `expected` object was sent,
+    not the client's."""
+    from emporia.relay_server import _verify_x402_payment, AGENT_REGISTRY
+
+    creator = "p1brr4_forward_creator"
+    _register(client, creator)
+    AGENT_REGISTRY.set_x402_pay_to(creator, "evm", "0x" + "aa" * 20)
+
+    accepted = {
+        "scheme": "exact", "network": "eip155:8453", "amount": "2500000",
+        "asset": "0xUSDCFAKE", "payTo": "0x" + "aa" * 20, "maxTimeoutSeconds": 300,
+        "extra": {"attacker_note": "not part of x402_requirement()'s schema"},
+    }
+
+    with patch.dict(os.environ, _X402_ENV, clear=False):
+        with patch("httpx.AsyncClient.post", new_callable=AsyncMock) as mock_post:
+            verify_resp = MagicMock()
+            verify_resp.json.return_value = {"isValid": True, "payer": "0x" + "11" * 20}
+            verify_resp.raise_for_status = MagicMock()
+            settle_resp = MagicMock()
+            settle_resp.json.return_value = {"success": True, "transaction": "0xforwardtest"}
+            settle_resp.raise_for_status = MagicMock()
+            mock_post.side_effect = [verify_resp, settle_resp]
+
+            await _verify_x402_payment(
+                {"accepted": accepted, "payload": {}},
+                creator_id=creator, amount_cents=250, currency="usd",
+                challenge_resource="emporia:room:test",
+            )
+
+    assert mock_post.call_count == 2, "expected one /verify call and one /settle call"
+    for call in mock_post.call_args_list:
+        requirements = call.kwargs["json"]["paymentRequirements"]
+        assert "extra" not in requirements, (
+            "the facilitator must receive the relay's own computed requirement, "
+            "not the client's accepted object forwarded verbatim"
+        )
+        assert requirements == {
+            "scheme": "exact", "network": "eip155:8453", "amount": "2500000",
+            "asset": "0xUSDCFAKE", "payTo": "0x" + "aa" * 20, "maxTimeoutSeconds": 300,
+        }
+
+
 def test_record_payment_is_idempotent_for_x402_rail():
     """P1b-5: the plan's stated replay-protection claim, confirmed rather
     than assumed — a replayed x402 transaction hash hits record_payment()'s
