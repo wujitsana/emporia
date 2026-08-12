@@ -1371,7 +1371,10 @@ def list_sessions(
 ) -> dict[str, Any]:
     """List sessions on this relay.
 
-    status: 'active' | 'complete' | 'abandoned' — omit for all
+    status: 'waiting' | 'active' | 'completed' | 'abandoned' — omit for all.
+    (P5-1: was documented as 'active' | 'complete' | 'abandoned' — wrong on
+    'complete' and missing 'waiting', neither of which relay_server.py ever
+    writes/omits respectively.)
     module_type: e.g. 'emporia:chess:v1' — omit for all
     """
     params: dict[str, Any] = {"limit": limit}

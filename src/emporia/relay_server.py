@@ -2053,6 +2053,28 @@ def validate_proof_of_reasoning(turn: dict[str, Any]) -> str:
 # Session Management
 # ============================================================================
 
+# P5-1: the single source for sessions.status — real values written are
+# "waiting" (create_session), "active" (session join / a turn taken),
+# "completed" (a module's is_over), "abandoned" (abandon_session). Before
+# this pass, /health, the dashboard WS, and abandon_session's own guard each
+# independently hardcoded a DIFFERENT, WRONG pair of literals
+# ("complete"/"cancelled" — neither is ever written) as their "terminal"
+# check, so all three silently no-op'd: /health's session_count counted
+# completed/abandoned sessions as active, and abandon_session's "already
+# complete" guard never fired, letting a completed session's captured
+# payments be cancelled a second time.
+_SESSION_STATUSES = {"waiting", "active", "completed", "abandoned"}
+_SESSION_TERMINAL_STATUSES = {"completed", "abandoned"}
+
+
+def _session_status_not_in_terminal_sql(column: str = "status") -> str:
+    """`WHERE {column} NOT IN (?, ?)` built from `_SESSION_TERMINAL_STATUSES`
+    rather than hand-copied literals a third time — two independently
+    hand-copied literal lists (both wrong) is how this bug happened."""
+    placeholders = ", ".join("?" for _ in _SESSION_TERMINAL_STATUSES)
+    return f"{column} NOT IN ({placeholders})"
+
+
 def _session_row_to_dict(row: sqlite3.Row) -> dict[str, Any]:
     return {
         "session_id": row["session_id"],
@@ -2570,8 +2592,13 @@ async def health():
                 (datetime.now(UTC).isoformat(),),
             ).fetchone()
             listing_count = row["c"] if row else 0
+            # P5-1: was `NOT IN ('complete','cancelled')` — neither literal is
+            # ever written to sessions.status, so this counted completed and
+            # abandoned sessions as active. Built from _SESSION_TERMINAL_STATUSES
+            # now instead of a second hand-copied literal list.
             row2 = conn.execute(
-                "SELECT COUNT(*) AS c FROM sessions WHERE status NOT IN ('complete','cancelled')"
+                f"SELECT COUNT(*) AS c FROM sessions WHERE {_session_status_not_in_terminal_sql()}",
+                tuple(_SESSION_TERMINAL_STATUSES),
             ).fetchone()
             session_count = row2["c"] if row2 else 0
     except Exception:
@@ -4842,8 +4869,15 @@ async def abandon_session(session_id: str, request: Request, req: dict = None):
     if not caller or (caller not in s["participants"] and caller != owner):
         raise HTTPException(403, "Only a participant or the relay operator may abandon this session")
     _enforce_agent_rate_limit(caller)
-    if s["status"] == "complete":
-        raise HTTPException(400, "Session already complete — cannot abandon")
+    # P5-1: was `== "complete"`, a status never actually written (the real
+    # terminal values are "completed" and "abandoned") — this guard never
+    # fired, so a completed session could be "abandoned" a second time,
+    # re-running cancel_payment_hold() over payments already captured.
+    # Re-abandoning an already-abandoned session is refused for the same
+    # reason: cancelling the same holds twice is the exact double-action
+    # this guard exists to prevent, not a distinct case to allow.
+    if s["status"] in _SESSION_TERMINAL_STATUSES:
+        raise HTTPException(400, f"Session already {s['status']} — cannot abandon")
 
     # Cancel all authorized holds for this session
     payments = get_session_payments(session_id)
@@ -4877,9 +4911,6 @@ async def abandon_session(session_id: str, request: Request, req: dict = None):
         "holds_released": cancel_results,
         "message": "Authorized stakes released. Agents will see refunds within 5–7 days.",
     }
-
-
-_SESSION_TERMINAL_STATUSES = {"completed", "abandoned"}
 
 
 @app.delete("/admin/sessions/{session_id}")
@@ -5079,7 +5110,12 @@ async def ws_global_events(ws: WebSocket):
             with DB_LOCK, get_db() as conn:
                 row = conn.execute("SELECT COUNT(*) AS c FROM listings WHERE status='open'").fetchone()
                 health_data["listing_count"] = row["c"] if row else 0
-                row2 = conn.execute("SELECT COUNT(*) AS c FROM sessions WHERE status NOT IN ('complete','cancelled')").fetchone()
+                # P5-1: same fix as /health's REST handler above — see that
+                # comment for why the old literals were wrong.
+                row2 = conn.execute(
+                    f"SELECT COUNT(*) AS c FROM sessions WHERE {_session_status_not_in_terminal_sql()}",
+                    tuple(_SESSION_TERMINAL_STATUSES),
+                ).fetchone()
                 health_data["session_count"] = row2["c"] if row2 else 0
         except Exception:
             pass

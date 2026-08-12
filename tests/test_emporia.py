@@ -3129,6 +3129,81 @@ def test_abandon_session_requires_participant(client):
     assert r.json()["status"] == "abandoned"
 
 
+def test_abandon_session_refuses_already_completed_session(client):
+    """P5-1 (D1): the guard used to check `s["status"] == "complete"` — a
+    value relay_server.py never actually writes (real terminal values are
+    "completed" and "abandoned"), so this 400 never fired and a completed
+    session's already-captured payments could be cancelled a second time
+    via abandon. Fixed by checking against _SESSION_TERMINAL_STATUSES."""
+    import sqlite3
+
+    from emporia.relay_server import DATABASE_PATH
+
+    _register(client, "p5_1_complete_buyer")
+    r = client.post("/sessions", json={
+        "module_type": "emporia:service:v1", "creator_agent_id": "p5_1_complete_buyer",
+        "config": {"description": "d"}, "payment_rules": {"mode": "free"},
+    },
+        headers={"x-emporia-agent-id": "p5_1_complete_buyer"})
+    session_id = r.json()["session_id"]
+
+    conn = sqlite3.connect(DATABASE_PATH)
+    conn.execute("UPDATE sessions SET status='completed' WHERE session_id=?", (session_id,))
+    conn.commit()
+    conn.close()
+
+    r = client.post(
+        f"/sessions/{session_id}/abandon", json={},
+        headers={"x-emporia-agent-id": "p5_1_complete_buyer"},
+    )
+    assert r.status_code == 400, r.text
+    assert "completed" in r.text
+
+
+def test_health_session_count_excludes_completed_and_abandoned_sessions(client):
+    """P5-1 (D1): /health's session_count query was
+    `WHERE status NOT IN ('complete','cancelled')` — neither literal is
+    ever written to sessions.status, so this counted every session
+    (including completed/abandoned ones) as active. Confirmed the
+    user-visible symptom directly: create one waiting/active session and
+    one completed session, and assert the completed one is excluded."""
+    import sqlite3
+
+    from emporia.relay_server import DATABASE_PATH
+
+    _register(client, "p5_1_health_creator")
+    r1 = client.post("/sessions", json={
+        "module_type": "emporia:service:v1", "creator_agent_id": "p5_1_health_creator",
+        "config": {"description": "still open"}, "payment_rules": {"mode": "free"},
+    },
+        headers={"x-emporia-agent-id": "p5_1_health_creator"})
+    assert r1.status_code == 200, r1.text
+
+    r2 = client.post("/sessions", json={
+        "module_type": "emporia:service:v1", "creator_agent_id": "p5_1_health_creator",
+        "config": {"description": "will be completed"}, "payment_rules": {"mode": "free"},
+    },
+        headers={"x-emporia-agent-id": "p5_1_health_creator"})
+    assert r2.status_code == 200, r2.text
+    completed_session_id = r2.json()["session_id"]
+
+    conn = sqlite3.connect(DATABASE_PATH)
+    before = conn.execute(
+        "SELECT COUNT(*) FROM sessions WHERE status NOT IN ('completed', 'abandoned')"
+    ).fetchone()[0]
+    conn.execute(
+        "UPDATE sessions SET status='completed' WHERE session_id=?", (completed_session_id,)
+    )
+    conn.commit()
+    conn.close()
+
+    health = client.get("/health").json()
+    assert health["session_count"] == before - 1, (
+        f"expected session_count to exclude the just-completed session "
+        f"({before - 1}), got {health['session_count']}"
+    )
+
+
 def _p4_5_query_counts(session_id: str) -> dict[str, int]:
     """Row counts across every table DELETE /admin/sessions/{id} touches or
     reports on, for P4-5's cascade-delete tests."""
