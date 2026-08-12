@@ -4966,17 +4966,20 @@ async def delete_session(session_id: str, request: Request, force: bool = False)
             f"({sorted(_SESSION_TERMINAL_STATUSES)}) — pass ?force=true to delete anyway",
         )
 
-    # P5-3: the audit line used to be written AFTER this transaction
-    # committed — if _write_audit_line() raised (missing LOG_DIR, full
-    # disk), the rows were already gone, the caller got a 500, and there
-    # was no audit record of a deletion that actually happened, for an
-    # endpoint whose whole story is "we always report/record what we
-    # touched". Counts are now computed by SELECT COUNT(*) first (exact
-    # counts of what the DELETEs below will affect, computed under the same
-    # DB_LOCK/transaction so nothing else can race in between), the audit
-    # line is written from those counts BEFORE any row is deleted, and only
-    # then do the deletes run — so a failed audit write aborts the whole
+    # P5-3: the audit line must be written BEFORE any row is deleted — a
+    # failed audit write (missing LOG_DIR, full disk) must abort the whole
     # request with nothing touched, rather than a deletion nothing recorded.
+    #
+    # P6-1: but _write_audit_line() must NOT run while DB_LOCK is held.
+    # log_message() (this file's only other caller, above) deliberately
+    # writes its audit line after releasing DB_LOCK — direct precedent that
+    # this function doesn't belong under the lock. P5-3 put it there anyway.
+    # Nothing here awaits, so this isn't the same async-starvation class as
+    # the Agora/Stripe DB_LOCK-across-a-network-round-trip bug this codebase
+    # already fixed once (ROADMAP.md § Architecture cleanup) — but it's the
+    # same shape of mistake, so it gets fixed the same way: two short
+    # DB_LOCK-held blocks (count, then delete) with the file write in
+    # between, holding no lock.
     with DB_LOCK, get_db() as conn:
         unlinked = {
             "rooms": conn.execute(
@@ -5006,16 +5009,29 @@ async def delete_session(session_id: str, request: Request, force: bool = False)
             ).fetchone()[0],
         }
 
-        _write_audit_line({
-            "timestamp": datetime.now(UTC).isoformat(),
-            "type": "admin_session_deleted",
-            "operator": caller,
-            "session_id": session_id,
-            "deleted": deleted,
-            "retained": retained,
-            "unlinked": unlinked,
-        })
+    _write_audit_line({
+        "timestamp": datetime.now(UTC).isoformat(),
+        "type": "admin_session_deleted",
+        "operator": caller,
+        "session_id": session_id,
+        "deleted": deleted,
+        "retained": retained,
+        "unlinked": unlinked,
+    })
 
+    # Re-check existence: a narrow TOCTOU window exists between the two
+    # DB_LOCK blocks above/below (another request could in principle touch
+    # this exact session in between). Low-stakes here — this endpoint only
+    # ever targets a terminal (completed/abandoned) session unless
+    # ?force=true, so nothing in normal operation is still writing to the
+    # target between the two blocks — but fail loudly rather than silently
+    # deleting a session that vanished out from under us, instead of adding
+    # retry logic to an admin cleanup endpoint that doesn't need it.
+    with DB_LOCK, get_db() as conn:
+        if not conn.execute(
+            "SELECT 1 FROM sessions WHERE session_id = ?", (session_id,)
+        ).fetchone():
+            raise HTTPException(409, "Session was deleted by a concurrent request")
         conn.execute(
             "UPDATE rooms SET linked_session_id = NULL WHERE linked_session_id = ?",
             (session_id,),

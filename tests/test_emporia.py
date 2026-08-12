@@ -3457,9 +3457,12 @@ def test_delete_session_deletes_nothing_if_audit_write_fails(client):
     transaction committed — a failed audit write (missing LOG_DIR, full
     disk) meant the rows were already gone with no record of the deletion,
     for an endpoint whose whole story is "we record what we touched". The
-    audit line is now written INSIDE the transaction, before any row is
-    deleted, so a failed write aborts the whole request. Must fail pre-fix
-    with the session's rows gone despite the 500."""
+    audit line is now written BEFORE any row is deleted (P6-1 moved it
+    outside DB_LOCK, but kept it strictly before the delete pass — see
+    test_delete_session_audit_write_does_not_hold_db_lock below for the
+    lock-scope half of that fix), so a failed write aborts the whole
+    request. Must fail pre-fix with the session's rows gone despite the
+    error."""
     from emporia import relay_server
     from emporia.relay_server import load_session
 
@@ -3482,6 +3485,50 @@ def test_delete_session_deletes_nothing_if_audit_write_fails(client):
             )
     assert load_session(session_id) is not None, (
         "a failed audit write must leave the session (and its rows) untouched"
+    )
+
+
+def test_delete_session_audit_write_does_not_hold_db_lock(client):
+    """P6-1: P5-3 moved the audit write before the row deletes, but left it
+    running INSIDE the `with DB_LOCK, get_db() as conn:` block — a local
+    file append now happening while the relay's global write lock is held.
+    log_message() (this file's only other _write_audit_line() caller)
+    deliberately writes its audit line AFTER releasing DB_LOCK — direct
+    precedent this endpoint should have followed. Same shape of mistake
+    this codebase already fixed once for Agora subscribe/the Stripe
+    round-trip (ROADMAP.md), just with a file write instead of a network
+    call. Verified by asserting DB_LOCK._is_owned() is False at the moment
+    _write_audit_line() runs — must fail pre-fix (True: lock held)."""
+    from emporia import relay_server
+    from emporia.relay_server import DB_LOCK
+
+    _register(client, "p6_1_lockscope_creator")
+    _register(client, "p6_1_lockscope_op")
+
+    r = client.post("/sessions", json={
+        "module_type": "emporia:service:v1", "creator_agent_id": "p6_1_lockscope_creator",
+        "config": {"description": "d"}, "payment_rules": {"mode": "free"},
+    },
+        headers={"x-emporia-agent-id": "p6_1_lockscope_creator"})
+    session_id = r.json()["session_id"]
+
+    observed = {"lock_owned": None}
+    original_write = relay_server._write_audit_line
+
+    def spying_write(entry):
+        observed["lock_owned"] = DB_LOCK._is_owned()
+        return original_write(entry)
+
+    with patch.dict(os.environ, {"EMPORIA_AGENT_ID": "p6_1_lockscope_op"}), \
+         patch.object(relay_server, "_write_audit_line", side_effect=spying_write):
+        r = client.delete(
+            f"/admin/sessions/{session_id}?force=true",
+            headers={"x-emporia-agent-id": "p6_1_lockscope_op"},
+        )
+    assert r.status_code == 200, r.text
+    assert observed["lock_owned"] is False, (
+        "DB_LOCK must not be held while _write_audit_line() runs — "
+        f"got lock_owned={observed['lock_owned']}"
     )
 
 
