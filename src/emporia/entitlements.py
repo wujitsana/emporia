@@ -48,6 +48,7 @@ kicked agent would make that distinction lie.
 
 from __future__ import annotations
 
+import contextlib
 import os
 import sqlite3
 import threading
@@ -181,6 +182,18 @@ def grant(
     return _row_to_entitlement(row)
 
 
+_HAS_ACCESS_SQL = (
+    "SELECT expires_at, revoked_at FROM access_entitlements "
+    "WHERE resource_type = ? AND resource_id = ? AND agent_id = ? "
+    "ORDER BY granted_at DESC LIMIT 1"
+)
+
+_HAS_ANY_GRANT_SQL = (
+    "SELECT 1 FROM access_entitlements "
+    "WHERE resource_type = ? AND resource_id = ? AND agent_id = ? LIMIT 1"
+)
+
+
 def has_access(
     resource_type: str, resource_id: str, agent_id: str, db_path: Path | None = None,
     *, conn: sqlite3.Connection | None = None,
@@ -197,23 +210,22 @@ def has_access(
     connections per row for a paid topic before this. Optional and
     defaults to today's own-connection behavior, so no existing caller
     needs to change.
+
+    P1brr (A1): the two branches share `_HAS_ACCESS_SQL` rather than each
+    carrying its own copy of the query text — P1br-3 introduced the branch
+    but left the SQL duplicated, the exact drift hazard
+    `payments.x402_requirement()` was factored out to kill in the
+    immediately preceding pass. `contextlib.nullcontext(conn)` lets the
+    passed-in-connection branch reuse the same `with _LOCK, ctx as c:`
+    shape as the owned-connection branch without committing the caller's
+    transaction out from under them (`sqlite3.Connection.__exit__` commits;
+    `nullcontext.__exit__` does nothing).
     """
-    if conn is not None:
-        with _LOCK:
-            row = conn.execute(
-                "SELECT expires_at, revoked_at FROM access_entitlements "
-                "WHERE resource_type = ? AND resource_id = ? AND agent_id = ? "
-                "ORDER BY granted_at DESC LIMIT 1",
-                (resource_type, resource_id, agent_id),
-            ).fetchone()
-    else:
-        with _LOCK, _connect(db_path) as owned:
-            row = owned.execute(
-                "SELECT expires_at, revoked_at FROM access_entitlements "
-                "WHERE resource_type = ? AND resource_id = ? AND agent_id = ? "
-                "ORDER BY granted_at DESC LIMIT 1",
-                (resource_type, resource_id, agent_id),
-            ).fetchone()
+    ctx = contextlib.nullcontext(conn) if conn is not None else _connect(db_path)
+    with _LOCK, ctx as c:
+        row = c.execute(
+            _HAS_ACCESS_SQL, (resource_type, resource_id, agent_id)
+        ).fetchone()
     if not row:
         return False
     if row["revoked_at"] is not None:
@@ -237,22 +249,14 @@ def has_any_grant(
     (relay_server.py, P2-5's Agora sibling), the two callers.
 
     `conn` — see `has_access()`'s docstring; same optional reused-connection
-    parameter, same default.
+    parameter, same default, and same single-sourced `_HAS_ANY_GRANT_SQL`
+    (P1brr, A1).
     """
-    if conn is not None:
-        with _LOCK:
-            row = conn.execute(
-                "SELECT 1 FROM access_entitlements "
-                "WHERE resource_type = ? AND resource_id = ? AND agent_id = ? LIMIT 1",
-                (resource_type, resource_id, agent_id),
-            ).fetchone()
-    else:
-        with _LOCK, _connect(db_path) as owned:
-            row = owned.execute(
-                "SELECT 1 FROM access_entitlements "
-                "WHERE resource_type = ? AND resource_id = ? AND agent_id = ? LIMIT 1",
-                (resource_type, resource_id, agent_id),
-            ).fetchone()
+    ctx = contextlib.nullcontext(conn) if conn is not None else _connect(db_path)
+    with _LOCK, ctx as c:
+        row = c.execute(
+            _HAS_ANY_GRANT_SQL, (resource_type, resource_id, agent_id)
+        ).fetchone()
     return row is not None
 
 

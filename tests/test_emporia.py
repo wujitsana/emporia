@@ -10801,6 +10801,61 @@ def test_agent_posts_reuses_one_connection_per_request_not_per_row(mock_verify, 
     )
 
 
+def test_entitlements_query_is_single_sourced_between_conn_paths(tmp_path):
+    """P1brr item 1 (A1): P1br-3 threaded an optional conn= through
+    has_access()/has_any_grant() but left the SELECT text duplicated once
+    per branch inside each function — the exact drift hazard
+    payments.x402_requirement() was factored out to kill one commit
+    earlier in the same pass. Edit one copy and the passed-conn path (the
+    Agora read path) and the owned-conn path (the room path) could
+    silently answer access questions differently.
+
+    Pinned the same way as x402_requirement()'s single-sourcing test
+    (test_x402_max_timeout_seconds_is_single_sourced): patch the shared
+    query constant and confirm BOTH the conn= path and the no-conn= path
+    move together. That proves single-sourcing, not just that today's two
+    copies happen to agree."""
+    import sqlite3
+
+    from emporia import entitlements
+
+    db_path = tmp_path / "ent.sqlite3"
+    setup_conn = sqlite3.connect(db_path)
+    entitlements.init_entitlements_schema(setup_conn)
+    setup_conn.commit()
+    setup_conn.close()
+
+    entitlements.grant("room", "r1", "agent1", "pi_1", rail="stripe", db_path=db_path)
+
+    conn = sqlite3.connect(db_path)
+    conn.row_factory = sqlite3.Row
+    try:
+        # Sanity: both paths already agree today — the risk this pins is
+        # future drift, not today's answer.
+        assert entitlements.has_access("room", "r1", "agent1", db_path=db_path) is True
+        assert entitlements.has_access("room", "r1", "agent1", conn=conn) is True
+        assert entitlements.has_any_grant("room", "r1", "agent1", db_path=db_path) is True
+        assert entitlements.has_any_grant("room", "r1", "agent1", conn=conn) is True
+
+        with patch.object(
+            entitlements, "_HAS_ACCESS_SQL",
+            "SELECT expires_at, revoked_at FROM access_entitlements "
+            "WHERE resource_type = ? AND resource_id = ? AND agent_id = ? AND 0",
+        ):
+            assert entitlements.has_access("room", "r1", "agent1", db_path=db_path) is False
+            assert entitlements.has_access("room", "r1", "agent1", conn=conn) is False
+
+        with patch.object(
+            entitlements, "_HAS_ANY_GRANT_SQL",
+            "SELECT 1 FROM access_entitlements "
+            "WHERE resource_type = ? AND resource_id = ? AND agent_id = ? AND 0",
+        ):
+            assert entitlements.has_any_grant("room", "r1", "agent1", db_path=db_path) is False
+            assert entitlements.has_any_grant("room", "r1", "agent1", conn=conn) is False
+    finally:
+        conn.close()
+
+
 def test_x402_pay_to_by_network_excludes_unconfigured_or_walletless_networks(client):
     """P1b-4: a network the creator has no wallet for, or one not in
     EMPORIA_X402_NETWORKS at all, is silently excluded rather than raising —
