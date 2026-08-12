@@ -121,11 +121,12 @@ def _dashboard_bearer_headers(relay_url: str = "", agent_id: str = "") -> dict[s
         return {"Authorization": f"Bearer {cached[0]}"}
     try:
         from emporia.identity import sign_raw
+        from emporia.wire import dashboard_session_body
         ch = httpx.post(f"{target}/dashboard/challenge", timeout=10).json()
         sig_hex = sign_raw(ch["nonce"].encode(), aid)
         r = httpx.post(
             f"{target}/dashboard/session",
-            json={"agent_id": aid, "challenge_id": ch["challenge_id"], "signature_hex": sig_hex},
+            json=dashboard_session_body(aid, ch["challenge_id"], sig_hex),
             timeout=10,
         )
         r.raise_for_status()

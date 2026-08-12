@@ -91,13 +91,14 @@ class EmporiaAgent:
             return self._bearer_token
         try:
             from emporia.identity import sign_raw
+            from emporia.wire import dashboard_session_body
             ch_resp = await self._client().post(f"{self.relay_url}/dashboard/challenge")
             ch_resp.raise_for_status()
             ch = ch_resp.json()
             sig_hex = sign_raw(ch["nonce"].encode(), self.profile_id)
             resp = await self._client().post(
                 f"{self.relay_url}/dashboard/session",
-                json={"agent_id": self.agent_id, "challenge_id": ch["challenge_id"], "signature_hex": sig_hex},
+                json=dashboard_session_body(self.agent_id, ch["challenge_id"], sig_hex),
             )
             resp.raise_for_status()
             data = resp.json()

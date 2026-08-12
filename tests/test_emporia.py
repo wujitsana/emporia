@@ -10040,6 +10040,57 @@ def test_mcp_paid_session_full_turn_under_prod_auth(prod_client):
         assert r["outcome"]["winner"] == "mcp_e2e_seller"
 
 
+def test_mcp_dashboard_bearer_headers_uses_shared_wire_contract(prod_client):
+    """P6-2: mcp_server._dashboard_bearer_headers() and agent_sdk's
+    _bearer_token_value() (see the sibling test below) used to build the
+    POST /dashboard/session body inline, independently, in both files.
+    Both now call wire.dashboard_session_body() — pinned by patching that
+    shared function (wraps= the real one, so behavior is unchanged) and
+    confirming this call site actually invokes it with the right args,
+    the same single-sourcing proof pattern used for
+    payments.x402_requirement()."""
+    from emporia import mcp_server, wire
+
+    _register_keyed(prod_client, "p6_2_mcp_dashboard_agent")
+
+    adapter = _ASGIHttpxAdapter(prod_client, mcp_server.RELAY_URL)
+    with patch.object(mcp_server, "httpx", adapter), \
+         patch.object(wire, "dashboard_session_body", wraps=wire.dashboard_session_body) as spy:
+        headers = mcp_server._dashboard_bearer_headers(agent_id="p6_2_mcp_dashboard_agent")
+
+    assert "Authorization" in headers, "sanity: the real handshake must still succeed"
+    spy.assert_called_once()
+    assert spy.call_args.args[0] == "p6_2_mcp_dashboard_agent"
+
+
+def test_agent_sdk_bearer_token_value_uses_shared_wire_contract():
+    """P6-2: agent_sdk.EmporiaAgent._bearer_token_value()'s half of the
+    single-sourcing proof — see the mcp_server test above. Unit-level
+    since agent_sdk.py has no ASGI-transport test harness (matching
+    test_agent_sdk_bearer_request_retries_once_on_401's own posture):
+    mocks the underlying HTTP calls and asserts wire.dashboard_session_body()
+    is what actually built the second POST's body."""
+    import asyncio
+
+    from emporia import wire
+    from emporia.agent_sdk import EmporiaAgent
+
+    agent = EmporiaAgent(relay_url="http://fake.invalid", agent_id="sdk_wire_agent", public_key_hex="ab" * 32)
+    agent._http = MagicMock()
+    ch_resp = MagicMock()
+    ch_resp.json.return_value = {"nonce": "test-nonce", "challenge_id": "ch_test"}
+    session_resp = MagicMock()
+    session_resp.json.return_value = {"token": "jwt.test.token", "expires_in": 3600}
+    agent._http.post = AsyncMock(side_effect=[ch_resp, session_resp])
+
+    with patch("emporia.identity.sign_raw", return_value="deadbeef"), \
+         patch.object(wire, "dashboard_session_body", wraps=wire.dashboard_session_body) as spy:
+        token = asyncio.run(agent._bearer_token_value())
+
+    assert token == "jwt.test.token"
+    spy.assert_called_once_with("sdk_wire_agent", "ch_test", "deadbeef")
+
+
 def test_mcp_bearer_request_recovers_from_stale_cached_token(prod_client):
     """Regression for N2-1: _dashboard_bearer_headers() only ever refreshed on expiry, with
     no path back from a token the server actually rejects — before the JWT secret was
