@@ -1228,17 +1228,24 @@ def _x402_pay_to_by_network(creator_id: str | None) -> dict[str, str]:
     """Resolve which configured x402 networks this creator can actually
     receive on. A network whose family the creator has no wallet for is
     silently excluded — same no-auto-provision posture as P1b-2 (there's no
-    wallet to invent on the creator's behalf)."""
+    wallet to invent on the creator's behalf).
+
+    P1brr-3: reads the creator's wallets once via `get_x402_pay_to_all()`
+    rather than calling `get_x402_pay_to()` per configured network — this
+    runs on every 402 challenge and, since P1br-1 made `_x402_offer()` the
+    credential gate, on every x402 payment attempt too, so N configured
+    networks used to mean N connections for one single-row lookup."""
     if not creator_id:
         return {}
     from emporia.payments import _x402_networks
 
+    wallets = AGENT_REGISTRY.get_x402_pay_to_all(creator_id)
     result: dict[str, str] = {}
     for network in _x402_networks():
         family = _x402_network_family(network)
         if not family:
             continue
-        pay_to = AGENT_REGISTRY.get_x402_pay_to(creator_id, family)
+        pay_to = wallets.get(family)
         if pay_to:
             result[network] = pay_to
     return result
@@ -1853,6 +1860,17 @@ class AgentRegistry:
         per `network_family` ("evm" | "svm") rather than one column. Not
         auto-provisioned like Connect: there's no wallet to create on an
         agent's behalf, so this returns None until the agent sets one."""
+        return self.get_x402_pay_to_all(agent_id).get(network_family)
+
+    def get_x402_pay_to_all(self, agent_id: str) -> dict[str, str]:
+        """P1brr-3: every one of this agent's registered wallets in one read
+        — `{network_family: address}`. `_x402_pay_to_by_network()`
+        (relay_server.py) used to call `get_x402_pay_to()` once per
+        configured network, each opening its own connection to re-read the
+        same single-row JSON blob; there are only ever two families (`evm`,
+        `svm`) inside it, so one read always suffices. Same
+        swallow-and-return-empty posture as `get_x402_pay_to()`: a lookup
+        failure means "offer nothing," fails closed."""
         try:
             with DB_LOCK, get_db() as conn:
                 row = conn.execute(
@@ -1860,10 +1878,10 @@ class AgentRegistry:
                     (agent_id,),
                 ).fetchone()
             if not row:
-                return None
-            return json.loads(row["x402_pay_to_json"] or "{}").get(network_family)
+                return {}
+            return json.loads(row["x402_pay_to_json"] or "{}")
         except Exception:
-            return None
+            return {}
 
     def set_x402_pay_to(self, agent_id: str, network_family: str, address: str) -> None:
         with DB_LOCK, get_db() as conn:

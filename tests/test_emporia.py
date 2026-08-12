@@ -10954,6 +10954,48 @@ def test_x402_pay_to_by_network_excludes_unconfigured_or_walletless_networks(cli
     assert _x402_pay_to_by_network(None) == {}, "no creator_id (session escrow) must resolve to nothing"
 
 
+def test_x402_pay_to_by_network_reads_wallets_once_not_per_network(client):
+    """P1brr-3 (A3): the same N+1 class P1br-3 fixed on the Agora read path,
+    in x402 wallet-resolution code P1br never looked at.
+    _x402_pay_to_by_network() used to call AGENT_REGISTRY.get_x402_pay_to()
+    once per configured network, each opening its own get_db() connection
+    to re-read the same single-row x402_pay_to_json blob — N networks
+    configured meant N connections for one lookup, on every 402 challenge
+    and (since P1br-1) every x402 payment attempt.
+
+    Counted directly (relay_server.get_db patched with a counting wrapper),
+    not timed: two networks (evm + svm) configured, both wallets
+    registered, connection count must be 1 and must not grow with the
+    network count. Must fail pre-fix with count == 2."""
+    from emporia import relay_server
+    from emporia.relay_server import _x402_pay_to_by_network, AGENT_REGISTRY
+
+    creator = "p1brr3_walletcount_creator"
+    _register(client, creator)
+    AGENT_REGISTRY.set_x402_pay_to(creator, "evm", "0x" + "ab" * 20)
+    AGENT_REGISTRY.set_x402_pay_to(creator, "svm", "5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp")
+
+    call_count = {"n": 0}
+    original_get_db = relay_server.get_db
+
+    def counting_get_db():
+        call_count["n"] += 1
+        return original_get_db()
+
+    with patch.dict(os.environ, {
+        "EMPORIA_X402_NETWORKS": "eip155:8453,solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp",
+    }), patch.object(relay_server, "get_db", side_effect=counting_get_db):
+        result = _x402_pay_to_by_network(creator)
+
+    assert result == {
+        "eip155:8453": "0x" + "ab" * 20,
+        "solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp": "5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp",
+    }, "sanity: both networks must resolve correctly"
+    assert call_count["n"] == 1, (
+        f"expected exactly one get_db() call regardless of network count, got {call_count['n']}"
+    )
+
+
 def test_extract_x402_payload_parses_valid_and_rejects_malformed():
     """P1b-5: the x402 analogue of extract_mpp_token(). Anything malformed
     returns None (not a raised error) so the caller falls through to issuing
