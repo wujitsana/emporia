@@ -4879,6 +4879,90 @@ async def abandon_session(session_id: str, request: Request, req: dict = None):
     }
 
 
+_SESSION_TERMINAL_STATUSES = {"completed", "abandoned"}
+
+
+@app.delete("/admin/sessions/{session_id}")
+async def delete_session(session_id: str, request: Request, force: bool = False):
+    """P4-5 (ROADMAP.md § Architecture cleanup): operator-only cleanup for a
+    finished session's operational rows. Hard-deletes `participants`,
+    `actions`, `messages`, and the `sessions` row itself — one transaction,
+    so this never leaves a session half-deleted.
+
+    Deliberately does NOT delete `payments` or `settlements` rows — those
+    are the record that real money moved, and deleting them destroys
+    reconciliation. This is a permanent product decision, not an
+    oversight the cascade should eventually "finish": the response reports
+    exactly how many of each were retained. The `settlements.session_id`
+    column is overloaded (session/room/topic escrow all key off it — see
+    SECURITY.md's N4-R1) but the `sess_`/`room_`/`tpc_` id prefixes make a
+    `WHERE session_id = ?` count on this table unambiguous.
+
+    Also does NOT rewrite the audit trail. `_write_audit_line()` appends to
+    a date-keyed `messages_{date}.jsonl`, not a per-session file, so
+    "delete the session's audit files" would mean stripping lines out of an
+    append-only log — destroying the integrity property the audit trail
+    exists for. Instead, this appends one new audit line recording the
+    deletion itself (operator, session_id, per-table counts).
+
+    Refuses to delete a non-terminal session (`status` not in
+    `completed`/`abandoned`) unless `?force=true` is passed, so a wedged
+    session can still be cleaned up deliberately without silently deleting
+    an in-progress one by mistake.
+    """
+    caller = _dashboard_agent_id(request)
+    _require_operator(caller, "Delete session")
+    s = load_session(session_id)
+    if not s:
+        raise HTTPException(404, "Session not found")
+    if s["status"] not in _SESSION_TERMINAL_STATUSES and not force:
+        raise HTTPException(
+            409,
+            f"Session status is {s['status']!r}, not terminal "
+            f"({sorted(_SESSION_TERMINAL_STATUSES)}) — pass ?force=true to delete anyway",
+        )
+
+    with DB_LOCK, get_db() as conn:
+        deleted = {
+            "participants": conn.execute(
+                "DELETE FROM participants WHERE session_id = ?", (session_id,)
+            ).rowcount,
+            "actions": conn.execute(
+                "DELETE FROM actions WHERE session_id = ?", (session_id,)
+            ).rowcount,
+            "messages": conn.execute(
+                "DELETE FROM messages WHERE session_id = ?", (session_id,)
+            ).rowcount,
+            "sessions": conn.execute(
+                "DELETE FROM sessions WHERE session_id = ?", (session_id,)
+            ).rowcount,
+        }
+        retained = {
+            "payments": conn.execute(
+                "SELECT COUNT(*) FROM payments WHERE session_id = ?", (session_id,)
+            ).fetchone()[0],
+            "settlements": conn.execute(
+                "SELECT COUNT(*) FROM settlements WHERE session_id = ?", (session_id,)
+            ).fetchone()[0],
+        }
+
+    _write_audit_line({
+        "timestamp": datetime.now(UTC).isoformat(),
+        "type": "admin_session_deleted",
+        "operator": caller,
+        "session_id": session_id,
+        "deleted": deleted,
+        "retained": retained,
+    })
+
+    return {
+        "session_id": session_id,
+        "deleted": deleted,
+        "retained": retained,
+        "message": "Payments and settlements are never deleted — see this endpoint's docstring.",
+    }
+
+
 # ============================================================================
 # Messaging / Negotiation
 # ============================================================================

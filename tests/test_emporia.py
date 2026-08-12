@@ -2840,6 +2840,8 @@ def test_every_route_has_a_reviewed_auth_posture():
         ("POST", "/sessions/{session_id}/confirm-delivery"),
         ("POST", "/sessions/{session_id}/dispute-delivery"),
         ("POST", "/sessions/{session_id}/abandon"),
+        # P4-5: operator-only, same _require_operator() gate as federation sync above.
+        ("DELETE", "/admin/sessions/{session_id}"),
         ("POST", "/messages"),
         ("GET", "/messages"),
         ("WS", "/ws/agent/{agent_id}"),
@@ -3125,6 +3127,209 @@ def test_abandon_session_requires_participant(client):
     )
     assert r.status_code == 200
     assert r.json()["status"] == "abandoned"
+
+
+def _p4_5_query_counts(session_id: str) -> dict[str, int]:
+    """Row counts across every table DELETE /admin/sessions/{id} touches or
+    reports on, for P4-5's cascade-delete tests."""
+    import sqlite3
+
+    from emporia.relay_server import DATABASE_PATH
+    conn = sqlite3.connect(DATABASE_PATH)
+    try:
+        return {
+            table: conn.execute(
+                f"SELECT COUNT(*) FROM {table} WHERE session_id = ?", (session_id,)
+            ).fetchone()[0]
+            for table in ("participants", "actions", "messages", "sessions", "payments", "settlements")
+        }
+    finally:
+        conn.close()
+
+
+def test_delete_session_requires_operator(client):
+    """P4-5: DELETE /admin/sessions/{id} is operator-only, same
+    _require_operator() gate as federation sync / unfiltered payment
+    records / global settlements."""
+    _register(client, "p4_5_auth_creator")
+    r = client.post("/sessions", json={
+        "module_type": "emporia:service:v1", "creator_agent_id": "p4_5_auth_creator",
+        "config": {"description": "d"}, "payment_rules": {"mode": "free"},
+    },
+        headers={"x-emporia-agent-id": "p4_5_auth_creator"})
+    session_id = r.json()["session_id"]
+
+    assert client.delete(f"/admin/sessions/{session_id}").status_code == 403
+    r = client.delete(
+        f"/admin/sessions/{session_id}", headers={"x-emporia-agent-id": "p4_5_auth_creator"},
+    )
+    assert r.status_code == 403, "the session's own creator is not the relay operator"
+
+
+def test_delete_session_unknown_returns_404(client):
+    _register(client, "p4_5_404_op")
+    with patch.dict(os.environ, {"EMPORIA_AGENT_ID": "p4_5_404_op"}):
+        r = client.delete(
+            "/admin/sessions/sess_doesnotexist", headers={"x-emporia-agent-id": "p4_5_404_op"},
+        )
+    assert r.status_code == 404
+
+
+def test_delete_session_non_terminal_conflicts_and_deletes_nothing(client):
+    """P4-5: a 'waiting' session (never joined, never abandoned/completed) is
+    refused without ?force=true — and, critically, nothing is deleted on
+    that refusal. A 409 that already ran half the cascade would be the
+    real failure mode here, not the status code."""
+    _register(client, "p4_5_nonterm_creator")
+    _register(client, "p4_5_nonterm_op")
+    r = client.post("/sessions", json={
+        "module_type": "emporia:service:v1", "creator_agent_id": "p4_5_nonterm_creator",
+        "config": {"description": "d"}, "payment_rules": {"mode": "free"},
+    },
+        headers={"x-emporia-agent-id": "p4_5_nonterm_creator"})
+    session_id = r.json()["session_id"]
+    assert r.json()  # sanity
+    from emporia.relay_server import load_session
+    assert load_session(session_id)["status"] == "waiting"
+
+    before = _p4_5_query_counts(session_id)
+    assert before["sessions"] == 1
+    assert before["participants"] == 1, "creator is auto-joined"
+
+    with patch.dict(os.environ, {"EMPORIA_AGENT_ID": "p4_5_nonterm_op"}):
+        r = client.delete(
+            f"/admin/sessions/{session_id}", headers={"x-emporia-agent-id": "p4_5_nonterm_op"},
+        )
+    assert r.status_code == 409, r.text
+    assert "waiting" in r.text
+
+    after = _p4_5_query_counts(session_id)
+    assert after == before, "a 409 must not delete any rows"
+
+
+def test_delete_session_force_deletes_non_terminal(client):
+    """P4-5: ?force=true overrides the terminal-status check, so an operator
+    can still clean up a wedged session deliberately."""
+    _register(client, "p4_5_force_creator")
+    _register(client, "p4_5_force_op")
+    r = client.post("/sessions", json={
+        "module_type": "emporia:service:v1", "creator_agent_id": "p4_5_force_creator",
+        "config": {"description": "d"}, "payment_rules": {"mode": "free"},
+    },
+        headers={"x-emporia-agent-id": "p4_5_force_creator"})
+    session_id = r.json()["session_id"]
+
+    with patch.dict(os.environ, {"EMPORIA_AGENT_ID": "p4_5_force_op"}):
+        r = client.delete(
+            f"/admin/sessions/{session_id}?force=true",
+            headers={"x-emporia-agent-id": "p4_5_force_op"},
+        )
+    assert r.status_code == 200, r.text
+    assert r.json()["deleted"]["sessions"] == 1
+
+    after = _p4_5_query_counts(session_id)
+    assert after["sessions"] == 0
+    assert after["participants"] == 0
+
+
+def test_delete_session_operator_deletes_terminal_session_retains_money_rows(client):
+    """P4-5: the core cascade-delete contract. A completed session's
+    participants/actions/messages/sessions rows are hard-deleted, but its
+    payments and settlements rows — the record that real money moved — are
+    retained and reported, never deleted. Also confirms one audit line is
+    appended recording the deletion."""
+    from emporia.relay_server import (
+        DATABASE_PATH, load_session, record_action, record_payment, record_settlement,
+    )
+
+    _register(client, "p4_5_full_creator")
+    _register(client, "p4_5_full_seller")
+    _register(client, "p4_5_full_op")
+
+    r = client.post("/sessions", json={
+        "module_type": "emporia:service:v1", "creator_agent_id": "p4_5_full_creator",
+        "config": {"description": "d"}, "payment_rules": {"mode": "free"},
+    },
+        headers={"x-emporia-agent-id": "p4_5_full_creator"})
+    session_id = r.json()["session_id"]
+    client.post(
+        f"/sessions/{session_id}/join", json={"agent_id": "p4_5_full_seller"},
+        headers={"x-emporia-agent-id": "p4_5_full_seller"},
+    )
+    # Written directly rather than through POST .../action — that endpoint's
+    # signature/turn-order requirements are a different test's job; this test
+    # only needs one real actions row to prove the cascade deletes it.
+    record_action(session_id, "p4_5_full_creator", "note", {})
+
+    record_payment(
+        payment_intent_id=f"pi_{session_id}", agent_id="p4_5_full_creator",
+        amount_cents=100, payment_type="stake", session_id=session_id, rail="stripe",
+    )
+    record_settlement({
+        "session_id": session_id, "winner_id": "p4_5_full_seller", "outcome_type": "won",
+        "status": "settled", "total_stake_cents": 100, "platform_fee_cents": 0,
+        "winner_payout_cents": 100, "platform_fee_bps": 0,
+        "payment_intent_ids": [f"pi_{session_id}"], "transfer_id": None,
+        "transfer_status": "no_stripe_account",
+    })
+
+    import sqlite3
+    from datetime import UTC, datetime
+    conn = sqlite3.connect(DATABASE_PATH)
+    conn.execute(
+        "UPDATE sessions SET status='completed', updated_at=? WHERE session_id=?",
+        (datetime.now(UTC).isoformat(), session_id),
+    )
+    conn.commit()
+    conn.close()
+    assert load_session(session_id)["status"] == "completed"
+
+    before = _p4_5_query_counts(session_id)
+    assert before["participants"] == 2
+    assert before["actions"] == 1
+    assert before["payments"] == 1
+    assert before["settlements"] == 1
+
+    import glob
+    from emporia.relay_server import LOG_DIR
+    audit_files_before = set(glob.glob(str(LOG_DIR / "messages_*.jsonl")))
+    audit_lines_before = sum(
+        1 for f in audit_files_before for _ in open(f, encoding="utf-8")
+    )
+
+    with patch.dict(os.environ, {"EMPORIA_AGENT_ID": "p4_5_full_op"}):
+        r = client.delete(
+            f"/admin/sessions/{session_id}", headers={"x-emporia-agent-id": "p4_5_full_op"},
+        )
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert body["deleted"]["sessions"] == 1
+    assert body["deleted"]["participants"] == 2
+    assert body["deleted"]["actions"] == 1
+    assert body["retained"] == {"payments": 1, "settlements": 1}
+
+    after = _p4_5_query_counts(session_id)
+    assert after["participants"] == 0
+    assert after["actions"] == 0
+    assert after["sessions"] == 0
+    assert after["payments"] == 1, "payments must never be deleted"
+    assert after["settlements"] == 1, "settlements must never be deleted"
+    assert load_session(session_id) is None
+
+    audit_files_after = set(glob.glob(str(LOG_DIR / "messages_*.jsonl")))
+    audit_lines_after = sum(
+        1 for f in audit_files_after for _ in open(f, encoding="utf-8")
+    )
+    assert audit_lines_after == audit_lines_before + 1, (
+        "exactly one new audit line must be appended for the deletion — "
+        "no existing audit lines rewritten or removed"
+    )
+    last_line = json.loads(
+        open(sorted(audit_files_after)[-1], encoding="utf-8").readlines()[-1]
+    )
+    assert last_line["type"] == "admin_session_deleted"
+    assert last_line["session_id"] == session_id
+    assert last_line["operator"] == "p4_5_full_op"
 
 
 # ============================================================================
