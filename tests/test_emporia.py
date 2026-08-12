@@ -3407,6 +3407,51 @@ def test_delete_session_operator_deletes_terminal_session_retains_money_rows(cli
     assert last_line["operator"] == "p4_5_full_op"
 
 
+def test_delete_session_clears_linked_room_without_deleting_it(client):
+    """P5-2 (D2): create_room() validates a linked session exists (404 if
+    not), so DELETE /admin/sessions/{id} breaking that invariant is a real
+    defect, not a hypothetical — rooms_db.get_room_for_session() is a live
+    call (_session_visibility()). Clears the link rather than deleting the
+    room: a room has its own members/entitlements a session cleanup should
+    not destroy as a side effect. Must fail pre-fix with the room's
+    linked_session_id still pointing at the deleted session."""
+    from emporia.relay_server import load_session
+
+    _register(client, "p5_2_room_owner")
+    _register(client, "p5_2_room_op")
+
+    r = client.post("/sessions", json={
+        "module_type": "emporia:service:v1", "creator_agent_id": "p5_2_room_owner",
+        "config": {"description": "d"}, "payment_rules": {"mode": "free"},
+    },
+        headers={"x-emporia-agent-id": "p5_2_room_owner"})
+    session_id = r.json()["session_id"]
+
+    r = client.post("/rooms", json={
+        "name": "P5-2 Linked Room", "creator_id": "p5_2_room_owner",
+        "room_type": "public", "gate_type": "open",
+        "linked_session_id": session_id,
+    },
+        headers={"x-emporia-agent-id": "p5_2_room_owner"})
+    assert r.status_code == 200, r.text
+    room_id = r.json()["room_id"]
+
+    with patch.dict(os.environ, {"EMPORIA_AGENT_ID": "p5_2_room_op"}):
+        r = client.delete(
+            f"/admin/sessions/{session_id}?force=true",
+            headers={"x-emporia-agent-id": "p5_2_room_op"},
+        )
+    assert r.status_code == 200, r.text
+    assert r.json()["unlinked"] == {"rooms": 1}
+    assert load_session(session_id) is None, "sanity: session itself must still be deleted"
+
+    r = client.get(f"/rooms/{room_id}")
+    assert r.status_code == 200, "the room itself must NOT be deleted"
+    assert r.json()["linked_session_id"] is None, (
+        "the link to the now-deleted session must be cleared, not left dangling"
+    )
+
+
 # ============================================================================
 # Proof-of-Reasoning gate
 # ============================================================================

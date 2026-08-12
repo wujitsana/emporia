@@ -4940,6 +4940,19 @@ async def delete_session(session_id: str, request: Request, force: bool = False)
     `completed`/`abandoned`) unless `?force=true` is passed, so a wedged
     session can still be cleaned up deliberately without silently deleting
     an in-progress one by mistake.
+
+    P5-2: also clears `rooms.linked_session_id` for any room linked to this
+    session — room creation *validates* the linked session exists
+    (`create_room()`, 404 if not), so deleting the session without doing
+    this leaves that invariant broken and `rooms_db.get_room_for_session()`
+    (a live call, `_session_visibility()`) pointing at nothing. Clears the
+    link rather than deleting the room: a room is its own resource with its
+    own members and paid entitlements, and deleting it as a side effect of
+    a session cleanup would destroy far more than the caller asked for.
+    `rooms` lives in the same physical `EMPORIA_DB_PATH` file as `sessions`
+    (rooms.py's own `ROOM_DB_PATH` resolves the same env var) — updated on
+    this same connection so it's part of the one transaction, not a second
+    connection to reason about ordering for.
     """
     caller = _dashboard_agent_id(request)
     _require_operator(caller, "Delete session")
@@ -4954,6 +4967,12 @@ async def delete_session(session_id: str, request: Request, force: bool = False)
         )
 
     with DB_LOCK, get_db() as conn:
+        unlinked = {
+            "rooms": conn.execute(
+                "UPDATE rooms SET linked_session_id = NULL WHERE linked_session_id = ?",
+                (session_id,),
+            ).rowcount,
+        }
         deleted = {
             "participants": conn.execute(
                 "DELETE FROM participants WHERE session_id = ?", (session_id,)
@@ -4984,12 +5003,14 @@ async def delete_session(session_id: str, request: Request, force: bool = False)
         "session_id": session_id,
         "deleted": deleted,
         "retained": retained,
+        "unlinked": unlinked,
     })
 
     return {
         "session_id": session_id,
         "deleted": deleted,
         "retained": retained,
+        "unlinked": unlinked,
         "message": "Payments and settlements are never deleted — see this endpoint's docstring.",
     }
 
