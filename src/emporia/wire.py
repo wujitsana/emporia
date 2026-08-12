@@ -27,3 +27,27 @@ def dashboard_session_body(agent_id: str, challenge_id: str, signature_hex: str)
     for their own outbound calls (mcp_server.py's
     `_dashboard_bearer_headers()`, agent_sdk.py's `_bearer_token_value()`)."""
     return {"agent_id": agent_id, "challenge_id": challenge_id, "signature_hex": signature_hex}
+
+
+def registration_body(
+    agent_id: str,
+    public_key_hex: str,
+    display_name: str,
+    challenge_id: str,
+    challenge_signature: str,
+    *,
+    nous_jwt: str = "",
+) -> dict[str, Any]:
+    """Body for `POST /agents/register` — the second half of the
+    challenge/sign/register handshake both clients use
+    (mcp_server.py's `register_agent()`, agent_sdk.py's `register()`)."""
+    body: dict[str, Any] = {
+        "agent_id": agent_id,
+        "public_key_hex": public_key_hex,
+        "display_name": display_name,
+        "challenge_id": challenge_id,
+        "challenge_signature": challenge_signature,
+    }
+    if nous_jwt:
+        body["identity_claims"] = [{"provider": "nous", "token": nous_jwt}]
+    return body

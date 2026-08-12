@@ -286,16 +286,12 @@ def register_agent(
     except Exception as e:
         return {"error": f"challenge failed: {e}", "success": False}
 
-    payload: dict = {
-        "agent_id": agent_id,
-        "display_name": display_name or agent_id,
-        "public_key_hex": pub_hex,
-        "challenge_id": ch["challenge_id"],
-        "challenge_signature": sig_hex,
-    }
+    from emporia.wire import registration_body
     jwt = nous_jwt or os.getenv("EMPORIA_NOUS_JWT", "") or NOUS_JWT
-    if jwt:
-        payload["identity_claims"] = [{"provider": "nous", "token": jwt}]
+    payload = registration_body(
+        agent_id, pub_hex, display_name or agent_id,
+        ch["challenge_id"], sig_hex, nous_jwt=jwt,
+    )
     try:
         r = httpx.post(f"{RELAY_URL}/agents/register", json=payload, timeout=5)
         data = r.json()

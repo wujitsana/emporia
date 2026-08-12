@@ -10091,6 +10091,68 @@ def test_agent_sdk_bearer_token_value_uses_shared_wire_contract():
     spy.assert_called_once_with("sdk_wire_agent", "ch_test", "deadbeef")
 
 
+def test_mcp_register_agent_uses_shared_wire_contract(prod_client):
+    """P6-3: mcp_server.register_agent() and agent_sdk.register() (see the
+    sibling test below) used to build the POST /agents/register body
+    inline, independently, in both files. Both now call
+    wire.registration_body() — same single-sourcing proof pattern as
+    item 2's dashboard-session tests."""
+    from emporia import mcp_server, wire
+    from emporia.identity import get_public_key_hex
+
+    adapter = _ASGIHttpxAdapter(prod_client, mcp_server.RELAY_URL)
+    pub_hex = get_public_key_hex("p6_3_mcp_register_agent")
+    # This environment's profile .env sets a real NOUS_JWT (mirrors the
+    # EMPORIA_WRITE_REQUIRES_NOUS leakage noted elsewhere) — isolate this
+    # test from it so it neither depends on nor touches a real secret.
+    with patch.object(mcp_server, "httpx", adapter), \
+         patch.object(mcp_server, "NOUS_JWT", ""), \
+         patch.dict(os.environ, {"EMPORIA_NOUS_JWT": ""}), \
+         patch.object(wire, "registration_body", wraps=wire.registration_body) as spy:
+        result = mcp_server.register_agent("p6_3_mcp_register_agent", display_name="P6-3 MCP Agent")
+
+    assert result.get("success") is not False, result
+    spy.assert_called_once()
+    args = spy.call_args.args
+    assert args[0] == "p6_3_mcp_register_agent"
+    assert args[1] == pub_hex
+    assert args[2] == "P6-3 MCP Agent"
+    assert isinstance(args[3], str) and args[3], "challenge_id must be a real, non-empty value"
+    assert len(args[4]) == 128, "challenge_signature must be a real 64-byte hex Ed25519 signature"
+    assert spy.call_args.kwargs == {"nous_jwt": ""}
+
+
+def test_agent_sdk_register_uses_shared_wire_contract():
+    """P6-3: agent_sdk.EmporiaAgent.register()'s half of the single-sourcing
+    proof — see the mcp_server test above. Unit-level, same posture as
+    test_agent_sdk_bearer_token_value_uses_shared_wire_contract."""
+    import asyncio
+
+    from emporia import wire
+    from emporia.agent_sdk import EmporiaAgent
+
+    agent = EmporiaAgent(
+        relay_url="http://fake.invalid", agent_id="sdk_register_agent",
+        public_key_hex="cd" * 32, profile_id="sdk_register_agent",
+    )
+    agent._http = MagicMock()
+    ch_resp = MagicMock()
+    ch_resp.json.return_value = {"nonce": "test-nonce", "challenge_id": "ch_reg_test"}
+    register_resp = MagicMock()
+    register_resp.json.return_value = {"status": "registered", "agent_id": "sdk_register_agent"}
+    agent._http.post = AsyncMock(side_effect=[ch_resp, register_resp])
+
+    with patch("emporia.identity.sign_raw", return_value="feedface"), \
+         patch.object(wire, "registration_body", wraps=wire.registration_body) as spy:
+        result = asyncio.run(agent.register(display_name="SDK Register Agent"))
+
+    assert result["status"] == "registered"
+    spy.assert_called_once_with(
+        "sdk_register_agent", "cd" * 32, "SDK Register Agent",
+        "ch_reg_test", "feedface", nous_jwt="",
+    )
+
+
 def test_mcp_bearer_request_recovers_from_stale_cached_token(prod_client):
     """Regression for N2-1: _dashboard_bearer_headers() only ever refreshed on expiry, with
     no path back from a token the server actually rejects — before the JWT secret was

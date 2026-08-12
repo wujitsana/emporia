@@ -180,21 +180,17 @@ class EmporiaAgent:
 
     async def register(self, display_name: str = "", nous_jwt: str = "") -> dict[str, Any]:
         from emporia.identity import sign_raw
+        from emporia.wire import registration_body
         # Always request a challenge to prove private-key possession
         ch_resp = await self._client().post(f"{self.relay_url}/agents/challenge")
         ch_resp.raise_for_status()
         ch = ch_resp.json()
         sig_hex = sign_raw(ch["nonce"].encode(), self.profile_id)
 
-        body: dict = {
-            "agent_id": self.agent_id,
-            "public_key_hex": self.public_key_hex,
-            "display_name": display_name or self.agent_id,
-            "challenge_id": ch["challenge_id"],
-            "challenge_signature": sig_hex,
-        }
-        if nous_jwt:
-            body["identity_claims"] = [{"provider": "nous", "token": nous_jwt}]
+        body = registration_body(
+            self.agent_id, self.public_key_hex, display_name or self.agent_id,
+            ch["challenge_id"], sig_hex, nous_jwt=nous_jwt,
+        )
         resp = await self._client().post(f"{self.relay_url}/agents/register", json=body)
         resp.raise_for_status()
         return resp.json()
