@@ -10985,6 +10985,68 @@ def test_entitlements_query_is_single_sourced_between_conn_paths(tmp_path):
         conn.close()
 
 
+@pytest.mark.parametrize("state", ["no_grant", "active", "expired", "revoked"])
+def test_entitlements_conn_and_db_path_paths_agree_across_all_states(tmp_path, state):
+    """P4 item 4: P1brr's single-sourcing test
+    (test_entitlements_query_is_single_sourced_between_conn_paths, above)
+    pinned only the "active" state — the deviation the P1brr plan called
+    for (four states x two connection paths) got delivered as one
+    stronger structural pin instead, which is a real proof but covers one
+    of the four states. This closes that gap directly: for each of
+    no_grant / active / expired / revoked, has_access()/has_any_grant()
+    must return the identical answer whether called with conn= or
+    db_path=."""
+    import sqlite3
+    from datetime import UTC, datetime, timedelta
+
+    from emporia import entitlements
+
+    db_path = tmp_path / f"ent_{state}.sqlite3"
+    setup_conn = sqlite3.connect(db_path)
+    entitlements.init_entitlements_schema(setup_conn)
+    setup_conn.commit()
+    setup_conn.close()
+
+    resource_id = f"r_{state}"
+    if state == "no_grant":
+        pass
+    elif state == "active":
+        entitlements.grant("room", resource_id, "agent1", "pi_1", rail="stripe", db_path=db_path)
+    elif state == "expired":
+        entitlements.grant(
+            "room", resource_id, "agent1", "pi_1", duration_days=1,
+            rail="stripe", db_path=db_path,
+        )
+        backdate_conn = sqlite3.connect(db_path)
+        backdate_conn.execute(
+            "UPDATE access_entitlements SET expires_at = ? "
+            "WHERE resource_type='room' AND resource_id=? AND agent_id='agent1'",
+            ((datetime.now(UTC) - timedelta(hours=1)).isoformat(), resource_id),
+        )
+        backdate_conn.commit()
+        backdate_conn.close()
+    elif state == "revoked":
+        entitlements.grant("room", resource_id, "agent1", "pi_1", rail="stripe", db_path=db_path)
+        entitlements.revoke("room", resource_id, "agent1", reason="kicked", db_path=db_path)
+
+    conn = sqlite3.connect(db_path)
+    conn.row_factory = sqlite3.Row
+    try:
+        access_by_path = entitlements.has_access("room", resource_id, "agent1", db_path=db_path)
+        access_by_conn = entitlements.has_access("room", resource_id, "agent1", conn=conn)
+        grant_by_path = entitlements.has_any_grant("room", resource_id, "agent1", db_path=db_path)
+        grant_by_conn = entitlements.has_any_grant("room", resource_id, "agent1", conn=conn)
+    finally:
+        conn.close()
+
+    assert access_by_path == access_by_conn, (
+        f"has_access() disagreed between conn= and db_path= paths in state={state!r}"
+    )
+    assert grant_by_path == grant_by_conn, (
+        f"has_any_grant() disagreed between conn= and db_path= paths in state={state!r}"
+    )
+
+
 def test_x402_offer_skips_wallet_lookup_when_disabled(client):
     """P4 item 1 (B1): _x402_offer() (relay_server.py) evaluated
     _x402_pay_to_by_network() as an ARGUMENT to build_x402_challenge() —
