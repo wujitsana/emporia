@@ -4966,26 +4966,36 @@ async def delete_session(session_id: str, request: Request, force: bool = False)
             f"({sorted(_SESSION_TERMINAL_STATUSES)}) — pass ?force=true to delete anyway",
         )
 
+    # P5-3: the audit line used to be written AFTER this transaction
+    # committed — if _write_audit_line() raised (missing LOG_DIR, full
+    # disk), the rows were already gone, the caller got a 500, and there
+    # was no audit record of a deletion that actually happened, for an
+    # endpoint whose whole story is "we always report/record what we
+    # touched". Counts are now computed by SELECT COUNT(*) first (exact
+    # counts of what the DELETEs below will affect, computed under the same
+    # DB_LOCK/transaction so nothing else can race in between), the audit
+    # line is written from those counts BEFORE any row is deleted, and only
+    # then do the deletes run — so a failed audit write aborts the whole
+    # request with nothing touched, rather than a deletion nothing recorded.
     with DB_LOCK, get_db() as conn:
         unlinked = {
             "rooms": conn.execute(
-                "UPDATE rooms SET linked_session_id = NULL WHERE linked_session_id = ?",
-                (session_id,),
-            ).rowcount,
+                "SELECT COUNT(*) FROM rooms WHERE linked_session_id = ?", (session_id,)
+            ).fetchone()[0],
         }
         deleted = {
             "participants": conn.execute(
-                "DELETE FROM participants WHERE session_id = ?", (session_id,)
-            ).rowcount,
+                "SELECT COUNT(*) FROM participants WHERE session_id = ?", (session_id,)
+            ).fetchone()[0],
             "actions": conn.execute(
-                "DELETE FROM actions WHERE session_id = ?", (session_id,)
-            ).rowcount,
+                "SELECT COUNT(*) FROM actions WHERE session_id = ?", (session_id,)
+            ).fetchone()[0],
             "messages": conn.execute(
-                "DELETE FROM messages WHERE session_id = ?", (session_id,)
-            ).rowcount,
+                "SELECT COUNT(*) FROM messages WHERE session_id = ?", (session_id,)
+            ).fetchone()[0],
             "sessions": conn.execute(
-                "DELETE FROM sessions WHERE session_id = ?", (session_id,)
-            ).rowcount,
+                "SELECT COUNT(*) FROM sessions WHERE session_id = ?", (session_id,)
+            ).fetchone()[0],
         }
         retained = {
             "payments": conn.execute(
@@ -4996,15 +5006,24 @@ async def delete_session(session_id: str, request: Request, force: bool = False)
             ).fetchone()[0],
         }
 
-    _write_audit_line({
-        "timestamp": datetime.now(UTC).isoformat(),
-        "type": "admin_session_deleted",
-        "operator": caller,
-        "session_id": session_id,
-        "deleted": deleted,
-        "retained": retained,
-        "unlinked": unlinked,
-    })
+        _write_audit_line({
+            "timestamp": datetime.now(UTC).isoformat(),
+            "type": "admin_session_deleted",
+            "operator": caller,
+            "session_id": session_id,
+            "deleted": deleted,
+            "retained": retained,
+            "unlinked": unlinked,
+        })
+
+        conn.execute(
+            "UPDATE rooms SET linked_session_id = NULL WHERE linked_session_id = ?",
+            (session_id,),
+        )
+        conn.execute("DELETE FROM participants WHERE session_id = ?", (session_id,))
+        conn.execute("DELETE FROM actions WHERE session_id = ?", (session_id,))
+        conn.execute("DELETE FROM messages WHERE session_id = ?", (session_id,))
+        conn.execute("DELETE FROM sessions WHERE session_id = ?", (session_id,))
 
     return {
         "session_id": session_id,

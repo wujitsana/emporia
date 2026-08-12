@@ -3452,6 +3452,39 @@ def test_delete_session_clears_linked_room_without_deleting_it(client):
     )
 
 
+def test_delete_session_deletes_nothing_if_audit_write_fails(client):
+    """P5-3 (D3): the audit line used to be written AFTER the deleting
+    transaction committed — a failed audit write (missing LOG_DIR, full
+    disk) meant the rows were already gone with no record of the deletion,
+    for an endpoint whose whole story is "we record what we touched". The
+    audit line is now written INSIDE the transaction, before any row is
+    deleted, so a failed write aborts the whole request. Must fail pre-fix
+    with the session's rows gone despite the 500."""
+    from emporia import relay_server
+    from emporia.relay_server import load_session
+
+    _register(client, "p5_3_auditfail_creator")
+    _register(client, "p5_3_auditfail_op")
+
+    r = client.post("/sessions", json={
+        "module_type": "emporia:service:v1", "creator_agent_id": "p5_3_auditfail_creator",
+        "config": {"description": "d"}, "payment_rules": {"mode": "free"},
+    },
+        headers={"x-emporia-agent-id": "p5_3_auditfail_creator"})
+    session_id = r.json()["session_id"]
+
+    with patch.dict(os.environ, {"EMPORIA_AGENT_ID": "p5_3_auditfail_op"}), \
+         patch.object(relay_server, "_write_audit_line", side_effect=OSError("disk full")):
+        with pytest.raises(OSError, match="disk full"):
+            client.delete(
+                f"/admin/sessions/{session_id}?force=true",
+                headers={"x-emporia-agent-id": "p5_3_auditfail_op"},
+            )
+    assert load_session(session_id) is not None, (
+        "a failed audit write must leave the session (and its rows) untouched"
+    )
+
+
 # ============================================================================
 # Proof-of-Reasoning gate
 # ============================================================================
