@@ -10982,6 +10982,37 @@ def test_x402_offer_skips_wallet_lookup_when_disabled(client):
     )
 
 
+def test_get_x402_pay_to_fails_closed_on_corrupted_wallet_blob(client):
+    """P4 item 2 (B2): get_x402_pay_to() used to wrap the WHOLE lookup,
+    including the eventual .get(network_family) call, in try/except ->
+    None. P1brr-3 rewrote it as
+    self.get_x402_pay_to_all(agent_id).get(network_family), and
+    get_x402_pay_to_all()'s own try only covers the read + json.loads —
+    the .get() now runs unguarded. A stored blob that's valid JSON but
+    not an object (DB corruption or a manual edit; set_x402_pay_to()
+    itself never writes one) used to return None; post-P1brr-3 it raised
+    AttributeError instead, silently narrowing the "fails closed"
+    guarantee both functions' docstrings still claim. Must fail pre-fix
+    with AttributeError, not just a wrong return value."""
+    import sqlite3
+
+    from emporia.relay_server import AGENT_REGISTRY, DATABASE_PATH
+
+    owner = "p4_2_corrupt_owner"
+    _register(client, owner)
+
+    conn = sqlite3.connect(DATABASE_PATH)
+    conn.execute(
+        "UPDATE authorized_agents SET x402_pay_to_json = ? WHERE agent_id = ?",
+        ("[\"not\", \"a\", \"dict\"]", owner),
+    )
+    conn.commit()
+    conn.close()
+
+    assert AGENT_REGISTRY.get_x402_pay_to(owner, "evm") is None
+    assert AGENT_REGISTRY.get_x402_pay_to_all(owner) == {}
+
+
 def test_x402_pay_to_by_network_excludes_unconfigured_or_walletless_networks(client):
     """P1b-4: a network the creator has no wallet for, or one not in
     EMPORIA_X402_NETWORKS at all, is silently excluded rather than raising —

@@ -1879,7 +1879,15 @@ class AgentRegistry:
         same single-row JSON blob; there are only ever two families (`evm`,
         `svm`) inside it, so one read always suffices. Same
         swallow-and-return-empty posture as `get_x402_pay_to()`: a lookup
-        failure means "offer nothing," fails closed."""
+        failure means "offer nothing," fails closed.
+
+        P4-2: also fails closed on a stored blob that is valid JSON but not
+        an object (`set_x402_pay_to()` never writes one, but DB corruption
+        or a manual edit could) — `get_x402_pay_to()` used to guard its own
+        `.get(network_family)` call inside this same try/except, and lost
+        that guarantee when it was rewritten in terms of this function
+        (P1brr-3), since only the read and `json.loads` stayed inside the
+        try here. Restored at the source so both callers keep it."""
         try:
             with DB_LOCK, get_db() as conn:
                 row = conn.execute(
@@ -1888,7 +1896,8 @@ class AgentRegistry:
                 ).fetchone()
             if not row:
                 return {}
-            return json.loads(row["x402_pay_to_json"] or "{}")
+            data = json.loads(row["x402_pay_to_json"] or "{}")
+            return data if isinstance(data, dict) else {}
         except Exception:
             return {}
 
