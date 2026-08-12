@@ -842,7 +842,7 @@ to the principle it derives from, since the next rail this codebase adds will ne
 ## Fixed post-hackathon (P1brr pass — the P1br self-review)
 
 The twelfth consecutive pass to find genuine defects in the immediately preceding pass's own shipped
-work (…→P3→P3r→P1b→P1br→**P1brr**). Four commits, all landed on `post-hackathon`. This pass
+work (…→P3→P3r→P1b→P1br→**P1brr**). Five commits, all landed on `post-hackathon`. This pass
 **discharges the wider P1b sweep P1br's own coverage caveat recorded as owed** — it went back over
 P1b's x402 code P1br never reached, and over P1br's own four commits.
 
@@ -884,6 +884,44 @@ caller that grants and then re-checks inside one long-lived connection could see
 no call site does this today (both `_agora_is_member()` call sites are pure reads on a
 request-scoped connection); noted as a one-line constraint in `has_access()`'s docstring rather than
 built around.
+
+## Fixed post-hackathon (P4 pass — the P1brr self-review, plus the cascade-delete endpoint)
+
+The thirteenth consecutive pass to find genuine defects in the immediately preceding pass's own
+shipped work (…→P1b→P1br→P1brr→**P4**). Six commits, all landed on `post-hackathon`.
+
+**Naming change, recorded once so the lineage stays traceable:** the `r`-suffix review chain
+(P1b → P1br → P1brr) ends here — findings had shrunk to one Medium and three Low across P1brr's own
+five commits, the smallest yield of the whole chain, which is the signal that x402-specific review
+has reached diminishing returns. This pass closes the chain and, in the same pass, takes the first
+forward item off `ROADMAP.md` (the cascade-delete admin endpoint). Future review passes are named
+sequentially (P5, P6, …) rather than growing another suffix.
+
+| Finding | Severity | Fix |
+|---|---|---|
+| **P1brr-3's optimization pessimized the shipped-default configuration.** `_x402_pay_to_by_network(creator_id)` was evaluated as an *argument* to `build_x402_challenge()`, so it ran before that function's own `_x402_enabled()` guard — on a disabled relay (the default), every 402 challenge did one unconditional wallet-table read that used to be zero. P1brr-3 fixed the N-configured-networks case and made the zero-network default case worse. | Medium (perf regression on the default config; our defect) | `_x402_offer()` now checks `_x402_enabled()` before calling `_x402_pay_to_by_network()` at all; `build_x402_challenge()` keeps its own check too, as defense in depth. Verified by tracing `get_db()`'s call stack directly (not guessing): the one remaining call on a disabled relay is `_require_registered()`, unrelated to x402 — confirmed 2 pre-fix, 1 post-fix. |
+| **`get_x402_pay_to()` lost its fail-closed guarantee.** It used to wrap the whole lookup, including the eventual `.get(network_family)` call, in try/except → `None`. P1brr-3 rewrote it in terms of `get_x402_pay_to_all()`, whose own `try` covers only the read + `json.loads` — the `.get()` now runs unguarded. A stored blob that's valid JSON but not an object (DB corruption or a manual edit; `set_x402_pay_to()` itself never writes one) used to return `None`; it now raised `AttributeError`, silently narrowing a guarantee both functions' docstrings still claim. | Low (our defect; docstring was false) | `get_x402_pay_to_all()` confirms the parsed blob is a `dict` before returning it, so the guarantee lives in the one guarded function again. Reachable only via DB corruption, but the one production caller is the payment path (`_verify_x402_payment()`). |
+| **`mcp_server.join_session()` discarded the 402 body.** Its two siblings (`join_room`, `subscribe_agora_topic`) both pass the full body through as `detail`; session join returned only `{error, www_authenticate, success}`. Session join is exactly the route where P1brr-2's new `route_unsupported` reason fires (session escrow has no x402 analogue), so the one route where the machine-readable decline reason mattered most was the one whose own MCP client threw it away. | Low | Added `detail` to the 402 return, matching both siblings. Verified end-to-end via the ASGI-adapter pattern: drives a real session-join 402 with a `PAYMENT-SIGNATURE` header through the MCP tool function and confirms `{"rail": "x402", "reason": "route_unsupported"}` actually reaches the caller. |
+| **`SECURITY.md`'s P1brr section said "Four commits"; the pass shipped five.** The same miscount class P1brr-5 was itself written to correct in P1br's section. | Low (doc) | Corrected to five above. |
+
+**Coverage gap closed, not a defect:** P1brr's plan called for pinning `has_access()`/
+`has_any_grant()`'s `conn=` vs `db_path=` agreement across four states (no grant / active / expired /
+revoked). What shipped was a stronger structural pin (patch the shared query constant, confirm both
+paths move together) but only for the "active" state. Added a parametrized test covering all four;
+verified non-vacuous first by confirming each state produces a genuinely distinct
+`has_access()`/`has_any_grant()` combination.
+
+**New: `DELETE /admin/sessions/{session_id}`**, the cascade-delete endpoint `ROADMAP.md`'s
+Architecture cleanup section named as the remaining piece after `_sweep_expired_state()`'s eviction
+fix. Operator-only (`_require_operator()`, the same gate as federation sync / unfiltered payment
+records / global settlements). Hard-deletes `participants`/`actions`/`messages`/`sessions` in one
+transaction; refuses a non-terminal session with 409 unless `?force=true`, and a refusal deletes
+nothing (pinned directly). **Deliberately never deletes `payments` or `settlements`** — the record
+that real money moved — and **never rewrites the audit trail** (`_write_audit_line()` appends to a
+date-keyed log, not a per-session file; stripping lines would break its append-only integrity
+property). Instead reports retained payment/settlement counts and appends one audit line for the
+deletion itself. Both are permanent product decisions stated in the endpoint's own docstring, not
+gaps for a future pass to "finish."
 
 ## Threat model notes (by design, not gaps)
 

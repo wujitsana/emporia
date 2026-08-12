@@ -147,10 +147,17 @@ via `finally` on disconnect. The real gap was that `ws_connections`, `_RATE_WIND
 per-agent rate-limit dict, and dashboard `_PENDING_TOKENS` all left their *key* behind once its
 value emptied out or expired — one permanent entry per IP/session/agent/challenge ever seen, for
 the life of a process meant to run for months. `_sweep_expired_state()` (the relay's first
-background task, run on `EMPORIA_SWEEP_INTERVAL_SECONDS`, default 300s) now evicts all four. No
-cascade-delete path exists for an admin to remove a session and its
-participants/actions/payments/settlements/audit files together — that piece is still open.
-- *Effort:* small — an admin-only cleanup endpoint.
+background task, run on `EMPORIA_SWEEP_INTERVAL_SECONDS`, default 300s) now evicts all four.
+
+**Cascade-delete — done (P4-5).** `DELETE /admin/sessions/{session_id}`, operator-only, hard-deletes
+a terminal session's `participants`/`actions`/`messages`/`sessions` rows in one transaction. This
+entry used to say "participants/actions/payments/settlements/audit files together" — that overstated
+the shipped scope on purpose, not by oversight: `payments`/`settlements` rows (the record that real
+money moved) are never deleted, only counted and reported, and the audit trail is never rewritten
+(`_write_audit_line()` appends to a date-keyed log, not a per-session file — stripping lines would
+break its append-only integrity property). One audit line is appended recording the deletion itself.
+See `SECURITY.md`'s P4 pass for the full reasoning.
+- *Effort:* small — an admin-only cleanup endpoint. (Confirmed accurate in hindsight.)
 
 ## Payments
 
@@ -179,7 +186,10 @@ handful of capture-method/PI-status/Connect sites in `relay_server.py`). The oth
 opaque tokens — stored, compared, redacted, never parsed — which is exactly why P3 could tag the
 reference at one funnel instead of touching 150 call sites. Sequencing: **P3 (done) → P1b (done) →
 P1br (done, the P1b self-review) → P1brr (done, the P1br self-review, and it discharges the wider
-P1b sweep P1br's own coverage caveat left owed — see SECURITY.md) → next unnamed.**
+P1b sweep P1br's own coverage caveat left owed) → P4 (done — closes the x402 review chain and ships
+the cascade-delete endpoint — see SECURITY.md) → next unnamed.** The `r`-suffix review-chain naming
+ends at P1brr; a future review pass is named sequentially (P5, …) rather than growing another suffix
+— review yield had shrunk to P1brr's own one Medium/three Low, the signal to stop.
 
 **P1b shipped: x402 is a real, working second payment rail**, non-custodial, eight commits
 (SECURITY.md's P1b pass has the full findings). `_verify_and_confirm_payment()` gained an x402
