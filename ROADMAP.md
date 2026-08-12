@@ -178,7 +178,8 @@ count (156 in `src/`, confirmed by the audit that opened P3) but overstated the 
 handful of capture-method/PI-status/Connect sites in `relay_server.py`). The other ~120 were always
 opaque tokens — stored, compared, redacted, never parsed — which is exactly why P3 could tag the
 reference at one funnel instead of touching 150 call sites. Sequencing: **P3 (done) → P1b (done) →
-P1br (done, the P1b self-review — see SECURITY.md) → next unnamed.**
+P1br (done, the P1b self-review) → P1brr (done, the P1br self-review, and it discharges the wider
+P1b sweep P1br's own coverage caveat left owed — see SECURITY.md) → next unnamed.**
 
 **P1b shipped: x402 is a real, working second payment rail**, non-custodial, eight commits
 (SECURITY.md's P1b pass has the full findings). `_verify_and_confirm_payment()` gained an x402
@@ -215,6 +216,14 @@ explicitly (the same merged-402 shape, so the agent sees what's actually accepte
 never silently switches rails on the payer's behalf. **This rule applies to any future rail this
 codebase adds, not just x402** — worth remembering as a design constraint before it's tempting to
 "just fall through" again.
+
+**Two things the P1brr self-review noted but deliberately left as-is** (SECURITY.md's P1brr section
+has the full reasoning): a facilitator-side error surfaces as a 402 telling the payer to retry rather
+than a 500 saying the relay's own backend call failed — matches the Stripe branches' existing
+convention, not an x402-specific gap, and changing it is a cross-cutting API-contract decision, not a
+review fix; and `entitlements.has_access(conn=…)`'s reused-connection parameter reads whatever
+transaction snapshot the caller's connection already has, which no call site combines with a `grant()`
+today but a future one should be aware of before doing so.
 
 **A public paid Agora topic's entry fee gated nothing — resolved, provisionally.** Was pinned open by
 P2r-5 specifically to block x402 scoping onto Agora subscriptions until answered. P1b-1: paid topics

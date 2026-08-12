@@ -220,6 +220,16 @@ def has_access(
     shape as the owned-connection branch without committing the caller's
     transaction out from under them (`sqlite3.Connection.__exit__` commits;
     `nullcontext.__exit__` does nothing).
+
+    Constraint on `conn=` (P1brr, noted not built around — no call site
+    does this today): under WAL, a passed-in connection sees only that
+    connection's own transaction snapshot. A caller that both `grant()`s
+    (which always opens its own connection) and then re-checks
+    `has_access()` with a `conn=` it already had open before the grant may
+    see a stale answer. Both current `conn=` callers (`_agora_is_member()`
+    call sites) are pure reads on a request-scoped connection, so this
+    doesn't apply yet — but a future caller that mixes the two needs to
+    open a fresh connection (or pass none) after granting.
     """
     ctx = contextlib.nullcontext(conn) if conn is not None else _connect(db_path)
     with _LOCK, ctx as c:

@@ -816,14 +816,15 @@ this only matters for the fallback path), not a security finding, and not this p
 ## Fixed post-hackathon (P1br pass — the P1b self-review)
 
 The eleventh consecutive pass to find genuine defects in the immediately preceding pass's own shipped
-work (N12→N13→N14→P1a→P1r→P2→P2r→P2r-6→P3→P3r→P1b→**P1br**). Three commits, all landed on
+work (N12→N13→N14→P1a→P1r→P2→P2r→P2r-6→P3→P3r→P1b→**P1br**). Four commits, all landed on
 `post-hackathon`.
 
 **Coverage caveat, stated for the record:** three Explore audit agents were launched for this review
 and **all three died on a session limit before reporting anything.** The three findings below were
 found and verified by hand against the shipped code afterward. That is narrower coverage than a
 normal review round got — the next pass should not treat P1b as fully reviewed on the strength of
-this one, and a wider follow-up sweep of P1b (and this pass's own three commits) is still owed.
+this one, and a wider follow-up sweep of P1b (and this pass's own four commits) is still owed. **The
+P1brr pass below discharges that debt.**
 
 | Finding | Severity | Fix |
 |---|---|---|
@@ -837,6 +838,52 @@ This derives from `ROADMAP.md`'s composable-payment-options principle (an operat
 accepts; a payer's wallet picks from it) but adds the corollary that principle didn't spell out: once
 a payer has picked, the relay doesn't get to override that pick either. Recorded in `ROADMAP.md` next
 to the principle it derives from, since the next rail this codebase adds will need the same rule.
+
+## Fixed post-hackathon (P1brr pass — the P1br self-review)
+
+The twelfth consecutive pass to find genuine defects in the immediately preceding pass's own shipped
+work (…→P3→P3r→P1b→P1br→**P1brr**). Four commits, all landed on `post-hackathon`. This pass
+**discharges the wider P1b sweep P1br's own coverage caveat recorded as owed** — it went back over
+P1b's x402 code P1br never reached, and over P1br's own four commits.
+
+Two of the four findings below are defects P1br itself introduced one commit apart from the fix that
+should have caught them; one is a P1b performance bug of exactly the class P1br fixed elsewhere in
+the same pass, just in code that pass never looked at; one is a coverage hole.
+
+| Finding | Severity | Fix |
+|---|---|---|
+| **P1br-3 re-introduced, one commit later, the exact query duplication P1br-2 removed.** `entitlements.has_access()`/`has_any_grant()` each carried the same `SELECT` twice — once per connection-handling branch — the identical drift hazard `payments.x402_requirement()` was factored out to kill in the immediately preceding commit of that same pass. | Medium (latent; our defect) | Both functions now share one `_HAS_ACCESS_SQL`/`_HAS_ANY_GRANT_SQL` constant; the branches differ only in which connection executes it (`contextlib.nullcontext(conn)` for the passed-in case, so the caller's transaction is never committed out from under them). Pinned by patching the shared constant and confirming both the `conn=` and no-`conn=` paths move together. |
+| **P1br-1 regressed an accurate error message into an inaccurate one.** `_x402_offer()` returns `None` for four distinct reasons (disabled / non-USD currency / no `creator_id` on this route / no wallet-and-asset match), but the decline branch it gated collapsed them into one two-way message — a non-USD paid room with x402 enabled and a wallet registered was declined with "no x402 payout wallet is registered," which is false. Pre-P1br-1 that exact case correctly named the currency. Separately, the reason existed only as English prose, giving an x402-native client no machine-readable way to learn "don't retry this rail." | Medium (message correctness + client-retry hazard; our regression) | The four conditions are now checked in priority order and each gets its own accurate sentence. A new `"declined": {"rail": "x402", "reason": "<code>"}` key (one of `x402_disabled`/`currency_unsupported`/`route_unsupported`/`no_payout_wallet`) is added to the decline body only — never to the ordinary no-credential 402, so P1b-4's byte-identical contract for an MPP-only client is untouched (pinned by a dedicated test). Regression test reproduces the mis-attributed EUR case directly. |
+| **P1b-2's per-network wallet lookup was an N+1 — the same class P1br-3 fixed elsewhere, in code that pass never looked at.** `_x402_pay_to_by_network()` called `AGENT_REGISTRY.get_x402_pay_to()` once per configured network, each opening its own connection to re-read the same single-row `x402_pay_to_json` blob. Runs on every 402 challenge and, since P1br-1 made `_x402_offer()` the credential gate, on every x402 payment attempt. | Medium (perf; pre-existing, widened by P1br-1) | New `AGENT_REGISTRY.get_x402_pay_to_all()` reads the blob once; `get_x402_pay_to()` and `_x402_pay_to_by_network()` both build on it. Verified by counting connections directly (two networks configured, both wallets set): 2 pre-fix, 1 post-fix. |
+| **The facilitator HTTP layer had zero test coverage.** All 214 x402 test references patched `x402_verify_payment`/`x402_settle_payment` wholesale — confirmed no test anywhere called either function unpatched, so the URL join, outbound JSON keys, and `resp.json()` handling were entirely unexercised. | Medium (coverage) | New tests patch `httpx.AsyncClient.post` directly: outbound URL/trailing-slash handling, the exact three spec keys, a facilitator error surfacing as the documented 402 (not a 500), and that the facilitator receives the relay's own computed requirement rather than the client's claim forwarded verbatim (an extra key on the client's `accepted` never reaches the wire — a case content-equality alone can't distinguish in the success path). Sanity-checked non-vacuous by temporarily breaking the wire shape and confirming three tests catch it, then reverting before commit. |
+
+**The x402 v2 wire shape was re-verified against the specification during this audit (2026-08-12)
+and found correct as shipped — recorded here so it isn't re-litigated.** `accepts` entries are
+`scheme`/`network`/`amount`/`asset`/`payTo`/`maxTimeoutSeconds` (the amount field is `amount`, not
+`maxAmountRequired`); `resource` belongs only at the top level of `PaymentRequired`, never nested in
+an `accepts` entry, which is how `build_x402_challenge()` already builds it; `/verify` and `/settle`
+both take `{x402Version, paymentPayload, paymentRequirements}`. Known unknowns, not silently treated
+as covered: the optional spec field `extra` (EIP-712 domain material some facilitators expect) is
+never sent, and no real facilitator has ever been contacted — the new tests prove internal
+consistency with the spec text, not interoperability with a live implementation.
+
+**Also checked and confirmed clean this pass, not re-derived from scratch by the next one:**
+`entitlements` has no import of `relay_server` (no lock-order inversion risk from P1br-3's `conn=`
+threading — the only ordering that exists is `DB_LOCK → entitlements._LOCK`, never reversed);
+`POST /agents/{id}/x402-wallet` is properly guarded (`_require_caller_is` + `_require_registered` +
+per-family address-format regex before any write); the resource-binding assertion still runs before
+any facilitator call, as `_verify_x402_payment()`'s docstring claims.
+
+**Two things noted but deliberately left as-is, not fixed:** a facilitator 5xx/timeout surfaces as
+`402 x402 verification failed: …`, telling the payer to retry when the relay itself couldn't reach
+its backend — this is a codebase-wide convention the Stripe branches already share (`SPT validation
+failed`, `Payment verification failed`), not an x402-specific regression, and changing it is a
+cross-cutting API-contract decision. And `entitlements.has_access(conn=…)` reads the caller's
+transaction snapshot while `entitlements.grant()` always writes on its own connection — under WAL, a
+caller that grants and then re-checks inside one long-lived connection could see a stale answer, but
+no call site does this today (both `_agora_is_member()` call sites are pure reads on a
+request-scoped connection); noted as a one-line constraint in `has_access()`'s docstring rather than
+built around.
 
 ## Threat model notes (by design, not gaps)
 
