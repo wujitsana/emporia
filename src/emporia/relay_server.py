@@ -1423,7 +1423,9 @@ async def _verify_and_confirm_payment(
             currency=currency,
         )
 
-    def _no_credential_402(message: str, offer: dict[str, Any] | None) -> JSONResponse:
+    def _no_credential_402(
+        message: str, offer: dict[str, Any] | None, *, declined_reason: str | None = None,
+    ) -> JSONResponse:
         challenge_headers = build_mpp_challenge(amount_cents, challenge_resource, currency=currency)
         content: dict[str, Any] = {
             "error": "payment_required",
@@ -1440,6 +1442,16 @@ async def _verify_and_confirm_payment(
         if offer:
             content["x402"] = offer["body"]
             challenge_headers = {**challenge_headers, **offer["headers"]}
+        # P1brr-2: only set on the "a PAYMENT-SIGNATURE credential was
+        # submitted and declined" path below — the ordinary no-credential
+        # challenge (the call site with no declined_reason) never sets it,
+        # so an MPP-only client, which never sends that header, never sees
+        # this key. P1b-4's byte-identical-when-no-credential contract is
+        # untouched. Machine-readable so an x402-native client can tell
+        # "don't retry this rail" apart from "retry with a signed payload,"
+        # rather than parsing English prose in `message`.
+        if declined_reason:
+            content["declined"] = {"rail": "x402", "reason": declined_reason}
         return JSONResponse(status_code=402, content=content, headers=challenge_headers)
 
     x402_payload = extract_x402_payload(request.headers.get("PAYMENT-SIGNATURE"))
@@ -1450,13 +1462,35 @@ async def _verify_and_confirm_payment(
                 x402_payload, creator_id=creator_id, amount_cents=amount_cents,
                 currency=currency, challenge_resource=challenge_resource,
             )
-        reason = (
-            "x402 is not enabled on this relay" if not _x402_enabled()
-            else "no x402 payout wallet is registered for this resource "
-                 "(or this route has no x402 analogue, e.g. session escrow)"
-        )
+        # P1brr-2: _x402_offer() returns None for any of four distinct
+        # reasons (disabled / wrong currency / no creator on this route /
+        # no wallet-and-asset match) — attribute the actual one rather than
+        # collapsing them into one message. P1br-1 conflated "no payout
+        # wallet" and "route has no x402 analogue" into a single sentence
+        # covering both, which also mis-described a non-USD resource (a
+        # real regression: pre-P1br-1 that case correctly said
+        # "currency=usd", and P1br-1 silently lost that distinction).
+        if not _x402_enabled():
+            reason_code, reason = "x402_disabled", "x402 is not enabled on this relay"
+        elif currency != "usd":
+            reason_code, reason = (
+                "currency_unsupported",
+                f"x402 only supports currency=usd on this relay "
+                f"(this resource is priced in {currency})",
+            )
+        elif not creator_id:
+            reason_code, reason = (
+                "route_unsupported",
+                "this route has no x402 analogue (e.g. session escrow)",
+            )
+        else:
+            reason_code, reason = (
+                "no_payout_wallet",
+                "no x402 payout wallet is registered for this resource",
+            )
         return _no_credential_402(
-            f"x402 payment declined: {reason}. {challenge_message}", offer,
+            f"x402 payment declined: {reason}. {challenge_message}", None,
+            declined_reason=reason_code,
         )
 
     auth_header = request.headers.get("Authorization")

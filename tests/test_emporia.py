@@ -10553,6 +10553,7 @@ def test_x402_credential_declined_explicitly_when_x402_disabled(mock_verify, moc
     assert "x402 payment declined" in body["message"]
     assert "not enabled" in body["message"]
     assert "x402" not in body, "nothing to offer — the x402 body key must be absent, not empty"
+    assert body["declined"] == {"rail": "x402", "reason": "x402_disabled"}
     header_names = {k.lower() for k in resp.headers.keys()}
     assert "www-authenticate" in header_names, "MPP fallback must still be offered"
     assert "payment-required" not in header_names
@@ -10595,8 +10596,12 @@ def test_x402_credential_declined_explicitly_on_session_join(mock_verify, mock_s
     assert resp.status_code == 402, resp.text
     body = resp.json()
     assert "x402 payment declined" in body["message"]
-    assert "no x402 payout wallet" in body["message"]
+    assert "no x402 analogue" in body["message"]
     assert "x402" not in body
+    # P1brr-2: session join has no creator_id — this must be attributed as
+    # route_unsupported, not conflated with "no payout wallet" (P1br-1's
+    # message covered both cases with one ambiguous sentence).
+    assert body["declined"] == {"rail": "x402", "reason": "route_unsupported"}
     mock_verify.assert_not_called()
     mock_settle.assert_not_called()
 
@@ -10637,10 +10642,82 @@ def test_x402_credential_declined_explicitly_when_creator_has_no_wallet(mock_ver
     body = resp.json()
     assert "x402 payment declined" in body["message"]
     assert "x402" not in body
+    assert body["declined"] == {"rail": "x402", "reason": "no_payout_wallet"}
     header_names = {k.lower() for k in resp.headers.keys()}
     assert "www-authenticate" in header_names, "Stripe MPP fallback must still be offered"
     mock_verify.assert_not_called()
     mock_settle.assert_not_called()
+
+
+@patch("emporia.payments.x402_settle_payment", new_callable=AsyncMock)
+@patch("emporia.payments.x402_verify_payment", new_callable=AsyncMock)
+def test_x402_credential_declined_explicitly_for_non_usd_currency(mock_verify, mock_settle, client):
+    """P1brr-2 (A2): a real regression in P1br-1 — a non-USD paid room with
+    x402 enabled *and* a wallet registered used to be declined with "no
+    x402 payout wallet is registered for this resource", which is false;
+    the actual reason is the currency. Pre-P1br-1 this exact case correctly
+    said "currency=usd" (see _verify_x402_payment()'s own defense-in-depth
+    check, which build_x402_challenge() normally filters out before this
+    branch is ever reached). CreateRoomRequest.currency is a real,
+    reachable field (default "USD"), so this is not a hypothetical."""
+    owner = "p1brr2_eur_owner"
+    payer = "p1brr2_eur_payer"
+    _register(client, owner)
+    _register(client, payer)
+    from emporia.relay_server import AGENT_REGISTRY
+    AGENT_REGISTRY.set_x402_pay_to(owner, "evm", "0x" + "aa" * 20)
+
+    r = client.post("/rooms", json={
+        "name": "P1brr-2 EUR Room", "creator_id": owner,
+        "room_type": "private", "gate_type": "paid", "entry_fee_cents": 250,
+        "currency": "eur",
+    },
+        headers={"x-emporia-agent-id": owner})
+    assert r.status_code == 200, r.text
+    room_id = r.json()["room_id"]
+
+    header = _x402_payment_signature_header({
+        "scheme": "exact", "network": "eip155:8453", "amount": "2500000",
+        "asset": "0xUSDCFAKE", "payTo": "0x" + "aa" * 20, "maxTimeoutSeconds": 300,
+    })
+
+    with patch.dict(os.environ, _X402_ENV, clear=False):
+        resp = client.post(f"/rooms/{room_id}/join", json={"agent_id": payer},
+            headers={"x-emporia-agent-id": payer, "PAYMENT-SIGNATURE": header})
+
+    assert resp.status_code == 402, resp.text
+    body = resp.json()
+    assert "currency=usd" in body["message"]
+    assert "eur" in body["message"]
+    assert "no x402 payout wallet" not in body["message"], \
+        "must not misattribute a currency mismatch as a missing wallet"
+    assert body["declined"] == {"rail": "x402", "reason": "currency_unsupported"}
+    mock_verify.assert_not_called()
+    mock_settle.assert_not_called()
+
+
+def test_x402_no_credential_challenge_has_no_declined_key(client):
+    """P1brr-2: the `declined` key must only appear when a PAYMENT-SIGNATURE
+    credential was actually submitted and declined — the ordinary
+    no-credential 402 challenge (an MPP-only client never sends that
+    header) must stay exactly as P1b-4 shipped it, with no new key."""
+    owner = "p1brr2_nocred_owner"
+    payer = "p1brr2_nocred_payer"
+    _register(client, owner)
+    _register(client, payer)
+
+    r = client.post("/rooms", json={
+        "name": "P1brr-2 No Credential Room", "creator_id": owner,
+        "room_type": "private", "gate_type": "paid", "entry_fee_cents": 250,
+    },
+        headers={"x-emporia-agent-id": owner})
+    assert r.status_code == 200, r.text
+    room_id = r.json()["room_id"]
+
+    resp = client.post(f"/rooms/{room_id}/join", json={"agent_id": payer},
+        headers={"x-emporia-agent-id": payer})
+    assert resp.status_code == 402, resp.text
+    assert "declined" not in resp.json()
 
 
 def test_verify_x402_payment_currency_check_is_defense_in_depth():
