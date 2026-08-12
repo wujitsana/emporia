@@ -307,19 +307,15 @@ class EmporiaAgent:
         signature to the session_id + current step_number so a captured
         signature can't be replayed against a different session or turn.
         """
+        from emporia.wire import action_envelope, signed_action_payload
         session = await self.get_session(session_id)
-        envelope: dict[str, Any] = {
-            "agent_id": self.agent_id,
-            "action_type": action_type,
-            "payload": payload,
-            "peer_text_rationale": rationale,
-        }
-        signed_payload = {
-            **envelope,
-            "session_id": session_id,
-            "step_number": session["step_number"],
-        }
-        envelope["signature"] = self._sign(signed_payload)
+        signed_payload = signed_action_payload(
+            self.agent_id, action_type, payload, rationale,
+            session_id, session["step_number"],
+        )
+        envelope = action_envelope(
+            self.agent_id, action_type, payload, rationale, self._sign(signed_payload),
+        )
         resp = await self._bearer_request(
             "post", f"{self.relay_url}/sessions/{session_id}/action",
             json=envelope,

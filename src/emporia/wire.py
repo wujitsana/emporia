@@ -51,3 +51,45 @@ def registration_body(
     if nous_jwt:
         body["identity_claims"] = [{"provider": "nous", "token": nous_jwt}]
     return body
+
+
+def signed_action_payload(
+    agent_id: str,
+    action_type: str,
+    payload: dict[str, Any],
+    rationale: str,
+    session_id: str,
+    step_number: int,
+) -> dict[str, Any]:
+    """The dict `POST /sessions/{id}/action` callers sign before sending —
+    binds the signature to `session_id`/`step_number` so it can't be
+    replayed against a different session or turn (N3-8). Key order here
+    doesn't need to match `action_envelope()`'s: `identity.sign()`
+    canonicalizes via `json.dumps(..., sort_keys=True)`."""
+    return {
+        "agent_id": agent_id,
+        "action_type": action_type,
+        "payload": payload,
+        "peer_text_rationale": rationale,
+        "session_id": session_id,
+        "step_number": step_number,
+    }
+
+
+def action_envelope(
+    agent_id: str,
+    action_type: str,
+    payload: dict[str, Any],
+    rationale: str,
+    signature: str,
+) -> dict[str, Any]:
+    """The actual `POST /sessions/{id}/action` body — `signed_action_payload()`'s
+    fields minus `session_id`/`step_number` (both already in the URL/relay
+    state), plus the signature computed over that payload."""
+    return {
+        "agent_id": agent_id,
+        "action_type": action_type,
+        "payload": payload,
+        "peer_text_rationale": rationale,
+        "signature": signature,
+    }

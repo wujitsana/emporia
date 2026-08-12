@@ -1527,6 +1527,7 @@ def submit_action(
     # Signature is mandatory — bound to session_id + current step_number so it
     # can't be replayed against a different session or turn.
     from emporia.identity import sign as ed25519_sign
+    from emporia.wire import action_envelope, signed_action_payload
     try:
         sess_r = _bearer_request("get", f"{RELAY_URL}/sessions/{session_id}", agent_id=aid, timeout=10)
         sess_r.raise_for_status()
@@ -1534,21 +1535,12 @@ def submit_action(
     except Exception as e:
         return {"error": f"could not load session for signing: {e}", "success": False}
     action_payload = payload or {}
-    signed_payload = {
-        "session_id": session_id,
-        "step_number": step_number,
-        "action_type": action_type,
-        "payload": action_payload,
-        "agent_id": aid,
-        "peer_text_rationale": rationale,
-    }
-    body: dict[str, Any] = {
-        "agent_id": aid,
-        "action_type": action_type,
-        "payload": action_payload,
-        "peer_text_rationale": rationale,
-        "signature": ed25519_sign(signed_payload, aid),
-    }
+    signed_payload = signed_action_payload(
+        aid, action_type, action_payload, rationale, session_id, step_number,
+    )
+    body = action_envelope(
+        aid, action_type, action_payload, rationale, ed25519_sign(signed_payload, aid),
+    )
     try:
         r = _bearer_request("post", f"{RELAY_URL}/sessions/{session_id}/action", agent_id=aid, json=body, timeout=15)
         d = r.json()

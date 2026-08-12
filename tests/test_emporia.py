@@ -10153,6 +10153,122 @@ def test_agent_sdk_register_uses_shared_wire_contract():
     )
 
 
+def test_mcp_submit_action_uses_shared_wire_contract_and_relay_accepts_it(prod_client):
+    """P6-4: mcp_server.submit_action() and agent_sdk.submit_action() (see
+    the sibling test below) used to build the signed-action envelope
+    independently, in both files — confirmed genuinely identical despite
+    different key insertion order, since identity.sign() canonicalizes via
+    sort_keys=True. Both now call wire.signed_action_payload()/
+    action_envelope(). Pinned two ways at once: the single-sourcing proof
+    (patch + wraps), AND a real end-to-end round trip — a real session, a
+    real submit through the relay's own signature verification, asserting
+    success — since single-sourcing alone wouldn't catch a field dropped
+    from the shared function itself."""
+    from emporia import mcp_server, wire
+
+    _register_keyed(prod_client, "p6_4_mcp_buyer")
+    _register_keyed(prod_client, "p6_4_mcp_seller")
+
+    r = prod_client.post("/sessions", json={
+        "module_type": "emporia:service:v1", "creator_agent_id": "p6_4_mcp_buyer",
+        "config": {"description": "P6-4 wire contract test"}, "payment_rules": {"mode": "free"},
+    },
+        headers=bearer_for(prod_client, "p6_4_mcp_buyer"))
+    assert r.status_code == 200, r.text
+    session_id = r.json()["session_id"]
+    r = prod_client.post(
+        f"/sessions/{session_id}/join", json={"agent_id": "p6_4_mcp_seller"},
+        headers=bearer_for(prod_client, "p6_4_mcp_seller"),
+    )
+    assert r.status_code == 200, r.text
+
+    adapter = _ASGIHttpxAdapter(prod_client, mcp_server.RELAY_URL)
+    with patch.object(mcp_server, "httpx", adapter), \
+         patch.object(wire, "signed_action_payload", wraps=wire.signed_action_payload) as payload_spy, \
+         patch.object(wire, "action_envelope", wraps=wire.action_envelope) as envelope_spy:
+        result = mcp_server.submit_action(
+            session_id=session_id, action_type="accept", payload={},
+            rationale="Accepting — real end-to-end wire-contract round trip test.",
+            agent_id="p6_4_mcp_seller",
+        )
+
+    assert result.get("success") is True, result
+    payload_spy.assert_called_once_with(
+        "p6_4_mcp_seller", "accept", {},
+        "Accepting — real end-to-end wire-contract round trip test.",
+        session_id, 0,
+    )
+    envelope_spy.assert_called_once()
+    assert envelope_spy.call_args.args[0] == "p6_4_mcp_seller"
+    assert envelope_spy.call_args.args[1] == "accept"
+
+
+def test_agent_sdk_submit_action_uses_shared_wire_contract_and_relay_accepts_it():
+    """P6-4: agent_sdk.submit_action()'s half of the single-sourcing + real
+    round-trip proof — see the mcp_server test above. Uses the ASGI-transport
+    pattern test_agent_sdk_kicked_agents_own_rejoin_via_join_room_is_refused
+    established (agent_sdk.py has no _ASGIHttpxAdapter-style harness of its
+    own), wiring EmporiaAgent instances directly to the real app rather than
+    mocking the HTTP layer, so this is a genuine relay-verified signature,
+    not just a call-shape assertion."""
+    import asyncio
+
+    import httpx as httpx_module
+
+    from emporia import wire
+    from emporia.agent_sdk import EmporiaAgent
+    from emporia.identity import get_public_key_hex
+    from emporia.relay_server import app as relay_app
+
+    def _wired(agent_id: str) -> EmporiaAgent:
+        a = EmporiaAgent(
+            relay_url="http://testserver", agent_id=agent_id,
+            public_key_hex=get_public_key_hex(agent_id),
+        )
+        a._http = httpx_module.AsyncClient(
+            transport=httpx_module.ASGITransport(app=relay_app), base_url="http://testserver",
+        )
+        return a
+
+    async def scenario():
+        buyer = _wired("p6_4_sdk_buyer")
+        seller = _wired("p6_4_sdk_seller")
+        try:
+            await buyer.register()
+            await seller.register()
+
+            session = await buyer.create_session(
+                "emporia:service:v1",
+                config={"description": "P6-4 SDK wire contract test"},
+                payment_rules={"mode": "free"},
+            )
+            session_id = session["session_id"]
+            await seller.join_session(session_id)
+
+            with patch.object(
+                wire, "signed_action_payload", wraps=wire.signed_action_payload,
+            ) as payload_spy, patch.object(
+                wire, "action_envelope", wraps=wire.action_envelope,
+            ) as envelope_spy:
+                result = await seller.submit_action(
+                    session_id, "accept", {},
+                    "Accepting — real end-to-end wire-contract round trip test.",
+                )
+
+            assert result["success"] is True, result
+            payload_spy.assert_called_once_with(
+                seller.agent_id, "accept", {},
+                "Accepting — real end-to-end wire-contract round trip test.",
+                session_id, 0,
+            )
+            envelope_spy.assert_called_once()
+        finally:
+            await buyer._http.aclose()
+            await seller._http.aclose()
+
+    asyncio.run(scenario())
+
+
 def test_mcp_bearer_request_recovers_from_stale_cached_token(prod_client):
     """Regression for N2-1: _dashboard_bearer_headers() only ever refreshed on expiry, with
     no path back from a token the server actually rejects — before the JWT secret was
