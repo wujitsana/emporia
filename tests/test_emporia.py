@@ -10933,6 +10933,55 @@ def test_entitlements_query_is_single_sourced_between_conn_paths(tmp_path):
         conn.close()
 
 
+def test_x402_offer_skips_wallet_lookup_when_disabled(client):
+    """P4 item 1 (B1): _x402_offer() (relay_server.py) evaluated
+    _x402_pay_to_by_network() as an ARGUMENT to build_x402_challenge() —
+    which has its own _x402_enabled() check, but only after the wallet
+    read already ran. On a disabled relay (the shipped default) that was
+    one unconditional get_db() read per 402 challenge. P1brr-3 fixed the
+    N-networks case (one read instead of N) and made the zero-network
+    default case worse (1 read instead of 0). Counted directly, not
+    timed, must fail pre-fix at 1."""
+    from emporia import relay_server
+
+    owner = "p4_1_disabled_owner"
+    payer = "p4_1_disabled_payer"
+    _register(client, owner)
+    _register(client, payer)
+
+    r = client.post("/rooms", json={
+        "name": "P4-1 Disabled Room", "creator_id": owner,
+        "room_type": "private", "gate_type": "paid", "entry_fee_cents": 250,
+    },
+        headers={"x-emporia-agent-id": owner})
+    assert r.status_code == 200, r.text
+    room_id = r.json()["room_id"]
+
+    call_count = {"n": 0}
+    original_get_db = relay_server.get_db
+
+    def counting_get_db():
+        call_count["n"] += 1
+        return original_get_db()
+
+    with patch.dict(os.environ, {}, clear=False):
+        os.environ.pop("EMPORIA_X402_ENABLED", None)
+        with patch.object(relay_server, "get_db", side_effect=counting_get_db):
+            resp = client.post(f"/rooms/{room_id}/join", json={"agent_id": payer},
+                headers={"x-emporia-agent-id": payer})
+
+    assert resp.status_code == 402, resp.text
+    assert "x402" not in resp.json(), "x402 disabled — no offer should be built"
+    # 1 expected call is _require_registered() -> AGENT_REGISTRY.is_authorized()
+    # (unrelated to x402), confirmed by tracing get_db()'s call stack directly.
+    # Pre-fix this was 2: that call plus one unconditional wallet-lookup read
+    # from _x402_pay_to_by_network() inside _x402_offer().
+    assert call_count["n"] == 1, (
+        "expected exactly one get_db() call (agent-registration check only, "
+        f"no wallet resolution) on a disabled relay, got {call_count['n']}"
+    )
+
+
 def test_x402_pay_to_by_network_excludes_unconfigured_or_walletless_networks(client):
     """P1b-4: a network the creator has no wallet for, or one not in
     EMPORIA_X402_NETWORKS at all, is silently excluded rather than raising —

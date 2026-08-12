@@ -1422,8 +1422,17 @@ async def _verify_and_confirm_payment(
         nothing can be offered (disabled, no creator, no wallet, wrong
         currency) — the single source both the credential-honoring check
         below and the eventual 402's "x402" body key read from, so they
-        can never disagree about whether x402 applies here."""
-        if not creator_id:
+        can never disagree about whether x402 applies here.
+
+        P4-1: checks `_x402_enabled()` before doing any wallet lookup.
+        `_x402_pay_to_by_network()` used to be evaluated unconditionally as
+        an argument to `build_x402_challenge()` — which has its own
+        `_x402_enabled()` guard, but only *after* the wallet read already
+        happened. On a disabled relay (the shipped default) that meant one
+        unconditional DB read per 402 challenge. `build_x402_challenge()`
+        keeps its own check too — defense in depth, same posture as
+        `_verify_x402_payment()`'s currency check."""
+        if not creator_id or not _x402_enabled():
             return None
         return build_x402_challenge(
             amount_cents, challenge_resource, _x402_pay_to_by_network(creator_id),
