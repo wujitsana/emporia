@@ -112,10 +112,37 @@ already had in `httpx` form. The N3 pass (N3-7) made it worse in the other direc
 meant rewriting them to forward via `_bearer_request` — duplicating logic `agent_sdk.py`'s
 equivalents already had, rather than sharing it (see `SECURITY.md`'s N3 pass, R6). Every future
 pass that touches a write endpoint's contract will keep paying this tax until the refactor below
-happens.
+happens. **Still live in P5:** `agent_sdk.join_session()` calls `raise_for_status()`, so P1brr-2's
+`declined` reason key (added to `mcp_server.join_session()` in P4-3) is only reachable there by
+catching `HTTPStatusError` and re-parsing — same underlying information, two different shapes,
+across the two clients.
+
+**De-risked in P5 — the estimate below understated a real blocker, and a better decomposition
+exists.** The stated direction ("MCP tools delegate to `EmporiaAgent` methods") assumes a mechanical
+wrap; it isn't one. `mcp_server.py` is **52 sync** tool functions (module-level `httpx.get`/`.post`);
+`agent_sdk.py` is **40 async** methods (`await self._client()...`). Delegating one to the other needs
+a sync→async bridge in ~52 places — architectural work, not the small-medium lift "medium-large" was
+scoped against.
+
+**Recommendation: split the item.** Every duplication bug this entry actually cites (N3-8's envelope
+shape, N2's bearer/retry semantics) is in *request construction* — what bytes to send — not
+transport, and all of it is already pure and synchronous in both files:
+- the dashboard challenge/sign/session handshake (`mcp_server.py`'s `_dashboard_bearer_headers()` vs
+  `agent_sdk.py`'s `_bearer_headers()` — both `sign_raw(nonce, …)` → the same request shape);
+- the registration handshake (`mcp_server.py`'s and `agent_sdk.py`'s `register()` — both
+  `{agent_id, public_key_hex, display_name, challenge_id, challenge_signature}`);
+- the signed action/message envelopes (`agent_sdk.py`'s `_sign()` call sites — the N3-8 shape lives
+  here, independently reconstructed in `mcp_server.py` and `relay_server.py` too).
+
+Extracting a **shared, synchronous wire-contract module** (what to send, built and tested once) while
+leaving the two transports (sync `httpx` calls vs. `AsyncClient`) alone kills this drift class
+entirely with zero async bridging. Transport dedup — the part that actually needs the bridge — stays
+optional and can follow later if it's still worth it once the shared-contract half has shipped.
 - *Why deferred:* a real refactor (MCP tools delegate to `EmporiaAgent` methods) touches the
   request/response shape of every MCP tool — needs its own testing pass, too risky pre-deadline.
-- *Effort:* medium-large.
+- *Effort:* shared wire-contract module — small-medium. Transport dedup (the sync/async bridge) —
+  large, and optional once the shared contract lands. (Revised from a single "medium-large" figure,
+  which didn't account for the sync/async split — see `SECURITY.md`'s P5 pass.)
 
 **Two independent `GameRegistry` instances** (MCP-local SQLite vs. relay) reconciled only by
 manual `export_challenge`/`import_challenge` MCP calls — no automatic sync, no conflict
@@ -149,15 +176,28 @@ value emptied out or expired — one permanent entry per IP/session/agent/challe
 the life of a process meant to run for months. `_sweep_expired_state()` (the relay's first
 background task, run on `EMPORIA_SWEEP_INTERVAL_SECONDS`, default 300s) now evicts all four.
 
-**Cascade-delete — done (P4-5).** `DELETE /admin/sessions/{session_id}`, operator-only, hard-deletes
-a terminal session's `participants`/`actions`/`messages`/`sessions` rows in one transaction. This
-entry used to say "participants/actions/payments/settlements/audit files together" — that overstated
-the shipped scope on purpose, not by oversight: `payments`/`settlements` rows (the record that real
-money moved) are never deleted, only counted and reported, and the audit trail is never rewritten
-(`_write_audit_line()` appends to a date-keyed log, not a per-session file — stripping lines would
-break its append-only integrity property). One audit line is appended recording the deletion itself.
-See `SECURITY.md`'s P4 pass for the full reasoning.
+**Cascade-delete — done (P4-5, hardened in P5-2/P5-3).** `DELETE /admin/sessions/{session_id}`,
+operator-only, hard-deletes a terminal session's `participants`/`actions`/`messages`/`sessions` rows
+in one transaction. This entry used to say "participants/actions/payments/settlements/audit files
+together" — that overstated the shipped scope on purpose, not by oversight: `payments`/`settlements`
+rows (the record that real money moved) are never deleted, only counted and reported, and the audit
+trail is never rewritten (`_write_audit_line()` appends to a date-keyed log, not a per-session file —
+stripping lines would break its append-only integrity property). One audit line is appended recording
+the deletion itself, written **before** the row deletes run (P5-3 — a failed audit write now aborts
+the request with nothing touched, rather than deleting with no record). P5-2 also closed a real gap
+P4-5 left: a room linked to the deleted session (`rooms.linked_session_id`) used to dangle, pointing
+at nothing — now cleared (not the room itself deleted) and reported as `"unlinked": {"rooms": N}`.
+See `SECURITY.md`'s P4 and P5 passes.
 - *Effort:* small — an admin-only cleanup endpoint. (Confirmed accurate in hindsight.)
+
+**`sessions.status` vocabulary bug — done (P5-1).** Found while auditing P4-5's terminal-status
+constant: `/health` and the dashboard WS both reported `session_count` using a query
+(`WHERE status NOT IN ('complete','cancelled')`) that matched no real status value ever written
+(`waiting`/`active`/`completed`/`abandoned`), so the count silently included every completed and
+abandoned session as if still active — a user-visible wrong number, pre-existing, not introduced by
+P4-5. `abandon_session`'s own re-abandon guard had the same bug and was dead code as a result. All
+three (plus `mcp_server.py`'s status docstring) now read from one `_SESSION_STATUSES`/
+`_SESSION_TERMINAL_STATUSES` pair. See `SECURITY.md`'s P5 pass.
 
 ## Payments
 
@@ -187,9 +227,11 @@ opaque tokens — stored, compared, redacted, never parsed — which is exactly 
 reference at one funnel instead of touching 150 call sites. Sequencing: **P3 (done) → P1b (done) →
 P1br (done, the P1b self-review) → P1brr (done, the P1br self-review, and it discharges the wider
 P1b sweep P1br's own coverage caveat left owed) → P4 (done — closes the x402 review chain and ships
-the cascade-delete endpoint — see SECURITY.md) → next unnamed.** The `r`-suffix review-chain naming
-ends at P1brr; a future review pass is named sequentially (P5, …) rather than growing another suffix
-— review yield had shrunk to P1brr's own one Medium/three Low, the signal to stop.
+the cascade-delete endpoint) → P5 (done — the P4 self-review; found the pre-existing
+`sessions.status` bug P4-5 walked past, hardened the cascade-delete endpoint, and de-risked the
+MCP/SDK refactor below — see `SECURITY.md`) → next unnamed.** The `r`-suffix review-chain naming
+ends at P1brr; review passes since are named sequentially (P5, P6, …) rather than growing another
+suffix — review yield had shrunk to P1brr's own one Medium/three Low, the signal to stop.
 
 **P1b shipped: x402 is a real, working second payment rail**, non-custodial, eight commits
 (SECURITY.md's P1b pass has the full findings). `_verify_and_confirm_payment()` gained an x402

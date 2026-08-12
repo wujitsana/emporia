@@ -923,6 +923,40 @@ property). Instead reports retained payment/settlement counts and appends one au
 deletion itself. Both are permanent product decisions stated in the endpoint's own docstring, not
 gaps for a future pass to "finish."
 
+## Fixed post-hackathon (P5 pass — the P4 self-review)
+
+The fourteenth consecutive pass to find genuine defects in the immediately preceding pass's own
+shipped work (…→P1br→P1brr→P4→**P5**). Three commits, all landed on `post-hackathon`.
+
+The most interesting finding this pass is **not P4's fault.** Chasing P4-5's
+`_SESSION_TERMINAL_STATUSES` constant revealed that `sessions.status` was wrong in three separate,
+pre-existing places — P4-5 introduced the first *correct* vocabulary right next to four sites still
+using a wrong one, and didn't reconcile them. That's exactly what a review chain is for: catching
+what a pass touched but didn't look at, not just what it introduced.
+
+| Finding | Severity | Fix |
+|---|---|---|
+| **`sessions.status`'s real vocabulary (`waiting`/`active`/`completed`/`abandoned`) disagreed with three independent readers.** `/health` and the dashboard WS both queried `WHERE status NOT IN ('complete','cancelled')` — neither literal is ever written, so `session_count` silently counted every session (including completed/abandoned ones) as active, a user-visible wrong number in two independently hand-copied places. `abandon_session`'s own guard checked `s["status"] == "complete"` — also never matches, so a completed session's already-captured payments could be cancelled a second time via abandon; the guard had been dead code. `mcp_server.py`'s `list_sessions` docstring also advertised the wrong vocabulary to agents. Pre-existing, walked past by P4-5. | **Medium** (user-visible wrong number + a dead safety guard) | New `_SESSION_STATUSES`/`_SESSION_TERMINAL_STATUSES`, defined once next to `save_session()`; `delete_session()` (P4-5) now reads from there instead of its own copy. `/health` and the WS build their `WHERE` clause from the constant via a shared helper rather than a third hand-copied literal list. `abandon_session` now also refuses re-abandoning an already-abandoned session — cancelling the same holds twice is the exact double-action the guard exists to prevent. |
+| **`delete_session()` (P4-5) left a dangling `rooms.linked_session_id`.** Room creation *validates* the linked session exists (404 if not) — the delete path broke that invariant, and `rooms_db.get_room_for_session()` is a live call (`_session_visibility()`). | Medium (our defect; breaks an invariant the create path enforces) | The endpoint now clears the link (`UPDATE rooms SET linked_session_id = NULL`) rather than deleting the room — a room has its own members and paid entitlements a session cleanup should not destroy as a side effect. Same physical `EMPORIA_DB_PATH` file as `sessions` (`rooms.py`'s `ROOM_DB_PATH` resolves the same env var), updated on the endpoint's existing connection as part of the one transaction. Reported as `"unlinked": {"rooms": N}`, matching the endpoint's report-everything-touched posture. |
+| **`delete_session()`'s audit line was written after the transaction committed.** A failed audit write (missing `LOG_DIR`, full disk) meant the rows were already gone with no record of the deletion — for an endpoint whose entire audit story is "we record what we touched." | Low (our defect; low reachability — `init_db()` creates `LOG_DIR`) | Restructured so per-table counts are computed by `SELECT COUNT(*)` first, the audit line is written from those counts, and only then do the deletes run — all inside the one transaction, so a failed audit write raises before any row is touched. |
+
+**Verified clean this pass, not re-derived from scratch by the next one:** P4-1's `_x402_enabled()`
+guard is correct and `build_x402_challenge()`'s own check remains as defense in depth; P4-2's
+`isinstance` guard restores fail-closed at the single guarded source; P4-5's transaction boundary
+is correct (`sqlite3.Connection.__exit__` rolls back on exception, so a mid-cascade failure cannot
+half-delete — the 409-deletes-nothing test pins the case that matters); P4-5's `sess_`/`room_`/`tpc_`
+id-prefix claim is accurate, so the overloaded `settlements.session_id` count is genuinely
+unambiguous; the route-auth sentinel (`test_every_route_has_a_reviewed_auth_posture`) caught the new
+`DELETE /admin/sessions/{session_id}` route as unclassified during P4's own implementation, exactly
+as designed.
+
+**Not fixed, recorded as evidence for the next pass:** `agent_sdk.join_session()` calls
+`raise_for_status()`, so P1brr-2's `declined` reason key is only reachable there by catching
+`HTTPStatusError` and re-parsing the body — consistent with the SDK's raise-on-error contract across
+all 40 of its methods, but it means the two clients (`mcp_server.py`, `agent_sdk.py`) still surface
+the same information differently. One instance of the MCP/SDK duplication tax `ROADMAP.md` already
+names; not fixed here, folded into that entry's de-risking writeup instead (see `ROADMAP.md`).
+
 ## Threat model notes (by design, not gaps)
 
 - **Ed25519 = auth; the relay never holds private keys.** Keys live at `~/.hermes/keys/*.priv`,
