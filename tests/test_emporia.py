@@ -9931,6 +9931,58 @@ def test_mcp_get_settlements_authenticates_under_prod_auth(prod_client):
     assert r["settlements"][0]["winner_id"] == "mcpsettle_buyer"
 
 
+def test_mcp_join_session_surfaces_x402_declined_reason(prod_client):
+    """P4 item 3 (B4): mcp_server.join_session()'s 402 branch used to return
+    only {error, www_authenticate, success} -- its siblings join_room and
+    subscribe_agora_topic both pass the full body through as `detail`.
+    Session join is exactly the route where P1brr-2's route_unsupported
+    reason fires (session escrow has no x402 analogue), so this drives a
+    real session-join 402 with a PAYMENT-SIGNATURE header through the MCP
+    tool function end-to-end and confirms the machine-readable `declined`
+    key actually reaches the caller now."""
+    import base64
+    import json as _json
+
+    from emporia import mcp_server
+
+    _register_keyed(prod_client, "p4_3_mcp_creator")
+    _register_keyed(prod_client, "p4_3_mcp_joiner")
+
+    r = prod_client.post("/sessions", json={
+        "module_type": "emporia:service:v1",
+        "creator_agent_id": "p4_3_mcp_creator",
+        "config": {"description": "P4-3 session decline test"},
+        "payment_rules": {"mode": "stripe_link", "stake_per_participant": "1.00", "currency": "usd"},
+    },
+        headers=bearer_for(prod_client, "p4_3_mcp_creator"))
+    assert r.status_code == 200, r.text
+    session_id = r.json()["session_id"]
+
+    payload = {
+        "x402Version": 2, "accepted": {
+            "scheme": "exact", "network": "eip155:8453", "amount": "100000000",
+            "asset": "0xUSDCFAKE", "payTo": "0x" + "aa" * 20, "maxTimeoutSeconds": 300,
+        }, "payload": {"sig": "0xfake"},
+    }
+    x402_header = base64.urlsafe_b64encode(_json.dumps(payload).encode()).decode()
+
+    from emporia.mcp_server import _dashboard_bearer_headers as _real_headers
+
+    def _headers_with_x402(relay_url="", agent_id=""):
+        headers = _real_headers(relay_url=relay_url, agent_id=agent_id)
+        return {**headers, "PAYMENT-SIGNATURE": x402_header}
+
+    adapter = _ASGIHttpxAdapter(prod_client, mcp_server.RELAY_URL)
+    with patch.dict(os.environ, _X402_ENV, clear=False), \
+         patch.object(mcp_server, "httpx", adapter), \
+         patch.object(mcp_server, "_dashboard_bearer_headers", side_effect=_headers_with_x402):
+        result = mcp_server.join_session(session_id=session_id, agent_id="p4_3_mcp_joiner")
+
+    assert result["success"] is False
+    assert result["error"] == "payment_required"
+    assert result["detail"]["declined"] == {"rail": "x402", "reason": "route_unsupported"}
+
+
 def test_agent_sdk_write_call_site_attaches_bearer_credential():
     """Same property as the MCP test above, for agent_sdk.py's write methods
     (create_listing, create_session, submit_action, send_message, create_event,

@@ -1480,7 +1480,17 @@ def join_session(
         if r.status_code == 200:
             return {"success": True, **d}
         if r.status_code == 402:
-            return {"error": "payment_required", "www_authenticate": r.headers.get("www-authenticate", ""), "success": False}
+            # P4-3: join_room and subscribe_agora_topic both pass the full body
+            # through as `detail` — this one used to return only www_authenticate,
+            # dropping the body entirely (including P1brr-2's machine-readable
+            # `declined` key). Session join is exactly the route where x402's
+            # route_unsupported reason fires (no x402 analogue for session
+            # escrow), so this was the one route where that reason mattered most
+            # and the one whose client discarded it.
+            return {
+                "error": "payment_required", "detail": d,
+                "www_authenticate": r.headers.get("www-authenticate", ""), "success": False,
+            }
         return {"error": f"Relay {r.status_code}", "detail": d, "success": False}
     except Exception as e:
         return {"error": str(e), "success": False}
