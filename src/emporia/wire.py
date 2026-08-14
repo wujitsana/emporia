@@ -53,6 +53,18 @@ def registration_body(
     return body
 
 
+DEFAULT_CONFIRM_RATIONALE = "Buyer confirmed delivery."
+
+
+def default_dispute_rationale(reason: str) -> str:
+    """The default `peer_text_rationale` for a dispute when the caller omits
+    one explicitly. Signer and verifier must resolve to the identical string —
+    it's part of what gets signed (`signed_action_payload()`'s `rationale`
+    arg), so a divergence between the two sides breaks signature verification
+    with a 403 that points nowhere near the actual cause."""
+    return f"Dispute: {reason}"
+
+
 def signed_action_payload(
     agent_id: str,
     action_type: str,

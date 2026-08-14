@@ -1565,9 +1565,9 @@ def confirm_delivery(
     aid = agent_id or AGENT_ID
     if not aid:
         return {"error": "agent_id required", "success": False}
-    effective_rationale = rationale or "Buyer confirmed delivery."
     from emporia.identity import sign as ed25519_sign
-    from emporia.wire import signed_action_payload
+    from emporia.wire import DEFAULT_CONFIRM_RATIONALE, signed_action_payload
+    effective_rationale = rationale or DEFAULT_CONFIRM_RATIONALE
     try:
         sess_r = _bearer_request("get", f"{RELAY_URL}/sessions/{session_id}", agent_id=aid, timeout=10)
         sess_r.raise_for_status()
@@ -1603,9 +1603,9 @@ def dispute_delivery(
     aid = agent_id or AGENT_ID
     if not aid:
         return {"error": "agent_id required", "success": False}
-    effective_rationale = rationale or f"Dispute: {reason}"
     from emporia.identity import sign as ed25519_sign
-    from emporia.wire import signed_action_payload
+    from emporia.wire import default_dispute_rationale, signed_action_payload
+    effective_rationale = rationale or default_dispute_rationale(reason)
     try:
         sess_r = _bearer_request("get", f"{RELAY_URL}/sessions/{session_id}", agent_id=aid, timeout=10)
         sess_r.raise_for_status()

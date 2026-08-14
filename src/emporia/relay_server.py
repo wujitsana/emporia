@@ -4822,13 +4822,14 @@ async def confirm_delivery(session_id: str, req: ConfirmDeliveryRequest, request
     Shorthand for submitting action_type='confirm' to an emporia:service:v1 session.
     Works on any module that accepts a 'confirm' action from the non-current participant.
     """
+    from emporia.wire import DEFAULT_CONFIRM_RATIONALE
     return await submit_action(
         session_id=session_id,
         req=SubmitActionRequest(
             agent_id=req.agent_id,
             action_type="confirm",
             payload={},
-            peer_text_rationale=req.rationale or "Buyer confirmed delivery.",
+            peer_text_rationale=req.rationale or DEFAULT_CONFIRM_RATIONALE,
             signature=req.signature,
         ),
     )
@@ -4840,13 +4841,14 @@ async def dispute_delivery(session_id: str, req: DisputeDeliveryRequest, request
 
     Shorthand for submitting action_type='dispute' to an emporia:service:v1 session.
     """
+    from emporia.wire import default_dispute_rationale
     return await submit_action(
         session_id=session_id,
         req=SubmitActionRequest(
             agent_id=req.agent_id,
             action_type="dispute",
             payload={"reason": req.reason},
-            peer_text_rationale=req.rationale or f"Dispute: {req.reason}",
+            peer_text_rationale=req.rationale or default_dispute_rationale(req.reason),
             signature=req.signature,
         ),
     )

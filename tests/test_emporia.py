@@ -10305,6 +10305,78 @@ def test_mcp_confirm_and_dispute_delivery_use_shared_wire_contract(prod_client):
     )
 
 
+def test_mcp_confirm_and_dispute_default_rationale_are_single_sourced(prod_client):
+    """P10-2: mcp_server.confirm_delivery()/dispute_delivery() (the signer)
+    and relay_server.confirm_delivery()/dispute_delivery() (the verifier,
+    which reconstructs the same default when req.rationale is omitted) each
+    hand-copied the same literal default rationale string. The relay's
+    reconstructed default becomes part of what verify_signature() checks —
+    so if the two literals were to ever diverge (a typo, a copy-edit in one
+    file but not the other), every unsigned-rationale confirm/dispute would
+    start 403ing with no clue why. Both now resolve from wire.py
+    (DEFAULT_CONFIRM_RATIONALE / default_dispute_rationale()). Proves the
+    two sides can't drift by patching the shared value to something
+    non-default and confirming a real confirm/dispute — driven with no
+    explicit rationale, so both sides must independently resolve the
+    patched value — still verifies. If either side still had its own
+    hardcoded copy of the old literal, this would 403."""
+    from emporia import mcp_server, wire
+
+    _register_keyed(prod_client, "p10_2_buyer")
+    _register_keyed(prod_client, "p10_2_seller")
+    adapter = _ASGIHttpxAdapter(prod_client, mcp_server.RELAY_URL)
+
+    r = prod_client.post("/sessions", json={
+        "module_type": "emporia:service:v1", "creator_agent_id": "p10_2_buyer",
+        "config": {"description": "P10-2 confirm rationale test"}, "payment_rules": {"mode": "free"},
+    },
+        headers=bearer_for(prod_client, "p10_2_buyer"))
+    session_id = r.json()["session_id"]
+    prod_client.post(
+        f"/sessions/{session_id}/join", json={"agent_id": "p10_2_seller"},
+        headers=bearer_for(prod_client, "p10_2_seller"),
+    )
+    with patch.object(mcp_server, "httpx", adapter):
+        mcp_server.submit_action(
+            session_id=session_id, action_type="accept", payload={},
+            rationale="Accepting — P10-2 test.", agent_id="p10_2_seller",
+        )
+        mcp_server.submit_action(
+            session_id=session_id, action_type="deliver", payload={"deliverable": "done"},
+            rationale="Delivered — P10-2 test.", agent_id="p10_2_seller",
+        )
+        with patch.object(wire, "DEFAULT_CONFIRM_RATIONALE", "P10-2 patched confirm default"):
+            result = mcp_server.confirm_delivery(session_id=session_id, agent_id="p10_2_buyer")
+    assert result.get("success") is True, result
+
+    r = prod_client.post("/sessions", json={
+        "module_type": "emporia:service:v1", "creator_agent_id": "p10_2_buyer",
+        "config": {"description": "P10-2 dispute rationale test"}, "payment_rules": {"mode": "free"},
+    },
+        headers=bearer_for(prod_client, "p10_2_buyer"))
+    session_id2 = r.json()["session_id"]
+    prod_client.post(
+        f"/sessions/{session_id2}/join", json={"agent_id": "p10_2_seller"},
+        headers=bearer_for(prod_client, "p10_2_seller"),
+    )
+    with patch.object(mcp_server, "httpx", adapter):
+        mcp_server.submit_action(
+            session_id=session_id2, action_type="accept", payload={},
+            rationale="Accepting — P10-2 test.", agent_id="p10_2_seller",
+        )
+        mcp_server.submit_action(
+            session_id=session_id2, action_type="deliver", payload={"deliverable": "done"},
+            rationale="Delivered — P10-2 test.", agent_id="p10_2_seller",
+        )
+        with patch.object(
+            wire, "default_dispute_rationale", side_effect=lambda reason: f"P10-2 patched: {reason}",
+        ):
+            result2 = mcp_server.dispute_delivery(
+                session_id=session_id2, reason="quality issue", agent_id="p10_2_buyer",
+            )
+    assert result2.get("success") is True, result2
+
+
 def test_mcp_dashboard_bearer_headers_uses_shared_wire_contract(prod_client):
     """P6-2: mcp_server._dashboard_bearer_headers() and agent_sdk's
     _bearer_token_value() (see the sibling test below) used to build the
