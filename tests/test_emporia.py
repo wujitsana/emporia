@@ -10268,9 +10268,13 @@ def test_mcp_confirm_and_dispute_delivery_use_shared_wire_contract(prod_client):
                 rationale="Confirming — P10-1 wire contract test.",
             )
     assert result.get("success") is True, result
-    confirm_spy.assert_called_once_with(
-        "p10_1_buyer", "confirm", {}, "Confirming — P10-1 wire contract test.", session_id, 2,
-    )
+    # Called twice since P10-3: once by mcp_server.py's signer, once by
+    # relay_server.py's verifier — both now resolve from wire.py.
+    assert confirm_spy.call_count == 2
+    for call in confirm_spy.call_args_list:
+        assert call.args == (
+            "p10_1_buyer", "confirm", {}, "Confirming — P10-1 wire contract test.", session_id, 2,
+        )
 
     # dispute_delivery — a second session, since the first is now terminal
     r = prod_client.post("/sessions", json={
@@ -10299,10 +10303,14 @@ def test_mcp_confirm_and_dispute_delivery_use_shared_wire_contract(prod_client):
                 session_id=session_id2, reason="not as described", agent_id="p10_1_buyer",
             )
     assert result2.get("success") is True, result2
-    dispute_spy.assert_called_once_with(
-        "p10_1_buyer", "dispute", {"reason": "not as described"},
-        "Dispute: not as described", session_id2, 2,
-    )
+    # Called twice since P10-3: once by mcp_server.py's signer, once by
+    # relay_server.py's verifier — both now resolve from wire.py.
+    assert dispute_spy.call_count == 2
+    for call in dispute_spy.call_args_list:
+        assert call.args == (
+            "p10_1_buyer", "dispute", {"reason": "not as described"},
+            "Dispute: not as described", session_id2, 2,
+        )
 
 
 def test_mcp_confirm_and_dispute_default_rationale_are_single_sourced(prod_client):
@@ -10530,11 +10538,15 @@ def test_mcp_submit_action_uses_shared_wire_contract_and_relay_accepts_it(prod_c
         )
 
     assert result.get("success") is True, result
-    payload_spy.assert_called_once_with(
-        "p6_4_mcp_seller", "accept", {},
-        "Accepting — real end-to-end wire-contract round trip test.",
-        session_id, 0,
-    )
+    # Called twice since P10-3: once by mcp_server.py's signer, once by
+    # relay_server.py's verifier — both now resolve from wire.py.
+    assert payload_spy.call_count == 2
+    for call in payload_spy.call_args_list:
+        assert call.args == (
+            "p6_4_mcp_seller", "accept", {},
+            "Accepting — real end-to-end wire-contract round trip test.",
+            session_id, 0,
+        )
     envelope_spy.assert_called_once()
     assert envelope_spy.call_args.args[0] == "p6_4_mcp_seller"
     assert envelope_spy.call_args.args[1] == "accept"
@@ -10593,11 +10605,15 @@ def test_agent_sdk_submit_action_uses_shared_wire_contract_and_relay_accepts_it(
                 )
 
             assert result["success"] is True, result
-            payload_spy.assert_called_once_with(
-                seller.agent_id, "accept", {},
-                "Accepting — real end-to-end wire-contract round trip test.",
-                session_id, 0,
-            )
+            # Called twice since P10-3: once by the SDK's signer, once by
+            # relay_server.py's verifier — both now resolve from wire.py.
+            assert payload_spy.call_count == 2
+            for call in payload_spy.call_args_list:
+                assert call.args == (
+                    seller.agent_id, "accept", {},
+                    "Accepting — real end-to-end wire-contract round trip test.",
+                    session_id, 0,
+                )
             envelope_spy.assert_called_once()
         finally:
             await buyer._http.aclose()
@@ -10638,7 +10654,11 @@ def test_mcp_send_room_message_uses_shared_wire_contract_and_relay_accepts_it(pr
 
     assert result.get("success") is True, result
     assert result.get("message_id", "").startswith("rmsg_"), result
-    payload_spy.assert_called_once_with(room_id, "hello from P6-5", "chat")
+    # Called twice since P10-3: once by mcp_server.py's signer, once by
+    # relay_server.py's verifier — both now resolve from wire.py.
+    assert payload_spy.call_count == 2
+    for call in payload_spy.call_args_list:
+        assert call.args == (room_id, "hello from P6-5", "chat")
     envelope_spy.assert_called_once()
     assert envelope_spy.call_args.args[0] == "hello from P6-5"
     assert envelope_spy.call_args.args[1] == "chat"
@@ -10686,13 +10706,153 @@ def test_agent_sdk_send_room_message_uses_shared_wire_contract_and_relay_accepts
                 result = await sender.send_room_message(room_id, "hello from P6-5 SDK")
 
             assert result.get("message_id", "").startswith("rmsg_"), result
-            payload_spy.assert_called_once_with(room_id, "hello from P6-5 SDK", "chat")
+            # Called twice since P10-3: once by the SDK's signer, once by
+            # relay_server.py's verifier — both now resolve from wire.py.
+            assert payload_spy.call_count == 2
+            for call in payload_spy.call_args_list:
+                assert call.args == (room_id, "hello from P6-5 SDK", "chat")
             envelope_spy.assert_called_once()
             assert envelope_spy.call_args.args[0] == "hello from P6-5 SDK"
             assert envelope_spy.call_args.args[1] == "chat"
             assert len(envelope_spy.call_args.args[2]) == 86  # base64url Ed25519 sig, identity.sign()
         finally:
             await sender._http.aclose()
+
+    asyncio.run(scenario())
+
+
+def test_relay_server_verifies_signed_action_and_room_message_via_wire_contract():
+    """P10-3: N3-8's original defect was one signed-envelope shape living in
+    THREE files (relay_server.py, agent_sdk.py, mcp_server.py), needing the
+    identical fix in each. P6 unified the two clients on wire.py but left
+    the verifier — relay_server.py, the copy that actually decides whether
+    a signature is valid — hand-building its own copies. submit_action()'s
+    full_payload and send_room_message()'s signed_envelope now both call the
+    same wire.py functions the clients sign with. Pinned by patching each
+    wire.py function with a spy and confirming the verifier actually invokes
+    it (not just coincidentally building an equal dict) while a real
+    signature — computed by the real client-side function — still verifies
+    end-to-end. No existing test's assertions needed editing for this item;
+    that's the actual proof of behavior-preservation for a pure refactor
+    like this one."""
+    import asyncio
+
+    import httpx as httpx_module
+
+    from emporia import wire
+    from emporia.agent_sdk import EmporiaAgent
+    from emporia.identity import get_public_key_hex
+    from emporia.relay_server import app as relay_app
+
+    def _wired(agent_id: str) -> EmporiaAgent:
+        a = EmporiaAgent(
+            relay_url="http://testserver", agent_id=agent_id,
+            public_key_hex=get_public_key_hex(agent_id),
+        )
+        a._http = httpx_module.AsyncClient(
+            transport=httpx_module.ASGITransport(app=relay_app), base_url="http://testserver",
+        )
+        return a
+
+    async def scenario():
+        buyer = _wired("p10_3_buyer")
+        seller = _wired("p10_3_seller")
+        try:
+            await buyer.register()
+            await seller.register()
+
+            session = await buyer.create_session(
+                "emporia:service:v1", config={"description": "P10-3 test"},
+                payment_rules={"mode": "free"},
+            )
+            session_id = session["session_id"]
+            await seller.join_session(session_id)
+
+            with patch.object(
+                wire, "signed_action_payload", wraps=wire.signed_action_payload,
+            ) as action_spy:
+                result = await seller.submit_action(
+                    session_id, "accept", {}, "Accepting — P10-3 verifier test.",
+                )
+            assert result["success"] is True, result
+            # Called at least twice: once by the SDK signer, once by the
+            # relay verifier — both must resolve to the exact same dict.
+            assert action_spy.call_count >= 2
+            signer_call = action_spy.call_args_list[0]
+            verifier_call = action_spy.call_args_list[-1]
+            assert signer_call.args == verifier_call.args, (signer_call, verifier_call)
+
+            room = await buyer.create_room(
+                name="P10-3 Room", room_type="public", gate_type="open",
+            )
+            room_id = room["room_id"]
+            with patch.object(
+                wire, "signed_room_message_payload", wraps=wire.signed_room_message_payload,
+            ) as msg_spy:
+                msg_result = await buyer.send_room_message(room_id, "hello P10-3")
+            assert msg_result.get("message_id", "").startswith("rmsg_")
+            assert msg_spy.call_count >= 2
+            msg_signer_call = msg_spy.call_args_list[0]
+            msg_verifier_call = msg_spy.call_args_list[-1]
+            assert msg_signer_call.args == msg_verifier_call.args
+        finally:
+            await buyer._http.aclose()
+            await seller._http.aclose()
+
+    asyncio.run(scenario())
+
+
+def test_relay_server_verifies_dm_signature_via_wire_contract():
+    """P10-3: send_message()'s signed_envelope (the DM/routing contract —
+    N3-8's original R7 finding, "bound to to_agent/type/session_id") now
+    also comes from wire.signed_dm_envelope() on both the agent_sdk.py
+    signer and the relay_server.py verifier — the fourth signed contract,
+    and like the action/room-message ones above, the first time the
+    verifier side is single-sourced too, not just the two clients. Pinned
+    the same way: a real DM through the ASGI-transport pattern, with a spy
+    on the shared function proving both sides call it with identical args."""
+    import asyncio
+
+    import httpx as httpx_module
+
+    from emporia import wire
+    from emporia.agent_sdk import EmporiaAgent
+    from emporia.identity import get_public_key_hex
+    from emporia.relay_server import app as relay_app
+
+    def _wired(agent_id: str) -> EmporiaAgent:
+        a = EmporiaAgent(
+            relay_url="http://testserver", agent_id=agent_id,
+            public_key_hex=get_public_key_hex(agent_id),
+        )
+        a._http = httpx_module.AsyncClient(
+            transport=httpx_module.ASGITransport(app=relay_app), base_url="http://testserver",
+        )
+        return a
+
+    async def scenario():
+        sender = _wired("p10_3_dm_sender")
+        recipient = _wired("p10_3_dm_recipient")
+        try:
+            await sender.register()
+            await recipient.register()
+
+            with patch.object(
+                wire, "signed_dm_envelope", wraps=wire.signed_dm_envelope,
+            ) as dm_spy:
+                result = await sender.send_message(
+                    "p10_3_dm_recipient", "chat", {"text": "hi from P10-3"},
+                )
+            assert result, result
+            assert dm_spy.call_count >= 2
+            signer_call = dm_spy.call_args_list[0]
+            verifier_call = dm_spy.call_args_list[-1]
+            assert signer_call.args == verifier_call.args
+            assert signer_call.args[0] == "p10_3_dm_recipient"
+            assert signer_call.args[1] == "chat"
+        finally:
+            await sender._http.aclose()
+            await recipient._http.aclose()
 
     asyncio.run(scenario())
 

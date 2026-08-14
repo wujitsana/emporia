@@ -4615,14 +4615,11 @@ async def submit_action(session_id: str, req: SubmitActionRequest):
     if req.agent_id not in s["participants"]:
         raise HTTPException(400, "Not a participant")
 
-    full_payload = {
-        "session_id": session_id,
-        "step_number": s["step_number"],
-        "action_type": req.action_type,
-        "payload": req.payload,
-        "agent_id": req.agent_id,
-        "peer_text_rationale": req.peer_text_rationale,
-    }
+    from emporia.wire import signed_action_payload
+    full_payload = signed_action_payload(
+        req.agent_id, req.action_type, req.payload, req.peer_text_rationale,
+        session_id, s["step_number"],
+    )
 
     # 1. Guardrails (regex firewall + optional NVIDIA NIM semantic check)
     try:
@@ -5127,10 +5124,8 @@ async def send_message(req: SendMessageRequest, request: Request):
     # N3-8 (R7): bound to the routing envelope (to_agent/type/session_id), not just
     # payload — a payload-only signature was valid for delivery to *any* recipient/type,
     # since those fields sit outside what was signed yet drive routing (:3339 below).
-    signed_envelope = {
-        "to_agent": req.to_agent, "type": req.type,
-        "session_id": req.session_id, "payload": req.payload,
-    }
+    from emporia.wire import signed_dm_envelope
+    signed_envelope = signed_dm_envelope(req.to_agent, req.type, req.session_id, req.payload)
     if not AGENT_REGISTRY.verify_signature(caller, signed_envelope, req.signature):
         raise HTTPException(403, "Invalid signature")
 
@@ -5966,7 +5961,8 @@ async def send_room_message(room_id: str, req: SendRoomMessageRequest, request: 
     # N3-8 (R7): bound to room_id + msg_type, not just content — a content-only
     # signature was valid in *any* room the caller belongs to, forever (replayable
     # across rooms and across msg_type, e.g. a signed "chat" replayed as "accept").
-    signed_envelope = {"room_id": room_id, "content": req.content, "msg_type": req.msg_type}
+    from emporia.wire import signed_room_message_payload
+    signed_envelope = signed_room_message_payload(room_id, req.content, req.msg_type)
     if not AGENT_REGISTRY.verify_signature(caller, signed_envelope, req.signature):
         raise HTTPException(403, "Invalid message signature")
 

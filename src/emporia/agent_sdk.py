@@ -396,18 +396,11 @@ class EmporiaAgent:
         # Signed envelope binds to_agent/type/session_id too, not just the payload
         # (N3-8/R7) — a payload-only signature was valid for delivery to any
         # recipient/type, since those fields drove routing without being signed.
+        from emporia.wire import signed_dm_envelope
+        signed_payload = signed_dm_envelope(to_agent, msg_type, session_id, body)
         resp = await self._bearer_request(
             "post", f"{self.relay_url}/messages",
-            json={
-                "to_agent": to_agent,
-                "session_id": session_id,
-                "type": msg_type,
-                "payload": body,
-                "signature": self._sign({
-                    "to_agent": to_agent, "type": msg_type,
-                    "session_id": session_id, "payload": body,
-                }),
-            },
+            json={**signed_payload, "signature": self._sign(signed_payload)},
         )
         resp.raise_for_status()
         return resp.json()

@@ -130,3 +130,16 @@ def room_message_envelope(
     if parent_message_id:
         body["parent_message_id"] = parent_message_id
     return body
+
+
+def signed_dm_envelope(
+    to_agent: str, msg_type: str, session_id: str | None, payload: dict[str, Any],
+) -> dict[str, Any]:
+    """The dict `POST /messages` callers sign (a direct agent-to-agent message,
+    not a room post) — binds `to_agent`/`msg_type`/`session_id`, not just
+    `payload` (N3-8/R7: a payload-only signature was valid for delivery to
+    *any* recipient/type, since those fields sit outside what was signed yet
+    drive routing). `relay_server.py`'s `send_message()` reconstructs this
+    same dict to verify — the fourth signed contract, and the first one this
+    module also single-sources on the verifier side, not just both clients."""
+    return {"to_agent": to_agent, "type": msg_type, "session_id": session_id, "payload": payload}
