@@ -996,6 +996,25 @@ flagged by P5 as the expensive, optional half of the MCP/SDK duplication entry, 
 confirms that scoping was right: every real bug found in that overlap has been in the shared bodies
 `wire.py` now owns, not in the transport difference itself.
 
+## Fixed post-hackathon (P7 pass — the P6 self-review, plus closing the join_session 402 gap)
+
+The sixteenth consecutive pass to find genuine defects in the immediately preceding pass's own
+shipped work (…→P4→P5→P6→**P7**). Two commits, both landed on `post-hackathon`.
+
+| Finding | Severity | Fix |
+|---|---|---|
+| **`delete_session()`'s (P6-1) TOCTOU re-check only confirmed the target session still existed, not that its row counts still matched what the audit line and API response had already committed to.** P6-1 split the endpoint's single `DB_LOCK` block into two (count, then delete) to stop holding the lock during the audit-line file write, reusing a bare existence check to guard the gap between them. `submit_action()`/`join_session()` each write via `save_session()`/`record_action()`/`add_participant()`, every one of which acquires `DB_LOCK` independently and briefly — nothing stopped one of them landing in that gap. Reachable only via `?force=true` against a non-terminal (`waiting`/`active`) session with a concurrent write in flight — the default path is safe, since neither write endpoint accepts a terminal session — but on that path, a concurrent row got silently deleted along with everything else, undercounting the exact record this endpoint's whole docstring promises ("we always report/record what we touched"). | Medium (our defect; real but narrow — force-delete of a non-terminal session, racing a concurrent write, only) | Generalized the existence-only re-check into a count-match re-check: the same `unlinked`/`deleted` `SELECT COUNT(*)` queries run again inside the second `DB_LOCK` block, and any mismatch (not just "session gone") now aborts with 409 instead of proceeding — same fail-loudly, no-retry-logic posture the narrower guard already had. Verified by simulating the exact race: a side effect on `_write_audit_line()` (which runs in the window between the two blocks, same as production) performs a real concurrent `record_action()` write before the delete block re-checks. |
+| **`agent_sdk.join_session()` discarded a 402's response body**, called out as owed by P5's own section but not fixed there. `resp.raise_for_status()` on every non-2xx response meant a 402 raised a bare `httpx.HTTPStatusError`, losing P1brr-2's machine-readable `declined: {"rail": ..., "reason": ...}` key that `mcp_server.join_session()` (P4-3) already returns directly as `detail`. Confirmed via `grep` that `agent_sdk.py` had zero existing 402-special-casing anywhere — a live gap, not a stale note. | Low (API-shape parity, not a security hole; the information was reachable via `e.response.json()`, just inconsistently with the MCP client) | New `PaymentRequiredError(httpx.HTTPStatusError)`, raised only by `join_session()` on a 402, carrying `.detail` (the parsed body) and `.www_authenticate`. Chosen over returning a dict on 402 (which would break the SDK's raise-on-error contract for one status code on one of its 40 methods) — callers keep the uniform "await returns success or raises" shape, with a documented, typed way to get the same information `mcp_server.py` already hands back. Verified end-to-end: the same real x402-declined scenario `test_mcp_join_session_surfaces_x402_declined_reason` (P4-3) drives against the MCP client, now driven against a real `EmporiaAgent` over the ASGI-transport pattern, confirming `PaymentRequiredError.detail["declined"]` matches. |
+
+**Not fixed, recorded as evidence for the next pass:** `payments`/`settlements` counts in
+`delete_session()`'s report are still computed once, in the first `DB_LOCK` block, and never
+re-verified — deliberately, since those tables are never deleted (a drift there is a reporting
+inaccuracy, not a data-integrity break the way `unlinked`/`deleted` would be). `PaymentRequiredError`
+is wired into `join_session()` only; `join_room`/`subscribe_agora_topic` are a separate, unscoped
+instance of the same 402-shape tax if it turns out to matter later. Federation/Interop/Rooms/
+Dashboard remain unsurveyed in detail — the standing candidate for a broader sweep instead of
+another self-review.
+
 ## Threat model notes (by design, not gaps)
 
 - **Ed25519 = auth; the relay never holds private keys.** Keys live at `~/.hermes/keys/*.priv`,

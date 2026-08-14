@@ -112,10 +112,13 @@ already had in `httpx` form. The N3 pass (N3-7) made it worse in the other direc
 meant rewriting them to forward via `_bearer_request` — duplicating logic `agent_sdk.py`'s
 equivalents already had, rather than sharing it (see `SECURITY.md`'s N3 pass, R6). Every future
 pass that touches a write endpoint's contract will keep paying this tax until the refactor below
-happens. **Still live in P5:** `agent_sdk.join_session()` calls `raise_for_status()`, so P1brr-2's
-`declined` reason key (added to `mcp_server.join_session()` in P4-3) is only reachable there by
-catching `HTTPStatusError` and re-parsing — same underlying information, two different shapes,
-across the two clients.
+happens. **Closed (P7-2).** `agent_sdk.join_session()` used to call `raise_for_status()`, so
+P1brr-2's `declined` reason key (added to `mcp_server.join_session()` in P4-3) was only reachable
+there by catching `HTTPStatusError` and re-parsing — same underlying information, two different
+shapes, across the two clients. `join_session()` now raises `PaymentRequiredError` (a small
+`httpx.HTTPStatusError` subclass, `.detail`/`.www_authenticate`) instead of a bare
+`HTTPStatusError` on 402, without touching the SDK's raise-on-error contract for its other 39
+methods. See `SECURITY.md`'s P7 pass.
 
 **De-risked in P5 — the estimate below understated a real blocker, and a better decomposition
 exists.** The stated direction ("MCP tools delegate to `EmporiaAgent` methods") assumes a mechanical
@@ -236,9 +239,11 @@ P1b sweep P1br's own coverage caveat left owed) → P4 (done — closes the x402
 the cascade-delete endpoint) → P5 (done — the P4 self-review; found the pre-existing
 `sessions.status` bug P4-5 walked past, hardened the cascade-delete endpoint, and de-risked the
 MCP/SDK refactor below) → P6 (done — the P5 self-review, plus the shared wire-contract module the
-MCP/SDK refactor above needed — see `SECURITY.md`) → next unnamed.** The `r`-suffix review-chain
-naming ends at P1brr; review passes since are named sequentially (P5, P6, …) rather than growing
-another suffix — review yield had shrunk to P1brr's own one Medium/three Low, the signal to stop.
+MCP/SDK refactor above needed) → P7 (done — the P6 self-review; closed a count TOCTOU P6-1's own
+lock-scope fix reopened, and closed the join_session 402-shape gap P5 had left owed — see
+`SECURITY.md`) → next unnamed.** The `r`-suffix review-chain naming ends at P1brr; review passes
+since are named sequentially (P5, P6, P7, …) rather than growing another suffix — review yield had
+shrunk to P1brr's own one Medium/three Low, the signal to stop.
 
 **P1b shipped: x402 is a real, working second payment rail**, non-custodial, eight commits
 (SECURITY.md's P1b pass has the full findings). `_verify_and_confirm_payment()` gained an x402
