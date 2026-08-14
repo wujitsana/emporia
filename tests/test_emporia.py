@@ -432,6 +432,55 @@ def test_identity_atomic_write_leaves_no_residue_on_failure():
             assert leftovers == [], leftovers
 
 
+def test_identity_corrupt_private_key_fails_loud_and_is_left_untouched():
+    """P11-4: a truncated key file (crash, disk-full mid-write — the exact
+    failure _write_secret_atomically() (P11-3) prevents going forward, but
+    not for a file that was already truncated before this pass) used to
+    raise a bare `ValueError: An Ed25519 private key is 32 bytes long` out
+    of cryptography's own code — no mention of which file, why, or what to
+    do. Deliberately does NOT regenerate: a new key would silently mint a
+    different public key and break this identity's existing relay
+    registration, so recovery has to be a human decision. Asserts the
+    corrupt file is left byte-for-byte untouched, since recovery (restore
+    from backup) depends on it."""
+    from emporia.identity import generate_or_load_keypair
+    with tempfile.TemporaryDirectory() as d:
+        fresh_dir = Path(d) / "corrupt_key_dir"
+        fresh_dir.mkdir()
+        key_file = fresh_dir / "p11_4_corrupt_agent.priv"
+        key_file.write_bytes(b"\x01\x02\x03\x04\x05")
+        with patch("emporia.identity.KEY_DIR", fresh_dir):
+            with pytest.raises(ValueError) as exc_info:
+                generate_or_load_keypair("p11_4_corrupt_agent")
+        msg = str(exc_info.value)
+        assert "corrupt" in msg.lower()
+        assert "5 bytes" in msg
+        assert str(key_file) in msg
+        assert key_file.read_bytes() == b"\x01\x02\x03\x04\x05"
+
+
+def test_identity_truncated_jwt_secret_self_heals():
+    """P11-4: unlike a corrupt private key, a truncated JWT secret is safe to
+    regenerate — the blast radius is only invalidating outstanding bearer
+    tokens (an availability blip), versus silently continuing to HMAC-sign
+    every dashboard/agent token with a shorter, weaker key (the read path had
+    no length check at all before this). Writes a 7-byte file at the JWT
+    secret path and asserts it self-heals to a fresh 32-byte secret rather
+    than being used as-is or raising."""
+    from emporia import identity
+    with tempfile.TemporaryDirectory() as d:
+        fresh_dir = Path(d) / "truncated_jwt_dir"
+        fresh_dir.mkdir()
+        secret_path = fresh_dir / identity._JWT_SECRET_FILE_NAME
+        secret_path.write_bytes(b"\x01\x02\x03\x04\x05\x06\x07")
+        with patch.object(identity, "KEY_DIR", fresh_dir), \
+             patch.object(identity, "_RELAY_JWT_SECRET_CACHE", None):
+            secret = identity.load_or_generate_relay_jwt_secret()
+        assert len(secret) == 32
+        assert secret != b"\x01\x02\x03\x04\x05\x06\x07"
+        assert secret_path.read_bytes() == secret
+
+
 def test_content_address_no_0x_prefix():
     from emporia.identity import content_address_for
     addr = content_address_for("alice", None)

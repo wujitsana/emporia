@@ -64,7 +64,24 @@ def _load_or_generate_at(path: Path) -> tuple[ed25519.Ed25519PrivateKey, bytes]:
     KEY_DIR.mkdir(mode=0o700, parents=True, exist_ok=True)
     if path.exists():
         raw = path.read_bytes()
-        priv = ed25519.Ed25519PrivateKey.from_private_bytes(raw)
+        try:
+            priv = ed25519.Ed25519PrivateKey.from_private_bytes(raw)
+        except ValueError as e:
+            # A truncated write (crash, disk-full) is the only way this file gets
+            # here at the wrong length — _write_secret_atomically() means a
+            # completed write is always exactly 32 bytes. Deliberately not
+            # regenerating: a new key would change this identity's public key and
+            # silently break its existing relay registration, so recovery has to
+            # be a human decision (restore from backup, or delete the file to
+            # register as a new identity) rather than something this function
+            # decides on its own.
+            raise ValueError(
+                f"private key file is corrupt (unrecoverable): {path} is "
+                f"{len(raw)} bytes, expected 32 — refusing to silently "
+                f"regenerate, since that would mint a new public key and break "
+                f"this identity's existing relay registration. Restore {path} "
+                f"from backup, or delete it to register as a new identity."
+            ) from e
     else:
         priv = ed25519.Ed25519PrivateKey.generate()
         raw = priv.private_bytes(
@@ -149,9 +166,17 @@ def load_or_generate_relay_jwt_secret() -> bytes:
     if _RELAY_JWT_SECRET_CACHE is None:
         KEY_DIR.mkdir(mode=0o700, parents=True, exist_ok=True)
         path = KEY_DIR / _JWT_SECRET_FILE_NAME
-        if path.exists():
-            _RELAY_JWT_SECRET_CACHE = path.read_bytes()
+        existing = path.read_bytes() if path.exists() else b""
+        if len(existing) == 32:
+            _RELAY_JWT_SECRET_CACHE = existing
         else:
+            # A truncated write (crash, disk-full) is the only way a persisted
+            # secret ends up here at the wrong length — _write_secret_atomically()
+            # means a completed write is always exactly 32 bytes. Unlike a corrupt
+            # private key, regenerating here is safe: the blast radius is only
+            # invalidating outstanding bearer tokens (an availability blip), versus
+            # silently continuing to HMAC-sign every dashboard/agent token with a
+            # shorter, weaker key.
             secret = secrets.token_bytes(32)
             _write_secret_atomically(path, secret)
             _RELAY_JWT_SECRET_CACHE = secret
