@@ -3532,6 +3532,56 @@ def test_delete_session_audit_write_does_not_hold_db_lock(client):
     )
 
 
+def test_delete_session_force_delete_aborts_on_concurrent_write(client):
+    """P7-1: P6-1 split the count/audit/delete block into two DB_LOCK-held
+    blocks (count, then delete) with the audit-line file write running
+    outside any lock in between — fixing the lock-scope bug, but opening a
+    narrow window between them. The re-check added there only verified the
+    session still EXISTED, not that its row counts still matched what was
+    already written to the audit line and would be returned to the caller.
+    A concurrent submit_action landing in that window (reachable via
+    ?force=true against a non-terminal session — the only case where a
+    write path would still accept one) got silently deleted anyway,
+    undercounting both. Simulates exactly that: a side effect on
+    _write_audit_line (which runs in the window between the two blocks)
+    performs a real concurrent record_action() write before the delete
+    block re-checks. Must fail pre-fix (200, and the concurrent action row
+    silently deleted with it) and pass post-fix (409, nothing touched)."""
+    from emporia import relay_server
+    from emporia.relay_server import load_session
+
+    _register(client, "p7_1_race_creator")
+    _register(client, "p7_1_race_op")
+
+    r = client.post("/sessions", json={
+        "module_type": "emporia:service:v1", "creator_agent_id": "p7_1_race_creator",
+        "config": {"description": "d"}, "payment_rules": {"mode": "free"},
+    },
+        headers={"x-emporia-agent-id": "p7_1_race_creator"})
+    session_id = r.json()["session_id"]
+
+    original_write = relay_server._write_audit_line
+
+    def racing_write(entry):
+        # Simulates a concurrent submit_action's write landing in the window
+        # between the count block (already run) and the delete block (about
+        # to run) — the same DB_LOCK-acquiring call submit_action() itself
+        # makes via record_action().
+        relay_server.record_action(session_id, "p7_1_race_creator", "concurrent_action", {})
+        return original_write(entry)
+
+    with patch.dict(os.environ, {"EMPORIA_AGENT_ID": "p7_1_race_op"}), \
+         patch.object(relay_server, "_write_audit_line", side_effect=racing_write):
+        r = client.delete(
+            f"/admin/sessions/{session_id}?force=true",
+            headers={"x-emporia-agent-id": "p7_1_race_op"},
+        )
+    assert r.status_code == 409, r.text
+    assert load_session(session_id) is not None, (
+        "a count mismatch between the two DB_LOCK blocks must leave the session untouched"
+    )
+
+
 # ============================================================================
 # Proof-of-Reasoning gate
 # ============================================================================

@@ -4980,7 +4980,7 @@ async def delete_session(session_id: str, request: Request, force: bool = False)
     # same shape of mistake, so it gets fixed the same way: two short
     # DB_LOCK-held blocks (count, then delete) with the file write in
     # between, holding no lock.
-    with DB_LOCK, get_db() as conn:
+    def _unlinked_and_deleted_counts(conn: sqlite3.Connection) -> tuple[dict, dict]:
         unlinked = {
             "rooms": conn.execute(
                 "SELECT COUNT(*) FROM rooms WHERE linked_session_id = ?", (session_id,)
@@ -5000,6 +5000,10 @@ async def delete_session(session_id: str, request: Request, force: bool = False)
                 "SELECT COUNT(*) FROM sessions WHERE session_id = ?", (session_id,)
             ).fetchone()[0],
         }
+        return unlinked, deleted
+
+    with DB_LOCK, get_db() as conn:
+        unlinked, deleted = _unlinked_and_deleted_counts(conn)
         retained = {
             "payments": conn.execute(
                 "SELECT COUNT(*) FROM payments WHERE session_id = ?", (session_id,)
@@ -5019,19 +5023,24 @@ async def delete_session(session_id: str, request: Request, force: bool = False)
         "unlinked": unlinked,
     })
 
-    # Re-check existence: a narrow TOCTOU window exists between the two
-    # DB_LOCK blocks above/below (another request could in principle touch
-    # this exact session in between). Low-stakes here — this endpoint only
-    # ever targets a terminal (completed/abandoned) session unless
-    # ?force=true, so nothing in normal operation is still writing to the
-    # target between the two blocks — but fail loudly rather than silently
-    # deleting a session that vanished out from under us, instead of adding
-    # retry logic to an admin cleanup endpoint that doesn't need it.
+    # Re-check counts, not just existence: a narrow TOCTOU window exists
+    # between the two DB_LOCK blocks above/below (a concurrent submit_action/
+    # join_session on this exact session — reachable only via ?force=true on
+    # a non-terminal session, since neither of those write paths accepts a
+    # terminal one). P7-1: the original version of this guard only checked
+    # the session still existed, so a row landing in that window (e.g. a
+    # concurrent submit_action's new `actions` row) got silently deleted
+    # anyway — undercounting the audit line and the response already
+    # committed to above. Re-running the same counts and refusing on ANY
+    # mismatch (not just "gone") closes that; still no retry logic, same as
+    # the existence-only version — this is an admin cleanup endpoint, fail
+    # loudly and let the operator re-issue the call against the new state.
     with DB_LOCK, get_db() as conn:
-        if not conn.execute(
-            "SELECT 1 FROM sessions WHERE session_id = ?", (session_id,)
-        ).fetchone():
-            raise HTTPException(409, "Session was deleted by a concurrent request")
+        recheck_unlinked, recheck_deleted = _unlinked_and_deleted_counts(conn)
+        if recheck_unlinked != unlinked or recheck_deleted != deleted:
+            raise HTTPException(
+                409, "Session was modified by a concurrent request — retry to delete the current state",
+            )
         conn.execute(
             "UPDATE rooms SET linked_session_id = NULL WHERE linked_session_id = ?",
             (session_id,),
