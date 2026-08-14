@@ -10905,6 +10905,120 @@ def test_agent_sdk_join_session_surfaces_x402_declined_reason_via_payment_requir
     asyncio.run(scenario())
 
 
+def test_agent_sdk_join_room_surfaces_402_detail_via_payment_required_error():
+    """P8-2: join_room() had the same gap join_session() did before P7-2 —
+    a bare resp.raise_for_status() on a 402, discarding the challenge body
+    (see test_room_join_402_is_byte_identical_when_x402_unconfigured for the
+    MPP body's shape: error/message/amount_cents/resource/protocol).
+    mcp_server.join_room() already returns this as `detail` (:775). Simpler
+    scenario than the x402 one above — a plain unpaid join against a
+    gate_type:"paid" room is enough to hit the 402 and exercises the common
+    case, not just the x402-declined edge. Must fail pre-fix (bare
+    HTTPStatusError, no .detail) and pass post-fix. Also pins that
+    PaymentRequiredError stays catchable as httpx.HTTPStatusError, so an
+    existing caller catching that broad type keeps working unchanged."""
+    import asyncio
+
+    import httpx as httpx_module
+
+    from emporia.agent_sdk import EmporiaAgent, PaymentRequiredError
+    from emporia.identity import get_public_key_hex
+    from emporia.relay_server import app as relay_app
+
+    def _wired(agent_id: str) -> EmporiaAgent:
+        a = EmporiaAgent(
+            relay_url="http://testserver", agent_id=agent_id,
+            public_key_hex=get_public_key_hex(agent_id),
+        )
+        a._http = httpx_module.AsyncClient(
+            transport=httpx_module.ASGITransport(app=relay_app), base_url="http://testserver",
+        )
+        return a
+
+    async def scenario():
+        owner = _wired("p8_2_sdk_room_owner")
+        joiner = _wired("p8_2_sdk_room_joiner")
+        try:
+            await owner.register()
+            await joiner.register()
+
+            room = await owner.create_room(
+                name="P8-2 SDK Wire Room", room_type="private",
+                gate_type="paid", entry_fee_cents=250,
+            )
+            room_id = room["room_id"]
+
+            with pytest.raises(PaymentRequiredError) as exc_info:
+                await joiner.join_room(room_id, "p8_2_sdk_room_joiner")
+
+            assert isinstance(exc_info.value, httpx_module.HTTPStatusError)
+            assert exc_info.value.detail["resource"] == f"emporia:room:{room_id}"
+            assert exc_info.value.detail["amount_cents"] == 250
+            assert exc_info.value.www_authenticate
+        finally:
+            await owner._http.aclose()
+            await joiner._http.aclose()
+
+    asyncio.run(scenario())
+
+
+def test_agent_sdk_subscribe_agora_topic_surfaces_402_detail_via_payment_required_error():
+    """P8-2: subscribe_agora_topic()'s half of the same gap — see the
+    join_room test above. mcp_server.subscribe_agora_topic() already
+    returns the 402 body as `detail` (:1147). paid_invite requires an
+    invite AND payment; the invite is issued first (via a raw bearer
+    request — the SDK has no dedicated invite method) so the 402 this test
+    hits is genuinely the payment gate, not the invite gate."""
+    import asyncio
+
+    import httpx as httpx_module
+
+    from emporia.agent_sdk import EmporiaAgent, PaymentRequiredError
+    from emporia.identity import get_public_key_hex
+    from emporia.relay_server import app as relay_app
+
+    def _wired(agent_id: str) -> EmporiaAgent:
+        a = EmporiaAgent(
+            relay_url="http://testserver", agent_id=agent_id,
+            public_key_hex=get_public_key_hex(agent_id),
+        )
+        a._http = httpx_module.AsyncClient(
+            transport=httpx_module.ASGITransport(app=relay_app), base_url="http://testserver",
+        )
+        return a
+
+    async def scenario():
+        owner = _wired("p8_2_sdk_topic_owner")
+        joiner = _wired("p8_2_sdk_topic_joiner")
+        try:
+            await owner.register()
+            await joiner.register()
+
+            topic = await owner.create_agora_topic(
+                name="P8-2 SDK Wire Topic", gate_type="paid_invite", entry_fee_cents=100,
+            )
+            slug = topic["slug"]
+
+            invite_resp = await owner._bearer_request(
+                "post", f"{owner.relay_url}/agoras/topics/{slug}/invite",
+                json={"invitee_id": "p8_2_sdk_topic_joiner"},
+            )
+            invite_resp.raise_for_status()
+
+            with pytest.raises(PaymentRequiredError) as exc_info:
+                await joiner.subscribe_agora_topic(slug)
+
+            assert isinstance(exc_info.value, httpx_module.HTTPStatusError)
+            assert exc_info.value.detail["resource"] == f"emporia:agora:{topic['topic_id']}"
+            assert exc_info.value.detail["amount_cents"] == 100
+            assert exc_info.value.www_authenticate
+        finally:
+            await owner._http.aclose()
+            await joiner._http.aclose()
+
+    asyncio.run(scenario())
+
+
 def test_agent_sdk_write_call_site_attaches_bearer_credential():
     """Same property as the MCP test above, for agent_sdk.py's write methods
     (create_listing, create_session, submit_action, send_message, create_event,

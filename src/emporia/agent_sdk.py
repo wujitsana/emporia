@@ -33,12 +33,16 @@ def _ws_url(http_url: str, path: str) -> str:
 
 
 class PaymentRequiredError(httpx.HTTPStatusError):
-    """Raised by join_session() on a 402. `.detail` is the parsed response body
-    (e.g. x402's declined={"rail": ..., "reason": ...}); `.www_authenticate` is the
-    challenge header. mcp_server.join_session() already returns this same
+    """Raised by the three paid-entry methods (join_session, join_room,
+    subscribe_agora_topic) on a 402. `.detail` is the parsed response body
+    (e.g. x402's declined={"rail": ..., "reason": ...}, or the MPP challenge's
+    amount_cents/resource fields); `.www_authenticate` is the challenge header.
+    mcp_server.py's equivalent tool functions already return this same
     information as a plain dict — this mirrors it via an exception instead, so
-    join_session() doesn't have to special-case its return type against the raise-
-    on-error contract every other method on this class follows.
+    these methods don't have to special-case their return type against the
+    raise-on-error contract every other method on this class follows. Still a
+    subclass of httpx.HTTPStatusError, so existing callers catching that keep
+    working unchanged.
     """
 
     def __init__(self, response: httpx.Response, detail: dict[str, Any]) -> None:
@@ -48,6 +52,22 @@ class PaymentRequiredError(httpx.HTTPStatusError):
         )
         self.detail = detail
         self.www_authenticate = response.headers.get("www-authenticate", "")
+
+
+def _raise_for_status_or_payment(resp: httpx.Response) -> None:
+    """resp.raise_for_status(), except a 402 becomes PaymentRequiredError so the
+    challenge body (x402's declined={...}, the MPP amount/resource fields) reaches
+    the caller instead of being discarded. Used by the three paid-entry methods —
+    join_session, join_room, subscribe_agora_topic — mirroring the three
+    mcp_server.py call sites that already return that body as `detail`.
+    """
+    if resp.status_code == 402:
+        try:
+            detail = resp.json()
+        except ValueError:
+            detail = {}
+        raise PaymentRequiredError(resp, detail)
+    resp.raise_for_status()
 
 
 class EmporiaAgent:
@@ -292,7 +312,8 @@ class EmporiaAgent:
         """Join a session. For paid sessions, provide either:
         - mpp_spt: a Shared Payment Token from link-cli/mppx (MPP 402 path)
         - payment_intent_id: a pre-created PaymentIntent ID (legacy path)
-        Omit both to receive a 402 challenge with WWW-Authenticate headers.
+        Omit both and, if payment is required, this raises PaymentRequiredError
+        (`.detail` the parsed challenge body, `.www_authenticate` the header).
         """
         body = {
             "agent_id": self.agent_id,
@@ -311,13 +332,7 @@ class EmporiaAgent:
             resp = await self._bearer_request(
                 "post", f"{self.relay_url}/sessions/{session_id}/join", json=body,
             )
-        if resp.status_code == 402:
-            try:
-                detail = resp.json()
-            except ValueError:
-                detail = {}
-            raise PaymentRequiredError(resp, detail)
-        resp.raise_for_status()
+        _raise_for_status_or_payment(resp)
         return resp.json()
 
     async def submit_action(
@@ -558,6 +573,9 @@ class EmporiaAgent:
         rather than charging again. A kicked agent's rejoin — with or
         without payment — is always rejected (403); this is permanent,
         there is no un-kick.
+
+        Omit both and, if payment is required, this raises PaymentRequiredError
+        (`.detail` the parsed challenge body, `.www_authenticate` the header).
         """
         body = {"agent_id": agent_id, "payment_intent_id": payment_intent_id}
         if mpp_spt:
@@ -570,7 +588,7 @@ class EmporiaAgent:
             )
         else:
             resp = await self._bearer_request("post", f"{self.relay_url}/rooms/{room_id}/join", json=body)
-        resp.raise_for_status()
+        _raise_for_status_or_payment(resp)
         return resp.json()
 
     async def get_rooms(self) -> list[dict[str, Any]]:
@@ -757,6 +775,9 @@ class EmporiaAgent:
         access_duration_days), omit both payment_intent_id and mpp_spt — the
         relay recognizes the existing entitlement and re-admits for free
         rather than charging again.
+
+        Omit both and, if payment is required, this raises PaymentRequiredError
+        (`.detail` the parsed challenge body, `.www_authenticate` the header).
         """
         body = {"agent_id": self.agent_id, "payment_intent_id": payment_intent_id}
         if mpp_spt:
@@ -771,7 +792,7 @@ class EmporiaAgent:
             resp = await self._bearer_request(
                 "post", f"{self.relay_url}/agoras/topics/{slug}/subscribe", json=body,
             )
-        resp.raise_for_status()
+        _raise_for_status_or_payment(resp)
         return resp.json()
 
     async def vote_agora_post(self, post_id: str, value: int) -> dict[str, Any]:
