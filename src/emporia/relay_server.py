@@ -4936,6 +4936,11 @@ async def delete_session(session_id: str, request: Request, force: bool = False)
     exists for. Instead, this appends one new audit line recording the
     deletion itself (operator, session_id, per-table counts).
 
+    P8-1: an `admin_session_deleted` line is authoritative only if it is
+    NOT followed by an `admin_session_delete_aborted` line for the same
+    `session_id` — see the second DB_LOCK block below. A reader of the
+    audit log must honor the abort.
+
     Refuses to delete a non-terminal session (`status` not in
     `completed`/`abandoned`) unless `?force=true` is passed, so a wedged
     session can still be cleaned up deliberately without silently deleting
@@ -5035,20 +5040,44 @@ async def delete_session(session_id: str, request: Request, force: bool = False)
     # mismatch (not just "gone") closes that; still no retry logic, same as
     # the existence-only version — this is an admin cleanup endpoint, fail
     # loudly and let the operator re-issue the call against the new state.
+    #
+    # P8-1: the "admin_session_deleted" line above is already on disk by the
+    # time this block runs, and can't be un-written (append-only log) — so a
+    # mismatch here means that line is now FALSE (it claims a deletion that's
+    # about to be aborted). Don't raise from inside this lock block (that
+    # would leave the false line uncorrected); record the mismatch, exit the
+    # lock, then append a compensating "admin_session_delete_aborted" line —
+    # same P6-1 rule (_write_audit_line() never runs under DB_LOCK) applies
+    # to this line too — before raising.
+    mismatch: tuple[dict, dict] | None = None
     with DB_LOCK, get_db() as conn:
         recheck_unlinked, recheck_deleted = _unlinked_and_deleted_counts(conn)
         if recheck_unlinked != unlinked or recheck_deleted != deleted:
-            raise HTTPException(
-                409, "Session was modified by a concurrent request — retry to delete the current state",
+            mismatch = (recheck_unlinked, recheck_deleted)
+        else:
+            conn.execute(
+                "UPDATE rooms SET linked_session_id = NULL WHERE linked_session_id = ?",
+                (session_id,),
             )
-        conn.execute(
-            "UPDATE rooms SET linked_session_id = NULL WHERE linked_session_id = ?",
-            (session_id,),
+            conn.execute("DELETE FROM participants WHERE session_id = ?", (session_id,))
+            conn.execute("DELETE FROM actions WHERE session_id = ?", (session_id,))
+            conn.execute("DELETE FROM messages WHERE session_id = ?", (session_id,))
+            conn.execute("DELETE FROM sessions WHERE session_id = ?", (session_id,))
+
+    if mismatch is not None:
+        recheck_unlinked, recheck_deleted = mismatch
+        _write_audit_line({
+            "timestamp": datetime.now(UTC).isoformat(),
+            "type": "admin_session_delete_aborted",
+            "reason": "concurrent_modification",
+            "operator": caller,
+            "session_id": session_id,
+            "expected": {"unlinked": unlinked, "deleted": deleted},
+            "observed": {"unlinked": recheck_unlinked, "deleted": recheck_deleted},
+        })
+        raise HTTPException(
+            409, "Session was modified by a concurrent request — retry to delete the current state",
         )
-        conn.execute("DELETE FROM participants WHERE session_id = ?", (session_id,))
-        conn.execute("DELETE FROM actions WHERE session_id = ?", (session_id,))
-        conn.execute("DELETE FROM messages WHERE session_id = ?", (session_id,))
-        conn.execute("DELETE FROM sessions WHERE session_id = ?", (session_id,))
 
     return {
         "session_id": session_id,

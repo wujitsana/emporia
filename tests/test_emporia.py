@@ -3582,6 +3582,82 @@ def test_delete_session_force_delete_aborts_on_concurrent_write(client):
     )
 
 
+def test_delete_session_409_compensates_the_false_audit_line(client):
+    """P8-1: P7-1's count-recheck raises 409 on a concurrent-write mismatch —
+    but by then the "admin_session_deleted" line (with the pre-race counts)
+    is already on disk, appended by P5-3's before-delete write, and an
+    append-only log can't retract it. Left as-is, the log falsely claims a
+    deletion that never happened. Simulates the same race
+    test_delete_session_force_delete_aborts_on_concurrent_write does (a
+    concurrent record_action() landing via a _write_audit_line side effect)
+    and checks the audit log itself: must fail pre-fix (exactly one new
+    line, an uncorrected "admin_session_deleted") and pass post-fix (two new
+    lines, the second an "admin_session_delete_aborted" for this
+    session_id) — mirroring the audit-log-reading pattern
+    test_delete_session_operator_deletes_terminal_session_retains_money_rows
+    already established. Also confirms the compensating write doesn't hold
+    DB_LOCK, same property test_delete_session_audit_write_does_not_hold_db_lock
+    pins for the first write."""
+    import glob
+    import json as _json
+
+    from emporia import relay_server
+    from emporia.relay_server import DB_LOCK, LOG_DIR, load_session
+
+    _register(client, "p8_1_race_creator")
+    _register(client, "p8_1_race_op")
+
+    r = client.post("/sessions", json={
+        "module_type": "emporia:service:v1", "creator_agent_id": "p8_1_race_creator",
+        "config": {"description": "d"}, "payment_rules": {"mode": "free"},
+    },
+        headers={"x-emporia-agent-id": "p8_1_race_creator"})
+    session_id = r.json()["session_id"]
+
+    audit_files_before = set(glob.glob(str(LOG_DIR / "messages_*.jsonl")))
+    audit_lines_before = sum(1 for f in audit_files_before for _ in open(f, encoding="utf-8"))
+
+    original_write = relay_server._write_audit_line
+    observed_lock_owned = []
+
+    def racing_write(entry):
+        relay_server.record_action(session_id, "p8_1_race_creator", "concurrent_action", {})
+        observed_lock_owned.append(DB_LOCK._is_owned())
+        return original_write(entry)
+
+    with patch.dict(os.environ, {"EMPORIA_AGENT_ID": "p8_1_race_op"}), \
+         patch.object(relay_server, "_write_audit_line", side_effect=racing_write):
+        r = client.delete(
+            f"/admin/sessions/{session_id}?force=true",
+            headers={"x-emporia-agent-id": "p8_1_race_op"},
+        )
+    assert r.status_code == 409, r.text
+    assert load_session(session_id) is not None
+
+    assert all(owned is False for owned in observed_lock_owned), (
+        "DB_LOCK must not be held while _write_audit_line() runs — "
+        f"got {observed_lock_owned}"
+    )
+
+    audit_files_after = set(glob.glob(str(LOG_DIR / "messages_*.jsonl")))
+    all_lines_after = [
+        _json.loads(line) for f in audit_files_after for line in open(f, encoding="utf-8")
+    ]
+    audit_lines_after = len(all_lines_after)
+    assert audit_lines_after == audit_lines_before + 2, (
+        "a 409 abort must append a SECOND compensating line, not leave the "
+        "first 'admin_session_deleted' line as the only (false) record — "
+        f"got {audit_lines_after - audit_lines_before} new line(s)"
+    )
+    this_session_lines = [
+        entry for entry in all_lines_after if entry.get("session_id") == session_id
+    ]
+    assert len(this_session_lines) == 2
+    assert this_session_lines[0]["type"] == "admin_session_deleted"
+    assert this_session_lines[1]["type"] == "admin_session_delete_aborted"
+    assert this_session_lines[1]["operator"] == "p8_1_race_op"
+
+
 # ============================================================================
 # Proof-of-Reasoning gate
 # ============================================================================
