@@ -1064,6 +1064,32 @@ for tables that are never deleted, the same call every pass since P7 has made. W
 the previous one's work on it (P4-5, P5-2/P5-3, P6-1, P7-1, P8-1, P9-1) is worth checking again at
 P10 — this pass's finding was the smallest yet, which is itself a signal, but not proof.
 
+## Fixed post-hackathon (P10 pass — duplication debt across P6–P9, not a continuation of the P4–P9 self-review chain)
+
+That chain closed deliberately at P9: seven straight passes each found a genuine defect in the
+previous one's `delete_session()` fix (P4-5, P5-2/P5-3, P6-1, P7-1, P8-1, P9-1), until P9 found
+none, confirmed clean on an eighth look. This pass asked a different question: reviewed across
+everything that shipped today (P6 through P9) as one body of work, what did those passes leave
+unfinished? Framed honestly, this is **not a bug-fix table** — nothing below was reachable as a
+live defect, because the existing 419-test suite already covered every path each item touches. The
+value is collapsing multiple definitions of one contract down to one, which is exactly the tax
+`ROADMAP.md`'s MCP/SDK duplication entry exists to pay down.
+
+| Item | Risk if left alone | Fix |
+|---|---|---|
+| **P6-4 unified `submit_action` across both client files and missed two call sites in the very file it was editing.** `mcp_server.py`'s `confirm_delivery`/`dispute_delivery` each hand-built the identical 6-key signed-action dict `wire.signed_action_payload()` already owns. | None reachable today — the two hand-built dicts were genuinely identical to the shared function's output. A future edit to one of the three action-signing call sites in this file risked silently drifting from the other two. | Both now call `wire.signed_action_payload()`. |
+| **Default rationale strings hand-copied across signer and verifier — the one item here that was genuinely load-bearing.** `"Buyer confirmed delivery."` and `f"Dispute: {reason}"` each lived twice: once in `mcp_server.py` (the signer), once in `relay_server.py` (the verifier reconstructing the payload to check `verify_signature` against). A typo or copy-edit in either literal would break every unsigned-rationale confirm/dispute with a 403 that points nowhere near the actual cause. | Two string literals in two files holding up a signature check — the only item in this pass with a plausible future-incident shape. | Both sites now resolve `wire.DEFAULT_CONFIRM_RATIONALE` / `wire.default_dispute_rationale()`. |
+| **`relay_server.py` never imported `wire.py` — the verifier hand-built three signed-envelope shapes P6 only unified for the two clients.** N3-8's original defect was explicitly that one signed-envelope shape lived in *three* files and needed the identical fix in each; P6 unified two of the three and left out the copy that actually decides whether a signature is valid. | Same as item 1: latent drift risk, not a live gap — all three verifier-side dicts were confirmed byte-identical to `wire.py`'s output before the change, including the two consumers (`_assert_payload_safe_counted`, `validate_proof_of_reasoning`) that read the action dict's keys by name. | `submit_action()`, `send_room_message()`, and `send_message()` in `relay_server.py` now call `wire.signed_action_payload()` / `signed_room_message_payload()` / the new `signed_dm_envelope()`. `agent_sdk.send_message()`'s signer moved to the same new function, so the DM/routing contract — the fourth signed contract, and the first one this module single-sources on the verifier side too — is unified end-to-end. |
+| **`mcp_server.py`'s three paid-entry tools returned three different response shapes.** `join_room`/`join_session` both follow `{"success": True, **d}` on 200 and `{..., "success": False}` on 402/error; `subscribe_agora_topic` had no `success` key on any path. | The one item in this pass reachable as an actual (minor) caller-facing surprise, not just duplication: a caller doing `result["success"]` on `subscribe_agora_topic` — a reasonable inference from its two siblings — got a bare `KeyError` instead of a clean `False`. | `subscribe_agora_topic` now follows the same convention on all three paths (200/402/error); route-specific extras (`hint`, `requires_payment`, `www_authenticate`) untouched. |
+| **(Optional, explicitly lowest priority) `delete_session()`'s count helper ran 10 round trips (5 `SELECT COUNT(*)` queries × 2 calls) where 1 query per call would do.** | None — correctness was never in question, only round-trip count on an operator-only cleanup endpoint. | Collapsed to one query with five scalar subqueries per call; all 11 existing `delete_session` tests pass unchanged, which is the actual proof of behavior-preservation for a pure refactor like this one. |
+
+**A consequence worth recording, not a defect:** five pre-existing tests asserted the shared
+`wire.py` action/room-message functions were called *exactly once* — the signer's call. Once the
+verifier also called them (item 3 above), the true count became two, both sides with identical
+args. Those assertions were updated from `assert_called_once_with(...)` to asserting call count 2
+plus identical args across both calls — itself part of the proof the two sides can no longer drift,
+not a correction to prior work.
+
 ## Threat model notes (by design, not gaps)
 
 - **Ed25519 = auth; the relay never holds private keys.** Keys live at `~/.hermes/keys/*.priv`,

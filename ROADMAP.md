@@ -147,6 +147,17 @@ and `agent_sdk.py` call the same functions rather than building the dicts inline
 existing 404-test suite passing unchanged (no existing assertion needed editing) plus new
 single-sourcing and real-signature-round-trip tests per function. See `SECURITY.md`'s P6 pass.
 
+**Verifier-side adoption — done (P10).** P6 unified the two *clients* on `wire.py` and left the
+*verifier* — `relay_server.py`, the copy that actually decides whether a signature is valid —
+hand-building its own copies of the same three envelope shapes (action, room message, and a fourth,
+previously uncovered DM-routing envelope). N3-8's original framing was explicitly a three-file
+duplication (`relay_server.py`, `agent_sdk.py`, `mcp_server.py`); as of P10 all three call the same
+`wire.py` functions, so the shared wire-contract module is complete across all three files, not just
+the two clients. Also folded in: `mcp_server.py`'s `confirm_delivery`/`dispute_delivery` (missed by
+P6-4 despite being in the file P6-4 was editing) now call `wire.signed_action_payload()` too, and the
+default rationale strings the signer and verifier each hand-copied (load-bearing for signature
+verification) are now single-sourced constants in `wire.py`. See `SECURITY.md`'s P10 pass.
+
 **Transport dedup — still open, optional.** Leaving the two transports (sync `httpx` calls vs.
 `AsyncClient`) alone was the right call: it kills the drift class this entry cared about with zero
 async bridging, and P6 confirms it — every duplication bug found in this overlap, before and during
@@ -248,10 +259,16 @@ lock-scope fix reopened, and closed the join_session 402-shape gap P5 had left o
 the P7 self-review; compensated a false audit line P7-1's own fix could leave behind, and finished
 the 402 parity P7-2 started across all three paid-entry SDK methods) → P9 (done — the P8
 self-review, the smallest finding yet in the `delete_session()` arc, plus a research-only
-Federation/Interop/Rooms/Dashboard survey that found every open item there still correctly scoped
-— see `SECURITY.md`) → next unnamed.** The `r`-suffix review-chain naming ends at P1brr; review
-passes since are named sequentially (P5, P6, P7, P8, P9, …) rather than growing another suffix —
-review yield had
+Federation/Interop/Rooms/Dashboard survey that found every open item there still correctly scoped;
+the P4–P9 self-review chain was deliberately closed here, seven straight passes each finding a
+defect in the previous one's `delete_session()` fix until P9 found none, confirmed clean on an
+eighth look) → P10 (done — **not** a continuation of that chain, a different pass reviewing
+everything P6–P9 shipped as one body of work for duplication debt those passes created and didn't
+fully discharge: finished the MCP/SDK wire-contract unification onto the verifier side, single-sourced
+the confirm/dispute default rationale strings, made `subscribe_agora_topic()`'s response shape match
+its two siblings, and collapsed `delete_session()`'s count queries — see `SECURITY.md`) → next
+unnamed.** The `r`-suffix review-chain naming ends at P1brr; review passes since are named
+sequentially (P5, P6, P7, P8, P9, P10, …) rather than growing another suffix — review yield had
 shrunk to P1brr's own one Medium/three Low, the signal to stop.
 
 **P1b shipped: x402 is a real, working second payment rail**, non-custodial, eight commits
