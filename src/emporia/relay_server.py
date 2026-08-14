@@ -4985,24 +4985,23 @@ async def delete_session(session_id: str, request: Request, force: bool = False)
     # DB_LOCK-held blocks (count, then delete) with the file write in
     # between, holding no lock.
     def _unlinked_and_deleted_counts(conn: sqlite3.Connection) -> tuple[dict, dict]:
-        unlinked = {
-            "rooms": conn.execute(
-                "SELECT COUNT(*) FROM rooms WHERE linked_session_id = ?", (session_id,)
-            ).fetchone()[0],
-        }
+        row = conn.execute(
+            """
+            SELECT
+                (SELECT COUNT(*) FROM rooms WHERE linked_session_id = ?) AS rooms,
+                (SELECT COUNT(*) FROM participants WHERE session_id = ?) AS participants,
+                (SELECT COUNT(*) FROM actions WHERE session_id = ?) AS actions,
+                (SELECT COUNT(*) FROM messages WHERE session_id = ?) AS messages,
+                (SELECT COUNT(*) FROM sessions WHERE session_id = ?) AS sessions
+            """,
+            (session_id, session_id, session_id, session_id, session_id),
+        ).fetchone()
+        unlinked = {"rooms": row["rooms"]}
         deleted = {
-            "participants": conn.execute(
-                "SELECT COUNT(*) FROM participants WHERE session_id = ?", (session_id,)
-            ).fetchone()[0],
-            "actions": conn.execute(
-                "SELECT COUNT(*) FROM actions WHERE session_id = ?", (session_id,)
-            ).fetchone()[0],
-            "messages": conn.execute(
-                "SELECT COUNT(*) FROM messages WHERE session_id = ?", (session_id,)
-            ).fetchone()[0],
-            "sessions": conn.execute(
-                "SELECT COUNT(*) FROM sessions WHERE session_id = ?", (session_id,)
-            ).fetchone()[0],
+            "participants": row["participants"],
+            "actions": row["actions"],
+            "messages": row["messages"],
+            "sessions": row["sessions"],
         }
         return unlinked, deleted
 
