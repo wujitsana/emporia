@@ -10758,6 +10758,77 @@ def test_mcp_join_session_surfaces_x402_declined_reason(prod_client):
     assert result["detail"]["declined"] == {"rail": "x402", "reason": "route_unsupported"}
 
 
+def test_agent_sdk_join_session_surfaces_x402_declined_reason_via_payment_required_error():
+    """P7-2: agent_sdk.join_session() used to call resp.raise_for_status() on
+    every non-2xx response, so a 402 raised a bare httpx.HTTPStatusError and
+    discarded the body — including the same machine-readable `declined` key
+    the sibling test above confirms mcp_server.join_session() already
+    surfaces. Same real x402-declined scenario, driven through a real
+    EmporiaAgent wired to the real app via the established ASGI-transport
+    pattern; asserts join_session() now raises PaymentRequiredError with
+    .detail carrying the same information instead of losing it. Must fail
+    pre-fix (bare HTTPStatusError, no .detail) and pass post-fix."""
+    import asyncio
+    import base64
+    import json as _json
+
+    import httpx as httpx_module
+
+    from emporia.agent_sdk import EmporiaAgent, PaymentRequiredError
+    from emporia.identity import get_public_key_hex
+    from emporia.relay_server import app as relay_app
+
+    def _wired(agent_id: str) -> EmporiaAgent:
+        a = EmporiaAgent(
+            relay_url="http://testserver", agent_id=agent_id,
+            public_key_hex=get_public_key_hex(agent_id),
+        )
+        a._http = httpx_module.AsyncClient(
+            transport=httpx_module.ASGITransport(app=relay_app), base_url="http://testserver",
+        )
+        return a
+
+    async def scenario():
+        creator = _wired("p7_2_sdk_creator")
+        joiner = _wired("p7_2_sdk_joiner")
+        try:
+            await creator.register()
+            await joiner.register()
+
+            session = await creator.create_session(
+                "emporia:service:v1",
+                config={"description": "P7-2 session decline test"},
+                payment_rules={"mode": "stripe_link", "stake_per_participant": "1.00", "currency": "usd"},
+            )
+            session_id = session["session_id"]
+
+            payload = {
+                "x402Version": 2, "accepted": {
+                    "scheme": "exact", "network": "eip155:8453", "amount": "100000000",
+                    "asset": "0xUSDCFAKE", "payTo": "0x" + "aa" * 20, "maxTimeoutSeconds": 300,
+                }, "payload": {"sig": "0xfake"},
+            }
+            x402_header = base64.urlsafe_b64encode(_json.dumps(payload).encode()).decode()
+
+            original_bearer_headers = joiner._bearer_headers
+
+            async def _headers_with_x402():
+                headers = await original_bearer_headers()
+                return {**headers, "PAYMENT-SIGNATURE": x402_header}
+
+            with patch.dict(os.environ, _X402_ENV, clear=False), \
+                 patch.object(joiner, "_bearer_headers", side_effect=_headers_with_x402):
+                with pytest.raises(PaymentRequiredError) as exc_info:
+                    await joiner.join_session(session_id)
+
+            assert exc_info.value.detail["declined"] == {"rail": "x402", "reason": "route_unsupported"}
+        finally:
+            await creator._http.aclose()
+            await joiner._http.aclose()
+
+    asyncio.run(scenario())
+
+
 def test_agent_sdk_write_call_site_attaches_bearer_credential():
     """Same property as the MCP test above, for agent_sdk.py's write methods
     (create_listing, create_session, submit_action, send_message, create_event,

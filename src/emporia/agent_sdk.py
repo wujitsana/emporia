@@ -32,6 +32,24 @@ def _ws_url(http_url: str, path: str) -> str:
     return urllib.parse.urljoin(base.geturl(), path)
 
 
+class PaymentRequiredError(httpx.HTTPStatusError):
+    """Raised by join_session() on a 402. `.detail` is the parsed response body
+    (e.g. x402's declined={"rail": ..., "reason": ...}); `.www_authenticate` is the
+    challenge header. mcp_server.join_session() already returns this same
+    information as a plain dict — this mirrors it via an exception instead, so
+    join_session() doesn't have to special-case its return type against the raise-
+    on-error contract every other method on this class follows.
+    """
+
+    def __init__(self, response: httpx.Response, detail: dict[str, Any]) -> None:
+        super().__init__(
+            f"402 Payment Required: {response.request.method} {response.request.url}",
+            request=response.request, response=response,
+        )
+        self.detail = detail
+        self.www_authenticate = response.headers.get("www-authenticate", "")
+
+
 class EmporiaAgent:
     """Async client for one agent on an Emporia relay.
 
@@ -293,6 +311,12 @@ class EmporiaAgent:
             resp = await self._bearer_request(
                 "post", f"{self.relay_url}/sessions/{session_id}/join", json=body,
             )
+        if resp.status_code == 402:
+            try:
+                detail = resp.json()
+            except ValueError:
+                detail = {}
+            raise PaymentRequiredError(resp, detail)
         resp.raise_for_status()
         return resp.json()
 
