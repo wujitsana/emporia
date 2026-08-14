@@ -10222,6 +10222,89 @@ def test_mcp_paid_session_full_turn_under_prod_auth(prod_client):
         assert r["outcome"]["winner"] == "mcp_e2e_seller"
 
 
+def test_mcp_confirm_and_dispute_delivery_use_shared_wire_contract(prod_client):
+    """P10-1: confirm_delivery()/dispute_delivery() hand-built the same
+    6-key signed-action dict wire.signed_action_payload() (P6-4) already
+    owns — three copies of one contract in a file that imports the shared
+    version four lines away. Both now call it. Pinned two ways: the
+    single-sourcing spy (patch + wraps) at both call sites, and a real
+    round trip through the relay's own signature verification for each
+    (confirm on one session, dispute on a second) — confirming no field
+    was dropped or renamed in the switch."""
+    from emporia import mcp_server, wire
+
+    _register_keyed(prod_client, "p10_1_buyer")
+    _register_keyed(prod_client, "p10_1_seller")
+    adapter = _ASGIHttpxAdapter(prod_client, mcp_server.RELAY_URL)
+
+    # confirm_delivery
+    r = prod_client.post("/sessions", json={
+        "module_type": "emporia:service:v1", "creator_agent_id": "p10_1_buyer",
+        "config": {"description": "P10-1 confirm test"}, "payment_rules": {"mode": "free"},
+    },
+        headers=bearer_for(prod_client, "p10_1_buyer"))
+    assert r.status_code == 200, r.text
+    session_id = r.json()["session_id"]
+    r = prod_client.post(
+        f"/sessions/{session_id}/join", json={"agent_id": "p10_1_seller"},
+        headers=bearer_for(prod_client, "p10_1_seller"),
+    )
+    assert r.status_code == 200, r.text
+
+    with patch.object(mcp_server, "httpx", adapter):
+        mcp_server.submit_action(
+            session_id=session_id, action_type="accept", payload={},
+            rationale="Accepting — P10-1 wire contract test.", agent_id="p10_1_seller",
+        )
+        mcp_server.submit_action(
+            session_id=session_id, action_type="deliver", payload={"deliverable": "done"},
+            rationale="Delivered — P10-1 wire contract test.", agent_id="p10_1_seller",
+        )
+        with patch.object(
+            wire, "signed_action_payload", wraps=wire.signed_action_payload,
+        ) as confirm_spy:
+            result = mcp_server.confirm_delivery(
+                session_id=session_id, agent_id="p10_1_buyer",
+                rationale="Confirming — P10-1 wire contract test.",
+            )
+    assert result.get("success") is True, result
+    confirm_spy.assert_called_once_with(
+        "p10_1_buyer", "confirm", {}, "Confirming — P10-1 wire contract test.", session_id, 2,
+    )
+
+    # dispute_delivery — a second session, since the first is now terminal
+    r = prod_client.post("/sessions", json={
+        "module_type": "emporia:service:v1", "creator_agent_id": "p10_1_buyer",
+        "config": {"description": "P10-1 dispute test"}, "payment_rules": {"mode": "free"},
+    },
+        headers=bearer_for(prod_client, "p10_1_buyer"))
+    session_id2 = r.json()["session_id"]
+    prod_client.post(
+        f"/sessions/{session_id2}/join", json={"agent_id": "p10_1_seller"},
+        headers=bearer_for(prod_client, "p10_1_seller"),
+    )
+    with patch.object(mcp_server, "httpx", adapter):
+        mcp_server.submit_action(
+            session_id=session_id2, action_type="accept", payload={},
+            rationale="Accepting — P10-1 wire contract test.", agent_id="p10_1_seller",
+        )
+        mcp_server.submit_action(
+            session_id=session_id2, action_type="deliver", payload={"deliverable": "done"},
+            rationale="Delivered — P10-1 wire contract test.", agent_id="p10_1_seller",
+        )
+        with patch.object(
+            wire, "signed_action_payload", wraps=wire.signed_action_payload,
+        ) as dispute_spy:
+            result2 = mcp_server.dispute_delivery(
+                session_id=session_id2, reason="not as described", agent_id="p10_1_buyer",
+            )
+    assert result2.get("success") is True, result2
+    dispute_spy.assert_called_once_with(
+        "p10_1_buyer", "dispute", {"reason": "not as described"},
+        "Dispute: not as described", session_id2, 2,
+    )
+
+
 def test_mcp_dashboard_bearer_headers_uses_shared_wire_contract(prod_client):
     """P6-2: mcp_server._dashboard_bearer_headers() and agent_sdk's
     _bearer_token_value() (see the sibling test below) used to build the

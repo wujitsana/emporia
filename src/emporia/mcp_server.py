@@ -1567,20 +1567,14 @@ def confirm_delivery(
         return {"error": "agent_id required", "success": False}
     effective_rationale = rationale or "Buyer confirmed delivery."
     from emporia.identity import sign as ed25519_sign
+    from emporia.wire import signed_action_payload
     try:
         sess_r = _bearer_request("get", f"{RELAY_URL}/sessions/{session_id}", agent_id=aid, timeout=10)
         sess_r.raise_for_status()
         step_number = sess_r.json()["step_number"]
     except Exception as e:
         return {"error": f"could not load session for signing: {e}", "success": False}
-    signed_payload = {
-        "session_id": session_id,
-        "step_number": step_number,
-        "action_type": "confirm",
-        "payload": {},
-        "agent_id": aid,
-        "peer_text_rationale": effective_rationale,
-    }
+    signed_payload = signed_action_payload(aid, "confirm", {}, effective_rationale, session_id, step_number)
     body: dict[str, Any] = {
         "agent_id": aid,
         "rationale": effective_rationale,
@@ -1611,20 +1605,16 @@ def dispute_delivery(
         return {"error": "agent_id required", "success": False}
     effective_rationale = rationale or f"Dispute: {reason}"
     from emporia.identity import sign as ed25519_sign
+    from emporia.wire import signed_action_payload
     try:
         sess_r = _bearer_request("get", f"{RELAY_URL}/sessions/{session_id}", agent_id=aid, timeout=10)
         sess_r.raise_for_status()
         step_number = sess_r.json()["step_number"]
     except Exception as e:
         return {"error": f"could not load session for signing: {e}", "success": False}
-    signed_payload = {
-        "session_id": session_id,
-        "step_number": step_number,
-        "action_type": "dispute",
-        "payload": {"reason": reason},
-        "agent_id": aid,
-        "peer_text_rationale": effective_rationale,
-    }
+    signed_payload = signed_action_payload(
+        aid, "dispute", {"reason": reason}, effective_rationale, session_id, step_number,
+    )
     body: dict[str, Any] = {
         "agent_id": aid,
         "reason": reason,
