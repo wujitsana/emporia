@@ -1539,14 +1539,14 @@ def submit_action(
         step_number = sess_r.json()["step_number"]
     except Exception as e:
         return {"error": f"could not load session for signing: {e}", "success": False}
-    action_payload = payload or {}
-    signed_payload = signed_action_payload(
-        aid, action_type, action_payload, rationale, session_id, step_number,
-    )
-    body = action_envelope(
-        aid, action_type, action_payload, rationale, ed25519_sign(signed_payload, aid),
-    )
     try:
+        action_payload = payload or {}
+        signed_payload = signed_action_payload(
+            aid, action_type, action_payload, rationale, session_id, step_number,
+        )
+        body = action_envelope(
+            aid, action_type, action_payload, rationale, ed25519_sign(signed_payload, aid),
+        )
         r = _bearer_request("post", f"{RELAY_URL}/sessions/{session_id}/action", agent_id=aid, json=body, timeout=15)
         d = r.json()
         if r.status_code == 200:
@@ -1579,13 +1579,13 @@ def confirm_delivery(
         step_number = sess_r.json()["step_number"]
     except Exception as e:
         return {"error": f"could not load session for signing: {e}", "success": False}
-    signed_payload = signed_action_payload(aid, "confirm", {}, effective_rationale, session_id, step_number)
-    body: dict[str, Any] = {
-        "agent_id": aid,
-        "rationale": effective_rationale,
-        "signature": ed25519_sign(signed_payload, aid),
-    }
     try:
+        signed_payload = signed_action_payload(aid, "confirm", {}, effective_rationale, session_id, step_number)
+        body: dict[str, Any] = {
+            "agent_id": aid,
+            "rationale": effective_rationale,
+            "signature": ed25519_sign(signed_payload, aid),
+        }
         r = _bearer_request("post", f"{RELAY_URL}/sessions/{session_id}/confirm-delivery", agent_id=aid, json=body, timeout=15)
         d = r.json()
         return {"success": True, **d} if r.status_code == 200 else {"error": f"Relay {r.status_code}", "detail": d, "success": False}
@@ -1617,16 +1617,16 @@ def dispute_delivery(
         step_number = sess_r.json()["step_number"]
     except Exception as e:
         return {"error": f"could not load session for signing: {e}", "success": False}
-    signed_payload = signed_action_payload(
-        aid, "dispute", {"reason": reason}, effective_rationale, session_id, step_number,
-    )
-    body: dict[str, Any] = {
-        "agent_id": aid,
-        "reason": reason,
-        "rationale": effective_rationale,
-        "signature": ed25519_sign(signed_payload, aid),
-    }
     try:
+        signed_payload = signed_action_payload(
+            aid, "dispute", {"reason": reason}, effective_rationale, session_id, step_number,
+        )
+        body: dict[str, Any] = {
+            "agent_id": aid,
+            "reason": reason,
+            "rationale": effective_rationale,
+            "signature": ed25519_sign(signed_payload, aid),
+        }
         r = _bearer_request("post", f"{RELAY_URL}/sessions/{session_id}/dispute-delivery", agent_id=aid, json=body, timeout=15)
         d = r.json()
         return {"success": True, **d} if r.status_code == 200 else {"error": f"Relay {r.status_code}", "detail": d, "success": False}

@@ -11213,6 +11213,114 @@ def test_mcp_send_room_message_returns_structured_error_on_sign_failure(prod_cli
     assert "key unreadable" in result.get("error", "")
 
 
+def test_mcp_submit_action_returns_structured_error_on_sign_failure(prod_client):
+    """P11-2: the same N4-7 defect (sign() outside the try that exists to catch
+    it), found a second time — submit_action() still had it. P10-1 rewrote the
+    lines immediately above this call site (switching to
+    wire.signed_action_payload()) and walked past it. A local signing failure
+    (missing/unreadable key for agent_id) used to raise out of this MCP tool
+    as an unhandled exception instead of the structured {"error", "success":
+    False} shape every other tool in this file guarantees its caller."""
+    from emporia import mcp_server
+
+    _register_keyed(prod_client, "p11_2_action_buyer")
+    _register_keyed(prod_client, "p11_2_action_seller")
+    adapter = _ASGIHttpxAdapter(prod_client, mcp_server.RELAY_URL)
+
+    with patch.object(mcp_server, "httpx", adapter):
+        r = prod_client.post("/sessions", json={
+            "module_type": "emporia:service:v1", "creator_agent_id": "p11_2_action_buyer",
+            "config": {"description": "P11-2 sign failure test"}, "payment_rules": {"mode": "free"},
+        },
+            headers=bearer_for(prod_client, "p11_2_action_buyer"))
+        session_id = r.json()["session_id"]
+        prod_client.post(
+            f"/sessions/{session_id}/join", json={"agent_id": "p11_2_action_seller"},
+            headers=bearer_for(prod_client, "p11_2_action_seller"),
+        )
+
+        with patch("emporia.identity.sign", side_effect=RuntimeError("key unreadable")):
+            result = mcp_server.submit_action(
+                session_id=session_id, action_type="accept", payload={},
+                rationale="Accepting — P11-2 sign failure test.", agent_id="p11_2_action_seller",
+            )
+    assert result.get("success") is False, result
+    assert "key unreadable" in result.get("error", "")
+
+
+def test_mcp_confirm_delivery_returns_structured_error_on_sign_failure(prod_client):
+    """P11-2: same defect as the submit_action test above, in confirm_delivery()."""
+    from emporia import mcp_server
+
+    _register_keyed(prod_client, "p11_2_confirm_buyer")
+    _register_keyed(prod_client, "p11_2_confirm_seller")
+    adapter = _ASGIHttpxAdapter(prod_client, mcp_server.RELAY_URL)
+
+    with patch.object(mcp_server, "httpx", adapter):
+        r = prod_client.post("/sessions", json={
+            "module_type": "emporia:service:v1", "creator_agent_id": "p11_2_confirm_buyer",
+            "config": {"description": "P11-2 confirm sign failure test"}, "payment_rules": {"mode": "free"},
+        },
+            headers=bearer_for(prod_client, "p11_2_confirm_buyer"))
+        session_id = r.json()["session_id"]
+        prod_client.post(
+            f"/sessions/{session_id}/join", json={"agent_id": "p11_2_confirm_seller"},
+            headers=bearer_for(prod_client, "p11_2_confirm_seller"),
+        )
+        mcp_server.submit_action(
+            session_id=session_id, action_type="accept", payload={},
+            rationale="Accepting — P11-2 test.", agent_id="p11_2_confirm_seller",
+        )
+        mcp_server.submit_action(
+            session_id=session_id, action_type="deliver", payload={"deliverable": "done"},
+            rationale="Delivered — P11-2 test.", agent_id="p11_2_confirm_seller",
+        )
+
+        with patch("emporia.identity.sign", side_effect=RuntimeError("key unreadable")):
+            result = mcp_server.confirm_delivery(
+                session_id=session_id, agent_id="p11_2_confirm_buyer",
+                rationale="Confirming — P11-2 sign failure test.",
+            )
+    assert result.get("success") is False, result
+    assert "key unreadable" in result.get("error", "")
+
+
+def test_mcp_dispute_delivery_returns_structured_error_on_sign_failure(prod_client):
+    """P11-2: same defect as the two tests above, in dispute_delivery()."""
+    from emporia import mcp_server
+
+    _register_keyed(prod_client, "p11_2_dispute_buyer")
+    _register_keyed(prod_client, "p11_2_dispute_seller")
+    adapter = _ASGIHttpxAdapter(prod_client, mcp_server.RELAY_URL)
+
+    with patch.object(mcp_server, "httpx", adapter):
+        r = prod_client.post("/sessions", json={
+            "module_type": "emporia:service:v1", "creator_agent_id": "p11_2_dispute_buyer",
+            "config": {"description": "P11-2 dispute sign failure test"}, "payment_rules": {"mode": "free"},
+        },
+            headers=bearer_for(prod_client, "p11_2_dispute_buyer"))
+        session_id = r.json()["session_id"]
+        prod_client.post(
+            f"/sessions/{session_id}/join", json={"agent_id": "p11_2_dispute_seller"},
+            headers=bearer_for(prod_client, "p11_2_dispute_seller"),
+        )
+        mcp_server.submit_action(
+            session_id=session_id, action_type="accept", payload={},
+            rationale="Accepting — P11-2 test.", agent_id="p11_2_dispute_seller",
+        )
+        mcp_server.submit_action(
+            session_id=session_id, action_type="deliver", payload={"deliverable": "done"},
+            rationale="Delivered — P11-2 test.", agent_id="p11_2_dispute_seller",
+        )
+
+        with patch("emporia.identity.sign", side_effect=RuntimeError("key unreadable")):
+            result = mcp_server.dispute_delivery(
+                session_id=session_id, reason="not as described", agent_id="p11_2_dispute_buyer",
+            )
+    assert result.get("success") is False, result
+    assert "key unreadable" in result.get("error", "")
+
+
 def test_mcp_list_agents_authenticates_under_prod_auth(prod_client):
     """N3-3 made GET /agents require an authenticated caller (it was the enumeration
     primitive the N2 review named and never closed). mcp_server.list_agents() called
