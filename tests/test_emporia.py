@@ -3658,6 +3658,62 @@ def test_delete_session_409_compensates_the_false_audit_line(client):
     assert this_session_lines[1]["operator"] == "p8_1_race_op"
 
 
+def test_delete_session_diagnostic_500_when_compensating_write_itself_fails(client):
+    """P9-1: P8-1's compensating "admin_session_delete_aborted" write is
+    itself an unguarded _write_audit_line() call, which can fail exactly
+    like the first write (missing LOG_DIR, full disk). Unguarded, that
+    failure propagates as a bare, undiagnostic 500 (no @app.exception_handler
+    is registered in relay_server.py) and silently leaves the earlier
+    "admin_session_deleted" line unfollowed by an "aborted" line — exactly
+    the false-record shape P8-1 exists to prevent, just one level deeper.
+    Same race setup as test_delete_session_409_compensates_the_false_audit_line,
+    but the _write_audit_line side effect succeeds on its first call (the
+    real "admin_session_deleted" write) and raises on its second (the
+    compensating "aborted" write) — a call counter distinguishes them since
+    both go through the same patched function. Must fail pre-fix (an
+    unhandled OSError, not a diagnostic response) and pass post-fix (500
+    with a detail message naming the session_id and confirming nothing was
+    deleted)."""
+    from emporia import relay_server
+    from emporia.relay_server import load_session
+
+    _register(client, "p9_1_race_creator")
+    _register(client, "p9_1_race_op")
+
+    r = client.post("/sessions", json={
+        "module_type": "emporia:service:v1", "creator_agent_id": "p9_1_race_creator",
+        "config": {"description": "d"}, "payment_rules": {"mode": "free"},
+    },
+        headers={"x-emporia-agent-id": "p9_1_race_creator"})
+    session_id = r.json()["session_id"]
+
+    original_write = relay_server._write_audit_line
+    call_count = {"n": 0}
+
+    def racing_then_failing_write(entry):
+        call_count["n"] += 1
+        if call_count["n"] == 1:
+            # The real "admin_session_deleted" write succeeds, but a concurrent
+            # write lands right after it — same race as the P8-1 test, so the
+            # recheck block finds a mismatch and reaches the compensating write.
+            relay_server.record_action(session_id, "p9_1_race_creator", "concurrent_action", {})
+            return original_write(entry)
+        # The compensating "admin_session_delete_aborted" write fails.
+        raise OSError("disk full")
+
+    with patch.dict(os.environ, {"EMPORIA_AGENT_ID": "p9_1_race_op"}), \
+         patch.object(relay_server, "_write_audit_line", side_effect=racing_then_failing_write):
+        r = client.delete(
+            f"/admin/sessions/{session_id}?force=true",
+            headers={"x-emporia-agent-id": "p9_1_race_op"},
+        )
+    assert r.status_code == 500, r.text
+    detail = r.json()["detail"]
+    assert session_id in detail
+    assert "NOT deleted" in detail
+    assert load_session(session_id) is not None
+
+
 # ============================================================================
 # Proof-of-Reasoning gate
 # ============================================================================

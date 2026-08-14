@@ -5066,15 +5066,33 @@ async def delete_session(session_id: str, request: Request, force: bool = False)
 
     if mismatch is not None:
         recheck_unlinked, recheck_deleted = mismatch
-        _write_audit_line({
-            "timestamp": datetime.now(UTC).isoformat(),
-            "type": "admin_session_delete_aborted",
-            "reason": "concurrent_modification",
-            "operator": caller,
-            "session_id": session_id,
-            "expected": {"unlinked": unlinked, "deleted": deleted},
-            "observed": {"unlinked": recheck_unlinked, "deleted": recheck_deleted},
-        })
+        # P9-1: this write can fail exactly like the first one (missing LOG_DIR,
+        # full disk) — but unlike the first (P5-3's guard aborts before deleting
+        # anything), there's nothing left here to protect: the session already
+        # survived intact. Left unguarded, a failure here surfaces as a bare,
+        # undiagnostic 500 (no @app.exception_handler is registered anywhere in
+        # this file) and silently leaves the earlier "admin_session_deleted" line
+        # unfollowed by the "aborted" line that would explain it's stale — exactly
+        # the false-record shape P8-1 exists to prevent. No further compensation
+        # is meaningful here (there's no useful "compensate for the compensating
+        # write" step); the fix is making the failure legible instead of opaque.
+        try:
+            _write_audit_line({
+                "timestamp": datetime.now(UTC).isoformat(),
+                "type": "admin_session_delete_aborted",
+                "reason": "concurrent_modification",
+                "operator": caller,
+                "session_id": session_id,
+                "expected": {"unlinked": unlinked, "deleted": deleted},
+                "observed": {"unlinked": recheck_unlinked, "deleted": recheck_deleted},
+            })
+        except OSError as e:
+            raise HTTPException(
+                500,
+                f"Session {session_id} was NOT deleted (concurrent modification detected), but "
+                f"the compensating audit record could not be written: {e}. The earlier "
+                "'admin_session_deleted' line for this session_id is stale — verify manually.",
+            ) from e
         raise HTTPException(
             409, "Session was modified by a concurrent request — retry to delete the current state",
         )
