@@ -388,6 +388,50 @@ def test_ed25519_verify_rejects_tampered():
             assert not verify(tampered, sig, pub_hex)
 
 
+def test_identity_generated_key_and_dir_are_private_from_creation():
+    """P11-3: the previous write_bytes()-then-chmod() pattern created the key
+    file at the umask default (typically 0o644) and only narrowed it to 0o600
+    on the *next* syscall — a brief world-readable window, permanent if the
+    process died in between. KEY_DIR itself was created with no mode at all
+    (0o755, traversable). _write_secret_atomically() uses O_CREAT with the
+    0o600 mode baked into the open() call, so there's no window; KEY_DIR is
+    now created 0o700. Uses a nested subdirectory that doesn't exist yet, so
+    KEY_DIR.mkdir() actually creates it fresh — the session-wide _test_keys_dir
+    fixture's KEY_DIR was already created earlier in the run."""
+    import stat
+
+    from emporia.identity import generate_or_load_keypair
+    with tempfile.TemporaryDirectory() as d:
+        fresh_dir = Path(d) / "fresh_key_dir"
+        with patch("emporia.identity.KEY_DIR", fresh_dir):
+            generate_or_load_keypair("p11_3_perms_agent")
+            dir_mode = stat.S_IMODE(fresh_dir.stat().st_mode)
+            assert dir_mode == 0o700, oct(dir_mode)
+            key_file = fresh_dir / "p11_3_perms_agent.priv"
+            file_mode = stat.S_IMODE(key_file.stat().st_mode)
+            assert file_mode == 0o600, oct(file_mode)
+
+
+def test_identity_atomic_write_leaves_no_residue_on_failure():
+    """P11-3: a failed write (disk full, permissions) must never leave a
+    truncated file at the real key path — every caller branches on
+    path.exists(), so a truncated file there would never self-heal. The
+    previous write_bytes() call wrote directly to the final path; this
+    asserts the new temp-then-rename write leaves neither the final path
+    nor a stray .tmp file behind when os.replace() fails partway through."""
+    from emporia.identity import generate_or_load_keypair
+    with tempfile.TemporaryDirectory() as d:
+        fresh_dir = Path(d) / "fresh_key_dir_2"
+        with patch("emporia.identity.KEY_DIR", fresh_dir):
+            with patch("os.replace", side_effect=OSError("disk full")):
+                with pytest.raises(OSError):
+                    generate_or_load_keypair("p11_3_atomic_agent")
+            key_file = fresh_dir / "p11_3_atomic_agent.priv"
+            assert not key_file.exists()
+            leftovers = list(fresh_dir.glob("*.tmp")) if fresh_dir.exists() else []
+            assert leftovers == [], leftovers
+
+
 def test_content_address_no_0x_prefix():
     from emporia.identity import content_address_for
     addr = content_address_for("alice", None)

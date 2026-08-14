@@ -35,8 +35,33 @@ def _key_path(profile_id: str) -> Path:
     return KEY_DIR / f"{safe}.priv"
 
 
+def _write_secret_atomically(path: Path, data: bytes) -> None:
+    """Create `path` containing `data`, 0600 from the instant it exists, atomically.
+
+    Replaces the previous write_bytes()-then-chmod() pattern, which lacked two
+    properties every caller here needs: the file is never briefly world-readable
+    (O_CREAT honours the 0o600 mode; umask can only clear bits, never set them),
+    and a crash mid-write truncates the *temp* file, not the real one — every
+    caller here branches on path.exists(), so a truncated real file would never
+    self-heal.
+    """
+    tmp = path.with_name(f".{path.name}.{secrets.token_hex(8)}.tmp")
+    try:
+        fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+        with os.fdopen(fd, "wb") as f:
+            f.write(data)
+            f.flush()
+            os.fsync(f.fileno())
+        os.replace(tmp, path)
+    except BaseException:
+        tmp.unlink(missing_ok=True)
+        raise
+
+
 def _load_or_generate_at(path: Path) -> tuple[ed25519.Ed25519PrivateKey, bytes]:
-    KEY_DIR.mkdir(parents=True, exist_ok=True)
+    # mode= only applies when this call actually creates the directory — an
+    # already-existing KEY_DIR (e.g. an existing deployment) keeps its current mode.
+    KEY_DIR.mkdir(mode=0o700, parents=True, exist_ok=True)
     if path.exists():
         raw = path.read_bytes()
         priv = ed25519.Ed25519PrivateKey.from_private_bytes(raw)
@@ -47,8 +72,7 @@ def _load_or_generate_at(path: Path) -> tuple[ed25519.Ed25519PrivateKey, bytes]:
             format=serialization.PrivateFormat.Raw,
             encryption_algorithm=serialization.NoEncryption(),
         )
-        path.write_bytes(raw)
-        path.chmod(0o600)
+        _write_secret_atomically(path, raw)
     pub_bytes = priv.public_key().public_bytes_raw()
     return priv, pub_bytes
 
@@ -123,14 +147,13 @@ def load_or_generate_relay_jwt_secret() -> bytes:
     encode/decode, so re-reading the file every request would be pure overhead."""
     global _RELAY_JWT_SECRET_CACHE
     if _RELAY_JWT_SECRET_CACHE is None:
-        KEY_DIR.mkdir(parents=True, exist_ok=True)
+        KEY_DIR.mkdir(mode=0o700, parents=True, exist_ok=True)
         path = KEY_DIR / _JWT_SECRET_FILE_NAME
         if path.exists():
             _RELAY_JWT_SECRET_CACHE = path.read_bytes()
         else:
             secret = secrets.token_bytes(32)
-            path.write_bytes(secret)
-            path.chmod(0o600)
+            _write_secret_atomically(path, secret)
             _RELAY_JWT_SECRET_CACHE = secret
     return _RELAY_JWT_SECRET_CACHE
 
@@ -162,11 +185,10 @@ def save_federation_peer_pubkeys(pubkeys: dict[str, str]) -> None:
     process's lifetime rather than raising — pinning is a hardening measure, not a
     correctness dependency the relay should crash over.
     """
-    KEY_DIR.mkdir(parents=True, exist_ok=True)
+    KEY_DIR.mkdir(mode=0o700, parents=True, exist_ok=True)
     path = KEY_DIR / _PEER_PUBKEYS_FILE_NAME
     try:
-        path.write_text(json.dumps(pubkeys, sort_keys=True, indent=2))
-        path.chmod(0o600)
+        _write_secret_atomically(path, json.dumps(pubkeys, sort_keys=True, indent=2).encode())
     except OSError:
         pass
 
