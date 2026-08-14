@@ -124,9 +124,9 @@ wrap; it isn't one. `mcp_server.py` is **52 sync** tool functions (module-level 
 a sync→async bridge in ~52 places — architectural work, not the small-medium lift "medium-large" was
 scoped against.
 
-**Recommendation: split the item.** Every duplication bug this entry actually cites (N3-8's envelope
-shape, N2's bearer/retry semantics) is in *request construction* — what bytes to send — not
-transport, and all of it is already pure and synchronous in both files:
+**Shared wire-contract module — done (P6).** Every duplication bug this entry actually cited
+(N3-8's envelope shape, N2's bearer/retry semantics) was in *request construction* — what bytes to
+send — not transport, and all of it was already pure and synchronous in both files:
 - the dashboard challenge/sign/session handshake (`mcp_server.py`'s `_dashboard_bearer_headers()` vs
   `agent_sdk.py`'s `_bearer_headers()` — both `sign_raw(nonce, …)` → the same request shape);
 - the registration handshake (`mcp_server.py`'s and `agent_sdk.py`'s `register()` — both
@@ -134,15 +134,21 @@ transport, and all of it is already pure and synchronous in both files:
 - the signed action/message envelopes (`agent_sdk.py`'s `_sign()` call sites — the N3-8 shape lives
   here, independently reconstructed in `mcp_server.py` and `relay_server.py` too).
 
-Extracting a **shared, synchronous wire-contract module** (what to send, built and tested once) while
-leaving the two transports (sync `httpx` calls vs. `AsyncClient`) alone kills this drift class
-entirely with zero async bridging. Transport dedup — the part that actually needs the bridge — stays
-optional and can follow later if it's still worth it once the shared-contract half has shipped.
+`src/emporia/wire.py` now owns all four as six pure, synchronous functions (no `httpx`, no
+`identity` import — signing and the actual HTTP call both stay in each caller); both `mcp_server.py`
+and `agent_sdk.py` call the same functions rather than building the dicts inline. Verified by the
+existing 404-test suite passing unchanged (no existing assertion needed editing) plus new
+single-sourcing and real-signature-round-trip tests per function. See `SECURITY.md`'s P6 pass.
+
+**Transport dedup — still open, optional.** Leaving the two transports (sync `httpx` calls vs.
+`AsyncClient`) alone was the right call: it kills the drift class this entry cared about with zero
+async bridging, and P6 confirms it — every duplication bug found in this overlap, before and during
+that pass, was in request construction, none in the transport difference itself.
 - *Why deferred:* a real refactor (MCP tools delegate to `EmporiaAgent` methods) touches the
   request/response shape of every MCP tool — needs its own testing pass, too risky pre-deadline.
-- *Effort:* shared wire-contract module — small-medium. Transport dedup (the sync/async bridge) —
-  large, and optional once the shared contract lands. (Revised from a single "medium-large" figure,
-  which didn't account for the sync/async split — see `SECURITY.md`'s P5 pass.)
+- *Effort:* large, and optional now that the shared-contract half has shipped. (Revised from a
+  single "medium-large" figure, which didn't account for the sync/async split — see `SECURITY.md`'s
+  P5 pass.)
 
 **Two independent `GameRegistry` instances** (MCP-local SQLite vs. relay) reconciled only by
 manual `export_challenge`/`import_challenge` MCP calls — no automatic sync, no conflict
@@ -229,9 +235,10 @@ P1br (done, the P1b self-review) → P1brr (done, the P1br self-review, and it d
 P1b sweep P1br's own coverage caveat left owed) → P4 (done — closes the x402 review chain and ships
 the cascade-delete endpoint) → P5 (done — the P4 self-review; found the pre-existing
 `sessions.status` bug P4-5 walked past, hardened the cascade-delete endpoint, and de-risked the
-MCP/SDK refactor below — see `SECURITY.md`) → next unnamed.** The `r`-suffix review-chain naming
-ends at P1brr; review passes since are named sequentially (P5, P6, …) rather than growing another
-suffix — review yield had shrunk to P1brr's own one Medium/three Low, the signal to stop.
+MCP/SDK refactor below) → P6 (done — the P5 self-review, plus the shared wire-contract module the
+MCP/SDK refactor above needed — see `SECURITY.md`) → next unnamed.** The `r`-suffix review-chain
+naming ends at P1brr; review passes since are named sequentially (P5, P6, …) rather than growing
+another suffix — review yield had shrunk to P1brr's own one Medium/three Low, the signal to stop.
 
 **P1b shipped: x402 is a real, working second payment rail**, non-custodial, eight commits
 (SECURITY.md's P1b pass has the full findings). `_verify_and_confirm_payment()` gained an x402

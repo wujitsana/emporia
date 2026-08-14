@@ -957,6 +957,45 @@ all 40 of its methods, but it means the two clients (`mcp_server.py`, `agent_sdk
 the same information differently. One instance of the MCP/SDK duplication tax `ROADMAP.md` already
 names; not fixed here, folded into that entry's de-risking writeup instead (see `ROADMAP.md`).
 
+## Fixed post-hackathon (P6 pass — the P5 self-review, plus the shared wire-contract module)
+
+The fifteenth consecutive pass to find genuine defects in the immediately preceding pass's own
+shipped work (…→P1brr→P4→P5→**P6**). Five commits, all landed on `post-hackathon`.
+
+P5 found exactly one issue in its own self-review — the smallest yield since the `r`-suffix chain
+ended — so this pass folds that fix into its first commit and spends the rest building the forward
+item P5 had already designed but deliberately didn't build.
+
+| Finding | Severity | Fix |
+|---|---|---|
+| **`delete_session()` (P5-3) wrote its audit line while holding `DB_LOCK`,** immediately before the row deletes. `_write_audit_line()`'s one other call site (`log_message()`) deliberately calls it *after* releasing `DB_LOCK` — direct, existing precedent in the same file that this function shouldn't run under the lock, and the same lock-scope-over-slow-work pattern already fixed once for Agora subscribe/Stripe (`ROADMAP.md` § Architecture cleanup). Here it's a local file append, not a network round trip, so nothing awaits during it and no other request is actually starved — genuinely low severity, but still the wrong shape. | Low (our defect; no observed starvation, but a precedent this codebase already treats as a defect class) | Split into two `DB_LOCK` blocks: the first only computes the `SELECT COUNT(*)` figures; the audit line is written outside any lock; a second block re-checks the session still exists (a narrow TOCTOU window — this endpoint already requires terminal status or `?force=true`, so nothing in normal operation is still writing to the target session between the two blocks) before running the actual UPDATE/DELETEs. |
+
+**New: `src/emporia/wire.py`**, the shared wire-contract module `ROADMAP.md`'s MCP/SDK duplication
+entry named as the low-risk, low-effort half of that cleanup. `mcp_server.py` (52 sync tool
+functions) and `agent_sdk.py` (40 async `EmporiaAgent` methods) each independently built the same
+request bodies for four handshakes — the dashboard challenge/session exchange, agent registration,
+the signed action envelope, and the signed room-message envelope. Every duplication bug this
+codebase has actually found between the two files (N2's bearer/retry semantics, N3-8's signed-
+envelope shape) was in this request-construction layer, not transport, which is why this module
+extracts exactly that and nothing else: six pure, synchronous, no-I/O functions, no `httpx` import,
+no `identity` import (signing and the actual HTTP call both stay in each caller — transport
+deliberately still differs by design, see `ROADMAP.md`'s "transport dedup" note).
+
+Not a bug-fix table entry — a pure extraction, verified by the **existing 404-test suite passing
+unchanged** (no existing test's assertions needed editing) plus new tests per function, each proven
+two ways: single-sourcing (`patch.object(wire, "fn", wraps=wire.fn)` at both call sites, the
+established pattern from `payments.x402_requirement()`) and, for the two signed envelopes, a real
+signed round trip through the relay's own signature verification — confirming a field wasn't
+silently dropped, since `identity.sign()`'s `sort_keys=True` canonicalization already made key
+*order* a non-issue (the two files built their dicts in different order and were provably signing
+the identical structure).
+
+**Not fixed, recorded as evidence for the next pass:** the sync/async transport bridge itself
+(`mcp_server.py`'s module-level `httpx.get/post` vs. `agent_sdk.py`'s `AsyncClient`) stays unbuilt —
+flagged by P5 as the expensive, optional half of the MCP/SDK duplication entry, and this pass
+confirms that scoping was right: every real bug found in that overlap has been in the shared bodies
+`wire.py` now owns, not in the transport difference itself.
+
 ## Threat model notes (by design, not gaps)
 
 - **Ed25519 = auth; the relay never holds private keys.** Keys live at `~/.hermes/keys/*.priv`,
