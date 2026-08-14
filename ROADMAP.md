@@ -246,9 +246,12 @@ MCP/SDK refactor below) → P6 (done — the P5 self-review, plus the shared wir
 MCP/SDK refactor above needed) → P7 (done — the P6 self-review; closed a count TOCTOU P6-1's own
 lock-scope fix reopened, and closed the join_session 402-shape gap P5 had left owed) → P8 (done —
 the P7 self-review; compensated a false audit line P7-1's own fix could leave behind, and finished
-the 402 parity P7-2 started across all three paid-entry SDK methods — see `SECURITY.md`) → next
-unnamed.** The `r`-suffix review-chain naming ends at P1brr; review passes since are named
-sequentially (P5, P6, P7, P8, …) rather than growing another suffix — review yield had
+the 402 parity P7-2 started across all three paid-entry SDK methods) → P9 (done — the P8
+self-review, the smallest finding yet in the `delete_session()` arc, plus a research-only
+Federation/Interop/Rooms/Dashboard survey that found every open item there still correctly scoped
+— see `SECURITY.md`) → next unnamed.** The `r`-suffix review-chain naming ends at P1brr; review
+passes since are named sequentially (P5, P6, P7, P8, P9, …) rather than growing another suffix —
+review yield had
 shrunk to P1brr's own one Medium/three Low, the signal to stop.
 
 **P1b shipped: x402 is a real, working second payment rail**, non-custodial, eight commits
@@ -403,11 +406,26 @@ section (R1/R2) — the incorrect "blocked on a migration runner" claim itself w
 
 ## Federation
 
+**P9 survey (research only, no code — see also Interop/Rooms/Dashboard below):** re-verified every
+claim in this section directly against current source rather than trusting the prior text. All
+hold. One thing worth recording that wasn't spelled out here before: the lack of an automatic
+periodic federation pull is a **deliberate, already-documented design choice**
+(`ARCHITECTURE.md`'s "Background tasks" section: "federation sync is pull-on-demand... not
+scheduled by the relay itself" — the only background task that exists is `_sweep_loop()`), not an
+oversight or a small gap. It would be easy to bolt on (`_sweep_loop()`'s exact pattern —
+`asyncio.create_task` in `lifespan()`, an `EMPORIA_*_INTERVAL_SECONDS` env var, per-run exception
+isolation) but doing so reverses a stated decision, not fills an unnoticed hole — not something to
+pick up without first understanding *why* pull-on-demand was chosen (likely: keeping every relay's
+outbound network behavior fully operator-controlled, no surprise traffic to peers). Not proposing it
+as a candidate; flagging it so a future pass doesn't rediscover it as if it were new.
+
 **No peer-discovery directory.** Two relays federate today only if each operator manually sets
 `FEDERATED_RELAYS` to the other's URL. There's no bootstrap/registry mechanism for a node to find
 peers automatically.
 - *Effort:* medium-large — needs a design decision (centralized directory vs. DHT vs. seed-list
-  gossip) before implementation.
+  gossip) before implementation. **Confirmed still accurate (P9):** no directory/bootstrap
+  mechanism exists in `relay_server.py`; `FEDERATED_RELAYS` is still a manually-configured list.
+  Still correctly the largest-effort item in this section — a design decision, not a coding task.
 
 **Done (post-hackathon hardening pass): federation peer responses are now signed.** The relay has
 its own persistent Ed25519 identity (`identity.generate_or_load_relay_keypair()`), used to sign
@@ -425,7 +443,9 @@ builds. It shares the same prerequisite as the Stripe-Projects-remote deploy mod
 plus a design decision on what's shared vs. per-node (keys, rate limits). Full writeup:
 `README.md` § Deployment → "Federated relay with a shared DB".
 - *Effort:* large — new DB backend + connection pooling, plus the per-node-state design above,
-  before any of the actual multi-process federation logic.
+  before any of the actual multi-process federation logic. **Confirmed still accurate (P9):**
+  `DATABASE_URL` doesn't appear anywhere in `src/emporia/` — the Postgres-backend prerequisite is
+  still fully unbuilt.
 
 **Sandboxed remote deployment via NVIDIA NemoClaw.** NemoClaw is specifically "NemoClaw for
 Hermes Agent" — it wraps the *Hermes agent* process, not the relay (the relay is our own code,
@@ -443,7 +463,11 @@ NemoClaw wrapping — this is an infra/ops-level integration (how the agent proc
 an in-relay code change.
 - *Effort:* medium — confirm NemoClaw's current image/CLI interface against its own docs, then
   wire it into the `nemoclaw` compose profile; needs its own testing pass since it changes how
-  the agent process is sandboxed/hosted, not just app code.
+  the agent process is sandboxed/hosted, not just app code. **Confirmed still accurate (P9):**
+  `docker-compose.yml`'s `nemoclaw` profile is still commented out. Deliberately not picked up by
+  this review chain regardless — it's ops/infra work needing external verification against
+  NVIDIA's own docs, a different risk profile than this chain's usual read-the-code-write-the-fix
+  passes.
 
 ## Interop
 
@@ -481,20 +505,40 @@ lifecycle, SSE streaming, push webhooks) stays deferred**, and only becomes just
 changes from "Hermes-operated agents for known relays" (current scope) to "non-Hermes, non-SDK agents
 must transact against Emporia directly" — effort comparable to the x402/MPP re-platform below.
 - *Effort:* large, same order as x402/MPP — not worth scoping until the goal actually changes.
+  **Confirmed still accurate (P9):** the goal hasn't changed since N10; `/relay-card` and the two
+  hard-404'd `.well-known` paths are unchanged in `relay_server.py`.
 
 ## Rooms
+
+**P9 survey (research only, no code):** confirmed `rooms.py`/`relay_server.py` still have zero
+X25519 or other key-exchange machinery — `encrypted` is still exactly the boolean flag described
+below, nothing more. No drift to correct.
 
 **No end-to-end encryption for `encrypted=true` rooms.** Today, `encrypted: true` only means the
 relay skips guardrails scanning and stores content as opaque — there's no actual client-side
 X25519 key exchange, so message bodies aren't really encrypted in transit/at rest beyond whatever
 the client does on its own. Documented as "post-v1" in `DEMO.md`'s federation-readiness notes.
 - *Effort:* medium — needs an agreed key-exchange protocol between participating agents before the
-  relay's storage format can be finalized.
+  relay's storage format can be finalized. Still correctly gated on a design decision this codebase
+  hasn't made, not an implementation gap — not a candidate until that protocol choice exists.
 
 ## Dashboard
+
+**P9 survey (research only, no code):** `dashboard/src/ui/McpCommandHint.tsx` and
+`ReadOnlyChat.tsx` confirm the read-only-plus-MCP-hint claim below is still exactly what's shipped.
 
 **Write actions are deliberately read-only + "show the MCP command."** The dashboard surfaces
 exactly what MCP tool call an agent would run (join a session, message an agent) rather than
 performing writes itself. This is a scope choice, not a gap — see `README.md`'s Dashboard section
 for the rationale — but a future iteration could add an actual write UI (would need its own
 Ed25519-signing flow in the browser, which is a meaningfully bigger feature).
+
+**P9 conclusion for all four sections above:** every claim re-verified against current source holds
+— no drift, nothing shipped since silently invalidated an estimate. No candidate emerged that's
+genuinely comparable in size to `wire.py` (P6) or the cascade-delete endpoint (P4-5): every open
+item here is either gated on a design decision this codebase hasn't made (peer discovery, room
+encryption), architecturally large by nature (shared-DB federation, a full A2A server, a dashboard
+write UI), or a deliberate decision already recorded elsewhere (no automatic federation sync —
+see Federation above) rather than an overlooked gap. That's a legitimate outcome of a survey pass,
+not a failure to find something: these four sections were correctly left alone by six passes in a
+row, not merely unexamined by them.

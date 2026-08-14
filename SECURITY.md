@@ -1034,6 +1034,36 @@ detail — the standing candidate for a broader sweep instead of another self-re
 whether `delete_session()` finally reviews clean at P9: five consecutive passes (P4-5, P5-2/P5-3,
 P6-1, P7-1, P8-1) have each found something in the previous one's work on that single endpoint.
 
+## Fixed post-hackathon (P9 pass — the P8 self-review, plus a Federation/Interop/Rooms/Dashboard survey)
+
+The eighteenth consecutive pass to find genuine defects in the immediately preceding pass's own
+shipped work (…→P6→P7→P8→**P9**). One commit landed on `post-hackathon`; the second item was a
+research-only survey with no code change.
+
+| Finding | Severity | Fix |
+|---|---|---|
+| **P8-1's compensating `admin_session_delete_aborted` write was itself unguarded.** That write can fail exactly like the first `admin_session_deleted` write (missing `LOG_DIR`, full disk) — P5-3 already established this failure mode exists. Unguarded, it propagated as a bare, undiagnostic 500 (no `@app.exception_handler` is registered anywhere in `relay_server.py`) and silently left the earlier `admin_session_deleted` line unfollowed by an `admin_session_delete_aborted` line — exactly the false-record shape P8-1 exists to prevent, one level deeper. | Low (needs two independent rare conditions at once — a concurrent force-delete race *and* an audit-write outage — and doesn't corrupt data, only the audit narrative around an already-safe abort) | The compensating write is now wrapped; on failure it raises a 500 whose detail states plainly that nothing was deleted and that the earlier audit line is stale and needs manual verification, instead of a bare `OSError`. No further recursion — there's no meaningful third layer of compensation for a failure that can't be un-failed; the fix is making it legible. |
+
+**Federation/Interop/Rooms/Dashboard survey (research only, no code):** re-verified every claim in
+all four `ROADMAP.md` sections directly against current source, three passes after they were first
+flagged unsurveyed (P6) and twice deferred since (P7, P8) in favor of concretely-scoped work each
+time. Every claim held — no drift, nothing shipped since silently invalidated an effort estimate.
+No candidate emerged that's genuinely comparable in size to `wire.py` (P6) or the cascade-delete
+endpoint (P4-5): every open item is either gated on a design decision this codebase hasn't made
+(peer-discovery directory, room E2E encryption), architecturally large by nature (shared-DB
+federation, a full A2A JSON-RPC server, a dashboard write UI), or — newly recorded this pass — a
+deliberate decision already documented elsewhere rather than an overlooked gap: `ARCHITECTURE.md`'s
+"Background tasks" section states federation sync is pull-on-demand, not scheduled by the relay
+itself, so the lack of an automatic periodic sync is intentional, not a small unbuilt feature.
+See `ROADMAP.md`'s Federation/Interop/Rooms/Dashboard sections for the full per-item notes.
+
+**Not fixed, recorded as evidence for the next pass:** `payments`/`settlements` counts in
+`delete_session()`'s report are still never re-verified on the 409 path — a reporting-only concern
+for tables that are never deleted, the same call every pass since P7 has made. Whether
+`delete_session()` has finally gone quiet after six consecutive passes each finding something in
+the previous one's work on it (P4-5, P5-2/P5-3, P6-1, P7-1, P8-1, P9-1) is worth checking again at
+P10 — this pass's finding was the smallest yet, which is itself a signal, but not proof.
+
 ## Threat model notes (by design, not gaps)
 
 - **Ed25519 = auth; the relay never holds private keys.** Keys live at `~/.hermes/keys/*.priv`,
