@@ -156,7 +156,22 @@ duplication (`relay_server.py`, `agent_sdk.py`, `mcp_server.py`); as of P10 all 
 the two clients. Also folded in: `mcp_server.py`'s `confirm_delivery`/`dispute_delivery` (missed by
 P6-4 despite being in the file P6-4 was editing) now call `wire.signed_action_payload()` too, and the
 default rationale strings the signer and verifier each hand-copied (load-bearing for signature
-verification) are now single-sourced constants in `wire.py`. See `SECURITY.md`'s P10 pass.
+verification) are now single-sourced constants in `wire.py`. **Correction (P11-1): the confirm side
+of that last claim was wrong at the time it was written** — `relay_server.py`'s
+`ConfirmDeliveryRequest` still carried a third, different hardcoded rationale default as its pydantic
+field default, which shadowed `wire.py`'s constant on the common path (a client omitting the optional
+field) and made it dead code there. P10-2's own test didn't catch this because it drove
+`confirm_delivery` through `mcp_server.py`, which always resolves and forwards `rationale` explicitly
+— the one path that can't exercise the field default. Fixed in P11; see `SECURITY.md`'s P11 pass.
+
+**Two gaps surfaced, recorded, not fixed (P11) — both design questions, not oversights.**
+`agent_sdk.py` has no `confirm_delivery`/`dispute_delivery` methods at all, unlike `mcp_server.py`'s
+pair — a real MCP/SDK parity gap, found while checking how far P10-2's confirm-rationale bug could
+reach (answer: not into the SDK, because there's no SDK path to reach through). Separately,
+`POST /dm/{thread_id}/send` (`relay_server.py`) has no `signature` field on its request model and
+never calls `verify_signature`, while both sibling message routes (`POST /messages`, room messages)
+require one — not a duplication gap `wire.py` could close, since there's no envelope to unify; whether
+bearer identity alone is sufficient for a thread DM is a call this codebase hasn't made either way.
 
 **Transport dedup — still open, optional.** Leaving the two transports (sync `httpx` calls vs.
 `AsyncClient`) alone was the right call: it kills the drift class this entry cared about with zero
@@ -266,10 +281,16 @@ eighth look) → P10 (done — **not** a continuation of that chain, a different
 everything P6–P9 shipped as one body of work for duplication debt those passes created and didn't
 fully discharge: finished the MCP/SDK wire-contract unification onto the verifier side, single-sourced
 the confirm/dispute default rationale strings, made `subscribe_agora_topic()`'s response shape match
-its two siblings, and collapsed `delete_session()`'s count queries — see `SECURITY.md`) → next
-unnamed.** The `r`-suffix review-chain naming ends at P1brr; review passes since are named
-sequentially (P5, P6, P7, P8, P9, P10, …) rather than growing another suffix — review yield had
-shrunk to P1brr's own one Medium/three Low, the signal to stop.
+its two siblings, and collapsed `delete_session()`'s count queries — see `SECURITY.md`) → P11 (done —
+resumed the audit-the-previous-pass pattern, applied to P10's own work: found and fixed a genuine gap
+in P10-2's own single-sourcing claim, the same N4-7 unguarded-`sign()` defect recurring in three
+siblings P10-1 edited without noticing, and the non-atomic/non-private secret writes that made that
+defect reachable — see `SECURITY.md`) → next unnamed.** The `r`-suffix review-chain naming ends at
+P1brr; review passes since are named sequentially (P5, P6, P7, P8, P9, P10, P11, …) rather than
+growing another suffix — review yield had shrunk to P1brr's own one Medium/three Low, the signal to
+stop; P11 finding a live defect in P10's own work shows that signal doesn't mean stop reviewing
+altogether, only that the *chain-of-fixes-in-one-function* shape (the P4–P9 `delete_session()` arc)
+had run its course.
 
 **P1b shipped: x402 is a real, working second payment rail**, non-custodial, eight commits
 (SECURITY.md's P1b pass has the full findings). `_verify_and_confirm_payment()` gained an x402
