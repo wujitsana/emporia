@@ -1144,10 +1144,15 @@ def subscribe_agora_topic(topic_slug: str, agent_id: str, mpp_token: str = "", p
                 agent_id=agent_id, json=body, timeout=10,
             )
         if r.status_code == 402:
-            return {"error": "payment_required", "detail": r.json(), "hint": "Use link-cli or mppx to pay the entry fee, then retry with Authorization: Payment <spt>"}
-        return r.json() if r.status_code == 200 else {"error": f"Relay {r.status_code}", "detail": r.text}
+            return {
+                "error": "payment_required", "detail": r.json(), "success": False,
+                "hint": "Use link-cli or mppx to pay the entry fee, then retry with Authorization: Payment <spt>",
+            }
+        if r.status_code == 200:
+            return {"success": True, **r.json()}
+        return {"error": f"Relay {r.status_code}", "detail": r.text, "success": False}
     except Exception as e:
-        return {"error": str(e)}
+        return {"error": str(e), "success": False}
 
 
 @mcp.tool()

@@ -10857,6 +10857,62 @@ def test_relay_server_verifies_dm_signature_via_wire_contract():
     asyncio.run(scenario())
 
 
+def test_mcp_subscribe_agora_topic_response_shape_matches_join_room_and_join_session(prod_client):
+    """P10-4: join_room() and join_session() both return {"success": True, **d}
+    on 200, {..., "success": False} on 402/error. subscribe_agora_topic() used
+    to skip the "success" key entirely on every path — a caller doing
+    result["success"] on it (having learned the convention from its two
+    siblings) got a bare KeyError instead of a clean False. Covers all three
+    shapes: 200 (open topic, no gate), 402 (paid_invite topic, no payment
+    credential), and non-200/non-402 error (topic that doesn't exist, a 404).
+    The route-specific extras (hint, requires_payment, www_authenticate) are
+    untouched — this is only about the common "success" key every sibling
+    tool already has."""
+    from emporia import mcp_server
+
+    _register_keyed(prod_client, "p10_4_creator")
+    _register_keyed(prod_client, "p10_4_subscriber")
+    adapter = _ASGIHttpxAdapter(prod_client, mcp_server.RELAY_URL)
+
+    with patch.object(mcp_server, "httpx", adapter):
+        open_topic = mcp_server.create_agora_topic(
+            name="P10-4 Open Topic", creator_id="p10_4_creator", gate_type="open",
+        )
+        assert "error" not in open_topic, open_topic
+        open_slug = open_topic["slug"]
+
+        paid_topic = mcp_server.create_agora_topic(
+            name="P10-4 Paid Topic", creator_id="p10_4_creator",
+            gate_type="paid_invite", entry_fee_cents=500,
+        )
+        assert "error" not in paid_topic, paid_topic
+        paid_slug = paid_topic["slug"]
+        invite_result = mcp_server.invite_to_agora_topic(
+            topic_slug=paid_slug, agent_id="p10_4_subscriber", invited_by="p10_4_creator",
+        )
+        assert "error" not in invite_result, invite_result
+
+        # 200: open topic, no gate to clear.
+        ok_result = mcp_server.subscribe_agora_topic(
+            topic_slug=open_slug, agent_id="p10_4_subscriber",
+        )
+        assert ok_result.get("success") is True, ok_result
+
+        # 402: invited to a paid_invite topic but no payment credential offered.
+        paid_result = mcp_server.subscribe_agora_topic(
+            topic_slug=paid_slug, agent_id="p10_4_subscriber",
+        )
+        assert paid_result.get("success") is False, paid_result
+        assert paid_result.get("error") == "payment_required", paid_result
+        assert "hint" in paid_result, paid_result
+
+        # error: topic that doesn't exist (404 from the relay).
+        error_result = mcp_server.subscribe_agora_topic(
+            topic_slug="p10-4-no-such-topic", agent_id="p10_4_subscriber",
+        )
+        assert error_result.get("success") is False, error_result
+
+
 def test_mcp_bearer_request_recovers_from_stale_cached_token(prod_client):
     """Regression for N2-1: _dashboard_bearer_headers() only ever refreshed on expiry, with
     no path back from a token the server actually rejects — before the JWT secret was
