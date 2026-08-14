@@ -10269,6 +10269,97 @@ def test_agent_sdk_submit_action_uses_shared_wire_contract_and_relay_accepts_it(
     asyncio.run(scenario())
 
 
+def test_mcp_send_room_message_uses_shared_wire_contract_and_relay_accepts_it(prod_client):
+    """P6-5: mcp_server.send_room_message() and agent_sdk.send_room_message()
+    (see the sibling test below) independently signed
+    {room_id, content, msg_type} and posted {content, msg_type, signature}
+    (N3-8/R7's shape, binding the signature to more than just content). Both
+    now call wire.signed_room_message_payload()/room_message_envelope().
+    Same combined proof as item 4: single-sourcing (patch + wraps) plus a
+    real relay-verified round trip."""
+    from emporia import mcp_server, wire
+
+    _register_keyed(prod_client, "p6_5_mcp_sender")
+
+    r = prod_client.post("/rooms", json={
+        "name": "P6-5 MCP Wire Room", "creator_id": "p6_5_mcp_sender",
+        "room_type": "public", "gate_type": "open",
+    },
+        headers=bearer_for(prod_client, "p6_5_mcp_sender"))
+    assert r.status_code == 200, r.text
+    room_id = r.json()["room_id"]
+
+    adapter = _ASGIHttpxAdapter(prod_client, mcp_server.RELAY_URL)
+    with patch.object(mcp_server, "httpx", adapter), \
+         patch.object(
+             wire, "signed_room_message_payload", wraps=wire.signed_room_message_payload,
+         ) as payload_spy, \
+         patch.object(wire, "room_message_envelope", wraps=wire.room_message_envelope) as envelope_spy:
+        result = mcp_server.send_room_message(
+            room_id=room_id, sender_id="p6_5_mcp_sender", content="hello from P6-5",
+        )
+
+    assert result.get("success") is True, result
+    assert result.get("message_id", "").startswith("rmsg_"), result
+    payload_spy.assert_called_once_with(room_id, "hello from P6-5", "chat")
+    envelope_spy.assert_called_once()
+    assert envelope_spy.call_args.args[0] == "hello from P6-5"
+    assert envelope_spy.call_args.args[1] == "chat"
+    assert len(envelope_spy.call_args.args[2]) == 86  # base64url Ed25519 sig, identity.sign()
+    assert envelope_spy.call_args.kwargs.get("parent_message_id") is None
+
+
+def test_agent_sdk_send_room_message_uses_shared_wire_contract_and_relay_accepts_it():
+    """P6-5: agent_sdk.send_room_message()'s half of the single-sourcing +
+    real round-trip proof — see the mcp_server test above. Same
+    ASGI-transport-wired-EmporiaAgent pattern item 4 used."""
+    import asyncio
+
+    import httpx as httpx_module
+
+    from emporia import wire
+    from emporia.agent_sdk import EmporiaAgent
+    from emporia.identity import get_public_key_hex
+    from emporia.relay_server import app as relay_app
+
+    def _wired(agent_id: str) -> EmporiaAgent:
+        a = EmporiaAgent(
+            relay_url="http://testserver", agent_id=agent_id,
+            public_key_hex=get_public_key_hex(agent_id),
+        )
+        a._http = httpx_module.AsyncClient(
+            transport=httpx_module.ASGITransport(app=relay_app), base_url="http://testserver",
+        )
+        return a
+
+    async def scenario():
+        sender = _wired("p6_5_sdk_sender")
+        try:
+            await sender.register()
+            room = await sender.create_room(
+                name="P6-5 SDK Wire Room", room_type="public", gate_type="open",
+            )
+            room_id = room["room_id"]
+
+            with patch.object(
+                wire, "signed_room_message_payload", wraps=wire.signed_room_message_payload,
+            ) as payload_spy, patch.object(
+                wire, "room_message_envelope", wraps=wire.room_message_envelope,
+            ) as envelope_spy:
+                result = await sender.send_room_message(room_id, "hello from P6-5 SDK")
+
+            assert result.get("message_id", "").startswith("rmsg_"), result
+            payload_spy.assert_called_once_with(room_id, "hello from P6-5 SDK", "chat")
+            envelope_spy.assert_called_once()
+            assert envelope_spy.call_args.args[0] == "hello from P6-5 SDK"
+            assert envelope_spy.call_args.args[1] == "chat"
+            assert len(envelope_spy.call_args.args[2]) == 86  # base64url Ed25519 sig, identity.sign()
+        finally:
+            await sender._http.aclose()
+
+    asyncio.run(scenario())
+
+
 def test_mcp_bearer_request_recovers_from_stale_cached_token(prod_client):
     """Regression for N2-1: _dashboard_bearer_headers() only ever refreshed on expiry, with
     no path back from a token the server actually rejects — before the JWT secret was

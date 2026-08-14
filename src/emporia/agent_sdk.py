@@ -573,12 +573,11 @@ class EmporiaAgent:
         Signature is mandatory — the relay rejects an unsigned POST (N2-5), and is bound
         to room_id + msg_type, not just content (N3-8/R7) — a content-only signature was
         valid in any room this agent belongs to, forever."""
+        from emporia.wire import room_message_envelope, signed_room_message_payload
+        signed_payload = signed_room_message_payload(room_id, content, msg_type)
         resp = await self._bearer_request(
             "post", f"{self.relay_url}/rooms/{room_id}/message",
-            json={
-                "content": content, "msg_type": msg_type,
-                "signature": self._sign({"room_id": room_id, "content": content, "msg_type": msg_type}),
-            },
+            json=room_message_envelope(content, msg_type, self._sign(signed_payload)),
         )
         resp.raise_for_status()
         return resp.json()

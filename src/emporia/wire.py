@@ -93,3 +93,28 @@ def action_envelope(
         "peer_text_rationale": rationale,
         "signature": signature,
     }
+
+
+def signed_room_message_payload(room_id: str, content: str, msg_type: str) -> dict[str, Any]:
+    """The dict `POST /rooms/{id}/message` callers sign before sending —
+    binds the signature to `room_id`/`msg_type`, not just `content` (N3-8/R7:
+    a content-only signature was valid in any room this agent belongs to,
+    forever)."""
+    return {"room_id": room_id, "content": content, "msg_type": msg_type}
+
+
+def room_message_envelope(
+    content: str,
+    msg_type: str,
+    signature: str,
+    *,
+    parent_message_id: str | None = None,
+) -> dict[str, Any]:
+    """The actual `POST /rooms/{id}/message` body. `parent_message_id` is
+    accepted here even though agent_sdk.py's `send_room_message()` doesn't
+    have that parameter yet (only mcp_server.py's does) — so adding it to
+    the SDK later doesn't require touching this function."""
+    body: dict[str, Any] = {"content": content, "msg_type": msg_type, "signature": signature}
+    if parent_message_id:
+        body["parent_message_id"] = parent_message_id
+    return body

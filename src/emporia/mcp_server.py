@@ -816,12 +816,12 @@ def send_room_message(
         # out of the MCP tool as an unhandled exception instead of the structured
         # {"error": ..., "success": False} shape every other tool in this file returns.
         from emporia.identity import sign
-        body: dict[str, Any] = {
-            "content": content, "msg_type": msg_type,
-            "signature": sign({"room_id": room_id, "content": content, "msg_type": msg_type}, sender_id),
-        }
-        if parent_message_id:
-            body["parent_message_id"] = parent_message_id
+        from emporia.wire import room_message_envelope, signed_room_message_payload
+        signed_payload = signed_room_message_payload(room_id, content, msg_type)
+        body = room_message_envelope(
+            content, msg_type, sign(signed_payload, sender_id),
+            parent_message_id=parent_message_id,
+        )
         r = _bearer_request(
             "post", f"{RELAY_URL}/rooms/{room_id}/message",
             agent_id=sender_id, json=body, timeout=15,
