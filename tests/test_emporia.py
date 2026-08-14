@@ -10385,6 +10385,59 @@ def test_mcp_confirm_and_dispute_default_rationale_are_single_sourced(prod_clien
     assert result2.get("success") is True, result2
 
 
+def test_relay_confirm_delivery_omitted_rationale_resolves_from_wire_py(client):
+    """P11-1: ConfirmDeliveryRequest.rationale (relay_server.py) carried a
+    THIRD hardcoded default — "Delivery confirmed as satisfactory." — as a
+    pydantic field default, distinct from wire.DEFAULT_CONFIRM_RATIONALE
+    ("Buyer confirmed delivery.") that P10-2 was supposed to single-source.
+    Because that model default was non-empty, the verifier's
+    `req.rationale or DEFAULT_CONFIRM_RATIONALE` never took the `or` branch
+    on the common omit-the-field path — wire.py's constant was dead code
+    there. mcp_server.py never hits this (it always resolves and forwards
+    rationale explicitly, so P10-2's own test — which drives confirm_delivery
+    through mcp_server.py — couldn't have caught it), but a raw client that
+    omits the optional `rationale` field entirely, the natural reading of
+    the API, got a bare 403 pointing nowhere near the cause. Drives a raw
+    POST /sessions/{id}/confirm-delivery with no "rationale" key at all,
+    signed with wire.DEFAULT_CONFIRM_RATIONALE (what an honest client
+    reading wire.py would sign with), and asserts the relay accepts it."""
+    from emporia import wire
+
+    _register_keyed(client, "p11_1_buyer")
+    _register_keyed(client, "p11_1_seller")
+
+    r = client.post("/sessions", json={
+        "module_type": "emporia:service:v1", "creator_agent_id": "p11_1_buyer",
+        "config": {"description": "P11-1 omitted rationale test"}, "payment_rules": {"mode": "free"},
+    },
+        headers={"x-emporia-agent-id": "p11_1_buyer"})
+    assert r.status_code == 200, r.text
+    session_id = r.json()["session_id"]
+    r = client.post(
+        f"/sessions/{session_id}/join", json={"agent_id": "p11_1_seller"},
+        headers={"x-emporia-agent-id": "p11_1_seller"},
+    )
+    assert r.status_code == 200, r.text
+
+    r = client.post(f"/sessions/{session_id}/action", json=_signed_action_body(
+        client, session_id, "p11_1_seller", "accept", {}, "Accepting — P11-1 test.",
+    ))
+    assert r.status_code == 200, r.text
+    r = client.post(f"/sessions/{session_id}/action", json=_signed_action_body(
+        client, session_id, "p11_1_seller", "deliver", {"deliverable": "done"},
+        "Delivered — P11-1 test.",
+    ))
+    assert r.status_code == 200, r.text
+
+    body = _signed_confirm_delivery_body(
+        client, session_id, "p11_1_buyer", wire.DEFAULT_CONFIRM_RATIONALE,
+    )
+    del body["rationale"]
+    r = client.post(f"/sessions/{session_id}/confirm-delivery", json=body)
+    assert r.status_code == 200, r.text
+    assert r.json()["is_terminal"] is True
+
+
 def test_mcp_dashboard_bearer_headers_uses_shared_wire_contract(prod_client):
     """P6-2: mcp_server._dashboard_bearer_headers() and agent_sdk's
     _bearer_token_value() (see the sibling test below) used to build the

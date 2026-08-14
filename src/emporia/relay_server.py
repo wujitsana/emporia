@@ -4801,7 +4801,7 @@ async def get_session_state(session_id: str, request: Request):
 
 class ConfirmDeliveryRequest(BaseModel):
     agent_id: str
-    rationale: str = "Delivery confirmed as satisfactory."
+    rationale: str = ""
     signature: str | None = None
 
 
