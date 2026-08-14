@@ -1015,6 +1015,25 @@ instance of the same 402-shape tax if it turns out to matter later. Federation/I
 Dashboard remain unsurveyed in detail — the standing candidate for a broader sweep instead of
 another self-review.
 
+## Fixed post-hackathon (P8 pass — the P7 self-review, plus finishing the SDK's 402 parity)
+
+The seventeenth consecutive pass to find genuine defects in the immediately preceding pass's own
+shipped work (…→P5→P6→P7→**P8**). Two commits, both landed on `post-hackathon`.
+
+| Finding | Severity | Fix |
+|---|---|---|
+| **`delete_session()`'s 409 abort path (P7-1) left a false audit record.** P5-3 made the `admin_session_deleted` audit line get written *before* any row is deleted, so a failed audit write can never leave a deletion nothing recorded. P7-1 then added a count-recheck that can raise 409 on a concurrent-write mismatch — but by then the `admin_session_deleted` line, with the pre-race counts, was already on disk. An append-only log can't retract a line, so a 409 abort left the log falsely claiming a deletion that never happened — the exact mirror of the bug P5-3 fixed, in the opposite direction, and reachable more often after P7-1 widened the guard from "session gone" to "any count drifted." | Medium (our defect; an incorrect audit record for an endpoint whose whole story is "we record what we touched") | The mismatch is now recorded rather than raised from inside the `DB_LOCK` block; once outside, a compensating `admin_session_delete_aborted` line is appended (same P6-1 rule — never write it under `DB_LOCK`) before the 409 raises. The endpoint's docstring now states the resulting contract: an `admin_session_deleted` line is authoritative only if not immediately followed by an `admin_session_delete_aborted` line for the same `session_id`. |
+| **`agent_sdk.py`'s 402 parity was incomplete.** P7-2 fixed `join_session()`'s bare `raise_for_status()` on a 402 (which discarded the challenge body). Its two structurally identical siblings — `join_room()` and `subscribe_agora_topic()`, both hitting routes `mcp_server.py` already surfaces 402 detail for — still had the exact same gap; P7's own review missed that it had traded a cross-client asymmetry for an intra-client one. | Low (API-shape parity, not a security hole — same class as the P7-2 finding) | Both now go through a new shared `_raise_for_status_or_payment()` helper — the same 402-to-`PaymentRequiredError` check P7-2 wrote inline, now used by all three call sites instead of copied a third time. All three docstrings updated to state a 402 raises rather than returning a challenge. `PaymentRequiredError` remains a subclass of `httpx.HTTPStatusError`, so an existing caller catching that broad type around either method keeps working unchanged. |
+
+**Not fixed, recorded as evidence for the next pass:** `payments`/`settlements` counts in
+`delete_session()`'s report are still never re-verified on the 409 path (a reporting-only drift for
+tables that are never deleted, not an integrity break — the same call P7 made, still standing).
+`PaymentRequiredError` is wired into all three paid-entry SDK methods now; the other 37 methods on
+`EmporiaAgent` are unaffected, deliberately. Federation/Interop/Rooms/Dashboard remain unsurveyed in
+detail — the standing candidate for a broader sweep instead of another self-review. Worth watching
+whether `delete_session()` finally reviews clean at P9: five consecutive passes (P4-5, P5-2/P5-3,
+P6-1, P7-1, P8-1) have each found something in the previous one's work on that single endpoint.
+
 ## Threat model notes (by design, not gaps)
 
 - **Ed25519 = auth; the relay never holds private keys.** Keys live at `~/.hermes/keys/*.priv`,

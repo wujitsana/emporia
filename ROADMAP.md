@@ -112,13 +112,17 @@ already had in `httpx` form. The N3 pass (N3-7) made it worse in the other direc
 meant rewriting them to forward via `_bearer_request` — duplicating logic `agent_sdk.py`'s
 equivalents already had, rather than sharing it (see `SECURITY.md`'s N3 pass, R6). Every future
 pass that touches a write endpoint's contract will keep paying this tax until the refactor below
-happens. **Closed (P7-2).** `agent_sdk.join_session()` used to call `raise_for_status()`, so
-P1brr-2's `declined` reason key (added to `mcp_server.join_session()` in P4-3) was only reachable
-there by catching `HTTPStatusError` and re-parsing — same underlying information, two different
-shapes, across the two clients. `join_session()` now raises `PaymentRequiredError` (a small
-`httpx.HTTPStatusError` subclass, `.detail`/`.www_authenticate`) instead of a bare
-`HTTPStatusError` on 402, without touching the SDK's raise-on-error contract for its other 39
-methods. See `SECURITY.md`'s P7 pass.
+happens. **Closed (P7-2, finished P8-2).** `agent_sdk.py`'s three paid-entry methods —
+`join_session`, `join_room`, `subscribe_agora_topic` — used to call `raise_for_status()`, so
+P1brr-2's `declined` reason key (added to `mcp_server.py`'s equivalents in P4-3) was only reachable
+by catching `HTTPStatusError` and re-parsing — same underlying information, two different shapes,
+across the two clients. P7-2 fixed `join_session()`; P8-2 finished the other two, which had traded
+that cross-client asymmetry for an intra-client one (P7-2 shipped, P7's own review missed that its
+two siblings were structurally identical and still had the gap). All three now raise
+`PaymentRequiredError` (a small `httpx.HTTPStatusError` subclass, `.detail`/`.www_authenticate`)
+via one shared `_raise_for_status_or_payment()` helper, instead of a bare `HTTPStatusError` on 402
+— without touching the SDK's raise-on-error contract for its other 37 methods. See `SECURITY.md`'s
+P7 and P8 passes.
 
 **De-risked in P5 — the estimate below understated a real blocker, and a better decomposition
 exists.** The stated direction ("MCP tools delegate to `EmporiaAgent` methods") assumes a mechanical
@@ -240,9 +244,11 @@ the cascade-delete endpoint) → P5 (done — the P4 self-review; found the pre-
 `sessions.status` bug P4-5 walked past, hardened the cascade-delete endpoint, and de-risked the
 MCP/SDK refactor below) → P6 (done — the P5 self-review, plus the shared wire-contract module the
 MCP/SDK refactor above needed) → P7 (done — the P6 self-review; closed a count TOCTOU P6-1's own
-lock-scope fix reopened, and closed the join_session 402-shape gap P5 had left owed — see
-`SECURITY.md`) → next unnamed.** The `r`-suffix review-chain naming ends at P1brr; review passes
-since are named sequentially (P5, P6, P7, …) rather than growing another suffix — review yield had
+lock-scope fix reopened, and closed the join_session 402-shape gap P5 had left owed) → P8 (done —
+the P7 self-review; compensated a false audit line P7-1's own fix could leave behind, and finished
+the 402 parity P7-2 started across all three paid-entry SDK methods — see `SECURITY.md`) → next
+unnamed.** The `r`-suffix review-chain naming ends at P1brr; review passes since are named
+sequentially (P5, P6, P7, P8, …) rather than growing another suffix — review yield had
 shrunk to P1brr's own one Medium/three Low, the signal to stop.
 
 **P1b shipped: x402 is a real, working second payment rail**, non-custodial, eight commits
