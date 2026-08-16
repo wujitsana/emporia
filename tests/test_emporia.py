@@ -2904,6 +2904,16 @@ def test_no_new_identity_as_proof_params():
         # agent_id (path): _require_caller_is-checked (P1b-2). network_family/address in
         # the body carry no identity claim.
         ("POST", "/agents/{agent_id}/x402-wallet"),
+        # agent_id (path): _require_caller_is-checked (P16-3). The body's
+        # encryption_public_key_hex is not an identity claim either way — the
+        # signature over it must verify against *this* agent_id's already-registered
+        # Ed25519 key, so a forged path param fails the binding, not just the caller
+        # check.
+        ("POST", "/agents/{agent_id}/encryption-key"),
+        # agent_id (path): a lookup key for whose published key to return, not
+        # identity-as-proof — the caller is separately resolved via
+        # _dashboard_agent_id(request), same posture as GET /agents/{agent_id}.
+        ("GET", "/agents/{agent_id}/encryption-key"),
         # Raw dict body (req: dict = None) is unused for identity — caller is resolved via
         # _dashboard_agent_id(request) and checked against session participants inline.
         ("POST", "/sessions/{session_id}/abandon"),
@@ -3023,6 +3033,11 @@ def test_every_route_has_a_reviewed_auth_posture():
         ("POST", "/agents/{agent_id}/inbox/mark-read"),
         # P1b-2: _require_caller_is — a mismatched caller gets 403.
         ("POST", "/agents/{agent_id}/x402-wallet"),
+        # P16-3: _require_caller_is on publish; authenticated-caller on fetch. Key
+        # discovery stays a feature, it just doesn't happen anonymously — same
+        # reasoning as N4-3 applied to GET /agents/{agent_id}.
+        ("POST", "/agents/{agent_id}/encryption-key"),
+        ("GET", "/agents/{agent_id}/encryption-key"),
         ("POST", "/payments/create-intent"),
         # Closed in N4-5 (R7) — was _KNOWN_UNGATED. Operator-only, not just any
         # authenticated caller.
@@ -15614,3 +15629,165 @@ def test_pin_peer_encryption_key_rejects_a_malformed_key():
                 with pytest.raises(ValueError):
                     identity.pin_peer_encryption_key("peer_six", bad)
             assert identity.load_peer_encryption_keys() == {}
+
+
+# ============================================================================
+# P16-3: publishing an encryption key — and the INSERT OR REPLACE column wipe
+# ============================================================================
+
+def _publish_enc_key(client, agent_id: str, *, key: str | None = None, sig: str | None = None):
+    from emporia import identity
+    from emporia.wire import encryption_key_body, signed_encryption_key_payload
+
+    pub = key if key is not None else identity.get_encryption_public_key_hex(agent_id)
+    signature = sig if sig is not None else identity.sign(
+        signed_encryption_key_payload(agent_id, pub), agent_id,
+    )
+    return client.post(
+        f"/agents/{agent_id}/encryption-key",
+        json=encryption_key_body(pub, signature),
+        headers={"X-Emporia-Agent-Id": agent_id},
+    )
+
+
+def test_reregistering_no_longer_wipes_the_x402_wallet(client):
+    """Pre-existing, found while scoping P16. register_agent's INSERT OR REPLACE
+    listed 8 of the table's 9 columns, and SQLite's INSERT OR REPLACE is
+    DELETE+INSERT — so the 9th, x402_pay_to_json, silently reverted to its
+    DEFAULT '{}'. A creator who re-registered stopped being offered the x402 rail
+    at all, because _x402_pay_to_by_network() then found no wallet."""
+    from emporia.relay_server import AGENT_REGISTRY
+
+    _register_keyed(client, "wipe_agent")
+    r = client.post(
+        "/agents/wipe_agent/x402-wallet",
+        json={"network_family": "evm", "address": "0x" + "ab" * 20},
+        headers={"X-Emporia-Agent-Id": "wipe_agent"},
+    )
+    assert r.status_code == 200
+    assert AGENT_REGISTRY.get_x402_pay_to("wipe_agent", "evm") == "0x" + "ab" * 20
+
+    _register_keyed(client, "wipe_agent")  # same key, same agent — a plain re-register
+    assert AGENT_REGISTRY.get_x402_pay_to("wipe_agent", "evm") == "0x" + "ab" * 20
+
+
+def test_publish_and_fetch_encryption_key(client):
+    from emporia import identity
+
+    _register_keyed(client, "enc_pub")
+    assert _publish_enc_key(client, "enc_pub").status_code == 200
+
+    r = client.get("/agents/enc_pub/encryption-key", headers={"X-Emporia-Agent-Id": "enc_pub"})
+    assert r.status_code == 200
+    assert r.json()["encryption_public_key"] == identity.get_encryption_public_key_hex("enc_pub")
+    assert r.json()["signature"]
+
+
+def test_encryption_key_is_served_with_a_verifiable_ed25519_binding(client):
+    """The relay serves this key, so a peer needs to be able to check the key is
+    the one the *agent* published rather than the one the relay chose. The binding
+    is an Ed25519 signature over {agent_id, encryption_public_key_hex}, verifiable
+    against the agent's signing key."""
+    from emporia import identity
+    from emporia.wire import signed_encryption_key_payload
+
+    _register_keyed(client, "enc_bind")
+    _publish_enc_key(client, "enc_bind")
+
+    body = client.get(
+        "/agents/enc_bind/encryption-key", headers={"X-Emporia-Agent-Id": "enc_bind"},
+    ).json()
+    assert identity.verify(
+        signed_encryption_key_payload("enc_bind", body["encryption_public_key"]),
+        body["signature"],
+        identity.get_public_key_hex("enc_bind"),
+    )
+
+
+def test_publish_encryption_key_rejects_a_bad_binding_signature(client):
+    """Verified at publish time, so a key with a broken binding never reaches
+    storage — a peer that skipped the check would otherwise still trust it."""
+    _register_keyed(client, "enc_badsig")
+    r = _publish_enc_key(client, "enc_badsig", sig="00" * 64)
+    assert r.status_code == 403
+
+
+def test_publish_encryption_key_rejects_a_malformed_key(client):
+    _register_keyed(client, "enc_badkey")
+    for bad in ("", "nothex" * 10, "aa" * 16):
+        assert _publish_enc_key(client, "enc_badkey", key=bad).status_code == 400
+
+
+def test_publish_encryption_key_requires_being_that_agent(client):
+    from emporia import identity
+    from emporia.wire import encryption_key_body, signed_encryption_key_payload
+
+    _register_keyed(client, "enc_owner")
+    _register_keyed(client, "enc_impostor")
+    pub = identity.get_encryption_public_key_hex("enc_impostor")
+    r = client.post(
+        "/agents/enc_owner/encryption-key",
+        json=encryption_key_body(
+            pub, identity.sign(signed_encryption_key_payload("enc_owner", pub), "enc_impostor"),
+        ),
+        headers={"X-Emporia-Agent-Id": "enc_impostor"},
+    )
+    assert r.status_code == 403
+
+
+def test_reregistering_preserves_a_published_encryption_key(client):
+    """Same column-wipe hazard as the x402 wallet, with a worse blast radius: a
+    wiped encryption key means peers find nothing to encrypt to, so DMs silently
+    stop being sendable."""
+    from emporia import identity
+
+    _register_keyed(client, "enc_persist")
+    _publish_enc_key(client, "enc_persist")
+    _register_keyed(client, "enc_persist")
+
+    r = client.get(
+        "/agents/enc_persist/encryption-key", headers={"X-Emporia-Agent-Id": "enc_persist"},
+    )
+    assert r.json()["encryption_public_key"] == identity.get_encryption_public_key_hex(
+        "enc_persist"
+    )
+
+
+def test_agent_profile_exposes_the_encryption_key(client):
+    from emporia import identity
+
+    _register_keyed(client, "enc_profile")
+    _publish_enc_key(client, "enc_profile")
+    r = client.get("/agents/enc_profile", headers={"X-Emporia-Agent-Id": "enc_profile"})
+    assert r.json()["encryption_public_key"] == identity.get_encryption_public_key_hex(
+        "enc_profile"
+    )
+
+
+def test_agent_without_a_published_encryption_key_reports_empty(client):
+    """Not a 404: "this agent has not published one" is a normal, expected state
+    that clients branch on, not an error."""
+    _register_keyed(client, "enc_none")
+    r = client.get("/agents/enc_none/encryption-key", headers={"X-Emporia-Agent-Id": "enc_none"})
+    assert r.status_code == 200
+    assert r.json()["encryption_public_key"] == ""
+
+
+def test_registration_can_publish_the_encryption_key_inline(client):
+    """One round trip for a fresh agent — otherwise every client has to remember a
+    second call, and the ones that forget look to peers like agents who opted out
+    of encryption."""
+    from emporia import identity
+    from emporia.wire import registration_body, signed_encryption_key_payload
+
+    enc = identity.get_encryption_public_key_hex("enc_inline")
+    body = registration_body(
+        "enc_inline", identity.get_public_key_hex("enc_inline"), "Inline", "", "",
+        encryption_public_key_hex=enc,
+        encryption_key_signature=identity.sign(
+            signed_encryption_key_payload("enc_inline", enc), "enc_inline",
+        ),
+    )
+    assert client.post("/agents/register", json=body).status_code == 200
+    r = client.get("/agents/enc_inline/encryption-key", headers={"X-Emporia-Agent-Id": "enc_inline"})
+    assert r.json()["encryption_public_key"] == enc

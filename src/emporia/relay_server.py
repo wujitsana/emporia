@@ -515,7 +515,9 @@ def init_db() -> None:
                 nous_user_id TEXT,
                 trust_level TEXT NOT NULL DEFAULT 'key_only',
                 identity_providers_json TEXT NOT NULL DEFAULT '[]',
-                x402_pay_to_json TEXT NOT NULL DEFAULT '{}'
+                x402_pay_to_json TEXT NOT NULL DEFAULT '{}',
+                encryption_public_key TEXT NOT NULL DEFAULT '',
+                encryption_key_signature TEXT NOT NULL DEFAULT ''
             );
 
             CREATE TABLE IF NOT EXISTS sessions (
@@ -1116,6 +1118,12 @@ def _migrate_authorized_agents(conn: Any) -> None:
         ("nous_user_id", "TEXT"),
         ("trust_level", "TEXT NOT NULL DEFAULT 'key_only'"),
         ("identity_providers_json", "TEXT NOT NULL DEFAULT '[]'"),
+        # P16: the agent's X25519 public key for E2E DMs, plus the Ed25519
+        # signature binding it to this agent_id. '' is the correct value for every
+        # pre-existing row — "has not published one" is a normal state clients
+        # branch on, not a missing migration — so no backfill, only the columns.
+        ("encryption_public_key", "TEXT NOT NULL DEFAULT ''"),
+        ("encryption_key_signature", "TEXT NOT NULL DEFAULT ''"),
     ]
     for col, defn in migrations:
         if col not in existing:
@@ -1823,11 +1831,33 @@ class AgentRegistry:
                         f"Agent ID '{agent_id}' is already taken by a different key. "
                         f"Choose a unique agent_id — e.g. '{agent_id}_{suffix}'."
                     )
+                # P16-3: an UPSERT, not INSERT OR REPLACE. SQLite implements
+                # INSERT OR REPLACE as DELETE-then-INSERT, so every column *not*
+                # listed here silently reverted to its schema DEFAULT on a
+                # re-register. That was a live bug for `x402_pay_to_json`: a
+                # creator who re-registered lost their wallet, and
+                # `_x402_pay_to_by_network()` then found none, so the 402 challenge
+                # stopped offering the x402 rail entirely — silent, with no error
+                # anywhere. P16 would have reproduced it exactly for
+                # `encryption_public_key`, where the blast radius is worse (peers
+                # find no key to encrypt to, so DMs quietly stop being sendable).
+                # DO UPDATE names precisely the columns registration owns; anything
+                # an agent set through another endpoint survives by construction
+                # rather than by remembering to add it to a list.
                 conn.execute(
-                    "INSERT OR REPLACE INTO authorized_agents "
+                    "INSERT INTO authorized_agents "
                     "(agent_id, public_key_hex, display_name, registered_at, is_active, "
                     "stripe_account_id, nous_user_id, trust_level, identity_providers_json) "
-                    "VALUES (?, ?, ?, ?, 1, ?, ?, ?, ?)",
+                    "VALUES (?, ?, ?, ?, 1, ?, ?, ?, ?) "
+                    "ON CONFLICT(agent_id) DO UPDATE SET "
+                    "public_key_hex=excluded.public_key_hex, "
+                    "display_name=excluded.display_name, "
+                    "registered_at=excluded.registered_at, "
+                    "is_active=1, "
+                    "stripe_account_id=excluded.stripe_account_id, "
+                    "nous_user_id=excluded.nous_user_id, "
+                    "trust_level=excluded.trust_level, "
+                    "identity_providers_json=excluded.identity_providers_json",
                     (agent_id, public_key_hex, verified_display_name,
                      datetime.now(UTC).isoformat(), stripe_account_id,
                      nous_user_id, trust_level, json.dumps(providers_verified)),
@@ -1912,6 +1942,35 @@ class AgentRegistry:
             conn.execute(
                 "UPDATE authorized_agents SET x402_pay_to_json = ? WHERE agent_id = ?",
                 (json.dumps(wallets), agent_id),
+            )
+
+    def get_encryption_key(self, agent_id: str) -> tuple[str, str]:
+        """P16: this agent's published X25519 public key and the Ed25519 signature
+        binding it to their id, or `("", "")` if they never published one.
+
+        Not published is a normal state, not an error — an agent may simply not do
+        encrypted DMs — so callers branch on the empty string rather than handling
+        an exception.
+        """
+        try:
+            with DB_LOCK, get_db() as conn:
+                row = conn.execute(
+                    "SELECT encryption_public_key, encryption_key_signature "
+                    "FROM authorized_agents WHERE agent_id = ?",
+                    (agent_id,),
+                ).fetchone()
+            if not row:
+                return "", ""
+            return row["encryption_public_key"] or "", row["encryption_key_signature"] or ""
+        except Exception:
+            return "", ""
+
+    def set_encryption_key(self, agent_id: str, public_key_hex: str, signature: str) -> None:
+        with DB_LOCK, get_db() as conn:
+            conn.execute(
+                "UPDATE authorized_agents SET encryption_public_key = ?, "
+                "encryption_key_signature = ? WHERE agent_id = ?",
+                (public_key_hex, signature, agent_id),
             )
 
     def is_authorized(self, agent_id: str) -> bool:
@@ -2422,11 +2481,20 @@ class RegisterAgentRequest(BaseModel):
     identity_claims: list[IdentityClaimRequest] = Field(default_factory=list)
     challenge_id: str = ""
     challenge_signature: str = ""  # hex Ed25519 sig of the nonce bytes
+    # P16: publish the X25519 encryption key in the same round trip. Optional —
+    # an agent that doesn't do encrypted DMs sends neither field.
+    encryption_public_key_hex: str = ""
+    encryption_key_signature: str = ""
 
 
 class SetX402WalletRequest(BaseModel):
     network_family: str  # "evm" | "svm"
     address: str
+
+
+class SetEncryptionKeyRequest(BaseModel):
+    encryption_public_key_hex: str
+    signature: str  # Ed25519 over wire.signed_encryption_key_payload()
 
 
 class CreateSessionRequest(BaseModel):
@@ -2981,6 +3049,20 @@ async def register_agent(req: RegisterAgentRequest):
 
     canonical_id = profile["agent_id"]
 
+    # P16: the X25519 encryption key, if the client published it inline. Runs after
+    # AGENT_REGISTRY.register() because the binding is verified against the Ed25519
+    # key that call just stored, and goes through the same
+    # _validated_encryption_key() as the standalone endpoint so the two paths can't
+    # apply different rules. A bad key fails the whole registration rather than
+    # succeeding quietly without one — an agent who thinks they published a key but
+    # didn't is invisible to their peers, who just see someone who doesn't do
+    # encrypted DMs.
+    if req.encryption_public_key_hex:
+        enc_key = _validated_encryption_key(
+            canonical_id, req.encryption_public_key_hex, req.encryption_key_signature,
+        )
+        AGENT_REGISTRY.set_encryption_key(canonical_id, enc_key, req.encryption_key_signature)
+
     # Auto-provision a Stripe Connected Account in test mode so the agent can
     # receive real (test) payouts without manual Stripe onboarding.
     stripe_account_id: str | None = None
@@ -3095,7 +3177,7 @@ async def get_agent_profile(agent_id: str, request: Request):
     with DB_LOCK, get_db() as conn:
         row = conn.execute(
             "SELECT agent_id, display_name, registered_at, is_active, stripe_account_id, "
-            "nous_user_id, trust_level, identity_providers_json "
+            "nous_user_id, trust_level, identity_providers_json, encryption_public_key "
             "FROM authorized_agents WHERE agent_id = ?",
             (agent_id,),
         ).fetchone()
@@ -3119,6 +3201,11 @@ async def get_agent_profile(agent_id: str, request: Request):
         "trust_level": row["trust_level"] or "key_only",
         "nous_user_id": row["nous_user_id"],
         "providers_verified": json.loads(row["identity_providers_json"] or "[]"),
+        # P16: "" means this agent has not published one — an ordinary state, not a
+        # gap. Served here as well as on the dedicated route so a client already
+        # fetching a profile doesn't need a second round trip to learn whether it
+        # can DM this agent encrypted.
+        "encryption_public_key": row["encryption_public_key"] or "",
         "registered_at": row["registered_at"],
         "is_active": bool(row["is_active"]),
         # N4-3 (R2): stripe_account_id (the raw Connect acct_... id) removed from the
@@ -3305,6 +3392,80 @@ async def set_x402_wallet(agent_id: str, req: SetX402WalletRequest, request: Req
         )
     AGENT_REGISTRY.set_x402_pay_to(agent_id, req.network_family, req.address)
     return {"agent_id": agent_id, "network_family": req.network_family, "address": req.address}
+
+
+def _validated_encryption_key(agent_id: str, public_key_hex: str, signature: str) -> str:
+    """Shared by `POST /agents/{id}/encryption-key` and the inline field on
+    registration, so the two paths cannot end up applying different rules to the
+    same key.
+
+    Returns the normalized key. Raises `HTTPException` — 400 for a malformed key,
+    403 for a binding that doesn't verify.
+    """
+    from emporia.wire import signed_encryption_key_payload
+
+    key = (public_key_hex or "").strip().lower()
+    try:
+        if len(bytes.fromhex(key)) != 32:
+            raise ValueError()
+    except ValueError:
+        raise HTTPException(
+            400, "encryption_public_key_hex must be a 64-char hex string (X25519 public key)"
+        )
+    # Verified here, at publish time, so a key whose binding doesn't check out
+    # never reaches storage. The relay is the one *serving* this key to peers, so
+    # a peer who skipped the check would otherwise be trusting the relay's word —
+    # which is exactly the trust this whole feature is built to avoid needing.
+    # verify_signature() also returns False when no Ed25519 key is registered for
+    # this agent, which is the correct answer for an unregistered publisher.
+    if not AGENT_REGISTRY.verify_signature(
+        agent_id, signed_encryption_key_payload(agent_id, key), signature,
+    ):
+        raise HTTPException(
+            403,
+            "encryption key signature does not verify against this agent's Ed25519 "
+            "key — the key must be signed by the identity publishing it",
+        )
+    return key
+
+
+@app.post("/agents/{agent_id}/encryption-key")
+async def set_encryption_key(agent_id: str, req: SetEncryptionKeyRequest, request: Request):
+    """Publish (or rotate) this agent's X25519 public key for end-to-end encrypted
+    DMs. The relay stores and serves it; it never holds the matching private key,
+    which lives 0600 under the agent's own `identity.KEY_DIR` and is never
+    transmitted.
+
+    Rotation is allowed and is a normal operation — but note that peers pin this
+    key on first use, so a rotation requires each peer to confirm the new
+    fingerprint out of band before their client will encrypt again. That friction
+    is the feature.
+    """
+    _require_caller_is(agent_id, request)
+    _require_registered(agent_id)
+    _enforce_agent_rate_limit(agent_id)
+    key = _validated_encryption_key(agent_id, req.encryption_public_key_hex, req.signature)
+    AGENT_REGISTRY.set_encryption_key(agent_id, key, req.signature)
+    return {"agent_id": agent_id, "encryption_public_key": key}
+
+
+@app.get("/agents/{agent_id}/encryption-key")
+async def get_encryption_key(agent_id: str, request: Request):
+    """Fetch an agent's published encryption key and its Ed25519 binding.
+
+    Returns `""` rather than 404 when the agent has published nothing: "does not
+    do encrypted DMs" is an ordinary state clients branch on, and a 404 here would
+    be indistinguishable from "no such agent". Authenticated for the same reason
+    `GET /agents/{id}` is (N4-3) — key discovery stays a feature, it just doesn't
+    happen anonymously.
+    """
+    caller = _dashboard_agent_id(request)
+    if not caller:
+        raise HTTPException(401, "Authentication required")
+    if not AGENT_REGISTRY.is_authorized(agent_id):
+        raise HTTPException(404, f"Agent not found: {agent_id}")
+    key, signature = AGENT_REGISTRY.get_encryption_key(agent_id)
+    return {"agent_id": agent_id, "encryption_public_key": key, "signature": signature}
 
 
 # ============================================================================

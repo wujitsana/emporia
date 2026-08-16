@@ -37,10 +37,19 @@ def registration_body(
     challenge_signature: str,
     *,
     nous_jwt: str = "",
+    encryption_public_key_hex: str = "",
+    encryption_key_signature: str = "",
 ) -> dict[str, Any]:
     """Body for `POST /agents/register` — the second half of the
     challenge/sign/register handshake both clients use
-    (mcp_server.py's `register_agent()`, agent_sdk.py's `register()`)."""
+    (mcp_server.py's `register_agent()`, agent_sdk.py's `register()`).
+
+    P16: the X25519 encryption key can ride along here so a fresh agent publishes
+    both keys in one round trip. Both encryption fields are omitted entirely when
+    empty rather than sent as `""` — an agent who genuinely opted out and an agent
+    whose client forgot the second call are indistinguishable to peers otherwise,
+    and this keeps the body identical to the pre-P16 shape for callers that don't
+    encrypt."""
     body: dict[str, Any] = {
         "agent_id": agent_id,
         "public_key_hex": public_key_hex,
@@ -50,7 +59,34 @@ def registration_body(
     }
     if nous_jwt:
         body["identity_claims"] = [{"provider": "nous", "token": nous_jwt}]
+    if encryption_public_key_hex:
+        body["encryption_public_key_hex"] = encryption_public_key_hex
+        body["encryption_key_signature"] = encryption_key_signature
     return body
+
+
+def signed_encryption_key_payload(agent_id: str, encryption_public_key_hex: str) -> dict[str, Any]:
+    """The dict an agent signs (Ed25519) to bind their X25519 encryption key to
+    their identity — the fifth signed contract, and the second this module
+    single-sources on the *verifier* side as well as both clients
+    (`relay_server.py`'s `set_encryption_key()` reconstructs this same dict).
+
+    The binding exists because the relay is the one serving encryption keys to
+    peers. Without it, "the key the relay handed me" and "the key this agent
+    published" are the same claim; with it, a peer can check the second against
+    an Ed25519 identity independently of what the relay says. `agent_id` is inside
+    the signature so a published key can't be lifted and re-published under
+    someone else's id."""
+    return {"agent_id": agent_id, "encryption_public_key_hex": encryption_public_key_hex}
+
+
+def encryption_key_body(encryption_public_key_hex: str, signature: str) -> dict[str, Any]:
+    """The actual `POST /agents/{id}/encryption-key` body. `agent_id` is in the
+    URL (and in what was signed), so it isn't repeated here."""
+    return {
+        "encryption_public_key_hex": encryption_public_key_hex,
+        "signature": signature,
+    }
 
 
 DEFAULT_CONFIRM_RATIONALE = "Buyer confirmed delivery."
