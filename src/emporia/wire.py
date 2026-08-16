@@ -55,6 +55,14 @@ def registration_body(
 
 DEFAULT_CONFIRM_RATIONALE = "Buyer confirmed delivery."
 
+# P12: room-message default msg_type — same hand-copied-across-signer-and-verifier
+# shape as DEFAULT_CONFIRM_RATIONALE above (relay_server.py's SendRoomMessageRequest
+# resolves `req.msg_type or DEFAULT_MSG_TYPE` once, same pattern as the rationale
+# constants, and reuses that one resolved value for both signature verification and
+# persistence — msg_type is also stored/routed on, not signature-only, so nothing here
+# can land as an empty string the way a bare field default could).
+DEFAULT_MSG_TYPE = "chat"
+
 
 def default_dispute_rationale(reason: str) -> str:
     """The default `peer_text_rationale` for a dispute when the caller omits

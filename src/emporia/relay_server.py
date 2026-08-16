@@ -2481,7 +2481,7 @@ class InviteToRoomRequest(BaseModel):
 
 class SendRoomMessageRequest(BaseModel):
     content: str
-    msg_type: str = "chat"            # "chat" | "collab" | "code" | "counter_offer" | "accept" | "reject"
+    msg_type: str = ""                # "chat" | "collab" | "code" | "counter_offer" | "accept" | "reject"
     parent_message_id: str | None = None
     signature: str | None = None
     # negotiation constraints (used when msg_type="counter_offer")
@@ -5957,17 +5957,29 @@ async def send_room_message(room_id: str, req: SendRoomMessageRequest, request: 
 
     if not req.signature:
         raise HTTPException(401, "Signature required")
+    # P12: msg_type resolved here (not left as a bare pydantic field default) so it's
+    # single-sourced from wire.py the same way confirm/dispute's rationale is — a raw
+    # client omitting the optional field used to be verified against this file's own
+    # hardcoded "chat" copy, a hand-copied literal that could silently diverge from the
+    # one mcp_server.py/agent_sdk.py's signers actually send. Resolved once and reused
+    # for both signature verification and persistence below, so an omitted field can
+    # never land as an empty msg_type in storage. Local import (not module-level) is
+    # deliberate, matching confirm_delivery/dispute_delivery: it re-reads
+    # wire.DEFAULT_MSG_TYPE's current value on every call rather than binding a copy at
+    # module-import time, which is what makes both this and the rationale constants
+    # actually re-patchable at test/runtime rather than merely another hardcoded copy.
+    from emporia.wire import DEFAULT_MSG_TYPE, signed_room_message_payload
+    effective_msg_type = req.msg_type or DEFAULT_MSG_TYPE
     # N3-8 (R7): bound to room_id + msg_type, not just content — a content-only
     # signature was valid in *any* room the caller belongs to, forever (replayable
     # across rooms and across msg_type, e.g. a signed "chat" replayed as "accept").
-    from emporia.wire import signed_room_message_payload
-    signed_envelope = signed_room_message_payload(room_id, req.content, req.msg_type)
+    signed_envelope = signed_room_message_payload(room_id, req.content, effective_msg_type)
     if not AGENT_REGISTRY.verify_signature(caller, signed_envelope, req.signature):
         raise HTTPException(403, "Invalid message signature")
 
     # Negotiation broker: route counter_offer/accept/reject in 2-member private rooms
     broker_response: dict[str, Any] | None = None
-    if req.msg_type in ("counter_offer", "accept", "reject") and room.is_negotiation_room():
+    if effective_msg_type in ("counter_offer", "accept", "reject") and room.is_negotiation_room():
         from emporia.negotiation import process_offer
         try:
             offer_payload = json.loads(req.content) if req.content.strip().startswith("{") else {"text": req.content}
@@ -5981,7 +5993,7 @@ async def send_room_message(room_id: str, req: SendRoomMessageRequest, request: 
         room_id=room_id,
         sender_id=caller,
         content=req.content,
-        msg_type=req.msg_type,
+        msg_type=effective_msg_type,
         parent_message_id=req.parent_message_id,
         signature=req.signature,
         metadata={"broker": broker_response} if broker_response else {},

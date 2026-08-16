@@ -22,6 +22,7 @@ import websockets
 from websockets.exceptions import ConnectionClosedError, InvalidHandshake
 
 from emporia.identity import sign as ed25519_sign
+from emporia.wire import DEFAULT_MSG_TYPE
 
 
 def _ws_url(http_url: str, path: str) -> str:
@@ -601,7 +602,7 @@ class EmporiaAgent:
         self,
         room_id: str,
         content: str,
-        msg_type: str = "chat",
+        msg_type: str = DEFAULT_MSG_TYPE,
     ) -> dict[str, Any]:
         """Send a message to a room. Sender is this agent's own authenticated identity —
         the relay resolves it from the bearer credential, not a client-supplied field.

@@ -10631,6 +10631,43 @@ def test_relay_dispute_delivery_omitted_rationale_resolves_from_wire_py(client):
     assert r.json()["is_terminal"] is True
 
 
+def test_relay_room_message_omitted_msg_type_resolves_from_wire_py(prod_client):
+    """P12: "chat" was hand-copied as the msg_type default in three places —
+    mcp_server.send_room_message(), agent_sdk.EmporiaAgent.send_room_message(),
+    and relay_server.SendRoomMessageRequest's pydantic field default. msg_type
+    is signature-load-bearing (N3-8/R7: signed_room_message_payload() binds
+    room_id + msg_type, not just content, so a signed "chat" can't be replayed
+    as an "accept") — so a raw client omitting the optional field is verified
+    against the relay's *own* hardcoded copy, exactly the shape of the
+    confirm-rationale bug this same pass already found once. Benign today
+    (all three literals read "chat"), but proven the same way: patch
+    wire.DEFAULT_MSG_TYPE to a non-default value, sign a raw
+    POST /rooms/{id}/message with `msg_type` omitted using that patched
+    value, and assert the relay accepts it — a relay with its own hardcoded
+    "chat" would 403, since it would verify against the wrong msg_type."""
+    from emporia import wire
+    from emporia.identity import sign
+
+    _register_keyed(prod_client, "p12_msgtype_owner")
+    r = prod_client.post(
+        "/rooms", json={"name": "P12 msg_type test room", "creator_id": "p12_msgtype_owner"},
+        headers=bearer_for(prod_client, "p12_msgtype_owner"),
+    )
+    assert r.status_code == 200, r.text
+    room_id = r.json()["room_id"]
+    content = "P12 msg_type omit test"
+
+    with patch.object(wire, "DEFAULT_MSG_TYPE", "p12_patched_type"):
+        signed_payload = wire.signed_room_message_payload(room_id, content, "p12_patched_type")
+        body = {"content": content, "signature": sign(signed_payload, "p12_msgtype_owner")}
+        r = prod_client.post(
+            f"/rooms/{room_id}/message", json=body,
+            headers=bearer_for(prod_client, "p12_msgtype_owner"),
+        )
+    assert r.status_code == 200, r.text
+    assert r.json()["msg_type"] == "p12_patched_type", r.text
+
+
 def test_mcp_dashboard_bearer_headers_uses_shared_wire_contract(prod_client):
     """P6-2: mcp_server._dashboard_bearer_headers() and agent_sdk's
     _bearer_token_value() (see the sibling test below) used to build the

@@ -71,6 +71,7 @@ from emporia.engine.game_registry import GameRegistry
 from emporia.engine.guardrails import assert_payload_safe
 from emporia.env_config import env
 from emporia.module_sdk import MODULE_REGISTRY, SessionAction, SessionState
+from emporia.wire import DEFAULT_MSG_TYPE
 
 RELAY_URL = env("RELAY_URL", "http://localhost:8088")
 LOG_DIR = Path(env("LOG_DIR", "./.local/logs")).expanduser()
@@ -783,7 +784,7 @@ def send_room_message(
     room_id: str,
     sender_id: str,
     content: str,
-    msg_type: str = "chat",
+    msg_type: str = DEFAULT_MSG_TYPE,
     parent_message_id: str | None = None,
 ) -> dict[str, Any]:
     """Send a message to a room. Sender must be a member.
