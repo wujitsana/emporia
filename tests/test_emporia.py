@@ -15458,3 +15458,159 @@ def test_crypto_box_looks_like_envelope_discriminates_plaintext():
     assert not crypto_box.looks_like_envelope("hello there")
     assert not crypto_box.looks_like_envelope('{"just": "some json"}')
     assert not crypto_box.looks_like_envelope("")
+
+
+# ============================================================================
+# P16-2: X25519 encryption keys + trust-on-first-use peer pinning
+#
+# The relay serves peer encryption keys, so a hostile relay's only remaining
+# move against E2E DMs is substituting a key it holds. Pinning is what closes
+# that, and these tests are where that guarantee lives.
+# ============================================================================
+
+def test_encryption_keypair_is_stable_and_separate_from_the_signing_key():
+    from emporia import identity
+
+    with tempfile.TemporaryDirectory() as d:
+        with patch.object(identity, "KEY_DIR", Path(d)):
+            priv1, pub1 = identity.generate_or_load_encryption_keypair("enc_agent")
+            priv2, pub2 = identity.generate_or_load_encryption_keypair("enc_agent")
+            assert pub1 == pub2, "reloading must not mint a new key"
+            assert identity.get_encryption_public_key_hex("enc_agent") == pub1.hex()
+
+            # Independent of the Ed25519 identity, and stored in its own file.
+            _, signing_pub = identity.generate_or_load_keypair("enc_agent")
+            assert signing_pub != pub1
+            assert (Path(d) / "enc_agent.priv").exists()
+            assert (Path(d) / "enc_agent.x25519.priv").exists()
+
+            # It must actually work as an X25519 key.
+            assert priv1.exchange(priv2.public_key())
+
+
+def test_encryption_key_file_is_private_from_creation():
+    """Same guarantee P11-3 established for the signing key — the secret is 0600
+    from the instant it exists, not chmod'd afterwards."""
+    from emporia import identity
+
+    with tempfile.TemporaryDirectory() as parent:
+        fresh = Path(parent) / "keys"
+        with patch.object(identity, "KEY_DIR", fresh):
+            identity.generate_or_load_encryption_keypair("perm_agent")
+            assert (fresh / "perm_agent.x25519.priv").stat().st_mode & 0o777 == 0o600
+            assert fresh.stat().st_mode & 0o777 == 0o700
+
+
+def test_corrupt_encryption_key_refuses_to_regenerate():
+    """Regenerating would silently mint a new public key — every peer holding a
+    pin would then reject this agent, and every already-sealed message would
+    become permanently unreadable. Recovery has to be a human decision."""
+    from emporia import identity
+
+    with tempfile.TemporaryDirectory() as d:
+        with patch.object(identity, "KEY_DIR", Path(d)):
+            identity.generate_or_load_encryption_keypair("corrupt_agent")
+            (Path(d) / "corrupt_agent.x25519.priv").write_bytes(b"truncated")
+            with pytest.raises(ValueError, match="corrupt"):
+                identity.generate_or_load_encryption_keypair("corrupt_agent")
+
+
+def test_encryption_key_fingerprint_is_stable_and_distinguishes_keys():
+    """The out-of-band affordance: two humans compare fingerprints over a channel
+    the relay doesn't control, which is the only complete answer to first-contact
+    substitution."""
+    from emporia import identity
+
+    with tempfile.TemporaryDirectory() as d:
+        with patch.object(identity, "KEY_DIR", Path(d)):
+            a = identity.get_encryption_public_key_hex("fp_a")
+            b = identity.get_encryption_public_key_hex("fp_b")
+            assert identity.encryption_key_fingerprint(a) == identity.encryption_key_fingerprint(a)
+            assert identity.encryption_key_fingerprint(a) != identity.encryption_key_fingerprint(b)
+            assert len(identity.encryption_key_fingerprint(a)) < len(a)
+
+
+def test_pin_peer_encryption_key_trusts_on_first_use_and_persists():
+    from emporia import identity
+
+    with tempfile.TemporaryDirectory() as d:
+        with patch.object(identity, "KEY_DIR", Path(d)):
+            key = identity.get_encryption_public_key_hex("peer_one")
+            assert identity.pin_peer_encryption_key("peer_one", key) == key
+            assert identity.load_peer_encryption_keys()["peer_one"] == key
+            # Same key again is a no-op, not an error.
+            assert identity.pin_peer_encryption_key("peer_one", key) == key
+
+
+def test_pin_peer_encryption_key_refuses_a_changed_key():
+    """The whole point. A hostile relay serving a substituted key must make the
+    client *refuse to encrypt*, not warn and continue — warn-and-continue hands
+    the attacker the plaintext, which is exactly the outcome being defended
+    against."""
+    from emporia import identity
+
+    with tempfile.TemporaryDirectory() as d:
+        with patch.object(identity, "KEY_DIR", Path(d)):
+            good = identity.get_encryption_public_key_hex("peer_two")
+            attacker = identity.get_encryption_public_key_hex("relay_operator")
+            identity.pin_peer_encryption_key("peer_two", good)
+
+            with pytest.raises(identity.PeerKeyMismatch) as exc:
+                identity.pin_peer_encryption_key("peer_two", attacker)
+            assert "peer_two" in str(exc.value)
+            # The pin is unchanged — a rejected substitution must not overwrite it.
+            assert identity.load_peer_encryption_keys()["peer_two"] == good
+
+
+def test_trust_new_encryption_key_is_the_explicit_rotation_escape_hatch():
+    from emporia import identity
+
+    with tempfile.TemporaryDirectory() as d:
+        with patch.object(identity, "KEY_DIR", Path(d)):
+            old = identity.get_encryption_public_key_hex("peer_three")
+            new = identity.get_encryption_public_key_hex("peer_three_rotated")
+            identity.pin_peer_encryption_key("peer_three", old)
+            identity.trust_new_encryption_key("peer_three", new)
+            assert identity.pin_peer_encryption_key("peer_three", new) == new
+
+
+def test_corrupt_peer_encryption_pin_map_is_preserved_not_silently_reset():
+    """Same policy as load_federation_peer_pubkeys(): silently returning {} resets
+    every pinned peer to trust-on-first-use invisibly, and the next save destroys
+    the evidence."""
+    from emporia import identity
+
+    with tempfile.TemporaryDirectory() as d:
+        with patch.object(identity, "KEY_DIR", Path(d)):
+            identity.pin_peer_encryption_key("peer_four", "aa" * 32)
+            path = Path(d) / identity._PEER_ENC_KEYS_FILE_NAME
+            path.write_text("{not json at all")
+
+            assert identity.load_peer_encryption_keys() == {}
+            preserved = list(Path(d).glob(f"{identity._PEER_ENC_KEYS_FILE_NAME}.corrupt-*"))
+            assert preserved, "the damaged pin map must be kept for inspection"
+
+
+def test_peer_encryption_pin_map_is_private_from_creation():
+    """It is not a secret, but it lives beside 0600 key material and a
+    world-writable pin map is a substitution vector of its own."""
+    from emporia import identity
+
+    with tempfile.TemporaryDirectory() as d:
+        with patch.object(identity, "KEY_DIR", Path(d)):
+            identity.pin_peer_encryption_key("peer_five", "bb" * 32)
+            path = Path(d) / identity._PEER_ENC_KEYS_FILE_NAME
+            assert path.stat().st_mode & 0o777 == 0o600
+
+
+def test_pin_peer_encryption_key_rejects_a_malformed_key():
+    """A relay returning "" (an agent who never published one) must not be pinned
+    as if it were a real key — the next send would then 'match' the empty pin."""
+    from emporia import identity
+
+    with tempfile.TemporaryDirectory() as d:
+        with patch.object(identity, "KEY_DIR", Path(d)):
+            for bad in ("", "nothex", "aa" * 16):
+                with pytest.raises(ValueError):
+                    identity.pin_peer_encryption_key("peer_six", bad)
+            assert identity.load_peer_encryption_keys() == {}

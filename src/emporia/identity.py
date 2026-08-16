@@ -124,6 +124,210 @@ def get_public_key_hex(profile_id: str) -> str:
     return pub_bytes.hex()
 
 
+# ============================================================================
+# X25519 encryption keys (P16) — key agreement for end-to-end encrypted DMs
+# ============================================================================
+# A *separate* key from the Ed25519 identity above, deliberately. Ed25519 and
+# X25519 keys are birationally related and libsodium exposes a conversion, but
+# `cryptography` does not, and reusing one key across signing and key agreement is
+# a sharp edge with no upside here. The cost is one more file per agent; the
+# benefit is that a compromise or rotation of one never implies the other.
+#
+# Same storage contract as the signing key: raw 32 bytes under KEY_DIR, 0600 from
+# creation via _write_secret_atomically(), never transmitted, and never silently
+# regenerated when corrupt.
+
+_ENC_KEY_RECOVERY_HINT = (
+    "Restore {path} from backup. Deleting it mints a new encryption key, which "
+    "every peer that has pinned the old one will then reject — and it makes every "
+    "message already sealed to the old key permanently unreadable."
+)
+
+
+def _enc_key_path(profile_id: str) -> Path:
+    # Same sanitization as _key_path(), different suffix — so the two keys for one
+    # profile sit side by side and neither can ever land on the other's filename.
+    safe = _HANDLE_RE.sub("_", profile_id.strip().lower()).strip("_") or "default"
+    return KEY_DIR / f"{safe}.x25519.priv"
+
+
+def generate_or_load_encryption_keypair(profile_id: str) -> tuple[Any, bytes]:
+    """Return (X25519 private key, public key bytes), generating and persisting
+    on first use.
+
+    Not routed through `_load_or_generate_at()`: that function is typed to
+    Ed25519 all the way through (`ed25519.Ed25519PrivateKey.from_private_bytes`,
+    and a recovery hint written for a signing identity). The failure *policy* is
+    copied deliberately — a corrupt file raises rather than regenerating, because
+    a new public key here is worse than for the signing key: peers reject it on
+    their pin, and every message already sealed to the old key becomes
+    permanently unreadable.
+    """
+    from cryptography.hazmat.primitives.asymmetric.x25519 import X25519PrivateKey
+
+    path = _enc_key_path(profile_id)
+    KEY_DIR.mkdir(mode=0o700, parents=True, exist_ok=True)
+    if path.exists():
+        raw = path.read_bytes()
+        try:
+            priv = X25519PrivateKey.from_private_bytes(raw)
+        except ValueError as e:
+            raise ValueError(
+                f"encryption key file is corrupt (unrecoverable): {path} is "
+                f"{len(raw)} bytes, expected 32 — refusing to silently regenerate. "
+                + _ENC_KEY_RECOVERY_HINT.format(path=path)
+            ) from e
+    else:
+        priv = X25519PrivateKey.generate()
+        _write_secret_atomically(path, priv.private_bytes(
+            encoding=serialization.Encoding.Raw,
+            format=serialization.PrivateFormat.Raw,
+            encryption_algorithm=serialization.NoEncryption(),
+        ))
+    return priv, priv.public_key().public_bytes_raw()
+
+
+def get_encryption_public_key_hex(profile_id: str) -> str:
+    """The hex X25519 public key to publish to the relay, generating on first use."""
+    _, pub_bytes = generate_or_load_encryption_keypair(profile_id)
+    return pub_bytes.hex()
+
+
+def encryption_key_fingerprint(public_key_hex: str) -> str:
+    """A short, human-comparable digest of an encryption public key.
+
+    First contact is trust-on-first-use, and TOFU is only fully closed by two
+    people comparing keys over a channel the relay does not control. A 64-char
+    hex string is not something anyone compares correctly by eye; this is.
+    """
+    digest = hashlib.sha256(public_key_hex.strip().lower().encode("ascii")).hexdigest()
+    return ":".join(digest[i:i + 4] for i in range(0, 16, 4))
+
+
+# ============================================================================
+# Peer encryption-key pinning (trust-on-first-use, persisted)
+# ============================================================================
+# The relay serves peer encryption keys, so an *active* hostile relay's one
+# remaining move against E2E DMs is handing out a key it holds. Pinning turns
+# that from "undetectable, works forever" into "works once, against a peer you
+# have never messaged, and is permanent evidence afterwards".
+#
+# Stored beside the keys themselves, exactly like federation_peer_pubkeys.json,
+# and for the same reason: it must survive container recreation, and keeping the
+# path in this module means it tracks KEY_DIR's live value (including test
+# patches) rather than a value captured at import time.
+
+_PEER_ENC_KEYS_FILE_NAME = "peer_encryption_keys.json"
+
+
+class PeerKeyMismatch(Exception):
+    """A peer's encryption key changed after it was pinned. Raised rather than
+    warned: continuing would seal the message to whatever key was just served,
+    which is precisely the attack pinning exists to stop."""
+
+
+def _valid_x25519_pubkey_hex(value: str) -> bool:
+    if not isinstance(value, str) or len(value) != 64:
+        return False
+    try:
+        bytes.fromhex(value)
+    except ValueError:
+        return False
+    return True
+
+
+def load_peer_encryption_keys() -> dict[str, str]:
+    """Return the persisted {agent_id: x25519_pubkey_hex} pin map, or {} if none.
+
+    Missing file = ordinary first run, returns {} silently. Corrupt file follows
+    `load_federation_peer_pubkeys()`'s policy exactly: log loudly, rename the
+    damaged file aside so the next save can't destroy the evidence, and return {}
+    — never self-heal, because silently regenerating an empty map *is* the
+    invisible-TOFU-reset bug rather than a fix for it.
+    """
+    path = KEY_DIR / _PEER_ENC_KEYS_FILE_NAME
+    try:
+        data = json.loads(path.read_text())
+        return data if isinstance(data, dict) else {}
+    except FileNotFoundError:
+        return {}
+    except (json.JSONDecodeError, OSError) as e:
+        import logging
+        logging.getLogger("emporia.identity").warning(
+            "peer encryption-key pin map at %s is corrupt/unreadable (%s) — every "
+            "previously-pinned peer is being reset to trust-on-first-use; preserving "
+            "the damaged file for inspection", path, e,
+        )
+        try:
+            path.rename(path.with_name(f"{path.name}.corrupt-{int(time.time())}"))
+        except OSError:
+            pass
+        return {}
+
+
+def save_peer_encryption_keys(pins: dict[str, str]) -> None:
+    """Persist the full pin map.
+
+    Unlike `save_federation_peer_pubkeys()`, a write failure **raises**. That
+    sibling is best-effort because federation pinning is hardening the relay can
+    run without; here a pin that fails to persist means the next send silently
+    re-TOFUs and would accept a substituted key — the exact failure the caller
+    asked to be protected from. Nor does this newly restrict anyone: the X25519
+    private key already requires this same directory to be writable, so a
+    deployment that cannot write here cannot do encrypted DMs at all.
+    """
+    KEY_DIR.mkdir(mode=0o700, parents=True, exist_ok=True)
+    _write_secret_atomically(
+        KEY_DIR / _PEER_ENC_KEYS_FILE_NAME,
+        json.dumps(pins, sort_keys=True, indent=2).encode(),
+    )
+
+
+def pin_peer_encryption_key(agent_id: str, public_key_hex: str) -> str:
+    """Trust-on-first-use: pin `public_key_hex` for `agent_id` and return it, or
+    raise `PeerKeyMismatch` if a *different* key was already pinned.
+
+    Call this on every fetched peer key, not just the first — the check is the
+    point. A malformed or empty key is rejected outright (`ValueError`) rather
+    than pinned: an agent who never published one comes back as "", and pinning
+    that would make the next substituted key "match" nothing at all.
+    """
+    key = (public_key_hex or "").strip().lower()
+    if not _valid_x25519_pubkey_hex(key):
+        raise ValueError(
+            f"'{agent_id}' has no usable encryption key published "
+            f"(got {public_key_hex!r}) — they must publish one before you can "
+            f"send them encrypted messages"
+        )
+    pins = load_peer_encryption_keys()
+    existing = pins.get(agent_id)
+    if existing and existing != key:
+        raise PeerKeyMismatch(
+            f"the encryption key served for '{agent_id}' does not match the one "
+            f"pinned on first contact (pinned {encryption_key_fingerprint(existing)}, "
+            f"served {encryption_key_fingerprint(key)}). Refusing to encrypt. If "
+            f"they legitimately rotated, confirm the new fingerprint out of band "
+            f"and call trust_new_encryption_key('{agent_id}', ...)."
+        )
+    if not existing:
+        pins[agent_id] = key
+        save_peer_encryption_keys(pins)
+    return key
+
+
+def trust_new_encryption_key(agent_id: str, public_key_hex: str) -> None:
+    """Replace a pin after an out-of-band fingerprint check — the explicit escape
+    hatch for legitimate rotation. Separate from `pin_peer_encryption_key()` on
+    purpose: overwriting a pin must be something a human chose, never something a
+    send path does on its own."""
+    key = (public_key_hex or "").strip().lower()
+    if not _valid_x25519_pubkey_hex(key):
+        raise ValueError(f"not a valid X25519 public key: {public_key_hex!r}")
+    pins = load_peer_encryption_keys()
+    pins[agent_id] = key
+    save_peer_encryption_keys(pins)
+
+
 # Reserved path outside _key_path()'s sanitized profile_id → filename mapping, so no
 # agent-chosen agent_id (unrestricted free-form string) can ever collide with it —
 # _key_path() always strips leading/trailing underscores, so a leading-underscore
