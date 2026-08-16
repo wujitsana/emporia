@@ -612,8 +612,15 @@ class EmporiaAgent:
             if sender not in pubkeys:
                 pubkeys[sender] = await self._sender_public_key(sender)
             msg["verified"] = verify_dm_message(thread_id, msg, pubkeys[sender])
+            # P17-3: `encrypted` beside `decrypted` so the three states are
+            # distinguishable. P16 reported False for both a plaintext message and
+            # one it could not open, collapsing "never encrypted" and "ciphertext I
+            # can't read" into the same answer — exactly when a caller would want to
+            # surface a problem. (False, False) = plaintext, (True, True) = opened,
+            # (True, False) = ciphertext that failed.
             msg["decrypted"] = False
-            if not crypto_box.looks_like_envelope(msg.get("content", "")):
+            msg["encrypted"] = crypto_box.looks_like_envelope(msg.get("content", ""))
+            if not msg["encrypted"]:
                 continue
             try:
                 msg["content"] = crypto_box.open_sealed(

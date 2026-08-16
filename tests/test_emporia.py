@@ -16203,6 +16203,10 @@ def test_sdk_undecryptable_message_does_not_break_history(prod_client):
 
     msgs = asyncio.run(scenario_read())["messages"]
     assert msgs[0]["decrypted"] is False
+    # P17-3: and `encrypted` True — this is ciphertext that could not be opened,
+    # which the flag pair now distinguishes from a message that was never encrypted
+    # (see test_sdk_plaintext_dm_still_works_unchanged, which asserts False/False).
+    assert msgs[0]["encrypted"] is True
     assert crypto_box.looks_like_envelope(msgs[0]["content"]), "the raw envelope is preserved"
 
 
@@ -16263,6 +16267,9 @@ def test_sdk_plaintext_dm_still_works_unchanged(prod_client):
     msgs = asyncio.run(scenario())["messages"]
     assert msgs[0]["content"] == "ordinary prose"
     assert msgs[0]["decrypted"] is False, "nothing to decrypt on a plaintext thread"
+    # P17-3: the other half of the pair — never encrypted, as opposed to encrypted
+    # and unreadable, which P16 reported with the identical `decrypted: False`.
+    assert msgs[0]["encrypted"] is False
 
 
 def test_mcp_encrypted_dm_round_trip(prod_client):
@@ -16545,3 +16552,66 @@ def test_pre_p17_dm_rows_report_verified_none(client):
             await b.__aexit__()
 
     assert asyncio.run(read())["messages"][0]["verified"] is None
+
+
+def test_encrypted_flag_distinguishes_plaintext_from_failed_decryption(client, prod_client):
+    """P17-3: P16 set `decrypted: False` both for a plaintext message and for one
+    it could not open, so a caller couldn't tell "never encrypted" from "ciphertext
+    I can't read" — precisely when you'd want to surface a problem. P16's own two
+    tests asserted the same False for both states, which is how it slipped through.
+    `encrypted` beside it makes all three states distinguishable."""
+    import asyncio
+
+    from emporia.relay_server import DB_LOCK, get_db
+
+    async def setup():
+        a, b = _sdk_wired("p17_flag_a"), _sdk_wired("p17_flag_b")
+        try:
+            await a.register()
+            await b.register()
+            plain = (await a.start_dm("p17_flag_b"))["thread_id"]
+            await a.send_dm(plain, "never encrypted")
+            enc = (await a.start_dm("p17_flag_c", encrypted=True))["thread_id"]
+            await a.send_dm(enc, "opened fine")
+            await a.send_dm(enc, "will be corrupted")
+            return plain, enc
+        finally:
+            await a.__aexit__()
+            await b.__aexit__()
+
+    async def setup_c():
+        c = _sdk_wired("p17_flag_c")
+        try:
+            await c.register()
+        finally:
+            await c.__aexit__()
+
+    asyncio.run(setup_c())
+    plain, enc = asyncio.run(setup())
+
+    with DB_LOCK, get_db() as conn:
+        row = conn.execute(
+            "SELECT message_id, content FROM dm_messages WHERE thread_id=? "
+            "ORDER BY created_at DESC LIMIT 1", (enc,),
+        ).fetchone()
+        env = json.loads(row["content"])
+        env["ct"] = base64.b64encode(b"\x00" * 40).decode()
+        conn.execute("UPDATE dm_messages SET content=? WHERE message_id=?",
+                     (json.dumps(env), row["message_id"]))
+
+    async def read():
+        a = _sdk_wired("p17_flag_a")
+        try:
+            return (await a.get_dm_messages(plain))["messages"], \
+                   (await a.get_dm_messages(enc))["messages"]
+        finally:
+            await a.__aexit__()
+
+    plain_msgs, enc_msgs = asyncio.run(read())
+
+    # 1. plaintext: not encrypted, nothing to decrypt
+    assert (plain_msgs[0]["encrypted"], plain_msgs[0]["decrypted"]) == (False, False)
+    # 2. opened, and 3. failed — both encrypted, only one decrypted
+    states = {(m["encrypted"], m["decrypted"]) for m in enc_msgs}
+    assert (True, True) in states, "an opened message"
+    assert (True, False) in states, "ciphertext that could not be opened"
