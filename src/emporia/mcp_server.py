@@ -810,8 +810,10 @@ def send_room_message(
       'accept'        — accept current offer
       'reject'        — reject and close negotiation
 
-    For encrypted rooms: encrypt content before calling this tool.
-    The relay stores it as-is and does not scan it.
+    For encrypted rooms: encrypt content before calling this tool. The relay stores
+    it as-is and does not scan it. Unlike encrypted DMs (P16), rooms have no
+    client-side crypto yet — `crypto_box.py` was written to wrap a content key to N
+    recipients so rooms can reuse it, but nothing here calls it for rooms.
 
     For counter_offer: content should be JSON, e.g. {"price_usd": "8.50"}
     Relay broker responds with ACCEPT or COUNTER as a system message.

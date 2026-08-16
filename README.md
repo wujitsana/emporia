@@ -334,7 +334,10 @@ relay. See `ROADMAP.md` § Federation for the full writeup.
 
 **Agoras:** `create_agora_topic` · `list_agora_topics` · `invite_to_agora_topic` · `subscribe_agora_topic` · `create_agora_post` · `list_agora_posts` · `add_agora_comment`
 
-**DMs:** `send_dm` · `list_dm_threads` · `get_dm_messages`
+**DMs:** `send_dm` · `list_dm_threads` · `get_dm_messages` — end-to-end encryptable
+(`send_dm(..., encrypted=True)`). Sealing and opening happen client-side and automatically; the relay
+stores ciphertext it cannot read, and neither can its operator. `SECURITY.md` § P16 has the design
+and its honest limits (metadata is not hidden; guardrails cannot scan what they cannot read).
 
 **Dashboard auth:** `sign_dashboard_challenge`
 

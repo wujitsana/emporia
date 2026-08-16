@@ -314,7 +314,12 @@ but never checked at runtime (`wire.CLIENT_MSG_TYPES`, pinned against `rooms.Msg
 test, enforced on the resolved value in both message routes — which also stops clients minting the
 server-owned `"system"` label), hoisted `dm_send()`'s participant check above the guardrails scan,
 and closed the broadcast sweep as a **finding of absence**: 19 call sites, one divergence, already
-fixed at P14-1 — see `SECURITY.md`) → next unnamed.** The `r`-suffix review-chain naming ends
+fixed at P14-1 — see `SECURITY.md`) → P16 (done — not a review: end-to-end encrypted DMs, built to
+the requirement that the relay operator and anyone with relay access cannot read them. `crypto_box.py`
+(X25519/HKDF/AES-GCM, content key wrapped per participant, AAD-bound), X25519 keys + TOFU peer pinning
+in `identity.py`, key publication with an Ed25519 binding, one-way encrypted threads, and both clients
+sealing/opening transparently — plus the pre-existing `INSERT OR REPLACE` column wipe it uncovered —
+see `SECURITY.md`) → next unnamed.** The `r`-suffix review-chain naming ends
 at P1brr; review passes since are named sequentially (P5, P6, P7, P8, P9, P10, P11, P12, P13, P14, …)
 rather than growing another suffix — review yield had shrunk to P1brr's own one Medium/three Low, the
 signal to stop; P11 finding a live defect in P10's own work showed that signal doesn't mean stop
@@ -340,6 +345,26 @@ one. **What's left is the explicitly-large set** — transport dedup, peer-disco
 E2E encryption, dashboard write UI — each gated on a design decision rather than effort. The next
 session is a product question ("which of the four?"), not a code-quality one; the first time that's
 been true since P4.
+
+**P16 answered that question with a fifth option the list didn't contain: end-to-end encrypted DMs.**
+The requirement was stated as a threat model, not a feature — *the relay owner, and anyone with
+access to the relay, must not be able to read encrypted DMs* — which ruled out encryption-at-rest and
+every design where a relay-held key recovers plaintext. Six commits: a pure `crypto_box.py` (content
+key per message, wrapped once per participant, AAD-bound to thread/sender/msg_type), X25519 keys and
+TOFU peer pinning in `identity.py`, key publication with an Ed25519 binding at the relay, one-way
+encrypted DM threads, and both clients sealing/opening transparently. Verified live against the
+SQLite file, not just the API. Full write-up and the six honest limits — metadata, guardrails, no
+forward secrecy, first contact, not retroactive, rooms unchanged — in `SECURITY.md`.
+
+**Two things worth carrying forward from it.** First, the pass turned up a live pre-existing bug
+nobody was looking for: `register_agent`'s `INSERT OR REPLACE` had been silently wiping
+`x402_pay_to_json` on every re-register since P1b, quietly removing the x402 rail from that creator's
+402 challenges. It surfaced only because the new encryption-key column would have been wiped the same
+way — *designing a new column found a bug in an old one*. Second, `crypto_box.py` was written for N
+recipients rather than 2, so **room E2E encryption is now a materially smaller item than it was on
+the list above**: rooms today still have only the relay-side `encrypted` posture (store an opaque
+blob, skip the scan), and the remaining work is wrapping the content key to the member set rather
+than inventing the crypto.
 
 **P1b shipped: x402 is a real, working second payment rail**, non-custodial, eight commits
 (SECURITY.md's P1b pass has the full findings). `_verify_and_confirm_payment()` gained an x402

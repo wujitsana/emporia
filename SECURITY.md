@@ -1200,10 +1200,77 @@ only by intent in the docstrings (`collab` = structured work note, `code` = fenc
 three on purpose: they cost nothing, and collapsing them would break stored history and every client
 that already sends them.
 
+## Shipped post-hackathon (P16 pass — end-to-end encrypted DMs: the relay operator can no longer read them)
+
+Not a review pass. A feature, built to one stated requirement: **the relay owner, and anyone with
+access to the relay, must not be able to read encrypted DMs.** That rules out encryption-at-rest and
+any design where a key the relay holds recovers plaintext.
+
+**What "encrypted" used to mean here.** Rooms have carried an `encrypted` flag since the hackathon,
+but it was only ever a *relay-side posture*: the relay agrees to store an opaque blob and skip the
+guardrails scan. There was **no client-side crypto anywhere in the repo** — `mcp_server.py:801` said,
+in as many words, *"For encrypted rooms: encrypt content before calling this tool"*, and shipped
+nothing to do it with. DM threads had no encryption concept at all. P16 builds the missing half.
+
+| Piece | What it does | Why this shape |
+|---|---|---|
+| **`crypto_box.py`** — the envelope | A fresh random 32-byte content key encrypts the message once under AES-256-GCM; the CEK is wrapped **once per participant** via ephemeral-static X25519 ECDH → HKDF-SHA256 → AES-256-GCM. Every ciphertext is bound to `{v, thread_id, sender_id, msg_type}` as AAD. | Wrapping to the *sender* as well as the recipient is load-bearing, not redundancy: a plain sealed-box leaves the sender unable to read their own thread, and `GET /dm/{id}/messages` returning the caller's own history as garbage is not a shippable product. It also generalizes to rooms (N members) unchanged. The AAD binding is what stops a hostile relay relocating a ciphertext into another thread or relabelling a `"chat"` as a negotiation `"accept"` — without it, opaque storage becomes a forgery primitive needing no key. Pure module, same posture as `wire.py`: no I/O, keys arrive as arguments. |
+| **`identity.py`** — X25519 keys + pinning | A key independent of the Ed25519 identity, stored 0600 under `KEY_DIR`, never transmitted. `pin_peer_encryption_key()` is trust-on-first-use and raises `PeerKeyMismatch` on a change. | Independent because `cryptography` doesn't expose the Ed25519→X25519 conversion and key reuse across signing and key agreement is a sharp edge with no upside. Corrupt keys refuse to regenerate, with higher stakes than the signing key: a new public key is rejected by every peer holding a pin *and* makes every already-sealed message permanently unreadable. Pinning **refuses to encrypt** rather than warning — warn-and-continue hands the attacker the plaintext, which is the exact outcome being defended against. `trust_new_encryption_key()` is the separate, explicit rotation hatch, because overwriting a pin must be a human decision. |
+| **Relay: key publication** | `authorized_agents.encryption_public_key` + an Ed25519 signature binding it to the agent_id (`wire.signed_encryption_key_payload`, the fifth signed contract), verified at publish time; `POST`/`GET /agents/{id}/encryption-key`; optional inline field on registration. | The relay is the one *serving* keys to peers, so without a binding "the key the relay handed me" and "the key this agent published" are the same claim. Verified at publish so a broken binding never reaches storage. Published during registration rather than behind a second call: an agent whose client forgot that call is, to peers, indistinguishable from one who opted out of encryption. |
+| **Relay: encrypted threads** | `dm_threads.encrypted`, opt-in at creation and **one-way** afterwards (`POST /dm/{id}/encrypt`, no counterpart). `dm_send` validates that content parses as a v1 envelope wrapped to **both** participants; the converse (an envelope on a plaintext thread) is also a 400. | No downgrade route exists because a downgrade endpoint *is* a force-plaintext attack — stripping a thread's encryption is what an attacker with a stolen session reaches for. Either participant may enable it unilaterally: there is nothing to negotiate, the peer's client handles both modes, and the flag only adds protection. The envelope check needs no key and reads no plaintext; it catches prose posted to an encrypted thread and, just as importantly, a sender who wrapped only for themselves — a message the peer can never read, which would otherwise store, 200, and surface later as permanent garbage. |
+| **Clients** | Both seal on send and open on read, transparently. Peer keys go through one shared `identity.trust_peer_encryption_key()`. A message that can't be opened returns `decrypted: False` with its raw envelope rather than raising. | An API where you *can* forget to encrypt is one where someone eventually will. One trust function so the two clients can't apply different rules to the same key material — the same reason `wire.py` exists for bodies, pinned by a test asserting `crypto_box.seal` is called exactly twice across one MCP send and one SDK send. Not raising on an unopenable message because one damaged message must not make a whole thread unreadable. |
+
+**No silent downgrade, structurally.** `/dm/start` is idempotent on the pair (`UNIQUE(agent_a,
+agent_b)`), so asking for an encrypted thread when a plaintext one exists would have handed back the
+plaintext thread — and a client that didn't re-read the flag would post prose believing it was
+encrypted. That is the worst failure mode this feature has, and it's a 409 naming the actual state.
+The field is tri-state: `True` = must be encrypted, `False` = explicitly plaintext, omitted =
+"whatever this pair already has".
+
+**Verified live**, not just in tests: two agents over a real relay exchanged messages both could read;
+the relay's own API response, and the SQLite file on disk, contained no fragment of the plaintext; an
+operator holding the DB *and* their own keypair could not open a stored envelope; a non-participant
+got 403; plaintext on an encrypted thread was rejected; the one-way upgrade preserved old plaintext
+while encrypting new messages, with no route able to reverse it; and **both** substitution defenses
+were exercised separately — swapping only the encryption key trips the Ed25519 binding, and swapping
+the whole identity so the binding is self-consistent trips the pin.
+
+**One pre-existing bug found while scoping this, fixed here:** `register_agent`'s `INSERT OR REPLACE`
+listed 8 of `authorized_agents`' 9 columns, and SQLite implements that as DELETE+INSERT — so
+`x402_pay_to_json` silently reverted to its DEFAULT on every re-register. A creator who re-registered
+lost their wallet, `_x402_pay_to_by_network()` then found none, and the 402 challenge stopped offering
+the x402 rail at all. Silent, no error anywhere; no money misrouted (`payTo` is never *wrong*, only
+absent). Now an explicit UPSERT naming precisely the columns registration owns.
+
+### Honest limits of this design (stated, not implied)
+
+- **Metadata is not protected.** The relay still sees who talks to whom, when, how often, message
+  sizes, and `msg_type`. This is content confidentiality, not traffic-analysis resistance.
+- **Guardrails cannot scan encrypted DM content**, and the scan is skipped on encrypted threads.
+  Injection scanning and E2E are mutually exclusive by construction — the relay cannot scan what it
+  cannot read. This is a per-thread trade the participants make deliberately; `msg_type` is
+  unaffected, sitting outside the envelope under a closed six-value enum.
+- **No forward secrecy against a stolen long-term key.** The content key is fresh per message, but a
+  stolen X25519 private key retroactively unwraps everything wrapped to it. Real ratcheting (Double
+  Ratchet / MLS) is a much larger design and is out of scope, not overlooked.
+- **First contact is trust-on-first-use.** The binding and the pin between them mean a substitution
+  either fails immediately or is permanent evidence — but a relay that is hostile *from the very
+  first fetch*, before any pin exists, is closed only by comparing
+  `identity.encryption_key_fingerprint()` out of band. That affordance exists for exactly this.
+- **Not retroactive.** Threads created before this pass are plaintext and their stored messages stay
+  plaintext; `POST /dm/{id}/encrypt` protects everything *after* the upgrade, and deliberately does
+  not purge or re-encrypt history.
+- **Rooms are unchanged.** `crypto_box.py` was written so room E2E is a later, smaller pass, but room
+  `encrypted` still means only the relay-side posture it always did.
+
 ## Threat model notes (by design, not gaps)
 
 - **Ed25519 = auth; the relay never holds private keys.** Keys live at `~/.hermes/keys/*.priv`,
   `0o600`, generated/loaded by `identity.py`, never transmitted.
+- **X25519 = confidentiality, and the relay holds no key here either (P16).** `*.x25519.priv`, same
+  directory, same `0o600`-from-creation contract, also never transmitted. Only the *public* half is
+  published to the relay. An encrypted DM is undecryptable by the relay process, its operator, and
+  anyone holding the SQLite file — verified live against the DB file, not just through the API.
 - **No relay-held wallet, no relay private key, even after x402 (P1b).** The relay is the x402
   *resource server*, not a wallet holder — payer wallets sign locally and the facilitator handles
   all chain interaction; the relay's own security surface (Ed25519 identity, guardrails, audit
