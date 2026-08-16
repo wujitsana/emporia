@@ -7075,7 +7075,13 @@ async def dm_send(thread_id: str, req: DMSendRequest, request: Request):
         "message_id": message_id,
         "sender_id": caller,
         "content": req.content,
-        "msg_type": req.msg_type,
+        # P14: was req.msg_type, which is "" on the omit path while the row above
+        # stores effective_msg_type ("chat") — the same message reached its two
+        # consumers (this inbox/WS event vs. GET /dm/{id}/messages) with different
+        # values. The room route avoids this structurally by broadcasting the stored
+        # message object; this one hand-builds its event, so both sites have to use
+        # the resolved value explicitly.
+        "msg_type": effective_msg_type,
         "created_at": now,
     }
     await broadcast_to_agent(recipient, event)

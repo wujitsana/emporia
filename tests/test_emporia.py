@@ -9441,6 +9441,61 @@ def test_relay_dm_send_omitted_msg_type_resolves_from_wire_py(prod_client):
     assert any(m["content"] == content and m["msg_type"] == "p13_patched_type" for m in msgs), msgs
 
 
+def test_dm_send_broadcast_msg_type_matches_stored_msg_type(prod_client):
+    """P14: dm_send() stored effective_msg_type in the DB row but broadcast
+    req.msg_type in the dm_received event — so on the omit path (the exact path
+    P13-1 added `msg_type: str = ""` + `or DEFAULT_MSG_TYPE` to support) the same
+    message reached its two consumers with different values: "chat" from
+    GET /dm/{id}/messages, "" from the inbox/WS event. P13's own plan said to use
+    the resolved value at "both the DB insert and the broadcast event"; it did the
+    insert and missed the event, and nothing in the suite asserted on dm_received
+    at all, so no test could see it. msg_type is what the negotiation broker routes
+    on, so a live channel disagreeing with the record isn't cosmetic.
+
+    Asserts the persisted inbox event (broadcast_to_agent's durable half) carries
+    the same msg_type the stored message does, for the same message_id."""
+    from emporia import wire
+    from emporia.identity import sign
+    _register_keyed(prod_client, "p14_dm_bcast_alice")
+    _register_keyed(prod_client, "p14_dm_bcast_bob")
+    thread_id = prod_client.post(
+        "/dm/start", json={"to_agent": "p14_dm_bcast_bob"},
+        headers=bearer_for(prod_client, "p14_dm_bcast_alice"),
+    ).json()["thread_id"]
+    content = "P14 broadcast/store agreement test"
+
+    # msg_type omitted entirely — the path where req.msg_type is "" but the
+    # resolved value is DEFAULT_MSG_TYPE.
+    signed_payload = wire.signed_dm_thread_payload(thread_id, content, wire.DEFAULT_MSG_TYPE)
+    r = prod_client.post(
+        f"/dm/{thread_id}/send",
+        json={"content": content, "signature": sign(signed_payload, "p14_dm_bcast_alice")},
+        headers=bearer_for(prod_client, "p14_dm_bcast_alice"),
+    )
+    assert r.status_code == 200, r.text
+    message_id = r.json()["message_id"]
+
+    stored = prod_client.get(
+        f"/dm/{thread_id}/messages", params={"agent_id": "p14_dm_bcast_bob"},
+        headers=bearer_for(prod_client, "p14_dm_bcast_bob"),
+    ).json()["messages"]
+    stored_msg = next(m for m in stored if m["message_id"] == message_id)
+
+    inbox = prod_client.get(
+        "/agents/p14_dm_bcast_bob/inbox",
+        headers=bearer_for(prod_client, "p14_dm_bcast_bob"),
+    ).json()
+    dm_events = [
+        e for e in inbox["events"]
+        if e["event_type"] == "dm_received" and e["payload"]["message_id"] == message_id
+    ]
+    assert len(dm_events) == 1, inbox
+    broadcast_msg_type = dm_events[0]["payload"]["msg_type"]
+
+    assert broadcast_msg_type == wire.DEFAULT_MSG_TYPE, broadcast_msg_type
+    assert broadcast_msg_type == stored_msg["msg_type"], (broadcast_msg_type, stored_msg["msg_type"])
+
+
 def test_mcp_send_dm_returns_structured_error_on_sign_failure(prod_client):
     """send_dm() now signs — a local signing failure (missing/unreadable key)
     must return the structured {"error": ...} shape rather than raising, same
