@@ -305,15 +305,24 @@ not another review pass, the design-question follow-through P12 called for: sign
 federation peer-pin corruption its own policy — log loudly, preserve the evidence, don't raise (fail
 loud wasn't safe without also adding exception boundaries in `relay_server.py`'s federation-sync
 loop; self-heal would have been the invisible-TOFU-reset bug wearing a fix's clothes) — see
-`SECURITY.md`) → next unnamed.** The `r`-suffix review-chain naming ends at P1brr; review passes
-since are named sequentially (P5, P6, P7, P8, P9, P10, P11, P12, P13, …) rather than growing another
-suffix — review yield had shrunk to P1brr's own one Medium/three Low, the signal to stop; P11 finding
-a live defect in P10's own work showed that signal doesn't mean stop reviewing altogether, only that
-the *chain-of-fixes-in-one-function* shape (the P4–P9 `delete_session()` arc) had run its course.
-P12's own yield — one skipped test commitment, one wrong error message, one latent drift, one broken
-docstring promise, nothing reachable by a caller today — read as that chain-of-audits itself reaching
-its end, and P13 confirms it: three genuine, shipped-worthy design decisions, not another audit
-finding. Whatever comes next is a fresh body of work, not P14 auditing P13.
+`SECURITY.md`) → P14 (done — the review of P13, which P13 itself said shouldn't happen: a `msg_type`
+that disagreed with itself across the DB row and the inbox broadcast, a guardrails scan P13 narrowed
+on a premise that turned out to be factually wrong, and the cross-client body duplication P12-3 had
+just finished clearing — see `SECURITY.md`) → next unnamed.** The `r`-suffix review-chain naming ends
+at P1brr; review passes since are named sequentially (P5, P6, P7, P8, P9, P10, P11, P12, P13, P14, …)
+rather than growing another suffix — review yield had shrunk to P1brr's own one Medium/three Low, the
+signal to stop; P11 finding a live defect in P10's own work showed that signal doesn't mean stop
+reviewing altogether, only that the *chain-of-fixes-in-one-function* shape (the P4–P9
+`delete_session()` arc) had run its course.
+
+**P13 declared the audit chain finished — "whatever comes next is a fresh body of work, not P14
+auditing P13" — and P14 falsified that by three findings, two of them live.** The useful correction
+isn't "keep auditing forever," though; it's that **every P14 finding sits in code P13 wrote that same
+pass**, none in older code. Auditing keeps paying because each pass writes new code, not because the
+existing code keeps rotting. The sustainable version of this is reviewing new work as it lands rather
+than scheduling a pass to audit the pass — and the recorded-but-unfixed pile (broadcast-event
+coverage generally, `msg_type` validation, guardrails-vs-participant ordering) is a better use of the
+next pass than P15 auditing P14.
 
 **P1b shipped: x402 is a real, working second payment rail**, non-custodial, eight commits
 (SECURITY.md's P1b pass has the full findings). `_verify_and_confirm_payment()` gained an x402
