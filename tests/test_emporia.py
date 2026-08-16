@@ -459,6 +459,36 @@ def test_identity_corrupt_private_key_fails_loud_and_is_left_untouched():
         assert key_file.read_bytes() == b"\x01\x02\x03\x04\x05"
 
 
+def test_identity_corrupt_relay_key_error_names_federation_not_reregistration():
+    """P12: _load_or_generate_at() serves two very different callers —
+    generate_or_load_keypair() (an agent's key, where "delete it to
+    register as a new identity" is correct, local advice) and
+    generate_or_load_relay_keypair() (the relay's own federation-signing
+    identity, which every peer has TOFU-pinned — deleting it doesn't
+    register anything locally, it makes every peer reject the replacement
+    outright as a `peer key mismatch` that each peer operator must then
+    clear on their own box). P11-4 shipped only the agent-key wording for
+    both callers, so the relay-key error actively told operators to do the
+    one thing that turns a local file problem into a multi-party outage.
+    Writes a truncated relay key file and asserts the error mentions
+    federation/peer pinning and does NOT say "register as a new identity"."""
+    from emporia import identity
+    with tempfile.TemporaryDirectory() as d:
+        fresh_dir = Path(d) / "corrupt_relay_key_dir"
+        fresh_dir.mkdir()
+        key_file = fresh_dir / identity._RELAY_KEY_PATH_NAME
+        key_file.write_bytes(b"\x01\x02\x03\x04\x05")
+        with patch("emporia.identity.KEY_DIR", fresh_dir), \
+             patch("emporia.identity._RELAY_KEYPAIR_CACHE", None):
+            with pytest.raises(ValueError) as exc_info:
+                identity.generate_or_load_relay_keypair()
+        msg = str(exc_info.value)
+        assert "corrupt" in msg.lower()
+        assert "federation" in msg.lower() or "peer" in msg.lower()
+        assert "register as a new identity" not in msg
+        assert key_file.read_bytes() == b"\x01\x02\x03\x04\x05"
+
+
 def test_identity_truncated_jwt_secret_self_heals():
     """P11-4: unlike a corrupt private key, a truncated JWT secret is safe to
     regenerate — the blast radius is only invalidating outstanding bearer

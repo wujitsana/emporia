@@ -58,7 +58,26 @@ def _write_secret_atomically(path: Path, data: bytes) -> None:
         raise
 
 
-def _load_or_generate_at(path: Path) -> tuple[ed25519.Ed25519PrivateKey, bytes]:
+# P12: _load_or_generate_at() serves two callers whose corrupt-key recovery paths are
+# not the same action. An agent key's fix is local (re-register, or restore from
+# backup). The relay's own federation-signing key is pinned by every peer that has
+# ever synced with it (TOFU, see save_federation_peer_pubkeys()) — deleting it doesn't
+# register a "new identity" locally, it makes every peer reject the replacement outright
+# as a `peer key mismatch`, a fix each peer operator then has to apply on their own box.
+_AGENT_KEY_RECOVERY_HINT = (
+    "Restore {path} from backup, or delete it to register as a new identity."
+)
+_RELAY_KEY_RECOVERY_HINT = (
+    "this is the relay's federation signing identity, and a new public key is "
+    "rejected outright by every peer that has pinned the old one (`peer key "
+    "mismatch`), which each peer operator must then clear on their own box. "
+    "Restore {path} from backup; deleting it is not a local recovery."
+)
+
+
+def _load_or_generate_at(
+    path: Path, recovery_hint: str = _AGENT_KEY_RECOVERY_HINT,
+) -> tuple[ed25519.Ed25519PrivateKey, bytes]:
     # mode= only applies when this call actually creates the directory — an
     # already-existing KEY_DIR (e.g. an existing deployment) keeps its current mode.
     KEY_DIR.mkdir(mode=0o700, parents=True, exist_ok=True)
@@ -70,17 +89,16 @@ def _load_or_generate_at(path: Path) -> tuple[ed25519.Ed25519PrivateKey, bytes]:
             # A truncated write (crash, disk-full) is the only way this file gets
             # here at the wrong length — _write_secret_atomically() means a
             # completed write is always exactly 32 bytes. Deliberately not
-            # regenerating: a new key would change this identity's public key and
-            # silently break its existing relay registration, so recovery has to
-            # be a human decision (restore from backup, or delete the file to
-            # register as a new identity) rather than something this function
-            # decides on its own.
+            # regenerating: a new key would change this identity's public key,
+            # so recovery has to be a human decision, not something this function
+            # decides on its own — recovery_hint says what that decision is for
+            # this specific caller (see _AGENT_KEY_RECOVERY_HINT /
+            # _RELAY_KEY_RECOVERY_HINT above).
             raise ValueError(
                 f"private key file is corrupt (unrecoverable): {path} is "
                 f"{len(raw)} bytes, expected 32 — refusing to silently "
-                f"regenerate, since that would mint a new public key and break "
-                f"this identity's existing relay registration. Restore {path} "
-                f"from backup, or delete it to register as a new identity."
+                f"regenerate, since that would mint a new public key. "
+                + recovery_hint.format(path=path)
             ) from e
     else:
         priv = ed25519.Ed25519PrivateKey.generate()
@@ -128,7 +146,9 @@ def generate_or_load_relay_keypair() -> tuple[ed25519.Ed25519PrivateKey, bytes]:
     """
     global _RELAY_KEYPAIR_CACHE
     if _RELAY_KEYPAIR_CACHE is None:
-        _RELAY_KEYPAIR_CACHE = _load_or_generate_at(KEY_DIR / _RELAY_KEY_PATH_NAME)
+        _RELAY_KEYPAIR_CACHE = _load_or_generate_at(
+            KEY_DIR / _RELAY_KEY_PATH_NAME, recovery_hint=_RELAY_KEY_RECOVERY_HINT,
+        )
     return _RELAY_KEYPAIR_CACHE
 
 
