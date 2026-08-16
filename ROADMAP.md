@@ -163,6 +163,13 @@ field default, which shadowed `wire.py`'s constant on the common path (a client 
 field) and made it dead code there. P10-2's own test didn't catch this because it drove
 `confirm_delivery` through `mcp_server.py`, which always resolves and forwards `rationale` explicitly
 — the one path that can't exercise the field default. Fixed in P11; see `SECURITY.md`'s P11 pass.
+**Second correction (P12): P11's own fix for this had the identical shape one level up** — it shipped
+the source fix but skipped its own plan's test fix, so the verifier-side guarantee it was fixing went
+unpinned by any test for a full pass (P11's diff touched zero existing test lines). Also extended the
+same single-sourcing to room-message `msg_type`, the third hand-copied-default site of this shape
+(`mcp_server.py`, `agent_sdk.py`, `relay_server.py`'s `SendRoomMessageRequest` field default) — benign
+today, all three literals agreed, but the same reachable-by-a-raw-client shape as the confirm bug. See
+`SECURITY.md`'s P12 pass.
 
 **Two gaps surfaced, recorded, not fixed (P11) — both design questions, not oversights.**
 `agent_sdk.py` has no `confirm_delivery`/`dispute_delivery` methods at all, unlike `mcp_server.py`'s
@@ -285,12 +292,21 @@ its two siblings, and collapsed `delete_session()`'s count queries — see `SECU
 resumed the audit-the-previous-pass pattern, applied to P10's own work: found and fixed a genuine gap
 in P10-2's own single-sourcing claim, the same N4-7 unguarded-`sign()` defect recurring in three
 siblings P10-1 edited without noticing, and the non-atomic/non-private secret writes that made that
-defect reachable — see `SECURITY.md`) → next unnamed.** The `r`-suffix review-chain naming ends at
-P1brr; review passes since are named sequentially (P5, P6, P7, P8, P9, P10, P11, …) rather than
-growing another suffix — review yield had shrunk to P1brr's own one Medium/three Low, the signal to
-stop; P11 finding a live defect in P10's own work shows that signal doesn't mean stop reviewing
-altogether, only that the *chain-of-fixes-in-one-function* shape (the P4–P9 `delete_session()` arc)
-had run its course.
+defect reachable — see `SECURITY.md`) → P12 (done — audited P11's own work and found the same shape
+one level up: P11 shipped item 1's source fix but skipped its own plan's test fix, so the
+confirm-rationale verifier guarantee went unpinned for a full pass; also a wrong recovery message on
+one of two corrupt-key callers, the same hand-copied-default shape recurring a third time in
+`msg_type`, and one best-effort contract that could still raise — see `SECURITY.md`) → next unnamed.**
+The `r`-suffix review-chain naming ends at P1brr; review passes since are named sequentially (P5, P6,
+P7, P8, P9, P10, P11, P12, …) rather than growing another suffix — review yield had shrunk to
+P1brr's own one Medium/three Low, the signal to stop; P11 finding a live defect in P10's own work
+showed that signal doesn't mean stop reviewing altogether, only that the *chain-of-fixes-in-one-
+function* shape (the P4–P9 `delete_session()` arc) had run its course. P12's own yield — one skipped
+test commitment, one wrong error message, one latent drift, one broken docstring promise, nothing
+reachable by a caller today — reads as that chain-of-audits itself now reaching its end; see
+`SECURITY.md`'s P12 section for why the next work is probably the recorded design questions
+(unsigned thread DMs, MCP/SDK confirm/dispute parity, a three-way corrupt-secret policy) rather than
+another review pass.
 
 **P1b shipped: x402 is a real, working second payment rail**, non-custodial, eight commits
 (SECURITY.md's P1b pass has the full findings). `_verify_and_confirm_payment()` gained an x402
