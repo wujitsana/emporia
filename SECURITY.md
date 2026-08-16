@@ -1126,14 +1126,26 @@ full pass.
 | **The same hand-copied-default shape P11-1 fixed once survives in `msg_type`.** `"chat"` was hand-copied as the default in `mcp_server.send_room_message()`, `agent_sdk.EmporiaAgent.send_room_message()`, and `relay_server.SendRoomMessageRequest`'s pydantic field default — and `msg_type` is signature-load-bearing (N3-8/R7 binds it into what's signed). A raw client omitting the optional field was verified against the relay's own hardcoded copy. Benign today (all three literals read `"chat"`), and P11 never swept for this sibling after finding the shape once. | Low, latent (nothing currently diverges) | Added `wire.DEFAULT_MSG_TYPE`. The verifier resolves `req.msg_type or DEFAULT_MSG_TYPE` once (a local import inside the handler — a top-level import silently stops being test-patchable, a mistake this fix's own test caught during development) and reuses that one value for both signature verification and persistence. |
 | **`save_federation_peer_pubkeys()` could raise despite its own docstring promising it can't.** `KEY_DIR.mkdir()` sat outside the `try` wrapping the write — a read-only `KEY_DIR` parent raised `OSError` straight through the "best-effort, never raises" contract, mid a federation pull. Pre-existing (P11-3 only added `mode=` to the same line), a one-line fix found while auditing the area. | Low | Moved `KEY_DIR.mkdir()` inside the `try`. |
 
-**Explicitly recorded, not fixed:** `load_federation_peer_pubkeys()` still swallows a corrupt pin-map
-file silently (`except (..., JSONDecodeError, OSError): return {}`, no log line) — the next successful
-federation pull re-pins and overwrites it, destroying the evidence. P11-3's atomic writes already
-removed the most likely cause (truncation from a crash mid-write), so what's left is hand-edits or
-partial restores. The right fix is arguably a three-way policy (fail loud / self-heal / degrade
-silently) decided once across all three secrets rather than accreted a row at a time — left for that
-design conversation rather than fixed here. `POST /dm/{thread_id}/send` (unsigned) and the
-`agent_sdk.py` confirm/dispute parity gap are unchanged from P11's recording.
+**Explicitly recorded, not fixed at P12 time — all three closed in P13 below:** `load_federation_peer_pubkeys()`'s
+silent corruption-swallowing, `POST /dm/{thread_id}/send`'s missing signature, and the
+`agent_sdk.py` confirm/dispute parity gap.
+
+## Fixed post-hackathon (P13 pass — the three design questions P12 recorded but didn't fix)
+
+Each of P12's three recorded-but-unfixed items needed a decision, not a mechanical patch — this pass
+made the three decisions and shipped all three.
+
+| Item | Decision | Fix |
+|---|---|---|
+| **`POST /dm/{thread_id}/send` was unsigned** — no `signature` field, no `verify_signature` call, unlike both sibling message routes (`/messages`, room messages). | Require a signature, breaking any unsigned client. This repo's own precedent already made the same call for the other two message routes (N2-5/N3-8 R7); DM threads were the last surviving unsigned one, and the two in-repo clients are the only callers. `/dm/start` deliberately left untouched — it carries no content, same reason `POST /rooms`/`POST /sessions` aren't signed either. | Added `wire.signed_dm_thread_payload(thread_id, content, msg_type)`, mirroring `signed_room_message_payload()` (not `signed_dm_envelope()` — that one's `to_agent`/`session_id`/`payload` shape is `/messages`'; thread DMs route on `thread_id`, a different key). `DMSendRequest` gained a `signature` field and its `msg_type` default changed `"chat"` → `""` (P12-3's fix, done right the first time here). `dm_send()` requires the signature and verifies before persisting. Both `mcp_server.send_dm()` and `agent_sdk.send_dm()` now sign. |
+| **`agent_sdk.py` had no `confirm_delivery()`/`dispute_delivery()`** — `mcp_server.py`'s pair existed, the SDK's didn't; an SDK-based agent could accept/deliver a service session but never confirm or dispute it. | Add them, mechanically mirroring `mcp_server.py`'s pair (post-P11-2) in this class's existing shape. | New `confirm_delivery()`/`dispute_delivery()` on `EmporiaAgent`, reusing `get_session()` for `step_number` (same call `submit_action()` already makes) and resolving rationale defaults from `wire.py`, same as the relay side. No P11-2-style try/except around `sign()` — that fix was specific to `mcp_server.py`'s structured-error convention; `agent_sdk.py`'s methods deliberately let everything raise. |
+| **Federation peer-pin corruption was silent and self-erasing** — `load_federation_peer_pubkeys()` collapsed "no file yet" and "file is corrupt" into the same silent `{}`, and the next successful sync overwrote the corrupt file, destroying the evidence. | Neither of this repo's two existing secret-corruption policies fits: fail loud (the private-key policy) isn't safe here without also adding exception boundaries in `relay_server.py` — checked `trigger_federation_sync()`'s peer loop, no per-peer `try`/`except`, so raising would abort sync for every configured peer and 500 the dashboard's own diagnostic view on the strength of one damaged file. Self-heal (the JWT-secret policy) is wrong for the opposite reason: silently regenerating an empty map *is* the invisible-TOFU-reset bug, not a fix for it. | Control flow and return type unchanged (`load_federation_peer_pubkeys()` still returns `{}` on any read failure) — `FileNotFoundError` stays silent, `JSONDecodeError`/`OSError` now logs a `WARNING` via `logging.getLogger("emporia.relay")` (matching `relay_server.py`'s own logging convention) and renames the corrupt file aside (best-effort) before still returning `{}`. |
+
+All three were built test-first with `git stash` verification against the pre-fix source (item 1's
+signature-mandatory tests fail 200-not-401 pre-fix and `AttributeError` on the missing `wire.py`
+function; item 2's tests fail `AttributeError` on the missing methods; item 3's corrupt-file test
+fails on no warning logged, while its missing-file sibling correctly stays green pre- and post-fix,
+confirming the two branches weren't accidentally merged).
 
 ## Threat model notes (by design, not gaps)
 

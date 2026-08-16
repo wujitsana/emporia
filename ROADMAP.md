@@ -171,14 +171,16 @@ same single-sourcing to room-message `msg_type`, the third hand-copied-default s
 today, all three literals agreed, but the same reachable-by-a-raw-client shape as the confirm bug. See
 `SECURITY.md`'s P12 pass.
 
-**Two gaps surfaced, recorded, not fixed (P11) — both design questions, not oversights.**
-`agent_sdk.py` has no `confirm_delivery`/`dispute_delivery` methods at all, unlike `mcp_server.py`'s
-pair — a real MCP/SDK parity gap, found while checking how far P10-2's confirm-rationale bug could
-reach (answer: not into the SDK, because there's no SDK path to reach through). Separately,
-`POST /dm/{thread_id}/send` (`relay_server.py`) has no `signature` field on its request model and
-never calls `verify_signature`, while both sibling message routes (`POST /messages`, room messages)
-require one — not a duplication gap `wire.py` could close, since there's no envelope to unify; whether
-bearer identity alone is sufficient for a thread DM is a call this codebase hasn't made either way.
+**Two gaps surfaced at P11, recorded then, fixed at P13 — both were design questions, not
+oversights.** `agent_sdk.py` had no `confirm_delivery`/`dispute_delivery` methods at all, unlike
+`mcp_server.py`'s pair — a real MCP/SDK parity gap, found while checking how far P10-2's
+confirm-rationale bug could reach (answer: not into the SDK, because there was no SDK path to reach
+through). Now added, mechanically mirroring `mcp_server.py`'s pair. Separately,
+`POST /dm/{thread_id}/send` (`relay_server.py`) had no `signature` field on its request model and
+never called `verify_signature`, while both sibling message routes (`POST /messages`, room messages)
+require one — the decision made at P13 was to require one here too, breaking any unsigned client,
+the same call this codebase already made for the other two routes. See `SECURITY.md`'s P13 pass for
+both.
 
 **Transport dedup — still open, optional.** Leaving the two transports (sync `httpx` calls vs.
 `AsyncClient`) alone was the right call: it kills the drift class this entry cared about with zero
@@ -296,17 +298,22 @@ defect reachable — see `SECURITY.md`) → P12 (done — audited P11's own work
 one level up: P11 shipped item 1's source fix but skipped its own plan's test fix, so the
 confirm-rationale verifier guarantee went unpinned for a full pass; also a wrong recovery message on
 one of two corrupt-key callers, the same hand-copied-default shape recurring a third time in
-`msg_type`, and one best-effort contract that could still raise — see `SECURITY.md`) → next unnamed.**
-The `r`-suffix review-chain naming ends at P1brr; review passes since are named sequentially (P5, P6,
-P7, P8, P9, P10, P11, P12, …) rather than growing another suffix — review yield had shrunk to
-P1brr's own one Medium/three Low, the signal to stop; P11 finding a live defect in P10's own work
-showed that signal doesn't mean stop reviewing altogether, only that the *chain-of-fixes-in-one-
-function* shape (the P4–P9 `delete_session()` arc) had run its course. P12's own yield — one skipped
-test commitment, one wrong error message, one latent drift, one broken docstring promise, nothing
-reachable by a caller today — reads as that chain-of-audits itself now reaching its end; see
-`SECURITY.md`'s P12 section for why the next work is probably the recorded design questions
-(unsigned thread DMs, MCP/SDK confirm/dispute parity, a three-way corrupt-secret policy) rather than
-another review pass.
+`msg_type`, and one best-effort contract that could still raise — see `SECURITY.md`) → P13 (done —
+not another review pass, the design-question follow-through P12 called for: signed
+`POST /dm/{thread_id}/send` (the last unsigned content-bearing message route), added
+`agent_sdk.py`'s `confirm_delivery()`/`dispute_delivery()` (closing the MCP/SDK parity gap), and gave
+federation peer-pin corruption its own policy — log loudly, preserve the evidence, don't raise (fail
+loud wasn't safe without also adding exception boundaries in `relay_server.py`'s federation-sync
+loop; self-heal would have been the invisible-TOFU-reset bug wearing a fix's clothes) — see
+`SECURITY.md`) → next unnamed.** The `r`-suffix review-chain naming ends at P1brr; review passes
+since are named sequentially (P5, P6, P7, P8, P9, P10, P11, P12, P13, …) rather than growing another
+suffix — review yield had shrunk to P1brr's own one Medium/three Low, the signal to stop; P11 finding
+a live defect in P10's own work showed that signal doesn't mean stop reviewing altogether, only that
+the *chain-of-fixes-in-one-function* shape (the P4–P9 `delete_session()` arc) had run its course.
+P12's own yield — one skipped test commitment, one wrong error message, one latent drift, one broken
+docstring promise, nothing reachable by a caller today — read as that chain-of-audits itself reaching
+its end, and P13 confirms it: three genuine, shipped-worthy design decisions, not another audit
+finding. Whatever comes next is a fresh body of work, not P14 auditing P13.
 
 **P1b shipped: x402 is a real, working second payment rail**, non-custodial, eight commits
 (SECURITY.md's P1b pass has the full findings). `_verify_and_confirm_payment()` gained an x402
