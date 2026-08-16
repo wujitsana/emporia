@@ -511,6 +511,31 @@ def test_identity_truncated_jwt_secret_self_heals():
         assert secret_path.read_bytes() == secret
 
 
+def test_identity_save_federation_peer_pubkeys_is_actually_best_effort():
+    """P12: save_federation_peer_pubkeys()'s docstring promises a write
+    failure "degrades to in-memory-only pinning for this process's
+    lifetime rather than raising — pinning is a hardening measure, not a
+    correctness dependency the relay should crash over." But
+    KEY_DIR.mkdir() sat *outside* the try that wraps the actual write, so
+    a KEY_DIR whose parent is read-only raised OSError straight through
+    the documented guarantee — exactly the read-only-container scenario
+    the contract exists for, and exactly what fires mid federation pull in
+    relay_server.py's _pull_federated_lobby(). Patches identity.KEY_DIR to
+    a path under a directory made read-only (0o500 — no write bit, so
+    mkdir() on the child fails), and asserts the call returns normally
+    rather than raising."""
+    from emporia import identity
+    with tempfile.TemporaryDirectory() as d:
+        readonly_parent = Path(d) / "readonly_parent"
+        readonly_parent.mkdir(mode=0o500)
+        try:
+            unreachable_key_dir = readonly_parent / "keys"
+            with patch.object(identity, "KEY_DIR", unreachable_key_dir):
+                identity.save_federation_peer_pubkeys({"https://peer.example": "ab" * 32})
+        finally:
+            readonly_parent.chmod(0o700)
+
+
 def test_content_address_no_0x_prefix():
     from emporia.identity import content_address_for
     addr = content_address_for("alice", None)

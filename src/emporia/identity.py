@@ -230,9 +230,13 @@ def save_federation_peer_pubkeys(pubkeys: dict[str, str]) -> None:
     process's lifetime rather than raising — pinning is a hardening measure, not a
     correctness dependency the relay should crash over.
     """
-    KEY_DIR.mkdir(mode=0o700, parents=True, exist_ok=True)
     path = KEY_DIR / _PEER_PUBKEYS_FILE_NAME
     try:
+        # P12: KEY_DIR.mkdir() moved inside this try — it used to sit before it, so a
+        # read-only KEY_DIR parent (the read-only-container scenario this docstring's
+        # own "best-effort" contract exists for) raised OSError straight through it,
+        # out of the mid-federation-pull caller in relay_server.py.
+        KEY_DIR.mkdir(mode=0o700, parents=True, exist_ok=True)
         _write_secret_atomically(path, json.dumps(pubkeys, sort_keys=True, indent=2).encode())
     except OSError:
         pass
