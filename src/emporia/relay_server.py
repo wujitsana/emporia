@@ -6994,7 +6994,8 @@ class DMStartRequest(BaseModel):
 
 class DMSendRequest(BaseModel):
     content: str
-    msg_type: str = "chat"
+    msg_type: str = ""
+    signature: str | None = None
 
 
 @app.post("/dm/start")
@@ -7035,9 +7036,20 @@ async def dm_send(thread_id: str, req: DMSendRequest, request: Request):
     _require_registered(caller)
     _enforce_agent_rate_limit(caller)
     try:
-        await _assert_payload_safe_counted(req.model_dump())
+        await _assert_payload_safe_counted({"content": req.content})
     except PermissionError as e:
         raise HTTPException(403, str(e))
+    if not req.signature:
+        raise HTTPException(401, "Signature required")
+    # Same N3-8/R7 shape as room messages: bound to thread_id + msg_type, not just
+    # content — a content-only signature was valid for delivery into any thread this
+    # agent is a participant of, forever (replayable across threads and across
+    # msg_type). Local import + resolved-once pattern matches P12-3's room-message fix.
+    from emporia.wire import DEFAULT_MSG_TYPE, signed_dm_thread_payload
+    effective_msg_type = req.msg_type or DEFAULT_MSG_TYPE
+    signed_envelope = signed_dm_thread_payload(thread_id, req.content, effective_msg_type)
+    if not AGENT_REGISTRY.verify_signature(caller, signed_envelope, req.signature):
+        raise HTTPException(403, "Invalid message signature")
     now = datetime.now(UTC).isoformat()
     message_id = f"dmm_{uuid.uuid4().hex[:12]}"
     with DB_LOCK, get_db() as conn:
@@ -7051,7 +7063,7 @@ async def dm_send(thread_id: str, req: DMSendRequest, request: Request):
         conn.execute(
             "INSERT INTO dm_messages (message_id, thread_id, sender_id, content, msg_type, created_at) "
             "VALUES (?,?,?,?,?,?)",
-            (message_id, thread_id, caller, req.content, req.msg_type, now),
+            (message_id, thread_id, caller, req.content, effective_msg_type, now),
         )
         conn.execute(
             "UPDATE dm_threads SET last_message_at=? WHERE thread_id=?", (now, thread_id)

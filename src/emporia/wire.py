@@ -140,6 +140,17 @@ def room_message_envelope(
     return body
 
 
+def signed_dm_thread_payload(thread_id: str, content: str, msg_type: str) -> dict[str, Any]:
+    """The dict `POST /dm/{thread_id}/send` callers sign before sending — binds the
+    signature to `thread_id`/`msg_type`, not just `content` (same N3-8/R7 shape as
+    `signed_room_message_payload()`: a content-only signature would be valid in any
+    thread this agent is a participant of, forever). Distinct from
+    `signed_dm_envelope()` above, which is `POST /messages`'s shape
+    (`to_agent`/`session_id`/`payload`) — thread DMs route on `thread_id`, a
+    structurally different key, not `to_agent`."""
+    return {"thread_id": thread_id, "content": content, "msg_type": msg_type}
+
+
 def signed_dm_envelope(
     to_agent: str, msg_type: str, session_id: str | None, payload: dict[str, Any],
 ) -> dict[str, Any]:

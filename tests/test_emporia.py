@@ -9102,15 +9102,19 @@ def test_room_private_not_visible_to_non_member(client):
 # ============================================================================
 
 def test_dm_requires_own_identity(client):
-    _register(client, "dm_alice")
+    from emporia import wire
+    from emporia.identity import sign
+    _register_keyed(client, "dm_alice")
     _register(client, "dm_bob")
     _register(client, "dm_mallory")
     r = client.post(
         "/dm/start", json={"to_agent": "dm_bob"}, headers={"x-emporia-agent-id": "dm_alice"},
     )
     thread_id = r.json()["thread_id"]
+    signed_payload = wire.signed_dm_thread_payload(thread_id, "hi bob", wire.DEFAULT_MSG_TYPE)
     client.post(
-        f"/dm/{thread_id}/send", json={"content": "hi bob"},
+        f"/dm/{thread_id}/send",
+        json={"content": "hi bob", "signature": sign(signed_payload, "dm_alice")},
         headers={"x-emporia-agent-id": "dm_alice"},
     )
 
@@ -9233,6 +9237,8 @@ def test_dm_requires_authentication_and_sender_is_caller(prod_client):
     body. Confirms unauthenticated -> 401 on both, and that the sent message is attributed
     to the real authenticated caller when the recipient reads the thread back.
     """
+    from emporia import wire
+    from emporia.identity import sign
     _register_keyed(prod_client, "dmauth_alice")
     _register_keyed(prod_client, "dmauth_bob")
 
@@ -9249,8 +9255,10 @@ def test_dm_requires_authentication_and_sender_is_caller(prod_client):
     r = prod_client.post(f"/dm/{thread_id}/send", json={"content": "hi bob"})
     assert r.status_code == 401
 
+    signed_payload = wire.signed_dm_thread_payload(thread_id, "hi bob", wire.DEFAULT_MSG_TYPE)
     r = prod_client.post(
-        f"/dm/{thread_id}/send", json={"content": "hi bob"},
+        f"/dm/{thread_id}/send",
+        json={"content": "hi bob", "signature": sign(signed_payload, "dmauth_alice")},
         headers=bearer_for(prod_client, "dmauth_alice"),
     )
     assert r.status_code == 200
@@ -9262,6 +9270,217 @@ def test_dm_requires_authentication_and_sender_is_caller(prod_client):
     assert r.status_code == 200
     msgs = r.json()["messages"]
     assert any(m["sender_id"] == "dmauth_alice" and m["content"] == "hi bob" for m in msgs)
+
+
+# ============================================================================
+# P13 — bind mandatory signatures to POST /dm/{thread_id}/send (last surviving
+# unsigned content-bearing message route; /messages and room messages were both
+# already fixed, N2-5/N3-8 R7).
+# ============================================================================
+
+def test_dm_send_signature_mandatory(prod_client):
+    """POST /dm/{thread_id}/send had no signature field at all, unlike its two
+    sibling message routes. Matches their shape: 401 when signature is absent,
+    403 when it fails to verify, 200 only with a valid one.
+    """
+    from emporia import wire
+    from emporia.identity import sign
+    _register_keyed(prod_client, "sig_dm_alice")
+    _register_keyed(prod_client, "sig_dm_bob")
+    r = prod_client.post(
+        "/dm/start", json={"to_agent": "sig_dm_bob"},
+        headers=bearer_for(prod_client, "sig_dm_alice"),
+    )
+    thread_id = r.json()["thread_id"]
+    content = "hello bob"
+
+    r = prod_client.post(
+        f"/dm/{thread_id}/send", json={"content": content},
+        headers=bearer_for(prod_client, "sig_dm_alice"),
+    )
+    assert r.status_code == 401
+
+    wrong_payload = wire.signed_dm_thread_payload(thread_id, "different content", wire.DEFAULT_MSG_TYPE)
+    r = prod_client.post(
+        f"/dm/{thread_id}/send",
+        json={"content": content, "signature": sign(wrong_payload, "sig_dm_alice")},
+        headers=bearer_for(prod_client, "sig_dm_alice"),
+    )
+    assert r.status_code == 403
+
+    signed_payload = wire.signed_dm_thread_payload(thread_id, content, wire.DEFAULT_MSG_TYPE)
+    r = prod_client.post(
+        f"/dm/{thread_id}/send",
+        json={"content": content, "signature": sign(signed_payload, "sig_dm_alice")},
+        headers=bearer_for(prod_client, "sig_dm_alice"),
+    )
+    assert r.status_code == 200
+
+
+def test_dm_send_signature_not_replayable_across_threads(prod_client):
+    """Same N3-8/R7 shape as the room-message fix: a signature bound only to
+    {content, msg_type} would be valid in *any* thread the caller is a
+    participant of, forever, since thread_id would sit outside the signed
+    envelope. Sign a message for thread A and replay the identical
+    signature+content in thread B: must be rejected, since thread_id is part
+    of what's signed.
+    """
+    from emporia import wire
+    from emporia.identity import sign
+    _register_keyed(prod_client, "replay_dm_owner")
+    _register_keyed(prod_client, "replay_dm_bob")
+    _register_keyed(prod_client, "replay_dm_carol")
+
+    thread_a = prod_client.post(
+        "/dm/start", json={"to_agent": "replay_dm_bob"},
+        headers=bearer_for(prod_client, "replay_dm_owner"),
+    ).json()["thread_id"]
+    thread_b = prod_client.post(
+        "/dm/start", json={"to_agent": "replay_dm_carol"},
+        headers=bearer_for(prod_client, "replay_dm_owner"),
+    ).json()["thread_id"]
+
+    content = "same message"
+    sig_for_thread_a = sign(
+        wire.signed_dm_thread_payload(thread_a, content, wire.DEFAULT_MSG_TYPE), "replay_dm_owner",
+    )
+
+    r = prod_client.post(
+        f"/dm/{thread_a}/send",
+        json={"content": content, "signature": sig_for_thread_a},
+        headers=bearer_for(prod_client, "replay_dm_owner"),
+    )
+    assert r.status_code == 200
+
+    replayed = prod_client.post(
+        f"/dm/{thread_b}/send",
+        json={"content": content, "signature": sig_for_thread_a},
+        headers=bearer_for(prod_client, "replay_dm_owner"),
+    )
+    assert replayed.status_code == 403
+
+
+def test_relay_dm_send_omitted_msg_type_resolves_from_wire_py(prod_client):
+    """Same shape as P12-3's room-message fix: DMSendRequest.msg_type is
+    signature-load-bearing (bound via signed_dm_thread_payload), so a raw
+    client omitting the optional field must be verified against the relay's
+    own resolution of wire.DEFAULT_MSG_TYPE, not a hardcoded literal. Patches
+    the constant to a non-default value, signs with it, omits msg_type from
+    the raw body, and asserts the relay accepts it and persists that value."""
+    from emporia import wire
+    from emporia.identity import sign
+    _register_keyed(prod_client, "p13_dm_msgtype_alice")
+    _register_keyed(prod_client, "p13_dm_msgtype_bob")
+    thread_id = prod_client.post(
+        "/dm/start", json={"to_agent": "p13_dm_msgtype_bob"},
+        headers=bearer_for(prod_client, "p13_dm_msgtype_alice"),
+    ).json()["thread_id"]
+    content = "P13 msg_type omit test"
+
+    with patch.object(wire, "DEFAULT_MSG_TYPE", "p13_patched_type"):
+        signed_payload = wire.signed_dm_thread_payload(thread_id, content, "p13_patched_type")
+        body = {"content": content, "signature": sign(signed_payload, "p13_dm_msgtype_alice")}
+        r = prod_client.post(
+            f"/dm/{thread_id}/send", json=body,
+            headers=bearer_for(prod_client, "p13_dm_msgtype_alice"),
+        )
+    assert r.status_code == 200, r.text
+
+    r = prod_client.get(
+        f"/dm/{thread_id}/messages", params={"agent_id": "p13_dm_msgtype_alice"},
+        headers=bearer_for(prod_client, "p13_dm_msgtype_alice"),
+    )
+    msgs = r.json()["messages"]
+    assert any(m["content"] == content and m["msg_type"] == "p13_patched_type" for m in msgs), msgs
+
+
+def test_mcp_send_dm_returns_structured_error_on_sign_failure(prod_client):
+    """send_dm() now signs — a local signing failure (missing/unreadable key)
+    must return the structured {"error": ...} shape rather than raising, same
+    N4-7 guard every other signing MCP tool has. This function has no
+    "success" key on its return contract today (unlike most mcp_server.py
+    tools) — asserted against its actual existing shape, not a new one."""
+    from emporia import mcp_server
+    _register_keyed(prod_client, "p13_dm_sign_fail_sender")
+    _register_keyed(prod_client, "p13_dm_sign_fail_recipient")
+    adapter = _ASGIHttpxAdapter(prod_client, mcp_server.RELAY_URL)
+
+    with patch.object(mcp_server, "httpx", adapter):
+        with patch("emporia.identity.sign", side_effect=RuntimeError("key unreadable")):
+            result = mcp_server.send_dm(
+                to_agent_id="p13_dm_sign_fail_recipient", content="hi",
+                from_agent_id="p13_dm_sign_fail_sender",
+            )
+    assert "key unreadable" in result.get("error", ""), result
+
+
+def test_mcp_send_dm_uses_shared_wire_contract_and_relay_accepts_it(prod_client):
+    """mcp_server.send_dm() now signs via wire.signed_dm_thread_payload(), the same
+    function relay_server.dm_send() uses to verify — spy-proof both sides resolve
+    from wire.py (call_count == 2: signer + verifier), not independent copies."""
+    from emporia import mcp_server, wire
+    _register_keyed(prod_client, "p13_dm_wire_sender")
+    _register_keyed(prod_client, "p13_dm_wire_recipient")
+    adapter = _ASGIHttpxAdapter(prod_client, mcp_server.RELAY_URL)
+
+    with patch.object(mcp_server, "httpx", adapter), \
+         patch.object(wire, "signed_dm_thread_payload", wraps=wire.signed_dm_thread_payload) as spy:
+        result = mcp_server.send_dm(
+            to_agent_id="p13_dm_wire_recipient", content="hi via mcp",
+            from_agent_id="p13_dm_wire_sender",
+        )
+    assert "error" not in result, result
+    assert spy.call_count == 2, spy.call_args_list
+    calls = [c.args for c in spy.call_args_list]
+    assert calls[0] == calls[1], calls
+
+
+def test_agent_sdk_send_dm_uses_shared_wire_contract_and_relay_accepts_it():
+    """agent_sdk.EmporiaAgent.send_dm() now signs via wire.signed_dm_thread_payload(),
+    the same function relay_server.dm_send() uses to verify — spy-proof both sides
+    resolve from wire.py (call_count == 2), driven against the real in-process app."""
+    import asyncio
+
+    import httpx as httpx_module
+
+    from emporia import wire
+    from emporia.agent_sdk import EmporiaAgent
+    from emporia.identity import get_public_key_hex
+    from emporia.relay_server import app as relay_app
+
+    def _wired(agent_id: str) -> EmporiaAgent:
+        a = EmporiaAgent(
+            relay_url="http://testserver", agent_id=agent_id,
+            public_key_hex=get_public_key_hex(agent_id),
+        )
+        a._http = httpx_module.AsyncClient(
+            transport=httpx_module.ASGITransport(app=relay_app), base_url="http://testserver",
+        )
+        return a
+
+    async def scenario():
+        alice = _wired("p13_dm_sdk_alice")
+        bob = _wired("p13_dm_sdk_bob")
+        try:
+            await alice.register()
+            await bob.register()
+            thread = await alice.start_dm("p13_dm_sdk_bob")
+            thread_id = thread["thread_id"]
+
+            with patch.object(
+                wire, "signed_dm_thread_payload", wraps=wire.signed_dm_thread_payload,
+            ) as spy:
+                result = await alice.send_dm(thread_id, "hi via sdk")
+
+            assert "message_id" in result, result
+            assert spy.call_count == 2, spy.call_args_list
+            calls = [c.args for c in spy.call_args_list]
+            assert calls[0] == calls[1], calls
+        finally:
+            await alice._http.aclose()
+            await bob._http.aclose()
+
+    asyncio.run(scenario())
 
 
 # ============================================================================

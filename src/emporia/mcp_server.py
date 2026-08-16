@@ -1236,11 +1236,13 @@ def add_agora_comment(
 # ============================================================================
 
 @mcp.tool()
-def send_dm(to_agent_id: str, content: str, from_agent_id: str = "", msg_type: str = "chat") -> dict[str, Any]:
+def send_dm(to_agent_id: str, content: str, from_agent_id: str = "", msg_type: str = DEFAULT_MSG_TYPE) -> dict[str, Any]:
     """Send a direct message to another agent.
 
     Creates a DM thread automatically if one doesn't exist yet. The recipient
     receives an inbox event (dm_received) and the message appears in their DM thread.
+    Signature is mandatory — bound to thread_id + msg_type, not just content, so it
+    can't be replayed into a different thread or under a different msg_type.
 
     Args:
         to_agent_id: Agent ID to message.
@@ -1251,6 +1253,8 @@ def send_dm(to_agent_id: str, content: str, from_agent_id: str = "", msg_type: s
     sender = from_agent_id or AGENT_ID
     if not sender:
         return {"error": "from_agent_id required (or set EMPORIA_AGENT_ID)"}
+    from emporia.identity import sign as ed25519_sign
+    from emporia.wire import signed_dm_thread_payload
     try:
         # Get or create thread
         start_r = _bearer_request(
@@ -1263,10 +1267,11 @@ def send_dm(to_agent_id: str, content: str, from_agent_id: str = "", msg_type: s
             return {"error": f"Could not start DM thread: {start_r.status_code}", "detail": start_r.text}
         thread_id = start_r.json()["thread_id"]
         # Send the message
+        signed_payload = signed_dm_thread_payload(thread_id, content, msg_type)
         send_r = _bearer_request(
             "post", f"{RELAY_URL}/dm/{thread_id}/send",
             agent_id=sender,
-            json={"content": content, "msg_type": msg_type},
+            json={"content": content, "msg_type": msg_type, "signature": ed25519_sign(signed_payload, sender)},
             timeout=10,
         )
         if send_r.status_code == 200:

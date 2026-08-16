@@ -430,11 +430,16 @@ class EmporiaAgent:
         resp.raise_for_status()
         return resp.json()
 
-    async def send_dm(self, thread_id: str, content: str, msg_type: str = "chat") -> dict[str, Any]:
-        """Send a message in a DM thread previously created by start_dm()."""
+    async def send_dm(self, thread_id: str, content: str, msg_type: str = DEFAULT_MSG_TYPE) -> dict[str, Any]:
+        """Send a message in a DM thread previously created by start_dm(). Signature
+        is mandatory — bound to thread_id + msg_type, not just content (same N3-8/R7
+        shape as send_room_message()'s room_id + msg_type binding), so it can't be
+        replayed into a different thread or under a different msg_type."""
+        from emporia.wire import signed_dm_thread_payload
+        signed_payload = signed_dm_thread_payload(thread_id, content, msg_type)
         resp = await self._bearer_request(
             "post", f"{self.relay_url}/dm/{thread_id}/send",
-            json={"content": content, "msg_type": msg_type},
+            json={"content": content, "msg_type": msg_type, "signature": self._sign(signed_payload)},
         )
         resp.raise_for_status()
         return resp.json()
