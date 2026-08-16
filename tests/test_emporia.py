@@ -11353,7 +11353,13 @@ def test_mcp_register_agent_uses_shared_wire_contract(prod_client):
     assert args[2] == "P6-3 MCP Agent"
     assert isinstance(args[3], str) and args[3], "challenge_id must be a real, non-empty value"
     assert len(args[4]) == 128, "challenge_signature must be a real 64-byte hex Ed25519 signature"
-    assert spy.call_args.kwargs == {"nous_jwt": ""}
+    # P16: registration now also publishes the X25519 encryption key in this same
+    # body. The nous_jwt assertion stays exact; the two encryption kwargs are
+    # asserted for presence and shape rather than value, since the key is generated
+    # per key-dir and the signature over it is fresh each run.
+    assert spy.call_args.kwargs["nous_jwt"] == ""
+    assert len(spy.call_args.kwargs["encryption_public_key_hex"]) == 64
+    assert spy.call_args.kwargs["encryption_key_signature"]
 
 
 def test_agent_sdk_register_uses_shared_wire_contract():
@@ -11381,10 +11387,13 @@ def test_agent_sdk_register_uses_shared_wire_contract():
         result = asyncio.run(agent.register(display_name="SDK Register Agent"))
 
     assert result["status"] == "registered"
-    spy.assert_called_once_with(
-        "sdk_register_agent", "cd" * 32, "SDK Register Agent",
-        "ch_reg_test", "feedface", nous_jwt="",
+    # P16: same body now carries the encryption key — positional args unchanged.
+    assert spy.call_args.args == (
+        "sdk_register_agent", "cd" * 32, "SDK Register Agent", "ch_reg_test", "feedface",
     )
+    assert spy.call_args.kwargs["nous_jwt"] == ""
+    assert len(spy.call_args.kwargs["encryption_public_key_hex"]) == 64
+    assert spy.call_args.kwargs["encryption_key_signature"]
 
 
 def test_mcp_submit_action_uses_shared_wire_contract_and_relay_accepts_it(prod_client):
@@ -11645,6 +11654,12 @@ def test_request_bodies_are_single_sourced_across_both_clients():
         agent._http.post = AsyncMock(return_value=resp)
         agent._bearer_headers = AsyncMock(return_value={})
         agent.get_session = AsyncMock(return_value={"step_number": 0})
+        # P16: send_dm() reads the thread's mode before building the body, so that
+        # an encrypted thread gets sealed content. Stubbed plaintext here — this
+        # test is about which function builds the body, not about encryption.
+        agent.get_dm_thread = AsyncMock(
+            return_value={"encrypted": False, "agent_a": "sdk_body_agent", "agent_b": "b"},
+        )
         with patch.object(wire, wire_fn, wraps=getattr(wire, wire_fn)) as spy:
             await getattr(agent, method)(**kwargs)
         return spy
@@ -15885,9 +15900,19 @@ def test_dm_start_plaintext_request_on_an_encrypted_thread_also_conflicts(client
     client.post("/dm/start", json={"to_agent": "e2e_up_b", "encrypted": True},
                 headers={"X-Emporia-Agent-Id": "e2e_up_a"})
 
-    r = client.post("/dm/start", json={"to_agent": "e2e_up_b"},
+    # P16-5: `encrypted` is tri-state — this asserts the *explicit* False, which is
+    # a caller stating they expect plaintext. Omitting the field entirely means
+    # "whatever this pair already has" and correctly returns the encrypted thread;
+    # the protection that matters (never handing back plaintext when encryption was
+    # asked for) is the other direction, covered above.
+    r = client.post("/dm/start", json={"to_agent": "e2e_up_b", "encrypted": False},
                     headers={"X-Emporia-Agent-Id": "e2e_up_a"})
     assert r.status_code == 409
+
+    matched = client.post("/dm/start", json={"to_agent": "e2e_up_b"},
+                          headers={"X-Emporia-Agent-Id": "e2e_up_a"})
+    assert matched.status_code == 200
+    assert matched.json()["encrypted"] is True
 
 
 def test_encrypted_message_is_opaque_in_the_database(client, tmp_path):
@@ -16053,3 +16078,268 @@ def test_plaintext_dm_threads_are_completely_unchanged(client):
     msgs = client.get(f"/dm/{tid}/messages?agent_id=e2e_plain_b",
                       headers={"X-Emporia-Agent-Id": "e2e_plain_b"}).json()["messages"]
     assert msgs[0]["content"] == "ordinary prose"
+
+
+# ============================================================================
+# P16-5: the client half — both clients seal and open transparently
+# ============================================================================
+
+def _sdk_wired(agent_id: str):
+    import httpx as httpx_module
+
+    from emporia.agent_sdk import EmporiaAgent
+    from emporia.identity import get_public_key_hex
+    from emporia.relay_server import app as relay_app
+
+    a = EmporiaAgent(
+        relay_url="http://testserver", agent_id=agent_id,
+        public_key_hex=get_public_key_hex(agent_id),
+    )
+    a._http = httpx_module.AsyncClient(
+        transport=httpx_module.ASGITransport(app=relay_app), base_url="http://testserver",
+    )
+    return a
+
+
+def test_sdk_register_publishes_the_encryption_key(prod_client):
+    """Published in the same round trip as registration. An agent whose client
+    forgot the second call is indistinguishable, to peers, from one who opted out
+    of encryption — so it isn't a second call."""
+    import asyncio
+
+    from emporia.identity import get_encryption_public_key_hex
+
+    async def scenario():
+        a = _sdk_wired("p16_sdk_reg")
+        try:
+            await a.register()
+            r = await a._bearer_request("get", "http://testserver/agents/p16_sdk_reg/encryption-key")
+            return r.json()
+        finally:
+            await a.__aexit__()
+
+    assert asyncio.run(scenario())["encryption_public_key"] == get_encryption_public_key_hex(
+        "p16_sdk_reg"
+    )
+
+
+def test_sdk_encrypted_dm_round_trip_is_opaque_at_the_relay(prod_client):
+    """The whole feature, end to end through the real relay: both participants read
+    the plaintext, and what the relay actually stored contains none of it."""
+    import asyncio
+
+    from emporia.relay_server import get_db
+
+    secret = "the wire transfer clears at noon, account 8812"
+
+    async def scenario():
+        alice, bob = _sdk_wired("p16_sdk_alice"), _sdk_wired("p16_sdk_bob")
+        try:
+            await alice.register()
+            await bob.register()
+            thread = await alice.start_dm("p16_sdk_bob", encrypted=True)
+            tid = thread["thread_id"]
+            assert thread["encrypted"] is True
+            await alice.send_dm(tid, secret)
+            return tid, await alice.get_dm_messages(tid), await bob.get_dm_messages(tid)
+        finally:
+            await alice.__aexit__()
+            await bob.__aexit__()
+
+    tid, alice_view, bob_view = asyncio.run(scenario())
+
+    # Both sides read it — the sender too, which is why the CEK is wrapped to both.
+    assert bob_view["messages"][0]["content"] == secret
+    assert bob_view["messages"][0]["decrypted"] is True
+    assert alice_view["messages"][0]["content"] == secret
+
+    with get_db() as conn:
+        stored = conn.execute(
+            "SELECT content FROM dm_messages WHERE thread_id=?", (tid,)
+        ).fetchone()["content"]
+    assert secret not in stored and "8812" not in stored
+
+
+def test_sdk_undecryptable_message_does_not_break_history(prod_client):
+    """One unreadable message must not take the whole thread down with it — a
+    thread that raises on read is a thread the user cannot recover."""
+    import asyncio
+
+    from emporia import crypto_box
+    from emporia.relay_server import DB_LOCK, get_db
+
+    async def scenario_send():
+        alice, bob = _sdk_wired("p16_sdk_bad_a"), _sdk_wired("p16_sdk_bad_b")
+        try:
+            await alice.register()
+            await bob.register()
+            tid = (await alice.start_dm("p16_sdk_bad_b", encrypted=True))["thread_id"]
+            await alice.send_dm(tid, "this one is fine")
+            return tid
+        finally:
+            await alice.__aexit__()
+            await bob.__aexit__()
+
+    tid = asyncio.run(scenario_send())
+
+    # Corrupt the stored ciphertext the way a damaged/hostile store would.
+    with DB_LOCK, get_db() as conn:
+        row = conn.execute(
+            "SELECT message_id, content FROM dm_messages WHERE thread_id=?", (tid,)
+        ).fetchone()
+        env = json.loads(row["content"])
+        env["ct"] = base64.b64encode(b"\x00" * 40).decode()
+        conn.execute(
+            "UPDATE dm_messages SET content=? WHERE message_id=?",
+            (json.dumps(env), row["message_id"]),
+        )
+
+    async def scenario_read():
+        bob = _sdk_wired("p16_sdk_bad_b")
+        try:
+            return await bob.get_dm_messages(tid)
+        finally:
+            await bob.__aexit__()
+
+    msgs = asyncio.run(scenario_read())["messages"]
+    assert msgs[0]["decrypted"] is False
+    assert crypto_box.looks_like_envelope(msgs[0]["content"]), "the raw envelope is preserved"
+
+
+def test_sdk_refuses_to_send_when_the_peer_key_changed(prod_client):
+    """The key-substitution drill. A relay that swaps a pinned peer's encryption
+    key must make the client stop, not encrypt to the substituted key — which is
+    the one outcome this whole feature exists to prevent."""
+    import asyncio
+
+    from emporia import identity
+    from emporia.relay_server import AGENT_REGISTRY
+
+    async def setup():
+        alice, bob = _sdk_wired("p16_sub_a"), _sdk_wired("p16_sub_b")
+        try:
+            await alice.register()
+            await bob.register()
+            tid = (await alice.start_dm("p16_sub_b", encrypted=True))["thread_id"]
+            await alice.send_dm(tid, "first message, pins bob's key")
+            return tid
+        finally:
+            await alice.__aexit__()
+            await bob.__aexit__()
+
+    tid = asyncio.run(setup())
+    assert identity.load_peer_encryption_keys()["p16_sub_b"]
+
+    # The relay now serves an attacker-held key for bob, correctly self-signed.
+    attacker_key = identity.get_encryption_public_key_hex("p16_sub_attacker")
+    AGENT_REGISTRY.set_encryption_key("p16_sub_b", attacker_key, "")
+
+    async def resend():
+        alice = _sdk_wired("p16_sub_a")
+        try:
+            await alice.send_dm(tid, "second message, must not be sealed to the attacker")
+        finally:
+            await alice.__aexit__()
+
+    with pytest.raises(identity.PeerKeyMismatch):
+        asyncio.run(resend())
+
+
+def test_sdk_plaintext_dm_still_works_unchanged(prod_client):
+    import asyncio
+
+    async def scenario():
+        alice, bob = _sdk_wired("p16_sdk_pt_a"), _sdk_wired("p16_sdk_pt_b")
+        try:
+            await alice.register()
+            await bob.register()
+            tid = (await alice.start_dm("p16_sdk_pt_b"))["thread_id"]
+            await alice.send_dm(tid, "ordinary prose")
+            return await bob.get_dm_messages(tid)
+        finally:
+            await alice.__aexit__()
+            await bob.__aexit__()
+
+    msgs = asyncio.run(scenario())["messages"]
+    assert msgs[0]["content"] == "ordinary prose"
+    assert msgs[0]["decrypted"] is False, "nothing to decrypt on a plaintext thread"
+
+
+def test_mcp_encrypted_dm_round_trip(prod_client):
+    """The MCP client's half. Same guarantee, different transport — and the two
+    must not diverge, since both go through crypto_box."""
+    from emporia import identity, mcp_server
+    from emporia.relay_server import get_db
+
+    adapter = _ASGIHttpxAdapter(prod_client, mcp_server.RELAY_URL)
+    secret = "meet at the second gate, bring the manifest"
+    with patch.object(mcp_server, "httpx", adapter):
+        mcp_server.register_agent("p16_mcp_a")
+        mcp_server.register_agent("p16_mcp_b")
+        sent = mcp_server.send_dm("p16_mcp_b", secret, from_agent_id="p16_mcp_a", encrypted=True)
+        assert "error" not in sent, sent
+        tid = sent["thread_id"]
+        read = mcp_server.get_dm_messages(tid, agent_id="p16_mcp_b")
+
+    assert read["messages"][0]["content"] == secret
+    assert read["messages"][0]["decrypted"] is True
+    assert identity.load_peer_encryption_keys()["p16_mcp_b"]
+
+    with get_db() as conn:
+        stored = conn.execute(
+            "SELECT content FROM dm_messages WHERE thread_id=?", (tid,)
+        ).fetchone()["content"]
+    assert secret not in stored and "manifest" not in stored
+
+
+def test_both_clients_seal_through_crypto_box(prod_client):
+    """The no-drift proof, same shape as every other shared-contract test here:
+    neither client is allowed its own crypto. Two call sites, one implementation."""
+    import asyncio
+
+    from emporia import crypto_box, mcp_server
+
+    with patch.object(crypto_box, "seal", wraps=crypto_box.seal) as spy:
+        adapter = _ASGIHttpxAdapter(prod_client, mcp_server.RELAY_URL)
+        with patch.object(mcp_server, "httpx", adapter):
+            mcp_server.register_agent("p16_drift_a")
+            mcp_server.register_agent("p16_drift_b")
+            mcp_server.send_dm("p16_drift_b", "via mcp", from_agent_id="p16_drift_a",
+                               encrypted=True)
+
+        async def via_sdk():
+            a, b = _sdk_wired("p16_drift_c"), _sdk_wired("p16_drift_d")
+            try:
+                await a.register()
+                await b.register()
+                tid = (await a.start_dm("p16_drift_d", encrypted=True))["thread_id"]
+                await a.send_dm(tid, "via sdk")
+            finally:
+                await a.__aexit__()
+                await b.__aexit__()
+
+        asyncio.run(via_sdk())
+
+    assert spy.call_count == 2, "one seal per client, both through crypto_box"
+
+
+def test_sdk_can_upgrade_an_existing_thread_to_encrypted(prod_client):
+    import asyncio
+
+    async def scenario():
+        a, b = _sdk_wired("p16_upg_a"), _sdk_wired("p16_upg_b")
+        try:
+            await a.register()
+            await b.register()
+            tid = (await a.start_dm("p16_upg_b"))["thread_id"]
+            await a.send_dm(tid, "before")
+            await b.enable_dm_encryption(tid)
+            await a.send_dm(tid, "after")
+            return await b.get_dm_messages(tid)
+        finally:
+            await a.__aexit__()
+            await b.__aexit__()
+
+    msgs = {m["content"]: m for m in asyncio.run(scenario())["messages"]}
+    assert msgs["before"]["decrypted"] is False
+    assert msgs["after"]["decrypted"] is True

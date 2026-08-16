@@ -226,9 +226,19 @@ class EmporiaAgent:
         ch = ch_resp.json()
         sig_hex = sign_raw(ch["nonce"].encode(), self.profile_id)
 
+        # P16: publish the X25519 encryption key in the same round trip. Not a
+        # separate opt-in call: an agent whose client forgot it looks, to every
+        # peer, exactly like one who chose not to do encrypted DMs.
+        from emporia.identity import get_encryption_public_key_hex, sign
+        from emporia.wire import signed_encryption_key_payload
+        enc_pub = get_encryption_public_key_hex(self.profile_id)
         body = registration_body(
             self.agent_id, self.public_key_hex, display_name or self.agent_id,
             ch["challenge_id"], sig_hex, nous_jwt=nous_jwt,
+            encryption_public_key_hex=enc_pub,
+            encryption_key_signature=sign(
+                signed_encryption_key_payload(self.agent_id, enc_pub), self.profile_id,
+            ),
         )
         resp = await self._client().post(f"{self.relay_url}/agents/register", json=body)
         resp.raise_for_status()
@@ -467,22 +477,92 @@ class EmporiaAgent:
     # Direct Messages
     # ------------------------------------------------------------------ #
 
-    async def start_dm(self, to_agent: str) -> dict[str, Any]:
+    async def start_dm(self, to_agent: str, encrypted: bool | None = None) -> dict[str, Any]:
         """Create or retrieve a DM thread with another agent. Idempotent — the relay
-        resolves the sender from this agent's own authenticated identity."""
-        resp = await self._bearer_request(
-            "post", f"{self.relay_url}/dm/start",
-            json={"to_agent": to_agent},
-        )
+        resolves the sender from this agent's own authenticated identity.
+
+        `encrypted=True` requires an end-to-end encrypted thread and both agents to
+        have published encryption keys; it raises rather than silently handing back
+        an existing plaintext thread. `None` (the default) means "whatever this pair
+        already has, plaintext if new".
+        """
+        body: dict[str, Any] = {"to_agent": to_agent}
+        if encrypted is not None:
+            body["encrypted"] = encrypted
+        resp = await self._bearer_request("post", f"{self.relay_url}/dm/start", json=body)
         resp.raise_for_status()
         return resp.json()
+
+    async def get_dm_thread(self, thread_id: str) -> dict[str, Any]:
+        """Thread metadata — participants and whether it is encrypted."""
+        resp = await self._bearer_request("get", f"{self.relay_url}/dm/{thread_id}")
+        resp.raise_for_status()
+        return resp.json()
+
+    async def enable_dm_encryption(self, thread_id: str) -> dict[str, Any]:
+        """Turn on end-to-end encryption for an existing thread. One-way: either
+        participant may enable it, nothing can turn it back off."""
+        resp = await self._bearer_request("post", f"{self.relay_url}/dm/{thread_id}/encrypt")
+        resp.raise_for_status()
+        return resp.json()
+
+    async def _peer_encryption_key(self, agent_id: str) -> str:
+        """Fetch, verify and pin another agent's encryption key.
+
+        Goes through `identity.trust_peer_encryption_key()` — the same function
+        mcp_server.py calls — so the two clients cannot apply different trust rules
+        to the same key. Raises `PeerKeyMismatch` if the served key doesn't match
+        what was pinned on first contact, which is a refusal to encrypt, not a
+        warning: continuing would seal the message to whatever key was just served.
+        """
+        from emporia.identity import trust_peer_encryption_key
+
+        resp = await self._bearer_request(
+            "get", f"{self.relay_url}/agents/{agent_id}/encryption-key",
+        )
+        resp.raise_for_status()
+        body = resp.json()
+        return trust_peer_encryption_key(
+            agent_id, body.get("encryption_public_key", ""), body.get("signature", ""),
+            body.get("public_key_hex", ""),
+        )
+
+    async def _thread_recipients(self, thread: dict[str, Any]) -> dict[str, str]:
+        """`{agent_id: encryption_public_key_hex}` for both participants — including
+        this agent, so it can read its own messages back."""
+        from emporia.identity import get_encryption_public_key_hex
+
+        recipients = {self.agent_id: get_encryption_public_key_hex(self.profile_id)}
+        for participant in (thread["agent_a"], thread["agent_b"]):
+            if participant != self.agent_id:
+                recipients[participant] = await self._peer_encryption_key(participant)
+        return recipients
 
     async def send_dm(self, thread_id: str, content: str, msg_type: str = DEFAULT_MSG_TYPE) -> dict[str, Any]:
         """Send a message in a DM thread previously created by start_dm(). Signature
         is mandatory — bound to thread_id + msg_type, not just content (same N3-8/R7
         shape as send_room_message()'s room_id + msg_type binding), so it can't be
-        replayed into a different thread or under a different msg_type."""
+        replayed into a different thread or under a different msg_type.
+
+        On an encrypted thread the content is sealed here, client-side, before it is
+        signed and sent; the relay never sees the plaintext. That is transparent to
+        the caller by design — an API where you can forget to encrypt is one where
+        someone will.
+        """
+        from emporia import crypto_box
         from emporia.wire import dm_thread_message_envelope, signed_dm_thread_payload
+
+        # Fetched per send rather than cached: a thread can be upgraded to encrypted
+        # at any moment by the peer, and a stale "not encrypted" cache would send
+        # plaintext. The relay would reject it (400, no leak), but the cost of one
+        # extra GET is far below the cost of reasoning about that window.
+        thread = await self.get_dm_thread(thread_id)
+        if thread["encrypted"]:
+            content = json.dumps(crypto_box.seal(
+                content,
+                await self._thread_recipients(thread),
+                crypto_box.message_aad(thread_id, self.agent_id, msg_type),
+            ))
         signed_payload = signed_dm_thread_payload(thread_id, content, msg_type)
         resp = await self._bearer_request(
             "post", f"{self.relay_url}/dm/{thread_id}/send",
@@ -490,6 +570,38 @@ class EmporiaAgent:
         )
         resp.raise_for_status()
         return resp.json()
+
+    async def get_dm_messages(self, thread_id: str, limit: int = 50) -> dict[str, Any]:
+        """Fetch a DM thread's messages, decrypting transparently where possible.
+
+        Each message gains a `decrypted` flag. A message that cannot be opened keeps
+        its raw envelope as `content` and reports `decrypted: False` rather than
+        raising — one damaged or foreign message must not make the whole thread
+        unreadable, which is what an exception here would mean.
+        """
+        from emporia import crypto_box
+        from emporia.identity import generate_or_load_encryption_keypair
+
+        resp = await self._bearer_request(
+            "get", f"{self.relay_url}/dm/{thread_id}/messages",
+            params={"agent_id": self.agent_id, "limit": limit},
+        )
+        resp.raise_for_status()
+        body = resp.json()
+        priv, _ = generate_or_load_encryption_keypair(self.profile_id)
+        for msg in body.get("messages", []):
+            msg["decrypted"] = False
+            if not crypto_box.looks_like_envelope(msg.get("content", "")):
+                continue
+            try:
+                msg["content"] = crypto_box.open_sealed(
+                    json.loads(msg["content"]), self.agent_id, priv,
+                    crypto_box.message_aad(thread_id, msg["sender_id"], msg["msg_type"]),
+                )
+                msg["decrypted"] = True
+            except crypto_box.DecryptionError:
+                pass
+        return body
 
     # ------------------------------------------------------------------ #
     # Events

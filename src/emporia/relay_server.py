@@ -3481,7 +3481,23 @@ async def get_encryption_key(agent_id: str, request: Request):
     if not AGENT_REGISTRY.is_authorized(agent_id):
         raise HTTPException(404, f"Agent not found: {agent_id}")
     key, signature = AGENT_REGISTRY.get_encryption_key(agent_id)
-    return {"agent_id": agent_id, "encryption_public_key": key, "signature": signature}
+    with DB_LOCK, get_db() as conn:
+        row = conn.execute(
+            "SELECT public_key_hex FROM authorized_agents WHERE agent_id = ?", (agent_id,)
+        ).fetchone()
+    # The Ed25519 key rides along so the caller can check the binding without a
+    # second round trip. Be precise about what that buys: against a relay that
+    # substitutes *both* halves on first contact it buys nothing — that's the TOFU
+    # limitation, closed only by pinning (which the client does on the encryption
+    # key) and by an out-of-band fingerprint check. What it does close is a relay
+    # that swaps only the encryption key, and it makes any substitution durable
+    # evidence rather than a deniable transient.
+    return {
+        "agent_id": agent_id,
+        "encryption_public_key": key,
+        "signature": signature,
+        "public_key_hex": row["public_key_hex"] if row else "",
+    }
 
 
 # ============================================================================
@@ -7199,7 +7215,16 @@ async def root_redirect():
 
 class DMStartRequest(BaseModel):
     to_agent: str
-    encrypted: bool = False
+    # P16-5: tri-state, and the third state is the common case. `True` = this thread
+    # must be encrypted (409 if an existing one isn't — the dangerous direction, never
+    # silently downgraded). `False` = explicitly asking for plaintext (409 if the
+    # existing thread is encrypted, so the caller gets a clear error rather than a
+    # confusing 400 on their first send). `None`/omitted = "whatever this pair already
+    # has, plaintext if new" — what a client that just wants to reach an agent means,
+    # and the only value that lets one round trip both find an existing thread and
+    # learn its mode. Started as a plain `bool` in P16-4; building the clients showed
+    # that forced every send path into a thread-list scan just to avoid a spurious 409.
+    encrypted: bool | None = None
 
 
 class DMSendRequest(BaseModel):
@@ -7257,7 +7282,7 @@ async def dm_start(req: DMStartRequest, request: Request):
             # case conflicts too: a caller expecting plaintext must not be handed
             # an encrypted thread and post prose into it. `POST /dm/{id}/encrypt`
             # is how an existing thread changes mode, deliberately and one-way.
-            if bool(existing["encrypted"]) != req.encrypted:
+            if req.encrypted is not None and bool(existing["encrypted"]) != req.encrypted:
                 state = "encrypted" if existing["encrypted"] else "not encrypted"
                 raise HTTPException(
                     409,
@@ -7274,11 +7299,11 @@ async def dm_start(req: DMStartRequest, request: Request):
             "INSERT INTO dm_threads "
             "(thread_id, agent_a, agent_b, created_at, last_message_at, encrypted) "
             "VALUES (?,?,?,?,?,?)",
-            (thread_id, a, b, now, now, int(req.encrypted)),
+            (thread_id, a, b, now, now, int(bool(req.encrypted))),
         )
     return {
         "thread_id": thread_id, "agent_a": a, "agent_b": b,
-        "created": True, "encrypted": req.encrypted,
+        "created": True, "encrypted": bool(req.encrypted),
     }
 
 

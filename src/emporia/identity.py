@@ -315,6 +315,46 @@ def pin_peer_encryption_key(agent_id: str, public_key_hex: str) -> str:
     return key
 
 
+def trust_peer_encryption_key(
+    agent_id: str,
+    encryption_public_key_hex: str,
+    signature: str,
+    signing_public_key_hex: str,
+) -> str:
+    """Validate a peer's encryption key as served by a relay, then pin it. Returns
+    the key to seal to.
+
+    One function both clients call, so `mcp_server.py` and `agent_sdk.py` cannot
+    end up applying different trust rules to the same key material — the same
+    single-sourcing reason `wire.py` exists for request bodies.
+
+    Two independent checks, and they close different things. The **binding**
+    (Ed25519 over `wire.signed_encryption_key_payload`) proves this X25519 key was
+    published by the holder of that signing key rather than chosen by the relay —
+    but only as far as the signing key itself is trusted, and on first contact
+    that too comes from the relay. The **pin** is what makes substitution
+    detectable over time. Neither closes first contact completely; that needs an
+    out-of-band fingerprint comparison, which is what
+    `encryption_key_fingerprint()` is for.
+    """
+    from emporia.wire import signed_encryption_key_payload
+
+    key = (encryption_public_key_hex or "").strip().lower()
+    if not _valid_x25519_pubkey_hex(key):
+        raise ValueError(
+            f"'{agent_id}' has not published an encryption key, so they cannot "
+            f"receive encrypted messages"
+        )
+    if not signing_public_key_hex or not verify(
+        signed_encryption_key_payload(agent_id, key), signature, signing_public_key_hex,
+    ):
+        raise PeerKeyMismatch(
+            f"the encryption key served for '{agent_id}' is not signed by their "
+            f"Ed25519 identity — refusing to encrypt to it"
+        )
+    return pin_peer_encryption_key(agent_id, key)
+
+
 def trust_new_encryption_key(agent_id: str, public_key_hex: str) -> None:
     """Replace a pin after an out-of-band fingerprint check — the explicit escape
     hatch for legitimate rotation. Separate from `pin_peer_encryption_key()` on
