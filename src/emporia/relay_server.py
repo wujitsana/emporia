@@ -2005,6 +2005,29 @@ SAFETY_STATS: dict[str, int] = {
 }
 
 
+def _require_valid_msg_type(msg_type: str) -> None:
+    """P15: enforce the msg_type domain both message routes already declare but never
+    checked. rooms.py has declared `MsgType` as a closed Literal since rooms shipped,
+    and rooms.post_message() is annotated with it — but annotations aren't runtime
+    checks and both request models type the field as bare `str`, so any string reached
+    storage. Call with the *resolved* value (after `or DEFAULT_MSG_TYPE`), so an omitted
+    field still resolves normally rather than tripping this.
+
+    "system" is rejected here specifically: it's the relay's own type for
+    negotiation-broker output (posted with sender_id="emporia:broker"), so a client
+    supplying it is minting a server-owned label. Not an impersonation primitive — the
+    one consumer that distinguishes broker messages keys off sender, not type — but the
+    type isn't the client's to set.
+    """
+    from emporia.wire import CLIENT_MSG_TYPES
+    if msg_type not in CLIENT_MSG_TYPES:
+        raise HTTPException(
+            400,
+            f"Invalid msg_type '{msg_type}' — must be one of "
+            f"{', '.join(sorted(CLIENT_MSG_TYPES))}",
+        )
+
+
 async def _assert_payload_safe_counted(payload: dict[str, Any]) -> None:
     """Wrap guardrails.assert_payload_safe_async to track block counts for the
     dashboard, distinguishing the always-on regex layer from the optional
@@ -5977,6 +6000,7 @@ async def send_room_message(room_id: str, req: SendRoomMessageRequest, request: 
     # actually re-patchable at test/runtime rather than merely another hardcoded copy.
     from emporia.wire import DEFAULT_MSG_TYPE, signed_room_message_payload
     effective_msg_type = req.msg_type or DEFAULT_MSG_TYPE
+    _require_valid_msg_type(effective_msg_type)
     # N3-8 (R7): bound to room_id + msg_type, not just content — a content-only
     # signature was valid in *any* room the caller belongs to, forever (replayable
     # across rooms and across msg_type, e.g. a signed "chat" replayed as "accept").
@@ -7062,6 +7086,7 @@ async def dm_send(thread_id: str, req: DMSendRequest, request: Request):
     # msg_type). Local import + resolved-once pattern matches P12-3's room-message fix.
     from emporia.wire import DEFAULT_MSG_TYPE, signed_dm_thread_payload
     effective_msg_type = req.msg_type or DEFAULT_MSG_TYPE
+    _require_valid_msg_type(effective_msg_type)
     signed_envelope = signed_dm_thread_payload(thread_id, req.content, effective_msg_type)
     if not AGENT_REGISTRY.verify_signature(caller, signed_envelope, req.signature):
         raise HTTPException(403, "Invalid message signature")

@@ -9413,7 +9413,13 @@ def test_relay_dm_send_omitted_msg_type_resolves_from_wire_py(prod_client):
     client omitting the optional field must be verified against the relay's
     own resolution of wire.DEFAULT_MSG_TYPE, not a hardcoded literal. Patches
     the constant to a non-default value, signs with it, omits msg_type from
-    the raw body, and asserts the relay accepts it and persists that value."""
+    the raw body, and asserts the relay accepts it and persists that value.
+
+    P15: the patched value is "collab" rather than a synthetic string because
+    msg_type is now enum-validated against wire.CLIENT_MSG_TYPES. "collab" is
+    still not the real default ("chat"), so the proof is unchanged — both
+    sides must independently resolve the patched value or the signature
+    check 403s."""
     from emporia import wire
     from emporia.identity import sign
     _register_keyed(prod_client, "p13_dm_msgtype_alice")
@@ -9424,8 +9430,8 @@ def test_relay_dm_send_omitted_msg_type_resolves_from_wire_py(prod_client):
     ).json()["thread_id"]
     content = "P13 msg_type omit test"
 
-    with patch.object(wire, "DEFAULT_MSG_TYPE", "p13_patched_type"):
-        signed_payload = wire.signed_dm_thread_payload(thread_id, content, "p13_patched_type")
+    with patch.object(wire, "DEFAULT_MSG_TYPE", "collab"):
+        signed_payload = wire.signed_dm_thread_payload(thread_id, content, "collab")
         body = {"content": content, "signature": sign(signed_payload, "p13_dm_msgtype_alice")}
         r = prod_client.post(
             f"/dm/{thread_id}/send", json=body,
@@ -9438,7 +9444,7 @@ def test_relay_dm_send_omitted_msg_type_resolves_from_wire_py(prod_client):
         headers=bearer_for(prod_client, "p13_dm_msgtype_alice"),
     )
     msgs = r.json()["messages"]
-    assert any(m["content"] == content and m["msg_type"] == "p13_patched_type" for m in msgs), msgs
+    assert any(m["content"] == content and m["msg_type"] == "collab" for m in msgs), msgs
 
 
 def test_dm_send_broadcast_msg_type_matches_stored_msg_type(prod_client):
@@ -9581,6 +9587,107 @@ def test_room_message_scans_msg_type_for_injection(prod_client):
             "signature": sign(signed_ok, "p14_room_scan_owner"),
         },
         headers=bearer_for(prod_client, "p14_room_scan_owner"),
+    )
+    assert r.status_code == 200, r.text
+
+
+def test_client_msg_types_matches_rooms_msg_type_enum():
+    """P15: wire.CLIENT_MSG_TYPES is the set a client may post; rooms.MsgType is the
+    full declared domain including the server-owned "system". Two declarations of one
+    contract, so pin them against each other — the same drift-proof discipline every
+    other shared contract in this codebase gets, enforced by a test rather than by
+    construction (MsgType is a static Literal and can't be built from a runtime set)."""
+    from typing import get_args
+
+    from emporia import rooms, wire
+
+    assert set(get_args(rooms.MsgType)) - {"system"} == set(wire.CLIENT_MSG_TYPES)
+    assert "system" not in wire.CLIENT_MSG_TYPES
+    assert wire.DEFAULT_MSG_TYPE in wire.CLIENT_MSG_TYPES
+
+
+def test_dm_send_rejects_invalid_and_server_owned_msg_type(prod_client):
+    """P15: rooms.py has declared MsgType a closed Literal since rooms shipped, and
+    rooms.post_message() is annotated with it — but annotations aren't runtime checks
+    and both request models typed the field as bare `str`, so any string reached
+    storage (verified live during P13/P14, where a synthetic value persisted and read
+    back cleanly). Both routes now validate the resolved value.
+
+    "system" is rejected specifically because it's the relay's own type for
+    negotiation-broker output, posted under sender_id="emporia:broker" — a client
+    supplying it is minting a server-owned label. Not an impersonation primitive (the
+    one consumer that distinguishes broker messages keys off sender, not type), but
+    the type isn't the client's to set."""
+    from emporia import wire
+    from emporia.identity import sign
+    _register_keyed(prod_client, "p15_dm_enum_alice")
+    _register_keyed(prod_client, "p15_dm_enum_bob")
+    thread_id = prod_client.post(
+        "/dm/start", json={"to_agent": "p15_dm_enum_bob"},
+        headers=bearer_for(prod_client, "p15_dm_enum_alice"),
+    ).json()["thread_id"]
+    content = "P15 enum test"
+
+    for bad in ("not_a_real_type", "system"):
+        payload = wire.signed_dm_thread_payload(thread_id, content, bad)
+        r = prod_client.post(
+            f"/dm/{thread_id}/send",
+            json={
+                "content": content, "msg_type": bad,
+                "signature": sign(payload, "p15_dm_enum_alice"),
+            },
+            headers=bearer_for(prod_client, "p15_dm_enum_alice"),
+        )
+        assert r.status_code == 400, (bad, r.status_code, r.text)
+        assert "msg_type" in r.text, (bad, r.text)
+
+    payload = wire.signed_dm_thread_payload(thread_id, content, "collab")
+    r = prod_client.post(
+        f"/dm/{thread_id}/send",
+        json={
+            "content": content, "msg_type": "collab",
+            "signature": sign(payload, "p15_dm_enum_alice"),
+        },
+        headers=bearer_for(prod_client, "p15_dm_enum_alice"),
+    )
+    assert r.status_code == 200, r.text
+
+
+def test_room_message_rejects_invalid_and_server_owned_msg_type(prod_client):
+    """P15: the room-route half of the enum enforcement above. "system" matters a
+    little more here than on the DM route — this is the route whose handler actually
+    posts "system" messages itself (broker output), so it's the one where a
+    client-supplied "system" would sit alongside genuine ones in the same room."""
+    from emporia import wire
+    from emporia.identity import sign
+    _register_keyed(prod_client, "p15_room_enum_owner")
+    room_id = prod_client.post(
+        "/rooms", json={"name": "P15 enum room", "creator_id": "p15_room_enum_owner"},
+        headers=bearer_for(prod_client, "p15_room_enum_owner"),
+    ).json()["room_id"]
+    content = "P15 enum test"
+
+    for bad in ("not_a_real_type", "system"):
+        payload = wire.signed_room_message_payload(room_id, content, bad)
+        r = prod_client.post(
+            f"/rooms/{room_id}/message",
+            json={
+                "content": content, "msg_type": bad,
+                "signature": sign(payload, "p15_room_enum_owner"),
+            },
+            headers=bearer_for(prod_client, "p15_room_enum_owner"),
+        )
+        assert r.status_code == 400, (bad, r.status_code, r.text)
+        assert "msg_type" in r.text, (bad, r.text)
+
+    payload = wire.signed_room_message_payload(room_id, content, "collab")
+    r = prod_client.post(
+        f"/rooms/{room_id}/message",
+        json={
+            "content": content, "msg_type": "collab",
+            "signature": sign(payload, "p15_room_enum_owner"),
+        },
+        headers=bearer_for(prod_client, "p15_room_enum_owner"),
     )
     assert r.status_code == 200, r.text
 
@@ -11079,7 +11186,11 @@ def test_relay_room_message_omitted_msg_type_resolves_from_wire_py(prod_client):
     wire.DEFAULT_MSG_TYPE to a non-default value, sign a raw
     POST /rooms/{id}/message with `msg_type` omitted using that patched
     value, and assert the relay accepts it — a relay with its own hardcoded
-    "chat" would 403, since it would verify against the wrong msg_type."""
+    "chat" would 403, since it would verify against the wrong msg_type.
+
+    P15: the patched value is "collab" rather than a synthetic string because
+    msg_type is now enum-validated against wire.CLIENT_MSG_TYPES. "collab" is
+    still not the real default ("chat"), so the proof is unchanged."""
     from emporia import wire
     from emporia.identity import sign
 
@@ -11092,15 +11203,15 @@ def test_relay_room_message_omitted_msg_type_resolves_from_wire_py(prod_client):
     room_id = r.json()["room_id"]
     content = "P12 msg_type omit test"
 
-    with patch.object(wire, "DEFAULT_MSG_TYPE", "p12_patched_type"):
-        signed_payload = wire.signed_room_message_payload(room_id, content, "p12_patched_type")
+    with patch.object(wire, "DEFAULT_MSG_TYPE", "collab"):
+        signed_payload = wire.signed_room_message_payload(room_id, content, "collab")
         body = {"content": content, "signature": sign(signed_payload, "p12_msgtype_owner")}
         r = prod_client.post(
             f"/rooms/{room_id}/message", json=body,
             headers=bearer_for(prod_client, "p12_msgtype_owner"),
         )
     assert r.status_code == 200, r.text
-    assert r.json()["msg_type"] == "p12_patched_type", r.text
+    assert r.json()["msg_type"] == "collab", r.text
 
 
 def test_mcp_dashboard_bearer_headers_uses_shared_wire_contract(prod_client):

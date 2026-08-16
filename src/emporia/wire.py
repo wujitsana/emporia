@@ -63,6 +63,14 @@ DEFAULT_CONFIRM_RATIONALE = "Buyer confirmed delivery."
 # can land as an empty string the way a bare field default could).
 DEFAULT_MSG_TYPE = "chat"
 
+# P15: the msg_type values a *client* may post. `rooms.MsgType` (rooms.py) is the full
+# declared domain and includes "system", which is server-owned — the relay posts it
+# itself for negotiation-broker output, under sender_id="emporia:broker". Clients get
+# everything except that. Lives here rather than in rooms.py because both the room route
+# and the thread-DM route validate against it and only this module is shared by all of
+# them; a test pins it against rooms.MsgType so the two can't drift.
+CLIENT_MSG_TYPES = frozenset({"chat", "collab", "code", "counter_offer", "accept", "reject"})
+
 
 def default_dispute_rationale(reason: str) -> str:
     """The default `peer_text_rationale` for a dispute when the caller omits
