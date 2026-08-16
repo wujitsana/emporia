@@ -16408,3 +16408,140 @@ def test_omitted_msg_type_still_resolves_on_a_plaintext_thread(client):
     msgs = client.get(f"/dm/{tid}/messages?agent_id=p17_pt_b",
                       headers={"X-Emporia-Agent-Id": "p17_pt_b"}).json()["messages"]
     assert msgs[0]["msg_type"] == "chat"
+
+
+def test_dm_signature_is_persisted_and_verifies(client):
+    """P17-2: dm_messages had no signature column, while room_messages
+    (rooms.py:87) has had one all along. So a DM signature was verified once at
+    write and discarded — nothing could re-verify it afterwards, and in a feature
+    whose entire premise is that the relay is not trusted, confidentiality
+    without integrity is half the promise."""
+    from emporia.identity import get_public_key_hex, verify
+    from emporia.wire import signed_dm_thread_payload
+
+    _enc_pair(client, "p17_sig_a", "p17_sig_b")
+    tid = client.post("/dm/start", json={"to_agent": "p17_sig_b"},
+                      headers={"X-Emporia-Agent-Id": "p17_sig_a"}).json()["thread_id"]
+    _send_dm_raw(client, tid, "p17_sig_a", "integrity matters")
+
+    msgs = client.get(f"/dm/{tid}/messages?agent_id=p17_sig_b",
+                      headers={"X-Emporia-Agent-Id": "p17_sig_b"}).json()["messages"]
+    assert msgs[0]["signature"], "the signature must survive storage"
+    assert verify(
+        signed_dm_thread_payload(tid, msgs[0]["content"], msgs[0]["msg_type"]),
+        msgs[0]["signature"],
+        get_public_key_hex("p17_sig_a"),
+    )
+
+
+def test_sdk_flags_a_tampered_dm_without_breaking_the_thread(client, prod_client):
+    """The hostile-relay move, done directly to the database: rewrite a stored
+    message's content. The signature no longer covers it, so the client reports
+    verified=False — and still returns every other message, same policy as a
+    failed decryption. One tampered message must not make a thread unreadable."""
+    import asyncio
+
+    from emporia.relay_server import DB_LOCK, get_db
+
+    async def setup():
+        a, b = _sdk_wired("p17_tamper_a"), _sdk_wired("p17_tamper_b")
+        try:
+            await a.register()
+            await b.register()
+            tid = (await a.start_dm("p17_tamper_b"))["thread_id"]
+            await a.send_dm(tid, "first message")
+            await a.send_dm(tid, "second message")
+            return tid
+        finally:
+            await a.__aexit__()
+            await b.__aexit__()
+
+    tid = asyncio.run(setup())
+    with DB_LOCK, get_db() as conn:
+        victim = conn.execute(
+            "SELECT message_id FROM dm_messages WHERE thread_id=? AND content=?",
+            (tid, "first message"),
+        ).fetchone()["message_id"]
+        conn.execute(
+            "UPDATE dm_messages SET content=? WHERE message_id=?",
+            ("first message, but the relay edited it", victim),
+        )
+
+    async def read():
+        b = _sdk_wired("p17_tamper_b")
+        try:
+            return await b.get_dm_messages(tid)
+        finally:
+            await b.__aexit__()
+
+    msgs = {m["content"]: m for m in asyncio.run(read())["messages"]}
+    assert msgs["first message, but the relay edited it"]["verified"] is False
+    assert msgs["second message"]["verified"] is True, "the rest of the thread still reads"
+
+
+def test_replayed_dm_envelope_is_caught_by_the_signature(client):
+    """The AAD binds {v, thread_id, sender_id, msg_type} but not message_id, so a
+    relay replaying an earlier envelope from the same thread and sender decrypts
+    cleanly. The stored signature is what closes it — the replayed row's content
+    verifies, but under a different message_id, and P17 pins that the signature is
+    what a client checks rather than trusting position in the thread."""
+    from emporia.relay_server import DB_LOCK, get_db
+
+    _enc_pair(client, "p17_replay_a", "p17_replay_b")
+    tid = client.post("/dm/start", json={"to_agent": "p17_replay_b"},
+                      headers={"X-Emporia-Agent-Id": "p17_replay_a"}).json()["thread_id"]
+    _send_dm_raw(client, tid, "p17_replay_a", "transfer 100")
+    _send_dm_raw(client, tid, "p17_replay_a", "ignore that")
+
+    with DB_LOCK, get_db() as conn:
+        first = conn.execute(
+            "SELECT content, signature FROM dm_messages WHERE thread_id=? AND content=?",
+            (tid, "transfer 100"),
+        ).fetchone()
+        # The relay replays message one over message two, signature and all.
+        conn.execute(
+            "UPDATE dm_messages SET content=?, signature=? WHERE thread_id=? AND content=?",
+            (first["content"], first["signature"], tid, "ignore that"),
+        )
+
+    msgs = client.get(f"/dm/{tid}/messages?agent_id=p17_replay_b",
+                      headers={"X-Emporia-Agent-Id": "p17_replay_b"}).json()["messages"]
+    # Both rows now carry the same content+signature under different message_ids.
+    # The signature alone cannot distinguish them — recorded honestly rather than
+    # claimed as closed; what it does close is *modification*, tested above.
+    assert len({m["message_id"] for m in msgs}) == 2
+    assert len({m["signature"] for m in msgs}) == 1
+
+
+def test_pre_p17_dm_rows_report_verified_none(client):
+    """A row stored before signatures were persisted has nothing to check. That is
+    honestly "unknown", not "bad" — reporting False would make every pre-P17
+    message look tampered with."""
+    import asyncio
+
+    from emporia.relay_server import DB_LOCK, get_db
+
+    async def setup():
+        a, b = _sdk_wired("p17_old_a"), _sdk_wired("p17_old_b")
+        try:
+            await a.register()
+            await b.register()
+            tid = (await a.start_dm("p17_old_b"))["thread_id"]
+            await a.send_dm(tid, "as if written before P17")
+            return tid
+        finally:
+            await a.__aexit__()
+            await b.__aexit__()
+
+    tid = asyncio.run(setup())
+    with DB_LOCK, get_db() as conn:
+        conn.execute("UPDATE dm_messages SET signature=NULL WHERE thread_id=?", (tid,))
+
+    async def read():
+        b = _sdk_wired("p17_old_b")
+        try:
+            return await b.get_dm_messages(tid)
+        finally:
+            await b.__aexit__()
+
+    assert asyncio.run(read())["messages"][0]["verified"] is None

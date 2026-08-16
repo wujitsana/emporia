@@ -506,6 +506,18 @@ class EmporiaAgent:
         resp.raise_for_status()
         return resp.json()
 
+    async def _sender_public_key(self, agent_id: str) -> str:
+        """An agent's Ed25519 signing key, for re-verifying stored message
+        signatures. Returns `""` rather than raising if it can't be fetched — a
+        verification that couldn't run reports `None` ("unknown"), and a thread
+        must stay readable even when one lookup fails."""
+        try:
+            resp = await self._bearer_request("get", f"{self.relay_url}/agents/{agent_id}")
+            resp.raise_for_status()
+            return resp.json().get("public_key_hex", "") or ""
+        except Exception:
+            return ""
+
     async def _peer_encryption_key(self, agent_id: str) -> str:
         """Fetch, verify and pin another agent's encryption key.
 
@@ -580,7 +592,7 @@ class EmporiaAgent:
         unreadable, which is what an exception here would mean.
         """
         from emporia import crypto_box
-        from emporia.identity import generate_or_load_encryption_keypair
+        from emporia.identity import generate_or_load_encryption_keypair, verify_dm_message
 
         resp = await self._bearer_request(
             "get", f"{self.relay_url}/dm/{thread_id}/messages",
@@ -589,7 +601,17 @@ class EmporiaAgent:
         resp.raise_for_status()
         body = resp.json()
         priv, _ = generate_or_load_encryption_keypair(self.profile_id)
+        pubkeys: dict[str, str] = {}
         for msg in body.get("messages", []):
+            # P17-2: verified against the *stored* content, before any decryption —
+            # for an encrypted thread that envelope is what was signed. Verifying
+            # after decrypting would check the signature against plaintext nobody
+            # ever signed. A mismatch marks the message rather than raising, same
+            # policy as a failed decryption below.
+            sender = msg.get("sender_id", "")
+            if sender not in pubkeys:
+                pubkeys[sender] = await self._sender_public_key(sender)
+            msg["verified"] = verify_dm_message(thread_id, msg, pubkeys[sender])
             msg["decrypted"] = False
             if not crypto_box.looks_like_envelope(msg.get("content", "")):
                 continue

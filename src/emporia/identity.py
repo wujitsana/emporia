@@ -315,6 +315,41 @@ def pin_peer_encryption_key(agent_id: str, public_key_hex: str) -> str:
     return key
 
 
+def verify_dm_message(
+    thread_id: str, message: dict[str, Any], sender_public_key_hex: str,
+) -> bool | None:
+    """Re-verify a stored DM's signature client-side. `True`/`False`, or `None`
+    when there is nothing to check.
+
+    P17-2: the relay verifies a signature at write time and — before this — threw
+    it away, so nothing could tell afterwards whether a stored row still matched
+    what its sender signed. In a feature whose premise is that the relay is not
+    trusted, confidentiality without integrity is half the promise.
+
+    `None` (not `False`) when the row carries no signature or the sender's key is
+    unavailable: a message stored before signatures were persisted is honestly
+    *unknown*, and reporting it as `False` would paint every pre-P17 message as
+    tampered with.
+
+    Verify against the **stored** `content` — for an encrypted thread that is the
+    envelope, which is what was signed. Calling this after decrypting would check
+    the signature against plaintext that was never signed.
+
+    One function both clients call, same reason as `trust_peer_encryption_key()`:
+    two implementations of a verification rule is one implementation too many.
+    """
+    from emporia.wire import signed_dm_thread_payload
+
+    signature = message.get("signature")
+    if not signature or not sender_public_key_hex:
+        return None
+    return verify(
+        signed_dm_thread_payload(thread_id, message.get("content", ""), message.get("msg_type", "")),
+        signature,
+        sender_public_key_hex,
+    )
+
+
 def trust_peer_encryption_key(
     agent_id: str,
     encryption_public_key_hex: str,

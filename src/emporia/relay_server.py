@@ -745,7 +745,8 @@ def init_db() -> None:
                 sender_id TEXT NOT NULL,
                 content TEXT NOT NULL,
                 msg_type TEXT NOT NULL DEFAULT 'chat',
-                created_at TEXT NOT NULL
+                created_at TEXT NOT NULL,
+                signature TEXT
             );
             CREATE INDEX IF NOT EXISTS idx_dm_threads_a ON dm_threads(agent_a, last_message_at);
             CREATE INDEX IF NOT EXISTS idx_dm_threads_b ON dm_threads(agent_b, last_message_at);
@@ -1123,6 +1124,15 @@ def _migrate_dm_threads(conn: Any) -> None:
     cols = {r[1] for r in conn.execute("PRAGMA table_info(dm_threads)").fetchall()}
     if "encrypted" not in cols:
         conn.execute("ALTER TABLE dm_threads ADD COLUMN encrypted INTEGER NOT NULL DEFAULT 0")
+    # P17-2: the sender's Ed25519 signature over the message, kept rather than
+    # discarded after write-time verification — `room_messages` has stored one all
+    # along (rooms.py), and DMs had no counterpart, so nothing could re-verify a DM
+    # once it was in the table. NULL (not '') for every pre-P17 row: nothing was
+    # stored, so nothing can be claimed about it, and clients report that as
+    # `verified: None` — "unknown", not "bad".
+    msg_cols = {r[1] for r in conn.execute("PRAGMA table_info(dm_messages)").fetchall()}
+    if "signature" not in msg_cols:
+        conn.execute("ALTER TABLE dm_messages ADD COLUMN signature TEXT")
 
 
 def _migrate_authorized_agents(conn: Any) -> None:
@@ -3193,7 +3203,8 @@ async def get_agent_profile(agent_id: str, request: Request):
     with DB_LOCK, get_db() as conn:
         row = conn.execute(
             "SELECT agent_id, display_name, registered_at, is_active, stripe_account_id, "
-            "nous_user_id, trust_level, identity_providers_json, encryption_public_key "
+            "nous_user_id, trust_level, identity_providers_json, encryption_public_key, "
+            "public_key_hex "
             "FROM authorized_agents WHERE agent_id = ?",
             (agent_id,),
         ).fetchone()
@@ -3222,6 +3233,12 @@ async def get_agent_profile(agent_id: str, request: Request):
         # fetching a profile doesn't need a second round trip to learn whether it
         # can DM this agent encrypted.
         "encryption_public_key": row["encryption_public_key"] or "",
+        # P17-2: the Ed25519 signing key, so a client can re-verify a stored message
+        # signature without going through the encryption-key route (which would be a
+        # confusing place to look when the thread isn't encrypted at all). Public by
+        # nature — it is what every signature on this relay is checked against — and
+        # this route already requires an authenticated caller (N4-3).
+        "public_key_hex": row["public_key_hex"],
         "registered_at": row["registered_at"],
         "is_active": bool(row["is_active"]),
         # N4-3 (R2): stripe_account_id (the raw Connect acct_... id) removed from the
@@ -7465,9 +7482,10 @@ async def dm_send(thread_id: str, req: DMSendRequest, request: Request):
     message_id = f"dmm_{uuid.uuid4().hex[:12]}"
     with DB_LOCK, get_db() as conn:
         conn.execute(
-            "INSERT INTO dm_messages (message_id, thread_id, sender_id, content, msg_type, created_at) "
-            "VALUES (?,?,?,?,?,?)",
-            (message_id, thread_id, caller, req.content, effective_msg_type, now),
+            "INSERT INTO dm_messages "
+            "(message_id, thread_id, sender_id, content, msg_type, created_at, signature) "
+            "VALUES (?,?,?,?,?,?,?)",
+            (message_id, thread_id, caller, req.content, effective_msg_type, now, req.signature),
         )
         conn.execute(
             "UPDATE dm_threads SET last_message_at=? WHERE thread_id=?", (now, thread_id)
@@ -7562,6 +7580,9 @@ async def dm_messages(
             "content": r["content"],
             "msg_type": r["msg_type"],
             "created_at": r["created_at"],
+            # P17-2: served so the *client* can re-verify, not just the relay at
+            # write time. NULL for pre-P17 rows, which clients surface as "unknown".
+            "signature": r["signature"],
         }
         for r in reversed(rows)
     ]

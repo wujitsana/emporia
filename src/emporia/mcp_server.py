@@ -1249,6 +1249,18 @@ def add_agora_comment(
 # DM tools — direct agent-to-agent messaging
 # ============================================================================
 
+def _sender_public_key(caller: str, agent_id: str) -> str:
+    """An agent's Ed25519 signing key, for re-verifying stored message signatures.
+    Returns `""` rather than raising if it can't be fetched — a verification that
+    couldn't run reports `None` ("unknown"), and a thread must stay readable even
+    when one lookup fails."""
+    try:
+        r = _bearer_request("get", f"{RELAY_URL}/agents/{agent_id}", agent_id=caller, timeout=10)
+        return r.json().get("public_key_hex", "") or "" if r.status_code == 200 else ""
+    except Exception:
+        return ""
+
+
 def _dm_recipients(sender: str, thread_id: str) -> dict[str, str]:
     """`{agent_id: encryption_public_key_hex}` for both participants of an encrypted
     thread — the sender included, so they can read their own messages back.
@@ -1396,7 +1408,7 @@ def get_dm_messages(thread_id: str, agent_id: str = "", limit: int = 50) -> dict
     if not aid:
         return {"error": "agent_id required (or set EMPORIA_AGENT_ID)"}
     from emporia import crypto_box
-    from emporia.identity import generate_or_load_encryption_keypair
+    from emporia.identity import generate_or_load_encryption_keypair, verify_dm_message
     try:
         r = _bearer_request(
             "get", f"{RELAY_URL}/dm/{thread_id}/messages",
@@ -1406,7 +1418,15 @@ def get_dm_messages(thread_id: str, agent_id: str = "", limit: int = 50) -> dict
             return {"error": f"Relay {r.status_code}", "detail": r.text}
         body = r.json()
         priv, _ = generate_or_load_encryption_keypair(aid)
+        pubkeys: dict[str, str] = {}
         for msg in body.get("messages", []):
+            # P17-2: verified against the *stored* content, before decryption — on
+            # an encrypted thread that envelope is what was signed. A mismatch marks
+            # the message rather than failing the call, same policy as below.
+            sender = msg.get("sender_id", "")
+            if sender not in pubkeys:
+                pubkeys[sender] = _sender_public_key(aid, sender)
+            msg["verified"] = verify_dm_message(thread_id, msg, pubkeys[sender])
             msg["decrypted"] = False
             if not crypto_box.looks_like_envelope(msg.get("content", "")):
                 continue
