@@ -1254,7 +1254,7 @@ def send_dm(to_agent_id: str, content: str, from_agent_id: str = "", msg_type: s
     if not sender:
         return {"error": "from_agent_id required (or set EMPORIA_AGENT_ID)"}
     from emporia.identity import sign as ed25519_sign
-    from emporia.wire import signed_dm_thread_payload
+    from emporia.wire import dm_thread_message_envelope, signed_dm_thread_payload
     try:
         # Get or create thread
         start_r = _bearer_request(
@@ -1271,7 +1271,7 @@ def send_dm(to_agent_id: str, content: str, from_agent_id: str = "", msg_type: s
         send_r = _bearer_request(
             "post", f"{RELAY_URL}/dm/{thread_id}/send",
             agent_id=sender,
-            json={"content": content, "msg_type": msg_type, "signature": ed25519_sign(signed_payload, sender)},
+            json=dm_thread_message_envelope(content, msg_type, ed25519_sign(signed_payload, sender)),
             timeout=10,
         )
         if send_r.status_code == 200:
@@ -1577,7 +1577,7 @@ def confirm_delivery(
     if not aid:
         return {"error": "agent_id required", "success": False}
     from emporia.identity import sign as ed25519_sign
-    from emporia.wire import DEFAULT_CONFIRM_RATIONALE, signed_action_payload
+    from emporia.wire import DEFAULT_CONFIRM_RATIONALE, confirm_delivery_body, signed_action_payload
     effective_rationale = rationale or DEFAULT_CONFIRM_RATIONALE
     try:
         sess_r = _bearer_request("get", f"{RELAY_URL}/sessions/{session_id}", agent_id=aid, timeout=10)
@@ -1587,11 +1587,9 @@ def confirm_delivery(
         return {"error": f"could not load session for signing: {e}", "success": False}
     try:
         signed_payload = signed_action_payload(aid, "confirm", {}, effective_rationale, session_id, step_number)
-        body: dict[str, Any] = {
-            "agent_id": aid,
-            "rationale": effective_rationale,
-            "signature": ed25519_sign(signed_payload, aid),
-        }
+        body: dict[str, Any] = confirm_delivery_body(
+            aid, effective_rationale, ed25519_sign(signed_payload, aid),
+        )
         r = _bearer_request("post", f"{RELAY_URL}/sessions/{session_id}/confirm-delivery", agent_id=aid, json=body, timeout=15)
         d = r.json()
         return {"success": True, **d} if r.status_code == 200 else {"error": f"Relay {r.status_code}", "detail": d, "success": False}
@@ -1615,7 +1613,7 @@ def dispute_delivery(
     if not aid:
         return {"error": "agent_id required", "success": False}
     from emporia.identity import sign as ed25519_sign
-    from emporia.wire import default_dispute_rationale, signed_action_payload
+    from emporia.wire import default_dispute_rationale, dispute_delivery_body, signed_action_payload
     effective_rationale = rationale or default_dispute_rationale(reason)
     try:
         sess_r = _bearer_request("get", f"{RELAY_URL}/sessions/{session_id}", agent_id=aid, timeout=10)
@@ -1627,12 +1625,9 @@ def dispute_delivery(
         signed_payload = signed_action_payload(
             aid, "dispute", {"reason": reason}, effective_rationale, session_id, step_number,
         )
-        body: dict[str, Any] = {
-            "agent_id": aid,
-            "reason": reason,
-            "rationale": effective_rationale,
-            "signature": ed25519_sign(signed_payload, aid),
-        }
+        body: dict[str, Any] = dispute_delivery_body(
+            aid, reason, effective_rationale, ed25519_sign(signed_payload, aid),
+        )
         r = _bearer_request("post", f"{RELAY_URL}/sessions/{session_id}/dispute-delivery", agent_id=aid, json=body, timeout=15)
         d = r.json()
         return {"success": True, **d} if r.status_code == 200 else {"error": f"Relay {r.status_code}", "detail": d, "success": False}

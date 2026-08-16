@@ -11425,6 +11425,80 @@ def test_agent_sdk_confirm_delivery_and_dispute_delivery_use_shared_wire_contrac
     asyncio.run(scenario())
 
 
+def test_request_bodies_are_single_sourced_across_both_clients():
+    """P14: P13 added three signed request bodies and hand-built every one of them
+    in *both* clients — confirm and dispute went from one copy to two, and dm-send
+    was never unified. It added wire.signed_dm_thread_payload() for the signed-payload
+    half and then wrote the envelope half inline, breaking the pairing this module
+    holds everywhere else (signed_action_payload+action_envelope,
+    signed_room_message_payload+room_message_envelope). Nothing diverged yet — this
+    is drift-prevention, the same standing as P12-3's msg_type finding, and exactly
+    the duplication class P12-3 had just finished clearing.
+
+    Asserts each client routes through the shared wire.py builder. Unlike the
+    signed_*_payload spies elsewhere in this file, these assert call_count == 1 per
+    client, not 2: these are *request bodies*, which only the signer builds — the
+    relay parses them into pydantic models rather than constructing them, so there
+    is no verifier call site to count."""
+    import asyncio
+
+    from emporia import mcp_server, wire
+    from emporia.agent_sdk import EmporiaAgent
+
+    # --- mcp_server side: confirm/dispute bodies ---
+    for tool_name, wire_fn in (
+        ("confirm_delivery", "confirm_delivery_body"),
+        ("dispute_delivery", "dispute_delivery_body"),
+    ):
+        with patch.object(wire, wire_fn, wraps=getattr(wire, wire_fn)) as spy, \
+             patch.object(mcp_server, "_bearer_request") as req:
+            # Same mock serves the session pre-fetch (needs step_number to sign) and
+            # the delivery POST that follows it.
+            req.return_value = MagicMock(
+                status_code=200, **{"json.return_value": {"step_number": 0}},
+            )
+            kwargs = {"session_id": "s1", "agent_id": "a1"}
+            if tool_name == "dispute_delivery":
+                kwargs["reason"] = "not as described"
+            getattr(mcp_server, tool_name)(**kwargs)
+        assert spy.call_count == 1, (tool_name, spy.call_args_list)
+
+    # --- agent_sdk side: confirm/dispute bodies ---
+    async def sdk_call(method, wire_fn, **kwargs):
+        agent = EmporiaAgent(
+            relay_url="http://fake.invalid", agent_id="sdk_body_agent", public_key_hex="ab" * 32,
+        )
+        agent._http = MagicMock()
+        resp = MagicMock(status_code=200)
+        resp.json.return_value = {}
+        agent._http.post = AsyncMock(return_value=resp)
+        agent._bearer_headers = AsyncMock(return_value={})
+        agent.get_session = AsyncMock(return_value={"step_number": 0})
+        with patch.object(wire, wire_fn, wraps=getattr(wire, wire_fn)) as spy:
+            await getattr(agent, method)(**kwargs)
+        return spy
+
+    spy = asyncio.run(sdk_call("confirm_delivery", "confirm_delivery_body", session_id="s1"))
+    assert spy.call_count == 1, spy.call_args_list
+    spy = asyncio.run(sdk_call(
+        "dispute_delivery", "dispute_delivery_body", session_id="s1", reason="not as described",
+    ))
+    assert spy.call_count == 1, spy.call_args_list
+
+    # --- dm-send envelope, both clients ---
+    with patch.object(
+        wire, "dm_thread_message_envelope", wraps=wire.dm_thread_message_envelope,
+    ) as spy, patch.object(mcp_server, "_bearer_request") as req:
+        req.return_value = MagicMock(status_code=200, **{"json.return_value": {"thread_id": "t1"}})
+        mcp_server.send_dm(to_agent_id="b", content="hi", from_agent_id="sdk_body_agent")
+    assert spy.call_count == 1, spy.call_args_list
+
+    spy = asyncio.run(sdk_call(
+        "send_dm", "dm_thread_message_envelope", thread_id="t1", content="hi",
+    ))
+    assert spy.call_count == 1, spy.call_args_list
+
+
 def test_agent_sdk_confirm_delivery_signs_and_attaches_rationale():
     """Unit-level check of confirm_delivery()'s request-body shape, mirroring
     test_agent_sdk_create_room_forwards_access_duration_days's mocked-HTTP idiom.

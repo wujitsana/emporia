@@ -151,6 +151,36 @@ def signed_dm_thread_payload(thread_id: str, content: str, msg_type: str) -> dic
     return {"thread_id": thread_id, "content": content, "msg_type": msg_type}
 
 
+def dm_thread_message_envelope(content: str, msg_type: str, signature: str) -> dict[str, Any]:
+    """The actual `POST /dm/{thread_id}/send` body — `signed_dm_thread_payload()`'s
+    fields minus `thread_id` (already in the URL), plus the signature computed over
+    that payload.
+
+    Deliberately separate from `room_message_envelope()` despite the two shapes being
+    identical today: they're different routes whose bodies are free to diverge, and
+    `room_message_envelope()` already carries a `parent_message_id` kwarg this route
+    doesn't accept. Sharing one function would mean the next field added for rooms
+    silently changes the DM wire body."""
+    return {"content": content, "msg_type": msg_type, "signature": signature}
+
+
+def confirm_delivery_body(agent_id: str, rationale: str, signature: str) -> dict[str, Any]:
+    """The actual `POST /sessions/{id}/confirm-delivery` body. Signer-side only —
+    the relay parses this into `ConfirmDeliveryRequest` rather than building it, so
+    unlike `signed_action_payload()` there's no verifier call site to single-source."""
+    return {"agent_id": agent_id, "rationale": rationale, "signature": signature}
+
+
+def dispute_delivery_body(
+    agent_id: str, reason: str, rationale: str, signature: str,
+) -> dict[str, Any]:
+    """The actual `POST /sessions/{id}/dispute-delivery` body — `confirm_delivery_body()`
+    plus the `reason` the dispute is recorded under. Signer-side only, same as above."""
+    return {
+        "agent_id": agent_id, "reason": reason, "rationale": rationale, "signature": signature,
+    }
+
+
 def signed_dm_envelope(
     to_agent: str, msg_type: str, session_id: str | None, payload: dict[str, Any],
 ) -> dict[str, Any]:

@@ -374,16 +374,17 @@ class EmporiaAgent:
         Mirrors mcp_server.py's confirm_delivery() MCP tool — the SDK/MCP parity gap
         this and dispute_delivery() close.
         """
-        from emporia.wire import DEFAULT_CONFIRM_RATIONALE, signed_action_payload
+        from emporia.wire import (
+            DEFAULT_CONFIRM_RATIONALE, confirm_delivery_body, signed_action_payload,
+        )
         effective_rationale = rationale or DEFAULT_CONFIRM_RATIONALE
         session = await self.get_session(session_id)
         signed_payload = signed_action_payload(
             self.agent_id, "confirm", {}, effective_rationale, session_id, session["step_number"],
         )
-        body = {
-            "agent_id": self.agent_id, "rationale": effective_rationale,
-            "signature": self._sign(signed_payload),
-        }
+        body = confirm_delivery_body(
+            self.agent_id, effective_rationale, self._sign(signed_payload),
+        )
         resp = await self._bearer_request(
             "post", f"{self.relay_url}/sessions/{session_id}/confirm-delivery", json=body,
         )
@@ -396,17 +397,18 @@ class EmporiaAgent:
         """Dispute a service delivery (emporia:service:v1). Buyer calls this to reject
         the deliverable. Payment hold is released (buyer refunded).
         """
-        from emporia.wire import default_dispute_rationale, signed_action_payload
+        from emporia.wire import (
+            default_dispute_rationale, dispute_delivery_body, signed_action_payload,
+        )
         effective_rationale = rationale or default_dispute_rationale(reason)
         session = await self.get_session(session_id)
         signed_payload = signed_action_payload(
             self.agent_id, "dispute", {"reason": reason}, effective_rationale,
             session_id, session["step_number"],
         )
-        body = {
-            "agent_id": self.agent_id, "reason": reason, "rationale": effective_rationale,
-            "signature": self._sign(signed_payload),
-        }
+        body = dispute_delivery_body(
+            self.agent_id, reason, effective_rationale, self._sign(signed_payload),
+        )
         resp = await self._bearer_request(
             "post", f"{self.relay_url}/sessions/{session_id}/dispute-delivery", json=body,
         )
@@ -480,11 +482,11 @@ class EmporiaAgent:
         is mandatory — bound to thread_id + msg_type, not just content (same N3-8/R7
         shape as send_room_message()'s room_id + msg_type binding), so it can't be
         replayed into a different thread or under a different msg_type."""
-        from emporia.wire import signed_dm_thread_payload
+        from emporia.wire import dm_thread_message_envelope, signed_dm_thread_payload
         signed_payload = signed_dm_thread_payload(thread_id, content, msg_type)
         resp = await self._bearer_request(
             "post", f"{self.relay_url}/dm/{thread_id}/send",
-            json={"content": content, "msg_type": msg_type, "signature": self._sign(signed_payload)},
+            json=dm_thread_message_envelope(content, msg_type, self._sign(signed_payload)),
         )
         resp.raise_for_status()
         return resp.json()
