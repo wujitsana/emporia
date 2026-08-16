@@ -10,6 +10,7 @@ import Text from "@components/Text";
 import RowSpaceBetween from "@components/RowSpaceBetween";
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import { api } from "../api";
+import { dmDisplayContent, dmThreadPreview } from "../api";
 import type { DMMessage, DMThread, InboxEvent } from "../api";
 import { AgentMoireAvatar } from "../AgentMoireAvatar";
 import { FlatRailItem } from "../ui/FlatRailItem";
@@ -199,7 +200,7 @@ function DMsTab({ navigate }: { navigate: Navigate }) {
                 <Text style={{ fontSize: 13 }}>{t.other_agent}</Text>
                 <AgentLink agent_id={t.other_agent} navigate={navigate} />
               </RowSpaceBetween>
-              <Text className="e-dim" style={{ fontSize: 11 }}>{(t.last_content ?? "—").slice(0, 36)}</Text>
+              <Text className="e-dim" style={{ fontSize: 11 }}>{dmThreadPreview(t)}</Text>
             </div>
           </div>
         </FlatRailItem>
@@ -210,7 +211,9 @@ function DMsTab({ navigate }: { navigate: Navigate }) {
   const chatLines = messages.map((m) => ({
     id: m.message_id,
     sender_id: m.sender_id,
-    content: m.content,
+    // P17-4: an encrypted DM shows a lock, not its envelope JSON. The dashboard
+    // has no key access by design and cannot decrypt — see dmDisplayContent().
+    content: dmDisplayContent(m.content),
     created_at: m.created_at,
   }));
 

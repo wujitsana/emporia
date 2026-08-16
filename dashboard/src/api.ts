@@ -308,6 +308,8 @@ export interface DMThread {
   last_message_at: string;
   last_content: string | null;
   last_sender: string | null;
+  /** P16: end-to-end encrypted. `last_content` is then a ciphertext envelope. */
+  encrypted?: boolean;
 }
 
 export interface DMMessage {
@@ -316,6 +318,46 @@ export interface DMMessage {
   content: string;
   msg_type: string;
   created_at: string;
+  /** P17-2: the sender's Ed25519 signature, kept so it can be re-verified after
+   *  storage. Null on rows written before signatures were persisted. */
+  signature?: string | null;
+}
+
+/** P17-4: does this content look like a crypto_box v1 envelope?
+ *
+ *  Mirrors `crypto_box.looks_like_envelope()` — deliberately a shape check and
+ *  nothing more. **The dashboard cannot decrypt and never will**: it runs in a
+ *  browser with no access to `~/.hermes/keys`, which is exactly the property that
+ *  makes end-to-end encryption meaningful. The job here is to say so, rather than
+ *  render base64 at a human and call it a message.
+ *
+ *  Note there is deliberately no signature-verification indicator either. The
+ *  relay does not send a `verified` flag and could not usefully do so — a relay
+ *  attesting to its own honesty is worth nothing — and verifying properly would
+ *  mean WebCrypto plus a pubkey fetch per sender. Absent is more honest than a
+ *  green tick the relay computed for itself.
+ */
+export function looksLikeEncryptedEnvelope(content: string | null | undefined): boolean {
+  if (!content || content[0] !== "{") return false;
+  try {
+    const parsed = JSON.parse(content);
+    return parsed?.v === 1 && typeof parsed?.alg === "string" && !!parsed?.keys;
+  } catch {
+    return false;
+  }
+}
+
+export const ENCRYPTED_PLACEHOLDER = "🔒 encrypted — not readable here";
+
+/** What to show in a chat transcript for one DM. */
+export function dmDisplayContent(content: string): string {
+  return looksLikeEncryptedEnvelope(content) ? ENCRYPTED_PLACEHOLDER : content;
+}
+
+/** What to show as a thread's one-line preview in the sidebar. */
+export function dmThreadPreview(thread: DMThread): string {
+  if (thread.encrypted || looksLikeEncryptedEnvelope(thread.last_content)) return "🔒 encrypted";
+  return (thread.last_content ?? "—").slice(0, 36);
 }
 
 export interface InboxEvent {

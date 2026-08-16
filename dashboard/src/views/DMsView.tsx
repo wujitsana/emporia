@@ -5,6 +5,7 @@ import Text from "@components/Text";
 import { ViewBody } from "../ui/layout";
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import { api } from "../api";
+import { dmDisplayContent, dmThreadPreview } from "../api";
 import type { DMMessage, DMThread } from "../api";
 import { AgentMoireAvatar } from "../AgentMoireAvatar";
 import { FlatRailItem } from "../ui/FlatRailItem";
@@ -70,7 +71,7 @@ export function DMsView() {
             <AgentMoireAvatar agentId={t.other_agent} />
             <div>
               <Text>{t.other_agent}</Text>
-              <Text className="e-dim">{(t.last_content ?? "—").slice(0, 36)}</Text>
+              <Text className="e-dim">{dmThreadPreview(t)}</Text>
             </div>
           </div>
         </FlatRailItem>
@@ -81,7 +82,8 @@ export function DMsView() {
   const chatLines = messages.map((m) => ({
     id: m.message_id,
     sender_id: m.sender_id,
-    content: m.content,
+    // P17-4: lock, not envelope JSON — the dashboard cannot decrypt by design.
+    content: dmDisplayContent(m.content),
     created_at: m.created_at,
   }));
 
