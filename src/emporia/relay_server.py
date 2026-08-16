@@ -5949,11 +5949,18 @@ async def send_room_message(room_id: str, req: SendRoomMessageRequest, request: 
     # Encrypted rooms: relay stores opaque ciphertext — never scan it.
     # Ciphertext is binary/base64 and WILL false-positive on injection patterns.
     # Membership check above is the only gate; clients own key exchange + decryption.
-    if not room.encrypted:
-        try:
-            await _assert_payload_safe_counted({"content": req.content})
-        except PermissionError as e:
-            raise HTTPException(403, str(e))
+    # P14: msg_type is scanned regardless — the carve-out above is specifically about
+    # `content` being opaque ciphertext, and msg_type never is: it's routing metadata
+    # this handler itself reads and switches on (negotiation broker, below), so it's
+    # plaintext in an encrypted room too. Pre-existing gap, not a P13 regression like
+    # the DM route's — same one-line shape, fixed here while in the area.
+    try:
+        scan_payload: dict[str, Any] = {"msg_type": req.msg_type}
+        if not room.encrypted:
+            scan_payload["content"] = req.content
+        await _assert_payload_safe_counted(scan_payload)
+    except PermissionError as e:
+        raise HTTPException(403, str(e))
 
     if not req.signature:
         raise HTTPException(401, "Signature required")
@@ -7036,7 +7043,15 @@ async def dm_send(thread_id: str, req: DMSendRequest, request: Request):
     _require_registered(caller)
     _enforce_agent_rate_limit(caller)
     try:
-        await _assert_payload_safe_counted({"content": req.content})
+        # P14: msg_type is scanned too. P13-1 narrowed this from req.model_dump() to
+        # content-only on the stated grounds that it "would otherwise now scan the
+        # signature string" — but guardrails already exempts `signature` (structural
+        # key + token-shaped value, see _STRUCTURAL_FIELDS/_looks_like_token), so that
+        # was never happening, and the narrowing dropped real coverage: msg_type is
+        # free-form, persisted, and pushed into the recipient's inbox. Legitimate enum
+        # values ("chat", "counter_offer") stay exempt automatically via the same
+        # token-shape check, so only prose-shaped msg_type values are ever scanned.
+        await _assert_payload_safe_counted({"content": req.content, "msg_type": req.msg_type})
     except PermissionError as e:
         raise HTTPException(403, str(e))
     if not req.signature:
