@@ -16343,3 +16343,68 @@ def test_sdk_can_upgrade_an_existing_thread_to_encrypted(prod_client):
     msgs = {m["content"]: m for m in asyncio.run(scenario())["messages"]}
     assert msgs["before"]["decrypted"] is False
     assert msgs["after"]["decrypted"] is True
+
+
+# ============================================================================
+# P17: the review of P16
+# ============================================================================
+
+def test_omitted_msg_type_rejected_on_an_encrypted_thread(client):
+    """P17-1: the AAD binds msg_type, but the relay *resolves* it
+    (`req.msg_type or DEFAULT_MSG_TYPE` — the ""-default shape P12-3/P13-1
+    established). A client that omits the field seals under "" while the relay
+    stores "chat", so the recipient computes different AAD and the message is
+    permanently unreadable.
+
+    Pre-fix this returned 200: verified directly — the row stored msg_type='chat'
+    and open_sealed() raised for the recipient. That is exactly the failure class
+    validate_envelope_for() exists to turn into a 400, so it gets the same
+    treatment. The relay cannot repair the mismatch (it has no way to know what
+    value the client sealed under), only refuse it."""
+    from emporia import crypto_box, identity
+    from emporia.wire import dm_thread_message_envelope, signed_dm_thread_payload
+
+    _enc_pair(client, "p17_omit_a", "p17_omit_b")
+    tid = client.post("/dm/start", json={"to_agent": "p17_omit_b", "encrypted": True},
+                      headers={"X-Emporia-Agent-Id": "p17_omit_a"}).json()["thread_id"]
+    recips = {x: identity.get_encryption_public_key_hex(x) for x in ("p17_omit_a", "p17_omit_b")}
+    sealed = json.dumps(crypto_box.seal(
+        "secret text", recips, crypto_box.message_aad(tid, "p17_omit_a", ""),
+    ))
+    # Signed under the relay's *resolved* value, or the signature check would 403
+    # first and this test would pass for the wrong reason.
+    body = dm_thread_message_envelope(sealed, "", "")
+    body["signature"] = identity.sign(
+        signed_dm_thread_payload(tid, sealed, "chat"), "p17_omit_a",
+    )
+    del body["msg_type"]
+
+    r = client.post(f"/dm/{tid}/send", json=body, headers={"X-Emporia-Agent-Id": "p17_omit_a"})
+    assert r.status_code == 400, r.text
+    assert "msg_type" in r.text
+
+    # Nothing was stored — an unreadable message must not reach the thread at all.
+    msgs = client.get(f"/dm/{tid}/messages?agent_id=p17_omit_b",
+                      headers={"X-Emporia-Agent-Id": "p17_omit_b"}).json()["messages"]
+    assert msgs == []
+
+
+def test_omitted_msg_type_still_resolves_on_a_plaintext_thread(client):
+    """The ""-default resolution shape is untouched where it is safe — no AAD is
+    involved, so nothing can disagree about what was signed vs. stored."""
+    from emporia.identity import sign
+    from emporia.wire import dm_thread_message_envelope, signed_dm_thread_payload
+
+    _register_keyed(client, "p17_pt_a")
+    _register_keyed(client, "p17_pt_b")
+    tid = client.post("/dm/start", json={"to_agent": "p17_pt_b"},
+                      headers={"X-Emporia-Agent-Id": "p17_pt_a"}).json()["thread_id"]
+    body = dm_thread_message_envelope("ordinary prose", "", "")
+    body["signature"] = sign(signed_dm_thread_payload(tid, "ordinary prose", "chat"), "p17_pt_a")
+    del body["msg_type"]
+
+    r = client.post(f"/dm/{tid}/send", json=body, headers={"X-Emporia-Agent-Id": "p17_pt_a"})
+    assert r.status_code == 200, r.text
+    msgs = client.get(f"/dm/{tid}/messages?agent_id=p17_pt_b",
+                      headers={"X-Emporia-Agent-Id": "p17_pt_b"}).json()["messages"]
+    assert msgs[0]["msg_type"] == "chat"

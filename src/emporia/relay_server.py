@@ -7402,6 +7402,29 @@ async def dm_send(thread_id: str, req: DMSendRequest, request: Request):
     # here for a client to lie about.
     from emporia import crypto_box
     if thread["encrypted"]:
+        # P17-1: the AAD binds msg_type, and this handler *resolves* msg_type just
+        # above (`req.msg_type or DEFAULT_MSG_TYPE`). So a client that omits the
+        # field seals under "" while this row stores "chat" — the recipient then
+        # computes different AAD and the message is permanently unreadable, having
+        # been accepted with a 200. Verified before the fix: row stored
+        # msg_type='chat', open_sealed() raised for the recipient.
+        #
+        # Refusing is the only sound option: the relay cannot know what value the
+        # client sealed under, so it can't repair the mismatch. Dropping msg_type
+        # from the AAD was considered and rejected — it would throw away
+        # relabelling protection (which rooms will reuse when they adopt
+        # crypto_box) to fix something a clear 400 fixes outright. Same class as
+        # validate_envelope_for() below, and deliberately sitting next to it: both
+        # turn "accepted but nobody can ever read it" into an actionable error.
+        # Plaintext threads keep the omit path — no AAD, nothing to disagree about.
+        if not req.msg_type:
+            raise HTTPException(
+                400,
+                "msg_type must be sent explicitly on an end-to-end encrypted thread: "
+                "it is bound into the message's AAD, and the relay's own default "
+                f"resolution (to '{DEFAULT_MSG_TYPE}') would not match what you "
+                "sealed under, making the message permanently unreadable",
+            )
         try:
             crypto_box.validate_envelope_for(
                 req.content, {thread["agent_a"], thread["agent_b"]},
