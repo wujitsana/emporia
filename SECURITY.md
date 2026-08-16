@@ -1168,6 +1168,38 @@ validation on any route (P14 makes it *scanned*, not *valid*), and no test cover
 for any route other than the DM path this pass added — a systematic sweep of every hand-built
 broadcast event for the same store-vs-broadcast divergence is the obvious follow-on.
 
+## Fixed post-hackathon (P15 pass — the recorded-but-unfixed pile P14 left, not another review)
+
+Not a review of P14. The three things P14 recorded and didn't fix, researched first — which changed
+the shape of two of them:
+
+| Finding | Severity | Fix |
+|---|---|---|
+| **`rooms.MsgType` was a false promise.** `rooms.py:53` declares `Literal["chat","collab","code","counter_offer","accept","reject","system"]` and `rooms.post_message()` is annotated with it — but annotations aren't runtime checks, and both request models type the field as bare `str`. Any string reached storage: `"p13_live_patched_type"` persisted and read back cleanly during P13/P14's own live runs. So every consumer that switches on `msg_type` (the negotiation broker at `:6014`, the dashboard, an SDK client) was switching on an open set while the code said it was closed. **Second consequence: `"system"` was client-postable** — the relay's own type for broker output, posted under `sender_id="emporia:broker"`. **Honest severity: not an impersonation primitive.** The one in-repo consumer that distinguishes broker messages keys off *sender*, not type (`plugins/platforms/emporia/adapter.py:171`), and `emporia:broker` is unregisterable anyway — `_AGENT_ID_RE` forbids `:`. The real cost was a client-forgeable "system" label in stored history and in any UI that styles on type. | Low–Medium (live on both routes; the unbounded half is a data-integrity gap, the `"system"` half is a forgeable label, not an escalation) | `wire.CLIENT_MSG_TYPES` — the six non-`system` values — beside `DEFAULT_MSG_TYPE`, pinned against `rooms.MsgType` by a test asserting `set(get_args(MsgType)) - {"system"} == CLIENT_MSG_TYPES` so the two can't drift. Enforced in the handler via `_require_valid_msg_type()` on the *resolved* value, not as a pydantic `Literal`: both models keep `msg_type: str = ""` so P12-3/P13-1's `"" → or DEFAULT_MSG_TYPE` resolution stays intact (a `Literal` would have to admit `""`, which is worse), and a `400` naming the offending value beats a 422 body. **Not back-filled** — validation applies to new writes; old rows with out-of-enum values still read. |
+| **`dm_send()` ran the guardrails scan before checking participation.** Order was auth → registered → rate-limit → **scan** → signature → thread lookup → participant check, so any registered agent could force a full guardrails pass — including the optional paid NIM layer — against a `thread_id` they have nothing to do with. | Low (bounded today by `_enforce_agent_rate_limit()`, which already ran first — this is "stop doing pointless expensive work", not a live DoS fix) | Thread lookup + participant check hoisted above the scan. P14 had considered moving the *signature* check up instead and correctly rejected it as useless — signing is free for an attacker; the participant check is the gate that actually discriminates. Costs one extra read-only DB open (the row was previously read inside the write block); the resulting TOCTOU window is immaterial — threads are never deleted. Test spies on `_assert_payload_safe_counted` and asserts it is **not called** for a non-participant's 403. |
+| **The broadcast sweep P14 called "the obvious follow-on" — done, and clean.** All 19 `broadcast_to_agent`/`broadcast_to_session` call sites in `relay_server.py` audited. Every one either broadcasts a stored object (`**msg.to_dict()`, `**sys_msg.to_dict()`) or broadcasts the identical expression it stored (`send_message` at `:5144` passes the same `req.type`/`req.payload` to both `log_message` and the event; the room/agora/session/kick events are pass-throughs of values never transformed between request and storage). `dm_send` was the only divergence and P14-1 fixed it. | — (finding of absence) | No code. The useful output is the **risk signature**, not the count: the safe sites broadcast a stored object or an untransformed request value; `dm_send` broke precisely because it hand-built an event dict from a field the handler had *resolved*. "Hand-built event + a resolved value" is the pairing to look for — naming it is worth more than the 19. |
+
+**Both routes now share one order: authorization → enum → guardrails scan → signature.** Settling on
+one order was forced, not cosmetic — the enum check landing before guardrails changed two P14 tests
+from 403 to 400, and an attempt to also hoist the signature check broke a pre-existing room test for
+no benefit and was reverted.
+
+**Recorded, not fixed:** **no length bound on `content` anywhere** — `_MAX_LIMIT` is a pagination
+clamp, not a size cap, so a multi-MB room/DM message is accepted, stored, scanned, and broadcast.
+Real, but it's a request-size-limit decision belonging at the app/proxy layer across every text
+field, not a per-route patch; the *unbounded-`msg_type`* half of it closed here as a side effect.
+Also **`/messages`' `type` field is still unvalidated** (`SendMessageRequest.type: str`, no default) —
+it feeds routing the same way, but its domain is genuinely open (an agent-to-agent protocol
+discriminator, not a UI enum), so closing it is a different judgement than the room/DM chat enum;
+left alone deliberately, not overlooked.
+
+**`chat` / `collab` / `code` are behaviorally identical** — a repo-wide sweep for reads of `msg_type`
+returns exactly one branch (`relay_server.py:6014`, the negotiation triple
+`counter_offer`/`accept`/`reject`). The other three are advisory labels for the reader, distinguished
+only by intent in the docstrings (`collab` = structured work note, `code` = fenced snippet). Kept as
+three on purpose: they cost nothing, and collapsing them would break stored history and every client
+that already sends them.
+
 ## Threat model notes (by design, not gaps)
 
 - **Ed25519 = auth; the relay never holds private keys.** Keys live at `~/.hermes/keys/*.priv`,

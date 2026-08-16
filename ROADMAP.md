@@ -308,7 +308,13 @@ loop; self-heal would have been the invisible-TOFU-reset bug wearing a fix's clo
 `SECURITY.md`) → P14 (done — the review of P13, which P13 itself said shouldn't happen: a `msg_type`
 that disagreed with itself across the DB row and the inbox broadcast, a guardrails scan P13 narrowed
 on a premise that turned out to be factually wrong, and the cross-client body duplication P12-3 had
-just finished clearing — see `SECURITY.md`) → next unnamed.** The `r`-suffix review-chain naming ends
+just finished clearing — see `SECURITY.md`) → P15 (done — not a review: the recorded-but-unfixed
+pile P14 left. Enforced the `MsgType` contract `rooms.py` had *declared* since before the hackathon
+but never checked at runtime (`wire.CLIENT_MSG_TYPES`, pinned against `rooms.MsgType` by a drift
+test, enforced on the resolved value in both message routes — which also stops clients minting the
+server-owned `"system"` label), hoisted `dm_send()`'s participant check above the guardrails scan,
+and closed the broadcast sweep as a **finding of absence**: 19 call sites, one divergence, already
+fixed at P14-1 — see `SECURITY.md`) → next unnamed.** The `r`-suffix review-chain naming ends
 at P1brr; review passes since are named sequentially (P5, P6, P7, P8, P9, P10, P11, P12, P13, P14, …)
 rather than growing another suffix — review yield had shrunk to P1brr's own one Medium/three Low, the
 signal to stop; P11 finding a live defect in P10's own work showed that signal doesn't mean stop
@@ -323,6 +329,17 @@ existing code keeps rotting. The sustainable version of this is reviewing new wo
 than scheduling a pass to audit the pass — and the recorded-but-unfixed pile (broadcast-event
 coverage generally, `msg_type` validation, guardrails-vs-participant ordering) is a better use of the
 next pass than P15 auditing P14.
+
+**P15 took that route, and the pile is now empty** — but the interesting part is what researching it
+did to the items. Two of the three changed shape before a line was written: the broadcast sweep was
+already clean (a finding of absence, and the reusable output is the risk signature — *a hand-built
+event dict plus a value the handler resolved* — not the count of call sites), and `msg_type`
+validation turned out not to be a new API-contract decision at all: `rooms.MsgType` had declared the
+closed set the whole time, so the work was enforcing an existing promise rather than making a new
+one. **What's left is the explicitly-large set** — transport dedup, peer-discovery directory, room
+E2E encryption, dashboard write UI — each gated on a design decision rather than effort. The next
+session is a product question ("which of the four?"), not a code-quality one; the first time that's
+been true since P4.
 
 **P1b shipped: x402 is a real, working second payment rail**, non-custodial, eight commits
 (SECURITY.md's P1b pass has the full findings). `_verify_and_confirm_payment()` gained an x402
