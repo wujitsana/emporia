@@ -16,6 +16,7 @@ import json
 import os
 import re
 import secrets
+import time
 from pathlib import Path
 from typing import Any
 
@@ -216,11 +217,38 @@ _PEER_PUBKEYS_FILE_NAME = "federation_peer_pubkeys.json"
 
 
 def load_federation_peer_pubkeys() -> dict[str, str]:
-    """Return the persisted {peer_url: pubkey_hex} pin map, or {} if none exists yet."""
+    """Return the persisted {peer_url: pubkey_hex} pin map, or {} if none exists yet.
+
+    A missing file is the ordinary first-run case and returns {} silently. A file that
+    exists but is corrupt/unreadable is different: silently returning {} there resets
+    every previously-pinned peer back to trust-on-first-use, invisibly, and the next
+    save_federation_peer_pubkeys() call would overwrite the corrupt file with a fresh
+    one, destroying the evidence anything was wrong. That case is logged loudly and the
+    corrupt file is preserved (renamed aside) before still returning {} — deliberately
+    NOT raised: none of this function's three call sites (relay_server.py) wrap it in a
+    try/except, and the federation-sync loop that calls two of them has no per-peer
+    exception boundary — raising here would abort sync for every configured peer, and
+    500 the dashboard's own peer-status diagnostic view, on the strength of one damaged
+    file. Self-healing (this repo's policy for the JWT secret) is wrong here for the
+    opposite reason: silently regenerating an empty map IS the invisible-TOFU-reset bug,
+    not a fix for it.
+    """
     path = KEY_DIR / _PEER_PUBKEYS_FILE_NAME
     try:
         return json.loads(path.read_text())
-    except (FileNotFoundError, json.JSONDecodeError, OSError):
+    except FileNotFoundError:
+        return {}
+    except (json.JSONDecodeError, OSError) as e:
+        import logging
+        logging.getLogger("emporia.relay").warning(
+            "federation peer pin map at %s is corrupt/unreadable (%s) — every "
+            "previously-pinned peer is being reset to trust-on-first-use; "
+            "preserving the damaged file for inspection", path, e,
+        )
+        try:
+            path.rename(path.with_name(f"{path.name}.corrupt-{int(time.time())}"))
+        except OSError:
+            pass  # best-effort, same as save_federation_peer_pubkeys()'s own contract
         return {}
 
 

@@ -536,6 +536,53 @@ def test_identity_save_federation_peer_pubkeys_is_actually_best_effort():
             readonly_parent.chmod(0o700)
 
 
+def test_identity_load_federation_peer_pubkeys_corrupt_file_logs_and_preserves_evidence(caplog):
+    """P13-3: load_federation_peer_pubkeys() used to collapse "no file yet" and "file
+    is corrupt" into the same silent {} — a corrupt pin file invisibly reset every
+    previously-pinned peer back to trust-on-first-use, and the next successful
+    federation sync would overwrite the corrupt file with a fresh one, destroying the
+    evidence. Writes malformed JSON at the pin-map path and asserts: still returns {}
+    (control flow unchanged — raising isn't safe here, see the function's docstring);
+    a WARNING is logged naming the path; the malformed content survives byte-for-byte
+    under a renamed *.corrupt-* sibling; nothing is written back to the original path."""
+    import logging
+
+    from emporia import identity
+    with tempfile.TemporaryDirectory() as d:
+        fresh_dir = Path(d) / "corrupt_pins_dir"
+        fresh_dir.mkdir()
+        pin_path = fresh_dir / identity._PEER_PUBKEYS_FILE_NAME
+        garbage = b"{not valid json"
+        pin_path.write_bytes(garbage)
+        with patch.object(identity, "KEY_DIR", fresh_dir):
+            with caplog.at_level(logging.WARNING, logger="emporia.relay"):
+                result = identity.load_federation_peer_pubkeys()
+        assert result == {}
+        assert any("corrupt" in rec.message.lower() and str(pin_path) in rec.message for rec in caplog.records)
+        assert not pin_path.exists()
+        preserved = list(fresh_dir.glob(f"{identity._PEER_PUBKEYS_FILE_NAME}.corrupt-*"))
+        assert len(preserved) == 1, preserved
+        assert preserved[0].read_bytes() == garbage
+
+
+def test_identity_load_federation_peer_pubkeys_missing_file_returns_empty_silently(caplog):
+    """P13-3: guards the FileNotFoundError branch — the ordinary first-run case —
+    stays silent (no log, no renamed file), so a future edit can't collapse the two
+    branches back together without a test noticing."""
+    import logging
+
+    from emporia import identity
+    with tempfile.TemporaryDirectory() as d:
+        fresh_dir = Path(d) / "no_pins_yet_dir"
+        fresh_dir.mkdir()
+        with patch.object(identity, "KEY_DIR", fresh_dir):
+            with caplog.at_level(logging.WARNING, logger="emporia.relay"):
+                result = identity.load_federation_peer_pubkeys()
+        assert result == {}
+        assert caplog.records == []
+        assert list(fresh_dir.iterdir()) == []
+
+
 def test_content_address_no_0x_prefix():
     from emporia.identity import content_address_for
     addr = content_address_for("alice", None)
