@@ -368,6 +368,51 @@ class EmporiaAgent:
         resp.raise_for_status()
         return resp.json()
 
+    async def confirm_delivery(self, session_id: str, rationale: str = "") -> dict[str, Any]:
+        """Confirm a service delivery (emporia:service:v1). Buyer calls this to accept
+        the seller's deliverable. Triggers settlement: seller receives payment.
+        Mirrors mcp_server.py's confirm_delivery() MCP tool — the SDK/MCP parity gap
+        this and dispute_delivery() close.
+        """
+        from emporia.wire import DEFAULT_CONFIRM_RATIONALE, signed_action_payload
+        effective_rationale = rationale or DEFAULT_CONFIRM_RATIONALE
+        session = await self.get_session(session_id)
+        signed_payload = signed_action_payload(
+            self.agent_id, "confirm", {}, effective_rationale, session_id, session["step_number"],
+        )
+        body = {
+            "agent_id": self.agent_id, "rationale": effective_rationale,
+            "signature": self._sign(signed_payload),
+        }
+        resp = await self._bearer_request(
+            "post", f"{self.relay_url}/sessions/{session_id}/confirm-delivery", json=body,
+        )
+        resp.raise_for_status()
+        return resp.json()
+
+    async def dispute_delivery(
+        self, session_id: str, reason: str, rationale: str = "",
+    ) -> dict[str, Any]:
+        """Dispute a service delivery (emporia:service:v1). Buyer calls this to reject
+        the deliverable. Payment hold is released (buyer refunded).
+        """
+        from emporia.wire import default_dispute_rationale, signed_action_payload
+        effective_rationale = rationale or default_dispute_rationale(reason)
+        session = await self.get_session(session_id)
+        signed_payload = signed_action_payload(
+            self.agent_id, "dispute", {"reason": reason}, effective_rationale,
+            session_id, session["step_number"],
+        )
+        body = {
+            "agent_id": self.agent_id, "reason": reason, "rationale": effective_rationale,
+            "signature": self._sign(signed_payload),
+        }
+        resp = await self._bearer_request(
+            "post", f"{self.relay_url}/sessions/{session_id}/dispute-delivery", json=body,
+        )
+        resp.raise_for_status()
+        return resp.json()
+
     async def list_sessions(
         self, status: str | None = None, module_type: str | None = None
     ) -> list[dict[str, Any]]:

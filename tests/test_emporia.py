@@ -11149,6 +11149,115 @@ def test_agent_sdk_submit_action_uses_shared_wire_contract_and_relay_accepts_it(
     asyncio.run(scenario())
 
 
+def test_agent_sdk_confirm_delivery_and_dispute_delivery_use_shared_wire_contract_and_relay_accepts_it():
+    """P13-2: agent_sdk.py had no confirm_delivery()/dispute_delivery() at all — a
+    real MCP/SDK parity gap (mcp_server.py's pair predates this). Added mirroring
+    the mcp_server shape (step_number via get_session(), signed_action_payload(),
+    default-rationale resolution from wire.py) in this class's raise-on-error
+    style. Same combined proof as submit_action's sibling test above: real
+    accept->deliver->confirm/dispute round trips through the actual relay, plus a
+    spy proving signer and verifier both resolve signed_action_payload() from
+    wire.py (call_count == 2), not independent copies."""
+    import asyncio
+
+    import httpx as httpx_module
+
+    from emporia import wire
+    from emporia.agent_sdk import EmporiaAgent
+    from emporia.identity import get_public_key_hex
+    from emporia.relay_server import app as relay_app
+
+    def _wired(agent_id: str) -> EmporiaAgent:
+        a = EmporiaAgent(
+            relay_url="http://testserver", agent_id=agent_id,
+            public_key_hex=get_public_key_hex(agent_id),
+        )
+        a._http = httpx_module.AsyncClient(
+            transport=httpx_module.ASGITransport(app=relay_app), base_url="http://testserver",
+        )
+        return a
+
+    async def scenario():
+        buyer = _wired("p13_2_sdk_buyer")
+        seller = _wired("p13_2_sdk_seller")
+        try:
+            await buyer.register()
+            await seller.register()
+
+            # confirm_delivery, with the default rationale resolved (not passed explicitly)
+            session = await buyer.create_session(
+                "emporia:service:v1",
+                config={"description": "P13-2 SDK confirm test"},
+                payment_rules={"mode": "free"},
+            )
+            session_id = session["session_id"]
+            await seller.join_session(session_id)
+            await seller.submit_action(session_id, "accept", {}, "Accepting — P13-2 test.")
+            await seller.submit_action(
+                session_id, "deliver", {"deliverable": "done"}, "Delivered — P13-2 test.",
+            )
+
+            with patch.object(
+                wire, "signed_action_payload", wraps=wire.signed_action_payload,
+            ) as spy:
+                result = await buyer.confirm_delivery(session_id)
+            assert result["is_terminal"] is True, result
+            assert spy.call_count == 2, spy.call_args_list
+            calls = [c.args for c in spy.call_args_list]
+            assert calls[0] == calls[1], calls
+
+            # dispute_delivery, same proof
+            session2 = await buyer.create_session(
+                "emporia:service:v1",
+                config={"description": "P13-2 SDK dispute test"},
+                payment_rules={"mode": "free"},
+            )
+            session_id2 = session2["session_id"]
+            await seller.join_session(session_id2)
+            await seller.submit_action(session_id2, "accept", {}, "Accepting — P13-2 test.")
+            await seller.submit_action(
+                session_id2, "deliver", {"deliverable": "done"}, "Delivered — P13-2 test.",
+            )
+
+            with patch.object(
+                wire, "signed_action_payload", wraps=wire.signed_action_payload,
+            ) as spy2:
+                result2 = await buyer.dispute_delivery(session_id2, "not as described")
+            assert result2["is_terminal"] is True, result2
+            assert spy2.call_count == 2, spy2.call_args_list
+            calls2 = [c.args for c in spy2.call_args_list]
+            assert calls2[0] == calls2[1], calls2
+        finally:
+            await buyer._http.aclose()
+            await seller._http.aclose()
+
+    asyncio.run(scenario())
+
+
+def test_agent_sdk_confirm_delivery_signs_and_attaches_rationale():
+    """Unit-level check of confirm_delivery()'s request-body shape, mirroring
+    test_agent_sdk_create_room_forwards_access_duration_days's mocked-HTTP idiom.
+    Mocks get_session() (so no real relay round trip is needed) and asserts the
+    posted body carries agent_id/rationale/signature."""
+    import asyncio
+    from emporia.agent_sdk import EmporiaAgent
+
+    agent = EmporiaAgent(relay_url="http://fake.invalid", agent_id="sdk_confirm_agent", public_key_hex="ab" * 32)
+    agent._http = MagicMock()
+    resp = MagicMock(status_code=200)
+    resp.json.return_value = {"is_terminal": True}
+    agent._http.post = AsyncMock(return_value=resp)
+    agent._bearer_headers = AsyncMock(return_value={"Authorization": "Bearer x"})
+    agent.get_session = AsyncMock(return_value={"step_number": 3})
+
+    asyncio.run(agent.confirm_delivery("sess_1", rationale="Confirming — unit test."))
+
+    body = agent._http.post.call_args.kwargs["json"]
+    assert body["agent_id"] == "sdk_confirm_agent", body
+    assert body["rationale"] == "Confirming — unit test.", body
+    assert "signature" in body and body["signature"], body
+
+
 def test_mcp_send_room_message_uses_shared_wire_contract_and_relay_accepts_it(prod_client):
     """P6-5: mcp_server.send_room_message() and agent_sdk.send_room_message()
     (see the sibling test below) independently signed
