@@ -9502,20 +9502,20 @@ def test_dm_send_broadcast_msg_type_matches_stored_msg_type(prod_client):
     assert broadcast_msg_type == stored_msg["msg_type"], (broadcast_msg_type, stored_msg["msg_type"])
 
 
-def test_dm_send_scans_msg_type_for_injection(prod_client):
-    """P14: P13-1 narrowed dm_send()'s guardrails scan from req.model_dump() to
-    {"content": req.content}, on the stated grounds that it "would otherwise now
-    scan the signature string too". But guardrails already exempts `signature`
-    (structural key AND token-shaped value — see _STRUCTURAL_FIELDS /
-    _looks_like_token), so that was never happening; the narrowing dropped real
-    coverage instead. msg_type is free-form, persisted to dm_messages, returned by
-    GET /dm/{id}/messages, and pushed into the recipient's inbox event — a field
-    that crosses an agent boundary, which is exactly what the guardrail gates.
+def test_dm_send_rejects_prose_msg_type(prod_client):
+    """Prose can't reach msg_type. Originally a P14 guardrails test: P13-1 had
+    narrowed dm_send()'s scan to content-only, dropping msg_type coverage on a
+    premise that didn't hold (guardrails already exempts `signature`), so P14 put
+    msg_type back in the scan and this asserted a 403 from the guardrail.
 
-    Benign content, injection text in msg_type: the block can only come from
-    msg_type. Note the exemption is value-shape gated, so real enum values
-    ("chat", "counter_offer" — no whitespace) can't false-positive; only
-    prose-shaped msg_type values are ever scanned."""
+    P15 supersedes that with the stronger control: msg_type is now validated against
+    a closed six-value enum (wire.CLIENT_MSG_TYPES) *before* the scan runs, so prose
+    is rejected 400 by the enum and never reaches the guardrail — which is why
+    msg_type is no longer in the scan payload at all (it would be provably dead code
+    behind a closed enum of token-shaped values). The property this test protects is
+    unchanged and now enforced more strictly; only the mechanism and status moved.
+
+    Benign content, prose in msg_type: the rejection can only come from msg_type."""
     from emporia import wire
     from emporia.identity import sign
     _register_keyed(prod_client, "p14_dm_scan_alice")
@@ -9536,7 +9536,8 @@ def test_dm_send_scans_msg_type_for_injection(prod_client):
         },
         headers=bearer_for(prod_client, "p14_dm_scan_alice"),
     )
-    assert r.status_code == 403, r.text
+    assert r.status_code == 400, r.text
+    assert "msg_type" in r.text, r.text
 
     # A normal enum-shaped msg_type still goes through untouched.
     signed_ok = wire.signed_dm_thread_payload(thread_id, content, "collab")
@@ -9551,13 +9552,13 @@ def test_dm_send_scans_msg_type_for_injection(prod_client):
     assert r.status_code == 200, r.text
 
 
-def test_room_message_scans_msg_type_for_injection(prod_client):
-    """P14: the room route's sibling of the DM gap above — pre-existing, not a P13
-    regression, but the same one line. Its scan covered content only, so injection
-    text in msg_type reached storage and every room member's broadcast. Fixed
-    unconditionally (outside the encrypted-room carve-out): that carve-out exists
-    because `content` is opaque ciphertext that false-positives, and msg_type never
-    is — it's plaintext routing metadata this handler itself switches on."""
+def test_room_message_rejects_prose_msg_type(prod_client):
+    """The room route's sibling of the DM test above. Same history: P14 added
+    msg_type to this route's guardrails scan (a pre-existing gap, not a P13
+    regression), P15 superseded it with the closed enum, which runs first and
+    rejects 400. Ordering the enum ahead of the scan on both routes is deliberate —
+    the same bad input now gets the same, more actionable error naming the valid
+    values, instead of one route saying 400 and the other 403."""
     from emporia import wire
     from emporia.identity import sign
     _register_keyed(prod_client, "p14_room_scan_owner")
@@ -9577,7 +9578,8 @@ def test_room_message_scans_msg_type_for_injection(prod_client):
         },
         headers=bearer_for(prod_client, "p14_room_scan_owner"),
     )
-    assert r.status_code == 403, r.text
+    assert r.status_code == 400, r.text
+    assert "msg_type" in r.text, r.text
 
     signed_ok = wire.signed_room_message_payload(room_id, content, "collab")
     r = prod_client.post(
@@ -9690,6 +9692,42 @@ def test_room_message_rejects_invalid_and_server_owned_msg_type(prod_client):
         headers=bearer_for(prod_client, "p15_room_enum_owner"),
     )
     assert r.status_code == 200, r.text
+
+
+def test_dm_send_rejects_non_participant_before_running_guardrails(prod_client):
+    """P15: dm_send() ran the guardrails scan — including the optional paid NIM
+    semantic layer — before it ever looked up the thread, so any registered agent
+    could force a scan against a thread_id they have nothing to do with. Bounded by
+    the per-agent rate limit that runs first, so this is "stop doing expensive work
+    for a request that's already rejected" rather than a live DoS fix. Moving only
+    the signature check up (considered at P14) would not have helped: signing is free
+    for the attacker, so it discriminates nothing — the participant check is the gate
+    that actually does.
+
+    Asserts a non-participant gets 403 and the scan never ran."""
+    from emporia import relay_server, wire
+    from emporia.identity import sign
+    _register_keyed(prod_client, "p15_order_alice")
+    _register_keyed(prod_client, "p15_order_bob")
+    _register_keyed(prod_client, "p15_order_mallory")
+    thread_id = prod_client.post(
+        "/dm/start", json={"to_agent": "p15_order_bob"},
+        headers=bearer_for(prod_client, "p15_order_alice"),
+    ).json()["thread_id"]
+
+    content = "P15 ordering test"
+    payload = wire.signed_dm_thread_payload(thread_id, content, wire.DEFAULT_MSG_TYPE)
+    with patch.object(
+        relay_server, "_assert_payload_safe_counted", wraps=relay_server._assert_payload_safe_counted,
+    ) as scan_spy:
+        r = prod_client.post(
+            f"/dm/{thread_id}/send",
+            json={"content": content, "signature": sign(payload, "p15_order_mallory")},
+            headers=bearer_for(prod_client, "p15_order_mallory"),
+        )
+    assert r.status_code == 403, r.text
+    assert "participant" in r.text.lower(), r.text
+    assert not scan_spy.called, "guardrails scan ran for a caller who isn't in the thread"
 
 
 def test_mcp_send_dm_returns_structured_error_on_sign_failure(prod_client):

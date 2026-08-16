@@ -5969,24 +5969,6 @@ async def send_room_message(room_id: str, req: SendRoomMessageRequest, request: 
         raise HTTPException(403, "Join the room first")
     _enforce_agent_rate_limit(caller)
 
-    # Encrypted rooms: relay stores opaque ciphertext — never scan it.
-    # Ciphertext is binary/base64 and WILL false-positive on injection patterns.
-    # Membership check above is the only gate; clients own key exchange + decryption.
-    # P14: msg_type is scanned regardless — the carve-out above is specifically about
-    # `content` being opaque ciphertext, and msg_type never is: it's routing metadata
-    # this handler itself reads and switches on (negotiation broker, below), so it's
-    # plaintext in an encrypted room too. Pre-existing gap, not a P13 regression like
-    # the DM route's — same one-line shape, fixed here while in the area.
-    try:
-        scan_payload: dict[str, Any] = {"msg_type": req.msg_type}
-        if not room.encrypted:
-            scan_payload["content"] = req.content
-        await _assert_payload_safe_counted(scan_payload)
-    except PermissionError as e:
-        raise HTTPException(403, str(e))
-
-    if not req.signature:
-        raise HTTPException(401, "Signature required")
     # P12: msg_type resolved here (not left as a bare pydantic field default) so it's
     # single-sourced from wire.py the same way confirm/dispute's rationale is — a raw
     # client omitting the optional field used to be verified against this file's own
@@ -6001,6 +5983,25 @@ async def send_room_message(room_id: str, req: SendRoomMessageRequest, request: 
     from emporia.wire import DEFAULT_MSG_TYPE, signed_room_message_payload
     effective_msg_type = req.msg_type or DEFAULT_MSG_TYPE
     _require_valid_msg_type(effective_msg_type)
+
+    # Encrypted rooms: relay stores opaque ciphertext — never scan it.
+    # Ciphertext is binary/base64 and WILL false-positive on injection patterns.
+    # Membership check above is the only gate; clients own key exchange + decryption.
+    # P15: msg_type is no longer in this payload. P14 added it (a real gap at the time —
+    # the field was free-form and prose-capable), but _require_valid_msg_type() above now
+    # rejects anything outside a closed six-value enum, every member of which is exempt
+    # from scanning anyway as a token-shaped value, so scanning it here would be provably
+    # dead code behind a strictly stronger control. The enum runs before the scan on both
+    # message routes so the same bad input gets the same actionable 400 naming the valid
+    # values, rather than one route saying 400 and the other a generic guardrails 403.
+    if not room.encrypted:
+        try:
+            await _assert_payload_safe_counted({"content": req.content})
+        except PermissionError as e:
+            raise HTTPException(403, str(e))
+
+    if not req.signature:
+        raise HTTPException(401, "Signature required")
     # N3-8 (R7): bound to room_id + msg_type, not just content — a content-only
     # signature was valid in *any* room the caller belongs to, forever (replayable
     # across rooms and across msg_type, e.g. a signed "chat" replayed as "accept").
@@ -7066,40 +7067,47 @@ async def dm_send(thread_id: str, req: DMSendRequest, request: Request):
         raise HTTPException(401, "Authentication required")
     _require_registered(caller)
     _enforce_agent_rate_limit(caller)
+    # P15: thread lookup + participant check hoisted above the guardrails scan. They
+    # used to sit in the write block below, so any registered agent could force a scan —
+    # including the optional paid NIM layer — against a thread_id they have nothing to
+    # do with. Bounded by _enforce_agent_rate_limit() above, so this is "stop doing
+    # expensive work for a request that's already rejected", not a live DoS fix. Moving
+    # only the *signature* check up (considered at P14) would not have helped: signing
+    # is free for the attacker, so it discriminates nothing. Read-only, so it takes its
+    # own connection rather than holding DB_LOCK across the scan; the resulting TOCTOU
+    # window is immaterial (threads are never deleted).
+    with get_db() as conn:
+        thread = conn.execute(
+            "SELECT * FROM dm_threads WHERE thread_id=?", (thread_id,)
+        ).fetchone()
+    if not thread:
+        raise HTTPException(404, "DM thread not found")
+    if caller not in (thread["agent_a"], thread["agent_b"]):
+        raise HTTPException(403, "Not a participant in this thread")
+    # Local import + resolved-once pattern matches P12-3's room-message fix.
+    from emporia.wire import DEFAULT_MSG_TYPE, signed_dm_thread_payload
+    effective_msg_type = req.msg_type or DEFAULT_MSG_TYPE
+    _require_valid_msg_type(effective_msg_type)
+
+    # P15: msg_type dropped from this payload for the same reason as the room route
+    # above — the closed enum checked immediately above supersedes scanning it.
     try:
-        # P14: msg_type is scanned too. P13-1 narrowed this from req.model_dump() to
-        # content-only on the stated grounds that it "would otherwise now scan the
-        # signature string" — but guardrails already exempts `signature` (structural
-        # key + token-shaped value, see _STRUCTURAL_FIELDS/_looks_like_token), so that
-        # was never happening, and the narrowing dropped real coverage: msg_type is
-        # free-form, persisted, and pushed into the recipient's inbox. Legitimate enum
-        # values ("chat", "counter_offer") stay exempt automatically via the same
-        # token-shape check, so only prose-shaped msg_type values are ever scanned.
-        await _assert_payload_safe_counted({"content": req.content, "msg_type": req.msg_type})
+        await _assert_payload_safe_counted({"content": req.content})
     except PermissionError as e:
         raise HTTPException(403, str(e))
+
     if not req.signature:
         raise HTTPException(401, "Signature required")
     # Same N3-8/R7 shape as room messages: bound to thread_id + msg_type, not just
     # content — a content-only signature was valid for delivery into any thread this
     # agent is a participant of, forever (replayable across threads and across
-    # msg_type). Local import + resolved-once pattern matches P12-3's room-message fix.
-    from emporia.wire import DEFAULT_MSG_TYPE, signed_dm_thread_payload
-    effective_msg_type = req.msg_type or DEFAULT_MSG_TYPE
-    _require_valid_msg_type(effective_msg_type)
+    # msg_type).
     signed_envelope = signed_dm_thread_payload(thread_id, req.content, effective_msg_type)
     if not AGENT_REGISTRY.verify_signature(caller, signed_envelope, req.signature):
         raise HTTPException(403, "Invalid message signature")
     now = datetime.now(UTC).isoformat()
     message_id = f"dmm_{uuid.uuid4().hex[:12]}"
     with DB_LOCK, get_db() as conn:
-        thread = conn.execute(
-            "SELECT * FROM dm_threads WHERE thread_id=?", (thread_id,)
-        ).fetchone()
-        if not thread:
-            raise HTTPException(404, "DM thread not found")
-        if caller not in (thread["agent_a"], thread["agent_b"]):
-            raise HTTPException(403, "Not a participant in this thread")
         conn.execute(
             "INSERT INTO dm_messages (message_id, thread_id, sender_id, content, msg_type, created_at) "
             "VALUES (?,?,?,?,?,?)",
