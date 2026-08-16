@@ -736,6 +736,7 @@ def init_db() -> None:
                 agent_b TEXT NOT NULL,
                 created_at TEXT NOT NULL,
                 last_message_at TEXT NOT NULL,
+                encrypted INTEGER NOT NULL DEFAULT 0,
                 UNIQUE(agent_a, agent_b)
             );
             CREATE TABLE IF NOT EXISTS dm_messages (
@@ -765,6 +766,7 @@ def init_db() -> None:
         """)
         # Schema migrations for existing DBs (idempotent ADD COLUMN)
         _migrate_authorized_agents(conn)
+        _migrate_dm_threads(conn)
         _migrate_payments(conn)
         _migrate_settlements(conn)
         _migrate_settlement_dedupe_key(conn)
@@ -1107,6 +1109,20 @@ def _migrate_settlement_refund_columns(conn: Any) -> None:
         conn.execute("ALTER TABLE settlements ADD COLUMN refund_id TEXT")
     if "reversal_id" not in cols:
         conn.execute("ALTER TABLE settlements ADD COLUMN reversal_id TEXT")
+
+
+def _migrate_dm_threads(conn: Any) -> None:
+    """P16: whether a DM thread is end-to-end encrypted.
+
+    `0` is correct for every pre-existing thread — none of them had any concept of
+    encryption, and the flag is opt-in — so this is the column and nothing else, no
+    backfill. Note there is deliberately no migration *off* this: the flag is
+    one-way by design (see `dm_encrypt()`), and a schema that could clear it would
+    be the force-plaintext path the route refuses to provide.
+    """
+    cols = {r[1] for r in conn.execute("PRAGMA table_info(dm_threads)").fetchall()}
+    if "encrypted" not in cols:
+        conn.execute("ALTER TABLE dm_threads ADD COLUMN encrypted INTEGER NOT NULL DEFAULT 0")
 
 
 def _migrate_authorized_agents(conn: Any) -> None:
@@ -7183,12 +7199,31 @@ async def root_redirect():
 
 class DMStartRequest(BaseModel):
     to_agent: str
+    encrypted: bool = False
 
 
 class DMSendRequest(BaseModel):
     content: str
     msg_type: str = ""
     signature: str | None = None
+
+
+def _require_encryption_keys_published(agent_ids: list[str]) -> None:
+    """P16: every participant must have published an X25519 key before a thread can
+    be marked encrypted.
+
+    An encrypted thread with an unreachable participant is worse than no flag at
+    all — every send would fail `validate_envelope_for()` with an error about
+    wrapped keys, nowhere near the actual cause. Fails 409 (a state conflict, not a
+    malformed request) naming the agent who needs to act.
+    """
+    missing = [a for a in agent_ids if not AGENT_REGISTRY.get_encryption_key(a)[0]]
+    if missing:
+        raise HTTPException(
+            409,
+            f"cannot encrypt this thread: {', '.join(missing)} has not published an "
+            f"encryption key (POST /agents/{{agent_id}}/encryption-key)",
+        )
 
 
 @app.post("/dm/start")
@@ -7204,20 +7239,108 @@ async def dm_start(req: DMStartRequest, request: Request):
         raise HTTPException(400, "Cannot DM yourself")
     # Canonical ordering so UNIQUE(agent_a, agent_b) always matches
     a, b = sorted([caller, req.to_agent])
+    if req.encrypted:
+        _require_encryption_keys_published([a, b])
     now = datetime.now(UTC).isoformat()
     thread_id = f"dm_{uuid.uuid4().hex[:12]}"
     with DB_LOCK, get_db() as conn:
         existing = conn.execute(
-            "SELECT thread_id FROM dm_threads WHERE agent_a=? AND agent_b=?", (a, b)
+            "SELECT thread_id, encrypted FROM dm_threads WHERE agent_a=? AND agent_b=?", (a, b)
         ).fetchone()
         if existing:
-            return {"thread_id": existing["thread_id"], "created": False}
+            # P16: this route is idempotent on the *pair*, so without this check
+            # asking for an encrypted thread when a plaintext one already exists
+            # would hand back the plaintext thread — and a client that didn't
+            # re-read the flag would post prose believing it was encrypted. That
+            # silent downgrade is the worst failure mode this feature has, so the
+            # mismatch is a 409 rather than a quietly different answer. The mirror
+            # case conflicts too: a caller expecting plaintext must not be handed
+            # an encrypted thread and post prose into it. `POST /dm/{id}/encrypt`
+            # is how an existing thread changes mode, deliberately and one-way.
+            if bool(existing["encrypted"]) != req.encrypted:
+                state = "encrypted" if existing["encrypted"] else "not encrypted"
+                raise HTTPException(
+                    409,
+                    f"a DM thread with '{req.to_agent}' already exists and is {state}. "
+                    f"Use POST /dm/{existing['thread_id']}/encrypt to enable encryption "
+                    f"on it (encryption cannot be turned off).",
+                )
+            return {
+                "thread_id": existing["thread_id"],
+                "created": False,
+                "encrypted": bool(existing["encrypted"]),
+            }
         conn.execute(
-            "INSERT INTO dm_threads (thread_id, agent_a, agent_b, created_at, last_message_at) "
-            "VALUES (?,?,?,?,?)",
-            (thread_id, a, b, now, now),
+            "INSERT INTO dm_threads "
+            "(thread_id, agent_a, agent_b, created_at, last_message_at, encrypted) "
+            "VALUES (?,?,?,?,?,?)",
+            (thread_id, a, b, now, now, int(req.encrypted)),
         )
-    return {"thread_id": thread_id, "agent_a": a, "agent_b": b, "created": True}
+    return {
+        "thread_id": thread_id, "agent_a": a, "agent_b": b,
+        "created": True, "encrypted": req.encrypted,
+    }
+
+
+def _dm_thread_or_404(thread_id: str, caller: str) -> Any:
+    """Load a DM thread and assert `caller` is one of its two participants."""
+    with get_db() as conn:
+        thread = conn.execute(
+            "SELECT * FROM dm_threads WHERE thread_id=?", (thread_id,)
+        ).fetchone()
+    if not thread:
+        raise HTTPException(404, "DM thread not found")
+    if caller not in (thread["agent_a"], thread["agent_b"]):
+        raise HTTPException(403, "Not a participant in this thread")
+    return thread
+
+
+@app.get("/dm/{thread_id}")
+async def dm_thread_info(thread_id: str, request: Request):
+    """Thread metadata — participants and whether it is encrypted.
+
+    Exists so a client holding only a `thread_id` (from an inbox event, a stored
+    reference) can learn the mode before it sends or displays anything, without
+    fetching the message history to infer it.
+    """
+    caller = _dashboard_agent_id(request)
+    if not caller:
+        raise HTTPException(401, "Authentication required")
+    thread = _dm_thread_or_404(thread_id, caller)
+    return {
+        "thread_id": thread["thread_id"],
+        "agent_a": thread["agent_a"],
+        "agent_b": thread["agent_b"],
+        "encrypted": bool(thread["encrypted"]),
+        "created_at": thread["created_at"],
+        "last_message_at": thread["last_message_at"],
+    }
+
+
+@app.post("/dm/{thread_id}/encrypt")
+async def dm_encrypt(thread_id: str, request: Request):
+    """Turn on end-to-end encryption for an existing thread. Idempotent.
+
+    **One-way, on purpose.** Either participant may enable it unilaterally — there
+    is nothing to negotiate, since the peer's client handles both modes and the
+    flag only ever adds protection. There is deliberately no route that clears it:
+    a downgrade endpoint is a force-plaintext attack, and one participant being
+    able to strip a thread's encryption is exactly what an attacker with a stolen
+    session would reach for. The only way back to plaintext is a different thread.
+
+    Messages already stored stay as they are — an upgrade is not a purge. Old
+    plaintext remains readable; everything after this point must be an envelope.
+    """
+    caller = _dashboard_agent_id(request)
+    if not caller:
+        raise HTTPException(401, "Authentication required")
+    _require_registered(caller)
+    _enforce_agent_rate_limit(caller)
+    thread = _dm_thread_or_404(thread_id, caller)
+    _require_encryption_keys_published([thread["agent_a"], thread["agent_b"]])
+    with DB_LOCK, get_db() as conn:
+        conn.execute("UPDATE dm_threads SET encrypted=1 WHERE thread_id=?", (thread_id,))
+    return {"thread_id": thread_id, "encrypted": True}
 
 
 @app.post("/dm/{thread_id}/send")
@@ -7237,25 +7360,49 @@ async def dm_send(thread_id: str, req: DMSendRequest, request: Request):
     # is free for the attacker, so it discriminates nothing. Read-only, so it takes its
     # own connection rather than holding DB_LOCK across the scan; the resulting TOCTOU
     # window is immaterial (threads are never deleted).
-    with get_db() as conn:
-        thread = conn.execute(
-            "SELECT * FROM dm_threads WHERE thread_id=?", (thread_id,)
-        ).fetchone()
-    if not thread:
-        raise HTTPException(404, "DM thread not found")
-    if caller not in (thread["agent_a"], thread["agent_b"]):
-        raise HTTPException(403, "Not a participant in this thread")
+    thread = _dm_thread_or_404(thread_id, caller)
     # Local import + resolved-once pattern matches P12-3's room-message fix.
     from emporia.wire import DEFAULT_MSG_TYPE, signed_dm_thread_payload
     effective_msg_type = req.msg_type or DEFAULT_MSG_TYPE
     _require_valid_msg_type(effective_msg_type)
 
+    # P16: enforce the thread's mode. The relay reads no plaintext and holds no key
+    # here — `validate_envelope_for()` inspects the envelope's structure and the set
+    # of agent_ids the content key was wrapped to, nothing more. It catches the two
+    # failures that actually happen: prose posted to an encrypted thread (a silent
+    # plaintext leak into a store the sender believes is opaque), and a sender who
+    # wrapped only for themselves — a message the peer can never read, which without
+    # this check would be stored, 200'd, and discovered as permanent garbage. The
+    # mode comes from the thread row, never from the request, so there is nothing
+    # here for a client to lie about.
+    from emporia import crypto_box
+    if thread["encrypted"]:
+        try:
+            crypto_box.validate_envelope_for(
+                req.content, {thread["agent_a"], thread["agent_b"]},
+            )
+        except ValueError as e:
+            raise HTTPException(400, f"this DM thread is end-to-end encrypted — {e}")
+    elif crypto_box.looks_like_envelope(req.content):
+        raise HTTPException(
+            400,
+            "this DM thread is not encrypted, so an encrypted envelope cannot be "
+            f"stored in it — enable encryption first via POST /dm/{thread_id}/encrypt",
+        )
+
     # P15: msg_type dropped from this payload for the same reason as the room route
     # above — the closed enum checked immediately above supersedes scanning it.
-    try:
-        await _assert_payload_safe_counted({"content": req.content})
-    except PermissionError as e:
-        raise HTTPException(403, str(e))
+    # P16: and the content scan is skipped entirely on an encrypted thread, the same
+    # carve-out (and the same reason) encrypted rooms already have — ciphertext is
+    # base64 and *will* false-positive on injection patterns. This is the real price
+    # of E2E, stated plainly in SECURITY.md rather than implied away: the relay
+    # cannot scan what it cannot read. msg_type is unaffected — it sits outside the
+    # envelope and is already restricted to a closed six-value enum.
+    if not thread["encrypted"]:
+        try:
+            await _assert_payload_safe_counted({"content": req.content})
+        except PermissionError as e:
+            raise HTTPException(403, str(e))
 
     if not req.signature:
         raise HTTPException(401, "Signature required")
@@ -7291,6 +7438,11 @@ async def dm_send(thread_id: str, req: DMSendRequest, request: Request):
         # message object; this one hand-builds its event, so both sites have to use
         # the resolved value explicitly.
         "msg_type": effective_msg_type,
+        # P16: a client holding only this event has to know whether `content` is
+        # ciphertext before it tries to display it. Read from the thread row, the
+        # same source the mode check above used — not re-derived from the content,
+        # which would be a second definition of the same fact.
+        "encrypted": bool(thread["encrypted"]),
         "created_at": now,
     }
     await broadcast_to_agent(recipient, event)
@@ -7318,8 +7470,12 @@ async def dm_list(agent_id: str, request: Request, limit: int = 50):
             "thread_id": r["thread_id"],
             "other_agent": r["agent_b"] if r["agent_a"] == agent_id else r["agent_a"],
             "last_message_at": r["last_message_at"],
+            # P16: on an encrypted thread this preview is the raw envelope, which
+            # is exactly right — the relay has nothing else to give. The `encrypted`
+            # flag beside it is how a client knows to decrypt rather than display.
             "last_content": r["last_content"],
             "last_sender": r["last_sender"],
+            "encrypted": bool(r["encrypted"]),
         }
         for r in rows
     ]
