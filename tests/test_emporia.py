@@ -19,6 +19,7 @@ Run:
 
 from __future__ import annotations
 
+import base64
 import json
 import os
 import shutil
@@ -15244,3 +15245,216 @@ def test_entitlement_resource_type_keeps_room_and_agora_separate(entitlements_db
     grant("room", "shared_id_123", "ent_payer", "pi_room", rail="stripe", db_path=entitlements_db_path)
     assert has_access("room", "shared_id_123", "ent_payer", db_path=entitlements_db_path)
     assert not has_access("agora", "shared_id_123", "ent_payer", db_path=entitlements_db_path)
+
+
+# ============================================================================
+# P16-1: crypto_box — the pure E2E envelope layer for encrypted DMs
+#
+# The relay never holds a private key and never sees plaintext, so every
+# guarantee this feature makes is a property of *this* module, tested here in
+# isolation from HTTP, the DB, and identity's key files.
+# ============================================================================
+
+def _x25519_pair():
+    from cryptography.hazmat.primitives.asymmetric.x25519 import X25519PrivateKey
+
+    priv = X25519PrivateKey.generate()
+    return priv, priv.public_key().public_bytes_raw().hex()
+
+
+def test_crypto_box_round_trips_for_both_participants():
+    """The load-bearing property: the *sender* can read their own message back.
+    A plain sealed-box (wrap to the recipient only) would make GET /dm/{id}/messages
+    return the sender's own history as garbage."""
+    from emporia import crypto_box
+
+    alice_priv, alice_pub = _x25519_pair()
+    bob_priv, bob_pub = _x25519_pair()
+    aad = crypto_box.message_aad("dm_abc", "alice", "chat")
+    env = crypto_box.seal("meet me at the docks", {"alice": alice_pub, "bob": bob_pub}, aad)
+
+    assert crypto_box.open_sealed(env, "alice", alice_priv, aad) == "meet me at the docks"
+    assert crypto_box.open_sealed(env, "bob", bob_priv, aad) == "meet me at the docks"
+
+
+def test_crypto_box_ciphertext_does_not_contain_plaintext():
+    """The user's requirement stated as an assertion at the lowest level: the
+    serialized envelope — which is exactly what lands in dm_messages.content —
+    contains no trace of the plaintext."""
+    from emporia import crypto_box
+
+    _, alice_pub = _x25519_pair()
+    _, bob_pub = _x25519_pair()
+    secret = "the relay operator must never read this"
+    env = crypto_box.seal(
+        secret, {"alice": alice_pub, "bob": bob_pub},
+        crypto_box.message_aad("dm_abc", "alice", "chat"),
+    )
+    assert secret not in json.dumps(env)
+    assert "docks" not in json.dumps(env)
+
+
+def test_crypto_box_non_recipient_cannot_open():
+    """A third agent with a perfectly valid keypair of their own has no wrapped
+    key in the envelope — this is the property that makes the relay operator's
+    own keypair useless against a thread they are not in."""
+    from emporia import crypto_box
+
+    _, alice_pub = _x25519_pair()
+    _, bob_pub = _x25519_pair()
+    mallory_priv, _ = _x25519_pair()
+    aad = crypto_box.message_aad("dm_abc", "alice", "chat")
+    env = crypto_box.seal("private", {"alice": alice_pub, "bob": bob_pub}, aad)
+
+    with pytest.raises(crypto_box.DecryptionError):
+        crypto_box.open_sealed(env, "mallory", mallory_priv, aad)
+
+
+def test_crypto_box_wrong_key_for_a_named_recipient_fails():
+    """Being *named* in `keys` is not enough — the wrapped CEK is bound to the
+    recipient's actual public key, so a substituted private key still fails."""
+    from emporia import crypto_box
+
+    _, alice_pub = _x25519_pair()
+    _, bob_pub = _x25519_pair()
+    impostor_priv, _ = _x25519_pair()
+    aad = crypto_box.message_aad("dm_abc", "alice", "chat")
+    env = crypto_box.seal("private", {"alice": alice_pub, "bob": bob_pub}, aad)
+
+    with pytest.raises(crypto_box.DecryptionError):
+        crypto_box.open_sealed(env, "bob", impostor_priv, aad)
+
+
+@pytest.mark.parametrize("field", ["ct", "n", "epk"])
+def test_crypto_box_detects_tampering(field):
+    from emporia import crypto_box
+
+    alice_priv, alice_pub = _x25519_pair()
+    _, bob_pub = _x25519_pair()
+    aad = crypto_box.message_aad("dm_abc", "alice", "chat")
+    env = crypto_box.seal("original text", {"alice": alice_pub, "bob": bob_pub}, aad)
+
+    raw = base64.b64decode(env[field]) if field != "epk" else bytes.fromhex(env["epk"])
+    flipped = bytes([raw[0] ^ 0xFF]) + raw[1:]
+    env[field] = flipped.hex() if field == "epk" else base64.b64encode(flipped).decode()
+
+    with pytest.raises(crypto_box.DecryptionError):
+        crypto_box.open_sealed(env, "alice", alice_priv, aad)
+
+
+def test_crypto_box_detects_tampering_with_a_wrapped_key():
+    from emporia import crypto_box
+
+    alice_priv, alice_pub = _x25519_pair()
+    _, bob_pub = _x25519_pair()
+    aad = crypto_box.message_aad("dm_abc", "alice", "chat")
+    env = crypto_box.seal("original text", {"alice": alice_pub, "bob": bob_pub}, aad)
+
+    raw = base64.b64decode(env["keys"]["alice"]["ct"])
+    env["keys"]["alice"]["ct"] = base64.b64encode(bytes([raw[0] ^ 0xFF]) + raw[1:]).decode()
+
+    with pytest.raises(crypto_box.DecryptionError):
+        crypto_box.open_sealed(env, "alice", alice_priv, aad)
+
+
+@pytest.mark.parametrize(
+    "thread_id,sender_id,msg_type",
+    [
+        ("dm_OTHER", "alice", "chat"),   # relay moved the ciphertext to another thread
+        ("dm_abc", "mallory", "chat"),   # relay relabelled the sender
+        ("dm_abc", "alice", "accept"),   # relay relabelled a "chat" as a negotiation "accept"
+    ],
+)
+def test_crypto_box_aad_binds_thread_sender_and_msg_type(thread_id, sender_id, msg_type):
+    """Without AAD binding, the relay could relocate or relabel a ciphertext and it
+    would still decrypt — turning an opaque store into a message-forgery primitive
+    that needs no key at all."""
+    from emporia import crypto_box
+
+    alice_priv, alice_pub = _x25519_pair()
+    _, bob_pub = _x25519_pair()
+    sealed_aad = crypto_box.message_aad("dm_abc", "alice", "chat")
+    env = crypto_box.seal("original text", {"alice": alice_pub, "bob": bob_pub}, sealed_aad)
+
+    tampered_aad = crypto_box.message_aad(thread_id, sender_id, msg_type)
+    assert tampered_aad != sealed_aad
+    with pytest.raises(crypto_box.DecryptionError):
+        crypto_box.open_sealed(env, "alice", alice_priv, tampered_aad)
+
+
+@pytest.mark.parametrize("mutate", [
+    lambda e: e.update({"v": 2}),
+    lambda e: e.update({"alg": "rot13"}),
+    lambda e: e.pop("epk"),
+    lambda e: e.pop("keys"),
+])
+def test_crypto_box_rejects_unknown_version_alg_or_shape(mutate):
+    from emporia import crypto_box
+
+    alice_priv, alice_pub = _x25519_pair()
+    _, bob_pub = _x25519_pair()
+    aad = crypto_box.message_aad("dm_abc", "alice", "chat")
+    env = crypto_box.seal("text", {"alice": alice_pub, "bob": bob_pub}, aad)
+    mutate(env)
+
+    with pytest.raises(crypto_box.DecryptionError):
+        crypto_box.open_sealed(env, "alice", alice_priv, aad)
+
+
+def test_crypto_box_seal_requires_recipients():
+    from emporia import crypto_box
+
+    with pytest.raises(ValueError):
+        crypto_box.seal("text", {}, crypto_box.message_aad("dm_abc", "alice", "chat"))
+
+
+def test_crypto_box_each_seal_uses_a_fresh_content_key():
+    """Two seals of identical plaintext to identical recipients must share no
+    ciphertext — otherwise the relay learns message equality by comparing rows."""
+    from emporia import crypto_box
+
+    _, alice_pub = _x25519_pair()
+    _, bob_pub = _x25519_pair()
+    aad = crypto_box.message_aad("dm_abc", "alice", "chat")
+    a = crypto_box.seal("same text", {"alice": alice_pub, "bob": bob_pub}, aad)
+    b = crypto_box.seal("same text", {"alice": alice_pub, "bob": bob_pub}, aad)
+
+    assert a["ct"] != b["ct"]
+    assert a["epk"] != b["epk"]
+    assert a["keys"]["alice"]["ct"] != b["keys"]["alice"]["ct"]
+
+
+# --- the relay-side half: shape validation that needs no key and reads no plaintext ---
+
+def test_crypto_box_validates_envelope_for_required_recipients():
+    """What the relay runs on POST /dm/{id}/send for an encrypted thread. Catches
+    the sender who forgot to wrap for their peer — a message that would otherwise
+    be permanently unreadable to the one person it was addressed to, with no error."""
+    from emporia import crypto_box
+
+    _, alice_pub = _x25519_pair()
+    _, bob_pub = _x25519_pair()
+    aad = crypto_box.message_aad("dm_abc", "alice", "chat")
+    both = json.dumps(crypto_box.seal("hi", {"alice": alice_pub, "bob": bob_pub}, aad))
+    alice_only = json.dumps(crypto_box.seal("hi", {"alice": alice_pub}, aad))
+
+    crypto_box.validate_envelope_for(both, {"alice", "bob"})  # no raise
+    with pytest.raises(ValueError, match="bob"):
+        crypto_box.validate_envelope_for(alice_only, {"alice", "bob"})
+    with pytest.raises(ValueError):
+        crypto_box.validate_envelope_for("just some plaintext", {"alice", "bob"})
+
+
+def test_crypto_box_looks_like_envelope_discriminates_plaintext():
+    """Used the other direction: an envelope posted to a *plaintext* thread is a
+    client bug worth a 400, not an opaque blob to store."""
+    from emporia import crypto_box
+
+    _, alice_pub = _x25519_pair()
+    env = json.dumps(crypto_box.seal(
+        "hi", {"alice": alice_pub}, crypto_box.message_aad("dm_abc", "alice", "chat"),
+    ))
+    assert crypto_box.looks_like_envelope(env)
+    assert not crypto_box.looks_like_envelope("hello there")
+    assert not crypto_box.looks_like_envelope('{"just": "some json"}')
+    assert not crypto_box.looks_like_envelope("")
