@@ -10408,19 +10408,26 @@ def test_mcp_confirm_and_dispute_delivery_use_shared_wire_contract(prod_client):
 
 def test_mcp_confirm_and_dispute_default_rationale_are_single_sourced(prod_client):
     """P10-2: mcp_server.confirm_delivery()/dispute_delivery() (the signer)
-    and relay_server.confirm_delivery()/dispute_delivery() (the verifier,
-    which reconstructs the same default when req.rationale is omitted) each
-    hand-copied the same literal default rationale string. The relay's
-    reconstructed default becomes part of what verify_signature() checks —
-    so if the two literals were to ever diverge (a typo, a copy-edit in one
-    file but not the other), every unsigned-rationale confirm/dispute would
-    start 403ing with no clue why. Both now resolve from wire.py
-    (DEFAULT_CONFIRM_RATIONALE / default_dispute_rationale()). Proves the
-    two sides can't drift by patching the shared value to something
-    non-default and confirming a real confirm/dispute — driven with no
-    explicit rationale, so both sides must independently resolve the
-    patched value — still verifies. If either side still had its own
-    hardcoded copy of the old literal, this would 403."""
+    now resolve their default rationale from wire.py
+    (DEFAULT_CONFIRM_RATIONALE / default_dispute_rationale()) instead of a
+    hand-copied literal. Proves the *signer* side by patching the shared
+    value to something non-default and confirming a real confirm/dispute
+    driven with no explicit rationale still verifies — if mcp_server.py
+    still had its own hardcoded copy of the old literal, the patched value
+    it sends would differ and this would 403.
+
+    P12 correction: despite this docstring previously claiming it, this
+    test does NOT prove the relay_server.py verifier side resolves from
+    wire.py too — confirm_delivery()/dispute_delivery() (mcp_server.py)
+    always resolve and forward an explicit `rationale`, so the relay's own
+    `req.rationale or DEFAULT_CONFIRM_RATIONALE` fallback is never
+    exercised by this test; a hardcoded literal on the relay side would
+    pass here undetected (which is exactly what P10-2 shipped, undetected,
+    until P11-1). The verifier side is pinned separately by
+    test_relay_confirm_delivery_omitted_rationale_resolves_from_wire_py and
+    test_relay_dispute_delivery_omitted_rationale_resolves_from_wire_py
+    below, both of which omit `rationale` from the raw request body — the
+    only path that can reach the relay's field default."""
     from emporia import mcp_server, wire
 
     _register_keyed(prod_client, "p10_2_buyer")
@@ -10493,7 +10500,16 @@ def test_relay_confirm_delivery_omitted_rationale_resolves_from_wire_py(client):
     the API, got a bare 403 pointing nowhere near the cause. Drives a raw
     POST /sessions/{id}/confirm-delivery with no "rationale" key at all,
     signed with wire.DEFAULT_CONFIRM_RATIONALE (what an honest client
-    reading wire.py would sign with), and asserts the relay accepts it."""
+    reading wire.py would sign with), and asserts the relay accepts it.
+
+    P12: strengthened to patch wire.DEFAULT_CONFIRM_RATIONALE to a
+    non-default value and sign with *that*, matching P10-2's own
+    drift-proof pattern. Signing with the real, unpatched constant (as this
+    test originally did) only proves the two sides currently agree on one
+    value — a relay that inlined the literal "Buyer confirmed delivery."
+    instead of importing wire.DEFAULT_CONFIRM_RATIONALE would still pass.
+    Patching forces the relay to genuinely resolve from wire.py at request
+    time or 403."""
     from emporia import wire
 
     _register_keyed(client, "p11_1_buyer")
@@ -10522,11 +10538,65 @@ def test_relay_confirm_delivery_omitted_rationale_resolves_from_wire_py(client):
     ))
     assert r.status_code == 200, r.text
 
-    body = _signed_confirm_delivery_body(
-        client, session_id, "p11_1_buyer", wire.DEFAULT_CONFIRM_RATIONALE,
+    with patch.object(wire, "DEFAULT_CONFIRM_RATIONALE", "P12 patched confirm default"):
+        body = _signed_confirm_delivery_body(
+            client, session_id, "p11_1_buyer", "P12 patched confirm default",
+        )
+        del body["rationale"]
+        r = client.post(f"/sessions/{session_id}/confirm-delivery", json=body)
+    assert r.status_code == 200, r.text
+    assert r.json()["is_terminal"] is True
+
+
+def test_relay_dispute_delivery_omitted_rationale_resolves_from_wire_py(client):
+    """P12: the dispute-side counterpart of
+    test_relay_confirm_delivery_omitted_rationale_resolves_from_wire_py.
+    DisputeDeliveryRequest.rationale already defaulted to "" (unlike
+    ConfirmDeliveryRequest's now-fixed third literal), so the relay's
+    `req.rationale or default_dispute_rationale(req.reason)` fallback was
+    always reachable on the omit path — but nothing actually drove that
+    path before P12, so it was correct "only by luck" (P11's own words)
+    with no test pinning it. Patches wire.default_dispute_rationale to a
+    non-default value, signs a raw POST /dispute-delivery with `rationale`
+    omitted entirely using that patched value, and asserts the relay
+    accepts it — proving the verifier genuinely resolves from wire.py
+    rather than a hardcoded copy."""
+    from emporia import wire
+
+    _register_keyed(client, "p12_dispute_buyer")
+    _register_keyed(client, "p12_dispute_seller")
+
+    r = client.post("/sessions", json={
+        "module_type": "emporia:service:v1", "creator_agent_id": "p12_dispute_buyer",
+        "config": {"description": "P12 dispute omitted rationale test"}, "payment_rules": {"mode": "free"},
+    },
+        headers={"x-emporia-agent-id": "p12_dispute_buyer"})
+    assert r.status_code == 200, r.text
+    session_id = r.json()["session_id"]
+    r = client.post(
+        f"/sessions/{session_id}/join", json={"agent_id": "p12_dispute_seller"},
+        headers={"x-emporia-agent-id": "p12_dispute_seller"},
     )
-    del body["rationale"]
-    r = client.post(f"/sessions/{session_id}/confirm-delivery", json=body)
+    assert r.status_code == 200, r.text
+
+    r = client.post(f"/sessions/{session_id}/action", json=_signed_action_body(
+        client, session_id, "p12_dispute_seller", "accept", {}, "Accepting — P12 test.",
+    ))
+    assert r.status_code == 200, r.text
+    r = client.post(f"/sessions/{session_id}/action", json=_signed_action_body(
+        client, session_id, "p12_dispute_seller", "deliver", {"deliverable": "done"},
+        "Delivered — P12 test.",
+    ))
+    assert r.status_code == 200, r.text
+
+    reason = "not as described"
+    with patch.object(wire, "default_dispute_rationale", side_effect=lambda r: f"P12 patched: {r}"):
+        patched_rationale = wire.default_dispute_rationale(reason)
+        body = _signed_dispute_delivery_body(
+            client, session_id, "p12_dispute_buyer", reason, patched_rationale,
+        )
+        del body["rationale"]
+        r = client.post(f"/sessions/{session_id}/dispute-delivery", json=body)
     assert r.status_code == 200, r.text
     assert r.json()["is_terminal"] is True
 
