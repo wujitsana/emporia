@@ -3511,6 +3511,27 @@ def _validated_encryption_key(agent_id: str, public_key_hex: str, signature: str
         raise HTTPException(
             400, "encryption_public_key_hex must be a 64-char hex string (X25519 public key)"
         )
+    # P19 (H1): any 32 bytes pass the length check above and *were* being accepted
+    # as a published key — including a low-order/all-zeros point, which is a
+    # well-formed public key that produces a fixed, attacker-known shared secret
+    # and, worse, makes `crypto_box._wrap_key_for()`'s exchange() raise instead of
+    # returning one. crypto_box.py's own docstring on that guard explains the
+    # blast radius: before P19, any member of an *encrypted room* publishing such
+    # a key permanently broke sealing for every other member, since seal() wraps
+    # to every recipient in one call. Testing agreement against a throwaway
+    # ephemeral key here — the same operation _wrap_key_for() performs — catches
+    # every low-order point, not just the all-zeros case, and rejects it before it
+    # ever reaches storage rather than discovering it mid-send.
+    from cryptography.hazmat.primitives.asymmetric.x25519 import X25519PrivateKey, X25519PublicKey
+
+    try:
+        X25519PrivateKey.generate().exchange(X25519PublicKey.from_public_bytes(bytes.fromhex(key)))
+    except ValueError:
+        raise HTTPException(
+            400,
+            "encryption_public_key_hex is not usable for key agreement (a low-order "
+            "or all-zeros point) — generate a real X25519 keypair",
+        )
     # Verified here, at publish time, so a key whose binding doesn't check out
     # never reaches storage. The relay is the one *serving* this key to peers, so
     # a peer who skipped the check would otherwise be trusting the relay's word —
@@ -7401,6 +7422,12 @@ class DMStartRequest(BaseModel):
     encrypted: bool | None = None
 
 
+# P19 (M3): what an honest nonce looks like — `wire.new_message_nonce()` is
+# `secrets.token_hex(16)` (32 hex chars); the upper bound leaves room for a future
+# longer nonce without immediately needing a second constant.
+_NONCE_RE = re.compile(r"[0-9a-fA-F]{32,64}")
+
+
 class DMSendRequest(BaseModel):
     content: str
     msg_type: str = ""
@@ -7643,6 +7670,17 @@ async def dm_send(thread_id: str, req: DMSendRequest, request: Request):
             "this message, so a stored row cannot be replayed as another. Generate "
             "one with wire.new_message_nonce().",
         )
+    # P19 (M3): "non-empty" was the entire validation. `wire.new_message_nonce()`
+    # produces 32 hex chars, but nothing enforced clients use it — a nonce sat
+    # outside `_require_content_within_limit`'s reach, so an ~800KB nonce was
+    # accepted, stored, *indexed* in idx_dm_messages_nonce, and echoed back on
+    # every read. Bounded to what an honest nonce actually looks like, generously
+    # (32-64 hex chars covers 128-256 bits of a future longer nonce without
+    # forcing a re-tune).
+    if not _NONCE_RE.fullmatch(req.nonce):
+        raise HTTPException(
+            400, "nonce must be 32-64 hex characters (see wire.new_message_nonce())",
+        )
     # Same N3-8/R7 shape as room messages: bound to thread_id + msg_type, not just
     # content — a content-only signature was valid for delivery into any thread this
     # agent is a participant of, forever (replayable across threads and across
@@ -7655,12 +7693,27 @@ async def dm_send(thread_id: str, req: DMSendRequest, request: Request):
     now = datetime.now(UTC).isoformat()
     message_id = f"dmm_{uuid.uuid4().hex[:12]}"
     with DB_LOCK, get_db() as conn:
-        conn.execute(
-            "INSERT INTO dm_messages (message_id, thread_id, sender_id, content, "
-            "msg_type, created_at, signature, nonce) VALUES (?,?,?,?,?,?,?,?)",
-            (message_id, thread_id, caller, req.content, effective_msg_type, now,
-             req.signature, req.nonce),
-        )
+        try:
+            conn.execute(
+                "INSERT INTO dm_messages (message_id, thread_id, sender_id, content, "
+                "msg_type, created_at, signature, nonce) VALUES (?,?,?,?,?,?,?,?)",
+                (message_id, thread_id, caller, req.content, effective_msg_type, now,
+                 req.signature, req.nonce),
+            )
+        except sqlite3.IntegrityError as e:
+            # P19 (H3): idx_dm_messages_nonce's UNIQUE(thread_id, nonce) is the
+            # database-level half of the replay defense — the one that survives an
+            # operator dropping the application check — but nothing caught the
+            # constraint firing, and `relay_server.py` registers no
+            # `@app.exception_handler`. So the primary case this feature exists for
+            # (a captured request replayed verbatim) surfaced as an unhandled 500
+            # with a traceback, not the 409 the client-facing contract implies.
+            # Reachable by an honest client too: the nonce is free-form, so a
+            # counter-based generator 500s on its very second message.
+            raise HTTPException(
+                409, "a message with this nonce already exists in this thread — this "
+                "looks like a replayed request, not a new message",
+            ) from e
         conn.execute(
             "UPDATE dm_threads SET last_message_at=? WHERE thread_id=?", (now, thread_id)
         )

@@ -15754,6 +15754,21 @@ def test_publish_encryption_key_rejects_a_malformed_key(client):
         assert _publish_enc_key(client, "enc_badkey", key=bad).status_code == 400
 
 
+def test_publish_encryption_key_rejects_a_low_order_point(client):
+    """P19 (H1): "64 hex chars" was the entire key check — any 32 bytes passed,
+    including a low-order/all-zeros X25519 point, a well-formed public key that
+    crypto_box._wrap_key_for()'s exchange() cannot actually use (it raises
+    ValueError, the write-side half of the P17-5 defect class). Rejecting it here,
+    at publish time, means it never reaches storage — a peer who skipped this same
+    check would otherwise trust the relay's word that it's usable. Before this
+    fix, any *room* member publishing "00"*32 permanently broke sealing for every
+    other member, since seal() wraps to every recipient in one call."""
+    _register_keyed(client, "enc_loworder")
+    for bad in ("00" * 32, "01" + "00" * 31):
+        r = _publish_enc_key(client, "enc_loworder", key=bad)
+        assert r.status_code == 400, (bad, r.text)
+
+
 def test_publish_encryption_key_requires_being_that_agent(client):
     from emporia import identity
     from emporia.wire import encryption_key_body, signed_encryption_key_payload
@@ -17006,29 +17021,100 @@ def test_replay_with_the_constraint_bypassed_is_still_caught_by_the_client(clien
 
     tid = asyncio.run(setup())
     # Rebuild the table without the UNIQUE index — the "operator drops the
-    # constraint" scenario, done for real rather than asserted about.
-    with DB_LOCK, get_db() as conn:
-        conn.execute("DROP INDEX IF EXISTS idx_dm_messages_nonce")
-        first = conn.execute(
-            "SELECT content, signature, nonce FROM dm_messages WHERE thread_id=? AND content=?",
-            (tid, "transfer 100"),
-        ).fetchone()
-        conn.execute(
-            "UPDATE dm_messages SET content=?, signature=?, nonce=? WHERE thread_id=? AND content=?",
-            (first["content"], first["signature"], first["nonce"], tid, "ignore that"),
+    # constraint" scenario, done for real rather than asserted about. The DB is
+    # session-scoped and shared across the whole suite, so the index has to come
+    # back afterward (P19: its absence otherwise silently weakened every later
+    # test — including P19's own HTTP-level duplicate-nonce test — that assumes
+    # the constraint is live).
+    try:
+        with DB_LOCK, get_db() as conn:
+            conn.execute("DROP INDEX IF EXISTS idx_dm_messages_nonce")
+            first = conn.execute(
+                "SELECT content, signature, nonce FROM dm_messages WHERE thread_id=? AND content=?",
+                (tid, "transfer 100"),
+            ).fetchone()
+            victim_id = conn.execute(
+                "SELECT message_id FROM dm_messages WHERE thread_id=? AND content=?",
+                (tid, "ignore that"),
+            ).fetchone()["message_id"]
+            conn.execute(
+                "UPDATE dm_messages SET content=?, signature=?, nonce=? WHERE message_id=?",
+                (first["content"], first["signature"], first["nonce"], victim_id),
+            )
+
+        async def read():
+            b = _sdk_wired("p18_rpc_b")
+            try:
+                return await b.get_dm_messages(tid)
+            finally:
+                await b.__aexit__()
+
+        msgs = asyncio.run(read())["messages"]
+        replayed = [m for m in msgs if m.get("replayed")]
+        assert replayed, "a duplicate nonce in one thread must be surfaced to the reader"
+        assert all(m["verified"] for m in msgs), (
+            "each row still carries a valid signature on its own"
+        )
+    finally:
+        # The duplicate row this test wrote on purpose has to go (or the nonce it
+        # shares would violate the constraint the moment it's rebuilt) before the
+        # index can come back.
+        with DB_LOCK, get_db() as conn:
+            conn.execute("DELETE FROM dm_messages WHERE message_id=?", (victim_id,))
+            conn.execute(
+                "CREATE UNIQUE INDEX IF NOT EXISTS idx_dm_messages_nonce "
+                "ON dm_messages(thread_id, nonce) WHERE nonce IS NOT NULL"
+            )
+
+
+def test_duplicate_nonce_over_http_is_409_not_500(client):
+    """P19 (H3): the UNIQUE(thread_id, nonce) index existed since P18-2, but the
+    INSERT had no `except sqlite3.IntegrityError` and relay_server.py registers no
+    `@app.exception_handler` — so the *primary* attack this feature exists to stop
+    (a captured request, replayed verbatim over HTTP) was answered by an unhandled
+    500, not the 409 the client-facing contract implies. Reachable by an honest
+    client too, not just an attacker: a counter-based nonce generator hits this on
+    its second message."""
+    _register_keyed(client, "p19_dup_a")
+    _register_keyed(client, "p19_dup_b")
+    tid = client.post("/dm/start", json={"to_agent": "p19_dup_b"},
+                      headers={"X-Emporia-Agent-Id": "p19_dup_a"}).json()["thread_id"]
+
+    same_nonce = "c" * 32
+    from emporia.identity import sign
+    from emporia.wire import dm_thread_message_envelope, signed_dm_thread_payload
+
+    def _post(text: str):
+        return client.post(
+            f"/dm/{tid}/send",
+            json=dm_thread_message_envelope(
+                text, "chat",
+                sign(signed_dm_thread_payload(tid, text, "chat", same_nonce), "p19_dup_a"),
+                nonce=same_nonce,
+            ),
+            headers={"X-Emporia-Agent-Id": "p19_dup_a"},
         )
 
-    async def read():
-        b = _sdk_wired("p18_rpc_b")
-        try:
-            return await b.get_dm_messages(tid)
-        finally:
-            await b.__aexit__()
+    assert _post("first").status_code == 200
+    r = _post("second, different content, same nonce")
+    assert r.status_code == 409, r.text
 
-    msgs = asyncio.run(read())["messages"]
-    replayed = [m for m in msgs if m.get("replayed")]
-    assert replayed, "a duplicate nonce in one thread must be surfaced to the reader"
-    assert all(m["verified"] for m in msgs), "each row still carries a valid signature on its own"
+
+def test_nonce_shape_is_validated(client):
+    """P19 (M3): non-empty used to be the entire nonce validation, so an ~800KB
+    nonce would be accepted, stored, indexed, and echoed back on every read —
+    quadrupling the per-message budget P18-1 was written to bound. Bounded to
+    what `wire.new_message_nonce()` actually produces."""
+    _register_keyed(client, "p19_shape_a")
+    _register_keyed(client, "p19_shape_b")
+    tid = client.post("/dm/start", json={"to_agent": "p19_shape_b"},
+                      headers={"X-Emporia-Agent-Id": "p19_shape_a"}).json()["thread_id"]
+
+    for bad_nonce in ("not-hex-at-all!!", "short", "g" * 32, "a" * 200):
+        r = _send_dm_raw(client, tid, "p19_shape_a", "hi", nonce=bad_nonce)
+        assert r.status_code == 400, (bad_nonce, r.text)
+
+    assert _send_dm_raw(client, tid, "p19_shape_a", "hi").status_code == 200
 
 
 def test_nonce_is_bound_into_the_signature(client):
@@ -17044,8 +17130,8 @@ def test_nonce_is_bound_into_the_signature(client):
 
     body = dm_thread_message_envelope(
         "hello", "chat",
-        sign(signed_dm_thread_payload(tid, "hello", "chat", "nonce-one"), "p18_nb_a"),
-        nonce="nonce-two",  # signed one nonce, sent another
+        sign(signed_dm_thread_payload(tid, "hello", "chat", "a" * 32), "p18_nb_a"),
+        nonce="b" * 32,  # signed one nonce, sent another
     )
     r = client.post(f"/dm/{tid}/send", json=body, headers={"X-Emporia-Agent-Id": "p18_nb_a"})
     assert r.status_code == 403, r.text
