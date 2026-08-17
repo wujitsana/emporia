@@ -805,11 +805,69 @@ class EmporiaAgent:
         resp.raise_for_status()
         return resp.json().get("rooms", [])
 
+    async def get_room(self, room_id: str) -> dict[str, Any]:
+        """One room's metadata — including `encrypted`, which `send_room_message()`
+        reads before deciding whether to seal."""
+        resp = await self._bearer_request("get", f"{self.relay_url}/rooms/{room_id}")
+        resp.raise_for_status()
+        return resp.json()
+
+    async def _room_recipients(self, room_id: str) -> dict[str, str]:
+        """`{agent_id: encryption_public_key_hex}` for every member of an encrypted
+        room, from the relay's one-shot bundle.
+
+        Every key still goes through `identity.trust_peer_encryption_key()` — the
+        same function the DM path uses — so rooms and DMs cannot drift on trust
+        rules, and a substituted key refuses to encrypt here exactly as it does
+        there.
+        """
+        from emporia.identity import get_encryption_public_key_hex, trust_peer_encryption_key
+
+        resp = await self._bearer_request(
+            "get", f"{self.relay_url}/rooms/{room_id}/encryption-keys",
+        )
+        resp.raise_for_status()
+        recipients: dict[str, str] = {}
+        for member, entry in resp.json().get("keys", {}).items():
+            if member == self.agent_id:
+                recipients[member] = get_encryption_public_key_hex(self.profile_id)
+                continue
+            recipients[member] = trust_peer_encryption_key(
+                member, entry.get("encryption_public_key", ""), entry.get("signature", ""),
+                entry.get("public_key_hex", ""),
+            )
+        return recipients
+
     async def get_room_messages(self, room_id: str) -> list[dict[str, Any]]:
-        """Get recent messages from a room."""
+        """Get recent messages from a room, decrypting transparently where possible.
+
+        Each message gains `encrypted`/`decrypted`, the same pair `get_dm_messages()`
+        uses. **A member who joined after a message was sent cannot read it** — no
+        key was wrapped for them, and re-wrapping history would require the relay to
+        hold plaintext, which is the whole thing being avoided. Those messages come
+        back `encrypted: True, decrypted: False` rather than raising.
+        """
+        from emporia import crypto_box
+        from emporia.identity import generate_or_load_encryption_keypair
+
         resp = await self._bearer_request("get", f"{self.relay_url}/rooms/{room_id}/messages")
         resp.raise_for_status()
-        return resp.json().get("messages", [])
+        messages = resp.json().get("messages", [])
+        priv, _ = generate_or_load_encryption_keypair(self.profile_id)
+        for msg in messages:
+            msg["decrypted"] = False
+            msg["encrypted"] = crypto_box.looks_like_envelope(msg.get("content", ""))
+            if not msg["encrypted"]:
+                continue
+            try:
+                msg["content"] = crypto_box.open_sealed(
+                    json.loads(msg["content"]), self.agent_id, priv,
+                    crypto_box.message_aad(room_id, msg["sender_id"], msg["msg_type"]),
+                )
+                msg["decrypted"] = True
+            except crypto_box.DecryptionError:
+                pass
+        return messages
 
     async def send_room_message(
         self,
@@ -822,12 +880,37 @@ class EmporiaAgent:
         Signature is mandatory — the relay rejects an unsigned POST (N2-5), and is bound
         to room_id + msg_type, not just content (N3-8/R7) — a content-only signature was
         valid in any room this agent belongs to, forever."""
+        from emporia import crypto_box
         from emporia.wire import room_message_envelope, signed_room_message_payload
-        signed_payload = signed_room_message_payload(room_id, content, msg_type)
-        resp = await self._bearer_request(
-            "post", f"{self.relay_url}/rooms/{room_id}/message",
-            json=room_message_envelope(content, msg_type, self._sign(signed_payload)),
-        )
+
+        room = await self.get_room(room_id)
+        encrypted = bool(room.get("encrypted"))
+
+        async def _post(body_content: str):
+            signed_payload = signed_room_message_payload(room_id, body_content, msg_type)
+            return await self._bearer_request(
+                "post", f"{self.relay_url}/rooms/{room_id}/message",
+                json=room_message_envelope(body_content, msg_type, self._sign(signed_payload)),
+            )
+
+        if not encrypted:
+            resp = await _post(content)
+            resp.raise_for_status()
+            return resp.json()
+
+        aad = crypto_box.message_aad(room_id, self.agent_id, msg_type)
+        resp = await _post(json.dumps(
+            crypto_box.seal(content, await self._room_recipients(room_id), aad),
+        ))
+        # P18-5: a 409 here means someone joined between the key fetch and this
+        # send — a race, not a bad request, and the relay says so deliberately so
+        # it can be recovered rather than surfaced. Re-fetch the member set and
+        # try once. Exactly once: a second 409 means membership is churning faster
+        # than a round trip, and retrying forever would be a busy loop, not a fix.
+        if resp.status_code == 409:
+            resp = await _post(json.dumps(
+                crypto_box.seal(content, await self._room_recipients(room_id), aad),
+            ))
         resp.raise_for_status()
         return resp.json()
 

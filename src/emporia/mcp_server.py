@@ -810,10 +810,11 @@ def send_room_message(
       'accept'        — accept current offer
       'reject'        — reject and close negotiation
 
-    For encrypted rooms: encrypt content before calling this tool. The relay stores
-    it as-is and does not scan it. Unlike encrypted DMs (P16), rooms have no
-    client-side crypto yet — `crypto_box.py` was written to wrap a content key to N
-    recipients so rooms can reuse it, but nothing here calls it for rooms.
+    Encrypted rooms (P18): content is sealed client-side before it is signed and
+    sent, automatically — you never have to remember to do it. The relay stores and
+    forwards ciphertext it cannot read, and does not scan it. Note that a member who
+    joins later cannot read earlier messages: no key was wrapped for them, and
+    re-wrapping history would require the relay to hold plaintext.
 
     For counter_offer: content should be JSON, e.g. {"price_usd": "8.50"}
     Relay broker responds with ACCEPT or COUNTER as a system message.
@@ -830,23 +831,116 @@ def send_room_message(
         # missing/unreadable) used to sit outside this try — a missing local key raised
         # out of the MCP tool as an unhandled exception instead of the structured
         # {"error": ..., "success": False} shape every other tool in this file returns.
+        from emporia import crypto_box
         from emporia.identity import sign
         from emporia.wire import room_message_envelope, signed_room_message_payload
-        signed_payload = signed_room_message_payload(room_id, content, msg_type)
-        body = room_message_envelope(
-            content, msg_type, sign(signed_payload, sender_id),
-            parent_message_id=parent_message_id,
+
+        room_r = _bearer_request(
+            "get", f"{RELAY_URL}/rooms/{room_id}", agent_id=sender_id, timeout=10,
         )
-        r = _bearer_request(
-            "post", f"{RELAY_URL}/rooms/{room_id}/message",
-            agent_id=sender_id, json=body, timeout=15,
-        )
+        encrypted = room_r.status_code == 200 and bool(room_r.json().get("encrypted"))
+        aad = crypto_box.message_aad(room_id, sender_id, msg_type)
+
+        def _post(body_content: str):
+            signed_payload = signed_room_message_payload(room_id, body_content, msg_type)
+            body = room_message_envelope(
+                body_content, msg_type, sign(signed_payload, sender_id),
+                parent_message_id=parent_message_id,
+            )
+            return _bearer_request(
+                "post", f"{RELAY_URL}/rooms/{room_id}/message",
+                agent_id=sender_id, json=body, timeout=15,
+            )
+
+        if encrypted:
+            r = _post(json.dumps(
+                crypto_box.seal(content, _room_recipients(sender_id, room_id), aad),
+            ))
+            # P18-5: a 409 means someone joined between the key fetch and this send
+            # — a race the relay reports deliberately so it can be recovered. Retry
+            # once with a fresh member set; a second 409 means membership is churning
+            # faster than a round trip, and looping would be a busy wait, not a fix.
+            if r.status_code == 409:
+                r = _post(json.dumps(
+                    crypto_box.seal(content, _room_recipients(sender_id, room_id), aad),
+                ))
+        else:
+            r = _post(content)
         d = r.json()
         if r.status_code == 200:
             return {"success": True, **d}
         return {"error": f"Relay {r.status_code}", "detail": d, "success": False}
     except Exception as e:
         return {"error": str(e), "success": False}
+
+
+def _room_recipients(sender: str, room_id: str) -> dict[str, str]:
+    """`{agent_id: encryption_public_key_hex}` for an encrypted room's members, from
+    the relay's one-shot bundle. Every peer key goes through
+    `identity.trust_peer_encryption_key()` — the same function the DM path and the
+    SDK use — so no two call sites can apply different trust rules."""
+    from emporia.identity import get_encryption_public_key_hex, trust_peer_encryption_key
+
+    r = _bearer_request(
+        "get", f"{RELAY_URL}/rooms/{room_id}/encryption-keys", agent_id=sender, timeout=10,
+    )
+    r.raise_for_status()
+    recipients: dict[str, str] = {}
+    for member, entry in r.json().get("keys", {}).items():
+        if member == sender:
+            recipients[member] = get_encryption_public_key_hex(sender)
+            continue
+        recipients[member] = trust_peer_encryption_key(
+            member, entry.get("encryption_public_key", ""), entry.get("signature", ""),
+            entry.get("public_key_hex", ""),
+        )
+    return recipients
+
+
+@mcp.tool()
+def get_room_messages(room_id: str, agent_id: str = "", limit: int = 50) -> dict[str, Any]:
+    """Fetch a room's messages, decrypting transparently where possible.
+
+    Each message carries `encrypted`/`decrypted`. **A member who joined after a
+    message was sent cannot read it** — no key was wrapped for them, and re-wrapping
+    history would require the relay to hold plaintext. Those come back
+    `encrypted: True, decrypted: False` rather than failing the call.
+
+    Args:
+        room_id: The room to read.
+        agent_id: Your agent ID. Defaults to EMPORIA_AGENT_ID env.
+        limit: Max messages to return.
+    """
+    aid = agent_id or AGENT_ID
+    if not aid:
+        return {"error": "agent_id required (or set EMPORIA_AGENT_ID)"}
+    from emporia import crypto_box
+    from emporia.identity import generate_or_load_encryption_keypair
+    try:
+        r = _bearer_request(
+            "get", f"{RELAY_URL}/rooms/{room_id}/messages",
+            agent_id=aid, params={"limit": limit}, timeout=10,
+        )
+        if r.status_code != 200:
+            return {"error": f"Relay {r.status_code}", "detail": r.text}
+        body = r.json()
+        priv, _ = generate_or_load_encryption_keypair(aid)
+        for msg in body.get("messages", []):
+            msg["decrypted"] = False
+            msg["encrypted"] = crypto_box.looks_like_envelope(msg.get("content", ""))
+            if not msg["encrypted"]:
+                continue
+            try:
+                msg["content"] = crypto_box.open_sealed(
+                    json.loads(msg["content"]), aid, priv,
+                    crypto_box.message_aad(room_id, msg["sender_id"], msg["msg_type"]),
+                )
+                msg["decrypted"] = True
+            except crypto_box.DecryptionError:
+                pass
+        return body
+    except Exception as e:
+        return {"error": str(e)}
 
 
 @mcp.tool()

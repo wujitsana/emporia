@@ -17097,3 +17097,130 @@ def test_plaintext_rooms_are_completely_unchanged(client):
     msgs = client.get(f"/rooms/{room}/messages",
                       headers={"X-Emporia-Agent-Id": "p18_pu_b"}).json()["messages"]
     assert any(m["content"] == "ordinary prose" for m in msgs)
+
+
+def test_sdk_encrypted_room_round_trip(prod_client):
+    """All three members read the plaintext; the relay stored none of it."""
+    import asyncio
+
+    from emporia.relay_server import get_db
+
+    secret = "rendezvous at pier 9, phrase MERIDIAN"
+
+    async def scenario():
+        a, b, c = _sdk_wired("p18_sr_a"), _sdk_wired("p18_sr_b"), _sdk_wired("p18_sr_c")
+        try:
+            for ag in (a, b, c):
+                await ag.register()
+            room = (await a.create_room("p18 sdk enc", encrypted=True))["room_id"]
+            for ag in (b, c):
+                await ag.join_room(room, ag.agent_id)
+            await a.send_room_message(room, secret)
+            return room, [await ag.get_room_messages(room) for ag in (a, b, c)]
+        finally:
+            for ag in (a, b, c):
+                await ag.__aexit__()
+
+    room, views = asyncio.run(scenario())
+    for v in views:
+        msg = v[0]
+        assert msg["content"] == secret, msg
+        assert msg["decrypted"] is True
+
+    with get_db() as conn:
+        stored = conn.execute(
+            "SELECT content FROM room_messages WHERE room_id=?", (room,)
+        ).fetchone()["content"]
+    assert secret not in stored and "MERIDIAN" not in stored
+
+
+def test_sdk_retries_once_when_a_member_joins_mid_send(prod_client):
+    """The coverage 409 is recoverable by construction, so the client recovers from
+    it rather than surfacing it. Simulated by sealing against a stale member set —
+    exactly what a client holds when someone joins between its key-fetch and its
+    send."""
+    import asyncio
+
+    async def scenario():
+        a, b, c = _sdk_wired("p18_rt_a"), _sdk_wired("p18_rt_b"), _sdk_wired("p18_rt_c")
+        try:
+            for ag in (a, b, c):
+                await ag.register()
+            room = (await a.create_room("p18 sdk race", encrypted=True))["room_id"]
+            await b.join_room(room, b.agent_id)
+
+            # `a` caches a member set that predates c's join, then c joins.
+            stale = await a._room_recipients(room)
+            await c.join_room(room, c.agent_id)
+
+            calls = {"n": 0}
+            real = a._room_recipients
+
+            async def stale_once(rid):
+                calls["n"] += 1
+                return stale if calls["n"] == 1 else await real(rid)
+
+            a._room_recipients = stale_once
+            await a.send_room_message(room, "sent across a join")
+            return calls["n"], await c.get_room_messages(room)
+        finally:
+            for ag in (a, b, c):
+                await ag.__aexit__()
+
+    attempts, cview = asyncio.run(scenario())
+    assert attempts == 2, "the first seal was stale; the retry re-fetched the member set"
+    assert cview[0]["content"] == "sent across a join"
+    assert cview[0]["decrypted"] is True
+
+
+def test_new_room_member_cannot_read_earlier_messages(prod_client):
+    """The most surprising behaviour of the feature, pinned as a test rather than
+    left to be discovered: no key was wrapped for a member who wasn't there, and
+    re-wrapping history would require the relay to hold plaintext — the whole thing
+    being avoided."""
+    import asyncio
+
+    async def scenario():
+        a, b = _sdk_wired("p18_nm_a2"), _sdk_wired("p18_nm_b2")
+        try:
+            await a.register()
+            await b.register()
+            room = (await a.create_room("p18 late join", encrypted=True))["room_id"]
+            await a.send_room_message(room, "before you arrived")
+            await b.join_room(room, b.agent_id)
+            await a.send_room_message(room, "after you arrived")
+            return await b.get_room_messages(room)
+        finally:
+            await a.__aexit__()
+            await b.__aexit__()
+
+    msgs = {m["content"]: m for m in asyncio.run(scenario())}
+    assert msgs["after you arrived"]["decrypted"] is True
+    # The earlier message is still ciphertext to them — present, unreadable.
+    unreadable = [m for m in msgs.values() if m["encrypted"] and not m["decrypted"]]
+    assert len(unreadable) == 1
+
+
+def test_mcp_encrypted_room_round_trip(prod_client):
+    from emporia import mcp_server
+    from emporia.relay_server import get_db
+
+    adapter = _ASGIHttpxAdapter(prod_client, mcp_server.RELAY_URL)
+    secret = "the ledger key rotates on the 3rd"
+    with patch.object(mcp_server, "httpx", adapter):
+        mcp_server.register_agent("p18_mr_a")
+        mcp_server.register_agent("p18_mr_b")
+        room = mcp_server.create_room("p18 mcp enc", "p18_mr_a", encrypted=True)
+        rid = room["room"]["room_id"]
+        mcp_server.join_room(rid, "p18_mr_b")
+        sent = mcp_server.send_room_message(rid, "p18_mr_a", secret)
+        assert "error" not in sent, sent
+        read = mcp_server.get_room_messages(rid, agent_id="p18_mr_b")
+
+    assert read["messages"][0]["content"] == secret
+    assert read["messages"][0]["decrypted"] is True
+    with get_db() as conn:
+        stored = conn.execute(
+            "SELECT content FROM room_messages WHERE room_id=?", (rid,)
+        ).fetchone()["content"]
+    assert secret not in stored
