@@ -89,6 +89,24 @@ def encryption_key_body(encryption_public_key_hex: str, signature: str) -> dict[
     }
 
 
+# P18: the largest a single message's `content` may be, in **bytes** — a character
+# bound is meaningless against multi-byte input (a 4-bytes-per-char string sails
+# through a len()-based check at four times the intended size). Lives here rather
+# than in relay_server.py so both clients can check before sending rather than
+# discovering the limit as a 400 after a round trip.
+#
+# Recorded as an open gap since P15 and deferred twice as "belongs at the app/proxy
+# layer". True of the general case, but this relay runs with nothing in front of
+# it, so nothing enforced it at all: a multi-MB message was accepted, stored,
+# scanned and broadcast. `relay_server.MAX_REQUEST_BYTES` is the general ceiling;
+# this is the per-field one, and it exists because an opaque 413 names nothing.
+#
+# Consequence worth knowing: on an encrypted thread this budget is spent on
+# *ciphertext*, so the usable plaintext allowance is smaller — and smaller again
+# for each additional room member, since the wrapped-key set grows with the member
+# count.
+MAX_CONTENT_BYTES = 256 * 1024
+
 DEFAULT_CONFIRM_RATIONALE = "Buyer confirmed delivery."
 
 # P12: room-message default msg_type — same hand-copied-across-signer-and-verifier

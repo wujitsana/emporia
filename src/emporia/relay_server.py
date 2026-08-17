@@ -2355,6 +2355,59 @@ _RATE_LIMITS: dict[str, tuple[int, float]] = {
 _AUTH_PATHS = {"/dashboard/challenge", "/dashboard/session", "/agents/challenge", "/agents/register"}
 
 
+# P18-1: the general request-body ceiling. Deliberately larger than
+# wire.MAX_CONTENT_BYTES — a legitimate request is one content field plus signature,
+# metadata and framing, and some routes (registration with identity claims, x402
+# payment payloads) carry more structure than a message does.
+MAX_REQUEST_BYTES = int(os.getenv("EMPORIA_MAX_REQUEST_BYTES", str(1024 * 1024)))
+
+
+@app.middleware("http")
+async def limit_request_size(request: Request, call_next):
+    """Reject an oversized body with 413 before any handler, guardrails scan, or DB
+    write sees it.
+
+    This is the "it belongs at the proxy layer" fix, implemented in the app —
+    because the reasoning was right about the general case and wrong as a reason to
+    do nothing: this relay runs with nothing in front of it, so until now a
+    multi-MB POST to any route was simply accepted.
+
+    Content-Length only. A chunked request without that header isn't rejected here
+    — Starlette streams the body and a size check would mean buffering it, which is
+    the very thing being avoided. That residual case is what a real reverse proxy
+    is still for, and it is written down rather than implied: this closes the
+    ordinary path, not every path.
+    """
+    raw_len = request.headers.get("content-length")
+    if raw_len:
+        try:
+            if int(raw_len) > MAX_REQUEST_BYTES:
+                return JSONResponse(
+                    {"detail": f"Request body too large — limit is {MAX_REQUEST_BYTES} bytes"},
+                    status_code=413,
+                )
+        except ValueError:
+            return JSONResponse({"detail": "Invalid Content-Length header"}, status_code=400)
+    return await call_next(request)
+
+
+def _require_content_within_limit(content: str, field: str = "content") -> None:
+    """P18-1: bound one text field, in bytes. Separate from the request-size
+    middleware because a body can sit under the general ceiling while its content
+    field is still far past what a message should be — and because a 413 that names
+    nothing is a poor answer to "why was my message rejected"."""
+    from emporia.wire import MAX_CONTENT_BYTES
+
+    size = len(content.encode("utf-8"))
+    if size > MAX_CONTENT_BYTES:
+        raise HTTPException(
+            400,
+            f"{field} is too large — {size} bytes, limit is {MAX_CONTENT_BYTES}. "
+            f"On an encrypted thread this budget covers the ciphertext, which runs "
+            f"larger than the plaintext it carries.",
+        )
+
+
 @app.middleware("http")
 async def rate_limit(request: Request, call_next):
     # Always use the real TCP peer address — never trust X-Forwarded-For for bypass decisions.
@@ -6193,6 +6246,7 @@ async def send_room_message(room_id: str, req: SendRoomMessageRequest, request: 
     from emporia.wire import DEFAULT_MSG_TYPE, signed_room_message_payload
     effective_msg_type = req.msg_type or DEFAULT_MSG_TYPE
     _require_valid_msg_type(effective_msg_type)
+    _require_content_within_limit(req.content)
 
     # Encrypted rooms: relay stores opaque ciphertext — never scan it.
     # Ciphertext is binary/base64 and WILL false-positive on injection patterns.
@@ -7407,6 +7461,7 @@ async def dm_send(thread_id: str, req: DMSendRequest, request: Request):
     from emporia.wire import DEFAULT_MSG_TYPE, signed_dm_thread_payload
     effective_msg_type = req.msg_type or DEFAULT_MSG_TYPE
     _require_valid_msg_type(effective_msg_type)
+    _require_content_within_limit(req.content)
 
     # P16: enforce the thread's mode. The relay reads no plaintext and holds no key
     # here — `validate_envelope_for()` inspects the envelope's structure and the set

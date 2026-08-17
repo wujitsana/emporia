@@ -16688,3 +16688,86 @@ def test_sdk_low_order_epk_does_not_break_the_thread(client, prod_client):
     msgs = {m["message_id"]: m for m in asyncio.run(read())["messages"]}
     assert msgs[victim]["decrypted"] is False
     assert any(m["decrypted"] and m["content"] == "still fine" for m in msgs.values())
+
+
+# ============================================================================
+# P18-1: size limits — recorded at P15, deferred twice, closed here
+# ============================================================================
+
+def test_oversized_request_body_is_rejected_before_any_handler(client):
+    """P18-1: a multi-MB POST was accepted, scanned, stored and broadcast — the
+    "belongs at the proxy layer" reasoning was right about the general case and
+    wrong as an excuse, since this relay runs with no proxy in front of it. The
+    middleware rejects on Content-Length before a handler, a guardrails scan, or a
+    DB write ever sees the body."""
+    from emporia.relay_server import MAX_REQUEST_BYTES
+
+    _register_keyed(client, "p18_big_a")
+    _register_keyed(client, "p18_big_b")
+    tid = client.post("/dm/start", json={"to_agent": "p18_big_b"},
+                      headers={"X-Emporia-Agent-Id": "p18_big_a"}).json()["thread_id"]
+
+    with patch("emporia.relay_server._assert_payload_safe_counted", new=AsyncMock()) as scan:
+        r = client.post(
+            f"/dm/{tid}/send",
+            json={"content": "x" * (MAX_REQUEST_BYTES + 1024), "msg_type": "chat", "signature": "aa"},
+            headers={"X-Emporia-Agent-Id": "p18_big_a"},
+        )
+    assert r.status_code == 413, r.status_code
+    assert not scan.called, "the guardrails scan must never run on a body this size"
+
+
+def test_oversized_content_is_rejected_with_a_field_specific_400(client):
+    """The middleware alone would answer with an opaque 413 that names nothing.
+    This says which field and what the limit is — a body can be under the request
+    ceiling while its content field is still far past what a message should be."""
+    from emporia.wire import MAX_CONTENT_BYTES
+
+    _enc_pair(client, "p18_len_a", "p18_len_b")
+    tid = client.post("/dm/start", json={"to_agent": "p18_len_b"},
+                      headers={"X-Emporia-Agent-Id": "p18_len_a"}).json()["thread_id"]
+
+    r = _send_dm_raw(client, tid, "p18_len_a", "x" * (MAX_CONTENT_BYTES + 1))
+    assert r.status_code == 400, r.status_code
+    assert "content" in r.text and str(MAX_CONTENT_BYTES) in r.text
+
+    room = client.post("/rooms", json={"name": "p18 len room", "description": ""},
+                       headers={"X-Emporia-Agent-Id": "p18_len_a"}).json()["room_id"]
+    from emporia.identity import sign
+    from emporia.wire import room_message_envelope, signed_room_message_payload
+    big = "y" * (MAX_CONTENT_BYTES + 1)
+    r = client.post(
+        f"/rooms/{room}/message",
+        json=room_message_envelope(big, "chat", sign(
+            signed_room_message_payload(room, big, "chat"), "p18_len_a")),
+        headers={"X-Emporia-Agent-Id": "p18_len_a"},
+    )
+    assert r.status_code == 400, r.status_code
+    assert "content" in r.text
+
+
+def test_content_limit_is_measured_in_bytes_not_characters(client):
+    """A character bound is meaningless against multi-byte input — a 4-byte-per-
+    char string would sail through a len()-based check at four times the limit."""
+    from emporia.wire import MAX_CONTENT_BYTES
+
+    _register_keyed(client, "p18_utf_a")
+    _register_keyed(client, "p18_utf_b")
+    tid = client.post("/dm/start", json={"to_agent": "p18_utf_b"},
+                      headers={"X-Emporia-Agent-Id": "p18_utf_a"}).json()["thread_id"]
+
+    # Well under the limit by character count, over it by bytes.
+    emoji = "🔒" * (MAX_CONTENT_BYTES // 4 + 1)
+    assert len(emoji) < MAX_CONTENT_BYTES < len(emoji.encode())
+    assert _send_dm_raw(client, tid, "p18_utf_a", emoji).status_code == 400
+
+
+def test_a_normal_message_is_unaffected_by_the_limits(client):
+    """The regression that matters: ordinary messages, and a comfortably large
+    one, still go through."""
+    _register_keyed(client, "p18_ok_a")
+    _register_keyed(client, "p18_ok_b")
+    tid = client.post("/dm/start", json={"to_agent": "p18_ok_b"},
+                      headers={"X-Emporia-Agent-Id": "p18_ok_a"}).json()["thread_id"]
+    assert _send_dm_raw(client, tid, "p18_ok_a", "an ordinary message").status_code == 200
+    assert _send_dm_raw(client, tid, "p18_ok_a", "z" * 20_000).status_code == 200
