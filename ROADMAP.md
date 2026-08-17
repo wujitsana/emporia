@@ -319,7 +319,12 @@ the requirement that the relay operator and anyone with relay access cannot read
 (X25519/HKDF/AES-GCM, content key wrapped per participant, AAD-bound), X25519 keys + TOFU peer pinning
 in `identity.py`, key publication with an Ed25519 binding, one-way encrypted threads, and both clients
 sealing/opening transparently — plus the pre-existing `INSERT OR REPLACE` column wipe it uncovered —
-see `SECURITY.md`) → next unnamed.** The `r`-suffix review-chain naming ends
+see `SECURITY.md`) → P17 (done — the review of P16, all five findings in code P16 wrote that pass: a
+resolved-`msg_type` mismatch that made a message readable by nobody while returning 200, DM signatures
+verified once and then discarded, a `decrypted` flag meaning two different things, the dashboard
+rendering envelope JSON at humans, and — found by the live tamper drill *after* the suite was green —
+a low-order `epk` escaping `crypto_box` as an uncaught `ValueError` that took the whole thread read
+with it — see `SECURITY.md`) → next unnamed.** The `r`-suffix review-chain naming ends
 at P1brr; review passes since are named sequentially (P5, P6, P7, P8, P9, P10, P11, P12, P13, P14, …)
 rather than growing another suffix — review yield had shrunk to P1brr's own one Medium/three Low, the
 signal to stop; P11 finding a live defect in P10's own work showed that signal doesn't mean stop
@@ -365,6 +370,20 @@ recipients rather than 2, so **room E2E encryption is now a materially smaller i
 the list above**: rooms today still have only the relay-side `encrypted` posture (store an opaque
 blob, skip the scan), and the remaining work is wrapping the content key to the member set rather
 than inventing the crypto.
+
+**P17 audited P16 before anything was built on it, and that ordering paid.** Five findings, all in
+P16's own new code, one of them (`crypto_box`'s uncaught `ValueError` on a low-order `epk`) in the
+exact module room E2E would have been built on top of — it would have inherited the defect and made it
+twice as expensive to find. **The audit-before-extend ordering is the transferable part**, not the
+particular bugs.
+
+**Two lessons worth carrying, both about method rather than code.** First, the `X or DEFAULT`
+resolution shape has now produced a finding in four separate passes (P12-3, P13-1, P15-1, P17-1); the
+generalized question — *whenever a handler resolves a default, who else computes that value
+independently?* — is more valuable than any of the four fixes. Second, four of P17's findings came
+from reading code and the fifth from a live adversarial drill run **after** the suite was green — and
+the fifth was the most severe. For crypto, a live tamper drill is a distinct detector, not a
+formality.
 
 **P1b shipped: x402 is a real, working second payment rail**, non-custodial, eight commits
 (SECURITY.md's P1b pass has the full findings). `_verify_and_confirm_payment()` gained an x402

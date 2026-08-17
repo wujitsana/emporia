@@ -1263,6 +1263,33 @@ absent). Now an explicit UPSERT naming precisely the columns registration owns.
 - **Rooms are unchanged.** `crypto_box.py` was written so room E2E is a later, smaller pass, but room
   `encrypted` still means only the relay-side posture it always did.
 
+## Fixed post-hackathon (P17 pass — the review of P16)
+
+P16 shipped ~1,100 lines of new, security-critical code in one pass. The P11–P14 lesson is that
+findings sit in the code the immediately preceding pass wrote, so it got audited before anything was
+built on top of it — room E2E would sit directly on `crypto_box.py`. **All five findings are in code
+P16 wrote that same pass.** Two were found by reading it, two by asking what a hostile relay could
+still do, and **one by the live tamper drill after the other four were already fixed.**
+
+| Finding | Severity | Fix |
+|---|---|---|
+| **A message could be accepted with 200 and be permanently unreadable — the exact failure class P16 built `validate_envelope_for()` to prevent.** The AAD binds `msg_type`, but `dm_send` *resolves* `msg_type` immediately above the encryption check (`req.msg_type or DEFAULT_MSG_TYPE` — the `""`-default shape). A client omitting the field seals under `""` while the row stores `"chat"`, so the recipient computes different AAD and can never open it. Verified before fixing: 200 returned, row stored `msg_type='chat'`, `open_sealed()` raised for the recipient. | Medium (silent, permanent data loss on a documented-optional field; reachable only by a raw client, since both shipped clients always pass an explicit `msg_type` — which is why nothing caught it) | 400 naming the cause, sitting directly beside `validate_envelope_for()` since it is the same class of failure. Refusing is the only sound option — the relay cannot know what value the client sealed under, so it can't repair the mismatch. Dropping `msg_type` from the AAD was considered and rejected: it would discard relabelling protection that rooms inherit when they adopt `crypto_box`, to fix something a clear 400 fixes outright. Plaintext threads keep the omit path, pinned by its own test. |
+| **DM signatures were verified once at write and then discarded.** `dm_messages` had no `signature` column — while `room_messages` (`rooms.py:87`) has stored one all along. Nothing could re-verify a stored DM, so a hostile relay could rewrite stored envelopes undetectably. Pre-existing for plaintext DMs; P16 raised the stakes, because the premise of E2E is that the relay is not trusted, and confidentiality without integrity is half the promise. | Medium | `dm_messages.signature` (ADD COLUMN; `NULL`, not `''`, for pre-P17 rows — nothing was stored, so nothing can be claimed), served by `GET /dm/{id}/messages`, re-verified by both clients through one shared `identity.verify_dm_message()`. Verified against the **stored** content, before decryption — on an encrypted thread the envelope is what was signed. `verified: None` when there is nothing to check; a mismatch **marks** the message rather than raising, same policy as a failed decryption. `GET /agents/{id}` now serves `public_key_hex`, since the Ed25519 key was otherwise reachable only via the encryption-key route — a confusing place to look when the thread isn't encrypted. |
+| **`decrypted: False` meant two different things** — a plaintext message and one that failed to decrypt, so a caller could not tell "never encrypted" from "ciphertext I can't read", exactly when it matters. P16's own two tests each asserted that same `False` and neither noticed they agreed. | Low (API contract flaw in new code) | `encrypted` beside `decrypted` in both clients: `(False, False)` plaintext, `(True, True)` opened, `(True, False)` failed. Both P16 tests gained the assertion that pins the difference. |
+| **The dashboard rendered raw envelope JSON as chat text** — `{"v":1,"alg":"x25519-hkdf-sha...` shown to a human and called a message, in the only place anyone actually looks at DMs. | Low | A 🔒 placeholder for envelope content and thread previews, via helpers in `api.ts` shared by both DM views. **Not a crypto fix**: the dashboard runs in a browser with no key access, which is precisely the property that makes E2E meaningful — the job is to say so. Deliberately **no signature indicator**: the relay doesn't send a `verified` flag and couldn't usefully do so, since a relay attesting to its own honesty is worth nothing. Absent beats a green tick the relay computed for itself. |
+| **A low-order `epk` escaped as an uncaught `ValueError` and took the whole thread read down.** X25519 `exchange()` raises `ValueError("Error computing shared key.")` for an all-zeros/low-order peer point — a *different* exception from the `InvalidTag` `open_sealed()` guarded — and `epk` is fully attacker-controllable. Every other failure in the module funnels into `DecryptionError`; this one path did not, breaking the "one damaged message must not make a thread unreadable" contract P16 stated and P17-2 restated. | Medium (attacker-controllable input causing a caller-visible crash on a read path, in crypto code) | Caught and re-raised as `DecryptionError`. **Found by the live tamper drill, after the other four were already fixed and the suite was green** — the suite's tamper tests flip a byte of a valid `epk`, which almost always yields another valid point and fails as `InvalidTag`. Only a *structured* bad value reaches that path, which is exactly what an attacker supplies and a fuzz-free suite does not. Regression tests use all-zeros and the canonical `0x01` low-order point. |
+
+**The recurring shape, now found in four separate passes.** P12-3, P13-1, P15-1 and now P17-1 are all
+the same defect class: a value the handler *resolves* (`X or DEFAULT`) while some other party — signer,
+verifier, broadcast consumer, or now the AAD — uses the *unresolved* one. The pattern is worth more
+than any single instance: **whenever a handler resolves a default, ask who else computes that same
+value independently.** Each time, the answer has been "someone does, and they disagree".
+
+**The other lesson is about verification method.** Four findings came from reading the code; the fifth
+came from doing something hostile to a live system and watching what broke. It was the most severe of
+the five, and the suite was fully green when it was found. Live adversarial drills are not a
+formality after the tests pass — for crypto code they are a distinct detector.
+
 ## Threat model notes (by design, not gaps)
 
 - **Ed25519 = auth; the relay never holds private keys.** Keys live at `~/.hermes/keys/*.priv`,
