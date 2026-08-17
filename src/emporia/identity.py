@@ -326,10 +326,15 @@ def verify_dm_message(
     what its sender signed. In a feature whose premise is that the relay is not
     trusted, confidentiality without integrity is half the promise.
 
-    `None` (not `False`) when the row carries no signature or the sender's key is
-    unavailable: a message stored before signatures were persisted is honestly
-    *unknown*, and reporting it as `False` would paint every pre-P17 message as
-    tampered with.
+    `None` (not `False`) when the row carries no signature, no nonce, or the
+    sender's key is unavailable: a message stored before signatures — or before
+    P18-2's nonce — were persisted is honestly *unknown*, and reporting it as
+    `False` would paint it as tampered with. The relay requires a nonce on every
+    row it accepts today, so a nonce-less row can only be one written before that
+    requirement existed (P19: this used to pass `message.get("nonce") or ""`,
+    which signed and verified against an empty-string nonce no legitimate sender
+    ever signed over — every such row came back `False`, indistinguishable from
+    tampering).
 
     Verify against the **stored** `content` — for an encrypted thread that is the
     envelope, which is what was signed. Calling this after decrypting would check
@@ -341,12 +346,12 @@ def verify_dm_message(
     from emporia.wire import signed_dm_thread_payload
 
     signature = message.get("signature")
-    if not signature or not sender_public_key_hex:
+    nonce = message.get("nonce")
+    if not signature or not nonce or not sender_public_key_hex:
         return None
     return verify(
         signed_dm_thread_payload(
-            thread_id, message.get("content", ""), message.get("msg_type", ""),
-            message.get("nonce") or "",
+            thread_id, message.get("content", ""), message.get("msg_type", ""), nonce,
         ),
         signature,
         sender_public_key_hex,

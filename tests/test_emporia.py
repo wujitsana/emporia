@@ -16596,6 +16596,44 @@ def test_pre_p17_dm_rows_report_verified_none(client):
     assert asyncio.run(read())["messages"][0]["verified"] is None
 
 
+def test_pre_p18_dm_rows_signed_but_nonce_less_report_verified_none(client):
+    """P19: verify_dm_message() used to fall back to `message.get("nonce") or ""`
+    and verify against that empty-string nonce — which no legitimate sender ever
+    signed over, since P18-2's nonce is always non-empty on every row the relay
+    accepts. Every signed-but-nonce-less row (any row from before that requirement
+    existed) came back `False`: indistinguishable from tampering, and the same
+    mistake `test_pre_p17_dm_rows_report_verified_none` above exists to catch for
+    signatures. A missing nonce is exactly as "unknown" as a missing signature."""
+    import asyncio
+
+    from emporia.relay_server import DB_LOCK, get_db
+
+    async def setup():
+        a, b = _sdk_wired("p19_nonceless_a"), _sdk_wired("p19_nonceless_b")
+        try:
+            await a.register()
+            await b.register()
+            tid = (await a.start_dm("p19_nonceless_b"))["thread_id"]
+            await a.send_dm(tid, "as if written before P18-2")
+            return tid
+        finally:
+            await a.__aexit__()
+            await b.__aexit__()
+
+    tid = asyncio.run(setup())
+    with DB_LOCK, get_db() as conn:
+        conn.execute("UPDATE dm_messages SET nonce=NULL WHERE thread_id=?", (tid,))
+
+    async def read():
+        b = _sdk_wired("p19_nonceless_b")
+        try:
+            return await b.get_dm_messages(tid)
+        finally:
+            await b.__aexit__()
+
+    assert asyncio.run(read())["messages"][0]["verified"] is None
+
+
 def test_encrypted_flag_distinguishes_plaintext_from_failed_decryption(client, prod_client):
     """P17-3: P16 set `decrypted: False` both for a plaintext message and for one
     it could not open, so a caller couldn't tell "never encrypted" from "ciphertext
