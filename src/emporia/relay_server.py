@@ -5926,6 +5926,12 @@ async def join_room(room_id: str, req: JoinRoomRequest, request: Request):
         _enforce_agent_rate_limit(req.agent_id)
     if rooms_db.is_member(room_id, req.agent_id, db_path=DATABASE_PATH):
         return {"status": "already_member", "room_id": room_id}
+    # P18-4: joining an encrypted room without a published key would make every
+    # subsequent message in that room fail coverage validation — one member with no
+    # key blocks the whole room, not just themselves. Refused at the door, where the
+    # error names the one thing the joiner has to do.
+    if room.encrypted:
+        _require_encryption_keys_published([req.agent_id])
     # P2-6/P2r-1 (R2/R1): a kick is permanent — checked before the gate branch
     # so a kicked agent can't buy or invite their way back in with a fresh
     # PaymentIntent or a leftover invite. Runs for every gate type, including
@@ -6277,6 +6283,32 @@ async def send_room_message(room_id: str, req: SendRoomMessageRequest, request: 
     # dead code behind a strictly stronger control. The enum runs before the scan on both
     # message routes so the same bad input gets the same actionable 400 naming the valid
     # values, rather than one route saying 400 and the other a generic guardrails 403.
+    # P18-4: enforce the room's mode, the room analogue of the DM check. The relay
+    # reads no plaintext and holds no key — it inspects the envelope's structure and
+    # the *set of agent_ids* the content key was wrapped to.
+    from emporia import crypto_box
+    if room.encrypted:
+        try:
+            # Coverage is checked against room.members (structural membership), the
+            # same set _room_member_encryption_keys() hands clients — see there for
+            # why a lapsed paid member stays in it.
+            crypto_box.validate_envelope_for(req.content, set(room.members))
+        except ValueError as e:
+            # 409, not 400, when the only problem is a member the sender didn't wrap
+            # for: membership churns, so a joiner arriving between the client's
+            # key-fetch and its send is a *race*, not a malformed request. Naming the
+            # missing members makes it recoverable — re-fetch the bundle, re-seal,
+            # retry — instead of silently producing a message they can never read.
+            if "no wrapped key for" in str(e):
+                raise HTTPException(409, f"this room is end-to-end encrypted — {e}")
+            raise HTTPException(400, f"this room is end-to-end encrypted — {e}")
+    elif crypto_box.looks_like_envelope(req.content):
+        raise HTTPException(
+            400,
+            "this room is not encrypted, so an encrypted envelope cannot be stored "
+            "in it — create the room with encrypted=true instead",
+        )
+
     if not room.encrypted:
         try:
             await _assert_payload_safe_counted({"content": req.content})
