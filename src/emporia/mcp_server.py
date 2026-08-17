@@ -1329,7 +1329,11 @@ def send_dm(
         return {"error": "from_agent_id required (or set EMPORIA_AGENT_ID)"}
     from emporia import crypto_box
     from emporia.identity import sign as ed25519_sign
-    from emporia.wire import dm_thread_message_envelope, signed_dm_thread_payload
+    from emporia.wire import (
+        dm_thread_message_envelope,
+        new_message_nonce,
+        signed_dm_thread_payload,
+    )
     try:
         # Get or create thread
         start_body: dict[str, Any] = {"to_agent": to_agent_id}
@@ -1344,6 +1348,9 @@ def send_dm(
         if start_r.status_code not in (200, 201):
             return {"error": f"Could not start DM thread: {start_r.status_code}", "detail": start_r.text}
         thread_id = start_r.json()["thread_id"]
+        # P18-2: one nonce, bound into both the ciphertext's AAD and the signature,
+        # so a stored row cannot be replayed as a different message.
+        nonce = new_message_nonce()
         if start_r.json().get("encrypted"):
             # A PeerKeyMismatch here propagates to the module's standard
             # {"error": ...} return via the outer handler, carrying its own message
@@ -1351,14 +1358,16 @@ def send_dm(
             # caller is told why in terms they can act on.
             content = json.dumps(crypto_box.seal(
                 content, _dm_recipients(sender, thread_id),
-                crypto_box.message_aad(thread_id, sender, msg_type),
+                crypto_box.message_aad(thread_id, sender, msg_type, nonce),
             ))
         # Send the message
-        signed_payload = signed_dm_thread_payload(thread_id, content, msg_type)
+        signed_payload = signed_dm_thread_payload(thread_id, content, msg_type, nonce)
         send_r = _bearer_request(
             "post", f"{RELAY_URL}/dm/{thread_id}/send",
             agent_id=sender,
-            json=dm_thread_message_envelope(content, msg_type, ed25519_sign(signed_payload, sender)),
+            json=dm_thread_message_envelope(
+                content, msg_type, ed25519_sign(signed_payload, sender), nonce=nonce,
+            ),
             timeout=10,
         )
         if send_r.status_code == 200:
@@ -1419,7 +1428,14 @@ def get_dm_messages(thread_id: str, agent_id: str = "", limit: int = 50) -> dict
         body = r.json()
         priv, _ = generate_or_load_encryption_keypair(aid)
         pubkeys: dict[str, str] = {}
+        # P18-2: the relay's UNIQUE index stops the easy replay; an operator who can
+        # write the database can also drop an index, so the reader checks too.
+        seen_nonces: set[str] = set()
         for msg in body.get("messages", []):
+            nonce = msg.get("nonce") or ""
+            msg["replayed"] = bool(nonce) and nonce in seen_nonces
+            if nonce:
+                seen_nonces.add(nonce)
             # P17-2: verified against the *stored* content, before decryption — on
             # an encrypted thread that envelope is what was signed. A mismatch marks
             # the message rather than failing the call, same policy as below.
@@ -1440,7 +1456,9 @@ def get_dm_messages(thread_id: str, agent_id: str = "", limit: int = 50) -> dict
             try:
                 msg["content"] = crypto_box.open_sealed(
                     json.loads(msg["content"]), aid, priv,
-                    crypto_box.message_aad(thread_id, msg["sender_id"], msg["msg_type"]),
+                    crypto_box.message_aad(
+                        thread_id, msg["sender_id"], msg["msg_type"], msg.get("nonce") or "",
+                    ),
                 )
                 msg["decrypted"] = True
             except crypto_box.DecryptionError:

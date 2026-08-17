@@ -562,23 +562,32 @@ class EmporiaAgent:
         someone will.
         """
         from emporia import crypto_box
-        from emporia.wire import dm_thread_message_envelope, signed_dm_thread_payload
+        from emporia.wire import (
+            dm_thread_message_envelope,
+            new_message_nonce,
+            signed_dm_thread_payload,
+        )
 
         # Fetched per send rather than cached: a thread can be upgraded to encrypted
         # at any moment by the peer, and a stale "not encrypted" cache would send
         # plaintext. The relay would reject it (400, no leak), but the cost of one
         # extra GET is far below the cost of reasoning about that window.
         thread = await self.get_dm_thread(thread_id)
+        # P18-2: one nonce, bound into both the ciphertext's AAD and the signature,
+        # so a stored row cannot be replayed as a different message.
+        nonce = new_message_nonce()
         if thread["encrypted"]:
             content = json.dumps(crypto_box.seal(
                 content,
                 await self._thread_recipients(thread),
-                crypto_box.message_aad(thread_id, self.agent_id, msg_type),
+                crypto_box.message_aad(thread_id, self.agent_id, msg_type, nonce),
             ))
-        signed_payload = signed_dm_thread_payload(thread_id, content, msg_type)
+        signed_payload = signed_dm_thread_payload(thread_id, content, msg_type, nonce)
         resp = await self._bearer_request(
             "post", f"{self.relay_url}/dm/{thread_id}/send",
-            json=dm_thread_message_envelope(content, msg_type, self._sign(signed_payload)),
+            json=dm_thread_message_envelope(
+                content, msg_type, self._sign(signed_payload), nonce=nonce,
+            ),
         )
         resp.raise_for_status()
         return resp.json()
@@ -602,7 +611,16 @@ class EmporiaAgent:
         body = resp.json()
         priv, _ = generate_or_load_encryption_keypair(self.profile_id)
         pubkeys: dict[str, str] = {}
+        # P18-2: the relay's UNIQUE(thread_id, nonce) index stops the easy replay,
+        # but an operator who can write the database can also drop an index. Seeing
+        # the same nonce twice in one thread is the reader's own check, so the hard
+        # path stays visible rather than silent.
+        seen_nonces: set[str] = set()
         for msg in body.get("messages", []):
+            nonce = msg.get("nonce") or ""
+            msg["replayed"] = bool(nonce) and nonce in seen_nonces
+            if nonce:
+                seen_nonces.add(nonce)
             # P17-2: verified against the *stored* content, before any decryption —
             # for an encrypted thread that envelope is what was signed. Verifying
             # after decrypting would check the signature against plaintext nobody
@@ -625,7 +643,9 @@ class EmporiaAgent:
             try:
                 msg["content"] = crypto_box.open_sealed(
                     json.loads(msg["content"]), self.agent_id, priv,
-                    crypto_box.message_aad(thread_id, msg["sender_id"], msg["msg_type"]),
+                    crypto_box.message_aad(
+                        thread_id, msg["sender_id"], msg["msg_type"], msg.get("nonce") or "",
+                    ),
                 )
                 msg["decrypted"] = True
             except crypto_box.DecryptionError:

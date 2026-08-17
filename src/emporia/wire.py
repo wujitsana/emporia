@@ -202,18 +202,47 @@ def room_message_envelope(
     return body
 
 
-def signed_dm_thread_payload(thread_id: str, content: str, msg_type: str) -> dict[str, Any]:
+def new_message_nonce() -> str:
+    """A fresh per-message nonce, chosen by the *sender*.
+
+    P18-2: before this, neither the signature (`{thread_id, content, msg_type}`)
+    nor the AAD (`{v, thread_id, sender_id, msg_type}`) bound anything unique to
+    the message — so a relay could copy one row's content *and its signature* onto
+    another row and have both verify and decrypt. P17-2 recorded that honestly
+    rather than claiming it closed; this is the close.
+
+    Sender-chosen rather than server-assigned because it has to be inside what the
+    sender signs, and a server-assigned `message_id` doesn't exist yet at signing
+    time. 128 bits from `secrets`, so two honest senders never collide and a
+    hostile one can only squat ids in their own thread.
+    """
+    import secrets
+
+    return secrets.token_hex(16)
+
+
+def signed_dm_thread_payload(
+    thread_id: str, content: str, msg_type: str, nonce: str,
+) -> dict[str, Any]:
     """The dict `POST /dm/{thread_id}/send` callers sign before sending — binds the
     signature to `thread_id`/`msg_type`, not just `content` (same N3-8/R7 shape as
     `signed_room_message_payload()`: a content-only signature would be valid in any
     thread this agent is a participant of, forever). Distinct from
     `signed_dm_envelope()` above, which is `POST /messages`'s shape
     (`to_agent`/`session_id`/`payload`) — thread DMs route on `thread_id`, a
-    structurally different key, not `to_agent`."""
-    return {"thread_id": thread_id, "content": content, "msg_type": msg_type}
+    structurally different key, not `to_agent`.
+
+    P18-2: `nonce` binds the signature to *this* message, closing the replay P17-2
+    recorded — without it a relay could lift a valid (content, signature) pair onto
+    a second row and both would verify."""
+    return {
+        "thread_id": thread_id, "content": content, "msg_type": msg_type, "nonce": nonce,
+    }
 
 
-def dm_thread_message_envelope(content: str, msg_type: str, signature: str) -> dict[str, Any]:
+def dm_thread_message_envelope(
+    content: str, msg_type: str, signature: str, *, nonce: str = "",
+) -> dict[str, Any]:
     """The actual `POST /dm/{thread_id}/send` body — `signed_dm_thread_payload()`'s
     fields minus `thread_id` (already in the URL), plus the signature computed over
     that payload.
@@ -222,8 +251,16 @@ def dm_thread_message_envelope(content: str, msg_type: str, signature: str) -> d
     identical today: they're different routes whose bodies are free to diverge, and
     `room_message_envelope()` already carries a `parent_message_id` kwarg this route
     doesn't accept. Sharing one function would mean the next field added for rooms
-    silently changes the DM wire body."""
-    return {"content": content, "msg_type": msg_type, "signature": signature}
+    silently changes the DM wire body.
+
+    P18-2: `nonce` is keyword-only and defaults to `""` purely so the three
+    positional arguments keep their meaning at every existing call site. The relay
+    *rejects* an empty nonce rather than falling back to an unbound message — a
+    silent fallback would leave the replay hole open to any client that simply
+    omitted the field, which is the failure mode a default invites."""
+    return {
+        "content": content, "msg_type": msg_type, "signature": signature, "nonce": nonce,
+    }
 
 
 def confirm_delivery_body(agent_id: str, rationale: str, signature: str) -> dict[str, Any]:

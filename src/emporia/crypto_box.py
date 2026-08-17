@@ -84,7 +84,7 @@ def _b64d(s: Any) -> bytes:
         raise DecryptionError("malformed envelope") from e
 
 
-def message_aad(thread_id: str, sender_id: str, msg_type: str) -> bytes:
+def message_aad(thread_id: str, sender_id: str, msg_type: str, nonce: str = "") -> bytes:
     """The additional authenticated data every DM ciphertext is bound to.
 
     Canonicalized the same way `identity.sign()` canonicalizes a signed payload
@@ -96,6 +96,14 @@ def message_aad(thread_id: str, sender_id: str, msg_type: str) -> bytes:
 
     `v` is included so a version bump changes the AAD, making cross-version
     confusion a decryption failure rather than a subtle mismatch.
+
+    P18-2: `nonce` binds the ciphertext to *this* message. Without it, `{v,
+    thread_id, sender_id, msg_type}` is identical across every message one sender
+    posts to one thread, so a relay could lift a ciphertext onto another row and it
+    would decrypt cleanly. It defaults to `""` so the signature of this function
+    reads the same for callers that predate it — but the DM path always passes one,
+    and the relay rejects an empty nonce outright rather than accepting an unbound
+    message.
     """
     return json.dumps(
         {
@@ -103,6 +111,7 @@ def message_aad(thread_id: str, sender_id: str, msg_type: str) -> bytes:
             "thread_id": thread_id,
             "sender_id": sender_id,
             "msg_type": msg_type,
+            "nonce": nonce,
         },
         sort_keys=True,
         separators=(",", ":"),

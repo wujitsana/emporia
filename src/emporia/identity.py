@@ -344,7 +344,10 @@ def verify_dm_message(
     if not signature or not sender_public_key_hex:
         return None
     return verify(
-        signed_dm_thread_payload(thread_id, message.get("content", ""), message.get("msg_type", "")),
+        signed_dm_thread_payload(
+            thread_id, message.get("content", ""), message.get("msg_type", ""),
+            message.get("nonce") or "",
+        ),
         signature,
         sender_public_key_hex,
     )

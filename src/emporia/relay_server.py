@@ -746,7 +746,8 @@ def init_db() -> None:
                 content TEXT NOT NULL,
                 msg_type TEXT NOT NULL DEFAULT 'chat',
                 created_at TEXT NOT NULL,
-                signature TEXT
+                signature TEXT,
+                nonce TEXT
             );
             CREATE INDEX IF NOT EXISTS idx_dm_threads_a ON dm_threads(agent_a, last_message_at);
             CREATE INDEX IF NOT EXISTS idx_dm_threads_b ON dm_threads(agent_b, last_message_at);
@@ -1133,6 +1134,18 @@ def _migrate_dm_threads(conn: Any) -> None:
     msg_cols = {r[1] for r in conn.execute("PRAGMA table_info(dm_messages)").fetchall()}
     if "signature" not in msg_cols:
         conn.execute("ALTER TABLE dm_messages ADD COLUMN signature TEXT")
+    # P18-2: the sender-chosen per-message nonce that closes replay. The UNIQUE
+    # index is the load-bearing half — it binds the relay's *own SQL*, not just its
+    # HTTP handlers, so an operator copying a row's content+signature onto another
+    # row hits an IntegrityError rather than succeeding silently. NULL is allowed so
+    # pre-P18 rows survive; SQLite treats NULLs as distinct in a UNIQUE index, which
+    # is what we want (many old rows, no nonce, no false collisions).
+    if "nonce" not in msg_cols:
+        conn.execute("ALTER TABLE dm_messages ADD COLUMN nonce TEXT")
+    conn.execute(
+        "CREATE UNIQUE INDEX IF NOT EXISTS idx_dm_messages_nonce "
+        "ON dm_messages(thread_id, nonce) WHERE nonce IS NOT NULL"
+    )
 
 
 def _migrate_authorized_agents(conn: Any) -> None:
@@ -7302,6 +7315,10 @@ class DMSendRequest(BaseModel):
     content: str
     msg_type: str = ""
     signature: str | None = None
+    # P18-2: sender-chosen, inside the signature and the AAD. Empty is rejected
+    # rather than defaulted — a silent fallback would leave replay open to any
+    # client that just omitted the field.
+    nonce: str = ""
 
 
 def _require_encryption_keys_published(agent_ids: list[str]) -> None:
@@ -7462,7 +7479,6 @@ async def dm_send(thread_id: str, req: DMSendRequest, request: Request):
     effective_msg_type = req.msg_type or DEFAULT_MSG_TYPE
     _require_valid_msg_type(effective_msg_type)
     _require_content_within_limit(req.content)
-
     # P16: enforce the thread's mode. The relay reads no plaintext and holds no key
     # here — `validate_envelope_for()` inspects the envelope's structure and the set
     # of agent_ids the content key was wrapped to, nothing more. It catches the two
@@ -7526,21 +7542,34 @@ async def dm_send(thread_id: str, req: DMSendRequest, request: Request):
 
     if not req.signature:
         raise HTTPException(401, "Signature required")
+    # P18-2: no silent fallback — an absent nonce means a message bound to nothing
+    # unique, which is exactly the replay hole this closes. Checked here rather than
+    # earlier so a missing *signature* still answers 401 first: that is the more
+    # fundamental failure, and its status code predates this field.
+    if not req.nonce:
+        raise HTTPException(
+            400,
+            "nonce is required — it binds this message's signature and ciphertext to "
+            "this message, so a stored row cannot be replayed as another. Generate "
+            "one with wire.new_message_nonce().",
+        )
     # Same N3-8/R7 shape as room messages: bound to thread_id + msg_type, not just
     # content — a content-only signature was valid for delivery into any thread this
     # agent is a participant of, forever (replayable across threads and across
     # msg_type).
-    signed_envelope = signed_dm_thread_payload(thread_id, req.content, effective_msg_type)
+    signed_envelope = signed_dm_thread_payload(
+        thread_id, req.content, effective_msg_type, req.nonce,
+    )
     if not AGENT_REGISTRY.verify_signature(caller, signed_envelope, req.signature):
         raise HTTPException(403, "Invalid message signature")
     now = datetime.now(UTC).isoformat()
     message_id = f"dmm_{uuid.uuid4().hex[:12]}"
     with DB_LOCK, get_db() as conn:
         conn.execute(
-            "INSERT INTO dm_messages "
-            "(message_id, thread_id, sender_id, content, msg_type, created_at, signature) "
-            "VALUES (?,?,?,?,?,?,?)",
-            (message_id, thread_id, caller, req.content, effective_msg_type, now, req.signature),
+            "INSERT INTO dm_messages (message_id, thread_id, sender_id, content, "
+            "msg_type, created_at, signature, nonce) VALUES (?,?,?,?,?,?,?,?)",
+            (message_id, thread_id, caller, req.content, effective_msg_type, now,
+             req.signature, req.nonce),
         )
         conn.execute(
             "UPDATE dm_threads SET last_message_at=? WHERE thread_id=?", (now, thread_id)
@@ -7638,6 +7667,10 @@ async def dm_messages(
             # P17-2: served so the *client* can re-verify, not just the relay at
             # write time. NULL for pre-P17 rows, which clients surface as "unknown".
             "signature": r["signature"],
+            # P18-2: served so the client can spot a duplicate itself — the UNIQUE
+            # index stops the easy replay, but an operator who can write the DB can
+            # also drop an index, and this is what keeps that visible.
+            "nonce": r["nonce"],
         }
         for r in reversed(rows)
     ]
