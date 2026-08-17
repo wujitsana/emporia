@@ -190,7 +190,19 @@ def open_sealed(
     except ValueError as e:
         raise DecryptionError("malformed envelope") from e
 
-    shared = private_key.exchange(eph_pub)
+    try:
+        shared = private_key.exchange(eph_pub)
+    except ValueError as e:
+        # P17-5: X25519 exchange() raises ValueError("Error computing shared key.")
+        # for a low-order/all-zeros peer point — a *different* exception from the
+        # InvalidTag below, and `epk` is attacker-controllable. Unguarded, it
+        # escaped this function entirely and took the caller's whole thread read
+        # with it, breaking the "one bad message must not make a thread
+        # unreadable" contract both clients rely on. Found by a live tamper drill,
+        # not by the suite: flipping a byte of a valid epk almost always yields
+        # another valid point and fails as InvalidTag, so only a *structured* bad
+        # value reaches this path.
+        raise DecryptionError("could not decrypt this message") from e
     wrap_key = HKDF(
         algorithm=hashes.SHA256(),
         length=32,

@@ -16615,3 +16615,76 @@ def test_encrypted_flag_distinguishes_plaintext_from_failed_decryption(client, p
     states = {(m["encrypted"], m["decrypted"]) for m in enc_msgs}
     assert (True, True) in states, "an opened message"
     assert (True, False) in states, "ciphertext that could not be opened"
+
+
+@pytest.mark.parametrize("epk", ["00" * 32, "01" + "00" * 31])
+def test_crypto_box_low_order_epk_raises_decryption_error_not_valueerror(epk):
+    """P17-5: found by the live tamper drill, not by the suite. X25519
+    `exchange()` raises ValueError("Error computing shared key.") for a
+    low-order/all-zeros peer point — a *different* exception from the InvalidTag
+    that open_sealed() guarded. So an attacker-controllable `epk` escaped as an
+    uncaught ValueError and took the whole thread read down with it, breaking the
+    "one bad message must not make a thread unreadable" contract both P16 and
+    P17-2 claim.
+
+    The suite's own tamper tests missed it because flipping one byte of a valid
+    epk almost always yields another valid point, which fails as InvalidTag. It
+    takes a *structured* bad value to reach this path."""
+    from emporia import crypto_box
+
+    alice_priv, alice_pub = _x25519_pair()
+    _, bob_pub = _x25519_pair()
+    aad = crypto_box.message_aad("dm_abc", "alice", "chat")
+    env = crypto_box.seal("text", {"alice": alice_pub, "bob": bob_pub}, aad)
+    env["epk"] = epk
+
+    with pytest.raises(crypto_box.DecryptionError):
+        crypto_box.open_sealed(env, "alice", alice_priv, aad)
+
+
+def test_sdk_low_order_epk_does_not_break_the_thread(client, prod_client):
+    """The same defect at the level it actually bit: a single poisoned row must
+    not stop the rest of the thread from being read."""
+    import asyncio
+
+    from emporia import crypto_box
+    from emporia.relay_server import DB_LOCK, get_db
+
+    async def setup():
+        a, b = _sdk_wired("p17_lo_a"), _sdk_wired("p17_lo_b")
+        try:
+            await a.register()
+            await b.register()
+            tid = (await a.start_dm("p17_lo_b", encrypted=True))["thread_id"]
+            await a.send_dm(tid, "poisoned")
+            await a.send_dm(tid, "still fine")
+            return tid
+        finally:
+            await a.__aexit__()
+            await b.__aexit__()
+
+    tid = asyncio.run(setup())
+    with DB_LOCK, get_db() as conn:
+        victim = conn.execute(
+            "SELECT message_id FROM dm_messages WHERE thread_id=? ORDER BY created_at LIMIT 1",
+            (tid,),
+        ).fetchone()["message_id"]
+        conn.execute(
+            "UPDATE dm_messages SET content=? WHERE message_id=?",
+            (json.dumps({
+                "v": 1, "alg": crypto_box.ENVELOPE_ALG, "epk": "00" * 32,
+                "n": "AAAAAAAAAAAAAAAA", "ct": "AAAAAAAAAAAAAAAA",
+                "keys": {"p17_lo_b": {"n": "AAAAAAAAAAAAAAAA", "ct": "AAAAAAAAAAAAAAAA"}},
+            }), victim),
+        )
+
+    async def read():
+        b = _sdk_wired("p17_lo_b")
+        try:
+            return await b.get_dm_messages(tid)
+        finally:
+            await b.__aexit__()
+
+    msgs = {m["message_id"]: m for m in asyncio.run(read())["messages"]}
+    assert msgs[victim]["decrypted"] is False
+    assert any(m["decrypted"] and m["content"] == "still fine" for m in msgs.values())
