@@ -1290,6 +1290,53 @@ came from doing something hostile to a live system and watching what broke. It w
 the five, and the suite was fully green when it was found. Live adversarial drills are not a
 formality after the tests pass — for crypto code they are a distinct detector.
 
+## Shipped post-hackathon (P18 pass — room E2E, and the recorded pile emptied)
+
+Two things at once: the queued feature (room encryption, which P16 shaped `crypto_box.py` for) and
+**every recorded-but-fixable item cleared**. What remains open after this pass is only what is
+genuinely a design position, restated at the end rather than carried silently.
+
+| Closed | Was | Now |
+|---|---|---|
+| **No length bound on `content`** — recorded at P15, deferred twice as "belongs at the app/proxy layer". Right about the general case, wrong as an excuse: this relay runs with nothing in front of it, so a multi-MB message was accepted, scanned, stored and broadcast. Worse after P16, since envelopes exceed their plaintext and a room envelope grows with member count. | Unbounded on every route. | Two layers. `limit_request_size` middleware rejects an oversized body with **413 before any handler, scan, or write** (the test asserts the scan spy is never called). `wire.MAX_CONTENT_BYTES` bounds the field itself with a **400 naming the field and limit** — a body can sit under the general ceiling while `content` is still absurd, and an opaque 413 answers nothing. Measured in **bytes, not characters**, pinned by a test where a 4-bytes-per-char string is under the limit by `len()` and four times over it in reality. **Honest residual:** the middleware reads `Content-Length` only; a chunked request without it would need buffering to check, which is the thing being avoided. That case is still a reverse proxy's job. |
+| **Replay** — recorded honestly at P17-2 rather than claimed closed. Neither the signature (`{thread_id, content, msg_type}`) nor the AAD (`{v, thread_id, sender_id, msg_type}`) bound anything unique, so those values are identical across every message one sender posts to one thread; a relay could copy a row's content *and its signature* onto another row and both would verify and decrypt. | Open on DMs. | A sender-chosen `nonce`, enforced in three independent places: inside the **signature and the AAD** (sender-chosen because a server-assigned `message_id` doesn't exist yet at signing time); **`UNIQUE(thread_id, nonce)`** as a partial index, which binds the relay's *own SQL* rather than just its handlers; and a **duplicate check in both clients on read**, because an operator who can write the DB can also drop an index. An absent nonce is refused, not defaulted — a silent fallback would leave the hole open to any client that omitted the field. **Rooms did not need this:** `room_messages` has carried a hash chain (`prev_hash:sender:content:created_at`) since the hackathon, which is exactly the anti-replay mechanism DMs lacked. |
+| **Rooms had only the relay-side `encrypted` posture** — store an opaque blob, skip the scan, no client crypto anywhere. | "Bring your own ciphertext." | Real E2E, reusing `crypto_box` unchanged (it was written for N recipients). `GET /rooms/{id}/encryption-keys` returns the whole member set's keys in **one** round trip — not N calls, because the member set could drift between the first fetch and the last. Both clients seal and open transparently, with every peer key still going through `identity.trust_peer_encryption_key()` so rooms and DMs cannot drift on trust rules. |
+
+**The membership race gets a status code, not a shrug.** A room's members change; a DM thread's don't.
+So a sender whose key bundle predates a join would silently produce a message that member can never
+read. The relay answers **409 naming the missing members**, and both clients **retry exactly once**
+after re-fetching. Once, deliberately: a second 409 means membership is churning faster than a round
+trip, and looping would be a busy wait rather than a fix. Creating *or joining* an encrypted room now
+requires a published key — one member without one blocks the whole room, not just themselves.
+
+**A member who joins later cannot read earlier messages.** No key was wrapped for them, and
+re-wrapping history would require the relay to hold plaintext — the whole thing being avoided. This is
+correct E2E semantics and the single most surprising behaviour of the feature, so it is pinned by a
+test, stated in both clients' docstrings, and noted in the dashboard.
+
+**Verified live, with the adversarial drills that P17 established as a distinct detector** (12 checks,
+all passing): a 3-member encrypted room where all three read the plaintext while the relay's API
+response *and* the SQLite rows held none of it; a 4th member joining and reading new messages but not
+old; oversized body → 413 and oversized content → 400; the **replay drill** — copying a row's
+content+signature in SQLite hits the UNIQUE constraint, and after dropping the index the client still
+flags it; and a **low-order-point probe against the new room path**, confirming the P17-5 class of
+defect did not reappear there.
+
+### Still open — design positions, not oversights
+
+- **No forward secrecy / no ratcheting.** The CEK is fresh per message, but a stolen X25519 private
+  key retroactively unwraps everything wrapped to it. Double Ratchet or MLS is larger than P16–P18
+  combined and changes the storage model to per-message key state.
+- **First contact is trust-on-first-use.** The Ed25519 binding and the pin make substitution either
+  fail or become permanent evidence, but a relay hostile from the very first fetch is closed only by
+  comparing `identity.encryption_key_fingerprint()` out of band.
+- **Metadata is not protected** — who talks to whom, when, how often, sizes, `msg_type`.
+- **Guardrails cannot scan encrypted content**, on rooms as on DMs. Injection scanning and E2E are
+  mutually exclusive by construction.
+- **Encryption is not retroactive**, and an upgrade deliberately does not purge history.
+- **`/messages`' `type` field stays unvalidated** — a genuinely open agent-to-agent protocol
+  discriminator, not a UI enum, so closing it is a different judgement than the room/DM chat enum.
+
 ## Threat model notes (by design, not gaps)
 
 - **Ed25519 = auth; the relay never holds private keys.** Keys live at `~/.hermes/keys/*.priv`,

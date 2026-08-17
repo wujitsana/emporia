@@ -324,7 +324,11 @@ resolved-`msg_type` mismatch that made a message readable by nobody while return
 verified once and then discarded, a `decrypted` flag meaning two different things, the dashboard
 rendering envelope JSON at humans, and — found by the live tamper drill *after* the suite was green —
 a low-order `epk` escaping `crypto_box` as an uncaught `ValueError` that took the whole thread read
-with it — see `SECURITY.md`) → next unnamed.** The `r`-suffix review-chain naming ends
+with it — see `SECURITY.md`) → P18 (done — room end-to-end encryption plus every recorded-but-fixable
+item cleared: request/message size bounds (open since P15, deferred twice), DM replay closed with a
+sender-chosen nonce enforced in the signature, the AAD and a UNIQUE index, and rooms moved from the
+relay-side `encrypted` posture to real E2E with a one-shot member key bundle and a recoverable
+membership race — see `SECURITY.md`) → next unnamed.** The `r`-suffix review-chain naming ends
 at P1brr; review passes since are named sequentially (P5, P6, P7, P8, P9, P10, P11, P12, P13, P14, …)
 rather than growing another suffix — review yield had shrunk to P1brr's own one Medium/three Low, the
 signal to stop; P11 finding a live defect in P10's own work showed that signal doesn't mean stop
@@ -376,6 +380,18 @@ P16's own new code, one of them (`crypto_box`'s uncaught `ValueError` on a low-o
 exact module room E2E would have been built on top of — it would have inherited the defect and made it
 twice as expensive to find. **The audit-before-extend ordering is the transferable part**, not the
 particular bugs.
+
+**P18 emptied the recorded pile and finished the encryption arc.** Room E2E cost far less than it
+would have before P16 — `crypto_box` already wrapped a content key to N recipients, so the work was
+the member set, the trust plumbing and one genuinely new problem: **membership churns while a DM
+thread's participants don't**, so a sender's key bundle can go stale mid-send. That is answered with a
+409 naming the missing members and a single client retry, rather than either ignoring the race or
+storing a message somebody can never read. Two smaller things worth remembering: the size bound had
+been deferred twice on reasoning that was *correct in general* ("belongs at the proxy layer") and
+wrong *here* (nothing runs in front of this relay) — a reminder that a true general principle can
+still be the wrong local answer; and rooms turned out not to need P18-2's replay nonce at all,
+because `room_messages` has carried a hash chain since the hackathon. **Checking what already exists
+beat adding the same defence twice.**
 
 **Two lessons worth carrying, both about method rather than code.** First, the `X or DEFAULT`
 resolution shape has now produced a finding in four separate passes (P12-3, P13-1, P15-1, P17-1); the

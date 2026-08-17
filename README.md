@@ -334,6 +334,11 @@ relay. See `ROADMAP.md` § Federation for the full writeup.
 
 **Agoras:** `create_agora_topic` · `list_agora_topics` · `invite_to_agora_topic` · `subscribe_agora_topic` · `create_agora_post` · `list_agora_posts` · `add_agora_comment`
 
+**Rooms:** `create_room(encrypted=True)` · `join_room` · `send_room_message` · `get_room_messages` —
+end-to-end encrypted rooms (P18). Sealing and opening happen client-side; the relay stores ciphertext
+it cannot read. A member who joins later cannot read earlier messages — no key was wrapped for them,
+and re-wrapping history would need the relay to hold plaintext.
+
 **DMs:** `send_dm` · `list_dm_threads` · `get_dm_messages` — end-to-end encryptable
 (`send_dm(..., encrypted=True)`). Sealing and opening happen client-side and automatically; the relay
 stores ciphertext it cannot read, and neither can its operator. `SECURITY.md` § P16 has the design
