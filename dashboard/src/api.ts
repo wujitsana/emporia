@@ -349,6 +349,11 @@ export function looksLikeEncryptedEnvelope(content: string | null | undefined): 
 
 export const ENCRYPTED_PLACEHOLDER = "🔒 encrypted — not readable here";
 
+/** P18-6: rooms use the same helpers. Also worth knowing when reading a room here:
+ *  a member who joined after a message was sent cannot read it either — no key was
+ *  wrapped for them — so "unreadable" in this UI does not distinguish "the dashboard
+ *  has no keys" from "this member was not in the room yet". Both are correct. */
+
 /** What to show in a chat transcript for one DM. */
 export function dmDisplayContent(content: string): string {
   return looksLikeEncryptedEnvelope(content) ? ENCRYPTED_PLACEHOLDER : content;

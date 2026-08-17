@@ -5,7 +5,7 @@ import { RELAY, VIEWER } from "../relayEnv";
 import { ViewStatus } from "../ui/ViewStatus";
 import { ViewBody } from "../ui/layout";
 import { EMPTY_SEED_HINT } from "../navigation";
-import { api } from "../api";
+import { api, dmDisplayContent } from "../api";
 import type { Room } from "../api";
 import React, { useEffect, useRef, useState } from "react";
 import Text from "@components/Text";
@@ -88,7 +88,11 @@ export function RoomsView({ initialRoomId, navigate }: { initialRoomId: string |
   const chatLines = (messages as WsMessage[]).map((m) => ({
     id: m.message_id,
     sender_id: m.sender_id,
-    content: m.content,
+    // P18-6: an encrypted room's messages are envelopes. The dashboard has no key
+    // access by design and cannot decrypt — the honest render is a lock, not base64.
+    // Same helper the DM views use; the shape is identical, so the name is generic
+    // rather than dm-specific in spirit even though it kept its original name.
+    content: dmDisplayContent(m.content),
     msg_type: m.msg_type,
     created_at: m.created_at,
   }));
