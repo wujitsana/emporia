@@ -1,11 +1,8 @@
 """End-to-end message encryption for Emporia — the layer the relay cannot see through.
 
-Emporia's `encrypted` rooms flag has, until now, meant only a relay-side posture:
-the relay agrees to store an opaque blob and skip the guardrails scan
-(`relay_server.py`'s room route), while `mcp_server.py` told callers to "encrypt
-content before calling this tool" and provided nothing to do it with. This module
-is that missing half — the actual crypto — written for encrypted DM threads and
-deliberately shaped so rooms can reuse it later (wrap to N members instead of 2).
+Used by both encrypted DM threads (P16) and encrypted rooms (P18): one content key
+wrapped to N recipients, so the same envelope serves a 2-party thread and an
+N-member room without branching.
 
 **The guarantee.** The relay process, its operator, and anyone holding the SQLite
 file see only what `seal()` produces. No key the relay holds recovers the
@@ -19,11 +16,17 @@ as well as the recipient is not redundancy — it is what lets the sender read t
 own thread back. A plain sealed-box would make `GET /dm/{id}/messages` return the
 caller's own history as garbage, which is not a shippable DM product.
 
-**AAD.** Every ciphertext is bound to `{v, thread_id, sender_id, msg_type}` via
-`message_aad()`. Without that binding a hostile relay could relocate a ciphertext
-into a different thread, or relabel a "chat" as a negotiation "accept", and it
-would still decrypt — turning opaque storage into a forgery primitive requiring no
-key. With it, any such move fails authentication at the recipient.
+**AAD.** Every ciphertext is bound to `{v, kind, scope_id, sender_id, msg_type,
+nonce}` via `message_aad()`. Without that binding a hostile relay could relocate a
+ciphertext into a different thread, or relabel a "chat" as a negotiation "accept",
+and it would still decrypt — turning opaque storage into a forgery primitive
+requiring no key. With it, any such move fails authentication at the recipient.
+
+`kind` (`"dm"` / `"room"`) is a P19 addition. Before it, a DM AAD and a room AAD
+were distinguishable only because `dm_`-prefixed thread ids and `room_`-prefixed
+room ids happen not to collide — a property of two `uuid` format strings in two
+other modules, not of this one. An explicit domain tag makes cross-context
+relocation structurally impossible rather than accidentally impossible.
 
 Pure by design, same posture as `wire.py`: no I/O, no `httpx`, no `identity`
 import, no relay import. Keys come in as arguments. That keeps every guarantee
@@ -50,7 +53,14 @@ from cryptography.hazmat.primitives.asymmetric.x25519 import X25519PrivateKey, X
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 from cryptography.hazmat.primitives.kdf.hkdf import HKDF
 
-ENVELOPE_VERSION = 1
+# P19: bumped from 1. P18-2 added `nonce` to the AAD without moving this, so every
+# v1 envelope became undecryptable while still *claiming* to be a supported version
+# — the failure surfaced as the generic "could not decrypt this message", which
+# points at a key or a tamper, not at a format change. Backward compatibility is
+# not owed here (hackathon-era testers restart on the current build), so the fix is
+# to make the break loud rather than to carry two AAD shapes forever: a v1 envelope
+# now fails the version check with a message that says exactly what happened.
+ENVELOPE_VERSION = 2
 ENVELOPE_ALG = "x25519-hkdf-sha256/aes-256-gcm"
 
 # Distinct HKDF `info` strings for the two derivations, so a key derived for one
@@ -71,6 +81,26 @@ class DecryptionError(Exception):
     """
 
 
+class MissingRecipients(ValueError):
+    """`validate_envelope_for()` found a participant with no wrapped key.
+
+    A subclass of `ValueError` so every existing `except ValueError` around
+    validation keeps working, but a *distinct* type because the relay has to tell
+    this case apart from every other malformed envelope: a missing member is a
+    recoverable membership race (409, retry), while a bad envelope is a client bug
+    (400, terminal). P18-4 made that distinction by substring-matching this
+    module's error text from `relay_server.py`, which meant rewording a sentence
+    here would silently turn every room race into a terminal 400.
+    """
+
+    def __init__(self, missing: list[str]) -> None:
+        self.missing = missing
+        super().__init__(
+            "encrypted message is not readable by every thread participant — no "
+            f"wrapped key for: {', '.join(missing)}"
+        )
+
+
 def _b64e(raw: bytes) -> str:
     return base64.b64encode(raw).decode("ascii")
 
@@ -84,8 +114,8 @@ def _b64d(s: Any) -> bytes:
         raise DecryptionError("malformed envelope") from e
 
 
-def message_aad(thread_id: str, sender_id: str, msg_type: str, nonce: str = "") -> bytes:
-    """The additional authenticated data every DM ciphertext is bound to.
+def message_aad(kind: str, scope_id: str, sender_id: str, msg_type: str, nonce: str) -> bytes:
+    """The additional authenticated data every ciphertext is bound to.
 
     Canonicalized the same way `identity.sign()` canonicalizes a signed payload
     (`sort_keys=True`), for the same reason: sender and recipient must produce
@@ -97,18 +127,22 @@ def message_aad(thread_id: str, sender_id: str, msg_type: str, nonce: str = "") 
     `v` is included so a version bump changes the AAD, making cross-version
     confusion a decryption failure rather than a subtle mismatch.
 
-    P18-2: `nonce` binds the ciphertext to *this* message. Without it, `{v,
-    thread_id, sender_id, msg_type}` is identical across every message one sender
-    posts to one thread, so a relay could lift a ciphertext onto another row and it
-    would decrypt cleanly. It defaults to `""` so the signature of this function
-    reads the same for callers that predate it — but the DM path always passes one,
-    and the relay rejects an empty nonce outright rather than accepting an unbound
-    message.
+    `kind` is `"dm"` or `"room"` and `scope_id` is the thread id or room id it
+    belongs to. Both are required positionally, with no default between them: P19
+    added `kind`, and a defaulted domain tag is worth nothing — the whole point is
+    that a caller cannot omit it and silently produce the other context's AAD.
+
+    `nonce` (P18-2) binds the ciphertext to *this* message. Without it the AAD is
+    identical across every message one sender posts to one scope, so a relay could
+    lift a ciphertext onto another row and it would decrypt cleanly. Also required
+    with no default, for the same reason and because P18-2's `""` default is what
+    let the room path ship without one at all.
     """
     return json.dumps(
         {
             "v": ENVELOPE_VERSION,
-            "thread_id": thread_id,
+            "kind": kind,
+            "scope_id": scope_id,
             "sender_id": sender_id,
             "msg_type": msg_type,
             "nonce": nonce,
@@ -119,13 +153,34 @@ def message_aad(thread_id: str, sender_id: str, msg_type: str, nonce: str = "") 
 
 
 def _wrap_key_for(
-    eph_priv: X25519PrivateKey, eph_pub: bytes, recipient_pub_hex: str, cek: bytes, aad: bytes,
+    eph_priv: X25519PrivateKey, eph_pub: bytes, agent_id: str, recipient_pub_hex: str,
+    cek: bytes, aad: bytes,
 ) -> dict[str, str]:
     try:
         recipient_pub = X25519PublicKey.from_public_bytes(bytes.fromhex(recipient_pub_hex))
     except ValueError as e:
-        raise ValueError(f"not a valid X25519 public key: {recipient_pub_hex!r}") from e
-    shared = eph_priv.exchange(recipient_pub)
+        raise ValueError(
+            f"not a valid X25519 public key for '{agent_id}': {recipient_pub_hex!r}"
+        ) from e
+    try:
+        shared = eph_priv.exchange(recipient_pub)
+    except ValueError as e:
+        # P19: the write-side half of P17-5. `exchange()` raises ValueError("Error
+        # computing shared key.") for a low-order or all-zeros peer point, and
+        # `from_public_bytes()` above does *not* reject one — any 32 bytes are a
+        # well-formed X25519 public key. P17-5 guarded `open_sealed()`; this path
+        # was never audited, and P18-3 made it far worse than a 2-party problem:
+        # `seal()` wraps to every room member, so one member publishing "00"*32
+        # took down sending for the entire room, for everyone, permanently.
+        #
+        # Named rather than opaque. Unlike a decryption failure — where telling the
+        # attacker which mode they hit is itself a leak — this one is a peer's
+        # published key being unusable, and the sender can act on it (kick, or ask
+        # them to re-publish) only if they know who.
+        raise ValueError(
+            f"'{agent_id}' published an X25519 public key that cannot be used for key "
+            f"agreement (low-order or all-zeros point): {recipient_pub_hex!r}"
+        ) from e
     # Salt binds the derived key to *this* ephemeral key and *this* recipient, so
     # the same ECDH output can never produce the same wrapping key for two
     # different (epk, recipient) pairs.
@@ -163,7 +218,7 @@ def seal(plaintext: str, recipients: dict[str, str], aad: bytes) -> dict[str, An
         # sorted() only so the serialized envelope is deterministic given its
         # inputs — it is not a security property, just easier to diff and test.
         "keys": {
-            agent_id: _wrap_key_for(eph_priv, eph_pub, pub_hex, cek, aad)
+            agent_id: _wrap_key_for(eph_priv, eph_pub, agent_id, pub_hex, cek, aad)
             for agent_id, pub_hex in sorted(recipients.items())
         },
     }
@@ -237,7 +292,14 @@ def parse_envelope(content: str) -> dict[str, Any]:
     """Parse a stored/posted `content` string as a v1 envelope, or raise `ValueError`."""
     try:
         env = json.loads(content)
-    except (json.JSONDecodeError, TypeError) as e:
+    except (json.JSONDecodeError, TypeError, RecursionError) as e:
+        # P19: RecursionError is not a subclass of ValueError, and `json.loads` raises
+        # it — not JSONDecodeError — on deeply nested input (`"[" * 100000` is enough,
+        # and that is ~100 KB, comfortably inside both of P18-1's size limits). Every
+        # caller here catches ValueError or nothing, so it escaped as an unhandled 500
+        # on both message routes. P18-4 widened the blast radius by routing *plaintext*
+        # room messages through `looks_like_envelope()` too, so a route that had never
+        # touched this module became crashable by the same body.
         raise ValueError("content is not an encrypted envelope") from e
     if not isinstance(env, dict):
         raise ValueError("content is not an encrypted envelope")
@@ -269,10 +331,7 @@ def validate_envelope_for(content: str, required_recipients: set[str]) -> None:
     env = parse_envelope(content)
     missing = sorted(required_recipients - set(env["keys"]))
     if missing:
-        raise ValueError(
-            "encrypted message is not readable by every thread participant — no "
-            f"wrapped key for: {', '.join(missing)}"
-        )
+        raise MissingRecipients(missing)
 
 
 def looks_like_envelope(content: str) -> bool:

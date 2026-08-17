@@ -15321,7 +15321,7 @@ def test_crypto_box_round_trips_for_both_participants():
 
     alice_priv, alice_pub = _x25519_pair()
     bob_priv, bob_pub = _x25519_pair()
-    aad = crypto_box.message_aad("dm_abc", "alice", "chat")
+    aad = crypto_box.message_aad("dm", "dm_abc", "alice", "chat", "")
     env = crypto_box.seal("meet me at the docks", {"alice": alice_pub, "bob": bob_pub}, aad)
 
     assert crypto_box.open_sealed(env, "alice", alice_priv, aad) == "meet me at the docks"
@@ -15339,7 +15339,7 @@ def test_crypto_box_ciphertext_does_not_contain_plaintext():
     secret = "the relay operator must never read this"
     env = crypto_box.seal(
         secret, {"alice": alice_pub, "bob": bob_pub},
-        crypto_box.message_aad("dm_abc", "alice", "chat"),
+        crypto_box.message_aad("dm", "dm_abc", "alice", "chat", ""),
     )
     assert secret not in json.dumps(env)
     assert "docks" not in json.dumps(env)
@@ -15354,7 +15354,7 @@ def test_crypto_box_non_recipient_cannot_open():
     _, alice_pub = _x25519_pair()
     _, bob_pub = _x25519_pair()
     mallory_priv, _ = _x25519_pair()
-    aad = crypto_box.message_aad("dm_abc", "alice", "chat")
+    aad = crypto_box.message_aad("dm", "dm_abc", "alice", "chat", "")
     env = crypto_box.seal("private", {"alice": alice_pub, "bob": bob_pub}, aad)
 
     with pytest.raises(crypto_box.DecryptionError):
@@ -15369,7 +15369,7 @@ def test_crypto_box_wrong_key_for_a_named_recipient_fails():
     _, alice_pub = _x25519_pair()
     _, bob_pub = _x25519_pair()
     impostor_priv, _ = _x25519_pair()
-    aad = crypto_box.message_aad("dm_abc", "alice", "chat")
+    aad = crypto_box.message_aad("dm", "dm_abc", "alice", "chat", "")
     env = crypto_box.seal("private", {"alice": alice_pub, "bob": bob_pub}, aad)
 
     with pytest.raises(crypto_box.DecryptionError):
@@ -15382,7 +15382,7 @@ def test_crypto_box_detects_tampering(field):
 
     alice_priv, alice_pub = _x25519_pair()
     _, bob_pub = _x25519_pair()
-    aad = crypto_box.message_aad("dm_abc", "alice", "chat")
+    aad = crypto_box.message_aad("dm", "dm_abc", "alice", "chat", "")
     env = crypto_box.seal("original text", {"alice": alice_pub, "bob": bob_pub}, aad)
 
     raw = base64.b64decode(env[field]) if field != "epk" else bytes.fromhex(env["epk"])
@@ -15398,7 +15398,7 @@ def test_crypto_box_detects_tampering_with_a_wrapped_key():
 
     alice_priv, alice_pub = _x25519_pair()
     _, bob_pub = _x25519_pair()
-    aad = crypto_box.message_aad("dm_abc", "alice", "chat")
+    aad = crypto_box.message_aad("dm", "dm_abc", "alice", "chat", "")
     env = crypto_box.seal("original text", {"alice": alice_pub, "bob": bob_pub}, aad)
 
     raw = base64.b64decode(env["keys"]["alice"]["ct"])
@@ -15424,17 +15424,17 @@ def test_crypto_box_aad_binds_thread_sender_and_msg_type(thread_id, sender_id, m
 
     alice_priv, alice_pub = _x25519_pair()
     _, bob_pub = _x25519_pair()
-    sealed_aad = crypto_box.message_aad("dm_abc", "alice", "chat")
+    sealed_aad = crypto_box.message_aad("dm", "dm_abc", "alice", "chat", "")
     env = crypto_box.seal("original text", {"alice": alice_pub, "bob": bob_pub}, sealed_aad)
 
-    tampered_aad = crypto_box.message_aad(thread_id, sender_id, msg_type)
+    tampered_aad = crypto_box.message_aad("dm", thread_id, sender_id, msg_type, "")
     assert tampered_aad != sealed_aad
     with pytest.raises(crypto_box.DecryptionError):
         crypto_box.open_sealed(env, "alice", alice_priv, tampered_aad)
 
 
 @pytest.mark.parametrize("mutate", [
-    lambda e: e.update({"v": 2}),
+    lambda e: e.update({"v": 99}),
     lambda e: e.update({"alg": "rot13"}),
     lambda e: e.pop("epk"),
     lambda e: e.pop("keys"),
@@ -15444,7 +15444,7 @@ def test_crypto_box_rejects_unknown_version_alg_or_shape(mutate):
 
     alice_priv, alice_pub = _x25519_pair()
     _, bob_pub = _x25519_pair()
-    aad = crypto_box.message_aad("dm_abc", "alice", "chat")
+    aad = crypto_box.message_aad("dm", "dm_abc", "alice", "chat", "")
     env = crypto_box.seal("text", {"alice": alice_pub, "bob": bob_pub}, aad)
     mutate(env)
 
@@ -15456,7 +15456,7 @@ def test_crypto_box_seal_requires_recipients():
     from emporia import crypto_box
 
     with pytest.raises(ValueError):
-        crypto_box.seal("text", {}, crypto_box.message_aad("dm_abc", "alice", "chat"))
+        crypto_box.seal("text", {}, crypto_box.message_aad("dm", "dm_abc", "alice", "chat", ""))
 
 
 def test_crypto_box_each_seal_uses_a_fresh_content_key():
@@ -15466,7 +15466,7 @@ def test_crypto_box_each_seal_uses_a_fresh_content_key():
 
     _, alice_pub = _x25519_pair()
     _, bob_pub = _x25519_pair()
-    aad = crypto_box.message_aad("dm_abc", "alice", "chat")
+    aad = crypto_box.message_aad("dm", "dm_abc", "alice", "chat", "")
     a = crypto_box.seal("same text", {"alice": alice_pub, "bob": bob_pub}, aad)
     b = crypto_box.seal("same text", {"alice": alice_pub, "bob": bob_pub}, aad)
 
@@ -15485,7 +15485,7 @@ def test_crypto_box_validates_envelope_for_required_recipients():
 
     _, alice_pub = _x25519_pair()
     _, bob_pub = _x25519_pair()
-    aad = crypto_box.message_aad("dm_abc", "alice", "chat")
+    aad = crypto_box.message_aad("dm", "dm_abc", "alice", "chat", "")
     both = json.dumps(crypto_box.seal("hi", {"alice": alice_pub, "bob": bob_pub}, aad))
     alice_only = json.dumps(crypto_box.seal("hi", {"alice": alice_pub}, aad))
 
@@ -15503,7 +15503,7 @@ def test_crypto_box_looks_like_envelope_discriminates_plaintext():
 
     _, alice_pub = _x25519_pair()
     env = json.dumps(crypto_box.seal(
-        "hi", {"alice": alice_pub}, crypto_box.message_aad("dm_abc", "alice", "chat"),
+        "hi", {"alice": alice_pub}, crypto_box.message_aad("dm", "dm_abc", "alice", "chat", ""),
     ))
     assert crypto_box.looks_like_envelope(env)
     assert not crypto_box.looks_like_envelope("hello there")
@@ -15849,7 +15849,7 @@ def _seal_for(thread_id: str, sender: str, participants: list[str], text: str,
 
     recipients = {p: identity.get_encryption_public_key_hex(p) for p in participants}
     return json.dumps(crypto_box.seal(
-        text, recipients, crypto_box.message_aad(thread_id, sender, msg_type, nonce),
+        text, recipients, crypto_box.message_aad("dm", thread_id, sender, msg_type, nonce),
     ))
 
 
@@ -16413,7 +16413,7 @@ def test_omitted_msg_type_rejected_on_an_encrypted_thread(client):
                       headers={"X-Emporia-Agent-Id": "p17_omit_a"}).json()["thread_id"]
     recips = {x: identity.get_encryption_public_key_hex(x) for x in ("p17_omit_a", "p17_omit_b")}
     sealed = json.dumps(crypto_box.seal(
-        "secret text", recips, crypto_box.message_aad(tid, "p17_omit_a", ""),
+        "secret text", recips, crypto_box.message_aad("dm", tid, "p17_omit_a", "", ""),
     ))
     # Signed under the relay's *resolved* value, or the signature check would 403
     # first and this test would pass for the wrong reason.
@@ -16659,6 +16659,102 @@ def test_encrypted_flag_distinguishes_plaintext_from_failed_decryption(client, p
     assert (True, False) in states, "ciphertext that could not be opened"
 
 
+# ============================================================================
+# P19-1: crypto_box hardening found auditing P18 — envelope v2, kind-tagged AAD,
+# a distinct MissingRecipients type, RecursionError guard, and the write-side
+# low-order-point guard P17-5 only added to the read side.
+# ============================================================================
+
+def test_message_aad_requires_kind_and_scope_positionally():
+    """P19: `kind` has no default. A defaulted domain tag is worth nothing — the
+    whole point of adding it is that a caller cannot omit it and silently produce
+    the other context's AAD."""
+    from emporia import crypto_box
+
+    with pytest.raises(TypeError):
+        crypto_box.message_aad("dm_abc", "alice", "chat", "")  # missing kind
+
+
+def test_message_aad_kind_prevents_cross_context_relocation():
+    """Before P19, a DM and a room AAD were distinguishable only because dm_ and
+    room_ id prefixes happen not to collide — an accident of two other modules'
+    id formats, not a property of this one. Two scopes with the *same* id string
+    but a different `kind` must produce different AAD bytes."""
+    from emporia import crypto_box
+
+    dm_aad = crypto_box.message_aad("dm", "x", "alice", "chat", "n1")
+    room_aad = crypto_box.message_aad("room", "x", "alice", "chat", "n1")
+    assert dm_aad != room_aad
+
+
+def test_a_v1_envelope_fails_the_version_check_not_a_generic_decrypt_error():
+    """P19: ENVELOPE_VERSION moved to 2. P18-2 added `nonce` to the AAD without
+    bumping it, so a v1 envelope silently became undecryptable while its version
+    field still claimed to be supported — the failure surfaced as the generic
+    "could not decrypt this message", indistinguishable from a bad key or a real
+    tamper. No backward compatibility is owed here; the fix is to make the
+    version mismatch itself the diagnosis."""
+    from emporia import crypto_box
+
+    alice_priv, alice_pub = _x25519_pair()
+    _, bob_pub = _x25519_pair()
+    aad = crypto_box.message_aad("dm", "dm_abc", "alice", "chat", "")
+    env = crypto_box.seal("text", {"alice": alice_pub, "bob": bob_pub}, aad)
+    env["v"] = 1
+
+    with pytest.raises(crypto_box.DecryptionError, match="version"):
+        crypto_box.open_sealed(env, "alice", alice_priv, aad)
+
+
+def test_validate_envelope_for_raises_missing_recipients_not_bare_value_error():
+    """P19 (M7): the relay used to tell a recoverable membership race (409) apart
+    from a malformed envelope (400) by substring-matching this module's error
+    text — rewording the sentence would have silently turned every race into a
+    terminal 400. MissingRecipients is a distinct, still-ValueError type so the
+    relay can `except` it directly."""
+    from emporia import crypto_box
+
+    _, alice_pub = _x25519_pair()
+    aad = crypto_box.message_aad("room", "room_1", "alice", "chat", "")
+    env = crypto_box.seal("hi", {"alice": alice_pub}, aad)
+
+    with pytest.raises(crypto_box.MissingRecipients) as exc_info:
+        crypto_box.validate_envelope_for(json.dumps(env), {"alice", "bob"})
+    assert exc_info.value.missing == ["bob"]
+    assert isinstance(exc_info.value, ValueError)
+
+
+def test_parse_envelope_rejects_deeply_nested_json_without_crashing():
+    """P19 (H2): json.loads raises RecursionError — not JSONDecodeError — on
+    deeply nested input, and RecursionError is not a ValueError. A ~100KB body
+    (well under both P18-1 size limits) escaped parse_envelope() as an unhandled
+    500 on every message route, including plaintext rooms after P18-4 routed
+    them through looks_like_envelope() too."""
+    from emporia import crypto_box
+
+    deeply_nested = "[" * 100_000
+
+    with pytest.raises(ValueError, match="not an encrypted envelope"):
+        crypto_box.parse_envelope(deeply_nested)
+    assert crypto_box.looks_like_envelope(deeply_nested) is False
+
+
+def test_seal_raises_a_named_error_for_a_low_order_recipient_key():
+    """P19 (H1): open_sealed() got the P17-5 guard; seal() never did. Any
+    recipient's published key reaching _wrap_key_for() unguarded meant one
+    low-order/all-zeros key anywhere in the recipient set took down sealing for
+    *every* other recipient — in a room, every other member, permanently. The
+    error must name which agent's key is unusable so the sender can act on it."""
+    from emporia import crypto_box
+
+    _, alice_pub = _x25519_pair()
+    aad = crypto_box.message_aad("room", "room_1", "alice", "chat", "n1")
+
+    with pytest.raises(ValueError, match="mallory.*low-order|low-order.*mallory") as exc_info:
+        crypto_box.seal("hi", {"alice": alice_pub, "mallory": "00" * 32}, aad)
+    assert "mallory" in str(exc_info.value)
+
+
 @pytest.mark.parametrize("epk", ["00" * 32, "01" + "00" * 31])
 def test_crypto_box_low_order_epk_raises_decryption_error_not_valueerror(epk):
     """P17-5: found by the live tamper drill, not by the suite. X25519
@@ -16676,7 +16772,7 @@ def test_crypto_box_low_order_epk_raises_decryption_error_not_valueerror(epk):
 
     alice_priv, alice_pub = _x25519_pair()
     _, bob_pub = _x25519_pair()
-    aad = crypto_box.message_aad("dm_abc", "alice", "chat")
+    aad = crypto_box.message_aad("dm", "dm_abc", "alice", "chat", "")
     env = crypto_box.seal("text", {"alice": alice_pub, "bob": bob_pub}, aad)
     env["epk"] = epk
 
@@ -16714,7 +16810,7 @@ def test_sdk_low_order_epk_does_not_break_the_thread(client, prod_client):
         conn.execute(
             "UPDATE dm_messages SET content=? WHERE message_id=?",
             (json.dumps({
-                "v": 1, "alg": crypto_box.ENVELOPE_ALG, "epk": "00" * 32,
+                "v": crypto_box.ENVELOPE_VERSION, "alg": crypto_box.ENVELOPE_ALG, "epk": "00" * 32,
                 "n": "AAAAAAAAAAAAAAAA", "ct": "AAAAAAAAAAAAAAAA",
                 "keys": {"p17_lo_b": {"n": "AAAAAAAAAAAAAAAA", "ct": "AAAAAAAAAAAAAAAA"}},
             }), victim),
@@ -16991,7 +17087,7 @@ def _seal_room(room_id: str, sender: str, members: list[str], text: str,
 
     recipients = {m: identity.get_encryption_public_key_hex(m) for m in members}
     return json.dumps(crypto_box.seal(
-        text, recipients, crypto_box.message_aad(room_id, sender, msg_type),
+        text, recipients, crypto_box.message_aad("room", room_id, sender, msg_type, ""),
     ))
 
 

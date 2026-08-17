@@ -839,7 +839,7 @@ def send_room_message(
             "get", f"{RELAY_URL}/rooms/{room_id}", agent_id=sender_id, timeout=10,
         )
         encrypted = room_r.status_code == 200 and bool(room_r.json().get("encrypted"))
-        aad = crypto_box.message_aad(room_id, sender_id, msg_type)
+        aad = crypto_box.message_aad("room", room_id, sender_id, msg_type, "")
 
         def _post(body_content: str):
             signed_payload = signed_room_message_payload(room_id, body_content, msg_type)
@@ -933,7 +933,9 @@ def get_room_messages(room_id: str, agent_id: str = "", limit: int = 50) -> dict
             try:
                 msg["content"] = crypto_box.open_sealed(
                     json.loads(msg["content"]), aid, priv,
-                    crypto_box.message_aad(room_id, msg["sender_id"], msg["msg_type"]),
+                    crypto_box.message_aad(
+                        "room", room_id, msg["sender_id"], msg["msg_type"], "",
+                    ),
                 )
                 msg["decrypted"] = True
             except crypto_box.DecryptionError:
@@ -1452,7 +1454,7 @@ def send_dm(
             # caller is told why in terms they can act on.
             content = json.dumps(crypto_box.seal(
                 content, _dm_recipients(sender, thread_id),
-                crypto_box.message_aad(thread_id, sender, msg_type, nonce),
+                crypto_box.message_aad("dm", thread_id, sender, msg_type, nonce),
             ))
         # Send the message
         signed_payload = signed_dm_thread_payload(thread_id, content, msg_type, nonce)
@@ -1551,7 +1553,8 @@ def get_dm_messages(thread_id: str, agent_id: str = "", limit: int = 50) -> dict
                 msg["content"] = crypto_box.open_sealed(
                     json.loads(msg["content"]), aid, priv,
                     crypto_box.message_aad(
-                        thread_id, msg["sender_id"], msg["msg_type"], msg.get("nonce") or "",
+                        "dm", thread_id, msg["sender_id"], msg["msg_type"],
+                        msg.get("nonce") or "",
                     ),
                 )
                 msg["decrypted"] = True

@@ -580,7 +580,7 @@ class EmporiaAgent:
             content = json.dumps(crypto_box.seal(
                 content,
                 await self._thread_recipients(thread),
-                crypto_box.message_aad(thread_id, self.agent_id, msg_type, nonce),
+                crypto_box.message_aad("dm", thread_id, self.agent_id, msg_type, nonce),
             ))
         signed_payload = signed_dm_thread_payload(thread_id, content, msg_type, nonce)
         resp = await self._bearer_request(
@@ -644,7 +644,8 @@ class EmporiaAgent:
                 msg["content"] = crypto_box.open_sealed(
                     json.loads(msg["content"]), self.agent_id, priv,
                     crypto_box.message_aad(
-                        thread_id, msg["sender_id"], msg["msg_type"], msg.get("nonce") or "",
+                        "dm", thread_id, msg["sender_id"], msg["msg_type"],
+                        msg.get("nonce") or "",
                     ),
                 )
                 msg["decrypted"] = True
@@ -862,7 +863,9 @@ class EmporiaAgent:
             try:
                 msg["content"] = crypto_box.open_sealed(
                     json.loads(msg["content"]), self.agent_id, priv,
-                    crypto_box.message_aad(room_id, msg["sender_id"], msg["msg_type"]),
+                    crypto_box.message_aad(
+                        "room", room_id, msg["sender_id"], msg["msg_type"], "",
+                    ),
                 )
                 msg["decrypted"] = True
             except crypto_box.DecryptionError:
@@ -898,7 +901,7 @@ class EmporiaAgent:
             resp.raise_for_status()
             return resp.json()
 
-        aad = crypto_box.message_aad(room_id, self.agent_id, msg_type)
+        aad = crypto_box.message_aad("room", room_id, self.agent_id, msg_type, "")
         resp = await _post(json.dumps(
             crypto_box.seal(content, await self._room_recipients(room_id), aad),
         ))
