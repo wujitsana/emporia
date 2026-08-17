@@ -6309,19 +6309,39 @@ async def send_room_message(room_id: str, req: SendRoomMessageRequest, request: 
     # the *set of agent_ids* the content key was wrapped to.
     from emporia import crypto_box
     if room.encrypted:
+        # P19 (H5): the DM route (dm_send, below) has this exact guard for the exact
+        # same reason — the room AAD binds msg_type, and this handler *resolves*
+        # msg_type two lines above (`req.msg_type or DEFAULT_MSG_TYPE`). A client
+        # that omits the field seals under "" while the row stores "chat"; every
+        # reader then computes different AAD and the message is permanently
+        # unreadable, accepted with a 200. P18-4 shipped the room's coverage check
+        # without this one — the same "X or DEFAULT" resolution-shape defect class
+        # (P12-3, P13-1, P15-1, P17-1) recurring in the very code that closed the
+        # DM instance of it.
+        if not req.msg_type:
+            raise HTTPException(
+                400,
+                "msg_type must be sent explicitly on an end-to-end encrypted room: "
+                "it is bound into the message's AAD, and the relay's own default "
+                f"resolution (to '{DEFAULT_MSG_TYPE}') would not match what you "
+                "sealed under, making the message permanently unreadable",
+            )
         try:
             # Coverage is checked against room.members (structural membership), the
             # same set _room_member_encryption_keys() hands clients — see there for
             # why a lapsed paid member stays in it.
             crypto_box.validate_envelope_for(req.content, set(room.members))
+        except crypto_box.MissingRecipients as e:
+            # 409, not 400: membership churns, so a joiner arriving between the
+            # client's key-fetch and its send is a *race*, not a malformed request.
+            # Naming the missing members makes it recoverable — re-fetch the
+            # bundle, re-seal, retry — instead of silently producing a message
+            # they can never read. P19: this used to be a substring match on
+            # crypto_box's error text ("no wrapped key for" in str(e)) — a
+            # dedicated exception type means rewording that message can no longer
+            # silently turn every membership race into a terminal 400.
+            raise HTTPException(409, f"this room is end-to-end encrypted — {e}")
         except ValueError as e:
-            # 409, not 400, when the only problem is a member the sender didn't wrap
-            # for: membership churns, so a joiner arriving between the client's
-            # key-fetch and its send is a *race*, not a malformed request. Naming the
-            # missing members makes it recoverable — re-fetch the bundle, re-seal,
-            # retry — instead of silently producing a message they can never read.
-            if "no wrapped key for" in str(e):
-                raise HTTPException(409, f"this room is end-to-end encrypted — {e}")
             raise HTTPException(400, f"this room is end-to-end encrypted — {e}")
     elif crypto_box.looks_like_envelope(req.content):
         raise HTTPException(

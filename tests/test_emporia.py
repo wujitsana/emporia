@@ -17287,6 +17287,42 @@ def test_encrypted_room_requires_coverage_of_every_member(client):
     assert _send_room_raw(client, room, "p18_cov_a", fresh).status_code == 200
 
 
+def test_encrypted_room_requires_explicit_msg_type(client):
+    """P19 (H5): the room route resolves `req.msg_type or DEFAULT_MSG_TYPE` (two
+    lines above the encrypted branch) the same way the DM route does — and the DM
+    route has had this exact guard since P17-1 (test_omitted_msg_type_rejected_on_
+    an_encrypted_thread above), closing the same "X or DEFAULT" shape (P12-3,
+    P13-1, P15-1, P17-1) that recurred here in P18-4's own new code. A client that
+    omits msg_type seals under "" while the relay resolves and stores "chat", so
+    the recipient computes different AAD and the message is permanently unreadable
+    — accepted with a 200 pre-fix (verified directly: the row stored
+    msg_type='chat' and open_sealed() raised for the recipient).
+
+    Signed under the relay's *resolved* value ("chat"), or the signature check
+    would 403 first and this test would pass for the wrong reason — same
+    construction as the DM version of this test."""
+    from emporia.identity import sign
+    from emporia.wire import room_message_envelope, signed_room_message_payload
+
+    _enc_agents(client, "p19_mt_a", "p19_mt_b")
+    room = _encrypted_room(client, "p19_mt_a", ["p19_mt_b"])
+    sealed = _seal_room(room, "p19_mt_a", ["p19_mt_a", "p19_mt_b"], "hi", msg_type="")
+    body = room_message_envelope(
+        sealed, "", sign(signed_room_message_payload(room, sealed, "chat"), "p19_mt_a"),
+    )
+    del body["msg_type"]
+
+    r = client.post(f"/rooms/{room}/message", json=body,
+                    headers={"X-Emporia-Agent-Id": "p19_mt_a"})
+    assert r.status_code == 400, r.text
+    assert "msg_type" in r.text
+
+    # Nothing was stored — an unreadable message must not reach the room at all.
+    msgs = client.get(f"/rooms/{room}/messages",
+                      headers={"X-Emporia-Agent-Id": "p19_mt_b"}).json()["messages"]
+    assert msgs == []
+
+
 def test_plaintext_room_rejects_an_envelope(client):
     _enc_agents(client, "p18_pre_a", "p18_pre_b")
     room = client.post("/rooms", json={"name": "p18 plain room", "description": ""},
