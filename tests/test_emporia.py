@@ -3110,6 +3110,10 @@ def test_every_route_has_a_reviewed_auth_posture():
         ("GET", "/rooms"),
         ("GET", "/rooms/{room_id}"),
         ("GET", "/rooms/{room_id}/messages"),
+        # P18-3: _dashboard_agent_id + rooms_db.is_member — the key material is
+        # public, but the membership list it is keyed by is not, so this is
+        # members-only rather than merely authenticated.
+        ("GET", "/rooms/{room_id}/encryption-keys"),
         ("WS", "/ws/rooms/{room_id}"),
         ("GET", "/agoras/topics"),
         ("GET", "/agoras/topics/{slug}"),
@@ -9113,6 +9117,10 @@ def test_room_guardrails_blocks_injection(client):
 def test_room_encrypted_skips_guardrails(client):
     from emporia.identity import sign
     _register_keyed(client, "enc_alice")
+    # P18-4: an encrypted room now requires its creator to have published an
+    # encryption key — a room nobody can be encrypted to is a room where nothing
+    # can be sent.
+    _publish_enc_key(client, "enc_alice")
     _register(client, "enc_bob")
     r = client.post("/rooms", json={
         "name": "Encrypted Room", "creator_id": "enc_alice",
@@ -16927,3 +16935,54 @@ def test_missing_nonce_is_rejected(client):
     r = client.post(f"/dm/{tid}/send", json=body, headers={"X-Emporia-Agent-Id": "p18_nm_a"})
     assert r.status_code == 400, r.text
     assert "nonce" in r.text
+
+
+# ============================================================================
+# P18-3/4/5: room end-to-end encryption
+# ============================================================================
+
+def _enc_agents(client, *agent_ids):
+    for a in agent_ids:
+        _register_keyed(client, a)
+        _publish_enc_key(client, a)
+
+
+def test_room_encryption_keys_returns_every_member(client):
+    """P18-3: one round trip for the whole member set. Without it a client would
+    make N requests to send one message, and the set it wrapped to could drift
+    between the first fetch and the last."""
+    from emporia import identity
+
+    _enc_agents(client, "p18_rk_a", "p18_rk_b", "p18_rk_c")
+    room = client.post("/rooms", json={"name": "p18 keys", "description": "", "encrypted": True},
+                       headers={"X-Emporia-Agent-Id": "p18_rk_a"}).json()["room_id"]
+    for a in ("p18_rk_b", "p18_rk_c"):
+        assert client.post(f"/rooms/{room}/join", json={"agent_id": a},
+                           headers={"X-Emporia-Agent-Id": a}).status_code == 200
+
+    r = client.get(f"/rooms/{room}/encryption-keys", headers={"X-Emporia-Agent-Id": "p18_rk_b"})
+    assert r.status_code == 200
+    keys = r.json()["keys"]
+    assert set(keys) == {"p18_rk_a", "p18_rk_b", "p18_rk_c"}
+    for aid, entry in keys.items():
+        assert entry["encryption_public_key"] == identity.get_encryption_public_key_hex(aid)
+        assert entry["signature"] and entry["public_key_hex"]
+
+
+def test_room_encryption_keys_is_members_only(client):
+    _enc_agents(client, "p18_rko_a", "p18_rko_b")
+    room = client.post("/rooms", json={"name": "p18 keys private", "description": "",
+                                       "room_type": "private", "encrypted": True},
+                       headers={"X-Emporia-Agent-Id": "p18_rko_a"}).json()["room_id"]
+    r = client.get(f"/rooms/{room}/encryption-keys", headers={"X-Emporia-Agent-Id": "p18_rko_b"})
+    assert r.status_code == 403
+
+
+def test_creating_an_encrypted_room_requires_a_published_key(client):
+    """Same rule DMs already have: an encrypted room whose creator cannot be
+    encrypted to is a room where nothing can ever be sent."""
+    _register_keyed(client, "p18_nokey_creator")
+    r = client.post("/rooms", json={"name": "p18 nokey", "description": "", "encrypted": True},
+                    headers={"X-Emporia-Agent-Id": "p18_nokey_creator"})
+    assert r.status_code == 409
+    assert "encryption key" in r.text

@@ -5729,6 +5729,12 @@ async def create_room_endpoint(req: CreateRoomRequest, request: Request):
         raise HTTPException(400, "paid rooms require entry_fee_cents > 0")
     if req.access_duration_days is not None and req.access_duration_days <= 0:
         raise HTTPException(400, "access_duration_days must be a positive integer or omitted")
+    # P18-4: same rule encrypted DM threads already have. An encrypted room whose
+    # creator has no published key is a room in which nothing can ever be sent —
+    # every message would fail envelope validation with an error nowhere near the
+    # cause. Joiners are checked at join time, not here, since they don't exist yet.
+    if req.encrypted:
+        _require_encryption_keys_published([caller])
     if req.linked_session_id:
         s = load_session(req.linked_session_id)
         if not s:
@@ -6345,6 +6351,58 @@ async def send_room_message(room_id: str, req: SendRoomMessageRequest, request: 
     if broker_response:
         result["broker"] = broker_response
     return result
+
+
+def _room_member_encryption_keys(room: Any) -> dict[str, dict[str, str]]:
+    """`{agent_id: {encryption_public_key, signature, public_key_hex}}` for every
+    member of `room`, in one query per member.
+
+    Keyed on `room.members` — *structural* membership — rather than
+    `rooms_db.is_member()`, which additionally requires an active entitlement on a
+    paid room. A member whose access lapsed and is later restored must not find a
+    hole in their history, and excluding them here would create exactly that. They
+    still cannot *fetch* messages while lapsed, because the relay gates reads — so
+    this is an access-control question the relay already answers elsewhere, not a
+    confidentiality hole opened here.
+    """
+    keys: dict[str, dict[str, str]] = {}
+    for member in room.members:
+        enc, sig = AGENT_REGISTRY.get_encryption_key(member)
+        with DB_LOCK, get_db() as conn:
+            row = conn.execute(
+                "SELECT public_key_hex FROM authorized_agents WHERE agent_id = ?", (member,)
+            ).fetchone()
+        keys[member] = {
+            "encryption_public_key": enc,
+            "signature": sig,
+            "public_key_hex": row["public_key_hex"] if row else "",
+        }
+    return keys
+
+
+@app.get("/rooms/{room_id}/encryption-keys")
+async def get_room_encryption_keys(room_id: str, request: Request):
+    """Every member's encryption key in one round trip — what a client needs to
+    seal a message to an encrypted room.
+
+    Exists as a bundle rather than N calls to `/agents/{id}/encryption-key` for two
+    reasons: N requests to send one message is a poor trade, and more importantly
+    the member set could drift between the first fetch and the last, producing a
+    message that silently excludes someone. One snapshot, one answer.
+
+    Members only — the key material is public, but the *membership list* is not,
+    and this returns both.
+    """
+    caller = _dashboard_agent_id(request)
+    if not caller:
+        raise HTTPException(401, "Authentication required")
+    room = rooms_db.get_room(room_id, db_path=DATABASE_PATH)
+    if not room:
+        raise HTTPException(404, "Room not found")
+    if not rooms_db.is_member(room_id, caller, db_path=DATABASE_PATH):
+        raise HTTPException(403, "Not a member of this room")
+    return {"room_id": room_id, "encrypted": room.encrypted,
+            "keys": _room_member_encryption_keys(room)}
 
 
 @app.get("/rooms/{room_id}/messages")
