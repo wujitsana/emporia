@@ -863,6 +863,22 @@ def _migrate_rooms(conn: Any) -> None:
     room_cols = {r[1] for r in conn.execute("PRAGMA table_info(rooms)").fetchall()}
     if "access_duration_days" not in room_cols:
         conn.execute("ALTER TABLE rooms ADD COLUMN access_duration_days INTEGER")
+    # P19-5: the sender-chosen per-message nonce that closes room replay, mirroring
+    # dm_messages.nonce (P18-2, migrated the identical way here). Before this,
+    # signed_room_message_payload() and the room AAD bound nothing unique to a
+    # message, so a relay could copy one row's content+signature onto another and
+    # both would verify and decrypt — the exact hole P18-2 closed for DMs, open
+    # here because P18-4 shipped room E2E pointing at the pre-existing chain_hash
+    # instead, which is relay-computed and verified by nothing client-side. NULL
+    # allowed so pre-P19-5 rows survive; SQLite treats NULLs as distinct in a
+    # UNIQUE index, so old rows never collide with each other or a new one.
+    msg_cols = {r[1] for r in conn.execute("PRAGMA table_info(room_messages)").fetchall()}
+    if "nonce" not in msg_cols:
+        conn.execute("ALTER TABLE room_messages ADD COLUMN nonce TEXT")
+    conn.execute(
+        "CREATE UNIQUE INDEX IF NOT EXISTS idx_room_messages_nonce "
+        "ON room_messages(room_id, nonce) WHERE nonce IS NOT NULL"
+    )
 
 
 def _migrate_payments(conn: Any) -> None:
@@ -2669,6 +2685,11 @@ class SendRoomMessageRequest(BaseModel):
     signature: str | None = None
     # negotiation constraints (used when msg_type="counter_offer")
     negotiation_constraints: dict[str, Any] | None = None
+    # P19-5: sender-chosen, inside the signature and (on an encrypted room) the
+    # AAD — the room analogue of DMSendRequest.nonce. Empty is rejected rather
+    # than defaulted, same reasoning as the DM field: a silent fallback would
+    # leave replay open to any client that just omitted it.
+    nonce: str = ""
 
 
 class KickFromRoomRequest(BaseModel):
@@ -6358,10 +6379,27 @@ async def send_room_message(room_id: str, req: SendRoomMessageRequest, request: 
 
     if not req.signature:
         raise HTTPException(401, "Signature required")
+    # P19-5 (H4): the DM route (dm_send, above) has this exact guard for the exact
+    # same reason — without a nonce bound into the signature, an identical message
+    # replayed to this room verifies and stores again indistinguishably from the
+    # original. Checked here rather than earlier so a missing *signature* still
+    # answers 401 first, matching the DM route's ordering.
+    if not req.nonce:
+        raise HTTPException(
+            400,
+            "nonce is required — it binds this message's signature (and, on an "
+            "encrypted room, its ciphertext) to this message, so a stored row "
+            "cannot be replayed as another. Generate one with "
+            "wire.new_message_nonce().",
+        )
+    if not _NONCE_RE.fullmatch(req.nonce):
+        raise HTTPException(
+            400, "nonce must be 32-64 hex characters (see wire.new_message_nonce())",
+        )
     # N3-8 (R7): bound to room_id + msg_type, not just content — a content-only
     # signature was valid in *any* room the caller belongs to, forever (replayable
     # across rooms and across msg_type, e.g. a signed "chat" replayed as "accept").
-    signed_envelope = signed_room_message_payload(room_id, req.content, effective_msg_type)
+    signed_envelope = signed_room_message_payload(room_id, req.content, effective_msg_type, req.nonce)
     if not AGENT_REGISTRY.verify_signature(caller, signed_envelope, req.signature):
         raise HTTPException(403, "Invalid message signature")
 
@@ -6377,16 +6415,25 @@ async def send_room_message(room_id: str, req: SendRoomMessageRequest, request: 
         except Exception:
             pass  # non-JSON content — treat as plain chat
 
-    msg = rooms_db.post_message(
-        room_id=room_id,
-        sender_id=caller,
-        content=req.content,
-        msg_type=effective_msg_type,
-        parent_message_id=req.parent_message_id,
-        signature=req.signature,
-        metadata={"broker": broker_response} if broker_response else {},
-        db_path=DATABASE_PATH,
-    )
+    try:
+        msg = rooms_db.post_message(
+            room_id=room_id,
+            sender_id=caller,
+            content=req.content,
+            msg_type=effective_msg_type,
+            parent_message_id=req.parent_message_id,
+            signature=req.signature,
+            nonce=req.nonce,
+            metadata={"broker": broker_response} if broker_response else {},
+            db_path=DATABASE_PATH,
+        )
+    except sqlite3.IntegrityError as e:
+        # P19-5 (H4): idx_room_messages_nonce's UNIQUE(room_id, nonce) is the
+        # database-level half of the replay defense, mirroring the DM fix in
+        # dm_send above — same reasoning, same 409.
+        raise HTTPException(
+            409, "duplicate nonce — this message has already been posted to this room",
+        ) from e
 
     event: dict[str, Any] = {"type": "room_message", "room_id": room_id, **msg.to_dict()}
     if broker_response:

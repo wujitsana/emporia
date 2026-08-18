@@ -833,18 +833,26 @@ def send_room_message(
         # {"error": ..., "success": False} shape every other tool in this file returns.
         from emporia import crypto_box
         from emporia.identity import sign
-        from emporia.wire import room_message_envelope, signed_room_message_payload
+        from emporia.wire import (
+            new_message_nonce,
+            room_message_envelope,
+            signed_room_message_payload,
+        )
 
         room_r = _bearer_request(
             "get", f"{RELAY_URL}/rooms/{room_id}", agent_id=sender_id, timeout=10,
         )
         encrypted = room_r.status_code == 200 and bool(room_r.json().get("encrypted"))
-        aad = crypto_box.message_aad("room", room_id, sender_id, msg_type, "")
+        # P19-5 (H4): one nonce, bound into both the ciphertext's AAD and the
+        # signature, same shape as send_dm's nonce. Reused across the
+        # membership-race retry below — nothing is stored on the 409 branch.
+        nonce = new_message_nonce()
+        aad = crypto_box.message_aad("room", room_id, sender_id, msg_type, nonce)
 
         def _post(body_content: str):
-            signed_payload = signed_room_message_payload(room_id, body_content, msg_type)
+            signed_payload = signed_room_message_payload(room_id, body_content, msg_type, nonce)
             body = room_message_envelope(
-                body_content, msg_type, sign(signed_payload, sender_id),
+                body_content, msg_type, sign(signed_payload, sender_id), nonce,
                 parent_message_id=parent_message_id,
             )
             return _bearer_request(
@@ -925,7 +933,15 @@ def get_room_messages(room_id: str, agent_id: str = "", limit: int = 50) -> dict
             return {"error": f"Relay {r.status_code}", "detail": r.text}
         body = r.json()
         priv, _ = generate_or_load_encryption_keypair(aid)
+        # P19-5 (H4): the relay's UNIQUE(room_id, nonce) index stops the easy
+        # replay, but an operator who can write the database can also drop an
+        # index — same reasoning as the DM path's seen_nonces check.
+        seen_nonces: set[str] = set()
         for msg in body.get("messages", []):
+            nonce = msg.get("nonce") or ""
+            msg["replayed"] = bool(nonce) and nonce in seen_nonces
+            if nonce:
+                seen_nonces.add(nonce)
             msg["decrypted"] = False
             msg["encrypted"] = crypto_box.looks_like_envelope(msg.get("content", ""))
             if not msg["encrypted"]:
@@ -934,7 +950,8 @@ def get_room_messages(room_id: str, agent_id: str = "", limit: int = 50) -> dict
                 msg["content"] = crypto_box.open_sealed(
                     json.loads(msg["content"]), aid, priv,
                     crypto_box.message_aad(
-                        "room", room_id, msg["sender_id"], msg["msg_type"], "",
+                        "room", room_id, msg["sender_id"], msg["msg_type"],
+                        msg.get("nonce") or "",
                     ),
                 )
                 msg["decrypted"] = True

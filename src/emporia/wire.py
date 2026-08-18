@@ -177,26 +177,45 @@ def action_envelope(
     }
 
 
-def signed_room_message_payload(room_id: str, content: str, msg_type: str) -> dict[str, Any]:
+def signed_room_message_payload(
+    room_id: str, content: str, msg_type: str, nonce: str,
+) -> dict[str, Any]:
     """The dict `POST /rooms/{id}/message` callers sign before sending —
     binds the signature to `room_id`/`msg_type`, not just `content` (N3-8/R7:
     a content-only signature was valid in any room this agent belongs to,
-    forever)."""
-    return {"room_id": room_id, "content": content, "msg_type": msg_type}
+    forever).
+
+    P19-5: `nonce` closes the replay gap P18-4 left open. Before it, this
+    payload — and the room AAD — were identical across every message one
+    sender posted to one room, so a relay could copy one row's content and
+    signature onto another and both would verify and decrypt: the exact hole
+    P18-2 closed for DMs. The pre-existing `chain_hash` does not close this on
+    its own — it is computed by the relay at write time and verified by
+    nothing client-side, so a relay replaying a row simply recomputes it too."""
+    return {"room_id": room_id, "content": content, "msg_type": msg_type, "nonce": nonce}
 
 
 def room_message_envelope(
     content: str,
     msg_type: str,
     signature: str,
+    nonce: str,
     *,
     parent_message_id: str | None = None,
 ) -> dict[str, Any]:
     """The actual `POST /rooms/{id}/message` body. `parent_message_id` is
     accepted here even though agent_sdk.py's `send_room_message()` doesn't
     have that parameter yet (only mcp_server.py's does) — so adding it to
-    the SDK later doesn't require touching this function."""
-    body: dict[str, Any] = {"content": content, "msg_type": msg_type, "signature": signature}
+    the SDK later doesn't require touching this function.
+
+    P19-5: `nonce` is positional and required, unlike DM's
+    `dm_thread_message_envelope()` (keyword, defaulted `""`) — that default
+    existed only so every pre-P18-2 DM call site kept working unchanged.
+    There are no pre-P19-5 room call sites to preserve, since room nonces are
+    new in this pass, so nothing here needs the same escape hatch."""
+    body: dict[str, Any] = {
+        "content": content, "msg_type": msg_type, "signature": signature, "nonce": nonce,
+    }
     if parent_message_id:
         body["parent_message_id"] = parent_message_id
     return body

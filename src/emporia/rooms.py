@@ -13,9 +13,15 @@ and commentary running alongside the formal move sequence.
 
 Encryption flag:
   encrypted=False (default) — relay-enforced access control; guardrails run on content
-  encrypted=True            — relay stores opaque client-ciphertext; skips guardrails scan;
-                              checks membership only. Clients encrypt before POST, decrypt
-                              after GET. Full X25519 ECDH key exchange is post-v1.
+  encrypted=True            — real end-to-end encryption (P18): the relay stores an
+                              opaque `crypto_box` envelope, skips the guardrails scan,
+                              and enforces membership coverage only — it never holds a
+                              key. Both clients seal before POST and open after GET via
+                              `crypto_box.py`, with peer keys published through
+                              `identity.trust_peer_encryption_key()`. A member who joins
+                              after a message was sent cannot read it — no key was
+                              wrapped for them, and re-wrapping history would require the
+                              relay to hold plaintext, the whole thing being avoided.
 
 Negotiation routing:
   msg_type='counter_offer' in a 2-member private room triggers negotiation.process_offer()
@@ -23,8 +29,13 @@ Negotiation routing:
   system message in the same room.
 
 Message chain integrity:
-  Each message hashes (prev_hash:sender:content:created_at) → chain_hash, so room
-  history tampering is detectable by recomputing the chain.
+  Each message hashes (prev_hash:sender:content:created_at) → chain_hash, computed by the
+  relay at write time. Detects tampering with an already-stored row by an integrity check
+  that recomputes and compares — nothing in this codebase does that yet (P19: recorded as
+  an open item, not implied solved by the chain's existence). Replay — a relay copying one
+  row's content and signature onto another — is a *different* threat the chain does not
+  address on its own, since a relay replaying a row simply recomputes the chain too; P19-5
+  closes that with a sender-chosen `nonce`, the same mechanism P18-2 gave DMs.
 """
 
 from __future__ import annotations
@@ -93,6 +104,7 @@ CREATE TABLE IF NOT EXISTS room_messages (
     parent_message_id TEXT,
     chain_hash TEXT,
     signature TEXT,
+    nonce TEXT,
     metadata_json TEXT NOT NULL DEFAULT '{}',
     created_at TEXT NOT NULL
 );
@@ -163,6 +175,7 @@ class RoomMessage:
     parent_message_id: str | None
     chain_hash: str | None
     signature: str | None
+    nonce: str | None
     metadata: dict[str, Any]
     created_at: str
 
@@ -215,6 +228,7 @@ def _row_to_message(row: sqlite3.Row) -> RoomMessage:
         parent_message_id=row["parent_message_id"],
         chain_hash=row["chain_hash"],
         signature=row["signature"],
+        nonce=row["nonce"],
         metadata=json.loads(row["metadata_json"] or "{}"),
         created_at=row["created_at"],
     )
@@ -478,6 +492,7 @@ def post_message(
     msg_type: MsgType = "chat",
     parent_message_id: str | None = None,
     signature: str | None = None,
+    nonce: str | None = None,
     metadata: dict[str, Any] | None = None,
     db_path: Path | None = None,
 ) -> RoomMessage:
@@ -490,10 +505,10 @@ def post_message(
         conn.execute(
             "INSERT INTO room_messages "
             "(message_id, room_id, sender_id, msg_type, content, "
-            "parent_message_id, chain_hash, signature, metadata_json, created_at) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            "parent_message_id, chain_hash, signature, nonce, metadata_json, created_at) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             (message_id, room_id, sender_id, msg_type, content,
-             parent_message_id, chain_hash, signature,
+             parent_message_id, chain_hash, signature, nonce,
              json.dumps(metadata or {}), created_at),
         )
         row = conn.execute(

@@ -855,7 +855,15 @@ class EmporiaAgent:
         resp.raise_for_status()
         messages = resp.json().get("messages", [])
         priv, _ = generate_or_load_encryption_keypair(self.profile_id)
+        # P19-5 (H4): the relay's UNIQUE(room_id, nonce) index stops the easy
+        # replay, but an operator who can write the database can also drop an
+        # index — same reasoning as get_dm_messages()'s seen_nonces.
+        seen_nonces: set[str] = set()
         for msg in messages:
+            nonce = msg.get("nonce") or ""
+            msg["replayed"] = bool(nonce) and nonce in seen_nonces
+            if nonce:
+                seen_nonces.add(nonce)
             msg["decrypted"] = False
             msg["encrypted"] = crypto_box.looks_like_envelope(msg.get("content", ""))
             if not msg["encrypted"]:
@@ -864,7 +872,8 @@ class EmporiaAgent:
                 msg["content"] = crypto_box.open_sealed(
                     json.loads(msg["content"]), self.agent_id, priv,
                     crypto_box.message_aad(
-                        "room", room_id, msg["sender_id"], msg["msg_type"], "",
+                        "room", room_id, msg["sender_id"], msg["msg_type"],
+                        msg.get("nonce") or "",
                     ),
                 )
                 msg["decrypted"] = True
@@ -884,16 +893,27 @@ class EmporiaAgent:
         to room_id + msg_type, not just content (N3-8/R7) — a content-only signature was
         valid in any room this agent belongs to, forever."""
         from emporia import crypto_box
-        from emporia.wire import room_message_envelope, signed_room_message_payload
+        from emporia.wire import (
+            new_message_nonce,
+            room_message_envelope,
+            signed_room_message_payload,
+        )
 
         room = await self.get_room(room_id)
         encrypted = bool(room.get("encrypted"))
+        # P19-5 (H4): one nonce, bound into both the ciphertext's AAD and the
+        # signature, same shape as send_dm()'s nonce. Generated once and reused
+        # across the membership-race retry below — nothing is stored on the 409
+        # branch, so there is nothing for a reused nonce to collide with.
+        nonce = new_message_nonce()
 
         async def _post(body_content: str):
-            signed_payload = signed_room_message_payload(room_id, body_content, msg_type)
+            signed_payload = signed_room_message_payload(room_id, body_content, msg_type, nonce)
             return await self._bearer_request(
                 "post", f"{self.relay_url}/rooms/{room_id}/message",
-                json=room_message_envelope(body_content, msg_type, self._sign(signed_payload)),
+                json=room_message_envelope(
+                    body_content, msg_type, self._sign(signed_payload), nonce,
+                ),
             )
 
         if not encrypted:
@@ -901,7 +921,7 @@ class EmporiaAgent:
             resp.raise_for_status()
             return resp.json()
 
-        aad = crypto_box.message_aad("room", room_id, self.agent_id, msg_type, "")
+        aad = crypto_box.message_aad("room", room_id, self.agent_id, msg_type, nonce)
         resp = await _post(json.dumps(
             crypto_box.seal(content, await self._room_recipients(room_id), aad),
         ))
