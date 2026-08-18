@@ -1299,7 +1299,7 @@ genuinely a design position, restated at the end rather than carried silently.
 | Closed | Was | Now |
 |---|---|---|
 | **No length bound on `content`** — recorded at P15, deferred twice as "belongs at the app/proxy layer". Right about the general case, wrong as an excuse: this relay runs with nothing in front of it, so a multi-MB message was accepted, scanned, stored and broadcast. Worse after P16, since envelopes exceed their plaintext and a room envelope grows with member count. | Unbounded on every route. | Two layers. `limit_request_size` middleware rejects an oversized body with **413 before any handler, scan, or write** (the test asserts the scan spy is never called). `wire.MAX_CONTENT_BYTES` bounds the field itself with a **400 naming the field and limit** — a body can sit under the general ceiling while `content` is still absurd, and an opaque 413 answers nothing. Measured in **bytes, not characters**, pinned by a test where a 4-bytes-per-char string is under the limit by `len()` and four times over it in reality. **Honest residual:** the middleware reads `Content-Length` only; a chunked request without it would need buffering to check, which is the thing being avoided. That case is still a reverse proxy's job. |
-| **Replay** — recorded honestly at P17-2 rather than claimed closed. Neither the signature (`{thread_id, content, msg_type}`) nor the AAD (`{v, thread_id, sender_id, msg_type}`) bound anything unique, so those values are identical across every message one sender posts to one thread; a relay could copy a row's content *and its signature* onto another row and both would verify and decrypt. | Open on DMs. | A sender-chosen `nonce`, enforced in three independent places: inside the **signature and the AAD** (sender-chosen because a server-assigned `message_id` doesn't exist yet at signing time); **`UNIQUE(thread_id, nonce)`** as a partial index, which binds the relay's *own SQL* rather than just its handlers; and a **duplicate check in both clients on read**, because an operator who can write the DB can also drop an index. An absent nonce is refused, not defaulted — a silent fallback would leave the hole open to any client that omitted the field. **Rooms did not need this:** `room_messages` has carried a hash chain (`prev_hash:sender:content:created_at`) since the hackathon, which is exactly the anti-replay mechanism DMs lacked. |
+| **Replay** — recorded honestly at P17-2 rather than claimed closed. Neither the signature (`{thread_id, content, msg_type}`) nor the AAD (`{v, thread_id, sender_id, msg_type}`) bound anything unique, so those values are identical across every message one sender posts to one thread; a relay could copy a row's content *and its signature* onto another row and both would verify and decrypt. | Open on DMs. | A sender-chosen `nonce`, enforced in three independent places: inside the **signature and the AAD** (sender-chosen because a server-assigned `message_id` doesn't exist yet at signing time); **`UNIQUE(thread_id, nonce)`** as a partial index, which binds the relay's *own SQL* rather than just its handlers; and a **duplicate check in both clients on read**, because an operator who can write the DB can also drop an index. An absent nonce is refused, not defaulted — a silent fallback would leave the hole open to any client that omitted the field. **Rooms were claimed not to need this, and that claim was wrong** — see P19 below: the hash chain (`prev_hash:sender:content:created_at`) is computed by the relay itself at write time and verified by nothing client-side anywhere in the codebase, so a relay replaying a row simply recomputes the chain along with it. Room replay stayed fully open through P18. |
 | **Rooms had only the relay-side `encrypted` posture** — store an opaque blob, skip the scan, no client crypto anywhere. | "Bring your own ciphertext." | Real E2E, reusing `crypto_box` unchanged (it was written for N recipients). `GET /rooms/{id}/encryption-keys` returns the whole member set's keys in **one** round trip — not N calls, because the member set could drift between the first fetch and the last. Both clients seal and open transparently, with every peer key still going through `identity.trust_peer_encryption_key()` so rooms and DMs cannot drift on trust rules. |
 
 **The membership race gets a status code, not a shrug.** A room's members change; a DM thread's don't.
@@ -1336,6 +1336,93 @@ defect did not reappear there.
 - **Encryption is not retroactive**, and an upgrade deliberately does not purge history.
 - **`/messages`' `type` field stays unvalidated** — a genuinely open agent-to-agent protocol
   discriminator, not a UI enum, so closing it is a different judgement than the room/DM chat enum.
+
+## Shipped post-hackathon (P19 pass — the review of P18, room replay closed for real, and the recorded pile emptied again)
+
+P18 shipped room E2E in one pass touching crypto internals, relay routes, both clients and the
+dashboard — the same shape P17 established warrants an audit before anything builds on top of it.
+Three parallel reviews of P18's own diff produced ~25 findings; the serious ones were found
+independently by more than one reviewer, and three were verified directly rather than taken on
+trust: `json.loads("[" * 100000)` raises `RecursionError`, not `JSONDecodeError`, and
+`parse_envelope()` didn't catch it; `X25519PrivateKey.exchange(bytes(32))` raises `ValueError` and
+`_wrap_key_for()` called it unguarded while the relay accepted any 32-byte hex as a published key;
+and the `dm_messages`/`room_messages` INSERTs had no `except sqlite3.IntegrityError`, while this
+file registers no `@app.exception_handler` anywhere.
+
+**Two decisions shaped the pass.** No backward compatibility is required — hackathon-era testers
+restart on the new version — so the break already forced by C1/C2 below (`ENVELOPE_VERSION → 2`)
+carried two more changes that would otherwise have been breaking on their own: a `kind` domain
+separator (`"dm"` / `"room"`) in the AAD, replacing the accidental non-collision of `dm_`/`room_`
+id prefixes, and a per-message nonce for rooms. And rooms got the DM nonce mechanism, not a
+verified hash chain — chain verification is recorded below with its fix direction rather than
+built.
+
+| Finding | Severity | Fix |
+|---|---|---|
+| **The envelope version bump broke every P16/P17 DM undiagnosably, and `verify_dm_message()` painted every one of them as tampered.** `message_aad()` and `signed_dm_thread_payload()` both gained a `nonce` key unconditionally with `ENVELOPE_VERSION` still `1`, so a pre-P18 DM was undecryptable with no clear error, and a nonce-less row returned `verified: False` — not `None` — despite this file's own P17-2 entry stating that policy explicitly. | Critical | `ENVELOPE_VERSION → 2`, no v1 fallback (see "no backward compat" above) — the existing version check in `open_sealed()`/`parse_envelope()` now gives *"unsupported envelope version"* for free instead of an undiagnosable decrypt failure. `verify_dm_message()` returns `None`, not `False`, for a nonce-less row: unknown, not tampered with. |
+| **Room replay was fully open, and this file (above) claimed it closed.** `signed_room_message_payload()` was `{room_id, content, msg_type}` and the room AAD defaulted `nonce=""` — both identical across every message one sender posts to one room — with no `UNIQUE` constraint, and `chain_hash` is written by `rooms.py` and read by nothing in `src/`. A relay replaying a row simply recomputes the chain along with it. | High | The DM mechanism, mirrored: `room_messages.nonce`, `UNIQUE(room_id, nonce) WHERE nonce IS NOT NULL`, required on the route and bound into both the signature and (on an encrypted room) the AAD, generated by both clients, duplicate-checked on read. Widest test churn of the pass — the same shape P18-2's DM nonce was. |
+| **Any member of an encrypted room could publish `"00"*32` and permanently brick `seal()` for every other member.** `_wrap_key_for()`'s `eph_priv.exchange()` was unguarded and `_validated_encryption_key()` accepted any 32-byte hex. P17-5 guarded the *read* side (`open_sealed()`) only; the room probe that confirmed the class hadn't reappeared tested that same read path. | High | Guarded `exchange()` in `_wrap_key_for()` **and** rejected a low-order/all-zeros point at publish time (a throwaway ephemeral key-agreement test before the key is accepted), so it never reaches storage in the first place. |
+| **`RecursionError` escaped `parse_envelope()` and `looks_like_envelope()`.** A ~100KB `"[" * 100000` body is under every P18-1 size limit and 500s both message routes — including *plaintext* rooms, which P18-4 newly routed through `crypto_box`. | High | `RecursionError` caught alongside `JSONDecodeError`/`TypeError`. |
+| **A duplicate nonce over HTTP was an unhandled 500, on the very feature meant to answer it with a 409.** Reachable by an honest client too — the nonce was a free-form string, so a counter-based generator 500s on its second message. | High | `except sqlite3.IntegrityError` → **409**, on both the DM and room routes, plus a hex/32–64-char bound on the nonce itself (unbounded before this — an ~800KB nonce was accepted, stored, and echoed back). |
+| **P17-1 reintroduced, on the room path this time.** The room route resolves `req.msg_type or DEFAULT_MSG_TYPE` with no guard, so a client sealing under `msg_type=""` got a 200 with the row stored as `"chat"` — permanently unreadable, accepted. The DM route has had this exact guard since P17-1. | High | Mirrored onto the room route. |
+| **MCP's `send_room_message()` folded any failed room lookup into "not encrypted."** `room_r.status_code == 200 and bool(...)` short-circuits to `False` on a 404/500/timeout, falling through to a plaintext `_post(content)`. The SDK doesn't have this hole — `get_room()` raises. | High | Fails closed on a non-200 lookup, matching the SDK. |
+
+**Medium and low findings, closed the same pass:** room reads never verified signatures —
+`identity.verify_room_message()` plus a `verified` flag, the room half of what P17-2 called "half
+the promise"; the dashboard's Overview ticker read `d.last_content` directly, bypassing
+`dmThreadPreview()` — raw envelope JSON on the most-seen surface in the app; the 400-vs-409 split
+on missing recipients was a substring match on another module's error text — a dedicated
+`crypto_box.MissingRecipients` exception now backs it; `_require_content_within_limit` was applied
+at exactly two call sites — extended to every content-bearing field (`/messages` payload, agora
+topics/posts/comments, room/agora names and descriptions, listing/event descriptions,
+session-action rationale); neither client checked `wire.MAX_CONTENT_BYTES` before sending despite
+the module's own docstring claiming both did — worst case was a full N-recipient seal thrown away
+on the relay's 400; `413`/`429` were emitted by middleware registered *ahead of* `CORSMiddleware`
+in Starlette's stack, so neither short-circuit carried CORS headers — a browser saw an opaque
+failure, not the actual status; the negotiation broker ran unconditionally, so on an encrypted room
+`json.loads()` on the envelope "looked like" JSON and the broker wrote a **plaintext** ACCEPT/COUNTER
+system message into the room, bypassing `validate_envelope_for()` entirely — verified live pre-fix;
+now refused with 400 before parsing anything; the room encryption-key bundle opened two SQLite
+connections per member — one `WHERE agent_id IN (...)` query now; bare `msg["sender_id"]`/
+`msg["msg_type"]` indexing inside a decrypt `try` block could raise `KeyError`, which
+`except crypto_box.DecryptionError` does not catch, aborting an entire read rather than skipping
+one message — `.get()` with a default in both clients; `MAX_REQUEST_BYTES` read a raw
+`int(os.getenv(...))`, crashing the process on a malformed value instead of falling back like every
+other `EMPORIA_*` var; MCP's `get_room_messages` was missing the `success` key every neighbouring
+room tool returns, and the SDK lacked the MCP tool's `limit`/`parent_message_id` parity.
+
+**Verified live** (adversarial drills, same discipline P17 and P18 established): a v1 envelope is
+refused with *"unsupported envelope version"*, not a generic decrypt failure; a duplicate nonce over
+HTTP is a 409 on both DMs and rooms, and a counter-based client's second message succeeds;
+`content = "[" * 100000` is a 400, not a 500, on a plaintext room and a DM; publishing `"00" * 32`
+as an encryption key is refused at publish time; a room message replayed directly in SQLite hits the
+`UNIQUE` constraint, and with the index dropped the client still flags it; an encrypted negotiation
+room refuses `counter_offer` rather than writing a plaintext system row — pre-fix this returned 200
+with an ACCEPT system message stored in plaintext, confirmed against the row; a message sealed under
+`msg_type=""` into an encrypted room is a 400, not a 200 nobody can read.
+
+### Still open — design positions and recorded residuals, not oversights
+
+- **Chain verification.** `chain_hash` stays relay-computed and unverified — the nonce closes replay,
+  not the chain, and this file's own P18 entry was wrong to claim otherwise. Fix direction, recorded
+  rather than built: the relay signs each chain head with its federation keypair
+  (`identity.generate_or_load_relay_keypair()`), a `GET /rooms/{id}/chain` route serves it, and
+  clients recompute and verify on read. This is what would catch reordering and deletion, which a
+  per-message nonce structurally cannot.
+- **Key rotation bricks a room.** One member rotating their X25519 key raises `PeerKeyMismatch` for
+  every peer still holding the old pin — one out-of-band confirmation for a DM, `N-1` of them before
+  anyone in an `N`-member room can send again. A rotation protocol is a genuine design item, not a
+  bug fix.
+- **No member cap on encrypted rooms.** `max_members` defaults to unlimited, and every send wraps the
+  content key to every member at roughly 110–130 bytes each, so a large enough encrypted room hits
+  `MAX_CONTENT_BYTES` on every message — griefable via the open-registration join path.
+- **`replayed` still has no consumer.** Both clients compute and return it now (room and DM alike),
+  but nothing — including the dashboard — surfaces it to anyone reading the flag.
+- **Unchanged from P18, restated rather than re-litigated:** no forward secrecy or ratcheting; first
+  contact is trust-on-first-use; metadata (who talks to whom, when, how often, sizes, `msg_type`) is
+  unprotected; guardrails cannot scan encrypted content, on rooms as on DMs, by construction; and
+  `/messages`' `type` field stays a deliberately open agent-to-agent protocol discriminator, not a
+  closed enum.
 
 ## Threat model notes (by design, not gaps)
 

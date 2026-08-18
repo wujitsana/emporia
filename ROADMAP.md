@@ -386,12 +386,31 @@ would have before P16 — `crypto_box` already wrapped a content key to N recipi
 the member set, the trust plumbing and one genuinely new problem: **membership churns while a DM
 thread's participants don't**, so a sender's key bundle can go stale mid-send. That is answered with a
 409 naming the missing members and a single client retry, rather than either ignoring the race or
-storing a message somebody can never read. Two smaller things worth remembering: the size bound had
+storing a message somebody can never read. One smaller thing worth remembering: the size bound had
 been deferred twice on reasoning that was *correct in general* ("belongs at the proxy layer") and
 wrong *here* (nothing runs in front of this relay) — a reminder that a true general principle can
-still be the wrong local answer; and rooms turned out not to need P18-2's replay nonce at all,
-because `room_messages` has carried a hash chain since the hackathon. **Checking what already exists
-beat adding the same defence twice.**
+still be the wrong local answer. **One claim in that pass didn't hold up: P18 asserted rooms didn't
+need P18-2's replay nonce because `room_messages` already carried a hash chain — P19 (below) found
+that chain is relay-computed and verified by nothing client-side, so room replay was fully open
+through P18 despite the claim it was closed. "Checking what already exists" is only a substitute for
+a fix if the existing thing actually does the job**, which nobody had verified it did.
+
+**P19 audited P18 (five findings in five prior passes now — the pattern holds) and closed room
+replay for real.** Three parallel reviews of P18's diff, ~25 findings total, the serious ones found
+independently more than once. The headline items: the version bump C1/C2 forced anyway
+(pre-P18 DMs were undecryptable and misreported as tampered) carried two more changes that would
+otherwise have been breaking on their own — an explicit `kind` AAD tag (`"dm"`/`"room"`, replacing
+an accidental id-prefix non-collision) and the room nonce that actually closes replay this time,
+enforced the same three ways the DM nonce is (signature, AAD, `UNIQUE` index) plus a client-side
+duplicate check on read. A member publishing an all-zeros X25519 key could brick `seal()` for an
+entire encrypted room — P17-5 had guarded the read side of this exact class and the room probe that
+"confirmed" it hadn't reappeared had only tested that same read side. And the negotiation broker ran
+on encrypted-room content unconditionally: an envelope is a JSON dict, so it "looked like" an offer,
+and on ACCEPT/COUNTER the broker wrote a **plaintext** system message into a room whose entire point
+is that the relay holds no plaintext — verified live pre-fix. Full findings list and every live
+verification in `SECURITY.md`'s P19 section. **Same lesson as P17, restated because it recurred:
+audit the pass that shipped the most security-critical new code before building on top of it, and
+verify a defense-in-depth claim actually works before writing it down as closed.**
 
 **Two lessons worth carrying, both about method rather than code.** First, the `X or DEFAULT`
 resolution shape has now produced a finding in four separate passes (P12-3, P13-1, P15-1, P17-1); the
@@ -657,17 +676,30 @@ must transact against Emporia directly" — effort comparable to the x402/MPP re
 
 ## Rooms
 
-**P9 survey (research only, no code):** confirmed `rooms.py`/`relay_server.py` still have zero
-X25519 or other key-exchange machinery — `encrypted` is still exactly the boolean flag described
-below, nothing more. No drift to correct.
+**P9 survey (research only, no code) — superseded by P18, below.** At the time, `rooms.py`/
+`relay_server.py` had zero X25519 or other key-exchange machinery, and `encrypted` was exactly the
+boolean flag the old text of this section described: skip guardrails, store opaque content, nothing
+more. That was accurate through P17. It is not accurate now — kept here only so the "gated on a
+design decision" reasoning below has its original context.
 
-**No end-to-end encryption for `encrypted=true` rooms.** Today, `encrypted: true` only means the
-relay skips guardrails scanning and stores content as opaque — there's no actual client-side
-X25519 key exchange, so message bodies aren't really encrypted in transit/at rest beyond whatever
-the client does on its own. Documented as "post-v1" in `DEMO.md`'s federation-readiness notes.
-- *Effort:* medium — needs an agreed key-exchange protocol between participating agents before the
-  relay's storage format can be finalized. Still correctly gated on a design decision this codebase
-  hasn't made, not an implementation gap — not a candidate until that protocol choice exists.
+**Shipped (P18), then audited and hardened (P19): real end-to-end encryption for `encrypted=true`
+rooms.** `crypto_box.py` (written for N recipients from P16 onward) wraps one content key per
+member; `GET /rooms/{id}/encryption-keys` returns the whole member set's keys in one round trip so
+a sender's wrap set can't drift mid-fetch; both clients seal and open transparently, and every peer
+key goes through the same `identity.trust_peer_encryption_key()` DMs use, so the two features can't
+apply different trust rules to the same key material. P19 then found and closed: room replay (the
+hash chain this section used to point to as the anti-replay mechanism is relay-computed and
+verified by nothing client-side — a per-message nonce, the DM mechanism mirrored, is what actually
+closes it); a member publishing a degenerate X25519 key bricking `seal()` for the whole room; and
+the negotiation broker running on ciphertext and writing a plaintext system message into an
+encrypted room. Full detail in `SECURITY.md`'s P18 and P19 sections.
+- **What's still open, by design or as a recorded residual, not an oversight:** no forward secrecy
+  (a stolen key retroactively unwraps everything wrapped to it); chain verification stays
+  unbuilt — the fix direction (relay-signed chain heads, a route to serve them, client-side
+  recomputation) is recorded rather than implemented; key rotation has no protocol, so one member
+  rotating bricks sending for the room until every other member re-pins (`N-1` reconfirmations, not
+  a DM's one); and there's no member cap, so a large enough encrypted room can hit the per-message
+  content-size limit on ordinary sends.
 
 ## Dashboard
 
@@ -680,12 +712,14 @@ performing writes itself. This is a scope choice, not a gap — see `README.md`'
 for the rationale — but a future iteration could add an actual write UI (would need its own
 Ed25519-signing flow in the browser, which is a meaningfully bigger feature).
 
-**P9 conclusion for all four sections above:** every claim re-verified against current source holds
-— no drift, nothing shipped since silently invalidated an estimate. No candidate emerged that's
-genuinely comparable in size to `wire.py` (P6) or the cascade-delete endpoint (P4-5): every open
-item here is either gated on a design decision this codebase hasn't made (peer discovery, room
-encryption), architecturally large by nature (shared-DB federation, a full A2A server, a dashboard
-write UI), or a deliberate decision already recorded elsewhere (no automatic federation sync —
-see Federation above) rather than an overlooked gap. That's a legitimate outcome of a survey pass,
-not a failure to find something: these four sections were correctly left alone by six passes in a
+**P9 conclusion for all four sections above, at the time it was written:** every claim re-verified
+against current source held — no drift, nothing shipped since silently invalidated an estimate. No
+candidate emerged that's genuinely comparable in size to `wire.py` (P6) or the cascade-delete
+endpoint (P4-5): every open item was either gated on a design decision this codebase hadn't made
+(peer discovery, room encryption), architecturally large by nature (shared-DB federation, a full A2A
+server, a dashboard write UI), or a deliberate decision already recorded elsewhere (no automatic
+federation sync — see Federation above) rather than an overlooked gap. **Room encryption stopped
+being one of those gated items at P18** — see the Rooms section above for what shipped and what's
+still open now. That's a legitimate outcome of a survey pass, not a failure to find something: these
+four sections were correctly left alone by six passes in a
 row, not merely unexamined by them.
