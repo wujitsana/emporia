@@ -1,4 +1,4 @@
-import { api } from "./api";
+import { api, dmThreadPreview } from "./api";
 import type { RelayHealth } from "./hooks";
 import type { DashboardView } from "./eventNav";
 import type { NavItem } from "./navConfig";
@@ -133,8 +133,13 @@ export async function fetchOverviewSections(viewerId: string): Promise<OverviewS
       view: "messages",
       lines:
         dms?.length
+          // P19-9 (M2): this used to read d.last_content directly, bypassing
+          // dmThreadPreview() — raw envelope JSON (or, once a thread upgrades
+          // to encrypted mid-conversation, ciphertext) on the Overview ticker,
+          // the most-seen surface in the dashboard. dmThreadPreview() is what
+          // MessagesView/DMsView's own sidebar already goes through.
           ? dms.slice(0, MAX_LINES).map((d) =>
-              clip(`${d.other_agent}: ${d.last_content || "(no preview)"}`),
+              clip(`${d.other_agent}: ${dmThreadPreview(d)}`),
             )
           : ["No DM threads"],
     },
