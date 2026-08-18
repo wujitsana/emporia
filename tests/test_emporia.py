@@ -17478,6 +17478,241 @@ def test_room_replay_with_the_constraint_bypassed_is_still_caught_by_the_client(
 
 
 # ============================================================================
+# P19-8: room read integrity, MCP plaintext-fallback fix, pre-send limits
+# ============================================================================
+
+def test_room_message_verified_flag_reports_tampering(client):
+    """P19-8 (M1): the room analogue of the DM tamper test above —
+    identity.verify_room_message() plus a `verified` flag on
+    get_room_messages(), where rooms previously had confidentiality (P18-4)
+    without the integrity half."""
+    import asyncio
+
+    from emporia.relay_server import DB_LOCK, get_db
+
+    async def setup():
+        a, b = _sdk_wired("p19_rtamper_a"), _sdk_wired("p19_rtamper_b")
+        try:
+            await a.register()
+            await b.register()
+            room = await a.create_room(name="p19 tamper room", room_type="public", gate_type="open")
+            room_id = room["room_id"]
+            await a.send_room_message(room_id, "first message")
+            await a.send_room_message(room_id, "second message")
+            return room_id
+        finally:
+            await a.__aexit__()
+            await b.__aexit__()
+
+    room_id = asyncio.run(setup())
+    with DB_LOCK, get_db() as conn:
+        victim = conn.execute(
+            "SELECT message_id FROM room_messages WHERE room_id=? AND content=?",
+            (room_id, "first message"),
+        ).fetchone()["message_id"]
+        conn.execute(
+            "UPDATE room_messages SET content=? WHERE message_id=?",
+            ("first message, but the relay edited it", victim),
+        )
+
+    async def read():
+        b = _sdk_wired("p19_rtamper_b")
+        try:
+            return await b.get_room_messages(room_id)
+        finally:
+            await b.__aexit__()
+
+    msgs = {m["content"]: m for m in asyncio.run(read())}
+    assert msgs["first message, but the relay edited it"]["verified"] is False
+    assert msgs["second message"]["verified"] is True, "the rest of the room still reads"
+
+
+def test_room_message_missing_signature_reports_verified_none(client):
+    """Same 'unknown, not tampered with' reasoning as the DM nonce-less test —
+    the negotiation broker's own system messages carry no signature at all
+    (rooms_db.post_message() with no signature= kwarg), so they must report
+    `None`, not `False`."""
+    import asyncio
+
+    from emporia.relay_server import DB_LOCK, get_db
+
+    async def setup():
+        a = _sdk_wired("p19_rnosig_a")
+        try:
+            await a.register()
+            room = await a.create_room(name="p19 nosig room", room_type="public", gate_type="open")
+            room_id = room["room_id"]
+            await a.send_room_message(room_id, "as if written before signatures")
+            return room_id
+        finally:
+            await a.__aexit__()
+
+    room_id = asyncio.run(setup())
+    with DB_LOCK, get_db() as conn:
+        conn.execute("UPDATE room_messages SET signature=NULL WHERE room_id=?", (room_id,))
+
+    async def read():
+        b = _sdk_wired("p19_rnosig_b")
+        try:
+            await b.register()
+            return await b.get_room_messages(room_id)
+        finally:
+            await b.__aexit__()
+
+    assert asyncio.run(read())[0]["verified"] is None
+
+
+def test_mcp_send_room_message_fails_closed_on_room_lookup_failure(prod_client):
+    """P19-8 (H6): `room_r.status_code == 200 and bool(...)` used to fold *any*
+    failed room lookup into "not encrypted", falling through to _post(content)
+    — an attempt to send plaintext, in a request body, to the relay (which
+    P18-4's own room.encrypted check on the *message* route happens to still
+    catch for a genuinely encrypted room — but the client should never have
+    tried, and for a lookup that fails for a reason unrelated to encryption
+    the old code masked the real error behind a confusing send-side one).
+    Proven by making the room lookup fail and asserting the function returns
+    immediately — no second (send) call reaches the relay at all — matching
+    the SDK's get_room(), which raises via raise_for_status()."""
+    from emporia import mcp_server
+
+    def fake_bearer_request(method, url, **kwargs):
+        if method == "get" and url == f"{mcp_server.RELAY_URL}/rooms/room_lookup_target":
+            return MagicMock(status_code=500, text="internal error")
+        raise AssertionError(f"must not reach the relay beyond the room lookup: {method} {url}")
+
+    with patch.object(mcp_server, "_bearer_request", side_effect=fake_bearer_request):
+        result = mcp_server.send_room_message(
+            room_id="room_lookup_target", sender_id="p19_h6_a", content="should never be attempted",
+        )
+    assert result.get("success") is False, result
+    assert "500" in result.get("error", ""), result
+
+
+def test_pre_send_content_limit_is_checked_before_any_network_or_crypto_work(client):
+    """P19-8 (M5): wire.py's own docstring claimed both clients check
+    MAX_CONTENT_BYTES before sending; neither imported it. Worst case was an
+    encrypted room/thread doing a full seal and *then* eating the relay's 400.
+    Proven here by asserting the oversized send never reaches the network at
+    all — a bearer/room-lookup call would require _bearer_request, so patching
+    it and asserting it's never called demonstrates the check runs first."""
+    import asyncio
+
+    from emporia import mcp_server
+    from emporia.wire import MAX_CONTENT_BYTES
+
+    big = "z" * (MAX_CONTENT_BYTES + 1)
+
+    async def sdk_check():
+        a = _sdk_wired("p19_m5_sdk_a")
+        try:
+            a._bearer_request = AsyncMock(side_effect=AssertionError("must not reach the network"))
+            try:
+                await a.send_dm("tid_irrelevant", big)
+            except ValueError as e:
+                assert "too large" in str(e)
+            else:
+                raise AssertionError("expected ValueError")
+            try:
+                await a.send_room_message("room_irrelevant", big)
+            except ValueError as e:
+                assert "too large" in str(e)
+            else:
+                raise AssertionError("expected ValueError")
+        finally:
+            await a.__aexit__()
+
+    asyncio.run(sdk_check())
+
+    with patch.object(mcp_server, "_bearer_request") as req:
+        req.side_effect = AssertionError("must not reach the network")
+        r1 = mcp_server.send_dm(to_agent_id="irrelevant", content=big, from_agent_id="p19_m5_mcp_a")
+        assert r1.get("success") is False and "too large" in r1.get("error", ""), r1
+        r2 = mcp_server.send_room_message(room_id="room_irrelevant", sender_id="p19_m5_mcp_a", content=big)
+        assert r2.get("success") is False and "too large" in r2.get("error", ""), r2
+
+
+def test_decrypt_does_not_crash_on_a_message_missing_sender_or_msg_type(client):
+    """P19-8 (L1): msg["sender_id"]/msg["msg_type"] bare indexing inside the
+    decrypt try block bypassed `except crypto_box.DecryptionError` on a
+    KeyError, which would abort the whole read (every other message in the
+    room too) rather than just leaving this one undecrypted. .get() with a
+    default closes it. A fabricated relay response missing both keys on an
+    envelope-shaped message must not raise out of get_room_messages()."""
+    import asyncio
+
+    from emporia import crypto_box
+
+    async def scenario():
+        a = _sdk_wired("p19_l1_a")
+        try:
+            await a.register()
+            fake_envelope = json.dumps({
+                "v": crypto_box.ENVELOPE_VERSION, "alg": crypto_box.ENVELOPE_ALG,
+                "epk": "aa", "n": "bb", "ct": "cc", "keys": {"someone": {"n": "dd", "ct": "ee"}},
+            })
+            fake_resp = MagicMock()
+            fake_resp.raise_for_status = MagicMock()
+            fake_resp.json = MagicMock(return_value={
+                "messages": [{"message_id": "rmsg_fake", "content": fake_envelope}],
+            })
+            a._bearer_request = AsyncMock(return_value=fake_resp)
+            # The assertion is that this doesn't raise KeyError — a message with
+            # no sender_id/msg_type must still come back, just undecrypted.
+            msgs = await a.get_room_messages("room_irrelevant")
+            assert len(msgs) == 1
+            assert msgs[0]["decrypted"] is False
+        finally:
+            await a.__aexit__()
+
+    asyncio.run(scenario())
+
+
+def test_mcp_get_room_messages_has_success_key(prod_client):
+    """P19-8 (L3): every neighbouring room tool (create_room, list_rooms,
+    send_room_message, kick_from_room) returns a `success` key; get_room_messages
+    didn't."""
+    from emporia import mcp_server
+
+    _register_keyed(prod_client, "p19_l3_a")
+    adapter = _ASGIHttpxAdapter(prod_client, mcp_server.RELAY_URL)
+    with patch.object(mcp_server, "httpx", adapter):
+        room = mcp_server.create_room(name="p19 l3 room", creator_id="p19_l3_a")
+        room_id = room["room"]["room_id"]
+        result = mcp_server.get_room_messages(room_id=room_id, agent_id="p19_l3_a")
+    assert result.get("success") is True, result
+
+
+def test_sdk_room_message_functions_gain_limit_and_parent_message_id_parity(client):
+    """P19-8 (L3): the MCP tool already had limit (get_room_messages) and
+    parent_message_id (send_room_message); the SDK had neither."""
+    import asyncio
+    import inspect
+
+    from emporia.agent_sdk import EmporiaAgent
+
+    assert "limit" in inspect.signature(EmporiaAgent.get_room_messages).parameters
+    assert "parent_message_id" in inspect.signature(EmporiaAgent.send_room_message).parameters
+
+    async def scenario():
+        a = _sdk_wired("p19_l3_sdk_a")
+        try:
+            await a.register()
+            room = await a.create_room(name="p19 l3 sdk room", room_type="public", gate_type="open")
+            room_id = room["room_id"]
+            first = await a.send_room_message(room_id, "parent")
+            reply = await a.send_room_message(
+                room_id, "child", parent_message_id=first["message_id"],
+            )
+            assert reply["parent_message_id"] == first["message_id"]
+            msgs = await a.get_room_messages(room_id, limit=1)
+            assert len(msgs) == 1
+        finally:
+            await a.__aexit__()
+
+    asyncio.run(scenario())
+
+
+# ============================================================================
 # P18-3/4/5: room end-to-end encryption
 # ============================================================================
 

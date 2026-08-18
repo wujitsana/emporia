@@ -834,15 +834,35 @@ def send_room_message(
         from emporia import crypto_box
         from emporia.identity import sign
         from emporia.wire import (
+            MAX_CONTENT_BYTES,
             new_message_nonce,
             room_message_envelope,
             signed_room_message_payload,
         )
 
+        # P19-8 (M5): checked before any network or crypto work — worst case
+        # without this is an encrypted room doing a full N-recipient seal and
+        # *then* eating the relay's 400. See agent_sdk.send_room_message()'s
+        # identical check.
+        if len(content.encode("utf-8")) > MAX_CONTENT_BYTES:
+            return {
+                "error": f"content is too large — {len(content.encode('utf-8'))} bytes, "
+                         f"limit is {MAX_CONTENT_BYTES}",
+                "success": False,
+            }
+
         room_r = _bearer_request(
             "get", f"{RELAY_URL}/rooms/{room_id}", agent_id=sender_id, timeout=10,
         )
-        encrypted = room_r.status_code == 200 and bool(room_r.json().get("encrypted"))
+        if room_r.status_code != 200:
+            # P19-8 (H6): `room_r.status_code == 200 and bool(...)` used to fold
+            # *any* failed lookup — a 404, a timeout returning non-200, a 403 —
+            # into "not encrypted", falling through to _post(content): plaintext,
+            # in a request body, sent to the relay. Fails closed instead, matching
+            # the SDK (get_room() raises via raise_for_status()) and send_dm's own
+            # documented reasoning for the identical DM-side check.
+            return {"error": f"Relay {room_r.status_code}", "detail": room_r.text, "success": False}
+        encrypted = bool(room_r.json().get("encrypted"))
         # P19-5 (H4): one nonce, bound into both the ciphertext's AAD and the
         # signature, same shape as send_dm's nonce. Reused across the
         # membership-race retry below — nothing is stored on the 409 branch.
@@ -909,10 +929,12 @@ def _room_recipients(sender: str, room_id: str) -> dict[str, str]:
 def get_room_messages(room_id: str, agent_id: str = "", limit: int = 50) -> dict[str, Any]:
     """Fetch a room's messages, decrypting transparently where possible.
 
-    Each message carries `encrypted`/`decrypted`. **A member who joined after a
-    message was sent cannot read it** — no key was wrapped for them, and re-wrapping
-    history would require the relay to hold plaintext. Those come back
-    `encrypted: True, decrypted: False` rather than failing the call.
+    Each message carries `encrypted`/`decrypted`, and now `verified` too (P19-8,
+    M1) — `None` means unknown (no signature/nonce on the row), not tampered
+    with. **A member who joined after a message was sent cannot read it** — no
+    key was wrapped for them, and re-wrapping history would require the relay to
+    hold plaintext. Those come back `encrypted: True, decrypted: False` rather
+    than failing the call.
 
     Args:
         room_id: The room to read.
@@ -921,18 +943,19 @@ def get_room_messages(room_id: str, agent_id: str = "", limit: int = 50) -> dict
     """
     aid = agent_id or AGENT_ID
     if not aid:
-        return {"error": "agent_id required (or set EMPORIA_AGENT_ID)"}
+        return {"error": "agent_id required (or set EMPORIA_AGENT_ID)", "success": False}
     from emporia import crypto_box
-    from emporia.identity import generate_or_load_encryption_keypair
+    from emporia.identity import generate_or_load_encryption_keypair, verify_room_message
     try:
         r = _bearer_request(
             "get", f"{RELAY_URL}/rooms/{room_id}/messages",
             agent_id=aid, params={"limit": limit}, timeout=10,
         )
         if r.status_code != 200:
-            return {"error": f"Relay {r.status_code}", "detail": r.text}
+            return {"error": f"Relay {r.status_code}", "detail": r.text, "success": False}
         body = r.json()
         priv, _ = generate_or_load_encryption_keypair(aid)
+        pubkeys: dict[str, str] = {}
         # P19-5 (H4): the relay's UNIQUE(room_id, nonce) index stops the easy
         # replay, but an operator who can write the database can also drop an
         # index — same reasoning as the DM path's seen_nonces check.
@@ -942,6 +965,13 @@ def get_room_messages(room_id: str, agent_id: str = "", limit: int = 50) -> dict
             msg["replayed"] = bool(nonce) and nonce in seen_nonces
             if nonce:
                 seen_nonces.add(nonce)
+            # P19-8 (M1): the room analogue of get_dm_messages()'s verified flag —
+            # verified against the *stored* content, before decryption, since
+            # that envelope is what was signed on an encrypted room.
+            sender = msg.get("sender_id", "")
+            if sender not in pubkeys:
+                pubkeys[sender] = _sender_public_key(aid, sender)
+            msg["verified"] = verify_room_message(room_id, msg, pubkeys[sender])
             msg["decrypted"] = False
             msg["encrypted"] = crypto_box.looks_like_envelope(msg.get("content", ""))
             if not msg["encrypted"]:
@@ -950,16 +980,20 @@ def get_room_messages(room_id: str, agent_id: str = "", limit: int = 50) -> dict
                 msg["content"] = crypto_box.open_sealed(
                     json.loads(msg["content"]), aid, priv,
                     crypto_box.message_aad(
-                        "room", room_id, msg["sender_id"], msg["msg_type"],
+                        "room", room_id, msg.get("sender_id", ""), msg.get("msg_type", ""),
                         msg.get("nonce") or "",
                     ),
                 )
                 msg["decrypted"] = True
             except crypto_box.DecryptionError:
                 pass
+        # P19-8 (L3): every neighbouring room tool (create_room, list_rooms,
+        # send_room_message, kick_from_room) returns a `success` key; this one
+        # didn't.
+        body["success"] = True
         return body
     except Exception as e:
-        return {"error": str(e)}
+        return {"error": str(e), "success": False}
 
 
 @mcp.tool()
@@ -1443,10 +1477,20 @@ def send_dm(
     from emporia import crypto_box
     from emporia.identity import sign as ed25519_sign
     from emporia.wire import (
+        MAX_CONTENT_BYTES,
         dm_thread_message_envelope,
         new_message_nonce,
         signed_dm_thread_payload,
     )
+    # P19-8 (M5): checked before any network or crypto work — worst case
+    # without this is an encrypted thread doing a full seal and *then* eating
+    # the relay's 400. See agent_sdk.send_dm()'s identical check.
+    if len(content.encode("utf-8")) > MAX_CONTENT_BYTES:
+        return {
+            "error": f"content is too large — {len(content.encode('utf-8'))} bytes, "
+                     f"limit is {MAX_CONTENT_BYTES}",
+            "success": False,
+        }
     try:
         # Get or create thread
         start_body: dict[str, Any] = {"to_agent": to_agent_id}
@@ -1570,7 +1614,7 @@ def get_dm_messages(thread_id: str, agent_id: str = "", limit: int = 50) -> dict
                 msg["content"] = crypto_box.open_sealed(
                     json.loads(msg["content"]), aid, priv,
                     crypto_box.message_aad(
-                        "dm", thread_id, msg["sender_id"], msg["msg_type"],
+                        "dm", thread_id, msg.get("sender_id", ""), msg.get("msg_type", ""),
                         msg.get("nonce") or "",
                     ),
                 )

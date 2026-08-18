@@ -563,10 +563,23 @@ class EmporiaAgent:
         """
         from emporia import crypto_box
         from emporia.wire import (
+            MAX_CONTENT_BYTES,
             dm_thread_message_envelope,
             new_message_nonce,
             signed_dm_thread_payload,
         )
+
+        # P19-8 (M5): checked before any network or crypto work — worst case
+        # without this is an encrypted thread doing a full N-recipient seal and
+        # *then* eating the relay's 400. Checked against the plaintext, so this
+        # catches the obviously-oversized case; ciphertext runs larger than
+        # plaintext, so a borderline size can still 400 at the relay, which is
+        # the authoritative check either way.
+        if len(content.encode("utf-8")) > MAX_CONTENT_BYTES:
+            raise ValueError(
+                f"content is too large — {len(content.encode('utf-8'))} bytes, "
+                f"limit is {MAX_CONTENT_BYTES}",
+            )
 
         # Fetched per send rather than cached: a thread can be upgraded to encrypted
         # at any moment by the peer, and a stale "not encrypted" cache would send
@@ -644,7 +657,7 @@ class EmporiaAgent:
                 msg["content"] = crypto_box.open_sealed(
                     json.loads(msg["content"]), self.agent_id, priv,
                     crypto_box.message_aad(
-                        "dm", thread_id, msg["sender_id"], msg["msg_type"],
+                        "dm", thread_id, msg.get("sender_id", ""), msg.get("msg_type", ""),
                         msg.get("nonce") or "",
                     ),
                 )
@@ -839,19 +852,26 @@ class EmporiaAgent:
             )
         return recipients
 
-    async def get_room_messages(self, room_id: str) -> list[dict[str, Any]]:
+    async def get_room_messages(self, room_id: str, limit: int = 50) -> list[dict[str, Any]]:
         """Get recent messages from a room, decrypting transparently where possible.
 
         Each message gains `encrypted`/`decrypted`, the same pair `get_dm_messages()`
-        uses. **A member who joined after a message was sent cannot read it** — no
+        uses, and now `verified` too (P19-8, M1) — rooms had confidentiality
+        (P18-4) without the integrity half `verify_dm_message()`'s own docstring
+        calls "half the promise". `None` means unknown (no signature/nonce on the
+        row), not tampered with — see `identity.verify_room_message()`.
+
+        **A member who joined after a message was sent cannot read it** — no
         key was wrapped for them, and re-wrapping history would require the relay to
         hold plaintext, which is the whole thing being avoided. Those messages come
         back `encrypted: True, decrypted: False` rather than raising.
         """
         from emporia import crypto_box
-        from emporia.identity import generate_or_load_encryption_keypair
+        from emporia.identity import generate_or_load_encryption_keypair, verify_room_message
 
-        resp = await self._bearer_request("get", f"{self.relay_url}/rooms/{room_id}/messages")
+        resp = await self._bearer_request(
+            "get", f"{self.relay_url}/rooms/{room_id}/messages", params={"limit": limit},
+        )
         resp.raise_for_status()
         messages = resp.json().get("messages", [])
         priv, _ = generate_or_load_encryption_keypair(self.profile_id)
@@ -859,11 +879,19 @@ class EmporiaAgent:
         # replay, but an operator who can write the database can also drop an
         # index — same reasoning as get_dm_messages()'s seen_nonces.
         seen_nonces: set[str] = set()
+        pubkeys: dict[str, str] = {}
         for msg in messages:
             nonce = msg.get("nonce") or ""
             msg["replayed"] = bool(nonce) and nonce in seen_nonces
             if nonce:
                 seen_nonces.add(nonce)
+            # P17-2's DM reasoning, mirrored: verified against the *stored*
+            # content, before any decryption — for an encrypted room that
+            # envelope is what was signed.
+            sender = msg.get("sender_id", "")
+            if sender not in pubkeys:
+                pubkeys[sender] = await self._sender_public_key(sender)
+            msg["verified"] = verify_room_message(room_id, msg, pubkeys[sender])
             msg["decrypted"] = False
             msg["encrypted"] = crypto_box.looks_like_envelope(msg.get("content", ""))
             if not msg["encrypted"]:
@@ -872,7 +900,7 @@ class EmporiaAgent:
                 msg["content"] = crypto_box.open_sealed(
                     json.loads(msg["content"]), self.agent_id, priv,
                     crypto_box.message_aad(
-                        "room", room_id, msg["sender_id"], msg["msg_type"],
+                        "room", room_id, msg.get("sender_id", ""), msg.get("msg_type", ""),
                         msg.get("nonce") or "",
                     ),
                 )
@@ -886,6 +914,7 @@ class EmporiaAgent:
         room_id: str,
         content: str,
         msg_type: str = DEFAULT_MSG_TYPE,
+        parent_message_id: str | None = None,
     ) -> dict[str, Any]:
         """Send a message to a room. Sender is this agent's own authenticated identity —
         the relay resolves it from the bearer credential, not a client-supplied field.
@@ -894,10 +923,20 @@ class EmporiaAgent:
         valid in any room this agent belongs to, forever."""
         from emporia import crypto_box
         from emporia.wire import (
+            MAX_CONTENT_BYTES,
             new_message_nonce,
             room_message_envelope,
             signed_room_message_payload,
         )
+
+        # P19-8 (M5): checked before any network or crypto work — worst case
+        # without this is an encrypted room doing a full N-recipient seal and
+        # *then* eating the relay's 400. See send_dm()'s identical check.
+        if len(content.encode("utf-8")) > MAX_CONTENT_BYTES:
+            raise ValueError(
+                f"content is too large — {len(content.encode('utf-8'))} bytes, "
+                f"limit is {MAX_CONTENT_BYTES}",
+            )
 
         room = await self.get_room(room_id)
         encrypted = bool(room.get("encrypted"))
@@ -913,6 +952,7 @@ class EmporiaAgent:
                 "post", f"{self.relay_url}/rooms/{room_id}/message",
                 json=room_message_envelope(
                     body_content, msg_type, self._sign(signed_payload), nonce,
+                    parent_message_id=parent_message_id,
                 ),
             )
 

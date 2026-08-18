@@ -358,6 +358,37 @@ def verify_dm_message(
     )
 
 
+def verify_room_message(
+    room_id: str, message: dict[str, Any], sender_public_key_hex: str,
+) -> bool | None:
+    """The room analogue of `verify_dm_message()` — see there for the full
+    reasoning. P19-8 (M1): rooms got confidentiality (P18-4) without the
+    integrity half `verify_dm_message()`'s own docstring calls "half the
+    promise" — `get_room_messages()` set `encrypted`/`decrypted` but never a
+    `verified` flag, and there was no room counterpart to call. `None` (not
+    `False`) for a row with no signature or no nonce, same "unknown, not
+    tampered with" reasoning: every P19-5-or-later room row carries both, so a
+    row missing either predates that requirement rather than being forged.
+
+    Verify against the **stored** `content` — for an encrypted room that is the
+    envelope, which is what was signed. Calling this after decrypting would
+    check the signature against plaintext that was never signed.
+    """
+    from emporia.wire import signed_room_message_payload
+
+    signature = message.get("signature")
+    nonce = message.get("nonce")
+    if not signature or not nonce or not sender_public_key_hex:
+        return None
+    return verify(
+        signed_room_message_payload(
+            room_id, message.get("content", ""), message.get("msg_type", ""), nonce,
+        ),
+        signature,
+        sender_public_key_hex,
+    )
+
+
 def trust_peer_encryption_key(
     agent_id: str,
     encryption_public_key_hex: str,
