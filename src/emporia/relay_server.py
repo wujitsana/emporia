@@ -6406,6 +6406,25 @@ async def send_room_message(room_id: str, req: SendRoomMessageRequest, request: 
     # Negotiation broker: route counter_offer/accept/reject in 2-member private rooms
     broker_response: dict[str, Any] | None = None
     if effective_msg_type in ("counter_offer", "accept", "reject") and room.is_negotiation_room():
+        # P19-6 (M8): the broker used to run unconditionally here — on an
+        # encrypted room, req.content is the *envelope*, not the offer: it's a
+        # JSON dict (crypto_box.seal()'s output serialized), so
+        # `req.content.strip().startswith("{")` is true and json.loads()
+        # parses it cleanly, handing process_offer() the envelope's structural
+        # fields (v, alg, epk, ct, ...) as if they were an offer. Worse than a
+        # no-op: on ACCEPT/COUNTER it posted `broker_response` as a *plaintext*
+        # system row via rooms_db.post_message() below, bypassing
+        # validate_envelope_for() entirely — a guaranteed plaintext write into
+        # a room whose entire point is that the relay never holds plaintext.
+        # The relay cannot decrypt, so it cannot broker; refuse cleanly instead.
+        if room.encrypted:
+            raise HTTPException(
+                400,
+                "the negotiation broker is unavailable in an end-to-end encrypted "
+                "room — it would need to read the offer's plaintext to apply the "
+                "midpoint algorithm, which is exactly what this room's encryption "
+                "denies the relay. Negotiate out of band, or use an unencrypted room.",
+            )
         from emporia.negotiation import process_offer
         try:
             offer_payload = json.loads(req.content) if req.content.strip().startswith("{") else {"text": req.content}
@@ -6485,19 +6504,32 @@ def _room_member_encryption_keys(room: Any) -> dict[str, dict[str, str]]:
     this is an access-control question the relay already answers elsewhere, not a
     confidentiality hole opened here.
     """
-    keys: dict[str, dict[str, str]] = {}
-    for member in room.members:
-        enc, sig = AGENT_REGISTRY.get_encryption_key(member)
-        with DB_LOCK, get_db() as conn:
-            row = conn.execute(
-                "SELECT public_key_hex FROM authorized_agents WHERE agent_id = ?", (member,)
-            ).fetchone()
-        keys[member] = {
-            "encryption_public_key": enc,
-            "signature": sig,
-            "public_key_hex": row["public_key_hex"] if row else "",
+    # P19-6 (M9): one query, one connection, one DB_LOCK acquisition for the whole
+    # member set — this used to be get_encryption_key() (a connection of its own)
+    # plus a second connection for public_key_hex, *per member*, against a global
+    # write lock. A large room's every send paid 2N connections and 2N lock
+    # acquisitions for what a single `WHERE agent_id IN (...)` answers at once.
+    if not room.members:
+        return {}
+    placeholders = ",".join("?" * len(room.members))
+    with DB_LOCK, get_db() as conn:
+        rows = conn.execute(
+            "SELECT agent_id, encryption_public_key, encryption_key_signature, "
+            f"public_key_hex FROM authorized_agents WHERE agent_id IN ({placeholders})",
+            room.members,
+        ).fetchall()
+    found = {
+        row["agent_id"]: {
+            "encryption_public_key": row["encryption_public_key"] or "",
+            "signature": row["encryption_key_signature"] or "",
+            "public_key_hex": row["public_key_hex"] or "",
         }
-    return keys
+        for row in rows
+    }
+    return {
+        member: found.get(member, {"encryption_public_key": "", "signature": "", "public_key_hex": ""})
+        for member in room.members
+    }
 
 
 @app.get("/rooms/{room_id}/encryption-keys")

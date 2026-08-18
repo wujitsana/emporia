@@ -17403,6 +17403,58 @@ def test_room_encryption_keys_returns_every_member(client):
         assert entry["signature"] and entry["public_key_hex"]
 
 
+def test_room_encryption_keys_is_one_query_not_two_per_member(client):
+    """P19-6 (M9): _room_member_encryption_keys() used to open a connection via
+    AGENT_REGISTRY.get_encryption_key() *and* a second one for public_key_hex,
+    per member — 2N connections and 2N DB_LOCK acquisitions for one bundle
+    fetch. Now one `WHERE agent_id IN (...)` query, so get_db() is called
+    exactly once regardless of member count."""
+    from emporia import relay_server
+
+    _enc_agents(client, "p19_rkq_a", "p19_rkq_b", "p19_rkq_c")
+    room = client.post("/rooms", json={"name": "p19 keys query", "description": "",
+                                       "encrypted": True},
+                       headers={"X-Emporia-Agent-Id": "p19_rkq_a"}).json()["room_id"]
+    for a in ("p19_rkq_b", "p19_rkq_c"):
+        assert client.post(f"/rooms/{room}/join", json={"agent_id": a},
+                           headers={"X-Emporia-Agent-Id": a}).status_code == 200
+
+    with patch.object(relay_server, "get_db", wraps=relay_server.get_db) as spy:
+        r = client.get(f"/rooms/{room}/encryption-keys", headers={"X-Emporia-Agent-Id": "p19_rkq_b"})
+    assert r.status_code == 200
+    assert set(r.json()["keys"]) == {"p19_rkq_a", "p19_rkq_b", "p19_rkq_c"}
+    assert spy.call_count == 1, spy.call_args_list
+
+
+def test_encrypted_negotiation_room_refuses_the_broker(client):
+    """P19-6 (M8): the broker used to run unconditionally — on an encrypted
+    room, req.content is the envelope (a JSON dict), so the "looks like JSON"
+    check passed and process_offer() got handed the envelope's structural
+    fields as if they were an offer. Worse: on ACCEPT/COUNTER it then wrote a
+    *plaintext* system message into the encrypted room via rooms_db.post_message(),
+    bypassing validate_envelope_for() entirely. Now it refuses cleanly, and
+    nothing — encrypted or not — gets written."""
+    _enc_agents(client, "p19_neg_a", "p19_neg_b")
+    room = client.post("/rooms", json={
+        "name": "p19 neg room", "description": "", "room_type": "private",
+        "gate_type": "invite", "encrypted": True,
+    }, headers={"X-Emporia-Agent-Id": "p19_neg_a"}).json()["room_id"]
+    client.post(f"/rooms/{room}/invite", json={"invitee_id": "p19_neg_b"},
+               headers={"X-Emporia-Agent-Id": "p19_neg_a"})
+    assert client.post(f"/rooms/{room}/join", json={"agent_id": "p19_neg_b"},
+                       headers={"X-Emporia-Agent-Id": "p19_neg_b"}).status_code == 200
+
+    sealed = _seal_room(room, "p19_neg_a", ["p19_neg_a", "p19_neg_b"],
+                        json.dumps({"price_usd": "8.50"}), msg_type="counter_offer")
+    r = _send_room_raw(client, room, "p19_neg_a", sealed, msg_type="counter_offer")
+    assert r.status_code == 400, r.text
+    assert "encrypted" in r.text.lower()
+
+    msgs = client.get(f"/rooms/{room}/messages",
+                      headers={"X-Emporia-Agent-Id": "p19_neg_b"}).json()["messages"]
+    assert msgs == [], "a refused broker call must not reach storage, plaintext or not"
+
+
 def test_room_encryption_keys_is_members_only(client):
     _enc_agents(client, "p18_rko_a", "p18_rko_b")
     room = client.post("/rooms", json={"name": "p18 keys private", "description": "",
