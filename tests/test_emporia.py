@@ -17010,6 +17010,112 @@ def test_a_normal_message_is_unaffected_by_the_limits(client):
     assert _send_dm_raw(client, tid, "p18_ok_a", "an ordinary message").status_code == 200
     assert _send_dm_raw(client, tid, "p18_ok_a", "z" * 20_000).status_code == 200
 
+
+def test_content_limit_now_covers_every_content_bearing_route(client):
+    """P19-7 (M4): _require_content_within_limit() used to be applied at exactly
+    two call sites (the room/DM message routes) — every other content-bearing
+    field had no bound at all. One representative field per newly-covered route:
+    room/agora name+description, agora post/comment content, and /messages'
+    payload (a dict, not a str — bound via its serialized size)."""
+    from emporia.wire import MAX_CONTENT_BYTES
+
+    _register_keyed(client, "p19_lim_a")
+    big = "z" * (MAX_CONTENT_BYTES + 1)
+
+    r = client.post("/rooms", json={"name": "ok", "description": big},
+                    headers={"X-Emporia-Agent-Id": "p19_lim_a"})
+    assert r.status_code == 400 and "description" in r.text, r.text
+    r = client.post("/rooms", json={"name": big, "description": ""},
+                    headers={"X-Emporia-Agent-Id": "p19_lim_a"})
+    assert r.status_code == 400 and "name" in r.text, r.text
+
+    r = client.post("/listings", json={"title": "ok", "description": big},
+                    headers={"X-Emporia-Agent-Id": "p19_lim_a"})
+    assert r.status_code == 400 and "description" in r.text, r.text
+
+    r = client.post("/events", json={"title": "ok", "description": big, "module_type": "emporia:chess:v1"},
+                    headers={"X-Emporia-Agent-Id": "p19_lim_a"})
+    assert r.status_code == 400 and "description" in r.text, r.text
+
+    r = client.post("/agoras/topics", json={"name": "ok topic", "description": big},
+                    headers={"X-Emporia-Agent-Id": "p19_lim_a"})
+    assert r.status_code == 400 and "description" in r.text, r.text
+    r = client.post("/agoras/topics", json={"name": big, "description": ""},
+                    headers={"X-Emporia-Agent-Id": "p19_lim_a"})
+    assert r.status_code == 400 and "name" in r.text, r.text
+
+    topic = client.post("/agoras/topics", json={"name": "p19 lim topic", "description": ""},
+                        headers={"X-Emporia-Agent-Id": "p19_lim_a"}).json()
+    slug = topic["slug"]
+    r = client.post(f"/agoras/topics/{slug}/posts", json={"title": "ok", "content": big},
+                    headers={"X-Emporia-Agent-Id": "p19_lim_a"})
+    assert r.status_code == 400 and "content" in r.text, r.text
+    post = client.post(f"/agoras/topics/{slug}/posts", json={"title": "ok", "content": "fine"},
+                       headers={"X-Emporia-Agent-Id": "p19_lim_a"}).json()
+    r = client.post(f"/agoras/posts/{post['post_id']}/comments", json={"content": big},
+                    headers={"X-Emporia-Agent-Id": "p19_lim_a"})
+    assert r.status_code == 400 and "content" in r.text, r.text
+
+    r = client.post(
+        "/messages",
+        json={"to_agent": "p19_lim_a", "type": "chat", "payload": {"text": big}, "signature": "aa"},
+        headers={"X-Emporia-Agent-Id": "p19_lim_a"},
+    )
+    assert r.status_code == 400 and "payload" in r.text, r.text
+
+
+def test_max_request_bytes_falls_back_on_a_malformed_env_var(client):
+    """P19-7 (L2): the raw `int(os.getenv(...))` this replaced would crash the
+    whole process at import time on a malformed value — env_int() falls back to
+    the default instead, matching how every other EMPORIA_* var in the codebase
+    already degrades."""
+    from emporia.env_config import env_int
+
+    with patch.dict(os.environ, {"EMPORIA_MAX_REQUEST_BYTES": "not-a-number"}):
+        assert env_int("MAX_REQUEST_BYTES", 1024 * 1024) == 1024 * 1024
+
+
+def test_413_and_429_short_circuits_carry_cors_headers(client):
+    """P19-7 (M6): rate_limit and limit_request_size used to be registered
+    outside (in front of) CORSMiddleware, so a short-circuit response from
+    either never reached CORSMiddleware's wrapped `send` — a browser's fetch()
+    saw an opaque CORS failure, not the 413/429 body and status the relay
+    actually sent. CORS is now registered last (outermost) so it wraps both."""
+    from emporia import relay_server
+
+    origin = "http://localhost:5173"  # in the default _CORS_ORIGINS allowlist
+
+    with patch.object(relay_server, "MAX_REQUEST_BYTES", 10):
+        r = client.post(
+            "/rooms", json={"name": "x" * 100, "description": ""},
+            headers={"X-Emporia-Agent-Id": "p19_cors_a", "Origin": origin},
+        )
+    assert r.status_code == 413, r.status_code
+    assert r.headers.get("access-control-allow-origin") == origin, r.headers
+
+    non_exempt = TestClient(app, client=("203.0.113.7", 4321))
+    with patch.object(relay_server, "_RATE_LIMITS", {**relay_server._RATE_LIMITS, "default": (1, 60.0)}):
+        non_exempt.get("/safety/stats", headers={"Origin": origin})
+        r = non_exempt.get("/safety/stats", headers={"Origin": origin})
+    assert r.status_code == 429, r.status_code
+    assert r.headers.get("access-control-allow-origin") == origin, r.headers
+
+
+def test_oversized_request_is_rejected_before_it_can_burn_rate_limit_budget(client):
+    """P19-7 (M6): limit_request_size now runs ahead of rate_limit (registration
+    order below the CORS block), so an oversized request — cheap to reject on
+    the Content-Length header alone — is refused before it consumes a slot in
+    the sender's rate-limit budget."""
+    from emporia import relay_server
+
+    non_exempt = TestClient(app, client=("203.0.113.9", 4321))
+    with patch.object(relay_server, "MAX_REQUEST_BYTES", 10), \
+         patch.object(relay_server, "_RATE_LIMITS", {**relay_server._RATE_LIMITS, "write": (5, 60.0)}):
+        for _ in range(10):  # far more than the 5-request write budget
+            r = non_exempt.post("/rooms", json={"name": "x" * 100, "description": ""})
+            assert r.status_code == 413, r.status_code  # never 429 — size is checked first
+
+
 # ============================================================================
 # P18-2: replay — recorded honestly at P17-2, closed here
 # ============================================================================

@@ -117,6 +117,7 @@ from emporia.session_audit import (
 )
 from emporia import rooms as rooms_db
 from emporia import entitlements
+from emporia.env_config import env_int
 
 if TYPE_CHECKING:
     # Type-only — every real (runtime) reference to emporia.payments stays a
@@ -2348,28 +2349,22 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(title="Emporia Relay", version="0.1.0", lifespan=lifespan)
 
-# CORS allowlist: relay's own URL + local dev dashboard ports by default, extendable
-# via EMPORIA_CORS_ORIGINS (comma-separated) for a remote-hosted dashboard.
-# allow_credentials=True + allow_origins=["*"] would let any site replay a browser's
-# stored dashboard JWT/cookie against this relay — keep this an explicit allowlist.
-_CORS_ORIGINS = {RELAY_BASE_URL, "http://localhost:8088", "http://localhost:5173"}
-_CORS_ORIGINS.update(
-    o.strip() for o in os.getenv("EMPORIA_CORS_ORIGINS", "").split(",") if o.strip()
-)
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=sorted(_CORS_ORIGINS),
-    allow_credentials=True,
-    allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
-    # P1b-4: PAYMENT-SIGNATURE is the x402 retry header (the browser-wallet
-    # analogue of Authorization: Payment for MPP) — without it in
-    # allow_headers, a browser-based payer's retry is silently blocked by CORS
-    # before it ever reaches the route. PAYMENT-RESPONSE must be exposed for
-    # the same reason a JS client would otherwise be unable to read it off a
-    # cross-origin response at all.
-    allow_headers=["Content-Type", "Authorization", "X-Emporia-Agent-Id", "PAYMENT-SIGNATURE"],
-    expose_headers=["PAYMENT-RESPONSE"],
-)
+# ─── Middleware registration order (P19-7, M6) ────────────────────────────────
+# Starlette's add_middleware() inserts each new middleware at the *front* of its
+# list, and the stack is built by wrapping in reverse — so the middleware
+# registered LAST ends up OUTERMOST (runs first on the way in, last on the way
+# out), and the middleware registered FIRST ends up innermost, right next to
+# the router. Registration order below is therefore deliberately: rate_limit
+# first (innermost), limit_request_size second, CORS last (outermost) — so a
+# request hits CORS, then the cheap Content-Length check, then the rate
+# limiter, then the router. Two things this fixes, verified live pre-fix:
+#   - a 413/429 short-circuit returned by an inner middleware never reached
+#     CORSMiddleware's wrapped `send`, so it carried no CORS headers — a
+#     browser's fetch() saw an opaque network-level CORS failure, not the
+#     413/429 body and status the relay actually sent.
+#   - the size check ran *after* rate limiting, so an oversized request (cheap
+#     to reject on the Content-Length header alone) still consumed a slot in
+#     the sender's rate-limit budget before being rejected.
 
 # ─── Rate limiting (sliding window, in-memory) ────────────────────────────────
 from collections import deque as _deque
@@ -2384,11 +2379,44 @@ _RATE_LIMITS: dict[str, tuple[int, float]] = {
 _AUTH_PATHS = {"/dashboard/challenge", "/dashboard/session", "/agents/challenge", "/agents/register"}
 
 
+@app.middleware("http")
+async def rate_limit(request: Request, call_next):
+    # Always use the real TCP peer address — never trust X-Forwarded-For for bypass decisions.
+    # If behind a trusted reverse proxy (nginx, Caddy), set TRUSTED_PROXY=1 and the proxy
+    # must rewrite the source IP at TCP level or strip/replace the X-Real-IP header server-side.
+    ip = (request.client.host if request.client else "unknown")
+    # Localhost, operator-listed proxy IPs, and test client: no rate limiting. Separate from
+    # _HEADER_AUTH_TRUSTED_HOSTS — exempting an IP from throttling is a much lower-stakes
+    # bypass than trusting it to claim any agent identity.
+    if ip in _RATE_LIMIT_EXEMPT_HOSTS or ip == "testclient":
+        return await call_next(request)
+    path = request.url.path
+    bucket = "auth" if path in _AUTH_PATHS else ("write" if request.method not in ("GET", "HEAD") else "default")
+    limit, window = _RATE_LIMITS[bucket]
+    now = time.time()
+    key = (ip, bucket)
+    q = _RATE_WINDOWS[key]
+    while q and q[0] < now - window:
+        q.popleft()
+    if len(q) >= limit:
+        return JSONResponse(
+            {"detail": f"Rate limit exceeded — {limit} requests per {int(window)}s per IP"},
+            status_code=429,
+            headers={"Retry-After": str(int(window - (now - q[0])))},
+        )
+    q.append(now)
+    return await call_next(request)
+
+
 # P18-1: the general request-body ceiling. Deliberately larger than
 # wire.MAX_CONTENT_BYTES — a legitimate request is one content field plus signature,
 # metadata and framing, and some routes (registration with identity claims, x402
 # payment payloads) carry more structure than a message does.
-MAX_REQUEST_BYTES = int(os.getenv("EMPORIA_MAX_REQUEST_BYTES", str(1024 * 1024)))
+# P19-7 (L2): env_int() over a raw int(os.getenv(...)) — the raw form crashes the
+# whole process at import time on a malformed value instead of falling back to
+# the default, and every other EMPORIA_* env var in this codebase already goes
+# through this module (see mcp_server.py).
+MAX_REQUEST_BYTES = env_int("MAX_REQUEST_BYTES", 1024 * 1024)
 
 
 @app.middleware("http")
@@ -2437,33 +2465,30 @@ def _require_content_within_limit(content: str, field: str = "content") -> None:
         )
 
 
-@app.middleware("http")
-async def rate_limit(request: Request, call_next):
-    # Always use the real TCP peer address — never trust X-Forwarded-For for bypass decisions.
-    # If behind a trusted reverse proxy (nginx, Caddy), set TRUSTED_PROXY=1 and the proxy
-    # must rewrite the source IP at TCP level or strip/replace the X-Real-IP header server-side.
-    ip = (request.client.host if request.client else "unknown")
-    # Localhost, operator-listed proxy IPs, and test client: no rate limiting. Separate from
-    # _HEADER_AUTH_TRUSTED_HOSTS — exempting an IP from throttling is a much lower-stakes
-    # bypass than trusting it to claim any agent identity.
-    if ip in _RATE_LIMIT_EXEMPT_HOSTS or ip == "testclient":
-        return await call_next(request)
-    path = request.url.path
-    bucket = "auth" if path in _AUTH_PATHS else ("write" if request.method not in ("GET", "HEAD") else "default")
-    limit, window = _RATE_LIMITS[bucket]
-    now = time.time()
-    key = (ip, bucket)
-    q = _RATE_WINDOWS[key]
-    while q and q[0] < now - window:
-        q.popleft()
-    if len(q) >= limit:
-        return JSONResponse(
-            {"detail": f"Rate limit exceeded — {limit} requests per {int(window)}s per IP"},
-            status_code=429,
-            headers={"Retry-After": str(int(window - (now - q[0])))},
-        )
-    q.append(now)
-    return await call_next(request)
+# CORS allowlist: relay's own URL + local dev dashboard ports by default, extendable
+# via EMPORIA_CORS_ORIGINS (comma-separated) for a remote-hosted dashboard.
+# allow_credentials=True + allow_origins=["*"] would let any site replay a browser's
+# stored dashboard JWT/cookie against this relay — keep this an explicit allowlist.
+# Registered last so it wraps outermost — see the ordering note above the rate
+# limiter: this is what makes its headers land on a 413/429 short-circuit too.
+_CORS_ORIGINS = {RELAY_BASE_URL, "http://localhost:8088", "http://localhost:5173"}
+_CORS_ORIGINS.update(
+    o.strip() for o in os.getenv("EMPORIA_CORS_ORIGINS", "").split(",") if o.strip()
+)
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=sorted(_CORS_ORIGINS),
+    allow_credentials=True,
+    allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+    # P1b-4: PAYMENT-SIGNATURE is the x402 retry header (the browser-wallet
+    # analogue of Authorization: Payment for MPP) — without it in
+    # allow_headers, a browser-based payer's retry is silently blocked by CORS
+    # before it ever reaches the route. PAYMENT-RESPONSE must be exposed for
+    # the same reason a JS client would otherwise be unable to read it off a
+    # cross-origin response at all.
+    allow_headers=["Content-Type", "Authorization", "X-Emporia-Agent-Id", "PAYMENT-SIGNATURE"],
+    expose_headers=["PAYMENT-RESPONSE"],
+)
 
 
 # ============================================================================
@@ -4135,6 +4160,10 @@ async def create_listing(req: CreateListingRequest, request: Request):
         raise HTTPException(401, "Authentication required")
     _require_registered(caller)
     _enforce_agent_rate_limit(caller)
+    # P19-7 (M4): _require_content_within_limit was applied at exactly two call
+    # sites (the room/DM message routes) — every other content-bearing field,
+    # this one included, had no bound at all.
+    _require_content_within_limit(req.description, "description")
     try:
         await _assert_payload_safe_counted(req.model_dump())
     except PermissionError as e:
@@ -4250,6 +4279,7 @@ async def create_event(req: CreateEventRequest, request: Request):
         raise HTTPException(401, "Authentication required")
     _require_registered(caller)
     _enforce_agent_rate_limit(caller)
+    _require_content_within_limit(req.description, "description")  # P19-7 (M4)
     try:
         await _assert_payload_safe_counted(req.model_dump())
     except PermissionError as e:
@@ -4955,6 +4985,7 @@ async def submit_action(session_id: str, req: SubmitActionRequest):
         raise HTTPException(400, "Not your turn")
     if req.agent_id not in s["participants"]:
         raise HTTPException(400, "Not a participant")
+    _require_content_within_limit(req.peer_text_rationale, "peer_text_rationale")  # P19-7 (M4)
 
     from emporia.wire import signed_action_payload
     full_payload = signed_action_payload(
@@ -5459,6 +5490,9 @@ async def send_message(req: SendMessageRequest, request: Request):
         raise HTTPException(401, "Authentication required")
     _require_registered(caller)
     _enforce_agent_rate_limit(caller)
+    # P19-7 (M4): payload is a dict, not a str — bound its serialized size, same
+    # budget every other content-bearing field now gets.
+    _require_content_within_limit(json.dumps(req.payload), "payload")
     if not req.signature:
         raise HTTPException(401, "Signature required")
     # N3-8 (R7): bound to the routing envelope (to_agent/type/session_id), not just
@@ -5757,6 +5791,8 @@ async def create_room_endpoint(req: CreateRoomRequest, request: Request):
         raise HTTPException(401, "Authentication required")
     _require_registered(caller)
     _enforce_agent_rate_limit(caller)
+    _require_content_within_limit(req.name, "name")  # P19-7 (M4)
+    _require_content_within_limit(req.description, "description")
     try:
         await _assert_payload_safe_counted(req.model_dump())
     except PermissionError as e:
@@ -6751,6 +6787,8 @@ async def create_agora_topic(req: CreateAgoraTopicRequest, request: Request):
         raise HTTPException(401, "Authentication required")
     _require_registered(caller)
     _enforce_agent_rate_limit(caller)
+    _require_content_within_limit(req.name, "name")  # P19-7 (M4)
+    _require_content_within_limit(req.description, "description")
     try:
         await _assert_payload_safe_counted(req.model_dump())
     except PermissionError as e:
@@ -7148,6 +7186,7 @@ async def create_agora_post(slug: str, req: CreateAgoraPostRequest, request: Req
         raise HTTPException(401, "Authentication required")
     _require_registered(caller)
     _enforce_agent_rate_limit(caller)
+    _require_content_within_limit(req.content)  # P19-7 (M4)
     try:
         await _assert_payload_safe_counted(req.model_dump())
     except PermissionError as e:
@@ -7364,6 +7403,7 @@ async def add_agora_comment(post_id: str, req: AddAgoraCommentRequest, request: 
         raise HTTPException(401, "Authentication required")
     _require_registered(caller)
     _enforce_agent_rate_limit(caller)
+    _require_content_within_limit(req.content)  # P19-7 (M4)
     try:
         await _assert_payload_safe_counted(req.model_dump())
     except PermissionError as e:
