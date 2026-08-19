@@ -18264,3 +18264,43 @@ def test_mcp_room_read_reports_a_stale_version_envelope_as_ciphertext_not_plaint
     assert len(stale) == 1, msgs
     assert stale[0]["encrypted"] is True, "a v1 envelope is still an envelope"
     assert stale[0]["decrypted"] is False, "wrong version must not silently decrypt"
+
+
+# ============================================================================
+# P20-4: CORS preflights are rate-limited and size-checked again (A2)
+# ============================================================================
+
+def test_cors_preflight_is_rate_limited_and_size_checked(client):
+    """P19-7 made CORSMiddleware outermost so 413/429 short-circuits from
+    rate_limit/limit_request_size would carry CORS headers. Side effect, found
+    auditing that pass: CORSMiddleware answers a genuine preflight (OPTIONS +
+    Access-Control-Request-Method) itself and never calls the wrapped app, so
+    both inner middlewares -- and their counters -- are skipped entirely for
+    every preflight. preflight_guard (registered outside CORS) applies the
+    same two checks by hand before CORSMiddleware gets a chance to
+    short-circuit."""
+    from emporia import relay_server
+
+    origin = "http://localhost:5173"  # in the default _CORS_ORIGINS allowlist
+    preflight_headers = {"Origin": origin, "Access-Control-Request-Method": "POST"}
+
+    # A normal preflight, under every limit, is unaffected -- still answered by
+    # CORSMiddleware with the expected headers.
+    ok = client.options("/rooms", headers=preflight_headers)
+    assert ok.status_code == 200, ok.status_code
+    assert ok.headers.get("access-control-allow-origin") == origin, ok.headers
+
+    non_exempt = TestClient(app, client=("203.0.113.11", 4321))
+
+    # Size: an oversized preflight body (attacker-crafted -- a real browser never
+    # sends one on OPTIONS) is rejected on Content-Length alone, same as a POST.
+    with patch.object(relay_server, "MAX_REQUEST_BYTES", 10):
+        r = non_exempt.request("OPTIONS", "/rooms", headers=preflight_headers, content=b"x" * 100)
+    assert r.status_code == 413, r.status_code
+
+    # Rate limit: a flood of preflights now consumes the same budget a real
+    # request would, instead of sailing through uncounted.
+    with patch.object(relay_server, "_RATE_LIMITS", {**relay_server._RATE_LIMITS, "write": (1, 60.0)}):
+        non_exempt.options("/rooms", headers=preflight_headers)
+        r = non_exempt.options("/rooms", headers=preflight_headers)
+    assert r.status_code == 429, r.status_code

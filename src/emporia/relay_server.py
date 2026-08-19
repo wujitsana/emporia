@@ -2379,8 +2379,11 @@ _RATE_LIMITS: dict[str, tuple[int, float]] = {
 _AUTH_PATHS = {"/dashboard/challenge", "/dashboard/session", "/agents/challenge", "/agents/register"}
 
 
-@app.middleware("http")
-async def rate_limit(request: Request, call_next):
+def _check_rate_limit(request: Request) -> JSONResponse | None:
+    """The shared core of `rate_limit()` below — a `JSONResponse` if the caller is
+    over budget, `None` if the request should proceed. Pulled out so
+    `preflight_guard` (P20-4) can apply the same accounting to a CORS preflight,
+    which `CORSMiddleware` answers itself without ever reaching this middleware."""
     # Always use the real TCP peer address — never trust X-Forwarded-For for bypass decisions.
     # If behind a trusted reverse proxy (nginx, Caddy), set TRUSTED_PROXY=1 and the proxy
     # must rewrite the source IP at TCP level or strip/replace the X-Real-IP header server-side.
@@ -2389,7 +2392,7 @@ async def rate_limit(request: Request, call_next):
     # _HEADER_AUTH_TRUSTED_HOSTS — exempting an IP from throttling is a much lower-stakes
     # bypass than trusting it to claim any agent identity.
     if ip in _RATE_LIMIT_EXEMPT_HOSTS or ip == "testclient":
-        return await call_next(request)
+        return None
     path = request.url.path
     bucket = "auth" if path in _AUTH_PATHS else ("write" if request.method not in ("GET", "HEAD") else "default")
     limit, window = _RATE_LIMITS[bucket]
@@ -2405,6 +2408,14 @@ async def rate_limit(request: Request, call_next):
             headers={"Retry-After": str(int(window - (now - q[0])))},
         )
     q.append(now)
+    return None
+
+
+@app.middleware("http")
+async def rate_limit(request: Request, call_next):
+    denied = _check_rate_limit(request)
+    if denied is not None:
+        return denied
     return await call_next(request)
 
 
@@ -2419,15 +2430,9 @@ async def rate_limit(request: Request, call_next):
 MAX_REQUEST_BYTES = env_int("MAX_REQUEST_BYTES", 1024 * 1024)
 
 
-@app.middleware("http")
-async def limit_request_size(request: Request, call_next):
-    """Reject an oversized body with 413 before any handler, guardrails scan, or DB
-    write sees it.
-
-    This is the "it belongs at the proxy layer" fix, implemented in the app —
-    because the reasoning was right about the general case and wrong as a reason to
-    do nothing: this relay runs with nothing in front of it, so until now a
-    multi-MB POST to any route was simply accepted.
+def _check_request_size(request: Request) -> JSONResponse | None:
+    """The shared core of `limit_request_size()` below — see `_check_rate_limit()`
+    just above for why this is split out (P20-4: `preflight_guard` needs it too).
 
     Content-Length only. A chunked request without that header isn't rejected here
     — Starlette streams the body and a size check would mean buffering it, which is
@@ -2445,6 +2450,22 @@ async def limit_request_size(request: Request, call_next):
                 )
         except ValueError:
             return JSONResponse({"detail": "Invalid Content-Length header"}, status_code=400)
+    return None
+
+
+@app.middleware("http")
+async def limit_request_size(request: Request, call_next):
+    """Reject an oversized body with 413 before any handler, guardrails scan, or DB
+    write sees it.
+
+    This is the "it belongs at the proxy layer" fix, implemented in the app —
+    because the reasoning was right about the general case and wrong as a reason to
+    do nothing: this relay runs with nothing in front of it, so until now a
+    multi-MB POST to any route was simply accepted.
+    """
+    denied = _check_request_size(request)
+    if denied is not None:
+        return denied
     return await call_next(request)
 
 
@@ -2489,6 +2510,30 @@ app.add_middleware(
     allow_headers=["Content-Type", "Authorization", "X-Emporia-Agent-Id", "PAYMENT-SIGNATURE"],
     expose_headers=["PAYMENT-RESPONSE"],
 )
+
+
+# P20-4: CORSMiddleware answers a genuine CORS preflight (OPTIONS carrying
+# Access-Control-Request-Method) itself and never calls the wrapped app —
+# see starlette.middleware.cors.CORSMiddleware.__call__. Registering CORS
+# outermost (above) was necessary so 413/429 short-circuits from the two
+# middlewares below it carry CORS headers, but it has the side effect of
+# routing every preflight around both of them: unauthenticated, unlimited,
+# uncounted OPTIONS requests, found auditing P19-7's own ordering change.
+# This middleware is registered last, so it wraps outside CORS and sees a
+# preflight before CORSMiddleware ever gets to short-circuit it — applying
+# the same two checks by hand, since call_next() for a preflight never
+# reaches rate_limit/limit_request_size below. Anything that isn't a
+# preflight passes straight through, unaffected.
+@app.middleware("http")
+async def preflight_guard(request: Request, call_next):
+    is_preflight = (
+        request.method == "OPTIONS" and "access-control-request-method" in request.headers
+    )
+    if is_preflight:
+        denied = _check_request_size(request) or _check_rate_limit(request)
+        if denied is not None:
+            return denied
+    return await call_next(request)
 
 
 # ============================================================================
