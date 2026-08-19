@@ -4208,7 +4208,12 @@ async def create_listing(req: CreateListingRequest, request: Request):
     # P19-7 (M4): _require_content_within_limit was applied at exactly two call
     # sites (the room/DM message routes) — every other content-bearing field,
     # this one included, had no bound at all.
+    # P20-5 (A3): title and metadata were still uncovered after P19-7 — a 900KB
+    # title passed straight through, was scanned by the paid NIM layer, and was
+    # stored and served.
+    _require_content_within_limit(req.title, "title")
     _require_content_within_limit(req.description, "description")
+    _require_content_within_limit(json.dumps(req.metadata), "metadata")
     try:
         await _assert_payload_safe_counted(req.model_dump())
     except PermissionError as e:
@@ -4324,6 +4329,7 @@ async def create_event(req: CreateEventRequest, request: Request):
         raise HTTPException(401, "Authentication required")
     _require_registered(caller)
     _enforce_agent_rate_limit(caller)
+    _require_content_within_limit(req.title, "title")  # P20-5 (A3)
     _require_content_within_limit(req.description, "description")  # P19-7 (M4)
     try:
         await _assert_payload_safe_counted(req.model_dump())
@@ -5031,6 +5037,10 @@ async def submit_action(session_id: str, req: SubmitActionRequest):
     if req.agent_id not in s["participants"]:
         raise HTTPException(400, "Not a participant")
     _require_content_within_limit(req.peer_text_rationale, "peer_text_rationale")  # P19-7 (M4)
+    # P20-5 (A3): req.payload itself was still unbounded -- unlike the identical
+    # field on SendMessageRequest (bounded below at the /messages route). Also
+    # closes DisputeDeliveryRequest.reason, which flows in here as payload={"reason": ...}.
+    _require_content_within_limit(json.dumps(req.payload), "payload")
 
     from emporia.wire import signed_action_payload
     full_payload = signed_action_payload(
@@ -6452,12 +6462,6 @@ async def send_room_message(room_id: str, req: SendRoomMessageRequest, request: 
             "in it — create the room with encrypted=true instead",
         )
 
-    if not room.encrypted:
-        try:
-            await _assert_payload_safe_counted({"content": req.content})
-        except PermissionError as e:
-            raise HTTPException(403, str(e))
-
     if not req.signature:
         raise HTTPException(401, "Signature required")
     # P19-5 (H4): the DM route (dm_send, above) has this exact guard for the exact
@@ -6473,10 +6477,20 @@ async def send_room_message(room_id: str, req: SendRoomMessageRequest, request: 
             "cannot be replayed as another. Generate one with "
             "wire.new_message_nonce().",
         )
+    # P20-5 (A9): moved ahead of the guardrails scan below — a cheap regex check
+    # shouldn't run after the expensive (paid NIM) scan P15 already hoisted checks
+    # like this one to avoid wasting.
     if not _NONCE_RE.fullmatch(req.nonce):
         raise HTTPException(
             400, "nonce must be 32-64 hex characters (see wire.new_message_nonce())",
         )
+
+    if not room.encrypted:
+        try:
+            await _assert_payload_safe_counted({"content": req.content})
+        except PermissionError as e:
+            raise HTTPException(403, str(e))
+
     # N3-8 (R7): bound to room_id + msg_type, not just content — a content-only
     # signature was valid in *any* room the caller belongs to, forever (replayable
     # across rooms and across msg_type, e.g. a signed "chat" replayed as "accept").
@@ -7231,6 +7245,9 @@ async def create_agora_post(slug: str, req: CreateAgoraPostRequest, request: Req
         raise HTTPException(401, "Authentication required")
     _require_registered(caller)
     _enforce_agent_rate_limit(caller)
+    _require_content_within_limit(req.title, "title")  # P20-5 (A3)
+    if req.flair:
+        _require_content_within_limit(req.flair, "flair")  # P20-5 (A3)
     _require_content_within_limit(req.content)  # P19-7 (M4)
     try:
         await _assert_payload_safe_counted(req.model_dump())
@@ -7819,6 +7836,14 @@ async def dm_send(thread_id: str, req: DMSendRequest, request: Request):
                 req.content, {thread["agent_a"], thread["agent_b"]},
             )
         except ValueError as e:
+            # P20-5: audited whether this should split MissingRecipients into a
+            # 409 the way the room route does (A10) and concluded it shouldn't —
+            # a DM thread's recipient set is exactly {agent_a, agent_b}, fixed at
+            # creation, with no join path and so no membership race to recover
+            # from. A missing-recipient failure here is always the same client
+            # bug the room route calls out as the *other* case: wrapped only for
+            # self. 400 is correct and test_encrypted_message_must_be_readable_by_
+            # every_participant pins it.
             raise HTTPException(400, f"this DM thread is end-to-end encrypted — {e}")
     elif crypto_box.looks_like_envelope(req.content):
         raise HTTPException(
@@ -7826,20 +7851,6 @@ async def dm_send(thread_id: str, req: DMSendRequest, request: Request):
             "this DM thread is not encrypted, so an encrypted envelope cannot be "
             f"stored in it — enable encryption first via POST /dm/{thread_id}/encrypt",
         )
-
-    # P15: msg_type dropped from this payload for the same reason as the room route
-    # above — the closed enum checked immediately above supersedes scanning it.
-    # P16: and the content scan is skipped entirely on an encrypted thread, the same
-    # carve-out (and the same reason) encrypted rooms already have — ciphertext is
-    # base64 and *will* false-positive on injection patterns. This is the real price
-    # of E2E, stated plainly in SECURITY.md rather than implied away: the relay
-    # cannot scan what it cannot read. msg_type is unaffected — it sits outside the
-    # envelope and is already restricted to a closed six-value enum.
-    if not thread["encrypted"]:
-        try:
-            await _assert_payload_safe_counted({"content": req.content})
-        except PermissionError as e:
-            raise HTTPException(403, str(e))
 
     if not req.signature:
         raise HTTPException(401, "Signature required")
@@ -7861,10 +7872,27 @@ async def dm_send(thread_id: str, req: DMSendRequest, request: Request):
     # every read. Bounded to what an honest nonce actually looks like, generously
     # (32-64 hex chars covers 128-256 bits of a future longer nonce without
     # forcing a re-tune).
+    # P20-5 (A9): moved ahead of the guardrails scan below, same reasoning as the
+    # room route — a cheap regex shouldn't run after the expensive (paid NIM) scan.
     if not _NONCE_RE.fullmatch(req.nonce):
         raise HTTPException(
             400, "nonce must be 32-64 hex characters (see wire.new_message_nonce())",
         )
+
+    # P15: msg_type dropped from this payload for the same reason as the room route
+    # above — the closed enum checked immediately above supersedes scanning it.
+    # P16: and the content scan is skipped entirely on an encrypted thread, the same
+    # carve-out (and the same reason) encrypted rooms already have — ciphertext is
+    # base64 and *will* false-positive on injection patterns. This is the real price
+    # of E2E, stated plainly in SECURITY.md rather than implied away: the relay
+    # cannot scan what it cannot read. msg_type is unaffected — it sits outside the
+    # envelope and is already restricted to a closed six-value enum.
+    if not thread["encrypted"]:
+        try:
+            await _assert_payload_safe_counted({"content": req.content})
+        except PermissionError as e:
+            raise HTTPException(403, str(e))
+
     # Same N3-8/R7 shape as room messages: bound to thread_id + msg_type, not just
     # content — a content-only signature was valid for delivery into any thread this
     # agent is a participant of, forever (replayable across threads and across
