@@ -842,8 +842,12 @@ def send_room_message(
 
         # P19-8 (M5): checked before any network or crypto work — worst case
         # without this is an encrypted room doing a full N-recipient seal and
-        # *then* eating the relay's 400. See agent_sdk.send_room_message()'s
-        # identical check.
+        # *then* eating the relay's 400. Checked against the plaintext; ciphertext
+        # runs larger, and a room's envelope also grows with member count (one
+        # wrapped key per member), so a borderline size can still fail the
+        # N-recipient seal and then 400 at the relay, which is the authoritative
+        # check either way. See agent_sdk.send_room_message()'s identical check
+        # and its identical caveat (P20-6, A4).
         if len(content.encode("utf-8")) > MAX_CONTENT_BYTES:
             return {
                 "error": f"content is too large — {len(content.encode('utf-8'))} bytes, "
@@ -884,11 +888,17 @@ def send_room_message(
             r = _post(json.dumps(
                 crypto_box.seal(content, _room_recipients(sender_id, room_id), aad),
             ))
-            # P18-5: a 409 means someone joined between the key fetch and this send
-            # — a race the relay reports deliberately so it can be recovered. Retry
-            # once with a fresh member set; a second 409 means membership is churning
-            # faster than a round trip, and looping would be a busy wait, not a fix.
-            if r.status_code == 409:
+            # P18-5: a 409 usually means someone joined between the key fetch and
+            # this send — a race the relay reports deliberately so it can be
+            # recovered. Retry once with a fresh member set; a second 409 means
+            # membership is churning faster than a round trip, and looping would
+            # be a busy wait, not a fix.
+            #
+            # P20-6 (A7): the route also answers 409 for a duplicate nonce, which
+            # this retry cannot fix (it reseals under the same nonce and hits the
+            # identical conflict again) — see agent_sdk.send_room_message()'s
+            # identical check for the full reasoning.
+            if r.status_code == 409 and "duplicate nonce" not in r.text:
                 r = _post(json.dumps(
                     crypto_box.seal(content, _room_recipients(sender_id, room_id), aad),
                 ))
@@ -1476,7 +1486,7 @@ def send_dm(
     """
     sender = from_agent_id or AGENT_ID
     if not sender:
-        return {"error": "from_agent_id required (or set EMPORIA_AGENT_ID)"}
+        return {"error": "from_agent_id required (or set EMPORIA_AGENT_ID)", "success": False}
     from emporia import crypto_box
     from emporia.identity import sign as ed25519_sign
     from emporia.wire import (
@@ -1506,7 +1516,10 @@ def send_dm(
             timeout=10,
         )
         if start_r.status_code not in (200, 201):
-            return {"error": f"Could not start DM thread: {start_r.status_code}", "detail": start_r.text}
+            return {
+                "error": f"Could not start DM thread: {start_r.status_code}",
+                "detail": start_r.text, "success": False,
+            }
         thread_id = start_r.json()["thread_id"]
         # P18-2: one nonce, bound into both the ciphertext's AAD and the signature,
         # so a stored row cannot be replayed as a different message.
@@ -1534,10 +1547,14 @@ def send_dm(
             result = send_r.json()
             result["thread_id"] = thread_id
             result["to_agent_id"] = to_agent_id
-            return result
-        return {"error": f"Relay {send_r.status_code}", "detail": send_r.text}
+            # P20-6 (A5): send_room_message returns {"success": True, **d} on the
+            # same shape — this tool didn't, so a caller checking
+            # result.get("success") on every send tool treated a successful DM
+            # send as a failure.
+            return {"success": True, **result}
+        return {"error": f"Relay {send_r.status_code}", "detail": send_r.text, "success": False}
     except Exception as e:
-        return {"error": str(e)}
+        return {"error": str(e), "success": False}
 
 
 @mcp.tool()
@@ -1549,14 +1566,20 @@ def list_dm_threads(agent_id: str = "") -> dict[str, Any]:
     """
     aid = agent_id or AGENT_ID
     if not aid:
-        return {"error": "agent_id required (or set EMPORIA_AGENT_ID)"}
+        return {"error": "agent_id required (or set EMPORIA_AGENT_ID)", "success": False}
     try:
         r = _bearer_request(
             "get", f"{RELAY_URL}/dm", agent_id=aid, params={"agent_id": aid}, timeout=10,
         )
-        return r.json() if r.status_code == 200 else {"error": f"Relay {r.status_code}", "detail": r.text}
+        # P20-6 (A5): GET /dm's own response is a bare JSON list (unlike GET
+        # /rooms, which is a dict list_rooms above wraps with success=True) --
+        # there is no dict here to add a "success" key to on the happy path,
+        # only on the error dict below.
+        if r.status_code == 200:
+            return r.json()
+        return {"error": f"Relay {r.status_code}", "detail": r.text, "success": False}
     except Exception as e:
-        return {"error": str(e)}
+        return {"error": str(e), "success": False}
 
 
 @mcp.tool()
@@ -1575,7 +1598,7 @@ def get_dm_messages(thread_id: str, agent_id: str = "", limit: int = 50) -> dict
     """
     aid = agent_id or AGENT_ID
     if not aid:
-        return {"error": "agent_id required (or set EMPORIA_AGENT_ID)"}
+        return {"error": "agent_id required (or set EMPORIA_AGENT_ID)", "success": False}
     from emporia import crypto_box
     from emporia.identity import generate_or_load_encryption_keypair, verify_dm_message
     try:
@@ -1584,7 +1607,7 @@ def get_dm_messages(thread_id: str, agent_id: str = "", limit: int = 50) -> dict
             agent_id=aid, params={"agent_id": aid, "limit": limit}, timeout=10,
         )
         if r.status_code != 200:
-            return {"error": f"Relay {r.status_code}", "detail": r.text}
+            return {"error": f"Relay {r.status_code}", "detail": r.text, "success": False}
         body = r.json()
         priv, _ = generate_or_load_encryption_keypair(aid)
         pubkeys: dict[str, str] = {}
@@ -1627,9 +1650,13 @@ def get_dm_messages(thread_id: str, agent_id: str = "", limit: int = 50) -> dict
                 msg["decrypted"] = True
             except crypto_box.DecryptionError:
                 pass
+        # P20-6 (A5): get_room_messages carries a `success` key (P19-8, L3); this
+        # sibling tool didn't, so a caller checking result.get("success") on every
+        # read tool treated a successful DM read as a failure.
+        body["success"] = True
         return body
     except Exception as e:
-        return {"error": str(e)}
+        return {"error": str(e), "success": False}
 
 
 # ============================================================================

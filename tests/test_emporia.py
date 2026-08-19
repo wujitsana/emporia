@@ -18439,3 +18439,110 @@ def test_dm_message_nonce_shape_check_runs_before_the_guardrails_scan(client):
         )
     assert r.status_code == 400 and "nonce" in r.text, r.text
     assert not spy.called, "a malformed nonce must reject before the paid scan runs"
+
+
+# ============================================================================
+# P20-6: MCP DM return-shape parity with the room tools (A5), 409-retry no
+# longer blind to *which* 409 it got (A7), and the room pre-send size check's
+# caveat stated honestly (A4)
+# ============================================================================
+
+def test_mcp_dm_tools_carry_success_key_like_their_room_siblings(prod_client):
+    """A5: get_room_messages/send_room_message/list_rooms all carry a `success`
+    key; get_dm_messages, send_dm and list_dm_threads's error path did not, so a
+    caller doing `if not result.get("success")` treated every successful DM read
+    or send as a failure."""
+    from emporia import mcp_server
+
+    adapter = _ASGIHttpxAdapter(prod_client, mcp_server.RELAY_URL)
+    with patch.object(mcp_server, "httpx", adapter):
+        mcp_server.register_agent("p20_success_a")
+        mcp_server.register_agent("p20_success_b")
+
+        sent = mcp_server.send_dm("p20_success_b", "hi", from_agent_id="p20_success_a")
+        assert sent.get("success") is True, sent
+
+        read = mcp_server.get_dm_messages(sent["thread_id"], agent_id="p20_success_b")
+        assert read.get("success") is True, read
+
+        # Error path: a bogus thread_id still returns success: False, not a
+        # bare error dict indistinguishable from a successful-but-empty read.
+        bad = mcp_server.get_dm_messages("dm_does_not_exist", agent_id="p20_success_b")
+        assert bad.get("success") is False, bad
+
+        # An unregistered recipient fails at /dm/start with success: False --
+        # not from_agent_id="" for this, which falls back to the module's
+        # configured AGENT_ID (env-dependent, so order-fragile across the suite).
+        bad_send = mcp_server.send_dm("p20_does_not_exist", "hi", from_agent_id="p20_success_a")
+        assert bad_send.get("success") is False, bad_send
+
+
+def test_room_message_409_retry_skips_a_duplicate_nonce_conflict(prod_client):
+    """A7: the room route answers 409 both for a membership race
+    (MissingRecipients, recoverable by re-fetching keys and re-sealing) and for
+    a duplicate nonce (idx_room_messages_nonce's UNIQUE constraint — resealing
+    under the same nonce hits the identical conflict again, guaranteed). Both
+    clients used to retry on any 409 blindly. Forces a real duplicate-nonce 409
+    by pinning new_message_nonce() to a fixed value across two sends, then
+    counts how many times the room's encryption-key bundle is fetched during
+    the second send: once (no retry) if the fix holds, twice if it doesn't."""
+    from emporia import mcp_server
+
+    adapter = _ASGIHttpxAdapter(prod_client, mcp_server.RELAY_URL)
+    with patch.object(mcp_server, "httpx", adapter):
+        mcp_server.register_agent("p20_dupe_a")
+        room = mcp_server.create_room("p20 dupe room", "p20_dupe_a", encrypted=True)
+        room_id = room["room"]["room_id"]
+
+    fixed_nonce = "b" * 32
+    with patch.object(mcp_server, "httpx", adapter), \
+         patch("emporia.wire.new_message_nonce", return_value=fixed_nonce):
+        first = mcp_server.send_room_message(room_id, "p20_dupe_a", "first")
+        assert first.get("success") is True, first
+
+        with patch(
+            "emporia.mcp_server._room_recipients",
+            wraps=mcp_server._room_recipients,
+        ) as spy:
+            second = mcp_server.send_room_message(room_id, "p20_dupe_a", "second, same nonce")
+
+    assert second.get("success") is not True, second
+    assert "duplicate nonce" in str(second.get("detail", "")), second
+    assert spy.call_count == 1, (
+        "a duplicate-nonce 409 must not be retried -- it reseals under the same "
+        f"nonce and is guaranteed to fail again (called {spy.call_count}x)"
+    )
+
+
+def test_sdk_room_message_409_retry_skips_a_duplicate_nonce_conflict():
+    """A7, the SDK's independent copy of the same fix (agent_sdk.py and
+    mcp_server.py don't share this code path)."""
+    import asyncio
+
+    import httpx
+
+    async def scenario():
+        a = _sdk_wired("p20_sdk_dupe_a")
+        try:
+            await a.register()
+            room = await a.create_room("p20 sdk dupe room", encrypted=True)
+            room_id = room["room_id"]
+            with patch("emporia.wire.new_message_nonce", return_value="c" * 32):
+                first = await a.send_room_message(room_id, "first")
+                assert first["content"] or first.get("message_id"), first
+                with patch.object(
+                    a, "_room_recipients", wraps=a._room_recipients,
+                ) as spy:
+                    with pytest.raises(httpx.HTTPStatusError) as exc_info:
+                        await a.send_room_message(room_id, "second, same nonce")
+            return spy.call_count, exc_info.value.response
+        finally:
+            await a.__aexit__()
+
+    call_count, resp = asyncio.run(scenario())
+    assert resp.status_code == 409
+    assert "duplicate nonce" in resp.text, resp.text
+    assert call_count == 1, (
+        "a duplicate-nonce 409 must not be retried -- it reseals under the same "
+        f"nonce and is guaranteed to fail again (called {call_count}x)"
+    )

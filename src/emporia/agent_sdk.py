@@ -937,7 +937,13 @@ class EmporiaAgent:
 
         # P19-8 (M5): checked before any network or crypto work — worst case
         # without this is an encrypted room doing a full N-recipient seal and
-        # *then* eating the relay's 400. See send_dm()'s identical check.
+        # *then* eating the relay's 400. Checked against the plaintext, so this
+        # catches the obviously-oversized case; ciphertext runs larger than
+        # plaintext — worse here than in a DM, since a room's envelope also grows
+        # with member count (one wrapped key per member) — so a borderline size
+        # can still fail the N-recipient seal and then 400 at the relay, which
+        # is the authoritative check either way. See send_dm()'s identical check
+        # and its identical caveat.
         if len(content.encode("utf-8")) > MAX_CONTENT_BYTES:
             raise ValueError(
                 f"content is too large — {len(content.encode('utf-8'))} bytes, "
@@ -971,12 +977,20 @@ class EmporiaAgent:
         resp = await _post(json.dumps(
             crypto_box.seal(content, await self._room_recipients(room_id), aad),
         ))
-        # P18-5: a 409 here means someone joined between the key fetch and this
-        # send — a race, not a bad request, and the relay says so deliberately so
-        # it can be recovered rather than surfaced. Re-fetch the member set and
-        # try once. Exactly once: a second 409 means membership is churning faster
-        # than a round trip, and retrying forever would be a busy loop, not a fix.
-        if resp.status_code == 409:
+        # P18-5: a 409 here usually means someone joined between the key fetch
+        # and this send — a race, not a bad request, and the relay says so
+        # deliberately so it can be recovered rather than surfaced. Re-fetch the
+        # member set and try once. Exactly once: a second 409 means membership is
+        # churning faster than a round trip, and retrying forever would be a busy
+        # loop, not a fix.
+        #
+        # P20-6 (A7): the room route also answers 409 for a duplicate nonce
+        # (idx_room_messages_nonce's UNIQUE constraint) — a *different* failure
+        # this retry cannot fix, since it reseals under the same nonce and is
+        # guaranteed to hit the identical conflict again. The two are
+        # distinguishable by the relay's own error text; skip the retry for the
+        # one it can't help.
+        if resp.status_code == 409 and "duplicate nonce" not in resp.text:
             resp = await _post(json.dumps(
                 crypto_box.seal(content, await self._room_recipients(room_id), aad),
             ))
