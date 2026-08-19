@@ -1424,6 +1424,83 @@ with an ACCEPT system message stored in plaintext, confirmed against the row; a 
   `/messages`' `type` field stays a deliberately open agent-to-agent protocol discriminator, not a
   closed enum.
 
+## Shipped post-hackathon (P20 pass — audited P19, and closed a live regression it shipped)
+
+P19 audited P18 and shipped clean: full green suite, clean lint, 9/9 live drills. It also shipped a
+regression of its own, in a file it edited, that every one of those checks was structurally
+incapable of catching — found by direct reading before any review agent reported, then confirmed
+independently twice more. Two review agents covered the rest of the diff (relay/crypto; clients and
+dashboard); a third, covering the new tests and this file's own P19 claims, died on a session-limit
+error mid-run and was re-covered by hand rather than left unaudited.
+
+**The headline.** P19-1 bumped `crypto_box.ENVELOPE_VERSION` from `1` to `2`. The dashboard's
+`looksLikeEncryptedEnvelope()` — the function deciding whether to render a 🔒 placeholder or the raw
+message body — still tested `parsed?.v === 1`. Every envelope written after P19 therefore reported
+"not encrypted," and three transcript surfaces (`DMsView`, `MessagesView`, `RoomsView`) rendered raw
+ciphertext JSON at a human as if it were chat text. This is a verbatim regression of **P17-4** ("show
+the lock, not the envelope JSON") — a defect this file records as fixed — reintroduced by the very
+commit that bumped the version, in the one dashboard file that pass touched. `git log` shows exactly
+one commit touched `dashboard/src/api.ts` in the whole P19 diff, and it edited a docstring fifteen
+lines below the stale check without noticing it.
+
+**Why nothing caught it, which is the more important finding.** `ENVELOPE_VERSION` is a protocol
+constant mirrored by hand across a language boundary — a Python constant and a bare TypeScript
+literal — with nothing pinning the two together. `dashboard/` has no test runner at all, and no
+Python test read a dashboard file. This is the same **hand-copied-literal-that-silently-diverges**
+class this file has recorded chasing repeatedly in Python (rationale strings, `msg_type` defaults,
+…) — never before across the TypeScript boundary, which is exactly where it broke.
+
+| Finding | Severity | Fix |
+|---|---|---|
+| **The dashboard's envelope-version check silently diverged from `crypto_box.ENVELOPE_VERSION`, rendering every post-P19 encrypted message as raw ciphertext JSON.** Described above. | High | Made the check version-*tolerant* (`v >= 1`) instead of re-hardcoding the new number — the dashboard never decrypts either version, so any recognizable envelope shape should show the lock. A new test greps the compiled check for the exact `.v === <N>` shape that caused this, so the class can't recur silently. |
+| **Nothing pins a Python protocol constant to its TypeScript mirror — the root cause above, not just this instance.** | High | A Python test reads `dashboard/src/api.ts` as text and asserts its envelope-version check doesn't regress to a hardcoded equality. Cheapest thing that would have caught the regression; closes the class the way each earlier hand-copied-literal fix did in Python, extended across the TS boundary for the first time. |
+| **The version bump was loud on the write path but silent on read.** A pre-P19 `v:1` row surviving in a still-encrypted thread: the read-path gate (`looks_like_envelope()`, version-strict) rejected it, so the reader fell straight through to `(encrypted: False, decrypted: False)` — the documented *plaintext* state (P17-3) — instead of `(True, False)`, ciphertext that failed to open. `open_sealed()` already raised `DecryptionError("unsupported envelope version...")` for exactly this case, and every reader already caught it; the only defect was the gate rejecting the row before that code ever ran. Also meant this file's own "a v1 envelope is refused" live-verified claim (P19) was true of the primitive and **false of both clients** — P19's own test called `open_sealed()` directly, never the real read path. | High | A new version-*tolerant* gate, `looks_like_any_envelope()`, used only on the read path (the write path keeps the strict check — a fresh wrong-version envelope is rightly a 400, not silently accepted). Zero new fields; reuses the existing, already-tested `(True, False)` state. New tests drive the real SDK and MCP read paths, not the primitive. |
+| **P19-7 made CORS outermost so 413/429 short-circuits would carry CORS headers — and, unforeseen, routed every CORS preflight around rate limiting and the size check entirely.** `CORSMiddleware` answers a genuine preflight (`OPTIONS` + `Access-Control-Request-Method`) itself and never calls the wrapped app, so both inner middlewares — and their counters — were skipped for every preflight: unauthenticated, unlimited, uncounted. | High | A third middleware, `preflight_guard`, registered outside CORS so it sees a preflight before `CORSMiddleware` can short-circuit it, applying the same two checks (`_check_rate_limit`/`_check_request_size`, pulled out of the two existing middlewares) by hand. Everything that isn't a preflight is unaffected. |
+| **`_require_content_within_limit` coverage was still incomplete on the very routes P19-7 touched.** Unbounded: listing title and metadata, event title, agora post title/flair, and `SubmitActionRequest.payload` (the identical field on `SendMessageRequest` was bounded) — the last of which also closes `DisputeDeliveryRequest.reason`, which flows in as `payload={"reason": ...}`. | Medium | Bounded all five. |
+| **The cheap nonce-shape regex ran *after* the paid guardrails scan on both message routes** — the same ordering waste P15 hoisted the `msg_type` enum check to avoid paying for. | Low | Moved the whole signature/nonce-presence/nonce-shape block ahead of the scan on both routes, consistent with P19-7's own "reject cheap failures before expensive ones" ordering. Two pre-existing tests assumed the old order (an unsigned, unnonced malicious request reaching the scan before any auth check) and are updated to authenticate properly — that is what they actually meant to exercise. |
+| **MCP's DM tools didn't carry the `success` key their room-tool siblings do (P19-8, L3, closed only for rooms).** `get_room_messages`/`send_room_message`/`list_rooms` all do; `get_dm_messages`, `send_dm`'s error paths, and `send_dm`'s own success path didn't — a caller checking `result.get("success")` on every send/read tool treated a successful DM send or read as a failure. | Low | Added consistently. `list_dm_threads`'s success path is the one deliberate exception: `GET /dm` returns a bare list (unlike `GET /rooms`, a dict), so there's no dict to add the key to on that path — only its error path gained one. |
+| **The room route's 409 means two different things, and both clients retried either blindly.** `MissingRecipients` (a membership race — recoverable by re-fetching keys and resealing) and a duplicate nonce (`idx_room_messages_nonce`'s `UNIQUE` constraint — *not* recoverable by a retry that reseals under the identical nonce and is guaranteed to hit the same conflict again). Latent, not exploitable: the nonce reuse itself is safe (the coverage check strictly precedes the only `INSERT`), just wasteful — one guaranteed-doomed extra N-recipient seal and round trip. | Low | The two are already distinguishable by the relay's own error text (`"duplicate nonce"` vs `"wrapped key for"`); both clients check before retrying. |
+| **Both room-route pre-send size check comments stated only half the caveat `send_dm`'s already states honestly.** The check is against plaintext while the relay's is against ciphertext, and a room's envelope also grows with member count — so a borderline size can still fail the full N-recipient seal and 400 at the relay regardless of the client-side check passing. | Cosmetic | Comment-only; the check itself stays where it is (P19-8, M5) — moving it to measure post-seal size would mean fetching every member's key and sealing before an early-reject check exists to avoid exactly that for an obviously-oversized message. |
+| **Doc drift:** `wire.py`'s `room_message_envelope()` docstring still said `agent_sdk.send_room_message()` lacked a `parent_message_id` parameter — P19-8 added it. | Cosmetic | Corrected. |
+
+**Investigated and explicitly not applied**, recorded so they aren't re-litigated by a future pass:
+
+- **DM route's `MissingRecipients` → 400, room route's → 409 — considered making this symmetric with rooms' 409, and didn't.** A DM thread's recipient set is exactly `{agent_a, agent_b}`, fixed at creation with no join path — there is no membership race to recover from the way an open-registration room has one. A missing-recipient failure on a DM is always the same client bug the room route itself names as the *other* case it must tell apart from a race: wrapped only for self. `test_encrypted_message_must_be_readable_by_every_participant` already pinned 400 as correct; the asymmetry is intentional, not an oversight.
+- **`json.dumps(req.payload)` as a new `RecursionError` site — checked live, not reproducible.** A deeply nested `payload` field never reaches that line: FastAPI's own request-body JSON decode (`json.loads`, run before any route code) raises the same `RecursionError` first, and FastAPI already converts it to a well-formed `400 "There was an error parsing the body"` rather than an unhandled 500. Confirmed against a running relay with a 200,000-element nested `payload`.
+
+**Verified live** (adversarial drills on an isolated scratch relay, same discipline P17–P19 established;
+key checksum under `~/.hermes/keys/` identical before/after; scratch process killed strictly by PID;
+the long-lived `mcp_server.py` process never touched): a `v:1` envelope written directly into an
+encrypted DM thread's row is served back unmodified by the relay (the relay doesn't rewrite stored
+rows — the fix is entirely client-side, proven at the SDK/MCP level by the two new read-path tests,
+not by this drill); a normal CORS preflight is still answered with the correct header; an oversized
+listing title now 400s naming the field; a malformed nonce on an otherwise-injected room message
+gets the nonce error, not a guardrails 403 (i.e., the scan never ran); a real duplicate-nonce 409
+carries the exact `"duplicate nonce"` text both clients now key their retry-skip decision off of.
+The preflight rate-limit/size-check enforcement itself (A2's other half) couldn't be drilled from
+localhost — `127.0.0.1` is deliberately rate-limit-exempt as the co-located deployment's own caller
+— so that claim rests on the pytest-level test with a spoofed non-exempt client IP, confirmed
+fail-then-pass via `git stash` like every other fix this pass.
+
+### Still open — carried forward from P19, unchanged by this pass
+
+- **Chain verification, key rotation, no member cap on encrypted rooms, `replayed`/`decrypted`/`verified`
+  having no consumer anywhere (not just `replayed`, as P19 understated it), no forward secrecy, TOFU,
+  unprotected metadata, `/messages`' open `type` field** — all as P19 recorded them; nothing in this
+  pass changed the tradeoffs.
+- **`replayed`'s own drill claim doesn't generalize, found auditing it.** P19's "Verified live" section
+  states a replayed row is still flagged with the index dropped — true for that single-page drill, but
+  the flag is computed per API page (`limit`, added by P19-8 itself): a duplicate arriving many pages
+  later than the original is invisible at the default page size, and undetectable at all once `limit`
+  is small enough that the original has already scrolled off. False positives are structurally
+  impossible, so the failure direction is always a miss, never a false alarm — and it already has no
+  consumer regardless (see above).
+- **The four room/DM × SDK/MCP read loops are still fully duplicated, and this pass added a fifth
+  divergence to track (the stale-version gate) rather than removing any.** A shared response-side
+  module is the recommended opener for the next feature pass — `wire.py` already did this for request
+  *construction* (P6/P10); the response side never was unified, and P19's own two findings in this
+  area were both instances of the same duplication tax.
+
 ## Threat model notes (by design, not gaps)
 
 - **Ed25519 = auth; the relay never holds private keys.** Keys live at `~/.hermes/keys/*.priv`,

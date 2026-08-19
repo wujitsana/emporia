@@ -203,10 +203,11 @@ def room_message_envelope(
     *,
     parent_message_id: str | None = None,
 ) -> dict[str, Any]:
-    """The actual `POST /rooms/{id}/message` body. `parent_message_id` is
-    accepted here even though agent_sdk.py's `send_room_message()` doesn't
-    have that parameter yet (only mcp_server.py's does) — so adding it to
-    the SDK later doesn't require touching this function.
+    """The actual `POST /rooms/{id}/message` body. `parent_message_id` is a
+    keyword-only optional param here — P19-8 (A12/P20-7) added the matching
+    parameter to agent_sdk.py's `send_room_message()`, closing the gap this
+    docstring used to describe; kept keyword-only/optional so a future third
+    caller without the concept of a parent message doesn't have to pass it.
 
     P19-5: `nonce` is positional and required, unlike DM's
     `dm_thread_message_envelope()` (keyword, defaulted `""`) — that default
