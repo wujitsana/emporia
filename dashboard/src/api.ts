@@ -323,13 +323,18 @@ export interface DMMessage {
   signature?: string | null;
 }
 
-/** P17-4: does this content look like a crypto_box v1 envelope?
+/** P17-4/P20-1: does this content look like a crypto_box envelope?
  *
  *  Mirrors `crypto_box.looks_like_envelope()` — deliberately a shape check and
  *  nothing more. **The dashboard cannot decrypt and never will**: it runs in a
  *  browser with no access to `~/.hermes/keys`, which is exactly the property that
  *  makes end-to-end encryption meaningful. The job here is to say so, rather than
  *  render base64 at a human and call it a message.
+ *
+ *  P20-1: the version check is deliberately `>= 1`, not pinned to the current
+ *  `crypto_box.ENVELOPE_VERSION` (P20-2 pins that value itself in a test) — the
+ *  dashboard doesn't decrypt either version, so any recognizable envelope shape,
+ *  past or future, should still show the lock rather than raw JSON.
  *
  *  Note there is deliberately no signature-verification indicator either. The
  *  relay does not send a `verified` flag and could not usefully do so — a relay
@@ -341,7 +346,8 @@ export function looksLikeEncryptedEnvelope(content: string | null | undefined): 
   if (!content || content[0] !== "{") return false;
   try {
     const parsed = JSON.parse(content);
-    return parsed?.v === 1 && typeof parsed?.alg === "string" && !!parsed?.keys;
+    return typeof parsed?.v === "number" && parsed.v >= 1 &&
+      typeof parsed?.alg === "string" && !!parsed?.keys;
   } catch {
     return false;
   }
@@ -400,13 +406,6 @@ export const api = {
   // viewer/member scoping now comes from the authenticated caller server-side
   // (_dashboard_agent_id), not a client-supplied id — see relay N1-6.
   rooms: () => get<{ rooms: Room[]; count: number }>("/rooms", { agentScoped: true }),
-  // Sender is the authenticated caller (agentHeaders(), sent by post() on every
-  // call) — the relay no longer accepts a client-claimed sender_id (N2-4). Unused —
-  // the dashboard has no agent private key to produce the now-mandatory Ed25519
-  // signature (N2-5), so this call will 401 if ever wired up; sending as an agent
-  // is an agent_sdk.py/mcp_server.py concern, not the dashboard's.
-  sendRoomMessage: (room_id: string, content: string, msg_type = "chat") =>
-    post<RoomMessage>(`/rooms/${room_id}/message`, { content, msg_type }),
   // N3-3: GET /agents now requires an authenticated caller (it was the unauthenticated
   // identity-enumeration primitive N2's review named but never closed).
   agents: (search?: string) =>
@@ -563,10 +562,6 @@ export const api = {
   // DMs — sender is the authenticated caller (agentHeaders()), not a body field (N2-4).
   dmStart: (to_agent: string) =>
     post<{ thread_id: string; created: boolean }>("/dm/start", { to_agent }),
-  dmSend: (thread_id: string, content: string, msg_type = "chat") =>
-    post<{ message_id: string; thread_id: string; created_at: string }>(
-      `/dm/${thread_id}/send`, { content, msg_type }
-    ),
   // agent_id must match the authenticated caller server-side now — see relay N1-6.
   dmThreads: (agent_id: string) =>
     get<DMThread[]>(`/dm?agent_id=${encodeURIComponent(agent_id)}`, { agentScoped: true }),

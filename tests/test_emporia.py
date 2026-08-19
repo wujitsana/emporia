@@ -18110,3 +18110,60 @@ def test_mcp_encrypted_room_round_trip(prod_client):
             "SELECT content FROM room_messages WHERE room_id=?", (rid,)
         ).fetchone()["content"]
     assert secret not in stored
+
+
+# ============================================================================
+# P20-2: pin the cross-language protocol contract — the fix for the class,
+# not just the instance, behind the P19 dashboard regression
+# ============================================================================
+
+def _dashboard_api_ts() -> str:
+    return (Path(__file__).parent.parent / "dashboard" / "src" / "api.ts").read_text()
+
+
+def test_dashboard_envelope_check_does_not_hardcode_a_stale_version():
+    """P19-1 bumped crypto_box.ENVELOPE_VERSION 1 -> 2; the dashboard's
+    looksLikeEncryptedEnvelope() still tested `parsed?.v === 1`, so every
+    post-P19 envelope silently rendered as raw ciphertext JSON in the DM,
+    Messages and Rooms transcripts instead of the lock placeholder — a live
+    regression P20-1 fixed. Nothing pinned the two together; this is the fix
+    for the class, not the instance: a strict `v === <N>` equality against a
+    hardcoded number is exactly the shape that goes stale on the next bump, so
+    assert the check doesn't regress to one, and that whatever floor it uses
+    is satisfied by the current protocol version."""
+    import re
+
+    from emporia.crypto_box import ENVELOPE_VERSION
+
+    src = _dashboard_api_ts()
+    m = re.search(
+        r"function looksLikeEncryptedEnvelope\([^)]*\)[^{]*\{(.*?)\n\}",
+        src, re.DOTALL,
+    )
+    assert m, "looksLikeEncryptedEnvelope() not found in dashboard/src/api.ts"
+    body = m.group(1)
+
+    assert not re.search(r"\.v\s*===\s*\d", body), (
+        "looksLikeEncryptedEnvelope() hardcodes a strict version equality -- "
+        "this is the exact pattern that silently diverged from "
+        "crypto_box.ENVELOPE_VERSION and shipped a live regression (P19/P20-1)"
+    )
+    floor_match = re.search(r"parsed\.v\s*>=\s*(\d+)", body)
+    assert floor_match, "expected a `parsed.v >= <floor>` version-floor check"
+    assert int(floor_match.group(1)) <= ENVELOPE_VERSION, (
+        "the dashboard's version floor is ahead of crypto_box.ENVELOPE_VERSION -- "
+        "it would reject the relay's own current envelopes"
+    )
+
+
+def test_dashboard_has_no_hardcoded_default_msg_type():
+    """D4: sendRoomMessage/dmSend hard-coded msg_type="chat", a fourth copy of
+    wire.DEFAULT_MSG_TYPE with nothing pinning it to the source of truth, and
+    both were dead code (no call sites anywhere in dashboard/src) — P20-1
+    deleted them outright rather than patch, since the dashboard has no agent
+    private key and can never actually send a signed message. Guards against
+    either reappearing with the same hand-copied default."""
+    src = _dashboard_api_ts()
+    assert 'msg_type = "chat"' not in src
+    assert "sendRoomMessage" not in src
+    assert "dmSend:" not in src
