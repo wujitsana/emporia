@@ -335,12 +335,49 @@ def validate_envelope_for(content: str, required_recipients: set[str]) -> None:
 
 
 def looks_like_envelope(content: str) -> bool:
-    """True if `content` is a well-formed v1 envelope. Used in the other
-    direction from `validate_envelope_for()`: an envelope posted to a *plaintext*
-    thread is a client bug worth a clear 400, not an opaque blob to store as if
-    it were prose."""
+    """True if `content` is a well-formed envelope of the *current* protocol
+    version. Used in the write direction from `validate_envelope_for()`: an
+    envelope posted to a *plaintext* thread is a client bug worth a clear 400,
+    not an opaque blob to store as if it were prose. Also used to reject an
+    envelope of the wrong version at write time — a fresh post is a client bug,
+    not something to accept silently.
+
+    Deliberately version-strict: `looks_like_any_envelope()` below is the
+    version-tolerant sibling for the read path, where a stale-version envelope
+    is old ciphertext, not a bug to reject.
+    """
     try:
         parse_envelope(content)
     except ValueError:
         return False
     return True
+
+
+def looks_like_any_envelope(content: str) -> bool:
+    """True if `content` has the general shape of a crypto_box envelope,
+    regardless of protocol version.
+
+    P20-3: readers used `looks_like_envelope()` (version-strict) to decide
+    `encrypted`, so a stored envelope from a since-retired protocol version
+    failed that check and fell straight through as `(encrypted=False,
+    decrypted=False)` — the documented *plaintext* state (P17-3) — instead of
+    `(True, False)`, ciphertext that failed to open. Reading is not the place
+    to reject an old version outright: `open_sealed()` already raises
+    `DecryptionError("unsupported envelope version or algorithm")` for exactly
+    this shape, which every reader already catches and folds into the
+    (True, False) state. This function is the read-path gate that lets a
+    stale-version envelope reach that existing, already-tested path instead of
+    being misreported as plaintext.
+    """
+    try:
+        env = json.loads(content)
+    except (json.JSONDecodeError, TypeError, RecursionError):
+        return False
+    if not isinstance(env, dict):
+        return False
+    if not isinstance(env.get("v"), int) or not isinstance(env.get("alg"), str):
+        return False
+    for field in ("epk", "n", "ct"):
+        if not isinstance(env.get(field), str) or not env[field]:
+            return False
+    return isinstance(env.get("keys"), dict) and bool(env["keys"])

@@ -18167,3 +18167,100 @@ def test_dashboard_has_no_hardcoded_default_msg_type():
     assert 'msg_type = "chat"' not in src
     assert "sendRoomMessage" not in src
     assert "dmSend:" not in src
+
+
+# ============================================================================
+# P20-3: a stale-version envelope must fail loud on read, not report itself
+# as plaintext — the read-path half of the P19-1 version bump
+# ============================================================================
+
+def test_sdk_dm_read_reports_a_stale_version_envelope_as_ciphertext_not_plaintext():
+    """A pre-P19 v1 row surviving in a still-encrypted thread used to gate on
+    looks_like_envelope() (version-strict), fail that check, and fall straight
+    through to the (encrypted=False, decrypted=False) branch — the documented
+    *plaintext* state (P17-3) — instead of (True, False), ciphertext that
+    failed to open. Defeated the three-state contract silently: a caller had no
+    way to tell "never encrypted" from "old ciphertext I can't read." Can only
+    be reproduced by writing the stale row directly — the live write path
+    already refuses a v1 envelope outright (validate_envelope_for)."""
+    import asyncio
+
+    from emporia.relay_server import DB_LOCK, get_db
+
+    async def setup():
+        a, b = _sdk_wired("p20_stale_a"), _sdk_wired("p20_stale_b")
+        try:
+            await a.register()
+            await b.register()
+            tid = (await a.start_dm("p20_stale_b", encrypted=True))["thread_id"]
+            await a.send_dm(tid, "will be downgraded to v1")
+            return tid
+        finally:
+            await a.__aexit__()
+            await b.__aexit__()
+
+    tid = asyncio.run(setup())
+
+    with DB_LOCK, get_db() as conn:
+        row = conn.execute(
+            "SELECT message_id, content FROM dm_messages WHERE thread_id=? "
+            "ORDER BY created_at DESC LIMIT 1", (tid,),
+        ).fetchone()
+        env = json.loads(row["content"])
+        env["v"] = 1  # simulate a message written before the P19-1 bump
+        conn.execute(
+            "UPDATE dm_messages SET content=? WHERE message_id=?",
+            (json.dumps(env), row["message_id"]),
+        )
+
+    async def read():
+        b = _sdk_wired("p20_stale_b")
+        try:
+            await b.register()
+            return await b.get_dm_messages(tid)
+        finally:
+            await b.__aexit__()
+
+    msgs = asyncio.run(read())["messages"]
+    stale = [m for m in msgs if m["content"] == json.dumps(env)]
+    assert len(stale) == 1, msgs
+    assert stale[0]["encrypted"] is True, "a v1 envelope is still an envelope"
+    assert stale[0]["decrypted"] is False, "wrong version must not silently decrypt"
+
+
+def test_mcp_room_read_reports_a_stale_version_envelope_as_ciphertext_not_plaintext(prod_client):
+    """Same defect, MCP's room reader this time — the fourth of the four
+    near-identical read loops A1 found broken. Uses the direct ASGI adapter
+    pattern the other live MCP round-trip tests use (prod_client)."""
+    from emporia import mcp_server
+    from emporia.relay_server import DB_LOCK, get_db
+
+    adapter = _ASGIHttpxAdapter(prod_client, mcp_server.RELAY_URL)
+    with patch.object(mcp_server, "httpx", adapter):
+        mcp_server.register_agent("p20_stale_room_a")
+        mcp_server.register_agent("p20_stale_room_b")
+        room = mcp_server.create_room("p20 stale room", "p20_stale_room_a", encrypted=True)
+        rid = room["room"]["room_id"]
+        mcp_server.join_room(rid, "p20_stale_room_b")
+        sent = mcp_server.send_room_message(rid, "p20_stale_room_a", "will be downgraded")
+        assert "error" not in sent, sent
+
+        with DB_LOCK, get_db() as conn:
+            row = conn.execute(
+                "SELECT message_id, content FROM room_messages WHERE room_id=? "
+                "ORDER BY created_at DESC LIMIT 1", (rid,),
+            ).fetchone()
+            env = json.loads(row["content"])
+            env["v"] = 1
+            conn.execute(
+                "UPDATE room_messages SET content=? WHERE message_id=?",
+                (json.dumps(env), row["message_id"]),
+            )
+
+        read = mcp_server.get_room_messages(rid, agent_id="p20_stale_room_b")
+
+    msgs = read["messages"]
+    stale = [m for m in msgs if m["content"] == json.dumps(env)]
+    assert len(stale) == 1, msgs
+    assert stale[0]["encrypted"] is True, "a v1 envelope is still an envelope"
+    assert stale[0]["decrypted"] is False, "wrong version must not silently decrypt"

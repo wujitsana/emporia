@@ -650,7 +650,10 @@ class EmporiaAgent:
             # surface a problem. (False, False) = plaintext, (True, True) = opened,
             # (True, False) = ciphertext that failed.
             msg["decrypted"] = False
-            msg["encrypted"] = crypto_box.looks_like_envelope(msg.get("content", ""))
+            # P20-3: version-tolerant on purpose — a stale-version envelope must
+            # reach open_sealed() below and land in (True, False), not be
+            # misreported as plaintext. See looks_like_any_envelope()'s docstring.
+            msg["encrypted"] = crypto_box.looks_like_any_envelope(msg.get("content", ""))
             if not msg["encrypted"]:
                 continue
             try:
@@ -893,7 +896,10 @@ class EmporiaAgent:
                 pubkeys[sender] = await self._sender_public_key(sender)
             msg["verified"] = verify_room_message(room_id, msg, pubkeys[sender])
             msg["decrypted"] = False
-            msg["encrypted"] = crypto_box.looks_like_envelope(msg.get("content", ""))
+            # P20-3: version-tolerant on purpose — a stale-version envelope must
+            # reach open_sealed() below and land in (True, False), not be
+            # misreported as plaintext. See looks_like_any_envelope()'s docstring.
+            msg["encrypted"] = crypto_box.looks_like_any_envelope(msg.get("content", ""))
             if not msg["encrypted"]:
                 continue
             try:
