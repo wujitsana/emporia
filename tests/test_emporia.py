@@ -18247,6 +18247,10 @@ def test_sdk_dm_read_reports_a_stale_version_envelope_as_ciphertext_not_plaintex
     assert len(stale) == 1, msgs
     assert stale[0]["encrypted"] is True, "a v1 envelope is still an envelope"
     assert stale[0]["decrypted"] is False, "wrong version must not silently decrypt"
+    # P21-4 (B6): the DecryptionError reason, previously discarded at all four
+    # read sites — (encrypted, decrypted)=(True, False) alone can't tell a stale
+    # version apart from tampered ciphertext or a wrong key.
+    assert stale[0]["decrypt_error"], "the failure reason must not be discarded"
 
 
 def test_mcp_room_read_reports_a_stale_version_envelope_as_ciphertext_not_plaintext(prod_client):
@@ -18285,6 +18289,7 @@ def test_mcp_room_read_reports_a_stale_version_envelope_as_ciphertext_not_plaint
     assert len(stale) == 1, msgs
     assert stale[0]["encrypted"] is True, "a v1 envelope is still an envelope"
     assert stale[0]["decrypted"] is False, "wrong version must not silently decrypt"
+    assert stale[0]["decrypt_error"], "the failure reason must not be discarded"
 
 
 # ============================================================================
@@ -18808,3 +18813,64 @@ def test_dm_message_409_carries_a_structured_code(client):
     second = _send_dm_raw(client, tid, "p21_dmcode_a", "second", nonce=nonce)
     assert second.status_code == 409, second.text
     assert second.json()["detail"]["code"] == ERR_DUPLICATE_NONCE, second.json()
+
+
+# ============================================================================
+# P21-4: the shared response-side read-loop (message_read.annotate_messages),
+# unifying what were four near-identical copies across agent_sdk.py/mcp_server.py
+# ============================================================================
+
+def test_message_read_annotate_messages_shared_core():
+    """Direct unit test of the read-path counterpart to wire.py's shared request
+    construction -- decoupled from both transports (agent_sdk.py, mcp_server.py)
+    that now call it. Covers all three encrypted/decrypted states, replayed-nonce
+    tracking, the verify callback wiring, and decrypt_error (B6, new in this
+    module -- all four original sites discarded the DecryptionError reason)."""
+    from emporia import crypto_box, identity, message_read
+
+    sender_pub = identity.get_encryption_public_key_hex("p21_mr_sender")
+    viewer_priv, _ = identity.generate_or_load_encryption_keypair("p21_mr_viewer")
+    viewer_pub = identity.get_encryption_public_key_hex("p21_mr_viewer")
+
+    good_nonce = "n" * 32
+    good_env = crypto_box.seal(
+        "hello", {"p21_mr_viewer": viewer_pub},
+        crypto_box.message_aad("room", "room_x", "p21_mr_sender", "chat", good_nonce),
+    )
+    # Sealed under one nonce, stored under another -- AAD mismatch, so
+    # open_sealed() must fail and land in (encrypted=True, decrypted=False).
+    bad_env = crypto_box.seal(
+        "will not open", {"p21_mr_viewer": viewer_pub},
+        crypto_box.message_aad("room", "room_x", "p21_mr_sender", "chat", "m" * 32),
+    )
+
+    messages = [
+        {"sender_id": "p21_mr_sender", "content": "plain text", "msg_type": "chat",
+         "nonce": "a" * 32},
+        {"sender_id": "p21_mr_sender", "content": json.dumps(good_env), "msg_type": "chat",
+         "nonce": good_nonce},
+        {"sender_id": "p21_mr_sender", "content": json.dumps(bad_env), "msg_type": "chat",
+         "nonce": "z" * 32},
+        {"sender_id": "p21_mr_sender", "content": "replay", "msg_type": "chat",
+         "nonce": "a" * 32},  # same nonce as the first message
+    ]
+
+    message_read.annotate_messages(
+        messages, kind="room", scope_id="room_x", viewer_agent_id="p21_mr_viewer",
+        private_key=viewer_priv, pubkeys={"p21_mr_sender": sender_pub},
+        verify=lambda msg, pk: True,
+    )
+    plain, decrypted, failed, replay = messages
+
+    assert (plain["encrypted"], plain["decrypted"], plain["replayed"]) == (False, False, False)
+    assert plain["decrypt_error"] is None
+    assert plain["verified"] is True, "verify callback must run for every message"
+
+    assert (decrypted["encrypted"], decrypted["decrypted"]) == (True, True)
+    assert decrypted["content"] == "hello"
+    assert decrypted["decrypt_error"] is None
+
+    assert (failed["encrypted"], failed["decrypted"]) == (True, False)
+    assert failed["decrypt_error"], "the DecryptionError reason must be captured, not discarded"
+
+    assert replay["replayed"] is True, "a nonce repeated on a later message must be flagged"

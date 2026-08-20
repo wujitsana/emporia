@@ -613,7 +613,7 @@ class EmporiaAgent:
         raising — one damaged or foreign message must not make the whole thread
         unreadable, which is what an exception here would mean.
         """
-        from emporia import crypto_box
+        from emporia import message_read
         from emporia.identity import generate_or_load_encryption_keypair, verify_dm_message
 
         resp = await self._bearer_request(
@@ -622,51 +622,18 @@ class EmporiaAgent:
         )
         resp.raise_for_status()
         body = resp.json()
+        messages = body.get("messages", [])
         priv, _ = generate_or_load_encryption_keypair(self.profile_id)
+        # P21-4: the only I/O the old inline loop did — resolved once per distinct
+        # sender before handing off to the shared, pure annotate_messages().
         pubkeys: dict[str, str] = {}
-        # P18-2: the relay's UNIQUE(thread_id, nonce) index stops the easy replay,
-        # but an operator who can write the database can also drop an index. Seeing
-        # the same nonce twice in one thread is the reader's own check, so the hard
-        # path stays visible rather than silent.
-        seen_nonces: set[str] = set()
-        for msg in body.get("messages", []):
-            nonce = msg.get("nonce") or ""
-            msg["replayed"] = bool(nonce) and nonce in seen_nonces
-            if nonce:
-                seen_nonces.add(nonce)
-            # P17-2: verified against the *stored* content, before any decryption —
-            # for an encrypted thread that envelope is what was signed. Verifying
-            # after decrypting would check the signature against plaintext nobody
-            # ever signed. A mismatch marks the message rather than raising, same
-            # policy as a failed decryption below.
-            sender = msg.get("sender_id", "")
-            if sender not in pubkeys:
-                pubkeys[sender] = await self._sender_public_key(sender)
-            msg["verified"] = verify_dm_message(thread_id, msg, pubkeys[sender])
-            # P17-3: `encrypted` beside `decrypted` so the three states are
-            # distinguishable. P16 reported False for both a plaintext message and
-            # one it could not open, collapsing "never encrypted" and "ciphertext I
-            # can't read" into the same answer — exactly when a caller would want to
-            # surface a problem. (False, False) = plaintext, (True, True) = opened,
-            # (True, False) = ciphertext that failed.
-            msg["decrypted"] = False
-            # P20-3: version-tolerant on purpose — a stale-version envelope must
-            # reach open_sealed() below and land in (True, False), not be
-            # misreported as plaintext. See looks_like_any_envelope()'s docstring.
-            msg["encrypted"] = crypto_box.looks_like_any_envelope(msg.get("content", ""))
-            if not msg["encrypted"]:
-                continue
-            try:
-                msg["content"] = crypto_box.open_sealed(
-                    json.loads(msg["content"]), self.agent_id, priv,
-                    crypto_box.message_aad(
-                        "dm", thread_id, msg.get("sender_id", ""), msg.get("msg_type", ""),
-                        msg.get("nonce") or "",
-                    ),
-                )
-                msg["decrypted"] = True
-            except crypto_box.DecryptionError:
-                pass
+        for sender in {m.get("sender_id", "") for m in messages}:
+            pubkeys[sender] = await self._sender_public_key(sender)
+        message_read.annotate_messages(
+            messages, kind="dm", scope_id=thread_id, viewer_agent_id=self.agent_id,
+            private_key=priv, pubkeys=pubkeys,
+            verify=lambda msg, pk: verify_dm_message(thread_id, msg, pk),
+        )
         return body
 
     # ------------------------------------------------------------------ #
@@ -869,7 +836,7 @@ class EmporiaAgent:
         hold plaintext, which is the whole thing being avoided. Those messages come
         back `encrypted: True, decrypted: False` rather than raising.
         """
-        from emporia import crypto_box
+        from emporia import message_read
         from emporia.identity import generate_or_load_encryption_keypair, verify_room_message
 
         resp = await self._bearer_request(
@@ -878,41 +845,16 @@ class EmporiaAgent:
         resp.raise_for_status()
         messages = resp.json().get("messages", [])
         priv, _ = generate_or_load_encryption_keypair(self.profile_id)
-        # P19-5 (H4): the relay's UNIQUE(room_id, nonce) index stops the easy
-        # replay, but an operator who can write the database can also drop an
-        # index — same reasoning as get_dm_messages()'s seen_nonces.
-        seen_nonces: set[str] = set()
+        # P21-4: the only I/O the old inline loop did — resolved once per distinct
+        # sender before handing off to the shared, pure annotate_messages().
         pubkeys: dict[str, str] = {}
-        for msg in messages:
-            nonce = msg.get("nonce") or ""
-            msg["replayed"] = bool(nonce) and nonce in seen_nonces
-            if nonce:
-                seen_nonces.add(nonce)
-            # P17-2's DM reasoning, mirrored: verified against the *stored*
-            # content, before any decryption — for an encrypted room that
-            # envelope is what was signed.
-            sender = msg.get("sender_id", "")
-            if sender not in pubkeys:
-                pubkeys[sender] = await self._sender_public_key(sender)
-            msg["verified"] = verify_room_message(room_id, msg, pubkeys[sender])
-            msg["decrypted"] = False
-            # P20-3: version-tolerant on purpose — a stale-version envelope must
-            # reach open_sealed() below and land in (True, False), not be
-            # misreported as plaintext. See looks_like_any_envelope()'s docstring.
-            msg["encrypted"] = crypto_box.looks_like_any_envelope(msg.get("content", ""))
-            if not msg["encrypted"]:
-                continue
-            try:
-                msg["content"] = crypto_box.open_sealed(
-                    json.loads(msg["content"]), self.agent_id, priv,
-                    crypto_box.message_aad(
-                        "room", room_id, msg.get("sender_id", ""), msg.get("msg_type", ""),
-                        msg.get("nonce") or "",
-                    ),
-                )
-                msg["decrypted"] = True
-            except crypto_box.DecryptionError:
-                pass
+        for sender in {m.get("sender_id", "") for m in messages}:
+            pubkeys[sender] = await self._sender_public_key(sender)
+        message_read.annotate_messages(
+            messages, kind="room", scope_id=room_id, viewer_agent_id=self.agent_id,
+            private_key=priv, pubkeys=pubkeys,
+            verify=lambda msg, pk: verify_room_message(room_id, msg, pk),
+        )
         return messages
 
     async def send_room_message(
