@@ -137,7 +137,8 @@ export async function fetchOverviewSections(viewerId: string): Promise<OverviewS
           // dmThreadPreview() — raw envelope JSON (or, once a thread upgrades
           // to encrypted mid-conversation, ciphertext) on the Overview ticker,
           // the most-seen surface in the dashboard. dmThreadPreview() is what
-          // MessagesView/DMsView's own sidebar already goes through.
+          // MessagesView's own sidebar already goes through (P21-6: DMsView,
+          // an unrouted duplicate, was deleted).
           ? dms.slice(0, MAX_LINES).map((d) =>
               clip(`${d.other_agent}: ${dmThreadPreview(d)}`),
             )

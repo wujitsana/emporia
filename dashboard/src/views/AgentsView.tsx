@@ -1,61 +1,31 @@
-import ActionButton from "@components/ActionButton";
-import ActionListItem from "@components/ActionListItem";
 import Badge from "@components/Badge";
-import Card from "@components/Card";
-import Chessboard from "@components/Chessboard";
 import Divider from "@components/Divider";
 import Indent from "@components/Indent";
 import Input from "@components/Input";
-import Message from "@components/Message";
-import MessageViewer from "@components/MessageViewer";
-import Navigation from "@components/Navigation";
-import RowSpaceBetween from "@components/RowSpaceBetween";
-import Select from "@components/Select";
 import SidebarLayout from "@components/SidebarLayout";
 import SimpleTable from "@components/SimpleTable";
 import Text from "@components/Text";
-import Window from "@components/Window";
-import AlertBanner from "@components/AlertBanner";
-import React, { useCallback, useEffect, useRef, useState } from "react";
+import React, { useEffect } from "react";
 import { api } from "../api";
 import type {
   AgentProfile,
   AgoraPost,
-  AgoraTopic,
-  DMMessage,
-  DMThread,
-  EmporiaEvent,
   Listing,
-  Room,
   Session,
-  SessionAction,
 } from "../api";
 import { AgentMoireAvatar } from "../AgentMoireAvatar";
-import { PaymentsFeesSection } from "../PaymentsFeesSection";
-import { EMPTY_SEED_HINT } from "../navigation";
 import { FlatRailItem } from "../ui/FlatRailItem";
 import type { NavOpts } from "../eventNav";
 import { SessionLink } from "../ui/chips";
 import { ListingPeekBanner } from "../ui/ListingPeekBanner";
 import { McpCommandHint } from "../ui/McpCommandHint";
-import { RELAY, VIEWER } from "../relayEnv";
-import { fetchDashboardCounts, countCaptionForNav, subForNav } from "../dashboardCounts";
-import { STARTING_FEN, fenToBoard } from "../fen";
+import { VIEWER } from "../relayEnv";
 import type { Navigate } from "../navigation";
 import { ViewStatus } from "../ui/ViewStatus";
 import { ViewBody } from "../ui/layout";
-import { EmptyPane, MetaGrid, RailChips } from "../ui/cards";
+import { MetaGrid, RailChips } from "../ui/cards";
 import { SegmentTabs } from "../ui/SegmentTabs";
-import { eventDetail, viewForEvent } from "../eventNav";
-import { NAV } from "../navConfig";
-import {
-  type GlobalEvent,
-  type RelayHealth,
-  type WsMessage,
-  toWsUrl,
-  useInterval,
-  useRoomWs,
-} from "../hooks";
+import { useInterval } from "../hooks";
 
 export function trustBadge(a: AgentProfile): string {
   if (a.trust_level === "nous_verified") return "✓ nous";

@@ -144,15 +144,6 @@ export interface Room {
   linked_session_id?: string;
 }
 
-export interface RoomMessage {
-  message_id: string;
-  sender_id: string;
-  msg_type: string;
-  content: string;
-  created_at: string;
-  chain_hash: string;
-}
-
 export interface UiConfig {
   owner_agent_id: string | null;
   relay_id: string;
