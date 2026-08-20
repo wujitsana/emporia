@@ -49,6 +49,7 @@ from fastapi.responses import RedirectResponse
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
+from starlette.datastructures import Headers
 from starlette.responses import JSONResponse
 
 
@@ -2493,6 +2494,55 @@ def _require_content_within_limit(content: str, field: str = "content") -> None:
         )
 
 
+class GuardedCORSMiddleware(CORSMiddleware):
+    """CORSMiddleware answers a genuine preflight (OPTIONS + Origin +
+    Access-Control-Request-Method) itself and never calls the wrapped app — see
+    CORSMiddleware.__call__ — so every request-size/rate-limit middleware
+    registered *inside* it (below) never sees a preflight at all.
+
+    P20-4 fixed that by adding a separate `preflight_guard` middleware registered
+    *outside* CORS, so it would see the preflight before CORSMiddleware could
+    short-circuit it. That worked for catching the preflight, but its own 413/429
+    denial then sat outside CORSMiddleware too — exactly the problem the ordering
+    note above the rate limiter says CORS-outermost exists to prevent, just for a
+    different code path. A rate-limited browser client got an opaque CORS failure
+    instead of the 429 + Retry-After the relay actually sent.
+
+    P21-2 (B2): subclassing instead of adding a middleware is the only way to
+    apply the checks to a preflight *and* have the denial still carry CORS
+    headers, since CORSMiddleware's own `__call__` is the one place that both
+    recognizes a preflight and controls what headers a response gets. This
+    intercepts the exact condition CORSMiddleware itself uses to decide "this is
+    a preflight", runs the same two checks `rate_limit`/`limit_request_size`
+    apply to every other request, and on denial takes the CORS headers from
+    `self.preflight_response()` — the same call CORSMiddleware would have made —
+    rather than reconstructing them by hand, so the CORS header logic stays
+    single-sourced in Starlette's own implementation.
+    """
+
+    async def __call__(self, scope, receive, send):
+        if scope["type"] != "http":
+            await super().__call__(scope, receive, send)
+            return
+        headers = Headers(scope=scope)
+        is_preflight = (
+            scope["method"] == "OPTIONS"
+            and headers.get("origin") is not None
+            and "access-control-request-method" in headers
+        )
+        if is_preflight:
+            request = Request(scope)
+            denied = _check_request_size(request) or _check_rate_limit(request)
+            if denied is not None:
+                cors_headers = self.preflight_response(request_headers=headers).headers
+                for key, value in cors_headers.items():
+                    if key.lower() == "vary" or key.lower().startswith("access-control-"):
+                        denied.headers[key] = value
+                await denied(scope, receive, send)
+                return
+        await super().__call__(scope, receive, send)
+
+
 # CORS allowlist: relay's own URL + local dev dashboard ports by default, extendable
 # via EMPORIA_CORS_ORIGINS (comma-separated) for a remote-hosted dashboard.
 # allow_credentials=True + allow_origins=["*"] would let any site replay a browser's
@@ -2504,7 +2554,7 @@ _CORS_ORIGINS.update(
     o.strip() for o in os.getenv("EMPORIA_CORS_ORIGINS", "").split(",") if o.strip()
 )
 app.add_middleware(
-    CORSMiddleware,
+    GuardedCORSMiddleware,
     allow_origins=sorted(_CORS_ORIGINS),
     allow_credentials=True,
     allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
@@ -2517,30 +2567,6 @@ app.add_middleware(
     allow_headers=["Content-Type", "Authorization", "X-Emporia-Agent-Id", "PAYMENT-SIGNATURE"],
     expose_headers=["PAYMENT-RESPONSE"],
 )
-
-
-# P20-4: CORSMiddleware answers a genuine CORS preflight (OPTIONS carrying
-# Access-Control-Request-Method) itself and never calls the wrapped app —
-# see starlette.middleware.cors.CORSMiddleware.__call__. Registering CORS
-# outermost (above) was necessary so 413/429 short-circuits from the two
-# middlewares below it carry CORS headers, but it has the side effect of
-# routing every preflight around both of them: unauthenticated, unlimited,
-# uncounted OPTIONS requests, found auditing P19-7's own ordering change.
-# This middleware is registered last, so it wraps outside CORS and sees a
-# preflight before CORSMiddleware ever gets to short-circuit it — applying
-# the same two checks by hand, since call_next() for a preflight never
-# reaches rate_limit/limit_request_size below. Anything that isn't a
-# preflight passes straight through, unaffected.
-@app.middleware("http")
-async def preflight_guard(request: Request, call_next):
-    is_preflight = (
-        request.method == "OPTIONS" and "access-control-request-method" in request.headers
-    )
-    if is_preflight:
-        denied = _check_request_size(request) or _check_rate_limit(request)
-        if denied is not None:
-            return denied
-    return await call_next(request)
 
 
 # ============================================================================
@@ -6522,18 +6548,23 @@ async def send_room_message(room_id: str, req: SendRoomMessageRequest, request: 
             400, "nonce must be 32-64 hex characters (see wire.new_message_nonce())",
         )
 
+    # N3-8 (R7): bound to room_id + msg_type, not just content — a content-only
+    # signature was valid in *any* room the caller belongs to, forever (replayable
+    # across rooms and across msg_type, e.g. a signed "chat" replayed as "accept").
+    # P21-2 (B3): moved ahead of the guardrails scan below — Ed25519 verification is
+    # microseconds; the scan is a paid NIM call. A9 hoisted the cheap nonce-shape
+    # check over the scan and stopped one statement short of this one, so a
+    # registered member sending a garbage signature still burned scan budget on
+    # every request until now.
+    signed_envelope = signed_room_message_payload(room_id, req.content, effective_msg_type, req.nonce)
+    if not AGENT_REGISTRY.verify_signature(caller, signed_envelope, req.signature):
+        raise HTTPException(403, "Invalid message signature")
+
     if not room.encrypted:
         try:
             await _assert_payload_safe_counted({"content": req.content})
         except PermissionError as e:
             raise HTTPException(403, str(e))
-
-    # N3-8 (R7): bound to room_id + msg_type, not just content — a content-only
-    # signature was valid in *any* room the caller belongs to, forever (replayable
-    # across rooms and across msg_type, e.g. a signed "chat" replayed as "accept").
-    signed_envelope = signed_room_message_payload(room_id, req.content, effective_msg_type, req.nonce)
-    if not AGENT_REGISTRY.verify_signature(caller, signed_envelope, req.signature):
-        raise HTTPException(403, "Invalid message signature")
 
     # Negotiation broker: route counter_offer/accept/reject in 2-member private rooms
     broker_response: dict[str, Any] | None = None
@@ -7916,6 +7947,21 @@ async def dm_send(thread_id: str, req: DMSendRequest, request: Request):
             400, "nonce must be 32-64 hex characters (see wire.new_message_nonce())",
         )
 
+    # Same N3-8/R7 shape as room messages: bound to thread_id + msg_type, not just
+    # content — a content-only signature was valid for delivery into any thread this
+    # agent is a participant of, forever (replayable across threads and across
+    # msg_type).
+    # P21-2 (B3): moved ahead of the guardrails scan below — Ed25519 verification is
+    # microseconds; the scan is a paid NIM call. A9 hoisted the cheap nonce-shape
+    # check over the scan and stopped one statement short of this one, so a
+    # registered participant sending a garbage signature still burned scan budget
+    # on every plaintext-thread request until now.
+    signed_envelope = signed_dm_thread_payload(
+        thread_id, req.content, effective_msg_type, req.nonce,
+    )
+    if not AGENT_REGISTRY.verify_signature(caller, signed_envelope, req.signature):
+        raise HTTPException(403, "Invalid message signature")
+
     # P15: msg_type dropped from this payload for the same reason as the room route
     # above — the closed enum checked immediately above supersedes scanning it.
     # P16: and the content scan is skipped entirely on an encrypted thread, the same
@@ -7929,16 +7975,6 @@ async def dm_send(thread_id: str, req: DMSendRequest, request: Request):
             await _assert_payload_safe_counted({"content": req.content})
         except PermissionError as e:
             raise HTTPException(403, str(e))
-
-    # Same N3-8/R7 shape as room messages: bound to thread_id + msg_type, not just
-    # content — a content-only signature was valid for delivery into any thread this
-    # agent is a participant of, forever (replayable across threads and across
-    # msg_type).
-    signed_envelope = signed_dm_thread_payload(
-        thread_id, req.content, effective_msg_type, req.nonce,
-    )
-    if not AGENT_REGISTRY.verify_signature(caller, signed_envelope, req.signature):
-        raise HTTPException(403, "Invalid message signature")
     now = datetime.now(UTC).isoformat()
     message_id = f"dmm_{uuid.uuid4().hex[:12]}"
     with DB_LOCK, get_db() as conn:
