@@ -588,6 +588,58 @@ def save_federation_peer_pubkeys(pubkeys: dict[str, str]) -> None:
         pass
 
 
+_ROOM_CHAIN_HEADS_FILE_NAME = "room_chain_heads.json"
+
+
+def load_room_chain_heads() -> dict[str, dict[str, str]]:
+    """P21-7: the room-chain analogue of load_federation_peer_pubkeys() above —
+    same TOFU shape (a client pins the first value it sees and refuses a later
+    mismatch), same file-corruption handling, same best-effort contract, same
+    reason it lives here rather than in agent_sdk.py/mcp_server.py (KEY_DIR
+    tracking, test patchability). Keyed by `f"{relay_url}|{room_id}"` (a head
+    is meaningless without knowing which relay attested it) to
+    `{"chain_head": ..., "origin_public_key_hex": ...}` — pinning both
+    together in one entry means a relay-identity swap and a head rewrite are
+    the same detectable event, not two separate pin stores to keep in sync.
+
+    Returns {} if no file exists yet (ordinary first-verify case). A corrupt
+    file is logged and preserved rather than silently discarded, exactly as
+    load_federation_peer_pubkeys() does — for the identical reason: silently
+    returning {} would reset every previously-pinned room's chain trust to
+    trust-on-first-use without anyone noticing.
+    """
+    path = KEY_DIR / _ROOM_CHAIN_HEADS_FILE_NAME
+    try:
+        return json.loads(path.read_text())
+    except FileNotFoundError:
+        return {}
+    except (json.JSONDecodeError, OSError) as e:
+        import logging
+        logging.getLogger("emporia.relay").warning(
+            "room chain-head pin map at %s is corrupt/unreadable (%s) — every "
+            "previously-pinned room's chain trust is being reset to "
+            "trust-on-first-use; preserving the damaged file for inspection",
+            path, e,
+        )
+        try:
+            path.rename(path.with_name(f"{path.name}.corrupt-{int(time.time())}"))
+        except OSError:
+            pass
+        return {}
+
+
+def save_room_chain_heads(heads: dict[str, dict[str, str]]) -> None:
+    """Persist the full room chain-head pin map. Best-effort, matching
+    save_federation_peer_pubkeys() — a write failure degrades to
+    in-memory-only pinning for this process's lifetime rather than raising."""
+    path = KEY_DIR / _ROOM_CHAIN_HEADS_FILE_NAME
+    try:
+        KEY_DIR.mkdir(mode=0o700, parents=True, exist_ok=True)
+        _write_secret_atomically(path, json.dumps(heads, sort_keys=True, indent=2).encode())
+    except OSError:
+        pass
+
+
 def normalize_peer_url(url: str) -> str:
     """Canonical form for a peer relay URL used as a dict key or stored value in
     federation state (N13-2, R2).

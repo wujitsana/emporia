@@ -6788,6 +6788,63 @@ async def get_room_messages(
     return {"messages": [m.to_dict() for m in msgs], "count": len(msgs)}
 
 
+@app.get("/rooms/{room_id}/chain")
+async def get_room_chain(room_id: str, request: Request):
+    """Chain-integrity verification for a room — the fix direction SECURITY.md
+    has recorded since P19: "the relay signs each chain head with its
+    federation keypair, a route serves it, and clients recompute and verify on
+    read." Mirrors GET /sessions/{id}/audit (session_audit.verify_chain(),
+    signed the same way GET /gaming/v1/federate/listings signs a batch —
+    federation_signable_bytes() already invites a third `key`, see its
+    docstring) — same gate as GET /rooms/{id}/messages (private rooms require
+    membership; public rooms are open to any connection).
+
+    Deliberately returns hashes, not message content — the caller already has
+    every message's own `content`/`chain_hash` from GET /rooms/{id}/messages;
+    this route's only job is the piece that read can't provide on its own: an
+    attestation, signed with a key the caller doesn't hold, of what the
+    current chain head actually is.
+
+    **What the signature does and does not prove.** It proves the response
+    came from this relay's own key, unaltered in transit — a third party
+    (network MITM, a compromised CDN in front of the relay) cannot forge a
+    different head. It does **not** prove the relay itself is honest: an
+    operator with DB write access can rewrite a message's content, recompute
+    a self-consistent chain from that point forward (verify_chain() would
+    report `verified: true` for the tampered chain, since recomputation-and-
+    compare only catches inconsistency, not a rewrite that stays internally
+    consistent), and sign the new head with the same key — the signature
+    changes nothing about that, since the relay holds it. Catching *that*
+    is what client-side head-pinning is for (agent_sdk.py's/mcp_server.py's
+    verify_room_chain(), which persist the last head they saw per room and
+    refuse a chain that doesn't extend it — the same TOFU shape
+    _FEDERATION_PEER_PUBKEYS already uses for peer relays). This route is the
+    signed-attestation half of that; without it, there would be nothing for a
+    client to pin at all.
+    """
+    room = rooms_db.get_room(room_id, db_path=DATABASE_PATH)
+    if not room:
+        raise HTTPException(404, "Room not found")
+    viewer_id = _dashboard_agent_id(request)
+    if room.room_type == "private" and not rooms_db.is_member(room_id, viewer_id or "", db_path=DATABASE_PATH):
+        raise HTTPException(403, "Private room — not a member")
+    ok, message, head, count = rooms_db.verify_chain(room_id, db_path=DATABASE_PATH)
+    signature = sign_raw_relay(federation_signable_bytes(
+        RELAY_BASE_URL, "room_chain",
+        [{"room_id": room_id, "chain_head": head or "", "message_count": count}],
+    ))
+    return {
+        "room_id": room_id,
+        "verified": ok,
+        "message": message,
+        "chain_head": head,
+        "message_count": count,
+        "origin_relay": RELAY_BASE_URL,
+        "origin_public_key_hex": get_relay_public_key_hex(),
+        "signature": signature,
+    }
+
+
 @app.websocket("/ws/rooms/{room_id}")
 async def ws_room(ws: WebSocket, room_id: str):
     """Real-time room channel. Sends last 20 messages on connect. Private rooms require

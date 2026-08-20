@@ -3116,6 +3116,9 @@ def test_every_route_has_a_reviewed_auth_posture():
         ("GET", "/rooms"),
         ("GET", "/rooms/{room_id}"),
         ("GET", "/rooms/{room_id}/messages"),
+        # P21-7: same gate as /rooms/{room_id}/messages -- public rooms open to
+        # any connection, private rooms require rooms_db.is_member.
+        ("GET", "/rooms/{room_id}/chain"),
         # P18-3: _dashboard_agent_id + rooms_db.is_member — the key material is
         # public, but the membership list it is keyed by is not, so this is
         # members-only rather than merely authenticated.
@@ -8904,6 +8907,57 @@ def test_message_chain_integrity(rooms_db_path):
         expected = hashlib.sha256(frame.encode()).hexdigest()
         assert msg.chain_hash == expected
         prev_hash = msg.chain_hash
+
+
+def test_verify_chain_empty_room_is_trivially_valid(rooms_db_path):
+    from emporia.rooms import create_room, verify_chain
+    room = create_room("Empty Chain Room", "agent_alice", db_path=rooms_db_path)
+    ok, message, head, count = verify_chain(room.room_id, db_path=rooms_db_path)
+    assert (ok, head, count) == (True, None, 0)
+    assert "empty" in message.lower()
+
+
+def test_verify_chain_recomputes_and_matches_a_genuine_chain(rooms_db_path):
+    """P21-7: chain_hash was computed and stored since P18, verified by nothing
+    until now (SECURITY.md recorded this gap since P19). A genuine, untouched
+    chain must recompute clean and report the true head + count."""
+    from emporia.rooms import create_room, post_message, verify_chain
+    room = create_room("Chain Room", "agent_alice", db_path=rooms_db_path)
+    post_message(room.room_id, "agent_alice", "Move 1", db_path=rooms_db_path)
+    post_message(room.room_id, "agent_bob", "Move 2", db_path=rooms_db_path)
+    last = post_message(room.room_id, "agent_alice", "Move 3", db_path=rooms_db_path)
+
+    ok, message, head, count = verify_chain(room.room_id, db_path=rooms_db_path)
+    assert ok is True, message
+    assert head == last.chain_hash
+    assert count == 3
+
+
+def test_verify_chain_detects_a_tampered_message(rooms_db_path):
+    """A message rewritten in place (content changed, chain_hash left as-is)
+    must be caught -- the exact scenario chain_hash exists to detect, and
+    which nothing checked before this pass."""
+    import sqlite3
+
+    from emporia.rooms import create_room, post_message, verify_chain
+    room = create_room("Tamper Room", "agent_alice", db_path=rooms_db_path)
+    post_message(room.room_id, "agent_alice", "Move 1", db_path=rooms_db_path)
+    target = post_message(room.room_id, "agent_bob", "Move 2", db_path=rooms_db_path)
+    post_message(room.room_id, "agent_alice", "Move 3", db_path=rooms_db_path)
+
+    conn = sqlite3.connect(rooms_db_path)
+    conn.execute(
+        "UPDATE room_messages SET content = ? WHERE message_id = ?",
+        ("Move 2, but tampered", target.message_id),
+    )
+    conn.commit()
+    conn.close()
+
+    ok, message, head, count = verify_chain(room.room_id, db_path=rooms_db_path)
+    assert ok is False
+    assert "mismatch" in message.lower()
+    assert head is None
+    assert count == 3
 
 
 def test_is_negotiation_room(rooms_db_path):
@@ -18982,3 +19036,205 @@ def test_gaming_lobby_post_rejects_oversized_metadata(client):
 
     r = client.post("/gaming/lobby", json=data, headers={"X-Emporia-Agent-Id": "p21_lobby_oversized"})
     assert r.status_code == 400 and "metadata" in r.text, r.text
+
+
+# ============================================================================
+# P21-7: room chain verification, end to end -- the fix direction SECURITY.md
+# has recorded since P19 (chain_hash computed and stored, verified nowhere)
+# ============================================================================
+
+def test_room_chain_route_is_signed_and_verified_for_a_clean_room(client):
+    """GET /rooms/{id}/chain must report verified=True and a valid Ed25519
+    signature over the origin_relay/room_id/chain_head/message_count, the
+    same shape GET /gaming/v1/federate/listings already signs."""
+    from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
+    from emporia.identity import federation_signable_bytes
+
+    _register_keyed(client, "p21_chain_a")
+    room_id = client.post(
+        "/rooms", json={"name": "p21 chain room", "description": ""},
+        headers={"X-Emporia-Agent-Id": "p21_chain_a"},
+    ).json()["room_id"]
+    _send_room_raw(client, room_id, "p21_chain_a", "hello")
+    last = _send_room_raw(client, room_id, "p21_chain_a", "world").json()
+
+    r = client.get(f"/rooms/{room_id}/chain")
+    assert r.status_code == 200, r.text
+    data = r.json()
+    assert data["verified"] is True, data
+    assert data["message_count"] == 2
+    assert data["chain_head"] == last["chain_hash"]
+    assert data["origin_public_key_hex"]
+    assert data["signature"]
+
+    pub = Ed25519PublicKey.from_public_bytes(bytes.fromhex(data["origin_public_key_hex"]))
+    signed_bytes = federation_signable_bytes(
+        data["origin_relay"], "room_chain",
+        [{"room_id": room_id, "chain_head": data["chain_head"], "message_count": data["message_count"]}],
+    )
+    pub.verify(bytes.fromhex(data["signature"]), signed_bytes)  # raises if invalid
+
+
+def test_room_chain_route_reports_unverified_for_a_tampered_room(client):
+    from emporia.relay_server import DB_LOCK, get_db
+
+    _register_keyed(client, "p21_chain_tamper_a")
+    room_id = client.post(
+        "/rooms", json={"name": "p21 chain tamper room", "description": ""},
+        headers={"X-Emporia-Agent-Id": "p21_chain_tamper_a"},
+    ).json()["room_id"]
+    _send_room_raw(client, room_id, "p21_chain_tamper_a", "hello")
+    target = _send_room_raw(client, room_id, "p21_chain_tamper_a", "world").json()
+
+    with DB_LOCK, get_db() as conn:
+        conn.execute(
+            "UPDATE room_messages SET content = ? WHERE message_id = ?",
+            ("tampered", target["message_id"]),
+        )
+
+    r = client.get(f"/rooms/{room_id}/chain")
+    assert r.status_code == 200
+    data = r.json()
+    assert data["verified"] is False
+    assert data["chain_head"] is None
+    # Still signed -- the signature attests transport integrity of this
+    # (correctly negative) result, not that the room itself is untampered.
+    assert data["signature"]
+
+
+def test_room_chain_route_requires_membership_for_a_private_room(client):
+    _register_keyed(client, "p21_chain_priv_owner")
+    _register_keyed(client, "p21_chain_priv_outsider")
+    room_id = client.post(
+        "/rooms", json={"name": "p21 private chain room", "description": "",
+                        "room_type": "private", "gate_type": "invite"},
+        headers={"X-Emporia-Agent-Id": "p21_chain_priv_owner"},
+    ).json()["room_id"]
+
+    r = client.get(
+        f"/rooms/{room_id}/chain", headers={"X-Emporia-Agent-Id": "p21_chain_priv_outsider"},
+    )
+    assert r.status_code == 403
+    assert "member" in r.text.lower()
+
+    r2 = client.get(
+        f"/rooms/{room_id}/chain", headers={"X-Emporia-Agent-Id": "p21_chain_priv_owner"},
+    )
+    assert r2.status_code == 200
+
+
+def test_sdk_verify_room_chain_pins_head_and_catches_a_self_consistent_rewrite():
+    """The property client-side pinning exists for, and that the relay's
+    signature alone cannot provide: a relay-signed head only proves the
+    response wasn't altered in transit. An operator with DB write access can
+    rewrite a message, recompute a self-consistent replacement chain from
+    that point forward, and sign the new (tampered) head with the same key
+    -- the signature check cannot catch this, since it changes nothing about
+    which key signs it, and the relay's own recomputation reports "verified"
+    too, since the rewrite is internally consistent. Only a client that
+    remembers a head it saw *before* the rewrite can tell: the old pinned
+    head no longer appears anywhere in the freshly (and validly) signed,
+    self-consistent, tampered chain."""
+    import asyncio
+
+    from emporia.relay_server import DB_LOCK, get_db
+    from emporia.rooms import compute_chain_hash
+
+    async def setup():
+        a = _sdk_wired("p21_pin_a")
+        try:
+            await a.register()
+            room = await a.create_room("p21 pin room", room_type="public")
+            room_id = room["room_id"]
+            await a.send_room_message(room_id, "Move 1")
+            await a.send_room_message(room_id, "Move 2")
+            return room_id, await a.verify_room_chain(room_id)
+        finally:
+            await a.__aexit__()
+
+    room_id, first = asyncio.run(setup())
+    assert first["verified"] is True, first
+    assert first["message_count"] == 2
+
+    # Simulate a compromised relay operator: rewrite "Move 1" and recompute a
+    # self-consistent chain for every row from that point forward, in place.
+    with DB_LOCK, get_db() as conn:
+        rows = conn.execute(
+            "SELECT message_id, sender_id, content, created_at FROM room_messages "
+            "WHERE room_id = ? ORDER BY created_at ASC, rowid ASC", (room_id,),
+        ).fetchall()
+        prev_hash = None
+        for i, row in enumerate(rows):
+            content = "Move 1, but tampered" if i == 0 else row["content"]
+            new_hash = compute_chain_hash(prev_hash, row["sender_id"], content, row["created_at"])
+            conn.execute(
+                "UPDATE room_messages SET content = ?, chain_hash = ? WHERE message_id = ?",
+                (content, new_hash, row["message_id"]),
+            )
+            prev_hash = new_hash
+
+    # Confirm the relay's own self-check is genuinely fooled -- the point of
+    # this test isn't reachable if the server-side check already caught it.
+    async def relay_self_check():
+        a = _sdk_wired("p21_pin_a")
+        try:
+            resp = await a._bearer_request("get", f"{a.relay_url}/rooms/{room_id}/chain")
+            return resp.json()
+        finally:
+            await a.__aexit__()
+
+    relay_report = asyncio.run(relay_self_check())
+    assert relay_report["verified"] is True, (
+        "test setup didn't produce a self-consistent tampered chain", relay_report,
+    )
+
+    async def reverify():
+        a = _sdk_wired("p21_pin_a")
+        try:
+            return await a.verify_room_chain(room_id)
+        finally:
+            await a.__aexit__()
+
+    second = asyncio.run(reverify())
+    assert second["verified"] is False, second
+    assert "rewritten" in second["reason"].lower(), second
+
+
+def test_mcp_verify_room_chain_matches_sdk_behavior(prod_client):
+    """MCP's verify_room_chain tool, live over the ASGI adapter -- proves the
+    sync/mcp_server.py implementation carries the same pin-detects-rewrite
+    property as the async SDK, not just that it returns a shape."""
+    from emporia import mcp_server
+    from emporia.relay_server import DB_LOCK, get_db
+    from emporia.rooms import compute_chain_hash
+
+    adapter = _ASGIHttpxAdapter(prod_client, mcp_server.RELAY_URL)
+    with patch.object(mcp_server, "httpx", adapter):
+        mcp_server.register_agent("p21_mcp_pin_a")
+        room = mcp_server.create_room("p21 mcp pin room", "p21_mcp_pin_a")
+        room_id = room["room"]["room_id"]
+        mcp_server.send_room_message(room_id, "p21_mcp_pin_a", "Move 1")
+        mcp_server.send_room_message(room_id, "p21_mcp_pin_a", "Move 2")
+
+        first = mcp_server.verify_room_chain(room_id, agent_id="p21_mcp_pin_a")
+        assert first["success"] is True, first
+        assert first["verified"] is True, first
+
+        with DB_LOCK, get_db() as conn:
+            rows = conn.execute(
+                "SELECT message_id, sender_id, content, created_at FROM room_messages "
+                "WHERE room_id = ? ORDER BY created_at ASC, rowid ASC", (room_id,),
+            ).fetchall()
+            prev_hash = None
+            for i, row in enumerate(rows):
+                content = "Move 1, but tampered" if i == 0 else row["content"]
+                new_hash = compute_chain_hash(prev_hash, row["sender_id"], content, row["created_at"])
+                conn.execute(
+                    "UPDATE room_messages SET content = ?, chain_hash = ? WHERE message_id = ?",
+                    (content, new_hash, row["message_id"]),
+                )
+                prev_hash = new_hash
+
+        second = mcp_server.verify_room_chain(room_id, agent_id="p21_mcp_pin_a")
+    assert second["verified"] is False, second
+    assert "rewritten" in second["reason"].lower(), second

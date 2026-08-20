@@ -234,23 +234,70 @@ def _row_to_message(row: sqlite3.Row) -> RoomMessage:
     )
 
 
-def _compute_chain_hash(
+def compute_chain_hash(
     prev_hash: str | None,
     sender_id: str,
     content: str,
     created_at: str,
 ) -> str:
+    """P21-7: made public (was `_compute_chain_hash`) — `verify_chain()` below
+    needs to call the exact same frame the writer uses rather than
+    reimplementing it, the DRY wart `session_audit.verify_chain()` has (its
+    frame is hand-copied from `log_public_receipt()`, not shared)."""
     frame = f"{prev_hash or 'GENESIS'}:{sender_id}:{content}:{created_at}"
     return hashlib.sha256(frame.encode()).hexdigest()
 
 
 def _last_chain_hash(room_id: str, conn: sqlite3.Connection) -> str | None:
+    # P21-7: rowid tiebreak added so this agrees with verify_chain()'s walk
+    # (ORDER BY created_at ASC, rowid ASC) in the case of a created_at tie —
+    # two inserts serialized by _LOCK landing on the same microsecond is
+    # unlikely but not impossible, and without a shared tiebreak the writer
+    # could chain onto a different "last" row than the verifier computes,
+    # producing a false break for every message after the tie.
     row = conn.execute(
         "SELECT chain_hash FROM room_messages WHERE room_id = ? "
-        "ORDER BY created_at DESC LIMIT 1",
+        "ORDER BY created_at DESC, rowid DESC LIMIT 1",
         (room_id,),
     ).fetchone()
     return row["chain_hash"] if row else None
+
+
+def verify_chain(room_id: str, db_path: Path | None = None) -> tuple[bool, str, str | None, int]:
+    """Recompute a room's message chain from genesis and compare against each
+    stored `chain_hash` — the verifier `chain_hash` never had (SECURITY.md
+    recorded it as "computed and stored, verified nowhere" since P18).
+
+    Mirrors `session_audit.verify_chain()`'s `(ok, message)` shape, extended
+    with the resulting head hash and message count so a caller (the relay
+    route) can sign over them without a second query. Unlike
+    `session_audit.verify_chain()`, which recomputes from *stored* fields it
+    has no independent check on, a mismatch here is genuinely meaningful only
+    combined with something the relay can't also forge — see the route's own
+    docstring for why the signature this feeds is necessary but not
+    sufficient, and what closes that gap.
+
+    Walks the full room history every call: one SELECT plus N SHA256 hashes,
+    all local, no network — cheap even for a large room. A caller wanting to
+    bound cost for a room with unusually many messages should decide that
+    itself; nothing here silently truncates.
+    """
+    with _LOCK, _connect(db_path) as conn:
+        rows = conn.execute(
+            "SELECT sender_id, content, created_at, chain_hash FROM room_messages "
+            "WHERE room_id = ? ORDER BY created_at ASC, rowid ASC",
+            (room_id,),
+        ).fetchall()
+    if not rows:
+        return True, "empty room — nothing to verify", None, 0
+
+    prev_hash: str | None = None
+    for i, row in enumerate(rows):
+        expected = compute_chain_hash(prev_hash, row["sender_id"], row["content"], row["created_at"])
+        if row["chain_hash"] != expected:
+            return False, f"hash mismatch at message {i}", None, len(rows)
+        prev_hash = row["chain_hash"]
+    return True, f"chain valid ({len(rows)} messages)", prev_hash, len(rows)
 
 
 # ============================================================================
@@ -501,7 +548,7 @@ def post_message(
 
     with _LOCK, _connect(db_path) as conn:
         prev_hash = _last_chain_hash(room_id, conn)
-        chain_hash = _compute_chain_hash(prev_hash, sender_id, content, created_at)
+        chain_hash = compute_chain_hash(prev_hash, sender_id, content, created_at)
         conn.execute(
             "INSERT INTO room_messages "
             "(message_id, room_id, sender_id, msg_type, content, "

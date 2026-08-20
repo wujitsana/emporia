@@ -857,6 +857,126 @@ class EmporiaAgent:
         )
         return messages
 
+    async def verify_room_chain(self, room_id: str, *, max_messages: int = 1000) -> dict[str, Any]:
+        """P21-7: independently verify a room's tamper-evident message chain,
+        rather than trusting the relay's own self-report.
+
+        `GET /rooms/{id}/chain` gives a relay-signed `chain_head` — proof the
+        response wasn't altered in transit, not proof the relay itself is
+        honest (an operator with DB access can rewrite history and re-sign a
+        self-consistent replacement; see that route's docstring). What closes
+        that gap: this method fetches the room's own messages (paginated,
+        undecrypted — chain_hash is computed over the *stored* content, which
+        is ciphertext on an encrypted room, so this must not reuse
+        get_room_messages()'s decrypting version), recomputes the whole chain
+        itself via rooms.compute_chain_hash(), and compares the result against
+        a head it persisted the *last* time this room verified cleanly
+        (identity.load_room_chain_heads() — same TOFU shape
+        _FEDERATION_PEER_PUBKEYS uses for peer relays). A relay that rewrites
+        history changes every hash from the rewritten point forward, so the
+        old pinned head stops appearing anywhere in the freshly recomputed
+        sequence — that's what a compromised-but-self-consistent relay cannot
+        talk its way around, since it doesn't hold this client's disk.
+
+        The pin is only ever updated on a clean, fully-verified result; a
+        detected mismatch leaves the old pin in place so the room stays
+        flagged on every subsequent check until a human clears it.
+
+        Bounded to `max_messages` (paginated via `before`, capped at the
+        relay's own 200/page limit) — a room with more messages than that
+        cannot be verified from genesis in one call, and this says so plainly
+        (`verified: False`, `reason: "..."`) rather than silently checking a
+        suffix and calling it whole-chain verification.
+        """
+        from emporia import identity, rooms
+
+        resp = await self._bearer_request("get", f"{self.relay_url}/rooms/{room_id}/chain")
+        resp.raise_for_status()
+        data = resp.json()
+
+        result: dict[str, Any] = {
+            "room_id": room_id,
+            "relay_reported_verified": data.get("verified"),
+            "signed_chain_head": data.get("chain_head"),
+            "message_count": data.get("message_count", 0),
+            "verified": False,
+            "reason": "",
+        }
+
+        pubkey_hex = data.get("origin_public_key_hex", "")
+        signature_hex = data.get("signature", "")
+        try:
+            signable = identity.federation_signable_bytes(
+                data.get("origin_relay", self.relay_url), "room_chain",
+                [{"room_id": room_id, "chain_head": data.get("chain_head") or "",
+                  "message_count": data.get("message_count", 0)}],
+            )
+            signature_valid = identity.verify_raw(signable, signature_hex, pubkey_hex)
+        except Exception:
+            signature_valid = False
+        if not signature_valid:
+            result["reason"] = "relay signature over the chain head did not verify"
+            return result
+        if not data.get("verified"):
+            result["reason"] = f"relay's own recomputation failed: {data.get('message')}"
+            return result
+
+        raw_messages: list[dict[str, Any]] = []
+        before: str | None = None
+        while len(raw_messages) < min(result["message_count"], max_messages):
+            page = await self._bearer_request(
+                "get", f"{self.relay_url}/rooms/{room_id}/messages",
+                params={"limit": 200, **({"before": before} if before else {})},
+            )
+            page.raise_for_status()
+            batch = page.json().get("messages", [])
+            if not batch:
+                break
+            raw_messages = batch + raw_messages
+            before = batch[0]["created_at"]
+            if len(batch) < 200:
+                break
+        if len(raw_messages) < result["message_count"]:
+            result["reason"] = (
+                f"could not fetch full history for independent verification — "
+                f"{len(raw_messages)}/{result['message_count']} messages within the "
+                f"{max_messages}-message cap"
+            )
+            return result
+
+        prev_hash: str | None = None
+        computed_heads: list[str] = []
+        for m in raw_messages:
+            prev_hash = rooms.compute_chain_hash(
+                prev_hash, m["sender_id"], m["content"], m["created_at"],
+            )
+            computed_heads.append(prev_hash)
+        if prev_hash != data.get("chain_head"):
+            result["reason"] = (
+                "recomputed chain head does not match the relay's signed head — "
+                "the message content the relay served doesn't match what it signed"
+            )
+            return result
+
+        pins = identity.load_room_chain_heads()
+        pin_key = f"{self.relay_url}|{room_id}"
+        pinned = pins.get(pin_key)
+        if pinned and pinned.get("chain_head") and pinned["chain_head"] not in computed_heads:
+            result["reason"] = (
+                "previously pinned chain head is not an ancestor of the current chain — "
+                "history was rewritten (reordered or deleted messages)"
+            )
+            return result
+        if pinned and pinned.get("origin_public_key_hex") and pinned["origin_public_key_hex"] != pubkey_hex:
+            result["reason"] = "relay's signing key changed since it was last pinned for this room"
+            return result
+
+        pins[pin_key] = {"chain_head": prev_hash or "", "origin_public_key_hex": pubkey_hex}
+        identity.save_room_chain_heads(pins)
+        result["verified"] = True
+        result["reason"] = f"chain valid and extends the previously pinned head ({len(raw_messages)} messages)"
+        return result
+
     async def send_room_message(
         self,
         room_id: str,
