@@ -1469,7 +1469,7 @@ def _mock_peer_response(batch: dict):
     return resp
 
 
-@patch("httpx.AsyncClient.get", new_callable=AsyncMock)
+@patch("emporia.relay_server._fetch_federation_batch", new_callable=AsyncMock)
 async def test_pull_federated_listings_accepts_valid_signature(mock_get):
     from emporia.relay_server import _pull_federated_listings, _FEDERATION_PEER_PUBKEYS
 
@@ -1480,7 +1480,7 @@ async def test_pull_federated_listings_accepts_valid_signature(mock_get):
         "metadata": {}, "created_at": "2026-01-01T00:00:00+00:00",
     }
     batch, pub_hex = _make_peer_batch("https://peer.example/relay", [listing])
-    mock_get.return_value = _mock_peer_response(batch)
+    mock_get.return_value = (batch)
 
     _FEDERATION_PEER_PUBKEYS.pop("https://peer.example/relay", None)
     imported = await _pull_federated_listings("https://peer.example/relay")
@@ -1488,7 +1488,7 @@ async def test_pull_federated_listings_accepts_valid_signature(mock_get):
     assert _FEDERATION_PEER_PUBKEYS["https://peer.example/relay"] == pub_hex
 
 
-@patch("httpx.AsyncClient.get", new_callable=AsyncMock)
+@patch("emporia.relay_server._fetch_federation_batch", new_callable=AsyncMock)
 async def test_pull_federated_listings_scans_each_item_rejects_only_the_bad_one(mock_get):
     """N12-6 (R3-adjacent): MCP sync_lobby_from_peer already scanned each imported
     challenge with assert_payload_safe; _pull_federated_lobby and
@@ -1513,7 +1513,7 @@ async def test_pull_federated_listings_scans_each_item_rejects_only_the_bad_one(
         "metadata": {}, "created_at": "2026-01-01T00:00:00+00:00",
     }
     batch, _ = _make_peer_batch("https://scan-peer.example/relay", [clean, unsafe])
-    mock_get.return_value = _mock_peer_response(batch)
+    mock_get.return_value = (batch)
 
     _FEDERATION_PEER_PUBKEYS.pop("https://scan-peer.example/relay", None)
     imported = await _pull_federated_listings("https://scan-peer.example/relay")
@@ -1530,7 +1530,7 @@ async def test_pull_federated_listings_scans_each_item_rejects_only_the_bad_one(
     assert rows == {"lst_fed_scan_clean"}
 
 
-@patch("httpx.AsyncClient.get", new_callable=AsyncMock)
+@patch("emporia.relay_server._fetch_federation_batch", new_callable=AsyncMock)
 async def test_pull_federated_listings_caps_inbound_batch_size(mock_get):
     """N13-3 (R3): the outbound feed caps at 200 (federated_listings_out), but the
     inbound accept side didn't mirror it — _pull_federated_listings processed
@@ -1553,7 +1553,7 @@ async def test_pull_federated_listings_caps_inbound_batch_size(mock_get):
     ]
     batch, _ = _make_peer_batch(peer_url, listings)
     _FEDERATION_PEER_PUBKEYS.pop(peer_url, None)
-    mock_get.return_value = _mock_peer_response(batch)
+    mock_get.return_value = (batch)
 
     imported = await _pull_federated_listings(peer_url)
     assert imported == 200
@@ -1563,11 +1563,11 @@ async def test_pull_federated_listings_caps_inbound_batch_size(mock_get):
     assert record["peer_batch_size"] == 210
 
 
-@patch("httpx.AsyncClient.get", new_callable=AsyncMock)
+@patch("emporia.relay_server._fetch_federation_batch", new_callable=AsyncMock)
 async def test_pull_federated_listings_rejects_unsigned(mock_get):
     from emporia.relay_server import _pull_federated_listings, _FEDERATION_LAST_SYNC
 
-    mock_get.return_value = _mock_peer_response({
+    mock_get.return_value = ({
         "origin_relay": "https://unsigned-peer.example",
         "listings": [{"listing_id": "lst_unsigned", "agent_id": "x"}],
     })
@@ -1577,7 +1577,7 @@ async def test_pull_federated_listings_rejects_unsigned(mock_get):
     assert "unsigned" in _FEDERATION_LAST_SYNC["https://unsigned-peer.example"]["error"]
 
 
-@patch("httpx.AsyncClient.get", new_callable=AsyncMock)
+@patch("emporia.relay_server._fetch_federation_batch", new_callable=AsyncMock)
 async def test_pull_federated_listings_rejects_tampered_batch(mock_get):
     """A signature valid for one payload must not verify against a different (tampered)
     one — simulates a MITM or compromised-transport modification after signing."""
@@ -1591,7 +1591,7 @@ async def test_pull_federated_listings_rejects_tampered_batch(mock_get):
     }
     batch, _ = _make_peer_batch("https://tamper-peer.example", [listing])
     batch["listings"][0]["title"] = "Scam title — signature no longer matches"
-    mock_get.return_value = _mock_peer_response(batch)
+    mock_get.return_value = (batch)
 
     imported = await _pull_federated_listings("https://tamper-peer.example")
     assert imported == 0
@@ -1599,7 +1599,7 @@ async def test_pull_federated_listings_rejects_tampered_batch(mock_get):
     assert "signature" in _FEDERATION_LAST_SYNC["https://tamper-peer.example"]["error"]
 
 
-@patch("httpx.AsyncClient.get", new_callable=AsyncMock)
+@patch("emporia.relay_server._fetch_federation_batch", new_callable=AsyncMock)
 async def test_pull_federated_listings_rejects_key_rotation_without_repin(mock_get):
     """Once a peer's key is pinned, a later pull presenting a different (even validly
     self-signed) key for the same peer_url must be rejected, not silently re-trusted."""
@@ -1614,13 +1614,13 @@ async def test_pull_federated_listings_rejects_key_rotation_without_repin(mock_g
     }
     batch1, pub1 = _make_peer_batch(peer_url, [listing])
     _FEDERATION_PEER_PUBKEYS.pop(peer_url, None)
-    mock_get.return_value = _mock_peer_response(batch1)
+    mock_get.return_value = (batch1)
     assert await _pull_federated_listings(peer_url) == 1
     assert _FEDERATION_PEER_PUBKEYS[peer_url] == pub1
 
     batch2, pub2 = _make_peer_batch(peer_url, [{**listing, "listing_id": "lst_fed_rotate_2"}])
     assert pub2 != pub1
-    mock_get.return_value = _mock_peer_response(batch2)
+    mock_get.return_value = (batch2)
     imported2 = await _pull_federated_listings(peer_url)
     assert imported2 == 0
     assert _FEDERATION_PEER_PUBKEYS[peer_url] == pub1  # unchanged — still pinned to the original
@@ -1662,7 +1662,7 @@ def test_federated_lobby_out_is_signed(client):
     pub.verify(bytes.fromhex(data["signature"]), signed_bytes)  # raises if invalid
 
 
-@patch("httpx.AsyncClient.get", new_callable=AsyncMock)
+@patch("emporia.relay_server._fetch_federation_batch", new_callable=AsyncMock)
 async def test_federated_lobby_out_excludes_foreign_origin_challenges(mock_get, client):
     """N12-4 (R2a): federated_lobby_out used to re-serve, signed as if authored here,
     any challenge this relay had merely imported from another peer — the signature
@@ -1683,7 +1683,7 @@ async def test_federated_lobby_out_excludes_foreign_origin_challenges(mock_get, 
     foreign_peer = "https://scope-foreign-peer.example/relay"
     foreign_challenge = _sample_challenge("scope_foreign")
     batch, _ = _make_peer_batch(foreign_peer, [foreign_challenge], key="challenges")
-    mock_get.return_value = _mock_peer_response(batch)
+    mock_get.return_value = (batch)
     assert await _pull_federated_lobby(foreign_peer) == 1
 
     r = client.get("/gaming/v1/federate/lobby")
@@ -1712,7 +1712,7 @@ def test_federated_lobby_out_caps_at_200(client):
     assert len(r.json()["challenges"]) <= 200
 
 
-@patch("httpx.AsyncClient.get", new_callable=AsyncMock)
+@patch("emporia.relay_server._fetch_federation_batch", new_callable=AsyncMock)
 async def test_pull_federated_lobby_scans_each_item_rejects_only_the_bad_one(mock_get):
     """N12-6 (R3-adjacent): same guardrails gap as
     test_pull_federated_listings_scans_each_item_rejects_only_the_bad_one, for the
@@ -1739,7 +1739,7 @@ async def test_pull_federated_lobby_scans_each_item_rejects_only_the_bad_one(moc
 
     peer_url = "https://scan-lobby-peer.example/relay"
     batch, _ = _make_peer_batch(peer_url, [clean, unsafe], key="challenges")
-    mock_get.return_value = _mock_peer_response(batch)
+    mock_get.return_value = (batch)
 
     _FEDERATION_PEER_PUBKEYS.pop(peer_url, None)
     imported = await _pull_federated_lobby(peer_url)
@@ -1749,7 +1749,7 @@ async def test_pull_federated_lobby_scans_each_item_rejects_only_the_bad_one(moc
     assert _game_registry.get_challenge(unsafe["challenge_id"]) is None
 
 
-@patch("httpx.AsyncClient.get", new_callable=AsyncMock)
+@patch("emporia.relay_server._fetch_federation_batch", new_callable=AsyncMock)
 async def test_pull_federated_lobby_caps_inbound_batch_size(mock_get):
     """N13-3 (R3): the outbound feed caps at 200 (federated_lobby_out, N12-4), but the
     inbound accept side didn't mirror it — _pull_federated_lobby processed whatever a
@@ -1764,7 +1764,7 @@ async def test_pull_federated_lobby_caps_inbound_batch_size(mock_get):
     challenges = [_sample_challenge(f"oversized_{i}") for i in range(210)]
     batch, _ = _make_peer_batch(peer_url, challenges, key="challenges")
     _FEDERATION_PEER_PUBKEYS.pop(peer_url, None)
-    mock_get.return_value = _mock_peer_response(batch)
+    mock_get.return_value = (batch)
 
     imported = await _pull_federated_lobby(peer_url)
     assert imported == 200
@@ -1774,7 +1774,7 @@ async def test_pull_federated_lobby_caps_inbound_batch_size(mock_get):
     assert record["peer_batch_size"] == 210
 
 
-@patch("httpx.AsyncClient.get", new_callable=AsyncMock)
+@patch("emporia.relay_server._fetch_federation_batch", new_callable=AsyncMock)
 async def test_pull_federated_lobby_accepts_valid_signature(mock_get):
     from emporia.relay_server import _pull_federated_lobby, _FEDERATION_PEER_PUBKEYS
 
@@ -1782,7 +1782,7 @@ async def test_pull_federated_lobby_accepts_valid_signature(mock_get):
     batch, pub_hex = _make_peer_batch(
         "https://lobby-peer.example/relay", [challenge], key="challenges"
     )
-    mock_get.return_value = _mock_peer_response(batch)
+    mock_get.return_value = (batch)
 
     _FEDERATION_PEER_PUBKEYS.pop("https://lobby-peer.example/relay", None)
     imported = await _pull_federated_lobby("https://lobby-peer.example/relay")
@@ -1790,11 +1790,11 @@ async def test_pull_federated_lobby_accepts_valid_signature(mock_get):
     assert _FEDERATION_PEER_PUBKEYS["https://lobby-peer.example/relay"] == pub_hex
 
 
-@patch("httpx.AsyncClient.get", new_callable=AsyncMock)
+@patch("emporia.relay_server._fetch_federation_batch", new_callable=AsyncMock)
 async def test_pull_federated_lobby_rejects_unsigned(mock_get):
     from emporia.relay_server import _pull_federated_lobby, _FEDERATION_LOBBY_LAST_SYNC
 
-    mock_get.return_value = _mock_peer_response({
+    mock_get.return_value = ({
         "origin_relay": "https://unsigned-lobby-peer.example",
         "challenges": [_sample_challenge("emporia_chal_unsigned")],
     })
@@ -1804,7 +1804,7 @@ async def test_pull_federated_lobby_rejects_unsigned(mock_get):
     assert "unsigned" in _FEDERATION_LOBBY_LAST_SYNC["https://unsigned-lobby-peer.example"]["error"]
 
 
-@patch("httpx.AsyncClient.get", new_callable=AsyncMock)
+@patch("emporia.relay_server._fetch_federation_batch", new_callable=AsyncMock)
 async def test_pull_federated_lobby_rejects_tampered_batch(mock_get):
     """A signature valid for one payload must not verify against a different (tampered)
     one — simulates a MITM or compromised-transport modification after signing."""
@@ -1815,7 +1815,7 @@ async def test_pull_federated_lobby_rejects_tampered_batch(mock_get):
         "https://tamper-lobby-peer.example", [challenge], key="challenges"
     )
     batch["challenges"][0]["status"] = "closed"  # tamper: reopen->closed post-signature
-    mock_get.return_value = _mock_peer_response(batch)
+    mock_get.return_value = (batch)
 
     imported = await _pull_federated_lobby("https://tamper-lobby-peer.example")
     assert imported == 0
@@ -1823,7 +1823,7 @@ async def test_pull_federated_lobby_rejects_tampered_batch(mock_get):
     assert "signature" in _FEDERATION_LOBBY_LAST_SYNC["https://tamper-lobby-peer.example"]["error"]
 
 
-@patch("httpx.AsyncClient.get", new_callable=AsyncMock)
+@patch("emporia.relay_server._fetch_federation_batch", new_callable=AsyncMock)
 async def test_pull_federated_lobby_rejects_key_rotation_without_repin(mock_get):
     """Once a peer's key is pinned, a later pull presenting a different (even validly
     self-signed) key for the same peer_url must be rejected, not silently re-trusted.
@@ -1835,7 +1835,7 @@ async def test_pull_federated_lobby_rejects_key_rotation_without_repin(mock_get)
     challenge = _sample_challenge("emporia_chal_rotate")
     batch1, pub1 = _make_peer_batch(peer_url, [challenge], key="challenges")
     _FEDERATION_PEER_PUBKEYS.pop(peer_url, None)
-    mock_get.return_value = _mock_peer_response(batch1)
+    mock_get.return_value = (batch1)
     assert await _pull_federated_lobby(peer_url) == 1
     assert _FEDERATION_PEER_PUBKEYS[peer_url] == pub1
 
@@ -1843,14 +1843,15 @@ async def test_pull_federated_lobby_rejects_key_rotation_without_repin(mock_get)
         peer_url, [_sample_challenge("emporia_chal_rotate_2")], key="challenges"
     )
     assert pub2 != pub1
-    mock_get.return_value = _mock_peer_response(batch2)
+    mock_get.return_value = (batch2)
     imported2 = await _pull_federated_lobby(peer_url)
     assert imported2 == 0
     assert _FEDERATION_PEER_PUBKEYS[peer_url] == pub1  # unchanged — still pinned to the original
 
 
 @patch("httpx.AsyncClient.get", new_callable=AsyncMock)
-async def test_relay_and_mcp_importers_agree_on_the_same_peer_identity(mock_get):
+@patch("emporia.relay_server._fetch_federation_batch", new_callable=AsyncMock)
+async def test_relay_and_mcp_importers_agree_on_the_same_peer_identity(mock_fetch, mock_get):
     """N13-2 (R2): _pull_federated_lobby (relay_server.py) and sync_lobby_from_peer
     (mcp_server.py) each normalized their own outbound fetch URL with .rstrip("/") but
     stored the raw, un-normalized peer_url everywhere else (the pin-store key,
@@ -1860,7 +1861,11 @@ async def test_relay_and_mcp_importers_agree_on_the_same_peer_identity(mock_get)
     as two different origins: the peer's own second, entirely legitimate sync got
     rejected by N12-3's ownership check as belonging to someone else, and the pin got
     duplicated under a second key. Exact scenario from this finding — relay pulls with
-    a trailing slash first, an agent then calls the MCP tool without one."""
+    a trailing slash first, an agent then calls the MCP tool without one.
+
+    Two separate mocks (P21-1): _pull_federated_lobby now fetches via the
+    size-capped _fetch_federation_batch() helper, while mcp_server.sync_lobby_from_peer
+    still calls httpx.AsyncClient.get directly — both must see the same batch."""
     from emporia import identity, mcp_server
     from emporia.relay_server import _FEDERATION_PEER_PUBKEYS, _pull_federated_lobby
 
@@ -1868,6 +1873,7 @@ async def test_relay_and_mcp_importers_agree_on_the_same_peer_identity(mock_get)
     batch, pub_hex = _make_peer_batch(
         "https://cross-importer-peer.example/relay", [challenge], key="challenges"
     )
+    mock_fetch.return_value = batch
     mock_get.return_value = _mock_peer_response(batch)
 
     _FEDERATION_PEER_PUBKEYS.pop("https://cross-importer-peer.example/relay", None)
@@ -1888,7 +1894,7 @@ async def test_relay_and_mcp_importers_agree_on_the_same_peer_identity(mock_get)
     assert "https://cross-importer-peer.example/relay/" not in _FEDERATION_PEER_PUBKEYS
 
 
-@patch("httpx.AsyncClient.get", new_callable=AsyncMock)
+@patch("emporia.relay_server._fetch_federation_batch", new_callable=AsyncMock)
 async def test_pull_federated_lobby_rejects_ownership_hijack_of_local_challenge(mock_get, prod_client):
     """N12-3 (R3): _pull_federated_lobby used to bypass the ownership check
     POST /gaming/lobby enforces — GameRegistry._upsert's ON CONFLICT DO UPDATE has no
@@ -1916,7 +1922,7 @@ async def test_pull_federated_lobby_rejects_ownership_hijack_of_local_challenge(
     peer_url = "https://hijack-peer.example/relay"
     batch, _ = _make_peer_batch(peer_url, [replay], key="challenges")
     _FEDERATION_PEER_PUBKEYS.pop(peer_url, None)
-    mock_get.return_value = _mock_peer_response(batch)
+    mock_get.return_value = (batch)
 
     imported = await _pull_federated_lobby(peer_url)
     assert imported == 0
@@ -18546,3 +18552,87 @@ def test_sdk_room_message_409_retry_skips_a_duplicate_nonce_conflict():
         "a duplicate-nonce 409 must not be retried -- it reseals under the same "
         f"nonce and is guaranteed to fail again (called {call_count}x)"
     )
+
+
+# ============================================================================
+# P21-1 (B1): a federation peer's response must be size-capped while streaming,
+# before it is fully buffered for signature verification or JSON parsing
+# ============================================================================
+
+def test_fetch_federation_batch_rejects_an_oversized_response_before_parsing():
+    """_pull_federated_listings/_pull_federated_lobby used to call
+    `client.get(url)` then `resp.json()` -- a non-streaming call that already reads
+    the *entire* body into memory before returning, so an untrusted (or hijacked)
+    peer returning an arbitrarily large body was fully buffered before the
+    signature check ever got a chance to reject it. _fetch_federation_batch()
+    streams instead and must refuse to keep buffering once the cap is crossed --
+    proven here directly against the helper with a small test cap, so a body well
+    under any real MAX_FEDERATION_RESPONSE_BYTES default still exercises the
+    over-cap path deterministically and fast."""
+    import asyncio
+
+    import httpx
+
+    from emporia import relay_server
+
+    big_body = json.dumps({"listings": ["x" * 200]}).encode()
+    assert len(big_body) > 100, "fixture body must exceed the test cap below"
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, content=big_body)
+
+    async def scenario():
+        transport = httpx.MockTransport(handler)
+        async with httpx.AsyncClient(transport=transport) as client:
+            with patch.object(relay_server, "MAX_FEDERATION_RESPONSE_BYTES", 100):
+                with pytest.raises(ValueError, match="exceeds"):
+                    await relay_server._fetch_federation_batch(
+                        "https://oversized-peer.example/relay/gaming/v1/federate/listings",
+                        client=client,
+                    )
+
+    asyncio.run(scenario())
+
+
+def test_fetch_federation_batch_parses_a_response_within_the_cap():
+    """The happy path of the same helper: a response under the cap is streamed,
+    reassembled, and parsed as JSON -- proves the cap doesn't break normal-sized
+    federation batches, only oversized ones."""
+    import asyncio
+
+    import httpx
+
+    from emporia import relay_server
+
+    small_body = json.dumps({"listings": [], "origin_relay": "https://ok-peer.example"}).encode()
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, content=small_body)
+
+    async def scenario():
+        transport = httpx.MockTransport(handler)
+        async with httpx.AsyncClient(transport=transport) as client:
+            with patch.object(relay_server, "MAX_FEDERATION_RESPONSE_BYTES", 10_000):
+                return await relay_server._fetch_federation_batch(
+                    "https://ok-peer.example/gaming/v1/federate/listings", client=client,
+                )
+
+    data = asyncio.run(scenario())
+    assert data == {"listings": [], "origin_relay": "https://ok-peer.example"}
+
+
+@patch("emporia.relay_server._fetch_federation_batch", new_callable=AsyncMock)
+async def test_pull_federated_listings_records_an_oversized_peer_response(mock_fetch):
+    """The size-cap rejection from _fetch_federation_batch() must surface through
+    _pull_federated_listings' existing generic except-and-record path the same way
+    every other rejection (unsigned, tampered, key-mismatch) already does -- proving
+    the two pull functions actually route through the capped helper, not just that
+    the helper works in isolation."""
+    from emporia.relay_server import _FEDERATION_LAST_SYNC, _pull_federated_listings
+
+    mock_fetch.side_effect = ValueError("peer response exceeds 8388608 bytes — refusing to buffer further")
+    peer_url = "https://oversized-listings-peer.example"
+    imported = await _pull_federated_listings(peer_url)
+    assert imported == 0
+    assert _FEDERATION_LAST_SYNC[peer_url]["ok"] is False
+    assert "exceeds" in _FEDERATION_LAST_SYNC[peer_url]["error"]

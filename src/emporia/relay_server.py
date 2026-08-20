@@ -415,6 +415,13 @@ def _require_caller_unless_mpp_payment(agent_id: str, request: Request) -> bool:
 
 _MAX_LIMIT = 200
 
+# P21-1 (B1): a federation peer's response is streamed and capped at this many bytes
+# *before* being buffered for signature verification or JSON parsing — see
+# _fetch_federation_batch(). Default generous enough for a full _MAX_LIMIT-sized batch
+# of listings/challenges with room to spare, small enough that a malicious or hijacked
+# peer can't OOM the relay by returning an arbitrarily large body.
+MAX_FEDERATION_RESPONSE_BYTES = env_int("MAX_FEDERATION_RESPONSE_BYTES", 8 * 1024 * 1024)
+
 
 def _clamp_limit(limit: int, max_limit: int = _MAX_LIMIT) -> int:
     """Bound a caller-supplied `limit` query param to [1, max_limit] (N3-6). Several
@@ -4434,6 +4441,42 @@ async def federated_listings_out():
     }
 
 
+async def _fetch_federation_batch(url: str, *, client: httpx.AsyncClient | None = None) -> dict:
+    """GET a federation feed with the response body capped at
+    MAX_FEDERATION_RESPONSE_BYTES, enforced while streaming rather than after a full
+    buffer.
+
+    P21-1 (B1): both federation pulls used to call `client.get(url)` then
+    `resp.json()` — a non-streaming call already reads the *entire* body into memory
+    before returning, so by the time the signature check below got a chance to reject
+    an untrusted peer's response, an arbitrarily large body (a hijacked peer URL, or a
+    misbehaving one) had already been fully buffered. Content-Length isn't trusted
+    alone — chunked transfer can omit or lie about it — so the cap is enforced against
+    actual bytes read as they arrive.
+
+    `client` is injectable for tests; the two callers below always let this open (and
+    close) its own short-lived client, same as they did before this helper existed.
+    """
+    owns_client = client is None
+    if client is None:
+        client = httpx.AsyncClient(timeout=15)
+    try:
+        async with client.stream("GET", url) as resp:
+            resp.raise_for_status()
+            body = bytearray()
+            async for chunk in resp.aiter_bytes():
+                body.extend(chunk)
+                if len(body) > MAX_FEDERATION_RESPONSE_BYTES:
+                    raise ValueError(
+                        f"peer response exceeds {MAX_FEDERATION_RESPONSE_BYTES} "
+                        "bytes — refusing to buffer further"
+                    )
+            return json.loads(bytes(body))
+    finally:
+        if owns_client:
+            await client.aclose()
+
+
 async def _pull_federated_listings(peer_url: str) -> int:
     """Pull listings from a peer relay and upsert locally (federation gossip).
 
@@ -4446,10 +4489,7 @@ async def _pull_federated_listings(peer_url: str) -> int:
     """
     peer_url = normalize_peer_url(peer_url)  # N13-2 (R2): one identity for this peer
     try:
-        async with httpx.AsyncClient(timeout=15) as client:
-            resp = await client.get(f"{peer_url}/gaming/v1/federate/listings")
-            resp.raise_for_status()
-            data = resp.json()
+        data = await _fetch_federation_batch(f"{peer_url}/gaming/v1/federate/listings")
     except Exception as e:
         _FEDERATION_LAST_SYNC[peer_url] = {
             "ok": False,
@@ -4617,10 +4657,7 @@ async def _pull_federated_lobby(peer_url: str) -> int:
     """
     peer_url = normalize_peer_url(peer_url)  # N13-2 (R2): one identity for this peer
     try:
-        async with httpx.AsyncClient(timeout=15) as client:
-            resp = await client.get(f"{peer_url}/gaming/v1/federate/lobby")
-            resp.raise_for_status()
-            data = resp.json()
+        data = await _fetch_federation_batch(f"{peer_url}/gaming/v1/federate/lobby")
     except Exception as e:
         _FEDERATION_LOBBY_LAST_SYNC[peer_url] = {
             "ok": False,
