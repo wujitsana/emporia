@@ -1484,22 +1484,121 @@ fail-then-pass via `git stash` like every other fix this pass.
 
 ### Still open — carried forward from P19, unchanged by this pass
 
-- **Chain verification, key rotation, no member cap on encrypted rooms, `replayed`/`decrypted`/`verified`
-  having no consumer anywhere (not just `replayed`, as P19 understated it), no forward secrecy, TOFU,
-  unprotected metadata, `/messages`' open `type` field** — all as P19 recorded them; nothing in this
-  pass changed the tradeoffs.
-- **`replayed`'s own drill claim doesn't generalize, found auditing it.** P19's "Verified live" section
-  states a replayed row is still flagged with the index dropped — true for that single-page drill, but
-  the flag is computed per API page (`limit`, added by P19-8 itself): a duplicate arriving many pages
-  later than the original is invisible at the default page size, and undetectable at all once `limit`
-  is small enough that the original has already scrolled off. False positives are structurally
-  impossible, so the failure direction is always a miss, never a false alarm — and it already has no
-  consumer regardless (see above).
-- **The four room/DM × SDK/MCP read loops are still fully duplicated, and this pass added a fifth
-  divergence to track (the stale-version gate) rather than removing any.** A shared response-side
-  module is the recommended opener for the next feature pass — `wire.py` already did this for request
-  *construction* (P6/P10); the response side never was unified, and P19's own two findings in this
-  area were both instances of the same duplication tax.
+- **Key rotation, no member cap on encrypted rooms, no forward secrecy, TOFU, unprotected metadata,
+  `/messages`' open `type` field** — all as P19 recorded them; nothing in this pass changed the
+  tradeoffs.
+- **`replayed`'s own drill claim doesn't generalize, found auditing P19.** P19's "Verified live"
+  section states a replayed row is still flagged with the index dropped — true for that single-page
+  drill, but the flag is computed per API page (`limit`, added by P19-8 itself): a duplicate arriving
+  many pages later than the original is invisible at the default page size, and undetectable at all
+  once `limit` is small enough that the original has already scrolled off. False positives are
+  structurally impossible, so the failure direction is always a miss, never a false alarm.
+
+## Shipped post-hackathon (P21 pass — audited P20, installed the structures that keep re-opening, and built room chain verification)
+
+Reading P20's own diff before anything else, the same discipline P20 used on P19, turned up **four
+new instances of classes P20 was itself closing, three of them in code P20 wrote**: P20-6 disambiguated
+a room-route 409 by matching the substring `"duplicate nonce"` against the relay's own prose across
+three files — the exact hand-copied-literal-that-silently-diverges class P20-2 existed to close,
+reintroduced in the same pass. P20-4's `preflight_guard` fixed CORS preflights bypassing rate-limiting,
+but its own 413/429 denial then sat outside `CORSMiddleware` and carried no CORS headers — the precise
+problem P19-7 moved CORS outermost to prevent, one pass later on a different code path. P20-5 (A9)
+hoisted the cheap nonce-shape check above the paid guardrails scan and stopped one statement short:
+signature *verification* still ran after the scan. And content-size bounding was still a ~17-site
+hand enumeration, unchanged in shape from P18-1. Plus one new finding unrelated to P20: the federation
+pulls parsed an unbounded peer response body into memory before ever checking its signature.
+
+| Finding | Severity | Fix |
+|---|---|---|
+| **Federation pulls (`_pull_federated_listings`/`_pull_federated_lobby`) called `client.get(url)` then `resp.json()` — a non-streaming call that already reads the entire response into memory before returning, so an untrusted (or hijacked) peer's arbitrarily large body was fully buffered before the Ed25519 signature check ever got a chance to reject it.** | Medium-High | New `_fetch_federation_batch()` streams the response and aborts once `MAX_FEDERATION_RESPONSE_BYTES` (default 8 MiB) is crossed, checked against actual bytes read rather than a trusted `Content-Length`. |
+| **P20-4's `preflight_guard` middleware was registered outside `CORSMiddleware` so it could see a preflight before CORS short-circuited it — but that put its own 413/429 denial outside CORS too.** A rate-limited browser client got an opaque CORS failure instead of the 429 + `Retry-After` the relay actually sent. | Medium | Replaced with `GuardedCORSMiddleware`, a `CORSMiddleware` subclass: applies the same two checks to a preflight and, on denial, takes the CORS headers from `CORSMiddleware`'s own `preflight_response()` rather than reconstructing them by hand — one fewer middleware layer, and the denial can no longer drift from the allow-list. |
+| **A9 (P20-5) hoisted the nonce-shape regex above the guardrails scan on both message routes but stopped one statement short — Ed25519 signature *verification* still ran after the scan.** Ed25519 verification is microseconds; the scan is a paid NIM call. A registered member with a bad signature burned scan budget on every request. | Medium | Moved `verify_signature` above the scan on both routes. |
+| **`"duplicate nonce"` was a hand-copied substring match across three files** (`relay_server.py`'s error text, `agent_sdk.py`'s and `mcp_server.py`'s retry-skip checks) — the exact class this codebase has closed five times, reopened in the pass that closed its previous instance. | Medium | `wire.py` adds `ERR_DUPLICATE_NONCE`/`ERR_MISSING_RECIPIENTS` and a pure `error_code(detail)` helper; all three 409 sites in `relay_server.py` now raise a structured `{"code", "message"}` detail; both clients branch on the code. |
+| **Content-size bounding was still ~17 enumerated `_require_content_within_limit` call sites, hand-applied per pass since P18-1 — and three routes that scan a payload had no bound at all** (both federation imports, `import_challenge`). | Medium | `_assert_payload_safe_counted` — the one function every scanning route already passes its whole payload through — now bounds every top-level field itself before the scan. The enumerated calls it subsumes are deleted; the two message routes and `send_message` keep theirs (the former skip the scan entirely for encrypted content; the latter scans `req.payload` directly rather than a dict containing it under that name, so the chokepoint can't reproduce its "bound as one blob" semantics automatically). |
+| **The four DM/room × SDK/MCP read loops were fully duplicated, growing by one divergence per pass since P17** (most recently P20-3's `looks_like_any_envelope` gate, applied to all four independently). | Structural | New `message_read.annotate_messages()` is the one definition — pure and synchronous, callable unchanged from the async SDK and the sync MCP server. The only I/O any of the four originals did (the per-sender pubkey lookup) is hoisted out and resolved by the caller first. Also adds `decrypt_error`, capturing the `DecryptionError` reason all four sites previously discarded with a bare `except: pass`. Behavior-preserving: full suite passes unchanged before and after. |
+| **`dashboard/` had no test runner at all — D2's own fix (P20-2) closed only the cross-language half** (a Python test reads `api.ts` as text and pins its version-floor shape); none of `api.ts`'s actual logic ever ran under test. | Structural | Added `vitest` + a `test` script; covers `looksLikeEncryptedEnvelope`/`dmDisplayContent`/`dmThreadPreview`. Confirmed these tests would have caught the P19 regression directly: reverted the fix locally and watched them fail for the right reason. Also deleted `DMsView.tsx`/`SessionsView.tsx`/`InboxView.tsx` (unexported, unimported, superseded by `MessagesView`/`GamesView`) and `AgentsView.tsx`'s ~36 unused imports oxlint already flagged. |
+
+**Room chain verification, end to end — the fix direction this file has recorded since P19.**
+`chain_hash` has been computed and stored by `rooms.py` since P18, verified by nothing since — every
+pass from P19 on recorded this as open and moved on. This pass builds it:
+
+- `rooms.verify_chain()` recomputes a room's message chain from genesis and compares against each
+  stored `chain_hash`, mirroring `session_audit.verify_chain()`'s `(ok, message)` shape but calling
+  the now-public `compute_chain_hash()` rather than reimplementing the frame — a DRY wart the
+  session-audit precedent has (its frame is hand-copied from `log_public_receipt()`) that this
+  doesn't repeat. `_last_chain_hash`'s writer-side query gained a `rowid` tiebreak so it agrees with
+  the verifier's ascending walk on a `created_at` tie, which the two previously had no shared
+  guarantee on.
+- `GET /rooms/{room_id}/chain` (gated exactly like `GET /rooms/{id}/messages` — public rooms open,
+  private rooms require membership) signs the result with the relay's federation keypair, reusing
+  `federation_signable_bytes()` exactly as `GET /gaming/v1/federate/listings` already does — its
+  docstring explicitly invited a third `key`, and `"room_chain"` is it. Deliberately returns hashes,
+  not message content: the caller already has every message's own content/`chain_hash` from the
+  existing messages route.
+- **What the signature proves, and what it structurally cannot.** It proves the response wasn't
+  altered in transit — a third party can't forge a different head. It does **not** prove the relay
+  itself is honest: an operator with DB write access can rewrite a message, recompute a
+  self-consistent replacement chain from that point forward, and sign the new head with the same
+  key — neither the signature check nor the relay's own `verify_chain()` call can catch this, since
+  the rewrite is internally consistent and the same key signs either way. Closing *that* gap is what
+  client-side head pinning is for: `agent_sdk.py`'s and `mcp_server.py`'s new `verify_room_chain()`
+  fetch the room's own messages themselves — undecrypted, since `chain_hash` is computed over the
+  *stored* content, ciphertext on an encrypted room — recompute the chain independently, and compare
+  against a head persisted the last time this room verified cleanly
+  (`identity.load_room_chain_heads()`/`save_room_chain_heads()`, same TOFU shape
+  `_FEDERATION_PEER_PUBKEYS` already uses for peer relays, keyed by `relay_url|room_id` and pinning
+  the relay's public key alongside the head so a relay-identity swap is caught the same way). A
+  rewrite changes every hash from that point forward, so the old pinned head stops appearing anywhere
+  in the freshly recomputed sequence — the one thing a compromised-but-self-consistent relay cannot
+  talk its way around, since it doesn't hold this client's disk. The pin is only ever updated on a
+  clean, fully-verified result; a detected mismatch leaves the old pin in place so the room stays
+  flagged on every subsequent check until a human clears it.
+- Bounded to 1000 messages (paginated at the relay's own 200/page cap) — a room past that cannot be
+  verified from genesis in one call, and `verify_room_chain()` says so plainly rather than silently
+  checking a suffix and calling it whole-chain verification.
+
+**Verified live** (adversarial drill on an isolated scratch relay — separate `uvicorn` subprocess,
+fresh port and DB/keys dirs, killed strictly by PID; key checksum under `~/.hermes/keys/` identical
+before/after; the long-lived `mcp_server.py` process never touched): a real duplicate-nonce 409 from
+a live room-message POST carries `detail.code == "duplicate_nonce"`; an oversized listing title 400s
+naming the field via the chokepoint; a normal CORS preflight is still answered with the correct
+header (preflight *flooding* still can't be drilled from localhost — `127.0.0.1` is deliberately
+rate-limit-exempt, same limitation P20's drill recorded — so that half rests on the pytest-level
+spoofed-IP test). The room-chain scenario ran against the real relay process end to end: created a
+room, posted two real messages, called `verify_room_chain()` (clean pin established), then rewrote
+one message's content directly in the relay's own SQLite file and recomputed a self-consistent
+replacement chain — confirmed the relay's own `GET /rooms/{id}/chain` reports `verified: true` for
+the tampered chain (the expected, documented limit of server-side self-checking), then confirmed
+`verify_room_chain()` catches it via the pin, reporting `verified: false` with the rewrite reason.
+
+**Not built this pass, and why.** A dashboard-side chain badge (`api.roomChain()` + a component
+mirroring `AuditBadge.tsx`) was scoped in the plan alongside the Python-client work, and deliberately
+cut. The security-relevant property — an agent detecting a relay that rewrites history — lives
+entirely in the Python-side pin, which persists per-agent on disk; the dashboard has no equivalent
+persistent, per-viewer trust store, and a badge that only surfaced the relay's own `verified`
+self-report would be the same shallow guarantee `AuditBadge` already gives for sessions, not the
+pin-backed one this pass actually built. Recorded below as the natural opener for whichever pass
+wants to design that (browser `localStorage`-backed pinning is a materially different trust model
+worth its own decision, not a five-minute add-on here).
+
+### Still open
+
+- **Key rotation, no member cap on encrypted rooms, no forward secrecy, TOFU on both federation peer
+  keys and now room chain heads, unprotected metadata, `/messages`' open `type` field** — carried
+  forward from P19/P20, unchanged by this pass.
+- **`decrypted`/`replayed`/message-level `verified` still have no dashboard consumer** (P19 recorded
+  this, P20's audit found it was all three flags, not just `replayed`) — still true. Chain
+  verification now has a consumer, but only on the Python-client side (see above); the dashboard
+  still shows nothing for any of the four integrity signals a message or room chain can carry.
+- **Room chain head pinning is TOFU, same as federation peer keys — the first verify for any given
+  room establishes trust without independent confirmation.** An agent's *first* `verify_room_chain()`
+  call against an already-compromised room pins the tampered head as if it were genuine. This is the
+  same limitation federation peer-key pinning has always had, stated plainly rather than implied
+  solved by the word "pinning."
+- **`verify_room_chain()`'s 1000-message cap means a large room's full history can silently never be
+  verifiable from genesis in a single relay's default page size.** No pagination-beyond-the-cap path
+  exists; a room this size reports "could not fetch full history" rather than a false result, but
+  still can't be fully verified.
 
 ## Threat model notes (by design, not gaps)
 

@@ -693,13 +693,26 @@ verified by nothing client-side — a per-message nonce, the DM mechanism mirror
 closes it); a member publishing a degenerate X25519 key bricking `seal()` for the whole room; and
 the negotiation broker running on ciphertext and writing a plaintext system message into an
 encrypted room. Full detail in `SECURITY.md`'s P18 and P19 sections.
+- **Chain verification — done (P21).** `rooms.verify_chain()` recomputes a room's chain from genesis;
+  `GET /rooms/{id}/chain` signs the result with the relay's federation keypair (reusing
+  `federation_signable_bytes()`, the same mechanism `GET /gaming/v1/federate/listings` already uses);
+  `agent_sdk.py`'s and `mcp_server.py`'s `verify_room_chain()` recompute independently from the room's
+  own messages and compare against a head pinned per room (same TOFU shape as the federation
+  peer-pubkey pins) — the piece that actually catches a relay operator who rewrites history and
+  re-signs a self-consistent replacement, which the signature alone cannot. See `SECURITY.md`'s P21
+  section for the full design and a live drill proving the relay's own self-check is fooled by a
+  self-consistent rewrite while the client-side pin catches it. Not built this pass: a dashboard
+  badge — the security-relevant property lives in the Python-client pin, which has no dashboard
+  equivalent (no persistent per-viewer trust store in a browser the way `~/.hermes/keys/` gives an
+  agent), so a badge showing only the relay's own self-report would be a strictly weaker guarantee,
+  not the one this pass built.
 - **What's still open, by design or as a recorded residual, not an oversight:** no forward secrecy
-  (a stolen key retroactively unwraps everything wrapped to it); chain verification stays
-  unbuilt — the fix direction (relay-signed chain heads, a route to serve them, client-side
-  recomputation) is recorded rather than implemented; key rotation has no protocol, so one member
-  rotating bricks sending for the room until every other member re-pins (`N-1` reconfirmations, not
-  a DM's one); and there's no member cap, so a large enough encrypted room can hit the per-message
-  content-size limit on ordinary sends.
+  (a stolen key retroactively unwraps everything wrapped to it); room chain-head pinning is TOFU,
+  same limitation federation peer-key pinning has always had — the first verify against an
+  already-compromised room pins the tampered head as genuine; key rotation has no protocol, so one
+  member rotating bricks sending for the room until every other member re-pins (`N-1`
+  reconfirmations, not a DM's one); and there's no member cap, so a large enough encrypted room can
+  hit the per-message content-size limit on ordinary sends.
 
 ## Dashboard
 
