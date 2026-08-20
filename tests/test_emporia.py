@@ -18736,3 +18736,75 @@ def test_dm_message_invalid_signature_is_rejected_before_the_guardrails_scan(cli
         )
     assert r.status_code == 403 and "signature" in r.text.lower(), r.text
     assert not spy.called, "an invalid signature must reject before the paid scan runs"
+
+
+# ============================================================================
+# P21-3 (B4): the room route's 409 is now disambiguated by a structured `code`
+# field, not a hand-copied substring match against the relay's error prose
+# ============================================================================
+
+def test_wire_error_code_extracts_structured_code_and_falls_back_gracefully():
+    """The pure helper both clients now call instead of substring-matching
+    resp.text -- a dict detail with a string `code` returns it; anything else
+    (a bare string detail, a dict with no code, a non-dict) returns None rather
+    than raising, so a caller can treat 'no code' and 'wrong code' identically."""
+    from emporia.wire import ERR_DUPLICATE_NONCE, error_code
+
+    assert error_code({"code": ERR_DUPLICATE_NONCE, "message": "x"}) == ERR_DUPLICATE_NONCE
+    assert error_code({"message": "no code field"}) is None
+    assert error_code("a bare string detail, the old shape") is None
+    assert error_code(None) is None
+
+
+def test_room_message_409s_carry_a_structured_code(client):
+    """The room route answers 409 for two unrelated conditions -- a duplicate
+    nonce and MissingRecipients -- and both clients used to tell them apart by
+    matching the substring "duplicate nonce" against the relay's own prose. Both
+    now carry a machine-readable `code` in `detail` instead; this pins the
+    relay's half of that contract directly, independent of the message wording."""
+    from emporia.wire import ERR_DUPLICATE_NONCE, ERR_MISSING_RECIPIENTS
+
+    _enc_agents(client, "p21_code_a", "p21_code_b", "p21_code_c")
+    room = _encrypted_room(client, "p21_code_a", ["p21_code_b", "p21_code_c"])
+
+    # MissingRecipients: sealed to a stale member set missing the newest joiner.
+    stale = _seal_room(room, "p21_code_a", ["p21_code_a", "p21_code_b"], "stale seal")
+    r = _send_room_raw(client, room, "p21_code_a", stale)
+    assert r.status_code == 409, r.text
+    assert r.json()["detail"]["code"] == ERR_MISSING_RECIPIENTS, r.json()
+
+    # Duplicate nonce: same nonce, unencrypted room, sent twice.
+    plain_room = client.post(
+        "/rooms", json={"name": "p21 code plain room", "description": ""},
+        headers={"X-Emporia-Agent-Id": "p21_code_a"},
+    ).json()["room_id"]
+    from emporia.wire import new_message_nonce
+
+    nonce = new_message_nonce()
+    first = _send_room_raw(client, plain_room, "p21_code_a", "first", nonce=nonce)
+    assert first.status_code == 200, first.text
+    second = _send_room_raw(client, plain_room, "p21_code_a", "second", nonce=nonce)
+    assert second.status_code == 409, second.text
+    assert second.json()["detail"]["code"] == ERR_DUPLICATE_NONCE, second.json()
+
+
+def test_dm_message_409_carries_a_structured_code(client):
+    """The DM route's duplicate-nonce 409 gets the same structured code, for
+    consistency -- no client branches on it today (send_dm doesn't retry on
+    409), but there's no reason to leave it the one hand-copied-string holdout
+    of the shape this pass closed everywhere else."""
+    from emporia.wire import ERR_DUPLICATE_NONCE, new_message_nonce
+
+    _register_keyed(client, "p21_dmcode_a")
+    _register_keyed(client, "p21_dmcode_b")
+    tid = client.post(
+        "/dm/start", json={"to_agent": "p21_dmcode_b"},
+        headers={"X-Emporia-Agent-Id": "p21_dmcode_a"},
+    ).json()["thread_id"]
+
+    nonce = new_message_nonce()
+    first = _send_dm_raw(client, tid, "p21_dmcode_a", "first", nonce=nonce)
+    assert first.status_code == 200, first.text
+    second = _send_dm_raw(client, tid, "p21_dmcode_a", "second", nonce=nonce)
+    assert second.status_code == 409, second.text
+    assert second.json()["detail"]["code"] == ERR_DUPLICATE_NONCE, second.json()

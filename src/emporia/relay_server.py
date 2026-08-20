@@ -6464,7 +6464,12 @@ async def send_room_message(room_id: str, req: SendRoomMessageRequest, request: 
     # wire.DEFAULT_MSG_TYPE's current value on every call rather than binding a copy at
     # module-import time, which is what makes both this and the rationale constants
     # actually re-patchable at test/runtime rather than merely another hardcoded copy.
-    from emporia.wire import DEFAULT_MSG_TYPE, signed_room_message_payload
+    from emporia.wire import (
+        ERR_DUPLICATE_NONCE,
+        ERR_MISSING_RECIPIENTS,
+        DEFAULT_MSG_TYPE,
+        signed_room_message_payload,
+    )
     effective_msg_type = req.msg_type or DEFAULT_MSG_TYPE
     _require_valid_msg_type(effective_msg_type)
     _require_content_within_limit(req.content)
@@ -6515,7 +6520,14 @@ async def send_room_message(room_id: str, req: SendRoomMessageRequest, request: 
             # crypto_box's error text ("no wrapped key for" in str(e)) — a
             # dedicated exception type means rewording that message can no longer
             # silently turn every membership race into a terminal 400.
-            raise HTTPException(409, f"this room is end-to-end encrypted — {e}")
+            # P21-3 (B4): structured `code` -- this room route's 409 is otherwise
+            # ambiguous with the duplicate-nonce 409 below, and clients used to
+            # tell them apart the same substring-matching way, one exception type
+            # later. See wire.ERR_MISSING_RECIPIENTS.
+            raise HTTPException(409, {
+                "code": ERR_MISSING_RECIPIENTS,
+                "message": f"this room is end-to-end encrypted — {e}",
+            })
         except ValueError as e:
             raise HTTPException(400, f"this room is end-to-end encrypted — {e}")
     elif crypto_box.looks_like_envelope(req.content):
@@ -6613,9 +6625,10 @@ async def send_room_message(room_id: str, req: SendRoomMessageRequest, request: 
         # P19-5 (H4): idx_room_messages_nonce's UNIQUE(room_id, nonce) is the
         # database-level half of the replay defense, mirroring the DM fix in
         # dm_send above — same reasoning, same 409.
-        raise HTTPException(
-            409, "duplicate nonce — this message has already been posted to this room",
-        ) from e
+        raise HTTPException(409, {
+            "code": ERR_DUPLICATE_NONCE,
+            "message": "duplicate nonce — this message has already been posted to this room",
+        }) from e
 
     event: dict[str, Any] = {"type": "room_message", "room_id": room_id, **msg.to_dict()}
     if broker_response:
@@ -7861,7 +7874,7 @@ async def dm_send(thread_id: str, req: DMSendRequest, request: Request):
     # window is immaterial (threads are never deleted).
     thread = _dm_thread_or_404(thread_id, caller)
     # Local import + resolved-once pattern matches P12-3's room-message fix.
-    from emporia.wire import DEFAULT_MSG_TYPE, signed_dm_thread_payload
+    from emporia.wire import ERR_DUPLICATE_NONCE, DEFAULT_MSG_TYPE, signed_dm_thread_payload
     effective_msg_type = req.msg_type or DEFAULT_MSG_TYPE
     _require_valid_msg_type(effective_msg_type)
     _require_content_within_limit(req.content)
@@ -7995,10 +8008,16 @@ async def dm_send(thread_id: str, req: DMSendRequest, request: Request):
             # with a traceback, not the 409 the client-facing contract implies.
             # Reachable by an honest client too: the nonce is free-form, so a
             # counter-based generator 500s on its very second message.
-            raise HTTPException(
-                409, "a message with this nonce already exists in this thread — this "
-                "looks like a replayed request, not a new message",
-            ) from e
+            # P21-3 (B4): same structured code as the room route's duplicate-nonce
+            # 409 (wire.ERR_DUPLICATE_NONCE) -- no client branches on this one
+            # today (send_dm doesn't retry on 409 at all), but there's no reason
+            # to leave this the one hand-copied-string holdout of the shape B4
+            # just closed everywhere else.
+            raise HTTPException(409, {
+                "code": ERR_DUPLICATE_NONCE,
+                "message": "a message with this nonce already exists in this thread — "
+                "this looks like a replayed request, not a new message",
+            }) from e
         conn.execute(
             "UPDATE dm_threads SET last_message_at=? WHERE thread_id=?", (now, thread_id)
         )

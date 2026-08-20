@@ -125,6 +125,32 @@ DEFAULT_MSG_TYPE = "chat"
 # them; a test pins it against rooms.MsgType so the two can't drift.
 CLIENT_MSG_TYPES = frozenset({"chat", "collab", "code", "counter_offer", "accept", "reject"})
 
+# P21-3 (B4): the room message route answers 409 for two unrelated conditions —
+# a duplicate nonce (idx_room_messages_nonce's UNIQUE constraint, unrecoverable by
+# a retry that reseals under the same nonce) and MissingRecipients (a membership
+# race, recoverable by re-fetching keys and resealing). Both clients used to tell
+# them apart by matching the substring "duplicate nonce" against the relay's own
+# prose (relay_server.py's HTTPException message) — a hand-copied literal across
+# three files, the exact hand-copied-literal-that-silently-diverges class this
+# module exists to close, reintroduced in the pass that closed the last instance
+# of it (P20-2). relay_server.py now raises a structured `{"code", "message"}`
+# detail on every 409 of this shape; both clients branch on `code`.
+ERR_DUPLICATE_NONCE = "duplicate_nonce"
+ERR_MISSING_RECIPIENTS = "missing_recipients"
+
+
+def error_code(detail: Any) -> str | None:
+    """Extract the machine-readable `code` from a relay error response's `detail`
+    (i.e. `response.json().get("detail")`) — a dict for a structured error using
+    one of the ERR_* constants above, a bare string for any relay error that
+    doesn't (most of them; this shape is new, not retrofitted everywhere). Returns
+    None for either case if there's no code, so a caller can treat "no code" and
+    "some other code" the same way without a KeyError."""
+    if isinstance(detail, dict):
+        code = detail.get("code")
+        return code if isinstance(code, str) else None
+    return None
+
 
 def default_dispute_rationale(reason: str) -> str:
     """The default `peer_text_rationale` for a dispute when the caller omits

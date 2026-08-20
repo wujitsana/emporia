@@ -22,7 +22,7 @@ import websockets
 from websockets.exceptions import ConnectionClosedError, InvalidHandshake
 
 from emporia.identity import sign as ed25519_sign
-from emporia.wire import DEFAULT_MSG_TYPE
+from emporia.wire import DEFAULT_MSG_TYPE, ERR_DUPLICATE_NONCE, error_code
 
 
 def _ws_url(http_url: str, path: str) -> str:
@@ -987,10 +987,14 @@ class EmporiaAgent:
         # P20-6 (A7): the room route also answers 409 for a duplicate nonce
         # (idx_room_messages_nonce's UNIQUE constraint) — a *different* failure
         # this retry cannot fix, since it reseals under the same nonce and is
-        # guaranteed to hit the identical conflict again. The two are
-        # distinguishable by the relay's own error text; skip the retry for the
-        # one it can't help.
-        if resp.status_code == 409 and "duplicate nonce" not in resp.text:
+        # guaranteed to hit the identical conflict again.
+        # P21-3 (B4): distinguished by the relay's structured `code`, not a
+        # substring match against its error prose — the hand-copied-literal
+        # class this codebase has closed five times over, reopened by P20-6
+        # itself. A response with no code (or an unparseable body) is treated
+        # as "not a duplicate nonce", matching the substring match's old
+        # fail-open behavior for anything it didn't recognize either.
+        if resp.status_code == 409 and error_code(resp.json().get("detail")) != ERR_DUPLICATE_NONCE:
             resp = await _post(json.dumps(
                 crypto_box.seal(content, await self._room_recipients(room_id), aad),
             ))

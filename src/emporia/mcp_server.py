@@ -71,7 +71,7 @@ from emporia.engine.game_registry import GameRegistry
 from emporia.engine.guardrails import assert_payload_safe
 from emporia.env_config import env
 from emporia.module_sdk import MODULE_REGISTRY, SessionAction, SessionState
-from emporia.wire import DEFAULT_MSG_TYPE
+from emporia.wire import DEFAULT_MSG_TYPE, ERR_DUPLICATE_NONCE, error_code
 
 RELAY_URL = env("RELAY_URL", "http://localhost:8088")
 LOG_DIR = Path(env("LOG_DIR", "./.local/logs")).expanduser()
@@ -898,7 +898,9 @@ def send_room_message(
             # this retry cannot fix (it reseals under the same nonce and hits the
             # identical conflict again) — see agent_sdk.send_room_message()'s
             # identical check for the full reasoning.
-            if r.status_code == 409 and "duplicate nonce" not in r.text:
+            # P21-3 (B4): distinguished by the relay's structured `code`, not a
+            # substring match against its error prose. See wire.error_code().
+            if r.status_code == 409 and error_code(r.json().get("detail")) != ERR_DUPLICATE_NONCE:
                 r = _post(json.dumps(
                     crypto_box.seal(content, _room_recipients(sender_id, room_id), aad),
                 ))
