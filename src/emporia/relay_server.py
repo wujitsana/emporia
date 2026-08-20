@@ -2156,7 +2156,14 @@ async def _assert_payload_safe_counted(payload: dict[str, Any]) -> None:
     dashboard, distinguishing the always-on regex layer from the optional
     NVIDIA NIM semantic layer via the structured GuardrailResult attached to
     GuardrailBlocked (not by parsing the exception's message text — that broke
-    once already when the message wording changed)."""
+    once already when the message wording changed).
+
+    P21-5 (B5): also the one chokepoint every scanning route already passes its
+    whole payload through, so the per-field content-size bound
+    (_require_payload_content_within_limit, checked before the scan — cheap
+    should reject before expensive) now lives here instead of being enumerated
+    by hand at up to 17 call sites, three of which had no bound at all."""
+    _require_payload_content_within_limit(payload)
     try:
         await assert_payload_safe_async(payload)
     except GuardrailBlocked as e:
@@ -2492,6 +2499,42 @@ def _require_content_within_limit(content: str, field: str = "content") -> None:
             f"On an encrypted thread this budget covers the ciphertext, which runs "
             f"larger than the plaintext it carries.",
         )
+
+
+def _require_payload_content_within_limit(payload: dict[str, Any]) -> None:
+    """P21-5 (B5): bound every top-level field of `payload` the same way
+    `_require_content_within_limit` bounds one — a str field as itself, anything
+    else (a dict/list, e.g. `metadata`/`payload`) as its `json.dumps()`'d size,
+    exactly matching what each of the ~17 enumerated call sites this replaces
+    did by hand for one named field at a time. Called from
+    `_assert_payload_safe_counted` itself (below), so every route that already
+    unconditionally scans its whole payload gets this for free — including the
+    three that had no enumerated call at all (both federation imports,
+    `import_challenge`) and were wholly unbounded until now.
+
+    Deliberately does **not** replace every enumerated call: a route that scans
+    a *sub*-value directly rather than a dict containing it under that field's
+    own name (`send_message`'s `_assert_payload_safe_counted(req.payload)` — the
+    scanned dict IS `req.payload`, not `{"payload": req.payload}`) would have
+    this walk `req.payload`'s own inner keys instead of bounding it as the one
+    blob the enumerated call did; that call site keeps its explicit check. Same
+    reasoning already carved out the two message routes, which skip the scan
+    entirely for encrypted content and so have nothing here to piggyback on.
+    """
+    from emporia.wire import MAX_CONTENT_BYTES
+
+    if not isinstance(payload, dict):
+        return
+    for field, value in payload.items():
+        text = value if isinstance(value, str) else json.dumps(value)
+        size = len(text.encode("utf-8"))
+        if size > MAX_CONTENT_BYTES:
+            raise HTTPException(
+                400,
+                f"{field} is too large — {size} bytes, limit is {MAX_CONTENT_BYTES}. "
+                f"On an encrypted thread this budget covers the ciphertext, which runs "
+                f"larger than the plaintext it carries.",
+            )
 
 
 class GuardedCORSMiddleware(CORSMiddleware):
@@ -4238,15 +4281,10 @@ async def create_listing(req: CreateListingRequest, request: Request):
         raise HTTPException(401, "Authentication required")
     _require_registered(caller)
     _enforce_agent_rate_limit(caller)
-    # P19-7 (M4): _require_content_within_limit was applied at exactly two call
-    # sites (the room/DM message routes) — every other content-bearing field,
-    # this one included, had no bound at all.
-    # P20-5 (A3): title and metadata were still uncovered after P19-7 — a 900KB
-    # title passed straight through, was scanned by the paid NIM layer, and was
-    # stored and served.
-    _require_content_within_limit(req.title, "title")
-    _require_content_within_limit(req.description, "description")
-    _require_content_within_limit(json.dumps(req.metadata), "metadata")
+    # P19-7 (M4)/P20-5 (A3): title/description/metadata used to be bounded by
+    # hand here. P21-5 (B5): _assert_payload_safe_counted now bounds every
+    # top-level field of whatever it's handed, so this is redundant — see
+    # _require_payload_content_within_limit.
     try:
         await _assert_payload_safe_counted(req.model_dump())
     except PermissionError as e:
@@ -4362,8 +4400,8 @@ async def create_event(req: CreateEventRequest, request: Request):
         raise HTTPException(401, "Authentication required")
     _require_registered(caller)
     _enforce_agent_rate_limit(caller)
-    _require_content_within_limit(req.title, "title")  # P20-5 (A3)
-    _require_content_within_limit(req.description, "description")  # P19-7 (M4)
+    # P21-5 (B5): title/description bounded automatically by
+    # _assert_payload_safe_counted now — see _require_payload_content_within_limit.
     try:
         await _assert_payload_safe_counted(req.model_dump())
     except PermissionError as e:
@@ -5099,11 +5137,11 @@ async def submit_action(session_id: str, req: SubmitActionRequest):
         raise HTTPException(400, "Not your turn")
     if req.agent_id not in s["participants"]:
         raise HTTPException(400, "Not a participant")
-    _require_content_within_limit(req.peer_text_rationale, "peer_text_rationale")  # P19-7 (M4)
-    # P20-5 (A3): req.payload itself was still unbounded -- unlike the identical
-    # field on SendMessageRequest (bounded below at the /messages route). Also
-    # closes DisputeDeliveryRequest.reason, which flows in here as payload={"reason": ...}.
-    _require_content_within_limit(json.dumps(req.payload), "payload")
+    # P21-5 (B5): peer_text_rationale/payload used to be bounded by hand here
+    # (payload's check also covered DisputeDeliveryRequest.reason, which flows
+    # in as payload={"reason": ...}). _assert_payload_safe_counted below scans
+    # full_payload, whose own top-level keys are exactly "payload" and
+    # "peer_text_rationale" (see signed_action_payload) — same bound, for free.
 
     from emporia.wire import signed_action_payload
     full_payload = signed_action_payload(
@@ -5909,8 +5947,8 @@ async def create_room_endpoint(req: CreateRoomRequest, request: Request):
         raise HTTPException(401, "Authentication required")
     _require_registered(caller)
     _enforce_agent_rate_limit(caller)
-    _require_content_within_limit(req.name, "name")  # P19-7 (M4)
-    _require_content_within_limit(req.description, "description")
+    # P21-5 (B5): name/description bounded automatically — see
+    # _require_payload_content_within_limit.
     try:
         await _assert_payload_safe_counted(req.model_dump())
     except PermissionError as e:
@@ -6927,8 +6965,8 @@ async def create_agora_topic(req: CreateAgoraTopicRequest, request: Request):
         raise HTTPException(401, "Authentication required")
     _require_registered(caller)
     _enforce_agent_rate_limit(caller)
-    _require_content_within_limit(req.name, "name")  # P19-7 (M4)
-    _require_content_within_limit(req.description, "description")
+    # P21-5 (B5): name/description bounded automatically — see
+    # _require_payload_content_within_limit.
     try:
         await _assert_payload_safe_counted(req.model_dump())
     except PermissionError as e:
@@ -7326,10 +7364,8 @@ async def create_agora_post(slug: str, req: CreateAgoraPostRequest, request: Req
         raise HTTPException(401, "Authentication required")
     _require_registered(caller)
     _enforce_agent_rate_limit(caller)
-    _require_content_within_limit(req.title, "title")  # P20-5 (A3)
-    if req.flair:
-        _require_content_within_limit(req.flair, "flair")  # P20-5 (A3)
-    _require_content_within_limit(req.content)  # P19-7 (M4)
+    # P21-5 (B5): title/flair/content bounded automatically — see
+    # _require_payload_content_within_limit.
     try:
         await _assert_payload_safe_counted(req.model_dump())
     except PermissionError as e:
@@ -7546,7 +7582,8 @@ async def add_agora_comment(post_id: str, req: AddAgoraCommentRequest, request: 
         raise HTTPException(401, "Authentication required")
     _require_registered(caller)
     _enforce_agent_rate_limit(caller)
-    _require_content_within_limit(req.content)  # P19-7 (M4)
+    # P21-5 (B5): content bounded automatically — see
+    # _require_payload_content_within_limit.
     try:
         await _assert_payload_safe_counted(req.model_dump())
     except PermissionError as e:

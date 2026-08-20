@@ -18874,3 +18874,111 @@ def test_message_read_annotate_messages_shared_core():
     assert failed["decrypt_error"], "the DecryptionError reason must be captured, not discarded"
 
     assert replay["replayed"] is True, "a nonce repeated on a later message must be flagged"
+
+
+# ============================================================================
+# P21-5 (B5): content-size bounding moved from ~17 enumerated call sites to
+# one chokepoint inside _assert_payload_safe_counted -- closing three routes
+# that had no bound at all (both federation imports, import_challenge)
+# ============================================================================
+
+def test_require_payload_content_within_limit_bounds_every_top_level_field():
+    """Direct unit test of the chokepoint helper: a str field is measured as
+    itself, anything else (dict/list/None) as its json.dumps()'d size --
+    exactly what each enumerated call this replaces did by hand for one named
+    field at a time."""
+    from emporia.relay_server import _require_payload_content_within_limit
+    from emporia.wire import MAX_CONTENT_BYTES
+
+    # Under the limit in every field: no raise.
+    _require_payload_content_within_limit({
+        "title": "fine", "metadata": {"note": "also fine"}, "flair": None,
+    })
+
+    big = "z" * (MAX_CONTENT_BYTES + 1)
+
+    with pytest.raises(HTTPException) as exc_info:
+        _require_payload_content_within_limit({"title": big, "description": "ok"})
+    assert exc_info.value.status_code == 400
+    assert "title" in str(exc_info.value.detail)
+
+    # A dict field is bounded by its serialized size, same as the enumerated
+    # json.dumps(req.metadata) calls it replaces.
+    with pytest.raises(HTTPException) as exc_info:
+        _require_payload_content_within_limit({"metadata": {"note": big}})
+    assert exc_info.value.status_code == 400
+    assert "metadata" in str(exc_info.value.detail)
+
+    # Non-dict input is a no-op, not an error (matches how it's called from
+    # _assert_payload_safe_counted, whose callers all pass dicts, but a few
+    # scan-only call sites could in principle pass something else).
+    _require_payload_content_within_limit("not a dict")  # type: ignore[arg-type]
+
+
+@patch("emporia.relay_server._fetch_federation_batch", new_callable=AsyncMock)
+async def test_pull_federated_listings_rejects_an_oversized_field_not_just_injection(mock_fetch):
+    """B5: this import path had *no* content-size bound at all before P21-5 --
+    only the guardrails scan (added P19). A validly-signed batch with an
+    oversized title must still be rejected per-item, the same way an injection
+    payload already was (test_pull_federated_listings_scans_each_item_rejects_
+    only_the_bad_one), proving the new chokepoint actually reaches this route,
+    not just the ones that already had an enumerated call."""
+    from emporia.relay_server import DB_LOCK, _FEDERATION_PEER_PUBKEYS, _pull_federated_listings, get_db
+    from emporia.wire import MAX_CONTENT_BYTES
+
+    clean = {
+        "listing_id": "lst_fed_size_clean", "title": "Peer listing", "description": "",
+        "listing_type": "service", "agent_id": "peer_agent", "payment_mode": "free",
+        "price_usd": "0", "module_type": None, "expires_at": None,
+        "metadata": {}, "created_at": "2026-01-01T00:00:00+00:00",
+    }
+    oversized = {
+        "listing_id": "lst_fed_size_big", "title": "z" * (MAX_CONTENT_BYTES + 1),
+        "description": "", "listing_type": "service", "agent_id": "peer_agent",
+        "payment_mode": "free", "price_usd": "0", "module_type": None, "expires_at": None,
+        "metadata": {}, "created_at": "2026-01-01T00:00:00+00:00",
+    }
+    batch, _ = _make_peer_batch("https://size-peer.example/relay", [clean, oversized])
+    mock_fetch.return_value = batch
+
+    _FEDERATION_PEER_PUBKEYS.pop("https://size-peer.example/relay", None)
+    imported = await _pull_federated_listings("https://size-peer.example/relay")
+    assert imported == 1
+
+    with DB_LOCK, get_db() as conn:
+        rows = {
+            r["listing_id"]
+            for r in conn.execute(
+                "SELECT listing_id FROM listings WHERE listing_id IN (?, ?)",
+                ("lst_fed_size_clean", "lst_fed_size_big"),
+            ).fetchall()
+        }
+    assert rows == {"lst_fed_size_clean"}
+
+
+def test_gaming_lobby_post_rejects_oversized_metadata(client):
+    """B5: GamingLobbyChallengeRequest.metadata had no enumerated
+    _require_content_within_limit call and no other bound at all --
+    import_challenge's _assert_payload_safe_counted(payload) now catches it
+    automatically via the chokepoint, the same way every enumerated field
+    elsewhere does."""
+    import secrets
+    from datetime import UTC, datetime
+
+    from emporia.engine.game_registry import _recompute_challenge_id
+    from emporia.wire import MAX_CONTENT_BYTES
+
+    _register_keyed(client, "p21_lobby_oversized")
+    data = {
+        "game_type": "emporia:chess:v1",
+        "creator_agent_id": "p21_lobby_oversized",
+        "creator_gateway_url": "https://example.test/gw",
+        "payment_mode": "free", "stake_amount": "0", "currency": "USD", "status": "open",
+        "created_at": datetime.now(UTC).isoformat(), "expires_at": None,
+        "origin_relay": None,
+        "metadata": {"nonce": secrets.token_urlsafe(12), "note": "z" * (MAX_CONTENT_BYTES + 1)},
+    }
+    data["challenge_id"] = _recompute_challenge_id(data)
+
+    r = client.post("/gaming/lobby", json=data, headers={"X-Emporia-Agent-Id": "p21_lobby_oversized"})
+    assert r.status_code == 400 and "metadata" in r.text, r.text
