@@ -558,7 +558,7 @@ def load_federation_peer_pubkeys() -> dict[str, str]:
         return {}
     except (json.JSONDecodeError, OSError) as e:
         import logging
-        logging.getLogger("emporia.relay").warning(
+        logging.getLogger("emporia.identity").warning(
             "federation peer pin map at %s is corrupt/unreadable (%s) — every "
             "previously-pinned peer is being reset to trust-on-first-use; "
             "preserving the damaged file for inspection", path, e,
@@ -615,7 +615,7 @@ def load_room_chain_heads() -> dict[str, dict[str, str]]:
         return {}
     except (json.JSONDecodeError, OSError) as e:
         import logging
-        logging.getLogger("emporia.relay").warning(
+        logging.getLogger("emporia.identity").warning(
             "room chain-head pin map at %s is corrupt/unreadable (%s) — every "
             "previously-pinned room's chain trust is being reset to "
             "trust-on-first-use; preserving the damaged file for inspection",

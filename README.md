@@ -596,4 +596,8 @@ recipients. Provisional, not permanent; see `ROADMAP.md` § Payments for the rev
 | `EMPORIA_NEMO_GUARDRAILS_BASE_URL` | `https://integrate.api.nvidia.com/v1` | NIM endpoint base URL |
 | `EMPORIA_NEMO_GUARDRAILS_TIMEOUT` | `5` | Seconds before the NIM call times out (fails open) |
 | `NVIDIA_API_KEY` | _(required if NeMo guardrails enabled)_ | NVIDIA NIM API key |
-| `EMPORIA_LOG_DIR` | `./.local/logs` | JSONL runtime message log directory |
+| `EMPORIA_LOG_DIR` | `./.local/logs` | JSONL runtime message log directory (distinct from the structured operational logging below — this one is the message/audit trail) |
+| `EMPORIA_LOG_LEVEL` | `INFO` | Level for the relay's and MCP server's structured JSON logging, emitted one object per line to stderr (captured by `docker logs`/`docker compose logs` with no extra config) |
+| `SENTRY_DSN` | _(empty)_ | Sentry project DSN for the relay's HTTP surface. Empty = error tracking is a no-op — nothing is imported or initialized. Not wired into the MCP stdio process. |
+| `SENTRY_ENVIRONMENT` | `development` | Environment tag attached to events sent to Sentry (only meaningful when `SENTRY_DSN` is set) |
+| `SENTRY_TRACES_SAMPLE_RATE` | `0` | Sentry performance-tracing sample rate (0 = error tracking only, no perf tracing/added overhead) |

@@ -58,6 +58,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import logging
 import os
 import time
 from importlib import import_module
@@ -70,8 +71,15 @@ from fastmcp import FastMCP
 from emporia.engine.game_registry import GameRegistry
 from emporia.engine.guardrails import assert_payload_safe
 from emporia.env_config import env
+from emporia.logging_config import configure_logging
 from emporia.module_sdk import MODULE_REGISTRY, SessionAction, SessionState
 from emporia.wire import DEFAULT_MSG_TYPE, ERR_DUPLICATE_NONCE, error_code
+
+# P22: module-import time, not inside main() -- this process's stdout is the
+# MCP stdio protocol channel itself; logging_config defaults to stderr, which
+# is already what this file's own _auto_register() used directly before this.
+configure_logging()
+logger = logging.getLogger("emporia.mcp")
 
 RELAY_URL = env("RELAY_URL", "http://localhost:8088")
 LOG_DIR = Path(env("LOG_DIR", "./.local/logs")).expanduser()
@@ -2225,10 +2233,9 @@ def _auto_register() -> None:
     Called once in main() before mcp.run(). Safe to call on every restart —
     POST /agents/register is idempotent (upserts on agent_id).
     Skipped if EMPORIA_AGENT_ID is not set.
-    Prints to stderr so the operator sees registration status or errors.
+    Logged to stderr (this process's stdout is the MCP stdio protocol channel
+    itself) so the operator sees registration status or errors.
     """
-    import sys
-
     if not AGENT_ID:
         return
 
@@ -2236,8 +2243,7 @@ def _auto_register() -> None:
         from emporia.identity import get_public_key_hex
         pub_hex = get_public_key_hex(AGENT_ID)
     except Exception as e:
-        print(f"[emporia] ERROR: could not load Ed25519 keypair for '{AGENT_ID}': {e}",
-              file=sys.stderr, flush=True)
+        logger.error("auto_register_keypair_failed", extra={"agent_id": AGENT_ID}, exc_info=e)
         return
 
     payload: dict = {
@@ -2252,16 +2258,22 @@ def _auto_register() -> None:
         r = httpx.post(f"{RELAY_URL}/agents/register", json=payload, timeout=5)
         if r.status_code in (200, 201):
             tier = r.json().get("trust_level", "key_only")
-            print(f"[emporia] Registered '{AGENT_ID}' on {RELAY_URL} — trust: {tier}",
-                  file=sys.stderr, flush=True)
+            logger.info(
+                "auto_register_ok",
+                extra={"agent_id": AGENT_ID, "relay_url": RELAY_URL, "trust_level": tier},
+            )
         else:
-            print(f"[emporia] ERROR: registration failed for '{AGENT_ID}' — "
-                  f"relay returned {r.status_code}: {r.text[:200]}",
-                  file=sys.stderr, flush=True)
+            logger.error(
+                "auto_register_failed", extra={
+                    "agent_id": AGENT_ID, "relay_url": RELAY_URL,
+                    "status_code": r.status_code, "detail": r.text[:200],
+                },
+            )
     except Exception as e:
-        print(f"[emporia] ERROR: could not reach relay at {RELAY_URL} to register "
-              f"'{AGENT_ID}': {e}",
-              file=sys.stderr, flush=True)
+        logger.error(
+            "auto_register_unreachable",
+            extra={"agent_id": AGENT_ID, "relay_url": RELAY_URL}, exc_info=e,
+        )
 
 
 def main() -> None:

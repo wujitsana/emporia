@@ -21,6 +21,7 @@ from __future__ import annotations
 
 import base64
 import json
+import logging
 import os
 import shutil
 import sys
@@ -556,10 +557,11 @@ def test_identity_load_federation_peer_pubkeys_corrupt_file_logs_and_preserves_e
         garbage = b"{not valid json"
         pin_path.write_bytes(garbage)
         with patch.object(identity, "KEY_DIR", fresh_dir):
-            with caplog.at_level(logging.WARNING, logger="emporia.relay"):
+            with caplog.at_level(logging.WARNING, logger="emporia.identity"):
                 result = identity.load_federation_peer_pubkeys()
         assert result == {}
         assert any("corrupt" in rec.message.lower() and str(pin_path) in rec.message for rec in caplog.records)
+        assert all(rec.name == "emporia.identity" for rec in caplog.records)
         assert not pin_path.exists()
         preserved = list(fresh_dir.glob(f"{identity._PEER_PUBKEYS_FILE_NAME}.corrupt-*"))
         assert len(preserved) == 1, preserved
@@ -577,11 +579,38 @@ def test_identity_load_federation_peer_pubkeys_missing_file_returns_empty_silent
         fresh_dir = Path(d) / "no_pins_yet_dir"
         fresh_dir.mkdir()
         with patch.object(identity, "KEY_DIR", fresh_dir):
-            with caplog.at_level(logging.WARNING, logger="emporia.relay"):
+            with caplog.at_level(logging.WARNING, logger="emporia.identity"):
                 result = identity.load_federation_peer_pubkeys()
         assert result == {}
         assert caplog.records == []
         assert list(fresh_dir.iterdir()) == []
+
+
+def test_identity_load_room_chain_heads_corrupt_file_logs_under_identity_logger(caplog):
+    """P22: load_room_chain_heads() used to log its corrupt-file warning under
+    "emporia.relay" despite living in identity.py — a mislabeling that would have
+    misdirected anyone grepping/filtering logs by module. Mirrors
+    test_identity_load_federation_peer_pubkeys_corrupt_file_logs_and_preserves_evidence
+    for the room-chain-heads analogue, asserting the logger name is "emporia.identity"."""
+    import logging
+
+    from emporia import identity
+    with tempfile.TemporaryDirectory() as d:
+        fresh_dir = Path(d) / "corrupt_room_heads_dir"
+        fresh_dir.mkdir()
+        heads_path = fresh_dir / identity._ROOM_CHAIN_HEADS_FILE_NAME
+        garbage = b"{not valid json"
+        heads_path.write_bytes(garbage)
+        with patch.object(identity, "KEY_DIR", fresh_dir):
+            with caplog.at_level(logging.WARNING, logger="emporia.identity"):
+                result = identity.load_room_chain_heads()
+        assert result == {}
+        assert any("corrupt" in rec.message.lower() and str(heads_path) in rec.message for rec in caplog.records)
+        assert all(rec.name == "emporia.identity" for rec in caplog.records)
+        assert not heads_path.exists()
+        preserved = list(fresh_dir.glob(f"{identity._ROOM_CHAIN_HEADS_FILE_NAME}.corrupt-*"))
+        assert len(preserved) == 1, preserved
+        assert preserved[0].read_bytes() == garbage
 
 
 def test_content_address_no_0x_prefix():
@@ -19238,3 +19267,217 @@ def test_mcp_verify_room_chain_matches_sdk_behavior(prod_client):
         second = mcp_server.verify_room_chain(room_id, agent_id="p21_mcp_pin_a")
     assert second["verified"] is False, second
     assert "rewritten" in second["reason"].lower(), second
+
+
+# ============================================================================
+# P22: structured logging, request correlation, error tracking
+# ============================================================================
+
+def test_json_formatter_produces_valid_parseable_json_with_expected_keys():
+    """The whole formatter is hand-rolled (no dependency) -- this pins its
+    output shape: one JSON object per line with ts/level/logger/msg/request_id,
+    parseable by json.loads with no trailing junk."""
+    from emporia.logging_config import JsonFormatter
+
+    record = logging.LogRecord(
+        name="emporia.relay", level=logging.INFO, pathname=__file__, lineno=1,
+        msg="something happened", args=(), exc_info=None,
+    )
+    record.request_id = "abc123def456"
+    line = JsonFormatter().format(record)
+    payload = json.loads(line)
+    assert payload["level"] == "INFO"
+    assert payload["logger"] == "emporia.relay"
+    assert payload["msg"] == "something happened"
+    assert payload["request_id"] == "abc123def456"
+    assert "ts" in payload and "T" in payload["ts"]
+
+
+def test_json_formatter_merges_extra_fields_and_omits_standard_record_attrs():
+    """extra={...} fields passed to a log call must surface in the JSON payload,
+    but internal LogRecord bookkeeping attributes (pathname, lineno, args, ...)
+    must not leak into it -- only the caller-supplied extras plus the fixed
+    ts/level/logger/msg/request_id keys."""
+    from emporia.logging_config import JsonFormatter
+
+    record = logging.LogRecord(
+        name="emporia.relay", level=logging.WARNING, pathname=__file__, lineno=1,
+        msg="rate_limit_exceeded", args=(), exc_info=None,
+    )
+    record.request_id = "-"
+    record.client_ip = "127.0.0.1"
+    record.bucket = "global"
+    line = JsonFormatter().format(record)
+    payload = json.loads(line)
+    assert payload["client_ip"] == "127.0.0.1"
+    assert payload["bucket"] == "global"
+    assert "pathname" not in payload
+    assert "lineno" not in payload
+    assert "args" not in payload
+
+
+def test_json_formatter_includes_formatted_traceback_on_exc_info():
+    from emporia.logging_config import JsonFormatter
+
+    try:
+        raise RuntimeError("boom")
+    except RuntimeError:
+        record = logging.LogRecord(
+            name="emporia.relay", level=logging.ERROR, pathname=__file__, lineno=1,
+            msg="unhandled_exception", args=(), exc_info=sys.exc_info(),
+        )
+    record.request_id = "-"
+    payload = json.loads(JsonFormatter().format(record))
+    assert "RuntimeError: boom" in payload["exc_info"]
+
+
+def test_configure_logging_respects_log_level_env_var():
+    """EMPORIA_LOG_LEVEL actually changes the level of the "emporia" logger --
+    reset via the module's own _configured flag (mirroring configure_logging()'s
+    own idempotency guard) since relay_server.py already configured it once at
+    import time; state is restored afterward so this doesn't affect any other
+    test in the session."""
+    from emporia import logging_config
+
+    target_logger = logging.getLogger(logging_config._LOGGER_NAME)
+    orig_configured = logging_config._configured
+    orig_level = target_logger.level
+    orig_handlers = list(target_logger.handlers)
+    try:
+        logging_config._configured = False
+        target_logger.handlers = []
+        with patch.dict(os.environ, {"EMPORIA_LOG_LEVEL": "ERROR"}):
+            logging_config.configure_logging()
+        assert target_logger.level == logging.ERROR
+    finally:
+        logging_config._configured = orig_configured
+        target_logger.handlers = orig_handlers
+        target_logger.setLevel(orig_level)
+
+
+def test_configure_logging_is_idempotent_does_not_double_attach_handlers():
+    from emporia import logging_config
+
+    target_logger = logging.getLogger(logging_config._LOGGER_NAME)
+    count_before = len(target_logger.handlers)
+    logging_config.configure_logging()
+    logging_config.configure_logging()
+    assert len(target_logger.handlers) == count_before
+
+
+def test_configure_sentry_noop_when_dsn_unset():
+    from emporia import logging_config
+
+    orig = logging_config._sentry_configured
+    try:
+        logging_config._sentry_configured = False
+        with patch.dict(os.environ, {"SENTRY_DSN": ""}), patch("sentry_sdk.init") as mock_init:
+            logging_config.configure_sentry()
+        mock_init.assert_not_called()
+    finally:
+        logging_config._sentry_configured = orig
+
+
+def test_configure_sentry_calls_init_with_dsn_and_env_kwargs_when_set():
+    from emporia import logging_config
+
+    orig = logging_config._sentry_configured
+    try:
+        logging_config._sentry_configured = False
+        env = {
+            "SENTRY_DSN": "https://examplePublicKey@o0.ingest.sentry.io/0",
+            "SENTRY_ENVIRONMENT": "staging",
+            "SENTRY_TRACES_SAMPLE_RATE": "0.25",
+        }
+        with patch.dict(os.environ, env), patch("sentry_sdk.init") as mock_init:
+            logging_config.configure_sentry()
+        mock_init.assert_called_once_with(
+            dsn=env["SENTRY_DSN"], environment="staging", traces_sample_rate=0.25,
+        )
+    finally:
+        logging_config._sentry_configured = orig
+
+
+def test_configure_sentry_is_idempotent():
+    from emporia import logging_config
+
+    orig = logging_config._sentry_configured
+    try:
+        logging_config._sentry_configured = False
+        with patch.dict(os.environ, {"SENTRY_DSN": "https://x@o0.ingest.sentry.io/0"}), \
+             patch("sentry_sdk.init") as mock_init:
+            logging_config.configure_sentry()
+            logging_config.configure_sentry()
+        mock_init.assert_called_once()
+    finally:
+        logging_config._sentry_configured = orig
+
+
+def test_request_context_assigns_distinct_request_ids_and_header_round_trips(client):
+    """Two ordinary requests get two different X-Request-Id values, and the
+    header the client sees back matches the id the middleware generated (not
+    just present -- actually round-tripping)."""
+    r1 = client.get("/health")
+    r2 = client.get("/health")
+    assert r1.status_code == 200
+    assert r2.status_code == 200
+    rid1 = r1.headers["x-request-id"]
+    rid2 = r2.headers["x-request-id"]
+    assert rid1 != rid2
+    assert len(rid1) == 12
+    assert len(rid2) == 12
+
+
+def test_request_context_logs_request_line_with_matching_request_id(client, caplog):
+    with caplog.at_level(logging.INFO, logger="emporia.relay"):
+        r = client.get("/health")
+    rid = r.headers["x-request-id"]
+    matches = [
+        rec for rec in caplog.records
+        if rec.name == "emporia.relay" and rec.message == "request"
+        and getattr(rec, "request_id", None) == rid
+    ]
+    assert len(matches) == 1, caplog.records
+    assert matches[0].status_code == 200
+    assert matches[0].path == "/health"
+
+
+def test_request_context_logs_unhandled_exception_preserving_500_shape(caplog):
+    """A genuine unhandled exception (not an HTTPException -- those are handled
+    responses, not exceptions from request_context's point of view) must still
+    produce Starlette's ordinary 500, and the middleware's own logger.exception
+    call must carry a request_id distinguishing it from any other in-flight
+    request. Uses raise_server_exceptions=False since the default TestClient
+    behavior is to re-raise, per Starlette's own ServerErrorMiddleware contract
+    (see the request_context docstring in relay_server.py)."""
+    from emporia import relay_server
+
+    tc = TestClient(app, client=("127.0.0.1", 51216), raise_server_exceptions=False)
+    with patch.object(relay_server, "_stripe_profile_ready", side_effect=RuntimeError("boom")):
+        with caplog.at_level(logging.ERROR, logger="emporia.relay"):
+            r1 = tc.get("/health")
+            r2 = tc.get("/health")
+    assert r1.status_code == 500
+    assert r2.status_code == 500
+    exc_records = [
+        rec for rec in caplog.records
+        if rec.name == "emporia.relay" and rec.message == "unhandled_exception"
+    ]
+    assert len(exc_records) == 2, caplog.records
+    rid1, rid2 = exc_records[0].request_id, exc_records[1].request_id
+    assert rid1 != "-" and rid2 != "-"
+    assert rid1 != rid2
+    assert exc_records[0].exc_info is not None
+    # P22: known, structural limitation (documented in relay_server.py) --
+    # Starlette's ServerErrorMiddleware builds this response *outside* every
+    # app.add_middleware()-registered layer, so X-Request-Id never reaches it.
+    assert "x-request-id" not in r1.headers
+
+
+def test_request_context_resets_contextvar_after_each_request(client):
+    """request_id_ctx must not leak between requests -- outside of any request,
+    it's the default sentinel, not a stale id from the last call."""
+    from emporia.logging_config import request_id_ctx
+
+    client.get("/health")
+    assert request_id_ctx.get() == "-"

@@ -28,6 +28,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
 import os
 import re
 import secrets
@@ -119,6 +120,7 @@ from emporia.session_audit import (
 from emporia import rooms as rooms_db
 from emporia import entitlements
 from emporia.env_config import env_int
+from emporia.logging_config import configure_logging, configure_sentry, request_id_ctx
 
 if TYPE_CHECKING:
     # Type-only — every real (runtime) reference to emporia.payments stays a
@@ -139,6 +141,15 @@ import emporia.modules.service  # noqa: F401
 # ============================================================================
 
 BRAND = "Emporia"
+
+# P22: module-import-time, not inside main() -- `python -m uvicorn
+# emporia.relay_server:app` (the documented local-dev path, scripts/local_relay.py)
+# imports this module and serves `app` directly, never calling main() at all.
+# Configuring here is the only way that covers every real invocation path.
+configure_logging()
+configure_sentry()
+logger = logging.getLogger("emporia.relay")
+
 RELAY_PORT = int(os.getenv("EMPORIA_RELAY_PORT", "8088"))
 RELAY_BASE_URL = os.getenv("EMPORIA_RELAY_URL", f"http://localhost:{RELAY_PORT}")
 RELAY_ID = os.getenv("EMPORIA_RELAY_ID", secrets.token_urlsafe(8))
@@ -1024,8 +1035,8 @@ def _migrate_settlement_dedupe_key(conn: Any) -> None:
 
     Pre-existing genuine duplicates (both rows keying identically even under the
     finer key — a true replay of the same payment, double-inserted by the bug
-    P1a-2 fixed) are deleted, keeping the earliest by rowid, logged via `print()`
-    first so an unexpected hit is auditable.
+    P1a-2 fixed) are deleted, keeping the earliest by rowid, logged first so an
+    unexpected hit is auditable.
 
     P2-1 (R3): only the rewrite/collapse above is marker-gated — the
     `CREATE UNIQUE INDEX` itself runs on *every* call, gated branch or not
@@ -1108,9 +1119,11 @@ def _collapse_duplicate_settlements_by_dedupe_key(conn: Any) -> None:
         "FROM settlements WHERE dedupe_key IS NOT NULL GROUP BY dedupe_key HAVING c > 1"
     ).fetchall()
     for row in dupes:
-        print(
-            f"[migrate] settlements: dedupe_key {row['dedupe_key']!r} has {row['c']} "
-            f"duplicate rows ({row['ids']}) — keeping the earliest, removing the rest"
+        logger.info(
+            "migrate_settlements_dedupe", extra={
+                "dedupe_key": row["dedupe_key"], "duplicate_count": row["c"],
+                "settlement_ids": row["ids"],
+            },
         )
     conn.execute(
         "DELETE FROM settlements WHERE dedupe_key IS NOT NULL AND rowid NOT IN "
@@ -2171,6 +2184,9 @@ async def _assert_payload_safe_counted(payload: dict[str, Any]) -> None:
             SAFETY_STATS["nemo_guardrail_blocks"] += 1
         else:
             SAFETY_STATS["guardrail_blocks"] += 1
+        logger.warning(
+            "guardrail_blocked", extra={"matched_pattern": e.result.matched_pattern},
+        )
         raise
 
 
@@ -2190,6 +2206,7 @@ def validate_proof_of_reasoning(turn: dict[str, Any]) -> str:
     rationale = turn.get("peer_text_rationale") or turn.get("rationale") or ""
     if not isinstance(rationale, str) or len(rationale.strip()) < MIN_RATIONALE_CHARS:
         SAFETY_STATS["por_rejections"] += 1
+        logger.warning("por_rejected", extra={"reason": "missing_rationale"})
         raise PermissionError(
             f"REJECTED_INFRACTION: Missing Proof-of-Reasoning "
             f"(need >= {MIN_RATIONALE_CHARS} chars)"
@@ -2198,6 +2215,7 @@ def validate_proof_of_reasoning(turn: dict[str, Any]) -> str:
     for fp in BOT_FINGERPRINTS:
         if fp.casefold() in lowered:
             SAFETY_STATS["por_rejections"] += 1
+            logger.warning("por_rejected", extra={"reason": "bot_fingerprint"})
             raise PermissionError(f"REJECTED_INFRACTION: Bot fingerprint detected: {fp}")
     return rationale
 
@@ -2349,9 +2367,7 @@ async def lifespan(app: FastAPI):
     init_db()
     notice = _stripe_mpp_admin_notice()
     if notice:
-        import logging
-
-        logging.getLogger("emporia.relay").warning("%s", notice)
+        logger.warning("%s", notice)
     global _SWEEP_TASK
     _SWEEP_TASK = asyncio.create_task(_sweep_loop())
     try:
@@ -2417,6 +2433,9 @@ def _check_rate_limit(request: Request) -> JSONResponse | None:
     while q and q[0] < now - window:
         q.popleft()
     if len(q) >= limit:
+        logger.warning(
+            "rate_limit_exceeded", extra={"client_ip": ip, "bucket": bucket, "path": path},
+        )
         return JSONResponse(
             {"detail": f"Rate limit exceeded — {limit} requests per {int(window)}s per IP"},
             status_code=429,
@@ -2608,8 +2627,60 @@ app.add_middleware(
     # the same reason a JS client would otherwise be unable to read it off a
     # cross-origin response at all.
     allow_headers=["Content-Type", "Authorization", "X-Emporia-Agent-Id", "PAYMENT-SIGNATURE"],
-    expose_headers=["PAYMENT-RESPONSE"],
+    # P22: X-Request-Id is set by request_context (below), registered *after*
+    # this middleware so it wraps outside CORS and adds the header once CORS
+    # has already finished deciding what to expose — without listing it here
+    # too, a cross-origin browser caller (e.g. a remote-hosted dashboard)
+    # could see the header in devtools but couldn't read it via fetch().
+    expose_headers=["PAYMENT-RESPONSE", "X-Request-Id"],
 )
+
+
+# P22: registered last, so it wraps outside CORS (and every other app-level
+# middleware) and still sits inside Starlette's own ServerErrorMiddleware,
+# which wraps *everything* app-registered (confirmed against this repo's own
+# starlette/middleware/errors.py) -- an unhandled exception anywhere below
+# this point propagates through call_next() as a real Python exception,
+# catchable here, loggable, and then re-raised so ServerErrorMiddleware still
+# produces the exact same 500 it always has. No @app.exception_handler is
+# added or needed.
+#
+# Known, structural limitation (verified live, not just reasoned about): the
+# X-Request-Id header set below never reaches a genuine unhandled-exception
+# 500. ServerErrorMiddleware is prepended by Starlette *outside* every
+# app.add_middleware()-registered layer -- the same structural fact behind
+# A8's recorded "500s still bypass CORS" finding -- so once an exception
+# propagates past this middleware, there is no way to attach anything to the
+# response it builds without a custom @app.exception_handler, which this
+# deliberately avoids (see above). The request_id still reaches the log line
+# (correlatable by timestamp/path/traceback) -- it just can't reach the
+# client-visible response body on this one path.
+@app.middleware("http")
+async def request_context(request: Request, call_next):
+    rid = uuid.uuid4().hex[:12]
+    token = request_id_ctx.set(rid)
+    start = time.monotonic()
+    try:
+        try:
+            response = await call_next(request)
+        except Exception:
+            logger.exception(
+                "unhandled_exception",
+                extra={"method": request.method, "path": request.url.path},
+            )
+            raise
+        duration_ms = round((time.monotonic() - start) * 1000, 1)
+        logger.info(
+            "request", extra={
+                "method": request.method, "path": request.url.path,
+                "status_code": response.status_code, "duration_ms": duration_ms,
+                "client_ip": request.client.host if request.client else "unknown",
+            },
+        )
+        response.headers["X-Request-Id"] = rid
+        return response
+    finally:
+        request_id_ctx.reset(token)
 
 
 # ============================================================================
@@ -2698,9 +2769,6 @@ async def _sweep_loop() -> None:
     here — it must propagate so lifespan's own cancel+await sees a real cancellation,
     not a task that already died for an unrelated reason.
     """
-    import logging
-
-    logger = logging.getLogger("emporia.relay")
     while True:
         await asyncio.sleep(_SWEEP_INTERVAL_SECONDS)
         try:
@@ -5160,9 +5228,11 @@ async def submit_action(session_id: str, req: SubmitActionRequest):
     # replayed against a different session or an earlier/later turn.
     if not req.signature:
         SAFETY_STATS["unsigned_actions_rejected"] += 1
+        logger.warning("unsigned_action_rejected", extra={"reason": "missing_signature"})
         raise HTTPException(401, "Signature required for session actions")
     if not AGENT_REGISTRY.verify_signature(req.agent_id, full_payload, req.signature):
         SAFETY_STATS["unsigned_actions_rejected"] += 1
+        logger.warning("unsigned_action_rejected", extra={"reason": "invalid_signature"})
         raise HTTPException(403, "Invalid signature")
     # Rate-limit after signature verification, not before — keying on req.agent_id
     # pre-signature would let a forged, unsigned request burn any agent's rate-limit
@@ -6381,9 +6451,10 @@ async def _refund_kicked_room_payer(room_id: str, agent_id: str) -> dict[str, An
             except Exception as persist_exc:
                 # S1: Stripe's reversal already happened — a local write failure
                 # on top of it must still report the reversal, not 500 and hide it.
-                print(
-                    f"_refund_kicked_room_payer: failed to persist "
-                    f"reversed_pending_refund for settlement {settlement_id}: {persist_exc}"
+                logger.error(
+                    "refund_persist_failed_after_reversal",
+                    extra={"settlement_id": settlement_id, "reversal_id": reversal_id},
+                    exc_info=persist_exc,
                 )
                 return {
                     "refunded": False, "reason": f"refund_failed: {e}",
@@ -6407,9 +6478,10 @@ async def _refund_kicked_room_payer(room_id: str, agent_id: str) -> dict[str, An
     except Exception as persist_exc:
         # S1: refund + reversal already happened at Stripe — a local write
         # failure on top of that must still report the real outcome, not 500.
-        print(
-            f"_refund_kicked_room_payer: failed to persist refund for "
-            f"settlement {settlement_id}: {persist_exc}"
+        logger.error(
+            "refund_persist_failed",
+            extra={"settlement_id": settlement_id, "reversal_id": reversal_id},
+            exc_info=persist_exc,
         )
         return {
             "refunded": True, "refund_id": refund["refund_id"], "reversal_id": reversal_id,
