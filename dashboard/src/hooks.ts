@@ -88,9 +88,14 @@ export function useRoomWs(
   const wsRef = useRef<WebSocket | null>(null);
 
   useEffect(() => {
+    // P24-5 (W5, F2): clear unconditionally on every roomId change, not just
+    // the falsy transition -- otherwise a room->room switch renders the old
+    // room's messages against the new room's verification context until the
+    // new room's room_init frame arrives, producing a false "unverified" chip.
+    setMessages([]);
+    setConnected(false);
+
     if (!roomId) {
-      setMessages([]);
-      setConnected(false);
       return;
     }
 
@@ -142,6 +147,55 @@ export function useRoomWs(
 
   const send = (data: string) => wsRef.current?.send(data);
   return { messages, connected, send };
+}
+
+// ─── Sender pubkeys ──────────────────────────────────────────────────────────
+
+/**
+ * Fetches and caches each distinct sender's pubkey, for verifyMessageSignature().
+ *
+ * P24-5 (W5, F3): RoomsView used to key this effect on `[messages, pubkeys]`
+ * with `messages` a WS-frame array that gets a new identity on every frame --
+ * the effect re-ran constantly, and a second run before the first's fetch
+ * resolved could re-request the same id (no infinite loop; failures cache
+ * "", so it self-limits, but requests were still unbounded in flight).
+ * Fixed by keying on a stable, deduped, sorted senderKey string instead of
+ * the raw id array, and tracking in-flight ids in a ref so a re-run before
+ * the first request lands never re-requests the same id.
+ */
+export function useSenderPubkeys(
+  senderIds: string[],
+  fetchPubkey: (agentId: string) => Promise<string>,
+): Record<string, string> {
+  const [pubkeys, setPubkeys] = useState<Record<string, string>>({});
+  const pubkeysRef = useRef(pubkeys);
+  pubkeysRef.current = pubkeys;
+  const requestedRef = useRef<Set<string>>(new Set());
+  const fetchRef = useRef(fetchPubkey);
+  fetchRef.current = fetchPubkey;
+  // A request for id X, once started, must be allowed to land no matter which
+  // later effect run's closure it resolves in -- requestedRef's dedup is only
+  // sound if a landed result is never dropped, so unmount (not "this effect
+  // run got superseded") is the only reason to discard it.
+  const unmountedRef = useRef(false);
+  useEffect(() => () => { unmountedRef.current = true; }, []);
+
+  const senderKey = [...new Set(senderIds)].sort().join(" ");
+
+  useEffect(() => {
+    const ids = senderKey ? senderKey.split(" ") : [];
+    const unknown = ids.filter((id) => !(id in pubkeysRef.current) && !requestedRef.current.has(id));
+    if (unknown.length === 0) return;
+    unknown.forEach((id) => requestedRef.current.add(id));
+
+    Promise.all(unknown.map((id) => fetchRef.current(id).then((key) => [id, key] as const)))
+      .then((pairs) => {
+        if (unmountedRef.current) return;
+        setPubkeys((prev) => ({ ...prev, ...Object.fromEntries(pairs) }));
+      });
+  }, [senderKey]);
+
+  return pubkeys;
 }
 
 // ─── Global event stream ─────────────────────────────────────────────────────

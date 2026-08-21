@@ -1595,11 +1595,15 @@ worth its own decision, not a five-minute add-on here).
   room establishes trust without independent confirmation.** An agent's *first* `verify_room_chain()`
   call against an already-compromised room pins the tampered head as if it were genuine. This is the
   same limitation federation peer-key pinning has always had, stated plainly rather than implied
-  solved by the word "pinning."
-- **`verify_room_chain()`'s 1000-message cap means a large room's full history can silently never be
-  verifiable from genesis in a single relay's default page size.** No pagination-beyond-the-cap path
-  exists; a room this size reports "could not fetch full history" rather than a false result, but
-  still can't be fully verified.
+  solved by the word "pinning." **P24 update:** the pin is now also used as an early-stop
+  *checkpoint* for the backward walk (see the P24 section below) — a room whose pin already matches
+  a point in the current history skips re-verifying everything before it. This makes `verified: true`
+  mean one of two different things depending on `chain_verified_scope`, which is why that field
+  exists rather than folding the distinction into prose alone.
+- **`verify_room_chain()`'s 1000-message cap meant a large room's full history could silently never
+  be verifiable from genesis in a single relay's default page size.** *(Closed by P24 — see below;
+  left here, struck through in spirit rather than deleted, so the historical record of what P21
+  shipped and what P24 fixed stays intact rather than quietly vanishing from this list.)*
 
 ## Fixed post-hackathon (P23-1 pass — audited P21)
 
@@ -1680,6 +1684,150 @@ every restart and every browser; `localStorage` is per-origin and per-browser-pr
 site data, a private window, or switching browsers all reset the pin to first-verify-establishes-
 trust. This is the same TOFU limitation the Python-side pin has always had (see "Still open"
 above), just with a shorter, more easily-reset persistence horizon in a browser than on disk.
+
+## P24 pass — full-history chain verification, real replay detection, guardrail normalization
+
+Auditing P23's own diff — this codebase's standing discipline — turned up three real defects, two
+of them regressions P23 itself introduced, plus four minor ones, all verified live rather than just
+reasoned about. Fixed alongside three forward workstreams: closing the 1000-message chain-
+verification cap, extending replay detection past one page, and hardening the guardrails regex
+firewall against zero-width/homoglyph obfuscation.
+
+### Fixed — carried defects from P23
+
+| Finding | Severity | Fix |
+|---|---|---|
+| **Federation `asyncio.gather` regression (P23 introduced this).** P23's own comment claimed per-peer failures couldn't escape `_sync_all_federated_peers()`. False: `_fetch_federation_batch()` did a bare `json.loads` with no type check, and both pullers' `data.get("origin_relay", ...)` ran *outside* their own try/except. Reproduced live: a peer serving a JSON array (not an object) raised `AttributeError` straight out of the bare `asyncio.gather()`, 500ing `POST /gaming/v1/federate/sync` and leaving the *sibling* peer's task orphaned — still running, still writing `_FEDERATION_LAST_SYNC` and the DB, after the request had already returned a failure. Strictly worse than the serial loop P23 replaced. | High | Fixed at the chokepoint both pullers already route through: `_fetch_federation_batch()` now raises `ValueError` on a non-dict JSON body, converting the escape into an ordinary per-peer failure their existing `except Exception` already handles. Belt and braces: both inner `asyncio.gather()` calls also gained `return_exceptions=True`, mapping any *other* surprise to a logged failure record instead of taking the whole fan-out down. |
+| **False "✗ unverified" on every room switch (P23 introduced this, user-visible).** `useRoomWs` (`hooks.ts`) only cleared `messages` when `roomId` went *falsy* — on a room→room switch, the previous room's messages rendered while `RoomsView.tsx`'s `roomId` was already the new one, so `verifyMessageSignature()` returned `false` (not `null`) for every message: a wall of red chips. Exactly the false alarm P23's own `ReadOnlyChat.tsx` comment claimed the `null`-vs-`false` semantics prevented. | Medium (dashboard trust signal) | `setMessages([])`/`setConnected(false)` now run unconditionally at the top of the effect, before the `if (!roomId) return` guard, so *any* `roomId` change clears — not just the falsy transition. `RoomChainBadge` additionally gained `key={selected.room_id}` at its call site to force a remount on room switch (not a `useInterval` reset-on-deps-change, which would blank `EventsView`/`ListingsView` on every manual refresh). |
+| **Pubkey-fetch request storm.** `RoomsView.tsx`'s pubkey-fetch effect was keyed on `[messages, pubkeys]`; `messages` gets a new array identity on every WS frame, so the effect re-ran constantly, and a second run before the first fetch's `setPubkeys()` landed could re-request the same in-flight id. No infinite loop (a failed fetch still caches `""`), but unbounded in-flight requests. | Low | Extracted into a reusable `useSenderPubkeys()` hook (`hooks.ts`), keyed on a stable, deduped, sorted `senderKey` string instead of the raw array, with a `requestedRef` set tracking in-flight ids so a re-run before the first request lands never re-requests the same id. |
+| **Corrupt localStorage pin silently disabled TOFU and reported `verified: true`.** `getPinnedRoomChainHead()` treated any `JSON.parse` failure, or a parsed value that wasn't a well-formed `RoomChainPin`, the same as "never pinned" — indistinguishable from a room that had genuinely never been verified, silently disabling the one check that catches a self-consistent history rewrite. | Medium | `getPinnedRoomChainHead()` now returns `{ pin, corrupt }`; `verifyRoomChainFromRelay()` fails closed (`verified: false`) when `corrupt` is true, rather than degrading to "no pin". |
+| **`data.origin_relay \|\| relayUrl` diverged from Python's `.get(key, default)` on an empty-string key.** `\|\|` also falls back on a present-but-falsy value; Python's `dict.get` only falls back when the key is actually *missing*. A peer legitimately reporting `origin_relay: ""` would recompute a different signable payload than the one it actually signed, falsely rejecting an honest response. | Low | `"origin_relay" in data ? data.origin_relay : relayUrl` — matches Python's `.get()` semantics exactly. |
+| **`_SWEEP_TASK`/`_FEDERATION_SYNC_TASK` never reset to `None` on shutdown.** Left a reference to a cancelled, dead task sitting in the module global between a test's `TestClient` teardown and the next one's startup. | Low | Both reset to `None` in `lifespan()`'s `finally` block, after their cancellation is awaited. |
+| **`_LOW_SIGNAL_PATHS` missed the trailing-slash variant.** Starlette 307-redirects `/health/` to `/health`; the redirect's own request line matched nothing in the DEBUG-demotion set and logged at INFO. | Low | Path normalized (`.rstrip("/") or "/"`) before the set lookup. |
+
+**New finding, from checking the design against the code (not from either audit that fed this pass):**
+P21-7 gave the chain's ordering rule a `rowid` tiebreak in `rooms.verify_chain()` and
+`_last_chain_hash()` — but not in `get_messages()`, the paginator every chain-verification client
+actually walks, which still orders by `created_at` alone with a strict `<` cursor. Two of three call
+sites of one ordering rule. A `created_at` tie straddling a page boundary can silently drop a
+message during pagination. **Not fixed this pass** — changing `get_messages()`'s cursor semantics is
+a public-API decision of its own — but the backward walk below (`verify_chain_page()`) *detects* it:
+a page-boundary hash mismatch gets a reason string distinct from a mid-page one
+("hash mismatch at a page boundary... or a message was lost at a created_at tie spanning the page
+split"), so the walk fails closed with an actionable message rather than reporting a generic,
+indistinguishable-from-tampering break.
+
+### Shipped — full-history chain verification (W1)
+
+Closes the cap recorded above: `verify_room_chain()`'s 1000-message default meant a large room
+could "silently never be verifiable from genesis." The fix walks **backward** instead of forward —
+the only direction the relay's own pagination (`get_messages()`, `before=created_at`) supports —
+verifying each page against the one before it, holding only one page in memory at a time. This
+removes the memory argument for a hard cap entirely.
+
+- **`rooms.verify_chain_page(page, expected, at_genesis) -> (ok, new_expected, reason)`** is the
+  extracted pure decision core, shared by `agent_sdk.py`'s async `verify_room_chain()` and
+  `mcp_server.py`'s sync twin — closing the exact class of drift the "new finding" above and P21-7
+  before it both found (a fix landing in one hand-copied implementation but not the other). Each
+  caller keeps its own ~10-line fetch loop; only the verification logic moved. `dashboard/src/
+  integrityCheck.ts`'s `verifyChainPage()` is a hand port, kept in sync manually — the same decision
+  `pyCanonicalJson()`/`computeChainHash()` already made in that file, verified against
+  cross-language golden fixtures the same way.
+- **`max_messages: int | None = None`** (was `int = 1000`) is the new Python default — unlimited,
+  walk to genesis. A caller-supplied int keeps the old fail-closed "could not fetch full history"
+  branch verbatim. The dashboard's TS port keeps a real bound (25,000 by default) — each hash there
+  is an async Web Crypto call on a UI that polls every 60s, not a one-shot CLI/MCP call.
+- **Pin as checkpoint.** If the walk reaches a hash already pinned by an earlier fully-verified
+  call, it stops — that hash is a cryptographic commitment to its entire prefix (each `chain_hash`
+  recursively embeds the one before it via SHA-256), so re-walking history a previous call already
+  verified from genesis buys nothing. Confirmed by page-fetch-count assertions
+  (`test_sdk_verify_room_chain_pin_checkpoint_avoids_refetching_already_verified_history` and its TS
+  twin): a room with a few new messages since the pin fetches exactly one page, not the whole room
+  again; an *unchanged* room (pin equals the current signed head) fetches nothing at all. **This
+  changes what `verified: true` means** — from "genesis, this call" to "genesis, cumulatively across
+  calls" — surfaced via `chain_verified_scope: "genesis" | "pinned_checkpoint"` rather than left
+  implicit in prose alone, and rendered in `RoomChainBadge`'s tooltip. `ignore_pin=True` (Python) /
+  `ignorePin` (TS) forces a full genesis walk regardless of any existing pin, for an operator who
+  wants to re-establish trust from scratch.
+- **The pin can land mid-page, not just at a page boundary** — found while writing the pin-
+  checkpoint tests, not by either audit. Checking only a page's *oldest* message against the pin
+  (the naive boundary-only implementation) both under-performs (a room with a few new messages can
+  still pay for a full extra page fetch before finding the pin one page later) and — more
+  seriously — can produce a **false** "history was rewritten" result: if a genesis-reaching walk
+  never happens to land the pin exactly at a boundary, `pin_matched` stays `False` even though the
+  pin's hash genuinely is present, mid-page. Fixed by scanning every message in each fetched page
+  for the pin, truncating verification to the suffix from the match forward once found.
+- **Duplication risk, stated plainly:** the async SDK and sync MCP copies must get every future
+  change to this method in lockstep — the same risk P21-7's rowid tiebreak and this pass's own
+  federation-regression audit both found in other duplicated pairs. The extracted
+  `verify_chain_page()` shrinks the surface that can drift to the two ~10-line fetch loops; it does
+  not eliminate the risk.
+- **Live-verified:** a room seeded past 1200 messages (three times the old cap) reports
+  `verified: true, chain_verified_scope: "genesis"` end to end over real HTTP through both the async
+  SDK and the sync MCP tool.
+
+### Shipped — full-history replay detection (W2)
+
+`message_read.annotate_messages()`'s nonce-dedup was, and remains, per-page only —
+`SECURITY.md` has described this since P19 as "always a miss, never a false alarm," true but
+narrower than it sounds once P23-4 gave `replayed` a dashboard consumer that implied more coverage
+than it had.
+
+Since W1's walk already visits a room's entire history, the same walk now builds a `set` of every
+nonce seen — the one part of this design that isn't O(page) memory, since duplicate detection
+inherently needs the full set, not a page at a time. Reported via `replay_scan_scope`:
+`"full_history"` only when the call actually reached genesis this time, `"since_pinned_head"` when
+it stopped at the pin checkpoint (a duplicate whose original predates the pin is necessarily
+missed — an honest, stated limitation, not a silent gap), `"no_new_messages"` when the pin fast-path
+skipped fetching anything at all. A bounded sample (20) of offending nonces travels alongside the
+count. Chain verification does not subsume this check — appending a replayed message extends the
+chain legitimately; a hash chain proves order and content integrity, not uniqueness.
+
+Given `idx_room_messages_nonce`'s `UNIQUE(room_id, nonce)` (`relay_server.py`) means a genuine
+same-room duplicate nonce can only ever reach this scanner if an operator has dropped that index —
+confirmed by the test for this needing to do exactly that — a `set` plus a scope string is the right
+amount of machinery; no new persistence was added. **DMs keep the per-page-only limit deliberately:**
+there is no `/threads/{id}/chain` route, so a full-thread walk would have no signed head or pin to
+anchor it. Building that route was explicitly out of scope for this pass; recorded here rather than
+silently left inconsistent with rooms.
+
+### Shipped — guardrail zero-width/homoglyph normalization (W3)
+
+`engine/guardrails.py`'s `scan_text()` ran all 10 `_INJECTION_PATTERNS` against raw, unnormalized
+input. Confirmed live before the fix: a zero-width character (`​` and five others — ZWNJ, ZWJ,
+BOM/ZWNBSP, word joiner, soft hyphen) inserted mid-word (`igno​re`) or substituted for a
+pattern's required whitespace (`ignore​all`) defeated every one of the 10 patterns.
+
+`_normalize_for_scan()` produces a deduped `(raw, strip-variant, space-variant)` tuple per input;
+`scan_text()` tries every pattern against every variant. Stripping alone is insufficient — the
+strip-variant fixes the mid-word case but not the between-word case (a stripped
+`ignore​all` is `ignoreall`, still not matching `\s+`); a space-substitution variant fixes the
+between-word case but would wrongly split an intact word if applied universally. Both normalized
+variants are NFKC-normalized first (the same precedent `relay_server.py`'s `_normalize_agent_id()`
+already established for agent ids), folding full-width forms and NBSP — the raw variant is kept
+un-normalized specifically so an attacker can't dodge detection by relying on a payload that only
+the raw check would see.
+
+Deliberately **not** touched: the NIM semantic-check path (`_flatten_texts()`, `nemo_semantic_check()`)
+stays on raw text — an LLM classifier handles obfuscation natively, and normalizing before sending
+would destroy evidence a human reviewing a false negative might want. `matched_pattern`/`reason`
+stay unchanged (a consumer-facing contract; advertising "we normalized" would help an attacker probe
+for the boundary). Out of scope, and staying that way: a full Unicode-confusables table (homoglyph
+substitution across scripts, e.g. Cyrillic а for Latin a — the actual rabbit hole a "homoglyph
+defense" name might imply) and paraphrase evasion (that's what the NIM layer, off by default, is
+for). Tested: each of the 10 patterns with a zero-width inserted mid-word and substituted for a
+space (20 cases), plus a legitimate ZWJ-emoji payload confirmed to *not* false-positive — ZWJ is one
+of the six characters this normalization touches, and every pattern here is an English word
+sequence, so an emoji sequence built from it was never at real risk, but the negative case is worth
+pinning explicitly given how close it sits to the normalized character set.
+
+### CI backstop (W6)
+
+`.github/workflows/ci.yml`'s `dashboard-typecheck` job installed dependencies and typechecked but
+never ran `npm test` or `npm run lint` — P23's 19 cross-language crypto golden-fixture tests (and
+everything W1/W2 added on top, another ~15) had **zero** automated backstop. Both steps added,
+unmodified (`oxlint` currently exits 0 despite ~30 pre-existing warnings — no `--deny-warnings` or
+threshold added this pass, so the gate is errors-only for now).
 
 ## Threat model notes (by design, not gaps)
 

@@ -26,6 +26,7 @@ import json
 import logging
 import os
 import re
+import unicodedata
 from dataclasses import asdict, dataclass
 from typing import Any, Iterable, Mapping
 
@@ -165,18 +166,58 @@ def _iter_text_values(value: Any, *, parent_key: str | None = None) -> Iterable[
             yield from _iter_text_values(child, parent_key=parent_key)
 
 
+# P24-3 (W3): zero-width/formatting characters with no NFKC decomposition to
+# nothing -- they're not compatibility variants of a visible character, just
+# invisible, so NFKC alone (_normalize_agent_id()'s precedent, relay_server.py)
+# leaves them untouched. ZWSP, ZWNJ, ZWJ, BOM/ZWNBSP, word joiner, soft hyphen.
+_ZERO_WIDTH_RE = re.compile("[​‌‍﻿⁠­]")
+
+
+def _normalize_for_scan(text: str) -> tuple[str, ...]:
+    """P24-3 (W3): homoglyph/zero-width obfuscation defense for the
+    deterministic regex layer. `igno​re` (a zero-width character
+    inserted mid-word) and `ignore​all` (one substituted for the
+    whitespace `_INJECTION_PATTERNS` requires between words) both defeat
+    every pattern as stored, unnormalized -- confirmed live before this fix.
+
+    Stripping alone is insufficient: the *strip* variant fixes the first
+    case (`igno​re` -> `ignore`) but not the second (`ignore​all`
+    stripped is `ignoreall`, still not matching `\\s+`) -- while a
+    *space-substitution* variant fixes the second but would mangle the
+    first (`igno re`, splitting a word the pattern expects intact). Trying
+    to pick one universally breaks the other, so both variants are tried.
+
+    Returns a deduped `(raw, strip-variant, space-variant)` -- never
+    mutates `text` itself; `scan_text` applies every pattern against every
+    variant. NFKC (folding full-width forms, NBSP, and other compatibility
+    variants) is applied as the base of both normalized variants, not the
+    raw one, so an attacker can't dodge detection by using a NFKC-folded
+    homoglyph in an otherwise-clean payload that only the raw check sees.
+    """
+    nfkc = unicodedata.normalize("NFKC", text)
+    strip_variant = _ZERO_WIDTH_RE.sub("", nfkc)
+    space_variant = _ZERO_WIDTH_RE.sub(" ", nfkc)
+    variants = (text, strip_variant, space_variant)
+    seen: list[str] = []
+    for v in variants:
+        if v not in seen:
+            seen.append(v)
+    return tuple(seen)
+
+
 def scan_text(text: str, *, mode: str | None = None) -> GuardrailResult:
     active_mode = (mode or DEFAULT_MODE or "enforce").lower()
     if active_mode == "off":
         return GuardrailResult(ok=True, mode=active_mode)
     for pattern in _INJECTION_PATTERNS:
-        if pattern.search(text):
-            return GuardrailResult(
-                ok=(active_mode == "audit"),
-                mode=active_mode,
-                reason="REJECTED_SECURITY: blocked adversarial system instruction text.",
-                matched_pattern=pattern.pattern,
-            )
+        for variant in _normalize_for_scan(text):
+            if pattern.search(variant):
+                return GuardrailResult(
+                    ok=(active_mode == "audit"),
+                    mode=active_mode,
+                    reason="REJECTED_SECURITY: blocked adversarial system instruction text.",
+                    matched_pattern=pattern.pattern,
+                )
     return GuardrailResult(ok=True, mode=active_mode)
 
 

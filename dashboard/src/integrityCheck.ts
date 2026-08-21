@@ -180,6 +180,79 @@ export interface ChainMessage {
   content: string;
   created_at: string;
   chain_hash?: string | null;
+  nonce?: string | null;
+}
+
+/** Either a bare `chain_hash` string (the *first* call in a walk, checked
+ * for direct equality against the page's newest message's own stored hash)
+ * or a pending message (every call after the first: the *previous*, newer
+ * page's oldest message, unverifiable using that page alone, recomputed
+ * against this page's newest as its true predecessor). See
+ * `rooms.verify_chain_page()` (Python) for the full rationale -- this is a
+ * hand port, kept in sync manually. */
+export type ChainPageExpected = string | ChainMessage;
+
+export interface ChainPageResult {
+  ok: boolean;
+  newExpected: ChainPageExpected | null;
+  reason: string;
+}
+
+/**
+ * TS port of `rooms.verify_chain_page()` (P24-1, W1) -- pure decision core
+ * for one page of a *backward* (newest-to-oldest) room chain walk. `page`
+ * must be ascending (oldest → newest), the same order GET
+ * /rooms/{id}/messages already returns. See the Python function's docstring
+ * for the full design rationale (why backward, why one message per page
+ * boundary must be deferred, what `atGenesis` changes).
+ */
+export async function verifyChainPage(
+  page: ChainMessage[],
+  expected: ChainPageExpected,
+  atGenesis: boolean,
+): Promise<ChainPageResult> {
+  if (page.length === 0) return { ok: false, newExpected: null, reason: "empty page" };
+
+  const newest = page[page.length - 1];
+  if (typeof expected === "string") {
+    if (newest.chain_hash !== expected) {
+      return {
+        ok: false, newExpected: null,
+        reason: "relay-signed chain head does not match the newest message's own stored hash — history may have been rewritten",
+      };
+    }
+  } else {
+    const pending = expected;
+    const recomputed = await computeChainHash(newest.chain_hash ?? null, pending.sender_id, pending.content, pending.created_at);
+    if (recomputed !== pending.chain_hash) {
+      return {
+        ok: false, newExpected: null,
+        reason: "hash mismatch at a page boundary — either history was rewritten, or a message was lost at a created_at tie spanning the page split",
+      };
+    }
+  }
+
+  for (let i = 1; i < page.length; i++) {
+    const older = page[i - 1];
+    const newer = page[i];
+    const recomputed = await computeChainHash(older.chain_hash ?? null, newer.sender_id, newer.content, newer.created_at);
+    if (recomputed !== newer.chain_hash) {
+      return { ok: false, newExpected: null, reason: "hash mismatch within a page — history may have been rewritten" };
+    }
+  }
+
+  const oldest = page[0];
+  if (atGenesis) {
+    const genesisExpected = await computeChainHash(null, oldest.sender_id, oldest.content, oldest.created_at);
+    if (genesisExpected !== oldest.chain_hash) {
+      return {
+        ok: false, newExpected: null,
+        reason: "genesis message does not chain from an empty prior — chain does not anchor at a true beginning",
+      };
+    }
+    return { ok: true, newExpected: null, reason: `genesis reached and verified (${page.length} messages in final page)` };
+  }
+  return { ok: true, newExpected: oldest, reason: `page verified (${page.length} messages), boundary check deferred` };
 }
 
 export interface ChainVerifyResult {
@@ -227,13 +300,41 @@ export interface RoomChainPin {
  * chain head AND the relay's signing key (same shape
  * load_room_chain_heads()/save_room_chain_heads() use), so a relay-identity
  * swap is caught the same way a content rewrite is. */
-export function getPinnedRoomChainHead(pinKey: string): RoomChainPin | null {
+export interface PinnedRoomChainHeadResult {
+  pin: RoomChainPin | null;
+  /** P24-5 (W5, F4): a stored value that parses but isn't a well-formed
+   *  RoomChainPin (corrupted localStorage, a foreign write to the same key)
+   *  used to silently degrade to "no pin" -- indistinguishable from a room
+   *  that has genuinely never been pinned, silently disabling the one check
+   *  that catches a self-consistent history rewrite. `corrupt` lets the
+   *  caller fail closed instead of reporting `verified: true` over an
+   *  anchor that was never actually checked. */
+  corrupt: boolean;
+}
+
+function isWellFormedPin(v: unknown): v is RoomChainPin {
+  return (
+    typeof v === "object" && v !== null && !Array.isArray(v) &&
+    typeof (v as Record<string, unknown>).chain_head === "string" &&
+    typeof (v as Record<string, unknown>).origin_public_key_hex === "string"
+  );
+}
+
+export function getPinnedRoomChainHead(pinKey: string): PinnedRoomChainHeadResult {
+  let raw: string | null;
   try {
-    const raw = localStorage.getItem(PIN_STORAGE_PREFIX + pinKey);
-    return raw ? (JSON.parse(raw) as RoomChainPin) : null;
+    raw = localStorage.getItem(PIN_STORAGE_PREFIX + pinKey);
   } catch {
-    return null;
+    return { pin: null, corrupt: false };
   }
+  if (!raw) return { pin: null, corrupt: false };
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw);
+  } catch {
+    return { pin: null, corrupt: true };
+  }
+  return isWellFormedPin(parsed) ? { pin: parsed, corrupt: false } : { pin: null, corrupt: true };
 }
 
 export function setPinnedRoomChainHead(pinKey: string, pin: RoomChainPin): void {
@@ -261,23 +362,42 @@ export interface RoomChainVerifyResult {
   message_count: number;
   verified: boolean;
   reason: string;
+  /** P24-1 (W1): what "verified: true" actually means this call --
+   *  "genesis" (walked all the way to the room's true first message this
+   *  call) vs "pinned_checkpoint" (stopped at a hash already committed to
+   *  its whole prefix by an earlier genesis walk). Never both; a badge that
+   *  only rendered `verified` would overclaim exactly the way the old
+   *  replay chip did (SECURITY.md). */
+  chain_verified_scope: "genesis" | "pinned_checkpoint" | null;
+  /** P24-2 (W2): how much of the room's nonce history this call actually
+   *  scanned for a duplicate -- "full_history" only when this call reached
+   *  true genesis; "since_pinned_head" when it stopped at the checkpoint
+   *  (a duplicate whose original predates the pin is necessarily missed);
+   *  "no_new_messages" when the pin fast-path skipped fetching anything. */
+  replay_scan_scope: "full_history" | "since_pinned_head" | "no_new_messages" | null;
+  replayed_nonce_count: number;
+  replayed_nonce_sample: string[];
 }
 
 /**
- * Full port of `agent_sdk.py`'s `verify_room_chain()` (860-978): fetch the
- * relay-signed chain head, verify the signature came from the key the relay
- * claims, fetch the room's own message history (paginated, capped at
- * `maxMessages`), recompute the chain independently, and compare against a
- * head pinned in localStorage the last time this room verified cleanly. This
- * is the "materially different trust model" SECURITY.md's P21 section left
- * as an opener rather than a five-minute add-on -- a badge that only echoed
- * `roomChain.verified` (the relay's own self-report) would be the same
- * shallow guarantee `AuditBadge.tsx` already gives for sessions, not this.
+ * TS port of `agent_sdk.py`'s `verify_room_chain()` (P21-7/P24-1, W1/W2) --
+ * fetch the relay-signed chain head, verify the signature came from the key
+ * the relay claims, then walk the room's own message history *backward*
+ * (the only direction GET /rooms/{id}/messages paginates), verifying each
+ * page against the one before it via `verifyChainPage()` above. See that
+ * Python method's docstring for the full design rationale (full history by
+ * default, pin-as-checkpoint, the replay scan riding the same walk) -- this
+ * is a hand port, kept in sync manually rather than shared, the same
+ * decision `pyCanonicalJson`/`computeChainHash` above already made.
  *
  * `fetchRoomChain`/`fetchRoomMessages` are injected (rather than importing
  * `api.ts` directly) so this module stays a pure, dependency-light unit
  * testable without a DOM/fetch mock -- callers pass `api.roomChain`/
  * `api.roomMessages` in practice.
+ *
+ * `maxMessages` defaults to a real bound (unlike the Python default of
+ * unlimited) — each hash here is an async Web Crypto call on a UI that
+ * polls, not a one-shot CLI/MCP call; pass `null` for an unbounded walk.
  */
 export async function verifyRoomChainFromRelay(
   relayUrl: string,
@@ -289,7 +409,8 @@ export async function verifyRoomChainFromRelay(
   fetchRoomMessages: (
     roomId: string, opts?: { limit?: number; before?: string },
   ) => Promise<{ messages: ChainMessage[] }>,
-  maxMessages = 1000,
+  maxMessages: number | null = 25_000,
+  ignorePin = false,
 ): Promise<RoomChainVerifyResult> {
   const data = await fetchRoomChain(roomId);
   const result: RoomChainVerifyResult = {
@@ -299,10 +420,19 @@ export async function verifyRoomChainFromRelay(
     message_count: data.message_count,
     verified: false,
     reason: "",
+    chain_verified_scope: null,
+    replay_scan_scope: null,
+    replayed_nonce_count: 0,
+    replayed_nonce_sample: [],
   };
 
   const signable = pyCanonicalJson({
-    origin_relay: data.origin_relay || relayUrl,
+    // P24-5 (W5, F5): `||` also falls back on a present-but-falsy value (an
+    // empty string); Python's `data.get("origin_relay", relayUrl)` only
+    // falls back when the key is actually *missing* -- diverging on a peer
+    // that legitimately reports `origin_relay: ""` would recompute a
+    // different signable payload than the relay signed and falsely reject.
+    origin_relay: "origin_relay" in data ? data.origin_relay : relayUrl,
     room_chain: [{ room_id: roomId, chain_head: data.chain_head || "", message_count: data.message_count }],
   });
   const signatureValid = verifyRaw(new TextEncoder().encode(signable), data.signature, data.origin_public_key_hex);
@@ -315,49 +445,138 @@ export async function verifyRoomChainFromRelay(
     return result;
   }
 
-  let rawMessages: ChainMessage[] = [];
-  let before: string | undefined;
-  const budget = Math.min(result.message_count, maxMessages);
-  while (rawMessages.length < budget) {
-    const pageLimit = Math.min(200, budget - rawMessages.length);
-    const page = await fetchRoomMessages(roomId, { limit: pageLimit, before });
-    const batch = page.messages ?? [];
-    if (batch.length === 0) break;
-    rawMessages = [...batch, ...rawMessages];
-    before = batch[0].created_at;
-    if (batch.length < pageLimit) break;
-  }
-  if (rawMessages.length < result.message_count) {
-    result.reason =
-      `could not fetch full history for independent verification — ` +
-      `${rawMessages.length}/${result.message_count} messages within the ${maxMessages}-message cap`;
-    return result;
-  }
-
-  let prevHash: string | null = null;
-  const computedHeads: string[] = [];
-  for (const m of rawMessages) {
-    prevHash = await computeChainHash(prevHash, m.sender_id, m.content, m.created_at);
-    computedHeads.push(prevHash);
-  }
-  if (prevHash !== data.chain_head) {
-    result.reason = "recomputed chain head does not match the relay's signed head — the message content the relay served doesn't match what it signed";
+  if (result.message_count === 0) {
+    result.verified = true;
+    result.reason = "empty room — nothing to verify";
+    result.chain_verified_scope = "genesis";
+    result.replay_scan_scope = "full_history";
     return result;
   }
 
   const pinKey = `${relayUrl}|${roomId}`;
-  const pinned = getPinnedRoomChainHead(pinKey);
-  if (pinned && pinned.chain_head && !computedHeads.includes(pinned.chain_head)) {
-    result.reason = "previously pinned chain head is not an ancestor of the current chain — history was rewritten (reordered or deleted messages)";
-    return result;
-  }
-  if (pinned && pinned.origin_public_key_hex && pinned.origin_public_key_hex !== data.origin_public_key_hex) {
-    result.reason = "relay's signing key changed since it was last pinned for this room";
+  const { pin: pinned, corrupt: pinCorrupt } = getPinnedRoomChainHead(pinKey);
+  if (pinCorrupt) {
+    // P24-5 (W5, F4): fail closed rather than silently treating a corrupt
+    // stored pin the same as "never pinned" -- that used to report
+    // `verified: true` over an anchor that was never actually checked,
+    // exactly the TOFU guarantee this whole function exists to provide.
+    result.reason = "stored chain-head pin is corrupt — refusing to report verified without a trustworthy TOFU anchor";
     return result;
   }
 
-  setPinnedRoomChainHead(pinKey, { chain_head: prevHash || "", origin_public_key_hex: data.origin_public_key_hex });
+  if (!ignorePin && pinned && pinned.chain_head === data.chain_head) {
+    if (pinned.origin_public_key_hex && pinned.origin_public_key_hex !== data.origin_public_key_hex) {
+      result.reason = "relay's signing key changed since it was last pinned for this room";
+      return result;
+    }
+    result.verified = true;
+    result.reason = "chain head unchanged since the last pinned verification — nothing new to check";
+    result.chain_verified_scope = "pinned_checkpoint";
+    result.replay_scan_scope = "no_new_messages";
+    return result;
+  }
+
+  const seenNonces = new Set<string>();
+  const replaySample: string[] = [];
+  let replayCount = 0;
+
+  let expected: ChainPageExpected = data.chain_head || "";
+  let before: string | undefined;
+  let fetched = 0;
+  let reachedGenesis = false;
+  let reachedPin = false;
+  let pinMatched = false;
+
+  while (true) {
+    if (maxMessages !== null && fetched >= maxMessages) {
+      result.reason =
+        `could not fetch full history for independent verification — ` +
+        `${fetched}/${result.message_count} messages within the ${maxMessages}-message cap`;
+      return result;
+    }
+    let pageLimit = Math.min(200, result.message_count - fetched);
+    if (maxMessages !== null) pageLimit = Math.min(pageLimit, maxMessages - fetched);
+    const page = await fetchRoomMessages(roomId, { limit: pageLimit, before });
+    const batch = page.messages ?? [];
+    if (batch.length < pageLimit) {
+      result.reason = "relay served fewer messages than its own reported message_count claims exist";
+      return result;
+    }
+
+    for (const m of batch) {
+      if (!m.nonce) continue;
+      if (seenNonces.has(m.nonce)) {
+        replayCount++;
+        if (replaySample.length < 20) replaySample.push(m.nonce);
+      }
+      seenNonces.add(m.nonce);
+    }
+
+    fetched += batch.length;
+    const atGenesis = fetched >= result.message_count;
+
+    // P24-1/2: the pin can land anywhere in a fetched page, not just at its
+    // oldest boundary -- see agent_sdk.py's verify_room_chain() for why
+    // this must scan the whole page.
+    let pinIndex: number | null = null;
+    if (pinned && !ignorePin) {
+      for (let i = 0; i < batch.length; i++) {
+        if (batch[i].chain_hash === pinned.chain_head) {
+          pinIndex = i;
+          break;
+        }
+      }
+    }
+
+    const verifyBatch = pinIndex !== null ? batch.slice(pinIndex) : batch;
+    const verifyAtGenesis = atGenesis && pinIndex === null;
+
+    const { ok, newExpected, reason } = await verifyChainPage(verifyBatch, expected, verifyAtGenesis);
+    if (!ok) {
+      result.reason = reason;
+      return result;
+    }
+
+    if (pinIndex !== null) {
+      pinMatched = true;
+      if (pinned!.origin_public_key_hex && pinned!.origin_public_key_hex !== data.origin_public_key_hex) {
+        result.reason = "relay's signing key changed since it was last pinned for this room";
+        return result;
+      }
+      reachedPin = true;
+      break;
+    }
+
+    if (atGenesis) {
+      reachedGenesis = true;
+      break;
+    }
+
+    const oldest = batch[0];
+    expected = newExpected as ChainPageExpected;
+    before = oldest.created_at;
+  }
+
+  if (reachedGenesis && pinned && !pinMatched && !ignorePin) {
+    result.reason = "previously pinned chain head is not an ancestor of the current chain — history was rewritten (reordered or deleted messages)";
+    return result;
+  }
+
   result.verified = true;
-  result.reason = `chain valid and extends the previously pinned head (${rawMessages.length} messages)`;
+  result.replayed_nonce_count = replayCount;
+  result.replayed_nonce_sample = replaySample;
+  if (reachedGenesis) {
+    result.chain_verified_scope = "genesis";
+    result.replay_scan_scope = "full_history";
+    result.reason = `chain valid, verified from true genesis this call (${fetched} messages)`;
+  } else {
+    result.chain_verified_scope = "pinned_checkpoint";
+    result.replay_scan_scope = "since_pinned_head";
+    result.reason =
+      `chain valid back to the previously pinned head (${fetched} new messages checked this call; ` +
+      `earlier history was verified from genesis when that head was first pinned)`;
+  }
+
+  setPinnedRoomChainHead(pinKey, { chain_head: data.chain_head || "", origin_public_key_hex: data.origin_public_key_hex });
   return result;
 }

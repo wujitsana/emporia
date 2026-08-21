@@ -13,7 +13,7 @@ import Text from "@components/Text";
 import SidebarLayout from "@components/SidebarLayout";
 import RowSpaceBetween from "@components/RowSpaceBetween";
 import Indent from "@components/Indent";
-import { useInterval, useRoomWs, type WsMessage } from "../hooks";
+import { useInterval, useRoomWs, useSenderPubkeys, type WsMessage } from "../hooks";
 import type { Navigate } from "../navigation";
 import { markReplayedNonces, verifyMessageSignature } from "../integrityCheck";
 
@@ -31,19 +31,10 @@ export function RoomsView({ initialRoomId, navigate }: { initialRoomId: string |
   // entirely for a sender whose fetch is still in flight or failed, which
   // verifyMessageSignature() already treats as "unknown" (undefined pubkey),
   // not "tampered with".
-  const [pubkeys, setPubkeys] = useState<Record<string, string>>({});
-  useEffect(() => {
-    const unknown = [...new Set((messages as WsMessage[]).map((m) => m.sender_id))]
-      .filter((id) => !(id in pubkeys));
-    if (unknown.length === 0) return;
-    let cancelled = false;
-    Promise.all(unknown.map((id) => api.agentProfile(id).then((a) => [id, a.public_key_hex || ""] as const).catch(() => [id, ""] as const)))
-      .then((pairs) => {
-        if (cancelled) return;
-        setPubkeys((prev) => ({ ...prev, ...Object.fromEntries(pairs) }));
-      });
-    return () => { cancelled = true; };
-  }, [messages, pubkeys]);
+  const pubkeys = useSenderPubkeys(
+    (messages as WsMessage[]).map((m) => m.sender_id),
+    (id) => api.agentProfile(id).then((a) => a.public_key_hex || "").catch(() => ""),
+  );
 
   useEffect(() => {
     if (initialRoomId || rooms.length === 0) return;
@@ -138,7 +129,12 @@ export function RoomsView({ initialRoomId, navigate }: { initialRoomId: string |
         selected ? (
           <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
             {wsConnected && <LiveMark live />}
-            <RoomChainBadge roomId={selected.room_id} />
+            {/* P24-5 (W5, F2): key forces a remount on room switch so the badge's
+                own polling state can't briefly render the previous room's verdict
+                against the new room's id -- useInterval itself intentionally does
+                not reset on a dep change (EventsView/ListingsView rely on that to
+                avoid blanking on a manual refresh), so the reset has to happen here. */}
+            <RoomChainBadge key={selected.room_id} roomId={selected.room_id} />
           </div>
         ) : undefined
       }

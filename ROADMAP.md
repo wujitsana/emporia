@@ -716,6 +716,26 @@ encrypted room. Full detail in `SECURITY.md`'s P18 and P19 sections.
   DMs — `decrypted` stays deliberately unported (`api.ts`'s own long-standing "the dashboard
   cannot decrypt and never will" principle). See `SECURITY.md`'s P23 section for the
   cross-language golden-fixture tests this relies on.
+- **Full-history chain verification, real replay detection, guardrail normalization — done (P24).**
+  Closed the cap SECURITY.md's P21 section recorded as "still open" (`verify_room_chain()`'s
+  1000-message limit meant a large room could silently never be verifiable from genesis): both
+  Python clients and the dashboard's `integrityCheck.ts` now walk a room's chain *backward*,
+  page-at-a-time (`rooms.verify_chain_page()`, extracted so the async SDK and the sync MCP copy
+  share one verification core instead of two independently-maintained ones), holding only one
+  page in memory regardless of room size — with a pin-as-checkpoint early stop once the walk
+  reaches a hash an earlier call already fully verified from genesis. `chain_verified_scope`
+  (`"genesis"` vs `"pinned_checkpoint"`) makes explicit which one happened this call, rather than
+  letting a bare `verified: true` overclaim. The same walk also runs a full-history nonce-replay
+  scan (previously always per-page-only — "a miss, never a false alarm," true but silently
+  narrower than a badge implied once P23-4 gave it a dashboard consumer), reported via
+  `replay_scan_scope`. Also folded in: a federation `asyncio.gather` regression P23 itself
+  introduced (a peer serving non-dict JSON escaped both pullers' own error handling and orphaned
+  sibling peer tasks), a dashboard false-"unverified" regression on room switch, a pubkey-fetch
+  request storm, a corrupt-pin fail-*open* gap (silently degraded to "never pinned" instead of
+  refusing to verify), and guardrail zero-width/homoglyph normalization
+  (`engine/guardrails.py`'s regex firewall previously ran on raw, unnormalized text — a zero-width
+  character inserted mid-word or substituted for a required space defeated every pattern). See
+  `SECURITY.md`'s P24 section for full detail.
 - **What's still open, by design or as a recorded residual, not an oversight:** no forward secrecy
   (a stolen key retroactively unwraps everything wrapped to it); room chain-head pinning is TOFU,
   same limitation federation peer-key pinning has always had — the first verify against an

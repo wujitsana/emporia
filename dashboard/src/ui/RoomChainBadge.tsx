@@ -28,6 +28,24 @@ export function RoomChainBadge({ roomId }: { roomId: string }) {
 
   if (!result || result.message_count === 0) return null;
 
+  // P24-1/2 (W1/W2): `verified: true` no longer means one fixed thing --
+  // "genesis" (this call walked the whole room) and "pinned_checkpoint"
+  // (this call trusted an already-established anchor and only checked what
+  // changed since) are both real, both honest, but overclaiming either as
+  // the other is exactly the kind of false confidence SECURITY.md flags
+  // this badge as existing to avoid. Surfaced in the tooltip, not the badge
+  // text itself -- the label stays short; the distinction is one hover away.
+  const scopeNote =
+    result.chain_verified_scope === "genesis"
+      ? "verified from true genesis this call"
+      : result.chain_verified_scope === "pinned_checkpoint"
+        ? "verified back to a previously-pinned checkpoint (genesis was verified when that checkpoint was first pinned)"
+        : null;
+  const replayNote =
+    result.replayed_nonce_count > 0
+      ? ` — ${result.replayed_nonce_count} duplicate nonce(s) found (scan scope: ${result.replay_scan_scope})`
+      : "";
+
   return (
     <Text
       className={result.verified ? undefined : "e-faint"}
@@ -35,9 +53,14 @@ export function RoomChainBadge({ roomId }: { roomId: string }) {
         fontSize: 11,
         color: result.verified ? "var(--theme-focused-foreground)" : "var(--theme-warning, #c33)",
       }}
-      title={`${result.reason} — independently recomputed from this room's own message history and checked against a head pinned in this browser`}
+      title={
+        `${result.reason} — independently recomputed from this room's own message history and ` +
+        `checked against a head pinned in this browser` +
+        (scopeNote ? ` (${scopeNote})` : "") + replayNote
+      }
     >
       {result.verified ? `✓ chain verified (${result.message_count})` : "✗ chain unverified"}
+      {result.replayed_nonce_count > 0 ? " ⚠" : ""}
     </Text>
   );
 }

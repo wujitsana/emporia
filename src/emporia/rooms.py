@@ -564,6 +564,114 @@ def post_message(
     return _row_to_message(row)
 
 
+def verify_chain_page(
+    page: list[Any],
+    expected: str | Any,
+    at_genesis: bool,
+) -> tuple[bool, Any | None, str]:
+    """Pure decision core for one page of a *backward* (newest-to-oldest) room
+    chain walk (P24-1, W1) — shared by `agent_sdk.py`'s async
+    `verify_room_chain()` and `mcp_server.py`'s sync twin, closing the
+    duplication risk P24's own audit flagged (P21-7's rowid tiebreak reached
+    two of three call sites because the two copies drifted). This is the
+    piece `message_read.py`'s own precedent says to extract — each caller
+    keeps its own ~10-line fetch loop; only the verification decision moves
+    here.
+
+    Exists because a room's chain can no longer be verified in one
+    forward pass that loads every message at once (SECURITY.md recorded that
+    a room over the old 1000-message cap "can silently never be verifiable
+    from genesis"). Walking backward instead — the only direction the relay's
+    own pagination (`get_messages`, `before=created_at`) supports — lets a
+    caller hold one page in memory rather than the whole room, at the cost of
+    one message per page boundary needing a *deferred* check: a page's own
+    oldest message can't be verified against its true predecessor until the
+    next (older) page — containing that predecessor — has been fetched.
+
+    `page`: one page of messages, each needing `.sender_id`/`.content`/
+    `.created_at`/`.chain_hash` (dict-style `__getitem__` access — works
+    against both `RoomMessage.to_dict()` output and the relay's JSON), in
+    the same ascending (oldest → newest) order `get_messages()`/
+    `GET /rooms/{id}/messages` already return — no caller needs to reverse
+    anything.
+
+    `expected` carries state between calls and takes two different shapes
+    depending on which check it drives:
+      - a bare `chain_hash` string, on the *first* call only: checked for
+        direct equality against this page's newest message's own stored
+        `chain_hash`. This is a legitimate equality, not a recompute — a
+        room's relay-attested `chain_head` *is defined as* its newest
+        message's `chain_hash`.
+      - a message-shaped value (the *previous*, newer page's oldest message),
+        on every call after the first: that message couldn't be verified
+        using its own page alone, since its true predecessor lives in the
+        page being processed now. This call recomputes
+        `compute_chain_hash(<this page's newest>.chain_hash, pending.sender_id,
+        pending.content, pending.created_at)` and compares it against
+        `pending.chain_hash`.
+
+    Every message strictly between a page's oldest and newest is verified by
+    an ordinary adjacent-pair recompute, entirely within this one page.
+
+    Returns `(ok, new_expected, reason)`:
+      - `ok=False`: verification failed; `reason` says why (and — for the
+        deferred cross-page check specifically — says so distinctly, since a
+        failure there can also mean `get_messages`' own known page-boundary
+        gap silently dropped a message on a `created_at` tie, not just
+        tampering; see that function's docstring and SECURITY.md); `new_expected`
+        is `None` and the caller must stop.
+      - `ok=True, at_genesis=False`: `new_expected` is this page's own oldest
+        message, deferred for the *next* (older) page to verify.
+      - `ok=True, at_genesis=True`: this page reached the room's true first
+        message, and it was independently checked against a `None` prev_hash
+        (real chain genesis, not merely "ran out of fetch budget").
+        `new_expected` is `None`; the walk is complete.
+    """
+    if not page:
+        return False, None, "empty page"
+
+    newest = page[-1]
+    if isinstance(expected, str):
+        if newest["chain_hash"] != expected:
+            return (
+                False, None,
+                "relay-signed chain head does not match the newest message's "
+                "own stored hash — history may have been rewritten",
+            )
+    else:
+        pending = expected
+        recomputed = compute_chain_hash(
+            newest["chain_hash"], pending["sender_id"], pending["content"], pending["created_at"],
+        )
+        if recomputed != pending["chain_hash"]:
+            return (
+                False, None,
+                "hash mismatch at a page boundary — either history was "
+                "rewritten, or a message was lost at a created_at tie "
+                "spanning the page split (see get_messages()'s known "
+                "ordering-tiebreak gap)",
+            )
+
+    for older, newer in zip(page, page[1:]):
+        recomputed = compute_chain_hash(
+            older["chain_hash"], newer["sender_id"], newer["content"], newer["created_at"],
+        )
+        if recomputed != newer["chain_hash"]:
+            return False, None, "hash mismatch within a page — history may have been rewritten"
+
+    oldest = page[0]
+    if at_genesis:
+        genesis_expected = compute_chain_hash(None, oldest["sender_id"], oldest["content"], oldest["created_at"])
+        if genesis_expected != oldest["chain_hash"]:
+            return (
+                False, None,
+                "genesis message does not chain from an empty prior — "
+                "chain does not anchor at a true beginning",
+            )
+        return True, None, f"genesis reached and verified ({len(page)} messages in final page)"
+    return True, oldest, f"page verified ({len(page)} messages), boundary check deferred"
+
+
 def get_messages(
     room_id: str,
     limit: int = 50,

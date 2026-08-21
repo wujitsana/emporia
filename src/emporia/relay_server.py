@@ -2381,10 +2381,12 @@ async def lifespan(app: FastAPI):
         _SWEEP_TASK.cancel()
         with suppress(asyncio.CancelledError):
             await _SWEEP_TASK
+        _SWEEP_TASK = None
         if _FEDERATION_SYNC_TASK is not None:
             _FEDERATION_SYNC_TASK.cancel()
             with suppress(asyncio.CancelledError):
                 await _FEDERATION_SYNC_TASK
+            _FEDERATION_SYNC_TASK = None
 
 
 app = FastAPI(title="Emporia Relay", version="0.1.0", lifespan=lifespan)
@@ -2699,7 +2701,12 @@ async def request_context(request: Request, call_next):
         # PaymentsFeesSection.tsx) -- at INFO that's a near-constant stream of
         # near-identical lines drowning out everything else. DEBUG keeps it
         # available (EMPORIA_LOG_LEVEL=DEBUG) without polluting the default.
-        level = logging.DEBUG if request.url.path in _LOW_SIGNAL_PATHS else logging.INFO
+        # P24-5 (W5, F7): normalized before the set lookup -- a bare path match
+        # missed the trailing-slash variant (Starlette 307-redirects /health/
+        # to /health, and that redirect's own line matched nothing, logging at
+        # INFO).
+        normalized_path = request.url.path.rstrip("/") or "/"
+        level = logging.DEBUG if normalized_path in _LOW_SIGNAL_PATHS else logging.INFO
         logger.log(
             level, "request", extra={
                 "method": request.method, "path": request.url.path,
@@ -4633,7 +4640,18 @@ async def _fetch_federation_batch(url: str, *, client: httpx.AsyncClient | None 
                         f"peer response exceeds {MAX_FEDERATION_RESPONSE_BYTES} "
                         "bytes — refusing to buffer further"
                     )
-            return json.loads(bytes(body))
+            parsed = json.loads(bytes(body))
+            # P24-4 (W4): both callers immediately do `data.get(...)` on the return
+            # value, outside their own try/except -- valid JSON that isn't an object
+            # (a peer serving a bare list/string/number) used to raise AttributeError
+            # straight out of _sync_all_federated_peers()'s asyncio.gather(), 500ing
+            # the sync endpoint and leaving sibling peer tasks orphaned. Rejecting
+            # here, the one chokepoint both pullers already route through, converts
+            # it into an ordinary per-peer failure their existing except-and-record
+            # path already handles.
+            if not isinstance(parsed, dict):
+                raise ValueError("peer response is not a JSON object")
+            return parsed
     finally:
         if owns_client:
             await client.aclose()
@@ -4928,13 +4946,38 @@ async def _sync_all_federated_peers() -> tuple[dict[str, int], dict[str, int]]:
     failures -- nothing about correctness changes, only how long it takes.
     Shared by the manual `POST /gaming/v1/federate/sync` endpoint and the
     periodic `_federation_sync_loop()` below.
+
+    P24-4 (W4): that "already catch and record" claim was wrong once -- a peer
+    serving valid-but-non-dict JSON raised past both pullers' own try/except
+    (closed at the source in `_fetch_federation_batch()` now), and an
+    uncaught exception from a bare `asyncio.gather()` propagates immediately,
+    leaving every other still-running peer task orphaned: cancelled by
+    nothing, still mutating `_FEDERATION_LAST_SYNC`/the DB after this
+    function's caller has already received (and reported) a failure. Belt and
+    braces: `return_exceptions=True` so one peer's surprise can never again
+    take the whole fan-out down or abandon its siblings mid-flight, on top of
+    (not instead of) fixing the currently-known escape at its source.
     """
     peers = list(FEDERATED_RELAYS)
-    listing_counts, lobby_counts = await asyncio.gather(
-        asyncio.gather(*(_pull_federated_listings(p) for p in peers)),
-        asyncio.gather(*(_pull_federated_lobby(p) for p in peers)),
+    listing_results, lobby_results = await asyncio.gather(
+        asyncio.gather(*(_pull_federated_listings(p) for p in peers), return_exceptions=True),
+        asyncio.gather(*(_pull_federated_lobby(p) for p in peers), return_exceptions=True),
     )
-    return dict(zip(peers, listing_counts)), dict(zip(peers, lobby_counts))
+
+    def _coerce(results: list) -> dict[str, int]:
+        counts: dict[str, int] = {}
+        for peer, result in zip(peers, results):
+            if isinstance(result, BaseException):
+                logger.error(
+                    "federation_sync_peer_raised_unexpectedly",
+                    extra={"peer_url": peer}, exc_info=result,
+                )
+                counts[peer] = 0
+            else:
+                counts[peer] = result
+        return counts
+
+    return _coerce(listing_results), _coerce(lobby_results)
 
 
 _FEDERATION_SYNC_INTERVAL_SECONDS = float(os.getenv("EMPORIA_FEDERATION_SYNC_INTERVAL_SECONDS", "300"))

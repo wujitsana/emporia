@@ -52,6 +52,17 @@ jobs:
         working-directory: dashboard
         run: npm run typecheck:src
 
+      - name: Test
+        # P24-6 (W6): P23's 19 cross-language crypto golden-fixture tests (and
+        # everything W1/W2 added on top) had zero automated backstop until now
+        # -- this job ran typecheck only, never `npm test`.
+        working-directory: dashboard
+        run: npm test
+
+      - name: Lint
+        working-directory: dashboard
+        run: npm run lint
+
   docker-build:
     runs-on: ubuntu-latest
     steps:

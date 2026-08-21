@@ -857,36 +857,67 @@ class EmporiaAgent:
         )
         return messages
 
-    async def verify_room_chain(self, room_id: str, *, max_messages: int = 1000) -> dict[str, Any]:
-        """P21-7: independently verify a room's tamper-evident message chain,
-        rather than trusting the relay's own self-report.
+    async def verify_room_chain(
+        self, room_id: str, *, max_messages: int | None = None, ignore_pin: bool = False,
+    ) -> dict[str, Any]:
+        """P21-7/P24-1 (W1/W2): independently verify a room's tamper-evident
+        message chain, rather than trusting the relay's own self-report.
 
         `GET /rooms/{id}/chain` gives a relay-signed `chain_head` — proof the
         response wasn't altered in transit, not proof the relay itself is
         honest (an operator with DB access can rewrite history and re-sign a
         self-consistent replacement; see that route's docstring). What closes
-        that gap: this method fetches the room's own messages (paginated,
-        undecrypted — chain_hash is computed over the *stored* content, which
-        is ciphertext on an encrypted room, so this must not reuse
-        get_room_messages()'s decrypting version), recomputes the whole chain
-        itself via rooms.compute_chain_hash(), and compares the result against
-        a head it persisted the *last* time this room verified cleanly
-        (identity.load_room_chain_heads() — same TOFU shape
-        _FEDERATION_PEER_PUBKEYS uses for peer relays). A relay that rewrites
-        history changes every hash from the rewritten point forward, so the
-        old pinned head stops appearing anywhere in the freshly recomputed
-        sequence — that's what a compromised-but-self-consistent relay cannot
-        talk its way around, since it doesn't hold this client's disk.
+        that gap: this method walks the room's own messages *backward* (the
+        only direction the relay's own pagination supports), verifying each
+        page against the one before it via `rooms.verify_chain_page()` —
+        chain_hash is computed over the *stored* content, which is ciphertext
+        on an encrypted room, so this must not reuse get_room_messages()'s
+        decrypting version.
 
-        The pin is only ever updated on a clean, fully-verified result; a
-        detected mismatch leaves the old pin in place so the room stays
-        flagged on every subsequent check until a human clears it.
+        **Full history by default (P24-1).** `max_messages=None` (the
+        default) walks all the way to the room's true genesis message,
+        holding only one page in memory at a time — the streaming design
+        that removes the old hard cap SECURITY.md recorded as an open item
+        ("a room over 1000 messages can silently never be verifiable from
+        genesis"). Pass an int to keep the old fail-closed behavior verbatim:
+        `verified: False` with a "could not fetch full history" reason
+        rather than silently checking a truncated suffix and calling it
+        whole-chain verification.
 
-        Bounded to `max_messages` (paginated via `before`, capped at the
-        relay's own 200/page limit) — a room with more messages than that
-        cannot be verified from genesis in one call, and this says so plainly
-        (`verified: False`, `reason: "..."`) rather than silently checking a
-        suffix and calling it whole-chain verification.
+        **Pin as checkpoint.** A hash this method previously verified and
+        pinned (`identity.load_room_chain_heads()` — same TOFU shape
+        `_FEDERATION_PEER_PUBKEYS` uses for peer relays) is *already* a
+        commitment to its entire prefix; the walk stops the moment it
+        reaches that hash rather than re-walking history genesis already
+        vouched for. **This changes what `verified: True` means** — from
+        "genesis, this call" to "genesis, cumulatively across calls" — so
+        the result's `chain_verified_scope`/`reason` say plainly which one
+        happened: `"genesis"` (this call walked to the true beginning) vs
+        `"pinned_checkpoint"` (this call verified only back to a
+        previously-established anchor). A relay that rewrites history
+        changes every hash from the rewritten point forward, so the old
+        pinned head stops appearing anywhere in the freshly served chain —
+        that's what a compromised-but-self-consistent relay cannot talk its
+        way around, since it doesn't hold this client's disk. Pass
+        `ignore_pin=True` to force a full walk to genesis regardless of any
+        existing pin. The pin is only ever updated on a clean, fully-verified
+        result; a detected mismatch leaves the old pin in place so the room
+        stays flagged on every subsequent check until a human clears it.
+
+        **Replay scan (W2) rides the same walk.** `message_read.py`'s
+        per-page nonce dedup is "always a miss, never a false alarm" over
+        whatever one page happens to be loaded; since this walk already
+        visits the messages it's scanning, a full nonce `set` is built up
+        as pages are fetched — the one part of this method that isn't
+        O(page) memory, since duplicate detection needs to see every nonce
+        ever used, not just the current page's. Reported via
+        `replay_scan_scope` ("full_history" only when this call actually
+        reached genesis; "since_pinned_head" when it stopped at the pin
+        checkpoint, since a duplicate whose original predates the pin is
+        necessarily missed; "no_new_messages" when the pin-shortcut skipped
+        fetching anything at all) plus a bounded sample of offending nonces
+        — never hidden behind a bare boolean that would silently overclaim
+        coverage the way the per-page-only check always has.
         """
         from emporia import identity, rooms
 
@@ -901,6 +932,10 @@ class EmporiaAgent:
             "message_count": data.get("message_count", 0),
             "verified": False,
             "reason": "",
+            "chain_verified_scope": None,
+            "replay_scan_scope": None,
+            "replayed_nonce_count": 0,
+            "replayed_nonce_sample": [],
         }
 
         pubkey_hex = data.get("origin_public_key_hex", "")
@@ -921,67 +956,141 @@ class EmporiaAgent:
             result["reason"] = f"relay's own recomputation failed: {data.get('message')}"
             return result
 
-        raw_messages: list[dict[str, Any]] = []
+        if result["message_count"] == 0:
+            result["verified"] = True
+            result["reason"] = "empty room — nothing to verify"
+            result["chain_verified_scope"] = "genesis"
+            result["replay_scan_scope"] = "full_history"
+            return result
+
+        pins = identity.load_room_chain_heads()
+        pin_key = f"{self.relay_url}|{room_id}"
+        pinned = pins.get(pin_key)
+
+        # Fast path: the room hasn't changed since the last fully-verified
+        # pin -- that hash is already a commitment to everything before it,
+        # so there's nothing new to fetch at all.
+        if not ignore_pin and pinned and pinned.get("chain_head") == data.get("chain_head"):
+            if pinned.get("origin_public_key_hex") and pinned["origin_public_key_hex"] != pubkey_hex:
+                result["reason"] = "relay's signing key changed since it was last pinned for this room"
+                return result
+            result["verified"] = True
+            result["reason"] = "chain head unchanged since the last pinned verification — nothing new to check"
+            result["chain_verified_scope"] = "pinned_checkpoint"
+            result["replay_scan_scope"] = "no_new_messages"
+            return result
+
+        seen_nonces: set[str] = set()
+        replay_sample: list[str] = []
+        replay_count = 0
+
+        expected: str | dict[str, Any] = data.get("chain_head") or ""
         before: str | None = None
-        # P23-1: `limit` here must itself be capped to what's still needed within
-        # `max_messages` -- a bare `limit=200` fetched a whole page regardless of
-        # the remaining budget, so a room with fewer messages than one page (200)
-        # was always fully fetched in a single call no matter how small
-        # `max_messages` was, silently defeating the cap for the common case.
-        budget = min(result["message_count"], max_messages)
-        while len(raw_messages) < budget:
-            page_limit = min(200, budget - len(raw_messages))
+        fetched = 0
+        reached_genesis = False
+        reached_pin = False
+        pin_matched = False
+
+        while True:
+            if max_messages is not None and fetched >= max_messages:
+                result["reason"] = (
+                    f"could not fetch full history for independent verification — "
+                    f"{fetched}/{result['message_count']} messages within the "
+                    f"{max_messages}-message cap"
+                )
+                return result
+            page_limit = min(200, result["message_count"] - fetched)
+            if max_messages is not None:
+                page_limit = min(page_limit, max_messages - fetched)
             page = await self._bearer_request(
                 "get", f"{self.relay_url}/rooms/{room_id}/messages",
                 params={"limit": page_limit, **({"before": before} if before else {})},
             )
             page.raise_for_status()
             batch = page.json().get("messages", [])
-            if not batch:
-                break
-            raw_messages = batch + raw_messages
-            before = batch[0]["created_at"]
             if len(batch) < page_limit:
+                result["reason"] = "relay served fewer messages than its own reported message_count claims exist"
+                return result
+
+            for m in batch:
+                nonce = m.get("nonce")
+                if not nonce:
+                    continue
+                if nonce in seen_nonces:
+                    replay_count += 1
+                    if len(replay_sample) < 20:
+                        replay_sample.append(nonce)
+                seen_nonces.add(nonce)
+
+            fetched += len(batch)
+            at_genesis = fetched >= result["message_count"]
+
+            # P24-1/2: the pin can land *anywhere* in a fetched page, not
+            # just at its oldest boundary -- a page boundary just happens to
+            # be where a plain forward walk would stop looking. Scanning the
+            # whole page catches a mid-page pin too (both a correctness
+            # requirement -- otherwise a genesis-reaching walk can find the
+            # pin nowhere at its own boundaries and wrongly report "history
+            # was rewritten" even though the pin's hash truly is present,
+            # just mid-page -- and the efficiency this checkpoint exists
+            # for: without it, a room with only a few new messages since the
+            # pin still pays for a full walk back to genesis).
+            pin_index = None
+            if pinned and not ignore_pin:
+                for i, m in enumerate(batch):
+                    if m["chain_hash"] == pinned.get("chain_head"):
+                        pin_index = i
+                        break
+
+            verify_batch = batch[pin_index:] if pin_index is not None else batch
+            verify_at_genesis = at_genesis and pin_index is None
+
+            ok, new_expected, reason = rooms.verify_chain_page(verify_batch, expected, verify_at_genesis)
+            if not ok:
+                result["reason"] = reason
+                return result
+
+            if pin_index is not None:
+                pin_matched = True
+                if pinned.get("origin_public_key_hex") and pinned["origin_public_key_hex"] != pubkey_hex:
+                    result["reason"] = "relay's signing key changed since it was last pinned for this room"
+                    return result
+                reached_pin = True
                 break
-        if len(raw_messages) < result["message_count"]:
-            result["reason"] = (
-                f"could not fetch full history for independent verification — "
-                f"{len(raw_messages)}/{result['message_count']} messages within the "
-                f"{max_messages}-message cap"
-            )
-            return result
 
-        prev_hash: str | None = None
-        computed_heads: list[str] = []
-        for m in raw_messages:
-            prev_hash = rooms.compute_chain_hash(
-                prev_hash, m["sender_id"], m["content"], m["created_at"],
-            )
-            computed_heads.append(prev_hash)
-        if prev_hash != data.get("chain_head"):
-            result["reason"] = (
-                "recomputed chain head does not match the relay's signed head — "
-                "the message content the relay served doesn't match what it signed"
-            )
-            return result
+            if at_genesis:
+                reached_genesis = True
+                break
 
-        pins = identity.load_room_chain_heads()
-        pin_key = f"{self.relay_url}|{room_id}"
-        pinned = pins.get(pin_key)
-        if pinned and pinned.get("chain_head") and pinned["chain_head"] not in computed_heads:
+            oldest = batch[0]
+            expected = new_expected
+            before = oldest["created_at"]
+
+        if reached_genesis and pinned and not pin_matched and not ignore_pin:
             result["reason"] = (
                 "previously pinned chain head is not an ancestor of the current chain — "
                 "history was rewritten (reordered or deleted messages)"
             )
             return result
-        if pinned and pinned.get("origin_public_key_hex") and pinned["origin_public_key_hex"] != pubkey_hex:
-            result["reason"] = "relay's signing key changed since it was last pinned for this room"
-            return result
 
-        pins[pin_key] = {"chain_head": prev_hash or "", "origin_public_key_hex": pubkey_hex}
-        identity.save_room_chain_heads(pins)
         result["verified"] = True
-        result["reason"] = f"chain valid and extends the previously pinned head ({len(raw_messages)} messages)"
+        result["replayed_nonce_count"] = replay_count
+        result["replayed_nonce_sample"] = replay_sample
+        if reached_genesis:
+            result["chain_verified_scope"] = "genesis"
+            result["replay_scan_scope"] = "full_history"
+            result["reason"] = f"chain valid, verified from true genesis this call ({fetched} messages)"
+        else:
+            assert reached_pin
+            result["chain_verified_scope"] = "pinned_checkpoint"
+            result["replay_scan_scope"] = "since_pinned_head"
+            result["reason"] = (
+                f"chain valid back to the previously pinned head ({fetched} new messages checked "
+                f"this call; earlier history was verified from genesis when that head was first pinned)"
+            )
+
+        pins[pin_key] = {"chain_head": data.get("chain_head") or "", "origin_public_key_hex": pubkey_hex}
+        identity.save_room_chain_heads(pins)
         return result
 
     async def send_room_message(
