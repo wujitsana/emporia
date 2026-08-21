@@ -923,10 +923,17 @@ class EmporiaAgent:
 
         raw_messages: list[dict[str, Any]] = []
         before: str | None = None
-        while len(raw_messages) < min(result["message_count"], max_messages):
+        # P23-1: `limit` here must itself be capped to what's still needed within
+        # `max_messages` -- a bare `limit=200` fetched a whole page regardless of
+        # the remaining budget, so a room with fewer messages than one page (200)
+        # was always fully fetched in a single call no matter how small
+        # `max_messages` was, silently defeating the cap for the common case.
+        budget = min(result["message_count"], max_messages)
+        while len(raw_messages) < budget:
+            page_limit = min(200, budget - len(raw_messages))
             page = await self._bearer_request(
                 "get", f"{self.relay_url}/rooms/{room_id}/messages",
-                params={"limit": 200, **({"before": before} if before else {})},
+                params={"limit": page_limit, **({"before": before} if before else {})},
             )
             page.raise_for_status()
             batch = page.json().get("messages", [])
@@ -934,7 +941,7 @@ class EmporiaAgent:
                 break
             raw_messages = batch + raw_messages
             before = batch[0]["created_at"]
-            if len(batch) < 200:
+            if len(batch) < page_limit:
                 break
         if len(raw_messages) < result["message_count"]:
             result["reason"] = (

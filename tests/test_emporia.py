@@ -19269,6 +19269,127 @@ def test_mcp_verify_room_chain_matches_sdk_behavior(prod_client):
     assert "rewritten" in second["reason"].lower(), second
 
 
+def test_mcp_verify_room_chain_fails_closed_when_history_exceeds_max_messages(prod_client):
+    """P23-1: MCP parity for test_sdk_verify_room_chain_fails_closed_when_history_
+    exceeds_max_messages -- the sync mcp_server.py implementation hand-copies the
+    same pagination loop as the async SDK (a duplication this codebase already
+    tracks as a known risk), so the same fetch-a-whole-page-regardless-of-budget
+    bug lived in both. Fixed in both; this pins the MCP side independently rather
+    than trusting the SDK test alone to cover a separately-maintained copy."""
+    from emporia import mcp_server
+
+    adapter = _ASGIHttpxAdapter(prod_client, mcp_server.RELAY_URL)
+    with patch.object(mcp_server, "httpx", adapter):
+        mcp_server.register_agent("p23_mcp_cap_a")
+        room = mcp_server.create_room("p23 mcp cap room", "p23_mcp_cap_a")
+        room_id = room["room"]["room_id"]
+        mcp_server.send_room_message(room_id, "p23_mcp_cap_a", "Move 1")
+        mcp_server.send_room_message(room_id, "p23_mcp_cap_a", "Move 2")
+        mcp_server.send_room_message(room_id, "p23_mcp_cap_a", "Move 3")
+
+        clean = mcp_server.verify_room_chain(room_id, agent_id="p23_mcp_cap_a")
+        assert clean["verified"] is True, clean
+
+        capped = mcp_server.verify_room_chain(room_id, agent_id="p23_mcp_cap_a", max_messages=2)
+    assert capped["verified"] is False, capped
+    assert "could not fetch full history" in capped["reason"], capped
+
+
+# ============================================================================
+# P23-1: audit of P21 -- two of verify_room_chain()'s own documented fail-closed
+# paths (SECURITY.md's "Still open" list: the 1000-message cap, and the
+# federation-peer-style key-mismatch check) had no test coverage. Both are
+# confirmed correct by reading the code (agent_sdk.py:860-978); these tests
+# pin that behavior so a future refactor can't silently regress it.
+# ============================================================================
+
+def test_sdk_verify_room_chain_fails_closed_when_history_exceeds_max_messages():
+    """A room with more messages than `max_messages` must report verified=False
+    with a "could not fetch full history" reason -- never a false "verified: True"
+    computed over a truncated suffix. This is the exact property SECURITY.md's
+    "Still open" list names ("a large room's full history can silently never be
+    verifiable... no pagination-beyond-the-cap path exists") but which no test
+    exercised until now."""
+    import asyncio
+
+    async def run():
+        a = _sdk_wired("p23_cap_a")
+        try:
+            await a.register()
+            room = await a.create_room("p23 cap room", room_type="public")
+            room_id = room["room_id"]
+            await a.send_room_message(room_id, "Move 1")
+            await a.send_room_message(room_id, "Move 2")
+            await a.send_room_message(room_id, "Move 3")
+            # A real, clean 3-message room verifies fine at the default cap...
+            clean = await a.verify_room_chain(room_id)
+            assert clean["verified"] is True, clean
+            # ...but reporting the identical, untampered room against a cap
+            # smaller than its message count must fail closed, not silently
+            # "verify" a truncated suffix as if it were the whole chain.
+            capped = await a.verify_room_chain(room_id, max_messages=2)
+            return capped
+        finally:
+            await a.__aexit__()
+
+    capped = asyncio.run(run())
+    assert capped["verified"] is False, capped
+    assert "could not fetch full history" in capped["reason"], capped
+    assert "2/3" in capped["reason"] or "/3" in capped["reason"], capped
+
+
+def test_sdk_verify_room_chain_detects_relay_signing_key_change_since_pin():
+    """The pin stores both the chain head AND the relay's public key
+    (identity.load_room_chain_heads()/save_room_chain_heads(), same shape as
+    _FEDERATION_PEER_PUBKEYS) specifically so a relay-identity swap is caught
+    the same way a content rewrite is -- confirmed by reading
+    agent_sdk.py:970-972, but never exercised by a test. Simulates a prior
+    pin recorded under a different relay key (e.g. this room was first
+    verified against a relay that has since rotated its federation keypair,
+    or a URL now points at a different relay) and confirms re-verification
+    refuses to silently re-trust the new key."""
+    import asyncio
+
+    from emporia import identity
+
+    async def setup():
+        a = _sdk_wired("p23_keychange_a")
+        try:
+            await a.register()
+            room = await a.create_room("p23 keychange room", room_type="public")
+            room_id = room["room_id"]
+            await a.send_room_message(room_id, "Move 1")
+            first = await a.verify_room_chain(room_id)
+            return room_id, first, a.relay_url
+        finally:
+            await a.__aexit__()
+
+    room_id, first, relay_url = asyncio.run(setup())
+    assert first["verified"] is True, first
+
+    pin_key = f"{relay_url}|{room_id}"
+    pins = identity.load_room_chain_heads()
+    assert pin_key in pins, pins
+    real_pubkey = pins[pin_key]["origin_public_key_hex"]
+    assert real_pubkey, pins[pin_key]
+    # Corrupt only the pinned key, as if this room was previously verified
+    # against a different relay identity -- the chain head itself is left
+    # alone, isolating this test to the key-mismatch branch specifically.
+    pins[pin_key]["origin_public_key_hex"] = "0" * len(real_pubkey)
+    identity.save_room_chain_heads(pins)
+
+    async def reverify():
+        a = _sdk_wired("p23_keychange_a")
+        try:
+            return await a.verify_room_chain(room_id)
+        finally:
+            await a.__aexit__()
+
+    second = asyncio.run(reverify())
+    assert second["verified"] is False, second
+    assert "signing key changed" in second["reason"].lower(), second
+
+
 # ============================================================================
 # P22: structured logging, request correlation, error tracking
 # ============================================================================
@@ -19429,8 +19550,10 @@ def test_request_context_assigns_distinct_request_ids_and_header_round_trips(cli
 
 
 def test_request_context_logs_request_line_with_matching_request_id(client, caplog):
+    # Not /health -- P23-2 demotes its "request" line to DEBUG (dashboard polls
+    # it every 5-10s per tab); see test_health_request_logged_at_debug_not_info.
     with caplog.at_level(logging.INFO, logger="emporia.relay"):
-        r = client.get("/health")
+        r = client.get("/federation/peers")
     rid = r.headers["x-request-id"]
     matches = [
         rec for rec in caplog.records
@@ -19439,7 +19562,7 @@ def test_request_context_logs_request_line_with_matching_request_id(client, capl
     ]
     assert len(matches) == 1, caplog.records
     assert matches[0].status_code == 200
-    assert matches[0].path == "/health"
+    assert matches[0].path == "/federation/peers"
 
 
 def test_request_context_logs_unhandled_exception_preserving_500_shape(caplog):
@@ -19481,3 +19604,150 @@ def test_request_context_resets_contextvar_after_each_request(client):
 
     client.get("/health")
     assert request_id_ctx.get() == "-"
+
+
+# ============================================================================
+# P23-2: P22 polish -- WebSocket connect/disconnect/reject logging (the 4
+# @app.websocket routes have zero visibility under @app.middleware("http"),
+# which per Starlette semantics doesn't cover WS at all), and /health's
+# request-log line demoted to DEBUG (dashboard polls it every 5-10s per tab).
+# ============================================================================
+
+def test_ws_global_events_logs_connect_and_disconnect(client, caplog):
+    with caplog.at_level(logging.INFO, logger="emporia.relay"):
+        with client.websocket_connect("/ws/events") as ws:
+            ws.receive_json()  # the "connected" snapshot frame
+    connects = [r for r in caplog.records if r.message == "ws_connected" and r.channel == "global"]
+    disconnects = [r for r in caplog.records if r.message == "ws_disconnected" and r.channel == "global"]
+    assert len(connects) == 1, caplog.records
+    assert len(disconnects) == 1, caplog.records
+    assert connects[0].ws_id == disconnects[0].ws_id
+
+
+def test_ws_session_logs_reject_for_unknown_session_id(client, caplog):
+    with caplog.at_level(logging.WARNING, logger="emporia.relay"):
+        with pytest.raises(WebSocketDisconnect):
+            with client.websocket_connect("/ws/sess_does_not_exist"):
+                pass
+    rejects = [r for r in caplog.records if r.message == "ws_rejected" and r.channel == "session"]
+    assert len(rejects) == 1, caplog.records
+    assert rejects[0].reason == "unknown_session"
+
+
+def test_ws_agent_logs_reject_for_mismatched_identity(client, caplog):
+    _register(client, "p23_ws_owner")
+    with caplog.at_level(logging.WARNING, logger="emporia.relay"):
+        with pytest.raises(WebSocketDisconnect):
+            with client.websocket_connect("/ws/agent/p23_ws_owner?agent_id=p23_ws_stranger"):
+                pass
+    rejects = [r for r in caplog.records if r.message == "ws_rejected" and r.channel == "agent"]
+    assert len(rejects) == 1, caplog.records
+    assert rejects[0].reason == "not_authorized"
+
+
+def test_ws_room_logs_connect_disconnect_and_reject(client, caplog):
+    _register(client, "p23_ws_room_owner")
+    r = client.post("/rooms", json={
+        "name": "p23 ws room", "creator_id": "p23_ws_room_owner",
+        "room_type": "public", "gate_type": "open",
+    }, headers={"x-emporia-agent-id": "p23_ws_room_owner"})
+    assert r.status_code == 200, r.text
+    room_id = r.json()["room_id"]
+    with caplog.at_level(logging.INFO, logger="emporia.relay"):
+        with client.websocket_connect(f"/ws/rooms/{room_id}") as ws:
+            ws.receive_json()  # room_init
+        with pytest.raises(WebSocketDisconnect):
+            with client.websocket_connect("/ws/rooms/room_does_not_exist"):
+                pass
+    connects = [r for r in caplog.records if r.message == "ws_connected" and r.channel == "room"]
+    disconnects = [r for r in caplog.records if r.message == "ws_disconnected" and r.channel == "room"]
+    rejects = [r for r in caplog.records if r.message == "ws_rejected" and r.channel == "room"]
+    assert len(connects) == 1 and connects[0].room_id == room_id, caplog.records
+    assert len(disconnects) == 1, caplog.records
+    assert len(rejects) == 1 and rejects[0].reason == "unknown_room", caplog.records
+
+
+def test_health_request_logged_at_debug_not_info(client, caplog):
+    """/health is polled every 5-10s per open dashboard tab -- at INFO that's a
+    near-constant stream drowning out real signal. Demoted to DEBUG; a normal
+    route (e.g. the same /health call's own request line for a different path)
+    stays at INFO for comparison."""
+    with caplog.at_level(logging.INFO, logger="emporia.relay"):
+        client.get("/health")
+    info_request_lines = [
+        r for r in caplog.records if r.message == "request" and r.path == "/health"
+    ]
+    assert info_request_lines == [], caplog.records
+
+    with caplog.at_level(logging.DEBUG, logger="emporia.relay"):
+        client.get("/health")
+    debug_request_lines = [
+        r for r in caplog.records
+        if r.message == "request" and r.path == "/health" and r.levelname == "DEBUG"
+    ]
+    assert len(debug_request_lines) == 1, caplog.records
+
+
+# ============================================================================
+# P23-3: federation reliability -- a periodic background sync loop (mirroring
+# _sweep_loop()'s shape) replaces manual-trigger-only sync, and peer fan-out
+# is now concurrent (asyncio.gather) instead of a serial for-loop.
+# ============================================================================
+
+async def test_sync_all_federated_peers_fans_out_concurrently():
+    """Two peers, each artificially slow, must together take about as long as
+    the slower one alone -- not the sum -- proving the fan-out is concurrent,
+    not a serial loop with a shared helper name."""
+    import asyncio
+    import time
+
+    from emporia import relay_server as rs
+
+    async def slow_listings(peer_url):
+        await asyncio.sleep(0.2 if "slow" in peer_url else 0.02)
+        return 0
+
+    async def slow_lobby(peer_url):
+        await asyncio.sleep(0.2 if "slow" in peer_url else 0.02)
+        return 0
+
+    with patch.object(rs, "FEDERATED_RELAYS", ["http://slow-peer.example", "http://fast-peer.example"]), \
+         patch.object(rs, "_pull_federated_listings", side_effect=slow_listings), \
+         patch.object(rs, "_pull_federated_lobby", side_effect=slow_lobby):
+        start = time.monotonic()
+        results, lobby_results = await rs._sync_all_federated_peers()
+        elapsed = time.monotonic() - start
+
+    assert set(results) == {"http://slow-peer.example", "http://fast-peer.example"}
+    assert set(lobby_results) == {"http://slow-peer.example", "http://fast-peer.example"}
+    # Serial would be ~4 * 0.2 = 0.8s (2 peers x 2 calls each on the slow path
+    # if run one at a time); concurrent should land near the single slowest
+    # call (~0.2s), with generous headroom for test-runner scheduling jitter.
+    assert elapsed < 0.5, elapsed
+
+
+def test_federation_sync_task_not_started_when_no_peers_configured():
+    """The test suite's own default env has no FEDERATED_RELAYS -- confirms a
+    standalone relay (the common case) doesn't spin a background task that
+    would do nothing every interval forever."""
+    from emporia import relay_server as rs
+
+    assert not rs.FEDERATED_RELAYS
+    with TestClient(app) as tc:
+        tc.get("/health")
+        assert rs._FEDERATION_SYNC_TASK is None
+
+
+def test_federation_sync_task_starts_and_cancels_cleanly_on_shutdown_when_peers_configured():
+    """Mirrors test_sweep_task_starts_and_cancels_cleanly_on_shutdown -- same
+    lifespan-managed start/cancel contract, for the new periodic loop, only
+    when FEDERATED_RELAYS is actually non-empty."""
+    from emporia import relay_server as rs
+
+    with patch.object(rs, "FEDERATED_RELAYS", ["http://fake-peer.example"]):
+        with TestClient(app) as tc:
+            tc.get("/health")
+            assert rs._FEDERATION_SYNC_TASK is not None
+            assert not rs._FEDERATION_SYNC_TASK.done()
+        assert rs._FEDERATION_SYNC_TASK.done()
+        assert rs._FEDERATION_SYNC_TASK.cancelled()

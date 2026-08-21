@@ -1586,10 +1586,11 @@ worth its own decision, not a five-minute add-on here).
 - **Key rotation, no member cap on encrypted rooms, no forward secrecy, TOFU on both federation peer
   keys and now room chain heads, unprotected metadata, `/messages`' open `type` field** — carried
   forward from P19/P20, unchanged by this pass.
-- **`decrypted`/`replayed`/message-level `verified` still have no dashboard consumer** (P19 recorded
-  this, P20's audit found it was all three flags, not just `replayed`) — still true. Chain
-  verification now has a consumer, but only on the Python-client side (see above); the dashboard
-  still shows nothing for any of the four integrity signals a message or room chain can carry.
+- **`decrypted`/`replayed`/message-level `verified` had no dashboard consumer** (P19 recorded this,
+  P20's audit found it was all three flags, not just `replayed`) — **closed for `replayed` and
+  `verified` by P23-4** (see below); `decrypted` remains and stays deliberately unbuilt — the
+  dashboard genuinely cannot decrypt (no private key in a browser), so there is nothing honest to
+  show beyond the existing lock icon.
 - **Room chain head pinning is TOFU, same as federation peer keys — the first verify for any given
   room establishes trust without independent confirmation.** An agent's *first* `verify_room_chain()`
   call against an already-compromised room pins the tampered head as if it were genuine. This is the
@@ -1599,6 +1600,86 @@ worth its own decision, not a five-minute add-on here).
   verifiable from genesis in a single relay's default page size.** No pagination-beyond-the-cap path
   exists; a room this size reports "could not fetch full history" rather than a false result, but
   still can't be fully verified.
+
+## Fixed post-hackathon (P23-1 pass — audited P21)
+
+Reading P21's own diff before anything else, the same discipline P21 used on P20 (and every pass
+since P11): verify every claim against the code, not just against the commit message.
+
+| Finding | Severity | Fix |
+|---|---|---|
+| **`verify_room_chain()`'s `max_messages` cap (both `agent_sdk.py`'s async and `mcp_server.py`'s hand-copied sync version) was silently unenforced whenever a room's history fit in one page.** Each page fetch requested a flat `limit=200` regardless of how much of the caller's `max_messages` budget was left, so a 3-message room called with `max_messages=2` still fetched and fully verified all 3 messages — the cap did nothing unless message count and page size happened to interact unfavorably across *multiple* pages. The 1000-default case worked by accident (1000 is an exact multiple of the 200 page size); any other caller-supplied value could silently report `verified: True` over more history than requested. A test (`test_sdk_verify_room_chain_fails_closed_when_history_exceeds_max_messages`) confirmed the false positive before the fix and confirmed the fix, git-stash-verified against both implementations. | Medium | Each page fetch now requests `min(200, budget - len(raw_messages))` where `budget = min(message_count, max_messages)`, so the fetch itself can never overshoot the cap — the existing "could not fetch full history" fail-closed branch (unchanged) now actually triggers whenever it's supposed to, at any `max_messages` value, not just ones aligned to the page size. |
+
+**Confirmed clean, no fix needed:**
+- **Room chain tamper detection** (the pass's headline claim) re-verified by reading
+  `test_sdk_verify_room_chain_pins_head_and_catches_a_self_consistent_rewrite` end to end: it
+  independently confirms the relay's own self-check is genuinely fooled by a self-consistent
+  rewrite *before* asserting the pin catches it — the test can't pass by accident. Matches
+  SECURITY.md's own "verified live" writeup for this pass.
+- **The three structural installs** (`GuardedCORSMiddleware`, `wire.py`'s `ERR_DUPLICATE_NONCE`/
+  `error_code()`, `_assert_payload_safe_counted`) each have dedicated existing test sections and
+  their code matches their commit-message claims on direct read — no drift found.
+- **TOFU pin file corruption handling** for room chain heads now has the same test coverage
+  federation peer-key pins have (closed by P22's `identity.py` logger-name fix incidentally
+  adding the missing test — see P22's own writeup).
+- **P21-6's dashboard cleanup** (`DMsView`/`InboxView`/`SessionsView` deletion, `AgentsView`'s
+  unused imports) — grepped for dangling references in `navConfig.ts`/`App.tsx`/anywhere else in
+  `dashboard/src`: none found. The `"sessions"` nav id now routes to `GamesView`, not a deleted
+  file.
+
+**New test coverage added** (previously-shipped, previously-untested behavior, now pinned):
+`test_sdk_verify_room_chain_fails_closed_when_history_exceeds_max_messages`,
+`test_mcp_verify_room_chain_fails_closed_when_history_exceeds_max_messages`,
+`test_sdk_verify_room_chain_detects_relay_signing_key_change_since_pin` — the last of these
+confirms the pin's *other* field (`origin_public_key_hex`, not just `chain_head`) is actually
+checked on reverify, a documented property (`agent_sdk.py:970-972`) that had no test before this.
+
+## Shipped post-hackathon (P23-4 pass — the dashboard chain badge P21 left open)
+
+P21's own writeup (above) scoped a dashboard chain badge and deliberately cut it, reasoning that
+a badge showing only the relay's own `verified` self-report "would be the same shallow guarantee
+`AuditBadge` already gives for sessions, not the pin-backed one this pass actually built" — and
+left it "recorded... as the natural opener for whichever pass wants to design that." This pass
+builds the real (pin-backed) version, not the shallow one.
+
+- **`dashboard/src/integrityCheck.ts`** ports three pieces of client-side verification logic to
+  the browser, all using only *public* information (a sender's public key, never a private one —
+  decryption stays server/agent-only, unchanged): `verifyMessageSignature()` (the Ed25519 check
+  `message_read.annotate_messages()` performs, reconstructing the exact canonical-JSON signable
+  payload `identity.py`'s `sign()`/`verify()` use — `json.dumps(..., sort_keys=True,
+  separators=(",", ":"))` with `ensure_ascii=True`, which a naive `JSON.stringify()` port would
+  silently get wrong for any non-ASCII message content); `markReplayedNonces()` (the per-page
+  nonce-dedup check); and `verifyRoomChainFromRelay()`, a full port of `agent_sdk.py`'s
+  `verify_room_chain()` (860-978) — fetch the relay-signed chain head, verify the signature,
+  fetch + recompute the room's full message history, and compare against a head pinned in this
+  browser's `localStorage` (the browser's per-viewer trust-store analogue of
+  `~/.hermes/keys/room_chain_heads.json`), refusing to silently re-trust a rewritten history or a
+  changed relay signing key — the same properties `test_sdk_verify_room_chain_pins_head_and_
+  catches_a_self_consistent_rewrite` proves server-side, now available client-side in the browser.
+- **Cross-language golden-fixture tests** (`dashboard/src/integrityCheck.test.ts`): fixtures
+  generated by calling `identity.sign()`/`identity.sign_raw_relay()`/`rooms.compute_chain_hash()`
+  directly (not hand-constructed), including deliberately-adversarial content — an em-dash, CJK
+  characters, an astral emoji (needs UTF-16 surrogate-pair escaping), a quote, and a backslash —
+  to catch exactly the class of bug a subtly-wrong canonical-JSON port would produce. All pass,
+  confirming the TypeScript port is byte-for-byte compatible with the Python signing/hashing it
+  mirrors.
+- **`RoomChainBadge.tsx`** (wired into `RoomsView.tsx`'s toolbar) and per-message
+  `verified`/`replayed` indicators (`ReadOnlyChat.tsx`, wired into both `RoomsView.tsx` and
+  `MessagesView.tsx`'s DM tab) — `verified: undefined`/`null` (unknown — no signature/nonce, or
+  the sender's key hasn't loaded yet) renders nothing; only an actual `false` result is shown, so
+  a view that hasn't finished loading sender keys never flashes a false negative.
+- **No backend changes required** — `chain_hash`/`signature`/`nonce` were already serialized by
+  `RoomMessage.to_dict()` (`asdict()`) and already flowing over `/ws/rooms/{id}` and
+  `GET /rooms/{id}/messages`; `hooks.ts`'s `WsMessage` type even already had `chain_hash?` typed,
+  just never read. `public_key_hex` was already returned by `GET /agents/{id}` (added in P17-2
+  for exactly this purpose) but absent from the dashboard's own `AgentProfile` type. All of this
+  was data already on the wire, discarded before it reached a render.
+
+**Still not the same guarantee a Python SDK/MCP agent gets**: `~/.hermes/keys/` persists across
+every restart and every browser; `localStorage` is per-origin and per-browser-profile — clearing
+site data, a private window, or switching browsers all reset the pin to first-verify-establishes-
+trust. This is the same TOFU limitation the Python-side pin has always had (see "Still open"
+above), just with a shorter, more easily-reset persistence horizon in a browser than on disk.
 
 ## Threat model notes (by design, not gaps)
 

@@ -60,6 +60,11 @@ export interface WsMessage {
   content: string;
   created_at: string;
   chain_hash?: string;
+  /** P23-4: already sent by RoomMessage.to_dict() (asdict() serializes every
+   *  dataclass field) -- previously typed here but unused past chain_hash;
+   *  needed for client-side signature verification (integrityCheck.ts). */
+  signature?: string | null;
+  nonce?: string | null;
 }
 
 export interface RoomWsState {

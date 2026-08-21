@@ -1,6 +1,7 @@
 import { FlatRailItem } from "../ui/FlatRailItem";
 import { LiveMark } from "../ui/chessControls";
 import { ReadOnlyChat } from "../ui/ReadOnlyChat";
+import { RoomChainBadge } from "../ui/RoomChainBadge";
 import { RELAY, VIEWER } from "../relayEnv";
 import { ViewStatus } from "../ui/ViewStatus";
 import { ViewBody } from "../ui/layout";
@@ -14,6 +15,7 @@ import RowSpaceBetween from "@components/RowSpaceBetween";
 import Indent from "@components/Indent";
 import { useInterval, useRoomWs, type WsMessage } from "../hooks";
 import type { Navigate } from "../navigation";
+import { markReplayedNonces, verifyMessageSignature } from "../integrityCheck";
 
 export function RoomsView({ initialRoomId, navigate }: { initialRoomId: string | null; navigate?: Navigate }) {
   const [data, loading, error] = useInterval(() => api.rooms(), 8_000);
@@ -22,6 +24,26 @@ export function RoomsView({ initialRoomId, navigate }: { initialRoomId: string |
   const endRef = useRef<HTMLDivElement>(null);
 
   const { messages, connected: wsConnected } = useRoomWs(RELAY, selected?.room_id ?? null, VIEWER);
+
+  // P23-4: pubkeys needed for verifyMessageSignature() -- fetched on demand,
+  // one round trip per distinct sender seen, cached for the life of the view
+  // rather than the room (a sender's key doesn't change per-room). Missing
+  // entirely for a sender whose fetch is still in flight or failed, which
+  // verifyMessageSignature() already treats as "unknown" (undefined pubkey),
+  // not "tampered with".
+  const [pubkeys, setPubkeys] = useState<Record<string, string>>({});
+  useEffect(() => {
+    const unknown = [...new Set((messages as WsMessage[]).map((m) => m.sender_id))]
+      .filter((id) => !(id in pubkeys));
+    if (unknown.length === 0) return;
+    let cancelled = false;
+    Promise.all(unknown.map((id) => api.agentProfile(id).then((a) => [id, a.public_key_hex || ""] as const).catch(() => [id, ""] as const)))
+      .then((pairs) => {
+        if (cancelled) return;
+        setPubkeys((prev) => ({ ...prev, ...Object.fromEntries(pairs) }));
+      });
+    return () => { cancelled = true; };
+  }, [messages, pubkeys]);
 
   useEffect(() => {
     if (initialRoomId || rooms.length === 0) return;
@@ -85,7 +107,13 @@ export function RoomsView({ initialRoomId, navigate }: { initialRoomId: string |
     </>
   );
 
-  const chatLines = (messages as WsMessage[]).map((m) => ({
+  // P23-4: replay detection needs the raw (undisplayed) content/nonce, and
+  // must run over the whole page before mapping to ChatLine -- markReplayedNonces
+  // tracks nonces across the array, so it has to see every message at once,
+  // not be called per-row.
+  const roomId = selected?.room_id ?? "";
+  const annotated = markReplayedNonces(messages as WsMessage[]);
+  const chatLines = annotated.map((m) => ({
     id: m.message_id,
     sender_id: m.sender_id,
     // P18-6: an encrypted room's messages are envelopes. The dashboard has no key
@@ -95,10 +123,26 @@ export function RoomsView({ initialRoomId, navigate }: { initialRoomId: string |
     content: dmDisplayContent(m.content),
     msg_type: m.msg_type,
     created_at: m.created_at,
+    // P23-4: verified against the *stored* content (m.content, pre-display-
+    // transform) — for an encrypted room that's the envelope, which is what
+    // was actually signed; verifying against dmDisplayContent()'s output
+    // (the 🔒 placeholder) would never match any real signature.
+    verified: verifyMessageSignature("room", roomId, m, pubkeys[m.sender_id] || ""),
+    replayed: m.replayed,
   }));
 
   return (
-    <ViewBody flush toolbar={wsConnected && selected ? <LiveMark live /> : undefined}>
+    <ViewBody
+      flush
+      toolbar={
+        selected ? (
+          <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
+            {wsConnected && <LiveMark live />}
+            <RoomChainBadge roomId={selected.room_id} />
+          </div>
+        ) : undefined
+      }
+    >
       <SidebarLayout sidebar={roomSidebar} defaultSidebarWidth={26}>
         <div className="e-split-main">
           <ViewStatus loading={loading} error={error} />

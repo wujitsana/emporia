@@ -1064,8 +1064,15 @@ def verify_room_chain(room_id: str, agent_id: str = "", max_messages: int = 1000
 
         raw_messages: list[dict[str, Any]] = []
         before: str | None = None
-        while len(raw_messages) < min(result["message_count"], max_messages):
-            params = {"limit": 200, **({"before": before} if before else {})}
+        # P23-1: `limit` here must itself be capped to what's still needed within
+        # `max_messages` -- a bare `limit=200` fetched a whole page regardless of
+        # the remaining budget, so a room with fewer messages than one page (200)
+        # was always fully fetched in a single call no matter how small
+        # `max_messages` was, silently defeating the cap for the common case.
+        budget = min(result["message_count"], max_messages)
+        while len(raw_messages) < budget:
+            page_limit = min(200, budget - len(raw_messages))
+            params = {"limit": page_limit, **({"before": before} if before else {})}
             page = _bearer_request(
                 "get", f"{RELAY_URL}/rooms/{room_id}/messages", agent_id=aid,
                 params=params, timeout=10,
@@ -1077,7 +1084,7 @@ def verify_room_chain(room_id: str, agent_id: str = "", max_messages: int = 1000
                 break
             raw_messages = batch + raw_messages
             before = batch[0]["created_at"]
-            if len(batch) < 200:
+            if len(batch) < page_limit:
                 break
         if len(raw_messages) < result["message_count"]:
             result["reason"] = (

@@ -48,6 +48,17 @@ services:
       - EMPORIA_RELAY_PORT=8088
     volumes:
       - emporia-data:/data
+    # P23-2: the relay logs one structured JSON line per HTTP request/WS
+    # connect-disconnect to stdout/stderr (see logging_config.py); Docker's
+    # default json-file driver has unbounded growth with no rotation config —
+    # a real disk-growth risk on a container meant to run `restart:
+    # unless-stopped` for months unattended, as of this pass's own request-level
+    # logging.
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "5"
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8088/health', timeout=3)"]
       interval: 30s

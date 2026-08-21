@@ -22,6 +22,7 @@ import { VIEWER } from "../relayEnv";
 import { useInterval } from "../hooks";
 import type { Navigate } from "../navigation";
 import { AgentLink } from "../ui/chips";
+import { markReplayedNonces, verifyMessageSignature } from "../integrityCheck";
 
 // ─── Inbox tab ────────────────────────────────────────────────────────────────
 
@@ -158,6 +159,7 @@ function DMsTab({ navigate }: { navigate: Navigate }) {
   const [active, setActive] = useState<DMThread | null>(null);
   const [messages, setMessages] = useState<DMMessage[]>([]);
   const [error, setError] = useState<string | null>(null);
+  const [pubkeys, setPubkeys] = useState<Record<string, string>>({});
   const bottomRef = useRef<HTMLDivElement | null>(null);
 
   const loadThreads = useCallback(async () => {
@@ -186,6 +188,21 @@ function DMsTab({ navigate }: { navigate: Navigate }) {
     return () => clearInterval(iv);
   }, [active, loadMsgs]);
 
+  // P23-4: pubkeys for verifyMessageSignature() -- just the two participants
+  // of the active thread (viewer + other_agent), refetched per thread switch.
+  useEffect(() => {
+    if (!active) return;
+    let cancelled = false;
+    Promise.all(
+      [VIEWER, active.other_agent].map((id) =>
+        api.agentProfile(id).then((a) => [id, a.public_key_hex || ""] as const).catch(() => [id, ""] as const),
+      ),
+    ).then((pairs) => {
+      if (!cancelled) setPubkeys(Object.fromEntries(pairs));
+    });
+    return () => { cancelled = true; };
+  }, [active]);
+
   const sidebar = (
     <>
       {threads.length === 0 && (
@@ -208,13 +225,20 @@ function DMsTab({ navigate }: { navigate: Navigate }) {
     </>
   );
 
-  const chatLines = messages.map((m) => ({
+  // P23-4: markReplayedNonces() needs to see the whole page at once (it
+  // tracks nonces across the array), so it runs before the per-row map.
+  const annotatedMessages = markReplayedNonces(messages);
+  const chatLines = annotatedMessages.map((m) => ({
     id: m.message_id,
     sender_id: m.sender_id,
     // P17-4: an encrypted DM shows a lock, not its envelope JSON. The dashboard
     // has no key access by design and cannot decrypt — see dmDisplayContent().
     content: dmDisplayContent(m.content),
     created_at: m.created_at,
+    // P23-4: verified against the *stored* content (m.content, pre-display-
+    // transform) — see the identical note in RoomsView.tsx's chatLines.
+    verified: active ? verifyMessageSignature("dm", active.thread_id, m, pubkeys[m.sender_id] || "") : null,
+    replayed: m.replayed,
   }));
 
   return (

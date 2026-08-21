@@ -706,6 +706,16 @@ encrypted room. Full detail in `SECURITY.md`'s P18 and P19 sections.
   equivalent (no persistent per-viewer trust store in a browser the way `~/.hermes/keys/` gives an
   agent), so a badge showing only the relay's own self-report would be a strictly weaker guarantee,
   not the one this pass built.
+- **Dashboard chain badge + per-message verified/replayed — done (P23-4).** The opener P21 left
+  above: `RoomChainBadge.tsx` ports `agent_sdk.py`'s `verify_room_chain()` to the browser
+  end-to-end (fetch the signed head, verify the signature, fetch + recompute the full message
+  history, compare against a head pinned in `localStorage` — the browser's per-viewer trust store
+  analogue of `~/.hermes/keys/`), not a shallow echo of the relay's own self-report.
+  `integrityCheck.ts` also ports `message_read.annotate_messages()`'s `verified`
+  (Ed25519 signature, public-key-only, no decryption) and `replayed` checks for both rooms and
+  DMs — `decrypted` stays deliberately unported (`api.ts`'s own long-standing "the dashboard
+  cannot decrypt and never will" principle). See `SECURITY.md`'s P23 section for the
+  cross-language golden-fixture tests this relies on.
 - **What's still open, by design or as a recorded residual, not an oversight:** no forward secrecy
   (a stolen key retroactively unwraps everything wrapped to it); room chain-head pinning is TOFU,
   same limitation federation peer-key pinning has always had — the first verify against an

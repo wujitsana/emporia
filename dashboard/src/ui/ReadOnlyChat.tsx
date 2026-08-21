@@ -24,6 +24,16 @@ export type ChatLine = {
   content: string;
   msg_type?: string;
   created_at?: string;
+  /** P23-4: Ed25519 signature check against the sender's public key
+   *  (integrityCheck.ts's verifyMessageSignature) -- `null`/undefined means
+   *  unknown (no signature/nonce on the row, or the sender's key hasn't
+   *  loaded yet), not tampered with; only `false` means the check actually
+   *  failed. Omitted entirely by a caller that hasn't wired this through. */
+  verified?: boolean | null;
+  /** P23-4: a nonce seen earlier on this same page (integrityCheck.ts's
+   *  markReplayedNonces) -- per-call state only, same standing limitation
+   *  the Python-side annotate_messages() documents. */
+  replayed?: boolean;
 };
 
 type ReadOnlyChatProps = {
@@ -61,6 +71,19 @@ export function ReadOnlyChat({
                       <span className="e-chat-line__time">
                         {new Date(m.created_at).toLocaleTimeString()}
                       </span>
+                    )}
+                    {/* P23-4: `undefined`/`null` (not wired up, or nothing to
+                        check) renders nothing -- only an actual failed check
+                        is shown, so a view that hasn't loaded sender keys yet
+                        doesn't flash a false negative. */}
+                    {m.verified === true && (
+                      <span className="e-faint" style={{ fontSize: 10 }} title="Ed25519 signature verified against the sender's public key">✓ signed</span>
+                    )}
+                    {m.verified === false && (
+                      <span style={{ fontSize: 10, color: "var(--theme-warning, #c33)" }} title="Signature does not match this message's stored content -- may have been altered after the sender sent it">✗ unverified</span>
+                    )}
+                    {m.replayed && (
+                      <span style={{ fontSize: 10, color: "var(--theme-warning, #c33)" }} title="This message's nonce was already seen earlier on this page -- a possible replay">⚠ replay</span>
                     )}
                   </div>
                   <div className="e-chat-line__content">{m.content}</div>

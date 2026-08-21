@@ -2368,14 +2368,23 @@ async def lifespan(app: FastAPI):
     notice = _stripe_mpp_admin_notice()
     if notice:
         logger.warning("%s", notice)
-    global _SWEEP_TASK
+    global _SWEEP_TASK, _FEDERATION_SYNC_TASK
     _SWEEP_TASK = asyncio.create_task(_sweep_loop())
+    # P23-3: only started when peers are actually configured -- a standalone
+    # relay (the common case) shouldn't spin a task that does nothing every
+    # EMPORIA_FEDERATION_SYNC_INTERVAL_SECONDS forever.
+    if FEDERATED_RELAYS:
+        _FEDERATION_SYNC_TASK = asyncio.create_task(_federation_sync_loop())
     try:
         yield
     finally:
         _SWEEP_TASK.cancel()
         with suppress(asyncio.CancelledError):
             await _SWEEP_TASK
+        if _FEDERATION_SYNC_TASK is not None:
+            _FEDERATION_SYNC_TASK.cancel()
+            with suppress(asyncio.CancelledError):
+                await _FEDERATION_SYNC_TASK
 
 
 app = FastAPI(title="Emporia Relay", version="0.1.0", lifespan=lifespan)
@@ -2655,6 +2664,22 @@ app.add_middleware(
 # deliberately avoids (see above). The request_id still reaches the log line
 # (correlatable by timestamp/path/traceback) -- it just can't reach the
 # client-visible response body on this one path.
+#
+# P23-2: when SENTRY_DSN is configured, this same re-raise also propagates to
+# sentry_sdk's own Starlette/FastAPI ASGI integration, which independently
+# captures the exception -- so one unhandled exception could in principle
+# produce two Sentry events (one via the logger.exception() call below, via
+# sentry_sdk's default LoggingIntegration; one via the ASGI integration
+# catching the re-raised exception itself). It doesn't, because both captures
+# see the *same* exception object, and sentry_sdk's default DedupeIntegration
+# drops a second capture of an already-seen exception by identity -- verified
+# empirically with a recording transport, not just read about. This relies on
+# the except-block re-raising the bare caught exception unchanged; wrapping it
+# in a new exception before re-raising would defeat the dedupe and silently
+# double-report.
+_LOW_SIGNAL_PATHS = {"/health"}
+
+
 @app.middleware("http")
 async def request_context(request: Request, call_next):
     rid = uuid.uuid4().hex[:12]
@@ -2670,8 +2695,13 @@ async def request_context(request: Request, call_next):
             )
             raise
         duration_ms = round((time.monotonic() - start) * 1000, 1)
-        logger.info(
-            "request", extra={
+        # P23-2: the dashboard polls /health every 5-10s per open tab (App.tsx,
+        # PaymentsFeesSection.tsx) -- at INFO that's a near-constant stream of
+        # near-identical lines drowning out everything else. DEBUG keeps it
+        # available (EMPORIA_LOG_LEVEL=DEBUG) without polluting the default.
+        level = logging.DEBUG if request.url.path in _LOW_SIGNAL_PATHS else logging.INFO
+        logger.log(
+            level, "request", extra={
                 "method": request.method, "path": request.url.path,
                 "status_code": response.status_code, "duration_ms": duration_ms,
                 "client_ip": request.client.host if request.client else "unknown",
@@ -4885,6 +4915,54 @@ async def _pull_federated_lobby(peer_url: str) -> int:
     return imported
 
 
+async def _sync_all_federated_peers() -> tuple[dict[str, int], dict[str, int]]:
+    """Pull listings + lobby from every configured peer, concurrently.
+
+    P23-3: used to be a `for peer in FEDERATED_RELAYS: await ...` loop -- both
+    `_pull_federated_listings`/`_pull_federated_lobby` already catch and record
+    per-peer failures into `_FEDERATION_LAST_SYNC`/`_FEDERATION_LOBBY_LAST_SYNC`
+    rather than raising, so a bad peer never crashed the loop, it just serialized
+    everyone behind its own `_fetch_federation_batch` timeout (15s) needlessly.
+    `asyncio.gather` here cuts worst-case wall time from O(peers) to
+    O(slowest peer) since each peer's own error handling already isolates
+    failures -- nothing about correctness changes, only how long it takes.
+    Shared by the manual `POST /gaming/v1/federate/sync` endpoint and the
+    periodic `_federation_sync_loop()` below.
+    """
+    peers = list(FEDERATED_RELAYS)
+    listing_counts, lobby_counts = await asyncio.gather(
+        asyncio.gather(*(_pull_federated_listings(p) for p in peers)),
+        asyncio.gather(*(_pull_federated_lobby(p) for p in peers)),
+    )
+    return dict(zip(peers, listing_counts)), dict(zip(peers, lobby_counts))
+
+
+_FEDERATION_SYNC_INTERVAL_SECONDS = float(os.getenv("EMPORIA_FEDERATION_SYNC_INTERVAL_SECONDS", "300"))
+_FEDERATION_SYNC_TASK: asyncio.Task | None = None  # set/cancelled in lifespan(); exposed for tests/ops
+
+
+async def _federation_sync_loop() -> None:
+    """Runs _sync_all_federated_peers() on EMPORIA_FEDERATION_SYNC_INTERVAL_SECONDS
+    (default 300s) -- mirrors _sweep_loop()'s exact shape. Started in lifespan()
+    only when FEDERATED_RELAYS is non-empty; cancelled there on shutdown.
+
+    P23-3: before this, `POST /gaming/v1/federate/sync` was the *only* sync
+    path -- operator-triggered only, no periodic retry. Per-peer failures were
+    already recorded and non-fatal (see _pull_federated_listings), so a
+    transient failure just sat there until a human re-triggered. This periodic
+    loop is itself the retry mechanism -- no separate backoff needed, the same
+    reasoning _sweep_loop() already applies to its own failures.
+    """
+    while True:
+        await asyncio.sleep(_FEDERATION_SYNC_INTERVAL_SECONDS)
+        try:
+            await _sync_all_federated_peers()
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            logger.exception("Background federation sync failed — will retry next interval")
+
+
 @app.post("/gaming/v1/federate/sync")
 async def trigger_federation_sync(request: Request):
     """Manually trigger a federation pull from all configured peers.
@@ -4902,11 +4980,7 @@ async def trigger_federation_sync(request: Request):
     """
     caller = _dashboard_agent_id(request)
     _require_operator(caller, "Federation sync")
-    results = {}
-    lobby_results = {}
-    for peer in FEDERATED_RELAYS:
-        results[peer] = await _pull_federated_listings(peer)
-        lobby_results[peer] = await _pull_federated_lobby(peer)
+    results, lobby_results = await _sync_all_federated_peers()
     return {"synced": results, "synced_lobby": lobby_results}
 
 
@@ -5804,6 +5878,8 @@ async def ws_global_events(ws: WebSocket):
     Send {"type": "ping"} to keep alive; relay responds {"type": "pong"}.
     """
     await ws.accept()
+    ws_id = uuid.uuid4().hex[:12]
+    logger.info("ws_connected", extra={"ws_id": ws_id, "channel": "global"})
     ws_connections["__global__"].add(ws)
     try:
         # Send a snapshot on connect
@@ -5840,6 +5916,7 @@ async def ws_global_events(ws: WebSocket):
     except WebSocketDisconnect:
         pass
     finally:
+        logger.info("ws_disconnected", extra={"ws_id": ws_id, "channel": "global"})
         ws_connections["__global__"].discard(ws)
 
 
@@ -5858,12 +5935,16 @@ async def ws_session(ws: WebSocket, session_id: str):
     """
     s = load_session(session_id)
     if not s:
+        logger.warning("ws_rejected", extra={"channel": "session", "session_id": session_id, "reason": "unknown_session"})
         await ws.close(code=1008)
         return
     if not _session_viewer_allowed(s, _ws_agent_id(ws)):
+        logger.warning("ws_rejected", extra={"channel": "session", "session_id": session_id, "reason": "not_allowed"})
         await ws.close(code=1008)
         return
     await ws.accept()
+    ws_id = uuid.uuid4().hex[:12]
+    logger.info("ws_connected", extra={"ws_id": ws_id, "channel": "session", "session_id": session_id})
     ws_connections[session_id].add(ws)
     try:
         await ws.send_json({"type": "init", "session": s})
@@ -5875,6 +5956,7 @@ async def ws_session(ws: WebSocket, session_id: str):
     except WebSocketDisconnect:
         pass
     finally:
+        logger.info("ws_disconnected", extra={"ws_id": ws_id, "channel": "session", "session_id": session_id})
         ws_connections[session_id].discard(ws)
 
 
@@ -5885,9 +5967,12 @@ async def ws_agent(ws: WebSocket, agent_id: str):
     caller = _ws_agent_id(ws)
     owner = _relay_operator_id()
     if caller != agent_id and not (owner and caller == owner):
+        logger.warning("ws_rejected", extra={"channel": "agent", "agent_id": agent_id, "reason": "not_authorized"})
         await ws.close(code=1008)
         return
     await ws.accept()
+    ws_id = uuid.uuid4().hex[:12]
+    logger.info("ws_connected", extra={"ws_id": ws_id, "channel": "agent", "agent_id": agent_id})
     key = f"agent:{agent_id}"
     ws_connections[key].add(ws)
     try:
@@ -5896,6 +5981,7 @@ async def ws_agent(ws: WebSocket, agent_id: str):
     except WebSocketDisconnect:
         pass
     finally:
+        logger.info("ws_disconnected", extra={"ws_id": ws_id, "channel": "agent", "agent_id": agent_id})
         ws_connections[key].discard(ws)
 
 
@@ -6924,13 +7010,17 @@ async def ws_room(ws: WebSocket, room_id: str):
     to any connection, matching GET /rooms/{id}/messages."""
     room = rooms_db.get_room(room_id, db_path=DATABASE_PATH)
     if not room:
+        logger.warning("ws_rejected", extra={"channel": "room", "room_id": room_id, "reason": "unknown_room"})
         await ws.close(code=1008)
         return
     caller = _ws_agent_id(ws)
     if room.room_type == "private" and not rooms_db.is_member(room_id, caller or "", db_path=DATABASE_PATH):
+        logger.warning("ws_rejected", extra={"channel": "room", "room_id": room_id, "reason": "not_a_member"})
         await ws.close(code=1008)
         return
     await ws.accept()
+    ws_id = uuid.uuid4().hex[:12]
+    logger.info("ws_connected", extra={"ws_id": ws_id, "channel": "room", "room_id": room_id})
     key = f"room:{room_id}"
     ws_connections[key].add(ws)
     try:
@@ -6951,6 +7041,7 @@ async def ws_room(ws: WebSocket, room_id: str):
     except WebSocketDisconnect:
         pass
     finally:
+        logger.info("ws_disconnected", extra={"ws_id": ws_id, "channel": "room", "room_id": room_id})
         ws_connections[key].discard(ws)
 
 

@@ -90,6 +90,9 @@ export interface AgentProfile {
   registered_at: string;
   is_active: boolean;
   has_stripe: boolean;
+  /** P17-2/P23-4: the Ed25519 signing key -- public by nature, sent so a
+   *  client can re-verify a stored message signature (see integrityCheck.ts). */
+  public_key_hex?: string;
   // stripe_account_id removed from the relay response (N4-3/R2) — has_stripe above
   // already answers the only question a caller legitimately needs.
   stripe_profile_ready?: boolean;
@@ -142,6 +145,39 @@ export interface Room {
   member_count?: number;
   encrypted: boolean;
   linked_session_id?: string;
+}
+
+/** P23-4: GET /rooms/{id}/chain's response shape -- a relay-signed attestation
+ *  of the room's current chain head, consumed by integrityCheck.ts for
+ *  genuine client-side (pin-backed) verification, not just displaying this
+ *  raw self-report (see that route's own docstring on what the signature
+ *  does and does not prove). */
+export interface RoomChain {
+  room_id: string;
+  verified: boolean;
+  message: string;
+  chain_head: string | null;
+  message_count: number;
+  origin_relay: string;
+  origin_public_key_hex: string;
+  signature: string;
+}
+
+/** P23-4: GET /rooms/{id}/messages' response shape -- RoomMessage.to_dict()
+ *  (rooms.py) via asdict(), so every dataclass field is present, not just the
+ *  subset the WS frame's WsMessage type (hooks.ts) happened to carry through
+ *  before this pass. Kept as its own type rather than importing WsMessage to
+ *  avoid an api.ts <-> hooks.ts import cycle (hooks.ts already imports from
+ *  here). */
+export interface RoomMessageDetail {
+  message_id: string;
+  sender_id: string;
+  content: string;
+  msg_type: string;
+  created_at: string;
+  chain_hash?: string | null;
+  signature?: string | null;
+  nonce?: string | null;
 }
 
 export interface UiConfig {
@@ -312,6 +348,11 @@ export interface DMMessage {
   /** P17-2: the sender's Ed25519 signature, kept so it can be re-verified after
    *  storage. Null on rows written before signatures were persisted. */
   signature?: string | null;
+  /** P18-2/P23-4: already sent by the relay (dm_messages route) so a client
+   *  can spot a duplicate itself, and needed to reconstruct the exact
+   *  signed payload for verification (integrityCheck.ts). Previously typed
+   *  nowhere in this interface despite being on the wire. */
+  nonce?: string | null;
 }
 
 /** P17-4/P20-1: does this content look like a crypto_box envelope?
@@ -397,6 +438,17 @@ export const api = {
   // viewer/member scoping now comes from the authenticated caller server-side
   // (_dashboard_agent_id), not a client-supplied id — see relay N1-6.
   rooms: () => get<{ rooms: Room[]; count: number }>("/rooms", { agentScoped: true }),
+  // P23-4: for client-side (pin-backed) room chain verification -- see
+  // integrityCheck.ts. agentScoped: true so a private room's gate (membership
+  // check server-side) sees the caller; public rooms ignore the header.
+  roomChain: (room_id: string) =>
+    get<RoomChain>(`/rooms/${encodeURIComponent(room_id)}/chain`, { agentScoped: true }),
+  roomMessages: (room_id: string, opts?: { limit?: number; before?: string }) =>
+    get<{ messages: RoomMessageDetail[]; count: number }>(
+      `/rooms/${encodeURIComponent(room_id)}/messages?limit=${opts?.limit ?? 200}` +
+        (opts?.before ? `&before=${encodeURIComponent(opts.before)}` : ""),
+      { agentScoped: true },
+    ),
   // N3-3: GET /agents now requires an authenticated caller (it was the unauthenticated
   // identity-enumeration primitive N2's review named but never closed).
   agents: (search?: string) =>
