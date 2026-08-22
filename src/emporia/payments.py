@@ -803,6 +803,7 @@ async def settle(
     total_stake_cents: int,
     payment_intent_ids: list[str],
     winner_stripe_account: str | None = None,
+    winner_stripe_account_status: str = "active",
 ) -> dict[str, Any]:
     """Capture all escrowed stakes, then transfer the winner's net payout.
 
@@ -814,6 +815,14 @@ async def settle(
 
     Platform fee: OPERATOR_FEE_BPS basis points (default 250 = 2.5%), minimum 1¢.
     Requires total_stake_cents ≥ STRIPE_MIN_CHARGE_CENTS (50¢) — enforced upstream.
+
+    `winner_stripe_account_status` (P25-2) defaults to "active" — every caller
+    that doesn't pass it explicitly (this codebase's own pre-P25 tests included)
+    keeps attempting the transfer exactly as before, since a test-mode account
+    genuinely is active immediately. The one real caller in relay_server.py
+    passes the winner's actual AGENT_REGISTRY status, so a live-mode account
+    that hasn't finished onboarding is skipped here rather than attempted and
+    left to fail against Stripe's own API.
     """
     fee = platform_fee(total_stake_cents)
     platform_fee_cents = fee
@@ -833,7 +842,9 @@ async def settle(
     transfer_status = "pending_connect"
 
     # Step 2: Transfer winner's net share from platform balance to their connected account
-    if winner_stripe_account and winner_payout_cents > 0:
+    if winner_stripe_account and winner_payout_cents > 0 and winner_stripe_account_status != "active":
+        transfer_status = "pending_connect_not_active"
+    elif winner_stripe_account and winner_payout_cents > 0:
         try:
             transfer = await payout_winner(
                 winner_id=winner_id,
@@ -902,6 +913,71 @@ async def create_connected_account(agent_id: str) -> dict[str, Any]:
             "agent_id": agent_id,
             "status": "created",
         }
+
+
+async def create_live_connected_account(agent_id: str) -> dict[str, Any]:
+    """Create a Stripe Custom connected account for an agent (live mode).
+
+    A sibling of create_connected_account() above, not a variant of it —
+    that function's `tos_acceptance[*]` auto-fill (date=now, ip=127.0.0.1) is
+    correct only because Stripe auto-approves Custom accounts in test mode
+    without ever looking at it. Fabricating ToS-acceptance evidence for a
+    real account would be lying about a real legal event, so this omits
+    `tos_acceptance` entirely — Stripe's own hosted onboarding
+    (create_account_onboarding_link() below) collects the real acceptance,
+    and the account starts unverified/pending until that flow completes and
+    the account.updated webhook (relay_server.py) reports it active.
+    """
+    key = _stripe_key()
+    async with httpx.AsyncClient(timeout=REQUEST_TIMEOUT) as client:
+        resp = await client.post(
+            f"{STRIPE_API_BASE}/accounts",
+            auth=(key, ""),
+            data={
+                "type": "custom",
+                "country": "US",
+                "email": f"{agent_id}@emporia.local",
+                "capabilities[card_payments][requested]": "true",
+                "capabilities[transfers][requested]": "true",
+                "metadata[agent_id]": agent_id,
+                "metadata[protocol]": "emporia:v1",
+            },
+        )
+        resp.raise_for_status()
+        acct = resp.json()
+        return {
+            "stripe_account_id": acct["id"],
+            "agent_id": agent_id,
+            "status": "created",
+        }
+
+
+async def create_account_onboarding_link(
+    stripe_account_id: str, refresh_url: str, return_url: str,
+) -> str:
+    """Create a Stripe-hosted Account Link (`type=account_onboarding`) for a
+    live-mode Connected Account created by create_live_connected_account()
+    above, and return its URL. `refresh_url` is where Stripe sends the agent's
+    operator back if the link itself expired (they should be sent through
+    this function again to get a fresh one); `return_url` is where Stripe
+    sends them after the onboarding *form* is complete — that is not the same
+    as the account being payable, since capability activation happens
+    asynchronously and is only ever confirmed by the account.updated webhook.
+    """
+    key = _stripe_key()
+    async with httpx.AsyncClient(timeout=REQUEST_TIMEOUT) as client:
+        resp = await client.post(
+            f"{STRIPE_API_BASE}/account_links",
+            auth=(key, ""),
+            data={
+                "account": stripe_account_id,
+                "refresh_url": refresh_url,
+                "return_url": return_url,
+                "type": "account_onboarding",
+            },
+        )
+        resp.raise_for_status()
+        return resp.json()["url"]
 
 
 async def payout_winner(

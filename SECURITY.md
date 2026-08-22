@@ -1829,6 +1829,205 @@ everything W1/W2 added on top, another ~15) had **zero** automated backstop. Bot
 unmodified (`oxlint` currently exits 0 despite ~30 pre-existing warnings — no `--deny-warnings` or
 threshold added this pass, so the gate is errors-only for now).
 
+## P25 pass — pin type-safety fix, Stripe Connect live-mode onboarding
+
+Reviewing P24's own diff (this codebase's standing per-pass discipline) confirmed every claim
+against the actual code — 675 pytest + ruff clean, 59 vitest + typecheck + build clean, all eight
+W1–W6 claims verified line-by-line — and found the implementation solid, but turned up one real
+gap in code P24 itself wrote. The forward-looking half of this pass closes the one open payments
+gap with no outstanding design question: live-mode Stripe Connect onboarding. (x402 payer binding
+and federation peer-discovery both need a dedicated design conversation — open product questions,
+not a code-authoring scope — and stay on the backlog; see ROADMAP.md.)
+
+### Fixed — carried P24 defect (audit finding)
+
+`dashboard/src/integrityCheck.ts`'s `getPinnedRoomChainHead()` got a `{pin, corrupt}` shape in
+P24/F4, failing closed when a stored pin isn't a well-formed object — but the Python side
+(`agent_sdk.py::verify_room_chain()` and its `mcp_server.py` twin) never got the equivalent check.
+`identity.load_room_chain_heads()` only guards *whole-file* JSON corruption (resets every pin and
+preserves the damaged file for inspection); a single malformed *entry* inside an otherwise-valid
+file reached `pinned.get(...)` unguarded. Three distinct bad shapes produced three distinct wrong
+behaviors, confirmed live before the fix: a truthy non-dict (e.g. a bare string) crashed with
+`AttributeError`; a dict with a non-string `chain_head` didn't crash but reported the misleading
+"history was rewritten" instead of "the pin itself is corrupt"; a falsy non-dict (e.g. `[]`) was
+silently treated as "no pin at all" and quietly overwritten with a fresh pin at the end — a silent
+trust-reset with no signal, exactly what `load_room_chain_heads()`'s own docstring says whole-file
+corruption must not do. Fixed in both files with one shape check (`pinned is not None and not
+(isinstance(pinned, dict) and isinstance(pinned.get("chain_head"), str))`) immediately after the
+pin lookup, matching the TS side's `corrupt` semantics. All three bad shapes covered by one
+stash-verified test per implementation (SDK, MCP).
+
+### Shipped — Stripe Connect live-mode onboarding (P25-2)
+
+Test mode already worked end-to-end: `register_agent()` auto-provisions a Custom Connected
+Account and auto-accepts ToS on the agent's behalf, which Stripe permits *only* in test mode
+(it skips verification outright). Live mode had no path to an account at all —
+`if stripe_key.startswith("sk_test_")` gated the entire auto-provision block, so a real operator's
+agents could never be paid.
+
+- **Account-status tracking.** New `authorized_agents.stripe_account_status` column
+  (`'none' | 'pending' | 'active'`, default `'none'` — correct for every pre-existing row except
+  one: `register_agent()`'s test-mode branch now sets it to `'active'` immediately, since a
+  test-mode account genuinely is usable right away). New `AGENT_REGISTRY.get_stripe_account_status()`
+  / `set_stripe_account_status()` accessors, the latter keyed by `stripe_account_id` (not
+  `agent_id`) since the webhook below only ever learns the Stripe account id, not which agent owns
+  it.
+- **Live account creation, kept separate from the test-mode function.** `payments.py` gained
+  `create_live_connected_account()` as a sibling to `create_connected_account()`, not a branch
+  inside it — the test-mode function's `tos_acceptance[*]` auto-fill is correct only because
+  Stripe never looks at it in test mode; reusing that fill for a real account would be fabricating
+  evidence of a real legal event. The live version omits `tos_acceptance` entirely; Stripe's own
+  hosted onboarding (`create_account_onboarding_link()`, wrapping `POST /v1/account_links`)
+  collects the real acceptance. New `POST /agents/{agent_id}/stripe-onboarding`
+  (`_require_caller_is`-gated, live-mode only — rejects with 400 in test mode, since that path
+  auto-provisions already) creates or reuses the account and returns a fresh onboarding URL;
+  reusing an existing account never resets its status, so re-requesting a link for banking-detail
+  updates can't regress an already-`active` account back to `pending`. Both `refresh_url` and
+  `return_url` point at a new `GET /stripe-onboarding-return`, a plain HTML page served by the
+  relay itself (not the dashboard SPA — Stripe only needs a valid URL, and completing the hosted
+  form isn't the same as the account being payable) that explicitly says so and points the operator
+  at `stripe_account_status` instead of claiming completion.
+- **The webhook is the only thing allowed to mark an account `active`.** New `POST /webhooks/stripe`
+  receives Stripe's `account.updated` event and is security-critical in the ordinary sense that
+  matters for a payments feature: an unverified webhook would let anyone POST a claim that any
+  Stripe account is payable. Verification is hand-rolled (`hmac`/`hashlib`, matching this
+  codebase's established raw-`httpx`/no-SDK posture toward Stripe — `payments.py` never imports
+  the `stripe` package) over Stripe's `Stripe-Signature: t=<ts>,v1=<hex>[,v1=...]` scheme, checked
+  with `hmac.compare_digest` and a 300-second replay-tolerance window on the timestamp; a missing
+  secret, a missing/malformed header, a wrong signature, or a stale timestamp are all rejects, not
+  skips — confirmed by a stash-verify that literally stubbed the verifier to always return `True`
+  and watched two tests fail for exactly that reason before the real implementation went back in.
+  The route reads the raw request body before any JSON parsing, since FastAPI's model binding
+  would consume/reparse it and Stripe's signature is computed over the exact raw bytes. Status
+  becomes `'active'` only when both `capabilities.transfers` and `capabilities.card_payments`
+  report `"active"`; an event for an unrecognized account id still returns 200 (logged, not
+  rejected) so Stripe's retry-on-non-2xx doesn't loop forever on an event this relay will never act
+  on differently.
+- **Startup fails loud, not silent, on a missing secret.** `lifespan()` now calls
+  `_require_stripe_webhook_secret_if_needed()`: a live `STRIPE_SECRET_KEY` with no
+  `STRIPE_WEBHOOK_SECRET` raises at startup (the webhook is the *only* way an account ever becomes
+  payable in live mode, and it fails closed rather than open — booting without the ability to ever
+  verify one is a state worth refusing to start in, not a state worth silently degrading into).
+  Test mode only warns.
+- **Pre-check before a doomed transfer, not a caught failure after one.** Both `payout_winner()`
+  call sites (`payments.py::settle()`, and `relay_server.py`'s room/Agora entry-fee split) now
+  check status before attempting the Stripe call: not `'active'` skips it and records
+  `transfer_status = "pending_connect_not_active"` — a clearer, correctly-attributed outcome than
+  letting the doomed call reach Stripe's API and surface as an opaque `transfer_failed: ...`.
+  `settle()`'s new `winner_stripe_account_status` parameter defaults to `"active"` specifically so
+  every pre-P25 caller (including this codebase's own existing tests) keeps its prior behavior
+  unchanged when it doesn't pass the parameter at all; the one real caller passes the winner's
+  actual `AGENT_REGISTRY` status. **This surfaced a real test-fixture gap during implementation**:
+  28 existing tests mocked `AGENT_REGISTRY.get_stripe_account` alone to simulate "this creator can
+  be paid" — with the new status dimension, a bare account-id mock without a matching `'active'`
+  status is no longer sufficient, and all 28 broke until updated to mock both together (via a new
+  `_stripe_account_active()` test helper). Confirmed via a stash-verify of the gating logic itself,
+  independent of the fixture fix: reverting the check reproduced 15 of those failures for the right
+  reason before the fixture update, and a dedicated pair of new tests (one direct unit test on
+  `settle()`, one end-to-end through the real join flow) pin the skip behavior on its own.
+- **`GET /agents/{agent_id}`** now reports `stripe_account_status` alongside the existing
+  `has_stripe` — `has_stripe` only ever answered "does an account exist," not "can this agent be
+  paid right now," which live mode's `pending` state makes a real, distinct question.
+- **MCP/SDK parity, in the same pass.** `agent_sdk.EmporiaAgent.start_stripe_onboarding()` and
+  `mcp_server.start_stripe_onboarding()` are both thin wrappers around the new endpoint, added
+  together rather than one first and the other as a later audit finding — the exact
+  duplication-drift risk this repo's own plans have named explicitly since P21.
+
+Explicitly unchanged: `payout_winner()`'s signature and idempotency-key derivation; test-mode
+behavior (still auto-provisions and auto-accepts ToS, immediately usable, same as before this
+pass); Account Links are never requested for a test-mode account (Stripe auto-approves those, there
+is nothing to onboard).
+
+## P25 pass — pin type-safety fix, Stripe Connect live-mode onboarding
+
+Reviewing P24's own diff (both against its own claims and against the rest of the codebase's open
+backlog) turned up one real defect. Of the open backlog items, x402 payer binding and a federation
+peer-discovery directory both still need a dedicated product/design conversation before code should
+be written against them (open questions: wallet-binding semantics; bootstrap/registry shape) — this
+pass instead closes the one payments gap with no outstanding design question: Stripe Connect
+live-mode onboarding had no path at all, only test mode worked.
+
+### Fixed — carried defect from P24
+
+| Finding | Severity | Fix |
+|---|---|---|
+| **Pin type-safety gap, found auditing P24's own diff.** `integrityCheck.ts`'s `getPinnedRoomChainHead()` got a `{ pin, corrupt }` shape in P24/F4, failing closed on a malformed stored pin — but the Python side (`agent_sdk.py`/`mcp_server.py`) never got the equivalent check. `identity.load_room_chain_heads()` only guards *whole-file* JSON corruption; a single malformed *entry* inside an otherwise-valid file reached `pinned.get(...)` unguarded, producing three different wrong outcomes depending on the exact shape: a truthy non-dict (e.g. a bare string) crashed with `AttributeError`; a dict with a non-string `chain_head` didn't crash but reported the misleading "history was rewritten" instead of "the pin itself is corrupt"; a falsy non-dict (e.g. `[]`) was silently treated as "no pin at all" and quietly overwritten with a fresh pin at the end of the call — a silent trust-reset with no signal, exactly what `load_room_chain_heads()`'s own docstring says whole-file corruption must not do. | Medium | Both `verify_room_chain()` copies now validate `pinned` immediately after the lookup — non-`None` must be a `dict` with `chain_head` present as a `str`, else fail closed with a distinct "stored pin entry for this room is malformed" reason. Confirmed all three bad shapes (`"not-a-dict"`, `{"chain_head": 123}`, `[]`) now produce the same clean, actionable failure instead of a crash, a wrong reason, or a silent reset. |
+
+### Shipped — Stripe Connect live-mode onboarding
+
+`register_agent()`'s Connected Account auto-provisioning (`relay_server.py`) has always been gated
+to `sk_test_` keys — Stripe auto-approves a test-mode Custom account's capabilities instantly, with
+no verification step, so `create_connected_account()`'s `tos_acceptance[*]` auto-fill (date=now,
+ip=127.0.0.1) is legitimate there. In live mode that block is skipped entirely: no account, no
+onboarding path, nothing. A real operator's agents had no way to ever receive a Stripe payout.
+
+- **Account-status tracking.** New `authorized_agents.stripe_account_status` column
+  (`'none' | 'pending' | 'active'`, default `'none'` — correct for every pre-existing row, same
+  posture as the `encryption_public_key` migration before it) plus `AGENT_REGISTRY.get/
+  set_stripe_account_status()`. Test-mode registration now sets `'active'` immediately (Stripe
+  really does skip verification there); a live-mode account starts `'pending'` and only ever
+  becomes `'active'` via the verified webhook below — nothing else in this codebase is allowed to
+  set it there.
+- **`payments.create_live_connected_account()`** is a sibling of the test-mode function, not a
+  variant of it — it omits `tos_acceptance[*]` entirely rather than fabricating evidence of a real
+  legal event Stripe's hosted form hasn't actually collected yet. **`create_account_onboarding_link()`**
+  wraps Stripe's Account Links API (`type=account_onboarding`).
+- **`POST /agents/{agent_id}/stripe-onboarding`** (`_require_caller_is`-gated, same posture as
+  `/agents/{agent_id}/x402-wallet`) creates or reuses the agent's Connected Account and returns a
+  fresh onboarding URL. Rejects with 400 in test mode (nothing to onboard — already auto-provisioned)
+  and when Stripe isn't configured at all. Reusing an existing account for a fresh link never resets
+  its status — only the webhook does that.
+- **`POST /webhooks/stripe`** receives Stripe's `account.updated` events — the *only* thing allowed
+  to mark a live-mode account `'active'`. Security-critical and deliberately unauthenticated (this is
+  Stripe's own server calling in, not an Emporia agent): the `Stripe-Signature` HMAC check
+  (`t=<ts>,v1=<hex>`, hand-rolled with `hmac`/`hashlib` — matches this codebase's established
+  no-`stripe`-SDK posture toward Stripe) is the entire authorization boundary, and it never fails
+  open. Reads the raw request body before any JSON parsing (FastAPI's model binding would
+  consume/reparse it, and Stripe signs the exact raw bytes). Rejects a missing/malformed header, a
+  wrong signature, a tampered body, and a timestamp outside Stripe's ~5-minute replay-tolerance
+  window — each confirmed by a dedicated test asserting the *specific* rejection reason, not just
+  "some check failed." Marks an account `'active'` only when both `transfers` and `card_payments`
+  capabilities report `active`; otherwise `'pending'`. Always returns 200 once the signature verifies
+  (Stripe retries non-2xx), even for an account id this relay doesn't recognize (logged, not
+  rejected) — there's nothing to gain from making Stripe retry an event this relay will never act on
+  differently.
+- **Startup fail-loud.** `_require_stripe_webhook_secret_if_needed()` raises in `lifespan()` if
+  `STRIPE_SECRET_KEY` is a live key and `STRIPE_WEBHOOK_SECRET` is unset — booting into a state where
+  live-mode accounts could *never* be marked payable is worse than refusing to start. Test mode only
+  warns (the route is harmless there; test-mode accounts are already `'active'` at registration).
+- **Payout pre-check, not a post-hoc relabel.** Both Stripe transfer call sites (`payments.settle()`
+  and `relay_server._settle_access_payment()`'s room/Agora branch) now skip the transfer entirely —
+  never attempting a doomed Stripe API call — when the payee's status isn't `'active'`, reporting
+  `transfer_status: "pending_connect_not_active"` instead of letting an opaque `transfer_failed: ...`
+  surface later. `settle()`'s new `winner_stripe_account_status` parameter defaults to `"active"`,
+  so every pre-P25 caller (including this codebase's own existing tests) keeps behaving exactly as
+  before unless it explicitly opts into the new check — confirmed by re-running the full pre-existing
+  suite, which found 28 test call sites that mocked `get_stripe_account` alone and needed the new
+  `_stripe_account_active()` test helper to also mock status, a mechanical but real blast-radius fix
+  caught by the suite itself before it could ship as a live regression.
+- **Static onboarding-return page.** `GET /stripe-onboarding-return`, served by the relay itself (not
+  the dashboard SPA — Stripe's Account Links API only needs a valid URL for its `refresh_url`/
+  `return_url`, and completing the hosted form is not the same as the account being payable, so the
+  page deliberately does not claim success). A deliberate deviation from the plan's suggestion of a
+  new dashboard route: same-origin with the relay, no dashboard build dependency, and nothing for
+  Stripe to actually need beyond "a URL that exists."
+- **Dashboard: read-only status visibility**, matching the established MCP-hint pattern
+  (`ProfileView.tsx`'s `RemoteAuthPanel`) rather than adding a browser-side write/signing flow (which
+  ROADMAP.md's Dashboard section already scopes as its own, materially bigger feature). The "Stripe
+  payouts" row now shows `'none'`/`'pending'`/`'active'` instead of a binary connected/not-connected,
+  and hints at the `start_stripe_onboarding` MCP tool when not active.
+- **MCP/SDK parity, from the start.** `agent_sdk.EmporiaAgent.start_stripe_onboarding()` and
+  `mcp_server.start_stripe_onboarding()` are both thin wrappers around the new endpoint, added in the
+  same pass rather than deferred — the exact drift this repo's own audit chain has found repeatedly
+  when one client gets a fix and its twin doesn't.
+
+**Explicitly not built this pass:** an Account Links refresh/expiry retry loop beyond "call the
+endpoint again" (Stripe links expire after a short window; re-requesting one is already the correct
+recovery, so no additional state machine was needed); event-id-based webhook deduplication (`account.
+updated` is a status *mirror*, not a money-moving operation — Stripe's capability state is
+authoritative and monotonic, so last-write-wins on redelivery is correct, and the signature
+timestamp tolerance already rejects genuinely stale redeliveries).
+
 ## Threat model notes (by design, not gaps)
 
 - **Ed25519 = auth; the relay never holds private keys.** Keys live at `~/.hermes/keys/*.priv`,

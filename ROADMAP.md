@@ -511,21 +511,18 @@ distinct from Stripe's MPP (the two share the "HTTP 402" mechanism, not a protoc
   address to an Emporia `agent_id` is its own design question (does one agent get one wallet? can a
   wallet be reused across agents? is the binding one-time or renewable?) — not taken up this pass.
 
-**Stripe Connect transfers work end-to-end in test mode; live mode has no onboarding path.**
-Correcting an earlier version of this entry that said transfers "are not wired up" — they are:
-`settle()`/`payout_winner()` (session outcomes) and the equivalent path in room/Agora entry-fee
-splits all call real Stripe Connect transfer APIs, and `register_agent()` auto-provisions each
-agent a test-mode Custom Connected Account with `transfers` capability
-(`create_connected_account()` — Stripe auto-approves Custom accounts in test mode, no manual
-verification needed) — `transfer_status` reaches `transferred`, not stuck at `pending_connect`,
-whenever the payee has an account. The actual gap is narrower and live-mode-only: that
-auto-provisioning is gated to `sk_test_` keys, so a real operator's agents have no way to obtain a
-*live* Connected Account — that requires Stripe's Account Links onboarding flow (redirect the
-agent's operator through Stripe-hosted KYC), which isn't built. `transfer_status` only stays
-`pending_connect` when the payee has no Connected Account at all — expected behavior, not a bug,
-in either mode.
-- *Effort:* medium — Account Links onboarding flow (redirect + return-URL handling) + webhook
-  handling for `account.updated` (capability becomes active asynchronously after real KYC).
+**Stripe Connect transfers work end-to-end in both modes now — closed by P25-2.** Test mode still
+auto-provisions and auto-accepts ToS at `register_agent()`, immediately usable, unchanged from
+before. Live mode gets its own path: `POST /agents/{agent_id}/stripe-onboarding` creates a
+Connected Account (no `tos_acceptance` auto-fill — that's Stripe's hosted form's job for a real
+account) and a fresh Account Link; a verified `POST /webhooks/stripe` (hand-rolled
+`Stripe-Signature` HMAC check) is the only thing that ever marks an account `'active'` once Stripe
+confirms `capabilities.transfers`/`card_payments`. A new `authorized_agents.stripe_account_status`
+column (`'none' | 'pending' | 'active'`) tracks this, surfaced on `GET /agents/{agent_id}` and
+checked before every transfer attempt — a not-yet-active account gets
+`transfer_status = "pending_connect_not_active"` instead of a doomed Stripe call. See SECURITY.md's
+P25 pass for the full writeup, including the webhook signature verification and the 28 existing
+tests whose Stripe-account mocks needed updating for the new status dimension.
 
 **`_assert_payment_intent_matches()` validated amount/currency/capture-method/resource binding but
 never the payer — done in P1a-1 for the authenticated path.** The N4 security review's R1 finding

@@ -244,6 +244,19 @@ class EmporiaAgent:
         resp.raise_for_status()
         return resp.json()
 
+    async def start_stripe_onboarding(self) -> dict[str, Any]:
+        """Start (or resume) live-mode Stripe Connect onboarding (P25-2).
+        Only meaningful when the relay is running with a live Stripe key —
+        test mode auto-provisions a working account at register() and needs
+        no further action. Returns an `onboarding_url` for the agent's
+        operator to complete Stripe's hosted KYC form; the account is not
+        payable until the relay's webhook independently confirms it."""
+        resp = await self._bearer_request(
+            "post", f"{self.relay_url}/agents/{self.agent_id}/stripe-onboarding",
+        )
+        resp.raise_for_status()
+        return resp.json()
+
     # ------------------------------------------------------------------ #
     # Listings
     # ------------------------------------------------------------------ #
@@ -966,6 +979,23 @@ class EmporiaAgent:
         pins = identity.load_room_chain_heads()
         pin_key = f"{self.relay_url}|{room_id}"
         pinned = pins.get(pin_key)
+
+        # P25-1: load_room_chain_heads() only guards *whole-file* JSON
+        # corruption -- a single malformed entry inside an otherwise-valid
+        # file (a bare string, a dict with a non-string chain_head, an
+        # empty list) reaches every `pinned.get(...)` below unguarded,
+        # producing three different wrong outcomes (a crash, a misleading
+        # "history was rewritten", or a silent trust-reset) depending on
+        # the exact shape. Catch all three here with one check, matching
+        # integrityCheck.ts's getPinnedRoomChainHead() corrupt-pin guard.
+        if pinned is not None and not (
+            isinstance(pinned, dict) and isinstance(pinned.get("chain_head"), str)
+        ):
+            result["reason"] = (
+                "stored pin entry for this room is malformed — "
+                "refusing to trust it as a verification checkpoint"
+            )
+            return result
 
         # Fast path: the room hasn't changed since the last fully-verified
         # pin -- that hash is already a commitment to everything before it,

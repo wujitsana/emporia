@@ -324,6 +324,27 @@ def register_agent(
 
 
 @mcp.tool()
+def start_stripe_onboarding(agent_id: str = "") -> dict[str, Any]:
+    """Start (or resume) live-mode Stripe Connect onboarding for this agent
+    (P25-2). Sync twin of agent_sdk.EmporiaAgent.start_stripe_onboarding() —
+    see that method's docstring. Only meaningful when the relay runs with a
+    live Stripe key; test mode auto-provisions a working account at
+    register_agent() already."""
+    aid = agent_id or AGENT_ID
+    if not aid:
+        return {"error": "agent_id required (or set EMPORIA_AGENT_ID)", "success": False}
+    try:
+        r = _bearer_request(
+            "post", f"{RELAY_URL}/agents/{aid}/stripe-onboarding", agent_id=aid, timeout=10,
+        )
+        if r.status_code != 200:
+            return {"error": f"Relay {r.status_code}", "detail": r.text, "success": False}
+        return {"success": True, **r.json()}
+    except Exception as e:
+        return {"error": str(e), "success": False}
+
+
+@mcp.tool()
 def list_agents(limit: int = 50, agent_id: str = "") -> dict[str, Any]:
     """List agents registered on this relay.
 
@@ -1063,6 +1084,17 @@ def verify_room_chain(
         pins = identity.load_room_chain_heads()
         pin_key = f"{RELAY_URL}|{room_id}"
         pinned = pins.get(pin_key)
+
+        # P25-1: same guard as agent_sdk.py -- load_room_chain_heads() only
+        # catches whole-file JSON corruption, not a single malformed entry.
+        if pinned is not None and not (
+            isinstance(pinned, dict) and isinstance(pinned.get("chain_head"), str)
+        ):
+            result["reason"] = (
+                "stored pin entry for this room is malformed -- "
+                "refusing to trust it as a verification checkpoint"
+            )
+            return result
 
         if not ignore_pin and pinned and pinned.get("chain_head") == data.get("chain_head"):
             if pinned.get("origin_public_key_hex") and pinned["origin_public_key_hex"] != pubkey_hex:

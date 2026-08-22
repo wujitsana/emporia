@@ -78,6 +78,18 @@ function RolePill({ isOperator, isSpectator }: { isOperator: boolean; isSpectato
   return <span className="e-role-pill e-role-pill--member">Member</span>;
 }
 
+/** P25-2: has_stripe alone only ever answered "does an account exist" --
+ *  distinguish the live-mode "created but not payable yet" state, and hint
+ *  at the MCP tool that starts onboarding, matching this file's existing
+ *  MCP-hint pattern (RemoteAuthPanel above) rather than adding a signing
+ *  write-flow to the dashboard itself. */
+function stripeAccountStatusLabel(registered: AgentProfile): string {
+  const status = registered.stripe_account_status ?? (registered.has_stripe ? "active" : "none");
+  if (status === "active") return "connected";
+  if (status === "pending") return "onboarding pending — Stripe confirms automatically";
+  return "not connected — run start_stripe_onboarding (MCP) for live payouts";
+}
+
 function SettlementRow({ s, viewerId }: { s: Settlement; viewerId: string }) {
   const won = s.winner_id === viewerId;
   const amount = won
@@ -156,7 +168,7 @@ export function ProfileView() {
                 ["Registered", new Date(registered.registered_at).toLocaleDateString()],
                 ["Sessions", String(registered.session_count)],
                 ["Wins", `${registered.win_count} (${registered.session_count > 0 ? Math.round((registered.win_count / registered.session_count) * 100) : 0}%)`],
-                ["Stripe payouts", registered.has_stripe ? "connected" : "not connected"],
+                ["Stripe payouts", stripeAccountStatusLabel(registered)],
                 ["Stripe MPP seller", registered.stripe_profile_ready ? "ready" : "not ready"],
                 ...(registered.payment_methods?.length ? [["Methods", registered.payment_methods.join(", ")] as [string, string]] : []),
                 ...(registered.payment_rails?.length ? [["Rails", registered.payment_rails.join(", ")] as [string, string]] : []),

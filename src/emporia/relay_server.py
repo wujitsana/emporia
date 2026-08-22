@@ -46,7 +46,7 @@ from typing import TYPE_CHECKING, Any
 import httpx
 import uvicorn
 from fastapi import FastAPI, HTTPException, Request, WebSocket, WebSocketDisconnect
-from fastapi.responses import RedirectResponse
+from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
@@ -225,6 +225,72 @@ def _stripe_mpp_admin_notice() -> str | None:
 
     sk = (os.getenv("STRIPE_SECRET_KEY") or "").strip()
     return stripe_mpp_admin_notice(sk, profile_ready=_stripe_profile_ready())
+
+
+def _verify_stripe_webhook_signature(
+    payload: bytes, sig_header: str, secret: str, *, tolerance_seconds: int = 300,
+) -> bool:
+    """Hand-rolled verification of Stripe's `Stripe-Signature` header scheme
+    (`t=<unix-ts>,v1=<hex-hmac-sha256>[,v1=...]`) — matches this codebase's
+    established raw-httpx/no-SDK posture toward Stripe (`payments.py` never
+    imports the `stripe` package; P25-2 stays consistent). A payload can carry
+    more than one `v1` value during Stripe's own secret-rotation window, so any
+    match is accepted. Rejects a missing/malformed header, a wrong signature,
+    and a timestamp outside Stripe's documented ~5-minute replay-tolerance
+    window. Never fails open: an empty secret or any parse error is a reject,
+    not a skip.
+    """
+    if not secret or not sig_header:
+        return False
+    parts: dict[str, list[str]] = {}
+    for item in sig_header.split(","):
+        if "=" not in item:
+            continue
+        k, _, v = item.partition("=")
+        parts.setdefault(k.strip(), []).append(v.strip())
+    ts_values = parts.get("t")
+    v1_values = parts.get("v1")
+    if not ts_values or not v1_values:
+        return False
+    try:
+        ts = int(ts_values[0])
+    except ValueError:
+        return False
+    if abs(time.time() - ts) > tolerance_seconds:
+        return False
+    signed_payload = f"{ts_values[0]}.".encode() + payload
+    expected = _hmac.new(secret.encode(), signed_payload, hashlib.sha256).hexdigest()
+    return any(_hmac.compare_digest(expected, v1) for v1 in v1_values)
+
+
+def _require_stripe_webhook_secret_if_needed() -> None:
+    """Fail loud at startup (P25-2) rather than silently booting into a state
+    where live-mode Connected Accounts could never be marked payable —
+    POST /webhooks/stripe is the *only* thing that ever sets an account's
+    status to 'active' in live mode, and it refuses every request without a
+    secret to verify against (never fails open). Test-mode key: warn only —
+    the route existing there is harmless (test-mode accounts are already
+    marked 'active' at registration, see register_agent) unless someone is
+    deliberately exercising live-mode onboarding locally.
+    """
+    sk = (os.getenv("STRIPE_SECRET_KEY") or "").strip()
+    secret = (os.getenv("STRIPE_WEBHOOK_SECRET") or "").strip()
+    if sk.startswith("sk_live_") and not secret:
+        raise RuntimeError(
+            "STRIPE_SECRET_KEY is a live key but STRIPE_WEBHOOK_SECRET is unset — "
+            "POST /webhooks/stripe cannot verify Stripe's account.updated events "
+            "without it, so live-mode Connected Accounts could never be marked "
+            "payable. Set STRIPE_WEBHOOK_SECRET (from the Stripe Dashboard's "
+            "webhook endpoint configuration) before starting in live mode."
+        )
+    if sk.startswith("sk_test_") and not secret:
+        logger.warning(
+            "STRIPE_WEBHOOK_SECRET is unset — POST /webhooks/stripe will reject "
+            "every request until it's configured. Harmless in test mode unless "
+            "you're exercising live-mode onboarding locally (e.g. Stripe CLI "
+            "webhook forwarding)."
+        )
+
 
 def _docker_gateway_ip() -> str | None:
     """Return this container's default-route gateway IP, if any.
@@ -1201,6 +1267,14 @@ def _migrate_authorized_agents(conn: Any) -> None:
         # branch on, not a missing migration — so no backfill, only the columns.
         ("encryption_public_key", "TEXT NOT NULL DEFAULT ''"),
         ("encryption_key_signature", "TEXT NOT NULL DEFAULT ''"),
+        # P25-2: 'none' (no Connected Account) / 'pending' (created, capabilities
+        # not yet active) / 'active' (transfers capability active). 'none' is
+        # already correct for every pre-existing row — same "not a missing
+        # migration" posture as encryption_public_key above — with one
+        # exception: a test-mode auto-provisioned account is immediately
+        # usable (Stripe skips verification), so register_agent() sets
+        # 'active' directly rather than leaving those rows at 'none' too.
+        ("stripe_account_status", "TEXT NOT NULL DEFAULT 'none'"),
     ]
     for col, defn in migrations:
         if col not in existing:
@@ -1969,6 +2043,33 @@ class AgentRegistry:
                 (stripe_account_id, agent_id),
             )
 
+    def get_stripe_account_status(self, agent_id: str) -> str:
+        """P25-2: 'none' | 'pending' | 'active' — see the migration comment
+        above. Never raises; an unknown agent or a DB error reads as 'none'
+        (can't be paid), the same fail-closed default a brand-new row has."""
+        try:
+            with DB_LOCK, get_db() as conn:
+                row = conn.execute(
+                    "SELECT stripe_account_status FROM authorized_agents WHERE agent_id = ?",
+                    (agent_id,),
+                ).fetchone()
+            return (row["stripe_account_status"] if row else None) or "none"
+        except Exception:
+            return "none"
+
+    def set_stripe_account_status(self, stripe_account_id: str, status: str) -> bool:
+        """Looked up by stripe_account_id, not agent_id — the only caller is
+        POST /webhooks/stripe, which learns the Stripe account id from the
+        event payload and has no agent_id in hand. Returns False when no row
+        matches, so the caller can log an unrecognized/stale webhook instead
+        of assuming it took effect."""
+        with DB_LOCK, get_db() as conn:
+            cur = conn.execute(
+                "UPDATE authorized_agents SET stripe_account_status = ? WHERE stripe_account_id = ?",
+                (status, stripe_account_id),
+            )
+            return cur.rowcount > 0
+
     def get_x402_pay_to(self, agent_id: str, network_family: str) -> str | None:
         """P1b-2: the x402 analogue of get_stripe_account — except one Stripe
         Connect account serves every currency, while an EVM address and a
@@ -2368,6 +2469,7 @@ async def lifespan(app: FastAPI):
     notice = _stripe_mpp_admin_notice()
     if notice:
         logger.warning("%s", notice)
+    _require_stripe_webhook_secret_if_needed()
     global _SWEEP_TASK, _FEDERATION_SYNC_TASK
     _SWEEP_TASK = asyncio.create_task(_sweep_loop())
     # P23-3: only started when peers are actually configured -- a standalone
@@ -3437,6 +3539,11 @@ async def register_agent(req: RegisterAgentRequest):
             acct = await create_connected_account(canonical_id)
             stripe_account_id = acct["stripe_account_id"]
             AGENT_REGISTRY.set_stripe_account(canonical_id, stripe_account_id)
+            # P25-2: test mode is the one case where 'active' is correct
+            # immediately — Stripe auto-approves a Custom account's
+            # capabilities in test mode (create_connected_account()'s own
+            # docstring), so there's no webhook to wait for.
+            AGENT_REGISTRY.set_stripe_account_status(stripe_account_id, "active")
         except Exception:
             pass  # non-fatal — agent can still play free sessions
 
@@ -3541,8 +3648,8 @@ async def get_agent_profile(agent_id: str, request: Request):
     with DB_LOCK, get_db() as conn:
         row = conn.execute(
             "SELECT agent_id, display_name, registered_at, is_active, stripe_account_id, "
-            "nous_user_id, trust_level, identity_providers_json, encryption_public_key, "
-            "public_key_hex "
+            "stripe_account_status, nous_user_id, trust_level, identity_providers_json, "
+            "encryption_public_key, public_key_hex "
             "FROM authorized_agents WHERE agent_id = ?",
             (agent_id,),
         ).fetchone()
@@ -3583,6 +3690,10 @@ async def get_agent_profile(agent_id: str, request: Request):
         # response shape entirely, regardless of auth — has_stripe already answers the
         # only question a caller legitimately needs ("can this agent be paid").
         "has_stripe": has_stripe,
+        # P25-2: has_stripe only ever answered "does an account exist" —
+        # 'none' | 'pending' | 'active' answers the question that actually
+        # matters for live mode, "can this agent be paid right now".
+        "stripe_account_status": row["stripe_account_status"] or "none",
         "stripe_profile_ready": stripe_profile_ready,
         "session_count": session_count,
         "win_count": win_count,
@@ -3763,6 +3874,132 @@ async def set_x402_wallet(agent_id: str, req: SetX402WalletRequest, request: Req
         )
     AGENT_REGISTRY.set_x402_pay_to(agent_id, req.network_family, req.address)
     return {"agent_id": agent_id, "network_family": req.network_family, "address": req.address}
+
+
+def _stripe_onboarding_return_url(request: Request) -> str:
+    base = (os.getenv("EMPORIA_DASHBOARD_BASE_URL") or "").strip().rstrip("/")
+    if not base:
+        base = str(request.base_url).rstrip("/")
+    return f"{base}/stripe-onboarding-return"
+
+
+@app.post("/agents/{agent_id}/stripe-onboarding")
+async def start_stripe_onboarding(agent_id: str, request: Request):
+    """Start (or resume) live-mode Stripe Connect onboarding for this agent
+    (P25-2). Distinct from registration's test-mode auto-provisioning
+    (`register_agent`, above) — live mode has no verification-skipping
+    shortcut, so this must be an explicit, operator-triggered action that
+    sends the agent's operator through Stripe's own hosted KYC flow rather
+    than fabricating ToS acceptance the way the test-mode path legitimately
+    can. Reuses an existing Connected Account if one was already created by
+    an earlier call (a fresh onboarding link can be requested any time,
+    including for an already-active account, without resetting its status).
+    """
+    _require_caller_is(agent_id, request)
+    _require_registered(agent_id)
+    _enforce_agent_rate_limit(agent_id)
+
+    stripe_key = (os.getenv("STRIPE_SECRET_KEY") or "").strip()
+    if not stripe_key:
+        raise HTTPException(400, "Stripe is not configured on this relay")
+    if stripe_key.startswith("sk_test_"):
+        raise HTTPException(
+            400,
+            "This relay is running in Stripe test mode — a Connected Account "
+            "was already auto-provisioned at registration and needs no "
+            "onboarding. This endpoint is for live mode only.",
+        )
+
+    from emporia.payments import create_account_onboarding_link, create_live_connected_account
+
+    stripe_account_id = AGENT_REGISTRY.get_stripe_account(agent_id)
+    if not stripe_account_id:
+        acct = await create_live_connected_account(agent_id)
+        stripe_account_id = acct["stripe_account_id"]
+        AGENT_REGISTRY.set_stripe_account(agent_id, stripe_account_id)
+        AGENT_REGISTRY.set_stripe_account_status(stripe_account_id, "pending")
+
+    return_url = _stripe_onboarding_return_url(request)
+    onboarding_url = await create_account_onboarding_link(
+        stripe_account_id, refresh_url=return_url, return_url=return_url,
+    )
+    return {
+        "agent_id": agent_id,
+        "stripe_account_id": stripe_account_id,
+        "onboarding_url": onboarding_url,
+    }
+
+
+@app.get("/stripe-onboarding-return", response_class=HTMLResponse)
+async def stripe_onboarding_return_page():
+    """Landing page for Stripe's Account Link refresh_url/return_url (P25-2).
+
+    Deliberately plain HTML served by the relay itself, not the dashboard
+    SPA — Stripe just needs a valid URL to redirect to, and completing the
+    hosted form here is not the same as the account being payable (capability
+    activation is asynchronous). Only POST /webhooks/stripe's verified
+    account.updated event ever confirms that; this page must not claim it.
+    """
+    return (
+        "<!doctype html><html><head><title>Emporia — Stripe onboarding</title></head>"
+        "<body style=\"font-family: sans-serif; max-width: 32em; margin: 4em auto; padding: 0 1em;\">"
+        "<h1>Onboarding step complete</h1>"
+        "<p>Stripe has recorded what you submitted. Your account becomes payable "
+        "automatically once Stripe finishes its own verification — check this "
+        "agent's <code>stripe_account_status</code> field (via <code>GET /agents/"
+        "{agent_id}</code> or the dashboard) to see when that happens. "
+        "You can close this tab.</p>"
+        "</body></html>"
+    )
+
+
+@app.post("/webhooks/stripe")
+async def stripe_webhook(request: Request):
+    """Verified receiver for Stripe's `account.updated` events (P25-2) — the
+    only thing in this codebase allowed to mark a live-mode Connected Account
+    'active'. Security-critical: an unverified webhook would let anyone POST
+    a claim that any Stripe account is payable. Reads the raw body before any
+    JSON parsing — FastAPI's model binding would consume/reparse it, and
+    Stripe's signature is computed over the exact raw bytes, not a
+    re-serialized re-encoding of them. Unauthenticated by design (this is
+    Stripe's server calling us, not an Emporia agent) — the signature check
+    is the entire authorization boundary, which is why it must never fail
+    open (see _verify_stripe_webhook_signature's own docstring).
+
+    Always returns 200 once the signature verifies, even for an event type
+    this relay doesn't act on or an account id it doesn't recognize (logged,
+    not rejected) — Stripe retries non-2xx responses, and there's nothing to
+    gain by making it retry an event this relay will never act on differently.
+    """
+    raw_body = await request.body()
+    sig_header = request.headers.get("Stripe-Signature", "")
+    secret = (os.getenv("STRIPE_WEBHOOK_SECRET") or "").strip()
+    if not _verify_stripe_webhook_signature(raw_body, sig_header, secret):
+        raise HTTPException(403, "invalid Stripe webhook signature")
+
+    try:
+        event = json.loads(raw_body)
+    except json.JSONDecodeError:
+        raise HTTPException(400, "invalid JSON body")
+
+    if event.get("type") == "account.updated":
+        obj = (event.get("data") or {}).get("object") or {}
+        stripe_account_id = obj.get("id")
+        capabilities = obj.get("capabilities") or {}
+        if stripe_account_id:
+            status = (
+                "active"
+                if capabilities.get("transfers") == "active"
+                and capabilities.get("card_payments") == "active"
+                else "pending"
+            )
+            if not AGENT_REGISTRY.set_stripe_account_status(stripe_account_id, status):
+                logger.warning(
+                    "Stripe webhook account.updated for unrecognized account %s",
+                    stripe_account_id,
+                )
+
+    return {"received": True}
 
 
 def _validated_encryption_key(agent_id: str, public_key_hex: str, signature: str) -> str:
@@ -5464,6 +5701,7 @@ async def submit_action(session_id: str, req: SubmitActionRequest):
                 settlement_record = await settle(
                     session_id, winner_id, total_cents, pi_ids,
                     winner_stripe_account=winner_stripe_account,
+                    winner_stripe_account_status=AGENT_REGISTRY.get_stripe_account_status(winner_id),
                 )
             else:
                 # Free session: record outcome with zero financials.
@@ -6311,7 +6549,13 @@ async def _settle_access_payment(
         transfer_status = "no_stripe_account"
         if creator_payout > 0:
             creator_stripe = AGENT_REGISTRY.get_stripe_account(creator_id)
-            if creator_stripe:
+            if creator_stripe and AGENT_REGISTRY.get_stripe_account_status(creator_id) != "active":
+                # P25-2: a live-mode account that hasn't finished onboarding
+                # yet — skip the doomed Stripe call rather than let it fail
+                # against Stripe's own API and surface as an opaque
+                # "transfer_failed: ...".
+                transfer_status = "pending_connect_not_active"
+            elif creator_stripe:
                 try:
                     t = await payout_winner(
                         winner_id=creator_id,

@@ -90,6 +90,9 @@ export interface AgentProfile {
   registered_at: string;
   is_active: boolean;
   has_stripe: boolean;
+  /** P25-2: 'none' | 'pending' | 'active' -- has_stripe only ever answered
+   *  "does an account exist"; this answers "can it be paid right now". */
+  stripe_account_status?: "none" | "pending" | "active" | string;
   /** P17-2/P23-4: the Ed25519 signing key -- public by nature, sent so a
    *  client can re-verify a stored message signature (see integrityCheck.ts). */
   public_key_hex?: string;
