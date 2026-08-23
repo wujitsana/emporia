@@ -524,6 +524,18 @@ checked before every transfer attempt — a not-yet-active account gets
 P25 pass for the full writeup, including the webhook signature verification and the 28 existing
 tests whose Stripe-account mocks needed updating for the new status dimension.
 
+**P26 then audited that work and found it shipped a money-stranding bug**, which is why "closed by
+P25-2" above is accurate about the *feature* and was wrong about the *state migration*: P25's new
+`stripe_account_status` defaulted to `'none'` with no backfill, so every agent registered before it
+kept a working Connected Account while reading as unpayable — captured charges, no transfer, no
+retry. P26 adds the backfill (run only when the column is newly added, so it can't promote a
+legitimately-pending live account), a `stripe_account_mode` column closing the test-account-under-a-
+live-key case, a `COALESCE` fix stopping a re-register from orphaning a real Connected Account, a
+required real `email` plus an ISO `country` on live account creation, `account.application.
+deauthorized` handling, and `livemode` filtering. It also made the webhook verifier total — two
+malformed headers were reaching an unauthenticated 500 rather than a 403. Full findings in
+SECURITY.md's P26 section.
+
 **`_assert_payment_intent_matches()` validated amount/currency/capture-method/resource binding but
 never the payer — done in P1a-1 for the authenticated path.** The N4 security review's R1 finding
 was a working payment bypass for paid Agora topics built directly on this gap. Both halves of that

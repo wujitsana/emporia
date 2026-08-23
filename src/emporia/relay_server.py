@@ -227,6 +227,34 @@ def _stripe_mpp_admin_notice() -> str | None:
     return stripe_mpp_admin_notice(sk, profile_ready=_stripe_profile_ready())
 
 
+def _stripe_key_mode() -> str:
+    """P26-4: which Stripe mode this relay's configured key talks to —
+    `"test"` | `"live"` | `""` (not configured / unrecognizable).
+
+    Connected Account ids don't encode their own mode, and the two key spaces
+    are completely disjoint: an `acct_...` created under a test key does not
+    exist under a live key. That makes the mode a thing the relay has to track
+    itself rather than infer from an id — see the `stripe_account_mode` column.
+
+    Delegates to `payments.stripe_key_mode()` rather than re-deriving the
+    prefix rule: `settle()` applies the same rule and can't import this module,
+    so a second copy here is precisely the hand-copied-logic drift this
+    codebase has found in four separate passes.
+    """
+    from emporia.payments import stripe_key_mode
+
+    return stripe_key_mode()
+
+
+def _stripe_account_mode_mismatch(account_mode: str) -> bool:
+    """Thin re-export of `payments.stripe_account_mode_mismatch()` so both
+    payout call sites (that one, and `_settle_access_payment` here) apply one
+    rule rather than two hand-copied ones."""
+    from emporia.payments import stripe_account_mode_mismatch
+
+    return stripe_account_mode_mismatch(account_mode)
+
+
 def _verify_stripe_webhook_signature(
     payload: bytes, sig_header: str, secret: str, *, tolerance_seconds: int = 300,
 ) -> bool:
@@ -239,28 +267,44 @@ def _verify_stripe_webhook_signature(
     and a timestamp outside Stripe's documented ~5-minute replay-tolerance
     window. Never fails open: an empty secret or any parse error is a reject,
     not a skip.
+
+    P26-2: that last sentence was the *intent* in P25 but not the behavior —
+    two inputs raised instead of returning False, and since this app registers
+    no exception handler anywhere, both surfaced as an unauthenticated 500 with
+    a traceback rather than a 403: a `t` of a few hundred digits overflowed
+    `abs(time.time() - ts)` (`int` parses fine, the float subtraction doesn't),
+    and any non-ASCII byte in a `v1` value raised `TypeError` out of
+    `hmac.compare_digest`. Not a bypass — neither produces a valid signature —
+    but it handed any anonymous caller a log-flood primitive and broke the
+    stated contract. The whole body is now total: anything unexpected is a
+    reject. Deliberately a blanket `except Exception`, since this function's
+    only correct answer to *any* input it can't fully parse is False.
     """
-    if not secret or not sig_header:
-        return False
-    parts: dict[str, list[str]] = {}
-    for item in sig_header.split(","):
-        if "=" not in item:
-            continue
-        k, _, v = item.partition("=")
-        parts.setdefault(k.strip(), []).append(v.strip())
-    ts_values = parts.get("t")
-    v1_values = parts.get("v1")
-    if not ts_values or not v1_values:
-        return False
     try:
+        if not secret or not sig_header:
+            return False
+        parts: dict[str, list[str]] = {}
+        for item in sig_header.split(","):
+            if "=" not in item:
+                continue
+            k, _, v = item.partition("=")
+            parts.setdefault(k.strip(), []).append(v.strip())
+        ts_values = parts.get("t")
+        v1_values = parts.get("v1")
+        if not ts_values or not v1_values:
+            return False
         ts = int(ts_values[0])
-    except ValueError:
+        # Bound before the float subtraction: int() happily parses a 400-digit
+        # timestamp that abs(time.time() - ts) then can't convert (P26-2).
+        if abs(ts) > 10**12:
+            return False
+        if abs(time.time() - ts) > tolerance_seconds:
+            return False
+        signed_payload = f"{ts_values[0]}.".encode() + payload
+        expected = _hmac.new(secret.encode(), signed_payload, hashlib.sha256).hexdigest()
+        return any(_hmac.compare_digest(expected, v1) for v1 in v1_values)
+    except Exception:
         return False
-    if abs(time.time() - ts) > tolerance_seconds:
-        return False
-    signed_payload = f"{ts_values[0]}.".encode() + payload
-    expected = _hmac.new(secret.encode(), signed_payload, hashlib.sha256).hexdigest()
-    return any(_hmac.compare_digest(expected, v1) for v1 in v1_values)
 
 
 def _require_stripe_webhook_secret_if_needed() -> None:
@@ -1252,6 +1296,28 @@ def _migrate_dm_threads(conn: Any) -> None:
     )
 
 
+def _backfill_stripe_account_state(conn: Any) -> None:
+    """P26-1: repair the state P25's migration left behind (see the column's own
+    comment above for the money-stranding failure this prevents).
+
+    Runs **only** when `stripe_account_status` is newly added, never on a
+    re-run: a relay already on P25 can legitimately hold a live account at
+    'pending' (created, KYC unfinished), and promoting that to 'active' would
+    make the relay attempt a real transfer Stripe is going to reject.
+
+    Any row that already has a `stripe_account_id` at the moment this column
+    first appears was necessarily created by the pre-P26 auto-provisioning
+    block, which was gated on `sk_test_` — so 'test'/'active' is not a guess,
+    it's the only state that block could have produced. That inference is
+    exactly why the mode can be backfilled here and must not be assumed
+    anywhere else.
+    """
+    conn.execute(
+        "UPDATE authorized_agents SET stripe_account_status = 'active', "
+        "stripe_account_mode = 'test' WHERE COALESCE(stripe_account_id, '') != ''"
+    )
+
+
 def _migrate_authorized_agents(conn: Any) -> None:
     existing = {
         row[1]
@@ -1268,17 +1334,29 @@ def _migrate_authorized_agents(conn: Any) -> None:
         ("encryption_public_key", "TEXT NOT NULL DEFAULT ''"),
         ("encryption_key_signature", "TEXT NOT NULL DEFAULT ''"),
         # P25-2: 'none' (no Connected Account) / 'pending' (created, capabilities
-        # not yet active) / 'active' (transfers capability active). 'none' is
-        # already correct for every pre-existing row — same "not a missing
-        # migration" posture as encryption_public_key above — with one
-        # exception: a test-mode auto-provisioned account is immediately
-        # usable (Stripe skips verification), so register_agent() sets
-        # 'active' directly rather than leaving those rows at 'none' too.
+        # not yet active) / 'active' (transfers capability active).
+        #
+        # P26-1: P25 shipped this claiming 'none' was "already correct for every
+        # pre-existing row." **That was wrong, and it stranded money.**
+        # register_agent() only sets 'active' at *registration* time, so every
+        # agent that registered before P25 kept a working Connected Account while
+        # reading 'none' — and both of P25's new pre-checks skip a payout on
+        # exactly that value. The charge still captures into the platform
+        # balance; the payee's share is never transferred and nothing retries it.
+        # The backfill below is the fix; see _backfill_stripe_account_state().
         ("stripe_account_status", "TEXT NOT NULL DEFAULT 'none'"),
+        # P26-4: which Stripe mode created this account. '' = unknown. Account
+        # ids don't encode their own mode, and a test-mode acct id is worthless
+        # (worse: dangerous) under a live key — see _stripe_key_mode().
+        ("stripe_account_mode", "TEXT NOT NULL DEFAULT ''"),
     ]
+    newly_added = set()
     for col, defn in migrations:
         if col not in existing:
             conn.execute(f"ALTER TABLE authorized_agents ADD COLUMN {col} {defn}")
+            newly_added.add(col)
+    if "stripe_account_status" in newly_added:
+        _backfill_stripe_account_state(conn)
     # Non-unique index — one Nous user may operate multiple agent personas.
     # Drop the old unique variant if it exists (created by an earlier migration).
     conn.execute("DROP INDEX IF EXISTS idx_agents_nous_user_id")
@@ -2005,7 +2083,17 @@ class AgentRegistry:
                     "display_name=excluded.display_name, "
                     "registered_at=excluded.registered_at, "
                     "is_active=1, "
-                    "stripe_account_id=excluded.stripe_account_id, "
+                    # P26-5: was `stripe_account_id=excluded.stripe_account_id`,
+                    # which writes NULL on any re-register that isn't
+                    # auto-provisioning (every live-mode one). stripe_account_status
+                    # is correctly not in this list, so it *survived* — leaving
+                    # 'active' with no account id. The next start_stripe_onboarding
+                    # then created a SECOND real Connected Account: a second real
+                    # KYC, orphaning the first and any balance on it. Registration
+                    # is documented as "safe to call on every start", so this was
+                    # reachable on an ordinary restart. COALESCE keeps an existing
+                    # id whenever this registration didn't mint one.
+                    "stripe_account_id=COALESCE(excluded.stripe_account_id, authorized_agents.stripe_account_id), "
                     "nous_user_id=excluded.nous_user_id, "
                     "trust_level=excluded.trust_level, "
                     "identity_providers_json=excluded.identity_providers_json",
@@ -2036,12 +2124,36 @@ class AgentRegistry:
         except Exception:
             return None
 
-    def set_stripe_account(self, agent_id: str, stripe_account_id: str) -> None:
+    def set_stripe_account(self, agent_id: str, stripe_account_id: str, mode: str = "") -> None:
+        """`mode` (P26-4) records which Stripe key space created this account —
+        "test"/"live", or "" to leave whatever is stored (so a caller that
+        genuinely doesn't know can't erase a known value)."""
         with DB_LOCK, get_db() as conn:
-            conn.execute(
-                "UPDATE authorized_agents SET stripe_account_id = ? WHERE agent_id = ?",
-                (stripe_account_id, agent_id),
-            )
+            if mode:
+                conn.execute(
+                    "UPDATE authorized_agents SET stripe_account_id = ?, "
+                    "stripe_account_mode = ? WHERE agent_id = ?",
+                    (stripe_account_id, mode, agent_id),
+                )
+            else:
+                conn.execute(
+                    "UPDATE authorized_agents SET stripe_account_id = ? WHERE agent_id = ?",
+                    (stripe_account_id, agent_id),
+                )
+
+    def get_stripe_account_mode(self, agent_id: str) -> str:
+        """P26-4: "test" | "live" | "" (unknown). Never raises; unknown on any
+        error, which `payments.stripe_account_mode_mismatch()` treats as
+        "don't block" rather than "refuse" — see that function for why."""
+        try:
+            with DB_LOCK, get_db() as conn:
+                row = conn.execute(
+                    "SELECT stripe_account_mode FROM authorized_agents WHERE agent_id = ?",
+                    (agent_id,),
+                ).fetchone()
+            return (row["stripe_account_mode"] if row else None) or ""
+        except Exception:
+            return ""
 
     def get_stripe_account_status(self, agent_id: str) -> str:
         """P25-2: 'none' | 'pending' | 'active' — see the migration comment
@@ -3538,7 +3650,9 @@ async def register_agent(req: RegisterAgentRequest):
             from emporia.payments import create_connected_account
             acct = await create_connected_account(canonical_id)
             stripe_account_id = acct["stripe_account_id"]
-            AGENT_REGISTRY.set_stripe_account(canonical_id, stripe_account_id)
+            # P26-4: tag the key space that created it — this block only ever
+            # runs under sk_test_, so "test" is a fact here, not an inference.
+            AGENT_REGISTRY.set_stripe_account(canonical_id, stripe_account_id, mode="test")
             # P25-2: test mode is the one case where 'active' is correct
             # immediately — Stripe auto-approves a Custom account's
             # capabilities in test mode (create_connected_account()'s own
@@ -3894,6 +4008,14 @@ async def start_stripe_onboarding(agent_id: str, request: Request):
     can. Reuses an existing Connected Account if one was already created by
     an earlier call (a fresh onboarding link can be requested any time,
     including for an already-active account, without resetting its status).
+
+    P26-4/P26-6: an existing account is reused only when it belongs to the
+    *current* key space — a leftover test-mode `acct_...` is useless under a
+    live key, so reusing it would produce a Stripe error at best and a real
+    transfer aimed at a nonexistent account at worst. `email` is required
+    (Stripe mails a real account holder about verification and payout
+    failures) and `country` is accepted because Stripe treats it as immutable
+    after creation.
     """
     _require_caller_is(agent_id, request)
     _require_registered(agent_id)
@@ -3912,17 +4034,50 @@ async def start_stripe_onboarding(agent_id: str, request: Request):
 
     from emporia.payments import create_account_onboarding_link, create_live_connected_account
 
+    try:
+        body = await request.json()
+    except Exception:
+        body = {}
+    body = body if isinstance(body, dict) else {}
+    email = str(body.get("email") or "").strip()
+    country = str(body.get("country") or "US").strip().upper()
+
+    key_mode = _stripe_key_mode()
     stripe_account_id = AGENT_REGISTRY.get_stripe_account(agent_id)
+    account_mode = AGENT_REGISTRY.get_stripe_account_mode(agent_id)
+    if stripe_account_id and account_mode and key_mode and account_mode != key_mode:
+        # Leftover from the other key space — mint a real one for this mode.
+        stripe_account_id = None
+
     if not stripe_account_id:
-        acct = await create_live_connected_account(agent_id)
+        if not email or "@" not in email or email.endswith(".local"):
+            raise HTTPException(
+                400,
+                "a real, reachable `email` is required to create a live Stripe "
+                "Connected Account — Stripe sends verification requirements, "
+                "payout failures and account restrictions to it",
+            )
+        if len(country) != 2 or not country.isalpha():
+            raise HTTPException(
+                400,
+                "`country` must be a 2-letter ISO code; Stripe treats it as "
+                "immutable after the account is created",
+            )
+        acct = await create_live_connected_account(agent_id, email=email, country=country)
         stripe_account_id = acct["stripe_account_id"]
-        AGENT_REGISTRY.set_stripe_account(agent_id, stripe_account_id)
+        AGENT_REGISTRY.set_stripe_account(agent_id, stripe_account_id, mode=key_mode or "live")
         AGENT_REGISTRY.set_stripe_account_status(stripe_account_id, "pending")
 
     return_url = _stripe_onboarding_return_url(request)
-    onboarding_url = await create_account_onboarding_link(
-        stripe_account_id, refresh_url=return_url, return_url=return_url,
-    )
+    try:
+        onboarding_url = await create_account_onboarding_link(
+            stripe_account_id, refresh_url=return_url, return_url=return_url,
+        )
+    except httpx.HTTPError as e:
+        # P26-7 (L11): the account itself is already persisted at 'pending', so
+        # a retry correctly reuses it — this is a clean upstream failure, not a
+        # 500 in our own code, and shouldn't be reported as one.
+        raise HTTPException(502, f"Stripe rejected the onboarding-link request: {e}")
     return {
         "agent_id": agent_id,
         "stripe_account_id": stripe_account_id,
@@ -3982,11 +4137,40 @@ async def stripe_webhook(request: Request):
     except json.JSONDecodeError:
         raise HTTPException(400, "invalid JSON body")
 
-    if event.get("type") == "account.updated":
-        obj = (event.get("data") or {}).get("object") or {}
+    if not isinstance(event, dict):
+        return {"received": True, "ignored": "payload is not an object"}
+
+    # P26-5 (L10): Stripe delivers test-mode and live-mode events to the same
+    # configured endpoint. Acting on the wrong one would let a test-mode
+    # capability report mark a *live* account payable, so an event whose
+    # livemode disagrees with this relay's own key is ignored outright.
+    # `livemode` absent (older payloads, hand-built test fixtures) is treated
+    # as "matches" rather than rejected, so this can't silently drop real work.
+    key_mode = _stripe_key_mode()
+    event_livemode = event.get("livemode")
+    if isinstance(event_livemode, bool) and key_mode in ("test", "live"):
+        if event_livemode != (key_mode == "live"):
+            logger.info(
+                "Stripe webhook ignored: event livemode=%s but relay key is %s",
+                event_livemode, key_mode,
+            )
+            return {"received": True, "ignored": "livemode mismatch"}
+
+    event_type = event.get("type")
+    # P26-3 (M3): every field below is attacker-shaped only in the sense that
+    # Stripe could reshape it in a future API version -- but P25 assumed dicts
+    # throughout (`.get("object") or {}` doesn't save you when `object` is a
+    # *string*), so any such change became a 500, and Stripe's retry-on-non-2xx
+    # turned that into an infinite loop. Every access is now shape-checked.
+    data = event.get("data")
+    obj = data.get("object") if isinstance(data, dict) else None
+    obj = obj if isinstance(obj, dict) else {}
+
+    if event_type == "account.updated":
         stripe_account_id = obj.get("id")
-        capabilities = obj.get("capabilities") or {}
-        if stripe_account_id:
+        capabilities = obj.get("capabilities")
+        capabilities = capabilities if isinstance(capabilities, dict) else {}
+        if isinstance(stripe_account_id, str) and stripe_account_id:
             status = (
                 "active"
                 if capabilities.get("transfers") == "active"
@@ -3998,6 +4182,15 @@ async def stripe_webhook(request: Request):
                     "Stripe webhook account.updated for unrecognized account %s",
                     stripe_account_id,
                 )
+    elif event_type == "account.application.deauthorized":
+        # P26-5 (L10): the operator disconnected this account in Stripe. It can
+        # no longer receive transfers, so leaving it 'active' would put it right
+        # back in the doomed-transfer case the pre-check exists to prevent.
+        # The account id is the event's top-level `account` field here -- the
+        # `data.object` is the *application*, not the account.
+        stripe_account_id = event.get("account")
+        if isinstance(stripe_account_id, str) and stripe_account_id:
+            AGENT_REGISTRY.set_stripe_account_status(stripe_account_id, "none")
 
     return {"received": True}
 
@@ -5702,6 +5895,7 @@ async def submit_action(session_id: str, req: SubmitActionRequest):
                     session_id, winner_id, total_cents, pi_ids,
                     winner_stripe_account=winner_stripe_account,
                     winner_stripe_account_status=AGENT_REGISTRY.get_stripe_account_status(winner_id),
+                    winner_stripe_account_mode=AGENT_REGISTRY.get_stripe_account_mode(winner_id),
                 )
             else:
                 # Free session: record outcome with zero financials.
@@ -6549,7 +6743,15 @@ async def _settle_access_payment(
         transfer_status = "no_stripe_account"
         if creator_payout > 0:
             creator_stripe = AGENT_REGISTRY.get_stripe_account(creator_id)
-            if creator_stripe and AGENT_REGISTRY.get_stripe_account_status(creator_id) != "active":
+            if creator_stripe and _stripe_account_mode_mismatch(
+                AGENT_REGISTRY.get_stripe_account_mode(creator_id)
+            ):
+                # P26-4: account belongs to the other Stripe key space (e.g. a
+                # test-mode leftover after switching to a live key) — the two
+                # acct_... namespaces are disjoint, so this transfer cannot
+                # succeed and must not be attempted.
+                transfer_status = "pending_connect_wrong_mode"
+            elif creator_stripe and AGENT_REGISTRY.get_stripe_account_status(creator_id) != "active":
                 # P25-2: a live-mode account that hasn't finished onboarding
                 # yet — skip the doomed Stripe call rather than let it fail
                 # against Stripe's own API and surface as an opaque

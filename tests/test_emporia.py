@@ -4346,9 +4346,14 @@ async def test_settle_derives_payout_idempotency_key_from_payment_intent_ids():
             mock_resp.raise_for_status = MagicMock()
             mock_post.return_value = mock_resp
 
-            await settle("sess_settle_idem", "winner_settle", 200, ["pi_settle_a"], "acct_settle")
-            await settle("sess_settle_idem", "winner_settle", 200, ["pi_settle_a"], "acct_settle")
-            await settle("sess_settle_idem", "winner_settle", 200, ["pi_settle_b"], "acct_settle")
+            # P26-9: winner_stripe_account_status is now required and
+            # keyword-only -- "active" here keeps this test's original intent
+            # (a payable winner), stated explicitly instead of defaulted.
+            for pi in ("pi_settle_a", "pi_settle_a", "pi_settle_b"):
+                await settle(
+                    "sess_settle_idem", "winner_settle", 200, [pi], "acct_settle",
+                    winner_stripe_account_status="active",
+                )
 
     keys = [
         call.kwargs["headers"]["Idempotency-Key"]
@@ -14793,6 +14798,7 @@ async def test_escrow_capture_and_transfer_mocked():
                 total_stake_cents=1000,
                 payment_intent_ids=["pi_buyer_hold", "pi_seller_hold"],
                 winner_stripe_account="acct_seller_001",
+                winner_stripe_account_status="active",  # P26-9: now required
             )
 
     # Both PIs were captured
@@ -19973,6 +19979,352 @@ def test_register_agent_test_mode_marks_stripe_account_active_immediately(client
     assert AGENT_REGISTRY.get_stripe_account_status("p25_stripe_testmode_a") == "active"
 
 
+# ============================================================================
+# P26: audit of P25's own diff. P25 shipped a money-stranding migration bug
+# (H1), two unauthenticated-500 paths in the webhook verifier (H2), and
+# several live-mode correctness gaps in the code it had just introduced.
+# ============================================================================
+
+def test_p26_migration_backfills_status_for_preexisting_stripe_accounts():
+    """P26-H1: THE bug P25 shipped. P25's migration comment claimed 'none' was
+    "already correct for every pre-existing row" -- it is not. register_agent()
+    only sets 'active' at *registration* time, so every agent that registered
+    BEFORE P25 has a working test-mode Connected Account but reads 'none'
+    after the migration. Both new pre-checks then skip that agent's payout:
+    the charge is still captured into the platform balance, the creator's
+    97.5% is never transferred, and nothing retries it (nothing in the
+    codebase reads 'pending_connect_not_active'). Money captured and stranded,
+    silently, on every existing deployment.
+
+    The backfill can also soundly infer *mode*: pre-P25 auto-provisioning was
+    gated on `sk_test_`, so any pre-existing account is necessarily test-mode.
+    """
+    import sqlite3
+    import tempfile as _tempfile
+
+    from emporia.relay_server import _migrate_authorized_agents
+
+    db = os.path.join(_tempfile.mkdtemp(), "pre_p25.sqlite3")
+    conn = sqlite3.connect(db)
+    conn.row_factory = sqlite3.Row
+    # A pre-P25 schema: no stripe_account_status/-_mode columns at all.
+    conn.execute(
+        "CREATE TABLE authorized_agents ("
+        "agent_id TEXT PRIMARY KEY, public_key_hex TEXT, display_name TEXT, "
+        "registered_at TEXT, is_active INTEGER DEFAULT 1, stripe_account_id TEXT)"
+    )
+    conn.executemany(
+        "INSERT INTO authorized_agents (agent_id, stripe_account_id) VALUES (?, ?)",
+        [("paid_before", "acct_preexisting"), ("never_had_one", None), ("empty_string", "")],
+    )
+    conn.commit()
+
+    _migrate_authorized_agents(conn)
+    conn.commit()
+    rows = {
+        r["agent_id"]: (r["stripe_account_status"], r["stripe_account_mode"])
+        for r in conn.execute(
+            "SELECT agent_id, stripe_account_status, stripe_account_mode FROM authorized_agents"
+        )
+    }
+    conn.close()
+
+    # The whole point: an agent who could be paid before the upgrade can still be paid after.
+    assert rows["paid_before"] == ("active", "test"), rows
+    # An agent with no account is genuinely 'none' -- the default really is right for these.
+    assert rows["never_had_one"] == ("none", ""), rows
+    assert rows["empty_string"] == ("none", ""), rows
+
+
+def test_p26_migration_backfill_does_not_clobber_an_existing_pending_account():
+    """The backfill must run only when the column is newly added. A relay
+    already on P25 can legitimately hold a live account at 'pending' (created,
+    KYC unfinished); re-running the migration must not promote it to 'active'
+    and make the relay attempt a real transfer Stripe would reject."""
+    import sqlite3
+    import tempfile as _tempfile
+
+    from emporia.relay_server import _migrate_authorized_agents
+
+    db = os.path.join(_tempfile.mkdtemp(), "already_p25.sqlite3")
+    conn = sqlite3.connect(db)
+    conn.row_factory = sqlite3.Row
+    conn.execute(
+        "CREATE TABLE authorized_agents ("
+        "agent_id TEXT PRIMARY KEY, public_key_hex TEXT, display_name TEXT, "
+        "registered_at TEXT, is_active INTEGER DEFAULT 1, stripe_account_id TEXT, "
+        "stripe_account_status TEXT NOT NULL DEFAULT 'none', "
+        "stripe_account_mode TEXT NOT NULL DEFAULT '')"
+    )
+    conn.execute(
+        "INSERT INTO authorized_agents (agent_id, stripe_account_id, stripe_account_status, "
+        "stripe_account_mode) VALUES ('mid_onboarding', 'acct_live_pending', 'pending', 'live')"
+    )
+    conn.commit()
+
+    _migrate_authorized_agents(conn)
+    conn.commit()
+    row = conn.execute(
+        "SELECT stripe_account_status, stripe_account_mode FROM authorized_agents"
+    ).fetchone()
+    conn.close()
+    assert (row["stripe_account_status"], row["stripe_account_mode"]) == ("pending", "live"), dict(row)
+
+
+@pytest.mark.parametrize("bad_header,label", [
+    ("t=" + "9" * 400 + ",v1=abc", "timestamp too large for float conversion"),
+    ("t={now},v1=é", "non-ASCII in the v1 signature"),
+    ("t={now},v1=", "empty v1 value"),
+    ("t=,v1=abc", "empty timestamp"),
+])
+def test_p26_webhook_verifier_never_raises_on_a_malformed_header(bad_header, label):
+    """P26-H2: /webhooks/stripe is unauthenticated and internet-reachable --
+    the signature check IS the authorization boundary, and P25 documented it
+    as "any parse error is a reject, not a skip." Two paths broke that
+    contract by raising instead of returning False: a 400-digit `t` raised
+    OverflowError from `abs(time.time() - ts)`, and a non-ASCII `v1` raised
+    TypeError from hmac.compare_digest. With no exception handler registered
+    anywhere in the app, both became a 500 + traceback for any anonymous
+    caller -- a log-flood/alert-noise primitive."""
+    import time as _time
+
+    from emporia.relay_server import _verify_stripe_webhook_signature
+
+    header = bad_header.replace("{now}", str(int(_time.time())))
+    assert _verify_stripe_webhook_signature(b'{"x":1}', header, "whsec_test_p26") is False, label
+
+
+def test_p26_webhook_route_returns_403_not_500_on_a_malformed_header(client):
+    """The route-level half of H2: malformed headers must surface as a clean
+    403, never an unhandled 500.
+
+    The non-ASCII case is sent as raw latin-1 bytes deliberately -- httpx
+    refuses to encode a non-ASCII str into a header, but Starlette *decodes*
+    incoming header bytes as latin-1, so a non-compliant client (or anything
+    speaking raw HTTP) genuinely can deliver `v1=é` to this endpoint. Passing
+    str here would have made the test unreachable-by-construction rather than
+    actually exercising the TypeError path."""
+    payload = json.dumps({"id": "evt_p26", "type": "account.updated"}).encode()
+    headers = [
+        b"t=" + b"9" * 400 + b",v1=abc",
+        ("t=%d,v1=" % int(time.time())).encode() + "é".encode("latin-1"),
+    ]
+    with patch.dict(os.environ, {"STRIPE_WEBHOOK_SECRET": "whsec_test_p26"}):
+        for header in headers:
+            r = client.post(
+                "/webhooks/stripe", content=payload,
+                # A list of raw byte pairs bypasses httpx's own str header encoder.
+                headers=[(b"content-type", b"application/json"), (b"stripe-signature", header)],
+            )
+            assert r.status_code == 403, (header[:40], r.status_code, r.text)
+
+
+def _p26_send_webhook(client, body: dict, secret: str = "whsec_test_p26"):
+    payload = json.dumps(body).encode()
+    with patch.dict(os.environ, {"STRIPE_WEBHOOK_SECRET": secret}):
+        return client.post(
+            "/webhooks/stripe", content=payload,
+            headers={
+                "Content-Type": "application/json",
+                "Stripe-Signature": _stripe_signed_header(payload, secret),
+            },
+        )
+
+
+@pytest.mark.parametrize("body,label", [
+    ({"type": "account.updated", "data": []}, "data is a list"),
+    ({"type": "account.updated", "data": {"object": "acct_x"}}, "object is a string"),
+    ({"type": "account.updated", "data": {"object": {"id": "a", "capabilities": "active"}}},
+     "capabilities is a string"),
+    ({"type": "account.updated", "data": {"object": {"id": "a", "capabilities": []}}},
+     "capabilities is a list"),
+    ({"type": "account.updated"}, "no data key at all"),
+    ({"type": "account.updated", "data": {"object": {}}}, "object has no id"),
+])
+def test_p26_webhook_survives_unexpected_payload_shapes(client, body, label):
+    """P26-M3: every one of these has a VALID signature, so it reaches the
+    parsing code. P25 assumed dicts throughout (`.get("object") or {}` doesn't
+    help when `object` is a *string*), so a Stripe API-version change that
+    reshapes any of these fields would turn into a 500 -- and because Stripe
+    retries non-2xx, an infinite retry loop, exactly what the
+    unrecognized-account test was written to prevent."""
+    r = _p26_send_webhook(client, body)
+    assert r.status_code == 200, (label, r.status_code, r.text)
+
+
+def test_p26_webhook_deauthorized_account_loses_active_status(client):
+    """P26-L10: once 'active', P25's account stayed 'active' forever -- even
+    after the operator disconnected it in Stripe. A deauthorized account
+    cannot receive transfers, so continuing to treat it as payable puts it
+    right back in the doomed-transfer case the pre-check exists to avoid."""
+    from emporia.relay_server import AGENT_REGISTRY
+    _register(client, "p26_deauth_agent")
+    AGENT_REGISTRY.set_stripe_account("p26_deauth_agent", "acct_p26_deauth")
+    AGENT_REGISTRY.set_stripe_account_status("acct_p26_deauth", "active")
+
+    r = _p26_send_webhook(client, {
+        "type": "account.application.deauthorized",
+        "account": "acct_p26_deauth",
+        "data": {"object": {"id": "ca_someapp"}},
+    })
+    assert r.status_code == 200, r.text
+    assert AGENT_REGISTRY.get_stripe_account_status("p26_deauth_agent") == "none"
+
+
+def test_p26_webhook_ignores_an_event_from_the_other_stripe_mode(client):
+    """P26-L10: a test-mode event (`livemode: false`) must not drive state on a
+    relay running a live key. Stripe delivers both to the same endpoint if both
+    are configured, and acting on the wrong one would mark a live account
+    payable on the strength of a test-mode capability report."""
+    from emporia.relay_server import AGENT_REGISTRY
+    _register(client, "p26_livemode_agent")
+    AGENT_REGISTRY.set_stripe_account("p26_livemode_agent", "acct_p26_livemode")
+    AGENT_REGISTRY.set_stripe_account_status("acct_p26_livemode", "pending")
+
+    with patch.dict(os.environ, {"STRIPE_SECRET_KEY": "sk_live_mock"}):
+        r = _p26_send_webhook(client, {
+            "type": "account.updated",
+            "livemode": False,
+            "data": {"object": {
+                "id": "acct_p26_livemode",
+                "capabilities": {"transfers": "active", "card_payments": "active"},
+            }},
+        })
+    assert r.status_code == 200, r.text
+    assert AGENT_REGISTRY.get_stripe_account_status("p26_livemode_agent") == "pending"
+
+
+def test_p26_live_onboarding_does_not_reuse_a_test_mode_account(client):
+    """P26-4 (M4): the mode-switch case P25's own pre-check was built for but
+    didn't cover. An operator who ran in test mode has agents holding
+    `acct_...` ids that exist ONLY in Stripe's test key space, marked 'active'.
+    Switch STRIPE_SECRET_KEY to a live key and P25 would (a) POST
+    /account_links for a test acct id with a live key -- a Stripe error -- and
+    worse (b) leave that stale 'active' status making settle() attempt REAL
+    live transfers to an account that doesn't exist in live mode. A live
+    onboarding call must mint a genuinely new live account instead."""
+    from emporia.relay_server import AGENT_REGISTRY
+    _register(client, "p26_modeswitch")
+    AGENT_REGISTRY.set_stripe_account("p26_modeswitch", "acct_test_leftover", mode="test")
+    AGENT_REGISTRY.set_stripe_account_status("acct_test_leftover", "active")
+
+    created = []
+
+    def mock_post_side_effect(url, *args, **kwargs):
+        m = MagicMock()
+        m.raise_for_status = MagicMock()
+        if url.endswith("/accounts"):
+            created.append(url)
+            m.json.return_value = {"id": "acct_live_fresh"}
+        elif url.endswith("/account_links"):
+            m.json.return_value = {"url": "https://connect.stripe.com/setup/e/p26"}
+        return m
+
+    with patch.dict(os.environ, {"STRIPE_SECRET_KEY": "sk_live_mock"}):
+        with patch("httpx.AsyncClient.post", new_callable=AsyncMock, side_effect=mock_post_side_effect):
+            r = client.post(
+                "/agents/p26_modeswitch/stripe-onboarding",
+                json={"email": "operator@example.com"},
+                headers={"x-emporia-agent-id": "p26_modeswitch"},
+            )
+    assert r.status_code == 200, r.text
+    assert created, "a live-mode onboarding must create a real live account, not reuse the test one"
+    assert r.json()["stripe_account_id"] == "acct_live_fresh"
+    assert AGENT_REGISTRY.get_stripe_account("p26_modeswitch") == "acct_live_fresh"
+    assert AGENT_REGISTRY.get_stripe_account_status("p26_modeswitch") == "pending"
+
+
+@pytest.mark.asyncio
+async def test_p26_settle_refuses_to_pay_an_account_from_the_other_stripe_mode():
+    """P26-4 (M4), the money half: even if a stale 'active' status survives
+    somewhere, a transfer must never be attempted against an account belonging
+    to the other key space."""
+    from emporia.payments import settle
+
+    async def mock_post(url, *args, **kwargs):
+        m = MagicMock()
+        m.raise_for_status = MagicMock()
+        m.json.return_value = {"id": "pi_x", "status": "succeeded"}
+        return m
+
+    with patch.dict(os.environ, {"STRIPE_SECRET_KEY": "sk_live_mock"}):
+        with patch("httpx.AsyncClient.post", new_callable=AsyncMock, side_effect=mock_post) as mp:
+            result = await settle(
+                session_id="sess_p26_mode", winner_id="w", total_stake_cents=1000,
+                payment_intent_ids=["pi_p26_mode"],
+                winner_stripe_account="acct_test_leftover",
+                winner_stripe_account_status="active",
+                winner_stripe_account_mode="test",   # live key, test account
+            )
+    assert result["transfer_status"] == "pending_connect_wrong_mode", result
+    assert result["transfer_id"] is None, result
+    assert [c for c in mp.call_args_list if "transfers" in c.args[0]] == []
+
+
+def test_p26_reregister_does_not_desync_stripe_account_id_from_status(client):
+    """P26-5 (M5): register_agent()'s UPSERT nulls stripe_account_id but does
+    not touch stripe_account_status, so a re-register left 'active' with no
+    account id. In live mode the next start_stripe_onboarding then creates a
+    SECOND real Connected Account -- a second real KYC, orphaning the first and
+    any balance on it. Idempotent re-registration is explicitly supported
+    ("safe to call on every start"), so this is reachable on an ordinary
+    restart, not just an edge case."""
+    from emporia.relay_server import AGENT_REGISTRY
+    _register(client, "p26_rereg")
+    AGENT_REGISTRY.set_stripe_account("p26_rereg", "acct_p26_rereg", mode="live")
+    AGENT_REGISTRY.set_stripe_account_status("acct_p26_rereg", "active")
+
+    # Re-register with no Stripe configured, so nothing re-provisions.
+    with patch.dict(os.environ, {"STRIPE_SECRET_KEY": ""}):
+        r = client.post("/agents/register", json={
+            "agent_id": "p26_rereg", "public_key_hex": "b" * 64,
+        })
+    assert r.status_code == 200, r.text
+
+    assert AGENT_REGISTRY.get_stripe_account("p26_rereg") == "acct_p26_rereg", \
+        "a re-register must not discard an existing Connected Account id"
+    assert AGENT_REGISTRY.get_stripe_account_status("p26_rereg") == "active"
+
+
+@pytest.mark.asyncio
+async def test_p26_create_live_connected_account_uses_a_real_email_and_country():
+    """P26-6 (M6): P25 hardcoded `{agent_id}@emporia.local` and country US.
+    `.local` is unroutable by design, so Stripe's verification-requirement,
+    payout-failure and account-restriction emails -- for a REAL account
+    handling REAL money -- all bounce into a void. Country is worse than
+    cosmetic: it is immutable after account creation, so a non-US operator's
+    only recovery is deleting the account and redoing KYC."""
+    from emporia.payments import create_live_connected_account
+
+    with patch.dict(os.environ, {"STRIPE_SECRET_KEY": "sk_live_mock"}):
+        with patch("httpx.AsyncClient.post", new_callable=AsyncMock) as mock_post:
+            m = MagicMock()
+            m.raise_for_status = MagicMock()
+            m.json.return_value = {"id": "acct_live_email"}
+            mock_post.return_value = m
+            await create_live_connected_account(
+                "p26_agent", email="operator@example.com", country="GB",
+            )
+    body = mock_post.call_args.kwargs["data"]
+    assert body["email"] == "operator@example.com", body
+    assert body["country"] == "GB", body
+    assert not any(k.startswith("tos_acceptance") for k in body), body
+
+
+def test_p26_live_onboarding_requires_a_real_email(client):
+    """The endpoint half of M6: live mode must not silently fall back to the
+    unroutable placeholder. Absent a real email, refuse rather than create a
+    real account nobody can be contacted about."""
+    _register(client, "p26_email_required")
+    with patch.dict(os.environ, {"STRIPE_SECRET_KEY": "sk_live_mock"}):
+        r = client.post(
+            "/agents/p26_email_required/stripe-onboarding",
+            headers={"x-emporia-agent-id": "p26_email_required"},
+        )
+    assert r.status_code == 400, r.text
+    assert "email" in r.text.lower()
+
+
 @pytest.mark.asyncio
 async def test_create_live_connected_account_omits_tos_acceptance():
     """The entire safety property of create_live_connected_account() vs. its
@@ -19987,7 +20339,9 @@ async def test_create_live_connected_account_omits_tos_acceptance():
             mock_resp.json.return_value = {"id": "acct_live_001"}
             mock_resp.raise_for_status = MagicMock()
             mock_post.return_value = mock_resp
-            result = await create_live_connected_account("p25_live_agent")
+            result = await create_live_connected_account(
+                "p25_live_agent", email="live@example.com",
+            )
     assert result["stripe_account_id"] == "acct_live_001"
     body = mock_post.call_args.kwargs["data"]
     assert not any(k.startswith("tos_acceptance") for k in body), body
@@ -20059,6 +20413,7 @@ def test_start_stripe_onboarding_creates_account_and_link_in_live_mode(client):
         with patch("httpx.AsyncClient.post", new_callable=AsyncMock, side_effect=mock_post_side_effect):
             r = client.post(
                 "/agents/p25_onboard_live/stripe-onboarding",
+                json={"email": "live@example.com", "country": "US"},
                 headers={"x-emporia-agent-id": "p25_onboard_live"},
             )
     assert r.status_code == 200, r.text
@@ -20214,7 +20569,7 @@ def test_sdk_start_stripe_onboarding_returns_onboarding_url():
                     "emporia.payments.create_account_onboarding_link", new_callable=AsyncMock,
                     return_value="https://connect.stripe.com/setup/e/sdk",
                 ):
-                    return await a.start_stripe_onboarding()
+                    return await a.start_stripe_onboarding(email="sdk@example.com")
         finally:
             await a.__aexit__()
 
@@ -20241,7 +20596,9 @@ def test_mcp_start_stripe_onboarding_returns_onboarding_url(prod_client):
                 "emporia.payments.create_account_onboarding_link", new_callable=AsyncMock,
                 return_value="https://connect.stripe.com/setup/e/mcp",
             ):
-                result = mcp_server.start_stripe_onboarding(agent_id="p25_mcp_onboard_a")
+                result = mcp_server.start_stripe_onboarding(
+                    agent_id="p25_mcp_onboard_a", email="mcp@example.com",
+                )
     assert result["success"] is True, result
     assert result["onboarding_url"] == "https://connect.stripe.com/setup/e/mcp"
     assert result["stripe_account_id"] == "acct_p25_mcp"
@@ -20303,13 +20660,35 @@ def test_stripe_webhook_rejects_unsigned_request_without_touching_db(client):
         }},
     }).encode()
 
+    # P26-8 (M7): this used `t=1,v1=bogus`. t=1 is 1970, so the *timestamp*
+    # check rejected it before the HMAC was ever computed -- the test passed
+    # identically with the signature comparison deleted, i.e. it never
+    # exercised the thing its name claims. A current timestamp with a wrong
+    # signature is the case that actually pins the HMAC branch.
     with patch.dict(os.environ, {"STRIPE_WEBHOOK_SECRET": "whsec_test_p25"}):
         r = client.post(
             "/webhooks/stripe", content=payload,
-            headers={"Content-Type": "application/json", "Stripe-Signature": "t=1,v1=bogus"},
+            headers={
+                "Content-Type": "application/json",
+                "Stripe-Signature": f"t={int(time.time())},v1={'0' * 64}",
+            },
         )
     assert r.status_code == 403, r.text
     assert AGENT_REGISTRY.get_stripe_account_status("p25_webhook_unsigned") == "pending"
+
+    # And a *correctly* signed body for the same payload must be accepted --
+    # otherwise "rejects the wrong signature" could pass by rejecting
+    # everything, which is a different bug wearing this test's clothes.
+    with patch.dict(os.environ, {"STRIPE_WEBHOOK_SECRET": "whsec_test_p25"}):
+        ok = client.post(
+            "/webhooks/stripe", content=payload,
+            headers={
+                "Content-Type": "application/json",
+                "Stripe-Signature": _stripe_signed_header(payload, "whsec_test_p25"),
+            },
+        )
+    assert ok.status_code == 200, ok.text
+    assert AGENT_REGISTRY.get_stripe_account_status("p25_webhook_unsigned") == "active"
 
 
 def test_stripe_webhook_marks_account_active_only_when_both_capabilities_active(client):
@@ -20332,8 +20711,20 @@ def test_stripe_webhook_marks_account_active_only_when_both_capabilities_active(
                 headers={"Content-Type": "application/json", "Stripe-Signature": header},
             )
 
+    # P26-8 (L8): this covered only transfers=active/card_payments=pending, so
+    # it passed even with the `transfers == "active"` half of the condition
+    # deleted -- half of the "both" in its own name was unverified. Both
+    # one-sided cases are now checked, in both orders.
     r1 = send({"transfers": "active", "card_payments": "pending"})
     assert r1.status_code == 200, r1.text
+    assert AGENT_REGISTRY.get_stripe_account_status("p25_webhook_partial") == "pending"
+
+    r_mirror = send({"transfers": "pending", "card_payments": "active"})
+    assert r_mirror.status_code == 200, r_mirror.text
+    assert AGENT_REGISTRY.get_stripe_account_status("p25_webhook_partial") == "pending"
+
+    r_missing = send({})
+    assert r_missing.status_code == 200, r_missing.text
     assert AGENT_REGISTRY.get_stripe_account_status("p25_webhook_partial") == "pending"
 
     r2 = send({"transfers": "active", "card_payments": "active"})

@@ -593,6 +593,31 @@ async def confirm_spt(
         }
 
 
+def stripe_key_mode() -> str:
+    """P26-4: which Stripe key space this relay is configured for —
+    "test" | "live" | "" (unconfigured/unrecognized). Lives here rather than
+    in relay_server.py so `settle()` can apply the same rule without importing
+    the server module (payments.py must stay server-import-free, same
+    constraint entitlements.py has)."""
+    sk = (os.getenv("STRIPE_SECRET_KEY") or "").strip()
+    if sk.startswith("sk_test_"):
+        return "test"
+    if sk.startswith("sk_live_"):
+        return "live"
+    return ""
+
+
+def stripe_account_mode_mismatch(account_mode: str) -> bool:
+    """True only when both the account's mode and the configured key's mode are
+    known AND they disagree — a transfer that is guaranteed to fail, since a
+    test-mode `acct_...` simply does not exist in the live key space (and vice
+    versa). Unknown on either side is deliberately NOT a mismatch: blocking on
+    absence would break every payout on a relay that hasn't been migrated yet,
+    which is the failure P26-1 exists to prevent, not repeat."""
+    key_mode = stripe_key_mode()
+    return bool(account_mode) and bool(key_mode) and account_mode != key_mode
+
+
 def _stripe_key() -> str:
     key = os.getenv("STRIPE_SECRET_KEY", "")
     if not key:
@@ -803,7 +828,9 @@ async def settle(
     total_stake_cents: int,
     payment_intent_ids: list[str],
     winner_stripe_account: str | None = None,
-    winner_stripe_account_status: str = "active",
+    *,
+    winner_stripe_account_status: str,
+    winner_stripe_account_mode: str = "",
 ) -> dict[str, Any]:
     """Capture all escrowed stakes, then transfer the winner's net payout.
 
@@ -816,13 +843,24 @@ async def settle(
     Platform fee: OPERATOR_FEE_BPS basis points (default 250 = 2.5%), minimum 1¢.
     Requires total_stake_cents ≥ STRIPE_MIN_CHARGE_CENTS (50¢) — enforced upstream.
 
-    `winner_stripe_account_status` (P25-2) defaults to "active" — every caller
-    that doesn't pass it explicitly (this codebase's own pre-P25 tests included)
-    keeps attempting the transfer exactly as before, since a test-mode account
-    genuinely is active immediately. The one real caller in relay_server.py
-    passes the winner's actual AGENT_REGISTRY status, so a live-mode account
-    that hasn't finished onboarding is skipped here rather than attempted and
-    left to fail against Stripe's own API.
+    `winner_stripe_account_status` (P25-2) is **required and keyword-only**
+    (P26-9). P25 gave it a `"active"` default so pre-existing callers kept
+    their behavior — but that is fail-*open*, the opposite of
+    `get_stripe_account_status()`'s own fail-closed `'none'`, and it meant a
+    future caller that simply forgot the argument would silently get the
+    unguarded path with no signal. There is exactly one production call site
+    and it always passes the winner's real AGENT_REGISTRY status, so making it
+    explicit costs nothing and removes the footgun entirely: forgetting it is
+    now a TypeError at the call, not a wrong money decision at runtime.
+
+    `winner_stripe_account_mode` (P26-4) is the Stripe key space the account
+    belongs to ("test"/"live"/"" for unknown). A transfer is refused when it is
+    known and disagrees with the configured key's own mode: the two `acct_...`
+    namespaces are disjoint, so paying a test account under a live key is a
+    guaranteed failure at best. "" (unknown) does not block — pre-P26 rows are
+    backfilled to a real value by `_backfill_stripe_account_state()`, and a
+    caller that genuinely doesn't know shouldn't have its previously-working
+    payout broken by this check.
     """
     fee = platform_fee(total_stake_cents)
     platform_fee_cents = fee
@@ -842,7 +880,11 @@ async def settle(
     transfer_status = "pending_connect"
 
     # Step 2: Transfer winner's net share from platform balance to their connected account
-    if winner_stripe_account and winner_payout_cents > 0 and winner_stripe_account_status != "active":
+    if winner_stripe_account and winner_payout_cents > 0 and stripe_account_mode_mismatch(
+        winner_stripe_account_mode
+    ):
+        transfer_status = "pending_connect_wrong_mode"
+    elif winner_stripe_account and winner_payout_cents > 0 and winner_stripe_account_status != "active":
         transfer_status = "pending_connect_not_active"
     elif winner_stripe_account and winner_payout_cents > 0:
         try:
@@ -915,7 +957,9 @@ async def create_connected_account(agent_id: str) -> dict[str, Any]:
         }
 
 
-async def create_live_connected_account(agent_id: str) -> dict[str, Any]:
+async def create_live_connected_account(
+    agent_id: str, *, email: str, country: str = "US",
+) -> dict[str, Any]:
     """Create a Stripe Custom connected account for an agent (live mode).
 
     A sibling of create_connected_account() above, not a variant of it —
@@ -927,6 +971,15 @@ async def create_live_connected_account(agent_id: str) -> dict[str, Any]:
     (create_account_onboarding_link() below) collects the real acceptance,
     and the account starts unverified/pending until that flow completes and
     the account.updated webhook (relay_server.py) reports it active.
+
+    P26-6: `email` is required, with no default. P25 sent
+    `f"{agent_id}@emporia.local"` — `.local` is unroutable by design, so every
+    message Stripe sends the account holder about a REAL money-handling
+    account (verification requirements, payout failures, restrictions) went
+    nowhere. `country` matters even more than it looks: Stripe treats it as
+    **immutable after creation**, so getting it wrong means deleting the
+    account and redoing KYC from scratch. Both are now the caller's explicit
+    decision rather than a hardcoded guess.
     """
     key = _stripe_key()
     async with httpx.AsyncClient(timeout=REQUEST_TIMEOUT) as client:
@@ -935,8 +988,8 @@ async def create_live_connected_account(agent_id: str) -> dict[str, Any]:
             auth=(key, ""),
             data={
                 "type": "custom",
-                "country": "US",
-                "email": f"{agent_id}@emporia.local",
+                "country": country,
+                "email": email,
                 "capabilities[card_payments][requested]": "true",
                 "capabilities[transfers][requested]": "true",
                 "metadata[agent_id]": agent_id,

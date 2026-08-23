@@ -244,15 +244,25 @@ class EmporiaAgent:
         resp.raise_for_status()
         return resp.json()
 
-    async def start_stripe_onboarding(self) -> dict[str, Any]:
+    async def start_stripe_onboarding(
+        self, *, email: str = "", country: str = "US",
+    ) -> dict[str, Any]:
         """Start (or resume) live-mode Stripe Connect onboarding (P25-2).
         Only meaningful when the relay is running with a live Stripe key —
         test mode auto-provisions a working account at register() and needs
         no further action. Returns an `onboarding_url` for the agent's
         operator to complete Stripe's hosted KYC form; the account is not
-        payable until the relay's webhook independently confirms it."""
+        payable until the relay's webhook independently confirms it.
+
+        P26-6: `email` must be a real, reachable address when a new account
+        is created — Stripe sends verification requirements and payout
+        failures there. `country` is immutable once Stripe creates the
+        account. Both are ignored when an existing account is simply being
+        re-linked.
+        """
         resp = await self._bearer_request(
             "post", f"{self.relay_url}/agents/{self.agent_id}/stripe-onboarding",
+            json={"email": email, "country": country},
         )
         resp.raise_for_status()
         return resp.json()

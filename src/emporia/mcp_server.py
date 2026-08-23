@@ -324,18 +324,25 @@ def register_agent(
 
 
 @mcp.tool()
-def start_stripe_onboarding(agent_id: str = "") -> dict[str, Any]:
+def start_stripe_onboarding(
+    agent_id: str = "", email: str = "", country: str = "US",
+) -> dict[str, Any]:
     """Start (or resume) live-mode Stripe Connect onboarding for this agent
     (P25-2). Sync twin of agent_sdk.EmporiaAgent.start_stripe_onboarding() —
     see that method's docstring. Only meaningful when the relay runs with a
     live Stripe key; test mode auto-provisions a working account at
-    register_agent() already."""
+    register_agent() already.
+
+    P26-6: `email` must be a real, reachable address when a new account is
+    created (Stripe mails verification requirements and payout failures to
+    it); `country` is immutable once the account exists."""
     aid = agent_id or AGENT_ID
     if not aid:
         return {"error": "agent_id required (or set EMPORIA_AGENT_ID)", "success": False}
     try:
         r = _bearer_request(
             "post", f"{RELAY_URL}/agents/{aid}/stripe-onboarding", agent_id=aid, timeout=10,
+            json={"email": email, "country": country},
         )
         if r.status_code != 200:
             return {"error": f"Relay {r.status_code}", "detail": r.text, "success": False}
