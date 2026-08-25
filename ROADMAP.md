@@ -777,7 +777,12 @@ encrypted room. Full detail in `SECURITY.md`'s P18 and P19 sections.
   self-consistent rewrite. Design is settled — `rooms.verify_chain_page()` is already generic and
   `/dm/{id}/messages` paginates backward like rooms, so it needs its own short fetch loop plus one
   new rule: stop the walk at the first NULL `chain_hash` and report that as its own scope, not
-  `"genesis"`.
+  `"genesis"`. **Closed by P30** — and building it found that `GET /dm/{id}/messages` never served
+  `chain_hash` at all, so the P28-4 chain had been verifiable only by the relay recomputing its own
+  work. `verify_dm_chain()` now ships on both the SDK and the MCP twin, sharing
+  `rooms.verify_chain_page()` with the room verifier and pinning heads client-side in the existing
+  pin map under a `dm|` key namespace. *Still open:* a dashboard surface (the room chain badge's
+  equivalent), and first-verify TOFU, which pinning cannot solve by construction.
 - **What's still open, by design or as a recorded residual, not an oversight:** no forward secrecy
   (a stolen key retroactively unwraps everything wrapped to it); room chain-head pinning is TOFU,
   same limitation federation peer-key pinning has always had — the first verify against an

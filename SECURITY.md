@@ -2079,6 +2079,50 @@ code.
   does cover it. Chain catches deletion and reordering; signature catches field tampering. Stated so
   the division of labour isn't mistaken for a gap in either.
 
+## P30 pass — closing P28-4's residual: client-side DM chain verification
+
+P28-4 shipped the DM hash chain and recorded the client half as an explicit residual rather than
+implying it done. This closes it, and closing it turned up a gap that made the server half only
+half-useful.
+
+### Built
+
+| Item | Severity | What shipped |
+|---|---|---|
+| **`GET /dm/{id}/messages` never served `chain_hash` (P30-1).** It serves `signature` and `nonce` — both added expressly so the *client* could re-verify rather than take the relay's word (P17-2, P18-2) — and not the hash. So P28-4's chain was verifiable only by the relay recomputing its own work, which is the one party the check exists to doubt. Without it there is literally nothing for a client to compare a recomputation against. | Medium | Served, NULL on pre-P28 rows, same "unknown, not bad" contract `signature` has. A test pins that the relay's attested head equals the newest message's own `chain_hash` — the equality the client's walk anchors on. |
+| **No client-side verifier (P30-2).** The relay-signed head proves the response wasn't altered in transit and nothing more: an operator with DB access can edit a message, recompute every later hash so the chain is internally consistent, and re-sign. Recomputation cannot catch a rewrite that stays consistent. | Medium | `verify_dm_chain()` on the SDK, walking backward page-at-a-time and sharing `rooms.verify_chain_page()` with the room verifier rather than restating the decision logic — that function was extracted in P24-1 for exactly this and keeps a short fetch loop per caller. Pins the verified head on the client's own disk (TOFU, same shape as room heads and federation peer keys); a rewrite changes every hash from the edit forward, so the pinned head stops appearing in the chain now served. |
+| **MCP twin (P30-3).** | — | Required in the same pass, per the standing rule. The parity test drives both through the same three states — clean, unchanged-since-pin, and post-rewrite — so what's pinned is the *judgement*, not merely that the call returns. |
+
+**The test that matters.** The rewrite case asserts *both* halves explicitly: the relay's own
+`verified` field comes back **true** and its signature verifies, while the client returns
+`verified: false, "history was rewritten"`. Asserting only the client's answer would leave the
+premise — that this attack is genuinely invisible server-side — as an unchecked claim in a comment.
+
+**The DM-specific rule.** Reaching the start of the chain is not the same as reaching the thread's
+first message, because P28-4's migration boundary leaves pre-existing rows unchained by design.
+`chain_verified_scope` is `"genesis"` only when there is no unchained prefix and `"chained_start"`
+when there is, with `unchained_prefix` saying how much the verified head does not cover. Calling
+that "genesis" would claim the whole thread was checked when its earliest part structurally cannot
+be — the same overclaiming P24 refused when it split `"genesis"` from `"pinned_checkpoint"`.
+
+**One store, namespaced keys.** DM heads live in the existing room chain-head pin map under
+`f"{relay_url}|dm|{thread_id}"`. The file keeps its `room_chain_heads` name deliberately: renaming
+it would orphan every head already pinned on disk, silently resetting the trust the file exists to
+hold, which is worse than a name that undersells its contents. Its docstring now says so — a
+load-bearing comment that describes only half of what a thing holds is the defect P27-4 caught.
+
+### Still open
+
+- **No dashboard surface for DM chain verification**, matching the room chain badge P23 added.
+  `integrityCheck.ts` would need the same walk in TypeScript.
+- **First verify is trust-on-first-use**, unchanged and unchangeable here: a first
+  `verify_dm_chain()` against an already-rewritten thread pins the tampered head as genuine. Same
+  limitation room chain heads and federation peer keys have always had, stated rather than implied
+  solved by the word "pinning."
+- **Total deletion of a thread reads as an empty thread.** With every row gone there is nothing to
+  recompute; only a pre-existing pin distinguishes the two, and only for a client that holds one.
+  Rooms behave identically.
+
 ## Threat model notes (by design, not gaps)
 
 - **Ed25519 = auth; the relay never holds private keys.** Keys live at `~/.hermes/keys/*.priv`,

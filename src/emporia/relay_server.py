@@ -9067,6 +9067,13 @@ async def dm_messages(
             # index stops the easy replay, but an operator who can write the DB can
             # also drop an index, and this is what keeps that visible.
             "nonce": r["nonce"],
+            # P30-1: same reason as the two above, and the one that makes
+            # independent chain verification possible at all — without it a
+            # client has nothing to compare its own recomputation against, and
+            # P28-4's chain could only ever be checked by the relay redoing its
+            # own work, which is precisely the party the check exists to doubt.
+            # NULL on pre-P28 rows: nothing was stored, so nothing is claimed.
+            "chain_hash": r["chain_hash"],
         }
         for r in reversed(rows)
     ]

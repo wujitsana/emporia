@@ -1025,6 +1025,219 @@ def get_room_messages(room_id: str, agent_id: str = "", limit: int = 50) -> dict
 
 
 @mcp.tool()
+def verify_dm_chain(
+    thread_id: str, agent_id: str = "", max_messages: int | None = None,
+    ignore_pin: bool = False,
+) -> dict[str, Any]:
+    """Independently verify a DM thread's hash chain rather than trusting the
+    relay's self-report (P30-2).
+
+    Sync twin of `agent_sdk.EmporiaAgent.verify_dm_chain()` -- see that
+    method's docstring for the full rationale (why a relay-signed head is not
+    enough, how the client-held pin catches a self-consistent rewrite, and why
+    reaching the start of the chain is not the same as reaching the thread's
+    first message once a pre-P28 unchained prefix exists). This copy must get
+    every behavior change in lockstep with that one -- shared-logic drift
+    between these two twins is a defect this codebase has found repeatedly.
+    """
+    aid = agent_id or AGENT_ID
+    if not aid:
+        return {"error": "agent_id required (or set EMPORIA_AGENT_ID)", "success": False}
+    from emporia import identity, rooms
+    try:
+        r = _bearer_request(
+            "get", f"{RELAY_URL}/dm/{thread_id}/chain", agent_id=aid, timeout=10,
+        )
+        if r.status_code != 200:
+            return {"error": f"Relay {r.status_code}", "detail": r.text, "success": False}
+        data = r.json()
+
+        chained_count = data.get("message_count", 0)
+        unchained_prefix = data.get("unchained_prefix", 0)
+        result: dict[str, Any] = {
+            "thread_id": thread_id,
+            "relay_reported_verified": data.get("verified"),
+            "signed_chain_head": data.get("chain_head"),
+            "message_count": chained_count,
+            "unchained_prefix": unchained_prefix,
+            "verified": False,
+            "reason": "",
+            "chain_verified_scope": None,
+            "replay_scan_scope": None,
+            "replayed_nonce_count": 0,
+            "replayed_nonce_sample": [],
+            "success": True,
+        }
+
+        pubkey_hex = data.get("origin_public_key_hex", "")
+        try:
+            signable = identity.federation_signable_bytes(
+                data.get("origin_relay", RELAY_URL), "dm_chain",
+                [{"thread_id": thread_id, "chain_head": data.get("chain_head") or "",
+                  "message_count": chained_count}],
+            )
+            signature_valid = identity.verify_raw(
+                signable, data.get("signature", ""), pubkey_hex,
+            )
+        except Exception:
+            signature_valid = False
+        if not signature_valid:
+            result["reason"] = "relay signature over the chain head did not verify"
+            return result
+        if not data.get("verified"):
+            result["reason"] = f"relay's own recomputation failed: {data.get('message')}"
+            return result
+
+        if chained_count == 0:
+            result["verified"] = True
+            result["reason"] = "no chained messages — nothing to verify"
+            result["chain_verified_scope"] = "genesis" if not unchained_prefix else "chained_start"
+            result["replay_scan_scope"] = "full_history"
+            return result
+
+        pins = identity.load_room_chain_heads()
+        pin_key = f"{RELAY_URL}|dm|{thread_id}"
+        pinned = pins.get(pin_key)
+
+        if pinned is not None and not (
+            isinstance(pinned, dict) and isinstance(pinned.get("chain_head"), str)
+        ):
+            result["reason"] = (
+                "stored pin entry for this thread is malformed — "
+                "refusing to trust it as a verification checkpoint"
+            )
+            return result
+
+        if not ignore_pin and pinned and pinned.get("chain_head") == data.get("chain_head"):
+            if pinned.get("origin_public_key_hex") and pinned["origin_public_key_hex"] != pubkey_hex:
+                result["reason"] = "relay's signing key changed since it was last pinned for this thread"
+                return result
+            result["verified"] = True
+            result["reason"] = "chain head unchanged since the last pinned verification — nothing new to check"
+            result["chain_verified_scope"] = "pinned_checkpoint"
+            result["replay_scan_scope"] = "no_new_messages"
+            return result
+
+        seen_nonces: set[str] = set()
+        replay_sample: list[str] = []
+        replay_count = 0
+
+        expected: Any = data.get("chain_head") or ""
+        before: str | None = None
+        chained_seen = 0
+        reached_chain_start = False
+        reached_pin = False
+
+        while True:
+            if max_messages is not None and chained_seen >= max_messages:
+                result["reason"] = (
+                    f"could not fetch full history for independent verification — "
+                    f"{chained_seen}/{chained_count} chained messages within the "
+                    f"{max_messages}-message cap"
+                )
+                return result
+            params: dict[str, Any] = {"agent_id": aid, "limit": 200}
+            if before:
+                params["before"] = before
+            page = _bearer_request(
+                "get", f"{RELAY_URL}/dm/{thread_id}/messages",
+                agent_id=aid, timeout=10, params=params,
+            )
+            if page.status_code != 200:
+                return {"error": f"Relay {page.status_code}", "detail": page.text, "success": False}
+            batch = page.json().get("messages", [])
+            if not batch:
+                result["reason"] = (
+                    "relay served fewer messages than its own reported message_count claims exist"
+                )
+                return result
+
+            for m in batch:
+                nonce = m.get("nonce")
+                if not nonce:
+                    continue
+                if nonce in seen_nonces:
+                    replay_count += 1
+                    if len(replay_sample) < 20:
+                        replay_sample.append(nonce)
+                seen_nonces.add(nonce)
+
+            chained_batch = [m for m in batch if m.get("chain_hash")]
+
+            pin_index = None
+            if pinned and not ignore_pin:
+                for i, m in enumerate(chained_batch):
+                    if m["chain_hash"] == pinned.get("chain_head"):
+                        pin_index = i
+                        break
+
+            verify_batch = chained_batch[pin_index:] if pin_index is not None else chained_batch
+            at_chain_start = chained_seen + len(chained_batch) >= chained_count
+            verify_at_genesis = at_chain_start and pin_index is None
+
+            if verify_batch:
+                ok, new_expected, reason = rooms.verify_chain_page(
+                    verify_batch, expected, verify_at_genesis,
+                )
+                if not ok:
+                    result["reason"] = reason
+                    return result
+                expected = new_expected
+
+            chained_seen += len(chained_batch)
+
+            if pin_index is not None:
+                if pinned.get("origin_public_key_hex") and pinned["origin_public_key_hex"] != pubkey_hex:
+                    result["reason"] = "relay's signing key changed since it was last pinned for this thread"
+                    return result
+                reached_pin = True
+                break
+            if at_chain_start:
+                reached_chain_start = True
+                break
+
+            before = batch[0]["created_at"]
+
+        if reached_chain_start and pinned and not reached_pin and not ignore_pin:
+            result["reason"] = (
+                "previously pinned chain head is not an ancestor of the current chain — "
+                "history was rewritten (reordered or deleted messages)"
+            )
+            return result
+
+        result["verified"] = True
+        result["replayed_nonce_count"] = replay_count
+        result["replayed_nonce_sample"] = replay_sample
+        if reached_chain_start:
+            result["chain_verified_scope"] = "genesis" if not unchained_prefix else "chained_start"
+            result["replay_scan_scope"] = "full_history"
+            result["reason"] = (
+                f"chain valid, verified from the start of the chain this call "
+                f"({chained_seen} messages)"
+                + (
+                    f"; {unchained_prefix} earlier message(s) predate the chain and are not covered"
+                    if unchained_prefix else ""
+                )
+            )
+        else:
+            result["chain_verified_scope"] = "pinned_checkpoint"
+            result["replay_scan_scope"] = "since_pinned_head"
+            result["reason"] = (
+                f"chain valid back to the previously pinned head ({chained_seen} new messages "
+                "checked this call)"
+            )
+
+        pins[pin_key] = {
+            "chain_head": data.get("chain_head") or "",
+            "origin_public_key_hex": pubkey_hex,
+        }
+        identity.save_room_chain_heads(pins)
+        return result
+    except Exception as e:
+        return {"error": str(e), "success": False}
+
+
+@mcp.tool()
 def verify_room_chain(
     room_id: str, agent_id: str = "", max_messages: int | None = None, ignore_pin: bool = False,
 ) -> dict[str, Any]:

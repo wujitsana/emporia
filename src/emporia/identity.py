@@ -602,6 +602,13 @@ def load_room_chain_heads() -> dict[str, dict[str, str]]:
     together in one entry means a relay-identity swap and a head rewrite are
     the same detectable event, not two separate pin stores to keep in sync.
 
+    **P30-2: this map holds DM thread heads too**, keyed
+    `f"{relay_url}|dm|{thread_id}"`. The name stays `room_chain_heads` because
+    renaming it would orphan every already-pinned head on disk — a silent reset
+    of exactly the trust this file exists to keep, which is worse than a name
+    that undersells its contents. Same reasoning as the single-store choice
+    above: one file, namespaced keys, one place a pin can go stale.
+
     Returns {} if no file exists yet (ordinary first-verify case). A corrupt
     file is logged and preserved rather than silently discarded, exactly as
     load_federation_peer_pubkeys() does — for the identical reason: silently

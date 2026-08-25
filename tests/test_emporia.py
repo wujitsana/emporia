@@ -22032,3 +22032,249 @@ def test_p29_dm_chain_catches_history_truncation(client):
         "the surviving rows all still carry a chain_hash, so none of this is "
         f"the unchained-migration case: {after}"
     )
+
+
+# ---------------------------------------------------------------------------
+# P30 -- client-side DM chain verification (closing P28-4's recorded residual)
+# ---------------------------------------------------------------------------
+
+
+def test_p30_dm_messages_serve_chain_hash(client):
+    """P30-1: `GET /dm/{id}/messages` served `signature` and `nonce` -- both
+    added expressly so the CLIENT could re-verify rather than taking the
+    relay's word (P17-2, P18-2) -- and did not serve `chain_hash`. So P28-4's
+    chain was verifiable only by the relay recomputing its own work, which is
+    the one party the check exists to doubt.
+
+    Serving it is what makes independent verification possible at all: without
+    it there is nothing for `rooms.verify_chain_page()` to compare against.
+    NULL on pre-P28 rows, same "unknown, not bad" contract `signature` has.
+    """
+    thread_id = _p28_dm_thread(client, "p30hash_alice", "p30hash_bob")
+    _p28_dm_send(client, thread_id, "p30hash_alice", "one")
+    _p28_dm_send(client, thread_id, "p30hash_bob", "two")
+
+    r = client.get(
+        f"/dm/{thread_id}/messages", params={"agent_id": "p30hash_alice"},
+        headers={"x-emporia-agent-id": "p30hash_alice"},
+    )
+    assert r.status_code == 200, r.text
+    msgs = r.json()["messages"]
+    assert len(msgs) == 2, msgs
+    assert all(m.get("chain_hash") for m in msgs), msgs
+    # The relay's own attested head must equal the newest message's chain_hash --
+    # that equality is what the client's walk anchors on.
+    chain = client.get(
+        f"/dm/{thread_id}/chain", headers={"x-emporia-agent-id": "p30hash_alice"},
+    ).json()
+    assert chain["chain_head"] == msgs[-1]["chain_hash"], (chain, msgs)
+
+
+def test_p30_sdk_verifies_a_dm_chain_and_pins_it():
+    """P30-2: the happy path, and the pin it establishes. A first call walks to
+    the start of the chain; a second call finds the head unchanged and short-
+    circuits on the pin rather than re-walking history it already vouched for.
+    """
+    import asyncio
+
+    async def scenario():
+        a = _sdk_wired("p30sdk_alice")
+        b = _sdk_wired("p30sdk_bob")
+        try:
+            await a.register()
+            await b.register()
+            thread = await a.start_dm("p30sdk_bob")
+            thread_id = thread["thread_id"]
+            for i in range(3):
+                await a.send_dm(thread_id, f"msg {i}")
+            first = await a.verify_dm_chain(thread_id)
+            second = await a.verify_dm_chain(thread_id)
+            return first, second
+        finally:
+            await a.__aexit__()
+            await b.__aexit__()
+
+    first, second = asyncio.run(scenario())
+    assert first["verified"] is True, first
+    assert first["chain_verified_scope"] == "genesis", first
+    assert first["unchained_prefix"] == 0, first
+    assert first["message_count"] == 3, first
+    # Second call: nothing changed, so the pin answers without a re-walk.
+    assert second["verified"] is True, second
+    assert second["chain_verified_scope"] == "pinned_checkpoint", second
+    assert second["replay_scan_scope"] == "no_new_messages", second
+
+
+def test_p30_sdk_catches_a_self_consistent_rewrite_the_relay_signs():
+    """P30-2, the whole reason this exists. The relay-signed head proves only
+    that the response wasn't altered in transit. An operator with DB access can
+    edit a message, recompute every later hash so the chain is internally
+    consistent, and sign the new head -- and the relay's own `verified` field,
+    plus the signature, both come back clean. Recomputation cannot catch a
+    rewrite that stays consistent.
+
+    The pin can, because it lives on the client's disk and the relay doesn't
+    hold it: rewriting history changes every hash from the edit forward, so the
+    previously pinned head is no longer anywhere in the chain now served.
+    """
+    import asyncio
+
+    from emporia import rooms as rooms_db
+    from emporia.relay_server import get_db
+
+    async def scenario():
+        a = _sdk_wired("p30rw_alice")
+        b = _sdk_wired("p30rw_bob")
+        try:
+            await a.register()
+            await b.register()
+            thread_id = (await a.start_dm("p30rw_bob"))["thread_id"]
+            for i in range(3):
+                await a.send_dm(thread_id, f"original {i}")
+            first = await a.verify_dm_chain(thread_id)
+            assert first["verified"] is True, first
+
+            # Operator rewrites message 1 and recomputes the chain forward, so
+            # the relay's own recomputation will report the thread as valid.
+            with get_db() as conn:
+                rows = conn.execute(
+                    "SELECT message_id, sender_id, content, created_at FROM dm_messages "
+                    "WHERE thread_id = ? ORDER BY created_at ASC, rowid ASC", (thread_id,),
+                ).fetchall()
+                prev = None
+                for i, row in enumerate(rows):
+                    content = "TAMPERED" if i == 1 else row["content"]
+                    h = rooms_db.compute_chain_hash(
+                        prev, row["sender_id"], content, row["created_at"],
+                    )
+                    conn.execute(
+                        "UPDATE dm_messages SET content = ?, chain_hash = ? WHERE message_id = ?",
+                        (content, h, row["message_id"]),
+                    )
+                    prev = h
+                conn.commit()
+
+            resp = await a._bearer_request("get", f"http://testserver/dm/{thread_id}/chain")
+            relay_says = resp.json()
+            return relay_says, await a.verify_dm_chain(thread_id)
+        finally:
+            await a.__aexit__()
+            await b.__aexit__()
+
+    relay_says, after = asyncio.run(scenario())
+    assert relay_says["verified"] is True, (
+        "the rewrite is self-consistent, so the relay's own recomputation must "
+        f"still pass — that is exactly what makes it undetectable server-side: {relay_says}"
+    )
+    assert after["verified"] is False, after
+    assert "rewritten" in after["reason"], after
+
+
+def test_p30_sdk_reports_chained_start_not_genesis_when_a_prefix_predates_the_chain():
+    """P30-2: pre-P28 messages carry no hash, so reaching the start of the
+    chain is not the same as reaching the thread's first message. Reporting
+    that as "genesis" would claim the whole thread was checked when its
+    earliest part structurally cannot be."""
+    import asyncio
+
+    from emporia.relay_server import get_db
+
+    async def scenario():
+        a = _sdk_wired("p30pre_alice")
+        b = _sdk_wired("p30pre_bob")
+        try:
+            await a.register()
+            await b.register()
+            thread_id = (await a.start_dm("p30pre_bob"))["thread_id"]
+            with get_db() as conn:
+                conn.execute(
+                    "INSERT INTO dm_messages (message_id, thread_id, sender_id, content, "
+                    "msg_type, created_at, signature, nonce, chain_hash) "
+                    "VALUES (?,?,?,?,?,?,?,?,NULL)",
+                    ("dmm_p30_legacy", thread_id, "p30pre_alice", "legacy",
+                     "chat", "2020-01-01T00:00:00+00:00", None, "p30_legacy_nonce"),
+                )
+                conn.commit()
+            await a.send_dm(thread_id, "modern one")
+            await a.send_dm(thread_id, "modern two")
+            return await a.verify_dm_chain(thread_id)
+        finally:
+            await a.__aexit__()
+            await b.__aexit__()
+
+    r = asyncio.run(scenario())
+    assert r["verified"] is True, r
+    assert r["chain_verified_scope"] == "chained_start", r
+    assert r["unchained_prefix"] == 1, r
+    assert "not covered" in r["reason"], r
+
+
+def test_p30_mcp_verify_dm_chain_matches_the_sdk_twin(prod_client):
+    """P30-3: the MCP twin, required in the same pass. These two are
+    hand-copied siblings, and drift between them is a defect this codebase has
+    found in four separate passes — so the parity worth pinning is the
+    *judgement*, not just that the call returns something.
+
+    Both are pointed at one thread in three states: clean (verified from
+    genesis), unchanged-since-pin (short-circuits on the pin), and after a
+    self-consistent operator rewrite the relay itself still signs as valid.
+    """
+    from emporia import mcp_server, rooms as rooms_db
+    from emporia.relay_server import get_db
+
+    _register_keyed(prod_client, "p30mcp_alice")
+    _register_keyed(prod_client, "p30mcp_bob")
+    r = prod_client.post(
+        "/dm/start", json={"to_agent": "p30mcp_bob"},
+        headers=bearer_for(prod_client, "p30mcp_alice"),
+    )
+    assert r.status_code == 200, r.text
+    thread_id = r.json()["thread_id"]
+
+    from emporia import wire
+    from emporia.identity import sign
+    for i in range(3):
+        nonce = wire.new_message_nonce()
+        payload = wire.signed_dm_thread_payload(
+            thread_id, f"mcp {i}", wire.DEFAULT_MSG_TYPE, nonce,
+        )
+        sent = prod_client.post(
+            f"/dm/{thread_id}/send",
+            json={"content": f"mcp {i}", "signature": sign(payload, "p30mcp_alice"),
+                  "nonce": nonce},
+            headers=bearer_for(prod_client, "p30mcp_alice"),
+        )
+        assert sent.status_code == 200, sent.text
+
+    adapter = _ASGIHttpxAdapter(prod_client, mcp_server.RELAY_URL)
+    with patch.object(mcp_server, "httpx", adapter):
+        first = mcp_server.verify_dm_chain(thread_id=thread_id, agent_id="p30mcp_alice")
+        assert first["verified"] is True, first
+        assert first["chain_verified_scope"] == "genesis", first
+        assert first["message_count"] == 3, first
+
+        second = mcp_server.verify_dm_chain(thread_id=thread_id, agent_id="p30mcp_alice")
+        assert second["chain_verified_scope"] == "pinned_checkpoint", second
+
+        # Self-consistent rewrite: the relay's own recomputation still passes.
+        with get_db() as conn:
+            rows = conn.execute(
+                "SELECT message_id, sender_id, content, created_at FROM dm_messages "
+                "WHERE thread_id = ? ORDER BY created_at ASC, rowid ASC", (thread_id,),
+            ).fetchall()
+            prev = None
+            for i, row in enumerate(rows):
+                content = "MCP TAMPERED" if i == 0 else row["content"]
+                h = rooms_db.compute_chain_hash(
+                    prev, row["sender_id"], content, row["created_at"],
+                )
+                conn.execute(
+                    "UPDATE dm_messages SET content = ?, chain_hash = ? WHERE message_id = ?",
+                    (content, h, row["message_id"]),
+                )
+                prev = h
+            conn.commit()
+
+        after = mcp_server.verify_dm_chain(thread_id=thread_id, agent_id="p30mcp_alice")
+        assert after["verified"] is False, after
+        assert "rewritten" in after["reason"], after
