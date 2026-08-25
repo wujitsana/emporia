@@ -410,6 +410,221 @@ export interface RoomChainVerifyResult {
  * unlimited) — each hash here is an async Web Crypto call on a UI that
  * polls, not a one-shot CLI/MCP call; pass `null` for an unbounded walk.
  */
+export interface DmChainVerifyResult {
+  thread_id: string;
+  relay_reported_verified: boolean | null;
+  signed_chain_head: string | null;
+  message_count: number;
+  /** P32-2: how many of this thread's messages predate the chain entirely
+   *  (P28-4 left pre-existing rows unchained rather than backfilling a
+   *  history the relay cannot honestly attest). The verified head does not
+   *  cover them, and a UI that rendered only `verified` would imply it did. */
+  unchained_prefix: number;
+  verified: boolean;
+  reason: string;
+  /** Like the room result's, plus `"chained_start"`: the walk reached the
+   *  beginning of the CHAIN, which is not the thread's first message when an
+   *  unchained prefix exists. Calling that "genesis" would overclaim. */
+  chain_verified_scope: "genesis" | "chained_start" | "pinned_checkpoint" | null;
+  replay_scan_scope: "full_history" | "since_pinned_head" | "no_new_messages" | null;
+  replayed_nonce_count: number;
+  replayed_nonce_sample: string[];
+}
+
+/**
+ * P32-2: the DM analogue of `verifyRoomChainFromRelay()` below, and the
+ * TypeScript twin of `agent_sdk.py`'s `verify_dm_chain()` (P30-2). Same
+ * reason it exists: the relay-signed head proves only that the response
+ * wasn't altered in transit, while an operator with DB access can rewrite a
+ * message, recompute the chain forward, and re-sign. The head pinned in this
+ * browser's localStorage is what catches that, because the relay doesn't hold
+ * it.
+ *
+ * Shares `verifyChainPage()` and the pin store with the room walk rather than
+ * restating either. The DM-specific rule is the unchained prefix: reaching the
+ * start of the chain is not reaching the thread's first message, so the scope
+ * distinguishes `"chained_start"` from `"genesis"`.
+ */
+export async function verifyDmChainFromRelay(
+  relayUrl: string,
+  threadId: string,
+  fetchDmChain: (threadId: string) => Promise<{
+    verified: boolean; message: string; chain_head: string | null; message_count: number;
+    unchained_prefix?: number;
+    origin_relay: string; origin_public_key_hex: string; signature: string;
+  }>,
+  fetchDmMessages: (
+    threadId: string, opts?: { limit?: number; before?: string; beforeSeq?: number | null },
+  ) => Promise<{ messages: ChainMessage[] }>,
+  maxMessages: number | null = 25_000,
+  ignorePin = false,
+): Promise<DmChainVerifyResult> {
+  const data = await fetchDmChain(threadId);
+  const unchainedPrefix = data.unchained_prefix ?? 0;
+  const result: DmChainVerifyResult = {
+    thread_id: threadId,
+    relay_reported_verified: data.verified,
+    signed_chain_head: data.chain_head,
+    message_count: data.message_count,
+    unchained_prefix: unchainedPrefix,
+    verified: false,
+    reason: "",
+    chain_verified_scope: null,
+    replay_scan_scope: null,
+    replayed_nonce_count: 0,
+    replayed_nonce_sample: [],
+  };
+
+  const signable = pyCanonicalJson({
+    // Same present-but-empty-string handling as the room walk (P24-5/F5):
+    // `||` would substitute relayUrl for a legitimately-empty origin_relay
+    // and recompute a different signable than the relay signed.
+    origin_relay: "origin_relay" in data ? data.origin_relay : relayUrl,
+    dm_chain: [{ thread_id: threadId, chain_head: data.chain_head || "", message_count: data.message_count }],
+  });
+  const signatureValid = verifyRaw(new TextEncoder().encode(signable), data.signature, data.origin_public_key_hex);
+  if (!signatureValid) {
+    result.reason = "relay signature over the chain head did not verify";
+    return result;
+  }
+  if (!data.verified) {
+    result.reason = `relay's own recomputation failed: ${data.message}`;
+    return result;
+  }
+
+  if (result.message_count === 0) {
+    result.verified = true;
+    result.reason = "no chained messages — nothing to verify";
+    result.chain_verified_scope = unchainedPrefix ? "chained_start" : "genesis";
+    result.replay_scan_scope = "full_history";
+    return result;
+  }
+
+  // Namespaced so a DM subject can never collide with a room's in the shared
+  // pin store — matching the Python clients' `{relay}|dm|{thread}` key.
+  const pinKey = `${relayUrl}|dm|${threadId}`;
+  const { pin: pinned, corrupt: pinCorrupt } = getPinnedRoomChainHead(pinKey);
+  if (pinCorrupt) {
+    result.reason = "stored chain-head pin is corrupt — refusing to report verified without a trustworthy TOFU anchor";
+    return result;
+  }
+
+  if (!ignorePin && pinned && pinned.chain_head === data.chain_head) {
+    if (pinned.origin_public_key_hex && pinned.origin_public_key_hex !== data.origin_public_key_hex) {
+      result.reason = "relay's signing key changed since it was last pinned for this thread";
+      return result;
+    }
+    result.verified = true;
+    result.reason = "chain head unchanged since the last pinned verification — nothing new to check";
+    result.chain_verified_scope = "pinned_checkpoint";
+    result.replay_scan_scope = "no_new_messages";
+    return result;
+  }
+
+  const seenNonces = new Set<string>();
+  const replaySample: string[] = [];
+  let replayCount = 0;
+
+  let expected: ChainPageExpected = data.chain_head || "";
+  let before: string | undefined;
+  let beforeSeq: number | null | undefined;
+  let chainedSeen = 0;
+  let reachedChainStart = false;
+  let reachedPin = false;
+
+  while (true) {
+    if (maxMessages !== null && chainedSeen >= maxMessages) {
+      result.reason =
+        `could not fetch full history for independent verification — ` +
+        `${chainedSeen}/${result.message_count} chained messages within the ${maxMessages}-message cap`;
+      return result;
+    }
+    const page = await fetchDmMessages(threadId, { limit: 200, before, beforeSeq });
+    const batch = page.messages ?? [];
+    if (batch.length === 0) {
+      result.reason = "relay served fewer messages than its own reported message_count claims exist";
+      return result;
+    }
+
+    for (const m of batch) {
+      if (!m.nonce) continue;
+      if (seenNonces.has(m.nonce)) {
+        replayCount++;
+        if (replaySample.length < 20) replaySample.push(m.nonce);
+      }
+      seenNonces.add(m.nonce);
+    }
+
+    // Drop the pre-chain tail: those rows carry no hash, so there is nothing
+    // to verify them against. Counted, never trusted.
+    const chainedBatch = batch.filter((m) => !!m.chain_hash);
+
+    let pinIndex: number | null = null;
+    if (pinned && !ignorePin) {
+      for (let i = 0; i < chainedBatch.length; i++) {
+        if (chainedBatch[i].chain_hash === pinned.chain_head) {
+          pinIndex = i;
+          break;
+        }
+      }
+    }
+
+    const verifyBatch = pinIndex !== null ? chainedBatch.slice(pinIndex) : chainedBatch;
+    const atChainStart = chainedSeen + chainedBatch.length >= result.message_count;
+    const verifyAtGenesis = atChainStart && pinIndex === null;
+
+    if (verifyBatch.length > 0) {
+      const { ok, newExpected, reason } = await verifyChainPage(verifyBatch, expected, verifyAtGenesis);
+      if (!ok) {
+        result.reason = reason;
+        return result;
+      }
+      expected = newExpected as ChainPageExpected;
+    }
+
+    chainedSeen += chainedBatch.length;
+
+    if (pinIndex !== null) {
+      if (pinned!.origin_public_key_hex && pinned!.origin_public_key_hex !== data.origin_public_key_hex) {
+        result.reason = "relay's signing key changed since it was last pinned for this thread";
+        return result;
+      }
+      reachedPin = true;
+      break;
+    }
+    if (atChainStart) {
+      reachedChainStart = true;
+      break;
+    }
+
+    before = batch[0].created_at;
+    beforeSeq = batch[0].seq ?? null;
+  }
+
+  if (reachedChainStart && pinned && !reachedPin && !ignorePin) {
+    result.reason = "previously pinned chain head is not an ancestor of the current chain — history was rewritten (reordered or deleted messages)";
+    return result;
+  }
+
+  result.verified = true;
+  result.replayed_nonce_count = replayCount;
+  result.replayed_nonce_sample = replaySample;
+  if (reachedChainStart) {
+    result.chain_verified_scope = unchainedPrefix ? "chained_start" : "genesis";
+    result.replay_scan_scope = "full_history";
+    result.reason =
+      `chain valid, verified from the start of the chain this call (${chainedSeen} messages)` +
+      (unchainedPrefix ? `; ${unchainedPrefix} earlier message(s) predate the chain and are not covered` : "");
+  } else {
+    result.chain_verified_scope = "pinned_checkpoint";
+    result.replay_scan_scope = "since_pinned_head";
+    result.reason = `chain valid back to the previously pinned head (${chainedSeen} new messages checked this call)`;
+  }
+
+  setPinnedRoomChainHead(pinKey, { chain_head: data.chain_head || "", origin_public_key_hex: data.origin_public_key_hex });
+  return result;
+}
+
 export async function verifyRoomChainFromRelay(
   relayUrl: string,
   roomId: string,

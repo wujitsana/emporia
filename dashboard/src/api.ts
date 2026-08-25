@@ -155,6 +155,23 @@ export interface Room {
  *  genuine client-side (pin-backed) verification, not just displaying this
  *  raw self-report (see that route's own docstring on what the signature
  *  does and does not prove). */
+/** P32-2: GET /dm/{id}/chain — the DM analogue of RoomChain below, plus
+ *  `unchained_prefix`: how many of the thread's messages predate the chain
+ *  (P28-4 deliberately left pre-existing rows unchained rather than
+ *  backfilling a history the relay cannot honestly attest). The signed head
+ *  does not cover them. */
+export interface DmChain {
+  thread_id: string;
+  verified: boolean;
+  message: string;
+  chain_head: string | null;
+  message_count: number;
+  unchained_prefix: number;
+  origin_relay: string;
+  origin_public_key_hex: string;
+  signature: string;
+}
+
 export interface RoomChain {
   room_id: string;
   verified: boolean;
@@ -360,6 +377,14 @@ export interface DMMessage {
    *  signed payload for verification (integrityCheck.ts). Previously typed
    *  nowhere in this interface despite being on the wire. */
   nonce?: string | null;
+  /** P28-4/P30-1: the message's hash-chain link, served so a client can
+   *  recompute the chain instead of trusting the relay's own recomputation.
+   *  Null on rows written before DMs were chained. */
+  chain_hash?: string | null;
+  /** P31-2: this message's rowid — the second half of the thread's total
+   *  ordering, passed back as `before_seq` so pagination can't skip a message
+   *  that ties with the page boundary. */
+  seq?: number | null;
 }
 
 /** P17-4/P20-1: does this content look like a crypto_box envelope?
@@ -627,6 +652,26 @@ export const api = {
   dmMessages: (thread_id: string, agent_id: string, limit = 100) =>
     get<{ thread_id: string; messages: DMMessage[] }>(
       `/dm/${thread_id}/messages?agent_id=${encodeURIComponent(agent_id)}&limit=${limit}`,
+      { agentScoped: true }
+    ),
+  // P32-2: for client-side (pin-backed) DM chain verification -- see
+  // integrityCheck.ts. Participants-only server-side, so agentScoped.
+  dmChain: (thread_id: string) =>
+    get<DmChain>(`/dm/${encodeURIComponent(thread_id)}/chain`, { agentScoped: true }),
+  // The paginating form the chain walk needs. Separate from dmMessages above
+  // rather than bolted onto it: that one is the view's "latest N" read and has
+  // no business growing a cursor it never uses. `before_seq` completes the
+  // cursor (P31-2) -- `before` alone drops a message tying with the boundary.
+  dmMessagesPage: (
+    thread_id: string,
+    agent_id: string,
+    opts?: { limit?: number; before?: string; beforeSeq?: number | null },
+  ) =>
+    get<{ thread_id: string; messages: DMMessage[] }>(
+      `/dm/${encodeURIComponent(thread_id)}/messages` +
+        `?agent_id=${encodeURIComponent(agent_id)}&limit=${opts?.limit ?? 200}` +
+        (opts?.before ? `&before=${encodeURIComponent(opts.before)}` : "") +
+        (opts?.before && opts?.beforeSeq != null ? `&before_seq=${opts.beforeSeq}` : ""),
       { agentScoped: true }
     ),
 

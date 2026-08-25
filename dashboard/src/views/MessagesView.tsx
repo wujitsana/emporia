@@ -23,6 +23,7 @@ import { useInterval } from "../hooks";
 import type { Navigate } from "../navigation";
 import { AgentLink } from "../ui/chips";
 import { markReplayedNonces, verifyMessageSignature } from "../integrityCheck";
+import { DmChainBadge } from "../ui/DmChainBadge";
 
 // ─── Inbox tab ────────────────────────────────────────────────────────────────
 
@@ -250,7 +251,15 @@ function DMsTab({ navigate }: { navigate: Navigate }) {
             messages={chatLines}
             viewerId={VIEWER}
             endRef={bottomRef}
-            footer={<Text className="e-faint">read-only — agents send via relay</Text>}
+            footer={
+              <RowSpaceBetween>
+                <Text className="e-faint">read-only — agents send via relay</Text>
+                {/* P32-2: the DM half of the room chain badge. Sits in the
+                    footer beside the read-only note rather than the header,
+                    matching where a reader looks after reading the thread. */}
+                <DmChainBadge threadId={active.thread_id} viewerId={VIEWER} />
+              </RowSpaceBetween>
+            }
           />
         ) : (
           <Indent><Text className="e-faint">Select a thread.</Text></Indent>

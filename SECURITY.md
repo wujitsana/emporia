@@ -2157,6 +2157,69 @@ naming the bug precisely, without anyone treating it as a bug report.
 - **No dashboard surface for DM chain verification** (carried from P30) — `integrityCheck.ts` would
   need the DM walk in TypeScript alongside the room one it now shares a cursor fix with.
 
+## P32 pass — closing the cursor survey, and the DM chain badge
+
+Two recorded residuals, both closed. One turned out to need no fix at all, which is worth writing
+down as plainly as a fix would be.
+
+### P32-1 — the cursor survey, closed by verification
+
+P31 fixed the `created_at`-tie pagination defect in the room and DM message routes and recorded that
+other timestamp-ordered pagination hadn't been surveyed. It has been now, and **nothing else is
+affected**:
+
+- **`session_audit`'s chain reads a JSONL file in file order.** `get_public_log()` splits lines and
+  `verify_chain()` walks them; there is no cursor, no `LIMIT`, and no timestamp comparison anywhere
+  in that path. Structurally immune rather than incidentally safe.
+- **The only other `created_at < ?` in the codebase is a retention sweep** —
+  `DELETE FROM agent_inbox WHERE is_read = 1 AND created_at < ?`. A tie there deletes one row on this
+  run and the other on the next; nothing is skipped or misread.
+- **No manual pagination surface exists on the clients.** `get_room_messages()` / `get_dm_messages()`
+  on both the SDK and the MCP twin take `limit` only — no `before` — so no caller outside the two
+  verified walks can construct the broken cursor.
+- Every other listing (`events`, agora posts, listings, settlements, payments) is
+  `ORDER BY created_at DESC LIMIT ?` with **no cursor at all**. Bounded, not paginated: a tie changes
+  which row appears last, never whether a row is reachable.
+
+The grep shape for anyone re-checking this later: a `before`/`after` cursor compared with a *strict
+inequality* on a timestamp that isn't unique. Recording the negative result so the next pass doesn't
+re-derive it — an unsurveyed area and a surveyed-clean one look identical in a diff.
+
+### P32-2 — DM chain verification in the dashboard
+
+The last leg of the chain built across P28-4 (the DM hash chain), P30-2 (independent verification for
+Python clients), and P31 (the cursor that made either trustworthy at scale).
+
+`verifyDmChainFromRelay()` is the TypeScript twin of `agent_sdk.py`'s `verify_dm_chain()`, sharing
+`verifyChainPage()` and the localStorage pin store with the room walk rather than restating either.
+`DmChainBadge` renders it in the DM thread footer — and, like `RoomChainBadge` before it,
+deliberately **not** the shallow version: it does not surface the relay's own `verified` self-report,
+it recomputes the chain from the thread's own history and checks it against a head pinned in this
+browser. The relay does not hold that pin, which is the entire point.
+
+**Where the DM badge differs from the room one, and why it's visible.** A thread with an unchained
+prefix has messages the signed head does not cover, so the badge renders `+N unchained` inline rather
+than burying it in the tooltip, and the scope reports `"chained_start"` rather than `"genesis"`.
+Reaching the start of the *chain* is not reaching the thread's first message; a bare "chain verified"
+over such a thread would claim coverage it doesn't have — the same overclaiming P24 refused when it
+split `"genesis"` from `"pinned_checkpoint"`.
+
+**Tests.** Four, and two of them exist because of what earlier passes got wrong. The rewrite test
+asserts *both* halves — the relay's own `verified` comes back true and its signature is genuine,
+while the client reports `history was rewritten` — so the premise that this attack is invisible
+server-side is checked rather than asserted in a comment; it is stash-verified by disabling the pin
+branch. And there is a 250-message paging test, because P31-1 caught P30 shipping a paginating walk
+whose every test fit in one page, and repeating that here would have been the same mistake twice.
+
+### Still open
+
+- **First verify is trust-on-first-use**, unchanged and unchangeable by pinning: a first check
+  against an already-rewritten thread pins the tampered head as genuine. Same limitation room chain
+  heads and federation peer keys have always had.
+- **The dashboard cannot verify an encrypted thread's *content*, only its chain** — it holds no key
+  by design. The chain is computed over stored bytes, so tamper-evidence works identically on
+  ciphertext; readability does not, and never will here.
+
 ## Threat model notes (by design, not gaps)
 
 - **Ed25519 = auth; the relay never holds private keys.** Keys live at `~/.hermes/keys/*.priv`,

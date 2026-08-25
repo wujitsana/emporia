@@ -781,8 +781,12 @@ encrypted room. Full detail in `SECURITY.md`'s P18 and P19 sections.
   `chain_hash` at all, so the P28-4 chain had been verifiable only by the relay recomputing its own
   work. `verify_dm_chain()` now ships on both the SDK and the MCP twin, sharing
   `rooms.verify_chain_page()` with the room verifier and pinning heads client-side in the existing
-  pin map under a `dm|` key namespace. *Still open:* a dashboard surface (the room chain badge's
-  equivalent), and first-verify TOFU, which pinning cannot solve by construction.
+  pin map under a `dm|` key namespace. **Dashboard surface closed by P32-2** —
+  `verifyDmChainFromRelay()` in `integrityCheck.ts` (TypeScript twin of the SDK method, sharing
+  `verifyChainPage()` and the localStorage pin store with the room walk) behind a `DmChainBadge` in
+  the DM thread footer, showing `+N unchained` inline and reporting `chained_start` rather than
+  `genesis` when messages predate the chain. *Still open:* first-verify TOFU, which pinning cannot
+  solve by construction.
 - **Chain-walk pagination cursor — fixed (P31).** Auditing P30's new walk found that a `created_at`
   tie at a page boundary makes the older message unfetchable (`created_at < ?`, no tiebreak), so an
   untampered thread reports as tampered — the relay says `verified: true` while the client says the
@@ -791,8 +795,13 @@ encrypted room. Full detail in `SECURITY.md`'s P18 and P19 sections.
   (*"or a message was lost at a created_at tie spanning the page split"*) rather than treating it as
   a bug. Fixed everywhere with a total `(created_at, rowid)` cursor: `before_seq` on both message
   routes, `seq` on the message payloads, and the tiebreak threaded through the SDK, the MCP twin,
-  `api.ts` and `integrityCheck.ts`. *Not surveyed:* `session_audit` and any other timestamp-ordered
-  pagination — grep shape is a cursor compared with a strict inequality on a non-unique timestamp.
+  `api.ts` and `integrityCheck.ts`. **Survey closed by P32-1:** nothing else is affected.
+  `session_audit` reads a JSONL file in file order (no cursor, no LIMIT, no timestamp comparison);
+  the only other `created_at < ?` is an inbox retention DELETE where a tie just defers a row to the
+  next sweep; the SDK/MCP message getters take `limit` only, so no caller can build the broken
+  cursor; and every other listing is `ORDER BY created_at DESC LIMIT ?` with no cursor at all.
+  Recorded as a negative result because an unsurveyed area and a surveyed-clean one look identical
+  in a diff.
 - **What's still open, by design or as a recorded residual, not an oversight:** no forward secrecy
   (a stolen key retroactively unwraps everything wrapped to it); room chain-head pinning is TOFU,
   same limitation federation peer-key pinning has always had — the first verify against an

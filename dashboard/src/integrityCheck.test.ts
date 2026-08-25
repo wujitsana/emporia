@@ -9,6 +9,7 @@ import {
   verifyChainPage,
   verifyMessageSignature,
   verifyRoomChainFromRelay,
+  verifyDmChainFromRelay,
 } from "./integrityCheck";
 
 function bytesToHex(bytes: Uint8Array): string {
@@ -290,6 +291,177 @@ describe("room chain head pinning (localStorage TOFU store)", () => {
     const key = "relay|room_corrupt_" + Math.random();
     localStorage.setItem(`emporia.room_chain_pin.${key}`, stored);
     expect(getPinnedRoomChainHead(key)).toEqual({ pin: null, corrupt: true });
+  });
+
+  describe("verifyDmChainFromRelay (P32-2)", () => {
+    /** Build a signed DM-chain response plus its message list. */
+    async function makeThread(opts: {
+      relayUrl: string; threadId: string; contents: string[]; unchainedPrefix?: number;
+    }) {
+      const secretKey = ed25519.utils.randomSecretKey();
+      const pubHex = bytesToHex(ed25519.getPublicKey(secretKey));
+      const messages: any[] = [];
+      let prev: string | null = null;
+      // Unchained rows come first and carry no hash, exactly as pre-P28 rows do.
+      for (let i = 0; i < (opts.unchainedPrefix ?? 0); i++) {
+        messages.push({
+          sender_id: "a", content: `legacy ${i}`,
+          created_at: `2020-01-01T00:00:0${i}.000000+00:00`, chain_hash: null,
+          nonce: `legacy_${i}`, seq: i + 1,
+        });
+      }
+      for (const [i, content] of opts.contents.entries()) {
+        const created_at = `2026-04-04T00:00:${String(i).padStart(2, "0")}.000000+00:00`;
+        prev = await computeChainHash(prev, "a", content, created_at);
+        messages.push({
+          sender_id: "a", content, created_at, chain_hash: prev,
+          nonce: `n_${i}`, seq: (opts.unchainedPrefix ?? 0) + i + 1,
+        });
+      }
+      const chainHead = prev;
+      const signable = JSON.stringify({
+        dm_chain: [{ chain_head: chainHead || "", message_count: opts.contents.length, thread_id: opts.threadId }],
+        origin_relay: opts.relayUrl,
+      });
+      const signature = bytesToHex(ed25519.sign(new TextEncoder().encode(signable), secretKey));
+      const fetchChain = async () => ({
+        verified: true, message: "ok", chain_head: chainHead,
+        message_count: opts.contents.length, unchained_prefix: opts.unchainedPrefix ?? 0,
+        origin_relay: opts.relayUrl, origin_public_key_hex: pubHex, signature,
+      });
+      const fetchMessages = async () => ({ messages });
+      return { fetchChain, fetchMessages, chainHead, pubHex };
+    }
+
+    it("verifies a clean thread and pins the head under a dm-namespaced key", async () => {
+      const relayUrl = "http://relay-dm.example";
+      const threadId = "dm_clean";
+      const { fetchChain, fetchMessages, chainHead, pubHex } = await makeThread({
+        relayUrl, threadId, contents: ["one", "two", "three"],
+      });
+      const result = await verifyDmChainFromRelay(relayUrl, threadId, fetchChain, fetchMessages);
+      expect(result.verified).toBe(true);
+      expect(result.chain_verified_scope).toBe("genesis");
+      expect(result.unchained_prefix).toBe(0);
+      // `dm|` namespacing keeps a thread's pin from ever colliding with a room's.
+      expect(getPinnedRoomChainHead(`${relayUrl}|dm|${threadId}`)).toEqual({
+        pin: { chain_head: chainHead, origin_public_key_hex: pubHex },
+        corrupt: false,
+      });
+    });
+
+    it("catches a self-consistent rewrite that the relay itself still signs as valid", async () => {
+      const relayUrl = "http://relay-dm2.example";
+      const threadId = "dm_rewrite";
+      const original = await makeThread({ relayUrl, threadId, contents: ["one", "two", "three"] });
+      const first = await verifyDmChainFromRelay(
+        relayUrl, threadId, original.fetchChain, original.fetchMessages,
+      );
+      expect(first.verified).toBe(true);
+
+      // The operator edits a message and recomputes every later hash, then
+      // re-signs. Recomputation cannot catch this -- the relay's own report is
+      // clean and its signature is genuine. Only the pinned head can.
+      const rewritten = await makeThread({
+        relayUrl, threadId, contents: ["one", "TAMPERED", "three"],
+      });
+      const relaySays = await rewritten.fetchChain();
+      expect(relaySays.verified).toBe(true);
+
+      const after = await verifyDmChainFromRelay(
+        relayUrl, threadId, rewritten.fetchChain, rewritten.fetchMessages,
+      );
+      expect(after.verified).toBe(false);
+      expect(after.reason).toContain("rewritten");
+    });
+
+    it("walks more than one page, and still catches a break on the oldest one", async () => {
+      // P31-1's lesson applied to this file rather than restated: a
+      // paginating walk whose tests never paginate has its whole loop --
+      // cursor, `expected` hand-off across boundaries, deferred check on each
+      // page's oldest message -- entirely unexercised.
+      const relayUrl = "http://relay-dm4.example";
+      const threadId = "dm_paged";
+      const secretKey = ed25519.utils.randomSecretKey();
+      const pubHex = bytesToHex(ed25519.getPublicKey(secretKey));
+
+      const build = async (tamperAt: number | null) => {
+        const messages: any[] = [];
+        let prev: string | null = null;
+        for (let i = 0; i < 250; i++) {
+          const created_at =
+            `2026-05-05T00:${String(Math.floor(i / 60)).padStart(2, "0")}:` +
+            `${String(i % 60).padStart(2, "0")}.${String(i).padStart(6, "0")}+00:00`;
+          const content = `paged ${i}`;
+          prev = await computeChainHash(prev, "a", content, created_at);
+          messages.push({
+            sender_id: "a",
+            // Tamper with the CONTENT only, leaving stored hashes intact, so
+            // the recomputation diverges the way a real edit would.
+            content: i === tamperAt ? "TAMPERED" : content,
+            created_at, chain_hash: prev, nonce: `pn_${i}`, seq: i + 1,
+          });
+        }
+        return { messages, head: prev as string };
+      };
+
+      const clean = await build(null);
+      const signable = JSON.stringify({
+        dm_chain: [{ chain_head: clean.head, message_count: 250, thread_id: threadId }],
+        origin_relay: relayUrl,
+      });
+      const signature = bytesToHex(ed25519.sign(new TextEncoder().encode(signable), secretKey));
+      const fetchChain = async () => ({
+        verified: true, message: "ok", chain_head: clean.head, message_count: 250,
+        unchained_prefix: 0, origin_relay: relayUrl,
+        origin_public_key_hex: pubHex, signature,
+      });
+
+      let pages = 0;
+      const pagedFetcher = (all: any[]) => async (
+        _t: string, opts?: { limit?: number; before?: string; beforeSeq?: number | null },
+      ) => {
+        pages++;
+        const limit = opts?.limit ?? 200;
+        let pool = all;
+        if (opts?.before) {
+          pool = all.filter(
+            (m) =>
+              m.created_at < opts.before! ||
+              (m.created_at === opts.before! && opts.beforeSeq != null && m.seq < opts.beforeSeq),
+          );
+        }
+        return { messages: pool.slice(Math.max(0, pool.length - limit)) };
+      };
+
+      const ok = await verifyDmChainFromRelay(
+        relayUrl, threadId, fetchChain, pagedFetcher(clean.messages), null, true,
+      );
+      expect(ok.verified).toBe(true);
+      expect(pages).toBeGreaterThan(1);
+
+      // Message 5 lives on the OLDEST page, two boundaries back.
+      const broken = await build(5);
+      const after = await verifyDmChainFromRelay(
+        relayUrl, threadId, fetchChain, pagedFetcher(broken.messages), null, true,
+      );
+      expect(after.verified).toBe(false);
+    });
+
+    it("reports chained_start, not genesis, when messages predate the chain", async () => {
+      const relayUrl = "http://relay-dm3.example";
+      const threadId = "dm_prefix";
+      const { fetchChain, fetchMessages } = await makeThread({
+        relayUrl, threadId, contents: ["modern one", "modern two"], unchainedPrefix: 2,
+      });
+      const result = await verifyDmChainFromRelay(relayUrl, threadId, fetchChain, fetchMessages);
+      expect(result.verified).toBe(true);
+      // Reaching the start of the CHAIN is not reaching the thread's first
+      // message; calling this "genesis" would claim coverage it doesn't have.
+      expect(result.chain_verified_scope).toBe("chained_start");
+      expect(result.unchained_prefix).toBe(2);
+      expect(result.reason).toContain("not covered");
+    });
   });
 
   describe("verifyRoomChainFromRelay", () => {
