@@ -994,6 +994,7 @@ class EmporiaAgent:
 
         expected: str | dict[str, Any] = data.get("chain_head") or ""
         before: str | None = None
+        before_seq: int | None = None
         chained_seen = 0
         reached_chain_start = False
         reached_pin = False
@@ -1010,7 +1011,11 @@ class EmporiaAgent:
                 "get", f"{self.relay_url}/dm/{thread_id}/messages",
                 params={
                     "agent_id": self.agent_id, "limit": 200,
-                    **({"before": before} if before else {}),
+                    # P31-2: `before` alone can skip a message that shares a
+                    # timestamp with the page boundary, turning an untampered
+                    # thread into a false "history was rewritten". `before_seq`
+                    # makes the cursor total.
+                    **({"before": before, "before_seq": before_seq} if before else {}),
                 },
             )
             page.raise_for_status()
@@ -1070,6 +1075,7 @@ class EmporiaAgent:
                 break
 
             before = batch[0]["created_at"]
+            before_seq = batch[0].get("seq")
 
         if reached_chain_start and pinned and not reached_pin and not ignore_pin:
             result["reason"] = (
@@ -1254,6 +1260,7 @@ class EmporiaAgent:
 
         expected: str | dict[str, Any] = data.get("chain_head") or ""
         before: str | None = None
+        before_seq: int | None = None
         fetched = 0
         reached_genesis = False
         reached_pin = False
@@ -1272,7 +1279,13 @@ class EmporiaAgent:
                 page_limit = min(page_limit, max_messages - fetched)
             page = await self._bearer_request(
                 "get", f"{self.relay_url}/rooms/{room_id}/messages",
-                params={"limit": page_limit, **({"before": before} if before else {})},
+                params={
+                    "limit": page_limit,
+                    # P31-3: total cursor — `before` alone can skip a message
+                    # sharing a timestamp with the page boundary, turning an
+                    # untampered room into a false chain break.
+                    **({"before": before, "before_seq": before_seq} if before else {}),
+                },
             )
             page.raise_for_status()
             batch = page.json().get("messages", [])
@@ -1333,6 +1346,7 @@ class EmporiaAgent:
             oldest = batch[0]
             expected = new_expected
             before = oldest["created_at"]
+            before_seq = oldest.get("seq")
 
         if reached_genesis and pinned and not pin_matched and not ignore_pin:
             result["reason"] = (

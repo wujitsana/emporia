@@ -181,6 +181,10 @@ export interface RoomMessageDetail {
   chain_hash?: string | null;
   signature?: string | null;
   nonce?: string | null;
+  /** P31-3: the message's rowid — the second half of a room's total ordering,
+   *  `(created_at, rowid)`, passed back as `before_seq` so pagination can't
+   *  skip a message that ties with the page boundary. */
+  seq?: number | null;
 }
 
 export interface UiConfig {
@@ -446,10 +450,19 @@ export const api = {
   // check server-side) sees the caller; public rooms ignore the header.
   roomChain: (room_id: string) =>
     get<RoomChain>(`/rooms/${encodeURIComponent(room_id)}/chain`, { agentScoped: true }),
-  roomMessages: (room_id: string, opts?: { limit?: number; before?: string }) =>
+  // P31-3: `beforeSeq` completes the pagination cursor. Paginating on
+  // `before` alone drops any message sharing a created_at with the page
+  // boundary, which surfaced as a false "history was rewritten" on an
+  // untampered room. Only sent alongside `before`, which is the only case it
+  // means anything.
+  roomMessages: (
+    room_id: string,
+    opts?: { limit?: number; before?: string; beforeSeq?: number | null },
+  ) =>
     get<{ messages: RoomMessageDetail[]; count: number }>(
       `/rooms/${encodeURIComponent(room_id)}/messages?limit=${opts?.limit ?? 200}` +
-        (opts?.before ? `&before=${encodeURIComponent(opts.before)}` : ""),
+        (opts?.before ? `&before=${encodeURIComponent(opts.before)}` : "") +
+        (opts?.before && opts?.beforeSeq != null ? `&before_seq=${opts.beforeSeq}` : ""),
       { agentScoped: true },
     ),
   // N3-3: GET /agents now requires an authenticated caller (it was the unauthenticated

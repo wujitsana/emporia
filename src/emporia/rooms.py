@@ -178,6 +178,12 @@ class RoomMessage:
     nonce: str | None
     metadata: dict[str, Any]
     created_at: str
+    # P31-3: this message's rowid — the second half of a room's total message
+    # ordering, `(created_at, rowid)`, which `verify_chain()` and
+    # `_last_chain_hash()` have both used since P21-7. Served so a paginating
+    # client can build a cursor that can't skip a message sharing a timestamp
+    # with the page boundary. None when the row wasn't read with it.
+    seq: int | None = None
 
     def to_dict(self) -> dict[str, Any]:
         d = asdict(self)
@@ -231,6 +237,7 @@ def _row_to_message(row: sqlite3.Row) -> RoomMessage:
         nonce=row["nonce"],
         metadata=json.loads(row["metadata_json"] or "{}"),
         created_at=row["created_at"],
+        seq=row["seq"] if "seq" in row.keys() else None,
     )
 
 
@@ -737,18 +744,37 @@ def get_messages(
     limit: int = 50,
     before: str | None = None,
     db_path: Path | None = None,
+    before_seq: int | None = None,
 ) -> list[RoomMessage]:
+    """P31-3: `before` alone is not a total cursor. Two messages can share a
+    `created_at` — `post_message()` computes it before taking `_LOCK`, the same
+    case P21-7 added the chain writer's `rowid` tiebreak for — and when such a
+    pair straddles a page boundary, `created_at < ?` excludes the older one from
+    every later page: it can never be fetched, and a client walking the chain
+    backward reports an untampered room as unverifiable.
+
+    `before_seq` (a message's `seq`, its rowid) completes the cursor, ordered
+    exactly as `verify_chain()` orders. Optional, so non-paginating callers are
+    unaffected.
+    """
     with _LOCK, _connect(db_path) as conn:
-        if before:
+        if before and before_seq is not None:
             rows = conn.execute(
-                "SELECT * FROM room_messages WHERE room_id = ? AND created_at < ? "
-                "ORDER BY created_at DESC LIMIT ?",
+                "SELECT *, rowid AS seq FROM room_messages WHERE room_id = ? AND "
+                "(created_at < ? OR (created_at = ? AND rowid < ?)) "
+                "ORDER BY created_at DESC, rowid DESC LIMIT ?",
+                (room_id, before, before, before_seq, limit),
+            ).fetchall()
+        elif before:
+            rows = conn.execute(
+                "SELECT *, rowid AS seq FROM room_messages WHERE room_id = ? AND created_at < ? "
+                "ORDER BY created_at DESC, rowid DESC LIMIT ?",
                 (room_id, before, limit),
             ).fetchall()
         else:
             rows = conn.execute(
-                "SELECT * FROM room_messages WHERE room_id = ? "
-                "ORDER BY created_at DESC LIMIT ?",
+                "SELECT *, rowid AS seq FROM room_messages WHERE room_id = ? "
+                "ORDER BY created_at DESC, rowid DESC LIMIT ?",
                 (room_id, limit),
             ).fetchall()
     return [_row_to_message(row) for row in reversed(rows)]

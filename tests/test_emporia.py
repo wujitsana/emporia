@@ -22278,3 +22278,226 @@ def test_p30_mcp_verify_dm_chain_matches_the_sdk_twin(prod_client):
         after = mcp_server.verify_dm_chain(thread_id=thread_id, agent_id="p30mcp_alice")
         assert after["verified"] is False, after
         assert "rewritten" in after["reason"], after
+
+
+# ---------------------------------------------------------------------------
+# P31 -- audit of P29/P30
+# ---------------------------------------------------------------------------
+
+
+def _p31_seed_dm_messages(thread_id, sender, n, start_index=0, tag="x"):
+    """Write `n` correctly-chained DM rows directly, the way the relay's own
+    send path would. Direct writes because this exercises the *client* walk and
+    n is deliberately larger than one page — 250 signed HTTP sends would make
+    the test slow without making it more faithful, and rooms.compute_chain_hash
+    is literally the function the route calls."""
+    from emporia import rooms as rooms_db
+    from emporia.relay_server import get_db
+    with get_db() as conn:
+        row = conn.execute(
+            "SELECT chain_hash FROM dm_messages WHERE thread_id = ? AND chain_hash IS NOT NULL "
+            "ORDER BY created_at DESC, rowid DESC LIMIT 1", (thread_id,),
+        ).fetchone()
+        prev = row["chain_hash"] if row else None
+        for i in range(start_index, start_index + n):
+            created_at = f"2026-01-01T00:{i // 60:02d}:{i % 60:02d}.{i:06d}+00:00"
+            content = f"paged {i}"
+            h = rooms_db.compute_chain_hash(prev, sender, content, created_at)
+            conn.execute(
+                "INSERT INTO dm_messages (message_id, thread_id, sender_id, content, "
+                "msg_type, created_at, signature, nonce, chain_hash) VALUES (?,?,?,?,?,?,?,?,?)",
+                (f"dmm_p31_{tag}_{i}", thread_id, sender, content, "chat", created_at,
+                 None, f"p31_nonce_{tag}_{i}", h),
+            )
+            prev = h
+        conn.commit()
+    return prev
+
+
+def test_p31_dm_chain_verification_walks_more_than_one_page():
+    """P31-1: P30 shipped a paginating backward walk and every test it came
+    with used a thread of three messages against a 200-message page — so the
+    loop's own mechanics (the `before=` cursor, carrying `expected` across a
+    page boundary, the deferred check on each page's oldest message) never ran
+    once. A pagination bug there would have been invisible, and this is exactly
+    the walk whose room-side equivalent needed a P24 fix to get right.
+
+    250 messages: two full pages plus a partial one.
+    """
+    import asyncio
+
+    async def scenario():
+        a = _sdk_wired("p31_page_alice")
+        b = _sdk_wired("p31_page_bob")
+        try:
+            await a.register()
+            await b.register()
+            thread_id = (await a.start_dm("p31_page_bob"))["thread_id"]
+            _p31_seed_dm_messages(thread_id, "p31_page_alice", 250, tag="page")
+            return thread_id, await a.verify_dm_chain(thread_id)
+        finally:
+            await a.__aexit__()
+            await b.__aexit__()
+
+    thread_id, r = asyncio.run(scenario())
+    assert r["verified"] is True, r
+    assert r["chain_verified_scope"] == "genesis", r
+    assert r["message_count"] == 250, r
+    assert r["replay_scan_scope"] == "full_history", r
+
+
+def test_p31_dm_chain_multipage_walk_still_catches_a_break_on_an_older_page():
+    """P31-1, the half that proves the multi-page walk actually verifies rather
+    than merely completing: corrupt a message on the OLDEST page, past two page
+    boundaries, and it must still be caught. A walk that silently stopped
+    early, or that mishandled the `expected` hand-off between pages, would
+    return a clean result here."""
+    import asyncio
+
+    from emporia.relay_server import get_db
+
+    async def scenario():
+        a = _sdk_wired("p31_break_alice")
+        b = _sdk_wired("p31_break_bob")
+        try:
+            await a.register()
+            await b.register()
+            thread_id = (await a.start_dm("p31_break_bob"))["thread_id"]
+            _p31_seed_dm_messages(thread_id, "p31_break_alice", 250, tag="break")
+            clean = await a.verify_dm_chain(thread_id, ignore_pin=True)
+            assert clean["verified"] is True, clean
+            # Message 5 lives on the oldest page; edit content only, leaving
+            # every stored chain_hash untouched -> the recomputation diverges.
+            with get_db() as conn:
+                conn.execute(
+                    "UPDATE dm_messages SET content = 'TAMPERED' WHERE message_id = ?",
+                    ("dmm_p31_break_5",),
+                )
+                conn.commit()
+            return await a.verify_dm_chain(thread_id, ignore_pin=True)
+        finally:
+            await a.__aexit__()
+            await b.__aexit__()
+
+    r = asyncio.run(scenario())
+    assert r["verified"] is False, (
+        "a break on the oldest page, two page boundaries back, must still be "
+        f"caught by the paginating walk: {r}"
+    )
+
+
+def test_p31_dm_chain_walk_survives_a_created_at_tie_at_a_page_boundary():
+    """P31-2: the `before=` cursor is `created_at < ?`, with no tiebreak. Two
+    messages sharing a timestamp across a page boundary means the older one is
+    excluded from the next page entirely -- it can never be fetched -- so an
+    untampered thread reports as unverifiable.
+
+    Not hypothetical by this repo's own standard: P21-7 added a `rowid`
+    tiebreak to the chain writer for exactly this case, calling it "unlikely
+    but not impossible", and the DM send path computes `created_at` BEFORE
+    taking DB_LOCK, so two concurrent sends genuinely can land on one
+    microsecond. The server-side verifier and the writer both order by
+    `(created_at, rowid)`; only the client's pagination cursor lacks it.
+
+    A false "your history was rewritten" is a real failure for a tamper-
+    detection feature -- crying wolf is how such a check gets ignored.
+    """
+    import asyncio
+
+    from emporia import rooms as rooms_db
+    from emporia.relay_server import get_db
+
+    async def scenario():
+        a = _sdk_wired("p31_tie_alice")
+        b = _sdk_wired("p31_tie_bob")
+        try:
+            await a.register()
+            await b.register()
+            thread_id = (await a.start_dm("p31_tie_bob"))["thread_id"]
+            # 201 messages where the two OLDEST share one created_at, so the
+            # tie straddles the boundary of a 200-message first page.
+            tied = "2026-02-02T00:00:00.000000+00:00"
+            with get_db() as conn:
+                prev = None
+                for i in range(201):
+                    created_at = (
+                        tied if i < 2
+                        else f"2026-02-02T00:{i // 60:02d}:{i % 60:02d}.{i:06d}+00:00"
+                    )
+                    content = f"tie {i}"
+                    h = rooms_db.compute_chain_hash(prev, "p31_tie_alice", content, created_at)
+                    conn.execute(
+                        "INSERT INTO dm_messages (message_id, thread_id, sender_id, content, "
+                        "msg_type, created_at, signature, nonce, chain_hash) "
+                        "VALUES (?,?,?,?,?,?,?,?,?)",
+                        (f"dmm_p31_tie_{i}", thread_id, "p31_tie_alice", content, "chat",
+                         created_at, None, f"p31_tie_nonce_{i}", h),
+                    )
+                    prev = h
+                conn.commit()
+            return await a.verify_dm_chain(thread_id, ignore_pin=True)
+        finally:
+            await a.__aexit__()
+            await b.__aexit__()
+
+    r = asyncio.run(scenario())
+    assert r["verified"] is True, (
+        "nothing about this thread was tampered with -- a timestamp tie at a "
+        f"page boundary must not read as a broken chain: {r}"
+    )
+
+
+def test_p31_room_chain_walk_survives_a_created_at_tie_at_a_page_boundary():
+    """P31-3: the same defect P31-2 proved for DMs, in the ROOM verifier that
+    has been shipped since P24 -- across the SDK, the MCP twin, and the
+    dashboard's integrityCheck.ts. `rooms.get_messages()` paginates on
+    `created_at < ?` with no tiebreak, and `verify_room_chain()` walks with
+    `before = oldest.created_at`, so a timestamp tie straddling a page boundary
+    makes the older message unfetchable and an untampered room unverifiable.
+
+    Fixed here rather than recorded: the mechanism is proven, not suspected,
+    and leaving a known false-alarm in a shipped tamper-detection feature is
+    how such a check earns a reputation for crying wolf and stops being run.
+    """
+    import asyncio
+    import sqlite3
+
+    from emporia import rooms as rooms_db
+    from emporia.relay_server import DATABASE_PATH
+
+    async def scenario():
+        a = _sdk_wired("p31_roomtie_a")
+        try:
+            await a.register()
+            room = await a.create_room("p31 room tie", room_type="public")
+            room_id = room["room_id"]
+            tied = "2026-03-03T00:00:00.000000+00:00"
+            conn = sqlite3.connect(DATABASE_PATH)
+            conn.row_factory = sqlite3.Row
+            prev = None
+            for i in range(201):
+                created_at = (
+                    tied if i < 2
+                    else f"2026-03-03T00:{i // 60:02d}:{i % 60:02d}.{i:06d}+00:00"
+                )
+                content = f"roomtie {i}"
+                h = rooms_db.compute_chain_hash(prev, "p31_roomtie_a", content, created_at)
+                conn.execute(
+                    "INSERT INTO room_messages (message_id, room_id, sender_id, msg_type, "
+                    "content, parent_message_id, chain_hash, signature, nonce, "
+                    "metadata_json, created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?)",
+                    (f"rmsg_p31rt_{i}", room_id, "p31_roomtie_a", "chat", content,
+                     None, h, None, f"p31rt_nonce_{i}", "{}", created_at),
+                )
+                prev = h
+            conn.commit()
+            conn.close()
+            return await a.verify_room_chain(room_id, ignore_pin=True)
+        finally:
+            await a.__aexit__()
+
+    r = asyncio.run(scenario())
+    assert r["verified"] is True, (
+        "nothing in this room was tampered with -- a timestamp tie at a page "
+        f"boundary must not read as a broken chain: {r}"
+    )

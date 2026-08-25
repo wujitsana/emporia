@@ -305,6 +305,84 @@ describe("room chain head pinning (localStorage TOFU store)", () => {
       });
     });
 
+    it("passes before_seq on every page after the first, so a created_at tie can't drop a message (P31-3)", async () => {
+      // Paginating on `created_at < ?` alone excludes any message sharing a
+      // timestamp with the page boundary -- it can never be fetched, and the
+      // walk reports an untampered room as tampered. This file's own page-
+      // boundary error string used to hedge about exactly that case instead
+      // of the cursor being fixed. Here the fetcher REFUSES to serve a page
+      // without the tiebreak once one is needed, so a regression to the old
+      // cursor fails rather than silently degrading.
+      const secretKey = ed25519.utils.randomSecretKey();
+      const publicKey = ed25519.getPublicKey(secretKey);
+      const pubHex = bytesToHex(publicKey);
+      const roomId = "room_p31_tie";
+      const relayUrl = "http://relay-tie.example";
+
+      // 201 messages so the walk's own page size (min(200, count)) forces a
+      // second page, with the two OLDEST sharing one created_at so the tie
+      // lands exactly on that boundary.
+      const tied = "2026-03-03T00:00:00.000000+00:00";
+      const raw = Array.from({ length: 201 }, (_, i) => ({
+        sender_id: "a",
+        content: `m${i}`,
+        created_at:
+          i < 2
+            ? tied
+            : `2026-03-03T00:${String(Math.floor(i / 60)).padStart(2, "0")}:` +
+              `${String(i % 60).padStart(2, "0")}.${String(i).padStart(6, "0")}+00:00`,
+        seq: i + 1,
+      }));
+      const messages: any[] = [];
+      let prev: string | null = null;
+      for (const m of raw) {
+        prev = await computeChainHash(prev, m.sender_id, m.content, m.created_at);
+        messages.push({ ...m, chain_hash: prev });
+      }
+      const chainHead = prev as string;
+
+      const signable = JSON.stringify({
+        origin_relay: relayUrl,
+        room_chain: [{ chain_head: chainHead, message_count: messages.length, room_id: roomId }],
+      });
+      const signature = bytesToHex(
+        ed25519.sign(new TextEncoder().encode(signable), secretKey),
+      );
+
+      const seenBeforeSeq: Array<number | null | undefined> = [];
+      const fetchChain = async () => ({
+        verified: true, message: "ok", chain_head: chainHead,
+        message_count: messages.length, origin_relay: relayUrl,
+        origin_public_key_hex: pubHex, signature,
+      });
+      const fetchMessages = async (
+        _roomId: string,
+        opts?: { limit?: number; before?: string; beforeSeq?: number | null },
+      ) => {
+        const limit = opts?.limit ?? 200;
+        let pool = messages;
+        if (opts?.before) {
+          seenBeforeSeq.push(opts.beforeSeq);
+          if (opts.beforeSeq == null) {
+            throw new Error("paginated without before_seq — a created_at tie would drop a message");
+          }
+          pool = messages.filter(
+            (m) =>
+              m.created_at < opts.before! ||
+              (m.created_at === opts.before! && m.seq < opts.beforeSeq!),
+          );
+        }
+        return { messages: pool.slice(Math.max(0, pool.length - limit)) };
+      };
+
+      const result = await verifyRoomChainFromRelay(
+        relayUrl, roomId, fetchChain, fetchMessages, null, true,
+      );
+      expect(result.verified).toBe(true);
+      expect(seenBeforeSeq.length).toBeGreaterThan(0);
+      expect(seenBeforeSeq.every((v) => typeof v === "number")).toBe(true);
+    });
+
     it("fails closed when the stored pin is corrupt, instead of silently verifying as if never pinned", async () => {
       const pinKey = `${CHAIN_GOLDEN.relayUrl}|${CHAIN_GOLDEN.roomId}`;
       localStorage.setItem(`emporia.room_chain_pin.${pinKey}`, "not json");

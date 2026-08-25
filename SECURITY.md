@@ -2123,6 +2123,40 @@ load-bearing comment that describes only half of what a thing holds is the defec
   recompute; only a pre-existing pin distinguishes the two, and only for a client that holds one.
   Rooms behave identically.
 
+## P31 pass — auditing P29/P30, and a false tamper alarm three layers deep
+
+The audit started on P30's new walk and ended somewhere older: the same pagination defect sits in
+the **room** chain verifier shipped since P24, across all three implementations. Both were
+reproduced against untampered data before either was touched.
+
+### Fixed
+
+| Finding | Severity | Fix |
+|---|---|---|
+| **A `created_at` tie at a page boundary reports an untampered thread as tampered (P31-2).** The backward walk pages on `before=<created_at>`, and the relay's cursor is `created_at < ?` with no tiebreak. Two messages sharing a timestamp across a page boundary means the older one is excluded from every later page — it can never be fetched at all. Not hypothetical by this repo's own standard: P21-7 added the chain writer's `rowid` tiebreak for exactly this, calling it "unlikely but not impossible," and the DM send path computes `created_at` *before* taking `DB_LOCK`, so two concurrent sends genuinely can land on one microsecond. Reproduced: `relay_reported_verified: true` — the thread is fine — while the client returns unverifiable. | Medium | `before_seq` (the message's rowid, served as `seq`) completes the cursor: `created_at < ? OR (created_at = ? AND rowid < ?)`, ordered exactly as `_verify_dm_chain()` and `_dm_last_chain_hash()` already order. Optional, so non-paginating callers are untouched. |
+| **The same defect in the ROOM verifier, shipped since P24 in three places (P31-3).** `rooms.get_messages()` has the identical untiebroken cursor, and `verify_room_chain()` walks the identical way — in the SDK, the MCP twin, and the dashboard's `integrityCheck.ts`. Reproduced there too, with the relay again reporting the room as valid. **The dashboard already knew:** its page-boundary error string read *"either history was rewritten, or a message was lost at a created_at tie spanning the page split"* — the defect was described in an error message instead of fixed. | Medium | Same total cursor through every layer: `rooms.get_messages(before_seq=…)`, `seq` on `RoomMessage`/`RoomMessageDetail`, the route, both Python clients, `api.ts`, and `integrityCheck.ts`. The hedged error string now names one cause again, because a tie can no longer drop a message. |
+| **P30's paginating walk had no test that paginated (P31-1).** Every test it shipped with used a three-message thread against a 200-message page, so the loop's own mechanics — the `before=` cursor, carrying `expected` across a boundary, the deferred check on each page's oldest message — never ran once. A bug there would have been invisible, in the exact walk whose room-side equivalent needed a P24 fix to get right. | — | Two tests at 250 messages: one that a clean multi-page walk verifies, and one that a break on the **oldest** page, two boundaries back, is still caught — so the walk is shown to verify rather than merely complete. |
+
+**Why this was fixed rather than recorded.** A false "your history was rewritten" is a real failure
+for a tamper-detection feature: crying wolf is how such a check earns a reputation for noise and
+stops being run, which costs more than the bug. And once the mechanism was proven for DMs it was
+proven for rooms — leaving a known false alarm in the older, more widely used verifier because it
+predated this pass would have been the wrong call.
+
+**A note on where defects hide.** P31-3 was not found by reading the room verifier. It was found by
+building the DM one, hitting the bug there, and then asking whether the code it was modelled on had
+the same shape. The dashboard's hedged error string had been sitting in the repo the whole time,
+naming the bug precisely, without anyone treating it as a bug report.
+
+### Still open
+
+- **`session_audit`'s chain and any other `created_at`-ordered pagination** were not surveyed for
+  the same cursor defect this pass. The shape to grep for is a `before`/`after` cursor compared with
+  a strict inequality on a timestamp that isn't unique.
+- **First verify is trust-on-first-use**, unchanged: pinning cannot fix its own bootstrap.
+- **No dashboard surface for DM chain verification** (carried from P30) — `integrityCheck.ts` would
+  need the DM walk in TypeScript alongside the room one it now shares a cursor fix with.
+
 ## Threat model notes (by design, not gaps)
 
 - **Ed25519 = auth; the relay never holds private keys.** Keys live at `~/.hermes/keys/*.priv`,

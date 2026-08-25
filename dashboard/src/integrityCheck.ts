@@ -181,6 +181,12 @@ export interface ChainMessage {
   created_at: string;
   chain_hash?: string | null;
   nonce?: string | null;
+  /** P31-3: this message's rowid — the second half of a room's total ordering,
+   * `(created_at, rowid)`. Paginating on `created_at` alone silently drops a
+   * message that shares a timestamp with the page boundary; passing this back
+   * as `before_seq` makes the cursor total. Optional so a relay that predates
+   * it degrades to the old behaviour rather than breaking. */
+  seq?: number | null;
 }
 
 /** Either a bare `chain_hash` string (the *first* call in a walk, checked
@@ -227,7 +233,12 @@ export async function verifyChainPage(
     if (recomputed !== pending.chain_hash) {
       return {
         ok: false, newExpected: null,
-        reason: "hash mismatch at a page boundary — either history was rewritten, or a message was lost at a created_at tie spanning the page split",
+        // P31-3: this used to hedge with "or a message was lost at a
+        // created_at tie spanning the page split" — a known defect described
+        // in an error string instead of fixed. The cursor is total now
+        // (`before_seq`), so a tie can no longer drop a message and this
+        // mismatch has one cause again.
+        reason: "hash mismatch at a page boundary — history was rewritten (reordered or deleted messages)",
       };
     }
   }
@@ -407,7 +418,7 @@ export async function verifyRoomChainFromRelay(
     origin_relay: string; origin_public_key_hex: string; signature: string;
   }>,
   fetchRoomMessages: (
-    roomId: string, opts?: { limit?: number; before?: string },
+    roomId: string, opts?: { limit?: number; before?: string; beforeSeq?: number | null },
   ) => Promise<{ messages: ChainMessage[] }>,
   maxMessages: number | null = 25_000,
   ignorePin = false,
@@ -482,6 +493,7 @@ export async function verifyRoomChainFromRelay(
 
   let expected: ChainPageExpected = data.chain_head || "";
   let before: string | undefined;
+  let beforeSeq: number | null | undefined;
   let fetched = 0;
   let reachedGenesis = false;
   let reachedPin = false;
@@ -496,7 +508,7 @@ export async function verifyRoomChainFromRelay(
     }
     let pageLimit = Math.min(200, result.message_count - fetched);
     if (maxMessages !== null) pageLimit = Math.min(pageLimit, maxMessages - fetched);
-    const page = await fetchRoomMessages(roomId, { limit: pageLimit, before });
+    const page = await fetchRoomMessages(roomId, { limit: pageLimit, before, beforeSeq });
     const batch = page.messages ?? [];
     if (batch.length < pageLimit) {
       result.reason = "relay served fewer messages than its own reported message_count claims exist";
@@ -555,6 +567,7 @@ export async function verifyRoomChainFromRelay(
     const oldest = batch[0];
     expected = newExpected as ChainPageExpected;
     before = oldest.created_at;
+    beforeSeq = oldest.seq ?? null;
   }
 
   if (reachedGenesis && pinned && !pinMatched && !ignorePin) {

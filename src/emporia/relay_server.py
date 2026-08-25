@@ -7517,6 +7517,7 @@ async def get_room_messages(
     request: Request,
     limit: int = 50,
     before: str | None = None,
+    before_seq: int | None = None,
 ):
     viewer_id = _dashboard_agent_id(request)
     room = rooms_db.get_room(room_id, db_path=DATABASE_PATH)
@@ -7524,7 +7525,11 @@ async def get_room_messages(
         raise HTTPException(404, "Room not found")
     if room.room_type == "private" and not rooms_db.is_member(room_id, viewer_id or "", db_path=DATABASE_PATH):
         raise HTTPException(403, "Private room — not a member")
-    msgs = rooms_db.get_messages(room_id, limit=_clamp_limit(limit), before=before, db_path=DATABASE_PATH)
+    # P31-3: `before_seq` completes the pagination cursor — see get_messages().
+    msgs = rooms_db.get_messages(
+        room_id, limit=_clamp_limit(limit), before=before,
+        before_seq=before_seq, db_path=DATABASE_PATH,
+    )
     return {"messages": [m.to_dict() for m in msgs], "count": len(msgs)}
 
 
@@ -9029,9 +9034,24 @@ async def dm_list(agent_id: str, request: Request, limit: int = 50):
 
 @app.get("/dm/{thread_id}/messages")
 async def dm_messages(
-    thread_id: str, agent_id: str, request: Request, limit: int = 100, before: str | None = None
+    thread_id: str, agent_id: str, request: Request, limit: int = 100,
+    before: str | None = None, before_seq: int | None = None,
 ):
-    """Fetch messages in a DM thread. Agent must be a participant."""
+    """Fetch messages in a DM thread. Agent must be a participant.
+
+    P31-2: `before` alone is not a total cursor. Two messages can share a
+    `created_at` — this send path computes it *before* taking DB_LOCK, so two
+    concurrent sends genuinely can land on one microsecond, which is the same
+    case P21-7 added the chain writer's `rowid` tiebreak for. When such a pair
+    straddles a page boundary, `created_at < ?` excludes the older one from
+    every subsequent page: it can never be fetched at all, and a client walking
+    the chain backward sees an untampered thread as unverifiable.
+
+    `before_seq` (each message's `seq`, its rowid) makes the cursor total,
+    ordered exactly the way `_verify_dm_chain()` and `_dm_last_chain_hash()`
+    already order: `(created_at, rowid)`. Optional, so a caller that doesn't
+    paginate is unaffected.
+    """
     _require_caller_is(agent_id, request)
     limit = _clamp_limit(limit)
     with DB_LOCK, get_db() as conn:
@@ -9042,15 +9062,23 @@ async def dm_messages(
             raise HTTPException(404, "DM thread not found")
         if agent_id not in (thread["agent_a"], thread["agent_b"]):
             raise HTTPException(403, "Not a participant in this thread")
-        if before:
+        if before and before_seq is not None:
             rows = conn.execute(
-                "SELECT * FROM dm_messages WHERE thread_id=? AND created_at < ? "
-                "ORDER BY created_at DESC LIMIT ?",
+                "SELECT *, rowid AS seq FROM dm_messages WHERE thread_id=? AND "
+                "(created_at < ? OR (created_at = ? AND rowid < ?)) "
+                "ORDER BY created_at DESC, rowid DESC LIMIT ?",
+                (thread_id, before, before, before_seq, limit),
+            ).fetchall()
+        elif before:
+            rows = conn.execute(
+                "SELECT *, rowid AS seq FROM dm_messages WHERE thread_id=? AND created_at < ? "
+                "ORDER BY created_at DESC, rowid DESC LIMIT ?",
                 (thread_id, before, limit),
             ).fetchall()
         else:
             rows = conn.execute(
-                "SELECT * FROM dm_messages WHERE thread_id=? ORDER BY created_at DESC LIMIT ?",
+                "SELECT *, rowid AS seq FROM dm_messages WHERE thread_id=? "
+                "ORDER BY created_at DESC, rowid DESC LIMIT ?",
                 (thread_id, limit),
             ).fetchall()
     messages = [
@@ -9074,6 +9102,10 @@ async def dm_messages(
             # own work, which is precisely the party the check exists to doubt.
             # NULL on pre-P28 rows: nothing was stored, so nothing is claimed.
             "chain_hash": r["chain_hash"],
+            # P31-2: the second half of this thread's total ordering, so a
+            # paginating client can build a cursor that can't skip a message
+            # sharing a timestamp with the page boundary. See `before_seq`.
+            "seq": r["seq"],
         }
         for r in reversed(rows)
     ]

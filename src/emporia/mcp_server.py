@@ -1124,6 +1124,7 @@ def verify_dm_chain(
 
         expected: Any = data.get("chain_head") or ""
         before: str | None = None
+        before_seq: int | None = None
         chained_seen = 0
         reached_chain_start = False
         reached_pin = False
@@ -1138,7 +1139,9 @@ def verify_dm_chain(
                 return result
             params: dict[str, Any] = {"agent_id": aid, "limit": 200}
             if before:
+                # P31-2: total cursor -- see the SDK twin.
                 params["before"] = before
+                params["before_seq"] = before_seq
             page = _bearer_request(
                 "get", f"{RELAY_URL}/dm/{thread_id}/messages",
                 agent_id=aid, timeout=10, params=params,
@@ -1197,6 +1200,7 @@ def verify_dm_chain(
                 break
 
             before = batch[0]["created_at"]
+            before_seq = batch[0].get("seq")
 
         if reached_chain_start and pinned and not reached_pin and not ignore_pin:
             result["reason"] = (
@@ -1332,6 +1336,7 @@ def verify_room_chain(
 
         expected: str | dict[str, Any] = data.get("chain_head") or ""
         before: str | None = None
+        before_seq: int | None = None
         fetched = 0
         reached_genesis = False
         reached_pin = False
@@ -1348,7 +1353,11 @@ def verify_room_chain(
             page_limit = min(200, result["message_count"] - fetched)
             if max_messages is not None:
                 page_limit = min(page_limit, max_messages - fetched)
-            params = {"limit": page_limit, **({"before": before} if before else {})}
+            params = {
+                "limit": page_limit,
+                # P31-3: total cursor -- see the SDK twin.
+                **({"before": before, "before_seq": before_seq} if before else {}),
+            }
             page = _bearer_request(
                 "get", f"{RELAY_URL}/rooms/{room_id}/messages", agent_id=aid,
                 params=params, timeout=10,
@@ -1403,6 +1412,7 @@ def verify_room_chain(
             oldest = batch[0]
             expected = new_expected
             before = oldest["created_at"]
+            before_seq = oldest.get("seq")
 
         if reached_genesis and pinned and not pin_matched and not ignore_pin:
             result["reason"] = (

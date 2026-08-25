@@ -783,6 +783,16 @@ encrypted room. Full detail in `SECURITY.md`'s P18 and P19 sections.
   `rooms.verify_chain_page()` with the room verifier and pinning heads client-side in the existing
   pin map under a `dm|` key namespace. *Still open:* a dashboard surface (the room chain badge's
   equivalent), and first-verify TOFU, which pinning cannot solve by construction.
+- **Chain-walk pagination cursor — fixed (P31).** Auditing P30's new walk found that a `created_at`
+  tie at a page boundary makes the older message unfetchable (`created_at < ?`, no tiebreak), so an
+  untampered thread reports as tampered — the relay says `verified: true` while the client says the
+  history was rewritten. Then the same defect turned up in the **room** verifier shipped since P24,
+  in all three implementations; the dashboard's own error string had been describing it
+  (*"or a message was lost at a created_at tie spanning the page split"*) rather than treating it as
+  a bug. Fixed everywhere with a total `(created_at, rowid)` cursor: `before_seq` on both message
+  routes, `seq` on the message payloads, and the tiebreak threaded through the SDK, the MCP twin,
+  `api.ts` and `integrityCheck.ts`. *Not surveyed:* `session_audit` and any other timestamp-ordered
+  pagination — grep shape is a cursor compared with a strict inequality on a non-unique timestamp.
 - **What's still open, by design or as a recorded residual, not an oversight:** no forward secrecy
   (a stolen key retroactively unwraps everything wrapped to it); room chain-head pinning is TOFU,
   same limitation federation peer-key pinning has always had — the first verify against an
