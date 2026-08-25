@@ -74,13 +74,11 @@ async def maintain_relay_tunnel(
         public_key_hex="",
         profile_id=profile_id or agent_id,
     ) as agent:
-        remint_done_this_cycle = False
         while True:
             try:
                 url = _ws_url(relay_url, agent_id, await agent._ws_auth_params())
                 async with websockets.connect(url) as ws:
                     backoff = initial_backoff
-                    remint_done_this_cycle = False
                     async for raw in ws:
                         try:
                             frame = json.loads(raw)
@@ -92,10 +90,20 @@ async def maintain_relay_tunnel(
             except (ConnectionClosedError, OSError, InvalidHandshake) as e:
                 # A rejected *handshake* means the credential was refused, so
                 # re-minting is the only thing that can change the outcome.
-                # Throttled to once per disconnect cycle so a relay that is
-                # simply down doesn't turn into an auth-request loop.
-                if isinstance(e, InvalidHandshake) and not remint_done_this_cycle:
+                #
+                # P29-1: attempted on EVERY rejected handshake, throttled by the
+                # exponential backoff below rather than by a once-per-cycle flag.
+                # The SDK's listen_agent() uses such a flag safely because it has
+                # a max_retries budget and eventually raises, which bounds the
+                # flag's life. This loop runs forever by design, so a flag
+                # cleared only by a *successful* connect is never cleared at all
+                # once the first re-mint fails — a blip on /dashboard/challenge,
+                # precisely the transient this path exists to recover from —
+                # leaving the tunnel replaying a refused credential for the life
+                # of the process. Backoff already caps the worst case at one
+                # auth attempt per max_backoff, which is not a loop worth
+                # trading permanent death for.
+                if isinstance(e, InvalidHandshake):
                     await agent._invalidate_bearer_and_remint()
-                    remint_done_this_cycle = True
                 await asyncio.sleep(backoff)
                 backoff = min(backoff * 2, max_backoff)

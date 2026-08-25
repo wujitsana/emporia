@@ -86,7 +86,12 @@ obtain a credential for its own private notification channel.
   relay. It now mints `?token=` through `EmporiaAgent`'s existing challenge/session flow — reusing
   that machinery rather than restating it — rebuilds the URL per reconnect attempt (a token that
   expired mid-outage could otherwise never recover), and re-mints once per cycle on a rejected
-  handshake. See SECURITY.md's P28 section.
+  handshake. See SECURITY.md's P28 section. **P29 correction:** that re-mint was throttled by a
+  once-per-cycle flag copied from `listen_agent()`, which is safe there only because it has a
+  `max_retries` budget that bounds the flag's life. The tunnel retries forever, so a first failed
+  re-mint left the flag set permanently and the tunnel replaying a refused credential until the
+  process restarted. Now re-mints on every rejected handshake, throttled by the backoff already
+  present.
 
 ## Architecture cleanup
 

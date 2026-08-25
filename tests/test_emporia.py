@@ -21911,3 +21911,124 @@ def test_p28_dm_chain_reports_an_unchained_prefix_rather_than_vouching_for_it(cl
     assert body["message_count"] == 2, body
     assert body["verified"] is True, body
     assert body["chain_head"], body
+
+
+# ---------------------------------------------------------------------------
+# P29 -- audit of P28's own diff
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_p29_tunnel_keeps_trying_to_remint_after_a_failed_remint():
+    """P29-1: P28-3 carried the SDK's once-per-cycle re-mint throttle into a
+    loop that has no cycle.
+
+    `listen_agent()` can use that throttle safely because it has a `max_retries`
+    budget and eventually raises -- the flag's lifetime is bounded. The tunnel
+    retries FOREVER by design (it is a background daemon). There, the flag is
+    set on the first rejected handshake and cleared only inside a *successful*
+    connection, so if that first re-mint itself fails -- a blip on
+    /dashboard/challenge, a brief relay auth outage, exactly the transient this
+    recovery path exists for -- the flag stays set for the life of the process
+    and every later attempt replays the credential the relay already refused.
+    The tunnel is then permanently dead with no error surfaced, recoverable only
+    by restarting the agent.
+
+    A pattern is only as safe as the precondition it was written under.
+    """
+    import asyncio
+    import contextlib
+
+    from websockets.exceptions import InvalidHandshake
+
+    from emporia.agent_sdk import EmporiaAgent
+    from emporia.plugins.platforms.emporia.tunnel import maintain_relay_tunnel
+
+    remints = []
+
+    class _RejectingConnect:
+        def __init__(self, url, **kw):
+            pass
+
+        async def __aenter__(self):
+            raise InvalidHandshake("relay refused the credential")
+
+        async def __aexit__(self, *a):
+            return False
+
+    async def failing_remint(self):
+        # Mirrors _invalidate_bearer_and_remint's own contract: it swallows
+        # failures and keeps the previous token rather than raising.
+        remints.append(1)
+
+    async def fake_token(self):
+        return "stale_token"
+
+    async def on_frame(frame):  # pragma: no cover - never reached
+        raise AssertionError("no frame should arrive")
+
+    with patch("websockets.connect", _RejectingConnect), \
+         patch.object(EmporiaAgent, "_bearer_token_value", fake_token), \
+         patch.object(EmporiaAgent, "_invalidate_bearer_and_remint", failing_remint):
+        task = asyncio.create_task(maintain_relay_tunnel(
+            "http://relay.example", "p29_tunnel_agent", on_frame,
+            initial_backoff=0.01, max_backoff=0.01,
+        ))
+        await asyncio.sleep(0.2)
+        task.cancel()
+        with contextlib.suppress(asyncio.CancelledError):
+            await task
+
+    assert len(remints) >= 2, (
+        "a rejected handshake after a failed re-mint must try again -- with the "
+        f"once-ever flag it only ever re-mints once ({len(remints)}) and then "
+        "replays a refused credential forever"
+    )
+
+
+def test_p29_dm_chain_catches_history_truncation(client):
+    """P29-2: probes a hole P28-4's own design could plausibly have opened.
+
+    `_verify_dm_chain()` skips NULL-`chain_hash` rows and restarts the walk from
+    GENESIS at the first chained message -- necessary for the migration
+    boundary, but it means the verifier deliberately does NOT require the chain
+    to begin at the thread's first row. So: can an operator TRUNCATE a thread's
+    beginning and have the remainder verify clean?
+
+    No, and this pins why. Message K+1's stored hash was computed over message
+    K's hash, so once K is gone the verifier's GENESIS restart computes a
+    different expected value and the chain breaks at the new first message.
+    Deleting the whole prefix does not launder it -- that requires recomputing
+    every surviving hash, which is the self-consistent rewrite only client-side
+    pinning catches (recorded as this pass's open residual, not fixed here).
+    """
+    from emporia.relay_server import get_db
+
+    thread_id = _p28_dm_thread(client, "p29trunc_alice", "p29trunc_bob")
+    _p28_dm_send(client, thread_id, "p29trunc_alice", "one")
+    _p28_dm_send(client, thread_id, "p29trunc_bob", "two")
+    _p28_dm_send(client, thread_id, "p29trunc_alice", "three")
+
+    before = client.get(
+        f"/dm/{thread_id}/chain", headers={"x-emporia-agent-id": "p29trunc_alice"}
+    ).json()
+    assert before["verified"] is True and before["unchained_prefix"] == 0, before
+
+    with get_db() as conn:
+        conn.execute(
+            "DELETE FROM dm_messages WHERE thread_id = ? AND content = 'one'", (thread_id,),
+        )
+        conn.commit()
+
+    after = client.get(
+        f"/dm/{thread_id}/chain", headers={"x-emporia-agent-id": "p29trunc_alice"}
+    ).json()
+    assert after["verified"] is False, (
+        "truncating the start of a thread must break the chain -- the GENESIS "
+        "restart exists for the migration boundary and must not double as a "
+        f"way to launder a deleted prefix: {after}"
+    )
+    assert after["unchained_prefix"] == 0, (
+        "the surviving rows all still carry a chain_hash, so none of this is "
+        f"the unchained-migration case: {after}"
+    )

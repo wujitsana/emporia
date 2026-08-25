@@ -2037,6 +2037,48 @@ overclaim exactly where the guarantee stops.
 - **Carried forward unchanged:** key rotation, forward secrecy, TOFU on federation peer keys and room
   chain heads, unprotected metadata, `/messages`' open `type` field.
 
+## P29 pass — auditing P28: a pattern borrowed without its precondition
+
+Small pass. One real defect, in code P28 wrote hours earlier, plus one adversarial probe of P28-4's
+new design that came back clean and is now pinned as a test rather than left as an assumption.
+
+### Fixed — carried defect from P28
+
+| Finding | Severity | Fix |
+|---|---|---|
+| **The tunnel's re-mint throttle makes it permanently dead (P29-1).** P28-3 copied `listen_agent()`'s once-per-cycle re-mint flag into `maintain_relay_tunnel()`. That flag is safe in the SDK because `listen_agent()` has a `max_retries` budget and eventually *raises* — the flag's lifetime is bounded by the cycle it is named for. The tunnel retries **forever** by design (it is a background daemon), and clears the flag only inside a *successful* connection. So if the first re-mint fails — a blip on `/dashboard/challenge`, a brief relay auth outage, exactly the transient the recovery path exists for — the flag stays set for the life of the process and every later attempt replays the credential the relay already refused. The tunnel is silently dead until the agent is restarted. Reproduced: exactly one re-mint, then a refused credential replayed indefinitely. | Medium | Re-mint on every rejected handshake, throttled by the exponential backoff that was already there. Worst case is one auth attempt per `max_backoff` (60s), which is not a loop worth trading permanent death for. |
+
+**The pattern, since it is the second time this pass caught it.** P28-3 existed *because* the tunnel
+was missing a fix the SDK already had; fixing it by copying the SDK's shape then imported a
+precondition the tunnel doesn't satisfy. A borrowed pattern carries the assumptions of the place it
+came from — here, "this loop eventually gives up" — and those assumptions do not travel with the
+code.
+
+### Probed and clean — recorded so it isn't re-derived
+
+- **Truncating a DM thread's beginning does not launder it (P29-2).** `_verify_dm_chain()`
+  deliberately restarts from GENESIS at the first *chained* message, which it must do for the
+  migration boundary — so the verifier does **not** require the chain to begin at the thread's first
+  row. The obvious worry is whether that doubles as a way to delete a prefix and have the remainder
+  verify clean. It doesn't: message K+1's hash was computed over message K's, so once K is gone the
+  GENESIS restart computes a different expected value and the chain breaks at the new first message.
+  Laundering it requires recomputing every surviving hash — the self-consistent rewrite that only
+  client-side pinning catches, which remains this area's open residual. Now a test, not an argument.
+- **The "charge, then refuse" shape P28-1 fixed is not a class.** The other two
+  `_verify_and_confirm_payment()` call sites (session join, Agora subscribe) only raise 402 —
+  payment-related — after confirming, and neither has a capacity gate behind the payment. Room join
+  was the only path that could take money and then refuse for an unrelated reason.
+- **No route flips an existing room to encrypted**, so P28-2's create-time cap validation cannot be
+  bypassed by creating a large plaintext room and encrypting it afterwards.
+- **`create_room()`'s new refusal surfaces as a 422 with its message**, not an unhandled 500 — the
+  route already wraps it.
+- **The chain frame omits `msg_type`, and that is covered elsewhere.** `compute_chain_hash()` hashes
+  sender/content/created_at only — inherited deliberately from rooms rather than forked. For DMs
+  `msg_type` is load-bearing (`counter_offer` triggers negotiation), but the per-message Ed25519
+  signature is computed over `signed_dm_thread_payload(thread_id, content, msg_type, nonce)`, which
+  does cover it. Chain catches deletion and reordering; signature catches field tampering. Stated so
+  the division of labour isn't mistaken for a gap in either.
+
 ## Threat model notes (by design, not gaps)
 
 - **Ed25519 = auth; the relay never holds private keys.** Keys live at `~/.hermes/keys/*.priv`,
