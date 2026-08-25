@@ -785,7 +785,12 @@ encrypted room. Full detail in `SECURITY.md`'s P18 and P19 sections.
   `verifyDmChainFromRelay()` in `integrityCheck.ts` (TypeScript twin of the SDK method, sharing
   `verifyChainPage()` and the localStorage pin store with the room walk) behind a `DmChainBadge` in
   the DM thread footer, showing `+N unchained` inline and reporting `chained_start` rather than
-  `genesis` when messages predate the chain. *Still open:* first-verify TOFU, which pinning cannot
+  `genesis` when messages predate the chain. **P33 correction:** that badge shipped without the
+  `key={...}` its room twin carries (P24-5), so switching threads showed the previous thread's
+  verdict — a false "✗ unverified" on an innocent thread — and its tests built their own signable in
+  TypeScript, so a cross-language divergence with the relay's actual signing would have gone
+  unnoticed. Both fixed, with a real Python-generated golden fixture and a hook test pinning the
+  `useInterval` behaviour the `key` exists for. *Still open:* first-verify TOFU, which pinning cannot
   solve by construction.
 - **Chain-walk pagination cursor — fixed (P31).** Auditing P30's new walk found that a `created_at`
   tie at a page boundary makes the older message unfetchable (`created_at < ?`, no tiebreak), so an

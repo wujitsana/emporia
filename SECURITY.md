@@ -2220,6 +2220,32 @@ whose every test fit in one page, and repeating that here would have been the sa
   by design. The chain is computed over stored bytes, so tamper-evidence works identically on
   ciphertext; readability does not, and never will here.
 
+## P33 pass — auditing P32: a self-certifying test, and a borrowed pattern (again)
+
+Two defects, both in P32's own work, and both the same underlying mistake in different clothing:
+copying something without the part that made it correct.
+
+### Fixed
+
+| Finding | Severity | Fix |
+|---|---|---|
+| **P32's DM chain tests could not have caught a cross-language divergence (P33-1).** Every one of them built the signable payload in TypeScript, signed it in TypeScript, and verified it in TypeScript. That passes just as happily if the *relay* signs a differently-shaped payload — which is the single thing a cross-language verifier most needs pinned, and the reason the room path has carried a golden fixture since P23. A self-constructed fixture certifies the test's own assumptions, not the contract. | Medium (false confidence) | A genuine golden fixture: chain hashes from `rooms.compute_chain_hash()`, a signable from `identity.federation_signable_bytes()`, signed with a real Ed25519 key — every value produced by the Python side and pasted in. Non-ASCII content included deliberately, since `pyCanonicalJson`'s `\uXXXX` escaping and a hash over `日本語` are where a UTF-8/UTF-16 mismatch would show up and an ASCII fixture never would. Plus a wrong-`thread_id` rejection test, so one thread's attestation can't be replayed as another's. Stash-verified: perturbing the signable's shape fails the golden test, while the self-built ones would have been updated in lockstep and passed. |
+| **`DmChainBadge` shipped without the `key` that makes the room badge correct (P33-2).** `useInterval` deliberately does *not* clear its data on a dep change — `EventsView`/`ListingsView` rely on that so a manual refresh doesn't blank the list. `RoomChainBadge` therefore carries `key={selected.room_id}` at its call site (P24-5, W5, F2) to force a remount. P32 copied the badge and left the `key` behind, so switching DM threads renders the **previous** thread's verdict against the new thread's id until the next poll resolves — including a false "✗ chain unverified" on an innocent thread. That is the same user-visible false alarm P24 was fixing when it added the `key`. | Medium (dashboard trust signal) | `key={active.thread_id}` at the call site, with the reason stated where the fix lives. The underlying coupling is now pinned by a hook test asserting `useInterval` keeps the previous subject's data across a dep change — so if that behaviour is ever changed, the test fails and points whoever changed it straight at the two `key` props that exist only because of it. |
+
+### Surveyed clean
+
+- **`AuditBadge`'s two call sites are already protected.** Both sit inside `ChessReplayPanel` /
+  `NonChessSessionPanel`, which are themselves rendered with `key={selected.session_id}` — the parent
+  remount takes the nested badge with it. No third instance of P33-2.
+
+**The pattern, stated firmly because this is the third time in five passes.** P29-1 was the tunnel
+inheriting `listen_agent()`'s re-mint throttle without its bounded-retry precondition. P33-2 is a
+badge inheriting a polling component without the remount fix bolted onto it. P33-1 is a test suite
+inheriting a shape without the golden fixture that gave the original its teeth. Every time, the
+copied thing looked complete on its own; what was missing was a correction someone had *already*
+made, living somewhere the copy didn't reach — a call site, a precondition, a fixture. The habit
+worth building isn't "don't copy," it's: when copying, go find what was fixed about the original.
+
 ## Threat model notes (by design, not gaps)
 
 - **Ed25519 = auth; the relay never holds private keys.** Keys live at `~/.hermes/keys/*.priv`,

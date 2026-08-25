@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { act, renderHook } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { useRoomWs, useSenderPubkeys } from "./hooks";
+import { useInterval, useRoomWs, useSenderPubkeys } from "./hooks";
 
 // P24-5 (W5, F2): useRoomWs (hooks.ts) only cleared `messages` when `roomId`
 // went falsy, not on every roomId change -- so switching room A -> room B
@@ -150,5 +150,50 @@ describe("useSenderPubkeys", () => {
     rerender({ senders: [...["a"]] }); // fresh array identity, same set
 
     expect(fetchPubkey).toHaveBeenCalledTimes(1);
+  });
+});
+
+
+describe("useInterval stale-data semantics (P33-2)", () => {
+  it("keeps the previous subject's data across a deps change, which is why the chain badges need a key", async () => {
+    // This is a *documented* property, not a bug: EventsView/ListingsView rely
+    // on it so a manual refresh doesn't blank the list mid-request. But it is
+    // exactly why RoomChainBadge carries `key={selected.room_id}` (P24-5, W5,
+    // F2) and DmChainBadge `key={active.thread_id}` (P33-2) at their call
+    // sites: without a remount, switching subject renders the OLD subject's
+    // verdict against the NEW subject's id -- a false "✗ unverified" on an
+    // innocent room or thread, the same user-visible false alarm P24 fixed.
+    //
+    // Pinned here so the coupling is explicit in both directions: if
+    // useInterval ever starts clearing on a dep change, this test fails and
+    // whoever changes it is pointed straight at the two `key` props that exist
+    // only because of this behaviour.
+    let resolveSecond: ((v: string) => void) | undefined;
+    const fn = vi.fn((subject: string) =>
+      subject === "first"
+        ? Promise.resolve("first-result")
+        : new Promise<string>((res) => { resolveSecond = res; }),
+    );
+
+    const { result, rerender } = renderHook(
+      ({ subject }: { subject: string }) => useInterval(() => fn(subject), 60_000, [subject]),
+      { initialProps: { subject: "first" } },
+    );
+
+    await act(async () => { await Promise.resolve(); await Promise.resolve(); });
+    expect(result.current[0]).toBe("first-result");
+
+    // Switch subject; the new fetch is still in flight.
+    rerender({ subject: "second" });
+    await act(async () => { await Promise.resolve(); });
+    expect(result.current[0]).toBe("first-result");
+
+    // Only once the new fetch resolves does the value catch up.
+    await act(async () => {
+      resolveSecond?.("second-result");
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    expect(result.current[0]).toBe("second-result");
   });
 });

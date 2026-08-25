@@ -256,8 +256,21 @@ function DMsTab({ navigate }: { navigate: Navigate }) {
                 <Text className="e-faint">read-only — agents send via relay</Text>
                 {/* P32-2: the DM half of the room chain badge. Sits in the
                     footer beside the read-only note rather than the header,
-                    matching where a reader looks after reading the thread. */}
-                <DmChainBadge threadId={active.thread_id} viewerId={VIEWER} />
+                    matching where a reader looks after reading the thread.
+
+                    P33-2: `key` forces a remount on thread switch. useInterval
+                    deliberately does NOT clear its data on a dep change
+                    (EventsView/ListingsView rely on that to avoid blanking on a
+                    manual refresh), so without this the badge renders the
+                    PREVIOUS thread's verdict against the new thread's id until
+                    the next poll resolves -- including a false "✗ unverified"
+                    on an innocent thread. RoomChainBadge got exactly this fix
+                    in P24-5 (W5, F2); P32 copied the badge without it. */}
+                <DmChainBadge
+                  key={active.thread_id}
+                  threadId={active.thread_id}
+                  viewerId={VIEWER}
+                />
               </RowSpaceBetween>
             }
           />

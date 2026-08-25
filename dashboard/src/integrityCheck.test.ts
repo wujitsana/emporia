@@ -294,6 +294,85 @@ describe("room chain head pinning (localStorage TOFU store)", () => {
   });
 
   describe("verifyDmChainFromRelay (P32-2)", () => {
+    /**
+     * P33-1: a genuine cross-language fixture — every value below was produced
+     * by the Python side (`identity.federation_signable_bytes` +
+     * `rooms.compute_chain_hash`, signed with a real Ed25519 key), not
+     * hand-built here.
+     *
+     * P32's DM tests all constructed the signable in TypeScript and then
+     * verified it in TypeScript, so they would have passed just as happily if
+     * the relay signed a differently-shaped payload — the one thing a
+     * cross-language verifier most needs pinned. The room path has had exactly
+     * this fixture since P23; the DM path shipped without it.
+     *
+     * The non-ASCII content is deliberate: `pyCanonicalJson`'s `\uXXXX`
+     * escaping (Python's `json.dumps` default) is the other half of agreement,
+     * and a chain hash over "日本語" catches a UTF-8/UTF-16 mismatch that an
+     * ASCII-only fixture never would.
+     */
+    const DM_GOLDEN = {
+      relayUrl: "http://golden-relay.example",
+      threadId: "dm_chain_golden",
+      relayPubkeyHex: "58d97e2aa1657282c675515dbd1900a03a6092a2274f75b2701c66779bd6142c",
+      chainHead: "e9d0ecba893995d6ff1ca9ea23fad174a6a60a542713514e21abd7a1d6d7a9ed",
+      signature:
+        "4ff3d7e7786c009cda6bd37a97270a55f2a9fc3a48c613a1fa6fcd062160b0f7" +
+        "cd4aa4062f80ba933b730e881cda30ada277c1d0c27055c21ef4078882246302",
+      messages: [
+        {
+          sender_id: "agent_a", content: "first dm", created_at: "2026-01-01T00:00:00Z",
+          nonce: "gn_0", seq: 1,
+          chain_hash: "04c1b8655597e685e2f1bff458958a894910ac3804446bb27fd37c7964b0829a",
+        },
+        {
+          sender_id: "agent_b", content: "second — 日本語", created_at: "2026-01-01T00:00:05Z",
+          nonce: "gn_1", seq: 2,
+          chain_hash: "e9d0ecba893995d6ff1ca9ea23fad174a6a60a542713514e21abd7a1d6d7a9ed",
+        },
+      ],
+    };
+
+    it("accepts a chain head signed by the real Python relay (cross-language golden)", async () => {
+      const result = await verifyDmChainFromRelay(
+        DM_GOLDEN.relayUrl,
+        DM_GOLDEN.threadId,
+        async () => ({
+          verified: true, message: "chain valid (2 messages)",
+          chain_head: DM_GOLDEN.chainHead, message_count: DM_GOLDEN.messages.length,
+          unchained_prefix: 0, origin_relay: DM_GOLDEN.relayUrl,
+          origin_public_key_hex: DM_GOLDEN.relayPubkeyHex, signature: DM_GOLDEN.signature,
+        }),
+        async () => ({ messages: DM_GOLDEN.messages }),
+      );
+      // A signable-shape divergence shows up here as a signature failure, and
+      // a hashing divergence as a chain mismatch -- distinct symptoms, both
+      // fatal, neither reachable by a self-constructed fixture.
+      expect(result.reason).not.toContain("signature");
+      expect(result.verified).toBe(true);
+      expect(result.chain_verified_scope).toBe("genesis");
+    });
+
+    it("rejects the golden fixture when the signed thread_id is not the one asked about", async () => {
+      // The signature covers thread_id, so it must not verify for another
+      // thread -- otherwise one thread's attestation could be replayed as
+      // another's.
+      const result = await verifyDmChainFromRelay(
+        DM_GOLDEN.relayUrl,
+        "dm_some_other_thread",
+        async () => ({
+          verified: true, message: "chain valid (2 messages)",
+          chain_head: DM_GOLDEN.chainHead, message_count: DM_GOLDEN.messages.length,
+          unchained_prefix: 0, origin_relay: DM_GOLDEN.relayUrl,
+          origin_public_key_hex: DM_GOLDEN.relayPubkeyHex, signature: DM_GOLDEN.signature,
+        }),
+        async () => ({ messages: DM_GOLDEN.messages }),
+      );
+      expect(result.verified).toBe(false);
+      expect(result.reason).toContain("signature");
+    });
+
+
     /** Build a signed DM-chain response plus its message list. */
     async function makeThread(opts: {
       relayUrl: string; threadId: string; contents: string[]; unchainedPrefix?: number;
