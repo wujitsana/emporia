@@ -324,6 +324,15 @@ def create_room(
         raise ValueError("paid gate requires entry_fee_cents > 0")
     if access_duration_days is not None and access_duration_days <= 0:
         raise ValueError("access_duration_days must be a positive integer or None")
+    if encrypted and max_members and max_members > effective_max_members(None, True):
+        # P28-2: refuse rather than silently clamp. The creator asked for a room
+        # size this format cannot deliver, and finding that out at member 513 --
+        # when the room is already in use -- is strictly worse than here.
+        raise ValueError(
+            f"encrypted rooms are capped at {effective_max_members(None, True)} members "
+            f"(requested {max_members}) — every message wraps the content key once per "
+            "member, so a larger room would exceed the per-message size limit on every send"
+        )
 
     room_id = f"room_{uuid.uuid4().hex[:12]}"
     now = datetime.now(UTC).isoformat()
@@ -456,6 +465,46 @@ def is_member(room_id: str, agent_id: str, db_path: Path | None = None) -> bool:
     )
 
 
+def effective_max_members(max_members: int | None, encrypted: bool) -> int | None:
+    """P28-2: the member limit actually in force — the operator's `max_members`
+    and, for an encrypted room, `MAX_ENCRYPTED_ROOM_MEMBERS`, whichever binds
+    first.
+
+    An encrypted room's cap is not a policy choice: `crypto_box.seal()` wraps
+    the content key once per member, so membership sets a floor on every future
+    message's size, and past a threshold the wrap set alone exceeds
+    `wire.MAX_CONTENT_BYTES` and the room can never be posted to again. See that
+    constant for the derivation. Unencrypted rooms have no such coupling and are
+    left entirely to the operator.
+
+    Kept as one function rather than inlined at each check so the join route's
+    pre-payment test and `add_member()`'s authoritative one can't disagree about
+    what "full" means (P28-1 is what that disagreement costs).
+    """
+    from emporia.crypto_box import MAX_ENCRYPTED_ROOM_MEMBERS
+
+    if not encrypted:
+        return max_members
+    if not max_members:
+        return MAX_ENCRYPTED_ROOM_MEMBERS
+    return min(max_members, MAX_ENCRYPTED_ROOM_MEMBERS)
+
+
+def room_is_full(room_id: str, db_path: Path | None = None) -> bool:
+    """P28-1: is this room at its effective limit? Read-only, so the join route
+    can refuse *before* charging an entry fee. `add_member()` re-checks under
+    the write lock — this is the early answer, not the authoritative one."""
+    with _LOCK, _connect(db_path) as conn:
+        row = conn.execute(
+            "SELECT members_json, max_members, encrypted FROM rooms WHERE room_id = ?",
+            (room_id,),
+        ).fetchone()
+    if not row:
+        return False
+    cap = effective_max_members(row["max_members"], bool(row["encrypted"]))
+    return bool(cap and len(json.loads(row["members_json"] or "[]")) >= cap)
+
+
 def add_member(room_id: str, agent_id: str, db_path: Path | None = None) -> bool:
     """Add agent to room members. Returns True if added, False if already present."""
     with _LOCK, _connect(db_path) as conn:
@@ -463,10 +512,21 @@ def add_member(room_id: str, agent_id: str, db_path: Path | None = None) -> bool
         if not row:
             return False
         members = json.loads(row["members_json"] or "[]")
-        max_members = row["max_members"]
+        encrypted = bool(row["encrypted"])
+        max_members = effective_max_members(row["max_members"], encrypted)
         if agent_id in members:
             return False
         if max_members and len(members) >= max_members:
+            # P28-2: name the reason, because the two are fixed by different
+            # people — an operator can raise their own `max_members`, but the
+            # encrypted limit is a property of the message format and raising it
+            # would just move the room's bricking point.
+            if encrypted and max_members == effective_max_members(None, True):
+                raise ValueError(
+                    f"Room is full ({max_members} members) — an encrypted room is "
+                    "capped because every message wraps the content key once per "
+                    "member, and a larger room could not be posted to at all"
+                )
             raise ValueError(f"Room is full ({max_members} members)")
         members.append(agent_id)
         conn.execute(

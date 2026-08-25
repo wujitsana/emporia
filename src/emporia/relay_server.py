@@ -1290,6 +1290,19 @@ def _migrate_dm_threads(conn: Any) -> None:
     # is what we want (many old rows, no nonce, no false collisions).
     if "nonce" not in msg_cols:
         conn.execute("ALTER TABLE dm_messages ADD COLUMN nonce TEXT")
+    # P28-4: the hash chain rooms have had since P18. `signature` and `nonce`
+    # above give per-message authenticity and replay protection; neither can
+    # detect a DELETED or REORDERED message, because every surviving row still
+    # verifies on its own. Binding message N to N-1 is what does.
+    #
+    # NULL for every pre-P28 row, and deliberately no backfill: a chain computed
+    # now over rows written before the chain existed would be indistinguishable
+    # from one that had been maintained all along, which is a claim the relay
+    # cannot honestly make about its own history. Same posture as `signature`
+    # above — nothing was stored, so nothing is asserted. `_verify_dm_chain()`
+    # reports the size of that unchained prefix rather than vouching for it.
+    if "chain_hash" not in msg_cols:
+        conn.execute("ALTER TABLE dm_messages ADD COLUMN chain_hash TEXT")
     conn.execute(
         "CREATE UNIQUE INDEX IF NOT EXISTS idx_dm_messages_nonce "
         "ON dm_messages(thread_id, nonce) WHERE nonce IS NOT NULL"
@@ -6894,6 +6907,17 @@ async def join_room(room_id: str, req: JoinRoomRequest, request: Request):
                                 db_path=DATABASE_PATH):
         raise HTTPException(403, "Removed from this room")
 
+    # P28-1: capacity is checked BEFORE the payment gate below. It used to be
+    # checked only by add_member(), which runs *after* the entry fee has been
+    # confirmed and recorded — and the room path confirms with
+    # capture_method="automatic"/status "succeeded", so the money is captured,
+    # not held. Joining a full paid room therefore charged the payer and then
+    # answered 403 with no membership, no entitlement and no refund. add_member()
+    # still re-checks under the write lock (two agents can race the last seat);
+    # this is the early refusal that keeps a doomed join away from the money.
+    if rooms_db.room_is_full(room_id, db_path=DATABASE_PATH):
+        raise HTTPException(403, "Room is full")
+
     confirmed_pi = None  # PaymentRef | None — imported function-local, see L2
     amount_cents = 0
     currency = "usd"
@@ -8609,6 +8633,62 @@ async def dm_start(req: DMStartRequest, request: Request):
     }
 
 
+def _dm_last_chain_hash(conn: Any, thread_id: str) -> str | None:
+    """The chain head this thread's next message links onto, or None for a
+    thread with no chained messages yet.
+
+    Ordering matches `_verify_dm_chain()`'s walk exactly, `rowid` tiebreak
+    included — rooms.py's `_last_chain_hash()` carries the same note (P21-7):
+    two inserts landing on the same microsecond would otherwise let the writer
+    chain onto a different "last" row than the verifier recomputes, breaking
+    every message after the tie.
+    """
+    row = conn.execute(
+        "SELECT chain_hash FROM dm_messages WHERE thread_id = ? AND chain_hash IS NOT NULL "
+        "ORDER BY created_at DESC, rowid DESC LIMIT 1",
+        (thread_id,),
+    ).fetchone()
+    return row["chain_hash"] if row else None
+
+
+def _verify_dm_chain(thread_id: str) -> tuple[bool, str, str | None, int, int]:
+    """Recompute a DM thread's hash chain and compare against each stored
+    `chain_hash`. Returns `(ok, message, head, chained_count, unchained_prefix)`.
+
+    The DM counterpart of `rooms.verify_chain()`, and it reuses that module's
+    `compute_chain_hash()` rather than restating the frame. The one real
+    difference is the boundary: rooms have been chained since P18, while DM rows
+    written before P28-4 have `chain_hash` NULL. Those are skipped and *counted*,
+    never treated as verified — an operator can delete the entire unchained
+    prefix and the chained suffix still verifies perfectly, so a bare
+    `verified: true` would overclaim precisely where the guarantee stops.
+    """
+    with DB_LOCK, get_db() as conn:
+        rows = conn.execute(
+            "SELECT sender_id, content, created_at, chain_hash FROM dm_messages "
+            "WHERE thread_id = ? ORDER BY created_at ASC, rowid ASC",
+            (thread_id,),
+        ).fetchall()
+
+    chained = [r for r in rows if r["chain_hash"] is not None]
+    unchained_prefix = len(rows) - len(chained)
+    if not chained:
+        return True, "no chained messages — nothing to verify", None, 0, unchained_prefix
+
+    prev_hash: str | None = None
+    for i, row in enumerate(chained):
+        expected = rooms_db.compute_chain_hash(
+            prev_hash, row["sender_id"], row["content"], row["created_at"],
+        )
+        if row["chain_hash"] != expected:
+            return False, f"hash mismatch at message {i}", None, len(chained), unchained_prefix
+        prev_hash = row["chain_hash"]
+    return (
+        True, f"chain valid ({len(chained)} messages)",
+        prev_hash, len(chained), unchained_prefix,
+    )
+
+
 def _dm_thread_or_404(thread_id: str, caller: str) -> Any:
     """Load a DM thread and assert `caller` is one of its two participants."""
     with get_db() as conn:
@@ -8620,6 +8700,53 @@ def _dm_thread_or_404(thread_id: str, caller: str) -> Any:
     if caller not in (thread["agent_a"], thread["agent_b"]):
         raise HTTPException(403, "Not a participant in this thread")
     return thread
+
+
+@app.get("/dm/{thread_id}/chain")
+async def get_dm_chain(thread_id: str, request: Request):
+    """Chain-integrity verification for a DM thread — the DM half of
+    GET /rooms/{id}/chain, which P24 built and explicitly deferred this from.
+
+    Same gate as GET /dm/{id}/messages: participants only. A chain head plus a
+    message count is metadata about a private conversation (who is talking, how
+    much, and when it last changed), so the attestation route must not be more
+    open than the read route it attests to.
+
+    Like the room route, this returns hashes rather than content — the caller
+    already has every message from GET /dm/{id}/messages, and the only thing a
+    read cannot provide for itself is an attestation, signed with a key the
+    caller does not hold, of what the head actually is.
+
+    **What it proves, and what it does not.** Identical limits to the room
+    route, and worth restating rather than cross-referencing away: the signature
+    proves the response came from this relay unaltered, not that the relay is
+    honest. An operator with DB write access can rewrite a message, recompute a
+    self-consistent chain forward from it, and sign the new head — recomputation
+    catches inconsistency, not an internally consistent rewrite. Client-side
+    head pinning is what catches that; this route is the half a client pins.
+
+    `unchained_prefix` is the DM-specific caveat: messages written before P28-4
+    have no `chain_hash` and are not covered by `chain_head`. A client treating
+    a nonzero value as "verified" would be trusting exactly the region the relay
+    is declining to vouch for.
+    """
+    _dm_thread_or_404(thread_id, _dashboard_agent_id(request) or "")
+    ok, message, head, count, unchained_prefix = _verify_dm_chain(thread_id)
+    signature = sign_raw_relay(federation_signable_bytes(
+        RELAY_BASE_URL, "dm_chain",
+        [{"thread_id": thread_id, "chain_head": head or "", "message_count": count}],
+    ))
+    return {
+        "thread_id": thread_id,
+        "verified": ok,
+        "message": message,
+        "chain_head": head,
+        "message_count": count,
+        "unchained_prefix": unchained_prefix,
+        "origin_relay": RELAY_BASE_URL,
+        "origin_public_key_hex": get_relay_public_key_hex(),
+        "signature": signature,
+    }
 
 
 @app.get("/dm/{thread_id}")
@@ -8807,11 +8934,18 @@ async def dm_send(thread_id: str, req: DMSendRequest, request: Request):
     message_id = f"dmm_{uuid.uuid4().hex[:12]}"
     with DB_LOCK, get_db() as conn:
         try:
+            # P28-4: computed inside the same DB_LOCK as the INSERT, so two
+            # concurrent sends can't both read the same predecessor and chain
+            # onto it. The frame is rooms.compute_chain_hash() itself rather
+            # than a copy — P21-7 made it public for exactly this reason.
+            chain_hash = rooms_db.compute_chain_hash(
+                _dm_last_chain_hash(conn, thread_id), caller, req.content, now,
+            )
             conn.execute(
                 "INSERT INTO dm_messages (message_id, thread_id, sender_id, content, "
-                "msg_type, created_at, signature, nonce) VALUES (?,?,?,?,?,?,?,?)",
+                "msg_type, created_at, signature, nonce, chain_hash) VALUES (?,?,?,?,?,?,?,?,?)",
                 (message_id, thread_id, caller, req.content, effective_msg_type, now,
-                 req.signature, req.nonce),
+                 req.signature, req.nonce, chain_hash),
             )
         except sqlite3.IntegrityError as e:
             # P19 (H3): idx_dm_messages_nonce's UNIQUE(thread_id, nonce) is the

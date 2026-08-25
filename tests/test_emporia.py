@@ -3151,6 +3151,10 @@ def test_every_route_has_a_reviewed_auth_posture():
         ("POST", "/dm/{thread_id}/encrypt"),
         ("GET", "/dm"),
         ("GET", "/dm/{thread_id}/messages"),
+        # P28-4: same gate, deliberately — a chain head plus message count is
+        # metadata about a private conversation, so the attestation route is no
+        # more open than the read route it attests to.
+        ("GET", "/dm/{thread_id}/chain"),
     }
     _VISIBILITY_FILTERED: set[tuple[str, str]] = {
         ("GET", "/agents/{agent_id}/sessions"),
@@ -21565,3 +21569,345 @@ def test_p27_transfers_active_alone_makes_an_account_payable(client):
         "transfers=active is exactly the capability a /v1/transfers payout "
         "requires; withholding 'active' here strands the payee's money"
     )
+
+
+# ---------------------------------------------------------------------------
+# P28 -- encrypted-room member cap, and the full-room charge it exposed
+# ---------------------------------------------------------------------------
+
+
+@patch("emporia.payments.payout_winner", new_callable=AsyncMock)
+@patch("emporia.payments.verify_payment_intent", new_callable=AsyncMock)
+def test_p28_a_full_paid_room_refuses_before_taking_the_money(
+    mock_verify, mock_payout, client,
+):
+    """P28-1: /rooms/{id}/join confirms and records the entry fee BEFORE calling
+    add_member(), which is where "Room is full" is raised. So joining a full
+    paid room charges the payer -- `capture_method="automatic"`,
+    `allowed_statuses=("succeeded",)`, so the money is genuinely captured, not
+    held -- and then answers 403 with no membership, no entitlement and no
+    refund. The fee buys nothing.
+
+    Pre-existing on the operator-set `max_members` path, and the reason it has
+    to be fixed in this pass rather than after it: P28-2's automatic cap on
+    encrypted rooms makes "the room is full" reachable without any operator
+    ever setting a limit.
+    """
+    from emporia import rooms as rooms_db
+    from emporia.relay_server import DATABASE_PATH, get_db
+
+    owner, payer = "p28_full_owner", "p28_full_payer"
+    _register(client, owner)
+    _register(client, payer)
+    mock_payout.return_value = {"transfer_id": "tr_p28_full"}
+
+    r = client.post("/rooms", json={
+        "name": "P28 Full Room", "creator_id": owner,
+        "room_type": "private", "gate_type": "paid", "entry_fee_cents": 100,
+        "max_members": 1,  # creator only -- already full
+    },
+        headers={"x-emporia-agent-id": owner})
+    assert r.status_code == 200, r.text
+    room_id = r.json()["room_id"]
+
+    mock_verify.return_value = {
+        "status": "succeeded", "payment_intent_id": "pi_p28_full",
+        "amount": 100, "currency": "usd", "capture_method": "automatic",
+        "metadata": {"resource_type": "room", "resource_id": room_id, "buyer_agent_id": payer},
+    }
+    with _stripe_account_active("acct_p28_full"):
+        joined = client.post(f"/rooms/{room_id}/join",
+            json={"agent_id": payer, "payment_intent_id": "pi_p28_full"},
+            headers={"x-emporia-agent-id": payer})
+
+    assert joined.status_code == 403, joined.text
+    assert not rooms_db.is_member(room_id, payer, db_path=DATABASE_PATH)
+
+    with get_db() as conn:
+        charged = conn.execute(
+            "SELECT 1 FROM payments WHERE payment_intent_id = 'pi_p28_full'"
+        ).fetchone()
+    assert charged is None, (
+        "the join was refused, so the entry fee must never have been captured -- "
+        "a recorded payment here is money taken for access that was denied"
+    )
+    assert not mock_verify.called, (
+        "capacity is knowable before any payment work; confirming the "
+        "PaymentIntent first is what captures the money"
+    )
+
+
+def test_p28_encrypted_room_membership_is_capped(rooms_db_path):
+    """P28-2 (SECURITY.md's "No member cap on encrypted rooms"): every send to
+    an encrypted room wraps the content key once per member, so membership is
+    an input to *every future message's* size. Past a threshold each wrap set
+    alone exceeds MAX_CONTENT_BYTES and nobody can send anything -- the room is
+    permanently bricked, and on an open-gate room any registered agent can
+    push it there by joining. An unencrypted room has no such coupling, so the
+    cap applies only where the cost is real.
+    """
+    from emporia.crypto_box import MAX_ENCRYPTED_ROOM_MEMBERS
+    from emporia.rooms import add_member, create_room
+
+    room = create_room("P28 Sealed", "p28_cap_owner", encrypted=True, db_path=rooms_db_path)
+    for i in range(MAX_ENCRYPTED_ROOM_MEMBERS - 1):  # creator already counts
+        add_member(room.room_id, f"p28_cap_m{i}", db_path=rooms_db_path)
+
+    with pytest.raises(ValueError, match="encrypted"):
+        add_member(room.room_id, "p28_cap_overflow", db_path=rooms_db_path)
+
+    # The same membership count is fine unencrypted -- no per-member wrapping.
+    plain = create_room("P28 Plain", "p28_plain_owner", db_path=rooms_db_path)
+    for i in range(MAX_ENCRYPTED_ROOM_MEMBERS):
+        add_member(plain.room_id, f"p28_plain_m{i}", db_path=rooms_db_path)
+
+
+def test_p28_the_cap_leaves_real_room_for_a_real_message():
+    """P28-2: the cap is only meaningful if a room *at* it can still send
+    something worth sending. Measures the actual envelope rather than trusting
+    the estimate, and pins both directions: a full-cap wrap set has to leave
+    most of the budget for content, and the uncapped size SECURITY.md warned
+    about has to genuinely exceed it -- otherwise the cap is guarding nothing.
+    """
+    import json as _json
+
+    from cryptography.hazmat.primitives.asymmetric.x25519 import X25519PrivateKey
+
+    from emporia.crypto_box import MAX_ENCRYPTED_ROOM_MEMBERS, seal
+    from emporia.wire import MAX_CONTENT_BYTES
+
+    def envelope_bytes(n_members: int) -> int:
+        recipients = {
+            # Deliberately long ids: the agent_id is a KEY in the wrap map, so
+            # id length is part of the per-member cost. A cap validated only
+            # against short ids would not hold for real ones.
+            f"agent_{i:058d}": X25519PrivateKey.generate().public_key().public_bytes_raw().hex()
+            for i in range(n_members)
+        }
+        return len(_json.dumps(seal("", recipients, b"aad"), separators=(",", ":")).encode())
+
+    at_cap = envelope_bytes(MAX_ENCRYPTED_ROOM_MEMBERS)
+    assert at_cap < MAX_CONTENT_BYTES // 2, (
+        f"a full-cap room spends {at_cap} of {MAX_CONTENT_BYTES} bytes on key "
+        "wrapping alone, leaving too little for the message itself"
+    )
+
+    # Sample well above the cap to confirm the failure the cap prevents is real.
+    overflow = envelope_bytes(MAX_ENCRYPTED_ROOM_MEMBERS * 8)
+    assert overflow > MAX_CONTENT_BYTES, (
+        "if an 8x-over-cap room still fits, the cap is not guarding the "
+        "size limit it claims to guard"
+    )
+
+
+@pytest.mark.asyncio
+async def test_p28_tunnel_authenticates_and_refreshes_per_attempt():
+    """P28-3 (ROADMAP "Agent's own outbound WS tunnel has no credential path"):
+    two defects, and the first is worse than that entry describes.
+
+    `tunnel.py` sent only `?agent_id=`, which the relay honours solely for hosts
+    in `_HEADER_AUTH_TRUSTED_HOSTS` -- and that set is EMPTY unless the operator
+    sets EMPORIA_TRUST_LOCAL_HEADER_AUTH=1, which is not the shipped default. So
+    the tunnel authenticated nowhere on a default install, co-located or not; the
+    relay closed it 1008 every time. This is exactly N6 review R4, fixed in
+    `agent_sdk.py`'s listen_agent() and never carried across to the tunnel --
+    the same hand-copied-client drift this codebase keeps finding.
+
+    Second: the connect URL was built ONCE before the reconnect loop, so even
+    with a token every retry would replay the same one. A token that expired
+    during a long outage could then never recover -- N7 review R5, again already
+    fixed in the SDK. The URL must be rebuilt per attempt.
+    """
+    import asyncio
+    import contextlib
+
+    from emporia.agent_sdk import EmporiaAgent
+    from emporia.plugins.platforms.emporia.tunnel import maintain_relay_tunnel
+
+    urls: list[str] = []
+    minted = iter([f"tok_{i}" for i in range(1, 20)])
+
+    class _FailingConnect:
+        def __init__(self, url, **kw):
+            urls.append(url)
+
+        async def __aenter__(self):
+            raise OSError("relay unreachable")
+
+        async def __aexit__(self, *a):
+            return False
+
+    async def fake_token(self):
+        return next(minted)
+
+    async def on_frame(frame):  # pragma: no cover - never reached
+        raise AssertionError("no frame should arrive")
+
+    with patch("websockets.connect", _FailingConnect), \
+         patch.object(EmporiaAgent, "_bearer_token_value", fake_token):
+        task = asyncio.create_task(maintain_relay_tunnel(
+            "http://relay.example", "p28_tunnel_agent", on_frame,
+            initial_backoff=0.01, max_backoff=0.01,
+        ))
+        await asyncio.sleep(0.15)
+        task.cancel()
+        with contextlib.suppress(asyncio.CancelledError):
+            await task
+
+    assert len(urls) >= 2, f"expected repeated reconnect attempts, got {urls}"
+    assert "token=tok_1" in urls[0], (
+        f"the tunnel must present a bearer credential, not just agent_id: {urls[0]}"
+    )
+    assert "token=tok_2" in urls[1], (
+        "the URL is rebuilt per attempt, so a reconnect uses a freshly minted "
+        f"token rather than replaying the first one: {urls[1]}"
+    )
+    assert "/ws/agent/p28_tunnel_agent" in urls[0], urls[0]
+
+
+def _p28_dm_thread(client, a="p28dm_alice", b="p28dm_bob"):
+    """Open a DM thread between two freshly registered, key-holding agents."""
+    _register_keyed(client, a)
+    _register_keyed(client, b)
+    r = client.post("/dm/start", json={"to_agent": b}, headers={"x-emporia-agent-id": a})
+    assert r.status_code == 200, r.text
+    return r.json()["thread_id"]
+
+
+def _p28_dm_send(client, thread_id, sender, content):
+    from emporia import wire
+    from emporia.identity import sign
+    nonce = wire.new_message_nonce()
+    payload = wire.signed_dm_thread_payload(thread_id, content, wire.DEFAULT_MSG_TYPE, nonce)
+    r = client.post(
+        f"/dm/{thread_id}/send",
+        json={"content": content, "signature": sign(payload, sender), "nonce": nonce},
+        headers={"x-emporia-agent-id": sender},
+    )
+    assert r.status_code == 200, r.text
+    return r.json()
+
+
+def test_p28_dm_messages_are_chained_and_verifiable(client):
+    """P28-4: DMs had no hash chain at all. `room_messages` has carried
+    `chain_hash` since P18 and got a verifier plus a signed attestation route in
+    P21/P24; `dm_messages` has `signature` and `nonce` -- per-message integrity
+    and replay -- but nothing binding message N to message N-1. Those are
+    different properties: a signature proves each message is authentic
+    individually, and neither it nor a nonce can detect an operator DELETING a
+    message or REORDERING the thread, because every surviving row still
+    verifies on its own.
+
+    P24 built exactly this for rooms and recorded the DM half as deferred. The
+    chain frame is `rooms.compute_chain_hash()` itself, not a copy of it -- it
+    was made public in P21-7 precisely so a second caller wouldn't restate it.
+    """
+    thread_id = _p28_dm_thread(client)
+    _p28_dm_send(client, thread_id, "p28dm_alice", "first")
+    _p28_dm_send(client, thread_id, "p28dm_bob", "second")
+    _p28_dm_send(client, thread_id, "p28dm_alice", "third")
+
+    r = client.get(f"/dm/{thread_id}/chain", headers={"x-emporia-agent-id": "p28dm_alice"})
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert body["verified"] is True, body
+    assert body["message_count"] == 3, body
+    assert body["chain_head"], body
+    assert body["unchained_prefix"] == 0, body
+    # Signed with the relay's federation key, exactly as the room route is --
+    # the attestation is the half a plain read can't provide.
+    assert body["origin_public_key_hex"], body
+    assert body["signature"], body
+
+
+def test_p28_dm_chain_catches_a_deleted_message(client):
+    """P28-4, the property signatures and nonces structurally cannot give:
+    an operator with DB write access removes one message from the middle of a
+    thread. Every remaining row still has a valid Ed25519 signature and a unique
+    nonce, so both existing defenses report the thread as fine. Only the chain
+    notices, because message N+1's hash committed to the message that is gone.
+    """
+    from emporia.relay_server import get_db
+
+    thread_id = _p28_dm_thread(client, "p28del_alice", "p28del_bob")
+    _p28_dm_send(client, thread_id, "p28del_alice", "one")
+    _p28_dm_send(client, thread_id, "p28del_bob", "two — the inconvenient one")
+    _p28_dm_send(client, thread_id, "p28del_alice", "three")
+
+    ok = client.get(f"/dm/{thread_id}/chain", headers={"x-emporia-agent-id": "p28del_alice"})
+    assert ok.json()["verified"] is True, ok.text
+
+    with get_db() as conn:
+        conn.execute(
+            "DELETE FROM dm_messages WHERE thread_id = ? AND content LIKE '%inconvenient%'",
+            (thread_id,),
+        )
+        conn.commit()
+
+    r = client.get(f"/dm/{thread_id}/chain", headers={"x-emporia-agent-id": "p28del_alice"})
+    assert r.status_code == 200, r.text
+    assert r.json()["verified"] is False, (
+        "deleting a chained message must break the chain — this is the whole "
+        "reason a chain exists alongside per-message signatures"
+    )
+
+
+def test_p28_dm_chain_is_participants_only(client):
+    """P28-4: same gate as GET /dm/{id}/messages. A chain head plus message
+    count is metadata about a private conversation -- who is talking and how
+    much -- so the attestation route cannot be more open than the read route."""
+    thread_id = _p28_dm_thread(client, "p28gate_alice", "p28gate_bob")
+    _p28_dm_send(client, thread_id, "p28gate_alice", "private")
+    _register_keyed(client, "p28gate_mallory")
+
+    assert client.get(f"/dm/{thread_id}/chain").status_code in (403, 404)
+    r = client.get(f"/dm/{thread_id}/chain", headers={"x-emporia-agent-id": "p28gate_mallory"})
+    assert r.status_code in (403, 404), r.text
+    assert client.get(
+        f"/dm/{thread_id}/chain", headers={"x-emporia-agent-id": "p28gate_bob"}
+    ).status_code == 200
+
+
+def test_p28_dm_chain_reports_an_unchained_prefix_rather_than_vouching_for_it(client):
+    """P28-4: pre-P28 rows have `chain_hash` NULL — nothing was stored, so
+    nothing can be claimed about them, the same posture P17's `signature` and
+    P18's `nonce` migrations took. The chain therefore starts at the first
+    chained message.
+
+    That boundary must be stated, not hidden. An operator can delete the entire
+    unchained prefix and the chained suffix still verifies perfectly, so
+    reporting a bare `verified: true` would overclaim exactly where the
+    guarantee stops. `unchained_prefix` is how a client learns how much of the
+    thread the head does not cover.
+    """
+    from emporia.relay_server import get_db
+
+    thread_id = _p28_dm_thread(client, "p28pre_alice", "p28pre_bob")
+
+    # Two genuinely pre-P28 rows: written straight to the table with chain_hash
+    # NULL and an earlier created_at, exactly as they would have been before the
+    # column existed. Nulling an already-chained message instead would be an
+    # unfaithful fixture -- the later message committed to that hash, so the
+    # suffix would legitimately fail to verify and the test would be measuring
+    # its own setup rather than the migration boundary.
+    with get_db() as conn:
+        for i in range(2):
+            conn.execute(
+                "INSERT INTO dm_messages (message_id, thread_id, sender_id, content, "
+                "msg_type, created_at, signature, nonce, chain_hash) "
+                "VALUES (?,?,?,?,?,?,?,?,NULL)",
+                (f"dmm_pre_p28_{i}", thread_id, "p28pre_alice", f"legacy {i}",
+                 "chat", f"2020-01-0{i + 1}T00:00:00+00:00", None, f"legacy_nonce_{i}"),
+            )
+        conn.commit()
+
+    _p28_dm_send(client, thread_id, "p28pre_alice", "chained one")
+    _p28_dm_send(client, thread_id, "p28pre_bob", "chained two")
+
+    r = client.get(f"/dm/{thread_id}/chain", headers={"x-emporia-agent-id": "p28pre_alice"})
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert body["unchained_prefix"] == 2, body
+    assert body["message_count"] == 2, body
+    assert body["verified"] is True, body
+    assert body["chain_head"], body

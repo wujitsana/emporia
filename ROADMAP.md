@@ -78,14 +78,15 @@ peers are found).
 only works when the agent and relay are co-located — the documented default deployment. An agent
 registered on a relay it doesn't co-locate with (e.g., a public multi-tenant relay) has no way to
 obtain a credential for its own private notification channel.
-- *Fix direction:* have `tunnel.py`/`agent_sdk.py`'s `listen_agent()` send `?token=` instead of
-  `?agent_id=` on the WS URL.
-- *Effort:* small, and smaller than originally scoped here — the challenge/session round-trip this
-  needed (`POST /dashboard/challenge`, sign via `identity.sign_raw()`, `POST /dashboard/session`,
-  cache with refresh-before-expiry) was built for a different purpose during the N1 pass
-  (`EmporiaAgent._bearer_headers()` in `agent_sdk.py`, `_dashboard_bearer_headers()` in
-  `mcp_server.py` — both authenticate REST session reads today). This item is now "point the WS
-  tunnel at the credential that already exists," not "build the credential."
+- **Closed by P28-3, and the entry above understated it.** `agent_sdk.py`'s `listen_agent()` was
+  already fixed (N6 review R4); only `tunnel.py` still sent `?agent_id=` alone — and that param is
+  honoured solely for hosts in `_HEADER_AUTH_TRUSTED_HOSTS`, which is **empty** unless the operator
+  sets `EMPORIA_TRUST_LOCAL_HEADER_AUTH=1`. That is not the shipped default, so the tunnel
+  authenticated nowhere at all, co-located or not, rather than merely lacking a path to a remote
+  relay. It now mints `?token=` through `EmporiaAgent`'s existing challenge/session flow — reusing
+  that machinery rather than restating it — rebuilds the URL per reconnect attempt (a token that
+  expired mid-outage could otherwise never recover), and re-mints once per cycle on a rejected
+  handshake. See SECURITY.md's P28 section.
 
 ## Architecture cleanup
 
@@ -758,13 +759,30 @@ encrypted room. Full detail in `SECURITY.md`'s P18 and P19 sections.
   (`engine/guardrails.py`'s regex firewall previously ran on raw, unnormalized text — a zero-width
   character inserted mid-word or substituted for a required space defeated every pattern). See
   `SECURITY.md`'s P24 section for full detail.
+- **DM hash chain — done (P28-4).** `room_messages` has carried `chain_hash` since P18; `dm_messages`
+  had `signature` and `nonce` and nothing binding message N to N−1, so neither existing defense could
+  detect an operator deleting or reordering a thread (every surviving row still verifies alone). P24
+  built the room half and deferred this. DMs now chain on insert via `rooms.compute_chain_hash()`
+  itself — public since P21-7 so a second caller wouldn't restate the frame — computed inside the
+  same `DB_LOCK` as the INSERT, with a new relay-signed `GET /dm/{thread_id}/chain` gated
+  participants-only. Pre-P28 rows keep `chain_hash` NULL with **no backfill** (a chain computed now
+  over older rows would be indistinguishable from one maintained all along — a claim the relay can't
+  honestly make), and the route reports `unchained_prefix` so a client can see how much of the thread
+  the head does not cover. *Still open:* the client-side pinning verifier, the half that catches a
+  self-consistent rewrite. Design is settled — `rooms.verify_chain_page()` is already generic and
+  `/dm/{id}/messages` paginates backward like rooms, so it needs its own short fetch loop plus one
+  new rule: stop the walk at the first NULL `chain_hash` and report that as its own scope, not
+  `"genesis"`.
 - **What's still open, by design or as a recorded residual, not an oversight:** no forward secrecy
   (a stolen key retroactively unwraps everything wrapped to it); room chain-head pinning is TOFU,
   same limitation federation peer-key pinning has always had — the first verify against an
   already-compromised room pins the tampered head as genuine; key rotation has no protocol, so one
   member rotating bricks sending for the room until every other member re-pins (`N-1`
-  reconfirmations, not a DM's one); and there's no member cap, so a large enough encrypted room can
-  hit the per-message content-size limit on ordinary sends.
+  reconfirmations, not a DM's one). **The member cap is closed by P28-2** — measured at ~111 bytes of
+  key wrapping per member, so ~2360 members bricked a room on an empty message; capped at 512, which
+  keeps the wrap set under a quarter of the content budget even with long agent ids. Building it
+  surfaced P28-1: joining a full *paid* room captured the entry fee before the capacity check and
+  then 403'd, so the fee bought nothing.
 
 ## Dashboard
 

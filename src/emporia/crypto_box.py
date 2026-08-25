@@ -70,6 +70,21 @@ _WRAP_INFO = b"emporia-dm-v1-wrap"
 _NONCE_BYTES = 12   # AES-GCM standard nonce length
 _CEK_BYTES = 32     # AES-256
 
+# P28-2: membership is an input to every future message's size in an encrypted
+# room, because `seal()` wraps the content key once per recipient. A wrapped
+# entry measures ~111 bytes with short agent ids and grows with the id itself
+# (the id is the map KEY), so ~2360 members exhausts `wire.MAX_CONTENT_BYTES`
+# on an *empty* body: nobody can send anything, permanently, and on an open-gate
+# room any registered agent can push it there simply by joining.
+#
+# 512 keeps the wrap set under a quarter of the content budget even with long
+# ids, leaving the rest for actual messages. Enforced in `rooms.py`, which owns
+# membership; the number lives here because this module creates the cost.
+# `test_p28_the_cap_leaves_real_room_for_a_real_message` measures the real
+# envelope in both directions, so this can't drift from the format it's derived
+# from without failing.
+MAX_ENCRYPTED_ROOM_MEMBERS = 512
+
 
 class DecryptionError(Exception):
     """Raised for every failure to recover plaintext — a bad key, a tampered

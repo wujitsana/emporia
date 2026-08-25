@@ -33,12 +33,19 @@ class EmporiaAdapter:
             "EMPORIA_RELAY_URL", "http://localhost:8088"
         )
         self.agent_id = config.get("agent_id") or os.getenv("HERMES_AGENT_ID", "hermes_agent")
+        # P28-3: the local signing identity the tunnel's session token is minted
+        # from. Defaults to agent_id, which is the co-located case; a deployment
+        # whose key file is named differently can now say so.
+        self.profile_id = config.get("profile_id") or os.getenv("HERMES_PROFILE_ID") or None
         self._session_manager = session_manager
         self._tunnel_task: asyncio.Task | None = None
 
     async def start(self) -> None:
         self._tunnel_task = asyncio.create_task(
-            maintain_relay_tunnel(self.relay_url, self.agent_id, self._handle_frame),
+            maintain_relay_tunnel(
+                self.relay_url, self.agent_id, self._handle_frame,
+                profile_id=self.profile_id,
+            ),
             name=f"emporia-tunnel-{self.agent_id}",
         )
 
