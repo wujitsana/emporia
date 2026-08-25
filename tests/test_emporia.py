@@ -20715,10 +20715,19 @@ def test_stripe_webhook_marks_account_active_only_when_both_capabilities_active(
     # it passed even with the `transfers == "active"` half of the condition
     # deleted -- half of the "both" in its own name was unverified. Both
     # one-sided cases are now checked, in both orders.
+    #
+    # P27-6 flipped the first case's expectation: requiring `card_payments`
+    # for a payout that only uses `transfers` stranded money (see
+    # test_p27_transfers_active_alone_makes_an_account_payable). Recording the
+    # change rather than quietly editing the assertion -- this test's rigor
+    # (each capability checked in isolation, in both orders) is the part worth
+    # keeping, and `transfers` is still pinned by the two cases below.
     r1 = send({"transfers": "active", "card_payments": "pending"})
     assert r1.status_code == 200, r1.text
-    assert AGENT_REGISTRY.get_stripe_account_status("p25_webhook_partial") == "pending"
+    assert AGENT_REGISTRY.get_stripe_account_status("p25_webhook_partial") == "active"
 
+    # Reset, so the one-sided cases below can't pass on a stale 'active'.
+    send({"transfers": "pending", "card_payments": "pending"})
     r_mirror = send({"transfers": "pending", "card_payments": "active"})
     assert r_mirror.status_code == 200, r_mirror.text
     assert AGENT_REGISTRY.get_stripe_account_status("p25_webhook_partial") == "pending"
@@ -21295,3 +21304,264 @@ def test_lifespan_second_run_does_not_see_a_stale_task_from_the_first():
             assert second_fed is not first_fed
             assert not second_sweep.done()
             assert not second_fed.done()
+
+
+# ---------------------------------------------------------------------------
+# P27 -- audit of P26's own diff
+# ---------------------------------------------------------------------------
+
+
+def _p27_migrate(schema_cols, rows):
+    """Run `_migrate_authorized_agents` against a hand-built historical schema.
+
+    `schema_cols` is the set of stripe columns the table starts with, which is
+    what distinguishes one deployed generation from another: P24 has neither,
+    P25 has `stripe_account_status` only, P26 has both. Returns
+    `{agent_id: (status, mode)}` after the migration.
+    """
+    import sqlite3
+    import tempfile as _tempfile
+
+    from emporia.relay_server import _migrate_authorized_agents
+
+    db = os.path.join(_tempfile.mkdtemp(), "generation.sqlite3")
+    conn = sqlite3.connect(db)
+    conn.row_factory = sqlite3.Row
+    cols = [
+        "agent_id TEXT PRIMARY KEY", "public_key_hex TEXT", "display_name TEXT",
+        "registered_at TEXT", "is_active INTEGER DEFAULT 1", "stripe_account_id TEXT",
+    ]
+    if "stripe_account_status" in schema_cols:
+        cols.append("stripe_account_status TEXT NOT NULL DEFAULT 'none'")
+    if "stripe_account_mode" in schema_cols:
+        cols.append("stripe_account_mode TEXT NOT NULL DEFAULT ''")
+    conn.execute(f"CREATE TABLE authorized_agents ({', '.join(cols)})")
+    for agent_id, account_id, status in rows:
+        names = ["agent_id", "stripe_account_id"]
+        values = [agent_id, account_id]
+        if "stripe_account_status" in schema_cols:
+            names.append("stripe_account_status")
+            values.append(status)
+        conn.execute(
+            f"INSERT INTO authorized_agents ({', '.join(names)}) "
+            f"VALUES ({', '.join('?' * len(names))})",
+            values,
+        )
+    conn.commit()
+    _migrate_authorized_agents(conn)
+    conn.commit()
+    out = {
+        r["agent_id"]: (r["stripe_account_status"], r["stripe_account_mode"])
+        for r in conn.execute(
+            "SELECT agent_id, stripe_account_status, stripe_account_mode FROM authorized_agents"
+        )
+    }
+    conn.close()
+    return out
+
+
+def test_p27_backfill_reaches_a_relay_that_actually_ran_p25():
+    """P27-1: P26's H1 fix did not reach the deployments H1 was about.
+
+    The backfill was gated on `stripe_account_status` being *newly added*, so
+    it only fires on a P24 -> P26 jump. But P25 shipped, and a relay that ran
+    it already HAS that column -- populated with exactly the wrong value,
+    since that mis-defaulting was H1. Upgrading P25 -> P26 therefore skipped
+    the repair and left the money stranded, which is the whole failure P26
+    reported fixing.
+
+    P26's own "already on P25" test missed this because its fixture includes
+    `stripe_account_mode` -- a column P25 never had (`git show a321d70` adds
+    no such column). It builds a P26 schema and asserts a re-run is inert,
+    which is true and worth keeping, but is not the upgrade path it names.
+    """
+    # The real P25 schema: status column present, mode column not yet.
+    rows = _p27_migrate(
+        {"stripe_account_status"},
+        [
+            # A working test-mode Connected Account that P25's migration
+            # mis-defaulted to 'none'. This agent could be paid before P25 and
+            # must be payable again after the upgrade.
+            ("stranded", "acct_preexisting", "none"),
+            # Created under P25's live onboarding, KYC genuinely unfinished --
+            # promoting this would make the relay attempt a doomed transfer.
+            ("kyc_in_flight", "acct_live_new", "pending"),
+            # Registered after P25, already correct.
+            ("registered_post_p25", "acct_new", "active"),
+            # No account at all: 'none' really is right for these.
+            ("never_had_one", None, "none"),
+        ],
+    )
+    assert rows["stranded"] == ("active", "test"), rows
+    assert rows["kyc_in_flight"] == ("pending", ""), rows
+    assert rows["registered_post_p25"] == ("active", ""), rows
+    assert rows["never_had_one"] == ("none", ""), rows
+
+
+def test_p27_backfill_never_resurrects_a_deauthorized_account():
+    """P27-1: the backfill is now reachable on more than one upgrade path, so
+    its SQL -- not just its gate -- has to be safe.
+
+    P26 added a deauthorization handler that sets status 'none' while leaving
+    `stripe_account_id` in place. That is the same (id present, status 'none')
+    shape the backfill repairs, so a backfill that ran on a P26-era schema
+    would mark a disconnected account payable again and send a transfer
+    Stripe will reject. A fully-migrated table must be inert.
+    """
+    rows = _p27_migrate(
+        {"stripe_account_status", "stripe_account_mode"},
+        [("deauthorized", "acct_disconnected", "none")],
+    )
+    assert rows["deauthorized"] == ("none", ""), rows
+
+
+def test_p27_stripe_rejecting_account_creation_is_a_502_not_a_500(client):
+    """P27-2: P26 wrapped the *second* Stripe call on this route (the Account
+    Link) so an upstream failure reports as 502 rather than a 500 in our own
+    code -- and left the first one, account creation, unwrapped. Both are the
+    same class of event, and creation is the likelier to fail: it is the call
+    that carries operator-supplied `country` and `email`, so a country Stripe
+    doesn't support for Custom accounts lands here. An upstream rejection must
+    not be reported to the agent as a relay bug.
+    """
+    import httpx
+
+    from emporia.relay_server import AGENT_REGISTRY
+    _register(client, "p27_stripe_rejects")
+    AGENT_REGISTRY.set_stripe_account("p27_stripe_rejects", "", mode="")
+
+    def mock_post_side_effect(url, *args, **kwargs):
+        m = MagicMock()
+        if url.endswith("/accounts"):
+            m.status_code = 400
+            m.raise_for_status = MagicMock(
+                side_effect=httpx.HTTPStatusError(
+                    "400 Bad Request", request=MagicMock(), response=MagicMock(),
+                )
+            )
+            return m
+        m.raise_for_status = MagicMock()
+        m.json.return_value = {"url": "https://connect.stripe.com/setup/e/p27"}
+        return m
+
+    with patch.dict(os.environ, {"STRIPE_SECRET_KEY": "sk_live_mock"}):
+        with patch("httpx.AsyncClient.post", new_callable=AsyncMock, side_effect=mock_post_side_effect):
+            r = client.post(
+                "/agents/p27_stripe_rejects/stripe-onboarding",
+                json={"email": "operator@example.com", "country": "ZZ"},
+                headers={"x-emporia-agent-id": "p27_stripe_rejects"},
+            )
+    assert r.status_code == 502, f"expected an upstream-failure 502, got {r.status_code}: {r.text}"
+
+
+@pytest.mark.parametrize("email,country,why", [
+    ("agent@emporia.LOCAL", "US", "the .local guard is case-sensitive; DNS is not"),
+    ("agent@emporia.Local", "US", "mixed case reaches the same unroutable TLD"),
+    ("operator@example.com", "ÉÉ", "str.isalpha() is true for non-ASCII letters"),
+])
+def test_p27_live_onboarding_validation_is_not_bypassable_by_case_or_unicode(
+    client, email, country, why,
+):
+    """P27-3: both P26 guards on this route are checked against a narrower
+    input space than they accept. `email.endswith('.local')` is case-sensitive
+    while DNS is not, so `@emporia.LOCAL` -- the exact address P26 removed for
+    being unroutable -- passes. And `country.isalpha()` is true for any
+    Unicode letter, so a 2-char non-ASCII string reaches Stripe as an ISO
+    country code. Neither is a privilege boundary; both create a REAL
+    money-handling account whose country Stripe then treats as immutable, so
+    the cost of a bad value is deleting the account and redoing KYC.
+    """
+    _register(client, f"p27_val_{abs(hash(email + country)) % 10000}")
+    aid = f"p27_val_{abs(hash(email + country)) % 10000}"
+
+    def mock_post_side_effect(url, *args, **kwargs):
+        m = MagicMock()
+        m.raise_for_status = MagicMock()
+        m.json.return_value = (
+            {"id": "acct_should_not_exist"} if url.endswith("/accounts")
+            else {"url": "https://connect.stripe.com/setup/e/p27"}
+        )
+        return m
+
+    with patch.dict(os.environ, {"STRIPE_SECRET_KEY": "sk_live_mock"}):
+        with patch("httpx.AsyncClient.post", new_callable=AsyncMock, side_effect=mock_post_side_effect) as mp:
+            r = client.post(
+                f"/agents/{aid}/stripe-onboarding",
+                json={"email": email, "country": country},
+                headers={"x-emporia-agent-id": aid},
+            )
+    assert r.status_code == 400, f"{why} -- got {r.status_code}: {r.text}"
+    assert not mp.called, f"{why} -- no Stripe account may be created for a rejected input"
+
+
+def test_p27_webhook_stamps_the_mode_it_just_proved(client):
+    """P27-5: the mode-mismatch guard can never protect a row whose mode is
+    unknown, and P25-era accounts are exactly those rows -- P25 had no mode
+    column, so anything it created reads ''. The backfill deliberately can't
+    help them either: it only repairs 'none' rows, and a P25 live account sits
+    at 'pending' or 'active'.
+
+    So such a row stays permanently unknown-mode, and the guard's whole
+    scenario -- operator switches STRIPE_SECRET_KEY to the other key space --
+    finds nothing to compare and lets the doomed transfer through. The webhook
+    can close that for free: livemode filtering directly above has *already*
+    established that this event's key space matches the relay's, so recording
+    it is publishing a fact the handler just proved, not inferring one.
+    """
+    from emporia.relay_server import AGENT_REGISTRY
+    _register(client, "p27_mode_stamp")
+    # A P25-era live account: real, payable, mode unknown.
+    AGENT_REGISTRY.set_stripe_account("p27_mode_stamp", "acct_p25_era", mode="")
+    AGENT_REGISTRY.set_stripe_account_status("acct_p25_era", "pending")
+    assert AGENT_REGISTRY.get_stripe_account_mode("p27_mode_stamp") == ""
+
+    with patch.dict(os.environ, {"STRIPE_SECRET_KEY": "sk_live_mock"}):
+        r = _p26_send_webhook(client, {
+            "type": "account.updated",
+            "livemode": True,
+            "data": {"object": {"id": "acct_p25_era", "capabilities": {"transfers": "active"}}},
+        })
+    assert r.status_code == 200, r.text
+    assert AGENT_REGISTRY.get_stripe_account_status("p27_mode_stamp") == "active"
+    assert AGENT_REGISTRY.get_stripe_account_mode("p27_mode_stamp") == "live", (
+        "the handler had already proved this account's key space via livemode "
+        "filtering; leaving it '' keeps the mismatch guard blind to this row"
+    )
+
+
+def test_p27_transfers_active_alone_makes_an_account_payable(client):
+    """P27-6: P26 hardened the webhook to require BOTH `transfers` and
+    `card_payments` to be active before an account counts as payable. That
+    gates the payout on a capability the payout does not use.
+
+    The payout is `POST /v1/transfers` with `destination=acct_...`
+    (payments.py::payout_winner) -- a transfer INTO the connected account,
+    which needs the `transfers` capability and nothing else. `card_payments`
+    governs the connected account accepting card charges directly, which this
+    codebase never does: every charge is created on the platform account, and
+    no call anywhere passes `destination`/`on_behalf_of` on a charge.
+
+    So an account Stripe has approved for transfers but restricted for card
+    payments -- an ordinary outcome for one that only ever receives money --
+    sits at 'pending' forever. Every settlement then takes
+    `pending_connect_not_active`: the payer is charged, the payee is never
+    paid, and nothing retries. That is H1's failure mode exactly, reached
+    through P26's own fix rather than through the migration.
+    """
+    from emporia.relay_server import AGENT_REGISTRY
+    _register(client, "p27_payee_only")
+    AGENT_REGISTRY.set_stripe_account("p27_payee_only", "acct_payee_only", mode="live")
+    AGENT_REGISTRY.set_stripe_account_status("acct_payee_only", "pending")
+
+    r = _p26_send_webhook(client, {
+        "type": "account.updated",
+        "data": {"object": {
+            "id": "acct_payee_only",
+            "capabilities": {"transfers": "active", "card_payments": "inactive"},
+        }},
+    })
+    assert r.status_code == 200, r.text
+    assert AGENT_REGISTRY.get_stripe_account_status("p27_payee_only") == "active", (
+        "transfers=active is exactly the capability a /v1/transfers payout "
+        "requires; withholding 'active' here strands the payee's money"
+    )

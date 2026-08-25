@@ -1300,21 +1300,34 @@ def _backfill_stripe_account_state(conn: Any) -> None:
     """P26-1: repair the state P25's migration left behind (see the column's own
     comment above for the money-stranding failure this prevents).
 
-    Runs **only** when `stripe_account_status` is newly added, never on a
-    re-run: a relay already on P25 can legitimately hold a live account at
-    'pending' (created, KYC unfinished), and promoting that to 'active' would
-    make the relay attempt a real transfer Stripe is going to reject.
+    P27-1: P26 gated this on `stripe_account_status` being newly added, which
+    meant it only ever fired on a P24 -> P26 jump — and therefore missed every
+    deployment that had actually run P25, i.e. exactly the ones H1 was about.
+    Those relays already have the column, populated with the wrong value,
+    because that mis-defaulting *is* H1. The gate now also fires when
+    `stripe_account_mode` is newly added (the P25 -> P26 upgrade moment).
 
-    Any row that already has a `stripe_account_id` at the moment this column
-    first appears was necessarily created by the pre-P26 auto-provisioning
-    block, which was gated on `sk_test_` — so 'test'/'active' is not a guess,
-    it's the only state that block could have produced. That inference is
-    exactly why the mode can be backfilled here and must not be assumed
-    anywhere else.
+    That widens when this runs, so the safety no longer rests on the gate
+    alone: the `stripe_account_status = 'none'` predicate makes the statement
+    structurally incapable of touching a row that is already 'pending' or
+    'active'. A live account mid-KYC keeps its 'pending', and a P26-era
+    deauthorized account — which the P26 handler leaves as (id present, status
+    'none'), the same shape repaired here — is protected by the gate, since a
+    table that already has both columns triggers neither branch.
+
+    Rows matched by the predicate can be dated precisely. Before P26 nothing
+    wrote 'none' over an existing account id: auto-provisioning set 'active',
+    live onboarding set 'pending', and the webhook only ever set 'active' or
+    'pending'. So (id present, status 'none') can only have been produced by
+    a column default landing on a row auto-provisioning had already filled —
+    and that block was gated on `sk_test_`. 'test'/'active' is not a guess;
+    it is the only state that path could have produced. That inference holds
+    here and must not be assumed anywhere else.
     """
     conn.execute(
         "UPDATE authorized_agents SET stripe_account_status = 'active', "
-        "stripe_account_mode = 'test' WHERE COALESCE(stripe_account_id, '') != ''"
+        "stripe_account_mode = 'test' "
+        "WHERE COALESCE(stripe_account_id, '') != '' AND stripe_account_status = 'none'"
     )
 
 
@@ -1355,7 +1368,11 @@ def _migrate_authorized_agents(conn: Any) -> None:
         if col not in existing:
             conn.execute(f"ALTER TABLE authorized_agents ADD COLUMN {col} {defn}")
             newly_added.add(col)
-    if "stripe_account_status" in newly_added:
+    # P27-1: either column appearing marks an un-repaired generation --
+    # `stripe_account_status` for a P24-era table, `stripe_account_mode` for a
+    # relay that already ran P25 (and so already has the mis-defaulted status
+    # column). A table that has both is fully migrated and triggers neither.
+    if newly_added & {"stripe_account_status", "stripe_account_mode"}:
         _backfill_stripe_account_state(conn)
     # Non-unique index — one Nous user may operate multiple agent personas.
     # Drop the old unique variant if it exists (created by an earlier migration).
@@ -2169,17 +2186,36 @@ class AgentRegistry:
         except Exception:
             return "none"
 
-    def set_stripe_account_status(self, stripe_account_id: str, status: str) -> bool:
-        """Looked up by stripe_account_id, not agent_id — the only caller is
+    def set_stripe_account_status(
+        self, stripe_account_id: str, status: str, mode: str = "",
+    ) -> bool:
+        """Looked up by stripe_account_id, not agent_id — that shape is set by
         POST /webhooks/stripe, which learns the Stripe account id from the
         event payload and has no agent_id in hand. Returns False when no row
         matches, so the caller can log an unrecognized/stale webhook instead
-        of assuming it took effect."""
+        of assuming it took effect.
+
+        P27-4: this said "the only caller is POST /webhooks/stripe". It has not
+        been since P25 — register_agent() and start_stripe_onboarding() both
+        call it too, and the webhook itself calls it from two branches. The
+        by-account-id lookup is still the webhook's constraint, but a reader
+        checking "who can move this column" was being told the wrong answer."""
         with DB_LOCK, get_db() as conn:
-            cur = conn.execute(
-                "UPDATE authorized_agents SET stripe_account_status = ? WHERE stripe_account_id = ?",
-                (status, stripe_account_id),
-            )
+            if mode:
+                # P27-5: same "" means leave-it-alone contract as
+                # set_stripe_account()'s own `mode`, so a caller that hasn't
+                # established the key space can't erase one that has.
+                cur = conn.execute(
+                    "UPDATE authorized_agents SET stripe_account_status = ?, "
+                    "stripe_account_mode = ? WHERE stripe_account_id = ?",
+                    (status, mode, stripe_account_id),
+                )
+            else:
+                cur = conn.execute(
+                    "UPDATE authorized_agents SET stripe_account_status = ? "
+                    "WHERE stripe_account_id = ?",
+                    (status, stripe_account_id),
+                )
             return cur.rowcount > 0
 
     def get_x402_pay_to(self, agent_id: str, network_family: str) -> str | None:
@@ -4050,20 +4086,35 @@ async def start_stripe_onboarding(agent_id: str, request: Request):
         stripe_account_id = None
 
     if not stripe_account_id:
-        if not email or "@" not in email or email.endswith(".local"):
+        # P27-3: `.local` compared case-insensitively (DNS is), and the
+        # local-part/domain split checked rather than a bare "@" test.
+        if not email or "@" not in email or email.lower().endswith(".local"):
             raise HTTPException(
                 400,
                 "a real, reachable `email` is required to create a live Stripe "
                 "Connected Account — Stripe sends verification requirements, "
                 "payout failures and account restrictions to it",
             )
-        if len(country) != 2 or not country.isalpha():
+        # P27-3: `str.isalpha()` is true for any Unicode letter, so "ÉÉ"
+        # passed this and reached Stripe as an ISO country code. ISO 3166-1
+        # alpha-2 is ASCII by definition, and Stripe treats the value as
+        # immutable, so a bad one costs an account deletion and a fresh KYC.
+        if len(country) != 2 or not country.isascii() or not country.isalpha():
             raise HTTPException(
                 400,
                 "`country` must be a 2-letter ISO code; Stripe treats it as "
                 "immutable after the account is created",
             )
-        acct = await create_live_connected_account(agent_id, email=email, country=country)
+        try:
+            acct = await create_live_connected_account(agent_id, email=email, country=country)
+        except httpx.HTTPError as e:
+            # P27-2: P26 gave the Account Link call below this treatment and
+            # left creation raw, so a Stripe rejection here surfaced as a 500 —
+            # a relay bug — rather than the upstream failure it is. This is the
+            # likelier of the two to fail: it's the call carrying the
+            # operator-supplied `country` and `email`. Nothing is persisted on
+            # this path, so a corrected retry starts cleanly.
+            raise HTTPException(502, f"Stripe rejected the account-creation request: {e}")
         stripe_account_id = acct["stripe_account_id"]
         AGENT_REGISTRY.set_stripe_account(agent_id, stripe_account_id, mode=key_mode or "live")
         AGENT_REGISTRY.set_stripe_account_status(stripe_account_id, "pending")
@@ -4148,6 +4199,14 @@ async def stripe_webhook(request: Request):
     # as "matches" rather than rejected, so this can't silently drop real work.
     key_mode = _stripe_key_mode()
     event_livemode = event.get("livemode")
+    # P27-5: whatever this block concludes about the event's key space is worth
+    # persisting. The mode guard can only protect a row whose mode is known,
+    # and P25-era accounts read "" forever -- P25 had no mode column, and the
+    # P26-1 backfill can't help them either (it repairs 'none' rows, while a
+    # P25 live account sits at 'pending'/'active'). Stamping here publishes a
+    # fact this handler has already established rather than inferring one, so
+    # it's set only when the event states `livemode` outright.
+    proven_mode = ""
     if isinstance(event_livemode, bool) and key_mode in ("test", "live"):
         if event_livemode != (key_mode == "live"):
             logger.info(
@@ -4155,6 +4214,7 @@ async def stripe_webhook(request: Request):
                 event_livemode, key_mode,
             )
             return {"received": True, "ignored": "livemode mismatch"}
+        proven_mode = "live" if event_livemode else "test"
 
     event_type = event.get("type")
     # P26-3 (M3): every field below is attacker-shaped only in the sense that
@@ -4171,13 +4231,22 @@ async def stripe_webhook(request: Request):
         capabilities = obj.get("capabilities")
         capabilities = capabilities if isinstance(capabilities, dict) else {}
         if isinstance(stripe_account_id, str) and stripe_account_id:
-            status = (
-                "active"
-                if capabilities.get("transfers") == "active"
-                and capabilities.get("card_payments") == "active"
-                else "pending"
-            )
-            if not AGENT_REGISTRY.set_stripe_account_status(stripe_account_id, status):
+            # P27-6: `transfers` alone, deliberately. This status has exactly
+            # one consumer -- the pre-check guarding payout_winner(), which
+            # issues `POST /v1/transfers` with `destination=acct_...`. That
+            # needs the transfers capability and nothing else. P26 also
+            # required `card_payments`, which governs the connected account
+            # accepting card charges directly -- something this codebase never
+            # does (every charge is created on the platform account; no call
+            # passes `destination`/`on_behalf_of` on a charge). Requiring it
+            # pinned any transfers-approved-but-card-restricted account, a
+            # normal outcome for an account that only receives, at 'pending'
+            # forever: payer charged, payee never paid, no retry. Same
+            # money-stranding class as P26-1, reached through P26's own fix.
+            status = "active" if capabilities.get("transfers") == "active" else "pending"
+            if not AGENT_REGISTRY.set_stripe_account_status(
+                stripe_account_id, status, mode=proven_mode,
+            ):
                 logger.warning(
                     "Stripe webhook account.updated for unrecognized account %s",
                     stripe_account_id,

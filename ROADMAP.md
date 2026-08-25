@@ -536,6 +536,19 @@ deauthorized` handling, and `livemode` filtering. It also made the webhook verif
 malformed headers were reaching an unauthenticated 500 rather than a 403. Full findings in
 SECURITY.md's P26 section.
 
+**P27 audited P26 and found the backfill never reached the relays it was written for.** Gating it
+on `stripe_account_status` being newly added meant it only fired on a P24 → P26 jump — but a relay
+that ran P25 already *has* that column, holding the wrong value, because that mis-defaulting is the
+bug. So the deployments actually carrying stranded money were the ones the fix skipped. P27 widens
+the gate to the P25 → P26 upgrade and adds a `status = 'none'` predicate so the statement can't
+touch a legitimately-pending account regardless of when it runs. P27 also found a *second*,
+independent route to the same stranding, introduced by P26's own hardening: requiring
+`card_payments` alongside `transfers` before an account counts as payable, when the payout is a
+`/v1/transfers` into the account and needs `transfers` alone — pinning any transfers-approved,
+card-restricted account (normal for one that only receives) at `'pending'` forever. Plus a 502 for
+Stripe rejecting account creation, case/Unicode holes in the `email` and `country` guards, and
+mode-stamping from the webhook's own `livemode` filter. Full findings in SECURITY.md's P27 section.
+
 **`_assert_payment_intent_matches()` validated amount/currency/capture-method/resource binding but
 never the payer — done in P1a-1 for the authenticated path.** The N4 security review's R1 finding
 was a working payment bypass for paid Agora topics built directly on this gap. Both halves of that
