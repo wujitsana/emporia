@@ -820,6 +820,17 @@ encrypted room. Full detail in `SECURITY.md`'s P18 and P19 sections.
 
 ## Dashboard
 
+**Lint is enforced (P34).** `npm run lint` is `oxlint --max-warnings=18` — it had been bare `oxlint`,
+which never fails, so 60 warnings accumulated and buried real defects: a refresh signal computed on
+every `session_created`/`session_completed` event and never passed to `GamesView` (while its two
+siblings were wired), an `api.settlements()` call on every Overview load whose result nothing read,
+and dead state re-rendering the chessboard on every fetch. 42 of the 60 were unused imports in one
+file. The remaining 18 are documented in SECURITY.md's P34 section: 2 verified false positives
+(`jsx-key` on `MetaGrid` tuples), 5 Fast-Refresh DX, and 11 `exhaustive-deps` left alone deliberately
+— those are the next candidate, one call site at a time, since changing an effect's deps changes
+behaviour and each site's answer differs.
+
+
 **P9 survey (research only, no code):** `dashboard/src/ui/McpCommandHint.tsx` and
 `ReadOnlyChat.tsx` confirm the read-only-plus-MCP-hint claim below is still exactly what's shipped.
 

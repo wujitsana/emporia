@@ -40,7 +40,11 @@ export async function fetchOverviewSections(viewerId: string): Promise<OverviewS
     api.agents(),
     api.agoraTopics(),
     api.dmThreads(viewerId),
-    api.settlements(),
+    // P34-3: `api.settlements()` removed from this batch. Its result was read
+    // into a variable nothing used, so every Overview load paid for a
+    // /payments/settlements round trip it then discarded — and the Overview
+    // never had a settlements row to show it in, since OVERVIEW_SKIP_VIEWS
+    // lists "fees". The unused variable was the linter's tell.
   ]);
 
   const val = <T>(i: number): T | null =>
@@ -53,13 +57,10 @@ export async function fetchOverviewSections(viewerId: string): Promise<OverviewS
   const agents = val<Awaited<ReturnType<typeof api.agents>>>(4);
   const topics = val<Awaited<ReturnType<typeof api.agoraTopics>>>(5);
   const dms = val<Awaited<ReturnType<typeof api.dmThreads>>>(6);
-  const settlementsData = val<Awaited<ReturnType<typeof api.settlements>>>(7);
 
   const gameSessions = [...(sessions?.sessions ?? [])]
     .filter((s) => s.module_type.startsWith("emporia:"))
     .sort((a, b) => b.created_at.localeCompare(a.created_at));
-
-  const allSettlements = settlementsData?.settlements ?? [];
 
   const rows: OverviewSectionRow[] = [
     {

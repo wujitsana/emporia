@@ -2246,6 +2246,46 @@ copied thing looked complete on its own; what was missing was a correction someo
 made, living somewhere the copy didn't reach — a call site, a precondition, a fixture. The habit
 worth building isn't "don't copy," it's: when copying, go find what was fixed about the original.
 
+## P34 pass — the linter was right, and nobody could hear it
+
+Not an audit of the previous pass; an audit of a signal that had been reporting real defects for a
+while. `npm run lint` emitted 60 warnings and failed nothing, so it emitted them into the void.
+**42 of the 60 were unused imports in a single file.** Under that noise sat a dropped wire, a wasted
+request on every page load, and a needless re-render of the chessboard.
+
+### Fixed
+
+| Finding | Severity | Fix |
+|---|---|---|
+| **A refresh signal was computed and thrown away (P34-1).** `App.tsx` bumps `sessionsRefresh` on every `session_created` / `session_completed` WS event — and never passes it to anything. Its two siblings are both wired (`listingsRefresh` → `ListingsView`, `eventsRefresh` → `EventsView`); this one was dropped. So a new or finished game never triggered an immediate refresh and only appeared on the next 6s/10s poll tick, while listings and events updated instantly. The intent is unambiguous — the event handler exists and computes the value — so this is a dropped wire, not a design choice. | Medium (stale UI) | `refreshTrigger={sessionsRefresh}` threaded into `GamesView`'s two `useInterval` dep arrays, exactly as the two siblings do it. Safe against the P33-2 stale-render trap by construction: `useInterval` keeps its previous data across a dep change, so the list doesn't blank while the new fetch is in flight — the same property P33 pinned with a test. |
+| **The Overview fetched settlements on every load and discarded the result (P34-3).** `fetchOverviewSections()` issued `api.settlements()` as one of eight parallel requests and read it into a variable nothing used. The Overview has no settlements row to show it in either — `OVERVIEW_SKIP_VIEWS` lists `"fees"`. A round trip to one of the heavier, more sensitive endpoints, paid on every Overview load, for nothing. | Low (waste) | Removed from the batch. The unused variable was the linter's tell, sitting in the warning list the whole time. |
+| **Dead state forcing a re-render per fetch (P34-2).** `ChessReplayPanel` wrote `setActions(r.actions)` on every fetch *and* every live WS update, and never read `actions` — `applyReplay(r.actions)` is what consumes the data. Each write re-rendered the chessboard for nothing. (`NonChessSessionPanel`'s identically-named state *is* rendered; only the dead one was removed.) | Low | State and both writes removed. |
+| **42 unused imports in `GamesView.tsx` (P34-4).** | — | Pruned, along with three other dead reads (`allSettlements`, `isRelayOperator`, `reachedPin` — the last a second name for `pinMatched` in the room chain walk, which is how two names for one state drift apart). 60 → 18 warnings. |
+| **Nothing stopped the noise regrowing.** `"lint": "oxlint"` never fails, whatever it finds. | — | `oxlint --max-warnings=18`. Verified by adding one deliberate unused variable: exit 1. This gate *is* the regression test for this whole class — the linter already catches a dropped wire, it just needed to be able to say so. |
+
+### Checked, and deliberately not "fixed"
+
+- **The two `react(jsx-key)` warnings are false positives.** Both are JSX inside a `[string, ReactNode]`
+  tuple passed to `MetaGrid`, which renders it as `<div key={k}><dd>{v}</dd></div>` — the wrapper
+  carries the key, the value is a single child and needs none. Confirmed by reading `cards.tsx`, not
+  assumed. Left as-is rather than silenced with a disable comment: a suppression would have to be
+  re-justified by every future reader, and the count is gated anyway.
+- **11 `react-hooks(exhaustive-deps)` warnings, left alone on purpose.** Several are the deliberate
+  `useInterval` dep pattern; the rest are real staleness *questions* whose answers differ per call
+  site (`RoomsView`'s `setSelected` effects converge via a functional update and an identity guard;
+  `AgentsView`'s equivalent lacks the guard and re-sets `selected` to a fresh object each poll).
+  Changing an effect's deps changes behaviour, and doing that speculatively across five call sites
+  in a pass about *reading* signals would be the opposite of the point. Named here as the next
+  candidate, one call site at a time, each with its own reasoning.
+- **5 `react(only-export-components)`** are Fast-Refresh DX, not correctness. Fixing them means
+  splitting files, which is a refactor, not a fix.
+
+**The lesson, which is about signal rather than code.** Every defect in this pass was already being
+reported, correctly, by a tool that ran on every commit. What failed wasn't detection — it was that a
+warning stream nothing enforces decays into a warning stream nobody reads, and then real findings
+arrive indistinguishable from `Identifier 'Badge' is imported but never used`. The fix that matters
+here isn't any single bug; it's the threshold that keeps the channel worth listening to.
+
 ## Threat model notes (by design, not gaps)
 
 - **Ed25519 = auth; the relay never holds private keys.** Keys live at `~/.hermes/keys/*.priv`,

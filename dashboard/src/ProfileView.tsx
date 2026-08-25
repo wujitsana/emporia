@@ -1,6 +1,5 @@
 import Indent from "@components/Indent";
 import Text from "@components/Text";
-import RowSpaceBetween from "@components/RowSpaceBetween";
 import { AgentMoireAvatar } from "./AgentMoireAvatar";
 import { api, dashboardAuth } from "./api";
 import type { AgentProfile, Session, Settlement } from "./api";

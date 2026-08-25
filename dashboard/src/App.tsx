@@ -235,6 +235,7 @@ function AppInner() {
                 initialSessionId={selectedSessionId}
                 initialGameModule={gameModuleType}
                 listingPeek={listingPeek}
+                refreshTrigger={sessionsRefresh}
               />
             )}
             {view === "rooms" && <RoomsView initialRoomId={selectedRoomId} navigate={navigate} />}

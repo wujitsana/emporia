@@ -1,38 +1,12 @@
-import ActionButton from "@components/ActionButton";
-import ActionListItem from "@components/ActionListItem";
-import Badge from "@components/Badge";
-import Card from "@components/Card";
 import Chessboard from "@components/Chessboard";
 import Divider from "@components/Divider";
 import Indent from "@components/Indent";
-import Input from "@components/Input";
-import Message from "@components/Message";
-import MessageViewer from "@components/MessageViewer";
-import Navigation from "@components/Navigation";
 import RowSpaceBetween from "@components/RowSpaceBetween";
-import Select from "@components/Select";
 import SidebarLayout from "@components/SidebarLayout";
-import SimpleTable from "@components/SimpleTable";
 import Text from "@components/Text";
-import Window from "@components/Window";
-import AlertBanner from "@components/AlertBanner";
-import React, { useCallback, useEffect, useRef, useState } from "react";
+import React, { useEffect, useRef } from "react";
 import { api, dashboardToken } from "../api";
-import type {
-  AgentProfile,
-  AgoraPost,
-  AgoraTopic,
-  DMMessage,
-  DMThread,
-  EmporiaEvent,
-  Listing,
-  Room,
-  Session,
-  SessionAction,
-} from "../api";
-import { AgentMoireAvatar } from "../AgentMoireAvatar";
-import { PaymentsFeesSection } from "../PaymentsFeesSection";
-import { EMPTY_SEED_HINT } from "../navigation";
+import type { Session, SessionAction } from "../api";
 import { FlatRailItem } from "../ui/FlatRailItem";
 import { SegmentTabs } from "../ui/SegmentTabs";
 import {
@@ -41,7 +15,6 @@ import {
   ChessTransport,
 } from "../ui/chessControls";
 import { RELAY, VIEWER } from "../relayEnv";
-import { fetchDashboardCounts, countCaptionForNav, subForNav } from "../dashboardCounts";
 import { STARTING_FEN, fenToBoard } from "../fen";
 import {
   buildChessReplay,
@@ -51,22 +24,12 @@ import {
   shortAgent,
 } from "../chessReplay";
 import { ChessMoveLine, ChessPlayersBar } from "../ui/chessMatch";
-import type { Navigate } from "../navigation";
 import { ViewStatus } from "../ui/ViewStatus";
 import { ViewBody } from "../ui/layout";
-import { eventDetail, viewForEvent } from "../eventNav";
 import type { NavOpts } from "../eventNav";
 import { ListingPeekBanner } from "../ui/ListingPeekBanner";
 import { AuditBadge } from "../ui/AuditBadge";
-import { NAV } from "../navConfig";
-import {
-  type GlobalEvent,
-  type RelayHealth,
-  type WsMessage,
-  toWsUrl,
-  useInterval,
-  useRoomWs,
-} from "../hooks";
+import { toWsUrl, useInterval } from "../hooks";
 
 export const GAME_TYPES = [
   { id: "", label: "all" },
@@ -77,7 +40,10 @@ export const GAME_TYPES = [
 ] as const;
 
 export function ChessReplayPanel({ session }: { session: Session }) {
-  const [actions, setActions] = React.useState<SessionAction[]>([]);
+  // P34-2: `actions` state removed — it was written on every fetch and every
+  // live update and never read (applyReplay(r.actions) is what consumes the
+  // data), so each write forced a needless re-render of the chessboard.
+  // NonChessSessionPanel below keeps its own `actions`, which it does render.
   const [fens, setFens] = React.useState<string[]>([STARTING_FEN]);
   const [sans, setSans] = React.useState<string[]>([]);
   const [idx, setIdx] = React.useState(0);
@@ -105,7 +71,6 @@ export function ChessReplayPanel({ session }: { session: Session }) {
     api.sessionActions(session.session_id)
       .then((r) => {
         if (cancelled) return;
-        setActions(r.actions);
         applyReplay(r.actions);
       })
       .catch(() => {
@@ -139,7 +104,6 @@ export function ChessReplayPanel({ session }: { session: Session }) {
         if (f.type === "action_result" && f.new_state?.board_fen) {
           api.sessionActions(session.session_id)
             .then((r) => {
-              setActions(r.actions);
               applyReplay(r.actions);
             })
             .catch(() => {});
@@ -352,22 +316,29 @@ export function GamesView({
   initialSessionId,
   initialGameModule,
   listingPeek,
+  refreshTrigger,
 }: {
   initialSessionId: string | null;
   initialGameModule: string | null;
   listingPeek: NavOpts["listingPeek"] | null;
+  /** P34-1: bumped by App.tsx on a `session_created`/`session_completed` WS
+   *  event so a new or finished game appears immediately rather than on the
+   *  next poll tick. App has computed this signal since the trigger was added
+   *  but never passed it here — the two sibling triggers (listings, events)
+   *  were both wired, this one was dropped. */
+  refreshTrigger: number;
 }) {
   const [gameType, setGameType] = React.useState("");
   const [liveTab, setLiveTab] = React.useState<"live" | "history">("live");
   const [liveSessions, liveLoading, liveErr] = useInterval(
     () => api.sessions({ module_type: gameType || undefined, status: "active" }),
     6_000,
-    [gameType],
+    [gameType, refreshTrigger],
   );
   const [historySessions, histLoading, histErr] = useInterval(
     () => api.sessions({ module_type: gameType || undefined, status: "completed" }),
     10_000,
-    [gameType],
+    [gameType, refreshTrigger],
   );
   const [selected, setSelected] = React.useState<Session | null>(null);
 

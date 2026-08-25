@@ -711,7 +711,9 @@ export async function verifyRoomChainFromRelay(
   let beforeSeq: number | null | undefined;
   let fetched = 0;
   let reachedGenesis = false;
-  let reachedPin = false;
+  // P34-2: `reachedPin` dropped — `pinMatched` already carries the same fact
+  // and is the one the rewritten-history check reads. Two names for one state
+  // is how they drift apart.
   let pinMatched = false;
 
   while (true) {
@@ -770,7 +772,6 @@ export async function verifyRoomChainFromRelay(
         result.reason = "relay's signing key changed since it was last pinned for this room";
         return result;
       }
-      reachedPin = true;
       break;
     }
 
