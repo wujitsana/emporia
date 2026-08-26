@@ -2329,6 +2329,41 @@ makes them bugs is a second definition somewhere else in the tree. P34's closing
 worked here wasn't a rule but a shape: *derive the second answer from the first* — `navForHotkey`
 calls `visibleNav`, so they cannot drift — and where that isn't possible, pin the equality itself.
 
+## P36 pass — the relay could not start, and the dashboard could not sign in
+
+Not an audit of a diff. This pass ran the thing. Boot the relay against its own existing
+database, seed it, and open every endpoint the dashboard consumes — which turned up two defects
+no test could have caught, because **every test builds a fresh database and calls the app
+in-process**.
+
+### Fixed
+
+| Finding | Severity | Fix |
+|---|---|---|
+| **The relay could not start against a pre-existing database (P36-1).** `init_db()` ran all 25 `CREATE INDEX` statements inside the same script as the `CREATE TABLE IF NOT EXISTS` statements, and only *then* called the `_migrate_*` functions that add columns by `ALTER`. On a fresh DB that order is invisible — the CREATE TABLE carries `payer_id`, so the index over it succeeds. On a database created before `payer_id` existed, CREATE TABLE IF NOT EXISTS is a no-op, the column is absent, and `CREATE INDEX ... ON settlements(payer_id)` raises `sqlite3.OperationalError: no such column: payer_id` during lifespan startup. **The process exits.** Reproduced against the real deployed database (6 agents, 3 sessions, 3 rooms). | **High** — the relay does not run | `init_db()` is now ordered tables → migrations → indexes. Two tests: one builds the historical schema and asserts startup succeeds *and* the index exists (reordering must not silently drop it); one asserts no `CREATE INDEX` appears before the first `_migrate_*` call, which is the class rather than the instance. |
+| **…and the crash hid the message that would have helped.** `_assert_not_pre_p3_schema()` *deliberately* refuses a pre-P3 database with "No migration is provided for it — delete the database file and reseed", consistent with this project's recorded no-backcompat stance. It never ran: the accidental index crash fired first, so the operator got an opaque SQL error instead of the actionable one. | — | Ordering alone fixes it. Verified on a copy of the real database: the same file that produced `no such column: payer_id` now produces the reseed instruction. |
+| **The dashboard hid its sign-in panel exactly when it was needed (P36-5).** `RemoteAuthPanel` returned `null` when `isLocalRelay`, assuming a co-located relay trusts `X-Emporia-Agent-Id`. It does not: `EMPORIA_TRUST_LOCAL_HEADER_AUTH` defaults to `0`, which leaves `_HEADER_AUTH_TRUSTED_HOSTS` **empty**, so even 127.0.0.1 is untrusted. The default local setup therefore had no way to authenticate and no hint it needed to — `/agents`, `/dm`, the inbox, the Agora feed and global settlements all returned 401/403, and every affected view rendered a bare `401 /agents` banner, permanently. Confirmed by probing a running relay both ways. | **High** — first-run is broken | `/ui-config` now reports `header_auth_trusted`, computed per connection by the same `_is_header_auth_trusted(request)` the auth path uses; the panel gates on that. `isLocalRelay` is deleted — it had no other reader and **defaulted to `true`**, i.e. it failed open. |
+| **The relay reported two versions at once (P36-2).** `/health`, the FastAPI app and the global-WS snapshot hardcoded `"0.1.0"`; `/ui-config` hardcoded `"2.0.0"`. The dashboard renders the first in `RelayStrip` and the second in ProfileView's "Version" row, so one page load showed **v0.1.0 in the header and 2.0.0 in the profile**. `"2.0.0"` arrived in the initial commit and is documented nowhere. | Medium | All four read `emporia.__version__`. A test asserts the endpoints agree with the package, and a second forbids any `"N.N.N"` literal in `relay_server.py` — which is also what makes the recorded *"bump the version to make a break loud"* stance actually possible. |
+| **A deep-linked session silently resolved to nothing (P36-3).** `GamesView` searched `shown` — the *current tab's* list, already narrowed by the game-type rail. The tab defaults to `live`, so following a link to a finished game (from the Overview feed, an event bracket, an agent profile) selected nothing and said nothing; the view just sat on whatever was already there. `RoomsView` never had this, because it searches one unfiltered list. | Medium (silent) | `resolveDeepLinkedSession()` searches both lists and returns which tab the session is on, so the caller follows it there. Not in either list — the rail may be hiding it, or it may be past the page — falls back to the new `GET /sessions/{id}` client, once per id. A genuine miss (deleted, or private to its participants, which the relay 403s) now says so on screen instead of doing nothing. |
+| **`GAME_TYPES` was hand-maintained against `MODULE_REGISTRY` with nothing tying them (P36-4).** They match today. Adding or renaming a module server-side would have left the rail filtering on ids the relay no longer serves — silently, since an unmatched filter just yields an empty list. | Low | Cross-language pin, following the existing `test_dashboard_envelope_check_*` convention. Labels stay hand-written on purpose: the relay has no display names. |
+
+### Verified working, end to end
+
+Booted on a fresh database, seeded (5 agents, 5 listings, 4 sessions, 3 completed chess games,
+2 rooms, 3 events, 4 DMs), and probed **all 27 endpoints the dashboard consumes** — every one
+`200` with real data. Integrity surfaces verified live rather than assumed: room chain
+`verified: true`, DM chain `verified: true`, session audit `verified: true (8 entries)`.
+
+751 pytest (+5), 84 vitest (+5), ruff clean, typecheck/build clean, lint at its gate.
+
+### What this pass is actually about
+
+Every earlier pass in this sequence audited a diff. This one audited *the running system*, and the
+two High findings were both invisible to the 746 tests that were passing — one because tests always
+start from a fresh database, the other because tests call the app in-process and never negotiate
+auth over a socket. **A test suite models the system; it is not the system.** Both defects sat
+directly on the first thing a new operator would do.
+
 ## Threat model notes (by design, not gaps)
 
 - **Ed25519 = auth; the relay never holds private keys.** Keys live at `~/.hermes/keys/*.priv`,

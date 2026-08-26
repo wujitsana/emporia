@@ -117,6 +117,7 @@ from emporia.session_audit import (
     open_dual_session,
     verify_chain,
 )
+from emporia import __version__
 from emporia import rooms as rooms_db
 from emporia import entitlements
 from emporia.env_config import env_int
@@ -754,25 +755,6 @@ def init_db() -> None:
                 rail TEXT NOT NULL DEFAULT 'stripe'
             );
 
-            CREATE INDEX IF NOT EXISTS idx_sessions_status ON sessions(status);
-            CREATE INDEX IF NOT EXISTS idx_sessions_module ON sessions(module_type);
-            CREATE INDEX IF NOT EXISTS idx_actions_session ON actions(session_id);
-            CREATE INDEX IF NOT EXISTS idx_messages_to ON messages(to_agent);
-            CREATE INDEX IF NOT EXISTS idx_messages_from ON messages(from_agent);
-            CREATE INDEX IF NOT EXISTS idx_listings_type ON listings(listing_type);
-            CREATE INDEX IF NOT EXISTS idx_listings_agent ON listings(agent_id);
-            CREATE INDEX IF NOT EXISTS idx_events_status ON events(status);
-            CREATE INDEX IF NOT EXISTS idx_payments_session ON payments(session_id);
-            CREATE INDEX IF NOT EXISTS idx_settlements_session ON settlements(session_id);
-            CREATE INDEX IF NOT EXISTS idx_settlements_winner ON settlements(winner_id);
-            CREATE INDEX IF NOT EXISTS idx_settlements_payer ON settlements(payer_id);
-            -- N9 review O1: all three list_settlements branches ORDER BY created_at
-            -- DESC; without this, SQLite scans the whole table and sorts the matching
-            -- set in a temp b-tree before LIMIT applies (verified via EXPLAIN QUERY
-            -- PLAN — see the commit message for before/after).
-            CREATE INDEX IF NOT EXISTS idx_settlements_created ON settlements(created_at);
-            CREATE INDEX IF NOT EXISTS idx_participants_agent ON participants(agent_id);
-            CREATE INDEX IF NOT EXISTS idx_payments_agent ON payments(agent_id);
         """)
         conn.execute("""
             CREATE TABLE IF NOT EXISTS agent_inbox (
@@ -784,9 +766,6 @@ def init_db() -> None:
                 created_at TEXT NOT NULL
             );
         """)
-        conn.execute(
-            "CREATE INDEX IF NOT EXISTS idx_inbox_agent ON agent_inbox(agent_id, is_read)"
-        )
         # Agoras schema (topic-based agent forums: public/private/restricted)
         conn.executescript("""
             CREATE TABLE IF NOT EXISTS agora_topics (
@@ -851,12 +830,6 @@ def init_db() -> None:
                 created_at TEXT NOT NULL,
                 PRIMARY KEY (voter_id, target_id, target_type)
             );
-            CREATE INDEX IF NOT EXISTS idx_agora_posts_topic ON agora_posts(topic_id, created_at);
-            CREATE INDEX IF NOT EXISTS idx_agora_posts_author ON agora_posts(author_id);
-            CREATE INDEX IF NOT EXISTS idx_agora_comments_post ON agora_comments(post_id, created_at);
-            CREATE INDEX IF NOT EXISTS idx_agora_members_agent ON agora_members(agent_id);
-            CREATE INDEX IF NOT EXISTS idx_agora_topics_visibility ON agora_topics(visibility, created_at);
-            CREATE INDEX IF NOT EXISTS idx_inbox_created ON agent_inbox(is_read, created_at);
         """)
         # DM schema (direct agent-to-agent threads)
         conn.executescript("""
@@ -879,9 +852,6 @@ def init_db() -> None:
                 signature TEXT,
                 nonce TEXT
             );
-            CREATE INDEX IF NOT EXISTS idx_dm_threads_a ON dm_threads(agent_a, last_message_at);
-            CREATE INDEX IF NOT EXISTS idx_dm_threads_b ON dm_threads(agent_b, last_message_at);
-            CREATE INDEX IF NOT EXISTS idx_dm_messages_thread ON dm_messages(thread_id, created_at);
 
             CREATE TABLE IF NOT EXISTS reg_challenges (
                 challenge_id TEXT PRIMARY KEY,
@@ -908,6 +878,45 @@ def init_db() -> None:
         # Rooms schema (separate DDL to keep clean)
         rooms_db.init_rooms_schema(conn)
         _migrate_rooms(conn)
+
+        # P36-1: indexes come AFTER the column migrations, always. They used to
+        # sit in the same executescript as the CREATE TABLE statements, which is
+        # indistinguishable from correct on a fresh database -- the CREATE TABLE
+        # carries every column -- and fatal on a pre-existing one, where CREATE
+        # TABLE IF NOT EXISTS is a no-op and only the ALTERs below add the newer
+        # columns. `idx_settlements_payer ON settlements(payer_id)` was the live
+        # instance: it crashed startup on any relay older than N7.
+        conn.executescript("""
+            CREATE INDEX IF NOT EXISTS idx_sessions_status ON sessions(status);
+            CREATE INDEX IF NOT EXISTS idx_sessions_module ON sessions(module_type);
+            CREATE INDEX IF NOT EXISTS idx_actions_session ON actions(session_id);
+            CREATE INDEX IF NOT EXISTS idx_messages_to ON messages(to_agent);
+            CREATE INDEX IF NOT EXISTS idx_messages_from ON messages(from_agent);
+            CREATE INDEX IF NOT EXISTS idx_listings_type ON listings(listing_type);
+            CREATE INDEX IF NOT EXISTS idx_listings_agent ON listings(agent_id);
+            CREATE INDEX IF NOT EXISTS idx_events_status ON events(status);
+            CREATE INDEX IF NOT EXISTS idx_payments_session ON payments(session_id);
+            CREATE INDEX IF NOT EXISTS idx_settlements_session ON settlements(session_id);
+            CREATE INDEX IF NOT EXISTS idx_settlements_winner ON settlements(winner_id);
+            CREATE INDEX IF NOT EXISTS idx_settlements_payer ON settlements(payer_id);
+            -- N9 review O1: all three list_settlements branches ORDER BY created_at
+            -- DESC; without this, SQLite scans the whole table and sorts the matching
+            -- set in a temp b-tree before LIMIT applies (verified via EXPLAIN QUERY
+            -- PLAN — see the commit message for before/after).
+            CREATE INDEX IF NOT EXISTS idx_settlements_created ON settlements(created_at);
+            CREATE INDEX IF NOT EXISTS idx_participants_agent ON participants(agent_id);
+            CREATE INDEX IF NOT EXISTS idx_payments_agent ON payments(agent_id);
+            CREATE INDEX IF NOT EXISTS idx_inbox_agent ON agent_inbox(agent_id, is_read);
+            CREATE INDEX IF NOT EXISTS idx_agora_posts_topic ON agora_posts(topic_id, created_at);
+            CREATE INDEX IF NOT EXISTS idx_agora_posts_author ON agora_posts(author_id);
+            CREATE INDEX IF NOT EXISTS idx_agora_comments_post ON agora_comments(post_id, created_at);
+            CREATE INDEX IF NOT EXISTS idx_agora_members_agent ON agora_members(agent_id);
+            CREATE INDEX IF NOT EXISTS idx_agora_topics_visibility ON agora_topics(visibility, created_at);
+            CREATE INDEX IF NOT EXISTS idx_inbox_created ON agent_inbox(is_read, created_at);
+            CREATE INDEX IF NOT EXISTS idx_dm_threads_a ON dm_threads(agent_a, last_message_at);
+            CREATE INDEX IF NOT EXISTS idx_dm_threads_b ON dm_threads(agent_b, last_message_at);
+            CREATE INDEX IF NOT EXISTS idx_dm_messages_thread ON dm_messages(thread_id, created_at);
+        """)
         # Access entitlements (P2-3): what a payment actually buys — see
         # entitlements.py's module docstring
         entitlements.init_entitlements_schema(conn)
@@ -2652,7 +2661,7 @@ async def lifespan(app: FastAPI):
             _FEDERATION_SYNC_TASK = None
 
 
-app = FastAPI(title="Emporia Relay", version="0.1.0", lifespan=lifespan)
+app = FastAPI(title="Emporia Relay", version=__version__, lifespan=lifespan)
 
 # ─── Middleware registration order (P19-7, M6) ────────────────────────────────
 # Starlette's add_middleware() inserts each new middleware at the *front* of its
@@ -3329,7 +3338,7 @@ async def health():
         "status": "ok",
         "service": BRAND,
         "relay_id": RELAY_ID,
-        "version": "0.1.0",
+        "version": __version__,
         "modules": list(MODULE_REGISTRY.keys()),
         "listing_count": listing_count,
         "session_count": session_count,
@@ -3450,7 +3459,7 @@ async def a2a_well_known_not_supported():
 
 
 @app.get("/ui-config")
-async def ui_config():
+async def ui_config(request: Request):
     """Runtime config for the dashboard.
 
     Returns relay identity, feature flags, and live stats so the dashboard can
@@ -3471,9 +3480,21 @@ async def ui_config():
         "require_nous": REQUIRE_NOUS,
         "write_requires_nous": WRITE_REQUIRES_NOUS,
         "require_challenge": REQUIRE_CHALLENGE,
+        # P36-5: whether THIS connection may claim an identity with the
+        # X-Emporia-Agent-Id header. The dashboard used to infer it from the
+        # relay URL looking local, which is the wrong question: header auth is
+        # off unless EMPORIA_TRUST_LOCAL_HEADER_AUTH=1, so a co-located relay
+        # rejects the header too, and the dashboard hid its sign-in panel anyway
+        # and left every agent-scoped view showing a bare 401.
+        "header_auth_trusted": _is_header_auth_trusted(request),
         "agent_count": agent_count,
         "active_session_count": active_session_count,
-        "version": "2.0.0",
+        # P36-2: was a hardcoded "2.0.0" — undocumented, present since the initial
+        # commit, and disagreeing with the "0.1.0" every other endpoint reported.
+        # The dashboard showed both at once: v0.1.0 in the relay strip, 2.0.0 in
+        # the profile. One source now, which is also what makes "bump the version
+        # to make a break loud" a thing you can actually do.
+        "version": __version__,
     }
 
 
@@ -6442,8 +6463,8 @@ async def ws_global_events(ws: WebSocket):
         # Send a snapshot on connect
         health_data = {
             "status": "ok",
-            "service": "Emporia",
-            "version": "0.1.0",
+            "service": BRAND,
+            "version": __version__,
             "listing_count": 0,
             "session_count": 0,
             "modules": list(MODULE_REGISTRY.keys()),

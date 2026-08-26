@@ -21390,6 +21390,210 @@ def test_lifespan_second_run_does_not_see_a_stale_task_from_the_first():
 # ---------------------------------------------------------------------------
 
 
+def test_ui_config_reports_whether_header_auth_is_trusted():
+    """P36-5: the dashboard hid its sign-in panel whenever the relay looked
+    local (`if (isLocalRelay || dashboardToken) return null`), on the assumption
+    that a co-located relay trusts the `X-Emporia-Agent-Id` header. It does not
+    by default: `EMPORIA_TRUST_LOCAL_HEADER_AUTH` defaults to "0", which leaves
+    `_HEADER_AUTH_TRUSTED_HOSTS` empty so that even 127.0.0.1 is untrusted.
+
+    The out-of-the-box local result was a dashboard with no way to authenticate
+    and no hint that it needed to: every agent-scoped view rendered a raw
+    `401 /agents` banner, forever. The relay knows the answer per-connection and
+    simply never told anyone, so `/ui-config` now says."""
+    from emporia.relay_server import app
+
+    body = TestClient(app).get("/ui-config").json()
+    assert "header_auth_trusted" in body, (
+        "/ui-config must report whether this connection may claim identity by "
+        "header -- it is the only way the dashboard can know to offer sign-in"
+    )
+    assert isinstance(body["header_auth_trusted"], bool)
+
+
+def test_dashboard_gates_signin_on_header_auth_not_on_locality():
+    """P36-5, the client half. `isLocalRelay` answers "is this relay on my
+    machine", which is not the question; the question is "will this relay accept
+    my header". Pinning that the sign-in gate reads the relay's own answer."""
+    src = (
+        Path(__file__).parent.parent / "dashboard" / "src" / "ProfileView.tsx"
+    ).read_text()
+    assert "headerAuthTrusted" in src, (
+        "ProfileView no longer consults the relay's header-auth answer"
+    )
+    assert "if (isLocalRelay || dashboardToken) return null;" not in src, (
+        "the sign-in panel is gated on relay locality again -- that is the P36-5 "
+        "defect: a local relay does not trust header auth by default"
+    )
+
+
+def test_dashboard_game_types_match_the_relay_module_registry():
+    """P36-4: `GamesView.GAME_TYPES` is a hand-written list of module ids used
+    for the sidebar rail *and* for mapping an incoming `gameModuleType` onto a
+    filter. Nothing tied it to `MODULE_REGISTRY`, so adding or renaming a module
+    server-side would leave the dashboard filtering on ids the relay no longer
+    serves — silently, since an unmatched filter just yields an empty list.
+
+    The labels stay hand-written on purpose (the relay has no display names);
+    it is the id set that must not drift."""
+    import re
+
+    from emporia.relay_server import MODULE_REGISTRY
+
+    src = (
+        Path(__file__).parent.parent / "dashboard" / "src" / "views" / "GamesView.tsx"
+    ).read_text()
+    block = re.search(r"export const GAME_TYPES = \[(.*?)\] as const;", src, re.DOTALL)
+    assert block, "GAME_TYPES not found in GamesView.tsx"
+    ids = {m for m in re.findall(r'id:\s*"([^"]*)"', block.group(1)) if m}
+
+    assert ids == set(MODULE_REGISTRY), (
+        "GamesView.GAME_TYPES has drifted from the relay's MODULE_REGISTRY.\n"
+        f"  only in dashboard: {sorted(ids - set(MODULE_REGISTRY))}\n"
+        f"  only in relay:     {sorted(set(MODULE_REGISTRY) - ids)}"
+    )
+
+
+def test_relay_reports_one_version_everywhere():
+    """P36-2: the relay reported two different versions at once, and both were
+    on screen together. `/health` (and the FastAPI app, the agent card, and the
+    global-WS snapshot) hardcoded "0.1.0"; `/ui-config` hardcoded "2.0.0". The
+    dashboard reads the first into RelayStrip and the second into ProfileView's
+    "Version" row, so a single page load showed v0.1.0 in the header and 2.0.0
+    in the profile.
+
+    "2.0.0" arrived in the initial commit and is documented nowhere; the package
+    version in pyproject.toml and emporia/__init__.py is the real one. This pins
+    that there is exactly one source -- which is also what makes the recorded
+    "bump the version to make a break loud" stance possible at all."""
+    from emporia import __version__
+    from emporia.relay_server import app
+
+    client = TestClient(app)
+    health = client.get("/health").json()
+    ui = client.get("/ui-config").json()
+
+    assert health["version"] == __version__
+    assert ui["version"] == __version__, (
+        f"/ui-config reports {ui['version']!r} but the package is {__version__!r}"
+    )
+    assert app.version == __version__
+
+
+def test_relay_server_hardcodes_no_version_literal():
+    """P36-2, the class. A version literal in the source is how the two got out
+    of step; `__version__` is the only place it may live."""
+    import re
+
+    src = (Path(__file__).parent.parent / "src" / "emporia" / "relay_server.py").read_text()
+    literals = []
+    for i, line in enumerate(src.splitlines(), 1):
+        if line.strip().startswith("#"):
+            continue
+        for m in re.finditer(r'"\d+\.\d+\.\d+"', line):
+            literals.append(f"{i}: {line.strip()}")
+    assert not literals, (
+        "relay_server.py hardcodes a version literal; import emporia.__version__ "
+        "instead:\n" + "\n".join(literals)
+    )
+
+
+def _legacy_settlements_db() -> str:
+    """A settlements table as it existed before `payer_id` and `rail` — i.e. the
+    schema every relay deployed before N7 is still carrying on disk."""
+    import sqlite3
+    import tempfile as _tempfile
+
+    db = os.path.join(_tempfile.mkdtemp(), "legacy.sqlite3")
+    conn = sqlite3.connect(db)
+    conn.execute(
+        "CREATE TABLE settlements ("
+        "settlement_id TEXT PRIMARY KEY, session_id TEXT NOT NULL, winner_id TEXT, "
+        "total_stake_cents INTEGER NOT NULL DEFAULT 0, "
+        "platform_fee_cents INTEGER NOT NULL DEFAULT 0, "
+        "winner_payout_cents INTEGER NOT NULL DEFAULT 0, "
+        "platform_fee_bps INTEGER NOT NULL DEFAULT 250, "
+        "payment_intent_ids TEXT NOT NULL DEFAULT '[]', transfer_id TEXT, "
+        "transfer_status TEXT NOT NULL DEFAULT 'pending_connect', "
+        "status TEXT NOT NULL DEFAULT 'settled', created_at TEXT NOT NULL, "
+        # `rail` is present: it predates payer_id, and a DB without it is
+        # refused deliberately by _assert_not_pre_p3_schema with an actionable
+        # "delete and reseed" message. This fixture models the generation that
+        # the index crash actually broke, which is the one in between.
+        "rail TEXT NOT NULL DEFAULT 'stripe')"
+    )
+    conn.commit()
+    conn.close()
+    return db
+
+
+def test_init_db_starts_against_a_pre_payer_id_database(monkeypatch):
+    """P36-1: the relay could not start against its own existing database.
+
+    `init_db()` ran every `CREATE INDEX` inside the same script as the
+    `CREATE TABLE IF NOT EXISTS` statements, and only *then* called the
+    `_migrate_*` functions that add columns via ALTER. On a fresh DB that order
+    is invisible: the CREATE TABLE includes `payer_id`, so the index over it
+    succeeds. On a DB created before `payer_id` existed the CREATE TABLE is a
+    no-op, the column is still missing, and
+
+        CREATE INDEX IF NOT EXISTS idx_settlements_payer ON settlements(payer_id)
+
+    raises `sqlite3.OperationalError: no such column: payer_id` during lifespan
+    startup — the process exits. Every test passed throughout, because tests
+    always build a fresh database.
+
+    Reproduced against the real deployed DB before the fix.
+    """
+    import sqlite3
+    from pathlib import Path as _Path
+
+    import emporia.relay_server as rs
+
+    db = _legacy_settlements_db()
+    monkeypatch.setattr(rs, "DATABASE_PATH", _Path(db))
+
+    rs.init_db()  # this raised OperationalError before the fix
+
+    conn = sqlite3.connect(db)
+    cols = [r[1] for r in conn.execute("PRAGMA table_info(settlements)")]
+    assert "payer_id" in cols, "the migration that adds payer_id did not run"
+    idx = {r[0] for r in conn.execute(
+        "SELECT name FROM sqlite_master WHERE type='index' AND tbl_name='settlements'"
+    )}
+    assert "idx_settlements_payer" in idx, (
+        "the index over the migrated column was never created -- reordering must "
+        "move it after the migrations, not drop it"
+    )
+    conn.close()
+
+
+def test_init_db_creates_no_index_before_running_migrations():
+    """P36-1, the class rather than the instance. An index over a column that a
+    migration adds can only work if indexes come after migrations. Today exactly
+    one index is in that position; the ordering is what stops the next one being
+    a startup crash discovered in production."""
+    import inspect
+
+    from emporia.relay_server import init_db
+
+    body = inspect.getsource(init_db).splitlines()
+    first_migration = next(
+        (i for i, ln in enumerate(body) if "_migrate_" in ln and "(conn)" in ln), None
+    )
+    assert first_migration is not None, "init_db no longer calls the _migrate_* functions"
+
+    early = [
+        (i, ln.strip()) for i, ln in enumerate(body)
+        if "CREATE INDEX" in ln and i < first_migration
+    ]
+    assert not early, (
+        "init_db creates indexes before running column migrations; an index over "
+        "a migration-added column crashes startup on any pre-existing database:\n"
+        + "\n".join(f"  line {i}: {ln}" for i, ln in early)
+    )
+
+
 def _p27_migrate(schema_cols, rows):
     """Run `_migrate_authorized_agents` against a hand-built historical schema.
 

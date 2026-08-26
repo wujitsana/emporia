@@ -11,11 +11,19 @@ import { TrustBadge } from "./views/AgentsView";
 import { useEffect, useRef, useState } from "react";
 
 /**
- * Auto-starts the dashboard auth flow when the relay is remote and no JWT is stored.
- * No button — polls silently until the agent completes the sign_dashboard_challenge MCP call.
+ * Auto-starts the dashboard auth flow when the relay will not accept a header
+ * identity and no JWT is stored. No button — polls silently until the agent
+ * completes the sign_dashboard_challenge MCP call.
+ *
+ * P36-5: this used to gate on `isLocalRelay`, i.e. "is the relay on my machine",
+ * on the assumption that a co-located relay trusts `X-Emporia-Agent-Id`. It does
+ * not unless the operator sets EMPORIA_TRUST_LOCAL_HEADER_AUTH=1, which is off
+ * by default — so the standard local setup hid this panel AND had every
+ * agent-scoped view render a bare `401 /agents` with no way to act on it. The
+ * relay knows the answer per connection; ask it.
  */
 function RemoteAuthPanel() {
-  const { viewerId, relayUrl, isLocalRelay, dashboardToken, setDashboardToken } = useRelayCtx();
+  const { viewerId, relayUrl, headerAuthTrusted, dashboardToken, setDashboardToken } = useRelayCtx();
   const [state, setState] = useState<"idle" | "pending" | "done" | "error">("idle");
   const [challenge, setChallenge] = useState<{ challenge_id: string; nonce: string } | null>(null);
   const [errMsg, setErrMsg] = useState<string | null>(null);
@@ -23,7 +31,7 @@ function RemoteAuthPanel() {
 
   // Auto-start challenge when remote relay + no JWT + we have an identity
   useEffect(() => {
-    if (isLocalRelay || dashboardToken || !viewerId || state !== "idle") return;
+    if (headerAuthTrusted || dashboardToken || !viewerId || state !== "idle") return;
     setState("pending");
     dashboardAuth.challenge()
       .then((c) => {
@@ -45,13 +53,13 @@ function RemoteAuthPanel() {
         setState("error");
       });
     return () => { if (pollRef.current) clearInterval(pollRef.current); };
-  }, [isLocalRelay, dashboardToken, viewerId, state, setDashboardToken]);
+  }, [headerAuthTrusted, dashboardToken, viewerId, state, setDashboardToken]);
 
-  if (isLocalRelay || dashboardToken) return null;
+  if (headerAuthTrusted || dashboardToken) return null;
   if (!viewerId) return null;
 
   return (
-    <SlimCard title="Remote relay auth">
+    <SlimCard title="Relay sign-in">
       {state === "pending" && challenge ? (
         <div>
           <Text className="e-dim" style={{ marginBottom: 8 }}>

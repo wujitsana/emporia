@@ -27,8 +27,16 @@ export interface RelayCtxValue {
   relayVersion: string;
   isRelayOperator: boolean;
   isSpectator: boolean;
-  /** True when the relay is on localhost — identity header trusted without JWT */
-  isLocalRelay: boolean;
+  /** P36-5: the relay's own answer to "will you accept my X-Emporia-Agent-Id
+   *  header?", per connection.
+   *
+   *  This replaced `isLocalRelay`, which was standing in for it and getting it
+   *  wrong — header auth is off unless the operator sets
+   *  EMPORIA_TRUST_LOCAL_HEADER_AUTH=1, so "the relay is on localhost" says
+   *  nothing about whether it will authenticate you. `isLocalRelay` had no
+   *  other reader and defaulted to `true`, i.e. it failed open; it is gone
+   *  rather than left around for the next person to reach for. */
+  headerAuthTrusted: boolean;
   /** Bearer JWT for remote relay auth (sessionStorage-backed) */
   dashboardToken: string | null;
   setDashboardToken: (t: string | null) => void;
@@ -46,8 +54,8 @@ const DEFAULT: RelayCtxValue = {
   activeSessionCount: 0,
   relayVersion: "",
   isRelayOperator: false,
+  headerAuthTrusted: false,
   isSpectator: true,
-  isLocalRelay: true,
   dashboardToken: null,
   setDashboardToken: () => {},
   refresh: () => {},
@@ -60,14 +68,6 @@ const RelayCtx = createContext<RelayCtxValue>(DEFAULT);
 // P35-1: viewer identity now comes from relayEnv.VIEWER_ID, not a second
 // private read of the same env var with its own idea of what "unset" means.
 
-function _isLocalUrl(url: string): boolean {
-  try {
-    const h = new URL(url).hostname;
-    return h === "localhost" || h === "127.0.0.1" || h === "::1";
-  } catch {
-    return true;
-  }
-}
 
 export function RelayContextProvider({ children }: { children: React.ReactNode }) {
   const [cfg, setCfg] = useState<UiConfig | null>(null);
@@ -110,8 +110,8 @@ export function RelayContextProvider({ children }: { children: React.ReactNode }
     activeSessionCount: cfg?.active_session_count ?? 0,
     relayVersion: cfg?.version ?? "",
     isRelayOperator,
+    headerAuthTrusted: cfg?.header_auth_trusted ?? false,
     isSpectator: viewerId === null,
-    isLocalRelay: _isLocalUrl(relayUrl),
     dashboardToken,
     setDashboardToken,
     refresh: () => setTick((n) => n + 1),

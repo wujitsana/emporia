@@ -213,6 +213,9 @@ export interface UiConfig {
   require_nous: boolean;
   write_requires_nous: boolean;
   require_challenge: boolean;
+  /** P36-5: may this connection claim an identity by header? Decides whether
+   *  the dashboard must offer the challenge/sign flow. */
+  header_auth_trusted: boolean;
   agent_count: number;
   active_session_count: number;
   version: string;
@@ -464,6 +467,12 @@ export const api = {
     // unaffected either way.
     return get<{ sessions: Session[] }>(`/sessions${q.size ? `?${q}` : ""}`, { agentScoped: true });
   },
+  // P36-3: single-session fetch, so a deep link can resolve a session the two
+  // list endpoints don't happen to be showing (filtered out by the game-type
+  // rail, or past the page). Agent-scoped: the relay 403s a non-participant on
+  // a private session, which the caller surfaces rather than swallowing.
+  session: (session_id: string) =>
+    get<Session>(`/sessions/${encodeURIComponent(session_id)}`, { agentScoped: true }),
   sessionActions: (session_id: string) =>
     get<{ session_id: string; actions: SessionAction[] }>(
       `/sessions/${session_id}/actions`, { agentScoped: true }

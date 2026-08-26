@@ -846,6 +846,19 @@ second defined in terms of the first. Details in SECURITY.md's P35 section.
 Note for the P34 lint gate: it reads unused imports *within* a file and cannot see an unused *file* —
 P35 deleted a 95-line orphan view the gate had no way to flag.
 
+**The relay boots and the dashboard signs in (P36).** Two release blockers, both found by running
+the system rather than reading a diff, and both invisible to a green test suite. `init_db()` created
+indexes before running column migrations, so `CREATE INDEX ... ON settlements(payer_id)` crashed
+startup on any database predating that column — every test builds a fresh DB, so nothing caught it;
+reproduced against the real deployed database. Ordering is now tables → migrations → indexes, which
+also lets the deliberate "delete and reseed" message for pre-P3 databases actually reach the
+operator instead of being preempted by an opaque SQL error. Separately, the dashboard hid its
+sign-in panel whenever the relay looked local, but local header auth is off by default
+(`EMPORIA_TRUST_LOCAL_HEADER_AUTH=0`), so the standard local setup had no way to authenticate and
+no hint it needed one; `/ui-config` now reports `header_auth_trusted` per connection and the panel
+gates on that. Also: one version instead of two, and deep-linked sessions resolve across both tabs
+with a `GET /sessions/{id}` fallback. Details in SECURITY.md's P36 section.
+
 **P9 survey (research only, no code):** `dashboard/src/ui/McpCommandHint.tsx` and
 `ReadOnlyChat.tsx` confirm the read-only-plus-MCP-hint claim below is still exactly what's shipped.
 

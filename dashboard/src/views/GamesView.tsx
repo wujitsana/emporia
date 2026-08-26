@@ -24,6 +24,7 @@ import {
   shortAgent,
 } from "../chessReplay";
 import { ChessMoveLine, ChessPlayersBar } from "../ui/chessMatch";
+import { resolveDeepLinkedSession } from "../sessionSelect";
 import { ViewStatus } from "../ui/ViewStatus";
 import { ViewBody } from "../ui/layout";
 import type { NavOpts } from "../eventNav";
@@ -362,11 +363,41 @@ export function GamesView({
     if (id) setGameType(id);
   }, [initialGameModule]);
 
+  /* P36-3: resolve a deep-linked session against BOTH lists and follow it to the
+     right tab. This used to search `shown` — the current tab's list, already
+     narrowed by the game-type rail — and the tab defaults to "live", so a link
+     to a finished game selected nothing and said nothing about it.
+
+     If it is in neither list the rail may be hiding it or it may be past the
+     page, so ask the relay directly, once per id (the ref; the lists are rebuilt
+     every poll, so without it a miss would refetch on every tick). */
+  const deepLinkFetched = React.useRef<string | null>(null);
+  const [deepLinkMiss, setDeepLinkMiss] = React.useState<string | null>(null);
+
   React.useEffect(() => {
-    if (!initialSessionId || shown.length === 0) return;
-    const found = shown.find((s) => s.session_id === initialSessionId);
-    if (found) setSelected(found);
-  }, [initialSessionId, shown]);
+    if (!initialSessionId) return;
+    const hit = resolveDeepLinkedSession(initialSessionId, live, history);
+    if (hit) {
+      setLiveTab(hit.tab);
+      setSelected(hit.session);
+      setDeepLinkMiss(null);
+      return;
+    }
+    if (liveLoading || histLoading) return;          // lists not in yet
+    if (deepLinkFetched.current === initialSessionId) return;
+    deepLinkFetched.current = initialSessionId;
+    let cancelled = false;
+    api.session(initialSessionId)
+      .then((s) => {
+        if (cancelled) return;
+        setGameType("");                              // the rail was hiding it
+        setLiveTab(s.status === "active" ? "live" : "history");
+        setSelected(s);
+        setDeepLinkMiss(null);
+      })
+      .catch(() => { if (!cancelled) setDeepLinkMiss(initialSessionId); });
+    return () => { cancelled = true; };
+  }, [initialSessionId, live, history, liveLoading, histLoading]);
 
   React.useEffect(() => {
     if (!listingPeek || shown.length === 0) return;
@@ -452,6 +483,19 @@ export function GamesView({
           <Indent>
             <ViewStatus loading={pollLoading} error={pollErr} />
           </Indent>
+          {/* P36-3: a deep link that resolves to nothing used to be silent — the
+              view simply stayed on whatever was already selected, which reads as
+              "the link did nothing" rather than "that session isn't visible to
+              you". The relay 403s a non-participant on a private session, so
+              this covers both "gone" and "not yours". */}
+          {deepLinkMiss && !selected ? (
+            <Indent>
+              <Text className="e-faint">
+                Session …{deepLinkMiss.slice(-8)} could not be opened — it may have been
+                removed, or it may be private to its participants.
+              </Text>
+            </Indent>
+          ) : null}
           {listingPeek && !selected ? <ListingPeekBanner peek={listingPeek} /> : null}
           {!selected && listingPeek ? (
             <Indent>
