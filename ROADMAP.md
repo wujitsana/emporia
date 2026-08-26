@@ -913,6 +913,13 @@ challenges — the demo seeds six and none are visible), `GET /agoras/feed` (the
 `/messages` is deprecated in its own docstring, and `/sessions/{id}/state` returns exactly what
 `/sessions/{id}` returns.
 
+**The visibility gaps are closed (P40).** All four of P39's findings, none of which needed relay
+work — every one was a capability served all along with no client. Open challenges now appear in
+Listings (the demo seeds twelve and showed none); the agent's own Agora feed is selectable like a
+topic; events are deep-linkable and finally report their real participant count, having read a
+`participant_count` field **the relay has never produced**; and payment records appear in Fees for
+the relay operator. Details in SECURITY.md's P40 section.
+
 **P9 survey (research only, no code):** `dashboard/src/ui/McpCommandHint.tsx` and
 `ReadOnlyChat.tsx` confirm the read-only-plus-MCP-hint claim below is still exactly what's shipped.
 **(Superseded by P37: it was not — the dashboard already performed two unsigned writes at the

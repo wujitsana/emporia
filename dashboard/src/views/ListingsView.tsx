@@ -2,7 +2,7 @@ import Text from "@components/Text";
 import Indent from "@components/Indent";
 import type { ReactElement } from "react";
 import { api } from "../api";
-import type { Listing } from "../api";
+import type { Challenge, Listing } from "../api";
 import { EMPTY_SEED_HINT } from "../navigation";
 import type { Navigate } from "../navigation";
 import { viewForListing } from "../listingNav";
@@ -10,23 +10,34 @@ import { ViewStatus } from "../ui/ViewStatus";
 import { ViewBody } from "../ui/layout";
 import { SlimCard } from "../ui/cards";
 import { useInterval } from "../hooks";
+import { expiryLabel, relayHost } from "../discoveryFormat";
 import { AgentMoireAvatar } from "../AgentMoireAvatar";
 
 type RowCells = (string | ReactElement)[];
 
-function ListingTable({
+/**
+ * P40-1: was `ListingTable`, hardwired to `Listing[]` for its row keys and its
+ * click target. Challenges need the same table and are not clickable — there is
+ * no challenge view to open — so it takes the keys directly and treats `onOpen`
+ * as optional. A second near-identical table would have been the easier edit
+ * and the wrong one.
+ */
+function RowTable({
   headers,
   rows,
-  listings,
+  keys,
   onOpen,
 }: {
   headers: string[];
   rows: RowCells[];
-  listings: Listing[];
-  onOpen: (l: Listing) => void;
+  keys: string[];
+  onOpen?: (index: number) => void;
 }) {
   return (
-    <div className="e-compact-table e-listings-click" style={{ overflowX: "auto" }}>
+    <div
+      className={`e-compact-table${onOpen ? " e-listings-click" : ""}`}
+      style={{ overflowX: "auto" }}
+    >
       <table className="e-listings-native">
         <thead>
           <tr>
@@ -36,19 +47,23 @@ function ListingTable({
           </tr>
         </thead>
         <tbody>
-          {listings.map((l, i) => (
+          {keys.map((k, i) => (
             <tr
-              key={l.listing_id}
-              className="e-listings-row"
-              role="button"
-              tabIndex={0}
-              onClick={() => onOpen(l)}
-              onKeyDown={(e) => {
-                if (e.key === "Enter" || e.key === " ") {
-                  e.preventDefault();
-                  onOpen(l);
-                }
-              }}
+              key={k}
+              className={onOpen ? "e-listings-row" : undefined}
+              role={onOpen ? "button" : undefined}
+              tabIndex={onOpen ? 0 : undefined}
+              onClick={onOpen ? () => onOpen(i) : undefined}
+              onKeyDown={
+                onOpen
+                  ? (e) => {
+                      if (e.key === "Enter" || e.key === " ") {
+                        e.preventDefault();
+                        onOpen(i);
+                      }
+                    }
+                  : undefined
+              }
             >
               {rows[i].map((cell, j) => (
                 <td key={j}>{cell}</td>
@@ -61,15 +76,6 @@ function ListingTable({
   );
 }
 
-function expiryLabel(expiresAt?: string | null): string {
-  if (!expiresAt) return "";
-  const ms = new Date(expiresAt).getTime() - Date.now();
-  if (ms < 0) return "expired";
-  const h = Math.floor(ms / 3_600_000);
-  if (h < 48) return `${h}h`;
-  return `${Math.floor(h / 24)}d`;
-}
-
 export function ListingsView({
   refreshTrigger,
   navigate,
@@ -79,6 +85,13 @@ export function ListingsView({
 }) {
   const [data, loading, error] = useInterval(() => api.listings(), 10_000, [refreshTrigger]);
   const listings: Listing[] = data?.listings ?? [];
+
+  /* P40-1: open challenges — an agent advertising that it wants an opponent.
+     GET /gaming/lobby has been served all along and no client called it, so the
+     demo's own seeded challenges were invisible. They belong beside listings:
+     both are discovery, one for services and one for games. */
+  const [lobby] = useInterval(() => api.gamingLobby(), 15_000, [refreshTrigger]);
+  const challenges: Challenge[] = lobby?.challenges ?? [];
 
   const sessions = listings.filter((l) => l.listing_type !== "room");
   const rooms = listings.filter((l) => l.listing_type === "room");
@@ -118,6 +131,34 @@ export function ListingsView({
     ];
   });
 
+  const challengeRows: RowCells[] = challenges.map((c) => {
+    const creator = c.creator_agent_id.length > 14
+      ? `…${c.creator_agent_id.slice(-12)}`
+      : c.creator_agent_id;
+    return [
+      <span key="game" className="e-badge e-badge--dim">
+        {c.game_type.replace("emporia:", "").replace(/:v\d$/, "")}
+      </span>,
+      <span key="agent" style={{ display: "inline-flex", alignItems: "center", gap: 5 }}>
+        <AgentMoireAvatar agentId={c.creator_agent_id} size={18} />
+        <span className="e-dim" style={{ fontSize: 11 }}>{creator}</span>
+      </span>,
+      c.payment_mode !== "free"
+        ? <span key="stake" style={{ color: "var(--theme-focused-foreground)" }}>
+            ${c.stake_amount}
+          </span>
+        : <span key="stake" className="e-faint">free</span>,
+      // A federated challenge is one imported from a peer relay. Worth showing:
+      // it is the only place the dashboard reveals that the lobby spans relays.
+      <span key="origin" className="e-faint" style={{ fontSize: 11 }}>
+        {relayHost(c.origin_relay)}
+      </span>,
+      <span key="exp" className="e-faint" style={{ fontSize: 11 }}>
+        {expiryLabel(c.expires_at)}
+      </span>,
+    ];
+  });
+
   const roomRows: RowCells[] = rooms.map((r) => [
     r.title.slice(0, 24),
     r.room_type ?? "public",
@@ -139,25 +180,34 @@ export function ListingsView({
         )}
         {sessions.length > 0 && (
           <SlimCard title="Services" action={<Text className="e-dim">{sessions.length}</Text>}>
-            <ListingTable
+            <RowTable
               headers={["LISTING", "TYPE", "PRICE", "AGENT", "EXPIRES"]}
               rows={sessionRows}
-              listings={sessions}
-              onOpen={open}
+              keys={sessions.map((l) => l.listing_id)}
+              onOpen={(i) => open(sessions[i])}
             />
           </SlimCard>
         )}
         {rooms.length > 0 && (
           <SlimCard title="Rooms" action={<Text className="e-dim">{rooms.length}</Text>}>
-            <ListingTable
+            <RowTable
               headers={["NAME", "TYPE", "GATE", "FEE", "MBR"]}
               rows={roomRows}
-              listings={rooms}
-              onOpen={open}
+              keys={rooms.map((l) => l.listing_id)}
+              onOpen={(i) => open(rooms[i])}
             />
           </SlimCard>
         )}
-        {listings.length === 0 && !loading && !error && (
+        {challenges.length > 0 && (
+          <SlimCard title="Open challenges" action={<Text className="e-dim">{challenges.length}</Text>}>
+            <RowTable
+              headers={["GAME", "CREATOR", "STAKE", "RELAY", "EXPIRES"]}
+              rows={challengeRows}
+              keys={challenges.map((c) => c.challenge_id)}
+            />
+          </SlimCard>
+        )}
+        {listings.length === 0 && challenges.length === 0 && !loading && !error && (
           <Text className="e-faint">{EMPTY_SEED_HINT}</Text>
         )}
       </Indent>

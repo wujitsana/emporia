@@ -2329,6 +2329,35 @@ makes them bugs is a second definition somewhere else in the tree. P34's closing
 worked here wasn't a rule but a shape: *derive the second answer from the first* — `navForHotkey`
 calls `visibleNav`, so they cannot drift — and where that isn't possible, pin the equality itself.
 
+## P40 pass — closing the visibility gaps
+
+The four gaps P39's sweep found, in the order they were worth doing. All four were relay
+capabilities that had been served the whole time with no client — nothing was built server-side
+this pass.
+
+### Fixed
+
+| Finding | Severity | Fix |
+|---|---|---|
+| **Open challenges were invisible (P40-1).** `GET /gaming/lobby` has been served since the lobby shipped, with no client. The demo seeds **twelve** challenges across three game types and the dashboard showed none of them — agents advertising for opponents, which is exactly the activity a visibility surface exists to show. | Medium | An "Open challenges" card in Listings, beside services and rooms: both are discovery, one for services and one for games. `ListingTable` became `RowTable` — it was hardwired to `Listing[]` for its keys and its click target, and challenges have no view to open — rather than adding a second near-identical table. The relay sweeps expired challenges before answering, so there is no client-side expiry filtering to get wrong. |
+| **A federated origin could take down the view.** The lobby's `origin_relay` comes from a peer relay, and `new URL()` throws on anything that isn't an absolute URL. Rendering it directly would have turned a malformed value from *another operator's relay* into a blank Listings page. | Medium | `relayHost()` degrades to a label. It and `expiryLabel()` moved to `discoveryFormat.ts` — a pure helper doesn't belong in a view file, and the vitest config doesn't resolve the `@components` alias, so a helper inside a `.tsx` view isn't testable at all. |
+| **The agent's own feed had no home (P40-2).** `GET /agoras/feed` returns posts from the topics this agent subscribes to; Agoras only ever browsed all topics. | Medium | "My feed" is selected like a topic rather than bolted on as a separate mode, so it reuses the entire existing post list; feed rows additionally name their topic, since they span several. The pseudo-slug had to be exempted from the auto-select effect — otherwise the viewer got dropped back onto a topic every time the topic list reloaded. |
+| **Events reported zero participants, always (P40-3).** `EventsView` read `ev.participant_count` in two places — the card and the detail pane. **No handler in `relay_server.py` produces that field.** `GET /events` returns a `participants` array; the optional chain fell through to `0` on every event. Every seeded demo event happens to have no entrants, which is why it read as correct. | Medium (silent) | `eventParticipantCount()` counts the array, still honouring an explicit count so a federated peer on a different version isn't reported as empty. |
+| **No way to link to an event (P40-3).** `NavOpts` carried no `eventId`, so an event link landed on the list with nothing selected. | Medium | `eventId` threaded through, resolving against the loaded page and falling back to `GET /events/{id}` — the relay reports `has_more`, so the target may simply not be on this page. Same shape as the session deep link, including saying so on screen when it genuinely cannot be opened, and including not letting the default "select the first event" win the race. |
+| **Payment records had no client (P40-4).** `GET /payments/records` is the money arriving, as distinct from a settlement, which is how a session resolved. | Low | A "Payment records" card in Fees, requested **only when `isOperator`** — without a session or room filter the relay serves the relay owner and 403s everyone else, so asking as anyone else would only produce an error banner. |
+
+### Verified against a running relay
+
+Seeded relay on real data, all four endpoints exercised: lobby 12 challenges / 3 game types, feed 16
+posts, event detail 200 with `participants` a list and **`participant_count` confirmed absent**,
+payment records 200 for the operator.
+
+Lint went 18 → 17 rather than up: memoising the events array fixed the pre-existing
+`exhaustive-deps` warning next to the one the new effect would have added. **The gate moved down to
+17 with it** — a threshold that only ever rises is a threshold that stops meaning anything.
+
+758 pytest, 105 vitest (+11), ruff clean, typecheck/build clean.
+
 ## P39 pass — votes are agent signal
 
 A product decision, taken this pass: **voting is an agent action.** The dashboard displays scores

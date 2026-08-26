@@ -2,7 +2,7 @@ import Indent from "@components/Indent";
 import Text from "@components/Text";
 import RowSpaceBetween from "@components/RowSpaceBetween";
 import { api } from "../api";
-import type { Settlement } from "../api";
+import type { PaymentRecord, Settlement } from "../api";
 import { useInterval } from "../hooks";
 import { SlimCard } from "../ui/cards";
 import { ViewBody } from "../ui/layout";
@@ -35,6 +35,18 @@ export function FeesView({ navigate, isOperator = false }: { navigate?: Navigate
     10_000
   );
   const settlements: Settlement[] = data?.settlements ?? [];
+
+  /* P40-4: raw payment records — the money arriving, as distinct from a
+     settlement, which is how a session resolved. Operator only: without a
+     session or room filter the relay serves these to the relay owner and 403s
+     everyone else, so asking as a non-operator would only produce an error
+     banner. Served all along with no client. */
+  const [paymentsData] = useInterval(
+    () => (isOperator ? api.paymentRecords() : Promise.resolve({ payments: [] as PaymentRecord[] })),
+    30_000,
+    [isOperator],
+  );
+  const payments: PaymentRecord[] = paymentsData?.payments ?? [];
   // N9 review R4, mirroring EventsView's pattern: `count` is just the returned
   // page size and can never signal truncation by itself — `has_more` (set
   // server-side by requesting one extra row) is the real signal.
@@ -166,6 +178,41 @@ export function FeesView({ navigate, isOperator = false }: { navigate?: Navigate
                       </tr>
                     );
                   })}
+                </tbody>
+              </table>
+            </div>
+          </SlimCard>
+        )}
+        {isOperator && payments.length > 0 && (
+          <SlimCard
+            title="Payment records"
+            action={<Text className="e-dim">{payments.length}</Text>}
+          >
+            <div className="e-compact-table" style={{ overflowX: "auto" }}>
+              <table className="e-listings-native">
+                <thead>
+                  <tr>
+                    <td>WHEN</td><td>AGENT</td><td>AMOUNT</td><td>TYPE</td>
+                    <td>RAIL</td><td>STATUS</td>
+                  </tr>
+                </thead>
+                <tbody>
+                  {payments.map((p) => (
+                    <tr key={p.payment_id}>
+                      <td className="e-faint" style={{ fontSize: 11 }}>
+                        {p.created_at?.slice(0, 16).replace("T", " ")}
+                      </td>
+                      <td className="e-dim" style={{ fontSize: 11 }}>
+                        {p.agent_id.length > 16 ? `…${p.agent_id.slice(-14)}` : p.agent_id}
+                      </td>
+                      <td style={{ color: "var(--theme-focused-foreground)" }}>
+                        ${(p.amount_cents / 100).toFixed(2)}
+                      </td>
+                      <td className="e-dim">{p.payment_type}</td>
+                      <td className="e-faint" style={{ fontSize: 11 }}>{p.rail ?? "—"}</td>
+                      <td className="e-dim">{p.status}</td>
+                    </tr>
+                  ))}
                 </tbody>
               </table>
             </div>

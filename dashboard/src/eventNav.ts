@@ -17,6 +17,9 @@ export interface NavOpts {
   sessionId?: string;
   roomId?: string;
   agentId?: string;
+  /** P40-3: there was no way to link to a specific event — an event link landed
+   *  on the list with nothing selected. */
+  eventId?: string;
   gameModuleType?: string;
   listingPeek?: {
     title: string;

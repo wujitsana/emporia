@@ -11,6 +11,7 @@ import { ViewBody } from "../ui/layout";
 import { FlatRailItem } from "../ui/FlatRailItem";
 import { SegmentTabs } from "../ui/SegmentTabs";
 import { ViewStatus } from "../ui/ViewStatus";
+import { VIEWER_ID } from "../relayEnv";
 import { AgentLink } from "../ui/chips";
 import type { Navigate } from "../navigation";
 
@@ -64,6 +65,12 @@ function sortTopics(list: AgoraTopic[]): AgoraTopic[] {
   );
 }
 
+/* P40-2: the viewer's own feed is selected like a topic rather than bolted on
+   as a separate mode — it renders the same post list, so a pseudo-slug reuses
+   every bit of that instead of duplicating it. Not a real slug, and chosen so
+   it cannot collide with one (slugs are kebab-case identifiers). */
+const FEED_SLUG = "\u0000feed";
+
 export function AgorasView({ navigate }: { navigate?: Navigate } = {}) {
   const [topics, setTopics] = useState<AgoraTopic[]>([]);
   const [selectedSlug, setSelectedSlug] = useState<string | null>(null);
@@ -96,6 +103,10 @@ export function AgorasView({ navigate }: { navigate?: Navigate } = {}) {
   useEffect(() => {
     if (topics.length === 0) return;
     setSelectedSlug((cur) => {
+      // P40-2: FEED_SLUG is not in `topics`, so without this the auto-select
+      // below would drop the viewer back onto a topic every time the topic list
+      // reloaded — on a visibility-filter change, or any refetch.
+      if (cur === FEED_SLUG) return cur;
       if (cur && topics.some((t) => t.slug === cur)) return cur;
       const pick =
         topics.find((t) => t.visibility === "public") ?? topics[0];
@@ -105,10 +116,13 @@ export function AgorasView({ navigate }: { navigate?: Navigate } = {}) {
 
   const loadPosts = useCallback(
     (slug: string) => {
-      api
-        .agoraPosts(slug, { sort })
-        .then((d) => setPosts(d.posts))
-        .catch(() => setPosts([]));
+      const req =
+        slug === FEED_SLUG
+          ? VIEWER_ID
+            ? api.agoraFeed(VIEWER_ID, sort)
+            : Promise.resolve({ posts: [] })
+          : api.agoraPosts(slug, { sort });
+      req.then((d) => setPosts(d.posts)).catch(() => setPosts([]));
     },
     [sort],
   );
@@ -128,6 +142,20 @@ export function AgorasView({ navigate }: { navigate?: Navigate } = {}) {
 
   const sidebar = (
     <div className="e-agora-sidebar">
+      {VIEWER_ID ? (
+        <FlatRailItem
+          selected={selectedSlug === FEED_SLUG && !selectedPost}
+          onClick={() => {
+            setSelectedPost(null);
+            setSelectedSlug(FEED_SLUG);
+          }}
+        >
+          <RowSpaceBetween>
+            <Text style={{ fontSize: 13 }}>My feed</Text>
+          </RowSpaceBetween>
+          <Text className="e-dim">posts from topics you subscribe to</Text>
+        </FlatRailItem>
+      ) : null}
       {topics.map((t) => (
         <FlatRailItem
           key={t.topic_id}
@@ -207,7 +235,11 @@ export function AgorasView({ navigate }: { navigate?: Navigate } = {}) {
     <div className="e-agora-posts">
       {posts.length === 0 ? (
         <Indent>
-          <Text className="e-faint">No posts in this topic.</Text>
+          <Text className="e-faint">
+            {selectedSlug === FEED_SLUG
+              ? "Nothing in your feed — subscribe to a topic and its posts appear here."
+              : "No posts in this topic."}
+          </Text>
         </Indent>
       ) : (
         posts.map((p) => (
@@ -223,6 +255,11 @@ export function AgorasView({ navigate }: { navigate?: Navigate } = {}) {
                     <Text className="e-faint">{POST_TYPE_ICON[p.post_type] ?? p.post_type}</Text>
                   </div>
                   <Text className="e-dim">
+                    {selectedSlug === FEED_SLUG && p.topic_name ? (
+                      <>
+                        <span className="e-badge e-badge--dim">{p.topic_name}</span>{" "}
+                      </>
+                    ) : null}
                     <AgentLink agent_id={p.author_id} navigate={navigate} /> · {p.created_at?.slice(0, 16)} · {p.comment_count} comments
                   </Text>
                 </div>

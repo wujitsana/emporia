@@ -4,7 +4,7 @@ import Indent from "@components/Indent";
 import SidebarLayout from "@components/SidebarLayout";
 import Text from "@components/Text";
 import RowSpaceBetween from "@components/RowSpaceBetween";
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import { api } from "../api";
 import type { EmporiaEvent } from "../api";
 import { FlatRailItem } from "../ui/FlatRailItem";
@@ -12,6 +12,7 @@ import { useInterval } from "../hooks";
 import { EMPTY_SEED_HINT } from "../navigation";
 import { ViewBody } from "../ui/layout";
 import { ViewStatus } from "../ui/ViewStatus";
+import { eventParticipantCount } from "../eventFormat";
 import { EmptyPane } from "../ui/cards";
 
 function statusDot(status: string) {
@@ -23,7 +24,7 @@ function statusDot(status: string) {
 
 function EntryCount({ ev }: { ev: EmporiaEvent }) {
   const fee = parseFloat(ev.entry_fee_usd ?? "0");
-  const count = ev.participant_count ?? 0;
+  const count = eventParticipantCount(ev);
   return (
     <div style={{ display: "flex", gap: 6, alignItems: "center", flexWrap: "wrap", marginTop: 2 }}>
       {count > 0 ? (
@@ -40,7 +41,7 @@ function EntryCount({ ev }: { ev: EmporiaEvent }) {
 
 function EventDetail({ ev, onBack }: { ev: EmporiaEvent; onBack: () => void }) {
   const module = ev.module_type.replace("emporia:", "").replace(":v1", "");
-  const count = ev.participant_count ?? 0;
+  const count = eventParticipantCount(ev);
   const fee = parseFloat(ev.entry_fee_usd ?? "0");
 
   return (
@@ -90,10 +91,46 @@ function EventDetail({ ev, onBack }: { ev: EmporiaEvent; onBack: () => void }) {
   );
 }
 
-export function EventsView({ refreshTrigger }: { refreshTrigger: number }) {
+export function EventsView({
+  refreshTrigger,
+  initialEventId = null,
+}: {
+  refreshTrigger: number;
+  /** P40-3: follow a link to one event. Resolves against the loaded page first,
+   *  then asks the relay — GET /events reports has_more, so the target may
+   *  simply not be on this page. Same shape as the session deep link (P36-3),
+   *  including saying so on screen when it genuinely cannot be opened. */
+  initialEventId?: string | null;
+}) {
   const [data, loading, error] = useInterval(() => api.events(), 10_000, [refreshTrigger]);
   const [selected, setSelected] = useState<EmporiaEvent | null>(null);
-  const events: EmporiaEvent[] = data?.events ?? [];
+  const [deepLinkMiss, setDeepLinkMiss] = useState<string | null>(null);
+  const deepLinkFetched = useRef<string | null>(null);
+
+  // P40-3: memoised because two effects depend on it. `data?.events ?? []`
+  // builds a new array every render, so both effects re-ran on every render —
+  // harmless here (one is ref-guarded, the other is a `cur ?? first` no-op) but
+  // exactly the churn the exhaustive-deps warning is pointing at.
+  const events: EmporiaEvent[] = useMemo(() => data?.events ?? [], [data]);
+
+  useEffect(() => {
+    if (!initialEventId) return;
+    const found = events.find((e) => e.event_id === initialEventId);
+    if (found) {
+      setSelected(found);
+      setDeepLinkMiss(null);
+      return;
+    }
+    if (loading) return;
+    if (deepLinkFetched.current === initialEventId) return;
+    deepLinkFetched.current = initialEventId;
+    let cancelled = false;
+    api.event(initialEventId)
+      .then((e) => { if (!cancelled) { setSelected(e); setDeepLinkMiss(null); } })
+      .catch(() => { if (!cancelled) setDeepLinkMiss(initialEventId); });
+    return () => { cancelled = true; };
+  }, [initialEventId, events, loading]);
+
   // The relay caps this response at 50 by default (N4-5). `count` is just the
   // returned page size (== events.length always) — it can never signal
   // truncation. `has_more` (N6 review R2) is the real signal: it's set by
@@ -101,9 +138,11 @@ export function EventsView({ refreshTrigger }: { refreshTrigger: number }) {
   const truncated = data?.has_more === true;
 
   useEffect(() => {
-    if (events.length === 0) return;
+    // P40-3: don't default-select while a deep link is being resolved, or the
+    // first event wins the race and the link looks like it did nothing.
+    if (initialEventId || events.length === 0) return;
     setSelected((cur) => cur ?? events[0]);
-  }, [events]);
+  }, [events, initialEventId]);
 
   const sidebar = (
     <div>
@@ -130,6 +169,13 @@ export function EventsView({ refreshTrigger }: { refreshTrigger: number }) {
     <EventDetail ev={selected} onBack={() => setSelected(null)} />
   ) : (
     <Indent>
+      {/* P40-3: a deep link that resolves to nothing says so, rather than
+          leaving the view looking like the link did nothing at all. */}
+      {deepLinkMiss ? (
+        <Text className="e-faint" style={{ padding: "16px 0", display: "block" }}>
+          Event …{deepLinkMiss.slice(-8)} could not be opened — it may have been removed.
+        </Text>
+      ) : null}
       {events.length === 0 && !loading && !error ? (
         <EmptyPane
           title="No scheduled events"

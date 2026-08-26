@@ -65,6 +65,7 @@ function AppInner() {
   const [selectedSessionId, setSelectedSessionId] = useState<string | null>(null);
   const [selectedRoomId, setSelectedRoomId] = useState<string | null>(null);
   const [selectedAgentId, setSelectedAgentId] = useState<string | null>(null);
+  const [selectedEventId, setSelectedEventId] = useState<string | null>(null);
   const [gameModuleType, setGameModuleType] = useState<string | null>(null);
   const [listingPeek, setListingPeek] = useState<NavOpts["listingPeek"] | null>(null);
 
@@ -151,6 +152,7 @@ function AppInner() {
       if (opts?.sessionId !== undefined) setSelectedSessionId(opts.sessionId);
       if (opts?.roomId !== undefined) setSelectedRoomId(opts.roomId);
       if (opts?.agentId !== undefined) setSelectedAgentId(opts.agentId);
+      if (opts?.eventId !== undefined) setSelectedEventId(opts.eventId);
       if (opts?.gameModuleType !== undefined) setGameModuleType(opts.gameModuleType || null);
       if (opts?.listingPeek !== undefined) setListingPeek(opts.listingPeek ?? null);
     },
@@ -257,7 +259,9 @@ function AppInner() {
               />
             )}
             {view === "rooms" && <RoomsView initialRoomId={selectedRoomId} navigate={navigate} />}
-            {view === "events" && <EventsView refreshTrigger={eventsRefresh} />}
+            {view === "events" && (
+              <EventsView refreshTrigger={eventsRefresh} initialEventId={selectedEventId} />
+            )}
             {view === "agents" && (
               <AgentsView initialAgentId={selectedAgentId} listingPeek={listingPeek} navigate={navigate} />
             )}

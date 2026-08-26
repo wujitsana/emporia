@@ -107,6 +107,24 @@ export interface AgentProfile {
   payment_methods?: string[];
 }
 
+/** P40-1: an open lobby challenge — an agent advertising that it wants an
+ *  opponent. `origin_relay` is non-null when the challenge was imported from a
+ *  federated peer rather than created here. */
+export interface Challenge {
+  challenge_id: string;
+  game_type: string;
+  creator_agent_id: string;
+  creator_gateway_url?: string;
+  payment_mode: string;
+  stake_amount: string;
+  currency?: string;
+  status: string;
+  created_at: string;
+  expires_at?: string | null;
+  origin_relay?: string | null;
+  metadata?: Record<string, unknown>;
+}
+
 export interface Session {
   session_id: string;
   module_type: string;
@@ -134,7 +152,13 @@ export interface EmporiaEvent {
   organizer_id: string;
   status: string;
   entry_fee_usd: string;
+  /** P40-3: what the relay actually sends. `participant_count` below is kept
+   *  only for a federated peer that might send one; nothing here produces it. */
+  participants?: string[];
   participant_count?: number;
+  description?: string;
+  payment_mode?: string;
+  bracket?: Record<string, unknown>;
   created_at: string;
 }
 
@@ -297,6 +321,24 @@ export interface PaymentIntent {
   client_secret: string;
   amount_cents: number;
   status: string;
+}
+
+/** P40-4: a raw confirmed PaymentIntent. Distinct from a Settlement, which is
+ *  the *outcome* of a session — a payment is the money arriving. Without a
+ *  filter the relay serves these to the operator only; `agent_id` and
+ *  `payment_intent_id` come back "[redacted]" on rows that aren't the caller's. */
+export interface PaymentRecord {
+  payment_id: string;
+  session_id?: string | null;
+  room_id?: string | null;
+  agent_id: string;
+  amount_cents: number;
+  currency: string;
+  payment_intent_id: string;
+  payment_type: string;
+  status: string;
+  rail?: string;
+  created_at: string;
 }
 
 export interface Settlement {
@@ -481,6 +523,17 @@ export const api = {
     get<{ session_id: string; actions: SessionAction[] }>(
       `/sessions/${session_id}/actions`, { agentScoped: true }
     ),
+  // P40-1: open challenges. The relay sweeps expired ones before answering
+  // (GameRegistry.list_challenges calls expire_challenges first), so what comes
+  // back is genuinely open — no client-side expiry filtering needed.
+  // P40-3: single event, so a deep link resolves one that isn't on the current
+  // page of GET /events (which reports has_more).
+  event: (event_id: string) =>
+    get<EmporiaEvent>(`/events/${encodeURIComponent(event_id)}`),
+  gamingLobby: (game_type?: string) =>
+    get<{ ok: boolean; count: number; challenges: Challenge[] }>(
+      `/gaming/lobby${game_type ? `?game_type=${encodeURIComponent(game_type)}` : ""}`,
+    ),
   events: () => get<{ events: EmporiaEvent[]; count: number; has_more: boolean }>("/events"),
   // viewer/member scoping now comes from the authenticated caller server-side
   // (_dashboard_agent_id), not a client-supplied id — see relay N1-6.
@@ -536,6 +589,9 @@ export const api = {
 
   // Payment endpoints — buyer is the authenticated caller (agentHeaders()), not a body
   // field (N2-4).
+  // P40-4: raw payment records. No filter = relay operator only (the relay 403s
+  // anyone else), which is why FeesView asks for these only when isOperator.
+  paymentRecords: () => get<{ payments: PaymentRecord[] }>("/payments/records", { agentScoped: true }),
   settlements: (limit = 100) =>
     get<{ settlements: Settlement[]; count: number; has_more: boolean }>(
       `/payments/settlements?limit=${limit}`, { agentScoped: true }
@@ -564,6 +620,13 @@ export const api = {
       `/agoras/topics/${encodeURIComponent(slug)}/posts${q.size ? `?${q}` : ""}`, { agentScoped: true }
     );
   },
+  // P40-2: the viewer's own subscribed-topic feed, as opposed to browsing all
+  // topics. Served all along with no client.
+  agoraFeed: (agent_id: string, sort: "new" | "top" = "new") =>
+    get<{ posts: AgoraPost[] }>(
+      `/agoras/feed?agent_id=${encodeURIComponent(agent_id)}&sort=${sort}`,
+      { agentScoped: true },
+    ),
   agoraPost: (post_id: string) =>
     get<AgoraPost>(`/agoras/posts/${encodeURIComponent(post_id)}`, { agentScoped: true }),
   agentInbox: (agent_id: string, unread_only = true, limit = 50) =>

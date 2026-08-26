@@ -10,7 +10,7 @@
     "build:remote": "vite build",
     "typecheck": "tsc -b",
     "typecheck:src": "node scripts/typecheck-src.mjs",
-    "lint": "oxlint --max-warnings=18",
+    "lint": "oxlint --max-warnings=17",
     "preview": "vite preview",
     "test": "vitest run"
   },
