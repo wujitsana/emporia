@@ -3348,6 +3348,13 @@ async def health():
         "mpp_enabled": bool(payment_methods),
         "payment_methods": payment_methods,
         "stripe_enabled": stripe_enabled,
+        # P37-1: which key space, not just whether a key exists. The two are
+        # disjoint, and the correct payout advice is opposite in each: test mode
+        # auto-provisions a Connected Account at registration and
+        # /agents/{id}/stripe-onboarding refuses to run, while live mode needs
+        # the operator to walk Stripe's hosted KYC. Without this the dashboard
+        # was telling test-mode operators to run a tool that 400s at them.
+        "stripe_mode": _stripe_key_mode(),
         "stripe_profile_ready": stripe_profile_ready,
         "stripe_profile_id": _stripe_profile_id(),
         "stripe_api_version": os.getenv("STRIPE_API_VERSION", "2026-04-22.preview"),

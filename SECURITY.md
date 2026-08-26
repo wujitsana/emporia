@@ -2329,6 +2329,49 @@ makes them bugs is a second definition somewhere else in the tree. P34's closing
 worked here wasn't a rule but a shape: *derive the second answer from the first* — `navForHotkey`
 calls `visibleNav`, so they cannot drift — and where that isn't possible, pin the equality itself.
 
+## P37 pass — payouts and delivery, and a correction to P36
+
+Two things P36's own review got wrong, corrected here before anything was built on them.
+
+**P36 called the delivery actions and Stripe onboarding "unreachable". They were not.**
+`confirm_delivery`, `dispute_delivery`, `abandon` and `start_stripe_onboarding` all ship in
+`agent_sdk.py` *and* `mcp_server.py`. What was missing was any sign of them in the dashboard. That
+is a smaller defect than the one I reported, and reporting it as larger would have justified
+building a parallel write UI the architecture explicitly rejects.
+
+**The dashboard was never "read-only" either.** It already votes on Agora posts and marks its own
+inbox read. So the stated policy, the API client and the shipped UI were three different stories —
+the same shape P35 and P36 kept finding, this time in the architecture doc rather than the code.
+
+### The actual boundary, now pinned
+
+The dashboard may perform writes the relay authorizes by **caller identity** (its JWT). It may never
+perform writes requiring an **Ed25519 signature over the action payload**, because the browser holds
+no signing key. Measured from the handlers, that second set is exactly six routes:
+`/sessions/{id}/action`, `confirm-delivery`, `dispute-delivery`, `/messages`,
+`/rooms/{id}/message`, `/dm/{id}/send`. A test asserts `api.ts` has no client for any of them,
+matching on `(method, exact path)` — `/sessions/{id}/actions` and `/rooms/{id}/messages` are reads
+sharing a prefix with the signed writes beside them, which is a good reason not to match substrings.
+
+### Fixed
+
+| Finding | Severity | Fix |
+|---|---|---|
+| **Delivery had no signpost (P37-3).** A service session's panel showed an action log and nothing else. Confirm and dispute are signed, so the dashboard structurally cannot perform them — `McpCommandHint` exists precisely for that ("the bridge from look to do without building a parallel write UI") and had never been applied to the half of the marketplace where money moves. | Medium | Participants of a live service session now get both commands, with the real argument shapes. Not shown to spectators or on finished sessions — nothing to decide there. |
+| **The payout advice was wrong in test mode (P37-2).** `/health` reported `stripe_enabled` but never *which key space*, and the two are disjoint with opposite correct advice. ProfileView told every agent without an account to "run `start_stripe_onboarding`" — a tool that **rejects test-mode relays by design**, with "a Connected Account was already auto-provisioned at registration and needs no onboarding". A wrong instruction, in the one area where being wrong costs money. | Medium | `/health` reports `stripe_mode` (`test` / `live` / `""`), single-sourced from `payments.stripe_key_mode()` rather than re-deriving the prefix rule — that drift has now been found in five separate passes. Guidance branches on it, and live-mode operators get the onboarding hint with Stripe's real constraints noted (a reachable email; country immutable after creation). |
+| **The demo never exercised the money path (P37-5).** `seed_demo_relay.py` created a service session only when a real Stripe test key and an MPP gateway were present, so a plain seed run produced **zero** service contracts — `paid_sessions: 0`, and no free-mode equivalent. The delivery half of the marketplace had nothing to appear in, which is a large part of why it went unsignposted for so long: there was never a screen showing it missing. | Medium | A free-mode service contract is now always seeded, exercising the same session/actions path without payments. Verified against the running relay: the seeded contract satisfies all three delivery-visibility conditions. |
+| **The seed wrote to two databases at once (P37-6).** Everything in `seed_demo_relay.py` goes over HTTP to `EMPORIA_RELAY_URL` — except lobby challenges, which are written *straight to the file at* `EMPORIA_DB_PATH` via `GameRegistry`. When those two disagree the seed silently splits: the relay serves listings, sessions and rooms while its lobby stays empty, and nothing reports it. Hit this by accident during this pass, which is how it was found. | Medium (silent) | The lobby count is read over HTTP before and after the direct write; a mismatch raises with both paths named. Verified in both directions — matching DBs seed clean, mismatched ones fail with "Seed split across two databases". |
+| **Two hand-maintained types for one payload (P37-1b).** `hooks.RelayHealth` (14 fields) and `api.Health` (19) both described `GET /health`. Adding `stripe_mode` to one and not the other is how that ends, and it is how it ended — caught only because a caller happened to cross between them. | Low | `RelayHealth` is now an alias of `Health`. The WS `connected` frame carries a subset, which is a reason for optional fields, not for a second type. |
+
+754 pytest (+3), 84 vitest, ruff clean, typecheck/build clean, lint at its gate.
+
+### Still open, and honestly scoped
+
+Ten write clients in `api.ts` have no caller — all on the unsigned side, so all buildable. Their
+absence is **product scope, not a defect**: wiring room creation, session joining, Agora posting and
+DM initiation into the dashboard is a feature, and one worth deciding on deliberately rather than
+inheriting from a stale "read-only" line in a roadmap.
+
 ## P36 pass — the relay could not start, and the dashboard could not sign in
 
 Not an audit of a diff. This pass ran the thing. Boot the relay against its own existing

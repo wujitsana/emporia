@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { resolveRelayUrl } from "./relayEnv";
 import { dashboardToken } from "./api";
+import type { Health } from "./api";
 
 // ─── URL helpers ────────────────────────────────────────────────────────────
 
@@ -204,21 +205,20 @@ export function useSenderPubkeys(
 // ─── Global event stream ─────────────────────────────────────────────────────
 
 export interface GlobalEvent { type: string; _ts: number; [k: string]: unknown }
-export interface RelayHealth {
-  status: string; version: string; service: string;
-  listing_count: number; session_count: number; modules: string[];
-  guardrails_mode?: string;
-  stripe_enabled?: boolean;
-  operator_fee_bps?: number;
-  // Present on GET /health; absent from the smaller WS "connected" frame snapshot
-  // above (relay_server.py's ws_global handler sends only the first six fields).
-  require_nous?: boolean;
-  mpp_enabled?: boolean;
-  payment_methods?: string[];
-  stripe_profile_ready?: boolean;
-  max_total_spend_cents?: number;
-  stripe_mpp_admin_notice?: string | null;
-}
+/**
+ * The `GET /health` payload.
+ *
+ * P37-1: this was a second, hand-maintained description of the same response
+ * that `api.Health` already described — 14 fields against 19, overlapping but
+ * not equal. Adding `stripe_mode` to one of them and not the other is exactly
+ * how that ends, and it is how it ended: the compiler caught it only because a
+ * caller happened to cross from one type to the other.
+ *
+ * The WS "connected" frame carries a subset of these (relay_server.py's
+ * ws_global handler sends the first six), which is why so many fields are
+ * optional — a subset is a reason for optionality, not for a second type.
+ */
+export type RelayHealth = Health;
 
 export interface GlobalWsState {
   events: GlobalEvent[];

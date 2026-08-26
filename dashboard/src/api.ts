@@ -231,6 +231,10 @@ export interface Health {
   guardrails_mode?: string;
   require_nous?: boolean;
   stripe_enabled?: boolean;
+  /** P37-1: "test" | "live" | "" — which key space, not merely whether a key
+   *  exists. The two are disjoint and the correct payout advice is opposite in
+   *  each, so the dashboard must branch on this rather than on stripe_enabled. */
+  stripe_mode?: string;
   mpp_enabled?: boolean;
   tempo_enabled?: boolean;
   operator_fee_bps?: number;

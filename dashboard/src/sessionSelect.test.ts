@@ -55,3 +55,34 @@ describe("resolveDeepLinkedSession", () => {
     expect(resolveDeepLinkedSession("dup", [dup], [dupDone])?.tab).toBe("live");
   });
 });
+
+// ── P37-3: who sees the delivery commands ────────────────────────────────────
+
+import { shouldShowDeliveryActions } from "./sessionSelect";
+
+const svc = (status: string, participants: string[]): Session => ({
+  ...s("svc-1", status, "emporia:service:v1"),
+  participants,
+});
+
+describe("shouldShowDeliveryActions", () => {
+  it("offers them to a participant of a running service contract", () => {
+    expect(shouldShowDeliveryActions(svc("active", ["buyer", "seller"]), "buyer")).toBe(true);
+    expect(shouldShowDeliveryActions(svc("active", ["buyer", "seller"]), "seller")).toBe(true);
+  });
+
+  it("withholds them from a spectator watching someone else's contract", () => {
+    expect(shouldShowDeliveryActions(svc("active", ["buyer", "seller"]), "onlooker")).toBe(false);
+    expect(shouldShowDeliveryActions(svc("active", ["buyer", "seller"]), null)).toBe(false);
+  });
+
+  it("withholds them once the contract is settled", () => {
+    // Nothing left to confirm or dispute; the relay would reject it anyway.
+    expect(shouldShowDeliveryActions(svc("completed", ["buyer"]), "buyer")).toBe(false);
+    expect(shouldShowDeliveryActions(svc("abandoned", ["buyer"]), "buyer")).toBe(false);
+  });
+
+  it("does not offer them on a module that has no delivery step", () => {
+    expect(shouldShowDeliveryActions(s("chess-1", "active"), "a")).toBe(false);
+  });
+});

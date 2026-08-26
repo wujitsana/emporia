@@ -21390,6 +21390,132 @@ def test_lifespan_second_run_does_not_see_a_stale_task_from_the_first():
 # ---------------------------------------------------------------------------
 
 
+# P37-4: the endpoints whose bodies must carry an Ed25519 signature over the
+# action itself. The browser holds no signing key, so these are the ones the
+# dashboard can never call however its auth is arranged -- the actual boundary
+# of the "dashboard doesn't write" rule, which ROADMAP.md had been describing
+# as plain read-only. It is not: the dashboard already votes on Agora posts and
+# marks its own inbox read, both caller-authenticated and neither signed.
+_ACTION_SIGNED_ROUTES = [
+    "/sessions/{session_id}/action",
+    "/sessions/{session_id}/confirm-delivery",
+    "/sessions/{session_id}/dispute-delivery",
+    "/messages",
+    "/rooms/{room_id}/message",
+    "/dm/{thread_id}/send",
+]
+
+
+def test_dashboard_has_no_client_for_an_action_signed_endpoint():
+    """The dashboard may perform writes the relay authorizes by caller identity
+    (its JWT), and may not perform writes that require a signature over the
+    action payload. The second kind gets an McpCommandHint instead -- that
+    component's whole purpose, and until P37-3 it had never been applied to
+    delivery, the point where money actually moves.
+
+    A client for one of these would be code that cannot succeed, which is worse
+    than a missing feature: it looks like a working path. Matching is on
+    (method, exact path): `/sessions/{id}/actions` and `/rooms/{id}/messages`
+    are reads that merely share a prefix with the signed writes next to them,
+    which is a good reason not to match on substrings."""
+    import re
+
+    api_ts = (Path(__file__).parent.parent / "dashboard" / "src" / "api.ts").read_text()
+
+    def _strip_interp(text: str) -> str:
+        out, i, n = [], 0, len(text)
+        while i < n:
+            if text.startswith("${", i):
+                depth, i = 1, i + 2
+                while i < n and depth:
+                    if text[i] == "{":
+                        depth += 1
+                    elif text[i] == "}":
+                        depth -= 1
+                    i += 1
+                out.append("{}")
+            else:
+                out.append(text[i])
+                i += 1
+        return "".join(out)
+
+    called: set[tuple[str, str]] = set()
+    for verb, raw in re.findall(r"\b(get|post|del|put|patch)<[^>]*>\(\s*[`\"]([^`\"]+)", api_ts):
+        path = _strip_interp(raw).split("?")[0].rstrip("/")
+        called.add(("DELETE" if verb == "del" else verb.upper(), path))
+
+    signed = {("POST", re.sub(r"\{[^}]+\}", "{}", r)) for r in _ACTION_SIGNED_ROUTES}
+    offenders = sorted(called & signed)
+    assert not offenders, (
+        "dashboard/src/api.ts has a client for an action-signed endpoint, which "
+        f"the browser holds no key to sign for: {offenders}"
+    )
+
+
+def test_health_reports_the_stripe_key_mode(monkeypatch):
+    """P37-1: `/health` said `stripe_enabled` but never which key space the
+    relay is configured for, and the two are completely disjoint. Without it
+    the dashboard cannot tell an operator whether payout onboarding even
+    applies: `POST /agents/{id}/stripe-onboarding` *rejects* test-mode relays
+    with "a Connected Account was already auto-provisioned at registration and
+    needs no onboarding", yet ProfileView told every agent without an account
+    to run that exact tool. Wrong instruction, in the one area where being
+    wrong costs money.
+
+    Public on purpose: a counterparty deciding whether to transact is entitled
+    to know the relay is in test mode, and `stripe_enabled` / `payment_rails`
+    are already there."""
+    import emporia.payments as payments
+    from emporia.relay_server import app
+
+    client = TestClient(app)
+
+    monkeypatch.setenv("STRIPE_SECRET_KEY", "sk_test_" + "x" * 20)
+    body = client.get("/health").json()
+    assert "stripe_mode" in body, "/health must report which Stripe key space it uses"
+    assert body["stripe_mode"] == "test"
+
+    monkeypatch.setenv("STRIPE_SECRET_KEY", "sk_live_" + "x" * 20)
+    assert client.get("/health").json()["stripe_mode"] == "live"
+
+    monkeypatch.delenv("STRIPE_SECRET_KEY", raising=False)
+    assert client.get("/health").json()["stripe_mode"] == ""
+
+    # Single-sourced, not a second copy of the prefix rule -- the drift this
+    # codebase has now found in five separate passes.
+    assert payments.stripe_key_mode() == ""
+
+
+def test_dashboard_payout_guidance_is_mode_aware():
+    """P37-2, the client half. The label that tells an operator what to do about
+    payouts must branch on the relay's Stripe mode, because the advice is
+    opposite in the two modes: in test mode the account already exists and the
+    onboarding tool refuses to run."""
+    src = (
+        Path(__file__).parent.parent / "dashboard" / "src" / "ProfileView.tsx"
+    ).read_text()
+    assert "stripeMode" in src, (
+        "ProfileView's payout guidance ignores the relay's Stripe mode -- it "
+        "told test-mode operators to run a tool that 400s at them"
+    )
+
+
+def test_dashboard_signposts_the_delivery_actions():
+    """P37-3: a service session's panel offered nothing about delivery. Confirm
+    and dispute are Ed25519-*signed* actions, so the dashboard structurally
+    cannot perform them -- which is exactly what McpCommandHint exists for
+    ("the bridge from look to do without building a parallel write UI"), and it
+    was simply never applied to the half of the marketplace where money moves.
+
+    P36's writeup called these "unreachable"; that was wrong and is corrected
+    there. They were reachable via MCP and the SDK, just unsignposted."""
+    src = (
+        Path(__file__).parent.parent / "dashboard" / "src" / "views" / "GamesView.tsx"
+    ).read_text()
+    for tool in ("confirm_delivery", "dispute_delivery"):
+        assert tool in src, f"the session panel does not signpost {tool}"
+
+
 def test_ui_config_reports_whether_header_auth_is_trusted():
     """P36-5: the dashboard hid its sign-in panel whenever the relay looked
     local (`if (isLocalRelay || dashboardToken) return null`), on the assumption

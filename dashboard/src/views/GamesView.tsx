@@ -24,12 +24,13 @@ import {
   shortAgent,
 } from "../chessReplay";
 import { ChessMoveLine, ChessPlayersBar } from "../ui/chessMatch";
-import { resolveDeepLinkedSession } from "../sessionSelect";
+import { resolveDeepLinkedSession, shouldShowDeliveryActions } from "../sessionSelect";
 import { ViewStatus } from "../ui/ViewStatus";
 import { ViewBody } from "../ui/layout";
 import type { NavOpts } from "../eventNav";
 import { ListingPeekBanner } from "../ui/ListingPeekBanner";
 import { AuditBadge } from "../ui/AuditBadge";
+import { McpCommandHint } from "../ui/McpCommandHint";
 import { toWsUrl, useInterval } from "../hooks";
 
 export const GAME_TYPES = [
@@ -241,6 +242,7 @@ export function NonChessSessionPanel({ session }: { session: Session }) {
   const [loading, setLoading] = React.useState(false);
 
   const moduleKind = session.module_type.replace("emporia:", "").replace(/:v\d$/, "");
+  const showDelivery = shouldShowDeliveryActions(session, VIEWER_ID);
 
   useEffect(() => {
     setLoading(true);
@@ -308,6 +310,41 @@ export function NonChessSessionPanel({ session }: { session: Session }) {
             );
           })}
         </div>
+      )}
+      {/* P37-3: the delivery half of a service contract. `confirm` and `dispute`
+          are Ed25519-signed actions, so the dashboard structurally cannot
+          perform them — McpCommandHint is the established bridge from "look" to
+          "do", and it had simply never been applied to the point where money
+          actually moves. Shown only to a participant of a live service session:
+          a spectator has nothing to confirm, and a finished session has nothing
+          left to decide. */}
+      {showDelivery && VIEWER_ID && (
+        <>
+          <br />
+          <Divider />
+          <br />
+          <Text className="e-dim" style={{ display: "block", marginBottom: 6 }}>
+            Delivery — the buyer settles this contract
+          </Text>
+          <McpCommandHint
+            label="Accept the deliverable and release payment"
+            tool="confirm_delivery"
+            args={{
+              session_id: session.session_id,
+              agent_id: VIEWER_ID,
+              rationale: "<why you are accepting — 15 chars min>",
+            }}
+          />
+          <McpCommandHint
+            label="Reject it and release the hold back to the buyer"
+            tool="dispute_delivery"
+            args={{
+              session_id: session.session_id,
+              agent_id: VIEWER_ID,
+              reason: "<what was wrong>",
+            }}
+          />
+        </>
       )}
       <br />
       <Text className="e-faint" style={{ fontSize: "0.65rem" }}>

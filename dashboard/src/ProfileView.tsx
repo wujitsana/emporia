@@ -8,6 +8,7 @@ import { MetaGrid, SlimCard } from "./ui/cards";
 import { useInterval } from "./hooks";
 import { useRelayCtx } from "./relayContext";
 import { TrustBadge } from "./views/AgentsView";
+import { McpCommandHint } from "./ui/McpCommandHint";
 import { useEffect, useRef, useState } from "react";
 
 /**
@@ -90,11 +91,18 @@ function RolePill({ isOperator, isSpectator }: { isOperator: boolean; isSpectato
  *  at the MCP tool that starts onboarding, matching this file's existing
  *  MCP-hint pattern (RemoteAuthPanel above) rather than adding a signing
  *  write-flow to the dashboard itself. */
-function stripeAccountStatusLabel(registered: AgentProfile): string {
+function stripeAccountStatusLabel(registered: AgentProfile, stripeMode: string): string {
   const status = registered.stripe_account_status ?? (registered.has_stripe ? "active" : "none");
   if (status === "active") return "connected";
   if (status === "pending") return "onboarding pending — Stripe confirms automatically";
-  return "not connected — run start_stripe_onboarding (MCP) for live payouts";
+  // P37-2: the advice is opposite in the two key spaces, and this used to give
+  // the live-mode one unconditionally. In test mode the relay auto-provisions a
+  // Connected Account at registration and POST /agents/{id}/stripe-onboarding
+  // *rejects* the call — so "run start_stripe_onboarding" was an instruction
+  // that could only produce a 400.
+  if (stripeMode === "test") return "not connected — test mode provisions an account at registration";
+  if (stripeMode !== "live") return "not connected — this relay has no Stripe key configured";
+  return "not connected — needs Stripe onboarding for live payouts";
 }
 
 function SettlementRow({ s, viewerId }: { s: Settlement; viewerId: string }) {
@@ -138,6 +146,8 @@ export function ProfileView() {
   }, [viewerId]);
 
   const [agentsData] = useInterval(() => api.agents(), 30_000);
+  const [health] = useInterval(() => api.health(), 30_000);
+  const stripeMode = health?.stripe_mode ?? "";
   const agents = agentsData?.agents ?? [];
   const registered = profile ?? agents.find((a) => a.agent_id === viewerId) ?? null;
   const displayName = registered?.display_name || registered?.agent_id || viewerId || "Spectator";
@@ -175,7 +185,7 @@ export function ProfileView() {
                 ["Registered", new Date(registered.registered_at).toLocaleDateString()],
                 ["Sessions", String(registered.session_count)],
                 ["Wins", `${registered.win_count} (${registered.session_count > 0 ? Math.round((registered.win_count / registered.session_count) * 100) : 0}%)`],
-                ["Stripe payouts", stripeAccountStatusLabel(registered)],
+                ["Stripe payouts", stripeAccountStatusLabel(registered, stripeMode)],
                 ["Stripe MPP seller", registered.stripe_profile_ready ? "ready" : "not ready"],
                 ...(registered.payment_methods?.length ? [["Methods", registered.payment_methods.join(", ")] as [string, string]] : []),
                 ...(registered.payment_rails?.length ? [["Rails", registered.payment_rails.join(", ")] as [string, string]] : []),
@@ -236,6 +246,31 @@ export function ProfileView() {
                 ))}
               </div>
             )}
+          </SlimCard>
+        )}
+
+        {/* P37-2: live-mode payout onboarding. Only shown when it can actually
+            do something: a live key, an identified viewer, and an account that
+            is not already active. `start_stripe_onboarding` returns a URL the
+            operator opens in a browser to walk Stripe's hosted KYC — the
+            dashboard cannot perform it, which is what the hint is for. */}
+        {!isSpectator && viewerId && stripeMode === "live"
+          && (registered?.stripe_account_status ?? (registered?.has_stripe ? "active" : "none")) !== "active" && (
+          <SlimCard title="Payouts">
+            <Text className="e-faint" style={{ display: "block", marginBottom: 8 }}>
+              {(registered?.stripe_account_status ?? "none") === "pending"
+                ? "Stripe is still verifying this account. Re-run the tool for a fresh onboarding link if the last one expired — Stripe confirms the result automatically."
+                : "Live payouts need a Stripe Connected Account. The tool returns a link to Stripe's own verification flow; open it in a browser."}
+            </Text>
+            <McpCommandHint
+              label="Start Stripe onboarding via MCP"
+              tool="start_stripe_onboarding"
+              args={{ agent_id: viewerId, email: "you@example.com", country: "US" }}
+            />
+            <Text className="e-faint" style={{ fontSize: "0.68rem", marginTop: 8, display: "block" }}>
+              Use a real, reachable address — Stripe sends verification requirements and payout
+              failures there. Country is fixed once the account exists.
+            </Text>
           </SlimCard>
         )}
 

@@ -507,6 +507,17 @@ async def seed() -> None:
                     summary["listings"] = len(listings)
 
                     # --- Lobby challenges (PTGS) ---
+                    # P37-6: these are the one thing this script writes straight
+                    # to a database file instead of over HTTP, so they land
+                    # wherever EMPORIA_DB_PATH points -- which is NOT necessarily
+                    # the database the relay at EMPORIA_RELAY_URL is using. When
+                    # the two disagree the seed silently splits in half: the
+                    # relay serves listings, sessions and rooms while its lobby
+                    # stays empty, and nothing says so. Count before and after
+                    # and fail loudly instead.
+                    lobby_before = await _get(http, "/gaming/lobby")
+                    count_before = int((lobby_before or {}).get("count") or 0)
+
                     game_reg = GameRegistry(DB_PATH)
                     challenges = []
                     for game, creator, stake, mode in [
@@ -527,6 +538,17 @@ async def seed() -> None:
                         )
                         challenges.append(ch.challenge_id)
                     summary["challenges"] = len(challenges)
+
+                    lobby_after = await _get(http, "/gaming/lobby")
+                    count_after = int((lobby_after or {}).get("count") or 0)
+                    if count_after - count_before != len(challenges):
+                        raise SystemExit(
+                            f"Seed split across two databases: wrote {len(challenges)} "
+                            f"challenges directly to {DB_PATH}, but the relay at {RELAY} "
+                            f"went from {count_before} to {count_after} in its lobby. "
+                            "EMPORIA_DB_PATH must name the same database the relay is "
+                            "running against."
+                        )
 
                     # --- Rooms ---
                     room_pub = await hermes.create_room(
@@ -568,6 +590,22 @@ async def seed() -> None:
                     await _play_chess(hermes, nemotron, SCHOLARS_MATE)
                     summary["sessions"] = 4
                     summary["completed_chess"] = 3
+
+                    # --- Free-mode service contract (always seeded) ---
+                    # P37-3: the delivery half of the marketplace -- confirm and
+                    # dispute -- had no demo to appear in. The paid variant below
+                    # needs a real Stripe test key and an MPP gateway, so on a
+                    # plain `seed_demo_relay.py` run the service module produced
+                    # nothing at all and the flow could not be shown. Free mode
+                    # exercises the same session/actions path without payments.
+                    svc = await hermes.create_session(
+                        "emporia:service:v1",
+                        config={"description": "Logo redraw — 2 rounds, free-mode demo"},
+                        payment_rules={"mode": "free"},
+                    )
+                    svc_sid = svc["session_id"]
+                    await beta.join_session(svc_sid)
+                    summary["service_sessions"] = 1
 
                     # --- Paid Stripe MPP demo session (sandbox only) ---
                     if os.getenv("STRIPE_SECRET_KEY", "").startswith("sk_test_"):

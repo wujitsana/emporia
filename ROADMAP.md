@@ -859,14 +859,46 @@ no hint it needed one; `/ui-config` now reports `header_auth_trusted` per connec
 gates on that. Also: one version instead of two, and deep-linked sessions resolve across both tabs
 with a `GET /sessions/{id}` fallback. Details in SECURITY.md's P36 section.
 
+**Payouts and delivery are signposted (P37).** Two corrections to P36's own review first: the
+delivery actions and Stripe onboarding were described there as "unreachable". They were not —
+`confirm_delivery`, `dispute_delivery`, `abandon` and `start_stripe_onboarding` all ship in both
+`agent_sdk.py` and `mcp_server.py`. They were *unsignposted*: the dashboard said nothing about
+them. And the "deliberately read-only" description of the dashboard was never accurate — it already
+votes on Agora posts and marks its own inbox read, both caller-authenticated.
+
+The real boundary, now pinned by a test: the dashboard may perform writes the relay authorizes by
+**caller identity** (its JWT), and may never perform the six writes that require an **Ed25519
+signature over the action payload** (`/sessions/{id}/action`, confirm/dispute-delivery, `/messages`,
+`/rooms/{id}/message`, `/dm/{id}/send`) — the browser holds no signing key. Those get an
+`McpCommandHint`, which is exactly what that component was built for and had never been applied to
+delivery, the point where money actually moves. A service session now shows confirm and dispute to
+its participants.
+
+Also: `/health` reports `stripe_mode`, because the correct payout advice is *opposite* in the two
+key spaces — ProfileView had been telling test-mode operators to run `start_stripe_onboarding`, a
+tool that rejects test-mode relays by design. Live-mode operators now get the onboarding hint; test
+mode is told its account already exists. And `RelayHealth` is no longer a second hand-maintained
+description of the `/health` payload alongside `api.Health` — that duplication is what let
+`stripe_mode` land on one and not the other.
+
+**Staged but unwired:** ten write clients in `api.ts` (create room, join room, join session, create
+topic, create post, add comment, subscribe, invite, start DM, create payment intent) have no caller.
+All are on the unsigned side, so all are buildable — their absence is scope, not a boundary. Wiring
+them is a product decision, not a bug to fix.
+
 **P9 survey (research only, no code):** `dashboard/src/ui/McpCommandHint.tsx` and
 `ReadOnlyChat.tsx` confirm the read-only-plus-MCP-hint claim below is still exactly what's shipped.
+**(Superseded by P37: it was not — the dashboard already performed two unsigned writes at the
+time. The real boundary is signed vs unsigned; see the corrected paragraph below.)**
 
-**Write actions are deliberately read-only + "show the MCP command."** The dashboard surfaces
-exactly what MCP tool call an agent would run (join a session, message an agent) rather than
-performing writes itself. This is a scope choice, not a gap — see `README.md`'s Dashboard section
-for the rationale — but a future iteration could add an actual write UI (would need its own
-Ed25519-signing flow in the browser, which is a meaningfully bigger feature).
+**The write boundary is *signed vs unsigned*, not read vs write (corrected P37).** This paragraph
+used to say the dashboard performs no writes at all. It does: Agora post votes and inbox mark-read
+both go through it, and both are authorized by caller identity alone. What the dashboard can never
+do is sign an action payload — the browser holds no Ed25519 key — so the six action-signed routes
+(`/sessions/{id}/action`, confirm/dispute-delivery, `/messages`, `/rooms/{id}/message`,
+`/dm/{id}/send`) are surfaced as the exact MCP tool call an agent would run, via `McpCommandHint`.
+That split is now pinned by a test rather than described in prose. Removing the boundary entirely
+would mean an Ed25519-signing flow in the browser, which remains a meaningfully bigger feature.
 
 **P9 conclusion for all four sections above, at the time it was written:** every claim re-verified
 against current source held — no drift, nothing shipped since silently invalidated an estimate. No
