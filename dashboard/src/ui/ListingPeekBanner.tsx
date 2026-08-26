@@ -1,7 +1,7 @@
 import Text from "@components/Text";
 import type { NavOpts } from "../eventNav";
 import { McpCommandHint } from "./McpCommandHint";
-import { VIEWER } from "../relayEnv";
+import { VIEWER_ID } from "../relayEnv";
 
 export function ListingPeekBanner({ peek }: { peek: NonNullable<NavOpts["listingPeek"]> }) {
   const mod = peek.moduleType?.replace("emporia:", "").replace(/:v\d$/, "") ?? "listing";
@@ -20,7 +20,7 @@ export function ListingPeekBanner({ peek }: { peek: NonNullable<NavOpts["listing
           tool="create_session"
           args={{
             module_type: peek.moduleType,
-            agent_id: VIEWER && VIEWER !== "dashboard" ? VIEWER : "<your_agent_id>",
+            agent_id: VIEWER_ID ?? "<your_agent_id>",
           }}
         />
       )}

@@ -18462,6 +18462,81 @@ def _dashboard_api_ts() -> str:
     return (Path(__file__).parent.parent / "dashboard" / "src" / "api.ts").read_text()
 
 
+def _dashboard_src_files() -> list:
+    root = Path(__file__).parent.parent / "dashboard" / "src"
+    return sorted(p for p in root.rglob("*.ts*") if not p.name.endswith(".test.ts"))
+
+
+def test_dashboard_reads_viewer_identity_in_exactly_one_place():
+    """P35-1: the dashboard read VITE_AGENT_ID in four separate places and the
+    four disagreed about what "unset" means -- relayEnv defaulted to the truthy
+    placeholder "dashboard", relayContext to null, SocialHubView kept its own
+    copy of the placeholder version, and api.ts had no default at all. The
+    placeholder is what made it a bug rather than a smell: it is truthy, so all
+    five `if (!VIEWER)` guards in the app tested a branch that could never be
+    taken -- including the user-facing "set VITE_AGENT_ID" notice, which no
+    spectator could ever see. Meanwhile four *other* call sites had noticed the
+    placeholder was lying and hand-rolled `VIEWER !== "dashboard"` instead.
+
+    This pins the shape, not the instance: one resolver, one env read. A second
+    read is how the four got there in the first place."""
+    readers = [
+        p for p in _dashboard_src_files()
+        if "import.meta.env.VITE_AGENT_ID" in p.read_text()
+    ]
+    assert [p.name for p in readers] == ["relayEnv.ts"], (
+        "VITE_AGENT_ID is read outside relayEnv.ts: "
+        f"{[p.name for p in readers]} -- viewer identity has one resolver "
+        "(relayEnv.resolveViewerId) so that 'unset' has one meaning"
+    )
+
+
+def test_dashboard_has_no_placeholder_agent_id_sentinel():
+    """P35-1, the other half: with absence spelled `null`, no call site should
+    still be string-comparing its way around a placeholder. Four were
+    (AgentsView twice, AgorasView, ListingPeekBanner) -- each one a reader who
+    had worked out that the identity field was lying and patched it locally,
+    which is precisely why the falsy guards stayed dead for so long: the bug
+    was being routed around rather than reported."""
+    offenders = []
+    for p in _dashboard_src_files():
+        for i, line in enumerate(p.read_text().splitlines(), 1):
+            stripped = line.strip()
+            # Comments may name the sentinel -- that is how it stays dead.
+            if stripped.startswith(("//", "*", "/*")):
+                continue
+            if '"dashboard"' in line and ("VIEWER" in line or "agent" in line.lower()):
+                offenders.append(f"{p.name}:{i}: {stripped}")
+    assert not offenders, (
+        "a placeholder agent-id sentinel is back:\n" + "\n".join(offenders)
+    )
+
+
+def test_dashboard_hotkeys_and_nav_share_one_visibility_rule():
+    """P35-2: AppNav filtered the nav for spectators; App.tsx's keydown handler
+    searched the unfiltered NAV, so both hidden sections stayed one keypress
+    away. They failed differently enough that neither read as a bug -- "0"
+    (fees) hit a second guard at the render site and drew a blank pane, "8"
+    (messages) had no guard there and drew the whole view. One rule read in two
+    places is the defect; this pins that there is one function."""
+    root = Path(__file__).parent.parent / "dashboard" / "src"
+    nav_config = (root / "navConfig.ts").read_text()
+    assert "export function visibleNav(" in nav_config
+    assert "export function navForHotkey(" in nav_config
+
+    app = (root / "App.tsx").read_text()
+    assert "navForHotkey(" in app, "App.tsx no longer routes hotkeys through the shared rule"
+    assert "NAV.find(" not in app, (
+        "App.tsx searches the unfiltered NAV again -- that is the P35-2 defect"
+    )
+
+    app_nav = (root / "AppNav.tsx").read_text()
+    assert "visibleNav(" in app_nav
+    assert "NAV.filter(" not in app_nav, (
+        "AppNav re-implements the visibility filter instead of calling visibleNav()"
+    )
+
+
 def test_dashboard_envelope_check_does_not_hardcode_a_stale_version():
     """P19-1 bumped crypto_box.ENVELOPE_VERSION 1 -> 2; the dashboard's
     looksLikeEncryptedEnvelope() still tested `parsed?.v === 1`, so every

@@ -1,5 +1,5 @@
 import Text from "@components/Text";
-import { NAV, type View } from "./navConfig";
+import { visibleNav, type View } from "./navConfig";
 import { useRelayCtx } from "./relayContext";
 import { ThemePanelBody } from "./ThemeControls";
 import type { Theme, Tint } from "./themeConfig";
@@ -8,14 +8,11 @@ import type { DashboardView } from "./eventNav";
 function useVisibleNav() {
   // P34-2: `isRelayOperator` was destructured here and never used — the nav
   // gates on `isSpectator` alone, and App.tsx passes operator-ness to FeesView
-  // itself. Dropped rather than prefixed, so the day nav genuinely needs it the
-  // read appears with its use.
+  // itself. P35-2: the filter itself moved to navConfig.visibleNav(), so the
+  // keyboard handler in App.tsx can ask the same question and get the same
+  // answer instead of searching the unfiltered list.
   const { isSpectator } = useRelayCtx();
-  return NAV.filter((n) => {
-    if (n.id === "fees") return !isSpectator;
-    if (n.id === "messages") return !isSpectator;
-    return true;
-  });
+  return visibleNav({ isSpectator });
 }
 
 /** Single nav source: horizontal tabs (desktop header) or drawer list (mobile). */

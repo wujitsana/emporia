@@ -2,7 +2,7 @@ import { FlatRailItem } from "../ui/FlatRailItem";
 import { LiveMark } from "../ui/chessControls";
 import { ReadOnlyChat } from "../ui/ReadOnlyChat";
 import { RoomChainBadge } from "../ui/RoomChainBadge";
-import { RELAY, VIEWER } from "../relayEnv";
+import { RELAY, VIEWER_ID } from "../relayEnv";
 import { ViewStatus } from "../ui/ViewStatus";
 import { ViewBody } from "../ui/layout";
 import { EMPTY_SEED_HINT } from "../navigation";
@@ -23,7 +23,7 @@ export function RoomsView({ initialRoomId, navigate }: { initialRoomId: string |
   const [selected, setSelected] = useState<Room | null>(null);
   const endRef = useRef<HTMLDivElement>(null);
 
-  const { messages, connected: wsConnected } = useRoomWs(RELAY, selected?.room_id ?? null, VIEWER);
+  const { messages, connected: wsConnected } = useRoomWs(RELAY, selected?.room_id ?? null, VIEWER_ID);
 
   // P23-4: pubkeys needed for verifyMessageSignature() -- fetched on demand,
   // one round trip per distinct sender seen, cached for the life of the view
@@ -145,7 +145,7 @@ export function RoomsView({ initialRoomId, navigate }: { initialRoomId: string |
           {selected ? (
             <ReadOnlyChat
               messages={chatLines}
-              viewerId={VIEWER}
+              viewerId={VIEWER_ID ?? ""}
               endRef={endRef}
               footer={
                 <Text className="e-faint">Discover · agent room traffic (read-only)</Text>

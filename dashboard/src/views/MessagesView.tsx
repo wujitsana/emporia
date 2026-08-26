@@ -18,7 +18,7 @@ import { ReadOnlyChat } from "../ui/ReadOnlyChat";
 import { SegmentTabs } from "../ui/SegmentTabs";
 import { ViewBody } from "../ui/layout";
 import { ViewStatus } from "../ui/ViewStatus";
-import { VIEWER } from "../relayEnv";
+import { VIEWER_ID } from "../relayEnv";
 import { useInterval } from "../hooks";
 import type { Navigate } from "../navigation";
 import { AgentLink } from "../ui/chips";
@@ -36,19 +36,18 @@ const EVENT_ICONS: Record<string, string> = {
   notification: "◆",
 };
 
-function InboxTab({ navigate }: { navigate: Navigate }) {
+function InboxTab({ navigate, viewer }: { navigate: Navigate; viewer: string }) {
   const [events, setEvents] = useState<InboxEvent[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [showAll, setShowAll] = useState(false);
 
   const load = useCallback(() => {
-    if (!VIEWER) return;
-    api.agentInbox(VIEWER, !showAll, 100)
+    api.agentInbox(viewer, !showAll, 100)
       .then((d) => { setEvents(d.events); setError(null); })
       .catch((e: unknown) => setError(String(e)))
       .finally(() => setLoading(false));
-  }, [showAll]);
+  }, [showAll, viewer]);
 
   useEffect(() => {
     load();
@@ -57,24 +56,18 @@ function InboxTab({ navigate }: { navigate: Navigate }) {
   }, [load]);
 
   const markRead = useCallback(async (inbox_id: string) => {
-    if (!VIEWER) return;
-    await api.markInboxRead(VIEWER, [inbox_id]).catch(() => {});
+    await api.markInboxRead(viewer, [inbox_id]).catch(() => {});
     setEvents((prev) => prev.map((e) => e.inbox_id === inbox_id ? { ...e, is_read: true } : e));
-  }, []);
+  }, [viewer]);
 
   const markAllRead = useCallback(async () => {
-    if (!VIEWER) return;
     const unread = events.filter((e) => !e.is_read).map((e) => e.inbox_id);
     if (!unread.length) return;
-    await api.markInboxRead(VIEWER, unread).catch(() => {});
+    await api.markInboxRead(viewer, unread).catch(() => {});
     setEvents((prev) => prev.map((e) => ({ ...e, is_read: true })));
-  }, [events]);
+  }, [events, viewer]);
 
   const unreadCount = events.filter((e) => !e.is_read).length;
-
-  if (!VIEWER) {
-    return <Text className="e-faint" style={{ padding: "16px" }}>Set VITE_AGENT_ID to view your inbox.</Text>;
-  }
 
   return (
     <div className="e-messages-pane">
@@ -155,7 +148,7 @@ function InboxTab({ navigate }: { navigate: Navigate }) {
 
 // ─── DMs tab ─────────────────────────────────────────────────────────────────
 
-function DMsTab({ navigate }: { navigate: Navigate }) {
+function DMsTab({ navigate, viewer }: { navigate: Navigate; viewer: string }) {
   const [threads, setThreads] = useState<DMThread[]>([]);
   const [active, setActive] = useState<DMThread | null>(null);
   const [messages, setMessages] = useState<DMMessage[]>([]);
@@ -165,18 +158,18 @@ function DMsTab({ navigate }: { navigate: Navigate }) {
 
   const loadThreads = useCallback(async () => {
     try {
-      const data = await api.dmThreads(VIEWER);
+      const data = await api.dmThreads(viewer);
       setThreads(Array.isArray(data) ? data : []);
       setError(null);
     } catch (e) { setError(String(e)); }
-  }, []);
+  }, [viewer]);
 
   const loadMsgs = useCallback(async (t: DMThread) => {
     try {
-      const data = await api.dmMessages(t.thread_id, VIEWER);
+      const data = await api.dmMessages(t.thread_id, viewer);
       setMessages(data.messages);
     } catch { /* keep old */ }
-  }, []);
+  }, [viewer]);
 
   useEffect(() => { loadThreads(); }, [loadThreads]);
   useEffect(() => {
@@ -195,14 +188,14 @@ function DMsTab({ navigate }: { navigate: Navigate }) {
     if (!active) return;
     let cancelled = false;
     Promise.all(
-      [VIEWER, active.other_agent].map((id) =>
+      [viewer, active.other_agent].map((id) =>
         api.agentProfile(id).then((a) => [id, a.public_key_hex || ""] as const).catch(() => [id, ""] as const),
       ),
     ).then((pairs) => {
       if (!cancelled) setPubkeys(Object.fromEntries(pairs));
     });
     return () => { cancelled = true; };
-  }, [active]);
+  }, [active, viewer]);
 
   const sidebar = (
     <>
@@ -249,7 +242,7 @@ function DMsTab({ navigate }: { navigate: Navigate }) {
         {active ? (
           <ReadOnlyChat
             messages={chatLines}
-            viewerId={VIEWER}
+            viewerId={viewer}
             endRef={bottomRef}
             footer={
               <RowSpaceBetween>
@@ -269,7 +262,7 @@ function DMsTab({ navigate }: { navigate: Navigate }) {
                 <DmChainBadge
                   key={active.thread_id}
                   threadId={active.thread_id}
-                  viewerId={VIEWER}
+                  viewerId={viewer}
                 />
               </RowSpaceBetween>
             }
@@ -288,15 +281,37 @@ export function MessagesView({ navigate, initialTab }: { navigate: Navigate; ini
   const [tab, setTab] = useState<"inbox" | "dms">(initialTab ?? "inbox");
   const [unread, setUnread] = useState(0);
 
-  const [dmCount] = useInterval(() => api.dmThreads(VIEWER).then((d) => (Array.isArray(d) ? d : []).length).catch(() => 0), 30_000);
+  const [dmCount] = useInterval(
+    () => VIEWER_ID
+      ? api.dmThreads(VIEWER_ID).then((d) => (Array.isArray(d) ? d : []).length).catch(() => 0)
+      : Promise.resolve(0),
+    30_000,
+  );
 
   useEffect(() => {
-    if (!VIEWER) return;
-    const poll = () => api.agentInbox(VIEWER, true, 1).then((d) => setUnread(d.count)).catch(() => {});
+    const viewer = VIEWER_ID;
+    if (!viewer) return;
+    const poll = () => api.agentInbox(viewer, true, 1).then((d) => setUnread(d.count)).catch(() => {});
     poll();
     const t = setInterval(poll, 10_000);
     return () => clearInterval(t);
   }, []);
+
+  // P35-1: this branch is the one that used to be unreachable. It sat in
+  // InboxTab as `if (!VIEWER)` against a value that defaulted to the truthy
+  // placeholder "dashboard", so a spectator never saw it — the dashboard just
+  // polled the relay about an agent named "dashboard" every 10 and 30 seconds
+  // and swallowed the misses. P35-2 is why a spectator gets here at all: the
+  // nav hides this section, but the "8" hotkey reached it anyway.
+  if (!VIEWER_ID) {
+    return (
+      <ViewBody flush>
+        <Text className="e-faint" style={{ padding: "16px" }}>
+          Spectator mode — set VITE_AGENT_ID in the dashboard env to view your inbox and DMs.
+        </Text>
+      </ViewBody>
+    );
+  }
 
   return (
     <ViewBody flush>
@@ -312,8 +327,8 @@ export function MessagesView({ navigate, initialTab }: { navigate: Navigate; ini
         />
       </div>
       <div className="e-messages-body">
-        {tab === "inbox" && <InboxTab navigate={navigate} />}
-        {tab === "dms" && <DMsTab navigate={navigate} />}
+        {tab === "inbox" && <InboxTab navigate={navigate} viewer={VIEWER_ID} />}
+        {tab === "dms" && <DMsTab navigate={navigate} viewer={VIEWER_ID} />}
       </div>
     </ViewBody>
   );

@@ -1,3 +1,5 @@
+import { VIEWER_ID } from "./relayEnv";
+
 const BASE = (() => {
   const env = import.meta.env.VITE_RELAY_URL;
   if (typeof env === "string" && env.length > 0) return env;
@@ -10,7 +12,7 @@ const BASE = (() => {
 // Sent on requests that scope data to the current agent.
 // Local relay: X-Emporia-Agent-Id header trusted on localhost.
 // Remote relay: Authorization: Bearer <jwt> from the dashboard/challenge flow.
-const AGENT_ID_HEADER = import.meta.env.VITE_AGENT_ID as string | undefined;
+const AGENT_ID_HEADER = VIEWER_ID;
 const SESSION_TOKEN_KEY = "emporia_dashboard_token";
 
 /** The dashboard's JWT, if any — for callers that need it outside a fetch() header

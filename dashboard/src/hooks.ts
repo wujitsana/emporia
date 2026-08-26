@@ -81,7 +81,7 @@ export interface RoomWsState {
 export function useRoomWs(
   relayUrl: string,
   roomId: string | null,
-  agentId: string,
+  agentId: string | null,
 ): RoomWsState {
   const [messages, setMessages] = useState<WsMessage[]>([]);
   const [connected, setConnected] = useState(false);
@@ -108,7 +108,10 @@ export function useRoomWs(
       // agent_id is trusted only for co-located (localhost) connections; a remote relay
       // authenticates private-room access via the dashboard JWT instead — see
       // relay_server.py's _ws_agent_id().
-      const params = new URLSearchParams({ agent_id: agentId });
+      // P35-1: a spectator has no agent_id; omit the param rather than send a
+      // placeholder the relay would have to interpret.
+      const params = new URLSearchParams();
+      if (agentId) params.set("agent_id", agentId);
       const token = dashboardToken();
       if (token) params.set("token", token);
       const ws = new WebSocket(`${base}/ws/rooms/${roomId}?${params.toString()}`);

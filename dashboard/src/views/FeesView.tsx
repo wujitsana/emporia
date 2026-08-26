@@ -9,7 +9,7 @@ import { ViewBody } from "../ui/layout";
 import { ViewStatus } from "../ui/ViewStatus";
 import { AgentLink, SessionLink } from "../ui/chips";
 import type { Navigate } from "../navigation";
-import { VIEWER } from "../relayEnv";
+import { VIEWER_ID } from "../relayEnv";
 
 function statusDot(status: string) {
   if (status === "settled") return <span style={{ color: "var(--theme-focused-foreground)" }}>●</span>;
@@ -27,7 +27,11 @@ function outcomeLabel(s: Settlement): { label: string; cls: string } {
 
 export function FeesView({ navigate, isOperator = false }: { navigate?: Navigate; isOperator?: boolean } = {}) {
   const [data, loading, error] = useInterval(
-    () => isOperator ? api.settlements() : api.agentSettlements(VIEWER ?? ""),
+    () => isOperator
+      ? api.settlements()
+      : VIEWER_ID
+        ? api.agentSettlements(VIEWER_ID)
+        : Promise.resolve({ settlements: [] as Settlement[], count: 0, has_more: false }),
     10_000
   );
   const settlements: Settlement[] = data?.settlements ?? [];

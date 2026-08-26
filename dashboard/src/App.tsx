@@ -16,7 +16,7 @@ import { RELAY } from "./relayEnv";
 import { RelayContextProvider, useRelayCtx } from "./relayContext";
 import { applyTheme, THEMES, TINTS, type Theme, type Tint } from "./themeConfig";
 import { useGlobalEvents, useInterval } from "./hooks";
-import { NAV, type View } from "./navConfig";
+import { navForHotkey, type View } from "./navConfig";
 import type { NavOpts } from "./eventNav";
 import type { Navigate } from "./navigation";
 import {
@@ -30,7 +30,7 @@ import {
   GamesView,
   FeesView,
 } from "./views";
-import { VIEWER } from "./relayEnv";
+import { VIEWER_ID } from "./relayEnv";
 import { syncHash, viewFromHash } from "./dashboardRoute";
 
 const LS_THEME = "emporia_theme";
@@ -76,8 +76,9 @@ function AppInner() {
   const { events, seed, wsConnected } = useGlobalEvents();
   const [healthPoll] = useInterval(() => api.health(), 5_000);
   useEffect(() => {
-    if (!VIEWER) return;
-    const poll = () => api.agentInbox(VIEWER, true, 1).then((d) => setInboxUnread(d.count)).catch(() => {});
+    const viewer = VIEWER_ID;
+    if (!viewer) return;
+    const poll = () => api.agentInbox(viewer, true, 1).then((d) => setInboxUnread(d.count)).catch(() => {});
     poll();
     const t = setInterval(poll, 15_000);
     return () => clearInterval(t);
@@ -148,12 +149,18 @@ function AppInner() {
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
       if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return;
-      const found = NAV.find((n) => n.hotkey === e.key);
+      // P35-2: `navForHotkey` applies the same visibility rule the rendered
+      // nav does. Searching the unfiltered NAV here is what let a spectator
+      // reach the two sections the nav hides.
+      const found = navForHotkey(e.key, { isSpectator });
       if (found) goToView(found.id);
     };
     window.addEventListener("keydown", handler);
     return () => window.removeEventListener("keydown", handler);
-  }, [goToView]);
+    // `isSpectator` belongs here: the handler closes over it, and it stops being
+    // constant the moment the dashboard/challenge login flow lands (the token
+    // setter is already on the context).
+  }, [goToView, isSpectator]);
 
   return (
     <div className={`e-app-shell e-dashboard-shell e-app-shell--header-nav${navOpen ? " is-nav-open" : ""}`}>

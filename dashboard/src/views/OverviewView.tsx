@@ -20,7 +20,7 @@ import type { GlobalEvent, RelayHealth } from "../hooks";
 import { useInterval } from "../hooks";
 import { NAV_GROUPS, navById, type View } from "../navConfig";
 import type { Navigate } from "../navigation";
-import { RELAY, VIEWER } from "../relayEnv";
+import { RELAY, VIEWER_ID } from "../relayEnv";
 import { FeedEventType, ViewBody } from "../ui/layout";
 import { SlimCard } from "../ui/cards";
 
@@ -38,8 +38,8 @@ export function OverviewView({
   onAfterNavigate?: () => void;
 }) {
   const [polled] = useInterval(() => api.health(), 5_000);
-  const [counts] = useInterval(() => fetchDashboardCounts(VIEWER), 15_000);
-  const [sections] = useInterval(() => fetchOverviewSections(VIEWER), 20_000);
+  const [counts] = useInterval(() => fetchDashboardCounts(VIEWER_ID), 15_000);
+  const [sections] = useInterval(() => fetchOverviewSections(VIEWER_ID), 20_000);
   const health = polled ?? seed;
   const online = health?.status === "ok";
   const countsMerged = counts ?? null;

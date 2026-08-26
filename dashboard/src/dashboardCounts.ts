@@ -31,7 +31,7 @@ function clip(s: string, max = 52): string {
 }
 
 /** Live snippets from each dashboard tab (for Overview). */
-export async function fetchOverviewSections(viewerId: string): Promise<OverviewSectionRow[]> {
+export async function fetchOverviewSections(viewerId: string | null): Promise<OverviewSectionRow[]> {
   const settled = await Promise.allSettled([
     api.listings(),
     api.sessions(),
@@ -39,7 +39,9 @@ export async function fetchOverviewSections(viewerId: string): Promise<OverviewS
     api.events(),
     api.agents(),
     api.agoraTopics(),
-    api.dmThreads(viewerId),
+    // P35-1: a spectator has no threads to count; the old placeholder id sent
+    // this request on every Overview load and quietly collected a miss.
+    viewerId ? api.dmThreads(viewerId) : Promise.resolve([]),
     // P34-3: `api.settlements()` removed from this batch. Its result was read
     // into a variable nothing used, so every Overview load paid for a
     // /payments/settlements round trip it then discarded — and the Overview
@@ -171,7 +173,7 @@ export interface DashboardCounts {
   gameSessions: number | null;
 }
 
-export async function fetchDashboardCounts(viewerId: string): Promise<DashboardCounts> {
+export async function fetchDashboardCounts(viewerId: string | null): Promise<DashboardCounts> {
   const [listingsR, sessionsR, roomsR, eventsR, agentsR, settlementsR, topicsR, dmsR] =
     await Promise.allSettled([
       api.listings(),
@@ -181,7 +183,7 @@ export async function fetchDashboardCounts(viewerId: string): Promise<DashboardC
       api.agents(),
       api.settlements(),
       api.agoraTopics(),
-      api.dmThreads(viewerId),
+      viewerId ? api.dmThreads(viewerId) : Promise.resolve([]),
     ]);
 
   // N6 review R2: `count` is always the returned page size (never a total), so it

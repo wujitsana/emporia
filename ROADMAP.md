@@ -831,6 +831,21 @@ file. The remaining 18 are documented in SECURITY.md's P34 section: 2 verified f
 behaviour and each site's answer differs.
 
 
+**Viewer identity has one resolver (P35).** `VITE_AGENT_ID` used to be read in four places with three
+different meanings for "unset" — `relayEnv` returned the truthy placeholder `"dashboard"`,
+`relayContext` returned `null` (which is what `isSpectator` is built on), `api.ts` returned nothing,
+and a fourth, unimported file kept its own copy. Because the placeholder is truthy, all five
+`if (!VIEWER)` guards in the app were unreachable, including the "set `VITE_AGENT_ID`" notice a
+spectator was supposed to see; meanwhile four other call sites had noticed and hand-rolled
+`VIEWER !== "dashboard"` instead. `relayEnv.resolveViewerId()` / `VIEWER_ID: string | null` is now the
+single answer and the placeholder is gone rather than centralised. Separately, nav visibility was
+decided by `AppNav` but ignored by `App.tsx`'s hotkey handler, so a spectator could reach both hidden
+sections with `0` and `8`; `navConfig.visibleNav()` / `navForHotkey()` is now one rule, with the
+second defined in terms of the first. Details in SECURITY.md's P35 section.
+
+Note for the P34 lint gate: it reads unused imports *within* a file and cannot see an unused *file* —
+P35 deleted a 95-line orphan view the gate had no way to flag.
+
 **P9 survey (research only, no code):** `dashboard/src/ui/McpCommandHint.tsx` and
 `ReadOnlyChat.tsx` confirm the read-only-plus-MCP-hint claim below is still exactly what's shipped.
 

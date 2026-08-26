@@ -7,7 +7,7 @@ import Text from "@components/Text";
 import React, { useCallback, useEffect, useState } from "react";
 import { api } from "../api";
 import type { AgoraPost, AgoraTopic } from "../api";
-import { VIEWER } from "../relayEnv";
+import { VIEWER_ID } from "../relayEnv";
 import { ViewBody } from "../ui/layout";
 import { FlatRailItem } from "../ui/FlatRailItem";
 import { SegmentTabs } from "../ui/SegmentTabs";
@@ -36,7 +36,7 @@ function GateBadge({ gate, fee }: { gate?: string; fee?: number }) {
 function VoteButtons({ postId, initialScore }: { postId: string; initialScore: number }) {
   const [score, setScore] = useState(initialScore);
   const [voted, setVoted] = useState<1 | -1 | null>(null);
-  const voter = VIEWER !== "dashboard" ? VIEWER : null;
+  const voter = VIEWER_ID;
 
   if (!voter) {
     return <span className="e-vote-score e-faint">{score}</span>;

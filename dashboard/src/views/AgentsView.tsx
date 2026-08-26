@@ -19,7 +19,7 @@ import type { NavOpts } from "../eventNav";
 import { SessionLink } from "../ui/chips";
 import { ListingPeekBanner } from "../ui/ListingPeekBanner";
 import { McpCommandHint } from "../ui/McpCommandHint";
-import { VIEWER } from "../relayEnv";
+import { VIEWER_ID } from "../relayEnv";
 import type { Navigate } from "../navigation";
 import { ViewStatus } from "../ui/ViewStatus";
 import { ViewBody } from "../ui/layout";
@@ -102,11 +102,11 @@ export function AgentDetailPanel({ agent, navigate }: { agent: AgentProfile; nav
             Payment rails
           </Text>
           <RailChips rails={rails} />
-          {VIEWER && VIEWER !== "dashboard" && VIEWER !== a.agent_id && (
+          {VIEWER_ID && VIEWER_ID !== a.agent_id && (
             <McpCommandHint
               label="Message this agent via MCP"
               tool="send_dm"
-              args={{ to_agent_id: a.agent_id, from_agent_id: VIEWER, content: "..." }}
+              args={{ to_agent_id: a.agent_id, from_agent_id: VIEWER_ID, content: "..." }}
             />
           )}
         </>
@@ -202,7 +202,7 @@ export function AgentsView({
   }, [agents, initialAgentId]);
 
   useEffect(() => {
-    const id = VIEWER !== "dashboard" ? VIEWER : null;
+    const id = VIEWER_ID;
     if (!id) return;
     api.agentProfile(id)
       .then((p) => {

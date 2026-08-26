@@ -2286,6 +2286,49 @@ warning stream nothing enforces decays into a warning stream nobody reads, and t
 arrive indistinguishable from `Identifier 'Badge' is imported but never used`. The fix that matters
 here isn't any single bug; it's the threshold that keeps the channel worth listening to.
 
+## P35 pass — one fact, four answers
+
+An audit of P34's own diff. P34 ended by noting that `reachedPin` was "a second name for
+`pinMatched`, which is how two names for one state drift apart" — and then removed it from a
+twenty-line function. This pass found the same disease at application scale, twice, in code the
+linter cannot see: **the dashboard read one env var in four places and got three different answers
+for "unset," and it decided nav visibility in two places that disagreed.** Both defects were
+reproduced before being fixed.
+
+### Fixed
+
+| Finding | Severity | Fix |
+|---|---|---|
+| **Every `if (!VIEWER)` guard in the app was dead (P35-1).** `relayEnv.ts` resolved `VITE_AGENT_ID` as `?? "dashboard"` — a *truthy* placeholder — while `relayContext.tsx` resolved the same variable as `?? null` to compute `isSpectator`, `api.ts` used no fallback at all (correctly omitting the header), and a fourth file kept its own copy of the placeholder version. Because the placeholder is truthy, the five `if (!VIEWER)` guards in `App.tsx` and `MessagesView.tsx` tested a branch that could never be taken — **including the user-facing "Set `VITE_AGENT_ID` to view your inbox" notice, which no spectator could ever see.** Instead the dashboard polled the relay about an agent named `dashboard` every 10s (inbox) and 30s (DM threads), plus once per Overview load, and swallowed every miss in a `.catch(() => {})`. Reproduced: with the var unstubbed, `VIEWER === "dashboard"` and `!VIEWER === false`. | Medium | One resolver. `relayEnv.resolveViewerId()` trims and maps empty to `null`; `VIEWER_ID: string \| null` is the app's single answer, and `relayContext`/`api.ts` now import it instead of re-reading the env. The placeholder was **removed rather than centralised** — a sentinel meaning "no identity" while occupying the identity field is something every reader has to remember, and half of them didn't. TypeScript surfaced all 14 call sites as the loud break; each now either guards or omits the parameter, so a spectator's dashboard asks the relay nothing about a viewer that doesn't exist. |
+| **Four call sites had already routed around it by hand (P35-1b).** `AgentsView` (twice), `AgorasView`, and `ListingPeekBanner` each re-derived identity as `VIEWER !== "dashboard"`. So the codebase carried two competing idioms for one question — and the shorter one was the dead one. This is why the dead guards survived so long: the bug was being *worked around* at each site rather than reported once. | — | All four are now plain `VIEWER_ID` truthiness. `.env.example` no longer ships `VITE_AGENT_ID=dashboard`, which under the old split semantics put a reader in both states at once — `isSpectator: false` (nav shows Messages and Fees) while `AgentsView`/`AgorasView` treated them as having no identity at all. |
+| **Nav visibility was decided in two places, and the keyboard ignored one (P35-2).** `AppNav.useVisibleNav()` filtered `fees` and `messages` out for a spectator; `App.tsx`'s `keydown` handler looked the hotkey up in the *unfiltered* `NAV`. Both hidden sections were one keypress away — and they failed differently enough that neither read as a bug: `0` (fees) hit a second `!isSpectator` guard at the render site and drew a **blank pane**, while `8` (messages) had no guard there and drew **the whole view**, which is how the dead-guard defect above became reachable in the first place. | Medium | `navConfig.visibleNav()` is the one rule; `navForHotkey()` is defined *in terms of* it rather than beside it, and both `AppNav` and `App.tsx` call in. A test asserts the reachable-hotkey set equals the visible-nav set for both viewer kinds — the invariant, not the two instances. |
+| **A 95-line view module that nothing imported (P35-3).** `SocialHubView.tsx` held the fourth copy of the placeholder read. Nothing has referenced it since it was written. | Low | Deleted, not fixed. **The lint gate P34 installed reads unused imports *within* a file and cannot see an unused *file*** — worth stating plainly one pass after declaring the linter the regression test for this class. |
+
+### Verification
+
+Test-first throughout, and every new pin verified load-bearing by reintroducing the exact defect it
+claims to catch and confirming the failure:
+
+- `dashboard/src/relayEnv.test.ts` (6) and `navConfig.test.ts` (6) — all 12 failed before the fix.
+- Three Python source pins, matching this repo's existing cross-language grep convention
+  (`test_dashboard_envelope_check_does_not_hardcode_a_stale_version`): only `relayEnv.ts` may read
+  `import.meta.env.VITE_AGENT_ID`; no non-comment line may compare an identity against a
+  `"dashboard"` sentinel; `App.tsx`/`AppNav.tsx` must route through `navForHotkey`/`visibleNav`
+  rather than searching `NAV` directly. Each was confirmed to fail when its defect was put back.
+
+744 pytest (741 + 3), 79 vitest (67 + 12), ruff clean, typecheck/build clean, lint still at the
+gate.
+
+### The shape worth naming
+
+Both defects are the same one: **a fact computed in more than one place, where the copies disagree
+and the disagreement is invisible because each copy is locally reasonable.** Neither is catchable by
+a linter — every individual read of `import.meta.env` is fine, and `NAV.find(...)` is fine. What
+makes them bugs is a second definition somewhere else in the tree. P34's closing note about
+`reachedPin` was the miniature; this is the same thing with a blast radius. The countermeasure that
+worked here wasn't a rule but a shape: *derive the second answer from the first* — `navForHotkey`
+calls `visibleNav`, so they cannot drift — and where that isn't possible, pin the equality itself.
+
 ## Threat model notes (by design, not gaps)
 
 - **Ed25519 = auth; the relay never holds private keys.** Keys live at `~/.hermes/keys/*.priv`,

@@ -14,7 +14,7 @@ import {
   ChessSpeedSlider,
   ChessTransport,
 } from "../ui/chessControls";
-import { RELAY, VIEWER } from "../relayEnv";
+import { RELAY, VIEWER_ID } from "../relayEnv";
 import { STARTING_FEN, fenToBoard } from "../fen";
 import {
   buildChessReplay,
@@ -90,7 +90,11 @@ export function ChessReplayPanel({ session }: { session: Session }) {
       if (closed) return;
       // agent_id/token authenticate participants-only sessions (paid modules by default) —
       // see relay_server.py's _session_viewer_allowed(). No-op for public sessions.
-      const params = new URLSearchParams({ agent_id: VIEWER });
+      // P35-1: a spectator has no agent_id to present. Sending the literal
+      // "dashboard" got participants-only sessions rejected under a name that
+      // looked deliberate in the relay log.
+      const params = new URLSearchParams();
+      if (VIEWER_ID) params.set("agent_id", VIEWER_ID);
       const token = dashboardToken();
       if (token) params.set("token", token);
       ws = new WebSocket(`${base}/ws/${session.session_id}?${params.toString()}`);

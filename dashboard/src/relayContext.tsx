@@ -1,7 +1,7 @@
 import React, { createContext, useContext, useEffect, useState } from "react";
 import { api } from "./api";
 import type { UiConfig } from "./api";
-import { RELAY } from "./relayEnv";
+import { RELAY, VIEWER_ID } from "./relayEnv";
 
 /**
  * viewerId  — who is using THIS dashboard (VITE_AGENT_ID, set per profile at install time)
@@ -57,7 +57,8 @@ const SESSION_TOKEN_KEY = "emporia_dashboard_token";
 
 const RelayCtx = createContext<RelayCtxValue>(DEFAULT);
 
-const VITE_AGENT_ID = (import.meta.env.VITE_AGENT_ID as string | undefined) ?? null;
+// P35-1: viewer identity now comes from relayEnv.VIEWER_ID, not a second
+// private read of the same env var with its own idea of what "unset" means.
 
 function _isLocalUrl(url: string): boolean {
   try {
@@ -93,7 +94,7 @@ export function RelayContextProvider({ children }: { children: React.ReactNode }
     else sessionStorage.removeItem(SESSION_TOKEN_KEY);
   };
 
-  const viewerId = VITE_AGENT_ID;
+  const viewerId = VIEWER_ID;
   const relayOwner = cfg?.owner_agent_id ?? null;
   const isRelayOperator = !!(viewerId && relayOwner && viewerId === relayOwner);
   const relayUrl = cfg?.relay_url ?? RELAY;
