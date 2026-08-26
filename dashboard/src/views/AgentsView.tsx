@@ -51,8 +51,18 @@ export function AgentDetailPanel({ agent, navigate }: { agent: AgentProfile; nav
   const [listings, setListings] = React.useState<Listing[]>([]);
   const [posts, setPosts] = React.useState<AgoraPost[]>([]);
 
+  /* P41-2: the fetch is keyed on the agent's *id*, but the failure fallback
+     wants the *latest* row for that agent. Depending on `agent` itself would
+     refetch the profile on every poll tick, since the list hands down a new
+     object each time; a ref keeps the fallback current without turning identity
+     churn into network traffic. */
+  const agentRef = React.useRef(agent);
+  agentRef.current = agent;
+
   React.useEffect(() => {
-    api.agentProfile(agent.agent_id).then(setProfile).catch(() => setProfile(agent));
+    api.agentProfile(agent.agent_id)
+      .then(setProfile)
+      .catch(() => setProfile(agentRef.current));
   }, [agent.agent_id]);
 
   React.useEffect(() => {
@@ -185,15 +195,26 @@ export function AgentsView({
     8_000,
     [search],
   );
-  const agents = agentsData?.agents ?? [];
+  // P41-2: memoised — a fresh array each render made all three effects below
+  // re-run on every render, which is what let the deep link fight the default
+  // selection (see the next two notes).
+  const agents = React.useMemo(() => agentsData?.agents ?? [], [agentsData]);
 
   const [selected, setSelected] = React.useState<AgentProfile | null>(null);
   const [myProfile, setMyProfile] = React.useState<AgentProfile | null>(null);
 
+  /* P41-2: follow the link once, as in RoomsView/GamesView/EventsView. Re-running
+     it after every render made `initialAgentId` a standing instruction, so
+     picking a different agent in the sidebar was immediately undone. */
+  const deepLinkApplied = React.useRef<string | null>(null);
   useEffect(() => {
     if (!initialAgentId || !agents.length) return;
+    if (deepLinkApplied.current === initialAgentId) return;
     const found = agents.find((a) => a.agent_id === initialAgentId);
-    if (found) setSelected(found);
+    if (found) {
+      deepLinkApplied.current = initialAgentId;
+      setSelected(found);
+    }
   }, [initialAgentId, agents]);
 
   useEffect(() => {
@@ -207,7 +228,11 @@ export function AgentsView({
     api.agentProfile(id)
       .then((p) => {
         setMyProfile(p);
-        if (!selected) setSelected(p);
+        // P41-2: was `if (!selected) setSelected(p)` inside a `[]` effect, so
+        // `selected` was the value captured at mount — always null — and this
+        // overwrote whatever the deep link had resolved in the meantime. The
+        // functional form reads the current value and needs no dependency.
+        setSelected((cur) => cur ?? p);
       })
       .catch(() => {});
   }, []);

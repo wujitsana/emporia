@@ -2329,6 +2329,44 @@ makes them bugs is a second definition somewhere else in the tree. P34's closing
 worked here wasn't a rule but a shape: *derive the second answer from the first* — `navForHotkey`
 calls `visibleNav`, so they cannot drift — and where that isn't possible, pin the equality itself.
 
+## P41 pass — the small stuff, and it wasn't small
+
+The leftovers: one dead config field and the `exhaustive-deps` warnings carried since P34, which
+that pass deliberately left alone because "changing an effect's deps changes behaviour, and doing
+that speculatively across five call sites would be the opposite of the point." Taken one call site
+at a time, as promised. **Three of the eight were hiding real defects.**
+
+### Fixed
+
+| Finding | Severity | Fix |
+|---|---|---|
+| **A linked room could not be navigated away from (P41-2).** `RoomsView`'s deep-link effect depended on `[initialRoomId, rooms]`, and `rooms` was a fresh array on every render — so the effect ran after *every* render and re-applied `initialRoomId` each time. Clicking a different room in the sidebar set it; the effect immediately set it back. `initialAgentId` had the identical shape in `AgentsView`. | **Medium (unusable UI)** | Memoise the list, and resolve the link **once** per id via a ref. The ref is what makes "follow the link" a one-time act rather than a standing instruction — the same shape already used for sessions (P36-3) and events (P40-3). |
+| **A mount-only effect read state frozen at null (P41-2).** `AgentsView`'s "load my profile" effect had `[]` deps and `if (!selected) setSelected(p)`. `selected` was captured at mount — always `null` — so this **always** fired, overwriting whatever the deep link had resolved in the meantime. | Medium (race) | `setSelected((cur) => cur ?? p)`. The functional form reads the current value and needs no dependency at all, which is why the warning was pointing at it. |
+| **Two events in the same millisecond dropped a refresh (P41-2).** `App.tsx` keyed its global-event effect on `events[0]?._ts`, and `_ts` is `Date.now()`. Two frames arriving in the same millisecond produce the same key, so the second silently failed to trigger its refresh. | Low (rare, silent) | Keyed on the newest event's **identity** instead. `useGlobalEvents` prepends a fresh object per event, so identity changes exactly once per event and cannot collide — and it is a plain variable, which is what the dependency checker needed to see in the first place. |
+| **A restricted topic reported itself empty (P41-3).** `/agoras/topics` lists `restricted` topics on purpose — you can see one exists and ask for access — but its posts 403. The dashboard caught that and rendered **"No posts in this topic."**, which says the topic is empty when the truth is that this agent cannot read it. Found by the end-to-end sweep, not by reading code. | Medium (misleading) | The 403 is distinguished from an empty list and says so. |
+| **`require_challenge` was declared and read by nothing (P41-1).** A relay policy — whether registration must prove key possession — reported by `/ui-config` since forever, typed in `UiConfig`, surfaced nowhere. | Low | Shown in the Relay card **in both states**, not only when true: "registration is open, no key-possession proof" is the more surprising of the two and the one worth stating. |
+
+`exhaustive-deps` went 8 → 0. **The lint gate moved 18 → 8** across this pass and P40. What remains is
+2 `jsx-key` false positives (verified in P34 by reading `cards.tsx`) and 6 `only-export-components`,
+which is Fast-Refresh DX and would mean splitting files.
+
+### End to end, on a fresh database
+
+Not a test-suite run — the actual system, from an empty file:
+
+- Boot on a fresh DB → `ok v0.1.0 stripe_mode=test`; seed → 5 agents, 5 listings, 4 sessions,
+  3 completed chess games, **1 service contract**, 2 rooms, 3 events, 4 DMs, 6 challenges.
+- **31/31 dashboard-consumed endpoints 200.**
+- Integrity verified live: room chain ✓, DM chain ✓, session audit ✓.
+- **The agent socket, exercised for real:** subscribed to `/ws/agent/hackathon_hermes`, had `beta`
+  send a DM through the SDK, and received the `dm_received` frame with its content — the path P38
+  built and nothing had yet proven against a running relay.
+- **Agent voting, exercised for real:** `beta` upvoted a post through the SDK (0 → 1, confirmed by
+  re-reading the post) and `beta` upvoted a comment through the **MCP tool** — the capability that
+  did not exist before P39.
+
+758 pytest, 105 vitest, ruff clean, typecheck/build clean, lint gated at 8.
+
 ## P40 pass — closing the visibility gaps
 
 The four gaps P39's sweep found, in the order they were worth doing. All four were relay

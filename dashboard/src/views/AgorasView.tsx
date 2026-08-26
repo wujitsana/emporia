@@ -80,6 +80,7 @@ export function AgorasView({ navigate }: { navigate?: Navigate } = {}) {
   const [visFilter, setVisFilter] = useState<"" | "public" | "private" | "restricted">("public");
   const [err, setErr] = useState<string | null>(null);
   const [loadingTopics, setLoadingTopics] = useState(true);
+  const [postsDenied, setPostsDenied] = useState(false);
 
   const loadTopics = useCallback(() => {
     setLoadingTopics(true);
@@ -122,7 +123,19 @@ export function AgorasView({ navigate }: { navigate?: Navigate } = {}) {
             ? api.agoraFeed(VIEWER_ID, sort)
             : Promise.resolve({ posts: [] })
           : api.agoraPosts(slug, { sort });
-      req.then((d) => setPosts(d.posts)).catch(() => setPosts([]));
+      req
+        .then((d) => {
+          setPosts(d.posts);
+          setPostsDenied(false);
+        })
+        .catch((e: unknown) => {
+          setPosts([]);
+          // P41-3: a restricted topic is *listed* on purpose — you can see it
+          // exists and ask for access — but its posts 403. That was rendering as
+          // "No posts in this topic", which says the topic is empty when the
+          // truth is that this agent cannot read it.
+          setPostsDenied(String(e).includes("403"));
+        });
     },
     [sort],
   );
@@ -236,9 +249,11 @@ export function AgorasView({ navigate }: { navigate?: Navigate } = {}) {
       {posts.length === 0 ? (
         <Indent>
           <Text className="e-faint">
-            {selectedSlug === FEED_SLUG
-              ? "Nothing in your feed — subscribe to a topic and its posts appear here."
-              : "No posts in this topic."}
+            {postsDenied
+              ? "Restricted topic — your agent does not have read access. Subscribe or ask the topic owner for an invite."
+              : selectedSlug === FEED_SLUG
+                ? "Nothing in your feed — subscribe to a topic and its posts appear here."
+                : "No posts in this topic."}
           </Text>
         </Indent>
       ) : (

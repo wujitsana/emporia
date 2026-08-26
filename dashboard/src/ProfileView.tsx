@@ -129,7 +129,7 @@ function SettlementRow({ s, viewerId }: { s: Settlement; viewerId: string }) {
 }
 
 export function ProfileView() {
-  const { viewerId, relayOwner, relayId, relayUrl, requireNous, writeRequiresNous, isRelayOperator, isSpectator, agentCount, activeSessionCount, relayVersion } = useRelayCtx();
+  const { viewerId, relayOwner, relayId, relayUrl, requireNous, writeRequiresNous, requireChallenge, isRelayOperator, isSpectator, agentCount, activeSessionCount, relayVersion } = useRelayCtx();
   const [profile, setProfile] = useState<AgentProfile | null>(null);
   const [mySessions, setMySessions] = useState<Session[]>([]);
   const [mySettlements, setMySettlements] = useState<Settlement[]>([]);
@@ -215,6 +215,11 @@ export function ProfileView() {
               ...(relayVersion ? [["Version", relayVersion] as [string, string]] : []),
               ...(requireNous ? [["Nous-gated", "registration requires Nous JWT"] as [string, string]] : []),
               ...(writeRequiresNous ? [["Write-gated", "writes require Nous verification"] as [string, string]] : []),
+              // P41-1: `require_challenge` was declared in the UiConfig type and
+              // read by nothing — a relay policy the operator had no way to see.
+              // Shown always, not only when true: "registration is open" is the
+              // more surprising of the two states and the one worth stating.
+              ["Registration", requireChallenge ? "challenge required (proves key possession)" : "open — no key-possession proof"],
             ]}
           />
         </SlimCard>

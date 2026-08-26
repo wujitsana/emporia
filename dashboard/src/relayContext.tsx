@@ -22,6 +22,9 @@ export interface RelayCtxValue {
   relayUrl: string;
   requireNous: boolean;
   writeRequiresNous: boolean;
+  /** P41-1: relay policy — registration must prove key possession via the
+   *  challenge flow. The relay has reported this all along and nothing read it. */
+  requireChallenge: boolean;
   agentCount: number;
   activeSessionCount: number;
   relayVersion: string;
@@ -50,6 +53,7 @@ const DEFAULT: RelayCtxValue = {
   relayUrl: RELAY,
   requireNous: false,
   writeRequiresNous: false,
+  requireChallenge: false,
   agentCount: 0,
   activeSessionCount: 0,
   relayVersion: "",
@@ -106,6 +110,7 @@ export function RelayContextProvider({ children }: { children: React.ReactNode }
     relayUrl,
     requireNous: cfg?.require_nous ?? false,
     writeRequiresNous: cfg?.write_requires_nous ?? false,
+    requireChallenge: cfg?.require_challenge ?? false,
     agentCount: cfg?.agent_count ?? 0,
     activeSessionCount: cfg?.active_session_count ?? 0,
     relayVersion: cfg?.version ?? "",

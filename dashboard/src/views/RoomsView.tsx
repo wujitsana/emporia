@@ -8,7 +8,7 @@ import { ViewBody } from "../ui/layout";
 import { EMPTY_SEED_HINT } from "../navigation";
 import { api, dmDisplayContent } from "../api";
 import type { Room } from "../api";
-import React, { useEffect, useRef, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import Text from "@components/Text";
 import SidebarLayout from "@components/SidebarLayout";
 import RowSpaceBetween from "@components/RowSpaceBetween";
@@ -19,7 +19,10 @@ import { markReplayedNonces, verifyMessageSignature } from "../integrityCheck";
 
 export function RoomsView({ initialRoomId, navigate }: { initialRoomId: string | null; navigate?: Navigate }) {
   const [data, loading, error] = useInterval(() => api.rooms(), 8_000);
-  const rooms: Room[] = data?.rooms ?? [];
+  // P41-2: memoised. `data?.rooms ?? []` builds a new array every render, so
+  // every effect depending on it re-ran on every render — which is what made the
+  // deep-link effect below snap the selection back (see its own note).
+  const rooms: Room[] = useMemo(() => data?.rooms ?? [], [data]);
   const [selected, setSelected] = useState<Room | null>(null);
   const endRef = useRef<HTMLDivElement>(null);
 
@@ -41,10 +44,23 @@ export function RoomsView({ initialRoomId, navigate }: { initialRoomId: string |
     setSelected((cur) => cur ?? rooms[0]);
   }, [rooms, initialRoomId]);
 
+  /* P41-2: resolve the deep link ONCE per id.
+     This used to run on `[initialRoomId, rooms]`, and `rooms` was a fresh array
+     every render, so the effect ran after every render and re-applied
+     `initialRoomId` each time — clicking a different room in the sidebar set it,
+     the effect immediately set it back, and a linked room could not be navigated
+     away from. The ref is what makes "follow the link" a one-time act instead of
+     a standing instruction. Same shape as the session (P36-3) and event (P40-3)
+     deep links. */
+  const deepLinkApplied = useRef<string | null>(null);
   useEffect(() => {
     if (!initialRoomId || !rooms.length) return;
+    if (deepLinkApplied.current === initialRoomId) return;
     const found = rooms.find((r) => r.room_id === initialRoomId);
-    if (found && found.room_id !== selected?.room_id) setSelected(found);
+    if (found) {
+      deepLinkApplied.current = initialRoomId;
+      setSelected(found);
+    }
   }, [initialRoomId, rooms]);
 
   useEffect(() => {

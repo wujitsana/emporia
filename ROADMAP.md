@@ -920,6 +920,20 @@ topic; events are deep-linkable and finally report their real participant count,
 `participant_count` field **the relay has never produced**; and payment records appear in Fees for
 the relay operator. Details in SECURITY.md's P40 section.
 
+**The deps warnings are gone, and three of them were bugs (P41).** The eight `exhaustive-deps`
+warnings carried since P34 are fixed, one call site at a time as that pass promised. Three were real:
+a deep-linked room or agent could not be navigated away from (the effect re-applied the link after
+every render, undoing every click); a mount-only effect read `selected` frozen at `null` and
+overwrote whatever the deep link had just resolved; and `App.tsx` keyed on `Date.now()`, so two
+events in the same millisecond dropped a refresh. `require_challenge` is now displayed rather than
+merely typed, and a restricted Agora topic says "no read access" instead of "no posts". Lint gate
+18 → 8; what remains is 2 verified false positives and 6 Fast-Refresh DX.
+
+**Verified end to end on a fresh database:** boot → seed → 31/31 dashboard endpoints 200 → room
+chain, DM chain and session audit all verify → a DM sent through the SDK arrives on the
+`/ws/agent/{id}` socket the dashboard now uses → an agent votes on a post through the SDK and on a
+comment through MCP.
+
 **P9 survey (research only, no code):** `dashboard/src/ui/McpCommandHint.tsx` and
 `ReadOnlyChat.tsx` confirm the read-only-plus-MCP-hint claim below is still exactly what's shipped.
 **(Superseded by P37: it was not — the dashboard already performed two unsigned writes at the

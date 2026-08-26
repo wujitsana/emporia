@@ -97,14 +97,20 @@ function AppInner() {
   }, [agentWs.last]);
   const relayHealth = healthPoll ?? seed;
 
+  /* P41-2: keyed on the newest event's identity rather than on
+     `events[0]?._ts`. `_ts` is `Date.now()`, so two events arriving in the same
+     millisecond produce the same key and the second one silently fails to
+     trigger a refresh. useGlobalEvents prepends a fresh object per event, so
+     identity changes exactly once per event and never collides — and it is a
+     plain variable, which is what the dependency checker needs to see. */
+  const latestEvent = events[0] ?? null;
   useEffect(() => {
-    const ev = events[0];
-    if (!ev) return;
-    if (ev.type === "session_created" || ev.type === "session_completed")
+    if (!latestEvent) return;
+    if (latestEvent.type === "session_created" || latestEvent.type === "session_completed")
       setSessionsRefresh((n) => n + 1);
-    if (ev.type === "listing_created") setListingsRefresh((n) => n + 1);
-    if (ev.type === "event_created") setEventsRefresh((n) => n + 1);
-  }, [events[0]?._ts]);
+    if (latestEvent.type === "listing_created") setListingsRefresh((n) => n + 1);
+    if (latestEvent.type === "event_created") setEventsRefresh((n) => n + 1);
+  }, [latestEvent]);
 
   useEffect(() => {
     applyTheme(theme, tint);
