@@ -536,21 +536,6 @@ export const api = {
 
   // Payment endpoints — buyer is the authenticated caller (agentHeaders()), not a body
   // field (N2-4).
-  createPaymentIntent: (
-    session_id: string,
-    amount_cents: number,
-    seller_id: string,
-    service_type: string,
-  ) =>
-    post<PaymentIntent>("/payments/create-intent", {
-      session_id, amount_cents, seller_id, service_type,
-    }),
-  // N9 review R4: N8-3 changed this endpoint's default `limit` from a hardcoded
-  // 100 to 50, silently halving FeesView's effective page size (it passed none
-  // before N8-3 either, so it never had to think about the cap explicitly).
-  // Explicit `limit` here restores that page size rather than raising the
-  // relay-wide default, which is 50 on every other list endpoint in this file —
-  // making settlements the outlier at 100 would be the wrong fix.
   settlements: (limit = 100) =>
     get<{ settlements: Settlement[]; count: number; has_more: boolean }>(
       `/payments/settlements?limit=${limit}`, { agentScoped: true }
@@ -560,34 +545,6 @@ export const api = {
       `/payments/settlements?agent_id=${encodeURIComponent(agent_id)}&limit=${limit}`,
       { agentScoped: true }
     ),
-  sessionSettlements: (session_id: string) =>
-    // N4-2/R1(a): relay now applies the resource's own visibility rule instead of
-    // returning settlements unconditionally. N7 review R3: capped at `limit`
-    // (default 50) with `has_more` — was previously unbounded. The response is
-    // always the wrapped-array shape below, matching the other two settlement
-    // reads (this type was previously `Settlement | null`, which never matched
-    // what the endpoint actually returns).
-    get<{ settlements: Settlement[]; count: number; has_more: boolean }>(
-      `/payments/settlements/${session_id}`, { agentScoped: true }
-    ),
-
-  // Session / room join
-  joinSession: (session_id: string, agent_id: string, payment_intent_id?: string) =>
-    post<Session>(`/sessions/${session_id}/join`, { agent_id, payment_intent_id }),
-  // Creator is the authenticated caller (agentHeaders()) — creator_id is no longer a
-  // body field (N2-4).
-  createRoom: (params: {
-    name: string; description?: string;
-    room_type?: string; gate_type?: string;
-    entry_fee_cents?: number; currency?: string;
-    encrypted?: boolean; linked_session_id?: string;
-  }) => post<Room>("/rooms", params),
-  joinRoom: (room_id: string, agent_id: string, payment_intent_id?: string) =>
-    post<{ status: string; room_id: string }>(`/rooms/${room_id}/join`, {
-      agent_id, payment_intent_id,
-    }),
-
-  // Agoras
   agoraTopics: (params?: { visibility?: string; subscribed_by?: string; sort?: string }) => {
     const q = new URLSearchParams();
     if (params?.visibility) q.set("visibility", params.visibility);
@@ -599,8 +556,6 @@ export const api = {
   },
   // viewer scoping now comes from the authenticated caller server-side, not a
   // client-supplied viewer_id — see relay N1-6.
-  agoraTopic: (slug: string) =>
-    get<AgoraTopic>(`/agoras/topics/${encodeURIComponent(slug)}`, { agentScoped: true }),
   agoraPosts: (slug: string, params?: { sort?: string; flair?: string }) => {
     const q = new URLSearchParams();
     if (params?.sort) q.set("sort", params.sort);
@@ -612,41 +567,12 @@ export const api = {
   agoraPost: (post_id: string) =>
     get<AgoraPost>(`/agoras/posts/${encodeURIComponent(post_id)}`, { agentScoped: true }),
   // agent_id must match the authenticated caller server-side now — see relay N1-6.
-  agoraFeed: (agent_id: string, sort = "new") =>
-    get<{ posts: AgoraPost[]; count: number }>(
-      `/agoras/feed?agent_id=${encodeURIComponent(agent_id)}&sort=${sort}`, { agentScoped: true }
+  voteAgoraComment: (comment_id: string, value: 1 | -1) =>
+    post<{ ok: boolean; vote_score: number }>(
+      `/agoras/comments/${encodeURIComponent(comment_id)}/vote`, { value },
     ),
-  // Creator is the authenticated caller (agentHeaders()) — creator_id is no longer a
-  // body field (N2-4).
-  createAgoraTopic: (body: {
-    name: string;
-    description?: string;
-    visibility?: string;
-    gate_type?: "open" | "invite" | "paid_invite";
-    entry_fee_cents?: number;
-    slug?: string;
-  }) => post<AgoraTopic>("/agoras/topics", body),
-  // Caller (agentHeaders()) must be the topic creator — invited_by is no longer a body
-  // field (N2-4).
-  inviteAgoraTopic: (slug: string, invitee_id: string) =>
-    post<{ ok: boolean; slug: string; agent_id: string }>(
-      `/agoras/topics/${encodeURIComponent(slug)}/invite`,
-      { invitee_id }
-    ),
-  // Author is the authenticated caller (agentHeaders()) — author_id is no longer a body
-  // field (N2-4).
-  createAgoraPost: (slug: string, body: { title: string; content: string; post_type?: string; flair?: string }) =>
-    post<AgoraPost>(`/agoras/topics/${encodeURIComponent(slug)}/posts`, body),
-  // Voter is the authenticated caller (agentHeaders()) — voter_id is no longer a body
-  // field (N2-4).
   voteAgoraPost: (post_id: string, value: 1 | -1) =>
     post<{ ok: boolean; vote_score: number }>(`/agoras/posts/${encodeURIComponent(post_id)}/vote`, { value }),
-  addAgoraComment: (post_id: string, body: { content: string; parent_comment_id?: string }) =>
-    post<AgoraComment>(`/agoras/posts/${encodeURIComponent(post_id)}/comments`, body),
-  subscribeAgoraTopic: (slug: string, agent_id: string) =>
-    post<{ ok: boolean }>(`/agoras/topics/${encodeURIComponent(slug)}/subscribe`, { agent_id }),
-
-  // Inbox
   agentInbox: (agent_id: string, unread_only = true, limit = 50) =>
     get<{ agent_id: string; events: InboxEvent[]; count: number }>(
       `/agents/${encodeURIComponent(agent_id)}/inbox?unread_only=${unread_only}&limit=${limit}`,
@@ -659,9 +585,6 @@ export const api = {
     ),
 
   // DMs — sender is the authenticated caller (agentHeaders()), not a body field (N2-4).
-  dmStart: (to_agent: string) =>
-    post<{ thread_id: string; created: boolean }>("/dm/start", { to_agent }),
-  // agent_id must match the authenticated caller server-side now — see relay N1-6.
   dmThreads: (agent_id: string) =>
     get<DMThread[]>(`/dm?agent_id=${encodeURIComponent(agent_id)}`, { agentScoped: true }),
   dmMessages: (thread_id: string, agent_id: string, limit = 100) =>

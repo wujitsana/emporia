@@ -2329,6 +2329,38 @@ makes them bugs is a second definition somewhere else in the tree. P34's closing
 worked here wasn't a rule but a shape: *derive the second answer from the first* — `navForHotkey`
 calls `visibleNav`, so they cannot drift — and where that isn't possible, pin the equality itself.
 
+## P38 pass — the dashboard goes live, and its purpose gets written down
+
+The dashboard's job was settled this pass: **it is a visibility surface — it shows what the agent
+is doing.** It does not drive the marketplace. Lightweight human reactions (Agora votes, inbox
+mark-read) are the one exception and the intended growth direction. That single sentence resolved
+the contradiction P37 flagged and made most of this pass mechanical.
+
+### Fixed
+
+| Finding | Severity | Fix |
+|---|---|---|
+| **The relay had a live agent channel and the dashboard ignored it (P38-1).** `/ws/agent/{id}` has been fully wired server-side all along, pushing `dm_received` (with content), `session_created`, `session_started`, `room_invite`, `room_message`, `kicked_from_room`, `agora_invite` and `agora_post_created` from nine call sites. The dashboard subscribed to none of it and polled instead: DMs every 4s, inbox every 10s, thread counts every 30s. **For a dashboard whose entire job is showing what the agent is doing, this was the largest gap left** — not a performance issue but a purpose one. | **High (for this product)** | `useAgentWs`, opened once in `App` so every view shares one socket. It deliberately exposes *events* rather than merging frames into state: consumers refetch the endpoint they already trust, so `GET /dm/{id}/messages` stays the single source of truth for what a thread contains and the socket is only responsible for *when*. No ordering, dedup or decryption path to get wrong twice. The polls remain as a slow safety net for a dropped socket (4s → 30s, 10s → 60s). |
+| **Comments showed a score nobody could move (P38-2).** `POST /agoras/comments/{id}/vote` shipped alongside the posts endpoint. The dashboard rendered `c.vote_score` next to every comment's author and date, and had no control for it — the one human interaction the product has, present on posts and missing on comments. | Medium | `VoteButtons` now takes the vote call as a prop instead of hardcoding `voteAgoraPost`, which is what lets both use it and keeps the component about the interaction rather than about which table it writes to. |
+| **Thirteen API clients with no caller (P38-3).** Ten were writes for marketplace actions the dashboard does not perform — create room, join room, join session, create topic, create post, add comment, subscribe, invite, start DM, create payment intent. They mattered beyond tidiness: **they described a product that isn't this one.** | Medium | Deleted, and pinned. `test_every_dashboard_api_client_has_a_caller` asserts every method on the exported `api` object is called from somewhere. |
+
+### The third blind spot
+
+P34 installed `oxlint --max-warnings` and called it the regression test for dead code. P35 found it
+cannot see an unused **file**. P38 found it cannot see an unused **method on an exported object** —
+every one counts as "used" by virtue of the export. Three passes, three widening gaps in the same
+tool, each closed by a different mechanism: a threshold, then a source pin, now a caller pin.
+
+### Open, and it cannot be backfilled
+
+`agora_votes.voter_id` stores the **agent** id, because the dashboard authenticates as `VIEWER_ID`.
+Nothing distinguishes "the human clicked ▲" from "the agent voted via MCP" — and an agent reading
+`vote_score` cannot tell either. If human reactions are meant to carry human signal, that
+provenance has to be recorded **at write time**; it cannot be reconstructed later. Flagged rather
+than decided, because it is a product question about what a vote means.
+
+756 pytest (+1), 94 vitest (+6), ruff clean, typecheck/build clean, lint at its gate.
+
 ## P37 pass — payouts and delivery, and a correction to P36
 
 Two things P36's own review got wrong, corrected here before anything was built on them.

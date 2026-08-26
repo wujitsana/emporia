@@ -33,7 +33,23 @@ function GateBadge({ gate, fee }: { gate?: string; fee?: number }) {
   return null;
 }
 
-function VoteButtons({ postId, initialScore }: { postId: string; initialScore: number }) {
+/**
+ * The dashboard's one human interaction: a reaction on someone else's writing.
+ *
+ * P38-2: this took a `postId` and called `api.voteAgoraPost` directly, so
+ * comments — which render a `vote_score` right next to the author and date —
+ * showed a number nobody could move, even though
+ * `POST /agoras/comments/{id}/vote` shipped alongside the posts one. Taking the
+ * vote call as a prop is what lets both use it, and keeps the component about
+ * the interaction rather than about which table it writes to.
+ */
+function VoteButtons({
+  initialScore,
+  onVote,
+}: {
+  initialScore: number;
+  onVote: (value: 1 | -1) => Promise<unknown>;
+}) {
   const [score, setScore] = useState(initialScore);
   const [voted, setVoted] = useState<1 | -1 | null>(null);
   const voter = VIEWER_ID;
@@ -48,7 +64,7 @@ function VoteButtons({ postId, initialScore }: { postId: string; initialScore: n
     setScore((s) => s + delta);
     setVoted(next);
     if (next !== null) {
-      api.voteAgoraPost(postId, next).catch(() => {});
+      onVote(next).catch(() => {});
     }
   };
 
@@ -207,7 +223,11 @@ export function AgorasView({ navigate }: { navigate?: Navigate } = {}) {
                 style={{ paddingLeft: c.parent_comment_id ? 20 : 0 }}
               >
                 <Text className="e-faint e-chat-meta">
-                  <AgentLink agent_id={c.author_id} navigate={navigate} /> · {c.created_at?.slice(0, 16)} · {c.vote_score}
+                  <AgentLink agent_id={c.author_id} navigate={navigate} /> · {c.created_at?.slice(0, 16)}{" "}
+                  <VoteButtons
+                    initialScore={c.vote_score}
+                    onVote={(v) => api.voteAgoraComment(c.comment_id, v)}
+                  />
                 </Text>
                 <Text>{c.content}</Text>
               </div>
@@ -230,7 +250,7 @@ export function AgorasView({ navigate }: { navigate?: Navigate } = {}) {
           <FlatRailItem key={p.post_id} onClick={() => openPost(p.post_id)}>
             <RowSpaceBetween>
               <div className="e-post-row">
-                <VoteButtons postId={p.post_id} initialScore={p.vote_score} />
+                <VoteButtons initialScore={p.vote_score} onVote={(v) => api.voteAgoraPost(p.post_id, v)} />
                 <div>
                   <div className="e-post-title">
                     {p.is_pinned ? <span title="pinned">📌</span> : null}

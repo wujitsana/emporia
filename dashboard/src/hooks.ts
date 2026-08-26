@@ -68,10 +68,114 @@ export interface WsMessage {
   nonce?: string | null;
 }
 
+/**
+ * A frame on the per-agent channel. Unlike WsMessage — which is one specific
+ * shape, a room message — this channel multiplexes eight different event types,
+ * so only `type` is guaranteed and the rest are per-event.
+ */
+export interface AgentEvent {
+  type: string;
+  thread_id?: string;
+  room_id?: string;
+  session_id?: string;
+  message_id?: string;
+  sender_id?: string;
+  created_at?: string;
+  [key: string]: unknown;
+}
+
 export interface RoomWsState {
   messages: WsMessage[];
   connected: boolean;
   send: (data: string) => void;
+}
+
+export interface AgentWsState {
+  connected: boolean;
+  /** The most recent event, with a fresh object identity per frame so an
+   *  `useEffect(..., [last])` fires again on a repeat of the same event. */
+  last: AgentEvent | null;
+  /** Total events seen on this connection — useful as a dep when the payload
+   *  itself doesn't matter. */
+  eventCount: number;
+}
+
+/**
+ * Connects to /ws/agent/{agentId} — the relay's per-agent notification channel.
+ *
+ * P38-1: this channel has been fully wired server-side all along. It emits
+ * `dm_received` (with content), `session_created`, `session_started`,
+ * `room_invite`, `room_message`, `kicked_from_room`, `agora_invite` and
+ * `agora_post_created` — and the dashboard subscribed to none of it, polling
+ * DMs every 4s and the inbox every 10s instead. For a dashboard whose whole job
+ * is showing what the agent is doing, that was the largest visibility gap left.
+ *
+ * Deliberately exposes events rather than merging them into state: callers
+ * refetch the endpoint they already trust on the events they care about. That
+ * keeps one source of truth for the data and leaves the socket responsible only
+ * for *when* — no ordering, dedup or partial-frame handling to get wrong. The
+ * existing polls stay as a slow safety net for a dropped socket.
+ */
+export function useAgentWs(relayUrl: string, agentId: string | null): AgentWsState {
+  const [connected, setConnected] = useState(false);
+  const [last, setLast] = useState<AgentEvent | null>(null);
+  const [eventCount, setEventCount] = useState(0);
+  const wsRef = useRef<WebSocket | null>(null);
+
+  useEffect(() => {
+    setConnected(false);
+    setLast(null);
+    setEventCount(0);
+    if (!agentId) return;
+
+    let closed = false;
+    let retryMs = 1_000;
+    const base = toWsUrl(relayUrl);
+
+    const connect = () => {
+      if (closed) return;
+      const params = new URLSearchParams({ agent_id: agentId });
+      const token = dashboardToken();
+      if (token) params.set("token", token);
+      const ws = new WebSocket(`${base}/ws/agent/${encodeURIComponent(agentId)}?${params.toString()}`);
+      wsRef.current = ws;
+
+      ws.onopen = () => { setConnected(true); retryMs = 1_000; };
+      ws.onclose = () => {
+        setConnected(false);
+        wsRef.current = null;
+        if (!closed) setTimeout(connect, (retryMs = Math.min(retryMs * 2, 30_000)));
+      };
+      ws.onmessage = (e) => {
+        let frame: AgentEvent;
+        try {
+          frame = JSON.parse(e.data);
+        } catch {
+          return;
+        }
+        // The keepalive is not an event; counting it would refetch every 20s
+        // and quietly reinstate the polling this hook exists to remove.
+        if (!frame?.type || frame.type === "pong") return;
+        setLast({ ...frame });
+        setEventCount((n) => n + 1);
+      };
+    };
+
+    connect();
+    const pingId = setInterval(() => {
+      if (wsRef.current?.readyState === WebSocket.OPEN)
+        wsRef.current.send('{"type":"ping"}');
+    }, 20_000);
+
+    return () => {
+      closed = true;
+      clearInterval(pingId);
+      wsRef.current?.close();
+      wsRef.current = null;
+    };
+  }, [relayUrl, agentId]);
+
+  return { connected, last, eventCount };
 }
 
 /**

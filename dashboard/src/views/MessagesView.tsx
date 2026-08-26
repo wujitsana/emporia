@@ -20,6 +20,7 @@ import { ViewBody } from "../ui/layout";
 import { ViewStatus } from "../ui/ViewStatus";
 import { VIEWER_ID } from "../relayEnv";
 import { useInterval } from "../hooks";
+import type { AgentEvent } from "../hooks";
 import type { Navigate } from "../navigation";
 import { AgentLink } from "../ui/chips";
 import { markReplayedNonces, verifyMessageSignature } from "../integrityCheck";
@@ -148,7 +149,17 @@ function InboxTab({ navigate, viewer }: { navigate: Navigate; viewer: string }) 
 
 // ─── DMs tab ─────────────────────────────────────────────────────────────────
 
-function DMsTab({ navigate, viewer }: { navigate: Navigate; viewer: string }) {
+function DMsTab({
+  navigate,
+  viewer,
+  liveEvent,
+  liveConnected,
+}: {
+  navigate: Navigate;
+  viewer: string;
+  liveEvent: AgentEvent | null;
+  liveConnected: boolean;
+}) {
   const [threads, setThreads] = useState<DMThread[]>([]);
   const [active, setActive] = useState<DMThread | null>(null);
   const [messages, setMessages] = useState<DMMessage[]>([]);
@@ -178,9 +189,22 @@ function DMsTab({ navigate, viewer }: { navigate: Navigate; viewer: string }) {
   useEffect(() => {
     if (!active) return;
     loadMsgs(active);
-    const iv = setInterval(() => loadMsgs(active), 4_000);
+    // P38-1: was every 4 seconds. The relay pushes `dm_received` on the agent
+    // channel the moment a message lands, so this interval is now the safety
+    // net for a dropped socket rather than the mechanism — see the effect below.
+    const iv = setInterval(() => loadMsgs(active), 30_000);
     return () => clearInterval(iv);
   }, [active, loadMsgs]);
+
+  // P38-1: refetch on the event rather than on a timer. Refetching (instead of
+  // appending the frame) keeps GET /dm/{id}/messages the single source of truth
+  // for what the thread contains — the socket only says *when* to look, so
+  // there is no ordering, dedup or decryption path to get wrong twice.
+  useEffect(() => {
+    if (liveEvent?.type !== "dm_received") return;
+    loadThreads();
+    if (active && liveEvent.thread_id === active.thread_id) loadMsgs(active);
+  }, [liveEvent, active, loadMsgs, loadThreads]);
 
   // P23-4: pubkeys for verifyMessageSignature() -- just the two participants
   // of the active thread (viewer + other_agent), refetched per thread switch.
@@ -246,7 +270,9 @@ function DMsTab({ navigate, viewer }: { navigate: Navigate; viewer: string }) {
             endRef={bottomRef}
             footer={
               <RowSpaceBetween>
-                <Text className="e-faint">read-only — agents send via relay</Text>
+                <Text className="e-faint">
+                  {liveConnected ? "live · agents send via relay" : "read-only — agents send via relay"}
+                </Text>
                 {/* P32-2: the DM half of the room chain badge. Sits in the
                     footer beside the read-only note rather than the header,
                     matching where a reader looks after reading the thread.
@@ -277,7 +303,19 @@ function DMsTab({ navigate, viewer }: { navigate: Navigate; viewer: string }) {
 
 // ─── MessagesView ───────────────────────────────────────────────────────────────
 
-export function MessagesView({ navigate, initialTab }: { navigate: Navigate; initialTab?: "inbox" | "dms" }) {
+export function MessagesView({
+  navigate,
+  initialTab,
+  liveEvent = null,
+  liveConnected = false,
+}: {
+  navigate: Navigate;
+  initialTab?: "inbox" | "dms";
+  /** P38-1: the latest frame from the agent's own relay channel, opened once in
+   *  App so every view shares one socket. */
+  liveEvent?: AgentEvent | null;
+  liveConnected?: boolean;
+}) {
   const [tab, setTab] = useState<"inbox" | "dms">(initialTab ?? "inbox");
   const [unread, setUnread] = useState(0);
 
@@ -328,7 +366,14 @@ export function MessagesView({ navigate, initialTab }: { navigate: Navigate; ini
       </div>
       <div className="e-messages-body">
         {tab === "inbox" && <InboxTab navigate={navigate} viewer={VIEWER_ID} />}
-        {tab === "dms" && <DMsTab navigate={navigate} viewer={VIEWER_ID} />}
+        {tab === "dms" && (
+          <DMsTab
+            navigate={navigate}
+            viewer={VIEWER_ID}
+            liveEvent={liveEvent}
+            liveConnected={liveConnected}
+          />
+        )}
       </div>
     </ViewBody>
   );

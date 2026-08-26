@@ -15,7 +15,7 @@ import { ProfileView } from "./ProfileView";
 import { RELAY } from "./relayEnv";
 import { RelayContextProvider, useRelayCtx } from "./relayContext";
 import { applyTheme, THEMES, TINTS, type Theme, type Tint } from "./themeConfig";
-import { useGlobalEvents, useInterval } from "./hooks";
+import { useAgentWs, useGlobalEvents, useInterval } from "./hooks";
 import { navForHotkey, type View } from "./navConfig";
 import type { NavOpts } from "./eventNav";
 import type { Navigate } from "./navigation";
@@ -75,14 +75,25 @@ function AppInner() {
 
   const { events, seed, wsConnected } = useGlobalEvents();
   const [healthPoll] = useInterval(() => api.health(), 5_000);
+
+  /* P38-1: the per-agent notification channel, opened once here so every view
+     shares one connection (calling useAgentWs in each consumer would open a
+     socket each). Everything the relay pushes to an agent — DMs, invites,
+     session starts, kicks — arrives on it, and the dashboard had been polling
+     for all of it. */
+  const agentWs = useAgentWs(RELAY, VIEWER_ID);
+
   useEffect(() => {
     const viewer = VIEWER_ID;
     if (!viewer) return;
     const poll = () => api.agentInbox(viewer, true, 1).then((d) => setInboxUnread(d.count)).catch(() => {});
     poll();
-    const t = setInterval(poll, 15_000);
+    // The interval is the safety net for a dropped socket now, not the way the
+    // badge stays current — the `agentWs.last` dep is. Every event type the
+    // relay sends on this channel also lands in the agent's inbox.
+    const t = setInterval(poll, 60_000);
     return () => clearInterval(t);
-  }, []);
+  }, [agentWs.last]);
   const relayHealth = healthPoll ?? seed;
 
   useEffect(() => {
@@ -251,7 +262,13 @@ function AppInner() {
               <AgentsView initialAgentId={selectedAgentId} listingPeek={listingPeek} navigate={navigate} />
             )}
             {view === "agoras" && <AgorasView navigate={navigate} />}
-            {view === "messages" && <MessagesView navigate={navigate} />}
+            {view === "messages" && (
+              <MessagesView
+                navigate={navigate}
+                liveEvent={agentWs.last}
+                liveConnected={agentWs.connected}
+              />
+            )}
             {view === "fees" && !isSpectator && <FeesView navigate={navigate} isOperator={isRelayOperator} />}
             {view === "profile" && <ProfileView />}
           </div>

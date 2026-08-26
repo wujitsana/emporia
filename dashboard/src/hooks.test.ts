@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { act, renderHook } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { useInterval, useRoomWs, useSenderPubkeys } from "./hooks";
+import { useAgentWs, useInterval, useRoomWs, useSenderPubkeys } from "./hooks";
 
 // P24-5 (W5, F2): useRoomWs (hooks.ts) only cleared `messages` when `roomId`
 // went falsy, not on every roomId change -- so switching room A -> room B
@@ -195,5 +195,77 @@ describe("useInterval stale-data semantics (P33-2)", () => {
       await Promise.resolve();
     });
     expect(result.current[0]).toBe("second-result");
+  });
+});
+
+
+// ── P38-1: the per-agent notification channel ────────────────────────────────
+// /ws/agent/{id} has been fully wired server-side all along -- it emits
+// dm_received, session_created, session_started, room_invite, room_message,
+// kicked_from_room, agora_invite and agora_post_created -- and the dashboard
+// subscribed to none of it, polling DMs every 4s and the inbox every 10s
+// instead. For a dashboard whose whole job is showing what the agent is doing,
+// that was the largest visibility gap left.
+
+describe("useAgentWs", () => {
+  it("connects to the agent's own channel", () => {
+    renderHook(() => useAgentWs("http://relay.test", "hackathon_hermes"));
+    expect(FakeWebSocket.instances).toHaveLength(1);
+    expect(FakeWebSocket.instances[0].url).toContain("/ws/agent/hackathon_hermes");
+  });
+
+  it("does not connect without an identity", () => {
+    // A spectator has no channel to open, and the relay would close it anyway.
+    renderHook(() => useAgentWs("http://relay.test", null));
+    expect(FakeWebSocket.instances).toHaveLength(0);
+  });
+
+  it("surfaces each event as `last`, so callers can refetch on the ones they care about", () => {
+    const { result } = renderHook(() => useAgentWs("http://relay.test", "a"));
+    act(() => { FakeWebSocket.instances[0].fireOpen(); });
+    expect(result.current.connected).toBe(true);
+
+    act(() => {
+      FakeWebSocket.instances[0].fireMessage({ type: "dm_received", thread_id: "dm_1" });
+    });
+    expect(result.current.last?.type).toBe("dm_received");
+    expect(result.current.eventCount).toBe(1);
+
+    act(() => {
+      FakeWebSocket.instances[0].fireMessage({ type: "room_invite", room_id: "r_1" });
+    });
+    expect(result.current.last?.type).toBe("room_invite");
+    expect(result.current.eventCount).toBe(2);
+  });
+
+  it("gives every event a fresh identity, so an effect keyed on `last` re-runs", () => {
+    // Two identical frames in a row are two real events -- a second DM in the
+    // same thread must still trigger a refetch. Reusing the object would make
+    // the second one invisible to a `useEffect(..., [last])`.
+    const { result } = renderHook(() => useAgentWs("http://relay.test", "a"));
+    act(() => { FakeWebSocket.instances[0].fireOpen(); });
+
+    act(() => { FakeWebSocket.instances[0].fireMessage({ type: "dm_received", thread_id: "t" }); });
+    const first = result.current.last;
+    act(() => { FakeWebSocket.instances[0].fireMessage({ type: "dm_received", thread_id: "t" }); });
+    expect(result.current.last).not.toBe(first);
+  });
+
+  it("ignores the relay's pong keepalive", () => {
+    const { result } = renderHook(() => useAgentWs("http://relay.test", "a"));
+    act(() => { FakeWebSocket.instances[0].fireOpen(); });
+    act(() => { FakeWebSocket.instances[0].fireMessage({ type: "pong" }); });
+    expect(result.current.last).toBeNull();
+    expect(result.current.eventCount).toBe(0);
+  });
+
+  it("reconnects to the new channel when the identity changes", () => {
+    const { rerender } = renderHook(({ id }) => useAgentWs("http://relay.test", id), {
+      initialProps: { id: "a" as string | null },
+    });
+    act(() => { FakeWebSocket.instances[0].fireOpen(); });
+    rerender({ id: "b" });
+    expect(FakeWebSocket.instances).toHaveLength(2);
+    expect(FakeWebSocket.instances[1].url).toContain("/ws/agent/b");
   });
 });

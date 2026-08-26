@@ -21406,6 +21406,41 @@ _ACTION_SIGNED_ROUTES = [
 ]
 
 
+def test_every_dashboard_api_client_has_a_caller():
+    """P38-3: the third blind spot in this codebase's unused-code detection.
+
+    P34 installed `oxlint --max-warnings` and called it the regression test for
+    dead code. P35 found it cannot see an unused *file*. This is the other one:
+    every method on the exported `api` object counts as "used" by virtue of the
+    export, so thirteen clients — ten of them writes for marketplace actions the
+    dashboard does not perform — sat there with no caller and no warning.
+
+    They mattered beyond tidiness: they described a dashboard that creates
+    rooms, joins sessions and starts DMs, which is not the product. The
+    dashboard is for *visibility* — watching what the agent does — plus
+    lightweight human reactions (Agora votes, inbox mark-read). A client for
+    something the UI never does is a claim about the product that isn't true."""
+    import re
+
+    api_ts = (Path(__file__).parent.parent / "dashboard" / "src" / "api.ts").read_text()
+    block = re.search(r"^export const api = \{(.*?)^\};", api_ts, re.DOTALL | re.MULTILINE)
+    assert block, "the exported `api` object was not found in dashboard/src/api.ts"
+    methods = re.findall(r"^  ([a-zA-Z_][a-zA-Z0-9_]*):", block.group(1), re.MULTILINE)
+    assert methods, "no api methods parsed -- the pin would pass vacuously"
+
+    src_root = Path(__file__).parent.parent / "dashboard" / "src"
+    consumers = "\n".join(
+        f.read_text()
+        for f in src_root.rglob("*.ts*")
+        if f.name != "api.ts" and not f.name.endswith(".test.ts")
+    )
+    unused = [m for m in methods if not re.search(rf"\.{m}\b", consumers)]
+    assert not unused, (
+        "dashboard/src/api.ts has client methods nothing calls — either wire them "
+        f"or drop them; an unreachable client is a claim the product doesn't keep: {unused}"
+    )
+
+
 def test_dashboard_has_no_client_for_an_action_signed_endpoint():
     """The dashboard may perform writes the relay authorizes by caller identity
     (its JWT), and may not perform writes that require a signature over the
