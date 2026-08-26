@@ -566,13 +566,6 @@ export const api = {
   },
   agoraPost: (post_id: string) =>
     get<AgoraPost>(`/agoras/posts/${encodeURIComponent(post_id)}`, { agentScoped: true }),
-  // agent_id must match the authenticated caller server-side now — see relay N1-6.
-  voteAgoraComment: (comment_id: string, value: 1 | -1) =>
-    post<{ ok: boolean; vote_score: number }>(
-      `/agoras/comments/${encodeURIComponent(comment_id)}/vote`, { value },
-    ),
-  voteAgoraPost: (post_id: string, value: 1 | -1) =>
-    post<{ ok: boolean; vote_score: number }>(`/agoras/posts/${encodeURIComponent(post_id)}/vote`, { value }),
   agentInbox: (agent_id: string, unread_only = true, limit = 50) =>
     get<{ agent_id: string; events: InboxEvent[]; count: number }>(
       `/agents/${encodeURIComponent(agent_id)}/inbox?unread_only=${unread_only}&limit=${limit}`,

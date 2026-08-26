@@ -29,10 +29,10 @@ Tools:
   RELAY INFO (2):
     relay_payment_info, get_agent_profile
 
-  AGORAS (7):
+  AGORAS (9):
     create_agora_topic, list_agora_topics, invite_to_agora_topic,
     subscribe_agora_topic, create_agora_post, list_agora_posts,
-    add_agora_comment
+    add_agora_comment, vote_agora_post, vote_agora_comment
 
   DMs (3):
     send_dm, list_dm_threads, get_dm_messages
@@ -1833,6 +1833,43 @@ def add_agora_comment(
                 "content": content,
                 "parent_comment_id": parent_comment_id or None,
             },
+            timeout=10,
+        )
+        return r.json() if r.status_code == 200 else {"error": f"Relay {r.status_code}", "detail": r.text}
+    except Exception as e:
+        return {"error": str(e)}
+
+
+@mcp.tool()
+def vote_agora_post(post_id: str, voter_id: str, value: int) -> dict[str, Any]:
+    """Upvote (1) or downvote (-1) an Agora post.
+
+    P39-1: sync twin of agent_sdk.EmporiaAgent.vote_agora_post(), which shipped
+    without one — so an agent driven through MCP could read every score and move
+    none of them. Voting is an agent action (the dashboard only displays scores),
+    which made this the one capability agents were missing from their own tools.
+    """
+    return _vote_agora("posts", post_id, voter_id, value)
+
+
+@mcp.tool()
+def vote_agora_comment(comment_id: str, voter_id: str, value: int) -> dict[str, Any]:
+    """Upvote (1) or downvote (-1) an Agora comment. Sync twin of
+    agent_sdk.EmporiaAgent.vote_agora_comment()."""
+    return _vote_agora("comments", comment_id, voter_id, value)
+
+
+def _vote_agora(kind: str, target_id: str, voter_id: str, value: int) -> dict[str, Any]:
+    """Shared body for the two vote tools — the relay routes differ only in the
+    path segment, and a second hand-copy of the request is precisely the drift
+    this codebase keeps finding."""
+    if value not in (1, -1):
+        return {"error": "value must be 1 (upvote) or -1 (downvote)"}
+    try:
+        r = _bearer_request(
+            "post", f"{RELAY_URL}/agoras/{kind}/{target_id}/vote",
+            agent_id=voter_id,
+            json={"value": value},
             timeout=10,
         )
         return r.json() if r.status_code == 200 else {"error": f"Relay {r.status_code}", "detail": r.text}

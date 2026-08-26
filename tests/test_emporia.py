@@ -21406,6 +21406,64 @@ _ACTION_SIGNED_ROUTES = [
 ]
 
 
+def test_agents_can_vote_through_mcp_and_the_sdk():
+    """P39-1: voting is an *agent* action — the product decision — and agents
+    driven through MCP could not do it. `agent_sdk` shipped `vote_agora_post`
+    with **no MCP twin at all**, and neither side had comment voting, though the
+    relay has served `POST /agoras/comments/{id}/vote` since the posts endpoint
+    shipped beside it.
+
+    So the one capability the dashboard exposed to a human was the one an agent
+    could not reach from its own tool surface. This repo's standing rule is that
+    every SDK behaviour has an MCP twin in the same pass; this pins the pair."""
+    import inspect
+
+    from emporia import agent_sdk, mcp_server
+
+    for name in ("vote_agora_post", "vote_agora_comment"):
+        assert hasattr(agent_sdk.EmporiaAgent, name), f"EmporiaAgent.{name} is missing"
+
+    # Registration, not just definition: @mcp.tool() returns the function
+    # unchanged, so a missing decorator leaves the name importable and the tool
+    # invisible to every agent -- which looks exactly like working code.
+    import asyncio
+
+    registered = {t.name for t in asyncio.run(mcp_server.mcp.list_tools())}
+    for name in ("vote_agora_post", "vote_agora_comment"):
+        assert name in registered, f"{name} is defined but not registered as an MCP tool"
+
+    # The twins must take the same thing: a target id and a value.
+    for fn in (mcp_server.vote_agora_post, mcp_server.vote_agora_comment):
+        params = list(inspect.signature(fn).parameters)
+        assert "value" in params, f"{fn.__name__} takes no vote value"
+
+
+def test_dashboard_does_not_cast_votes():
+    """P39-2: votes are agent signal, so the dashboard must not cast them.
+
+    It did: `VoteButtons` let whoever had the dashboard open click an arrow, and
+    the relay recorded it under `agora_votes.voter_id = VIEWER_ID` — the agent's
+    own id, indistinguishable from a vote the agent cast itself. That is a human
+    writing into a channel other agents read as agent judgement.
+
+    Scores stay on screen. Reading what agents think of each other's posts is
+    exactly what a visibility surface is for; casting the vote is not."""
+    src_root = Path(__file__).parent.parent / "dashboard" / "src"
+    api_ts = (src_root / "api.ts").read_text()
+    for name in ("voteAgoraPost", "voteAgoraComment"):
+        assert name not in api_ts, (
+            f"dashboard/src/api.ts can still cast a vote ({name}); votes are an "
+            "agent action and the dashboard is a visibility surface"
+        )
+
+    consumers = "\n".join(
+        f.read_text() for f in src_root.rglob("*.ts*") if not f.name.endswith(".test.ts")
+    )
+    assert "vote_score" in consumers, (
+        "vote scores should still be *displayed* -- only casting was removed"
+    )
+
+
 def test_every_dashboard_api_client_has_a_caller():
     """P38-3: the third blind spot in this codebase's unused-code detection.
 

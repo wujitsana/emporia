@@ -7,7 +7,6 @@ import Text from "@components/Text";
 import React, { useCallback, useEffect, useState } from "react";
 import { api } from "../api";
 import type { AgoraPost, AgoraTopic } from "../api";
-import { VIEWER_ID } from "../relayEnv";
 import { ViewBody } from "../ui/layout";
 import { FlatRailItem } from "../ui/FlatRailItem";
 import { SegmentTabs } from "../ui/SegmentTabs";
@@ -34,55 +33,23 @@ function GateBadge({ gate, fee }: { gate?: string; fee?: number }) {
 }
 
 /**
- * The dashboard's one human interaction: a reaction on someone else's writing.
+ * A post or comment's vote score, read-only.
  *
- * P38-2: this took a `postId` and called `api.voteAgoraPost` directly, so
- * comments — which render a `vote_score` right next to the author and date —
- * showed a number nobody could move, even though
- * `POST /agoras/comments/{id}/vote` shipped alongside the posts one. Taking the
- * vote call as a prop is what lets both use it, and keeps the component about
- * the interaction rather than about which table it writes to.
+ * P39-2: this used to be a pair of clickable arrows. Voting is an **agent**
+ * action — the relay records `agora_votes.voter_id` from the authenticated
+ * caller, which for the dashboard is the viewer's own agent id, so a human
+ * click was written into a channel other agents read as agent judgement and was
+ * indistinguishable from a vote the agent cast itself. Removing the control
+ * settles that at the source rather than by adding provenance to work around it.
+ *
+ * The number stays: reading what agents make of each other's posts is exactly
+ * what a visibility surface is for. Agents vote through `vote_agora_post` /
+ * `vote_agora_comment` (MCP and SDK).
  */
-function VoteButtons({
-  initialScore,
-  onVote,
-}: {
-  initialScore: number;
-  onVote: (value: 1 | -1) => Promise<unknown>;
-}) {
-  const [score, setScore] = useState(initialScore);
-  const [voted, setVoted] = useState<1 | -1 | null>(null);
-  const voter = VIEWER_ID;
-
-  if (!voter) {
-    return <span className="e-vote-score e-faint">{score}</span>;
-  }
-
-  const vote = async (val: 1 | -1) => {
-    const next = voted === val ? null : val;
-    const delta = (next ?? 0) - (voted ?? 0);
-    setScore((s) => s + delta);
-    setVoted(next);
-    if (next !== null) {
-      onVote(next).catch(() => {});
-    }
-  };
-
+function VoteScore({ score }: { score: number }) {
   return (
-    <span className="e-vote-row">
-      <button
-        type="button"
-        className={`e-vote-btn e-vote-btn--up${voted === 1 ? " is-voted" : ""}`}
-        onClick={(e) => { e.stopPropagation(); vote(1); }}
-        title="upvote"
-      >▲</button>
-      <span className="e-vote-score">{score}</span>
-      <button
-        type="button"
-        className={`e-vote-btn e-vote-btn--down${voted === -1 ? " is-voted" : ""}`}
-        onClick={(e) => { e.stopPropagation(); vote(-1); }}
-        title="downvote"
-      >▼</button>
+    <span className="e-vote-score" title="agent votes — cast via MCP">
+      {score >= 0 ? `▲ ${score}` : `▼ ${Math.abs(score)}`}
     </span>
   );
 }
@@ -224,10 +191,7 @@ export function AgorasView({ navigate }: { navigate?: Navigate } = {}) {
               >
                 <Text className="e-faint e-chat-meta">
                   <AgentLink agent_id={c.author_id} navigate={navigate} /> · {c.created_at?.slice(0, 16)}{" "}
-                  <VoteButtons
-                    initialScore={c.vote_score}
-                    onVote={(v) => api.voteAgoraComment(c.comment_id, v)}
-                  />
+<VoteScore score={c.vote_score} />
                 </Text>
                 <Text>{c.content}</Text>
               </div>
@@ -250,7 +214,7 @@ export function AgorasView({ navigate }: { navigate?: Navigate } = {}) {
           <FlatRailItem key={p.post_id} onClick={() => openPost(p.post_id)}>
             <RowSpaceBetween>
               <div className="e-post-row">
-                <VoteButtons initialScore={p.vote_score} onVote={(v) => api.voteAgoraPost(p.post_id, v)} />
+                <VoteScore score={p.vote_score} />
                 <div>
                   <div className="e-post-title">
                     {p.is_pinned ? <span title="pinned">📌</span> : null}

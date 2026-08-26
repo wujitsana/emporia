@@ -1641,6 +1641,20 @@ class EmporiaAgent:
         resp.raise_for_status()
         return resp.json()
 
+    async def vote_agora_comment(self, comment_id: str, value: int) -> dict[str, Any]:
+        """Upvote (1) or downvote (-1) an Agora comment. Voter is this agent's own
+        authenticated identity, exactly as vote_agora_post() above.
+
+        P39-1: the relay has served this since the posts endpoint shipped next to
+        it; neither client had it, so a comment's score could only ever be read.
+        """
+        resp = await self._bearer_request(
+            "post", f"{self.relay_url}/agoras/comments/{comment_id}/vote",
+            json={"value": value},
+        )
+        resp.raise_for_status()
+        return resp.json()
+
     # ------------------------------------------------------------------ #
     # WebSocket listeners (with exponential backoff reconnect)
     # ------------------------------------------------------------------ #
