@@ -23,6 +23,7 @@ import base64
 import json
 import logging
 import os
+import re
 import shutil
 import sys
 import tempfile
@@ -23001,4 +23002,103 @@ def test_p31_room_chain_walk_survives_a_created_at_tie_at_a_page_boundary():
     assert r["verified"] is True, (
         "nothing in this room was tampered with -- a timestamp tie at a page "
         f"boundary must not read as a broken chain: {r}"
+    )
+
+
+# ---------------------------------------------------------------------------
+# P43-1: the docs are a surface an agent reads, so drift there is unreachable
+# capability -- the same class as an api.ts client with no caller (P38), one
+# layer up. Every other source-grep pin in this file compares source to source;
+# these two are the first that compare source to docs.
+# ---------------------------------------------------------------------------
+
+_DOC_ROOT = Path(__file__).parent.parent
+
+#: Docs that must name every MCP tool. `skills/emporia.md` is a symlink to the
+#: first of these, not a fifth surface.
+_TOOL_INVENTORY_DOCS = (
+    "skills/emporia/SKILL.md",
+    "skills/dev/emporia-dev/SKILL.md",
+    "README.md",
+)
+
+#: Every place a doc states how many MCP tools there are. Kept as one regex
+#: rather than a per-file literal so a new phrasing is caught too.
+_TOOL_COUNT_RE = re.compile(
+    r"(\d+)\s*(?:FastMCP\s+)?(?:MCP\s+)?tools?\b"      # "44 tools", "42 FastMCP tools"
+    r"|MCP [Tt]ools?\s*(?:\(|—\s*)(\d+)"                # "MCP tools (44)", "MCP Tools — 44"
+    r"|#mcp-tools-(\d+)"                                 # the README TOC anchor
+)
+
+_COUNTED_DOCS = (
+    "README.md",
+    "ARCHITECTURE.md",
+    "skills/emporia/SKILL.md",
+    "skills/dev/emporia-dev/SKILL.md",
+)
+
+
+def _registered_mcp_tools() -> set[str]:
+    """Registration, not definition -- @mcp.tool() returns the function
+    unchanged, so a name can be importable and invisible to every agent."""
+    import asyncio
+
+    from emporia import mcp_server
+
+    return {t.name for t in asyncio.run(mcp_server.mcp.list_tools())}
+
+
+def _tool_inventory_section(text: str) -> str:
+    """The doc's MCP-tool inventory: its `## ... MCP tools` heading through the
+    next level-2 heading.
+
+    Scoped deliberately. The first version of this pin searched the whole file,
+    and deleting a tool's table row still passed because a prose paragraph
+    elsewhere happened to mention the name -- a weaker guarantee than the one
+    this test is for, and it looked identical from the green result."""
+    lines = text.splitlines()
+    start = next(
+        i for i, ln in enumerate(lines)
+        if re.match(r"^##+ .*MCP [Tt]ools?\b", ln)
+    )
+    end = next(
+        (i for i, ln in enumerate(lines[start + 1:], start + 1) if ln.startswith("## ")),
+        len(lines),
+    )
+    return "\n".join(lines[start:end])
+
+
+def test_docs_name_every_mcp_tool():
+    """P43-1: a tool absent from the skill is a tool no agent will ever call.
+
+    `skills/emporia/SKILL.md` is the file a Hermes agent loads to learn what it
+    can do. Seven tools -- including both chain verifiers, the feature this repo
+    spent P21/P24/P30 building -- were shipped and listed in no doc at all."""
+    tools = _registered_mcp_tools()
+    missing: dict[str, list[str]] = {}
+    for doc in _TOOL_INVENTORY_DOCS:
+        section = _tool_inventory_section((_DOC_ROOT / doc).read_text())
+        absent = sorted(t for t in tools if f"`{t}`" not in section)
+        if absent:
+            missing[doc] = absent
+    assert not missing, (
+        "MCP tools registered but absent from a doc's tool inventory -- an "
+        f"agent reading the skill cannot discover these: {missing}"
+    )
+
+
+def test_docs_state_the_real_mcp_tool_count():
+    """P43-1: four docs said 44, one of them said 42 two sections later, and
+    the server registered 51. A count is the cheapest possible drift detector
+    and nothing was checking it."""
+    expected = len(_registered_mcp_tools())
+    wrong: list[str] = []
+    for doc in _COUNTED_DOCS:
+        for i, line in enumerate((_DOC_ROOT / doc).read_text().splitlines(), 1):
+            for match in _TOOL_COUNT_RE.finditer(line):
+                stated = next(g for g in match.groups() if g is not None)
+                if int(stated) != expected:
+                    wrong.append(f"{doc}:{i} says {stated}")
+    assert not wrong, (
+        f"the relay registers {expected} MCP tools; these say otherwise: {wrong}"
     )

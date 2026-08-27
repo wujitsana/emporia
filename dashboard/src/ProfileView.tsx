@@ -6,6 +6,7 @@ import type { AgentProfile, Session, Settlement } from "./api";
 import { ViewBody } from "./ui/layout";
 import { MetaGrid, SlimCard } from "./ui/cards";
 import { useInterval } from "./hooks";
+import { useRelayHealth } from "./healthCtx";
 import { useRelayCtx } from "./relayCtx";
 import { TrustBadge } from "./views/AgentsView";
 import { McpCommandHint } from "./ui/McpCommandHint";
@@ -146,7 +147,8 @@ export function ProfileView() {
   }, [viewerId]);
 
   const [agentsData] = useInterval(() => api.agents(), 30_000);
-  const [health] = useInterval(() => api.health(), 30_000);
+  // P43-2: was a fourth independent /health poll; App polls it once.
+  const health = useRelayHealth();
   const stripeMode = health?.stripe_mode ?? "";
   const agents = agentsData?.agents ?? [];
   const registered = profile ?? agents.find((a) => a.agent_id === viewerId) ?? null;

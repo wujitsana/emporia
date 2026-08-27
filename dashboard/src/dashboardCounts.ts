@@ -30,35 +30,59 @@ function clip(s: string, max = 52): string {
   return t.length <= max ? t : `${t.slice(0, max - 1)}…`;
 }
 
-/** Live snippets from each dashboard tab (for Overview). */
-export async function fetchOverviewSections(viewerId: string | null): Promise<OverviewSectionRow[]> {
-  const settled = await Promise.allSettled([
-    api.listings(),
-    api.sessions(),
-    api.rooms(),
-    api.events(),
-    api.agents(),
-    api.agoraTopics(),
-    // P35-1: a spectator has no threads to count; the old placeholder id sent
-    // this request on every Overview load and quietly collected a miss.
-    viewerId ? api.dmThreads(viewerId) : Promise.resolve([]),
-    // P34-3: `api.settlements()` removed from this batch. Its result was read
-    // into a variable nothing used, so every Overview load paid for a
-    // /payments/settlements round trip it then discarded — and the Overview
-    // never had a settlements row to show it in, since OVERVIEW_SKIP_VIEWS
-    // lists "fees". The unused variable was the linter's tell.
-  ]);
+/**
+ * One fetch of everything the Overview shows.
+ *
+ * P43-2: `fetchDashboardCounts` and `fetchOverviewSections` each ran their own
+ * `Promise.allSettled` over the same seven collections, on 15s and 20s timers —
+ * measured at nine requests per collection per minute where five is right.
+ * Fetching and deriving are separate now: this is the only function here that
+ * touches the network, and the two derivers below are pure.
+ *
+ * Settled results, not unwrapped values: a rejected leg has to stay
+ * distinguishable from an empty one, or a relay that is down reads as a relay
+ * with nothing on it.
+ */
+export interface OverviewSnapshot {
+  listings: PromiseSettledResult<Awaited<ReturnType<typeof api.listings>>>;
+  sessions: PromiseSettledResult<Awaited<ReturnType<typeof api.sessions>>>;
+  rooms: PromiseSettledResult<Awaited<ReturnType<typeof api.rooms>>>;
+  events: PromiseSettledResult<Awaited<ReturnType<typeof api.events>>>;
+  agents: PromiseSettledResult<Awaited<ReturnType<typeof api.agents>>>;
+  settlements: PromiseSettledResult<Awaited<ReturnType<typeof api.settlements>>>;
+  agoraTopics: PromiseSettledResult<Awaited<ReturnType<typeof api.agoraTopics>>>;
+  dmThreads: PromiseSettledResult<Awaited<ReturnType<typeof api.dmThreads>>>;
+}
 
-  const val = <T>(i: number): T | null =>
-    settled[i]?.status === "fulfilled" ? (settled[i] as PromiseFulfilledResult<T>).value : null;
+export async function fetchOverviewSnapshot(viewerId: string | null): Promise<OverviewSnapshot> {
+  const [listings, sessions, rooms, events, agents, settlements, agoraTopics, dmThreads] =
+    await Promise.allSettled([
+      api.listings(),
+      api.sessions(),
+      api.rooms(),
+      api.events(),
+      api.agents(),
+      api.settlements(),
+      api.agoraTopics(),
+      // P35-1: a spectator has no threads to count; the old placeholder id sent
+      // this request on every Overview load and quietly collected a miss.
+      viewerId ? api.dmThreads(viewerId) : Promise.resolve([]),
+    ]);
+  return { listings, sessions, rooms, events, agents, settlements, agoraTopics, dmThreads };
+}
 
-  const listings = val<Awaited<ReturnType<typeof api.listings>>>(0);
-  const sessions = val<Awaited<ReturnType<typeof api.sessions>>>(1);
-  const rooms = val<Awaited<ReturnType<typeof api.rooms>>>(2);
-  const events = val<Awaited<ReturnType<typeof api.events>>>(3);
-  const agents = val<Awaited<ReturnType<typeof api.agents>>>(4);
-  const topics = val<Awaited<ReturnType<typeof api.agoraTopics>>>(5);
-  const dms = val<Awaited<ReturnType<typeof api.dmThreads>>>(6);
+/** Live snippets from each dashboard tab (for Overview). Pure. */
+export function sectionsFromSnapshot(snapshot: OverviewSnapshot): OverviewSectionRow[] {
+  const val = <T>(r: PromiseSettledResult<T>): T | null =>
+    r.status === "fulfilled" ? r.value : null;
+
+  const listings = val(snapshot.listings);
+  const sessions = val(snapshot.sessions);
+  const rooms = val(snapshot.rooms);
+  const events = val(snapshot.events);
+  const agents = val(snapshot.agents);
+  const topics = val(snapshot.agoraTopics);
+  const dms = val(snapshot.dmThreads);
 
   const gameSessions = [...(sessions?.sessions ?? [])]
     .filter((s) => s.module_type.startsWith("emporia:"))
@@ -173,18 +197,16 @@ export interface DashboardCounts {
   gameSessions: number | null;
 }
 
-export async function fetchDashboardCounts(viewerId: string | null): Promise<DashboardCounts> {
-  const [listingsR, sessionsR, roomsR, eventsR, agentsR, settlementsR, topicsR, dmsR] =
-    await Promise.allSettled([
-      api.listings(),
-      api.sessions(),
-      api.rooms(),
-      api.events(),
-      api.agents(),
-      api.settlements(),
-      api.agoraTopics(),
-      viewerId ? api.dmThreads(viewerId) : Promise.resolve([]),
-    ]);
+/** Per-tab counts for the nav metrics. Pure. */
+export function countsFromSnapshot(snapshot: OverviewSnapshot): DashboardCounts {
+  const listingsR = snapshot.listings;
+  const sessionsR = snapshot.sessions;
+  const roomsR = snapshot.rooms;
+  const eventsR = snapshot.events;
+  const agentsR = snapshot.agents;
+  const settlementsR = snapshot.settlements;
+  const topicsR = snapshot.agoraTopics;
+  const dmsR = snapshot.dmThreads;
 
   // N6 review R2: `count` is always the returned page size (never a total), so it
   // can never signal truncation by itself. `has_more` (so far only on /events and

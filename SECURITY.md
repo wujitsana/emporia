@@ -2329,6 +2329,55 @@ makes them bugs is a second definition somewhere else in the tree. P34's closing
 worked here wasn't a rule but a shape: *derive the second answer from the first* — `navForHotkey`
 calls `visibleNav`, so they cannot drift — and where that isn't possible, pin the equality itself.
 
+## P43 pass — the docs stopped at P1b, and the Overview asked twice
+
+Not an audit of a diff. This pass re-read `ROADMAP.md` and `ARCHITECTURE.md` against the actual
+code, which is a thing this project had never done to its *documentation* — every source-grep pin
+in `tests/test_emporia.py` compares source to source.
+
+### Fixed
+
+| Finding | Severity | Fix |
+|---|---|---|
+| **Seven MCP tools were shipped and listed in no doc at all (P43-1).** `verify_room_chain`, `verify_dm_chain`, `start_stripe_onboarding`, `kick_from_room`, `get_room_messages`, `vote_agora_post`, `vote_agora_comment`. `skills/emporia/SKILL.md` is the file a Hermes agent loads to learn what it can do, so a tool absent from it is a capability no agent will ever invoke — the same class as P38's unreachable `api.ts` client, one layer up. The four features this repo spent the most passes building (room chains P21/P24, DM chains P28/P30, live-mode payouts P25–P27, E2E key publication P16/P18) are the ones the agent's own instructions never mentioned. | Medium | All four surfaces updated. The agent skill also gains a § 10a on verifying history yourself: what `verified: false` actually means, what the three `chain_verified_scope` values distinguish, and the TOFU limit. |
+| **Four docs said 44 tools; one of them said 42 two sections later; the server registers 51.** Nine stated counts across `README.md`, `ARCHITECTURE.md` and both skills. | Low | All corrected, and pinned — see below. |
+| **The dev skill documented two WebSocket paths that do not exist (P43-2).** `/ws/sessions/{id}` and `/ws/agents/{id}`; the relay serves `/ws/{session_id}` and `/ws/agent/{agent_id}`. `ARCHITECTURE.md` had them right, so the two docs disagreed with each other and the wrong one was the one a client author would read. | Medium | Corrected, along with the eleven REST routes the skill omitted entirely (encryption keys, both chain endpoints, the x402 wallet, Stripe onboarding + webhook, `/federation/peers`, the federated lobby pull). |
+| **Nothing watched any of this.** Twenty passes of drift accumulated silently. `x402` (P1b) is mentioned 7–14 times in every doc and nothing shipped after it is mentioned anywhere — P1b is measurably the last pass that updated the documentation. | — | Two pins: `test_docs_name_every_mcp_tool` (every registered tool appears in each doc's tool inventory) and `test_docs_state_the_real_mcp_tool_count` (every stated count equals `len(list_tools())`). Both read `mcp.list_tools()`, not the source, so an undecorated function cannot satisfy them. |
+| **The first version of the name pin passed when it should not have.** Deleting `verify_room_chain`'s table row still went green, because the new § 10a prose happened to mention the name. A whole-file substring search is a weaker guarantee than the one the test is for, and green looks identical either way. | — | Scoped to the doc's tool-inventory section (its `## … MCP tools` heading through the next level-2 heading). Re-verified: deleting the row now fails. |
+| **Three components polled `/health` on their own timers, and one of them was already receiving the value as a prop (P43-2).** `App` (5s), `OverviewView` (5s), `PaymentsFeesSection` (10s), `ProfileView` (30s) — and `OverviewView` rendered `<PaymentsFeesSection seed={health} />`. | Low | `healthCtx.ts`: `App` owns the one poll and provides it, everything else reads `useRelayHealth()`. Its own context, not a field on `RelayCtx` — that provider re-renders every 30s, and moving a 5s value into it trades a network cost for a render cost. |
+| **`fetchDashboardCounts` and `fetchOverviewSections` each fanned out over the same seven collections**, on 15s and 20s timers. Both only ever ran on the Overview, together. | Low | `fetchOverviewSnapshot()` fetches once; `countsFromSnapshot()` and `sectionsFromSnapshot()` are pure. `PaymentsFeesSection`'s separate `/payments/settlements` poll — same 15s cadence as the fanout that already had the rows — goes with them. |
+| **`dashboardCounts.ts` had no test**, at 325 lines driving every nav metric and the entire Overview hub. Fetching and deriving were fused, so there was nothing callable without mocking the network. | — | `dashboardCounts.test.ts`, six cases over the pure derivers: `has_more` → `"N+"`, a rejected leg → `null` and not `0`, the `emporia:` game-session filter, the three-line cap, and the empty states. |
+
+### Measured, not reasoned
+
+The Overview was rendered under fake timers with a counting `fetch`, for a simulated 60 seconds,
+before and after. Requests from the Overview subtree alone:
+
+| Endpoint | Before | After |
+|---|---|---|
+| `/health` | 20 | 0 (App's single poll serves the tree) |
+| `/payments/settlements` | 10 | 5 |
+| seven collections, each | 9 | 5 |
+| `/safety/stats`, `/federation/peers` | 7, 5 | 7, 5 |
+| **total** | **105/min** | **52/min** |
+
+`overviewRequests.test.tsx` keeps both numbers honest: re-adding a second `/health` poll to the
+Overview fails it, as does restoring the second fanout. Verified live besides — relay booted on a
+scratch database, seeded, and every endpoint the single fanout touches returns 200 for the
+operator (`/payments/settlements` and `/payments/records` 403 for a non-operator, which is the
+rejected-leg case `countsFromSnapshot` renders as `null` rather than `0`).
+
+### The shape, again, in a place nobody was looking
+
+P35 through P42 each found *one fact computed in several places*. So does this one, twice — but
+neither copy was in code. A tool inventory maintained in five places, and a collection fetched by
+two functions that only ever run together. **The pins this project already had could not have
+caught either**, because both compare code to something that isn't code: docs, and the network.
+That is the fourth blind spot in the same series — P34 an unenforced threshold, P35 an unused file,
+P38 an unused method on an exported object, P43 an undocumented capability.
+
+760 pytest (+2), 115 vitest (+8), ruff clean, typecheck/build clean, lint at zero.
+
 ## P42 pass — the lint gate reaches zero
 
 The last eight warnings: six `only-export-components` and the two `jsx-key` false positives P34

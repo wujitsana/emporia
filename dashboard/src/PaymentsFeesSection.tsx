@@ -1,14 +1,14 @@
 import Text from "@components/Text";
-import { useInterval } from "./hooks";
-import { api } from "./api";
-import type { RelayHealth } from "./hooks";
+import type { Settlement } from "./api";
+import { useRelayHealth } from "./healthCtx";
 import { SlimCard } from "./ui/cards";
 
-export function PaymentsFeesSection({ seed }: { seed: RelayHealth | null }) {
-  const [polled] = useInterval(() => api.health(), 10_000);
-  const [settlementsData] = useInterval(() => api.settlements(), 15_000);
-  const health = polled ?? seed;
-  const settlements = settlementsData?.settlements ?? [];
+/* P43-2: this took health as a `seed` prop and polled /health anyway, and
+   polled /payments/settlements on a timer identical to the one the Overview
+   was already running. Both facts now arrive from the single fetch above it —
+   health through the context, settlements as a prop. */
+export function PaymentsFeesSection({ settlements }: { settlements: Settlement[] }) {
+  const health = useRelayHealth();
   const totalStakeCents = settlements.reduce((s, r) => s + r.total_stake_cents, 0);
   const totalFeeCents = settlements.reduce((s, r) => s + r.platform_fee_cents, 0);
   const feeBps = health?.operator_fee_bps ?? 250;

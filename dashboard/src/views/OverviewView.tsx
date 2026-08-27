@@ -2,15 +2,15 @@ import AlertBanner from "@components/AlertBanner";
 import Badge from "@components/Badge";
 import RowSpaceBetween from "@components/RowSpaceBetween";
 import Text from "@components/Text";
-import { api } from "../api";
 import { PaymentsFeesSection } from "../PaymentsFeesSection";
 import { TrustSafetySection } from "../TrustSafetySection";
 import { FederationSection } from "../FederationSection";
 import {
   countCaptionForNav,
-  fetchDashboardCounts,
-  fetchOverviewSections,
+  countsFromSnapshot,
+  fetchOverviewSnapshot,
   metricForNav,
+  sectionsFromSnapshot,
   OVERVIEW_SKIP_VIEWS,
   type OverviewSectionRow,
   type OverviewTabId,
@@ -18,6 +18,7 @@ import {
 import { eventDetail, viewForEvent } from "../eventNav";
 import type { GlobalEvent, RelayHealth } from "../hooks";
 import { useInterval } from "../hooks";
+import { useRelayHealth } from "../healthCtx";
 import { NAV_GROUPS, navById, type View } from "../navConfig";
 import type { Navigate } from "../navigation";
 import { RELAY, VIEWER_ID } from "../relayEnv";
@@ -37,10 +38,15 @@ export function OverviewView({
   navigate: Navigate;
   onAfterNavigate?: () => void;
 }) {
-  const [polled] = useInterval(() => api.health(), 5_000);
-  const [counts] = useInterval(() => fetchDashboardCounts(VIEWER_ID), 15_000);
-  const [sections] = useInterval(() => fetchOverviewSections(VIEWER_ID), 20_000);
-  const health = polled ?? seed;
+  /* P43-2: one fanout, not two. `fetchDashboardCounts` and
+     `fetchOverviewSections` each fetched the same seven collections on their
+     own timer; the snapshot is fetched once and both are derived from it. */
+  const [snapshot] = useInterval(() => fetchOverviewSnapshot(VIEWER_ID), 15_000);
+  const counts = snapshot ? countsFromSnapshot(snapshot) : null;
+  const sections = snapshot ? sectionsFromSnapshot(snapshot) : null;
+  const settlementRows =
+    snapshot?.settlements.status === "fulfilled" ? snapshot.settlements.value.settlements : [];
+  const health = useRelayHealth() ?? seed;
   const online = health?.status === "ok";
   const countsMerged = counts ?? null;
 
@@ -164,7 +170,7 @@ export function OverviewView({
         </div>
       </SlimCard>
 
-      <PaymentsFeesSection seed={health} />
+      <PaymentsFeesSection settlements={settlementRows} />
       <TrustSafetySection />
       <FederationSection />
     </ViewBody>

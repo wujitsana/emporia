@@ -15,6 +15,7 @@ import { ProfileView } from "./ProfileView";
 import { RELAY } from "./relayEnv";
 import { RelayContextProvider } from "./relayContext";
 import { useRelayCtx } from "./relayCtx";
+import { RelayHealthCtx } from "./healthCtx";
 import { applyTheme, THEMES, TINTS, type Theme, type Tint } from "./themeConfig";
 import { useAgentWs, useGlobalEvents, useInterval } from "./hooks";
 import { navForHotkey, type View } from "./navConfig";
@@ -76,6 +77,9 @@ function AppInner() {
   const [inboxUnread, setInboxUnread] = useState(0);
 
   const { events, seed, wsConnected } = useGlobalEvents();
+  /* P43-2: the app's ONE /health poll. Three other components polled it
+     independently — one of them while receiving this very value as a prop.
+     They read `useRelayHealth()` now. */
   const [healthPoll] = useInterval(() => api.health(), 5_000);
 
   /* P38-1: the per-agent notification channel, opened once here so every view
@@ -183,6 +187,7 @@ function AppInner() {
   }, [goToView, isSpectator]);
 
   return (
+    <RelayHealthCtx.Provider value={relayHealth}>
     <div className={`e-app-shell e-dashboard-shell e-app-shell--header-nav${navOpen ? " is-nav-open" : ""}`}>
         <aside className="e-app-drawer" aria-label="Menu">
           <MobileNavDrawer
@@ -284,6 +289,7 @@ function AppInner() {
             {view === "profile" && <ProfileView />}
           </div>
         </main>
-      </div>
+    </div>
+    </RelayHealthCtx.Provider>
   );
 }
