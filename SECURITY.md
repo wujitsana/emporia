@@ -2329,6 +2329,38 @@ makes them bugs is a second definition somewhere else in the tree. P34's closing
 worked here wasn't a rule but a shape: *derive the second answer from the first* — `navForHotkey`
 calls `visibleNav`, so they cannot drift — and where that isn't possible, pin the equality itself.
 
+## P42 pass — the lint gate reaches zero
+
+The last eight warnings: six `only-export-components` and the two `jsx-key` false positives P34
+verified and deliberately left. Both categories were described in earlier passes as "not
+correctness" — which was true, and which is why nobody looked underneath them.
+
+### Fixed
+
+| Finding | Severity | Fix |
+|---|---|---|
+| **Five of the six Fast-Refresh warnings were exports nothing imported (P42-1).** `trustBadge`, `relayWsOrigin`, `relayEventsWsUrl` and `GAME_TYPES` are each used only inside their own file. P34 wrote off this whole category as "would mean splitting files"; four of them needed the word `export` deleted. | Low | Unexported. One genuine split remained (below). |
+| **`relayHost` existed twice (P42-2).** `RelayStrip.tsx` had one, used by federation peers; **P40 added a second** in `discoveryFormat.ts` for a lobby challenge's `origin_relay` — while that same pass was removing duplicates elsewhere. Same job, different fallbacks: 48-char truncation vs 24, and a `"local"` default baked into URL formatting by one of them. | Medium | One `relayFormat.relayHost()`. The `"local"` default moved to the caller that has a notion of local, since URL formatting doesn't. |
+| **…and only the malformed branch was length-capped.** `https://` + 300 characters is a **valid** URL, so `new URL(url).host` returned an unbounded string straight into a table cell; the truncation guarded the branch that couldn't produce a long value. Found by a test written for the consolidation, not by reading the code. | Low | Capped on both paths. |
+| **The context split (P42-3).** `useRelayCtx` lived beside `RelayContextProvider`, which is the one case here that genuinely needed splitting: a module exporting both a component and a non-component loses hot reloading for the component. | Low | `relayCtx.ts` holds the context, value type and hook; `relayContext.tsx` holds only the provider. |
+| **A split typecheck cannot validate.** Both halves must hold the *same* context object. Importing a second copy typechecks perfectly and silently hands every consumer the `DEFAULT` value — a spectator dashboard with no relay id. | — | `relayCtx.test.tsx` renders the provider and reads the hook through it. Verified load-bearing by giving `relayContext.tsx` its own `createContext`: the test fails exactly as it should. |
+| **The two `jsx-key` warnings (P42-4).** JSX sitting directly in an array literal, where `MetaGrid` renders each row as `<div key={k}><dd>{v}</dd></div>` — the wrapper carries the key. | — | The cell is extracted to a named value. That satisfies the rule without a disable comment, which is the outcome P34 wanted and didn't have a way to reach: a suppression asserts "the key is handled" in a place where a future reader can't check, while a named value asserts nothing at all. |
+
+**`"lint": "oxlint --max-warnings=0"`.** The gate has gone 60 → 18 → 17 → 8 → 0 across P34, P40, P41
+and P42. From here any new warning is a build failure, which is the only threshold that needs no
+judgement to maintain.
+
+### What the category labels cost
+
+P34 called `only-export-components` "Fast-Refresh DX, not correctness" and `jsx-key` "false
+positives", and both were accurate. But a label that says "not worth reading" is also a label that
+says "don't look" — and underneath sat a duplicated function this project had spent four passes
+removing the equivalents of, plus an unbounded string reaching a table cell. **The finding isn't
+that the labels were wrong; it's that a warning nobody re-reads stops being evidence**, which is the
+same lesson P34 drew about the unenforced gate, one level up.
+
+758 pytest, 107 vitest (+2), ruff clean, typecheck/build clean, **lint at zero**.
+
 ## P41 pass — the small stuff, and it wasn't small
 
 The leftovers: one dead config field and the `exhaustive-deps` warnings carried since P34, which

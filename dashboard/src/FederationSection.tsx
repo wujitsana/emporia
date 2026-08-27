@@ -2,7 +2,7 @@ import Text from "@components/Text";
 import { useInterval } from "./hooks";
 import { api } from "./api";
 import { SlimCard } from "./ui/cards";
-import { relayHost } from "./RelayStrip";
+import { relayHost } from "./relayFormat";
 
 /** Federation gossip — configured peers and the outcome of the last pull. */
 export function FederationSection() {

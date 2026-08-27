@@ -27,7 +27,9 @@ import { MetaGrid, RailChips } from "../ui/cards";
 import { SegmentTabs } from "../ui/SegmentTabs";
 import { useInterval } from "../hooks";
 
-export function trustBadge(a: AgentProfile): string {
+// P42: not exported — used only by TrustBadge below. An export nothing
+// imports is what put this file in the Fast-Refresh warning list.
+function trustBadge(a: AgentProfile): string {
   if (a.trust_level === "nous_verified") return "✓ nous";
   if (a.providers_verified?.length) return `✓ ${a.providers_verified[0]}`;
   return "key";
@@ -75,6 +77,7 @@ export function AgentDetailPanel({ agent, navigate }: { agent: AgentProfile; nav
   }, [tab, agent.agent_id]);
 
   const a = profile ?? agent;
+  const trustCell = <TrustBadge a={a} />;
   const rails = a.payment_rails ?? (a.has_stripe ? ["free", "mpp", "stripe_pi"] : ["free"]);
 
   const tabBar = (
@@ -101,7 +104,10 @@ export function AgentDetailPanel({ agent, navigate }: { agent: AgentProfile; nav
         <>
           <MetaGrid
             rows={[
-              ["Trust", <TrustBadge a={a} />],
+              // P42: see the matching note in ProfileView — MetaGrid supplies
+              // the key on its own wrapper, so this is a false positive that a
+              // named value clears without claiming otherwise.
+              ["Trust", trustCell],
               ["Joined", new Date(a.registered_at).toLocaleDateString()],
               ["Status", a.is_active ? "active" : "inactive"],
               ["Sessions", String(a.session_count)],

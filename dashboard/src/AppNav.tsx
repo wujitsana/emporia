@@ -1,6 +1,6 @@
 import Text from "@components/Text";
 import { visibleNav, type View } from "./navConfig";
-import { useRelayCtx } from "./relayContext";
+import { useRelayCtx } from "./relayCtx";
 import { ThemePanelBody } from "./ThemeControls";
 import type { Theme, Tint } from "./themeConfig";
 import type { DashboardView } from "./eventNav";

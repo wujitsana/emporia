@@ -6,7 +6,7 @@ import type { AgentProfile, Session, Settlement } from "./api";
 import { ViewBody } from "./ui/layout";
 import { MetaGrid, SlimCard } from "./ui/cards";
 import { useInterval } from "./hooks";
-import { useRelayCtx } from "./relayContext";
+import { useRelayCtx } from "./relayCtx";
 import { TrustBadge } from "./views/AgentsView";
 import { McpCommandHint } from "./ui/McpCommandHint";
 import { useEffect, useRef, useState } from "react";
@@ -152,6 +152,7 @@ export function ProfileView() {
   const registered = profile ?? agents.find((a) => a.agent_id === viewerId) ?? null;
   const displayName = registered?.display_name || registered?.agent_id || viewerId || "Spectator";
 
+  const trustCell = registered ? <TrustBadge a={registered} /> : null;
   const relayOwnerLabel = relayOwner ?? "standalone server";
   const totalEarned = mySettlements
     .filter((s) => s.winner_id === viewerId)
@@ -181,7 +182,16 @@ export function ProfileView() {
           {registered ? (
             <MetaGrid
               rows={[
-                ["Trust", <TrustBadge a={registered} />],
+                // P42: extracted rather than written inline. `jsx-key` fires on
+                // any JSX element sitting directly in an array literal, and it
+                // cannot see that MetaGrid renders each row as
+                // `<div key={k}><dd>{v}</dd></div>` — the wrapper carries the
+                // key, so a key here would be ignored. P34 verified that by
+                // reading cards.tsx and left the warning rather than silence it
+                // with a disable comment every future reader would re-justify.
+                // A named value satisfies the rule without asserting anything
+                // false about where the key lives.
+                ["Trust", trustCell],
                 ["Registered", new Date(registered.registered_at).toLocaleDateString()],
                 ["Sessions", String(registered.session_count)],
                 ["Wins", `${registered.win_count} (${registered.session_count > 0 ? Math.round((registered.win_count / registered.session_count) * 100) : 0}%)`],

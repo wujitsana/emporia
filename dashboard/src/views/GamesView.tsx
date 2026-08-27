@@ -33,7 +33,11 @@ import { AuditBadge } from "../ui/AuditBadge";
 import { McpCommandHint } from "../ui/McpCommandHint";
 import { toWsUrl, useInterval } from "../hooks";
 
-export const GAME_TYPES = [
+// P42: not exported — the rail and the module-filter mapping below are its
+// only readers. Still pinned against MODULE_REGISTRY by
+// test_dashboard_game_types_match_the_relay_module_registry, which reads this
+// file's source text and does not care whether the const is exported.
+const GAME_TYPES = [
   { id: "", label: "all" },
   { id: "emporia:chess:v1", label: "chess" },
   { id: "emporia:service:v1", label: "service" },

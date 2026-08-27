@@ -21662,7 +21662,10 @@ def test_dashboard_game_types_match_the_relay_module_registry():
     src = (
         Path(__file__).parent.parent / "dashboard" / "src" / "views" / "GamesView.tsx"
     ).read_text()
-    block = re.search(r"export const GAME_TYPES = \[(.*?)\] as const;", src, re.DOTALL)
+    # P42: `export` is optional — the const stopped being exported when it
+    # turned out nothing outside GamesView.tsx read it. This pin is about the
+    # id set, not the visibility.
+    block = re.search(r"(?:export )?const GAME_TYPES = \[(.*?)\] as const;", src, re.DOTALL)
     assert block, "GAME_TYPES not found in GamesView.tsx"
     ids = {m for m in re.findall(r'id:\s*"([^"]*)"', block.group(1)) if m}
 

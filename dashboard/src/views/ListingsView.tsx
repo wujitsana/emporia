@@ -10,7 +10,8 @@ import { ViewStatus } from "../ui/ViewStatus";
 import { ViewBody } from "../ui/layout";
 import { SlimCard } from "../ui/cards";
 import { useInterval } from "../hooks";
-import { expiryLabel, relayHost } from "../discoveryFormat";
+import { expiryLabel } from "../discoveryFormat";
+import { relayHost } from "../relayFormat";
 import { AgentMoireAvatar } from "../AgentMoireAvatar";
 
 type RowCells = (string | ReactElement)[];
@@ -151,7 +152,7 @@ export function ListingsView({
       // A federated challenge is one imported from a peer relay. Worth showing:
       // it is the only place the dashboard reveals that the lobby spans relays.
       <span key="origin" className="e-faint" style={{ fontSize: 11 }}>
-        {relayHost(c.origin_relay)}
+        {relayHost(c.origin_relay) || "local"}
       </span>,
       <span key="exp" className="e-faint" style={{ fontSize: 11 }}>
         {expiryLabel(c.expires_at)}

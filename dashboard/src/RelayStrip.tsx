@@ -4,21 +4,15 @@ import type { ReactNode } from "react";
 import type { RelayHealth } from "./hooks";
 import { toWsUrl } from "./hooks";
 import { resolveRelayUrl } from "./relayEnv";
+import { relayHost } from "./relayFormat";
 
-export function relayHost(url: string): string {
-  try {
-    return new URL(url).host;
-  } catch {
-    return url.replace(/^https?:\/\//, "").slice(0, 48);
-  }
-}
-
-export function relayWsOrigin(httpRelay?: string): string {
+// P42: internal to this file — see the note on trustBadge in AgentsView.
+function relayWsOrigin(httpRelay?: string): string {
   const relay = httpRelay && httpRelay.length > 0 ? httpRelay : resolveRelayUrl();
   return toWsUrl(relay).replace(/\/$/, "");
 }
 
-export function relayEventsWsUrl(httpRelay?: string): string {
+function relayEventsWsUrl(httpRelay?: string): string {
   return `${relayWsOrigin(httpRelay)}/ws/events`;
 }
 

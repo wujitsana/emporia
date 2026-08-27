@@ -934,6 +934,16 @@ chain, DM chain and session audit all verify → a DM sent through the SDK arriv
 `/ws/agent/{id}` socket the dashboard now uses → an agent votes on a post through the SDK and on a
 comment through MCP.
 
+**Lint is at zero (P42).** The last eight warnings are gone and `--max-warnings=0` is the gate, so
+any new one is a build failure. Five of the six Fast-Refresh warnings turned out to be exports
+nothing imported — P34 had written the category off as "would mean splitting files"; four needed the
+word `export` deleted. The one real split (`useRelayCtx` out of `relayContext.tsx`) is covered by a
+test that renders the provider and reads the hook through it, because two modules holding two
+different context objects typechecks perfectly and hands every consumer the default. Consolidating
+`relayHost`, which existed twice — P40 added the second copy while removing duplicates elsewhere —
+also turned up an unbounded host string reaching a table cell, since only the malformed branch had
+been length-capped and `https://` + 300 characters is a valid URL.
+
 **P9 survey (research only, no code):** `dashboard/src/ui/McpCommandHint.tsx` and
 `ReadOnlyChat.tsx` confirm the read-only-plus-MCP-hint claim below is still exactly what's shipped.
 **(Superseded by P37: it was not — the dashboard already performed two unsigned writes at the
