@@ -2329,6 +2329,71 @@ makes them bugs is a second definition somewhere else in the tree. P34's closing
 worked here wasn't a rule but a shape: *derive the second answer from the first* — `navForHotkey`
 calls `visibleNav`, so they cannot drift — and where that isn't possible, pin the equality itself.
 
+## P44 pass — a public GET that recomputed 20,000 hashes on the event loop
+
+P43 ended by measuring the dashboard's idle request load and finding it doubled. This pass took the
+same question to the relay: what does one request actually cost the process that serves it? The
+answer was on `GET /rooms/{id}/chain`, which is unauthenticated for a public room.
+
+### Fixed
+
+| Finding | Severity | Fix |
+|---|---|---|
+| **The chain routes recomputed the entire history on every call, uncapped (P44-1).** `rooms.verify_chain()`'s own docstring said it walks the full room "every call: one SELECT plus N SHA256 hashes, all local, no network — cheap even for a large room." Measured against a 20,000-message room it is **64.8ms of blocking CPU per request**, and the route is open to any connection for a public room. At the default `(120, 60.0)` GET budget that is 8.4 seconds of relay CPU per minute per IP; at 200,000 messages, 84 seconds per minute. Nothing capped it and nothing paged it. | **High** | The routes pass `CHAIN_VERIFY_LIMIT` (default 1000, `EMPORIA_CHAIN_VERIFY_LIMIT`). The bounded walk fetches `limit + 1` rows newest-first over `idx_room_messages_created` and reverses them, so the window's own oldest row seeds `prev_hash`. Chain p50 **64.8ms → 8.6ms**. |
+| **…and it ran on the event loop.** All 89 relay endpoints are `async def` with blocking `sqlite3` inside, so CPU spent in a handler is not slow for *that* request — it is a full stop for every other request in the process. One client walking a large chain froze the relay for everyone. | **High** | The three heaviest read routes — `/rooms/{id}/chain`, `/dm/{id}/chain`, `/sessions/{id}/audit` — moved to `run_in_threadpool`. Pinned by measuring event-loop lag during a request, not by racing two requests: in-process ASGI gives no guarantee the sibling suspends first, so a two-request race can pass without ever overlapping. A heartbeat that oversleeps cannot. |
+| **A capped walk that still reported a bare `verified: true` would overclaim exactly where the guarantee stops (P44-2).** The same objection P28-4 raised about the DM unchained prefix: an answer that says "verified" about history it did not read is worse than no answer. | Medium | `chain_verified_scope` on both routes — `"genesis"`, `"recent_window"`, and for DMs `"chained_start"` — plus `verified_message_count`. The vocabulary is P24's, already spoken by the SDK, MCP and dashboard verifiers, so the relay now answers in the language its clients were already reading. |
+| **`relay_reported_verified` stopped meaning what its name says.** Four Python result dicts (a sync MCP tool and an async SDK method, each for rooms and DMs) hand that flag straight to an agent. | Medium | `relay_verified_scope` beside it in all four, pinned by count — the four are independently maintained copies, and P24-1 extracted the *decision* they share, not the envelope they build. The dashboard's two copies took the other fix: the flag was **written in two places and read in zero**, so a scope qualifying it would have been a second dead field (P38's shape exactly). Removed instead; the badge's meaning comes from the dashboard's own walk. |
+| **`GET /sessions/{id}/audit` read and JSON-parsed the whole log twice per request (P44-3).** `verify_chain(session_id)` read it, then `get_public_log(session_id)` read it again for the response body — so the route verified one read and served a *different* one. A write landing between them was returned unverified. | Low | `session_audit.verify_chain_entries()` split out of the read; the route reads once, verifies what it is about to serve, off the loop. |
+| **The dev skill omitted `GET /sessions/{id}/audit` entirely.** P43's new pins cover MCP tool names and counts — not REST routes, which are still checked by nobody. | Low | Added, with the two chain routes' cap and the new env var. Recorded in ROADMAP as the gap P43's detector does not close. |
+
+### Measured, not reasoned
+
+Relay booted on a scratch copy of P43's benchmark database (one room, 20,000 chained messages),
+three configurations, same machine, same session. `/health` p50 sampled while four clients pull the
+chain route in a loop:
+
+| Configuration | chain p50 | `/health` idle | `/health` under chain load |
+|---|---|---|---|
+| P43 tree — uncapped, on the loop | 64.8 ms | 2.8 ms | **218.9 ms** (p95 265) |
+| threadpool only (cap raised to 100k) | 66.6 ms | 3.6 ms | 120.9 ms (p95 148) |
+| P44 — cap 1000 + threadpool | **8.6 ms** | 2.7 ms | **16.8 ms** (p95 26) |
+
+Both halves earn their place: the threadpool alone roughly halves the collateral latency, and the
+cap does the rest. Together, 218.9ms → 16.8ms, a 13× reduction in what one client's chain request
+costs everyone else.
+
+**Honestly, 16.8ms is still six times idle.** Threadpool work competes for the GIL and for
+`DB_LOCK`, so moving a blocking call off the loop bounds the damage without eliminating it. The
+general problem — 89 `async def` endpoints with blocking `sqlite3` inside, measured in P43 at a flat
+~330 rps across concurrency 1→100 with exactly linear latency growth — is a backend decision, not a
+pass, and stays on the roadmap.
+
+### What the cap does not cost
+
+`chain_head` and `message_count` are indexed lookups, not walk products, and stay exact at any cap.
+They are the entire signed payload, so those bytes are unchanged and the **five** independent
+reconstructions of them (SDK ×2, MCP ×2, dashboard ×1) needed no edit — a pass that widened the
+signed dict would have had to touch all five and make it six. What a window gives up is the relay's
+opinion about old messages, which `get_room_chain()`'s docstring has said since P21 is not the
+load-bearing guarantee: client-side head pinning is, and the SDK and MCP verifiers already page
+backward through `GET /rooms/{id}/messages` and recompute the history themselves.
+
+### The shape, one level down
+
+P43 found the Overview fetching one fact twice. The audit route was doing the same thing in the
+relay, in a way that was not merely wasteful: it verified one read and served another. The chain
+routes were a different failure — not a duplicated fact but an **unbounded** one, a cost that was
+correct at demo scale and load-bearing at real scale, with a docstring asserting the opposite.
+"Cheap even for a large room" was written, reviewed, and wrong by two orders of magnitude, and no
+test could have caught it because no test measured anything. This pass's pins measure: hashes
+computed, log reads issued, milliseconds the event loop was unavailable.
+
+The version goes to **0.2.0**. `verified` on the two chain routes means less than it did in 0.1.0 —
+a semantic narrowing of a security-relevant field, which is exactly the case for making the break
+loud rather than shipping a shim.
+
+771 pytest (+11), 115 vitest, ruff clean, typecheck/build clean, lint at zero.
+
 ## P43 pass — the docs stopped at P1b, and the Overview asked twice
 
 Not an audit of a diff. This pass re-read `ROADMAP.md` and `ARCHITECTURE.md` against the actual

@@ -49,7 +49,7 @@ import uuid
 from dataclasses import asdict, dataclass
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any, Literal
+from typing import Any, Literal, NamedTuple
 
 from emporia import entitlements
 
@@ -270,41 +270,114 @@ def _last_chain_hash(room_id: str, conn: sqlite3.Connection) -> str | None:
     return row["chain_hash"] if row else None
 
 
-def verify_chain(room_id: str, db_path: Path | None = None) -> tuple[bool, str, str | None, int]:
-    """Recompute a room's message chain from genesis and compare against each
-    stored `chain_hash` — the verifier `chain_hash` never had (SECURITY.md
-    recorded it as "computed and stored, verified nowhere" since P18).
+ChainScope = Literal["genesis", "recent_window"]
 
-    Mirrors `session_audit.verify_chain()`'s `(ok, message)` shape, extended
-    with the resulting head hash and message count so a caller (the relay
-    route) can sign over them without a second query. Unlike
-    `session_audit.verify_chain()`, which recomputes from *stored* fields it
-    has no independent check on, a mismatch here is genuinely meaningful only
+
+class ChainVerification(NamedTuple):
+    """What `verify_chain()` actually established, kept apart from what it
+    merely read off the newest row.
+
+    `head` and `message_count` are the *attested* facts — a chain head and a
+    total, both exact, both cheap, and both derived from indexed lookups rather
+    than from the walk. They are what `GET /rooms/{id}/chain` signs and what a
+    client pins.
+
+    `verified_count` and `scope` describe the walk itself, and exist because
+    P44 bounded it: a capped call cannot honestly report the same thing an
+    uncapped one does, and a single `ok` flag has nowhere to say so.
+    """
+
+    ok: bool
+    message: str
+    head: str | None
+    message_count: int
+    verified_count: int
+    scope: ChainScope
+
+
+def verify_chain(
+    room_id: str,
+    db_path: Path | None = None,
+    limit: int | None = None,
+) -> ChainVerification:
+    """Recompute a room's message chain and compare against each stored
+    `chain_hash` — the verifier `chain_hash` never had (SECURITY.md recorded it
+    as "computed and stored, verified nowhere" since P18).
+
+    Unlike `session_audit.verify_chain()`, which recomputes from *stored* fields
+    it has no independent check on, a mismatch here is genuinely meaningful only
     combined with something the relay can't also forge — see the route's own
-    docstring for why the signature this feeds is necessary but not
-    sufficient, and what closes that gap.
+    docstring for why the signature this feeds is necessary but not sufficient,
+    and what closes that gap.
 
-    Walks the full room history every call: one SELECT plus N SHA256 hashes,
-    all local, no network — cheap even for a large room. A caller wanting to
-    bound cost for a room with unusually many messages should decide that
-    itself; nothing here silently truncates.
+    `limit` bounds the walk to the newest `limit` messages; `None` (the default)
+    walks the whole history. P44 added it after measuring the uncapped walk at
+    70ms for a 20,000-message room — the previous docstring called that "cheap
+    even for a large room", which was wrong by two orders of magnitude, and the
+    route serving it is open to any connection for a public room. The default
+    stays uncapped deliberately: an offline audit wants the whole chain, and the
+    cap is a *route* policy (`relay_server.CHAIN_VERIFY_LIMIT`) applied where the
+    untrusted caller is, not a truncation this function does behind a caller's
+    back.
+
+    A bounded walk fetches `limit + 1` rows so the window's own oldest row can
+    seed `prev_hash`; that seed row is taken on trust and is not itself counted
+    as verified. `scope` says which happened — `"genesis"` when the walk reached
+    the room's true first message, `"recent_window"` when it did not — because a
+    bare `ok=True` from a window would claim history the call never read. Same
+    reasoning P28-4 applied to the DM unchained prefix.
+
+    Mismatch indices are absolute (an index into the room, not an offset into
+    the window), so the same message gets the same number at any cap.
     """
     with _LOCK, _connect(db_path) as conn:
-        rows = conn.execute(
-            "SELECT sender_id, content, created_at, chain_hash FROM room_messages "
-            "WHERE room_id = ? ORDER BY created_at ASC, rowid ASC",
-            (room_id,),
-        ).fetchall()
-    if not rows:
-        return True, "empty room — nothing to verify", None, 0
+        total = conn.execute(
+            "SELECT COUNT(*) AS n FROM room_messages WHERE room_id = ?", (room_id,),
+        ).fetchone()["n"]
+        if total == 0:
+            return ChainVerification(
+                True, "empty room — nothing to verify", None, 0, 0, "genesis",
+            )
+        if limit is None or total <= limit:
+            rows = conn.execute(
+                "SELECT sender_id, content, created_at, chain_hash FROM room_messages "
+                "WHERE room_id = ? ORDER BY created_at ASC, rowid ASC",
+                (room_id,),
+            ).fetchall()
+        else:
+            # Newest-first with a LIMIT is the only shape the (room_id, created_at)
+            # index can serve cheaply; reverse it back to the ascending order the
+            # recompute needs. The rowid tiebreak mirrors _last_chain_hash() (P21-7).
+            rows = conn.execute(
+                "SELECT sender_id, content, created_at, chain_hash FROM room_messages "
+                "WHERE room_id = ? ORDER BY created_at DESC, rowid DESC LIMIT ?",
+                (room_id, limit + 1),
+            ).fetchall()
+            rows.reverse()
 
-    prev_hash: str | None = None
-    for i, row in enumerate(rows):
+    head = rows[-1]["chain_hash"]
+    at_genesis = limit is None or total <= limit
+    if at_genesis:
+        prev_hash: str | None = None
+        walk, first_index, scope = rows, 0, "genesis"
+    else:
+        prev_hash = rows[0]["chain_hash"]
+        walk, first_index, scope = rows[1:], total - len(rows) + 1, "recent_window"
+
+    for offset, row in enumerate(walk):
         expected = compute_chain_hash(prev_hash, row["sender_id"], row["content"], row["created_at"])
         if row["chain_hash"] != expected:
-            return False, f"hash mismatch at message {i}", None, len(rows)
+            return ChainVerification(
+                False, f"hash mismatch at message {first_index + offset}",
+                None, total, offset, scope,
+            )
         prev_hash = row["chain_hash"]
-    return True, f"chain valid ({len(rows)} messages)", prev_hash, len(rows)
+
+    verified = len(walk)
+    detail = "chain valid" if scope == "genesis" else "recent window valid"
+    return ChainVerification(
+        True, f"{detail} ({verified} of {total} messages)", head, total, verified, scope,
+    )
 
 
 # ============================================================================

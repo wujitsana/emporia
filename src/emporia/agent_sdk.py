@@ -923,6 +923,13 @@ class EmporiaAgent:
         result: dict[str, Any] = {
             "thread_id": thread_id,
             "relay_reported_verified": data.get("verified"),
+            # P44: the relay caps its own recompute, so its flag means "true
+            # over the window it read". Passed through rather than dropped —
+            # a bare `relay_reported_verified: true` would read as a claim
+            # about the whole history, which is exactly what it is not. The
+            # `chain_verified_scope` below is this client's own finding and
+            # is the one that carries weight.
+            "relay_verified_scope": data.get("chain_verified_scope"),
             "signed_chain_head": data.get("chain_head"),
             "message_count": chained_count,
             "unchained_prefix": unchained_prefix,
@@ -1185,6 +1192,13 @@ class EmporiaAgent:
         result: dict[str, Any] = {
             "room_id": room_id,
             "relay_reported_verified": data.get("verified"),
+            # P44: the relay caps its own recompute, so its flag means "true
+            # over the window it read". Passed through rather than dropped —
+            # a bare `relay_reported_verified: true` would read as a claim
+            # about the whole history, which is exactly what it is not. The
+            # `chain_verified_scope` below is this client's own finding and
+            # is the one that carries weight.
+            "relay_verified_scope": data.get("chain_verified_scope"),
             "signed_chain_head": data.get("chain_head"),
             "message_count": data.get("message_count", 0),
             "verified": False,

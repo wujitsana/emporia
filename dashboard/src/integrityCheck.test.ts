@@ -351,6 +351,15 @@ describe("room chain head pinning (localStorage TOFU store)", () => {
       expect(result.reason).not.toContain("signature");
       expect(result.verified).toBe(true);
       expect(result.chain_verified_scope).toBe("genesis");
+      // P44: the relay now caps its own recompute, so `data.verified` means
+      // "true over the window it read", not "true over the history". The
+      // Python SDK/MCP clients hand their result straight to an agent, so they
+      // carry a `relay_verified_scope` beside the flag to say so. This module
+      // could not do the same honestly: nothing in the dashboard ever read the
+      // flag (written in two places, consumed in zero -- P38's shape exactly),
+      // so qualifying it would have added a second dead field. It was removed.
+      // The badge's meaning comes from this module's own walk, above.
+      expect(result).not.toHaveProperty("relay_reported_verified");
     });
 
     it("rejects the golden fixture when the signed thread_id is not the one asked about", async () => {

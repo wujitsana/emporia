@@ -41,7 +41,7 @@ from collections import defaultdict
 from contextlib import asynccontextmanager, suppress
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, NamedTuple
 
 import httpx
 import uvicorn
@@ -50,6 +50,7 @@ from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
+from starlette.concurrency import run_in_threadpool
 from starlette.datastructures import Headers
 from starlette.responses import JSONResponse
 
@@ -115,7 +116,7 @@ from emporia.session_audit import (
     log_private_event,
     log_public_receipt,
     open_dual_session,
-    verify_chain,
+    verify_chain_entries,
 )
 from emporia import __version__
 from emporia import rooms as rooms_db
@@ -618,6 +619,19 @@ BOT_FINGERPRINTS: list[str] = [
 ws_connections: dict[str, set[WebSocket]] = defaultdict(set)
 
 DB_LOCK = threading.RLock()
+
+# P44: how many messages the chain-verification routes recompute per call.
+# `rooms.verify_chain()` itself still defaults to the whole history — the cap is
+# a policy about untrusted callers, so it lives at the route boundary where the
+# untrusted caller is. GET /rooms/{id}/chain is unauthenticated for a public
+# room, and an uncapped walk measured at 70ms for 20,000 messages; at the
+# default 120 GET/min/IP that is 8.4 seconds of relay CPU per minute per IP, and
+# the walk ran on the event loop, so it was 8.4 seconds of *everyone's* latency.
+# The cap costs nothing that matters: `chain_head` and `message_count` — the two
+# facts the response signs and a client pins — are indexed lookups, exact at any
+# cap, and the relay's own recompute was never the load-bearing guarantee (see
+# get_room_chain()'s docstring: client-side head pinning is).
+CHAIN_VERIFY_LIMIT = int(os.getenv("EMPORIA_CHAIN_VERIFY_LIMIT", "1000"))
 
 
 # ============================================================================
@@ -5724,12 +5738,19 @@ async def get_session_audit(session_id: str, request: Request):
         raise HTTPException(404, "Session not found")
     if not _session_viewer_allowed(s, _dashboard_agent_id(request)):
         raise HTTPException(403, "Not a participant in this session")
-    ok, message = verify_chain(session_id)
+    # P44: one read, not two. This used to call verify_chain(session_id) and
+    # then get_public_log(session_id), reading and JSON-parsing the same file
+    # twice per request — and verifying a *different* read than the one it
+    # served, so a write landing between them would be returned unverified.
+    # Off the loop for the same reason as the two chain routes: this parses the
+    # whole log and serializes it back out, all of it blocking CPU.
+    entries = await run_in_threadpool(get_public_log, session_id)
+    ok, message = verify_chain_entries(entries)
     return {
         "session_id": session_id,
         "verified": ok,
         "message": message,
-        "chain": get_public_log(session_id),
+        "chain": entries,
     }
 
 
@@ -7594,6 +7615,19 @@ async def get_room_chain(room_id: str, request: Request):
     _FEDERATION_PEER_PUBKEYS already uses for peer relays). This route is the
     signed-attestation half of that; without it, there would be nothing for a
     client to pin at all.
+
+    **What the cap changes, and what it doesn't** (P44). The recompute is bounded
+    to the newest `CHAIN_VERIFY_LIMIT` messages, and `chain_verified_scope` says
+    which happened — `"genesis"` when the walk reached the room's first message,
+    `"recent_window"` when it stopped short. `chain_head` and `message_count` are
+    unaffected: both are indexed lookups, not walk products, so the *signed*
+    payload is byte-identical at any cap and the five independent verifiers that
+    reconstruct those bytes need no change. What a window gives up is the relay's
+    own opinion about old messages — which the paragraph above already says is
+    not the guarantee. A client that wants more asks for more: the SDK's and MCP
+    server's `verify_room_chain()` page backward through
+    GET /rooms/{id}/messages and recompute the history themselves, against a head
+    they pinned earlier, which is the check that actually catches an operator.
     """
     room = rooms_db.get_room(room_id, db_path=DATABASE_PATH)
     if not room:
@@ -7601,17 +7635,25 @@ async def get_room_chain(room_id: str, request: Request):
     viewer_id = _dashboard_agent_id(request)
     if room.room_type == "private" and not rooms_db.is_member(room_id, viewer_id or "", db_path=DATABASE_PATH):
         raise HTTPException(403, "Private room — not a member")
-    ok, message, head, count = rooms_db.verify_chain(room_id, db_path=DATABASE_PATH)
+    result = await run_in_threadpool(
+        rooms_db.verify_chain, room_id, db_path=DATABASE_PATH, limit=CHAIN_VERIFY_LIMIT,
+    )
     signature = sign_raw_relay(federation_signable_bytes(
         RELAY_BASE_URL, "room_chain",
-        [{"room_id": room_id, "chain_head": head or "", "message_count": count}],
+        [{
+            "room_id": room_id,
+            "chain_head": result.head or "",
+            "message_count": result.message_count,
+        }],
     ))
     return {
         "room_id": room_id,
-        "verified": ok,
-        "message": message,
-        "chain_head": head,
-        "message_count": count,
+        "verified": result.ok,
+        "message": result.message,
+        "chain_head": result.head,
+        "message_count": result.message_count,
+        "verified_message_count": result.verified_count,
+        "chain_verified_scope": result.scope,
         "origin_relay": RELAY_BASE_URL,
         "origin_public_key_hex": get_relay_public_key_hex(),
         "signature": signature,
@@ -8684,9 +8726,26 @@ def _dm_last_chain_hash(conn: Any, thread_id: str) -> str | None:
     return row["chain_hash"] if row else None
 
 
-def _verify_dm_chain(thread_id: str) -> tuple[bool, str, str | None, int, int]:
+class DmChainVerification(NamedTuple):
+    """`_verify_dm_chain()`'s result. Mirrors `rooms.ChainVerification` field for
+    field, plus `unchained_prefix` — the DM-only region P28-4 refuses to vouch
+    for. `message_count` counts *chained* messages, as it always has: the
+    unchained prefix is reported separately rather than folded into a total that
+    would imply coverage.
+    """
+
+    ok: bool
+    message: str
+    head: str | None
+    message_count: int
+    unchained_prefix: int
+    verified_count: int
+    scope: str
+
+
+def _verify_dm_chain(thread_id: str, limit: int | None = None) -> DmChainVerification:
     """Recompute a DM thread's hash chain and compare against each stored
-    `chain_hash`. Returns `(ok, message, head, chained_count, unchained_prefix)`.
+    `chain_hash`.
 
     The DM counterpart of `rooms.verify_chain()`, and it reuses that module's
     `compute_chain_hash()` rather than restating the frame. The one real
@@ -8695,30 +8754,76 @@ def _verify_dm_chain(thread_id: str) -> tuple[bool, str, str | None, int, int]:
     never treated as verified — an operator can delete the entire unchained
     prefix and the chained suffix still verifies perfectly, so a bare
     `verified: true` would overclaim precisely where the guarantee stops.
+
+    `limit` bounds the walk exactly as `rooms.verify_chain()`'s does, and for the
+    same reason (P44) — kept in step with it deliberately, since P8's lesson here
+    was that these two verifiers drift when only one of them gets fixed. `scope`
+    carries all three outcomes: `"genesis"` (walked every message in the thread),
+    `"chained_start"` (walked every *chained* message, but an unchained prefix
+    sits in front of it), `"recent_window"` (stopped at the cap).
     """
     with DB_LOCK, get_db() as conn:
-        rows = conn.execute(
-            "SELECT sender_id, content, created_at, chain_hash FROM dm_messages "
-            "WHERE thread_id = ? ORDER BY created_at ASC, rowid ASC",
+        total = conn.execute(
+            "SELECT COUNT(*) AS n FROM dm_messages WHERE thread_id = ?", (thread_id,),
+        ).fetchone()["n"]
+        chained_total = conn.execute(
+            "SELECT COUNT(*) AS n FROM dm_messages WHERE thread_id = ? AND chain_hash IS NOT NULL",
             (thread_id,),
-        ).fetchall()
+        ).fetchone()["n"]
+        unchained_prefix = total - chained_total
+        rows = []
+        if chained_total:
+            if limit is None or chained_total <= limit:
+                rows = conn.execute(
+                    "SELECT sender_id, content, created_at, chain_hash FROM dm_messages "
+                    "WHERE thread_id = ? AND chain_hash IS NOT NULL "
+                    "ORDER BY created_at ASC, rowid ASC",
+                    (thread_id,),
+                ).fetchall()
+            else:
+                # Newest-first + LIMIT, then reversed — the only shape
+                # idx_dm_messages_thread can serve without reading the thread.
+                rows = conn.execute(
+                    "SELECT sender_id, content, created_at, chain_hash FROM dm_messages "
+                    "WHERE thread_id = ? AND chain_hash IS NOT NULL "
+                    "ORDER BY created_at DESC, rowid DESC LIMIT ?",
+                    (thread_id, limit + 1),
+                ).fetchall()
+                rows.reverse()
 
-    chained = [r for r in rows if r["chain_hash"] is not None]
-    unchained_prefix = len(rows) - len(chained)
-    if not chained:
-        return True, "no chained messages — nothing to verify", None, 0, unchained_prefix
+    if not rows:
+        return DmChainVerification(
+            True, "no chained messages — nothing to verify", None, 0,
+            unchained_prefix, 0, "chained_start" if unchained_prefix else "genesis",
+        )
 
-    prev_hash: str | None = None
-    for i, row in enumerate(chained):
+    head = rows[-1]["chain_hash"]
+    at_start = limit is None or chained_total <= limit
+    if at_start:
+        prev_hash: str | None = None
+        walk, first_index = rows, 0
+        scope = "chained_start" if unchained_prefix else "genesis"
+    else:
+        prev_hash = rows[0]["chain_hash"]
+        walk, first_index = rows[1:], chained_total - len(rows) + 1
+        scope = "recent_window"
+
+    for offset, row in enumerate(walk):
         expected = rooms_db.compute_chain_hash(
             prev_hash, row["sender_id"], row["content"], row["created_at"],
         )
         if row["chain_hash"] != expected:
-            return False, f"hash mismatch at message {i}", None, len(chained), unchained_prefix
+            return DmChainVerification(
+                False, f"hash mismatch at message {first_index + offset}",
+                None, chained_total, unchained_prefix, offset, scope,
+            )
         prev_hash = row["chain_hash"]
-    return (
-        True, f"chain valid ({len(chained)} messages)",
-        prev_hash, len(chained), unchained_prefix,
+
+    verified = len(walk)
+    detail = "chain valid" if scope != "recent_window" else "recent window valid"
+    return DmChainVerification(
+        True, f"{detail} ({verified} of {chained_total} messages)",
+        head, chained_total, unchained_prefix, verified, scope,
     )
 
 
@@ -8762,20 +8867,31 @@ async def get_dm_chain(thread_id: str, request: Request):
     have no `chain_hash` and are not covered by `chain_head`. A client treating
     a nonzero value as "verified" would be trusting exactly the region the relay
     is declining to vouch for.
+
+    `chain_verified_scope` and `verified_message_count` carry P44's bounded walk,
+    with the same guarantees the room route's docstring spells out: the signed
+    payload is unchanged by the cap, and a client wanting the full history
+    recomputes it itself against a pinned head.
     """
     _dm_thread_or_404(thread_id, _dashboard_agent_id(request) or "")
-    ok, message, head, count, unchained_prefix = _verify_dm_chain(thread_id)
+    result = await run_in_threadpool(_verify_dm_chain, thread_id, CHAIN_VERIFY_LIMIT)
     signature = sign_raw_relay(federation_signable_bytes(
         RELAY_BASE_URL, "dm_chain",
-        [{"thread_id": thread_id, "chain_head": head or "", "message_count": count}],
+        [{
+            "thread_id": thread_id,
+            "chain_head": result.head or "",
+            "message_count": result.message_count,
+        }],
     ))
     return {
         "thread_id": thread_id,
-        "verified": ok,
-        "message": message,
-        "chain_head": head,
-        "message_count": count,
-        "unchained_prefix": unchained_prefix,
+        "verified": result.ok,
+        "message": result.message,
+        "chain_head": result.head,
+        "message_count": result.message_count,
+        "unchained_prefix": result.unchained_prefix,
+        "verified_message_count": result.verified_count,
+        "chain_verified_scope": result.scope,
         "origin_relay": RELAY_BASE_URL,
         "origin_public_key_hex": get_relay_public_key_hex(),
         "signature": signature,

@@ -368,7 +368,6 @@ function verifyRaw(dataBytes: Uint8Array, sigHex: string, pubkeyHex: string): bo
 
 export interface RoomChainVerifyResult {
   room_id: string;
-  relay_reported_verified: boolean | null;
   signed_chain_head: string | null;
   message_count: number;
   verified: boolean;
@@ -412,7 +411,6 @@ export interface RoomChainVerifyResult {
  */
 export interface DmChainVerifyResult {
   thread_id: string;
-  relay_reported_verified: boolean | null;
   signed_chain_head: string | null;
   message_count: number;
   /** P32-2: how many of this thread's messages predate the chain entirely
@@ -463,7 +461,6 @@ export async function verifyDmChainFromRelay(
   const unchainedPrefix = data.unchained_prefix ?? 0;
   const result: DmChainVerifyResult = {
     thread_id: threadId,
-    relay_reported_verified: data.verified,
     signed_chain_head: data.chain_head,
     message_count: data.message_count,
     unchained_prefix: unchainedPrefix,
@@ -641,7 +638,6 @@ export async function verifyRoomChainFromRelay(
   const data = await fetchRoomChain(roomId);
   const result: RoomChainVerifyResult = {
     room_id: roomId,
-    relay_reported_verified: data.verified,
     signed_chain_head: data.chain_head,
     message_count: data.message_count,
     verified: false,

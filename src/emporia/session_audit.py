@@ -122,11 +122,23 @@ def get_public_log(session_id: str) -> list[dict[str, Any]]:
 
 
 def verify_chain(session_id: str) -> tuple[bool, str]:
-    """Verify the hash chain integrity of the public receipt log.
+    """Verify the hash chain integrity of a session's public receipt log.
 
-    Returns (ok, message).
+    Returns (ok, message). Reads the log; a caller that already holds the
+    entries should call `verify_chain_entries()` instead — P44 found the relay's
+    own audit route doing both, which read and JSON-parsed the whole file twice
+    per request.
     """
-    entries = get_public_log(session_id)
+    return verify_chain_entries(get_public_log(session_id))
+
+
+def verify_chain_entries(entries: list[dict[str, Any]]) -> tuple[bool, str]:
+    """The verification itself, over entries the caller already has.
+
+    Split out at P44 so `GET /sessions/{id}/audit` — which returns the entries
+    in its own response body — can read the log once and verify what it is about
+    to serve, rather than verifying one read and serving a second.
+    """
     if not entries:
         return True, "empty log"
 

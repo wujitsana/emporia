@@ -9044,9 +9044,12 @@ def test_message_chain_integrity(rooms_db_path):
 def test_verify_chain_empty_room_is_trivially_valid(rooms_db_path):
     from emporia.rooms import create_room, verify_chain
     room = create_room("Empty Chain Room", "agent_alice", db_path=rooms_db_path)
-    ok, message, head, count = verify_chain(room.room_id, db_path=rooms_db_path)
-    assert (ok, head, count) == (True, None, 0)
-    assert "empty" in message.lower()
+    result = verify_chain(room.room_id, db_path=rooms_db_path)
+    assert (result.ok, result.head, result.message_count) == (True, None, 0)
+    assert "empty" in result.message.lower()
+    # P44: nothing to verify is still `genesis` — the walk really did cover the
+    # whole history, which happens to be none of it.
+    assert (result.verified_count, result.scope) == (0, "genesis")
 
 
 def test_verify_chain_recomputes_and_matches_a_genuine_chain(rooms_db_path):
@@ -9059,10 +9062,10 @@ def test_verify_chain_recomputes_and_matches_a_genuine_chain(rooms_db_path):
     post_message(room.room_id, "agent_bob", "Move 2", db_path=rooms_db_path)
     last = post_message(room.room_id, "agent_alice", "Move 3", db_path=rooms_db_path)
 
-    ok, message, head, count = verify_chain(room.room_id, db_path=rooms_db_path)
-    assert ok is True, message
-    assert head == last.chain_hash
-    assert count == 3
+    result = verify_chain(room.room_id, db_path=rooms_db_path)
+    assert result.ok is True, result.message
+    assert result.head == last.chain_hash
+    assert result.message_count == 3
 
 
 def test_verify_chain_detects_a_tampered_message(rooms_db_path):
@@ -9085,11 +9088,11 @@ def test_verify_chain_detects_a_tampered_message(rooms_db_path):
     conn.commit()
     conn.close()
 
-    ok, message, head, count = verify_chain(room.room_id, db_path=rooms_db_path)
-    assert ok is False
-    assert "mismatch" in message.lower()
-    assert head is None
-    assert count == 3
+    result = verify_chain(room.room_id, db_path=rooms_db_path)
+    assert result.ok is False
+    assert "mismatch" in result.message.lower()
+    assert result.head is None
+    assert result.message_count == 3
 
 
 # ============================================================================
@@ -23102,3 +23105,358 @@ def test_docs_state_the_real_mcp_tool_count():
     assert not wrong, (
         f"the relay registers {expected} MCP tools; these say otherwise: {wrong}"
     )
+
+
+# ============================================================================
+# P44: the relay's own chain verifiers walked every message, every call, on the
+# event loop. GET /rooms/{id}/chain is unauthenticated for a public room, and
+# recomputing a 20,000-message chain took 70ms of pure CPU inside an `async
+# def` — measured as driving concurrent /health p50 from 2.9ms to 73.9ms.
+# Three fixes, all in this pass because P8's lesson is that sibling routes
+# drift apart when only one of them is repaired: bound the walk to a recent
+# window, say so honestly in the response instead of implying genesis, and get
+# the work off the loop.
+# ============================================================================
+
+
+def _seed_chain_room(db_path, n: int, creator: str = "agent_alice", name: str = "P44 Room"):
+    """A room with `n` genuinely chained messages; returns (room_id, last message)."""
+    from emporia.rooms import create_room, post_message
+    room = create_room(name, creator, db_path=db_path)
+    last = None
+    for i in range(n):
+        last = post_message(room.room_id, creator, f"msg {i}", db_path=db_path)
+    return room.room_id, last
+
+
+def test_verify_chain_bounds_its_walk_to_the_recent_window(rooms_db_path):
+    """P44-1: the walk recomputed one SHA256 per message in the room on every
+    call, with no cap — its own docstring called that "cheap even for a large
+    room". At 20k messages it is 70ms, and the route serving it is open to any
+    connection for a public room. A bounded call must hash the window and
+    nothing more."""
+    from emporia import rooms as rooms_mod
+
+    room_id, last = _seed_chain_room(rooms_db_path, 30)
+
+    real = rooms_mod.compute_chain_hash
+    calls = 0
+
+    def counting(*args, **kwargs):
+        nonlocal calls
+        calls += 1
+        return real(*args, **kwargs)
+
+    with patch.object(rooms_mod, "compute_chain_hash", counting):
+        result = rooms_mod.verify_chain(room_id, db_path=rooms_db_path, limit=10)
+
+    assert result.ok is True, result.message
+    assert calls == 10, f"walked {calls} messages for a limit of 10"
+    assert result.verified_count == 10
+    assert result.scope == "recent_window"
+    # The attested facts stay exact — they are what a client pins, and neither
+    # is derived from the walk.
+    assert result.message_count == 30
+    assert result.head == last.chain_hash
+
+
+def test_verify_chain_full_walk_is_still_available_and_reaches_genesis(rooms_db_path):
+    """The cap is the route's policy, not the library's: an offline audit that
+    wants the whole history asks for it and gets a `genesis` scope."""
+    from emporia import rooms as rooms_mod
+
+    room_id, last = _seed_chain_room(rooms_db_path, 30)
+
+    result = rooms_mod.verify_chain(room_id, db_path=rooms_db_path, limit=None)
+    assert result.ok is True, result.message
+    assert result.scope == "genesis"
+    assert result.verified_count == 30
+    assert result.message_count == 30
+    assert result.head == last.chain_hash
+
+
+def test_verify_chain_short_room_reports_genesis_not_a_window(rooms_db_path):
+    """A room smaller than the cap really was verified from genesis and must
+    say so — a cap that reported `recent_window` for everything would make the
+    field useless for the one distinction it exists to draw."""
+    from emporia import rooms as rooms_mod
+
+    room_id, _ = _seed_chain_room(rooms_db_path, 4)
+    result = rooms_mod.verify_chain(room_id, db_path=rooms_db_path, limit=1000)
+    assert (result.ok, result.scope, result.verified_count) == (True, "genesis", 4)
+
+
+def test_capped_verify_never_claims_history_it_did_not_read(rooms_db_path):
+    """The honesty pin. Tampering with message 0 of a 30-message room is
+    invisible to a 10-message window — which is fine, and exactly why the
+    window must not be reported as `genesis`. A bare `verified: true` would
+    overclaim precisely where the guarantee stops, the same reasoning P28-4
+    applied to the DM unchained prefix."""
+    import sqlite3
+
+    from emporia import rooms as rooms_mod
+
+    room_id, _ = _seed_chain_room(rooms_db_path, 30)
+
+    conn = sqlite3.connect(rooms_db_path)
+    conn.execute(
+        "UPDATE room_messages SET content = 'rewritten' WHERE room_id = ? "
+        "AND created_at = (SELECT MIN(created_at) FROM room_messages WHERE room_id = ?)",
+        (room_id, room_id),
+    )
+    conn.commit()
+    conn.close()
+
+    windowed = rooms_mod.verify_chain(room_id, db_path=rooms_db_path, limit=10)
+    assert windowed.ok is True
+    assert windowed.scope == "recent_window", (
+        "a window that never read message 0 must not report genesis scope"
+    )
+
+    full = rooms_mod.verify_chain(room_id, db_path=rooms_db_path, limit=None)
+    assert full.ok is False
+    assert "mismatch at message 0" in full.message
+
+
+def test_verify_chain_reports_an_absolute_message_index_on_mismatch(rooms_db_path):
+    """A mismatch index meaning "offset into the window" would point at a
+    different message depending on the cap. It is an index into the room."""
+    import sqlite3
+
+    from emporia import rooms as rooms_mod
+
+    room_id, _ = _seed_chain_room(rooms_db_path, 30)
+
+    conn = sqlite3.connect(rooms_db_path)
+    conn.execute(
+        "UPDATE room_messages SET content = 'rewritten' WHERE room_id = ? AND content = 'msg 25'",
+        (room_id,),
+    )
+    conn.commit()
+    conn.close()
+
+    windowed = rooms_mod.verify_chain(room_id, db_path=rooms_db_path, limit=10)
+    full = rooms_mod.verify_chain(room_id, db_path=rooms_db_path, limit=None)
+    assert windowed.ok is False and full.ok is False
+    assert "mismatch at message 25" in windowed.message
+    assert "mismatch at message 25" in full.message
+
+
+def test_room_chain_route_declares_its_verification_scope(client):
+    """P44-2: the route caps its walk, so the response has to carry the scope —
+    a client reading `verified: true` with no scope cannot tell a genesis check
+    from a window."""
+    from emporia import relay_server
+
+    room_id, _ = _seed_chain_room(
+        relay_server.DATABASE_PATH, 6, creator="p44_scope_alice", name="P44 Scope Room",
+    )
+
+    with patch.object(relay_server, "CHAIN_VERIFY_LIMIT", 2):
+        data = client.get(f"/rooms/{room_id}/chain").json()
+    assert data["verified"] is True, data
+    assert data["chain_verified_scope"] == "recent_window"
+    assert data["verified_message_count"] == 2
+    assert data["message_count"] == 6, "the signed count stays the true total"
+
+    with patch.object(relay_server, "CHAIN_VERIFY_LIMIT", 1000):
+        wide = client.get(f"/rooms/{room_id}/chain").json()
+    assert wide["chain_verified_scope"] == "genesis"
+    assert wide["verified_message_count"] == 6
+    assert wide["chain_head"] == data["chain_head"], "the head does not depend on the cap"
+    assert wide["signature"] == data["signature"], (
+        "the signed payload is unchanged by the cap — five separate verifiers "
+        "reconstruct those bytes, and this pass must not make them six"
+    )
+
+
+def _p44_send_dm(client, thread_id: str, sender: str, content: str):
+    from emporia import wire
+    from emporia.identity import sign
+    nonce = wire.new_message_nonce()
+    body = {
+        "content": content, "nonce": nonce,
+        "signature": sign(
+            wire.signed_dm_thread_payload(thread_id, content, wire.DEFAULT_MSG_TYPE, nonce),
+            sender,
+        ),
+    }
+    r = client.post(f"/dm/{thread_id}/send", json=body,
+                    headers={"X-Emporia-Agent-Id": sender})
+    assert r.status_code == 200, r.text
+
+
+def test_dm_chain_route_declares_its_verification_scope(client):
+    """The DM half, fixed in the same pass. P8's lesson: sibling routes that
+    get repaired one at a time are how these two verifiers drifted apart in the
+    first place."""
+    from emporia import relay_server
+
+    _register_keyed(client, "p44_dm_a")
+    _register_keyed(client, "p44_dm_b")
+    r = client.post("/dm/start", json={"to_agent": "p44_dm_b"},
+                    headers={"X-Emporia-Agent-Id": "p44_dm_a"})
+    assert r.status_code == 200, r.text
+    thread_id = r.json()["thread_id"]
+    for i in range(6):
+        _p44_send_dm(client, thread_id, "p44_dm_a", f"m{i}")
+
+    hdr = {"X-Emporia-Agent-Id": "p44_dm_a"}
+    with patch.object(relay_server, "CHAIN_VERIFY_LIMIT", 2):
+        data = client.get(f"/dm/{thread_id}/chain", headers=hdr).json()
+    assert data["verified"] is True, data
+    assert data["chain_verified_scope"] == "recent_window"
+    assert data["verified_message_count"] == 2
+    assert data["message_count"] == 6
+
+    with patch.object(relay_server, "CHAIN_VERIFY_LIMIT", 1000):
+        wide = client.get(f"/dm/{thread_id}/chain", headers=hdr).json()
+    assert wide["chain_verified_scope"] == "genesis"
+    assert wide["verified_message_count"] == 6
+    assert wide["signature"] == data["signature"]
+
+
+def test_dm_chain_scope_still_names_the_unchained_prefix(client):
+    """P28-4's distinction survives the cap: a thread whose chained suffix was
+    fully walked but which has pre-P28-4 unchained rows in front of it is
+    `chained_start`, never `genesis`."""
+    import sqlite3
+
+    from emporia import relay_server
+
+    _register_keyed(client, "p44_dmu_a")
+    _register_keyed(client, "p44_dmu_b")
+    thread_id = client.post("/dm/start", json={"to_agent": "p44_dmu_b"},
+                            headers={"X-Emporia-Agent-Id": "p44_dmu_a"}).json()["thread_id"]
+    for i in range(4):
+        _p44_send_dm(client, thread_id, "p44_dmu_a", f"m{i}")
+
+    conn = sqlite3.connect(_test_db)
+    conn.execute(
+        "UPDATE dm_messages SET chain_hash = NULL WHERE thread_id = ? "
+        "AND created_at = (SELECT MIN(created_at) FROM dm_messages WHERE thread_id = ?)",
+        (thread_id, thread_id),
+    )
+    conn.commit()
+    conn.close()
+
+    with patch.object(relay_server, "CHAIN_VERIFY_LIMIT", 1000):
+        data = client.get(f"/dm/{thread_id}/chain",
+                          headers={"X-Emporia-Agent-Id": "p44_dmu_a"}).json()
+    assert data["chain_verified_scope"] == "chained_start", data
+    assert data["unchained_prefix"] == 1
+
+
+def test_session_audit_route_reads_its_log_once(client):
+    """P44-3: the route called verify_chain(session_id) and then
+    get_public_log(session_id) — two full reads and two JSON parses of the same
+    file per request. The same one-fact-fetched-twice shape P43 found in the
+    Overview, one layer down."""
+    from emporia import relay_server, session_audit
+
+    _register_keyed(client, "p44_audit_alice")
+    r = client.post("/sessions", json={
+        "module_type": "emporia:chess:v1", "creator_agent_id": "p44_audit_alice",
+    }, headers={"X-Emporia-Agent-Id": "p44_audit_alice"})
+    assert r.status_code == 200, r.text
+    session_id = r.json()["session_id"]
+
+    real = session_audit.get_public_log
+    reads = 0
+
+    def counting(sid):
+        nonlocal reads
+        reads += 1
+        return real(sid)
+
+    # Both names, because relay_server.py imported the function by value: the
+    # route's own call and verify_chain()'s internal one resolve through
+    # different module globals, and counting either alone counts one read.
+    with (
+        patch.object(relay_server, "get_public_log", counting),
+        patch.object(session_audit, "get_public_log", counting),
+    ):
+        resp = client.get(f"/sessions/{session_id}/audit",
+                          headers={"X-Emporia-Agent-Id": "p44_audit_alice"})
+    assert resp.status_code == 200, resp.text
+    assert resp.json()["verified"] is True
+    assert reads == 1, f"read the audit log {reads} times to answer one request"
+
+
+def test_chain_routes_do_not_block_the_event_loop(client):
+    """The load-bearing one. Every relay endpoint is `async def` with blocking
+    sqlite3 inside, so CPU spent in a handler freezes the whole process — a
+    70ms chain walk measured as driving concurrent /health p50 from 2.9ms to
+    73.9ms. These three routes do the most work per call and are the ones an
+    unauthenticated caller can aim, so they run off the loop.
+
+    Measured as event-loop lag rather than as a second concurrent request:
+    in-process ASGI gives no guarantee that a sibling request suspends before
+    the blocking one starts, so a two-request race can pass without ever
+    overlapping. A heartbeat that oversleeps cannot.
+    """
+    import asyncio
+    import time
+
+    import httpx as httpx_module
+
+    from emporia import relay_server
+    from emporia.relay_server import app as relay_app
+
+    room_id, _ = _seed_chain_room(
+        relay_server.DATABASE_PATH, 1, creator="p44_loop_alice", name="P44 Loop Room",
+    )
+
+    real = relay_server.rooms_db.verify_chain
+
+    def slow(*args, **kwargs):
+        time.sleep(0.30)
+        return real(*args, **kwargs)
+
+    async def scenario():
+        tick, lag, stop = 0.005, 0.0, False
+
+        async def heartbeat():
+            nonlocal lag
+            while not stop:
+                t0 = time.perf_counter()
+                await asyncio.sleep(tick)
+                lag = max(lag, time.perf_counter() - t0 - tick)
+
+        async with httpx_module.AsyncClient(
+            transport=httpx_module.ASGITransport(app=relay_app), base_url="http://testserver",
+        ) as http:
+            hb = asyncio.create_task(heartbeat())
+            await asyncio.sleep(0.02)  # let the heartbeat settle before measuring
+            lag = 0.0
+            with patch.object(relay_server.rooms_db, "verify_chain", slow):
+                resp = await http.get(f"/rooms/{room_id}/chain")
+            stop = True
+            await hb
+        assert resp.status_code == 200, resp.text
+        return lag
+
+    worst = asyncio.run(scenario())
+    assert worst < 0.10, (
+        f"the event loop stalled {worst * 1000:.0f}ms during a 300ms chain walk — "
+        f"the walk is running on the loop"
+    )
+
+
+def test_both_client_verifiers_surface_the_relay_verification_scope():
+    """P44: `relay_reported_verified` stopped meaning "the whole history" the
+    moment the routes gained a cap, so every result dict carrying that flag has
+    to carry the scope beside it. There are four such dicts — a sync MCP tool
+    and an async SDK method, each for rooms and DMs — and they are four
+    independently maintained copies (P24-1 extracted the *decision* they share,
+    not the envelope they build). A source-shape check, because what drifts here
+    is one of four copies, not the behaviour of any one of them."""
+    for module in ("src/emporia/mcp_server.py", "src/emporia/agent_sdk.py"):
+        text = (_DOC_ROOT / module).read_text()
+        flags = text.count('"relay_reported_verified"')
+        scopes = text.count('"relay_verified_scope"')
+        assert flags == 2, f"{module}: expected 2 verifier result dicts, found {flags}"
+        assert scopes == flags, (
+            f"{module}: {flags} result dicts report the relay's verdict but only "
+            f"{scopes} report the scope it applies to"
+        )

@@ -420,6 +420,13 @@ thread and re-sign a self-consistent replacement. `verify_room_chain` / `verify_
 half that catches that: they refetch the messages, recompute the chain client-side, and compare
 against a head pinned locally the first time you verified.
 
+**Never read the route's own `verified` as a verdict on the history.** It covers only the newest
+`EMPORIA_CHAIN_VERIFY_LIMIT` messages (1000 by default), which the response says outright in its
+own `chain_verified_scope` — `"recent_window"` when the relay stopped at the cap, `"genesis"` when
+the whole history fit inside it. The tools pass that through as `relay_verified_scope` so it can't
+be mistaken for their own finding. `chain_head` and `message_count` are exact at any cap; those
+are what the signature covers and what you pin.
+
 Run one after any conversation you'd act on financially — a negotiation, a delivery confirmation,
 a dispute. Read three keys off the result:
 
@@ -428,7 +435,9 @@ a dispute. Read three keys off the result:
 - **`chain_verified_scope`** — `"genesis"` (walked the whole history), `"pinned_checkpoint"`
   (stopped at a head you already verified from genesis — equally strong, cheaper), or
   `"chained_start"` (the walk hit messages that predate chaining; `unchained_prefix` says how
-  many the head doesn't cover).
+  many the head doesn't cover). This is the tool's *own* finding, from its own walk, and it is
+  the one that carries weight — `relay_verified_scope` beside it is only what the relay claims
+  about itself.
 - **`replay_scan_scope`** — `"full_history"` means the duplicate-nonce scan covered everything.
 
 Pass `ignore_pin=True` to verify without consulting or updating the local pin. Known limit: the

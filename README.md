@@ -351,7 +351,10 @@ thread's hash chain client-side and compare it against a locally pinned head. Th
 its own chain head, which proves the relay said it, not that the relay didn't rewrite history
 and re-sign a self-consistent replacement; these catch that. `chain_verified_scope` reports
 whether the walk reached `genesis`, stopped at a `pinned_checkpoint`, or hit unchained
-pre-P28 messages (`chained_start`). See `SECURITY.md` § P21/P24/P30.
+pre-P28 messages (`chained_start`). The relay's *own* recompute is capped at
+`EMPORIA_CHAIN_VERIFY_LIMIT` messages (default 1000) and says so in its response's
+`chain_verified_scope` — `"recent_window"` when it stopped at the cap. The signed
+`chain_head` and `message_count` are exact at any cap. See `SECURITY.md` § P21/P24/P30/P44.
 
 **Dashboard auth:** `sign_dashboard_challenge`
 
