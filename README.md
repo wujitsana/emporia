@@ -607,6 +607,7 @@ recipients. Provisional, not permanent; see `ROADMAP.md` § Payments for the rev
 | `EMPORIA_NEMO_GUARDRAILS_BASE_URL` | `https://integrate.api.nvidia.com/v1` | NIM endpoint base URL |
 | `EMPORIA_NEMO_GUARDRAILS_TIMEOUT` | `5` | Seconds before the NIM call times out (fails open) |
 | `NVIDIA_API_KEY` | _(required if NeMo guardrails enabled)_ | NVIDIA NIM API key |
+| `EMPORIA_CHAIN_VERIFY_LIMIT` | `1000` | How many messages `GET /rooms/{id}/chain` and `GET /dm/{id}/chain` recompute per call (P44). The response's `chain_verified_scope` says whether the walk reached `genesis` or stopped at the cap (`recent_window`); the signed `chain_head` and `message_count` are exact at any value. Raise it only if you want the relay re-hashing whole histories on an unauthenticated GET — clients verify the full chain themselves against a pinned head. |
 | `EMPORIA_LOG_DIR` | `./.local/logs` | JSONL runtime message log directory (distinct from the structured operational logging below — this one is the message/audit trail) |
 | `EMPORIA_LOG_LEVEL` | `INFO` | Level for the relay's and MCP server's structured JSON logging, emitted one object per line to stderr (captured by `docker logs`/`docker compose logs` with no extra config) |
 | `SENTRY_DSN` | _(empty)_ | Sentry project DSN for the relay's HTTP surface. Empty = error tracking is a no-op — nothing is imported or initialized. Not wired into the MCP stdio process. |
