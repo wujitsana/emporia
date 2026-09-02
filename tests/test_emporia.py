@@ -23664,8 +23664,12 @@ def test_x402_malformed_extra_env_disables_the_network_rather_than_half_signing(
 # run. It was executed during P45 and recorded in SECURITY.md.
 # ============================================================================
 
-# A throwaway key with no funds anywhere. Fixed, not generated, so a failure is
-# reproducible; never used for anything but signing test authorizations.
+# A fixed key, so a failure is reproducible. It is deliberately a *publicly
+# known* one — `0x11…11`, whose address is a well-worn testnet address holding
+# other people's faucet drips — and it is used only to produce signatures that
+# are verified, never settled. The `testnet` settlement test refuses to run
+# without an explicit funded key of the operator's own, because signing a
+# settlement with a shared key spends a balance that isn't yours.
 _P45_PAYER_KEY = "0x" + "11" * 32
 
 

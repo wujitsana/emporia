@@ -34,6 +34,14 @@ tampered with after signing. **Neither needs funds** — `/verify` checks the si
 authorization window and the requirement match; it does not move money. The second test is the
 control for the first: `isValid: true` means nothing unless `isValid: false` is reachable.
 
+Without `EMPORIA_TESTNET_PAYER_KEY` those two fall back to the private key `0x11…11`. That key is
+**publicly known** — its address (`0x19E7E376…ff2A`) is a well-worn testnet address that accumulates
+other people's faucet drips, and at the time of writing it held ~0.87 testnet USDC that is not
+yours. Signing a `/verify` request with it moves nothing and is fine. Never use it, or any other
+shared key, on a path that reaches `/settle`: you would be spending someone else's balance. The
+settlement test refuses to run without an explicit `EMPORIA_TESTNET_PAYER_KEY` for exactly that
+reason, and pays to the payer's own address so the principal comes straight back.
+
 Settlement is a third test and does need funds:
 
 ```bash

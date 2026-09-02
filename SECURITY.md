@@ -2479,6 +2479,25 @@ token's domain values were read off the contract (`name()` → `"USDC"`, `versio
 `decimals()` → `6`) rather than copied from the spec's example — which independently confirms
 `payments._USDC_DECIMALS = 6`.
 
+**And then the whole lane, settled on chain.** After P45–P47 landed, a relay was booted on the
+testnet configuration and driven through `agent_sdk` with nothing mocked: register (a `stable_id`
+allocated live), register a payout wallet, create a 1-cent paid room, take the 402, sign it with
+`x402_payer`, retry. It joined. The `payments` row carries
+`rail="x402"` and transaction
+`0x11748fce1223a8332fad5497aefa5b1a199d85ac6e7765a899bc6c0d1963fb57`, whose receipt on Base Sepolia
+is status `0x1` in block 46301925: the facilitator's own address submitted a
+`transferWithAuthorization` moving 10000 atomic units — 0.01 USDC, exactly the room's entry fee —
+against a signature this repo produced. The same session then renamed the room's creator and
+confirmed the `stable_id` survived. That is the first time any part of this rail has moved money.
+
+**One safety note from that run.** The credential was signed with `0x11…11`, a publicly known key,
+and the payout wallet was set to that key's own address, so the transfer was self-to-self and moved
+nothing between parties. It only succeeded at all because that well-worn address holds other
+people's faucet drips (~0.87 USDC at the time). Signing a `/verify` with a shared key is harmless;
+signing a `/settle` with one spends a balance that isn't yours. The settlement test refuses to run
+without an explicit funded key and pays to the payer's own address; `docs/testnet.md` says so in as
+many words.
+
 **Two of this pass's own tests were vacuous, and the stash-verify caught them.** The signature test
 originally rebuilt its expected digest by calling `eth_account` with `x402_payer`'s own type
 constant: reordering `validAfter`/`validBefore` in that constant moved both sides of the comparison
