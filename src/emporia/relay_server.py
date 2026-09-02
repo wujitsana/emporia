@@ -1502,18 +1502,6 @@ def _assert_payment_intent_matches(
             raise HTTPException(402, "PaymentIntent is not bound to this payer")
 
 
-def _x402_network_family(network: str) -> str | None:
-    """CAIP-2 network id -> the wallet key space it needs (P1b-2's
-    network_family). Unrecognized network id namespaces resolve to None so a
-    misconfigured EMPORIA_X402_NETWORKS entry is silently excluded rather
-    than raising mid-request."""
-    if network.startswith("eip155:"):
-        return "evm"
-    if network.startswith("solana:"):
-        return "svm"
-    return None
-
-
 def _x402_pay_to_by_network(creator_id: str | None) -> dict[str, str]:
     """Resolve which configured x402 networks this creator can actually
     receive on. A network whose family the creator has no wallet for is
@@ -1527,12 +1515,12 @@ def _x402_pay_to_by_network(creator_id: str | None) -> dict[str, str]:
     networks used to mean N connections for one single-row lookup."""
     if not creator_id:
         return {}
-    from emporia.payments import _x402_networks
+    from emporia.payments import _x402_networks, x402_network_family
 
     wallets = AGENT_REGISTRY.get_x402_pay_to_all(creator_id)
     result: dict[str, str] = {}
     for network in _x402_networks():
-        family = _x402_network_family(network)
+        family = x402_network_family(network)
         if not family:
             continue
         pay_to = wallets.get(family)
@@ -1580,7 +1568,7 @@ async def _verify_x402_payment(
     """
     from emporia.payments import (
         RAIL_X402, PaymentRef, x402_verify_payment, x402_settle_payment,
-        x402_requirement, _x402_asset_for,
+        x402_requirement, _x402_asset_for, _x402_extra_for, x402_network_family,
     )
 
     # P1br-1: unreachable via this function's one real call site as of that
@@ -1594,19 +1582,23 @@ async def _verify_x402_payment(
 
     accepted = x402_payload.get("accepted") or {}
     network = accepted.get("network")
-    family = _x402_network_family(network) if network else None
+    family = x402_network_family(network) if network else None
     pay_to = (
         AGENT_REGISTRY.get_x402_pay_to(creator_id, family)
         if creator_id and family else None
     )
     asset = _x402_asset_for(network) if network else None
+    extra = _x402_extra_for(network) if network else None
     # P1br-2: same x402_requirement() build_x402_challenge() uses to build
     # what this relay OFFERS — a single definition, so the two can never
     # compute two different `scheme`/`maxTimeoutSeconds` for the same
-    # request. Tolerant of None network/asset/payTo (a missing or
+    # request. Tolerant of None network/asset/payTo/extra (a missing or
     # unresolvable field) so every mismatch is listed at once below, not
-    # just the first one that would otherwise raise.
-    expected = x402_requirement(network, amount_cents, asset, pay_to)
+    # just the first one that would otherwise raise. P45: `extra` is read
+    # from config here rather than taken from the client's `accepted`, for
+    # the same reason as every other field — the requirement is this
+    # relay's assertion about the resource, not an echo of the claim.
+    expected = x402_requirement(network, amount_cents, asset, pay_to, extra)
     mismatched = [
         field for field, want in expected.items()
         if want is None or accepted.get(field) != want

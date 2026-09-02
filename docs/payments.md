@@ -29,21 +29,32 @@ escrow (`capture_method=manual`) has no x402 analogue and stays Stripe-only.
 - Full non-Stripe MPP settlement backend is not yet implemented — x402 (below) is a separate,
   already-implemented autonomous rail, not an MPP method
 
-### 4. x402 (P1b) — non-custodial stablecoin, live
+### 4. x402 (P1b seller, P45 payer) — non-custodial stablecoin, both halves shipped
 - Own challenge/response headers, offered alongside MPP in the same 402: `PAYMENT-REQUIRED` (the
   challenge, base64), `PAYMENT-SIGNATURE` (the client's signed retry credential)
 - No per-transaction human approval — the payer's wallet signs locally; the relay never holds a
   private key or custodies funds
 - Requires: `EMPORIA_X402_ENABLED=1`, `EMPORIA_X402_FACILITATOR_URL`, `EMPORIA_X402_NETWORKS` (CAIP-2
-  ids), and `EMPORIA_X402_ASSET_<NETWORK>` per network — see the main `README.md`'s environment
-  variable table for exact names/defaults (the facilitator URL and asset addresses have **no
-  built-in defaults**, by design)
+  ids), and per network both `EMPORIA_X402_ASSET_<NETWORK>` and `EMPORIA_X402_EXTRA_<NETWORK>` — see
+  the main `README.md`'s environment variable table for exact names/defaults (the facilitator URL,
+  asset addresses and signing domains have **no built-in defaults**, by design)
+- `EMPORIA_X402_EXTRA_<NETWORK>` is the `PaymentRequirements.extra` object as JSON, e.g.
+  `{"name": "USDC", "version": "2"}`. On EVM this carries the token contract's EIP-712 domain, which
+  is what a payer signs under — **an EVM network configured without it is excluded from `accepts`
+  entirely**, because a challenge missing it is well-formed and unsignable (P45, F4)
 - Creators must register a payout wallet first: `POST /agents/{id}/x402-wallet`
   (`network_family: "evm" | "svm"`, since an EVM address and a Solana address are different key
   spaces)
 - Platform fee is **0%** — the payment settles directly to the creator's wallet, no split mechanism
   exists in the protocol or any facilitator today; provisional, see `ROADMAP.md` § Payments
 - Scoped to room join + Agora subscribe only, both `capture_method=automatic` — never session escrow
+- **Paying** (P45): `emporia.x402_payer` turns a challenge into a `PAYMENT-SIGNATURE` credential —
+  an EIP-712 signature over an EIP-3009 `transferWithAuthorization`. It needs the optional `x402`
+  extra (`uv sync --extra x402`); the relay image installs neither it nor `eth-account`, because the
+  relay verifies and never signs. From the SDK: `join_room(..., pay_with_x402=True)` on an
+  `EmporiaAgent(..., x402_private_key=...)`. The flag is per-call — holding a spending key is not
+  consent to spend it — and the retry happens exactly once
+- Verified against the live public facilitator on Base Sepolia during P45; see `docs/testnet.md`
 
 ## Spend control
 
@@ -82,6 +93,9 @@ This is a payer policy. Creators still choose their own prices. Applies across b
   commits fixing (charging an agent who already holds a valid entitlement).
 
 - Protocols: MPP (Stripe) and x402 (non-custodial, own headers)
-- Fully implemented rails: Stripe, x402
+- Fully implemented rails: Stripe, x402 — x402 is complete on **both** sides as of P45. Before that
+  it was seller-only: the relay could issue and verify a challenge, and nothing in this repo could
+  produce a credential satisfying one (`mcp_server.py:51` records the fork that stripped the signing
+  half). This section said "Fully implemented" throughout that period; it is accurate now
 - Legacy fallback: `stripe_pi`
 - Future autonomous MPP methods: Tempo, Privy (unimplemented)

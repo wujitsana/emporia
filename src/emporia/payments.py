@@ -161,7 +161,7 @@ def _x402_enabled() -> bool:
     return (
         os.getenv("EMPORIA_X402_ENABLED", "0").strip() == "1"
         and bool(_x402_facilitator_url())
-        and any(_x402_asset_for(n) for n in _x402_networks())
+        and any(_x402_network_parts(n) for n in _x402_networks())
     )
 
 
@@ -179,6 +179,89 @@ def _x402_asset_for(network: str) -> str | None:
     env_name = "EMPORIA_X402_ASSET_" + re.sub(r"[:-]", "_", network.upper())
     value = os.getenv(env_name, "").strip()
     return value or None
+
+
+def x402_network_family(network: str) -> str | None:
+    """CAIP-2 network id -> the wallet key space / signing mechanism it needs
+    (P1b-2's network_family). Unrecognized namespaces resolve to None so a
+    misconfigured EMPORIA_X402_NETWORKS entry is silently excluded rather than
+    raising mid-request.
+
+    P45: moved here from relay_server.py. It used to live beside the wallet
+    lookup because that was its only caller; it now also decides whether a
+    network's requirement needs an EIP-712 domain (below), and two copies of
+    "which prefix means EVM" is exactly the drift P1br-2 factored
+    `x402_requirement()` out to prevent.
+    """
+    if network.startswith("eip155:"):
+        return "evm"
+    if network.startswith("solana:"):
+        return "svm"
+    return None
+
+
+# The `exact` scheme on EVM authorizes payment with an EIP-712 signature over an
+# EIP-3009 `transferWithAuthorization` struct, and the EIP-712 domain includes
+# the token contract's own `name` and `version`. Those are readable only from the
+# chain, so the spec carries them in `PaymentRequirements.extra` — which means a
+# challenge that omits `extra` is a challenge no EVM payer can sign. P1brr
+# recorded "`extra` is never sent" as a known unknown; P45 found it was the
+# reason the rail had no reachable client (F4) and made it required per family.
+_X402_FAMILIES_REQUIRING_EXTRA = frozenset({"evm"})
+
+
+def _x402_extra_for(network: str) -> dict[str, Any] | None:
+    """The `PaymentRequirements.extra` object for one CAIP-2 network, read from
+    EMPORIA_X402_EXTRA_<NETWORK> as a JSON object — same env-name transform as
+    `_x402_asset_for()` above (':' and '-' -> '_', uppercased), because an
+    operator configures the asset and its signing domain for the same network id
+    and having the two transforms disagree would silently drop one of them.
+
+    Carried verbatim as an object rather than as name/version scalars: `extra`
+    is scheme-defined, so this same var covers EVM's `{name, version}`, the
+    protocol-reserved `assetTransferMethod`/`paymentFlow` keys, and whatever a
+    non-EVM mechanism needs, without inventing a new env var per scheme.
+
+    No built-in defaults, for `_x402_asset_for()`'s reason: the domain is part
+    of what the payer signs, and a wrong one produces a signature that the
+    facilitator rejects (at best) against a token that isn't the one advertised.
+    Unset *and* unparseable both return None — see `_x402_network_parts()` for
+    why that excludes the network rather than degrading the challenge.
+    """
+    env_name = "EMPORIA_X402_EXTRA_" + re.sub(r"[:-]", "_", network.upper())
+    raw = os.getenv(env_name, "").strip()
+    if not raw:
+        return None
+    try:
+        parsed = json.loads(raw)
+    except ValueError:
+        return None
+    if not isinstance(parsed, dict) or not parsed:
+        return None
+    return parsed
+
+
+def _x402_network_parts(network: str) -> tuple[str, dict[str, Any] | None] | None:
+    """(asset, extra) for a fully configured network, else None.
+
+    The single definition of "this relay can actually offer this network",
+    shared by `_x402_enabled()` and `build_x402_challenge()` so the enabled
+    check and the `accepts` builder can never disagree about which networks
+    count — they used to share only the asset half of the condition, and P45
+    added a second half that would otherwise have had to be written twice.
+
+    A family in `_X402_FAMILIES_REQUIRING_EXTRA` with no usable `extra` is
+    excluded outright rather than advertised with the domain missing: the
+    resulting challenge would be well-formed, accepted by every existing test,
+    and unpayable.
+    """
+    asset = _x402_asset_for(network)
+    if not asset:
+        return None
+    extra = _x402_extra_for(network)
+    if extra is None and x402_network_family(network) in _X402_FAMILIES_REQUIRING_EXTRA:
+        return None
+    return asset, extra
 
 # Per-process secret for binding MPP challenges (32 random bytes).
 # The mppx library uses this to sign challenge payloads so they can't be replayed
@@ -280,6 +363,7 @@ _X402_MAX_TIMEOUT_SECONDS = 300
 
 def x402_requirement(
     network: str | None, amount_cents: int, asset: str | None, pay_to: str | None,
+    extra: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """One `accepts` entry / PaymentRequirements object — the single
     definition of the x402 requirement shape, used identically by
@@ -299,7 +383,7 @@ def x402_requirement(
     a possibly-incomplete client claim specifically so it can list every
     mismatched field at once, not just the first one that would raise.
     """
-    return {
+    requirement = {
         "scheme": "exact",
         "network": network,
         "amount": _x402_amount_atomic(amount_cents),
@@ -307,6 +391,17 @@ def x402_requirement(
         "payTo": pay_to,
         "maxTimeoutSeconds": _X402_MAX_TIMEOUT_SECONDS,
     }
+    if extra is not None:
+        requirement["extra"] = extra
+    elif network and x402_network_family(network) in _X402_FAMILIES_REQUIRING_EXTRA:
+        # P45: `extra` is Optional in the spec, so absence normally means "omit
+        # the key". Not here. On a family that signs with EIP-712 the domain is
+        # part of what makes the requirement satisfiable at all, so a missing
+        # one is recorded as an explicit None — which the verification caller's
+        # `want is None` rule already turns into a named 402 rather than a
+        # requirement whose domain simply goes unasserted.
+        requirement["extra"] = None
+    return requirement
 
 
 def build_x402_challenge(
@@ -322,11 +417,12 @@ def build_x402_challenge(
     AGENT_REGISTRY, which this payment-domain module doesn't import; see
     _x402_pay_to_by_network()). Only x402-enabled networks with both a
     configured asset (_x402_asset_for) and a wallet for this creator make it
-    into `accepts`.
+    into `accepts` (P45: "configured" now also means a usable `extra` where the
+    mechanism needs one — see `_x402_network_parts()`).
 
     Returns None (offer nothing) when x402 isn't enabled, the currency isn't
-    "usd" (USDC's peg assumption above only holds for USD), or no network
-    has both a configured asset and a wallet for this creator — the caller
+    "usd" (USDC's peg assumption above only holds for USD), or no network is
+    both fully configured and backed by a wallet for this creator — the caller
     then omits x402 from the 402 entirely rather than sending an empty
     `accepts` array.
     """
@@ -335,10 +431,11 @@ def build_x402_challenge(
     accepts = []
     for network in _x402_networks():
         pay_to = pay_to_by_network.get(network)
-        asset = _x402_asset_for(network)
-        if not pay_to or not asset:
+        parts = _x402_network_parts(network)
+        if not pay_to or parts is None:
             continue
-        accepts.append(x402_requirement(network, amount_cents, asset, pay_to))
+        asset, extra = parts
+        accepts.append(x402_requirement(network, amount_cents, asset, pay_to, extra))
     if not accepts:
         return None
     payment_required = {

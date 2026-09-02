@@ -15,6 +15,7 @@ from __future__ import annotations
 import asyncio
 import json
 import urllib.parse
+from collections.abc import Awaitable, Callable
 from typing import Any, AsyncIterator
 
 import httpx
@@ -55,6 +56,18 @@ class PaymentRequiredError(httpx.HTTPStatusError):
         self.www_authenticate = response.headers.get("www-authenticate", "")
 
 
+def _payment_detail(resp: httpx.Response) -> dict[str, Any]:
+    """The parsed 402 body, or {} when it isn't JSON. Split out of
+    `_raise_for_status_or_payment()` in P45: the x402 retry path needs the
+    challenge body to sign, and re-parsing it there would have made two places
+    that decide what "no readable challenge" means."""
+    try:
+        detail = resp.json()
+    except ValueError:
+        return {}
+    return detail if isinstance(detail, dict) else {}
+
+
 def _raise_for_status_or_payment(resp: httpx.Response) -> None:
     """resp.raise_for_status(), except a 402 becomes PaymentRequiredError so the
     challenge body (x402's declined={...}, the MPP amount/resource fields) reaches
@@ -63,11 +76,7 @@ def _raise_for_status_or_payment(resp: httpx.Response) -> None:
     mcp_server.py call sites that already return that body as `detail`.
     """
     if resp.status_code == 402:
-        try:
-            detail = resp.json()
-        except ValueError:
-            detail = {}
-        raise PaymentRequiredError(resp, detail)
+        raise PaymentRequiredError(resp, _payment_detail(resp))
     resp.raise_for_status()
 
 
@@ -90,6 +99,8 @@ class EmporiaAgent:
         public_key_hex: str,
         profile_id: str | None = None,
         timeout: float = 30.0,
+        x402_private_key: str | None = None,
+        x402_networks: list[str] | None = None,
     ) -> None:
         self.relay_url = relay_url.rstrip("/")
         self.agent_id = agent_id
@@ -97,6 +108,16 @@ class EmporiaAgent:
         self.profile_id = profile_id or agent_id
         self._http: httpx.AsyncClient | None = None
         self._timeout = timeout
+        # P45: the wallet this agent pays x402 from. Separate from
+        # `public_key_hex` on purpose — that is an Ed25519 identity key the
+        # relay knows, this is a secp256k1 spending key the relay must never
+        # see. Holding it is not enough to spend it: every paid method still
+        # requires `pay_with_x402=True` per call.
+        self._x402_private_key = x402_private_key
+        # An allowlist of CAIP-2 networks this agent will sign on, defaulting to
+        # "any EVM network the relay offers". A funded-on-testnet agent should
+        # set this rather than trust a relay not to advertise mainnet.
+        self._x402_networks = x402_networks
         self._bearer_token: str | None = None
         self._bearer_exp: float = 0.0
 
@@ -205,12 +226,25 @@ class EmporiaAgent:
     async def _bearer_request(self, method: str, url: str, **kwargs: Any) -> httpx.Response:
         """httpx.AsyncClient.{get,post,delete}(url, ...) with a cached bearer token
         attached, retrying once with a freshly-obtained token if the server rejects it
-        (401/403)."""
+        (401/403).
+
+        P45: a caller-supplied `headers=` is merged with the bearer headers
+        rather than colliding with them — the x402 retry needs to send
+        PAYMENT-SIGNATURE *and* stay authenticated, unlike the MPP path where
+        the payment credential takes over the Authorization header outright and
+        so has to bypass this method entirely. Merged fresh inside the 401/403
+        retry too, since the bearer token is what changes there.
+        """
         fn = getattr(self._client(), method)
-        r = await fn(url, headers=await self._bearer_headers(), **kwargs)
+        extra = kwargs.pop("headers", None) or {}
+
+        async def _headers() -> dict[str, str]:
+            return {**await self._bearer_headers(), **extra}
+
+        r = await fn(url, headers=await _headers(), **kwargs)
         if r.status_code in (401, 403):
             self._invalidate_bearer()
-            r = await fn(url, headers=await self._bearer_headers(), **kwargs)
+            r = await fn(url, headers=await _headers(), **kwargs)
         return r
 
     # ------------------------------------------------------------------ #
@@ -336,18 +370,63 @@ class EmporiaAgent:
         resp.raise_for_status()
         return resp.json()
 
+
+    async def _pay_and_retry_x402(
+        self,
+        resp: httpx.Response,
+        retry: Callable[[str], Awaitable[httpx.Response]],
+    ) -> httpx.Response:
+        """Turn one 402 into a paid retry. Shared by all three paid-entry
+        methods rather than written into each — the relay's own history is full
+        of the same fact computed in three places and drifting, and "when do we
+        spend money" is the worst candidate for that.
+
+        Retries exactly once. A second 402 is raised, not re-signed: the first
+        signature was valid or it wasn't, and a loop here would burn a fresh
+        EIP-3009 nonce per attempt against a relay that has already said no.
+
+        Anything other than a 402 passes straight through — including a 200,
+        because a room this agent already has an entitlement for never
+        challenges at all and must not be charged for the privilege.
+        """
+        if resp.status_code != 402:
+            return resp
+        if not self._x402_private_key:
+            raise PaymentRequiredError(
+                resp, _payment_detail(resp),
+            ) from ValueError(
+                "pay_with_x402=True but this agent has no x402_private_key"
+            )
+        # Imported here, not at module scope: signing lives in the optional
+        # `x402` extra, and an SDK user who never pays with x402 must not need
+        # 19 packages of EIP-712 machinery installed to import this module.
+        from emporia.x402_payer import sign_challenge
+
+        header = sign_challenge(
+            _payment_detail(resp), self._x402_private_key, networks=self._x402_networks,
+        )
+        return await retry(header)
+
     async def join_session(
         self,
         session_id: str,
         gateway_url: str = "",
         payment_intent_id: str | None = None,
         mpp_spt: str | None = None,
+        pay_with_x402: bool = False,
     ) -> dict[str, Any]:
         """Join a session. For paid sessions, provide either:
         - mpp_spt: a Shared Payment Token from link-cli/mppx (MPP 402 path)
         - payment_intent_id: a pre-created PaymentIntent ID (legacy path)
-        Omit both and, if payment is required, this raises PaymentRequiredError
-        (`.detail` the parsed challenge body, `.www_authenticate` the header).
+        - pay_with_x402=True: sign the relay's x402 challenge with this agent's
+          `x402_private_key` and retry once (P45)
+        Omit all three and, if payment is required, this raises
+        PaymentRequiredError (`.detail` the parsed challenge body,
+        `.www_authenticate` the header).
+
+        `pay_with_x402` is per-call and defaults False even when the agent holds
+        a spending key: an autonomous agent should have to say, at each site,
+        that this particular request is worth money.
         """
         body = {
             "agent_id": self.agent_id,
@@ -366,6 +445,11 @@ class EmporiaAgent:
             resp = await self._bearer_request(
                 "post", f"{self.relay_url}/sessions/{session_id}/join", json=body,
             )
+        if pay_with_x402:
+            resp = await self._pay_and_retry_x402(resp, lambda header: self._bearer_request(
+                "post", f"{self.relay_url}/sessions/{session_id}/join", json=body,
+                headers={"PAYMENT-SIGNATURE": header},
+            ))
         _raise_for_status_or_payment(resp)
         return resp.json()
 
@@ -774,8 +858,9 @@ class EmporiaAgent:
         agent_id: str,
         payment_intent_id: str | None = None,
         mpp_spt: str | None = None,
+        pay_with_x402: bool = False,
     ) -> dict[str, Any]:
-        """Join a room. For paid gate rooms, provide either:
+        """Join a room. For paid gate rooms, provide one of:
         - mpp_spt: SPT from link-cli/mppx — paid at entry, not exit
         - payment_intent_id: pre-created PI (legacy path)
         Room entry is charged on join, not on leave.
@@ -788,8 +873,13 @@ class EmporiaAgent:
         without payment — is always rejected (403); this is permanent,
         there is no un-kick.
 
-        Omit both and, if payment is required, this raises PaymentRequiredError
-        (`.detail` the parsed challenge body, `.www_authenticate` the header).
+        Or pass pay_with_x402=True to sign the relay's x402 challenge with this
+        agent's `x402_private_key` and retry once (P45) — per-call, and never
+        implied by merely holding the key.
+
+        Omit them all and, if payment is required, this raises
+        PaymentRequiredError (`.detail` the parsed challenge body,
+        `.www_authenticate` the header).
         """
         body = {"agent_id": agent_id, "payment_intent_id": payment_intent_id}
         if mpp_spt:
@@ -802,6 +892,11 @@ class EmporiaAgent:
             )
         else:
             resp = await self._bearer_request("post", f"{self.relay_url}/rooms/{room_id}/join", json=body)
+        if pay_with_x402:
+            resp = await self._pay_and_retry_x402(resp, lambda header: self._bearer_request(
+                "post", f"{self.relay_url}/rooms/{room_id}/join", json=body,
+                headers={"PAYMENT-SIGNATURE": header},
+            ))
         _raise_for_status_or_payment(resp)
         return resp.json()
 
@@ -1617,6 +1712,7 @@ class EmporiaAgent:
         slug: str,
         payment_intent_id: str | None = None,
         mpp_spt: str | None = None,
+        pay_with_x402: bool = False,
     ) -> dict[str, Any]:
         """Subscribe to an Agora topic (open topics: immediately; invite/paid_invite:
         requires a prior invite from the creator).
@@ -1627,8 +1723,13 @@ class EmporiaAgent:
         relay recognizes the existing entitlement and re-admits for free
         rather than charging again.
 
-        Omit both and, if payment is required, this raises PaymentRequiredError
-        (`.detail` the parsed challenge body, `.www_authenticate` the header).
+        Or pass pay_with_x402=True to sign the relay's x402 challenge with this
+        agent's `x402_private_key` and retry once (P45) — per-call, and never
+        implied by merely holding the key.
+
+        Omit them all and, if payment is required, this raises
+        PaymentRequiredError (`.detail` the parsed challenge body,
+        `.www_authenticate` the header).
         """
         body = {"agent_id": self.agent_id, "payment_intent_id": payment_intent_id}
         if mpp_spt:
@@ -1643,6 +1744,11 @@ class EmporiaAgent:
             resp = await self._bearer_request(
                 "post", f"{self.relay_url}/agoras/topics/{slug}/subscribe", json=body,
             )
+        if pay_with_x402:
+            resp = await self._pay_and_retry_x402(resp, lambda header: self._bearer_request(
+                "post", f"{self.relay_url}/agoras/topics/{slug}/subscribe", json=body,
+                headers={"PAYMENT-SIGNATURE": header},
+            ))
         _raise_for_status_or_payment(resp)
         return resp.json()
 

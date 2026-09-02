@@ -157,6 +157,23 @@ def test_agent_profile_key_only_stripe_does_not_expose_mpp(client):
     assert "stripe_pi" in data["payment_rails"]
 
 
+# A fully configured x402 rail, as five tests across this file need it. P45 moved
+# this to the top and folded three byte-identical copies into it: the block gained
+# a fifth key (EMPORIA_X402_EXTRA_*, the EIP-712 signing domain) and four copies of
+# an env block is four chances to configure a rail four different ways.
+# The EIP-712 signing domain the fake USDC above advertises. Held as the object,
+# with the env var serialized from it, so a test that builds a client `accepted`
+# claim by hand and the relay's own requirement cannot disagree about the domain.
+_X402_EXTRA = {"name": "USDC", "version": "2"}
+_X402_ENV = {
+    "EMPORIA_X402_ENABLED": "1",
+    "EMPORIA_X402_FACILITATOR_URL": "https://facilitator.example.test",
+    "EMPORIA_X402_NETWORKS": "eip155:8453",
+    "EMPORIA_X402_ASSET_EIP155_8453": "0xUSDCFAKE",
+    "EMPORIA_X402_EXTRA_EIP155_8453": json.dumps(_X402_EXTRA),
+}
+
+
 def test_health_advertises_x402_config(client):
     """P1b-7: /health gains x402_enabled/x402_networks/x402_facilitator —
     disabled by default (matches the byte-identical-402 contract from
@@ -168,10 +185,7 @@ def test_health_advertises_x402_config(client):
     assert r_off.json()["x402_facilitator"] == ""
 
     with patch.dict(os.environ, {
-        "EMPORIA_X402_ENABLED": "1",
-        "EMPORIA_X402_FACILITATOR_URL": "https://facilitator.example.test",
-        "EMPORIA_X402_NETWORKS": "eip155:8453",
-        "EMPORIA_X402_ASSET_EIP155_8453": "0xUSDCFAKE",
+        **_X402_ENV,
     }, clear=False):
         r_on = client.get("/health")
     assert r_on.status_code == 200
@@ -238,10 +252,7 @@ def test_payment_rails_helper_pins_health_and_agent_variants_across_flag_combina
     # way to both. payment_methods is untouched either way (x402 has no MPP
     # transport underneath it, so it was never a payment_methods candidate).
     _x402_on = {
-        "EMPORIA_X402_ENABLED": "1",
-        "EMPORIA_X402_FACILITATOR_URL": "https://facilitator.example.test",
-        "EMPORIA_X402_NETWORKS": "eip155:8453",
-        "EMPORIA_X402_ASSET_EIP155_8453": "0xUSDCFAKE",
+        **_X402_ENV,
     }
     with patch("emporia.relay_server._stripe_profile_ready", return_value=False):
         with patch.dict(os.environ, {"STRIPE_SECRET_KEY": "", **_x402_on}, clear=False):
@@ -7158,7 +7169,7 @@ def test_known_rails_widens_to_include_x402():
     assert KNOWN_RAILS == frozenset({RAIL_STRIPE, RAIL_X402})
 
 
-def test_x402_config_accessors_require_all_three_before_enabling():
+def test_x402_config_accessors_require_every_condition_before_enabling():
     """P1b-3: enabled/facilitator_url/networks are lazy (re-read the env var on
     every call, not an import-time constant — see TEMPO_ENABLED's cautionary
     note in the P1b plan) and the rail is enabled only when the flag is set,
@@ -7166,7 +7177,14 @@ def test_x402_config_accessors_require_all_three_before_enabling():
     actually has an asset address set. A partially configured rail must stay
     disabled rather than half-enabling and failing later — this is why the
     flag alone, or the flag plus a facilitator with no usable network, must
-    both still read as disabled."""
+    both still read as disabled.
+
+    P45 added a fourth condition rather than a fourth accessor: "usable" now
+    means asset *and*, on a family that signs with EIP-712, a configured
+    signing domain (`_x402_network_parts()`). Both halves live in one predicate
+    that `_x402_enabled()` and `build_x402_challenge()` share, so the
+    enabled check and the `accepts` builder cannot disagree about which
+    networks count."""
     from emporia import payments
 
     with patch.dict(os.environ, {}, clear=True):
@@ -7202,8 +7220,20 @@ def test_x402_config_accessors_require_all_three_before_enabling():
     with patch.dict(os.environ, {
         "EMPORIA_X402_ENABLED": "1",
         "EMPORIA_X402_FACILITATOR_URL": "https://facilitator.example.test",
+        "EMPORIA_X402_NETWORKS": "eip155:8453",
+        "EMPORIA_X402_ASSET_EIP155_8453": "0xfake",
+        # no EMPORIA_X402_EXTRA_EIP155_8453 set
+    }, clear=False):
+        assert payments._x402_enabled() is False, \
+            "P45: an EVM network with no EIP-712 signing domain can be advertised " \
+            "but not signed — it must not count as a usable network either"
+
+    with patch.dict(os.environ, {
+        "EMPORIA_X402_ENABLED": "1",
+        "EMPORIA_X402_FACILITATOR_URL": "https://facilitator.example.test",
         "EMPORIA_X402_NETWORKS": " eip155:8453 , solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp ",
         "EMPORIA_X402_ASSET_EIP155_8453": "0xfake",
+        "EMPORIA_X402_EXTRA_EIP155_8453": '{"name": "USDC", "version": "2"}',
     }, clear=False):
         assert payments._x402_enabled() is True
         assert payments._x402_facilitator_url() == "https://facilitator.example.test"
@@ -12818,6 +12848,7 @@ def test_mcp_join_session_surfaces_x402_declined_reason(prod_client):
         "x402Version": 2, "accepted": {
             "scheme": "exact", "network": "eip155:8453", "amount": "100000000",
             "asset": "0xUSDCFAKE", "payTo": "0x" + "aa" * 20, "maxTimeoutSeconds": 300,
+            "extra": _X402_EXTRA,
         }, "payload": {"sig": "0xfake"},
     }
     x402_header = base64.urlsafe_b64encode(_json.dumps(payload).encode()).decode()
@@ -12887,6 +12918,7 @@ def test_agent_sdk_join_session_surfaces_x402_declined_reason_via_payment_requir
                 "x402Version": 2, "accepted": {
                     "scheme": "exact", "network": "eip155:8453", "amount": "100000000",
                     "asset": "0xUSDCFAKE", "payTo": "0x" + "aa" * 20, "maxTimeoutSeconds": 300,
+                    "extra": _X402_EXTRA,
                 }, "payload": {"sig": "0xfake"},
             }
             x402_header = base64.urlsafe_b64encode(_json.dumps(payload).encode()).decode()
@@ -13568,10 +13600,7 @@ def test_room_join_402_offers_x402_alongside_mpp_when_configured(client):
     room_id = r.json()["room_id"]
 
     with patch.dict(os.environ, {
-        "EMPORIA_X402_ENABLED": "1",
-        "EMPORIA_X402_FACILITATOR_URL": "https://facilitator.example.test",
-        "EMPORIA_X402_NETWORKS": "eip155:8453",
-        "EMPORIA_X402_ASSET_EIP155_8453": "0xUSDCFAKE",
+        **_X402_ENV,
     }, clear=False):
         resp = client.post(f"/rooms/{room_id}/join", json={"agent_id": payer},
             headers={"x-emporia-agent-id": payer})
@@ -13593,6 +13622,9 @@ def test_room_join_402_offers_x402_alongside_mpp_when_configured(client):
         "asset": "0xUSDCFAKE",
         "payTo": "0x" + "cd" * 20,
         "maxTimeoutSeconds": 300,
+        # P45: without this the entry is well-formed and unsignable — an
+        # `exact`-EVM payer has nowhere else to read the EIP-712 domain from.
+        "extra": _X402_EXTRA,
     }]
 
     header_names = {k.lower(): k for k in resp.headers.keys()}
@@ -13634,6 +13666,7 @@ def test_x402_credential_declined_explicitly_when_x402_disabled(mock_verify, moc
     header = _x402_payment_signature_header({
         "scheme": "exact", "network": "eip155:8453", "amount": "2500000",
         "asset": "0xUSDCFAKE", "payTo": "0x" + "aa" * 20, "maxTimeoutSeconds": 300,
+        "extra": _X402_EXTRA,
     })
 
     with patch.dict(os.environ, {}, clear=False):
@@ -13679,6 +13712,7 @@ def test_x402_credential_declined_explicitly_on_session_join(mock_verify, mock_s
     header = _x402_payment_signature_header({
         "scheme": "exact", "network": "eip155:8453", "amount": "100000000",
         "asset": "0xUSDCFAKE", "payTo": "0x" + "aa" * 20, "maxTimeoutSeconds": 300,
+        "extra": _X402_EXTRA,
     })
 
     with patch.dict(os.environ, _X402_ENV, clear=False):
@@ -13725,6 +13759,7 @@ def test_x402_credential_declined_explicitly_when_creator_has_no_wallet(mock_ver
     header = _x402_payment_signature_header({
         "scheme": "exact", "network": "eip155:8453", "amount": "2500000",
         "asset": "0xUSDCFAKE", "payTo": "0x" + "aa" * 20, "maxTimeoutSeconds": 300,
+        "extra": _X402_EXTRA,
     })
 
     with patch.dict(os.environ, _X402_ENV, clear=False):
@@ -13772,6 +13807,7 @@ def test_x402_credential_declined_explicitly_for_non_usd_currency(mock_verify, m
     header = _x402_payment_signature_header({
         "scheme": "exact", "network": "eip155:8453", "amount": "2500000",
         "asset": "0xUSDCFAKE", "payTo": "0x" + "aa" * 20, "maxTimeoutSeconds": 300,
+        "extra": _X402_EXTRA,
     })
 
     with patch.dict(os.environ, _X402_ENV, clear=False):
@@ -14251,12 +14287,6 @@ def test_extract_x402_payload_parses_valid_and_rejects_malformed():
     assert decoded["accepted"] == {"network": "eip155:8453"}
 
 
-_X402_ENV = {
-    "EMPORIA_X402_ENABLED": "1",
-    "EMPORIA_X402_FACILITATOR_URL": "https://facilitator.example.test",
-    "EMPORIA_X402_NETWORKS": "eip155:8453",
-    "EMPORIA_X402_ASSET_EIP155_8453": "0xUSDCFAKE",
-}
 
 
 @patch("emporia.payments.x402_settle_payment", new_callable=AsyncMock)
@@ -14312,7 +14342,7 @@ def test_verify_x402_payment_rejects_tampered_amount(mock_verify, mock_settle, c
                 {"accepted": {
                     "scheme": "exact", "network": "eip155:8453", "amount": "1",  # should be 2500000
                     "asset": "0xUSDCFAKE", "payTo": "0x" + "aa" * 20,
-                    "maxTimeoutSeconds": 300,
+                    "maxTimeoutSeconds": 300, "extra": _X402_EXTRA,
                 }, "payload": {}},
                 creator_id=creator, amount_cents=250, currency="usd",
                 challenge_resource="emporia:room:test",
@@ -14343,7 +14373,7 @@ def test_verify_x402_payment_rejects_network_with_no_creator_wallet(mock_verify,
                 {"accepted": {
                     "scheme": "exact", "network": "eip155:8453", "amount": "2500000",
                     "asset": "0xUSDCFAKE", "payTo": "0x" + "aa" * 20,
-                    "maxTimeoutSeconds": 300,
+                    "maxTimeoutSeconds": 300, "extra": _X402_EXTRA,
                 }, "payload": {}},
                 creator_id=creator, amount_cents=250, currency="usd",
                 challenge_resource="emporia:room:test",
@@ -14373,7 +14403,7 @@ def test_verify_x402_payment_rejects_when_facilitator_says_invalid(mock_verify, 
                 {"accepted": {
                     "scheme": "exact", "network": "eip155:8453", "amount": "2500000",
                     "asset": "0xUSDCFAKE", "payTo": "0x" + "aa" * 20,
-                    "maxTimeoutSeconds": 300,
+                    "maxTimeoutSeconds": 300, "extra": _X402_EXTRA,
                 }, "payload": {}},
                 creator_id=creator, amount_cents=250, currency="usd",
                 challenge_resource="emporia:room:test",
@@ -14405,7 +14435,7 @@ def test_verify_x402_payment_rejects_when_settlement_fails(mock_verify, mock_set
                 {"accepted": {
                     "scheme": "exact", "network": "eip155:8453", "amount": "2500000",
                     "asset": "0xUSDCFAKE", "payTo": "0x" + "aa" * 20,
-                    "maxTimeoutSeconds": 300,
+                    "maxTimeoutSeconds": 300, "extra": _X402_EXTRA,
                 }, "payload": {}},
                 creator_id=creator, amount_cents=250, currency="usd",
                 challenge_resource="emporia:room:test",
@@ -14435,7 +14465,7 @@ def test_verify_x402_payment_happy_path_returns_payment_ref(mock_verify, mock_se
             {"accepted": {
                 "scheme": "exact", "network": "eip155:8453", "amount": "2500000",
                 "asset": "0xUSDCFAKE", "payTo": "0x" + "aa" * 20,
-                "maxTimeoutSeconds": 300,
+                "maxTimeoutSeconds": 300, "extra": _X402_EXTRA,
             }, "payload": {}},
             creator_id=creator, amount_cents=250, currency="usd",
             challenge_resource="emporia:room:test",
@@ -14490,6 +14520,7 @@ async def test_x402_verify_payment_posts_spec_shape_to_facilitator():
     requirements = {
         "scheme": "exact", "network": "eip155:8453", "amount": "2500000",
         "asset": "0xUSDCFAKE", "payTo": "0x" + "aa" * 20, "maxTimeoutSeconds": 300,
+        "extra": _X402_EXTRA,
     }
 
     with patch.dict(os.environ, {"EMPORIA_X402_FACILITATOR_URL": "https://fac.example.test/"}):
@@ -14522,6 +14553,7 @@ async def test_x402_settle_payment_posts_spec_shape_to_facilitator():
     requirements = {
         "scheme": "exact", "network": "eip155:8453", "amount": "2500000",
         "asset": "0xUSDCFAKE", "payTo": "0x" + "aa" * 20, "maxTimeoutSeconds": 300,
+        "extra": _X402_EXTRA,
     }
 
     with patch.dict(os.environ, {"EMPORIA_X402_FACILITATOR_URL": "https://fac.example.test"}):
@@ -14579,7 +14611,7 @@ async def test_x402_verify_payment_facilitator_error_surfaces_as_402(client):
                     {"accepted": {
                         "scheme": "exact", "network": "eip155:8453", "amount": "2500000",
                         "asset": "0xUSDCFAKE", "payTo": "0x" + "aa" * 20,
-                        "maxTimeoutSeconds": 300,
+                        "maxTimeoutSeconds": 300, "extra": _X402_EXTRA,
                     }, "payload": {}},
                     creator_id=creator, amount_cents=250, currency="usd",
                     challenge_resource="emporia:room:test",
@@ -14597,10 +14629,16 @@ async def test_verify_x402_payment_forwards_relay_computed_requirements_not_clie
     on every field x402_requirement() defines — but a success case can't
     distinguish "relay-computed object sent" from "client's accepted
     object sent verbatim" by content alone once every checked field
-    matches. Give the client's `accepted` an extra key outside
+    matches. Give the client's `accepted` a key outside
     x402_requirement()'s schema and confirm it never reaches the wire —
     that only happens if the relay-computed `expected` object was sent,
-    not the client's."""
+    not the client's.
+
+    P45 note: that spare key used to be `extra` itself, which was outside the
+    schema when this test was written. It is inside it now (it carries the
+    EIP-712 signing domain), so the probe moved to a key that is still outside
+    — and the relay's own `extra` is asserted to be present and equal to what
+    config says, which is a second, stronger version of the same property."""
     from emporia.relay_server import _verify_x402_payment, AGENT_REGISTRY
 
     creator = "p1brr4_forward_creator"
@@ -14610,7 +14648,8 @@ async def test_verify_x402_payment_forwards_relay_computed_requirements_not_clie
     accepted = {
         "scheme": "exact", "network": "eip155:8453", "amount": "2500000",
         "asset": "0xUSDCFAKE", "payTo": "0x" + "aa" * 20, "maxTimeoutSeconds": 300,
-        "extra": {"attacker_note": "not part of x402_requirement()'s schema"},
+        "extra": _X402_EXTRA,
+        "attackerNote": "not part of x402_requirement()'s schema",
     }
 
     with patch.dict(os.environ, _X402_ENV, clear=False):
@@ -14632,13 +14671,14 @@ async def test_verify_x402_payment_forwards_relay_computed_requirements_not_clie
     assert mock_post.call_count == 2, "expected one /verify call and one /settle call"
     for call in mock_post.call_args_list:
         requirements = call.kwargs["json"]["paymentRequirements"]
-        assert "extra" not in requirements, (
+        assert "attackerNote" not in requirements, (
             "the facilitator must receive the relay's own computed requirement, "
             "not the client's accepted object forwarded verbatim"
         )
         assert requirements == {
             "scheme": "exact", "network": "eip155:8453", "amount": "2500000",
             "asset": "0xUSDCFAKE", "payTo": "0x" + "aa" * 20, "maxTimeoutSeconds": 300,
+            "extra": _X402_EXTRA,
         }
 
 
@@ -14702,6 +14742,7 @@ def test_room_join_via_x402_credential_persists_rail_x402(mock_verify, mock_sett
     header = _x402_payment_signature_header({
         "scheme": "exact", "network": "eip155:8453", "amount": "2500000",
         "asset": "0xUSDCFAKE", "payTo": "0x" + "bb" * 20, "maxTimeoutSeconds": 300,
+        "extra": _X402_EXTRA,
     })
 
     with patch.dict(os.environ, _X402_ENV, clear=False):
@@ -14753,6 +14794,7 @@ def test_x402_room_join_settlement_is_non_custodial_direct_no_fee(mock_verify, m
     header = _x402_payment_signature_header({
         "scheme": "exact", "network": "eip155:8453", "amount": "4000000",
         "asset": "0xUSDCFAKE", "payTo": "0x" + "dd" * 20, "maxTimeoutSeconds": 300,
+        "extra": _X402_EXTRA,
     })
 
     with patch.dict(os.environ, _X402_ENV, clear=False):
@@ -23460,3 +23502,844 @@ def test_both_client_verifiers_surface_the_relay_verification_scope():
             f"{module}: {flags} result dicts report the relay's verdict but only "
             f"{scopes} report the scope it applies to"
         )
+
+
+# ============================================================================
+# P45 — the x402 lane gets a payer
+#
+# P1b built the whole seller half of x402: a 402 challenge, a resource-binding
+# assertion, facilitator /verify + /settle. P1brr then audited that wire shape
+# against the v2 spec and recorded two things as *known unknowns* rather than
+# claiming them covered: the optional `extra` field is never sent, and no real
+# facilitator has ever been contacted. Both are discharged here.
+#
+# The first turned out not to be optional in practice. `extra` carries the
+# EIP-712 domain (`name`, `version`) of the token contract, and an `exact`-EVM
+# payer cannot construct the signing domain without it — so a challenge that
+# omits `extra` is a challenge nothing can pay. That is F4: the rail had no
+# payer partly because the challenge did not contain enough information to
+# build one. `_x402_extra_for()` + `x402_requirement(extra=...)` fix it, and
+# `x402_payer.py` is the payer that consumes it.
+#
+# Values below are the real Base Sepolia USDC ones, read off the contract
+# during this pass (name() -> "USDC", version() -> "2", decimals() -> 6) and
+# matching the x402 v2 specification's own worked example.
+# ============================================================================
+
+_P45_USDC_84532 = "0x036CbD53842c5426634e7929541eC2318f3dCF7e"
+_P45_PAY_TO = "0x209693Bc6afc0C5328bA36FaF03C514EF312287C"
+_P45_EXTRA_ENV = "EMPORIA_X402_EXTRA_EIP155_84532"
+
+
+def test_x402_extra_env_name_matches_the_asset_env_name_transform():
+    """The `extra` lookup has to key off the CAIP-2 id the same way
+    `_x402_asset_for()` does, or an operator who configures the asset for
+    `eip155:84532` and the domain for the same network gets one of the two
+    silently ignored. Pinned as a pair, not two independent assertions, because
+    what breaks here is the two transforms drifting."""
+    from emporia.payments import _x402_asset_for, _x402_extra_for
+
+    with patch.dict(os.environ, {
+        "EMPORIA_X402_ASSET_EIP155_84532": _P45_USDC_84532,
+        _P45_EXTRA_ENV: '{"name": "USDC", "version": "2"}',
+    }):
+        assert _x402_asset_for("eip155:84532") == _P45_USDC_84532
+        assert _x402_extra_for("eip155:84532") == {"name": "USDC", "version": "2"}
+
+
+def test_x402_requirement_omits_extra_only_where_the_mechanism_allows_it():
+    """`extra` is Optional in the spec but not optional for `exact` on EVM,
+    where it carries the EIP-712 domain. So the requirement builder can't treat
+    a missing `extra` one way: for a family that needs it, absence has to become
+    an explicit `None`, which the relay's binding assertion already rejects
+    (`mismatched = [... if want is None ...]`), turning a silently un-signable
+    requirement into a named 402. For a family that doesn't, the key is omitted
+    entirely rather than sent as null."""
+    from emporia.payments import x402_requirement
+
+    evm = x402_requirement("eip155:84532", 250, _P45_USDC_84532, _P45_PAY_TO, extra=None)
+    assert evm["extra"] is None, (
+        "an EVM requirement with no EIP-712 domain must fail the binding "
+        "assertion loudly, not pass with the domain unchecked"
+    )
+
+    svm = x402_requirement("solana:EtWTRABZaYq6iMfeYKouRu166VU2xqa1", 250, "Es9v", "So11", extra=None)
+    assert "extra" not in svm, "a mechanism that needs no `extra` must omit the key, not send null"
+
+    with_domain = x402_requirement(
+        "eip155:84532", 250, _P45_USDC_84532, _P45_PAY_TO,
+        extra={"name": "USDC", "version": "2"},
+    )
+    assert with_domain["extra"] == {"name": "USDC", "version": "2"}
+
+
+def test_x402_challenge_carries_the_signing_domain(monkeypatch):
+    """F4, the defect this pass exists for: a 402 that omits `extra` cannot be
+    paid by any `exact`-EVM payer, because EIP-712 needs the token contract's
+    domain `name` and `version` and there is nowhere else in the challenge to
+    read them from. Asserted end-to-end through `build_x402_challenge()` —
+    including the base64 PAYMENT-REQUIRED header, which is the copy a real
+    client actually decodes."""
+    from emporia.payments import build_x402_challenge
+
+    monkeypatch.setenv("EMPORIA_X402_ENABLED", "1")
+    monkeypatch.setenv("EMPORIA_X402_FACILITATOR_URL", "https://fac.example.test")
+    monkeypatch.setenv("EMPORIA_X402_NETWORKS", "eip155:84532")
+    monkeypatch.setenv("EMPORIA_X402_ASSET_EIP155_84532", _P45_USDC_84532)
+    monkeypatch.setenv(_P45_EXTRA_ENV, '{"name": "USDC", "version": "2"}')
+
+    challenge = build_x402_challenge(250, "emporia:room:r1", {"eip155:84532": _P45_PAY_TO})
+    assert challenge is not None
+    entry = challenge["body"]["accepts"][0]
+    assert entry["extra"] == {"name": "USDC", "version": "2"}, (
+        "the challenge must carry the EIP-712 domain; without it a payer has no "
+        "way to build the signing domain and the rail has no reachable client"
+    )
+
+    raw = challenge["headers"]["PAYMENT-REQUIRED"]
+    decoded = json.loads(base64.urlsafe_b64decode(raw + "=" * (-len(raw) % 4)))
+    assert decoded["accepts"][0]["extra"] == {"name": "USDC", "version": "2"}
+
+
+def test_x402_malformed_extra_env_disables_the_network_rather_than_half_signing(monkeypatch):
+    """A typo'd JSON blob must not degrade to "no domain" — that would produce
+    exactly the un-signable challenge F4 is about, and silently. The network
+    drops out of `accepts` instead, which is the same failure mode an
+    unconfigured asset already has (`_x402_asset_for`'s docstring) and one a
+    client can actually see."""
+    from emporia.payments import _x402_extra_for, build_x402_challenge
+
+    monkeypatch.setenv("EMPORIA_X402_ENABLED", "1")
+    monkeypatch.setenv("EMPORIA_X402_FACILITATOR_URL", "https://fac.example.test")
+    monkeypatch.setenv("EMPORIA_X402_NETWORKS", "eip155:84532")
+    monkeypatch.setenv("EMPORIA_X402_ASSET_EIP155_84532", _P45_USDC_84532)
+    monkeypatch.setenv(_P45_EXTRA_ENV, '{"name": "USDC", "version" oops')
+
+    assert _x402_extra_for("eip155:84532") is None
+    assert build_x402_challenge(250, "emporia:room:r1", {"eip155:84532": _P45_PAY_TO}) is None, (
+        "a network whose EIP-712 domain is unparseable must be excluded from "
+        "`accepts`, not advertised with a missing domain"
+    )
+
+
+# ============================================================================
+# P45 — x402_payer.py
+#
+# These tests are the first in this repo that produce a real x402 credential.
+# Everything x402 before P45 built or asserted the *seller* half against a
+# mocked facilitator; `_x402_payment_signature_header()` above fakes a
+# credential with `"signature": "0xsig"` precisely because nothing could make a
+# genuine one.
+#
+# The offline tests below recover the signer from the signature rather than
+# comparing it to a golden hex string: a fixed expected signature would pin the
+# bytes without proving they mean anything, and would have to be regenerated
+# every time a field moved. Recovery proves the EIP-712 domain and struct are
+# the ones the token contract will actually accept.
+#
+# The interoperability half — that the public facilitator agrees — is the
+# `testnet`-marked test at the end of this section, excluded from the default
+# run. It was executed during P45 and recorded in SECURITY.md.
+# ============================================================================
+
+# A throwaway key with no funds anywhere. Fixed, not generated, so a failure is
+# reproducible; never used for anything but signing test authorizations.
+_P45_PAYER_KEY = "0x" + "11" * 32
+
+
+def _p45_requirement(**overrides):
+    """A Base Sepolia USDC requirement, in the shape build_x402_challenge()
+    now emits — real contract address, real EIP-712 domain."""
+    req = {
+        "scheme": "exact",
+        "network": "eip155:84532",
+        "amount": "2500000",
+        "asset": _P45_USDC_84532,
+        "payTo": _P45_PAY_TO,
+        "maxTimeoutSeconds": 300,
+        "extra": {"name": "USDC", "version": "2"},
+    }
+    req.update(overrides)
+    return req
+
+
+def test_payer_signature_recovers_to_the_paying_account():
+    """The load-bearing property: the signature is over EIP-3009's struct under
+    the token's own EIP-712 domain, so recovering it yields the payer's address.
+
+    The digest is rebuilt here from first principles — the literal EIP-3009 type
+    string, keccak, and hand-packed 32-byte words — rather than by calling
+    eth_account with `x402_payer`'s own type constant. That distinction is the
+    test: the self-consistent version passes happily with the struct's fields in
+    the wrong order (verified by reordering them), because both sides of the
+    comparison would move together. This version has an independent opinion
+    about what the token contract will accept.
+    """
+    from eth_account import Account
+    from eth_utils import keccak
+
+    from emporia.x402_payer import build_payment_payload, payer_address
+
+    def word(value: bytes) -> bytes:
+        return value.rjust(32, b"\x00")
+
+    # EIP-3009's canonical type string, as deployed in USDC. Written out, not
+    # derived from the module under test.
+    type_hash = keccak(text=(
+        "TransferWithAuthorization(address from,address to,uint256 value,"
+        "uint256 validAfter,uint256 validBefore,bytes32 nonce)"
+    ))
+    domain_hash = keccak(
+        keccak(text="EIP712Domain(string name,string version,uint256 chainId,address verifyingContract)")
+        + keccak(text="USDC")
+        + keccak(text="2")
+        + word((84532).to_bytes(4, "big"))
+        + word(bytes.fromhex(_P45_USDC_84532[2:]))
+    )
+
+    payload = build_payment_payload(_p45_requirement(), _P45_PAYER_KEY, now=1_700_000_000)
+    auth = payload["payload"]["authorization"]
+
+    struct_hash = keccak(
+        type_hash
+        + word(bytes.fromhex(auth["from"][2:]))
+        + word(bytes.fromhex(auth["to"][2:]))
+        + word(int(auth["value"]).to_bytes(32, "big"))
+        + word(int(auth["validAfter"]).to_bytes(32, "big"))
+        + word(int(auth["validBefore"]).to_bytes(32, "big"))
+        + bytes.fromhex(auth["nonce"][2:])
+    )
+    digest = keccak(b"\x19\x01" + domain_hash + struct_hash)
+
+    recovered = Account._recover_hash(digest, signature=payload["payload"]["signature"])
+    assert recovered == payer_address(_P45_PAYER_KEY) == auth["from"], (
+        "the signature does not recover to the payer under EIP-3009's own type "
+        "hash — the struct, its field order, or the domain is wrong"
+    )
+
+
+def test_payer_authorization_window_brackets_the_requirements_deadline():
+    """`validAfter` is backdated against clock skew and `validBefore` comes
+    from the requirement's own `maxTimeoutSeconds`, not from a constant in this
+    module — a payer that invented its own deadline would sign authorizations
+    the resource server considers already expired (too short) or would hold an
+    open claim on the payer's funds past the window the seller asked for (too
+    long)."""
+    from emporia.x402_payer import _VALID_AFTER_SKEW_SECONDS, build_payment_payload
+
+    now = 1_700_000_000
+    auth = build_payment_payload(
+        _p45_requirement(maxTimeoutSeconds=120), _P45_PAYER_KEY, now=now,
+    )["payload"]["authorization"]
+
+    assert int(auth["validAfter"]) == now - _VALID_AFTER_SKEW_SECONDS
+    assert int(auth["validBefore"]) == now + 120
+
+
+def test_payer_refuses_a_requirement_with_no_usable_window():
+    """A zero/absent `maxTimeoutSeconds` would produce validBefore <= now — an
+    authorization that is expired the instant it is signed. Refused at signing
+    rather than sent, because the facilitator's rejection of it
+    (`invalid_exact_evm_payload_authorization_valid_before`) reads like a payer
+    clock problem and would be debugged as one."""
+    from emporia.x402_payer import X402PayerError, build_payment_payload
+
+    with pytest.raises(X402PayerError, match="no window"):
+        build_payment_payload(_p45_requirement(maxTimeoutSeconds=0), _P45_PAYER_KEY)
+
+
+def test_payer_nonce_is_fresh_per_authorization():
+    """EIP-3009 nonces are single-use at the token contract, so a payer that
+    reuses one makes its second payment unsettleable — and, worse, only
+    discovers that at /settle, after the resource server has already committed
+    to the binding assertion."""
+    from emporia.x402_payer import build_payment_payload
+
+    req = _p45_requirement()
+    nonces = {
+        build_payment_payload(req, _P45_PAYER_KEY, now=1_700_000_000)["payload"]["authorization"]["nonce"]
+        for _ in range(8)
+    }
+    assert len(nonces) == 8, "nonces must not be derived from the requirement or the clock"
+
+
+def test_payer_echoes_the_requirement_verbatim_into_accepted():
+    """`accepted` is what the resource server's binding assertion compares
+    against its own computed requirement. Rebuilding it from parts — even
+    correctly — risks normalising a field the server did not, which reads as
+    tampering and is indistinguishable from it. Pinned including a key this
+    module has no opinion about."""
+    from emporia.x402_payer import build_payment_payload
+
+    req = _p45_requirement(
+        extra={"name": "USDC", "version": "2", "someFutureKey": ["a"]},
+        # A protocol-reserved key this module has no handling for, and a
+        # made-up one. Both must survive: the resource server compares against
+        # its own object, so a key silently dropped in transit is a mismatch
+        # the payer caused and the 402 blames on the payer's claim.
+        assetTransferMethod="eip3009",
+        someUnknownTopLevelKey={"nested": 1},
+    )
+    payload = build_payment_payload(req, _P45_PAYER_KEY, now=1_700_000_000)
+    assert payload["accepted"] == req
+
+
+def test_payer_skips_requirements_it_cannot_sign():
+    """Selection is a filter, not a "take the first entry" — a challenge may
+    legitimately offer several rails at once. The domain-less entry is the
+    shape every Emporia challenge had before P45 (F4): the payer must pass over
+    it rather than sign against a domain it invented."""
+    from emporia.x402_payer import X402PayerError, select_requirement
+
+    domainless = _p45_requirement()
+    domainless.pop("extra")
+    challenge = {
+        "x402Version": 2,
+        "accepts": [
+            _p45_requirement(scheme="upto"),
+            _p45_requirement(network="solana:EtWTRABZaYq6iMfeYKouRu166VU2xqa1"),
+            domainless,
+            _p45_requirement(network="eip155:8453"),
+        ],
+    }
+    assert select_requirement(challenge)["network"] == "eip155:8453"
+
+    # ... and the payer's own network allowlist beats the relay's offer.
+    with pytest.raises(X402PayerError, match="not in this payer's allowed networks"):
+        select_requirement(challenge, networks=["eip155:84532"])
+
+    with pytest.raises(X402PayerError, match="no EIP-712 domain"):
+        select_requirement({"accepts": [domainless]})
+
+
+def test_payer_header_round_trips_through_the_relays_own_decoder():
+    """`payment_signature_header()` and `payments.extract_x402_payload()` are
+    inverse functions living in two modules, and only one of them re-pads. A
+    disagreement there surfaces as "malformed credential", which is where
+    nobody would look for a base64 padding bug."""
+    from emporia.payments import extract_x402_payload
+    from emporia.x402_payer import build_payment_payload, payment_signature_header
+
+    payload = build_payment_payload(_p45_requirement(), _P45_PAYER_KEY, now=1_700_000_000)
+    assert extract_x402_payload(payment_signature_header(payload)) == payload
+
+
+def test_payer_reads_the_challenge_out_of_either_shape():
+    """Emporia's 402 nests the PaymentRequired object under "x402" (the MPP
+    body already owns a `resource` key of a different type). A client that
+    decoded the PAYMENT-REQUIRED header instead holds the bare object. Both are
+    accepted so no call site has to know which door it came in by."""
+    from emporia.x402_payer import X402PayerError, payment_required_from
+
+    bare = {"x402Version": 2, "accepts": [_p45_requirement()]}
+    assert payment_required_from(bare) is bare
+    assert payment_required_from({"resource": "emporia:room:r1", "x402": bare}) is bare
+
+    with pytest.raises(X402PayerError, match="no x402 PaymentRequired"):
+        payment_required_from({"resource": "emporia:room:r1", "amount_cents": 250})
+
+
+@patch("emporia.payments.x402_settle_payment", new_callable=AsyncMock)
+@patch("emporia.payments.x402_verify_payment", new_callable=AsyncMock)
+def test_payer_credential_satisfies_the_relays_own_402(mock_verify, mock_settle, client):
+    """The whole point of the pass, in one test: take the relay's real 402,
+    sign it with the real payer, retry, and get in.
+
+    Every x402 round-trip test before this one hand-wrote the client's
+    `accepted` claim to match what it knew the relay would compute — so they
+    proved the assertion logic, never that a payer built from the challenge
+    alone lands on the same object. Nothing here is copied from the seller
+    side: the header comes from `sign_challenge(resp.json(), key)` and nothing
+    else. The facilitator stays mocked (that half is the testnet test's job);
+    what is unmocked is the binding assertion, which is what would fail if the
+    payer and the challenge disagreed by so much as a key."""
+    from emporia.x402_payer import sign_challenge
+
+    owner, payer = "p45_loop_owner", "p45_loop_payer"
+    _register(client, owner)
+    _register(client, payer)
+
+    pay_to = "0x" + "bb" * 20
+    wallet = client.post(f"/agents/{owner}/x402-wallet",
+        json={"network_family": "evm", "address": pay_to},
+        headers={"x-emporia-agent-id": owner})
+    assert wallet.status_code == 200, wallet.text
+
+    r = client.post("/rooms", json={
+        "name": "P45 payer loop", "creator_id": owner,
+        "room_type": "private", "gate_type": "paid", "entry_fee_cents": 250,
+    }, headers={"x-emporia-agent-id": owner})
+    assert r.status_code == 200, r.text
+    room_id = r.json()["room_id"]
+
+    env = {**_X402_ENV,
+           "EMPORIA_X402_NETWORKS": "eip155:84532",
+           "EMPORIA_X402_ASSET_EIP155_84532": _P45_USDC_84532,
+           "EMPORIA_X402_EXTRA_EIP155_84532": json.dumps(_X402_EXTRA)}
+
+    with patch.dict(os.environ, env, clear=False):
+        challenged = client.post(f"/rooms/{room_id}/join", json={"agent_id": payer},
+            headers={"x-emporia-agent-id": payer})
+        assert challenged.status_code == 402, challenged.text
+
+        header = sign_challenge(challenged.json(), _P45_PAYER_KEY)
+
+        mock_verify.return_value = {"isValid": True}
+        mock_settle.return_value = {"success": True, "transaction": "0xp45_loop_tx"}
+        joined = client.post(f"/rooms/{room_id}/join", json={"agent_id": payer},
+            headers={"x-emporia-agent-id": payer, "PAYMENT-SIGNATURE": header})
+
+    assert joined.status_code == 200, joined.text
+
+    # The facilitator was handed the relay's requirement, and the payer signed
+    # against the same one — a mismatch would have 402'd before either call.
+    sent = mock_verify.call_args.args[1]
+    assert sent["payTo"] == pay_to
+    assert sent["extra"] == _X402_EXTRA
+    assert mock_verify.call_args.args[0]["payload"]["authorization"]["to"] == pay_to
+
+    from emporia.relay_server import get_db
+    with get_db() as conn:
+        row = conn.execute(
+            "SELECT rail FROM payments WHERE payment_intent_id=?", ("0xp45_loop_tx",),
+        ).fetchone()
+    assert row is not None and row["rail"] == "x402"
+
+
+# ─── the opt-in integration tier (P45, W3) ──────────────────────────────────
+# Everything above is offline. These talk to real infrastructure and are
+# excluded from the default run and from CI by pyproject.toml's
+# `addopts = -m 'not testnet'` — a red build here would mean "the internet is
+# down", not "the code is wrong". Run them deliberately:
+#
+#     uv run pytest -m testnet
+#
+# See docs/testnet.md for the env block and the faucets. Each test skips, never
+# fails, when its configuration is absent: "skip, don't fake" is the whole
+# posture of this tier, and a test that quietly substituted a mock for the real
+# facilitator would be worse than no test, because it would look like the
+# interoperability evidence it isn't.
+
+_TESTNET_FACILITATOR = os.getenv("EMPORIA_TESTNET_FACILITATOR_URL", "").strip()
+_TESTNET_NETWORK = os.getenv("EMPORIA_TESTNET_NETWORK", "eip155:84532").strip()
+_TESTNET_ASSET = os.getenv("EMPORIA_TESTNET_ASSET", "").strip()
+_TESTNET_PAYER_KEY = os.getenv("EMPORIA_TESTNET_PAYER_KEY", "").strip()
+
+_needs_testnet_facilitator = pytest.mark.skipif(
+    not (_TESTNET_FACILITATOR and _TESTNET_ASSET),
+    reason="set EMPORIA_TESTNET_FACILITATOR_URL and EMPORIA_TESTNET_ASSET (docs/testnet.md)",
+)
+
+
+@pytest.mark.testnet
+@_needs_testnet_facilitator
+@pytest.mark.asyncio
+async def test_testnet_facilitator_accepts_a_credential_this_repo_signed():
+    """The claim P1brr explicitly refused to make: that the wire shape is not
+    merely self-consistent with the spec text but interoperable with a real
+    implementation. A live facilitator is asked to verify a credential produced
+    by `x402_payer`, through the relay's own `x402_verify_payment()` — so the
+    outbound envelope under test is the relay's, not this test's.
+
+    The signing key needs no funds. `/verify` on the `exact` mechanism checks
+    the signature, the authorization window and the requirement match; it does
+    not settle, which is why this test can run unattended and
+    `..._settles_on_chain` below cannot.
+    """
+    from emporia.payments import x402_verify_payment
+    from emporia.x402_payer import build_payment_payload
+
+    key = _TESTNET_PAYER_KEY or ("0x" + "11" * 32)
+    requirement = {
+        "scheme": "exact", "network": _TESTNET_NETWORK, "amount": "1000",
+        "asset": _TESTNET_ASSET, "payTo": _P45_PAY_TO, "maxTimeoutSeconds": 300,
+        "extra": {"name": "USDC", "version": "2"},
+    }
+    payload = build_payment_payload(requirement, key)
+
+    with patch.dict(os.environ, {"EMPORIA_X402_FACILITATOR_URL": _TESTNET_FACILITATOR}):
+        result = await x402_verify_payment(payload, requirement)
+
+    assert result.get("isValid") is True, (
+        f"the facilitator rejected a credential this repo signed: {result}"
+    )
+    from emporia.x402_payer import payer_address
+    assert result.get("payer", "").lower() == payer_address(key).lower(), (
+        "the facilitator recovered a different signer than the key that signed — "
+        "the EIP-712 domain or struct does not match what it expects"
+    )
+
+
+@pytest.mark.testnet
+@_needs_testnet_facilitator
+@pytest.mark.asyncio
+async def test_testnet_facilitator_rejects_a_tampered_credential():
+    """The control for the test above. `isValid: true` only means something if
+    `isValid: false` is reachable — a facilitator that rubber-stamped every
+    payload would pass the previous test with a signature over anything. Raise
+    the authorized value after signing, the way a payer editing the wire would,
+    and the same facilitator must refuse it."""
+    from emporia.payments import x402_verify_payment
+    from emporia.x402_payer import build_payment_payload
+
+    key = _TESTNET_PAYER_KEY or ("0x" + "11" * 32)
+    requirement = {
+        "scheme": "exact", "network": _TESTNET_NETWORK, "amount": "1000",
+        "asset": _TESTNET_ASSET, "payTo": _P45_PAY_TO, "maxTimeoutSeconds": 300,
+        "extra": {"name": "USDC", "version": "2"},
+    }
+    payload = build_payment_payload(requirement, key)
+    payload["payload"]["authorization"]["value"] = "999999999"
+
+    with patch.dict(os.environ, {"EMPORIA_X402_FACILITATOR_URL": _TESTNET_FACILITATOR}):
+        result = await x402_verify_payment(payload, requirement)
+
+    assert result.get("isValid") is False, (
+        "a credential whose authorized value was raised after signing was accepted"
+    )
+
+
+@pytest.mark.testnet
+@pytest.mark.skipif(
+    not (_TESTNET_FACILITATOR and _TESTNET_ASSET and _TESTNET_PAYER_KEY),
+    reason="settlement moves real testnet funds: set EMPORIA_TESTNET_PAYER_KEY to a "
+           "funded key as well (docs/testnet.md)",
+)
+def test_testnet_paid_room_join_settles_on_chain(client, monkeypatch):
+    """The full lane, unmocked: the relay issues a 402, `x402_payer` signs it,
+    the retry is verified and settled by a live facilitator, and USDC moves on
+    Base Sepolia. Asserts the entitlement, the rail-tagged `payments` row and
+    the settlement — a 200 alone would also be returned by a relay that skipped
+    payment entirely.
+
+    Needs a funded key, so it is gated separately from the two above: an
+    unfunded run would fail at /settle for a reason that has nothing to do with
+    this repo.
+    """
+    from emporia.x402_payer import payer_address, sign_challenge
+
+    owner, payer = "p45_testnet_owner", "p45_testnet_payer"
+    _register(client, owner)
+    _register(client, payer)
+
+    # The creator is paid at the payer's own address — this test spends real
+    # testnet USDC and immediately returns it, rather than leaking it to a
+    # third-party address every run.
+    pay_to = payer_address(_TESTNET_PAYER_KEY)
+    wallet = client.post(f"/agents/{owner}/x402-wallet",
+        json={"network_family": "evm", "address": pay_to},
+        headers={"x-emporia-agent-id": owner})
+    assert wallet.status_code == 200, wallet.text
+
+    r = client.post("/rooms", json={
+        "name": "P45 testnet room", "creator_id": owner,
+        "room_type": "private", "gate_type": "paid", "entry_fee_cents": 1,
+    }, headers={"x-emporia-agent-id": owner})
+    assert r.status_code == 200, r.text
+    room_id = r.json()["room_id"]
+
+    net_env = re.sub(r"[:-]", "_", _TESTNET_NETWORK.upper())
+    monkeypatch.setenv("EMPORIA_X402_ENABLED", "1")
+    monkeypatch.setenv("EMPORIA_X402_FACILITATOR_URL", _TESTNET_FACILITATOR)
+    monkeypatch.setenv("EMPORIA_X402_NETWORKS", _TESTNET_NETWORK)
+    monkeypatch.setenv(f"EMPORIA_X402_ASSET_{net_env}", _TESTNET_ASSET)
+    monkeypatch.setenv(f"EMPORIA_X402_EXTRA_{net_env}", '{"name": "USDC", "version": "2"}')
+
+    challenged = client.post(f"/rooms/{room_id}/join", json={"agent_id": payer},
+        headers={"x-emporia-agent-id": payer})
+    assert challenged.status_code == 402, challenged.text
+
+    header = sign_challenge(challenged.json(), _TESTNET_PAYER_KEY)
+    joined = client.post(f"/rooms/{room_id}/join", json={"agent_id": payer},
+        headers={"x-emporia-agent-id": payer, "PAYMENT-SIGNATURE": header})
+    assert joined.status_code == 200, joined.text
+
+    from emporia.entitlements import has_access
+    assert has_access("room", room_id, payer), "settlement succeeded but granted no access"
+
+    from emporia.relay_server import get_db
+    with get_db() as conn:
+        row = conn.execute(
+            "SELECT rail, payment_intent_id FROM payments "
+            "WHERE agent_id = ? ORDER BY rowid DESC LIMIT 1", (payer,),
+        ).fetchone()
+    assert row is not None, "no payments row for a settled on-chain payment"
+    assert row["rail"] == "x402"
+    assert row["payment_intent_id"].startswith("0x"), (
+        f"expected an on-chain transaction hash, got {row['payment_intent_id']!r}"
+    )
+
+
+# ─── the SDK's opt-in retry (P45, W2) ───────────────────────────────────────
+
+def _p45_wired_agent(agent_id: str, **kwargs):
+    """An EmporiaAgent bound to the real app over ASGI transport — the pattern
+    the P7-2 SDK tests above established."""
+    import httpx as httpx_module
+
+    from emporia.agent_sdk import EmporiaAgent
+    from emporia.identity import get_public_key_hex
+    from emporia.relay_server import app as relay_app
+
+    a = EmporiaAgent(
+        relay_url="http://testserver", agent_id=agent_id,
+        public_key_hex=get_public_key_hex(agent_id), **kwargs,
+    )
+    a._http = httpx_module.AsyncClient(
+        transport=httpx_module.ASGITransport(app=relay_app), base_url="http://testserver",
+    )
+    return a
+
+
+_P45_TESTNET_ENV = {
+    "EMPORIA_X402_ENABLED": "1",
+    "EMPORIA_X402_FACILITATOR_URL": "https://facilitator.example.test",
+    "EMPORIA_X402_NETWORKS": "eip155:84532",
+    "EMPORIA_X402_ASSET_EIP155_84532": _P45_USDC_84532,
+    "EMPORIA_X402_EXTRA_EIP155_84532": '{"name": "USDC", "version": "2"}',
+}
+
+
+@patch("emporia.payments.x402_settle_payment", new_callable=AsyncMock)
+@patch("emporia.payments.x402_verify_payment", new_callable=AsyncMock)
+def test_sdk_pays_a_room_402_with_x402_when_asked(mock_verify, mock_settle, client):
+    """The SDK closes the loop the relay opened: `join_room(...,
+    pay_with_x402=True)` takes the 402 it was given, signs it, retries, and
+    returns the joined body — the caller never sees the challenge.
+
+    Driven through a real EmporiaAgent over ASGI transport, so the retry goes
+    out as a genuine HTTP request. Its headers are captured and asserted
+    directly rather than inferred from the 200: the MPP path deliberately
+    *replaces* the Authorization header with the payment credential, and an
+    x402 retry that inherited that shape would arrive unauthenticated. That
+    would be invisible here — this fixture's relay also accepts the trusted
+    local `x-emporia-agent-id` header, so a bearer-less request can still be
+    authorized and the round trip would go green with the bug in place.
+    Asserting on the request is the only version of this that holds."""
+    import asyncio
+
+    from emporia.x402_payer import payer_address
+
+    seen: list[dict[str, str]] = []
+
+    owner = "p45_sdk_owner"
+    _register(client, owner)
+    pay_to = "0x" + "ee" * 20
+    assert client.post(f"/agents/{owner}/x402-wallet",
+        json={"network_family": "evm", "address": pay_to},
+        headers={"x-emporia-agent-id": owner}).status_code == 200
+
+    r = client.post("/rooms", json={
+        "name": "P45 SDK room", "creator_id": owner,
+        "room_type": "private", "gate_type": "paid", "entry_fee_cents": 250,
+    }, headers={"x-emporia-agent-id": owner})
+    assert r.status_code == 200, r.text
+    room_id = r.json()["room_id"]
+
+    mock_verify.return_value = {"isValid": True}
+    mock_settle.return_value = {"success": True, "transaction": "0xp45_sdk_tx"}
+
+    async def scenario():
+        payer = _p45_wired_agent("p45_sdk_payer", x402_private_key=_P45_PAYER_KEY)
+        async def _record(req):
+            if req.url.path.endswith("/join"):
+                seen.append(dict(req.headers))
+
+        payer._http.event_hooks["request"] = [_record]
+        try:
+            await payer.register()
+            return await payer.join_room(room_id, "p45_sdk_payer", pay_with_x402=True)
+        finally:
+            await payer.__aexit__()
+
+    with patch.dict(os.environ, _P45_TESTNET_ENV, clear=False):
+        joined = asyncio.run(scenario())
+
+    assert joined.get("ok") or joined.get("room_id") or joined.get("member"), joined
+
+    assert len(seen) == 2, f"expected a challenged join and exactly one paid retry, got {len(seen)}"
+    challenge_req, retry_req = seen
+    assert "payment-signature" not in challenge_req, "the first attempt must not pre-pay"
+    assert retry_req.get("payment-signature"), "the retry must carry the credential"
+    assert retry_req.get("authorization", "").startswith("Bearer "), (
+        "the x402 retry must stay authenticated — unlike MPP, the credential "
+        "travels in its own header and must not displace the bearer token"
+    )
+
+    signed_from = mock_verify.call_args.args[0]["payload"]["authorization"]["from"]
+    assert signed_from == payer_address(_P45_PAYER_KEY)
+    assert mock_verify.call_args.args[1]["payTo"] == pay_to
+
+
+@patch("emporia.payments.x402_verify_payment", new_callable=AsyncMock)
+def test_sdk_x402_retry_gives_up_after_one_attempt(mock_verify, client):
+    """A rejected credential must not be re-signed. Each attempt burns a fresh
+    EIP-3009 nonce, and a relay that refused the first one has already made its
+    decision — a loop here would spend nonces against a wall and, on a relay
+    whose refusal was transient, could settle twice. The second 402 comes back
+    to the caller as PaymentRequiredError with the challenge intact."""
+    import asyncio
+
+    from emporia.agent_sdk import PaymentRequiredError
+
+    owner = "p45_once_owner"
+    _register(client, owner)
+    assert client.post(f"/agents/{owner}/x402-wallet",
+        json={"network_family": "evm", "address": "0x" + "ee" * 20},
+        headers={"x-emporia-agent-id": owner}).status_code == 200
+    r = client.post("/rooms", json={
+        "name": "P45 once room", "creator_id": owner,
+        "room_type": "private", "gate_type": "paid", "entry_fee_cents": 250,
+    }, headers={"x-emporia-agent-id": owner})
+    room_id = r.json()["room_id"]
+
+    mock_verify.return_value = {"isValid": False, "invalidReason": "insufficient_funds"}
+    joins: list[str] = []
+
+    async def scenario():
+        payer = _p45_wired_agent("p45_once_payer", x402_private_key=_P45_PAYER_KEY)
+
+        async def _record(req):
+            if req.url.path.endswith("/join"):
+                joins.append(req.headers.get("payment-signature", ""))
+
+        payer._http.event_hooks["request"] = [_record]
+        try:
+            await payer.register()
+            with pytest.raises(PaymentRequiredError) as exc:
+                await payer.join_room(room_id, "p45_once_payer", pay_with_x402=True)
+            return exc.value
+        finally:
+            await payer.__aexit__()
+
+    with patch.dict(os.environ, _P45_TESTNET_ENV, clear=False):
+        err = asyncio.run(scenario())
+
+    assert len(joins) == 2, f"expected one unpaid attempt and one paid retry, got {len(joins)}"
+    assert joins[0] == "" and joins[1], "the credential belongs on the second attempt only"
+    assert "insufficient_funds" in str(err.detail), err.detail
+
+
+def test_sdk_does_not_spend_unless_the_call_asks(client):
+    """Holding a spending key must not be the same as consenting to spend it.
+    The same agent, the same paid room, `pay_with_x402` left at its default —
+    the 402 has to come back as PaymentRequiredError, unpaid. This is the
+    property that makes it safe to construct an agent with a funded key at
+    startup."""
+    import asyncio
+
+    from emporia.agent_sdk import PaymentRequiredError
+
+    owner = "p45_nospend_owner"
+    _register(client, owner)
+    assert client.post(f"/agents/{owner}/x402-wallet",
+        json={"network_family": "evm", "address": "0x" + "ee" * 20},
+        headers={"x-emporia-agent-id": owner}).status_code == 200
+    r = client.post("/rooms", json={
+        "name": "P45 no-spend room", "creator_id": owner,
+        "room_type": "private", "gate_type": "paid", "entry_fee_cents": 250,
+    }, headers={"x-emporia-agent-id": owner})
+    room_id = r.json()["room_id"]
+
+    async def scenario():
+        payer = _p45_wired_agent("p45_nospend_payer", x402_private_key=_P45_PAYER_KEY)
+        try:
+            await payer.register()
+            with pytest.raises(PaymentRequiredError) as exc:
+                await payer.join_room(room_id, "p45_nospend_payer")
+            return exc.value
+        finally:
+            await payer.__aexit__()
+
+    with patch.dict(os.environ, _P45_TESTNET_ENV, clear=False):
+        err = asyncio.run(scenario())
+    assert err.detail.get("x402", {}).get("accepts"), err.detail
+
+
+def test_sdk_x402_retry_respects_the_payers_own_network_allowlist(client):
+    """The relay decides what it will accept; the payer decides what it will
+    sign. An agent funded only on Base Sepolia must refuse a mainnet offer
+    rather than sign an authorization against funds it doesn't have — or, worse,
+    ones it does. The refusal surfaces as X402PayerError, not as a silent
+    fall-through to an unpaid retry."""
+    import asyncio
+
+    from emporia.x402_payer import X402PayerError
+
+    owner = "p45_allowlist_owner"
+    _register(client, owner)
+    assert client.post(f"/agents/{owner}/x402-wallet",
+        json={"network_family": "evm", "address": "0x" + "ee" * 20},
+        headers={"x-emporia-agent-id": owner}).status_code == 200
+    r = client.post("/rooms", json={
+        "name": "P45 allowlist room", "creator_id": owner,
+        "room_type": "private", "gate_type": "paid", "entry_fee_cents": 250,
+    }, headers={"x-emporia-agent-id": owner})
+    room_id = r.json()["room_id"]
+
+    async def scenario():
+        payer = _p45_wired_agent(
+            "p45_allowlist_payer",
+            x402_private_key=_P45_PAYER_KEY,
+            x402_networks=["eip155:84532"],   # testnet only
+        )
+        try:
+            await payer.register()
+            with pytest.raises(X402PayerError, match="allowed networks"):
+                await payer.join_room(room_id, "p45_allowlist_payer", pay_with_x402=True)
+        finally:
+            await payer.__aexit__()
+
+    # The relay offers mainnet; the payer is funded on testnet.
+    mainnet = {**_X402_ENV, "EMPORIA_X402_NETWORKS": "eip155:8453"}
+    with patch.dict(os.environ, mainnet, clear=False):
+        asyncio.run(scenario())
+
+
+def test_sdk_x402_retry_without_a_key_still_reports_the_challenge(client):
+    """`pay_with_x402=True` on an agent with no spending key is a caller
+    mistake, but the 402 it was answering is still real — so the error carries
+    the challenge (PaymentRequiredError, `.detail` intact) with the missing-key
+    cause chained onto it, rather than replacing a payment problem with a
+    configuration one."""
+    import asyncio
+
+    from emporia.agent_sdk import PaymentRequiredError
+
+    owner = "p45_nokey_owner"
+    _register(client, owner)
+    assert client.post(f"/agents/{owner}/x402-wallet",
+        json={"network_family": "evm", "address": "0x" + "ee" * 20},
+        headers={"x-emporia-agent-id": owner}).status_code == 200
+    r = client.post("/rooms", json={
+        "name": "P45 no-key room", "creator_id": owner,
+        "room_type": "private", "gate_type": "paid", "entry_fee_cents": 250,
+    }, headers={"x-emporia-agent-id": owner})
+    room_id = r.json()["room_id"]
+
+    async def scenario():
+        payer = _p45_wired_agent("p45_nokey_payer")
+        try:
+            await payer.register()
+            with pytest.raises(PaymentRequiredError) as exc:
+                await payer.join_room(room_id, "p45_nokey_payer", pay_with_x402=True)
+            return exc.value
+        finally:
+            await payer.__aexit__()
+
+    with patch.dict(os.environ, _P45_TESTNET_ENV, clear=False):
+        err = asyncio.run(scenario())
+    assert err.detail.get("x402", {}).get("accepts"), "the challenge must survive the error"
+    assert "no x402_private_key" in str(err.__cause__)
+
+
+def test_sdk_x402_retry_is_shared_by_all_three_paid_methods():
+    """P45: `_pay_and_retry_x402()` exists so the decision to spend money is
+    written once. A source-shape check because the failure mode is one of three
+    call sites being changed alone — the same reason P44 pinned the four
+    verifier result dicts this way."""
+    text = (_DOC_ROOT / "src/emporia/agent_sdk.py").read_text()
+    assert text.count("pay_with_x402: bool = False") == 3, \
+        "join_session, join_room and subscribe_agora_topic must each take the flag"
+    assert text.count("await self._pay_and_retry_x402(") == 3, \
+        "each paid method must route through the one shared retry, not its own copy"

@@ -2329,6 +2329,86 @@ makes them bugs is a second definition somewhere else in the tree. P34's closing
 worked here wasn't a rule but a shape: *derive the second answer from the first* — `navForHotkey`
 calls `visibleNav`, so they cannot drift — and where that isn't possible, pin the equality itself.
 
+## P45 pass — the x402 rail had a seller, a spec, 320 tests, and no payer
+
+Not an audit pass. P45 is the first of three production-readiness passes, and it discharges two
+things earlier passes recorded as owed rather than fixed.
+
+**The finding (F4): the challenge could not be paid, and nothing could have noticed.** P1b built the
+whole seller half of x402 — challenge, resource-binding assertion, facilitator `/verify` + `/settle`
+— and P1brr audited its wire shape against the v2 specification and found it correct. Both were
+right about what they checked. Neither could check the thing that mattered, because there was no
+payer: `mcp_server.py:51` records that the PTGS fork deliberately stripped EIP-191 signing and every
+`X402_*` client var, `pyproject.toml` carried no signing dependency, and all 320 x402 test
+references were seller-side against a mocked facilitator.
+
+Inside that gap sat a defect neither pass could see. The `exact` scheme on EVM authorizes payment
+with an EIP-712 signature, and an EIP-712 domain includes the token contract's own `name` and
+`version` — values readable only from the chain, which the spec therefore carries in
+`PaymentRequirements.extra`. Emporia never sent `extra`. P1brr wrote that down, accurately, as a
+*known unknown* ("the optional spec field `extra` … is never sent"), reasoning from the spec's
+"Optional" marking. It is optional to the protocol and mandatory to the mechanism: every challenge
+this relay had ever issued was well-formed, spec-conformant, and unsignable by any EVM payer.
+
+| Finding | Severity | Fix |
+|---|---|---|
+| **The 402 challenge omitted the EIP-712 signing domain, making the whole x402 rail unpayable.** Not caught by 320 tests because every one of them asserted the seller against a mock, and the mock never had to sign anything. | High (the rail did not work; latent since P1b) | `EMPORIA_X402_EXTRA_<NETWORK>` carries the `extra` object as JSON, read by `_x402_extra_for()` with the same env-name transform as the asset. An EVM network configured without it is now **excluded from `accepts`** rather than advertised unsignable — `_x402_network_parts()` is the one predicate `_x402_enabled()` and `build_x402_challenge()` share, so the enabled check and the offer builder cannot disagree about which networks count. |
+| **`_x402_network_family()` was about to be duplicated.** It lived in `relay_server.py` because wallet lookup was its only caller; deciding "does this mechanism need an EIP-712 domain" needed it in `payments.py` too. | Low (pre-emptive) | Moved to `payments.x402_network_family()`, both relay call sites updated. Two copies of "which prefix means EVM" is the drift `x402_requirement()` was factored out to prevent one pass earlier. |
+| **A missing `extra` on an EVM requirement now fails loudly instead of going unasserted.** `extra` being Optional means absence normally omits the key — but then the binding assertion would simply not check the domain. | Medium (fail-open) | `x402_requirement()` records absence as an explicit `None` on families that sign with EIP-712, which the existing `want is None` rule turns into a named 402. On families that don't, the key is omitted. |
+| **Four copies of the x402 test env block.** The block gained a fifth key this pass; four copies is four chances to configure a rail four different ways. | Low (test hygiene) | Folded into one `_X402_ENV`, with `_X402_EXTRA` held as the object and the env var serialized from it. |
+
+**The payer.** `src/emporia/x402_payer.py` — challenge in, `PAYMENT-SIGNATURE` out. EIP-712 over an
+EIP-3009 `transferWithAuthorization`, no RPC and no chain reads, because everything it needs is in
+the challenge (which is what made F4 load-bearing rather than cosmetic). It depends on
+`eth-account`, so it lives in an optional `x402` extra: the relay verifies and never signs, and the
+Docker image installs none of it. The SDK exposes it as `pay_with_x402=True` on the three paid
+methods, routed through one shared `_pay_and_retry_x402()`; the flag is per-call, so holding a
+spending key is not consent to spend it, and the retry happens exactly once — each attempt burns a
+fresh EIP-3009 nonce, and a relay that refused the first has already decided.
+
+**Interoperability, finally measured.** P1brr recorded that "no real facilitator has ever been
+contacted — these mocks prove internal consistency with the spec text, not interoperability." That
+is no longer true. Against the public facilitator at `https://x402.org/facilitator`, Base Sepolia
+(`eip155:84532`), USDC at `0x036CbD53842c5426634e7929541eC2318f3dCF7e`:
+
+| Credential | Facilitator verdict |
+|---|---|
+| Signed by `x402_payer` | `{"isValid": true, "payer": "0x19E7…ff2A"}` — recovered signer matches the signing key |
+| Authorized value raised after signing | `{"isValid": false, "invalidReason": "invalid_exact_evm_signature"}` |
+| Signed under EIP-712 domain version `"1"` instead of `"2"` | `{"isValid": false, "invalidReason": "invalid_exact_evm_signature"}` |
+
+The last two are the control. `isValid: true` is worth nothing unless `isValid: false` is reachable,
+and a facilitator that rubber-stamped every payload would have passed the first row alone. The
+token's domain values were read off the contract (`name()` → `"USDC"`, `version()` → `"2"`,
+`decimals()` → `6`) rather than copied from the spec's example — which independently confirms
+`payments._USDC_DECIMALS = 6`.
+
+**Two of this pass's own tests were vacuous, and the stash-verify caught them.** The signature test
+originally rebuilt its expected digest by calling `eth_account` with `x402_payer`'s own type
+constant: reordering `validAfter`/`validBefore` in that constant moved both sides of the comparison
+together and the test stayed green. It now builds the EIP-712 digest from first principles — the
+literal EIP-3009 type string, keccak, hand-packed 32-byte words — and recovers the signer from it.
+Separately, the "echoes the requirement verbatim" test compared dicts, which cannot see a
+key-reordering and did not need to; it now carries an unknown top-level key that a rebuild would
+drop. Both defects were reintroduced afterward and confirmed to fail.
+
+The same check found a third: the SDK round-trip test claimed to prove the paid retry stays
+authenticated, and did not. This fixture's relay also accepts the trusted local
+`x-emporia-agent-id` header, so a retry that dropped its bearer token would still be authorized and
+the test would go green with the bug in place. It now captures the outgoing request and asserts the
+headers directly.
+
+**The opt-in integration tier.** A `testnet` pytest marker with `addopts = -m 'not testnet'`, so the
+default run and CI are unchanged; `docs/testnet.md` is the runbook. Every test in it skips rather
+than fails when unconfigured — a tier that quietly substituted a mock for the real facilitator would
+be worse than no tier, because it would look like the evidence it isn't. Two of the three run
+unfunded (`/verify` moves no money); settlement is gated separately on a funded key.
+
+**Not fixed, still recorded:** x402 has no `Idempotency-Key` equivalent on `/settle`, so a relay
+crash between settlement and `record_payment()` remains a real hole (`_verify_x402_payment()`'s
+docstring). P45 makes it reachable for the first time rather than theoretical, and adds no test that
+reproduces it.
+
 ## P44 pass — a public GET that recomputed 20,000 hashes on the event loop
 
 P43 ended by measuring the dashboard's idle request load and finding it doubled. This pass took the

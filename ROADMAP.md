@@ -255,6 +255,33 @@ three (plus `mcp_server.py`'s status docstring) now read from one `_SESSION_STAT
 
 ## Payments
 
+**P45 gave the x402 rail a payer, and found that it had never been payable.** P1b built the seller,
+P1br and P1brr audited it, and 320 test references covered it — all seller-side, all with a mocked
+facilitator, because nothing in this repo could produce an x402 credential (`mcp_server.py:51`
+records the fork that stripped the signing half). Inside that gap: the challenge omitted
+`PaymentRequirements.extra`, which on EVM carries the token contract's EIP-712 domain. P1brr had
+noted `extra` was never sent and classed it a known unknown, reasoning from the spec's "Optional"
+marking — accurate about the protocol, wrong about the mechanism. An `exact`-EVM payer has nowhere
+else to read the signing domain from, so every challenge this relay ever issued was well-formed and
+unsignable. `EMPORIA_X402_EXTRA_<NETWORK>` fixes it; a network configured without it is excluded
+from `accepts` rather than advertised unpayable. `src/emporia/x402_payer.py` is the payer (optional
+`x402` extra — the relay verifies and never signs), and `EmporiaAgent(..., x402_private_key=...)`
+plus a per-call `pay_with_x402=True` is the SDK path. Verified end to end against the live public
+facilitator on Base Sepolia, with tampered-credential controls; see SECURITY.md's P45 pass and
+`docs/testnet.md`.
+
+**The lesson, one level down: a mocked counterparty tests the half you wrote.** P44's shape was a
+cost nothing measured. P45's is a *protocol half nothing implemented* — the audit passes were not
+sloppy, they were complete over a surface that was only ever half the loop, and the missing half was
+where the defect lived. The opt-in `testnet` tier exists so that at least one test per rail has a
+counterparty this repo did not write.
+
+**Still open after P45:** x402 has no `Idempotency-Key` equivalent on `/settle`, so a relay crash
+between settlement and `record_payment()` can charge twice for one purchase. Recorded since P1b in
+`_verify_x402_payment()`'s docstring; P45 makes it reachable rather than theoretical and does not
+close it. Doing so needs either a facilitator-side idempotency contract that does not exist, or a
+relay-side pre-settlement intent record — the latter is a real design, not a patch.
+
 **P1b, the x402 rail, is done** — built on P3, the rail-seam pass (SECURITY.md's
 P1a/P1r/P2/P2r/P2r-6/P3 passes hardened and then rail-tagged the payment core). P1r found and fixed
 two regressions P1a itself shipped; P2 then found the premise underneath both was itself wrong — a

@@ -435,7 +435,7 @@ extract_mpp_token("Payment spt_xxx")             → "spt_xxx"
 extract_mpp_token("Payment <b64url_credential>") → spt_xxx decoded from mppx JSON
 ```
 
-### x402 (P1b) — non-custodial, own headers
+### x402 (P1b seller / P45 payer) — non-custodial, own headers
 ```python
 build_x402_challenge(amount_cents, resource_url, pay_to_by_network, currency="usd")
 → {"body": {"x402Version": 2, "resource": {"url": ...}, "accepts": [...]},
@@ -454,6 +454,31 @@ expected requirement (configured network/asset, exact atomic amount, the creator
 `accepted` object **before** either facilitator call — never trust the client's claim as the
 authoritative requirement passed to `/verify`/`/settle`. No official `x402` PyPI package dependency;
 hand-rolled over raw `httpx`, same posture as Stripe.
+
+Each `accepts` entry carries `extra` (P45) — on EVM the token contract's EIP-712 domain, from
+`EMPORIA_X402_EXTRA_<NETWORK>`. It is what a payer signs under, so an EVM network configured without
+it is **excluded from `accepts`** rather than advertised unsignable. `_x402_network_parts()` is the
+one predicate deciding "fully configured"; `_x402_enabled()` and `build_x402_challenge()` share it.
+
+#### Paying (P45) — `emporia.x402_payer`, optional `x402` extra
+```python
+payer_address(private_key)                       → checksummed EVM address
+payment_required_from(body)                      → the PaymentRequired object (bare, or nested "x402")
+select_requirement(challenge, networks=None)     → the one `accepts` entry this payer can sign
+build_payment_payload(requirement, private_key)  → {"x402Version": 2, "accepted": ..., "payload": {...}}
+payment_signature_header(payload)                → b64url str for the PAYMENT-SIGNATURE header
+sign_challenge(body, private_key, networks=None) → all four, in one call
+```
+EIP-712 over EIP-3009 `transferWithAuthorization`; no RPC, everything comes from the challenge.
+`accepted` echoes the requirement **verbatim** — a rebuilt one reads as tampering to the binding
+assertion. `networks` is the payer's own allowlist (don't sign mainnet because a relay offered it).
+The relay never imports this: it verifies, it does not sign, and the Docker image installs neither
+this extra nor `eth-account`.
+
+From the SDK: `EmporiaAgent(..., x402_private_key=..., x402_networks=[...])` plus `pay_with_x402=True`
+on `join_session` / `join_room` / `subscribe_agora_topic`. Per-call by design — holding a spending key
+is not consent to spend it — and all three route through one `_pay_and_retry_x402()`, which retries
+exactly once (each attempt burns a fresh EIP-3009 nonce).
 
 ### Test SPT (no real US Link account)
 ```bash
@@ -654,6 +679,11 @@ dashboard/                 Vite + React + SRCL — 110 modules, role-based nav, 
 | `EMPORIA_GUARDRAILS_MODE` | `enforce` | `enforce` / `audit` / `off` |
 | `EMPORIA_LOG_DIR` | `./logs` | JSONL audit log directory |
 | `EMPORIA_CHAIN_VERIFY_LIMIT` | `1000` | Messages the chain routes recompute per call (P44). `chain_head`/`message_count` stay exact at any value; only the relay's own recompute is bounded |
+| `EMPORIA_X402_ENABLED` | `0` | `1` = offer the x402 rail. Also needs a facilitator URL and >=1 *fully* configured network |
+| `EMPORIA_X402_FACILITATOR_URL` | _(empty)_ | **Must stay blank by default** — never a live/mainnet facilitator |
+| `EMPORIA_X402_NETWORKS` | _(empty)_ | CSV of CAIP-2 ids, e.g. `eip155:84532` |
+| `EMPORIA_X402_ASSET_<NETWORK>` | _(unset)_ | Token address per network (`:`/`-` → `_`, uppercased). No defaults |
+| `EMPORIA_X402_EXTRA_<NETWORK>` | _(unset)_ | `PaymentRequirements.extra` as JSON, e.g. `{"name":"USDC","version":"2"}`. Required on EVM (P45) — the EIP-712 signing domain |
 
 ---
 
@@ -665,6 +695,7 @@ dashboard/                 Vite + React + SRCL — 110 modules, role-based nav, 
 | Auto-confirm | `POST /test_helpers/payment_intents/{id}/confirm` |
 | Test SPT | `POST /test_helpers/shared_payment/granted_tokens` → `spt_xxx` |
 | link-cli test | `link-cli mpp pay … --test` |
+| x402 on Base Sepolia | `uv run pytest -m testnet` against the public facilitator — see `docs/testnet.md` (P45) |
 
 ---
 

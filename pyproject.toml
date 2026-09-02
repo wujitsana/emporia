@@ -23,6 +23,14 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
+# P45: the x402 payer (src/emporia/x402_payer.py) needs EIP-712 signing, which
+# pulls ~19 packages. The relay only ever *verifies* x402 credentials via the
+# facilitator, so it must not carry that weight -- the Dockerfile's
+# `uv sync --frozen --no-dev` deliberately installs neither this extra nor dev.
+# CI adds `--extra x402` so the payer's tests run.
+x402 = [
+    "eth-account>=0.13.0",
+]
 dev = [
     "pytest>=8.0.0",
     "pytest-asyncio>=0.23.0",
@@ -41,6 +49,15 @@ packages = ["src/emporia"]
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
 testpaths = ["tests"]
+# P45: `testnet` marks tests that talk to real external infrastructure (the
+# public x402 facilitator, a Base Sepolia RPC, Stripe's test mode). They are
+# excluded from the default run and from CI -- they need funded keys and a
+# live network, so a red build would mean "the internet is down", not "the
+# code is wrong". Opt in with `pytest -m testnet` (see docs/testnet.md).
+addopts = "-m 'not testnet'"
+markers = [
+    "testnet: opt-in integration test against real external payment infrastructure",
+]
 
 [tool.ruff]
 line-length = 100
