@@ -54,7 +54,17 @@ escrow (`capture_method=manual`) has no x402 analogue and stays Stripe-only.
   relay verifies and never signs. From the SDK: `join_room(..., pay_with_x402=True)` on an
   `EmporiaAgent(..., x402_private_key=...)`. The flag is per-call — holding a spending key is not
   consent to spend it — and the retry happens exactly once
-- Verified against the live public facilitator on Base Sepolia during P45; see `docs/testnet.md`
+- **Settling at most once** (P48): x402's `/settle` has no `Idempotency-Key` and the spec offers no
+  equivalent, so a relay that dies between a successful settlement and `record_payment()` would
+  otherwise be charging twice — the retry signs a *fresh* authorization, which is indistinguishable
+  from a first attempt. The relay writes its own intent record before the money moves, keyed on the
+  purchase (payer `stable_id`, resource, amount) rather than on the credential, and resolves an
+  interrupted one against the chain: EIP-3009 marks an authorization's nonce spent permanently, so
+  `authorizationState` answers "was this payer charged?" without the facilitator's cooperation.
+  Configure `EMPORIA_X402_RPC_<NETWORK>` to make that resolution automatic; without it an
+  interrupted settlement is refused rather than repeated, which is loud but never wrong
+- Verified against the live public facilitator on Base Sepolia during P45; the chain reads against
+  Base Sepolia during P48. See `docs/testnet.md`
 
 ## Spend control
 

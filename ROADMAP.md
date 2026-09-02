@@ -309,11 +309,30 @@ sloppy, they were complete over a surface that was only ever half the loop, and 
 where the defect lived. The opt-in `testnet` tier exists so that at least one test per rail has a
 counterparty this repo did not write.
 
-**Still open after P45:** x402 has no `Idempotency-Key` equivalent on `/settle`, so a relay crash
-between settlement and `record_payment()` can charge twice for one purchase. Recorded since P1b in
-`_verify_x402_payment()`'s docstring; P45 makes it reachable rather than theoretical and does not
-close it. Doing so needs either a facilitator-side idempotency contract that does not exist, or a
-relay-side pre-settlement intent record — the latter is a real design, not a patch.
+**Closed in P48 — the settlement window, and why three passes called it unclosable.** From P1b to
+P47 this entry said x402 has no `Idempotency-Key` equivalent on `/settle`, so a relay crash between
+settlement and `record_payment()` can charge twice for one purchase, and that closing it needed
+"either a facilitator-side idempotency contract that does not exist, or a relay-side pre-settlement
+intent record." The second option was the right one and the framing around it was too pessimistic:
+the relay never needed the protocol's permission. `exact` on EVM is EIP-3009, which keeps a
+permanent per-authorizer nonce map precisely so an authorization spends once — so the chain answers
+"was this payer charged?" without the facilitator's cooperation and without trusting its account of
+what it did.
+
+P48 writes an intent record before the money moves, keyed on the purchase (payer `stable_id`,
+resource, amount) rather than the credential — the retry arrives with a *fresh* authorization, which
+is why keying on the credential reproduces the exact blindness `record_payment()` already has. An
+interrupted settlement is resolved against `authorizationState`, and only retried once the recorded
+authorization is past its own `validBefore` and so can never land. `x402_authorization_used()` is
+tri-state: unknown is never rounded down to "not charged", so an unresolvable settlement on a relay
+with no `EMPORIA_X402_RPC_<NETWORK>` is refused rather than repeated. Verified against Base Sepolia
+with a negative control. See SECURITY.md's P48 pass.
+
+**Still open after P48, one window narrower:** a crash between `add_member()` and
+`entitlements.grant()` leaves a paid, joined agent with no entitlement, and the retry short-circuits
+on membership before it can grant one. No payment is lost; the expiry clock never starts and the
+intent never retires. It needs the membership write and the entitlement grant to be one transaction
+across two modules.
 
 **P1b, the x402 rail, is done** — built on P3, the rail-seam pass (SECURITY.md's
 P1a/P1r/P2/P2r/P2r-6/P3 passes hardened and then rail-tagged the payment core). P1r found and fixed

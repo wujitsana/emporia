@@ -517,6 +517,148 @@ async def x402_settle_payment(payment_payload: dict[str, Any], payment_requireme
         return resp.json()
 
 
+# ---------------------------------------------------------------------------
+# P48: reading EIP-3009 authorization state back off the chain
+#
+# x402's /settle has no Idempotency-Key and the spec offers no equivalent, so
+# a relay that crashes between a successful settlement and its own durable
+# record has, on the protocol's own terms, no way to ask "did that land?".
+# It does not need one. The `exact` scheme on EVM is EIP-3009
+# `transferWithAuthorization`, and EIP-3009 keeps a per-authorizer nonce map
+# specifically so an authorization can be spent at most once — which makes
+# the chain itself the idempotency record the protocol lacks. Two reads:
+#
+#   authorizationState(address,bytes32) -> bool   did this nonce get spent?
+#   AuthorizationUsed(address,bytes32)  (event)   ...and in which transaction?
+#
+# Both constants below are the keccak of their own signature and are pinned
+# by a test that derives them rather than restating them. Verified against
+# Base Sepolia during P48 using P45's real settlement (see SECURITY.md).
+# ---------------------------------------------------------------------------
+
+EIP3009_AUTHORIZATION_STATE_SELECTOR = "0xe94a0102"
+EIP3009_AUTHORIZATION_USED_TOPIC = (
+    "0x98de503528ee59b575ef0c0a2576a82497bfc029a5685b209e9ec333479b10a5"
+)
+
+RECONCILE_BLOCK_WINDOW = int(os.getenv("EMPORIA_X402_RECONCILE_BLOCKS", "10000") or "10000")
+
+
+def _x402_rpc_url_for(network: str) -> str | None:
+    """The JSON-RPC endpoint for a CAIP-2 network id, or None if the operator
+    hasn't configured one. Same no-built-in-defaults posture as
+    `_x402_asset_for()`, for a weaker reason: a wrong RPC endpoint isn't
+    unrecoverable money, it's a wrong answer to "was this payer charged?",
+    which is the question the whole reconciliation path exists to answer.
+    Unset means reconciliation reports "unknown" — never "not charged"; see
+    `x402_authorization_used()`'s tri-state return.
+    """
+    env_name = "EMPORIA_X402_RPC_" + re.sub(r"[:-]", "_", network.upper())
+    return os.getenv(env_name, "").strip() or None
+
+
+def _pad32_address(address: str) -> str:
+    """An address as a 32-byte ABI word / log topic (64 hex chars, no 0x)."""
+    return address.lower().removeprefix("0x").rjust(64, "0")
+
+
+def _bytes32(value: str) -> str:
+    """A bytes32 as 64 hex chars, no 0x — accepts either form."""
+    return value.lower().removeprefix("0x").rjust(64, "0")
+
+
+async def _eth_rpc(rpc_url: str, method: str, params: list[Any]) -> Any:
+    """One JSON-RPC round trip. Raises on transport failure or an RPC error
+    object; callers translate that into "unknown", never into "unspent"."""
+    async with httpx.AsyncClient(timeout=REQUEST_TIMEOUT) as client:
+        resp = await client.post(
+            rpc_url,
+            json={"jsonrpc": "2.0", "id": 1, "method": method, "params": params},
+        )
+        resp.raise_for_status()
+        body = resp.json()
+    if isinstance(body, dict) and body.get("error"):
+        raise RuntimeError(f"{method} failed: {body['error']}")
+    return body.get("result") if isinstance(body, dict) else None
+
+
+async def x402_authorization_used(
+    network: str, asset: str, authorizer: str, nonce: str,
+) -> bool | None:
+    """Has this EIP-3009 authorization already been spent?
+
+    **Tri-state on purpose.** True = spent (the payer was charged), False =
+    not spent (they were not), and None = *unknown* — no RPC configured, or
+    the call failed. Collapsing None into False is the one mistake that would
+    hand the double-charge straight back: "I couldn't reach the chain" and
+    "the money never moved" are the same value to a caller that only tests
+    truthiness, and only one of them makes it safe to settle again.
+    """
+    rpc_url = _x402_rpc_url_for(network)
+    if not rpc_url or not asset or not authorizer or not nonce:
+        return None
+    data = (
+        EIP3009_AUTHORIZATION_STATE_SELECTOR
+        + _pad32_address(authorizer)
+        + _bytes32(nonce)
+    )
+    try:
+        result = await _eth_rpc(rpc_url, "eth_call", [{"to": asset, "data": data}, "latest"])
+    except Exception:
+        return None
+    if not isinstance(result, str) or not result.startswith("0x"):
+        return None
+    try:
+        return int(result, 16) != 0
+    except ValueError:
+        return None
+
+
+async def x402_authorization_transaction(
+    network: str, asset: str, authorizer: str, nonce: str,
+) -> str | None:
+    """The transaction hash that spent this authorization, by its
+    `AuthorizationUsed(authorizer, nonce)` log, or None if it can't be found.
+
+    The search window is bounded to the last `EMPORIA_X402_RECONCILE_BLOCKS`
+    blocks (P44's rule: no unbounded work on a request path, and public RPC
+    providers reject wide `eth_getLogs` ranges anyway). Not finding the log
+    is **not** evidence the payment didn't happen — that question belongs to
+    `x402_authorization_used()`, which reads a permanent state map rather
+    than a retention-limited log index. A caller that has a True from there
+    and a None from here knows the payer was charged and simply lacks the
+    tx hash; it must not conclude the settlement never happened.
+    """
+    rpc_url = _x402_rpc_url_for(network)
+    if not rpc_url or not asset or not authorizer or not nonce:
+        return None
+    try:
+        head = await _eth_rpc(rpc_url, "eth_blockNumber", [])
+        head_block = int(head, 16)
+        from_block = max(0, head_block - max(1, RECONCILE_BLOCK_WINDOW))
+        logs = await _eth_rpc(rpc_url, "eth_getLogs", [{
+            "address": asset,
+            "fromBlock": hex(from_block),
+            # The head we just read, not "latest". Providers cap this range —
+            # Base's public RPC at 10,000 blocks — and "latest" advances between
+            # the two calls, so a window sized exactly at the cap would fail
+            # intermittently, in a code path that only ever runs while a payment
+            # is already in an uncertain state.
+            "toBlock": hex(head_block),
+            "topics": [
+                EIP3009_AUTHORIZATION_USED_TOPIC,
+                "0x" + _pad32_address(authorizer),
+                "0x" + _bytes32(nonce),
+            ],
+        }])
+    except Exception:
+        return None
+    if not isinstance(logs, list) or not logs:
+        return None
+    first = logs[0]
+    return first.get("transactionHash") if isinstance(first, dict) else None
+
+
 def extract_mpp_token(authorization_header: str | None) -> str | None:
     """Extract SPT from Authorization header per Stripe MPP spec.
 

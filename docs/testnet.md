@@ -89,6 +89,31 @@ POST /agents/{id}/x402-wallet   {"network_family": "evm", "address": "0x..."}
 
 ---
 
+## Lane 1b — the chain reads, free and unfunded (P48)
+
+Three tests read Base Sepolia directly, with no key, no gas and no money at risk. They exist because
+P48 closes x402's settlement window by asking the chain what the facilitator can't be asked: EIP-3009
+records a spent authorization permanently, so `authorizationState(authorizer, nonce)` answers "was
+this payer charged?" after a crash.
+
+```bash
+export EMPORIA_X402_RPC_EIP155_84532="https://sepolia.base.org"
+uv run pytest -m testnet -k "authorization or window" -rs
+```
+
+They assert against P45's own settlement, which is permanently on chain: its nonce reads as spent,
+an arbitrary nonce reads as unspent (the control — an answer of True for everything would look
+identical without it), and a recent `AuthorizationUsed` log from somebody else's transfer is
+recovered by authorizer and nonce alone.
+
+This is the cheapest honest integration test in the repo: a counterparty nobody here wrote, no
+funding, and it runs in about four seconds. It found two things the offline tests could not — Base's
+public RPC caps `eth_getLogs` at 10,000 blocks, so a "not found" log is a bound and never evidence a
+payment didn't happen; and `toBlock: "latest"` advances between calls, so a window sized at the cap
+failed intermittently.
+
+---
+
 ## Lane 2 — Stripe PaymentIntent (test mode)
 
 ```bash
@@ -145,11 +170,12 @@ exist since before the hackathon, on a path with no test coverage of any kind, a
 additional mocking and obvious the moment something real was asked.
 
 **Doesn't:** anything about mainnet, about facilitators other than the one configured, or about
-sustained load. It also doesn't cover the settlement-retry gap recorded in `SECURITY.md` — x402 has
-no idempotency key on `/settle`, so a relay crash between settlement and `record_payment()` is still
-a real hole and no test here reproduces it.
+sustained load. The settlement-retry gap this section used to list here is closed (P48) and
+reproduced by an offline test, not by this tier; what lane 1b adds is that the chain reads P48 relies
+on address what they claim on a live contract.
 
-**Run status, honestly:** lane 1 has been executed against the live facilitator (P45). Lanes 2 and 3
+**Run status, honestly:** lane 1 has been executed against the live facilitator (P45), and lane 1b
+against Base Sepolia (P48) — 3 passed. Lanes 2 and 3
 are written and have never been run — no Stripe test key was available in the environment where they
 were built, so they have only ever skipped. Treat their first real run as part of the work, not as a
 formality: the P46-1 URL fix is pinned offline by an asserted literal and confirmed against Stripe's

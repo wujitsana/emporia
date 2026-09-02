@@ -461,6 +461,15 @@ Each `accepts` entry carries `extra` (P45) — on EVM the token contract's EIP-7
 it is **excluded from `accepts`** rather than advertised unsignable. `_x402_network_parts()` is the
 one predicate deciding "fully configured"; `_x402_enabled()` and `build_x402_challenge()` share it.
 
+**P48 — settling at most once.** `_verify_x402_payment()` writes an `x402_settle_intents` row before
+calling `/settle`, keyed on the purchase (payer `stable_id`, resource type, resource id, amount) and
+retired by `_settle_access_payment()` once the entitlement exists. A retry for a purchase with an
+open intent is resolved, never re-settled: `payments.x402_authorization_used()` reads EIP-3009's
+`authorizationState` (tri-state — `None` means "couldn't ask" and must never be treated as "not
+charged"), and `x402_authorization_transaction()` recovers the tx hash from the `AuthorizationUsed`
+log. An unspent authorization is only retried once it is past its own `validBefore`. Both helpers
+are keyword-safe and return `None` rather than raising.
+
 #### Paying (P45) — `emporia.x402_payer`, optional `x402` extra
 ```python
 payer_address(private_key)                       → checksummed EVM address
@@ -685,6 +694,8 @@ dashboard/                 Vite + React + SRCL — 110 modules, role-based nav, 
 | `EMPORIA_X402_NETWORKS` | _(empty)_ | CSV of CAIP-2 ids, e.g. `eip155:84532` |
 | `EMPORIA_X402_ASSET_<NETWORK>` | _(unset)_ | Token address per network (`:`/`-` → `_`, uppercased). No defaults |
 | `EMPORIA_X402_EXTRA_<NETWORK>` | _(unset)_ | `PaymentRequirements.extra` as JSON, e.g. `{"name":"USDC","version":"2"}`. Required on EVM (P45) — the EIP-712 signing domain |
+| `EMPORIA_X402_RPC_<NETWORK>` | _(unset)_ | JSON-RPC endpoint per network (P48). Only used to resolve an *interrupted* settlement via EIP-3009 `authorizationState`. Unset is safe: an interrupted settlement is refused, never repeated |
+| `EMPORIA_X402_RECONCILE_BLOCKS` | `10000` | `eth_getLogs` window for recovering the transaction hash that spent an authorization (P48). Providers cap this — Base's public RPC at 10,000 — so raising it past the cap breaks the lookup rather than widening it |
 
 ---
 

@@ -13889,6 +13889,8 @@ def test_verify_x402_payment_currency_check_is_defense_in_depth():
             {"accepted": {}, "payload": {}},
             creator_id="irrelevant", amount_cents=100, currency="eur",
             challenge_resource="emporia:room:test",
+                payer_id="p48_direct_payer_1", resource_type="room",
+                resource_id="direct_1",
         ))
     assert exc_info.value.status_code == 402
     assert "currency=usd" in str(exc_info.value.detail)
@@ -13953,6 +13955,8 @@ def test_x402_challenge_output_round_trips_through_verification_without_mismatch
             {"accepted": accepted, "payload": {}},
             creator_id=creator, amount_cents=250, currency="usd",
             challenge_resource="emporia:room:test",
+                payer_id="p48_direct_payer_2", resource_type="room",
+                resource_id="direct_2",
         ))
     assert ref.reference == "0xroundtrip"
     mock_verify.assert_called_once()
@@ -14338,6 +14342,8 @@ def test_verify_x402_payment_rejects_wrong_payto_before_any_facilitator_call(moc
                 }, "payload": {}},
                 creator_id=creator, amount_cents=250, currency="usd",
                 challenge_resource="emporia:room:test",
+                payer_id="p48_direct_payer_3", resource_type="room",
+                resource_id="direct_3",
             ))
     assert exc_info.value.status_code == 402
     assert "mismatch" in str(exc_info.value.detail)
@@ -14368,6 +14374,8 @@ def test_verify_x402_payment_rejects_tampered_amount(mock_verify, mock_settle, c
                 }, "payload": {}},
                 creator_id=creator, amount_cents=250, currency="usd",
                 challenge_resource="emporia:room:test",
+                payer_id="p48_direct_payer_4", resource_type="room",
+                resource_id="direct_4",
             ))
     assert exc_info.value.status_code == 402
     mock_verify.assert_not_called()
@@ -14399,6 +14407,8 @@ def test_verify_x402_payment_rejects_network_with_no_creator_wallet(mock_verify,
                 }, "payload": {}},
                 creator_id=creator, amount_cents=250, currency="usd",
                 challenge_resource="emporia:room:test",
+                payer_id="p48_direct_payer_5", resource_type="room",
+                resource_id="direct_5",
             ))
     assert exc_info.value.status_code == 402
     mock_verify.assert_not_called()
@@ -14429,6 +14439,8 @@ def test_verify_x402_payment_rejects_when_facilitator_says_invalid(mock_verify, 
                 }, "payload": {}},
                 creator_id=creator, amount_cents=250, currency="usd",
                 challenge_resource="emporia:room:test",
+                payer_id="p48_direct_payer_6", resource_type="room",
+                resource_id="direct_6",
             ))
     assert exc_info.value.status_code == 402
     assert "insufficient_funds" in str(exc_info.value.detail)
@@ -14461,6 +14473,8 @@ def test_verify_x402_payment_rejects_when_settlement_fails(mock_verify, mock_set
                 }, "payload": {}},
                 creator_id=creator, amount_cents=250, currency="usd",
                 challenge_resource="emporia:room:test",
+                payer_id="p48_direct_payer_7", resource_type="room",
+                resource_id="direct_7",
             ))
     assert exc_info.value.status_code == 402
     assert "expired" in str(exc_info.value.detail)
@@ -14491,6 +14505,8 @@ def test_verify_x402_payment_happy_path_returns_payment_ref(mock_verify, mock_se
             }, "payload": {}},
             creator_id=creator, amount_cents=250, currency="usd",
             challenge_resource="emporia:room:test",
+                payer_id="p48_direct_payer_8", resource_type="room",
+                resource_id="direct_8",
         ))
     assert ref.rail == RAIL_X402
     assert ref.reference == "0xdeadbeef"
@@ -14637,6 +14653,8 @@ async def test_x402_verify_payment_facilitator_error_surfaces_as_402(client):
                     }, "payload": {}},
                     creator_id=creator, amount_cents=250, currency="usd",
                     challenge_resource="emporia:room:test",
+                payer_id="p48_direct_payer_9", resource_type="room",
+                resource_id="direct_9",
                 )
     assert exc_info.value.status_code == 402
     assert "x402 verification failed" in str(exc_info.value.detail)
@@ -14688,6 +14706,8 @@ async def test_verify_x402_payment_forwards_relay_computed_requirements_not_clie
                 {"accepted": accepted, "payload": {}},
                 creator_id=creator, amount_cents=250, currency="usd",
                 challenge_resource="emporia:room:test",
+                payer_id="p48_direct_payer_10", resource_type="room",
+                resource_id="direct_10",
             )
 
     assert mock_post.call_count == 2, "expected one /verify call and one /settle call"
@@ -25232,3 +25252,612 @@ def test_rename_map_classifies_every_column_in_the_schema():
     )
     stale = classified - schema
     assert not stale, f"classified columns that no longer exist in the schema: {sorted(stale)}"
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# P48 — the settlement window, closed by the chain
+#
+# _verify_x402_payment()'s docstring carried this gap from P1b to P47 and
+# concluded it couldn't be closed: "x402 has no Idempotency-Key equivalent in
+# its /settle contract". True about the protocol, and the wrong place to look.
+# The `exact` scheme on EVM is EIP-3009, which keeps a permanent per-authorizer
+# nonce map precisely so an authorization spends once — so the chain answers
+# "was this payer charged?" without the facilitator's cooperation and without
+# trusting its account of what it did.
+#
+# What the tests below have to establish, in order:
+#   1. the double charge is real and reproducible (it is: two settles, one
+#      purchase, every existing defence blind to it);
+#   2. the intent record stops it;
+#   3. "I couldn't reach the chain" never resolves to "settle again";
+#   4. the intent retires, so a legitimate re-purchase still works.
+# ═══════════════════════════════════════════════════════════════════════════
+
+_P48_ENV = {
+    "EMPORIA_X402_ENABLED": "1",
+    "EMPORIA_X402_FACILITATOR_URL": "https://facilitator.example.test",
+    "EMPORIA_X402_NETWORKS": "eip155:84532",
+    "EMPORIA_X402_ASSET_EIP155_84532": "0x036CbD53842c5426634e7929541eC2318f3dCF7e",
+    "EMPORIA_X402_EXTRA_EIP155_84532": '{"name": "USDC", "version": "2"}',
+}
+
+
+def _p48_credential(pay_to: str, amount_cents: int, *, nonce: str, valid_before: int):
+    """A payer credential for the P48 network, carrying a real-shaped
+    EIP-3009 authorization — the nonce and validBefore are what the intent
+    records and what reconciliation later asks the chain about, so unlike
+    most x402 tests in this file these cannot be placeholders."""
+    return {
+        "accepted": {
+            "scheme": "exact", "network": "eip155:84532",
+            "amount": str(amount_cents * 10_000),
+            "asset": _P48_ENV["EMPORIA_X402_ASSET_EIP155_84532"],
+            "payTo": pay_to, "maxTimeoutSeconds": 300,
+            "extra": {"name": "USDC", "version": "2"},
+        },
+        "payload": {
+            "signature": "0x" + "ab" * 65,
+            "authorization": {
+                "from": "0x" + "19" * 20, "to": pay_to,
+                "value": str(amount_cents * 10_000),
+                "validAfter": "0", "validBefore": str(valid_before), "nonce": nonce,
+            },
+        },
+    }
+
+
+async def _p48_settle(payload, creator, payer, *, resource_id, amount_cents=100):
+    from emporia.relay_server import _verify_x402_payment
+    return await _verify_x402_payment(
+        payload, creator_id=creator, amount_cents=amount_cents, currency="usd",
+        challenge_resource=f"emporia:room:{resource_id}",
+        payer_id=payer, resource_type="room", resource_id=resource_id,
+    )
+
+
+@patch("emporia.payments.x402_settle_payment", new_callable=AsyncMock)
+@patch("emporia.payments.x402_verify_payment", new_callable=AsyncMock)
+def test_one_purchase_settles_once_even_when_the_retry_signs_a_fresh_nonce(
+    mock_verify, mock_settle, client,
+):
+    """The defect, reproduced. A crash between a successful /settle and
+    record_payment() leaves the payer charged, holding nothing, and retrying —
+    and the retry signs a *fresh* authorization, because the first nonce is
+    spent. That retry is byte-for-byte a legitimate first attempt: the
+    facilitator will happily settle it, record_payment() dedupes on a
+    transaction hash it has never seen, and the chain's own nonce guard only
+    rejects a replay of the *same* authorization. Two settlements, one
+    purchase, and nothing in the pre-P48 relay able to tell.
+
+    Pinned at the level the money moves: `x402_settle_payment` is called once
+    across both attempts, and the second attempt returns the first's
+    transaction rather than a second one.
+    """
+    import asyncio
+
+    from emporia.relay_server import AGENT_REGISTRY
+    creator, payer = "p48_once_creator", "p48_once_payer"
+    _register(client, creator)
+    _register(client, payer)
+    AGENT_REGISTRY.set_x402_pay_to(creator, "evm", "0x" + "aa" * 20)
+    mock_verify.return_value = {"isValid": True}
+    mock_settle.return_value = {"success": True, "transaction": "0xfirstsettle"}
+
+    future = int(time.time()) + 300
+    with patch.dict(os.environ, _P48_ENV, clear=False):
+        first = asyncio.run(_p48_settle(
+            _p48_credential("0x" + "aa" * 20, 100, nonce="0x" + "01" * 32, valid_before=future),
+            creator, payer, resource_id="once",
+        ))
+        # The crash: record_payment() never ran. The payer retries with a
+        # genuinely new credential, exactly as a real payer would have to.
+        second = asyncio.run(_p48_settle(
+            _p48_credential("0x" + "aa" * 20, 100, nonce="0x" + "02" * 32, valid_before=future),
+            creator, payer, resource_id="once",
+        ))
+
+    assert mock_settle.call_count == 1, (
+        "the second attempt at one purchase must not reach the facilitator's "
+        f"/settle — it did, {mock_settle.call_count} times"
+    )
+    assert first.reference == second.reference == "0xfirstsettle", (
+        "the retry must resume the settled purchase, not open a second one"
+    )
+
+
+@patch("emporia.payments.x402_settle_payment", new_callable=AsyncMock)
+@patch("emporia.payments.x402_verify_payment", new_callable=AsyncMock)
+def test_an_interrupted_settlement_is_never_retried_on_an_unknown_chain_state(
+    mock_verify, mock_settle, client,
+):
+    """The tri-state that carries the whole guarantee. With no
+    EMPORIA_X402_RPC_* configured, a `settling` intent left behind by a crash
+    cannot be resolved: the relay does not know whether the payer was
+    charged. The only two answers it must never give are "settle again" and
+    "let them in free". It refuses, loudly, naming the intent.
+
+    This is the test that fails if `x402_authorization_used()`'s None is ever
+    collapsed into False — an easy and invisible change, since every caller
+    that only tests truthiness treats "couldn't ask" and "not charged" as the
+    same value, and only one of them is safe.
+    """
+    import asyncio
+
+    from emporia.relay_server import AGENT_REGISTRY
+    creator, payer = "p48_unknown_creator", "p48_unknown_payer"
+    _register(client, creator)
+    _register(client, payer)
+    AGENT_REGISTRY.set_x402_pay_to(creator, "evm", "0x" + "aa" * 20)
+    mock_verify.return_value = {"isValid": True}
+    # The settle that "crashed": it raises, so the intent is left `settling`
+    # with no transaction recorded — the exact state a killed process leaves.
+    mock_settle.side_effect = RuntimeError("connection reset")
+
+    future = int(time.time()) + 300
+    env = {k: v for k, v in _P48_ENV.items()}
+    with patch.dict(os.environ, env, clear=False):
+        os.environ.pop("EMPORIA_X402_RPC_EIP155_84532", None)
+        with pytest.raises(HTTPException) as first:
+            asyncio.run(_p48_settle(
+                _p48_credential("0x" + "aa" * 20, 100, nonce="0x" + "03" * 32,
+                                valid_before=future),
+                creator, payer, resource_id="unknown",
+            ))
+        assert first.value.status_code == 402
+
+        # The authorization is expired before the retry, deliberately. An
+        # unexpired one is refused by the in-flight interlock, which would
+        # leave this test passing for a reason that has nothing to do with the
+        # tri-state — expired is the case where the ONLY thing still standing
+        # between the payer and a second charge is None never meaning False.
+        from emporia.relay_server import DB_LOCK, get_db
+        with DB_LOCK, get_db() as conn:
+            conn.execute(
+                "UPDATE x402_settle_intents SET valid_before = ? WHERE resource_id = ?",
+                (int(time.time()) - 1, "unknown"),
+            )
+        mock_settle.side_effect = None
+        mock_settle.return_value = {"success": True, "transaction": "0xsecondsettle"}
+        with pytest.raises(HTTPException) as retry:
+            asyncio.run(_p48_settle(
+                _p48_credential("0x" + "aa" * 20, 100, nonce="0x" + "04" * 32,
+                                valid_before=future),
+                creator, payer, resource_id="unknown",
+            ))
+
+    assert retry.value.status_code == 402
+    assert "cannot be resolved" in retry.value.detail
+    assert "EMPORIA_X402_RPC" in retry.value.detail, (
+        "the refusal must tell the operator how to make this resolvable"
+    )
+    assert mock_settle.call_count == 1, (
+        "an unresolvable interrupted settlement must never be settled again"
+    )
+
+
+@patch("emporia.payments.x402_authorization_transaction", new_callable=AsyncMock)
+@patch("emporia.payments.x402_authorization_used", new_callable=AsyncMock)
+@patch("emporia.payments.x402_settle_payment", new_callable=AsyncMock)
+@patch("emporia.payments.x402_verify_payment", new_callable=AsyncMock)
+def test_an_interrupted_settlement_the_chain_says_landed_is_recovered_not_repaid(
+    mock_verify, mock_settle, mock_used, mock_tx, client,
+):
+    """The recovery path. The relay crashed after the facilitator settled;
+    the chain still holds the answer, because EIP-3009 marks the nonce spent
+    permanently. The retry reads that, recovers the transaction hash from the
+    AuthorizationUsed log, completes the purchase — and never settles again."""
+    import asyncio
+
+    from emporia.relay_server import AGENT_REGISTRY
+    creator, payer = "p48_recover_creator", "p48_recover_payer"
+    _register(client, creator)
+    _register(client, payer)
+    AGENT_REGISTRY.set_x402_pay_to(creator, "evm", "0x" + "aa" * 20)
+    mock_verify.return_value = {"isValid": True}
+    mock_settle.side_effect = RuntimeError("killed mid-settle")
+
+    future = int(time.time()) + 300
+    with patch.dict(os.environ, _P48_ENV, clear=False):
+        with pytest.raises(HTTPException):
+            asyncio.run(_p48_settle(
+                _p48_credential("0x" + "aa" * 20, 100, nonce="0x" + "05" * 32,
+                                valid_before=future),
+                creator, payer, resource_id="recover",
+            ))
+        mock_used.return_value = True
+        mock_tx.return_value = "0xrecoveredfromchain"
+        mock_settle.side_effect = None
+        mock_settle.return_value = {"success": True, "transaction": "0xshouldnothappen"}
+        ref = asyncio.run(_p48_settle(
+            _p48_credential("0x" + "aa" * 20, 100, nonce="0x" + "06" * 32,
+                            valid_before=future),
+            creator, payer, resource_id="recover",
+        ))
+
+    assert ref.reference == "0xrecoveredfromchain"
+    assert mock_settle.call_count == 1, "the money already moved; it must not move again"
+    used_args = mock_used.call_args.args
+    assert used_args[3] == "0x" + "05" * 32, (
+        "reconciliation must ask about the nonce the INTERRUPTED attempt used, "
+        f"not the retry's fresh one — it asked about {used_args[3]}"
+    )
+
+
+@patch("emporia.payments.x402_authorization_used", new_callable=AsyncMock)
+@patch("emporia.payments.x402_settle_payment", new_callable=AsyncMock)
+@patch("emporia.payments.x402_verify_payment", new_callable=AsyncMock)
+def test_an_unspent_authorization_is_only_retried_once_it_can_no_longer_land(
+    mock_verify, mock_settle, mock_used, client,
+):
+    """The interlock that makes the retry provably safe rather than probably
+    safe. "The chain says unspent" is not on its own a licence to settle
+    again: the interrupted /settle may still be in flight at the facilitator
+    and land a second after we ask. The EIP-3009 authorization carries its own
+    validBefore, so once that passes the old credential can never land, no
+    matter who submits it — and the race stops existing instead of narrowing.
+
+    Same chain answer, two deadlines: refused while live, allowed once expired.
+    """
+    import asyncio
+
+    from emporia.relay_server import AGENT_REGISTRY
+    creator, payer = "p48_interlock_creator", "p48_interlock_payer"
+    _register(client, creator)
+    _register(client, payer)
+    AGENT_REGISTRY.set_x402_pay_to(creator, "evm", "0x" + "aa" * 20)
+    mock_verify.return_value = {"isValid": True}
+    mock_used.return_value = False
+
+    with patch.dict(os.environ, {**_P48_ENV, "EMPORIA_X402_RPC_EIP155_84532": "https://rpc.test"},
+                    clear=False):
+        mock_settle.side_effect = RuntimeError("killed mid-settle")
+        with pytest.raises(HTTPException):
+            asyncio.run(_p48_settle(
+                _p48_credential("0x" + "aa" * 20, 100, nonce="0x" + "07" * 32,
+                                valid_before=int(time.time()) + 300),
+                creator, payer, resource_id="interlock",
+            ))
+        mock_settle.side_effect = None
+        mock_settle.return_value = {"success": True, "transaction": "0xafterexpiry"}
+
+        with pytest.raises(HTTPException) as live:
+            asyncio.run(_p48_settle(
+                _p48_credential("0x" + "aa" * 20, 100, nonce="0x" + "08" * 32,
+                                valid_before=int(time.time()) + 300),
+                creator, payer, resource_id="interlock",
+            ))
+        assert live.value.status_code == 402
+        assert "still in flight" in live.value.detail
+        assert mock_settle.call_count == 1, (
+            "an unspent but still-live authorization may yet land — settling "
+            "again here is the race this interlock exists to remove"
+        )
+
+        # Same chain answer; the only thing that changed is that the recorded
+        # authorization is now past its own deadline.
+        from emporia.relay_server import DB_LOCK, get_db
+        with DB_LOCK, get_db() as conn:
+            conn.execute(
+                "UPDATE x402_settle_intents SET valid_before = ? WHERE resource_id = ?",
+                (int(time.time()) - 1, "interlock"),
+            )
+        ref = asyncio.run(_p48_settle(
+            _p48_credential("0x" + "aa" * 20, 100, nonce="0x" + "09" * 32,
+                            valid_before=int(time.time()) + 300),
+            creator, payer, resource_id="interlock",
+        ))
+
+    assert ref.reference == "0xafterexpiry"
+    assert mock_settle.call_count == 2, (
+        "an expired, unspent authorization can never land — the payer must be "
+        "able to buy the thing they came for"
+    )
+
+
+@patch("emporia.payments.payout_winner", new_callable=AsyncMock)
+@patch("emporia.payments.x402_settle_payment", new_callable=AsyncMock)
+@patch("emporia.payments.x402_verify_payment", new_callable=AsyncMock)
+def test_the_intent_retires_when_the_entitlement_it_bought_exists(
+    mock_verify, mock_settle, mock_payout, client,
+):
+    """The intent guards an unfinished purchase, so it has to stop guarding a
+    finished one. The entitlement is the retirement trigger because it is what
+    the payment bought: while it is absent the purchase is incomplete and the
+    intent must hold; once it exists the payment path isn't entered at all.
+
+    Without retirement the bug is a slow one and points the other way — a
+    re-purchase after the first entitlement expires would collide with the
+    settled intent and be handed free access, months later.
+    """
+    from emporia.relay_server import AGENT_REGISTRY, DB_LOCK, get_db
+
+    creator, payer = "p48_retire_creator", "p48_retire_payer"
+    _register(client, creator)
+    _register(client, payer)
+    AGENT_REGISTRY.set_x402_pay_to(creator, "evm", "0x" + "aa" * 20)
+    mock_verify.return_value = {"isValid": True}
+    mock_settle.return_value = {"success": True, "transaction": "0xretire"}
+
+    with patch.dict(os.environ, _P48_ENV, clear=False):
+        r = client.post("/rooms", json={
+            "name": "P48 Retire Room", "creator_id": creator,
+            "room_type": "private", "gate_type": "paid", "entry_fee_cents": 100,
+        }, headers={"x-emporia-agent-id": creator})
+        assert r.status_code == 200, r.text
+        room_id = r.json()["room_id"]
+
+        header = _x402_payment_signature_header(
+            {"scheme": "exact", "network": "eip155:84532", "amount": "1000000",
+             "asset": _P48_ENV["EMPORIA_X402_ASSET_EIP155_84532"],
+             "payTo": "0x" + "aa" * 20, "maxTimeoutSeconds": 300,
+             "extra": {"name": "USDC", "version": "2"}},
+            {"signature": "0xsig", "authorization": {
+                "from": "0x" + "19" * 20, "nonce": "0x" + "0a" * 32,
+                "validBefore": str(int(time.time()) + 300)}},
+        )
+        join = client.post(f"/rooms/{room_id}/join", json={"agent_id": payer},
+            headers={"x-emporia-agent-id": payer, "PAYMENT-SIGNATURE": header})
+    assert join.status_code == 200, join.text
+
+    with DB_LOCK, get_db() as conn:
+        left = conn.execute(
+            "SELECT COUNT(*) AS n FROM x402_settle_intents WHERE resource_id = ?",
+            (room_id,),
+        ).fetchone()["n"]
+    assert left == 0, (
+        "a completed purchase must leave no intent behind — a stale settled "
+        "intent hands the next legitimate re-purchase free access"
+    )
+
+
+@patch("emporia.payments.payout_winner", new_callable=AsyncMock)
+@patch("emporia.payments.x402_settle_payment", new_callable=AsyncMock)
+@patch("emporia.payments.x402_verify_payment", new_callable=AsyncMock)
+def test_the_crash_window_survives_a_real_join_request_not_just_a_direct_call(
+    mock_verify, mock_settle, mock_payout, client,
+):
+    """The same guarantee, driven through POST /rooms/{id}/join instead of
+    _verify_x402_payment() directly — because the direct call proves the
+    function is correct and says nothing about whether the route reaches it
+    with the arguments that make it correct. The intent is keyed on
+    (payer, resource, amount), and all three are threaded down from the route;
+    a wrong one there is invisible to every unit test above.
+
+    The crash is real rather than simulated at the seam: record_payment()
+    raises, which is precisely the window — settled at the facilitator,
+    unrecorded here — and the payer then retries the join exactly as they
+    would have to.
+    """
+    from emporia.relay_server import AGENT_REGISTRY
+
+    creator, payer = "p48_route_creator", "p48_route_payer"
+    _register(client, creator)
+    _register(client, payer)
+    AGENT_REGISTRY.set_x402_pay_to(creator, "evm", "0x" + "aa" * 20)
+    mock_verify.return_value = {"isValid": True}
+    mock_settle.return_value = {"success": True, "transaction": "0xroutefirst"}
+
+    def _credential(nonce: str) -> str:
+        return _x402_payment_signature_header(
+            {"scheme": "exact", "network": "eip155:84532", "amount": "1000000",
+             "asset": _P48_ENV["EMPORIA_X402_ASSET_EIP155_84532"],
+             "payTo": "0x" + "aa" * 20, "maxTimeoutSeconds": 300,
+             "extra": {"name": "USDC", "version": "2"}},
+            {"signature": "0xsig", "authorization": {
+                "from": "0x" + "19" * 20, "nonce": nonce,
+                "validBefore": str(int(time.time()) + 300)}},
+        )
+
+    with patch.dict(os.environ, _P48_ENV, clear=False):
+        r = client.post("/rooms", json={
+            "name": "P48 Route Room", "creator_id": creator,
+            "room_type": "private", "gate_type": "paid", "entry_fee_cents": 100,
+        }, headers={"x-emporia-agent-id": creator})
+        assert r.status_code == 200, r.text
+        room_id = r.json()["room_id"]
+
+        with patch("emporia.relay_server.record_payment",
+                   side_effect=RuntimeError("process killed")):
+            with pytest.raises(RuntimeError):
+                client.post(f"/rooms/{room_id}/join", json={"agent_id": payer},
+                    headers={"x-emporia-agent-id": payer,
+                             "PAYMENT-SIGNATURE": _credential("0x" + "0b" * 32)})
+
+        mock_settle.return_value = {"success": True, "transaction": "0xroutesecond"}
+        retry = client.post(f"/rooms/{room_id}/join", json={"agent_id": payer},
+            headers={"x-emporia-agent-id": payer,
+                     "PAYMENT-SIGNATURE": _credential("0x" + "0c" * 32)})
+
+    assert retry.status_code == 200, retry.text
+    assert mock_settle.call_count == 1, (
+        "the retry after the crash must resume the settled purchase, not buy it "
+        f"a second time — /settle was called {mock_settle.call_count} times"
+    )
+
+    from emporia.relay_server import DB_LOCK, get_db
+    with DB_LOCK, get_db() as conn:
+        paid = conn.execute(
+            "SELECT payment_intent_id FROM payments WHERE agent_id = ? AND room_id = ?",
+            (payer, room_id),
+        ).fetchall()
+    assert [r["payment_intent_id"] for r in paid] == ["0xroutefirst"], (
+        "exactly one payment, recorded against the transaction that actually "
+        f"moved the money; got {[dict(r) for r in paid]}"
+    )
+
+
+def test_eip3009_constants_are_the_keccak_of_their_own_signatures():
+    """Two magic hex constants decide whether the relay is asking the chain
+    the question it thinks it is. A wrong selector reads some other function's
+    storage; a wrong topic matches no log ever. Derived here rather than
+    restated, so a typo in either cannot survive.
+
+    Both were also checked against Base Sepolia during P48 against P45's real
+    settlement, which is the half this pure derivation can't cover — see the
+    testnet tier below and SECURITY.md's P48 pass.
+    """
+    from eth_utils import keccak
+
+    from emporia.payments import (
+        EIP3009_AUTHORIZATION_STATE_SELECTOR, EIP3009_AUTHORIZATION_USED_TOPIC,
+    )
+    assert EIP3009_AUTHORIZATION_STATE_SELECTOR == (
+        "0x" + keccak(text="authorizationState(address,bytes32)").hex()[:8]
+    )
+    assert EIP3009_AUTHORIZATION_USED_TOPIC == (
+        "0x" + keccak(text="AuthorizationUsed(address,bytes32)").hex()
+    )
+
+
+@pytest.mark.asyncio
+async def test_chain_reads_report_unknown_rather_than_unspent_without_an_rpc(monkeypatch):
+    """The tri-state at its source. No RPC configured is not evidence of
+    anything, and neither is a failed call — both must be None, never False.
+    Asserted with `is None` rather than a falsy check, because the whole
+    distinction disappears under truthiness."""
+    from emporia.payments import x402_authorization_used
+
+    monkeypatch.delenv("EMPORIA_X402_RPC_EIP155_84532", raising=False)
+    assert await x402_authorization_used(
+        "eip155:84532", "0xasset", "0x" + "19" * 20, "0x" + "01" * 32,
+    ) is None
+
+    monkeypatch.setenv("EMPORIA_X402_RPC_EIP155_84532", "https://rpc.invalid.test")
+    import httpx as _httpx
+
+    async def _boom(*a, **k):
+        raise _httpx.ConnectError("no route to host")
+    monkeypatch.setattr("emporia.payments._eth_rpc", _boom)
+    assert await x402_authorization_used(
+        "eip155:84532", "0xasset", "0x" + "19" * 20, "0x" + "01" * 32,
+    ) is None
+
+
+@pytest.mark.asyncio
+async def test_a_rename_mid_purchase_does_not_open_a_second_intent(client):
+    """P47 × P48. The intent is keyed on the payer's stable_id, not the
+    handle, so a rename between the interrupted settlement and the retry
+    still names the same purchase. Keyed on the handle, this is a silent
+    double charge with a plausible-looking audit trail."""
+    from emporia.relay_server import AGENT_REGISTRY, _x402_intent_key
+
+    _register(client, "p48_rename_before")
+    before = _x402_intent_key(
+        payer_id="p48_rename_before", resource_type="room",
+        resource_id="r1", amount_cents=100,
+    )
+    AGENT_REGISTRY.rename("p48_rename_before", "p48_rename_after")
+    after = _x402_intent_key(
+        payer_id="p48_rename_after", resource_type="room",
+        resource_id="r1", amount_cents=100,
+    )
+    assert before == after, (
+        "a rename must not change which purchase an in-flight settlement is for"
+    )
+
+
+# ── testnet tier: the chain reads, against the chain ────────────────────────
+# Opt-in (`-m testnet`). These are pure reads — no key, no gas, no money — and
+# they run against P45's real settlement, which is permanently on Base Sepolia.
+# That makes them the cheapest honest integration test in this repo: a
+# counterparty nobody here wrote, asserting the two constants above actually
+# address what they claim on a live contract.
+
+_P48_LIVE_RPC = "https://sepolia.base.org"
+_P48_LIVE_USDC = "0x036CbD53842c5426634e7929541eC2318f3dCF7e"
+_P48_LIVE_AUTHORIZER = "0x19e7e376e7c213b7e7e7e46cc70a5dd086daff2a"
+_P48_LIVE_NONCE = "0x52cecfa23ced4a7fd49ccd317791fd61e97d2df32ea92646e220dec2517a99e6"
+_P48_LIVE_TX = "0x11748fce1223a8332fad5497aefa5b1a199d85ac6e7765a899bc6c0d1963fb57"
+
+
+@pytest.mark.testnet
+@pytest.mark.asyncio
+async def test_testnet_authorization_state_reads_the_real_chain(monkeypatch):
+    """P45's settlement spent this nonce; an arbitrary one was never spent.
+    The negative control is the point — a reconciliation that answered True
+    for everything would look identical on the positive case alone."""
+    from emporia.payments import x402_authorization_used
+
+    monkeypatch.setenv("EMPORIA_X402_RPC_EIP155_84532", _P48_LIVE_RPC)
+    assert await x402_authorization_used(
+        "eip155:84532", _P48_LIVE_USDC, _P48_LIVE_AUTHORIZER, _P48_LIVE_NONCE,
+    ) is True
+    assert await x402_authorization_used(
+        "eip155:84532", _P48_LIVE_USDC, _P48_LIVE_AUTHORIZER, "0x" + "00" * 31 + "ff",
+    ) is False
+
+
+@pytest.mark.testnet
+@pytest.mark.asyncio
+async def test_testnet_authorization_log_recovers_the_transaction_that_spent_a_nonce(
+    monkeypatch,
+):
+    """The recovery half, against the live chain and a counterparty nobody
+    here wrote: pick a real AuthorizationUsed log off Base Sepolia's USDC —
+    other people's EIP-3009 transfers, thousands per day — and assert
+    x402_authorization_transaction() finds the same transaction from nothing
+    but the authorizer and nonce the intent would have recorded.
+
+    Deliberately not P45's own settlement, which drifts out of the default
+    window a few hours after it was made and would turn this into a test that
+    passes or fails depending on the hour. Base's public RPC caps eth_getLogs
+    at 10,000 blocks — found by running this against the real endpoint — so
+    "just widen the window" is not available as a fix for that drift either.
+    """
+    from emporia.payments import (
+        EIP3009_AUTHORIZATION_USED_TOPIC, _eth_rpc, x402_authorization_transaction,
+    )
+
+    monkeypatch.setenv("EMPORIA_X402_RPC_EIP155_84532", _P48_LIVE_RPC)
+    head = int(await _eth_rpc(_P48_LIVE_RPC, "eth_blockNumber", []), 16)
+    logs = await _eth_rpc(_P48_LIVE_RPC, "eth_getLogs", [{
+        "address": _P48_LIVE_USDC,
+        "fromBlock": hex(head - 5_000), "toBlock": hex(head),
+        "topics": [EIP3009_AUTHORIZATION_USED_TOPIC],
+    }])
+    if not logs:
+        pytest.skip("no recent EIP-3009 activity on Base Sepolia USDC to read")
+
+    sample = logs[-1]
+    authorizer = "0x" + sample["topics"][1][-40:]
+    nonce = sample["topics"][2]
+    found = await x402_authorization_transaction(
+        "eip155:84532", _P48_LIVE_USDC, authorizer, nonce,
+    )
+    assert found == sample["transactionHash"], (
+        f"should recover {sample['transactionHash']} for nonce {nonce}; got {found}"
+    )
+
+
+@pytest.mark.testnet
+@pytest.mark.asyncio
+async def test_testnet_the_log_window_is_a_bound_not_an_answer(monkeypatch):
+    """The two chain reads disagree, on purpose, and the disagreement is the
+    design. `authorizationState` reads a permanent per-authorizer map, so it
+    still answers True for P45's settlement and will as long as the token
+    exists. The log lookup reads a range-limited index and answers None the
+    moment that settlement falls outside the window — which it does, a few
+    hours after it happened, and which the provider's 10,000-block cap makes
+    permanent rather than tunable.
+
+    The window is shrunk to one block here rather than waiting for real drift,
+    so the disagreement is deterministic instead of a function of what time
+    the suite runs. A caller that read "no log found" as "not paid" would
+    re-charge or refund a payment that genuinely happened; this pins the two
+    apart on a real transaction where they actually differ.
+    """
+    from emporia.payments import (
+        x402_authorization_transaction, x402_authorization_used,
+    )
+
+    monkeypatch.setenv("EMPORIA_X402_RPC_EIP155_84532", _P48_LIVE_RPC)
+    monkeypatch.setattr("emporia.payments.RECONCILE_BLOCK_WINDOW", 1)
+    assert await x402_authorization_used(
+        "eip155:84532", _P48_LIVE_USDC, _P48_LIVE_AUTHORIZER, _P48_LIVE_NONCE,
+    ) is True, (
+        f"P45's settlement ({_P48_LIVE_TX}) is on chain; the state map must "
+        "still say so, and must not depend on any search window"
+    )
+    assert await x402_authorization_transaction(
+        "eip155:84532", _P48_LIVE_USDC, _P48_LIVE_AUTHORIZER, _P48_LIVE_NONCE,
+    ) is None, "outside the window the log index reports nothing — a bound, not an answer"

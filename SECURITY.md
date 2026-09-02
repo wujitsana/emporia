@@ -2425,6 +2425,129 @@ built, so lanes 2 and 3 have only ever skipped. The URL fix is pinned offline by
 and corroborated against Stripe's routing table; nothing has yet watched a PaymentIntent actually
 confirm. `docs/testnet.md` says so in the same words rather than implying the tier is green.
 
+## P48 pass — the money path had one unclosable hole, and it was closable
+
+Three passes recorded the same gap and none closed it. `_verify_x402_payment()`'s docstring carried
+it from P1b to P47, and its last sentence explains why: *"x402 has no Idempotency-Key equivalent in
+its /settle contract to close this with."* That sentence is true. It is also the wrong sentence,
+because it makes the protocol's silence the end of the inquiry, and the relay is not limited to what
+the protocol tells it. This pass is what happened when the question changed from "does x402 give me
+an idempotency key?" to "who else knows whether this payer was charged?"
+
+### The defect
+
+`/settle` moves real money. A relay that dies between a successful settlement and its own
+`record_payment()` leaves a payer who was charged, holds no entitlement and no membership, and can
+only retry — and the retry has to sign a **fresh** authorization, because the first nonce is now
+spent on chain. That retry is, byte for byte, a legitimate first attempt. Every defence in place
+looks straight past it:
+
+- `record_payment()` dedupes on the transaction hash, and this is a transaction it has never seen;
+- EIP-3009's own nonce guard rejects a replay of the *same* authorization, and this is a different one;
+- `has_access()`'s free-rejoin short-circuit needs an entitlement that the crash is exactly what
+  prevented from existing.
+
+Two settlements, one purchase, and nothing between them. The window is narrow — `settle` →
+`record_payment` → `add_member`, two DB writes — but a deploy, an OOM kill or a container restart
+lands in it, and the failure is silent and financial. P45 made it reachable for the first time by
+shipping a payer that can actually retry; until then it was a hole nothing could fall into.
+
+### The fix
+
+An intent record, written and committed *before* the money moves — which is what "an intent" means
+everywhere else in payments, and is the thing the x402 rail alone never had, because unlike the
+Stripe branches there is no pre-created PaymentIntent to re-verify against.
+
+`x402_settle_intents` is keyed on the **purchase** — payer, resource, amount — and deliberately not
+on the credential, because the retry arrives with a different credential; keying on the credential
+would reproduce exactly the blindness `record_payment()` already has. The payer half of that key is
+P47's `stable_id`, not the handle: a rename between the interrupted settlement and the retry would
+otherwise compute a different key for the same purchase and charge again, which is precisely the
+class of bug `stable_id` was built for. A purchase whose intent is already open is never settled
+twice; it is resolved.
+
+**Resolution reads the chain, and the chain is the idempotency record the protocol lacks.** The
+`exact` scheme on EVM is EIP-3009, which maintains a permanent per-authorizer nonce map for the sole
+purpose of ensuring an authorization spends once. So `authorizationState(authorizer, nonce)` answers
+"was this payer charged?" for as long as the token contract exists — with no facilitator
+cooperation, no retention window, and, worth stating plainly, no need to trust the facilitator's own
+account of what it did. `AuthorizationUsed(authorizer, nonce)` then names the transaction that spent
+it. Both were verified against Base Sepolia during this pass, using P45's real settlement and a
+negative control; the two constants are pinned by a test that derives them from their own signatures
+rather than restating them.
+
+**The tri-state is where the guarantee actually lives.** `x402_authorization_used()` returns True,
+False, or **None for "couldn't ask"** — no RPC configured, or the call failed. Collapsing None into
+False hands the double charge straight back, and it is an invisible change: every caller that tests
+truthiness treats "the chain is unreachable" and "the money never moved" as the same value, and only
+one of them makes it safe to settle again. Without an RPC configured, an interrupted settlement is
+therefore refused with a 402 naming the intent, permanently, until an operator resolves it. That is
+a worse experience than a double charge and a strictly better outcome, and it is loud.
+
+**An unspent authorization is only retried once it can no longer land.** "The chain says unspent" is
+not on its own a licence to settle again — the interrupted `/settle` may still be in flight at the
+facilitator and land a second after we ask. The EIP-3009 authorization carries its own `validBefore`,
+so past that instant the old credential can never land no matter who submits it. Waiting for it
+costs at most `maxTimeoutSeconds` and removes the race rather than narrowing it.
+
+**Retirement.** The intent is deleted once the entitlement it bought exists, in
+`_settle_access_payment()` beside the `grant()`. Without that the bug inverts and gets slower: a
+legitimate re-purchase after the first entitlement expires would collide with the settled intent and
+be handed free access, months later.
+
+### What the tests had to establish, and one that didn't
+
+The pins run in order: the double charge reproduced (two settles, one purchase — it fails pre-fix
+with `/settle` called twice); the intent stopping it; unknown chain state never resolving to "settle
+again"; retirement. Seven defects were reintroduced one at a time to confirm each pin is
+load-bearing, including keying the intent on the handle instead of `stable_id`, reconciling against
+the retry's nonce instead of the interrupted one, and a single wrong hex digit in the selector.
+
+One pin was weak and the stash-verify is what said so. The tri-state test used an authorization that
+had not yet expired, so the in-flight interlock refused the retry before the tri-state was ever
+consulted — the test passed with the dangerous collapse in place, for a reason unrelated to what it
+claimed to prove. It now expires the recorded authorization first, which is the only state where
+None-never-meaning-False is the last thing standing between the payer and a second charge.
+
+A route-level test drives the same crash through `POST /rooms/{id}/join` rather than the function
+directly, because a direct call proves the function correct and says nothing about whether the route
+reaches it with the arguments that make it correct — the three that form the intent key are all
+threaded down from the route, and a wrong one there is invisible to every unit test.
+
+### Found by running it, not by reasoning about it
+
+The live tier caught two things the mocked tests could not. `eth_getLogs` is capped at 10,000 blocks
+on Base's public RPC, so the log lookup is a bounded search and "not found" is **not** evidence a
+payment didn't happen — which is why `authorizationState`, reading a permanent state map, is what
+decides that question and the log lookup only recovers a hash. And `toBlock: "latest"` advances
+between the block-number read and the log query, so a window sized at the provider's cap would fail
+intermittently, in a code path that only ever runs while a payment is already in an uncertain state;
+it now pins `toBlock` to the head it already read.
+
+**The recovery path, run against the chain.** An intent was left stuck in `settling` carrying P45's
+real authorizer and nonce, and `_resolve_open_x402_intent()` was asked to resolve it with nothing
+else to go on. It read `authorizationState`, found the authorization spent, recovered
+`0x11748fce…fb57` from the `AuthorizationUsed` log and marked the intent settled — a relay
+recovering a real settlement it had lost track of, from the chain alone, with no facilitator
+involved and no money moved. That is the half of this pass a mock cannot assert, for the same reason
+P45 built the testnet tier in the first place.
+
+A third correction was to a claim of mine, not to the code: a test docstring asserted P45's
+settlement was "months old and outside the search window." It was about 3,900 blocks back and well
+inside it, so the test asserted the opposite of what the chain said. Rewritten to shrink the window
+deterministically instead of depending on what hour the suite runs.
+
+**Still open, and now genuinely narrow.** One window survives this pass: a crash between
+`add_member()` and `entitlements.grant()` leaves a paid, joined agent holding no entitlement, and
+the retry hits `join_room()`'s `already_member` short-circuit (`relay_server.py:7803`) and returns
+before the payment path can grant one. Two consequences, neither of them a lost payment — the intent
+covers the money. The entitlement's expiry clock never starts, so the access is effectively
+unbounded; and the intent itself never retires, because retirement hangs off the grant that never
+ran. The stale intent is not a second charge (it is `settled`, so it replays the recorded
+transaction), but it means a much later rejoin after leaving the room is resolved by a months-old
+record instead of a fresh purchase. Closing this means making the membership write and the
+entitlement grant one transaction across two modules, which is a refactor rather than a patch.
+
 ## P45 pass — the x402 rail had a seller, a spec, 320 tests, and no payer
 
 Not an audit pass. P45 is the first of three production-readiness passes, and it discharges two
@@ -2519,10 +2642,10 @@ than fails when unconfigured — a tier that quietly substituted a mock for the 
 be worse than no tier, because it would look like the evidence it isn't. Two of the three run
 unfunded (`/verify` moves no money); settlement is gated separately on a funded key.
 
-**Not fixed, still recorded:** x402 has no `Idempotency-Key` equivalent on `/settle`, so a relay
-crash between settlement and `record_payment()` remains a real hole (`_verify_x402_payment()`'s
-docstring). P45 makes it reachable for the first time rather than theoretical, and adds no test that
-reproduces it.
+**Not fixed, still recorded** *(closed in P48 — see that pass above)*: x402 has no
+`Idempotency-Key` equivalent on `/settle`, so a relay crash between settlement and
+`record_payment()` remains a real hole (`_verify_x402_payment()`'s docstring). P45 makes it
+reachable for the first time rather than theoretical, and adds no test that reproduces it.
 
 ## P44 pass — a public GET that recomputed 20,000 hashes on the event loop
 

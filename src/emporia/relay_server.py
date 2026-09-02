@@ -769,6 +769,30 @@ def init_db() -> None:
                 rail TEXT NOT NULL DEFAULT 'stripe'
             );
 
+            -- P48: the pre-settlement intent record that closes x402's
+            -- double-charge window. One row per (payer, resource, amount)
+            -- purchase, written and committed BEFORE the facilitator's
+            -- /settle is called and retired once the entitlement it bought
+            -- exists. See _open_x402_intent() for the state machine and why
+            -- `valid_before` is what makes an abandoned attempt safe to retry.
+            CREATE TABLE IF NOT EXISTS x402_settle_intents (
+                intent_key TEXT PRIMARY KEY,
+                payer_id TEXT NOT NULL,
+                payer_stable_id TEXT,
+                resource_type TEXT NOT NULL,
+                resource_id TEXT NOT NULL,
+                amount_cents INTEGER NOT NULL,
+                network TEXT NOT NULL DEFAULT '',
+                asset TEXT NOT NULL DEFAULT '',
+                authorizer TEXT NOT NULL DEFAULT '',
+                nonce TEXT NOT NULL DEFAULT '',
+                valid_before INTEGER NOT NULL DEFAULT 0,
+                status TEXT NOT NULL DEFAULT 'settling',
+                transaction_hash TEXT,
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL
+            );
+
         """)
         conn.execute("""
             CREATE TABLE IF NOT EXISTS agent_inbox (
@@ -1586,6 +1610,236 @@ def _x402_pay_to_by_network(creator_id: str | None) -> dict[str, str]:
     return result
 
 
+# ---------------------------------------------------------------------------
+# P48: the x402 settlement intent
+#
+# The gap this closes, recorded in _verify_x402_payment()'s docstring since
+# P1b and made reachable by P45's payer: /settle moves real money and x402
+# has no Idempotency-Key, so a relay that dies between a successful
+# settlement and record_payment() leaves a payer who was charged, holds no
+# entitlement and no membership, and whose retry signs a *fresh* nonce. Every
+# defence in place caught the wrong thing — record_payment() dedupes on the
+# transaction hash, and the chain's own nonce guard rejects a replay of the
+# same authorization. Neither sees a second, genuinely valid settlement for
+# one purchase.
+#
+# The fix is a durable record written before the money moves, which is what
+# "an intent" means everywhere else in payments. It is keyed on the purchase
+# (payer, resource, amount), not on the credential, precisely because the
+# retry arrives with a different credential.
+# ---------------------------------------------------------------------------
+
+X402_INTENT_SETTLING = "settling"
+X402_INTENT_SETTLED = "settled"
+X402_INTENT_FAILED = "failed"
+
+
+def _x402_intent_key(
+    *, payer_id: str, resource_type: str, resource_id: str, amount_cents: int
+) -> str:
+    """The identity of a purchase, stable across the credential used to pay
+    for it and across a rename mid-flight.
+
+    Keyed on the payer's `stable_id` (P47) rather than the handle: a rename
+    between the settlement and the retry would otherwise compute a different
+    key for the same purchase and re-charge — exactly the case P47 built
+    `stable_id` for. Falls back to the handle only for an agent with no
+    stable_id at all, which after P47's backfill means an agent that isn't
+    registered.
+    """
+    identity = AGENT_REGISTRY.get_stable_id(payer_id) or payer_id
+    return hashlib.sha256(
+        "|".join([
+            "emporia:x402intent:v1", identity, resource_type, resource_id, str(amount_cents),
+        ]).encode()
+    ).hexdigest()
+
+
+def _open_x402_intent(
+    *,
+    intent_key: str,
+    payer_id: str,
+    resource_type: str,
+    resource_id: str,
+    amount_cents: int,
+    network: str,
+    asset: str,
+    authorizer: str,
+    nonce: str,
+    valid_before: int,
+) -> dict[str, Any] | None:
+    """Claim the right to settle this purchase, or report who already has it.
+
+    Returns None when the claim is ours and settlement may proceed. Returns
+    the existing row when someone got here first — the caller decides what
+    that means, because the three cases are genuinely different:
+
+      settled  — the money already moved for this purchase. Replay the
+                 recorded transaction; never settle again.
+      settling — an attempt is in flight or was abandoned mid-flight. Only
+                 the chain can say which, and only after the authorization
+                 it holds has expired (see `valid_before` below).
+      failed   — a previous attempt was refused. Free to try again.
+
+    `valid_before` is the abandoned-attempt safety interlock and the reason
+    this is provable rather than merely likely. A stuck `settling` row could
+    always be reconciled against the chain, but a reconciliation that says
+    "not spent" races the in-flight settle it is asking about: the facilitator
+    may land it a second later, after we have already decided to settle again.
+    The EIP-3009 authorization carries its own deadline, so past
+    `valid_before` that race cannot exist — the stored authorization is
+    expired and the chain will reject it no matter who submits it. Waiting for
+    that instant costs at most `maxTimeoutSeconds` and removes the window
+    entirely, instead of narrowing it.
+    """
+    now = datetime.now(UTC).isoformat()
+    payer_stable_id = AGENT_REGISTRY.get_stable_id(payer_id)
+    with DB_LOCK, get_db() as conn:
+        existing = conn.execute(
+            "SELECT * FROM x402_settle_intents WHERE intent_key = ?", (intent_key,)
+        ).fetchone()
+        if existing:
+            return dict(existing)
+        conn.execute(
+            "INSERT INTO x402_settle_intents "
+            "(intent_key, payer_id, payer_stable_id, resource_type, resource_id, "
+            "amount_cents, network, asset, authorizer, nonce, valid_before, status, "
+            "created_at, updated_at) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            (
+                intent_key, payer_id, payer_stable_id,
+                resource_type, resource_id, amount_cents, network, asset,
+                authorizer, nonce, valid_before, X402_INTENT_SETTLING, now, now,
+            ),
+        )
+    return None
+
+
+def _reopen_x402_intent(
+    *, intent_key: str, network: str, asset: str, authorizer: str,
+    nonce: str, valid_before: int,
+) -> None:
+    """Take over an intent whose previous attempt is known not to have landed,
+    re-pointing it at the credential we are about to settle."""
+    with DB_LOCK, get_db() as conn:
+        conn.execute(
+            "UPDATE x402_settle_intents SET status = ?, network = ?, asset = ?, "
+            "authorizer = ?, nonce = ?, valid_before = ?, transaction_hash = NULL, "
+            "updated_at = ? WHERE intent_key = ?",
+            (
+                X402_INTENT_SETTLING, network, asset, authorizer, nonce, valid_before,
+                datetime.now(UTC).isoformat(), intent_key,
+            ),
+        )
+
+
+def _close_x402_intent(
+    intent_key: str, status: str, transaction_hash: str | None = None
+) -> None:
+    with DB_LOCK, get_db() as conn:
+        conn.execute(
+            "UPDATE x402_settle_intents SET status = ?, transaction_hash = ?, "
+            "updated_at = ? WHERE intent_key = ?",
+            (status, transaction_hash, datetime.now(UTC).isoformat(), intent_key),
+        )
+
+
+def _retire_x402_intent(
+    *, payer_id: str, resource_type: str, resource_id: str, amount_cents: int
+) -> None:
+    """Delete the intent for a purchase that is now durably recorded.
+
+    Called once the entitlement exists, which is what makes a *later*
+    legitimate re-purchase of the same resource — after the first
+    entitlement expires — open a fresh intent instead of colliding with the
+    settled one and being handed free access. The entitlement is the right
+    retirement trigger because it is the thing the payment bought: while it
+    is absent the purchase is unfinished and the intent must keep guarding
+    it; once it exists the payment path isn't entered at all.
+    """
+    with DB_LOCK, get_db() as conn:
+        conn.execute(
+            "DELETE FROM x402_settle_intents WHERE intent_key = ?",
+            (_x402_intent_key(
+                payer_id=payer_id, resource_type=resource_type,
+                resource_id=resource_id, amount_cents=amount_cents,
+            ),),
+        )
+
+
+async def _resolve_open_x402_intent(
+    intent: dict[str, Any], challenge_resource: str
+) -> str | None:
+    """Decide what an already-open intent means for the request in hand.
+
+    Returns a transaction reference when this purchase is already paid for —
+    the caller returns it and never settles. Returns None when the previous
+    attempt provably did not land and settling again is safe. Raises 402 when
+    neither can be established, which is the only honest third answer: the
+    payer may or may not have been charged, and both "charge them again" and
+    "let them in free" are wrong.
+
+    The chain is the idempotency record x402's /settle contract doesn't
+    provide. EIP-3009 marks an authorization's nonce spent in a permanent
+    per-authorizer map, so `authorizationState` answers "was this payer
+    charged?" for as long as the token exists — no log retention window, no
+    facilitator cooperation, and no trust in the facilitator's own account of
+    what it did. `x402_authorization_used()` is deliberately tri-state; None
+    means "couldn't ask", and this function must never round that down to
+    False.
+    """
+    from emporia.payments import (
+        x402_authorization_used, x402_authorization_transaction,
+    )
+
+    intent_key = intent["intent_key"]
+    status = intent["status"]
+    recorded_tx = intent["transaction_hash"]
+
+    if status == X402_INTENT_SETTLED and recorded_tx:
+        # The interrupted purchase, resumed. record_payment() is idempotent on
+        # this reference and entitlements.grant() is idempotent on the
+        # resource, so replaying it finishes the join the crash cut short.
+        return recorded_tx
+    if status == X402_INTENT_FAILED:
+        return None
+
+    used = await x402_authorization_used(
+        intent["network"], intent["asset"], intent["authorizer"], intent["nonce"],
+    )
+    if used is True:
+        # Charged. Recover the transaction hash if the log is still in range;
+        # if it isn't, the authorization id is a true and unique reference for
+        # the payment, which matters more than it being a tx hash — refusing
+        # to record a payment we know happened would be the worse answer.
+        tx = await x402_authorization_transaction(
+            intent["network"], intent["asset"], intent["authorizer"], intent["nonce"],
+        ) or f"x402-auth:{intent['authorizer']}:{intent['nonce']}"
+        _close_x402_intent(intent_key, X402_INTENT_SETTLED, tx)
+        return tx
+
+    valid_before = int(intent["valid_before"] or 0)
+    expired = valid_before > 0 and time.time() > valid_before
+    if used is False and expired:
+        # Not spent, and now unspendable — the previous attempt can never land,
+        # so there is no in-flight settle left to race. This is the interlock
+        # that makes retrying safe rather than probably safe.
+        return None
+
+    if used is False:
+        raise HTTPException(402, (
+            f"an x402 settlement for {challenge_resource} is still in flight "
+            f"(intent {intent_key[:16]}); retry after the authorization expires"
+        ))
+    raise HTTPException(402, (
+        f"an x402 settlement for {challenge_resource} was interrupted and cannot be "
+        f"resolved (intent {intent_key[:16]}): no chain RPC is configured for "
+        f"{intent['network'] or 'this network'}, so the relay cannot tell whether the "
+        "payer was already charged. Set EMPORIA_X402_RPC_<NETWORK> to let this "
+        "resolve itself."
+    ))
+
+
 async def _verify_x402_payment(
     x402_payload: dict[str, Any],
     *,
@@ -1593,6 +1847,9 @@ async def _verify_x402_payment(
     amount_cents: int,
     currency: str,
     challenge_resource: str,
+    payer_id: str,
+    resource_type: str,
+    resource_id: str,
 ) -> "PaymentRef":
     """The x402 analogue of `_verify_and_confirm_payment()`'s SPT/direct-PI
     branches — verify a client-supplied x402 credential against what this
@@ -1612,16 +1869,20 @@ async def _verify_x402_payment(
     says nothing about whether that requirement is what *this resource*
     actually charges).
 
-    Known gap, recorded rather than silently accepted (SECURITY.md): unlike
-    the Stripe branches, there is no pre-created object (a PaymentIntent) to
-    safely re-verify against on retry. If the relay crashes after
-    x402_settle_payment() succeeds but before record_payment() persists the
-    transaction, a client retry re-signs a fresh authorization (the original
-    nonce is now spent) and this function has no way to detect that the
-    resource was already paid for — record_payment()'s idempotency only
-    catches a replay of the *same* transaction hash, not a second genuinely
-    valid settlement for the same purchase. x402 has no Idempotency-Key
-    equivalent in its /settle contract to close this with.
+    P48 closed the double-charge gap this docstring recorded from P1b to
+    P47, and the record of it is kept because the reasoning that left it open
+    was wrong in an instructive way. The gap was real: unlike the Stripe
+    branches there is no pre-created PaymentIntent to re-verify against, so a
+    crash between a successful x402_settle_payment() and record_payment()
+    left a retry that re-signs a *fresh* authorization indistinguishable from
+    a first attempt — record_payment() dedupes on the transaction hash and
+    the chain's nonce guard rejects only a replay of the same authorization,
+    so neither sees a second genuinely valid settlement for one purchase.
+    What was wrong was the conclusion: "x402 has no Idempotency-Key
+    equivalent in its /settle contract to close this with" is true of the
+    protocol and irrelevant to the relay, which can write its own intent
+    record before the money moves and ask the chain what happened afterwards.
+    See _open_x402_intent() for the state machine.
     """
     from emporia.payments import (
         RAIL_X402, PaymentRef, x402_verify_payment, x402_settle_payment,
@@ -1673,19 +1934,62 @@ async def _verify_x402_payment(
             raise HTTPException(
                 402, f"x402 payment invalid: {verify_result.get('invalidReason', 'unknown')}"
             )
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(402, f"x402 verification failed: {e}")
+
+    # P48: everything from here to the intent's close is the money path. The
+    # /verify above is free and non-mutating, so the intent is claimed after
+    # it — a credential the facilitator already rejected should not be able to
+    # occupy a purchase's intent slot and lock out the payer's real retry.
+    authorization = (x402_payload.get("payload") or {}).get("authorization") or {}
+    authorizer = str(authorization.get("from") or "")
+    nonce = str(authorization.get("nonce") or "")
+    try:
+        valid_before = int(authorization.get("validBefore") or 0)
+    except (TypeError, ValueError):
+        valid_before = 0
+
+    intent_key = _x402_intent_key(
+        payer_id=payer_id, resource_type=resource_type,
+        resource_id=resource_id, amount_cents=amount_cents,
+    )
+    existing = _open_x402_intent(
+        intent_key=intent_key, payer_id=payer_id, resource_type=resource_type,
+        resource_id=resource_id, amount_cents=amount_cents, network=network or "",
+        asset=asset or "", authorizer=authorizer, nonce=nonce, valid_before=valid_before,
+    )
+    if existing is not None:
+        settled = await _resolve_open_x402_intent(existing, challenge_resource)
+        if settled is not None:
+            return PaymentRef(RAIL_X402, settled)
+        _reopen_x402_intent(
+            intent_key=intent_key, network=network or "", asset=asset or "",
+            authorizer=authorizer, nonce=nonce, valid_before=valid_before,
+        )
+
+    try:
         settle_result = await x402_settle_payment(x402_payload, expected)
         if not settle_result.get("success"):
+            _close_x402_intent(intent_key, X402_INTENT_FAILED)
             raise HTTPException(
                 402, f"x402 settlement failed: {settle_result.get('errorReason', 'unknown')}"
             )
     except HTTPException:
         raise
     except Exception as e:
-        raise HTTPException(402, f"x402 verification failed: {e}")
+        # The settle request itself failed — a timeout or a dropped connection
+        # says nothing about whether the transaction landed, so the intent
+        # stays `settling` and is resolved against the chain on the retry.
+        # Marking it failed here is the one shortcut that would re-open the
+        # double charge.
+        raise HTTPException(402, f"x402 settlement failed: {e}")
 
     transaction = settle_result.get("transaction")
     if not transaction:
         raise HTTPException(402, "x402 settlement returned no transaction id")
+    _close_x402_intent(intent_key, X402_INTENT_SETTLED, transaction)
     return PaymentRef(RAIL_X402, transaction)
 
 
@@ -1816,6 +2120,7 @@ async def _verify_and_confirm_payment(
             return await _verify_x402_payment(
                 x402_payload, creator_id=creator_id, amount_cents=amount_cents,
                 currency=currency, challenge_resource=challenge_resource,
+                payer_id=agent_id, resource_type=resource_type, resource_id=resource_id,
             )
         # P1brr-2: _x402_offer() returns None for any of four distinct
         # reasons (disabled / wrong currency / no creator on this route /
@@ -2138,6 +2443,11 @@ _RENAME_COLUMNS: tuple[tuple[str, str], ...] = (
     # while the old row still exists — SQLite has no deferred constraints here,
     # and doing it first would leave every other statement pointing at a handle
     # that no longer resolves if the transaction were inspected mid-flight.
+    # P48: the settle intent's payer. The intent *key* hashes the payer's
+    # stable_id, so a rename can't invalidate an in-flight purchase — this
+    # column is the human-readable handle beside it and is rewritten like
+    # every other reference.
+    ("x402_settle_intents", "payer_id"),
     ("authorized_agents", "agent_id"),
 )
 
@@ -2155,6 +2465,17 @@ _RENAME_JSON_COLUMNS: tuple[tuple[str, str], ...] = (
 # id, not a handle; `agora_votes.target_id` is a post or comment id;
 # `access_*.resource_id` is a room or topic id.
 _NON_AGENT_COLUMNS: frozenset[tuple[str, str]] = frozenset({
+    # x402_settle_intents (P48) — payer_id is an agent reference and lives in
+    # _RENAME_COLUMNS; payer_stable_id deliberately is NOT one (it is P47's
+    # identity, which a rename must leave alone — rewriting it here would
+    # defeat the entire point of having it).
+    ("x402_settle_intents", "intent_key"), ("x402_settle_intents", "payer_stable_id"),
+    ("x402_settle_intents", "resource_type"), ("x402_settle_intents", "resource_id"),
+    ("x402_settle_intents", "amount_cents"), ("x402_settle_intents", "network"),
+    ("x402_settle_intents", "asset"), ("x402_settle_intents", "authorizer"),
+    ("x402_settle_intents", "nonce"), ("x402_settle_intents", "valid_before"),
+    ("x402_settle_intents", "status"), ("x402_settle_intents", "transaction_hash"),
+    ("x402_settle_intents", "created_at"), ("x402_settle_intents", "updated_at"),
     # access_entitlements
     ("access_entitlements", "entitlement_id"), ("access_entitlements", "resource_type"),
     ("access_entitlements", "resource_id"), ("access_entitlements", "payment_intent_id"),
@@ -2622,6 +2943,19 @@ class AgentRegistry:
             "previous_agent_id": agent_id,
             "stable_id": row["stable_id"],
         }
+
+    def get_stable_id(self, agent_id: str) -> str | None:
+        """P47's identity for a handle, or None if the handle isn't registered.
+
+        The lookup itself predates this accessor in three places inside this
+        class; P48 needed a fourth from outside it and single-sourced the
+        read rather than inlining a fifth.
+        """
+        with DB_LOCK, get_db() as conn:
+            row = conn.execute(
+                "SELECT stable_id FROM authorized_agents WHERE agent_id = ?", (agent_id,)
+            ).fetchone()
+        return row["stable_id"] if row else None
 
     def backfill_stable_ids(self) -> int:
         """Run `_backfill_stable_ids()` against the live database.
@@ -7379,6 +7713,16 @@ async def _settle_access_payment(
         access_duration_days, rail=payment_ref.rail, db_path=DATABASE_PATH,
     )
     if payment_ref.rail == RAIL_X402:
+        # P48: the entitlement now exists, so the purchase this intent was
+        # guarding is finished and the intent must go — otherwise a *later*
+        # re-purchase of the same resource, after this entitlement expires,
+        # would collide with the settled row and be handed free access. This
+        # is the retirement point because the entitlement is what the payment
+        # bought; see _retire_x402_intent().
+        _retire_x402_intent(
+            payer_id=payer_id, resource_type=resource_type,
+            resource_id=resource_id, amount_cents=amount_cents,
+        )
         platform_fee = 0
         creator_payout = amount_cents
         platform_fee_bps = 0
