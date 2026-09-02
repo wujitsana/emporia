@@ -2329,6 +2329,38 @@ makes them bugs is a second definition somewhere else in the tree. P34's closing
 worked here wasn't a rule but a shape: *derive the second answer from the first* — `navForHotkey`
 calls `visibleNav`, so they cannot drift — and where that isn't possible, pin the equality itself.
 
+## P46 pass — a Stripe endpoint that does not exist, called since before the hackathon
+
+P45's finding was that a mocked counterparty tests only the half you wrote. P46 pointed the same
+question at the Stripe rails and got an answer in the first ten minutes.
+
+| Finding | Severity | Fix |
+|---|---|---|
+| **`confirm_stripe_intent()`'s test-mode branch POSTed to a Stripe route that does not exist.** `/v1/test_helpers/payment_intents/{id}/confirm` is not served by Stripe. Probed directly (2026-09-02): a genuine `test_helpers` route with no API key answers *"You did not provide an API key"*; this one answers *"Unrecognized request URL (POST: …)"*, identical to a path invented on the spot — and `/v1/test_helpers/issuing/cards/{id}/shipping/ship` was used as the positive control, so the probe distinguishes real routes from fake ones rather than just reporting 404s. Every test-mode auto-confirm therefore 404'd, `raise_for_status()` raised, and both call sites reported it as a payment failure: a paid join whose PaymentIntent isn't yet confirmed (`_verify_and_confirm_payment()`) and `retry_with_stripe_auth()`. | High (a documented convenience that never worked; predates the hackathon) | One endpoint for both modes — `/v1/payment_intents/{id}/confirm` with `payment_method` — which is what the live branch already did and what Stripe documents for test-mode confirmation. `STRIPE_TEST_PAYMENT_METHOD = "pm_card_visa"` is the default; a real payer passes their own. |
+| **The function had no test of any kind.** A repo-wide search found zero references outside its definition and its two call sites. | Medium (coverage) | Three offline tests: the URL asserted as a literal, the payment method defaulted and overridable, and a source-shape pin that neither `payments.py` nor the dev skill still *builds or documents* that URL (matched on how it would be used, not on every mention — both files now explain the defect in prose). Plus a narrow live test in the `testnet` tier. |
+| **The dev skill documented the nonexistent route as a working test tier.** `skills/dev/emporia-dev/SKILL.md`'s payment-testing table listed `POST /test_helpers/payment_intents/{id}/confirm`. | Medium (a person following it by hand would debug a Stripe outage) | Corrected, and named in the source-shape pin above so the two copies cannot diverge again. |
+
+**Why no amount of additional mocking would have found this.** Every existing Stripe test patches
+`httpx.AsyncClient.post`, and a mock accepts every URL equally — the URL is the one property a
+mocked HTTP layer structurally cannot have an opinion about. It took an unauthenticated probe of
+Stripe's routing table, which costs nothing and needs no key, to see it. That is a cheap technique
+worth reaching for whenever this repo hand-rolls a wire format: `payments.py` deliberately does so
+for both Stripe and x402.
+
+**The two Stripe lanes on the integration tier.** Lane 2 (PaymentIntent) needed no new payer code —
+`POST /payments/create-intent` and the SDK's `create_payment_intent()` already existed. Stated
+plainly next to P45: x402 was missing a payer; Stripe was missing only a test that talked to Stripe.
+Lane 3 (MPP/SPT) turned out to be automatable rather than dependent on a recorded token: Stripe's
+`POST /v1/test_helpers/shared_payment/granted_tokens` **does** exist (same probe, 401 not 404), so
+the harness mints its own SPT, with `EMPORIA_TESTNET_SPT` left as an override for testing a token a
+real wallet produced. The `sk_test_` prefix is checked in the skip guard, so a live key configured by
+accident skips the tier rather than creating real PaymentIntents.
+
+**Not run, and recorded as such.** No Stripe test key was available in the environment where P46 was
+built, so lanes 2 and 3 have only ever skipped. The URL fix is pinned offline by an asserted literal
+and corroborated against Stripe's routing table; nothing has yet watched a PaymentIntent actually
+confirm. `docs/testnet.md` says so in the same words rather than implying the tier is green.
+
 ## P45 pass — the x402 rail had a seller, a spec, 320 tests, and no payer
 
 Not an audit pass. P45 is the first of three production-readiness passes, and it discharges two

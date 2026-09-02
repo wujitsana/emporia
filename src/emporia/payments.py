@@ -820,42 +820,50 @@ async def verify_payment_intent(payment_intent_id: str) -> dict[str, Any]:
         }
 
 
+# Stripe's own always-succeeds test payment method. The default for a
+# server-side confirm, so no card details exist anywhere in this repo; a caller
+# with a real one (Stripe Link, or a stored method) passes it explicitly.
+STRIPE_TEST_PAYMENT_METHOD = "pm_card_visa"
+
+
 async def confirm_stripe_intent(
     payment_intent_id: str,
     payment_method_id: str | None = None,
 ) -> dict[str, Any]:
     """Confirm a Stripe PaymentIntent server-side.
 
-    Two modes:
-    - Test mode (sk_test_...): uses test_helpers endpoint — no payment method needed.
-    - Live mode (sk_live_...): uses standard confirm endpoint with payment_method_id.
-      Pass pm_card_visa for automated test confirms, or a real pm_* for production.
+    One endpoint, both modes. Test mode is not a different route at Stripe — it
+    is this route under an `sk_test_` key, with a test payment method. The
+    default `pm_card_visa` is Stripe's always-succeeds token; production callers
+    pass their own `pm_...`.
+
+    P46-1: this used to branch on the key prefix and POST test-mode confirms to
+    `/v1/test_helpers/payment_intents/{id}/confirm`, which **Stripe does not
+    serve** — probed directly during P46, it answers "Unrecognized request URL",
+    the same as a path invented on the spot, while genuine `test_helpers` routes
+    answer "You did not provide an API key". So every test-mode auto-confirm
+    404'd, `raise_for_status()` raised, and both call sites surfaced it as a
+    payment failure: a paid join whose PaymentIntent wasn't yet confirmed
+    (`_verify_and_confirm_payment()`, relay_server.py) and
+    `retry_with_stripe_auth()`. The function had no test of any kind — every
+    x402 and SPT path in the suite is covered, this one was never called — and a
+    mocked `httpx.AsyncClient.post` would have accepted any URL at all, which is
+    why the defect needed a real API to find rather than more mocks.
 
     For autonomous agent payments in production, agents supply a payment method via
     Stripe Link (link-cli --test for sandbox, real Link account for production) or
     a stored payment method token. MPP is the correct long-term protocol.
     """
     key = _stripe_key()
-    is_test_key = key.startswith("sk_test_")
     async with httpx.AsyncClient(timeout=REQUEST_TIMEOUT) as client:
-        if is_test_key:
-            # Test mode: auto-confirm via test helper, no payment method needed
-            resp = await client.post(
-                f"{STRIPE_API_BASE}/test_helpers/payment_intents/{payment_intent_id}/confirm",
-                auth=(key, ""),
-                data={"metadata[protocol]": "emporia:v1"},
-            )
-        else:
-            # Live mode: server-side confirm requires a payment method
-            pm = payment_method_id or "pm_card_visa"
-            resp = await client.post(
-                f"{STRIPE_API_BASE}/payment_intents/{payment_intent_id}/confirm",
-                auth=(key, ""),
-                data={
-                    "payment_method": pm,
-                    "metadata[protocol]": "emporia:v1",
-                },
-            )
+        resp = await client.post(
+            f"{STRIPE_API_BASE}/payment_intents/{payment_intent_id}/confirm",
+            auth=(key, ""),
+            data={
+                "payment_method": payment_method_id or STRIPE_TEST_PAYMENT_METHOD,
+                "metadata[protocol]": "emporia:v1",
+            },
+        )
         resp.raise_for_status()
         pi = resp.json()
         return {

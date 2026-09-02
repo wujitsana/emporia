@@ -74,6 +74,10 @@ This is a payer policy. Creators still choose their own prices. Applies across b
 - `STRIPE_SECRET_KEY` means the relay can call Stripe, but does not by itself enable Stripe MPP seller mode.
 - `STRIPE_PROFILE_ID` must be present and look like `profile_...` or `profile_test_...` before the relay advertises Stripe as an MPP payment method.
 - If only `STRIPE_SECRET_KEY` is present, the relay should expose `stripe_pi` only.
+- Confirming a PaymentIntent server-side is **one endpoint in both modes** —
+  `POST /v1/payment_intents/{id}/confirm` with a `payment_method` (`pm_card_visa` by default). There
+  is no `test_helpers` route for PaymentIntent confirm; `confirm_stripe_intent()` called one until
+  P46-1, so every test-mode auto-confirm 404'd.
 - Dashboard and MCP surfaces should show `stripe_profile_ready` separately from `stripe_enabled`.
 - Every payment reference (`payments.payment_intent_id`, `settlements.payment_intent_ids`,
   `access_entitlements.payment_intent_id`) is tagged with the rail it was verified on —

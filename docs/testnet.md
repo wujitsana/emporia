@@ -81,12 +81,47 @@ POST /agents/{id}/x402-wallet   {"network_family": "evm", "address": "0x..."}
 
 ---
 
-## Lanes 2 and 3 — the Stripe rails
+## Lane 2 — Stripe PaymentIntent (test mode)
 
-Not here yet. P45 shipped the x402 lane; the Stripe PaymentIntent and MPP/SPT lanes land in P46 and
-this runbook grows a section each when they do. Documenting them ahead of the code is the exact
-defect this repo has now recorded twice (P43's undocumented capability, P45's F2 — a rail described
-as "live" that had no client), so the sections appear with the tests, not before.
+```bash
+export EMPORIA_TESTNET_STRIPE_KEY="sk_test_..."
+```
+
+Test mode only, and asserted rather than trusted: the skip guard checks the `sk_test_` prefix, so a
+live key configured by accident skips the tier instead of creating real PaymentIntents.
+
+This lane needed no new payer code — `POST /payments/create-intent` and the SDK's
+`create_payment_intent()` already existed. Worth stating next to lane 1: x402 was missing a payer;
+Stripe was missing only a test that talked to Stripe. What it turned out to be missing badly was a
+working auto-confirm — `confirm_stripe_intent()` POSTed to
+`/v1/test_helpers/payment_intents/{id}/confirm`, a route Stripe does not serve, on a path nothing
+had ever executed (P46-1). The narrow `..._confirm_reaches_a_real_endpoint` test exists so that
+regression fails about the endpoint rather than about a room three layers away.
+
+Confirmation uses `pm_card_visa`, Stripe's always-succeeds test token. No card details exist
+anywhere in this repo.
+
+---
+
+## Lane 3 — Stripe MPP / Shared Payment Tokens
+
+```bash
+export EMPORIA_TESTNET_STRIPE_KEY="sk_test_..."
+export EMPORIA_TESTNET_STRIPE_PROFILE_ID="profile_test_..."   # Dashboard → Machine Payments
+export EMPORIA_TESTNET_SPT="spt_..."                          # optional; minted automatically if unset
+```
+
+The token is minted by the harness from Stripe's own test helper
+(`POST /v1/test_helpers/shared_payment/granted_tokens`, confirmed to exist), so this lane runs
+unattended — no link-cli, no wallet. Set `EMPORIA_TESTNET_SPT` only to test a token a real wallet
+produced.
+
+SPTs are single-use and expire. A supplied one works exactly once; a second run with the same value
+fails at Stripe, not here.
+
+The credential travels as `Authorization: Payment <spt>`, which displaces the identity bearer token —
+they share that header and cannot both be sent. That is why the relay treats `agent_id` as unproven
+on this branch (`_require_caller_unless_mpp_payment`) and leans entirely on payment resource-binding.
 
 ---
 
@@ -96,7 +131,18 @@ as "live" that had no client), so the sections appear with the tests, not before
 from this repo, and that a tampered one is refused by the same implementation. That is the only
 claim a mock can never support, and it is the reason the tier exists.
 
+It found one immediately. `confirm_stripe_intent()` had been POSTing to a Stripe route that does not
+exist since before the hackathon, on a path with no test coverage of any kind, and a mocked
+`httpx.AsyncClient.post` accepts every URL equally — the defect was invisible to any amount of
+additional mocking and obvious the moment something real was asked.
+
 **Doesn't:** anything about mainnet, about facilitators other than the one configured, or about
 sustained load. It also doesn't cover the settlement-retry gap recorded in `SECURITY.md` — x402 has
 no idempotency key on `/settle`, so a relay crash between settlement and `record_payment()` is still
 a real hole and no test here reproduces it.
+
+**Run status, honestly:** lane 1 has been executed against the live facilitator (P45). Lanes 2 and 3
+are written and have never been run — no Stripe test key was available in the environment where they
+were built, so they have only ever skipped. Treat their first real run as part of the work, not as a
+formality: the P46-1 URL fix is pinned offline by an asserted literal and confirmed against Stripe's
+routing table, but nothing has yet watched a PaymentIntent actually confirm.

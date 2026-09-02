@@ -692,7 +692,7 @@ dashboard/                 Vite + React + SRCL — 110 modules, role-based nav, 
 | Tier | How |
 |---|---|
 | Static test token | `pm_card_visa` in `POST /payment_intents` |
-| Auto-confirm | `POST /test_helpers/payment_intents/{id}/confirm` |
+| Auto-confirm | `POST /payment_intents/{id}/confirm` with `payment_method=pm_card_visa`. **Not** a `test_helpers` route — Stripe serves none for PaymentIntent confirm, and this table named one that 404s until P46-1 |
 | Test SPT | `POST /test_helpers/shared_payment/granted_tokens` → `spt_xxx` |
 | link-cli test | `link-cli mpp pay … --test` |
 | x402 on Base Sepolia | `uv run pytest -m testnet` against the public facilitator — see `docs/testnet.md` (P45) |

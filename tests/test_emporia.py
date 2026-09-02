@@ -24343,3 +24343,281 @@ def test_sdk_x402_retry_is_shared_by_all_three_paid_methods():
         "join_session, join_room and subscribe_agora_topic must each take the flag"
     assert text.count("await self._pay_and_retry_x402(") == 3, \
         "each paid method must route through the one shared retry, not its own copy"
+
+
+# ============================================================================
+# P46 — the Stripe lanes get an integration tier, and one of them was broken
+#
+# P45's lesson was that a mocked counterparty tests only the half you wrote.
+# P46 pointed the same question at Stripe and got an answer immediately:
+# `confirm_stripe_intent()`'s test-mode branch POSTs to
+# `/v1/test_helpers/payment_intents/{id}/confirm`, and that route does not
+# exist at Stripe. Probed directly (2026-09-02): a real test_helpers route
+# with no API key answers "You did not provide an API key"; this one answers
+# "Unrecognized request URL (POST: ...)", the same as a path invented on the
+# spot. `/v1/payment_intents/{id}/confirm` — the branch the live path already
+# uses — is the real one, and Stripe's documented way to confirm in test mode
+# is that endpoint with a test payment method such as `pm_card_visa`.
+#
+# The function had no test of any kind: a repo-wide search found zero
+# references outside its own definition and its two call sites, both of which
+# are real auto-confirm paths (a join whose PaymentIntent isn't yet confirmed,
+# and `retry_with_stripe_auth()`). So the whole test-mode auto-confirm
+# convenience — advertised in the dev skill's payment-testing table and in this
+# function's own docstring — had never worked and nothing could have said so.
+# ============================================================================
+
+_STRIPE_TEST_KEY_ENV = {"STRIPE_SECRET_KEY": "sk_test_p46fake"}
+
+
+@pytest.mark.asyncio
+async def test_confirm_stripe_intent_posts_to_an_endpoint_stripe_actually_has():
+    """P46-1. The URL is asserted literally, against the path Stripe answers
+    on, because that is precisely what a mock cannot check for you — every
+    possible URL "works" against `patch("httpx.AsyncClient.post")`, which is
+    why this defect survived a rail that is otherwise heavily tested.
+
+    Test mode is not a separate endpoint at Stripe; it is the same endpoint
+    under a test key, with a test payment method. `pm_card_visa` is Stripe's
+    own always-succeeds token — no card details exist in this repo.
+    """
+    from emporia.payments import confirm_stripe_intent
+
+    with patch.dict(os.environ, _STRIPE_TEST_KEY_ENV, clear=False):
+        with patch("httpx.AsyncClient.post", new_callable=AsyncMock) as mock_post:
+            mock_resp = MagicMock()
+            mock_resp.json.return_value = {"status": "succeeded", "latest_charge": "ch_p46"}
+            mock_resp.raise_for_status = MagicMock()
+            mock_post.return_value = mock_resp
+
+            result = await confirm_stripe_intent("pi_p46test")
+
+    url = mock_post.call_args.args[0]
+    assert url == "https://api.stripe.com/v1/payment_intents/pi_p46test/confirm", (
+        f"POSTs to {url!r}; /v1/test_helpers/payment_intents/{{id}}/confirm is not a "
+        "route Stripe serves — it answers 'Unrecognized request URL' there"
+    )
+    assert mock_post.call_args.kwargs["data"]["payment_method"] == "pm_card_visa", (
+        "a confirm with no payment method leaves the intent in requires_payment_method"
+    )
+    assert result == {
+        "status": "succeeded", "payment_intent_id": "pi_p46test", "receipt": "ch_p46",
+    }
+
+
+@pytest.mark.asyncio
+async def test_confirm_stripe_intent_lets_the_caller_choose_the_payment_method():
+    """The live path's whole reason for existing: a real payer supplies a real
+    `pm_...` (from Stripe Link, or stored). `pm_card_visa` is the default, not
+    the only option — a default that couldn't be overridden would make the live
+    branch untestable and the test branch a lie about what production does."""
+    from emporia.payments import confirm_stripe_intent
+
+    with patch.dict(os.environ, {"STRIPE_SECRET_KEY": "sk_live_p46fake"}, clear=False):
+        with patch("httpx.AsyncClient.post", new_callable=AsyncMock) as mock_post:
+            mock_resp = MagicMock()
+            mock_resp.json.return_value = {"status": "succeeded", "id": "pi_live"}
+            mock_resp.raise_for_status = MagicMock()
+            mock_post.return_value = mock_resp
+
+            await confirm_stripe_intent("pi_live", payment_method_id="pm_realcard")
+
+    assert mock_post.call_args.kwargs["data"]["payment_method"] == "pm_realcard"
+    assert mock_post.call_args.args[0].endswith("/v1/payment_intents/pi_live/confirm"), \
+        "test and live must reach the same endpoint — the difference is the key and the method"
+
+
+def test_no_source_or_doc_still_calls_the_nonexistent_test_helper_route():
+    """P46-1 left two copies of the wrong URL: the code, and the dev skill's
+    payment-testing table that documented it as a working tier. A source-shape
+    check because the second copy is the one a person would follow by hand and
+    then debug as a Stripe outage.
+
+    Matches how the URL would be *used*, not every mention of it — both files
+    now describe the defect in prose, and a check that forbade the string
+    outright would forbid explaining what was fixed."""
+    code = (_DOC_ROOT / "src/emporia/payments.py").read_text()
+    assert "STRIPE_API_BASE}/test_helpers/payment_intents" not in code, \
+        "payments.py still builds a /v1/test_helpers/payment_intents/... URL"
+
+    skill = (_DOC_ROOT / "skills/dev/emporia-dev/SKILL.md").read_text()
+    assert "`POST /test_helpers/payment_intents" not in skill, \
+        "the dev skill still documents that route as one to call"
+
+
+# ─── the Stripe lanes on the integration tier (P46, W2/W3) ──────────────────
+# Same posture as P45's x402 lane: real Stripe, test mode only, skip when
+# unconfigured. `sk_test_` is required and asserted rather than assumed — this
+# tier creates and confirms PaymentIntents, and doing that against a live key
+# by accident is not a mistake worth leaving room for.
+
+_TESTNET_STRIPE_KEY = os.getenv("EMPORIA_TESTNET_STRIPE_KEY", "").strip()
+_TESTNET_STRIPE_PROFILE = os.getenv("EMPORIA_TESTNET_STRIPE_PROFILE_ID", "").strip()
+_TESTNET_SPT = os.getenv("EMPORIA_TESTNET_SPT", "").strip()
+
+_needs_stripe_test_key = pytest.mark.skipif(
+    not _TESTNET_STRIPE_KEY.startswith("sk_test_"),
+    reason="set EMPORIA_TESTNET_STRIPE_KEY to an sk_test_ key (docs/testnet.md)",
+)
+
+
+@pytest.mark.testnet
+@_needs_stripe_test_key
+@pytest.mark.asyncio
+async def test_testnet_stripe_confirm_reaches_a_real_endpoint():
+    """P46-1's regression test, against the API that has the opinion. The
+    offline test pins the URL string; only this one proves Stripe answers on
+    it. A 404 here is the exact defect coming back.
+
+    Deliberately the narrowest possible live test — create an intent, confirm
+    it — so that when it fails, it fails about the endpoint and not about a
+    room, an entitlement, or a settlement three layers away.
+    """
+    import httpx as httpx_module
+
+    from emporia.payments import STRIPE_API_BASE, confirm_stripe_intent
+
+    with patch.dict(os.environ, {"STRIPE_SECRET_KEY": _TESTNET_STRIPE_KEY}, clear=False):
+        async with httpx_module.AsyncClient(timeout=30) as c:
+            created = await c.post(
+                f"{STRIPE_API_BASE}/payment_intents",
+                auth=(_TESTNET_STRIPE_KEY, ""),
+                data={"amount": "100", "currency": "usd",
+                      "payment_method_types[]": "card"},
+            )
+            created.raise_for_status()
+            pi_id = created.json()["id"]
+
+        result = await confirm_stripe_intent(pi_id)
+
+    assert result["status"] == "succeeded", (
+        f"Stripe refused the confirm: {result} — if this is a 404, the "
+        "test_helpers URL is back (P46-1)"
+    )
+    assert result["receipt"], "a confirmed intent must carry a charge to reference"
+
+
+@pytest.mark.testnet
+@_needs_stripe_test_key
+def test_testnet_paid_room_join_settles_through_stripe(client, monkeypatch):
+    """The PaymentIntent lane end to end, unmocked: the relay mints an intent
+    bound to the room and payer, the payer confirms it with a test card, the
+    join verifies it and grants access.
+
+    This lane needed no new payer code — `POST /payments/create-intent` and the
+    SDK's `create_payment_intent()` already existed, which is worth stating
+    plainly next to P45: x402 was missing a payer, Stripe was missing only a
+    test that talked to Stripe. What it did have was a broken auto-confirm
+    (P46-1), on this exact path, which nothing had ever executed.
+    """
+    import asyncio
+
+    monkeypatch.setenv("STRIPE_SECRET_KEY", _TESTNET_STRIPE_KEY)
+
+    owner, payer = "p46_stripe_owner", "p46_stripe_payer"
+    _register(client, owner)
+    _register(client, payer)
+
+    r = client.post("/rooms", json={
+        "name": "P46 Stripe room", "creator_id": owner,
+        "room_type": "private", "gate_type": "paid", "entry_fee_cents": 100,
+    }, headers={"x-emporia-agent-id": owner})
+    assert r.status_code == 200, r.text
+    room_id = r.json()["room_id"]
+
+    intent = client.post("/payments/create-intent", json={
+        "amount_cents": 100, "room_id": room_id, "service_type": "emporia:room_entry",
+    }, headers={"x-emporia-agent-id": payer})
+    assert intent.status_code == 200, intent.text
+    pi_id = intent.json()["payment_intent_id"]
+
+    from emporia.payments import confirm_stripe_intent
+    confirmed = asyncio.run(confirm_stripe_intent(pi_id))
+    assert confirmed["status"] == "succeeded", confirmed
+
+    joined = client.post(f"/rooms/{room_id}/join",
+        json={"agent_id": payer, "payment_intent_id": pi_id},
+        headers={"x-emporia-agent-id": payer})
+    assert joined.status_code == 200, joined.text
+
+    from emporia.entitlements import has_access
+    assert has_access("room", room_id, payer), "Stripe settled but granted no access"
+
+    from emporia.relay_server import get_db
+    with get_db() as conn:
+        row = conn.execute(
+            "SELECT rail, payment_intent_id FROM payments WHERE payment_intent_id = ?",
+            (pi_id,),
+        ).fetchone()
+    assert row is not None and row["rail"] == "stripe"
+
+
+@pytest.mark.testnet
+@pytest.mark.skipif(
+    not (_TESTNET_STRIPE_KEY.startswith("sk_test_") and _TESTNET_STRIPE_PROFILE.startswith("profile_")),
+    reason="MPP needs EMPORIA_TESTNET_STRIPE_KEY plus a profile_test_... "
+           "EMPORIA_TESTNET_STRIPE_PROFILE_ID (docs/testnet.md)",
+)
+def test_testnet_paid_room_join_settles_through_mpp_spt(client, monkeypatch):
+    """The MPP lane: a Shared Payment Token in `Authorization: Payment <spt>`,
+    which the relay turns into a PaymentIntent via `confirm_spt()`.
+
+    The token comes from Stripe's own test helper
+    (`POST /v1/test_helpers/shared_payment/granted_tokens` — probed and
+    confirmed to exist), so this lane is automated rather than depending on
+    link-cli. `EMPORIA_TESTNET_SPT` overrides it for anyone who wants to test a
+    token a real wallet minted; the plan expected that to be the only option.
+
+    SPTs are single-use, so a supplied one works exactly once — a second run
+    with the same `EMPORIA_TESTNET_SPT` fails at Stripe, not here.
+    """
+    import httpx as httpx_module
+
+    from emporia.payments import STRIPE_API_BASE
+
+    monkeypatch.setenv("STRIPE_SECRET_KEY", _TESTNET_STRIPE_KEY)
+    monkeypatch.setenv("STRIPE_PROFILE_ID", _TESTNET_STRIPE_PROFILE)
+
+    spt = _TESTNET_SPT
+    if not spt:
+        minted = httpx_module.post(
+            f"{STRIPE_API_BASE}/test_helpers/shared_payment/granted_tokens",
+            auth=(_TESTNET_STRIPE_KEY, ""), timeout=30,
+            headers={"Stripe-Version": "2026-04-22.preview"},
+            data={"usage_limits[currency]": "usd", "usage_limits[max_amount]": "1000"},
+        )
+        assert minted.status_code == 200, (
+            f"could not mint a test SPT ({minted.status_code}): {minted.text[:300]}"
+        )
+        spt = minted.json()["id"]
+    assert spt.startswith("spt_"), spt
+
+    owner, payer = "p46_mpp_owner", "p46_mpp_payer"
+    _register(client, owner)
+    _register(client, payer)
+
+    r = client.post("/rooms", json={
+        "name": "P46 MPP room", "creator_id": owner,
+        "room_type": "private", "gate_type": "paid", "entry_fee_cents": 100,
+    }, headers={"x-emporia-agent-id": owner})
+    assert r.status_code == 200, r.text
+    room_id = r.json()["room_id"]
+
+    # The SPT travels in Authorization, displacing the identity bearer — the two
+    # share that header and cannot both be sent, which is exactly why the relay
+    # treats `agent_id` as unproven on this branch (_require_caller_unless_mpp_payment).
+    joined = client.post(f"/rooms/{room_id}/join",
+        json={"agent_id": payer},
+        headers={"Authorization": f"Payment {spt}"})
+    assert joined.status_code == 200, joined.text
+
+    from emporia.entitlements import has_access
+    assert has_access("room", room_id, payer), "the SPT settled but granted no access"
+
+    from emporia.relay_server import get_db
+    with get_db() as conn:
+        row = conn.execute(
+            "SELECT rail FROM payments WHERE agent_id = ? ORDER BY rowid DESC LIMIT 1",
+            (payer,),
+        ).fetchone()
+    assert row is not None and row["rail"] == "stripe"

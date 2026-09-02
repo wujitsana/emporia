@@ -255,6 +255,19 @@ three (plus `mcp_server.py`'s status docstring) now read from one `_SESSION_STAT
 
 ## Payments
 
+**P46 found a Stripe endpoint that does not exist, called since before the hackathon.**
+`confirm_stripe_intent()`'s test-mode branch POSTed to
+`/v1/test_helpers/payment_intents/{id}/confirm`; Stripe serves no such route (probed directly, with
+a real `test_helpers` route as the positive control). So the test-mode auto-confirm advertised in
+the function's docstring and in the dev skill's payment-testing table had never worked, on a path
+with zero test coverage. Fixed to the one endpoint both modes actually use. The general lesson,
+after P45: **a mocked HTTP layer structurally cannot have an opinion about the URL** — an
+unauthenticated probe of a vendor's routing table costs nothing and is worth doing wherever this
+repo hand-rolls a wire format, which is both payment rails. Lanes 2 (PaymentIntent) and 3 (MPP/SPT)
+now exist on the `testnet` tier; the SPT is minted from Stripe's own test helper rather than
+recorded, so the lane runs unattended. **Neither has been run** — no test key was available where
+they were built; `docs/testnet.md` records that rather than implying green.
+
 **P45 gave the x402 rail a payer, and found that it had never been payable.** P1b built the seller,
 P1br and P1brr audited it, and 320 test references covered it — all seller-side, all with a mocked
 facilitator, because nothing in this repo could produce an x402 credential (`mcp_server.py:51`
