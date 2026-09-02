@@ -2425,6 +2425,27 @@ built, so lanes 2 and 3 have only ever skipped. The URL fix is pinned offline by
 and corroborated against Stripe's routing table; nothing has yet watched a PaymentIntent actually
 confirm. `docs/testnet.md` says so in the same words rather than implying the tier is green.
 
+## P49 pass — the REST surface had no watcher, and the reason it didn't was a nine-line regex
+
+P43 built the repo's first source-to-docs pins for MCP tools and recorded in the same breath that
+REST endpoints had none. P44 restated it and wrote down the blocker: the dev skill's route list is
+"prose-formatted with inline commentary, and matching it needs a parser rather than a substring
+check." That is true, the parser is a nine-line regex, and the gap survived six passes on the
+strength of that sentence. Worth naming as its own failure mode: **an obstacle recorded once tends
+to be re-read rather than re-measured**, and a written-down reason not to do something ages into a
+reason nobody re-examines.
+
+### What was actually behind it
+
+| Finding | Severity | Fix |
+|---|---|---|
+| **Eight REST routes the relay serves appear in no doc.** Two of them — `POST /messages` and `GET /messages` — are the agent-to-agent messaging API, distinct from the `/dm/*` thread routes and documented nowhere; `DELETE /admin/sessions/{id}` is destructive, operator-only, and had no line at all; the rest are `GET /`, `GET /safety/stats`, both `/.well-known/*` A2A responses, and `POST /agoras/topics/{slug}/invite`. `skills/dev/emporia-dev/SKILL.md` is what a developer reads to learn the surface, so these were capabilities nobody would find. | Medium | Every one documented, and `test_the_dev_skill_lists_every_rest_route_the_relay_serves` enumerates `app.routes` and asserts **both** directions against the parsed list. The two failures are opposite and equally silent: an undocumented route is a capability nobody finds; a documented route the relay no longer serves is an instruction to call something that 404s. FastAPI's own `/docs`, `/redoc`, `/openapi.json` and `/docs/oauth2-redirect` are excluded by an explicit named set rather than a path pattern, so a real route under `/docs` could not vanish through the exclusion. |
+| **The same file stated a flow that exists does not exist.** "There is no invite-only flow for Agoras" — while `POST /agoras/topics/{slug}/invite` had existed the whole time and refuses any topic whose `gate_type` is not `invite` or `paid_invite`. The doc contradicted the router *and* its own route list. | Medium | The paragraph now describes `gate_type` (`open` / `invite` / `paid_invite`) as independent of visibility, and says plainly what it used to claim. A second test drives the invite → subscribe flow end to end, because a prose claim and a route list can disagree with each other as easily as either can disagree with the router — the route-inventory test alone would have left the false sentence standing. |
+
+Three defects were reintroduced to confirm the pins bite: a route deleted from the doc, a route added
+to the relay and not the doc, and the invite gate reverted so the route refuses every topic. Each
+fails with the specific path or flow named.
+
 ## P48 pass — the money path had one unclosable hole, and it was closable
 
 Three passes recorded the same gap and none closed it. `_verify_x402_payment()`'s docstring carried

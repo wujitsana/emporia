@@ -1034,12 +1034,22 @@ GIL and for the global `DB_LOCK`. Doing this properly is the same decision as th
 already listed under Federation (`DATABASE_URL` still appears nowhere in `src/emporia/`): a backend
 choice, not a pass.
 
-**REST routes are still watched by nobody (P44).** P43's new source-to-docs pins cover MCP tool
-names and stated counts. They do not cover REST endpoints — `GET /sessions/{id}/audit` was missing
-from the dev skill and was found by reading, not by a test. The same detector shape would work
-(enumerate `app.routes`, require each path in the dev skill's route list); it was not built in P44
-because the route list is prose-formatted with inline commentary, and matching it needs a parser
-rather than a substring check.
+**~~REST routes are still watched by nobody~~ — built in P49.** P43 pinned MCP tool names and
+counts and recorded that REST endpoints had no equivalent; P44 restated the gap and wrote down why
+it hadn't closed it — "the route list is prose-formatted with inline commentary, and matching it
+needs a parser rather than a substring check." The parser is a nine-line regex, and it had been
+deferred through six passes on that reasoning.
+
+What the six passes cost, measured the moment it was finally written: **eight undocumented routes**,
+of which `POST /messages` and `GET /messages` are the core agent-to-agent messaging API and
+`DELETE /admin/sessions/{id}` is destructive and operator-only. A prose paragraph in the same file
+also stated "There is no invite-only flow for Agoras" while `POST /agoras/topics/{slug}/invite` had
+existed the whole time, gating on `gate_type in ("invite", "paid_invite")` — so the file contradicted
+both the router and itself. `test_the_dev_skill_lists_every_rest_route_the_relay_serves` now asserts
+both directions from one map (an undocumented route is a capability nobody finds; a documented route
+the relay no longer serves is an instruction to call something that 404s), and a second test drives
+the invite flow the prose denied, because a claim and a route list can disagree with each other as
+easily as either can disagree with the router.
 
 **The docs stopped tracking the code at P1b (P43).** Seven MCP tools were shipped and listed in no
 doc at all — both chain verifiers, `start_stripe_onboarding`, `kick_from_room`, `get_room_messages`

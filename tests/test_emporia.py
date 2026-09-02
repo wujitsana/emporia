@@ -23191,6 +23191,105 @@ def test_docs_state_the_real_mcp_tool_count():
     )
 
 
+# ── P49: the REST surface gets the same watcher the MCP surface got ─────────
+# P43 pinned MCP tool names and counts and recorded that REST routes were still
+# watched by nobody -- `GET /sessions/{id}/audit` was missing from the dev skill
+# and was found by reading, not by a test. P44 wrote down why it hadn't built
+# the detector: the route list is prose with inline commentary, so matching it
+# "needs a parser rather than a substring check". It needs a nine-line regex.
+# The cost of not writing it, measured when it finally was: eight undocumented
+# routes, two of them (`POST`/`GET /messages`) the core agent-to-agent
+# messaging API, one (`DELETE /admin/sessions/{id}`) destructive -- and a
+# paragraph stating a flow that exists does not exist.
+
+# FastAPI mounts these itself; they are not Emporia's API and documenting them
+# in a hand-written route list would be noise. Named explicitly rather than
+# pattern-matched, so a real route that happened to live under /docs could not
+# disappear through this hole.
+_FRAMEWORK_ROUTES = frozenset({
+    ("GET", "/docs"), ("GET", "/docs/oauth2-redirect"),
+    ("GET", "/redoc"), ("GET", "/openapi.json"),
+})
+
+_ROUTE_LINE_RE = re.compile(r"^(GET|POST|PUT|PATCH|DELETE)\s+(/\S*)", re.M)
+_ROUTE_DOC = "skills/dev/emporia-dev/SKILL.md"
+
+
+def _normalize_route(path: str) -> str:
+    """`/agents/{agent_id}/inbox` and the doc's `/agents/{id}/inbox` are the
+    same route; the parameter's *name* is the router's business and the doc
+    reasonably uses a short one. A trailing query string in the doc is
+    commentary about parameters, not a distinct path."""
+    path = path.split("?", 1)[0]
+    return re.sub(r"\{[^}]+\}", "{}", path.rstrip("/")) or "/"
+
+
+def _registered_rest_routes() -> set[tuple[str, str]]:
+    from emporia.relay_server import app
+    return {
+        (method, _normalize_route(route.path))
+        for route in app.routes
+        for method in (getattr(route, "methods", None) or set())
+        if method not in {"HEAD", "OPTIONS"}
+    } - _FRAMEWORK_ROUTES
+
+
+def test_the_dev_skill_lists_every_rest_route_the_relay_serves():
+    """A route absent from the dev skill is a route a developer never learns
+    exists -- the REST analogue of P43-1's finding about MCP tools, which the
+    same pass recorded as unbuilt and left unbuilt for six more.
+
+    Both directions are asserted from one map, because the two failures are
+    opposite and equally silent: an undocumented route is a capability nobody
+    finds, and a documented route the relay no longer serves is an instruction
+    to call something that 404s.
+    """
+    live = _registered_rest_routes()
+    documented = {
+        (method, _normalize_route(path))
+        for method, path in _ROUTE_LINE_RE.findall(
+            (_DOC_ROOT / _ROUTE_DOC).read_text()
+        )
+    }
+    assert not (live - documented), (
+        f"routes the relay serves but {_ROUTE_DOC} does not list -- add a line "
+        f"for each: {sorted(live - documented)}"
+    )
+    assert not (documented - live), (
+        f"routes {_ROUTE_DOC} tells developers to call that the relay does not "
+        f"serve: {sorted(documented - live)}"
+    )
+
+
+def test_the_agora_invite_route_the_docs_denied_the_existence_of_works(client):
+    """The dev skill stated, flatly, "There is no invite-only flow for Agoras."
+    `POST /agoras/topics/{slug}/invite` has existed the whole time and gates on
+    `gate_type in ("invite", "paid_invite")`. Documenting the route is not
+    enough on its own -- a prose claim and a route list can disagree with each
+    other as easily as either can disagree with the router -- so this drives
+    the flow the corrected paragraph now describes.
+    """
+    owner, guest = "p49_invite_owner", "p49_invite_guest"
+    _register(client, owner)
+    _register(client, guest)
+
+    r = client.post("/agoras/topics", json={
+        "name": "P49 Invite Topic", "description": "d", "visibility": "private",
+        "gate_type": "invite", "creator_id": owner,
+    }, headers={"x-emporia-agent-id": owner})
+    assert r.status_code == 200, r.text
+    slug = r.json()["slug"]
+
+    invited = client.post(f"/agoras/topics/{slug}/invite", json={"invitee_id": guest},
+        headers={"x-emporia-agent-id": owner})
+    assert invited.status_code == 200, (
+        f"the invite flow the docs denied existed must work: {invited.text}"
+    )
+    joined = client.post(f"/agoras/topics/{slug}/subscribe", json={"agent_id": guest},
+        headers={"x-emporia-agent-id": guest})
+    assert joined.status_code == 200, joined.text
+
+
 # ============================================================================
 # P44: the relay's own chain verifiers walked every message, every call, on the
 # event loop. GET /rooms/{id}/chain is unauthenticated for a public room, and
