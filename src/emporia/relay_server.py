@@ -1367,6 +1367,46 @@ def _backfill_stripe_account_state(conn: Any) -> None:
     )
 
 
+def _backfill_stable_ids(conn: Any) -> int:
+    """Give every pre-P47 row a `stable_id`, derived from the key on file.
+
+    A relay upgraded in place has rows registered before this column existed,
+    and their **genesis** key is not recoverable — nothing ever recorded key
+    history. So the key on file becomes the genesis key for those rows. That is
+    a real approximation and is written down rather than glossed: an agent that
+    rotated its key before P47 gets an id derived from its current key, not its
+    first one. Every agent registered after P47 has a true genesis anchor.
+
+    The alternative — leaving NULL — pushes a branch into every reader forever
+    for the sake of a distinction no caller can act on.
+
+    Returns how many rows it touched, so a caller can log it and so the tests
+    can tell "backfilled nothing" from "backfilled correctly".
+    """
+    rows = conn.execute(
+        "SELECT agent_id, public_key_hex FROM authorized_agents WHERE stable_id IS NULL"
+    ).fetchall()
+    touched = 0
+    for row in rows:
+        key = row["public_key_hex"] if not isinstance(row, tuple) else row[1]
+        agent_id = row["agent_id"] if not isinstance(row, tuple) else row[0]
+        if not key:
+            continue
+        try:
+            derived = stable_id_for(key)
+        except ValueError:
+            # A malformed key on file can't produce an id. Left NULL rather
+            # than crashing the migration for every other agent on the relay.
+            logger.warning("stable_id backfill skipped %s: unparseable public key", agent_id)
+            continue
+        conn.execute(
+            "UPDATE authorized_agents SET stable_id = ? WHERE agent_id = ? AND stable_id IS NULL",
+            (derived, agent_id),
+        )
+        touched += 1
+    return touched
+
+
 def _migrate_authorized_agents(conn: Any) -> None:
     existing = {
         row[1]
@@ -1398,6 +1438,12 @@ def _migrate_authorized_agents(conn: Any) -> None:
         # ids don't encode their own mode, and a test-mode acct id is worthless
         # (worse: dangerous) under a live key — see _stripe_key_mode().
         ("stripe_account_mode", "TEXT NOT NULL DEFAULT ''"),
+        # P47: the agent's permanent identity, distinct from its handle. NULL
+        # (not '') for a row that predates this column, so the backfill below
+        # can tell "never allocated" from "allocated" without a sentinel — see
+        # _backfill_stable_ids(). Nullable rather than NOT NULL DEFAULT '': a
+        # default would make every legacy row collide on the unique index.
+        ("stable_id", "TEXT"),
     ]
     newly_added = set()
     for col, defn in migrations:
@@ -1410,6 +1456,17 @@ def _migrate_authorized_agents(conn: Any) -> None:
     # column). A table that has both is fully migrated and triggers neither.
     if newly_added & {"stripe_account_status", "stripe_account_mode"}:
         _backfill_stripe_account_state(conn)
+    if "stable_id" in newly_added:
+        _backfill_stable_ids(conn)
+    # P47: unique, and partial so legacy rows the backfill hasn't reached yet
+    # (or rows a future migration deliberately leaves NULL) don't all collide
+    # on NULL. Unique because two agents sharing an identity would be
+    # indistinguishable to everything downstream — the mirror of the
+    # taken-handle-under-a-different-key check `register()` already makes.
+    conn.execute(
+        "CREATE UNIQUE INDEX IF NOT EXISTS idx_agents_stable_id "
+        "ON authorized_agents(stable_id) WHERE stable_id IS NOT NULL"
+    )
     # Non-unique index — one Nous user may operate multiple agent personas.
     # Drop the old unique variant if it exists (created by an earlier migration).
     conn.execute("DROP INDEX IF EXISTS idx_agents_nous_user_id")
@@ -2041,6 +2098,261 @@ def _normalize_agent_id(agent_id: str) -> str:
     return normalized
 
 
+# ─── P47b: the agent-reference map ──────────────────────────────────────────
+# `agent_id` is the primary key of `authorized_agents` and is referenced by
+# name — not by foreign key — from 30 columns across 14 other tables, plus
+# three JSON arrays. Renaming an agent therefore means rewriting all of them in
+# one transaction; a rename that touched only `authorized_agents` would orphan
+# the agent's rooms, entitlements, payments and DMs while appearing to succeed.
+#
+# The plan for this pass put the figure at "22 agent-shaped columns" and
+# proposed leaving them un-re-keyed. Both halves were wrong. The count came
+# from a name-pattern heuristic that missed `removed_by`, `invited_by`,
+# `agent_a`/`agent_b`, `organizer_id`, `from_agent`/`to_agent` and
+# `current_agent`; and leaving references behind is not an option once rename
+# exists at all.
+#
+# `_NON_AGENT_COLUMNS` is not documentation. Together with the two maps below
+# it must partition the entire schema (231 columns), which a test asserts — so
+# a column added later belongs to neither set and fails that test, at the one
+# moment someone is thinking about that column and can answer correctly. A map
+# maintained any other way is a snapshot that rots silently, and the symptom is
+# orphaned rows nobody notices for months.
+_RENAME_COLUMNS: tuple[tuple[str, str], ...] = (
+    ("access_entitlements", "agent_id"), ("access_removals", "agent_id"),
+    ("access_removals", "removed_by"), ("actions", "agent_id"),
+    ("agent_inbox", "agent_id"), ("agora_comments", "author_id"),
+    ("agora_invites", "agent_id"), ("agora_invites", "invited_by"),
+    ("agora_members", "agent_id"), ("agora_posts", "author_id"),
+    ("agora_topics", "creator_id"), ("agora_votes", "voter_id"),
+    ("challenges", "creator_agent_id"), ("dm_messages", "sender_id"),
+    ("dm_threads", "agent_a"), ("dm_threads", "agent_b"),
+    ("events", "organizer_id"), ("listings", "agent_id"),
+    ("messages", "from_agent"), ("messages", "to_agent"),
+    ("participants", "agent_id"), ("payments", "agent_id"),
+    ("room_invites", "invitee_id"), ("room_invites", "invited_by"),
+    ("room_messages", "sender_id"), ("rooms", "creator_id"),
+    ("sessions", "current_agent"), ("settlements", "winner_id"),
+    ("settlements", "payer_id"),
+    # The row being renamed. Last, so the UPDATE below rewrites references
+    # while the old row still exists — SQLite has no deferred constraints here,
+    # and doing it first would leave every other statement pointing at a handle
+    # that no longer resolves if the transaction were inspected mid-flight.
+    ("authorized_agents", "agent_id"),
+)
+
+# Agent ids inside JSON arrays. Not rewritable in SQL, and deliberately not
+# done with a string replace: `"alice"` is a substring of `"alice_bot"`, so a
+# textual swap would corrupt a neighbour's membership. Parsed, mapped, re-dumped.
+_RENAME_JSON_COLUMNS: tuple[tuple[str, str], ...] = (
+    ("events", "participants_json"),
+    ("rooms", "members_json"),
+    ("sessions", "participants_json"),
+)
+
+# Every remaining column, declared not to hold an agent handle. Notable
+# judgements: `authorized_agents.nous_user_id` is an identity-provider subject
+# id, not a handle; `agora_votes.target_id` is a post or comment id;
+# `access_*.resource_id` is a room or topic id.
+_NON_AGENT_COLUMNS: frozenset[tuple[str, str]] = frozenset({
+    # access_entitlements
+    ("access_entitlements", "entitlement_id"), ("access_entitlements", "resource_type"),
+    ("access_entitlements", "resource_id"), ("access_entitlements", "payment_intent_id"),
+    ("access_entitlements", "granted_at"), ("access_entitlements", "expires_at"),
+    ("access_entitlements", "revoked_at"), ("access_entitlements", "revoked_reason"),
+    ("access_entitlements", "rail"),
+    # access_removals
+    ("access_removals", "removal_id"), ("access_removals", "resource_type"),
+    ("access_removals", "resource_id"), ("access_removals", "removed_at"),
+    ("access_removals", "reason"),
+    # actions
+    ("actions", "action_id"), ("actions", "session_id"), ("actions", "action_type"),
+    ("actions", "payload_json"), ("actions", "result_json"), ("actions", "created_at"),
+    # agent_inbox
+    ("agent_inbox", "inbox_id"), ("agent_inbox", "event_type"), ("agent_inbox", "payload_json"),
+    ("agent_inbox", "is_read"), ("agent_inbox", "created_at"),
+    # agora_comments
+    ("agora_comments", "comment_id"), ("agora_comments", "post_id"),
+    ("agora_comments", "parent_comment_id"), ("agora_comments", "content"),
+    ("agora_comments", "vote_score"), ("agora_comments", "is_deleted"),
+    ("agora_comments", "created_at"),
+    # agora_invites
+    ("agora_invites", "topic_id"), ("agora_invites", "created_at"),
+    # agora_members
+    ("agora_members", "topic_id"), ("agora_members", "role"), ("agora_members", "joined_at"),
+    # agora_posts
+    ("agora_posts", "post_id"), ("agora_posts", "topic_id"), ("agora_posts", "title"),
+    ("agora_posts", "content"), ("agora_posts", "post_type"), ("agora_posts", "flair"),
+    ("agora_posts", "vote_score"), ("agora_posts", "comment_count"),
+    ("agora_posts", "is_pinned"), ("agora_posts", "is_locked"), ("agora_posts", "is_deleted"),
+    ("agora_posts", "created_at"),
+    # agora_topics
+    ("agora_topics", "topic_id"), ("agora_topics", "slug"), ("agora_topics", "name"),
+    ("agora_topics", "description"), ("agora_topics", "visibility"),
+    ("agora_topics", "gate_type"), ("agora_topics", "entry_fee_cents"),
+    ("agora_topics", "created_at"), ("agora_topics", "post_count"),
+    ("agora_topics", "subscriber_count"), ("agora_topics", "flair_options"),
+    ("agora_topics", "access_duration_days"),
+    # agora_votes
+    ("agora_votes", "target_id"), ("agora_votes", "target_type"), ("agora_votes", "value"),
+    ("agora_votes", "created_at"),
+    # authorized_agents
+    ("authorized_agents", "public_key_hex"), ("authorized_agents", "display_name"),
+    ("authorized_agents", "registered_at"), ("authorized_agents", "is_active"),
+    ("authorized_agents", "stripe_account_id"), ("authorized_agents", "nous_user_id"),
+    ("authorized_agents", "trust_level"), ("authorized_agents", "identity_providers_json"),
+    ("authorized_agents", "x402_pay_to_json"), ("authorized_agents", "encryption_public_key"),
+    ("authorized_agents", "encryption_key_signature"),
+    ("authorized_agents", "stripe_account_status"),
+    ("authorized_agents", "stripe_account_mode"), ("authorized_agents", "stable_id"),
+    # challenges
+    ("challenges", "challenge_id"), ("challenges", "game_type"),
+    ("challenges", "creator_gateway_url"), ("challenges", "payment_mode"),
+    ("challenges", "stake_amount"), ("challenges", "currency"), ("challenges", "status"),
+    ("challenges", "created_at"), ("challenges", "expires_at"), ("challenges", "origin_relay"),
+    ("challenges", "metadata_json"),
+    # dm_messages
+    ("dm_messages", "message_id"), ("dm_messages", "thread_id"), ("dm_messages", "content"),
+    ("dm_messages", "msg_type"), ("dm_messages", "created_at"), ("dm_messages", "signature"),
+    ("dm_messages", "nonce"), ("dm_messages", "chain_hash"),
+    # dm_threads
+    ("dm_threads", "thread_id"), ("dm_threads", "created_at"),
+    ("dm_threads", "last_message_at"), ("dm_threads", "encrypted"),
+    # events
+    ("events", "event_id"), ("events", "title"), ("events", "description"),
+    ("events", "module_type"), ("events", "payment_mode"), ("events", "entry_fee_usd"),
+    ("events", "status"), ("events", "bracket_json"), ("events", "created_at"),
+    ("events", "updated_at"),
+    # listings
+    ("listings", "listing_id"), ("listings", "title"), ("listings", "description"),
+    ("listings", "listing_type"), ("listings", "payment_mode"), ("listings", "price_usd"),
+    ("listings", "module_type"), ("listings", "origin_relay"), ("listings", "expires_at"),
+    ("listings", "metadata_json"), ("listings", "created_at"),
+    # messages
+    ("messages", "message_id"), ("messages", "session_id"), ("messages", "type"),
+    ("messages", "payload_json"), ("messages", "signature"), ("messages", "created_at"),
+    # participants
+    ("participants", "session_id"), ("participants", "joined_at"),
+    ("participants", "stake_paid"),
+    # payments
+    ("payments", "payment_id"), ("payments", "session_id"), ("payments", "room_id"),
+    ("payments", "amount_cents"), ("payments", "currency"), ("payments", "payment_intent_id"),
+    ("payments", "payment_type"), ("payments", "status"), ("payments", "created_at"),
+    ("payments", "rail"),
+    # reg_challenges
+    ("reg_challenges", "challenge_id"), ("reg_challenges", "nonce"),
+    ("reg_challenges", "created_at"), ("reg_challenges", "expires_at"),
+    ("reg_challenges", "used"),
+    # room_invites
+    ("room_invites", "room_id"), ("room_invites", "created_at"),
+    # room_messages
+    ("room_messages", "message_id"), ("room_messages", "room_id"),
+    ("room_messages", "msg_type"), ("room_messages", "content"),
+    ("room_messages", "parent_message_id"), ("room_messages", "chain_hash"),
+    ("room_messages", "signature"), ("room_messages", "nonce"),
+    ("room_messages", "metadata_json"), ("room_messages", "created_at"),
+    # rooms
+    ("rooms", "room_id"), ("rooms", "name"), ("rooms", "description"), ("rooms", "room_type"),
+    ("rooms", "gate_type"), ("rooms", "entry_fee_cents"), ("rooms", "currency"),
+    ("rooms", "max_members"), ("rooms", "encrypted"), ("rooms", "linked_session_id"),
+    ("rooms", "created_at"), ("rooms", "updated_at"), ("rooms", "access_duration_days"),
+    # schema_migrations
+    ("schema_migrations", "key"), ("schema_migrations", "applied_at"),
+    # sessions
+    ("sessions", "session_id"), ("sessions", "module_type"), ("sessions", "config_json"),
+    ("sessions", "payment_rules_json"), ("sessions", "state_json"), ("sessions", "step_number"),
+    ("sessions", "status"), ("sessions", "created_at"), ("sessions", "updated_at"),
+    # settlements
+    ("settlements", "settlement_id"), ("settlements", "session_id"),
+    ("settlements", "total_stake_cents"), ("settlements", "platform_fee_cents"),
+    ("settlements", "winner_payout_cents"), ("settlements", "platform_fee_bps"),
+    ("settlements", "payment_intent_ids"), ("settlements", "transfer_id"),
+    ("settlements", "transfer_status"), ("settlements", "status"),
+    ("settlements", "created_at"), ("settlements", "rail"), ("settlements", "dedupe_key"),
+    ("settlements", "refund_id"), ("settlements", "reversal_id"),
+})
+
+# Handles the namespace keeps back. A first-come namespace has no other way to
+# protect names that are load-bearing elsewhere — `_relay_identity` is already
+# guarded by `_AGENT_ID_RE`'s leading-alnum rule, but nothing stopped an agent
+# from registering `relay` or `admin` and trading on it. Enforced at both doors
+# (registration and rename); a denylist on one of them is decoration.
+RESERVED_AGENT_IDS: frozenset[str] = frozenset({
+    "relay", "emporia", "admin", "administrator", "system", "root", "operator",
+    "support", "security", "official", "api", "www", "null", "none", "undefined",
+    "me", "self", "everyone", "anonymous",
+})
+
+
+def _rename_in_json_column(
+    conn: Any, table: str, column: str, old_id: str, new_id: str,
+) -> int:
+    """Rewrite one agent handle inside a JSON array column.
+
+    Parsed and re-dumped rather than string-replaced: `"alice"` is a substring
+    of `"alice_bot"`, so a textual swap on `["alice_bot", "bob"]` would corrupt
+    a neighbour's membership while looking like it worked. Rows whose JSON is
+    unparseable are left exactly as they are — that is pre-existing corruption,
+    and a rename is not the place to discover or "fix" it.
+
+    Only rows that actually contain the id are written back, so a rename does
+    not rewrite every room on the relay to change one membership.
+    """
+    changed = 0
+    rows = conn.execute(
+        f"SELECT rowid, {column} FROM {table} WHERE {column} LIKE ?", (f'%"{old_id}"%',)
+    ).fetchall()
+    for row in rows:
+        raw = row[1] if isinstance(row, tuple) else row[column]
+        rowid = row[0] if isinstance(row, tuple) else row["rowid"]
+        try:
+            members = json.loads(raw or "[]")
+        except ValueError:
+            continue
+        if not isinstance(members, list) or old_id not in members:
+            continue
+        conn.execute(
+            f"UPDATE {table} SET {column} = ? WHERE rowid = ?",
+            (json.dumps([new_id if m == old_id else m for m in members]), rowid),
+        )
+        changed += 1
+    return changed
+
+
+def stable_id_for(public_key_hex: str) -> str:
+    """This agent's permanent identity, derived from its **genesis** Ed25519
+    public key (P47).
+
+    `agent_id` was three things at once — primary key, display handle, and
+    identity — which works right up until any one of them has to change. This
+    separates the third out.
+
+    Why the pubkey and not the alternatives ROADMAP.md proposed:
+
+    * `identity.content_address_for(name, nous_user_id)` puts the **name inside
+      the digest** (`sha3_256(f"emporia:v1:{normalized}:{material}")`), so it
+      changes on rename. It is a content address for a named thing, which is a
+      different job; its only caller is the games lobby.
+    * `nous_user_id` is one-to-many by design — the index on it is deliberately
+      non-unique ("one Nous user may operate multiple agent personas"), so it
+      cannot identify an agent. And `register()` UPSERTs `trust_level`, so a
+      key_only agent presenting a Nous claim on an ordinary re-register would
+      *acquire* a Nous-derived id: identity changing at the exact moment it
+      became better attested.
+
+    The pubkey was already the ownership proof — registration requires one and
+    refuses a taken handle presented under a different key. This writes it down.
+
+    Derived so it is independently verifiable from public material; **stored**
+    thereafter (see `AgentRegistry.register`) so a key rotation preserves
+    identity rather than renaming the agent for doing the right thing. Hex is
+    lowercased before hashing: the same key written two ways is one key.
+    """
+    return hashlib.sha3_256(
+        b"emporia:agent:v1:" + bytes.fromhex(public_key_hex.strip().lower())
+    ).hexdigest()
+
+
 class AgentRegistry:
     def __init__(self) -> None:
         self.rate_limits: dict[str, list[float]] = defaultdict(list)
@@ -2056,6 +2368,10 @@ class AgentRegistry:
     ) -> dict:
         """Register an agent. Returns enriched profile dict with trust_level."""
         agent_id = _normalize_agent_id(agent_id)
+        # P47b: the denylist has to live at both doors. An agent refused `admin`
+        # on rename could otherwise simply register it.
+        if agent_id in RESERVED_AGENT_IDS:
+            raise ValueError(f"'{agent_id}' is a reserved handle")
         if not public_key_hex:
             raise ValueError("public_key_hex is required — agents must register with an Ed25519 pubkey")
         # Validate Ed25519 pubkey: exactly 64 hex chars (32 bytes).
@@ -2105,6 +2421,25 @@ class AgentRegistry:
                         f"Agent ID '{agent_id}' is already taken by a different key. "
                         f"Choose a unique agent_id — e.g. '{agent_id}_{suffix}'."
                     )
+                # P47: the mirror of the check above. That one refuses a taken
+                # handle under a new key; this refuses a new handle under a key
+                # that already holds one. Both together are what make the handle
+                # ownable: without this, one key could hold two identities that
+                # nothing downstream could tell apart. Checked here rather than
+                # left to the unique index so the message names the actual
+                # conflict instead of surfacing an IntegrityError.
+                derived_stable_id = stable_id_for(public_key_hex)
+                if not existing_row:
+                    twin = conn.execute(
+                        "SELECT agent_id FROM authorized_agents WHERE stable_id = ?",
+                        (derived_stable_id,),
+                    ).fetchone()
+                    if twin:
+                        raise ValueError(
+                            f"That key is already registered as '{twin['agent_id']}'. "
+                            f"One key is one identity — rename it rather than "
+                            f"registering it twice."
+                        )
                 # P16-3: an UPSERT, not INSERT OR REPLACE. SQLite implements
                 # INSERT OR REPLACE as DELETE-then-INSERT, so every column *not*
                 # listed here silently reverted to its schema DEFAULT on a
@@ -2121,8 +2456,15 @@ class AgentRegistry:
                 conn.execute(
                     "INSERT INTO authorized_agents "
                     "(agent_id, public_key_hex, display_name, registered_at, is_active, "
-                    "stripe_account_id, nous_user_id, trust_level, identity_providers_json) "
-                    "VALUES (?, ?, ?, ?, 1, ?, ?, ?, ?) "
+                    "stripe_account_id, nous_user_id, trust_level, identity_providers_json, "
+                    "stable_id) "
+                    "VALUES (?, ?, ?, ?, 1, ?, ?, ?, ?, ?) "
+                    # P47: `stable_id` is deliberately ABSENT from DO UPDATE.
+                    # Allocated once, on the row's first insert, and never
+                    # recomputed — that is the whole mechanism by which a key
+                    # rotation preserves identity. Putting it in this list would
+                    # silently make the id follow the key again, which is the
+                    # design this pass rejected.
                     "ON CONFLICT(agent_id) DO UPDATE SET "
                     "public_key_hex=excluded.public_key_hex, "
                     "display_name=excluded.display_name, "
@@ -2144,10 +2486,21 @@ class AgentRegistry:
                     "identity_providers_json=excluded.identity_providers_json",
                     (agent_id, public_key_hex, verified_display_name,
                      datetime.now(UTC).isoformat(), stripe_account_id,
-                     nous_user_id, trust_level, json.dumps(providers_verified)),
+                     nous_user_id, trust_level, json.dumps(providers_verified),
+                     derived_stable_id),
                 )
+                stable_id = conn.execute(
+                    "SELECT stable_id FROM authorized_agents WHERE agent_id = ?",
+                    (agent_id,),
+                ).fetchone()["stable_id"]
             return {
                 "agent_id": agent_id,
+                # P47: read back rather than returned from `derived_stable_id`.
+                # On a re-register those two differ whenever the row was created
+                # before this key — which is exactly the case (rotation, an
+                # upgraded legacy row) where returning the freshly derived value
+                # would report an identity the database does not hold.
+                "stable_id": stable_id,
                 "display_name": verified_display_name,
                 "trust_level": trust_level,
                 "nous_user_id": nous_user_id,
@@ -2157,6 +2510,130 @@ class AgentRegistry:
             raise  # key-conflict or validation errors — preserve message for HTTP status mapping
         except Exception as e:
             raise ValueError(f"Registration failed: {e}") from e
+
+    def rotate_key(self, agent_id: str, new_public_key_hex: str) -> dict:
+        """Replace an agent's Ed25519 signing key, keeping its identity (P47).
+
+        Not reachable through `register()` by design: that path refuses a taken
+        handle presented under a different key, and it has to — that refusal is
+        what makes a handle ownable at all. Rotation is therefore its own
+        operation, and the caller is responsible for having proved control of
+        the *current* key first (the route does; see `rotate_agent_key`).
+
+        `stable_id` is untouched. That is the point: an agent that rotates its
+        key for good reasons must not be renamed by the relay for doing so.
+        Note what this means downstream — signatures made under the old key stop
+        verifying immediately, which is the correct behaviour for a rotation and
+        the wrong behaviour for a compromise recovery that wants to keep them.
+        """
+        try:
+            if len(bytes.fromhex(new_public_key_hex)) != 32:
+                raise ValueError()
+        except ValueError:
+            raise ValueError("public_key_hex must be a 64-char hex string (Ed25519 public key)")
+
+        with DB_LOCK, get_db() as conn:
+            row = conn.execute(
+                "SELECT stable_id, public_key_hex FROM authorized_agents WHERE agent_id = ?",
+                (agent_id,),
+            ).fetchone()
+            if not row:
+                raise ValueError(f"Agent not found: {agent_id}")
+            # The new key must not already belong to someone else — same
+            # one-key-one-identity rule registration enforces, checked here so
+            # rotation can't be used to walk around it.
+            twin = conn.execute(
+                "SELECT agent_id FROM authorized_agents WHERE stable_id = ? AND agent_id != ?",
+                (stable_id_for(new_public_key_hex), agent_id),
+            ).fetchone()
+            if twin:
+                raise ValueError(f"That key is already registered as '{twin['agent_id']}'")
+            conn.execute(
+                "UPDATE authorized_agents SET public_key_hex = ? WHERE agent_id = ?",
+                (new_public_key_hex, agent_id),
+            )
+        return {"agent_id": agent_id, "stable_id": row["stable_id"],
+                "public_key_hex": new_public_key_hex}
+
+    def rename(self, agent_id: str, new_agent_id: str) -> dict:
+        """Move an agent to a new handle, carrying every reference with it (P47b).
+
+        The handle is the only thing that changes. `stable_id` is untouched —
+        that is what makes rename safe to offer at all: anything that recorded
+        *who* this agent is still resolves, and only things that recorded *what
+        it was called* have to move. Which is all of them, hence
+        `_RENAME_COLUMNS`.
+
+        One transaction, under DB_LOCK. A partial rename is the worst possible
+        outcome — an agent whose rooms answer to the new handle and whose
+        payments answer to the old one — so this either lands completely or not
+        at all.
+
+        The old handle is **released, not aliased**. Someone else may claim it,
+        and gets a fresh row with their own `stable_id` and none of the previous
+        holder's entitlements, payout wallet, or history: those all moved with
+        the rename, by construction rather than by a cleanup step that could be
+        forgotten. That is also the honest reading of the no-backcompat stance —
+        a redirect would keep a dead name resolving forever and make "available"
+        mean something weaker than it says.
+
+        Two things this deliberately does not move, recorded rather than
+        silently accepted:
+
+        * The append-only session audit log. It is a record of what happened
+          under a name at the time, and rewriting history to match a later
+          rename would defeat the point of having it. `stable_id` is the join
+          key for anyone correlating across a rename.
+        * In-memory state — open WebSocket connections and rate-limit buckets
+          keyed by handle. The agent reconnects; the stale bucket ages out.
+
+        Outstanding bearer tokens for the old handle stop resolving, because the
+        row they name is gone. That is correct: the token asserts a handle, and
+        the handle now belongs to nobody.
+        """
+        new_agent_id = _normalize_agent_id(new_agent_id)
+        if new_agent_id in RESERVED_AGENT_IDS:
+            raise ValueError(f"'{new_agent_id}' is a reserved handle")
+        if new_agent_id == agent_id:
+            raise ValueError("that is already this agent's handle")
+
+        with DB_LOCK, get_db() as conn:
+            row = conn.execute(
+                "SELECT stable_id FROM authorized_agents WHERE agent_id = ?", (agent_id,)
+            ).fetchone()
+            if not row:
+                raise ValueError(f"Agent not found: {agent_id}")
+            taken = conn.execute(
+                "SELECT 1 FROM authorized_agents WHERE agent_id = ?", (new_agent_id,)
+            ).fetchone()
+            if taken:
+                raise KeyError(f"'{new_agent_id}' is already taken")
+
+            for table, column in _RENAME_COLUMNS:
+                conn.execute(
+                    f"UPDATE {table} SET {column} = ? WHERE {column} = ?",
+                    (new_agent_id, agent_id),
+                )
+            for table, column in _RENAME_JSON_COLUMNS:
+                _rename_in_json_column(conn, table, column, agent_id, new_agent_id)
+
+        return {
+            "agent_id": new_agent_id,
+            "previous_agent_id": agent_id,
+            "stable_id": row["stable_id"],
+        }
+
+    def backfill_stable_ids(self) -> int:
+        """Run `_backfill_stable_ids()` against the live database.
+
+        The migration calls it once, when the column first appears. This is the
+        same operation as an explicitly invocable repair — a relay whose backfill
+        was interrupted, or whose rows were written by an older process mid-upgrade,
+        has NULLs the migration will never look at again (it only fires on the
+        column being newly added). Returns the number of rows touched.
+        """
+        with DB_LOCK, get_db() as conn:
+            return _backfill_stable_ids(conn)
 
     def get_stripe_account(self, agent_id: str) -> str | None:
         try:
@@ -3747,6 +4224,11 @@ async def register_agent(req: RegisterAgentRequest):
     return {
         "status": "registered",
         "agent_id": canonical_id,
+        # P47: the agent learns its own permanent identity here. Without it an
+        # agent would have to make a second request to find out who it is, and
+        # would have no way to notice a handle it re-registered was allocated to
+        # a different identity than it expected.
+        "stable_id": profile["stable_id"],
         "display_name": profile["display_name"],
         "trust_level": profile["trust_level"],
         "nous_user_id": profile["nous_user_id"],
@@ -3846,7 +4328,7 @@ async def get_agent_profile(agent_id: str, request: Request):
         row = conn.execute(
             "SELECT agent_id, display_name, registered_at, is_active, stripe_account_id, "
             "stripe_account_status, nous_user_id, trust_level, identity_providers_json, "
-            "encryption_public_key, public_key_hex "
+            "encryption_public_key, public_key_hex, stable_id "
             "FROM authorized_agents WHERE agent_id = ?",
             (agent_id,),
         ).fetchone()
@@ -3866,6 +4348,10 @@ async def get_agent_profile(agent_id: str, request: Request):
 
     return {
         "agent_id": row["agent_id"],
+        # P47: `agent_id` is the handle (mutable, claimable); `stable_id` is the
+        # identity (permanent, pubkey-anchored). A client that wants to remember
+        # *who* someone is stores the latter — see stable_id_for()'s docstring.
+        "stable_id": row["stable_id"],
         "display_name": row["display_name"] or row["agent_id"],
         "trust_level": row["trust_level"] or "key_only",
         "nous_user_id": row["nous_user_id"],
@@ -4048,6 +4534,50 @@ _X402_ADDRESS_PATTERNS = {
     "evm": re.compile(r"^0x[0-9a-fA-F]{40}$"),
     "svm": re.compile(r"^[1-9A-HJ-NP-Za-km-z]{32,44}$"),  # base58, Bitcoin alphabet (no 0OIl)
 }
+
+
+class RenameAgentRequest(BaseModel):
+    new_agent_id: str
+
+
+@app.post("/agents/{agent_id}/rename")
+async def rename_agent(agent_id: str, req: RenameAgentRequest, request: Request):
+    """Claim a different handle for this agent (P47b).
+
+    `stable_id` is what the agent *is*; `agent_id` is what it is *called*, and
+    since P47 those are two things. This changes the second, carrying every
+    reference in the database with it — see `AgentRegistry.rename()` for what
+    moves, what is deliberately left (the append-only audit log, in-memory
+    connection state) and why the old handle is released rather than aliased.
+
+    Authorized exactly like every other agent-scoped write: the caller must be
+    this agent, or the relay operator. Renaming someone else is taking their
+    name away from them, so there is no weaker tier for it.
+
+    Rate-limited on the *old* handle, before any write. A rename is cheap for
+    the caller and expensive for the relay (one UPDATE per reference column), so
+    it is the shape of request worth budgeting.
+    """
+    _require_caller_is(agent_id, request)
+    _require_registered(agent_id)
+    _enforce_agent_rate_limit(agent_id)
+    try:
+        result = AGENT_REGISTRY.rename(agent_id, req.new_agent_id)
+    except KeyError as e:
+        # Taken, not malformed — a different answer to the caller, who should
+        # pick another name rather than fix this one.
+        raise HTTPException(409, str(e).strip("'\""))
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+    logger.info(
+        "agent_renamed",
+        extra={
+            "stable_id": result["stable_id"],
+            "from_agent_id": result["previous_agent_id"],
+            "to_agent_id": result["agent_id"],
+        },
+    )
+    return result
 
 
 @app.post("/agents/{agent_id}/x402-wallet")

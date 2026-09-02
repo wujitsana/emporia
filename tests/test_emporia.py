@@ -662,7 +662,7 @@ def test_register_agent_requires_pubkey(client):
 def test_register_agent_success(client):
     r = client.post("/agents/register", json={
         "agent_id": "test_agent_001",
-        "public_key_hex": "a" * 64,
+        "public_key_hex": _test_pubkey("test_agent_001"),
         "display_name": "Test Agent 001",
     })
     assert r.status_code == 200
@@ -681,13 +681,13 @@ def test_agent_id_rejects_cyrillic_homoglyph_of_existing_agent(client):
     Cyrillic а isn't in the now-enforced [a-z0-9_-] charset, so it's rejected outright —
     not accepted as a distinct name."""
     r = client.post("/agents/register", json={
-        "agent_id": "stripe_official", "public_key_hex": "a" * 64,
+        "agent_id": "stripe_official", "public_key_hex": _test_pubkey("stripe_official"),
     })
     assert r.status_code == 200
 
     homoglyph = "stripe_officiаl"  # Cyrillic а (U+0430) in place of the Latin a
     r = client.post("/agents/register", json={
-        "agent_id": homoglyph, "public_key_hex": "b" * 64,
+        "agent_id": homoglyph, "public_key_hex": _test_pubkey(homoglyph),
     })
     assert r.status_code == 400
     assert "agent_id" in r.text
@@ -698,23 +698,23 @@ def test_agent_id_rejects_bad_charset_and_reserved_prefix(client):
     # matching identity._key_path()'s own .lower(), so "Alice"/"alice" can't diverge into
     # two distinct registrations.
     r = client.post("/agents/register", json={
-        "agent_id": "Has-Uppercase", "public_key_hex": "c" * 64,
+        "agent_id": "Has-Uppercase", "public_key_hex": _test_pubkey("Has-Uppercase"),
     })
     assert r.status_code == 200
     assert r.json()["agent_id"] == "has-uppercase"
 
     r = client.post("/agents/register", json={
-        "agent_id": "has spaces", "public_key_hex": "d" * 64,
+        "agent_id": "has spaces", "public_key_hex": _test_pubkey("has spaces"),
     })
     assert r.status_code == 400
 
     r = client.post("/agents/register", json={
-        "agent_id": "_shadow_relay", "public_key_hex": "e" * 64,
+        "agent_id": "_shadow_relay", "public_key_hex": _test_pubkey("_shadow_relay"),
     })
     assert r.status_code == 400
 
     r = client.post("/agents/register", json={
-        "agent_id": "ab", "public_key_hex": "f" * 64,  # below the 3-char minimum
+        "agent_id": "ab", "public_key_hex": _test_pubkey("ab"),  # below the 3-char minimum
     })
     assert r.status_code == 400
 
@@ -725,13 +725,13 @@ def test_agent_id_nfkc_variant_collides_with_existing_name(client):
     collides with an existing name through the ordinary key-mismatch check rather than
     silently registering as a distinct, confusable identity."""
     r = client.post("/agents/register", json={
-        "agent_id": "nfkc_demo_agent", "public_key_hex": "1" * 64,
+        "agent_id": "nfkc_demo_agent", "public_key_hex": _test_pubkey("nfkc_demo_agent"),
     })
     assert r.status_code == 200
 
     fullwidth = "nfkc_demo_ａgent"  # fullwidth "ａ" (U+FF41), NFKC-folds to "a"
     r = client.post("/agents/register", json={
-        "agent_id": fullwidth, "public_key_hex": "2" * 64,
+        "agent_id": fullwidth, "public_key_hex": _test_pubkey(fullwidth),
     })
     assert r.status_code == 409
     assert "already taken" in r.text
@@ -739,7 +739,7 @@ def test_agent_id_nfkc_variant_collides_with_existing_name(client):
 
 def test_agent_id_legitimate_new_name_still_registers(client):
     r = client.post("/agents/register", json={
-        "agent_id": "legit-new-agent_2", "public_key_hex": "3" * 64,
+        "agent_id": "legit-new-agent_2", "public_key_hex": _test_pubkey("legit-new-agent_2"),
     })
     assert r.status_code == 200
     assert r.json()["agent_id"] == "legit-new-agent_2"
@@ -1267,7 +1267,7 @@ def test_require_challenge_defaults_true_in_source():
 def test_register_agent_requires_challenge_when_mandatory(client):
     r = client.post("/agents/register", json={
         "agent_id": "no_challenge_agent",
-        "public_key_hex": "c" * 64,
+        "public_key_hex": _test_pubkey("no_challenge_agent"),
     })
     assert r.status_code == 400
 
@@ -1307,7 +1307,7 @@ def test_challenge_cannot_be_reused(client):
 def test_challenge_unknown_id_rejected(client):
     r = client.post("/agents/register", json={
         "agent_id": "ghost_agent",
-        "public_key_hex": "d" * 64,
+        "public_key_hex": _test_pubkey("ghost_agent"),
         "challenge_id": "ch_does_not_exist",
         "challenge_signature": "00" * 64,
     })
@@ -1319,10 +1319,24 @@ def test_challenge_unknown_id_rejected(client):
 # Listings
 # ============================================================================
 
+def _test_pubkey(agent_id: str) -> str:
+    """A distinct, valid-shaped Ed25519 public key per agent_id.
+
+    P47: this helper used to hand every agent the literal `"b" * 64`. That was
+    harmless while `agent_id` *was* the identity, and became wrong the moment
+    identity was anchored to the key — the relay now refuses a second handle on
+    a key that already holds one (one key, one identity), so a suite where every
+    agent shares a key models something the relay forbids. Derived from the
+    agent_id so failures stay reproducible.
+    """
+    import hashlib
+    return hashlib.sha256(f"emporia-test-key:{agent_id}".encode()).hexdigest()
+
+
 def _register(client, agent_id: str, pubkey: str = None) -> None:
     client.post("/agents/register", json={
         "agent_id": agent_id,
-        "public_key_hex": pubkey or ("b" * 64),
+        "public_key_hex": pubkey or _test_pubkey(agent_id),
     })
 
 
@@ -2975,6 +2989,11 @@ def test_no_new_identity_as_proof_params():
         # agent_id (path): _require_caller_is-checked (P1b-2). network_family/address in
         # the body carry no identity claim.
         ("POST", "/agents/{agent_id}/x402-wallet"),
+        # agent_id (path): _require_caller_is-checked (P47b). The body's new_agent_id
+        # is a *requested* handle, not a claim about who the caller is — it is
+        # normalized, denylist-checked and refused if taken, and none of that depends
+        # on trusting the caller's identity, which the path param already proved.
+        ("POST", "/agents/{agent_id}/rename"),
         # agent_id (path): _require_caller_is-checked (P16-3). The body's
         # encryption_public_key_hex is not an identity claim either way — the
         # signature over it must verify against *this* agent_id's already-registered
@@ -3107,6 +3126,9 @@ def test_every_route_has_a_reviewed_auth_posture():
         ("POST", "/agents/{agent_id}/inbox/mark-read"),
         # P1b-2: _require_caller_is — a mismatched caller gets 403.
         ("POST", "/agents/{agent_id}/x402-wallet"),
+        # P47b: _require_caller_is, same posture as x402-wallet. Renaming someone
+        # else is taking their name away from them, so there is no weaker tier.
+        ("POST", "/agents/{agent_id}/rename"),
         # P25-2: _require_caller_is, same posture as x402-wallet just above.
         ("POST", "/agents/{agent_id}/stripe-onboarding"),
         # P16-3: _require_caller_is on publish; authenticated-caller on fetch. Key
@@ -14872,7 +14894,7 @@ def test_inbox_empty_by_default(client):
     """New agent has empty inbox."""
     r = client.post("/agents/register", json={
         "agent_id": "inbox_tester_empty",
-        "public_key_hex": "a" * 64,
+        "public_key_hex": _test_pubkey("inbox_tester_empty"),
         "display_name": "Inbox Tester",
     })
     assert r.status_code == 200
@@ -14892,7 +14914,7 @@ def test_inbox_receives_room_invite(client):
     # Register creator and invitee
     for aid in ("ibx_creator", "ibx_invitee"):
         client.post("/agents/register", json={
-            "agent_id": aid, "public_key_hex": "b" * 64, "display_name": aid
+            "agent_id": aid, "public_key_hex": _test_pubkey(aid), "display_name": aid
         })
     # Creator makes a private room
     r = client.post("/rooms", json={
@@ -14944,7 +14966,7 @@ def test_inbox_rejects_cross_agent_access(client):
     mismatched header, is rejected."""
     for aid in ("ibx_victim", "ibx_attacker"):
         client.post("/agents/register", json={
-            "agent_id": aid, "public_key_hex": "b" * 64, "display_name": aid
+            "agent_id": aid, "public_key_hex": _test_pubkey(aid), "display_name": aid
         })
     # No identity header at all
     r = client.get("/agents/ibx_victim/inbox")
@@ -14983,7 +15005,7 @@ def test_header_auth_not_trusted_when_flag_off():
         with patch.object(relay_server, "_HEADER_AUTH_TRUSTED_HOSTS", set()):
             client = TestClient(app, client=(source_ip, 51216))
             client.post("/agents/register", json={
-                "agent_id": agent_id, "public_key_hex": "b" * 64, "display_name": agent_id
+                "agent_id": agent_id, "public_key_hex": _test_pubkey(agent_id), "display_name": agent_id
             })
             r = client.get(f"/agents/{agent_id}/inbox", headers={"x-emporia-agent-id": agent_id})
             assert r.status_code == 403, f"source_ip={source_ip}"
@@ -15215,7 +15237,7 @@ def test_register_without_identity_claim_is_key_only(client):
     """Registration without identity_claims gets trust_level='key_only'."""
     r = client.post("/agents/register", json={
         "agent_id": "plain_key_agent",
-        "public_key_hex": "c" * 64,
+        "public_key_hex": _test_pubkey("plain_key_agent"),
         "display_name": "Plain Key Agent",
     })
     assert r.status_code == 200
@@ -15229,7 +15251,7 @@ def test_register_with_bad_nous_token_degrades_gracefully(client):
     """Bad Nous token: registration succeeds but stays key_only (not rejected)."""
     r = client.post("/agents/register", json={
         "agent_id": "bad_nous_agent",
-        "public_key_hex": "d" * 64,
+        "public_key_hex": _test_pubkey("bad_nous_agent"),
         "display_name": "Bad Nous Agent",
         "identity_claims": [{"provider": "nous", "token": "invalid.jwt.token"}],
     })
@@ -15258,7 +15280,7 @@ def test_register_with_mocked_nous_verified(client):
     ):
         r = client.post("/agents/register", json={
             "agent_id": "nous_verified_agent",
-            "public_key_hex": "e" * 64,
+            "public_key_hex": _test_pubkey("nous_verified_agent"),
             "display_name": "",  # blank — should be filled from Nous claim
             "identity_claims": [{"provider": "nous", "token": "fake_but_mocked"}],
         })
@@ -15292,7 +15314,7 @@ def test_nous_portability_same_user_two_profiles(client):
     with patch("emporia.identity_providers.nous.NousIdentityProvider.verify", side_effect=make_claim):
         r1 = client.post("/agents/register", json={
             "agent_id": "profile_alpha_999",
-            "public_key_hex": "f" * 64,
+            "public_key_hex": _test_pubkey("profile_alpha_999"),
             "identity_claims": [{"provider": "nous", "token": "tok1"}],
         })
         assert r1.status_code == 200
@@ -15302,7 +15324,7 @@ def test_nous_portability_same_user_two_profiles(client):
         # Second profile with same Nous account — registers as its own identity
         r2 = client.post("/agents/register", json={
             "agent_id": "profile_beta_999",
-            "public_key_hex": "a" * 64,
+            "public_key_hex": _test_pubkey("profile_beta_999"),
             "identity_claims": [{"provider": "nous", "token": "tok2"}],
         })
         assert r2.status_code == 200
@@ -20097,7 +20119,7 @@ def test_register_agent_test_mode_marks_stripe_account_active_immediately(client
             mock_resp.raise_for_status = MagicMock()
             mock_post.return_value = mock_resp
             r = client.post("/agents/register", json={
-                "agent_id": "p25_stripe_testmode_a", "public_key_hex": "b" * 64,
+                "agent_id": "p25_stripe_testmode_a", "public_key_hex": _test_pubkey("p25_stripe_testmode_a"),
             })
     assert r.status_code == 200, r.text
     assert r.json()["stripe_account_id"] == "acct_test_active_001"
@@ -20402,7 +20424,7 @@ def test_p26_reregister_does_not_desync_stripe_account_id_from_status(client):
     # Re-register with no Stripe configured, so nothing re-provisions.
     with patch.dict(os.environ, {"STRIPE_SECRET_KEY": ""}):
         r = client.post("/agents/register", json={
-            "agent_id": "p26_rereg", "public_key_hex": "b" * 64,
+            "agent_id": "p26_rereg", "public_key_hex": _test_pubkey("p26_rereg"),
         })
     assert r.status_code == 200, r.text
 
@@ -24621,3 +24643,588 @@ def test_testnet_paid_room_join_settles_through_mpp_spt(client, monkeypatch):
             (payer,),
         ).fetchone()
     assert row is not None and row["rail"] == "stripe"
+
+
+# ============================================================================
+# P47 — identity stops being the handle
+#
+# `agent_id` has been three things at once since the first commit: the primary
+# key, the display handle, and the identity. That works until any one of them
+# needs to change, and then none of them can.
+#
+# ROADMAP.md proposed anchoring on `content_address_for()` or on
+# `nous_user_id`. Both were checked against the code and both are wrong:
+#
+#   * `identity.content_address_for(name, nous_user_id)` digests
+#     `f"emporia:v1:{normalized}:{material}"` — the **name is inside the
+#     digest**, so it changes on rename. It cannot be a rename-stable id, and
+#     its only caller is the games lobby; relay registration never touches it.
+#   * `nous_user_id` is one-to-many *by design* — `relay_server.py` drops any
+#     unique index on it, commented "one Nous user may operate multiple agent
+#     personas." Worse, re-registration UPSERTs `trust_level`, so a key_only
+#     agent upgrading to nous_verified would *acquire* a Nous-derived id it
+#     didn't have, changing identity at exactly the moment continuity matters.
+#
+# The pubkey is already the ownership proof — registration requires an Ed25519
+# key and already refuses a taken handle presented under a different one. It
+# simply was never written down as an id. So: `stable_id` is derived from the
+# genesis pubkey, allocated once, then **stored** and never recomputed, which
+# is what lets a key rotate without identity following it. `nous_user_id` stays
+# what it honestly is: a one-to-many linkage answering "same operator", which
+# is the "combo" half a Nous anchor can actually support.
+# ============================================================================
+
+def _p47_pubkey(seed: str) -> str:
+    """A distinct, valid Ed25519 public key per seed — 32 bytes of hex. The
+    relay only ever validates length here, so a deterministic filler is enough
+    and keeps failures reproducible."""
+    import hashlib
+    return hashlib.sha256(seed.encode()).hexdigest()
+
+
+def test_stable_id_is_derived_from_the_genesis_key_not_the_handle():
+    """The identity must not contain the name, or it isn't rename-stable —
+    which is precisely why `content_address_for()` could not be reused. Two
+    agents with different handles and the same key would collide, so the two
+    registrations below use different keys; what's asserted is that the digest
+    is a pure function of the key material and the domain tag."""
+    import hashlib
+
+    from emporia.relay_server import stable_id_for
+
+    key = _p47_pubkey("p47_genesis")
+    expected = hashlib.sha3_256(b"emporia:agent:v1:" + bytes.fromhex(key)).hexdigest()
+    assert stable_id_for(key) == expected
+    assert stable_id_for(key) == stable_id_for(key.upper()), \
+        "hex case is not identity — the same key must not yield two ids"
+    assert stable_id_for(_p47_pubkey("other")) != expected
+
+
+def test_registration_allocates_a_stable_id_and_reports_it(client):
+    """`stable_id` has to reach the caller at registration, or an agent has no
+    way to learn its own identity short of a second request."""
+    r = client.post("/agents/register", json={
+        "agent_id": "p47_alloc", "public_key_hex": _p47_pubkey("p47_alloc"),
+    })
+    assert r.status_code == 200, r.text
+    body = r.json()
+    from emporia.relay_server import stable_id_for
+    assert body["stable_id"] == stable_id_for(_p47_pubkey("p47_alloc"))
+
+    profile = client.get("/agents/p47_alloc", headers={"x-emporia-agent-id": "p47_alloc"})
+    assert profile.status_code == 200, profile.text
+    assert profile.json()["stable_id"] == body["stable_id"]
+
+
+def test_key_rotation_preserves_the_stable_id(client):
+    """The whole reason `stable_id` is *stored* rather than recomputed on read.
+    An agent that rotates its Ed25519 key is the same agent; an id that
+    followed the key would rename the agent every time it did the right thing
+    security-wise. Registration is documented as safe to call on every start,
+    so this path is ordinary, not exotic."""
+    from emporia.relay_server import AGENT_REGISTRY
+
+    first = client.post("/agents/register", json={
+        "agent_id": "p47_rotate", "public_key_hex": _p47_pubkey("rot_v1"),
+    })
+    assert first.status_code == 200, first.text
+    original = first.json()["stable_id"]
+
+    # A rotation is not something register() will do for you — a taken handle
+    # under a different key is refused (that check is what makes the handle
+    # ownable at all). Rotation goes through the registry's own path.
+    AGENT_REGISTRY.rotate_key("p47_rotate", _p47_pubkey("rot_v2"))
+
+    profile = client.get("/agents/p47_rotate", headers={"x-emporia-agent-id": "p47_rotate"})
+    assert profile.status_code == 200, profile.text
+    assert profile.json()["stable_id"] == original, \
+        "rotating the signing key must not change who the agent is"
+    assert profile.json()["public_key_hex"] == _p47_pubkey("rot_v2")
+
+
+def test_re_registering_after_a_rotation_does_not_reallocate_identity(client):
+    """The UPSERT path, which the rotation test above cannot reach.
+
+    `register()` is documented as safe to call on every start, so this is the
+    ordinary sequence for an agent that rotated its key: rotate, restart,
+    re-register — now under the *new* key, against a row whose `stable_id` was
+    derived from the old one. If `stable_id` were in the DO UPDATE list it would
+    be silently reallocated here, and the agent would come back from a restart
+    as a different identity. Written because reintroducing exactly that defect
+    left every other P47 test green: the rotation test never touches the UPSERT,
+    and the trust-upgrade test re-registers with an unchanged key, so
+    `excluded.stable_id` happens to equal what is already stored."""
+    from emporia.relay_server import AGENT_REGISTRY
+
+    first = client.post("/agents/register", json={
+        "agent_id": "p47_reregister", "public_key_hex": _p47_pubkey("rereg_v1"),
+    })
+    assert first.status_code == 200, first.text
+    original = first.json()["stable_id"]
+
+    AGENT_REGISTRY.rotate_key("p47_reregister", _p47_pubkey("rereg_v2"))
+
+    again = client.post("/agents/register", json={
+        "agent_id": "p47_reregister", "public_key_hex": _p47_pubkey("rereg_v2"),
+    })
+    assert again.status_code == 200, again.text
+    assert again.json()["stable_id"] == original, (
+        "an ordinary restart after a key rotation reallocated the agent's identity"
+    )
+
+
+def test_trust_upgrade_preserves_the_stable_id(client, monkeypatch):
+    """The case that kills the Nous-anchored design outright. Registration
+    UPSERTs `trust_level`, so a key_only agent presenting a Nous claim becomes
+    nous_verified on an ordinary re-register — under a Nous anchor that would
+    hand it a *new* identity at the exact moment its identity became better
+    attested."""
+    from emporia.relay_server import AGENT_REGISTRY
+
+    key = _p47_pubkey("p47_upgrade")
+    first = client.post("/agents/register", json={"agent_id": "p47_upgrade", "public_key_hex": key})
+    assert first.status_code == 200, first.text
+    original = first.json()["stable_id"]
+    assert first.json()["trust_level"] == "key_only"
+
+    class _Claim:
+        subject_id = "nous_user_p47"
+        display_name = "P47 Upgraded"
+
+    import emporia.identity_providers as idp
+    monkeypatch.setattr(idp, "verify_claim", lambda provider, token: _Claim())
+
+    upgraded = AGENT_REGISTRY.register(
+        "p47_upgrade", key, identity_claims=[{"provider": "nous", "token": "t"}],
+    )
+    assert upgraded["trust_level"] == "nous_verified"
+    assert upgraded["nous_user_id"] == "nous_user_p47"
+    assert upgraded["stable_id"] == original, \
+        "gaining a Nous attestation must not change the agent's identity"
+
+
+def test_one_nous_user_still_maps_to_many_agents_each_with_its_own_identity(client, monkeypatch):
+    """`nous_user_id` is a linkage, not an identity — the relay deliberately
+    dropped any unique index on it because one operator runs several personas.
+    Pinned from both directions: the personas share the Nous id and do not
+    share a `stable_id`."""
+    class _Claim:
+        subject_id = "nous_operator_p47"
+        display_name = ""
+
+    import emporia.identity_providers as idp
+    monkeypatch.setattr(idp, "verify_claim", lambda provider, token: _Claim())
+
+    from emporia.relay_server import AGENT_REGISTRY
+    personas = [
+        AGENT_REGISTRY.register(
+            f"p47_persona_{n}", _p47_pubkey(f"persona{n}"),
+            identity_claims=[{"provider": "nous", "token": "t"}],
+        )
+        for n in ("a", "b")
+    ]
+    assert {p["nous_user_id"] for p in personas} == {"nous_operator_p47"}
+    assert len({p["stable_id"] for p in personas}) == 2, \
+        "two personas of one operator must not share an identity"
+
+
+def test_legacy_rows_are_backfilled_from_their_current_key(client):
+    """A relay upgraded in place has rows that predate `stable_id`, and their
+    genesis key is not recoverable — nothing ever recorded it. The honest
+    choice is to treat the key on file as genesis and say so, rather than leave
+    a NULL that every reader has to branch on forever. Reproduced by clearing
+    the column on a real row, exactly as the migration finds it."""
+    from emporia.relay_server import AGENT_REGISTRY, get_db, stable_id_for
+
+    key = _p47_pubkey("p47_legacy")
+    client.post("/agents/register", json={"agent_id": "p47_legacy", "public_key_hex": key})
+
+    with get_db() as conn:
+        conn.execute("UPDATE authorized_agents SET stable_id = NULL WHERE agent_id = 'p47_legacy'")
+        conn.commit()
+
+    AGENT_REGISTRY.backfill_stable_ids()
+
+    with get_db() as conn:
+        row = conn.execute(
+            "SELECT stable_id FROM authorized_agents WHERE agent_id = 'p47_legacy'"
+        ).fetchone()
+    assert row["stable_id"] == stable_id_for(key)
+
+
+def test_stable_id_is_unique_across_agents(client):
+    """Two agents cannot share an identity. Registration already refuses a
+    taken *handle* under a different key; this is the other half — the same key
+    under a different handle. Without it, one key could hold two identities
+    that are indistinguishable downstream."""
+    key = _p47_pubkey("p47_shared_key")
+    first = client.post("/agents/register", json={"agent_id": "p47_twin_a", "public_key_hex": key})
+    assert first.status_code == 200, first.text
+
+    second = client.post("/agents/register", json={"agent_id": "p47_twin_b", "public_key_hex": key})
+    assert second.status_code == 409, (
+        f"expected the second handle on the same key to be refused as a conflict, got "
+        f"{second.status_code}: {second.text}"
+    )
+    assert "p47_twin_a" in second.text, \
+        "the refusal must name the handle that key already holds, not just say no"
+
+
+# ─── P47b: the handle becomes claimable, and rename re-keys everything ──────
+#
+# With `stable_id` carrying identity, `agent_id` is free to be what the user
+# asked for: a name, claimable when available. But `agent_id` is also the
+# primary key that ~30 columns across 14 tables point at, plus three JSON
+# arrays, so a rename that only touched `authorized_agents` would silently
+# orphan an agent's rooms, entitlements, payments and DMs. A rename feature
+# that corrupts data is worse than no rename feature.
+#
+# The plan for this pass said "22 agent-shaped columns" and proposed leaving
+# them alone. Both halves were wrong: the real count is 30 scalar columns plus
+# 3 JSON blobs (231 columns classified), and leaving them alone is not an
+# option if rename exists at all. The completeness test at the end of this
+# section is the part that keeps it true — a new agent-referencing column added
+# later fails it until someone classifies it.
+
+def _p47_agent_with_data(client, agent_id: str) -> dict[str, str]:
+    """Give an agent a footprint across as many reference columns as a test can
+    reach through the public API — a room it created, a room it joined, a
+    message, an inbox item, an entitlement, a payout wallet."""
+    _register(client, agent_id)
+    other = f"{agent_id}_peer"
+    _register(client, other)
+
+    room = client.post("/rooms", json={
+        "name": f"{agent_id} room", "creator_id": agent_id,
+        "room_type": "private", "gate_type": "invite",
+    }, headers={"x-emporia-agent-id": agent_id})
+    assert room.status_code == 200, room.text
+    room_id = room.json()["room_id"]
+
+    invite = client.post(f"/rooms/{room_id}/invite", json={"invitee_id": other},
+        headers={"x-emporia-agent-id": agent_id})
+    assert invite.status_code == 200, invite.text
+
+    joined = client.post(f"/rooms/{room_id}/join", json={"agent_id": other},
+        headers={"x-emporia-agent-id": other})
+    assert joined.status_code == 200, joined.text
+
+    listing = client.post("/listings", json={"title": f"{agent_id} service"},
+        headers={"x-emporia-agent-id": agent_id})
+    assert listing.status_code == 200, listing.text
+
+    topic = client.post("/agoras/topics", json={"name": f"{agent_id} topic"},
+        headers={"x-emporia-agent-id": agent_id})
+    assert topic.status_code == 200, topic.text
+    slug = topic.json()["slug"]
+
+    post = client.post(f"/agoras/topics/{slug}/posts",
+        json={"title": "first", "content": "posted under the old handle"},
+        headers={"x-emporia-agent-id": agent_id})
+    assert post.status_code == 200, post.text
+
+    vote = client.post(f"/agoras/posts/{post.json()['post_id']}/vote", json={"value": 1},
+        headers={"x-emporia-agent-id": other})
+    assert vote.status_code == 200, vote.text
+
+    wallet = client.post(f"/agents/{agent_id}/x402-wallet",
+        json={"network_family": "evm", "address": "0x" + "77" * 20},
+        headers={"x-emporia-agent-id": agent_id})
+    assert wallet.status_code == 200, wallet.text
+
+    return {"room_id": room_id, "peer": other}
+
+
+def _p47_occurrences(agent_id: str) -> dict[str, int]:
+    """Every place the relay's own rename map says an agent id can live, counted.
+
+    Reads the map rather than a hand-written list of tables, so this helper
+    cannot drift from the thing it is checking — and so a column added to the
+    map is checked here automatically."""
+    import json as _json
+
+    from emporia.relay_server import (
+        _RENAME_COLUMNS, _RENAME_JSON_COLUMNS, get_db,
+    )
+
+    found: dict[str, int] = {}
+    with get_db() as conn:
+        for table, column in _RENAME_COLUMNS:
+            n = conn.execute(
+                f"SELECT COUNT(*) FROM {table} WHERE {column} = ?", (agent_id,)
+            ).fetchone()[0]
+            if n:
+                found[f"{table}.{column}"] = n
+        for table, column in _RENAME_JSON_COLUMNS:
+            n = 0
+            for (raw,) in conn.execute(f"SELECT {column} FROM {table}"):
+                try:
+                    n += _json.loads(raw or "[]").count(agent_id)
+                except (ValueError, AttributeError):
+                    pass
+            if n:
+                found[f"{table}.{column}"] = n
+    return found
+
+
+def test_rename_moves_every_reference_and_keeps_the_identity(client):
+    """The core of P47b. Asserted as an exhaustive sweep, not a spot check of
+    the rooms table: the failure mode is one column being forgotten, so a test
+    that named the columns it expected would miss exactly the column the
+    implementation missed. Before and after are compared over the whole map."""
+    from emporia.relay_server import get_db
+
+    fixture = _p47_agent_with_data(client, "p47_renamer")
+    before = _p47_occurrences("p47_renamer")
+    # The API can only reach some of the map; `..._every_mapped_column` below
+    # covers the rest. What this fixture adds is that *realistically produced*
+    # rows survive and the agent still works afterwards.
+    assert len(before) >= 8, f"fixture is too thin to prove anything: {before}"
+
+    with get_db() as conn:
+        original = conn.execute(
+            "SELECT stable_id FROM authorized_agents WHERE agent_id = 'p47_renamer'"
+        ).fetchone()["stable_id"]
+
+    r = client.post("/agents/p47_renamer/rename", json={"new_agent_id": "p47_renamed"},
+        headers={"x-emporia-agent-id": "p47_renamer"})
+    assert r.status_code == 200, r.text
+    assert r.json()["agent_id"] == "p47_renamed"
+    assert r.json()["stable_id"] == original, "a rename must not change who the agent is"
+    assert r.json()["previous_agent_id"] == "p47_renamer"
+
+    assert _p47_occurrences("p47_renamer") == {}, (
+        "the old handle still appears in "
+        f"{sorted(_p47_occurrences('p47_renamer'))} — those references are orphaned"
+    )
+    assert _p47_occurrences("p47_renamed") == before, (
+        "the new handle does not carry exactly the references the old one had"
+    )
+
+    # And the agent still works under the new name.
+    room = client.get(f"/rooms/{fixture['room_id']}",
+        headers={"x-emporia-agent-id": "p47_renamed"})
+    assert room.status_code == 200, room.text
+    assert room.json()["creator_id"] == "p47_renamed"
+
+
+def test_rename_rewrites_every_mapped_column(client):
+    """The exhaustive half. The API-driven test above reaches 8 of the 33 mapped
+    references — the rest need payments, sessions, DMs or federation to exist —
+    so a rename that skipped, say, `agora_votes.voter_id` passed it while
+    orphaning real rows. (Verified: skipping that column's UPDATE left every
+    other rename test green.)
+
+    So this seeds one row per mapped column directly, filling each table's
+    required fields generically, and then asserts the sweep comes back empty.
+    How the row was produced is irrelevant to the property under test — that the
+    rename rewrites every column it claims to.
+    """
+    import json as _json
+
+    from emporia.relay_server import (
+        _RENAME_COLUMNS, _RENAME_JSON_COLUMNS, get_db,
+    )
+
+    _register(client, "p47_sweep")
+    old_id, new_id = "p47_sweep", "p47_swept"
+
+    with get_db() as conn:
+        for table, column in _RENAME_COLUMNS:
+            if table == "authorized_agents":
+                continue  # the real row, already there
+            cols, values = [], []
+            for cid, name, ctype, notnull, default, pk in conn.execute(
+                f"PRAGMA table_info({table})"
+            ).fetchall():
+                if name == column:
+                    cols.append(name); values.append(old_id)
+                elif notnull and default is None:
+                    cols.append(name)
+                    values.append(0 if ctype.upper() in ("INTEGER", "REAL") else f"seed_{column}_{name}")
+                elif pk:
+                    # Unique per (table, column) seeded: two columns of the same
+                    # table each get their own row, so a shared primary key
+                    # would collide on the second insert.
+                    cols.append(name); values.append(f"seed_{table}_{column}_{name}")
+            conn.execute(
+                f"INSERT INTO {table} ({', '.join(cols)}) "
+                f"VALUES ({', '.join('?' * len(cols))})",
+                values,
+            )
+        for table, column in _RENAME_JSON_COLUMNS:
+            conn.execute(
+                f"UPDATE {table} SET {column} = ?",
+                (_json.dumps([old_id, f"{old_id}_lookalike", "someone_else"]),),
+            )
+        conn.commit()
+
+    seeded = _p47_occurrences(old_id)
+    missing = {f"{t}.{c}" for t, c in (*_RENAME_COLUMNS, *_RENAME_JSON_COLUMNS)} - set(seeded)
+    assert not missing, f"the seed failed to populate {sorted(missing)} — this test proves nothing there"
+
+    r = client.post(f"/agents/{old_id}/rename", json={"new_agent_id": new_id},
+        headers={"x-emporia-agent-id": old_id})
+    assert r.status_code == 200, r.text
+
+    assert _p47_occurrences(old_id) == {}, (
+        f"rename left the old handle in {sorted(_p47_occurrences(old_id))}"
+    )
+    assert _p47_occurrences(new_id) == seeded
+
+    # And the neighbours in the JSON arrays are untouched — a string replace
+    # would have turned "p47_sweep_lookalike" into "p47_swept_lookalike".
+    with get_db() as conn:
+        for table, column in _RENAME_JSON_COLUMNS:
+            for (raw,) in conn.execute(f"SELECT {column} FROM {table}"):
+                members = _json.loads(raw)
+                assert f"{old_id}_lookalike" in members, (
+                    f"{table}.{column} corrupted a neighbouring id: {members}"
+                )
+                assert "someone_else" in members
+
+
+def test_rename_releases_the_old_handle_and_the_claimer_inherits_nothing(client):
+    """"Names claimable when available" cuts both ways: a released handle has to
+    be genuinely available, and genuinely empty. A claimer that inherited the
+    previous holder's entitlements or payout wallet would turn rename into a
+    way to hand someone else's access — or someone else's money — to a stranger."""
+    from emporia.relay_server import AGENT_REGISTRY
+
+    _p47_agent_with_data(client, "p47_release")
+    assert AGENT_REGISTRY.get_x402_pay_to("p47_release", "evm") == "0x" + "77" * 20
+
+    r = client.post("/agents/p47_release/rename", json={"new_agent_id": "p47_moved_on"},
+        headers={"x-emporia-agent-id": "p47_release"})
+    assert r.status_code == 200, r.text
+
+    claimed = client.post("/agents/register", json={
+        "agent_id": "p47_release", "public_key_hex": _p47_pubkey("a_different_owner"),
+    })
+    assert claimed.status_code == 200, (
+        f"a released handle must be claimable: {claimed.status_code} {claimed.text}"
+    )
+    assert claimed.json()["stable_id"] != r.json()["stable_id"], \
+        "the claimer is a different agent and must get a different identity"
+
+    assert AGENT_REGISTRY.get_x402_pay_to("p47_release", "evm") is None, \
+        "the claimer inherited the previous holder's payout wallet"
+    assert _p47_occurrences("p47_release") == {
+        k: v for k, v in _p47_occurrences("p47_release").items()
+        if k == "authorized_agents.agent_id"
+    }, "the claimer inherited references belonging to the previous holder"
+
+
+def test_rename_refuses_a_handle_someone_else_holds(client):
+    """First-come stays first-come. Rename is a claim on a free name, not a
+    way to take one."""
+    _register(client, "p47_squatter")
+    _register(client, "p47_target_holder")
+
+    r = client.post("/agents/p47_squatter/rename",
+        json={"new_agent_id": "p47_target_holder"},
+        headers={"x-emporia-agent-id": "p47_squatter"})
+    assert r.status_code == 409, r.text
+    assert "p47_target_holder" in r.text
+
+
+def test_rename_applies_the_same_normalization_registration_does(client):
+    """A rename that skipped `_normalize_agent_id()` would be a second door into
+    the namespace with different rules — the homoglyph and charset defences N2-7
+    added at registration would simply not apply to it."""
+    _register(client, "p47_norm")
+
+    for bad in ("has spaces", "_shadow", "ab"):
+        r = client.post("/agents/p47_norm/rename", json={"new_agent_id": bad},
+            headers={"x-emporia-agent-id": "p47_norm"})
+        assert r.status_code == 400, f"{bad!r} was accepted: {r.status_code} {r.text}"
+
+    # Case is folded, not rejected — the namespace is case-insensitive so
+    # "Alice"/"alice" can't become two agents (registration's own documented
+    # behaviour, matching identity._key_path()'s .lower()). Rename has to agree,
+    # or the two doors disagree about how many names exist.
+    r = client.post("/agents/p47_norm/rename", json={"new_agent_id": "P47-Folded"},
+        headers={"x-emporia-agent-id": "p47_norm"})
+    assert r.status_code == 200, r.text
+    assert r.json()["agent_id"] == "p47-folded"
+
+    # NFKC folding likewise: the fullwidth form lands on its ASCII equivalent.
+    r = client.post("/agents/p47-folded/rename", json={"new_agent_id": "ｐ４７＿ｗｉｄｅ"},
+        headers={"x-emporia-agent-id": "p47-folded"})
+    assert r.status_code == 200, r.text
+    assert r.json()["agent_id"] == "p47_wide"
+
+
+def test_rename_refuses_a_reserved_handle(client):
+    """A small denylist, because some names are load-bearing elsewhere in the
+    system and a first-come namespace has no other way to protect them — the
+    relay's own operator identity above all."""
+    _register(client, "p47_reserved_seeker")
+
+    for reserved in ("relay", "admin", "emporia", "system"):
+        r = client.post("/agents/p47_reserved_seeker/rename",
+            json={"new_agent_id": reserved},
+            headers={"x-emporia-agent-id": "p47_reserved_seeker"})
+        assert r.status_code == 400, f"{reserved!r} was allocated: {r.text}"
+        assert "reserved" in r.text.lower(), r.text
+
+
+def test_reserved_handles_are_refused_at_registration_too(client):
+    """The denylist has to live at both doors, or it is decoration: an agent
+    refused `admin` on rename could simply register it instead."""
+    r = client.post("/agents/register", json={
+        "agent_id": "admin", "public_key_hex": _p47_pubkey("would_be_admin"),
+    })
+    assert r.status_code == 400, r.text
+    assert "reserved" in r.text.lower(), r.text
+
+
+def test_rename_requires_being_the_agent(client):
+    """Renaming someone else is taking their name away from them."""
+    _register(client, "p47_owner_a")
+    _register(client, "p47_intruder")
+
+    r = client.post("/agents/p47_owner_a/rename", json={"new_agent_id": "p47_stolen"},
+        headers={"x-emporia-agent-id": "p47_intruder"})
+    assert r.status_code == 403, r.text
+    assert client.get("/agents/p47_owner_a",
+        headers={"x-emporia-agent-id": "p47_owner_a"}).status_code == 200
+
+
+def test_rename_map_classifies_every_column_in_the_schema():
+    """The pin that keeps rename correct as the schema grows.
+
+    Every column in every table is either an agent reference the rename must
+    rewrite, or explicitly declared not to be one. A column added later belongs
+    to neither set and fails here — which is the only moment anyone is thinking
+    about that column and can answer the question correctly. Without this, the
+    rename map is a snapshot that silently rots, and the symptom is orphaned
+    rows nobody notices for months.
+    """
+    import sqlite3
+
+    from emporia.relay_server import (
+        _NON_AGENT_COLUMNS, _RENAME_COLUMNS, _RENAME_JSON_COLUMNS, DATABASE_PATH,
+    )
+
+    conn = sqlite3.connect(DATABASE_PATH)
+    try:
+        schema = {
+            (t, row[1])
+            for (t,) in conn.execute(
+                "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'"
+            ).fetchall()
+            for row in conn.execute(f"PRAGMA table_info({t})").fetchall()
+        }
+    finally:
+        conn.close()
+
+    classified = set(_RENAME_COLUMNS) | set(_RENAME_JSON_COLUMNS) | set(_NON_AGENT_COLUMNS)
+    unclassified = schema - classified
+    assert not unclassified, (
+        "these columns are in the schema but classified neither as agent references "
+        "nor as non-references — add each to _RENAME_COLUMNS, _RENAME_JSON_COLUMNS "
+        f"or _NON_AGENT_COLUMNS in relay_server.py: {sorted(unclassified)}"
+    )
+    stale = classified - schema
+    assert not stale, f"classified columns that no longer exist in the schema: {sorted(stale)}"

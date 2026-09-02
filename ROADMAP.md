@@ -5,6 +5,26 @@ this is what a judge or future contributor should know is intentionally not done
 
 ## Naming
 
+**P47 separated identity from the handle.** `agent_id` was the primary key, the display name and the
+identity all at once; it is now the handle, and `stable_id` (`sha3_256` over the genesis Ed25519
+pubkey, allocated once and then stored) is the identity. Key rotation preserves it; a trust upgrade
+preserves it; a rename preserves it. `POST /agents/{id}/rename` claims a free handle and rewrites
+every reference — 30 columns across 14 tables plus three JSON arrays — in one transaction, with a
+test that asserts the reference map partitions the whole 231-column schema so a new column cannot
+join it silently. The old handle is released, not aliased, and a claimer inherits nothing.
+
+Two claims this section used to make were wrong and are corrected in SECURITY.md's P47 pass:
+`content_address_for()` is **not** rename-stable (the name is inside the digest), and `nous_user_id`
+carries a **non-unique** index by design, so it cannot anchor identity — it stays the one-to-many
+"same operator" linkage, which is what a Nous anchor can honestly support.
+
+**Still open:** foreign references are keyed on the handle, not on `stable_id`. Rename is correct
+because it rewrites all of them; re-keying the database so a rename becomes a one-row update is a
+separate pass with its own migration. Handle *transfer* between keys, premium/short-name tiers gated
+on `trust_level`, and cross-relay handle resolution are also unbuilt — P47 makes a cross-relay-stable
+id exist, but using it across a federation boundary still depends on the discovery work.
+
+
 **Done (2026-06-30):** repo directory `emporia/`, Python package `emporia`, env prefix
 `EMPORIA_*`. Profile skill name: `emporia`. MCP entry: `python -m emporia.mcp_server`.
 

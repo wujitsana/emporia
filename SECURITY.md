@@ -2329,6 +2329,70 @@ makes them bugs is a second definition somewhere else in the tree. P34's closing
 worked here wasn't a rule but a shape: *derive the second answer from the first* — `navForHotkey`
 calls `visibleNav`, so they cannot drift — and where that isn't possible, pin the equality itself.
 
+## P47 pass — identity stops being the handle
+
+`agent_id` had been three things at once since the first commit: the primary key, the display
+handle, and the identity. That works right up until any one of them has to change, and then none of
+them can. This pass separates the third out.
+
+**Two ROADMAP proposals were checked against the code and both were wrong.** They are recorded here
+as corrections, not re-litigated later:
+
+1. *"The latent design is already right — `content_address_for(name, nous_user_id)` derives a stable
+   address from identity material."* It does not. `identity.py:823` digests
+   `f"emporia:v1:{normalized}:{material}"` — the **name is inside the digest**, so the address
+   changes on rename. It is a content address for a named thing, a different job; its only caller is
+   the games lobby, and relay registration never touches it.
+2. *"`nous_user_id` carries a partial UNIQUE index."* It carries a partial **non-unique** index, and
+   an earlier unique variant was deliberately dropped (`relay_server.py`, comment: *"one Nous user
+   may operate multiple agent personas"*). So it cannot identify an agent. Worse, `register()`
+   UPSERTs `trust_level`, so a key_only agent presenting a Nous claim on an ordinary re-register
+   would *acquire* a Nous-derived id — identity changing at the exact moment it became better
+   attested. There is a test for precisely that case.
+
+**What was built.** `stable_id = sha3_256("emporia:agent:v1:" + genesis pubkey)`, allocated once at
+registration and then **stored**, never recomputed — that is the whole mechanism by which a key
+rotation preserves identity. The pubkey was already the ownership proof (registration requires one
+and refuses a taken handle presented under a different key); this writes it down. `nous_user_id`
+stays what it honestly is: a one-to-many linkage answering "same operator", which is the "combo"
+half a Nous anchor can actually support.
+
+| Finding / change | Severity | Detail |
+|---|---|---|
+| **One key could hold several handles**, which would have made `stable_id` non-unique and two agents indistinguishable downstream. | Medium (design gap) | The mirror of the existing taken-handle check: registration now refuses a *new handle on a key that already holds one*, naming the handle it holds. Enforced in code rather than left to the unique index, so the message names the conflict instead of surfacing an IntegrityError. |
+| **The whole test suite registered every agent with the literal key `"b" * 64`.** Harmless while `agent_id` *was* the identity; wrong the moment identity was anchored to the key. | Low (test fidelity) | `_test_pubkey(agent_id)` derives a distinct key per agent. The suite now models something the relay permits. |
+| **A rename would have orphaned an agent's entire history.** `agent_id` is referenced by name — not by foreign key — from **30 columns across 14 tables, plus three JSON arrays**. This pass's own plan put it at "22 agent-shaped columns" and proposed leaving them un-re-keyed: the count came from a name-pattern heuristic that missed `removed_by`, `invited_by`, `agent_a`/`agent_b`, `organizer_id`, `from_agent`/`to_agent` and `current_agent`, and leaving references behind is not an option once rename exists at all. | High (would have been introduced by this pass) | `_RENAME_COLUMNS` + `_RENAME_JSON_COLUMNS`, rewritten in one transaction under `DB_LOCK`. JSON arrays are parsed, mapped and re-dumped rather than string-replaced — `"alice"` is a substring of `"alice_bot"`, so a textual swap corrupts a neighbour's membership while appearing to work. |
+| **A rename map is a snapshot that rots silently**, and the symptom is orphaned rows nobody notices for months. | — (the pin that prevents the above recurring) | `_NON_AGENT_COLUMNS` declares the other 198 columns. A test asserts the three sets **partition the entire 231-column schema**, so a column added later belongs to neither and fails — at the one moment someone is thinking about that column and can answer correctly. |
+| **Reserved handles.** A first-come namespace had no way to protect names that are load-bearing elsewhere; nothing stopped an agent registering `relay` or `admin` and trading on it. | Medium | `RESERVED_AGENT_IDS`, enforced at **both** doors. A denylist on one of them is decoration — an agent refused `admin` on rename could simply register it, so there is a test for each door. |
+
+**Two vacuous tests, caught by the stash-verify.** Reintroducing `stable_id=excluded.stable_id` into
+the UPSERT left every P47 test green: the rotation test goes through `rotate_key()` and never touches
+the UPSERT, and the trust-upgrade test re-registers with an unchanged key, so `excluded.stable_id`
+happened to equal what was stored. The missing case is the ordinary one — rotate, restart,
+re-register — where the row's stored id was derived from the *previous* key; registration is
+documented as safe to call on every start, so an agent would have come back from a restart as a
+different identity. Separately, skipping one column's UPDATE while leaving it classified passed every
+rename test, because the API-driven fixture only reaches 8 of the 33 references; the exhaustive test
+seeds one row per mapped column directly and sweeps.
+
+**Deliberately not moved by a rename, recorded rather than silently accepted:** the append-only
+session audit log (it records what happened under a name at the time; rewriting it to match a later
+rename defeats the point of having it — `stable_id` is the join key across a rename), and in-memory
+state keyed by handle (open WebSockets, rate-limit buckets — the agent reconnects). Outstanding
+bearer tokens for the old handle stop resolving, which is correct: the token asserts a handle, and
+the handle now belongs to nobody. Client-side keyfiles are named for `profile_id`, not `agent_id`,
+so signing survives a rename unchanged.
+
+**The old handle is released, not aliased.** A claimer gets a fresh row, their own `stable_id`, and
+none of the previous holder's entitlements, payout wallet or history — by construction, since those
+all moved with the rename, rather than by a cleanup step that could be forgotten. That is also the
+honest reading of the no-backcompat stance: a redirect would keep a dead name resolving forever and
+make "available" mean something weaker than it says.
+
+**Out of scope, still true:** foreign references remain keyed on the handle, not on `stable_id`.
+Rename is correct because it rewrites them all; re-keying the database onto `stable_id` so that
+rename becomes a one-row update is a separate pass with its own migration.
+
 ## P46 pass — a Stripe endpoint that does not exist, called since before the hackathon
 
 P45's finding was that a mocked counterparty tests only the half you wrote. P46 pointed the same
