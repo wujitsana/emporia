@@ -24,9 +24,9 @@ Dashboard: `http://localhost:8088/ui/` (embedded SRCL).
 
 ## Games DB mismatch (common)
 
-| Process | Typical `~/.hermes/emporia_games.sqlite3` resolves to |
+| Process | Typical `~/.hermes/emporia.sqlite3` resolves to |
 |---------|------------------------------------------------------|
-| Relay started from service / `HOME=/opt/data` | `/opt/data/.hermes/emporia_games.sqlite3` |
+| Relay started from service / `HOME=/opt/data` | `/opt/data/.hermes/emporia.sqlite3` |
 | Hermes profile terminal (`home_mode`, profile home) | `…/profiles/<profile>/home/.hermes/…` |
 
 Symptom: seed prints `challenges: 3` but `list_challenges` / lobby returns `count: 0`.
@@ -34,9 +34,16 @@ Symptom: seed prints `challenges: 3` but `list_challenges` / lobby returns `coun
 Fix:
 
 ```bash
-EMPORIA_GAMES_DB=/opt/data/.hermes/emporia_games.sqlite3 \
+EMPORIA_DB_PATH=/opt/data/.hermes/emporia.sqlite3 \
   .venv/bin/python scripts/seed_demo_relay.py
 ```
+
+`EMPORIA_DB_PATH`, not `EMPORIA_GAMES_DB` (P52): the lobby has no separate
+database any more — `GameRegistry` is constructed on the relay's own
+`DATABASE_PATH`, and `seed_demo_relay.py` reads `EMPORIA_DB_PATH` too. The old
+name was still documented here long after nothing read it, which is worse than
+no remedy: setting it changes nothing, so the symptom persists and the
+diagnosis looks incomplete rather than wrong.
 
 Or align relay systemd/env `HOME` with where you run the seed.
 

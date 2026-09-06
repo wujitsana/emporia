@@ -2425,6 +2425,52 @@ built, so lanes 2 and 3 have only ever skipped. The URL fix is pinned offline by
 and corroborated against Stripe's routing table; nothing has yet watched a PaymentIntent actually
 confirm. `docs/testnet.md` says so in the same words rather than implying the tier is green.
 
+## P52 pass — the third source-to-docs surface, and a remedy that did nothing
+
+P43 pinned MCP tool names and counts. P49 pinned REST routes. The environment is the third surface
+where the code and the docs can disagree silently, and nothing watched it in either direction.
+
+**Forward: 13 of 52 variables the relay reads were documented nowhere.** The ones that matter:
+
+- `STRIPE_WEBHOOK_SECRET` — the relay **refuses to start** with a live `STRIPE_SECRET_KEY` and this
+  unset, because `POST /webhooks/stripe` is the only thing that ever marks a live-mode Connected
+  Account payable and it never fails open. The exception message was the only place it was explained.
+- `RATE_LIMIT_PER_MINUTE` — a security control, undocumented.
+- `EMPORIA_KEYS_DIR` — where agent private keys are read from and written to.
+- `STRIPE_API_BASE` — the base URL of **every** outbound Stripe call.
+- `EMPORIA_RELAY_ID` — a relay's federation identity, defaulting to a fresh
+  `secrets.token_urlsafe(8)` per process, so an unset relay changes who it is on every restart.
+- Plus `EMPORIA_AUDIT_DIR`, `EMPORIA_DASHBOARD_BASE_URL`, `EMPORIA_HTTP_TIMEOUT`,
+  `EMPORIA_SWEEP_INTERVAL_SECONDS`, `EMPORIA_MCP_TRANSPORT`, `EMPORIA_MCP_PORT`, `HERMES_AGENT_ID`,
+  `HERMES_PROFILE_ID`.
+
+**Reverse, and this is the direction that actually costs an operator something.** `EMPORIA_GAMES_DB`
+is named in the dev skill's env table, in a seed runbook's copy-paste command, and in
+`docs/RUNBOOK.md`'s troubleshooting table as the remedy for "seed OK but lobby empty". **Nothing in
+the repo has read it in a long time** — the lobby has no separate database any more, `GameRegistry`
+is constructed on the relay's own `DATABASE_PATH`, and `seed_demo_relay.py` reads `EMPORIA_DB_PATH`,
+which its own inline comment already says.
+
+A documented variable that nothing reads doesn't fail loudly. It fails as a remedy that doesn't work:
+the operator sets it, the symptom persists, and they conclude the diagnosis was right and their fix
+incomplete. The three documents now name `EMPORIA_DB_PATH`, which is the variable that has been doing
+the work all along.
+
+**Precision that makes the reverse check possible.** Documented means "named in the *first cell* of a
+markdown env-table row", not "mentioned in the file". Prose mentions are excluded on purpose: README
+discusses `DATABASE_URL` at length as the Postgres backend a federated deployment would need, and it
+is deliberately read nowhere yet. Counting prose would leave the reverse check unable to tell that
+apart from a variable that was deleted and left documented, which is the whole point. Variables built
+from a runtime network id (`EMPORIA_X402_ASSET_<NETWORK>`) never appear as literals and are excluded
+by their `<...>` marker rather than by an allowlist — an allowlist is the thing that rots next.
+
+Also fixed here: the dev skill's header had claimed `→ 78/78` tests for a very long time. Replaced
+with the command and no number, because a count in a header rots every pass and there is nothing
+useful to pin it to.
+
+Both directions stash-verified, including adding a fresh undocumented `os.getenv()` to `src/` — the
+detector's real job is the drift that has not happened yet.
+
 ## P51 pass — the relay recorded five ways a payout didn't happen and read none of them
 
 P50 closed the last hole in a purchase's *record* and left a note about the payout's 24-hour

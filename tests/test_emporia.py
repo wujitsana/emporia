@@ -26907,3 +26907,109 @@ def test_safety_stats_reports_the_reconciler_is_alive_without_reporting_what_it_
         f"liveness only — no owed/paid/recovered counts on an unauthenticated "
         f"route; got {sorted(stats)}"
     )
+
+
+# ---------------------------------------------------------------------------
+# P52 — the environment surface had no watcher
+#
+# P43 pinned MCP tool names and counts, P49 pinned REST routes. The third
+# source-to-docs surface is the environment: 52 distinct variables decide where
+# the keys live, where the audit trail goes, which Stripe host is called, how
+# many requests a minute an agent gets, and whether the relay starts at all.
+# Nothing checked that any of them were written down, in either direction.
+# ---------------------------------------------------------------------------
+
+_ENV_READ_RE = re.compile(
+    r'''(?:os\.)?getenv\(\s*["']([A-Z][A-Z0-9_]*)["']'''
+    r'''|environ\[\s*["']([A-Z][A-Z0-9_]*)["']'''
+    r'''|environ\.get\(\s*["']([A-Z][A-Z0-9_]*)["']'''
+)
+
+# Variables read only from an env name the code *builds* (e.g.
+# "EMPORIA_X402_ASSET_" + network) never appear as a literal, so they can't be
+# extracted — their table rows carry a `<NETWORK>` placeholder instead and are
+# excluded from the reverse check by that marker, not by an allowlist.
+_ENV_DOC_FILES = ("README.md", "skills/dev/emporia-dev/SKILL.md")
+
+
+def _env_vars_read_by_source() -> dict[str, set[str]]:
+    """Every environment variable name `src/emporia/` reads as a literal."""
+    from pathlib import Path as _Path
+
+    found: dict[str, set[str]] = {}
+    for path in sorted(_Path("src/emporia").rglob("*.py")):
+        for m in _ENV_READ_RE.finditer(path.read_text()):
+            name = m.group(1) or m.group(2) or m.group(3)
+            found.setdefault(name, set()).add(str(path))
+    return found
+
+
+def _env_vars_documented() -> set[str]:
+    """Every variable named in a markdown *table row* of the env docs.
+
+    Table rows only — prose mentions don't count. `DATABASE_URL` is discussed at
+    length in README as the Postgres backend a federated deployment would need
+    and is deliberately read nowhere yet; counting prose would make the reverse
+    check below unable to tell that apart from a variable that was removed and
+    left documented, which is exactly what it exists to catch.
+    """
+    from pathlib import Path as _Path
+
+    names: set[str] = set()
+    for doc in _ENV_DOC_FILES:
+        for line in _Path(doc).read_text().splitlines():
+            # First cell only — the Variable column. A backticked name in the
+            # *description* column is a cross-reference ("must match `HOME`",
+            # a log level of `INFO`), not a claim that this table documents it.
+            m = re.match(r"\s*\|\s*`([A-Z][A-Z0-9_]*(?:<[A-Z]+>)?[A-Z0-9_]*)`\s*\|", line)
+            if m:
+                names.add(m.group(1))
+    return names
+
+
+def test_every_environment_variable_the_relay_reads_is_documented():
+    """The gap this pass measured: 13 of 52, including `STRIPE_WEBHOOK_SECRET`
+    — which the relay *refuses to start* without on a live key, explained
+    nowhere but in the exception it raises — `RATE_LIMIT_PER_MINUTE`, which is
+    a security control, `EMPORIA_KEYS_DIR`, which is where private keys live,
+    and `STRIPE_API_BASE`, which points every Stripe call at a different host.
+    """
+    read = _env_vars_read_by_source()
+    documented = _env_vars_documented()
+    missing = {n: sorted(f.split("/")[-1] for f in files)
+               for n, files in read.items() if n not in documented}
+    assert not missing, (
+        "environment variables read by src/emporia but named in no env table "
+        f"({', '.join(_ENV_DOC_FILES)}):\n" +
+        "\n".join(f"  {n} — read in {', '.join(f)}" for n, f in sorted(missing.items()))
+    )
+
+
+def test_every_documented_environment_variable_is_actually_read():
+    """The other direction, which is the one that hurts operators. A variable
+    that was removed and left in a table doesn't fail loudly — it fails as a
+    remedy that doesn't work: the reader sets it, nothing changes, and they
+    conclude the diagnosis was right and their fix incomplete.
+
+    Names carrying a `<...>` placeholder are built at runtime from a network id
+    and never appear as literals, so they're excluded here by that marker.
+    """
+    from pathlib import Path as _Path
+
+    read = set(_env_vars_read_by_source())
+    # Scripts and the installer are part of the documented surface too.
+    for extra in ("scripts", "installer"):
+        for path in _Path(extra).rglob("*.py"):
+            for m in _ENV_READ_RE.finditer(path.read_text()):
+                read.add(m.group(1) or m.group(2) or m.group(3))
+
+    stale = sorted(
+        n for n in _env_vars_documented()
+        if "<" not in n and n not in read and not any(
+            n.startswith(p.split("<")[0]) for p in _env_vars_documented() if "<" in p
+        )
+    )
+    assert not stale, (
+        "documented in an env table but read by nothing in src/, scripts/ or "
+        f"installer/ — setting these does nothing: {stale}"
+    )

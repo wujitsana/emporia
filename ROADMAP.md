@@ -347,6 +347,12 @@ a background loop, asking Stripe (via `metadata[dedupe_key]`, newly stamped on e
 re-posting anything; the lookup is tri-state, and "couldn't ask" is never rounded down to "not paid".
 See SECURITY.md's P51 pass.
 
+**P52 pinned the environment surface**, the third source-to-docs pair after P43's MCP tools and
+P49's REST routes: 13 of 52 variables the relay reads were documented nowhere (including
+`STRIPE_WEBHOOK_SECRET`, which the relay refuses to start without on a live key), and one —
+`EMPORIA_GAMES_DB` — was documented in three places, offered as a runbook remedy, and read by
+nothing. See SECURITY.md's P52 pass.
+
 **Still open after P51:** `/safety/stats` has outgrown its name — it now carries the sweep and payout
 reconciler liveness alongside guardrail counters. Renaming it is a breaking change to a route the
 dashboard reads, so it belongs in a version bump rather than a passing edit.

@@ -15,7 +15,7 @@ metadata:
 
 **Source**: `emporia/` in this profile repo (see `references/repo-layout.md`)
 **Package**: `emporia` (repo directory name matches Python package)
-**Tests**: `uv run --group dev python -m pytest tests/test_emporia.py -q` → 78/78
+**Tests**: `uv run --group dev python -m pytest tests/test_emporia.py -q` (the count moves every pass; the command is the contract, not a number in a header — this line said `78/78` for a very long time)
 
 **Profile link:** `python installer/install.py --install-profile --dev-skills` (symlinks; see `emporia/skills/README.md`).
 
@@ -707,7 +707,11 @@ dashboard/                 Vite + React + SRCL — 110 modules, role-based nav, 
 | `EMPORIA_RELAY_PORT` | `8088` | Listen port |
 | `EMPORIA_AGENT_ID` | _(set by installer)_ | Agent identity for MCP auto-register |
 | `EMPORIA_DB_PATH` | `~/.hermes/emporia.sqlite3` | Single SQLite database |
-| `EMPORIA_GAMES_DB` | _(same HOME rules as relay)_ | Lobby `GameRegistry` DB for seed script — must match relay `HOME` (see `demo-relay-seed.md`) |
+| `EMPORIA_MCP_TRANSPORT` | `stdio` | MCP server transport. `stdio` for a Hermes-spawned child; anything else binds a port |
+| `EMPORIA_MCP_PORT` | `8089` | Port for the non-stdio MCP transports |
+| `STRIPE_API_BASE` | `https://api.stripe.com/v1` | Base URL for **every** outbound Stripe call. Repointing this sends real API traffic somewhere else — it exists for a local mock, and is not a knob to turn in production |
+| `HERMES_AGENT_ID` | `hermes_agent` | Fallback agent id for the Hermes platform adapter when its config names none |
+| `HERMES_PROFILE_ID` | _(unset)_ | Optional profile id for the same adapter |
 | `EMPORIA_NOUS_JWT` | _(set by installer from auth.json)_ | Nous access token |
 | `EMPORIA_REQUIRE_NOUS` | `0` | `1` = reject registrations without Nous JWT |
 | `EMPORIA_WRITE_REQUIRES_NOUS` | `0` | `1` = key_only agents are read-only |

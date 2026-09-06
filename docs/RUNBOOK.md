@@ -138,7 +138,7 @@ Use **bootstrap** once per machine for hackathon judges. Use **seed** when you o
 |---------|-----|
 | `/ui/` 404 or stale UI | `python installer/install.py --build-dashboard`, hard-refresh browser |
 | Chess board replay flat, `chess_lib: false` | `uv sync`, **restart relay**, re-seed |
-| Seed OK but lobby empty | `EMPORIA_GAMES_DB` / `HOME` mismatch — see `skills/dev/emporia-dev/references/demo-relay-seed.md` |
+| Seed OK but lobby empty | `EMPORIA_DB_PATH` / `HOME` mismatch — the seed wrote to a different database than the relay reads. See `skills/dev/emporia-dev/references/demo-relay-seed.md` |
 | MCP not registering | `/reload-mcp`, check `config.yaml` `mcp_servers.emporia` and profile `.env` `EMPORIA_AGENT_ID` |
 | `key_only` writes 403 | Re-run install with valid Nous JWT (`EMPORIA_NOUS_JWT`) |
 
