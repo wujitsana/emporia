@@ -3954,7 +3954,8 @@ PAYOUT_RECONCILE_STATS: dict[str, Any] = {
     "last_run_at": None,
     "last_error_at": None,
     "consecutive_failures": 0,
-    "outcomes": {"owed": 0, "recovered": 0, "paid": 0, "unknown": 0, "still_blocked": 0},
+    "outcomes": {"owed": 0, "recovered": 0, "paid": 0, "unknown": 0,
+                 "still_blocked": 0, "failed": 0},
 }
 
 
@@ -4004,61 +4005,94 @@ async def _reconcile_owed_payouts() -> dict[str, int]:
     expires after 24 hours, and every row this loop exists for is older than
     that by construction, so the key is not the guard here — the lookup is.
     """
+    counts = {"owed": 0, "recovered": 0, "paid": 0, "unknown": 0,
+              "still_blocked": 0, "failed": 0}
+
+    # P51r: no credentials, nothing to reconcile — and asking anyway raises out
+    # of `_stripe_key()`, which is a permanent, benign condition that would
+    # otherwise be reported as a failing loop forever. Found by running the
+    # relay, not by a test: every test in the suite reaches Stripe through a
+    # mock, so none of them can observe what an unconfigured relay does.
+    if not (os.getenv("STRIPE_SECRET_KEY") or "").strip():
+        return counts
+
+    for row in _owed_payout_rows():
+        counts["owed"] += 1
+        # P51r: per-row isolation. N12-1 established that a raise must not end
+        # the *loop*; this is the same rule one level down, and the level that
+        # actually matters here — without it a single unreconcilable row aborts
+        # the sweep for every row behind it, permanently and in row order.
+        try:
+            outcome = await _reconcile_one_payout(row)
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            logger.exception(
+                "Payout reconcile failed for settlement %s — other rows continue",
+                row["settlement_id"],
+            )
+            counts["failed"] += 1
+            continue
+        counts[outcome] += 1
+    return counts
+
+
+async def _reconcile_one_payout(row: dict[str, Any]) -> str:
+    """One owed settlement. Returns the outcome key it should be counted under.
+
+    Split out of `_reconcile_owed_payouts()` so that "what happens to one row"
+    and "one row must not take the others down with it" are separate, testable
+    things rather than one function where the second is a property of how
+    carefully the first was written.
+    """
     from emporia.payments import (
         find_settlement_transfer, payout_winner, stripe_account_mode_mismatch,
     )
 
-    counts = {"owed": 0, "recovered": 0, "paid": 0, "unknown": 0, "still_blocked": 0}
-    for row in _owed_payout_rows():
-        counts["owed"] += 1
-        known, transfer_id = await find_settlement_transfer(
-            transfer_group=row["session_id"], dedupe_key=row["dedupe_key"],
+    known, transfer_id = await find_settlement_transfer(
+        transfer_group=row["session_id"], dedupe_key=row["dedupe_key"],
+    )
+    if not known:
+        # Could not ask. Never rounded down to "not paid".
+        return "unknown"
+    if transfer_id:
+        # It landed and we lost the answer. No money moves here.
+        _record_payout_outcome(row["settlement_id"], "transferred", transfer_id)
+        return "recovered"
+
+    creator = row["winner_id"]
+    account = AGENT_REGISTRY.get_stripe_account(creator) if creator else None
+    if not account:
+        blocked = "no_stripe_account"
+    elif stripe_account_mode_mismatch(AGENT_REGISTRY.get_stripe_account_mode(creator)):
+        blocked = "pending_connect_wrong_mode"
+    elif AGENT_REGISTRY.get_stripe_account_status(creator) != "active":
+        blocked = "pending_connect_not_active"
+    else:
+        blocked = ""
+    if blocked:
+        # Still not payable — refresh the recorded reason (it may have
+        # changed) and leave it owed for the next pass.
+        if blocked != row["transfer_status"]:
+            _record_payout_outcome(row["settlement_id"], blocked, None)
+        return "still_blocked"
+
+    try:
+        transfer = await payout_winner(
+            winner_id=creator,
+            stripe_account_id=account,
+            amount_cents=row["winner_payout_cents"],
+            session_id=row["session_id"],
+            idempotency_key="emporia:payout:" + row["dedupe_key"],
         )
-        if not known:
-            # Could not ask. Never rounded down to "not paid".
-            counts["unknown"] += 1
-            continue
-        if transfer_id:
-            # It landed and we lost the answer. No money moves here.
-            _record_payout_outcome(row["settlement_id"], "transferred", transfer_id)
-            counts["recovered"] += 1
-            continue
-
-        creator = row["winner_id"]
-        account = AGENT_REGISTRY.get_stripe_account(creator) if creator else None
-        if not account:
-            blocked = "no_stripe_account"
-        elif stripe_account_mode_mismatch(AGENT_REGISTRY.get_stripe_account_mode(creator)):
-            blocked = "pending_connect_wrong_mode"
-        elif AGENT_REGISTRY.get_stripe_account_status(creator) != "active":
-            blocked = "pending_connect_not_active"
-        else:
-            blocked = ""
-        if blocked:
-            # Still not payable — refresh the recorded reason (it may have
-            # changed) and leave it owed for the next pass.
-            if blocked != row["transfer_status"]:
-                _record_payout_outcome(row["settlement_id"], blocked, None)
-            counts["still_blocked"] += 1
-            continue
-
-        try:
-            transfer = await payout_winner(
-                winner_id=creator,
-                stripe_account_id=account,
-                amount_cents=row["winner_payout_cents"],
-                session_id=row["session_id"],
-                idempotency_key="emporia:payout:" + row["dedupe_key"],
-            )
-        except Exception as e:
-            logger.warning(
-                "Payout reconcile failed for settlement %s: %s", row["settlement_id"], e
-            )
-            _record_payout_outcome(row["settlement_id"], "transfer_failed", None)
-            continue
-        _record_payout_outcome(row["settlement_id"], "transferred", transfer["transfer_id"])
-        counts["paid"] += 1
-    return counts
+    except Exception as e:
+        logger.warning(
+            "Payout transfer failed for settlement %s: %s", row["settlement_id"], e
+        )
+        _record_payout_outcome(row["settlement_id"], "transfer_failed", None)
+        return "failed"
+    _record_payout_outcome(row["settlement_id"], "transferred", transfer["transfer_id"])
+    return "paid"
 
 
 async def _payout_reconcile_loop() -> None:

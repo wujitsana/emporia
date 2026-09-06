@@ -347,6 +347,12 @@ a background loop, asking Stripe (via `metadata[dedupe_key]`, newly stamped on e
 re-posting anything; the lookup is tri-state, and "couldn't ask" is never rounded down to "not paid".
 See SECURITY.md's P51 pass.
 
+**P51r fixed two defects in P51 that only running the relay could find**: an unconfigured relay
+raised out of `_stripe_key()` on every reconcile tick, and one unreconcilable row aborted the sweep
+for every row behind it. Both are now pinned. The general lesson is recorded rather than the two
+instances: a mocked dependency cannot tell you what happens when that dependency is *absent*, and a
+loop that survives is not the same as a sweep that completes. See SECURITY.md's P51r.
+
 **P52 pinned the environment surface**, the third source-to-docs pair after P43's MCP tools and
 P49's REST routes: 13 of 52 variables the relay reads were documented nowhere (including
 `STRIPE_WEBHOOK_SECRET`, which the relay refuses to start without on a live key), and one —

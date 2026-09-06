@@ -26623,7 +26623,12 @@ def test_the_reconciler_pays_a_sale_the_creator_had_not_yet_onboarded_for(
         pi_id="pi_p51_fix",
     )
 
-    with _stripe_account_active("acct_p51_fix_owner"):
+    # Explicit, not ambient: the reconciler returns early with no Stripe
+    # credentials configured (P51r), so a test that relied on the
+    # developer's own environment having a key would pass here and do
+    # nothing at all in CI.
+    with patch.dict(os.environ, {"STRIPE_SECRET_KEY": "sk_test_p51"}, clear=False), \
+         _stripe_account_active("acct_p51_fix_owner"):
         with patch("emporia.payments.find_settlement_transfer",
                    new_callable=AsyncMock, return_value=(True, None)):
             with patch("emporia.payments.payout_winner", new_callable=AsyncMock) as payout:
@@ -26669,7 +26674,12 @@ def test_an_unanswerable_stripe_lookup_never_becomes_a_second_payout(
         pi_id="pi_p51_unknown",
     )
 
-    with _stripe_account_active("acct_p51_unknown_owner"):
+    # Explicit, not ambient: the reconciler returns early with no Stripe
+    # credentials configured (P51r), so a test that relied on the
+    # developer's own environment having a key would pass here and do
+    # nothing at all in CI.
+    with patch.dict(os.environ, {"STRIPE_SECRET_KEY": "sk_test_p51"}, clear=False), \
+         _stripe_account_active("acct_p51_unknown_owner"):
         with patch("emporia.payments.find_settlement_transfer",
                    new_callable=AsyncMock, return_value=(False, None)):
             with patch("emporia.payments.payout_winner", new_callable=AsyncMock) as payout:
@@ -26701,7 +26711,12 @@ def test_a_transfer_that_already_landed_is_recovered_not_repaid(mock_verify, cli
         pi_id="pi_p51_found",
     )
 
-    with _stripe_account_active("acct_p51_found_owner"):
+    # Explicit, not ambient: the reconciler returns early with no Stripe
+    # credentials configured (P51r), so a test that relied on the
+    # developer's own environment having a key would pass here and do
+    # nothing at all in CI.
+    with patch.dict(os.environ, {"STRIPE_SECRET_KEY": "sk_test_p51"}, clear=False), \
+         _stripe_account_active("acct_p51_found_owner"):
         with patch("emporia.payments.find_settlement_transfer",
                    new_callable=AsyncMock, return_value=(True, "tr_already_there")):
             with patch("emporia.payments.payout_winner", new_callable=AsyncMock) as payout:
@@ -27012,4 +27027,106 @@ def test_every_documented_environment_variable_is_actually_read():
     assert not stale, (
         "documented in an env table but read by nothing in src/, scripts/ or "
         f"installer/ — setting these does nothing: {stale}"
+    )
+
+
+@patch("emporia.payments.verify_payment_intent", new_callable=AsyncMock)
+def test_the_reconciler_is_a_quiet_no_op_on_a_relay_with_no_stripe_credentials(
+    mock_verify, client,
+):
+    """Found by starting the relay, not by the suite (P51r).
+
+    Every reconciler test above reaches Stripe through a mock, so none of them
+    could observe what an unconfigured relay does: `payments._stripe_key()`
+    raises when `STRIPE_SECRET_KEY` is unset, and it is called *before* the
+    request that `find_settlement_transfer()` guards. The raise escaped to the
+    loop, which logged a traceback and incremented `consecutive_failures` —
+    every tick, forever, for a permanent and entirely benign condition. The
+    liveness counter added for operators would have reported a broken relay on
+    every free-only deployment holding a legacy owed row.
+    """
+    import asyncio
+
+    from emporia.relay_server import _reconcile_owed_payouts, get_db
+
+    room_id = _p51_strand_a_sale(
+        client, mock_verify, owner="p51r_nokey_owner", payer="p51r_nokey_payer",
+        pi_id="pi_p51r_nokey",
+    )
+
+    env = {k: v for k, v in os.environ.items() if k != "STRIPE_SECRET_KEY"}
+    with patch.dict(os.environ, env, clear=True):
+        counts = asyncio.run(_reconcile_owed_payouts())
+
+    assert counts["failed"] == 0 and counts["owed"] == 0, (
+        f"no credentials is nothing to do, not a failure to report: {counts}"
+    )
+    with get_db() as conn:
+        row = conn.execute(
+            "SELECT transfer_status, transfer_id FROM settlements WHERE session_id=?",
+            (room_id,),
+        ).fetchone()
+    assert (row["transfer_status"], row["transfer_id"]) == \
+        ("pending_connect_not_active", None), \
+        f"and the owed row is left exactly as it was, got {dict(row)}"
+
+
+@patch("emporia.payments.verify_payment_intent", new_callable=AsyncMock)
+def test_one_unreconcilable_row_does_not_take_the_rest_of_the_sweep_with_it(
+    mock_verify, client,
+):
+    """N12-1's rule, one level down. That review established a raise must not
+    end the background *loop*; P51 applied it there and not to the row loop
+    inside, so a single row that threw aborted every row behind it — silently,
+    permanently, and in row order, which means the same creators every time.
+
+    The row that throws here is the one whose creator lookup explodes; the
+    second row is a perfectly ordinary owed payout that must still be paid.
+    """
+    import asyncio
+
+    from emporia.relay_server import AGENT_REGISTRY, _reconcile_owed_payouts, get_db
+
+    bad_room = _p51_strand_a_sale(
+        client, mock_verify, owner="p51r_bad_owner", payer="p51r_bad_payer",
+        pi_id="pi_p51r_bad",
+    )
+    good_room = _p51_strand_a_sale(
+        client, mock_verify, owner="p51r_good_owner", payer="p51r_good_payer",
+        pi_id="pi_p51r_good",
+    )
+
+    real_get_account = AGENT_REGISTRY.get_stripe_account
+
+    def _explodes_for_one_creator(agent_id):
+        if agent_id == "p51r_bad_owner":
+            raise RuntimeError("registry read blew up for this creator")
+        if agent_id == "p51r_good_owner":
+            return "acct_p51r_good"
+        return real_get_account(agent_id)
+
+    with patch.dict(os.environ, {"STRIPE_SECRET_KEY": "sk_test_p51r"}, clear=False), \
+         patch.object(AGENT_REGISTRY, "get_stripe_account", _explodes_for_one_creator), \
+         patch.object(AGENT_REGISTRY, "get_stripe_account_status", return_value="active"), \
+         patch("emporia.payments.find_settlement_transfer",
+               new_callable=AsyncMock, return_value=(True, None)), \
+         patch("emporia.payments.payout_winner", new_callable=AsyncMock) as payout:
+        payout.return_value = {"transfer_id": "tr_p51r_good"}
+        counts = asyncio.run(_reconcile_owed_payouts())
+
+    assert counts["failed"] >= 1, f"the bad row must be counted as failed: {counts}"
+    with get_db() as conn:
+        bad = conn.execute(
+            "SELECT transfer_status FROM settlements WHERE session_id=?", (bad_room,),
+        ).fetchone()
+        good = conn.execute(
+            "SELECT transfer_status, transfer_id FROM settlements WHERE session_id=?",
+            (good_room,),
+        ).fetchone()
+    assert bad["transfer_status"] == "pending_connect_not_active", (
+        f"the row that threw is left owed, unchanged, got {dict(bad)}"
+    )
+    assert (good["transfer_status"], good["transfer_id"]) == ("transferred", "tr_p51r_good"), (
+        "the row *behind* the one that threw must still be paid — that is the "
+        f"whole point; got {dict(good)}"
     )

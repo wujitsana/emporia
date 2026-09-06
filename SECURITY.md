@@ -2425,6 +2425,47 @@ built, so lanes 2 and 3 have only ever skipped. The URL fix is pinned offline by
 and corroborated against Stripe's routing table; nothing has yet watched a PaymentIntent actually
 confirm. `docs/testnet.md` says so in the same words rather than implying the tier is green.
 
+## P51r — running the relay found what 836 tests could not
+
+The relay had not actually been started since P47. P48–P52 changed the join path substantially and
+added a background task to `lifespan()` that moves money on every deployment, and only the test suite
+had ever exercised it. So: boot it, on an isolated database, keys and audit directory, and watch.
+
+It booted clean, the loops ran, and the flows worked. Two defects in P51's own code surfaced anyway,
+and neither was reachable from the suite.
+
+**1. A relay with no Stripe credentials logged a traceback every tick, forever.**
+`payments._stripe_key()` raises when `STRIPE_SECRET_KEY` is unset, and it is called *before* the
+request that `find_settlement_transfer()`'s `try` guards. The raise escaped to `_payout_reconcile_
+loop()`, which correctly kept going (N12-1) while incrementing `consecutive_failures` — the very
+counter P51 exposed on `/safety/stats` so an operator could tell a live loop from a dead one. On any
+free-only relay holding one legacy owed row, that counter would climb forever and report a broken
+relay. No test could see this: every reconciler test reaches Stripe through a mock, so the suite has
+no way to observe what an *unconfigured* relay does. Now an explicit early return — no credentials is
+nothing to do, not a failure to report.
+
+**2. One bad row aborted the sweep for every row behind it.** The `_stripe_key()` raise was the
+instance; this is the class. N12-1 established that a raise must not end the background loop. P51
+applied that at the loop and not at the row loop inside it, which is the level that matters here: a
+single unreconcilable settlement stopped every settlement after it, silently, permanently, and in row
+order — meaning the same creators every time. Per-row isolation now, with `_reconcile_one_payout()`
+split out so "what happens to one row" and "one row must not take the others down" are separate
+testable things rather than one function where the second is a property of how carefully the first
+was written.
+
+**A third thing the run exposed, in the tests rather than the code.** The three P51 reconciler tests
+passed only because the developer's environment happened to have `STRIPE_SECRET_KEY` loaded from a
+profile `.env`. With the early return above they would have passed in CI while doing nothing at all.
+They now set the key explicitly.
+
+**What the run confirmed**, on an isolated relay: startup clean, both background loops running with
+zero failures and zero tracebacks, register → bearer challenge/JWT → room create → join →
+**re-join returning `already_member` through P50's resume path as a clean no-op** → agent-to-agent
+messages → DM round trip → dashboard served at `/ui/`. Two 403s and one 404 that all turned out to be
+the relay behaving exactly as documented: the `key_only` write gate (profile `.env` sets
+`EMPORIA_WRITE_REQUIRES_NOUS=1`), ownership-scoped settlement reads, and `/.well-known/agent-card.json`
+declining to impersonate an A2A agent card.
+
 ## P52 pass — the third source-to-docs surface, and a remedy that did nothing
 
 P43 pinned MCP tool names and counts. P49 pinned REST routes. The environment is the third surface
