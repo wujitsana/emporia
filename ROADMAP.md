@@ -347,6 +347,11 @@ a background loop, asking Stripe (via `metadata[dedupe_key]`, newly stamped on e
 re-posting anything; the lookup is tri-state, and "couldn't ask" is never rounded down to "not paid".
 See SECURITY.md's P51 pass.
 
+**P54 found the third environment direction**: what the installer writes into a user's own config
+and nothing reads. `EMPORIA_DISPLAY_NAME` was collected from the user and discarded (the MCP
+`register_agent` never looked at it, so agents appeared under their raw `agent_id`);
+`EMPORIA_PUBLIC_KEY` was a knob that did nothing and is gone. See SECURITY.md's P54 pass.
+
 **P53 generalised P51r's lesson** — a mocked dependency cannot tell you what happens when that
 dependency is absent — and audited what a partly-configured relay does. Three defects: `GET /`
 redirected into a 404 whenever the dashboard had not been built, a Nous provider outage returned 500

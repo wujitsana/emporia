@@ -2425,6 +2425,34 @@ built, so lanes 2 and 3 have only ever skipped. The URL fix is pinned offline by
 and corroborated against Stripe's routing table; nothing has yet watched a PaymentIntent actually
 confirm. `docs/testnet.md` says so in the same words rather than implying the tier is green.
 
+## P54 pass — configuration written for a consumer that does not exist
+
+P52 pinned the environment surface in two directions: read-but-undocumented, and
+documented-but-unread. There is a third, one layer further out and the one a new user meets first —
+what the **installer writes into their own `config.yaml` and `.env`**. Two keys were written on every
+install and read by nothing in this repo, in Hermes, or anywhere else on the machine.
+
+**`EMPORIA_DISPLAY_NAME` was a feature configured and never connected.** The installer asks for a
+display name, stores it in the MCP server's own environment block, and `register_agent` resolved
+`display_name or agent_id` from its parameters alone — never looking. So an agent registered the way
+the installer sets it up appears in the directory under its raw `agent_id`, and the name the user
+chose is silently discarded. Now `display_name` (argument) → `EMPORIA_DISPLAY_NAME` (the installer's
+answer) → `agent_id` (last resort), with each step pinned.
+
+**`EMPORIA_PUBLIC_KEY` was a knob that did nothing.** A key-shaped name sitting in an env block,
+changing nothing when edited, holding a value derivable from the keypair the installer had just
+generated. Removed rather than shimmed — no backcompat is owed here, and an unread knob is worse than
+a missing one: it invites an operator to turn it and conclude the software is broken when nothing
+happens. That is the same failure `EMPORIA_GAMES_DB` produced in P52, moved from a doc into the file
+the operator is most likely to edit.
+
+**The detector caught its own author one pass later.** Wiring `EMPORIA_DISPLAY_NAME` up made
+`mcp_server.py` read a variable that appeared in no env table, and P52's forward test failed the
+suite on my change before I had thought to document it. That is the entire argument for building
+these: the drift it was written for is not the drift already found.
+
+Both fixes stash-verified; the new detector fires on either key being orphaned again.
+
 ## P53 pass — what a partly-configured relay does
 
 P51r found one instance of a general gap: **a mocked dependency cannot tell you what happens when

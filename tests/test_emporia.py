@@ -27295,3 +27295,106 @@ async def test_a_slow_identity_provider_does_not_stall_the_whole_relay():
     assert health.status_code == 200, health.text
     assert reg.status_code == 200, reg.text
     assert reg.json()["trust_level"] == "key_only"
+
+
+# ---------------------------------------------------------------------------
+# P54 — configuration written for a consumer that does not exist
+#
+# P52 pinned the environment surface in two directions: read-but-undocumented,
+# and documented-but-unread. There is a third, one layer out and the one a new
+# user meets first — the installer writes keys into *their* config.yaml and
+# .env that nothing anywhere reads. `EMPORIA_GAMES_DB` was a stale remedy in a
+# doc; this is a stale knob in the file the operator is most likely to edit.
+# ---------------------------------------------------------------------------
+
+_INSTALLER_ENV_WRITE_RE = re.compile(
+    r'''env(?:_block)?\[\s*["']([A-Z][A-Z0-9_]*)["']\s*\]\s*='''
+)
+
+
+def _installer_written_env_keys() -> set[str]:
+    from pathlib import Path as _Path
+
+    return set(_INSTALLER_ENV_WRITE_RE.findall(_Path("installer/install.py").read_text()))
+
+
+def test_every_key_the_installer_writes_into_a_users_config_is_read_by_something():
+    """The installer puts these in `config.yaml`'s env block and the profile
+    `.env` on every install, where they read as settings. Two of them were
+    read by nothing in this repo, in Hermes, or anywhere else:
+
+    - `EMPORIA_DISPLAY_NAME` — the installer *collects a display name from the
+      user*, writes it into the MCP server's own environment, and the MCP
+      server's `register_agent` never looks at it, so every agent registered
+      that way appears in the directory under its raw `agent_id`.
+    - `EMPORIA_PUBLIC_KEY` — a key-shaped name in an env block that changes
+      nothing when edited.
+
+    A knob nobody reads is worse than a missing one: it invites an operator to
+    turn it and conclude the software is broken when nothing happens.
+    """
+    from pathlib import Path as _Path
+
+    read: set[str] = set()
+    for root in ("src", "scripts", "relay"):
+        base = _Path(root)
+        if not base.exists():
+            continue
+        for path in base.rglob("*.py"):
+            for m in _ENV_READ_RE.finditer(path.read_text()):
+                read.add(m.group(1) or m.group(2) or m.group(3))
+
+    written = {k for k in _installer_written_env_keys()
+               if k.startswith(("EMPORIA_", "STRIPE_", "NVIDIA_"))}
+    orphans = sorted(written - read)
+    assert not orphans, (
+        "installer/install.py writes these into the user's configuration and "
+        f"nothing reads them: {orphans}"
+    )
+
+
+def test_the_display_name_the_installer_collected_reaches_registration(monkeypatch):
+    """The detector above only proves the key is read *somewhere*. This proves
+    the right value arrives where the user expects to see it — their chosen
+    name, in the agent directory, rather than the raw `agent_id`.
+
+    Precedence is explicit: an argument passed to the tool wins over the
+    installer's answer, which wins over `agent_id` as the last resort.
+    """
+    from emporia import mcp_server
+
+    captured: dict = {}
+
+    def _fake_post(url, *a, **k):
+        m = MagicMock()
+        m.raise_for_status = MagicMock()
+        m.status_code = 200
+        if url.endswith("/agents/challenge"):
+            m.json.return_value = {"challenge_id": "ch_1", "nonce": "nonce-value"}
+        else:
+            captured.update(k.get("json") or {})
+            m.json.return_value = {"agent_id": "p54_agent", "trust_level": "key_only"}
+        return m
+
+    monkeypatch.setenv("EMPORIA_DISPLAY_NAME", "Ada from the installer")
+    with patch.object(mcp_server, "httpx", MagicMock(post=_fake_post)):
+        out = mcp_server.register_agent("p54_agent")
+    assert out.get("success"), out
+    assert captured.get("display_name") == "Ada from the installer", (
+        f"the name the installer collected must be the one registered; got {captured}"
+    )
+
+    captured.clear()
+    with patch.object(mcp_server, "httpx", MagicMock(post=_fake_post)):
+        mcp_server.register_agent("p54_agent", display_name="Explicit Override")
+    assert captured.get("display_name") == "Explicit Override", (
+        "an explicit argument still wins over the installer's answer"
+    )
+
+    captured.clear()
+    monkeypatch.delenv("EMPORIA_DISPLAY_NAME", raising=False)
+    with patch.object(mcp_server, "httpx", MagicMock(post=_fake_post)):
+        mcp_server.register_agent("p54_agent")
+    assert captured.get("display_name") == "p54_agent", (
+        "and with neither, agent_id remains the last resort"
+    )

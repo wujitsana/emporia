@@ -307,8 +307,17 @@ def register_agent(
 
     from emporia.wire import registration_body
     jwt = nous_jwt or os.getenv("EMPORIA_NOUS_JWT", "") or NOUS_JWT
+    # P54: the installer collects a display name from the user and writes it
+    # into this process's own environment as EMPORIA_DISPLAY_NAME — and nothing
+    # ever read it, so an agent registered through this tool without an explicit
+    # display_name appeared in the directory under its raw agent_id and the name
+    # the user chose was silently discarded. The parameter still wins; the env
+    # var is the installer's answer, and `agent_id` stays the last resort.
+    effective_display_name = (
+        display_name or os.getenv("EMPORIA_DISPLAY_NAME", "").strip() or agent_id
+    )
     payload = registration_body(
-        agent_id, pub_hex, display_name or agent_id,
+        agent_id, pub_hex, effective_display_name,
         ch["challenge_id"], sig_hex, nous_jwt=jwt,
         encryption_public_key_hex=enc_pub,
         encryption_key_signature=enc_sig,

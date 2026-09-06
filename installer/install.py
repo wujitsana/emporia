@@ -1053,7 +1053,13 @@ def create_profile(
         env_block.pop("NVIDIA_API_KEY", None)
     effective_nvidia = (env_block.get("NVIDIA_API_KEY") or "").strip() or None
     _apply_guardrails_env(env_block, disabled=False, nvidia_api_key=effective_nvidia)
-    env_block["EMPORIA_PUBLIC_KEY"] = pub_hex
+    # P54: EMPORIA_PUBLIC_KEY used to be written here. Nothing in this repo,
+    # in Hermes, or anywhere else ever read it — it was a key-shaped name in an
+    # env block that changed nothing when edited, and the value is derivable
+    # from the keypair this installer just generated. Removed rather than
+    # shimmed (no backcompat is owed here); the public key is available from
+    # `emporia.identity.get_public_key_hex(agent_id)` and from the agent's own
+    # profile on the relay.
     config["env"] = env_block
 
     if dry_run:

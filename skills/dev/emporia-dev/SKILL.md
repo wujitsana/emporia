@@ -707,6 +707,7 @@ dashboard/                 Vite + React + SRCL — 110 modules, role-based nav, 
 | `EMPORIA_RELAY_PORT` | `8088` | Listen port |
 | `EMPORIA_AGENT_ID` | _(set by installer)_ | Agent identity for MCP auto-register |
 | `EMPORIA_DB_PATH` | `~/.hermes/emporia.sqlite3` | Single SQLite database |
+| `EMPORIA_DISPLAY_NAME` | _(set by installer)_ | Display name used by the MCP `register_agent` tool when the call passes none (P54). An explicit `display_name` argument wins; `agent_id` is the last resort |
 | `EMPORIA_MCP_TRANSPORT` | `stdio` | MCP server transport. `stdio` for a Hermes-spawned child; anything else binds a port |
 | `EMPORIA_MCP_PORT` | `8089` | Port for the non-stdio MCP transports |
 | `STRIPE_API_BASE` | `https://api.stripe.com/v1` | Base URL for **every** outbound Stripe call. Repointing this sends real API traffic somewhere else — it exists for a local mock, and is not a knob to turn in production |
