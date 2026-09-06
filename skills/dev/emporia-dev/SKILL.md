@@ -479,6 +479,17 @@ charged"), and `x402_authorization_transaction()` recovers the tx hash from the 
 log. An unspent authorization is only retried once it is past its own `validBefore`. Both helpers
 are keyword-safe and return `None` rather than raising.
 
+**P50 — finishing an interrupted purchase.** Rail-agnostic, so it applies to the Stripe lane too. A
+paid join commits its membership before it settles (N5 R2), and the `already_member` /
+`already_subscribed` short-circuits used to end the request there — so a crash between the membership
+write and `_settle_access_payment()` left the payer charged, the creator unpaid, the entitlement
+missing and the x402 intent stranded in `settled`, with no retry able to repair any of it. Both
+short-circuits now call `_finish_interrupted_access_purchase()` first: it reads the payer's last
+`payments` row for that resource and re-enters `_settle_access_payment()`, which is exactly-once per
+payment via `_settlement_exists(dedupe_key)`. The grant skip is keyed on *this payment*
+(`entitlements.has_grant_for_payment()`), never `has_any_grant()` — a payer renewing after expiry
+satisfies the latter and must still receive what they just paid for.
+
 #### Paying (P45) — `emporia.x402_payer`, optional `x402` extra
 ```python
 payer_address(private_key)                       → checksummed EVM address

@@ -63,6 +63,12 @@ escrow (`capture_method=manual`) has no x402 analogue and stays Stripe-only.
   `authorizationState` answers "was this payer charged?" without the facilitator's cooperation.
   Configure `EMPORIA_X402_RPC_<NETWORK>` to make that resolution automatic; without it an
   interrupted settlement is refused rather than repeated, which is loud but never wrong
+- **Finishing a purchase the relay died in the middle of** (P50): a paid join commits its membership
+  before it settles, so a crash in between left the payer charged, the creator unpaid and no
+  entitlement — and every retry answered 200 `already_member` and repaired none of it. Both
+  membership paths now finish an interrupted settlement before short-circuiting.
+  `_settle_access_payment()` is exactly-once per payment, so re-entering it costs nothing when
+  there is nothing to finish. Rail-agnostic: it fixes the Stripe and x402 lanes with the same code
 - Verified against the live public facilitator on Base Sepolia during P45; the chain reads against
   Base Sepolia during P48. See `docs/testnet.md`
 

@@ -328,11 +328,21 @@ tri-state: unknown is never rounded down to "not charged", so an unresolvable se
 with no `EMPORIA_X402_RPC_<NETWORK>` is refused rather than repeated. Verified against Base Sepolia
 with a negative control. See SECURITY.md's P48 pass.
 
-**Still open after P48, one window narrower:** a crash between `add_member()` and
-`entitlements.grant()` leaves a paid, joined agent with no entitlement, and the retry short-circuits
-on membership before it can grant one. No payment is lost; the expiry clock never starts and the
-intent never retires. It needs the membership write and the entitlement grant to be one transaction
-across two modules.
+**Closed in P50.** The window P48 recorded here — a crash between `add_member()` and
+`entitlements.grant()` — cost more than the note said: the grant is the *first* statement of
+`_settle_access_payment()`, so a crash there is also before the payout and before
+`record_settlement()`. The payer's money is captured, the creator is never paid, and every retry
+returns 200 `already_member` and repairs nothing. It did not need a cross-module transaction; it
+needed the short-circuit to stop reading membership as proof the purchase completed.
+`_finish_interrupted_access_purchase()` finishes the settlement before answering, and
+`_settle_access_payment()` is exactly-once per payment, keyed on the UNIQUE `settlements.dedupe_key`
+it writes last. The stranded x402 intent retires with it. See SECURITY.md's P50 pass.
+
+**Still open after P50, narrower again:** the payout itself remains outside any durable "owed"
+record. A crash between the settlement row and a *later* retry more than 24 hours on would move money
+twice, because Stripe expires an `Idempotency-Key` after 24 hours — the resume re-derives the same key
+and is a no-op inside that window, and is not outside it. Closing that means a payout outbox and a
+reconciler, not a wider guard.
 
 **P1b, the x402 rail, is done** — built on P3, the rail-seam pass (SECURITY.md's
 P1a/P1r/P2/P2r/P2r-6/P3 passes hardened and then rail-tagged the payment core). P1r found and fixed

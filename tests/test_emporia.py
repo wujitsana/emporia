@@ -25960,3 +25960,538 @@ async def test_testnet_the_log_window_is_a_bound_not_an_answer(monkeypatch):
     assert await x402_authorization_transaction(
         "eip155:84532", _P48_LIVE_USDC, _P48_LIVE_AUTHORIZER, _P48_LIVE_NONCE,
     ) is None, "outside the window the log index reports nothing — a bound, not an answer"
+
+
+# ---------------------------------------------------------------------------
+# P50 — membership is not proof of purchase
+#
+# P48 closed the settle window by writing an intent record before the money
+# moved. It recorded one narrower window as still open: "a crash between
+# add_member() and entitlements.grant() leaves a paid, joined agent with no
+# entitlement... No payment is lost; the expiry clock never starts." The first
+# half is right and the second half understates it — the grant is the *first*
+# statement in _settle_access_payment(), so a crash there is also before the
+# payout and before record_settlement(). The money is captured, the creator is
+# never paid, and the retry short-circuits on membership before it can repair
+# any of it. These tests pin the whole state, not just the clock.
+# ---------------------------------------------------------------------------
+
+
+@patch("emporia.payments.payout_winner", new_callable=AsyncMock)
+@patch("emporia.payments.verify_payment_intent", new_callable=AsyncMock)
+def test_a_paid_room_join_that_crashes_at_the_grant_is_repaired_by_the_retry(
+    mock_verify, mock_payout, client,
+):
+    """The window P48 left open, driven through the real route. The relay dies
+    between the membership write and the entitlement grant; the payer retries
+    with a fresh PaymentIntent, exactly as a real client would.
+
+    Before the fix the retry returns 200 `already_member` and repairs nothing:
+    the payer is charged and holds no entitlement, the creator is never paid,
+    and there is no settlement row. `already_member` is only a safe answer if
+    membership implies the purchase completed, and it does not.
+    """
+    from emporia import entitlements
+    from emporia.relay_server import DATABASE_PATH, get_db
+
+    _register(client, "p50_room_owner")
+    _register(client, "p50_room_payer")
+    mock_payout.return_value = {"transfer_id": "tr_p50_room"}
+
+    r = client.post("/rooms", json={
+        "name": "P50 Room", "creator_id": "p50_room_owner",
+        "room_type": "private", "gate_type": "paid", "entry_fee_cents": 100,
+        "access_duration_days": 1,
+    }, headers={"x-emporia-agent-id": "p50_room_owner"})
+    assert r.status_code == 200, r.text
+    room_id = r.json()["room_id"]
+
+    def _pi(pi_id: str) -> dict:
+        return {
+            "status": "succeeded", "payment_intent_id": pi_id,
+            "amount": 100, "currency": "usd", "capture_method": "automatic",
+            "metadata": {
+                "resource_type": "room", "resource_id": room_id,
+                "buyer_agent_id": "p50_room_payer",
+            },
+        }
+
+    def _join(pi_id: str):
+        return client.post(f"/rooms/{room_id}/join",
+            json={"agent_id": "p50_room_payer", "payment_intent_id": pi_id},
+            headers={"x-emporia-agent-id": "p50_room_payer"})
+
+    with _stripe_account_active("acct_p50_room"):
+        mock_verify.return_value = _pi("pi_P50_ROOM_ONE")
+        with patch.object(entitlements, "grant", side_effect=RuntimeError("relay died mid-grant")):
+            with pytest.raises(RuntimeError):
+                _join("pi_P50_ROOM_ONE")
+
+        with get_db() as conn:
+            captured = conn.execute(
+                "SELECT 1 FROM payments WHERE payment_intent_id=?", ("pi_P50_ROOM_ONE",),
+            ).fetchone()
+        assert captured, (
+            "precondition: the money is captured and recorded before the grant, "
+            "which is what makes the crash cost something"
+        )
+        assert not entitlements.has_access(
+            "room", room_id, "p50_room_payer", db_path=DATABASE_PATH,
+        ), "precondition: the grant is the statement that crashed"
+
+        mock_verify.return_value = _pi("pi_P50_ROOM_TWO")
+        r2 = _join("pi_P50_ROOM_TWO")
+        assert r2.status_code == 200, r2.text
+
+    assert mock_payout.call_count == 1, (
+        f"the grant is the first statement in _settle_access_payment(), so a crash "
+        f"there is also before the payout: the payer's money is captured and the "
+        f"creator is never paid. Payout fired {mock_payout.call_count}x"
+    )
+    with get_db() as conn:
+        settlements = conn.execute(
+            "SELECT payment_intent_ids FROM settlements WHERE session_id=?", (room_id,),
+        ).fetchall()
+    assert len(settlements) == 1, (
+        f"one captured payment, one settlement row, got {len(settlements)}"
+    )
+    assert entitlements.has_access(
+        "room", room_id, "p50_room_payer", db_path=DATABASE_PATH,
+    ), (
+        "the payer paid for a timed entitlement and the retry must leave them "
+        "holding one — membership alone starts no expiry clock and is not what "
+        "the money bought"
+    )
+
+
+@patch("emporia.payments.payout_winner", new_callable=AsyncMock)
+@patch("emporia.payments.verify_payment_intent", new_callable=AsyncMock)
+def test_a_paid_agora_subscribe_that_crashes_at_the_grant_is_repaired_by_the_retry(
+    mock_verify, mock_payout, client,
+):
+    """The Agora sibling, which fails in a nastier way than the room does.
+
+    A crash at the grant leaves this subscriber a member with no entitlement
+    row at all — and that is exactly the state P2-5's `not ever_entitled`
+    grandfather clause reads as "this membership predates entitlements
+    existing", so the short-circuit admits them free, permanently. The
+    interrupted purchase and a genuine pre-entitlements membership are
+    indistinguishable from membership alone; only the payment record tells
+    them apart, and nothing was consulting it.
+    """
+    from emporia import entitlements
+    from emporia.relay_server import DATABASE_PATH, get_db
+
+    _register(client, "p50_agora_owner")
+    _register(client, "p50_agora_payer")
+    mock_payout.return_value = {"transfer_id": "tr_p50_agora"}
+
+    r = client.post("/agoras/topics", json={
+        "name": "P50 Agora", "description": "d", "visibility": "public",
+        "gate_type": "paid_invite", "entry_fee_cents": 100,
+        "creator_id": "p50_agora_owner", "access_duration_days": 30,
+    }, headers={"x-emporia-agent-id": "p50_agora_owner"})
+    assert r.status_code == 200, r.text
+    slug, topic_id = r.json()["slug"], r.json()["topic_id"]
+    client.post(f"/agoras/topics/{slug}/invite", json={"invitee_id": "p50_agora_payer"},
+        headers={"x-emporia-agent-id": "p50_agora_owner"})
+
+    def _pi(pi_id: str) -> dict:
+        return {
+            "status": "succeeded", "payment_intent_id": pi_id,
+            "amount": 100, "currency": "usd", "capture_method": "automatic",
+            "metadata": {
+                "resource_type": "agora", "resource_id": topic_id,
+                "buyer_agent_id": "p50_agora_payer",
+            },
+        }
+
+    def _subscribe(pi_id: str):
+        return client.post(f"/agoras/topics/{slug}/subscribe",
+            json={"agent_id": "p50_agora_payer", "payment_intent_id": pi_id},
+            headers={"x-emporia-agent-id": "p50_agora_payer"})
+
+    with _stripe_account_active("acct_p50_agora"):
+        mock_verify.return_value = _pi("pi_P50_AGORA_ONE")
+        with patch.object(entitlements, "grant", side_effect=RuntimeError("relay died mid-grant")):
+            with pytest.raises(RuntimeError):
+                _subscribe("pi_P50_AGORA_ONE")
+
+        assert not entitlements.has_any_grant(
+            "agora", topic_id, "p50_agora_payer", db_path=DATABASE_PATH,
+        ), (
+            "precondition: no entitlement row at all — the state the grandfather "
+            "clause cannot distinguish from a pre-entitlements membership"
+        )
+
+        mock_verify.return_value = _pi("pi_P50_AGORA_TWO")
+        r2 = _subscribe("pi_P50_AGORA_TWO")
+        assert r2.status_code == 200, r2.text
+
+    assert mock_payout.call_count == 1, (
+        f"the creator must be paid for the one captured payment; payout fired "
+        f"{mock_payout.call_count}x"
+    )
+    assert entitlements.has_access(
+        "agora", topic_id, "p50_agora_payer", db_path=DATABASE_PATH,
+    ), "the 30-day window the subscriber paid for must actually start"
+    with get_db() as conn:
+        settlements = conn.execute(
+            "SELECT payment_intent_ids FROM settlements WHERE session_id=?", (topic_id,),
+        ).fetchall()
+    assert len(settlements) == 1, f"one purchase, one settlement row, got {len(settlements)}"
+
+
+@patch("emporia.payments.payout_winner", new_callable=AsyncMock)
+@patch("emporia.payments.verify_payment_intent", new_callable=AsyncMock)
+def test_an_ordinary_repeat_join_settles_nothing_a_second_time(
+    mock_verify, mock_payout, client,
+):
+    """The control for the fix, not for the defect. The repair runs on every
+    already-member join, so the thing that could go wrong now is it firing
+    when nothing is broken — a second payout, a duplicate entitlement receipt,
+    a second settlement row for one purchase.
+
+    `_settle_access_payment()` is exactly-once per payment because the
+    settlement row it writes last is the key it checks first; this pins that
+    property at the route, where a member simply re-joins a room they already
+    paid for.
+    """
+    from emporia import entitlements
+    from emporia.relay_server import DATABASE_PATH, get_db
+
+    _register(client, "p50_repeat_owner")
+    _register(client, "p50_repeat_payer")
+    mock_payout.return_value = {"transfer_id": "tr_p50_repeat"}
+
+    r = client.post("/rooms", json={
+        "name": "P50 Repeat Room", "creator_id": "p50_repeat_owner",
+        "room_type": "private", "gate_type": "paid", "entry_fee_cents": 100,
+        "access_duration_days": 7,
+    }, headers={"x-emporia-agent-id": "p50_repeat_owner"})
+    assert r.status_code == 200, r.text
+    room_id = r.json()["room_id"]
+
+    with _stripe_account_active("acct_p50_repeat"):
+        mock_verify.return_value = {
+            "status": "succeeded", "payment_intent_id": "pi_P50_REPEAT",
+            "amount": 100, "currency": "usd", "capture_method": "automatic",
+            "metadata": {
+                "resource_type": "room", "resource_id": room_id,
+                "buyer_agent_id": "p50_repeat_payer",
+            },
+        }
+        first = client.post(f"/rooms/{room_id}/join",
+            json={"agent_id": "p50_repeat_payer", "payment_intent_id": "pi_P50_REPEAT"},
+            headers={"x-emporia-agent-id": "p50_repeat_payer"})
+        assert first.status_code == 200, first.text
+
+        for _ in range(3):
+            again = client.post(f"/rooms/{room_id}/join",
+                json={"agent_id": "p50_repeat_payer"},
+                headers={"x-emporia-agent-id": "p50_repeat_payer"})
+            assert again.status_code == 200, again.text
+            assert again.json()["status"] == "already_member", again.text
+
+    assert mock_payout.call_count == 1, (
+        f"three repeat joins must not pay the creator again; payout fired "
+        f"{mock_payout.call_count}x"
+    )
+    with get_db() as conn:
+        settlements = conn.execute(
+            "SELECT 1 FROM settlements WHERE session_id=?", (room_id,),
+        ).fetchall()
+        grants = conn.execute(
+            "SELECT 1 FROM access_entitlements WHERE resource_type='room' "
+            "AND resource_id=? AND agent_id=?", (room_id, "p50_repeat_payer"),
+        ).fetchall()
+    assert len(settlements) == 1, f"one purchase, one settlement row, got {len(settlements)}"
+    assert len(grants) == 1, (
+        f"one payment buys one entitlement receipt — a repeat join must not "
+        f"insert another, got {len(grants)}"
+    )
+    assert entitlements.has_access(
+        "room", room_id, "p50_repeat_payer", db_path=DATABASE_PATH,
+    )
+
+
+@patch("emporia.payments.payout_winner", new_callable=AsyncMock)
+@patch("emporia.payments.x402_settle_payment", new_callable=AsyncMock)
+@patch("emporia.payments.x402_verify_payment", new_callable=AsyncMock)
+def test_the_x402_intent_retires_when_the_retry_finishes_the_purchase(
+    mock_verify, mock_settle, mock_payout, client,
+):
+    """The half of the window P48 named and could not close from its own side.
+
+    P48 retires the intent when the entitlement exists, because the entitlement
+    is what the payment bought. A crash at the grant therefore stranded the
+    intent in `settled` forever: the entitlement never appeared, the retry
+    short-circuited on membership, and nothing else retires intents. A stuck
+    settled intent is not inert — it is what a *later* legitimate re-purchase
+    of the same resource collides with, and being handed free access months
+    later is the same defect inverted and slower.
+
+    Driven through the route on the x402 rail so the intent is real, and the
+    crash is at the grant rather than simulated at the seam.
+    """
+    from emporia import entitlements
+    from emporia.relay_server import AGENT_REGISTRY, DATABASE_PATH, DB_LOCK, get_db
+
+    creator, payer = "p50_x402_creator", "p50_x402_payer"
+    _register(client, creator)
+    _register(client, payer)
+    AGENT_REGISTRY.set_x402_pay_to(creator, "evm", "0x" + "aa" * 20)
+    mock_verify.return_value = {"isValid": True}
+    mock_settle.return_value = {"success": True, "transaction": "0xp50first"}
+    mock_payout.return_value = {"transfer_id": "tr_p50_x402"}
+
+    def _credential(nonce: str) -> str:
+        return _x402_payment_signature_header(
+            {"scheme": "exact", "network": "eip155:84532", "amount": "1000000",
+             "asset": _P48_ENV["EMPORIA_X402_ASSET_EIP155_84532"],
+             "payTo": "0x" + "aa" * 20, "maxTimeoutSeconds": 300,
+             "extra": {"name": "USDC", "version": "2"}},
+            {"signature": "0xsig", "authorization": {
+                "from": "0x" + "19" * 20, "nonce": nonce,
+                "validBefore": str(int(time.time()) + 300)}},
+        )
+
+    with patch.dict(os.environ, _P48_ENV, clear=False):
+        r = client.post("/rooms", json={
+            "name": "P50 x402 Room", "creator_id": creator,
+            "room_type": "private", "gate_type": "paid", "entry_fee_cents": 100,
+            "access_duration_days": 30,
+        }, headers={"x-emporia-agent-id": creator})
+        assert r.status_code == 200, r.text
+        room_id = r.json()["room_id"]
+
+        with patch.object(entitlements, "grant", side_effect=RuntimeError("relay died mid-grant")):
+            with pytest.raises(RuntimeError):
+                client.post(f"/rooms/{room_id}/join", json={"agent_id": payer},
+                    headers={"x-emporia-agent-id": payer,
+                             "PAYMENT-SIGNATURE": _credential("0x" + "5a" * 32)})
+
+        with DB_LOCK, get_db() as conn:
+            stuck = conn.execute(
+                "SELECT status FROM x402_settle_intents WHERE payer_id=? AND resource_id=?",
+                (payer, room_id),
+            ).fetchall()
+        assert [i["status"] for i in stuck] == ["settled"], (
+            f"precondition: the settled intent is stranded by the crash, got "
+            f"{[dict(i) for i in stuck]}"
+        )
+
+        retry = client.post(f"/rooms/{room_id}/join", json={"agent_id": payer},
+            headers={"x-emporia-agent-id": payer,
+                     "PAYMENT-SIGNATURE": _credential("0x" + "5b" * 32)})
+        assert retry.status_code == 200, retry.text
+
+    assert mock_settle.call_count == 1, (
+        f"one purchase reaches /settle once; it was called {mock_settle.call_count}x"
+    )
+    assert entitlements.has_access("room", room_id, payer, db_path=DATABASE_PATH), (
+        "the retry must leave the payer holding the 30-day entitlement they bought"
+    )
+    with DB_LOCK, get_db() as conn:
+        left = conn.execute(
+            "SELECT 1 FROM x402_settle_intents WHERE payer_id=? AND resource_id=?",
+            (payer, room_id),
+        ).fetchall()
+    assert left == [], (
+        "the entitlement exists, so the intent guarding that purchase must be "
+        "retired — a stuck settled intent hands the payer's next genuine "
+        "re-purchase of this room free access"
+    )
+
+
+@patch("emporia.payments.payout_winner", new_callable=AsyncMock)
+@patch("emporia.payments.verify_payment_intent", new_callable=AsyncMock)
+def test_a_crash_after_the_grant_is_finished_without_issuing_a_second_receipt(
+    mock_verify, mock_payout, client,
+):
+    """The other half of the interrupted purchase, and the reason the resume
+    path cannot simply re-grant.
+
+    Here the grant landed and the settlement row did not, so the retry
+    genuinely re-enters `_settle_access_payment()` past its exactly-once
+    check. `entitlements.grant()` always inserts — one row per payment is the
+    receipt property that table exists for — so an unconditional re-grant
+    would hand this payer a second entitlement for one payment and restart
+    their 30-day window from the retry. The skip has to be keyed on *this
+    payment* (`has_grant_for_payment`), not on "holds any grant here", which a
+    genuine re-purchase after expiry also satisfies.
+    """
+    from emporia import entitlements, relay_server
+    from emporia.relay_server import DATABASE_PATH, get_db
+
+    _register(client, "p50_payout_owner")
+    _register(client, "p50_payout_payer")
+    mock_payout.return_value = {"transfer_id": "tr_p50_payout"}
+
+    r = client.post("/rooms", json={
+        "name": "P50 Payout Room", "creator_id": "p50_payout_owner",
+        "room_type": "private", "gate_type": "paid", "entry_fee_cents": 100,
+        "access_duration_days": 30,
+    }, headers={"x-emporia-agent-id": "p50_payout_owner"})
+    assert r.status_code == 200, r.text
+    room_id = r.json()["room_id"]
+
+    real_record_settlement = relay_server.record_settlement
+    attempts = {"n": 0}
+
+    def _dies_before_recording(settlement):
+        attempts["n"] += 1
+        if attempts["n"] == 1:
+            raise RuntimeError("relay died before the settlement was recorded")
+        return real_record_settlement(settlement)
+
+    def _pi(pi_id: str) -> dict:
+        return {
+            "status": "succeeded", "payment_intent_id": pi_id,
+            "amount": 100, "currency": "usd", "capture_method": "automatic",
+            "metadata": {
+                "resource_type": "room", "resource_id": room_id,
+                "buyer_agent_id": "p50_payout_payer",
+            },
+        }
+
+    with _stripe_account_active("acct_p50_payout"):
+        mock_verify.return_value = _pi("pi_P50_PAYOUT_ONE")
+        with patch.object(relay_server, "record_settlement", _dies_before_recording):
+            with pytest.raises(RuntimeError):
+                client.post(f"/rooms/{room_id}/join",
+                    json={"agent_id": "p50_payout_payer",
+                          "payment_intent_id": "pi_P50_PAYOUT_ONE"},
+                    headers={"x-emporia-agent-id": "p50_payout_payer"})
+
+        with get_db() as conn:
+            settled = conn.execute(
+                "SELECT 1 FROM settlements WHERE session_id=?", (room_id,),
+            ).fetchall()
+        assert settled == [], "precondition: the settlement row never landed"
+        assert entitlements.has_access(
+            "room", room_id, "p50_payout_payer", db_path=DATABASE_PATH,
+        ), "precondition: the grant did land — this is the state past the first guard"
+
+        again = client.post(f"/rooms/{room_id}/join",
+            json={"agent_id": "p50_payout_payer"},
+            headers={"x-emporia-agent-id": "p50_payout_payer"})
+        assert again.status_code == 200, again.text
+
+    with get_db() as conn:
+        grants = conn.execute(
+            "SELECT payment_intent_id FROM access_entitlements "
+            "WHERE resource_type='room' AND resource_id=? AND agent_id=?",
+            (room_id, "p50_payout_payer"),
+        ).fetchall()
+        settlements = conn.execute(
+            "SELECT 1 FROM settlements WHERE session_id=?", (room_id,),
+        ).fetchall()
+    assert len(grants) == 1, (
+        f"one payment buys one entitlement receipt; the resume must not insert "
+        f"a second, got {[dict(g) for g in grants]}"
+    )
+    assert grants[0]["payment_intent_id"] == "pi_P50_PAYOUT_ONE", (
+        "the receipt names the payment that actually bought it"
+    )
+    assert len(settlements) == 1, (
+        f"the resume finishes the settlement the crash lost, once; got {len(settlements)}"
+    )
+    keys = [c.kwargs["idempotency_key"] for c in mock_payout.call_args_list]
+    assert len(set(keys)) == 1, (
+        f"the resumed payout is the same payout, so it must reuse the same "
+        f"Idempotency-Key and be a no-op at Stripe; got {keys}"
+    )
+
+
+@patch("emporia.payments.payout_winner", new_callable=AsyncMock)
+@patch("emporia.payments.verify_payment_intent", new_callable=AsyncMock)
+def test_a_repurchase_after_expiry_gets_the_entitlement_it_paid_for(
+    mock_verify, mock_payout, client,
+):
+    """The pin the post-expiry rejoin tests were missing, found by
+    reintroducing the defect it guards: every one of them checked the ledger —
+    payments, settlement rows, payout count, distinct Idempotency-Keys — and
+    none checked that the payer ended up with the access those payments bought.
+
+    That gap is load-bearing now. P50's resume skips the grant when *this
+    payment* already bought one; keying that skip on `has_any_grant()` instead
+    would look identical on the happy path and silently withhold the grant from
+    every renewal, because a renewing payer holds an expired row and satisfies
+    "has ever been granted anything here". The suite could not tell the
+    difference.
+    """
+    import sqlite3
+    from datetime import UTC, datetime, timedelta
+
+    from emporia import entitlements
+    from emporia.relay_server import DATABASE_PATH, get_db
+
+    _register(client, "p50_renew_owner")
+    _register(client, "p50_renew_payer")
+    mock_payout.return_value = {"transfer_id": "tr_p50_renew"}
+
+    r = client.post("/rooms", json={
+        "name": "P50 Renewal Room", "creator_id": "p50_renew_owner",
+        "room_type": "private", "gate_type": "paid", "entry_fee_cents": 100,
+        "access_duration_days": 1,
+    }, headers={"x-emporia-agent-id": "p50_renew_owner"})
+    assert r.status_code == 200, r.text
+    room_id = r.json()["room_id"]
+
+    def _pi(pi_id: str) -> dict:
+        return {
+            "status": "succeeded", "payment_intent_id": pi_id,
+            "amount": 100, "currency": "usd", "capture_method": "automatic",
+            "metadata": {
+                "resource_type": "room", "resource_id": room_id,
+                "buyer_agent_id": "p50_renew_payer",
+            },
+        }
+
+    with _stripe_account_active("acct_p50_renew"):
+        mock_verify.return_value = _pi("pi_P50_RENEW_ONE")
+        first = client.post(f"/rooms/{room_id}/join",
+            json={"agent_id": "p50_renew_payer", "payment_intent_id": "pi_P50_RENEW_ONE"},
+            headers={"x-emporia-agent-id": "p50_renew_payer"})
+        assert first.status_code == 200, first.text
+
+        # Close the window and drop the membership, the way an expiry plus a
+        # leave/kick does — direct DB writes, to stay decoupled from
+        # kick_from_room()'s own semantics.
+        conn = sqlite3.connect(DATABASE_PATH)
+        conn.execute(
+            "UPDATE access_entitlements SET expires_at = ? "
+            "WHERE resource_type='room' AND resource_id=? AND agent_id=?",
+            ((datetime.now(UTC) - timedelta(hours=1)).isoformat(), room_id, "p50_renew_payer"),
+        )
+        conn.commit()
+        conn.close()
+        from emporia import rooms as rooms_db
+        rooms_db.remove_member(room_id, "p50_renew_payer", db_path=DATABASE_PATH)
+        assert not entitlements.has_access(
+            "room", room_id, "p50_renew_payer", db_path=DATABASE_PATH,
+        ), "precondition: the first window is closed"
+
+        mock_verify.return_value = _pi("pi_P50_RENEW_TWO")
+        second = client.post(f"/rooms/{room_id}/join",
+            json={"agent_id": "p50_renew_payer", "payment_intent_id": "pi_P50_RENEW_TWO"},
+            headers={"x-emporia-agent-id": "p50_renew_payer"})
+        assert second.status_code == 200, second.text
+
+    assert entitlements.has_access(
+        "room", room_id, "p50_renew_payer", db_path=DATABASE_PATH,
+    ), (
+        "the renewal payment must buy a fresh entitlement — the payer is "
+        "charged for access, so 'already has a lapsed row here' can never be "
+        "the reason to withhold it"
+    )
+    with get_db() as conn:
+        grants = conn.execute(
+            "SELECT payment_intent_id FROM access_entitlements "
+            "WHERE resource_type='room' AND resource_id=? AND agent_id=? "
+            "ORDER BY granted_at", (room_id, "p50_renew_payer"),
+        ).fetchall()
+    assert [g["payment_intent_id"] for g in grants] == [
+        "pi_P50_RENEW_ONE", "pi_P50_RENEW_TWO",
+    ], f"two payments, two receipts, in order; got {[dict(g) for g in grants]}"

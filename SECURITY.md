@@ -2425,6 +2425,79 @@ built, so lanes 2 and 3 have only ever skipped. The URL fix is pinned offline by
 and corroborated against Stripe's routing table; nothing has yet watched a PaymentIntent actually
 confirm. `docs/testnet.md` says so in the same words rather than implying the tier is green.
 
+## P50 pass — membership is not proof of purchase
+
+P48 closed the x402 settle window and recorded one narrower one as still open: "a crash between
+`add_member()` and `entitlements.grant()` leaves a paid, joined agent with no entitlement... No
+payment is lost; the expiry clock never starts and the intent never retires." The first clause is
+right. The rest of that sentence understated the damage by a wide margin, and reproducing it is what
+showed by how much.
+
+**What the window actually costs.** `entitlements.grant()` is the *first* statement of
+`_settle_access_payment()`. A crash there is therefore also before the payout and before
+`record_settlement()`. So the state a crash at the grant leaves behind is: the payer's money captured
+and recorded, no entitlement, **the creator never paid**, and no settlement row. Then the payer
+retries, and both membership paths answer
+
+```
+if is_member(...): return {"status": "already_member"}
+```
+
+— 200, repairing nothing, forever. There is no reconciler, and the payer cannot reach the settlement
+path again by paying more. The purchase is permanently unfinished and the relay reports success.
+
+**The defect in one line:** the short-circuit reads membership as proof the purchase completed.
+Membership is proof only that the membership write is the one that landed.
+
+**Why the short-circuit was written that way, and why the reason expired.** N5 review R2 restructured
+both routes to commit membership *before* the payout, justified in a comment repeated at both sites:
+"payout_winner is a real, non-idempotent Stripe transfer... a retry would fire a second transfer."
+That was true when it was written. It stopped being true at **P1a-3**, which made `idempotency_key`
+required on `payout_winner()` and derived it from `settlement_dedupe_key()` — a resumed payout for the
+same payment reuses the same key and is a no-op at Stripe. The ordering is still correct; the hazard
+it was defending against had already shrunk to "a replay more than 24 hours later, once Stripe expires
+the key". What nobody re-examined was the *other* half of the arrangement — that the short-circuit
+also ends the request, and so guarantees no retry can ever finish what a crash interrupted. This is
+the P49 shape again: a conclusion recorded once gets re-read rather than re-measured.
+
+**The fix.** The short-circuit finishes the purchase before it short-circuits.
+`_finish_interrupted_access_purchase()` reads the payer's last recorded payment for that resource and
+re-enters `_settle_access_payment()` with it; if there is no payment (an open room, a free topic, an
+invited member) it does nothing. Re-entry is safe because `_settle_access_payment()` is now
+**exactly-once per payment**, and it answers that from the durable record rather than by inference: the
+settlement row it writes last carries a UNIQUE `dedupe_key`, so the row's existence *is* "this already
+ran to the end". Same move P48 made with the chain — ask the record, don't reason about it.
+
+**The one place the fix could have quietly broken the happy path** is the grant. `entitlements.grant()`
+always inserts, deliberately: one receipt row per payment is what the table is for. A resume that
+re-granted would issue a second receipt for one payment and restart the payer's window from the retry.
+So the skip is keyed on *this payment* — `has_grant_for_payment()`, new in this pass — and explicitly
+not on `has_any_grant()`, which a payer renewing after expiry also satisfies.
+
+**The Agora case fails worse than the room does.** A crash at the grant leaves a subscriber with no
+entitlement row *at all*, which is exactly the state P2-5's `not ever_entitled` clause reads as "this
+membership predates entitlements existing" and grandfathers in free, permanently. An interrupted
+purchase and a genuine pre-entitlements membership are indistinguishable from membership alone. Only
+the payment record separates them, and nothing was consulting it.
+
+**Also closed here, from P48's own residual:** the stranded intent. A crash at the grant left the
+x402 intent in `settled` forever, because P48 retires it when the entitlement appears and the
+entitlement never did. A stuck settled intent is not inert — it is what the payer's *next* genuine
+re-purchase of that resource collides with, and being handed free access months later is the same
+defect inverted and slower. The resume path retires it.
+
+**Stash-verify found one of my own pins missing, and it was in the pre-existing suite.** Collapsing
+the payment-scoped skip to `has_any_grant()` — which silently withholds the grant from *every*
+renewal — passed all 821 tests. Every post-expiry rejoin test checked the ledger (payments, settlement
+rows, payout count, distinct Idempotency-Keys) and none checked that the payer ended up with the
+access those payments bought.
+`test_a_repurchase_after_expiry_gets_the_entitlement_it_paid_for` closes that; the collapse now fails
+it. Four other reintroduced defects each fire on a named test.
+
+**Two false comments corrected**, both mine or inherited: P48's claim that `entitlements.grant()` is
+idempotent (it is not, and nothing depended on the false half — but it was the premise this pass had
+to check before building on it), and N5 R2's "non-idempotent Stripe transfer" at both call sites.
+
 ## P49 pass — the REST surface had no watcher, and the reason it didn't was a nine-line regex
 
 P43 built the repo's first source-to-docs pins for MCP tools and recorded in the same breath that

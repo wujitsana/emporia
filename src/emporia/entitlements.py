@@ -193,6 +193,12 @@ _HAS_ANY_GRANT_SQL = (
     "WHERE resource_type = ? AND resource_id = ? AND agent_id = ? LIMIT 1"
 )
 
+_HAS_GRANT_FOR_PAYMENT_SQL = (
+    "SELECT 1 FROM access_entitlements "
+    "WHERE resource_type = ? AND resource_id = ? AND agent_id = ? "
+    "AND payment_intent_id = ? LIMIT 1"
+)
+
 
 def has_access(
     resource_type: str, resource_id: str, agent_id: str, db_path: Path | None = None,
@@ -266,6 +272,38 @@ def has_any_grant(
     with _LOCK, ctx as c:
         row = c.execute(
             _HAS_ANY_GRANT_SQL, (resource_type, resource_id, agent_id)
+        ).fetchone()
+    return row is not None
+
+
+def has_grant_for_payment(
+    resource_type: str, resource_id: str, agent_id: str, payment_intent_id: str,
+    db_path: Path | None = None, *, conn: sqlite3.Connection | None = None,
+) -> bool:
+    """True if *this specific payment* has already bought a grant here (P50).
+
+    Deliberately narrower than `has_any_grant()`, which answers "has this agent
+    ever held anything for this resource". The two are not interchangeable at
+    the one call site that needs this: `_settle_access_payment()` may be
+    re-entered to finish a purchase a crash cut short, and it has to tell
+    "I already granted for *this* payment, don't insert a duplicate receipt"
+    apart from "this payer holds an older, unrelated grant here" — a genuine
+    re-purchase after an entitlement expires is exactly that second case, and
+    keying the skip on `has_any_grant()` would silently withhold the grant the
+    payer just paid for.
+
+    `grant()` itself is left always-inserting: one row per payment is the
+    receipt property the table exists for, and making the *insert* idempotent
+    would put the payment-scoped key inside a function whose other callers
+    legitimately grant twice for the same resource.
+
+    `conn` / `db_path` — see `has_access()`'s docstring; same shape.
+    """
+    ctx = contextlib.nullcontext(conn) if conn is not None else _connect(db_path)
+    with _LOCK, ctx as c:
+        row = c.execute(
+            _HAS_GRANT_FOR_PAYMENT_SQL,
+            (resource_type, resource_id, agent_id, payment_intent_id),
         ).fetchone()
     return row is not None
 

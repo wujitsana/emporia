@@ -1798,8 +1798,14 @@ async def _resolve_open_x402_intent(
 
     if status == X402_INTENT_SETTLED and recorded_tx:
         # The interrupted purchase, resumed. record_payment() is idempotent on
-        # this reference and entitlements.grant() is idempotent on the
-        # resource, so replaying it finishes the join the crash cut short.
+        # this reference, and _settle_access_payment() is exactly-once per
+        # payment (P50), so replaying it finishes the join the crash cut short.
+        #
+        # P50 correction: this comment used to claim `entitlements.grant()` is
+        # itself idempotent. It is not — it always inserts, deliberately, one
+        # receipt row per payment. Nothing depended on the false half here
+        # (the replay reaches grant at most once on this path), but it was the
+        # premise P50 had to check before building a resume path on top of it.
         return recorded_tx
     if status == X402_INTENT_FAILED:
         return None
@@ -7667,9 +7673,17 @@ async def _settle_access_payment(
     into payout_winner — and the resource ids/outcome_type strings).
 
     Records the entitlement this payment just bought (P2-4), before the
-    payout — mirrors record_payment's placement relative to payout for the
-    same "commit the durable record before the non-idempotent Stripe call"
-    reason both join_room and subscribe_agora_topic already followed.
+    payout — mirrors record_payment's placement relative to payout, for the
+    same "commit the durable record before the outbound call" reason both
+    join_room and subscribe_agora_topic already followed.
+
+    P50: **exactly-once per payment.** Both membership paths now re-enter this
+    function to finish a purchase a crash cut short (see
+    `_finish_interrupted_access_purchase()`), so "already ran" has to be a
+    thing this function can answer about itself rather than a property of who
+    calls it. It answers from the settlement row it writes last, whose
+    `dedupe_key` is UNIQUE — the durable record, not an inference from
+    membership or from holding some entitlement here.
 
     The seam is drawn where custody actually splits, not as a dispatch
     table: recording the settlement (rail-agnostic, always runs) is
@@ -7708,10 +7722,27 @@ async def _settle_access_payment(
         RAIL_X402, payout_winner, platform_fee as _platform_fee, settlement_dedupe_key,
     )
 
-    entitlements.grant(
+    # P50: this function is exactly-once per payment, because
+    # _finish_interrupted_access_purchase() below re-enters it to finish a
+    # purchase a crash cut short. The settlement row is written last and its
+    # `dedupe_key` is UNIQUE, so the row's existence *is* the record that this
+    # whole function already ran to the end — the same "ask the durable record,
+    # don't reason about it" move P48 made with the chain.
+    dedupe_key = settlement_dedupe_key(resource_id, payer_id, [payment_ref.reference])
+    if _settlement_exists(dedupe_key):
+        return
+
+    # Skip only a grant *this same payment* already bought. has_any_grant()
+    # would be wrong here: a payer re-purchasing after their window expired
+    # holds an older grant and must still get the one they just paid for.
+    if not entitlements.has_grant_for_payment(
         resource_type, resource_id, payer_id, payment_ref.reference,
-        access_duration_days, rail=payment_ref.rail, db_path=DATABASE_PATH,
-    )
+        db_path=DATABASE_PATH,
+    ):
+        entitlements.grant(
+            resource_type, resource_id, payer_id, payment_ref.reference,
+            access_duration_days, rail=payment_ref.rail, db_path=DATABASE_PATH,
+        )
     if payment_ref.rail == RAIL_X402:
         # P48: the entitlement now exists, so the purchase this intent was
         # guarding is finished and the intent must go — otherwise a *later*
@@ -7789,6 +7820,81 @@ async def _settle_access_payment(
     })
 
 
+def _settlement_exists(dedupe_key: str) -> bool:
+    """P50: has this exact (resource, payer, payment) settlement already been
+    recorded? `settlements.dedupe_key` is UNIQUE (see
+    `_migrate_settlement_dedupe_key`) and `record_settlement()` is the last
+    statement of `_settle_access_payment()`, so the row's presence is a durable
+    "that purchase finished" flag rather than an inference from other state.
+    """
+    with DB_LOCK, get_db() as conn:
+        return conn.execute(
+            "SELECT 1 FROM settlements WHERE dedupe_key = ? LIMIT 1", (dedupe_key,)
+        ).fetchone() is not None
+
+
+async def _finish_interrupted_access_purchase(
+    *,
+    resource_type: str,
+    resource_id: str,
+    outcome_type: str,
+    payment_type: str,
+    payer_id: str,
+    creator_id: str,
+    access_duration_days: int | None,
+) -> None:
+    """P50: finish a paid join whose settlement never ran, before answering
+    "you are already a member".
+
+    Both membership paths commit the membership row first and settle after —
+    deliberately, so a retry lands on the already-member short-circuit instead
+    of re-entering payout work (N5 review R2). What that ordering did not
+    account for is that the short-circuit then *ends* the request: a relay that
+    died between the membership write and `_settle_access_payment()` leaves a
+    payer whose money is captured and recorded, with no entitlement, no payout
+    to the creator and no settlement row — and every retry from then on returns
+    200 and repairs none of it. The short-circuit reads membership as proof the
+    purchase completed. It is not: it is proof only that the membership write
+    is the one that landed.
+
+    So the short-circuit now finishes the purchase before it short-circuits.
+    Re-entry is safe because `_settle_access_payment()` is exactly-once per
+    payment (its settlement row is the key), and it is *needed* because
+    nothing else will ever run: there is no reconciler, and the payer cannot
+    reach the settlement path again by paying more.
+
+    Minting a `PaymentRef` here is the one place outside
+    `_verify_and_confirm_payment()` that does so. It is not a second
+    verification path: the row being read exists only because that funnel
+    already verified this payment and `record_payment()` committed it. The
+    rail is read back from storage rather than assumed (P3).
+    """
+    from emporia.payments import PaymentRef
+
+    with DB_LOCK, get_db() as conn:
+        row = conn.execute(
+            "SELECT payment_intent_id, amount_cents, rail FROM payments "
+            "WHERE room_id = ? AND agent_id = ? AND payment_type = ? "
+            "ORDER BY created_at DESC, rowid DESC LIMIT 1",
+            (resource_id, payer_id, payment_type),
+        ).fetchone()
+    if not row:
+        # Never paid for this resource — an open room, a free topic, or a
+        # member who was invited rather than charged. Nothing to finish.
+        return
+
+    await _settle_access_payment(
+        resource_type=resource_type,
+        resource_id=resource_id,
+        outcome_type=outcome_type,
+        payer_id=payer_id,
+        creator_id=creator_id,
+        amount_cents=row["amount_cents"],
+        payment_ref=PaymentRef(row["rail"], row["payment_intent_id"]),
+        access_duration_days=access_duration_days,
+    )
+
+
 @app.post("/rooms/{room_id}/join")
 async def join_room(room_id: str, req: JoinRoomRequest, request: Request):
     identity_verified = _require_caller_unless_mpp_payment(req.agent_id, request)
@@ -7801,6 +7907,15 @@ async def join_room(room_id: str, req: JoinRoomRequest, request: Request):
     if identity_verified:
         _enforce_agent_rate_limit(req.agent_id)
     if rooms_db.is_member(room_id, req.agent_id, db_path=DATABASE_PATH):
+        # P50: membership is not proof of purchase — finish the settlement a
+        # crash may have cut short before answering. See
+        # _finish_interrupted_access_purchase().
+        await _finish_interrupted_access_purchase(
+            resource_type="room", resource_id=room_id,
+            outcome_type="room_entry", payment_type="room_entry",
+            payer_id=req.agent_id, creator_id=room.creator_id,
+            access_duration_days=room.access_duration_days,
+        )
         return {"status": "already_member", "room_id": room_id}
     # P18-4: joining an encrypted room without a published key would make every
     # subsequent message in that room fail coverage validation — one member with no
@@ -7897,10 +8012,16 @@ async def join_room(room_id: str, req: JoinRoomRequest, request: Request):
     # Membership grant — N5 review R2: this must commit before the payout below (and
     # before returning) so that a retry after a mid-flight failure is caught by the
     # already_member short-circuit above rather than re-entering payout work.
-    # record_payment (above) is genuinely idempotent on a replayed PaymentIntent, but
-    # payout_winner is a real, non-idempotent Stripe transfer — without this ordering
-    # a retry after the payout succeeded but before this response returned would
-    # replay record_payment idempotently (no error) and fire a second transfer.
+    #
+    # P50 correction: "payout_winner is a real, non-idempotent Stripe transfer" was
+    # true when N5 wrote it and stopped being true at P1a-3, which made
+    # `idempotency_key` required and derived it from settlement_dedupe_key() — a
+    # resumed payout for the same payment reuses the same key and is a no-op at
+    # Stripe. The ordering is still right, and the residual reason is narrower than
+    # the one recorded: Stripe expires an Idempotency-Key after 24 hours, so a
+    # *very* late replay would move money twice. What was wrong was treating the
+    # short-circuit as free — it also ended the request, stranding any purchase the
+    # crash had left unfinished. See _finish_interrupted_access_purchase().
     try:
         rooms_db.add_member(room_id, req.agent_id, db_path=DATABASE_PATH)
     except ValueError as e:
@@ -8980,20 +9101,32 @@ async def subscribe_agora_topic(slug: str, req: AgoraSubscribeRequest, request: 
         # agents with no entitlement row at all (this membership predates
         # entitlements existing). A non-paid topic's membership never expires,
         # so the short-circuit is unconditional there.
-        if already_member and (
+        short_circuit = already_member and (
             gate != "paid_invite"
             or already_entitled
             or not ever_entitled
-        ):
-            return {"status": "already_subscribed", "slug": slug, "agent_id": req.agent_id, "gate_type": gate}
+        )
 
-        if gate in ("invite", "paid_invite"):
+        if not short_circuit and gate in ("invite", "paid_invite"):
             has_invite = conn.execute(
                 "SELECT 1 FROM agora_invites WHERE topic_id=? AND agent_id=?",
                 (topic_id, req.agent_id),
             ).fetchone()
             if not has_invite and not ever_entitled:
                 raise HTTPException(403, "Invite required — ask the topic creator to invite you")
+
+    # P50: outside DB_LOCK — this may settle, and settling reaches Stripe. The
+    # short-circuit is decided under the lock above and acted on here for the
+    # same reason the payment check below is outside it.
+    if short_circuit:
+        await _finish_interrupted_access_purchase(
+            resource_type="agora", resource_id=topic_id,
+            outcome_type="agora_subscribe", payment_type="agora_subscribe",
+            payer_id=req.agent_id, creator_id=creator_id,
+            access_duration_days=access_duration_days,
+        )
+        return {"status": "already_subscribed", "slug": slug,
+                "agent_id": req.agent_id, "gate_type": gate}
 
     # Payment check for paid_invite — outside DB_LOCK (see comment above).
     confirmed_pi = None
@@ -9042,9 +9175,9 @@ async def subscribe_agora_topic(slug: str, req: AgoraSubscribeRequest, request: 
 
     # Add member + consume invite — N5 review R2: this must commit before the payout
     # below, so that a retry lands on the already_member short-circuit above instead
-    # of re-entering payout work (payout_winner is a real, non-idempotent Stripe
-    # transfer; record_payment above is idempotent and would otherwise let a retry
-    # sail through to a second transfer). See join_room's identical restructuring.
+    # of re-entering payout work. See join_room's identical restructuring, and the
+    # P50 correction there for why "payout_winner is non-idempotent" has been stale
+    # since P1a-3 and what the short-circuit was actually costing.
     with DB_LOCK, get_db() as conn:
         existing = conn.execute(
             "SELECT 1 FROM agora_members WHERE topic_id=? AND agent_id=?",
