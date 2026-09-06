@@ -2425,6 +2425,62 @@ built, so lanes 2 and 3 have only ever skipped. The URL fix is pinned offline by
 and corroborated against Stripe's routing table; nothing has yet watched a PaymentIntent actually
 confirm. `docs/testnet.md` says so in the same words rather than implying the tier is green.
 
+## P51 pass — the relay recorded five ways a payout didn't happen and read none of them
+
+P50 closed the last hole in a purchase's *record* and left a note about the payout's 24-hour
+Idempotency-Key horizon. Auditing that horizon found something much larger sitting next to it, and it
+needed no crash at all.
+
+**The finding.** `_settle_access_payment()` and `payments.settle()` between them write five distinct
+"the creator's money did not move" states: `pending_connect`, `pending_connect_not_active`,
+`pending_connect_wrong_mode`, `no_stripe_account`, `transfer_failed`. Every one is written correctly
+and on purpose — P25-2 and P26-4 exist precisely to skip a Stripe call that cannot succeed rather
+than fail against it and surface an opaque error. Grepping the whole repo for readers of that column
+returns the schema, the rename map, an API projection, a refund path that only acts on
+`transferred`, and an MCP docstring. **Nothing ever reads those five values back.**
+
+So the ordinary marketplace sequence — register, list a paid room, make a sale, *then* finish Stripe
+onboarding — strands that first sale's money on the platform balance permanently. Nothing crashes,
+nothing is logged as wrong, and the settlement row states plainly what happened. It is simply never
+looked at again. `test_settle_access_payment_skips_transfer_when_creator_stripe_status_not_active`
+had been asserting this exact state was reached correctly since P25, and stopped there.
+
+**The shape.** A skip is a decision to do something later. Recording one without anything that reads
+the record is not a deferral, it is a drop — and it is invisible precisely because every individual
+write is right.
+
+**The fix**, and the reason it is not just "retry the transfer": `transfer_failed` means only that
+the API call raised. The transfer may well have been created and the response lost, so re-posting on
+the strength of our own record is how one failure becomes two payouts — and Stripe's
+`Idempotency-Key` has already expired (24 hours) by the time any sweep runs, so nothing downstream
+would catch it. `_reconcile_owed_payouts()` therefore asks Stripe first, which is P48's move pointed
+at a different ledger. `payments.find_settlement_transfer()` returns `(known, transfer_id)` and
+**`known=False` never means "no transfer"**; only `(True, None)` licenses a retry. Exhausting the
+page bound is `known=False` too — a search window is a bound, not an answer, which P48 learned
+against Base's 10,000-block `eth_getLogs` cap the expensive way.
+
+The lookup is possible at all because `payout_winner()` now stamps `metadata[dedupe_key]` on every
+transfer, derived from the `idempotency_key` it was handed rather than taken as a second argument so
+the two cannot drift. `transfer_group` alone is not enough: it is the resource, and a room has many
+buyers.
+
+**A live drift the fix had to accommodate.** `payments.settle()` writes `f"transfer_failed: {e}"`
+while `_settle_access_payment()` writes a bare `"transfer_failed"` — two lanes, one column, two
+shapes. An `==` check would have reconciled every room and Agora sale and silently skipped every
+session-escrow row, which is the lane where the largest amounts sit. Matched by prefix, and pinned.
+
+**Stash-verify found one weak pin of my own.** Dropping the `transfer_id IS NULL` guard from the
+sweep passed all 830 tests, because the status-prefix filter already excluded every terminal row the
+test listed. The guard exists for a *contradictory* row — an owed-looking status with a transfer id
+against it, where trusting the status would post a second transfer — and the test now names that row.
+Six other reintroduced defects each fire on their own pin.
+
+**Liveness is exposed; findings are not.** `/safety/stats` gains `payout_reconcile` with runs and
+failure counters only. That route is unauthenticated, and the outcome counters are an aggregate over
+other people's money — the same thing settlement reads are ownership-scoped for (N8-R4/R5). A loop
+that moves money and dies silently would be indistinguishable from the defect it exists to fix, so
+"is it alive" has to be visible; "what does it owe" does not.
+
 ## P50 pass — membership is not proof of purchase
 
 P48 closed the x402 settle window and recorded one narrower one as still open: "a crash between

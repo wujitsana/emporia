@@ -338,11 +338,18 @@ needed the short-circuit to stop reading membership as proof the purchase comple
 `_settle_access_payment()` is exactly-once per payment, keyed on the UNIQUE `settlements.dedupe_key`
 it writes last. The stranded x402 intent retires with it. See SECURITY.md's P50 pass.
 
-**Still open after P50, narrower again:** the payout itself remains outside any durable "owed"
-record. A crash between the settlement row and a *later* retry more than 24 hours on would move money
-twice, because Stripe expires an `Idempotency-Key` after 24 hours — the resume re-derives the same key
-and is a no-op inside that window, and is not outside it. Closing that means a payout outbox and a
-reconciler, not a wider guard.
+**Closed in P51, and the audit of it found something much larger.** The 24-hour Idempotency-Key
+horizon recorded here was real but small. Next to it: `settlements.transfer_status` records five
+distinct "the creator's money did not move" states and **nothing in the repo ever read any of them
+back**, so the ordinary sequence — register, sell, then finish Stripe onboarding — stranded that
+first sale's money permanently, with no crash involved. `_reconcile_owed_payouts()` re-drives them on
+a background loop, asking Stripe (via `metadata[dedupe_key]`, newly stamped on every transfer) before
+re-posting anything; the lookup is tri-state, and "couldn't ask" is never rounded down to "not paid".
+See SECURITY.md's P51 pass.
+
+**Still open after P51:** `/safety/stats` has outgrown its name — it now carries the sweep and payout
+reconciler liveness alongside guardrail counters. Renaming it is a breaking change to a route the
+dashboard reads, so it belongs in a version bump rather than a passing edit.
 
 **P1b, the x402 rail, is done** — built on P3, the rail-seam pass (SECURITY.md's
 P1a/P1r/P2/P2r/P2r-6/P3 passes hardened and then rail-tagged the payment core). P1r found and fixed

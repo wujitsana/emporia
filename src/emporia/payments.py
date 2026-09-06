@@ -1280,6 +1280,58 @@ async def create_account_onboarding_link(
         return resp.json()["url"]
 
 
+TRANSFER_SEARCH_PAGE_LIMIT = int(
+    os.getenv("EMPORIA_TRANSFER_SEARCH_PAGES", "20") or "20"
+)
+
+
+async def find_settlement_transfer(
+    *, transfer_group: str, dedupe_key: str
+) -> tuple[bool, str | None]:
+    """Ask Stripe whether the payout for one settlement already landed (P51).
+
+    Returns `(known, transfer_id)`. **`known=False` never means "no transfer"**
+    — it means the question could not be answered, and a caller that rounds it
+    down to "not paid" re-posts a transfer that may already have moved money.
+    This is the same tri-state discipline `x402_authorization_used()` carries
+    for the chain, for the same reason and against the same failure.
+
+    `known=True, transfer_id=None` is the only answer that licenses a retry.
+
+    Matching is on `metadata[dedupe_key]`, which `payout_winner()` stamps onto
+    every transfer for exactly this lookup: `transfer_group` is the *resource*
+    (a room can have many buyers, so many transfers share it), and Stripe's
+    Search API does not cover transfers, so the list endpoint plus a
+    client-side match on our own natural key is the available shape.
+
+    Paging is bounded at `TRANSFER_SEARCH_PAGE_LIMIT`. Exhausting the bound
+    without a match returns `known=False`, not "absent" — a search window is a
+    bound, not an answer, which is the lesson P48 learned from Base's
+    10,000-block `eth_getLogs` cap the expensive way.
+    """
+    key = _stripe_key()
+    params: dict[str, Any] = {"transfer_group": transfer_group, "limit": 100}
+    async with httpx.AsyncClient(timeout=REQUEST_TIMEOUT) as client:
+        for _ in range(TRANSFER_SEARCH_PAGE_LIMIT):
+            try:
+                resp = await client.get(
+                    f"{STRIPE_API_BASE}/transfers", auth=(key, ""), params=params
+                )
+                resp.raise_for_status()
+                page = resp.json()
+            except Exception:
+                return (False, None)
+            data = page.get("data") or []
+            for transfer in data:
+                if (transfer.get("metadata") or {}).get("dedupe_key") == dedupe_key:
+                    return (True, transfer.get("id"))
+            if not page.get("has_more") or not data:
+                return (True, None)
+            params = {**params, "starting_after": data[-1]["id"]}
+    # Ran out of pages with more still to read: unknown, not absent.
+    return (False, None)
+
+
 async def payout_winner(
     winner_id: str,
     stripe_account_id: str,
@@ -1320,6 +1372,13 @@ async def payout_winner(
                 "metadata[winner_id]": winner_id,
                 "metadata[session_id]": session_id,
                 "metadata[protocol]": "emporia:v1",
+                # P51: the settlement's own natural key, stamped on the
+                # transfer so reconciliation can ask Stripe "did this one
+                # land?" later. Derived from `idempotency_key` rather than
+                # taken as a second parameter, so the two cannot disagree:
+                # a transfer findable under a key it wasn't posted under
+                # would be worse than not being findable at all.
+                "metadata[dedupe_key]": idempotency_key.removeprefix("emporia:payout:"),
             },
         )
         resp.raise_for_status()

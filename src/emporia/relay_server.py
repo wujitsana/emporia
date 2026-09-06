@@ -3463,8 +3463,12 @@ async def lifespan(app: FastAPI):
     if notice:
         logger.warning("%s", notice)
     _require_stripe_webhook_secret_if_needed()
-    global _SWEEP_TASK, _FEDERATION_SYNC_TASK
+    global _SWEEP_TASK, _FEDERATION_SYNC_TASK, _PAYOUT_RECONCILE_TASK
     _SWEEP_TASK = asyncio.create_task(_sweep_loop())
+    # P51: money the relay owes a creator but never moved. Runs unconditionally
+    # — unlike the federation loop, which is gated on peers being configured,
+    # there is no deployment where "a payout could be owed" is knowably false.
+    _PAYOUT_RECONCILE_TASK = asyncio.create_task(_payout_reconcile_loop())
     # P23-3: only started when peers are actually configured -- a standalone
     # relay (the common case) shouldn't spin a task that does nothing every
     # EMPORIA_FEDERATION_SYNC_INTERVAL_SECONDS forever.
@@ -3477,6 +3481,11 @@ async def lifespan(app: FastAPI):
         with suppress(asyncio.CancelledError):
             await _SWEEP_TASK
         _SWEEP_TASK = None
+        if _PAYOUT_RECONCILE_TASK is not None:
+            _PAYOUT_RECONCILE_TASK.cancel()
+            with suppress(asyncio.CancelledError):
+                await _PAYOUT_RECONCILE_TASK
+            _PAYOUT_RECONCILE_TASK = None
         if _FEDERATION_SYNC_TASK is not None:
             _FEDERATION_SYNC_TASK.cancel()
             with suppress(asyncio.CancelledError):
@@ -3826,6 +3835,7 @@ async def request_context(request: Request, call_next):
 
 _SWEEP_INTERVAL_SECONDS = float(os.getenv("EMPORIA_SWEEP_INTERVAL_SECONDS", "300"))
 _SWEEP_TASK: asyncio.Task | None = None  # set/cancelled in lifespan(); exposed for tests/ops
+_PAYOUT_RECONCILE_TASK: asyncio.Task | None = None  # P51; same lifecycle as _SWEEP_TASK
 
 # Process-lifetime sweep health, surfaced read-only via GET /safety/stats (N12-1) — without
 # this there was no way to tell the sweep had ever run, which is exactly how a silent
@@ -3917,6 +3927,163 @@ async def _sweep_loop() -> None:
         SWEEP_STATS["consecutive_failures"] = 0
         for key, count in removed.items():
             SWEEP_STATS["evicted"][key] += count
+
+
+# ─── P51: the payouts nothing was ever going to look at again ────────────────
+# `_settle_access_payment()` and `payments.settle()` between them record five
+# distinct "the creator's money did not move" states, each written correctly and
+# on purpose (P25-2 and P26-4 exist precisely to skip a doomed Stripe call
+# rather than fail against it). Until this loop, nothing read any of them back.
+# The ordinary marketplace sequence — register, sell, *then* finish onboarding —
+# therefore stranded the first sale's money on the platform balance forever.
+#
+# Prefix-matched, not compared for equality: `payments.settle()` writes
+# `f"transfer_failed: {e}"` while `_settle_access_payment()` writes a bare
+# `"transfer_failed"`, and an `==` check would silently reconcile the room/Agora
+# lane while skipping every session-escrow row.
+_PAYOUT_OWED_STATUS_PREFIXES = (
+    "pending_connect", "no_stripe_account", "transfer_failed",
+)
+
+_PAYOUT_RECONCILE_INTERVAL_SECONDS = float(
+    os.getenv("EMPORIA_PAYOUT_RECONCILE_INTERVAL_SECONDS", "300")
+)
+
+PAYOUT_RECONCILE_STATS: dict[str, Any] = {
+    "runs": 0,
+    "last_run_at": None,
+    "last_error_at": None,
+    "consecutive_failures": 0,
+    "outcomes": {"owed": 0, "recovered": 0, "paid": 0, "unknown": 0, "still_blocked": 0},
+}
+
+
+def _owed_payout_rows() -> list[dict[str, Any]]:
+    """Settlements where a Stripe payout is owed and no transfer id was ever
+    recorded. `transfer_id IS NULL` is the load-bearing half: a reversed or
+    refunded row keeps its transfer id and must never be re-paid.
+    """
+    from emporia.payments import RAIL_STRIPE
+
+    with DB_LOCK, get_db() as conn:
+        rows = conn.execute(
+            "SELECT settlement_id, session_id, winner_id, winner_payout_cents, "
+            "transfer_status, dedupe_key FROM settlements "
+            "WHERE transfer_id IS NULL AND winner_payout_cents > 0 AND rail = ? "
+            "ORDER BY created_at",
+            (RAIL_STRIPE,),
+        ).fetchall()
+    return [
+        dict(r) for r in rows
+        if (r["transfer_status"] or "").startswith(_PAYOUT_OWED_STATUS_PREFIXES)
+        and r["dedupe_key"]
+    ]
+
+
+def _record_payout_outcome(settlement_id: str, transfer_status: str,
+                           transfer_id: str | None) -> None:
+    with DB_LOCK, get_db() as conn:
+        conn.execute(
+            "UPDATE settlements SET transfer_status = ?, transfer_id = ? "
+            "WHERE settlement_id = ?",
+            (transfer_status, transfer_id, settlement_id),
+        )
+
+
+async def _reconcile_owed_payouts() -> dict[str, int]:
+    """Re-drive the payouts that never happened, asking Stripe first.
+
+    "Ask the ledger, don't reason about it" — P48's move, pointed at Stripe
+    instead of the chain. `transfer_failed` in particular means only that the
+    API call raised: the transfer may well have been created and the response
+    lost, so re-posting on the strength of our own record is how one crash
+    becomes two payouts. `find_settlement_transfer()` is tri-state for that
+    reason, and an unknown answer leaves the row exactly as it was.
+
+    Stripe's `Idempotency-Key` would cover a same-day replay on its own; it
+    expires after 24 hours, and every row this loop exists for is older than
+    that by construction, so the key is not the guard here — the lookup is.
+    """
+    from emporia.payments import (
+        find_settlement_transfer, payout_winner, stripe_account_mode_mismatch,
+    )
+
+    counts = {"owed": 0, "recovered": 0, "paid": 0, "unknown": 0, "still_blocked": 0}
+    for row in _owed_payout_rows():
+        counts["owed"] += 1
+        known, transfer_id = await find_settlement_transfer(
+            transfer_group=row["session_id"], dedupe_key=row["dedupe_key"],
+        )
+        if not known:
+            # Could not ask. Never rounded down to "not paid".
+            counts["unknown"] += 1
+            continue
+        if transfer_id:
+            # It landed and we lost the answer. No money moves here.
+            _record_payout_outcome(row["settlement_id"], "transferred", transfer_id)
+            counts["recovered"] += 1
+            continue
+
+        creator = row["winner_id"]
+        account = AGENT_REGISTRY.get_stripe_account(creator) if creator else None
+        if not account:
+            blocked = "no_stripe_account"
+        elif stripe_account_mode_mismatch(AGENT_REGISTRY.get_stripe_account_mode(creator)):
+            blocked = "pending_connect_wrong_mode"
+        elif AGENT_REGISTRY.get_stripe_account_status(creator) != "active":
+            blocked = "pending_connect_not_active"
+        else:
+            blocked = ""
+        if blocked:
+            # Still not payable — refresh the recorded reason (it may have
+            # changed) and leave it owed for the next pass.
+            if blocked != row["transfer_status"]:
+                _record_payout_outcome(row["settlement_id"], blocked, None)
+            counts["still_blocked"] += 1
+            continue
+
+        try:
+            transfer = await payout_winner(
+                winner_id=creator,
+                stripe_account_id=account,
+                amount_cents=row["winner_payout_cents"],
+                session_id=row["session_id"],
+                idempotency_key="emporia:payout:" + row["dedupe_key"],
+            )
+        except Exception as e:
+            logger.warning(
+                "Payout reconcile failed for settlement %s: %s", row["settlement_id"], e
+            )
+            _record_payout_outcome(row["settlement_id"], "transfer_failed", None)
+            continue
+        _record_payout_outcome(row["settlement_id"], "transferred", transfer["transfer_id"])
+        counts["paid"] += 1
+    return counts
+
+
+async def _payout_reconcile_loop() -> None:
+    """Runs _reconcile_owed_payouts() on EMPORIA_PAYOUT_RECONCILE_INTERVAL_SECONDS
+    (default 300s). Same shape as _sweep_loop(), including N12-1's rule that one
+    raise must not end the loop for the life of the process — this one moves
+    money, so a loop that died silently would be indistinguishable from the
+    defect it exists to fix.
+    """
+    while True:
+        await asyncio.sleep(_PAYOUT_RECONCILE_INTERVAL_SECONDS)
+        try:
+            counts = await _reconcile_owed_payouts()
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            logger.exception("Payout reconcile failed — will retry next interval")
+            PAYOUT_RECONCILE_STATS["last_error_at"] = datetime.now(UTC).isoformat()
+            PAYOUT_RECONCILE_STATS["consecutive_failures"] += 1
+            continue
+        PAYOUT_RECONCILE_STATS["runs"] += 1
+        PAYOUT_RECONCILE_STATS["last_run_at"] = datetime.now(UTC).isoformat()
+        PAYOUT_RECONCILE_STATS["consecutive_failures"] = 0
+        for key, count in counts.items():
+            PAYOUT_RECONCILE_STATS["outcomes"][key] += count
 
 
 # ============================================================================
@@ -4217,6 +4384,22 @@ async def safety_stats():
         "nemo_guardrail_errors": guardrails.NEMO_STATS["errors"],
         **SAFETY_STATS,
         "sweep": SWEEP_STATS,
+        # P51: liveness only. This route is unauthenticated, and
+        # PAYOUT_RECONCILE_STATS["outcomes"] counts how many settlements the
+        # relay currently owes creators — an aggregate about other people's
+        # money, which settlement reads are ownership-scoped for (N8-R4/R5).
+        # A stalled loop has to be visible to an operator, though, because a
+        # loop that died silently is indistinguishable from the defect P51
+        # exists to fix. So: is it running, and is it failing — nothing about
+        # what it found. (This route has outgrown its name; `sweep` was already
+        # not a safety counter. Renaming it is a breaking change and its own
+        # decision, recorded in ROADMAP rather than done in passing.)
+        "payout_reconcile": {
+            "runs": PAYOUT_RECONCILE_STATS["runs"],
+            "last_run_at": PAYOUT_RECONCILE_STATS["last_run_at"],
+            "last_error_at": PAYOUT_RECONCILE_STATS["last_error_at"],
+            "consecutive_failures": PAYOUT_RECONCILE_STATS["consecutive_failures"],
+        },
     }
 
 

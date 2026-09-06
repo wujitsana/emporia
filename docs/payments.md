@@ -69,6 +69,13 @@ escrow (`capture_method=manual`) has no x402 analogue and stays Stripe-only.
   membership paths now finish an interrupted settlement before short-circuiting.
   `_settle_access_payment()` is exactly-once per payment, so re-entering it costs nothing when
   there is nothing to finish. Rail-agnostic: it fixes the Stripe and x402 lanes with the same code
+- **Paying a creator the relay owes but never paid** (P51, Stripe lane): a transfer is skipped
+  whenever the creator's Connected Account is missing, unonboarded or in the wrong key mode — all
+  correct, and until P51 nothing ever read those states back, so a sale made before onboarding was
+  stranded on the platform balance forever. A background loop
+  (`EMPORIA_PAYOUT_RECONCILE_INTERVAL_SECONDS`) re-drives them, and asks Stripe whether the transfer
+  already landed before posting one: `transfer_failed` only means the API call raised, not that the
+  money stayed put. An unanswerable lookup leaves the row owed rather than paying it twice
 - Verified against the live public facilitator on Base Sepolia during P45; the chain reads against
   Base Sepolia during P48. See `docs/testnet.md`
 

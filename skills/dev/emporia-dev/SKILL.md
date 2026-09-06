@@ -479,6 +479,18 @@ charged"), and `x402_authorization_transaction()` recovers the tx hash from the 
 log. An unspent authorization is only retried once it is past its own `validBefore`. Both helpers
 are keyword-safe and return `None` rather than raising.
 
+**P51 — paying out what the relay owes.** `settlements.transfer_status` records five "the money did
+not move" states (`pending_connect`, `pending_connect_not_active`, `pending_connect_wrong_mode`,
+`no_stripe_account`, `transfer_failed`); before P51 nothing read any of them back, so a sale made
+before the creator finished Stripe onboarding was stranded permanently.
+`_payout_reconcile_loop()` → `_reconcile_owed_payouts()` sweeps `_owed_payout_rows()` (prefix-matched,
+because `payments.settle()` writes `transfer_failed: {e}` and `_settle_access_payment()` writes a bare
+`transfer_failed`; guarded on `transfer_id IS NULL`). Each candidate goes through
+`payments.find_settlement_transfer()` → `(known, transfer_id)` first — **`known=False` is "couldn't
+ask", never "not paid"**, and only `(True, None)` licenses a retry. Matching is on
+`metadata[dedupe_key]`, which `payout_winner()` derives from its own `idempotency_key`.
+`/safety/stats` exposes the loop's liveness only, never its outcome counts.
+
 **P50 — finishing an interrupted purchase.** Rail-agnostic, so it applies to the Stripe lane too. A
 paid join commits its membership before it settles (N5 R2), and the `already_member` /
 `already_subscribed` short-circuits used to end the request there — so a crash between the membership
@@ -716,6 +728,8 @@ dashboard/                 Vite + React + SRCL — 110 modules, role-based nav, 
 | `EMPORIA_X402_EXTRA_<NETWORK>` | _(unset)_ | `PaymentRequirements.extra` as JSON, e.g. `{"name":"USDC","version":"2"}`. Required on EVM (P45) — the EIP-712 signing domain |
 | `EMPORIA_X402_RPC_<NETWORK>` | _(unset)_ | JSON-RPC endpoint per network (P48). Only used to resolve an *interrupted* settlement via EIP-3009 `authorizationState`. Unset is safe: an interrupted settlement is refused, never repeated |
 | `EMPORIA_X402_RECONCILE_BLOCKS` | `10000` | `eth_getLogs` window for recovering the transaction hash that spent an authorization (P48). Providers cap this — Base's public RPC at 10,000 — so raising it past the cap breaks the lookup rather than widening it |
+| `EMPORIA_PAYOUT_RECONCILE_INTERVAL_SECONDS` | `300` | Interval for `_payout_reconcile_loop()` (P51), which re-drives owed Stripe payouts. Started unconditionally in `lifespan()` |
+| `EMPORIA_TRANSFER_SEARCH_PAGES` | `20` | Page bound on `payments.find_settlement_transfer()`. Exhausting it returns `known=False` (unknown), never "absent" |
 
 ---
 

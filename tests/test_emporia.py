@@ -26495,3 +26495,415 @@ def test_a_repurchase_after_expiry_gets_the_entitlement_it_paid_for(
     assert [g["payment_intent_id"] for g in grants] == [
         "pi_P50_RENEW_ONE", "pi_P50_RENEW_TWO",
     ], f"two payments, two receipts, in order; got {[dict(g) for g in grants]}"
+
+
+# ---------------------------------------------------------------------------
+# P51 — the relay records five ways a payout didn't happen, and reads none of them
+# ---------------------------------------------------------------------------
+
+
+@patch("emporia.payments.payout_winner", new_callable=AsyncMock)
+@patch("emporia.payments.verify_payment_intent", new_callable=AsyncMock)
+def test_a_creator_who_onboards_after_their_first_sale_is_still_owed_it(
+    mock_verify, mock_payout, client,
+):
+    """The defect, reproduced with nothing crashing and no error path taken.
+
+    `_settle_access_payment()` records five distinct "the creator's money did
+    not move" states — `pending_connect`, `pending_connect_not_active`,
+    `pending_connect_wrong_mode`, `no_stripe_account`, `transfer_failed`. Each
+    is written correctly and deliberately (P25-2 and P26-4 both exist to skip a
+    doomed Stripe call rather than fail against it). Nothing in the repo ever
+    reads any of them again.
+
+    So the ordinary marketplace sequence — register, list a paid room, make a
+    sale, *then* finish Stripe onboarding — strands that first sale's money on
+    the platform balance permanently. Nothing is broken, nothing is logged as
+    wrong, and the settlement row says exactly what happened. It is simply
+    never looked at.
+    """
+    from emporia.relay_server import get_db
+
+    owner, payer = "p51_late_owner", "p51_late_payer"
+    _register(client, owner)
+    _register(client, payer)
+    mock_payout.return_value = {"transfer_id": "tr_p51_late"}
+
+    r = client.post("/rooms", json={
+        "name": "P51 Late Onboarding Room", "creator_id": owner,
+        "room_type": "private", "gate_type": "paid", "entry_fee_cents": 100,
+    }, headers={"x-emporia-agent-id": owner})
+    assert r.status_code == 200, r.text
+    room_id = r.json()["room_id"]
+
+    def _pi(pi_id: str, buyer: str) -> dict:
+        return {
+            "status": "succeeded", "payment_intent_id": pi_id,
+            "amount": 100, "currency": "usd", "capture_method": "automatic",
+            "metadata": {"resource_type": "room", "resource_id": room_id,
+                         "buyer_agent_id": buyer},
+        }
+
+    # Sale one: the Connected Account exists but onboarding isn't finished.
+    mock_verify.return_value = _pi("pi_p51_late_one", payer)
+    with patch("emporia.relay_server.AGENT_REGISTRY.get_stripe_account",
+               return_value="acct_p51_late"):
+        first = client.post(f"/rooms/{room_id}/join",
+            json={"agent_id": payer, "payment_intent_id": "pi_p51_late_one"},
+            headers={"x-emporia-agent-id": payer})
+    assert first.status_code == 200, first.text
+    assert mock_payout.call_count == 0, "precondition: the doomed transfer is skipped"
+
+    # The creator finishes onboarding. A second buyer arrives and is paid out
+    # normally, which is what makes the first sale's silence visible: the relay
+    # is working, and that one payment is simply gone from its attention.
+    _register(client, "p51_late_payer_two")
+    mock_verify.return_value = _pi("pi_p51_late_two", "p51_late_payer_two")
+    with _stripe_account_active("acct_p51_late"):
+        second = client.post(f"/rooms/{room_id}/join",
+            json={"agent_id": "p51_late_payer_two",
+                  "payment_intent_id": "pi_p51_late_two"},
+            headers={"x-emporia-agent-id": "p51_late_payer_two"})
+    assert second.status_code == 200, second.text
+
+    with get_db() as conn:
+        rows = conn.execute(
+            "SELECT payer_id, transfer_status, transfer_id, winner_payout_cents "
+            "FROM settlements WHERE session_id=? ORDER BY created_at", (room_id,),
+        ).fetchall()
+    owed = [dict(r) for r in rows if r["transfer_status"] != "transferred"]
+    assert [r["transfer_status"] for r in rows] == [
+        "pending_connect_not_active", "transferred",
+    ], f"precondition: one sale owed, one paid; got {[dict(r) for r in rows]}"
+    assert mock_payout.call_count == 1, (
+        f"only the second sale ever reached a transfer; the first is owed "
+        f"{owed[0]['winner_payout_cents']}c and nothing will ever pay it"
+    )
+
+
+def _p51_strand_a_sale(client, mock_verify, *, owner, payer, pi_id, fee_cents=100):
+    """A completed paid join whose payout was correctly skipped, leaving the
+    creator owed. Returns the room id."""
+    _register(client, owner)
+    _register(client, payer)
+    r = client.post("/rooms", json={
+        "name": f"P51 {owner}", "creator_id": owner,
+        "room_type": "private", "gate_type": "paid", "entry_fee_cents": fee_cents,
+    }, headers={"x-emporia-agent-id": owner})
+    assert r.status_code == 200, r.text
+    room_id = r.json()["room_id"]
+    mock_verify.return_value = {
+        "status": "succeeded", "payment_intent_id": pi_id,
+        "amount": fee_cents, "currency": "usd", "capture_method": "automatic",
+        "metadata": {"resource_type": "room", "resource_id": room_id,
+                     "buyer_agent_id": payer},
+    }
+    with patch("emporia.relay_server.AGENT_REGISTRY.get_stripe_account",
+               return_value=f"acct_{owner}"):
+        joined = client.post(f"/rooms/{room_id}/join",
+            json={"agent_id": payer, "payment_intent_id": pi_id},
+            headers={"x-emporia-agent-id": payer})
+    assert joined.status_code == 200, joined.text
+    return room_id
+
+
+@patch("emporia.payments.verify_payment_intent", new_callable=AsyncMock)
+def test_the_reconciler_pays_a_sale_the_creator_had_not_yet_onboarded_for(
+    mock_verify, client,
+):
+    """The pin for the defect above: once the creator's Connected Account is
+    active, the sale that was skipped is paid, with the same Idempotency-Key the
+    original attempt would have used."""
+    import asyncio
+
+    from emporia.relay_server import _reconcile_owed_payouts, get_db
+
+    room_id = _p51_strand_a_sale(
+        client, mock_verify, owner="p51_fix_owner", payer="p51_fix_payer",
+        pi_id="pi_p51_fix",
+    )
+
+    with _stripe_account_active("acct_p51_fix_owner"):
+        with patch("emporia.payments.find_settlement_transfer",
+                   new_callable=AsyncMock, return_value=(True, None)):
+            with patch("emporia.payments.payout_winner", new_callable=AsyncMock) as payout:
+                payout.return_value = {"transfer_id": "tr_p51_reconciled"}
+                counts = asyncio.run(_reconcile_owed_payouts())
+
+    # Counts are asserted as ">= 1", not "== 1": the reconciler is a global
+    # sweep and the suite shares one database, so earlier tests' deliberately
+    # stranded sales are legitimately in scope here. That is the feature
+    # working, not a harness quirk — so this test pins its own row instead.
+    assert counts["paid"] >= 1, f"the owed sale must be paid, got {counts}"
+    with get_db() as conn:
+        row = conn.execute(
+            "SELECT transfer_status, transfer_id, dedupe_key FROM settlements "
+            "WHERE session_id=?", (room_id,),
+        ).fetchone()
+    assert row["transfer_status"] == "transferred", dict(row)
+    assert row["transfer_id"] == "tr_p51_reconciled", dict(row)
+    keys = [c.kwargs["idempotency_key"] for c in payout.call_args_list]
+    assert "emporia:payout:" + row["dedupe_key"] in keys, (
+        "the reconciled payout must reuse the settlement's own key, so a "
+        f"same-day replay is a no-op at Stripe rather than a second transfer; "
+        f"got {keys}"
+    )
+
+
+@patch("emporia.payments.verify_payment_intent", new_callable=AsyncMock)
+def test_an_unanswerable_stripe_lookup_never_becomes_a_second_payout(
+    mock_verify, client,
+):
+    """P48's rule, on the Stripe ledger. `transfer_failed` means only that the
+    API call raised — the transfer may have been created and the response lost.
+    A reconciler that reads "couldn't ask" as "not paid" is how one crash turns
+    into two transfers, and Stripe's Idempotency-Key has already expired by the
+    time this loop runs (24 hours), so nothing downstream would catch it.
+    """
+    import asyncio
+
+    from emporia.relay_server import _reconcile_owed_payouts, get_db
+
+    room_id = _p51_strand_a_sale(
+        client, mock_verify, owner="p51_unknown_owner", payer="p51_unknown_payer",
+        pi_id="pi_p51_unknown",
+    )
+
+    with _stripe_account_active("acct_p51_unknown_owner"):
+        with patch("emporia.payments.find_settlement_transfer",
+                   new_callable=AsyncMock, return_value=(False, None)):
+            with patch("emporia.payments.payout_winner", new_callable=AsyncMock) as payout:
+                counts = asyncio.run(_reconcile_owed_payouts())
+
+    assert counts["unknown"] >= 1 and counts["paid"] == 0, counts
+    payout.assert_not_called()
+    with get_db() as conn:
+        row = conn.execute(
+            "SELECT transfer_status, transfer_id FROM settlements WHERE session_id=?",
+            (room_id,),
+        ).fetchone()
+    assert row["transfer_status"] == "pending_connect_not_active", (
+        f"an unanswerable lookup must leave the row exactly as it was, got {dict(row)}"
+    )
+    assert row["transfer_id"] is None, dict(row)
+
+
+@patch("emporia.payments.verify_payment_intent", new_callable=AsyncMock)
+def test_a_transfer_that_already_landed_is_recovered_not_repaid(mock_verify, client):
+    """The reason the lookup exists at all. Stripe says the transfer is there;
+    the relay adopts it and moves no money."""
+    import asyncio
+
+    from emporia.relay_server import _reconcile_owed_payouts, get_db
+
+    room_id = _p51_strand_a_sale(
+        client, mock_verify, owner="p51_found_owner", payer="p51_found_payer",
+        pi_id="pi_p51_found",
+    )
+
+    with _stripe_account_active("acct_p51_found_owner"):
+        with patch("emporia.payments.find_settlement_transfer",
+                   new_callable=AsyncMock, return_value=(True, "tr_already_there")):
+            with patch("emporia.payments.payout_winner", new_callable=AsyncMock) as payout:
+                counts = asyncio.run(_reconcile_owed_payouts())
+
+    assert counts["recovered"] >= 1 and counts["paid"] == 0, counts
+    payout.assert_not_called()
+    with get_db() as conn:
+        row = conn.execute(
+            "SELECT transfer_status, transfer_id FROM settlements WHERE session_id=?",
+            (room_id,),
+        ).fetchone()
+    assert (row["transfer_status"], row["transfer_id"]) == ("transferred", "tr_already_there"), \
+        dict(row)
+
+
+def test_the_owed_sweep_matches_the_escrow_lanes_status_string_too():
+    """`payments.settle()` writes `f"transfer_failed: {e}"`; `_settle_access_
+    payment()` writes a bare `"transfer_failed"`. Two lanes, one column, two
+    shapes — an `==` check would have reconciled every room and Agora sale and
+    silently skipped every session-escrow one, which is the lane where the
+    largest amounts sit. The prefix match is what makes the drift harmless;
+    this is what keeps it that way.
+    """
+    import json
+    import uuid as _uuid
+
+    from emporia.relay_server import DB_LOCK, _owed_payout_rows, get_db
+
+    marker = _uuid.uuid4().hex[:8]
+    rows = [
+        # (transfer_status, transfer_id, should_be_swept)
+        ("transfer_failed: 500 Server Error for url .../transfers", None, True),
+        ("transfer_failed", None, True),
+        ("pending_connect", None, True),
+        ("pending_connect_not_active", None, True),
+        ("pending_connect_wrong_mode", None, True),
+        ("no_stripe_account", None, True),
+        # Terminal, and the ones a re-payment would be a real second transfer:
+        ("transferred", "tr_done", False),
+        # The contradictory row, and the reason the sweep is guarded on
+        # `transfer_id IS NULL` and not on the status string alone: an owed-
+        # looking status with a transfer id against it means a transfer exists.
+        # Trusting the status here would post a second one.
+        ("transfer_failed", "tr_landed_anyway", False),
+        ("reversed_pending_refund", "tr_reversed", False),
+        ("refunded", "tr_refunded", False),
+        ("direct", None, False),  # x402: nothing was ever platform-held
+    ]
+    with DB_LOCK, get_db() as conn:
+        for i, (status, transfer_id, _) in enumerate(rows):
+            conn.execute(
+                "INSERT INTO settlements (settlement_id, session_id, winner_id, "
+                "winner_payout_cents, payment_intent_ids, transfer_id, transfer_status, "
+                "status, created_at, payer_id, dedupe_key, rail) "
+                "VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
+                (f"stl_{marker}_{i}", f"room_{marker}", f"owner_{marker}", 97,
+                 json.dumps([f"pi_{marker}_{i}"]), transfer_id, status, "settled",
+                 "2026-01-01T00:00:00+00:00", f"payer_{marker}",
+                 f"dk_{marker}_{i}", "direct" if status == "direct" else "stripe"),
+            )
+
+    swept = {r["settlement_id"] for r in _owed_payout_rows()}
+    for i, (status, _, should_sweep) in enumerate(rows):
+        sid = f"stl_{marker}_{i}"
+        assert (sid in swept) is should_sweep, (
+            f"{status!r} should {'be' if should_sweep else 'not be'} swept as owed"
+        )
+
+
+def test_a_reconciled_payout_can_be_found_again_under_the_key_it_was_posted_with():
+    """The lookup only works because the transfer carries the settlement's own
+    natural key. `payout_winner()` derives `metadata[dedupe_key]` from the
+    `idempotency_key` it was handed rather than taking it as a second argument,
+    so the two cannot drift — a transfer findable under a key it was not posted
+    under would be worse than one that is not findable at all.
+    """
+    import asyncio
+
+    from emporia.payments import find_settlement_transfer, payout_winner
+
+    posted = {}
+
+    async def _capture_post(url, *args, **kwargs):
+        posted.update(kwargs.get("data") or {})
+        m = MagicMock()
+        m.raise_for_status = MagicMock()
+        m.json.return_value = {"id": "tr_meta_check", "amount": 97,
+                               "destination": "acct_meta", "created": 0}
+        return m
+
+    with patch.dict(os.environ, {"STRIPE_SECRET_KEY": "sk_test_meta"}):
+        with patch("httpx.AsyncClient.post", new_callable=AsyncMock,
+                   side_effect=_capture_post):
+            asyncio.run(payout_winner(
+                winner_id="meta_winner", stripe_account_id="acct_meta",
+                amount_cents=97, session_id="room_meta",
+                idempotency_key="emporia:payout:room_meta:payer:abc123",
+            ))
+
+    assert posted["metadata[dedupe_key]"] == "room_meta:payer:abc123", posted
+    assert posted["transfer_group"] == "room_meta", posted
+
+    # And the lookup finds it by exactly that value.
+    async def _list_page(url, *args, **kwargs):
+        m = MagicMock()
+        m.raise_for_status = MagicMock()
+        m.json.return_value = {"has_more": False, "data": [
+            {"id": "tr_someone_else", "metadata": {"dedupe_key": "room_meta:other:zzz"}},
+            {"id": "tr_meta_check", "metadata": {"dedupe_key": posted["metadata[dedupe_key]"]}},
+        ]}
+        return m
+
+    with patch.dict(os.environ, {"STRIPE_SECRET_KEY": "sk_test_meta"}):
+        with patch("httpx.AsyncClient.get", new_callable=AsyncMock, side_effect=_list_page):
+            known, transfer_id = asyncio.run(find_settlement_transfer(
+                transfer_group="room_meta", dedupe_key="room_meta:payer:abc123",
+            ))
+    assert (known, transfer_id) == (True, "tr_meta_check"), (known, transfer_id)
+
+
+def test_the_transfer_lookup_reports_unknown_rather_than_absent_when_it_cannot_finish():
+    """Two ways the question goes unanswered, and neither may be reported as
+    "no transfer". P48 learned the second one against Base's 10,000-block
+    `eth_getLogs` cap: a search window is a bound, not an answer.
+    """
+    import asyncio
+
+    from emporia import payments
+    from emporia.payments import find_settlement_transfer
+
+    async def _boom(url, *args, **kwargs):
+        raise RuntimeError("stripe unreachable")
+
+    with patch.dict(os.environ, {"STRIPE_SECRET_KEY": "sk_test_unknown"}):
+        with patch("httpx.AsyncClient.get", new_callable=AsyncMock, side_effect=_boom):
+            assert asyncio.run(find_settlement_transfer(
+                transfer_group="room_x", dedupe_key="dk_x",
+            )) == (False, None), "an unreachable API is unknown, never absent"
+
+    # Always another page, never a match: the bound is hit, and the honest
+    # answer is still "couldn't finish asking".
+    async def _endless(url, *args, **kwargs):
+        m = MagicMock()
+        m.raise_for_status = MagicMock()
+        m.json.return_value = {"has_more": True, "data": [
+            {"id": "tr_page", "metadata": {"dedupe_key": "not_the_one"}},
+        ]}
+        return m
+
+    with patch.dict(os.environ, {"STRIPE_SECRET_KEY": "sk_test_unknown"}):
+        with patch.object(payments, "TRANSFER_SEARCH_PAGE_LIMIT", 3):
+            with patch("httpx.AsyncClient.get", new_callable=AsyncMock,
+                       side_effect=_endless) as get:
+                assert asyncio.run(find_settlement_transfer(
+                    transfer_group="room_x", dedupe_key="dk_x",
+                )) == (False, None), "exhausting the page bound is unknown, never absent"
+    assert get.await_count == 3, f"the bound must actually bound, got {get.await_count}"
+
+    # A complete listing with no match *is* an answer, and the only one that
+    # licenses a retry.
+    async def _one_page(url, *args, **kwargs):
+        m = MagicMock()
+        m.raise_for_status = MagicMock()
+        m.json.return_value = {"has_more": False, "data": []}
+        return m
+
+    with patch.dict(os.environ, {"STRIPE_SECRET_KEY": "sk_test_unknown"}):
+        with patch("httpx.AsyncClient.get", new_callable=AsyncMock, side_effect=_one_page):
+            assert asyncio.run(find_settlement_transfer(
+                transfer_group="room_x", dedupe_key="dk_x",
+            )) == (True, None), "a complete listing with no match is a real 'no'"
+
+
+def test_payout_reconcile_task_starts_and_cancels_cleanly_on_shutdown():
+    """The loop moves money, so a relay that silently never started it would be
+    indistinguishable from the defect P51 exists to fix. Same lifecycle
+    assertions as the sweep task's (N11-3, P24-5)."""
+    from emporia import relay_server as rs
+
+    assert rs._PAYOUT_RECONCILE_TASK is None or rs._PAYOUT_RECONCILE_TASK.done()
+    with TestClient(app) as tc:
+        tc.get("/health")
+        assert rs._PAYOUT_RECONCILE_TASK is not None
+        assert not rs._PAYOUT_RECONCILE_TASK.done()
+        task = rs._PAYOUT_RECONCILE_TASK
+    assert rs._PAYOUT_RECONCILE_TASK is None
+    assert task.done()
+    assert task.cancelled()
+
+
+def test_safety_stats_reports_the_reconciler_is_alive_without_reporting_what_it_owes(client):
+    """A loop that moves money and dies silently is indistinguishable from the
+    defect it exists to fix, so its liveness has to be visible. Its *findings*
+    must not be: `/safety/stats` is unauthenticated, and the outcome counters
+    are an aggregate over other people's money — the same thing every
+    settlement read path is ownership-scoped for (N8-R4/R5).
+    """
+    r = client.get("/safety/stats")
+    assert r.status_code == 200, r.text
+    stats = r.json()["payout_reconcile"]
+    assert set(stats) == {"runs", "last_run_at", "last_error_at", "consecutive_failures"}, (
+        f"liveness only — no owed/paid/recovered counts on an unauthenticated "
+        f"route; got {sorted(stats)}"
+    )
