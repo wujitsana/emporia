@@ -2425,6 +2425,49 @@ built, so lanes 2 and 3 have only ever skipped. The URL fix is pinned offline by
 and corroborated against Stripe's routing table; nothing has yet watched a PaymentIntent actually
 confirm. `docs/testnet.md` says so in the same words rather than implying the tier is green.
 
+## P53 pass — what a partly-configured relay does
+
+P51r found one instance of a general gap: **a mocked dependency cannot tell you what happens when
+that dependency is absent.** Every test in the suite configures a whole relay, and production is
+exactly where things are missing or down. `payments._x402_enabled()` already gets this right, on
+purpose and in writing — "a partially configured rail behaves exactly like a disabled one rather
+than failing halfway through building a 402 challenge". This pass went looking for the places that
+don't.
+
+**The front door led nowhere.** `GET /` redirected to `/ui/` unconditionally, but `/ui` is mounted
+only when `dashboard/dist` exists. The documented install is two steps — install the relay, then
+build the dashboard — so in between, the first URL anyone opens 307s into a bare
+`{"detail":"Not Found"}`. The relay is healthy, serving, and answering every API route; its front
+door says nothing. Reproduced by starting a real relay with `dist` moved aside. Now a page that names
+the build command and links `/health` and `/docs`, checked per request so it starts working the
+moment the build lands, without a restart.
+
+**A Nous outage was a 500, not a degradation.** `_JwksCache.get()` fetches the keyset and calls
+`raise_for_status()`. An unreachable provider raises `httpx.ConnectError`, which is not an
+`IdentityVerificationError` — and `register_agent()` catches only that. So every registration
+carrying a Nous JWT returned 500 while the provider was down, on precisely the deployments README
+recommends `EMPORIA_REQUIRE_NOUS=1` for. Fail-closed was already right for a *bad* claim (skipped,
+agent stays `key_only`); "the provider is down" is the same answer — this relay cannot verify you —
+and now arrives the same way instead of as a stack trace.
+
+**And that fetch was blocking the event loop.** `AgentRegistry.register()` verifies claims inline,
+and the Nous provider uses a synchronous `httpx.get` with a 5s timeout, twice (OIDC discovery, then
+the keyset). On the loop that stalls the entire relay, not just the one request — and the JWKS cache
+only stores on success, so every attempt against a down provider paid it again. Registration now runs
+through `run_in_threadpool`, the same treatment P44 gave the three heaviest read routes.
+
+**Stash-verify caught my own test being vacuous.** The first version of the event-loop pin asserted
+that `/health` was served at all, and a blocked loop still serves it — five seconds later, once the
+timeout releases the loop. It passed with the defect fully reintroduced. The test now records *how*
+the fake provider's wait ended: released by a concurrent `/health`, or expired on its own timeout.
+That is state, not timing, so it does not depend on how fast the machine is.
+
+**Checked and found already correct**, so the pass is not only a list of defects: the x402 rail's
+own partial-configuration gate; NeMo guardrails, which are off by default and raise a named error
+when enabled without `NVIDIA_API_KEY`; `/relay-card` and `/.well-known/agent-card.json`, which 404
+with an explanation rather than fabricating a descriptor; and settlement reads, which stay
+ownership-scoped to a non-operator caller.
+
 ## P51r — running the relay found what 836 tests could not
 
 The relay had not actually been started since P47. P48–P52 changed the join path substantially and

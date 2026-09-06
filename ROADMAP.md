@@ -347,6 +347,12 @@ a background loop, asking Stripe (via `metadata[dedupe_key]`, newly stamped on e
 re-posting anything; the lookup is tri-state, and "couldn't ask" is never rounded down to "not paid".
 See SECURITY.md's P51 pass.
 
+**P53 generalised P51r's lesson** — a mocked dependency cannot tell you what happens when that
+dependency is absent — and audited what a partly-configured relay does. Three defects: `GET /`
+redirected into a 404 whenever the dashboard had not been built, a Nous provider outage returned 500
+instead of degrading to `key_only`, and that provider's blocking `httpx.get` stalled the whole event
+loop for up to 10s per registration. See SECURITY.md's P53 pass.
+
 **P51r fixed two defects in P51 that only running the relay could find**: an unconfigured relay
 raised out of `_stripe_key()` on every reconcile tick, and one unreconcilable row aborted the sweep
 for every row behind it. Both are now pinned. The general lesson is recorded rather than the two

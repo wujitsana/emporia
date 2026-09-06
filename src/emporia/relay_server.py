@@ -27,6 +27,7 @@ Inbound processing order (hard contract):
 from __future__ import annotations
 
 import asyncio
+import functools
 import json
 import logging
 import os
@@ -4731,11 +4732,22 @@ async def register_agent(req: RegisterAgentRequest):
         )
 
     try:
-        profile = AGENT_REGISTRY.register(
-            req.agent_id,
-            req.public_key_hex,
-            req.display_name,
-            identity_claims=[c.model_dump() for c in req.identity_claims],
+        # P53: off the event loop. AgentRegistry.register() verifies identity
+        # claims inline, and the Nous provider fetches JWKS with a *blocking*
+        # httpx.get carrying a 5s timeout — twice (discovery, then the keyset).
+        # A slow or unreachable provider therefore stalled the entire relay for
+        # up to 10 seconds per registration attempt, not just that request, and
+        # the JWKS cache only stores on success so every attempt paid it again.
+        # Same treatment P44 gave the three heaviest read routes, for the same
+        # reason: blocking work does not belong on the loop.
+        profile = await run_in_threadpool(
+            functools.partial(
+                AGENT_REGISTRY.register,
+                req.agent_id,
+                req.public_key_hex,
+                req.display_name,
+                identity_claims=[c.model_dump() for c in req.identity_claims],
+            )
         )
     except ValueError as e:
         msg = str(e)
@@ -9811,8 +9823,37 @@ if _DASHBOARD_DIST.exists():
     app.mount("/ui", StaticFiles(directory=_DASHBOARD_DIST, html=True), name="dashboard")
 
 
+_DASHBOARD_NOT_BUILT_HTML = """<!doctype html>
+<html lang="en"><head><meta charset="utf-8">
+<title>Emporia relay — dashboard not built</title>
+<style>body{font:14px/1.6 system-ui,sans-serif;margin:3rem auto;max-width:44rem;padding:0 1rem}
+code{background:#eee;padding:.15rem .35rem;border-radius:3px}</style></head><body>
+<h1>Emporia relay is running</h1>
+<p>The operator dashboard has not been built, so there is nothing to serve at
+<code>/ui/</code> yet. Build it once:</p>
+<pre><code>cd dashboard &amp;&amp; npm install &amp;&amp; VITE_RELAY_URL="" npm run build</code></pre>
+<p>then reload this page. The relay itself is up and serving the API —
+<a href="/health">/health</a>, <a href="/docs">/docs</a>.</p>
+</body></html>"""
+
+
 @app.get("/")
 async def root_redirect():
+    """P53: only redirect somewhere that exists.
+
+    `/ui` is mounted at import time and only when `dashboard/dist` is present,
+    but this redirect used to fire unconditionally — so on a relay installed by
+    the documented two-step (pip install, then build the dashboard), the first
+    URL anyone opens 307'd into a bare `{"detail":"Not Found"}`. The relay was
+    healthy; its front door led nowhere and said nothing.
+
+    Checked per request rather than at import so the page starts working the
+    moment the build lands, without a restart. `payments._x402_enabled()` is
+    the same principle one rail over: a partly configured thing should behave
+    like a configured-off thing, not fail halfway.
+    """
+    if not _DASHBOARD_DIST.exists():
+        return HTMLResponse(_DASHBOARD_NOT_BUILT_HTML, status_code=200)
     return RedirectResponse(url="/ui/")
 
 

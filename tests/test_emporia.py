@@ -27130,3 +27130,168 @@ def test_one_unreconcilable_row_does_not_take_the_rest_of_the_sweep_with_it(
         "the row *behind* the one that threw must still be paid — that is the "
         f"whole point; got {dict(good)}"
     )
+
+
+# ---------------------------------------------------------------------------
+# P53 — what a partly-configured relay does
+#
+# P51r found one instance of a general gap: a mocked dependency cannot tell you
+# what happens when that dependency is *absent*. The suite configures a whole
+# relay for every test, and production is exactly where things are missing or
+# down. `payments._x402_enabled()` already gets this right on purpose — "a
+# partially configured rail behaves exactly like a disabled one rather than
+# failing halfway through building a 402 challenge". These are the places that
+# don't.
+# ---------------------------------------------------------------------------
+
+
+def test_the_front_door_explains_itself_when_the_dashboard_is_not_built(client):
+    """`GET /` is the first URL anyone opens against a new relay, and it
+    redirected — unconditionally — to `/ui/`, which is only mounted when
+    `dashboard/dist` exists. The documented install is two steps ("Build once
+    with: cd dashboard && npm run build"), so between them the relay is healthy,
+    serving, and its front door 307s into a bare `{"detail":"Not Found"}`.
+
+    Reproduced by starting a real relay with `dist` moved aside. Pinned here at
+    the handler, because the mount itself is decided at import time and the
+    redirect is the half that can still answer usefully at request time.
+    """
+    from pathlib import Path as _Path
+
+    from emporia import relay_server as rs
+
+    r = client.get("/", follow_redirects=False)
+    assert r.status_code in (307, 308), r.text
+    assert r.headers["location"] == "/ui/", r.headers
+
+    with patch.object(rs, "_DASHBOARD_DIST", _Path("/nonexistent/dashboard/dist")):
+        r = client.get("/", follow_redirects=False)
+    assert r.status_code == 200, (
+        f"with no dashboard build there is nothing to redirect *to* — answering "
+        f"307 sends the operator to a 404 that explains nothing; got {r.status_code}"
+    )
+    body = r.text.lower()
+    assert "npm run build" in body, (
+        f"the response has to name the command that fixes it, or it is just a "
+        f"prettier dead end: {r.text[:200]}"
+    )
+    assert "/health" in r.text, "and point at what does work, so the relay reads as alive"
+
+
+def test_an_unreachable_identity_provider_degrades_instead_of_500ing():
+    """`_JwksCache.get()` fetches Nous's JWKS over the network and calls
+    `raise_for_status()`. When the provider is unreachable that raises
+    `httpx.ConnectError` — which is not an `IdentityVerificationError`, and the
+    registration route catches only that. So a Nous outage turned every
+    registration carrying a JWT into a 500.
+
+    Fail-closed is the requirement, and it already worked for a *bad* claim
+    (skipped, agent stays `key_only`). "The provider is down" is the same
+    answer — this relay cannot verify you — and must arrive the same way, not
+    as a stack trace. A relay running with `EMPORIA_REQUIRE_NOUS=1`, which the
+    README recommends for public deployments, then refuses registration with a
+    reason instead of failing to answer at all.
+    """
+    import httpx as _httpx
+
+    from emporia.identity_providers import IdentityVerificationError, verify_claim
+
+    def _provider_down(*a, **k):
+        raise _httpx.ConnectError("nous portal unreachable")
+
+    with patch("httpx.get", _provider_down):
+        with pytest.raises(IdentityVerificationError):
+            verify_claim("nous", "eyJhbGciOiJSUzI1NiJ9.e30.sig")
+
+
+def test_registration_survives_an_identity_provider_outage(client):
+    """The same thing through the route that actually matters. The agent
+    registers, is told nothing verified, and lands at `key_only` — the trust
+    level an unverifiable claim has always produced."""
+    import httpx as _httpx
+
+    def _provider_down(*a, **k):
+        raise _httpx.ConnectError("nous portal unreachable")
+
+    with patch("httpx.get", _provider_down):
+        r = client.post("/agents/register", json={
+            "agent_id": "p53_outage_agent",
+            "public_key_hex": _test_pubkey("p53_outage_agent"),
+            "identity_claims": [
+                {"provider": "nous", "token": "eyJhbGciOiJSUzI1NiJ9.e30.s"}
+            ],
+        })
+    assert r.status_code == 200, (
+        f"a provider outage must not become a 500 on the registration route; "
+        f"got {r.status_code}: {r.text[:300]}"
+    )
+    assert r.json()["trust_level"] == "key_only", (
+        f"an outage is not a verification: {r.json()}"
+    )
+
+
+@pytest.mark.asyncio
+async def test_a_slow_identity_provider_does_not_stall_the_whole_relay():
+    """`AgentRegistry.register()` verifies identity claims inline, and the Nous
+    provider fetches JWKS with a *blocking* `httpx.get` carrying a 5s timeout —
+    twice (OIDC discovery, then the keyset). On the event loop that stalls the
+    entire relay, not just the one request, and the JWKS cache only stores on
+    success so every attempt against a down provider pays it again.
+
+    Deterministic rather than timed: the fake provider blocks until a
+    concurrent `/health` request releases it. If registration is running on the
+    loop, `/health` can never be served, the event is never set, and the fake
+    gives up on its own timeout — so the assertion fails on state, not on how
+    fast the machine is.
+    """
+    import asyncio as _asyncio
+    import threading as _threading
+
+    import httpx as _httpx
+
+    released = _threading.Event()
+    served_health = _threading.Event()
+    observed: dict[str, bool] = {}
+
+    def _blocking_provider(*a, **k):
+        # Waits for the loop to prove it is still alive. Recording *how* the
+        # wait ended is the whole test: a blocked loop cannot serve /health, so
+        # the wait ends on its own timeout with the event still clear. Checking
+        # `released.is_set()` after the gather instead would pass either way —
+        # on a blocked loop /health is still served, just five seconds later,
+        # once the timeout releases the loop. (My first version of this test did
+        # exactly that and passed with the defect reintroduced.)
+        released.wait(timeout=5.0)
+        observed["released_by_health"] = released.is_set()
+        raise _httpx.ConnectError("provider unreachable")
+
+    transport = _httpx.ASGITransport(app=app)
+    async with _httpx.AsyncClient(transport=transport, base_url="http://test") as ac:
+        with patch("httpx.get", _blocking_provider):
+            async def _register_slowly():
+                return await ac.post("/agents/register", json={
+                    "agent_id": "p53_slow_provider_agent",
+                    "public_key_hex": _test_pubkey("p53_slow_provider_agent"),
+                    "identity_claims": [
+                        {"provider": "nous", "token": "eyJhbGciOiJSUzI1NiJ9.e30.s"}
+                    ],
+                })
+
+            async def _health_meanwhile():
+                await _asyncio.sleep(0.05)
+                r = await ac.get("/health")
+                served_health.set()
+                released.set()
+                return r
+
+            reg, health = await _asyncio.gather(_register_slowly(), _health_meanwhile())
+
+    assert observed.get("released_by_health") is True, (
+        "/health had to be served *while* the provider was hanging. It was not, "
+        "so the blocking fetch is running on the event loop and stalls the whole "
+        "relay for the provider's timeout on every registration attempt"
+    )
+    assert served_health.is_set()
+    assert health.status_code == 200, health.text
+    assert reg.status_code == 200, reg.text
+    assert reg.json()["trust_level"] == "key_only"

@@ -49,9 +49,26 @@ class _JwksCache:
                 jwks_uri = JWKS_FALLBACK
         except Exception:
             jwks_uri = JWKS_FALLBACK
-        r = httpx.get(jwks_uri, timeout=5.0)
-        r.raise_for_status()
-        self._keys = r.json().get("keys", [])
+        # P53: a fetch failure here is an *identity verification* failure, and
+        # has to arrive as one. It used to escape as httpx.ConnectError /
+        # HTTPStatusError, and `register_agent()` catches only
+        # IdentityVerificationError — so a Nous outage turned every
+        # registration carrying a JWT into a 500, on exactly the deployments
+        # the README recommends `EMPORIA_REQUIRE_NOUS=1` for. Fail-closed was
+        # already right for a *bad* claim (skipped, agent stays `key_only`);
+        # "the provider is down" is the same answer — this relay cannot verify
+        # you — and must be delivered the same way rather than as a stack trace.
+        try:
+            r = httpx.get(jwks_uri, timeout=5.0)
+            r.raise_for_status()
+            keys = r.json().get("keys", [])
+        except IdentityVerificationError:
+            raise
+        except Exception as e:
+            raise IdentityVerificationError(
+                f"Nous identity provider unreachable ({jwks_uri}): {e}"
+            ) from e
+        self._keys = keys
         self._fetched_at = time.time()
         return self._keys
 
