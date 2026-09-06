@@ -2425,6 +2425,54 @@ built, so lanes 2 and 3 have only ever skipped. The URL fix is pinned offline by
 and corroborated against Stripe's routing table; nothing has yet watched a PaymentIntent actually
 confirm. `docs/testnet.md` says so in the same words rather than implying the tier is green.
 
+## P55 pass — one database, one resolver
+
+Step one of the architecture audit, and the only finding in it that was a live hazard rather than a
+shape complaint.
+
+**Five module-level constants named the database**, and two of them named *a different file in a
+different directory*:
+
+```
+relay_server.DATABASE_PATH          ~/.hermes/emporia.sqlite3
+rooms.ROOM_DB_PATH                  ~/.hermes/emporia_relay.sqlite3
+entitlements.ENTITLEMENTS_DB_PATH   ~/.hermes/emporia_relay.sqlite3
+engine.game_registry.DEFAULT_DB_PATH   (agreed, by luck)
+engine.registry.DEFAULT_DB_PATH        (agreed, by luck)
+```
+
+They converged only because importing `relay_server` ran the profile-dotenv merge **as an import side
+effect**, populating `EMPORIA_DB_PATH` before the other constants were evaluated. Import `rooms` or
+`entitlements` first and they captured a second, empty store — silently. Reproduced in a fresh
+process before any of this was changed, and the two orders genuinely differ.
+
+What kept it latent was discipline, not design: every relay call site passes `db_path=` explicitly.
+An AST sweep of all 26 `db_path`-taking functions found **0 omissions**. The invariant held, and
+nothing checked that it kept holding.
+
+**The fix is `emporia/config.py`**, which owns both halves. It is the package's only reader of
+`EMPORIA_DB_PATH` — so there is no second default left to disagree with — and it performs the dotenv
+merge at its own import, so the merge runs before the first resolution in *any* process rather than
+only the one that imported the relay. Resolution is per-call rather than cached, because a value
+cached before the merge could disagree with the constant `relay_server` captures at import.
+
+**The guard is written as "who may read the variable", not "do the defaults match"** — and it earned
+that on its first run, failing on `engine/registry.py`, a **fifth** path constant that neither the
+audit nor my own greps had turned up. A check on today's values would have passed; a check on
+authority found it.
+
+**Stash-verify caught two weak pins, and the second one twice.** Deleting the dotenv merge left both
+the agreement test *and* the two-process test green, because with no merge anywhere every module
+agrees on the same *wrong* path. Agreeing and being right are separate properties, and the
+two-process test could only ever see the first. The merge is now pinned on what actually justifies
+widening its reach to every process: it has already run by the time anyone can ask, and its
+setdefault semantics mean it can only fill a gap — an explicitly set value always wins and a blank
+line never clears one.
+
+**One deliberate behaviour change**: the MCP server now gets the profile `.env` too, having been the
+system's second, undocumented configuration strategy. Because the merge is setdefault-only it can
+fill gaps and can never override what the installer already wrote into that process's environment.
+
 ## P54 pass — configuration written for a consumer that does not exist
 
 P52 pinned the environment surface in two directions: read-but-undocumented, and

@@ -21,11 +21,12 @@ from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any
 
+from emporia import config
 from emporia.identity import content_address_for
 
-DEFAULT_DB_PATH = Path(
-    os.getenv("EMPORIA_DB_PATH", "~/.hermes/emporia.sqlite3")
-).expanduser()
+# P55: the fifth path constant, found by the guard rather than by the audit
+# that prompted it — which is the argument for writing the guard as "who may
+# read the variable" instead of "do today's defaults match".
 _HANDLE_RE = re.compile(r"[^a-z0-9]+")
 
 
@@ -54,7 +55,7 @@ def normalize_profile_name(profile_name: str) -> str:
 
 class IdentityRegistry:
     def __init__(self, db_path: str | os.PathLike[str] | None = None) -> None:
-        self.db_path = Path(db_path or DEFAULT_DB_PATH).expanduser()
+        self.db_path = Path(db_path or config.database_path()).expanduser()
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
         self._lock = threading.RLock()
         self._initialize()

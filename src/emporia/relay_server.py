@@ -56,39 +56,13 @@ from starlette.datastructures import Headers
 from starlette.responses import JSONResponse
 
 
-def _merge_dotenv(path: Path) -> None:
-    if not path.exists():
-        return
-    for line in path.read_text().splitlines():
-        line = line.strip()
-        if line and not line.startswith("#") and "=" in line:
-            k, _, v = line.partition("=")
-            key = k.strip()
-            val = v.strip().strip('"').strip("'")
-            if not val:
-                continue
-            if not os.environ.get(key):
-                os.environ[key] = val
-
-
-def _load_profile_dotenv() -> None:
-    """Load Hermes profile .env first, then emporia repo .env (setdefault semantics).
-
-    When emporia lives under profiles/<name>/emporia, the repo-level .env must not
-    shadow the profile — the old \"first .env wins\" walk stopped at emporia/.env.
-    """
-    here = Path(__file__).resolve()
-    for parent in here.parents:
-        if (parent / "config.yaml").exists():
-            _merge_dotenv(parent / ".env")
-            break
-    for parent in here.parents:
-        if (parent / "pyproject.toml").exists() and (parent / "src" / "emporia").is_dir():
-            _merge_dotenv(parent / ".env")
-            break
-
-
-_load_profile_dotenv()
+# P55: the dotenv merge and the database path both moved to `emporia.config`,
+# which every store now imports. They used to live here, and `rooms` /
+# `entitlements` / `game_registry` each carried their own path default — two of
+# which named a *different file in a different directory*. Those defaults agreed
+# with this one only when `relay_server` happened to be imported first, because
+# this import is what ran the merge. See config.py's docstring.
+from emporia.config import database_path as _database_path  # noqa: E402
 
 from emporia.engine.game_registry import ChallengeOwnershipError, GameRegistry
 from emporia.engine import guardrails
@@ -168,7 +142,10 @@ OPERATOR_FEE_BPS = int(os.getenv("OPERATOR_FEE_BPS", "250"))
 MAX_TOTAL_SPEND_CENTS = int(os.getenv("EMPORIA_MAX_TOTAL_SPEND_CENTS", "0"))
 TEMPO_ENABLED = os.getenv("EMPORIA_MPP_TEMPO_ENABLED", "0").strip() == "1"
 LOG_DIR = Path(os.getenv("EMPORIA_LOG_DIR", "./.local/logs")).expanduser()
-DATABASE_PATH = Path(os.getenv("EMPORIA_DB_PATH", "~/.hermes/emporia.sqlite3")).expanduser()
+# P55: resolved through emporia.config, the package's only reader of
+# EMPORIA_DB_PATH. Still captured once here — 111 call sites in the suite treat
+# it as a Path — but it is now provably the same file every other store opens.
+DATABASE_PATH = _database_path()
 
 # Federated peers (comma-separated relay URLs; empty = standalone). Normalized
 # (N13-2, R2) so these entries agree with the keys _pull_federated_listings/

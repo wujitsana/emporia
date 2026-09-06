@@ -347,6 +347,17 @@ a background loop, asking Stripe (via `metadata[dedupe_key]`, newly stamped on e
 re-posting anything; the lookup is tri-state, and "couldn't ask" is never rounded down to "not paid".
 See SECURITY.md's P51 pass.
 
+**P55 closed the architecture audit's first finding**: five constants named the database, two of them
+a different file in a different directory, agreeing only when `relay_server` was imported first.
+`emporia/config.py` is now the package's only resolver and owns the dotenv merge. The guard is on
+*who may read* `EMPORIA_DB_PATH`, which found a fifth constant the audit had missed. See
+SECURITY.md's P55 pass.
+
+**Still open — architecture audit, steps 2-5:** split `relay_server.py` into routers; collapse rooms
+and Agoras onto one membership core; split the test file and add a `conftest.py`; numbered migrations
+driven by `schema_migrations`. Step 6, the backend decision, is deferred by the user and is not a
+refactor.
+
 **P54 found the third environment direction**: what the installer writes into a user's own config
 and nothing reads. `EMPORIA_DISPLAY_NAME` was collected from the user and discarded (the MCP
 `register_agent` never looked at it, so agents appeared under their raw `agent_id`);

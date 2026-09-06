@@ -27398,3 +27398,217 @@ def test_the_display_name_the_installer_collected_reaches_registration(monkeypat
     assert captured.get("display_name") == "p54_agent", (
         "and with neither, agent_id remains the last resort"
     )
+
+
+# ---------------------------------------------------------------------------
+# P55 — one database, one resolver
+#
+# The architecture audit's first finding: four module-level constants named the
+# database, two of them a *different file in a different directory*, and they
+# agreed only when `relay_server` happened to be imported first — because that
+# import was what merged the profile .env. Nothing enforced the order, and the
+# only thing keeping it latent was that every call site passed `db_path=`.
+# ---------------------------------------------------------------------------
+
+
+def test_only_one_module_resolves_the_database_path():
+    """`emporia.config` is the package's sole reader of `EMPORIA_DB_PATH`.
+
+    This is the invariant, not the symptom. Two modules can't disagree about
+    the database if only one of them is allowed to decide what it is — so the
+    check is on *who reads the variable*, which is cheap and total, rather than
+    on whether today's defaults happen to match, which was true of three of the
+    four constants right up until it wasn't.
+    """
+    from pathlib import Path as _Path
+
+    # Matches a *read*, not a mention: the modules that used to own a default
+    # now carry comments explaining why they don't, and a bare substring check
+    # would count those comments as violations forever.
+    reads = (
+        'getenv("EMPORIA_DB_PATH"',
+        "getenv('EMPORIA_DB_PATH'",
+        'environ["EMPORIA_DB_PATH"',
+        'environ.get("EMPORIA_DB_PATH"',
+    )
+    readers = sorted(
+        str(p) for p in _Path("src/emporia").rglob("*.py")
+        if any(r in p.read_text() for r in reads)
+    )
+    assert readers == ["src/emporia/config.py"], (
+        "only emporia/config.py may resolve EMPORIA_DB_PATH — a second reader is "
+        f"a second default, which is exactly what P55 removed. Found: {readers}"
+    )
+
+
+def test_every_store_opens_the_same_database_whatever_the_import_order():
+    """The defect itself, reproduced the only way it can be: in a fresh process,
+    with `EMPORIA_DB_PATH` unset, importing the stores *before* `relay_server`.
+
+    Run in a subprocess because import order is process-global and this suite
+    sets `EMPORIA_DB_PATH` before it imports anything — which is precisely why
+    the bug never showed up here.
+    """
+    import subprocess
+    import sys
+
+    probe = (
+        "import os; os.environ.pop('EMPORIA_DB_PATH', None)\n"
+        "from emporia import rooms, entitlements\n"          # the broken order
+        "from emporia import relay_server as rs\n"
+        "from emporia.engine import game_registry\n"
+        "from emporia import config\n"
+        "paths = {\n"
+        "  'config': str(config.database_path()),\n"
+        "  'relay': str(rs.DATABASE_PATH),\n"
+        "  'rooms': rooms._connect().execute('PRAGMA database_list').fetchone()[2],\n"
+        "  'entitlements': entitlements._connect().execute("
+        "'PRAGMA database_list').fetchone()[2],\n"
+        "  'games': str(game_registry.GameRegistry().db_path),\n"
+        "}\n"
+        "print(len(set(paths.values())), sorted(set(paths.values())))\n"
+    )
+    env = {k: v for k, v in os.environ.items() if k != "EMPORIA_DB_PATH"}
+    out = subprocess.run(
+        [sys.executable, "-c", probe], capture_output=True, text=True,
+        env=env, cwd=str(Path(__file__).resolve().parent.parent),
+    )
+    assert out.returncode == 0, out.stderr[-1500:]
+    distinct, paths = out.stdout.strip().split(" ", 1)
+    assert distinct == "1", (
+        "every store must open the same file no matter who is imported first; "
+        f"got {distinct} distinct paths: {paths}"
+    )
+
+
+def test_no_call_site_relies_on_a_store_default_it_cannot_see():
+    """The audit's AST sweep, kept as a test.
+
+    P55 makes the defaults agree, so an omitted `db_path=` is no longer a
+    different *database* — but it is still a caller silently depending on
+    process-global state instead of the path the relay resolved. This is what
+    would quietly reintroduce the divergence if a second default ever came
+    back, and it costs one AST walk to know.
+    """
+    import ast
+    from pathlib import Path as _Path
+
+    def _fns_taking_db_path(path: str) -> set[str]:
+        out = set()
+        for n in ast.walk(ast.parse(_Path(path).read_text())):
+            if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                names = [a.arg for a in n.args.args] + [a.arg for a in n.args.kwonlyargs]
+                if "db_path" in names:
+                    out.add(n.name)
+        return out
+
+    targets = {
+        "rooms_db": _fns_taking_db_path("src/emporia/rooms.py"),
+        "entitlements": _fns_taking_db_path("src/emporia/entitlements.py"),
+    }
+    tree = ast.parse(_Path("src/emporia/relay_server.py").read_text())
+    missing = []
+    for n in ast.walk(tree):
+        if (isinstance(n, ast.Call) and isinstance(n.func, ast.Attribute)
+                and isinstance(n.func.value, ast.Name)):
+            fns = targets.get(n.func.value.id)
+            if fns and n.func.attr in fns:
+                kw = {k.arg for k in n.keywords}
+                if "db_path" not in kw and "conn" not in kw:
+                    missing.append(f"{n.func.value.id}.{n.func.attr}() at line {n.lineno}")
+    assert not missing, (
+        "these relay call sites let the store pick the database instead of "
+        f"naming it: {missing}"
+    )
+
+
+def test_a_store_imported_alone_still_finds_the_relays_database():
+    """The other half of P55, and the half the agreement test cannot see.
+
+    Moving the profile-dotenv merge into `emporia.config` is what makes a store
+    imported *without* `relay_server` resolve the database an operator actually
+    configured, rather than the raw-environment default. Two processes, both
+    with `EMPORIA_DB_PATH` unset: one imports only `rooms`, the other only
+    `relay_server`. They have to land on the same file.
+
+    Found by stash-verify: removing the merge from config's import left the
+    agreement test green, because with no dotenv anywhere every module agrees
+    on the same *wrong* path. Agreeing and being right are separate properties
+    and need separate tests.
+    """
+    import subprocess
+    import sys
+
+    root = str(Path(__file__).resolve().parent.parent)
+    env = {k: v for k, v in os.environ.items() if k != "EMPORIA_DB_PATH"}
+
+    def _resolve(script: str) -> str:
+        out = subprocess.run([sys.executable, "-c", script], capture_output=True,
+                             text=True, env=env, cwd=root)
+        assert out.returncode == 0, out.stderr[-1500:]
+        return out.stdout.strip()
+
+    store_alone = _resolve(
+        "from emporia import rooms\n"
+        "print(rooms._connect().execute('PRAGMA database_list').fetchone()[2])\n"
+    )
+    relay = _resolve(
+        "from emporia import relay_server as rs\n"
+        "print(rs.DATABASE_PATH)\n"
+    )
+    assert store_alone == relay, (
+        "a store imported on its own must open the relay's configured database, "
+        f"not the raw-environment default.\n  rooms alone: {store_alone}\n"
+        f"  relay:       {relay}"
+    )
+
+
+def test_the_dotenv_merge_runs_at_import_and_can_only_fill_gaps(tmp_path):
+    """P55 moved the profile-dotenv merge out of `relay_server` and into
+    `emporia.config`, so it runs in every process that touches configuration
+    rather than only the one that happened to import the relay. Two properties
+    make that safe, and both are pinned here.
+
+    **It has already run by the time anyone can ask.** Importing `config` is
+    what triggers it, so no module has to remember to — which was the whole
+    order-dependence bug.
+
+    **It can only fill a gap.** setdefault semantics: an explicitly set value
+    always wins, and a blank line in the file never clears one. That is the
+    reason widening its reach to the MCP server is a safe change rather than a
+    silent reconfiguration of a second process.
+
+    Reached for after stash-verify showed the two-process test staying green
+    with the merge deleted — with no dotenv anywhere, every module agrees on
+    the same wrong path, so agreement could not detect it.
+    """
+    from emporia import config
+
+    assert config._dotenv_loaded is True, (
+        "importing emporia.config must have merged the profile .env already — "
+        "if a caller has to trigger it, the import order decides the database "
+        "again"
+    )
+
+    env_file = tmp_path / ".env"
+    env_file.write_text(
+        "P55_ALREADY_SET=from_file\n"
+        "P55_GAP=from_file\n"
+        "P55_BLANK=\n"
+        "# P55_COMMENTED=from_file\n"
+    )
+    with patch.dict(os.environ, {"P55_ALREADY_SET": "from_environment",
+                                 "P55_BLANK": "from_environment"}, clear=False):
+        os.environ.pop("P55_GAP", None)
+        config._merge_dotenv(env_file)
+        assert os.environ["P55_ALREADY_SET"] == "from_environment", \
+            "an explicitly set value must win over the file"
+        assert os.environ["P55_GAP"] == "from_file", "a gap must be filled"
+        assert os.environ["P55_BLANK"] == "from_environment", \
+            "a blank line must not clear a value that is already set"
+        assert "P55_COMMENTED" not in os.environ, "comments are not settings"
+    os.environ.pop("P55_GAP", None)
+
+    # Idempotent: a second call is a no-op, so any entry point may call it.
+    config.load_profile_dotenv()
+    assert config._dotenv_loaded is True

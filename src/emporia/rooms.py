@@ -42,7 +42,6 @@ from __future__ import annotations
 
 import hashlib
 import json
-import os
 import sqlite3
 import threading
 import uuid
@@ -51,11 +50,13 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, Literal, NamedTuple
 
-from emporia import entitlements
+from emporia import config, entitlements
 
-ROOM_DB_PATH = Path(
-    os.getenv("EMPORIA_DB_PATH", "~/.hermes/emporia_relay.sqlite3")
-).expanduser()
+# P55: no module-level default lives here any more. This one used to name
+# `~/.hermes/emporia_relay.sqlite3` — a different file, in a different
+# directory, from the one relay_server opened — and was reachable whenever a
+# caller omitted `db_path=` before relay_server had been imported.
+# `config.database_path()` is now the only resolver in the package.
 
 _LOCK = threading.RLock()
 
@@ -197,7 +198,7 @@ class RoomMessage:
 # ============================================================================
 
 def _connect(db_path: Path | None = None) -> sqlite3.Connection:
-    path = db_path or ROOM_DB_PATH
+    path = db_path or config.database_path()
     conn = sqlite3.connect(path)
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA journal_mode=WAL")

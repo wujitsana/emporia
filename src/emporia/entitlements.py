@@ -49,7 +49,6 @@ kicked agent would make that distinction lie.
 from __future__ import annotations
 
 import contextlib
-import os
 import sqlite3
 import threading
 import uuid
@@ -57,11 +56,11 @@ from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
+from emporia import config
 from emporia.payments import KNOWN_RAILS
 
-ENTITLEMENTS_DB_PATH = Path(
-    os.getenv("EMPORIA_DB_PATH", "~/.hermes/emporia_relay.sqlite3")
-).expanduser()
+# P55: see rooms.py — this default named the same wrong file, for the same
+# reason, and is likewise gone in favour of `config.database_path()`.
 
 _LOCK = threading.RLock()
 
@@ -102,7 +101,7 @@ def init_entitlements_schema(conn: sqlite3.Connection) -> None:
 
 
 def _connect(db_path: Path | None = None) -> sqlite3.Connection:
-    path = db_path or ENTITLEMENTS_DB_PATH
+    path = db_path or config.database_path()
     conn = sqlite3.connect(path)
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA journal_mode=WAL")

@@ -22,9 +22,11 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any, Literal, Mapping
 
-DEFAULT_DB_PATH = Path(
-    os.getenv("EMPORIA_DB_PATH", "~/.hermes/emporia.sqlite3")
-).expanduser()
+from emporia import config
+
+# P55: the fourth path constant. This one's default agreed with the relay's, so
+# it was not part of the split-brain — but "one resolver" is only true if it is
+# actually one, so it resolves through emporia.config like the rest.
 PaymentMode = Literal["free", "stripe_link", "mpp"]
 ChallengeStatus = Literal["open", "accepted", "closed", "expired"]
 
@@ -199,7 +201,7 @@ def _normalize_stake_amount(mode: PaymentMode, stake_amount: str | int | None) -
 
 class GameRegistry:
     def __init__(self, db_path: str | os.PathLike[str] | None = None) -> None:
-        self.db_path = Path(db_path or DEFAULT_DB_PATH).expanduser()
+        self.db_path = Path(db_path or config.database_path()).expanduser()
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
         self._lock = threading.RLock()
         self._initialize()
