@@ -2425,6 +2425,43 @@ built, so lanes 2 and 3 have only ever skipped. The URL fix is pinned offline by
 and corroborated against Stripe's routing table; nothing has yet watched a PaymentIntent actually
 confirm. `docs/testnet.md` says so in the same words rather than implying the tier is green.
 
+## P61 pass — the schema had no version, so a rollback was undefined rather than refused
+
+Step five of the architecture audit, taken ahead of step four's remaining half. Splitting the
+27k-line test file is findability with real churn risk; this closes a hazard an operator meets on an
+ordinary day.
+
+**What was there.** Eleven hand-written `_migrate_*`/`_backfill_*` routines run at init, each
+idempotent by its own check, beside a `schema_migrations` table that only two of them use — as a
+marker key, not as a version. `_assert_not_pre_p3_schema()` already refuses a database that is too
+*old*, with a message telling the operator what to do. **Nothing refused one that was too new.** An
+older binary opening a newer database ran its migrations over a schema it did not understand and
+served.
+
+That is the ordinary shape of a rollback: deploy, hit a problem, roll the binary back, and the
+database stays migrated. Undefined behaviour where there could be a sentence.
+
+**`PRAGMA user_version` is the gate.** It lives in the SQLite file header, costs nothing, and needs no
+table. `SCHEMA_VERSION = 1` in code; the check runs **before** anything is created or migrated —
+because the damage a stale binary does is done by migrating, not by reading — and the stamp lands
+after every migration has run. Verified end to end: a fresh database is stamped 1, and a database
+marked as newer is refused with its schema untouched and its own version intact.
+
+**The version is only worth something if it moves when the schema does**, and nothing makes that
+automatic. So a fingerprint over all 27 tables and 246 columns is pinned beside it. Change the schema
+and the test fails with one instruction: bump `SCHEMA_VERSION`, *then* update the fingerprint — never
+the fingerprint alone, which would silence the guard and leave the version lying. Stash-verified by
+adding a column and watching it fire.
+
+**One limitation, stated rather than papered over.** This protects forward only. A relay predating
+P61 has no gate to trip, so rolling back past this release is still undefined. That is inherent to
+adding a version late, and is the argument for adding it now rather than later.
+
+**What is deliberately not done.** The audit also proposed adopting the eleven routines as numbered
+entries 1–11 driven off `schema_migrations`. That adds structure and no safety — the eleven are
+individually idempotent and working, and reordering them carries risk the version gate does not. The
+gate is the half with the property; the renumbering can follow on its own evidence.
+
 ## P60 pass — the suite was running with production credentials, and reaching Stripe with them
 
 Step four of the architecture audit is "split the test file and add a `conftest.py`", filed as

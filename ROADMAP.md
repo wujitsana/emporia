@@ -353,6 +353,12 @@ a different file in a different directory, agreeing only when `relay_server` was
 *who may read* `EMPORIA_DB_PATH`, which found a fifth constant the audit had missed. See
 SECURITY.md's P55 pass.
 
+**P61 did step 5's safety half**: the schema now carries a version in `PRAGMA user_version`, checked
+before migrations run and stamped after, so an older binary refuses a database from the future instead
+of migrating it blind. A fingerprint over all 27 tables and 246 columns fails the suite if the schema
+moves without the version. Protects forward only — a relay predating P61 has no gate. Renumbering the
+eleven migration routines is deliberately *not* done: structure without safety. See SECURITY.md's P61.
+
 **P60 did step 4's `conftest.py` half**, which was filed as ergonomics and was not: the suite
 inherited ten variables from the profile `.env`, three of them live credentials, and one test had
 been making a real unmocked call to `api.stripe.com` on every local run. Environment is now pinned in

@@ -27818,3 +27818,111 @@ def test_the_membership_rule_is_written_in_exactly_one_place():
         "the expiry-aware membership rule must live in exactly one function; "
         f"these re-derive it: {rederivers}"
     )
+
+
+# ---------------------------------------------------------------------------
+# P61 — the schema has a version, and the version has to stay honest
+# ---------------------------------------------------------------------------
+
+# 27 tables, 246 columns, at SCHEMA_VERSION 1. Recomputed by the test below;
+# when it fails, read *why* before touching this string.
+_SCHEMA_FINGERPRINT_V1 = "0e55271262dab7e067ae678008d4f907eadbea1f7f01268b1d27014d1c953166"
+
+
+def _schema_fingerprint(db_path) -> tuple[str, int, int]:
+    import hashlib
+    import sqlite3 as _sqlite3
+
+    conn = _sqlite3.connect(db_path)
+    try:
+        tables = [r[0] for r in conn.execute(
+            "SELECT name FROM sqlite_master WHERE type='table' "
+            "AND name NOT LIKE 'sqlite_%' ORDER BY name"
+        )]
+        parts = [
+            f"{t}.{col[1]}:{col[2]}"
+            for t in tables
+            for col in conn.execute(f"PRAGMA table_info({t})").fetchall()
+        ]
+    finally:
+        conn.close()
+    parts.sort()
+    return hashlib.sha256("|".join(parts).encode()).hexdigest(), len(tables), len(parts)
+
+
+def test_a_schema_change_requires_a_version_bump():
+    """`SCHEMA_VERSION` is only worth anything if it moves when the schema does.
+
+    Nothing makes that automatic, so this does: a fingerprint over every table
+    and column. Change the schema and this fails, which is the reminder to bump
+    `SCHEMA_VERSION` — without which an operator rolling a binary back onto a
+    migrated database gets undefined behaviour instead of the refusal
+    `_assert_schema_not_from_the_future()` exists to give them.
+
+    **When this fails, that is the whole message.** Bump `SCHEMA_VERSION`, then
+    update the fingerprint here. Updating the fingerprint alone silences the
+    guard and leaves the version lying, which is worse than not having one.
+    """
+    from emporia.relay_server import SCHEMA_VERSION
+
+    fingerprint, tables, columns = _schema_fingerprint(_test_db)
+    assert (SCHEMA_VERSION, fingerprint) == (1, _SCHEMA_FINGERPRINT_V1), (
+        f"the schema changed ({tables} tables, {columns} columns) or the version "
+        f"moved. Bump SCHEMA_VERSION *and* update _SCHEMA_FINGERPRINT_V1 — in "
+        f"that order, and never the fingerprint alone.\n"
+        f"  code version: {SCHEMA_VERSION}\n  fingerprint:  {fingerprint}"
+    )
+
+
+def test_a_fresh_database_is_stamped_with_the_current_version():
+    """The stamp has to actually land, or the gate has nothing to compare."""
+    import sqlite3 as _sqlite3
+
+    from emporia.relay_server import SCHEMA_VERSION
+
+    conn = _sqlite3.connect(_test_db)
+    try:
+        stamped = conn.execute("PRAGMA user_version").fetchone()[0]
+    finally:
+        conn.close()
+    assert stamped == SCHEMA_VERSION, (
+        f"the suite's own database is stamped {stamped}, code says {SCHEMA_VERSION}"
+    )
+
+
+def test_a_database_from_a_newer_relay_is_refused_rather_than_migrated():
+    """The rollback case, which is the ordinary one: deploy, hit a problem, roll
+    the binary back, and the database stays migrated. The old binary used to run
+    its migrations over a schema it did not understand and serve. It now refuses,
+    and the message says what to do about it.
+
+    Checked *before* migrations run — the damage a stale binary does is done by
+    migrating, not by reading — so this asserts the schema is untouched too.
+    """
+    import sqlite3 as _sqlite3
+    import tempfile
+    from pathlib import Path as _Path
+
+    from emporia import relay_server as rs
+
+    db = _Path(tempfile.mkdtemp()) / "from_the_future.sqlite3"
+    with patch.object(rs, "DATABASE_PATH", db):
+        rs.init_db()
+        conn = _sqlite3.connect(db)
+        conn.execute(f"PRAGMA user_version = {rs.SCHEMA_VERSION + 1}")
+        conn.commit()
+        before = {r[0] for r in conn.execute(
+            "SELECT name FROM sqlite_master WHERE type='table'")}
+        conn.close()
+
+        with pytest.raises(RuntimeError, match="newer Emporia relay"):
+            rs.init_db()
+
+        conn = _sqlite3.connect(db)
+        after = {r[0] for r in conn.execute(
+            "SELECT name FROM sqlite_master WHERE type='table'")}
+        still = conn.execute("PRAGMA user_version").fetchone()[0]
+        conn.close()
+
+    assert after == before, "a refused database must not have been touched"
+    assert still == rs.SCHEMA_VERSION + 1, "and must keep its own version"

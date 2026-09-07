@@ -616,6 +616,8 @@ def init_db() -> None:
     DATABASE_PATH.parent.mkdir(parents=True, exist_ok=True)
     LOG_DIR.mkdir(parents=True, exist_ok=True)
     with DB_LOCK, get_db() as conn:
+        # P61: before anything is created or migrated.
+        _assert_schema_not_from_the_future(conn)
         conn.executescript("""
             CREATE TABLE IF NOT EXISTS authorized_agents (
                 agent_id TEXT PRIMARY KEY,
@@ -926,6 +928,51 @@ def init_db() -> None:
         # entitlements.py's module docstring
         entitlements.init_entitlements_schema(conn)
         _assert_not_pre_p3_schema(conn)
+        _stamp_schema_version(conn)
+
+
+# P61: the schema's own version, stamped into the database header via
+# `PRAGMA user_version`. Bump it whenever the schema changes — a test computes
+# a fingerprint of every table and column and fails if the shape moved without
+# this number moving, so it cannot quietly stop meaning anything.
+SCHEMA_VERSION = 1
+
+
+def _assert_schema_not_from_the_future(conn: Any) -> None:
+    """Refuse a database written by a newer relay than this one (P61).
+
+    `_assert_not_pre_p3_schema()` below already refuses a database that is too
+    *old*. Nothing refused one that was too new: an older binary opening a newer
+    file simply ran its own migrations over it and served, which is undefined
+    rather than diagnosed. That is the ordinary shape of a rollback — deploy,
+    hit a problem, roll back the binary, and the database stays migrated.
+
+    Checked *before* the migrations run, because the damage a stale binary does
+    is done by migrating a schema it does not understand, not by reading it.
+
+    This protects forward only: a relay predating P61 has no gate to trip. That
+    is inherent to adding a version late and is the reason to add it now rather
+    than later.
+    """
+    found = conn.execute("PRAGMA user_version").fetchone()[0]
+    if found > SCHEMA_VERSION:
+        raise RuntimeError(
+            f"This database was written by a newer Emporia relay: it is at "
+            f"schema version {found}, and this relay understands up to "
+            f"{SCHEMA_VERSION}. Refusing to start rather than migrate a schema "
+            f"this binary does not know — run the newer relay, or restore a "
+            f"backup taken before the upgrade."
+        )
+
+
+def _stamp_schema_version(conn: Any) -> None:
+    """Record the schema version, after every migration has run.
+
+    Interpolated rather than bound: `PRAGMA user_version = ?` is not a
+    parameterised statement in SQLite. `SCHEMA_VERSION` is an int constant in
+    this module, so there is nothing here a caller can reach.
+    """
+    conn.execute(f"PRAGMA user_version = {int(SCHEMA_VERSION)}")
 
 
 def _assert_not_pre_p3_schema(conn: Any) -> None:
