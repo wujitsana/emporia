@@ -608,19 +608,36 @@ async def seed() -> None:
                     summary["service_sessions"] = 1
 
                     # --- Paid Stripe MPP demo session (sandbox only) ---
+                    # P64: optional, and its failure is not the seed's failure.
+                    # `create_test_spt()` calls Stripe's `test_helpers` API for
+                    # real, so it needs a genuine `sk_test_` key with test-helper
+                    # permission — which most people setting Emporia up for the
+                    # first time do not have. A 401 here used to abort the whole
+                    # run and print an httpx traceback under "Seed failed",
+                    # after five agents, two rooms, five listings, three Agora
+                    # topics and six sessions had already been created. The
+                    # demo content was fine; only the report said otherwise.
+                    summary["paid_sessions"] = 0
                     if os.getenv("STRIPE_SECRET_KEY", "").startswith("sk_test_"):
-                        paid = await hermes.create_session(
-                            "emporia:service:v1",
-                            config={"description": "Sandbox-paid MPP demo"},
-                            payment_rules={"mode": "mpp", "stake_per_participant": "1.00", "currency": "usd"},
-                            gateway_url=GATEWAY,
-                        )
-                        paid_sid = paid["session_id"]
-                        spt = await create_test_spt(100, "usd")
-                        await beta.join_session(paid_sid, gateway_url=GATEWAY, mpp_spt=spt["id"])
-                        summary["paid_sessions"] = 1
-                    else:
-                        summary["paid_sessions"] = 0
+                        try:
+                            paid = await hermes.create_session(
+                                "emporia:service:v1",
+                                config={"description": "Sandbox-paid MPP demo"},
+                                payment_rules={"mode": "mpp", "stake_per_participant": "1.00", "currency": "usd"},
+                                gateway_url=GATEWAY,
+                            )
+                            paid_sid = paid["session_id"]
+                            spt = await create_test_spt(100, "usd")
+                            await beta.join_session(paid_sid, gateway_url=GATEWAY, mpp_spt=spt["id"])
+                            summary["paid_sessions"] = 1
+                        except Exception as exc:
+                            # Named, not swallowed: the operator should know the
+                            # paid lane was skipped and why, without being told
+                            # the seed failed.
+                            summary["paid_sessions"] = 0
+                            summary["paid_session_skipped"] = (
+                                f"{type(exc).__name__}: {str(exc)[:160]}"
+                            )
 
                     # --- Events ---
                     event_count = 0

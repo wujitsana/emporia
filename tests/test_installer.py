@@ -105,3 +105,51 @@ def test_the_installer_writes_no_gateway_platform_entry():
         "the installer is writing a gateway platform entry again; it is inert "
         f"until a real plugin exists: {offenders}"
     )
+
+
+def test_no_setup_command_prunes_a_contributors_venv():
+    """P64: a bare `uv sync` installs the default set and *removes* everything
+    else, including the `dev` and `x402` extras CI installs with
+    `uv sync --frozen --extra dev --extra x402`.
+
+    Both the installer and `scripts/local_relay.py` ran one — and
+    `local_relay.py`'s runs on every relay start. Measured after a single
+    `--local-demo`: `import ruff` and `import eth_account` both gone. The next
+    `uv run python -m ruff check` (CI's own lint command) then failed with "No
+    module named ruff", with nothing connecting it back to the setup step.
+
+    `--inexact` installs what is needed and leaves the rest alone.
+    """
+    from pathlib import Path
+
+    root = Path(__file__).parent.parent
+    offenders = []
+    for rel in ("installer/install.py", "scripts/local_relay.py"):
+        text = (root / rel).read_text()
+        for i, line in enumerate(text.splitlines(), 1):
+            if '"sync"' in line and "--inexact" not in text[
+                max(0, text.find(line) - 200): text.find(line) + 400
+            ]:
+                offenders.append(f"{rel}:{i}: {line.strip()}")
+    assert not offenders, (
+        f"`uv sync` without --inexact deletes the dev toolchain: {offenders}"
+    )
+
+
+def test_the_seed_is_told_which_relay_to_seed():
+    """P64: `_run_demo_seed()` took `relay_url`, used it for the health check,
+    and then launched the seed subprocess without it.
+
+    `seed_demo_relay.py` reads `EMPORIA_RELAY_URL` and defaults to
+    `localhost:8088`, so `--local-demo --relay-url http://127.0.0.1:8099`
+    started a relay on 8099 and seeded whatever answered on 8088. The seed's own
+    split-brain guard caught it and reported a database mismatch — the right
+    error for the wrong reason: the databases matched, the *relay* was wrong.
+    """
+    from pathlib import Path
+
+    text = (Path(__file__).parent.parent / "installer" / "install.py").read_text()
+    assert 'seed_env["EMPORIA_RELAY_URL"] = relay_url' in text, (
+        "the seed subprocess must be told which relay to seed, not left to "
+        "default to localhost:8088"
+    )

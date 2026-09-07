@@ -35,7 +35,13 @@ def _sync_venv_deps() -> None:
 
     uv = shutil.which("uv")
     if uv:
-        subprocess.run([uv, "sync", "--directory", str(EMPORIA_ROOT)], cwd=str(EMPORIA_ROOT), check=False)
+        # P64: `--inexact` — see installer/install.py's matching call. A bare
+        # `uv sync` prunes the `dev` and `x402` extras out of a contributor's
+        # venv, and this one runs on every relay start.
+        subprocess.run(
+            [uv, "sync", "--inexact", "--directory", str(EMPORIA_ROOT)],
+            cwd=str(EMPORIA_ROOT), check=False,
+        )
     else:
         subprocess.run(
             [venv_python(), "-m", "pip", "install", "-e", str(EMPORIA_ROOT)],

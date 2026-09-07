@@ -353,6 +353,13 @@ a different file in a different directory, agreeing only when `relay_server` was
 *who may read* `EMPORIA_DB_PATH`, which found a fifth constant the audit had missed. See
 SECURITY.md's P55 pass.
 
+**P64 fixed the one-command setup**, found by running `--local-demo` end to end: a bare `uv sync` in
+both the installer and `local_relay.py` pruned the `dev` and `x402` extras out of a contributor's venv
+(ruff and eth-account, gone after one run, and `local_relay.py`'s copy runs on every relay start); the
+seed was launched without `EMPORIA_RELAY_URL` and so seeded whatever answered on 8088; and a Stripe
+`test_helpers` 401 aborted the seed report after all the demo content had already been created. See
+SECURITY.md's P64.
+
 **P63 established the Hermes integration story.** The agent-side install was already correct — the
 MCP server is registered and enabled with all tools. The inert `platforms:` entry the installer wrote
 belonged to the *gateway/desktop* half of Hermes's plugin surface, never registered anything, and is

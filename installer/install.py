@@ -1162,7 +1162,20 @@ def _ensure_project_dependencies(*, dry_run: bool = False) -> None:
     py = _venv_python()
     uv = shutil.which("uv")
     if uv:
-        subprocess.run([uv, "sync", "--directory", str(_EMPORIA_DIR)], cwd=str(_EMPORIA_DIR), check=False)
+        # P64: `--inexact`, because this same command runs in a contributor's
+        # checkout. A bare `uv sync` installs the default set and *prunes*
+        # everything else, so running the documented operator setup
+        # (`--local-demo`, which calls this) silently deleted `ruff` and
+        # `eth-account` from the venv — the `dev` and `x402` extras CI installs
+        # with `uv sync --frozen --extra dev --extra x402`. The next
+        # `uv run python -m ruff check` (CI's own lint command) then failed with
+        # "No module named ruff", with nothing connecting it to the setup step
+        # that caused it. Measured, not guessed: both imports were gone after a
+        # local-demo run.
+        subprocess.run(
+            [uv, "sync", "--inexact", "--directory", str(_EMPORIA_DIR)],
+            cwd=str(_EMPORIA_DIR), check=False,
+        )
     else:
         subprocess.run(
             [py, "-m", "pip", "install", "-e", str(_EMPORIA_DIR)],
@@ -1174,7 +1187,7 @@ def _ensure_project_dependencies(*, dry_run: bool = False) -> None:
         subprocess.run([py, "-m", "pip", "install", "chess>=1.10.0"], check=False)
 
 
-def _build_dashboard_embedded(*, dry_run: bool = False) -> None:
+def _build_dashboard_embedded(*, dry_run: bool = False, relay_url: str = "") -> None:
     """npm install + build:embedded so relay serves /ui/."""
     dash = _EMPORIA_DIR / "dashboard"
     if not dash.is_dir():
@@ -1191,7 +1204,12 @@ def _build_dashboard_embedded(*, dry_run: bool = False) -> None:
     subprocess.run([npm, "install"], cwd=str(dash), check=False)
     r = subprocess.run([npm, "run", "build:embedded"], cwd=str(dash), check=False)
     if r.returncode == 0:
-        print("  Dashboard built → open {}/ui/ after relay is up".format(DEFAULT_RELAY_URL.rstrip("/")))
+        # P64: the URL the caller asked for, not the default. `--local-demo
+        # --relay-url http://127.0.0.1:8099` printed "open http://localhost:8088/ui/"
+        # and then, three lines later, the correct 8099 — so the first thing an
+        # operator reads is the one address that does not work.
+        print("  Dashboard built → open {}/ui/ after relay is up".format(
+            (relay_url or DEFAULT_RELAY_URL).rstrip("/")))
     else:
         print("  Dashboard build failed — see output above")
 
@@ -1208,11 +1226,19 @@ def _run_demo_seed(relay_url: str, *, dry_run: bool = False) -> None:
         if not _start_relay(relay_url):
             print(f"  Relay failed to start — run manually: python {seed_script}")
             return
+    # P64: the seed reads EMPORIA_RELAY_URL and defaults to localhost:8088, so
+    # `--local-demo --relay-url http://127.0.0.1:8099` started a relay on 8099
+    # and then seeded whatever was answering on 8088. The seed's own split-brain
+    # guard caught it — "wrote 6 challenges directly to <db>, but the relay at
+    # http://localhost:8088 went from 6 to 6" — which is the right error for the
+    # wrong reason: the databases matched, the *relay* was the wrong one.
+    seed_env = os.environ.copy()
+    seed_env["EMPORIA_RELAY_URL"] = relay_url
     result = subprocess.run(
         [_venv_python(), str(seed_script)],
         capture_output=True,
         text=True,
-        env=os.environ.copy(),
+        env=seed_env,
         cwd=str(_EMPORIA_DIR),
     )
     if result.returncode == 0:
@@ -1451,7 +1477,7 @@ def main() -> None:
         if not args.dry_run:
             _ensure_project_dependencies(dry_run=False)
         if args.build_dashboard:
-            _build_dashboard_embedded(dry_run=args.dry_run)
+            _build_dashboard_embedded(dry_run=args.dry_run, relay_url=args.relay_url)
         if args.start_relay:
             if args.dry_run:
                 print("  [dry-run] Would start relay")

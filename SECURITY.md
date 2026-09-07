@@ -2425,6 +2425,44 @@ built, so lanes 2 and 3 have only ever skipped. The URL fix is pinned offline by
 and corroborated against Stripe's routing table; nothing has yet watched a PaymentIntent actually
 confirm. `docs/testnet.md` says so in the same words rather than implying the tier is green.
 
+## P64 pass — the one-command setup broke three things, found by running it
+
+The documented operator path is `installer/install.py --local-demo`. It had never been run end to end
+in this session's memory, so it was, against an isolated database, keys directory and port. Three
+defects, all of which a first-time operator would hit.
+
+**1. The setup command deleted the contributor toolchain.** Both `installer/install.py` and
+`scripts/local_relay.py` ran a bare `uv sync`, which installs the default dependency set and *prunes
+everything else*. CI installs the toolchain with `uv sync --frozen --extra dev --extra x402`, so a
+single `--local-demo` removed both extras. Measured immediately after: `import ruff` and
+`import eth_account` both gone — the lint tool CI runs, and the EIP-712 signing library the x402
+payer needs. The next `uv run python -m ruff check` failed with "No module named ruff" and nothing
+connected it back to the setup step. `local_relay.py`'s copy runs on **every relay start**, so this
+was not a one-off. Both now pass `--inexact`.
+
+**2. The seed was pointed at the wrong relay.** `_run_demo_seed()` received `relay_url`, used it for
+the health check, and then launched the seed subprocess without it —
+`seed_demo_relay.py` reads `EMPORIA_RELAY_URL` and defaults to `localhost:8088`. So
+`--local-demo --relay-url http://127.0.0.1:8099` started a relay on 8099 and seeded whatever was
+answering on 8088. The seed's own split-brain guard caught it and reported a *database* mismatch,
+which is the right error for the wrong reason: the databases matched, the relay was wrong.
+
+**3. A Stripe call nobody can make sank the whole seed report.** The demo's paid-MPP session calls
+`create_test_spt()`, which hits Stripe's `test_helpers` API for real and needs a genuine `sk_test_`
+key with test-helper permission. Without one it 401s — and that aborted the run and printed an httpx
+traceback under **"Seed failed"**, *after* five agents, two rooms, five listings, three Agora topics
+and six sessions had already been created. The demo content was fine; only the report said otherwise.
+The paid lane is now optional and named: `paid_sessions: 0` plus a `paid_session_skipped` string
+saying why, with everything else reported as seeded.
+
+**Also fixed**: `--local-demo --relay-url <x>` printed "open http://localhost:8088/ui/" — the default,
+not the URL it was given — and then the correct address three lines later, so the first thing an
+operator read was the one that does not work.
+
+Verified by re-running the whole path twice more: seed completes, the toolchain survives, the relay
+serves its dashboard on the port that was asked for. Three static guards keep each fix from
+regressing, in the style of P52/P54/P63.
+
 ## P63 pass — we were installing into the wrong half of Hermes's plugin surface
 
 Research pass, prompted by "are we installing correctly for Hermes agents". Short answer: **the agent
