@@ -23565,7 +23565,7 @@ def test_session_audit_route_reads_its_log_once(client):
     get_public_log(session_id) — two full reads and two JSON parses of the same
     file per request. The same one-fact-fetched-twice shape P43 found in the
     Overview, one layer down."""
-    from emporia import relay_server, session_audit
+    from emporia import session_audit
 
     _register_keyed(client, "p44_audit_alice")
     r = client.post("/sessions", json={
@@ -23582,11 +23582,16 @@ def test_session_audit_route_reads_its_log_once(client):
         reads += 1
         return real(sid)
 
-    # Both names, because relay_server.py imported the function by value: the
-    # route's own call and verify_chain()'s internal one resolve through
-    # different module globals, and counting either alone counts one read.
+    # Both names, because the module holding the route imported the function by
+    # value: the route's own call and verify_chain()'s internal one resolve
+    # through different module globals, and counting either alone counts one
+    # read. P58 moved the route to emporia.routes.sessions, so that is the
+    # module whose global now matters — relay_server no longer imports the name
+    # at all, and patching it there raised AttributeError rather than silently
+    # counting nothing, which is the failure mode worth having.
+    from emporia.routes import sessions as session_routes
     with (
-        patch.object(relay_server, "get_public_log", counting),
+        patch.object(session_routes, "get_public_log", counting),
         patch.object(session_audit, "get_public_log", counting),
     ):
         resp = client.get(f"/sessions/{session_id}/audit",
@@ -27672,4 +27677,45 @@ def test_route_enumeration_sees_inside_included_routers():
     )
     assert ("GET", "/events") in _registered_rest_routes(), (
         "and they must reach the docs-drift detector, which is what noticed"
+    )
+
+
+def test_every_router_module_is_actually_included():
+    """A router that is written but never included serves nothing, and the only
+    symptom is 404s on routes that plainly exist in the source (P58).
+
+    P56 proved the suite catches it *if* a test exercises the route — removing
+    the events include broke ten tests. This catches it directly, which matters
+    now that there are nine router modules and the include list is hand-written
+    in `relay_server`: a domain whose routes have thin coverage could be dropped
+    and leave the suite green.
+    """
+    import importlib
+    import pkgutil
+
+    from emporia import routes as routes_pkg
+
+    served = {
+        (m, getattr(r, "path", None))
+        for r in _all_app_routes()
+        for m in (getattr(r, "methods", None) or set())
+    }
+
+    missing: list[str] = []
+    found_any = False
+    for mod_info in pkgutil.iter_modules(routes_pkg.__path__):
+        mod = importlib.import_module(f"emporia.routes.{mod_info.name}")
+        router = getattr(mod, "router", None)
+        if router is None:
+            continue
+        for route in router.routes:
+            found_any = True
+            for method in (getattr(route, "methods", None) or set()):
+                if (method, route.path) not in served:
+                    missing.append(f"{mod_info.name}: {method} {route.path}")
+
+    assert found_any, "no router modules found — the traversal is broken, not the code"
+    assert not missing, (
+        "these routers define routes the app does not serve — an "
+        f"app.include_router() line is missing in relay_server: {sorted(missing)}"
     )

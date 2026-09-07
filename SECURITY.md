@@ -2425,6 +2425,48 @@ built, so lanes 2 and 3 have only ever skipped. The URL fix is pinned offline by
 and corroborated against Stripe's routing table; nothing has yet watched a PaymentIntent actually
 confirm. `docs/testnet.md` says so in the same words rather than implying the tier is green.
 
+## P58 pass — extraction by definition, and the bug that only showed up in what was left behind
+
+Step two of the architecture audit is now substantially done. **67 of 87 routes** live in
+`emporia/routes/`, and `relay_server.py` is **6,968 lines — down from 10,525**, a 34% cut.
+
+**The tool learned to extract by definition name.** P57 stopped at federation because its four routes
+are interleaved with six helpers the background sync loop shares and the suite patches or imports
+directly — `_fetch_federation_batch` alone is patched 17 times — so a line-range cut would have moved
+them and broken every site. `main_defs()` takes handler names instead, pulls each definition with its
+decorators and leading comments, and leaves everything unnamed exactly where it is. Federation, then
+agoras (14), rooms (10), sessions (11) and agents (14) all moved that way.
+
+**The bug was in what the tool left behind, not in what it wrote.** Deletion used
+`sorted(spans, reverse=True)` on `(name, start, end)` tuples — which sorts by **name**, not by line
+number, so excisions ran in the wrong order and every offset after the first was wrong. It spliced a
+fragment of `federation_peers` into the middle of `create_session`. The verbatim self-check P57 added
+passed cleanly, because it verifies the *extracted* text; nothing was checking the remainder. Ruff
+caught it. The remainder now gets its own check: after excision the file must still parse, or the tool
+refuses to write `relay_server` at all.
+
+**One real test coupling, found the hard way.** `test_session_audit_route_reads_its_log_once` patches
+`get_public_log` on two modules by value. My pre-flight scan for coupling only matched the
+`patch("emporia.relay_server.X")` string form and missed `patch.object(relay_server, "X")` — 22 more
+sites. Re-measured properly: of those 22, exactly one broke, because the session route moved and ruff
+then removed the now-unused import from `relay_server`. The test follows the code and patches
+`emporia.routes.sessions` instead. It failed loudly with `AttributeError` rather than silently
+counting nothing, which is the failure mode worth having.
+
+**A new guard for a new failure mode.** With nine router modules and a hand-written include list, a
+router can be written and never included — serving nothing, with 404s on routes that plainly exist in
+the source. P56 showed the suite catches that *if* a test exercises the route; a thinly covered domain
+could be dropped and leave the suite green. `test_every_router_module_is_actually_included` walks
+`emporia.routes` and asserts every route each module defines is actually served.
+
+**Verified serving, not just green**: `/agents` 401, `/rooms` 200, `/sessions` 200, `/agoras/topics`
+200, `/health` 200.
+
+**What is left in `relay_server`**, deliberately: 20 routes (health, admin, dashboard auth, webhooks,
+static, well-known), the schema and its 11 migrations, both background loops, the auth helpers, the
+payment funnel, and every helper shared across domains. Splitting those is a different question from
+moving routes, and worth its own pass.
+
 ## P57 pass — three more domains out, and the extraction tool had to be fixed twice
 
 Continuing step two. DM (7 routes, 657 lines), gaming lobby (2 routes) and the P56 pattern applied by

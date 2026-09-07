@@ -353,6 +353,12 @@ a different file in a different directory, agreeing only when `relay_server` was
 *who may read* `EMPORIA_DB_PATH`, which found a fifth constant the audit had missed. See
 SECURITY.md's P55 pass.
 
+**P58 substantially finished step 2**: federation, agoras, rooms, sessions and agents moved by
+definition name rather than line range. **67 of 87 routes** are in `emporia/routes/`;
+`relay_server.py` is **6,968 lines, from 10,525**. What remains there is deliberate — 20 routes
+(health, admin, dashboard auth, webhooks, static), the schema and migrations, both background loops,
+the auth helpers and the cross-domain helpers. See SECURITY.md's P58 pass.
+
 **P57 continued step 2**: dm, gaming and the P56 domains are out — 14 of 87 routes, `relay_server.py`
 9,595 lines (from 10,525). Extraction is now done by `scratchpad/extract_router.py`, which proves each
 move is verbatim rather than trusting a regex. **Federation is deliberately not done**: four of the
