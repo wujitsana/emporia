@@ -2425,6 +2425,33 @@ built, so lanes 2 and 3 have only ever skipped. The URL fix is pinned offline by
 and corroborated against Stripe's routing table; nothing has yet watched a PaymentIntent actually
 confirm. `docs/testnet.md` says so in the same words rather than implying the tier is green.
 
+## P65 pass — P62 blocked a real relay, and the refusal did not say how to get past it
+
+Checked, before recommending manual testing, what P62 does to the machine it shipped on. It stops the
+relay from starting.
+
+That profile holds an `rk_live_` key and no `STRIPE_WEBHOOK_SECRET`. Before P62 the guard matched
+`sk_live_` by prefix and missed it; now it classifies correctly, fires, and the relay refuses to boot.
+The already-running instance survived because it started earlier — so this would have surfaced at the
+worst moment, on the first restart during manual testing.
+
+**The refusal stays.** A live relay without the signing secret can never mark a Connected Account
+payable, and it fails silently — that is exactly what the guard is for, and weakening a
+payment-correctness check because it caught something would be the wrong lesson.
+
+**The message was the defect.** It was written for a full `sk_live_` production key and offered one
+exit: set the webhook secret. An operator blocked by the widened check is usually not running
+production at all, and the two exits that fit them went unmentioned:
+
+* **Use a test key.** `sk_test_`/`rk_test_` — nothing in development needs a live one.
+* **Drop Stripe entirely.** Unset `STRIPE_SECRET_KEY` and the relay starts with the Stripe rail
+  disabled; rooms, Agoras, DMs and the whole x402 lane are unaffected. Not obvious, and pinned by a
+  test because it is the fastest way past this for someone who just wants to look at the relay.
+
+The message also names P62 explicitly, so an operator whose relay used to start reads why rather than
+guessing: the guard was missing their key's shape, not newly disagreeing with it. All three exits
+verified by running them.
+
 ## P64 pass — the one-command setup broke three things, found by running it
 
 The documented operator path is `installer/install.py --local-demo`. It had never been run end to end

@@ -353,6 +353,10 @@ a different file in a different directory, agreeing only when `relay_server` was
 *who may read* `EMPORIA_DB_PATH`, which found a fifth constant the audit had missed. See
 SECURITY.md's P55 pass.
 
+**P65 caught P62 blocking a live relay.** Widening the live-key check to `rk_live_` was right and
+stopped the development relay from booting. The refusal stays; the message now names all three exits
+(test key, no Stripe at all, or set the webhook secret) and says which pass changed the behaviour.
+
 **P64 fixed the one-command setup**, found by running `--local-demo` end to end: a bare `uv sync` in
 both the installer and `local_relay.py` pruned the `dev` and `x402` extras out of a contributor's venv
 (ruff and eth-account, gone after one run, and `local_relay.py`'s copy runs on every relay start); the

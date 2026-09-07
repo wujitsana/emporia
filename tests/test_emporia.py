@@ -28013,3 +28013,35 @@ def test_test_mode_capabilities_stay_gated_on_a_full_secret_key():
         "the SPT test-helper route must still require a full test secret key"
     assert 'os.getenv("STRIPE_SECRET_KEY", "").startswith("sk_test_")' in relay_src, \
         "PaymentIntent auto-confirm must still require a full test secret key"
+
+
+def test_a_blocked_live_relay_is_told_every_way_out():
+    """P65: P62 widened the live-key refusal to restricted keys, which is
+    correct and immediately blocked a real relay — an `rk_live_` key with no
+    webhook secret, on a machine doing development.
+
+    The refusal stays: a live relay without the signing secret can never mark a
+    Connected Account payable, and that fails silently. What was wrong was the
+    message, written for full `sk_live_` production keys. An operator blocked by
+    this is usually not running production at all, and the two exits that fit
+    their case — use a test key, or drop Stripe entirely — were not mentioned.
+
+    Dropping Stripe is the one worth pinning: it is not obvious that unsetting
+    the key lets the relay start with rooms, Agoras, DMs and x402 intact.
+    """
+    from emporia import relay_server as rs
+
+    env = {k: v for k, v in os.environ.items() if k != "STRIPE_WEBHOOK_SECRET"}
+    env["STRIPE_SECRET_KEY"] = "rk_live_blocked"
+    with patch.dict(os.environ, env, clear=True):
+        with pytest.raises(RuntimeError) as excinfo:
+            rs._require_stripe_webhook_secret_if_needed()
+    message = str(excinfo.value)
+    for expected in ("sk_test_", "unset STRIPE_SECRET_KEY", "STRIPE_WEBHOOK_SECRET", "rk_live_"):
+        assert expected in message, f"the refusal must name {expected!r}: {message}"
+
+    # And the no-Stripe exit has to actually work.
+    env = {k: v for k, v in os.environ.items()
+           if k not in ("STRIPE_SECRET_KEY", "STRIPE_WEBHOOK_SECRET")}
+    with patch.dict(os.environ, env, clear=True):
+        rs._require_stripe_webhook_secret_if_needed()
