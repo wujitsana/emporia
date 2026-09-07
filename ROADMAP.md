@@ -353,6 +353,11 @@ a different file in a different directory, agreeing only when `relay_server` was
 *who may read* `EMPORIA_DB_PATH`, which found a fifth constant the audit had missed. See
 SECURITY.md's P55 pass.
 
+**P66 turned the testnet lanes into a command.** `scripts/testnet.py` supplies the lane config,
+preflights what each lane actually depends on, and refuses any chain id outside a testnet allowlist
+(exit 1, pinned against Ethereum and Base mainnet). Lanes 1 and 1b run from one command — 5 tests
+green against live infrastructure. Lanes 2 and 3 still need an `sk_test_` key.
+
 **P65 caught P62 blocking a live relay.** Widening the live-key check to `rk_live_` was right and
 stopped the development relay from booting. The refusal stays; the message now names all three exits
 (test key, no Stripe at all, or set the webhook secret) and says which pass changed the behaviour.

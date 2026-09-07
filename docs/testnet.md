@@ -17,6 +17,33 @@ Nothing here is required to develop on Emporia. It is required before believing 
 
 ---
 
+## The short way: `scripts/testnet.py`
+
+Everything below is still true and worth reading once. For running the lanes, prefer the script — it
+supplies the config rather than asking you to type it, and it will not let you point the harness at
+mainnet:
+
+```bash
+python scripts/testnet.py --check     # what can run, and why the rest cannot
+python scripts/testnet.py             # run every lane that is ready and free
+python scripts/testnet.py --lane 1b   # just one
+```
+
+`--check` answers the questions the lanes actually depend on rather than whether a host resolves: it
+asks the facilitator's `/supported` whether it serves the configured network and reports the schemes
+it offers, and it makes a real `eth_blockNumber` call and reports the head block. A plain reachability
+probe returned "ok (HTTP 403)" for the facilitator and "ok (HTTP 405)" for the RPC — both were the
+probe's own request shape, and the same code would have called a genuine "your requests are blocked"
+403 ready.
+
+The chain id is checked against an allowlist of testnets and anything else is refused, exit code 1.
+The rule below — *never point `EMPORIA_TESTNET_*` at mainnet* — was previously enforced by the reader
+remembering it; a mistyped chain id looks exactly like an intended one at the point a transfer gets
+signed.
+
+Lanes that spend anything are opt-in: the settlement lane needs `EMPORIA_TESTNET_PAYER_KEY` and is
+never selected by a bare run.
+
 ## Lane 1 — x402 on Base Sepolia
 
 The public facilitator at `https://x402.org/facilitator` supports `exact` on `eip155:84532` at

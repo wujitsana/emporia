@@ -2425,6 +2425,33 @@ built, so lanes 2 and 3 have only ever skipped. The URL fix is pinned offline by
 and corroborated against Stripe's routing table; nothing has yet watched a PaymentIntent actually
 confirm. `docs/testnet.md` says so in the same words rather than implying the tier is green.
 
+## P66 pass — the testnet lanes became a command, and the safety rule became a check
+
+`docs/testnet.md` was a good runbook and a bad command: five variables exported by hand, one of them a
+USDC contract address that is unrecoverable money if mistyped, and a rule — *never point
+`EMPORIA_TESTNET_*` at mainnet* — enforced by the reader remembering it.
+
+`scripts/testnet.py` supplies the config, reports which lanes can run and why the others cannot, and
+runs exactly those. Lanes 1 and 1b (both free, both unfunded) now run from one command: **5 tests
+passed against the live facilitator and a real Base Sepolia RPC.**
+
+**The rule is now a check.** The chain id is matched against an allowlist of testnets and anything
+else is refused with exit code 1 — verified against Ethereum mainnet (`eip155:1`) and Base mainnet
+(`eip155:8453`), the two that would actually cost someone money, and pinned by a test. A mistyped or
+mainnet chain id looks exactly like an intended one at the point a transfer gets signed.
+
+**The preflight asks what the lanes depend on, which took two attempts.** The first version probed
+reachability and reported "ok (HTTP 403)" for the facilitator and "ok (HTTP 405)" for the RPC. Both
+were artefacts of the probe's own request shape — curl gets 200 and a proper JSON-RPC POST answers
+fine — and the same code would have called a genuine "your requests are blocked" 403 ready. It now
+asks the facilitator's `/supported` whether it serves the configured network (currently
+`eip155:84532`, schemes `batch-settlement, exact, upto`) and makes a real `eth_blockNumber` call,
+reporting the head block. Those are the two premises the lanes rest on.
+
+Anything that spends is opt-in: the settlement lane needs `EMPORIA_TESTNET_PAYER_KEY` and is never
+selected by a bare run. Lanes 2 and 3 still report "needs `EMPORIA_TESTNET_STRIPE_KEY` — never run
+since it was written", which remains true and is now visible without reading the doc.
+
 ## P65 pass — P62 blocked a real relay, and the refusal did not say how to get past it
 
 Checked, before recommending manual testing, what P62 does to the machine it shipped on. It stops the

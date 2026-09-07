@@ -153,3 +153,36 @@ def test_the_seed_is_told_which_relay_to_seed():
         "the seed subprocess must be told which relay to seed, not left to "
         "default to localhost:8088"
     )
+
+
+def test_the_testnet_runner_refuses_a_mainnet_chain_id():
+    """P66: `docs/testnet.md` says "never point `EMPORIA_TESTNET_*` at mainnet"
+    and nothing enforced it — the harness would configure whatever chain id it
+    was handed and sign against it.
+
+    A mistyped or mainnet chain id looks exactly like an intended one at the
+    point a transfer gets signed, so the runner keeps an allowlist and exits
+    non-zero on anything else. Ethereum and Base mainnet are the two that would
+    actually cost someone money.
+    """
+    import subprocess
+    import sys
+    from pathlib import Path
+
+    root = Path(__file__).parent.parent
+    for chain_id in ("eip155:1", "eip155:8453"):
+        result = subprocess.run(
+            [sys.executable, str(root / "scripts" / "testnet.py"),
+             "--network", chain_id, "--check"],
+            capture_output=True, text=True, cwd=str(root),
+        )
+        assert result.returncode != 0, f"{chain_id} must be refused, not configured"
+        assert "Refusing to configure" in (result.stderr + result.stdout), result.stderr[:200]
+
+    # And a real testnet is still accepted.
+    result = subprocess.run(
+        [sys.executable, str(root / "scripts" / "testnet.py"),
+         "--network", "eip155:84532", "--check"],
+        capture_output=True, text=True, cwd=str(root),
+    )
+    assert result.returncode == 0, result.stderr[-400:]

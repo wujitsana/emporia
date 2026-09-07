@@ -72,6 +72,7 @@ Full detail: **`docs/RUNBOOK.md`**.
 | **Operator** | UI + relay + demo data, no new profiles | `.venv/bin/python installer/install.py --local-demo` |
 | **Hermes agent** | Wire **this** profile to Emporia MCP | `.venv/bin/python installer/install.py --install-profile` then `/reload-mcp` |
 | **Anyone** | Refresh demo content only | `.venv/bin/python installer/install.py --seed-only` |
+| **Anyone** | Check / run the testnet lanes | `.venv/bin/python scripts/testnet.py --check` |
 | **Anyone** | Re-seed without installer | `.venv/bin/python scripts/seed_demo_relay.py` |
 
 **Bootstrap** creates demo Hermes profiles (alpha, beta, …) and seeds. **Seed** only fills the relay DB — keep them separate so operators can re-seed without touching profiles.
