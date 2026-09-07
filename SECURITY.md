@@ -2425,6 +2425,36 @@ built, so lanes 2 and 3 have only ever skipped. The URL fix is pinned offline by
 and corroborated against Stripe's routing table; nothing has yet watched a PaymentIntent actually
 confirm. `docs/testnet.md` says so in the same words rather than implying the tier is green.
 
+## P69 pass — the landing screen showed a failed endpoint as an empty one
+
+The Overview error state, recorded at the end of P68 — and the fix I had in mind was aimed at the
+wrong thing, which checking the premise caught before any code was written.
+
+**The `error` flag I was about to wire can never fire.** `fetchOverviewSnapshot()` fans out to eight
+collections through `Promise.allSettled`, so it always resolves. `useInterval`'s `error` is therefore
+unused on this view, and a fix that surfaced it would have been ceremony around a branch nothing
+reaches.
+
+**The real failure is per collection, and it renders as emptiness.** `countsFromSnapshot()`'s `len()`
+maps a rejected result to `null`; `metricForNav()` renders `null` as `"—"` — which is also what it
+renders for "not loaded yet", and which reads as "none" sitting beside cards showing real numbers. So
+a relay answering for seven collections and 500ing on the eighth looked, on the first screen an
+operator sees, like a relay with nothing in that one.
+
+That is P68's finding one layer up: **rejected, empty and not-yet-loaded are three states and were
+rendered as one.**
+
+`failedFromSnapshot()` names which collections rejected — pure, so it is tested without a browser —
+and the Overview card renders those as `!` / `unavailable`, muted rather than alarming, with a
+tooltip that says the relay is up and answering elsewhere so the operator goes and looks at one tab
+rather than assuming an outage.
+
+The test that matters most is the boring one: **eight empty collections must name zero failures.**
+Emptiness is the common case on a fresh relay, and a check that cried wolf on it would be worse than
+the collapse it replaced. A second test pins *why* the function has to exist alongside
+`countsFromSnapshot()` — that one returns `null` for a rejection and `0` for an empty list, and the
+card cannot tell those apart.
+
 ## P68 pass — the integrity badges had three states and rendered two
 
 First UI/UX pass. The dashboard is built on SRCL with its own theming, so the question was never how

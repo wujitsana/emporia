@@ -921,6 +921,19 @@ body.theme-light {
 }
 .e-overview-card__icon  { font-size: 1.1rem; line-height: 1; flex-shrink: 0; }
 .e-overview-card__title { font-size: 0.858rem; font-weight: 500; }
+/* P69: a collection whose fetch rejected, as distinct from one that came back
+   empty. The snapshot is allSettled, so a single failing endpoint used to
+   render "—" — the same glyph as "not loaded yet" — beside cards showing real
+   numbers, which reads as "there is nothing there". Muted rather than alarming:
+   the relay is up and answering for the other panels, so this is one endpoint
+   to go and look at, not an outage. */
+.e-overview-card--failed .e-overview-card__sub {
+  color: var(--theme-warning, #c33);
+  opacity: 1;
+  letter-spacing: 0.02em;
+}
+.e-overview-card--failed .e-overview-card__body { opacity: 0.55; }
+
 .e-overview-card__sub   {
   font-size: 0.715rem;
   font-variant-numeric: tabular-nums;

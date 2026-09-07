@@ -8,6 +8,7 @@ import { FederationSection } from "../FederationSection";
 import {
   countCaptionForNav,
   countsFromSnapshot,
+  failedFromSnapshot,
   fetchOverviewSnapshot,
   metricForNav,
   sectionsFromSnapshot,
@@ -43,6 +44,12 @@ export function OverviewView({
      own timer; the snapshot is fetched once and both are derived from it. */
   const [snapshot] = useInterval(() => fetchOverviewSnapshot(VIEWER_ID), 15_000);
   const counts = snapshot ? countsFromSnapshot(snapshot) : null;
+  /* P69: which collections *failed*, as opposed to came back empty. The
+     snapshot is allSettled, so it always resolves and useInterval's `error`
+     never fires here — the failure is per collection, and a rejected one used
+     to render as "—", the same glyph as "not loaded yet", beside cards showing
+     real numbers. */
+  const failed = snapshot ? failedFromSnapshot(snapshot) : new Set<OverviewTabId>();
   const sections = snapshot ? sectionsFromSnapshot(snapshot) : null;
   const settlementRows =
     snapshot?.settlements.status === "fulfilled" ? snapshot.settlements.value.settlements : [];
@@ -80,17 +87,27 @@ export function OverviewView({
     if (!item) return null;
     const tabId = id as OverviewTabId;
     const row = sectionByView.get(tabId);
-    const metric =
-      row?.metric ?? metricForNav(item, health, countsMerged, events.length, online);
-    const caption = countCaptionForNav(item, health, countsMerged, online);
+    const didFail = failed.has(tabId);
+    const metric = didFail
+      ? "!"
+      : row?.metric ?? metricForNav(item, health, countsMerged, events.length, online);
+    const caption = didFail
+      ? "unavailable"
+      : countCaptionForNav(item, health, countsMerged, online);
     const lines = (row?.lines ?? [item.blurb]).slice(0, 3);
     return (
       <button
         key={id}
         type="button"
-        className="e-overview-card"
+        className={didFail ? "e-overview-card e-overview-card--failed" : "e-overview-card"}
         onClick={() => go(id)}
-        title={[item.blurb, ...(row?.lines ?? [])].join("\n")}
+        title={
+          didFail
+            ? `${item.label}: this collection did not load. The relay answered for the ` +
+              `other panels, so this is one endpoint failing rather than the relay being ` +
+              `down — open the tab for the error.`
+            : [item.blurb, ...(row?.lines ?? [])].join("\n")
+        }
       >
         <div className="e-overview-card__head">
           <div className="e-overview-card__topline">

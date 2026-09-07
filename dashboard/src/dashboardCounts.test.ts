@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   countsFromSnapshot,
+  failedFromSnapshot,
   sectionsFromSnapshot,
   type OverviewSnapshot,
 } from "./dashboardCounts";
@@ -94,5 +95,56 @@ describe("sectionsFromSnapshot", () => {
   it("renders a failed leg as the empty state rather than throwing", () => {
     const rows = sectionsFromSnapshot(snapshot({ agents: failed() }));
     expect(rows.find((r) => r.view === "agents")?.lines).toEqual(["No registered agents"]);
+  });
+});
+
+describe("failedFromSnapshot — rejected is not empty (P69)", () => {
+  const ok = <T,>(value: T): PromiseSettledResult<T> => ({ status: "fulfilled", value });
+  const bad = (why: string): PromiseSettledResult<never> =>
+    ({ status: "rejected", reason: new Error(why) });
+
+  const allOk = () => ({
+    listings: ok([]),
+    sessions: ok({ sessions: [] }),
+    rooms: ok({ rooms: [] }),
+    events: ok({ events: [] }),
+    agents: ok({ agents: [] }),
+    settlements: ok({ settlements: [] }),
+    agoraTopics: ok({ topics: [] }),
+    dmThreads: ok([]),
+  }) as unknown as Parameters<typeof failedFromSnapshot>[0];
+
+  it("names nothing when every collection answered, however empty", () => {
+    // The distinction the whole change rests on: eight empty collections are
+    // not eight failures, and used to render identically to them.
+    expect(failedFromSnapshot(allOk()).size).toBe(0);
+  });
+
+  it("names only the collection that rejected", () => {
+    const snap = { ...allOk(), rooms: bad("500 from /rooms") } as Parameters<
+      typeof failedFromSnapshot
+    >[0];
+    const failed = failedFromSnapshot(snap);
+    expect([...failed]).toEqual(["rooms"]);
+  });
+
+  it("names each of several independent failures", () => {
+    const snap = {
+      ...allOk(),
+      agents: bad("timeout"),
+      settlements: bad("403"),
+    } as Parameters<typeof failedFromSnapshot>[0];
+    expect([...failedFromSnapshot(snap)].sort()).toEqual(["agents", "fees"]);
+  });
+
+  it("counts a rejected collection as null, which is why it needed naming", () => {
+    // countsFromSnapshot cannot tell these apart — that is the bug, and this
+    // pins the reason failedFromSnapshot has to exist alongside it.
+    const rejected = countsFromSnapshot({
+      ...allOk(), rooms: bad("500"),
+    } as Parameters<typeof countsFromSnapshot>[0]);
+    const empty = countsFromSnapshot(allOk() as Parameters<typeof countsFromSnapshot>[0]);
+    expect(rejected.rooms).toBeNull();
+    expect(empty.rooms).toBe(0);
   });
 });

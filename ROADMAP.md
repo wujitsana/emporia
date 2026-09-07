@@ -353,6 +353,12 @@ a different file in a different directory, agreeing only when `relay_server` was
 *who may read* `EMPORIA_DB_PATH`, which found a fifth constant the audit had missed. See
 SECURITY.md's P55 pass.
 
+**P69 fixed the landing screen's version of the same collapse.** The Overview snapshot is
+`allSettled`, so `useInterval`'s error flag never fires and a *single* failing endpoint rendered as
+"—" — indistinguishable from empty — beside cards with real numbers. `failedFromSnapshot()` names the
+rejected collections and the card shows them as unavailable. **Still open:** nine other `useInterval`
+call sites discard the flags, all benign as far as measured.
+
 **P68 gave the integrity badges their third state.** All three rendered a check that *could not run*
 as absence, beside rooms showing "✓ chain verified" — the tri-state discipline P48 and P51 enforce in
 the payment code, missing from the surface that displays it. **Still open:** `OverviewView` discards

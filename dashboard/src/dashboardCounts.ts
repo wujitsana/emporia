@@ -198,6 +198,38 @@ export interface DashboardCounts {
 }
 
 /** Per-tab counts for the nav metrics. Pure. */
+/**
+ * Which collections in this snapshot *failed*, as nav ids (P69).
+ *
+ * `fetchOverviewSnapshot()` uses `Promise.allSettled`, so it always resolves
+ * and `useInterval`'s `error` flag never fires for the Overview — the failure
+ * is per collection, and `countsFromSnapshot()`'s `len()` maps a rejection to
+ * `null`. `metricForNav()` then renders `null` as `"—"`, which is also what it
+ * renders for "not loaded yet", and which reads as "none" beside cards showing
+ * real numbers.
+ *
+ * So a relay that is answering for seven collections and 500ing on the eighth
+ * looked, on the landing screen, like a relay with nothing in that one. Same
+ * collapse P68 fixed in the integrity badges, one layer up: **rejected, empty
+ * and not-yet-loaded are three states and were rendered as one.**
+ *
+ * Pure, so it can be tested without a browser.
+ */
+export function failedFromSnapshot(snapshot: OverviewSnapshot): Set<OverviewTabId> {
+  const pairs: [OverviewTabId, PromiseSettledResult<unknown>][] = [
+    ["listings", snapshot.listings],
+    ["sessions", snapshot.sessions],
+    ["rooms", snapshot.rooms],
+    ["events", snapshot.events],
+    ["agents", snapshot.agents],
+    ["agoras", snapshot.agoraTopics],
+    ["messages", snapshot.dmThreads],
+    ["fees", snapshot.settlements],
+  ];
+  return new Set(pairs.filter(([, r]) => r.status === "rejected").map(([id]) => id));
+}
+
+
 export function countsFromSnapshot(snapshot: OverviewSnapshot): DashboardCounts {
   const listingsR = snapshot.listings;
   const sessionsR = snapshot.sessions;
