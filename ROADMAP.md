@@ -353,6 +353,13 @@ a different file in a different directory, agreeing only when `relay_server` was
 *who may read* `EMPORIA_DB_PATH`, which found a fifth constant the audit had missed. See
 SECURITY.md's P55 pass.
 
+**P57 continued step 2**: dm, gaming and the P56 domains are out — 14 of 87 routes, `relay_server.py`
+9,595 lines (from 10,525). Extraction is now done by `scratchpad/extract_router.py`, which proves each
+move is verbatim rather than trusting a regex. **Federation is deliberately not done**: four of the
+ten names in its block are helpers the sync loop shares and the suite patches (`_fetch_federation_batch`
+17 times), so it needs selective extraction by definition rather than by line range. See SECURITY.md's
+P57 pass.
+
 **P56 started step 2**: `emporia/routes/` exists, the binding convention is documented and pinned,
 and listings + events have moved (5 of 87 routes). The blocker it removed was not the mechanics but
 the guards — included routes are invisible to a plain `app.routes` walk, so the whole suite's

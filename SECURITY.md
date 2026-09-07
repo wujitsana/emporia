@@ -2425,6 +2425,49 @@ built, so lanes 2 and 3 have only ever skipped. The URL fix is pinned offline by
 and corroborated against Stripe's routing table; nothing has yet watched a PaymentIntent actually
 confirm. `docs/testnet.md` says so in the same words rather than implying the tier is green.
 
+## P57 pass — three more domains out, and the extraction tool had to be fixed twice
+
+Continuing step two. DM (7 routes, 657 lines), gaming lobby (2 routes) and the P56 pattern applied by
+tool rather than by hand. `relay_server.py` is down from 10,525 to 9,595 lines.
+
+**The tool exists because P56's hand method was wrong.** There I listed the names needing an `rs.`
+prefix from a regex matching only `_lower` and `UPPER` forms and missed six. The tool derives the
+list instead: names *used* in the block (AST) minus names *defined* in it, intersected with what
+`relay_server` itself **defines** — not what it merely imports, which is the distinction that keeps
+`rs.datetime` and `rs.re` from being generated. That rule was itself wrong on the first run and
+qualified ten stdlib names before I fixed it.
+
+**Then the rewrite corrupted an f-string, and ruff caught it.** The first `qualify()` rebuilt the
+source from the token stream and reconstructed whitespace. Under PEP 701 (Python 3.12+) an f-string's
+internals are real tokens, so `f"...{{agent_id}}..."` — escaped braces meaning *literal* text in the
+message — came back as `f"...{ agent_id}..."`, a live interpolation of an undefined name. The tool
+now splices the original text at token positions instead of rebuilding it, so everything not
+explicitly replaced is copied byte for byte, and it **proves** each extraction is verbatim: undo the
+two intended edits and the result must equal the input exactly, or it refuses to write.
+
+**Three shared names had to stay behind**, found by ruff rather than by planning:
+`_require_encryption_keys_published` and `_NONCE_RE` (the room and Agora join paths use them) and
+`_game_registry` (the federation routes use it). Routers hold routes; state and helpers shared across
+domains stay in `relay_server` until they have a proper home.
+
+**Federation was scoped out, deliberately.** Its block is 470 contiguous lines, but four of the ten
+names defined in it are helpers the background sync loop also uses and the suite patches or imports
+directly — `_fetch_federation_batch` alone is patched 17 times. A contiguous cut would move them and
+break those sites. It needs selective extraction by definition, not by line range; forcing it late in
+a pass was the wrong trade.
+
+**Stash-verify corrected my own P56 rationale.** That pass justified the `rs.` convention by pointing
+at all 43 patch sites. Binding `_assert_payload_safe_counted` early in `dm.py` — one of those sites —
+changed nothing, because no DM route reaches it in the suite. Binding every qualified name broke two
+tests, and narrowing it down identified the two that actually carry the convention here:
+`broadcast_to_agent` and `CHAIN_VERIFY_LIMIT`, both patched against DM routes
+(`test_dm_list_and_inbox_event_carry_the_encrypted_flag`,
+`test_dm_chain_route_declares_its_verification_scope`). The convention is right and it is load-bearing
+— but the honest claim is "two names, today", not "43 sites".
+
+**Verified serving, not just green**: `GET /gaming/lobby` 200, `GET /listings` 200, `GET /dm` and
+`POST /dm/start` routing to auth/validation rather than 404.
+
 ## P56 pass — the first routes leave the monolith, and the guards nearly went blind
 
 Step two of the architecture audit: split `relay_server.py` into routers. This pass establishes the
