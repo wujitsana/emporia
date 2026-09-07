@@ -2425,6 +2425,43 @@ built, so lanes 2 and 3 have only ever skipped. The URL fix is pinned offline by
 and corroborated against Stripe's routing table; nothing has yet watched a PaymentIntent actually
 confirm. `docs/testnet.md` says so in the same words rather than implying the tier is green.
 
+## P67 pass — the dashboard covers its ground, and now says so out loud
+
+The last item from the manual-testing sweep: does the dashboard cover what the relay and MCP serve?
+Measured rather than eyeballed, and the answer is **yes** — which is worth stating plainly instead of
+manufacturing a to-do list out of a diff.
+
+**47 GET routes. 31 called by the dashboard. 16 deliberately not**, each now carrying its reason:
+
+* **Eight are infrastructure or machine-facing** — `/`, both `.well-known` descriptors, `/relay-card`,
+  `/stripe-onboarding-return`, `/modules`, and the two `/gaming/v1/federate/*` peer endpoints (humans
+  get `/federation/peers` instead).
+* **Three are agent-only or unreadable by design** — `/messages` is agent-to-agent and the dashboard
+  is not an agent; the two encryption-key routes serve public keys for a store the relay holds no
+  plaintext of.
+* **Five are detail endpoints whose rows the dashboard already has** from a list plus the children it
+  fetches: `/rooms/{}`, `/dm/{}`, `/agoras/topics/{}`, `/payments/settlements/{}`, and
+  `/sessions/{}/state`.
+
+Writes are not in the count at all: the dashboard is visibility-only by decision — it watches the
+agent, it does not drive the marketplace — so 40 write routes being absent is the design, not a gap.
+
+**The most interesting candidate turned out not to be one.** `/sessions/{}/state` looked like the real
+find — a live game's board, with no dashboard surface. It has one: `GamesView` rebuilds the board from
+`sessionActions` and falls back to `session.state.board_fen`, both arriving from `/sessions/{}`. The
+route is a second round trip for rows the dashboard already holds.
+
+**Four wrong answers before the right one**, all from guessing at how the dashboard builds URLs rather
+than reading it. A naive matcher stripped `{agent_id}` from `/agents/{agent_id}/inbox` into
+`/agents//inbox` and called a surfaced route missing; a later one reported `/health` and `/rooms`
+unsurfaced, which `api.ts` plainly calls. The extraction is deliberately literal now, and the reason
+is written where the next person will hit it.
+
+The classification is a test, not a document. A new GET route fails it until someone decides whether a
+human should be able to see that data — the decision is the point, and the test only insists it gets
+made. It also fails if an entry goes stale, so a route that gets surfaced later cannot sit in the
+"deliberately absent" list forever.
+
 ## P66 pass — the testnet lanes became a command, and the safety rule became a check
 
 `docs/testnet.md` was a good runbook and a bad command: five variables exported by hand, one of them a

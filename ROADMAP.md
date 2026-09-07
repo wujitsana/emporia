@@ -353,6 +353,12 @@ a different file in a different directory, agreeing only when `relay_server` was
 *who may read* `EMPORIA_DB_PATH`, which found a fifth constant the audit had missed. See
 SECURITY.md's P55 pass.
 
+**P67 audited the dashboard's coverage** and found it complete: 47 GET routes, 31 surfaced, 16
+classified as deliberately absent (infrastructure, agent-only, or detail endpoints whose rows the
+dashboard already holds). Writes are excluded by the visibility-only stance. The classification is
+pinned by a test, so a new read route has to be triaged rather than silently unsurfaced. See
+SECURITY.md's P67.
+
 **P66 turned the testnet lanes into a command.** `scripts/testnet.py` supplies the lane config,
 preflights what each lane actually depends on, and refuses any chain id outside a testnet allowlist
 (exit 1, pinned against Ethereum and Base mainnet). Lanes 1 and 1b run from one command — 5 tests

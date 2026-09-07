@@ -28045,3 +28045,107 @@ def test_a_blocked_live_relay_is_told_every_way_out():
            if k not in ("STRIPE_SECRET_KEY", "STRIPE_WEBHOOK_SECRET")}
     with patch.dict(os.environ, env, clear=True):
         rs._require_stripe_webhook_secret_if_needed()
+
+
+# ---------------------------------------------------------------------------
+# P67 — the dashboard's read coverage, classified and pinned
+# ---------------------------------------------------------------------------
+
+# Every GET route the dashboard does not call, with the reason. The dashboard is
+# visibility-only by decision — it watches the agent, it does not drive the
+# marketplace — so *writes* are out of scope by design and are not listed here.
+# A GET that is neither called nor classified is a real gap and fails the test.
+_DASHBOARD_UNSURFACED_GETS: dict[str, str] = {
+    # Infrastructure and machine-facing descriptors — nothing for a human view.
+    "/": "redirects to /ui/; it *is* the dashboard's front door",
+    "/.well-known/agent-card.json": "A2A descriptor, machine-facing",
+    "/.well-known/agent.json": "A2A descriptor, machine-facing",
+    "/relay-card": "relay descriptor for peers, machine-facing",
+    "/stripe-onboarding-return": "HTML landing page Stripe redirects a browser to",
+    "/modules": "module registry; the session views name their module inline",
+    "/gaming/v1/federate/listings": "peer-to-peer federation; humans get /federation/peers",
+    "/gaming/v1/federate/lobby": "peer-to-peer federation; humans get /federation/peers",
+
+    # Agent-only by design, or nothing a human could read anyway.
+    "/messages": "agent-to-agent messaging; the dashboard is not an agent",
+    "/agents/{}/encryption-key": "X25519 public key — the relay holds no plaintext to show",
+    "/rooms/{}/encryption-keys": "same; membership coverage data, not content",
+
+    # Detail endpoints whose data the dashboard already has from the list plus
+    # the children it fetches. Not gaps — a second round trip for the same rows.
+    "/rooms/{}": "room record arrives in /rooms; messages and chain fetched separately",
+    "/dm/{}": "thread record arrives in /dm; messages fetched separately",
+    "/agoras/topics/{}": "topic record arrives in /agoras/topics; posts fetched separately",
+    "/payments/settlements/{}": "the row arrives in /payments/settlements",
+    "/sessions/{}/state": (
+        "GamesView rebuilds the board from sessionActions, with "
+        "session.state.board_fen from /sessions/{} as the fallback"
+    ),
+}
+
+
+def _dashboard_called_paths() -> set[str]:
+    """Paths the dashboard actually requests, canonicalised to route shape.
+
+    Extraction is deliberately literal — template literals, query strings and
+    ternary tails stripped — because three looser attempts at this each produced
+    a different wrong answer: one reported `/agents/{}/inbox` unsurfaced (it is
+    called), another reported `/health` and `/rooms` unsurfaced (both are).
+    """
+    import re
+    from pathlib import Path as _Path
+
+    out: set[str] = set()
+    for path in _Path("dashboard/src").rglob("*.ts*"):
+        for raw in re.findall(r"`([^`]*)`|\"(/[^\"]*)\"|'(/[^']*)'", path.read_text()):
+            for candidate in raw:
+                if not candidate:
+                    continue
+                cleaned = re.sub(r"^\$\{[A-Za-z_]+\}", "", candidate)
+                if not cleaned.startswith("/"):
+                    continue
+                cleaned = re.sub(r"\$\{[^}]*\}", "{}", cleaned)
+                cleaned = re.split(r"[?$]", cleaned)[0].rstrip("/")
+                if cleaned:
+                    out.add(cleaned)
+    return out
+
+
+def test_every_relay_read_is_either_on_the_dashboard_or_classified():
+    """P67: the dashboard's read coverage, kept honest.
+
+    Measured: 47 GET routes, 31 called by the dashboard, 16 classified above.
+    The conclusion of the audit was that the dashboard *covers its ground* —
+    not a to-do list — and this is what stops that quietly stopping being true.
+
+    A new GET route fails here until someone decides whether a human should be
+    able to see it. That decision is the point; the test only insists it gets
+    made.
+    """
+    import re
+
+    def canon(p: str) -> str:
+        return re.sub(r"\{[^}]*\}", "{}", p).rstrip("/") or "/"
+
+    framework = {"/openapi.json", "/docs", "/docs/oauth2-redirect", "/redoc"}
+    gets = {
+        canon(r.path) for r in _all_app_routes()
+        if getattr(r, "path", None) and r.path not in framework
+        and "GET" in (getattr(r, "methods", None) or set())
+    }
+    called = _dashboard_called_paths()
+
+    unclassified = sorted(p for p in gets if p not in called
+                          and p not in _DASHBOARD_UNSURFACED_GETS)
+    assert not unclassified, (
+        "these relay reads are neither shown on the dashboard nor classified as "
+        "deliberately absent — decide which, and add a reason to "
+        f"_DASHBOARD_UNSURFACED_GETS: {unclassified}"
+    )
+
+    # And the classification must not rot: an entry for a route that no longer
+    # exists, or that the dashboard has since started calling, is stale.
+    stale = sorted(p for p in _DASHBOARD_UNSURFACED_GETS if p not in gets or p in called)
+    assert not stale, (
+        f"_DASHBOARD_UNSURFACED_GETS lists routes that are gone or now surfaced: {stale}"
+    )
