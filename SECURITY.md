@@ -2425,6 +2425,44 @@ built, so lanes 2 and 3 have only ever skipped. The URL fix is pinned offline by
 and corroborated against Stripe's routing table; nothing has yet watched a PaymentIntent actually
 confirm. `docs/testnet.md` says so in the same words rather than implying the tier is green.
 
+## P68 pass — the integrity badges had three states and rendered two
+
+First UI/UX pass. The dashboard is built on SRCL with its own theming, so the question was never how
+it looks — it was what it *claims*.
+
+**All three integrity badges collapsed "could not check" into "nothing to say".** `RoomChainBadge`,
+`DmChainBadge` and `AuditBadge` each verify something, and each opened with
+`if (!result) return null` while taking only the first element of
+`useInterval`'s `[data, loading, error]`. So a verification that **failed to run** — relay
+unreachable, fetch rejected, Web Crypto unavailable — rendered as **nothing at all**, in a list
+beside rooms showing `✓ chain verified`.
+
+A blank cell next to a column of ticks reads as "that one has not been checked yet". It meant "the
+check could not be performed". Those are very different claims to make about a hash chain, and the
+badge was making the reassuring one.
+
+**This is the rule the relay already enforces on itself**, missing from the one surface that renders
+it. `payments.x402_authorization_used()` is tri-state, and P48 records that folding `None` into
+`False` reopens the double charge. `payments.find_settlement_transfer()` returns `(known,
+transfer_id)`, and P51 records that `known=False` never means "no transfer". Verified, unverified and
+*could not check* are three answers; a badge that renders two of them is lying about the third.
+
+`IntegrityState.tsx` holds the shared "unverifiable" and "checking" renders so the three cannot drift
+apart, and absence now means exactly one thing: **there is nothing here to verify.**
+
+**Two things the tooling caught that I had wrong.** The test fixture used
+`replay_scan_scope: "full"`, which is not a member of that union — `typecheck:src` failed it, and a
+fixture that does not satisfy the type it stands in for is a test asserting on a shape the code never
+produces. And testing-library's auto-cleanup does not run here (vitest globals are off), so the first
+test's badge was still mounted when the fourth asserted on absence — it passed for the wrong reason
+until `cleanup()` was explicit.
+
+**Also measured, and left alone**: eleven of eighteen `useInterval` call sites discard `loading` and
+`error`. Most are benign — a count badge, a peer list. Two are not: `OverviewView` is the landing
+screen, where a failed snapshot fetch leaves every card showing `—`, indistinguishable from an empty
+relay. That one is worth the same treatment and is recorded rather than done in the same pass as the
+badges.
+
 ## P67 pass — the dashboard covers its ground, and now says so out loud
 
 The last item from the manual-testing sweep: does the dashboard cover what the relay and MCP serve?

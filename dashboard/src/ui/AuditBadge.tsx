@@ -1,5 +1,6 @@
 import Text from "@components/Text";
 import { useInterval } from "../hooks";
+import { IntegrityChecking, IntegrityUnknown } from "./IntegrityState";
 import { api } from "../api";
 
 /**
@@ -8,8 +9,11 @@ import { api } from "../api";
  * happens somewhere server-side.
  */
 export function AuditBadge({ sessionId }: { sessionId: string }) {
-  const [audit] = useInterval(() => api.sessionAudit(sessionId), 10_000, [sessionId]);
+  const [audit, loading, error] = useInterval(() => api.sessionAudit(sessionId), 10_000, [sessionId]);
 
+  // P68: see IntegrityState.tsx.
+  if (error && !audit) return <IntegrityUnknown what="audit log" detail={error} />;
+  if (loading && !audit) return <IntegrityChecking what="audit log" />;
   if (!audit || audit.chain.length <= 1) return null;
 
   const entries = audit.chain.length - 1; // exclude genesis block

@@ -1,5 +1,6 @@
 import Text from "@components/Text";
 import { useInterval } from "../hooks";
+import { IntegrityChecking, IntegrityUnknown } from "./IntegrityState";
 import { api } from "../api";
 import { RELAY } from "../relayEnv";
 import { verifyDmChainFromRelay } from "../integrityCheck";
@@ -17,7 +18,7 @@ import { verifyDmChainFromRelay } from "../integrityCheck";
  * plus a SHA-256 per message via Web Crypto), not one cheap read.
  */
 export function DmChainBadge({ threadId, viewerId }: { threadId: string; viewerId: string }) {
-  const [result] = useInterval(
+  const [result, loading, error] = useInterval(
     () =>
       verifyDmChainFromRelay(
         RELAY,
@@ -29,6 +30,10 @@ export function DmChainBadge({ threadId, viewerId }: { threadId: string; viewerI
     [threadId, viewerId],
   );
 
+  // P68: see IntegrityState.tsx — a check that could not run is not the same
+  // as a chain with nothing in it, and used to render identically.
+  if (error && !result) return <IntegrityUnknown what="chain" detail={error} />;
+  if (loading && !result) return <IntegrityChecking what="chain" />;
   if (!result) return null;
   // Nothing chained and nothing older: an untouched thread, no claim to make.
   if (result.message_count === 0 && result.unchained_prefix === 0) return null;

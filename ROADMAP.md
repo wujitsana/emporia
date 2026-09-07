@@ -353,6 +353,12 @@ a different file in a different directory, agreeing only when `relay_server` was
 *who may read* `EMPORIA_DB_PATH`, which found a fifth constant the audit had missed. See
 SECURITY.md's P55 pass.
 
+**P68 gave the integrity badges their third state.** All three rendered a check that *could not run*
+as absence, beside rooms showing "✓ chain verified" — the tri-state discipline P48 and P51 enforce in
+the payment code, missing from the surface that displays it. **Still open:** `OverviewView` discards
+`useInterval`'s error flag, so a failed snapshot on the landing screen looks like an empty relay;
+eleven of eighteen call sites discard the flags, most benignly. See SECURITY.md's P68.
+
 **P67 audited the dashboard's coverage** and found it complete: 47 GET routes, 31 surfaced, 16
 classified as deliberately absent (infrastructure, agent-only, or detail endpoints whose rows the
 dashboard already holds). Writes are excluded by the visibility-only stance. The classification is

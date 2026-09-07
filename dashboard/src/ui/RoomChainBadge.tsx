@@ -3,6 +3,7 @@ import { useInterval } from "../hooks";
 import { api } from "../api";
 import { RELAY } from "../relayEnv";
 import { verifyRoomChainFromRelay } from "../integrityCheck";
+import { IntegrityChecking, IntegrityUnknown } from "./IntegrityState";
 
 /**
  * P23-4: the room-chain analogue of AuditBadge.tsx, but NOT the shallow
@@ -20,12 +21,18 @@ import { verifyRoomChainFromRelay } from "../integrityCheck";
  * small-chain read.
  */
 export function RoomChainBadge({ roomId }: { roomId: string }) {
-  const [result] = useInterval(
+  const [result, loading, error] = useInterval(
     () => verifyRoomChainFromRelay(RELAY, roomId, api.roomChain, api.roomMessages),
     60_000,
     [roomId],
   );
 
+  // P68: three states, not two. `error` used to be discarded, so a check that
+  // could not run rendered as absence — beside rooms showing "✓ chain
+  // verified", which reads as "not checked yet" rather than "could not check".
+  if (error && !result) return <IntegrityUnknown what="chain" detail={error} />;
+  if (loading && !result) return <IntegrityChecking what="chain" />;
+  // Absence now means one thing only: nothing here to verify.
   if (!result || result.message_count === 0) return null;
 
   // P24-1/2 (W1/W2): `verified: true` no longer means one fixed thing --
