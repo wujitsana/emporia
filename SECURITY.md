@@ -2425,6 +2425,45 @@ built, so lanes 2 and 3 have only ever skipped. The URL fix is pinned offline by
 and corroborated against Stripe's routing table; nothing has yet watched a PaymentIntent actually
 confirm. `docs/testnet.md` says so in the same words rather than implying the tier is green.
 
+## P62 pass — a restricted live key is still a live key, and nothing knew it
+
+Found while checking whether the documented local-run path was safe to hand over for manual testing.
+It starts a relay against the operator's profile, and that profile holds an `rk_live_` Stripe key —
+so the question became what the code thinks a restricted key *is*.
+
+**`rk_` is Stripe's restricted-key prefix**: same test/live segment, fewer permissions, and the
+least-privilege shape Stripe recommends. `stripe_key_mode()` only recognised `sk_`, so a restricted
+key classified as `""` — unknown — and every protection derived from mode switched itself off:
+
+| key | mode | refuses start without webhook secret | detects account-mode mismatch |
+|---|---|---|---|
+| `sk_live_` | `live` | **yes** | yes |
+| `rk_live_` | `""` | **no** | **no** |
+| `sk_test_` | `test` | no | no |
+| `rk_test_` | `""` | no | no |
+
+Two live consequences. `_require_stripe_webhook_secret_if_needed()` matched `sk_live_` by prefix, so a
+restricted live key walked straight past the one guard that refuses to start a live relay without a
+signing secret — and `POST /webhooks/stripe` is the only thing that ever marks a live Connected
+Account payable, and never fails open. The relay would start into exactly the state the guard exists
+to prevent, and creators would never become payable, silently. **The guard fired for the less safe key
+shape and not the more safe one.** And P26-4's account-mode mismatch check only acts when both modes
+are known, correctly, so an unknown key mode disabled it: the relay would attempt a transfer to an
+`acct_` from the other key space, guaranteed to fail.
+
+**The symptom had been on `/health` the whole time** as `stripe_mode: ""`. I read that field in P51r
+while chasing something else and moved on.
+
+**The distinction the fix had to keep: mode is not capability.** A restricted key is genuinely test or
+live mode, but may not carry the permissions the `test_helpers` routes need. Auto-confirming a
+PaymentIntent and minting an SPT stay gated on `sk_test_` specifically, so the relay never attempts a
+call a restricted key cannot make and then reports the 403 as a payment failure. Only the two
+*mode-derived protections* were widened, and a test pins that the capability gates still require a
+full secret key.
+
+`_require_stripe_webhook_secret_if_needed()` now asks `stripe_key_mode()` instead of matching a prefix
+of its own, so the two cannot drift apart again.
+
 ## P61 pass — the schema had no version, so a rollback was undefined rather than refused
 
 Step five of the architecture audit, taken ahead of step four's remaining half. Splitting the

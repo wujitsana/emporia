@@ -286,9 +286,17 @@ def _require_stripe_webhook_secret_if_needed() -> None:
     marked 'active' at registration, see register_agent) unless someone is
     deliberately exercising live-mode onboarding locally.
     """
-    sk = (os.getenv("STRIPE_SECRET_KEY") or "").strip()
+    # P62: asks `stripe_key_mode()` rather than matching a prefix here. The
+    # prefix check missed `rk_live_` — a restricted *live* key, the
+    # least-privilege shape Stripe recommends — so this guard fired for the less
+    # safe key and not the more safe one, and a live relay started into exactly
+    # the state it exists to prevent. Routing both callers through one
+    # classifier is what stops that drifting apart again.
+    from emporia.payments import stripe_key_mode
+
     secret = (os.getenv("STRIPE_WEBHOOK_SECRET") or "").strip()
-    if sk.startswith("sk_live_") and not secret:
+    mode = stripe_key_mode()
+    if mode == "live" and not secret:
         raise RuntimeError(
             "STRIPE_SECRET_KEY is a live key but STRIPE_WEBHOOK_SECRET is unset — "
             "POST /webhooks/stripe cannot verify Stripe's account.updated events "
@@ -296,7 +304,7 @@ def _require_stripe_webhook_secret_if_needed() -> None:
             "payable. Set STRIPE_WEBHOOK_SECRET (from the Stripe Dashboard's "
             "webhook endpoint configuration) before starting in live mode."
         )
-    if sk.startswith("sk_test_") and not secret:
+    if mode == "test" and not secret:
         logger.warning(
             "STRIPE_WEBHOOK_SECRET is unset — POST /webhooks/stripe will reject "
             "every request until it's configured. Harmless in test mode unless "

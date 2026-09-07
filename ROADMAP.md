@@ -353,6 +353,12 @@ a different file in a different directory, agreeing only when `relay_server` was
 *who may read* `EMPORIA_DB_PATH`, which found a fifth constant the audit had missed. See
 SECURITY.md's P55 pass.
 
+**P62 fixed restricted-key blindness**, found while checking the local-run path before recommending
+manual testing: `stripe_key_mode()` only knew `sk_`, so an `rk_live_` key classified as unknown and
+both mode-derived protections switched off — the live-mode webhook-secret refusal never fired, and
+P26-4's account-mode mismatch check could not. Mode is now recognised for `rk_`; the `sk_test_`
+*capability* gates are deliberately unchanged. See SECURITY.md's P62.
+
 **P61 did step 5's safety half**: the schema now carries a version in `PRAGMA user_version`, checked
 before migrations run and stamped after, so an older binary refuses a database from the future instead
 of migrating it blind. A fingerprint over all 27 tables and 246 columns fails the suite if the schema

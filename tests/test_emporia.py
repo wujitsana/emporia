@@ -27926,3 +27926,90 @@ def test_a_database_from_a_newer_relay_is_refused_rather_than_migrated():
 
     assert after == before, "a refused database must not have been touched"
     assert still == rs.SCHEMA_VERSION + 1, "and must keep its own version"
+
+
+# ---------------------------------------------------------------------------
+# P62 — a restricted live key is still a live key
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize("key,expected_mode", [
+    ("sk_live_abc", "live"),
+    ("rk_live_abc", "live"),   # restricted, live — the shape Stripe recommends
+    ("sk_test_abc", "test"),
+    ("rk_test_abc", "test"),
+    ("", ""),
+    ("garbage", ""),
+])
+def test_stripe_key_mode_knows_restricted_keys(key, expected_mode):
+    """`rk_` is Stripe's *restricted* key prefix — same test/live segment, fewer
+    permissions. `stripe_key_mode()` only knew `sk_`, so a restricted key
+    returned "" (unknown) and every protection keyed on mode quietly switched
+    off. The symptom was visible and unread: `/health` reports
+    `stripe_mode: ""` on a relay that is very much in live mode.
+    """
+    from emporia.payments import stripe_key_mode
+
+    with patch.dict(os.environ, {"STRIPE_SECRET_KEY": key}, clear=False):
+        assert stripe_key_mode() == expected_mode
+
+
+def test_a_restricted_live_key_still_refuses_to_start_without_a_webhook_secret():
+    """The guard exists because `POST /webhooks/stripe` is the only thing that
+    ever marks a live Connected Account payable, and it never fails open — so a
+    live relay without the signing secret can never pay a creator. It checked
+    `sk_live_` by prefix, so a `rk_live_` key walked straight past it and the
+    relay started into exactly the state the guard was written to prevent.
+
+    Backwards, specifically: it fired for the *less* safe key shape and not the
+    more safe one.
+    """
+    from emporia import relay_server as rs
+
+    for key in ("sk_live_abc", "rk_live_abc"):
+        env = {k: v for k, v in os.environ.items() if k != "STRIPE_WEBHOOK_SECRET"}
+        env["STRIPE_SECRET_KEY"] = key
+        with patch.dict(os.environ, env, clear=True):
+            with pytest.raises(RuntimeError, match="STRIPE_WEBHOOK_SECRET"):
+                rs._require_stripe_webhook_secret_if_needed()
+
+    # A test-mode key of either shape warns rather than refuses — unchanged.
+    for key in ("sk_test_abc", "rk_test_abc"):
+        env = {k: v for k, v in os.environ.items() if k != "STRIPE_WEBHOOK_SECRET"}
+        env["STRIPE_SECRET_KEY"] = key
+        with patch.dict(os.environ, env, clear=True):
+            rs._require_stripe_webhook_secret_if_needed()
+
+
+def test_a_restricted_key_detects_an_account_from_the_other_key_space():
+    """P26-4 refuses a transfer to an `acct_` from the other key space, because
+    the two namespaces are disjoint and the call is guaranteed to fail. It only
+    fires when both modes are *known* — correctly, since guessing would block
+    legitimate transfers — so a restricted key reporting "" disabled it.
+    """
+    from emporia.payments import stripe_account_mode_mismatch
+
+    with patch.dict(os.environ, {"STRIPE_SECRET_KEY": "rk_live_abc"}, clear=False):
+        assert stripe_account_mode_mismatch("test") is True
+        assert stripe_account_mode_mismatch("live") is False
+        assert stripe_account_mode_mismatch("") is False, "unknown stays unknown"
+
+
+def test_test_mode_capabilities_stay_gated_on_a_full_secret_key():
+    """The distinction the fix must not lose: **mode is not capability.**
+
+    A `rk_test_` key is test *mode*, but a restricted key may not carry the
+    permissions the test-helper routes need — auto-confirming a PaymentIntent,
+    minting an SPT. Those branches stay gated on `sk_test_` on purpose, so the
+    relay does not attempt a call a restricted key cannot make and report the
+    403 as a payment failure. Only the two mode-derived *protections* were
+    widened.
+    """
+    from pathlib import Path as _Path
+
+    payments_src = _Path("src/emporia/payments.py").read_text()
+    relay_src = _Path("src/emporia/relay_server.py").read_text()
+    assert 'if not key.startswith("sk_test_")' in payments_src, \
+        "the SPT test-helper route must still require a full test secret key"
+    assert 'os.getenv("STRIPE_SECRET_KEY", "").startswith("sk_test_")' in relay_src, \
+        "PaymentIntent auto-confirm must still require a full test secret key"

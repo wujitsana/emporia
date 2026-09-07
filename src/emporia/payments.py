@@ -839,9 +839,21 @@ def stripe_key_mode() -> str:
     the server module (payments.py must stay server-import-free, same
     constraint entitlements.py has)."""
     sk = (os.getenv("STRIPE_SECRET_KEY") or "").strip()
-    if sk.startswith("sk_test_"):
+    # P62: `rk_` is Stripe's *restricted* key prefix — same test/live segment,
+    # fewer permissions. Only `sk_` was recognised, so a restricted key returned
+    # "" and every protection keyed on mode switched itself off: the live-mode
+    # webhook-secret refusal never fired, and P26-4's account-mode mismatch
+    # check could never fire either, because it only acts when both modes are
+    # known. The symptom was on `/health` the whole time as `stripe_mode: ""`.
+    #
+    # Mode is not capability, and this function only answers mode. The branches
+    # that need a *full* test secret key — auto-confirming a PaymentIntent,
+    # minting an SPT through `test_helpers` — stay gated on `sk_test_`
+    # separately, so the relay never attempts a call a restricted key cannot
+    # make and then reports the 403 as a payment failure.
+    if sk.startswith(("sk_test_", "rk_test_")):
         return "test"
-    if sk.startswith("sk_live_"):
+    if sk.startswith(("sk_live_", "rk_live_")):
         return "live"
     return ""
 
