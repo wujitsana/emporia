@@ -2425,6 +2425,72 @@ built, so lanes 2 and 3 have only ever skipped. The URL fix is pinned offline by
 and corroborated against Stripe's routing table; nothing has yet watched a PaymentIntent actually
 confirm. `docs/testnet.md` says so in the same words rather than implying the tier is green.
 
+## P60 pass — the suite was running with production credentials, and reaching Stripe with them
+
+Step four of the architecture audit is "split the test file and add a `conftest.py`", filed as
+ergonomics. The `conftest.py` half turned out to be a correctness item.
+
+**What was measured.** `test_emporia.py` pinned five permissive flags at module scope, with a comment
+noting "profile .env may have stricter settings" — right about the flags, and it stopped there. On a
+developer machine the profile `.env` injects **ten further variables** into every test run, three of
+them live credentials: `STRIPE_SECRET_KEY`, `NVIDIA_API_KEY`, `EMPORIA_NOUS_JWT`. Also
+`OPENROUTER_API_KEY`, `STRIPE_PROFILE_ID`, `STRIPE_API_VERSION`, `EMPORIA_AGENT_ID`,
+`EMPORIA_RELAY_URL`, and the two guardrail switches.
+
+Two consequences. The suite ran with production secrets in scope — and P46 established that a mocked
+`httpx.AsyncClient.post` accepts every URL equally, so a test that forgets a mock reaches the real
+service holding a real key. And the suite behaved differently in CI, where none of these exist, which
+is what P51r ran into: three reconciler tests passed locally and would have done nothing at all in CI.
+
+**The credential it was inheriting is a `rk_live_` key** — a *live* restricted Stripe key, in the
+profile `.env`, loaded into every test run and every relay process on that machine. Rotating it is the
+operator's call and outside this pass; pinning the suite's own environment means the suite stops being
+one of the things holding it.
+
+**And the shape of that key was hiding a whole code path.** `_verify_and_confirm_payment()`
+auto-confirms a PaymentIntent when `STRIPE_SECRET_KEY` starts with `sk_test_`. A `rk_live_` key does
+not, so **the suite never exercised the auto-confirm branch at all** — it fell straight through to the
+402 every time. That is N1's finding again ("the suite tests a configuration we don't ship"), one
+layer down: the relay's documented test-mode behaviour was untested because the developer's key was a
+live one.
+
+Pinning `sk_test_` turns that branch on, and
+`test_join_room_rejects_uncaptured_payment_intent` immediately failed with
+`401 Unauthorized for url 'https://api.stripe.com/v1/payment_intents/pi_room_hold_test/confirm'` — it
+mocks `verify_payment_intent` and nothing else, so with the branch live it reaches Stripe for real. It
+now mocks the confirm too and asserts the relay's 402, which is what it was always about.
+
+**A correction to my own first reading**: I initially recorded that this test had been calling Stripe
+on every run. It had not — the live-key prefix was suppressing the branch. Enabling the branch is what
+exposed the missing mock, which is the right outcome but a different story, and the difference matters
+because it is the *key shape*, not the test, that was wrong.
+
+**Why the pinned key keeps `sk_test_`**: the alternative is a dummy that makes the relay take a path
+it never takes in production, which is precisely the state this pass found. Better to run the mode the
+product ships and mock the remote calls.
+
+**Sizing the cost turned into the second half of the pass.** Turning the branch on took the suite from
+~60s to ~130s, so something was reaching the network. Blocking outbound connections outright answered
+it: **863 passed either way, in 58s instead of 130s.** Seventy seconds of real traffic to
+api.stripe.com, and not one test failed without it — because the paths that make those calls swallow
+the failure by design. `payments.find_settlement_transfer()` catches every exception and reports
+"couldn't ask", which is exactly right in production (P51's tri-state) and indistinguishable from
+"properly mocked" in a test. Nothing failed, so nothing said anything.
+
+The block is now permanent. Loopback stays open for TestClient and the ASGI transport; the `testnet`
+tier is exempt, since those tests exist to reach the real facilitator and a real Base Sepolia RPC, and
+are deselected by default anyway. The suite is now deterministic, runnable offline, twice as fast, and
+any future unmocked call fails immediately with the host it tried to reach instead of quietly
+succeeding — or quietly failing — against someone's account.
+
+**Why pinning works at all**: since P55, `emporia.config.load_profile_dotenv()` merges with
+**setdefault** semantics, so a value already in the environment wins. A `conftest.py` is imported
+before any test module, so it lands first and the merge can only fill what it left blank. That
+property was built in P55 for a different reason and is what makes this file possible.
+
+`test_installer.py` gets the same environment for free, which module-scope setup in `test_emporia.py`
+never gave it.
+
 ## P59 pass — one expiry-aware membership rule, and there were three copies
 
 Step three of the architecture audit, first slice. The audit called the rooms/Agoras collapse the

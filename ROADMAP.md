@@ -353,6 +353,20 @@ a different file in a different directory, agreeing only when `relay_server` was
 *who may read* `EMPORIA_DB_PATH`, which found a fifth constant the audit had missed. See
 SECURITY.md's P55 pass.
 
+**P60 did step 4's `conftest.py` half**, which was filed as ergonomics and was not: the suite
+inherited ten variables from the profile `.env`, three of them live credentials, and one test had
+been making a real unmocked call to `api.stripe.com` on every local run. Environment is now pinned in
+`tests/conftest.py` for the whole suite, which also blocks outbound network: that removed 70s of real
+traffic to api.stripe.com per run without changing a single result, because the code paths making
+those calls swallow failure by design. **Still open in step 4:** splitting the 27k-line test file
+by subject.
+
+**Step 3 is closed as a refactor.** P59 unified the rule that was actually duplicated. The remaining
+"duplication" is not: rooms cap membership because `crypto_box.seal()` wraps the content key once per
+member, and Agoras have no capacity column at all — genuinely different constraints, and forcing them
+into one function would invent a capacity concept for Agoras. The missing Agora kick is a feature, not
+a refactor.
+
 **P59 started step 3**, the rooms/Agoras collapse: the expiry-aware membership rule existed in
 **three** copies (`rooms._access_active`, `subscribe_agora_topic` inline, and
 `relay_server._agora_is_member` — the third found by the guard, not by the audit) and is now

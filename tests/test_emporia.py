@@ -24,7 +24,6 @@ import json
 import logging
 import os
 import re
-import shutil
 import sys
 import tempfile
 import time
@@ -37,34 +36,12 @@ from fastapi import HTTPException
 from fastapi.testclient import TestClient
 from starlette.websockets import WebSocketDisconnect
 
-# Allow running from repo root without installing
-_src = str(Path(__file__).parent.parent / "src")
-if _src not in sys.path:
-    sys.path.insert(0, _src)
-
-# One throwaway root for every artifact this run writes (logs, audit, DB), honouring
-# TMPDIR so CI sandboxes and hosts without a writable /tmp both work. Removed by
-# _init_test_db's teardown.
-_test_root = Path(tempfile.mkdtemp(prefix="emporia_test_"))
-os.environ.setdefault("EMPORIA_LOG_DIR", str(_test_root / "logs"))
-os.environ.setdefault("EMPORIA_AUDIT_DIR", str(_test_root / "audit"))
-
-# Force permissive defaults for tests — profile .env may have stricter settings.
-# Individual tests that want to verify the gated behavior use patch.dict explicitly.
-os.environ["EMPORIA_WRITE_REQUIRES_NOUS"] = "0"
-os.environ["EMPORIA_REQUIRE_NOUS"] = "0"
-os.environ["EMPORIA_REQUIRE_CHALLENGE"] = "0"
-# Header-auth trust (X-Emporia-Agent-Id / WS ?agent_id=) is off by default in the relay itself —
-# most tests exercise the co-located-deployment path via the `client` fixture's 127.0.0.1 source,
-# which requires this on. Tests verifying the *off* behavior patch
-# emporia.relay_server._HEADER_AUTH_TRUSTED_HOSTS directly, since it's computed once at import
-# time from this env var and won't re-read it later.
-os.environ["EMPORIA_TRUST_LOCAL_HEADER_AUTH"] = "1"
-
-# Use a persistent temp file so TestClient requests share the same SQLite DB.
-# :memory: creates a new empty DB on every connect() call — unusable across requests.
-_test_db = str(_test_root / "emporia_test.sqlite3")
-os.environ["EMPORIA_DB_PATH"] = _test_db
+# P60: the environment — including the DB path, the permissive gates and the
+# dummy credentials — is pinned in tests/conftest.py, which pytest imports
+# before this module. It used to live here, which meant `test_installer.py`
+# never got it and the profile .env quietly supplied ten more variables to
+# every run, three of them live credentials. See that file's docstring.
+from conftest import TEST_DB as _test_db  # noqa: E402
 
 from emporia.relay_server import app, init_db
 
@@ -74,7 +51,8 @@ def _init_test_db():
     """Initialize the shared test DB once per session; clean up on exit."""
     init_db()
     yield
-    shutil.rmtree(_test_root, ignore_errors=True)
+    # Teardown of _test_root is conftest's pytest_sessionfinish (P60), so it
+    # also runs for sessions that never touch this module.
 
 
 @pytest.fixture(scope="session", autouse=True)
@@ -4653,8 +4631,21 @@ def test_join_session_rejects_payment_intent_replay(mock_verify, client):
     assert "not bound to this resource" in r2.text
 
 
+@patch("emporia.payments.confirm_stripe_intent", new_callable=AsyncMock)
 @patch("emporia.payments.verify_payment_intent", new_callable=AsyncMock)
-def test_join_room_rejects_uncaptured_payment_intent(mock_verify, client):
+def test_join_room_rejects_uncaptured_payment_intent(mock_verify, mock_confirm, client):
+    """P60: `confirm_stripe_intent` is mocked here, and has to be.
+
+    `_verify_and_confirm_payment()` auto-confirms on a `sk_test_` key — by
+    design — so a PaymentIntent left in `requires_capture` sends the relay to
+    Stripe's live API. This test mocked only `verify_payment_intent` and so made
+    a real, unmocked call to `api.stripe.com` on every run, passing because the
+    developer's profile `.env` supplied a working key and asserting on Stripe's
+    own response to a fabricated PI id. The suite's pinned dummy key turned that
+    into a 401 and surfaced it. The subject here is the relay's 402, so the
+    remote call is mocked into a no-op and `verify_payment_intent` keeps
+    returning `requires_capture`.
+    """
     _register(client, "room_owner")
     _register(client, "room_joiner")
     r = client.post("/rooms", json={
