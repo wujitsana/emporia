@@ -2941,7 +2941,6 @@ def test_no_new_identity_as_proof_params():
     raw body has no identity claim in it despite being uninspectable, are not
     identity-as-proof and belong in _SAFE_LOOKUPS instead.
     """
-    from emporia.relay_server import app
 
     IDENTITY_LIKE = {
         "viewer_id", "agent_id", "sender_id", "author_id", "voter_id",
@@ -3041,7 +3040,7 @@ def test_no_new_identity_as_proof_params():
     allowed = _SAFE_LOOKUPS | _KNOWN_VIOLATIONS
 
     violations = []
-    for route in app.routes:
+    for route in _all_app_routes():
         path = getattr(route, "path", None)
         dependant = getattr(route, "dependant", None)
         methods = _route_methods(route)
@@ -3064,7 +3063,7 @@ def test_no_new_identity_as_proof_params():
     # renamed/removed, or fixed without deleting its line here) — every entry should still
     # name a real offending route.
     still_present = set()
-    for route in app.routes:
+    for route in _all_app_routes():
         path = getattr(route, "path", None)
         dependant = getattr(route, "dependant", None)
         methods = _route_methods(route)
@@ -3110,7 +3109,6 @@ def test_every_route_has_a_reviewed_auth_posture():
     _KNOWN_UNGATED is the drain-to-empty set for routes with *zero* caller resolution
     that this pass is actively closing — same mechanic as _KNOWN_VIOLATIONS above.
     """
-    from emporia.relay_server import app
 
     _AUTHENTICATED: set[tuple[str, str]] = {
         # Bootstrap: no credential can exist yet: identity is bound by a consumed
@@ -3268,7 +3266,7 @@ def test_every_route_has_a_reviewed_auth_posture():
     assert not overlap, f"Route(s) classified in more than one bucket: {overlap}"
 
     unclassified = []
-    for route in app.routes:
+    for route in _all_app_routes():
         path = getattr(route, "path", None)
         dependant = getattr(route, "dependant", None)
         methods = _route_methods(route)
@@ -3287,7 +3285,7 @@ def test_every_route_has_a_reviewed_auth_posture():
     # line here, or the route renamed/removed).
     live_paths = {
         (method, getattr(route, "path", None))
-        for route in app.routes
+        for route in _all_app_routes()
         for method in (_route_methods(route) or set())
         if getattr(route, "path", None) and getattr(route, "dependant", None)
     }
@@ -3336,10 +3334,9 @@ def test_no_route_shadowing():
     `/agents/me` or `/sessions/active` can't regress the same way silently.
     """
     from fastapi.routing import APIWebSocketRoute
-    from emporia.relay_server import app
 
     routes = [
-        r for r in app.routes
+        r for r in _all_app_routes()
         if getattr(r, "path", None) and getattr(r, "dependant", None)
     ]
     violations = []
@@ -16543,8 +16540,7 @@ def test_encrypt_upgrades_an_existing_thread_and_cannot_be_reversed(client):
                        headers={"X-Emporia-Agent-Id": "e2e_upg_b"}).status_code == 200
     assert client.get(f"/dm/{tid}", headers={"X-Emporia-Agent-Id": "e2e_upg_a"}
                       ).json()["encrypted"] is True
-    from emporia.relay_server import app
-    assert not [r for r in app.routes if getattr(r, "path", "").endswith("/decrypt")]
+    assert not [r for r in _all_app_routes() if getattr(r, "path", "").endswith("/decrypt")]
 
     # The pre-upgrade plaintext message is still readable — an upgrade is not a purge.
     msgs = client.get(f"/dm/{tid}/messages?agent_id=e2e_upg_a",
@@ -23224,11 +23220,45 @@ def _normalize_route(path: str) -> str:
     return re.sub(r"\{[^}]+\}", "{}", path.rstrip("/")) or "/"
 
 
+def _all_app_routes(app=None):
+    """Every route the relay serves, including those inside included routers.
+
+    P56: `app.include_router()` on this FastAPI version appends an
+    `_IncludedRouter` to `app.routes` rather than flattening the router's own
+    routes into it. Every enumerator in this file walked `app.routes` directly
+    and so went blind the moment a domain moved out of `relay_server` into
+    `emporia/routes/` — reporting routes as unserved while they answered 200,
+    and, far worse, silently no longer noticing an *undocumented* route added
+    inside a router. Caught by P49's drift detector on the first extraction,
+    which is exactly the job it was built for.
+    """
+    from emporia.relay_server import app as _app
+
+    def walk(routes):
+        for route in routes:
+            # An `_IncludedRouter` exposes the router it wrapped as
+            # `original_router`, not as `routes` — it is a matcher, not a
+            # container. A `Mount` (the /ui static files) does carry `.routes`.
+            inner = getattr(route, "original_router", None)
+            nested = getattr(inner, "routes", None) or (
+                getattr(route, "routes", None) if inner is None else None
+            )
+            if nested and not getattr(route, "methods", None):
+                yield from walk(nested)
+            else:
+                yield route
+
+    # Registration order is preserved deliberately: test_no_route_shadowing
+    # reads it to decide whether a general path is registered ahead of a more
+    # specific one, so a traversal that reverses or reorders turns that test
+    # into a generator of false positives (it did, on the first attempt).
+    return list(walk((app or _app).routes))
+
+
 def _registered_rest_routes() -> set[tuple[str, str]]:
-    from emporia.relay_server import app
     return {
         (method, _normalize_route(route.path))
-        for route in app.routes
+        for route in _all_app_routes()
         for method in (getattr(route, "methods", None) or set())
         if method not in {"HEAD", "OPTIONS"}
     } - _FRAMEWORK_ROUTES
@@ -27612,3 +27642,34 @@ def test_the_dotenv_merge_runs_at_import_and_can_only_fill_gaps(tmp_path):
     # Idempotent: a second call is a no-op, so any entry point may call it.
     config.load_profile_dotenv()
     assert config._dotenv_loaded is True
+
+
+def test_route_enumeration_sees_inside_included_routers():
+    """P56's own guard, and the reason the extraction is safe to continue.
+
+    Every route-level test in this file — the auth-posture review, the ungated
+    sweep, the shadowing check, P49's docs drift detector — works by walking the
+    relay's routes. On this FastAPI version `include_router()` appends an
+    `_IncludedRouter` matcher rather than flattening the router's routes into
+    `app.routes`, so a walk of `app.routes` alone stops seeing a domain the
+    moment it moves into `emporia/routes/`. The routes still answer 200; the
+    guards just stop covering them, which is the worst of both.
+
+    P49's detector caught this on the very first extraction. This pins it, so
+    the remaining ~80 routes can move without anyone having to remember.
+    """
+    from emporia.relay_server import app
+
+    flat = {getattr(r, "path", None) for r in app.routes}
+    deep = {getattr(r, "path", None) for r in _all_app_routes()}
+
+    assert "/events" not in flat, (
+        "if included routes ever appear directly in app.routes this guard is "
+        "moot — but so is the traversal, and both should be simplified together"
+    )
+    assert {"/events", "/events/{event_id}", "/listings"} <= deep, (
+        f"routes inside included routers must be enumerable; got {sorted(deep - flat)}"
+    )
+    assert ("GET", "/events") in _registered_rest_routes(), (
+        "and they must reach the docs-drift detector, which is what noticed"
+    )

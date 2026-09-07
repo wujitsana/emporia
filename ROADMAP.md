@@ -353,7 +353,12 @@ a different file in a different directory, agreeing only when `relay_server` was
 *who may read* `EMPORIA_DB_PATH`, which found a fifth constant the audit had missed. See
 SECURITY.md's P55 pass.
 
-**Still open — architecture audit, steps 2-5:** split `relay_server.py` into routers; collapse rooms
+**P56 started step 2**: `emporia/routes/` exists, the binding convention is documented and pinned,
+and listings + events have moved (5 of 87 routes). The blocker it removed was not the mechanics but
+the guards — included routes are invisible to a plain `app.routes` walk, so the whole suite's
+route-level coverage would have drained away one domain at a time. See SECURITY.md's P56 pass.
+
+**Still open — architecture audit, remaining of steps 2-5:** split `relay_server.py` into routers; collapse rooms
 and Agoras onto one membership core; split the test file and add a `conftest.py`; numbered migrations
 driven by `schema_migrations`. Step 6, the backend decision, is deferred by the user and is not a
 refactor.

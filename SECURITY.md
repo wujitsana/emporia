@@ -2425,6 +2425,46 @@ built, so lanes 2 and 3 have only ever skipped. The URL fix is pinned offline by
 and corroborated against Stripe's routing table; nothing has yet watched a PaymentIntent actually
 confirm. `docs/testnet.md` says so in the same words rather than implying the tier is green.
 
+## P56 pass — the first routes leave the monolith, and the guards nearly went blind
+
+Step two of the architecture audit: split `relay_server.py` into routers. This pass establishes the
+pattern and moves the first two domains; the remaining ~80 routes follow it mechanically.
+
+**The convention, and why it is not the obvious one.** A router reaches shared relay state through
+the module object — `rs.get_db()`, not `from emporia.relay_server import get_db`. The difference is
+*when the name resolves*. A module-scope `from ... import` binds once; `rs.NAME` looks up on every
+call. The suite has 43 sites that patch `emporia.relay_server.<name>` — `_assert_payload_safe_counted`
+alone is patched seven times — and each replaces an attribute on the module object. Bind early and
+the router keeps the original, the patch does nothing, and the test passes for the wrong reason.
+`relay_server` already documents this hazard for its own function-local imports; the routers inherit
+it.
+
+**The finding, and P49 earned its keep.** On this FastAPI version `app.include_router()` appends an
+`_IncludedRouter` *matcher* to `app.routes` rather than flattening the router's routes into it. The
+moved routes answered 200 immediately — but every route-level guard in the suite walks `app.routes`,
+so all of them stopped seeing those five routes the moment they moved. That is the worst possible
+shape: the routes work, and nothing is checking them any more. Applied across all 87 routes it would
+have silently retired the auth-posture review, the ungated sweep, the shadowing check and the docs
+drift detector, one domain at a time, with a green suite throughout.
+
+P49's REST-route detector failed on the very first extraction and is what surfaced it. Six
+enumeration sites now share `_all_app_routes()`, which recurses through `original_router` — an
+`_IncludedRouter` is a matcher, not a container, and exposes the router it wrapped under that name
+rather than as `routes`.
+
+**Two mistakes of my own, both caught rather than reasoned away.** The first traversal used
+`stack.pop()`, which reverses order — and `test_no_route_shadowing` reads registration order to
+decide whether a general path is registered ahead of a specific one, so it immediately reported
+`/ws/{session_id}` shadowing `/ws/events`. A false positive produced by the test infrastructure, not
+a real defect; the walk now preserves order, deliberately and with a comment saying why. The second:
+my list of names to rewrite came from a regex that only matched `_lower` and `UPPER` forms, so
+`rooms_db`, `broadcast_global`, `datetime`, `uuid`, `UTC` and `Any` were missed. Ruff caught all six
+as undefined names before anything ran.
+
+**Verified end to end**, not just in the suite: `GET /listings`, `GET /events` and `GET /events/{id}`
+answer 200/200/404 against a real `TestClient`, and the extraction is otherwise verbatim — the only
+edits are `@app` → `@router` and the `rs.` prefix.
+
 ## P55 pass — one database, one resolver
 
 Step one of the architecture audit, and the only finding in it that was a live hazard rather than a

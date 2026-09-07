@@ -5997,211 +5997,9 @@ async def list_payment_records(
     return {"payments": payments}
 
 
-# ============================================================================
-# Listings ("Craigslist for agents")
-# ============================================================================
+# Listings and Events moved to emporia/routes/{listings,events}.py (P56).
+# The routers are included at the bottom of this file.
 
-@app.post("/listings")
-async def create_listing(req: CreateListingRequest, request: Request):
-    caller = _dashboard_agent_id(request)
-    if not caller:
-        raise HTTPException(401, "Authentication required")
-    _require_registered(caller)
-    _enforce_agent_rate_limit(caller)
-    # P19-7 (M4)/P20-5 (A3): title/description/metadata used to be bounded by
-    # hand here. P21-5 (B5): _assert_payload_safe_counted now bounds every
-    # top-level field of whatever it's handed, so this is redundant — see
-    # _require_payload_content_within_limit.
-    try:
-        await _assert_payload_safe_counted(req.model_dump())
-    except PermissionError as e:
-        raise HTTPException(403, str(e))
-
-    listing_id = f"lst_{uuid.uuid4().hex[:16]}"
-    now = datetime.now(UTC).isoformat()
-    from datetime import timedelta
-    expires_at = (datetime.now(UTC) + timedelta(hours=req.expires_in_hours)).isoformat()
-
-    with DB_LOCK, get_db() as conn:
-        conn.execute(
-            "INSERT INTO listings (listing_id, title, description, listing_type, agent_id, "
-            "payment_mode, price_usd, module_type, origin_relay, expires_at, metadata_json, created_at) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-            (listing_id, req.title, req.description, req.listing_type, caller,
-             req.payment_mode, req.price_usd, req.module_type, RELAY_BASE_URL,
-             expires_at, json.dumps(req.metadata), now),
-        )
-    await broadcast_global({
-        "type": "listing_created",
-        "listing_id": listing_id,
-        "title": req.title,
-        "module_type": req.module_type,
-        "agent_id": caller,
-    })
-    return {"listing_id": listing_id, "status": "created"}
-
-
-@app.get("/listings")
-async def get_listings(
-    listing_type: str | None = None,
-    module_type: str | None = None,
-    creator_id: str | None = None,
-    include_rooms: bool = True,
-    limit: int = 50,
-):
-    """Browse all discoverable listings.
-
-    Includes standard listings (sessions, services, events) plus public and
-    paid-private rooms when include_rooms=true (default). Rooms appear as
-    listing_type='room' with gate_type, entry_fee_cents, and member_count visible.
-    Private invite-only rooms are never shown to non-members.
-    """
-    limit = _clamp_limit(limit)
-    with DB_LOCK, get_db() as conn:
-        q = "SELECT * FROM listings WHERE (expires_at IS NULL OR expires_at > ?) "
-        params: list[Any] = [datetime.now(UTC).isoformat()]
-        if listing_type and listing_type != "room":
-            q += "AND listing_type = ? "
-            params.append(listing_type)
-        if module_type:
-            q += "AND module_type = ? "
-            params.append(module_type)
-        if creator_id:
-            q += "AND agent_id = ? "
-            params.append(creator_id)
-        q += "ORDER BY created_at DESC LIMIT ?"
-        params.append(limit)
-        rows = conn.execute(q, params).fetchall()
-
-    listings = [
-        {**dict(r), "metadata": json.loads(r["metadata_json"])}
-        for r in rows
-    ]
-
-    # Surface rooms as browsable listings so agents can discover them
-    if include_rooms and listing_type in (None, "room"):
-        room_list = rooms_db.list_rooms(room_type="public", limit=limit, db_path=DATABASE_PATH)
-        # Also include paid private rooms (paid gate) — agents need to know they exist
-        paid_private = rooms_db.list_rooms(room_type="private", limit=limit, db_path=DATABASE_PATH)
-        for room in room_list + paid_private:
-            if room.gate_type == "invite":
-                continue  # never surfaced — invite-only means truly private
-            listings.append({
-                "listing_id": room.room_id,
-                "listing_type": "room",
-                "title": room.name,
-                "description": room.description,
-                "agent_id": room.creator_id,
-                "room_type": room.room_type,
-                "gate_type": room.gate_type,
-                "entry_fee_cents": room.entry_fee_cents if room.gate_type == "paid" else 0,
-                "currency": room.currency,
-                "member_count": len(room.members),
-                "max_members": room.max_members,
-                "encrypted": room.encrypted,
-                # payment_mode is a *different* vocabulary (listings/events axis,
-                # PaymentMode in engine/game_registry.py) — "stripe_link" here is
-                # that axis's own value, deliberately not renamed by the P3 gate_type
-                # rename. Reconciling the two vocabularies is out of scope (see
-                # ROADMAP.md's P3 section).
-                "payment_mode": "stripe_link" if room.gate_type == "paid" else "free",
-                "price_usd": f"{room.entry_fee_cents / 100:.2f}" if room.gate_type == "paid" else "0",
-                "created_at": room.created_at,
-                "metadata": {"linked_session_id": room.linked_session_id},
-            })
-
-    if module_type:
-        listings = [l for l in listings if l.get("module_type") == module_type]
-
-    return {"listings": listings[:limit], "count": len(listings[:limit])}
-
-
-# ============================================================================
-# Events / Tournaments
-# ============================================================================
-
-@app.post("/events")
-async def create_event(req: CreateEventRequest, request: Request):
-    caller = _dashboard_agent_id(request)
-    if not caller:
-        raise HTTPException(401, "Authentication required")
-    _require_registered(caller)
-    _enforce_agent_rate_limit(caller)
-    # P21-5 (B5): title/description bounded automatically by
-    # _assert_payload_safe_counted now — see _require_payload_content_within_limit.
-    try:
-        await _assert_payload_safe_counted(req.model_dump())
-    except PermissionError as e:
-        raise HTTPException(403, str(e))
-
-    event_id = f"evt_{uuid.uuid4().hex[:12]}"
-    now = datetime.now(UTC).isoformat()
-    with DB_LOCK, get_db() as conn:
-        conn.execute(
-            "INSERT INTO events (event_id, title, description, module_type, organizer_id, "
-            "payment_mode, entry_fee_usd, status, bracket_json, participants_json, created_at, updated_at) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?, 'open', '{}', '[]', ?, ?)",
-            (event_id, req.title, req.description, req.module_type, caller,
-             req.payment_mode, req.entry_fee_usd, now, now),
-        )
-    # Also create a listing for the event
-    with DB_LOCK, get_db() as conn:
-        conn.execute(
-            "INSERT INTO listings (listing_id, title, description, listing_type, agent_id, "
-            "payment_mode, price_usd, module_type, origin_relay, expires_at, metadata_json, created_at) "
-            "VALUES (?, ?, ?, 'event', ?, ?, ?, ?, ?, NULL, ?, ?)",
-            (f"lst_{event_id}", req.title, req.description or "", caller,
-             req.payment_mode, req.entry_fee_usd, req.module_type, RELAY_BASE_URL,
-             json.dumps({"event_id": event_id}), now),
-        )
-    return {"event_id": event_id, "status": "open"}
-
-
-@app.get("/events")
-async def list_events(status: str | None = None, limit: int = 50):
-    """N4-5 (N4 review R7): previously had no `limit` param at all — every event, with
-    full bracket + participant lists, in one unbounded query. Public discovery stays
-    public (same shape as GET /listings); this just caps the row scan, matching every
-    other list endpoint after N3-6.
-
-    N6 review R2: `count` (added N5-5) is the returned page size, not a total — it
-    can never exceed `limit`, so it could never actually signal truncation despite
-    that being N5-5's stated goal. `has_more` (via _fetch_page) is the real signal.
-    """
-    limit = _clamp_limit(limit)
-    with DB_LOCK, get_db() as conn:
-        if status:
-            rows, has_more = _fetch_page(
-                conn,
-                "SELECT * FROM events WHERE status = ? ORDER BY created_at DESC LIMIT ?",
-                (status,), limit,
-            )
-        else:
-            rows, has_more = _fetch_page(
-                conn, "SELECT * FROM events ORDER BY created_at DESC LIMIT ?", (), limit,
-            )
-    events = [
-        {
-            **dict(r),
-            "bracket": json.loads(r["bracket_json"]),
-            "participants": json.loads(r["participants_json"]),
-        }
-        for r in rows
-    ]
-    return {"events": events, "count": len(events), "has_more": has_more}
-
-
-@app.get("/events/{event_id}")
-async def get_event(event_id: str):
-    with DB_LOCK, get_db() as conn:
-        row = conn.execute("SELECT * FROM events WHERE event_id = ?", (event_id,)).fetchone()
-    if not row:
-        raise HTTPException(404, "Event not found")
-    return {
-        **dict(row),
-        "bracket": json.loads(row["bracket_json"]),
-        "participants": json.loads(row["participants_json"]),
-    }
 
 
 # ============================================================================
@@ -10500,3 +10298,19 @@ def main():
 
 if __name__ == "__main__":
     main()
+
+
+# ============================================================================
+# Routers (P56)
+#
+# Imported last, after every name they reference exists. Each router reaches
+# shared state through `rs.<name>` at call time rather than binding it at
+# import, so the suite's 43 `patch("emporia.relay_server.<name>")` sites still
+# intercept. See emporia/routes/__init__.py.
+# ============================================================================
+
+from emporia.routes import events as _events_routes  # noqa: E402
+from emporia.routes import listings as _listings_routes  # noqa: E402
+
+app.include_router(_listings_routes.router)
+app.include_router(_events_routes.router)
