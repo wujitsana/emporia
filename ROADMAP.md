@@ -353,6 +353,14 @@ a different file in a different directory, agreeing only when `relay_server` was
 *who may read* `EMPORIA_DB_PATH`, which found a fifth constant the audit had missed. See
 SECURITY.md's P55 pass.
 
+**P63 established the Hermes integration story.** The agent-side install was already correct — the
+MCP server is registered and enabled with all tools. The inert `platforms:` entry the installer wrote
+belonged to the *gateway/desktop* half of Hermes's plugin surface, never registered anything, and is
+gone. The inbound tunnel is inseparable from that half (no agent-side hook is long-lived), so it is
+deferred with it; inbound stays a poll. **Still open, when the desktop half is picked up:** entry
+point in `hermes_agent.plugins`, `register(ctx)`, and a `BasePlatformAdapter` subclass. See
+SECURITY.md's P63.
+
 **P62 fixed restricted-key blindness**, found while checking the local-run path before recommending
 manual testing: `stripe_key_mode()` only knew `sk_`, so an `rk_live_` key classified as unknown and
 both mode-derived protections switched off — the live-mode webhook-secret refusal never fired, and

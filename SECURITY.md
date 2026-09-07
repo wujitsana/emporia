@@ -2425,6 +2425,57 @@ built, so lanes 2 and 3 have only ever skipped. The URL fix is pinned offline by
 and corroborated against Stripe's routing table; nothing has yet watched a PaymentIntent actually
 confirm. `docs/testnet.md` says so in the same words rather than implying the tier is green.
 
+## P63 pass — we were installing into the wrong half of Hermes's plugin surface
+
+Research pass, prompted by "are we installing correctly for Hermes agents". Short answer: **the agent
+side was already right, and the half that was broken is the half to defer.**
+
+**Hermes's plugin surface splits in two**, and the split is visible in what a plugin may register:
+
+| running the agent | the gateway / desktop |
+|---|---|
+| `register_tool`, `register_hook`, `register_middleware` | `register_platform` |
+| `register_system_prompt_section`, `register_context_engine` | `register_platform_handler`, `register_telegram_handler` |
+| `register_memory_provider`, `register_secret_source`, providers | `register_dashboard_auth_provider`, `register_approval_transport` |
+
+Plugin kinds are `standalone`, `backend`, `exclusive`, `platform`, `model-provider`; discovery is by
+the `hermes_agent.plugins` entry point.
+
+**What we had.** The installer wrote `platforms: - platform: emporia` into `config.yaml` on every
+install — a `register_platform`-family entry, the gateway/desktop half. It was inert and could not
+have been otherwise: this package declares no entry point, so `hermes plugins list` shows no emporia;
+nothing in the Hermes tree mentions the name, so there is no built-in branch; with neither, the
+gateway logs "No adapter for 'emporia' — is the plugin installed?". Nothing except that adapter ever
+calls `maintain_relay_tunnel()`, so **the inbound relay→agent tunnel has never carried a frame.**
+
+**What was already correct.** `hermes -p <profile> mcp list` reports `emporia` as **enabled, all
+tools**. The MCP server is the agent-side integration and it has been working the whole time. A
+correction worth recording: my first check ran without `-p` and reported "No MCP servers configured",
+which would have sent this pass in exactly the wrong direction. Profile-scoped state needs a
+profile-scoped query.
+
+**Why the tunnel cannot simply move.** There is no agent-side home for a long-lived inbound
+connection: `VALID_HOOKS` is entirely within-turn (tool calls, LLM calls, sessions, streams), and
+`register_auxiliary_task` is for LLM-backed side jobs, not sockets. `register_platform` *is* Hermes's
+mechanism for an external system pushing events into agent sessions — which is why the original design
+reached for it, and why the tunnel and the platform question are one question. Deferring the platform
+defers the tunnel, and inbound stays a poll (MCP tools, or a cron job against
+`GET /agents/{id}/inbox`).
+
+**The change.** The installer no longer writes the entry. An existing one from an older install is
+left alone — deleting keys from an operator's config is not the installer's call, and it is inert
+either way. A test guards the deletion, because writing it back should come with a real plugin rather
+than reappear in a refactor.
+
+**Also researched, for when the platform half is picked up:** a real integration needs an entry point
+in `hermes_agent.plugins`, a `register(ctx)` calling `ctx.register_platform(...)`, and a
+`BasePlatformAdapter` subclass — the bundled IRC platform shows the full feature set available
+(`setup_fn` for interactive install, `requires_env` prompts driving `hermes config`, `check_fn`,
+`is_connected`, `cron_deliver_env_var` + `standalone_sender_fn` for cron delivery, `allowed_users_env`).
+`plugin_packs` can bundle a plugin plus a config seed for one-command install, but a pack may only seed
+`plugins.entries.<id>` — it cannot install an MCP server, and there is no `register_mcp_server` API, so
+the MCP path stays as it is.
+
 ## P62 pass — a restricted live key is still a live key, and nothing knew it
 
 Found while checking whether the documented local-run path was safe to hand over for manual testing.

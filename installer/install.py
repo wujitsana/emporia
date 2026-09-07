@@ -647,12 +647,28 @@ def _mcp_entry(relay_url: str, agent_id: str = "", display_name: str = "", profi
     }
 
 
-def _platform_entry(relay_url: str, agent_id: str) -> dict[str, Any]:
-    return {
-        "platform": "emporia",
-        "relay_url": relay_url,
-        "agent_id": agent_id,
-    }
+# P63: `_platform_entry()` used to be written into `config.yaml` as
+# `platforms: - platform: emporia`. It never did anything, and it could not:
+#
+#   * Hermes discovers plugins through the `hermes_agent.plugins` entry point
+#     (`hermes_cli/plugins.py`), and this package declares none — `hermes
+#     plugins list` shows no emporia.
+#   * Nothing in the Hermes tree mentions emporia, so there is no built-in
+#     adapter branch either.
+#   * With neither, the gateway's registry lookup misses and it logs
+#     "No adapter for 'emporia' -- is the plugin installed?".
+#
+# `register_platform()` is also the *gateway/desktop* half of Hermes's plugin
+# surface — the same family as `register_dashboard_auth_provider` and the
+# Telegram/Slack handlers — not the agent-running half (`register_tool`,
+# `register_hook`, `register_middleware`). Emporia's agent integration is the
+# MCP server, which `hermes -p <profile> mcp list` reports as enabled with all
+# tools, and that has been the working path all along.
+#
+# Writing an inert entry made the config claim an integration that was not
+# there, so it is gone. When the platform adapter is built for real it needs an
+# entry point, a `register(ctx)`, and a `BasePlatformAdapter` subclass — at
+# which point Hermes finds it without anything being written here.
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -776,12 +792,10 @@ def install_into_profile(
                 print(f"  ~ mcp_servers.{MCP_TOOL_NAME}.env.{k}")
         mcp_servers[MCP_TOOL_NAME]["env"] = existing_env
 
-    # Platform entry
-    platforms = config.setdefault("platforms", [])
-    if not any(p.get("platform") == "emporia" for p in platforms):
-        platforms.append(_platform_entry(relay_url, agent_id))
-        changed = True
-        print("  + platforms.emporia")
+    # P63: no platform entry is written — see _platform_entry's removal note.
+    # An existing one from an older install is left alone rather than deleted:
+    # removing keys from an operator's config is not the installer's call, and
+    # the entry is inert either way.
 
     # Env block
     env_block = config.setdefault("env", {})
@@ -1019,7 +1033,6 @@ def create_profile(
     config["mcp_servers"] = {
         MCP_TOOL_NAME: _mcp_entry(relay_url, agent_id=name),
     }
-    config["platforms"] = [_platform_entry(relay_url, name)]
     config["toolsets"] = ["hermes-cli"]
     config["agent"] = {"max_turns": 150}
     config["terminal"] = {"backend": "local", "home_mode": "auto"}

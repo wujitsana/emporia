@@ -71,3 +71,37 @@ def test_guardrails_env_lines_never_auto_enables_nemo_from_key_presence():
 
     lines_without_key = installer._guardrails_env_lines(disabled=False, nvidia_api_key=None)
     assert "EMPORIA_NEMO_GUARDRAILS_ENABLED=0" in lines_without_key
+
+
+def test_the_installer_writes_no_gateway_platform_entry():
+    """P63: `platforms: - platform: emporia` was written into every install and
+    did nothing.
+
+    Hermes discovers plugins through the `hermes_agent.plugins` entry point;
+    this package declares none, and nothing in the Hermes tree knows the name,
+    so the gateway's registry lookup misses and it logs "No adapter for
+    'emporia' -- is the plugin installed?". The entry made `config.yaml` claim
+    an integration that was not there.
+
+    It is also the *gateway/desktop* half of Hermes's plugin surface — the same
+    family as `register_dashboard_auth_provider` and the Telegram/Slack
+    handlers — rather than the agent-running half (`register_tool`,
+    `register_hook`). Emporia's agent integration is the MCP server, which is
+    registered and enabled, and that is deliberately unchanged.
+
+    This guards the deletion: writing the entry back is a decision that should
+    come with a real plugin, not a line reappearing in a refactor.
+    """
+    from pathlib import Path
+
+    src = Path(__file__).parent.parent / "installer" / "install.py"
+    text = src.read_text()
+    offenders = [
+        line.strip() for line in text.splitlines()
+        if '"platform": "emporia"' in line
+        or ('config["platforms"]' in line and not line.strip().startswith("#"))
+    ]
+    assert not offenders, (
+        "the installer is writing a gateway platform entry again; it is inert "
+        f"until a real plugin exists: {offenders}"
+    )
