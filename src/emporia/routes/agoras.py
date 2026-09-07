@@ -256,6 +256,9 @@ async def subscribe_agora_topic(slug: str, req: rs.AgoraSubscribeRequest, reques
         # needs neither a fresh invite nor a fresh charge: paying again would
         # be double-charging one purchase, and requiring a fresh invite would
         # make them re-collect permission for access they already bought.
+        # Still needed on its own: the payment gate below must not charge a
+        # subscriber whose window is currently open (P2-4). The short-circuit
+        # no longer uses it — see access_active() below.
         already_entitled = gate == "paid_invite" and entitlements.has_access(
             "agora", topic_id, req.agent_id, db_path=rs.DATABASE_PATH
         )
@@ -281,17 +284,22 @@ async def subscribe_agora_topic(slug: str, req: rs.AgoraSubscribeRequest, reques
                                     db_path=rs.DATABASE_PATH):
             raise HTTPException(403, "Removed from this topic")
 
-        # P2-5: "already a member" alone is no longer enough to short-circuit
-        # for free on a paid_invite topic — membership rows are never deleted
-        # on expiry (see rooms.is_member()'s docstring for why), so a member
-        # whose window has closed is still "already_member" here. Grandfather
-        # agents with no entitlement row at all (this membership predates
-        # entitlements existing). A non-paid topic's membership never expires,
-        # so the short-circuit is unconditional there.
-        short_circuit = already_member and (
-            gate != "paid_invite"
-            or already_entitled
-            or not ever_entitled
+        # P2-5: "already a member" alone is not enough to short-circuit for free
+        # on a paid_invite topic — membership rows are never deleted on expiry
+        # (see rooms.is_member()'s docstring for why), so a member whose window
+        # has closed is still "already_member" here.
+        #
+        # P59: that rule used to be spelled out inline right here, as
+        # `already_member and (gate != "paid_invite" or already_entitled or not
+        # ever_entitled)` — algebraically identical to the copy living in
+        # `rooms._access_active()`, and the two were free to drift. One
+        # predicate now, for both. `ever_entitled` stays because the invite
+        # waiver below needs it for a different question (P2r-2).
+        short_circuit = entitlements.access_active(
+            "agora", topic_id, req.agent_id,
+            is_member=bool(already_member),
+            gate_has_expiry=gate == "paid_invite",
+            db_path=rs.DATABASE_PATH,
         )
 
         if not short_circuit and gate in ("invite", "paid_invite"):

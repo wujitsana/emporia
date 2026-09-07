@@ -516,13 +516,18 @@ def _access_active(
     query, hence no extra DB round-trip — since only `paid` rooms
     have an expiry concept at all.
     """
-    if agent_id not in members:
-        return False
-    if gate_type != "paid" or agent_id == creator_id:
-        return True
-    if entitlements.has_access("room", room_id, agent_id, db_path=db_path):
-        return True
-    return not entitlements.has_any_grant("room", room_id, agent_id, db_path=db_path)
+    # P59: the rule itself now lives in `entitlements.access_active()`, shared
+    # with the Agora subscribe path, which had the same algebra open-coded in
+    # its handler. This stays as the room-shaped door onto it — three callers
+    # already have a `Room` loaded and should not have to know the gate
+    # vocabulary or the creator exemption.
+    return entitlements.access_active(
+        "room", room_id, agent_id,
+        is_member=agent_id in members,
+        gate_has_expiry=gate_type == "paid",
+        is_exempt=agent_id == creator_id,
+        db_path=db_path,
+    )
 
 
 def is_member(room_id: str, agent_id: str, db_path: Path | None = None) -> bool:

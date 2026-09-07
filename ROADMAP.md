@@ -353,6 +353,13 @@ a different file in a different directory, agreeing only when `relay_server` was
 *who may read* `EMPORIA_DB_PATH`, which found a fifth constant the audit had missed. See
 SECURITY.md's P55 pass.
 
+**P59 started step 3**, the rooms/Agoras collapse: the expiry-aware membership rule existed in
+**three** copies (`rooms._access_active`, `subscribe_agora_topic` inline, and
+`relay_server._agora_is_member` — the third found by the guard, not by the audit) and is now
+`entitlements.access_active()` alone, with a guard on *who computes the rule*. Still open in step 3:
+the membership write itself (`add_member` vs inline INSERT), the gate/invite sequence, and the
+missing Agora kick. See SECURITY.md's P59 pass.
+
 **P58 substantially finished step 2**: federation, agoras, rooms, sessions and agents moved by
 definition name rather than line range. **67 of 87 routes** are in `emporia/routes/`;
 `relay_server.py` is **6,968 lines, from 10,525**. What remains there is deliberate — 20 routes

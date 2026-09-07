@@ -307,6 +307,65 @@ def has_grant_for_payment(
     return row is not None
 
 
+def access_active(
+    resource_type: str,
+    resource_id: str,
+    agent_id: str,
+    *,
+    is_member: bool,
+    gate_has_expiry: bool,
+    is_exempt: bool = False,
+    db_path: Path | None = None,
+    conn: sqlite3.Connection | None = None,
+) -> bool:
+    """Is this agent's membership *currently* good? (P59)
+
+    The one expiry-aware membership predicate, for every resource type. It was
+    written twice: `rooms._access_active()` had it encapsulated in the storage
+    layer with a creator exemption, and `subscribe_agora_topic()` open-coded the
+    same algebra inline in the handler —
+
+        already_member and (gate != "paid_invite" or already_entitled
+                            or not ever_entitled)
+
+    — which is this function with `is_creator` always False. Two copies of one
+    rule, at two different altitudes, in the two code paths whose drift the pass
+    record keeps returning to (N4-R1(b) found them already apart; P2r-1 added a
+    check to one purely so a future feature would not have to remember; P50's
+    defect was *worse* on the Agora side precisely because its copy of the
+    grandfather clause read an interrupted purchase as a pre-entitlements
+    membership).
+
+    The two exemptions are the subtle part and both are deliberate:
+
+    * **`is_exempt`** — someone who never paid to be here and so cannot expire
+      out of it. Each caller names its own: a room passes `agent_id ==
+      creator_id`; an Agora passes `role in ("owner", "moderator")`. Two
+      vocabularies, one rule, which is why this is a boolean the caller
+      computes rather than something this function tries to infer.
+    * **No entitlement row at all** means this membership predates entitlements
+      existing, not that one lapsed. Conflating those locks out members added
+      before P2-3 shipped. See `has_any_grant()`'s docstring.
+
+    `gate_has_expiry` is the caller's, not ours: rooms expire on `paid`, Agoras
+    on `paid_invite`, and only the caller knows its own gate vocabulary. A gate
+    with no expiry concept never touches the database here.
+
+    `conn` threads an already-open connection through to both primitives —
+    `_agora_is_member()` runs per row in the Agora feed and a topic's post
+    list, and opening two fresh connections per row there is what P1br-3
+    removed. Passing it also keeps the answer inside the caller's transaction.
+    """
+    if not is_member:
+        return False
+    if not gate_has_expiry or is_exempt:
+        return True
+    if has_access(resource_type, resource_id, agent_id, db_path=db_path, conn=conn):
+        return True
+    return not has_any_grant(resource_type, resource_id, agent_id,
+                             db_path=db_path, conn=conn)
+
+
 def revoke(
     resource_type: str,
     resource_id: str,

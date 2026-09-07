@@ -27719,3 +27719,111 @@ def test_every_router_module_is_actually_included():
         "these routers define routes the app does not serve — an "
         f"app.include_router() line is missing in relay_server: {sorted(missing)}"
     )
+
+
+# ---------------------------------------------------------------------------
+# P59 — one expiry-aware membership predicate
+#
+# Step 3 of the architecture audit, first slice. Rooms and Agoras had the same
+# rule written twice at two different altitudes: encapsulated in
+# `rooms._access_active()`, and open-coded inline in `subscribe_agora_topic()`.
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    "is_member,gate_has_expiry,is_exempt,grant,expected",
+    [
+        # not a member — nothing else matters
+        (False, True,  False, "active",  False),
+        (False, False, False, "none",    False),
+        # a gate with no expiry concept never consults entitlements
+        (True,  False, False, "none",    True),
+        (True,  False, False, "expired", True),
+        # an exempt member (room creator; Agora owner/moderator) never paid to be
+        # here and cannot expire out
+        (True,  True,  True,  "expired", True),
+        (True,  True,  True,  "none",    True),
+        # an open window admits; a closed one does not
+        (True,  True,  False, "active",  True),
+        (True,  True,  False, "expired", False),
+        # grandfathered: no entitlement row at all is "predates entitlements",
+        # never "entitlement lapsed"
+        (True,  True,  False, "none",    True),
+    ],
+)
+def test_access_active_state_matrix(tmp_path, is_member, gate_has_expiry, is_exempt,
+                                    grant, expected):
+    """Every state the one predicate has to get right, in one table.
+
+    The two exemptions are the subtle rows: a creator with an expired window is
+    still in (they never paid), and an agent with *no* entitlement row is still
+    in (their membership predates entitlements). Those two are the difference
+    between this rule and the naive `has_access()` check, and they are why it
+    had to be written down once rather than remembered twice.
+    """
+    import sqlite3 as _sqlite3
+    from datetime import UTC, datetime, timedelta
+
+    from emporia import entitlements
+
+    db = tmp_path / f"p59_{is_member}_{gate_has_expiry}_{is_exempt}_{grant}.sqlite3"
+    setup = _sqlite3.connect(db)
+    entitlements.init_entitlements_schema(setup)
+    setup.commit(); setup.close()
+
+    if grant in ("active", "expired"):
+        entitlements.grant("agora", "t1", "a1", "pi_1", duration_days=1,
+                           rail="stripe", db_path=db)
+        if grant == "expired":
+            c = _sqlite3.connect(db)
+            c.execute("UPDATE access_entitlements SET expires_at = ?",
+                      ((datetime.now(UTC) - timedelta(hours=1)).isoformat(),))
+            c.commit(); c.close()
+
+    assert entitlements.access_active(
+        "agora", "t1", "a1",
+        is_member=is_member, gate_has_expiry=gate_has_expiry,
+        is_exempt=is_exempt, db_path=db,
+    ) is expected
+
+
+def test_the_membership_rule_is_written_in_exactly_one_place():
+    """The drift guard, and the point of the slice.
+
+    The rule *is* the combination: an active grant admits, and no grant at all
+    admits, but a lapsed one does not. Any function that calls both
+    `has_access()` and `has_any_grant()` is re-deriving it. There must be
+    exactly one — `entitlements.access_active()`.
+
+    Written as "who computes the rule", not "does rooms still delegate",
+    because the failure this pass exists to prevent is a *third* copy appearing
+    in a route nobody thought to check. That is what happened between
+    `join_room` and `subscribe_agora_topic` (N4-R1(b)), and what made P50's
+    defect worse on the Agora side.
+    """
+    import ast
+    from pathlib import Path as _Path
+
+    rederivers = []
+    for path in sorted(_Path("src/emporia").rglob("*.py")):
+        tree = ast.parse(path.read_text())
+        for node in ast.walk(tree):
+            if not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                continue
+            called = {
+                (c.func.attr if isinstance(c.func, ast.Attribute) else
+                 c.func.id if isinstance(c.func, ast.Name) else "")
+                for c in ast.walk(node) if isinstance(c, ast.Call)
+            }
+            # A function that *delegates* is not re-deriving: the Agora subscribe
+            # handler still asks both primitives, for two questions that are
+            # not this rule — whether to charge (an open window means no
+            # charge, P2-4) and whether to waive the invite (P2r-2). Calling
+            # access_active() is what distinguishes the two cases.
+            if {"has_access", "has_any_grant"} <= called and "access_active" not in called:
+                rederivers.append(f"{path.name}:{node.name}")
+
+    assert rederivers == ["entitlements.py:access_active"], (
+        "the expiry-aware membership rule must live in exactly one function; "
+        f"these re-derive it: {rederivers}"
+    )

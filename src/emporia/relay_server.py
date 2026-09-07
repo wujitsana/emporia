@@ -6776,13 +6776,17 @@ def _agora_is_member(conn: Any, topic_id: str, agent_id: str, *, gate_type: str)
     ).fetchone()
     if not member:
         return False
-    if member["role"] in ("owner", "moderator"):
-        return True
-    if gate_type != "paid_invite":
-        return True
-    if entitlements.has_access("agora", topic_id, agent_id, conn=conn):
-        return True
-    return not entitlements.has_any_grant("agora", topic_id, agent_id, conn=conn)
+    # P59: the third copy of the rule. It now delegates like the other two —
+    # the exemption here is role-based rather than creator-id, which is exactly
+    # why `access_active()` takes `is_exempt` as a caller-computed boolean
+    # instead of trying to work out who is privileged on its own.
+    return entitlements.access_active(
+        "agora", topic_id, agent_id,
+        is_member=True,
+        gate_has_expiry=gate_type == "paid_invite",
+        is_exempt=member["role"] in ("owner", "moderator"),
+        conn=conn,
+    )
 
 
 def _topic_is_paid(gate_type: str, entry_fee_cents: int | None) -> bool:

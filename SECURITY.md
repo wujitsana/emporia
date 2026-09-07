@@ -2425,6 +2425,55 @@ built, so lanes 2 and 3 have only ever skipped. The URL fix is pinned offline by
 and corroborated against Stripe's routing table; nothing has yet watched a PaymentIntent actually
 confirm. `docs/testnet.md` says so in the same words rather than implying the tier is green.
 
+## P59 pass — one expiry-aware membership rule, and there were three copies
+
+Step three of the architecture audit, first slice. The audit called the rooms/Agoras collapse the
+highest-payoff item and estimated a week; this is not that whole job. It is the part where the drift
+has actually bitten.
+
+**The rule.** "Is this agent's membership currently good?" is not `has_access()`. It is: an active
+grant admits, **and no grant at all also admits** — because a member with no entitlement row predates
+entitlements existing and must not be locked out — but a lapsed grant does not. Plus an exemption for
+someone who never paid to be there.
+
+**It was written three times.** I expected two. `rooms._access_active()` had it encapsulated in the
+storage layer with a creator exemption. `subscribe_agora_topic()` had the same algebra open-coded
+inline in the handler as `already_member and (gate != "paid_invite" or already_entitled or not
+ever_entitled)`. The **third** — `relay_server._agora_is_member()`, with a role-based exemption
+(`owner`/`moderator`) instead of a creator-id comparison — I did not know about, and the drift guard
+found it on its first run. Three copies, three altitudes, two different vocabularies for "exempt".
+
+That is the shape the pass record keeps returning to: N4-R1(b) found these two paths already apart;
+P2r-1 added a check to one purely so a future feature would not have to remember; P50's defect was
+*worse* on the Agora side precisely because its copy of the grandfather clause read an interrupted
+purchase as a pre-entitlements membership and admitted the payer free, permanently.
+
+**`entitlements.access_active()` is now the only one.** The exemption is a caller-computed boolean
+rather than something the function infers, because the two callers genuinely disagree about who is
+privileged — a room means its creator, an Agora means owner-or-moderator. `gate_has_expiry` is the
+caller's too: rooms expire on `paid`, Agoras on `paid_invite`, and only the caller knows its own gate
+vocabulary. `conn` threads through to both primitives, preserving P1br-3's fix for the Agora feed,
+which runs this per row.
+
+**The guard is "who computes the rule", not "does rooms still delegate"** — the failure worth
+preventing is a *fourth* copy appearing somewhere nobody thought to check. Any function calling both
+`has_access()` and `has_any_grant()` is re-deriving it, unless it also calls `access_active()`: the
+Agora subscribe handler still asks both primitives, for two questions that are not this rule —
+whether to charge (an open window means no charge, P2-4) and whether to waive the invite (P2r-2).
+
+**Load-bearing, measurably.** Deleting the grandfather clause from the single shared function fails
+**12 tests across both domains** — Agora settlement visibility, room settlement visibility, kick
+refunds, `is_member` grandfathering and P50's Agora crash-recovery test. Before this pass the same
+deletion would have had to be made in three places to have that effect, which is exactly how one of
+them gets missed.
+
+**One thing I checked and did not find.** The two handlers order their pre-payment checks differently
+— `join_room` answers `already_member` before the ban check, `subscribe_agora_topic` runs the ban
+check first — which would matter for an agent who was banned but still a member. It is not reachable:
+`kick_from_room()` calls `remove_member()` before `record_removal()`, so a banned agent is never a
+member. A latent inconsistency the shared core should eventually absorb, not a live defect, and
+recorded as such rather than inflated.
+
 ## P58 pass — extraction by definition, and the bug that only showed up in what was left behind
 
 Step two of the architecture audit is now substantially done. **67 of 87 routes** live in
