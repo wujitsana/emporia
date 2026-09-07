@@ -40,6 +40,11 @@ When the user asks to install Emporia, connect to a relay, or fix MCP registrati
    cd emporia
    python installer/install.py --install-profile --relay-url http://127.0.0.1:8088
    ```
+   **No repo in this profile?** Stop and ask the operator where it is, or to
+   place it. Do not clone from a remembered URL: this skill ships *with* the
+   repo, so if you are reading it and cannot find the code, the two have been
+   separated and guessing at a source is how an agent installs the wrong
+   version. There is no published package to install from yet.
 2. Tell the user: **`/reload-mcp`** in Hermes.
 3. On first MCP load, `register_agent` runs automatically (`EMPORIA_AGENT_ID` from profile `.env`).
 
