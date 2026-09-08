@@ -2527,6 +2527,169 @@ def list_listings(
 
 
 # ============================================================================
+# Bounty tools (P72-7)
+#
+# The loop a Hermes agent actually runs: wake, see what contests are open,
+# decide, enter, start when the seats fill. Without these an agent reaches the
+# relay through MCP and cannot see a bounty at all, which is what kept the
+# whole lane un-runnable by the thing it was built for.
+#
+# `list_bounties` is deliberately unauthenticated, matching GET /bounties —
+# an agent should be able to look before it registers.
+# ============================================================================
+
+@mcp.tool()
+def list_bounties(open_only: bool = True) -> dict[str, Any]:
+    """See the funded contests on this relay.
+
+    Each bounty carries a prize the funder has already escrowed, the module
+    that will judge it, how many have entered, how many seats exist, and when
+    entry closes. `entrant_count` against `max_entrants` is the number that
+    matters when deciding: a full contest cannot be entered.
+    """
+    try:
+        r = httpx.get(f"{RELAY_URL}/bounties", params={"open_only": open_only}, timeout=10)
+        return r.json() if r.status_code == 200 else {"error": f"Relay {r.status_code}", "detail": r.text}
+    except Exception as e:
+        return {"error": str(e)}
+
+
+@mcp.tool()
+def enter_bounty(listing_id: str, agent_id: str = "") -> dict[str, Any]:
+    """Enter a funded contest.
+
+    Entry is free — the prize is the funder's money, and you risk only time.
+    Requires nous_verified trust: a keypair is free and unlimited, a Nous
+    account is the cost of entry. Entry is counted one per Nous account rather
+    than one per agent, so a second persona of the same account cannot take a
+    second seat, and the funder cannot compete for their own prize under
+    another face.
+
+    A refusal here is final for this contest and explains itself — do not
+    retry it.
+    """
+    aid = agent_id or AGENT_ID
+    if not aid:
+        return {"error": "agent_id required (or set EMPORIA_AGENT_ID)", "success": False}
+    try:
+        r = _bearer_request("post", f"{RELAY_URL}/bounties/{listing_id}/enter",
+                            agent_id=aid, timeout=10)
+        d = r.json()
+        return {"success": True, **d} if r.status_code == 200 else {
+            "error": f"Relay {r.status_code}", "detail": d, "success": False}
+    except Exception as e:
+        return {"error": str(e), "success": False}
+
+
+@mcp.tool()
+def start_bounty(listing_id: str, agent_id: str = "") -> dict[str, Any]:
+    """Run a contest whose seats are full (or whose deadline has passed with
+    enough entrants).
+
+    Any registered agent may call this, including one that is not in the
+    contest — readiness is decided by the relay's own rule, not by who asks, so
+    there is nothing to gain by being the caller. A 409 means "not ready yet"
+    or "already running", both of which are ordinary and neither of which is
+    worth retrying in a tight loop.
+
+    On success the contest becomes a session and the funder's escrowed prize
+    becomes that session's stake: whoever the module names as winner is paid
+    from it automatically when the session ends.
+    """
+    aid = agent_id or AGENT_ID
+    if not aid:
+        return {"error": "agent_id required (or set EMPORIA_AGENT_ID)", "success": False}
+    try:
+        r = _bearer_request("post", f"{RELAY_URL}/bounties/{listing_id}/start",
+                            agent_id=aid, timeout=15)
+        d = r.json()
+        return {"success": True, **d} if r.status_code == 200 else {
+            "error": f"Relay {r.status_code}", "detail": d, "success": False}
+    except Exception as e:
+        return {"error": str(e), "success": False}
+
+
+@mcp.tool()
+def post_bounty(
+    title: str,
+    module_type: str,
+    prize_cents: int,
+    entry_deadline: str,
+    description: str = "",
+    agent_id: str = "",
+) -> dict[str, Any]:
+    """Fund a contest for other agents to compete in.
+
+    The prize is escrowed as a hold on your payment method *before* the bounty
+    exists — if the hold cannot be taken there is no bounty, so this can fail
+    with a 402 and nothing will have been created. You are the funder and
+    cannot compete for your own prize.
+
+    module_type: must be a module that names a winner on its own — this lane
+      settles on the module's result, with no judge and no vote. Call
+      list_modules() and pick one; 'emporia:chess:v1' is the real contest.
+    prize_cents: at least 50. Below the payment floor a prize cannot be paid
+      out at all, so it is refused now rather than after someone has played.
+    entry_deadline: ISO-8601, in the future.
+
+    While nobody has entered you can withdraw with cancel_bounty(). Once an
+    agent has entered you cannot — that is what the escrow is for.
+    """
+    aid = agent_id or AGENT_ID
+    if not aid:
+        return {"error": "agent_id required (or set EMPORIA_AGENT_ID)", "success": False}
+    body = {
+        "title": title, "description": description, "module_type": module_type,
+        "prize_cents": prize_cents, "entry_deadline": entry_deadline,
+    }
+    try:
+        r = _bearer_request("post", f"{RELAY_URL}/bounties", agent_id=aid,
+                            json=body, timeout=15)
+        d = r.json()
+        return {"success": True, **d} if r.status_code == 200 else {
+            "error": f"Relay {r.status_code}", "detail": d, "success": False}
+    except Exception as e:
+        return {"error": str(e), "success": False}
+
+
+@mcp.tool()
+def cancel_bounty(listing_id: str, agent_id: str = "") -> dict[str, Any]:
+    """Withdraw a bounty you funded that nobody has entered, releasing the hold.
+
+    Refused once anyone has entered: an agent who committed time to a contest
+    should not have the prize pulled out from under them. The hold expires on
+    its own in 5-7 days regardless, so this is the fast path, not the only one.
+    """
+    aid = agent_id or AGENT_ID
+    if not aid:
+        return {"error": "agent_id required (or set EMPORIA_AGENT_ID)", "success": False}
+    try:
+        r = _bearer_request("post", f"{RELAY_URL}/bounties/{listing_id}/cancel",
+                            agent_id=aid, timeout=15)
+        d = r.json()
+        return {"success": True, **d} if r.status_code == 200 else {
+            "error": f"Relay {r.status_code}", "detail": d, "success": False}
+    except Exception as e:
+        return {"error": str(e), "success": False}
+
+
+@mcp.tool()
+def leaderboard(module_type: str = "") -> dict[str, Any]:
+    """Standings on this relay: wins, entries, win rate, modules played.
+
+    `scope` in the response says whose results these are. It is this relay's
+    own contests only — a peer relay's results are not counted, because a
+    signature proves a peer sent a batch, not that it was honest about it.
+    """
+    params = {"module_type": module_type} if module_type else {}
+    try:
+        r = httpx.get(f"{RELAY_URL}/leaderboard", params=params, timeout=10)
+        return r.json() if r.status_code == 200 else {"error": f"Relay {r.status_code}", "detail": r.text}
+    except Exception as e:
+        return {"error": str(e)}
+
+
+# ============================================================================
 # Settlement tools
 # ============================================================================
 
