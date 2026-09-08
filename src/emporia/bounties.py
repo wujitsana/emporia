@@ -40,6 +40,18 @@ The rules, and why each exists:
 
 * **A prize below the payment floor is refused at creation**, not at payout when
   the work is already done. See `MIN_PRIZE_CENTS`.
+
+* **Entry closes when the contest is full.** The module decides how many can
+  play, and both judging modules today seat exactly two. P72-4 shipped without
+  this: fifty agents could enter a chess bounty with two seats, and forty-eight
+  of them would have done nothing wrong and received nothing. A contest that
+  accepts entries it cannot seat is taking people's time under false pretences,
+  which is the same defect as advertising a prize with no hold behind it —
+  P72-5 fixed that one, this fixes its twin.
+
+  Capacity counts *entrants*, not participants-including-funder: the funder does
+  not compete, so a two-seat module means two entrants playing for the funder's
+  prize.
 """
 
 from __future__ import annotations
@@ -71,6 +83,10 @@ class BountySpec:
     module_type: str
     entry_deadline: datetime
     funder_id: str
+    # Seats, taken from the module rather than chosen by the funder — a bounty
+    # cannot be posted for more players than its judge can referee.
+    min_entrants: int = 2
+    max_entrants: int = 2
 
 
 class BountyRejected(ValueError):
@@ -120,7 +136,11 @@ def validate_spec(
         )
     if not funder_id:
         raise BountyRejected("A bounty needs a funder.")
-    return BountySpec(prize_cents, module_type, entry_deadline, funder_id)
+    cls = registry[module_type]
+    return BountySpec(
+        prize_cents, module_type, entry_deadline, funder_id,
+        min_entrants=cls.MIN_PARTICIPANTS, max_entrants=cls.MAX_PARTICIPANTS,
+    )
 
 
 def may_enter(
@@ -169,4 +189,23 @@ def may_enter(
             "This Nous account has already entered. Entry is one per account, not one per "
             "agent, because one Nous account may operate any number of personas."
         )
+    if len(existing_entrant_nous_ids) >= spec.max_entrants:
+        return False, (
+            f"This contest is full ({spec.max_entrants} of {spec.max_entrants} seats taken). "
+            f"Accepting an entry that cannot be seated would take your time for nothing."
+        )
     return True, ""
+
+
+def is_ready_to_run(spec: BountySpec, entrant_count: int, *, now: datetime | None = None) -> bool:
+    """Should this contest start?
+
+    Full, or past its deadline with enough entrants to satisfy the module. A
+    bounty that reaches its deadline short of `min_entrants` cannot run at all
+    and its hold is released instead — the funder is not charged for a contest
+    that never happened.
+    """
+    now = now or datetime.now(UTC)
+    if entrant_count >= spec.max_entrants:
+        return True
+    return now >= spec.entry_deadline and entrant_count >= spec.min_entrants

@@ -3173,6 +3173,10 @@ def test_every_route_has_a_reviewed_auth_posture():
         # P72-5: releases the funder's escrowed hold — caller must be the funder,
         # so identity is the whole gate.
         ("POST", "/bounties/{listing_id}/cancel"),
+        # P72-6: any registered agent may trigger a start — readiness is decided
+        # by the rule, not the caller, so there is nothing to gain by asking. Still
+        # authenticated: an anonymous caller could otherwise seat a contest.
+        ("POST", "/bounties/{listing_id}/start"),
         # Bootstrap: no credential can exist yet: identity is bound by a consumed
         # registration/login challenge-signature instead of a request-time caller.
         ("POST", "/dashboard/session"),

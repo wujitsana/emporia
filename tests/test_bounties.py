@@ -21,10 +21,14 @@ SOON = NOW + timedelta(hours=6)
 
 class _Judges:
     DECLARES_WINNER = True
+    MIN_PARTICIPANTS = 2
+    MAX_PARTICIPANTS = 2
 
 
 class _CannotJudge:
     DECLARES_WINNER = False
+    MIN_PARTICIPANTS = 2
+    MAX_PARTICIPANTS = 4
 
 
 REGISTRY = {"emporia:chess:v1": _Judges, "emporia:research:v1": _CannotJudge}
@@ -146,3 +150,44 @@ def test_the_real_module_registry_agrees_with_this_lane():
     assert "emporia:research:v1" in MODULE_REGISTRY
     assert "emporia:research:v1" not in judges
     assert "emporia:code-review:v1" not in judges
+
+
+class TestCapacity:
+    """P72-6: a contest that accepts entries it cannot seat is taking people's
+    time under false pretences — the same defect as advertising a prize with no
+    hold behind it, which P72-5 fixed. Both judging modules seat exactly two."""
+
+    def test_seats_come_from_the_module_not_the_funder(self):
+        """A bounty cannot be posted for more players than its judge can
+        referee, so the funder does not get to choose."""
+        spec = _spec()
+        assert (spec.min_entrants, spec.max_entrants) == (2, 2)
+
+    def test_entry_closes_when_the_seats_are_taken(self):
+        ok, why = _enter(existing_entrant_nous_ids={"nous_a", "nous_b"})
+        assert not ok and "full" in why
+
+    def test_the_last_seat_is_still_available(self):
+        """The capacity check must admit the entrant who fills the contest, not
+        refuse them — an off-by-one here silently halves every bounty."""
+        ok, why = _enter(existing_entrant_nous_ids={"nous_a"})
+        assert ok and why == ""
+
+
+class TestReadyToRun:
+    def test_a_full_contest_starts_without_waiting_for_the_deadline(self):
+        from emporia.bounties import is_ready_to_run
+        assert is_ready_to_run(_spec(), 2, now=NOW)
+
+    def test_an_empty_contest_never_starts(self):
+        from emporia.bounties import is_ready_to_run
+        assert not is_ready_to_run(_spec(), 0, now=NOW)
+        # Not even at the deadline: the module cannot run one-sided.
+        assert not is_ready_to_run(_spec(), 0, now=SOON)
+        assert not is_ready_to_run(_spec(), 1, now=SOON)
+
+    def test_before_the_deadline_a_short_contest_waits(self):
+        """One entrant with time left is not a failed contest, it is an open
+        one. Starting it would lock out anyone still deciding."""
+        from emporia.bounties import is_ready_to_run
+        assert not is_ready_to_run(_spec(), 1, now=NOW)

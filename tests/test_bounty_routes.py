@@ -52,8 +52,19 @@ def _escrow():
     exercises the route's use of it — the same convention the routes package
     uses for every other cross-module call.
     """
+    # A distinct PaymentIntent per bounty, because record_payment refuses to
+    # reuse one id across two payments — a real safety property that a shared
+    # fixture id would have masked here and nowhere else.
+    issued: list[str] = []
+
+    async def _hold(**kw):
+        pi = f"pi_bounty_{len(issued)}_{uuid.uuid4().hex[:6]}"
+        issued.append(pi)
+        return {"payment_intent_id": pi, "status": "requires_capture"}
+
     with patch("emporia.routes.bounties.create_stake_intent", new_callable=AsyncMock) as m:
-        m.return_value = {"payment_intent_id": "pi_bounty_test", "status": "requires_capture"}
+        m.side_effect = _hold
+        m.issued = issued
         yield m
 
 
@@ -186,7 +197,7 @@ def test_no_hold_means_no_bounty(client, _escrow):
 
     for exc in (RuntimeError("no Stripe key configured"),
                 httpx.ConnectError("All connection attempts failed")):
-        _escrow.side_effect = exc
+        _escrow.side_effect = exc  # replaces the per-call id issuer for this test
         r = _post_bounty(client, funder)
         assert r.status_code == 402, f"{type(exc).__name__} must refuse cleanly, got {r.status_code}"
         assert "could not be escrowed" in r.json()["detail"]
@@ -223,7 +234,8 @@ def test_the_funder_may_withdraw_only_before_anyone_enters(client, _escrow):
         # The funder can, while nobody has committed.
         r = client.post(f"/bounties/{listing_id}/cancel", headers=_hdr(funder))
         assert r.status_code == 200 and r.json()["hold_released"] is True
-        assert cancel.call_args.args[0] == "pi_bounty_test"
+        assert cancel.call_args.args[0] == _escrow.issued[-1], \
+            "the hold released must be this bounty's own"
 
     # Once an agent has entered, the prize is committed.
     second = _post_bounty(client, funder).json()["listing_id"]
@@ -231,3 +243,78 @@ def test_the_funder_may_withdraw_only_before_anyone_enters(client, _escrow):
     with patch("emporia.routes.bounties.cancel_payment_hold", new_callable=AsyncMock):
         r = client.post(f"/bounties/{second}/cancel", headers=_hdr(funder))
     assert r.status_code == 409 and "committed" in r.json()["detail"]
+
+
+def test_a_full_contest_runs_and_hands_the_prize_to_the_session(client, _escrow):
+    """P72-6: the whole settlement design in one test.
+
+    The contest is an ordinary session, and the funder's escrowed
+    PaymentIntent is recorded as that session's stake row. So the existing
+    terminal path in routes/sessions.py captures it and pays the winner with no
+    bounty-aware code anywhere in settlement — which is only possible because
+    P72-1 established that settle() does not require the winner to be a payer.
+    """
+    from emporia import relay_server as rs
+
+    funder = _mk_agent(client, nous_id="nous_f_" + uuid.uuid4().hex[:6])
+    p1 = _mk_agent(client, nous_id="nous_p1_" + uuid.uuid4().hex[:6])
+    p2 = _mk_agent(client, nous_id="nous_p2_" + uuid.uuid4().hex[:6])
+    listing_id = _post_bounty(client, funder, prize_cents=4000).json()["listing_id"]
+
+    for a in (p1, p2):
+        assert client.post(f"/bounties/{listing_id}/enter", headers=_hdr(a)).status_code == 200
+
+    r = client.post(f"/bounties/{listing_id}/start", headers=_hdr(p1))
+    assert r.status_code == 200, r.text
+    session_id = r.json()["session_id"]
+    assert set(r.json()["participants"]) == {p1, p2}
+    assert funder not in r.json()["participants"], "the funder does not compete"
+
+    # The prize is now the session's stake, payable to whoever the module names.
+    stakes = rs.get_session_payments(session_id)
+    assert [s["payment_intent_id"] for s in stakes] == [_escrow.issued[-1]]
+    assert sum(s["amount_cents"] for s in stakes) == 4000
+    assert stakes[0]["agent_id"] == funder, "the funder is the only payer"
+
+    # Entrants staked nothing.
+    with rs.DB_LOCK, rs.get_db() as conn:
+        paid = [dict(x) for x in conn.execute(
+            "SELECT agent_id, stake_paid FROM participants WHERE session_id = ?",
+            (session_id,)).fetchall()]
+    assert all(p["stake_paid"] == 0 for p in paid), "entrants risk time, not money"
+
+
+def test_a_bounty_cannot_seat_more_than_the_module_allows(client, _escrow):
+    """The defect P72-4 shipped: chess seats two, and nothing stopped a third
+    agent entering a contest they could never play in."""
+    funder = _mk_agent(client, nous_id="nous_f_" + uuid.uuid4().hex[:6])
+    listing_id = _post_bounty(client, funder).json()["listing_id"]
+    for _ in range(2):
+        a = _mk_agent(client, nous_id="nous_" + uuid.uuid4().hex[:8])
+        assert client.post(f"/bounties/{listing_id}/enter", headers=_hdr(a)).status_code == 200
+    third = _mk_agent(client, nous_id="nous_" + uuid.uuid4().hex[:8])
+    r = client.post(f"/bounties/{listing_id}/enter", headers=_hdr(third))
+    assert r.status_code == 403 and "full" in r.json()["detail"]
+
+
+def test_a_contest_short_of_entrants_will_not_start(client, _escrow):
+    funder = _mk_agent(client, nous_id="nous_f_" + uuid.uuid4().hex[:6])
+    lone = _mk_agent(client, nous_id="nous_l_" + uuid.uuid4().hex[:6])
+    listing_id = _post_bounty(client, funder).json()["listing_id"]
+    client.post(f"/bounties/{listing_id}/enter", headers=_hdr(lone))
+    r = client.post(f"/bounties/{listing_id}/start", headers=_hdr(lone))
+    assert r.status_code == 409 and "Not ready" in r.json()["detail"]
+
+
+def test_a_running_contest_cannot_be_started_twice(client, _escrow):
+    """Two cron ticks racing must not seat the same entrants into two sessions,
+    each holding a claim on one prize."""
+    funder = _mk_agent(client, nous_id="nous_f_" + uuid.uuid4().hex[:6])
+    p1 = _mk_agent(client, nous_id="nous_p1_" + uuid.uuid4().hex[:6])
+    p2 = _mk_agent(client, nous_id="nous_p2_" + uuid.uuid4().hex[:6])
+    listing_id = _post_bounty(client, funder).json()["listing_id"]
+    for a in (p1, p2):
+        client.post(f"/bounties/{listing_id}/enter", headers=_hdr(a))
+    assert client.post(f"/bounties/{listing_id}/start", headers=_hdr(p1)).status_code == 200
+    r = client.post(f"/bounties/{listing_id}/start", headers=_hdr(p2))
+    assert r.status_code == 409 and "not open" in r.json()["detail"]

@@ -37,6 +37,7 @@ from pydantic import BaseModel
 from emporia import bounties as rules
 from emporia import relay_server as rs
 from emporia.module_sdk import MODULE_REGISTRY
+from emporia.module_sdk import get_interaction_module
 from emporia.payments import cancel_payment_hold, create_stake_intent
 
 router = APIRouter()
@@ -158,6 +159,94 @@ async def create_bounty(req: CreateBountyRequest, request: Request):
             "module_type": spec.module_type,
             "entry_deadline": spec.entry_deadline.isoformat(), "state": "open",
             "prize_escrowed": True}
+
+
+async def _start_contest(listing_id: str) -> dict:
+    """Seat the entrants and hand the funder's hold to the session (P72-6).
+
+    The trick that makes this small: the contest is an ordinary session, and
+    the funder's escrowed PaymentIntent is recorded as that session's stake
+    row. So when the module reaches a terminal state, the *existing* settlement
+    path in routes/sessions.py reads it, captures it, and transfers to the
+    winner — which P72-1 proved already works when the payer is not the winner.
+    Nothing about settlement is bounty-aware, and nothing needs to be.
+    """
+    with rs.DB_LOCK, rs.get_db() as conn:
+        row = conn.execute(
+            "SELECT * FROM listings WHERE listing_id = ? AND listing_type = ?",
+            (listing_id, rules.BOUNTY_LISTING_TYPE),
+        ).fetchone()
+        if not row:
+            raise HTTPException(404, "No such bounty")
+        meta = json.loads(row["metadata_json"] or "{}")
+        if meta.get("state") != "open":
+            raise HTTPException(409, f"This bounty is {meta.get('state')}, not open.")
+        spec = _spec_from_row(row)
+        entrants = [
+            r["agent_id"] for r in conn.execute(
+                "SELECT agent_id FROM bounty_entries WHERE listing_id = ? ORDER BY entered_at",
+                (listing_id,),
+            ).fetchall()
+        ]
+
+    if not rules.is_ready_to_run(spec, len(entrants)):
+        raise HTTPException(409, (
+            f"Not ready: {len(entrants)} entrant(s), needs {spec.min_entrants} "
+            f"(or {spec.max_entrants} to start early). Deadline "
+            f"{spec.entry_deadline.isoformat()}."
+        ))
+
+    module = get_interaction_module(spec.module_type)
+    seated = entrants[:spec.max_entrants]
+    valid, err = module.validate_participants(seated)
+    if not valid:
+        raise HTTPException(409, f"The module refused these participants: {err}")
+
+    session_id = f"ses_{uuid.uuid4().hex[:16]}"
+    now = datetime.now(UTC).isoformat()
+    state = module.initial_state(seated, {"bounty_id": listing_id})
+    rs.save_session(
+        session_id=session_id, module_type=spec.module_type,
+        config={"bounty_id": listing_id, "prize_cents": spec.prize_cents},
+        payment_rules={}, state=state, current_agent=seated[0],
+        step_number=0, status="active", participants=seated,
+        created_at=now, updated_at=now,
+    )
+    for a in seated:
+        # stake_paid False: entrants pay nothing. The prize is the funder's.
+        rs.add_participant(session_id, a, stake_paid=False)
+
+    pi = meta.get("payment_intent_id")
+    if pi:
+        rs.record_payment(
+            payment_intent_id=pi, agent_id=spec.funder_id,
+            amount_cents=spec.prize_cents, payment_type="session_stake",
+            session_id=session_id, rail="stripe",
+        )
+
+    with rs.DB_LOCK, rs.get_db() as conn:
+        meta |= {"state": "running", "session_id": session_id, "seated": seated}
+        conn.execute("UPDATE listings SET metadata_json = ? WHERE listing_id = ?",
+                     (json.dumps(meta), listing_id))
+    await rs.broadcast_global({
+        "type": "bounty_started", "listing_id": listing_id,
+        "session_id": session_id, "participants": seated,
+    })
+    return {"listing_id": listing_id, "session_id": session_id,
+            "participants": seated, "state": "running"}
+
+
+@router.post("/bounties/{listing_id}/start")
+async def start_bounty(listing_id: str, request: Request):
+    """Run the contest. Any registered agent may trigger it — readiness is
+    decided by the rule, not the caller, so there is nothing to gain by being
+    the one who asks. That keeps it callable from a cron without inventing an
+    operator credential for a decision the relay already owns."""
+    caller = rs._dashboard_agent_id(request)
+    if not caller:
+        raise HTTPException(401, "Authentication required")
+    rs._require_registered(caller)
+    return await _start_contest(listing_id)
 
 
 @router.post("/bounties/{listing_id}/cancel")
