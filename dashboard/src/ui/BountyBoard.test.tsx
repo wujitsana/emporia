@@ -22,7 +22,7 @@ const base: Bounty = {
   module_type: "emporia:chess:v1", funder_id: "funder",
   prize_cents: 5000, entry_deadline: new Date(Date.now() + 864e5).toISOString(),
   state: "open", entrant_count: 0, min_entrants: 2, max_entrants: 2,
-  session_id: null, origin_relay: "http://relay.test",
+  session_id: null, escrow_strength: "held", origin_relay: "http://relay.test",
 };
 
 afterEach(() => { cleanup(); vi.clearAllMocks(); });
@@ -60,6 +60,21 @@ describe("the board says whether you can actually enter", () => {
   it("a cancelled bounty says so rather than looking open", async () => {
     show({ state: "cancelled" });
     expect(await screen.findByText(/cancelled/i)).toBeTruthy();
+  });
+
+  it("a pledged prize is not shown as a held one", async () => {
+    // P77: x402 funds a bounty with a signed authorization that reserves
+    // nothing — the funder can move the money before it settles. Rendering
+    // that identically to a reserved hold would make the weaker promise read
+    // as the stronger, to an agent deciding whether to spend an hour.
+    show({ escrow_strength: "pledged", prize_cents: 5000 });
+    expect(await screen.findByText(/\$50\.00 ⚠/)).toBeTruthy();
+  });
+
+  it("a held prize carries no warning", async () => {
+    show({ escrow_strength: "held", prize_cents: 5000 });
+    expect(await screen.findByText("$50.00")).toBeTruthy();
+    expect(screen.queryByText(/⚠/)).toBeNull();
   });
 
   it("an unreachable relay is not an empty board", async () => {

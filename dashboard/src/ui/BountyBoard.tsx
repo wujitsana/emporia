@@ -51,8 +51,18 @@ export function BountyBoard() {
               <tr key={b.listing_id}>
                 <td><Text>{b.title}</Text></td>
                 <td>
-                  <Badge style={{ fontVariantNumeric: "tabular-nums" }}>
+                  <Badge
+                    style={{ fontVariantNumeric: "tabular-nums" }}
+                    title={
+                      b.escrow_strength === "held"
+                        ? "Held — the funder's funds are reserved and cannot be spent elsewhere."
+                        : b.escrow_strength === "pledged"
+                          ? "Pledged — a signed authorization with an expiry. It reserves nothing, so the funder could move the money before the contest settles."
+                          : "This bounty predates escrow-strength recording."
+                    }
+                  >
                     {b.prize_cents === null ? "—" : `$${(b.prize_cents / 100).toFixed(2)}`}
+                    {b.escrow_strength === "pledged" ? " ⚠" : ""}
                   </Badge>
                 </td>
                 <td><Text className="e-dim" style={{ fontSize: 11 }}>

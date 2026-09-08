@@ -238,36 +238,56 @@ def test_seats_have_one_definition_not_two():
 
 
 class TestRails:
-    """P75, prompted by a direct question I had not asked myself: can a bounty
-    be funded on any rail?
+    """P75 asked whether a bounty can be on any rail and answered "Stripe only,
+    because x402 signs and settles in one step". **P77 corrects that.**
 
-    No — and the answer was buried in a `"stripe"` string literal rather than
-    stated. A prize must be *held*: authorised at funding, captured on a decided
-    result, released if the contest never runs. That is manual capture, and only
-    Stripe has it. x402 signs and settles in one step with nothing parked in
-    between, so "escrow now, pay out Thursday" has no x402 expression at all.
+    That described `_verify_x402_payment()`, which calls the facilitator's
+    /verify and /settle back to back — not the protocol, which defines them as
+    separate endpoints. An EIP-3009 authorization carries validBefore: a signed,
+    time-bounded instruction anyone can submit later. Deferring the settle is
+    exactly what a bounty needs.
 
-    The constraint is real and defensible. Leaving it as a literal was not.
+    What survives from P75 is the *guarantee*, not the capability. Stripe's
+    manual capture takes funds out of the payer's reach; an authorization
+    reserves nothing, so the funder can move the USDC and the settle fails. Held
+    versus pledged — both real, not the same promise.
     """
 
-    def test_only_a_rail_that_can_hold_funds_may_carry_a_bounty(self):
+    def test_both_rails_can_carry_a_prize(self):
         from emporia.bounties import rail_can_hold_a_prize
         from emporia.payments import RAIL_STRIPE, RAIL_X402
 
         assert rail_can_hold_a_prize(RAIL_STRIPE)
-        assert not rail_can_hold_a_prize(RAIL_X402), (
-            "x402 has no manual-capture equivalent — an authorization is settled "
-            "when it is verified, so there is nothing held to release later"
+        assert rail_can_hold_a_prize(RAIL_X402), (
+            "x402 defers settlement by design — /verify and /settle are separate "
+            "facilitator calls and an EIP-3009 authorization is valid until "
+            "validBefore"
         )
 
-    def test_this_is_narrower_than_being_a_known_rail(self):
-        """The distinction that makes this worth a separate predicate: x402 is a
-        perfectly good rail, tagged in PaymentRef and settled through the same
-        ledger. It just cannot hold. Asking `rail in KNOWN_RAILS` would say yes
-        and be answering a different question."""
-        from emporia.bounties import BOUNTY_RAILS
-        from emporia.payments import KNOWN_RAILS, RAIL_X402
+    def test_they_do_not_promise_the_same_thing(self):
+        """The distinction an entrant is entitled to know before spending an
+        hour on a contest."""
+        from emporia.bounties import ESCROW_HELD, ESCROW_PLEDGED, escrow_strength
+        from emporia.payments import RAIL_STRIPE, RAIL_X402
 
-        assert RAIL_X402 in KNOWN_RAILS
-        assert RAIL_X402 not in BOUNTY_RAILS
-        assert BOUNTY_RAILS < KNOWN_RAILS, "every bounty rail must still be a known rail"
+        assert escrow_strength(RAIL_STRIPE) == ESCROW_HELD
+        assert escrow_strength(RAIL_X402) == ESCROW_PLEDGED
+        assert ESCROW_HELD != ESCROW_PLEDGED
+
+    def test_an_unknown_rail_raises_rather_than_defaulting(self):
+        """A default here would read as a guarantee nobody made."""
+        import pytest as _pytest
+
+        from emporia.bounties import escrow_strength
+
+        with _pytest.raises(ValueError, match="cannot carry a bounty prize"):
+            escrow_strength("lightning")
+
+    def test_every_bounty_rail_is_still_a_known_rail(self):
+        from emporia.bounties import BOUNTY_RAILS
+        from emporia.payments import KNOWN_RAILS
+
+        assert BOUNTY_RAILS <= KNOWN_RAILS, (
+            "a bounty cannot be funded on a rail the settlement ledger does not "
+            "recognise — PaymentRef would carry a tag nothing can read"
+        )

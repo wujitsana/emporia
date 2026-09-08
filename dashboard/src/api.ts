@@ -539,6 +539,11 @@ export interface Bounty {
   max_entrants: number;
   /** Present once the contest is running — the session to watch it in. */
   session_id: string | null;
+  /** P77: "held" (funds reserved, capture cannot fail for lack of money) or
+   *  "pledged" (a signed, expiring authorization that reserves nothing). null
+   *  on a bounty funded before the rail was recorded. Never collapse these —
+   *  the weaker promise must not read as the stronger. */
+  escrow_strength: "held" | "pledged" | null;
   origin_relay: string | null;
 }
 

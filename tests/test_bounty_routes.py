@@ -47,26 +47,80 @@ def _mk_agent(client, *, nous_id=None, verified=True):
 
 @pytest.fixture(autouse=True)
 def _escrow():
-    """Stripe is mocked; the outbound block in conftest would refuse it anyway.
+    """A fake Stripe, not a fake escrow (P77).
 
-    Patched at the bounties module's own name, not at payments, so the test
-    exercises the route's use of it — the same convention the routes package
-    uses for every other cross-module call.
+    The previous fixture patched `create_stake_intent` and returned a
+    PaymentIntent id. That hid the actual defect: the real call created a PI
+    with no payment method and no confirm, so it sat in
+    `requires_payment_method` and held nothing — and a mock that hands back an
+    id cannot tell a held prize from an unheld one.
+
+    This mocks the Stripe HTTP boundary instead, so `confirm_spt()` →
+    `verify_payment_intent()` → `_assert_payment_intent_matches()` all run for
+    real. The PI it returns is `requires_capture` — authorised, not charged —
+    with the metadata binding the relay checks. A route that stopped confirming
+    would get a status this chain rejects.
     """
-    # A distinct PaymentIntent per bounty, because record_payment refuses to
-    # reuse one id across two payments — a real safety property that a shared
-    # fixture id would have masked here and nowhere else.
     issued: list[str] = []
 
-    async def _hold(**kw):
-        pi = f"pi_bounty_{len(issued)}_{uuid.uuid4().hex[:6]}"
-        issued.append(pi)
-        return {"payment_intent_id": pi, "status": "requires_capture"}
+    def _fake_stripe(url, *a, **kw):
+        data = kw.get("data") or {}
+        resp = MagicMock()
+        resp.raise_for_status = MagicMock()
+        if "/payment_intents" in url and url.rstrip("/").endswith("payment_intents"):
+            pi = f"pi_bounty_{len(issued)}_{uuid.uuid4().hex[:6]}"
+            issued.append(pi)
+            _PI_STORE[pi] = {
+                "id": pi,
+                "status": "requires_capture",       # held, not charged
+                "amount": int(data.get("amount", 0)),
+                "currency": data.get("currency", "usd"),
+                "capture_method": data.get("capture_method", "automatic"),
+                "metadata": {
+                    k[len("metadata["):-1]: v for k, v in data.items()
+                    if k.startswith("metadata[")
+                },
+            }
+            resp.json.return_value = _PI_STORE[pi]
+        elif "/capture" in url:
+            pi = url.rsplit("/payment_intents/", 1)[-1].split("/")[0]
+            _CAPTURED.append(pi)
+            resp.json.return_value = {**_PI_STORE.get(pi, {"id": pi}), "status": "succeeded"}
+        elif url.endswith("/transfers"):
+            _TRANSFERS.append(data)
+            resp.json.return_value = {"id": "tr_bounty", "status": "succeeded"}
+        else:
+            resp.json.return_value = {"id": "obj_unknown"}
+        return resp
 
-    with patch("emporia.routes.bounties.create_stake_intent", new_callable=AsyncMock) as m:
-        m.side_effect = _hold
-        m.issued = issued
-        yield m
+    def _fake_get(url, *a, **kw):
+        pi = url.rsplit("/payment_intents/", 1)[-1].split("?")[0]
+        resp = MagicMock()
+        resp.raise_for_status = MagicMock()
+        resp.json.return_value = _PI_STORE.get(pi, {"id": pi, "status": "requires_payment_method"})
+        return resp
+
+    _PI_STORE.clear(); _CAPTURED.clear(); _TRANSFERS.clear()
+    with patch.dict(os.environ, {"STRIPE_SECRET_KEY": "sk_test_bounty_fixture"}), \
+         patch("httpx.AsyncClient.post", new_callable=AsyncMock) as post, \
+         patch("httpx.AsyncClient.get", new_callable=AsyncMock) as get:
+        post.side_effect = _fake_stripe
+        get.side_effect = _fake_get
+        holder = MagicMock()
+        holder.issued = issued
+        holder.post = post
+        yield holder
+
+
+# Module-level so the fixture and the tests share one view of the fake Stripe.
+_PI_STORE: dict[str, dict] = {}
+_CAPTURED: list[str] = []
+_TRANSFERS: list[dict] = []
+
+# Every funding call now carries a payment credential, exactly as a paid room
+# join does. Without it the relay answers 402 with a challenge — which is a
+# behaviour worth having its own test rather than a fixture default.
+_PAY = {"Authorization": "Payment spt_bounty_test_token"}
 
 
 def _post_bounty(client, funder, **kw):
@@ -79,7 +133,7 @@ def _post_bounty(client, funder, **kw):
             "entry_deadline", (datetime.now(UTC) + timedelta(days=1)).isoformat()
         ),
     }
-    return client.post("/bounties", json=body, headers=_hdr(funder))
+    return client.post("/bounties", json=body, headers={**_hdr(funder), **_PAY})
 
 
 def test_a_bounty_is_posted_discovered_and_entered(client):
@@ -180,16 +234,12 @@ def test_an_unsettleable_bounty_is_refused_at_creation(client):
 
 
 def test_no_hold_means_no_bounty(client, _escrow):
-    """P72-5: the prize used to be a number in a JSON blob with nothing behind
-    it, so a bounty could advertise money the funder never had — and an entrant
-    would find out only after doing the work. validate_spec already refused a
-    prize below the payment floor for that reason; "the funder has no funds" is
-    the same discovery one step later.
+    """P72-5/P77: the prize must be *held* before the bounty row exists.
 
-    Both failure shapes are covered because they arrive differently:
-    create_stake_intent raises RuntimeError for an unconfigured rail, while an
-    unreachable Stripe surfaces as httpx.ConnectError. Catching only the first
-    turned the second into a 500 with a full traceback instead of this refusal.
+    Both failure shapes are covered because they arrive differently: an
+    unconfigured rail raises RuntimeError, an unreachable Stripe surfaces as
+    httpx.ConnectError. Catching only the first turned the second into a 500
+    with a traceback instead of a refusal.
     """
     import httpx
 
@@ -198,24 +248,58 @@ def test_no_hold_means_no_bounty(client, _escrow):
 
     for exc in (RuntimeError("no Stripe key configured"),
                 httpx.ConnectError("All connection attempts failed")):
-        _escrow.side_effect = exc  # replaces the per-call id issuer for this test
+        _escrow.post.side_effect = exc
         r = _post_bounty(client, funder)
-        assert r.status_code == 402, f"{type(exc).__name__} must refuse cleanly, got {r.status_code}"
-        assert "could not be escrowed" in r.json()["detail"]
+        assert r.status_code == 402, \
+            f"{type(exc).__name__} must refuse cleanly, got {r.status_code}: {r.text}"
 
     assert client.get("/bounties").json()["count"] == before, \
         "a bounty row must not exist when no hold does"
 
 
-def test_a_created_bounty_holds_the_prize(client, _escrow):
+def test_funding_without_a_credential_is_a_402_not_a_bounty(client, _escrow):
+    """P77: the funder pays the way every other payer does, so no credential
+    gets the same answer every other unpaid request gets — a challenge.
+
+    Previously `create_bounty` minted an unconfirmed PaymentIntent on its own
+    and called that escrow, so this case did not exist: a bounty was created
+    for a funder who had presented nothing at all.
+    """
+    funder = _mk_agent(client, nous_id="nous_f_" + uuid.uuid4().hex[:6])
+    before = client.get("/bounties").json()["count"]
+    r = client.post("/bounties", json={
+        "title": "Unfunded", "description": "", "module_type": "emporia:chess:v1",
+        "prize_cents": 5000,
+        "entry_deadline": (datetime.now(UTC) + timedelta(days=1)).isoformat(),
+    }, headers=_hdr(funder))          # no Authorization: Payment header
+    assert r.status_code == 402
+    assert "spt_token" in r.json().get("message", ""), r.text
+    assert client.get("/bounties").json()["count"] == before
+
+
+def test_the_prize_is_authorised_not_charged(client, _escrow):
+    """The distinction the whole lane rests on, asserted against the
+    PaymentIntent the relay actually produced.
+
+    P72-5 shipped a PI with no payment method and no confirm — it sat in
+    `requires_payment_method`, holding nothing, and a mock returning an id
+    could not tell that from a real hold. `requires_capture` is the status that
+    means authorised-and-not-yet-charged; `manual` is what makes releasing it
+    later possible.
+    """
     funder = _mk_agent(client, nous_id="nous_f_" + uuid.uuid4().hex[:6])
     r = _post_bounty(client, funder, prize_cents=2500)
     assert r.status_code == 200 and r.json()["prize_escrowed"] is True
-    kw = _escrow.call_args.kwargs
-    assert kw["amount_cents"] == 2500
-    assert kw["buyer_id"] == funder
-    assert kw["capture_method"] == "manual", "a bounty holds funds, it does not charge them"
-    assert kw["resource_type"] == "bounty"
+
+    pi = _PI_STORE[_escrow.issued[-1]]
+    assert pi["status"] == "requires_capture", (
+        f"the prize must be authorised and not yet charged, got {pi['status']!r} — "
+        f"'requires_payment_method' means nothing is held"
+    )
+    assert pi["capture_method"] == "manual", "a charge cannot be released later"
+    assert pi["amount"] == 2500
+    assert pi["metadata"]["buyer_agent_id"] == funder
+    assert pi["metadata"]["resource_type"] == "bounty"
 
 
 def test_the_funder_may_withdraw_only_before_anyone_enters(client, _escrow):

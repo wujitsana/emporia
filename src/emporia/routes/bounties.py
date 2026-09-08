@@ -32,17 +32,14 @@ import uuid
 from datetime import UTC, datetime
 
 from fastapi import APIRouter, HTTPException, Request
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
 from emporia import bounties as rules
 from emporia import relay_server as rs
 from emporia.module_sdk import MODULE_REGISTRY
 from emporia.module_sdk import get_interaction_module
-from emporia.payments import (
-    RAIL_STRIPE,
-    cancel_payment_hold,
-    create_stake_intent,
-)
+from emporia.payments import RAIL_STRIPE, cancel_payment_hold
 
 router = APIRouter()
 
@@ -114,39 +111,49 @@ async def create_bounty(req: CreateBountyRequest, request: Request):
     listing_id = f"bty_{uuid.uuid4().hex[:16]}"
     now = datetime.now(UTC).isoformat()
 
-    # Escrow first. A bounty row that exists without a hold behind it is a
-    # promise this relay cannot keep, so the hold is the precondition for the
-    # row rather than a step after it.
+    # P77: the funder pays the way every other payer on this relay pays.
     #
-    # Stripe-only, and deliberately so: a prize must be *held* and released
-    # later, which is `capture_method="manual"`, and x402 signs-and-settles in
-    # one step with nothing parked in between. `bounties.BOUNTY_RAILS` is where
-    # that constraint is written down; when a rail gains a hold primitive this
-    # call gets a rail argument and that set gains a member.
+    # P72-5 called `create_stake_intent()` directly, which POSTs a PaymentIntent
+    # with no `payment_method` and no `confirm` — so it came back in
+    # `requires_payment_method` and **held nothing**. The bounty recorded its id
+    # and called that escrow. Two consequences, both bad: an entrant could work
+    # for a prize that was never held, and at settlement `settle()` catches a
+    # failed capture and pays the winner anyway, so the relay would have paid
+    # out of its own platform balance while the funder was never charged.
+    #
+    # It was also the wrong shape for agents: that flow returns a
+    # `client_secret` for a human to confirm in a browser.
+    #
+    # Routing through `_verify_and_confirm_payment` fixes all of it at once. The
+    # funder presents `Authorization: Payment <spt_token>` like anyone joining a
+    # paid room; `confirm_spt()` creates *and confirms* in one call with
+    # `capture_method="manual"`, so the hold is real and no human is involved.
+    # No credential means a 402 challenge, which is the same answer this relay
+    # gives every other unpaid request.
     rs._assert_agent_budget(caller, spec.prize_cents)
-    try:
-        escrow = await create_stake_intent(
-            session_id=listing_id,
-            amount_cents=spec.prize_cents,
-            buyer_id=caller,
-            seller_id="",           # unknown until the contest is decided
-            service_type=spec.module_type,
-            capture_method="manual",
-            resource_type="bounty",
-        )
-    except Exception as e:
-        # Deliberately broad. `create_stake_intent` raises RuntimeError for "no
-        # rail configured", but an unreachable Stripe surfaces as
-        # httpx.ConnectError and a malformed response as something else again —
-        # and catching only RuntimeError turned an unreachable payment provider
-        # into a 500 with a full traceback instead of the refusal written right
-        # here. Every one of them means the same thing to the caller: there is
-        # no hold, so there is no bounty.
-        raise HTTPException(402, (
-            f"The prize could not be escrowed, so this bounty was not created: "
-            f"{type(e).__name__}: {e}"
-        ))
-    payment_intent_id = escrow.get("payment_intent_id") or escrow.get("id")
+    paid = await rs._verify_and_confirm_payment(
+        request,
+        agent_id=caller,
+        identity_verified=True,
+        amount_cents=spec.prize_cents,
+        currency="usd",
+        resource_type="bounty",
+        resource_id=listing_id,
+        service_type=spec.module_type,
+        # The whole point: authorised now, captured when a winner is named.
+        capture_method="manual",
+        allowed_statuses=("requires_capture",),
+        req_payment_intent_id=None,
+        challenge_message=(
+            f"Bounty prize: {spec.prize_cents} usd cents, held until the contest is "
+            f"decided. Retry with Authorization: Payment <spt_token>."
+        ),
+        challenge_resource=f"emporia:bounty:{listing_id}",
+        creator_id=None,   # no x402 analogue yet — see BOUNTY_RAILS
+    )
+    if isinstance(paid, JSONResponse):
+        return paid          # 402 with the challenge; no bounty was created
+    payment_intent_id = paid.reference
 
     with rs.DB_LOCK, rs.get_db() as conn:
         _, funder_nous = _agent_identity(conn, caller)
@@ -167,6 +174,9 @@ async def create_bounty(req: CreateBountyRequest, request: Request):
                  # The hold. Settlement captures this and pays the winner;
                  # the no-entrants path cancels it.
                  "payment_intent_id": payment_intent_id,
+                 # Which rail actually carried the prize, from the verified
+                 # PaymentRef rather than assumed here.
+                 "rail": paid.rail,
                  "state": "open",
              }), now),
         )
@@ -250,12 +260,13 @@ async def _start_contest(listing_id: str) -> dict:
         rs.record_payment(
             payment_intent_id=pi, agent_id=spec.funder_id,
             amount_cents=spec.prize_cents, payment_type="session_stake",
-            # P75: RAIL_STRIPE, not the literal "stripe" this used to be. The
-            # constant is the vocabulary `PaymentRef` and `KNOWN_RAILS` share,
-            # and a hand-written string here was a rail assumption invisible to
-            # every guard that reads that vocabulary. Bounties are Stripe-only
-            # because only Stripe can hold funds — see bounties.BOUNTY_RAILS.
-            session_id=session_id, rail=RAIL_STRIPE,
+            # P77: the rail comes from the verified payment, recorded on the
+            # bounty at funding. P75 replaced a "stripe" literal with the
+            # RAIL_STRIPE constant, which was better but still this file
+            # choosing an answer `_verify_and_confirm_payment` had already
+            # given. A PaymentRef knows which rail it was verified on; that is
+            # the tag, and nothing here needs an opinion.
+            session_id=session_id, rail=meta.get("rail") or RAIL_STRIPE,
         )
 
     with rs.DB_LOCK, rs.get_db() as conn:
@@ -377,6 +388,16 @@ async def list_bounties(limit: int = 50, open_only: bool = True):
             "state": meta.get("state", "open"),
             "entrant_count": counts.get(r["listing_id"], 0),
             "min_entrants": lo, "max_entrants": hi,
+            # P77: which promise backs this prize. "held" means the funds are
+            # out of the funder's reach and capture cannot fail for lack of
+            # money; "pledged" means a signed, expiring authorization that
+            # reserves nothing. An entrant deciding whether to spend an hour on
+            # a contest is entitled to know which — collapsing them would make
+            # the weaker one look like the stronger, which is the reassuring
+            # reading this dashboard has been fixed for twice already.
+            "escrow_strength": (
+                rules.escrow_strength(meta["rail"]) if meta.get("rail") else None
+            ),
             # Present only once the contest is running — the session anyone can
             # watch it in.
             "session_id": meta.get("session_id"),

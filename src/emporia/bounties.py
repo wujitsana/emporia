@@ -61,30 +61,71 @@ from datetime import UTC, datetime
 
 BOUNTY_LISTING_TYPE = "bounty"
 
-# P75: which rails can carry a bounty, stated rather than assumed.
+# Which rails can carry a bounty, and on what terms.
 #
-# A bounty needs funds *held* — authorised at funding, captured on a decided
-# result, released if the contest never runs. That is `capture_method="manual"`,
-# and only the Stripe rail has it. x402 has no hold: an authorization is signed
-# and settled in one step, so "escrow the prize now, pay it out on Thursday"
-# has no x402 expression at all. The relay's own x402 intents
-# (X402_INTENT_SETTLING/SETTLED/FAILED) track a settlement in flight, not money
-# parked.
+# **P75 got the reason wrong.** It said x402 "signs and settles in one step with
+# nothing parked in between". That describes `_verify_x402_payment()`, which
+# calls the facilitator's /verify and /settle back to back — not the protocol,
+# which defines them as separate endpoints. An EIP-3009 authorization carries
+# `validAfter`/`validBefore`: it is a signed, time-bounded instruction anyone
+# can submit *later*. Deferring the settle is exactly what a bounty needs.
 #
-# So a bounty is Stripe-only today, and this is where that is written down. It
-# was previously a `"stripe"` string literal in the start path — a third copy of
-# a rail assumption, invisible to the seam it contradicted. A rail that gains a
-# hold primitive joins this set; nothing else needs to change here.
-BOUNTY_RAILS = frozenset({"stripe"})
+# So x402 can carry a prize. What it cannot do is *reserve* one, and that
+# difference is the whole design:
+#
+#   HELD      Stripe manual capture authorises funds and takes them out of the
+#             payer's reach. Capture on a decided result cannot fail for lack of
+#             money. This is escrow in the strict sense.
+#
+#   PLEDGED   An EIP-3009 authorization reserves nothing. The funder can move
+#             the USDC before we settle, and the settle then fails on
+#             insufficient balance. The prize is a signed promise with an
+#             expiry, not a hold.
+#
+# A pledge is worth more than plain trust and worth less than a hold: it is
+# non-repudiable (the funder signed it), bounded (`validBefore`), and its
+# failure is provable on chain rather than one party's word. So it is offered,
+# labelled, and a funder who defects is recorded — not quietly treated as if the
+# money had been there.
+#
+# The distinction is on the wire and in the UI because an entrant deciding
+# whether to spend an hour on a contest is entitled to know which of the two
+# backs the prize.
+
+ESCROW_HELD = "held"
+ESCROW_PLEDGED = "pledged"
+
+#: rail -> how strongly the prize is backed.
+BOUNTY_RAIL_STRENGTH: dict[str, str] = {
+    "stripe": ESCROW_HELD,
+    "x402": ESCROW_PLEDGED,
+}
+
+BOUNTY_RAILS = frozenset(BOUNTY_RAIL_STRENGTH)
 
 
 def rail_can_hold_a_prize(rail: str) -> bool:
-    """Can a prize be escrowed on this rail and released later?
+    """Can this rail carry a bounty prize at all?
 
-    Not "is this rail known" — `payments.KNOWN_RAILS` answers that and x402 is
-    in it. This asks the narrower question a bounty actually depends on.
+    Not "is this rail known" — `payments.KNOWN_RAILS` answers that. This asks
+    whether a prize funded on it can be settled after the contest resolves,
+    which is the question a bounty depends on. Both rails can; they differ in
+    strength, which `escrow_strength()` answers.
     """
     return rail in BOUNTY_RAILS
+
+
+def escrow_strength(rail: str) -> str:
+    """ESCROW_HELD or ESCROW_PLEDGED — how much the prize is actually worth as a
+    promise. Raises for a rail that cannot carry a bounty, rather than returning
+    a default that would read as a guarantee nobody made."""
+    try:
+        return BOUNTY_RAIL_STRENGTH[rail]
+    except KeyError:
+        raise ValueError(
+            f"{rail!r} cannot carry a bounty prize. Known bounty rails: "
+            f"{', '.join(sorted(BOUNTY_RAILS))}."
+        ) from None
 
 # P74: one definition, imported rather than restated. P72-2 defined this as a
 # local 50 because `payments.settle()` cited a STRIPE_MIN_CHARGE_CENTS that did
