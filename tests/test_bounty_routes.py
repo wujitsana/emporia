@@ -4,16 +4,17 @@ tests/test_bounties.py proves the rules. This proves the wiring: that the rules
 are actually consulted, that identity comes from the database rather than the
 request, and that the Sybil limit survives the gap between checking and writing.
 """
+import os
 import uuid
 from datetime import UTC, datetime, timedelta
 
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from fastapi.testclient import TestClient
 
 from emporia.relay_server import app
-from tests.test_emporia import _register
+from tests.test_emporia import _register, _register_keyed, _signed_action_body
 
 
 @pytest.fixture
@@ -369,3 +370,103 @@ def test_capacity_is_enforced_at_the_modules_real_size(client, _escrow):
         assert r.status_code == 403 and "full" in r.json()["detail"]
     finally:
         MODULE_REGISTRY.pop(_FourSeater.MODULE_TYPE, None)
+
+
+def test_a_bounty_plays_to_the_end_and_the_winner_is_paid(client, _escrow):
+    """P76: the claim the whole lane rests on, tested for the first time.
+
+    Every pass so far proved a link: P72-1 that settle() pays a winner who
+    never paid in, P72-6 that the funder's hold becomes the contest session's
+    stake. Nothing had ever run the chain — post, enter, start, *play to a
+    terminal result*, and check that money moved to the right agent.
+
+    A claim assembled from proven links is not itself proven. This drives the
+    whole thing: the module names a winner, the existing session settlement
+    path captures the funder's hold, and the winner's payout is the prize less
+    the operator fee. The funder is charged; the loser is not.
+
+    `service` rather than `chess` because its terminal state is three
+    deterministic actions instead of a checkmate — the money path is what is
+    under test, not the referee.
+    """
+    from unittest.mock import AsyncMock, patch
+
+    from emporia import relay_server as rs
+
+    funder = _mk_agent(client, nous_id="nous_f_" + uuid.uuid4().hex[:6])
+    # Real keypairs: /sessions/{id}/action requires a signature.
+    buyer = "bty_buyer_" + uuid.uuid4().hex[:6]
+    seller = "bty_seller_" + uuid.uuid4().hex[:6]
+    for a in (buyer, seller):
+        _register_keyed(client, a)
+        with rs.DB_LOCK, rs.get_db() as conn:
+            conn.execute(
+                "UPDATE authorized_agents SET trust_level=?, nous_user_id=? WHERE agent_id=?",
+                ("nous_verified", "nous_" + uuid.uuid4().hex[:8], a),
+            )
+
+    listing_id = _post_bounty(
+        client, funder, prize_cents=4000, module_type="emporia:service:v1",
+    ).json()["listing_id"]
+    prize_pi = _escrow.issued[-1]
+
+    # service seats participants[0] as buyer, [1] as seller — entry order decides.
+    for a in (buyer, seller):
+        assert client.post(f"/bounties/{listing_id}/enter",
+                           headers=_hdr(a)).status_code == 200
+
+    session_id = client.post(f"/bounties/{listing_id}/start",
+                             headers=_hdr(buyer)).json()["session_id"]
+
+    captured: list[str] = []
+    transfers: list[dict] = []
+
+    def _stripe(url, *a, **kw):
+        if "/capture" in url:
+            captured.append(url.rsplit("/payment_intents/", 1)[-1].split("/")[0])
+        elif url.endswith("/transfers"):
+            transfers.append(kw.get("data", {}))
+        resp = MagicMock()
+        resp.json.return_value = {"id": "tr_bounty_e2e", "status": "succeeded"}
+        resp.raise_for_status = MagicMock()
+        return resp
+
+    with patch.dict(os.environ, {"STRIPE_SECRET_KEY": "sk_test_mock"}), \
+         patch("httpx.AsyncClient.post", new_callable=AsyncMock) as post, \
+         patch.object(rs.AGENT_REGISTRY, "get_stripe_account", return_value="acct_winner"), \
+         patch.object(rs.AGENT_REGISTRY, "get_stripe_account_status", return_value="active"), \
+         patch.object(rs.AGENT_REGISTRY, "get_stripe_account_mode", return_value="test"):
+        post.side_effect = _stripe
+        for actor, kind, payload in (
+            (seller, "accept", {}),
+            (seller, "deliver", {"deliverable": "the work"}),
+            (buyer, "confirm", {}),
+        ):
+            r = client.post(
+                f"/sessions/{session_id}/action",
+                json=_signed_action_body(client, session_id, actor, kind, payload,
+                                    f"Bounty contest step: {kind} — proceeding per the service module contract."),
+                headers=_hdr(actor),
+            )
+            assert r.status_code == 200, f"{kind} by {actor} failed: {r.text}"
+
+    # The module named the seller; the money followed.
+    assert captured == [prize_pi], \
+        f"the funder's hold is what should have been captured, got {captured}"
+    assert transfers and transfers[0].get("destination") == "acct_winner"
+    assert int(transfers[0]["amount"]) == 3900, \
+        "the winner receives the prize less the 2.5% operator fee"
+
+    settlements = [dict(r) for r in rs.get_db().execute(
+        "SELECT * FROM settlements WHERE session_id = ?", (session_id,)).fetchall()]
+    assert len(settlements) == 1
+    assert settlements[0]["winner_id"] == seller
+    assert settlements[0]["status"] == "settled"
+    assert settlements[0]["winner_payout_cents"] == 3900
+
+    # And standing reflects it — one win for the seller, an entry for each.
+    board = client.get("/leaderboard?limit=200").json()["standings"]
+    rows = {r["agent_id"]: r for r in board}
+    assert rows[seller]["wins"] == 1, "the winner should be on the table"
+    assert rows[buyer]["wins"] == 0 and rows[buyer]["entries"] >= 1, \
+        "the loser stays on the table with an entry and no win"

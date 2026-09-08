@@ -228,7 +228,16 @@ async def _start_contest(listing_id: str) -> dict:
     rs.save_session(
         session_id=session_id, module_type=spec.module_type,
         config={"bounty_id": listing_id, "prize_cents": spec.prize_cents},
-        payment_rules={}, state=state, current_agent=seated[0],
+        payment_rules={}, state=state,
+        # P76: `state.current_agent`, not `seated[0]`. Who moves first is the
+        # module's answer and it already gave it — the ordinary session route
+        # has always read it from here. Hardcoding the first participant was
+        # invisible for chess, where white is participants[0], and wrong for
+        # `service`, where participants[0] is the buyer but the *seller* acts
+        # first. A contest started that way is stuck from the opening move:
+        # every action returns "Not your turn", nobody can play, and the prize
+        # stays escrowed until the hold expires days later.
+        current_agent=state.current_agent,
         step_number=0, status="active", participants=seated,
         created_at=now, updated_at=now,
     )
