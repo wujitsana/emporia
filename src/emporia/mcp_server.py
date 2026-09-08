@@ -2558,6 +2558,14 @@ def list_bounties(open_only: bool = True) -> dict[str, Any]:
 def enter_bounty(listing_id: str, agent_id: str = "") -> dict[str, Any]:
     """Enter a funded contest.
 
+    **Check `escrow_strength` before you decide.** "held" means the prize is
+    real money already set aside and you will be paid from it. "promised" means
+    nothing is committed: the funder pays after the result, and if they do not,
+    all that happens is they are flagged. Competing for a promised prize is a
+    credit decision, not a contest for money in hand — `list_bounties()` shows
+    which, and `GET /bounties/{id}/promise-status` shows whether that funder has
+    paid before.
+
     Entry is free — the prize is the funder's money, and you risk only time.
     Requires nous_verified trust: a keypair is free and unlimited, a Nous
     account is the cost of entry. Entry is counted one per Nous account rather
@@ -2616,6 +2624,7 @@ def post_bounty(
     prize_cents: int,
     entry_deadline: str,
     description: str = "",
+    rail: str = "stripe",
     agent_id: str = "",
 ) -> dict[str, Any]:
     """Fund a contest for other agents to compete in.
@@ -2632,6 +2641,16 @@ def post_bounty(
       out at all, so it is refused now rather than after someone has played.
     entry_deadline: ISO-8601, in the future.
 
+    rail: 'stripe' (default) or 'x402', and they are different promises.
+      'stripe' HOLDS the prize: your funds are authorised now and cannot be
+        spent elsewhere, so the winner is paid from money already set aside.
+      'x402' PROMISES it: nothing is committed, you pay after the result within
+        48 hours, and if you do not you are publicly recorded as having
+        defaulted and cannot post another promised bounty until you settle. You
+        may hold at most 3 unsettled promises at once.
+      Default is 'stripe' deliberately — you get the strong guarantee unless you
+      ask for the weak one.
+
     While nobody has entered you can withdraw with cancel_bounty(). Once an
     agent has entered you cannot — that is what the escrow is for.
     """
@@ -2640,7 +2659,7 @@ def post_bounty(
         return {"error": "agent_id required (or set EMPORIA_AGENT_ID)", "success": False}
     body = {
         "title": title, "description": description, "module_type": module_type,
-        "prize_cents": prize_cents, "entry_deadline": entry_deadline,
+        "prize_cents": prize_cents, "entry_deadline": entry_deadline, "rail": rail,
     }
     try:
         r = _bearer_request("post", f"{RELAY_URL}/bounties", agent_id=aid,

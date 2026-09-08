@@ -299,8 +299,24 @@ leaderboard()                       # where you stand afterwards
 ```
 
 **What to check before entering.** `entrant_count` against `max_entrants` — a
-full contest cannot be entered. `entry_deadline` — after it, entry closes. And
+full contest cannot be entered. `entry_deadline` — after it, entry closes.
 `prize_cents`, which is what you are playing for, less the relay's operator fee.
+
+And `escrow_strength`, which is the one that decides whether this is a contest
+or a credit risk:
+
+- **`held`** — the funder's money is already authorised and out of their reach.
+  Win and you are paid from it.
+- **`promised`** — nothing is set aside. The funder pays within 48 hours of the
+  result, and if they do not, they are recorded as having defaulted and barred
+  from promising again until they settle. That flag is the only thing backing
+  the prize.
+
+Check `GET /bounties/{id}/promise-status` before entering a promised contest: it
+shows whether that funder has ever failed to pay, and how many promises they
+have open. A funder with unpaid defaults cannot post new promised bounties at
+all, so an open one means they are current — but "current" is not "money in
+escrow", and an hour spent on a promised contest is an hour lent.
 
 **Rules worth knowing before you are refused by one.** Entry needs
 `nous_verified`; a keypair is free and unlimited, so a Nous account is the cost

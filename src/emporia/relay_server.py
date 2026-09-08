@@ -3539,6 +3539,7 @@ async def lifespan(app: FastAPI):
     # — unlike the federation loop, which is gated on peers being configured,
     # there is no deployment where "a payout could be owed" is knowably false.
     _PAYOUT_RECONCILE_TASK = asyncio.create_task(_payout_reconcile_loop())
+    globals()["_BOUNTY_RECONCILE_TASK"] = asyncio.create_task(_bounty_reconcile_loop())
     # P23-3: only started when peers are actually configured -- a standalone
     # relay (the common case) shouldn't spin a task that does nothing every
     # EMPORIA_FEDERATION_SYNC_INTERVAL_SECONDS forever.
@@ -3556,6 +3557,12 @@ async def lifespan(app: FastAPI):
             with suppress(asyncio.CancelledError):
                 await _PAYOUT_RECONCILE_TASK
             _PAYOUT_RECONCILE_TASK = None
+        _bounty_task = globals().get("_BOUNTY_RECONCILE_TASK")
+        if _bounty_task is not None:
+            _bounty_task.cancel()
+            with suppress(asyncio.CancelledError):
+                await _bounty_task
+            globals()["_BOUNTY_RECONCILE_TASK"] = None
         if _FEDERATION_SYNC_TASK is not None:
             _FEDERATION_SYNC_TASK.cancel()
             with suppress(asyncio.CancelledError):
@@ -4015,6 +4022,16 @@ _PAYOUT_OWED_STATUS_PREFIXES = (
     "pending_connect", "no_stripe_account", "transfer_failed",
 )
 
+_BOUNTY_RECONCILE_INTERVAL_SECONDS = float(
+    os.getenv("EMPORIA_BOUNTY_RECONCILE_INTERVAL_SECONDS", "300")
+)
+_BOUNTY_RECONCILE_TASK: "asyncio.Task | None" = None
+BOUNTY_RECONCILE_STATS: dict[str, Any] = {
+    "runs": 0, "last_run_at": None, "last_error_at": None,
+    "consecutive_failures": 0, "settled": 0, "awaiting_payment": 0,
+    "refunded": 0, "defaulted": 0,
+}
+
 _PAYOUT_RECONCILE_INTERVAL_SECONDS = float(
     os.getenv("EMPORIA_PAYOUT_RECONCILE_INTERVAL_SECONDS", "300")
 )
@@ -4163,6 +4180,41 @@ async def _reconcile_one_payout(row: dict[str, Any]) -> str:
         return "failed"
     _record_payout_outcome(row["settlement_id"], "transferred", transfer["transfer_id"])
     return "paid"
+
+
+async def _bounty_reconcile_loop() -> None:
+    """Runs the bounty reconciler on an interval (P80).
+
+    P79 wrote the reconciler and never called it. That is not a missing
+    convenience: the automatic default flag is the *only* thing backing a
+    promised prize, so a reconciler nobody runs means a funder can take an
+    agent's work and never pay, and nothing anywhere notices. It also left
+    every held bounty reading "running" on the board after it had been paid.
+
+    Same shape as `_payout_reconcile_loop()` above, including N12-1's rule that
+    one raise must not end the loop for the life of the process — a loop that
+    died silently would be indistinguishable from the defect it exists to fix.
+    """
+    from emporia.routes.bounties import reconcile_bounties
+
+    while True:
+        await asyncio.sleep(_BOUNTY_RECONCILE_INTERVAL_SECONDS)
+        try:
+            counts = await reconcile_bounties()
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            logger.exception("Bounty reconcile failed — will retry next interval")
+            BOUNTY_RECONCILE_STATS["last_error_at"] = datetime.now(UTC).isoformat()
+            BOUNTY_RECONCILE_STATS["consecutive_failures"] += 1
+            continue
+        BOUNTY_RECONCILE_STATS["runs"] += 1
+        BOUNTY_RECONCILE_STATS["last_run_at"] = datetime.now(UTC).isoformat()
+        BOUNTY_RECONCILE_STATS["consecutive_failures"] = 0
+        for key, ids in counts.items():
+            if ids:
+                BOUNTY_RECONCILE_STATS[key] += len(ids)
+                logger.info("bounty_reconcile", extra={"transition": key, "count": len(ids)})
 
 
 async def _payout_reconcile_loop() -> None:

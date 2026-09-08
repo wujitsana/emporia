@@ -209,6 +209,8 @@ def _funder_promise_record(conn, agent_id: str) -> tuple[int, int]:
         if state == "defaulted":
             unpaid += 1
         elif state in ("open", "running", "awaiting_payment"):
+            # "settled", "refunded" and "cancelled" are terminal and free the
+            # slot; "defaulted" is counted above as a default, not here.
             outstanding += 1
     return unpaid, outstanding
 
@@ -638,26 +640,40 @@ async def settle_promise(listing_id: str, request: Request):
             "settled_late": was_late, "payment_reference": paid.reference}
 
 
-async def reconcile_promised_bounties(limit: int = 50) -> dict[str, Any]:
-    """Move promised bounties through the states nobody triggers by hand (P79).
+async def reconcile_bounties(limit: int = 50) -> dict[str, Any]:
+    """Move bounties through the states nobody triggers by hand (P80).
 
-    Two transitions, both of which have to happen on their own:
+    P79 shipped this covering one rail and one outcome, which left two dead
+    ends and one loop that never ran:
 
-    * A running contest whose session has settled becomes `awaiting_payment`,
-      with a deadline. Nothing else notices that a contest ended.
-    * An `awaiting_payment` bounty past its deadline becomes `defaulted`.
+    * **A held bounty never left `running`.** Nothing moved it — the session
+      settlement path pays the winner and knows nothing about bounties, and
+      `settle_promise` is x402-only. So a finished, paid contest showed on the
+      board as still running, permanently.
+    * **A refunded contest never left `running` on either rail.** A dispute, a
+      timeout or a draw ends the session without a winner, and this only looked
+      at `status == "settled"`. For a promised bounty that also consumed one of
+      the funder's outstanding slots forever.
+    * **Nothing called it.** The default flag is the only thing backing a
+      promised prize, and it arrived exactly never outside a test. Same shape
+      as P72-4, where `bounties.py` was a well-tested module with no callers.
 
-    The second is the entire mechanism. A promised prize is backed only by the
-    consequence of not paying it, and a consequence that waits for someone to
-    complain is not one — the winner would have to notice, and know to ask, and
-    have somewhere to ask. So the flag arrives by itself.
+    Every terminal session outcome now reaches a terminal bounty state, on both
+    rails:
+
+        running  + settled  + winner + held      -> settled   (already paid)
+        running  + settled  + winner + promised  -> awaiting_payment (+ due date)
+        running  + refunded                      -> refunded  (no winner, nothing owed)
+        awaiting_payment past its due date       -> defaulted
 
     Deliberately a reconciler rather than a branch inside session settlement:
     that path pays people and is the last place to add a rail-conditional
     branch. Same reasoning as P51's payout loop.
     """
     now = datetime.now(UTC)
-    resolved, defaulted = [], []
+    counts: dict[str, list[str]] = {
+        "settled": [], "awaiting_payment": [], "refunded": [], "defaulted": [],
+    }
     with rs.DB_LOCK, rs.get_db() as conn:
         rows = conn.execute(
             "SELECT * FROM listings WHERE listing_type = ? ORDER BY created_at LIMIT ?",
@@ -666,33 +682,59 @@ async def reconcile_promised_bounties(limit: int = 50) -> dict[str, Any]:
 
         for row in rows:
             meta = json.loads(row["metadata_json"] or "{}")
-            if meta.get("rail") != RAIL_X402:
-                continue
             state = meta.get("state")
+            rail = meta.get("rail")
 
             if state == "running" and meta.get("session_id"):
                 s = conn.execute(
                     "SELECT winner_id, status FROM settlements WHERE session_id = ?",
                     (meta["session_id"],),
                 ).fetchone()
-                if s and s["status"] == "settled" and s["winner_id"]:
-                    _mark_awaiting_payment(conn, row["listing_id"], meta,
-                                           s["winner_id"], now)
-                    resolved.append(row["listing_id"])
+                if not s:
+                    continue                      # contest still being played
+                if s["status"] == "settled" and s["winner_id"]:
+                    if rail == RAIL_X402:
+                        _mark_awaiting_payment(conn, row["listing_id"], meta,
+                                               s["winner_id"], now)
+                        counts["awaiting_payment"].append(row["listing_id"])
+                    else:
+                        # The session path already captured the hold and paid
+                        # the winner. Nothing is owed; the bounty is just done,
+                        # and saying "running" about a paid contest is the kind
+                        # of stale claim this board keeps being fixed for.
+                        meta |= {"state": "settled", "winner_id": s["winner_id"],
+                                 "resolved_at": now.isoformat()}
+                        conn.execute(
+                            "UPDATE listings SET metadata_json = ? WHERE listing_id = ?",
+                            (json.dumps(meta), row["listing_id"]),
+                        )
+                        counts["settled"].append(row["listing_id"])
+                else:
+                    # Refund: dispute, timeout, or a draw the module could not
+                    # decide. No winner, so nothing is owed on either rail —
+                    # the held prize was released by the session path and the
+                    # promised one never existed. Terminal either way, and a
+                    # funder's outstanding-promise slot is freed.
+                    meta |= {"state": "refunded", "resolved_at": now.isoformat(),
+                             "refund_reason": s["status"]}
+                    conn.execute(
+                        "UPDATE listings SET metadata_json = ? WHERE listing_id = ?",
+                        (json.dumps(meta), row["listing_id"]),
+                    )
+                    counts["refunded"].append(row["listing_id"])
                 continue
 
             if state == "awaiting_payment":
                 due = meta.get("payment_due_at")
                 if due and now >= datetime.fromisoformat(due):
-                    meta |= {"state": "defaulted",
-                             "defaulted_at": now.isoformat()}
+                    meta |= {"state": "defaulted", "defaulted_at": now.isoformat()}
                     conn.execute(
                         "UPDATE listings SET metadata_json = ? WHERE listing_id = ?",
                         (json.dumps(meta), row["listing_id"]),
                     )
-                    defaulted.append(row["listing_id"])
+                    counts["defaulted"].append(row["listing_id"])
 
-    return {"awaiting_payment": resolved, "defaulted": defaulted}
+    return counts
 
 
 @router.get("/bounties/{listing_id}/promise-status")

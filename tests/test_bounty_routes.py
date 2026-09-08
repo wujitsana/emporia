@@ -629,7 +629,7 @@ def test_outstanding_promises_are_capped_through_the_api(client, _escrow):
 def test_the_default_flag_arrives_without_anyone_complaining(client, _escrow):
     """A consequence that waits for the winner to notice, know to ask, and have
     somewhere to ask is not a consequence."""
-    from emporia.routes.bounties import reconcile_promised_bounties
+    from emporia.routes.bounties import reconcile_bounties
 
     funder = _mk_agent(client, nous_id="nous_r_" + uuid.uuid4().hex[:6])
     listing_id = _promise_bounty(client, funder).json()["listing_id"]
@@ -639,7 +639,7 @@ def test_the_default_flag_arrives_without_anyone_complaining(client, _escrow):
     )
 
     import anyio
-    out = anyio.run(reconcile_promised_bounties)
+    out = anyio.run(reconcile_bounties)
     assert listing_id in out["defaulted"]
 
     status = client.get(f"/bounties/{listing_id}/promise-status")
@@ -651,7 +651,7 @@ def test_a_bounty_still_within_its_window_is_not_defaulted(client, _escrow):
     them. Flagging early would punish an agent for being asleep."""
     import anyio
 
-    from emporia.routes.bounties import reconcile_promised_bounties
+    from emporia.routes.bounties import reconcile_bounties
 
     funder = _mk_agent(client, nous_id="nous_w_" + uuid.uuid4().hex[:6])
     listing_id = _promise_bounty(client, funder).json()["listing_id"]
@@ -659,5 +659,108 @@ def test_a_bounty_still_within_its_window_is_not_defaulted(client, _escrow):
         listing_id, state="awaiting_payment", winner_id="the_winner",
         payment_due_at=(datetime.now(UTC) + timedelta(hours=1)).isoformat(),
     )
-    out = anyio.run(reconcile_promised_bounties)
+    out = anyio.run(reconcile_bounties)
     assert listing_id not in out["defaulted"]
+
+
+def test_a_paid_held_bounty_stops_saying_it_is_running(client, _escrow):
+    """P80: nothing moved a held bounty out of `running` — not the session
+    settlement path, which pays the winner and knows nothing about bounties,
+    and not settle_promise, which is x402-only. So a finished, paid contest sat
+    on the board as still running, permanently.
+
+    The money was always right. The board was wrong about it, which is the
+    class of defect this dashboard has now been fixed for four times.
+    """
+    import anyio
+
+    from emporia import relay_server as rs
+    from emporia.routes.bounties import reconcile_bounties
+
+    funder = _mk_agent(client, nous_id="nous_h_" + uuid.uuid4().hex[:6])
+    listing_id = _post_bounty(client, funder).json()["listing_id"]
+    _force_state(listing_id, state="running", session_id="ses_held_done")
+    with rs.DB_LOCK, rs.get_db() as conn:
+        conn.execute(
+            "INSERT INTO settlements (settlement_id, session_id, winner_id, status, "
+            "created_at) VALUES (?,?,?,?,?)",
+            (f"stl_{uuid.uuid4().hex[:8]}", "ses_held_done", "the_winner", "settled",
+             datetime.now(UTC).isoformat()),
+        )
+
+    out = anyio.run(reconcile_bounties)
+    assert listing_id in out["settled"]
+    assert client.get(f"/bounties/{listing_id}/promise-status").json()["state"] == "settled"
+
+
+def test_a_refunded_contest_does_not_strand_the_bounty(client, _escrow):
+    """A dispute, timeout or undecidable draw ends the session with no winner.
+    P79 only looked at `status == "settled"`, so those bounties stayed
+    `running` forever — and on the promised rail that consumed one of the
+    funder's three outstanding slots permanently, for a contest that produced
+    nothing."""
+    import anyio
+
+    from emporia import relay_server as rs
+    from emporia.routes.bounties import reconcile_bounties
+
+    funder = _mk_agent(client, nous_id="nous_rf_" + uuid.uuid4().hex[:6])
+    listing_id = _promise_bounty(client, funder).json()["listing_id"]
+    _force_state(listing_id, state="running", session_id="ses_refunded")
+    with rs.DB_LOCK, rs.get_db() as conn:
+        conn.execute(
+            "INSERT INTO settlements (settlement_id, session_id, winner_id, status, "
+            "created_at) VALUES (?,?,?,?,?)",
+            (f"stl_{uuid.uuid4().hex[:8]}", "ses_refunded", "nominal_winner", "refunded",
+             datetime.now(UTC).isoformat()),
+        )
+
+    out = anyio.run(reconcile_bounties)
+    assert listing_id in out["refunded"]
+
+    # And the slot is free again — the funder can promise once more.
+    assert _promise_bounty(client, funder, title="After the refund").status_code == 200
+
+
+def test_a_contest_still_being_played_is_left_alone(client, _escrow):
+    """No settlement row yet means the module has not finished. Advancing on
+    that would mark a live contest resolved."""
+    import anyio
+
+    from emporia.routes.bounties import reconcile_bounties
+
+    funder = _mk_agent(client, nous_id="nous_live_" + uuid.uuid4().hex[:6])
+    listing_id = _promise_bounty(client, funder).json()["listing_id"]
+    _force_state(listing_id, state="running", session_id="ses_still_playing")
+    out = anyio.run(reconcile_bounties)
+    assert listing_id not in sum(out.values(), [])
+
+
+def test_the_reconciler_is_actually_wired_to_a_loop():
+    """P80's real defect: P79 wrote the reconciler, tested it by calling it
+    directly, and connected it to nothing.
+
+    That is not a missing convenience. The automatic default flag is the only
+    thing backing a promised prize, so a reconciler nobody runs means a funder
+    can take an agent's work and never pay, with nothing anywhere noticing —
+    and every test still passes, because the tests call it themselves.
+
+    Exactly the shape of P72-4, where bounties.py was a well-tested module with
+    no callers. Asserted against the lifespan source rather than by starting a
+    relay, so it stays true for the process that actually serves traffic.
+    """
+    import inspect
+
+    from emporia import relay_server as rs
+
+    lifespan_src = inspect.getsource(rs.lifespan)
+    assert "_bounty_reconcile_loop" in lifespan_src, (
+        "the bounty reconciler must be started by the relay, not only by tests"
+    )
+    loop_src = inspect.getsource(rs._bounty_reconcile_loop)
+    assert "reconcile_bounties" in loop_src
+    # N12-1's rule: one raise must not end the loop for the life of the process.
+    assert "continue" in loop_src and "except Exception" in loop_src, (
+        "a loop that dies on one error is indistinguishable from the defect it "
+        "exists to fix"
+    )
