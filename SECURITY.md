@@ -3954,6 +3954,42 @@ caught by both. S3 (the same one-door rail, but keyed off `tempo` with no Stripe
 combination the value test never asserts) is caught **only** by the new cross-product guard. S3 is
 the one that justifies the guard existing alongside the value test.
 
+## P71 pass — federation demonstrated, and a documented exit that did not exist
+
+The competitive read placed cross-relay discovery among strangers as the property worth defending,
+and recorded honestly that it was architectural, not demonstrated. This pass ran it: two relays,
+separate databases, separate key directories, each configured with the other as its only peer.
+
+**It works.** A listing created on relay A — with nothing on B aware it existed — appeared on B
+through the unattended sync loop within roughly seven seconds, carrying `origin_relay` and the
+original `agent_id` intact. `GET /federation/peers` on B then showed the TOFU pin it had taken for
+A's relay key. Wiping A's key directory and restarting it (the key-rotation / URL-hijack shape) made
+B reject the next batch outright: `imported: 0`, its existing row untouched, and an error naming
+both key prefixes and the deliberate re-pin path. The signature check and the pin are load-bearing,
+not decorative.
+
+| Finding | Severity | Fix |
+|---|---|---|
+| **An explicitly empty environment variable could not switch anything off.** `config._merge_dotenv()` is documented as setdefault semantics — "a value already present in the environment always wins" — but tested `if not os.environ.get(key)`: truthiness, not presence. So `VAR= <command>` was indistinguishable from `VAR` being unset, and the profile `.env` refilled it. The operator-visible consequence is that the Stripe live-key refusal (P62/P65) offers three exits, and its second — *"Not using Stripe at all — unset STRIPE_SECRET_KEY"* — did not exist for anyone running from a Hermes profile that defines the key. The only route was editing the shared profile file, which is the operator's real credential store, to start a throwaway relay. | Medium (usability of a security refusal; no leak) | `if key not in os.environ`. An explicit empty string is a deliberate statement, and a config layer that silently overrules it is answering a question the operator already answered. Blank values *in the file* are still ignored, unchanged. Verified end to end rather than by unit test alone: `STRIPE_SECRET_KEY= uvicorn …` from this profile now starts, reports `stripe_enabled: false` and `payment_rails: ["free"]`, where the identical command previously refused. |
+
+**How it was found.** Not by reading the function — by needing it. Standing up the federation harness
+took three restarts, each refused by the live-key guard, before I stopped working around the refusal
+and read why its own advice was not working.
+
+**Checked and cleared, recorded because the reasoning is not obvious.** `tests/conftest.py`
+deliberately blanks `NVIDIA_API_KEY`, `EMPORIA_NOUS_JWT` and `OPENROUTER_API_KEY`, and all three are
+defined in this profile's `.env`. Under the old truthiness check those blanks looked like they could
+be silently refilled with real credentials. They are not: `load_profile_dotenv()` runs once at
+`emporia.config` import, before conftest assigns, and the `_dotenv_loaded` guard means nothing
+re-merges afterwards. Probed directly (lengths only, never values) — all three are empty inside the
+suite. The safety was real but incidental to import order rather than guaranteed by the merge; after
+this pass the merge guarantees it too.
+
+**Stash-verify.** Restoring `if not os.environ.get(key)` fails
+`test_an_explicitly_empty_env_var_is_an_answer_not_a_gap`, which asserts all three behaviours
+together: an absent variable is still filled from the file, an explicitly empty one survives, and a
+blank line in the file still never creates a variable.
+
 ## Threat model notes (by design, not gaps)
 
 - **Ed25519 = auth; the relay never holds private keys.** Keys live at `~/.hermes/keys/*.priv`,

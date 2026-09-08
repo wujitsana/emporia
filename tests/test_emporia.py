@@ -246,6 +246,43 @@ def test_payment_rails_helper_pins_health_and_agent_variants_across_flag_combina
     # never sets EMPORIA_X402_ENABLED and never see "x402" in their output.
 
 
+def test_an_explicitly_empty_env_var_is_an_answer_not_a_gap(tmp_path):
+    """P71: `VAR= <command>` must switch a setting off, even when a profile
+    `.env` further up defines it.
+
+    `_merge_dotenv` is documented as setdefault semantics — "a value already
+    present in the environment always wins". It tested truthiness rather than
+    presence, so an explicitly empty value was treated as an unset one and the
+    file refilled it. The operator-visible consequence: the Stripe live-key
+    refusal (P62/P65) offers "unset STRIPE_SECRET_KEY" as one of its three
+    exits, and from a Hermes profile that defines it, that exit did not exist
+    per process — the only route was editing the shared profile file.
+
+    Found by running two relays against each other, not by reading the code.
+    """
+    from emporia.config import _merge_dotenv
+
+    env_file = tmp_path / ".env"
+    env_file.write_text(
+        "EMPORIA_P71_SET_BY_FILE=from_file\n"
+        "EMPORIA_P71_BLANKED=from_file\n"
+        "EMPORIA_P71_BLANK_IN_FILE=\n"
+    )
+    with patch.dict(os.environ, {"EMPORIA_P71_BLANKED": ""}, clear=False):
+        os.environ.pop("EMPORIA_P71_SET_BY_FILE", None)
+        os.environ.pop("EMPORIA_P71_BLANK_IN_FILE", None)
+        _merge_dotenv(env_file)
+
+        assert os.environ["EMPORIA_P71_SET_BY_FILE"] == "from_file", \
+            "a genuinely absent variable must still be filled from the file"
+        assert os.environ["EMPORIA_P71_BLANKED"] == "", \
+            "an explicitly empty value is a deliberate 'off' and must survive the merge"
+        assert "EMPORIA_P71_BLANK_IN_FILE" not in os.environ, \
+            "a blank value in the file must not be used to create a variable"
+    for k in ("EMPORIA_P71_SET_BY_FILE", "EMPORIA_P71_BLANK_IN_FILE"):
+        os.environ.pop(k, None)
+
+
 def test_both_doors_agree_on_every_rail_except_stripe_connect():
     """P70, the guard that keeps the seam a seam.
 

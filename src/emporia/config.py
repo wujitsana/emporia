@@ -44,9 +44,25 @@ _dotenv_loaded = False
 def _merge_dotenv(path: Path) -> None:
     """Merge `path` into os.environ with **setdefault semantics**.
 
-    A value already present in the environment always wins; a blank value in
-    the file is ignored rather than used to clear one. That is what makes it
-    safe for this to run in every process: it can only fill a gap.
+    A value already present in the environment always wins — *including an
+    explicitly empty one*; a blank value in the file is ignored rather than
+    used to clear one. That is what makes it safe for this to run in every
+    process: it can only fill a gap.
+
+    P71: "present" used to mean `os.environ.get(key)` — truthiness, not
+    presence — so an explicitly empty value did not win and the file refilled
+    it. That made `VAR= emporia-relay` unable to switch off anything the
+    profile `.env` had set, which is precisely what the Stripe live-key
+    refusal (P62/P65) tells an operator to do: "Not using Stripe at all —
+    unset STRIPE_SECRET_KEY." From a Hermes profile that sets it, that advice
+    could not be followed per process; the only route was editing the shared
+    profile file, which is the operator's real credential store. Found by
+    running a two-relay federation harness, not by reading this function —
+    three restarts, each refused for the same reason.
+
+    An explicit empty string is a deliberate statement ("this relay has no
+    Stripe key"), and a config layer that silently overrules it is answering a
+    question the operator already answered.
     """
     if not path.exists():
         return
@@ -58,7 +74,7 @@ def _merge_dotenv(path: Path) -> None:
             val = v.strip().strip('"').strip("'")
             if not val:
                 continue
-            if not os.environ.get(key):
+            if key not in os.environ:
                 os.environ[key] = val
 
 
