@@ -709,8 +709,20 @@ async def create_test_spt(amount_cents: int, currency: str = "usd") -> dict[str,
     obtain SPTs through Link approval or another MPP wallet flow.
     """
     key = _stripe_key()
+    # P75: deliberately NOT stripe_key_mode(). Every other bare-prefix check in
+    # this codebase was a mode question wearing a prefix check's clothes and was
+    # corrected to ask stripe_key_mode(); this one is the exception, and the
+    # distinction is the one stripe_key_mode()'s own docstring draws — mode is
+    # not capability. This calls /v1/test_helpers/, which a *restricted* test
+    # key (rk_test_) may not be permitted to reach at all. Being in test mode
+    # does not make a key able to mint tokens, so the narrow check stays and the
+    # message says which kind of key, not which mode.
     if not key.startswith("sk_test_"):
-        raise RuntimeError("create_test_spt requires a Stripe test secret key")
+        raise RuntimeError(
+            "create_test_spt requires a full Stripe test secret key (sk_test_). "
+            "A restricted test key (rk_test_) is still test mode but may lack "
+            "permission for Stripe's test_helpers endpoints."
+        )
     amount = f"{amount_cents / 100:.2f}"
     async with httpx.AsyncClient(timeout=REQUEST_TIMEOUT) as client:
         resp = await client.post(

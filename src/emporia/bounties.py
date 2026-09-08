@@ -61,6 +61,31 @@ from datetime import UTC, datetime
 
 BOUNTY_LISTING_TYPE = "bounty"
 
+# P75: which rails can carry a bounty, stated rather than assumed.
+#
+# A bounty needs funds *held* — authorised at funding, captured on a decided
+# result, released if the contest never runs. That is `capture_method="manual"`,
+# and only the Stripe rail has it. x402 has no hold: an authorization is signed
+# and settled in one step, so "escrow the prize now, pay it out on Thursday"
+# has no x402 expression at all. The relay's own x402 intents
+# (X402_INTENT_SETTLING/SETTLED/FAILED) track a settlement in flight, not money
+# parked.
+#
+# So a bounty is Stripe-only today, and this is where that is written down. It
+# was previously a `"stripe"` string literal in the start path — a third copy of
+# a rail assumption, invisible to the seam it contradicted. A rail that gains a
+# hold primitive joins this set; nothing else needs to change here.
+BOUNTY_RAILS = frozenset({"stripe"})
+
+
+def rail_can_hold_a_prize(rail: str) -> bool:
+    """Can a prize be escrowed on this rail and released later?
+
+    Not "is this rail known" — `payments.KNOWN_RAILS` answers that and x402 is
+    in it. This asks the narrower question a bounty actually depends on.
+    """
+    return rail in BOUNTY_RAILS
+
 # P74: one definition, imported rather than restated. P72-2 defined this as a
 # local 50 because `payments.settle()` cited a STRIPE_MIN_CHARGE_CENTS that did
 # not exist, and declined to invent it for every caller in a bounty pass. It

@@ -2242,6 +2242,14 @@ async def _verify_and_confirm_payment(
             result = await verify_payment_intent(req_payment_intent_id)
             status = result.get("status")
             if status not in allowed_statuses:
+                # Stays a full-key check, deliberately — see
+                # test_test_mode_capabilities_stay_gated_on_a_full_secret_key.
+                # P75 tried to widen this to stripe_key_mode() and that test
+                # caught it: a restricted key (rk_test_) is test *mode* but may
+                # lack payment_intents:write, and a 403 surfacing here would be
+                # reported to the caller as a payment failure. The narrow gate
+                # costs a restricted-key relay this convenience; guessing wrong
+                # costs it a misattributed error on the money path.
                 if os.getenv("STRIPE_SECRET_KEY", "").startswith("sk_test_"):
                     await confirm_stripe_intent(req_payment_intent_id)
                     result = await verify_payment_intent(req_payment_intent_id)

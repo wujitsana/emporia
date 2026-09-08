@@ -28261,15 +28261,66 @@ def test_a_restricted_key_detects_an_account_from_the_other_key_space():
         assert stripe_account_mode_mismatch("") is False, "unknown stays unknown"
 
 
+def test_a_restricted_test_key_is_test_mode_at_the_registration_sites(client):
+    """P75: `rk_test_` fell into a gap where the relay treated it as neither
+    test nor live.
+
+    Two bare `startswith("sk_test_")` checks in the agent routes: registration
+    skipped auto-provisioning a Connect account, and then the onboarding route —
+    whose whole job is to say "you are in test mode, an account already
+    exists" — did not recognise the key either, and waved the operator into the
+    **live** onboarding flow holding a test key. Neither half of the pair
+    applied, which is worse than either being wrong alone.
+
+    Both now ask `stripe_key_mode()`. Safe for a different reason in each: the
+    provisioning block swallows its own exceptions, so a restricted key that
+    lacks account-creation permission fails exactly as a non-test key does
+    today; and the onboarding route only chooses which message to return.
+
+    The auto-confirm branch is deliberately NOT widened — see
+    test_test_mode_capabilities_stay_gated_on_a_full_secret_key, which caught
+    this pass trying to.
+    """
+    import uuid
+
+    agent = "p75_" + uuid.uuid4().hex[:6]
+    _register(client, agent)
+
+    for key in ("sk_test_full_not_real", "rk_test_restricted_not_real"):
+        with patch.dict(os.environ, {"STRIPE_SECRET_KEY": key}, clear=False):
+            r = client.post(f"/agents/{agent}/stripe-onboarding", json={},
+                            headers={"x-emporia-agent-id": agent})
+            assert r.status_code == 400, f"{key} must be refused as test mode"
+            assert "test mode" in r.json()["detail"], (
+                f"{key} is test mode and the refusal must say so — got "
+                f"{r.json()['detail']!r}"
+            )
+
+
 def test_test_mode_capabilities_stay_gated_on_a_full_secret_key():
     """The distinction the fix must not lose: **mode is not capability.**
 
     A `rk_test_` key is test *mode*, but a restricted key may not carry the
-    permissions the test-helper routes need — auto-confirming a PaymentIntent,
-    minting an SPT. Those branches stay gated on `sk_test_` on purpose, so the
-    relay does not attempt a call a restricted key cannot make and report the
-    403 as a payment failure. Only the two mode-derived *protections* were
-    widened.
+    permissions these branches need. They stay gated on `sk_test_` on purpose,
+    so the relay does not attempt a call a restricted key cannot make and then
+    report the 403 as a payment failure.
+
+    **Correction (P75): one of the two reasons this test gave was stale.** It
+    described auto-confirming a PaymentIntent as a `test_helpers` route. It is
+    not, and has not been since P46 — that pass found the invented
+    `/v1/test_helpers/payment_intents/{id}/confirm` path and moved it to the
+    ordinary `/v1/payment_intents/{id}/confirm`. So the gate rests on
+    permissions alone now, not on the endpoint family. It still holds: a
+    restricted key may lack `payment_intents:write`, and this branch is not
+    wrapped in a swallow, so a 403 would reach the caller as a payment failure.
+
+    Minting an SPT is the genuine `test_helpers` case and needs no
+    qualification.
+
+    P75 widened the two *registration* sites (Connect auto-provision, and the
+    onboarding route's test-mode refusal) to `stripe_key_mode()`, which is safe
+    for a different reason in each: the first swallows its own exceptions, and
+    the second only chooses a message.
     """
     from pathlib import Path as _Path
 

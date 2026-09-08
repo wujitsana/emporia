@@ -38,7 +38,11 @@ from emporia import bounties as rules
 from emporia import relay_server as rs
 from emporia.module_sdk import MODULE_REGISTRY
 from emporia.module_sdk import get_interaction_module
-from emporia.payments import cancel_payment_hold, create_stake_intent
+from emporia.payments import (
+    RAIL_STRIPE,
+    cancel_payment_hold,
+    create_stake_intent,
+)
 
 router = APIRouter()
 
@@ -113,6 +117,12 @@ async def create_bounty(req: CreateBountyRequest, request: Request):
     # Escrow first. A bounty row that exists without a hold behind it is a
     # promise this relay cannot keep, so the hold is the precondition for the
     # row rather than a step after it.
+    #
+    # Stripe-only, and deliberately so: a prize must be *held* and released
+    # later, which is `capture_method="manual"`, and x402 signs-and-settles in
+    # one step with nothing parked in between. `bounties.BOUNTY_RAILS` is where
+    # that constraint is written down; when a rail gains a hold primitive this
+    # call gets a rail argument and that set gains a member.
     rs._assert_agent_budget(caller, spec.prize_cents)
     try:
         escrow = await create_stake_intent(
@@ -231,7 +241,12 @@ async def _start_contest(listing_id: str) -> dict:
         rs.record_payment(
             payment_intent_id=pi, agent_id=spec.funder_id,
             amount_cents=spec.prize_cents, payment_type="session_stake",
-            session_id=session_id, rail="stripe",
+            # P75: RAIL_STRIPE, not the literal "stripe" this used to be. The
+            # constant is the vocabulary `PaymentRef` and `KNOWN_RAILS` share,
+            # and a hand-written string here was a rail assumption invisible to
+            # every guard that reads that vocabulary. Bounties are Stripe-only
+            # because only Stripe can hold funds — see bounties.BOUNTY_RAILS.
+            session_id=session_id, rail=RAIL_STRIPE,
         )
 
     with rs.DB_LOCK, rs.get_db() as conn:

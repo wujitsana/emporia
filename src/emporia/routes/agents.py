@@ -105,8 +105,12 @@ async def register_agent(req: rs.RegisterAgentRequest):
     # Auto-provision a Stripe Connected Account in test mode so the agent can
     # receive real (test) payouts without manual Stripe onboarding.
     stripe_account_id: str | None = None
-    stripe_key = os.getenv("STRIPE_SECRET_KEY", "")
-    if stripe_key.startswith("sk_test_"):
+    # P75: mode, not prefix. A restricted test key (rk_test_) is test mode, and
+    # a bare sk_test_ check skipped provisioning for it — leaving that operator
+    # in a gap where registration provisions nothing and the onboarding route
+    # below then waves them into the live-mode flow with a test key.
+    from emporia.payments import stripe_key_mode
+    if stripe_key_mode() == "test":
         try:
             from emporia.payments import create_connected_account
             acct = await create_connected_account(canonical_id)
@@ -506,7 +510,8 @@ async def start_stripe_onboarding(agent_id: str, request: Request):
     stripe_key = (os.getenv("STRIPE_SECRET_KEY") or "").strip()
     if not stripe_key:
         raise HTTPException(400, "Stripe is not configured on this relay")
-    if stripe_key.startswith("sk_test_"):
+    from emporia.payments import stripe_key_mode
+    if stripe_key_mode() == "test":
         raise HTTPException(
             400,
             "This relay is running in Stripe test mode — a Connected Account "

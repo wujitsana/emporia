@@ -235,3 +235,39 @@ def test_seats_have_one_definition_not_two():
     assert (BountySpec(0, "", SOON, "f").min_entrants,
             BountySpec(0, "", SOON, "f").max_entrants) == (2, 2), \
         "if the defaults ever match a real module, this test stops proving anything"
+
+
+class TestRails:
+    """P75, prompted by a direct question I had not asked myself: can a bounty
+    be funded on any rail?
+
+    No — and the answer was buried in a `"stripe"` string literal rather than
+    stated. A prize must be *held*: authorised at funding, captured on a decided
+    result, released if the contest never runs. That is manual capture, and only
+    Stripe has it. x402 signs and settles in one step with nothing parked in
+    between, so "escrow now, pay out Thursday" has no x402 expression at all.
+
+    The constraint is real and defensible. Leaving it as a literal was not.
+    """
+
+    def test_only_a_rail_that_can_hold_funds_may_carry_a_bounty(self):
+        from emporia.bounties import rail_can_hold_a_prize
+        from emporia.payments import RAIL_STRIPE, RAIL_X402
+
+        assert rail_can_hold_a_prize(RAIL_STRIPE)
+        assert not rail_can_hold_a_prize(RAIL_X402), (
+            "x402 has no manual-capture equivalent — an authorization is settled "
+            "when it is verified, so there is nothing held to release later"
+        )
+
+    def test_this_is_narrower_than_being_a_known_rail(self):
+        """The distinction that makes this worth a separate predicate: x402 is a
+        perfectly good rail, tagged in PaymentRef and settled through the same
+        ledger. It just cannot hold. Asking `rail in KNOWN_RAILS` would say yes
+        and be answering a different question."""
+        from emporia.bounties import BOUNTY_RAILS
+        from emporia.payments import KNOWN_RAILS, RAIL_X402
+
+        assert RAIL_X402 in KNOWN_RAILS
+        assert RAIL_X402 not in BOUNTY_RAILS
+        assert BOUNTY_RAILS < KNOWN_RAILS, "every bounty rail must still be a known rail"
