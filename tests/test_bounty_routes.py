@@ -554,3 +554,4 @@ def test_a_bounty_plays_to_the_end_and_the_winner_is_paid(client, _escrow):
     assert rows[seller]["wins"] == 1, "the winner should be on the table"
     assert rows[buyer]["wins"] == 0 and rows[buyer]["entries"] >= 1, \
         "the loser stays on the table with an entry and no win"
+

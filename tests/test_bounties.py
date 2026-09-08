@@ -291,3 +291,55 @@ class TestRails:
             "a bounty cannot be funded on a rail the settlement ledger does not "
             "recognise — PaymentRef would carry a tag nothing can read"
         )
+
+
+class TestPledgeExpiry:
+    """P78: a pledge must outlive the contest it backs.
+
+    An EIP-3009 authorization expires. If it lapses while the contest runs, the
+    winner is owed a prize backed by an instruction nobody can submit — and
+    because a pledge reserves nothing, there is no hold to fall back on. The
+    funder keeps the money without ever having defected.
+
+    Refused at funding, where a re-sign costs the funder nothing, rather than
+    discovered at payout, where it costs a winner their prize.
+    """
+
+    def _epoch(self, dt):
+        return int(dt.timestamp())
+
+    def test_a_pledge_expiring_before_settlement_is_refused(self):
+        from emporia.bounties import pledge_outlives_contest
+
+        # Expires exactly at the deadline — no room to settle at all.
+        ok, why = pledge_outlives_contest(self._epoch(SOON), SOON)
+        assert not ok and "before the contest could be settled" in why
+
+    def test_a_pledge_with_settlement_room_is_accepted(self):
+        from datetime import timedelta
+
+        from emporia.bounties import PLEDGE_SETTLEMENT_MARGIN, pledge_outlives_contest
+
+        ok, why = pledge_outlives_contest(
+            self._epoch(SOON + PLEDGE_SETTLEMENT_MARGIN + timedelta(minutes=1)), SOON
+        )
+        assert ok and why == ""
+
+    def test_the_boundary_is_inclusive(self):
+        """Exactly enough room is enough. An off-by-one here rejects a
+        correctly-signed pledge and reads to the funder as a broken relay."""
+        from emporia.bounties import PLEDGE_SETTLEMENT_MARGIN, pledge_outlives_contest
+
+        ok, _ = pledge_outlives_contest(
+            self._epoch(SOON + PLEDGE_SETTLEMENT_MARGIN), SOON
+        )
+        assert ok
+
+    def test_a_missing_expiry_is_not_treated_as_forever(self):
+        """validBefore of 0 means "no window", not "unbounded" — reading an
+        absent bound as an infinite one is the collapse this codebase keeps
+        finding."""
+        from emporia.bounties import pledge_outlives_contest
+
+        ok, why = pledge_outlives_contest(0, SOON)
+        assert not ok and "no usable validBefore" in why

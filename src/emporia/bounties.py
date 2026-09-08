@@ -57,7 +57,7 @@ The rules, and why each exists:
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 
 BOUNTY_LISTING_TYPE = "bounty"
 
@@ -162,6 +162,61 @@ def judging_modules(registry: dict[str, type]) -> list[str]:
     return sorted(
         m for m, cls in registry.items() if getattr(cls, "DECLARES_WINNER", False)
     )
+
+
+# **Not yet reachable — the funding path is blocked (P78).** An EIP-3009
+# authorization signs `to` as part of the struct, so the recipient is fixed at
+# signing time and a funder cannot pledge to a winner who does not exist yet.
+# Every way past that changes something material and is a decision, not an
+# implementation detail: pay the relay instead (making it custodian of prize
+# money and needing a signing key it deliberately does not have), or sign after
+# the result (which is not a pledge at all — it is pay-on-result, with nothing
+# committed). The rules below are correct and tested and wait for that choice.
+#
+# A pledge has to outlive the contest it backs, with room to settle.
+#
+# An EIP-3009 authorization expires at `validBefore`. If it lapses while the
+# contest is still running, the winner is owed a prize backed by an instruction
+# nobody can submit any more — the funder keeps their money without ever having
+# defected, and the relay has no recourse because there was never a hold. That
+# failure is silent and arrives only at payout, which is the shape this lane has
+# now been bitten by three times (P72-5, P74, P77).
+#
+# The margin covers the gap between "the module named a winner" and "the
+# facilitator confirmed the transfer": a reconciliation tick, a facilitator
+# retry, a chain that is slow for an hour. Deliberately generous — a pledge
+# refused for being too short costs the funder one re-sign, while a pledge that
+# lapses costs a winner their prize.
+PLEDGE_SETTLEMENT_MARGIN = timedelta(hours=6)
+
+
+def pledge_outlives_contest(
+    valid_before_epoch: int,
+    entry_deadline: datetime,
+    *,
+    margin: timedelta = PLEDGE_SETTLEMENT_MARGIN,
+) -> tuple[bool, str]:
+    """Can this authorization still be settled once the contest resolves?
+
+    Returns `(ok, reason)` — `reason` empty when ok, and written for the funder,
+    who is the only one who can fix it by signing again with a later expiry.
+    """
+    if valid_before_epoch <= 0:
+        return False, (
+            "This authorization carries no usable validBefore, so there is no "
+            "window in which the prize could be settled."
+        )
+    expires = datetime.fromtimestamp(valid_before_epoch, tz=UTC)
+    needed = entry_deadline + margin
+    if expires < needed:
+        return False, (
+            f"This authorization expires at {expires.isoformat()}, before the contest "
+            f"could be settled. Entry closes at {entry_deadline.isoformat()} and "
+            f"settlement needs until {needed.isoformat()}. Sign again with a later "
+            f"validBefore — a pledge that lapses mid-contest costs the winner their "
+            f"prize, so it is refused now rather than discovered at payout."
+        )
+    return True, ""
 
 
 def seats_for(module_type: str, registry: dict[str, type]) -> tuple[int, int]:
