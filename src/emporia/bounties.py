@@ -61,19 +61,12 @@ from datetime import UTC, datetime
 
 BOUNTY_LISTING_TYPE = "bounty"
 
-# P72-2: `payments.settle()`'s docstring has always claimed "Requires
-# total_stake_cents >= STRIPE_MIN_CHARGE_CENTS (50c) — enforced upstream", and
-# no such constant exists anywhere in this codebase. Nothing enforces a floor;
-# the only amount guard in payments.py is `amount_cents <= 0`. Stripe itself
-# rejects a sub-minimum PaymentIntent, so the practical failure is a raw Stripe
-# error at escrow time rather than a clear refusal at creation — and for a
-# bounty that is the difference between "we won't take this" and an entrant
-# discovering the prize was never payable.
-#
-# Named here rather than in payments.py deliberately: this is the value the
-# bounty flow refuses on, and claiming to fix payments.py's phantom guard for
-# every caller is a wider change than this pass measured.
-MIN_PRIZE_CENTS = 50
+# P74: one definition, imported rather than restated. P72-2 defined this as a
+# local 50 because `payments.settle()` cited a STRIPE_MIN_CHARGE_CENTS that did
+# not exist, and declined to invent it for every caller in a bounty pass. It
+# exists now and is enforced where PaymentIntents are created, so a second copy
+# here would be exactly the divergence this file's own rules keep catching.
+from emporia.payments import STRIPE_MIN_CHARGE_CENTS as MIN_PRIZE_CENTS
 
 
 @dataclass(frozen=True)

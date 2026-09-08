@@ -4596,6 +4596,53 @@ def test_all_three_win_counters_agree_that_a_refund_is_not_a_win(client):
     assert board["scope"] == "this_relay", "a local table must say it is local"
 
 
+def test_a_price_the_rail_cannot_charge_is_refused_by_the_relay(client):
+    """P74: `settle()` claimed "Requires total_stake_cents >=
+    STRIPE_MIN_CHARGE_CENTS (50c) — enforced upstream" and cited a constant
+    this codebase never defined. Nothing upstream enforced anything; the only
+    amount guard was `amount_cents <= 0`.
+
+    So a room priced at a penny passed every relay check, reached Stripe, and
+    came back a raw provider error — the agent meeting a payment-provider
+    rejection for a decision the relay could have made itself, about a price
+    its own operator had set. The mistake is the operator's and the message now
+    says so.
+
+    Asserted at 1c and at 49c (the boundary), and confirmed that a free room is
+    untouched: zero is not "below the minimum", it is a different thing
+    entirely, and folding the two together would break every free resource.
+    """
+    import uuid
+
+    from emporia import relay_server as rs
+    from emporia.payments import STRIPE_MIN_CHARGE_CENTS
+
+    assert STRIPE_MIN_CHARGE_CENTS == 50
+
+    agent = "p74_" + uuid.uuid4().hex[:6]
+    _register(client, agent)
+
+    from emporia import rooms as rooms_db
+
+    for cents in (1, STRIPE_MIN_CHARGE_CENTS - 1):
+        # Created through the real writer, not raw SQL — a room this test
+        # inserted by hand would prove nothing about a room the relay made.
+        room = rooms_db.create_room(
+            name="Underpriced", creator_id=agent, room_type="private",
+            gate_type="paid", entry_fee_cents=cents, currency="usd",
+            db_path=rs.DATABASE_PATH,
+        )
+        room_id = room.room_id
+        r = client.post("/payments/create-intent", json={
+            "room_id": room_id, "amount_cents": cents, "service_type": "emporia:room_entry",
+            "seller_id": agent,
+        }, headers={"x-emporia-agent-id": agent})
+        assert r.status_code == 400, f"{cents}c must be refused by the relay, got {r.status_code}"
+        detail = r.json()["detail"]
+        assert "minimum" in detail and "operator" in detail, \
+            f"the message must name whose mistake this is: {detail}"
+
+
 def test_settlement_dedupe_key_never_hashes_the_rail_tag():
     """P3, landmine L1: settlement_dedupe_key() is both settlements.dedupe_key
     (a UNIQUE index, ON CONFLICT target) and the base of every Stripe

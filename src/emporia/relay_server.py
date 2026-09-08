@@ -5030,6 +5030,25 @@ async def create_payment_intent_endpoint(req: CreatePaymentIntentRequest, reques
             f"amount_cents must match relay pricing for this resource ({expected_amount})",
         )
 
+    # P74: refuse a price the rail cannot charge, here rather than at Stripe.
+    # The previous guard was `expected_amount <= 0`, so a resource priced at a
+    # penny passed and the agent met a raw provider error for a decision the
+    # relay could have made itself. The operator set an unsellable price; say so.
+    #
+    # The `0 <` half is belt-and-braces, not load-bearing: both branches above
+    # already reject a free resource with "does not require a paid stake", so
+    # zero cannot reach here today. Stated rather than left to look protective —
+    # a stash-verify that folded zero in broke nothing, which is how I know.
+    from emporia.payments import STRIPE_MIN_CHARGE_CENTS
+    if 0 < expected_amount < STRIPE_MIN_CHARGE_CENTS:
+        raise HTTPException(400, (
+            f"This resource is priced at {expected_amount}¢, below the "
+            f"{STRIPE_MIN_CHARGE_CENTS}¢ minimum this payment rail can charge, so it "
+            f"cannot be paid for at all. That is a pricing mistake by the relay "
+            f"operator, not something the caller can work around — price it at "
+            f"{STRIPE_MIN_CHARGE_CENTS}¢ or more, or make it free."
+        ))
+
     _assert_agent_budget(caller, expected_amount)
 
     try:

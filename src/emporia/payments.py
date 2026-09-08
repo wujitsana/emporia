@@ -125,6 +125,19 @@ class PaymentRef:
 STRIPE_API_BASE = os.getenv("STRIPE_API_BASE", "https://api.stripe.com/v1")
 STRIPE_API_VERSION = os.getenv("STRIPE_API_VERSION", "2026-04-22.preview")
 OPERATOR_FEE_BPS = int(os.getenv("OPERATOR_FEE_BPS", "250"))  # 2.5%
+
+# P74: the constant `settle()`'s docstring has always cited and that never
+# existed. It claimed "Requires total_stake_cents >= STRIPE_MIN_CHARGE_CENTS
+# (50c) - enforced upstream"; nothing upstream enforced anything, and the only
+# amount guard in this module was `amount_cents <= 0`. So a resource priced at
+# a penny passed every check here and was rejected by Stripe, and the agent saw
+# a raw provider error instead of a relay that had declined to sell it.
+#
+# 50 is Stripe's USD floor. It is NOT universal - the minimum differs per
+# currency - and this codebase only ever charges in USD today. A second
+# currency needs a per-currency table rather than this constant widened, which
+# is why the value is named for the rail rather than for "money".
+STRIPE_MIN_CHARGE_CENTS = 50
 REQUEST_TIMEOUT = float(os.getenv("EMPORIA_HTTP_TIMEOUT", "30"))
 # Machine Payment Profile ID for the Stripe fiat MPP rail.
 # Set via Stripe dashboard → Machine Payments → Profile. Used in mppStripe.charge().
@@ -1100,7 +1113,10 @@ async def settle(
     4. If game was never played / abandoned, call cancel_payment_hold() instead.
 
     Platform fee: OPERATOR_FEE_BPS basis points (default 250 = 2.5%), minimum 1¢.
-    Requires total_stake_cents ≥ STRIPE_MIN_CHARGE_CENTS (50¢) — enforced upstream.
+    Requires total_stake_cents ≥ STRIPE_MIN_CHARGE_CENTS (50¢). P74: that was
+    a claim about a constant this module did not define and nobody enforced —
+    it is now real, checked where the PaymentIntent is created, before Stripe
+    is asked.
 
     `winner_stripe_account_status` (P25-2) is **required and keyword-only**
     (P26-9). P25 gave it a `"active"` default so pre-existing callers kept

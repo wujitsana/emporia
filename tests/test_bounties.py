@@ -66,8 +66,21 @@ class TestSpec:
             _spec(module_type="emporia:research:v1")
 
     def test_a_prize_below_the_payment_floor_is_refused_at_creation(self):
-        """Refused now, not after an entrant has done the work. payments.py's
-        docstring claims a floor enforced by a constant that does not exist."""
+        """Refused now, not after an entrant has done the work.
+
+        P74: the floor is the *rail's*, not the bounty lane's own. Asserted as
+        an identity rather than only relative to itself — the original version
+        compared `MIN_PRIZE_CENTS - 1` against `MIN_PRIZE_CENTS`, which holds
+        for any value and so could not notice this drifting away from what
+        Stripe will actually accept. A bounty floor below the rail's is a prize
+        that validates here and cannot be paid.
+        """
+        from emporia.payments import STRIPE_MIN_CHARGE_CENTS
+
+        assert MIN_PRIZE_CENTS == STRIPE_MIN_CHARGE_CENTS, (
+            "the bounty floor must BE the rail's floor, not a copy of its value — "
+            "a second definition is free to drift below what Stripe accepts"
+        )
         with pytest.raises(BountyRejected, match="at least"):
             _spec(prize_cents=MIN_PRIZE_CENTS - 1)
         assert _spec(prize_cents=MIN_PRIZE_CENTS).prize_cents == MIN_PRIZE_CENTS
