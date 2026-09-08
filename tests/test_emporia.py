@@ -46,13 +46,8 @@ from conftest import TEST_DB as _test_db  # noqa: E402
 from emporia.relay_server import app, init_db
 
 
-@pytest.fixture(scope="session", autouse=True)
-def _init_test_db():
-    """Initialize the shared test DB once per session; clean up on exit."""
-    init_db()
-    yield
-    # Teardown of _test_root is conftest's pytest_sessionfinish (P60), so it
-    # also runs for sessions that never touch this module.
+# _init_test_db moved to conftest.py (P72-4) — a session fixture in a test
+# module only runs when that module is collected.
 
 
 @pytest.fixture(scope="session", autouse=True)
@@ -3170,6 +3165,11 @@ def test_every_route_has_a_reviewed_auth_posture():
     """
 
     _AUTHENTICATED: set[tuple[str, str]] = {
+        # P72-4: both resolve the caller and reject. /bounties binds the funder
+        # so a bounty cannot be posted in someone else's name; /enter is the
+        # Sybil gate itself and is meaningless without a caller identity.
+        ("POST", "/bounties"),
+        ("POST", "/bounties/{listing_id}/enter"),
         # Bootstrap: no credential can exist yet: identity is bound by a consumed
         # registration/login challenge-signature instead of a request-time caller.
         ("POST", "/dashboard/session"),
@@ -3292,6 +3292,7 @@ def test_every_route_has_a_reviewed_auth_posture():
         ("POST", "/dashboard/challenge"): "bootstrap nonce issuance, no credential exists yet",
         ("GET", "/dashboard/poll"): "bearer-secret model: gated by an unguessable challenge_id, not caller identity",
         ("GET", "/modules"): "static list of available game module types",
+        ("GET", "/bounties"): "P72-4: public contest discovery, same shape as GET /listings — a bounty nobody can find is not a contest",
         ("GET", "/leaderboard"): "P72-3: public standings — wins/entries/modules only; per-agent earnings are deliberately excluded from the public shape (Standing.to_dict include_money)",
         ("POST", "/agents/challenge"): "bootstrap nonce issuance, no credential exists yet",
         ("GET", "/listings"): "public marketplace discovery, no auth decision keyed on any field",
@@ -22078,7 +22079,6 @@ def test_init_db_creates_no_index_before_running_migrations():
     a startup crash discovered in production."""
     import inspect
 
-    from emporia.relay_server import init_db
 
     body = inspect.getsource(init_db).splitlines()
     first_migration = next(
@@ -28030,9 +28030,15 @@ def test_the_membership_rule_is_written_in_exactly_one_place():
 # P61 — the schema has a version, and the version has to stay honest
 # ---------------------------------------------------------------------------
 
-# 27 tables, 246 columns, at SCHEMA_VERSION 1. Recomputed by the test below;
+# 28 tables, 250 columns, at SCHEMA_VERSION 2. Recomputed by the test below;
 # when it fails, read *why* before touching this string.
-_SCHEMA_FINGERPRINT_V1 = "0e55271262dab7e067ae678008d4f907eadbea1f7f01268b1d27014d1c953166"
+#
+# V1 -> V2 (P72-4): `bounty_entries` and its UNIQUE (listing_id, nous_user_id)
+# index. The version bump is the loud break this repo prefers to a compatibility
+# shim: a relay still on V1 code refuses to open a V2 database rather than
+# silently ignoring a table it does not know about — and the table it would be
+# ignoring is the one enforcing one entry per Nous account.
+_SCHEMA_FINGERPRINT_V2 = "1b4a9bed34500e9b3da36ee4e386f8a06d412761eaa8c9f22a01d754d4cd4bb8"
 
 
 def _schema_fingerprint(db_path) -> tuple[str, int, int]:
@@ -28072,9 +28078,9 @@ def test_a_schema_change_requires_a_version_bump():
     from emporia.relay_server import SCHEMA_VERSION
 
     fingerprint, tables, columns = _schema_fingerprint(_test_db)
-    assert (SCHEMA_VERSION, fingerprint) == (1, _SCHEMA_FINGERPRINT_V1), (
+    assert (SCHEMA_VERSION, fingerprint) == (2, _SCHEMA_FINGERPRINT_V2), (
         f"the schema changed ({tables} tables, {columns} columns) or the version "
-        f"moved. Bump SCHEMA_VERSION *and* update _SCHEMA_FINGERPRINT_V1 — in "
+        f"moved. Bump SCHEMA_VERSION *and* update _SCHEMA_FINGERPRINT_V2 — in "
         f"that order, and never the fingerprint alone.\n"
         f"  code version: {SCHEMA_VERSION}\n  fingerprint:  {fingerprint}"
     )

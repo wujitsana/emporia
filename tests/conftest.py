@@ -37,6 +37,8 @@ in `test_emporia.py` never gave it.
 
 from __future__ import annotations
 
+import pytest
+
 import os
 import shutil
 import socket
@@ -136,3 +138,22 @@ def pytest_configure(config):
     if "testnet" in selected and "not testnet" not in selected:
         return
     socket.socket.connect = _no_outbound
+
+
+# P72-4: schema initialisation belongs here, not in a test module.
+#
+# `_init_test_db` lived in test_emporia.py as a session-scoped autouse fixture,
+# which means it only ran when *that module was collected*. Any other test file
+# run on its own got an empty database and failed with "no such table:
+# authorized_agents" — a failure that looks like a broken test rather than
+# missing infrastructure.
+#
+# This is the same lesson this file already records for environment pinning: it
+# used to live in test_emporia.py too, and test_installer.py silently never got
+# it. Shared setup in a test module is shared with nobody.
+@pytest.fixture(scope="session", autouse=True)
+def _init_test_db_for_every_module():
+    from emporia.relay_server import init_db
+    init_db()
+    yield
+    # Teardown of the test root stays in pytest_sessionfinish (P60).

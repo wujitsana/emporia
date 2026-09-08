@@ -678,6 +678,24 @@ def init_db() -> None:
                 PRIMARY KEY (session_id, agent_id)
             );
 
+            CREATE TABLE IF NOT EXISTS bounty_entries (
+                listing_id TEXT NOT NULL,
+                agent_id TEXT NOT NULL,
+                nous_user_id TEXT NOT NULL,
+                entered_at TEXT NOT NULL,
+                PRIMARY KEY (listing_id, agent_id)
+            );
+
+            -- P72-4: the Sybil rule, enforced by the database rather than only
+            -- by the check that precedes it. bounties.may_enter() counts one
+            -- entry per Nous account, but a read-then-write cannot survive two
+            -- concurrent entries from two personas of the same account -- both
+            -- read an empty set, both pass, both insert. This UNIQUE index is
+            -- what makes the rule true under concurrency; the Python check is
+            -- what makes the refusal legible.
+            CREATE UNIQUE INDEX IF NOT EXISTS idx_bounty_entries_one_per_account
+                ON bounty_entries (listing_id, nous_user_id);
+
             CREATE TABLE IF NOT EXISTS actions (
                 action_id TEXT PRIMARY KEY,
                 session_id TEXT NOT NULL,
@@ -957,7 +975,7 @@ def init_db() -> None:
 # `PRAGMA user_version`. Bump it whenever the schema changes — a test computes
 # a fingerprint of every table and column and fails if the shape moved without
 # this number moving, so it cannot quietly stop meaning anything.
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
 
 
 def _assert_schema_not_from_the_future(conn: Any) -> None:
@@ -2467,6 +2485,7 @@ def _normalize_agent_id(agent_id: str) -> str:
 # orphaned rows nobody notices for months.
 _RENAME_COLUMNS: tuple[tuple[str, str], ...] = (
     ("access_entitlements", "agent_id"), ("access_removals", "agent_id"),
+    ("bounty_entries", "agent_id"),
     ("access_removals", "removed_by"), ("actions", "agent_id"),
     ("agent_inbox", "agent_id"), ("agora_comments", "author_id"),
     ("agora_invites", "agent_id"), ("agora_invites", "invited_by"),
@@ -2507,6 +2526,13 @@ _RENAME_JSON_COLUMNS: tuple[tuple[str, str], ...] = (
 # id, not a handle; `agora_votes.target_id` is a post or comment id;
 # `access_*.resource_id` is a room or topic id.
 _NON_AGENT_COLUMNS: frozenset[tuple[str, str]] = frozenset({
+    # bounty_entries (P72-4) — `agent_id` is a handle and lives in
+    # _RENAME_COLUMNS above. `nous_user_id` deliberately does NOT: it is an
+    # identity-provider subject, not an Emporia handle, and rewriting it on
+    # rename would break the one-entry-per-account rule it exists to enforce —
+    # the same reasoning that keeps payer_stable_id out, noted below.
+    ("bounty_entries", "listing_id"), ("bounty_entries", "nous_user_id"),
+    ("bounty_entries", "entered_at"),
     # x402_settle_intents (P48) — payer_id is an agent reference and lives in
     # _RENAME_COLUMNS; payer_stable_id deliberately is NOT one (it is P47's
     # identity, which a rename must leave alone — rewriting it here would
@@ -7005,6 +7031,7 @@ if __name__ == "__main__":
 # ============================================================================
 
 from emporia.routes import agents as _agent_routes
+from emporia.routes import bounties as _bounty_routes
 from emporia.routes import standing as _standing_routes  # noqa: E402
 from emporia.routes import agoras as _agora_routes  # noqa: E402
 from emporia.routes import dm as _dm_routes  # noqa: E402
@@ -7024,4 +7051,5 @@ app.include_router(_agora_routes.router)
 app.include_router(_room_routes.router)
 app.include_router(_session_routes.router)
 app.include_router(_agent_routes.router)
+app.include_router(_bounty_routes.router)
 app.include_router(_standing_routes.router)

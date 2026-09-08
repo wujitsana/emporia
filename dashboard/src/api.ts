@@ -520,11 +520,27 @@ export interface LeaderboardResponse {
   standings: Standing[];
 }
 
+/** P72-4: an open contest. `prize_cents` is the funder's escrowed prize, not a
+ * price — a bounty is money offered, not money asked. */
+export interface Bounty {
+  listing_id: string;
+  title: string;
+  description: string;
+  module_type: string;
+  funder_id: string;
+  prize_cents: number | null;
+  entry_deadline: string | null;
+  state: string;
+  entrant_count: number;
+  origin_relay: string | null;
+}
+
 export const api = {
   leaderboard: (moduleType?: string) =>
     get<LeaderboardResponse>(
       "/leaderboard" + (moduleType ? `?module_type=${encodeURIComponent(moduleType)}` : ""),
     ),
+  bounties: () => get<{ count: number; bounties: Bounty[] }>("/bounties"),
   health: () => get<Health>("/health"),
   uiConfig: () => get<UiConfig>("/ui-config"),
   listings: (module_type?: string) =>

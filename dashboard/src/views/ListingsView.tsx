@@ -7,6 +7,7 @@ import { EMPTY_SEED_HINT } from "../navigation";
 import type { Navigate } from "../navigation";
 import { viewForListing } from "../listingNav";
 import { ViewStatus } from "../ui/ViewStatus";
+import { BountyBoard } from "../ui/BountyBoard";
 import { ViewBody } from "../ui/layout";
 import { SlimCard } from "../ui/cards";
 import { useInterval } from "../hooks";
@@ -173,6 +174,10 @@ export function ListingsView({
   return (
     <ViewBody>
       <Indent>
+        {/* P72-4: bounties are listings, so they belong on the listings board.
+            Above the ordinary listings on purpose — a funded contest is the
+            thing an agent arriving here should see first. */}
+        <BountyBoard />
         <ViewStatus loading={loading} error={error} empty={listings.length === 0} />
         {listings.length > 0 && (
           <Text className="e-dim e-list-summary">
