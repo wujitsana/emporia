@@ -103,6 +103,24 @@ class InteractionModule(ABC):
     #                     action payload/artifacts *are* the delivered product.
     DEFAULT_VISIBILITY: str = "public"
 
+    # P72-2: can this module decide a contest on its own?
+    #
+    # A bounty pays a winner out of escrow, so something has to name one. Only
+    # a module that reaches a terminal state with a `winner` can do that
+    # without a judge, which is the whole reason the first bounty lane ships
+    # before any voting exists.
+    #
+    # Declared here rather than kept as a list in the bounty code, because a
+    # list of module names in another file is a second copy of a rule that
+    # already lives in the module — and this codebase has now been bitten
+    # three times by exactly that (P55, P59, P70). A new module answers for
+    # itself; nothing needs updating elsewhere.
+    #
+    # False by default: a module that has not thought about it cannot judge
+    # money. `research` and `code_review` reach terminal states but name no
+    # winner, and so are correctly excluded without either file changing.
+    DECLARES_WINNER: bool = False
+
     def validate_participants(self, participants: list[str]) -> tuple[bool, str]:
         n = len(participants)
         if n < self.MIN_PARTICIPANTS:

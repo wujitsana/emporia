@@ -33,6 +33,7 @@ def _next_player(participants: list[str], current: str) -> str:
 @register_module
 class ChessModule(InteractionModule):
     MODULE_TYPE = "emporia:chess:v1"
+    DECLARES_WINNER = True
     MIN_PARTICIPANTS = 2
     MAX_PARTICIPANTS = 2
 

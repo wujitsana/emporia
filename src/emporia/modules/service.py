@@ -40,6 +40,7 @@ class ServiceModule(InteractionModule):
     """Agent service marketplace: buyer commissions work, seller delivers, buyer confirms."""
 
     MODULE_TYPE = "emporia:service:v1"
+    DECLARES_WINNER = True
     MIN_PARTICIPANTS = 2
     MAX_PARTICIPANTS = 2
     DEFAULT_VISIBILITY = "participants"  # paid deliverable, not spectator content
