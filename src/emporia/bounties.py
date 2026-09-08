@@ -93,13 +93,20 @@ BOUNTY_LISTING_TYPE = "bounty"
 # backs the prize.
 
 ESCROW_HELD = "held"
-ESCROW_PLEDGED = "pledged"
+ESCROW_PROMISED = "promised"
 
 #: rail -> how strongly the prize is backed.
 BOUNTY_RAIL_STRENGTH: dict[str, str] = {
     "stripe": ESCROW_HELD,
-    "x402": ESCROW_PLEDGED,
+    "x402": ESCROW_PROMISED,
 }
+
+# How long a funder has to pay once a winner is named. Long enough for an agent
+# woken on a schedule to notice and act; short enough that a winner is not left
+# waiting on a promise indefinitely. After it, the bounty is `defaulted` and the
+# funder is flagged — that flag is the only thing backing a PROMISED prize, so
+# it has to arrive on its own rather than needing someone to complain.
+PAYMENT_WINDOW = timedelta(hours=48)
 
 BOUNTY_RAILS = frozenset(BOUNTY_RAIL_STRENGTH)
 
@@ -116,9 +123,9 @@ def rail_can_hold_a_prize(rail: str) -> bool:
 
 
 def escrow_strength(rail: str) -> str:
-    """ESCROW_HELD or ESCROW_PLEDGED — how much the prize is actually worth as a
-    promise. Raises for a rail that cannot carry a bounty, rather than returning
-    a default that would read as a guarantee nobody made."""
+    """ESCROW_HELD or ESCROW_PROMISED — what actually backs this prize. Raises
+    for a rail that cannot carry a bounty, rather than returning a default that
+    would read as a guarantee nobody made."""
     try:
         return BOUNTY_RAIL_STRENGTH[rail]
     except KeyError:
@@ -164,57 +171,74 @@ def judging_modules(registry: dict[str, type]) -> list[str]:
     )
 
 
-# **Not yet reachable — the funding path is blocked (P78).** An EIP-3009
-# authorization signs `to` as part of the struct, so the recipient is fixed at
-# signing time and a funder cannot pledge to a winner who does not exist yet.
-# Every way past that changes something material and is a decision, not an
-# implementation detail: pay the relay instead (making it custodian of prize
-# money and needing a signing key it deliberately does not have), or sign after
-# the result (which is not a pledge at all — it is pay-on-result, with nothing
-# committed). The rules below are correct and tested and wait for that choice.
+# How strongly a prize is backed. Two answers, and the gap between them is the
+# whole reason this is modelled rather than assumed.
 #
-# A pledge has to outlive the contest it backs, with room to settle.
+#   HELD       Stripe manual capture. Funds are authorised and out of the
+#              funder's reach; capture on a decided result cannot fail for lack
+#              of money. Escrow in the strict sense.
 #
-# An EIP-3009 authorization expires at `validBefore`. If it lapses while the
-# contest is still running, the winner is owed a prize backed by an instruction
-# nobody can submit any more — the funder keeps their money without ever having
-# defected, and the relay has no recourse because there was never a hold. That
-# failure is silent and arrives only at payout, which is the shape this lane has
-# now been bitten by three times (P72-5, P74, P77).
+#   PROMISED   x402. **Nothing is committed at funding.** The funder owes the
+#              prize once a winner exists and pays then, within a window. What
+#              backs it is not money but consequence: a funder who does not pay
+#              is recorded as having defaulted, and cannot post another promised
+#              bounty until they settle.
 #
-# The margin covers the gap between "the module named a winner" and "the
-# facilitator confirmed the transfer": a reconciliation tick, a facilitator
-# retry, a chain that is slow for an hour. Deliberately generous — a pledge
-# refused for being too short costs the funder one re-sign, while a pledge that
-# lapses costs a winner their prize.
-PLEDGE_SETTLEMENT_MARGIN = timedelta(hours=6)
+# P78 tried to make x402 a *pledge* — an EIP-3009 authorization signed at
+# funding and submitted later. It cannot be: `to` is inside the signed struct,
+# so the recipient is fixed at signing time, and a bounty's winner does not
+# exist yet. The two ways past that were to make the relay custodian of prize
+# money, or to sign after the result. Custody was declined deliberately (the
+# relay does not hold anyone's funds), which leaves paying after the result —
+# and that is a promise, so it is called one.
+#
+# The honesty matters more here than anywhere else in this file. An entrant
+# spending an hour on a PROMISED contest is taking a credit risk, not competing
+# for money already set aside. Rendering the two the same way would be the most
+# consequential version of the collapse this codebase keeps finding.
+
+def payment_due_at(resolved_at: datetime, *, window: timedelta = PAYMENT_WINDOW) -> datetime:
+    """When a promised prize stops being late and starts being a default."""
+    return resolved_at + window
 
 
-def pledge_outlives_contest(
-    valid_before_epoch: int,
-    entry_deadline: datetime,
+def funder_may_promise(
     *,
-    margin: timedelta = PLEDGE_SETTLEMENT_MARGIN,
+    unpaid_defaults: int,
+    outstanding_promises: int,
+    max_outstanding: int = 3,
 ) -> tuple[bool, str]:
-    """Can this authorization still be settled once the contest resolves?
+    """May this agent post a bounty backed by a promise rather than money?
 
-    Returns `(ok, reason)` — `reason` empty when ok, and written for the funder,
-    who is the only one who can fix it by signing again with a later expiry.
+    Written as "who may", the detector shape this codebase keeps being served
+    by. A promised prize is only worth the consequence of not paying it, so the
+    consequence has to actually bind:
+
+    * **One unpaid default is disqualifying.** Not a count, not a ratio — a
+      funder who owes a winner money is not entitled to ask another agent to
+      work on credit. This is the entire mechanism; softening it makes a
+      PROMISED bounty worth nothing.
+
+    * **Outstanding promises are capped.** Defaults only bite after a contest
+      resolves, so without a cap a funder can post unlimited promised bounties
+      before the first one comes due and default on all of them at once. The
+      cap bounds the damage to what one funder can run concurrently.
+
+    Returns `(allowed, reason)`, the reason written for the funder.
     """
-    if valid_before_epoch <= 0:
+    if unpaid_defaults > 0:
         return False, (
-            "This authorization carries no usable validBefore, so there is no "
-            "window in which the prize could be settled."
+            f"You have {unpaid_defaults} unpaid bounty default(s). Settle them before "
+            f"posting another bounty backed by a promise — an agent asked to compete on "
+            f"credit is entitled to a funder who has paid the last one."
         )
-    expires = datetime.fromtimestamp(valid_before_epoch, tz=UTC)
-    needed = entry_deadline + margin
-    if expires < needed:
+    if outstanding_promises >= max_outstanding:
         return False, (
-            f"This authorization expires at {expires.isoformat()}, before the contest "
-            f"could be settled. Entry closes at {entry_deadline.isoformat()} and "
-            f"settlement needs until {needed.isoformat()}. Sign again with a later "
-            f"validBefore — a pledge that lapses mid-contest costs the winner their "
-            f"prize, so it is refused now rather than discovered at payout."
+            f"You already have {outstanding_promises} unsettled promised bounties, the "
+            f"limit is {max_outstanding}. A promise is only worth the consequence of "
+            f"breaking it, and that consequence does not arrive until a contest "
+            f"resolves — so the number that can be open at once is bounded. Fund this "
+            f"one on a held rail, or wait for one of yours to settle."
         )
     return True, ""
 

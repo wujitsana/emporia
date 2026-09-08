@@ -29,6 +29,7 @@ from __future__ import annotations
 import json
 import sqlite3
 import uuid
+from typing import Any
 from datetime import UTC, datetime
 
 from fastapi import APIRouter, HTTPException, Request
@@ -39,7 +40,7 @@ from emporia import bounties as rules
 from emporia import relay_server as rs
 from emporia.module_sdk import MODULE_REGISTRY
 from emporia.module_sdk import get_interaction_module
-from emporia.payments import RAIL_STRIPE, cancel_payment_hold
+from emporia.payments import RAIL_STRIPE, RAIL_X402, cancel_payment_hold
 
 router = APIRouter()
 
@@ -50,6 +51,10 @@ class CreateBountyRequest(BaseModel):
     module_type: str
     prize_cents: int
     entry_deadline: datetime
+    # P79: which rail backs the prize. Defaults to the one that actually holds
+    # money — a funder gets the strong guarantee unless they ask for the weak
+    # one, rather than the other way round.
+    rail: str = RAIL_STRIPE
 
 
 def _agent_identity(conn, agent_id: str) -> tuple[str, str | None]:
@@ -131,6 +136,30 @@ async def create_bounty(req: CreateBountyRequest, request: Request):
     # No credential means a 402 challenge, which is the same answer this relay
     # gives every other unpaid request.
     rs._assert_agent_budget(caller, spec.prize_cents)
+
+    # P79: a funder may back a prize with money or with their word, and the two
+    # take different routes from here.
+    #
+    # `rail=x402` is a PROMISE: nothing is committed now, because nothing can
+    # be. An EIP-3009 authorization signs `to`, so it cannot name a winner who
+    # does not exist yet (P78), and holding the funds ourselves was declined —
+    # this relay does not custody anyone's money. So the funder pays after the
+    # result, and what backs the prize until then is the consequence of not
+    # paying: a default is recorded and they cannot promise again until it is
+    # settled. That rule is checked here, before anyone can enter.
+    if req.rail == RAIL_X402:
+        with rs.DB_LOCK, rs.get_db() as conn:
+            unpaid, outstanding = _funder_promise_record(conn, caller)
+        allowed, why = rules.funder_may_promise(
+            unpaid_defaults=unpaid, outstanding_promises=outstanding,
+        )
+        if not allowed:
+            raise HTTPException(403, why)
+        return await _write_bounty(
+            listing_id=listing_id, req=req, spec=spec, caller=caller, now=now,
+            rail=RAIL_X402, payment_intent_id=None,
+        )
+
     paid = await rs._verify_and_confirm_payment(
         request,
         agent_id=caller,
@@ -153,8 +182,44 @@ async def create_bounty(req: CreateBountyRequest, request: Request):
     )
     if isinstance(paid, JSONResponse):
         return paid          # 402 with the challenge; no bounty was created
-    payment_intent_id = paid.reference
 
+    return await _write_bounty(
+        listing_id=listing_id, req=req, spec=spec, caller=caller, now=now,
+        rail=paid.rail, payment_intent_id=paid.reference,
+    )
+
+
+def _funder_promise_record(conn, agent_id: str) -> tuple[int, int]:
+    """(unpaid defaults, outstanding promises) for this funder.
+
+    Read together in one pass because `funder_may_promise()` weighs them
+    together, and two queries a moment apart could disagree about the same
+    funder mid-contest.
+    """
+    rows = conn.execute(
+        "SELECT metadata_json FROM listings WHERE listing_type = ? AND agent_id = ?",
+        (rules.BOUNTY_LISTING_TYPE, agent_id),
+    ).fetchall()
+    unpaid = outstanding = 0
+    for r in rows:
+        meta = json.loads(r["metadata_json"] or "{}")
+        if meta.get("rail") != "x402":
+            continue
+        state = meta.get("state")
+        if state == "defaulted":
+            unpaid += 1
+        elif state in ("open", "running", "awaiting_payment"):
+            outstanding += 1
+    return unpaid, outstanding
+
+
+async def _write_bounty(*, listing_id, req, spec, caller, now, rail, payment_intent_id):
+    """One row-writer for both rails (P79).
+
+    Everything after the credential is identical whether the prize is held or
+    promised, and two copies of it would be the divergence this file's own
+    rules keep catching.
+    """
     with rs.DB_LOCK, rs.get_db() as conn:
         _, funder_nous = _agent_identity(conn, caller)
         conn.execute(
@@ -174,9 +239,11 @@ async def create_bounty(req: CreateBountyRequest, request: Request):
                  # The hold. Settlement captures this and pays the winner;
                  # the no-entrants path cancels it.
                  "payment_intent_id": payment_intent_id,
-                 # Which rail actually carried the prize, from the verified
-                 # PaymentRef rather than assumed here.
-                 "rail": paid.rail,
+                 # Which rail backs the prize. For a held prize this came from
+                 # the verified credential; for a promised one it is what the
+                 # funder declared, and nothing was verified because nothing was
+                 # committed.
+                 "rail": rail,
                  "state": "open",
              }), now),
         )
@@ -185,10 +252,15 @@ async def create_bounty(req: CreateBountyRequest, request: Request):
         "title": req.title, "module_type": spec.module_type,
         "prize_cents": spec.prize_cents,
     })
+    strength = rules.escrow_strength(rail)
     return {"listing_id": listing_id, "prize_cents": spec.prize_cents,
             "module_type": spec.module_type,
             "entry_deadline": spec.entry_deadline.isoformat(), "state": "open",
-            "prize_escrowed": True}
+            "rail": rail,
+            # Named, not a bare boolean: "escrowed: true" would say the same
+            # word for money set aside and a funder's word.
+            "escrow_strength": strength,
+            "prize_escrowed": strength == rules.ESCROW_HELD}
 
 
 async def _start_contest(listing_id: str) -> dict:
@@ -379,7 +451,17 @@ async def list_bounties(limit: int = 50, open_only: bool = True):
         # Seats are on the wire because `entrant_count` alone is a half-truth:
         # "2 entrants" reads as some interest when it can mean full and closed.
         # A reader deciding whether to enter needs the denominator.
-        lo, hi = rules.seats_for(r["module_type"] or "", MODULE_REGISTRY)
+        # P79: unknown modules are reachable here, so this cannot raise.
+        # `seats_for()` raises by design — validation wants a hard failure — but
+        # a *listing* row can name a module this relay does not have: federated
+        # gossip carries bounties from peers running modules we never
+        # registered, and a module can be removed after its bounties exist. One
+        # such row raising would 500 the whole board, hiding every other bounty
+        # behind an unrelated one. Unknown seats are reported as unknown.
+        try:
+            lo, hi = rules.seats_for(r["module_type"] or "", MODULE_REGISTRY)
+        except KeyError:
+            lo = hi = None
         out.append({
             "listing_id": r["listing_id"], "title": r["title"],
             "description": r["description"], "module_type": r["module_type"],
@@ -457,3 +539,196 @@ async def enter_bounty(listing_id: str, request: Request):
                 "per agent, because one Nous account may operate any number of personas."
             ))
     return {"listing_id": listing_id, "agent_id": caller, "entered": True}
+
+
+def _mark_awaiting_payment(conn, listing_id: str, meta: dict, winner_id: str, now: datetime) -> dict:
+    """A promised contest has resolved: the funder now owes the winner."""
+    meta |= {
+        "state": "awaiting_payment",
+        "winner_id": winner_id,
+        "resolved_at": now.isoformat(),
+        "payment_due_at": rules.payment_due_at(now).isoformat(),
+    }
+    conn.execute("UPDATE listings SET metadata_json = ? WHERE listing_id = ?",
+                 (json.dumps(meta), listing_id))
+    return meta
+
+
+@router.post("/bounties/{listing_id}/settle-promise")
+async def settle_promise(listing_id: str, request: Request):
+    """The funder pays a promised prize, after the contest named a winner.
+
+    This is the step that could not exist at funding: the winner is known now,
+    so an x402 authorization can finally name them. The funder presents it in
+    PAYMENT-SIGNATURE exactly as any other x402 payment, and it settles
+    immediately — there is nothing to defer any more.
+
+    Only the funder may call it, and only while the bounty is awaiting payment.
+    Paying late is still paying: a bounty already marked `defaulted` can be
+    settled, which clears the flag. The consequence is for not paying, not for
+    being slow — a funder with no way back would have no reason to settle at
+    all, and the winner is the one who loses by that.
+    """
+    caller = rs._dashboard_agent_id(request)
+    if not caller:
+        raise HTTPException(401, "Authentication required")
+
+    with rs.DB_LOCK, rs.get_db() as conn:
+        row = conn.execute(
+            "SELECT * FROM listings WHERE listing_id = ? AND listing_type = ?",
+            (listing_id, rules.BOUNTY_LISTING_TYPE),
+        ).fetchone()
+        if not row:
+            raise HTTPException(404, "No such bounty")
+        meta = json.loads(row["metadata_json"] or "{}")
+
+    if row["agent_id"] != caller:
+        raise HTTPException(403, "Only the funder pays their own bounty.")
+    if meta.get("rail") != RAIL_X402:
+        raise HTTPException(400, (
+            "This bounty is backed by a held prize — it settles from escrow when the "
+            "contest resolves and needs no payment from you."
+        ))
+    if meta.get("state") not in ("awaiting_payment", "defaulted"):
+        raise HTTPException(409, (
+            f"This bounty is {meta.get('state')!r}; nothing is owed. A promised prize "
+            f"becomes payable when the contest names a winner."
+        ))
+    winner_id = meta.get("winner_id")
+    if not winner_id:
+        raise HTTPException(409, "No winner recorded for this bounty yet.")
+
+    paid = await rs._verify_and_confirm_payment(
+        request,
+        agent_id=caller,
+        identity_verified=True,
+        amount_cents=int(meta.get("prize_cents") or 0),
+        currency="usd",
+        resource_type="bounty",
+        resource_id=listing_id,
+        service_type=row["module_type"] or "emporia:bounty",
+        capture_method="automatic",      # nothing to hold — this is the payment
+        allowed_statuses=("succeeded",),
+        req_payment_intent_id=None,
+        challenge_message=(
+            f"Owed to {winner_id}: {meta.get('prize_cents')} usd cents. "
+            f"Retry with a credential paying that agent."
+        ),
+        challenge_resource=f"emporia:bounty:{listing_id}",
+        creator_id=winner_id,            # the winner is who gets paid
+    )
+    if isinstance(paid, JSONResponse):
+        return paid
+
+    with rs.DB_LOCK, rs.get_db() as conn:
+        was_late = meta.get("state") == "defaulted"
+        meta |= {
+            "state": "settled",
+            "paid_at": datetime.now(UTC).isoformat(),
+            "payment_reference": paid.reference,
+            "paid_rail": paid.rail,
+            # Kept rather than cleared: a funder who paid only after defaulting
+            # has a different record from one who paid on time, and an entrant
+            # deciding whether to trust them is entitled to both facts.
+            "settled_late": was_late,
+        }
+        conn.execute("UPDATE listings SET metadata_json = ? WHERE listing_id = ?",
+                     (json.dumps(meta), listing_id))
+    return {"listing_id": listing_id, "state": "settled", "winner_id": winner_id,
+            "settled_late": was_late, "payment_reference": paid.reference}
+
+
+async def reconcile_promised_bounties(limit: int = 50) -> dict[str, Any]:
+    """Move promised bounties through the states nobody triggers by hand (P79).
+
+    Two transitions, both of which have to happen on their own:
+
+    * A running contest whose session has settled becomes `awaiting_payment`,
+      with a deadline. Nothing else notices that a contest ended.
+    * An `awaiting_payment` bounty past its deadline becomes `defaulted`.
+
+    The second is the entire mechanism. A promised prize is backed only by the
+    consequence of not paying it, and a consequence that waits for someone to
+    complain is not one — the winner would have to notice, and know to ask, and
+    have somewhere to ask. So the flag arrives by itself.
+
+    Deliberately a reconciler rather than a branch inside session settlement:
+    that path pays people and is the last place to add a rail-conditional
+    branch. Same reasoning as P51's payout loop.
+    """
+    now = datetime.now(UTC)
+    resolved, defaulted = [], []
+    with rs.DB_LOCK, rs.get_db() as conn:
+        rows = conn.execute(
+            "SELECT * FROM listings WHERE listing_type = ? ORDER BY created_at LIMIT ?",
+            (rules.BOUNTY_LISTING_TYPE, limit),
+        ).fetchall()
+
+        for row in rows:
+            meta = json.loads(row["metadata_json"] or "{}")
+            if meta.get("rail") != RAIL_X402:
+                continue
+            state = meta.get("state")
+
+            if state == "running" and meta.get("session_id"):
+                s = conn.execute(
+                    "SELECT winner_id, status FROM settlements WHERE session_id = ?",
+                    (meta["session_id"],),
+                ).fetchone()
+                if s and s["status"] == "settled" and s["winner_id"]:
+                    _mark_awaiting_payment(conn, row["listing_id"], meta,
+                                           s["winner_id"], now)
+                    resolved.append(row["listing_id"])
+                continue
+
+            if state == "awaiting_payment":
+                due = meta.get("payment_due_at")
+                if due and now >= datetime.fromisoformat(due):
+                    meta |= {"state": "defaulted",
+                             "defaulted_at": now.isoformat()}
+                    conn.execute(
+                        "UPDATE listings SET metadata_json = ? WHERE listing_id = ?",
+                        (json.dumps(meta), row["listing_id"]),
+                    )
+                    defaulted.append(row["listing_id"])
+
+    return {"awaiting_payment": resolved, "defaulted": defaulted}
+
+
+@router.get("/bounties/{listing_id}/promise-status")
+async def promise_status(listing_id: str):
+    """Whether a promised prize was actually paid.
+
+    Public, and deliberately so: this is the record an entrant needs before
+    deciding whether to compete for a prize backed by a funder's word rather
+    than by money. A default that only the relay operator can see would not be
+    a consequence.
+    """
+    with rs.DB_LOCK, rs.get_db() as conn:
+        row = conn.execute(
+            "SELECT * FROM listings WHERE listing_id = ? AND listing_type = ?",
+            (listing_id, rules.BOUNTY_LISTING_TYPE),
+        ).fetchone()
+        if not row:
+            raise HTTPException(404, "No such bounty")
+        unpaid, outstanding = _funder_promise_record(conn, row["agent_id"])
+    meta = json.loads(row["metadata_json"] or "{}")
+    rail = meta.get("rail")
+    return {
+        "listing_id": listing_id,
+        "funder_id": row["agent_id"],
+        "rail": rail,
+        "escrow_strength": rules.escrow_strength(rail) if rail in rules.BOUNTY_RAILS else None,
+        "state": meta.get("state"),
+        "winner_id": meta.get("winner_id"),
+        "payment_due_at": meta.get("payment_due_at"),
+        "paid_at": meta.get("paid_at"),
+        # A funder who paid only after defaulting has a different record from
+        # one who paid on time. Both facts, not the kinder one.
+        "settled_late": meta.get("settled_late"),
+        "defaulted_at": meta.get("defaulted_at"),
+        # This funder's standing overall, so an entrant does not have to walk
+        # every bounty they ever posted to learn it.
+        "funder_unpaid_defaults": unpaid,
+        "funder_outstanding_promises": outstanding,
+    }

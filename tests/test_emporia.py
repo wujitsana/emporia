@@ -3177,6 +3177,9 @@ def test_every_route_has_a_reviewed_auth_posture():
         # by the rule, not the caller, so there is nothing to gain by asking. Still
         # authenticated: an anonymous caller could otherwise seat a contest.
         ("POST", "/bounties/{listing_id}/start"),
+        # P79: only the funder pays their own promised bounty, so identity
+        # is the gate.
+        ("POST", "/bounties/{listing_id}/settle-promise"),
         # Bootstrap: no credential can exist yet: identity is bound by a consumed
         # registration/login challenge-signature instead of a request-time caller.
         ("POST", "/dashboard/session"),
@@ -3300,6 +3303,7 @@ def test_every_route_has_a_reviewed_auth_posture():
         ("GET", "/dashboard/poll"): "bearer-secret model: gated by an unguessable challenge_id, not caller identity",
         ("GET", "/modules"): "static list of available game module types",
         ("GET", "/bounties"): "P72-4: public contest discovery, same shape as GET /listings — a bounty nobody can find is not a contest",
+        ("GET", "/bounties/{listing_id}/promise-status"): "P79: whether a funder paid a prize backed only by their word. Public on purpose — a default only the operator can see is not a consequence, and this is the record an entrant needs before competing on credit",
         ("GET", "/leaderboard"): "P72-3: public standings — wins/entries/modules only; per-agent earnings are deliberately excluded from the public shape (Standing.to_dict include_money)",
         ("POST", "/agents/challenge"): "bootstrap nonce issuance, no credential exists yet",
         ("GET", "/listings"): "public marketplace discovery, no auth decision keyed on any field",
@@ -28373,6 +28377,7 @@ def test_a_blocked_live_relay_is_told_every_way_out():
 # marketplace — so *writes* are out of scope by design and are not listed here.
 # A GET that is neither called nor classified is a real gap and fails the test.
 _DASHBOARD_UNSURFACED_GETS: dict[str, str] = {
+    "/bounties/{}/promise-status": "P79: per-bounty funder-payment record. The board already flags a promised prize; this is the detail behind one, reached from a bounty rather than browsed — surfacing it as its own page would be a view of one row.",
     # Infrastructure and machine-facing descriptors — nothing for a human view.
     "/": "redirects to /ui/; it *is* the dashboard's front door",
     "/.well-known/agent-card.json": "A2A descriptor, machine-facing",

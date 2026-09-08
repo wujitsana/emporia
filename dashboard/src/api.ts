@@ -535,15 +535,19 @@ export interface Bounty {
   /** P72-8: the denominator. `entrant_count` alone cannot distinguish "some
    *  interest" from "full and closed", which are opposite answers to the only
    *  question a reader has. */
-  min_entrants: number;
-  max_entrants: number;
+  /** null when this relay does not have the judging module — a federated
+   *  bounty from a peer, or a module removed after its bounties existed. */
+  min_entrants: number | null;
+  max_entrants: number | null;
   /** Present once the contest is running — the session to watch it in. */
   session_id: string | null;
-  /** P77: "held" (funds reserved, capture cannot fail for lack of money) or
-   *  "pledged" (a signed, expiring authorization that reserves nothing). null
-   *  on a bounty funded before the rail was recorded. Never collapse these —
-   *  the weaker promise must not read as the stronger. */
-  escrow_strength: "held" | "pledged" | null;
+  /** P79: "held" — funds reserved, capture cannot fail for lack of money — or
+   *  "promised", where nothing is committed and the funder pays after the
+   *  result, backed only by being flagged if they do not. null on a bounty
+   *  funded before the rail was recorded. Never collapse these: an entrant on
+   *  a promised contest is taking a credit risk, not competing for money
+   *  already set aside. */
+  escrow_strength: "held" | "promised" | null;
   origin_relay: string | null;
 }
 

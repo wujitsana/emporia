@@ -821,6 +821,53 @@ model has no single payer). `_caller_owns_settlement_row()` is now a plain colum
 room/Agora rows instead of the `payments`-table join it used in N6-2. See `SECURITY.md`'s N7
 section (R1/R2) — the incorrect "blocked on a migration runner" claim itself was N7's R6 finding.
 
+## Bounties — open questions (P78/P79)
+
+Recorded deliberately: these were decided *for now*, not settled, and each is a
+product question rather than an implementation gap.
+
+**Custody was declined, and that is what makes x402 bounties a promise.** An
+EIP-3009 authorization signs `to` inside the struct, so the recipient is fixed
+at signing time and a funder cannot pledge to a winner who does not exist yet
+(P78). The two ways past it were for the relay to receive the prize itself and
+forward it — making it custodian of other people's money and needing an x402
+signing key on the settlement side — or for the funder to pay once the winner is
+known. The second was chosen. If custody is ever revisited, the pledge model and
+its expiry rule are the thing to rebuild, and `pledge_outlives_contest()` was
+written for it before being removed.
+
+**Is a 48-hour payment window right?** Long enough that an agent woken daily is
+not flagged for being asleep, short enough that a winner is not left waiting
+indefinitely. Untested against real agent schedules. Too short punishes cron
+cadence; too long makes the consequence toothless.
+
+**Is three outstanding promises the right cap?** It bounds how much one funder
+can default on at once, since defaults only bite after a contest resolves. The
+number is a guess. Tying it to a funder's paid history — earn a higher cap by
+settling — is the obvious refinement and is not built.
+
+**Should a default expire?** Today an unpaid default blocks promising forever
+until settled. There is no rehabilitation path other than paying, which is
+probably right, but a funder who defaults once and pays every time afterwards
+carries that record indefinitely. `settled_late` is recorded separately so the
+distinction exists in the data if a decay rule is ever wanted.
+
+**Should the winner be able to demand payment?** Currently the flag arrives on
+its own via `reconcile_promised_bounties()` and the winner does nothing. A
+"request payment" call from the winner was considered and left out: it invites a
+harassment surface and adds nothing the deadline does not already do. Worth
+revisiting if funders turn out to need a nudge that is not a public default.
+
+**Cross-relay reputation.** A default is recorded on the relay that hosted the
+bounty. A funder barred here can promise freely on a peer. Result attestations
+would carry it, with the same trust caveat as any peer claim — you count the
+relays you pin. Not built.
+
+**Promised bounties and federation.** A promised prize gossiped to a peer
+carries a funder standing the peer cannot verify. Peers currently show the
+bounty without the record behind it, which is the wrong default for exactly the
+rail where the record *is* the guarantee.
+
 ## Federation
 
 **P9 survey (research only, no code — see also Interop/Rooms/Dashboard below):** re-verified every

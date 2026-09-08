@@ -4,6 +4,7 @@ tests/test_bounties.py proves the rules. This proves the wiring: that the rules
 are actually consulted, that identity comes from the database rather than the
 request, and that the Sybil limit survives the gap between checking and writing.
 """
+import json
 import os
 import uuid
 from datetime import UTC, datetime, timedelta
@@ -555,3 +556,108 @@ def test_a_bounty_plays_to_the_end_and_the_winner_is_paid(client, _escrow):
     assert rows[buyer]["wins"] == 0 and rows[buyer]["entries"] >= 1, \
         "the loser stays on the table with an entry and no win"
 
+
+
+# ---------------------------------------------------------------------------
+# P79: promised prizes. Nothing is committed at funding, so the consequence of
+# not paying IS the product. These tests are the mechanism, not a check on it.
+# ---------------------------------------------------------------------------
+
+def _promise_bounty(client, funder, **kw):
+    body = {
+        "title": kw.get("title", "Promised contest"), "description": "",
+        "module_type": "emporia:chess:v1", "rail": "x402",
+        "prize_cents": kw.get("prize_cents", 5000),
+        "entry_deadline": (datetime.now(UTC) + timedelta(days=1)).isoformat(),
+    }
+    return client.post("/bounties", json=body, headers=_hdr(funder))
+
+
+def _force_state(listing_id, **fields):
+    from emporia import relay_server as rs
+    with rs.DB_LOCK, rs.get_db() as conn:
+        row = conn.execute("SELECT metadata_json FROM listings WHERE listing_id = ?",
+                           (listing_id,)).fetchone()
+        meta = json.loads(row["metadata_json"]) | fields
+        conn.execute("UPDATE listings SET metadata_json = ? WHERE listing_id = ?",
+                     (json.dumps(meta), listing_id))
+    return meta
+
+
+def test_a_promised_bounty_needs_no_credential_and_says_it_is_not_escrowed(client, _escrow):
+    """Nothing is committed at funding because nothing can be — so no credential
+    is asked for, and the response must not claim a prize is escrowed."""
+    funder = _mk_agent(client, nous_id="nous_p_" + uuid.uuid4().hex[:6])
+    r = _promise_bounty(client, funder)
+    assert r.status_code == 200, r.text
+    assert r.json()["escrow_strength"] == "promised"
+    assert r.json()["prize_escrowed"] is False, (
+        "reporting a promise as escrow is the one collapse this whole model "
+        "exists to prevent"
+    )
+    board = next(b for b in client.get("/bounties").json()["bounties"]
+                 if b["listing_id"] == r.json()["listing_id"])
+    assert board["escrow_strength"] == "promised"
+
+
+def test_a_funder_who_owes_a_winner_cannot_promise_again(client, _escrow):
+    """THE test. A promised prize is worth exactly the consequence of not
+    paying it, and this is that consequence. If a defaulted funder can keep
+    posting, the model is decorative and an entrant competing on credit has
+    been misled."""
+    funder = _mk_agent(client, nous_id="nous_d_" + uuid.uuid4().hex[:6])
+    first = _promise_bounty(client, funder).json()["listing_id"]
+    _force_state(first, state="defaulted", winner_id="somebody", prize_cents=5000)
+
+    r = _promise_bounty(client, funder, title="Second attempt")
+    assert r.status_code == 403 and "unpaid bounty default" in r.json()["detail"]
+
+    # A held prize is still fine — the funder's word is in question, not their
+    # money, and this rail does not ask anyone to take their word for anything.
+    held = _post_bounty(client, funder)
+    assert held.status_code == 200, held.text
+
+
+def test_outstanding_promises_are_capped_through_the_api(client, _escrow):
+    funder = _mk_agent(client, nous_id="nous_c_" + uuid.uuid4().hex[:6])
+    for i in range(3):
+        assert _promise_bounty(client, funder, title=f"Open {i}").status_code == 200
+    r = _promise_bounty(client, funder, title="One too many")
+    assert r.status_code == 403 and "limit is 3" in r.json()["detail"]
+
+
+def test_the_default_flag_arrives_without_anyone_complaining(client, _escrow):
+    """A consequence that waits for the winner to notice, know to ask, and have
+    somewhere to ask is not a consequence."""
+    from emporia.routes.bounties import reconcile_promised_bounties
+
+    funder = _mk_agent(client, nous_id="nous_r_" + uuid.uuid4().hex[:6])
+    listing_id = _promise_bounty(client, funder).json()["listing_id"]
+    _force_state(
+        listing_id, state="awaiting_payment", winner_id="the_winner",
+        payment_due_at=(datetime.now(UTC) - timedelta(minutes=1)).isoformat(),
+    )
+
+    import anyio
+    out = anyio.run(reconcile_promised_bounties)
+    assert listing_id in out["defaulted"]
+
+    status = client.get(f"/bounties/{listing_id}/promise-status")
+    assert status.status_code == 200 and status.json()["state"] == "defaulted"
+
+
+def test_a_bounty_still_within_its_window_is_not_defaulted(client, _escrow):
+    """Late is not the same as defaulted, and the window is what separates
+    them. Flagging early would punish an agent for being asleep."""
+    import anyio
+
+    from emporia.routes.bounties import reconcile_promised_bounties
+
+    funder = _mk_agent(client, nous_id="nous_w_" + uuid.uuid4().hex[:6])
+    listing_id = _promise_bounty(client, funder).json()["listing_id"]
+    _force_state(
+        listing_id, state="awaiting_payment", winner_id="the_winner",
+        payment_due_at=(datetime.now(UTC) + timedelta(hours=1)).isoformat(),
+    )
+    out = anyio.run(reconcile_promised_bounties)
+    assert listing_id not in out["defaulted"]

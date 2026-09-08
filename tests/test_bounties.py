@@ -264,16 +264,6 @@ class TestRails:
             "validBefore"
         )
 
-    def test_they_do_not_promise_the_same_thing(self):
-        """The distinction an entrant is entitled to know before spending an
-        hour on a contest."""
-        from emporia.bounties import ESCROW_HELD, ESCROW_PLEDGED, escrow_strength
-        from emporia.payments import RAIL_STRIPE, RAIL_X402
-
-        assert escrow_strength(RAIL_STRIPE) == ESCROW_HELD
-        assert escrow_strength(RAIL_X402) == ESCROW_PLEDGED
-        assert ESCROW_HELD != ESCROW_PLEDGED
-
     def test_an_unknown_rail_raises_rather_than_defaulting(self):
         """A default here would read as a guarantee nobody made."""
         import pytest as _pytest
@@ -293,53 +283,65 @@ class TestRails:
         )
 
 
-class TestPledgeExpiry:
-    """P78: a pledge must outlive the contest it backs.
+class TestPromisedPrizes:
+    """P79: x402 bounties are paid after the result, not before.
 
-    An EIP-3009 authorization expires. If it lapses while the contest runs, the
-    winner is owed a prize backed by an instruction nobody can submit — and
-    because a pledge reserves nothing, there is no hold to fall back on. The
-    funder keeps the money without ever having defected.
+    P78 established that a pledge is impossible on this rail — `to` is inside
+    the signed EIP-3009 struct, so the recipient is fixed at signing and the
+    winner does not exist at funding. Custody was declined, which leaves paying
+    once a winner is known. That is a promise, and the only thing backing it is
+    what happens when it is broken.
 
-    Refused at funding, where a re-sign costs the funder nothing, rather than
-    discovered at payout, where it costs a winner their prize.
+    So these rules ARE the product. A promised bounty with a soft default rule
+    is worth nothing, and an entrant who spends an hour on one has taken a
+    credit risk nobody priced.
     """
 
-    def _epoch(self, dt):
-        return int(dt.timestamp())
+    def test_the_two_strengths_are_not_the_same_promise(self):
+        from emporia.bounties import ESCROW_HELD, ESCROW_PROMISED, escrow_strength
+        from emporia.payments import RAIL_STRIPE, RAIL_X402
 
-    def test_a_pledge_expiring_before_settlement_is_refused(self):
-        from emporia.bounties import pledge_outlives_contest
+        assert escrow_strength(RAIL_STRIPE) == ESCROW_HELD
+        assert escrow_strength(RAIL_X402) == ESCROW_PROMISED
+        assert ESCROW_HELD != ESCROW_PROMISED
 
-        # Expires exactly at the deadline — no room to settle at all.
-        ok, why = pledge_outlives_contest(self._epoch(SOON), SOON)
-        assert not ok and "before the contest could be settled" in why
+    def test_one_unpaid_default_disqualifies(self):
+        """Not a count, not a ratio. A funder who owes a winner money is not
+        entitled to ask another agent to work on credit — softening this makes
+        the whole mechanism decorative."""
+        from emporia.bounties import funder_may_promise
 
-    def test_a_pledge_with_settlement_room_is_accepted(self):
-        from datetime import timedelta
+        ok, why = funder_may_promise(unpaid_defaults=1, outstanding_promises=0)
+        assert not ok and "unpaid bounty default" in why
 
-        from emporia.bounties import PLEDGE_SETTLEMENT_MARGIN, pledge_outlives_contest
+    def test_outstanding_promises_are_capped(self):
+        """Defaults only bite after a contest resolves, so without a cap a
+        funder posts unlimited promised bounties before the first comes due and
+        defaults on all of them at once."""
+        from emporia.bounties import funder_may_promise
 
-        ok, why = pledge_outlives_contest(
-            self._epoch(SOON + PLEDGE_SETTLEMENT_MARGIN + timedelta(minutes=1)), SOON
-        )
+        ok, _ = funder_may_promise(unpaid_defaults=0, outstanding_promises=2, max_outstanding=3)
+        assert ok, "under the cap must be allowed, or nobody can promise at all"
+        ok, why = funder_may_promise(unpaid_defaults=0, outstanding_promises=3, max_outstanding=3)
+        assert not ok and "limit is 3" in why
+
+    def test_a_clean_funder_may_promise(self):
+        from emporia.bounties import funder_may_promise
+
+        ok, why = funder_may_promise(unpaid_defaults=0, outstanding_promises=0)
         assert ok and why == ""
 
-    def test_the_boundary_is_inclusive(self):
-        """Exactly enough room is enough. An off-by-one here rejects a
-        correctly-signed pledge and reads to the funder as a broken relay."""
-        from emporia.bounties import PLEDGE_SETTLEMENT_MARGIN, pledge_outlives_contest
+    def test_payment_is_due_a_bounded_time_after_the_result(self):
+        """A winner must not be left waiting on a promise indefinitely, and the
+        deadline has to arrive on its own — the flag is the only thing backing
+        the prize, so it cannot wait for someone to complain."""
+        from datetime import timedelta
 
-        ok, _ = pledge_outlives_contest(
-            self._epoch(SOON + PLEDGE_SETTLEMENT_MARGIN), SOON
+        from emporia.bounties import PAYMENT_WINDOW, payment_due_at
+
+        resolved = NOW
+        assert payment_due_at(resolved) == resolved + PAYMENT_WINDOW
+        assert PAYMENT_WINDOW >= timedelta(hours=24), (
+            "shorter than a day punishes an agent woken on a daily schedule for "
+            "being asleep rather than for defaulting"
         )
-        assert ok
-
-    def test_a_missing_expiry_is_not_treated_as_forever(self):
-        """validBefore of 0 means "no window", not "unbounded" — reading an
-        absent bound as an infinite one is the collapse this codebase keeps
-        finding."""
-        from emporia.bounties import pledge_outlives_contest
-
-        ok, why = pledge_outlives_contest(0, SOON)
-        assert not ok and "no usable validBefore" in why

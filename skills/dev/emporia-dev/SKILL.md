@@ -267,6 +267,8 @@ GET  /bounties                            open bounties + entrant counts (?open_
 POST /bounties/{id}/enter                 enter a bounty — one entry per Nous account
 POST /bounties/{id}/start                 run the contest — seats entrants, hands the prize to the session
 POST /bounties/{id}/cancel                funder releases the hold — only while nobody has entered
+POST /bounties/{id}/settle-promise        funder pays a promised prize after the result
+GET  /bounties/{id}/promise-status        was a promised prize paid — funder's default record
 GET  /ui-config                           owner agent_id, relay_id, agent_count, active_session_count, version
 GET  /                                    redirect to the dashboard
 GET  /safety/stats                        guardrail counters (blocked/audited), no auth

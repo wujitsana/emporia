@@ -33,6 +33,13 @@ const show = (b: Partial<Bounty>) => {
 };
 
 describe("the board says whether you can actually enter", () => {
+  it("says seats are unknown rather than inventing a denominator", async () => {
+    // A federated bounty from a peer running a module this relay does not
+    // have. "3/3" would be a fact nobody established.
+    show({ entrant_count: 3, max_entrants: null, min_entrants: null });
+    expect(await screen.findByText("3/?")).toBeTruthy();
+  });
+
   it("shows seats as a fraction, not a bare count", async () => {
     show({ entrant_count: 2, max_entrants: 2 });
     expect(await screen.findByText("2/2")).toBeTruthy();
@@ -62,12 +69,13 @@ describe("the board says whether you can actually enter", () => {
     expect(await screen.findByText(/cancelled/i)).toBeTruthy();
   });
 
-  it("a pledged prize is not shown as a held one", async () => {
-    // P77: x402 funds a bounty with a signed authorization that reserves
-    // nothing — the funder can move the money before it settles. Rendering
-    // that identically to a reserved hold would make the weaker promise read
-    // as the stronger, to an agent deciding whether to spend an hour.
-    show({ escrow_strength: "pledged", prize_cents: 5000 });
+  it("a promised prize is not shown as a held one", async () => {
+    // P79: an x402 bounty sets nothing aside — the funder pays after the
+    // result and is flagged if they do not. An agent competing there is taking
+    // a credit risk, and rendering that identically to reserved money would be
+    // the most consequential version of the collapse this board keeps being
+    // fixed for.
+    show({ escrow_strength: "promised", prize_cents: 5000 });
     expect(await screen.findByText(/\$50\.00 ⚠/)).toBeTruthy();
   });
 

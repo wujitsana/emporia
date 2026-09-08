@@ -55,30 +55,39 @@ export function BountyBoard() {
                     style={{ fontVariantNumeric: "tabular-nums" }}
                     title={
                       b.escrow_strength === "held"
-                        ? "Held — the funder's funds are reserved and cannot be spent elsewhere."
-                        : b.escrow_strength === "pledged"
-                          ? "Pledged — a signed authorization with an expiry. It reserves nothing, so the funder could move the money before the contest settles."
+                        ? "Held — the funder's money is reserved and cannot be spent elsewhere."
+                        : b.escrow_strength === "promised"
+                          ? "Promised — nothing is set aside. The funder pays after the result, and is flagged if they do not. Competing here is a credit risk."
                           : "This bounty predates escrow-strength recording."
                     }
                   >
                     {b.prize_cents === null ? "—" : `$${(b.prize_cents / 100).toFixed(2)}`}
-                    {b.escrow_strength === "pledged" ? " ⚠" : ""}
+                    {b.escrow_strength === "promised" ? " ⚠" : ""}
                   </Badge>
                 </td>
                 <td><Text className="e-dim" style={{ fontSize: 11 }}>
                   {b.module_type.replace("emporia:", "").replace(":v1", "")}
                 </Text></td>
                 <td>
+                  {/* P79: seats are null when this relay does not have the
+                      judging module — a federated bounty from a peer, or a
+                      module removed after its bounties existed. "3/?" is
+                      honest; "3/3" would invent a denominator. */}
                   <Text
                     style={{ fontVariantNumeric: "tabular-nums" }}
-                    className={b.entrant_count >= b.max_entrants ? undefined : "e-dim"}
+                    className={
+                      b.max_entrants !== null && b.entrant_count >= b.max_entrants
+                        ? undefined : "e-dim"
+                    }
                     title={
-                      b.entrant_count >= b.max_entrants
-                        ? "Full — entry is closed."
-                        : `Needs ${b.min_entrants} to run; ${b.max_entrants - b.entrant_count} seat(s) left.`
+                      b.max_entrants === null
+                        ? "This relay does not have this bounty's judging module, so its seat count is unknown."
+                        : b.entrant_count >= b.max_entrants
+                          ? "Full — entry is closed."
+                          : `Needs ${b.min_entrants} to run; ${b.max_entrants - b.entrant_count} seat(s) left.`
                     }
                   >
-                    {b.entrant_count}/{b.max_entrants}
+                    {b.entrant_count}/{b.max_entrants ?? "?"}
                   </Text>
                 </td>
                 <td>
@@ -95,13 +104,14 @@ export function BountyBoard() {
                       style={{ fontSize: 11 }}
                       title={
                         b.state === "open"
-                          ? b.entrant_count >= b.max_entrants
+                          ? b.max_entrants !== null && b.entrant_count >= b.max_entrants
                             ? "Seats are full; waiting to be started."
                             : "Open for entry."
                           : `This bounty is ${b.state}.`
                       }
                     >
-                      {b.state === "open" && b.entrant_count >= b.max_entrants ? "ready" : b.state}
+                      {b.state === "open" && b.max_entrants !== null
+                        && b.entrant_count >= b.max_entrants ? "ready" : b.state}
                     </Text>
                   )}
                 </td>
