@@ -702,7 +702,7 @@ check and the room would quietly become free.
 
 | Finding | Severity | Fix |
 |---|---|---|
-| **`/health` and `GET /agents/{id}`'s `payment_rails`/`payment_methods` formulas had already drifted apart.** Factoring the two hand-built lists into one `_payment_rails()` helper (item 5) surfaced a genuine, previously undocumented divergence: with `STRIPE_SECRET_KEY` set, the MPP profile not ready, and `EMPORIA_MPP_TEMPO_ENABLED=1`, `/health`'s independent `if payment_methods:` check includes `"mpp"` in `payment_rails` (`payment_methods=["tempo"]` is truthy), while `GET /agents/{id}`'s `elif` chain resolves `stripe_enabled` first and never reaches the tempo branch, silently omitting it. Both are pure advertisement — nothing in the payment path reads either list to route a charge — so this was never a live security gap, just a documentation-shaped one nobody had noticed. | Low | Not fixed — deliberately. Reconciling the two formulas is a behavior change, not a refactor, and "no wire change" was this item's whole contract. Both formulas are reproduced byte-for-byte inside the one shared function (`has_stripe=None` selects the relay-wide variant, `has_stripe=<bool>` the per-agent one), and the divergence itself is pinned by a test (`test_payment_rails_helper_pins_health_and_agent_variants_across_flag_combinations`) so a future change to either formula is deliberate rather than an unnoticed regression — the same `_KNOWN_VIOLATIONS`-style discipline this codebase already applies elsewhere. |
+| **`/health` and `GET /agents/{id}`'s `payment_rails`/`payment_methods` formulas had already drifted apart.** Factoring the two hand-built lists into one `_payment_rails()` helper (item 5) surfaced a genuine, previously undocumented divergence: with `STRIPE_SECRET_KEY` set, the MPP profile not ready, and `EMPORIA_MPP_TEMPO_ENABLED=1`, `/health`'s independent `if payment_methods:` check includes `"mpp"` in `payment_rails` (`payment_methods=["tempo"]` is truthy), while `GET /agents/{id}`'s `elif` chain resolves `stripe_enabled` first and never reaches the tempo branch, silently omitting it. Both are pure advertisement — nothing in the payment path reads either list to route a charge — so this was never a live security gap, just a documentation-shaped one nobody had noticed. | Low | Not fixed — deliberately. Reconciling the two formulas is a behavior change, not a refactor, and "no wire change" was this item's whole contract. Both formulas are reproduced byte-for-byte inside the one shared function (`has_stripe=None` selects the relay-wide variant, `has_stripe=<bool>` the per-agent one), and the divergence itself is pinned by a test (`test_payment_rails_helper_pins_health_and_agent_variants_across_flag_combinations`) so a future change to either formula is deliberate rather than an unnoticed regression — the same `_KNOWN_VIOLATIONS`-style discipline this codebase already applies elsewhere. **Correction (P70 pass, 2026-09-08): now fixed.** Pinning the divergence kept it from drifting but left the relay giving two answers to one question, and made the seam's own purpose false — adding a settlement rail meant editing two formulas that no test required to agree. The `elif` chain was the defect: `mpp` ("is the MPP transport usable?") and `stripe_pi` ("is a Stripe key set?") are independent conditions, and chaining them let the second silently suppress the first. Each rail now has exactly one condition. See the P70 section below. |
 
 Checked and confirmed clean (no finding, no fix needed, and not this pass's job to remove): the payment-layer
 audit that opened this pass found `arbitrate_and_refund()` (refund by charge id) has no production call
@@ -3925,6 +3925,34 @@ two High findings were both invisible to the 746 tests that were passing — one
 start from a fresh database, the other because tests call the app in-process and never negotiate
 auth over a socket. **A test suite models the system; it is not the system.** Both defects sat
 directly on the first thing a new operator would do.
+
+## P70 pass — one question, two answers
+
+Found while measuring whether a third settlement rail would be a local edit or a migration. The
+answer was "mostly a migration", and this is the reason.
+
+`_payment_rails()` looked like a single definition and was two. P3 had factored `/health`'s and
+`GET /agents/{id}`'s hand-built lists into one function but reproduced both formulas byte-for-byte,
+because "no wire change" was that pass's contract; the divergence it surfaced was recorded above,
+rated Low, and pinned rather than fixed.
+
+| Finding | Severity | Fix |
+|---|---|---|
+| **The relay advertised different payment rails depending on which endpoint you asked.** With `STRIPE_SECRET_KEY` set, the MPP profile not ready, and `EMPORIA_MPP_TEMPO_ENABLED=1`, `GET /health` advertised `"mpp"` while `GET /agents/{id}` omitted it — same relay, same configuration, two answers to "can I pay by MPP here?". Both lists are pure advertisement (nothing in the payment path routes a charge from them), so this was never a settlement bug; it was a relay lying about its own capabilities to half the agents that asked, and the half that got the wrong answer would simply not attempt a rail that was in fact available. | Low (advertisement), but load-bearing for the seam | One rule, one condition per rail, no `elif` — `mpp` keys off whether any payment method exists, `stripe_pi` off whether a key is set, and the two no longer interfere. The variants now differ in exactly one way: `stripe_connect` is a claim about a specific agent's payout account, so it exists only in the per-agent answer. Relies on an ordering fact stated in the docstring rather than left implicit: `_stripe_profile_ready()` already requires `STRIPE_SECRET_KEY`, so `stripe_profile_ready` implies `stripe_enabled` and the two conditions cannot contradict. |
+| **No test required the two doors to agree.** This is why the defect survived three passes: each formula had its own passing value assertions, and "these two must match" was not expressed anywhere. A value-pinning test cannot catch a rail added to one door under a flag combination it does not happen to enumerate. | Medium (coverage) | New `test_both_doors_agree_on_every_rail_except_stripe_connect` sweeps the full 16-cell flag cross-product (`stripe_profile_ready` × key × tempo × x402) against both variants, asserting `payment_methods` never varies by agent, that the two rail lists are identical apart from `stripe_connect`, and that `stripe_connect` tracks the agent's own account. Written as *who may differ*, not *do these values match*, so a rail added to one formula fails here regardless of which flags it keys off. |
+
+**Wire change, stated rather than implied.** `GET /agents/{id}` now includes `"mpp"` in
+`payment_rails` for the one configuration described above. That is a deliberate break, not a
+compatibility problem: the previous answer was wrong, and the correct answer is the one `/health`
+was already giving.
+
+**Stash-verify.** Three mutations, because the first one taught me the two tests catch different
+things and neither is redundant. S1 (make the shared rule wrong again, suppressing `mpp` when a
+Stripe key is present) is caught only by the value-pinning test — with the formulas unified, both
+doors still agree, they are simply both wrong. S2 (add a rail to the per-agent branch only) is
+caught by both. S3 (the same one-door rail, but keyed off `tempo` with no Stripe key — a flag
+combination the value test never asserts) is caught **only** by the new cross-product guard. S3 is
+the one that justifies the guard existing alongside the value test.
 
 ## Threat model notes (by design, not gaps)
 

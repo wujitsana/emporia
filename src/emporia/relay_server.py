@@ -4287,83 +4287,67 @@ class KickFromRoomRequest(BaseModel):
 # ============================================================================
 
 def _payment_rails(*, has_stripe: bool | None = None) -> tuple[list[str], list[str]]:
-    """The single definition for `payment_rails`/`payment_methods` (P3, item 5)
-    — previously two independently hand-built lists, one in `health()`, one in
-    `get_agent_profile()`. Pure advertisement: nothing in the payment path
-    reads either list to route a charge — this becomes the one place P1b
-    builds x402's `accepts` array from.
+    """The single definition for `payment_rails`/`payment_methods` — one rule,
+    two callers (P3 item 5, unified in P70).
 
-    `has_stripe=None` selects the relay-wide variant (`GET /health`): no
-    agent-specific `stripe_connect` rail, "mpp" derived from whether any
-    payment method exists at all. `has_stripe=<bool>` selects the per-agent
-    variant (`GET /agents/{id}`): `stripe_connect` appended only when this
-    specific agent has a stored Connect account and the relay's MPP profile
-    is ready.
+    `has_stripe=None` selects the relay-wide variant (`GET /health`);
+    `has_stripe=<bool>` the per-agent variant (`GET /agents/{id}`). They now
+    differ in exactly one way: `stripe_connect` is a statement about *this
+    agent* (it has a stored Connect account and can receive payouts), so it
+    exists only in the per-agent answer. Every other rail is a relay-wide
+    capability and must read identically from both doors.
 
-    The two variants' formulas are preserved byte-for-byte as found, not
-    reconciled — "no wire change" is this item's whole contract, and they
-    were already, independently, not equivalent: with `STRIPE_SECRET_KEY`
-    set but the MPP profile not ready (`stripe_profile_ready=False`) and
-    `EMPORIA_MPP_TEMPO_ENABLED=1`, the relay-wide variant includes `"mpp"`
-    in `payment_rails` (payment_methods=["tempo"] is truthy) while the
-    per-agent variant's `elif` chain resolves `stripe_enabled` first and
-    never reaches the `elif TEMPO_ENABLED` branch — so it silently omits
-    `"mpp"`. Recorded in SECURITY.md's P3 section as a noted, unfixed
-    finding; both formulas are reproduced here exactly rather than unified.
+    **P70 fixed a divergence P3 deliberately preserved.** P3 factored two
+    hand-built lists into this one function but reproduced both formulas
+    byte-for-byte, because "no wire change" was that pass's contract — which
+    left one flag combination answering differently depending on which
+    endpoint you asked. With a Stripe key set, the MPP profile not ready and
+    `EMPORIA_MPP_TEMPO_ENABLED=1`, `/health` advertised `"mpp"` (its
+    `if payment_methods:` test is truthy on `["tempo"]`) while
+    `GET /agents/{id}` omitted it: an `elif` chain resolved `stripe_enabled`
+    first and never reached the tempo branch. Same relay, same config, two
+    answers to "can I pay by MPP here?".
 
-    P1b-7: `"x402"` joins `payment_rails` — deliberately not `payment_methods`,
-    which is Stripe's own MPP-specific sub-vocabulary (`stripe`/`tempo`,
-    both settlement backends reachable *through* MPP's challenge/response
-    transport). x402 is a rail exactly the way `stripe_pi`/`stripe_connect`
-    are: a settlement backend, `KNOWN_RAILS`-tagged, with no MPP transport
-    underneath it. Appended identically to both variants (unlike the two
-    pre-existing formulas above, there is nothing to preserve byte-for-byte
-    here — this is new). Advertised whenever the rail is enabled at all,
-    not filtered by whether *this specific* creator has a wallet set — the
-    per-creator/per-network filtering already happens where it has to,
-    in the 402 challenge itself (_x402_pay_to_by_network(), P1b-4);
-    advertising the rail is a relay-wide capability statement, closer to
-    "stripe_pi" (available if configured) than "stripe_connect" (this
-    agent specifically can receive payouts). This sharpens, rather than
-    resolves, the payment_rails/payment_methods conflation this docstring
-    already flags above — real now that a second axis (settlement rail vs.
-    negotiation transport) actually exists, still not this pass's job to
-    reconcile (ROADMAP.md).
+    The `elif` chain was the bug. `mpp` (is the MPP transport usable at all?)
+    and `stripe_pi` (is there a Stripe key?) are independent conditions, and
+    chaining them made the second silently suppress the first. Each rail now
+    has exactly one condition, tested independently — which is also what makes
+    adding a rail a local edit rather than a matching pair of edits in two
+    formulas that no test required to agree.
+
+    Note the ordering dependency this relies on: `_stripe_profile_ready()`
+    already requires `STRIPE_SECRET_KEY`, so `stripe_profile_ready` implies
+    `stripe_enabled` and the two conditions cannot contradict each other.
+
+    Pure advertisement: nothing in the payment path reads either list to route
+    a charge. `payment_methods` stays Stripe's MPP-specific sub-vocabulary
+    (`stripe`/`tempo`, both settlement backends reachable *through* MPP's
+    challenge/response transport); `x402` is a rail the way `stripe_pi` is —
+    a settlement backend with no MPP transport underneath it — and so is
+    advertised whenever the rail is enabled, not filtered by whether this
+    particular creator has a wallet set. That per-creator, per-network
+    filtering happens where it must, in the 402 challenge itself
+    (`_x402_pay_to_by_network()`, P1b-4).
     """
     stripe_enabled = bool(os.getenv("STRIPE_SECRET_KEY"))
     stripe_profile_ready = _stripe_profile_ready()
     from emporia.payments import _x402_enabled
-    x402_enabled = _x402_enabled()
 
-    if has_stripe is None:
-        payment_methods = []
-        if stripe_profile_ready:
-            payment_methods.append("stripe")
-        if TEMPO_ENABLED:
-            payment_methods.append("tempo")
-        payment_rails = ["free"]
-        if payment_methods:
-            payment_rails.append("mpp")
-        if stripe_enabled:
-            payment_rails.append("stripe_pi")
-        if x402_enabled:
-            payment_rails.append("x402")
-        return payment_rails, payment_methods
-
-    payment_rails = ["free"]
-    payment_methods = []
+    payment_methods: list[str] = []
     if stripe_profile_ready:
         payment_methods.append("stripe")
-        payment_rails += ["mpp", "stripe_pi"]
-        if has_stripe:
-            payment_rails.append("stripe_connect")  # can receive payouts
-    elif stripe_enabled:
-        payment_rails.append("stripe_pi")
-    elif TEMPO_ENABLED:
-        payment_rails.append("mpp")
     if TEMPO_ENABLED:
         payment_methods.append("tempo")
-    if x402_enabled:
+
+    # One condition per rail. No elif — the conditions are independent.
+    payment_rails = ["free"]
+    if payment_methods:
+        payment_rails.append("mpp")
+    if stripe_enabled:
+        payment_rails.append("stripe_pi")
+    if has_stripe and stripe_profile_ready:
+        payment_rails.append("stripe_connect")  # can receive payouts
+    if _x402_enabled():
         payment_rails.append("x402")
     return payment_rails, payment_methods
 

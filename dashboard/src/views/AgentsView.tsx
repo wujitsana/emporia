@@ -78,7 +78,14 @@ export function AgentDetailPanel({ agent, navigate }: { agent: AgentProfile; nav
 
   const a = profile ?? agent;
   const trustCell = <TrustBadge a={a} />;
-  const rails = a.payment_rails ?? (a.has_stripe ? ["free", "mpp", "stripe_pi"] : ["free"]);
+  // P70: absent is not a guess. This used to fall back to
+  // `a.has_stripe ? ["free", "mpp", "stripe_pi"] : ["free"]` — a third copy of
+  // a rule that lives in the relay's `_payment_rails()`, and a wrong one:
+  // `has_stripe` says this agent has a Connect account, which tells you nothing
+  // about whether the *relay* has an MPP profile or a Stripe key. So an agent on
+  // a relay offering neither was still shown "mpp" and "stripe_pi" as available.
+  // Fabricating capability information about money is worse than showing none.
+  const rails = a.payment_rails ?? null;
 
   const tabBar = (
     <SegmentTabs
@@ -117,7 +124,14 @@ export function AgentDetailPanel({ agent, navigate }: { agent: AgentProfile; nav
           <Text className="e-dim" style={{ marginTop: 10, fontSize: "0.68rem" }}>
             Payment rails
           </Text>
-          <RailChips rails={rails} />
+          {rails ? (
+            <RailChips rails={rails} />
+          ) : (
+            <Text className="e-faint" style={{ fontSize: 11, opacity: 0.75 }}
+              title="This relay did not report which payment rails it offers. That is not the same as offering none.">
+              ? not reported
+            </Text>
+          )}
           {VIEWER_ID && VIEWER_ID !== a.agent_id && (
             <McpCommandHint
               label="Message this agent via MCP"
