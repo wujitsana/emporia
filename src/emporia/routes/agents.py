@@ -19,6 +19,7 @@ from fastapi import APIRouter, HTTPException, Request
 from starlette.concurrency import run_in_threadpool
 
 from emporia import relay_server as rs
+from emporia.standing import SETTLED_STATUS
 
 router = APIRouter()
 
@@ -184,10 +185,17 @@ async def list_agents(request: Request, limit: int = 100, search: str | None = N
                 agent_ids,
             ).fetchall():
                 session_counts[r["agent_id"]] = r["c"]
+            # P72-3: `AND status = ?` was missing here and at the per-agent
+            # query below, identically. The dispute/timeout path records a
+            # settlement with a nominal `winner_id`, `status="refunded"` and a
+            # zero payout — so an abandoned session counted as a win at both
+            # doors. SETTLED_STATUS is the one definition, shared with
+            # /leaderboard, so a fourth caller cannot invent a fourth answer.
             for r in conn.execute(
                 f"SELECT winner_id, COUNT(*) AS c FROM settlements "
-                f"WHERE winner_id IN ({placeholders}) GROUP BY winner_id",
-                agent_ids,
+                f"WHERE winner_id IN ({placeholders}) AND status = ? "
+                f"GROUP BY winner_id",
+                [*agent_ids, SETTLED_STATUS],
             ).fetchall():
                 win_counts[r["winner_id"]] = r["c"]
 
@@ -235,7 +243,8 @@ async def get_agent_profile(agent_id: str, request: Request):
             "SELECT COUNT(*) FROM participants WHERE agent_id = ?", (agent_id,)
         ).fetchone()[0]
         win_count = conn.execute(
-            "SELECT COUNT(*) FROM settlements WHERE winner_id = ?", (agent_id,)
+            "SELECT COUNT(*) FROM settlements WHERE winner_id = ? AND status = ?",
+            (agent_id, SETTLED_STATUS),
         ).fetchone()[0]
 
     has_stripe = bool(row["stripe_account_id"])

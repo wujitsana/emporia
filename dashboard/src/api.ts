@@ -496,7 +496,35 @@ export interface InboxEvent {
   created_at: string;
 }
 
+/** P72-3: standings as far as ONE relay knows.
+ *
+ * `scope` is on the wire deliberately. Settlements are local — peer results
+ * would arrive as signed attestations, which does not exist yet — so this is
+ * never a network-wide ranking and the UI must not imply otherwise.
+ *
+ * No money fields: per-agent earnings are excluded from the public shape.
+ */
+export interface Standing {
+  agent_id: string;
+  wins: number;
+  entries: number;
+  win_rate: number | null;
+  modules: string[];
+}
+
+export interface LeaderboardResponse {
+  scope: string;
+  relay_url: string;
+  module_type: string | null;
+  count: number;
+  standings: Standing[];
+}
+
 export const api = {
+  leaderboard: (moduleType?: string) =>
+    get<LeaderboardResponse>(
+      "/leaderboard" + (moduleType ? `?module_type=${encodeURIComponent(moduleType)}` : ""),
+    ),
   health: () => get<Health>("/health"),
   uiConfig: () => get<UiConfig>("/ui-config"),
   listings: (module_type?: string) =>

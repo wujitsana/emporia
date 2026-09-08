@@ -7004,7 +7004,8 @@ if __name__ == "__main__":
 # intercept. See emporia/routes/__init__.py.
 # ============================================================================
 
-from emporia.routes import agents as _agent_routes  # noqa: E402
+from emporia.routes import agents as _agent_routes
+from emporia.routes import standing as _standing_routes  # noqa: E402
 from emporia.routes import agoras as _agora_routes  # noqa: E402
 from emporia.routes import dm as _dm_routes  # noqa: E402
 from emporia.routes import gaming as _gaming_routes  # noqa: E402
@@ -7023,3 +7024,4 @@ app.include_router(_agora_routes.router)
 app.include_router(_room_routes.router)
 app.include_router(_session_routes.router)
 app.include_router(_agent_routes.router)
+app.include_router(_standing_routes.router)

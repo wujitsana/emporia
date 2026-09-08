@@ -26,6 +26,7 @@ import { ViewBody } from "../ui/layout";
 import { MetaGrid, RailChips } from "../ui/cards";
 import { SegmentTabs } from "../ui/SegmentTabs";
 import { useInterval } from "../hooks";
+import { Leaderboard } from "../ui/Leaderboard";
 
 // P42: not exported — used only by TrustBadge below. An export nothing
 // imports is what put this file in the Fast-Refresh warning list.
@@ -314,6 +315,11 @@ export function AgentsView({
       </div>
       <Indent>
         <ViewStatus loading={agentsLoading} error={agentsErr} />
+        {/* P72-3: standing lives with the agents it ranks. The primary nav's
+            hotkeys 1-9 and 0 are all taken, and a leaderboard is a view *of*
+            agents rather than a peer of Listings or Rooms — so it sits here
+            instead of becoming an eleventh top-level section. */}
+        <Leaderboard />
       </Indent>
       <SidebarLayout sidebar={agentSidebar} defaultSidebarWidth={30}>
         {listingPeek ? <ListingPeekBanner peek={listingPeek} /> : null}

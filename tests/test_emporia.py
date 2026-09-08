@@ -3292,6 +3292,7 @@ def test_every_route_has_a_reviewed_auth_posture():
         ("POST", "/dashboard/challenge"): "bootstrap nonce issuance, no credential exists yet",
         ("GET", "/dashboard/poll"): "bearer-secret model: gated by an unguessable challenge_id, not caller identity",
         ("GET", "/modules"): "static list of available game module types",
+        ("GET", "/leaderboard"): "P72-3: public standings — wins/entries/modules only; per-agent earnings are deliberately excluded from the public shape (Standing.to_dict include_money)",
         ("POST", "/agents/challenge"): "bootstrap nonce issuance, no credential exists yet",
         ("GET", "/listings"): "public marketplace discovery, no auth decision keyed on any field",
         ("GET", "/events"): "public event discovery, same shape as GET /listings",
@@ -4521,6 +4522,70 @@ async def test_settle_pays_a_winner_who_never_paid_in(monkeypatch):
     assert result["platform_fee_cents"] == 125
     assert result["winner_payout_cents"] == 4875, \
         "a bounty pays out the prize less OPERATOR_FEE_BPS, same as any settlement"
+
+
+def test_all_three_win_counters_agree_that_a_refund_is_not_a_win(client):
+    """P72-3: three places now answer "how many has this agent won" — the agent
+    list, the agent profile, and /leaderboard. They must never disagree.
+
+    Both pre-existing queries counted `WHERE winner_id = ?` with no status
+    filter, and the dispute/timeout path records a settlement carrying a nominal
+    `winner_id`, `status="refunded"` and a zero payout. So an abandoned session
+    read as a victory at both doors — and a leaderboard built on the same
+    mistake would have rewarded quitting.
+
+    This is the P70 shape one layer out: the defect was never a wrong value in
+    one place, it was two copies of a rule that nothing required to agree. The
+    third copy is why this test exists before anyone notices a fourth.
+    """
+    import uuid
+
+    from emporia import relay_server as rs
+
+    agent = "p72_refund_" + uuid.uuid4().hex[:6]
+    _register(client, agent)
+
+    # One genuinely settled win, one refunded session with the same nominal
+    # winner — exactly what a dispute writes.
+    for status, payout, transfer in (
+        ("settled", 1000, "transferred"),
+        ("refunded", 0, "refunded"),
+    ):
+        rs.record_settlement({
+            "session_id": f"sess_{uuid.uuid4().hex[:10]}",
+            "winner_id": agent,
+            "status": status,
+            "outcome_type": "won" if status == "settled" else "refund",
+            "total_stake_cents": payout,
+            "platform_fee_cents": 0,
+            "winner_payout_cents": payout,
+            "platform_fee_bps": rs.OPERATOR_FEE_BPS,
+            "payment_intent_ids": [],
+            "transfer_id": None,
+            "transfer_status": transfer,
+        })
+
+    from_list = next(
+        a for a in client.get(
+            "/agents?limit=200", headers={"x-emporia-agent-id": agent}
+        ).json()["agents"]
+        if a["agent_id"] == agent
+    )["win_count"]
+    from_profile = client.get(
+        f"/agents/{agent}", headers={"x-emporia-agent-id": agent}
+    ).json()["win_count"]
+    board = client.get("/leaderboard?limit=200").json()
+    from_board = next(
+        (row["wins"] for row in board["standings"] if row["agent_id"] == agent), 0
+    )
+
+    assert from_list == from_profile == from_board == 1, (
+        f"the three win counters disagree, or counted the refund: list={from_list} "
+        f"profile={from_profile} leaderboard={from_board} (expected 1 each)"
+    )
+    # And the public board must not carry earnings.
+    assert all("prize_awarded_cents" not in row for row in board["standings"])
+    assert board["scope"] == "this_relay", "a local table must say it is local"
 
 
 def test_settlement_dedupe_key_never_hashes_the_rail_tag():

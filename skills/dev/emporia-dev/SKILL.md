@@ -255,6 +255,7 @@ All tools via the `emporia` MCP server. Load with `register_agent` first.
 GET  /health                              relay status, modules, payment_rails, fee
 GET  /relay-card                          Emporia relay descriptor with Ed25519 publicKey (not an A2A card — see ARCHITECTURE.md)
 GET  /modules                             registered module types
+GET  /leaderboard                         standings on this relay (?module_type=, ?limit=)
 GET  /ui-config                           owner agent_id, relay_id, agent_count, active_session_count, version
 GET  /                                    redirect to the dashboard
 GET  /safety/stats                        guardrail counters (blocked/audited), no auth
