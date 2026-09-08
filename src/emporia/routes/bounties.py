@@ -12,6 +12,16 @@ a concurrent entry.
 Settlement is deliberately not here. A bounty settles by running the module's
 own session and letting the existing `settle()` path pay out, which P72-1 proved
 already handles the asymmetric case. That is the next phase.
+
+**The prize is escrowed before the bounty exists (P72-5).** The first version of
+this file recorded `prize_cents` in a JSON blob and held nothing, which made a
+bounty a signup sheet with a number on it: an entrant could do the work and
+discover the funder never had the money. `validate_spec` already refused a prize
+below the payment floor on the grounds that finding out at payout is too late —
+and "the funder has no funds" is the same discovery, one step later. So creation
+now takes a manual-capture hold first and writes the row only if that hold
+exists. A relay with no payment rail configured cannot post a bounty at all,
+which is the honest failure: better than advertising a prize it could never pay.
 """
 
 from __future__ import annotations
@@ -27,6 +37,7 @@ from pydantic import BaseModel
 from emporia import bounties as rules
 from emporia import relay_server as rs
 from emporia.module_sdk import MODULE_REGISTRY
+from emporia.payments import cancel_payment_hold, create_stake_intent
 
 router = APIRouter()
 
@@ -87,6 +98,35 @@ async def create_bounty(req: CreateBountyRequest, request: Request):
 
     listing_id = f"bty_{uuid.uuid4().hex[:16]}"
     now = datetime.now(UTC).isoformat()
+
+    # Escrow first. A bounty row that exists without a hold behind it is a
+    # promise this relay cannot keep, so the hold is the precondition for the
+    # row rather than a step after it.
+    rs._assert_agent_budget(caller, spec.prize_cents)
+    try:
+        escrow = await create_stake_intent(
+            session_id=listing_id,
+            amount_cents=spec.prize_cents,
+            buyer_id=caller,
+            seller_id="",           # unknown until the contest is decided
+            service_type=spec.module_type,
+            capture_method="manual",
+            resource_type="bounty",
+        )
+    except Exception as e:
+        # Deliberately broad. `create_stake_intent` raises RuntimeError for "no
+        # rail configured", but an unreachable Stripe surfaces as
+        # httpx.ConnectError and a malformed response as something else again —
+        # and catching only RuntimeError turned an unreachable payment provider
+        # into a 500 with a full traceback instead of the refusal written right
+        # here. Every one of them means the same thing to the caller: there is
+        # no hold, so there is no bounty.
+        raise HTTPException(402, (
+            f"The prize could not be escrowed, so this bounty was not created: "
+            f"{type(e).__name__}: {e}"
+        ))
+    payment_intent_id = escrow.get("payment_intent_id") or escrow.get("id")
+
     with rs.DB_LOCK, rs.get_db() as conn:
         _, funder_nous = _agent_identity(conn, caller)
         conn.execute(
@@ -103,6 +143,9 @@ async def create_bounty(req: CreateBountyRequest, request: Request):
                  # current row, so re-registering cannot change who is barred
                  # from entering a bounty already posted.
                  "funder_nous_user_id": funder_nous,
+                 # The hold. Settlement captures this and pays the winner;
+                 # the no-entrants path cancels it.
+                 "payment_intent_id": payment_intent_id,
                  "state": "open",
              }), now),
         )
@@ -113,7 +156,64 @@ async def create_bounty(req: CreateBountyRequest, request: Request):
     })
     return {"listing_id": listing_id, "prize_cents": spec.prize_cents,
             "module_type": spec.module_type,
-            "entry_deadline": spec.entry_deadline.isoformat(), "state": "open"}
+            "entry_deadline": spec.entry_deadline.isoformat(), "state": "open",
+            "prize_escrowed": True}
+
+
+@router.post("/bounties/{listing_id}/cancel")
+async def cancel_bounty(listing_id: str, request: Request):
+    """Release the hold on a bounty nobody entered.
+
+    Only the funder, and only while the entrant list is empty — once an agent
+    has committed time to a contest, the funder withdrawing the prize is the
+    defection the escrow exists to prevent. After the deadline with entrants
+    present the bounty settles or refunds through the module, not through here.
+
+    The hold expires by itself in 5-7 days, so this is the fast path rather
+    than the only one; a relay that dies still returns the funder's money.
+    """
+    caller = rs._dashboard_agent_id(request)
+    if not caller:
+        raise HTTPException(401, "Authentication required")
+    with rs.DB_LOCK, rs.get_db() as conn:
+        row = conn.execute(
+            "SELECT * FROM listings WHERE listing_id = ? AND listing_type = ?",
+            (listing_id, rules.BOUNTY_LISTING_TYPE),
+        ).fetchone()
+        if not row:
+            raise HTTPException(404, "No such bounty")
+        if row["agent_id"] != caller:
+            raise HTTPException(403, "Only the funder may cancel a bounty.")
+        entrants = conn.execute(
+            "SELECT COUNT(*) FROM bounty_entries WHERE listing_id = ?", (listing_id,)
+        ).fetchone()[0]
+        if entrants:
+            raise HTTPException(409, (
+                f"{entrants} agent(s) have entered. A funded contest cannot be withdrawn "
+                "once agents have committed to it — that is what the escrow is for."
+            ))
+        meta = json.loads(row["metadata_json"] or "{}")
+        pi = meta.get("payment_intent_id")
+
+    released = False
+    if pi:
+        try:
+            await cancel_payment_hold(pi)
+            released = True
+        except Exception as e:
+            # The hold's own 5-7 day expiry is the backstop, so a failure here
+            # is reported rather than retried into a loop.
+            raise HTTPException(502, (
+                f"Could not release the hold ({e}). It expires on its own in 5-7 days; "
+                "the bounty has been left open rather than closed with money still held."
+            ))
+    with rs.DB_LOCK, rs.get_db() as conn:
+        meta["state"] = "cancelled"
+        conn.execute(
+            "UPDATE listings SET metadata_json = ?, expires_at = ? WHERE listing_id = ?",
+            (json.dumps(meta), datetime.now(UTC).isoformat(), listing_id),
+        )
+    return {"listing_id": listing_id, "state": "cancelled", "hold_released": released}
 
 
 @router.get("/bounties")

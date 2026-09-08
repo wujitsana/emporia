@@ -7,6 +7,8 @@ request, and that the Sybil limit survives the gap between checking and writing.
 import uuid
 from datetime import UTC, datetime, timedelta
 
+from unittest.mock import AsyncMock, patch
+
 import pytest
 from fastapi.testclient import TestClient
 
@@ -40,6 +42,19 @@ def _mk_agent(client, *, nous_id=None, verified=True):
             ("nous_verified" if verified else "key_only", nous_id, agent),
         )
     return agent
+
+
+@pytest.fixture(autouse=True)
+def _escrow():
+    """Stripe is mocked; the outbound block in conftest would refuse it anyway.
+
+    Patched at the bounties module's own name, not at payments, so the test
+    exercises the route's use of it — the same convention the routes package
+    uses for every other cross-module call.
+    """
+    with patch("emporia.routes.bounties.create_stake_intent", new_callable=AsyncMock) as m:
+        m.return_value = {"payment_intent_id": "pi_bounty_test", "status": "requires_capture"}
+        yield m
 
 
 def _post_bounty(client, funder, **kw):
@@ -150,3 +165,69 @@ def test_an_unsettleable_bounty_is_refused_at_creation(client):
         client, funder,
         entry_deadline=(datetime.now(UTC) - timedelta(hours=1)).isoformat(),
     ).status_code == 400
+
+
+def test_no_hold_means_no_bounty(client, _escrow):
+    """P72-5: the prize used to be a number in a JSON blob with nothing behind
+    it, so a bounty could advertise money the funder never had — and an entrant
+    would find out only after doing the work. validate_spec already refused a
+    prize below the payment floor for that reason; "the funder has no funds" is
+    the same discovery one step later.
+
+    Both failure shapes are covered because they arrive differently:
+    create_stake_intent raises RuntimeError for an unconfigured rail, while an
+    unreachable Stripe surfaces as httpx.ConnectError. Catching only the first
+    turned the second into a 500 with a full traceback instead of this refusal.
+    """
+    import httpx
+
+    funder = _mk_agent(client, nous_id="nous_f_" + uuid.uuid4().hex[:6])
+    before = client.get("/bounties").json()["count"]
+
+    for exc in (RuntimeError("no Stripe key configured"),
+                httpx.ConnectError("All connection attempts failed")):
+        _escrow.side_effect = exc
+        r = _post_bounty(client, funder)
+        assert r.status_code == 402, f"{type(exc).__name__} must refuse cleanly, got {r.status_code}"
+        assert "could not be escrowed" in r.json()["detail"]
+
+    assert client.get("/bounties").json()["count"] == before, \
+        "a bounty row must not exist when no hold does"
+
+
+def test_a_created_bounty_holds_the_prize(client, _escrow):
+    funder = _mk_agent(client, nous_id="nous_f_" + uuid.uuid4().hex[:6])
+    r = _post_bounty(client, funder, prize_cents=2500)
+    assert r.status_code == 200 and r.json()["prize_escrowed"] is True
+    kw = _escrow.call_args.kwargs
+    assert kw["amount_cents"] == 2500
+    assert kw["buyer_id"] == funder
+    assert kw["capture_method"] == "manual", "a bounty holds funds, it does not charge them"
+    assert kw["resource_type"] == "bounty"
+
+
+def test_the_funder_may_withdraw_only_before_anyone_enters(client, _escrow):
+    """The escrow protects the entrant's time, not just the funder's money."""
+    from unittest.mock import AsyncMock, patch
+
+    funder = _mk_agent(client, nous_id="nous_f_" + uuid.uuid4().hex[:6])
+    entrant = _mk_agent(client, nous_id="nous_e_" + uuid.uuid4().hex[:6])
+    listing_id = _post_bounty(client, funder).json()["listing_id"]
+
+    with patch("emporia.routes.bounties.cancel_payment_hold",
+               new_callable=AsyncMock) as cancel:
+        cancel.return_value = {"status": "canceled"}
+        # A stranger cannot withdraw someone else's prize.
+        assert client.post(f"/bounties/{listing_id}/cancel",
+                           headers=_hdr(entrant)).status_code == 403
+        # The funder can, while nobody has committed.
+        r = client.post(f"/bounties/{listing_id}/cancel", headers=_hdr(funder))
+        assert r.status_code == 200 and r.json()["hold_released"] is True
+        assert cancel.call_args.args[0] == "pi_bounty_test"
+
+    # Once an agent has entered, the prize is committed.
+    second = _post_bounty(client, funder).json()["listing_id"]
+    assert client.post(f"/bounties/{second}/enter", headers=_hdr(entrant)).status_code == 200
+    with patch("emporia.routes.bounties.cancel_payment_hold", new_callable=AsyncMock):
+        r = client.post(f"/bounties/{second}/cancel", headers=_hdr(funder))
+    assert r.status_code == 409 and "committed" in r.json()["detail"]

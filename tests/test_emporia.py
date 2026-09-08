@@ -3170,6 +3170,9 @@ def test_every_route_has_a_reviewed_auth_posture():
         # Sybil gate itself and is meaningless without a caller identity.
         ("POST", "/bounties"),
         ("POST", "/bounties/{listing_id}/enter"),
+        # P72-5: releases the funder's escrowed hold — caller must be the funder,
+        # so identity is the whole gate.
+        ("POST", "/bounties/{listing_id}/cancel"),
         # Bootstrap: no credential can exist yet: identity is bound by a consumed
         # registration/login challenge-signature instead of a request-time caller.
         ("POST", "/dashboard/session"),
