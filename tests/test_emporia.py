@@ -4463,6 +4463,66 @@ async def test_settle_derives_payout_idempotency_key_from_payment_intent_ids():
         f"share an Idempotency-Key, got {keys}"
 
 
+@pytest.mark.asyncio
+async def test_settle_pays_a_winner_who_never_paid_in(monkeypatch):
+    """P72 phase 01: the bounty shape — one funder escrows, a different agent wins.
+
+    Every settlement this codebase has shipped is a *wager*: N participants each
+    escrow a stake, one wins, the pot moves. A bounty is asymmetric — one funder
+    puts up the prize, entrants risk nothing but time, and the funder is
+    guaranteed *not* to be the winner. The spec called this the one structural
+    unknown, because if `settle()` requires the winner to be among the payers,
+    the bounty lane is a payments change rather than assembly.
+
+    It does not. `settle()` captures whatever PaymentIntents it is handed and
+    transfers to whatever account it is handed; the two are independent
+    arguments, and the session route derives payers from the session's payment
+    rows while looking the winner's account up separately. This test pins that
+    independence so a future "tighten settlement" pass cannot quietly close the
+    door on bounties without a failing test explaining what it broke.
+
+    Asserted at the wire, not the return value: the funder's hold is the PI that
+    gets captured, and the transfer is addressed to the winner's account.
+    """
+    from emporia.payments import settle
+
+    captured: list[str] = []
+    transfers: list[dict] = []
+
+    with patch.dict(os.environ, {"STRIPE_SECRET_KEY": "sk_test_mock"}):
+        with patch("httpx.AsyncClient.post", new_callable=AsyncMock) as mock_post:
+            def _record(url, *a, **kw):
+                if "/capture" in url:
+                    captured.append(url.rsplit("/payment_intents/", 1)[-1].split("/")[0])
+                elif url.endswith("/transfers"):
+                    transfers.append(kw.get("data", {}))
+                resp = MagicMock()
+                resp.json.return_value = {"id": "tr_bounty", "status": "succeeded"}
+                resp.raise_for_status = MagicMock()
+                return resp
+            mock_post.side_effect = _record
+
+            result = await settle(
+                "bounty_sess_1",
+                "entrant_who_paid_nothing",          # winner
+                5000,                                 # the funder's prize, in cents
+                ["pi_funder_hold"],                   # the ONLY payer is the funder
+                "acct_entrant",                       # winner's Connect account
+                winner_stripe_account_status="active",
+            )
+
+    assert captured == ["pi_funder_hold"], \
+        f"the funder's hold is what gets captured, got {captured}"
+    assert transfers and transfers[0].get("destination") == "acct_entrant", \
+        f"the payout must be addressed to the winner, who never paid in: {transfers}"
+    assert result["winner_id"] == "entrant_who_paid_nothing"
+    assert result["transfer_status"] == "transferred"
+    # 2.5% of 5000 = 125; the winner nets the prize less the operator fee.
+    assert result["platform_fee_cents"] == 125
+    assert result["winner_payout_cents"] == 4875, \
+        "a bounty pays out the prize less OPERATOR_FEE_BPS, same as any settlement"
+
+
 def test_settlement_dedupe_key_never_hashes_the_rail_tag():
     """P3, landmine L1: settlement_dedupe_key() is both settlements.dedupe_key
     (a UNIQUE index, ON CONFLICT target) and the base of every Stripe
