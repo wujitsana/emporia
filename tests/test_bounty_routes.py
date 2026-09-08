@@ -318,3 +318,54 @@ def test_a_running_contest_cannot_be_started_twice(client, _escrow):
     assert client.post(f"/bounties/{listing_id}/start", headers=_hdr(p1)).status_code == 200
     r = client.post(f"/bounties/{listing_id}/start", headers=_hdr(p2))
     assert r.status_code == 409 and "not open" in r.json()["detail"]
+
+
+def test_capacity_is_enforced_at_the_modules_real_size(client, _escrow):
+    """P72-8, pinned where the bug actually was.
+
+    `validate_spec` read seats from the module registry; the route's
+    `_spec_from_row` rebuilt a spec from the stored row and silently took
+    BountySpec's (2, 2) defaults. A bounty on a four-seat module would be
+    *validated* at four and then *enforced* at two — entry closing halfway
+    through its own contest, with two agents refused from seats that existed.
+
+    Invisible with the modules shipped today, which both seat two. So this
+    registers a four-seat judging module for the duration and drives real
+    entries through the API: the third and fourth must get in.
+
+    tests/test_bounties.py asserts the same rule against `seats_for` directly
+    and passes even with the route reverted — which is why this exists.
+    """
+    from emporia.module_sdk import MODULE_REGISTRY
+
+    class _FourSeater:
+        MODULE_TYPE = "emporia:fourseat:v1"
+        DECLARES_WINNER = True
+        MIN_PARTICIPANTS = 3
+        MAX_PARTICIPANTS = 4
+
+    MODULE_REGISTRY[_FourSeater.MODULE_TYPE] = _FourSeater
+    try:
+        funder = _mk_agent(client, nous_id="nous_f_" + uuid.uuid4().hex[:6])
+        listing_id = _post_bounty(
+            client, funder, module_type=_FourSeater.MODULE_TYPE
+        ).json()["listing_id"]
+
+        board = next(b for b in client.get("/bounties").json()["bounties"]
+                     if b["listing_id"] == listing_id)
+        assert (board["min_entrants"], board["max_entrants"]) == (3, 4), \
+            f"the wire must carry the module's real seats, got {board}"
+
+        for seat in range(4):
+            a = _mk_agent(client, nous_id="nous_" + uuid.uuid4().hex[:8])
+            r = client.post(f"/bounties/{listing_id}/enter", headers=_hdr(a))
+            assert r.status_code == 200, (
+                f"seat {seat + 1} of 4 was refused — capacity is being enforced at "
+                f"the default rather than the module's size: {r.text}"
+            )
+        # Five is genuinely too many.
+        fifth = _mk_agent(client, nous_id="nous_" + uuid.uuid4().hex[:8])
+        r = client.post(f"/bounties/{listing_id}/enter", headers=_hdr(fifth))
+        assert r.status_code == 403 and "full" in r.json()["detail"]
+    finally:
+        MODULE_REGISTRY.pop(_FourSeater.MODULE_TYPE, None)

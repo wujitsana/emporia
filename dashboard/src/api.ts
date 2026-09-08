@@ -532,6 +532,13 @@ export interface Bounty {
   entry_deadline: string | null;
   state: string;
   entrant_count: number;
+  /** P72-8: the denominator. `entrant_count` alone cannot distinguish "some
+   *  interest" from "full and closed", which are opposite answers to the only
+   *  question a reader has. */
+  min_entrants: number;
+  max_entrants: number;
+  /** Present once the contest is running — the session to watch it in. */
+  session_id: string | null;
   origin_relay: string | null;
 }
 

@@ -191,3 +191,34 @@ class TestReadyToRun:
         one. Starting it would lock out anyone still deciding."""
         from emporia.bounties import is_ready_to_run
         assert not is_ready_to_run(_spec(), 1, now=NOW)
+
+
+def test_seats_have_one_definition_not_two():
+    """P72-8: `validate_spec` read seats from the module registry while the
+    route's `_spec_from_row` rebuilt a spec and took BountySpec's defaults —
+    two implementations of one rule, agreeing only because both judging
+    modules happen to seat exactly two.
+
+    Asserted against a module that does NOT seat two, because that is the only
+    shape where the two answers differ. With a (2, 2) module the bug is
+    invisible, which is exactly why it survived.
+    """
+    from emporia.bounties import BountySpec, seats_for
+
+    class _FourSeater:
+        DECLARES_WINNER = True
+        MIN_PARTICIPANTS = 3
+        MAX_PARTICIPANTS = 4
+
+    registry = {"emporia:four:v1": _FourSeater}
+    assert seats_for("emporia:four:v1", registry) == (3, 4)
+
+    spec = validate_spec(
+        prize_cents=5000, module_type="emporia:four:v1", entry_deadline=SOON,
+        funder_id="funder", registry=registry, now=NOW,
+    )
+    assert (spec.min_entrants, spec.max_entrants) == (3, 4)
+    # And the defaults a rebuilt spec would silently fall back to are not these.
+    assert (BountySpec(0, "", SOON, "f").min_entrants,
+            BountySpec(0, "", SOON, "f").max_entrants) == (2, 2), \
+        "if the defaults ever match a real module, this test stops proving anything"

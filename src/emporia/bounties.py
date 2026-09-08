@@ -105,6 +105,23 @@ def judging_modules(registry: dict[str, type]) -> list[str]:
     )
 
 
+def seats_for(module_type: str, registry: dict[str, type]) -> tuple[int, int]:
+    """(min, max) entrants for a module — the one place that answers it.
+
+    P72-8: `validate_spec` derived these from the registry while the route's
+    `_spec_from_row` rebuilt a spec from the stored row and silently took the
+    dataclass defaults. Two copies of one rule, agreeing only because both
+    judging modules happen to seat exactly two: the first module with a
+    different capacity would have been validated at its real size and then
+    enforced at 2, closing entry halfway through its own contest.
+
+    Same shape as the defect P70 fixed in `_payment_rails` and P72-3 fixed in
+    `win_count`. A rule with two implementations has two answers.
+    """
+    cls = registry[module_type]
+    return cls.MIN_PARTICIPANTS, cls.MAX_PARTICIPANTS
+
+
 def validate_spec(
     *,
     prize_cents: int,
@@ -136,11 +153,9 @@ def validate_spec(
         )
     if not funder_id:
         raise BountyRejected("A bounty needs a funder.")
-    cls = registry[module_type]
-    return BountySpec(
-        prize_cents, module_type, entry_deadline, funder_id,
-        min_entrants=cls.MIN_PARTICIPANTS, max_entrants=cls.MAX_PARTICIPANTS,
-    )
+    lo, hi = seats_for(module_type, registry)
+    return BountySpec(prize_cents, module_type, entry_deadline, funder_id,
+                      min_entrants=lo, max_entrants=hi)
 
 
 def may_enter(

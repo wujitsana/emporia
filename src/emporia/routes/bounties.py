@@ -64,12 +64,22 @@ def _agent_identity(conn, agent_id: str) -> tuple[str, str | None]:
 
 
 def _spec_from_row(row) -> rules.BountySpec:
+    """Rebuild the spec a stored bounty row describes.
+
+    Seats come from `rules.seats_for()`, not from BountySpec's defaults — this
+    function used to take the defaults, which meant capacity was validated at
+    the module's real size and then *enforced* at two. Invisible while both
+    judging modules seat two; wrong for the first one that does not.
+    """
     meta = json.loads(row["metadata_json"] or "{}")
+    module_type = row["module_type"] or ""
+    lo, hi = rules.seats_for(module_type, MODULE_REGISTRY)
     return rules.BountySpec(
         prize_cents=int(meta.get("prize_cents") or 0),
-        module_type=row["module_type"] or "",
+        module_type=module_type,
         entry_deadline=datetime.fromisoformat(meta["entry_deadline"]),
         funder_id=row["agent_id"],
+        min_entrants=lo, max_entrants=hi,
     )
 
 
@@ -331,6 +341,10 @@ async def list_bounties(limit: int = 50, open_only: bool = True):
     out = []
     for r in rows:
         meta = json.loads(r["metadata_json"] or "{}")
+        # Seats are on the wire because `entrant_count` alone is a half-truth:
+        # "2 entrants" reads as some interest when it can mean full and closed.
+        # A reader deciding whether to enter needs the denominator.
+        lo, hi = rules.seats_for(r["module_type"] or "", MODULE_REGISTRY)
         out.append({
             "listing_id": r["listing_id"], "title": r["title"],
             "description": r["description"], "module_type": r["module_type"],
@@ -338,6 +352,10 @@ async def list_bounties(limit: int = 50, open_only: bool = True):
             "entry_deadline": meta.get("entry_deadline"),
             "state": meta.get("state", "open"),
             "entrant_count": counts.get(r["listing_id"], 0),
+            "min_entrants": lo, "max_entrants": hi,
+            # Present only once the contest is running — the session anyone can
+            # watch it in.
+            "session_id": meta.get("session_id"),
             "origin_relay": r["origin_relay"],
         })
     return {"count": len(out), "bounties": out}
