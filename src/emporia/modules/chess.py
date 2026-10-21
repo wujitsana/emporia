@@ -6,6 +6,7 @@ from datetime import UTC, datetime
 from typing import Any
 
 from emporia.module_sdk import (
+    STAKE_WAGER,
     InteractionModule,
     SessionAction,
     SessionResult,
@@ -57,6 +58,7 @@ def _result(board, participants: list[str]) -> dict[str, Any]:
 class ChessModule(InteractionModule):
     MODULE_TYPE = "emporia:chess:v1"
     DECLARES_WINNER = True
+    STAKE_MODEL = STAKE_WAGER
     MIN_PARTICIPANTS = 2
     MAX_PARTICIPANTS = 2
 

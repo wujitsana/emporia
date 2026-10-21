@@ -72,6 +72,10 @@ class SessionResult:
     artifacts: dict[str, Any] | None = None
 
 
+STAKE_WAGER = "wager"
+STAKE_PURCHASE = "purchase"
+
+
 class PaymentRules(BaseModel):
     """Declarative payment configuration. No blockchain/wallet fields."""
     mode: str = "free"  # "free", "stripe_link", "mpp"
@@ -120,6 +124,22 @@ class InteractionModule(ABC):
     # money. `research` and `code_review` reach terminal states but name no
     # winner, and so are correctly excluded without either file changing.
     DECLARES_WINNER: bool = False
+
+    # P95: who stakes, and who can be paid. The session routes used to apply
+    # one rule to every module — "creator joins free, challenger pays" — which
+    # was wrong both ways it could be: a wager's creator risked nothing, and a
+    # service session charged the *seller* (the joiner) while the buyer paid
+    # nothing at all.
+    #
+    #   STAKE_WAGER     every participant holds the stake; the winner, decided
+    #                   later, is paid. Stripe holds only: an x402 authorization
+    #                   names its payee when signed and reserves nothing.
+    #   STAKE_PURCHASE  participants[0] (the buyer) pays participants[1] (the
+    #                   seller). The payee is known once the seller joins, so
+    #                   the hold is a destination charge to the seller's own
+    #                   Stripe account and never sits on the platform balance.
+    #   None            takes no stake; a session that asks for one is refused.
+    STAKE_MODEL: str | None = None
 
     def validate_participants(self, participants: list[str]) -> tuple[bool, str]:
         n = len(participants)

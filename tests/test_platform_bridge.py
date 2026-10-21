@@ -85,6 +85,7 @@ def test_every_tool_a_notice_names_exists():
         {"type": "dm_received", "sender_id": "b", "thread_id": "d", "content": "x"},
         {"type": "room_message", "sender_id": "b", "room_id": "r", "content": f"hey {ME}"},
         {"type": "agora_post_created", "author_id": "b", "topic_slug": "t", "post_id": "p"},
+        {"type": "funding_required", "session_id": "s", "seller_id": "b", "amount_cents": 500},
     ]
     named = {m for f in frames for m in re.findall(r"(\w+)\(", format_frame(f, ME).text)}
     missing = sorted(n for n in named if not callable(getattr(mcp_server, n, None)))

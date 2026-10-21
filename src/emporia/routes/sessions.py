@@ -18,6 +18,8 @@ from starlette.concurrency import run_in_threadpool
 
 from emporia import relay_server as rs
 from emporia.module_sdk import (
+    STAKE_PURCHASE,
+    STAKE_WAGER,
     MODULE_REGISTRY,
     SessionAction,
     SessionState,
@@ -32,6 +34,19 @@ from emporia.session_audit import (
 )
 
 router = APIRouter()
+
+
+def _stake(payment_rules: dict[str, Any]) -> tuple[int, str]:
+    """(stake in cents, currency) for a session's rules; 0 when it is free."""
+    stake = payment_rules.get("stake_per_participant", "0")
+    if payment_rules.get("mode", "free") == "free" or stake in ("0", "0.00", "", None):
+        return 0, "usd"
+    return int(float(stake) * 100), (payment_rules.get("currency") or "usd").lower()
+
+
+def _is_bounty(s: dict[str, Any]) -> bool:
+    """A bounty contest's stake is the funder's ordinary hold, whatever the module."""
+    return bool((s.get("config") or {}).get("bounty_id"))
 
 
 @router.post("/sessions")
@@ -53,6 +68,51 @@ async def create_session(req: rs.CreateSessionRequest, request: Request):
     now = datetime.now(UTC).isoformat()
     state = module.initial_state([caller], req.config)
 
+    # P95: who stakes is the module's answer (STAKE_MODEL), not one rule for
+    # every module. A wager's creator holds the same stake as the challenger —
+    # before this they risked nothing, collecting the challenger's stake on a
+    # win and returning it, less the fee, on a loss. A purchase's buyer funds
+    # it once a seller has joined (/fund). A module with no stake model takes
+    # no stake, rather than holding money it has no way to pay out.
+    amount_cents, currency = _stake(payment_rules)
+    creator_payment = None
+    if amount_cents and module.STAKE_MODEL is None:
+        raise HTTPException(400, (
+            f"{req.module_type} takes no stake: it names no winner and no payee, so a "
+            f"held stake could never be paid out. For paid work, create an "
+            f"emporia:service:v1 session — the buyer pays the seller on delivery."
+        ))
+    if amount_cents and module.STAKE_MODEL == STAKE_WAGER:
+        result = await rs._verify_and_confirm_payment(
+            request,
+            agent_id=caller,
+            identity_verified=True,
+            amount_cents=amount_cents,
+            currency=currency,
+            resource_type="session",
+            resource_id=session_id,
+            service_type=req.module_type,
+            capture_method="manual",
+            allowed_statuses=("requires_capture",),
+            req_payment_intent_id=req.payment_intent_id,
+            challenge_message=(
+                f"A wager's creator stakes too: {amount_cents} {currency} cents, held until "
+                f"the result. Retry with Authorization: Payment <spt_token>."
+            ),
+            challenge_resource=f"emporia:session:{session_id}",
+        )
+        if isinstance(result, JSONResponse):
+            return result
+        creator_payment = result
+        try:
+            rs.record_payment(
+                payment_intent_id=creator_payment.reference, agent_id=caller,
+                amount_cents=amount_cents, payment_type="session_stake",
+                session_id=session_id, currency=currency, rail=creator_payment.rail,
+            )
+        except ValueError as e:
+            raise HTTPException(402, str(e))
+
     rs.save_session(
         session_id=session_id,
         module_type=req.module_type,
@@ -66,8 +126,7 @@ async def create_session(req: rs.CreateSessionRequest, request: Request):
         created_at=now,
         updated_at=now,
     )
-    rs.add_participant(session_id, caller, stake_paid=False)
-    # Creator joins free; challenger pays — intentional design
+    rs.add_participant(session_id, caller, stake_paid=creator_payment is not None)
     open_dual_session(session_id, caller, req.module_type)
 
     await rs.broadcast_to_agent(caller, {
@@ -167,6 +226,119 @@ async def get_session_audit(session_id: str, request: Request):
         "message": message,
         "chain": entries,
     }
+AWAITING_FUNDING = "awaiting_funding"
+
+
+async def _start(session_id: str, s: dict[str, Any], participants: list[str],
+                 payment_rules: dict[str, Any]) -> None:
+    """Build the opening state and tell every participant the session began."""
+    module = get_interaction_module(s["module_type"])
+    state = module.initial_state(participants, s["config"])
+    rs.save_session(
+        session_id=session_id,
+        module_type=s["module_type"],
+        config=s["config"],
+        payment_rules=payment_rules,
+        state=state,
+        current_agent=state.current_agent,
+        step_number=0,
+        status="active",
+        participants=participants,
+        created_at=s["created_at"],
+        updated_at=datetime.now(UTC).isoformat(),
+    )
+    for p in participants:
+        await rs.broadcast_to_agent(p, {
+            "type": "session_started",
+            "session_id": session_id,
+            "module_type": s["module_type"],
+            "participants": participants,
+            # P92: who moves first, so the first mover is told it is their turn
+            # without having to fetch the session to find out.
+            "current_agent": state.current_agent,
+        })
+
+
+@router.post("/sessions/{session_id}/fund")
+async def fund_session(session_id: str, request: Request):
+    """The buyer funds a purchase, as a hold that pays the seller directly (P95).
+
+    A destination charge: the hold names the seller's connected account and the
+    operator fee, so on capture Stripe pays the seller and the platform its fee,
+    and nothing sits on the platform balance in between. Possible only now that
+    the seller has joined — Stripe fixes a charge's destination when the hold is
+    created. Stripe only: an x402 payment cannot be held and released on a
+    dispute. Credential as everywhere else: `Authorization: Payment <spt>`.
+    """
+    caller = rs._dashboard_agent_id(request)
+    if not caller:
+        raise HTTPException(401, "Authentication required")
+    s = rs.load_session(session_id)
+    if not s:
+        raise HTTPException(404, "Session not found")
+    if s["status"] != AWAITING_FUNDING:
+        raise HTTPException(409, f"Session is {s['status']}, not awaiting funding.")
+    buyer, seller = s["participants"][0], s["participants"][1]
+    if caller != buyer:
+        raise HTTPException(403, "Only the buyer funds a purchase.")
+    rs._enforce_agent_rate_limit(caller)
+
+    account = rs.AGENT_REGISTRY.get_stripe_account(seller)
+    if not account or rs.AGENT_REGISTRY.get_stripe_account_status(seller) != "active":
+        raise HTTPException(409, (
+            f"{seller} cannot receive payments yet: their Stripe account is not set up. "
+            f"A purchase pays the seller directly, so it waits for that — they can run "
+            f"start_stripe_onboarding, or abandon the session to release it."
+        ))
+    if rs._stripe_account_mode_mismatch(rs.AGENT_REGISTRY.get_stripe_account_mode(seller)):
+        raise HTTPException(409, (
+            f"{seller}'s Stripe account belongs to the other key mode (test vs live) "
+            f"and cannot receive this payment."
+        ))
+
+    amount_cents, currency = _stake(s["payment_rules"])
+    from emporia.payments import platform_fee
+    rs._assert_agent_budget(caller, amount_cents)
+    paid = await rs._verify_and_confirm_payment(
+        request,
+        agent_id=caller,
+        identity_verified=True,
+        amount_cents=amount_cents,
+        currency=currency,
+        resource_type="session",
+        resource_id=session_id,
+        service_type=s["module_type"],
+        capture_method="manual",
+        allowed_statuses=("requires_capture",),
+        # SPT only: the direct-PaymentIntent route mints a hold without a
+        # destination, which would pay the platform instead of the seller.
+        req_payment_intent_id=None,
+        challenge_message=(
+            f"Fund this purchase: {amount_cents} {currency} cents, held and paid to "
+            f"{seller} when you confirm delivery. Retry with Authorization: Payment <spt_token>."
+        ),
+        challenge_resource=f"emporia:session:{session_id}",
+        destination_account=account,
+        application_fee_cents=platform_fee(amount_cents),
+    )
+    if isinstance(paid, JSONResponse):
+        return paid
+    try:
+        rs.record_payment(
+            payment_intent_id=paid.reference, agent_id=caller, amount_cents=amount_cents,
+            # The session's stake, like any other: settlement and abandon read
+            # stake rows, and STAKE_MODEL decides how this one settles.
+            payment_type="session_stake", session_id=session_id, currency=currency,
+            rail=paid.rail,
+        )
+    except ValueError as e:
+        raise HTTPException(402, str(e))
+    # The opening state is built now, not at join, so a slow buyer does not
+    # spend the seller's delivery window.
+    await _start(session_id, s, s["participants"], s["payment_rules"])
+    return rs.load_session(session_id)
+
+
 @router.post("/sessions/{session_id}/join")
 async def join_session(session_id: str, req: rs.JoinSessionRequest, request: Request):
     identity_verified = rs._require_caller_unless_mpp_payment(req.agent_id, request)
@@ -188,16 +360,16 @@ async def join_session(session_id: str, req: rs.JoinSessionRequest, request: Req
     if not valid:
         raise HTTPException(400, err)
 
-    # Stripe payment gate (challenger pays; creator is already in free)
+    # Payment gate. P95: only a wager charges the joiner — every participant
+    # stakes, and the creator already has. A purchase's joiner is the seller,
+    # who used to be the one charged here while the buyer paid nothing; the
+    # buyer now funds it after this join, through /fund, to this seller.
     payment_rules = s["payment_rules"]
-    mode = payment_rules.get("mode", "free")
-    stake = payment_rules.get("stake_per_participant", "0")
+    amount_cents, currency = _stake(payment_rules)
+    purchase = module.STAKE_MODEL == STAKE_PURCHASE and bool(amount_cents)
 
     stake_paid = False
-    if mode != "free" and stake not in ("0", "0.00", ""):
-        amount_cents = int(float(stake) * 100) if stake else 0
-        currency = (payment_rules.get("currency") or "usd").lower()
-
+    if amount_cents and not purchase:
         result = await rs._verify_and_confirm_payment(
             request,
             agent_id=req.agent_id,
@@ -242,31 +414,31 @@ async def join_session(session_id: str, req: rs.JoinSessionRequest, request: Req
     participants = s["participants"] + [req.agent_id]
     rs.add_participant(session_id, req.agent_id, stake_paid=stake_paid)
 
-    if len(participants) >= module.MIN_PARTICIPANTS:
-        state = module.initial_state(participants, s["config"])
+    if len(participants) >= module.MIN_PARTICIPANTS and purchase:
+        # P95: the seller is known now, so the buyer can fund a hold that pays
+        # them directly. Nothing can be played until it is.
         rs.save_session(
             session_id=session_id,
             module_type=s["module_type"],
             config=s["config"],
             payment_rules=payment_rules,
-            state=state,
-            current_agent=state.current_agent,
-            step_number=0,
-            status="active",
+            state=SessionState.from_dict(s["state"]),
+            current_agent=s["current_agent"],
+            step_number=s["step_number"],
+            status=AWAITING_FUNDING,
             participants=participants,
             created_at=s["created_at"],
             updated_at=datetime.now(UTC).isoformat(),
         )
-        for p in participants:
-            await rs.broadcast_to_agent(p, {
-                "type": "session_started",
-                "session_id": session_id,
-                "module_type": s["module_type"],
-                "participants": participants,
-                # P92: who moves first, so the first mover is told it is
-                # their turn without having to fetch the session to find out.
-                "current_agent": state.current_agent,
-            })
+        await rs.broadcast_to_agent(participants[0], {
+            "type": "funding_required",
+            "session_id": session_id,
+            "module_type": s["module_type"],
+            "seller_id": req.agent_id,
+            "amount_cents": amount_cents,
+        })
+    elif len(participants) >= module.MIN_PARTICIPANTS:
+        await _start(session_id, s, participants, payment_rules)
     else:
         rs.save_session(
             session_id=session_id,
@@ -408,6 +580,14 @@ async def submit_action(session_id: str, req: rs.SubmitActionRequest):
         pi_ids = [p["payment_intent_id"] for p in payments]
         total_cents = sum(p["amount_cents"] for p in payments)
 
+        module_purchase = (
+            module.STAKE_MODEL == STAKE_PURCHASE and not _is_bounty(s)
+            and bool(_stake(s["payment_rules"])[0])
+        )
+        if module_purchase and winner_id and winner_id != s["participants"][1]:
+            # A purchase pays only its seller. Any other winner is the buyer
+            # getting their money back, whatever the module called it.
+            outcome_type = "refund"
         if outcome_type in ("refund", "draw"):
             # Dispute, timeout, or a draw: cancel all authorized holds — no one
             # is charged. A draw used to reach neither branch (no winner, not a
@@ -436,7 +616,13 @@ async def submit_action(session_id: str, req: rs.SubmitActionRequest):
             }
             rs.record_settlement(settlement_record)
         elif winner_id:
-            if total_cents:
+            if total_cents and module_purchase:
+                # P95: destination charges — capture is the settlement.
+                from emporia.payments import settle_destination_charges
+                settlement_record = await settle_destination_charges(
+                    session_id, winner_id, total_cents, pi_ids,
+                )
+            elif total_cents:
                 # Paid session: capture all escrowed holds, transfer to winner.
                 from emporia.payments import settle
                 winner_stripe_account = rs.AGENT_REGISTRY.get_stripe_account(winner_id)

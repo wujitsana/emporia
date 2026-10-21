@@ -793,8 +793,17 @@ async def confirm_spt(
     currency: str = "usd",
     capture_method: str = "manual",
     resource_type: str = "session",
+    destination_account: str | None = None,
+    application_fee_cents: int | None = None,
 ) -> dict[str, Any]:
     """Create and confirm a PaymentIntent from a Stripe SPT (spt_xxx).
+
+    `destination_account` (P95) makes it a **destination charge**: on capture
+    Stripe moves the funds to that connected account itself, less
+    `application_fee_cents`, so they never sit on the platform's balance. Only
+    possible when the payee is known before the hold is placed — Stripe fixes
+    the destination at creation (capture's `transfer_data` takes an amount, not
+    a destination) — which is true of a purchase and never of a wager.
 
     Uses the correct field per Stripe docs:
       payment_method_data[shared_payment_granted_token] = spt_xxx
@@ -847,7 +856,8 @@ async def confirm_spt(
     # resource under the same key.
     idempotency_key = "emporia:spt:" + hashlib.sha256(
         f"{spt_token}|{resource_type}|{session_id}|{amount_cents}|"
-        f"{currency.lower()}|{capture_method}".encode()
+        f"{currency.lower()}|{capture_method}|{destination_account or ''}|"
+        f"{application_fee_cents or 0}".encode()
     ).hexdigest()
     async with httpx.AsyncClient(timeout=REQUEST_TIMEOUT) as client:
         resp = await client.post(
@@ -861,6 +871,10 @@ async def confirm_spt(
                 "confirm": "true",
                 "capture_method": capture_method,
                 "payment_method_data[shared_payment_granted_token]": spt_token,
+                **({"transfer_data[destination]": destination_account}
+                   if destination_account else {}),
+                **({"application_fee_amount": str(application_fee_cents)}
+                   if destination_account and application_fee_cents else {}),
                 **metadata,
             },
         )
@@ -1012,6 +1026,10 @@ async def verify_payment_intent(payment_intent_id: str) -> dict[str, Any]:
             "currency": pi.get("currency"),
             "capture_method": pi.get("capture_method"),
             "metadata": pi.get("metadata") or {},
+            # P95: where a destination charge sends the money on capture, so a
+            # purchase hold can be checked to pay the seller and not the platform.
+            "destination": (pi.get("transfer_data") or {}).get("destination"),
+            "application_fee_amount": pi.get("application_fee_amount"),
             "receipt": pi.get("latest_charge") or pi.get("id"),
         }
 
@@ -1270,6 +1288,47 @@ async def settle(
         "refund_results": refund_results,
         "transfer_id": transfer_id,
         "transfer_status": transfer_status,
+        "status": "settled",
+    }
+
+
+async def settle_destination_charges(
+    session_id: str,
+    payee_id: str,
+    total_cents: int,
+    payment_intent_ids: list[str],
+) -> dict[str, Any]:
+    """Settle a purchase whose holds are destination charges (P95).
+
+    Capture is the whole settlement: each hold was created with the seller's
+    connected account as its destination and the operator fee as its
+    application fee, so Stripe pays the seller and the platform on capture and
+    no transfer is made. Nothing reaches the platform balance except the fee.
+    A capture that fails pays nobody and says so, as in `settle()`.
+    """
+    fee = platform_fee(total_cents)
+    capture_results = []
+    for pi_id in payment_intent_ids:
+        if not pi_id:
+            continue
+        try:
+            capture_results.append(await capture_payment_intent(pi_id))
+        except Exception as e:
+            capture_results.append({"payment_intent_id": pi_id, "status": f"capture_failed: {e}"})
+    failed = any(str(r.get("status", "")).startswith("capture_failed") for r in capture_results)
+    return {
+        "session_id": session_id,
+        "winner_id": payee_id,
+        "total_stake_cents": total_cents,
+        "platform_fee_cents": fee,
+        "winner_payout_cents": total_cents - fee,
+        "platform_fee_bps": OPERATOR_FEE_BPS,
+        "payment_intent_ids": payment_intent_ids,
+        "capture_results": capture_results,
+        "transfer_id": None,
+        # "destination": the money went to the payee on capture, by Stripe —
+        # not owed, so the payout reconciler leaves it alone.
+        "transfer_status": "capture_failed" if failed else "destination",
         "status": "settled",
     }
 

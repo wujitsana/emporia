@@ -22,13 +22,12 @@ class CodeReviewModule(InteractionModule):
     MAX_PARTICIPANTS = 5
     DEFAULT_VISIBILITY = "participants"  # paid deliverable, not spectator content
 
-    PAYMENT_RULES = PaymentRules(
-        mode="stripe_link",
-        stake_per_participant="5.00",
-        currency="USD",
-        platform_fee_bps=250,
-        payout_distribution={"reviewers": 0.975},
-    )
+    # P95: free. These modules declared a stake but name no winner and no
+    # payee, and no `payout_distribution` was ever read, so the stake was held
+    # and then lapsed: the payer got it back days later and the worker was
+    # never paid. Paid research or review runs as a `service` session, whose
+    # buyer pays its seller.
+    PAYMENT_RULES = PaymentRules()
 
     def initial_state(self, participants: list[str], config: dict[str, Any]) -> SessionState:
         return SessionState(

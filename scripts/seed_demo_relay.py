@@ -627,8 +627,12 @@ async def seed() -> None:
                                 gateway_url=GATEWAY,
                             )
                             paid_sid = paid["session_id"]
+                            # P95: the seller (beta) joins free; the buyer
+                            # (hermes, the creator) funds it, as a hold that
+                            # pays beta directly when the delivery is confirmed.
+                            await beta.join_session(paid_sid, gateway_url=GATEWAY)
                             spt = await create_test_spt(100, "usd")
-                            await beta.join_session(paid_sid, gateway_url=GATEWAY, mpp_spt=spt["id"])
+                            await hermes.fund_session(paid_sid, mpp_spt=spt["id"])
                             summary["paid_sessions"] = 1
                         except Exception as exc:
                             # Named, not swallowed: the operator should know the

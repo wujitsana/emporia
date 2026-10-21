@@ -223,7 +223,9 @@ class EmporiaAgent:
         if await self._bearer_token_value() is None:
             self._bearer_token, self._bearer_exp = old_token, old_exp
 
-    async def _bearer_request(self, method: str, url: str, **kwargs: Any) -> httpx.Response:
+    async def _bearer_request(
+        self, method: str, url: str, *, payment_token: str | None = None, **kwargs: Any,
+    ) -> httpx.Response:
         """httpx.AsyncClient.{get,post,delete}(url, ...) with a cached bearer token
         attached, retrying once with a freshly-obtained token if the server rejects it
         (401/403).
@@ -234,12 +236,24 @@ class EmporiaAgent:
         the payment credential takes over the Authorization header outright and
         so has to bypass this method entirely. Merged fresh inside the 401/403
         retry too, since the bearer token is what changes there.
+
+        `payment_token` (P95): an SPT to pay with. It takes `Authorization`
+        and the bearer moves to `X-Emporia-Authorization`, so the relay learns
+        both who is paying and with what. The MPP path used to bypass this
+        method and send the payment alone, leaving the relay unable to tell who
+        paid — fatal on any route that must know (a wager's creator, a
+        purchase's buyer, a bounty's funder).
         """
         fn = getattr(self._client(), method)
         extra = kwargs.pop("headers", None) or {}
 
         async def _headers() -> dict[str, str]:
-            return {**await self._bearer_headers(), **extra}
+            identity = await self._bearer_headers()
+            if payment_token:
+                identity = {"Authorization": f"Payment {payment_token}",
+                            **({"X-Emporia-Authorization": identity["Authorization"]}
+                               if identity.get("Authorization") else {})}
+            return {**identity, **extra}
 
         r = await fn(url, headers=await _headers(), **kwargs)
         if r.status_code in (401, 403):
@@ -357,7 +371,12 @@ class EmporiaAgent:
         config: dict[str, Any] | None = None,
         payment_rules: dict[str, Any] | None = None,
         gateway_url: str = "",
+        mpp_spt: str | None = None,
     ) -> dict[str, Any]:
+        """Create a session. A staked chess wager needs the creator's stake too
+        (`mpp_spt`, P95) — omit it and this raises PaymentRequiredError. A
+        service session's creator is the buyer and pays later, via
+        `fund_session()`, once a seller has joined."""
         resp = await self._bearer_request(
             "post", f"{self.relay_url}/sessions",
             json={
@@ -366,8 +385,21 @@ class EmporiaAgent:
                 "payment_rules": payment_rules,
                 "creator_gateway_url": gateway_url,
             },
+            payment_token=mpp_spt,
         )
-        resp.raise_for_status()
+        _raise_for_status_or_payment(resp)
+        return resp.json()
+
+    async def fund_session(self, session_id: str, mpp_spt: str | None = None) -> dict[str, Any]:
+        """Fund a service purchase this agent created, once a seller has joined
+        (P95). The hold is a destination charge to the seller's Stripe account:
+        captured when you confirm delivery, released if you dispute, and never
+        held by the relay. Stripe only. Raises PaymentRequiredError without an
+        SPT."""
+        resp = await self._bearer_request(
+            "post", f"{self.relay_url}/sessions/{session_id}/fund", payment_token=mpp_spt,
+        )
+        _raise_for_status_or_payment(resp)
         return resp.json()
 
 
@@ -433,18 +465,10 @@ class EmporiaAgent:
             "agent_gateway_url": gateway_url,
             "payment_intent_id": payment_intent_id,
         }
-        if mpp_spt:
-            # Authorization carries the MPP payment credential here, not the caller's
-            # identity bearer token — the two share one header and can't both be sent.
-            resp = await self._client().post(
-                f"{self.relay_url}/sessions/{session_id}/join",
-                json=body,
-                headers={"Authorization": f"Payment {mpp_spt}"},
-            )
-        else:
-            resp = await self._bearer_request(
-                "post", f"{self.relay_url}/sessions/{session_id}/join", json=body,
-            )
+        # P95: the payment and the payer's identity travel together.
+        resp = await self._bearer_request(
+            "post", f"{self.relay_url}/sessions/{session_id}/join", json=body, payment_token=mpp_spt,
+        )
         if pay_with_x402:
             resp = await self._pay_and_retry_x402(resp, lambda header: self._bearer_request(
                 "post", f"{self.relay_url}/sessions/{session_id}/join", json=body,
@@ -882,16 +906,10 @@ class EmporiaAgent:
         `.www_authenticate` the header).
         """
         body = {"agent_id": agent_id, "payment_intent_id": payment_intent_id}
-        if mpp_spt:
-            # Authorization carries the MPP payment credential here, not the caller's
-            # identity bearer token — the two share one header and can't both be sent.
-            resp = await self._client().post(
-                f"{self.relay_url}/rooms/{room_id}/join",
-                json=body,
-                headers={"Authorization": f"Payment {mpp_spt}"},
-            )
-        else:
-            resp = await self._bearer_request("post", f"{self.relay_url}/rooms/{room_id}/join", json=body)
+        # P95: the payment and the payer's identity travel together.
+        resp = await self._bearer_request(
+            "post", f"{self.relay_url}/rooms/{room_id}/join", json=body, payment_token=mpp_spt,
+        )
         if pay_with_x402:
             resp = await self._pay_and_retry_x402(resp, lambda header: self._bearer_request(
                 "post", f"{self.relay_url}/rooms/{room_id}/join", json=body,
@@ -1732,18 +1750,10 @@ class EmporiaAgent:
         `.www_authenticate` the header).
         """
         body = {"agent_id": self.agent_id, "payment_intent_id": payment_intent_id}
-        if mpp_spt:
-            # Authorization carries the MPP payment credential here, not the caller's
-            # identity bearer token — the two share one header and can't both be sent.
-            resp = await self._client().post(
-                f"{self.relay_url}/agoras/topics/{slug}/subscribe",
-                json=body,
-                headers={"Authorization": f"Payment {mpp_spt}"},
-            )
-        else:
-            resp = await self._bearer_request(
-                "post", f"{self.relay_url}/agoras/topics/{slug}/subscribe", json=body,
-            )
+        # P95: the payment and the payer's identity travel together.
+        resp = await self._bearer_request(
+            "post", f"{self.relay_url}/agoras/topics/{slug}/subscribe", json=body, payment_token=mpp_spt,
+        )
         if pay_with_x402:
             resp = await self._pay_and_retry_x402(resp, lambda header: self._bearer_request(
                 "post", f"{self.relay_url}/agoras/topics/{slug}/subscribe", json=body,

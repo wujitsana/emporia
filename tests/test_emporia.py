@@ -1394,6 +1394,17 @@ def _register(client, agent_id: str, pubkey: str = None) -> None:
     })
 
 
+def _creator_stake_held():
+    """P95: a wager's creator stakes at creation. Tests about the *join* gate
+    stub only the creator's payment, for the one creation call, so the join
+    they exercise still goes through the real payment funnel."""
+    import secrets
+
+    from emporia.payments import RAIL_STRIPE, PaymentRef
+    return patch("emporia.relay_server._verify_and_confirm_payment", new=AsyncMock(
+        side_effect=lambda *a, **kw: PaymentRef(RAIL_STRIPE, f"pi_creator_{secrets.token_hex(5)}")))
+
+
 def _register_keyed(client, agent_id: str) -> None:
     """Register agent_id with a real Ed25519 keypair (under _test_keys_dir) so it can
     sign session actions. Use this instead of _register() for any agent that will
@@ -3216,6 +3227,8 @@ def test_every_route_has_a_reviewed_auth_posture():
         ("POST", "/sessions/{session_id}/confirm-delivery"),
         ("POST", "/sessions/{session_id}/dispute-delivery"),
         ("POST", "/sessions/{session_id}/abandon"),
+        # P95: caller must be the session's buyer (participants[0]), checked inline.
+        ("POST", "/sessions/{session_id}/fund"),
         # P4-5: operator-only, same _require_operator() gate as federation sync above.
         ("DELETE", "/admin/sessions/{session_id}"),
         ("POST", "/messages"),
@@ -4836,13 +4849,14 @@ def test_create_payment_intent_rejects_amount_mismatch(client):
 def test_join_session_rejects_underpaid_payment_intent(mock_verify, client):
     _register(client, "underpay_creator")
     _register(client, "underpay_joiner")
-    r = client.post("/sessions", json={
-        "module_type": "emporia:service:v1",
-        "creator_agent_id": "underpay_creator",
-        "config": {"description": "Underpayment test"},
-        "payment_rules": {"mode": "stripe_link", "stake_per_participant": "1.00", "currency": "usd"},
-    },
-        headers={"x-emporia-agent-id": "underpay_creator"})
+    with _creator_stake_held():
+        r = client.post("/sessions", json={
+            "module_type": "emporia:chess:v1",
+            "creator_agent_id": "underpay_creator",
+            "config": {"description": "Underpayment test"},
+            "payment_rules": {"mode": "stripe_link", "stake_per_participant": "1.00", "currency": "usd"},
+        },
+            headers={"x-emporia-agent-id": "underpay_creator"})
     session_id = r.json()["session_id"]
     mock_verify.return_value = {
         "status": "requires_capture",
@@ -4870,13 +4884,14 @@ def test_join_session_rejects_underpaid_payment_intent(mock_verify, client):
 def test_join_session_rejects_payment_intent_replay(mock_verify, client):
     _register(client, "replay_creator")
     _register(client, "replay_joiner")
-    r = client.post("/sessions", json={
-        "module_type": "emporia:service:v1",
-        "creator_agent_id": "replay_creator",
-        "config": {"description": "Replay test"},
-        "payment_rules": {"mode": "stripe_link", "stake_per_participant": "1.00", "currency": "usd"},
-    },
-        headers={"x-emporia-agent-id": "replay_creator"})
+    with _creator_stake_held():
+        r = client.post("/sessions", json={
+            "module_type": "emporia:chess:v1",
+            "creator_agent_id": "replay_creator",
+            "config": {"description": "Replay test"},
+            "payment_rules": {"mode": "stripe_link", "stake_per_participant": "1.00", "currency": "usd"},
+        },
+            headers={"x-emporia-agent-id": "replay_creator"})
     session_id = r.json()["session_id"]
     mock_verify.return_value = {
         "status": "requires_capture",
@@ -5156,13 +5171,14 @@ def test_join_session_payment_intent_replay_returns_402(mock_verify, client):
 
     session_ids = []
     for creator in ("n42_sess_creator1", "n42_sess_creator2"):
-        r = client.post("/sessions", json={
-            "module_type": "emporia:service:v1",
-            "creator_agent_id": creator,
-            "config": {"description": "d"},
-            "payment_rules": {"mode": "stripe_link", "stake_per_participant": "1.00", "currency": "usd"},
-        },
-            headers={"x-emporia-agent-id": creator})
+        with _creator_stake_held():
+            r = client.post("/sessions", json={
+                "module_type": "emporia:chess:v1",
+                "creator_agent_id": creator,
+                "config": {"description": "d"},
+                "payment_rules": {"mode": "stripe_link", "stake_per_participant": "1.00", "currency": "usd"},
+            },
+                headers={"x-emporia-agent-id": creator})
         session_ids.append(r.json()["session_id"])
 
     mock_verify.side_effect = [
@@ -9009,13 +9025,14 @@ def test_join_session_rejects_total_budget_exceeded(mock_verify, client):
 
     _register(client, "budget_creator")
     _register(client, "budget_joiner")
-    r = client.post("/sessions", json={
-        "module_type": "emporia:service:v1",
-        "creator_agent_id": "budget_creator",
-        "config": {"description": "Budget test"},
-        "payment_rules": {"mode": "stripe_link", "stake_per_participant": "1.00", "currency": "usd"},
-    },
-        headers={"x-emporia-agent-id": "budget_creator"})
+    with _creator_stake_held():
+        r = client.post("/sessions", json={
+            "module_type": "emporia:chess:v1",
+            "creator_agent_id": "budget_creator",
+            "config": {"description": "Budget test"},
+            "payment_rules": {"mode": "stripe_link", "stake_per_participant": "1.00", "currency": "usd"},
+        },
+            headers={"x-emporia-agent-id": "budget_creator"})
     session_id = r.json()["session_id"]
 
     record_payment(
@@ -13109,14 +13126,15 @@ def test_mcp_join_session_surfaces_x402_declined_reason(prod_client):
     _register_keyed(prod_client, "p4_3_mcp_creator")
     _register_keyed(prod_client, "p4_3_mcp_joiner")
 
-    r = prod_client.post("/sessions", json={
-        "module_type": "emporia:service:v1",
-        "creator_agent_id": "p4_3_mcp_creator",
-        "config": {"description": "P4-3 session decline test"},
-        "payment_rules": {"mode": "stripe_link", "stake_per_participant": "1.00", "currency": "usd"},
-    },
-        headers=bearer_for(prod_client, "p4_3_mcp_creator"))
-    assert r.status_code == 200, r.text
+    with _creator_stake_held():
+        r = prod_client.post("/sessions", json={
+            "module_type": "emporia:chess:v1",
+            "creator_agent_id": "p4_3_mcp_creator",
+            "config": {"description": "P4-3 session decline test"},
+            "payment_rules": {"mode": "stripe_link", "stake_per_participant": "1.00", "currency": "usd"},
+        },
+            headers=bearer_for(prod_client, "p4_3_mcp_creator"))
+        assert r.status_code == 200, r.text
     session_id = r.json()["session_id"]
 
     payload = {
@@ -13182,11 +13200,12 @@ def test_agent_sdk_join_session_surfaces_x402_declined_reason_via_payment_requir
             await creator.register()
             await joiner.register()
 
-            session = await creator.create_session(
-                "emporia:service:v1",
-                config={"description": "P7-2 session decline test"},
-                payment_rules={"mode": "stripe_link", "stake_per_participant": "1.00", "currency": "usd"},
-            )
+            with _creator_stake_held():
+                session = await creator.create_session(
+                    "emporia:chess:v1",
+                    config={"description": "P7-2 session decline test"},
+                    payment_rules={"mode": "stripe_link", "stake_per_participant": "1.00", "currency": "usd"},
+                )
             session_id = session["session_id"]
 
             payload = {
@@ -13776,18 +13795,19 @@ def test_mpp_402_challenge_issued(client):
     _register(client, "mpp_creator", "a1" * 32)
     _register(client, "mpp_joiner", "b2" * 32)
 
-    r = client.post("/sessions", json={
-        "module_type": "emporia:service:v1",
-        "creator_agent_id": "mpp_creator",
-        "config": {"description": "Test MPP challenge"},
-        "payment_rules": {
-            "mode": "stripe_link",
-            "stake_per_participant": "1.00",
-            "currency": "usd",
+    with _creator_stake_held():
+        r = client.post("/sessions", json={
+            "module_type": "emporia:chess:v1",
+            "creator_agent_id": "mpp_creator",
+            "config": {"description": "Test MPP challenge"},
+            "payment_rules": {
+                "mode": "stripe_link",
+                "stake_per_participant": "1.00",
+                "currency": "usd",
+            },
         },
-    },
-        headers={"x-emporia-agent-id": "mpp_creator"})
-    assert r.status_code == 200
+            headers={"x-emporia-agent-id": "mpp_creator"})
+        assert r.status_code == 200
     session_id = r.json()["session_id"]
 
     # A different agent joins without payment → must get 402 + MPP headers
@@ -13974,14 +13994,15 @@ def test_x402_credential_declined_explicitly_on_session_join(mock_verify, mock_s
     _register(client, "p1br1_session_creator")
     _register(client, "p1br1_session_joiner")
 
-    r = client.post("/sessions", json={
-        "module_type": "emporia:service:v1",
-        "creator_agent_id": "p1br1_session_creator",
-        "config": {"description": "P1br-1 session decline test"},
-        "payment_rules": {"mode": "stripe_link", "stake_per_participant": "1.00", "currency": "usd"},
-    },
-        headers={"x-emporia-agent-id": "p1br1_session_creator"})
-    assert r.status_code == 200, r.text
+    with _creator_stake_held():
+        r = client.post("/sessions", json={
+            "module_type": "emporia:chess:v1",
+            "creator_agent_id": "p1br1_session_creator",
+            "config": {"description": "P1br-1 session decline test"},
+            "payment_rules": {"mode": "stripe_link", "stake_per_participant": "1.00", "currency": "usd"},
+        },
+            headers={"x-emporia-agent-id": "p1br1_session_creator"})
+        assert r.status_code == 200, r.text
     session_id = r.json()["session_id"]
 
     header = _x402_payment_signature_header({

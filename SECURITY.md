@@ -4021,16 +4021,8 @@ failure shape.
 | **A checksummed EVM address was refused (P88).** x402 compared `payTo`/`asset` as exact strings. | Low | Case-insensitive for EVM only; Solana stays exact. |
 | **A code-review session could not be created (P89).** `initial_state` indexed `participants[1]` with only the creator present. | Medium | Creator holds the turn until a reviewer joins; every module now has a creation test. |
 
-### Open — these need a product decision, not a patch
+### Still open (the two product decisions recorded here were settled in P95)
 
-- **A wager's creator stakes nothing.** `create_session` admits the creator free and charges only the
-  joiner ("challenger pays", ARCHITECTURE.md). Right for `service`, where the buyer pays the seller.
-  But a creator can attach `payment_rules` to any module, chess included, and then risks nothing:
-  winning collects the challenger's stake, losing returns it less the fee.
-- **`research` and `code_review` take a stake that is never paid out.** No module's
-  `payout_distribution` is read anywhere; the only capture path is `settle()`, which needs a named
-  winner, and neither module names one. `research` cannot even finish: no action sets
-  `status="completed"`. A buyer's hold simply lapses after about seven days and the seller is never paid.
 - **`STRIPE_API_VERSION` defaults to `2026-04-22.preview`;** Stripe's SPT docs now show
   `2026-09-30.preview`, with the same endpoints and fields this relay uses. Moving it should go
   through the testnet lane (`docs/testnet.md`) with a `sk_test_` key; as of P93 none is configured
@@ -4049,6 +4041,29 @@ failure shape.
 | **`python -m emporia.relay_server` served no extracted routes (P92).** The `__main__` guard sat above the P56 router block. | Medium | The guard runs first and delegates to the module under its real name; one copy ever serves. The `emporia-relay` entry point and `uvicorn …:app` were unaffected. |
 | **x402 `PAYMENT-RESPONSE` was exposed by CORS and never set (P93).** | Low | Set from the facilitator's settlement on success and on failure, per the v2 HTTP transport. |
 | **Payout transfers drew on the available balance (P93).** | Medium | `source_transaction` names the funding charge whenever one charge funds the payout (all of today's room/Agora, wager and bounty payouts); several stakes and an unreadable charge fall back to the old behaviour. |
+
+## P95 pass — who stakes, who gets paid, and on which rail
+
+The two decisions P90 left open, built on one finding underneath both: the session routes applied a
+single rule to every module — the creator joins free, the joiner pays.
+
+| Finding | Severity | Fix |
+|---|---|---|
+| **A service session charged the seller, and the buyer paid nothing.** The creator of a service session is the buyer (`participants[0]`), so the joiner the gate charged was the seller; "dispute → buyer refunded" released the seller's money. Every paid service session since the module shipped. | **High** | Modules declare `STAKE_MODEL`. For a purchase the seller joins free, the session waits in `awaiting_funding`, and the buyer funds it with `POST /sessions/{id}/fund`: a Stripe **destination charge** to the seller's connected account with the operator fee as the application fee. Capture on confirm pays the seller directly; dispute releases the hold. Nothing sits on the platform balance. Bounty contests on the service module keep their funder's ordinary hold and settle through `settle()`. |
+| **A wager's creator staked nothing** (recorded open in P90). | High | Chess is a wager: the creator holds the same stake at `create_session` (402 without a credential, and no session is created), the challenger at join; the winner takes both, less the fee. |
+| **`research` and `code-review` took stakes nothing could pay out** (P90). | Medium | Free; a stake is refused with a pointer to the service module. |
+| **A payment hid who paid.** `Authorization: Payment <spt>` displaced the identity bearer, so a remote agent paying with an SPT could not also prove who it was: any route that must know the payer 401'd off-host, and MCP's `post_bounty` never sent a credential, so a held bounty had never been postable through MCP. | High | Identity travels in `X-Emporia-Authorization: Bearer <jwt>` when `Authorization` carries a payment. A paid join that sends it is held to the identity it proves. MCP and the SDK send both; `create_session`, `post_bounty` and the new `fund_session` accept an SPT. |
+
+**Rails, by flow.** Whether a rail can carry a payment depends on whether the payee is known when the
+money is committed — Stripe fixes a charge's destination at creation (`capture` takes a
+`transfer_data.amount`, not a destination), and an x402 authorization signs its `to`.
+
+| Flow | Payee known at funding | Stripe | x402 |
+|---|---|---|---|
+| Wager | no | holds; capture + transfer at the result (passes the platform balance at settlement) | no |
+| Purchase | yes, once the seller joins | destination-charge hold, paid to the seller on capture | not yet: only as pay-on-delivery, which puts the seller on credit |
+| Room / Agora entry | yes | today a charge + transfer; a destination charge is the non-custodial next step | direct to the creator (since P1b) |
+| Bounty | no | held prize, capture + transfer | promised, paid by the funder after the result |
 
 ## Threat model notes (by design, not gaps)
 

@@ -461,17 +461,29 @@ def _dashboard_agent_id(request: Request) -> str | None:
     Trust model:
       - trusted host + X-Emporia-Agent-Id header → trusted (co-located, EMPORIA_TRUST_LOCAL_HEADER_AUTH=1)
       - Authorization: Bearer <jwt>                → verified via HMAC-SHA256 JWT
+      - X-Emporia-Authorization: Bearer <jwt>      → the same, when Authorization
+                                                     carries a payment (P95)
       - anything else                              → None (unauthenticated)
+
+    P95: a paying request has two things to say — who is paying and with what —
+    and they used to share one header. `Authorization: Payment <spt>` displaced
+    the identity bearer, so a remote agent paying with an SPT could not also
+    prove who it was. Every route that must know the payer (posting a held
+    bounty, opening a wager, funding a purchase) 401'd for any agent not
+    co-located with the relay; MCP's `post_bounty` never sent a credential at
+    all, so a held bounty had never been postable through it. The identity now
+    has its own header when the payment needs that one.
     """
     if _is_header_auth_trusted(request):
         header_id = request.headers.get("x-emporia-agent-id")
         if header_id:
             return header_id
-    auth = request.headers.get("authorization", "")
-    if auth.startswith("Bearer "):
-        payload = _jwt_decode(auth[7:])
-        if payload and payload.get("relay_id") == RELAY_ID:
-            return payload.get("agent_id") or None
+    for name in ("authorization", "x-emporia-authorization"):
+        auth = request.headers.get(name, "")
+        if auth.startswith("Bearer "):
+            payload = _jwt_decode(auth[7:])
+            if payload and payload.get("relay_id") == RELAY_ID:
+                return payload.get("agent_id") or None
     return None
 
 
@@ -539,7 +551,10 @@ def _require_caller_unless_mpp_payment(agent_id: str, request: Request) -> bool:
     """
     from emporia.payments import extract_mpp_token
     if extract_mpp_token(request.headers.get("Authorization")):
-        return False
+        # P95: a payer who also sends X-Emporia-Authorization has proven who
+        # they are, and is held to it like any other authenticated caller.
+        if not request.headers.get("x-emporia-authorization"):
+            return False
     _require_caller_is(agent_id, request)
     return True
 
@@ -1625,8 +1640,13 @@ def _assert_payment_intent_matches(
     expected_capture_method: str,
     allowed_statuses: tuple[str, ...],
     expected_payer_agent_id: str | None = None,
+    expected_destination: str | None = None,
 ) -> None:
-    """`expected_payer_agent_id` (P1a-1, R1): a PaymentIntent used to be verified as
+    """`expected_destination` (P95): for a destination charge, the connected
+    account the money must go to on capture. A hold that names no destination,
+    or another one, would pay the platform or a stranger instead of the seller.
+
+    `expected_payer_agent_id` (P1a-1, R1): a PaymentIntent used to be verified as
     bound to a *resource* but never to a *payer* — any registered agent presenting a
     valid, correctly-bound PI id passed every check here, including one they didn't
     pay for. Both PI-minting paths (`create_stake_intent`, `confirm_spt`) already stamp
@@ -1669,6 +1689,8 @@ def _assert_payment_intent_matches(
         actual_payer = metadata.get("buyer_agent_id")
         if actual_payer != expected_payer_agent_id:
             raise HTTPException(402, "PaymentIntent is not bound to this payer")
+    if expected_destination is not None and payment.get("destination") != expected_destination:
+        raise HTTPException(402, "PaymentIntent does not pay this seller")
 
 
 def _x402_pay_to_by_network(creator_id: str | None) -> dict[str, str]:
@@ -2147,6 +2169,8 @@ async def _verify_and_confirm_payment(
     challenge_message: str,
     challenge_resource: str,
     creator_id: str | None = None,
+    destination_account: str | None = None,
+    application_fee_cents: int | None = None,
 ) -> "PaymentRef | JSONResponse":
     """Verify a payment credential (SPT via Authorization header, or a client-supplied
     PaymentIntent id) against the expected amount/currency/capture-method/resource binding,
@@ -2300,6 +2324,8 @@ async def _verify_and_confirm_payment(
             result = await confirm_spt(
                 spt_token, amount_cents, resource_id, agent_id, service_type,
                 currency=currency, capture_method=capture_method, resource_type=resource_type,
+                destination_account=destination_account,
+                application_fee_cents=application_fee_cents,
             )
             result = await verify_payment_intent(result["payment_intent_id"])
             # No expected_payer_agent_id: confirm_spt() mints this PI from the very
@@ -2309,6 +2335,7 @@ async def _verify_and_confirm_payment(
                 result, amount_cents=amount_cents, currency=currency,
                 resource_type=resource_type, resource_id=resource_id,
                 expected_capture_method=capture_method, allowed_statuses=allowed_statuses,
+                expected_destination=destination_account,
             )
             return PaymentRef(RAIL_STRIPE, result["payment_intent_id"])
         except HTTPException:
@@ -2343,6 +2370,7 @@ async def _verify_and_confirm_payment(
                 resource_type=resource_type, resource_id=resource_id,
                 expected_capture_method=capture_method, allowed_statuses=allowed_statuses,
                 expected_payer_agent_id=(agent_id if identity_verified else None),
+                expected_destination=destination_account,
             )
             return PaymentRef(RAIL_STRIPE, req_payment_intent_id)
         except HTTPException:
@@ -3898,7 +3926,8 @@ app.add_middleware(
     # before it ever reaches the route. PAYMENT-RESPONSE must be exposed for
     # the same reason a JS client would otherwise be unable to read it off a
     # cross-origin response at all.
-    allow_headers=["Content-Type", "Authorization", "X-Emporia-Agent-Id", "PAYMENT-SIGNATURE"],
+    allow_headers=["Content-Type", "Authorization", "X-Emporia-Agent-Id", "PAYMENT-SIGNATURE",
+                   "X-Emporia-Authorization"],
     # P22: X-Request-Id is set by request_context (below), registered *after*
     # this middleware so it wraps outside CORS and adds the header once CORS
     # has already finished deciding what to expose — without listing it here
@@ -4372,6 +4401,9 @@ class CreateSessionRequest(BaseModel):
     config: dict[str, Any] = Field(default_factory=dict)
     payment_rules: dict[str, Any] | None = None
     creator_gateway_url: str = ""
+    # P95: a wager's creator stakes too; the direct-PaymentIntent alternative
+    # to an `Authorization: Payment <spt>` credential, as on join.
+    payment_intent_id: str | None = None
 
 
 class JoinSessionRequest(BaseModel):

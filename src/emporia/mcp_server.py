@@ -156,14 +156,32 @@ def _invalidate_dashboard_bearer(relay_url: str = "", agent_id: str = "") -> Non
     _dashboard_token_cache.pop(f"{target}|{aid}", None)
 
 
-def _bearer_request(method: str, url: str, *, agent_id: str = "", **kwargs: Any) -> httpx.Response:
+def _bearer_request(
+    method: str, url: str, *, agent_id: str = "", payment_token: str = "", **kwargs: Any,
+) -> httpx.Response:
     """httpx.{get,post,delete}(url, ...) with a cached bearer token attached, retrying
-    once with a freshly-obtained token if the server rejects it (401/403)."""
+    once with a freshly-obtained token if the server rejects it (401/403).
+
+    `payment_token` (P95): an SPT to pay with. It takes `Authorization` and the
+    identity moves to `X-Emporia-Authorization`, so the relay knows both who is
+    paying and with what — before this, a paid call could carry only the
+    payment and the relay could not tell who sent it. Retrying a paid call is
+    safe: the SPT's Idempotency-Key (P88) returns the same PaymentIntent."""
     fn = getattr(httpx, method)
-    r = fn(url, headers=_dashboard_bearer_headers(agent_id=agent_id), **kwargs)
+
+    def headers() -> dict[str, str]:
+        identity = _dashboard_bearer_headers(agent_id=agent_id)
+        if not payment_token:
+            return identity
+        out = {"Authorization": f"Payment {payment_token}"}
+        if identity.get("Authorization"):
+            out["X-Emporia-Authorization"] = identity["Authorization"]
+        return out
+
+    r = fn(url, headers=headers(), **kwargs)
     if r.status_code in (401, 403):
         _invalidate_dashboard_bearer(agent_id=agent_id)
-        r = fn(url, headers=_dashboard_bearer_headers(agent_id=agent_id), **kwargs)
+        r = fn(url, headers=headers(), **kwargs)
     return r
 
 
@@ -1762,20 +1780,11 @@ def subscribe_agora_topic(topic_slug: str, agent_id: str, mpp_token: str = "", p
         body: dict[str, Any] = {"agent_id": agent_id}
         if payment_intent_id:
             body["payment_intent_id"] = payment_intent_id
-        if mpp_token:
-            # Authorization carries the MPP payment credential here, not the caller's
-            # identity bearer token — the two share one header and can't both be sent.
-            r = httpx.post(
-                f"{RELAY_URL}/agoras/topics/{topic_slug}/subscribe",
-                json=body,
-                headers={"Authorization": f"Payment {mpp_token}"},
-                timeout=10,
-            )
-        else:
-            r = _bearer_request(
-                "post", f"{RELAY_URL}/agoras/topics/{topic_slug}/subscribe",
-                agent_id=agent_id, json=body, timeout=10,
-            )
+        # P95: the payment and the payer's identity travel together.
+        r = _bearer_request(
+            "post", f"{RELAY_URL}/agoras/topics/{topic_slug}/subscribe",
+            agent_id=agent_id, payment_token=mpp_token, json=body, timeout=10,
+        )
         if r.status_code == 402:
             return {
                 "error": "payment_required", "detail": r.json(), "success": False,
@@ -2138,8 +2147,17 @@ def create_session(
     payment_mode: str = "free",
     stake_per_participant: str = "0",
     currency: str = "USD",
+    mpp_token: str = "",
 ) -> dict[str, Any]:
     """Create a new session on the relay. Creator auto-joins as first participant.
+
+    Stakes depend on the module (P95):
+      chess (a wager) — every player stakes, the creator included: pass an SPT
+        as mpp_token, or get back a 402 with the challenge. Stripe only.
+      service (a purchase) — you are the buyer and pay nothing now. A seller
+        joins free; then you fund_session() and the hold pays them directly
+        when you confirm delivery.
+      research / code-review — free. For paid work use a service session.
 
     module_type: 'emporia:chess:v1' | 'emporia:service:v1' |
                  'emporia:research:v1' | 'emporia:code-review:v1'
@@ -2163,10 +2181,14 @@ def create_session(
         },
     }
     try:
-        r = _bearer_request("post", f"{RELAY_URL}/sessions", agent_id=aid, json=body, timeout=10)
+        r = _bearer_request("post", f"{RELAY_URL}/sessions", agent_id=aid,
+                            payment_token=mpp_token, json=body, timeout=10)
         d = r.json()
         if r.status_code in (200, 201):
             return {"success": True, **d}
+        if r.status_code == 402:
+            return {"error": "payment_required", "detail": d,
+                    "www_authenticate": r.headers.get("www-authenticate", ""), "success": False}
         return {"error": f"Relay {r.status_code}", "detail": d, "success": False}
     except Exception as e:
         return {"error": str(e), "success": False}
@@ -2279,15 +2301,9 @@ def join_session(
     if payment_intent_id:
         body["payment_intent_id"] = payment_intent_id
     try:
-        if mpp_token:
-            # Authorization carries the MPP payment credential here, not the caller's
-            # identity bearer token — the two share one header and can't both be sent.
-            r = httpx.post(
-                f"{RELAY_URL}/sessions/{session_id}/join", json=body,
-                headers={"Authorization": f"Payment {mpp_token}"}, timeout=10,
-            )
-        else:
-            r = _bearer_request("post", f"{RELAY_URL}/sessions/{session_id}/join", agent_id=aid, json=body, timeout=10)
+        # P95: the payment and the payer's identity travel together.
+        r = _bearer_request("post", f"{RELAY_URL}/sessions/{session_id}/join", agent_id=aid,
+                            payment_token=mpp_token, json=body, timeout=10)
         d = r.json()
         if r.status_code == 200:
             return {"success": True, **d}
@@ -2303,6 +2319,32 @@ def join_session(
                 "error": "payment_required", "detail": d,
                 "www_authenticate": r.headers.get("www-authenticate", ""), "success": False,
             }
+        return {"error": f"Relay {r.status_code}", "detail": d, "success": False}
+    except Exception as e:
+        return {"error": str(e), "success": False}
+
+
+@mcp.tool()
+def fund_session(session_id: str, mpp_token: str = "", agent_id: str = "") -> dict[str, Any]:
+    """Fund a service purchase you created, once a seller has joined (P95).
+
+    The hold pays the seller directly: it is a Stripe destination charge to
+    their connected account, captured when you confirm delivery and released if
+    you dispute, so your money never sits with the relay. Pass an SPT as
+    mpp_token. Stripe only — x402 cannot hold and release a payment.
+    """
+    aid = agent_id or AGENT_ID
+    if not aid:
+        return {"error": "agent_id required (or set EMPORIA_AGENT_ID)", "success": False}
+    try:
+        r = _bearer_request("post", f"{RELAY_URL}/sessions/{session_id}/fund", agent_id=aid,
+                            payment_token=mpp_token, timeout=15)
+        d = r.json()
+        if r.status_code == 200:
+            return {"success": True, **d}
+        if r.status_code == 402:
+            return {"error": "payment_required", "detail": d,
+                    "www_authenticate": r.headers.get("www-authenticate", ""), "success": False}
         return {"error": f"Relay {r.status_code}", "detail": d, "success": False}
     except Exception as e:
         return {"error": str(e), "success": False}
@@ -2626,6 +2668,7 @@ def post_bounty(
     description: str = "",
     rail: str = "stripe",
     agent_id: str = "",
+    mpp_token: str = "",
 ) -> dict[str, Any]:
     """Fund a contest for other agents to compete in.
 
@@ -2653,6 +2696,8 @@ def post_bounty(
         with x402 enabled; you pay with settle-promise over x402, never by card.
       Default is 'stripe' deliberately — you get the strong guarantee unless you
       ask for the weak one.
+    mpp_token: the SPT that pays a held ('stripe') prize. Without it the relay
+      answers with a 402 challenge and no bounty is created.
 
     While nobody has entered you can withdraw with cancel_bounty(). Once an
     agent has entered you cannot — that is what the escrow is for.
@@ -2665,8 +2710,10 @@ def post_bounty(
         "prize_cents": prize_cents, "entry_deadline": entry_deadline, "rail": rail,
     }
     try:
+        # P95: a held prize is paid as the bounty is posted — an SPT in
+        # mpp_token. Without one this could only ever get the 402 back.
         r = _bearer_request("post", f"{RELAY_URL}/bounties", agent_id=aid,
-                            json=body, timeout=15)
+                            payment_token=mpp_token, json=body, timeout=15)
         d = r.json()
         return {"success": True, **d} if r.status_code == 200 else {
             "error": f"Relay {r.status_code}", "detail": d, "success": False}

@@ -23,6 +23,7 @@ from datetime import UTC, datetime, timedelta
 from typing import Any
 
 from emporia.module_sdk import (
+    STAKE_PURCHASE,
     InteractionModule,
     PaymentRules,
     SessionAction,
@@ -41,6 +42,7 @@ class ServiceModule(InteractionModule):
 
     MODULE_TYPE = "emporia:service:v1"
     DECLARES_WINNER = True
+    STAKE_MODEL = STAKE_PURCHASE
     MIN_PARTICIPANTS = 2
     MAX_PARTICIPANTS = 2
     DEFAULT_VISIBILITY = "participants"  # paid deliverable, not spectator content

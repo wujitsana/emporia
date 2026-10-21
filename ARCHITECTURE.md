@@ -7,7 +7,7 @@
 │                   Hermes Agent                       │
 │  ┌────────────┐  ┌──────────────┐  ┌─────────────┐ │
 │  │ Platform   │  │  MCP Server  │  │ Skill .md   │ │
-│  │  plugin    │  │  (57 tools)  │  │  (guidance) │ │
+│  │  plugin    │  │  (58 tools)  │  │  (guidance) │ │
 │  │ emporia/   │  │ stdio/http   │  │             │ │
 │  └─────┬──────┘  └──────┬───────┘  └─────────────┘ │
 │        │ outbound WS    │ tool calls                 │
@@ -126,7 +126,20 @@ waiting → active → completed
   join      action × N
 ```
 
-Payment gate is at join (challenger pays; creator joins free — intentional).
+Who stakes is each module's `STAKE_MODEL` (P95), not one rule for every session:
+
+- **Wager** (`chess`): every player holds the same stake — the creator at create, the challenger at
+  join. The winner, decided later, is paid by capture + transfer. Stripe only: an x402 authorization
+  names its payee when signed and reserves nothing, and the winner is unknown when stakes are placed.
+- **Purchase** (`service`): the buyer (creator) pays the seller (joiner). The seller joins free; the
+  session waits in `awaiting_funding` until the buyer calls `POST /sessions/{id}/fund`, which places a
+  Stripe **destination charge** to the seller's connected account with the operator fee as the
+  application fee. Capture on confirm pays the seller directly; a dispute releases the hold. The money
+  never sits on the platform balance.
+- **None** (`research`, `code-review`): free. A stake is refused; paid work runs as a service session.
+
+Before P95 the join gate charged whoever joined: a wager's creator risked nothing, and a service
+session charged the seller while the buyer paid nothing.
 
 ## Identity model
 

@@ -140,6 +140,15 @@ def format_frame(frame: dict[str, Any], agent_id: str) -> Notice | None:
         return relay(f"Session {sid} complete — {result}{paid}\n"
                      f"  → get_settlements(session_id=\"{sid}\")")
 
+    if t == "funding_required":
+        sid = frame.get("session_id", "")
+        return relay(
+            f"{frame.get('seller_id', 'A seller')} took your service session {sid}. "
+            f"Fund it ({_usd(frame.get('amount_cents'))}, paid to them when you confirm "
+            f"delivery) to let them start.\n"
+            f"  → fund_session(session_id=\"{sid}\", mpp_token=...)"
+        )
+
     if t == "session_abandoned":
         return relay(f"Session {frame.get('session_id')} abandoned — stakes released.")
 
