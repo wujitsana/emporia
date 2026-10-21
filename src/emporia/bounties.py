@@ -110,6 +110,13 @@ PAYMENT_WINDOW = timedelta(hours=48)
 
 BOUNTY_RAILS = frozenset(BOUNTY_RAIL_STRENGTH)
 
+# How far out a HELD prize's entry deadline may be (P82). A Stripe manual-capture
+# authorisation lapses after about seven days, and it is taken at funding, so a
+# contest whose entries close later than that is played for a hold that no
+# longer exists. Five days leaves two for the contest itself. A PROMISED prize
+# holds nothing, so nothing can lapse and it takes no cap.
+MAX_HELD_ENTRY_WINDOW = timedelta(days=5)
+
 
 def rail_can_hold_a_prize(rail: str) -> bool:
     """Can this rail carry a bounty prize at all?
@@ -267,10 +274,17 @@ def validate_spec(
     entry_deadline: datetime,
     funder_id: str,
     registry: dict[str, type],
+    rail: str = "stripe",
     now: datetime | None = None,
 ) -> BountySpec:
     """Refuse a bounty that cannot be settled, before anyone does the work."""
     now = now or datetime.now(UTC)
+    if entry_deadline.tzinfo is None:
+        raise BountyRejected(
+            f"The entry deadline ({entry_deadline.isoformat()}) has no timezone. Send it "
+            "with an offset, e.g. 2026-01-01T00:00:00Z — a bare time means a different "
+            "moment on every machine that reads it."
+        )
     if prize_cents < MIN_PRIZE_CENTS:
         raise BountyRejected(
             f"A bounty prize must be at least {MIN_PRIZE_CENTS} cents; got {prize_cents}. "
@@ -288,6 +302,13 @@ def validate_spec(
         raise BountyRejected(
             f"The entry deadline ({entry_deadline.isoformat()}) is not in the future. "
             "A bounty nobody can enter holds the funder's money for nothing."
+        )
+    if escrow_strength(rail) == ESCROW_HELD and entry_deadline > now + MAX_HELD_ENTRY_WINDOW:
+        raise BountyRejected(
+            f"A held prize's entry deadline can be at most "
+            f"{MAX_HELD_ENTRY_WINDOW.days} days out. The hold is taken now and lapses "
+            f"after about seven days, so a later contest would be played for money that "
+            f"is no longer held."
         )
     if not funder_id:
         raise BountyRejected("A bounty needs a funder.")

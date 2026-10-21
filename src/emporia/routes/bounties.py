@@ -109,8 +109,9 @@ async def create_bounty(req: CreateBountyRequest, request: Request):
             entry_deadline=req.entry_deadline,
             funder_id=caller,
             registry=MODULE_REGISTRY,
+            rail=req.rail,
         )
-    except rules.BountyRejected as e:
+    except (rules.BountyRejected, ValueError) as e:
         raise HTTPException(400, str(e))
 
     listing_id = f"bty_{uuid.uuid4().hex[:16]}"
@@ -125,6 +126,8 @@ async def create_bounty(req: CreateBountyRequest, request: Request):
     # for a prize that was never held, and at settlement `settle()` catches a
     # failed capture and pays the winner anyway, so the relay would have paid
     # out of its own platform balance while the funder was never charged.
+    # (P82 closed that second half: `settle()` no longer transfers when a
+    # capture fails.)
     #
     # It was also the wrong shape for agents: that flow returns a
     # `client_secret` for a human to confirm in a browser.
@@ -662,6 +665,7 @@ async def reconcile_bounties(limit: int = 50) -> dict[str, Any]:
     rails:
 
         running  + settled  + winner + held      -> settled   (already paid)
+        running  + settled  + winner + held, capture failed -> unfunded
         running  + settled  + winner + promised  -> awaiting_payment (+ due date)
         running  + refunded                      -> refunded  (no winner, nothing owed)
         awaiting_payment past its due date       -> defaulted
@@ -673,6 +677,7 @@ async def reconcile_bounties(limit: int = 50) -> dict[str, Any]:
     now = datetime.now(UTC)
     counts: dict[str, list[str]] = {
         "settled": [], "awaiting_payment": [], "refunded": [], "defaulted": [],
+        "unfunded": [],
     }
     with rs.DB_LOCK, rs.get_db() as conn:
         rows = conn.execute(
@@ -687,7 +692,8 @@ async def reconcile_bounties(limit: int = 50) -> dict[str, Any]:
 
             if state == "running" and meta.get("session_id"):
                 s = conn.execute(
-                    "SELECT winner_id, status FROM settlements WHERE session_id = ?",
+                    "SELECT winner_id, status, transfer_status FROM settlements "
+                    "WHERE session_id = ?",
                     (meta["session_id"],),
                 ).fetchone()
                 if not s:
@@ -697,6 +703,19 @@ async def reconcile_bounties(limit: int = 50) -> dict[str, Any]:
                         _mark_awaiting_payment(conn, row["listing_id"], meta,
                                                s["winner_id"], now)
                         counts["awaiting_payment"].append(row["listing_id"])
+                    elif s["transfer_status"] == "capture_failed":
+                        # P82: the funder's hold could not be captured (it
+                        # expired or was released), so the winner was not
+                        # paid. Saying "settled" would claim a payout that did
+                        # not happen; this is its own terminal state, visible
+                        # on the board and in promise-status.
+                        meta |= {"state": "unfunded", "winner_id": s["winner_id"],
+                                 "resolved_at": now.isoformat()}
+                        conn.execute(
+                            "UPDATE listings SET metadata_json = ? WHERE listing_id = ?",
+                            (json.dumps(meta), row["listing_id"]),
+                        )
+                        counts["unfunded"].append(row["listing_id"])
                     else:
                         # The session path already captured the hold and paid
                         # the winner. Nothing is owed; the bounty is just done,

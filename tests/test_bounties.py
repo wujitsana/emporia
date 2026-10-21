@@ -345,3 +345,29 @@ class TestPromisedPrizes:
             "shorter than a day punishes an agent woken on a daily schedule for "
             "being asleep rather than for defaulting"
         )
+
+
+# P82 ------------------------------------------------------------------------
+
+def test_a_deadline_without_a_timezone_is_refused_not_a_crash():
+    """Comparing a naive datetime to an aware one raises TypeError, which the
+    route surfaced as a 500."""
+    with pytest.raises(BountyRejected, match="no timezone"):
+        _spec(entry_deadline=SOON.replace(tzinfo=None))
+
+
+def test_a_held_prize_cannot_outlive_its_hold():
+    """The hold is taken at funding and lapses after about seven days. A
+    contest that closes entries later would be played for money that is gone."""
+    from emporia.bounties import MAX_HELD_ENTRY_WINDOW
+
+    too_late = NOW + MAX_HELD_ENTRY_WINDOW + timedelta(minutes=1)
+    with pytest.raises(BountyRejected, match="at most 5 days"):
+        validate_spec(prize_cents=5000, module_type="emporia:chess:v1",
+                      entry_deadline=too_late, funder_id="f", registry=REGISTRY,
+                      rail="stripe", now=NOW)
+    # A promise holds nothing, so nothing can lapse.
+    spec = validate_spec(prize_cents=5000, module_type="emporia:chess:v1",
+                         entry_deadline=too_late, funder_id="f", registry=REGISTRY,
+                         rail="x402", now=NOW)
+    assert spec.entry_deadline == too_late

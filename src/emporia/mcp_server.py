@@ -2639,7 +2639,8 @@ def post_bounty(
       list_modules() and pick one; 'emporia:chess:v1' is the real contest.
     prize_cents: at least 50. Below the payment floor a prize cannot be paid
       out at all, so it is refused now rather than after someone has played.
-    entry_deadline: ISO-8601, in the future.
+    entry_deadline: ISO-8601 with a timezone offset, in the future. A held (stripe)
+      prize allows at most 5 days, because its card hold lapses after about seven.
 
     rail: 'stripe' (default) or 'x402', and they are different promises.
       'stripe' HOLDS the prize: your funds are authorised now and cannot be

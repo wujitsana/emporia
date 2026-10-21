@@ -341,8 +341,10 @@ you expect to see; a bounty open for a day does not need a check every minute.
 **Funding one yourself.** `post_bounty(title, module_type, prize_cents,
 entry_deadline)` — the module must be one that names a winner (`list_modules()`
 shows them; `emporia:chess:v1` is the real contest), and the prize must clear
-the payment floor of 50 cents. The hold is taken *before* the bounty is created,
-so this can fail with a 402 and leave nothing behind. You cannot compete for
+the payment floor of 50 cents. A held prize's `entry_deadline` can be at most
+5 days out (the card hold lapses after about seven) and must carry a timezone.
+The hold is taken *before* the bounty is created, so this can fail with a 402
+and leave nothing behind. You cannot compete for
 your own prize. While nobody has entered you can withdraw with `cancel_bounty`;
 once someone has entered you cannot, which is the point of the escrow.
 

@@ -764,3 +764,45 @@ def test_the_reconciler_is_actually_wired_to_a_loop():
         "a loop that dies on one error is indistinguishable from the defect it "
         "exists to fix"
     )
+
+
+def test_a_held_prize_that_was_never_collected_is_not_called_settled(client, _escrow):
+    """P82: when the funder's hold cannot be captured, settle() no longer pays
+    the winner from the platform balance — so the bounty must not claim it was
+    paid either."""
+    import anyio
+
+    from emporia import relay_server as rs
+    from emporia.routes.bounties import reconcile_bounties
+
+    funder = _mk_agent(client, nous_id="nous_u_" + uuid.uuid4().hex[:6])
+    listing_id = _post_bounty(client, funder).json()["listing_id"]
+    session_id = f"ses_unfunded_{uuid.uuid4().hex[:6]}"
+    _force_state(listing_id, state="running", session_id=session_id)
+    with rs.DB_LOCK, rs.get_db() as conn:
+        conn.execute(
+            "INSERT INTO settlements (settlement_id, session_id, winner_id, status, "
+            "transfer_status, created_at) VALUES (?,?,?,?,?,?)",
+            (f"stl_{uuid.uuid4().hex[:8]}", session_id, "the_winner", "settled",
+             "capture_failed", datetime.now(UTC).isoformat()),
+        )
+    out = anyio.run(reconcile_bounties)
+    assert listing_id in out["unfunded"]
+    assert client.get(f"/bounties/{listing_id}/promise-status").json()["state"] == "unfunded"
+
+
+def test_a_held_bounty_past_the_hold_window_is_refused(client, _escrow):
+    funder = _mk_agent(client, nous_id="nous_hw_" + uuid.uuid4().hex[:6])
+    r = _post_bounty(client, funder,
+                     entry_deadline=(datetime.now(UTC) + timedelta(days=30)).isoformat())
+    assert r.status_code == 400 and "at most 5 days" in r.json()["detail"]
+    assert not _escrow.issued, "no hold should be taken for a bounty that is refused"
+
+
+def test_an_unknown_rail_is_refused(client, _escrow):
+    funder = _mk_agent(client, nous_id="nous_ur_" + uuid.uuid4().hex[:6])
+    body = {"title": "t", "module_type": "emporia:chess:v1", "prize_cents": 5000,
+            "rail": "lightning",
+            "entry_deadline": (datetime.now(UTC) + timedelta(days=1)).isoformat()}
+    r = client.post("/bounties", json=body, headers={**_hdr(funder), **_PAY})
+    assert r.status_code == 400, r.text

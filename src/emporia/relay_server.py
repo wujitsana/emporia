@@ -4029,7 +4029,7 @@ _BOUNTY_RECONCILE_TASK: "asyncio.Task | None" = None
 BOUNTY_RECONCILE_STATS: dict[str, Any] = {
     "runs": 0, "last_run_at": None, "last_error_at": None,
     "consecutive_failures": 0, "settled": 0, "awaiting_payment": 0,
-    "refunded": 0, "defaulted": 0,
+    "refunded": 0, "defaulted": 0, "unfunded": 0,
 }
 
 _PAYOUT_RECONCILE_INTERVAL_SECONDS = float(

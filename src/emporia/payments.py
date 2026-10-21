@@ -1076,8 +1076,18 @@ async def capture_payment_intent(payment_intent_id: str) -> dict[str, Any]:
             data = resp.json()
             code = data.get("error", {}).get("code", "")
             if code in ("payment_intent_unexpected_state",):
-                # Already captured or succeeded — treat as success
-                return {"payment_intent_id": payment_intent_id, "status": "already_captured"}
+                # P82: Stripe returns this code for *any* PI not in
+                # `requires_capture` — already captured, but also canceled,
+                # which is what an expired hold becomes. Only the first is a
+                # success. The error carries the PI, so its status decides;
+                # without one, nothing proves the money was collected.
+                pi_status = (data.get("error", {}).get("payment_intent") or {}).get("status")
+                if pi_status == "succeeded":
+                    return {"payment_intent_id": payment_intent_id, "status": "already_captured"}
+                raise RuntimeError(
+                    f"PaymentIntent {payment_intent_id} cannot be captured "
+                    f"(status {pi_status or 'unknown'}) — the hold is gone"
+                )
         resp.raise_for_status()
         pi = resp.json()
         return {"payment_intent_id": payment_intent_id, "status": pi.get("status")}
@@ -1166,8 +1176,23 @@ async def settle(
     transfer_id: str | None = None
     transfer_status = "pending_connect"
 
+    # P82: a stake that was not captured is money the platform does not have.
+    # This used to record `capture_failed` and transfer the full payout anyway,
+    # out of the platform's own balance — and nothing read the failure back. An
+    # expired hold (manual-capture authorisations lapse after ~7 days) was
+    # enough. No transfer now, and the status says why; `capture_failed` is not
+    # one of `_PAYOUT_OWED_STATUS_PREFIXES`, so the payout reconciler will not
+    # quietly pay it later either. Any stakes that *were* captured stay on the
+    # platform balance for an operator to refund or pay by hand.
+    captures_failed = [
+        r["payment_intent_id"] for r in capture_results
+        if str(r.get("status", "")).startswith("capture_failed")
+    ]
+
     # Step 2: Transfer winner's net share from platform balance to their connected account
-    if winner_stripe_account and winner_payout_cents > 0 and stripe_account_mode_mismatch(
+    if captures_failed:
+        transfer_status = "capture_failed"
+    elif winner_stripe_account and winner_payout_cents > 0 and stripe_account_mode_mismatch(
         winner_stripe_account_mode
     ):
         transfer_status = "pending_connect_wrong_mode"
