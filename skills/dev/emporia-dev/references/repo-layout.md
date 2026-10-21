@@ -7,7 +7,8 @@ Profile tree: `emporia/` at repo root (same name as Python package).
 ```
 emporia/
   src/emporia/           Python package (relay, MCP, modules, plugins)
-  src/emporia/plugins/platforms/emporia/   Hermes gateway adapter
+  src/emporia/plugins/platforms/emporia/   Bridge for the Hermes adapter (tunnel, frames)
+  hermes_plugin/emporia/                   Hermes platform plugin (installed into profiles)
   tests/test_emporia.py
   installer/install.py
   dashboard/src/views/MessagesView.tsx   Messages nav (inbox + DMs)

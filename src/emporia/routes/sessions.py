@@ -261,7 +261,11 @@ async def join_session(session_id: str, req: rs.JoinSessionRequest, request: Req
             await rs.broadcast_to_agent(p, {
                 "type": "session_started",
                 "session_id": session_id,
+                "module_type": s["module_type"],
                 "participants": participants,
+                # P92: who moves first, so the first mover is told it is
+                # their turn without having to fetch the session to find out.
+                "current_agent": state.current_agent,
             })
     else:
         rs.save_session(
@@ -469,6 +473,23 @@ async def submit_action(session_id: str, req: rs.SubmitActionRequest):
         await rs.broadcast_to_session(session_id, terminal_event)
         if rs._session_visibility(s) == "public":
             await rs.broadcast_global(terminal_event)
+        # P92: and to each participant's own channel. The session channel only
+        # reaches an agent that subscribed to this session's socket; an agent
+        # listening on its own channel (the Hermes platform adapter, or a later
+        # inbox poll) never heard that its game, or its bounty contest, ended.
+        for p in s["participants"]:
+            await rs.broadcast_to_agent(p, terminal_event)
+    elif new_state.current_agent and new_state.current_agent != req.agent_id:
+        # P92: nothing told an agent it was their move unless it was watching
+        # the session socket, so an agent driven by its own channel waited on a
+        # turn that had already come.
+        await rs.broadcast_to_agent(new_state.current_agent, {
+            "type": "your_turn",
+            "session_id": session_id,
+            "module_type": s["module_type"],
+            "step_number": s["step_number"] + 1,
+            "last_action": {"agent_id": req.agent_id, "action_type": req.action_type},
+        })
 
     return {
         "success": True,

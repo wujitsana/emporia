@@ -27307,6 +27307,14 @@ def test_every_documented_environment_variable_is_actually_read():
         for path in _Path(extra).rglob("*.py"):
             for m in _ENV_READ_RE.finditer(path.read_text()):
                 read.add(m.group(1) or m.group(2) or m.group(3))
+    # P92: so is the Hermes platform plugin, which reads through Hermes's
+    # profile-scoped secret helper rather than os.environ (Hermes's rule for
+    # platform adapters), so it needs its own pattern.
+    for path in _Path("hermes_plugin").rglob("*.py"):
+        read.update(re.findall(
+            r'(?:_get_scoped_secret\(|_setting\(extra,\s*|\(\()\s*"([A-Z][A-Z0-9_]*)"',
+            path.read_text()))
+        read.update(re.findall(r'_env\s*=\s*"([A-Z][A-Z0-9_]*)"', path.read_text()))
 
     stale = sorted(
         n for n in _env_vars_documented()

@@ -666,9 +666,9 @@ def _mcp_entry(relay_url: str, agent_id: str = "", display_name: str = "", profi
 # tools, and that has been the working path all along.
 #
 # Writing an inert entry made the config claim an integration that was not
-# there, so it is gone. When the platform adapter is built for real it needs an
-# entry point, a `register(ctx)`, and a `BasePlatformAdapter` subclass — at
-# which point Hermes finds it without anything being written here.
+# there, so it is gone. P92 built the adapter for real — a `plugin.yaml`, a
+# `register(ctx)` and a `BasePlatformAdapter` subclass in `hermes_plugin/emporia/`
+# — and `install_platform_plugin()` below places and enables it.
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -1130,6 +1130,7 @@ def create_profile(
 
     # Install agent skill so it loads on start (dev skills optional)
     _install_skill_link(profile_dir, dry_run=dry_run, dev_skills=dev_skills)
+    install_platform_plugin(profile_dir, dry_run=dry_run)
 
     print(f"\n  Agent ID : {name}")
     print(f"  Relay    : {relay_url}")
@@ -1344,6 +1345,71 @@ def _hermes_optional_skills_root() -> Path | None:
     root = Path(hermes_bin).resolve().parent.parent.parent
     candidate = root / "optional-skills"
     return candidate if candidate.is_dir() else None
+
+
+# The Hermes platform plugin key: user plugins under `plugins/platforms/<dir>`
+# are keyed `platforms/<dir>`, which is what `plugins.enabled` lists.
+PLATFORM_PLUGIN_KEY = "platforms/emporia"
+# The relay's own reports (your turn, results) are attributed to this sender by
+# frames.RELAY_SENDER; it is allowlisted so they reach the agent. Other agents'
+# messages pass only if the operator adds them (or sets EMPORIA_ALLOW_ALL_USERS).
+RELAY_SENDER = "emporia:relay"
+
+
+def install_platform_plugin(profile_dir: Path, dry_run: bool = False) -> None:
+    """Install the Hermes platform adapter into a profile (P92).
+
+    P63 removed the inert `platforms: - platform: emporia` entry and recorded
+    what a real adapter needs: a `plugin.yaml`, `register(ctx)`, and a
+    `BasePlatformAdapter` subclass. `hermes_plugin/emporia/` is that; this puts
+    it where Hermes's discovery looks for a profile's own plugins, enables it,
+    and writes the three settings it reads from the profile's `.env`.
+
+    Copied, not symlinked: Hermes's plugin scan applies containment rules a link
+    out of the profile could fail. Re-running the installer refreshes the copy.
+    """
+    src = _EMPORIA_DIR / "hermes_plugin" / "emporia"
+    dst = profile_dir / "plugins" / "platforms" / "emporia"
+    if dry_run:
+        print(f"  [dry-run] Would install the Emporia platform plugin at {dst}")
+        return
+    if dst.exists():
+        shutil.rmtree(dst)
+    shutil.copytree(src, dst, ignore=shutil.ignore_patterns("__pycache__"))
+    print(f"  + Hermes platform plugin: {dst}")
+
+    config_path = profile_dir / "config.yaml"
+    config = load_yaml(config_path) if config_path.exists() else {}
+    plugins = config.setdefault("plugins", {})
+    enabled = plugins.get("enabled")
+    enabled = list(enabled) if isinstance(enabled, list) else []
+    if PLATFORM_PLUGIN_KEY not in enabled:
+        plugins["enabled"] = [*enabled, PLATFORM_PLUGIN_KEY]
+        save_yaml(config_path, config)
+        print(f"  + plugins.enabled: {PLATFORM_PLUGIN_KEY}")
+
+    env_file = profile_dir / ".env"
+    lines = env_file.read_text().splitlines() if env_file.exists() else []
+    values = dict(ln.split("=", 1) for ln in lines if "=" in ln and not ln.startswith("#"))
+    allowed = [a for a in (values.get("EMPORIA_ALLOWED_USERS") or "").split(",") if a.strip()]
+    wanted = {
+        "EMPORIA_PYTHON": _venv_python(),
+        "EMPORIA_ALLOWED_USERS": ",".join(allowed if RELAY_SENDER in allowed
+                                          else [*allowed, RELAY_SENDER]),
+    }
+    changed = False
+    for key, value in wanted.items():
+        for i, ln in enumerate(lines):
+            if ln.startswith(f"{key}="):
+                if ln != f"{key}={value}":
+                    lines[i], changed = f"{key}={value}", True
+                break
+        else:
+            lines.append(f"{key}={value}")
+            changed = True
+    if changed:
+        env_file.write_text("\n".join(lines) + "\n")
+        print(f"  + {env_file}: EMPORIA_PYTHON, EMPORIA_ALLOWED_USERS")
 
 
 def _install_skill_link(
@@ -1564,8 +1630,10 @@ def main() -> None:
             dry_run=args.dry_run,
             dev_skills=args.dev_skills,
         )
+        install_platform_plugin(current_profile_dir, dry_run=args.dry_run)
         if not args.dry_run:
-            print("\nDone. Run /reload-mcp in Hermes to activate.")
+            print("\nDone. Run /reload-mcp in Hermes to activate, and restart the gateway "
+                  "for relay events to arrive on the Emporia platform.")
             print(f"The agent will register as '{agent_id}' on next MCP load.")
             if _is_local_relay(args.relay_url):
                 _run_demo_seed(args.relay_url)

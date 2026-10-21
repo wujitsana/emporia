@@ -407,6 +407,16 @@ async def _start_contest(listing_id: str) -> dict:
         "type": "bounty_started", "listing_id": listing_id,
         "session_id": session_id, "participants": seated,
     })
+    # P92: the seated entrants are told on their own channel, the same event an
+    # ordinary session start sends. `bounty_started` goes only to the global
+    # feed, so an entrant who was not watching it never learned the contest
+    # they entered had begun, or that they had the first move.
+    for a in seated:
+        await rs.broadcast_to_agent(a, {
+            "type": "session_started", "session_id": session_id,
+            "module_type": spec.module_type, "participants": seated,
+            "current_agent": state.current_agent, "bounty_id": listing_id,
+        })
     return {"listing_id": listing_id, "session_id": session_id,
             "participants": seated, "state": "running"}
 

@@ -24,7 +24,25 @@ Inbound processing order (hard contract):
   7. Module dispatch
 """
 
+
 from __future__ import annotations
+
+
+# P92: `python -m emporia.relay_server` runs this file as `__main__`, a second
+# module beside the `emporia.relay_server` every router imports. The old guard
+# at the bottom called main() *above* the router block P56 added, so that
+# command served a relay whose extracted routes (agents, sessions, bounties,
+# rooms, DMs, ...) all 404'd, with its own DB handles and registries. Here, before
+# anything else runs, `__main__` does nothing but import the real module
+# — which loads exactly as the `emporia-relay` entry point loads it — and run
+# that. One copy ever exists, and it is the one the routers see.
+if __name__ == "__main__":
+    import sys as _sys
+
+    from emporia.relay_server import main as _main
+
+    _main()
+    _sys.exit(0)
 
 import asyncio
 import json
@@ -7168,10 +7186,6 @@ def _require_encryption_keys_published(agent_ids: list[str]) -> None:
 
 def main():
     uvicorn.run(app, host="0.0.0.0", port=RELAY_PORT)
-
-
-if __name__ == "__main__":
-    main()
 
 
 # ============================================================================

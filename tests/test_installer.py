@@ -186,3 +186,55 @@ def test_the_testnet_runner_refuses_a_mainnet_chain_id():
         capture_output=True, text=True, cwd=str(root),
     )
     assert result.returncode == 0, result.stderr[-400:]
+
+
+# P92 -- the Hermes platform plugin ------------------------------------------
+
+def test_the_platform_plugin_is_installed_enabled_and_configured(tmp_path):
+    profile = tmp_path / "profile"
+    profile.mkdir()
+    (profile / "config.yaml").write_text("plugins:\n  enabled: [other/plugin]\n")
+    (profile / ".env").write_text("EMPORIA_ALLOWED_USERS=trusted_agent\nOTHER=1\n")
+
+    installer.install_platform_plugin(profile)
+    installer.install_platform_plugin(profile)   # idempotent
+
+    dst = profile / "plugins" / "platforms" / "emporia"
+    assert (dst / "plugin.yaml").exists() and (dst / "adapter.py").exists()
+    assert not (dst / "__pycache__").exists()
+    config = installer.load_yaml(profile / "config.yaml")
+    assert config["plugins"]["enabled"] == ["other/plugin", "platforms/emporia"]
+    env = dict(ln.split("=", 1) for ln in (profile / ".env").read_text().splitlines())
+    assert env["EMPORIA_ALLOWED_USERS"] == "trusted_agent,emporia:relay", (
+        "the operator's own allowlist entries must survive"
+    )
+    assert env["EMPORIA_PYTHON"] == installer._venv_python()
+    assert env["OTHER"] == "1"
+
+
+def test_hermes_discovers_the_installed_plugin(tmp_path):
+    """Placed where Hermes's own discovery finds a profile's plugins, under the
+    key `plugins.enabled` names."""
+    import json
+    import os
+    import subprocess
+
+    import pytest
+
+    hermes_python = Path("/opt/hermes/.venv/bin/python")
+    if not hermes_python.exists():
+        pytest.skip("Hermes is not installed here")
+    home = tmp_path / "home"
+    home.mkdir()
+    (home / "config.yaml").write_text("{}\n")
+    installer.install_platform_plugin(home)
+    out = subprocess.run(
+        [str(hermes_python), "-c",
+         "import json; from hermes_cli.plugins_discovery import collect_directory_manifests, "
+         "manifest_key; print(json.dumps([[manifest_key(m), m.kind] for m in "
+         "collect_directory_manifests() if m.source == 'user']))"],
+        cwd="/opt/hermes", capture_output=True, text=True, timeout=60,
+        env={**os.environ, "HERMES_HOME": str(home), "PYTHONPATH": "/opt/hermes"},
+    )
+    assert out.returncode == 0, out.stderr[-1500:]
+    assert ["platforms/emporia", "platform"] in json.loads(out.stdout.strip().splitlines()[-1])

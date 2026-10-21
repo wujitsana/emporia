@@ -24,7 +24,7 @@ jobs:
         run: uv sync --frozen --extra dev --extra x402
 
       - name: Ruff (correctness rules — E9, F)
-        run: uv run python -m ruff check src/ tests/ installer/ scripts/ relay/
+        run: uv run python -m ruff check src/ tests/ installer/ scripts/ relay/ hermes_plugin/
 
       - name: Pytest
         # No path: pyproject.toml's [tool.pytest.ini_options] testpaths = ["tests"] is the
