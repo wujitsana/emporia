@@ -30,6 +30,29 @@ def _next_player(participants: list[str], current: str) -> str:
     return participants[(idx + 1) % len(participants)]
 
 
+def _result(board, participants: list[str]) -> dict[str, Any]:
+    """The game's result, read from the board — the one answer both
+    `apply_action` and `is_terminal` give.
+
+    `is_terminal` used to return `state.current_agent`, which after the final
+    move is the side *to move*: the player just checkmated. Settlement reads
+    `is_terminal`, so every decided chess game paid the loser, and every draw
+    paid whoever happened to be on move. The colour comes from the board;
+    white is `participants[0]` (see `initial_state`).
+
+    A draw names no winner and says so with `outcome_type="draw"`, which the
+    session route settles as a refund — nobody won, so nobody is paid.
+    """
+    outcome = board.outcome(claim_draw=True)
+    if outcome is None:
+        return {"winner": None}
+    termination = str(outcome.termination)
+    if outcome.winner is None or len(participants) < 2:
+        return {"winner": None, "outcome_type": "draw", "termination": termination}
+    winner = participants[0] if outcome.winner == _chess_lib.WHITE else participants[1]
+    return {"winner": winner, "outcome_type": "won", "termination": termination}
+
+
 @register_module
 class ChessModule(InteractionModule):
     MODULE_TYPE = "emporia:chess:v1"
@@ -81,14 +104,9 @@ class ChessModule(InteractionModule):
             except Exception:
                 san = uci
             board.push(move)
-            outcome = board.outcome(claim_draw=True)
             new_fen = board.fen()
             terminal = board.is_game_over(claim_draw=True)
-            result = (
-                {"winner": action.agent_id, "termination": str(outcome.termination)}
-                if outcome
-                else {"winner": None}
-            )
+            result = _result(board, participants)
         else:
             # Without chess library: accept move, advance state, no legality check
             new_fen = state.data["board_fen"]
@@ -121,9 +139,5 @@ class ChessModule(InteractionModule):
             return False, {}
         board = _chess_lib.Board(state.data["board_fen"])
         if board.is_game_over(claim_draw=True):
-            outcome = board.outcome(claim_draw=True)
-            return True, {
-                "winner": state.current_agent,
-                "termination": str(outcome.termination) if outcome else None,
-            }
+            return True, _result(board, state.metadata.get("participants", []))
         return False, {}

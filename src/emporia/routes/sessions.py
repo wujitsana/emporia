@@ -404,8 +404,11 @@ async def submit_action(session_id: str, req: rs.SubmitActionRequest):
         pi_ids = [p["payment_intent_id"] for p in payments]
         total_cents = sum(p["amount_cents"] for p in payments)
 
-        if outcome_type == "refund":
-            # Dispute or timeout: cancel all authorized holds — no one is charged.
+        if outcome_type in ("refund", "draw"):
+            # Dispute, timeout, or a draw: cancel all authorized holds — no one
+            # is charged. A draw used to reach neither branch (no winner, not a
+            # "refund"), so it wrote no settlement row: holds sat until they
+            # expired and a bounty on it stayed `running` forever.
             from emporia.payments import cancel_payment_hold
             cancel_results = []
             for pi_id in pi_ids:
@@ -417,7 +420,7 @@ async def submit_action(session_id: str, req: rs.SubmitActionRequest):
             settlement_record = {
                 "session_id": session_id,
                 "winner_id": winner_id,
-                "outcome_type": "refund",
+                "outcome_type": outcome_type,
                 "status": "refunded",
                 "cancel_results": cancel_results,
                 "total_stake_cents": total_cents,
