@@ -18,6 +18,7 @@ var/
 *.key
 *.cert
 *.priv
+*.secp256k1
 auth.json
 auth.lock
 .vscdb
