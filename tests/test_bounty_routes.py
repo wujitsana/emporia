@@ -806,3 +806,97 @@ def test_an_unknown_rail_is_refused(client, _escrow):
             "entry_deadline": (datetime.now(UTC) + timedelta(days=1)).isoformat()}
     r = client.post("/bounties", json=body, headers={**_hdr(funder), **_PAY})
     assert r.status_code == 400, r.text
+
+
+# P83 -- a peer may not rewrite what it does not own -------------------------
+
+def _peer_batch(listings, origin="https://peer.example"):
+    from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
+
+    from emporia.identity import federation_signable_bytes
+
+    key = Ed25519PrivateKey.generate()
+    return origin, {
+        "origin_relay": origin, "listings": listings,
+        "origin_public_key_hex": key.public_key().public_bytes_raw().hex(),
+        "signature": key.sign(federation_signable_bytes(origin, "listings", listings)).hex(),
+    }
+
+
+def _pull(peer, batch):
+    import anyio
+
+    from emporia import relay_server as rs
+
+    peer = f"{peer}/{uuid.uuid4().hex[:6]}"   # a fresh pin per test
+    with patch.object(rs, "_fetch_federation_batch", AsyncMock(return_value=batch)):
+        return anyio.run(rs._pull_federated_listings, peer)
+
+
+def _foreign_bounty(agent_id, **meta):
+    return {"listing_id": "bty_peer_" + uuid.uuid4().hex[:8], "title": "Peer contest",
+            "listing_type": "bounty", "agent_id": agent_id,
+            "module_type": "emporia:chess:v1",
+            "metadata": {"prize_cents": 5000, "rail": "x402", "state": "open",
+                         "entry_deadline": (datetime.now(UTC) + timedelta(days=1)).isoformat(),
+                         **meta}}
+
+
+def test_a_peer_cannot_overwrite_a_local_bounty(client, _escrow):
+    from emporia import relay_server as rs
+
+    funder = _mk_agent(client, nous_id="nous_fo_" + uuid.uuid4().hex[:6])
+    listing_id = _post_bounty(client, funder).json()["listing_id"]
+    forged = _foreign_bounty(funder, payment_intent_id="pi_attacker", rail="stripe")
+    forged["listing_id"] = listing_id
+
+    peer, batch = _peer_batch([forged])
+    assert _pull(peer, batch) == 0
+    with rs.DB_LOCK, rs.get_db() as conn:
+        meta = json.loads(conn.execute(
+            "SELECT metadata_json FROM listings WHERE listing_id = ?", (listing_id,),
+        ).fetchone()[0])
+    assert meta["payment_intent_id"] != "pi_attacker"
+
+
+def test_a_peer_cannot_plant_a_default_on_a_local_agent(client, _escrow):
+    victim = _mk_agent(client, nous_id="nous_fv_" + uuid.uuid4().hex[:6])
+    peer, batch = _peer_batch([_foreign_bounty(victim, state="defaulted")])
+    assert _pull(peer, batch) == 1          # discoverable, as gossip should be
+    assert _promise_bounty(client, victim).status_code == 200
+
+
+def test_a_peers_bounty_is_entered_on_its_own_relay(client, _escrow):
+    peer, batch = _peer_batch([_foreign_bounty("someone_remote")])
+    _pull(peer, batch)
+    listing_id = batch["listings"][0]["listing_id"]
+    entrant = _mk_agent(client, nous_id="nous_fe_" + uuid.uuid4().hex[:6])
+    r = client.post(f"/bounties/{listing_id}/enter", headers=_hdr(entrant))
+    assert r.status_code == 409 and "hosted on" in r.json()["detail"]
+
+
+def test_a_peers_unknown_rail_does_not_break_the_board(client, _escrow):
+    peer, batch = _peer_batch([_foreign_bounty("someone_remote", rail="lightning")])
+    _pull(peer, batch)
+    r = client.get("/bounties")
+    assert r.status_code == 200
+    row = next(b for b in r.json()["bounties"]
+               if b["listing_id"] == batch["listings"][0]["listing_id"])
+    assert row["escrow_strength"] is None
+
+
+def test_a_peer_still_refreshes_its_own_listing(client, _escrow):
+    from emporia import relay_server as rs
+
+    listing = _foreign_bounty("someone_remote")
+    peer, batch = _peer_batch([listing])
+    assert _pull(peer, batch) == 1
+    listing["metadata"]["state"] = "running"
+    _, batch2 = _peer_batch([listing], origin=peer)
+    assert _pull(peer, batch2) == 1
+    with rs.DB_LOCK, rs.get_db() as conn:
+        meta = json.loads(conn.execute(
+            "SELECT metadata_json FROM listings WHERE listing_id = ?",
+            (listing["listing_id"],),
+        ).fetchone()[0])
+    assert meta["state"] == "running"

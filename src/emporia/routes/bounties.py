@@ -69,6 +69,26 @@ def _agent_identity(conn, agent_id: str) -> tuple[str, str | None]:
     return (row["trust_level"] or "key_only"), row["nous_user_id"]
 
 
+def _require_hosted_here(row) -> None:
+    """Refuse to act on a bounty another relay hosts (P83).
+
+    Federation gossip copies a peer's bounties onto this board so they can be
+    discovered — and every action route used to treat that copy as its own:
+    entries recorded here for a contest run there, a peer's Stripe hold recorded
+    as a local session's stake, a peer-reported state driving this relay's
+    reconciler. The hold, the entries and the contest all live where the bounty
+    was posted, so that is where it is entered.
+
+    "Hosted here" is the same test `federated_listings_out` already uses to
+    decide what this relay publishes as its own: `origin_relay` is this relay.
+    """
+    if row["origin_relay"] != rs.RELAY_BASE_URL:
+        raise HTTPException(409, (
+            f"This bounty is hosted on {row['origin_relay'] or 'another relay'}. "
+            "Its prize, entries and contest live there; act on it there."
+        ))
+
+
 def _spec_from_row(row) -> rules.BountySpec:
     """Rebuild the spec a stored bounty row describes.
 
@@ -200,8 +220,12 @@ def _funder_promise_record(conn, agent_id: str) -> tuple[int, int]:
     funder mid-contest.
     """
     rows = conn.execute(
-        "SELECT metadata_json FROM listings WHERE listing_type = ? AND agent_id = ?",
-        (rules.BOUNTY_LISTING_TYPE, agent_id),
+        "SELECT metadata_json FROM listings WHERE listing_type = ? AND agent_id = ? "
+        "AND origin_relay = ?",
+        # P83: hosted here only. A peer's bounty rows carry whatever agent_id
+        # and state the peer wrote, and an agent_id is only unique per relay —
+        # counting them let a peer plant a default against a local agent.
+        (rules.BOUNTY_LISTING_TYPE, agent_id, rs.RELAY_BASE_URL),
     ).fetchall()
     unpaid = outstanding = 0
     for r in rows:
@@ -285,6 +309,7 @@ async def _start_contest(listing_id: str) -> dict:
         ).fetchone()
         if not row:
             raise HTTPException(404, "No such bounty")
+        _require_hosted_here(row)
         meta = json.loads(row["metadata_json"] or "{}")
         if meta.get("state") != "open":
             raise HTTPException(409, f"This bounty is {meta.get('state')}, not open.")
@@ -393,6 +418,7 @@ async def cancel_bounty(listing_id: str, request: Request):
         ).fetchone()
         if not row:
             raise HTTPException(404, "No such bounty")
+        _require_hosted_here(row)
         if row["agent_id"] != caller:
             raise HTTPException(403, "Only the funder may cancel a bounty.")
         entrants = conn.execute(
@@ -482,8 +508,11 @@ async def list_bounties(limit: int = 50, open_only: bool = True):
             # a contest is entitled to know which — collapsing them would make
             # the weaker one look like the stronger, which is the reassuring
             # reading this dashboard has been fixed for twice already.
+            # P83: guarded like seats above — a peer's bounty can name a rail
+            # this relay does not know, and escrow_strength() raises for one.
             "escrow_strength": (
-                rules.escrow_strength(meta["rail"]) if meta.get("rail") else None
+                rules.escrow_strength(meta["rail"])
+                if meta.get("rail") in rules.BOUNTY_RAILS else None
             ),
             # Present only once the contest is running — the session anyone can
             # watch it in.
@@ -509,6 +538,7 @@ async def enter_bounty(listing_id: str, request: Request):
         ).fetchone()
         if not row:
             raise HTTPException(404, "No such bounty")
+        _require_hosted_here(row)
         spec = _spec_from_row(row)
         meta = json.loads(row["metadata_json"] or "{}")
         trust, nous_id = _agent_identity(conn, caller)
@@ -585,6 +615,7 @@ async def settle_promise(listing_id: str, request: Request):
         ).fetchone()
         if not row:
             raise HTTPException(404, "No such bounty")
+        _require_hosted_here(row)
         meta = json.loads(row["metadata_json"] or "{}")
 
     if row["agent_id"] != caller:
@@ -681,8 +712,9 @@ async def reconcile_bounties(limit: int = 50) -> dict[str, Any]:
     }
     with rs.DB_LOCK, rs.get_db() as conn:
         rows = conn.execute(
-            "SELECT * FROM listings WHERE listing_type = ? ORDER BY created_at LIMIT ?",
-            (rules.BOUNTY_LISTING_TYPE, limit),
+            "SELECT * FROM listings WHERE listing_type = ? AND origin_relay = ? "
+            "ORDER BY created_at LIMIT ?",
+            (rules.BOUNTY_LISTING_TYPE, rs.RELAY_BASE_URL, limit),
         ).fetchall()
 
         for row in rows:

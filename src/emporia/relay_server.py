@@ -5688,6 +5688,7 @@ async def _pull_federated_listings(peer_url: str) -> int:
         listings = listings[:_MAX_LIMIT]
 
     imported = 0
+    rejected_foreign = 0
     for listing in listings:
         if not listing.get("listing_id"):
             continue
@@ -5699,6 +5700,21 @@ async def _pull_federated_listings(peer_url: str) -> int:
         except Exception:
             continue
         with DB_LOCK, get_db() as conn:
+            # P83: ownership, the rule N12-3 put on lobby imports and this
+            # importer never got. A signature proves who sent the batch, not
+            # what they may say about someone else's row: `INSERT OR REPLACE`
+            # let any configured peer overwrite a *local* listing by reusing its
+            # id — a bounty's payment_intent_id, state and funder included. A
+            # row may now only be replaced by the origin that wrote it.
+            existing = conn.execute(
+                "SELECT origin_relay FROM listings WHERE listing_id = ?",
+                (listing["listing_id"],),
+            ).fetchone()
+            if existing and normalize_peer_url(existing["origin_relay"] or "") != (
+                normalize_peer_url(origin)
+            ):
+                rejected_foreign += 1
+                continue
             conn.execute(
                 "INSERT OR REPLACE INTO listings "
                 "(listing_id, title, description, listing_type, agent_id, payment_mode, "
@@ -5729,6 +5745,8 @@ async def _pull_federated_listings(peer_url: str) -> int:
     if peer_batch_size > _MAX_LIMIT:
         sync_record["truncated"] = True
         sync_record["peer_batch_size"] = peer_batch_size
+    if rejected_foreign:
+        sync_record["rejected_not_owner"] = rejected_foreign
     _FEDERATION_LAST_SYNC[peer_url] = sync_record
     return imported
 
