@@ -4000,7 +4000,7 @@ regression test that fails on the previous code.
 |---|---|---|
 | **Chess paid the loser (P81).** `ChessModule.is_terminal()` returned `state.current_agent`, which after the final move is the side *to move* — the player just mated. Settlement reads `is_terminal`, so every decided chess wager and chess bounty paid the loser and credited them the win; a draw paid whoever was on move. | **Critical** | One `_result()` helper, read by both `apply_action` and `is_terminal`, takes the colour from the board. A draw names no winner (`outcome_type="draw"`) and now settles as a refund — before, a no-winner result that was not a "refund" wrote no settlement row at all. |
 | **A stake that was never collected was paid out (P82).** `settle()` recorded `capture_failed` and transferred the payout from the platform balance anyway. Underneath it, `capture_payment_intent()` read Stripe's `payment_intent_unexpected_state` as "already captured", though Stripe returns it for a canceled PI — which is what an expired hold becomes. Held bounties could set any entry deadline, so their hold could lapse before the contest ran. | High | No transfer on a failed capture (`transfer_status="capture_failed"`, not an owed-payout prefix, so the payout reconciler will not pay it either); only a `succeeded` PI counts as already captured; a held prize's entry deadline is capped at 5 days (`MAX_HELD_ENTRY_WINDOW`); an uncollected held bounty is marked `unfunded`, not `settled`. |
-| **A federation peer could rewrite local listings (P83).** `_pull_federated_listings` used `INSERT OR REPLACE` with no ownership check — the gap N12-3 closed for lobby challenges, never closed here. A configured peer replaced a local bounty's `payment_intent_id`, and planted a `defaulted` bounty under a local agent's id that barred them from promising. The bounty routes, reconciler and funder record also acted on federated copies as if local. | High | A row may only be replaced by the origin that wrote it (`rejected_not_owner` in the sync record). Bounty actions, the reconciler and the default record act only on bounties hosted here. **Still open:** the origin is self-reported, so a peer can still claim another *peer's* origin and overwrite that peer's copies; local rows are no longer reachable. |
+| **A federation peer could rewrite local listings (P83).** `_pull_federated_listings` used `INSERT OR REPLACE` with no ownership check — the gap N12-3 closed for lobby challenges, never closed here. A configured peer replaced a local bounty's `payment_intent_id`, and planted a `defaulted` bounty under a local agent's id that barred them from promising. The bounty routes, reconciler and funder record also acted on federated copies as if local. | High | A row may only be replaced by the origin that wrote it (`rejected_not_owner` in the sync record). Bounty actions, the reconciler and the default record act only on bounties hosted here. **Closed in P87:** the origin is self-reported, so a peer could still claim another *peer's* origin and overwrite that peer's copies; rows are now owned by `federated_from`, the peer actually pulled from. |
 | **A promised prize could be escaped, misdirected, or unpayable (P84).** Defaults were counted per `agent_id` and funding needed only a key, so a defaulter registered a fresh keypair and promised again. `settle-promise` accepted a card, which charged the funder into the platform balance and marked the bounty settled with the winner unpaid. Entrants needed no x402 wallet, and an x402-disabled relay accepted promises. | High | Promising requires `nous_verified`, and the record counts every persona of the funder's Nous account; a card credential is refused before any charge; entering a promise requires an x402 payout wallet; posting one requires x402 to be enabled. |
 | **The bounty reconciler went blind after fifty, and cancel raced entry (P85).** It read the oldest 50 bounties of any state, so once 50 had finished no newer bounty was defaulted again. Entry never checked state, so a cancelled bounty took entries, and cancel left the row `open` across the hold release. | Medium | The reconciler reads only `running`/`awaiting_payment` rows; entry requires `open`; cancel claims the row as `cancelling` before releasing the hold, and reopens it if the release fails. |
 
@@ -4009,6 +4009,39 @@ plays the `service` module rather than chess, so nothing played a real game to a
 the payout path; the Stripe fakes never returned a capture failure; and the reconciler tests ran
 against a database with fewer than fifty bounties. Each gap now has a test built on the real
 failure shape.
+
+## P87–P89 pass — what P81–P85 left open, the rails against the providers' docs, and a second look
+
+| Finding | Severity | Fix |
+|---|---|---|
+| **A peer could overwrite another peer's federated listings (P87).** P83 checked ownership by `origin_relay`, which the peer reports about itself. | Medium | `listings.federated_from` records the URL actually fetched (and whose key is pinned); only that peer may replace the row. Pre-P87 rows are adopted only by the peer whose URL matches their origin. Schema V2 → V3. |
+| **A lapsed hold stranded the other player's captured stake (P87).** P82 stopped paying out on a failed capture but left captured stakes on the platform balance. | Medium | `settle()` refunds every stake it did capture, keyed per session and PaymentIntent. |
+| **The SPT spending check was 100× too loose (P88).** `usage_limits.max_amount` is already in cents; `retrieve_spt` multiplied it by 100. | High | Read as-is. Pinned by a unit test, since the only prior coverage was the opt-in testnet lane. |
+| **SPT charges had no Idempotency-Key (P88).** An SPT is consumed by its first PaymentIntent, so a timeout after the charge left the payer charged with no record on the relay. | High | Key derived from the token and what it pays for. |
+| **A checksummed EVM address was refused (P88).** x402 compared `payTo`/`asset` as exact strings. | Low | Case-insensitive for EVM only; Solana stays exact. |
+| **A code-review session could not be created (P89).** `initial_state` indexed `participants[1]` with only the creator present. | Medium | Creator holds the turn until a reviewer joins; every module now has a creation test. |
+
+### Open — these need a product decision, not a patch
+
+- **A wager's creator stakes nothing.** `create_session` admits the creator free and charges only the
+  joiner ("challenger pays", ARCHITECTURE.md). Right for `service`, where the buyer pays the seller.
+  But a creator can attach `payment_rules` to any module, chess included, and then risks nothing:
+  winning collects the challenger's stake, losing returns it less the fee.
+- **`research` and `code_review` take a stake that is never paid out.** No module's
+  `payout_distribution` is read anywhere; the only capture path is `settle()`, which needs a named
+  winner, and neither module names one. `research` cannot even finish: no action sets
+  `status="completed"`. A buyer's hold simply lapses after about seven days and the seller is never paid.
+- **Payout transfers carry no `source_transaction`.** In live mode captured funds are pending for days,
+  so a transfer drawn from the available balance can fail; the payout reconciler retries with the
+  same Idempotency-Key, and Stripe replays the saved failure until the key is pruned (≥24h). Paid
+  late, never twice. Using `source_transaction` needs one transfer per source charge, which changes
+  the one-transfer-per-settlement ledger shape.
+- **`STRIPE_API_VERSION` defaults to `2026-04-22.preview`;** Stripe's SPT docs now show
+  `2026-09-30.preview`. Moving it should go through the testnet lane (`docs/testnet.md`) with real
+  keys, not a mock.
+- **One intermittent failure, cause not yet captured:**
+  `test_sdk_encrypted_dm_round_trip_is_opaque_at_the_relay` failed once in about eight full runs and
+  passes alone. It uses fixed agent ids against the suite's shared database.
 
 ## Threat model notes (by design, not gaps)
 
