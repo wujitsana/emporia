@@ -773,7 +773,12 @@ async def retrieve_spt(spt_id: str) -> dict[str, Any]:
             "active": spt.get("deactivated_at") is None,
             "deactivated_reason": spt.get("deactivated_reason"),
             "currency": limits.get("currency", "usd"),
-            "max_amount_cents": int(max_amt * 100) if isinstance(max_amt, (int, float)) else 0,
+            # P88: `max_amount` is already in the currency's smallest unit, like
+            # every Stripe amount (the docs' own example grants
+            # `usage_limits[max_amount]=1000` for `amount=1000`, i.e. $10.00).
+            # This multiplied it by 100, so the "does this token cover the
+            # charge" check below accepted anything up to 100x the real limit.
+            "max_amount_cents": int(max_amt) if isinstance(max_amt, (int, float)) else 0,
             "expires_at": limits.get("expires_at"),
         }
 
@@ -833,11 +838,23 @@ async def confirm_spt(
     elif resource_type == "agora":
         metadata["metadata[topic_id]"] = session_id
 
+    # P88: an SPT is consumed by the first PaymentIntent that uses it. Without a
+    # key, a request that timed out *after* Stripe charged the card left the
+    # payer charged and the relay holding no PaymentIntent id, and the client's
+    # retry failed on the spent token — money moved, no record. With one, the
+    # retry gets the original PaymentIntent back. Bound to the token and to what
+    # it is paying for, so the same token cannot be replayed onto a different
+    # resource under the same key.
+    idempotency_key = "emporia:spt:" + hashlib.sha256(
+        f"{spt_token}|{resource_type}|{session_id}|{amount_cents}|"
+        f"{currency.lower()}|{capture_method}".encode()
+    ).hexdigest()
     async with httpx.AsyncClient(timeout=REQUEST_TIMEOUT) as client:
         resp = await client.post(
             f"{STRIPE_API_BASE}/payment_intents",
             auth=(key, ""),
-            headers={"Stripe-Version": STRIPE_API_VERSION},
+            headers={"Stripe-Version": STRIPE_API_VERSION,
+                     "Idempotency-Key": idempotency_key},
             data={
                 "amount": str(amount_cents),
                 "currency": currency.lower(),

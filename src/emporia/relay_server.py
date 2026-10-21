@@ -1993,9 +1993,20 @@ async def _verify_x402_payment(
     # the same reason as every other field — the requirement is this
     # relay's assertion about the resource, not an echo of the claim.
     expected = x402_requirement(network, amount_cents, asset, pay_to, extra)
+
+    def _same(field: str, got: Any, want: Any) -> bool:
+        # P88: an EVM address is one value in any letter case — mixed case is
+        # only the EIP-55 checksum encoding. A payer whose client checksummed
+        # `payTo` or `asset` while the registered wallet was stored lowercase
+        # (or the reverse) was refused for a payment that was exactly right.
+        # Solana addresses are base58 and case-sensitive, so only EVM relaxes.
+        if field in ("payTo", "asset") and family == "evm" and isinstance(got, str):
+            return got.lower() == str(want).lower()
+        return got == want
+
     mismatched = [
         field for field, want in expected.items()
-        if want is None or accepted.get(field) != want
+        if want is None or not _same(field, accepted.get(field), want)
     ]
     if mismatched:
         raise HTTPException(
@@ -4105,9 +4116,16 @@ async def _reconcile_owed_payouts() -> dict[str, int]:
     becomes two payouts. `find_settlement_transfer()` is tri-state for that
     reason, and an unknown answer leaves the row exactly as it was.
 
-    Stripe's `Idempotency-Key` would cover a same-day replay on its own; it
-    expires after 24 hours, and every row this loop exists for is older than
-    that by construction, so the key is not the guard here — the lookup is.
+    The lookup, not the `Idempotency-Key`, is the guard against paying twice:
+    the key is pruned after 24 hours. P88 corrected what this used to say —
+    that every row here is older than that "by construction". It is not; this
+    runs every few minutes, so a row can be retried minutes after it failed.
+    The consequence runs the other way too: Stripe saves the *first* response
+    to a key once execution begins, errors included, so a transfer refused for
+    an unavailable balance replays that refusal from cache on every retry until
+    the key is pruned, and only then is actually re-attempted. Paid late, never
+    twice. Transfers carry no `source_transaction`, which is what would let them
+    draw on pending funds instead — see SECURITY.md's P88 notes.
     """
     counts = {"owed": 0, "recovered": 0, "paid": 0, "unknown": 0,
               "still_blocked": 0, "failed": 0}
