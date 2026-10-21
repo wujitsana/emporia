@@ -964,3 +964,67 @@ def test_entering_a_promise_needs_a_wallet_to_be_paid_into(client, _escrow):
                       return_value={"evm": "0x" + "1" * 40}):
         r = client.post(f"/bounties/{lid}/enter", headers=_hdr(entrant))
     assert r.status_code == 200, r.text
+
+
+# P85 -- state, and the reconciler that reads it -----------------------------
+
+def test_the_reconciler_reaches_a_bounty_behind_many_finished_ones(client, _escrow):
+    """It read the oldest 50 bounties of any state, so once 50 had finished no
+    newer one was ever defaulted — the only backing a promise has."""
+    import anyio
+
+    from emporia.routes.bounties import reconcile_bounties
+
+    funder = _mk_agent(client, nous_id="nous_rl_" + uuid.uuid4().hex[:6])
+    for i in range(55):
+        _force_state(_post_bounty(client, funder, title=f"old {i}").json()["listing_id"],
+                     state="cancelled")
+    late = _mk_agent(client, nous_id="nous_rt_" + uuid.uuid4().hex[:6])
+    target = _promise_bounty(client, late).json()["listing_id"]
+    _force_state(target, state="awaiting_payment", winner_id="w",
+                 payment_due_at=(datetime.now(UTC) - timedelta(days=1)).isoformat())
+    assert target in anyio.run(lambda: reconcile_bounties(limit=50))["defaulted"]
+
+
+def test_a_cancelled_bounty_takes_no_entries(client, _escrow):
+    funder = _mk_agent(client, nous_id="nous_cx_" + uuid.uuid4().hex[:6])
+    lid = _post_bounty(client, funder).json()["listing_id"]
+    assert client.post(f"/bounties/{lid}/cancel", headers=_hdr(funder)).status_code == 200
+    entrant = _mk_agent(client, nous_id="nous_ce_" + uuid.uuid4().hex[:6])
+    r = client.post(f"/bounties/{lid}/enter", headers=_hdr(entrant))
+    assert r.status_code == 409, r.text
+
+
+def _state_of(listing_id):
+    from emporia import relay_server as rs
+    with rs.DB_LOCK, rs.get_db() as conn:
+        return json.loads(conn.execute(
+            "SELECT metadata_json FROM listings WHERE listing_id = ?", (listing_id,),
+        ).fetchone()[0])["state"]
+
+
+def test_a_bounty_is_claimed_while_its_hold_is_released(client, _escrow):
+    """Releasing the hold is a network call. The row stayed `open` across it, so
+    an entry and a start could land in between and then be overwritten."""
+    funder = _mk_agent(client, nous_id="nous_cl_" + uuid.uuid4().hex[:6])
+    lid = _post_bounty(client, funder).json()["listing_id"]
+    seen = []
+
+    async def release(pi):
+        seen.append(_state_of(lid))
+        return {"status": "canceled"}
+
+    with patch("emporia.routes.bounties.cancel_payment_hold", side_effect=release):
+        assert client.post(f"/bounties/{lid}/cancel", headers=_hdr(funder)).status_code == 200
+    assert seen == ["cancelling"]
+    assert _state_of(lid) == "cancelled"
+
+
+def test_a_failed_release_reopens_the_bounty(client, _escrow):
+    funder = _mk_agent(client, nous_id="nous_cf_" + uuid.uuid4().hex[:6])
+    lid = _post_bounty(client, funder).json()["listing_id"]
+    with patch("emporia.routes.bounties.cancel_payment_hold",
+               side_effect=RuntimeError("stripe down")):
+        assert client.post(f"/bounties/{lid}/cancel", headers=_hdr(funder)).status_code == 502
+    assert _state_of(lid) == "open"
+    assert client.post(f"/bounties/{lid}/cancel", headers=_hdr(funder)).status_code == 200

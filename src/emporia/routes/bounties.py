@@ -457,7 +457,17 @@ async def cancel_bounty(listing_id: str, request: Request):
                 "once agents have committed to it — that is what the escrow is for."
             ))
         meta = json.loads(row["metadata_json"] or "{}")
+        if meta.get("state", "open") != "open":
+            raise HTTPException(409, f"This bounty is {meta.get('state')}, not open.")
         pi = meta.get("payment_intent_id")
+        # P85: claimed before the hold is released. Releasing it is a network
+        # call, and the row used to stay `open` across it — an agent could
+        # enter, the contest start, and this then overwrite `running` with
+        # `cancelled` from its stale copy, leaving a live contest with no hold.
+        # Enter and start both require `open`, so `cancelling` shuts them out.
+        meta["state"] = "cancelling"
+        conn.execute("UPDATE listings SET metadata_json = ? WHERE listing_id = ?",
+                     (json.dumps(meta), listing_id))
 
     released = False
     if pi:
@@ -467,6 +477,10 @@ async def cancel_bounty(listing_id: str, request: Request):
         except Exception as e:
             # The hold's own 5-7 day expiry is the backstop, so a failure here
             # is reported rather than retried into a loop.
+            with rs.DB_LOCK, rs.get_db() as conn:
+                meta["state"] = "open"
+                conn.execute("UPDATE listings SET metadata_json = ? WHERE listing_id = ?",
+                             (json.dumps(meta), listing_id))
             raise HTTPException(502, (
                 f"Could not release the hold ({e}). It expires on its own in 5-7 days; "
                 "the bounty has been left open rather than closed with money still held."
@@ -568,6 +582,11 @@ async def enter_bounty(listing_id: str, request: Request):
         _require_hosted_here(row)
         spec = _spec_from_row(row)
         meta = json.loads(row["metadata_json"] or "{}")
+        # P85: entry checked the deadline and the seat count but never the
+        # state, so a cancelled bounty — whose deadline is still in the future —
+        # kept taking entries for a prize that had been released.
+        if meta.get("state", "open") != "open":
+            raise HTTPException(409, f"This bounty is {meta.get('state')}; entry is closed.")
         trust, nous_id = _agent_identity(conn, caller)
         existing = {
             r["nous_user_id"] for r in conn.execute(
@@ -718,7 +737,7 @@ async def settle_promise(listing_id: str, request: Request):
             "settled_late": was_late, "payment_reference": paid.reference}
 
 
-async def reconcile_bounties(limit: int = 50) -> dict[str, Any]:
+async def reconcile_bounties(limit: int = 500) -> dict[str, Any]:
     """Move bounties through the states nobody triggers by hand (P80).
 
     P79 shipped this covering one rail and one outcome, which left two dead
@@ -757,6 +776,11 @@ async def reconcile_bounties(limit: int = 50) -> dict[str, Any]:
     with rs.DB_LOCK, rs.get_db() as conn:
         rows = conn.execute(
             "SELECT * FROM listings WHERE listing_type = ? AND origin_relay = ? "
+            # P85: only the states this can move. It used to read the oldest
+            # `limit` bounties of *any* state, so once that many had finished,
+            # every run re-read the same finished rows and no newer bounty was
+            # ever settled, refunded or defaulted again.
+            "AND json_extract(metadata_json, '$.state') IN ('running', 'awaiting_payment') "
             "ORDER BY created_at LIMIT ?",
             (rules.BOUNTY_LISTING_TYPE, rs.RELAY_BASE_URL, limit),
         ).fetchall()
