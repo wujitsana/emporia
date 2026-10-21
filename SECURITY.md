@@ -3990,6 +3990,26 @@ this pass the merge guarantees it too.
 together: an absent variable is still filled from the file, an explicitly empty one survives, and a
 blank line in the file still never creates a variable.
 
+## P81–P85 pass — an outside audit of the branch, and where money went wrong
+
+A review of the whole post-hackathon branch from outside its own passes. Every finding below was
+first reproduced by a probe that passed only if the defect was real, and each fix carries a
+regression test that fails on the previous code.
+
+| Finding | Severity | Fix |
+|---|---|---|
+| **Chess paid the loser (P81).** `ChessModule.is_terminal()` returned `state.current_agent`, which after the final move is the side *to move* — the player just mated. Settlement reads `is_terminal`, so every decided chess wager and chess bounty paid the loser and credited them the win; a draw paid whoever was on move. | **Critical** | One `_result()` helper, read by both `apply_action` and `is_terminal`, takes the colour from the board. A draw names no winner (`outcome_type="draw"`) and now settles as a refund — before, a no-winner result that was not a "refund" wrote no settlement row at all. |
+| **A stake that was never collected was paid out (P82).** `settle()` recorded `capture_failed` and transferred the payout from the platform balance anyway. Underneath it, `capture_payment_intent()` read Stripe's `payment_intent_unexpected_state` as "already captured", though Stripe returns it for a canceled PI — which is what an expired hold becomes. Held bounties could set any entry deadline, so their hold could lapse before the contest ran. | High | No transfer on a failed capture (`transfer_status="capture_failed"`, not an owed-payout prefix, so the payout reconciler will not pay it either); only a `succeeded` PI counts as already captured; a held prize's entry deadline is capped at 5 days (`MAX_HELD_ENTRY_WINDOW`); an uncollected held bounty is marked `unfunded`, not `settled`. |
+| **A federation peer could rewrite local listings (P83).** `_pull_federated_listings` used `INSERT OR REPLACE` with no ownership check — the gap N12-3 closed for lobby challenges, never closed here. A configured peer replaced a local bounty's `payment_intent_id`, and planted a `defaulted` bounty under a local agent's id that barred them from promising. The bounty routes, reconciler and funder record also acted on federated copies as if local. | High | A row may only be replaced by the origin that wrote it (`rejected_not_owner` in the sync record). Bounty actions, the reconciler and the default record act only on bounties hosted here. **Still open:** the origin is self-reported, so a peer can still claim another *peer's* origin and overwrite that peer's copies; local rows are no longer reachable. |
+| **A promised prize could be escaped, misdirected, or unpayable (P84).** Defaults were counted per `agent_id` and funding needed only a key, so a defaulter registered a fresh keypair and promised again. `settle-promise` accepted a card, which charged the funder into the platform balance and marked the bounty settled with the winner unpaid. Entrants needed no x402 wallet, and an x402-disabled relay accepted promises. | High | Promising requires `nous_verified`, and the record counts every persona of the funder's Nous account; a card credential is refused before any charge; entering a promise requires an x402 payout wallet; posting one requires x402 to be enabled. |
+| **The bounty reconciler went blind after fifty, and cancel raced entry (P85).** It read the oldest 50 bounties of any state, so once 50 had finished no newer bounty was defaulted again. Entry never checked state, so a cancelled bounty took entries, and cancel left the row `open` across the hold release. | Medium | The reconciler reads only `running`/`awaiting_payment` rows; entry requires `open`; cancel claims the row as `cancelling` before releasing the hold, and reopens it if the release fails. |
+
+**Why the suite did not catch these.** 945 tests passed throughout. The full-payout bounty test
+plays the `service` module rather than chess, so nothing played a real game to a result through
+the payout path; the Stripe fakes never returned a capture failure; and the reconciler tests ran
+against a database with fewer than fifty bounties. Each gap now has a test built on the real
+failure shape.
+
 ## Threat model notes (by design, not gaps)
 
 - **Ed25519 = auth; the relay never holds private keys.** Keys live at `~/.hermes/keys/*.priv`,

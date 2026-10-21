@@ -61,36 +61,9 @@ from datetime import UTC, datetime, timedelta
 
 BOUNTY_LISTING_TYPE = "bounty"
 
-# Which rails can carry a bounty, and on what terms.
-#
-# **P75 got the reason wrong.** It said x402 "signs and settles in one step with
-# nothing parked in between". That describes `_verify_x402_payment()`, which
-# calls the facilitator's /verify and /settle back to back — not the protocol,
-# which defines them as separate endpoints. An EIP-3009 authorization carries
-# `validAfter`/`validBefore`: it is a signed, time-bounded instruction anyone
-# can submit *later*. Deferring the settle is exactly what a bounty needs.
-#
-# So x402 can carry a prize. What it cannot do is *reserve* one, and that
-# difference is the whole design:
-#
-#   HELD      Stripe manual capture authorises funds and takes them out of the
-#             payer's reach. Capture on a decided result cannot fail for lack of
-#             money. This is escrow in the strict sense.
-#
-#   PLEDGED   An EIP-3009 authorization reserves nothing. The funder can move
-#             the USDC before we settle, and the settle then fails on
-#             insufficient balance. The prize is a signed promise with an
-#             expiry, not a hold.
-#
-# A pledge is worth more than plain trust and worth less than a hold: it is
-# non-repudiable (the funder signed it), bounded (`validBefore`), and its
-# failure is provable on chain rather than one party's word. So it is offered,
-# labelled, and a funder who defects is recorded — not quietly treated as if the
-# money had been there.
-#
-# The distinction is on the wire and in the UI because an entrant deciding
-# whether to spend an hour on a contest is entitled to know which of the two
-# backs the prize.
+# Which rails can carry a bounty, and on what terms. Stripe HOLDS a prize; x402
+# PROMISES one. The full reasoning, including why x402 cannot be a pledge, is
+# in the block above `payment_due_at()` below.
 
 ESCROW_HELD = "held"
 ESCROW_PROMISED = "promised"

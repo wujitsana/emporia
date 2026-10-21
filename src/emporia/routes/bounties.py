@@ -9,9 +9,10 @@ in their own table because they need a UNIQUE constraint that a JSON blob in
 `metadata_json` cannot give, and because a read-modify-write on that blob loses
 a concurrent entry.
 
-Settlement is deliberately not here. A bounty settles by running the module's
-own session and letting the existing `settle()` path pay out, which P72-1 proved
-already handles the asymmetric case. That is the next phase.
+Settlement is deliberately not here. A held bounty settles by running the
+module's own session and letting the existing `settle()` path pay out (P72-6); a
+promised one is paid by the funder through `settle-promise`. `reconcile_bounties`
+moves both to their terminal states.
 
 **The prize is escrowed before the bounty exists (P72-5).** The first version of
 this file recorded `prize_cents` in a JSON blob and held nothing, which made a
@@ -542,13 +543,11 @@ async def list_bounties(limit: int = 50, open_only: bool = True):
             "state": meta.get("state", "open"),
             "entrant_count": counts.get(r["listing_id"], 0),
             "min_entrants": lo, "max_entrants": hi,
-            # P77: which promise backs this prize. "held" means the funds are
-            # out of the funder's reach and capture cannot fail for lack of
-            # money; "pledged" means a signed, expiring authorization that
-            # reserves nothing. An entrant deciding whether to spend an hour on
-            # a contest is entitled to know which — collapsing them would make
-            # the weaker one look like the stronger, which is the reassuring
-            # reading this dashboard has been fixed for twice already.
+            # Which backing this prize has: "held" means the funds are out of
+            # the funder's reach and capture cannot fail for lack of money;
+            # "promised" means nothing is set aside and the funder pays after the
+            # result. An entrant deciding whether to spend an hour on a contest
+            # is entitled to know which.
             # P83: guarded like seats above — a peer's bounty can name a rail
             # this relay does not know, and escrow_strength() raises for one.
             "escrow_strength": (
