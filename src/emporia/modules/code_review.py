@@ -40,7 +40,12 @@ class CodeReviewModule(InteractionModule):
                 "pending_reviewers": participants[1:],
                 "status": "pending",
             },
-            current_agent=participants[1],
+            # P89: the session route builds the initial state from the creator
+            # alone, then rebuilds it once a reviewer joins. Indexing
+            # participants[1] unconditionally made every code-review session a
+            # 500 at creation; until a reviewer exists, the creator holds the
+            # turn and nobody can act (validate_action requires a reviewer).
+            current_agent=participants[1] if len(participants) > 1 else participants[0],
             step_number=0,
             metadata={"participants": participants, "created_at": datetime.now(UTC).isoformat()},
         )
