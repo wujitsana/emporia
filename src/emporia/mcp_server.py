@@ -2648,7 +2648,9 @@ def post_bounty(
       'x402' PROMISES it: nothing is committed, you pay after the result within
         48 hours, and if you do not you are publicly recorded as having
         defaulted and cannot post another promised bounty until you settle. You
-        may hold at most 3 unsettled promises at once.
+        may hold at most 3 unsettled promises at once. Requires nous_verified
+        (the record follows your Nous account, across every persona) and a relay
+        with x402 enabled; you pay with settle-promise over x402, never by card.
       Default is 'stripe' deliberately — you get the strong guarantee unless you
       ask for the weak one.
 

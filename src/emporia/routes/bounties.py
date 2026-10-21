@@ -40,7 +40,9 @@ from emporia import bounties as rules
 from emporia import relay_server as rs
 from emporia.module_sdk import MODULE_REGISTRY
 from emporia.module_sdk import get_interaction_module
-from emporia.payments import RAIL_STRIPE, RAIL_X402, cancel_payment_hold
+from emporia.payments import (
+    RAIL_STRIPE, RAIL_X402, _x402_enabled, cancel_payment_hold, extract_mpp_token,
+)
 
 router = APIRouter()
 
@@ -171,8 +173,28 @@ async def create_bounty(req: CreateBountyRequest, request: Request):
     # paying: a default is recorded and they cannot promise again until it is
     # settled. That rule is checked here, before anyone can enter.
     if req.rail == RAIL_X402:
+        # P84: a promise is paid after the result, over x402, straight to the
+        # winner. A relay that cannot take an x402 payment cannot honour one,
+        # and the funder would default through no fault of their own.
+        if not _x402_enabled():
+            raise HTTPException(400, (
+                "This relay does not have x402 enabled, so a promised prize could never "
+                "be paid. Fund it on the held rail (rail='stripe') instead."
+            ))
         with rs.DB_LOCK, rs.get_db() as conn:
+            trust, _ = _agent_identity(conn, caller)
             unpaid, outstanding = _funder_promise_record(conn, caller)
+        # P84: the consequence that backs a promise has to bind the operator,
+        # not the key. Counted per key, a funder who defaulted registered a
+        # fresh keypair (free, unlimited) and promised again. Entry is already
+        # counted per Nous account for the same reason.
+        if trust != "nous_verified":
+            raise HTTPException(403, (
+                "Posting a bounty backed by a promise requires nous_verified. Its only "
+                "backing is the record of whether you paid, and that record has to follow "
+                "your account rather than a key you can replace. A held prize needs no "
+                "such record — fund it on rail='stripe'."
+            ))
         allowed, why = rules.funder_may_promise(
             unpaid_defaults=unpaid, outstanding_promises=outstanding,
         )
@@ -219,13 +241,18 @@ def _funder_promise_record(conn, agent_id: str) -> tuple[int, int]:
     together, and two queries a moment apart could disagree about the same
     funder mid-contest.
     """
+    # P84: counted across every persona of the funder's Nous account, via the
+    # `funder_nous_user_id` pinned on each bounty at funding — otherwise a
+    # default follows only the key that incurred it.
+    _, nous_id = _agent_identity(conn, agent_id)
     rows = conn.execute(
-        "SELECT metadata_json FROM listings WHERE listing_type = ? AND agent_id = ? "
-        "AND origin_relay = ?",
+        "SELECT metadata_json FROM listings WHERE listing_type = ? AND origin_relay = ? "
+        "AND (agent_id = ? OR (? IS NOT NULL AND "
+        "json_extract(metadata_json, '$.funder_nous_user_id') = ?))",
         # P83: hosted here only. A peer's bounty rows carry whatever agent_id
         # and state the peer wrote, and an agent_id is only unique per relay —
         # counting them let a peer plant a default against a local agent.
-        (rules.BOUNTY_LISTING_TYPE, agent_id, rs.RELAY_BASE_URL),
+        (rules.BOUNTY_LISTING_TYPE, rs.RELAY_BASE_URL, agent_id, nous_id, nous_id),
     ).fetchall()
     unpaid = outstanding = 0
     for r in rows:
@@ -558,6 +585,14 @@ async def enter_bounty(listing_id: str, request: Request):
         )
         if not allowed:
             raise HTTPException(403, why)
+        # P84: a promised prize is paid by x402 straight to the winner's wallet.
+        # An entrant with none could win a prize nobody can pay them, and the
+        # funder would then be flagged for a default they could not avoid.
+        if meta.get("rail") == RAIL_X402 and not rs.AGENT_REGISTRY.get_x402_pay_to_all(caller):
+            raise HTTPException(403, (
+                "This prize is promised and paid over x402 to the winner's wallet. "
+                "Register an x402 payout wallet before entering, so a win can be paid."
+            ))
         try:
             conn.execute(
                 "INSERT INTO bounty_entries (listing_id, agent_id, nous_user_id, entered_at) "
@@ -633,6 +668,15 @@ async def settle_promise(listing_id: str, request: Request):
     winner_id = meta.get("winner_id")
     if not winner_id:
         raise HTTPException(409, "No winner recorded for this bounty yet.")
+    # P84: refused before `_verify_and_confirm_payment` would charge it. A card
+    # payment lands on the platform's balance, and nothing here transfers it on
+    # — so the bounty was marked settled while the winner received nothing.
+    if extract_mpp_token(request.headers.get("Authorization")):
+        raise HTTPException(400, (
+            "A promised prize is paid over x402, straight to the winner's wallet. A "
+            "card payment would reach the platform, not the winner, so it is not "
+            "accepted here. Retry with a PAYMENT-SIGNATURE credential."
+        ))
 
     paid = await rs._verify_and_confirm_payment(
         request,

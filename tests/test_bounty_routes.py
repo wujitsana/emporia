@@ -113,6 +113,14 @@ def _escrow():
         yield holder
 
 
+@pytest.fixture(autouse=True)
+def _x402_on():
+    """P84: a promised prize can only be posted where x402 can pay it. The rail's
+    own configuration is tested where it lives; here it is simply on."""
+    with patch("emporia.routes.bounties._x402_enabled", return_value=True):
+        yield
+
+
 # Module-level so the fixture and the tests share one view of the fake Stripe.
 _PI_STORE: dict[str, dict] = {}
 _CAPTURED: list[str] = []
@@ -900,3 +908,59 @@ def test_a_peer_still_refreshes_its_own_listing(client, _escrow):
             (listing["listing_id"],),
         ).fetchone()[0])
     assert meta["state"] == "running"
+
+
+# P84 -- a promise binds the account, and can actually be paid ---------------
+
+def test_a_defaulted_funder_cannot_promise_again_under_another_persona(client, _escrow):
+    nous = "nous_sy_" + uuid.uuid4().hex[:6]
+    funder = _mk_agent(client, nous_id=nous)
+    first = _promise_bounty(client, funder).json()["listing_id"]
+    _force_state(first, state="defaulted", winner_id="w", prize_cents=5000)
+    second_persona = _mk_agent(client, nous_id=nous)
+    r = _promise_bounty(client, second_persona)
+    assert r.status_code == 403 and "unpaid bounty default" in r.json()["detail"]
+
+
+def test_a_fresh_keypair_cannot_promise_at_all(client, _escrow):
+    """The escape the audit reproduced: default, register a new key, promise again."""
+    from tests.test_emporia import _register
+    alt = "alt_" + uuid.uuid4().hex[:8]
+    _register(client, alt)
+    r = _promise_bounty(client, alt)
+    assert r.status_code == 403 and "nous_verified" in r.json()["detail"]
+
+
+def test_no_promise_where_x402_cannot_pay_it(client, _escrow):
+    funder = _mk_agent(client, nous_id="nous_nx_" + uuid.uuid4().hex[:6])
+    with patch("emporia.routes.bounties._x402_enabled", return_value=False):
+        r = _promise_bounty(client, funder)
+    assert r.status_code == 400 and "x402" in r.json()["detail"]
+
+
+def test_a_promise_is_not_settled_by_card(client, _escrow):
+    """A card payment reaches the platform, not the winner — it used to be
+    charged and the bounty marked settled with nothing transferred."""
+    funder = _mk_agent(client, nous_id="nous_sc_" + uuid.uuid4().hex[:6])
+    lid = _promise_bounty(client, funder).json()["listing_id"]
+    _force_state(lid, state="awaiting_payment", winner_id="the_winner",
+                 payment_due_at=(datetime.now(UTC) + timedelta(hours=1)).isoformat())
+    before = len(_escrow.issued)
+    r = client.post(f"/bounties/{lid}/settle-promise", headers={**_hdr(funder), **_PAY})
+    assert r.status_code == 400 and "x402" in r.json()["detail"]
+    assert len(_escrow.issued) == before, "the funder's card was charged anyway"
+    assert client.get(f"/bounties/{lid}/promise-status").json()["state"] == "awaiting_payment"
+
+
+def test_entering_a_promise_needs_a_wallet_to_be_paid_into(client, _escrow):
+    from emporia import relay_server as rs
+
+    funder = _mk_agent(client, nous_id="nous_pw_" + uuid.uuid4().hex[:6])
+    lid = _promise_bounty(client, funder).json()["listing_id"]
+    entrant = _mk_agent(client, nous_id="nous_pe_" + uuid.uuid4().hex[:6])
+    r = client.post(f"/bounties/{lid}/enter", headers=_hdr(entrant))
+    assert r.status_code == 403 and "wallet" in r.json()["detail"]
+    with patch.object(rs.AGENT_REGISTRY, "get_x402_pay_to_all",
+                      return_value={"evm": "0x" + "1" * 40}):
+        r = client.post(f"/bounties/{lid}/enter", headers=_hdr(entrant))
+    assert r.status_code == 200, r.text
