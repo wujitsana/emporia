@@ -4,6 +4,7 @@ Each test pins a fact about Stripe or x402 that the relay had wrong, so a
 future edit that reintroduces it fails here rather than in production.
 """
 import asyncio
+import json
 import os
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -131,3 +132,69 @@ def test_case_folding_does_not_let_a_different_address_through(mock_verify, mock
             ))
     assert e.value.status_code == 402 and "payTo" in str(e.value.detail)
     mock_verify.assert_not_called()
+
+
+# -- x402 PAYMENT-RESPONSE (P93) ------------------------------------------------
+
+def _x402_room(client, owner, fee=400):
+    from tests.test_emporia import _register as reg
+    reg(client, owner)
+    r = client.post(f"/agents/{owner}/x402-wallet",
+                    json={"network_family": "evm", "address": "0x" + "dd" * 20},
+                    headers={"x-emporia-agent-id": owner})
+    assert r.status_code == 200, r.text
+    r = client.post("/rooms", json={"name": "P93", "creator_id": owner, "room_type": "private",
+                                    "gate_type": "paid", "entry_fee_cents": fee},
+                    headers={"x-emporia-agent-id": owner})
+    return r.json()["room_id"]
+
+
+def _x402_join(client, room_id, payer):
+    from tests.test_emporia import _register as reg
+    from tests.test_emporia import _x402_payment_signature_header
+    reg(client, payer)
+    header = _x402_payment_signature_header({
+        "scheme": "exact", "network": "eip155:8453", "amount": "4000000",
+        "asset": "0xUSDCFAKE", "payTo": "0x" + "dd" * 20, "maxTimeoutSeconds": 300,
+        "extra": _X402_EXTRA,
+    })
+    with patch.dict(os.environ, _X402_ENV, clear=False):
+        return client.post(f"/rooms/{room_id}/join", json={"agent_id": payer},
+                           headers={"x-emporia-agent-id": payer, "PAYMENT-SIGNATURE": header})
+
+
+def _receipt(resp):
+    import base64
+    raw = resp.headers.get("PAYMENT-RESPONSE")
+    assert raw, f"no PAYMENT-RESPONSE on a {resp.status_code}"
+    return json.loads(base64.b64decode(raw))
+
+
+@patch("emporia.payments.x402_settle_payment", new_callable=AsyncMock)
+@patch("emporia.payments.x402_verify_payment", new_callable=AsyncMock)
+def test_a_settled_x402_payment_returns_its_receipt(mock_verify, mock_settle, client):
+    """x402 v2 returns the settlement to the payer in PAYMENT-RESPONSE. CORS
+    exposed the header since P1b; nothing ever set it."""
+    mock_verify.return_value = {"isValid": True}
+    mock_settle.return_value = {"success": True, "transaction": "0xp93_tx",
+                                "network": "eip155:8453", "payer": "0x" + "cc" * 20}
+    resp = _x402_join(client, _x402_room(client, "p93_owner"), "p93_payer")
+    assert resp.status_code == 200, resp.text
+    assert _receipt(resp) == {"success": True, "transaction": "0xp93_tx",
+                              "network": "eip155:8453", "payer": "0x" + "cc" * 20}
+
+
+@patch("emporia.payments.x402_settle_payment", new_callable=AsyncMock)
+@patch("emporia.payments.x402_verify_payment", new_callable=AsyncMock)
+def test_a_failed_settlement_returns_its_reason(mock_verify, mock_settle, client):
+    mock_verify.return_value = {"isValid": True}
+    mock_settle.return_value = {"success": False, "errorReason": "insufficient_funds"}
+    resp = _x402_join(client, _x402_room(client, "p93_owner_f"), "p93_payer_f")
+    assert resp.status_code == 402
+    receipt = _receipt(resp)
+    assert receipt["success"] is False and receipt["errorReason"] == "insufficient_funds"
+    assert receipt["network"] == "eip155:8453" and receipt["transaction"] == ""
+
+
+def test_no_receipt_where_nothing_settled(client):
+    assert "PAYMENT-RESPONSE" not in client.get("/health").headers

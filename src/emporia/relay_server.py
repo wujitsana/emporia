@@ -1934,6 +1934,34 @@ async def _resolve_open_x402_intent(
     ))
 
 
+def _record_x402_settlement(
+    request: Request | None, settle_result: dict[str, Any], *, network: str, payer: str,
+) -> None:
+    """Hold the facilitator's settlement result for the `PAYMENT-RESPONSE` header (P93).
+
+    x402 v2's HTTP transport returns the outcome of a settlement to the payer
+    in `PAYMENT-RESPONSE`: base64 JSON `{success, transaction, network, payer}`,
+    plus `errorReason` when it failed, on the 200 and on the 402 alike. CORS
+    has exposed the header since P1b; nothing ever set it, so an x402 client
+    had no receipt for a payment that had moved its money. Recorded on
+    `request.state` here and attached by `request_context`, so every paid
+    route gets it without each one building its own response.
+    """
+    if request is None:
+        return
+    body: dict[str, Any] = {
+        "success": bool(settle_result.get("success")),
+        "transaction": str(settle_result.get("transaction") or ""),
+        "network": str(settle_result.get("network") or network),
+        "payer": str(settle_result.get("payer") or payer),
+    }
+    if not body["success"]:
+        body["errorReason"] = str(settle_result.get("errorReason") or "unknown")
+    request.state.x402_payment_response = base64.b64encode(
+        json.dumps(body, separators=(",", ":")).encode()
+    ).decode()
+
+
 async def _verify_x402_payment(
     x402_payload: dict[str, Any],
     *,
@@ -1944,6 +1972,7 @@ async def _verify_x402_payment(
     payer_id: str,
     resource_type: str,
     resource_id: str,
+    request: Request | None = None,
 ) -> "PaymentRef":
     """The x402 analogue of `_verify_and_confirm_payment()`'s SPT/direct-PI
     branches — verify a client-supplied x402 credential against what this
@@ -2068,6 +2097,9 @@ async def _verify_x402_payment(
     if existing is not None:
         settled = await _resolve_open_x402_intent(existing, challenge_resource)
         if settled is not None:
+            # A retry whose earlier settlement landed gets the same receipt.
+            _record_x402_settlement(request, {"success": True, "transaction": settled},
+                                    network=network or "", payer=authorizer)
             return PaymentRef(RAIL_X402, settled)
         _reopen_x402_intent(
             intent_key=intent_key, network=network or "", asset=asset or "",
@@ -2076,6 +2108,7 @@ async def _verify_x402_payment(
 
     try:
         settle_result = await x402_settle_payment(x402_payload, expected)
+        _record_x402_settlement(request, settle_result, network=network or "", payer=authorizer)
         if not settle_result.get("success"):
             _close_x402_intent(intent_key, X402_INTENT_FAILED)
             raise HTTPException(
@@ -2226,6 +2259,7 @@ async def _verify_and_confirm_payment(
                 x402_payload, creator_id=creator_id, amount_cents=amount_cents,
                 currency=currency, challenge_resource=challenge_resource,
                 payer_id=agent_id, resource_type=resource_type, resource_id=resource_id,
+                request=request,
             )
         # P1brr-2: _x402_offer() returns None for any of four distinct
         # reasons (disabled / wrong currency / no creator on this route /
@@ -3923,6 +3957,10 @@ async def request_context(request: Request, call_next):
                 extra={"method": request.method, "path": request.url.path},
             )
             raise
+        # P93: an x402 settlement's receipt, recorded by _record_x402_settlement().
+        payment_response = getattr(request.state, "x402_payment_response", None)
+        if payment_response:
+            response.headers["PAYMENT-RESPONSE"] = payment_response
         duration_ms = round((time.monotonic() - start) * 1000, 1)
         # P23-2: the dashboard polls /health every 5-10s per open tab (App.tsx,
         # PaymentsFeesSection.tsx) -- at INFO that's a near-constant stream of
@@ -4142,8 +4180,10 @@ async def _reconcile_owed_payouts() -> dict[str, int]:
     to a key once execution begins, errors included, so a transfer refused for
     an unavailable balance replays that refusal from cache on every retry until
     the key is pruned, and only then is actually re-attempted. Paid late, never
-    twice. Transfers carry no `source_transaction`, which is what would let them
-    draw on pending funds instead — see SECURITY.md's P88 notes.
+    twice. P93 made that rare at the source: a payout funded by one charge now
+    names it as `source_transaction` and draws on it while it is still
+    pending. Retries from here still go without one, since a row records its
+    PaymentIntents but not which charge funded the transfer.
     """
     counts = {"owed": 0, "recovered": 0, "paid": 0, "unknown": 0,
               "still_blocked": 0, "failed": 0}
@@ -6615,6 +6655,7 @@ async def _settle_access_payment(
                         idempotency_key="emporia:payout:" + settlement_dedupe_key(
                             resource_id, payer_id, [payment_ref.reference]
                         ),
+                        source_payment_intent_id=payment_ref.reference,
                     )
                     transfer_id = t["transfer_id"]
                     transfer_status = "transferred"

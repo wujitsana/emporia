@@ -1248,6 +1248,10 @@ async def settle(
                 idempotency_key="emporia:payout:" + settlement_dedupe_key(
                     session_id, None, payment_intent_ids
                 ),
+                source_payment_intent_id=(
+                    funding[0] if len(funding := [p for p in payment_intent_ids if p]) == 1
+                    else None
+                ),
             )
             transfer_id = transfer["transfer_id"]
             transfer_status = "transferred"
@@ -1431,6 +1435,23 @@ async def find_settlement_transfer(
     return (False, None)
 
 
+async def _latest_charge(payment_intent_id: str) -> str | None:
+    """The charge id behind a PaymentIntent, or None when it cannot be read."""
+    try:
+        async with httpx.AsyncClient(timeout=REQUEST_TIMEOUT) as client:
+            resp = await client.get(
+                f"{STRIPE_API_BASE}/payment_intents/{payment_intent_id}",
+                auth=(_stripe_key(), ""),
+            )
+            resp.raise_for_status()
+            charge = resp.json().get("latest_charge")
+    except Exception:
+        return None
+    if isinstance(charge, dict):        # expanded form
+        charge = charge.get("id")
+    return charge if isinstance(charge, str) and charge.startswith(("ch_", "py_")) else None
+
+
 async def payout_winner(
     winner_id: str,
     stripe_account_id: str,
@@ -1438,6 +1459,7 @@ async def payout_winner(
     session_id: str,
     *,
     idempotency_key: str,
+    source_payment_intent_id: str | None = None,
 ) -> dict[str, Any]:
     """Transfer winner payout to their Stripe Connected Account.
 
@@ -1457,12 +1479,26 @@ async def payout_winner(
     matching record_settlement()'s own dedupe_key for that same settlement).
     """
     key = _stripe_key()
+    # P93: tie the transfer to the charge that funded it. Without
+    # `source_transaction` a transfer draws on the platform's *available*
+    # balance, and captured card funds are pending for days in live mode — so
+    # the payout could fail for want of money that had already been collected,
+    # then replay that failure from Stripe's idempotency cache until the key was
+    # pruned. With it, Stripe moves the funds as they become available. Only
+    # when exactly one charge funds the payout: a transfer can name one source
+    # and may not exceed it, and the payout (that charge less the fee) never
+    # does. Best-effort — if the charge cannot be looked up, the transfer goes
+    # out exactly as it did before rather than not at all.
+    source_charge = (
+        await _latest_charge(source_payment_intent_id) if source_payment_intent_id else None
+    )
     async with httpx.AsyncClient(timeout=REQUEST_TIMEOUT) as client:
         resp = await client.post(
             f"{STRIPE_API_BASE}/transfers",
             auth=(key, ""),
             headers={"Idempotency-Key": idempotency_key},
             data={
+                **({"source_transaction": source_charge} if source_charge else {}),
                 "amount": str(amount_cents),
                 "currency": "usd",
                 "destination": stripe_account_id,

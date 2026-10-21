@@ -120,3 +120,57 @@ def test_a_clean_settle_refunds_nothing():
         ))
     assert not refunds and out["refund_results"] == []
     assert out["transfer_status"] == "transferred"
+
+
+# P93 -- a payout names the charge that funded it ------------------------------
+
+def _stripe(transfers, *, latest_charge="ch_funding", get_fails=False):
+    async def post(url, *a, **kw):
+        if url.endswith("/capture"):
+            return _resp(200, {"status": "succeeded"})
+        if url.endswith("/transfers"):
+            transfers.append(kw["data"])
+        return _resp(200, {"id": "tr_x"})
+
+    async def get(url, *a, **kw):
+        if get_fails:
+            raise RuntimeError("stripe unreachable")
+        return _resp(200, {"id": url.rsplit("/", 1)[-1], "latest_charge": latest_charge})
+    return post, get
+
+
+def _settle(pis):
+    return anyio.run(lambda: payments.settle(
+        "ses_src", "winner", 5000, pis, winner_stripe_account="acct_w",
+        winner_stripe_account_status="active", winner_stripe_account_mode="test"))
+
+
+def test_a_single_stake_payout_draws_on_its_own_charge():
+    """Without source_transaction a live-mode payout draws on the *available*
+    balance and can fail while the stake it pays out is still pending."""
+    transfers = []
+    post, get = _stripe(transfers)
+    with patch("httpx.AsyncClient.post", new_callable=AsyncMock, side_effect=post), \
+         patch("httpx.AsyncClient.get", new_callable=AsyncMock, side_effect=get):
+        out = _settle(["pi_one"])
+    assert out["transfer_status"] == "transferred"
+    assert transfers[0]["source_transaction"] == "ch_funding"
+
+
+def test_several_stakes_cannot_name_one_source():
+    transfers = []
+    post, get = _stripe(transfers)
+    with patch("httpx.AsyncClient.post", new_callable=AsyncMock, side_effect=post), \
+         patch("httpx.AsyncClient.get", new_callable=AsyncMock, side_effect=get):
+        _settle(["pi_one", "pi_two"])
+    assert "source_transaction" not in transfers[0]
+
+
+def test_an_unreadable_charge_never_blocks_the_payout():
+    transfers = []
+    post, get = _stripe(transfers, get_fails=True)
+    with patch("httpx.AsyncClient.post", new_callable=AsyncMock, side_effect=post), \
+         patch("httpx.AsyncClient.get", new_callable=AsyncMock, side_effect=get):
+        out = _settle(["pi_one"])
+    assert out["transfer_status"] == "transferred"
+    assert "source_transaction" not in transfers[0]
