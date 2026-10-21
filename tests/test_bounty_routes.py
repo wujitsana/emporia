@@ -818,27 +818,35 @@ def test_an_unknown_rail_is_refused(client, _escrow):
 
 # P83 -- a peer may not rewrite what it does not own -------------------------
 
-def _peer_batch(listings, origin="https://peer.example"):
-    from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
+class _Peer:
+    """One federation peer: a URL, the key it signs with, and what it claims
+    as its origin (its own URL unless told otherwise)."""
 
-    from emporia.identity import federation_signable_bytes
+    def __init__(self, url=None):
+        from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 
-    key = Ed25519PrivateKey.generate()
-    return origin, {
-        "origin_relay": origin, "listings": listings,
-        "origin_public_key_hex": key.public_key().public_bytes_raw().hex(),
-        "signature": key.sign(federation_signable_bytes(origin, "listings", listings)).hex(),
-    }
+        self.url = url or f"https://peer-{uuid.uuid4().hex[:8]}.example"
+        self.key = Ed25519PrivateKey.generate()
 
+    def batch(self, listings, *, origin=None):
+        from emporia.identity import federation_signable_bytes
 
-def _pull(peer, batch):
-    import anyio
+        origin = origin or self.url
+        return {
+            "origin_relay": origin, "listings": listings,
+            "origin_public_key_hex": self.key.public_key().public_bytes_raw().hex(),
+            "signature": self.key.sign(
+                federation_signable_bytes(origin, "listings", listings)).hex(),
+        }
 
-    from emporia import relay_server as rs
+    def push(self, listings, *, origin=None):
+        import anyio
 
-    peer = f"{peer}/{uuid.uuid4().hex[:6]}"   # a fresh pin per test
-    with patch.object(rs, "_fetch_federation_batch", AsyncMock(return_value=batch)):
-        return anyio.run(rs._pull_federated_listings, peer)
+        from emporia import relay_server as rs
+
+        batch = self.batch(listings, origin=origin)
+        with patch.object(rs, "_fetch_federation_batch", AsyncMock(return_value=batch)):
+            return anyio.run(rs._pull_federated_listings, self.url)
 
 
 def _foreign_bounty(agent_id, **meta):
@@ -858,8 +866,7 @@ def test_a_peer_cannot_overwrite_a_local_bounty(client, _escrow):
     forged = _foreign_bounty(funder, payment_intent_id="pi_attacker", rail="stripe")
     forged["listing_id"] = listing_id
 
-    peer, batch = _peer_batch([forged])
-    assert _pull(peer, batch) == 0
+    assert _Peer().push([forged]) == 0
     with rs.DB_LOCK, rs.get_db() as conn:
         meta = json.loads(conn.execute(
             "SELECT metadata_json FROM listings WHERE listing_id = ?", (listing_id,),
@@ -869,27 +876,25 @@ def test_a_peer_cannot_overwrite_a_local_bounty(client, _escrow):
 
 def test_a_peer_cannot_plant_a_default_on_a_local_agent(client, _escrow):
     victim = _mk_agent(client, nous_id="nous_fv_" + uuid.uuid4().hex[:6])
-    peer, batch = _peer_batch([_foreign_bounty(victim, state="defaulted")])
-    assert _pull(peer, batch) == 1          # discoverable, as gossip should be
+    assert _Peer().push([_foreign_bounty(victim, state="defaulted")]) == 1  # discoverable
     assert _promise_bounty(client, victim).status_code == 200
 
 
 def test_a_peers_bounty_is_entered_on_its_own_relay(client, _escrow):
-    peer, batch = _peer_batch([_foreign_bounty("someone_remote")])
-    _pull(peer, batch)
-    listing_id = batch["listings"][0]["listing_id"]
+    listing = _foreign_bounty("someone_remote")
+    _Peer().push([listing])
+    listing_id = listing["listing_id"]
     entrant = _mk_agent(client, nous_id="nous_fe_" + uuid.uuid4().hex[:6])
     r = client.post(f"/bounties/{listing_id}/enter", headers=_hdr(entrant))
     assert r.status_code == 409 and "hosted on" in r.json()["detail"]
 
 
 def test_a_peers_unknown_rail_does_not_break_the_board(client, _escrow):
-    peer, batch = _peer_batch([_foreign_bounty("someone_remote", rail="lightning")])
-    _pull(peer, batch)
+    listing = _foreign_bounty("someone_remote", rail="lightning")
+    _Peer().push([listing])
     r = client.get("/bounties")
     assert r.status_code == 200
-    row = next(b for b in r.json()["bounties"]
-               if b["listing_id"] == batch["listings"][0]["listing_id"])
+    row = next(b for b in r.json()["bounties"] if b["listing_id"] == listing["listing_id"])
     assert row["escrow_strength"] is None
 
 
@@ -897,11 +902,10 @@ def test_a_peer_still_refreshes_its_own_listing(client, _escrow):
     from emporia import relay_server as rs
 
     listing = _foreign_bounty("someone_remote")
-    peer, batch = _peer_batch([listing])
-    assert _pull(peer, batch) == 1
+    peer = _Peer()
+    assert peer.push([listing]) == 1
     listing["metadata"]["state"] = "running"
-    _, batch2 = _peer_batch([listing], origin=peer)
-    assert _pull(peer, batch2) == 1
+    assert peer.push([listing]) == 1
     with rs.DB_LOCK, rs.get_db() as conn:
         meta = json.loads(conn.execute(
             "SELECT metadata_json FROM listings WHERE listing_id = ?",
@@ -1028,3 +1032,41 @@ def test_a_failed_release_reopens_the_bounty(client, _escrow):
         assert client.post(f"/bounties/{lid}/cancel", headers=_hdr(funder)).status_code == 502
     assert _state_of(lid) == "open"
     assert client.post(f"/bounties/{lid}/cancel", headers=_hdr(funder)).status_code == 200
+
+
+
+# P87 -- owned by the peer it came from, not the origin it claims ------------
+
+def _stored(listing_id):
+    from emporia import relay_server as rs
+    with rs.DB_LOCK, rs.get_db() as conn:
+        return dict(conn.execute("SELECT * FROM listings WHERE listing_id = ?",
+                                 (listing_id,)).fetchone())
+
+
+def test_a_peer_cannot_overwrite_another_peers_listing_by_claiming_its_origin(client, _escrow):
+    honest, impostor = _Peer(), _Peer()
+    listing = _foreign_bounty("someone_remote")
+    assert honest.push([listing]) == 1
+
+    forged = json.loads(json.dumps(listing))
+    forged["metadata"]["state"] = "defaulted"
+    assert impostor.push([forged], origin=honest.url) == 0
+    row = _stored(listing["listing_id"])
+    assert json.loads(row["metadata_json"])["state"] == "open"
+    assert row["federated_from"] == honest.url
+
+
+def test_a_row_pulled_before_ownership_was_recorded_is_adopted_by_its_origin(client, _escrow):
+    from emporia import relay_server as rs
+
+    peer = _Peer()
+    listing = _foreign_bounty("someone_remote")
+    assert peer.push([listing]) == 1
+    with rs.DB_LOCK, rs.get_db() as conn:     # what a V2 database holds
+        conn.execute("UPDATE listings SET federated_from = NULL WHERE listing_id = ?",
+                     (listing["listing_id"],))
+    assert _Peer().push([listing], origin=peer.url) == 0, "a stranger adopted it"
+    listing["metadata"]["state"] = "running"
+    assert peer.push([listing]) == 1
+    assert _stored(listing["listing_id"])["federated_from"] == peer.url

@@ -28088,7 +28088,7 @@ def test_the_membership_rule_is_written_in_exactly_one_place():
 # P61 — the schema has a version, and the version has to stay honest
 # ---------------------------------------------------------------------------
 
-# 28 tables, 250 columns, at SCHEMA_VERSION 2. Recomputed by the test below;
+# 28 tables, 251 columns, at SCHEMA_VERSION 3. Recomputed by the test below;
 # when it fails, read *why* before touching this string.
 #
 # V1 -> V2 (P72-4): `bounty_entries` and its UNIQUE (listing_id, nous_user_id)
@@ -28096,7 +28096,11 @@ def test_the_membership_rule_is_written_in_exactly_one_place():
 # shim: a relay still on V1 code refuses to open a V2 database rather than
 # silently ignoring a table it does not know about — and the table it would be
 # ignoring is the one enforcing one entry per Nous account.
-_SCHEMA_FINGERPRINT_V2 = "1b4a9bed34500e9b3da36ee4e386f8a06d412761eaa8c9f22a01d754d4cd4bb8"
+#
+# V2 -> V3 (P87): `listings.federated_from`, the peer a federated row was pulled
+# from. Federation ownership is checked against it, so a V2 relay that ignored
+# it would let a peer overwrite rows it does not own.
+_SCHEMA_FINGERPRINT_V3 = "e4b232f121d9dc73dbe123fd9e8c38f15449fcb8edbaf713edb364759acadcc2"
 
 
 def _schema_fingerprint(db_path) -> tuple[str, int, int]:
@@ -28136,9 +28140,9 @@ def test_a_schema_change_requires_a_version_bump():
     from emporia.relay_server import SCHEMA_VERSION
 
     fingerprint, tables, columns = _schema_fingerprint(_test_db)
-    assert (SCHEMA_VERSION, fingerprint) == (2, _SCHEMA_FINGERPRINT_V2), (
+    assert (SCHEMA_VERSION, fingerprint) == (3, _SCHEMA_FINGERPRINT_V3), (
         f"the schema changed ({tables} tables, {columns} columns) or the version "
-        f"moved. Bump SCHEMA_VERSION *and* update _SCHEMA_FINGERPRINT_V2 — in "
+        f"moved. Bump SCHEMA_VERSION *and* update _SCHEMA_FINGERPRINT_V3 — in "
         f"that order, and never the fingerprint alone.\n"
         f"  code version: {SCHEMA_VERSION}\n  fingerprint:  {fingerprint}"
     )

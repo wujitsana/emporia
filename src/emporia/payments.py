@@ -1182,12 +1182,28 @@ async def settle(
     # expired hold (manual-capture authorisations lapse after ~7 days) was
     # enough. No transfer now, and the status says why; `capture_failed` is not
     # one of `_PAYOUT_OWED_STATUS_PREFIXES`, so the payout reconciler will not
-    # quietly pay it later either. Any stakes that *were* captured stay on the
-    # platform balance for an operator to refund or pay by hand.
+    # quietly pay it later either.
     captures_failed = [
         r["payment_intent_id"] for r in capture_results
         if str(r.get("status", "")).startswith("capture_failed")
     ]
+    # P87: and the stakes that *were* captured go back to whoever paid them.
+    # P82 left them on the platform balance for an operator to notice, which in
+    # practice meant nobody would: one player's lapsed hold kept the other
+    # player's money. The key is per session and PI, so a retried settle()
+    # cannot refund the same stake twice.
+    refund_results: list[dict[str, Any]] = []
+    if captures_failed:
+        for r in capture_results:
+            if r["payment_intent_id"] in captures_failed:
+                continue
+            pi_id = r["payment_intent_id"]
+            try:
+                refund_results.append(await refund_payment_intent(
+                    pi_id, idempotency_key=f"emporia:capture-failed-refund:{session_id}:{pi_id}",
+                ))
+            except Exception as e:
+                refund_results.append({"payment_intent_id": pi_id, "status": f"refund_failed: {e}"})
 
     # Step 2: Transfer winner's net share from platform balance to their connected account
     if captures_failed:
@@ -1230,6 +1246,7 @@ async def settle(
         "platform_fee_bps": OPERATOR_FEE_BPS,
         "payment_intent_ids": payment_intent_ids,
         "capture_results": capture_results,
+        "refund_results": refund_results,
         "transfer_id": transfer_id,
         "transfer_status": transfer_status,
         "status": "settled",

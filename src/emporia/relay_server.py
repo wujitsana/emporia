@@ -729,7 +729,8 @@ def init_db() -> None:
                 origin_relay TEXT,
                 expires_at TEXT,
                 metadata_json TEXT NOT NULL DEFAULT '{}',
-                created_at TEXT NOT NULL
+                created_at TEXT NOT NULL,
+                federated_from TEXT
             );
 
             CREATE TABLE IF NOT EXISTS events (
@@ -920,6 +921,7 @@ def init_db() -> None:
         _migrate_settlements(conn)
         _migrate_settlement_dedupe_key(conn)
         _migrate_settlement_refund_columns(conn)
+        _migrate_listings_federated_from(conn)
         # Rename aroga_* → agora_* if old names still exist (typo fix)
         _migrate_agora_tables(conn)
         # Rooms schema (separate DDL to keep clean)
@@ -975,7 +977,7 @@ def init_db() -> None:
 # `PRAGMA user_version`. Bump it whenever the schema changes — a test computes
 # a fingerprint of every table and column and fails if the shape moved without
 # this number moving, so it cannot quietly stop meaning anything.
-SCHEMA_VERSION = 2
+SCHEMA_VERSION = 3
 
 
 def _assert_schema_not_from_the_future(conn: Any) -> None:
@@ -1360,6 +1362,20 @@ def _migrate_settlement_refund_columns(conn: Any) -> None:
         conn.execute("ALTER TABLE settlements ADD COLUMN refund_id TEXT")
     if "reversal_id" not in cols:
         conn.execute("ALTER TABLE settlements ADD COLUMN reversal_id TEXT")
+
+
+def _migrate_listings_federated_from(conn: Any) -> None:
+    """Add `listings.federated_from` (P87): the peer a row was actually pulled
+    from, as opposed to `origin_relay`, which is whatever that peer *said* the
+    origin was. Ownership of a federated row is checked against this.
+
+    NULL means "not pulled from a peer" for a local row, and "pulled before
+    P87" for a federated one — `_pull_federated_listings` adopts the latter on
+    its next refresh from a peer whose URL matches the row's origin.
+    """
+    cols = {r[1] for r in conn.execute("PRAGMA table_info(listings)").fetchall()}
+    if "federated_from" not in cols:
+        conn.execute("ALTER TABLE listings ADD COLUMN federated_from TEXT")
 
 
 def _migrate_dm_threads(conn: Any) -> None:
@@ -2624,6 +2640,7 @@ _NON_AGENT_COLUMNS: frozenset[tuple[str, str]] = frozenset({
     ("listings", "listing_id"), ("listings", "title"), ("listings", "description"),
     ("listings", "listing_type"), ("listings", "payment_mode"), ("listings", "price_usd"),
     ("listings", "module_type"), ("listings", "origin_relay"), ("listings", "expires_at"),
+    ("listings", "federated_from"),
     ("listings", "metadata_json"), ("listings", "created_at"),
     # messages
     ("messages", "message_id"), ("messages", "session_id"), ("messages", "type"),
@@ -5603,6 +5620,23 @@ async def _fetch_federation_batch(url: str, *, client: httpx.AsyncClient | None 
             await client.aclose()
 
 
+def _peer_owns_listing(existing: Any, peer_url: str) -> bool:
+    """May the peer at `peer_url` replace this existing listing row? (P87)
+
+    Only the peer it was pulled from. A local row (`federated_from` NULL and
+    `origin_relay` this relay) is never peer-writable. A row pulled before P87
+    has no `federated_from`, so it is adopted by a peer whose URL is the row's
+    own origin — the ordinary case, where a relay is reached at the URL it
+    reports — and by no other.
+    """
+    if existing["federated_from"]:
+        return normalize_peer_url(existing["federated_from"]) == peer_url
+    origin = existing["origin_relay"] or ""
+    if not origin or normalize_peer_url(origin) == normalize_peer_url(RELAY_BASE_URL):
+        return False
+    return normalize_peer_url(origin) == peer_url
+
+
 async def _pull_federated_listings(peer_url: str) -> int:
     """Pull listings from a peer relay and upsert locally (federation gossip).
 
@@ -5704,22 +5738,25 @@ async def _pull_federated_listings(peer_url: str) -> int:
             # importer never got. A signature proves who sent the batch, not
             # what they may say about someone else's row: `INSERT OR REPLACE`
             # let any configured peer overwrite a *local* listing by reusing its
-            # id — a bounty's payment_intent_id, state and funder included. A
-            # row may now only be replaced by the origin that wrote it.
+            # id — a bounty's payment_intent_id, state and funder included.
+            #
+            # P87: owned by the peer it was pulled from, not by the origin that
+            # peer claimed. `origin` is self-reported, so P83's origin check let
+            # one peer claim another's origin and overwrite that peer's rows.
+            # `peer_url` is the URL we fetched and whose key we pinned.
             existing = conn.execute(
-                "SELECT origin_relay FROM listings WHERE listing_id = ?",
+                "SELECT origin_relay, federated_from FROM listings WHERE listing_id = ?",
                 (listing["listing_id"],),
             ).fetchone()
-            if existing and normalize_peer_url(existing["origin_relay"] or "") != (
-                normalize_peer_url(origin)
-            ):
+            if existing and not _peer_owns_listing(existing, peer_url):
                 rejected_foreign += 1
                 continue
             conn.execute(
                 "INSERT OR REPLACE INTO listings "
                 "(listing_id, title, description, listing_type, agent_id, payment_mode, "
-                "price_usd, module_type, origin_relay, expires_at, metadata_json, created_at) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                "price_usd, module_type, origin_relay, expires_at, metadata_json, created_at, "
+                "federated_from) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 (
                     listing["listing_id"],
                     listing.get("title", ""),
@@ -5733,6 +5770,7 @@ async def _pull_federated_listings(peer_url: str) -> int:
                     listing.get("expires_at"),
                     json.dumps(listing.get("metadata") or {}),
                     listing.get("created_at", datetime.now(UTC).isoformat()),
+                    peer_url,
                 ),
             )
         imported += 1

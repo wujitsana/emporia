@@ -70,3 +70,53 @@ def test_settle_does_not_pay_out_what_it_could_not_capture():
     assert not transfers, "the winner was paid from the platform balance"
     assert out["transfer_status"] == "capture_failed"
     assert out["transfer_id"] is None
+
+
+def test_the_stake_that_was_captured_goes_back_when_another_was_not():
+    """P87: one player's lapsed hold used to leave the other player's captured
+    stake on the platform balance, waiting for an operator to notice."""
+    refunds, transfers = [], []
+
+    async def post(url, *a, **kw):
+        if url.endswith("/pi_lapsed/capture"):
+            return _unexpected_state("canceled")
+        if url.endswith("/capture"):
+            return _resp(200, {"id": "pi_good", "status": "succeeded"})
+        if url.endswith("/refunds"):
+            refunds.append(kw)
+            return _resp(200, {"id": "re_x", "status": "succeeded"})
+        if url.endswith("/transfers"):
+            transfers.append(kw)
+        return _resp(200, {"id": "tr_x"})
+
+    with patch("httpx.AsyncClient.post", new_callable=AsyncMock, side_effect=post):
+        out = anyio.run(lambda: payments.settle(
+            "ses_pair", "winner", 10000, ["pi_good", "pi_lapsed"],
+            winner_stripe_account="acct_w", winner_stripe_account_status="active",
+            winner_stripe_account_mode="test",
+        ))
+    assert not transfers
+    assert [r["data"]["payment_intent"] for r in refunds] == ["pi_good"]
+    assert refunds[0]["headers"]["Idempotency-Key"] == (
+        "emporia:capture-failed-refund:ses_pair:pi_good"
+    )
+    assert out["refund_results"][0]["refund_id"] == "re_x"
+
+
+def test_a_clean_settle_refunds_nothing():
+    refunds = []
+
+    async def post(url, *a, **kw):
+        if url.endswith("/capture"):
+            return _resp(200, {"id": "pi_ok", "status": "succeeded"})
+        if url.endswith("/refunds"):
+            refunds.append(kw)
+        return _resp(200, {"id": "tr_x"})
+
+    with patch("httpx.AsyncClient.post", new_callable=AsyncMock, side_effect=post):
+        out = anyio.run(lambda: payments.settle(
+            "ses_ok", "winner", 5000, ["pi_ok"], winner_stripe_account="acct_w",
+            winner_stripe_account_status="active", winner_stripe_account_mode="test",
+        ))
+    assert not refunds and out["refund_results"] == []
+    assert out["transfer_status"] == "transferred"
