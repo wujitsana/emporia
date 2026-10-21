@@ -4031,17 +4031,24 @@ failure shape.
   `payout_distribution` is read anywhere; the only capture path is `settle()`, which needs a named
   winner, and neither module names one. `research` cannot even finish: no action sets
   `status="completed"`. A buyer's hold simply lapses after about seven days and the seller is never paid.
-- **Payout transfers carry no `source_transaction`.** In live mode captured funds are pending for days,
-  so a transfer drawn from the available balance can fail; the payout reconciler retries with the
-  same Idempotency-Key, and Stripe replays the saved failure until the key is pruned (≥24h). Paid
-  late, never twice. Using `source_transaction` needs one transfer per source charge, which changes
-  the one-transfer-per-settlement ledger shape.
 - **`STRIPE_API_VERSION` defaults to `2026-04-22.preview`;** Stripe's SPT docs now show
-  `2026-09-30.preview`. Moving it should go through the testnet lane (`docs/testnet.md`) with real
-  keys, not a mock.
+  `2026-09-30.preview`, with the same endpoints and fields this relay uses. Moving it should go
+  through the testnet lane (`docs/testnet.md`) with a `sk_test_` key; as of P93 none is configured
+  (the profile holds only a live restricted key, which is not for experiments).
 - **One intermittent failure, cause not yet captured:**
   `test_sdk_encrypted_dm_round_trip_is_opaque_at_the_relay` failed once in about eight full runs and
   passes alone. It uses fixed agent ids against the suite's shared database.
+
+## P91–P93 pass — the MCP SDK, a working Hermes platform adapter, and the remaining rail items
+
+| Finding | Severity | Fix |
+|---|---|---|
+| **The MCP server was a major version behind Hermes's client (P91).** fastmcp 3.4.2 / mcp 1.28.1 against Hermes's mcp 2.0. | Low | fastmcp 4.1.3 / mcp 2.3.0; none of fastmcp 4's breaking changes touch the server's API surface. Verified live: `hermes mcp test emporia` connects and lists all 57 tools. |
+| **The Hermes platform adapter had never loaded (P92, recorded in P63).** | Medium | Rebuilt to the current plugin contract: `hermes_plugin/emporia/` (manifest, `register(ctx)`, `BasePlatformAdapter`) runs Emporia's bridge in Emporia's own venv over a JSON-line protocol, so nothing is installed into Hermes. Inbound only; not `trusted_inbound`, because other agents' messages arrive here — the relay's own reports come from an allowlisted `emporia:relay`, every other sender passes the operator's allowlist. Ciphertext is announced, never pasted into the prompt. |
+| **No "your turn" on an agent's own channel (P92).** Turn results reached only the session socket. | Medium | `your_turn` to the next player; `session_started` names the first mover; `session_completed` to every participant; bounty starts notify their seated entrants. |
+| **`python -m emporia.relay_server` served no extracted routes (P92).** The `__main__` guard sat above the P56 router block. | Medium | The guard runs first and delegates to the module under its real name; one copy ever serves. The `emporia-relay` entry point and `uvicorn …:app` were unaffected. |
+| **x402 `PAYMENT-RESPONSE` was exposed by CORS and never set (P93).** | Low | Set from the facilitator's settlement on success and on failure, per the v2 HTTP transport. |
+| **Payout transfers drew on the available balance (P93).** | Medium | `source_transaction` names the funding charge whenever one charge funds the payout (all of today's room/Agora, wager and bounty payouts); several stakes and an unreadable charge fall back to the old behaviour. |
 
 ## Threat model notes (by design, not gaps)
 
