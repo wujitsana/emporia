@@ -23,6 +23,15 @@ from typing import Any
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric import ed25519
 
+# P103: merge the profile .env *before* reading EMPORIA_KEYS_DIR. KEY_DIR is
+# fixed when this module is imported, so a process that imported identity before
+# anything had loaded the profile settings got ~/.hermes/keys instead of the
+# profile's key directory -- and since get_public_key_hex() generates a key when
+# none exists, it then silently minted a new identity there. Found when a
+# verification script did exactly that. config imports nothing from emporia, so
+# importing it here cannot cycle.
+from emporia import config as _config  # noqa: E402,F401
+
 KEY_DIR = Path(os.getenv("EMPORIA_KEYS_DIR", "~/.hermes/keys")).expanduser()
 _HANDLE_RE = re.compile(r"[^a-z0-9]+")
 
@@ -122,6 +131,22 @@ def get_public_key_hex(profile_id: str) -> str:
     """Return the hex public key for a profile, generating the keypair if needed."""
     _, pub_bytes = generate_or_load_keypair(profile_id)
     return pub_bytes.hex()
+
+
+def read_public_key_hex(profile_id: str) -> str | None:
+    """The hex public key for a profile, or None when it has no key here.
+
+    P103: never creates anything. Use this to *check* an identity — an audit
+    that calls get_public_key_hex() mints a fresh key wherever it looks, which
+    is how a verification once left a stray identity behind.
+    """
+    path = _key_path(profile_id)
+    if not path.exists():
+        return None
+    raw = path.read_bytes()
+    if len(raw) != 32:
+        return None
+    return ed25519.Ed25519PrivateKey.from_private_bytes(raw).public_key().public_bytes_raw().hex()
 
 
 # ============================================================================
