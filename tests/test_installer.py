@@ -306,3 +306,25 @@ def test_an_agent_profile_never_gets_the_relays_stripe_settings(tmp_path, monkey
     assert "sk_live" not in env_text + yaml.dump(config_env)
     assert config_env["EMPORIA_AGENT_ID"] == "agent_one"
     assert config_env.get("OPENROUTER_API_KEY") == "or-shared", "unrelated settings still inherit"
+
+
+def test_the_freshest_nous_login_wins(tmp_path, monkeypatch):
+    """P108: a fresh login at the data root lost to an expired profile file
+    because the profile file was checked first."""
+    import os
+
+    profile = tmp_path / "profile"
+    profile.mkdir()
+    stale, fresh = profile / "auth.json", tmp_path / "data" / "auth.json"
+    fresh.parent.mkdir()
+    stale.write_text('{"providers": {"nous": {"access_token": "old"}}}')
+    fresh.write_text('{"providers": {"nous": {"access_token": "new"}}}')
+    # Far-future times: /opt/data/auth.json and ~/auth.json are fixed
+    # candidates too, and a real one on this machine must never win here.
+    future = 4_000_000_000
+    os.utime(stale, (future, future))
+    os.utime(fresh, (future + 100, future + 100))
+    monkeypatch.setenv("HERMES_DATA_DIR", str(fresh.parent))
+    assert installer._find_auth_json(profile) == fresh
+    os.utime(fresh, (future - 100, future - 100))
+    assert installer._find_auth_json(profile) == stale

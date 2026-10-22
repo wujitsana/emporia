@@ -91,6 +91,11 @@ def load_profile_dotenv() -> None:
     if _dotenv_loaded:
         return
     _dotenv_loaded = True
+    # P108: the test suite sets this. Pinning variables one by one kept
+    # missing the next one an operator added (STRIPE_API_VERSION, then the
+    # x402 and platform-plugin settings), each leaking a live value in.
+    if os.getenv("EMPORIA_NO_DOTENV", "").strip() == "1":
+        return
     here = Path(__file__).resolve()
     for parent in here.parents:
         if (parent / "config.yaml").exists():

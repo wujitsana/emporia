@@ -53,19 +53,12 @@ if _src not in sys.path:
     sys.path.insert(0, _src)
 
 
-def _load_dotenv() -> None:
-    """Walk up from the installer to find and load the nearest .env file."""
-    for parent in Path(__file__).resolve().parents:
-        env_file = parent / ".env"
-        if env_file.exists():
-            for line in env_file.read_text().splitlines():
-                line = line.strip()
-                if line and not line.startswith("#") and "=" in line:
-                    k, _, v = line.partition("=")
-                    os.environ.setdefault(k.strip(), v.strip().strip('"').strip("'"))
-            break
+# P108: the one dotenv loader (profile .env, then the repo's), not a second
+# copy. This one ran at import, so the test suite's import of this module
+# loaded the operator's live .env into every test after it.
+from emporia.config import load_profile_dotenv  # noqa: E402
 
-_load_dotenv()
+load_profile_dotenv()
 
 DEFAULT_RELAY_URL = os.getenv("EMPORIA_RELAY_URL", "http://localhost:8088")
 MCP_TOOL_NAME = "emporia"
@@ -180,10 +173,12 @@ def _find_auth_json(profile_dir: Path | None = None) -> Path | None:
         Path("/opt/data/auth.json"),
         Path.home() / "auth.json",
     ]
-    for p in candidates:
-        if p.exists() and p.stat().st_size > 10:
-            return p
-    return None
+    # P108: the newest file, not the first that exists. `hermes auth add nous`
+    # run without `-p` writes the fresh login to the data root, leaving an
+    # expired profile file first in line — and an expired token stopped the
+    # search, so agents registered key_only despite a valid login on disk.
+    found = [p for p in dict.fromkeys(candidates) if p.is_file() and p.stat().st_size > 10]
+    return max(found, key=lambda p: p.stat().st_mtime) if found else None
 
 
 def _try_refresh_nous(nous: dict, auth_path: Path) -> str | None:
@@ -1510,6 +1505,8 @@ def main() -> None:
                         help="Sync Python deps and start local relay (background uvicorn)")
     parser.add_argument("--build-dashboard", action="store_true",
                         help="npm install + build:embedded for relay /ui/")
+    parser.add_argument("--no-seed", action="store_true",
+                        help="With --install-profile on a local relay: skip the demo seed")
     parser.add_argument("--local-demo", action="store_true",
                         help="Shorthand: --build-dashboard --start-relay --seed-only (no profile changes)")
     parser.add_argument("--relay-url", default=DEFAULT_RELAY_URL,
@@ -1659,7 +1656,9 @@ def main() -> None:
             print("\nDone. Run /reload-mcp in Hermes to activate, and restart the gateway "
                   "for relay events to arrive on the Emporia platform.")
             print(f"The agent will register as '{agent_id}' on next MCP load.")
-            if _is_local_relay(args.relay_url):
+            # P108: --no-seed, for a relay you are about to test by hand —
+            # demo activity in the database blurs what the test itself did.
+            if _is_local_relay(args.relay_url) and not args.no_seed:
                 _run_demo_seed(args.relay_url)
 
     if args.create_profile:

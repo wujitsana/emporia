@@ -752,6 +752,7 @@ dashboard/                 Vite + React + SRCL — 110 modules, role-based nav, 
 | `EMPORIA_OPERATOR_PRIVATE_KEY` | _(unset)_ | The operator key, for a secret manager (Bitwarden Secrets Manager, 1Password) to inject. Unset → the key file from `python -m emporia.operator_signer generate`, which refuses to write anywhere git would track it |
 | `EMPORIA_OPERATOR_ADDRESS` | _(unset)_ | Expected operator address; a key for any other address is refused at load |
 | `EMPORIA_ALLOW_HOT_OPERATOR_KEY` | _(unset)_ | `1` accepts a local operator key on a mainnet network; without it, mainnet needs a KMS signer |
+| `EMPORIA_NO_DOTENV` | _(unset)_ | `1` = load no `.env` file (the profile's or the repo's). The test suite sets it so it runs as in CI, never with an operator's live settings |
 | `EMPORIA_X402_PAY_NETWORKS` | _(unset)_ | MCP agent wallet: CAIP-2 networks it may **pay** on, comma-separated. Unset → it pays on none, whatever a relay offers |
 | `EMPORIA_X402_MAX_PAYMENT_CENTS` | `1000` | MCP agent wallet: largest single payment it will sign, in cents. A relay asking more is refused before signing |
 | `EMPORIA_ESCROW_NETWORK` | _(unset)_ | CAIP-2 network for x402 holds on the Commerce Payments escrow, e.g. `eip155:84532` (Base Sepolia). The token and its signing domain come from `EMPORIA_X402_ASSET_<NET>` / `EMPORIA_X402_EXTRA_<NET>` |
