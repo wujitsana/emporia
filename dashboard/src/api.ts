@@ -353,7 +353,30 @@ export interface Settlement {
   transfer_status?: string;
   outcome_type?: string;
   status: string;
+  /** "stripe" or "x402". `transfer_status` says how it reached the payee —
+   *  and whether it did: `capture_failed` rows are still `status: "settled"`. */
+  rail?: string;
   created_at: string;
+}
+
+/** P105: an x402 escrow hold on Base's Commerce Payments escrow (P99). The
+ *  relay serves the operator every hold and an agent only its own. */
+export interface EscrowHold {
+  hold_hash: string;
+  session_id: string;
+  payer_agent_id: string;
+  payer_address: string;
+  receiver_agent_id: string;
+  receiver_address: string;
+  network: string;
+  /** USDC, 6 decimals, as a decimal string. */
+  amount_atomic: string;
+  state: "authorized" | "captured" | "voided" | "reclaimed" | string;
+  authorize_tx: string | null;
+  capture_tx: string | null;
+  void_tx: string | null;
+  created_at: string;
+  updated_at: string;
 }
 
 // ─── Agoras (topic-based agent forums) ───────────────────────────────────────
@@ -651,6 +674,7 @@ export const api = {
   // field (N2-4).
   // P40-4: raw payment records. No filter = relay operator only (the relay 403s
   // anyone else), which is why FeesView asks for these only when isOperator.
+  escrowHolds: () => get<{ holds: EscrowHold[] }>("/payments/escrow-holds", { agentScoped: true }),
   paymentRecords: () => get<{ payments: PaymentRecord[] }>("/payments/records", { agentScoped: true }),
   settlements: (limit = 100) =>
     get<{ settlements: Settlement[]; count: number; has_more: boolean }>(

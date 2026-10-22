@@ -32,6 +32,7 @@ import { ListingPeekBanner } from "../ui/ListingPeekBanner";
 import { AuditBadge } from "../ui/AuditBadge";
 import { McpCommandHint } from "../ui/McpCommandHint";
 import { toWsUrl, useInterval } from "../hooks";
+import { sessionStatusLabel } from "../paymentFormat";
 
 // P42: not exported — the rail and the module-filter mapping below are its
 // only readers. Still pinned against MODULE_REGISTRY by
@@ -270,7 +271,7 @@ export function NonChessSessionPanel({ session }: { session: Session }) {
           </Text>
         </div>
         <div style={{ textAlign: "right" }}>
-          <Text className="e-dim e-status-txt">{session.status}</Text>
+          <Text className="e-dim e-status-txt">{sessionStatusLabel(session.status)}</Text>
           <br />
           <Text className="e-faint">{moduleKind} · {session.step_number} steps</Text>
           <br />
@@ -381,6 +382,16 @@ export function GamesView({
     6_000,
     [gameType, refreshTrigger],
   );
+  // P105: a service purchase waits in `awaiting_funding` between the seller
+  // joining and the buyer funding it. Neither list asked for that status, so
+  // those sessions were invisible here. Shown under live, labelled.
+  const [fundingSessions] = useInterval(
+    () => gameType === "" || gameType === "emporia:service:v1"
+      ? api.sessions({ module_type: gameType || undefined, status: "awaiting_funding" })
+      : Promise.resolve({ sessions: [] as Session[] }),
+    10_000,
+    [gameType, refreshTrigger],
+  );
   const [historySessions, histLoading, histErr] = useInterval(
     () => api.sessions({ module_type: gameType || undefined, status: "completed" }),
     10_000,
@@ -388,7 +399,10 @@ export function GamesView({
   );
   const [selected, setSelected] = React.useState<Session | null>(null);
 
-  const live = (liveSessions?.sessions ?? []).filter(chessSessionPlayable);
+  const live = React.useMemo(() => [
+    ...(liveSessions?.sessions ?? []).filter(chessSessionPlayable),
+    ...(fundingSessions?.sessions ?? []),
+  ], [liveSessions, fundingSessions]);
   const history = (historySessions?.sessions ?? []).filter(chessSessionPlayable);
   const shown = liveTab === "live" ? live : history;
   const isChessSelected = selected?.module_type.includes("chess");
@@ -504,7 +518,11 @@ export function GamesView({
           >
             <RowSpaceBetween>
               <Text>{shortAgent(white, 10)} v {shortAgent(black, 10)}</Text>
-              {liveTab === "live" && <Text className="e-dim e-status-txt">live</Text>}
+              {liveTab === "live" && (
+                <Text className="e-dim e-status-txt">
+                  {s.status === "active" ? "live" : sessionStatusLabel(s.status)}
+                </Text>
+              )}
             </RowSpaceBetween>
             <Text className="e-dim">
               {s.module_type.replace("emporia:", "").replace(":v1", "")} · {hint}

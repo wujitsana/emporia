@@ -5738,6 +5738,41 @@ async def list_payment_records(
     return {"payments": payments}
 
 
+_ESCROW_HOLD_PUBLIC_COLUMNS = (
+    "hold_hash, session_id, payer_agent_id, payer_address, receiver_agent_id, "
+    "receiver_address, network, amount_atomic, state, authorize_tx, capture_tx, void_tx, "
+    "created_at, updated_at"
+)
+
+
+@app.get("/payments/escrow-holds")
+async def list_escrow_holds(request: Request):
+    """x402 escrow holds (P99), for the dashboard (P105). Read-only.
+
+    The relay operator sees every hold; any other authenticated agent sees the
+    holds it paid or is paid by, and nothing else. `payment_info_json` stays
+    internal — the transactions are the public record, and each is linked.
+    """
+    caller = _dashboard_agent_id(request)
+    if not caller:
+        raise HTTPException(401, "Authentication required")
+    owner = _relay_operator_id()
+    with DB_LOCK, get_db() as conn:
+        if owner and caller == owner:
+            rows = conn.execute(
+                f"SELECT {_ESCROW_HOLD_PUBLIC_COLUMNS} FROM escrow_holds "
+                "ORDER BY created_at DESC LIMIT 200"
+            ).fetchall()
+        else:
+            rows = conn.execute(
+                f"SELECT {_ESCROW_HOLD_PUBLIC_COLUMNS} FROM escrow_holds "
+                "WHERE payer_agent_id = ? OR receiver_agent_id = ? "
+                "ORDER BY created_at DESC LIMIT 200",
+                (caller, caller),
+            ).fetchall()
+    return {"holds": [dict(r) for r in rows]}
+
+
 # Listings and Events moved to emporia/routes/{listings,events}.py (P56).
 # The routers are included at the bottom of this file.
 

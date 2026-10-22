@@ -265,3 +265,21 @@ def test_the_payer_will_not_sign_an_unexpected_amount_fee_or_network():
     with pytest.raises(escrow.EscrowError, match="network"):
         escrow.sign_offer(_plain_offer(), PAYER.key.hex(), expected_amount=AMOUNT,
                           allowed_networks=["eip155:8453"])
+
+
+def test_escrow_holds_are_visible_to_their_parties_only(client, chain):
+    """P105: the dashboard's read of escrow holds — each party sees the hold,
+    an outsider sees none, an anonymous caller is refused, and the signed
+    PaymentInfo is never served."""
+    sid, buyer, seller = _purchase(client)
+    header = escrow.sign_offer(_offer(client, sid, buyer), PAYER.key.hex(), expected_amount=AMOUNT)
+    assert _fund(client, sid, buyer, header).status_code == 200
+    outsider = "eo_" + uuid.uuid4().hex[:8]
+    _register_keyed(client, outsider)
+    for who in (buyer, seller):
+        holds = client.get("/payments/escrow-holds", headers=_hdr(who)).json()["holds"]
+        [hold] = [h for h in holds if h["session_id"] == sid]
+        assert hold["state"] == "authorized" and hold["amount_atomic"] == str(AMOUNT)
+        assert "payment_info_json" not in hold
+    assert client.get("/payments/escrow-holds", headers=_hdr(outsider)).json()["holds"] == []
+    assert TestClient(app).get("/payments/escrow-holds").status_code == 401

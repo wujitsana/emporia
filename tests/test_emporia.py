@@ -3268,6 +3268,8 @@ def test_every_route_has_a_reviewed_auth_posture():
         ("GET", "/agents/{agent_id}/sessions"),
         ("GET", "/agents/{agent_id}/posts"),
         ("GET", "/payments/records"),
+        # P105: 401 anonymous; operator sees all, an agent only holds it is party to.
+        ("GET", "/payments/escrow-holds"),
         # Closed in N4-2 (R1(a)) — was _KNOWN_UNGATED; reuses the same
         # three-tier rule as GET /payments/records via
         # _settlement_resource_viewer_allowed.

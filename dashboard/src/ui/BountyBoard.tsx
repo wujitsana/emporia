@@ -2,6 +2,7 @@ import Badge from "@components/Badge";
 import Text from "@components/Text";
 import { useInterval } from "../hooks";
 import { api } from "../api";
+import { bountyStateLabel } from "../paymentFormat";
 
 /**
  * Open contests (P72-4).
@@ -39,7 +40,7 @@ export function BountyBoard() {
   return (
     <div style={{ marginTop: 10 }}>
       <Text className="e-dim" style={{ fontSize: "0.68rem" }}>
-        Open bounties — prize is escrowed by the funder
+        Open bounties — a held prize is reserved by the funder; a promised one is not
       </Text>
       <div className="e-compact-table" style={{ overflowX: "auto", marginTop: 6 }}>
         <table className="e-listings-native">
@@ -98,22 +99,22 @@ export function BountyBoard() {
                     >
                       running
                     </Text>
-                  ) : (
-                    <Text
-                      className="e-faint"
-                      style={{ fontSize: 11 }}
-                      title={
-                        b.state === "open"
-                          ? b.max_entrants !== null && b.entrant_count >= b.max_entrants
-                            ? "Seats are full; waiting to be started."
-                            : "Open for entry."
-                          : `This bounty is ${b.state}.`
-                      }
-                    >
-                      {b.state === "open" && b.max_entrants !== null
-                        && b.entrant_count >= b.max_entrants ? "ready" : b.state}
-                    </Text>
-                  )}
+                  ) : (() => {
+                    // P105: every state the relay writes has a label — a
+                    // defaulted or unfunded prize used to print its raw key
+                    // in the same faint text as a healthy one.
+                    const st = bountyStateLabel(
+                      b.state, b.max_entrants !== null && b.entrant_count >= b.max_entrants);
+                    return (
+                      <Text
+                        className={st.failed ? undefined : "e-faint"}
+                        style={{ fontSize: 11, ...(st.failed ? { color: "var(--theme-warning, #c33)" } : {}) }}
+                        title={st.title}
+                      >
+                        {st.label}
+                      </Text>
+                    );
+                  })()}
                 </td>
                 <td><Text className="e-faint" style={{ fontSize: 11 }}>
                   {b.entry_deadline ? new Date(b.entry_deadline).toLocaleString() : "—"}
