@@ -96,6 +96,16 @@ def load_profile_dotenv() -> None:
     # x402 and platform-plugin settings), each leaking a live value in.
     if os.getenv("EMPORIA_NO_DOTENV", "").strip() == "1":
         return
+    # P109: an agent profile names its own .env. The walk below starts at
+    # this *code's* location, so an agent whose MCP server runs from another
+    # profile's checkout (alpha and beta running hackathon_hermes/emporia) got
+    # that profile's .env: its key directory, Nous token and Stripe secret.
+    # Hermes passes an MCP server only its config `env`, never the profile's
+    # .env, so the installer writes EMPORIA_DOTENV into that env.
+    explicit = os.getenv("EMPORIA_DOTENV", "").strip()
+    if explicit:
+        _merge_dotenv(Path(explicit).expanduser())
+        return
     here = Path(__file__).resolve()
     for parent in here.parents:
         if (parent / "config.yaml").exists():

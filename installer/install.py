@@ -659,6 +659,8 @@ def _mcp_entry(relay_url: str, agent_id: str = "", display_name: str = "", profi
         env["EMPORIA_DISPLAY_NAME"] = display_name
     if profile_dir:
         env.update(_profile_runtime_env(profile_dir))
+        # P109: this profile's own .env, not the one beside the code.
+        env["EMPORIA_DOTENV"] = str(profile_dir / ".env")
     return {
         "command": _venv_python(),
         "args": ["-m", "emporia.mcp_server"],
@@ -926,6 +928,7 @@ def install_into_profile(
     env_lines, c2 = _set_env_line(env_lines, "EMPORIA_RELAY_URL", relay_url)
     env_lines, c4 = _set_env_line(env_lines, "EMPORIA_DB_PATH", db_path)
     env_lines, c5 = _set_env_line(env_lines, "EMPORIA_KEYS_DIR", runtime_env["EMPORIA_KEYS_DIR"])
+    env_lines, _ = _set_env_line(env_lines, "EMPORIA_DOTENV", str(profile_dir / ".env"))  # P109
     if _is_local_relay(relay_url):
         # Single-operator co-located deployment — the case EMPORIA_TRUST_LOCAL_HEADER_AUTH
         # exists for. Without it, the embedded dashboard's baked-in VITE_AGENT_ID header auth
@@ -1006,6 +1009,8 @@ def create_profile(
     dry_run: bool = False,
     update_dashboard: bool = False,
     dev_skills: bool = False,
+    x402_pay_networks: str = "",
+    x402_max_payment_cents: int | None = None,
 ) -> None:
     """Create a new Hermes agent profile with emporia pre-wired.
 
@@ -1070,7 +1075,10 @@ def create_profile(
             print(f"  + model: {model_block.get('default', model_block.get('provider', '?'))}")
 
     config["mcp_servers"] = {
-        MCP_TOOL_NAME: _mcp_entry(relay_url, agent_id=name),
+        # P109: profile_dir, so the entry carries this profile's key dir,
+        # database and .env. Without it the MCP server fell back to the .env
+        # beside the code — another profile's.
+        MCP_TOOL_NAME: _mcp_entry(relay_url, agent_id=name, profile_dir=profile_dir),
     }
     config["toolsets"] = ["hermes-cli"]
     config["agent"] = {"max_turns": 150}
@@ -1121,7 +1129,16 @@ def create_profile(
         f"EMPORIA_DB_PATH={runtime_env['EMPORIA_DB_PATH']}",
         f"EMPORIA_KEYS_DIR={runtime_env['EMPORIA_KEYS_DIR']}",
         f"HERMES_AGENT_ID={name}",
+        # P109: for the platform bridge, which inherits the gateway's env.
+        f"EMPORIA_DOTENV={env_path}",
     ]
+    # P109: the agent wallet's spending policy (agent_wallet.py). Written here
+    # because this function rewrites the .env whole — a hand-added line would
+    # not survive the next run.
+    if x402_pay_networks:
+        safe_env_lines.append(f"EMPORIA_X402_PAY_NETWORKS={x402_pay_networks}")
+    if x402_max_payment_cents is not None:
+        safe_env_lines.append(f"EMPORIA_X402_MAX_PAYMENT_CENTS={x402_max_payment_cents}")
     if max_budget_cents is not None and max_budget_cents > 0:
         safe_env_lines.append(f"EMPORIA_MAX_TOTAL_SPEND_CENTS={max_budget_cents}")
     if nous_token:
@@ -1505,6 +1522,11 @@ def main() -> None:
                         help="Sync Python deps and start local relay (background uvicorn)")
     parser.add_argument("--build-dashboard", action="store_true",
                         help="npm install + build:embedded for relay /ui/")
+    parser.add_argument("--x402-pay-networks", default="",
+                        help="With --create-profile: CAIP-2 networks the agent's x402 wallet may "
+                             "pay on, e.g. eip155:84532 (unset = pays on none)")
+    parser.add_argument("--x402-max-payment-cents", type=int, default=None,
+                        help="With --create-profile: largest single x402 payment it signs")
     parser.add_argument("--no-seed", action="store_true",
                         help="With --install-profile on a local relay: skip the demo seed")
     parser.add_argument("--local-demo", action="store_true",
@@ -1675,6 +1697,8 @@ def main() -> None:
             name=args.create_profile,
             relay_url=args.relay_url,
             current_profile_dir=current_profile_dir,
+            x402_pay_networks=args.x402_pay_networks,
+            x402_max_payment_cents=args.x402_max_payment_cents,
             nvidia_api_key=nvidia_key,
             max_budget_cents=args.max_budget_cents,
             nous_token=nous_token,

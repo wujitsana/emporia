@@ -328,3 +328,63 @@ def test_the_freshest_nous_login_wins(tmp_path, monkeypatch):
     assert installer._find_auth_json(profile) == fresh
     os.utime(fresh, (future - 100, future - 100))
     assert installer._find_auth_json(profile) == stale
+
+
+def test_each_agent_profile_shares_the_relay_but_owns_its_identity(tmp_path, monkeypatch):
+    """P109: one relay, separate identities. create_profile() built the MCP
+    entry without the profile dir, so it carried no key dir or .env; Hermes
+    gives an MCP server only that `env`, and the server then loaded the .env
+    beside its code — the relay profile's keys, Nous token and Stripe secret."""
+    import os
+    from unittest.mock import patch
+
+    import yaml
+
+    relay = tmp_path / "profiles" / "relay_profile"
+    relay.mkdir(parents=True)
+    (relay / "config.yaml").write_text("{}")
+    monkeypatch.setattr(installer, "install_platform_plugin", lambda *a, **k: None)
+    monkeypatch.setattr(installer, "_install_skill_link", lambda *a, **k: None)
+    monkeypatch.setattr(installer, "_hermes_profile_create", lambda name: None)
+
+    entries = {}
+    with patch.dict(os.environ):
+        for name in ("alpha", "beta"):
+            installer.create_profile(name=name, relay_url="http://127.0.0.1:8088",
+                                     current_profile_dir=relay,
+                                     x402_pay_networks="eip155:84532", x402_max_payment_cents=500)
+            prof = tmp_path / "profiles" / name
+            entries[name] = (yaml.safe_load((prof / "config.yaml").read_text())
+                             ["mcp_servers"]["emporia"]["env"], (prof / ".env").read_text())
+
+    for name, (mcp_env, dotenv) in entries.items():
+        prof = tmp_path / "profiles" / name
+        assert mcp_env["EMPORIA_RELAY_URL"] == "http://127.0.0.1:8088"
+        assert mcp_env["EMPORIA_AGENT_ID"] == name
+        assert mcp_env["EMPORIA_KEYS_DIR"] == str(prof / "home" / ".hermes" / "keys")
+        assert mcp_env["EMPORIA_DOTENV"] == str(prof / ".env")
+        assert f"EMPORIA_DOTENV={prof / '.env'}" in dotenv
+        assert "EMPORIA_X402_PAY_NETWORKS=eip155:84532" in dotenv
+        assert "EMPORIA_X402_MAX_PAYMENT_CENTS=500" in dotenv
+        assert (prof / "home" / ".hermes" / "keys" / f"{name}.priv").exists()
+    assert entries["alpha"][0]["EMPORIA_KEYS_DIR"] != entries["beta"][0]["EMPORIA_KEYS_DIR"]
+
+
+def test_emporia_dotenv_names_the_only_env_file_loaded(tmp_path, monkeypatch):
+    """P109: with EMPORIA_DOTENV set, that file and nothing else — not the
+    .env beside the code, which belongs to whichever profile holds the checkout."""
+    import os
+    from unittest.mock import patch
+
+    from emporia import config
+
+    own = tmp_path / "agent.env"
+    own.write_text("P109_FROM_OWN=yes\n")
+    beside_code = []
+    monkeypatch.setattr(config, "_merge_dotenv",
+                        lambda p, _orig=config._merge_dotenv: (beside_code.append(p), _orig(p)))
+    with patch.dict(os.environ, {"EMPORIA_DOTENV": str(own), "EMPORIA_NO_DOTENV": ""}):
+        monkeypatch.setattr(config, "_dotenv_loaded", False)
+        config.load_profile_dotenv()
+        assert os.environ.get("P109_FROM_OWN") == "yes"
+    assert beside_code == [own]
