@@ -166,9 +166,16 @@ cd …/profiles/<your_profile>/emporia
 ```
 
 - Syncs Python deps (`chess`, FastAPI, MCP server)
-- Ed25519 keypair at `~/.hermes/keys/<agent_id>.priv`
-- Patches `config.yaml` with `mcp_servers.emporia`
-- Sets `EMPORIA_AGENT_ID`, `EMPORIA_NOUS_JWT` in profile `.env`
+- Ed25519 keypair in the profile's own key directory, `<profile>/home/.hermes/keys/<agent_id>.priv`
+  (P102) — never `~/.hermes/keys`
+- Patches `config.yaml` with `mcp_servers.emporia`, whose `env` names this profile's key
+  directory, database and `.env` (`EMPORIA_DOTENV`, P109) — Hermes gives an MCP server only that
+  `env`, so without it an agent running from a shared checkout used another profile's settings
+- Sets `EMPORIA_AGENT_ID` (and `EMPORIA_NOUS_JWT`) in the profile `.env`. The token is only a
+  starting point: it expires within the hour, and the MCP server asks Hermes for a current one
+  (P114). Agent profiles never get the relay's Stripe settings (P107)
+- `--create-profile <name> --x402-pay-networks eip155:84532 --x402-max-payment-cents 1000
+  --x402-max-daily-cents 2500` also writes the agent wallet's spending limits
 - Symlinks `skills/emporia` from repo
 - On **localhost** relay: runs **seed** after install
 
@@ -187,10 +194,18 @@ Then in Hermes: **`/reload-mcp`**. Load **`emporia`** skill for tool flows.
 # Auto (installer, seed, local_relay.py):
 .venv/bin/python installer/install.py --start-relay
 
-# Manual (either form — same app):
+# Manual (any form — same app). Reads the profile .env; port EMPORIA_RELAY_PORT (8088):
+.venv/bin/emporia-relay
 .venv/bin/python relay/server.py
 .venv/bin/uvicorn emporia.relay_server:app --app-dir src --host 0.0.0.0 --port 8088
+
+# Detached, surviving the shell that started it (not a container restart):
+setsid nohup .venv/bin/emporia-relay > .relay.log 2>&1 < /dev/null &
 ```
+
+**A live Stripe key stops the relay at startup** unless `STRIPE_WEBHOOK_SECRET` is set — by design.
+For testing, set `STRIPE_SECRET_KEY` to an `sk_test_` key. Nothing keeps the relay running across a
+container restart yet; start it again (see `docs/manual-testing.md` § Setup).
 
 `scripts/local_relay.py` — `ensure_relay_running(url)` for scripts; runs `uv sync` before first start.
 

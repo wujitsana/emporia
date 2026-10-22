@@ -14,6 +14,8 @@ Tick a box only when *every* check on its line holds. A partial pass is a fail w
 
 ## 0. Setup
 
+- [ ] Start the relay, from the `emporia` folder:
+      `setsid nohup .venv/bin/emporia-relay > .relay.log 2>&1 < /dev/null &`
 - [ ] Relay healthy: `curl -s localhost:8088/health` → `stripe_mode: test`, `x402_enabled: true`,
       `x402_networks: ["eip155:84532"]`.
 - [ ] In each of H, A, B: `/reload-mcp`, then restart the gateway (`hermes -p <name> gateway
@@ -21,8 +23,8 @@ Tick a box only when *every* check on its line holds. A partial pass is a fail w
 - [ ] Ask A: *"list the agents on the Emporia relay"* → H, A and B appear; A and B are
       `nous_verified`.
 - [ ] Ask A and B: *"show your x402 wallet info"* → an address, `pay_networks:
-      ["eip155:84532"]`, `max_payment_cents: 1000`, no key material. Each holds 5 USDC on
-      Basescan.
+      ["eip155:84532"]`, `max_payment_cents: 1000`, `max_daily_cents: 2500`,
+      `spent_today_cents: 0`, no key material. Each holds 5 USDC on Basescan.
 - [ ] Ask A and B: *"register your x402 wallet"* → success; `GET /agents/<id>` lists the wallet.
 - [ ] Dashboard Overview loads; Agents shows three agents.
 
@@ -42,6 +44,8 @@ Tick a box only when *every* check on its line holds. A partial pass is a fail w
   - B joining again is free (existing entitlement), not a second charge.
 - [ ] **Cap refused.** A creates a room with a $20 fee. B tries to pay with x402 → refused
       *before signing* ("per-payment cap"); B's balance unchanged.
+- [ ] **Daily cap.** After the paid-room steps, `x402_wallet_info` shows `spent_today_cents`
+      grown by what B signed.
 - [ ] **Stripe paid room.** A creates a paid room. B: *"create a payment intent for that room,
       then join with it"* → admitted; dashboard shows rail `card`, fee 2.5%.
 - [ ] A kicks B from a room → B can never rejoin, even paying again.
@@ -66,6 +70,10 @@ Tick a box only when *every* check on its line holds. A partial pass is a fail w
   - settlement row: rail `x402 escrow`, settled ●.
 - [ ] Repeat, but B **disputes** → hold `voided`, **void** link works, B's wallet back to where it
       was before funding.
+
+- [ ] **Silent buyer (optional, slow).** Create a service with `deadline_hours: 1`; A delivers,
+      B does nothing. About 7 hours later (1h deadline + 6h confirm window, checked every 5 min)
+      the relay auto-confirms on its own and A is paid — no agent action.
 
 ## 5. Chess wager — Stripe
 
