@@ -18,6 +18,10 @@ a counterparty, not a trusted party:
   1000, $10). A relay that asks for more is refused before signing.
 * **Escrow offers** additionally go through `escrow.sign_offer`'s checks (the
   amount the session states, a fee cap).
+* **Daily total** (P115) — at most `EMPORIA_X402_MAX_DAILY_CENTS` (default
+  5000, $50) signed in any 24 hours. The per-payment cap alone let a relay ask
+  for $10 again and again. Counted when signed, not when settled: a signed
+  authorization is money the holder can collect.
 
     python -m emporia.agent_wallet generate --agent-id <id>
     python -m emporia.agent_wallet address --agent-id <id>
@@ -25,14 +29,20 @@ a counterparty, not a trusted party:
 
 from __future__ import annotations
 
+import json
 import os
 import sys
+import threading
+import time
 from pathlib import Path
 
 from emporia import identity
 from emporia.operator_signer import _git_ignores, _git_work_tree
 
 DEFAULT_MAX_PAYMENT_CENTS = 1_000
+DEFAULT_MAX_DAILY_CENTS = 5_000
+_DAY_S = 24 * 3600
+_LEDGER_LOCK = threading.Lock()
 _USDC_ATOMIC_PER_CENT = 10_000      # 6 decimals
 
 
@@ -98,6 +108,48 @@ def max_payment_cents() -> int:
     return int(raw) if raw else DEFAULT_MAX_PAYMENT_CENTS
 
 
+def max_daily_cents() -> int:
+    raw = os.getenv("EMPORIA_X402_MAX_DAILY_CENTS", "").strip()
+    return int(raw) if raw else DEFAULT_MAX_DAILY_CENTS
+
+
+def spent_today_atomic(agent_id: str) -> int:
+    """USDC (atomic) this agent has signed for in the last 24 hours."""
+    try:
+        entries = json.loads(_ledger_path(agent_id).read_text())
+    except (OSError, ValueError):
+        return 0
+    now = time.time()
+    return sum(a for t, a in entries if now - t < _DAY_S)
+
+
+def _ledger_path(agent_id: str) -> Path:
+    path = wallet_path(agent_id)
+    return path.with_name(path.name.removesuffix(".secp256k1") + ".spend.json")
+
+
+def _charge_daily(agent_id: str, amount_atomic: int) -> None:
+    """Refuse if this payment would take the last 24 hours' signed total past
+    the daily cap; otherwise record it. Called just before signing."""
+    cap = max_daily_cents() * _USDC_ATOMIC_PER_CENT
+    path = _ledger_path(agent_id)
+    with _LEDGER_LOCK:
+        try:
+            entries = json.loads(path.read_text()) if path.exists() else []
+        except (OSError, ValueError):
+            entries = []
+        now = time.time()
+        entries = [[t, a] for t, a in entries if now - t < _DAY_S]
+        spent = sum(a for _, a in entries)
+        if spent + amount_atomic > cap:
+            raise AgentWalletError(
+                f"this payment ({amount_atomic / 1e6:.2f} USDC) would take today's signed total "
+                f"past this agent's {cap / 1e6:.2f} USDC daily cap "
+                f"({spent / 1e6:.2f} already; EMPORIA_X402_MAX_DAILY_CENTS)")
+        entries.append([now, amount_atomic])
+        identity._write_secret_atomically(path, json.dumps(entries).encode())
+
+
 def sign_exact(agent_id: str, body: dict) -> str:
     """A relay's x402 402 body in, the PAYMENT-SIGNATURE value out — after the
     network allowlist and the per-payment cap."""
@@ -112,8 +164,10 @@ def sign_exact(agent_id: str, body: dict) -> str:
         raise AgentWalletError(
             f"the relay asks for {amount / 1e6:.2f} USDC, above this agent's "
             f"{cap / 1e6:.2f} USDC per-payment cap (EMPORIA_X402_MAX_PAYMENT_CENTS)")
+    key = load_key(agent_id)
+    _charge_daily(agent_id, amount)
     return x402_payer.payment_signature_header(x402_payer.build_payment_payload(
-        requirement, load_key(agent_id), resource=challenge.get("resource")))
+        requirement, key, resource=challenge.get("resource")))
 
 
 def sign_escrow(agent_id: str, offer: dict, *, expected_amount: int) -> str:
@@ -124,8 +178,10 @@ def sign_escrow(agent_id: str, offer: dict, *, expected_amount: int) -> str:
     if expected_amount > max_payment_cents() * _USDC_ATOMIC_PER_CENT:
         raise AgentWalletError(
             f"the hold is {expected_amount / 1e6:.2f} USDC, above this agent's per-payment cap")
-    return escrow.sign_offer(offer, load_key(agent_id), expected_amount=expected_amount,
-                             allowed_networks=allowed_networks())
+    key, networks = load_key(agent_id), allowed_networks()
+    _charge_daily(agent_id, expected_amount)
+    return escrow.sign_offer(offer, key, expected_amount=expected_amount,
+                             allowed_networks=networks)
 
 
 def main(argv: list[str] | None = None) -> int:

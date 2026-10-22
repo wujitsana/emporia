@@ -179,6 +179,7 @@ def test_mcp_x402_wallet_info_returns_no_key_material(wallet_env):
     addr = agent_wallet.generate("info_agent")
     info = mcp_server.x402_wallet_info(agent_id="info_agent")
     assert info == {"agent_id": "info_agent", "max_payment_cents": 500,
+                    "max_daily_cents": 5000, "spent_today_cents": 0,
                     "address": addr, "pay_networks": [NET]}
 
 
@@ -209,3 +210,18 @@ def test_mcp_fund_session_signs_the_escrow_offer_for_the_sessions_stake(wallet_e
     assert seen == {"aid": "buyer", "offer": {"scheme": "emporia-escrow-v1"}, "amount": 1_250_000}
     assert relay.calls[-1]["PAYMENT-ESCROW"] == "signed-escrow"
     assert out.get("status") == "active" or out.get("success") is True, out
+
+
+def test_the_daily_cap_counts_every_signature_in_24_hours(wallet_env):
+    """P115: the per-payment cap alone let a relay ask for the maximum again and
+    again. $5 per payment, $12 per day: two pass, the third is refused."""
+    with patch.dict(os.environ, {"EMPORIA_X402_MAX_DAILY_CENTS": "1200"}):
+        agent_wallet.generate("daily_payer")
+        agent_wallet.sign_exact("daily_payer", _challenge(5_000_000))   # $5.00
+        agent_wallet.sign_exact("daily_payer", _challenge(5_000_000))
+        with pytest.raises(AgentWalletError, match="daily cap"):
+            agent_wallet.sign_exact("daily_payer", _challenge(5_000_000))
+        agent_wallet.sign_exact("daily_payer", _challenge(1_000_000))             # $1 still fits
+        later = __import__("time").time() + 25 * 3600
+        with patch("time.time", return_value=later):
+            agent_wallet.sign_exact("daily_payer", _challenge(5_000_000))         # a new day

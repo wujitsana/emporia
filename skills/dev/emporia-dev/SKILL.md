@@ -758,6 +758,7 @@ dashboard/                 Vite + React + SRCL — 110 modules, role-based nav, 
 | `EMPORIA_NO_DOTENV` | _(unset)_ | `1` = load no `.env` file (the profile's or the repo's). The test suite sets it so it runs as in CI, never with an operator's live settings |
 | `EMPORIA_X402_PAY_NETWORKS` | _(unset)_ | MCP agent wallet: CAIP-2 networks it may **pay** on, comma-separated. Unset → it pays on none, whatever a relay offers |
 | `EMPORIA_X402_MAX_PAYMENT_CENTS` | `1000` | MCP agent wallet: largest single payment it will sign, in cents. A relay asking more is refused before signing |
+| `EMPORIA_X402_MAX_DAILY_CENTS` | `5000` | MCP agent wallet: most it signs in any 24 hours, counted at signing. A payment that would pass it is refused (installer: `--x402-max-daily-cents`) |
 | `EMPORIA_ESCROW_NETWORK` | _(unset)_ | CAIP-2 network for x402 holds on the Commerce Payments escrow, e.g. `eip155:84532` (Base Sepolia). The token and its signing domain come from `EMPORIA_X402_ASSET_<NET>` / `EMPORIA_X402_EXTRA_<NET>` |
 | `EMPORIA_ESCROW_RPC_URL` | _(unset)_ | JSON-RPC endpoint for that network |
 | `EMPORIA_ESCROW_CONTRACT` | _(unset)_ | `AuthCaptureEscrow` address. No default: a wrong address is unrecoverable money |

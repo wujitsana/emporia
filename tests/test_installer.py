@@ -388,3 +388,13 @@ def test_emporia_dotenv_names_the_only_env_file_loaded(tmp_path, monkeypatch):
         config.load_profile_dotenv()
         assert os.environ.get("P109_FROM_OWN") == "yes"
     assert beside_code == [own]
+
+
+def test_re_running_the_installer_keeps_the_operators_own_env_lines(tmp_path):
+    """P115: create_profile() wrote the .env whole, dropping anything added by
+    hand. Managed keys are replaced, other lines kept, relay Stripe keys never."""
+    env = tmp_path / ".env"
+    env.write_text("# my note\nMY_OWN=1\nEMPORIA_AGENT_ID=old\nSTRIPE_SECRET_KEY=sk_live_x\n")
+    merged = installer._merge_profile_env(env, ["EMPORIA_AGENT_ID=alpha", "EMPORIA_RELAY_URL=u"])
+    assert merged == ["EMPORIA_AGENT_ID=alpha", "EMPORIA_RELAY_URL=u", "# my note", "MY_OWN=1"]
+    assert installer._merge_profile_env(tmp_path / "absent.env", ["A=1"]) == ["A=1"]

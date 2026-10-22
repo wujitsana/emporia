@@ -2465,7 +2465,12 @@ def x402_wallet_info(agent_id: str = "") -> dict[str, Any]:
     from emporia import agent_wallet
 
     aid = agent_id or AGENT_ID
-    out: dict[str, Any] = {"agent_id": aid, "max_payment_cents": agent_wallet.max_payment_cents()}
+    out: dict[str, Any] = {
+        "agent_id": aid, "max_payment_cents": agent_wallet.max_payment_cents(),
+        # P115: the 24-hour limit and how much of it is used.
+        "max_daily_cents": agent_wallet.max_daily_cents(),
+        "spent_today_cents": agent_wallet.spent_today_atomic(aid) // 10_000,
+    }
     try:
         out["address"] = agent_wallet.address(aid)
     except agent_wallet.AgentWalletError as e:

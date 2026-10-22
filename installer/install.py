@@ -998,6 +998,23 @@ def install_into_profile(
 # --create-profile
 # ─────────────────────────────────────────────────────────────────────────────
 
+def _merge_profile_env(env_path: Path, managed_lines: list[str]) -> list[str]:
+    """The installer's lines, then every line of the existing .env it does not
+    manage (P115). It used to write the file whole, dropping anything the
+    operator had added — and the relay's Stripe settings, which an agent
+    profile must not hold, are still dropped (_RELAY_ONLY_ENV_KEYS)."""
+    managed = {ln.split("=", 1)[0].strip() for ln in managed_lines if "=" in ln}
+    kept: list[str] = []
+    if env_path.exists():
+        for line in env_path.read_text().splitlines():
+            key = line.split("=", 1)[0].strip() if "=" in line and not line.lstrip().startswith("#") else ""
+            if key and (key in managed or key in _RELAY_ONLY_ENV_KEYS):
+                continue
+            if line.strip():
+                kept.append(line)
+    return managed_lines + kept
+
+
 def create_profile(
     name: str,
     relay_url: str,
@@ -1011,6 +1028,7 @@ def create_profile(
     dev_skills: bool = False,
     x402_pay_networks: str = "",
     x402_max_payment_cents: int | None = None,
+    x402_max_daily_cents: int | None = None,
 ) -> None:
     """Create a new Hermes agent profile with emporia pre-wired.
 
@@ -1139,6 +1157,8 @@ def create_profile(
         safe_env_lines.append(f"EMPORIA_X402_PAY_NETWORKS={x402_pay_networks}")
     if x402_max_payment_cents is not None:
         safe_env_lines.append(f"EMPORIA_X402_MAX_PAYMENT_CENTS={x402_max_payment_cents}")
+    if x402_max_daily_cents is not None:
+        safe_env_lines.append(f"EMPORIA_X402_MAX_DAILY_CENTS={x402_max_daily_cents}")
     if max_budget_cents is not None and max_budget_cents > 0:
         safe_env_lines.append(f"EMPORIA_MAX_TOTAL_SPEND_CENTS={max_budget_cents}")
     if nous_token:
@@ -1162,7 +1182,7 @@ def create_profile(
     if dry_run:
         print(f"  [dry-run] Would write {env_path}")
     else:
-        env_path.write_text("\n".join(safe_env_lines) + "\n")
+        env_path.write_text("\n".join(_merge_profile_env(env_path, safe_env_lines)) + "\n")
         print(f"  Saved: {env_path}")
 
     if update_dashboard:
@@ -1527,6 +1547,8 @@ def main() -> None:
                              "pay on, e.g. eip155:84532 (unset = pays on none)")
     parser.add_argument("--x402-max-payment-cents", type=int, default=None,
                         help="With --create-profile: largest single x402 payment it signs")
+    parser.add_argument("--x402-max-daily-cents", type=int, default=None,
+                        help="With --create-profile: most the x402 wallet signs in any 24 hours")
     parser.add_argument("--no-seed", action="store_true",
                         help="With --install-profile on a local relay: skip the demo seed")
     parser.add_argument("--local-demo", action="store_true",
@@ -1699,6 +1721,7 @@ def main() -> None:
             current_profile_dir=current_profile_dir,
             x402_pay_networks=args.x402_pay_networks,
             x402_max_payment_cents=args.x402_max_payment_cents,
+            x402_max_daily_cents=args.x402_max_daily_cents,
             nvidia_api_key=nvidia_key,
             max_budget_cents=args.max_budget_cents,
             nous_token=nous_token,
