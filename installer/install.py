@@ -661,6 +661,11 @@ def _mcp_entry(relay_url: str, agent_id: str = "", display_name: str = "", profi
         env.update(_profile_runtime_env(profile_dir))
         # P109: this profile's own .env, not the one beside the code.
         env["EMPORIA_DOTENV"] = str(profile_dir / ".env")
+    # P114: where Hermes is, so the MCP server can ask it for a current Nous
+    # token whatever PATH Hermes gives it (it lives in ~/.local/bin here).
+    hermes_bin = shutil.which("hermes")
+    if hermes_bin:
+        env["EMPORIA_HERMES_BIN"] = hermes_bin
     return {
         "command": _venv_python(),
         "args": ["-m", "emporia.mcp_server"],

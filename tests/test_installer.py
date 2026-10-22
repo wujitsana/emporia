@@ -4,6 +4,7 @@ directly by file path rather than building out a full installer test harness,
 which is out of scope for the small, pure function under test here (N10-5)."""
 
 import importlib.util
+import shutil
 import sys
 from pathlib import Path
 
@@ -363,6 +364,8 @@ def test_each_agent_profile_shares_the_relay_but_owns_its_identity(tmp_path, mon
         assert mcp_env["EMPORIA_AGENT_ID"] == name
         assert mcp_env["EMPORIA_KEYS_DIR"] == str(prof / "home" / ".hermes" / "keys")
         assert mcp_env["EMPORIA_DOTENV"] == str(prof / ".env")
+        if shutil.which("hermes"):
+            assert mcp_env["EMPORIA_HERMES_BIN"] == shutil.which("hermes")
         assert f"EMPORIA_DOTENV={prof / '.env'}" in dotenv
         assert "EMPORIA_X402_PAY_NETWORKS=eip155:84532" in dotenv
         assert "EMPORIA_X402_MAX_PAYMENT_CENTS=500" in dotenv
