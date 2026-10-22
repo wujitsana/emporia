@@ -390,15 +390,43 @@ class EmporiaAgent:
         _raise_for_status_or_payment(resp)
         return resp.json()
 
-    async def fund_session(self, session_id: str, mpp_spt: str | None = None) -> dict[str, Any]:
-        """Fund a service purchase this agent created, once a seller has joined
-        (P95). The hold is a destination charge to the seller's Stripe account:
-        captured when you confirm delivery, released if you dispute, and never
-        held by the relay. Stripe only. Raises PaymentRequiredError without an
-        SPT."""
-        resp = await self._bearer_request(
-            "post", f"{self.relay_url}/sessions/{session_id}/fund", payment_token=mpp_spt,
-        )
+    async def fund_session(
+        self, session_id: str, mpp_spt: str | None = None, pay_with_x402: bool = False,
+    ) -> dict[str, Any]:
+        """Fund a service purchase this agent created, once a seller has joined.
+
+        Either rail pays the seller directly and is released if you dispute:
+
+        - `mpp_spt` (P95): a Stripe destination charge to the seller's account.
+        - `pay_with_x402=True` (P99): an on-chain escrow hold. The relay offers a
+          PaymentInfo naming the seller's wallet; this agent checks it (network
+          allowlist, amount, fee cap), signs it with `x402_private_key`, and
+          retries. USDC moves into the escrow contract, not to the relay.
+
+        Without either, raises PaymentRequiredError carrying the offer(s).
+        """
+        url = f"{self.relay_url}/sessions/{session_id}/fund"
+        resp = await self._bearer_request("post", url, payment_token=mpp_spt)
+        if pay_with_x402 and resp.status_code == 402:
+            offer = (_payment_detail(resp) or {}).get("escrow")
+            if not offer:
+                raise PaymentRequiredError(resp, _payment_detail(resp)) from ValueError(
+                    "the relay offered no x402 escrow hold for this purchase")
+            if not self._x402_private_key:
+                raise PaymentRequiredError(resp, _payment_detail(resp)) from ValueError(
+                    "pay_with_x402=True but this agent has no x402_private_key")
+            from emporia.escrow import sign_offer
+            from emporia.payments import _x402_amount_atomic
+
+            session = (await self._bearer_request(
+                "get", f"{self.relay_url}/sessions/{session_id}")).json()
+            stake = (session.get("payment_rules") or {}).get("stake_per_participant", "0")
+            header = sign_offer(
+                offer, self._x402_private_key,
+                expected_amount=int(_x402_amount_atomic(int(round(float(stake) * 100)))),
+                allowed_networks=self._x402_networks,
+            )
+            resp = await self._bearer_request("post", url, headers={"PAYMENT-ESCROW": header})
         _raise_for_status_or_payment(resp)
         return resp.json()
 

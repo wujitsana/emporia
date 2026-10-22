@@ -182,3 +182,96 @@ def fee_amount(info: PaymentInfo, amount: int) -> int:
     """The fee to pass to `capture`: within the contract's bounds by construction
     (`amount * bps / 10000`, min == max)."""
     return amount * info.min_fee_bps // MAX_FEE_BPS
+
+
+# -- offers and what comes back (P99) -----------------------------------------
+
+#: How long a payer has to sign and submit an offer.
+PRE_APPROVAL_WINDOW = 15 * 60
+#: How long a hold lasts before the payer may reclaim it. Covers a service
+#: session's default delivery deadline (24h) and confirm window (6h) with room
+#: to spare; the operator must capture or void inside it.
+AUTHORIZATION_WINDOW = 7 * 24 * 3600
+#: Refunds after capture are not offered yet; the window is the minimum the
+#: contract's ordering allows past authorization.
+REFUND_WINDOW = 24 * 3600
+#: Slack for clock skew between this relay, the payer, and the chain.
+_SKEW = 120
+
+
+def check_submitted(
+    info: PaymentInfo, *, operator: str, receiver: str, token: str, amount: int,
+    fee_bps: int, fee_receiver: str, now: int,
+) -> None:
+    """Refuse a PaymentInfo that is not exactly what this relay offered.
+
+    Every field the money depends on must equal what the relay requires — the
+    payer chose only `payer` and `salt`. The windows are checked as bounds,
+    since the payer may submit a little after the offer was built.
+    """
+    expected = {
+        "operator": operator, "receiver": receiver, "token": token,
+        "fee_receiver": fee_receiver,
+    }
+    for field, want in expected.items():
+        if to_checksum_address(getattr(info, field)) != to_checksum_address(want):
+            raise EscrowError(f"{field} is {getattr(info, field)}, expected {want}")
+    if info.max_amount != amount:
+        raise EscrowError(f"max_amount is {info.max_amount}, expected {amount}")
+    if (info.min_fee_bps, info.max_fee_bps) != (fee_bps, fee_bps):
+        raise EscrowError(f"fee must be exactly {fee_bps} bps")
+    if to_checksum_address(info.payer) == to_checksum_address(ZERO_ADDRESS):
+        raise EscrowError("payer is the zero address")
+    if not (now < info.pre_approval_expiry <= now + PRE_APPROVAL_WINDOW + _SKEW):
+        raise EscrowError("pre_approval_expiry is outside the offer's window")
+    if info.authorization_expiry < now + AUTHORIZATION_WINDOW - PRE_APPROVAL_WINDOW - _SKEW:
+        raise EscrowError("authorization_expiry leaves too little time to deliver")
+    if not (info.pre_approval_expiry <= info.authorization_expiry <= info.refund_expiry):
+        raise EscrowError("expiries are not ordered")
+
+
+def recover_payer(info: PaymentInfo, signature: bytes, *, chain_id: int, escrow: str,
+                  collector: str, token_name: str, token_version: str) -> str:
+    """The address that signed this ReceiveWithAuthorization — checked against
+    `info.payer` before any gas is spent on a signature that cannot work."""
+    from eth_account import Account
+    from eth_account.messages import encode_typed_data
+
+    msg = receive_with_authorization_message(
+        info, chain_id=chain_id, escrow=escrow, collector=collector,
+        token_name=token_name, token_version=token_version)
+    return Account.recover_message(encode_typed_data(full_message=msg), signature=signature)
+
+
+def sign_offer(offer: dict, private_key: str, *, expected_amount: int,
+               allowed_networks: list[str] | None = None, max_fee_bps: int = 1_000) -> str:
+    """The payer's side: complete a relay's escrow offer and sign it, returning
+    the PAYMENT-ESCROW header value.
+
+    Checked before signing, because a signature here moves USDC: the network
+    must be one this agent pays on, the amount what the session says, and the
+    fee no more than `max_fee_bps` (10% unless the caller decides otherwise).
+    The receiver and fee receiver are bound by the signature itself, so what is
+    signed is exactly what can be captured.
+    """
+    import base64
+    import json
+
+    from eth_account import Account
+
+    if allowed_networks is not None and offer.get("network") not in allowed_networks:
+        raise EscrowError(f"network {offer.get('network')!r} is not one this agent pays on")
+    account = Account.from_key(private_key)
+    info = PaymentInfo.from_json({**offer["payment_info"], "payer": account.address})
+    if info.max_amount != expected_amount:
+        raise EscrowError(f"offer is for {info.max_amount}, expected {expected_amount}")
+    if info.max_fee_bps > max_fee_bps:
+        raise EscrowError(f"fee of {info.max_fee_bps} bps exceeds the {max_fee_bps} bps cap")
+    msg = receive_with_authorization_message(
+        info, chain_id=int(offer["chain_id"]), escrow=offer["escrow"],
+        collector=offer["collector"], token_name=offer["token_name"],
+        token_version=offer["token_version"])
+    signature = account.sign_typed_data(full_message=msg).signature
+    return base64.b64encode(json.dumps({
+        "payment_info": info.to_json(), "signature": "0x" + bytes(signature).hex(),
+    }).encode()).decode()

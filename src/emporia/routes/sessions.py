@@ -259,16 +259,210 @@ async def _start(session_id: str, s: dict[str, Any], participants: list[str],
         })
 
 
+ESCROW_HEADER = "PAYMENT-ESCROW"
+
+
+def _escrow_hold_for(payment: dict[str, Any]):
+    """(config, signer, PaymentInfo, hold) for an x402 escrow stake row."""
+    from emporia import escrow, escrow_chain
+    from emporia.operator_signer import load_operator_signer
+
+    hold = rs.get_escrow_hold(payment["payment_intent_id"])
+    if hold is None:
+        raise RuntimeError(f"no escrow hold recorded for {payment['payment_intent_id']}")
+    cfg = escrow_chain.load_config()
+    if cfg is None or cfg.network != hold["network"]:
+        raise RuntimeError(f"escrow for {hold['network']} is not configured on this relay")
+    return cfg, load_operator_signer(cfg.network), escrow.PaymentInfo.from_json(
+        hold["payment_info"]), hold
+
+
+async def _release_hold(payment: dict[str, Any]) -> dict[str, Any]:
+    """Give a stake back, on whichever rail holds it: cancel a Stripe hold, or
+    void an escrow hold to its payer (P99). Errors are reported, not raised —
+    both kinds of hold also lapse back to the payer on their own."""
+    from emporia.payments import RAIL_X402, cancel_payment_hold
+
+    ref = payment.get("payment_intent_id")
+    try:
+        if payment.get("rail") == RAIL_X402:
+            from emporia import escrow_chain
+            cfg, signer, info, hold = _escrow_hold_for(payment)
+            if hold["state"] != "authorized":
+                return {"payment_intent_id": ref, "status": f"already {hold['state']}"}
+            tx = await escrow_chain.void(cfg, signer, info)
+            rs.update_escrow_hold(ref, state="voided", void_tx=tx)
+            return {"payment_intent_id": ref, "status": "voided", "transaction": tx}
+        return await cancel_payment_hold(ref)
+    except Exception as e:
+        return {"payment_intent_id": ref, "error": str(e)}
+
+
+async def _settle_escrow_purchase(session_id: str, seller: str, total_cents: int,
+                                  payments: list[dict[str, Any]]) -> dict[str, Any]:
+    """Capture an escrow hold to the seller (P99): the contract pays the seller
+    and the fee receiver in the same transaction, so there is no transfer and
+    no platform balance in between. A failed capture pays nobody and says so."""
+    from emporia import escrow_chain
+    from emporia.payments import OPERATOR_FEE_BPS, RAIL_X402, platform_fee
+
+    captures, capture_tx, failed = [], None, False
+    for p in payments:
+        try:
+            cfg, signer, info, hold = _escrow_hold_for(p)
+            capture_tx = await escrow_chain.capture(cfg, signer, info, int(hold["amount_atomic"]))
+            rs.update_escrow_hold(p["payment_intent_id"], state="captured", capture_tx=capture_tx)
+            captures.append({"payment_intent_id": p["payment_intent_id"], "status": "captured",
+                             "transaction": capture_tx})
+        except Exception as e:
+            failed = True
+            captures.append({"payment_intent_id": p["payment_intent_id"],
+                             "status": f"capture_failed: {e}"})
+    fee = platform_fee(total_cents)
+    return {
+        "session_id": session_id, "winner_id": seller, "total_stake_cents": total_cents,
+        "platform_fee_cents": fee, "winner_payout_cents": total_cents - fee,
+        "platform_fee_bps": OPERATOR_FEE_BPS,
+        "payment_intent_ids": [p["payment_intent_id"] for p in payments],
+        "capture_results": captures, "transfer_id": None if failed else capture_tx,
+        # Captured to the seller by the contract itself; nothing is owed, so
+        # the (Stripe-only) payout reconciler never sees it.
+        "transfer_status": "capture_failed" if failed else "escrow_captured",
+        "status": "settled", "rail": RAIL_X402,
+    }
+
+
+def _escrow_rail(seller: str):
+    """(config, operator signer, seller wallet) when an x402 escrow hold can pay
+    this seller, else None. Every part must be present: a configured escrow, an
+    operator key that loads for its network, and an EVM payout wallet the seller
+    registered (POST /agents/{id}/x402-wallet)."""
+    from emporia import escrow_chain
+    from emporia.operator_signer import OperatorSignerError, load_operator_signer
+
+    cfg = escrow_chain.load_config()
+    if cfg is None:
+        return None
+    wallet = rs.AGENT_REGISTRY.get_x402_pay_to(seller, "evm")
+    if not wallet:
+        return None
+    try:
+        signer = load_operator_signer(cfg.network)
+    except OperatorSignerError:
+        rs.logger.warning("escrow configured but the operator signer will not load",
+                          exc_info=True)
+        return None
+    return cfg, signer, wallet
+
+
+def _escrow_offer(rail, amount_cents: int) -> dict[str, Any]:
+    """The x402 escrow half of a 402: the PaymentInfo the payer completes and
+    signs. `payer` is left zero — the payer fills in their own address, and the
+    signature does not cover it (the nonce is payer-agnostic) — and every other
+    field is what check_submitted() will require back."""
+    import time
+
+    from emporia import escrow
+    from emporia.payments import OPERATOR_FEE_BPS, _x402_amount_atomic
+
+    cfg, signer, wallet = rail
+    info = escrow.build_payment_info(
+        operator=signer.address, payer=escrow.ZERO_ADDRESS, receiver=wallet, token=cfg.token,
+        amount=int(_x402_amount_atomic(amount_cents)), fee_bps=OPERATOR_FEE_BPS,
+        fee_receiver=cfg.fee_receiver, now=int(time.time()),
+        pre_approval_window=escrow.PRE_APPROVAL_WINDOW,
+        authorization_window=escrow.AUTHORIZATION_WINDOW, refund_window=escrow.REFUND_WINDOW,
+    )
+    return {
+        "scheme": "emporia-escrow-v1", "network": cfg.network, "chain_id": cfg.chain_id,
+        "escrow": cfg.contract, "collector": cfg.collector, "token": cfg.token,
+        "token_name": cfg.token_name, "token_version": cfg.token_version,
+        "payment_info": info.to_json(), "header": ESCROW_HEADER,
+        "sign": ("Set payment_info.payer to your address, sign the ERC-3009 "
+                 "ReceiveWithAuthorization it implies, and retry with header "
+                 f"{ESCROW_HEADER}: base64(JSON {{payment_info, signature}})."),
+    }
+
+
+async def _fund_with_escrow(request: Request, s: dict[str, Any], session_id: str,
+                            caller: str, rail, amount_cents: int):
+    """Authorize the payer's signed hold on chain, then start the session."""
+    import base64
+    import time
+
+    from emporia import escrow, escrow_chain
+    from emporia.payments import OPERATOR_FEE_BPS, RAIL_X402, _x402_amount_atomic
+
+    cfg, signer, wallet = rail
+    try:
+        submitted = json.loads(base64.b64decode(request.headers[ESCROW_HEADER]))
+        info = escrow.PaymentInfo.from_json(submitted["payment_info"])
+        signature = bytes.fromhex(str(submitted["signature"]).removeprefix("0x"))
+    except Exception:
+        raise HTTPException(400, f"{ESCROW_HEADER} must be base64(JSON {{payment_info, signature}}).")
+    amount = int(_x402_amount_atomic(amount_cents))
+    try:
+        escrow.check_submitted(info, operator=signer.address, receiver=wallet, token=cfg.token,
+                               amount=amount, fee_bps=OPERATOR_FEE_BPS,
+                               fee_receiver=cfg.fee_receiver, now=int(time.time()))
+        signed_by = escrow.recover_payer(
+            info, signature, chain_id=cfg.chain_id, escrow=cfg.contract,
+            collector=cfg.collector, token_name=cfg.token_name, token_version=cfg.token_version)
+    except escrow.EscrowError as e:
+        raise HTTPException(402, f"Escrow hold refused: {e}")
+    except Exception:
+        raise HTTPException(402, "Escrow hold refused: the signature does not verify.")
+    if signed_by.lower() != info.payer.lower():
+        raise HTTPException(402, "Escrow hold refused: the signature is not the payer's.")
+
+    hold_hash = "0x" + escrow.payment_info_hash(info, chain_id=cfg.chain_id,
+                                                escrow=cfg.contract).hex()
+    if rs.get_escrow_hold(hold_hash):
+        raise HTTPException(409, "This hold has already been submitted.")
+    try:
+        tx = await escrow_chain.authorize(cfg, signer, info, amount, signature)
+        state = await escrow_chain.payment_state(cfg, info)
+    except escrow_chain.EscrowChainError as e:
+        rs._record_x402_settlement(request, {"success": False, "errorReason": str(e)},
+                                   network=cfg.network, payer=info.payer)
+        raise HTTPException(402, f"Escrow hold could not be placed: {e}")
+    if state["capturable"] != amount:
+        raise HTTPException(502, (
+            f"The hold was submitted ({tx}) but holds {state['capturable']}, not {amount}. "
+            f"Nothing was started; the payer can reclaim it after it expires."
+        ))
+    rs._record_x402_settlement(request, {"success": True, "transaction": tx},
+                               network=cfg.network, payer=info.payer)
+    rs.record_escrow_hold({
+        "hold_hash": hold_hash, "session_id": session_id, "payer_agent_id": caller,
+        "payer_address": info.payer, "receiver_agent_id": s["participants"][1],
+        "receiver_address": wallet, "network": cfg.network, "amount_atomic": amount,
+        "payment_info": info.to_json(), "authorize_tx": tx,
+    })
+    rs.record_payment(
+        payment_intent_id=hold_hash, agent_id=caller, amount_cents=amount_cents,
+        payment_type="session_stake", session_id=session_id, currency="usd", rail=RAIL_X402,
+    )
+    await _start(session_id, s, s["participants"], s["payment_rules"])
+    return rs.load_session(session_id)
+
+
 @router.post("/sessions/{session_id}/fund")
 async def fund_session(session_id: str, request: Request):
-    """The buyer funds a purchase, as a hold that pays the seller directly (P95).
+    """The buyer funds a purchase, as a hold that pays the seller directly.
 
-    A destination charge: the hold names the seller's connected account and the
-    operator fee, so on capture Stripe pays the seller and the platform its fee,
-    and nothing sits on the platform balance in between. Possible only now that
-    the seller has joined — Stripe fixes a charge's destination when the hold is
-    created. Stripe only: an x402 payment cannot be held and released on a
-    dispute. Credential as everywhere else: `Authorization: Payment <spt>`.
+    Two rails, both non-custodial, chosen by the credential sent:
+
+    * **Stripe (P95)** — `Authorization: Payment <spt>`. A destination charge:
+      the hold names the seller's connected account and the operator fee, so on
+      capture Stripe pays the seller and the platform its fee directly.
+    * **x402 escrow (P99)** — `PAYMENT-ESCROW`. A Commerce Payments hold on
+      chain: the payer signs a PaymentInfo naming the seller's wallet, the
+      operator authorizes it, and capture pays the seller less the fee, or void
+      returns it. The relay can do nothing else with it.
+
+    No credential: a 402 offering every rail this seller can be paid on. Both
+    need the seller known, which is why funding waits for them to join.
     """
     caller = rs._dashboard_agent_id(request)
     if not caller:
@@ -283,22 +477,41 @@ async def fund_session(session_id: str, request: Request):
         raise HTTPException(403, "Only the buyer funds a purchase.")
     rs._enforce_agent_rate_limit(caller)
 
+    amount_cents, currency = _stake(s["payment_rules"])
+    escrow_rail = _escrow_rail(seller) if currency == "usd" else None
     account = rs.AGENT_REGISTRY.get_stripe_account(seller)
-    if not account or rs.AGENT_REGISTRY.get_stripe_account_status(seller) != "active":
+    stripe_ok = bool(
+        account and rs.AGENT_REGISTRY.get_stripe_account_status(seller) == "active"
+        and not rs._stripe_account_mode_mismatch(rs.AGENT_REGISTRY.get_stripe_account_mode(seller))
+    )
+    rs._assert_agent_budget(caller, amount_cents)
+
+    if request.headers.get(ESCROW_HEADER):
+        if not escrow_rail:
+            raise HTTPException(409, (
+                f"An x402 escrow hold cannot pay {seller}: escrow is not configured on this "
+                f"relay, or they have no EVM payout wallet registered."
+            ))
+        return await _fund_with_escrow(request, s, session_id, caller, escrow_rail, amount_cents)
+
+    if not stripe_ok and not escrow_rail:
         raise HTTPException(409, (
-            f"{seller} cannot receive payments yet: their Stripe account is not set up. "
-            f"A purchase pays the seller directly, so it waits for that — they can run "
-            f"start_stripe_onboarding, or abandon the session to release it."
-        ))
-    if rs._stripe_account_mode_mismatch(rs.AGENT_REGISTRY.get_stripe_account_mode(seller)):
-        raise HTTPException(409, (
-            f"{seller}'s Stripe account belongs to the other key mode (test vs live) "
-            f"and cannot receive this payment."
+            f"{seller} cannot receive payments yet: no active Stripe account and no x402 "
+            f"payout wallet this relay can pay. A purchase pays the seller directly, so it "
+            f"waits for one — they can run start_stripe_onboarding or register a wallet, or "
+            f"abandon the session."
         ))
 
-    amount_cents, currency = _stake(s["payment_rules"])
+    if not stripe_ok:
+        offer = _escrow_offer(escrow_rail, amount_cents)
+        return JSONResponse(status_code=402, content={
+            "error": "payment_required", "amount_cents": amount_cents,
+            "resource": f"emporia:session:{session_id}",
+            "message": f"Fund this purchase with an x402 escrow hold paid to {seller}.",
+            "escrow": offer,
+        })
+
     from emporia.payments import platform_fee
-    rs._assert_agent_budget(caller, amount_cents)
     paid = await rs._verify_and_confirm_payment(
         request,
         agent_id=caller,
@@ -315,13 +528,20 @@ async def fund_session(session_id: str, request: Request):
         req_payment_intent_id=None,
         challenge_message=(
             f"Fund this purchase: {amount_cents} {currency} cents, held and paid to "
-            f"{seller} when you confirm delivery. Retry with Authorization: Payment <spt_token>."
+            f"{seller} when you confirm delivery. Retry with Authorization: Payment <spt_token>"
+            + (f", or with an x402 escrow hold ({ESCROW_HEADER})." if escrow_rail else ".")
         ),
         challenge_resource=f"emporia:session:{session_id}",
         destination_account=account,
         application_fee_cents=platform_fee(amount_cents),
     )
     if isinstance(paid, JSONResponse):
+        if escrow_rail:
+            # Offer the escrow alongside Stripe's challenge, same 402.
+            body = json.loads(paid.body)
+            body["escrow"] = _escrow_offer(escrow_rail, amount_cents)
+            headers = {k: v for k, v in paid.headers.items() if k.lower() != "content-length"}
+            return JSONResponse(status_code=402, content=body, headers=headers)
         return paid
     try:
         rs.record_payment(
@@ -593,14 +813,7 @@ async def submit_action(session_id: str, req: rs.SubmitActionRequest):
             # is charged. A draw used to reach neither branch (no winner, not a
             # "refund"), so it wrote no settlement row: holds sat until they
             # expired and a bounty on it stayed `running` forever.
-            from emporia.payments import cancel_payment_hold
-            cancel_results = []
-            for pi_id in pi_ids:
-                if pi_id:
-                    try:
-                        cancel_results.append(await cancel_payment_hold(pi_id))
-                    except Exception as e:
-                        cancel_results.append({"payment_intent_id": pi_id, "error": str(e)})
+            cancel_results = [await _release_hold(p) for p in payments if p.get("payment_intent_id")]
             settlement_record = {
                 "session_id": session_id,
                 "winner_id": winner_id,
@@ -616,7 +829,13 @@ async def submit_action(session_id: str, req: rs.SubmitActionRequest):
             }
             rs.record_settlement(settlement_record)
         elif winner_id:
-            if total_cents and module_purchase:
+            from emporia.payments import RAIL_X402
+            if total_cents and module_purchase and any(p.get("rail") == RAIL_X402 for p in payments):
+                # P99: an x402 escrow hold — capture on chain is the settlement.
+                settlement_record = await _settle_escrow_purchase(
+                    session_id, winner_id, total_cents, payments,
+                )
+            elif total_cents and module_purchase:
                 # P95: destination charges — capture is the settlement.
                 from emporia.payments import settle_destination_charges
                 settlement_record = await settle_destination_charges(
@@ -758,16 +977,7 @@ async def abandon_session(session_id: str, request: Request, req: dict = None):
 
     # Cancel all authorized holds for this session
     payments = rs.get_session_payments(session_id)
-    from emporia.payments import cancel_payment_hold
-    cancel_results = []
-    for p in payments:
-        pi_id = p.get("payment_intent_id")
-        if pi_id:
-            try:
-                result = await cancel_payment_hold(pi_id)
-                cancel_results.append(result)
-            except Exception as e:
-                cancel_results.append({"payment_intent_id": pi_id, "error": str(e)})
+    cancel_results = [await _release_hold(p) for p in payments if p.get("payment_intent_id")]
 
     with rs.get_db() as db:
         db.execute(

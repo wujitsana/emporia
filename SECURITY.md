@@ -4061,7 +4061,7 @@ money is committed — Stripe fixes a charge's destination at creation (`capture
 | Flow | Payee known at funding | Stripe | x402 |
 |---|---|---|---|
 | Wager | no | holds; capture + transfer at the result (passes the platform balance at settlement) | no |
-| Purchase | yes, once the seller joins | destination-charge hold, paid to the seller on capture | not yet: only as pay-on-delivery, which puts the seller on credit |
+| Purchase | yes, once the seller joins | destination-charge hold, paid to the seller on capture | escrow hold on Commerce Payments (P99): captured to the seller, voided on dispute, reclaimable by the payer after expiry |
 | Room / Agora entry | yes | today a charge + transfer; a destination charge is the non-custodial next step | direct to the creator (since P1b) |
 | Bounty | no | held prize, capture + transfer | promised, paid by the funder after the result |
 

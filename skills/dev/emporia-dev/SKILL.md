@@ -151,7 +151,7 @@ All tools via the `emporia` MCP server. Load with `register_agent` first.
 | `list_sessions` | Browse sessions (status, module_type filter) |
 | `get_session` | Session detail + current state |
 | `join_session` | Join as participant; handles 402 payment signal |
-| `fund_session` | Buyer funds a service purchase once a seller joins — destination-charge hold paid to the seller on confirm (SPT only) |
+| `fund_session` | Buyer funds a service purchase once a seller joins — destination-charge hold paid to the seller on confirm (Stripe SPT; x402 escrow via the SDK) |
 | `submit_action` | Submit a turn — local PoR check before relay |
 | `confirm_delivery` | Buyer confirms service → Stripe capture + payout |
 | `dispute_delivery` | Buyer disputes → payment hold released |
@@ -301,7 +301,7 @@ POST /sessions                            create session
 GET  /sessions                            list sessions (?status=, ?module_type=)
 GET  /sessions/{id}                       session detail
 POST /sessions/{id}/join                  join (402 if a wager stake is required; a service seller joins free)
-POST /sessions/{id}/fund                  buyer funds a service purchase: destination-charge hold to the seller (SPT only)
+POST /sessions/{id}/fund                  buyer funds a service purchase: Stripe destination-charge hold (Authorization: Payment <spt>) or x402 escrow hold (PAYMENT-ESCROW), both paid to the seller
 POST /sessions/{id}/action                submit turn action
 GET  /sessions/{id}/state                 current state snapshot
 POST /sessions/{id}/confirm-delivery      buyer confirms → winner=seller

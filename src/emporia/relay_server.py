@@ -711,6 +711,24 @@ def init_db() -> None:
                 PRIMARY KEY (session_id, agent_id)
             );
 
+            CREATE TABLE IF NOT EXISTS escrow_holds (
+                hold_hash TEXT PRIMARY KEY,
+                session_id TEXT NOT NULL,
+                payer_agent_id TEXT NOT NULL,
+                payer_address TEXT NOT NULL,
+                receiver_agent_id TEXT NOT NULL,
+                receiver_address TEXT NOT NULL,
+                network TEXT NOT NULL,
+                amount_atomic TEXT NOT NULL,
+                payment_info_json TEXT NOT NULL,
+                state TEXT NOT NULL,
+                authorize_tx TEXT,
+                capture_tx TEXT,
+                void_tx TEXT,
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL
+            );
+
             CREATE TABLE IF NOT EXISTS bounty_entries (
                 listing_id TEXT NOT NULL,
                 agent_id TEXT NOT NULL,
@@ -955,6 +973,8 @@ def init_db() -> None:
         _migrate_settlement_dedupe_key(conn)
         _migrate_settlement_refund_columns(conn)
         _migrate_listings_federated_from(conn)
+        # escrow_holds (P99) is a new table, created above by CREATE TABLE IF
+        # NOT EXISTS on any database, old or new, so it needs no migration.
         # Rename aroga_* → agora_* if old names still exist (typo fix)
         _migrate_agora_tables(conn)
         # Rooms schema (separate DDL to keep clean)
@@ -1010,7 +1030,7 @@ def init_db() -> None:
 # `PRAGMA user_version`. Bump it whenever the schema changes — a test computes
 # a fingerprint of every table and column and fails if the shape moved without
 # this number moving, so it cannot quietly stop meaning anything.
-SCHEMA_VERSION = 3
+SCHEMA_VERSION = 4
 
 
 def _assert_schema_not_from_the_future(conn: Any) -> None:
@@ -2466,6 +2486,43 @@ def _assert_agent_budget(agent_id: str, amount_cents: int) -> None:
         raise HTTPException(402, f"Agent spend limit exceeded: {current + amount_cents}>{MAX_TOTAL_SPEND_CENTS} cents")
 
 
+def record_escrow_hold(hold: dict[str, Any]) -> None:
+    """Store an authorized escrow hold (P99). The PaymentInfo is kept verbatim:
+    capture and void must resubmit exactly what the payer signed."""
+    now = datetime.now(UTC).isoformat()
+    with DB_LOCK, get_db() as conn:
+        conn.execute(
+            "INSERT INTO escrow_holds (hold_hash, session_id, payer_agent_id, payer_address, "
+            "receiver_agent_id, receiver_address, network, amount_atomic, payment_info_json, "
+            "state, authorize_tx, created_at, updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",
+            (hold["hold_hash"], hold["session_id"], hold["payer_agent_id"],
+             hold["payer_address"], hold["receiver_agent_id"], hold["receiver_address"],
+             hold["network"], str(hold["amount_atomic"]), json.dumps(hold["payment_info"]),
+             "authorized", hold["authorize_tx"], now, now),
+        )
+
+
+def get_escrow_hold(hold_hash: str) -> dict[str, Any] | None:
+    with DB_LOCK, get_db() as conn:
+        row = conn.execute("SELECT * FROM escrow_holds WHERE hold_hash = ?",
+                           (hold_hash,)).fetchone()
+    if not row:
+        return None
+    hold = dict(row)
+    hold["payment_info"] = json.loads(hold.pop("payment_info_json"))
+    return hold
+
+
+def update_escrow_hold(hold_hash: str, *, state: str, **tx: str) -> None:
+    """Move a hold to `state`, recording the transaction that did it
+    (capture_tx= or void_tx=)."""
+    cols = {k: v for k, v in tx.items() if k in ("capture_tx", "void_tx")}
+    sets = ", ".join(["state = ?", "updated_at = ?", *(f"{k} = ?" for k in cols)])
+    with DB_LOCK, get_db() as conn:
+        conn.execute(f"UPDATE escrow_holds SET {sets} WHERE hold_hash = ?",
+                     (state, datetime.now(UTC).isoformat(), *cols.values(), hold_hash))
+
+
 def get_session_payments(session_id: str) -> list[dict[str, Any]]:
     with DB_LOCK, get_db() as conn:
         rows = conn.execute(
@@ -2601,6 +2658,7 @@ def _normalize_agent_id(agent_id: str) -> str:
 _RENAME_COLUMNS: tuple[tuple[str, str], ...] = (
     ("access_entitlements", "agent_id"), ("access_removals", "agent_id"),
     ("bounty_entries", "agent_id"),
+    ("escrow_holds", "payer_agent_id"), ("escrow_holds", "receiver_agent_id"),
     ("access_removals", "removed_by"), ("actions", "agent_id"),
     ("agent_inbox", "agent_id"), ("agora_comments", "author_id"),
     ("agora_invites", "agent_id"), ("agora_invites", "invited_by"),
@@ -2647,6 +2705,16 @@ _NON_AGENT_COLUMNS: frozenset[tuple[str, str]] = frozenset({
     # rename would break the one-entry-per-account rule it exists to enforce —
     # the same reasoning that keeps payer_stable_id out, noted below.
     ("bounty_entries", "listing_id"), ("bounty_entries", "nous_user_id"),
+    # escrow_holds (P99): the on-chain record of a hold. Addresses are wallets,
+    # not handles, and the PaymentInfo they sit in is what the payer signed —
+    # rewriting either would make the hold uncapturable.
+    ("escrow_holds", "hold_hash"), ("escrow_holds", "session_id"),
+    ("escrow_holds", "payer_address"), ("escrow_holds", "receiver_address"),
+    ("escrow_holds", "network"), ("escrow_holds", "amount_atomic"),
+    ("escrow_holds", "payment_info_json"), ("escrow_holds", "state"),
+    ("escrow_holds", "authorize_tx"), ("escrow_holds", "capture_tx"),
+    ("escrow_holds", "void_tx"), ("escrow_holds", "created_at"),
+    ("escrow_holds", "updated_at"),
     ("bounty_entries", "entered_at"),
     # x402_settle_intents (P48) — payer_id is an agent reference and lives in
     # _RENAME_COLUMNS; payer_stable_id deliberately is NOT one (it is P47's
@@ -3927,7 +3995,7 @@ app.add_middleware(
     # the same reason a JS client would otherwise be unable to read it off a
     # cross-origin response at all.
     allow_headers=["Content-Type", "Authorization", "X-Emporia-Agent-Id", "PAYMENT-SIGNATURE",
-                   "X-Emporia-Authorization"],
+                   "X-Emporia-Authorization", "PAYMENT-ESCROW"],
     # P22: X-Request-Id is set by request_context (below), registered *after*
     # this middleware so it wraps outside CORS and adds the header once CORS
     # has already finished deciding what to expose — without listing it here

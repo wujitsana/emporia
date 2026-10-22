@@ -2331,7 +2331,9 @@ def fund_session(session_id: str, mpp_token: str = "", agent_id: str = "") -> di
     The hold pays the seller directly: it is a Stripe destination charge to
     their connected account, captured when you confirm delivery and released if
     you dispute, so your money never sits with the relay. Pass an SPT as
-    mpp_token. Stripe only — x402 cannot hold and release a payment.
+    mpp_token. The relay may also offer an x402 escrow hold (in the 402's
+    `escrow` key); signing it needs an x402 wallet key, which this server does
+    not hold — use the SDK's fund_session(pay_with_x402=True).
     """
     aid = agent_id or AGENT_ID
     if not aid:

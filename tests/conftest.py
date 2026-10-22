@@ -62,6 +62,12 @@ TEST_DB = str(TEST_ROOT / "emporia_test.sqlite3")
 TEST_ENVIRONMENT: dict[str, str] = {
     # Where this run's artifacts go.
     "EMPORIA_DB_PATH": TEST_DB,
+    # P99: keys too. The throwaway key directory used to be a fixture in
+    # test_emporia.py, so any other test file run on its own generated its
+    # agents' keys in the developer's real ~/.hermes/keys -- hundreds of them,
+    # found there. The variable covers code that reads it at import and
+    # subprocesses; the fixture below covers anything imported before this ran.
+    "EMPORIA_KEYS_DIR": str(TEST_ROOT / "keys"),
     "EMPORIA_LOG_DIR": str(TEST_ROOT / "logs"),
     "EMPORIA_AUDIT_DIR": str(TEST_ROOT / "audit"),
 
@@ -92,6 +98,20 @@ TEST_ENVIRONMENT: dict[str, str] = {
     "EMPORIA_GUARDRAILS_MODE": "enforce",
     "EMPORIA_AGENT_ID": "",
     "EMPORIA_RELAY_URL": "http://localhost:8088",
+
+    # P99: the x402 escrow operator and its network. The profile .env may name
+    # a real operator address and key; a test that inherited them would sign
+    # with, or be refused for, a key it did not choose. Escrow stays off unless
+    # a test configures it.
+    "EMPORIA_OPERATOR_SIGNER": "env",
+    "EMPORIA_OPERATOR_PRIVATE_KEY": "",
+    "EMPORIA_OPERATOR_ADDRESS": "",
+    "EMPORIA_ALLOW_HOT_OPERATOR_KEY": "",
+    "EMPORIA_ESCROW_NETWORK": "",
+    "EMPORIA_ESCROW_RPC_URL": "",
+    "EMPORIA_ESCROW_CONTRACT": "",
+    "EMPORIA_ESCROW_COLLECTOR": "",
+    "EMPORIA_ESCROW_FEE_RECEIVER": "",
 }
 
 os.environ.update(TEST_ENVIRONMENT)
@@ -151,6 +171,20 @@ def pytest_configure(config):
 # This is the same lesson this file already records for environment pinning: it
 # used to live in test_emporia.py too, and test_installer.py silently never got
 # it. Shared setup in a test module is shared with nobody.
+@pytest.fixture(scope="session", autouse=True)
+def _test_keys_dir_for_every_module():
+    """Every test's keys live under this run's TEST_ROOT, never a real key
+    directory -- whichever test files are collected. Same lesson as the DB
+    fixture below: shared setup in a test module is shared with nobody."""
+    from unittest.mock import patch
+
+    from emporia import identity
+    keys = TEST_ROOT / "keys"
+    keys.mkdir(mode=0o700, parents=True, exist_ok=True)
+    with patch.object(identity, "KEY_DIR", keys):
+        yield
+
+
 @pytest.fixture(scope="session", autouse=True)
 def _init_test_db_for_every_module():
     from emporia.relay_server import init_db

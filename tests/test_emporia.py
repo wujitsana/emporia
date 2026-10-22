@@ -50,14 +50,8 @@ from emporia.relay_server import app, init_db
 # module only runs when that module is collected.
 
 
-@pytest.fixture(scope="session", autouse=True)
-def _test_keys_dir():
-    """Real Ed25519 keys for signed-action tests live in a throwaway temp dir,
-    never the developer's actual ~/.hermes/keys."""
-    from emporia import identity
-    with tempfile.TemporaryDirectory() as d:
-        with patch.object(identity, "KEY_DIR", Path(d)):
-            yield
+# _test_keys_dir moved to conftest.py (P99), for the same reason: run on its
+# own, any other test file wrote its agents' keys into the real key directory.
 
 
 @pytest.fixture
@@ -24795,10 +24789,15 @@ def test_sdk_x402_retry_is_shared_by_all_three_paid_methods():
     call sites being changed alone — the same reason P44 pinned the four
     verifier result dicts this way."""
     text = (_DOC_ROOT / "src/emporia/agent_sdk.py").read_text()
-    assert text.count("pay_with_x402: bool = False") == 3, \
-        "join_session, join_room and subscribe_agora_topic must each take the flag"
+    # P99: fund_session takes the flag too, but pays by a different scheme -- an
+    # escrow hold, signed through escrow.sign_offer(), not an `exact` x402
+    # payment -- so it is counted on its own path below.
+    assert text.count("pay_with_x402: bool = False") == 4, \
+        "join_session, join_room, subscribe_agora_topic and fund_session must each take the flag"
     assert text.count("await self._pay_and_retry_x402(") == 3, \
-        "each paid method must route through the one shared retry, not its own copy"
+        "each exact-scheme paid method must route through the one shared retry, not its own copy"
+    assert text.count("sign_offer(") == 1, \
+        "escrow holds are signed in one place, escrow.sign_offer()"
 
 
 # ============================================================================
@@ -28117,7 +28116,7 @@ def test_the_membership_rule_is_written_in_exactly_one_place():
 # P61 — the schema has a version, and the version has to stay honest
 # ---------------------------------------------------------------------------
 
-# 28 tables, 251 columns, at SCHEMA_VERSION 3. Recomputed by the test below;
+# 29 tables, 266 columns, at SCHEMA_VERSION 4. Recomputed by the test below;
 # when it fails, read *why* before touching this string.
 #
 # V1 -> V2 (P72-4): `bounty_entries` and its UNIQUE (listing_id, nous_user_id)
@@ -28129,7 +28128,11 @@ def test_the_membership_rule_is_written_in_exactly_one_place():
 # V2 -> V3 (P87): `listings.federated_from`, the peer a federated row was pulled
 # from. Federation ownership is checked against it, so a V2 relay that ignored
 # it would let a peer overwrite rows it does not own.
-_SCHEMA_FINGERPRINT_V3 = "e4b232f121d9dc73dbe123fd9e8c38f15449fcb8edbaf713edb364759acadcc2"
+#
+# V3 -> V4 (P99): `escrow_holds`, the on-chain holds of x402 purchases. A V3
+# relay would serve a V4 database blind to holds it is operator for -- unable to
+# capture or void them -- so it refuses instead.
+_SCHEMA_FINGERPRINT_V4 = "de7fa90d96138f197252021f50372076367eb2b15ccc80679b8c1006267328b1"
 
 
 def _schema_fingerprint(db_path) -> tuple[str, int, int]:
@@ -28169,9 +28172,9 @@ def test_a_schema_change_requires_a_version_bump():
     from emporia.relay_server import SCHEMA_VERSION
 
     fingerprint, tables, columns = _schema_fingerprint(_test_db)
-    assert (SCHEMA_VERSION, fingerprint) == (3, _SCHEMA_FINGERPRINT_V3), (
+    assert (SCHEMA_VERSION, fingerprint) == (4, _SCHEMA_FINGERPRINT_V4), (
         f"the schema changed ({tables} tables, {columns} columns) or the version "
-        f"moved. Bump SCHEMA_VERSION *and* update _SCHEMA_FINGERPRINT_V3 — in "
+        f"moved. Bump SCHEMA_VERSION *and* update _SCHEMA_FINGERPRINT_V4 — in "
         f"that order, and never the fingerprint alone.\n"
         f"  code version: {SCHEMA_VERSION}\n  fingerprint:  {fingerprint}"
     )
