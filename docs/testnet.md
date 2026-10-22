@@ -161,6 +161,20 @@ regression fails about the endpoint rather than about a room three layers away.
 Confirmation uses `pm_card_visa`, Stripe's always-succeeds test token. No card details exist
 anywhere in this repo.
 
+**First live run, 2026-10-22 (P106), and it found a bug:** the confirm sent `metadata`, which
+Stripe's confirm endpoint rejects ("Received unknown parameter: metadata"), so every server-side
+confirm — test or live — would have failed. Fixed; lanes 2, 2b and 3 now pass.
+
+## Lane 2b — Shared Payment Tokens, no MPP profile needed (P106)
+
+Same key as lane 2. Mints a test SPT with `create_test_spt()`, reads its limits back with
+`retrieve_spt()`, pays with it as a manual-capture hold through `confirm_spt()`, and releases the
+hold. Its first run found `create_test_spt()` sending `usage_limits[amount]` (unknown to Stripe;
+the limit is `max_amount`, in cents) and omitting the required `usage_limits[expires_at]`.
+
+`STRIPE_API_VERSION` must be a version the SPT endpoints accept (`2026-04-22.preview`, the
+default). A plain dated version is refused with "Invalid Stripe API version".
+
 ---
 
 ## Lane 3 — Stripe MPP / Shared Payment Tokens

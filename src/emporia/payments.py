@@ -30,6 +30,7 @@ import json
 import os
 import re
 import secrets
+import time
 from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import Any
@@ -723,7 +724,10 @@ async def create_test_spt(amount_cents: int, currency: str = "usd") -> dict[str,
             "A restricted test key (rk_test_) is still test mode but may lack "
             "permission for Stripe's test_helpers endpoints."
         )
-    amount = f"{amount_cents / 100:.2f}"
+    # P106, from the first live call: Stripe knows no `usage_limits[amount]`
+    # ("Received unknown parameter") — the limit is `max_amount`, in cents, as
+    # retrieve_spt() already reads it — and `usage_limits[expires_at]` is
+    # required. An hour covers any demo flow.
     async with httpx.AsyncClient(timeout=REQUEST_TIMEOUT) as client:
         resp = await client.post(
             f"{STRIPE_API_BASE}/test_helpers/shared_payment/granted_tokens",
@@ -731,8 +735,9 @@ async def create_test_spt(amount_cents: int, currency: str = "usd") -> dict[str,
             headers={"Stripe-Version": STRIPE_API_VERSION},
             data={
                 "payment_method": "pm_card_visa",
-                "usage_limits[amount]": amount,
+                "usage_limits[max_amount]": str(amount_cents),
                 "usage_limits[currency]": currency.lower(),
+                "usage_limits[expires_at]": str(int(time.time()) + 3600),
             },
         )
         resp.raise_for_status()
@@ -1073,10 +1078,11 @@ async def confirm_stripe_intent(
         resp = await client.post(
             f"{STRIPE_API_BASE}/payment_intents/{payment_intent_id}/confirm",
             auth=(key, ""),
-            data={
-                "payment_method": payment_method_id or STRIPE_TEST_PAYMENT_METHOD,
-                "metadata[protocol]": "emporia:v1",
-            },
+            # P106: no `metadata` here. Stripe's confirm endpoint rejects it
+            # ("Received unknown parameter: metadata", 400) — found on the first
+            # live run of testnet lane 2. The intent's metadata is set where it
+            # is created.
+            data={"payment_method": payment_method_id or STRIPE_TEST_PAYMENT_METHOD},
         )
         resp.raise_for_status()
         pi = resp.json()

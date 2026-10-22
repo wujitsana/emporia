@@ -526,8 +526,9 @@ When `STRIPE_SECRET_KEY` is a test key and `STRIPE_PROFILE_ID` is a `profile_tes
 ```bash
 curl -u $STRIPE_SECRET_KEY: https://api.stripe.com/v1/test_helpers/shared_payment/granted_tokens \
   -d "payment_method=pm_card_visa" \
-  -d "usage_limits[amount]=1.00" \
+  -d "usage_limits[max_amount]=100" \
   -d "usage_limits[currency]=usd" \
+  -d "usage_limits[expires_at]=$(( $(date +%s) + 3600 ))" \
   -H "Stripe-Version: 2026-04-22.preview"
 ```
 

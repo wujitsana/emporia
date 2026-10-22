@@ -95,7 +95,10 @@ export function ListingsView({
   const [lobby] = useInterval(() => api.gamingLobby(), 15_000, [refreshTrigger]);
   const challenges: Challenge[] = lobby?.challenges ?? [];
 
-  const sessions = listings.filter((l) => l.listing_type !== "room");
+  // P105: bounties are listings too (same table) and BountyBoard above
+  // renders them. Left in here they showed a second time as a "$5.00" service
+  // — a prize offered, read as a price asked.
+  const sessions = listings.filter((l) => l.listing_type !== "room" && l.listing_type !== "bounty");
   const rooms = listings.filter((l) => l.listing_type === "room");
 
   const open = (l: Listing) => {

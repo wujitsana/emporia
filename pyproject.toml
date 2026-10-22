@@ -24,10 +24,9 @@ dependencies = [
 
 [project.optional-dependencies]
 # P45: the x402 payer (src/emporia/x402_payer.py) needs EIP-712 signing, which
-# pulls ~19 packages. The relay only ever *verifies* x402 credentials via the
-# facilitator, so it must not carry that weight -- the Dockerfile's
-# `uv sync --frozen --no-dev` deliberately installs neither this extra nor dev.
-# CI adds `--extra x402` so the payer's tests run.
+# pulls ~19 packages. P106: the relay needs it too now -- the escrow operator
+# (P96-P99) signs and ABI-encodes on the relay -- so the Dockerfile installs
+# this extra. Plain `exact` x402 is still verified via the facilitator.
 x402 = [
     "eth-account>=0.13.0",
 ]

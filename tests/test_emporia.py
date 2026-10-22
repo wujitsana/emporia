@@ -24958,6 +24958,30 @@ async def test_testnet_stripe_confirm_reaches_a_real_endpoint():
 
 @pytest.mark.testnet
 @_needs_stripe_test_key
+async def test_testnet_spt_mints_retrieves_and_holds():
+    """Lane 2b (P106): our SPT code against Stripe itself, no MPP profile needed.
+
+    Mint a test token, read its limits back, pay with it as a manual-capture
+    hold, release the hold. Its first live run found create_test_spt() sending
+    a parameter Stripe does not know and omitting one it requires.
+    """
+    import uuid
+
+    from emporia.payments import cancel_payment_hold, confirm_spt, create_test_spt, retrieve_spt
+
+    with patch.dict(os.environ, {"STRIPE_SECRET_KEY": _TESTNET_STRIPE_KEY}, clear=False):
+        spt = (await create_test_spt(500, "usd"))["id"]
+        assert spt.startswith("spt_")
+        limits = await retrieve_spt(spt)
+        assert limits["max_amount_cents"] == 500, limits
+        paid = await confirm_spt(spt, 300, f"lane2b_{uuid.uuid4().hex[:8]}", "lane2b_payer")
+        assert paid["status"] == "requires_capture", paid
+        released = await cancel_payment_hold(paid["payment_intent_id"])
+        assert released.get("status") == "canceled", released
+
+
+@pytest.mark.testnet
+@_needs_stripe_test_key
 def test_testnet_paid_room_join_settles_through_stripe(client, monkeypatch):
     """The PaymentIntent lane end to end, unmocked: the relay mints an intent
     bound to the room and payer, the payer confirms it with a test card, the
@@ -25030,25 +25054,18 @@ def test_testnet_paid_room_join_settles_through_mpp_spt(client, monkeypatch):
     SPTs are single-use, so a supplied one works exactly once — a second run
     with the same `EMPORIA_TESTNET_SPT` fails at Stripe, not here.
     """
-    import httpx as httpx_module
-
-    from emporia.payments import STRIPE_API_BASE
-
     monkeypatch.setenv("STRIPE_SECRET_KEY", _TESTNET_STRIPE_KEY)
     monkeypatch.setenv("STRIPE_PROFILE_ID", _TESTNET_STRIPE_PROFILE)
 
     spt = _TESTNET_SPT
     if not spt:
-        minted = httpx_module.post(
-            f"{STRIPE_API_BASE}/test_helpers/shared_payment/granted_tokens",
-            auth=(_TESTNET_STRIPE_KEY, ""), timeout=30,
-            headers={"Stripe-Version": "2026-04-22.preview"},
-            data={"usage_limits[currency]": "usd", "usage_limits[max_amount]": "1000"},
-        )
-        assert minted.status_code == 200, (
-            f"could not mint a test SPT ({minted.status_code}): {minted.text[:300]}"
-        )
-        spt = minted.json()["id"]
+        # P106: through create_test_spt(), whose parameters the live API has
+        # now checked (lane 2b) — this copy lacked payment_method and the
+        # required usage_limits[expires_at].
+        import asyncio
+
+        from emporia.payments import create_test_spt
+        spt = asyncio.run(create_test_spt(1000, "usd"))["id"]
     assert spt.startswith("spt_"), spt
 
     owner, payer = "p46_mpp_owner", "p46_mpp_payer"

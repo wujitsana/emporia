@@ -2,6 +2,7 @@ import Text from "@components/Text";
 import type { Settlement } from "./api";
 import { useRelayHealth } from "./healthCtx";
 import { SlimCard } from "./ui/cards";
+import { settlementHealth, settlementHealthTitle } from "./paymentFormat";
 
 /* P43-2: this took health as a `seed` prop and polled /health anyway, and
    polled /payments/settlements on a timer identical to the one the Overview
@@ -9,8 +10,11 @@ import { SlimCard } from "./ui/cards";
    health through the context, settlements as a prop. */
 export function PaymentsFeesSection({ settlements }: { settlements: Settlement[] }) {
   const health = useRelayHealth();
-  const totalStakeCents = settlements.reduce((s, r) => s + r.total_stake_cents, 0);
-  const totalFeeCents = settlements.reduce((s, r) => s + r.platform_fee_cents, 0);
+  // P105: a failed capture moved no money — counted apart, never summed.
+  const moved = settlements.filter((s) => settlementHealth(s) !== "failed");
+  const failedCount = settlements.length - moved.length;
+  const totalStakeCents = moved.reduce((s, r) => s + r.total_stake_cents, 0);
+  const totalFeeCents = moved.reduce((s, r) => s + r.platform_fee_cents, 0);
   const feeBps = health?.operator_fee_bps ?? 250;
   const feeLabel = `${(feeBps / 100).toFixed(1)}%`;
   const methods = health?.payment_methods?.join(", ") || "none";
@@ -24,7 +28,7 @@ export function PaymentsFeesSection({ settlements }: { settlements: Settlement[]
   return (
     <SlimCard
       title="Payments"
-      foot={`Relay-settled MPP commerce. Total spend limit: ${cap && cap > 0 ? `$${(cap / 100).toFixed(2)}` : "unlimited"}` }
+      foot={`Stripe (card, MPP) and x402 (USDC). Total spend limit: ${cap && cap > 0 ? `$${(cap / 100).toFixed(2)}` : "unlimited"}` }
     >
       <div className="e-kpi-row">
         <div className="e-kpi">
@@ -44,9 +48,15 @@ export function PaymentsFeesSection({ settlements }: { settlements: Settlement[]
           <span className="e-kpi__lbl">stripe profile</span>
         </div>
         <div className="e-kpi">
-          <span className="e-kpi__val">{settlements.length}</span>
+          <span className="e-kpi__val">{moved.length}</span>
           <span className="e-kpi__lbl">settled</span>
         </div>
+        {failedCount > 0 && (
+          <div className="e-kpi" title="Captures that failed: nothing was paid out on these.">
+            <span className="e-kpi__val" style={{ color: "var(--theme-warning, #c33)" }}>{failedCount}</span>
+            <span className="e-kpi__lbl">failed</span>
+          </div>
+        )}
         <div className="e-kpi">
           <span className="e-kpi__val">${(totalStakeCents / 100).toFixed(0)}</span>
           <span className="e-kpi__lbl">volume</span>
@@ -69,9 +79,17 @@ export function PaymentsFeesSection({ settlements }: { settlements: Settlement[]
               <Text>
                 {s.status === "refunded"
                   ? "refund"
-                  : `$${(s.winner_payout_cents / 100).toFixed(2)}`}
+                  : settlementHealth(s) === "failed"
+                    ? "not paid"
+                    : `$${(s.winner_payout_cents / 100).toFixed(2)}`}
               </Text>
-              <Text className="e-faint">{s.status}</Text>
+              <Text
+                className="e-faint"
+                title={settlementHealthTitle(s)}
+                style={settlementHealth(s) === "failed" ? { color: "var(--theme-warning, #c33)" } : undefined}
+              >
+                {settlementHealth(s)}
+              </Text>
             </li>
           ))}
         </ul>

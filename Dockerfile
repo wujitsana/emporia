@@ -26,9 +26,14 @@ RUN pip install --no-cache-dir uv
 WORKDIR /app
 
 # Install Python deps first (better layer caching on code-only changes)
-COPY pyproject.toml uv.lock ./
+# README.md: pyproject names it as the package readme, and building the
+# project fails without it (P106 — the image had not built since init).
+COPY pyproject.toml uv.lock README.md ./
 COPY src/ ./src/
-RUN uv sync --frozen --no-dev
+# --extra x402 (P106): the escrow operator (P96-P99) signs and ABI-encodes on
+# the relay itself, so the image needs eth-account/eth-abi. Without them a
+# relay with EMPORIA_ESCROW_* set failed at the first /fund.
+RUN uv sync --frozen --no-dev --extra x402
 
 # Embedded dashboard build output — relay serves this at /ui/ (StaticFiles on dashboard/dist)
 COPY --from=dashboard-builder /build/dashboard/dist ./dashboard/dist

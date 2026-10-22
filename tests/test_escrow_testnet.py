@@ -84,7 +84,7 @@ def live(tmp_path_factory):
     env = {**os.environ,
            "EMPORIA_DB_PATH": str(tmp / "relay.sqlite3"), "EMPORIA_LOG_DIR": str(tmp / "logs"),
            "EMPORIA_AUDIT_DIR": str(tmp / "audit"), "EMPORIA_KEYS_DIR": str(tmp / "relay_keys"),
-           "EMPORIA_RELAY_PORT": str(port), "EMPORIA_RELAY_BASE_URL": url,
+           "EMPORIA_RELAY_PORT": str(port), "EMPORIA_RELAY_URL": url,
            "EMPORIA_TRUST_LOCAL_HEADER_AUTH": "0", "STRIPE_SECRET_KEY": "",
            "EMPORIA_X402_ENABLED": "0",
            "EMPORIA_ESCROW_NETWORK": f"eip155:{CHAIN}", "EMPORIA_ESCROW_RPC_URL": RPC,

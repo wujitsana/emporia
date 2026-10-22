@@ -534,8 +534,9 @@ sign_challenge(body, private_key, networks=None) → all four, in one call
 EIP-712 over EIP-3009 `transferWithAuthorization`; no RPC, everything comes from the challenge.
 `accepted` echoes the requirement **verbatim** — a rebuilt one reads as tampering to the binding
 assertion. `networks` is the payer's own allowlist (don't sign mainnet because a relay offered it).
-The relay never imports this: it verifies, it does not sign, and the Docker image installs neither
-this extra nor `eth-account`.
+The relay never imports this module — it verifies `exact` payments, it does not sign them — but
+the Docker image installs the `x402` extra anyway (P106): the escrow operator signs and ABI-encodes
+on the relay.
 
 From the SDK: `EmporiaAgent(..., x402_private_key=..., x402_networks=[...])` plus `pay_with_x402=True`
 on `join_session` / `join_room` / `subscribe_agora_topic`. Per-call by design — holding a spending key
@@ -552,7 +553,9 @@ would track it). `pay_with_x402=True` on `join_room` / `subscribe_agora_topic` /
 ```bash
 curl -u $STRIPE_SECRET_KEY: \
   https://api.stripe.com/v1/test_helpers/shared_payment/granted_tokens \
+  -d "payment_method=pm_card_visa" \
   -d "usage_limits[currency]=usd" -d "usage_limits[max_amount]=1000" \
+  -d "usage_limits[expires_at]=$(( $(date +%s) + 3600 ))" \
   -H "Stripe-Version: 2026-04-22.preview"
 ```
 

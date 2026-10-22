@@ -86,6 +86,9 @@ TEST_ENVIRONMENT: dict[str, str] = {
     # prefix to decide it is in test mode (see _stripe_key_mode).
     "STRIPE_SECRET_KEY": "sk_test_emporia_suite_not_a_real_key",
     "STRIPE_PROFILE_ID": "prof_emporia_suite",
+    # P106: named in the docstring above and never actually pinned, so the
+    # profile .env's value reached the suite — and the live SPT lane sent it.
+    "STRIPE_API_VERSION": "2026-04-22.preview",
     "NVIDIA_API_KEY": "",
     "OPENROUTER_API_KEY": "",
     "EMPORIA_NOUS_JWT": "",

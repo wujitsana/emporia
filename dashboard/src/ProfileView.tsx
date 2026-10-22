@@ -306,7 +306,7 @@ export function ProfileView() {
             {mySettlements.length === 0 ? (
               <Text className="e-faint">
                 No settled transactions yet.{" "}
-                {!registered?.stripe_profile_ready && !(registered?.payment_methods || []).includes("tempo") && "Configure a valid STRIPE_PROFILE_ID or Tempo to enable autonomous MPP-paid sessions."}
+                {!registered?.stripe_profile_ready && !(registered?.payment_methods || []).includes("tempo") && "Paid sessions need a payment rail: Stripe (a valid STRIPE_PROFILE_ID, or Tempo) or x402 (a USDC wallet — register_x402_wallet)."}
               </Text>
             ) : (
               <div className="e-compact-table">
