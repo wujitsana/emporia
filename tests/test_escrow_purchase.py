@@ -43,7 +43,8 @@ AMOUNT = 5_000_000   # $5.00 in USDC atomic units
 class FakeChain:
     def __init__(self):
         self.authorized, self.captured, self.voided = [], [], []
-        self.capturable = AMOUNT
+        self.capturable, self.refundable = AMOUNT, 0
+        self.fail_capture = self.fail_void = None   # an exception to raise, P111
 
     async def authorize(self, cfg, signer, info, amount, sig):
         assert signer.address == OPERATOR.address
@@ -51,14 +52,21 @@ class FakeChain:
         return "0xauth" + uuid.uuid4().hex[:8]
 
     async def payment_state(self, cfg, info):
-        return {"has_collected_payment": True, "capturable": self.capturable, "refundable": 0}
+        return {"has_collected_payment": True, "capturable": self.capturable,
+                "refundable": self.refundable}
 
     async def capture(self, cfg, signer, info, amount):
+        if self.fail_capture:
+            raise self.fail_capture
         self.captured.append((info, amount))
+        self.capturable, self.refundable = 0, amount
         return "0xcapture"
 
     async def void(self, cfg, signer, info):
+        if self.fail_void:
+            raise self.fail_void
         self.voided.append(info)
+        self.capturable = 0
         return "0xvoid"
 
 
@@ -283,3 +291,156 @@ def test_escrow_holds_are_visible_to_their_parties_only(client, chain):
         assert "payment_info_json" not in hold
     assert client.get("/payments/escrow-holds", headers=_hdr(outsider)).json()["holds"] == []
     assert TestClient(app).get("/payments/escrow-holds").status_code == 401
+
+
+# ── P111: the chain decides, and what settlement could not finish is retried ──
+
+def _funded_and_delivered(client, chain):
+    sid, buyer, seller = _purchase(client)
+    _fund(client, sid, buyer, escrow.sign_offer(_offer(client, sid, buyer), PAYER.key.hex(),
+                                                expected_amount=AMOUNT))
+    _act(client, sid, seller, "accept")
+    _act(client, sid, seller, "deliver", {"deliverable": "done"})
+    return sid, buyer, seller
+
+
+def _reconcile():
+    import asyncio
+
+    from emporia.routes.sessions import reconcile_escrow_holds
+    return asyncio.run(reconcile_escrow_holds())
+
+
+def test_a_failed_capture_is_retried_until_the_seller_is_paid(client, chain):
+    from emporia.escrow_chain import EscrowChainError
+
+    sid, buyer, seller = _funded_and_delivered(client, chain)
+    chain.fail_capture = EscrowChainError("eth_estimateGas failed: upstream timeout")
+    _act(client, sid, buyer, "confirm")
+    [row] = _sql("SELECT * FROM settlements WHERE session_id = ?", sid)
+    assert row["transfer_status"] == "capture_failed"
+    assert _sql("SELECT state FROM escrow_holds WHERE session_id = ?", sid)[0]["state"] == \
+        "capture_pending"
+
+    chain.fail_capture = None
+    assert _reconcile()["escrow_captured"] == 1
+    assert len(chain.captured) == 1
+    [row] = _sql("SELECT * FROM settlements WHERE session_id = ?", sid)
+    assert (row["transfer_status"], row["transfer_id"]) == ("escrow_captured", "0xcapture")
+    assert _sql("SELECT state FROM escrow_holds WHERE session_id = ?", sid)[0]["state"] == "captured"
+
+
+def test_a_capture_whose_receipt_timed_out_but_landed_counts_as_paid(client, chain):
+    from emporia.escrow_chain import EscrowChainError
+
+    sid, buyer, seller = _funded_and_delivered(client, chain)
+    err = EscrowChainError("no receipt for 0xslow within 120s")
+    err.tx_hash = "0xslow"
+    chain.fail_capture = err
+    chain.capturable, chain.refundable = 0, AMOUNT     # it landed after all
+    _act(client, sid, buyer, "confirm")
+    [row] = _sql("SELECT * FROM settlements WHERE session_id = ?", sid)
+    assert (row["transfer_status"], row["transfer_id"]) == ("escrow_captured", "0xslow")
+
+
+def test_a_failed_void_is_retried_back_to_the_buyer(client, chain):
+    from emporia.escrow_chain import EscrowChainError
+
+    sid, buyer, seller = _funded_and_delivered(client, chain)
+    chain.fail_void = EscrowChainError("rpc down")
+    _act(client, sid, buyer, "dispute", {"reason": "wrong"})
+    assert _sql("SELECT state FROM escrow_holds WHERE session_id = ?", sid)[0]["state"] == \
+        "void_pending"
+    chain.fail_void = None
+    assert _reconcile()["escrow_voided"] == 1
+    assert _sql("SELECT state FROM escrow_holds WHERE session_id = ?", sid)[0]["state"] == "voided"
+
+
+def test_a_hold_past_its_authorization_window_is_left_to_the_payer(client, chain):
+    from emporia.escrow_chain import EscrowChainError
+
+    sid, buyer, seller = _funded_and_delivered(client, chain)
+    chain.fail_capture = EscrowChainError("rpc down")
+    _act(client, sid, buyer, "confirm")
+    chain.fail_capture = None
+    with patch("time.time", return_value=4_000_000_000):
+        assert _reconcile()["escrow_expired"] == 1
+    assert not chain.captured
+    assert _sql("SELECT state FROM escrow_holds WHERE session_id = ?", sid)[0]["state"] == "expired"
+
+
+def test_a_purchase_being_funded_cannot_be_funded_twice(client, chain):
+    from emporia import relay_server as rs
+    from emporia.routes.sessions import AWAITING_FUNDING, FUNDING
+
+    sid, buyer, seller = _purchase(client)
+    header = escrow.sign_offer(_offer(client, sid, buyer), PAYER.key.hex(), expected_amount=AMOUNT)
+    assert rs.claim_session_status(sid, AWAITING_FUNDING, FUNDING)    # another request in flight
+    r = _fund(client, sid, buyer, header)
+    assert r.status_code == 409 and "already being funded" in r.text
+    assert not chain.authorized
+
+
+def test_a_failed_authorize_releases_the_claim(client, chain):
+    from emporia.escrow_chain import EscrowChainError
+
+    sid, buyer, seller = _purchase(client)
+    header = escrow.sign_offer(_offer(client, sid, buyer), PAYER.key.hex(), expected_amount=AMOUNT)
+
+    async def refused(*a, **k):
+        raise EscrowChainError("transaction reverted")
+    chain.capturable = 0
+    with patch("emporia.escrow_chain.authorize", new=refused):
+        assert _fund(client, sid, buyer, header).status_code == 402
+    assert _sql("SELECT status FROM sessions WHERE session_id = ?", sid)[0]["status"] == \
+        "awaiting_funding"
+
+
+def test_a_hold_for_the_wrong_amount_is_voided_at_once(client, chain):
+    sid, buyer, seller = _purchase(client)
+    chain.capturable = AMOUNT - 1
+    r = _fund(client, sid, buyer, escrow.sign_offer(_offer(client, sid, buyer), PAYER.key.hex(),
+                                                    expected_amount=AMOUNT))
+    assert r.status_code == 502 and "voided back" in r.text
+    assert len(chain.voided) == 1
+
+
+# ── P112: service deadlines end on their own, inside the hold ──
+
+def test_a_silent_buyer_is_auto_confirmed_and_the_seller_paid(client, chain):
+    """Delivered, then the buyer never acts: the sweep ends it, the hold is captured."""
+    import asyncio
+    from datetime import UTC, datetime, timedelta
+
+    from emporia.routes.sessions import sweep_service_deadlines
+
+    sid, buyer, seller = _funded_and_delivered(client, chain)
+    asyncio.run(sweep_service_deadlines())
+    assert _sql("SELECT status FROM sessions WHERE session_id = ?", sid)[0]["status"] == "active"
+    captured_before = len(chain.captured)
+    later = datetime.now(UTC) + timedelta(days=3)
+
+    class _Later(datetime):
+        @classmethod
+        def now(cls, tz=None):
+            return later
+    with patch("emporia.modules.service.datetime", _Later):
+        asyncio.run(sweep_service_deadlines())     # other tests' sessions may end too
+        assert _sql("SELECT status FROM sessions WHERE session_id = ?", sid)[0]["status"] == \
+            "completed"
+        [row] = _sql("SELECT * FROM settlements WHERE session_id = ?", sid)
+        assert (row["winner_id"], row["transfer_status"]) == (seller, "escrow_captured")
+        captured = len(chain.captured)
+        assert asyncio.run(sweep_service_deadlines())["service_timeouts"] == 0, "settled once"
+    assert captured > captured_before and len(chain.captured) == captured
+    assert len(_sql("SELECT * FROM settlements WHERE session_id = ?", sid)) == 1
+
+
+def test_a_service_deadline_must_end_inside_the_hold(client, chain):
+    buyer = "ed_" + uuid.uuid4().hex[:8]
+    _register_keyed(client, buyer)
+    r = client.post("/sessions", json={"module_type": "emporia:service:v1",
+                                       "creator_agent_id": buyer,
+                                       "config": {"description": "x", "deadline_hours": 500},
+                                       "payment_rules": STAKE}, headers=_hdr(buyer))
+    assert r.status_code == 400 and "at most 120" in r.text

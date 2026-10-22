@@ -34,6 +34,10 @@ from emporia.module_sdk import (
 
 _DEFAULT_DEADLINE_HOURS = 24
 _BUYER_CONFIRM_WINDOW_HOURS = 6  # auto-confirm for seller after delivery + this window
+# P112: the delivery deadline plus the confirm window must end well inside the
+# payment hold — 7 days for an x402 escrow authorization and about 7 for a card
+# hold. A later settlement would try to capture a hold that has lapsed.
+MAX_DEADLINE_HOURS = 120
 
 
 @register_module
@@ -58,7 +62,8 @@ class ServiceModule(InteractionModule):
     def initial_state(self, participants: list[str], config: dict[str, Any]) -> SessionState:
         buyer = participants[0]
         seller = participants[1] if len(participants) > 1 else ""
-        deadline_hours = config.get("deadline_hours", _DEFAULT_DEADLINE_HOURS)
+        deadline_hours = min(float(config.get("deadline_hours", _DEFAULT_DEADLINE_HOURS)),
+                             MAX_DEADLINE_HOURS)
         now = datetime.now(UTC)
         return SessionState(
             data={

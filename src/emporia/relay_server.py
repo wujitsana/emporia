@@ -2513,6 +2513,51 @@ def get_escrow_hold(hold_hash: str) -> dict[str, Any] | None:
     return hold
 
 
+def escrow_holds_in_states(states: tuple[str, ...], limit: int = 100) -> list[dict[str, Any]]:
+    """Holds in any of `states`, oldest first — the reconciler's queue (P111)."""
+    marks = ",".join("?" * len(states))
+    with DB_LOCK, get_db() as conn:
+        rows = conn.execute(
+            f"SELECT * FROM escrow_holds WHERE state IN ({marks}) ORDER BY created_at LIMIT ?",
+            (*states, limit)).fetchall()
+    holds = []
+    for row in rows:
+        hold = dict(row)
+        hold["payment_info"] = json.loads(hold.pop("payment_info_json"))
+        holds.append(hold)
+    return holds
+
+
+def mark_escrow_settlement_captured(session_id: str, capture_tx: str | None) -> None:
+    """A capture that failed at settlement and landed later (P111): the
+    session's settlement row stops saying the seller was not paid."""
+    with DB_LOCK, get_db() as conn:
+        conn.execute(
+            "UPDATE settlements SET transfer_status = 'escrow_captured', "
+            "transfer_id = COALESCE(?, transfer_id) "
+            "WHERE session_id = ? AND rail = 'x402' AND transfer_status = 'capture_failed'",
+            (capture_tx, session_id))
+
+
+def active_sessions_of(module_type: str, limit: int = 200) -> list[dict[str, Any]]:
+    """Active sessions of one module, oldest first (P112's deadline sweep)."""
+    with DB_LOCK, get_db() as conn:
+        rows = conn.execute(
+            "SELECT * FROM sessions WHERE module_type = ? AND status = 'active' "
+            "ORDER BY updated_at LIMIT ?", (module_type, limit)).fetchall()
+    return [_session_row_to_dict(r) for r in rows]
+
+
+def claim_session_status(session_id: str, expected: str, new: str) -> bool:
+    """Move a session from `expected` to `new` only if it is still `expected`.
+    One UPDATE, so of two concurrent callers exactly one wins (P111)."""
+    with DB_LOCK, get_db() as conn:
+        cur = conn.execute(
+            "UPDATE sessions SET status = ?, updated_at = ? WHERE session_id = ? AND status = ?",
+            (new, datetime.now(UTC).isoformat(), session_id, expected))
+        return cur.rowcount == 1
+
+
 def update_escrow_hold(hold_hash: str, *, state: str, **tx: str) -> None:
     """Move a hold to `state`, recording the transaction that did it
     (capture_tx= or void_tx=)."""
@@ -4432,6 +4477,12 @@ async def _payout_reconcile_loop() -> None:
         await asyncio.sleep(_PAYOUT_RECONCILE_INTERVAL_SECONDS)
         try:
             counts = await _reconcile_owed_payouts()
+            # P111: failed escrow captures/voids, retried while the hold allows.
+            from emporia.routes.sessions import reconcile_escrow_holds
+            counts.update(await reconcile_escrow_holds())
+            # P112: service sessions whose deadline passed with nobody acting.
+            from emporia.routes.sessions import sweep_service_deadlines
+            counts.update(await sweep_service_deadlines())
         except asyncio.CancelledError:
             raise
         except Exception:
@@ -4443,7 +4494,8 @@ async def _payout_reconcile_loop() -> None:
         PAYOUT_RECONCILE_STATS["last_run_at"] = datetime.now(UTC).isoformat()
         PAYOUT_RECONCILE_STATS["consecutive_failures"] = 0
         for key, count in counts.items():
-            PAYOUT_RECONCILE_STATS["outcomes"][key] += count
+            outcomes = PAYOUT_RECONCILE_STATS["outcomes"]
+            outcomes[key] = outcomes.get(key, 0) + count
 
 
 # ============================================================================

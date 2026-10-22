@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   bountyStateLabel,
+  holdNeedsAttention,
   explorerTxUrl,
   railLabel,
   sessionStatusLabel,
@@ -50,5 +51,14 @@ describe("labels", () => {
   });
   it("spells out awaiting_funding", () => {
     expect(sessionStatusLabel("awaiting_funding")).toBe("awaiting funding");
+  });
+});
+
+describe("escrow hold states (P111)", () => {
+  it("flags a hold the seller may not be paid from", () => {
+    expect(holdNeedsAttention("capture_pending")).toBe(true);
+    expect(holdNeedsAttention("expired")).toBe(true);
+    expect(holdNeedsAttention("captured")).toBe(false);
+    expect(holdNeedsAttention("void_pending")).toBe(false);
   });
 });

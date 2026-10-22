@@ -74,6 +74,11 @@ export function usdcAtomicToUsd(amount: string): string {
   return n % 10_000 === 0 ? `$${(n / 1e6).toFixed(2)}` : `$${(n / 1e6).toFixed(6).replace(/0+$/, "")}`;
 }
 
+/** P111: a hold the seller may not be paid from — shown as a warning. */
+export function holdNeedsAttention(state: string): boolean {
+  return state === "capture_pending" || state === "expired";
+}
+
 export function holdStateTitle(state: string): string {
   switch (state) {
     case "authorized":
@@ -84,6 +89,12 @@ export function holdStateTitle(state: string): string {
       return "Voided: returned to the buyer.";
     case "reclaimed":
       return "Reclaimed by the buyer after the hold expired.";
+    case "capture_pending":
+      return "Capturing to the seller failed once; the relay retries until the hold expires.";
+    case "void_pending":
+      return "Returning it to the buyer failed once; the relay retries.";
+    case "expired":
+      return "The hold expired before it could be captured; the buyer can reclaim it.";
     default:
       return state;
   }
@@ -123,5 +134,6 @@ export function bountyStateLabel(
 /** A session status, for the session lists. */
 export function sessionStatusLabel(status: string): string {
   if (status === "awaiting_funding") return "awaiting funding";
+  if (status === "funding") return "funding…";
   return status;
 }

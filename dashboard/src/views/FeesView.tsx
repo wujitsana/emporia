@@ -4,7 +4,7 @@ import RowSpaceBetween from "@components/RowSpaceBetween";
 import { api } from "../api";
 import type { EscrowHold, PaymentRecord, Settlement } from "../api";
 import {
-  explorerTxUrl, holdStateTitle, networkLabel, railLabel, settlementHealth,
+  explorerTxUrl, holdNeedsAttention, holdStateTitle, networkLabel, railLabel, settlementHealth,
   settlementHealthTitle, usdcAtomicToUsd,
 } from "../paymentFormat";
 import { useInterval } from "../hooks";
@@ -246,7 +246,13 @@ export function FeesView({ navigate, isOperator = false }: { navigate?: Navigate
                       <td><AgentLink agent_id={h.receiver_agent_id} navigate={navigate} /></td>
                       <td style={{ fontVariantNumeric: "tabular-nums" }}>{usdcAtomicToUsd(h.amount_atomic)}</td>
                       <td className="e-faint" style={{ fontSize: 11 }}>{networkLabel(h.network)}</td>
-                      <td className="e-dim" title={holdStateTitle(h.state)}>{h.state}</td>
+                      <td
+                        className="e-dim"
+                        title={holdStateTitle(h.state)}
+                        style={holdNeedsAttention(h.state) ? { color: "var(--theme-warning, #c33)" } : undefined}
+                      >
+                        {h.state.replace("_", " ")}
+                      </td>
                       <td style={{ fontSize: 11, display: "flex", gap: 6 }}>
                         <TxLink network={h.network} tx={h.authorize_tx} label="hold" />
                         <TxLink network={h.network} tx={h.capture_tx} label="capture" />

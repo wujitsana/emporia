@@ -48,6 +48,11 @@ _RECEIPT_TIMEOUT_S = 120.0
 class EscrowChainError(RuntimeError):
     """A chain call failed or reverted. The message says which and why."""
 
+    #: P111: the transaction, when one was sent. A missing receipt is not a
+    #: failed transaction — it may still land — so a caller that sees this set
+    #: reads the payment's state before deciding anything.
+    tx_hash: str | None = None
+
 
 @dataclass(frozen=True)
 class EscrowConfig:
@@ -137,11 +142,15 @@ async def _send(cfg: EscrowConfig, signer: Any, data: bytes) -> str:
         receipt = await _rpc(cfg, "eth_getTransactionReceipt", [tx_hash])
         if receipt:
             if int(receipt["status"], 16) != 1:
-                raise EscrowChainError(f"transaction {tx_hash} reverted")
+                err = EscrowChainError(f"transaction {tx_hash} reverted")
+                err.tx_hash = tx_hash
+                raise err
             return tx_hash
         await asyncio.sleep(2)
-    raise EscrowChainError(f"no receipt for {tx_hash} within {_RECEIPT_TIMEOUT_S:.0f}s; "
+    err = EscrowChainError(f"no receipt for {tx_hash} within {_RECEIPT_TIMEOUT_S:.0f}s; "
                            f"check it before retrying")
+    err.tx_hash = tx_hash
+    raise err
 
 
 async def authorize(cfg: EscrowConfig, signer: Any, info: escrow.PaymentInfo,

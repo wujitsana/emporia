@@ -60,6 +60,17 @@ async def create_session(req: rs.CreateSessionRequest, request: Request):
     rs._enforce_agent_rate_limit(caller)
 
     module = get_interaction_module(req.module_type)
+    if req.module_type == SERVICE_MODULE:
+        from emporia.modules.service import MAX_DEADLINE_HOURS
+        try:
+            hours = float((req.config or {}).get("deadline_hours", 0) or 0)
+        except (TypeError, ValueError):
+            raise HTTPException(400, "deadline_hours must be a number")
+        if hours > MAX_DEADLINE_HOURS:
+            raise HTTPException(400, (
+                f"deadline_hours is at most {MAX_DEADLINE_HOURS}: delivery and the buyer's "
+                f"confirmation must finish while the payment is still held (7 days)."
+            ))
     payment_rules = req.payment_rules or module.PAYMENT_RULES.model_dump()
     if req.payment_rules:
         payment_rules = {**module.PAYMENT_RULES.model_dump(), **req.payment_rules}
@@ -227,6 +238,10 @@ async def get_session_audit(session_id: str, request: Request):
         "chain": entries,
     }
 AWAITING_FUNDING = "awaiting_funding"
+# P111: held for the seconds an escrow authorize takes on chain, so a second
+# fund request cannot place a second hold.
+FUNDING = "funding"
+SERVICE_MODULE = "emporia:service:v1"
 
 
 async def _start(session_id: str, s: dict[str, Any], participants: list[str],
@@ -277,6 +292,21 @@ def _escrow_hold_for(payment: dict[str, Any]):
         hold["payment_info"]), hold
 
 
+async def _chain_outcome(cfg, info) -> str | None:
+    """What the escrow contract says happened to a hold (P111): "held" (still
+    capturable), "captured", "gone" (voided or reclaimed), or None if the chain
+    cannot be read. Used whenever a capture or void call fails — a missing
+    receipt is not a failed transaction, and the contract is the record."""
+    from emporia import escrow_chain
+    try:
+        st = await escrow_chain.payment_state(cfg, info)
+    except Exception:
+        return None
+    if st["capturable"] > 0:
+        return "held"
+    return "captured" if st["refundable"] > 0 else "gone"
+
+
 async def _release_hold(payment: dict[str, Any]) -> dict[str, Any]:
     """Give a stake back, on whichever rail holds it: cancel a Stripe hold, or
     void an escrow hold to its payer (P99). Errors are reported, not raised —
@@ -290,8 +320,18 @@ async def _release_hold(payment: dict[str, Any]) -> dict[str, Any]:
             cfg, signer, info, hold = _escrow_hold_for(payment)
             if hold["state"] != "authorized":
                 return {"payment_intent_id": ref, "status": f"already {hold['state']}"}
-            tx = await escrow_chain.void(cfg, signer, info)
-            rs.update_escrow_hold(ref, state="voided", void_tx=tx)
+            try:
+                tx = await escrow_chain.void(cfg, signer, info)
+            except Exception as e:
+                # P111: read the chain before calling it failed, and leave a
+                # still-held hold for the reconciler to void, not to expire.
+                outcome = await _chain_outcome(cfg, info)
+                if outcome == "gone":
+                    tx = getattr(e, "tx_hash", None)
+                else:
+                    rs.update_escrow_hold(ref, state="void_pending")
+                    return {"payment_intent_id": ref, "error": str(e), "status": "void_pending"}
+            rs.update_escrow_hold(ref, state="voided", **({"void_tx": tx} if tx else {}))
             return {"payment_intent_id": ref, "status": "voided", "transaction": tx}
         return await cancel_payment_hold(ref)
     except Exception as e:
@@ -308,16 +348,30 @@ async def _settle_escrow_purchase(session_id: str, seller: str, total_cents: int
 
     captures, capture_tx, failed = [], None, False
     for p in payments:
+        ref = p["payment_intent_id"]
         try:
             cfg, signer, info, hold = _escrow_hold_for(p)
-            capture_tx = await escrow_chain.capture(cfg, signer, info, int(hold["amount_atomic"]))
-            rs.update_escrow_hold(p["payment_intent_id"], state="captured", capture_tx=capture_tx)
-            captures.append({"payment_intent_id": p["payment_intent_id"], "status": "captured",
-                             "transaction": capture_tx})
         except Exception as e:
             failed = True
-            captures.append({"payment_intent_id": p["payment_intent_id"],
-                             "status": f"capture_failed: {e}"})
+            captures.append({"payment_intent_id": ref, "status": f"capture_failed: {e}"})
+            continue
+        try:
+            tx = await escrow_chain.capture(cfg, signer, info, int(hold["amount_atomic"]))
+        except Exception as e:
+            # P111: the chain decides. A capture whose receipt timed out may
+            # have landed; one that truly failed is left `capture_pending` for
+            # reconcile_escrow_holds() to retry until the hold expires — before
+            # this, one RPC hiccup at confirm meant the seller was never paid.
+            if await _chain_outcome(cfg, info) == "captured":
+                tx = getattr(e, "tx_hash", None)
+            else:
+                rs.update_escrow_hold(ref, state="capture_pending")
+                failed = True
+                captures.append({"payment_intent_id": ref, "status": f"capture_failed: {e}"})
+                continue
+        capture_tx = tx or capture_tx
+        rs.update_escrow_hold(ref, state="captured", **({"capture_tx": tx} if tx else {}))
+        captures.append({"payment_intent_id": ref, "status": "captured", "transaction": tx})
     fee = platform_fee(total_cents)
     return {
         "session_id": session_id, "winner_id": seller, "total_stake_cents": total_cents,
@@ -330,6 +384,68 @@ async def _settle_escrow_purchase(session_id: str, seller: str, total_cents: int
         "transfer_status": "capture_failed" if failed else "escrow_captured",
         "status": "settled", "rail": RAIL_X402,
     }
+
+
+async def reconcile_escrow_holds(limit: int = 100) -> dict[str, int]:
+    """Finish what settlement could not (P111): retry a failed capture or void
+    while the hold can still be acted on, and record what the chain says
+    happened. Run by the relay's payout reconcile loop.
+
+    `capture_pending` → captured (retry, or found already captured: the
+    settlement row is corrected), or `expired` once the authorization window has
+    passed (the payer may then reclaim; the seller's settlement stays failed).
+    `void_pending` → voided, or `expired` (the payer reclaims it themselves).
+    """
+    import time
+
+    from emporia import escrow, escrow_chain
+    from emporia.operator_signer import load_operator_signer
+
+    counts = {"escrow_captured": 0, "escrow_voided": 0, "escrow_expired": 0,
+              "escrow_retry_later": 0}
+    cfg = escrow_chain.load_config()
+    if cfg is None:
+        return counts
+    holds = [h for h in rs.escrow_holds_in_states(("capture_pending", "void_pending"), limit)
+             if h["network"] == cfg.network]
+    if not holds:
+        return counts
+    signer = load_operator_signer(cfg.network)
+    for hold in holds:
+        ref, info = hold["hold_hash"], escrow.PaymentInfo.from_json(hold["payment_info"])
+        outcome = await _chain_outcome(cfg, info)
+        if outcome is None:
+            counts["escrow_retry_later"] += 1
+            continue
+        capturing = hold["state"] == "capture_pending"
+        if capturing and outcome == "captured":
+            rs.update_escrow_hold(ref, state="captured")
+            rs.mark_escrow_settlement_captured(hold["session_id"], None)
+            counts["escrow_captured"] += 1
+            continue
+        if outcome == "gone" or (not capturing and outcome == "captured"):
+            rs.update_escrow_hold(ref, state="voided" if outcome == "gone" else "captured")
+            counts["escrow_voided" if outcome == "gone" else "escrow_captured"] += 1
+            continue
+        if time.time() >= info.authorization_expiry:
+            rs.update_escrow_hold(ref, state="expired")
+            counts["escrow_expired"] += 1
+            continue
+        try:
+            if capturing:
+                tx = await escrow_chain.capture(cfg, signer, info, int(hold["amount_atomic"]))
+                rs.update_escrow_hold(ref, state="captured", capture_tx=tx)
+                rs.mark_escrow_settlement_captured(hold["session_id"], tx)
+                counts["escrow_captured"] += 1
+            else:
+                tx = await escrow_chain.void(cfg, signer, info)
+                rs.update_escrow_hold(ref, state="voided", void_tx=tx)
+                counts["escrow_voided"] += 1
+        except Exception:
+            rs.logger.warning("escrow reconcile: %s for %s will be retried",
+                              "capture" if capturing else "void", ref, exc_info=True)
+            counts["escrow_retry_later"] += 1
+    return counts
 
 
 def _escrow_rail(seller: str):
@@ -419,18 +535,36 @@ async def _fund_with_escrow(request: Request, s: dict[str, Any], session_id: str
                                                 escrow=cfg.contract).hex()
     if rs.get_escrow_hold(hold_hash):
         raise HTTPException(409, "This hold has already been submitted.")
+    # P111: claim the session before any chain call. Two concurrent funds both
+    # passed the status check above and could each place a hold — the buyer's
+    # money held twice for one purchase. One UPDATE decides; the loser is told.
+    if not rs.claim_session_status(session_id, AWAITING_FUNDING, FUNDING):
+        raise HTTPException(409, "This purchase is already being funded.")
     try:
-        tx = await escrow_chain.authorize(cfg, signer, info, amount, signature)
+        try:
+            tx = await escrow_chain.authorize(cfg, signer, info, amount, signature)
+        except escrow_chain.EscrowChainError as e:
+            # A missing receipt is not a failed authorize: ask the contract.
+            if (await _chain_outcome(cfg, info)) != "held":
+                rs._record_x402_settlement(request, {"success": False, "errorReason": str(e)},
+                                           network=cfg.network, payer=info.payer)
+                raise HTTPException(402, f"Escrow hold could not be placed: {e}")
+            tx = e.tx_hash or ""
         state = await escrow_chain.payment_state(cfg, info)
-    except escrow_chain.EscrowChainError as e:
-        rs._record_x402_settlement(request, {"success": False, "errorReason": str(e)},
-                                   network=cfg.network, payer=info.payer)
-        raise HTTPException(402, f"Escrow hold could not be placed: {e}")
-    if state["capturable"] != amount:
-        raise HTTPException(502, (
-            f"The hold was submitted ({tx}) but holds {state['capturable']}, not {amount}. "
-            f"Nothing was started; the payer can reclaim it after it expires."
-        ))
+        if state["capturable"] != amount:
+            # Void it now rather than leave the buyer's money held for a week.
+            try:
+                await escrow_chain.void(cfg, signer, info)
+                released = "It was voided back to the payer."
+            except Exception:
+                released = "Voiding it failed; the payer can reclaim it after it expires."
+            raise HTTPException(502, (
+                f"The hold was submitted ({tx}) but holds {state['capturable']}, not {amount}. "
+                f"Nothing was started. {released}"
+            ))
+    except BaseException:
+        rs.claim_session_status(session_id, FUNDING, AWAITING_FUNDING)
+        raise
     rs._record_x402_settlement(request, {"success": True, "transaction": tx},
                                network=cfg.network, payer=info.payer)
     rs.record_escrow_hold({
@@ -470,6 +604,8 @@ async def fund_session(session_id: str, request: Request):
     s = rs.load_session(session_id)
     if not s:
         raise HTTPException(404, "Session not found")
+    if s["status"] == FUNDING:
+        raise HTTPException(409, "This purchase is already being funded.")
     if s["status"] != AWAITING_FUNDING:
         raise HTTPException(409, f"Session is {s['status']}, not awaiting funding.")
     buyer, seller = s["participants"][0], s["participants"][1]
@@ -754,6 +890,10 @@ async def submit_action(session_id: str, req: rs.SubmitActionRequest):
     new_state = result.new_state
     is_over, outcome = module.is_terminal(new_state)
     new_status = "completed" if is_over else "active"
+    # P112: the deadline sweep can end a service session too. Whoever moves it
+    # from active to completed first settles it; the other is told.
+    if is_over and not rs.claim_session_status(session_id, "active", "completed"):
+        raise HTTPException(409, "This session has already ended.")
 
     rs.save_session(
         session_id=session_id,
@@ -794,96 +934,7 @@ async def submit_action(session_id: str, req: rs.SubmitActionRequest):
 
     settlement_record: dict[str, Any] | None = None
     if is_over:
-        winner_id = outcome.get("winner") if isinstance(outcome, dict) else None
-        outcome_type = outcome.get("outcome_type", "won") if isinstance(outcome, dict) else "won"
-        payments = rs.get_session_payments(session_id)
-        pi_ids = [p["payment_intent_id"] for p in payments]
-        total_cents = sum(p["amount_cents"] for p in payments)
-
-        module_purchase = (
-            module.STAKE_MODEL == STAKE_PURCHASE and not _is_bounty(s)
-            and bool(_stake(s["payment_rules"])[0])
-        )
-        if module_purchase and winner_id and winner_id != s["participants"][1]:
-            # A purchase pays only its seller. Any other winner is the buyer
-            # getting their money back, whatever the module called it.
-            outcome_type = "refund"
-        if outcome_type in ("refund", "draw"):
-            # Dispute, timeout, or a draw: cancel all authorized holds — no one
-            # is charged. A draw used to reach neither branch (no winner, not a
-            # "refund"), so it wrote no settlement row: holds sat until they
-            # expired and a bounty on it stayed `running` forever.
-            cancel_results = [await _release_hold(p) for p in payments if p.get("payment_intent_id")]
-            settlement_record = {
-                "session_id": session_id,
-                "winner_id": winner_id,
-                "outcome_type": outcome_type,
-                "status": "refunded",
-                "cancel_results": cancel_results,
-                "total_stake_cents": total_cents,
-                "platform_fee_cents": 0,
-                "winner_payout_cents": 0,
-                "payment_intent_ids": pi_ids,
-                "transfer_id": None,
-                "transfer_status": "refunded",
-            }
-            rs.record_settlement(settlement_record)
-        elif winner_id:
-            from emporia.payments import RAIL_X402
-            if total_cents and module_purchase and any(p.get("rail") == RAIL_X402 for p in payments):
-                # P99: an x402 escrow hold — capture on chain is the settlement.
-                settlement_record = await _settle_escrow_purchase(
-                    session_id, winner_id, total_cents, payments,
-                )
-            elif total_cents and module_purchase:
-                # P95: destination charges — capture is the settlement.
-                from emporia.payments import settle_destination_charges
-                settlement_record = await settle_destination_charges(
-                    session_id, winner_id, total_cents, pi_ids,
-                )
-            elif total_cents:
-                # Paid session: capture all escrowed holds, transfer to winner.
-                from emporia.payments import settle
-                winner_stripe_account = rs.AGENT_REGISTRY.get_stripe_account(winner_id)
-                settlement_record = await settle(
-                    session_id, winner_id, total_cents, pi_ids,
-                    winner_stripe_account=winner_stripe_account,
-                    winner_stripe_account_status=rs.AGENT_REGISTRY.get_stripe_account_status(winner_id),
-                    winner_stripe_account_mode=rs.AGENT_REGISTRY.get_stripe_account_mode(winner_id),
-                )
-            else:
-                # Free session: record outcome with zero financials.
-                settlement_record = {
-                    "session_id": session_id,
-                    "winner_id": winner_id,
-                    "outcome_type": outcome_type,
-                    "total_stake_cents": 0,
-                    "platform_fee_cents": 0,
-                    "winner_payout_cents": 0,
-                    "platform_fee_bps": rs.OPERATOR_FEE_BPS,
-                    "payment_intent_ids": [],
-                    "capture_results": [],
-                    "transfer_id": None,
-                    "transfer_status": "no_payment",
-                    "status": "settled",
-                }
-            rs.record_settlement(settlement_record)
-
-        terminal_event: dict[str, Any] = {
-            "type": "session_completed",
-            "session_id": session_id,
-            "outcome": outcome,
-            "settlement": settlement_record,
-        }
-        await rs.broadcast_to_session(session_id, terminal_event)
-        if rs._session_visibility(s) == "public":
-            await rs.broadcast_global(terminal_event)
-        # P92: and to each participant's own channel. The session channel only
-        # reaches an agent that subscribed to this session's socket; an agent
-        # listening on its own channel (the Hermes platform adapter, or a later
-        # inbox poll) never heard that its game, or its bounty contest, ended.
-        for p in s["participants"]:
-            await rs.broadcast_to_agent(p, terminal_event)
+        settlement_record = await _finish_session(session_id, s, module, outcome)
     elif new_state.current_agent and new_state.current_agent != req.agent_id:
         # P92: nothing told an agent it was their move unless it was watching
         # the session socket, so an agent driven by its own channel waited on a
@@ -905,6 +956,127 @@ async def submit_action(session_id: str, req: rs.SubmitActionRequest):
         "settlement": settlement_record,
         "artifacts": result.artifacts,
     }
+async def sweep_service_deadlines(limit: int = 200) -> dict[str, int]:
+    """End service sessions whose deadline passed with nobody acting (P112).
+
+    The service module's timeouts (refund if never delivered, auto-confirm for
+    the seller once delivered and the buyer's window lapsed) were evaluated only
+    inside submit_action. A buyer who went silent after delivery was therefore
+    never auto-confirmed: nothing captured the hold, and it lapsed back to them
+    with the seller unpaid. Run by the relay's payout reconcile loop.
+    """
+    counts = {"service_timeouts": 0}
+    module = get_interaction_module(SERVICE_MODULE)
+    for s in rs.active_sessions_of(SERVICE_MODULE, limit):
+        is_over, outcome = module.is_terminal(SessionState.from_dict(s["state"]))
+        if not is_over:
+            continue
+        # Claimed like a fund, so a racing submit_action and this sweep cannot
+        # both settle the same session.
+        if not rs.claim_session_status(s["session_id"], "active", "completed"):
+            continue
+        await _finish_session(s["session_id"], s, module, outcome)
+        counts["service_timeouts"] += 1
+    return counts
+
+
+async def _finish_session(session_id: str, s: dict[str, Any], module, outcome) -> dict[str, Any] | None:
+    """Settle a session that just ended and tell everyone (P112: shared by the
+    action that ended it and the sweep that ends a timed-out one)."""
+    settlement_record: dict[str, Any] | None = None
+    winner_id = outcome.get("winner") if isinstance(outcome, dict) else None
+    outcome_type = outcome.get("outcome_type", "won") if isinstance(outcome, dict) else "won"
+    payments = rs.get_session_payments(session_id)
+    pi_ids = [p["payment_intent_id"] for p in payments]
+    total_cents = sum(p["amount_cents"] for p in payments)
+
+    module_purchase = (
+        module.STAKE_MODEL == STAKE_PURCHASE and not _is_bounty(s)
+        and bool(_stake(s["payment_rules"])[0])
+    )
+    if module_purchase and winner_id and winner_id != s["participants"][1]:
+        # A purchase pays only its seller. Any other winner is the buyer
+        # getting their money back, whatever the module called it.
+        outcome_type = "refund"
+    if outcome_type in ("refund", "draw"):
+        # Dispute, timeout, or a draw: cancel all authorized holds — no one
+        # is charged. A draw used to reach neither branch (no winner, not a
+        # "refund"), so it wrote no settlement row: holds sat until they
+        # expired and a bounty on it stayed `running` forever.
+        cancel_results = [await _release_hold(p) for p in payments if p.get("payment_intent_id")]
+        settlement_record = {
+            "session_id": session_id,
+            "winner_id": winner_id,
+            "outcome_type": outcome_type,
+            "status": "refunded",
+            "cancel_results": cancel_results,
+            "total_stake_cents": total_cents,
+            "platform_fee_cents": 0,
+            "winner_payout_cents": 0,
+            "payment_intent_ids": pi_ids,
+            "transfer_id": None,
+            "transfer_status": "refunded",
+        }
+        rs.record_settlement(settlement_record)
+    elif winner_id:
+        from emporia.payments import RAIL_X402
+        if total_cents and module_purchase and any(p.get("rail") == RAIL_X402 for p in payments):
+            # P99: an x402 escrow hold — capture on chain is the settlement.
+            settlement_record = await _settle_escrow_purchase(
+                session_id, winner_id, total_cents, payments,
+            )
+        elif total_cents and module_purchase:
+            # P95: destination charges — capture is the settlement.
+            from emporia.payments import settle_destination_charges
+            settlement_record = await settle_destination_charges(
+                session_id, winner_id, total_cents, pi_ids,
+            )
+        elif total_cents:
+            # Paid session: capture all escrowed holds, transfer to winner.
+            from emporia.payments import settle
+            winner_stripe_account = rs.AGENT_REGISTRY.get_stripe_account(winner_id)
+            settlement_record = await settle(
+                session_id, winner_id, total_cents, pi_ids,
+                winner_stripe_account=winner_stripe_account,
+                winner_stripe_account_status=rs.AGENT_REGISTRY.get_stripe_account_status(winner_id),
+                winner_stripe_account_mode=rs.AGENT_REGISTRY.get_stripe_account_mode(winner_id),
+            )
+        else:
+            # Free session: record outcome with zero financials.
+            settlement_record = {
+                "session_id": session_id,
+                "winner_id": winner_id,
+                "outcome_type": outcome_type,
+                "total_stake_cents": 0,
+                "platform_fee_cents": 0,
+                "winner_payout_cents": 0,
+                "platform_fee_bps": rs.OPERATOR_FEE_BPS,
+                "payment_intent_ids": [],
+                "capture_results": [],
+                "transfer_id": None,
+                "transfer_status": "no_payment",
+                "status": "settled",
+            }
+        rs.record_settlement(settlement_record)
+
+    terminal_event: dict[str, Any] = {
+        "type": "session_completed",
+        "session_id": session_id,
+        "outcome": outcome,
+        "settlement": settlement_record,
+    }
+    await rs.broadcast_to_session(session_id, terminal_event)
+    if rs._session_visibility(s) == "public":
+        await rs.broadcast_global(terminal_event)
+    # P92: and to each participant's own channel. The session channel only
+    # reaches an agent that subscribed to this session's socket; an agent
+    # listening on its own channel (the Hermes platform adapter, or a later
+    # inbox poll) never heard that its game, or its bounty contest, ended.
+    for p in s["participants"]:
+        await rs.broadcast_to_agent(p, terminal_event)
+    return settlement_record
+
+
 @router.get("/sessions/{session_id}/state")
 async def get_session_state(session_id: str, request: Request):
     s = rs.load_session(session_id)
