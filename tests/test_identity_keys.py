@@ -31,3 +31,19 @@ def test_reading_a_key_never_creates_one():
 def test_reading_returns_the_same_key_the_generator_made():
     made = identity.get_public_key_hex("p103_somebody")
     assert identity.read_public_key_hex("p103_somebody") == made
+
+
+def test_distinct_agent_ids_never_share_a_key_or_wallet_file(tmp_path):
+    """P113: `my-agent` and `my_agent` are two identities on the relay; the
+    key file name used to fold `-` into `_`, giving them one key and one x402
+    wallet in a shared key directory."""
+    from unittest.mock import patch
+
+    from emporia import agent_wallet, identity
+
+    with patch.object(identity, "KEY_DIR", tmp_path):
+        assert identity._key_path("my-agent") != identity._key_path("my_agent")
+        assert identity._enc_key_path("my-agent") != identity._enc_key_path("my_agent")
+        assert agent_wallet.wallet_path("my-agent") != agent_wallet.wallet_path("my_agent")
+        assert identity._key_path("alpha").name == "alpha.priv"
+        assert identity._key_path("Hackathon_Hermes").name == "hackathon_hermes.priv"

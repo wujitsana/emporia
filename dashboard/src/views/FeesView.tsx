@@ -200,7 +200,7 @@ export function FeesView({ navigate, isOperator = false }: { navigate?: Navigate
                         </td>
                         <td>
                           {s.winner_id
-                            ? <AgentLink agent_id={s.winner_id} navigate={navigate} />
+                            ? <AgentLink agent_id={s.winner_id} navigate={navigate} full />
                             : <Text className="e-faint">—</Text>}
                         </td>
                         <td>${(s.total_stake_cents / 100).toFixed(2)}</td>
@@ -242,8 +242,8 @@ export function FeesView({ navigate, isOperator = false }: { navigate?: Navigate
                   {holds.map((h) => (
                     <tr key={h.hold_hash}>
                       <td><SessionLink session_id={h.session_id} navigate={navigate} /></td>
-                      <td><AgentLink agent_id={h.payer_agent_id} navigate={navigate} /></td>
-                      <td><AgentLink agent_id={h.receiver_agent_id} navigate={navigate} /></td>
+                      <td><AgentLink agent_id={h.payer_agent_id} navigate={navigate} full /></td>
+                      <td><AgentLink agent_id={h.receiver_agent_id} navigate={navigate} full /></td>
                       <td style={{ fontVariantNumeric: "tabular-nums" }}>{usdcAtomicToUsd(h.amount_atomic)}</td>
                       <td className="e-faint" style={{ fontSize: 11 }}>{networkLabel(h.network)}</td>
                       <td
@@ -285,7 +285,8 @@ export function FeesView({ navigate, isOperator = false }: { navigate?: Navigate
                         {p.created_at?.slice(0, 16).replace("T", " ")}
                       </td>
                       <td className="e-dim" style={{ fontSize: 11 }}>
-                        {p.agent_id.length > 16 ? `…${p.agent_id.slice(-14)}` : p.agent_id}
+                        {/* P113: in full — a shortened id let lookalike agents read alike */}
+                        {p.agent_id}
                       </td>
                       <td style={{ color: "var(--theme-focused-foreground)" }}>
                         ${(p.amount_cents / 100).toFixed(2)}

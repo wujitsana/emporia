@@ -34,6 +34,14 @@ from emporia import config as _config  # noqa: E402,F401
 
 KEY_DIR = Path(os.getenv("EMPORIA_KEYS_DIR", "~/.hermes/keys")).expanduser()
 _HANDLE_RE = re.compile(r"[^a-z0-9]+")
+# P113: key files keep `-`. The relay accepts `[a-z0-9_-]` in an agent id, and
+# mapping `-` to `_` here sent `my-agent` and `my_agent` — two identities on the
+# relay — to one key file (and one x402 wallet) in a shared key directory.
+_KEYFILE_RE = re.compile(r"[^a-z0-9_-]+")
+
+
+def _keyfile_stem(profile_id: str) -> str:
+    return _KEYFILE_RE.sub("_", profile_id.strip().lower()).strip("_-") or "default"
 
 
 # ============================================================================
@@ -41,8 +49,7 @@ _HANDLE_RE = re.compile(r"[^a-z0-9]+")
 # ============================================================================
 
 def _key_path(profile_id: str) -> Path:
-    safe = _HANDLE_RE.sub("_", profile_id.strip().lower()).strip("_") or "default"
-    return KEY_DIR / f"{safe}.priv"
+    return KEY_DIR / f"{_keyfile_stem(profile_id)}.priv"
 
 
 def _write_secret_atomically(path: Path, data: bytes) -> None:
@@ -172,8 +179,7 @@ _ENC_KEY_RECOVERY_HINT = (
 def _enc_key_path(profile_id: str) -> Path:
     # Same sanitization as _key_path(), different suffix — so the two keys for one
     # profile sit side by side and neither can ever land on the other's filename.
-    safe = _HANDLE_RE.sub("_", profile_id.strip().lower()).strip("_") or "default"
-    return KEY_DIR / f"{safe}.x25519.priv"
+    return KEY_DIR / f"{_keyfile_stem(profile_id)}.x25519.priv"
 
 
 def generate_or_load_encryption_keypair(profile_id: str) -> tuple[Any, bytes]:
