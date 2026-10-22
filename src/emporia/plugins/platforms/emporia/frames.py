@@ -146,7 +146,8 @@ def format_frame(frame: dict[str, Any], agent_id: str) -> Notice | None:
             f"{frame.get('seller_id', 'A seller')} took your service session {sid}. "
             f"Fund it ({_usd(frame.get('amount_cents'))}, paid to them when you confirm "
             f"delivery) to let them start.\n"
-            f"  → fund_session(session_id=\"{sid}\", mpp_token=...)"
+            f"  → fund_session(session_id=\"{sid}\", mpp_token=...)  (Stripe)\n"
+            f"  → fund_session(session_id=\"{sid}\", pay_with_x402=True)  (USDC escrow)"
         )
 
     if t == "session_abandoned":

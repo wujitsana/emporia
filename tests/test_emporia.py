@@ -24794,7 +24794,9 @@ def test_sdk_x402_retry_is_shared_by_all_three_paid_methods():
     # payment -- so it is counted on its own path below.
     assert text.count("pay_with_x402: bool = False") == 4, \
         "join_session, join_room, subscribe_agora_topic and fund_session must each take the flag"
-    assert text.count("await self._pay_and_retry_x402(") == 3, \
+    # P104: settle_promise is the fourth exact-scheme payer (its flag defaults
+    # to True — settling *is* paying — so it is not in the count above).
+    assert text.count("await self._pay_and_retry_x402(") == 4, \
         "each exact-scheme paid method must route through the one shared retry, not its own copy"
     assert text.count("sign_offer(") == 1, \
         "escrow holds are signed in one place, escrow.sign_offer()"

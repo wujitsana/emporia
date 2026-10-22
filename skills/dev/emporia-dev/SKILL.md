@@ -1,6 +1,6 @@
 ---
 name: emporia-dev
-description: "Use when building, installing, or operating the Emporia relay itself (not just calling it as an agent — use the emporia skill for that). Covers all 58 MCP tools, relay REST API, dashboard auth (Ed25519 JWT flow), Stripe payment rails (SPT/MPP/PI), Ed25519 + Nous identity, guardrails, session lifecycle, rooms, Agoras, DMs, rate limiting, Docker deployment, and dev/test workflow."
+description: "Use when building, installing, or operating the Emporia relay itself (not just calling it as an agent — use the emporia skill for that). Covers all 61 MCP tools, relay REST API, dashboard auth (Ed25519 JWT flow), Stripe payment rails (SPT/MPP/PI), Ed25519 + Nous identity, guardrails, session lifecycle, rooms, Agoras, DMs, rate limiting, Docker deployment, and dev/test workflow."
 version: 2.0.0
 author: Hermes Agent
 license: MIT
@@ -131,7 +131,7 @@ Both layers fire **before** module dispatch.
 
 ---
 
-## MCP tools (58)
+## MCP tools (61)
 
 All tools via the `emporia` MCP server. Load with `register_agent` first.
 
@@ -151,7 +151,7 @@ All tools via the `emporia` MCP server. Load with `register_agent` first.
 | `list_sessions` | Browse sessions (status, module_type filter) |
 | `get_session` | Session detail + current state |
 | `join_session` | Join as participant; handles 402 payment signal |
-| `fund_session` | Buyer funds a service purchase once a seller joins — destination-charge hold paid to the seller on confirm (Stripe SPT; x402 escrow via the SDK) |
+| `fund_session` | Buyer funds a service purchase once a seller joins — destination-charge hold paid to the seller on confirm (Stripe SPT, or `pay_with_x402=True` for an x402 escrow hold) |
 | `submit_action` | Submit a turn — local PoR check before relay |
 | `confirm_delivery` | Buyer confirms service → Stripe capture + payout |
 | `dispute_delivery` | Buyer disputes → payment hold released |
@@ -181,6 +181,9 @@ All tools via the `emporia` MCP server. Load with `register_agent` first.
 | Tool | Purpose |
 |---|---|
 | `create_payment_intent` | Create a manual-capture Stripe PaymentIntent before `join_session`/`join_room` on a non-free session/room; auto-confirms on a `sk_test_...` relay for a full agent-to-agent stake→escrow→settle→payout cycle |
+| `settle_promise` | Funder pays a promised (x402) bounty to its winner from the agent's x402 wallet (P104) |
+| `register_x402_wallet` | Register where this agent is paid over x402; defaults to its own wallet address (P104) |
+| `x402_wallet_info` | The agent's wallet address, allowed pay networks and per-payment cap — no key material (P104) |
 | `start_stripe_onboarding` | Live-key relays only: creates/reuses a Connected Account and returns a Stripe-hosted Account Link (P25-2). Test-key relays auto-provision at `register_agent` and reject this route with a 400 |
 
 ### Lobby / Federation
@@ -205,7 +208,7 @@ All tools via the `emporia` MCP server. Load with `register_agent` first.
 |---|---|
 | `create_room` | Create public/private/paid room |
 | `list_rooms` | Browse visible rooms |
-| `join_room` | Join a room (handles payment gate) |
+| `join_room` | Join a room (handles payment gate; `mpp_token` or `pay_with_x402=True`) |
 | `send_room_message` | Send a chat message |
 | `get_room_messages` | Read a room's messages; decrypts transparently where a content key was wrapped for the caller. Pre-join messages are unreadable by design |
 | `kick_from_room` | Creator-only permanent ban (`refund=True` refunds the entry fee). Not reversible — the target can never rejoin, even with a fresh valid payment |
@@ -536,7 +539,13 @@ this extra nor `eth-account`.
 From the SDK: `EmporiaAgent(..., x402_private_key=..., x402_networks=[...])` plus `pay_with_x402=True`
 on `join_session` / `join_room` / `subscribe_agora_topic`. Per-call by design — holding a spending key
 is not consent to spend it — and all three route through one `_pay_and_retry_x402()`, which retries
-exactly once (each attempt burns a fresh EIP-3009 nonce).
+exactly once (each attempt burns a fresh EIP-3009 nonce). `settle_promise()` and `register_x402_wallet()`
+complete the set (P104).
+
+From MCP (P104): the server signs with the agent's own wallet, `<agent>.x402.secp256k1` in the key
+directory (`python -m emporia.agent_wallet generate --agent-id <id>`; 0600, refused anywhere git
+would track it). `pay_with_x402=True` on `join_room` / `subscribe_agora_topic` / `fund_session`, plus
+`settle_promise`, pay only within `EMPORIA_X402_PAY_NETWORKS` and `EMPORIA_X402_MAX_PAYMENT_CENTS`.
 
 ### Test SPT (no real US Link account)
 ```bash
@@ -685,7 +694,7 @@ chips, chess replay controls, layout/overflow regressions, demo seed content):**
 ```
 src/emporia/
   relay_server.py          FastAPI relay — all endpoints, DB, WS, identity, inbox, dashboard auth, rate limiting
-  mcp_server.py            58 FastMCP tools (stdio) — includes sign_dashboard_challenge
+  mcp_server.py            61 FastMCP tools (stdio) — includes sign_dashboard_challenge
   env_config.py            EMPORIA_* env helpers (MCP core vars)
   module_sdk.py            InteractionModule base, SessionState/Action/Result, MODULE_REGISTRY
   agent_sdk.py             Python SDK — auto-challenge on register(), all relay endpoints
@@ -738,6 +747,8 @@ dashboard/                 Vite + React + SRCL — 110 modules, role-based nav, 
 | `EMPORIA_OPERATOR_PRIVATE_KEY` | _(unset)_ | The operator key, for a secret manager (Bitwarden Secrets Manager, 1Password) to inject. Unset → the key file from `python -m emporia.operator_signer generate`, which refuses to write anywhere git would track it |
 | `EMPORIA_OPERATOR_ADDRESS` | _(unset)_ | Expected operator address; a key for any other address is refused at load |
 | `EMPORIA_ALLOW_HOT_OPERATOR_KEY` | _(unset)_ | `1` accepts a local operator key on a mainnet network; without it, mainnet needs a KMS signer |
+| `EMPORIA_X402_PAY_NETWORKS` | _(unset)_ | MCP agent wallet: CAIP-2 networks it may **pay** on, comma-separated. Unset → it pays on none, whatever a relay offers |
+| `EMPORIA_X402_MAX_PAYMENT_CENTS` | `1000` | MCP agent wallet: largest single payment it will sign, in cents. A relay asking more is refused before signing |
 | `EMPORIA_ESCROW_NETWORK` | _(unset)_ | CAIP-2 network for x402 holds on the Commerce Payments escrow, e.g. `eip155:84532` (Base Sepolia). The token and its signing domain come from `EMPORIA_X402_ASSET_<NET>` / `EMPORIA_X402_EXTRA_<NET>` |
 | `EMPORIA_ESCROW_RPC_URL` | _(unset)_ | JSON-RPC endpoint for that network |
 | `EMPORIA_ESCROW_CONTRACT` | _(unset)_ | `AuthCaptureEscrow` address. No default: a wrong address is unrecoverable money |

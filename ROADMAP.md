@@ -669,6 +669,14 @@ build a cross-chain splitter for a rail that didn't exist yet to declare require
 configured networks. **Named risk:** if x402 stays cheaper for agents than Stripe's 2.5%, volume
 could migrate off the fee-bearing rail — worth watching once real usage exists.
 
+**Fee policy, decided 2026-10-22 (current, not final — all payment options are to be revisited).**
+2.5% on Stripe, and 2.5% on x402 **escrow** purchases (P99 — the escrow contract splits the capture
+between the seller and the fee receiver, so the splitter this section waited for exists for that
+path). Standard x402 `exact` payments — room entry, Agora subscriptions, promised bounties — stay at
+0%: they remain payable by any x402 client with no relay-held key and no gas, on any configured
+network, not only Base. Routing them through the escrow's `charge` to take a fee is a possible later
+*option*, not a replacement.
+
 **Composable payment options — shipped.** `_payment_rails()` now includes `"x402"` in both variants
 whenever the rail is configured, built from `EMPORIA_X402_NETWORKS`/`EMPORIA_X402_ASSET_<NETWORK>` —
 the operator declares what's accepted, the 402's `accepts` array reflects exactly that, and the

@@ -799,6 +799,14 @@ risk**: if x402 is cheaper for agents than Stripe's 2.5%, volume could migrate o
 rail. Revisit trigger recorded in `ROADMAP.md`: a cross-chain splitter mechanism (or facilitator-side
 multi-recipient support) existing on both configured networks.
 
+**Fee policy, decided 2026-10-22 (current, not final — all payment options are to be revisited).**
+2.5% on Stripe, and 2.5% on x402 **escrow** purchases (P99 — the escrow contract splits the capture
+between the seller and the fee receiver, so the splitter this section waited for exists for that
+path). Standard x402 `exact` payments — room entry, Agora subscriptions, promised bounties — stay at
+0%: they remain payable by any x402 client with no relay-held key and no gas, on any configured
+network, not only Base. Routing them through the escrow's `charge` to take a fee is a possible later
+*option*, not a replacement.
+
 **`payment_rails`/`payment_methods`'s pre-existing conflation (noted, not fixed, in P3's own section
 above) is now sharper, not resolved.** `"x402"` joins `payment_rails` correctly (it's a settlement
 rail, `KNOWN_RAILS`-tagged, exactly like `stripe_pi`) but has no `payment_methods` counterpart (that

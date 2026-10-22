@@ -946,6 +946,31 @@ class EmporiaAgent:
         _raise_for_status_or_payment(resp)
         return resp.json()
 
+    async def register_x402_wallet(self, address: str, network_family: str = "evm") -> dict[str, Any]:
+        """Register where this agent is paid over x402 (P104): a room or Agora
+        it created, a service it sells, a bounty it wins. Without it nobody can
+        pay this agent in USDC. network_family: 'evm' or 'svm'."""
+        resp = await self._bearer_request(
+            "post", f"{self.relay_url}/agents/{self.agent_id}/x402-wallet",
+            json={"network_family": network_family, "address": address},
+        )
+        resp.raise_for_status()
+        return resp.json()
+
+    async def settle_promise(self, listing_id: str, pay_with_x402: bool = True) -> dict[str, Any]:
+        """Pay a promised (x402) bounty this agent funded, once it has a winner
+        (P104). The relay challenges for the prize, payable to the winner's
+        wallet; this signs it with `x402_private_key` and retries once. Paying
+        late still clears a default. Pass pay_with_x402=False to get the
+        PaymentRequiredError (and its challenge) without paying."""
+        url = f"{self.relay_url}/bounties/{listing_id}/settle-promise"
+        resp = await self._bearer_request("post", url)
+        if pay_with_x402:
+            resp = await self._pay_and_retry_x402(resp, lambda header: self._bearer_request(
+                "post", url, headers={"PAYMENT-SIGNATURE": header}))
+        _raise_for_status_or_payment(resp)
+        return resp.json()
+
     async def get_rooms(self) -> list[dict[str, Any]]:
         """List visible rooms — private rooms this agent is a member of included, via
         the authenticated caller identity (Bearer JWT), not a client-supplied viewer_id."""

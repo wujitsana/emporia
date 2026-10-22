@@ -168,15 +168,16 @@ def _bearer_request(
     payment and the relay could not tell who sent it. Retrying a paid call is
     safe: the SPT's Idempotency-Key (P88) returns the same PaymentIntent."""
     fn = getattr(httpx, method)
+    extra = kwargs.pop("headers", None) or {}
 
     def headers() -> dict[str, str]:
         identity = _dashboard_bearer_headers(agent_id=agent_id)
         if not payment_token:
-            return identity
+            return {**identity, **extra}
         out = {"Authorization": f"Payment {payment_token}"}
         if identity.get("Authorization"):
             out["X-Emporia-Authorization"] = identity["Authorization"]
-        return out
+        return {**out, **extra}
 
     r = fn(url, headers=headers(), **kwargs)
     if r.status_code in (401, 403):
@@ -810,12 +811,28 @@ def list_rooms(
         return {"error": str(e), "success": False}
 
 
+def _x402_paid_retry(r: httpx.Response, aid: str, method: str, url: str, **kwargs: Any) -> httpx.Response:
+    """P104: answer a 402 by paying with this agent's x402 wallet, once.
+
+    Signs only after agent_wallet's policy (network allowlist, per-payment cap);
+    a refusal raises AgentWalletError, which the tool reports. A second 402 is
+    returned, not re-signed — the relay has said no to a valid signature."""
+    from emporia import agent_wallet
+
+    if r.status_code != 402:
+        return r
+    header = agent_wallet.sign_exact(aid, r.json())
+    return _bearer_request(method, url, agent_id=aid,
+                           headers={"PAYMENT-SIGNATURE": header}, **kwargs)
+
+
 @mcp.tool()
 def join_room(
     room_id: str,
     agent_id: str,
     payment_intent_id: str | None = None,
     mpp_token: str = "",
+    pay_with_x402: bool = False,
 ) -> dict[str, Any]:
     """Join a room. Gate logic:
       open            — just join (public rooms only)
@@ -843,7 +860,14 @@ def join_room(
     if payment_intent_id:
         body["payment_intent_id"] = payment_intent_id
     try:
-        r = _bearer_request("post", f"{RELAY_URL}/rooms/{room_id}/join", agent_id=agent_id, json=body, timeout=15)
+        # P104: mpp_token was accepted and never sent, so paying for a room with
+        # an SPT through MCP silently did nothing. It travels now, and
+        # pay_with_x402 pays the entry fee from this agent's x402 wallet.
+        url = f"{RELAY_URL}/rooms/{room_id}/join"
+        r = _bearer_request("post", url, agent_id=agent_id, payment_token=mpp_token,
+                            json=body, timeout=15)
+        if pay_with_x402:
+            r = _x402_paid_retry(r, agent_id, "post", url, json=body, timeout=30)
         d = r.json()
         if r.status_code == 200:
             return {"success": True, **d}
@@ -1760,7 +1784,8 @@ def invite_to_agora_topic(topic_slug: str, agent_id: str, invited_by: str) -> di
 
 
 @mcp.tool()
-def subscribe_agora_topic(topic_slug: str, agent_id: str, mpp_token: str = "", payment_intent_id: str = "") -> dict[str, Any]:
+def subscribe_agora_topic(topic_slug: str, agent_id: str, mpp_token: str = "",
+                          payment_intent_id: str = "", pay_with_x402: bool = False) -> dict[str, Any]:
     """Subscribe to an Agora topic.
 
     open topics: subscribes immediately.
@@ -1781,10 +1806,11 @@ def subscribe_agora_topic(topic_slug: str, agent_id: str, mpp_token: str = "", p
         if payment_intent_id:
             body["payment_intent_id"] = payment_intent_id
         # P95: the payment and the payer's identity travel together.
-        r = _bearer_request(
-            "post", f"{RELAY_URL}/agoras/topics/{topic_slug}/subscribe",
-            agent_id=agent_id, payment_token=mpp_token, json=body, timeout=10,
-        )
+        url = f"{RELAY_URL}/agoras/topics/{topic_slug}/subscribe"
+        r = _bearer_request("post", url, agent_id=agent_id, payment_token=mpp_token,
+                            json=body, timeout=10)
+        if pay_with_x402:
+            r = _x402_paid_retry(r, agent_id, "post", url, json=body, timeout=30)
         if r.status_code == 402:
             return {
                 "error": "payment_required", "detail": r.json(), "success": False,
@@ -2325,22 +2351,37 @@ def join_session(
 
 
 @mcp.tool()
-def fund_session(session_id: str, mpp_token: str = "", agent_id: str = "") -> dict[str, Any]:
+def fund_session(session_id: str, mpp_token: str = "", agent_id: str = "",
+                 pay_with_x402: bool = False) -> dict[str, Any]:
     """Fund a service purchase you created, once a seller has joined (P95).
 
     The hold pays the seller directly: it is a Stripe destination charge to
     their connected account, captured when you confirm delivery and released if
     you dispute, so your money never sits with the relay. Pass an SPT as
-    mpp_token. The relay may also offer an x402 escrow hold (in the 402's
-    `escrow` key); signing it needs an x402 wallet key, which this server does
-    not hold — use the SDK's fund_session(pay_with_x402=True).
+    mpp_token. Or pay_with_x402=True: the relay's x402 escrow offer is checked
+    (network allowlist, your per-payment cap, the session's stake, a fee cap)
+    and signed with this agent's x402 wallet; your USDC moves into Base's
+    Commerce Payments escrow, never to the relay, and you can reclaim it
+    yourself if the relay never acts.
     """
     aid = agent_id or AGENT_ID
     if not aid:
         return {"error": "agent_id required (or set EMPORIA_AGENT_ID)", "success": False}
     try:
-        r = _bearer_request("post", f"{RELAY_URL}/sessions/{session_id}/fund", agent_id=aid,
-                            payment_token=mpp_token, timeout=15)
+        url = f"{RELAY_URL}/sessions/{session_id}/fund"
+        r = _bearer_request("post", url, agent_id=aid, payment_token=mpp_token, timeout=15)
+        if pay_with_x402 and r.status_code == 402 and (r.json() or {}).get("escrow"):
+            from emporia import agent_wallet
+            from emporia.payments import _x402_amount_atomic
+
+            sess = _bearer_request("get", f"{RELAY_URL}/sessions/{session_id}",
+                                   agent_id=aid, timeout=10).json()
+            stake = (sess.get("payment_rules") or {}).get("stake_per_participant", "0")
+            header = agent_wallet.sign_escrow(
+                aid, r.json()["escrow"],
+                expected_amount=int(_x402_amount_atomic(int(round(float(stake) * 100)))))
+            r = _bearer_request("post", url, agent_id=aid,
+                                headers={"PAYMENT-ESCROW": header}, timeout=180)
         d = r.json()
         if r.status_code == 200:
             return {"success": True, **d}
@@ -2350,6 +2391,81 @@ def fund_session(session_id: str, mpp_token: str = "", agent_id: str = "") -> di
         return {"error": f"Relay {r.status_code}", "detail": d, "success": False}
     except Exception as e:
         return {"error": str(e), "success": False}
+
+
+@mcp.tool()
+def settle_promise(listing_id: str, agent_id: str = "") -> dict[str, Any]:
+    """Pay a promised (x402) bounty you funded, now that it has a winner (P104).
+
+    The relay names the amount and the winner's wallet; this agent's x402
+    wallet signs the payment after its own checks (network allowlist,
+    per-payment cap) and it goes straight to the winner. Paying late still
+    clears a default. Card payments are refused for promises — they would reach
+    the platform, not the winner.
+    """
+    aid = agent_id or AGENT_ID
+    if not aid:
+        return {"error": "agent_id required (or set EMPORIA_AGENT_ID)", "success": False}
+    try:
+        from emporia.agent_wallet import AgentWalletError
+        url = f"{RELAY_URL}/bounties/{listing_id}/settle-promise"
+        r = _bearer_request("post", url, agent_id=aid, timeout=15)
+        try:
+            r = _x402_paid_retry(r, aid, "post", url, timeout=60)
+        except AgentWalletError as e:
+            return {"error": str(e), "success": False}
+        d = r.json()
+        return {"success": True, **d} if r.status_code == 200 else {
+            "error": f"Relay {r.status_code}", "detail": d, "success": False}
+    except Exception as e:
+        return {"error": str(e), "success": False}
+
+
+@mcp.tool()
+def register_x402_wallet(address: str = "", network_family: str = "evm",
+                         agent_id: str = "") -> dict[str, Any]:
+    """Register where this agent is paid over x402 (P104).
+
+    Without it nobody can pay you in USDC: a room or Agora you created, a
+    service you sell, a bounty you win. `address` defaults to this agent's own
+    x402 wallet (see x402_wallet_info); pass another to be paid elsewhere, e.g.
+    a hardware wallet. network_family: 'evm' or 'svm'.
+    """
+    aid = agent_id or AGENT_ID
+    if not aid:
+        return {"error": "agent_id required (or set EMPORIA_AGENT_ID)", "success": False}
+    try:
+        if not address:
+            from emporia import agent_wallet
+            address = agent_wallet.address(aid)
+        r = _bearer_request("post", f"{RELAY_URL}/agents/{aid}/x402-wallet", agent_id=aid,
+                            json={"network_family": network_family, "address": address},
+                            timeout=10)
+        d = r.json()
+        return {"success": True, **d} if r.status_code == 200 else {
+            "error": f"Relay {r.status_code}", "detail": d, "success": False}
+    except Exception as e:
+        return {"error": str(e), "success": False}
+
+
+@mcp.tool()
+def x402_wallet_info(agent_id: str = "") -> dict[str, Any]:
+    """This agent's x402 wallet and the policy it pays under (P104): the
+    address to fund, the networks it may pay on, and the per-payment cap. No
+    key material is returned."""
+    from emporia import agent_wallet
+
+    aid = agent_id or AGENT_ID
+    out: dict[str, Any] = {"agent_id": aid, "max_payment_cents": agent_wallet.max_payment_cents()}
+    try:
+        out["address"] = agent_wallet.address(aid)
+    except agent_wallet.AgentWalletError as e:
+        out["address"], out["wallet_error"] = None, str(e)
+    try:
+        out["pay_networks"] = agent_wallet.allowed_networks()
+    except agent_wallet.AgentWalletError as e:
+        out["pay_networks"], out["networks_error"] = [], str(e)
+    return out
 
 
 @mcp.tool()
@@ -2695,7 +2811,8 @@ def post_bounty(
         defaulted and cannot post another promised bounty until you settle. You
         may hold at most 3 unsettled promises at once. Requires nous_verified
         (the record follows your Nous account, across every persona) and a relay
-        with x402 enabled; you pay with settle-promise over x402, never by card.
+        with x402 enabled; you pay with settle_promise() from this agent's x402
+        wallet, never by card.
       Default is 'stripe' deliberately — you get the strong guarantee unless you
       ask for the weak one.
     mpp_token: the SPT that pays a held ('stripe') prize. Without it the relay
