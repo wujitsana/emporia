@@ -37,6 +37,11 @@ BASE_SEPOLIA = "eip155:84532"
 BASE_SEPOLIA_USDC = "0x036CbD53842c5426634e7929541eC2318f3dCF7e"
 PUBLIC_FACILITATOR = "https://x402.org/facilitator"
 BASE_SEPOLIA_RPC = "https://sepolia.base.org"
+# Commerce Payments v1.1.0 on Base Sepolia (github.com/base/commerce-payments),
+# checked to hold code there on 2026-10-22. The harness's copies, like the USDC
+# address above -- the relay itself has no default for either.
+BASE_SEPOLIA_ESCROW = "0xf96815976523E00e65Be8f34cA5e64b4f41EB19c"
+BASE_SEPOLIA_ESCROW_COLLECTOR = "0x8612dfdc421f80336cd14E8EF9cb1E765dB5ab88"
 
 # The only chain ids this script will ever configure. A CAIP-2 id outside this
 # set is refused rather than passed through: the failure mode being guarded is
@@ -82,6 +87,13 @@ LANES = [
          [],  # selected by payer key presence; see docs/testnet.md
          needs=["EMPORIA_TESTNET_PAYER_KEY"], costs_money=True,
          note="Pays a 1-cent room to the payer's own address. Gas only."),
+    Lane("escrow", "x402 escrow holds for purchases (SPENDS testnet USDC)",
+         ["test_testnet_escrow_confirm_captures_to_the_seller_less_the_fee",
+          "test_testnet_escrow_dispute_voids_back_to_the_payer"],
+         needs=["EMPORIA_TESTNET_OPERATOR_KEY_FILE", "EMPORIA_TESTNET_PAYER_KEY_FILE"],
+         costs_money=True,
+         note="Real relay + Commerce Payments escrow: 1 USDC captured to a fresh seller "
+              "wallet, 1 USDC held and voided back. Operator pays gas."),
 ]
 
 
@@ -153,6 +165,9 @@ def configure(network: str, asset: str, facilitator: str) -> None:
     os.environ.setdefault("EMPORIA_TESTNET_NETWORK", network)
     os.environ.setdefault("EMPORIA_TESTNET_ASSET", asset)
     os.environ.setdefault("EMPORIA_X402_RPC_EIP155_84532", BASE_SEPOLIA_RPC)
+    if network == BASE_SEPOLIA:
+        os.environ.setdefault("EMPORIA_TESTNET_ESCROW_CONTRACT", BASE_SEPOLIA_ESCROW)
+        os.environ.setdefault("EMPORIA_TESTNET_ESCROW_COLLECTOR", BASE_SEPOLIA_ESCROW_COLLECTOR)
 
 
 def preflight(facilitator: str) -> dict[str, tuple[bool, str]]:
@@ -188,7 +203,7 @@ def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__,
                                      formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--lane", default="runnable",
-                        help="1, 1b, 2, 3, settle, all, or 'runnable' (default)")
+                        help="1, 1b, 2, 3, settle, escrow, all, or 'runnable' (default)")
     parser.add_argument("--check", action="store_true", help="preflight only")
     parser.add_argument("--network", default=BASE_SEPOLIA)
     parser.add_argument("--asset", default=BASE_SEPOLIA_USDC)

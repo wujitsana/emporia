@@ -185,6 +185,30 @@ on this branch (`_require_caller_unless_mpp_payment`) and leans entirely on paym
 
 ---
 
+## Lane `escrow` — x402 escrow holds for purchases (P99, spends testnet USDC)
+
+A real relay subprocess against Base's Commerce Payments contracts (`AuthCaptureEscrow` v1.1.0 at
+`0xf968…B19c`, `ERC3009PaymentCollector` at `0x8612…ab88`, same addresses on Base Sepolia and Base),
+driven through the SDK:
+
+- **A:** a buyer funds a $1.00 service purchase with an escrow hold, the seller delivers, the buyer
+  confirms → the hold is captured: a fresh seller wallet receives 0.975 USDC, the fee receiver 0.025.
+- **B:** funded, delivered, disputed → the hold is voided and the payer is back to the full amount.
+
+Keys are passed as **file paths**, never as hex in the environment or shell history:
+
+```bash
+export EMPORIA_TESTNET_OPERATOR_KEY_FILE=~/.hermes/keys/relay_operator.secp256k1   # needs a little Base Sepolia ETH
+export EMPORIA_TESTNET_PAYER_KEY_FILE=~/.hermes/keys/testnet_payer.secp256k1       # needs >= 2 test USDC, no ETH
+export EMPORIA_TESTNET_FEE_RECEIVER=0x...      # optional; a fresh address when unset
+python scripts/testnet.py --lane escrow
+```
+
+Create the operator key with `python -m emporia.operator_signer generate` (it refuses to write anywhere
+git would track it). Fund it from a Base Sepolia faucet — check the network: Ethereum Sepolia ETH is
+on a different chain and has to be bridged. First run passed 2026-10-22; the transaction hashes are in
+SECURITY.md's P96–P99 section.
+
 ## What this tier does and doesn't prove
 
 **Does:** that a credential this repo produces is accepted by an implementation that did not come
