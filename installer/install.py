@@ -619,14 +619,26 @@ def _model_block(config: dict) -> dict | None:
 # ─────────────────────────────────────────────────────────────────────────────
 
 def _profile_runtime_env(profile_dir: Path) -> dict[str, str]:
-    """Keys + DB paths so MCP matches Hermes profile home (same as seed script)."""
-    out: dict[str, str] = {}
-    keys = profile_dir / "home" / ".hermes" / "keys"
-    if keys.is_dir():
-        out["EMPORIA_KEYS_DIR"] = str(keys)
-    db = profile_dir / "home" / ".hermes" / "emporia.sqlite3"
-    out["EMPORIA_DB_PATH"] = str(db)
-    return out
+    """The key directory and database for this profile — the one answer every
+    Emporia process for it uses: the MCP server (its config.yaml env), and the
+    relay, the Hermes bridge and the CLI tools (the profile .env).
+
+    P102: these used to disagree. The MCP server got the profile-home paths, but
+    the .env got `~/.hermes/...` (wherever HOME pointed), and EMPORIA_KEYS_DIR
+    only when the directory already existed. The relay, bridge and CLI then used
+    a second key directory, whose copies of the profile keys turned out to be
+    different keys from the registered ones — an agent signing as itself with a
+    key its relay did not know.
+    """
+    home = profile_dir / "home" / ".hermes"
+    return {"EMPORIA_KEYS_DIR": str(home / "keys"), "EMPORIA_DB_PATH": str(home / "emporia.sqlite3")}
+
+
+def _ensure_keys_dir(runtime_env: dict[str, str], dry_run: bool) -> None:
+    """Create the profile's key directory owner-only, so the first key written
+    there is never in a world-readable directory."""
+    if not dry_run:
+        Path(runtime_env["EMPORIA_KEYS_DIR"]).mkdir(mode=0o700, parents=True, exist_ok=True)
 
 
 def _mcp_entry(relay_url: str, agent_id: str = "", display_name: str = "", profile_dir: Path | None = None) -> dict[str, Any]:
@@ -675,14 +687,25 @@ def _mcp_entry(relay_url: str, agent_id: str = "", display_name: str = "", profi
 # Keypair generation
 # ─────────────────────────────────────────────────────────────────────────────
 
-def generate_keypair(profile_id: str, dry_run: bool = False) -> tuple[str, str]:
-    """Generate or load Ed25519 keypair. Returns (pub_hex, key_path_str)."""
-    key_path = Path.home() / ".hermes" / "keys" / f"{profile_id}.priv"
+def generate_keypair(profile_id: str, dry_run: bool = False, *,
+                     keys_dir: Path | None = None) -> tuple[str, str]:
+    """Generate or load the Ed25519 keypair, in `keys_dir`. Returns (pub_hex, key_path_str).
+
+    P102: this used `Path.home()/.hermes/keys` and identity's default KEY_DIR,
+    while the profile's MCP server signs from `<profile>/home/.hermes/keys`. The
+    installer generated one key, the MCP server generated and registered another,
+    and the installer's copy sat beside the real one claiming the same name.
+    `keys_dir` is the profile's key directory, the one every process now uses.
+    """
+    from emporia import identity
+
+    if keys_dir is not None:
+        identity.KEY_DIR = Path(keys_dir)
+    key_path = identity.KEY_DIR / f"{profile_id}.priv"
     if dry_run:
         print(f"  [dry-run] Would generate keypair at {key_path}")
         return ("dryrun_pubkey_hex_placeholder", str(key_path))
-    from emporia.identity import generate_or_load_keypair
-    _, pub_bytes = generate_or_load_keypair(profile_id)
+    _, pub_bytes = identity.generate_or_load_keypair(profile_id)
     pub_hex = pub_bytes.hex()
     if key_path.exists():
         print(f"  keypair: {key_path} (existing)")
@@ -765,7 +788,10 @@ def install_into_profile(
         return False
 
     # Generate keypair first (idempotent)
-    pub_hex, _ = generate_keypair(agent_id, dry_run=dry_run)
+    pub_hex, _ = generate_keypair(
+        agent_id, dry_run=dry_run,
+        keys_dir=Path(_profile_runtime_env(profile_dir)["EMPORIA_KEYS_DIR"]),
+    )
 
     config = load_yaml(config_path)
     changed = False
@@ -886,10 +912,13 @@ def install_into_profile(
         lines.append(f"{key}={value}")
         return lines, True
 
-    db_path = os.path.expanduser("~/.hermes/emporia.sqlite3")
+    # P102: the same paths the MCP entry got above, so every process agrees.
+    _ensure_keys_dir(runtime_env, dry_run)
+    db_path = runtime_env["EMPORIA_DB_PATH"]
     env_lines, c1 = _set_env_line(env_lines, "EMPORIA_AGENT_ID", agent_id)
     env_lines, c2 = _set_env_line(env_lines, "EMPORIA_RELAY_URL", relay_url)
-    env_lines, _ = _set_env_line(env_lines, "EMPORIA_DB_PATH", db_path)
+    env_lines, c4 = _set_env_line(env_lines, "EMPORIA_DB_PATH", db_path)
+    env_lines, c5 = _set_env_line(env_lines, "EMPORIA_KEYS_DIR", runtime_env["EMPORIA_KEYS_DIR"])
     if _is_local_relay(relay_url):
         # Single-operator co-located deployment — the case EMPORIA_TRUST_LOCAL_HEADER_AUTH
         # exists for. Without it, the embedded dashboard's baked-in VITE_AGENT_ID header auth
@@ -929,6 +958,7 @@ def install_into_profile(
     os.environ["EMPORIA_AGENT_ID"] = agent_id
     os.environ["EMPORIA_RELAY_URL"] = relay_url
     os.environ["EMPORIA_DB_PATH"] = db_path
+    os.environ["EMPORIA_KEYS_DIR"] = runtime_env["EMPORIA_KEYS_DIR"]
     if nous_token:
         os.environ["EMPORIA_NOUS_JWT"] = nous_token
     if stripe_secret_key:
@@ -943,7 +973,7 @@ def install_into_profile(
         key, _, val = line.partition("=")
         os.environ[key] = val
 
-    if c1 or c2 or c3 or env_dirty:
+    if c1 or c2 or c3 or c4 or c5 or env_dirty:
         if not dry_run:
             env_file.write_text("\n".join(env_lines) + "\n")
             print(f"  Updated: {env_file}")
@@ -994,7 +1024,10 @@ def create_profile(
         profile_dir.mkdir(parents=True, exist_ok=True)
 
     # Keypair
-    pub_hex, _ = generate_keypair(name, dry_run=dry_run)
+    pub_hex, _ = generate_keypair(
+        name, dry_run=dry_run,
+        keys_dir=Path(_profile_runtime_env(profile_dir)["EMPORIA_KEYS_DIR"]),
+    )
 
     # On update, start from the existing config so we don't clobber other settings.
     existing_config: dict[str, Any] = load_yaml(config_path) if updating else {}
@@ -1082,13 +1115,16 @@ def create_profile(
         save_yaml(config_path, config)
         print(f"  Saved: {config_path}")
 
-    # Write .env file
-    db_path = os.path.expanduser("~/.hermes/emporia.sqlite3")
+    # Write .env file. P102: the profile's own key dir and DB, the same paths
+    # its MCP entry gets, so every process for this profile agrees.
+    runtime_env = _profile_runtime_env(profile_dir)
+    _ensure_keys_dir(runtime_env, dry_run)
     env_path = profile_dir / ".env"
     safe_env_lines = [
         f"EMPORIA_RELAY_URL={relay_url}",
         f"EMPORIA_AGENT_ID={name}",
-        f"EMPORIA_DB_PATH={db_path}",
+        f"EMPORIA_DB_PATH={runtime_env['EMPORIA_DB_PATH']}",
+        f"EMPORIA_KEYS_DIR={runtime_env['EMPORIA_KEYS_DIR']}",
         f"HERMES_AGENT_ID={name}",
         f"STRIPE_API_VERSION={stripe_api_version or os.getenv('STRIPE_API_VERSION', '2026-04-22.preview')}",
     ]
@@ -1115,7 +1151,8 @@ def create_profile(
     # Export to current process so subsequent steps see the vars immediately
     os.environ["EMPORIA_AGENT_ID"] = name
     os.environ["EMPORIA_RELAY_URL"] = relay_url
-    os.environ["EMPORIA_DB_PATH"] = db_path
+    os.environ["EMPORIA_DB_PATH"] = runtime_env["EMPORIA_DB_PATH"]
+    os.environ["EMPORIA_KEYS_DIR"] = runtime_env["EMPORIA_KEYS_DIR"]
     if nous_token:
         os.environ["EMPORIA_NOUS_JWT"] = nous_token
 

@@ -238,3 +238,28 @@ def test_hermes_discovers_the_installed_plugin(tmp_path):
     )
     assert out.returncode == 0, out.stderr[-1500:]
     assert ["platforms/emporia", "platform"] in json.loads(out.stdout.strip().splitlines()[-1])
+
+
+# P102 -- one key directory and one database per profile ----------------------
+
+def test_the_profile_key_dir_is_always_named_even_before_it_exists(tmp_path):
+    """It was named only when the directory already existed, so a first install
+    left the .env without it and every non-MCP process used ~/.hermes/keys."""
+    env = installer._profile_runtime_env(tmp_path / "fresh_profile")
+    assert env["EMPORIA_KEYS_DIR"] == str(tmp_path / "fresh_profile" / "home" / ".hermes" / "keys")
+    assert env["EMPORIA_DB_PATH"].startswith(str(tmp_path / "fresh_profile" / "home" / ".hermes"))
+
+
+def test_the_installer_generates_the_profile_key_where_the_mcp_server_signs_from(tmp_path):
+    """It generated into ~/.hermes/keys while the MCP server signed from the
+    profile's own key dir -- two different keys under one agent's name."""
+    from unittest.mock import patch
+
+    from emporia import identity
+
+    keys_dir = tmp_path / "profile" / "home" / ".hermes" / "keys"
+    with patch.object(identity, "KEY_DIR", identity.KEY_DIR):
+        pub_hex, path = installer.generate_keypair("p102_agent", keys_dir=keys_dir)
+    assert path == str(keys_dir / "p102_agent.priv")
+    assert (keys_dir / "p102_agent.priv").exists()
+    assert len(bytes.fromhex(pub_hex)) == 32
