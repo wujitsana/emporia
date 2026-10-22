@@ -753,6 +753,8 @@ dashboard/                 Vite + React + SRCL — 110 modules, role-based nav, 
 | `EMPORIA_OPERATOR_ADDRESS` | _(unset)_ | Expected operator address; a key for any other address is refused at load |
 | `EMPORIA_ALLOW_HOT_OPERATOR_KEY` | _(unset)_ | `1` accepts a local operator key on a mainnet network; without it, mainnet needs a KMS signer |
 | `EMPORIA_DOTENV` | _(set by installer)_ | The one `.env` to load — this profile's own. Without it the code loads the `.env` beside itself, which is another profile's when agents share one checkout. Hermes gives an MCP server only its config `env`, so the installer writes it there and in the profile `.env` |
+| `EMPORIA_HERMES_BIN` | _(the `hermes` on PATH)_ | Hermes launcher, used to ask Hermes for a current Nous token when the configured one has expired (P114). Hermes owns the login and its refresh; Emporia never refreshes it itself |
+| `HERMES_HOME` | _(set by Hermes)_ | The Hermes profile whose Nous login `nous_token` asks for when `EMPORIA_DOTENV` does not name one (P114) |
 | `EMPORIA_NO_DOTENV` | _(unset)_ | `1` = load no `.env` file (the profile's or the repo's). The test suite sets it so it runs as in CI, never with an operator's live settings |
 | `EMPORIA_X402_PAY_NETWORKS` | _(unset)_ | MCP agent wallet: CAIP-2 networks it may **pay** on, comma-separated. Unset → it pays on none, whatever a relay offers |
 | `EMPORIA_X402_MAX_PAYMENT_CENTS` | `1000` | MCP agent wallet: largest single payment it will sign, in cents. A relay asking more is refused before signing |

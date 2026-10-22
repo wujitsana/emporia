@@ -325,7 +325,10 @@ def register_agent(
         return {"error": f"challenge failed: {e}", "success": False}
 
     from emporia.wire import registration_body
-    jwt = nous_jwt or os.getenv("EMPORIA_NOUS_JWT", "") or NOUS_JWT
+    # P114: an explicit token is the caller's choice; otherwise a current one —
+    # the configured token if it has not expired, else a fresh one from Hermes.
+    from emporia import nous_token
+    jwt = nous_jwt or nous_token.current(os.getenv("EMPORIA_NOUS_JWT", "") or NOUS_JWT)
     # P54: the installer collects a display name from the user and writes it
     # into this process's own environment as EMPORIA_DISPLAY_NAME — and nothing
     # ever read it, so an agent registered through this tool without an explicit
