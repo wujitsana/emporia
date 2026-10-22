@@ -71,3 +71,6 @@ logs/*.jsonl
 *.njsproj
 *.sln
 *.swp
+
+# Personal Claude Code permissions — never committed
+.claude/settings.local.json

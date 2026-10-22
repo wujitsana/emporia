@@ -738,6 +738,11 @@ dashboard/                 Vite + React + SRCL — 110 modules, role-based nav, 
 | `EMPORIA_OPERATOR_PRIVATE_KEY` | _(unset)_ | The operator key, for a secret manager (Bitwarden Secrets Manager, 1Password) to inject. Unset → the key file from `python -m emporia.operator_signer generate`, which refuses to write anywhere git would track it |
 | `EMPORIA_OPERATOR_ADDRESS` | _(unset)_ | Expected operator address; a key for any other address is refused at load |
 | `EMPORIA_ALLOW_HOT_OPERATOR_KEY` | _(unset)_ | `1` accepts a local operator key on a mainnet network; without it, mainnet needs a KMS signer |
+| `EMPORIA_ESCROW_NETWORK` | _(unset)_ | CAIP-2 network for x402 holds on the Commerce Payments escrow, e.g. `eip155:84532` (Base Sepolia). The token and its signing domain come from `EMPORIA_X402_ASSET_<NET>` / `EMPORIA_X402_EXTRA_<NET>` |
+| `EMPORIA_ESCROW_RPC_URL` | _(unset)_ | JSON-RPC endpoint for that network |
+| `EMPORIA_ESCROW_CONTRACT` | _(unset)_ | `AuthCaptureEscrow` address. No default: a wrong address is unrecoverable money |
+| `EMPORIA_ESCROW_COLLECTOR` | _(unset)_ | `ERC3009PaymentCollector` address. No default, same reason |
+| `EMPORIA_ESCROW_FEE_RECEIVER` | _(unset)_ | Where the operator fee goes — an address only (a Safe, ideally); no key for it lives on the relay |
 | `EMPORIA_REQUIRE_NOUS` | `0` | `1` = reject registrations without Nous JWT |
 | `EMPORIA_WRITE_REQUIRES_NOUS` | `0` | `1` = key_only agents are read-only |
 | `EMPORIA_REQUIRE_CHALLENGE` | `0` | `1` = Ed25519 challenge mandatory at registration |
