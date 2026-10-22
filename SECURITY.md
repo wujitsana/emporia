@@ -4065,6 +4065,46 @@ money is committed — Stripe fixes a charge's destination at creation (`capture
 | Room / Agora entry | yes | today a charge + transfer; a destination charge is the non-custodial next step | direct to the creator (since P1b) |
 | Bounty | no | held prize, capture + transfer | promised, paid by the funder after the result |
 
+## P96–P99 pass — x402 escrow holds, verified on Base Sepolia
+
+Service purchases can now be funded by an x402 hold on Base's Commerce Payments Protocol
+(`AuthCaptureEscrow` v1.1.0, audited; github.com/base/commerce-payments), the on-chain counterpart of
+the Stripe destination charge. Neither rail lets the relay hold the buyer's money.
+
+**What bounds the relay.** The payer signs an ERC-3009 `ReceiveWithAuthorization` whose nonce is the
+escrow's hash of the whole `PaymentInfo` with the payer blanked, so receiver, amount, expiries, fee
+range and fee receiver are fixed by the payer's signature (confirmed in the contract source). Only the
+operator can authorize, capture, void or refund; only the payer can reclaim, after
+`authorizationExpiry`. Emporia narrows the operator further: the fee is pinned (min = max bps) and the
+fee receiver is always named, never zero (a zero receiver lets the operator choose at capture).
+
+**The operator key (P96)** is the one key a relay running escrow holds — a deliberate, scoped exception
+to "the relay holds no key". It can capture a hold to its fixed receiver or void it; it cannot redirect
+funds. Generated only by an explicit command, 0600, never where git would track it (git must confirm
+the path is ignored), checked against `EMPORIA_OPERATOR_ADDRESS`, and refused on mainnet without
+`EMPORIA_ALLOW_HOT_OPERATOR_KEY=1`. Signing is behind `EMPORIA_OPERATOR_SIGNER` so a KMS backend
+(planned before mainnet) slots in. Fees go to an *address*; no key for it lives on the relay.
+
+**Verified live, 2026-10-22, Base Sepolia** (real relay, real contracts, test USDC):
+
+| Step | Result | Transaction |
+|---|---|---|
+| Purchase A authorize | 1 USDC held in escrow | `0x2cb5820a…24aa39` |
+| Purchase A capture (confirm) | seller +0.975, fee receiver +0.025, payer −1.000 | `0x8f9e57c9…b99728` |
+| Purchase B authorize | 1 USDC held | `0x77c561d2…ff571d` |
+| Purchase B void (dispute) | payer +1.000, back in full | `0x89abb510…b08905` |
+
+Also pinned offline: our `PaymentInfo` hash equals the deployed escrow's `getHash` byte for byte, and
+our signing domain equals USDC's on-chain `DOMAIN_SEPARATOR`.
+
+**Found on the way:** the throwaway test key directory was a fixture in `test_emporia.py`, so any other
+test file run alone wrote its agents' keys into the real key directory; about 380 such files were found
+there. Moved to `conftest.py` with `EMPORIA_KEYS_DIR` pinned, and verified.
+
+**Still open:** wagers and held bounties stay Stripe-only (the payee is unknown when funds are
+committed); KMS signing before mainnet; the escrow `authorize` call runs inside the `/fund` request and
+can take tens of seconds; post-capture refunds are not offered (the refund window is the minimum).
+
 ## Threat model notes (by design, not gaps)
 
 - **Ed25519 = auth; the relay never holds private keys.** Keys live at `~/.hermes/keys/*.priv`,
