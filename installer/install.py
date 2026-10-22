@@ -99,6 +99,18 @@ _SECRET_ENV_KEYS = {
 
 _PROVIDER_ENV_KEYS = ("NVIDIA_API_KEY", "STRIPE_SECRET_KEY", "STRIPE_PROFILE_ID")
 
+# The relay's Stripe settings. An agent profile never needs them: its MCP
+# server and platform plugin read no Stripe variable, and every Stripe call goes
+# through the relay, which uses its own key. An agent pays with an SPT (via
+# Link) or its x402 wallet. P107: create_profile() copied these into every
+# agent profile it made or updated, which put the relay's secret key (live, on
+# this deployment) in two more places with no use. Never written to an agent
+# profile now, and stripped from one that already has them.
+_RELAY_ONLY_ENV_KEYS = frozenset({
+    "STRIPE_SECRET_KEY", "STRIPE_PROFILE_ID", "STRIPE_API_VERSION",
+    "STRIPE_WEBHOOK_SECRET", "EMPORIA_MPP_TEMPO_ENABLED",
+})
+
 
 def _apply_guardrails_env(
     env_block: dict[str, str],
@@ -992,11 +1004,7 @@ def create_profile(
     name: str,
     relay_url: str,
     current_profile_dir: Path | None,
-    stripe_secret_key: str | None = None,
-    stripe_profile_id: str | None = None,
-    stripe_api_version: str | None = None,
     nvidia_api_key: str | None = None,
-    tempo_enabled: bool = False,
     max_budget_cents: int | None = None,
     nous_token: str | None = None,
     inherit_env: bool = True,
@@ -1004,7 +1012,10 @@ def create_profile(
     update_dashboard: bool = False,
     dev_skills: bool = False,
 ) -> None:
-    """Create a new Hermes agent profile with emporia pre-wired."""
+    """Create a new Hermes agent profile with emporia pre-wired.
+
+    Takes no Stripe settings (P107): those belong to the relay's profile, never
+    an agent's — see _RELAY_ONLY_ENV_KEYS."""
 
     # Determine where to create it
     if current_profile_dir:
@@ -1074,19 +1085,8 @@ def create_profile(
     env_block: dict[str, str] = {**inherited_env}
     env_block["EMPORIA_RELAY_URL"] = relay_url
     env_block["EMPORIA_AGENT_ID"] = name
-    if stripe_secret_key:
-        env_block["STRIPE_SECRET_KEY"] = stripe_secret_key
-    else:
-        env_block.pop("STRIPE_SECRET_KEY", None)
-    if stripe_profile_id and not _valid_stripe_profile_id(stripe_profile_id):
-        print(f"  WARNING: ignoring invalid STRIPE_PROFILE_ID={stripe_profile_id!r} (expected profile_... or profile_test_...)")
-        stripe_profile_id = None
-    if stripe_profile_id:
-        env_block["STRIPE_PROFILE_ID"] = stripe_profile_id
-    if stripe_api_version:
-        env_block["STRIPE_API_VERSION"] = stripe_api_version
-    if tempo_enabled:
-        env_block["EMPORIA_MPP_TEMPO_ENABLED"] = "1"
+    for k in _RELAY_ONLY_ENV_KEYS:
+        env_block.pop(k, None)
     if max_budget_cents is not None and max_budget_cents > 0:
         env_block["EMPORIA_MAX_TOTAL_SPEND_CENTS"] = str(max_budget_cents)
     else:
@@ -1126,24 +1126,15 @@ def create_profile(
         f"EMPORIA_DB_PATH={runtime_env['EMPORIA_DB_PATH']}",
         f"EMPORIA_KEYS_DIR={runtime_env['EMPORIA_KEYS_DIR']}",
         f"HERMES_AGENT_ID={name}",
-        f"STRIPE_API_VERSION={stripe_api_version or os.getenv('STRIPE_API_VERSION', '2026-04-22.preview')}",
     ]
-    if stripe_profile_id:
-        safe_env_lines.append(f"STRIPE_PROFILE_ID={stripe_profile_id}")
-    if tempo_enabled:
-        safe_env_lines.append("EMPORIA_MPP_TEMPO_ENABLED=1")
     if max_budget_cents is not None and max_budget_cents > 0:
         safe_env_lines.append(f"EMPORIA_MAX_TOTAL_SPEND_CENTS={max_budget_cents}")
     if nous_token:
         safe_env_lines.append(f"EMPORIA_NOUS_JWT={nous_token}")
     nemo_key = effective_nvidia
     safe_env_lines.extend(_guardrails_env_lines(disabled=False, nvidia_api_key=nemo_key))
-    if stripe_secret_key:
-        safe_env_lines.append(f"STRIPE_SECRET_KEY={stripe_secret_key}")
-    for k in _SECRET_ENV_KEYS:
+    for k in _SECRET_ENV_KEYS - _RELAY_ONLY_ENV_KEYS:
         if k in env_block and env_block[k] and k != "EMPORIA_NOUS_JWT":
-            if k == "STRIPE_SECRET_KEY" and not stripe_secret_key:
-                continue
             if k == "NVIDIA_API_KEY" and not nemo_key:
                 continue
             safe_env_lines.append(f"{k}={env_block[k]}")
@@ -1333,11 +1324,7 @@ def bootstrap_test_profiles(
             name=name,
             relay_url=relay_url,
             current_profile_dir=current_profile_dir,
-            stripe_secret_key=stripe_secret_key,
-            stripe_profile_id=stripe_profile_id,
-            stripe_api_version=stripe_api_version,
             nvidia_api_key=nvidia_api_key,
-            tempo_enabled=tempo_enabled,
             max_budget_cents=max_budget_cents,
             nous_token=nous_token,
             inherit_env=True,
@@ -1689,11 +1676,7 @@ def main() -> None:
             name=args.create_profile,
             relay_url=args.relay_url,
             current_profile_dir=current_profile_dir,
-            stripe_secret_key=stripe_key,
-            stripe_profile_id=stripe_profile_id,
-            stripe_api_version=args.stripe_api_version,
             nvidia_api_key=nvidia_key,
-            tempo_enabled=args.tempo_enabled,
             max_budget_cents=args.max_budget_cents,
             nous_token=nous_token,
             inherit_env=not args.no_inherit_env,

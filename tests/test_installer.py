@@ -263,3 +263,46 @@ def test_the_installer_generates_the_profile_key_where_the_mcp_server_signs_from
     assert path == str(keys_dir / "p102_agent.priv")
     assert (keys_dir / "p102_agent.priv").exists()
     assert len(bytes.fromhex(pub_hex)) == 32
+
+
+def test_an_agent_profile_never_gets_the_relays_stripe_settings(tmp_path, monkeypatch):
+    """P107: create_profile() copied the relay's STRIPE_SECRET_KEY (live, on the
+    deployment that found this), STRIPE_PROFILE_ID and STRIPE_API_VERSION into
+    every agent profile. An agent reads none of them — it pays through the relay
+    with an SPT or its x402 wallet — so they are never written, and an existing
+    agent profile that has them loses them on the next run."""
+    import yaml
+
+    for k in ("STRIPE_SECRET_KEY", "STRIPE_PROFILE_ID", "STRIPE_API_VERSION"):
+        monkeypatch.delenv(k, raising=False)
+    relay = tmp_path / "profiles" / "relay_profile"
+    agent = tmp_path / "profiles" / "agent_one"
+    for d in (relay, agent):
+        d.mkdir(parents=True)
+    relay_secrets = ("STRIPE_SECRET_KEY=sk_live_relay_only\nSTRIPE_PROFILE_ID=profile_relay\n"
+                     "STRIPE_API_VERSION=2026-04-22.preview\nOPENROUTER_API_KEY=or-shared\n")
+    (relay / ".env").write_text(relay_secrets)
+    (relay / "config.yaml").write_text(yaml.dump({"env": {"STRIPE_SECRET_KEY": "sk_live_relay_only"}}))
+    (agent / "config.yaml").write_text(yaml.dump({"env": {"STRIPE_SECRET_KEY": "sk_live_old_copy",
+                                                          "STRIPE_PROFILE_ID": "profile_old"}}))
+    (agent / ".env").write_text("STRIPE_SECRET_KEY=sk_live_old_copy\n")
+    monkeypatch.setattr(installer, "install_platform_plugin", lambda *a, **k: None)
+    monkeypatch.setattr(installer, "_install_skill_link", lambda *a, **k: None)
+
+    import os
+    from unittest.mock import patch
+
+    # create_profile() exports EMPORIA_AGENT_ID & co. into this process for the
+    # installer's later steps; patch.dict puts the suite's environment back.
+    with patch.dict(os.environ):
+        installer.create_profile(name="agent_one", relay_url="http://127.0.0.1:8088",
+                                 current_profile_dir=relay)
+
+    env_text = (agent / ".env").read_text()
+    config_env = yaml.safe_load((agent / "config.yaml").read_text())["env"]
+    for k in ("STRIPE_SECRET_KEY", "STRIPE_PROFILE_ID", "STRIPE_API_VERSION"):
+        assert f"{k}=" not in env_text, k
+        assert k not in config_env, k
+    assert "sk_live" not in env_text + yaml.dump(config_env)
+    assert config_env["EMPORIA_AGENT_ID"] == "agent_one"
+    assert config_env.get("OPENROUTER_API_KEY") == "or-shared", "unrelated settings still inherit"
