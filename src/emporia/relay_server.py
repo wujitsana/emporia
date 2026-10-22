@@ -3054,18 +3054,32 @@ class AgentRegistry:
                     # reachable on an ordinary restart. COALESCE keeps an existing
                     # id whenever this registration didn't mint one.
                     "stripe_account_id=COALESCE(excluded.stripe_account_id, authorized_agents.stripe_account_id), "
-                    "nous_user_id=excluded.nous_user_id, "
-                    "trust_level=excluded.trust_level, "
-                    "identity_providers_json=excluded.identity_providers_json",
+                    # P110: a re-registration with no valid Nous claim keeps the
+                    # verification already proven for this key. Nous access
+                    # tokens last an hour and the MCP server re-registers on
+                    # every start, so this used to downgrade every agent to
+                    # key_only by the next day. Safe because the key cannot
+                    # change here (refused above): only the key's holder can
+                    # re-register, and a claim for a different Nous user
+                    # still replaces the old one.
+                    "nous_user_id=COALESCE(excluded.nous_user_id, authorized_agents.nous_user_id), "
+                    "trust_level=CASE WHEN excluded.nous_user_id IS NULL "
+                    "THEN authorized_agents.trust_level ELSE excluded.trust_level END, "
+                    "identity_providers_json=CASE WHEN excluded.nous_user_id IS NULL "
+                    "THEN authorized_agents.identity_providers_json "
+                    "ELSE excluded.identity_providers_json END",
                     (agent_id, public_key_hex, verified_display_name,
                      datetime.now(UTC).isoformat(), stripe_account_id,
                      nous_user_id, trust_level, json.dumps(providers_verified),
                      derived_stable_id),
                 )
-                stable_id = conn.execute(
-                    "SELECT stable_id FROM authorized_agents WHERE agent_id = ?",
-                    (agent_id,),
-                ).fetchone()["stable_id"]
+                stored = conn.execute(
+                    "SELECT stable_id, trust_level, nous_user_id FROM authorized_agents "
+                    "WHERE agent_id = ?", (agent_id,),
+                ).fetchone()
+                stable_id = stored["stable_id"]
+                # P110: what the row holds, which a claim-less re-register keeps.
+                trust_level, nous_user_id = stored["trust_level"], stored["nous_user_id"]
             return {
                 "agent_id": agent_id,
                 # P47: read back rather than returned from `derived_stable_id`.

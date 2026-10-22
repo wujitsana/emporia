@@ -811,6 +811,12 @@ def list_rooms(
         return {"error": str(e), "success": False}
 
 
+# P110: for calls that may settle on chain (capture, void): the relay waits up
+# to 120s for a receipt, so the client must outwait it or it reports a failure
+# for money that moved.
+_CHAIN_TIMEOUT_S = 150
+
+
 def _x402_paid_retry(r: httpx.Response, aid: str, method: str, url: str, **kwargs: Any) -> httpx.Response:
     """P104: answer a 402 by paying with this agent's x402 wallet, once.
 
@@ -2381,7 +2387,7 @@ def fund_session(session_id: str, mpp_token: str = "", agent_id: str = "",
                 aid, r.json()["escrow"],
                 expected_amount=int(_x402_amount_atomic(int(round(float(stake) * 100)))))
             r = _bearer_request("post", url, agent_id=aid,
-                                headers={"PAYMENT-ESCROW": header}, timeout=180)
+                                headers={"PAYMENT-ESCROW": header}, timeout=_CHAIN_TIMEOUT_S)
         d = r.json()
         if r.status_code == 200:
             return {"success": True, **d}
@@ -2514,7 +2520,8 @@ def submit_action(
         body = action_envelope(
             aid, action_type, action_payload, rationale, ed25519_sign(signed_payload, aid),
         )
-        r = _bearer_request("post", f"{RELAY_URL}/sessions/{session_id}/action", agent_id=aid, json=body, timeout=15)
+        # P110: a final move or a service's terminal action settles too.
+        r = _bearer_request("post", f"{RELAY_URL}/sessions/{session_id}/action", agent_id=aid, json=body, timeout=_CHAIN_TIMEOUT_S)
         d = r.json()
         if r.status_code == 200:
             return {"success": True, **d}
@@ -2551,7 +2558,10 @@ def confirm_delivery(
         body: dict[str, Any] = confirm_delivery_body(
             aid, effective_rationale, ed25519_sign(signed_payload, aid),
         )
-        r = _bearer_request("post", f"{RELAY_URL}/sessions/{session_id}/confirm-delivery", agent_id=aid, json=body, timeout=15)
+        # P110: settles on chain for an escrow purchase; the relay waits up
+        # to escrow_chain._RECEIPT_TIMEOUT_S for the receipt. 15s reported a
+        # failure for a capture that went through on a slow block.
+        r = _bearer_request("post", f"{RELAY_URL}/sessions/{session_id}/confirm-delivery", agent_id=aid, json=body, timeout=_CHAIN_TIMEOUT_S)
         d = r.json()
         return {"success": True, **d} if r.status_code == 200 else {"error": f"Relay {r.status_code}", "detail": d, "success": False}
     except Exception as e:
@@ -2589,7 +2599,7 @@ def dispute_delivery(
         body: dict[str, Any] = dispute_delivery_body(
             aid, reason, effective_rationale, ed25519_sign(signed_payload, aid),
         )
-        r = _bearer_request("post", f"{RELAY_URL}/sessions/{session_id}/dispute-delivery", agent_id=aid, json=body, timeout=15)
+        r = _bearer_request("post", f"{RELAY_URL}/sessions/{session_id}/dispute-delivery", agent_id=aid, json=body, timeout=_CHAIN_TIMEOUT_S)
         d = r.json()
         return {"success": True, **d} if r.status_code == 200 else {"error": f"Relay {r.status_code}", "detail": d, "success": False}
     except Exception as e:
@@ -2612,7 +2622,7 @@ def abandon_session(
     body: dict[str, Any] = {"agent_id": aid}
     try:
         r = _bearer_request(
-            "post", f"{RELAY_URL}/sessions/{session_id}/abandon", agent_id=aid, json=body, timeout=10,
+            "post", f"{RELAY_URL}/sessions/{session_id}/abandon", agent_id=aid, json=body, timeout=_CHAIN_TIMEOUT_S,
         )
         d = r.json()
         return {"success": True, **d} if r.status_code == 200 else {"error": f"Relay {r.status_code}", "detail": d, "success": False}

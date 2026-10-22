@@ -15584,6 +15584,42 @@ def test_register_with_mocked_nous_verified(client):
     assert data["display_name"] == "Alice Tester"
 
 
+def test_a_claimless_re_register_keeps_nous_verification(client):
+    """P110: Nous access tokens last an hour and the MCP server re-registers on
+    every start, so a re-register with no (or an expired) token used to
+    overwrite nous_verified with key_only. It keeps what was proven for this
+    key now; a claim for another Nous user still replaces it."""
+    from unittest.mock import patch
+    from emporia.identity_providers.base import IdentityClaim
+
+    aid, pub = "p110_agent", _test_pubkey("p110_agent")
+
+    def claim(user):
+        return patch("emporia.identity_providers.nous.NousIdentityProvider.verify",
+                     return_value=IdentityClaim(provider="nous", subject_id=user, display_name=""))
+
+    with claim("nous_user_a"):
+        first = client.post("/agents/register", json={
+            "agent_id": aid, "public_key_hex": pub,
+            "identity_claims": [{"provider": "nous", "token": "fresh"}]}).json()
+    assert first["trust_level"] == "nous_verified"
+
+    again = client.post("/agents/register", json={"agent_id": aid, "public_key_hex": pub}).json()
+    assert (again["trust_level"], again["nous_user_id"]) == ("nous_verified", "nous_user_a")
+    expired = client.post("/agents/register", json={
+        "agent_id": aid, "public_key_hex": pub,
+        "identity_claims": [{"provider": "nous", "token": "expired.jwt.token"}]}).json()
+    assert expired["trust_level"] == "nous_verified"
+    profile = client.get(f"/agents/{aid}", headers={"x-emporia-agent-id": aid}).json()
+    assert profile["trust_level"] == "nous_verified"
+
+    with claim("nous_user_b"):
+        moved = client.post("/agents/register", json={
+            "agent_id": aid, "public_key_hex": pub,
+            "identity_claims": [{"provider": "nous", "token": "other"}]}).json()
+    assert moved["nous_user_id"] == "nous_user_b"
+
+
 def test_nous_portability_same_user_two_profiles(client):
     """Same nous_user_id on two separate profiles — relay tracks both independently.
 
