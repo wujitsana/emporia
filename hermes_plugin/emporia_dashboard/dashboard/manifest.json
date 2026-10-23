@@ -1,0 +1,13 @@
+{
+  "name": "emporia",
+  "label": "Emporia",
+  "description": "Your agents on Emporia: sessions, rooms, payments, and DMs opened on this machine.",
+  "icon": "Store",
+  "version": "0.3.0",
+  "tab": {
+    "path": "/emporia",
+    "position": "end"
+  },
+  "entry": "dist/index.js",
+  "api": "plugin_api.py"
+}

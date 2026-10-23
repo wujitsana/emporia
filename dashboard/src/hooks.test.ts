@@ -57,13 +57,18 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
+// P126: sockets open after an await (the Hermes SDK mints a ticket per socket),
+// so a test lets that settle before looking for one.
+const flush = () => act(async () => { await Promise.resolve(); await Promise.resolve(); });
+
 describe("useRoomWs", () => {
-  it("clears stale messages immediately when roomId changes, before the new room's room_init arrives", () => {
+  it("clears stale messages immediately when roomId changes, before the new room's room_init arrives", async () => {
     const { result, rerender } = renderHook(
       ({ roomId }: { roomId: string | null }) => useRoomWs("http://relay.example", roomId, "agent-1"),
       { initialProps: { roomId: "room-a" } },
     );
 
+    await flush();
     const wsA = FakeWebSocket.instances[0];
     act(() => wsA.fireOpen());
     act(() =>
@@ -84,12 +89,13 @@ describe("useRoomWs", () => {
     expect(result.current.connected).toBe(false);
   });
 
-  it("still clears on the falsy-roomId transition (the case that already worked)", () => {
+  it("still clears on the falsy-roomId transition (the case that already worked)", async () => {
     const { result, rerender } = renderHook(
       ({ roomId }: { roomId: string | null }) => useRoomWs("http://relay.example", roomId, "agent-1"),
       { initialProps: { roomId: "room-a" as string | null } },
     );
 
+    await flush();
     const wsA = FakeWebSocket.instances[0];
     act(() => wsA.fireOpen());
     act(() =>
@@ -208,20 +214,24 @@ describe("useInterval stale-data semantics (P33-2)", () => {
 // that was the largest visibility gap left.
 
 describe("useAgentWs", () => {
-  it("connects to the agent's own channel", () => {
+  it("connects to the agent's own channel", async () => {
     renderHook(() => useAgentWs("http://relay.test", "hackathon_hermes"));
+    await flush();
     expect(FakeWebSocket.instances).toHaveLength(1);
+    await flush();
     expect(FakeWebSocket.instances[0].url).toContain("/ws/agent/hackathon_hermes");
   });
 
-  it("does not connect without an identity", () => {
+  it("does not connect without an identity", async () => {
     // A spectator has no channel to open, and the relay would close it anyway.
     renderHook(() => useAgentWs("http://relay.test", null));
+    await flush();
     expect(FakeWebSocket.instances).toHaveLength(0);
   });
 
-  it("surfaces each event as `last`, so callers can refetch on the ones they care about", () => {
+  it("surfaces each event as `last`, so callers can refetch on the ones they care about", async () => {
     const { result } = renderHook(() => useAgentWs("http://relay.test", "a"));
+    await flush();
     act(() => { FakeWebSocket.instances[0].fireOpen(); });
     expect(result.current.connected).toBe(true);
 
@@ -238,34 +248,42 @@ describe("useAgentWs", () => {
     expect(result.current.eventCount).toBe(2);
   });
 
-  it("gives every event a fresh identity, so an effect keyed on `last` re-runs", () => {
+  it("gives every event a fresh identity, so an effect keyed on `last` re-runs", async () => {
     // Two identical frames in a row are two real events -- a second DM in the
     // same thread must still trigger a refetch. Reusing the object would make
     // the second one invisible to a `useEffect(..., [last])`.
     const { result } = renderHook(() => useAgentWs("http://relay.test", "a"));
+    await flush();
     act(() => { FakeWebSocket.instances[0].fireOpen(); });
 
+    await flush();
     act(() => { FakeWebSocket.instances[0].fireMessage({ type: "dm_received", thread_id: "t" }); });
     const first = result.current.last;
+    await flush();
     act(() => { FakeWebSocket.instances[0].fireMessage({ type: "dm_received", thread_id: "t" }); });
     expect(result.current.last).not.toBe(first);
   });
 
-  it("ignores the relay's pong keepalive", () => {
+  it("ignores the relay's pong keepalive", async () => {
     const { result } = renderHook(() => useAgentWs("http://relay.test", "a"));
+    await flush();
     act(() => { FakeWebSocket.instances[0].fireOpen(); });
+    await flush();
     act(() => { FakeWebSocket.instances[0].fireMessage({ type: "pong" }); });
     expect(result.current.last).toBeNull();
     expect(result.current.eventCount).toBe(0);
   });
 
-  it("reconnects to the new channel when the identity changes", () => {
+  it("reconnects to the new channel when the identity changes", async () => {
     const { rerender } = renderHook(({ id }) => useAgentWs("http://relay.test", id), {
       initialProps: { id: "a" as string | null },
     });
+    await flush();
     act(() => { FakeWebSocket.instances[0].fireOpen(); });
     rerender({ id: "b" });
+    await flush();
     expect(FakeWebSocket.instances).toHaveLength(2);
+    await flush();
     expect(FakeWebSocket.instances[1].url).toContain("/ws/agent/b");
   });
 });

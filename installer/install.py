@@ -1467,11 +1467,86 @@ _GATEWAY_RESTART_NEEDED = False
 _TOUCHED_PROFILES: list[str] = []
 
 
+_DASHBOARD_RESTART_NEEDED = False
+
+
+def _git_exclude(repo_child: Path) -> str | None:
+    """Exclude `repo_child` via its git repo's local .git/info/exclude — never a
+    tracked file — when it sits inside one. Returns the pattern added, if any."""
+    try:
+        top = subprocess.run(["git", "-C", str(repo_child.parent), "rev-parse", "--show-toplevel"],
+                             capture_output=True, text=True, timeout=10, check=True).stdout.strip()
+    except (OSError, subprocess.SubprocessError):
+        return None
+    pattern = "/" + str(repo_child.resolve().relative_to(Path(top).resolve())) + "/"
+    exclude = Path(top) / ".git" / "info" / "exclude"
+    lines = exclude.read_text().splitlines() if exclude.exists() else []
+    if pattern not in lines:
+        exclude.parent.mkdir(parents=True, exist_ok=True)
+        exclude.write_text("\n".join([*lines, pattern]) + "\n")
+    return pattern
+
+
+def install_dashboard_plugin(profile_dir: Path, relay_url: str, hermes_home: Path,
+                             dry_run: bool = False) -> None:
+    """The Emporia tab in the Hermes dashboard (P126; docs/local-console.md).
+
+    Copies hermes_plugin/emporia_dashboard and the built bundle
+    (dashboard/dist-plugin, from `npm run build:hermes-plugin`) to
+    <hermes_home>/plugins/emporia, writes its emporia.json (this venv's python,
+    the relay, where the profiles' keys are, a 0700 runtime directory for the
+    console's socket), keeps it out of any git repo it lands in, and enables it
+    with `hermes plugins enable` — Hermes runs a user plugin's backend only once
+    it is enabled. No port: the tab is served by the Hermes dashboard itself.
+    """
+    global _DASHBOARD_RESTART_NEEDED
+    src = _EMPORIA_DIR / "hermes_plugin" / "emporia_dashboard"
+    bundle = _EMPORIA_DIR / "dashboard" / "dist-plugin"
+    dst = hermes_home / "plugins" / "emporia"
+    if dry_run:
+        print(f"  [dry-run] Would install the Emporia dashboard tab at {dst}")
+        return
+    npm = shutil.which("npm")
+    if npm:
+        subprocess.run([npm, "run", "-s", "build:hermes-plugin"], cwd=_EMPORIA_DIR / "dashboard",
+                       check=True, capture_output=True, timeout=600)
+    if not (bundle / "index.js").exists():
+        raise SystemExit("  The dashboard bundle is missing: run `npm run build:hermes-plugin` in "
+                         "dashboard/ (npm was not found), then re-run the installer.")
+    before = _tree_digest(dst)
+    if dst.exists():
+        shutil.rmtree(dst)
+    shutil.copytree(src, dst, ignore=shutil.ignore_patterns("__pycache__"))
+    shutil.copytree(bundle, dst / "dashboard" / "dist")
+    runtime = profile_dir / "home" / ".hermes" / "emporia-console"
+    (dst / "dashboard" / "emporia.json").write_text(json.dumps({
+        "python": _venv_python(),
+        "relay_url": relay_url,
+        "profiles_root": str(profile_dir.parent),
+        "runtime_dir": str(runtime),
+    }, indent=2) + "\n")
+    if _tree_digest(dst) != before:
+        _DASHBOARD_RESTART_NEEDED = True
+    print(f"  + Hermes dashboard tab: {dst}")
+    pattern = _git_exclude(dst)
+    if pattern:
+        print(f"  + kept out of git via .git/info/exclude: {pattern}")
+    env = {**os.environ, "HERMES_HOME": str(hermes_home)}
+    r = subprocess.run(["hermes", "plugins", "enable", "emporia"], env=env,
+                       capture_output=True, text=True, timeout=60)
+    print("  + plugins.enabled: emporia" if r.returncode == 0
+          else f"  WARNING: `hermes plugins enable emporia` failed: {(r.stderr or r.stdout)[-300:]}")
+
+
 def print_restart_instructions(profiles: list[str]) -> None:
     """Tell the user exactly which restart their change needs (P119). A
     per-profile restart respawns the bridge and MCP server but keeps the plugin
     code the gateway loaded at startup; there is no plugin reload."""
     print()
+    if _DASHBOARD_RESTART_NEEDED:
+        print("  RESTART THE HERMES DASHBOARD — the Emporia tab was installed or changed.")
+        print("  It loads plugins only when it starts: restart the `hermes dashboard` process,")
+        print("  then open the dashboard and pick the Emporia tab.")
     if _GATEWAY_RESTART_NEEDED:
         print("  RESTART REQUIRED — the Emporia gateway plugin was installed or changed.")
         print("  Hermes loads plugins only when the gateway process starts, and one process")
@@ -1633,6 +1708,11 @@ def main() -> None:
     parser.add_argument("--sync-model", action="store_true",
                         help="With --create-profile on an existing profile: switch it to this "
                              "profile's model (a new profile always copies it)")
+    parser.add_argument("--hermes-dashboard", action="store_true",
+                        help="Install or refresh the Emporia tab in the Hermes dashboard (P126)")
+    parser.add_argument("--hermes-home", default="",
+                        help="With --hermes-dashboard: the Hermes home the dashboard runs from "
+                             "(default: $HERMES_HOME, else ~/.hermes)")
     parser.add_argument("--no-seed", action="store_true",
                         help="With --install-profile on a local relay: skip the demo seed")
     parser.add_argument("--local-demo", action="store_true",
@@ -1681,7 +1761,8 @@ def main() -> None:
         args.seed_only = True
 
     ops_mode = any([args.seed_only, args.start_relay, args.build_dashboard])
-    profile_mode = any([args.install_profile, args.create_profile, args.bootstrap_test])
+    profile_mode = any([args.install_profile, args.create_profile, args.bootstrap_test,
+                        args.hermes_dashboard])
 
     if not ops_mode and not profile_mode:
         parser.print_help()
@@ -1843,7 +1924,13 @@ def main() -> None:
             dev_skills=args.dev_skills,
         )
 
-    if _TOUCHED_PROFILES and not args.dry_run:
+    if args.hermes_dashboard:
+        home = Path(args.hermes_home or os.getenv("HERMES_HOME") or Path.home() / ".hermes")
+        profile = current_profile_dir or find_profile_dir_from_cwd()
+        if profile is None:
+            raise SystemExit("  --hermes-dashboard needs the profile holding this checkout")
+        install_dashboard_plugin(profile, args.relay_url, home, dry_run=args.dry_run)
+    if (_TOUCHED_PROFILES or _DASHBOARD_RESTART_NEEDED) and not args.dry_run:
         print_restart_instructions(_TOUCHED_PROFILES)
     print("\nDone.")
 

@@ -1,13 +1,8 @@
 import { SESSION_TOKEN_KEY, VIEWER_ID } from "./relayEnv";
+import { VIA_CONSOLE, httpFetch, relayHttpBase } from "./transport";
 
-const BASE = (() => {
-  const env = import.meta.env.VITE_RELAY_URL;
-  if (typeof env === "string" && env.length > 0) return env;
-  if (typeof window !== "undefined" && window.location?.host) {
-    return `${window.location.protocol}//${window.location.host}`;
-  }
-  return "http://127.0.0.1:8088";
-})();
+// P126: the relay directly, or the local console signed in as the viewer.
+const BASE = relayHttpBase();
 
 // Sent on requests that scope data to the current agent.
 // Local relay: X-Emporia-Agent-Id header trusted on localhost.
@@ -22,6 +17,9 @@ export function dashboardToken(): string | null {
 
 function agentHeaders(): HeadersInit {
   const headers: Record<string, string> = {};
+  // P126: via the console, identity is the console's signed session for the
+  // viewer — nothing to send, and anything sent would be dropped.
+  if (VIA_CONSOLE) return headers;
   if (AGENT_ID_HEADER) headers["x-emporia-agent-id"] = AGENT_ID_HEADER;
   const jwt = dashboardToken();
   if (jwt) headers["authorization"] = `Bearer ${jwt}`;
@@ -29,7 +27,7 @@ function agentHeaders(): HeadersInit {
 }
 
 async function get<T>(path: string, opts?: { agentScoped?: boolean }): Promise<T> {
-  const r = await fetch(`${BASE}${path}`, {
+  const r = await httpFetch(`${BASE}${path}`, {
     headers: opts?.agentScoped ? agentHeaders() : {},
   });
   if (!r.ok) throw new Error(`${r.status} ${path}`);
@@ -37,7 +35,7 @@ async function get<T>(path: string, opts?: { agentScoped?: boolean }): Promise<T
 }
 
 async function post<T>(path: string, body: unknown): Promise<T> {
-  const r = await fetch(`${BASE}${path}`, {
+  const r = await httpFetch(`${BASE}${path}`, {
     method: "POST",
     headers: { "Content-Type": "application/json", ...agentHeaders() },
     body: JSON.stringify(body),

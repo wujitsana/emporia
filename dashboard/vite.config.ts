@@ -1,6 +1,7 @@
 import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
 import path from "path";
+import { noRemoteFonts } from "./postcss.noRemoteFonts";
 
 const RELAY = process.env.VITE_RELAY_URL ?? "http://127.0.0.1:8088";
 const SRCL = path.resolve("node_modules/srcl");
@@ -40,5 +41,8 @@ export default defineConfig({
       "/ui-config": { target: RELAY, changeOrigin: true },
     },
   },
-  css: { modules: { localsConvention: "camelCase" } },
+  css: {
+    modules: { localsConvention: "camelCase" },
+    postcss: { plugins: [noRemoteFonts] },
+  },
 });

@@ -28,10 +28,21 @@ import { AgentLink } from "../ui/chips";
 import { markReplayedNonces, verifyMessageSignature } from "../integrityCheck";
 import { DmChainBadge } from "../ui/DmChainBadge";
 import { inBox, splitInbox, unreadActivity } from "../messagesModel";
-import { openSealedDms, readerConfig } from "../dmReader";
+import { VIA_CONSOLE, consoleUrl, httpFetch } from "../transport";
 
-// P125: read once — it also strips the reader token from the address bar.
-const READER = readerConfig();
+/** P126: sealed DMs opened by the local console, with the viewer's own key, on
+ *  this machine. Directly against a relay there is no key, and they stay 🔒. */
+async function openSealedDms(viewer: string, threadId: string, messages: DMMessage[]) {
+  const r = await httpFetch(consoleUrl(`/dm/${encodeURIComponent(viewer)}/open`), {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ thread_id: threadId, messages }),
+  });
+  if (!r.ok) throw new Error(`console ${r.status}`);
+  const d = (await r.json()) as { opened?: Record<string, string | null> };
+  return Object.fromEntries(Object.entries(d.opened ?? {}).filter(
+    (e): e is [string, string] => typeof e[1] === "string"));
+}
 import type { ThreadBox } from "../messagesModel";
 import { SegmentTabs } from "../ui/SegmentTabs";
 
@@ -158,8 +169,8 @@ function ThreadPane({
       const msgs = (await api.dmMessages(thread.thread_id, viewer)).messages;
       setMessages(msgs);
       // P125: sealed messages, opened on this machine by the local reader.
-      if (READER && msgs.some((m) => looksLikeEncryptedEnvelope(m.content))) {
-        openSealedDms(READER, viewer, thread.thread_id, msgs)
+      if (VIA_CONSOLE && msgs.some((m) => looksLikeEncryptedEnvelope(m.content))) {
+        openSealedDms(viewer, thread.thread_id, msgs)
           .then((o) => { setOpened(o); setReaderError(null); })
           .catch((e: unknown) => setReaderError(String(e)));
       }
@@ -213,8 +224,8 @@ function ThreadPane({
           <Text className="e-faint" title={readerError ?? undefined}>
             {thread.encrypted ? "🔒 end-to-end encrypted · " : "not encrypted · "}
             {thread.encrypted
-              ? (READER ? (readerError ? "local reader unavailable · " : "🔓 opened locally · ")
-                        : "run emporia.dm_reader to read here · ")
+              ? (VIA_CONSOLE ? (readerError ? "could not open here · " : "🔓 opened on this machine · ")
+                             : "open via your local console to read · ")
               : ""}
             {liveConnected ? "live · agents send via relay" : "read-only — agents send via relay"}
           </Text>

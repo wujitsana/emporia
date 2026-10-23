@@ -14,7 +14,7 @@ import {
   ChessSpeedSlider,
   ChessTransport,
 } from "../ui/chessControls";
-import { RELAY, VIEWER_ID } from "../relayEnv";
+import { VIEWER_ID } from "../relayEnv";
 import { STARTING_FEN, fenToBoard } from "../fen";
 import {
   buildChessReplay,
@@ -31,7 +31,8 @@ import type { NavOpts } from "../eventNav";
 import { ListingPeekBanner } from "../ui/ListingPeekBanner";
 import { AuditBadge } from "../ui/AuditBadge";
 import { McpCommandHint } from "../ui/McpCommandHint";
-import { toWsUrl, useInterval } from "../hooks";
+import { useInterval } from "../hooks";
+import { relaySocket } from "../transport";
 import { sessionStatusLabel } from "../paymentFormat";
 
 // P42: not exported — the rail and the module-filter mapping below are its
@@ -88,7 +89,6 @@ export function ChessReplayPanel({ session }: { session: Session }) {
 
   useEffect(() => {
     if (!sessionIsActive(session.status)) return;
-    const base = toWsUrl(RELAY);
     let closed = false;
     let retryMs = 1_000;
     let ws: WebSocket;
@@ -104,7 +104,9 @@ export function ChessReplayPanel({ session }: { session: Session }) {
       if (VIEWER_ID) params.set("agent_id", VIEWER_ID);
       const token = dashboardToken();
       if (token) params.set("token", token);
-      ws = new WebSocket(`${base}/ws/${session.session_id}?${params.toString()}`);
+      void relaySocket(`/ws/${session.session_id}`, params).then((sock) => {
+      if (closed) { sock.close(); return; }
+      ws = sock;
       ws.onopen = () => { setWsLive(true); retryMs = 1_000; };
       ws.onclose = () => {
         setWsLive(false);
@@ -120,6 +122,7 @@ export function ChessReplayPanel({ session }: { session: Session }) {
             .catch(() => {});
         }
       };
+      }).catch(() => { if (!closed) setTimeout(connect, (retryMs = Math.min(retryMs * 2, 30_000))); });
     };
     connect();
     const pingId = setInterval(() => {

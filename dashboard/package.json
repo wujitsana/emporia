@@ -12,7 +12,9 @@
     "typecheck:src": "node scripts/typecheck-src.mjs",
     "lint": "oxlint --max-warnings=0",
     "preview": "vite preview",
-    "test": "vitest run"
+    "test": "vitest run",
+    "build:console": "VITE_EMPORIA_MODE=console VITE_RELAY_URL= vite build --base / --outDir dist-console",
+    "build:hermes-plugin": "vite build --config vite.plugin.config.ts"
   },
   "dependencies": {
     "@noble/curves": "^2.3.0",

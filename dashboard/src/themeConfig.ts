@@ -45,8 +45,16 @@ export function nextTint(current: Tint): Tint {
   return TINTS[next];
 }
 
+// P126: inside the Hermes dashboard the app lives in a shadow root, and theme
+// classes go on its own container — never on Hermes's <body>.
+let themeRoot: HTMLElement | null = null;
+
+export function setThemeRoot(el: HTMLElement | null) {
+  themeRoot = el;
+}
+
 export function applyTheme(theme: Theme, tint: Tint) {
-  const b = document.body;
+  const b = themeRoot ?? document.body;
   THEMES.forEach((t) => b.classList.remove(t));
   TINTS.forEach((t) => t && b.classList.remove(t));
   b.classList.add(theme);

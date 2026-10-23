@@ -2,7 +2,8 @@ import React from "react";
 import { api } from "../api";
 import { useInterval } from "../hooks";
 import { useRelayCtx } from "../relayCtx";
-import { VIEWER_ID } from "../relayEnv";
+import { VIEWER_ID, VIEWER_KEY } from "../relayEnv";
+import { VIA_CONSOLE, consoleUrl, httpFetch } from "../transport";
 
 /**
  * P123: view the dashboard as another agent on this relay — alpha, beta, the
@@ -16,18 +17,26 @@ import { VIEWER_ID } from "../relayEnv";
  */
 export function ViewerSwitcher() {
   const { headerAuthTrusted } = useRelayCtx();
+  // P126: via the local console the choices are the agents whose keys are on
+  // this machine — the only ones it can sign in as — and always shown.
+  const show = VIA_CONSOLE || headerAuthTrusted;
   const [data] = useInterval(
-    () => (headerAuthTrusted ? api.agents() : Promise.resolve({ agents: [], count: 0 })),
+    () => !show ? Promise.resolve({ ids: [] as string[] })
+      : VIA_CONSOLE
+        ? httpFetch(consoleUrl("/agents")).then((r) => r.json()).then((d) => ({ ids: d.agents as string[] }))
+        : api.agents().then((d) => ({ ids: d.agents.map((a) => a.agent_id) })),
     60_000,
-    [headerAuthTrusted],
+    [show],
   );
-  if (!headerAuthTrusted) return null;
-  const ids = (data?.agents ?? []).map((a) => a.agent_id).sort();
+  if (!show) return null;
+  const ids = [...(data?.ids ?? [])].sort();
   if (VIEWER_ID && !ids.includes(VIEWER_ID)) ids.unshift(VIEWER_ID);
 
   const choose = (e: React.ChangeEvent<HTMLSelectElement>) => {
+    try { sessionStorage.setItem(VIEWER_KEY, e.target.value); } catch { /* private mode */ }
     const url = new URL(window.location.href);
-    url.searchParams.set("as", e.target.value);
+    if (VIA_CONSOLE) url.searchParams.delete("as");   // the session choice decides
+    else url.searchParams.set("as", e.target.value);
     window.location.assign(url.toString());
   };
 

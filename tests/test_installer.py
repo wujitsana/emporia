@@ -485,3 +485,47 @@ def test_the_installer_says_which_restart_a_change_needs(tmp_path, monkeypatch, 
     again = capsys.readouterr().out
     assert "RESTART REQUIRED" not in again
     assert "hermes -p agent_r gateway restart" in again and "/reload-mcp" in again
+
+
+def test_the_dashboard_tab_installs_with_its_config_out_of_git_and_enabled(tmp_path, monkeypatch):
+    """P126: --hermes-dashboard puts the Emporia tab where the Hermes dashboard
+    loads user plugins, with its console config, excluded from any git repo it
+    lands in (via .git/info/exclude, never a tracked file), and enabled."""
+    import json
+    import subprocess as sp
+
+    home = tmp_path / "hermes_home"
+    home.mkdir()
+    sp.run(["git", "init", "-q", str(home)], check=True)
+    profile = tmp_path / "profiles" / "op"
+    profile.mkdir(parents=True)
+    bundle = installer._EMPORIA_DIR / "dashboard" / "dist-plugin"
+    if not (bundle / "index.js").exists():
+        import pytest
+        pytest.skip("dashboard bundle not built (npm run build:hermes-plugin)")
+    monkeypatch.setattr(installer.shutil, "which", lambda name: None)     # no npm rebuild
+    calls = []
+    real_run = installer.subprocess.run
+
+    def fake_run(argv, **kw):
+        if argv[:3] == ["hermes", "plugins", "enable"]:
+            calls.append((argv, kw["env"]["HERMES_HOME"]))
+            return sp.CompletedProcess(argv, 0, "", "")
+        return real_run(argv, **kw)
+    monkeypatch.setattr(installer.subprocess, "run", fake_run)
+    monkeypatch.setattr(installer, "_DASHBOARD_RESTART_NEEDED", False)
+
+    installer.install_dashboard_plugin(profile, "http://relay.example", home)
+    dst = home / "plugins" / "emporia"
+    assert (dst / "plugin.yaml").exists() and (dst / "dashboard" / "manifest.json").exists()
+    assert (dst / "dashboard" / "dist" / "index.js").exists()
+    cfg = json.loads((dst / "dashboard" / "emporia.json").read_text())
+    assert cfg["relay_url"] == "http://relay.example"
+    assert cfg["profiles_root"] == str(profile.parent)
+    assert cfg["runtime_dir"] == str(profile / "home" / ".hermes" / "emporia-console")
+    assert "/plugins/emporia/" in (home / ".git" / "info" / "exclude").read_text()
+    status = real_run(["git", "-C", str(home), "status", "--porcelain"],
+                      capture_output=True, text=True).stdout
+    assert "plugins" not in status, "the tab is invisible to the repo's git status"
+    assert calls == [(["hermes", "plugins", "enable", "emporia"], str(home))]
+    assert installer._DASHBOARD_RESTART_NEEDED

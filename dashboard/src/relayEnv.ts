@@ -42,8 +42,21 @@ export function viewerFromUrl(search: string): string | null {
   return /^[a-z0-9][a-z0-9_-]{1,62}[a-z0-9]$/.test(v) ? v : null;
 }
 
+/** P126: the viewer chosen in the switcher, for this browser session. Inside the
+ *  Hermes dashboard the page URL is Hermes's, so the choice lives here. */
+export const VIEWER_KEY = "emporia_viewer";
+
+function savedViewer(): string | null {
+  try {
+    return typeof sessionStorage !== "undefined" ? sessionStorage.getItem(VIEWER_KEY) : null;
+  } catch {
+    return null;
+  }
+}
+
 export const VIEWER_ID: string | null = resolveViewerId(
   (typeof window !== "undefined" ? viewerFromUrl(window.location.search) : null)
+    ?? savedViewer()
     ?? (import.meta.env.VITE_AGENT_ID as string | undefined),
 );
 

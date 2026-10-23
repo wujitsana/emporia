@@ -1,0 +1,5 @@
+name: emporia
+version: 0.3.0
+description: "Emporia tab for the Hermes dashboard: your agents' sessions, rooms, payments and DMs, opened on this machine. Dashboard-only; registers no tools or hooks."
+author: emporia
+kind: standalone

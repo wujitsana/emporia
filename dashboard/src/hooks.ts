@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { resolveRelayUrl } from "./relayEnv";
+import { relaySocket } from "./transport";
 import { dashboardToken } from "./api";
 import type { Health } from "./api";
 
@@ -130,14 +130,14 @@ export function useAgentWs(relayUrl: string, agentId: string | null): AgentWsSta
 
     let closed = false;
     let retryMs = 1_000;
-    const base = toWsUrl(relayUrl);
 
     const connect = () => {
       if (closed) return;
       const params = new URLSearchParams({ agent_id: agentId });
       const token = dashboardToken();
       if (token) params.set("token", token);
-      const ws = new WebSocket(`${base}/ws/agent/${encodeURIComponent(agentId)}?${params.toString()}`);
+      void relaySocket(`/ws/agent/${encodeURIComponent(agentId)}`, params).then((ws) => {
+      if (closed) { ws.close(); return; }
       wsRef.current = ws;
 
       ws.onopen = () => { setConnected(true); retryMs = 1_000; };
@@ -159,6 +159,7 @@ export function useAgentWs(relayUrl: string, agentId: string | null): AgentWsSta
         setLast({ ...frame });
         setEventCount((n) => n + 1);
       };
+      }).catch(() => { if (!closed) setTimeout(connect, (retryMs = Math.min(retryMs * 2, 30_000))); });
     };
 
     connect();
@@ -206,7 +207,6 @@ export function useRoomWs(
 
     let closed = false;
     let retryMs = 1_000;
-    const base = toWsUrl(relayUrl);
 
     const connect = () => {
       if (closed) return;
@@ -219,7 +219,8 @@ export function useRoomWs(
       if (agentId) params.set("agent_id", agentId);
       const token = dashboardToken();
       if (token) params.set("token", token);
-      const ws = new WebSocket(`${base}/ws/rooms/${roomId}?${params.toString()}`);
+      void relaySocket(`/ws/rooms/${roomId}`, params).then((ws) => {
+      if (closed) { ws.close(); return; }
       wsRef.current = ws;
 
       ws.onopen = () => { setConnected(true); retryMs = 1_000; };
@@ -237,6 +238,7 @@ export function useRoomWs(
           setMessages((prev) => [...prev, frame]);
         }
       };
+      }).catch(() => { if (!closed) setTimeout(connect, (retryMs = Math.min(retryMs * 2, 30_000))); });
     };
 
     connect();
@@ -341,15 +343,15 @@ export function useGlobalEvents(): GlobalWsState {
   const [wsConnected, setWsConnected] = useState(false);
 
   useEffect(() => {
-    const RELAY = resolveRelayUrl();
-    const base = toWsUrl(RELAY);
     let closed = false;
     let retryMs = 1_000;
     let ws: WebSocket;
 
     const connect = () => {
       if (closed) return;
-      ws = new WebSocket(`${base}/ws/events`);
+      void relaySocket("/ws/events").then((sock) => {
+      if (closed) { sock.close(); return; }
+      ws = sock;
 
       ws.onopen = () => { setWsConnected(true); retryMs = 1_000; };
       ws.onclose = () => {
@@ -362,6 +364,7 @@ export function useGlobalEvents(): GlobalWsState {
         if (f.type === "connected") { setSeed(f.health); return; }
         setEvents((prev) => [{ ...f, _ts: Date.now() }, ...prev].slice(0, 200));
       };
+      }).catch(() => { if (!closed) setTimeout(connect, (retryMs = Math.min(retryMs * 2, 30_000))); });
     };
 
     connect();
