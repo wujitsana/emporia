@@ -621,6 +621,29 @@ def _model_block(config: dict) -> dict | None:
     return config.get("model")
 
 
+# P117: the API key each model provider reads. A profile is created bare
+# (`hermes profile create --no-skills`, which Hermes will not combine with
+# --clone-from) and gets the model plus exactly this key — the minimum it needs
+# to answer. Without it Hermes greets the user with "No inference provider is
+# configured". Nous needs no key: it signs in (`hermes -p <name> auth add nous`).
+_PROVIDER_KEYS = {
+    "openrouter": "OPENROUTER_API_KEY", "nvidia": "NVIDIA_API_KEY",
+    "anthropic": "ANTHROPIC_API_KEY", "openai": "OPENAI_API_KEY",
+}
+
+
+def _provider_key_line(model_block: dict | None, *sources: dict[str, str]) -> str | None:
+    """`KEY=value` for the model's provider, from the first source that has it."""
+    name = _PROVIDER_KEYS.get(str((model_block or {}).get("provider") or "").lower())
+    if not name:
+        return None
+    for src in sources:
+        if src.get(name):
+            return f"{name}={src[name]}"
+    print(f"  WARNING: the model's provider needs {name}, and none was found to copy")
+    return None
+
+
 # ─────────────────────────────────────────────────────────────────────────────
 # MCP + platform entry builders
 # ─────────────────────────────────────────────────────────────────────────────
@@ -1167,6 +1190,13 @@ def create_profile(
         safe_env_lines.append(f"EMPORIA_X402_MAX_PAYMENT_CENTS={x402_max_payment_cents}")
     if x402_max_daily_cents is not None:
         safe_env_lines.append(f"EMPORIA_X402_MAX_DAILY_CENTS={x402_max_daily_cents}")
+    # P117: the one key this profile's model needs, into the .env Hermes reads it from.
+    provider_line = _provider_key_line(
+        model_block, harvest_env(profile_dir), env_block,
+        *((harvest_env(current_profile_dir), collect_upstream_env(current_profile_dir))
+          if current_profile_dir else ()))
+    if provider_line:
+        safe_env_lines.append(provider_line)
     if max_budget_cents is not None and max_budget_cents > 0:
         safe_env_lines.append(f"EMPORIA_MAX_TOTAL_SPEND_CENTS={max_budget_cents}")
     if nous_token:
@@ -1367,7 +1397,7 @@ def bootstrap_test_profiles(
             nvidia_api_key=nvidia_api_key,
             max_budget_cents=max_budget_cents,
             nous_token=nous_token,
-            inherit_env=True,
+            inherit_env=False,  # P117: bare — the model's key is copied on its own
             dry_run=dry_run,
             update_dashboard=False,  # don't overwrite operator dashboard env
             dev_skills=dev_skills,
@@ -1592,6 +1622,10 @@ def main() -> None:
                         help="Set EMPORIA_GUARDRAILS_MODE=off (testing only)")
     parser.add_argument("--no-inherit-env", action="store_true",
                         help="Don't copy env vars from current profile when creating new profile")
+    parser.add_argument("--inherit-env", action="store_true",
+                        help="With --create-profile: also copy this profile's other settings "
+                             "(provider keys, NVIDIA key, budgets). Default is bare: the model "
+                             "and the one key it needs")
     parser.add_argument("--dev-skills", action="store_true",
                         help="Symlink dev skills from repo (emporia-dev, srcl-terminal-ui)")
     parser.add_argument("--dry-run", action="store_true",
@@ -1737,7 +1771,9 @@ def main() -> None:
             nvidia_api_key=nvidia_key,
             max_budget_cents=args.max_budget_cents,
             nous_token=nous_token,
-            inherit_env=not args.no_inherit_env,
+            # P117: bare by default — the model and its key, nothing else from
+            # this profile; --inherit-env restores copying its other settings.
+            inherit_env=args.inherit_env and not args.no_inherit_env,
             dry_run=args.dry_run,
             dev_skills=args.dev_skills,
         )

@@ -432,3 +432,35 @@ def test_sync_model_makes_an_existing_profile_follow_the_operators_model(tmp_pat
                                  current_profile_dir=relay, sync_model=True)
         assert model()["default"] == "deepseek/deepseek-v4-flash-0731"
         assert model()["provider"] == "openrouter"
+
+
+def test_a_new_agent_profile_gets_its_models_key_and_nothing_else(tmp_path, monkeypatch):
+    """P117: profiles are created bare (Hermes will not combine --no-skills with
+    --clone-from), so the installer copies the model and the one API key its
+    provider needs. Without the key Hermes opens with "No inference provider is
+    configured". The relay's other secrets stay behind."""
+    import os
+    from unittest.mock import patch
+
+    import yaml
+
+    for k in ("OPENROUTER_API_KEY", "STRIPE_SECRET_KEY", "ANTHROPIC_API_KEY"):
+        monkeypatch.delenv(k, raising=False)
+    relay = tmp_path / "profiles" / "relay_profile"
+    agent = tmp_path / "profiles" / "fresh_agent"
+    relay.mkdir(parents=True)
+    (relay / "config.yaml").write_text(yaml.dump({"model": {
+        "provider": "openrouter", "default": "deepseek/deepseek-v4-flash-0731"}}))
+    (relay / ".env").write_text("OPENROUTER_API_KEY=sk-or-test\nSTRIPE_SECRET_KEY=sk_live_x\n"
+                                "ANTHROPIC_API_KEY=sk-ant-unrelated\n")
+    monkeypatch.setattr(installer, "install_platform_plugin", lambda *a, **k: None)
+    monkeypatch.setattr(installer, "_install_skill_link", lambda *a, **k: None)
+    monkeypatch.setattr(installer, "_hermes_profile_create", lambda name: agent.mkdir(parents=True))
+
+    with patch.dict(os.environ):
+        installer.create_profile(name="fresh_agent", relay_url="http://127.0.0.1:8088",
+                                 current_profile_dir=relay, inherit_env=False)
+    dotenv = (agent / ".env").read_text()
+    assert "OPENROUTER_API_KEY=sk-or-test" in dotenv
+    assert "sk_live_x" not in dotenv and "sk-ant-unrelated" not in dotenv
+    assert yaml.safe_load((agent / "config.yaml").read_text())["model"]["provider"] == "openrouter"

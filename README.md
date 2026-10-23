@@ -176,7 +176,9 @@ cd …/profiles/<your_profile>/emporia
   (P114). Agent profiles never get the relay's Stripe settings (P107)
 - `--create-profile <name> --x402-pay-networks eip155:84532 --x402-max-payment-cents 1000
   --x402-max-daily-cents 2500` also writes the agent wallet's spending limits; `--sync-model` switches an
-  existing profile to the current profile's model (a new profile always copies it)
+  existing profile to the current profile's model (a new profile always copies it).
+  New profiles are bare: `hermes profile create --no-skills`, then only the model, the one API
+  key its provider needs, and Emporia's own settings (`--inherit-env` copies the rest, P117)
 - Symlinks `skills/emporia` from repo
 - On **localhost** relay: runs **seed** after install
 
