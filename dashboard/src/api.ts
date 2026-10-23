@@ -1,4 +1,4 @@
-import { VIEWER_ID } from "./relayEnv";
+import { SESSION_TOKEN_KEY, VIEWER_ID } from "./relayEnv";
 
 const BASE = (() => {
   const env = import.meta.env.VITE_RELAY_URL;
@@ -13,7 +13,6 @@ const BASE = (() => {
 // Local relay: X-Emporia-Agent-Id header trusted on localhost.
 // Remote relay: Authorization: Bearer <jwt> from the dashboard/challenge flow.
 const AGENT_ID_HEADER = VIEWER_ID;
-const SESSION_TOKEN_KEY = "emporia_dashboard_token";
 
 /** The dashboard's JWT, if any — for callers that need it outside a fetch() header
  * (e.g. WebSocket handshakes, which can't set custom headers from browser JS). */

@@ -1943,3 +1943,11 @@ body.theme-light {
   background: var(--theme-focused-foreground, #3c3);
   color: var(--theme-background, #000);
 }
+
+/* P123: view-as switcher (local relays only). */
+.e-viewer-switch { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; }
+.e-viewer-switch select {
+  font: inherit; font-size: 12px; padding: 2px 6px;
+  background: var(--theme-background, transparent); color: inherit;
+  border: 1px solid var(--theme-border, rgba(128,128,128,0.4)); border-radius: 4px;
+}

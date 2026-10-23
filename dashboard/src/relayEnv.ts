@@ -30,6 +30,23 @@ export function resolveViewerId(raw: string | undefined | null): string | null {
   return v === "" ? null : v;
 }
 
+/**
+ * P123: `?as=<agent>` chooses who this dashboard views as, overriding the
+ * build-time VITE_AGENT_ID — so one dashboard can look at alpha, beta or the
+ * operator. It grants nothing: the relay decides what each identity may see,
+ * trusting the header only from this machine (EMPORIA_TRUST_LOCAL_HEADER_AUTH)
+ * and otherwise asking that agent to sign the dashboard challenge.
+ */
+export function viewerFromUrl(search: string): string | null {
+  const v = new URLSearchParams(search).get("as")?.trim().toLowerCase() ?? "";
+  return /^[a-z0-9][a-z0-9_-]{1,62}[a-z0-9]$/.test(v) ? v : null;
+}
+
 export const VIEWER_ID: string | null = resolveViewerId(
-  import.meta.env.VITE_AGENT_ID as string | undefined,
+  (typeof window !== "undefined" ? viewerFromUrl(window.location.search) : null)
+    ?? (import.meta.env.VITE_AGENT_ID as string | undefined),
 );
+
+/** sessionStorage key for the dashboard JWT — per viewer (P123), so a token
+ *  signed for one agent is never sent while viewing as another. */
+export const SESSION_TOKEN_KEY = `emporia_dashboard_token:${VIEWER_ID ?? ""}`;

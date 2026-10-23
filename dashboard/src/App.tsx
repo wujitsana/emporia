@@ -15,6 +15,7 @@ import { ProfileView } from "./ProfileView";
 import { RELAY } from "./relayEnv";
 import { RelayContextProvider } from "./relayContext";
 import { useRelayCtx } from "./relayCtx";
+import { ViewerSwitcher } from "./ui/ViewerSwitcher";
 import { RelayHealthCtx } from "./healthCtx";
 import { applyTheme, THEMES, TINTS, type Theme, type Tint } from "./themeConfig";
 import { useAgentWs, useGlobalEvents, useInterval } from "./hooks";
@@ -217,6 +218,7 @@ function AppInner() {
                   onTheme={setThemeAndApply}
                   onTint={setTintAndApply}
                 />
+                <ViewerSwitcher />
                 <RelayStrip
                   relayUrl={RELAY}
                   wsConnected={wsConnected}
@@ -242,6 +244,7 @@ function AppInner() {
               onTheme={setThemeAndApply}
               onTint={setTintAndApply}
             />
+            <ViewerSwitcher />
             <RelayStrip
               relayUrl={RELAY}
               wsConnected={wsConnected}

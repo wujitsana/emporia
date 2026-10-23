@@ -60,3 +60,14 @@ describe("VIEWER_ID module constant", () => {
     vi.resetModules();
   });
 });
+
+describe("viewerFromUrl (P123)", () => {
+  it("takes a valid agent id from ?as=", async () => {
+    const { viewerFromUrl } = await import("./relayEnv");
+    expect(viewerFromUrl("?as=beta")).toBe("beta");
+    expect(viewerFromUrl("?as=Hackathon_Hermes")).toBe("hackathon_hermes");
+    expect(viewerFromUrl("?foo=1")).toBeNull();
+    expect(viewerFromUrl("?as=<script>")).toBeNull();
+    expect(viewerFromUrl("?as=")).toBeNull();
+  });
+});

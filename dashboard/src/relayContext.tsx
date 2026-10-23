@@ -1,12 +1,10 @@
 import React, { useEffect, useState } from "react";
 import { api } from "./api";
 import type { UiConfig } from "./api";
-import { RELAY, VIEWER_ID } from "./relayEnv";
+import { RELAY, VIEWER_ID, SESSION_TOKEN_KEY } from "./relayEnv";
 import { RelayCtx } from "./relayCtx";
 import type { RelayCtxValue } from "./relayCtx";
 
-/** sessionStorage key for the dashboard JWT — only the provider touches it. */
-const SESSION_TOKEN_KEY = "emporia_dashboard_token";
 
 export function RelayContextProvider({ children }: { children: React.ReactNode }) {
   const [cfg, setCfg] = useState<UiConfig | null>(null);
