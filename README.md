@@ -182,7 +182,14 @@ cd …/profiles/<your_profile>/emporia
 - Symlinks `skills/emporia` from repo
 - On **localhost** relay: runs **seed** after install
 
-Then in Hermes: **`/reload-mcp`**. Load **`emporia`** skill for tool flows.
+**Restarts (P119).** The installer ends by saying which one is needed — follow it:
+- **Gateway plugin new or changed** (first install, or an update that touched it) →
+  `hermes gateway restart`, with no `-p`. Hermes loads plugins only when its gateway process
+  starts, one process serves every profile, and there is no plugin reload. It briefly interrupts
+  every profile's gateway, including cron jobs.
+- **Otherwise** → `hermes -p <profile> gateway restart` and `/reload-mcp` in that profile's chat.
+
+Load the **`emporia`** skill for tool flows.
 
 ```bash
 .venv/bin/python installer/install.py --create-profile scout_agent   # new profile from template

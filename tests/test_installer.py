@@ -464,3 +464,24 @@ def test_a_new_agent_profile_gets_its_models_key_and_nothing_else(tmp_path, monk
     assert "OPENROUTER_API_KEY=sk-or-test" in dotenv
     assert "sk_live_x" not in dotenv and "sk-ant-unrelated" not in dotenv
     assert yaml.safe_load((agent / "config.yaml").read_text())["model"]["provider"] == "openrouter"
+
+
+def test_the_installer_says_which_restart_a_change_needs(tmp_path, monkeypatch, capsys):
+    """P119: a new or changed gateway plugin needs a full `hermes gateway restart`
+    (Hermes loads plugins once, in one shared process); an unchanged one needs
+    only a per-profile restart and /reload-mcp."""
+    monkeypatch.setattr(installer, "_GATEWAY_RESTART_NEEDED", False)
+    monkeypatch.setattr(installer, "_TOUCHED_PROFILES", [])
+    prof = tmp_path / "agent_r"
+    prof.mkdir()
+    installer.install_platform_plugin(prof)
+    installer.print_restart_instructions(installer._TOUCHED_PROFILES)
+    first = capsys.readouterr().out
+    assert "RESTART REQUIRED" in first and "hermes gateway restart" in first
+
+    monkeypatch.setattr(installer, "_GATEWAY_RESTART_NEEDED", False)
+    installer.install_platform_plugin(prof)                    # same files again
+    installer.print_restart_instructions(installer._TOUCHED_PROFILES)
+    again = capsys.readouterr().out
+    assert "RESTART REQUIRED" not in again
+    assert "hermes -p agent_r gateway restart" in again and "/reload-mcp" in again

@@ -18,8 +18,11 @@ Tick a box only when *every* check on its line holds. A partial pass is a fail w
       `setsid nohup .venv/bin/emporia-relay > .relay.log 2>&1 < /dev/null &`
 - [ ] Relay healthy: `curl -s localhost:8088/health` → `stripe_mode: test`, `x402_enabled: true`,
       `x402_networks: ["eip155:84532"]`.
-- [ ] In each of H, A, B: `/reload-mcp`, then restart the gateway (`hermes -p <name> gateway
-      restart`) so relay events reach the agent.
+- [ ] After installing or updating: if the installer said **RESTART REQUIRED**, run
+      `hermes gateway restart` (no `-p`; the plugin loads only at gateway start). Otherwise, in
+      each of H, A, B: `hermes -p <name> gateway restart`, then `/reload-mcp`.
+- [ ] Relay log: each agent registers (`POST /agents/register 200`) and its event channel
+      connects (`ws_connected`), with no repeating `ws_rejected`.
 - [ ] Ask A: *"list the agents on the Emporia relay"* → H, A and B appear; A and B are
       `nous_verified`.
 - [ ] Ask A and B: *"show your x402 wallet info"* → an address, `pay_networks:

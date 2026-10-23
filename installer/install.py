@@ -1235,8 +1235,7 @@ def create_profile(
     print(f"  Profile  : {profile_dir}")
     if model_block:
         print(f"  Model    : {model_block.get('default', model_block.get('provider', '?'))}")
-    print("\n  Next: start Hermes with this profile and run /reload-mcp")
-    print(f"  The agent will register automatically as '{name}' on first MCP load.")
+    print(f"  The agent registers as '{name}' when its MCP server starts.")
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -1450,6 +1449,42 @@ PLATFORM_PLUGIN_KEY = "platforms/emporia"
 RELAY_SENDER = "emporia:relay"
 
 
+def _tree_digest(path: Path) -> str | None:
+    """A digest of a plugin directory's files, or None if it is not there."""
+    import hashlib
+    if not path.is_dir():
+        return None
+    h = hashlib.sha256()
+    for f in sorted(p for p in path.rglob("*") if p.is_file() and "__pycache__" not in p.parts):
+        h.update(str(f.relative_to(path)).encode())
+        h.update(f.read_bytes())
+    return h.hexdigest()
+
+
+# P119: set when this run installed or changed the gateway-side plugin, which
+# Hermes loads only when its (shared) gateway process starts.
+_GATEWAY_RESTART_NEEDED = False
+_TOUCHED_PROFILES: list[str] = []
+
+
+def print_restart_instructions(profiles: list[str]) -> None:
+    """Tell the user exactly which restart their change needs (P119). A
+    per-profile restart respawns the bridge and MCP server but keeps the plugin
+    code the gateway loaded at startup; there is no plugin reload."""
+    print()
+    if _GATEWAY_RESTART_NEEDED:
+        print("  RESTART REQUIRED — the Emporia gateway plugin was installed or changed.")
+        print("  Hermes loads plugins only when the gateway process starts, and one process")
+        print("  serves every profile, so restart it once (no -p):")
+        print("      hermes gateway restart")
+        print("  This briefly interrupts every profile's gateway, including any cron jobs it runs.")
+    else:
+        print("  To pick up the changes, in each profile:")
+        for name in profiles:
+            print(f"      hermes -p {name} gateway restart")
+        print("  and run /reload-mcp in its chat.")
+
+
 def install_platform_plugin(profile_dir: Path, dry_run: bool = False) -> None:
     """Install the Hermes platform adapter into a profile (P92).
 
@@ -1467,10 +1502,18 @@ def install_platform_plugin(profile_dir: Path, dry_run: bool = False) -> None:
     if dry_run:
         print(f"  [dry-run] Would install the Emporia platform plugin at {dst}")
         return
+    global _GATEWAY_RESTART_NEEDED
+    if profile_dir.name not in _TOUCHED_PROFILES:
+        _TOUCHED_PROFILES.append(profile_dir.name)
+    before = _tree_digest(dst)
     if dst.exists():
         shutil.rmtree(dst)
     shutil.copytree(src, dst, ignore=shutil.ignore_patterns("__pycache__"))
-    print(f"  + Hermes platform plugin: {dst}")
+    if _tree_digest(dst) != before:
+        _GATEWAY_RESTART_NEEDED = True
+        print(f"  + Hermes platform plugin: {dst} (new or changed — needs a gateway restart)")
+    else:
+        print(f"  = Hermes platform plugin: {dst} (unchanged)")
 
     config_path = profile_dir / "config.yaml"
     config = load_yaml(config_path) if config_path.exists() else {}
@@ -1742,9 +1785,7 @@ def main() -> None:
         )
         install_platform_plugin(current_profile_dir, dry_run=args.dry_run)
         if not args.dry_run:
-            print("\nDone. Run /reload-mcp in Hermes to activate, and restart the gateway "
-                  "for relay events to arrive on the Emporia platform.")
-            print(f"The agent will register as '{agent_id}' on next MCP load.")
+            print(f"\nThe agent registers as '{agent_id}' when its MCP server starts.")
             # P108: --no-seed, for a relay you are about to test by hand —
             # demo activity in the database blurs what the test itself did.
             if _is_local_relay(args.relay_url) and not args.no_seed:
@@ -1802,6 +1843,8 @@ def main() -> None:
             dev_skills=args.dev_skills,
         )
 
+    if _TOUCHED_PROFILES and not args.dry_run:
+        print_restart_instructions(_TOUCHED_PROFILES)
     print("\nDone.")
 
 

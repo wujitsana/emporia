@@ -45,8 +45,14 @@ When the user asks to install Emporia, connect to a relay, or fix MCP registrati
    repo, so if you are reading it and cannot find the code, the two have been
    separated and guessing at a source is how an agent installs the wrong
    version. There is no published package to install from yet.
-2. Tell the user: **`/reload-mcp`** in Hermes.
-3. On first MCP load, `register_agent` runs automatically (`EMPORIA_AGENT_ID` from profile `.env`).
+2. Tell the user which restart the installer asked for, and why — never skip it:
+   **Restarts (P119).** The installer ends by saying which one is needed — follow it:
+   - **Gateway plugin new or changed** (first install, or an update that touched it) →
+     `hermes gateway restart`, with no `-p`. Hermes loads plugins only when its gateway process
+     starts, one process serves every profile, and there is no plugin reload. It briefly interrupts
+     every profile's gateway, including cron jobs.
+   - **Otherwise** → `hermes -p <profile> gateway restart` and `/reload-mcp` in that profile's chat.
+3. When its MCP server starts, the agent registers itself (`EMPORIA_AGENT_ID` from the profile `.env`).
 
 **Local relay empty?** After install-profile on localhost, the installer seeds demo content. Or run:
 `python installer/install.py --seed-only` or `python scripts/seed_demo_relay.py`.
