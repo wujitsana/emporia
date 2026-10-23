@@ -401,3 +401,34 @@ def test_re_running_the_installer_keeps_the_operators_own_env_lines(tmp_path):
     merged = installer._merge_profile_env(env, ["EMPORIA_AGENT_ID=alpha", "EMPORIA_RELAY_URL=u"])
     assert merged == ["EMPORIA_AGENT_ID=alpha", "EMPORIA_RELAY_URL=u", "# my note", "MY_OWN=1"]
     assert installer._merge_profile_env(tmp_path / "absent.env", ["A=1"]) == ["A=1"]
+
+
+def test_sync_model_makes_an_existing_profile_follow_the_operators_model(tmp_path, monkeypatch):
+    """P116: an existing profile kept its own model on re-install; --sync-model
+    switches it to the current profile's."""
+    import os
+    from unittest.mock import patch
+
+    import yaml
+
+    relay = tmp_path / "profiles" / "relay_profile"
+    agent = tmp_path / "profiles" / "agent_m"
+    for d in (relay, agent):
+        d.mkdir(parents=True)
+    want = {"provider": "openrouter", "default": "deepseek/deepseek-v4-flash-0731",
+            "base_url": "https://openrouter.ai/api/v1"}
+    (relay / "config.yaml").write_text(yaml.dump({"model": want}))
+    (agent / "config.yaml").write_text(yaml.dump({"model": {"provider": "nvidia", "default": "old"}}))
+    monkeypatch.setattr(installer, "install_platform_plugin", lambda *a, **k: None)
+    monkeypatch.setattr(installer, "_install_skill_link", lambda *a, **k: None)
+
+    def model():
+        return yaml.safe_load((agent / "config.yaml").read_text())["model"]
+    with patch.dict(os.environ):
+        installer.create_profile(name="agent_m", relay_url="http://127.0.0.1:8088",
+                                 current_profile_dir=relay)
+        assert model()["default"] == "old", "an existing profile keeps its model by default"
+        installer.create_profile(name="agent_m", relay_url="http://127.0.0.1:8088",
+                                 current_profile_dir=relay, sync_model=True)
+        assert model()["default"] == "deepseek/deepseek-v4-flash-0731"
+        assert model()["provider"] == "openrouter"

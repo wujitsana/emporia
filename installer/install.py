@@ -1034,6 +1034,7 @@ def create_profile(
     x402_pay_networks: str = "",
     x402_max_payment_cents: int | None = None,
     x402_max_daily_cents: int | None = None,
+    sync_model: bool = False,
 ) -> None:
     """Create a new Hermes agent profile with emporia pre-wired.
 
@@ -1071,8 +1072,10 @@ def create_profile(
     inherited_env: dict[str, str] = dict(existing_config.get("env", {}))
     if current_profile_dir:
         cur_config = load_yaml(current_profile_dir / "config.yaml")
-        if not model_block:
-            model_block = _model_block(cur_config)
+        # P116: --sync-model makes an existing profile follow this one's model;
+        # without it an existing profile keeps its own (a new one always copies).
+        if not model_block or sync_model:
+            model_block = _model_block(cur_config) or model_block
         if inherit_env:
             env_from_file = harvest_env(current_profile_dir)
             env_from_config = cur_config.get("env", {})
@@ -1554,6 +1557,9 @@ def main() -> None:
                         help="With --create-profile: largest single x402 payment it signs")
     parser.add_argument("--x402-max-daily-cents", type=int, default=None,
                         help="With --create-profile: most the x402 wallet signs in any 24 hours")
+    parser.add_argument("--sync-model", action="store_true",
+                        help="With --create-profile on an existing profile: switch it to this "
+                             "profile's model (a new profile always copies it)")
     parser.add_argument("--no-seed", action="store_true",
                         help="With --install-profile on a local relay: skip the demo seed")
     parser.add_argument("--local-demo", action="store_true",
@@ -1727,6 +1733,7 @@ def main() -> None:
             x402_pay_networks=args.x402_pay_networks,
             x402_max_payment_cents=args.x402_max_payment_cents,
             x402_max_daily_cents=args.x402_max_daily_cents,
+            sync_model=args.sync_model,
             nvidia_api_key=nvidia_key,
             max_budget_cents=args.max_budget_cents,
             nous_token=nous_token,

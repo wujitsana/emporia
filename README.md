@@ -175,7 +175,8 @@ cd …/profiles/<your_profile>/emporia
   starting point: it expires within the hour, and the MCP server asks Hermes for a current one
   (P114). Agent profiles never get the relay's Stripe settings (P107)
 - `--create-profile <name> --x402-pay-networks eip155:84532 --x402-max-payment-cents 1000
-  --x402-max-daily-cents 2500` also writes the agent wallet's spending limits
+  --x402-max-daily-cents 2500` also writes the agent wallet's spending limits; `--sync-model` switches an
+  existing profile to the current profile's model (a new profile always copies it)
 - Symlinks `skills/emporia` from repo
 - On **localhost** relay: runs **seed** after install
 
