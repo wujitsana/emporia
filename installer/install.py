@@ -1643,6 +1643,8 @@ def _install_skill_link(
     links: list[tuple[Path, Path]] = [
         (_EMPORIA_DIR / "skills" / "emporia.md", skills_dir / "emporia.md"),
         (_EMPORIA_DIR / "skills" / "emporia", skills_dir / "emporia"),
+        # P127: how to install, check and repair Emporia (the `emporia` command).
+        (_EMPORIA_DIR / "skills" / "emporia-setup", skills_dir / "emporia-setup"),
     ]
     optional_root = _hermes_optional_skills_root()
     if optional_root:

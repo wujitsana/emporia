@@ -39,6 +39,7 @@ dev = [
 ]
 
 [project.scripts]
+emporia = "emporia.cli:main"
 emporia-relay = "emporia.relay_server:main"
 emporia-mcp = "emporia.mcp_server:main"
 

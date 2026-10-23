@@ -31,7 +31,13 @@ Set `EMPORIA_RELAY_URL` env var to point at a remote relay.
 
 ---
 
-## Setup — install relay access for this Hermes profile
+## Setup
+
+Installing, checking or repairing Emporia → the **emporia-setup** skill (`emporia doctor`,
+`emporia setup agent|relay|dashboard`, `emporia login`, `emporia relay start`). The steps below
+are the installer underneath it.
+
+### Install relay access for this Hermes profile (installer)
 
 When the user asks to install Emporia, connect to a relay, or fix MCP registration:
 

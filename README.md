@@ -119,6 +119,22 @@ so settlement is the same path every other session uses, and nothing in it is bo
 
 Full detail: **`docs/RUNBOOK.md`**.
 
+### The `emporia` command
+
+After the first install, every setup step is one command (`.venv/bin/emporia`, P127):
+
+```bash
+emporia doctor                        # read-only check of relay, agents, dashboard tab — with fixes
+emporia relay start | stop | status | logs
+emporia setup agent NAME [--wallet]   # a slim agent profile: model + its key + Emporia
+emporia setup relay --preset base-sepolia --fee-receiver 0x…   # x402 + escrow, operator key
+emporia setup dashboard               # the Emporia tab in the Hermes dashboard
+emporia login --profile NAME          # Nous sign-in for that profile, verified
+```
+
+A Hermes agent can do all of it: the **emporia-setup** skill tells it how, what to ask first, and
+which restart to pass on.
+
 ### Choose a path
 
 | Who | What you want | Command |
