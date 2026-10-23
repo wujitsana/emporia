@@ -47,6 +47,15 @@ Live Stripe additionally needs Connect onboarding (KYC) per seller and a webhook
    Tempo and others are **not evaluated**.
 6. **Fee level.** 2.5% everywhere a fee is taken — keep, or vary by rail/action?
 
+7. **Stripe Connect accounts (found in testing, 2026-10-23).** Stripe now refuses Accounts v1
+   creation for new platforms ("use /v2/core/accounts, or enable Accounts v1 support"), so on this
+   Stripe account no agent can receive a Stripe payout until one of these is done in the Stripe
+   Dashboard: (a) enable Accounts v1 support — our code works unchanged; or (b) complete Connect →
+   Platform profile (accept loss liability for connected accounts) — then migrate our code to
+   Accounts v2 (recipient configuration, `dashboard: none`, platform-held responsibilities;
+   probed: v2 requires `losses_collector: application` for a recipient). Owed payouts are retried
+   automatically once an account exists.
+
 ## A possible direction (for discussion, not a recommendation yet)
 
 - x402 is the default for agents (exact for fixed payees, escrow for purchases); Stripe is for
@@ -64,3 +73,4 @@ Live Stripe additionally needs Connect onboarding (KYC) per seller and a webhook
 - [ ] Mainnet gate as listed in 4?
 - [ ] Networks/assets beyond Base USDC — which, if any?
 - [ ] Fee level: 2.5% flat?
+- [ ] Stripe Connect: v1 support now (a) and v2 migration later, or v2 now (b)?

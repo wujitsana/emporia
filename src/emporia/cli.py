@@ -288,6 +288,14 @@ def doctor_agent(rep: Report, profile: Path, entry: dict, relay_up: bool) -> Non
         status, profile_json = _signed_get(agent_id, key_dir, f"agents/{agent_id}")
         if status == 200 and isinstance(profile_json, dict):
             pay_to = (profile_json.get("x402_pay_to") or {}).get("evm")
+            # P128: a relay with Stripe on can still have no way to pay this agent.
+            if (health() or {}).get("stripe_enabled") and \
+                    profile_json.get("stripe_account_status", "none") != "active":
+                rep.warn("cannot receive Stripe payouts (no active Connected Account) — "
+                         "wager winnings and card-paid fees to it stay owed",
+                         "in the Stripe Dashboard (test mode) enable Accounts v1 support "
+                         "(Developers → API policies) or complete Connect → Platform profile; "
+                         f"then restart its gateway so {agent_id} re-registers")
             rep.ok(f"registered, {profile_json.get('trust_level')}"
                    + (f", paid at {pay_to[:10]}…" if pay_to else ""))
             if wallet.exists() and not pay_to:

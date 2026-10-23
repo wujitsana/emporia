@@ -123,8 +123,20 @@ async def register_agent(req: rs.RegisterAgentRequest):
             # capabilities in test mode (create_connected_account()'s own
             # docstring), so there's no webhook to wait for.
             rs.AGENT_REGISTRY.set_stripe_account_status(stripe_account_id, "active")
-        except Exception:
-            pass  # non-fatal — agent can still play free sessions
+        except Exception as e:
+            # Non-fatal — the agent can still use free sessions and x402 — but
+            # never silent (P128): Stripe refused this for every agent on a new
+            # Connect platform ("use Accounts v2 or enable Accounts v1 support")
+            # and nothing said so until a payout found no account.
+            detail = str(e)
+            resp = getattr(e, "response", None)
+            if resp is not None:
+                try:
+                    detail = resp.json().get("error", {}).get("message", detail)
+                except ValueError:
+                    pass
+            rs.logger.warning("stripe_connected_account_not_created", extra={
+                "agent_id": canonical_id, "detail": detail[:300]})
 
     return {
         "status": "registered",
