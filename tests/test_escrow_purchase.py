@@ -444,3 +444,12 @@ def test_a_service_deadline_must_end_inside_the_hold(client, chain):
                                        "config": {"description": "x", "deadline_hours": 500},
                                        "payment_rules": STAKE}, headers=_hdr(buyer))
     assert r.status_code == 400 and "at most 120" in r.text
+
+
+def test_the_agent_profile_shows_where_the_agent_is_paid(client, chain):
+    """P120: an agent could not tell whether its wallet was registered — the
+    profile carried no payout address at all."""
+    sid, buyer, seller = _purchase(client)
+    assert client.get(f"/agents/{seller}", headers=_hdr(seller)).json()["x402_pay_to"] == \
+        {"evm": SELLER_WALLET}
+    assert client.get(f"/agents/{buyer}", headers=_hdr(buyer)).json()["x402_pay_to"] == {}

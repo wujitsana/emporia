@@ -291,6 +291,10 @@ async def get_agent_profile(agent_id: str, request: Request):
         "win_count": win_count,
         "payment_rails": payment_rails,
         "payment_methods": payment_methods,
+        # P120: where this agent is paid over x402, per network family. Public:
+        # every x402 payment request names it as payTo anyway. Without it an
+        # agent could not tell whether its own wallet was registered.
+        "x402_pay_to": rs.AGENT_REGISTRY.get_x402_pay_to_all(agent_id),
     }
 @router.get("/agents/{agent_id}/sessions")
 async def get_agent_sessions(agent_id: str, request: Request, status: str | None = None, limit: int = 50):

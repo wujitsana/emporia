@@ -2479,6 +2479,21 @@ def x402_wallet_info(agent_id: str = "") -> dict[str, Any]:
         out["pay_networks"] = agent_wallet.allowed_networks()
     except agent_wallet.AgentWalletError as e:
         out["pay_networks"], out["networks_error"] = [], str(e)
+    # P120: whether the relay can pay this agent, said outright. An agent read
+    # the old reply (address, no relay field) as "I have no wallet".
+    try:
+        r = _bearer_request("get", f"{RELAY_URL}/agents/{aid}", agent_id=aid, timeout=10)
+        pay_to = (r.json().get("x402_pay_to") or {}) if r.status_code == 200 else None
+    except Exception:
+        pay_to = None
+    if pay_to is None:
+        out["registered_on_relay"] = "unknown (relay not reachable)"
+    elif pay_to.get("evm"):
+        out["registered_on_relay"] = pay_to["evm"]
+    else:
+        out["registered_on_relay"] = None
+        out["note"] = ("This wallet exists and can pay. It is not yet registered as where you are "
+                       "paid — run register_x402_wallet to be payable over x402.")
     return out
 
 

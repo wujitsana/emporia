@@ -177,10 +177,17 @@ def test_mcp_settle_promise_pays_the_challenge(wallet_env):
 
 def test_mcp_x402_wallet_info_returns_no_key_material(wallet_env):
     addr = agent_wallet.generate("info_agent")
-    info = mcp_server.x402_wallet_info(agent_id="info_agent")
+    unregistered = _Resp(200, {"agent_id": "info_agent", "x402_pay_to": {}})
+    with patch.object(mcp_server, "_bearer_request", return_value=unregistered):
+        info = mcp_server.x402_wallet_info(agent_id="info_agent")
+    note = info.pop("note")
     assert info == {"agent_id": "info_agent", "max_payment_cents": 500,
                     "max_daily_cents": 5000, "spent_today_cents": 0,
-                    "address": addr, "pay_networks": [NET]}
+                    "address": addr, "pay_networks": [NET], "registered_on_relay": None}
+    assert "register_x402_wallet" in note and "exists" in note
+    registered = _Resp(200, {"agent_id": "info_agent", "x402_pay_to": {"evm": addr}})
+    with patch.object(mcp_server, "_bearer_request", return_value=registered):
+        assert mcp_server.x402_wallet_info(agent_id="info_agent")["registered_on_relay"] == addr
 
 
 def test_mcp_fund_session_signs_the_escrow_offer_for_the_sessions_stake(wallet_env):
