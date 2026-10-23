@@ -1,6 +1,10 @@
 /**
- * Messages — merged Inbox (relay events) + DM threads.
- * Single tab with sub-tabs to reduce nav clutter.
+ * Messages — one view (P121): conversations on the left, each with its unread
+ * count, and "Activity" (every non-DM event: challenges, invites, sessions) at
+ * the top of the same list. It replaced two sub-tabs that shared nothing: the
+ * inbox listed a DM it could not open, with a read state of its own.
+ *
+ * Visibility-only: the one write is marking events read.
  */
 import ActionButton from "@components/ActionButton";
 import AlertBanner from "@components/AlertBanner";
@@ -15,16 +19,15 @@ import type { DMMessage, DMThread, InboxEvent } from "../api";
 import { AgentMoireAvatar } from "../AgentMoireAvatar";
 import { FlatRailItem } from "../ui/FlatRailItem";
 import { ReadOnlyChat } from "../ui/ReadOnlyChat";
-import { SegmentTabs } from "../ui/SegmentTabs";
 import { ViewBody } from "../ui/layout";
 import { ViewStatus } from "../ui/ViewStatus";
 import { VIEWER_ID } from "../relayEnv";
-import { useInterval } from "../hooks";
 import type { AgentEvent } from "../hooks";
 import type { Navigate } from "../navigation";
 import { AgentLink } from "../ui/chips";
 import { markReplayedNonces, verifyMessageSignature } from "../integrityCheck";
 import { DmChainBadge } from "../ui/DmChainBadge";
+import { splitInbox, unreadActivity } from "../messagesModel";
 
 // ─── Inbox tab ────────────────────────────────────────────────────────────────
 
@@ -37,45 +40,25 @@ const EVENT_ICONS: Record<string, string> = {
   notification: "◆",
 };
 
-function InboxTab({ navigate, viewer }: { navigate: Navigate; viewer: string }) {
-  const [events, setEvents] = useState<InboxEvent[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+function ActivityPane({
+  navigate, events, loading, error, markRead,
+}: {
+  navigate: Navigate;
+  events: InboxEvent[];
+  loading: boolean;
+  error: string | null;
+  markRead: (ids: string[]) => void;
+}) {
   const [showAll, setShowAll] = useState(false);
-
-  const load = useCallback(() => {
-    api.agentInbox(viewer, !showAll, 100)
-      .then((d) => { setEvents(d.events); setError(null); })
-      .catch((e: unknown) => setError(String(e)))
-      .finally(() => setLoading(false));
-  }, [showAll, viewer]);
-
-  useEffect(() => {
-    load();
-    const t = setInterval(load, 5_000);
-    return () => clearInterval(t);
-  }, [load]);
-
-  const markRead = useCallback(async (inbox_id: string) => {
-    await api.markInboxRead(viewer, [inbox_id]).catch(() => {});
-    setEvents((prev) => prev.map((e) => e.inbox_id === inbox_id ? { ...e, is_read: true } : e));
-  }, [viewer]);
-
-  const markAllRead = useCallback(async () => {
-    const unread = events.filter((e) => !e.is_read).map((e) => e.inbox_id);
-    if (!unread.length) return;
-    await api.markInboxRead(viewer, unread).catch(() => {});
-    setEvents((prev) => prev.map((e) => ({ ...e, is_read: true })));
-  }, [events, viewer]);
-
-  const unreadCount = events.filter((e) => !e.is_read).length;
+  const shown = showAll ? events : events.filter((e) => !e.is_read);
+  const unread = events.filter((e) => !e.is_read).map((e) => e.inbox_id);
 
   return (
     <div className="e-messages-pane">
       <div className="e-messages-pane__toolbar">
-        <Text className="e-dim">{unreadCount > 0 ? `${unreadCount} unread` : "no unread"}</Text>
+        <Text className="e-dim">{unread.length > 0 ? `${unread.length} unread` : "no unread"}</Text>
         <div style={{ display: "flex", gap: 6 }}>
-          {unreadCount > 0 && <ActionButton onClick={markAllRead}>mark all read</ActionButton>}
+          {unread.length > 0 && <ActionButton onClick={() => markRead(unread)}>mark all read</ActionButton>}
           <ActionButton onClick={() => setShowAll((v) => !v)}>
             {showAll ? "unread only" : "show all"}
           </ActionButton>
@@ -83,9 +66,10 @@ function InboxTab({ navigate, viewer }: { navigate: Navigate; viewer: string }) 
       </div>
       <ViewStatus loading={loading} error={error} />
       <div className="e-inbox-list">
-        {events.length === 0 ? (
-          <Indent><Text className="e-faint">{showAll ? "No events yet." : "Inbox clear."}</Text></Indent>
-        ) : events.map((ev) => {
+        {shown.length === 0 ? (
+          <Indent><Text className="e-faint">{showAll ? "No activity yet." : "Nothing new."}</Text></Indent>
+        ) : shown.map((ev) => {
+          const markThis = () => markRead([ev.inbox_id]);
           const p = ev.payload;
           let title = ev.event_type.replace(/_/g, " ");
           let detail: React.ReactNode = null;
@@ -97,7 +81,7 @@ function InboxTab({ navigate, viewer }: { navigate: Navigate; viewer: string }) 
             const sid = (p.session_id as string) ?? null;
             title = "challenge";
             detail = <><AgentLink agent_id={from} navigate={navigate} /> {sid ? `· session …${sid.slice(-8)}` : ""}</>;
-            if (sid) action = () => { navigate("sessions", { sessionId: sid }); markRead(ev.inbox_id); };
+            if (sid) action = () => { navigate("sessions", { sessionId: sid }); markThis(); };
           } else if (ev.event_type === "agora_invite") {
             const name = (p.name as string) ?? (p.slug as string) ?? "topic";
             const by = (p.invited_by as string) ?? "creator";
@@ -105,7 +89,7 @@ function InboxTab({ navigate, viewer }: { navigate: Navigate; viewer: string }) 
             const fee = (p.entry_fee_cents as number) ?? 0;
             title = `invited to ${name}`;
             detail = <>by <AgentLink agent_id={by} navigate={navigate} />{gate === "paid_invite" && fee > 0 ? ` · $${(fee / 100).toFixed(2)} entry` : ""}</>;
-            action = () => { navigate("agoras"); markRead(ev.inbox_id); };
+            action = () => { navigate("agoras"); markThis(); };
             actionLabel = "open agoras";
           } else if (ev.event_type === "room_invite") {
             const name = (p.room_name as string) ?? "room";
@@ -113,13 +97,13 @@ function InboxTab({ navigate, viewer }: { navigate: Navigate; viewer: string }) 
             const rid = (p.room_id as string) ?? null;
             title = `invited to ${name}`;
             detail = <>by <AgentLink agent_id={by} navigate={navigate} /></>;
-            if (rid) action = () => { navigate("rooms", { roomId: rid }); markRead(ev.inbox_id); };
+            if (rid) action = () => { navigate("rooms", { roomId: rid }); markThis(); };
             actionLabel = "open room";
           } else if (ev.event_type === "session_update" || ev.event_type === "session_completed") {
             const sid = (p.session_id as string) ?? null;
             title = ev.event_type === "session_completed" ? "session completed" : "session update";
             detail = sid ? `…${sid.slice(-10)}` : null;
-            if (sid) action = () => { navigate("sessions", { sessionId: sid }); markRead(ev.inbox_id); };
+            if (sid) action = () => { navigate("sessions", { sessionId: sid }); markThis(); };
           } else {
             const keys = Object.keys(p).slice(0, 2);
             detail = keys.map((k) => `${k}: ${String(p[k]).slice(0, 24)}`).join(" · ") || null;
@@ -136,7 +120,7 @@ function InboxTab({ navigate, viewer }: { navigate: Navigate; viewer: string }) 
                 {detail && <Text className="e-dim" style={{ fontSize: 12, marginTop: 2 }}>{detail}</Text>}
                 <div style={{ display: "flex", gap: 6, marginTop: 4 }}>
                   {action && <ActionButton onClick={action}>{actionLabel}</ActionButton>}
-                  {!ev.is_read && !action && <ActionButton onClick={() => markRead(ev.inbox_id)}>dismiss</ActionButton>}
+                  {!ev.is_read && !action && <ActionButton onClick={markThis}>dismiss</ActionButton>}
                 </div>
               </div>
             </div>
@@ -147,161 +131,83 @@ function InboxTab({ navigate, viewer }: { navigate: Navigate; viewer: string }) 
   );
 }
 
-// ─── DMs tab ─────────────────────────────────────────────────────────────────
+// ─── Conversation pane ──────────────────────────────────────────────────────
 
-function DMsTab({
-  navigate,
-  viewer,
-  liveEvent,
-  liveConnected,
+function ThreadPane({
+  thread, viewer, liveEvent, liveConnected,
 }: {
-  navigate: Navigate;
+  thread: DMThread;
   viewer: string;
   liveEvent: AgentEvent | null;
   liveConnected: boolean;
 }) {
-  const [threads, setThreads] = useState<DMThread[]>([]);
-  const [active, setActive] = useState<DMThread | null>(null);
   const [messages, setMessages] = useState<DMMessage[]>([]);
-  const [error, setError] = useState<string | null>(null);
   const [pubkeys, setPubkeys] = useState<Record<string, string>>({});
   const bottomRef = useRef<HTMLDivElement | null>(null);
 
-  const loadThreads = useCallback(async () => {
+  const loadMsgs = useCallback(async () => {
     try {
-      const data = await api.dmThreads(viewer);
-      setThreads(Array.isArray(data) ? data : []);
-      setError(null);
-    } catch (e) { setError(String(e)); }
-  }, [viewer]);
-
-  const loadMsgs = useCallback(async (t: DMThread) => {
-    try {
-      const data = await api.dmMessages(t.thread_id, viewer);
-      setMessages(data.messages);
+      setMessages((await api.dmMessages(thread.thread_id, viewer)).messages);
     } catch { /* keep old */ }
-  }, [viewer]);
+  }, [thread.thread_id, viewer]);
 
-  useEffect(() => { loadThreads(); }, [loadThreads]);
+  // P38-1: the relay pushes `dm_received`; the interval is only the safety net
+  // for a dropped socket. Refetching keeps GET /dm/{id}/messages the single
+  // source of truth for what the thread contains.
   useEffect(() => {
-    if (!active && threads.length > 0) setActive(threads[0]);
-  }, [threads, active]);
-  useEffect(() => {
-    if (!active) return;
-    loadMsgs(active);
-    // P38-1: was every 4 seconds. The relay pushes `dm_received` on the agent
-    // channel the moment a message lands, so this interval is now the safety
-    // net for a dropped socket rather than the mechanism — see the effect below.
-    const iv = setInterval(() => loadMsgs(active), 30_000);
+    loadMsgs();
+    const iv = setInterval(loadMsgs, 30_000);
     return () => clearInterval(iv);
-  }, [active, loadMsgs]);
-
-  // P38-1: refetch on the event rather than on a timer. Refetching (instead of
-  // appending the frame) keeps GET /dm/{id}/messages the single source of truth
-  // for what the thread contains — the socket only says *when* to look, so
-  // there is no ordering, dedup or decryption path to get wrong twice.
+  }, [loadMsgs]);
   useEffect(() => {
-    if (liveEvent?.type !== "dm_received") return;
-    loadThreads();
-    if (active && liveEvent.thread_id === active.thread_id) loadMsgs(active);
-  }, [liveEvent, active, loadMsgs, loadThreads]);
+    if (liveEvent?.type === "dm_received" && liveEvent.thread_id === thread.thread_id) loadMsgs();
+  }, [liveEvent, thread.thread_id, loadMsgs]);
 
-  // P23-4: pubkeys for verifyMessageSignature() -- just the two participants
-  // of the active thread (viewer + other_agent), refetched per thread switch.
+  // P23-4: pubkeys for verifyMessageSignature() — the two participants.
   useEffect(() => {
-    if (!active) return;
     let cancelled = false;
     Promise.all(
-      [viewer, active.other_agent].map((id) =>
+      [viewer, thread.other_agent].map((id) =>
         api.agentProfile(id).then((a) => [id, a.public_key_hex || ""] as const).catch(() => [id, ""] as const),
       ),
-    ).then((pairs) => {
-      if (!cancelled) setPubkeys(Object.fromEntries(pairs));
-    });
+    ).then((pairs) => { if (!cancelled) setPubkeys(Object.fromEntries(pairs)); });
     return () => { cancelled = true; };
-  }, [active, viewer]);
+  }, [thread.other_agent, viewer]);
 
-  const sidebar = (
-    <>
-      {threads.length === 0 && (
-        <Indent><Text className="e-faint">No DM threads.</Text></Indent>
-      )}
-      {threads.map((t) => (
-        <FlatRailItem key={t.thread_id} selected={active?.thread_id === t.thread_id} onClick={() => setActive(t)}>
-          <div className="e-agent-row">
-            <AgentMoireAvatar agentId={t.other_agent} />
-            <div style={{ flex: 1, minWidth: 0 }}>
-              <RowSpaceBetween>
-                <Text style={{ fontSize: 13 }}>{t.other_agent}</Text>
-                <AgentLink agent_id={t.other_agent} navigate={navigate} />
-              </RowSpaceBetween>
-              <Text className="e-dim" style={{ fontSize: 11 }}>{dmThreadPreview(t)}</Text>
-            </div>
-          </div>
-        </FlatRailItem>
-      ))}
-    </>
-  );
-
-  // P23-4: markReplayedNonces() needs to see the whole page at once (it
-  // tracks nonces across the array), so it runs before the per-row map.
-  const annotatedMessages = markReplayedNonces(messages);
-  const chatLines = annotatedMessages.map((m) => ({
+  // P23-4: markReplayedNonces() needs the whole page at once.
+  const chatLines = markReplayedNonces(messages).map((m) => ({
     id: m.message_id,
     sender_id: m.sender_id,
-    // P17-4: an encrypted DM shows a lock, not its envelope JSON. The dashboard
-    // has no key access by design and cannot decrypt — see dmDisplayContent().
+    // P17-4: an encrypted DM shows a lock; the dashboard holds no key, by design.
     content: dmDisplayContent(m.content),
     created_at: m.created_at,
-    // P23-4: verified against the *stored* content (m.content, pre-display-
-    // transform) — see the identical note in RoomsView.tsx's chatLines.
-    verified: active ? verifyMessageSignature("dm", active.thread_id, m, pubkeys[m.sender_id] || "") : null,
+    verified: verifyMessageSignature("dm", thread.thread_id, m, pubkeys[m.sender_id] || ""),
     replayed: m.replayed,
   }));
 
   return (
-    <SidebarLayout sidebar={sidebar} defaultSidebarWidth={30}>
-      <div className="e-split-main">
-        {error ? <AlertBanner>{error}</AlertBanner> : null}
-        {active ? (
-          <ReadOnlyChat
-            messages={chatLines}
-            viewerId={viewer}
-            endRef={bottomRef}
-            footer={
-              <RowSpaceBetween>
-                <Text className="e-faint">
-                  {liveConnected ? "live · agents send via relay" : "read-only — agents send via relay"}
-                </Text>
-                {/* P32-2: the DM half of the room chain badge. Sits in the
-                    footer beside the read-only note rather than the header,
-                    matching where a reader looks after reading the thread.
-
-                    P33-2: `key` forces a remount on thread switch. useInterval
-                    deliberately does NOT clear its data on a dep change
-                    (EventsView/ListingsView rely on that to avoid blanking on a
-                    manual refresh), so without this the badge renders the
-                    PREVIOUS thread's verdict against the new thread's id until
-                    the next poll resolves -- including a false "✗ unverified"
-                    on an innocent thread. RoomChainBadge got exactly this fix
-                    in P24-5 (W5, F2); P32 copied the badge without it. */}
-                <DmChainBadge
-                  key={active.thread_id}
-                  threadId={active.thread_id}
-                  viewerId={viewer}
-                />
-              </RowSpaceBetween>
-            }
-          />
-        ) : (
-          <Indent><Text className="e-faint">Select a thread.</Text></Indent>
-        )}
-      </div>
-    </SidebarLayout>
+    <ReadOnlyChat
+      messages={chatLines}
+      viewerId={viewer}
+      endRef={bottomRef}
+      footer={
+        <RowSpaceBetween>
+          <Text className="e-faint">
+            {thread.encrypted ? "🔒 end-to-end encrypted · " : "not encrypted · "}
+            {liveConnected ? "live · agents send via relay" : "read-only — agents send via relay"}
+          </Text>
+          {/* P33-2: `key` remounts on thread switch, so the badge never shows
+              the previous thread's verdict against this one. */}
+          <DmChainBadge key={thread.thread_id} threadId={thread.thread_id} viewerId={viewer} />
+        </RowSpaceBetween>
+      }
+    />
   );
 }
 
-// ─── MessagesView ───────────────────────────────────────────────────────────────
+// ─── MessagesView ───────────────────────────────────────────────────────────
+
+const ACTIVITY = "__activity__";
 
 export function MessagesView({
   navigate,
@@ -310,71 +216,132 @@ export function MessagesView({
   liveConnected = false,
 }: {
   navigate: Navigate;
+  /** "inbox" opens Activity; "dms" the latest conversation. */
   initialTab?: "inbox" | "dms";
   /** P38-1: the latest frame from the agent's own relay channel, opened once in
    *  App so every view shares one socket. */
   liveEvent?: AgentEvent | null;
   liveConnected?: boolean;
 }) {
-  const [tab, setTab] = useState<"inbox" | "dms">(initialTab ?? "inbox");
-  const [unread, setUnread] = useState(0);
+  const viewer = VIEWER_ID;
+  const [events, setEvents] = useState<InboxEvent[]>([]);
+  const [threads, setThreads] = useState<DMThread[]>([]);
+  const [selected, setSelected] = useState<string | null>(initialTab === "inbox" ? ACTIVITY : null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
-  const [dmCount] = useInterval(
-    () => VIEWER_ID
-      ? api.dmThreads(VIEWER_ID).then((d) => (Array.isArray(d) ? d : []).length).catch(() => 0)
-      : Promise.resolve(0),
-    30_000,
-  );
+  const loadInbox = useCallback(() => {
+    if (!viewer) return;
+    api.agentInbox(viewer, false, 200)
+      .then((d) => { setEvents(d.events); setError(null); })
+      .catch((e: unknown) => setError(String(e)))
+      .finally(() => setLoading(false));
+  }, [viewer]);
+  const loadThreads = useCallback(() => {
+    if (!viewer) return;
+    api.dmThreads(viewer)
+      .then((d) => setThreads(Array.isArray(d) ? d : []))
+      .catch((e: unknown) => setError(String(e)));
+  }, [viewer]);
 
   useEffect(() => {
-    const viewer = VIEWER_ID;
-    if (!viewer) return;
-    const poll = () => api.agentInbox(viewer, true, 1).then((d) => setUnread(d.count)).catch(() => {});
-    poll();
-    const t = setInterval(poll, 10_000);
-    return () => clearInterval(t);
-  }, []);
+    loadInbox(); loadThreads();
+    const a = setInterval(loadInbox, 5_000);
+    const b = setInterval(loadThreads, 30_000);
+    return () => { clearInterval(a); clearInterval(b); };
+  }, [loadInbox, loadThreads]);
+  useEffect(() => {
+    if (liveEvent?.type === "dm_received") { loadThreads(); loadInbox(); }
+  }, [liveEvent, loadThreads, loadInbox]);
 
-  // P35-1: this branch is the one that used to be unreachable. It sat in
-  // InboxTab as `if (!VIEWER)` against a value that defaulted to the truthy
-  // placeholder "dashboard", so a spectator never saw it — the dashboard just
-  // polled the relay about an agent named "dashboard" every 10 and 30 seconds
-  // and swallowed the misses. P35-2 is why a spectator gets here at all: the
-  // nav hides this section, but the "8" hotkey reached it anyway.
-  if (!VIEWER_ID) {
+  const { activity, unreadByThread } = splitInbox(events);
+
+  const markRead = useCallback(async (ids: string[]) => {
+    if (!viewer || !ids.length) return;
+    await api.markInboxRead(viewer, ids).catch(() => {});
+    setEvents((prev) => prev.map((e) => (ids.includes(e.inbox_id) ? { ...e, is_read: true } : e)));
+  }, [viewer]);
+
+  // Default selection: the newest conversation, else Activity.
+  useEffect(() => {
+    if (selected === null && (threads.length > 0 || !loading)) {
+      setSelected(threads[0]?.thread_id ?? ACTIVITY);
+    }
+  }, [selected, threads, loading]);
+
+  // Opening a conversation reads it: its DM inbox events are marked read.
+  const openUnread = selected && selected !== ACTIVITY ? unreadByThread[selected] : undefined;
+  useEffect(() => {
+    if (openUnread?.length) markRead(openUnread);
+  }, [openUnread, markRead]);
+
+  // P35-1: a spectator has no inbox or DMs to show.
+  if (!viewer) {
     return (
       <ViewBody flush>
         <Text className="e-faint" style={{ padding: "16px" }}>
-          Spectator mode — set VITE_AGENT_ID in the dashboard env to view your inbox and DMs.
+          Spectator mode — set VITE_AGENT_ID in the dashboard env to view your messages.
         </Text>
       </ViewBody>
     );
   }
 
+  const activityUnread = unreadActivity(activity);
+  const active = threads.find((t) => t.thread_id === selected) ?? null;
+
+  const sidebar = (
+    <>
+      <FlatRailItem selected={selected === ACTIVITY} onClick={() => setSelected(ACTIVITY)}>
+        <RowSpaceBetween>
+          <Text style={{ fontSize: 13, fontWeight: activityUnread ? 600 : 400 }}>◆ Activity</Text>
+          {activityUnread > 0 && <Text className="e-unread-count">{activityUnread}</Text>}
+        </RowSpaceBetween>
+        <Text className="e-dim" style={{ fontSize: 11 }}>challenges · invites · sessions</Text>
+      </FlatRailItem>
+      {threads.length === 0 && (
+        <Indent><Text className="e-faint">No conversations yet.</Text></Indent>
+      )}
+      {threads.map((t) => {
+        const unread = unreadByThread[t.thread_id]?.length ?? 0;
+        return (
+          <FlatRailItem key={t.thread_id} selected={selected === t.thread_id}
+                        onClick={() => setSelected(t.thread_id)}>
+            <div className="e-agent-row">
+              <AgentMoireAvatar agentId={t.other_agent} />
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <RowSpaceBetween>
+                  <Text style={{ fontSize: 13, fontWeight: unread ? 600 : 400 }}>
+                    {t.encrypted ? "🔒 " : ""}{t.other_agent}
+                  </Text>
+                  {unread > 0
+                    ? <Text className="e-unread-count">{unread}</Text>
+                    : <AgentLink agent_id={t.other_agent} navigate={navigate} />}
+                </RowSpaceBetween>
+                <Text className="e-dim" style={{ fontSize: 11 }}>{dmThreadPreview(t)}</Text>
+              </div>
+            </div>
+          </FlatRailItem>
+        );
+      })}
+    </>
+  );
+
   return (
     <ViewBody flush>
-      <div className="e-messages-subnav">
-        <SegmentTabs
-          options={["inbox", "dms"] as const}
-          value={tab}
-          onChange={setTab}
-          labels={{
-            inbox: unread > 0 ? `inbox (${unread})` : "inbox",
-            dms: dmCount ? `messages (${dmCount})` : "messages",
-          }}
-        />
-      </div>
-      <div className="e-messages-body">
-        {tab === "inbox" && <InboxTab navigate={navigate} viewer={VIEWER_ID} />}
-        {tab === "dms" && (
-          <DMsTab
-            navigate={navigate}
-            viewer={VIEWER_ID}
-            liveEvent={liveEvent}
-            liveConnected={liveConnected}
-          />
-        )}
-      </div>
+      <SidebarLayout sidebar={sidebar} defaultSidebarWidth={30}>
+        <div className="e-split-main">
+          {error ? <AlertBanner>{error}</AlertBanner> : null}
+          {selected === ACTIVITY ? (
+            <ActivityPane navigate={navigate} events={activity} loading={loading}
+                          error={null} markRead={markRead} />
+          ) : active ? (
+            <ThreadPane key={active.thread_id} thread={active} viewer={viewer}
+                        liveEvent={liveEvent} liveConnected={liveConnected} />
+          ) : (
+            <Indent><Text className="e-faint">Select a conversation.</Text></Indent>
+          )}
+        </div>
+      </SidebarLayout>
     </ViewBody>
   );
 }

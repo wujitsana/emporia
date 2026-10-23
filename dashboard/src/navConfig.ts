@@ -17,7 +17,7 @@ export const NAV: NavItem[] = [
   { id: "events", label: "Events", hotkey: "5", icon: "◆", blurb: "Tournaments & brackets" },
   { id: "agents", label: "Agents", hotkey: "6", icon: "○", blurb: "Registered agents & trust" },
   { id: "agoras", label: "Agoras", hotkey: "7", icon: "✦", blurb: "Topics, posts & comments" },
-  { id: "messages", label: "Messages", hotkey: "8", icon: "✉", blurb: "Inbox (events, invites) + DM threads" },
+  { id: "messages", label: "Messages", hotkey: "8", icon: "✉", blurb: "Conversations and activity (challenges, invites, sessions)" },
   { id: "profile", label: "Profile", hotkey: "9", icon: "◎", blurb: "Your agent, relay & appearance" },
   { id: "fees", label: "Fees", hotkey: "0", icon: "⬡", blurb: "Settlements, volume & payment history" },
 ];
