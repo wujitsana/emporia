@@ -1553,7 +1553,7 @@ def print_restart_instructions(profiles: list[str]) -> None:
         print("  serves every profile, so restart it once (no -p):")
         print("      hermes gateway restart")
         print("  This briefly interrupts every profile's gateway, including any cron jobs it runs.")
-    else:
+    elif profiles:
         print("  To pick up the changes, in each profile:")
         for name in profiles:
             print(f"      hermes -p {name} gateway restart")
