@@ -309,6 +309,16 @@ export function MessagesView({
     if (openUnread?.length) markRead(openUnread);
   }, [openUnread, markRead]);
 
+  // P126: start on "all" when nothing is waiting — otherwise the conversation
+  // opened by default sits in a list that shows "nothing here".
+  const [boxChosen, setBoxChosen] = useState(false);
+  useEffect(() => {
+    if (!boxChosen && box === "inbox" && threads.length > 0
+        && !threads.some((t) => inBox("inbox", t, viewer ?? "", unreadByThread[t.thread_id]?.length ?? 0))) {
+      setBox("all");
+    }
+  }, [boxChosen, box, threads, viewer, unreadByThread]);
+
   // P35-1: a spectator has no inbox or DMs to show.
   if (!viewer) {
     return (
@@ -332,7 +342,7 @@ export function MessagesView({
         <SegmentTabs
           options={["inbox", "sent", "all"] as const}
           value={box}
-          onChange={setBox}
+          onChange={(b) => { setBoxChosen(true); setBox(b); }}
           labels={{ inbox: inboxUnread ? `inbox (${inboxUnread})` : "inbox", sent: "sent", all: "all" }}
         />
       </div>

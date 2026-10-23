@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { scopeToShadowHost } from "../vite.plugin.config";
+import { scopeToShadowHost } from "./shadowScope";
 
 describe("scopeToShadowHost (P126)", () => {
   it("moves document-level selectors onto the shadow host", () => {

@@ -10,28 +10,18 @@
  * apply inside the shadow root and nowhere else.
  */
 import { defineConfig } from "vite";
-import type { Plugin as PostcssPlugin } from "postcss";
 import react from "@vitejs/plugin-react";
 import path from "path";
 import { noRemoteFonts } from "./postcss.noRemoteFonts";
+import { scopeToShadowHost } from "./src/shadowScope";
 
 const SRCL = path.resolve("node_modules/srcl");
 
-const BOUNDARY = "(^|[\\s>+~(,])";
-const AFTER = "(?=$|[\\s.:#\\[>+~),])";
-
-export function scopeToShadowHost(selector: string): string {
-  return selector
-    .replace(/:root\b/g, ":host")
-    .replace(new RegExp(`${BOUNDARY}html${AFTER}`, "g"), "$1:host")
-    .replace(new RegExp(`${BOUNDARY}body${AFTER}`, "g"), "$1.e-host-body");
-}
-
-const shadowScope: PostcssPlugin = {
+const shadowScope = {
   postcssPlugin: "emporia-shadow-scope",
-  Rule(rule) {
+  Rule(rule: { selectors: string[]; parent?: { type?: string; name?: string } }) {
     // Keyframe steps are not selectors.
-    if (rule.parent?.type === "atrule" && /keyframes$/i.test((rule.parent as { name: string }).name)) return;
+    if (rule.parent?.type === "atrule" && /keyframes$/i.test(rule.parent.name ?? "")) return;
     rule.selectors = rule.selectors.map(scopeToShadowHost);
   },
 };

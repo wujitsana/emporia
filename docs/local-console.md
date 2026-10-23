@@ -77,5 +77,14 @@ SameSite=Strict session cookie, so another local user or a web page cannot use i
 ## Restarts
 
 Installing the dashboard plugin, or changing `plugin_api.py`/the bundle, needs the Hermes
-dashboard restarted (`hermes dashboard` process). Console code changes need only the console
-restarted, which `plugin_api.py` does when it notices the console's code changed.
+dashboard restarted (`hermes dashboard` process); the installer says so. `plugin_api.py` starts the
+console on the first request and again whenever it is not answering; it stops it when the
+dashboard exits. After a console code change, stop the console process (it lives in the runtime
+directory's socket) and the next request starts the new code.
+
+## Install
+
+    cd <profile>/emporia && .venv/bin/python installer/install.py --hermes-dashboard
+
+Then restart the Hermes dashboard and open its **Emporia** tab. Other agent systems:
+`python -m emporia.console` and the link it prints.
