@@ -16717,7 +16717,7 @@ def test_dm_start_never_silently_downgrades_an_encrypted_request(client):
     and a client that didn't re-check the flag would post plaintext believing it
     was encrypted."""
     _enc_pair(client, "e2e_down_a", "e2e_down_b")
-    client.post("/dm/start", json={"to_agent": "e2e_down_b"},
+    client.post("/dm/start", json={"to_agent": "e2e_down_b", "encrypted": False},
                 headers={"X-Emporia-Agent-Id": "e2e_down_a"})
 
     r = client.post("/dm/start", json={"to_agent": "e2e_down_b", "encrypted": True},
@@ -16784,7 +16784,7 @@ def test_envelope_rejected_on_a_plaintext_thread(client):
     """The other direction. Storing it would be a client bug preserved as
     permanent garbage in a thread the peer reads as prose."""
     _enc_pair(client, "e2e_env_a", "e2e_env_b")
-    tid = client.post("/dm/start", json={"to_agent": "e2e_env_b"},
+    tid = client.post("/dm/start", json={"to_agent": "e2e_env_b", "encrypted": False},
                       headers={"X-Emporia-Agent-Id": "e2e_env_a"}).json()["thread_id"]
 
     r = _send_encrypted_dm(client, tid, "e2e_env_a", ["e2e_env_a", "e2e_env_b"], "hi")
@@ -16830,7 +16830,7 @@ def test_encrypt_upgrades_an_existing_thread_and_cannot_be_reversed(client):
     can turn it back off. A downgrade path would be a force-plaintext attack, so
     it does not exist — the only way back is a different thread."""
     _enc_pair(client, "e2e_upg_a", "e2e_upg_b")
-    tid = client.post("/dm/start", json={"to_agent": "e2e_upg_b"},
+    tid = client.post("/dm/start", json={"to_agent": "e2e_upg_b", "encrypted": False},
                       headers={"X-Emporia-Agent-Id": "e2e_upg_a"}).json()["thread_id"]
     assert _send_dm_raw(client, tid, "e2e_upg_a", "plaintext, before").status_code == 200
 
@@ -17087,7 +17087,7 @@ def test_sdk_plaintext_dm_still_works_unchanged(prod_client):
         try:
             await alice.register()
             await bob.register()
-            tid = (await alice.start_dm("p16_sdk_pt_b"))["thread_id"]
+            tid = (await alice.start_dm("p16_sdk_pt_b", encrypted=False))["thread_id"]
             await alice.send_dm(tid, "ordinary prose")
             return await bob.get_dm_messages(tid)
         finally:
@@ -17168,7 +17168,7 @@ def test_sdk_can_upgrade_an_existing_thread_to_encrypted(prod_client):
         try:
             await a.register()
             await b.register()
-            tid = (await a.start_dm("p16_upg_b"))["thread_id"]
+            tid = (await a.start_dm("p16_upg_b", encrypted=False))["thread_id"]
             await a.send_dm(tid, "before")
             await b.enable_dm_encryption(tid)
             await a.send_dm(tid, "after")
@@ -17263,7 +17263,7 @@ def test_dm_signature_is_persisted_and_verifies(client):
     from emporia.wire import signed_dm_thread_payload
 
     _enc_pair(client, "p17_sig_a", "p17_sig_b")
-    tid = client.post("/dm/start", json={"to_agent": "p17_sig_b"},
+    tid = client.post("/dm/start", json={"to_agent": "p17_sig_b", "encrypted": False},
                       headers={"X-Emporia-Agent-Id": "p17_sig_a"}).json()["thread_id"]
     _send_dm_raw(client, tid, "p17_sig_a", "integrity matters")
 
@@ -17292,7 +17292,7 @@ def test_sdk_flags_a_tampered_dm_without_breaking_the_thread(client, prod_client
         try:
             await a.register()
             await b.register()
-            tid = (await a.start_dm("p17_tamper_b"))["thread_id"]
+            tid = (await a.start_dm("p17_tamper_b", encrypted=False))["thread_id"]
             await a.send_dm(tid, "first message")
             await a.send_dm(tid, "second message")
             return tid
@@ -17332,7 +17332,7 @@ def test_replayed_dm_envelope_is_caught_by_the_signature(client):
     from emporia.relay_server import DB_LOCK, get_db
 
     _enc_pair(client, "p17_replay_a", "p17_replay_b")
-    tid = client.post("/dm/start", json={"to_agent": "p17_replay_b"},
+    tid = client.post("/dm/start", json={"to_agent": "p17_replay_b", "encrypted": False},
                       headers={"X-Emporia-Agent-Id": "p17_replay_a"}).json()["thread_id"]
     _send_dm_raw(client, tid, "p17_replay_a", "transfer 100")
     _send_dm_raw(client, tid, "p17_replay_a", "ignore that")
@@ -17444,7 +17444,7 @@ def test_encrypted_flag_distinguishes_plaintext_from_failed_decryption(client, p
         try:
             await a.register()
             await b.register()
-            plain = (await a.start_dm("p17_flag_b"))["thread_id"]
+            plain = (await a.start_dm("p17_flag_b", encrypted=False))["thread_id"]
             await a.send_dm(plain, "never encrypted")
             enc = (await a.start_dm("p17_flag_c", encrypted=True))["thread_id"]
             await a.send_dm(enc, "opened fine")
@@ -17898,7 +17898,7 @@ def test_replay_with_the_constraint_bypassed_is_still_caught_by_the_client(clien
         try:
             await a.register()
             await b.register()
-            tid = (await a.start_dm("p18_rpc_b"))["thread_id"]
+            tid = (await a.start_dm("p18_rpc_b", encrypted=False))["thread_id"]
             await a.send_dm(tid, "transfer 100")
             await a.send_dm(tid, "ignore that")
             return tid
@@ -17964,7 +17964,7 @@ def test_duplicate_nonce_over_http_is_409_not_500(client):
     its second message."""
     _register_keyed(client, "p19_dup_a")
     _register_keyed(client, "p19_dup_b")
-    tid = client.post("/dm/start", json={"to_agent": "p19_dup_b"},
+    tid = client.post("/dm/start", json={"to_agent": "p19_dup_b", "encrypted": False},
                       headers={"X-Emporia-Agent-Id": "p19_dup_a"}).json()["thread_id"]
 
     same_nonce = "c" * 32
@@ -19591,7 +19591,7 @@ def test_dm_message_409_carries_a_structured_code(client):
     _register_keyed(client, "p21_dmcode_a")
     _register_keyed(client, "p21_dmcode_b")
     tid = client.post(
-        "/dm/start", json={"to_agent": "p21_dmcode_b"},
+        "/dm/start", json={"to_agent": "p21_dmcode_b", "encrypted": False},
         headers={"X-Emporia-Agent-Id": "p21_dmcode_a"},
     ).json()["thread_id"]
 
@@ -28564,3 +28564,28 @@ def test_every_relay_read_is_either_on_the_dashboard_or_classified():
     assert not stale, (
         f"_DASHBOARD_UNSURFACED_GETS lists routes that are gone or now surfaced: {stale}"
     )
+
+
+def test_dms_are_encrypted_by_default_when_both_agents_have_keys(client):
+    """P122: omitting `encrypted` used to mean plaintext, so an agent that never
+    thought about it sent prose the relay could read — found in manual testing,
+    where the relay's database held "hello from alpha" in the clear. Omitted
+    now means encrypted whenever both agents have published a key."""
+    _enc_pair(client, "p122_a", "p122_b")
+    h = {"x-emporia-agent-id": "p122_a"}
+    r = client.post("/dm/start", json={"to_agent": "p122_b"}, headers=h).json()
+    assert r["created"] and r["encrypted"] is True
+
+    # An existing plaintext thread is upgraded, one-way, by the default.
+    _enc_pair(client, "p122_a", "p122_c")
+    plain = client.post("/dm/start", json={"to_agent": "p122_c", "encrypted": False},
+                        headers=h).json()
+    assert plain["encrypted"] is False
+    again = client.post("/dm/start", json={"to_agent": "p122_c"}, headers=h).json()
+    assert (again["thread_id"], again["encrypted"], again.get("upgraded")) == \
+        (plain["thread_id"], True, True)
+
+    # Without a key on one side there is nothing to encrypt to: plaintext.
+    _register(client, "p122_nokey")
+    nokey = client.post("/dm/start", json={"to_agent": "p122_nokey"}, headers=h).json()
+    assert nokey["encrypted"] is False

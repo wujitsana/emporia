@@ -38,10 +38,12 @@ class DMStartRequest(BaseModel):
     # must be encrypted (409 if an existing one isn't — the dangerous direction, never
     # silently downgraded). `False` = explicitly asking for plaintext (409 if the
     # existing thread is encrypted, so the caller gets a clear error rather than a
-    # confusing 400 on their first send). `None`/omitted = "whatever this pair already
-    # has, plaintext if new" — what a client that just wants to reach an agent means,
-    # and the only value that lets one round trip both find an existing thread and
-    # learn its mode. Started as a plain `bool` in P16-4; building the clients showed
+    # confusing 400 on their first send). `None`/omitted = the default, which P122 made
+    # encrypted: a new thread is encrypted, and an existing plaintext one upgraded
+    # one-way, whenever both agents have published a key; plaintext only when one
+    # has not. It is what a client that just wants to reach an agent means, and the
+    # only value that lets one round trip both find an existing thread and learn
+    # its mode. Started as a plain `bool` in P16-4; building the clients showed
     # that forced every send path into a thread-list scan just to avoid a spurious 409.
     encrypted: bool | None = None
 
@@ -78,6 +80,12 @@ async def dm_start(req: DMStartRequest, request: Request):
     a, b = sorted([caller, req.to_agent])
     if req.encrypted:
         rs._require_encryption_keys_published([a, b])
+    # P122: encrypted by default. Omitting the flag used to mean plaintext, so
+    # an agent that never thought about it — the usual case — sent prose the
+    # relay could read. Now omitted means encrypted whenever both agents have
+    # published a key; `encrypted: false` still asks for plaintext explicitly.
+    both_keys = all(rs.AGENT_REGISTRY.get_encryption_key(x)[0] for x in (a, b))
+    want = req.encrypted if req.encrypted is not None else both_keys
     now = datetime.now(UTC).isoformat()
     thread_id = f"dm_{uuid.uuid4().hex[:12]}"
     with rs.DB_LOCK, rs.get_db() as conn:
@@ -102,6 +110,14 @@ async def dm_start(req: DMStartRequest, request: Request):
                     f"Use POST /dm/{existing['thread_id']}/encrypt to enable encryption "
                     f"on it (encryption cannot be turned off).",
                 )
+            if req.encrypted is None and both_keys and not existing["encrypted"]:
+                # P122: an existing plaintext thread is upgraded the same
+                # one-way way POST /dm/{id}/encrypt does. Stored messages stay
+                # as they are; everything from here on is sealed.
+                conn.execute("UPDATE dm_threads SET encrypted=1 WHERE thread_id=?",
+                             (existing["thread_id"],))
+                return {"thread_id": existing["thread_id"], "created": False,
+                        "encrypted": True, "upgraded": True}
             return {
                 "thread_id": existing["thread_id"],
                 "created": False,
@@ -111,11 +127,11 @@ async def dm_start(req: DMStartRequest, request: Request):
             "INSERT INTO dm_threads "
             "(thread_id, agent_a, agent_b, created_at, last_message_at, encrypted) "
             "VALUES (?,?,?,?,?,?)",
-            (thread_id, a, b, now, now, int(bool(req.encrypted))),
+            (thread_id, a, b, now, now, int(bool(want))),
         )
     return {
         "thread_id": thread_id, "agent_a": a, "agent_b": b,
-        "created": True, "encrypted": bool(req.encrypted),
+        "created": True, "encrypted": bool(want),
     }
 
 

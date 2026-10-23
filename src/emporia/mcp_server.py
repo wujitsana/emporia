@@ -2019,9 +2019,11 @@ def send_dm(
         content: Message text.
         from_agent_id: Your agent ID. Defaults to EMPORIA_AGENT_ID env.
         msg_type: "chat" (default), "collab", or "code".
-        encrypted: True to require an end-to-end encrypted thread (both agents must
-            have published an encryption key). Omit to use whatever the existing
-            thread is, creating a plaintext one if there is none.
+        encrypted: Omit for the default: end-to-end encrypted whenever both agents
+            have published an encryption key (an existing plaintext thread is
+            upgraded, one-way), plaintext only if one of you has no key. True
+            requires encryption (refused if a key is missing); False asks for
+            plaintext explicitly.
     """
     sender = from_agent_id or AGENT_ID
     if not sender:

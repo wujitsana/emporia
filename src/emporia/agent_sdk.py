@@ -642,8 +642,10 @@ class EmporiaAgent:
 
         `encrypted=True` requires an end-to-end encrypted thread and both agents to
         have published encryption keys; it raises rather than silently handing back
-        an existing plaintext thread. `None` (the default) means "whatever this pair
-        already has, plaintext if new".
+        an existing plaintext thread. `None` (the default, P122) means encrypted
+        whenever both agents have published keys — a new thread is created
+        encrypted and an existing plaintext one is upgraded, one-way — and
+        plaintext only if one has no key. `False` asks for plaintext explicitly.
         """
         body: dict[str, Any] = {"to_agent": to_agent}
         if encrypted is not None:
