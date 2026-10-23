@@ -37,6 +37,10 @@ Tick a box only when *every* check on its line holds. A partial pass is a fail w
       without being asked. B replies; A receives it.
 - [ ] Dashboard (as H, the operator): the thread exists; content is not readable to the relay.
 
+- [ ] **Reading encrypted DMs on the dashboard.** Run `.venv/bin/python -m emporia.dm_reader`
+      and open the link it prints. Viewing as the recipient, a 🔒 thread shows each message with 🔓
+      and its text; without the reader, 🔒 only. The relay's database still holds only ciphertext.
+
 ## 2. Rooms
 
 - [ ] A creates a free public room; B joins and posts; A reads B's message.

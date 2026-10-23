@@ -14,7 +14,7 @@ import Text from "@components/Text";
 import RowSpaceBetween from "@components/RowSpaceBetween";
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import { api } from "../api";
-import { dmDisplayContent, dmThreadPreview } from "../api";
+import { dmDisplayContent, dmThreadPreview, looksLikeEncryptedEnvelope } from "../api";
 import type { DMMessage, DMThread, InboxEvent } from "../api";
 import { AgentMoireAvatar } from "../AgentMoireAvatar";
 import { FlatRailItem } from "../ui/FlatRailItem";
@@ -28,6 +28,10 @@ import { AgentLink } from "../ui/chips";
 import { markReplayedNonces, verifyMessageSignature } from "../integrityCheck";
 import { DmChainBadge } from "../ui/DmChainBadge";
 import { inBox, splitInbox, unreadActivity } from "../messagesModel";
+import { openSealedDms, readerConfig } from "../dmReader";
+
+// P125: read once — it also strips the reader token from the address bar.
+const READER = readerConfig();
 import type { ThreadBox } from "../messagesModel";
 import { SegmentTabs } from "../ui/SegmentTabs";
 
@@ -144,12 +148,21 @@ function ThreadPane({
   liveConnected: boolean;
 }) {
   const [messages, setMessages] = useState<DMMessage[]>([]);
+  const [opened, setOpened] = useState<Record<string, string>>({});
+  const [readerError, setReaderError] = useState<string | null>(null);
   const [pubkeys, setPubkeys] = useState<Record<string, string>>({});
   const bottomRef = useRef<HTMLDivElement | null>(null);
 
   const loadMsgs = useCallback(async () => {
     try {
-      setMessages((await api.dmMessages(thread.thread_id, viewer)).messages);
+      const msgs = (await api.dmMessages(thread.thread_id, viewer)).messages;
+      setMessages(msgs);
+      // P125: sealed messages, opened on this machine by the local reader.
+      if (READER && msgs.some((m) => looksLikeEncryptedEnvelope(m.content))) {
+        openSealedDms(READER, viewer, thread.thread_id, msgs)
+          .then((o) => { setOpened(o); setReaderError(null); })
+          .catch((e: unknown) => setReaderError(String(e)));
+      }
     } catch { /* keep old */ }
   }, [thread.thread_id, viewer]);
 
@@ -181,7 +194,10 @@ function ThreadPane({
     id: m.message_id,
     sender_id: m.sender_id,
     // P17-4: an encrypted DM shows a lock; the dashboard holds no key, by design.
-    content: dmDisplayContent(m.content),
+    // P125: unless the local reader opened it, on this machine.
+    content: opened[m.message_id] !== undefined
+      ? `🔓 ${opened[m.message_id]}`
+      : dmDisplayContent(m.content),
     created_at: m.created_at,
     verified: verifyMessageSignature("dm", thread.thread_id, m, pubkeys[m.sender_id] || ""),
     replayed: m.replayed,
@@ -194,8 +210,12 @@ function ThreadPane({
       endRef={bottomRef}
       footer={
         <RowSpaceBetween>
-          <Text className="e-faint">
+          <Text className="e-faint" title={readerError ?? undefined}>
             {thread.encrypted ? "🔒 end-to-end encrypted · " : "not encrypted · "}
+            {thread.encrypted
+              ? (READER ? (readerError ? "local reader unavailable · " : "🔓 opened locally · ")
+                        : "run emporia.dm_reader to read here · ")
+              : ""}
             {liveConnected ? "live · agents send via relay" : "read-only — agents send via relay"}
           </Text>
           {/* P33-2: `key` remounts on thread switch, so the badge never shows
