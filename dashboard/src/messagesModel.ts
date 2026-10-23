@@ -33,6 +33,22 @@ export function splitInbox(events: InboxEvent[]): SplitInbox {
   return { activity, unreadByThread };
 }
 
+export type ThreadBox = "inbox" | "sent" | "all";
+
+/** P124: which list a conversation belongs in. Inbox: the other agent spoke
+ *  last, or something is unread. Sent: the viewer spoke last. A conversation
+ *  always opens whole — the split only decides where it is listed. */
+export function inBox(
+  box: ThreadBox,
+  t: { last_sender: string | null },
+  viewer: string,
+  unread: number,
+): boolean {
+  if (box === "all") return true;
+  const mineLast = t.last_sender === viewer;
+  return box === "sent" ? mineLast : !mineLast || unread > 0;
+}
+
 export function unreadActivity(activity: InboxEvent[]): number {
   return activity.filter((e) => !e.is_read).length;
 }

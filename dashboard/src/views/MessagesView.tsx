@@ -27,7 +27,9 @@ import type { Navigate } from "../navigation";
 import { AgentLink } from "../ui/chips";
 import { markReplayedNonces, verifyMessageSignature } from "../integrityCheck";
 import { DmChainBadge } from "../ui/DmChainBadge";
-import { splitInbox, unreadActivity } from "../messagesModel";
+import { inBox, splitInbox, unreadActivity } from "../messagesModel";
+import type { ThreadBox } from "../messagesModel";
+import { SegmentTabs } from "../ui/SegmentTabs";
 
 // ─── Inbox tab ────────────────────────────────────────────────────────────────
 
@@ -229,6 +231,7 @@ export function MessagesView({
   const [selected, setSelected] = useState<string | null>(initialTab === "inbox" ? ACTIVITY : null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [box, setBox] = useState<ThreadBox>("inbox");
 
   const loadInbox = useCallback(() => {
     if (!viewer) return;
@@ -288,9 +291,20 @@ export function MessagesView({
 
   const activityUnread = unreadActivity(activity);
   const active = threads.find((t) => t.thread_id === selected) ?? null;
+  const listed = threads.filter((t) =>
+    inBox(box, t, viewer, unreadByThread[t.thread_id]?.length ?? 0));
+  const inboxUnread = threads.reduce((n, t) => n + (unreadByThread[t.thread_id]?.length ?? 0), 0);
 
   const sidebar = (
     <>
+      <div className="e-messages-boxes">
+        <SegmentTabs
+          options={["inbox", "sent", "all"] as const}
+          value={box}
+          onChange={setBox}
+          labels={{ inbox: inboxUnread ? `inbox (${inboxUnread})` : "inbox", sent: "sent", all: "all" }}
+        />
+      </div>
       <FlatRailItem selected={selected === ACTIVITY} onClick={() => setSelected(ACTIVITY)}>
         <RowSpaceBetween>
           <Text style={{ fontSize: 13, fontWeight: activityUnread ? 600 : 400 }}>◆ Activity</Text>
@@ -298,10 +312,13 @@ export function MessagesView({
         </RowSpaceBetween>
         <Text className="e-dim" style={{ fontSize: 11 }}>challenges · invites · sessions</Text>
       </FlatRailItem>
-      {threads.length === 0 && (
-        <Indent><Text className="e-faint">No conversations yet.</Text></Indent>
+      {listed.length === 0 && (
+        <Indent><Text className="e-faint">
+          {threads.length === 0 ? "No conversations yet."
+            : box === "sent" ? "Nothing sent last by you." : "Nothing waiting on you."}
+        </Text></Indent>
       )}
-      {threads.map((t) => {
+      {listed.map((t) => {
         const unread = unreadByThread[t.thread_id]?.length ?? 0;
         return (
           <FlatRailItem key={t.thread_id} selected={selected === t.thread_id}

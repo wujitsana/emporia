@@ -1951,3 +1951,6 @@ body.theme-light {
   background: var(--theme-background, transparent); color: inherit;
   border: 1px solid var(--theme-border, rgba(128,128,128,0.4)); border-radius: 4px;
 }
+
+/* P124: inbox / sent / all above the conversation list. */
+.e-messages-boxes { padding: 8px 10px; border-bottom: 1px solid var(--theme-border-subdued, rgba(128,128,128,0.12)); }

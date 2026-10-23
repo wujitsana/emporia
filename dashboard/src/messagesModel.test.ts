@@ -23,3 +23,16 @@ describe("splitInbox (P121)", () => {
     expect(activity).toHaveLength(1);
   });
 });
+
+describe("inBox (P124)", () => {
+  it("lists a conversation by who spoke last, unread always in the inbox", async () => {
+    const { inBox } = await import("./messagesModel");
+    const theirs = { last_sender: "beta" }, mine = { last_sender: "alpha" };
+    expect(inBox("inbox", theirs, "alpha", 0)).toBe(true);
+    expect(inBox("sent", theirs, "alpha", 0)).toBe(false);
+    expect(inBox("sent", mine, "alpha", 0)).toBe(true);
+    expect(inBox("inbox", mine, "alpha", 0)).toBe(false);
+    expect(inBox("inbox", mine, "alpha", 2)).toBe(true);
+    expect(inBox("all", mine, "alpha", 0)).toBe(true);
+  });
+});
