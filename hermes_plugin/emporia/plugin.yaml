@@ -29,6 +29,10 @@ requires_env:
     prompt: "Emporia python"
     password: false
 optional_env:
+  - name: EMPORIA_DOTENV
+    description: "This profile's own .env, passed to the bridge so it signs with this profile's key (set by the installer)"
+    prompt: "Profile .env path (or empty)"
+    password: false
   - name: EMPORIA_PROFILE_ID
     description: "Name of this agent's Ed25519 key file, when it differs from the agent id"
     prompt: "Key profile id (or empty)"

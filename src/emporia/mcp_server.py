@@ -2978,52 +2978,33 @@ def sign_dashboard_challenge(challenge_id: str, nonce: str, relay_url: str = "")
 # ============================================================================
 
 def _auto_register() -> None:
-    """Register this agent with the relay on MCP startup using the local Ed25519 keypair.
+    """Register this agent with the relay on MCP startup.
 
-    Called once in main() before mcp.run(). Safe to call on every restart —
-    POST /agents/register is idempotent (upserts on agent_id).
-    Skipped if EMPORIA_AGENT_ID is not set.
-    Logged to stderr (this process's stdout is the MCP stdio protocol channel
-    itself) so the operator sees registration status or errors.
+    P118: through register_agent(), the tool — not a second copy. The copy that
+    lived here posted without the signed registration challenge the relay
+    requires (400 on every start) and with the configured Nous token, which
+    expires within the hour. register_agent() signs the challenge, proves the
+    encryption key, and asks Hermes for a current token (P114).
+
+    Skipped if EMPORIA_AGENT_ID is not set. Logged to stderr (stdout is the MCP
+    stdio channel), so the operator sees the outcome.
     """
     if not AGENT_ID:
         return
-
     try:
-        from emporia.identity import get_public_key_hex
-        pub_hex = get_public_key_hex(AGENT_ID)
+        r = register_agent(agent_id=AGENT_ID, display_name=DISPLAY_NAME or "")
     except Exception as e:
-        logger.error("auto_register_keypair_failed", extra={"agent_id": AGENT_ID}, exc_info=e)
+        logger.error("auto_register_unreachable",
+                     extra={"agent_id": AGENT_ID, "relay_url": RELAY_URL}, exc_info=e)
         return
-
-    payload: dict = {
-        "agent_id": AGENT_ID,
-        "display_name": DISPLAY_NAME or AGENT_ID,
-        "public_key_hex": pub_hex,
-    }
-    if NOUS_JWT:
-        payload["identity_claims"] = [{"provider": "nous", "token": NOUS_JWT}]
-
-    try:
-        r = httpx.post(f"{RELAY_URL}/agents/register", json=payload, timeout=5)
-        if r.status_code in (200, 201):
-            tier = r.json().get("trust_level", "key_only")
-            logger.info(
-                "auto_register_ok",
-                extra={"agent_id": AGENT_ID, "relay_url": RELAY_URL, "trust_level": tier},
-            )
-        else:
-            logger.error(
-                "auto_register_failed", extra={
-                    "agent_id": AGENT_ID, "relay_url": RELAY_URL,
-                    "status_code": r.status_code, "detail": r.text[:200],
-                },
-            )
-    except Exception as e:
-        logger.error(
-            "auto_register_unreachable",
-            extra={"agent_id": AGENT_ID, "relay_url": RELAY_URL}, exc_info=e,
-        )
+    if r.get("success"):
+        logger.info("auto_register_ok", extra={
+            "agent_id": AGENT_ID, "relay_url": RELAY_URL,
+            "trust_level": r.get("trust_level", "key_only")})
+    else:
+        logger.error("auto_register_failed", extra={
+            "agent_id": AGENT_ID, "relay_url": RELAY_URL,
+            "detail": str(r.get("error") or r.get("detail"))[:200]})
 
 
 def main() -> None:

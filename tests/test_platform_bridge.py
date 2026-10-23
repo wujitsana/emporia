@@ -265,3 +265,41 @@ asyncio.run(main())
         ["[Emporia] Your turn", "emporia:relay", "emporia:alice"],
     ]
     assert result["stopped"]
+
+
+@pytest.mark.skipif(not HERMES_PYTHON.exists(), reason="Hermes is not installed here")
+def test_the_bridge_gets_this_profiles_env_not_the_gateways(tmp_path):
+    """P118: the bridge inherited the gateway's os.environ, which holds no
+    profile .env values (Hermes scopes them) and, in a multiplexed gateway, the
+    launching profile's — so alpha's bridge signed with another profile's key.
+    It now gets EMPORIA_DOTENV for its own profile and no inherited EMPORIA_*."""
+    harness = tmp_path / "harness.py"
+    harness.write_text(f'''
+import importlib.util, json, os, sys
+from pathlib import Path
+d = Path({str(REPO / "hermes_plugin" / "emporia")!r})
+spec = importlib.util.spec_from_file_location("emporia_platform", d / "__init__.py",
+                                              submodule_search_locations=[str(d)])
+mod = importlib.util.module_from_spec(spec); sys.modules["emporia_platform"] = mod
+spec.loader.exec_module(mod)
+from gateway.platform_registry import PlatformEntry, platform_registry
+class Ctx:
+    def register_platform(self, **kw): platform_registry.register(PlatformEntry(**kw))
+mod.register(Ctx())
+from gateway.config import PlatformConfig
+from emporia_platform.adapter import EmporiaAdapter
+os.environ["EMPORIA_KEYS_DIR"] = "/launching/profile/keys"
+a = EmporiaAdapter(PlatformConfig(enabled=True, extra={{
+    "relay_url": "http://relay.test", "agent_id": "alpha", "python": "/x/python",
+    "dotenv": "/profiles/alpha/.env"}}))
+env = a._bridge_env()
+print(json.dumps({{"dotenv": env.get("EMPORIA_DOTENV"),
+                   "emporia": sorted(k for k in env if k.startswith("EMPORIA_"))}}))
+''')
+    out = subprocess.run([str(HERMES_PYTHON), str(harness)], cwd="/opt/hermes",
+                         env={**os.environ, "HERMES_HOME": str(tmp_path / "home"),
+                              "PYTHONPATH": "/opt/hermes"},
+                         capture_output=True, text=True, timeout=60)
+    assert out.returncode == 0, out.stderr[-2000:]
+    result = json.loads(out.stdout.strip().splitlines()[-1])
+    assert result == {"dotenv": "/profiles/alpha/.env", "emporia": ["EMPORIA_DOTENV"]}

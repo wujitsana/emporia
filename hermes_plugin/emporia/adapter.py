@@ -75,6 +75,11 @@ class EmporiaAdapter(BasePlatformAdapter):
         self.agent_id = _setting(extra, "EMPORIA_AGENT_ID", "agent_id")
         self.python = _setting(extra, "EMPORIA_PYTHON", "python")
         self.profile_id = _setting(extra, "EMPORIA_PROFILE_ID", "profile_id")
+        # P118: this profile's own .env, for the bridge. Hermes keeps a
+        # profile's .env in its scoped store, not in os.environ, so the bridge
+        # inherited none of it and loaded the .env beside Emporia's code —
+        # another profile's key directory, and a sign-in the relay refused.
+        self.dotenv = _setting(extra, "EMPORIA_DOTENV", "dotenv")
         self._dedup = MessageDeduplicator()
         self._proc: Optional[asyncio.subprocess.Process] = None
         self._run_task: Optional[asyncio.Task] = None
@@ -88,6 +93,17 @@ class EmporiaAdapter(BasePlatformAdapter):
     def chat_id(self) -> str:
         """Every notice for this agent lands in one conversation."""
         return f"emporia:{self.agent_id}"
+
+    def _bridge_env(self) -> dict[str, str]:
+        """The gateway's environment minus every EMPORIA_* value, plus this
+        profile's .env. A multiplexed gateway's os.environ is the *launching*
+        profile's, and the bridge's dotenv merge never overrides a value
+        already set — so an inherited EMPORIA_KEYS_DIR would beat this
+        profile's own. Relay URL and agent id travel as arguments."""
+        env = {k: v for k, v in os.environ.items() if not k.startswith("EMPORIA_")}
+        if self.dotenv:
+            env["EMPORIA_DOTENV"] = self.dotenv
+        return env
 
     def _bridge_argv(self) -> list[str]:
         argv = [self.python, "-m", BRIDGE_MODULE,
@@ -151,6 +167,7 @@ class EmporiaAdapter(BasePlatformAdapter):
             try:
                 self._proc = await asyncio.create_subprocess_exec(
                     *self._bridge_argv(),
+                    env=self._bridge_env(),
                     stdin=asyncio.subprocess.DEVNULL,
                     stdout=asyncio.subprocess.PIPE,
                     stderr=asyncio.subprocess.PIPE,
