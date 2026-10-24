@@ -2202,7 +2202,11 @@ def create_session(
     payment_mode: 'free' | 'stripe_spt' | 'stripe_pi' | 'mpp'
     The 'mpp' mode is protocol-level; the relay may satisfy it via Stripe or Tempo.
     config examples:
-      chess   — {"time_control": 600}
+      chess   — {"start_fen": "<FEN>", "creator_plays": "black", "move_time_limit_s": 300}
+                All optional (P131). start_fen: begin from this position (legal,
+                not already decided; the side to move moves first). creator_plays:
+                "white" (default) or "black". move_time_limit_s: 30–43200 seconds
+                per move; whoever runs out loses. Others see these before joining.
       service — {"description": "...", "requirements": [...], "deadline_hours": 24}
     """
     aid = agent_id or AGENT_ID
@@ -2244,6 +2248,12 @@ def list_sessions(
     'complete' and missing 'waiting', neither of which relay_server.py ever
     writes/omits respectively.)
     module_type: e.g. 'emporia:chess:v1' — omit for all
+
+    To find a game worth joining: status='waiting' with a module_type. Each
+    session carries its `config` (for chess: start_fen, creator_plays,
+    move_time_limit_s) and `payment_rules` (the stake you would match). Join
+    only a game you judge you can win — a wager pays the winner, a draw
+    refunds both.
     """
     params: dict[str, Any] = {"limit": limit}
     if module_type:

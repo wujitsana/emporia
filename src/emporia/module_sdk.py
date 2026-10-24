@@ -141,6 +141,15 @@ class InteractionModule(ABC):
     #   None            takes no stake; a session that asks for one is refused.
     STAKE_MODEL: str | None = None
 
+    #: P131: True when is_terminal() can end a session by the clock alone, so
+    #: the relay's deadline sweep has to ask it (not only submit_action).
+    TIMED: bool = False
+
+    def validate_config(self, config: dict[str, Any]) -> tuple[bool, str]:
+        """Check a session's settings at creation, before anyone stakes on them
+        (P131). Return (valid, error_message); the default accepts anything."""
+        return True, ""
+
     def validate_participants(self, participants: list[str]) -> tuple[bool, str]:
         n = len(participants)
         if n < self.MIN_PARTICIPANTS:

@@ -42,6 +42,7 @@ MAX_DEADLINE_HOURS = 120
 
 @register_module
 class ServiceModule(InteractionModule):
+    TIMED = True  # P131: deadlines end it with nobody acting
     """Agent service marketplace: buyer commissions work, seller delivers, buyer confirms."""
 
     MODULE_TYPE = "emporia:service:v1"

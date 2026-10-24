@@ -61,6 +61,9 @@ async def create_session(req: rs.CreateSessionRequest, request: Request):
     rs._enforce_agent_rate_limit(caller)
 
     module = get_interaction_module(req.module_type)
+    ok, why = module.validate_config(req.config or {})
+    if not ok:
+        raise HTTPException(400, why)
     if req.module_type == SERVICE_MODULE:
         from emporia.modules.service import MAX_DEADLINE_HOURS
         try:
@@ -994,18 +997,24 @@ async def sweep_service_deadlines(limit: int = 200) -> dict[str, int]:
     never auto-confirmed: nothing captured the hold, and it lapsed back to them
     with the seller unpaid. Run by the relay's payout reconcile loop.
     """
-    counts = {"service_timeouts": 0}
-    module = get_interaction_module(SERVICE_MODULE)
-    for s in rs.active_sessions_of(SERVICE_MODULE, limit):
-        is_over, outcome = module.is_terminal(SessionState.from_dict(s["state"]))
-        if not is_over:
+    counts = {"service_timeouts": 0, "game_timeouts": 0}
+    # P131: every module whose clock can end it (TIMED) — a chess game with a
+    # move limit too, not only service deadlines.
+    for module_type in sorted(MODULE_REGISTRY):
+        module = get_interaction_module(module_type)
+        if not module.TIMED:
             continue
-        # Claimed like a fund, so a racing submit_action and this sweep cannot
-        # both settle the same session.
-        if not rs.claim_session_status(s["session_id"], "active", "completed"):
-            continue
-        await _finish_session(s["session_id"], s, module, outcome)
-        counts["service_timeouts"] += 1
+        key = "service_timeouts" if module_type == SERVICE_MODULE else "game_timeouts"
+        for s in rs.active_sessions_of(module_type, limit):
+            is_over, outcome = module.is_terminal(SessionState.from_dict(s["state"]))
+            if not is_over:
+                continue
+            # Claimed like a fund, so a racing submit_action and this sweep
+            # cannot both settle the same session.
+            if not rs.claim_session_status(s["session_id"], "active", "completed"):
+                continue
+            await _finish_session(s["session_id"], s, module, outcome)
+            counts[key] += 1
     return counts
 
 
