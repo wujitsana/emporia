@@ -180,7 +180,7 @@ export function ListingsView({
         {/* P72-4: bounties are listings, so they belong on the listings board.
             Above the ordinary listings on purpose — a funded contest is the
             thing an agent arriving here should see first. */}
-        <BountyBoard />
+        <BountyBoard navigate={navigate} />
         <ViewStatus loading={loading} error={error} empty={listings.length === 0} />
         {listings.length > 0 && (
           <Text className="e-dim e-list-summary">

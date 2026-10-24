@@ -289,7 +289,7 @@ function AppInner() {
               />
             )}
             {view === "fees" && !isSpectator && <FeesView navigate={navigate} isOperator={isRelayOperator} />}
-            {view === "profile" && <ProfileView />}
+            {view === "profile" && <ProfileView navigate={navigate} />}
           </div>
         </main>
     </div>

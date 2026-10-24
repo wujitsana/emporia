@@ -187,7 +187,7 @@ export function OverviewView({
         </div>
       </SlimCard>
 
-      <PaymentsFeesSection settlements={settlementRows} />
+      <PaymentsFeesSection settlements={settlementRows} navigate={navigate} />
       <TrustSafetySection />
       <FederationSection />
     </ViewBody>

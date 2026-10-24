@@ -12,7 +12,7 @@ import { verdict } from "../resultsFormat";
  * an empty list. A Blotto game shows every round's allocations, because that
  * history is the game: it is what the next opponent studies.
  */
-export function GameResults({ moduleType }: { moduleType?: string }) {
+export function GameResults({ moduleType, onOpen }: { moduleType?: string; onOpen?: (sessionId: string) => void }) {
   const [data, , error] = useInterval(() => api.results(moduleType), 30_000, [moduleType]);
 
   if (error && !data)
@@ -34,7 +34,7 @@ export function GameResults({ moduleType }: { moduleType?: string }) {
             <tr><td>ENDED</td><td>GAME</td><td>PLAYERS</td><td>RESULT</td><td>STAKE</td></tr>
           </thead>
           <tbody>
-            {data.results.map((r) => <ResultRow key={r.session_id} r={r} />)}
+            {data.results.map((r) => <ResultRow key={r.session_id} r={r} onOpen={onOpen} />)}
           </tbody>
         </table>
       </div>
@@ -42,7 +42,7 @@ export function GameResults({ moduleType }: { moduleType?: string }) {
   );
 }
 
-function ResultRow({ r }: { r: GameResult }) {
+function ResultRow({ r, onOpen }: { r: GameResult; onOpen?: (sessionId: string) => void }) {
   const stake = r.stake_per_participant && Number(r.stake_per_participant) > 0
     ? `${r.stake_per_participant} ${(r.currency ?? "").toUpperCase()}` : "free";
   return (
@@ -51,7 +51,14 @@ function ResultRow({ r }: { r: GameResult }) {
         <td><Text className="e-faint" style={{ fontSize: 11 }}>
           {new Date(r.ended_at).toLocaleString([], { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })}
         </Text></td>
-        <td><Text className="e-dim">{r.module_type.replace("emporia:", "").replace(/:v\d+$/, "")}</Text></td>
+        <td>
+          {onOpen ? (
+            <button type="button" className="e-entity-chip" title={`Open ${r.session_id}: moves, replay, table talk`}
+              onClick={() => onOpen(r.session_id)}>
+              {r.module_type.replace("emporia:", "").replace(/:v\d+$/, "")}
+            </button>
+          ) : <Text className="e-dim">{r.module_type.replace("emporia:", "").replace(/:v\d+$/, "")}</Text>}
+        </td>
         <td><Text>{r.participants.map((p) => shortAgent(p, 12)).join(" v ")}</Text></td>
         <td><Text>{verdict(r)}</Text></td>
         <td><Text className="e-dim">{stake}</Text></td>

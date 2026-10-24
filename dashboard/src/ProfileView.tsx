@@ -11,6 +11,8 @@ import { useRelayCtx } from "./relayCtx";
 import { formatMicros, settlementPayoutMicros } from "./paymentFormat";
 import { TrustBadge } from "./views/AgentsView";
 import { McpCommandHint } from "./ui/McpCommandHint";
+import { SessionLink } from "./ui/chips";
+import type { Navigate } from "./navigation";
 import { useEffect, useRef, useState } from "react";
 
 /**
@@ -107,7 +109,7 @@ function stripeAccountStatusLabel(registered: AgentProfile, stripeMode: string):
   return "not connected — needs Stripe onboarding for live payouts";
 }
 
-function SettlementRow({ s, viewerId }: { s: Settlement; viewerId: string }) {
+function SettlementRow({ s, viewerId, navigate }: { s: Settlement; viewerId: string; navigate?: Navigate }) {
   const won = s.winner_id === viewerId;
   const amount = won
     ? `+${formatMicros(settlementPayoutMicros(s))}`
@@ -117,9 +119,7 @@ function SettlementRow({ s, viewerId }: { s: Settlement; viewerId: string }) {
   return (
     <div className="e-txn-row">
       <span className={`e-txn-dot ${won ? "e-txn-dot--in" : "e-txn-dot--out"}`} />
-      <Text className="e-dim" style={{ fontFamily: "var(--font-family-mono)", fontSize: 11, flex: 1 }}>
-        …{s.session_id.slice(-10)}
-      </Text>
+      <span style={{ flex: 1 }}><SessionLink session_id={s.session_id} navigate={navigate} /></span>
       <Text style={{ fontWeight: 600, color: won ? "var(--theme-focused-foreground)" : undefined }}>
         {amount}
       </Text>
@@ -130,7 +130,7 @@ function SettlementRow({ s, viewerId }: { s: Settlement; viewerId: string }) {
   );
 }
 
-export function ProfileView() {
+export function ProfileView({ navigate }: { navigate?: Navigate } = {}) {
   const { viewerId, relayOwner, relayId, relayUrl, requireNous, writeRequiresNous, requireChallenge, isRelayOperator, isSpectator, agentCount, activeSessionCount, relayVersion } = useRelayCtx();
   const [profile, setProfile] = useState<AgentProfile | null>(null);
   const [mySessions, setMySessions] = useState<Session[]>([]);
@@ -257,6 +257,7 @@ export function ProfileView() {
                       {s.module_type.replace("emporia:", "").replace(/:v\d$/, "")}
                     </Text>
                     <Text className="e-faint" style={{ fontSize: 11 }}>{s.status}</Text>
+                    <SessionLink session_id={s.session_id} navigate={navigate} />
                     <Text className="e-faint" style={{ fontSize: 11 }}>
                       {new Date(s.created_at).toLocaleDateString()}
                     </Text>
@@ -312,7 +313,7 @@ export function ProfileView() {
             ) : (
               <div className="e-compact-table">
                 {mySettlements.map((s) => (
-                  <SettlementRow key={s.settlement_id ?? s.session_id} s={s} viewerId={viewerId!} />
+                  <SettlementRow key={s.settlement_id ?? s.session_id} s={s} viewerId={viewerId!} navigate={navigate} />
                 ))}
               </div>
             )}

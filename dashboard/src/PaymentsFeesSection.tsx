@@ -2,6 +2,8 @@ import Text from "@components/Text";
 import type { Settlement } from "./api";
 import { useRelayHealth } from "./healthCtx";
 import { SlimCard } from "./ui/cards";
+import { SessionLink } from "./ui/chips";
+import type { Navigate } from "./navigation";
 import {
   formatMicros, settlementFeeMicros, settlementHealth, settlementHealthTitle, settlementPayoutMicros,
 } from "./paymentFormat";
@@ -10,7 +12,7 @@ import {
    polled /payments/settlements on a timer identical to the one the Overview
    was already running. Both facts now arrive from the single fetch above it —
    health through the context, settlements as a prop. */
-export function PaymentsFeesSection({ settlements }: { settlements: Settlement[] }) {
+export function PaymentsFeesSection({ settlements, navigate }: { settlements: Settlement[]; navigate?: Navigate }) {
   const health = useRelayHealth();
   // P105: a failed capture moved no money — counted apart, never summed.
   const moved = settlements.filter((s) => settlementHealth(s) !== "failed");
@@ -77,7 +79,7 @@ export function PaymentsFeesSection({ settlements }: { settlements: Settlement[]
         <ul className="e-settlement-list">
           {settlements.slice(0, 5).map((s) => (
             <li key={s.session_id} className="e-settlement-list__item">
-              <Text className="e-dim">…{s.session_id.slice(-8)}</Text>
+              <SessionLink session_id={s.session_id} navigate={navigate} />
               <Text>
                 {s.status === "refunded"
                   ? "refund"

@@ -590,7 +590,10 @@ export function GamesView({
               {/* P134: with no game open, the tab shows how games have gone —
                   standings and results, for the game picked on the left. */}
               <Leaderboard moduleType={gameType || undefined} />
-              <GameResults moduleType={gameType || undefined} />
+              <GameResults
+                moduleType={gameType || undefined}
+                onOpen={(id) => { api.session(id).then(setSelected).catch(() => setDeepLinkMiss(id)); }}
+              />
             </Indent>
           ) : null}
           {selected && isChessSelected ? (

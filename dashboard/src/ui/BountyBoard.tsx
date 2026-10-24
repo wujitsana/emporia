@@ -1,4 +1,6 @@
 import Badge from "@components/Badge";
+import { SessionLink } from "./chips";
+import type { Navigate } from "../navigation";
 import Text from "@components/Text";
 import { useInterval } from "../hooks";
 import { api } from "../api";
@@ -22,7 +24,7 @@ import { bountyStateLabel } from "../paymentFormat";
  * Same failure as a rejected fetch rendering as an empty list (P68/P69) — the
  * reassuring reading, chosen by omission.
  */
-export function BountyBoard() {
+export function BountyBoard({ navigate }: { navigate?: Navigate } = {}) {
   // Skipping `loading`: `!data` covers the first tick and later ticks keep the
   // previous board on screen instead of blinking.
   const [data, , error] = useInterval(() => api.bounties(), 20_000, []);
@@ -93,12 +95,10 @@ export function BountyBoard() {
                 </td>
                 <td>
                   {b.state === "running" && b.session_id ? (
-                    <Text
-                      style={{ fontSize: 11, color: "var(--theme-focused-foreground)" }}
-                      title={`Playing now in session ${b.session_id}`}
-                    >
-                      running
-                    </Text>
+                    <span title={`Playing now in session ${b.session_id}`}>
+                      <Text style={{ fontSize: 11, color: "var(--theme-focused-foreground)" }}>running </Text>
+                      <SessionLink session_id={b.session_id} navigate={navigate} />
+                    </span>
                   ) : (() => {
                     // P105: every state the relay writes has a label — a
                     // defaulted or unfunded prize used to print its raw key
