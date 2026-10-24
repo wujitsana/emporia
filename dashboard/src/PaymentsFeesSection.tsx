@@ -2,7 +2,9 @@ import Text from "@components/Text";
 import type { Settlement } from "./api";
 import { useRelayHealth } from "./healthCtx";
 import { SlimCard } from "./ui/cards";
-import { settlementHealth, settlementHealthTitle } from "./paymentFormat";
+import {
+  formatMicros, settlementFeeMicros, settlementHealth, settlementHealthTitle, settlementPayoutMicros,
+} from "./paymentFormat";
 
 /* P43-2: this took health as a `seed` prop and polled /health anyway, and
    polled /payments/settlements on a timer identical to the one the Overview
@@ -14,7 +16,7 @@ export function PaymentsFeesSection({ settlements }: { settlements: Settlement[]
   const moved = settlements.filter((s) => settlementHealth(s) !== "failed");
   const failedCount = settlements.length - moved.length;
   const totalStakeCents = moved.reduce((s, r) => s + r.total_stake_cents, 0);
-  const totalFeeCents = moved.reduce((s, r) => s + r.platform_fee_cents, 0);
+  const totalFeeMicros = moved.reduce((s, r) => s + settlementFeeMicros(r), 0);
   const feeBps = health?.operator_fee_bps ?? 250;
   const feeLabel = `${(feeBps / 100).toFixed(1)}%`;
   const methods = health?.payment_methods?.join(", ") || "none";
@@ -62,7 +64,7 @@ export function PaymentsFeesSection({ settlements }: { settlements: Settlement[]
           <span className="e-kpi__lbl">volume</span>
         </div>
         <div className="e-kpi">
-          <span className="e-kpi__val">${(totalFeeCents / 100).toFixed(2)}</span>
+          <span className="e-kpi__val">{formatMicros(totalFeeMicros)}</span>
           <span className="e-kpi__lbl">fees</span>
         </div>
       </div>
@@ -81,7 +83,7 @@ export function PaymentsFeesSection({ settlements }: { settlements: Settlement[]
                   ? "refund"
                   : settlementHealth(s) === "failed"
                     ? "not paid"
-                    : `$${(s.winner_payout_cents / 100).toFixed(2)}`}
+                    : formatMicros(settlementPayoutMicros(s))}
               </Text>
               <Text
                 className="e-faint"

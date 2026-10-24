@@ -8,7 +8,11 @@ and nothing is installed into Hermes's venv. It keeps the authenticated
 WebSocket tunnel to the relay (`tunnel.maintain_relay_tunnel`, reconnecting
 with backoff) and writes one JSON object per notice to stdout:
 
-    {"v": 1, "text": "...", "sender": "...", "frame_type": "...", "id": "..."}
+    {"v": 1, "text": "...", "sender": "...", "frame_type": "...", "id": "...",
+     "topic": "session:sess_…"}
+
+`topic` (optional, P129) is what the notice is about — the adapter gives each
+topic its own conversation.
 
 stdout carries nothing else — the adapter parses every line — so logging goes
 to stderr. `v` is the line protocol's version, checked by the adapter.
@@ -24,7 +28,7 @@ import sys
 import uuid
 from typing import Any, TextIO
 
-from emporia.plugins.platforms.emporia.frames import format_frame
+from emporia.plugins.platforms.emporia.frames import format_frame, frame_topic
 from emporia.plugins.platforms.emporia.tunnel import maintain_relay_tunnel
 
 LINE_PROTOCOL_VERSION = 1
@@ -37,6 +41,7 @@ def notice_line(frame: dict[str, Any], agent_id: str) -> str | None:
     notice = format_frame(frame, agent_id)
     if notice is None:
         return None
+    topic = frame_topic(frame)
     return json.dumps({
         "v": LINE_PROTOCOL_VERSION,
         "text": notice.text,
@@ -46,6 +51,7 @@ def notice_line(frame: dict[str, Any], agent_id: str) -> str | None:
         # (reconnect, inbox replay) dedupes on the Hermes side.
         "id": str(frame.get("message_id") or frame.get("inbox_id")
                   or frame.get("post_id") or uuid.uuid4().hex),
+        **({"topic": topic} if topic else {}),
     })
 
 

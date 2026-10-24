@@ -28173,7 +28173,7 @@ def test_the_membership_rule_is_written_in_exactly_one_place():
 # P61 — the schema has a version, and the version has to stay honest
 # ---------------------------------------------------------------------------
 
-# 29 tables, 266 columns, at SCHEMA_VERSION 4. Recomputed by the test below;
+# 29 tables, 268 columns, at SCHEMA_VERSION 5. Recomputed by the test below;
 # when it fails, read *why* before touching this string.
 #
 # V1 -> V2 (P72-4): `bounty_entries` and its UNIQUE (listing_id, nous_user_id)
@@ -28189,7 +28189,11 @@ def test_the_membership_rule_is_written_in_exactly_one_place():
 # V3 -> V4 (P99): `escrow_holds`, the on-chain holds of x402 purchases. A V3
 # relay would serve a V4 database blind to holds it is operator for -- unable to
 # capture or void them -- so it refuses instead.
-_SCHEMA_FINGERPRINT_V4 = "de7fa90d96138f197252021f50372076367eb2b15ccc80679b8c1006267328b1"
+#
+# V4 -> V5 (P129): `settlements.platform_fee_atomic`/`winner_payout_atomic`, an
+# escrow capture's split to the atomic unit. A V4 relay would keep writing
+# settlements without them, so the ledger would disagree with the chain again.
+_SCHEMA_FINGERPRINT_V5 = "cf2c4c5a551b788ae587e496b41239b0afbabd9495f8e2a80848a3ea0bf93fd1"
 
 
 def _schema_fingerprint(db_path) -> tuple[str, int, int]:
@@ -28229,9 +28233,9 @@ def test_a_schema_change_requires_a_version_bump():
     from emporia.relay_server import SCHEMA_VERSION
 
     fingerprint, tables, columns = _schema_fingerprint(_test_db)
-    assert (SCHEMA_VERSION, fingerprint) == (4, _SCHEMA_FINGERPRINT_V4), (
+    assert (SCHEMA_VERSION, fingerprint) == (5, _SCHEMA_FINGERPRINT_V5), (
         f"the schema changed ({tables} tables, {columns} columns) or the version "
-        f"moved. Bump SCHEMA_VERSION *and* update _SCHEMA_FINGERPRINT_V4 — in "
+        f"moved. Bump SCHEMA_VERSION *and* update _SCHEMA_FINGERPRINT_V5 — in "
         f"that order, and never the fingerprint alone.\n"
         f"  code version: {SCHEMA_VERSION}\n  fingerprint:  {fingerprint}"
     )

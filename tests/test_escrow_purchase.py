@@ -182,6 +182,9 @@ def test_confirmed_delivery_captures_to_the_seller(client, chain):
     [row] = _sql("SELECT * FROM settlements WHERE session_id = ?", sid)
     assert (row["rail"], row["transfer_status"], row["winner_id"]) == ("x402", "escrow_captured", seller)
     assert _sql("SELECT state FROM escrow_holds WHERE session_id = ?", sid)[0]["state"] == "captured"
+    # P129: the ledger records the split the contract made — $0.125 of $5.00,
+    # which the cents columns can only round.
+    assert (row["platform_fee_atomic"], row["winner_payout_atomic"]) == ("125000", "4875000")
 
 
 def test_a_dispute_voids_the_hold_back_to_the_buyer(client, chain):
@@ -319,6 +322,7 @@ def test_a_failed_capture_is_retried_until_the_seller_is_paid(client, chain):
     _act(client, sid, buyer, "confirm")
     [row] = _sql("SELECT * FROM settlements WHERE session_id = ?", sid)
     assert row["transfer_status"] == "capture_failed"
+    assert row["platform_fee_atomic"] == "125000", "the split a retried capture will pay"
     assert _sql("SELECT state FROM escrow_holds WHERE session_id = ?", sid)[0]["state"] == \
         "capture_pending"
 

@@ -785,6 +785,7 @@ dashboard/                 Vite + React + SRCL — 110 modules, role-based nav, 
 | `EMPORIA_X402_RPC_<NETWORK>` | _(unset)_ | JSON-RPC endpoint per network (P48). Only used to resolve an *interrupted* settlement via EIP-3009 `authorizationState`. Unset is safe: an interrupted settlement is refused, never repeated |
 | `EMPORIA_X402_RECONCILE_BLOCKS` | `10000` | `eth_getLogs` window for recovering the transaction hash that spent an authorization (P48). Providers cap this — Base's public RPC at 10,000 — so raising it past the cap breaks the lookup rather than widening it |
 | `EMPORIA_PAYOUT_RECONCILE_INTERVAL_SECONDS` | `300` | Interval for `_payout_reconcile_loop()` (P51), which re-drives owed Stripe payouts. Started unconditionally in `lifespan()` |
+| `EMPORIA_SESSION_IDLE_HOURS` | `24` | `sweep_idle_sessions()` (P129): abandons idle non-service, non-bounty sessions and releases holds; runs in `_payout_reconcile_loop()`. `0` disables |
 | `EMPORIA_TRANSFER_SEARCH_PAGES` | `20` | Page bound on `payments.find_settlement_transfer()`. Exhausting it returns `known=False` (unknown), never "absent" |
 
 ---

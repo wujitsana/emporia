@@ -8,8 +8,9 @@ scratchpad/extract_router.py's main_defs(). Shared helpers stay in
 from __future__ import annotations
 
 import json
+import os
 import uuid
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
 from fastapi import APIRouter, HTTPException, Request
@@ -346,7 +347,10 @@ async def _settle_escrow_purchase(session_id: str, seller: str, total_cents: int
     from emporia import escrow_chain
     from emporia.payments import OPERATOR_FEE_BPS, RAIL_X402, platform_fee
 
+    from emporia.escrow import fee_amount
+
     captures, capture_tx, failed = [], None, False
+    fee_atomic = payout_atomic = 0
     for p in payments:
         ref = p["payment_intent_id"]
         try:
@@ -355,8 +359,14 @@ async def _settle_escrow_purchase(session_id: str, seller: str, total_cents: int
             failed = True
             captures.append({"payment_intent_id": ref, "status": f"capture_failed: {e}"})
             continue
+        # P129: the split, to the atomic unit, with the same fee_amount() that
+        # capture() passes on chain. Fixed at authorization, so it is also what
+        # a capture the reconciler retries later will pay.
+        amount = int(hold["amount_atomic"])
+        fee_atomic += fee_amount(info, amount)
+        payout_atomic += amount - fee_amount(info, amount)
         try:
-            tx = await escrow_chain.capture(cfg, signer, info, int(hold["amount_atomic"]))
+            tx = await escrow_chain.capture(cfg, signer, info, amount)
         except Exception as e:
             # P111: the chain decides. A capture whose receipt timed out may
             # have landed; one that truly failed is left `capture_pending` for
@@ -377,6 +387,7 @@ async def _settle_escrow_purchase(session_id: str, seller: str, total_cents: int
         "session_id": session_id, "winner_id": seller, "total_stake_cents": total_cents,
         "platform_fee_cents": fee, "winner_payout_cents": total_cents - fee,
         "platform_fee_bps": OPERATOR_FEE_BPS,
+        "platform_fee_atomic": fee_atomic, "winner_payout_atomic": payout_atomic,
         "payment_intent_ids": [p["payment_intent_id"] for p in payments],
         "capture_results": captures, "transfer_id": None if failed else capture_tx,
         # Captured to the seller by the contract itself; nothing is owed, so
@@ -980,6 +991,62 @@ async def sweep_service_deadlines(limit: int = 200) -> dict[str, int]:
     return counts
 
 
+def _idle_hours() -> float:
+    try:
+        return float(os.environ.get("EMPORIA_SESSION_IDLE_HOURS", "24"))
+    except ValueError:
+        return 24.0
+
+
+async def sweep_idle_sessions(limit: int = 200) -> dict[str, int]:
+    """Abandon sessions nobody has acted in for EMPORIA_SESSION_IDLE_HOURS
+    (default 24; 0 turns it off), returning every stake (P129).
+
+    A chess wager whose player stopped answering (in testing: the agent's model
+    budget ran out mid-game) stayed `active` for good, both card holds sitting
+    until they lapsed, and the one who could still move could not end it.
+    Abandoned, not forfeited: an idle player may be a broken one, and nobody
+    is charged for a game that did not finish. Service sessions keep their own
+    deadlines (sweep_service_deadlines) and bounty contests their own rules.
+    """
+    counts = {"idle_abandoned": 0}
+    hours = _idle_hours()
+    if hours <= 0:
+        return counts
+    before = (datetime.now(UTC) - timedelta(hours=hours)).isoformat()
+    for s in rs.idle_sessions(before, SERVICE_MODULE, limit):
+        if _is_bounty(s):
+            continue
+        if await _abandon(s, reason=f"no action for {hours:g}h") is not None:
+            counts["idle_abandoned"] += 1
+    return counts
+
+
+async def _abandon(s: dict[str, Any], reason: str) -> list[dict[str, Any]] | None:
+    """End a session as abandoned and release every hold; None if it changed
+    status meanwhile. Claimed, so an abandon racing a settle (or the sweep
+    racing a participant) acts once — the route used to check, then write."""
+    session_id = s["session_id"]
+    if not rs.claim_session_status(session_id, s["status"], "abandoned"):
+        return None
+    payments = rs.get_session_payments(session_id)
+    cancel_results = [await _release_hold(p) for p in payments if p.get("payment_intent_id")]
+    event = {
+        "type": "session_abandoned",
+        "session_id": session_id,
+        "reason": reason,
+        "holds_released": len(cancel_results),
+        "cancel_results": cancel_results,
+    }
+    await rs.broadcast_to_session(session_id, event)
+    # As P92 did for a finished session: the session socket reaches only a
+    # subscriber, so an agent on its own channel never heard its game ended.
+    # Count only: cancel_results names every player's payment.
+    for p in s["participants"]:
+        await rs.broadcast_to_agent(p, {k: v for k, v in event.items() if k != "cancel_results"})
+    return cancel_results
+
+
 async def _finish_session(session_id: str, s: dict[str, Any], module, outcome) -> dict[str, Any] | None:
     """Settle a session that just ended and tell everyone (P112: shared by the
     action that ended it and the sweep that ends a timed-out one)."""
@@ -1147,22 +1214,9 @@ async def abandon_session(session_id: str, request: Request, req: dict = None):
     if s["status"] in rs._SESSION_TERMINAL_STATUSES:
         raise HTTPException(400, f"Session already {s['status']} — cannot abandon")
 
-    # Cancel all authorized holds for this session
-    payments = rs.get_session_payments(session_id)
-    cancel_results = [await _release_hold(p) for p in payments if p.get("payment_intent_id")]
-
-    with rs.get_db() as db:
-        db.execute(
-            "UPDATE sessions SET status='abandoned', updated_at=? WHERE session_id=?",
-            (datetime.now(UTC).isoformat(), session_id),
-        )
-
-    await rs.broadcast_to_session(session_id, {
-        "type": "session_abandoned",
-        "session_id": session_id,
-        "holds_released": len(cancel_results),
-        "cancel_results": cancel_results,
-    })
+    cancel_results = await _abandon(s, reason=f"abandoned by {caller}")
+    if cancel_results is None:
+        raise HTTPException(409, "The session changed meanwhile — load it again.")
 
     return {
         "status": "abandoned",

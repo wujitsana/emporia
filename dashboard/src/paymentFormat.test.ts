@@ -7,6 +7,9 @@ import {
   sessionStatusLabel,
   settlementHealth,
   usdcAtomicToUsd,
+  formatMicros,
+  settlementFeeMicros,
+  settlementPayoutMicros,
 } from "./paymentFormat";
 
 describe("settlementHealth", () => {
@@ -60,5 +63,25 @@ describe("escrow hold states (P111)", () => {
     expect(holdNeedsAttention("expired")).toBe(true);
     expect(holdNeedsAttention("captured")).toBe(false);
     expect(holdNeedsAttention("void_pending")).toBe(false);
+  });
+});
+
+describe("settlement split (P129)", () => {
+  const cents = { platform_fee_cents: 2, winner_payout_cents: 98 };
+  it("an escrow capture reads the contract's exact split, not the rounded cents", () => {
+    const s = { ...cents, platform_fee_atomic: "25000", winner_payout_atomic: "975000" };
+    expect(formatMicros(settlementFeeMicros(s))).toBe("$0.025");
+    expect(formatMicros(settlementPayoutMicros(s))).toBe("$0.975");
+  });
+  it("every other rail keeps its cents", () => {
+    expect(formatMicros(settlementFeeMicros({ ...cents, platform_fee_atomic: null }))).toBe("$0.02");
+    expect(formatMicros(settlementPayoutMicros(cents))).toBe("$0.98");
+  });
+  it("totals summed in micro-dollars agree with the chain", () => {
+    const rows = [
+      { ...cents, platform_fee_atomic: "25000", winner_payout_atomic: "975000" },
+      { ...cents, platform_fee_atomic: "25000", winner_payout_atomic: "975000" },
+    ];
+    expect(formatMicros(rows.reduce((n, r) => n + settlementFeeMicros(r), 0))).toBe("$0.05");
   });
 });

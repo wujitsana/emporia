@@ -972,6 +972,7 @@ def init_db() -> None:
         _migrate_settlements(conn)
         _migrate_settlement_dedupe_key(conn)
         _migrate_settlement_refund_columns(conn)
+        _migrate_settlement_atomic_columns(conn)
         _migrate_listings_federated_from(conn)
         # escrow_holds (P99) is a new table, created above by CREATE TABLE IF
         # NOT EXISTS on any database, old or new, so it needs no migration.
@@ -1030,7 +1031,7 @@ def init_db() -> None:
 # `PRAGMA user_version`. Bump it whenever the schema changes — a test computes
 # a fingerprint of every table and column and fails if the shape moved without
 # this number moving, so it cannot quietly stop meaning anything.
-SCHEMA_VERSION = 4
+SCHEMA_VERSION = 5
 
 
 def _assert_schema_not_from_the_future(conn: Any) -> None:
@@ -1415,6 +1416,19 @@ def _migrate_settlement_refund_columns(conn: Any) -> None:
         conn.execute("ALTER TABLE settlements ADD COLUMN refund_id TEXT")
     if "reversal_id" not in cols:
         conn.execute("ALTER TABLE settlements ADD COLUMN reversal_id TEXT")
+
+
+def _migrate_settlement_atomic_columns(conn: Any) -> None:
+    """Add `platform_fee_atomic`/`winner_payout_atomic` (P129): an escrow
+    capture splits in USDC atomic units, so 2.5% of $1.00 is $0.025 — the
+    cents columns could only say 2¢/98¢ while the contract paid 2.5¢/97.5¢.
+    Decimal strings of atomic units; NULL on every other rail, where the cents
+    columns are exact.
+    """
+    cols = {r[1] for r in conn.execute("PRAGMA table_info(settlements)").fetchall()}
+    for col in ("platform_fee_atomic", "winner_payout_atomic"):
+        if col not in cols:
+            conn.execute(f"ALTER TABLE settlements ADD COLUMN {col} TEXT")
 
 
 def _migrate_listings_federated_from(conn: Any) -> None:
@@ -2548,6 +2562,17 @@ def active_sessions_of(module_type: str, limit: int = 200) -> list[dict[str, Any
     return [_session_row_to_dict(r) for r in rows]
 
 
+def idle_sessions(before: str, exclude_module: str, limit: int = 200) -> list[dict[str, Any]]:
+    """Waiting or active sessions untouched since `before`, oldest first, other
+    than `exclude_module` (P129's idle sweep; service sessions have deadlines)."""
+    with DB_LOCK, get_db() as conn:
+        rows = conn.execute(
+            "SELECT * FROM sessions WHERE status IN ('waiting', 'active') AND updated_at < ? "
+            "AND module_type != ? ORDER BY updated_at LIMIT ?",
+            (before, exclude_module, limit)).fetchall()
+    return [_session_row_to_dict(r) for r in rows]
+
+
 def claim_session_status(session_id: str, expected: str, new: str) -> bool:
     """Move a session from `expected` to `new` only if it is still `expected`.
     One UPDATE, so of two concurrent callers exactly one wins (P111)."""
@@ -2575,6 +2600,10 @@ def get_session_payments(session_id: str) -> list[dict[str, Any]]:
             (session_id,),
         ).fetchall()
     return [dict(r) for r in rows]
+
+
+def _atomic_str(v: Any) -> str | None:
+    return None if v is None else str(int(v))
 
 
 def record_settlement(settlement: dict[str, Any]) -> None:
@@ -2612,8 +2641,9 @@ def record_settlement(settlement: dict[str, Any]) -> None:
             "INSERT INTO settlements "
             "(settlement_id, session_id, winner_id, total_stake_cents, platform_fee_cents, "
             "winner_payout_cents, platform_fee_bps, payment_intent_ids, "
-            "transfer_id, transfer_status, status, created_at, payer_id, dedupe_key, rail) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) "
+            "transfer_id, transfer_status, status, created_at, payer_id, dedupe_key, rail, "
+            "platform_fee_atomic, winner_payout_atomic) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) "
             "ON CONFLICT(dedupe_key) DO NOTHING",
             (
                 settlement_id,
@@ -2635,6 +2665,8 @@ def record_settlement(settlement: dict[str, Any]) -> None:
                 # real PaymentRef.rail here; other callers still fall back to
                 # the "rail" dict key's RAIL_STRIPE default.
                 rail,
+                _atomic_str(settlement.get("platform_fee_atomic")),
+                _atomic_str(settlement.get("winner_payout_atomic")),
             ),
         )
 
@@ -2888,6 +2920,7 @@ _NON_AGENT_COLUMNS: frozenset[tuple[str, str]] = frozenset({
     ("settlements", "transfer_status"), ("settlements", "status"),
     ("settlements", "created_at"), ("settlements", "rail"), ("settlements", "dedupe_key"),
     ("settlements", "refund_id"), ("settlements", "reversal_id"),
+    ("settlements", "platform_fee_atomic"), ("settlements", "winner_payout_atomic"),
 })
 
 # Handles the namespace keeps back. A first-come namespace has no other way to
@@ -4481,8 +4514,10 @@ async def _payout_reconcile_loop() -> None:
             from emporia.routes.sessions import reconcile_escrow_holds
             counts.update(await reconcile_escrow_holds())
             # P112: service sessions whose deadline passed with nobody acting.
-            from emporia.routes.sessions import sweep_service_deadlines
+            from emporia.routes.sessions import sweep_idle_sessions, sweep_service_deadlines
             counts.update(await sweep_service_deadlines())
+            # P129: any other session nobody has touched for a day.
+            counts.update(await sweep_idle_sessions())
         except asyncio.CancelledError:
             raise
         except Exception:
@@ -5512,6 +5547,7 @@ _SETTLEMENT_PUBLIC_COLUMNS = frozenset({
     "platform_fee_cents", "winner_payout_cents", "platform_fee_bps",
     "payment_intent_ids", "transfer_id", "transfer_status", "status",
     "created_at", "payer_id", "refund_id", "reversal_id", "rail",
+    "platform_fee_atomic", "winner_payout_atomic",
 })
 _SETTLEMENT_INTERNAL_COLUMNS = frozenset({"dedupe_key"})
 

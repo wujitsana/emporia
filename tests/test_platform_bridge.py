@@ -104,6 +104,22 @@ def test_the_line_protocol_is_versioned_and_carries_the_relays_id():
     assert line["v"] == LINE_PROTOCOL_VERSION
     assert line["id"] == "dmm_1", "a redelivered frame must dedupe on the relay's own id"
     assert notice_line({"type": "ping"}, ME) is None
+    assert line["topic"] == "dm:b"
+
+
+def test_each_notice_names_its_topic_so_a_game_is_its_own_conversation():
+    """P129: one conversation for every notice re-sent the agent's whole
+    history with each chess move; a $5 daily budget lasted ~100 moves."""
+    from emporia.plugins.platforms.emporia.frames import frame_topic
+    assert frame_topic({"type": "your_turn", "session_id": "sess_1"}) == "session:sess_1"
+    assert frame_topic({"type": "challenge", "from_agent": "b",
+                        "payload": {"session_id": "sess_2"}}) == "session:sess_2"
+    assert frame_topic({"type": "counter_offer", "from_agent": "b", "payload": {}}) == "dm:b"
+    assert frame_topic({"type": "room_message", "room_id": "room_9", "sender_id": "b"}) == "room:room_9"
+    assert frame_topic({"type": "agora_post_created", "topic_slug": "chess"}) == "agora:chess"
+    assert frame_topic({"type": "room_invite"}) is None
+    assert frame_topic({"type": "dm_received", "sender_id": "b\n x/../y"}) == "dm:bx..y", \
+        "relay-supplied ids are reduced to plain characters"
 
 
 # -- the relay sends what an agent needs on its own channel --------------------
@@ -207,9 +223,9 @@ HERMES_PYTHON = Path("/opt/hermes/.venv/bin/python")
 @pytest.mark.skipif(not HERMES_PYTHON.exists(), reason="Hermes is not installed here")
 def test_the_hermes_adapter_dispatches_bridge_lines(tmp_path):
     """Loads hermes_plugin/emporia the way Hermes does and connects it to a
-    stand-in bridge: every valid line becomes a MessageEvent from its sender in
-    one conversation, a wrong-version line is dropped, and disconnect stops the
-    process."""
+    stand-in bridge: every valid line becomes a MessageEvent from its sender, in
+    its topic's conversation (P129), a wrong-version line is dropped, and
+    disconnect stops the process."""
     fake_bridge = tmp_path / "python"
     lines = [
         {"v": 1, "text": "[Emporia] DM from bob: hi", "sender": "bob",
@@ -218,7 +234,9 @@ def test_the_hermes_adapter_dispatches_bridge_lines(tmp_path):
         {"v": 1, "text": "[Emporia] DM from bob: hi", "sender": "bob",
          "frame_type": "dm_received", "id": "dmm_1"},          # redelivery: deduped
         {"v": 1, "text": "[Emporia] Your turn", "sender": "emporia:relay",
-         "frame_type": "your_turn", "id": "t1"},
+         "frame_type": "your_turn", "id": "t1", "topic": "session:sess_1"},
+        {"v": 1, "text": "[Emporia] odd", "sender": "emporia:relay",
+         "frame_type": "x", "id": "t2", "topic": "session:a b"},  # malformed: main chat
     ]
     fake_bridge.write_text("#!/bin/sh\n" + "".join(
         f"echo '{json.dumps(line)}'\n" for line in lines) + "sleep 30\n")
@@ -247,7 +265,7 @@ async def main():
     a.handle_message = capture; a._message_handler = capture
     assert await a.connect()
     for _ in range(50):
-        if len(got) >= 2: break
+        if len(got) >= 3: break
         await asyncio.sleep(0.1)
     await asyncio.sleep(0.3)
     await a.disconnect()
@@ -262,7 +280,8 @@ asyncio.run(main())
     result = json.loads(out.stdout.strip().splitlines()[-1])
     assert result["got"] == [
         ["[Emporia] DM from bob: hi", "bob", "emporia:alice"],
-        ["[Emporia] Your turn", "emporia:relay", "emporia:alice"],
+        ["[Emporia] Your turn", "emporia:relay", "emporia:alice:session:sess_1"],
+        ["[Emporia] odd", "emporia:relay", "emporia:alice"],
     ]
     assert result["stopped"]
 
@@ -303,3 +322,45 @@ print(json.dumps({{"dotenv": env.get("EMPORIA_DOTENV"),
     assert out.returncode == 0, out.stderr[-2000:]
     result = json.loads(out.stdout.strip().splitlines()[-1])
     assert result == {"dotenv": "/profiles/alpha/.env", "emporia": ["EMPORIA_DOTENV"]}
+
+
+def test_an_idle_game_is_abandoned_and_every_stake_released(client, monkeypatch):
+    """P129: a wager whose player stopped answering stayed active for good,
+    with both holds sitting until they lapsed."""
+    import asyncio
+    from datetime import UTC, datetime, timedelta
+
+    from emporia import relay_server as rs
+    from emporia.routes import sessions as routes
+
+    idle, white, black = _game(client)
+    fresh, _, _ = _game(client)
+    _move(client, idle, white, "e2e4")
+    with rs.DB_LOCK, rs.get_db() as conn:
+        conn.execute("UPDATE sessions SET updated_at = ? WHERE session_id = ?",
+                     ((datetime.now(UTC) - timedelta(hours=25)).isoformat(), idle))
+    released = []
+
+    async def release(p):
+        released.append(p["payment_intent_id"])
+        return {"payment_intent_id": p["payment_intent_id"], "status": "canceled"}
+    real_payments = rs.get_session_payments
+    monkeypatch.setattr(rs, "get_session_payments", lambda sid: (
+        [{"payment_intent_id": "pi_w"}, {"payment_intent_id": "pi_b"}] if sid == idle
+        else real_payments(sid)))
+    monkeypatch.setattr(routes, "_release_hold", release)
+
+    assert asyncio.run(routes.sweep_idle_sessions())["idle_abandoned"] >= 1
+    assert rs.load_session(idle)["status"] == "abandoned"
+    assert released == ["pi_w", "pi_b"]
+    assert rs.load_session(fresh)["status"] == "active", "a game in progress is left alone"
+    [notice] = [e for e in _agent_events(black, "session_abandoned") if e["session_id"] == idle]
+    assert "no action for 24h" in notice["reason"]
+    assert notice["holds_released"] == 2 and "cancel_results" not in notice, \
+        "an agent hears how many holds were released, not whose payments they were"
+
+    released.clear()
+    asyncio.run(routes.sweep_idle_sessions())
+    assert released == [], "abandoned once"
+    monkeypatch.setenv("EMPORIA_SESSION_IDLE_HOURS", "0")
+    assert asyncio.run(routes.sweep_idle_sessions()) == {"idle_abandoned": 0}

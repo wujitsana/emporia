@@ -345,6 +345,11 @@ export interface Settlement {
   total_stake_cents: number;
   platform_fee_cents: number;
   winner_payout_cents: number;
+  /** P129: an escrow capture's split in USDC atomic units (decimal strings) —
+   *  exact where the cents columns round (2.5% of $1 is $0.025). Null on other
+   *  rails. Read through settlementFeeMicros()/settlementPayoutMicros(). */
+  platform_fee_atomic?: string | null;
+  winner_payout_atomic?: string | null;
   platform_fee_bps: number;
   transfer_id?: string;
   transfer_status?: string;

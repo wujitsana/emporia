@@ -27,6 +27,7 @@ import datetime
 import json
 import logging
 import os
+import re
 from typing import Any, Optional
 
 from gateway.config import Platform
@@ -41,6 +42,8 @@ logger = logging.getLogger(__name__)
 LINE_PROTOCOL_VERSION = 1
 BRIDGE_MODULE = "emporia.plugins.platforms.emporia.bridge"
 _MAX_BACKOFF = 60.0
+# A topic from the bridge (P129): `kind:id`, plain characters only.
+_TOPIC_RE = re.compile(r"(session|dm|room|agora):[A-Za-z0-9_.:@-]{1,90}")
 
 
 def _setting(extra: dict, env: str, key: str, default: str = "") -> str:
@@ -91,8 +94,18 @@ class EmporiaAdapter(BasePlatformAdapter):
 
     @property
     def chat_id(self) -> str:
-        """Every notice for this agent lands in one conversation."""
+        """The conversation for notices about nothing in particular."""
         return f"emporia:{self.agent_id}"
+
+    def chat_for(self, notice: dict[str, Any]) -> tuple[str, str]:
+        """(chat id, chat name) for a notice: one conversation per topic — a
+        session, a DM partner, a room, an Agora (P129). In one conversation for
+        everything, a long chess game re-sent the agent's whole Emporia history
+        with every move."""
+        topic = notice.get("topic")
+        if isinstance(topic, str) and _TOPIC_RE.fullmatch(topic):
+            return f"{self.chat_id}:{topic}", f"Emporia ({self.agent_id}) {topic}"
+        return self.chat_id, f"Emporia ({self.agent_id})"
 
     def _bridge_env(self) -> dict[str, str]:
         """The gateway's environment minus every EMPORIA_* value, plus this
@@ -212,8 +225,9 @@ class EmporiaAdapter(BasePlatformAdapter):
         if not self._message_handler:
             return
         sender = str(notice.get("sender") or "emporia:relay")
+        chat_id, chat_name = self.chat_for(notice)
         source = self.build_source(
-            chat_id=self.chat_id, chat_name=f"Emporia ({self.agent_id})", chat_type="dm",
+            chat_id=chat_id, chat_name=chat_name, chat_type="dm",
             user_id=sender, user_name=sender, message_id=message_id or None)
         await self.handle_message(MessageEvent(
             text=notice["text"], message_type=MessageType.TEXT, source=source,

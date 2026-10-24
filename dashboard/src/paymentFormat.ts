@@ -65,13 +65,37 @@ export function networkLabel(network: string): string {
   return network;
 }
 
+/** Micro-dollars (= USDC atomic units, 6 decimals) as dollars. Whole cents as
+ *  cents; a sub-cent amount (a fee split) keeps its digits rather than
+ *  rounding — $0.975 is what the seller received, not $0.98. */
+export function formatMicros(n: number): string {
+  if (!Number.isFinite(n)) return "—";
+  return n % 10_000 === 0 ? `$${(n / 1e6).toFixed(2)}` : `$${(n / 1e6).toFixed(6).replace(/0+$/, "")}`;
+}
+
 /** USDC atomic units (6 decimals) as dollars. */
 export function usdcAtomicToUsd(amount: string): string {
   const n = Number(amount);
-  if (!Number.isFinite(n)) return amount;
-  // Whole cents as cents; a sub-cent amount (a fee split) keeps its digits
-  // rather than rounding — $0.975 is what the seller received, not $0.98.
-  return n % 10_000 === 0 ? `$${(n / 1e6).toFixed(2)}` : `$${(n / 1e6).toFixed(6).replace(/0+$/, "")}`;
+  return Number.isFinite(n) ? formatMicros(n) : amount;
+}
+
+type SplitFields = Pick<Settlement, "platform_fee_cents" | "winner_payout_cents" |
+  "platform_fee_atomic" | "winner_payout_atomic">;
+
+function micros(atomic: string | null | undefined, cents: number): number {
+  const n = atomic == null ? NaN : Number(atomic);
+  return Number.isFinite(n) ? n : cents * 10_000;
+}
+
+/** P129: a settlement's fee in micro-dollars — the contract's exact split for
+ *  an escrow capture, the cents column everywhere else. Sum these, then
+ *  formatMicros(), so totals agree with what the chain paid. */
+export function settlementFeeMicros(s: SplitFields): number {
+  return micros(s.platform_fee_atomic, s.platform_fee_cents);
+}
+
+export function settlementPayoutMicros(s: SplitFields): number {
+  return micros(s.winner_payout_atomic, s.winner_payout_cents);
 }
 
 /** P111: a hold the seller may not be paid from — shown as a warning. */

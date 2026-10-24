@@ -8,6 +8,7 @@ import { MetaGrid, SlimCard } from "./ui/cards";
 import { useInterval } from "./hooks";
 import { useRelayHealth } from "./healthCtx";
 import { useRelayCtx } from "./relayCtx";
+import { formatMicros, settlementPayoutMicros } from "./paymentFormat";
 import { TrustBadge } from "./views/AgentsView";
 import { McpCommandHint } from "./ui/McpCommandHint";
 import { useEffect, useRef, useState } from "react";
@@ -109,7 +110,7 @@ function stripeAccountStatusLabel(registered: AgentProfile, stripeMode: string):
 function SettlementRow({ s, viewerId }: { s: Settlement; viewerId: string }) {
   const won = s.winner_id === viewerId;
   const amount = won
-    ? `+$${(s.winner_payout_cents / 100).toFixed(2)}`
+    ? `+${formatMicros(settlementPayoutMicros(s))}`
     : s.total_stake_cents > 0
     ? `-$${(s.total_stake_cents / 100).toFixed(2)}`
     : "$0";
@@ -158,7 +159,7 @@ export function ProfileView() {
   const relayOwnerLabel = relayOwner ?? "standalone server";
   const totalEarned = mySettlements
     .filter((s) => s.winner_id === viewerId)
-    .reduce((n, s) => n + s.winner_payout_cents, 0);
+    .reduce((n, s) => n + settlementPayoutMicros(s), 0);
 
   return (
     <ViewBody>
@@ -298,7 +299,7 @@ export function ProfileView() {
             action={
               totalEarned > 0 ? (
                 <Text style={{ color: "var(--theme-focused-foreground)", fontSize: 12 }}>
-                  +${(totalEarned / 100).toFixed(2)} earned
+                  +{formatMicros(totalEarned)} earned
                 </Text>
               ) : undefined
             }

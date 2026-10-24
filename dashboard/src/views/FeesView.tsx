@@ -5,7 +5,8 @@ import { api } from "../api";
 import type { EscrowHold, PaymentRecord, Settlement } from "../api";
 import {
   explorerTxUrl, holdNeedsAttention, holdStateTitle, networkLabel, railLabel, settlementHealth,
-  settlementHealthTitle, usdcAtomicToUsd,
+  settlementHealthTitle, usdcAtomicToUsd, formatMicros, settlementFeeMicros,
+  settlementPayoutMicros,
 } from "../paymentFormat";
 import { useInterval } from "../hooks";
 import { SlimCard } from "../ui/cards";
@@ -83,8 +84,8 @@ export function FeesView({ navigate, isOperator = false }: { navigate?: Navigate
   const failed = settlements.filter((s) => settlementHealth(s) === "failed");
   const moved = settlements.filter((s) => settlementHealth(s) !== "failed");
   const totalStake = moved.reduce((s, r) => s + r.total_stake_cents, 0);
-  const totalFees = moved.reduce((s, r) => s + r.platform_fee_cents, 0);
-  const totalPayout = moved.reduce((s, r) => s + r.winner_payout_cents, 0);
+  const totalFees = moved.reduce((s, r) => s + settlementFeeMicros(r), 0);
+  const totalPayout = moved.reduce((s, r) => s + settlementPayoutMicros(r), 0);
   const feeBps = settlements[0]?.platform_fee_bps ?? 250;
 
   // Revenue breakdown by type
@@ -92,7 +93,7 @@ export function FeesView({ navigate, isOperator = false }: { navigate?: Navigate
     const { label } = outcomeLabel(s);
     if (!acc[label]) acc[label] = { count: 0, fees: 0 };
     acc[label].count += 1;
-    acc[label].fees += s.platform_fee_cents;
+    acc[label].fees += settlementFeeMicros(s);
     return acc;
   }, {});
 
@@ -118,11 +119,11 @@ export function FeesView({ navigate, isOperator = false }: { navigate?: Navigate
               <span className="e-kpi__lbl">volume</span>
             </div>
             <div className="e-kpi">
-              <span className="e-kpi__val">${(totalPayout / 100).toFixed(2)}</span>
+              <span className="e-kpi__val">{formatMicros(totalPayout)}</span>
               <span className="e-kpi__lbl">paid out</span>
             </div>
             <div className="e-kpi">
-              <span className="e-kpi__val">${(totalFees / 100).toFixed(2)}</span>
+              <span className="e-kpi__val">{formatMicros(totalFees)}</span>
               <span className="e-kpi__lbl">relay fees</span>
             </div>
             <div className="e-kpi">
@@ -139,7 +140,7 @@ export function FeesView({ navigate, isOperator = false }: { navigate?: Navigate
                   <div key={type} style={{ display: "flex", alignItems: "center", gap: 6 }}>
                     <span className={`e-outcome-pill ${cls}`}>{type}</span>
                     <Text className="e-dim" style={{ fontSize: 11 }}>
-                      {count}× · ${(fees / 100).toFixed(2)} fees
+                      {count}× · {formatMicros(fees)} fees
                     </Text>
                   </div>
                 );
@@ -209,9 +210,9 @@ export function FeesView({ navigate, isOperator = false }: { navigate?: Navigate
                             ? <Text className="e-dim">refund</Text>
                             : settlementHealth(s) === "failed"
                               ? <Text className="e-dim">not paid</Text>
-                              : `$${(s.winner_payout_cents / 100).toFixed(2)}`}
+                              : formatMicros(settlementPayoutMicros(s))}
                         </td>
-                        <td className="e-dim">${(s.platform_fee_cents / 100).toFixed(2)}</td>
+                        <td className="e-dim">{formatMicros(settlementFeeMicros(s))}</td>
                         <td>
                           <Text className="e-faint">
                             {new Date(s.created_at).toLocaleDateString()}

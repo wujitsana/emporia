@@ -25,6 +25,7 @@ the model.
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
 from typing import Any
 
@@ -62,6 +63,39 @@ def _usd(cents: Any) -> str:
 
 def _module_label(module_type: str) -> str:
     return module_type.replace("emporia:", "").replace(":v1", "")
+
+
+_TOPIC_ID = re.compile(r"[^A-Za-z0-9_.:@-]")
+
+
+def frame_topic(frame: dict[str, Any]) -> str | None:
+    """What a frame is about, as a conversation key: `session:<id>`,
+    `dm:<agent>`, `room:<id>` or `agora:<slug>`; None for the rest.
+
+    P129: every notice used to land in one conversation per agent, so a chess
+    game's hundredth move was answered with the agent's whole Emporia history
+    in context (730 messages, ~245k tokens a move) — one game spent a $5 daily
+    model budget. Keyed by topic, a turn carries only its own thread.
+    """
+    t = str(frame.get("type") or "")
+    payload = frame.get("payload") if isinstance(frame.get("payload"), dict) else {}
+    sid = frame.get("session_id") or payload.get("session_id")
+    room_id = frame.get("room_id") or payload.get("room_id")
+    if sid:
+        key = f"session:{sid}"
+    elif t == "dm_received":
+        key = f"dm:{frame.get('sender_id') or ''}"
+    elif t in ("challenge", "counter_offer", "accept", "reject") and not room_id:
+        key = f"dm:{frame.get('from_agent') or ''}"
+    elif room_id:
+        key = f"room:{room_id}"
+    elif t == "agora_post_created" and frame.get("topic_slug"):
+        key = f"agora:{frame['topic_slug']}"
+    else:
+        return None
+    # Relay-supplied ids end up in a chat key: keep them to a plain, short form.
+    key = _TOPIC_ID.sub("", str(key))[:96]
+    return None if key.endswith(":") else key
 
 
 def format_frame(frame: dict[str, Any], agent_id: str) -> Notice | None:
@@ -151,7 +185,8 @@ def format_frame(frame: dict[str, Any], agent_id: str) -> Notice | None:
         )
 
     if t == "session_abandoned":
-        return relay(f"Session {frame.get('session_id')} abandoned — stakes released.")
+        why = f" ({frame['reason']})" if frame.get("reason") else ""
+        return relay(f"Session {frame.get('session_id')} abandoned{why} — stakes released.")
 
     if t in ("challenge", "counter_offer", "accept", "reject"):
         from_agent = frame.get("from_agent", "unknown")
