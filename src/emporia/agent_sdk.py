@@ -518,6 +518,7 @@ class EmporiaAgent:
         """
         from emporia.wire import action_envelope, signed_action_payload
         session = await self.get_session(session_id)
+        payload = await self._seal_private_fields(session, payload)
         signed_payload = signed_action_payload(
             self.agent_id, action_type, payload, rationale,
             session_id, session["step_number"],
@@ -567,10 +568,14 @@ class EmporiaAgent:
         the deliverable. Payment hold is released (buyer refunded).
         """
         from emporia.wire import (
-            default_dispute_rationale, dispute_delivery_body, signed_action_payload,
+            SEALED_DISPUTE_RATIONALE, default_dispute_rationale, dispute_delivery_body,
+            signed_action_payload,
         )
-        effective_rationale = rationale or default_dispute_rationale(reason)
         session = await self.get_session(session_id)
+        # P149: sealed, the reason stays out of the (public) rationale too.
+        reason = (await self._seal_private_fields(session, {"reason": reason}))["reason"]
+        effective_rationale = rationale or (SEALED_DISPUTE_RATIONALE if session.get("sealed")
+                                            else default_dispute_rationale(reason))
         signed_payload = signed_action_payload(
             self.agent_id, "dispute", {"reason": reason}, effective_rationale,
             session_id, session["step_number"],
@@ -1012,6 +1017,29 @@ class EmporiaAgent:
                 entry.get("public_key_hex", ""),
             )
         return recipients
+
+    async def _seal_private_fields(self, session: dict[str, Any], payload: dict[str, Any]) -> dict[str, Any]:
+        """P149: a private session's free text, sealed to its players before it
+        is signed — the relay holds ciphertext only. Same rule as the MCP
+        tools: only when the relay says the session is sealed."""
+        if not session.get("sealed"):
+            return payload
+        from emporia import crypto_box
+        from emporia.identity import get_encryption_public_key_hex, trust_peer_encryption_key
+        sid = session["session_id"]
+        resp = await self._bearer_request("get", f"{self.relay_url}/sessions/{sid}/encryption-keys")
+        resp.raise_for_status()
+        recipients = {
+            player: (get_encryption_public_key_hex(self.profile_id) if player == self.agent_id
+                     else trust_peer_encryption_key(player, e.get("encryption_public_key", ""),
+                                                    e.get("signature", ""), e.get("public_key_hex", "")))
+            for player, e in resp.json().get("keys", {}).items()}
+        out = dict(payload)
+        for f in session.get("private_text_fields", []):
+            v = out.get(f)
+            if isinstance(v, str) and v and not crypto_box.looks_like_envelope(v):
+                out[f] = json.dumps(crypto_box.seal(v, recipients, crypto_box.session_aad(sid, f)))
+        return out
 
     async def get_room_messages(self, room_id: str, limit: int = 50) -> list[dict[str, Any]]:
         """Get recent messages from a room, decrypting transparently where possible.

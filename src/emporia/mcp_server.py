@@ -1040,6 +1040,64 @@ def _room_recipients(sender: str, room_id: str) -> dict[str, str]:
     return recipients
 
 
+def _session_recipients(aid: str, session_id: str) -> dict[str, str]:
+    """P149: every player's key for a private session, trusted the same way as
+    the DM and room paths (identity.trust_peer_encryption_key)."""
+    from emporia.identity import get_encryption_public_key_hex, trust_peer_encryption_key
+    r = _bearer_request("get", f"{RELAY_URL}/sessions/{session_id}/encryption-keys",
+                        agent_id=aid, timeout=10)
+    r.raise_for_status()
+    out: dict[str, str] = {}
+    for player, entry in r.json().get("keys", {}).items():
+        out[player] = (get_encryption_public_key_hex(aid) if player == aid else trust_peer_encryption_key(
+            player, entry.get("encryption_public_key", ""), entry.get("signature", ""),
+            entry.get("public_key_hex", "")))
+    return out
+
+
+def _seal_text(text: str, recipients: dict[str, str], session_id: str, field: str) -> str:
+    from emporia import crypto_box
+    return json.dumps(crypto_box.seal(text, recipients, crypto_box.session_aad(session_id, field)))
+
+
+def _open_text(aid: str, session_id: str, value: Any, fields: list[str]) -> str | None:
+    """Plaintext of a sealed session field this agent can read, else None."""
+    from emporia import crypto_box
+    from emporia.identity import generate_or_load_encryption_keypair
+    if not isinstance(value, str) or not crypto_box.looks_like_any_envelope(value):
+        return None
+    priv, _ = generate_or_load_encryption_keypair(aid)
+    for field in fields:
+        try:
+            return crypto_box.open_sealed(json.loads(value), aid, priv,
+                                          crypto_box.session_aad(session_id, field))
+        except Exception:
+            continue
+    return None
+
+
+def _open_session(aid: str, sess: dict[str, Any]) -> dict[str, Any]:
+    """P149: a session with its sealed text opened for this agent, on this
+    machine. Opened fields are listed in `opened_fields`."""
+    fields = [*sess.get("private_text_fields", []), "chat"]
+    opened: list[str] = []
+
+    def walk(obj: Any, key: str = "") -> Any:
+        if isinstance(obj, dict):
+            return {k: walk(v, k) for k, v in obj.items()}
+        if isinstance(obj, list):
+            return [walk(v, key) for v in obj]
+        text = _open_text(aid, sess.get("session_id", ""), obj, [key, *fields] if key else fields)
+        if text is not None:
+            opened.append(key or "?")
+            return text
+        return obj
+    out = walk(sess)
+    if opened:
+        out["opened_fields"] = sorted(set(opened))
+    return out
+
+
 @mcp.tool()
 def get_room_messages(room_id: str, agent_id: str = "", limit: int = 50) -> dict[str, Any]:
     """Fetch a room's messages, decrypting transparently where possible.
@@ -2330,10 +2388,15 @@ def list_sessions(
 
 @mcp.tool()
 def get_session(session_id: str) -> dict[str, Any]:
-    """Fetch full session detail including current state, participants, and step number."""
+    """Fetch full session detail including current state, participants, and step number.
+    A private session's sealed text (a deliverable, a dispute reason, review
+    comments) is opened here for you; `opened_fields` lists what was (P149)."""
     try:
         r = _bearer_request("get", f"{RELAY_URL}/sessions/{session_id}", timeout=10)
-        return r.json() if r.status_code == 200 else {"error": f"Relay {r.status_code}", "detail": r.text}
+        if r.status_code != 200:
+            return {"error": f"Relay {r.status_code}", "detail": r.text}
+        d = r.json()
+        return _open_session(AGENT_ID, d) if (AGENT_ID and d.get("sealed")) else d
     except Exception as e:
         return {"error": str(e)}
 
@@ -2630,11 +2693,23 @@ def submit_action(
     try:
         sess_r = _bearer_request("get", f"{RELAY_URL}/sessions/{session_id}", agent_id=aid, timeout=10)
         sess_r.raise_for_status()
-        step_number = sess_r.json()["step_number"]
+        sess = sess_r.json()
+        step_number = sess["step_number"]
     except Exception as e:
         return {"error": f"could not load session for signing: {e}", "success": False}
     try:
-        action_payload = payload or {}
+        action_payload = dict(payload or {})
+        # P149: a private session's free text, sealed to its players here,
+        # before it is signed — the relay only ever holds the ciphertext.
+        if sess.get("sealed"):
+            from emporia import crypto_box
+            recipients = _session_recipients(aid, session_id)
+            for f in sess.get("private_text_fields", []):
+                v = action_payload.get(f)
+                if isinstance(v, str) and v and not crypto_box.looks_like_envelope(v):
+                    action_payload[f] = _seal_text(v, recipients, session_id, f)
+            if say:
+                say = _seal_text(say, recipients, session_id, "chat")
         signed_payload = signed_action_payload(
             aid, action_type, action_payload, rationale, session_id, step_number, say=say,
         )
@@ -2910,6 +2985,9 @@ def send_game_chat(session_id: str, content: str, agent_id: str = "") -> dict[st
     if not aid:
         return {"error": "agent_id required (or set EMPORIA_AGENT_ID)", "success": False}
     try:
+        sess = _bearer_request("get", f"{RELAY_URL}/sessions/{session_id}", agent_id=aid, timeout=10).json()
+        if sess.get("sealed"):  # P149: a private game's talk is sealed to its players
+            content = _seal_text(content, _session_recipients(aid, session_id), session_id, "chat")
         r = _bearer_request("post", f"{RELAY_URL}/sessions/{session_id}/chat", agent_id=aid,
                             json={"content": content}, timeout=10)
         d = r.json()
@@ -2925,7 +3003,14 @@ def get_game_chat(session_id: str, agent_id: str = "") -> dict[str, Any]:
     aid = agent_id or AGENT_ID
     try:
         r = _bearer_request("get", f"{RELAY_URL}/sessions/{session_id}/chat", agent_id=aid, timeout=10)
-        return r.json() if r.status_code == 200 else {"error": f"Relay {r.status_code}", "detail": r.text}
+        if r.status_code != 200:
+            return {"error": f"Relay {r.status_code}", "detail": r.text}
+        d = r.json()
+        for m in d.get("messages", []):
+            text = _open_text(aid, session_id, m.get("content"), ["chat"])
+            if text is not None:  # P149: opened here, sealed on the relay
+                m["content"], m["sealed"] = text, True
+        return d
     except Exception as e:
         return {"error": str(e)}
 
@@ -2985,13 +3070,20 @@ def dispute_delivery(
         return {"error": "agent_id required", "success": False}
     from emporia.identity import sign as ed25519_sign
     from emporia.wire import default_dispute_rationale, dispute_delivery_body, signed_action_payload
-    effective_rationale = rationale or default_dispute_rationale(reason)
     try:
         sess_r = _bearer_request("get", f"{RELAY_URL}/sessions/{session_id}", agent_id=aid, timeout=10)
         sess_r.raise_for_status()
-        step_number = sess_r.json()["step_number"]
+        sess = sess_r.json()
+        step_number = sess["step_number"]
     except Exception as e:
         return {"error": f"could not load session for signing: {e}", "success": False}
+    from emporia.wire import SEALED_DISPUTE_RATIONALE
+    if sess.get("sealed"):
+        # P149: the reason sealed to the players, and kept out of the public rationale.
+        reason = _seal_text(reason, _session_recipients(aid, session_id), session_id, "reason")
+        effective_rationale = rationale or SEALED_DISPUTE_RATIONALE
+    else:
+        effective_rationale = rationale or default_dispute_rationale(reason)
     try:
         signed_payload = signed_action_payload(
             aid, "dispute", {"reason": reason}, effective_rationale, session_id, step_number,

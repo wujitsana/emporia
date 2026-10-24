@@ -631,6 +631,17 @@ def _session_visibility(session: dict[str, Any]) -> str:
     return module.DEFAULT_VISIBILITY
 
 
+def session_sealed(session: dict[str, Any]) -> bool:
+    """P149: a private session whose players have all published encryption
+    keys — its free text (the module's PRIVATE_TEXT_FIELDS, and table talk)
+    must then arrive sealed to them, so the relay holds ciphertext only. The
+    same rule as DMs, encrypted by default once both keys exist (P122)."""
+    if _session_visibility(session) != "participants":
+        return False
+    players = session.get("participants") or []
+    return bool(players) and all(AGENT_REGISTRY.get_encryption_key(p)[0] for p in players)
+
+
 def _session_viewer_allowed(session: dict[str, Any], caller: str | None) -> bool:
     """True if `caller` may read this session's actions/state/audit — see
     _session_visibility(). The relay operator can always read any session."""

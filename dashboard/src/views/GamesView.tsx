@@ -5,7 +5,7 @@ import RowSpaceBetween from "@components/RowSpaceBetween";
 import SidebarLayout from "@components/SidebarLayout";
 import Text from "@components/Text";
 import React, { useEffect, useRef } from "react";
-import { api, dashboardToken } from "../api";
+import { api, dashboardToken, looksLikeEncryptedEnvelope } from "../api";
 import type { Session, SessionAction } from "../api";
 import { FlatRailItem } from "../ui/FlatRailItem";
 import { SegmentTabs } from "../ui/SegmentTabs";
@@ -39,6 +39,7 @@ import { GameResults } from "../ui/GameResults";
 import { GameChat } from "../ui/GameChat";
 import { VerifyBadge } from "../ui/VerifyBadge";
 import { PurchaseConversation } from "../ui/PurchaseConversation";
+import { openSealed, sealedItems } from "../sealedSession";
 
 // P42: not exported — the rail and the module-filter mapping below are its
 // only readers. Still pinned against MODULE_REGISTRY by
@@ -236,8 +237,14 @@ const ACTION_ICONS: Record<string, string> = {
   complete: "★",
 };
 
-function actionSummary(a: SessionAction): string {
-  const p = a.payload ?? {};
+function actionSummary(a: SessionAction, opened: Record<string, string> = {}): string {
+  // P149: a private session's sealed text — opened on this machine, or 🔒.
+  const p: Record<string, unknown> = { ...(a.payload ?? {}) };
+  for (const [k, v] of Object.entries(p)) {
+    if (typeof v === "string" && looksLikeEncryptedEnvelope(v)) {
+      p[k] = opened[`${a.action_id}:${k}`] !== undefined ? `🔓 ${opened[`${a.action_id}:${k}`]}` : "🔒 sealed to the players";
+    }
+  }
   if (p.deliverable) return String(p.deliverable).slice(0, 120);
   if (p.finding) return String(p.finding).slice(0, 120);
   if (p.comment) return String(p.comment).slice(0, 120);
@@ -271,10 +278,15 @@ export function NonChessSessionPanel({ session }: { session: Session }) {
   const moduleKind = session.module_type.replace("emporia:", "").replace(/:v\d$/, "");
   const showDelivery = shouldShowDeliveryActions(session, VIEWER_ID);
 
+  const [opened, setOpened] = React.useState<Record<string, string>>({});
   useEffect(() => {
     setLoading(true);
     api.sessionActions(session.session_id)
-      .then((r) => setActions(r.actions))
+      .then((r) => {
+        setActions(r.actions);
+        const items = sealedItems(r.actions.map((a) => ({ id: a.action_id, payload: a.payload })));
+        openSealed(session.session_id, items).then(setOpened).catch(() => setOpened({}));
+      })
       .catch(() => setActions([]))
       .finally(() => setLoading(false));
   }, [session.session_id]);
@@ -313,7 +325,7 @@ export function NonChessSessionPanel({ session }: { session: Session }) {
         <div className="e-action-timeline">
           {actions.map((a, i) => {
             const icon = ACTION_ICONS[a.action_type] ?? "·";
-            const summary = actionSummary(a);
+            const summary = actionSummary(a, opened);
             const outcome = outcomeLabel(a.result);
             const isTerminal = (a.result as any)?.is_terminal;
             return (

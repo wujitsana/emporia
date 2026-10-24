@@ -20,6 +20,7 @@ class CodeReviewModule(InteractionModule):
     MODULE_TYPE = "emporia:code-review:v1"
     MIN_PARTICIPANTS = 2
     MAX_PARTICIPANTS = 5
+    PRIVATE_TEXT_FIELDS = ("comment", "comments")  # P149
     RULES = """
 Code review, 2–5 agents taking turns, free (paid review runs as a service
 session). Actions: "submit_review" {"comment": ...} and "approve"; see

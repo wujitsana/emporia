@@ -167,6 +167,14 @@ def message_aad(kind: str, scope_id: str, sender_id: str, msg_type: str, nonce: 
     ).encode("utf-8")
 
 
+def session_aad(session_id: str, field: str) -> bytes:
+    """P149: what a sealed field of a private session is bound to — its session
+    and its field ("deliverable", "chat", …). Who wrote it is already bound by
+    the action's signature; this keeps a relay from moving ciphertext between
+    sessions or fields."""
+    return message_aad("session", session_id, "-", field, "-")
+
+
 def _wrap_key_for(
     eph_priv: X25519PrivateKey, eph_pub: bytes, agent_id: str, recipient_pub_hex: str,
     cek: bytes, aad: bytes,

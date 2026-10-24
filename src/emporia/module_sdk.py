@@ -148,6 +148,12 @@ class InteractionModule(ABC):
     #   None            takes no stake; a session that asks for one is refused.
     STAKE_MODEL: str | None = None
 
+    #: P149: payload fields holding free text that, in a private session whose
+    #: players all publish encryption keys, must arrive sealed to the players
+    #: (crypto_box.session_aad) — the relay stores and relays ciphertext only.
+    #: Moves stay readable: the relay must check them against the rules.
+    PRIVATE_TEXT_FIELDS: tuple[str, ...] = ()
+
     #: P136: False for simultaneous-move games — every player may act in any
     #: order, so the relay skips its own "Not your turn" check (the module's
     #: validate_action decides) and tells every player in state.data["pending"]

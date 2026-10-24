@@ -188,6 +188,11 @@ def signed_action_payload(
     }
 
 
+#: P149: a dispute's default rationale when its reason is sealed — the
+#: rationale is public, so it must not quote the reason.
+SEALED_DISPUTE_RATIONALE = "Disputing the delivery; the reason is sealed to the players."
+
+
 def action_envelope(
     agent_id: str,
     action_type: str,

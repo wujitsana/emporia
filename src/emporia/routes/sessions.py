@@ -186,10 +186,35 @@ async def get_session(session_id: str, request: Request):
         raise HTTPException(404, "Session not found")
     if not rs._session_viewer_allowed(s, rs._dashboard_agent_id(request)):
         raise HTTPException(403, "Not a participant in this session")
-    return s
+    # P149: whether its free text must be sealed, and which fields — what a
+    # player's tools need to know before they send.
+    try:
+        fields = list(get_interaction_module(s["module_type"]).PRIVATE_TEXT_FIELDS)
+    except ValueError:
+        fields = []
+    return {**s, "sealed": rs.session_sealed(s), "private_text_fields": fields}
+
+
+@router.get("/sessions/{session_id}/encryption-keys")
+async def get_session_encryption_keys(session_id: str, request: Request):
+    """Every player's encryption key in one snapshot (P149) — what a player
+    needs to seal a private session's text to all of them. Players only."""
+    from types import SimpleNamespace
+    caller = rs._dashboard_agent_id(request)
+    if not caller:
+        raise HTTPException(401, "Authentication required")
+    s = rs.load_session(session_id)
+    if not s:
+        raise HTTPException(404, "Session not found")
+    if caller not in s["participants"]:
+        raise HTTPException(403, "Only a player in this session")
+    return {"session_id": session_id, "sealed": rs.session_sealed(s),
+            "keys": rs._room_member_encryption_keys(SimpleNamespace(members=list(s["participants"])))}
 #: P143: table talk bounds. Every message wakes the other players' agents —
 #: a paid model turn each — so a game takes a few, short.
 CHAT_MAX_CHARS = 500
+#: A sealed line is an envelope around at most CHAT_MAX_CHARS of text.
+CHAT_SEALED_MAX_CHARS = 16_000
 CHAT_DEFAULT_LIMIT = 10
 
 
@@ -220,6 +245,19 @@ async def post_game_chat(session_id: str, req: GameChatRequest, request: Request
     return {**message, "remaining": remaining}
 
 
+def _require_sealed(s: dict[str, Any], value: str, what: str) -> None:
+    """P149: in a sealed session, `value` must be an envelope wrapped for every
+    player — plaintext here is the failure this feature exists to prevent."""
+    from emporia import crypto_box
+    try:
+        crypto_box.validate_envelope_for(value, set(s["participants"]))
+    except crypto_box.MissingRecipients as e:
+        raise HTTPException(409, f"{what} is sealed for too few players; missing {', '.join(e.missing)}")
+    except ValueError:
+        raise HTTPException(400, (f"This session is private and its players publish encryption keys: "
+                                  f"{what} must be sealed to them (your Emporia tools do this)"))
+
+
 def _check_chat(s: dict[str, Any], agent_id: str, content: str) -> None:
     """The table's rules, for a message on its own or one sent with a move."""
     config = s.get("config") or {}
@@ -227,7 +265,11 @@ def _check_chat(s: dict[str, Any], agent_id: str, content: str) -> None:
         raise HTTPException(400, "This game was created without table chat (config chat: true)")
     if s["status"] not in ("waiting", "active"):
         raise HTTPException(400, f"The game is {s['status']}; the table is closed")
-    if not content or len(content) > CHAT_MAX_CHARS:
+    if rs.session_sealed(s):
+        if len(content) > CHAT_SEALED_MAX_CHARS:
+            raise HTTPException(400, "That sealed message is too long")
+        _require_sealed(s, content, "table talk")
+    elif not content or len(content) > CHAT_MAX_CHARS:
         raise HTTPException(400, f"A message is 1–{CHAT_MAX_CHARS} characters")
     limit = int(config.get("chat_limit", CHAT_DEFAULT_LIMIT))
     with rs.DB_LOCK, rs.get_db() as conn:
@@ -974,6 +1016,13 @@ async def submit_action(session_id: str, req: rs.SubmitActionRequest):
     # before the move is applied so a refused line does not half-happen.
     if req.say:
         _check_chat(s, req.agent_id, req.say.strip())
+    # P149: a private session's free text arrives sealed to its players.
+    module_for_fields = get_interaction_module(s["module_type"])
+    if module_for_fields.PRIVATE_TEXT_FIELDS and rs.session_sealed(s):
+        for f in module_for_fields.PRIVATE_TEXT_FIELDS:
+            v = (req.payload or {}).get(f)
+            if isinstance(v, str) and v:
+                _require_sealed(s, v, f"'{f}'")
 
     # 1. Guardrails (regex firewall + optional NVIDIA NIM semantic check)
     try:

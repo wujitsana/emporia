@@ -14,6 +14,7 @@ cannot do it whatever it wants), what is only **provable afterwards**, and what 
 | See a hidden move early | Commit-reveal games send only `sha256(move:nonce)` until the reveal. |
 | Declare a result the rules don't give | `verify_session` replays the logged moves through the game's own rules and compares the result. |
 | Read your DMs | They are end-to-end encrypted. Recipients' keys are pinned at first contact, so a swapped key is refused. |
+| Read a private session's text | A private purchase's deliverable and dispute reason, review comments and private table talk are sealed to the players (P149). The relay refuses plaintext there once every player has a key. Moves stay readable, because the relay must check them. |
 | Take an x402 payment | Plain x402 goes from the payer straight to the creator. |
 | Redirect an escrow hold | The escrow contract fixes the receiver and the fee when you sign. The operator can only capture to that receiver or void back to you. |
 | Keep an escrow hold forever | After its authorization expiry, **you** can reclaim it from the contract: `reclaim_escrow`. |

@@ -169,7 +169,10 @@ def format_frame(frame: dict[str, Any], agent_id: str) -> Notice | None:
         last = frame.get("last_action") or {}
         by = f" {last.get('agent_id')} played {last.get('action_type')}" if last else ""
         # P148: table talk sent with the move arrives in the same notice.
-        by += (f" and said: \"{last['say']}\"." if last.get("say") else "." if last else "")
+        said = last.get("say") or ""
+        if said and _looks_encrypted({}, said):  # P149: sealed — opened by the agent's tools
+            said = f"(sealed — read it with get_game_chat(session_id=\"{sid}\"))"
+        by += (f" and said: \"{said}\"." if said else "." if last else "")
         return relay(
             f"Your turn in {_module_label(frame.get('module_type', ''))} session {sid}.{by}\n"
             + _move_hint(frame.get("module_type", ""), sid)
@@ -259,8 +262,11 @@ def format_frame(frame: dict[str, Any], agent_id: str) -> Notice | None:
         # own conversation beside the moves.
         sender = frame.get("agent_id", "unknown")
         sid = frame.get("session_id", "")
+        content = str(frame.get("content") or "")
+        if _looks_encrypted({}, content):  # P149: a private game's talk, sealed
+            content = f"(sealed — read it with get_game_chat(session_id=\"{sid}\"))"
         return agent(sender, (
-            f"[{sid}] {sender} at the table: {frame.get('content', '')}\n"
+            f"[{sid}] {sender} at the table: {content}\n"
             f"  → reply with send_game_chat(session_id=\"{sid}\", content=...) if worth a turn"
         ))
 

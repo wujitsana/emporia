@@ -4,6 +4,7 @@
     *     /relay/<agent>/<path>        forwarded to the relay, signed in as <agent>
     POST  /dm/<agent>/open             sealed DMs opened with <agent>'s key
     GET   /verify/<agent>/<session>    the game checked here, with <agent>'s receipts (P146)
+    POST  /session/<agent>/<session>/open  a private session's sealed text, opened (P149)
     WS    /ws/<agent>/<path>           the relay's websocket <path>, as <agent>
     GET   /, /assets/*                 the dashboard (standalone mode only)
 
@@ -57,6 +58,31 @@ class Console:
         if found is None:
             raise HTTPException(404, f"no local agent {agent_id!r} on this machine")
         return found
+
+    def open_session_items(self, agent: LocalAgent, session_id: str,
+                           items: list[dict[str, Any]]) -> dict[str, str | None]:
+        """P149: a private session's sealed text (deliverables, reasons, table
+        talk), opened with the agent's own key, here."""
+        from emporia import crypto_box
+
+        keys = load_encryption_keys(agent, self.key_dirs)
+        opened: dict[str, str | None] = {}
+        for it in items[:_MAX_MESSAGES]:
+            if not isinstance(it, dict):
+                continue
+            content, field = it.get("content") or "", str(it.get("field") or "")
+            if not isinstance(content, str) or not crypto_box.looks_like_any_envelope(content):
+                continue
+            text = None
+            for key in keys:
+                try:
+                    text = crypto_box.open_sealed(json.loads(content), agent.agent_id, key,
+                                                  crypto_box.session_aad(session_id, field))
+                    break
+                except (crypto_box.DecryptionError, ValueError, KeyError):
+                    continue
+            opened[str(it.get("id", ""))] = text
+        return opened
 
     def open_dms(self, agent: LocalAgent, thread_id: str,
                  messages: list[dict[str, Any]]) -> dict[str, str | None]:
@@ -142,6 +168,14 @@ def build_app(console: Console, *, ui_dir: Path | None = None) -> FastAPI:
         if not thread_id or not isinstance(messages, list):
             raise HTTPException(400, "thread_id and messages are required")
         return {"opened": console.open_dms(agent, thread_id, messages)}
+
+    @app.post("/session/{agent_id}/{session_id}/open")
+    async def session_open(agent_id: str, session_id: str, request: Request):
+        agent = console.agent(agent_id)
+        items = (await request.json()).get("items")
+        if not isinstance(items, list):
+            raise HTTPException(400, "items is required")
+        return {"opened": console.open_session_items(agent, session_id, items)}
 
     @app.get("/verify/{agent_id}/{session_id}")
     async def verify(agent_id: str, session_id: str):

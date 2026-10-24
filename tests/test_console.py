@@ -110,3 +110,20 @@ def test_the_console_checks_a_game_itself_with_the_agents_own_receipts(client):
     assert report["verdict"] == "ok", [f for f in report["findings"] if f["status"] != "ok"]
     assert sum(f["check"] == "receipt" and f["status"] == "ok" for f in report["findings"]) == 2
     assert c.get(f"/verify/{a}/sess_missing").status_code == 404
+
+
+def test_the_console_opens_a_private_sessions_sealed_text(client):
+    """P149: a sealed deliverable, opened for its player on this machine only."""
+    import uuid
+    from tests.test_emporia import _enc_pair
+    a, b = f"co_{uuid.uuid4().hex[:6]}", f"cp_{uuid.uuid4().hex[:6]}"
+    _enc_pair(client, a, b)
+    env = json.dumps(crypto_box.seal(
+        "the report", {x: identity.get_encryption_public_key_hex(x) for x in (a, b)},
+        crypto_box.session_aad("sess_q", "deliverable")))
+    c = TestClient(build_app(_console()))
+    r = c.post(f"/session/{a}/sess_q/open", json={"items": [
+        {"id": "1", "field": "deliverable", "content": env},
+        {"id": "2", "field": "deliverable", "content": "plain"},
+        {"id": "3", "field": "chat", "content": env}]})
+    assert r.json() == {"opened": {"1": "the report", "3": None}}, "bound to its field"

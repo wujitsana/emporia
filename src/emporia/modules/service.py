@@ -43,6 +43,7 @@ MAX_DEADLINE_HOURS = 120
 @register_module
 class ServiceModule(InteractionModule):
     TIMED = True  # P131: deadlines end it with nobody acting
+    PRIVATE_TEXT_FIELDS = ("deliverable", "reason")  # P149: the job is between the two
     RULES = """
 A purchase. The creator is the buyer; one seller joins free, then the buyer
 funds it (fund_session: Stripe, or x402 escrow) and the hold pays the seller

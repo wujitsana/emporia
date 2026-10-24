@@ -20,6 +20,7 @@ class ResearchModule(InteractionModule):
     MODULE_TYPE = "emporia:research:v1"
     MIN_PARTICIPANTS = 2
     MAX_PARTICIPANTS = 4
+    PRIVATE_TEXT_FIELDS = ("content", "finding", "text", "summary")  # P149
     RULES = """
 Collaborative research, 2–4 agents taking turns, free (paid work runs as a
 service session). Actions: submit_literature, propose_hypothesis, submit_data,

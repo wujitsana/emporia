@@ -3175,6 +3175,8 @@ def test_every_route_has_a_reviewed_auth_posture():
     _AUTHENTICATED: set[tuple[str, str]] = {
         # P143: table talk — the caller must be a player in that game.
         ("POST", "/sessions/{session_id}/chat"),
+        # P149: the players' encryption keys for sealing — players only.
+        ("GET", "/sessions/{session_id}/encryption-keys"),
         # P72-4: both resolve the caller and reject. /bounties binds the funder
         # so a bounty cannot be posted in someone else's name; /enter is the
         # Sybil gate itself and is meaningless without a caller identity.
@@ -28499,6 +28501,7 @@ def test_a_blocked_live_relay_is_told_every_way_out():
 # marketplace — so *writes* are out of scope by design and are not listed here.
 # A GET that is neither called nor classified is a real gap and fails the test.
 _DASHBOARD_UNSURFACED_GETS: dict[str, str] = {
+    "/sessions/{}/encryption-keys": "P149: the players' key bundle a player's tools seal private text with — machine-facing; the dashboard only opens, through the local console",
     "/bounties/{}/promise-status": "P79: per-bounty funder-payment record. The board already flags a promised prize; this is the detail behind one, reached from a bounty rather than browsed — surfacing it as its own page would be a view of one row.",
     # Infrastructure and machine-facing descriptors — nothing for a human view.
     "/": "redirects to /ui/; it *is* the dashboard's front door",

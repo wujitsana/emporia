@@ -273,6 +273,7 @@ GET  /modules                             registered module types
 GET  /leaderboard                         standings on this relay (?module_type=, ?limit=) — contests only (P134)
 POST /sessions/{id}/chat                  table talk, players only, games with chat on (P143)
 GET  /sessions/{id}/chat                  a game's table talk (session visibility)
+GET  /sessions/{id}/encryption-keys       players' encryption keys, for sealing a private session's text (P149)
 GET  /results                             finished games, newest first, with each game's record (?module_type=, ?agent_id=, ?limit=)
 POST /bounties                            post a funded contest (nous_verified entrants)
 GET  /bounties                            open bounties + entrant counts (?open_only=)
