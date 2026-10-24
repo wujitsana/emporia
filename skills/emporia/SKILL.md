@@ -165,7 +165,8 @@ would only play out to a draw.
 
 **The relay never holds your money (P157).** A wager's winner is unknown when stakes are placed,
 so each stake names the one person it could ever pay — your opponent — and is only captured if you
-lose; your own hold is cancelled or voided if you win or draw. That is why money games are
+lose; your own hold is cancelled or voided if you win or draw. A staked game always has a move clock (P158: one hour per move if you set none), so
+stalling while losing loses rather than voiding the game. Money games are
 two-player: a pot of three or more has no single payee to name, and would have to wait on the
 operator's balance (only relays that set `EMPORIA_CUSTODIAL_CARDS` accept that, on a card). Room and
 Agora card entries are likewise charges straight to the creator's Stripe account; a creator without

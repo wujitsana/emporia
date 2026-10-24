@@ -83,6 +83,13 @@ async def create_session(req: rs.CreateSessionRequest, request: Request):
     if req.payment_rules:
         payment_rules = {**module.PAYMENT_RULES.model_dump(), **req.payment_rules}
 
+    if (_stake(payment_rules)[0] and module.STAKE_MODEL == STAKE_WAGER and module.TIMED
+            and not (req.config or {}).get("move_time_limit_s")):
+        # P158: money on a game needs a clock. Without one, the player who is
+        # losing can stop moving until the idle sweep abandons the game — and an
+        # abandoned game gives every stake back. With one, stalling loses.
+        req.config = {**(req.config or {}), "move_time_limit_s": STAKED_MOVE_LIMIT_S}
+
     session_id = f"sess_{uuid.uuid4().hex[:12]}"
     now = datetime.now(UTC).isoformat()
     state = module.initial_state([caller], req.config)
@@ -103,14 +110,13 @@ async def create_session(req: rs.CreateSessionRequest, request: Request):
         ))
     if amount_cents and module.ENGINE_DECIDABLE and not engine_game_stakes_allowed():
         raise HTTPException(400, ENGINE_GAME_REFUSAL.format(mt=req.module_type))
-    if _x402_wager(module, payment_rules):
-        # P154: staked once the opponent is known — each hold pays the other.
-        _check_x402_wager_player(module, caller, currency)
-    elif amount_cents and module.STAKE_MODEL == STAKE_WAGER and (
-            not rs.custodial_cards_allowed() or payment_rules.get("custody") == "direct"):
-        # P157: the same on a card — nothing held until both have joined.
+    if (amount_cents and module.STAKE_MODEL == STAKE_WAGER and payment_rules.get("mode") != "x402"
+            and not rs.custodial_cards_allowed()):
+        # P157: a card wager is staked like an x402 one — after both have joined.
         payment_rules = {**payment_rules, "custody": "direct"}
-        _check_card_wager_player(module, caller)
+    if (rail := _wager_rail(module, payment_rules)):
+        # P154/P157: staked once the opponent is known — each hold pays the other.
+        _check_wager_player(module, caller, rail, currency)
     elif amount_cents and module.STAKE_MODEL == STAKE_WAGER:
         result = await rs._verify_and_confirm_payment(
             request,
@@ -390,57 +396,50 @@ AWAITING_FUNDING = "awaiting_funding"
 # P111: held for the seconds an escrow authorize takes on chain, so a second
 # fund request cannot place a second hold.
 FUNDING = "funding"
+# P158: the move clock a staked game gets when its creator set none.
+STAKED_MOVE_LIMIT_S = 3600
 SERVICE_MODULE = "emporia:service:v1"
 
 
-def _x402_wager(module, payment_rules: dict[str, Any]) -> bool:
-    """P154: a wager staked in USDC escrow rather than on a card."""
-    return (module.STAKE_MODEL == STAKE_WAGER and bool(_stake(payment_rules)[0])
-            and (payment_rules or {}).get("mode") == "x402")
+def _wager_rail(module, payment_rules: dict[str, Any]) -> str | None:
+    """How a two-player wager is staked, or None if this is not one: "x402"
+    (P154, USDC escrow holds) or "card" (P157, destination-charge holds). In
+    both each player's hold names the opponent, so the relay never holds the
+    pot; both are funded after the join, through /fund."""
+    rules = payment_rules or {}
+    if module.STAKE_MODEL != STAKE_WAGER or not _stake(rules)[0]:
+        return None
+    if rules.get("mode") == "x402":
+        return "x402"
+    return "card" if rules.get("custody") == "direct" else None
 
 
-def _check_x402_wager_player(module, agent_id: str, currency: str) -> None:
-    """Refuse an x402 wager a player could not take part in, before anything
-    is held. Each player's hold pays the *opponent* if they lose, so the payee
-    must be known when the hold is signed: two players only. And each player
-    is someone's payee, so each needs a wallet the relay can pay."""
-    from emporia import escrow_chain
+def _check_wager_player(module, agent_id: str, rail: str, currency: str) -> None:
+    """Refuse a wager a player could not take part in, before anything is
+    held. Each player's hold pays the *opponent* if they lose, so the payee must
+    be known when it is placed — two players only — and each player is someone's
+    payee, so each must be payable on the wager's rail."""
     if module.MAX_PARTICIPANTS != 2:
         raise HTTPException(400, (
-            f"An x402 wager is for two players: each stake is held for the opponent, who must be "
-            f"known when it is signed. {module.MODULE_TYPE} has up to {module.MAX_PARTICIPANTS}. "
-            f"Stake it on a card instead."))
-    if currency != "usd" or escrow_chain.load_config() is None:
-        raise HTTPException(409, "This relay has no USDC escrow configured, so it cannot hold an x402 wager.")
-    if not rs.AGENT_REGISTRY.get_x402_pay_to(agent_id, "evm"):
-        raise HTTPException(409, (
-            f"{agent_id} has no x402 wallet registered here. In an x402 wager you are paid there if "
-            f"you win — register one first (register_x402_wallet)."))
-
-
-def _card_wager(module, payment_rules: dict[str, Any]) -> bool:
-    """P157: a card wager staked as cross destination charges — each player's
-    hold names the other's Stripe account, so the relay never holds the pot."""
-    return (module.STAKE_MODEL == STAKE_WAGER and bool(_stake(payment_rules)[0])
-            and (payment_rules or {}).get("mode") != "x402"
-            and (payment_rules or {}).get("custody") == "direct")
-
-
-def _check_card_wager_player(module, agent_id: str) -> None:
-    """Refuse a card wager a player could not take part in, before anything is
-    held. The same shape as an x402 wager: two players, each one a payee."""
-    if module.MAX_PARTICIPANTS != 2:
-        raise HTTPException(400, (
-            f"A card wager on this relay is for two players: each stake is a hold paid to the "
-            f"opponent, who must be known when it is placed. {module.MODULE_TYPE} has up to "
-            f"{module.MAX_PARTICIPANTS}, and this relay does not hold a pot on its own balance."))
-    if not rs.stripe_payee_account(agent_id):
+            f"A staked game is for two players: each stake is a hold paid to the opponent, who "
+            f"must be known when it is placed. {module.MODULE_TYPE} has up to "
+            f"{module.MAX_PARTICIPANTS}, and this relay does not hold a pot itself."))
+    if rail == "x402":
+        from emporia import escrow_chain
+        if currency != "usd" or escrow_chain.load_config() is None:
+            raise HTTPException(409, "This relay has no USDC escrow configured, so it cannot hold an x402 wager.")
+        if not rs.AGENT_REGISTRY.get_x402_pay_to(agent_id, "evm"):
+            raise HTTPException(409, (
+                f"{agent_id} has no x402 wallet registered here. In an x402 wager you are paid there if "
+                f"you win — register one first (register_x402_wallet)."))
+    elif not rs.stripe_payee_account(agent_id):
         raise HTTPException(409, (
             f"{agent_id} has no active Stripe account here. In a card wager you are paid there "
             f"if you win — run start_stripe_onboarding first, or stake in USDC (payment_mode='x402')."))
 
 
-def _has_card_stake(session_id: str, agent_id: str) -> bool:
+def _has_stake(session_id: str, agent_id: str) -> bool:
+    """A live stake by this player: recorded, and not released since."""
     return any(p["agent_id"] == agent_id and p.get("status") == "confirmed"
                for p in rs.get_session_payments(session_id))
 
@@ -620,32 +619,6 @@ async def _settle_escrow_purchase(session_id: str, seller: str, total_cents: int
         "transfer_status": "capture_failed" if failed else "escrow_captured",
         "status": "settled", "rail": RAIL_X402,
     }
-
-
-async def _settle_escrow_wager(session_id: str, winner: str,
-                               payments: list[dict[str, Any]]) -> dict[str, Any]:
-    """P154: settle an x402 wager. Each player's hold names the other as
-    receiver, so the loser's is captured (paying the winner, less the fee, in
-    one transaction) and the winner's own is voided back to them. Recorded as
-    one settlement over the whole pot, so it reads like a card wager."""
-    from emporia.payments import platform_fee
-    losers = [p for p in payments if p.get("agent_id") != winner]
-    own = [p for p in payments if p.get("agent_id") == winner]
-    loser_cents = sum(p["amount_cents"] for p in losers)
-    record = await _settle_escrow_purchase(session_id, winner, loser_cents, losers)
-    released = [await _release_hold(p) for p in own]
-    own_cents = sum(p["amount_cents"] for p in own)
-    own_atomic = sum(int((rs.get_escrow_hold(p["payment_intent_id"]) or {}).get("amount_atomic") or 0)
-                     for p in own)
-    pot = loser_cents + own_cents
-    fee = platform_fee(pot)
-    record.update({
-        "total_stake_cents": pot, "platform_fee_cents": fee, "winner_payout_cents": pot - fee,
-        "winner_payout_atomic": int(record.get("winner_payout_atomic") or 0) + own_atomic,
-        "payment_intent_ids": [p["payment_intent_id"] for p in payments],
-        "release_results": released,
-    })
-    return record
 
 
 async def reconcile_escrow_holds(limit: int = 100) -> dict[str, int]:
@@ -850,129 +823,119 @@ async def _fund_with_escrow(request: Request, s: dict[str, Any], session_id: str
         payment_intent_id=hold_hash, agent_id=caller, amount_cents=amount_cents,
         payment_type="session_stake", session_id=session_id, currency="usd", rail=RAIL_X402,
     )
-    if not wager or all(_has_hold(session_id, p) for p in s["participants"]):
+    if not wager:    # a wager starts in _fund_wager, once both stakes are in
         await _start(session_id, s, s["participants"], s["payment_rules"])
     return rs.load_session(session_id)
 
 
-def _has_hold(session_id: str, agent_id: str) -> bool:
-    return any(h["payer_agent_id"] == agent_id and h["state"] in ("authorized", "captured")
-               for h in rs.escrow_holds_for_session(session_id))
-
-
-async def _fund_wager(request: Request, s: dict[str, Any], session_id: str, caller: str):
-    """P154: a player stakes an x402 wager — a hold paid to their opponent if
-    they lose, at double the fee rate: the contract takes its fee only from
-    what it captures, and only the loser's stake is captured, so 2× on one
-    stake is the same 2.5% of the pot a card wager pays. The game starts when
-    both holds are in."""
-    from emporia.payments import OPERATOR_FEE_BPS
-    if caller not in s["participants"]:
-        raise HTTPException(403, "Only a player stakes this wager.")
-    rs._enforce_agent_rate_limit(caller)
-    opponent = next(p for p in s["participants"] if p != caller)
-    amount_cents, _ = _stake(s["payment_rules"])
-    rail = _escrow_rail(opponent)
-    if rail is None:
-        raise HTTPException(409, f"{opponent} has no x402 wallet this relay can pay, or escrow is off.")
-    rs._assert_agent_budget(caller, amount_cents)
-    fee_bps = 2 * OPERATOR_FEE_BPS
-    lock = _WAGER_FUNDING_LOCKS.setdefault(session_id, asyncio.Lock())
-    async with lock:
-        if _has_hold(session_id, caller):
-            raise HTTPException(409, "You have already staked this wager.")
-        if not request.headers.get(ESCROW_HEADER):
-            return JSONResponse(status_code=402, content={
-                "error": "payment_required", "amount_cents": amount_cents,
-                "resource": f"emporia:session:{session_id}",
-                "message": (f"Stake this wager: an x402 escrow hold paid to {opponent} if you "
-                            f"lose, voided back to you if you win or draw."),
-                "escrow": _escrow_offer(rail, amount_cents, fee_bps=fee_bps),
-            })
-        return await _fund_with_escrow(request, rs.load_session(session_id) or s, session_id,
-                                       caller, rail, amount_cents, receiver_agent=opponent,
-                                       fee_bps=fee_bps, wager=True)
-
-
-async def _fund_card_wager(request: Request, s: dict[str, Any], session_id: str, caller: str):
-    """P157: a player stakes a card wager — a manual-capture destination charge
-    to their opponent's Stripe account, captured if they lose and cancelled if
-    they win or draw. Its application fee is 2.5% of the whole pot, since only
-    the loser's hold is ever captured. The game starts when both are in."""
-    from emporia.payments import platform_fee
+async def _fund_wager(request: Request, s: dict[str, Any], session_id: str, caller: str,
+                      rail: str):
+    """P154/P157: a player stakes a two-player wager — a hold paid to their
+    opponent if they lose, released if they win or draw: an x402 escrow hold,
+    or a manual-capture card charge whose destination is the opponent's Stripe
+    account. Only the loser's hold is ever captured, so its fee is 2.5% of the
+    whole pot (2× the rate on one stake). The game starts when both are in."""
+    from emporia.payments import OPERATOR_FEE_BPS, platform_fee
     if caller not in s["participants"]:
         raise HTTPException(403, "Only a player stakes this wager.")
     rs._enforce_agent_rate_limit(caller)
     opponent = next(p for p in s["participants"] if p != caller)
     amount_cents, currency = _stake(s["payment_rules"])
-    account = rs.stripe_payee_account(opponent)
-    if not account:
-        raise HTTPException(409, f"{opponent} has no active Stripe account a stake could pay.")
-    try:
-        body = await request.json()
-    except Exception:
-        body = None
-    intent = body.get("payment_intent_id") if isinstance(body, dict) else None
+    if rail == "x402":
+        escrow = _escrow_rail(opponent)
+        if escrow is None:
+            raise HTTPException(409, f"{opponent} has no x402 wallet this relay can pay, or escrow is off.")
+        rs._assert_agent_budget(caller, amount_cents)
+    else:
+        account = rs.stripe_payee_account(opponent)
+        if not account:
+            raise HTTPException(409, f"{opponent} has no active Stripe account a stake could pay.")
+        try:
+            body = await request.json()
+        except Exception:
+            body = None
+        intent = body.get("payment_intent_id") if isinstance(body, dict) else None
     lock = _WAGER_FUNDING_LOCKS.setdefault(session_id, asyncio.Lock())
     async with lock:
-        if _has_card_stake(session_id, caller):
+        if _has_stake(session_id, caller):
             raise HTTPException(409, "You have already staked this wager.")
-        paid = await rs._verify_and_confirm_payment(
-            request,
-            agent_id=caller,
-            identity_verified=True,
-            amount_cents=amount_cents,
-            currency=currency,
-            resource_type="session",
-            resource_id=session_id,
-            service_type=s["module_type"],
-            capture_method="manual",
-            allowed_statuses=("requires_capture",),
-            req_payment_intent_id=intent,
-            challenge_message=(
-                f"Stake this wager: {amount_cents} {currency} cents, held as a card payment to "
-                f"{opponent} — captured if you lose, cancelled if you win or draw. Retry with "
-                f"Authorization: Payment <spt_token>, or a payment_intent_id from "
-                f"/payments/create-intent."
-            ),
-            challenge_resource=f"emporia:session:{session_id}",
-            destination_account=account,
-            application_fee_cents=platform_fee(2 * amount_cents),
-        )
-        if isinstance(paid, JSONResponse):
-            return paid
-        try:
-            rs.record_payment(
-                payment_intent_id=paid.reference, agent_id=caller, amount_cents=amount_cents,
-                payment_type="session_stake", session_id=session_id, currency=currency,
-                rail=paid.rail,
+        if rail == "x402":
+            if not request.headers.get(ESCROW_HEADER):
+                return JSONResponse(status_code=402, content={
+                    "error": "payment_required", "amount_cents": amount_cents,
+                    "resource": f"emporia:session:{session_id}",
+                    "message": (f"Stake this wager: an x402 escrow hold paid to {opponent} if you "
+                                f"lose, voided back to you if you win or draw."),
+                    "escrow": _escrow_offer(escrow, amount_cents, fee_bps=2 * OPERATOR_FEE_BPS),
+                })
+            await _fund_with_escrow(request, rs.load_session(session_id) or s, session_id, caller,
+                                    escrow, amount_cents, receiver_agent=opponent,
+                                    fee_bps=2 * OPERATOR_FEE_BPS, wager=True)
+        else:
+            paid = await rs._verify_and_confirm_payment(
+                request,
+                agent_id=caller,
+                identity_verified=True,
+                amount_cents=amount_cents,
+                currency=currency,
+                resource_type="session",
+                resource_id=session_id,
+                service_type=s["module_type"],
+                capture_method="manual",
+                allowed_statuses=("requires_capture",),
+                req_payment_intent_id=intent,
+                challenge_message=(
+                    f"Stake this wager: {amount_cents} {currency} cents, held as a card payment to "
+                    f"{opponent} — captured if you lose, cancelled if you win or draw. Retry with "
+                    f"Authorization: Payment <spt_token>, or a payment_intent_id from "
+                    f"/payments/create-intent."
+                ),
+                challenge_resource=f"emporia:session:{session_id}",
+                destination_account=account,
+                application_fee_cents=platform_fee(2 * amount_cents),
             )
-        except ValueError as e:
-            raise HTTPException(402, str(e))
+            if isinstance(paid, JSONResponse):
+                return paid
+            try:
+                rs.record_payment(
+                    payment_intent_id=paid.reference, agent_id=caller, amount_cents=amount_cents,
+                    payment_type="session_stake", session_id=session_id, currency=currency,
+                    rail=paid.rail,
+                )
+            except ValueError as e:
+                raise HTTPException(402, str(e))
         s = rs.load_session(session_id) or s
-        if all(_has_card_stake(session_id, p) for p in s["participants"]):
+        if all(_has_stake(session_id, p) for p in s["participants"]):
             await _start(session_id, s, s["participants"], s["payment_rules"])
+            _WAGER_FUNDING_LOCKS.pop(session_id, None)
     return rs.load_session(session_id)
 
 
-async def _settle_card_wager(session_id: str, winner: str,
-                             payments: list[dict[str, Any]]) -> dict[str, Any]:
-    """P157: settle a card wager — capture the loser's hold, a destination
-    charge that pays the winner less the fee, and cancel the winner's own.
-    Recorded over the whole pot, like an x402 wager."""
+async def _settle_wager(session_id: str, winner: str, payments: list[dict[str, Any]],
+                        rail: str) -> dict[str, Any]:
+    """P154/P157: settle a two-player wager. Each hold names the other player,
+    so the loser's is captured — paying the winner, less the fee — and the
+    winner's own is released. Recorded as one settlement over the whole pot."""
     from emporia.payments import RAIL_STRIPE, platform_fee, settle_destination_charges
     losers = [p for p in payments if p.get("agent_id") != winner]
     own = [p for p in payments if p.get("agent_id") == winner]
     loser_cents = sum(p["amount_cents"] for p in losers)
-    record = await settle_destination_charges(
-        session_id, winner, loser_cents, [p["payment_intent_id"] for p in losers])
+    if rail == "x402":
+        record = await _settle_escrow_purchase(session_id, winner, loser_cents, losers)
+        own_atomic = sum(int((rs.get_escrow_hold(p["payment_intent_id"]) or {}).get("amount_atomic") or 0)
+                         for p in own)
+        record["winner_payout_atomic"] = int(record.get("winner_payout_atomic") or 0) + own_atomic
+    else:
+        record = await settle_destination_charges(
+            session_id, winner, loser_cents, [p["payment_intent_id"] for p in losers])
+        record["rail"] = RAIL_STRIPE
     released = [await _release_hold(p) for p in own]
     pot = loser_cents + sum(p["amount_cents"] for p in own)
     fee = platform_fee(pot)
     record.update({
         "total_stake_cents": pot, "platform_fee_cents": fee, "winner_payout_cents": pot - fee,
         "payment_intent_ids": [p["payment_intent_id"] for p in payments],
-        "release_results": released, "rail": RAIL_STRIPE,
+        "release_results": released,
     })
     return record
 
@@ -1004,10 +967,8 @@ async def fund_session(session_id: str, request: Request):
         raise HTTPException(409, "This purchase is already being funded.")
     if s["status"] != AWAITING_FUNDING:
         raise HTTPException(409, f"Session is {s['status']}, not awaiting funding.")
-    if _x402_wager(get_interaction_module(s["module_type"]), s["payment_rules"]):
-        return await _fund_wager(request, s, session_id, caller)
-    if _card_wager(get_interaction_module(s["module_type"]), s["payment_rules"]):
-        return await _fund_card_wager(request, s, session_id, caller)
+    if (rail := _wager_rail(get_interaction_module(s["module_type"]), s["payment_rules"])):
+        return await _fund_wager(request, s, session_id, caller, rail)
     buyer, seller = s["participants"][0], s["participants"][1]
     if caller != buyer:
         raise HTTPException(403, "Only the buyer funds a purchase.")
@@ -1125,15 +1086,12 @@ async def join_session(session_id: str, req: rs.JoinSessionRequest, request: Req
     payment_rules = s["payment_rules"]
     amount_cents, currency = _stake(payment_rules)
     purchase = module.STAKE_MODEL == STAKE_PURCHASE and bool(amount_cents)
-    x402_wager = _x402_wager(module, payment_rules)
-    if x402_wager:
-        _check_x402_wager_player(module, req.agent_id, currency)
-    card_wager = _card_wager(module, payment_rules)
-    if card_wager:
-        _check_card_wager_player(module, req.agent_id)
+    wager_rail = _wager_rail(module, payment_rules)
+    if wager_rail:
+        _check_wager_player(module, req.agent_id, wager_rail, currency)
 
     stake_paid = False
-    if amount_cents and not purchase and not x402_wager and not card_wager:
+    if amount_cents and not purchase and not wager_rail:
         result = await rs._verify_and_confirm_payment(
             request,
             agent_id=req.agent_id,
@@ -1178,7 +1136,7 @@ async def join_session(session_id: str, req: rs.JoinSessionRequest, request: Req
     participants = s["participants"] + [req.agent_id]
     rs.add_participant(session_id, req.agent_id, stake_paid=stake_paid)
 
-    if module.ready_to_start(participants, s["config"]) and (purchase or x402_wager or card_wager):
+    if module.ready_to_start(participants, s["config"]) and (purchase or wager_rail):
         # P95: the seller is known now, so the buyer can fund a hold that pays
         # them directly. Nothing can be played until it is.
         rs.save_session(
@@ -1194,13 +1152,13 @@ async def join_session(session_id: str, req: rs.JoinSessionRequest, request: Req
             created_at=s["created_at"],
             updated_at=datetime.now(UTC).isoformat(),
         )
-        if x402_wager or card_wager:
+        if wager_rail:
             # P154/P157: both stake now, each a hold paid to the other if they lose.
             for me, them in ((participants[0], participants[1]), (participants[1], participants[0])):
                 await rs.broadcast_to_agent(me, {
                     "type": "funding_required", "kind": "wager", "session_id": session_id,
                     "module_type": s["module_type"], "opponent": them, "amount_cents": amount_cents,
-                    "rail": "x402" if x402_wager else "card",
+                    "rail": wager_rail,
                 })
         else:
             await rs.broadcast_to_agent(participants[0], {
@@ -1503,6 +1461,7 @@ async def _abandon(s: dict[str, Any], reason: str) -> list[dict[str, Any]] | Non
     session_id = s["session_id"]
     if not rs.claim_session_status(session_id, s["status"], "abandoned"):
         return None
+    _WAGER_FUNDING_LOCKS.pop(session_id, None)
     payments = rs.get_session_payments(session_id)
     cancel_results = [await _release_hold(p) for p in payments if p.get("payment_intent_id")]
     event = {
@@ -1566,13 +1525,9 @@ async def _finish_session(session_id: str, s: dict[str, Any], module, outcome) -
             settlement_record = await _settle_escrow_purchase(
                 session_id, winner_id, total_cents, payments,
             )
-        elif total_cents and any(p.get("rail") == RAIL_X402 for p in payments):
-            # P154: an x402 wager — the loser's hold is captured to the winner,
-            # the winner's own is voided back to them.
-            settlement_record = await _settle_escrow_wager(session_id, winner_id, payments)
-        elif total_cents and _card_wager(module, s["payment_rules"]):
-            # P157: cross destination holds — the loser's pays the winner.
-            settlement_record = await _settle_card_wager(session_id, winner_id, payments)
+        elif total_cents and (rail := _wager_rail(module, s["payment_rules"])):
+            # P154/P157: the loser's hold pays the winner; the winner's own is released.
+            settlement_record = await _settle_wager(session_id, winner_id, payments, rail)
         elif total_cents and module_purchase:
             # P95: destination charges — capture is the settlement.
             from emporia.payments import settle_destination_charges

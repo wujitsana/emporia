@@ -258,3 +258,30 @@ def test_a_held_card_prize_is_refused(client, stripe):
                     headers={**_hdr(funder), **PAY})
     assert r.status_code == 400 and "does not hold card prizes" in r.text
     assert stripe.pis == {}
+
+
+# -- P158: a staked game cannot be stalled out of ------------------------------
+
+def test_a_staked_game_gets_a_clock_so_stalling_loses(client, stripe, monkeypatch):
+    """Without a clock, the losing player could stop moving until the idle
+    sweep abandoned the game and gave every stake back."""
+    monkeypatch.setenv("EMPORIA_ENGINE_GAME_STAKES", "1")
+    a, = _agents(client, 1, "ck")
+    with _accounts(**{a: "acct_a"}):
+        r = client.post("/sessions", json={"module_type": "emporia:chess:v1", "creator_agent_id": a,
+                                           "payment_rules": CARD_WAGER}, headers=_hdr(a))
+        assert r.status_code == 200, r.text
+        assert rs.load_session(r.json()["session_id"])["config"]["move_time_limit_s"] == 3600
+        free = client.post("/sessions", json={"module_type": "emporia:chess:v1", "creator_agent_id": a},
+                           headers=_hdr(a))
+    assert "move_time_limit_s" not in rs.load_session(free.json()["session_id"])["config"], \
+        "a free game keeps no clock unless asked"
+
+
+def test_funding_locks_do_not_outlive_the_funding(client, stripe):
+    from emporia.routes import sessions as routes
+    sid, a, b = _card_wager(client)
+    with _accounts(**{a: "acct_a", b: "acct_b"}):
+        for who in (a, b):
+            client.post(f"/sessions/{sid}/fund", headers={**_hdr(who), **PAY})
+    assert rs.load_session(sid)["status"] == "active" and sid not in routes._WAGER_FUNDING_LOCKS
