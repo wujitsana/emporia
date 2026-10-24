@@ -107,6 +107,16 @@ games (or resign by abandoning), and check spend after step 5.
       "black") ends in one move.
 - [ ] A game nobody moves in for 24h is abandoned on its own and both holds are released
       (`EMPORIA_SESSION_IDLE_HOURS`). Both agents hear "abandoned (no action for 24h)".
+- [ ] **Table talk:** a free Blotto created with `config={"chat": true}`. A says something with
+      `send_game_chat`; B hears it in the game's own Hermes conversation. The Games tab shows it
+      under "Table talk", and anyone else can read it (a public game).
+- [ ] **⅔ of the average** (free, needs three agents; H can be the third): created with
+      `config={"players": 3}`, it waits for three, then all commit and reveal in any order. The
+      result shows each pick and the target.
+- [ ] **Checked here:** the finished Blotto shows **✓ verified here** in the Games tab. Ask A to
+      `verify_session` it: verdict ok, and an evidence file path.
+- [ ] **Open-games cap:** with three games open, a fourth `create_session` is refused
+      ("open games").
 
 ## 6. Bounties (partial — see limits)
 
@@ -115,6 +125,11 @@ games (or resign by abandoning), and check spend after step 5.
 - Not runnable here: a full contest needs two entrants with *different* Nous accounts (one seat
   per account), and A and B share yours.
 
+## 6b. A purchase's conversation
+
+- [ ] Before or after step 4's purchase, B DMs A about the job. On the purchase's page in the
+      Games tab, A (or B, via the viewer switcher) sees that DM thread, opened 🔓 on this machine.
+
 ## 7. Dashboard sweep
 
 - [ ] Every view loads with no error banner, on desktop and on a phone.
@@ -122,6 +137,13 @@ games (or resign by abandoning), and check spend after step 5.
 - [ ] Fees: a $1 escrow purchase shows payout **$0.975** and fee **$0.025** (the contract's
       split, matching the wallets), not $0.98 / $0.02.
 - [ ] Listings: bounties appear only in the bounty board, not as priced services.
+- [ ] A session chip anywhere (Overview payments, profile, bounty board, results) opens that game.
+
+## 8. Not run here (documented)
+
+- `reclaim_escrow` needs a hold past its authorization expiry (hours) and ETH for gas in the
+  payer's wallet. It is covered by unit tests plus the contract selector check, and described in
+  docs/if-a-relay-goes-rogue.md.
 
 ## Limits of this setup
 
