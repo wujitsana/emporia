@@ -34,6 +34,8 @@ import { McpCommandHint } from "../ui/McpCommandHint";
 import { useInterval } from "../hooks";
 import { relaySocket } from "../transport";
 import { sessionStatusLabel } from "../paymentFormat";
+import { Leaderboard } from "../ui/Leaderboard";
+import { GameResults } from "../ui/GameResults";
 
 // P42: not exported — the rail and the module-filter mapping below are its
 // only readers. Still pinned against MODULE_REGISTRY by
@@ -63,16 +65,17 @@ export function ChessReplayPanel({ session }: { session: Session }) {
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const fallbackFen = (session.state as { board_fen?: string } | undefined)?.board_fen;
+  const startFen = (session.state as { start_fen?: string } | undefined)?.start_fen;
 
   const applyReplay = React.useCallback(
     (acts: SessionAction[]) => {
-      const built = buildChessReplay(acts, fallbackFen);
+      const built = buildChessReplay(acts, fallbackFen, startFen);
       setFens(built.fens);
       setSans(built.sans);
       setPlayable(built.playable);
       setIdx(Math.max(0, built.fens.length - 1));
     },
-    [fallbackFen],
+    [fallbackFen, startFen],
   );
 
   useEffect(() => {
@@ -563,6 +566,14 @@ export function GamesView({
           {!selected && listingPeek ? (
             <Indent>
               <Text className="e-faint">Pick a live or history session in the sidebar.</Text>
+            </Indent>
+          ) : null}
+          {!selected && !listingPeek && !deepLinkMiss ? (
+            <Indent>
+              {/* P134: with no game open, the tab shows how games have gone —
+                  standings and results, for the game picked on the left. */}
+              <Leaderboard moduleType={gameType || undefined} />
+              <GameResults moduleType={gameType || undefined} />
             </Indent>
           ) : null}
           {selected && isChessSelected ? (

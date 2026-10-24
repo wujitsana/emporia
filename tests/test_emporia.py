@@ -3019,6 +3019,7 @@ def test_no_new_identity_as_proof_params():
         ("GET", "/dm/{thread_id}/messages"),  # agent_id: _require_caller_is-checked (N1-6)
         ("GET", "/agoras/topics"),  # subscribed_by: _require_caller_is-checked (N2-6)
         ("GET", "/listings"),  # creator_id: public discovery filter, no auth decision keyed on it
+        ("GET", "/results"),  # agent_id: whose games to list (P134); visibility is the caller's own
         # Bootstrap endpoints: no credential can exist yet, identity is bound by a
         # consumed registration/login challenge instead (see _consume_challenge).
         ("POST", "/dashboard/session"),
@@ -3270,6 +3271,9 @@ def test_every_route_has_a_reviewed_auth_posture():
         ("GET", "/payments/records"),
         # P105: 401 anonymous; operator sees all, an agent only holds it is party to.
         ("GET", "/payments/escrow-holds"),
+        # P134: finished games — public ones to anyone, others to their players
+        # and the operator (_session_viewer_allowed per row).
+        ("GET", "/results"),
         # Closed in N4-2 (R1(a)) — was _KNOWN_UNGATED; reuses the same
         # three-tier rule as GET /payments/records via
         # _settlement_resource_viewer_allowed.
@@ -4568,12 +4572,24 @@ def test_all_three_win_counters_agree_that_a_refund_is_not_a_win(client):
 
     # One genuinely settled win, one refunded session with the same nominal
     # winner — exactly what a dispute writes.
+    from datetime import UTC, datetime
+
+    from emporia.module_sdk import SessionState
+
     for status, payout, transfer in (
         ("settled", 1000, "transferred"),
         ("refunded", 0, "refunded"),
     ):
+        # P134: a win is counted in a game session that exists.
+        sid = f"sess_{uuid.uuid4().hex[:10]}"
+        now = datetime.now(UTC).isoformat()
+        rs.save_session(session_id=sid, module_type="emporia:chess:v1", config={},
+                        payment_rules={}, state=SessionState(data={}, current_agent=agent,
+                                                             step_number=0, metadata={}),
+                        current_agent=agent, step_number=0, status="completed",
+                        participants=[agent], created_at=now, updated_at=now)
         rs.record_settlement({
-            "session_id": f"sess_{uuid.uuid4().hex[:10]}",
+            "session_id": sid,
             "winner_id": agent,
             "status": status,
             "outcome_type": "won" if status == "settled" else "refund",

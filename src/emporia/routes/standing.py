@@ -9,10 +9,11 @@ on the neighbouring agent list.
 
 from __future__ import annotations
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Request
 
 from emporia import relay_server as rs
-from emporia.standing import compute_standings
+from emporia.module_sdk import SessionState, get_interaction_module
+from emporia.standing import compute_standings, contest_sql, game_module_types, wins_sql
 
 router = APIRouter()
 
@@ -28,27 +29,21 @@ async def leaderboard(limit: int = 25, module_type: str | None = None):
     check as an empty one.
     """
     limit = rs._clamp_limit(limit)
+    # P134: games only. Every settlement row used to count — a room's paid
+    # entry is a settlement naming its creator, and a service sale names its
+    # seller — so selling things ranked an agent as a winner.
+    modules = game_module_types()
+    wins_from, wins_params = wins_sql(modules, only=module_type)
+    contest, contest_params = contest_sql(modules, only=module_type)
     with rs.DB_LOCK, rs.get_db() as conn:
-        part_q = (
+        participations = [dict(r) for r in conn.execute(
             "SELECT p.agent_id AS agent_id, s.module_type AS module_type "
-            "FROM participants p JOIN sessions s ON s.session_id = p.session_id"
-        )
-        settle_q = (
+            "FROM participants p JOIN sessions s ON s.session_id = p.session_id "
+            f"WHERE {contest}", contest_params).fetchall()]
+        settlements = [dict(r) for r in conn.execute(
             "SELECT st.winner_id AS winner_id, st.status AS status, "
             "st.winner_payout_cents AS winner_payout_cents, "
-            "st.transfer_status AS transfer_status "
-            "FROM settlements st"
-        )
-        params: list = []
-        if module_type:
-            part_q += " WHERE s.module_type = ?"
-            settle_q += (
-                " JOIN sessions s ON s.session_id = st.session_id "
-                "WHERE s.module_type = ?"
-            )
-            params = [module_type]
-        participations = [dict(r) for r in conn.execute(part_q, params).fetchall()]
-        settlements = [dict(r) for r in conn.execute(settle_q, params).fetchall()]
+            f"st.transfer_status AS transfer_status FROM {wins_from}", wins_params).fetchall()]
 
     standings = compute_standings(settlements, participations)
     return {
@@ -58,3 +53,59 @@ async def leaderboard(limit: int = 25, module_type: str | None = None):
         "count": len(standings),
         "standings": [s.to_dict() for s in standings[:limit]],
     }
+
+
+def _result_of(s: dict) -> dict:
+    """One finished game, as a reader (or an opponent studying a player) needs
+    it: who played, who won and how, the stake, and the game's final record —
+    for Blotto every round's allocations, for chess the position and moves."""
+    try:
+        module = get_interaction_module(s["module_type"])
+        _, outcome = module.is_terminal(SessionState.from_dict(s["state"]))
+    except ValueError:
+        outcome = {}  # a module this relay no longer loads: list the game, not its verdict
+    rules = s.get("payment_rules") or {}
+    return {
+        "session_id": s["session_id"],
+        "module_type": s["module_type"],
+        "participants": s["participants"],
+        "winner": outcome.get("winner"),
+        "outcome_type": outcome.get("outcome_type"),
+        "termination": outcome.get("termination"),
+        "stake_per_participant": rules.get("stake_per_participant"),
+        "currency": rules.get("currency"),
+        "config": s.get("config") or {},
+        "record": (s.get("state") or {}).get("data") or {},
+        "ended_at": s["updated_at"],
+    }
+
+
+@router.get("/results")
+async def results(request: Request, module_type: str | None = None,
+                  agent_id: str | None = None, limit: int = 20):
+    """Finished games, newest first (P134) — the record behind the leaderboard,
+    and how an agent reads an opponent before playing them. Only games this
+    caller may see (public, or ones they played in)."""
+    limit = rs._clamp_limit(limit)
+    contest, params = contest_sql(game_module_types(), only=module_type)
+    q = f"SELECT * FROM sessions s WHERE s.status = 'completed' AND {contest}"
+    if agent_id:
+        q += " AND participants_json LIKE ?"
+        params.append(f'%"{agent_id}"%')
+    q += " ORDER BY updated_at DESC LIMIT ?"
+    params.append(limit * 4)  # some may be hidden from this caller
+    with rs.DB_LOCK, rs.get_db() as conn:
+        rows = conn.execute(q, params).fetchall()
+    caller = rs._dashboard_agent_id(request)
+    out = []
+    for r in rows:
+        s = rs._session_row_to_dict(r)
+        if agent_id and agent_id not in s["participants"]:
+            continue
+        if not rs._session_viewer_allowed(s, caller):
+            continue
+        out.append(_result_of(s))
+        if len(out) >= limit:
+            break
+    return {"scope": "this_relay", "module_type": module_type, "agent_id": agent_id,
+            "results": out}

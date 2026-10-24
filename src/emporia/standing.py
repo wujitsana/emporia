@@ -43,8 +43,44 @@ from dataclasses import dataclass, field
 # "refunded" above all — is an outcome, not a win.
 SETTLED_STATUS = "settled"
 
-# The one transfer state in which the winner actually holds the money.
-PAID_TRANSFER_STATUS = "transferred"
+def game_module_types() -> list[str]:
+    """The modules a win is counted in (P134): ones that name a winner by their
+    rules — not purchases, where the "winner" is a seller being paid, and not
+    room or Agora entries, which are sales with no session at all."""
+    from emporia.module_sdk import MODULE_REGISTRY, STAKE_PURCHASE
+    return sorted(t for t, cls in MODULE_REGISTRY.items()
+                  if cls.DECLARES_WINNER and cls.STAKE_MODEL != STAKE_PURCHASE)
+
+
+def contest_sql(modules: list[str], alias: str = "s",
+                only: str | None = None) -> tuple[str, list]:
+    """WHERE fragment for "this session is a contest": a game module, or a
+    bounty contest on any module (a bounty names a real winner even when it
+    runs on the service module). `only` narrows it to one module's sessions."""
+    if only:
+        return f"{alias}.module_type = ?", [only]
+    marks = ",".join("?" * len(modules)) or "NULL"
+    return (f"({alias}.module_type IN ({marks}) OR "
+            f"json_extract({alias}.config_json, '$.bounty_id') IS NOT NULL)", list(modules))
+
+
+def wins_sql(modules: list[str], only: str | None = None) -> tuple[str, list]:
+    """FROM/WHERE for "settlements that are wins", with its parameters — the
+    one definition the agent list, the profile and /leaderboard all use, so
+    they cannot disagree (P72-3's rule; P134 narrowed it to contests)."""
+    contest, params = contest_sql(modules, only=only)
+    return (
+        "settlements st JOIN sessions s ON s.session_id = st.session_id "
+        f"WHERE st.status = ? AND st.payer_id IS NULL AND {contest}",
+        [SETTLED_STATUS, *params],
+    )
+
+
+# The transfer states in which the winner actually holds the money: a Stripe
+# transfer, and (P134) the rails that pay the winner with no transfer at all —
+# a captured x402 escrow hold, a Stripe destination charge, a direct x402
+# payment. Counting only "transferred" showed every such winner as owed.
+PAID_TRANSFER_STATUSES = frozenset({"transferred", "escrow_captured", "destination", "direct"})
 
 
 @dataclass
@@ -127,7 +163,7 @@ def compute_standings(
         s.wins += 1
         awarded = int(row.get("winner_payout_cents") or 0)
         s.prize_awarded_cents += awarded
-        if row.get("transfer_status") == PAID_TRANSFER_STATUS:
+        if row.get("transfer_status") in PAID_TRANSFER_STATUSES:
             s.prize_paid_cents += awarded
 
     return sorted(

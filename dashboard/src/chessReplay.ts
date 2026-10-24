@@ -11,8 +11,11 @@ export type ChessReplayData = {
 };
 
 export function chessSides(session: Session): { white: string; black: string } {
+  // P131: colours are stored at start (the creator may play black); older
+  // states mean participants[0] is white.
+  const st = session.state as { white?: string | null; black?: string | null } | undefined;
   const p = session.participants ?? [];
-  return { white: p[0] ?? "white", black: p[1] ?? "black" };
+  return { white: st?.white ?? p[0] ?? "white", black: st?.black ?? p[1] ?? "black" };
 }
 
 export function shortAgent(id: string, max = 14): string {
@@ -24,8 +27,10 @@ export function shortAgent(id: string, max = 14): string {
 export function buildChessReplay(
   actions: SessionAction[],
   fallbackFen?: string | null,
+  startFen?: string | null,
 ): ChessReplayData {
-  const chess = new Chess();
+  // P131: a game may start from a set position.
+  const chess = startFen ? new Chess(startFen) : new Chess();
   const fens: string[] = [chess.fen()];
   const sans: string[] = [];
   const moveAgents: string[] = [];

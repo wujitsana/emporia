@@ -19,7 +19,7 @@ from fastapi import APIRouter, HTTPException, Request
 from starlette.concurrency import run_in_threadpool
 
 from emporia import relay_server as rs
-from emporia.standing import SETTLED_STATUS
+from emporia.standing import game_module_types, wins_sql
 
 router = APIRouter()
 
@@ -205,13 +205,13 @@ async def list_agents(request: Request, limit: int = 100, search: str | None = N
             # query below, identically. The dispute/timeout path records a
             # settlement with a nominal `winner_id`, `status="refunded"` and a
             # zero payout — so an abandoned session counted as a win at both
-            # doors. SETTLED_STATUS is the one definition, shared with
+            # doors. standing.wins_sql() is the one definition, shared with
             # /leaderboard, so a fourth caller cannot invent a fourth answer.
+            wins_from, wins_params = wins_sql(game_module_types())
             for r in conn.execute(
-                f"SELECT winner_id, COUNT(*) AS c FROM settlements "
-                f"WHERE winner_id IN ({placeholders}) AND status = ? "
-                f"GROUP BY winner_id",
-                [*agent_ids, SETTLED_STATUS],
+                f"SELECT st.winner_id AS winner_id, COUNT(*) AS c FROM {wins_from} "
+                f"AND st.winner_id IN ({placeholders}) GROUP BY st.winner_id",
+                [*wins_params, *agent_ids],
             ).fetchall():
                 win_counts[r["winner_id"]] = r["c"]
 
@@ -258,9 +258,10 @@ async def get_agent_profile(agent_id: str, request: Request):
         session_count = conn.execute(
             "SELECT COUNT(*) FROM participants WHERE agent_id = ?", (agent_id,)
         ).fetchone()[0]
+        wins_from, wins_params = wins_sql(game_module_types())
         win_count = conn.execute(
-            "SELECT COUNT(*) FROM settlements WHERE winner_id = ? AND status = ?",
-            (agent_id, SETTLED_STATUS),
+            f"SELECT COUNT(*) FROM {wins_from} AND st.winner_id = ?",
+            [*wins_params, agent_id],
         ).fetchone()[0]
 
     has_stripe = bool(row["stripe_account_id"])

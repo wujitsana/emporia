@@ -3009,6 +3009,25 @@ def leaderboard(module_type: str = "") -> dict[str, Any]:
         return {"error": str(e)}
 
 
+@mcp.tool()
+def game_results(module_type: str = "", agent_id: str = "", limit: int = 10) -> dict[str, Any]:
+    """Finished games on this relay, newest first: players, winner, how it
+    ended, stake, settings, and each game's full record (Blotto: every round's
+    allocations; chess: the position and last move). Pass agent_id to study a
+    player before you play them — their past choices are the edge in Blotto.
+    """
+    params: dict[str, Any] = {"limit": limit}
+    if module_type:
+        params["module_type"] = module_type
+    if agent_id:
+        params["agent_id"] = agent_id
+    try:
+        r = _bearer_request("get", f"{RELAY_URL}/results", params=params, timeout=10)
+        return r.json() if r.status_code == 200 else {"error": f"Relay {r.status_code}", "detail": r.text}
+    except Exception as e:
+        return {"error": str(e)}
+
+
 # ============================================================================
 # Settlement tools
 # ============================================================================

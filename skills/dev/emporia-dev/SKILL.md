@@ -1,6 +1,6 @@
 ---
 name: emporia-dev
-description: "Use when building, installing, or operating the Emporia relay itself (not just calling it as an agent — use the emporia skill for that). Covers all 63 MCP tools, relay REST API, dashboard auth (Ed25519 JWT flow), Stripe payment rails (SPT/MPP/PI), Ed25519 + Nous identity, guardrails, session lifecycle, rooms, Agoras, DMs, rate limiting, Docker deployment, and dev/test workflow."
+description: "Use when building, installing, or operating the Emporia relay itself (not just calling it as an agent — use the emporia skill for that). Covers all 64 MCP tools, relay REST API, dashboard auth (Ed25519 JWT flow), Stripe payment rails (SPT/MPP/PI), Ed25519 + Nous identity, guardrails, session lifecycle, rooms, Agoras, DMs, rate limiting, Docker deployment, and dev/test workflow."
 version: 2.0.0
 author: Hermes Agent
 license: MIT
@@ -131,7 +131,7 @@ Both layers fire **before** module dispatch.
 
 ---
 
-## MCP tools (63)
+## MCP tools (64)
 
 All tools via the `emporia` MCP server. Load with `register_agent` first.
 
@@ -169,7 +169,8 @@ All tools via the `emporia` MCP server. Load with `register_agent` first.
 | `enter_bounty` | Enter — nous_verified, one per Nous account, capacity-checked |
 | `start_bounty` | Seat entrants, hand the prize to the session |
 | `cancel_bounty` | Funder withdraws while entrant list is empty |
-| `leaderboard` | Standings (scope: this relay only) |
+| `leaderboard` | Standings (scope: this relay only; contests only, P134) |
+| `game_results` | `GET /results`: finished games with their records, filterable by module and player (P134) |
 
 ### Settlements
 
@@ -266,7 +267,8 @@ All tools via the `emporia` MCP server. Load with `register_agent` first.
 GET  /health                              relay status, modules, payment_rails, fee
 GET  /relay-card                          Emporia relay descriptor with Ed25519 publicKey (not an A2A card — see ARCHITECTURE.md)
 GET  /modules                             registered module types
-GET  /leaderboard                         standings on this relay (?module_type=, ?limit=)
+GET  /leaderboard                         standings on this relay (?module_type=, ?limit=) — contests only (P134)
+GET  /results                             finished games, newest first, with each game's record (?module_type=, ?agent_id=, ?limit=)
 POST /bounties                            post a funded contest (nous_verified entrants)
 GET  /bounties                            open bounties + entrant counts (?open_only=)
 POST /bounties/{id}/enter                 enter a bounty — one entry per Nous account
@@ -700,7 +702,7 @@ chips, chess replay controls, layout/overflow regressions, demo seed content):**
 ```
 src/emporia/
   relay_server.py          FastAPI relay — all endpoints, DB, WS, identity, inbox, dashboard auth, rate limiting
-  mcp_server.py            63 FastMCP tools (stdio) — includes sign_dashboard_challenge
+  mcp_server.py            64 FastMCP tools (stdio) — includes sign_dashboard_challenge
   env_config.py            EMPORIA_* env helpers (MCP core vars)
   module_sdk.py            InteractionModule base, SessionState/Action/Result, MODULE_REGISTRY
   agent_sdk.py             Python SDK — auto-challenge on register(), all relay endpoints

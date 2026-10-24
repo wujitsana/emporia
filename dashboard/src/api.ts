@@ -545,6 +545,22 @@ export interface LeaderboardResponse {
   standings: Standing[];
 }
 
+/** P134: one finished game — players, verdict, settings, and the module's own
+ * final record (Blotto: `history` of allocations; chess: the position). */
+export interface GameResult {
+  session_id: string;
+  module_type: string;
+  participants: string[];
+  winner: string | null;
+  outcome_type: string | null;
+  termination: string | null;
+  stake_per_participant: string | null;
+  currency: string | null;
+  config: Record<string, unknown>;
+  record: Record<string, unknown>;
+  ended_at: string;
+}
+
 /** P72-4: an open contest. `prize_cents` is the funder's escrowed prize, not a
  * price — a bounty is money offered, not money asked. */
 export interface Bounty {
@@ -580,6 +596,10 @@ export const api = {
   leaderboard: (moduleType?: string) =>
     get<LeaderboardResponse>(
       "/leaderboard" + (moduleType ? `?module_type=${encodeURIComponent(moduleType)}` : ""),
+    ),
+  results: (moduleType?: string, limit = 15) =>
+    get<{ scope: string; results: GameResult[] }>(
+      `/results?limit=${limit}` + (moduleType ? `&module_type=${encodeURIComponent(moduleType)}` : ""),
     ),
   bounties: () => get<{ count: number; bounties: Bounty[] }>("/bounties"),
   health: () => get<Health>("/health"),
