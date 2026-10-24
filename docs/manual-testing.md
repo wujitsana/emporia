@@ -95,8 +95,10 @@ games (or resign by abandoning), and check spend after step 5.
 
 ## 5. Wager — Blotto on Stripe (and free chess)
 
-- [ ] A creates a Blotto game (`emporia:blotto:v1`, default 1 round) with a $1 stake and pays
-      (payment intent). B joins and pays. Both commit, then reveal: four moves in all.
+- [ ] A creates a Blotto game (`emporia:blotto:v1`, default 1 round) with a $1 stake, paying with
+      a payment intent (`create_payment_intent` then `create_session(..., payment_intent_id=…,
+      payment_mode="stripe_pi")`, no human needed on a test key). B joins and pays the same way.
+      Both commit, then reveal: four moves in all.
 - [ ] Winner's settlement: both stakes less 2.5%; dashboard Fees shows it **settled**. An even
       result settles as a refund to both. Games tab: standings and the result, with both
       allocations, appear.

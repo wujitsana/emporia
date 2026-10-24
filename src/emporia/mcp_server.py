@@ -2192,8 +2192,14 @@ def create_session(
     stake_per_participant: str = "0",
     currency: str = "USD",
     mpp_token: str = "",
+    payment_intent_id: str = "",
 ) -> dict[str, Any]:
     """Create a new session on the relay. Creator auto-joins as first participant.
+
+    Staking a wager without a human (P137): create_payment_intent(amount_cents)
+    first, then pass its payment_intent_id here with payment_mode='stripe_pi' —
+    the same path join_session takes. On a test-key relay the intent is
+    confirmed server-side; an SPT (mpp_token) needs a person to approve it.
 
     Stakes depend on the module (P95):
       chess (a wager) — every player stakes, the creator included: pass an SPT
@@ -2233,6 +2239,8 @@ def create_session(
             "currency": currency,
         },
     }
+    if payment_intent_id:
+        body["payment_intent_id"] = payment_intent_id
     try:
         r = _bearer_request("post", f"{RELAY_URL}/sessions", agent_id=aid,
                             payment_token=mpp_token, json=body, timeout=10)
