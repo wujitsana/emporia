@@ -203,13 +203,8 @@ def _relay_code_behind(h: dict) -> str:
         return "it reports no schema version"
     if running < SCHEMA_VERSION:
         return f"schema {running}, checkout {SCHEMA_VERSION}"
-    import importlib
-    import pkgutil
-
-    import emporia.modules
-    from emporia.module_sdk import MODULE_REGISTRY
-    for m in pkgutil.iter_modules(emporia.modules.__path__):
-        importlib.import_module(f"emporia.modules.{m.name}")
+    from emporia.module_sdk import MODULE_REGISTRY, load_bundled_modules
+    load_bundled_modules()
     missing = sorted(t for t in MODULE_REGISTRY
                      if t.startswith("emporia:") and t not in (h.get("modules") or []))
     return f"missing games: {', '.join(missing)}" if missing else ""

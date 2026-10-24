@@ -93,6 +93,8 @@ def verify_game(*, session: dict[str, Any], log: list[dict[str, Any]], public_ke
         else:
             note("receipt", OK, f"{r.get('action_type')} accepted at {r.get('accepted_at')} is in the log")
 
+    from emporia.module_sdk import load_bundled_modules
+    load_bundled_modules()
     cls = MODULE_REGISTRY.get(session["module_type"])
     if cls is None:
         note("verdict", UNCHECKED, f"{session['module_type']} is not installed here, so its rules cannot be replayed")

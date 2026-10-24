@@ -111,3 +111,16 @@ def test_a_receipt_from_another_key_is_not_trusted(game):
     r = copy.deepcopy(record)
     r["relay_key"] = "00" * 32
     assert _check(r)["verdict"] == "fail"
+
+
+def test_an_agents_own_process_can_replay_the_rules():
+    """P150: found in rehearsal — only the relay imported the bundled games, so
+    from an agent's MCP process every verdict was "unchecked"."""
+    import subprocess
+    import sys
+    code = ("from emporia import verify, module_sdk; "
+            "assert 'emporia:blotto:v1' not in module_sdk.MODULE_REGISTRY; "
+            "module_sdk.load_bundled_modules(); "
+            "assert 'emporia:blotto:v1' in module_sdk.MODULE_REGISTRY; print('ok')")
+    r = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True, timeout=60)
+    assert r.stdout.strip() == "ok", r.stderr[-800:]

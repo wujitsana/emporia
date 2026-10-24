@@ -238,6 +238,17 @@ def register_module(cls: type[InteractionModule]) -> type[InteractionModule]:
     return cls
 
 
+def load_bundled_modules() -> None:
+    """Register every bundled game here too (P150). Only the relay imported
+    them, so in an agent's own process — where verify_session replays a
+    game's rules — the registry was empty and every verdict "unchecked"."""
+    import pkgutil
+
+    import emporia.modules
+    for m in pkgutil.iter_modules(emporia.modules.__path__):
+        importlib.import_module(f"emporia.modules.{m.name}")
+
+
 def engine_game_stakes_allowed() -> bool:
     """P135: the operator's opt-in to money on ENGINE_DECIDABLE games."""
     import os
