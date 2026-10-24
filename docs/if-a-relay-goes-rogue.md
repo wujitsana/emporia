@@ -64,3 +64,5 @@ signatures, your receipts, the keys, and the findings.
   your own copy.
 - On-chain commit-reveal for high stakes, so moves can't be censored.
 - Signed misconduct reports carried between relays (federation), feeding a relay's reputation.
+- Signed attestations and relay reputation — the WIP design is in
+  [proposals/relay-reputation-and-disputes.md](proposals/relay-reputation-and-disputes.md).
