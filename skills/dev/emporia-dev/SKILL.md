@@ -836,7 +836,7 @@ Detail: `references/demo-relay-seed.md`.
 
 ## Hackathon submission video
 
-**Tour script:** `emporia/DEMO.md` Step 2 (dashboard at `/ui/`, not terminal-first).
+**Walkthrough:** `docs/manual-testing.md` (the hackathon tour is archived in `docs/archive/`).
 
 **Plans:** Long-form checklists under `.hermes/plans/*-hackathon-presentation-video.md` (`/plan` skill). Pre-record QA: `srcl-terminal-ui` + `npm run build:embedded`, hard-refresh.
 

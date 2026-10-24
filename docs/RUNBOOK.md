@@ -147,6 +147,6 @@ Use **bootstrap** once per machine for hackathon judges. Use **seed** when you o
 ## Related docs
 
 - `README.md` — architecture, security, payments, and **Deployment** (Docker/VPS, Stripe-Projects-remote, shared-DB federation, NemoClaw sandboxing) — this runbook covers the local/profile install path only
-- `DEMO.md` — dashboard-first judge tour  
+- `docs/manual-testing.md` — the end-to-end manual test pass (the hackathon judge tour is in `docs/archive/`)  
 - `installer/install.py --help`  
 - Skill `emporia-dev` — repo layout and REST details  

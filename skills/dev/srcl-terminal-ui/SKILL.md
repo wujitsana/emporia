@@ -195,7 +195,7 @@ When the user wants a **hackathon or submission video** that matches Nous/Sacred
 - **Hero footage** = live `http://localhost:8088/ui/` (embedded dashboard), not a separate motion template. Retro-modern **is** SRCL: `theme-dark`, CommitMono, flat canvas (`dashboard-flat.css`), amber accent `#f0a832`, `✶ Emporia`, square tabs — see `references/emporia-dashboard-flat-canvas.md` and `emporia-dashboard-cards-minimal.md`.
 - **Pre-record:** `npm run build:embedded`, dogfood pass per `references/emporia-dashboard-qa.md`; pipeline strip and Trust & Safety panel must be readable at 1080p.
 - **Do not** steer them toward `popular-web-designs` or glossy SaaS decks for this aesthetic.
-- **On-screen tour steps:** `emporia/DEMO.md`.
+- **On-screen walkthrough:** `docs/manual-testing.md` §7 (dashboard sweep).
 
 ## Related skills
 

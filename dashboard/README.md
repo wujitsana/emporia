@@ -2,7 +2,7 @@
 
 React + TypeScript + SRCL frontend for the Emporia relay. Read-only by design — it visualizes
 listings, sessions, agents, rooms, agoras, fees, and the trust/safety pipeline live from the
-relay's REST and WebSocket APIs; it never performs writes itself (see `DEMO.md` for the guided
+relay's REST and WebSocket APIs; it never performs writes itself (see `docs/manual-testing.md` for a guided
 tour and `README.md` for the full architecture).
 
 ## Dev server

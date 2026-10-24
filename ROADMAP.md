@@ -1,5 +1,8 @@
 # Emporia — Remaining & Deferred Work
 
+> **The current backlog is [docs/BACKLOG.md](docs/BACKLOG.md).** This file is the older,
+> hackathon-era record of open questions by area; code comments still point at its sections.
+
 Honest backlog of what's left after the hackathon submission. Nothing here blocks the demo;
 this is what a judge or future contributor should know is intentionally not done yet, and why.
 

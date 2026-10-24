@@ -127,9 +127,10 @@ waiting → active → completed
 
 Who stakes is each module's `STAKE_MODEL` (P95), not one rule for every session:
 
-- **Wager** (`chess`): every player holds the same stake — the creator at create, the challenger at
-  join. The winner, decided later, is paid by capture + transfer. Stripe only: an x402 authorization
-  names its payee when signed and reserves nothing, and the winner is unknown when stakes are placed.
+- **Wager** (`blotto`, and `chess` where the operator allows engine-decidable stakes): two players,
+  free to create and join, then each stakes a hold that names the *opponent* — the loser's is
+  captured to the winner, the winner's own released. In USDC escrow by default (P154); on cards only
+  with `EMPORIA_CARD_GAME_STAKES` (P157, P159). The relay never holds the pot.
 - **Purchase** (`service`): the buyer (creator) pays the seller (joiner). The seller joins free; the
   session waits in `awaiting_funding` until the buyer calls `POST /sessions/{id}/fund`, which places a
   Stripe **destination charge** to the seller's connected account with the operator fee as the
@@ -174,7 +175,7 @@ session charged the seller while the buyer paid nothing.
   mirrors the same cap on *accept*, not just serve: `_pull_federated_listings()`/
   `_pull_federated_lobby()` truncate an oversized signed batch to 200 items after verifying its
   signature (N13-3, R3 — the outbound cap alone left accepting a peer's batch unbounded, and N12-6's
-  per-item guardrails scan, including paid NIM calls when enabled, made that a real cost, not just
+  per-item guardrails scan made that a real cost, not just
   an unbounded response).
 - Peers pull these periodically: `POST /gaming/v1/federate/sync` (operator-triggered, pulls both
   from every `FEDERATED_RELAYS` entry) or the `sync_lobby_from_peer` MCP tool (agent-triggered,
@@ -256,7 +257,7 @@ each session.
 Three hackathon-required Stripe skills:
 - **stripe-link-cli**: payment mode for agent stakes (Link requires US account setup)
 - **stripe-projects**: v2 story — relay reads `DATABASE_URL` from env (Neon + Vercel provisioning)
-- **mpp-agent**: `mpp` is the protocol-level paid join mode. Stripe is the wired MPP settlement rail; x402 (P1b) is a second, non-custodial rail with its own challenge/response shape (`PAYMENT-REQUIRED`/`PAYMENT-SIGNATURE`) offered alongside MPP in the same 402, not routed through it — wallet-backed MPP methods such as Tempo/Privy remain unimplemented, fit behind MPP's own challenge surface if built.
+- **mpp-agent**: `mpp` is the protocol-level paid join mode. Stripe is the wired MPP settlement rail; x402 (P1b) is a second, non-custodial rail with its own challenge/response shape (`PAYMENT-REQUIRED`/`PAYMENT-SIGNATURE`) offered alongside MPP in the same 402, not routed through it. Tempo (P156) is MPP's stablecoin method, offered in the same 402; Privy remains unimplemented.
 
 Payment split: `OPERATOR_FEE_BPS=250` (2.5%) default. Configurable per relay operator.
 Note: `HERMES_PTGS_STRIPE_RELAY_BASE` is a hackathon convention, not an official Stripe endpoint.
@@ -271,8 +272,9 @@ column. `_settle_access_payment()` is the shared settlement/payout seam for the 
 (room join, Agora subscribe), replacing what were two near-identical copy-pasted blocks; it draws the
 boundary where custody actually splits — recording the settlement is rail-agnostic and always runs, the
 platform→creator transfer hop is Stripe-only and simply has no counterpart on the non-custodial rail
-chosen for x402 (see `ROADMAP.md` § Payments). `settle()` (session escrow) stays outside this seam
-entirely — it has no x402 analogue and remains Stripe-only. See `SECURITY.md`'s P3 pass for the full
+chosen for x402 (see `ROADMAP.md` § Payments). Since P157 that hop runs only on a relay that opts into
+custody (`EMPORIA_CUSTODIAL_CARDS`); by default a card entry is a destination charge and there is
+nothing to transfer. `settle()` (the custodial capture-then-transfer) stays outside this seam. See `SECURITY.md`'s P3 pass for the full
 scope, including the one prior-behavior divergence its own audit surfaced and pinned rather than fixed.
 
 **x402 (P1b): a real, working second rail, non-custodial.** `_verify_and_confirm_payment()` gained an
