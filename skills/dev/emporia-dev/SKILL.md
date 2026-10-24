@@ -799,6 +799,7 @@ dashboard/                 Vite + React + SRCL — 110 modules, role-based nav, 
 | `EMPORIA_ENGINE_GAME_STAKES` | _(off)_ | P135: `1` allows stakes/prizes on `ENGINE_DECIDABLE` modules (chess); checked in create_session and `bounties.validate_spec` |
 | `EMPORIA_MAX_OPEN_GAMES` | `3` | P138, MCP side: `_open_games_refusal()` before create_session/join_session; fails open if the relay can't be asked; `0` disables |
 | `EMPORIA_X402_RPC_URL` | public Base RPC | P145: `escrow_chain.payer_config()` for `reclaim_escrow` |
+| `EMPORIA_X402_SOLANA_RPC_URL` | public Solana RPC | P155: `x402_svm._recent_blockhash()` when `extra.recentBlockhash` is absent |
 | `EMPORIA_TRANSFER_SEARCH_PAGES` | `20` | Page bound on `payments.find_settlement_transfer()`. Exhausting it returns `known=False` (unknown), never "absent" |
 
 ---

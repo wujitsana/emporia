@@ -2607,7 +2607,8 @@ def register_x402_wallet(address: str = "", network_family: str = "evm",
     try:
         if not address:
             from emporia import agent_wallet
-            address = agent_wallet.address(aid)
+            address = (agent_wallet.solana_address(aid) if network_family == "svm"
+                       else agent_wallet.address(aid))
         r = _bearer_request("post", f"{RELAY_URL}/agents/{aid}/x402-wallet", agent_id=aid,
                             json={"network_family": network_family, "address": address},
                             timeout=10)
@@ -2636,6 +2637,8 @@ def x402_wallet_info(agent_id: str = "") -> dict[str, Any]:
         out["address"] = agent_wallet.address(aid)
     except agent_wallet.AgentWalletError as e:
         out["address"], out["wallet_error"] = None, str(e)
+    if agent_wallet.solana_wallet_path(aid).exists():  # P155
+        out["solana_address"] = agent_wallet.solana_address(aid)
     try:
         out["pay_networks"] = agent_wallet.allowed_networks()
     except agent_wallet.AgentWalletError as e:
@@ -2649,8 +2652,10 @@ def x402_wallet_info(agent_id: str = "") -> dict[str, Any]:
         pay_to = None
     if pay_to is None:
         out["registered_on_relay"] = "unknown (relay not reachable)"
-    elif pay_to.get("evm"):
-        out["registered_on_relay"] = pay_to["evm"]
+    elif pay_to.get("evm") or pay_to.get("svm"):
+        out["registered_on_relay"] = pay_to.get("evm")
+        if pay_to.get("svm"):
+            out["registered_on_relay_solana"] = pay_to["svm"]
     else:
         out["registered_on_relay"] = None
         out["note"] = ("This wallet exists and can pay. It is not yet registered as where you are "

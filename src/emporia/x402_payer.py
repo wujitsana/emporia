@@ -111,6 +111,7 @@ def payment_required_from(body: dict[str, Any]) -> dict[str, Any]:
 
 def select_requirement(
     challenge: dict[str, Any], *, networks: list[str] | None = None,
+    families: tuple[str, ...] = ("evm",),
 ) -> dict[str, Any]:
     """Pick the `accepts` entry this module can actually pay.
 
@@ -136,13 +137,20 @@ def select_requirement(
         if entry.get("scheme") != "exact":
             reasons.append(f"{network}: scheme {entry.get('scheme')!r} is not 'exact'")
             continue
-        if x402_network_family(network) != "evm":
-            reasons.append(f"{network}: not an EVM network")
+        family = x402_network_family(network)
+        if family not in families:
+            reasons.append(f"{network}: this payer has no {family or 'unknown'} wallet")
             continue
         if networks is not None and network not in networks:
             reasons.append(f"{network}: not in this payer's allowed networks")
             continue
         extra = entry.get("extra")
+        if family == "svm":
+            # P155: a Solana payment needs the facilitator as fee payer.
+            if isinstance(extra, dict) and extra.get("feePayer"):
+                return entry
+            reasons.append(f"{network}: no feePayer in `extra`")
+            continue
         if not isinstance(extra, dict) or not extra.get("name") or not extra.get("version"):
             # F4 from the payer's side: this is the state every Emporia
             # challenge was in before P45 — well-formed and unsignable.

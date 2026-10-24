@@ -74,6 +74,53 @@ def generate(agent_id: str) -> str:
     return account.address
 
 
+def solana_wallet_path(agent_id: str) -> Path:
+    """P155: the agent's Solana key (a 32-byte ed25519 seed), beside its EVM one."""
+    return identity._key_path(agent_id).with_name(
+        identity._key_path(agent_id).stem + ".x402.ed25519")
+
+
+def generate_solana(agent_id: str) -> str:
+    """Create the agent's Solana wallet and return its address — same rules as
+    the EVM one: explicit, 0600, never where git would track it."""
+    import secrets as _secrets
+
+    from emporia import x402_svm
+    path = solana_wallet_path(agent_id)
+    repo = _git_work_tree(path.parent.resolve())
+    if repo is not None and not _git_ignores(repo, path.resolve()):
+        raise AgentWalletError(f"{path} is inside the git working tree {repo}, and git does not "
+                               f"confirm it is ignored. A wallet key must never be committable.")
+    if path.exists():
+        raise AgentWalletError(f"{path} already exists; a wallet key is not replaced implicitly.")
+    identity.KEY_DIR.mkdir(mode=0o700, parents=True, exist_ok=True)
+    seed = _secrets.token_bytes(32)
+    identity._write_secret_atomically(path, seed)
+    return x402_svm.address_of(seed)
+
+
+def _load_solana_seed(agent_id: str) -> bytes:
+    path = solana_wallet_path(agent_id)
+    if not path.exists():
+        raise AgentWalletError(f"{agent_id} has no Solana wallet. Create one with "
+                               f"`python -m emporia.agent_wallet generate --solana --agent-id {agent_id}`.")
+    raw = path.read_bytes()
+    if len(raw) != 32:
+        raise AgentWalletError(f"{path} is {len(raw)} bytes, expected 32; restore it from backup.")
+    return raw
+
+
+def solana_address(agent_id: str) -> str:
+    from emporia import x402_svm
+    return x402_svm.address_of(_load_solana_seed(agent_id))
+
+
+def _families(agent_id: str) -> tuple[str, ...]:
+    """The networks families this agent holds a key for."""
+    return tuple(f for f, p in (("evm", wallet_path(agent_id)), ("svm", solana_wallet_path(agent_id)))
+                 if p.exists())
+
+
 def load_key(agent_id: str) -> str:
     """The wallet's private key as hex. Never logged or returned to a caller
     outside this module's signing helpers."""
@@ -157,13 +204,22 @@ def sign_exact(agent_id: str, body: dict) -> str:
 
     nets = allowed_networks()
     challenge = x402_payer.payment_required_from(body)
-    requirement = x402_payer.select_requirement(challenge, networks=nets)
+    families = _families(agent_id) or ("evm",)
+    requirement = x402_payer.select_requirement(challenge, networks=nets, families=families)
     amount = int(requirement.get("amount") or 0)
     cap = max_payment_cents() * _USDC_ATOMIC_PER_CENT
     if amount > cap:
         raise AgentWalletError(
             f"the relay asks for {amount / 1e6:.2f} USDC, above this agent's "
             f"{cap / 1e6:.2f} USDC per-payment cap (EMPORIA_X402_MAX_PAYMENT_CENTS)")
+    from emporia.payments import x402_network_family
+    if x402_network_family(requirement.get("network") or "") == "svm":
+        # P155: Solana — a partially signed transaction, the facilitator pays fees.
+        from emporia import x402_svm
+        seed = _load_solana_seed(agent_id)
+        _charge_daily(agent_id, amount)
+        return x402_payer.payment_signature_header(x402_svm.build_payment_payload(
+            requirement, seed, resource=challenge.get("resource")))
     key = load_key(agent_id)
     _charge_daily(agent_id, amount)
     return x402_payer.payment_signature_header(x402_payer.build_payment_payload(
@@ -190,19 +246,21 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="An agent's x402 wallet")
     parser.add_argument("command", choices=["generate", "address"])
     parser.add_argument("--agent-id", default=os.getenv("EMPORIA_AGENT_ID", ""))
+    parser.add_argument("--solana", action="store_true", help="the Solana wallet (P155), not the EVM one")
     args = parser.parse_args(argv)
     if not args.agent_id:
         print("error: --agent-id (or EMPORIA_AGENT_ID) is required", file=sys.stderr)
         return 2
     try:
         if args.command == "generate":
-            addr = generate(args.agent_id)
-            print(f"Wallet written to {wallet_path(args.agent_id)} (0600).")
+            addr = generate_solana(args.agent_id) if args.solana else generate(args.agent_id)
+            where = solana_wallet_path(args.agent_id) if args.solana else wallet_path(args.agent_id)
+            print(f"Wallet written to {where} (0600).")
             print(f"Address: {addr}")
             print("Fund it with USDC, then register it as the agent's payout wallet "
                   "(register_x402_wallet) so it can also be paid.")
         else:
-            print(address(args.agent_id))
+            print(solana_address(args.agent_id) if args.solana else address(args.agent_id))
     except AgentWalletError as e:
         print(f"error: {e}", file=sys.stderr)
         return 1

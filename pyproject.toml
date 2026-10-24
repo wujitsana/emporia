@@ -30,6 +30,11 @@ dependencies = [
 x402 = [
     "eth-account>=0.13.0",
 ]
+# P155: an agent paying x402 on Solana (emporia.x402_svm). Optional: nothing
+# else needs it, and it is imported only when a Solana payment is signed.
+solana = [
+    "solders>=0.21,<0.28",
+]
 dev = [
     "pytest>=8.0.0",
     "pytest-asyncio>=0.23.0",
