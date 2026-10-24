@@ -160,6 +160,10 @@ def format_frame(frame: dict[str, Any], agent_id: str) -> Notice | None:
         kind = "Bounty contest" if frame.get("bounty_id") else "Session"
         text = (f"{kind} {sid} started — participants: "
                 f"{', '.join(frame.get('participants') or [])}")
+        if frame.get("room_id"):
+            text += (f"\n  Table chat: room {frame['room_id']} → send_room_message(room_id="
+                     f"\"{frame['room_id']}\", sender_id=\"{agent_id}\", content=...). "
+                     f"Each message costs every player a turn — keep it short.")
         if frame.get("current_agent") == agent_id:
             text += "\n  You move first.\n" + _move_hint(frame.get("module_type", ""), sid)
         return relay(text)

@@ -2261,6 +2261,8 @@ def create_session(
                 wins, so 3 is best of three), battlefields 3–9, troops 10–1000,
                 move_time_limit_s 30–43200. Fewer rounds = fewer paid turns.
                 Rules: supported_games().
+      any game — add "chat": true for a table chat room for the players,
+                opened when the game starts (each message costs every player a turn).
       service — {"description": "...", "requirements": [...], "deadline_hours": 24}
     """
     aid = agent_id or AGENT_ID

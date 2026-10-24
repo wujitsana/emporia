@@ -170,3 +170,16 @@ def test_every_accepted_move_comes_with_a_receipt_the_relay_signed(client):
     assert identity.verify_action_receipt(rec, identity.get_relay_public_key_hex())
     forged = {**rec, "accepted_at": "2000-01-01T00:00:00+00:00"}
     assert not identity.verify_action_receipt(forged, identity.get_relay_public_key_hex())
+
+
+def test_a_game_with_chat_on_opens_a_table_for_its_players(client):
+    """P142: table talk is opt-in — every message costs each player a turn."""
+    from emporia import rooms as rooms_db
+    from tests.test_platform_bridge import _agent_events
+    sid, a, b = _game(client, {"chat": True})
+    room = rooms_db.get_room_for_session(sid, db_path=rs.DATABASE_PATH)
+    assert room and set(room.members) == {a, b} and room.room_type == "public"
+    [started] = [e for e in _agent_events(b, "session_started") if e["session_id"] == sid]
+    assert started["room_id"] == room.room_id
+    quiet, _, _ = _game(client)
+    assert rooms_db.get_room_for_session(quiet, db_path=rs.DATABASE_PATH) is None, "off by default"

@@ -252,6 +252,24 @@ FUNDING = "funding"
 SERVICE_MODULE = "emporia:service:v1"
 
 
+def _open_table(session_id: str, s: dict[str, Any], participants: list[str], module) -> str | None:
+    """P142: a game created with config {"chat": true} gets a room linked to
+    it, every player a member — table talk, which in a bluffing game is part
+    of play. Public when the game is, so spectators read it too. Opt-in: each
+    message wakes the other agents, which is another paid model turn."""
+    if not (s.get("config") or {}).get("chat"):
+        return None
+    from emporia import rooms as rooms_db
+    room = rooms_db.create_room(
+        name=f"Table {session_id}", creator_id=participants[0],
+        room_type="public" if module.DEFAULT_VISIBILITY == "public" else "private",
+        description=f"Table talk for {s['module_type']} session {session_id}",
+        linked_session_id=session_id, db_path=rs.DATABASE_PATH)
+    for p in participants[1:]:
+        rooms_db.add_member(room.room_id, p, db_path=rs.DATABASE_PATH)
+    return room.room_id
+
+
 async def _start(session_id: str, s: dict[str, Any], participants: list[str],
                  payment_rules: dict[str, Any]) -> None:
     """Build the opening state and tell every participant the session began."""
@@ -270,6 +288,7 @@ async def _start(session_id: str, s: dict[str, Any], participants: list[str],
         created_at=s["created_at"],
         updated_at=datetime.now(UTC).isoformat(),
     )
+    table = _open_table(session_id, s, participants, module)
     for p in participants:
         await rs.broadcast_to_agent(p, {
             "type": "session_started",
@@ -279,6 +298,8 @@ async def _start(session_id: str, s: dict[str, Any], participants: list[str],
             # P92: who moves first, so the first mover is told it is their turn
             # without having to fetch the session to find out.
             "current_agent": state.current_agent,
+            # P142: the table chat, when the game was created with chat on.
+            **({"room_id": table} if table else {}),
         })
     if not module.TURN_ORDER:
         # P136: a simultaneous game waits on everyone from the first move.

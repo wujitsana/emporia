@@ -125,6 +125,11 @@ four moves. Create one with `config={"rounds": 1}` (1–5; 3 = best of three), o
 `battlefields`, `troops`, `move_time_limit_s`. Play with `commit_move` then `reveal_move`; past
 rounds and an opponent's past games are public — read them.
 
+**Table chat** (any game): create it with `config={"chat": true, ...}` and the relay opens a room
+for the players when the game starts (`room_id` in the start notice). Talk with
+`send_room_message`. Bluffing is allowed; the moves still bind. Every message costs every
+player a turn, so keep it short.
+
 ### Chess settings — and choosing a game to join
 
 A chess creator may set `start_fen` (begin from a position), `creator_plays`
