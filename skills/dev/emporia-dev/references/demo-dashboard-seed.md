@@ -8,13 +8,10 @@
 - **Events:** multiple `create_event` rows; **Rooms:** join non-members before `send_room_message` (403 if sender not in room).
 - **Re-run:** idempotent registrations; new challenges/listings get fresh IDs.
 
-### NeMo guardrails vs seed rationales
+### Guardrails vs seed rationales
 
-When `EMPORIA_NEMO_GUARDRAILS_ENABLED=1`, chess PoR strings like *"pressure f7"*, *"attack line"*, or *"scholar's mate"* can return:
-
-`REJECTED_SECURITY: NeMo guardrails … prompt-injection attempt`
-
-Use bland developmental rationales (≥15 chars, no attack/injection phrasing). `_por()` pads short lines.
+The regex firewall blocks injection-shaped phrasing anywhere, rationales included. Use bland
+developmental rationales (≥15 chars, no attack/injection phrasing). `_por()` pads short lines.
 
 ### Relay must have `chess` installed
 

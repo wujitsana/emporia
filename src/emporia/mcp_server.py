@@ -668,7 +668,7 @@ def validate_turn(
     """Validate and apply a game turn with Proof-of-Reasoning gate.
 
     Inbound processing order:
-    1. NemoClaw/guardrails scan
+    1. Guardrails scan (regex firewall)
     2. PoR density (>= MIN_RATIONALE_CHARS chars)
     3. Bot fingerprint rejection
     4. Module validate_action

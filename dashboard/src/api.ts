@@ -272,10 +272,7 @@ export interface SafetyStats {
   guardrails_mode: string;
   min_rationale_chars: number;
   bot_fingerprints: string[];
-  nemo_guardrails_enabled: boolean;
-  nemo_guardrails_model: string | null;
   guardrail_blocks: number;
-  nemo_guardrail_blocks: number;
   por_rejections: number;
   unsigned_actions_rejected: number;
 }

@@ -8,7 +8,7 @@ Provides:
   - Agent-to-agent negotiation broker
   - Relay descriptor (not an A2A Agent Card) at /relay-card
   - WebSocket real-time updates (per-session + per-agent)
-  - Guardrails on all inbound (deterministic regex firewall + optional NVIDIA NIM check)
+  - Guardrails on all inbound (deterministic regex firewall)
   - Ed25519 identity verification
   - Stripe payment gate (when mode != free)
   - Anti-cheat: Proof-of-Reasoning + bot fingerprint rejection
@@ -3612,7 +3612,6 @@ def _enforce_agent_rate_limit(agent_id: str) -> None:
 # (the hash-chained audit log in session_audit.py is the durable record).
 SAFETY_STATS: dict[str, int] = {
     "guardrail_blocks": 0,
-    "nemo_guardrail_blocks": 0,
     "por_rejections": 0,
     "unsigned_actions_rejected": 0,
 }
@@ -3642,11 +3641,8 @@ def _require_valid_msg_type(msg_type: str) -> None:
 
 
 async def _assert_payload_safe_counted(payload: dict[str, Any]) -> None:
-    """Wrap guardrails.assert_payload_safe_async to track block counts for the
-    dashboard, distinguishing the always-on regex layer from the optional
-    NVIDIA NIM semantic layer via the structured GuardrailResult attached to
-    GuardrailBlocked (not by parsing the exception's message text — that broke
-    once already when the message wording changed).
+    """Wrap guardrails.assert_payload_safe_async to count blocks for the
+    dashboard.
 
     P21-5 (B5): also the one chokepoint every scanning route already passes its
     whole payload through, so the per-field content-size bound
@@ -3657,10 +3653,7 @@ async def _assert_payload_safe_counted(payload: dict[str, Any]) -> None:
     try:
         await assert_payload_safe_async(payload)
     except GuardrailBlocked as e:
-        if e.result.matched_pattern == "nemo:semantic":
-            SAFETY_STATS["nemo_guardrail_blocks"] += 1
-        else:
-            SAFETY_STATS["guardrail_blocks"] += 1
+        SAFETY_STATS["guardrail_blocks"] += 1
         logger.warning(
             "guardrail_blocked", extra={"matched_pattern": e.result.matched_pattern},
         )
@@ -4866,9 +4859,6 @@ async def safety_stats():
         "guardrails_mode": guardrails.DEFAULT_MODE,
         "min_rationale_chars": MIN_RATIONALE_CHARS,
         "bot_fingerprints": list(BOT_FINGERPRINTS),
-        "nemo_guardrails_enabled": guardrails.NEMO_GUARDRAILS_ENABLED,
-        "nemo_guardrails_model": guardrails.NEMO_GUARDRAILS_MODEL if guardrails.NEMO_GUARDRAILS_ENABLED else None,
-        "nemo_guardrail_errors": guardrails.NEMO_STATS["errors"],
         **SAFETY_STATS,
         "sweep": SWEEP_STATS,
         # P51: liveness only. This route is unauthenticated, and

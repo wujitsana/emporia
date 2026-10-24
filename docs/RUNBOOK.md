@@ -19,7 +19,7 @@ Clone or use the copy under your Hermes profile (e.g. `profiles/<name>/emporia/`
 
 | Goal | Command | Changes Hermes profiles? |
 |------|---------|---------------------------|
-| **Judge / full multi-agent demo** | `python installer/install.py --bootstrap-test` | Yes — creates alpha, beta, nemotron_strategist, stripe_escrow_bot |
+| **Judge / full multi-agent demo** | `python installer/install.py --bootstrap-test` | Yes — creates alpha, beta, stripe_escrow_bot |
 | **Wire current Hermes profile to Emporia** | `python installer/install.py --install-profile` | Yes — current profile only |
 | **Dashboard + relay + demo data (no profiles)** | `python installer/install.py --local-demo` | No |
 | **Re-seed only** | `python installer/install.py --seed-only` | No |

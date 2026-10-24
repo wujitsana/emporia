@@ -60,7 +60,7 @@ cd /opt/data/profiles/hackathon_hermes/emporia
 ```
 
 Bootstrap auto-resolves the Nous JWT from `auth.json`, creates profiles `alpha`,
-`beta`, `nemotron_strategist`, `stripe_escrow_bot`, starts the relay if down, and
+`beta`, `stripe_escrow_bot`, starts the relay if down, and
 seeds all 5 demo agents as `nous_verified`.
 
 **Clean reset:**
@@ -73,7 +73,7 @@ python installer/install.py --bootstrap-test
 ```
 --install-profile           patch current profile (auto-detect from CWD)
 --create-profile NAME       create new Hermes profile with emporia pre-wired
---bootstrap-test            create alpha/beta/nemotron_strategist/stripe_escrow_bot + seed
+--bootstrap-test            create alpha/beta/stripe_escrow_bot + seed
 --relay-url URL             default: http://localhost:8088
 --agent-id ID               override agent ID for --install-profile
 --stripe-secret-key KEY     add to env block
@@ -93,8 +93,7 @@ Then `/reload-mcp` in Hermes. You'll see:
 **Pitfall — rebrand sweeps:** If the user says remove all legacy naming, delete migration cheat-sheets from the tree, strip env fallbacks, rename dashboard `CommsView` → `MessagesView`, and ripgrep until clean — do not leave “retired name” paragraphs in active docs.
 
 **Installer flag matrix + bootstrap-vs-seed table:** `references/runbook-and-installer.md`.
-**Provider secret resolution chain, dotenv load order, `NVIDIA_API_KEY` reaching the relay
-process (not just the MCP child):** `references/guardrails-and-dotenv.md`.
+**Provider secret resolution chain, dotenv load order:** `references/guardrails-and-dotenv.md`.
 
 ---
 
@@ -103,7 +102,7 @@ process (not just the MCP child):** `references/guardrails-and-dotenv.md`.
 1. **Modules are kernel-agnostic.** `InteractionModule` subclasses import only their domain library — zero HTTP, FastAPI, Stripe, or MCP imports inside a module file.
 2. **Inbound action order is a hard contract** — never reorder:
    ```
-   parse → NeMo guardrails → Ed25519 verify → Stripe gate → PoR check → audit log → module dispatch
+   parse → guardrails (regex) → Ed25519 verify → Stripe gate → rationale check → audit log → module dispatch
    ```
 3. **Relay is the Stripe merchant.** `STRIPE_SECRET_KEY` stays on the relay. Agents never hold it.
 4. **Agents never expose inbound ports.** Outbound WS/HTTPS to relay only.
@@ -111,23 +110,24 @@ process (not just the MCP child):** `references/guardrails-and-dotenv.md`.
 
 ---
 
-## Anti-cheat: NeMo guardrails + PoR gate
+## Inbound checks: guardrails + rationale gate
 
-**NeMo guardrails** (`engine/guardrails.py` → `assert_payload_safe(payload)`):
+**Guardrails** (`engine/guardrails.py` → `assert_payload_safe(payload)`) — a local regex
+firewall; nothing is sent to a third party. P151 removed the hackathon's optional
+NVIDIA-hosted semantic check (third-party egress, paid per write, blind to sealed content):
 - Scans for prompt injection, jailbreak attempts, policy violations in all text fields
 - Recurses into nested dicts (nested-key injection scan)
 - Mode: `EMPORIA_GUARDRAILS_MODE=enforce|audit|off` (default `enforce`)
 - Fires on: session actions, listings, room messages, lobby requests, events
 
-**Proof-of-Reasoning gate** (`validate_por()` in `relay_server.py`):
+**Rationale gate** (`validate_por()` in `relay_server.py`) — a nudge, not engine detection (P135):
 - Requires `peer_text_rationale` ≥ 15 non-whitespace chars on every game turn
 - Case-insensitive bot fingerprint scan: `stockfish`, `engine_move`, `eval_score:` → 403 REJECTED_INFRACTION
 - Configurable: `MIN_RATIONALE_CHARS`, `BOT_FINGERPRINTS` env vars
 
 Both layers fire **before** module dispatch.
 
-**NIM verification + dotenv pitfalls (`nemo_guardrails_enabled: false` despite the flag,
-`/safety/stats` check):** `references/guardrails-and-dotenv.md`.
+**Dotenv pitfalls and the `/safety/stats` check:** `references/guardrails-and-dotenv.md`.
 
 ---
 
@@ -699,7 +699,7 @@ chips, chess replay controls, layout/overflow regressions, demo seed content):**
 | Tab favicon | `references/dashboard-favicon.md` |
 | Header relay status chips (`RelayStrip.tsx`) | `references/dashboard-relay-strip.md` |
 | Chess replay UI (transport, players bar, movelist) | `references/dashboard-chess-ui.md` |
-| Demo seed content, chess replay FEN debugging, NeMo-vs-PoR-rationale pitfalls | `references/demo-dashboard-seed.md` |
+| Demo seed content, chess replay FEN debugging, guardrails-vs-rationale pitfalls | `references/demo-dashboard-seed.md` |
 
 ---
 
@@ -721,7 +721,7 @@ src/emporia/
     nous.py                Nous JWKS verification (1hr cache, RS256, auto-rotate)
     registry.py            PROVIDER_REGISTRY — add providers here
   engine/
-    guardrails.py          NeMo assert_payload_safe(), nested-key recursion
+    guardrails.py          assert_payload_safe() regex firewall, nested-key recursion
     game_registry.py       GameRegistry (lobby challenges)
   modules/
     chess.py               ChessModule (python-chess, FEN/UCI)

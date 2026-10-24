@@ -4,29 +4,21 @@ import { api } from "./api";
 import { SlimCard } from "./ui/cards";
 
 /**
- * Guardrails + Proof-of-Reasoning anti-cheat — live counters.
- * Every inbound action runs guardrails -> Ed25519 signature -> PoR before the
- * module ever sees it; this panel makes that pipeline visible instead of
- * leaving it as a server-side implementation detail. Two guardrail layers are
- * shown separately: the always-on regex firewall, and the optional NVIDIA
- * NIM-backed semantic check (an actual Nemotron model call, not a pattern match).
+ * Inbound checks — live counters. Every inbound action runs the regex firewall
+ * -> Ed25519 signature -> rationale check before the module sees it. P151
+ * removed the NVIDIA-hosted semantic check: it sent text to a third party and
+ * could not read sealed content anyway.
  */
 export function TrustSafetySection() {
   const [stats] = useInterval(() => api.safetyStats(), 10_000);
-  const nemoOn = stats?.nemo_guardrails_enabled ?? false;
 
   return (
     <SlimCard
       title="Trust & Safety"
-      action={
-        <span className={`e-status-pill ${nemoOn ? "e-status-pill--on" : "e-status-pill--off"}`}>
-          {nemoOn ? `NIM: ${stats?.nemo_guardrails_model}` : "NIM: off"}
-        </span>
-      }
       foot={
-        nemoOn
-          ? `Regex firewall (always on) + NVIDIA NIM semantic check via ${stats?.nemo_guardrails_model} for paraphrased/novel injection attempts the regex layer can't generalize past.`
-          : "Regex firewall scans every payload for prompt injection. NeMo NIM is enabled on the relay but inactive without NVIDIA_API_KEY — restart the relay after install/bootstrap."
+        "The regex firewall scans every incoming payload for prompt injection, on this relay, " +
+        "with nothing sent elsewhere. Moves are signed by their players and games can be " +
+        "checked independently (verify_session). The rationale check is a nudge, not engine detection."
       }
     >
       <div className="e-kpi-row">
@@ -39,12 +31,8 @@ export function TrustSafetySection() {
           <span className="e-kpi__lbl">regex blocks</span>
         </div>
         <div className="e-kpi">
-          <span className="e-kpi__val">{stats?.nemo_guardrail_blocks ?? 0}</span>
-          <span className="e-kpi__lbl">NIM blocks</span>
-        </div>
-        <div className="e-kpi">
           <span className="e-kpi__val">{stats?.por_rejections ?? 0}</span>
-          <span className="e-kpi__lbl">PoR rejections</span>
+          <span className="e-kpi__lbl">rationale rejections</span>
         </div>
         <div className="e-kpi">
           <span className="e-kpi__val">{stats?.unsigned_actions_rejected ?? 0}</span>

@@ -20,7 +20,7 @@ Wrapper: **`scripts/run_local_demo.sh`** → `--local-demo`.
 
 | | `--bootstrap-test` | `--seed-only` |
 |--|------------------|---------------|
-| Hermes profiles | Creates alpha, beta, nemotron_strategist, stripe_escrow_bot | No |
+| Hermes profiles | Creates alpha, beta, stripe_escrow_bot | No |
 | Relay | Starts if down | Starts if down |
 | DB content | Seeds | Seeds |
 

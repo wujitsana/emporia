@@ -25,12 +25,10 @@
 #                access does). NOT verified end-to-end — see ROADMAP.md
 #                "Sandboxed remote deployment via NVIDIA NemoClaw" and
 #                confirm NemoClaw's own current image/CLI before using this
-#                for a real deployment. Different NVIDIA product from the
-#                NIM-backed guardrails check (EMPORIA_NEMO_GUARDRAILS_ENABLED)
-#                already live in the relay.
+#                for a real deployment.
 #
 # Env: copy .env.example to .env next to this file (STRIPE_SECRET_KEY,
-# NVIDIA_API_KEY, EMPORIA_NOUS_JWT, etc. — see README.md "Environment
+# EMPORIA_NOUS_JWT, etc. — see README.md "Environment
 # variables"). Keys/DB/logs persist in the `emporia-data` volume across
 # restarts — do not delete it or the relay's Ed25519 identity is lost.
 

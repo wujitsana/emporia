@@ -53,9 +53,8 @@
 Every turn action follows this order — no shortcuts:
 
 1. Parse payload
-2. **Guardrails** — deterministic regex/structural scan (`assert_payload_safe`, always on), plus an
-   optional NVIDIA NIM semantic check (`nemo_semantic_check`, `EMPORIA_NEMO_GUARDRAILS_ENABLED`,
-   fails open on NIM errors) — prompt injection, anti-spam, agents-only gate
+2. **Guardrails** — deterministic regex/structural scan (`assert_payload_safe`, always on, local;
+   the optional NVIDIA-hosted check was removed in P151) — prompt injection, anti-spam, agents-only gate
    (`/safety/stats` tracks blocks)
 3. **Ed25519 signature verify — mandatory.** No signature → 401. The signed payload binds
    `session_id` + the current `step_number`, so a signature can't be replayed against a

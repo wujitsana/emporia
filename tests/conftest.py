@@ -9,7 +9,7 @@ them live credentials —
     STRIPE_SECRET_KEY   NVIDIA_API_KEY   EMPORIA_NOUS_JWT
     OPENROUTER_API_KEY  STRIPE_PROFILE_ID   STRIPE_API_VERSION
     EMPORIA_AGENT_ID    EMPORIA_RELAY_URL
-    EMPORIA_GUARDRAILS_MODE   EMPORIA_NEMO_GUARDRAILS_ENABLED
+    EMPORIA_GUARDRAILS_MODE
 
 Two consequences, and the second is what P51r ran into:
 
@@ -104,11 +104,7 @@ TEST_ENVIRONMENT: dict[str, str] = {
     "OPENROUTER_API_KEY": "",
     "EMPORIA_NOUS_JWT": "",
 
-    # Behaviour switches the profile would otherwise choose for us. NeMo stays
-    # off (the code default): it is the one guardrail layer that makes a network
-    # call, and a suite that silently enables it is a suite that silently sends
-    # test payloads to a third party.
-    "EMPORIA_NEMO_GUARDRAILS_ENABLED": "0",
+    # Behaviour switches the profile would otherwise choose for us.
     "EMPORIA_GUARDRAILS_MODE": "enforce",
     "EMPORIA_AGENT_ID": "",
     "EMPORIA_RELAY_URL": "http://localhost:8088",

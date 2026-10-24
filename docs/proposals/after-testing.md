@@ -43,4 +43,5 @@ decision, or is safer after the first round of manual testing.
 - `tsc -b` fails on the build configs' Node module resolution (vite configs). It predates this
   work; `typecheck:src` is the gate.
 - Old profiles `nemotron_strategist` and `stripe_escrow_bot` from the hackathon; remove once
-  confirmed unused.
+  confirmed unused. (The NVIDIA guardrail is gone since P151; `.env.example` may still mention
+  `NVIDIA_API_KEY` — the operator should tidy it, as the tools here may not read it.)

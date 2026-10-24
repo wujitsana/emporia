@@ -1024,7 +1024,7 @@ async def submit_action(session_id: str, req: rs.SubmitActionRequest):
             if isinstance(v, str) and v:
                 _require_sealed(s, v, f"'{f}'")
 
-    # 1. Guardrails (regex firewall + optional NVIDIA NIM semantic check)
+    # 1. Guardrails (regex firewall)
     try:
         await rs._assert_payload_safe_counted(full_payload)
     except PermissionError as e:

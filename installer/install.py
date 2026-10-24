@@ -10,7 +10,7 @@ Usage (run from emporia repo root or inside a Hermes profile):
 
     # ── Full hackathon demo (multi-agent profiles + seed) ──
     python installer/install.py --bootstrap-test
-    # → creates alpha/beta/nemotron_strategist/stripe_escrow_bot profiles, starts relay, seeds
+    # → creates alpha/beta/stripe_escrow_bot profiles, starts relay, seeds
 
     # ── Relay + dashboard + seed only (no Hermes profile changes) ──
     python installer/install.py --local-demo
@@ -90,7 +90,7 @@ _SECRET_ENV_KEYS = {
     "EMPORIA_NOUS_JWT",
 }
 
-_PROVIDER_ENV_KEYS = ("NVIDIA_API_KEY", "STRIPE_SECRET_KEY", "STRIPE_PROFILE_ID")
+_PROVIDER_ENV_KEYS = ("STRIPE_SECRET_KEY", "STRIPE_PROFILE_ID")
 
 # The relay's Stripe settings. An agent profile never needs them: its MCP
 # server and platform plugin read no Stripe variable, and every Stripe call goes
@@ -105,48 +105,19 @@ _RELAY_ONLY_ENV_KEYS = frozenset({
 })
 
 
-def _apply_guardrails_env(
-    env_block: dict[str, str],
-    *,
-    disabled: bool = False,
-    nvidia_api_key: str | None = None,
-) -> None:
-    """Regex enforce always (unless off); NeMo NIM stays off by default.
-
-    NeMo NIM used to auto-enable the moment an NVIDIA_API_KEY was resolved from
-    anywhere (CLI, profile .env, parent .env, or config) — including a leftover
-    hackathon-sponsor key nobody meant to keep spending. Every guardrails-scanned
-    write fans out into a NIM API call once it's on, so that was a real, unadvertised
-    recurring cost on every fresh install *and* every routine re-run. NEMO is now
-    only ever written "0" here; a resolved key is still stored (so a deliberate
-    EMPORIA_NEMO_GUARDRAILS_ENABLED=1 later doesn't require re-entering it), but
-    presence of the key alone no longer turns anything on.
-    """
+def _apply_guardrails_env(env_block: dict[str, str], *, disabled: bool = False) -> None:
+    """The regex firewall: enforce, or off. P151 removed the NVIDIA-hosted
+    semantic layer; its old setting is dropped from any profile set up again."""
+    env_block.pop("EMPORIA_NEMO_GUARDRAILS_ENABLED", None)
     if disabled:
         env_block["EMPORIA_GUARDRAILS_MODE"] = "off"
-        env_block["EMPORIA_NEMO_GUARDRAILS_ENABLED"] = "0"
-        env_block.pop("NVIDIA_API_KEY", None)
         return
     env_block.setdefault("EMPORIA_GUARDRAILS_MODE", "enforce")
-    if nvidia_api_key:
-        env_block["NVIDIA_API_KEY"] = nvidia_api_key
-    else:
-        env_block.pop("NVIDIA_API_KEY", None)
-    env_block["EMPORIA_NEMO_GUARDRAILS_ENABLED"] = "0"
 
 
-def _guardrails_env_lines(*, disabled: bool = False, nvidia_api_key: str | None = None) -> list[str]:
-    """`nvidia_api_key` no longer decides NEMO enablement (see _apply_guardrails_env) —
-    kept as a parameter so call sites don't need to change, but NEMO is always "0" here.
-    The key itself, if resolved, is still written separately by the caller."""
-    if disabled:
-        return ["EMPORIA_GUARDRAILS_MODE=off", "EMPORIA_NEMO_GUARDRAILS_ENABLED=0"]
-    return ["EMPORIA_GUARDRAILS_MODE=enforce", "EMPORIA_NEMO_GUARDRAILS_ENABLED=0"]
+def _guardrails_env_lines(*, disabled: bool = False) -> list[str]:
+    return ["EMPORIA_GUARDRAILS_MODE=off" if disabled else "EMPORIA_GUARDRAILS_MODE=enforce"]
 
-
-# ─────────────────────────────────────────────────────────────────────────────
-# Nous token resolution
-# ─────────────────────────────────────────────────────────────────────────────
 
 def _find_auth_json(profile_dir: Path | None = None) -> Path | None:
     """Walk common locations to find auth.json.
@@ -514,13 +485,12 @@ def _prompt_optional_line(label: str, hint: str) -> str | None:
 def resolve_provider_secrets(
     profile_dir: Path,
     *,
-    nvidia_api_key: str | None = None,
     stripe_secret_key: str | None = None,
     stripe_profile_id: str | None = None,
     interactive: bool = True,
     dry_run: bool = False,
-) -> tuple[str | None, str | None, str | None]:
-    """Resolve NVIDIA + Stripe from CLI, profile .env, parent .env, config, then prompt."""
+) -> tuple[str | None, str | None]:
+    """Resolve the relay's Stripe settings from CLI, profile .env, parent .env, config, then prompt."""
     local = harvest_env(profile_dir)
     cfg_env = harvest_config_environment(profile_dir)
     for k in _PROVIDER_ENV_KEYS:
@@ -537,7 +507,6 @@ def resolve_provider_secrets(
             return upstream[key]
         return None
 
-    nvidia = pick("NVIDIA_API_KEY", nvidia_api_key)
     stripe = pick("STRIPE_SECRET_KEY", stripe_secret_key)
     profile_cli = stripe_profile_id
     if (profile_cli or "").strip().lower() == "auto":
@@ -563,13 +532,6 @@ def resolve_provider_secrets(
             print(f"  STRIPE_PROFILE_ID: auto-discover skipped ({type(e).__name__})")
 
     if interactive and not dry_run:
-        if not nvidia:
-            print("  NVIDIA_API_KEY: not in profile, parent .env, or config — NeMo NIM stays off.")
-            nvidia = _prompt_optional_secret(
-                "NVIDIA_API_KEY",
-                "lets you opt into NeMo NIM guardrails later (off by default; adds a paid "
-                "API call per scanned write)",
-            )
         if not stripe:
             print("  STRIPE_SECRET_KEY: not found — paid Stripe sessions stay off.")
             stripe = _prompt_optional_secret(
@@ -587,19 +549,13 @@ def resolve_provider_secrets(
         print(f"  WARNING: ignoring invalid STRIPE_PROFILE_ID={profile!r}")
         profile = None
 
-    return nvidia, stripe, profile
+    return stripe, profile
 
 
 def _print_provider_status(
-    nvidia_api_key: str | None,
     stripe_secret_key: str | None,
     stripe_profile_id: str | None,
 ) -> None:
-    if nvidia_api_key:
-        print("  NeMo NIM guardrails: off by default (NVIDIA_API_KEY saved to profile .env — "
-              "set EMPORIA_NEMO_GUARDRAILS_ENABLED=1 there to opt in)")
-    else:
-        print("  NeMo NIM guardrails: off (no NVIDIA_API_KEY)")
     if stripe_secret_key:
         if stripe_profile_id:
             print("  Stripe relay payments: on (secret key + STRIPE_PROFILE_ID — MPP seller ready)")
@@ -812,7 +768,6 @@ def install_into_profile(
     stripe_secret_key: str | None = None,
     stripe_profile_id: str | None = None,
     stripe_api_version: str | None = None,
-    nvidia_api_key: str | None = None,
     tempo_enabled: bool = False,
     max_budget_cents: int | None = None,
     nous_token: str | None = None,
@@ -915,14 +870,10 @@ def install_into_profile(
         print("  + guardrails disabled (EMPORIA_GUARDRAILS_MODE=off)")
     else:
         before = dict(env_block)
-        _apply_guardrails_env(env_block, disabled=False, nvidia_api_key=nvidia_api_key)
+        _apply_guardrails_env(env_block, disabled=False)
         if env_block != before:
             changed = True
-            if nvidia_api_key:
-                print("  + guardrails: regex enforce (NeMo NIM off by default — NVIDIA_API_KEY "
-                      "saved; set EMPORIA_NEMO_GUARDRAILS_ENABLED=1 to opt in)")
-            else:
-                print("  + guardrails: regex enforce only (NeMo NIM off — no NVIDIA_API_KEY)")
+            print("  + guardrails: regex firewall, enforce")
 
     if changed:
         if not dry_run:
@@ -972,10 +923,7 @@ def install_into_profile(
         env_lines, _ = _set_env_line(env_lines, "STRIPE_PROFILE_ID", stripe_profile_id)
     elif not stripe_secret_key:
         env_lines = [ln for ln in env_lines if not ln.startswith("STRIPE_PROFILE_ID=")]
-    if nvidia_api_key:
-        env_lines, _ = _set_env_line(env_lines, "NVIDIA_API_KEY", nvidia_api_key)
-    else:
-        env_lines = [ln for ln in env_lines if not ln.startswith("NVIDIA_API_KEY=")]
+    env_lines = [ln for ln in env_lines if not ln.startswith("EMPORIA_NEMO_GUARDRAILS_ENABLED=")]
     if tempo_enabled:
         env_lines, _ = _set_env_line(env_lines, "EMPORIA_MPP_TEMPO_ENABLED", "1")
     if max_budget_cents is not None:
@@ -988,7 +936,7 @@ def install_into_profile(
     else:
         c3 = False
     env_dirty = False
-    for line in _guardrails_env_lines(disabled=no_guardrails, nvidia_api_key=nvidia_api_key):
+    for line in _guardrails_env_lines(disabled=no_guardrails):
         key, _, val = line.partition("=")
         env_lines, ch = _set_env_line(env_lines, key, val)
         env_dirty = env_dirty or ch
@@ -1003,11 +951,7 @@ def install_into_profile(
         os.environ["STRIPE_SECRET_KEY"] = stripe_secret_key
     elif "STRIPE_SECRET_KEY" in os.environ:
         os.environ.pop("STRIPE_SECRET_KEY", None)
-    if nvidia_api_key:
-        os.environ["NVIDIA_API_KEY"] = nvidia_api_key
-    elif "NVIDIA_API_KEY" in os.environ:
-        os.environ.pop("NVIDIA_API_KEY", None)
-    for line in _guardrails_env_lines(disabled=no_guardrails, nvidia_api_key=nvidia_api_key):
+    for line in _guardrails_env_lines(disabled=no_guardrails):
         key, _, val = line.partition("=")
         os.environ[key] = val
 
@@ -1047,7 +991,6 @@ def create_profile(
     name: str,
     relay_url: str,
     current_profile_dir: Path | None,
-    nvidia_api_key: str | None = None,
     max_budget_cents: int | None = None,
     nous_token: str | None = None,
     inherit_env: bool = True,
@@ -1145,12 +1088,7 @@ def create_profile(
         env_block.pop("EMPORIA_MAX_TOTAL_SPEND_CENTS", None)
     if nous_token:
         env_block["EMPORIA_NOUS_JWT"] = nous_token
-    if nvidia_api_key:
-        env_block["NVIDIA_API_KEY"] = nvidia_api_key
-    elif not env_block.get("NVIDIA_API_KEY"):
-        env_block.pop("NVIDIA_API_KEY", None)
-    effective_nvidia = (env_block.get("NVIDIA_API_KEY") or "").strip() or None
-    _apply_guardrails_env(env_block, disabled=False, nvidia_api_key=effective_nvidia)
+    _apply_guardrails_env(env_block, disabled=False)
     # P54: EMPORIA_PUBLIC_KEY used to be written here. Nothing in this repo,
     # in Hermes, or anywhere else ever read it — it was a key-shaped name in an
     # env block that changed nothing when edited, and the value is derivable
@@ -1201,12 +1139,9 @@ def create_profile(
         safe_env_lines.append(f"EMPORIA_MAX_TOTAL_SPEND_CENTS={max_budget_cents}")
     if nous_token:
         safe_env_lines.append(f"EMPORIA_NOUS_JWT={nous_token}")
-    nemo_key = effective_nvidia
-    safe_env_lines.extend(_guardrails_env_lines(disabled=False, nvidia_api_key=nemo_key))
+    safe_env_lines.extend(_guardrails_env_lines(disabled=False))
     for k in _SECRET_ENV_KEYS - _RELAY_ONLY_ENV_KEYS:
         if k in env_block and env_block[k] and k != "EMPORIA_NOUS_JWT":
-            if k == "NVIDIA_API_KEY" and not nemo_key:
-                continue
             safe_env_lines.append(f"{k}={env_block[k]}")
 
     # Export to current process so subsequent steps see the vars immediately
@@ -1373,27 +1308,23 @@ def bootstrap_test_profiles(
     stripe_secret_key: str | None = None,
     stripe_profile_id: str | None = None,
     stripe_api_version: str | None = None,
-    nvidia_api_key: str | None = None,
     tempo_enabled: bool = False,
     max_budget_cents: int | None = None,
     nous_token: str | None = None,
     dry_run: bool = False,
     dev_skills: bool = False,
 ) -> None:
-    """Create all demo agent profiles (alpha, beta, nemotron_strategist, stripe_escrow_bot), then seed."""
+    """Create the test agent profiles (alpha, beta, stripe_escrow_bot), then seed."""
     if stripe_secret_key:
         os.environ["STRIPE_SECRET_KEY"] = stripe_secret_key
     elif not stripe_secret_key and "STRIPE_SECRET_KEY" not in os.environ:
         os.environ.pop("STRIPE_SECRET_KEY", None)
-    if nvidia_api_key:
-        os.environ["NVIDIA_API_KEY"] = nvidia_api_key
-    for name in ("alpha", "beta", "nemotron_strategist", "stripe_escrow_bot"):
+    for name in ("alpha", "beta", "stripe_escrow_bot"):
         print(f"\nBootstrapping: {name}")
         create_profile(
             name=name,
             relay_url=relay_url,
             current_profile_dir=current_profile_dir,
-            nvidia_api_key=nvidia_api_key,
             max_budget_cents=max_budget_cents,
             nous_token=nous_token,
             inherit_env=False,  # P117: bare — the model's key is copied on its own
@@ -1693,7 +1624,7 @@ def main() -> None:
     parser.add_argument("--create-profile", metavar="NAME",
                         help="Create a new agent profile named NAME")
     parser.add_argument("--bootstrap-test", action="store_true",
-                        help="Create alpha/beta/nemotron_strategist/stripe_escrow_bot profiles + seed")
+                        help="Create alpha/beta/stripe_escrow_bot profiles + seed")
     parser.add_argument("--seed-only", action="store_true",
                         help="Start local relay if needed and run scripts/seed_demo_relay.py")
     parser.add_argument("--start-relay", action="store_true",
@@ -1727,11 +1658,8 @@ def main() -> None:
                         help="Display name for the agent (defaults to agent-id)")
     parser.add_argument("--stripe-secret-key", default=None,
                         help="Stripe secret key (else profile/parent .env, config, or prompt)")
-    parser.add_argument("--nvidia-api-key", default=None,
-                        help="NVIDIA API key for NeMo NIM guardrails, saved but off by default — "
-                        "set EMPORIA_NEMO_GUARDRAILS_ENABLED=1 to opt in (else profile/parent .env, config, or prompt)")
     parser.add_argument("--non-interactive", action="store_true",
-                        help="Do not prompt for missing NVIDIA/Stripe keys (leave features off)")
+                        help="Do not prompt for missing Stripe keys (leave features off)")
     parser.add_argument("--stripe-profile-id", default=None,
                         help="Stripe Machine Payments profile ID (profile_... / profile_test_...); use 'auto' to discover from env files or Stripe API (sk_* keys only)")
     parser.add_argument("--stripe-api-version", default=os.getenv("STRIPE_API_VERSION", "2026-04-22.preview"),
@@ -1749,7 +1677,7 @@ def main() -> None:
                         help="Don't copy env vars from current profile when creating new profile")
     parser.add_argument("--inherit-env", action="store_true",
                         help="With --create-profile: also copy this profile's other settings "
-                             "(provider keys, NVIDIA key, budgets). Default is bare: the model "
+                             "(provider keys, budgets). Default is bare: the model "
                              "and the one key it needs")
     parser.add_argument("--dev-skills", action="store_true",
                         help="Symlink dev skills from repo (emporia-dev, srcl-terminal-ui)")
@@ -1837,15 +1765,14 @@ def main() -> None:
         )
         print(f"Installing into: {current_profile_dir}  agent_id={agent_id!r}")
 
-        nvidia_key, stripe_key, stripe_profile_id = resolve_provider_secrets(
+        stripe_key, stripe_profile_id = resolve_provider_secrets(
             current_profile_dir,
-            nvidia_api_key=args.nvidia_api_key,
             stripe_secret_key=args.stripe_secret_key,
             stripe_profile_id=args.stripe_profile_id,
             interactive=interactive,
             dry_run=args.dry_run,
         )
-        _print_provider_status(nvidia_key, stripe_key, stripe_profile_id)
+        _print_provider_status(stripe_key, stripe_profile_id)
 
         install_into_profile(
             profile_dir=current_profile_dir,
@@ -1854,7 +1781,6 @@ def main() -> None:
             stripe_secret_key=stripe_key,
             stripe_profile_id=stripe_profile_id,
             stripe_api_version=args.stripe_api_version,
-            nvidia_api_key=nvidia_key,
             tempo_enabled=args.tempo_enabled,
             max_budget_cents=args.max_budget_cents,
             nous_token=nous_token,
@@ -1875,15 +1801,14 @@ def main() -> None:
                 _run_demo_seed(args.relay_url)
 
     if args.create_profile:
-        nvidia_key, stripe_key, stripe_profile_id = resolve_provider_secrets(
+        stripe_key, stripe_profile_id = resolve_provider_secrets(
             secrets_dir,
-            nvidia_api_key=args.nvidia_api_key,
             stripe_secret_key=args.stripe_secret_key,
             stripe_profile_id=args.stripe_profile_id,
             interactive=interactive,
             dry_run=args.dry_run,
         )
-        _print_provider_status(nvidia_key, stripe_key, stripe_profile_id)
+        _print_provider_status(stripe_key, stripe_profile_id)
         create_profile(
             name=args.create_profile,
             relay_url=args.relay_url,
@@ -1892,7 +1817,6 @@ def main() -> None:
             x402_max_payment_cents=args.x402_max_payment_cents,
             x402_max_daily_cents=args.x402_max_daily_cents,
             sync_model=args.sync_model,
-            nvidia_api_key=nvidia_key,
             max_budget_cents=args.max_budget_cents,
             nous_token=nous_token,
             # P117: bare by default — the model and its key, nothing else from
@@ -1903,22 +1827,20 @@ def main() -> None:
         )
 
     if args.bootstrap_test:
-        nvidia_key, stripe_key, stripe_profile_id = resolve_provider_secrets(
+        stripe_key, stripe_profile_id = resolve_provider_secrets(
             secrets_dir,
-            nvidia_api_key=args.nvidia_api_key,
             stripe_secret_key=args.stripe_secret_key,
             stripe_profile_id=args.stripe_profile_id,
             interactive=interactive,
             dry_run=args.dry_run,
         )
-        _print_provider_status(nvidia_key, stripe_key, stripe_profile_id)
+        _print_provider_status(stripe_key, stripe_profile_id)
         bootstrap_test_profiles(
             relay_url=args.relay_url,
             current_profile_dir=current_profile_dir,
             stripe_secret_key=stripe_key,
             stripe_profile_id=stripe_profile_id,
             stripe_api_version=args.stripe_api_version,
-            nvidia_api_key=nvidia_key,
             tempo_enabled=args.tempo_enabled,
             max_budget_cents=args.max_budget_cents,
             nous_token=nous_token,

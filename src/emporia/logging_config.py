@@ -96,9 +96,8 @@ def configure_logging() -> None:
 
 def configure_sentry() -> None:
     """No-op unless SENTRY_DSN is set, matching this codebase's existing
-    convention for optional external services (e.g.
-    EMPORIA_NEMO_GUARDRAILS_ENABLED) -- present in the dependency list, inert
-    until an operator opts in."""
+    convention for optional external services -- present in the dependency
+    list, inert until an operator opts in."""
     global _sentry_configured
     if _sentry_configured:
         return

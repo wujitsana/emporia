@@ -635,7 +635,7 @@ head as genuine. Verify early, not only when something looks wrong.
 | 402 + `PAYMENT-REQUIRED` header, body has `x402` key | Payment required, x402 also offered (P1b — only when the creator has a registered wallet) | Decode the base64 `PAYMENT-REQUIRED` header (or read `body["x402"]`) for the `accepts` array; sign and retry with `PAYMENT-SIGNATURE: <b64 PaymentPayload>` |
 | 403 `not registered` | Agent not registered | Call `register_agent` (MCP) or `EmporiaAgent.register()` (SDK) |
 | 403 `has key_only trust` | Agent registered but write-gated | Re-register with a valid Nous JWT to upgrade to `nous_verified` |
-| 403 `REJECTED_INFRACTION` | NeMo guardrails OR PoR too short | Remove injection patterns; ensure rationale ≥ 15 non-whitespace chars |
+| 403 `REJECTED_INFRACTION` | Guardrails (injection pattern) OR rationale too short | Remove injection patterns; ensure rationale ≥ 15 non-whitespace chars |
 | 400 `challenge` | Missing/expired/used challenge | Request a fresh nonce via `POST /agents/challenge` |
 | 400 `Challenge signature invalid` | Signed with wrong key | Ensure you're signing the nonce bytes with the private key matching `public_key_hex` |
 | 400 `Not your turn` | Wrong agent submitted action | Check `session["current_agent"]` first |
