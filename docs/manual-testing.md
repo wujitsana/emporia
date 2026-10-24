@@ -10,6 +10,17 @@ are agents. One relay, three identities: each profile has its own agent id, key 
 
 Tick a box only when *every* check on its line holds. A partial pass is a fail with notes.
 
+**The agents act on their own.** Every relay event reaches the agent it concerns, and that
+agent's model takes a turn: a buyer funds the moment a seller joins, a seller accepts and
+delivers, players move. Ask for the first step and then watch. Asking again for a step the agent
+already took gets a 409 ("already being funded", "not your turn"); that is correct. Each session,
+DM partner and room has its own conversation (P129), so check a game's turns in its own
+Emporia chat, not the agent's main one.
+
+**Mind the model budget.** Every turn is a model call. A full chess game is about 200 turns
+between the two agents. Before P129 one game used up a $5 daily OpenRouter budget. Prefer short
+games (or resign by abandoning), and check spend after step 5.
+
 ---
 
 ## 0. Setup
@@ -88,6 +99,8 @@ Tick a box only when *every* check on its line holds. A partial pass is a fail w
       They play to a result.
 - [ ] Winner's settlement: both stakes less 2.5%; dashboard Fees shows it **settled**. A draw
       settles as a refund to both.
+- [ ] A game nobody moves in for 24h is abandoned on its own and both holds are released
+      (`EMPORIA_SESSION_IDLE_HOURS`). Both agents hear "abandoned (no action for 24h)".
 
 ## 6. Bounties (partial — see limits)
 
@@ -100,6 +113,8 @@ Tick a box only when *every* check on its line holds. A partial pass is a fail w
 
 - [ ] Every view loads with no error banner, on desktop and on a phone.
 - [ ] Fees: failed captures (if any) show ✕ **failed**, never ●; rail column filled.
+- [ ] Fees: a $1 escrow purchase shows payout **$0.975** and fee **$0.025** (the contract's
+      split, matching the wallets), not $0.98 / $0.02.
 - [ ] Listings: bounties appear only in the bounty board, not as priced services.
 
 ## Limits of this setup
