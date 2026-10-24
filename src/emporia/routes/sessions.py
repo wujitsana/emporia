@@ -111,6 +111,10 @@ async def create_session(req: rs.CreateSessionRequest, request: Request):
     if amount_cents and module.ENGINE_DECIDABLE and not engine_game_stakes_allowed():
         raise HTTPException(400, ENGINE_GAME_REFUSAL.format(mt=req.module_type))
     if (amount_cents and module.STAKE_MODEL == STAKE_WAGER and payment_rules.get("mode") != "x402"
+            and not rs.card_game_stakes_allowed()):
+        # P159: games are staked in USDC unless the operator has Stripe's approval.
+        raise HTTPException(400, rs.CARD_GAME_REFUSAL)
+    if (amount_cents and module.STAKE_MODEL == STAKE_WAGER and payment_rules.get("mode") != "x402"
             and not rs.custodial_cards_allowed()):
         # P157: a card wager is staked like an x402 one — after both have joined.
         payment_rules = {**payment_rules, "custody": "direct"}

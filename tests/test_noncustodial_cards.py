@@ -27,6 +27,9 @@ PAY = {"Authorization": "Payment spt_noncustodial_test"}
 @pytest.fixture(autouse=True)
 def _default_relay(monkeypatch):
     monkeypatch.delenv("EMPORIA_CUSTODIAL_CARDS", raising=False)
+    # The card-wager tests below are for an operator Stripe approved for skill
+    # games (P159); the default refuses card money on games — see the end.
+    monkeypatch.setenv("EMPORIA_CARD_GAME_STAKES", "1")
 
 
 @pytest.fixture
@@ -285,3 +288,23 @@ def test_funding_locks_do_not_outlive_the_funding(client, stripe):
         for who in (a, b):
             client.post(f"/sessions/{sid}/fund", headers={**_hdr(who), **PAY})
     assert rs.load_session(sid)["status"] == "active" and sid not in routes._WAGER_FUNDING_LOCKS
+
+
+# -- P159: by default, no card money on games ---------------------------------
+
+def test_by_default_games_are_staked_in_usdc_not_on_cards(client, stripe, monkeypatch):
+    monkeypatch.delenv("EMPORIA_CARD_GAME_STAKES")
+    a, = _agents(client, 1, "dg")
+    with _accounts(**{a: "acct_a"}):
+        r = client.post("/sessions", json={"module_type": "emporia:blotto:v1", "creator_agent_id": a,
+                                           "payment_rules": CARD_WAGER}, headers={**_hdr(a), **PAY})
+        assert r.status_code == 400 and "payment_mode='x402'" in r.text
+        deadline = (datetime.now(UTC) + timedelta(days=1)).isoformat()
+        r = client.post("/bounties", json={"title": "Prize", "description": "d", "prize_cents": 1000,
+                                           "module_type": "emporia:blotto:v1", "rail": "stripe",
+                                           "entry_deadline": deadline}, headers={**_hdr(a), **PAY})
+        assert r.status_code == 400 and "promise" in r.text
+        free = client.post("/sessions", json={"module_type": "emporia:blotto:v1", "creator_agent_id": a},
+                           headers=_hdr(a))
+    assert free.status_code == 200, "free play is untouched"
+    assert stripe.pis == {}

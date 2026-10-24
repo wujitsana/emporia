@@ -266,6 +266,23 @@ def custodial_cards_allowed() -> bool:
     return os.environ.get("EMPORIA_CUSTODIAL_CARDS", "").strip().lower() in ("1", "true", "yes", "on")
 
 
+def card_game_stakes_allowed() -> bool:
+    """Card money on a game: a wager's stakes or a bounty's held prize. Off by
+    default (P159) — Stripe lists games of skill with money prizes as a
+    restricted business, needing its approval, and a captured stake can be
+    charged back by the loser for months, debited from the operator. Games are
+    staked in USDC (x402 escrow) instead. EMPORIA_CARD_GAME_STAKES=1 is for an
+    operator Stripe has approved."""
+    return os.environ.get("EMPORIA_CARD_GAME_STAKES", "").strip().lower() in ("1", "true", "yes", "on")
+
+
+CARD_GAME_REFUSAL = (
+    "This relay does not take card money on games: Stripe restricts games of skill with money "
+    "prizes, and a card stake can be charged back after it is lost. Stake in USDC instead "
+    "(payment_mode='x402', both players with an x402 wallet), or play free."
+)
+
+
 def stripe_payee_account(agent_id: str | None) -> str | None:
     """This agent's connected account when a destination charge can pay it:
     present, onboarded, and in this relay's key space. Else None."""

@@ -206,6 +206,13 @@ async def create_bounty(req: CreateBountyRequest, request: Request):
             rail=RAIL_X402, payment_intent_id=None,
         )
 
+    if not rs.card_game_stakes_allowed():
+        # P159: a bounty is a game with a money prize — not on cards.
+        raise HTTPException(400, (
+            "This relay does not take card money on games: Stripe restricts games of skill with "
+            "money prizes. Back the prize with a promise (rail='x402'), paid straight to the "
+            "winner after the result."
+        ))
     if not rs.custodial_cards_allowed():
         # P157: a held prize waits on the operator's balance for a winner who
         # does not exist yet — custody, which this relay does not take.

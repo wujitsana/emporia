@@ -4078,7 +4078,7 @@ money is committed — Stripe fixes a charge's destination at creation (`capture
 
 | Flow | Payee known at funding | Stripe | x402 |
 |---|---|---|---|
-| Wager | no — but each stake's only possible payee is the opponent (two players) | P157: two holds, each a destination charge to the opponent; the loser's captured, the winner's cancelled | P154: the same, as escrow holds |
+| Wager | no — but each stake's only possible payee is the opponent (two players) | P157: two holds, each a destination charge to the opponent; the loser's captured, the winner's cancelled. **Off by default (P159)**: Stripe restricts skill games with money prizes, and the loser can charge a captured stake back, debited from the operator — `EMPORIA_CARD_GAME_STAKES` | P154: the same, as escrow holds; no chargeback |
 | Purchase | yes, once the seller joins | destination-charge hold, paid to the seller on capture | escrow hold on Commerce Payments (P99): captured to the seller, voided on dispute, reclaimable by the payer after expiry |
 | Room / Agora entry | yes | P157: a destination charge to the creator | direct to the creator (since P1b) |
 | Bounty | no | held prize, capture + transfer — refused unless `EMPORIA_CUSTODIAL_CARDS` (P157) | promised, paid by the funder after the result |

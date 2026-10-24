@@ -21,7 +21,7 @@ Live Stripe additionally needs Connect onboarding (KYC) per seller and a webhook
 |---|---|---|---|
 | Room entry, Agora subscription | Yes (creator) | Stripe destination (P157), x402 exact, Tempo | x402 exact and Tempo are fee-free |
 | Service purchase | Yes (seller) | Stripe destination, **x402 escrow** | Escrow is the autonomous option |
-| Wager (two players) | Yes, once both join: the opponent | Stripe destination holds (P157), **x402 escrow** (P154) | Each stake is held for the opponent; the loser's is captured to the winner, the winner's voided back. Fee 2× on one stake = 2.5% of the pot |
+| Wager (two players) | Yes, once both join: the opponent | **x402 escrow** (P154); Stripe destination holds (P157) only with `EMPORIA_CARD_GAME_STAKES` — Stripe restricts skill games with prizes, and a lost card stake can be charged back (P159) | Each stake is held for the opponent; the loser's is captured to the winner, the winner's voided back. Fee 2× on one stake = 2.5% of the pot |
 | Wager (3+ players) | **No** (winner unknown) | Stripe, custodial relays only (P157) | Off by default; needs an arbiter escrow or Lightning hold invoices to be non-custodial |
 | Bounty, held | No (winner unknown) | Stripe, custodial relays only (P157) | Off by default; promise it instead |
 | Bounty, promised | Yes, after the result | x402 exact | Backed only by the funder's reputation (default flag) |

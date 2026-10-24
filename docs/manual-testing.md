@@ -104,6 +104,9 @@ games (or resign by abandoning), and check spend after step 5.
 
 ## 5. Wager — Blotto on Stripe (and free chess)
 
+- [ ] **Card stake refused (P159).** A creates a Blotto with a $1 card stake
+      (`payment_mode="stripe_pi"`) → refused: games stake in USDC. The steps below need the relay
+      started with `EMPORIA_CARD_GAME_STAKES=1` (an operator with Stripe's approval).
 - [ ] **Card wager (P157: each stake held for the opponent).** A and B both need an active
       Stripe test account. A creates a Blotto game (`emporia:blotto:v1`, default 1 round) with a
       $1 stake, `payment_mode="stripe_pi"` — free to create; B joins free. Both hear "stake to

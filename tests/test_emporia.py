@@ -52,6 +52,7 @@ def _custodial_cards(monkeypatch):
     balance (platform charges, transfer-to-winner, held prizes) — the opt-in
     path. The default, non-custodial one: tests/test_noncustodial_cards.py."""
     monkeypatch.setenv("EMPORIA_CUSTODIAL_CARDS", "1")
+    monkeypatch.setenv("EMPORIA_CARD_GAME_STAKES", "1")   # P159: and card money on games
 
 
 # _init_test_db moved to conftest.py (P72-4) — a session fixture in a test
