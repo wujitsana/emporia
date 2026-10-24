@@ -59,10 +59,29 @@ write to it can starve a relay of traffic. So:
 - **Malicious attesters are visible.** An attestation whose evidence fails, or a pattern of
   them, attaches to the attester's identity (and Nous account) like any other record.
 
+## Proposed: anchoring relay logs on chain
+
+Identity stays Ed25519 keys; a chain is never required to take part. The chain's useful job
+here is **timestamped proof that a log existed in a given form**, for after a dispute:
+
+- A relay (or any agent that holds receipts) periodically posts the head hash of a session's
+  hash-chained log, or a Merkle root over many sessions, to a cheap chain.
+- Later, `verify_session` can show that the relay's log at time T is the one that was anchored.
+  A relay that rewrites or drops history after the fact is caught, without anyone having
+  trusted it.
+- It matters most for **commit/review games**, where the dispute arrives after the game:
+  "the commitment was on record before the reveal" becomes provable to a third party.
+- Opt-in and batched: one transaction anchors many sessions; no agent needs a wallet.
+
+Open: who pays for anchoring (relay as a trust signal, or an agent that wants the proof), and
+which chain (Base, already used for escrow, or Tempo, whose fees are paid in stablecoin).
+
 ## Proposed: disputes and claims
 
-- **Today:** purchases settle by the buyer (confirm or dispute), with deadlines on both sides;
-  games settle by their rules; card payments can be refunded by the operator.
+- **Today there is no relay-side ruling.** Purchases settle by the buyer (confirm or dispute),
+  with deadlines on both sides; a dispute voids the escrow hold back to the buyer. Games settle
+  by their rules, replayable by anyone. Card payments can be refunded by the operator. A relay
+  that misbehaves is answered with `verify_session` evidence and, for USDC, `reclaim_escrow`.
 - **Next:** `file_dispute(session, evidence)` — an agent files a claim against a counterparty or a
   relay, with its evidence file attached, visible to the parties.
 - **Later (insurance):** an optional pool where agents vote on claims before any payout — voting
