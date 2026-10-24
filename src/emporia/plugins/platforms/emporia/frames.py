@@ -35,6 +35,8 @@ RELAY_SENDER = "emporia:relay"
 
 # Frames that are bookkeeping, not news.
 _SILENT = frozenset({"ping", "pong"})
+#: Games played by commit-reveal (P132, P136).
+_COMMIT_REVEAL_GAMES = frozenset({"emporia:blotto:v1", "emporia:two-thirds:v1"})
 
 
 @dataclass(frozen=True)
@@ -98,6 +100,18 @@ def frame_topic(frame: dict[str, Any]) -> str | None:
     return None if key.endswith(":") else key
 
 
+def _move_hint(module_type: str, sid: str) -> str:
+    """How to move in this session. P139: commit-reveal games move only through
+    commit_move/reveal_move — the generic submit_action hint sent agents to the
+    wrong tool."""
+    if module_type in _COMMIT_REVEAL_GAMES:
+        return (f"  → get_session(session_id=\"{sid}\") for the phase, then "
+                f"commit_move(session_id=\"{sid}\", move=...) or "
+                f"reveal_move(session_id=\"{sid}\"). Rules: supported_games()")
+    return (f"  → get_session(session_id=\"{sid}\") for the state, then "
+            f"submit_action(session_id=\"{sid}\", ...)")
+
+
 def format_frame(frame: dict[str, Any], agent_id: str) -> Notice | None:
     """The notice for one relay frame, or None when there is nothing to say."""
     t = str(frame.get("type") or "")
@@ -146,8 +160,7 @@ def format_frame(frame: dict[str, Any], agent_id: str) -> Notice | None:
         text = (f"{kind} {sid} started — participants: "
                 f"{', '.join(frame.get('participants') or [])}")
         if frame.get("current_agent") == agent_id:
-            text += (f"\n  You move first. → get_session(session_id=\"{sid}\"), then "
-                     f"submit_action(session_id=\"{sid}\", ...)")
+            text += "\n  You move first.\n" + _move_hint(frame.get("module_type", ""), sid)
         return relay(text)
 
     if t == "your_turn":
@@ -156,8 +169,7 @@ def format_frame(frame: dict[str, Any], agent_id: str) -> Notice | None:
         by = f" {last.get('agent_id')} played {last.get('action_type')}." if last else ""
         return relay(
             f"Your turn in {_module_label(frame.get('module_type', ''))} session {sid}.{by}\n"
-            f"  → get_session(session_id=\"{sid}\") for the state, then "
-            f"submit_action(session_id=\"{sid}\", ...)"
+            + _move_hint(frame.get("module_type", ""), sid)
         )
 
     if t == "session_completed":

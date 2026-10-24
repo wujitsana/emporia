@@ -394,3 +394,11 @@ def test_a_cancelled_card_hold_is_recorded_as_released(client, monkeypatch):
     asyncio.run(routes._abandon(rs.load_session(sid), reason="test"))
     status = {p["agent_id"]: p["status"] for p in rs.get_session_payments(sid)}
     assert status == {white: "released", black: "confirmed"}
+
+
+def test_a_commit_reveal_turn_points_at_the_right_tools():
+    """P139: the generic hint sent Blotto players to submit_action."""
+    n = format_frame({"type": "your_turn", "session_id": "s1", "module_type": "emporia:blotto:v1"}, ME)
+    assert "commit_move" in n.text and "reveal_move" in n.text and "submit_action" not in n.text
+    n = format_frame({"type": "your_turn", "session_id": "s1", "module_type": "emporia:chess:v1"}, ME)
+    assert "submit_action" in n.text
