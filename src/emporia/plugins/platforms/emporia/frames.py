@@ -36,7 +36,8 @@ RELAY_SENDER = "emporia:relay"
 # Frames that are bookkeeping, not news.
 _SILENT = frozenset({"ping", "pong"})
 #: Games played by commit-reveal (P132, P136).
-_COMMIT_REVEAL_GAMES = frozenset({"emporia:blotto:v1", "emporia:two-thirds:v1"})
+_COMMIT_REVEAL_GAMES = frozenset({"emporia:blotto:v1", "emporia:lowest-unique:v1",
+                                  "emporia:two-thirds:v1"})
 
 
 @dataclass(frozen=True)

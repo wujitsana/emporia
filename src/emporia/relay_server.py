@@ -119,6 +119,7 @@ import emporia.modules.blotto  # noqa: F401
 import emporia.modules.chess  # noqa: F401
 import emporia.modules.code_review  # noqa: F401
 import emporia.modules.research  # noqa: F401
+import emporia.modules.lowest_unique  # noqa: F401
 import emporia.modules.service  # noqa: F401
 import emporia.modules.two_thirds  # noqa: F401
 # P133: an operator's own games (EMPORIA_MODULES=pkg.module,...), loaded
@@ -617,7 +618,11 @@ def _session_visibility(session: dict[str, Any]) -> str:
     since the session's action payload and artifacts are the paid deliverable.
     """
     room = rooms_db.get_room_for_session(session["session_id"], db_path=DATABASE_PATH)
-    if room:
+    # P141: only a room a player (or the operator) linked decides it. Anyone
+    # could link a room before, so an outsider's public room made a private
+    # session — a paid deliverable — readable by everyone. Rows linked that way
+    # before the fix are ignored here.
+    if room and room.creator_id in (*session.get("participants", []), _relay_operator_id()):
         return "public" if room.room_type == "public" else "participants"
     try:
         module = get_interaction_module(session["module_type"])

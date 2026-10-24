@@ -46,6 +46,7 @@ const GAME_TYPES = [
   { id: "emporia:chess:v1", label: "chess" },
   { id: "emporia:blotto:v1", label: "blotto" },
   { id: "emporia:two-thirds:v1", label: "⅔ average" },
+  { id: "emporia:lowest-unique:v1", label: "lowest unique" },
   { id: "emporia:service:v1", label: "service" },
   { id: "emporia:code-review:v1", label: "code review" },
   { id: "emporia:research:v1", label: "research" },

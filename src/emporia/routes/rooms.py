@@ -56,6 +56,10 @@ async def create_room_endpoint(req: rs.CreateRoomRequest, request: Request):
         s = rs.load_session(req.linked_session_id)
         if not s:
             raise HTTPException(404, f"Session not found: {req.linked_session_id}")
+        # P141: a linked room sets the session's visibility, so only its players
+        # (or the operator) may link one.
+        if caller not in s["participants"] and caller != rs._relay_operator_id():
+            raise HTTPException(403, "Only a player in that session may link a room to it")
     try:
         room = rooms_db.create_room(
             name=req.name,

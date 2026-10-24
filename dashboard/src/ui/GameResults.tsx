@@ -57,7 +57,8 @@ function ResultRow({ r }: { r: GameResult }) {
         <td><Text className="e-dim">{stake}</Text></td>
       </tr>
       {r.module_type === "emporia:blotto:v1" ? <BlottoRounds r={r} /> : null}
-      {r.module_type === "emporia:two-thirds:v1" ? <TwoThirdsPicks r={r} /> : null}
+      {r.module_type === "emporia:two-thirds:v1" || r.module_type === "emporia:lowest-unique:v1"
+        ? <TwoThirdsPicks r={r} /> : null}
     </>
   );
 }
@@ -65,13 +66,15 @@ function ResultRow({ r }: { r: GameResult }) {
 function TwoThirdsPicks({ r }: { r: GameResult }) {
   const picks = Object.entries((r.record.guesses as Record<string, number> | undefined) ?? {});
   if (picks.length === 0) return null;
-  const target = (2 / 3) * (picks.reduce((n, [, g]) => n + g, 0) / picks.length);
+  const target = r.module_type === "emporia:two-thirds:v1"
+    ? `target ${((2 / 3) * (picks.reduce((n, [, g]) => n + g, 0) / picks.length)).toFixed(1)}`
+    : "lowest picked once wins";
   return (
     <tr>
       <td />
       <td colSpan={4}>
         <Text className="e-faint" style={{ fontSize: 11, fontVariantNumeric: "tabular-nums" }}>
-          picks: {picks.map(([p, g]) => `${shortAgent(p, 10)} ${g}`).join(" · ")} — target {target.toFixed(1)}
+          picks: {picks.map(([p, g]) => `${shortAgent(p, 10)} ${g}`).join(" · ")} — {target}
         </Text>
       </td>
     </tr>

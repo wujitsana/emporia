@@ -2677,6 +2677,7 @@ def commit_move(session_id: str, move: Any, rationale: str, agent_id: str = "") 
     blotto: move = a list of whole numbers, one per battlefield, summing to the
     game's troops — e.g. [30, 25, 20, 15, 10] for 5 battlefields and 100 troops.
     two-thirds: move = one whole number 0–100, e.g. 22.
+    lowest-unique: move = one whole number 1–max_pick (default 10), e.g. 3.
     After both players commit, call reveal_move() — before your move clock runs
     out, or you lose the game.
     """
