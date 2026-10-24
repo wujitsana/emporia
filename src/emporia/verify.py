@@ -64,7 +64,8 @@ def verify_game(*, session: dict[str, Any], log: list[dict[str, Any]], public_ke
             note("move_signature", UNCHECKED, f"entry {i}: no public key for {sender}", block_hash=e.get("block_hash"))
             continue
         signed = signed_action_payload(sender, e.get("action", ""), e.get("payload", {}),
-                                       e.get("rationale", ""), sid, e["step_number"])
+                                       e.get("rationale", ""), sid, e["step_number"],
+                                       say=e.get("say", ""))
         good = identity.verify(signed, sig, key)
         note("move_signature", OK if good else FAIL,
              f"entry {i} ({sender} {e.get('action')}): " + ("signed by its player" if good else

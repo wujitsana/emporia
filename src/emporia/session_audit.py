@@ -72,6 +72,7 @@ def log_public_receipt(
     signature: str,
     step_number: int | None = None,
     rationale: str | None = None,
+    say: str | None = None,
 ) -> str:
     """Append a hash-chained public receipt. Returns the new block_hash.
 
@@ -107,6 +108,7 @@ def log_public_receipt(
         "block_hash": block_hash,
         **({"step_number": step_number} if step_number is not None else {}),
         **({"rationale": rationale} if rationale is not None else {}),
+        **({"say": say} if say else {}),  # P148: signed with the move
     }
     with path.open("a", encoding="utf-8") as f:
         f.write(json.dumps(entry, sort_keys=True) + "\n")

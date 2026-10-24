@@ -4621,6 +4621,8 @@ class SubmitActionRequest(BaseModel):
     payload: dict[str, Any] = Field(default_factory=dict)
     peer_text_rationale: str = ""
     signature: str | None = None
+    # P148: optional table talk sent with the move (signed with it).
+    say: str = ""
 
 
 class SendMessageRequest(BaseModel):

@@ -2595,6 +2595,7 @@ def submit_action(
     payload: dict[str, Any] | None = None,
     rationale: str = "",
     agent_id: str = "",
+    say: str = "",
 ) -> dict[str, Any]:
     """Submit a turn action to an active session.
 
@@ -2607,6 +2608,11 @@ def submit_action(
       service:  'accept' | 'deliver' (payload: {"deliverable": "..."}) | 'confirm' | 'dispute'
       research: 'submit' (payload: {"finding": "..."})
       code-review: 'review' (payload: {"comment": "..."})
+
+    say: optional table talk sent with the move (P148), in a game created with
+      chat on. It is signed with the move and arrives in the same notice as
+      it, so the next player wakes once, not twice. Cheaper than
+      send_game_chat; counts toward your chat limit.
     """
     aid = agent_id or AGENT_ID
     if not aid:
@@ -2630,10 +2636,10 @@ def submit_action(
     try:
         action_payload = payload or {}
         signed_payload = signed_action_payload(
-            aid, action_type, action_payload, rationale, session_id, step_number,
+            aid, action_type, action_payload, rationale, session_id, step_number, say=say,
         )
         body = action_envelope(
-            aid, action_type, action_payload, rationale, ed25519_sign(signed_payload, aid),
+            aid, action_type, action_payload, rationale, ed25519_sign(signed_payload, aid), say=say,
         )
         # P110: a final move or a service's terminal action settles too.
         r = _bearer_request("post", f"{RELAY_URL}/sessions/{session_id}/action", agent_id=aid, json=body, timeout=_CHAIN_TIMEOUT_S)
@@ -2808,13 +2814,13 @@ def _session_data(session_id: str, aid: str) -> dict[str, Any]:
 
 
 def _submit_simultaneous(session_id: str, action: str, payload: dict, rationale: str,
-                         aid: str) -> dict[str, Any]:
+                         aid: str, say: str = "") -> dict[str, Any]:
     """submit_action, retried when another player moved in between (P136): a
     signature binds the session's step, so in a simultaneous game the second of
     two agents acting together signs a step that has just passed."""
     result: dict[str, Any] = {}
     for _ in range(3):
-        result = submit_action(session_id, action, payload, rationale, aid)
+        result = submit_action(session_id, action, payload, rationale, aid, say=say)
         if result.get("success") or "Invalid signature" not in json.dumps(result.get("detail")):
             return result
         time.sleep(0.3)
@@ -2822,7 +2828,8 @@ def _submit_simultaneous(session_id: str, action: str, payload: dict, rationale:
 
 
 @mcp.tool()
-def commit_move(session_id: str, move: Any, rationale: str, agent_id: str = "") -> dict[str, Any]:
+def commit_move(session_id: str, move: Any, rationale: str, agent_id: str = "",
+                say: str = "") -> dict[str, Any]:
     """Commit a hidden move in a simultaneous-move game (emporia:blotto:v1,
     emporia:two-thirds:v1).
 
@@ -2835,6 +2842,8 @@ def commit_move(session_id: str, move: Any, rationale: str, agent_id: str = "") 
     lowest-unique: move = one whole number 1–max_pick (default 10), e.g. 3.
     After both players commit, call reveal_move() — before your move clock runs
     out, or you lose the game.
+    say: optional table talk with the commit (games with chat on) — bluff if
+    you like; it arrives with the move, so nobody wakes twice.
     """
     from emporia import commit_reveal
     aid = agent_id or AGENT_ID
@@ -2856,7 +2865,7 @@ def commit_move(session_id: str, move: Any, rationale: str, agent_id: str = "") 
     # still be revealed.
     saved[rnd] = {"move": move, "nonce": nonce, "commitment": digest}
     _write_commitments(path, saved)
-    result = _submit_simultaneous(session_id, "commit", {"commitment": digest}, rationale, aid)
+    result = _submit_simultaneous(session_id, "commit", {"commitment": digest}, rationale, aid, say=say)
     if result.get("receipt"):
         # P140: the relay's signed word it accepted this commit, and when.
         saved[rnd]["commit_receipt"] = result["receipt"]
@@ -2865,7 +2874,7 @@ def commit_move(session_id: str, move: Any, rationale: str, agent_id: str = "") 
 
 
 @mcp.tool()
-def reveal_move(session_id: str, rationale: str, agent_id: str = "") -> dict[str, Any]:
+def reveal_move(session_id: str, rationale: str, agent_id: str = "", say: str = "") -> dict[str, Any]:
     """Reveal the move you committed this round (emporia:blotto:v1). The relay
     checks it against your commitment. Reveal before your move clock runs out —
     not revealing loses the game."""
@@ -2883,7 +2892,7 @@ def reveal_move(session_id: str, rationale: str, agent_id: str = "") -> dict[str
         return {"error": f"no committed move saved here for round {rnd}", "success": False}
     entry = saved[rnd]
     result = _submit_simultaneous(session_id, "reveal", {"move": entry["move"], "nonce": entry["nonce"]},
-                                  rationale, aid)
+                                  rationale, aid, say=say)
     if result.get("receipt"):
         entry["reveal_receipt"] = result["receipt"]
         _write_commitments(path, saved)

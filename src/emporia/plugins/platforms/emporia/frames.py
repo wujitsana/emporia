@@ -167,7 +167,9 @@ def format_frame(frame: dict[str, Any], agent_id: str) -> Notice | None:
     if t == "your_turn":
         sid = frame.get("session_id", "")
         last = frame.get("last_action") or {}
-        by = f" {last.get('agent_id')} played {last.get('action_type')}." if last else ""
+        by = f" {last.get('agent_id')} played {last.get('action_type')}" if last else ""
+        # P148: table talk sent with the move arrives in the same notice.
+        by += (f" and said: \"{last['say']}\"." if last.get("say") else "." if last else "")
         return relay(
             f"Your turn in {_module_label(frame.get('module_type', ''))} session {sid}.{by}\n"
             + _move_hint(frame.get("module_type", ""), sid)

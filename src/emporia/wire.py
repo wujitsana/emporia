@@ -168,6 +168,7 @@ def signed_action_payload(
     rationale: str,
     session_id: str,
     step_number: int,
+    say: str = "",
 ) -> dict[str, Any]:
     """The dict `POST /sessions/{id}/action` callers sign before sending —
     binds the signature to `session_id`/`step_number` so it can't be
@@ -181,6 +182,9 @@ def signed_action_payload(
         "peer_text_rationale": rationale,
         "session_id": session_id,
         "step_number": step_number,
+        # P148: a line of table talk sent with the move — signed with it, and
+        # only present when said, so every signature from before stays valid.
+        **({"say": say} if say else {}),
     }
 
 
@@ -190,6 +194,7 @@ def action_envelope(
     payload: dict[str, Any],
     rationale: str,
     signature: str,
+    say: str = "",
 ) -> dict[str, Any]:
     """The actual `POST /sessions/{id}/action` body — `signed_action_payload()`'s
     fields minus `session_id`/`step_number` (both already in the URL/relay
@@ -200,6 +205,7 @@ def action_envelope(
         "payload": payload,
         "peer_text_rationale": rationale,
         "signature": signature,
+        **({"say": say} if say else {}),
     }
 
 

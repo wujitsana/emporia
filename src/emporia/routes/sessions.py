@@ -211,34 +211,53 @@ async def post_game_chat(session_id: str, req: GameChatRequest, request: Request
         raise HTTPException(404, "Session not found")
     if caller not in s["participants"]:
         raise HTTPException(403, "Only a player in this game may talk at its table")
+    content = (req.content or "").strip()
+    _check_chat(s, caller, content)
+    rs._enforce_agent_rate_limit(caller)
+    await rs._assert_payload_safe_counted({"content": content})
+    message, remaining = _store_chat(s, caller, content)
+    await _announce_chat(s, message, skip={caller})
+    return {**message, "remaining": remaining}
+
+
+def _check_chat(s: dict[str, Any], agent_id: str, content: str) -> None:
+    """The table's rules, for a message on its own or one sent with a move."""
     config = s.get("config") or {}
     if not config.get("chat"):
         raise HTTPException(400, "This game was created without table chat (config chat: true)")
     if s["status"] not in ("waiting", "active"):
         raise HTTPException(400, f"The game is {s['status']}; the table is closed")
-    content = (req.content or "").strip()
     if not content or len(content) > CHAT_MAX_CHARS:
         raise HTTPException(400, f"A message is 1–{CHAT_MAX_CHARS} characters")
-    rs._enforce_agent_rate_limit(caller)
-    await rs._assert_payload_safe_counted({"content": content})
     limit = int(config.get("chat_limit", CHAT_DEFAULT_LIMIT))
+    with rs.DB_LOCK, rs.get_db() as conn:
+        sent = conn.execute("SELECT COUNT(*) FROM game_chat WHERE session_id = ? AND agent_id = ?",
+                            (s["session_id"], agent_id)).fetchone()[0]
+    if sent >= limit:
+        raise HTTPException(429, f"You have said your {limit} messages at this table")
+
+
+def _store_chat(s: dict[str, Any], agent_id: str, content: str) -> tuple[dict[str, Any], int]:
+    limit = int((s.get("config") or {}).get("chat_limit", CHAT_DEFAULT_LIMIT))
     message_id = f"gchat_{uuid.uuid4().hex[:16]}"
     now = datetime.now(UTC).isoformat()
     with rs.DB_LOCK, rs.get_db() as conn:
-        sent = conn.execute("SELECT COUNT(*) FROM game_chat WHERE session_id = ? AND agent_id = ?",
-                            (session_id, caller)).fetchone()[0]
-        if sent >= limit:
-            raise HTTPException(429, f"You have said your {limit} messages at this table")
         conn.execute("INSERT INTO game_chat (message_id, session_id, agent_id, content, created_at) "
-                     "VALUES (?, ?, ?, ?, ?)", (message_id, session_id, caller, content, now))
-    message = {"message_id": message_id, "session_id": session_id, "agent_id": caller,
-               "content": content, "created_at": now}
+                     "VALUES (?, ?, ?, ?, ?)", (message_id, s["session_id"], agent_id, content, now))
+        sent = conn.execute("SELECT COUNT(*) FROM game_chat WHERE session_id = ? AND agent_id = ?",
+                            (s["session_id"], agent_id)).fetchone()[0]
+    return ({"message_id": message_id, "session_id": s["session_id"], "agent_id": agent_id,
+             "content": content, "created_at": now}, max(0, limit - sent))
+
+
+async def _announce_chat(s: dict[str, Any], message: dict[str, Any], skip: set[str]) -> None:
+    """To the session socket, and to every player not in `skip` — the speaker,
+    and (P148) a player who already hears it inside their your_turn notice."""
     event = {"type": "game_chat", "module_type": s["module_type"], **message}
-    await rs.broadcast_to_session(session_id, event)
+    await rs.broadcast_to_session(s["session_id"], event)
     for p in s["participants"]:
-        if p != caller:
+        if p not in skip:
             await rs.broadcast_to_agent(p, event)
-    return {**message, "remaining": limit - sent - 1}
 
 
 @router.get("/sessions/{session_id}/chat")
@@ -949,8 +968,12 @@ async def submit_action(session_id: str, req: rs.SubmitActionRequest):
     from emporia.wire import signed_action_payload
     full_payload = signed_action_payload(
         req.agent_id, req.action_type, req.payload, req.peer_text_rationale,
-        session_id, s["step_number"],
+        session_id, s["step_number"], say=req.say,
     )
+    # P148: a line of table talk with the move — the table's rules, checked
+    # before the move is applied so a refused line does not half-happen.
+    if req.say:
+        _check_chat(s, req.agent_id, req.say.strip())
 
     # 1. Guardrails (regex firewall + optional NVIDIA NIM semantic check)
     try:
@@ -1031,8 +1054,9 @@ async def submit_action(session_id: str, req: rs.SubmitActionRequest):
     # Public audit receipt
     block_hash = (log_public_receipt(session_id, req.agent_id, req.action_type, req.payload,
                                      req.signature, step_number=s["step_number"],
-                                     rationale=req.peer_text_rationale)
+                                     rationale=req.peer_text_rationale, say=req.say)
                   if req.signature else None)
+    said = _store_chat(s, req.agent_id, req.say.strip())[0] if req.say else None
     receipt = action_receipt(session_id, s["step_number"] + 1, req.agent_id, req.action_type,
                              req.payload, block_hash)
 
@@ -1051,29 +1075,39 @@ async def submit_action(session_id: str, req: rs.SubmitActionRequest):
         await rs.broadcast_global(action_event)
 
     settlement_record: dict[str, Any] | None = None
+    last_action = {"agent_id": req.agent_id, "action_type": req.action_type,
+                   **({"say": said["content"]} if said else {})}
+    told: set[str] = {req.agent_id}
     if is_over:
         settlement_record = await _finish_session(session_id, s, module, outcome)
+        told = set(s["participants"])  # everyone hears the result; the line is in the record
     elif not module.TURN_ORDER:
         # P136: everyone may move; when a phase opens, tell everyone it waits on.
         before = (s.get("state") or {}).get("data") or {}
         if new_state.data.get("phase") != before.get("phase"):
             for agent in new_state.data.get("pending") or []:
+                told.add(agent)
                 await rs.broadcast_to_agent(agent, {
                     "type": "your_turn", "session_id": session_id,
                     "module_type": s["module_type"], "step_number": s["step_number"] + 1,
-                    "last_action": {"agent_id": req.agent_id, "action_type": req.action_type},
+                    "last_action": last_action,
                 })
     elif new_state.current_agent and new_state.current_agent != req.agent_id:
         # P92: nothing told an agent it was their move unless it was watching
         # the session socket, so an agent driven by its own channel waited on a
         # turn that had already come.
+        told.add(new_state.current_agent)
         await rs.broadcast_to_agent(new_state.current_agent, {
             "type": "your_turn",
             "session_id": session_id,
             "module_type": s["module_type"],
             "step_number": s["step_number"] + 1,
-            "last_action": {"agent_id": req.agent_id, "action_type": req.action_type},
+            "last_action": last_action,
         })
+    if said:
+        # P148: a player woken by the move hears the line inside its notice;
+        # only the others get it as table talk, so nobody wakes twice.
+        await _announce_chat(s, said, skip=told)
 
     return {
         "success": True,

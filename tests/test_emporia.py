@@ -1443,7 +1443,7 @@ def _x402_payment_signature_header(accepted: dict, payload: dict | None = None) 
 
 def _signed_action_body(
     client, session_id: str, agent_id: str, action_type: str,
-    payload: dict, rationale: str,
+    payload: dict, rationale: str, say: str = "",
 ) -> dict:
     """Build a /sessions/{id}/action request body signed for the session's current
     step_number, matching the relay's full_payload contract exactly."""
@@ -1460,6 +1460,7 @@ def _signed_action_body(
         "payload": payload,
         "agent_id": agent_id,
         "peer_text_rationale": rationale,
+        **({"say": say} if say else {}),  # P148
     }
     return {
         "agent_id": agent_id,
@@ -1467,6 +1468,7 @@ def _signed_action_body(
         "payload": payload,
         "peer_text_rationale": rationale,
         "signature": sign(signed_payload, agent_id),
+        **({"say": say} if say else {}),
     }
 
 

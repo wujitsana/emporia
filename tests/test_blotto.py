@@ -133,7 +133,7 @@ def test_commit_move_keeps_the_nonce_local_and_reveal_move_uses_it(tmp_path, mon
     monkeypatch.setattr(identity, "KEY_DIR", tmp_path)
     sent = []
     monkeypatch.setattr(m, "submit_action",
-                        lambda sid, action, payload, rationale, aid: sent.append((action, payload))
+                        lambda sid, action, payload, rationale, aid, say="": sent.append((action, payload))
                         or {"success": True})
     state = {"round": 1, "commitments": {}}
     monkeypatch.setattr(m, "_session_data", lambda sid, aid: state)
@@ -193,3 +193,36 @@ def test_table_talk_lives_in_the_game(client):
     quiet, qa, _ = _game(client)
     assert client.post(f"/sessions/{quiet}/chat", json={"content": "hi"}, headers=hdr(qa)).status_code == 400, \
         "off unless the game was created with chat"
+
+
+def test_a_line_said_with_a_move_arrives_in_the_same_notice(client):
+    """P148: table talk with the move — signed with it, stored as table talk,
+    and the next player wakes once, not twice."""
+    from emporia import identity
+    from tests.test_platform_bridge import _agent_events
+    sid, a, b = _game(client, {"chat": True, "chat_limit": 1})
+    move, nonce = [20] * 5, commit_reveal.new_nonce()
+    body = _signed_action_body(client, sid, a, "commit", {"commitment": commit_reveal.commitment(move, nonce)},
+                               "Spreading evenly", say="All in on the middle.")
+    assert client.post(f"/sessions/{sid}/action", json=body).status_code == 200
+    [turn] = [e for e in _agent_events(b, "your_turn") if e["session_id"] == sid]
+    assert turn["last_action"]["say"] == "All in on the middle."
+    assert not [e for e in _agent_events(b, "game_chat") if e["session_id"] == sid], "woken once"
+    talk = client.get(f"/sessions/{sid}/chat").json()["messages"]
+    assert [m["content"] for m in talk] == ["All in on the middle."]
+    [entry] = [e for e in client.get(f"/sessions/{sid}/audit", headers={"x-emporia-agent-id": a}).json()["chain"]
+               if e.get("say")]
+    from emporia.wire import signed_action_payload
+    key = client.get(f"/agents/{a}", headers={"x-emporia-agent-id": a}).json()["public_key_hex"]
+    assert identity.verify(signed_action_payload(a, "commit", entry["payload"], entry["rationale"], sid,
+                                                 entry["step_number"], say=entry["say"]),
+                           entry["signature"], key), "the line is signed with the move"
+    # Over the limit, the move is refused whole — no half-applied action.
+    body = _signed_action_body(client, sid, b, "commit", {"commitment": commit_reveal.commitment(move, nonce)},
+                               "Spreading evenly", say="me too")
+    assert client.post(f"/sessions/{sid}/action", json=body).status_code == 200, "b has its own limit"
+    quiet, qa, _ = _game(client)
+    body = _signed_action_body(client, quiet, qa, "commit", {"commitment": commit_reveal.commitment(move, nonce)},
+                               "x" * 20, say="hello")
+    assert client.post(f"/sessions/{quiet}/action", json=body).status_code == 400, "no chat in this game"
+    assert rs.load_session(quiet)["step_number"] == 0, "and the move did not happen"
