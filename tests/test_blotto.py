@@ -156,3 +156,17 @@ def test_the_default_game_is_one_round_four_moves(client):
     r = _round(client, sid, a, b, [30, 30, 30, 5, 5], [20, 20, 20, 20, 20])
     assert r.json()["outcome"]["winner"] == a
     assert rs.load_session(sid)["step_number"] == 4
+
+
+def test_every_accepted_move_comes_with_a_receipt_the_relay_signed(client):
+    """P140: the relay cannot see a move early, but it could refuse one. A
+    signed receipt proves it accepted the commit, and when."""
+    from emporia import identity
+    sid, a, b = _game(client)
+    move, nonce = [20] * 5, commit_reveal.new_nonce()
+    r = _act(client, sid, a, "commit", {"commitment": commit_reveal.commitment(move, nonce)})
+    rec = r.json()["receipt"]
+    assert (rec["session_id"], rec["agent_id"], rec["action_type"]) == (sid, a, "commit")
+    assert identity.verify_action_receipt(rec, identity.get_relay_public_key_hex())
+    forged = {**rec, "accepted_at": "2000-01-01T00:00:00+00:00"}
+    assert not identity.verify_action_receipt(forged, identity.get_relay_public_key_hex())

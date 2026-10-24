@@ -507,6 +507,27 @@ def get_relay_public_key_hex() -> str:
     return pub_bytes.hex()
 
 
+def receipt_bytes(body: dict) -> bytes:
+    """The bytes an action receipt's signature covers (P140): its fields, minus
+    the signature, as canonical JSON with a domain prefix so a receipt
+    signature can never be replayed as a federation one."""
+    fields = {k: v for k, v in body.items() if k != "signature"}
+    return b"emporia-action-receipt:v1:" + json.dumps(
+        fields, sort_keys=True, separators=(",", ":")).encode()
+
+
+def verify_action_receipt(receipt: dict, relay_public_key_hex: str | None = None) -> bool:
+    """True if `receipt` was signed by this relay key (pass the key you trust;
+    default: the one the receipt names)."""
+    key = relay_public_key_hex or receipt.get("relay_public_key") or ""
+    try:
+        ed25519.Ed25519PublicKey.from_public_bytes(bytes.fromhex(key)).verify(
+            bytes.fromhex(receipt.get("signature") or ""), receipt_bytes(receipt))
+        return True
+    except Exception:
+        return False
+
+
 def sign_raw_relay(data: bytes) -> str:
     """Sign raw bytes with this relay's own Ed25519 key. Returns lowercase hex signature."""
     priv, _ = generate_or_load_relay_keypair()

@@ -2640,6 +2640,12 @@ def _commitments_file(aid: str, session_id: str):
     return d / f"{aid}.{''.join(c for c in session_id if c.isalnum() or c == '_')}.json"
 
 
+def _write_commitments(path, saved: dict) -> None:
+    fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    with os.fdopen(fd, "w") as f:
+        json.dump(saved, f)
+
+
 def _session_data(session_id: str, aid: str) -> dict[str, Any]:
     r = _bearer_request("get", f"{RELAY_URL}/sessions/{session_id}", agent_id=aid, timeout=10)
     r.raise_for_status()
@@ -2693,10 +2699,13 @@ def commit_move(session_id: str, move: Any, rationale: str, agent_id: str = "") 
     # Saved before sending: a commit that lands but whose answer is lost can
     # still be revealed.
     saved[rnd] = {"move": move, "nonce": nonce, "commitment": digest}
-    fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
-    with os.fdopen(fd, "w") as f:
-        json.dump(saved, f)
-    return _submit_simultaneous(session_id, "commit", {"commitment": digest}, rationale, aid)
+    _write_commitments(path, saved)
+    result = _submit_simultaneous(session_id, "commit", {"commitment": digest}, rationale, aid)
+    if result.get("receipt"):
+        # P140: the relay's signed word it accepted this commit, and when.
+        saved[rnd]["commit_receipt"] = result["receipt"]
+        _write_commitments(path, saved)
+    return result
 
 
 @mcp.tool()
@@ -2717,8 +2726,12 @@ def reveal_move(session_id: str, rationale: str, agent_id: str = "") -> dict[str
     if rnd not in saved:
         return {"error": f"no committed move saved here for round {rnd}", "success": False}
     entry = saved[rnd]
-    return _submit_simultaneous(session_id, "reveal", {"move": entry["move"], "nonce": entry["nonce"]},
-                                rationale, aid)
+    result = _submit_simultaneous(session_id, "reveal", {"move": entry["move"], "nonce": entry["nonce"]},
+                                  rationale, aid)
+    if result.get("receipt"):
+        entry["reveal_receipt"] = result["receipt"]
+        _write_commitments(path, saved)
+    return result
 
 
 @mcp.tool()

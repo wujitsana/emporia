@@ -959,8 +959,10 @@ async def submit_action(session_id: str, req: rs.SubmitActionRequest):
     })
 
     # Public audit receipt
-    if req.signature:
-        log_public_receipt(session_id, req.agent_id, req.action_type, req.payload, req.signature)
+    block_hash = (log_public_receipt(session_id, req.agent_id, req.action_type, req.payload,
+                                     req.signature) if req.signature else None)
+    receipt = action_receipt(session_id, s["step_number"] + 1, req.agent_id, req.action_type,
+                             req.payload, block_hash)
 
     action_event: dict[str, Any] = {
         "type": "action_result",
@@ -1009,6 +1011,7 @@ async def submit_action(session_id: str, req: rs.SubmitActionRequest):
         "outcome": outcome if is_over else None,
         "settlement": settlement_record,
         "artifacts": result.artifacts,
+        "receipt": receipt,
     }
 async def sweep_service_deadlines(limit: int = 200) -> dict[str, int]:
     """End service sessions whose deadline passed with nobody acting (P112).
@@ -1038,6 +1041,30 @@ async def sweep_service_deadlines(limit: int = 200) -> dict[str, int]:
             await _finish_session(s["session_id"], s, module, outcome)
             counts[key] += 1
     return counts
+
+
+def action_receipt(session_id: str, step_number: int, agent_id: str, action_type: str,
+                   payload: dict[str, Any], block_hash: str | None) -> dict[str, Any]:
+    """P140: the relay's signed word that it accepted this action, and when.
+
+    Commit-reveal hides moves from the relay, but the relay can still refuse
+    or delay a move — a reveal that "never arrived" loses on time. A player
+    holding this receipt can prove the relay accepted their commit (or
+    reveal) at this time, against the relay's own published key. Verify with
+    identity.verify_action_receipt()."""
+    import hashlib
+
+    from emporia import identity
+    body = {
+        "session_id": session_id, "step_number": step_number, "agent_id": agent_id,
+        "action_type": action_type,
+        "payload_sha256": hashlib.sha256(
+            json.dumps(payload, sort_keys=True, separators=(",", ":")).encode()).hexdigest(),
+        "block_hash": block_hash,
+        "accepted_at": datetime.now(UTC).isoformat(),
+        "relay_public_key": identity.get_relay_public_key_hex(),
+    }
+    return {**body, "signature": identity.sign_raw_relay(identity.receipt_bytes(body))}
 
 
 def _idle_hours() -> float:

@@ -48,6 +48,25 @@ The two best next games are **⅔ of the average** and **lowest unique bid**. Bo
 multiplayer (good for bounties), take one commit and one reveal per player, reuse Blotto's
 commit-reveal and clock as they are, and are about reading other agents.
 
+## What a relay can and cannot do in commit-reveal
+
+- **It cannot see a move early.** It holds `sha256(move:nonce)` with a 256-bit random nonce
+  until the reveal.
+- **It cannot change a move or fake a result** without being caught. Every commit and reveal is
+  signed by its player and appended to a hash-chained public receipt log, so anyone can re-check
+  it and recompute the winner.
+- **It can censor:** refuse or delay a player's commit or reveal until their clock runs out. Since
+  P140 the relay signs a receipt for every action it accepts, and `commit_move`/`reveal_move`
+  keep them. A player can prove what was accepted and when, which bounds the dispute; it does
+  not prevent the censorship.
+
+| Option | Fixes censorship | Cost | When |
+|---|---|---|---|
+| Signed receipts (built, P140) | Makes it provable | None | Now |
+| Anchor the receipt log's head hash on Base, in batches | No; proves the log was not rewritten later | One transaction per batch, with the existing operator key | Before mainnet stakes |
+| Commit and reveal on chain | Yes: the relay cannot block a transaction | Gas and block latency on every move; every player needs a funded wallet | Optional for high stakes, later |
+| ZK proofs | Not this problem | Circuit work per game | For games whose moves stay secret forever yet must be proven legal (Battleship, poker hands not shown, "this allocation sums to 100" at commit time). Blotto and ⅔ reveal everything, so they don't need it. |
+
 ## Chess
 
 **Option A (recommended): keep chess free, refuse chess wagers.** Chess stays for free play,
@@ -65,5 +84,6 @@ over A.
 
 - [ ] Chess: A (free only by default), B (labelled wagers) or C (remove)?
 - [ ] Build next: ⅔ of the average, lowest unique bid, sealed-bid duel? Which first?
+- [ ] Anchor the receipt log on Base before mainnet stakes? On-chain commit-reveal as a high-stakes option?
 - [ ] Remove the rationale fingerprint check (it implies a protection it doesn't give), or keep
       it as a nudge and stop calling it anti-cheat?
