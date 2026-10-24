@@ -7399,10 +7399,11 @@ def test_known_rails_widens_to_include_x402():
     """P1b-3: the second rail P3's seam was built for. KNOWN_RAILS must widen
     to exactly {stripe, x402} — no silent removal of stripe, no accidental
     third value."""
-    from emporia.payments import RAIL_STRIPE, RAIL_X402, KNOWN_RAILS
+    from emporia.payments import RAIL_STRIPE, RAIL_TEMPO, RAIL_X402, KNOWN_RAILS
 
     assert RAIL_X402 == "x402"
-    assert KNOWN_RAILS == frozenset({RAIL_STRIPE, RAIL_X402})
+    # P156 added the third deliberately: Tempo, paid straight to the payee.
+    assert KNOWN_RAILS == frozenset({RAIL_STRIPE, RAIL_X402, RAIL_TEMPO})
 
 
 def test_x402_config_accessors_require_every_condition_before_enabling():

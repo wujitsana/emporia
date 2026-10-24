@@ -827,6 +827,18 @@ def list_rooms(
 _CHAIN_TIMEOUT_S = 150
 
 
+def _tempo_paid_retry(r: httpx.Response, aid: str, method: str, url: str, **kwargs: Any) -> httpx.Response:
+    """P156: answer a 402 by paying its Tempo offer from this agent's wallet,
+    once — the transfer goes straight to the payee on Tempo, and the relay
+    checks the receipt. A 402 without a Tempo offer is returned as it is."""
+    from emporia import agent_wallet
+
+    if r.status_code != 402 or not (r.json() or {}).get("tempo"):
+        return r
+    header = agent_wallet.pay_tempo(aid, r.json()["tempo"])
+    return _bearer_request(method, url, agent_id=aid, headers={"PAYMENT-TEMPO": header}, **kwargs)
+
+
 def _x402_paid_retry(r: httpx.Response, aid: str, method: str, url: str, **kwargs: Any) -> httpx.Response:
     """P104: answer a 402 by paying with this agent's x402 wallet, once.
 
@@ -849,6 +861,7 @@ def join_room(
     payment_intent_id: str | None = None,
     mpp_token: str = "",
     pay_with_x402: bool = False,
+    pay_with_tempo: bool = False,
 ) -> dict[str, Any]:
     """Join a room. Gate logic:
       open            — just join (public rooms only)
@@ -878,12 +891,16 @@ def join_room(
     try:
         # P104: mpp_token was accepted and never sent, so paying for a room with
         # an SPT through MCP silently did nothing. It travels now, and
-        # pay_with_x402 pays the entry fee from this agent's x402 wallet.
+        # pay_with_x402 pays the entry fee from this agent's x402 wallet;
+        # pay_with_tempo (P156) pays it in Tempo stablecoin from the same EVM
+        # wallet, straight to the creator — the relay checks the receipt.
         url = f"{RELAY_URL}/rooms/{room_id}/join"
         r = _bearer_request("post", url, agent_id=agent_id, payment_token=mpp_token,
                             json=body, timeout=15)
         if pay_with_x402:
             r = _x402_paid_retry(r, agent_id, "post", url, json=body, timeout=30)
+        elif pay_with_tempo:   # P156: stablecoin on Tempo, straight to the creator
+            r = _tempo_paid_retry(r, agent_id, "post", url, json=body, timeout=30)
         d = r.json()
         if r.status_code == 200:
             return {"success": True, **d}
@@ -1858,7 +1875,8 @@ def invite_to_agora_topic(topic_slug: str, agent_id: str, invited_by: str) -> di
 
 @mcp.tool()
 def subscribe_agora_topic(topic_slug: str, agent_id: str, mpp_token: str = "",
-                          payment_intent_id: str = "", pay_with_x402: bool = False) -> dict[str, Any]:
+                          payment_intent_id: str = "", pay_with_x402: bool = False,
+                          pay_with_tempo: bool = False) -> dict[str, Any]:
     """Subscribe to an Agora topic.
 
     open topics: subscribes immediately.
@@ -1884,6 +1902,8 @@ def subscribe_agora_topic(topic_slug: str, agent_id: str, mpp_token: str = "",
                             json=body, timeout=10)
         if pay_with_x402:
             r = _x402_paid_retry(r, agent_id, "post", url, json=body, timeout=30)
+        elif pay_with_tempo:   # P156: stablecoin on Tempo, straight to the creator
+            r = _tempo_paid_retry(r, agent_id, "post", url, json=body, timeout=30)
         if r.status_code == 402:
             return {
                 "error": "payment_required", "detail": r.json(), "success": False,

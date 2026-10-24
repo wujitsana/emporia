@@ -637,6 +637,11 @@ def _session_visibility(session: dict[str, Any]) -> str:
     return module.DEFAULT_VISIBILITY
 
 
+def _tempo_cfg() -> dict[str, Any] | None:
+    from emporia import tempo
+    return tempo.config()
+
+
 def _escrow_network() -> str | None:
     from emporia import escrow_chain
     cfg = escrow_chain.load_config()
@@ -2334,6 +2339,20 @@ async def _verify_and_confirm_payment(
             currency=currency,
         )
 
+    def _tempo_offer() -> dict[str, Any] | None:
+        """P156: a Tempo charge paid straight to the creator, or None."""
+        from emporia import tempo
+        cfg = tempo.config()
+        # Config and currency first: no wallet read on a relay without Tempo (P4-1's rule).
+        if not cfg or not creator_id or currency != "usd":
+            return None
+        wallet = AGENT_REGISTRY.get_x402_pay_to(creator_id, "evm")
+        if not wallet:
+            return None
+        return tempo.build_offer(amount_cents=amount_cents, resource=challenge_resource,
+                                 recipient=wallet, payer_id=agent_id,
+                                 secret=load_or_generate_relay_jwt_secret(), cfg=cfg)
+
     def _no_credential_402(
         message: str, offer: dict[str, Any] | None, *, declined_reason: str | None = None,
     ) -> JSONResponse:
@@ -2363,7 +2382,28 @@ async def _verify_and_confirm_payment(
         # rather than parsing English prose in `message`.
         if declined_reason:
             content["declined"] = {"rail": "x402", "reason": declined_reason}
+        tempo_offer = _tempo_offer()
+        if tempo_offer:
+            content["tempo"] = tempo_offer   # P156
         return JSONResponse(status_code=402, content=content, headers=challenge_headers)
+
+    tempo_credential = request.headers.get("PAYMENT-TEMPO")
+    if tempo_credential:
+        # P156: the payer chose Tempo — verify on chain, or decline plainly.
+        from emporia import tempo
+        cfg = tempo.config()
+        wallet = AGENT_REGISTRY.get_x402_pay_to(creator_id, "evm") if creator_id else None
+        if not cfg or not wallet or currency != "usd":
+            return _no_credential_402(f"Tempo payment declined: not offered here. {challenge_message}", None)
+        try:
+            tx_hash = await asyncio.to_thread(
+                tempo.verify, tempo_credential, payer_id=agent_id, resource=challenge_resource,
+                amount_cents=amount_cents, recipient=wallet,
+                secret=load_or_generate_relay_jwt_secret(), cfg=cfg)
+        except tempo.TempoError as e:
+            return _no_credential_402(f"Tempo payment not accepted: {e}. {challenge_message}", None)
+        from emporia.payments import RAIL_TEMPO
+        return PaymentRef(reference=tx_hash, rail=RAIL_TEMPO)
 
     x402_payload = extract_x402_payload(request.headers.get("PAYMENT-SIGNATURE"))
     if x402_payload is not None:
@@ -4847,6 +4887,8 @@ async def health():
         # P153: where a purchase can be held in USDC escrow (None: card only),
         # so a page can say what it accepts before anyone pays.
         "x402_escrow_network": _escrow_network(),
+        # P156: where entries can be paid in Tempo stablecoin, straight to the creator.
+        "tempo_network": (_tempo_cfg() or {}).get("network"),
         "modules": list(MODULE_REGISTRY.keys()),
         "listing_count": listing_count,
         "session_count": session_count,
@@ -6895,7 +6937,7 @@ async def _settle_access_payment(
     branch below is untouched, byte-for-byte.
     """
     from emporia.payments import (
-        RAIL_X402, payout_winner, platform_fee as _platform_fee, settlement_dedupe_key,
+        RAIL_TEMPO, RAIL_X402, payout_winner, platform_fee as _platform_fee, settlement_dedupe_key,
     )
 
     # P50: this function is exactly-once per payment, because
@@ -6919,7 +6961,12 @@ async def _settle_access_payment(
             resource_type, resource_id, payer_id, payment_ref.reference,
             access_duration_days, rail=payment_ref.rail, db_path=DATABASE_PATH,
         )
-    if payment_ref.rail == RAIL_X402:
+    if payment_ref.rail == RAIL_TEMPO:
+        # P156: paid straight to the creator on chain, like x402 — nothing held,
+        # nothing to transfer, no cut taken.
+        platform_fee, creator_payout, platform_fee_bps = 0, amount_cents, 0
+        transfer_id, transfer_status = None, "direct"
+    elif payment_ref.rail == RAIL_X402:
         # P48: the entitlement now exists, so the purchase this intent was
         # guarding is finished and the intent must go — otherwise a *later*
         # re-purchase of the same resource, after this entitlement expires,

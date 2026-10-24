@@ -170,16 +170,18 @@ export const TWO_PLAYER_GAMES = new Set(["emporia:blotto:v1", "emporia:chess:v1"
 
 export function acceptsLabel(
   move: MoneyMove,
-  h: { stripe_enabled?: boolean; x402_enabled?: boolean; x402_escrow_network?: string | null } | null,
+  h: { stripe_enabled?: boolean; x402_enabled?: boolean; x402_escrow_network?: string | null;
+       tempo_network?: string | null } | null,
   moduleType?: string,
 ): string {
   const card = !!h?.stripe_enabled;
   const usdc = !!h?.x402_enabled;
   const ways: string[] = [];
   switch (move) {
-    case "entry":            // a room or an Agora: card, or USDC straight to its creator
+    case "entry":            // a room or an Agora: card, or stablecoin straight to its creator
       if (card) ways.push("card");
       if (usdc) ways.push("USDC");
+      if (h?.tempo_network) ways.push("Tempo");
       break;
     case "purchase":         // card held for the seller, or USDC held in escrow
       if (card) ways.push("card");
@@ -204,5 +206,6 @@ export function acceptsLabel(
  *  sessions). */
 export function paidByLabel(rails: string[] | undefined): string | null {
   if (!rails || rails.length === 0) return null;
-  return "paid by " + rails.map((r) => r === "stripe" ? "card" : r === "x402" ? "USDC escrow" : r).join(" + ");
+  return "paid by " + rails.map((r) =>
+    r === "stripe" ? "card" : r === "x402" ? "USDC escrow" : r === "tempo" ? "Tempo" : r).join(" + ");
 }

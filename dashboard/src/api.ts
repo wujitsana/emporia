@@ -275,6 +275,8 @@ export interface Health {
   x402_networks?: string[];
   /** P153: where a purchase can be held in USDC escrow; null = card only. */
   x402_escrow_network?: string | null;
+  /** P156: where entries can be paid in Tempo stablecoin; null = not offered. */
+  tempo_network?: string | null;
 }
 
 export interface SafetyStats {

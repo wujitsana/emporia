@@ -96,7 +96,9 @@ def platform_fee(amount_cents: int) -> int:
 # no further change.
 RAIL_STRIPE = "stripe"
 RAIL_X402 = "x402"
-KNOWN_RAILS = frozenset({RAIL_STRIPE, RAIL_X402})
+# P156: Tempo stablecoin, paid straight to the payee and checked on chain.
+RAIL_TEMPO = "tempo"
+KNOWN_RAILS = frozenset({RAIL_STRIPE, RAIL_X402, RAIL_TEMPO})
 
 
 @dataclass(frozen=True)

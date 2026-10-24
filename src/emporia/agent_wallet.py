@@ -226,6 +226,27 @@ def sign_exact(agent_id: str, body: dict) -> str:
         requirement, key, resource=challenge.get("resource")))
 
 
+def pay_tempo(agent_id: str, offer: dict) -> str:
+    """P156: pay a relay's Tempo offer from this agent's EVM wallet — a TIP-20
+    transfer straight to the payee — after the same network allowlist,
+    per-payment cap and daily cap as x402. Returns the PAYMENT-TEMPO value."""
+    from emporia import tempo
+
+    network = offer.get("network") or ""
+    if network not in allowed_networks():
+        raise AgentWalletError(f"{network} is not in EMPORIA_X402_PAY_NETWORKS, so this agent "
+                               f"does not pay there")
+    amount = int(offer["request"]["amount"])
+    cap = max_payment_cents() * _USDC_ATOMIC_PER_CENT
+    if amount > cap:
+        raise AgentWalletError(
+            f"the relay asks for {amount / 1e6:.2f}, above this agent's {cap / 1e6:.2f} "
+            f"per-payment cap (EMPORIA_X402_MAX_PAYMENT_CENTS)")
+    key = load_key(agent_id)
+    _charge_daily(agent_id, amount)
+    return tempo.pay(offer, key)
+
+
 def sign_escrow(agent_id: str, offer: dict, *, expected_amount: int) -> str:
     """A relay's escrow offer in, the PAYMENT-ESCROW value out — after the
     network allowlist, the per-payment cap, and escrow.sign_offer's checks."""
