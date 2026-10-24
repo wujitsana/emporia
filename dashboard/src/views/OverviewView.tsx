@@ -1,3 +1,4 @@
+import { useRelayCtx } from "../relayCtx";
 import AlertBanner from "@components/AlertBanner";
 import Badge from "@components/Badge";
 import RowSpaceBetween from "@components/RowSpaceBetween";
@@ -42,7 +43,8 @@ export function OverviewView({
   /* P43-2: one fanout, not two. `fetchDashboardCounts` and
      `fetchOverviewSections` each fetched the same seven collections on their
      own timer; the snapshot is fetched once and both are derived from it. */
-  const [snapshot] = useInterval(() => fetchOverviewSnapshot(VIEWER_ID), 15_000);
+  const { isRelayOperator } = useRelayCtx();
+  const [snapshot] = useInterval(() => fetchOverviewSnapshot(VIEWER_ID, isRelayOperator), 15_000, [isRelayOperator]);
   const counts = snapshot ? countsFromSnapshot(snapshot) : null;
   /* P69: which collections *failed*, as opposed to came back empty. The
      snapshot is allSettled, so it always resolves and useInterval's `error`

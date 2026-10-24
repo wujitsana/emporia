@@ -54,7 +54,9 @@ export interface OverviewSnapshot {
   dmThreads: PromiseSettledResult<Awaited<ReturnType<typeof api.dmThreads>>>;
 }
 
-export async function fetchOverviewSnapshot(viewerId: string | null): Promise<OverviewSnapshot> {
+export async function fetchOverviewSnapshot(
+  viewerId: string | null, isOperator = false,
+): Promise<OverviewSnapshot> {
   const [listings, sessions, rooms, events, agents, settlements, agoraTopics, dmThreads] =
     await Promise.allSettled([
       api.listings(),
@@ -62,7 +64,9 @@ export async function fetchOverviewSnapshot(viewerId: string | null): Promise<Ov
       api.rooms(),
       api.events(),
       api.agents(),
-      api.settlements(),
+      // The unfiltered list is the operator's; anyone else gets a 403 for it on
+      // every poll. An agent sees its own, as the Fees tab already does.
+      isOperator || !viewerId ? api.settlements() : api.agentSettlements(viewerId),
       api.agoraTopics(),
       // P35-1: a spectator has no threads to count; the old placeholder id sent
       // this request on every Overview load and quietly collected a miss.

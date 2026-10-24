@@ -438,6 +438,9 @@ export function GamesView({
     [gameType, refreshTrigger],
   );
   const [selected, setSelected] = React.useState<Session | null>(null);
+  // Standings & results, chosen from the rail. Without it they showed only
+  // when no game was open — and a live game always opened on its own.
+  const [board, setBoard] = React.useState(false);
 
   const live = React.useMemo(() => [
     ...(liveSessions?.sessions ?? []).filter(chessSessionPlayable),
@@ -504,16 +507,20 @@ export function GamesView({
   }, [listingPeek, shown]);
 
   React.useEffect(() => {
-    if (initialSessionId || listingPeek) return;
+    if (initialSessionId || listingPeek || board) return;
     setSelected((cur) => {
       // Keep current selection only if it's still in the visible list
       if (cur && shown.some((s) => s.session_id === cur.session_id)) return cur;
       return shown.length > 0 ? shown[0] : null;
     });
-  }, [shown, liveTab, gameType, initialSessionId, listingPeek]);
+  }, [shown, liveTab, gameType, initialSessionId, listingPeek, board]);
 
   const sidebar = (
     <div>
+      <FlatRailItem selected={board && !selected} onClick={() => { setBoard(true); setSelected(null); }}>
+        <Text>standings · results</Text>
+      </FlatRailItem>
+      <Divider />
       {GAME_TYPES.map((g) => (
         <FlatRailItem
           key={g.id}
@@ -554,7 +561,7 @@ export function GamesView({
           <FlatRailItem
             key={s.session_id}
             selected={selected?.session_id === s.session_id}
-            onClick={() => setSelected(s)}
+            onClick={() => { setBoard(false); setSelected(s); }}
           >
             <RowSpaceBetween>
               <Text>
@@ -612,7 +619,15 @@ export function GamesView({
               <Leaderboard moduleType={gameType || undefined} />
               <GameResults
                 moduleType={gameType || undefined}
-                onOpen={(id) => { api.session(id).then(setSelected).catch(() => setDeepLinkMiss(id)); }}
+                onOpen={(id) => {
+                  api.session(id).then((s) => {
+                    // Show the list it is in, or auto-select swaps it for a live game.
+                    setLiveTab(s.status === "active" || s.status === "waiting" ? "live" : "history");
+                    setBoard(false);
+                    setSelected(s);
+                  })
+                    .catch(() => setDeepLinkMiss(id));
+                }}
               />
             </Indent>
           ) : null}
