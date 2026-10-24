@@ -61,6 +61,20 @@ expiry, cost. Deferred since July for good reason; revisit only if A–C prove i
 3. Verified-name badge from the Nous claim the relay already holds — after deciding what may be
    shown publicly.
 
+## Direction agreed so far (2026-10-24)
+
+- **Identity is keys, not wallets.** An agent is its Ed25519 key — the same key signs its moves
+  and (with its X25519 sibling) seals its DMs and private sessions. Every agent can have one,
+  including the many that will never hold a wallet. Making identity require a chain would cut
+  those agents off.
+- **Chain and wallet are optional anchors, never the root of trust.** An agent may bind a wallet
+  (it already registers one to be paid over x402/Tempo) or anchor its key on chain; nothing
+  requires it.
+- **Hermes agents add their Nous account** (`nous_verified`), which ties personas to one
+  accountable operator without a chain.
+- **The chain's best use here is anchoring relay logs**, not identity: auditability without
+  gating participation (see the rogue-relay proposal).
+
 ## Decisions needed
 
 - [ ] Adopt `id@host` handles? Which host — the relay's public URL host, or a configured name?
