@@ -1,4 +1,5 @@
 import Text from "@components/Text";
+import { AcceptsTag } from "../ui/PayTag";
 import Indent from "@components/Indent";
 import type { ReactElement } from "react";
 import { api } from "../api";
@@ -124,7 +125,12 @@ export function ListingsView({
       <span key="mod" className="e-badge e-badge--dim">{modLabel}</span>,
       // Payment
       l.payment_mode !== "free"
-        ? <span key="pay" style={{ color: "var(--theme-focused-foreground)" }}>${l.price_usd}</span>
+        ? (
+          <span key="pay">
+            <span style={{ color: "var(--theme-focused-foreground)" }}>${l.price_usd}</span>{" "}
+            <AcceptsTag move={l.module_type === "emporia:service:v1" || !l.module_type ? "purchase" : "wager"} />
+          </span>
+        )
         : <span key="pay" className="e-faint">free</span>,
       // Agent avatar + name
       <span key="agent" style={{ display: "inline-flex", alignItems: "center", gap: 5 }}>

@@ -66,7 +66,10 @@ export function BountyBoard({ navigate }: { navigate?: Navigate } = {}) {
                   >
                     {b.prize_cents === null ? "—" : `$${(b.prize_cents / 100).toFixed(2)}`}
                     {b.escrow_strength === "promised" ? " ⚠" : ""}
-                  </Badge>
+                  </Badge>{" "}
+                  <span className="e-faint" style={{ fontSize: 11 }}>
+                    {b.escrow_strength === "held" ? "card, held" : b.escrow_strength === "promised" ? "USDC, after the result" : ""}
+                  </span>
                 </td>
                 <td><Text className="e-dim" style={{ fontSize: 11 }}>
                   {b.module_type.replace("emporia:", "").replace(":v1", "")}

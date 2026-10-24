@@ -7,6 +7,8 @@ import {
   sessionStatusLabel,
   settlementHealth,
   usdcAtomicToUsd,
+  acceptsLabel,
+  paidByLabel,
   formatMicros,
   settlementFeeMicros,
   settlementPayoutMicros,
@@ -83,5 +85,21 @@ describe("settlement split (P129)", () => {
       { ...cents, platform_fee_atomic: "25000", winner_payout_atomic: "975000" },
     ];
     expect(formatMicros(rows.reduce((n, r) => n + settlementFeeMicros(r), 0))).toBe("$0.05");
+  });
+});
+
+describe("what pays for what (P153)", () => {
+  const both = { stripe_enabled: true, x402_enabled: true, x402_escrow_network: "eip155:84532" };
+  it("says before paying what is accepted", () => {
+    expect(acceptsLabel("entry", both)).toBe("accepts card · USDC");
+    expect(acceptsLabel("purchase", both)).toBe("accepts card · USDC escrow");
+    expect(acceptsLabel("purchase", { ...both, x402_escrow_network: null })).toBe("accepts card");
+    expect(acceptsLabel("bounty_promised", both)).toBe("accepts USDC, paid after the result");
+    expect(acceptsLabel("entry", {})).toBe("no payment rail on this relay");
+  });
+  it("says after paying how", () => {
+    expect(paidByLabel(["stripe"])).toBe("paid by card");
+    expect(paidByLabel(["x402"])).toBe("paid by USDC escrow");
+    expect(paidByLabel([])).toBeNull();
   });
 });

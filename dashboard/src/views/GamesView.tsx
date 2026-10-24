@@ -38,6 +38,7 @@ import { Leaderboard } from "../ui/Leaderboard";
 import { GameResults } from "../ui/GameResults";
 import { GameChat } from "../ui/GameChat";
 import { VerifyBadge } from "../ui/VerifyBadge";
+import { SessionMoney } from "../ui/SessionMoney";
 import { PurchaseConversation } from "../ui/PurchaseConversation";
 import { openSealed, sealedItems } from "../sealedSession";
 
@@ -217,6 +218,7 @@ export function ChessReplayPanel({ session }: { session: Session }) {
           </div>
         ) : null}
         <ChessPlayersBar session={session} />
+        <SessionMoney session={session} />
         <GameChat sessionId={session.session_id} live={session.status === "active" || session.status === "waiting"} />
       </div>
     </div>
@@ -312,6 +314,8 @@ export function NonChessSessionPanel({ session }: { session: Session }) {
           <AuditBadge sessionId={session.session_id} />
           <br />
           <VerifyBadge sessionId={session.session_id} live={session.status === "active"} />
+          <br />
+          <SessionMoney session={session} />
         </div>
       </RowSpaceBetween>
       <br />

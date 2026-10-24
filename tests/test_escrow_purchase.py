@@ -185,6 +185,10 @@ def test_confirmed_delivery_captures_to_the_seller(client, chain):
     # P129: the ledger records the split the contract made — $0.125 of $5.00,
     # which the cents columns can only round.
     assert (row["platform_fee_atomic"], row["winner_payout_atomic"]) == ("125000", "4875000")
+    # P153: pages can say how it was paid, and the relay says where it holds USDC.
+    got = client.get(f"/sessions/{sid}", headers=_hdr(buyer)).json()
+    assert got["paid_by"] == ["x402"]
+    assert client.get("/health").json()["x402_escrow_network"] == "eip155:84532"
 
 
 def test_a_dispute_voids_the_hold_back_to_the_buyer(client, chain):

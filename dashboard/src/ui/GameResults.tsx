@@ -1,4 +1,5 @@
 import Text from "@components/Text";
+import { PaidByTag } from "./PayTag";
 import { useInterval } from "../hooks";
 import { api } from "../api";
 import type { GameResult } from "../api";
@@ -61,7 +62,10 @@ function ResultRow({ r, onOpen }: { r: GameResult; onOpen?: (sessionId: string) 
         </td>
         <td><Text>{r.participants.map((p) => shortAgent(p, 12)).join(" v ")}</Text></td>
         <td><Text>{verdict(r)}</Text></td>
-        <td><Text className="e-dim">{stake}</Text></td>
+        <td>
+          <Text className="e-dim">{stake}</Text>
+          {r.paid_by && r.paid_by.length > 0 ? <><br /><PaidByTag rails={r.paid_by} /></> : null}
+        </td>
       </tr>
       {r.module_type === "emporia:blotto:v1" ? <BlottoRounds r={r} /> : null}
       {r.module_type === "emporia:two-thirds:v1" || r.module_type === "emporia:lowest-unique:v1"

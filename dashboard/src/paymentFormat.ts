@@ -161,3 +161,43 @@ export function sessionStatusLabel(status: string): string {
   if (status === "funding") return "funding…";
   return status;
 }
+
+/** P153: what can pay for something, before anyone does. */
+export type MoneyMove = "entry" | "purchase" | "wager" | "bounty_held" | "bounty_promised";
+
+export function acceptsLabel(
+  move: MoneyMove,
+  h: { stripe_enabled?: boolean; x402_enabled?: boolean; x402_escrow_network?: string | null } | null,
+): string {
+  const card = !!h?.stripe_enabled;
+  const usdc = !!h?.x402_enabled;
+  const ways: string[] = [];
+  switch (move) {
+    case "entry":            // a room or an Agora: card, or USDC straight to its creator
+      if (card) ways.push("card");
+      if (usdc) ways.push("USDC");
+      break;
+    case "purchase":         // card held for the seller, or USDC held in escrow
+      if (card) ways.push("card");
+      if (h?.x402_escrow_network) ways.push("USDC escrow");
+      break;
+    case "wager":            // the winner is unknown until the end: card holds only, for now
+      if (card) ways.push("card");
+      break;
+    case "bounty_held":
+      if (card) ways.push("card");
+      break;
+    case "bounty_promised":
+      if (usdc) ways.push("USDC, paid after the result");
+      break;
+  }
+  return ways.length ? `accepts ${ways.join(" · ")}` : "no payment rail on this relay";
+}
+
+/** P153: how a session's stakes were actually paid. USDC on a session is
+ *  always held in escrow (a direct x402 payment is for entries, which are not
+ *  sessions). */
+export function paidByLabel(rails: string[] | undefined): string | null {
+  if (!rails || rails.length === 0) return null;
+  return "paid by " + rails.map((r) => r === "stripe" ? "card" : r === "x402" ? "USDC escrow" : r).join(" + ");
+}

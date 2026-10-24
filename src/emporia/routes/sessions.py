@@ -192,7 +192,8 @@ async def get_session(session_id: str, request: Request):
         fields = list(get_interaction_module(s["module_type"]).PRIVATE_TEXT_FIELDS)
     except ValueError:
         fields = []
-    return {**s, "sealed": rs.session_sealed(s), "private_text_fields": fields}
+    return {**s, "sealed": rs.session_sealed(s), "private_text_fields": fields,
+            "paid_by": rs.session_paid_by(session_id)}
 
 
 @router.get("/sessions/{session_id}/encryption-keys")

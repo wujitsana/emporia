@@ -131,6 +131,12 @@ export interface Session {
   step_number: number;
   created_at: string;
   state?: { board_fen?: string; [k: string]: unknown };
+  /** The stake rule; a list read may omit it. */
+  payment_rules?: { mode?: string; stake_per_participant?: string; currency?: string };
+  /** P153 (single-session read only): rails its stakes were paid on. */
+  paid_by?: string[];
+  /** P149 (single-session read only): its private text is sealed to its players. */
+  sealed?: boolean;
 }
 
 export interface SessionAction {
@@ -265,6 +271,10 @@ export interface Health {
   payment_methods?: string[];
   max_total_spend_cents?: number;
   stripe_mpp_admin_notice?: string | null;
+  x402_enabled?: boolean;
+  x402_networks?: string[];
+  /** P153: where a purchase can be held in USDC escrow; null = card only. */
+  x402_escrow_network?: string | null;
 }
 
 export interface SafetyStats {
@@ -561,6 +571,8 @@ export interface GameResult {
   stake_per_participant: string | null;
   currency: string | null;
   config: Record<string, unknown>;
+  /** P153: the rails its stakes were paid on ("stripe", "x402"). */
+  paid_by?: string[];
   record: Record<string, unknown>;
   ended_at: string;
 }

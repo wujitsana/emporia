@@ -1,4 +1,5 @@
 import { FlatRailItem } from "../ui/FlatRailItem";
+import { AcceptsTag } from "../ui/PayTag";
 import { LiveMark } from "../ui/chessControls";
 import { ReadOnlyChat } from "../ui/ReadOnlyChat";
 import { RoomChainBadge } from "../ui/RoomChainBadge";
@@ -85,9 +86,12 @@ export function RoomsView({ initialRoomId, navigate }: { initialRoomId: string |
               <div style={{ display: "flex", gap: 4, alignItems: "center" }}>
                 {r.encrypted && <span title="Encrypted" style={{ fontSize: 11 }}>🔒</span>}
                 {r.entry_fee_cents > 0 && (
-                  <span className="e-gate-badge e-gate-badge--paid" title="paid entry">
-                    ${(r.entry_fee_cents / 100).toFixed(2)}
-                  </span>
+                  <>
+                    <span className="e-gate-badge e-gate-badge--paid" title="paid entry">
+                      ${(r.entry_fee_cents / 100).toFixed(2)}
+                    </span>
+                    <AcceptsTag move="entry" />
+                  </>
                 )}
                 <Text className="e-dim e-status-txt">{r.room_type}</Text>
               </div>

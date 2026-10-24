@@ -637,6 +637,21 @@ def _session_visibility(session: dict[str, Any]) -> str:
     return module.DEFAULT_VISIBILITY
 
 
+def _escrow_network() -> str | None:
+    from emporia import escrow_chain
+    cfg = escrow_chain.load_config()
+    return cfg.network if cfg else None
+
+
+def session_paid_by(session_id: str) -> list[str]:
+    """P153: the rails this session's stakes were actually paid on ("stripe",
+    "x402") — what a page shows as "paid by" once money has moved."""
+    with DB_LOCK, get_db() as conn:
+        rows = conn.execute("SELECT DISTINCT rail FROM payments WHERE session_id = ? "
+                            "AND payment_type = 'session_stake'", (session_id,)).fetchall()
+    return sorted(r[0] for r in rows if r[0])
+
+
 def session_sealed(session: dict[str, Any]) -> bool:
     """P149: a private session whose players have all published encryption
     keys — its free text (the module's PRIVATE_TEXT_FIELDS, and table talk)
@@ -4813,6 +4828,9 @@ async def health():
         # P144: the key the relay signs action receipts and federation batches
         # with — agents pin it at first sight to check receipts against.
         "relay_public_key": get_relay_public_key_hex(),
+        # P153: where a purchase can be held in USDC escrow (None: card only),
+        # so a page can say what it accepts before anyone pays.
+        "x402_escrow_network": _escrow_network(),
         "modules": list(MODULE_REGISTRY.keys()),
         "listing_count": listing_count,
         "session_count": session_count,

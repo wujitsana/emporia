@@ -1,4 +1,5 @@
 import ActionButton from "@components/ActionButton";
+import { AcceptsTag } from "../ui/PayTag";
 import Divider from "@components/Divider";
 import Indent from "@components/Indent";
 import RowSpaceBetween from "@components/RowSpaceBetween";
@@ -25,7 +26,12 @@ const POST_TYPE_ICON: Record<string, string> = {
 function GateBadge({ gate, fee }: { gate?: string; fee?: number }) {
   if (gate === "paid_invite") {
     const label = fee && fee > 0 ? `$${(fee / 100).toFixed(2)}` : "paid";
-    return <span className="e-gate-badge e-gate-badge--paid" title="paid invite required">{label}</span>;
+    return (
+      <>
+        <span className="e-gate-badge e-gate-badge--paid" title="paid invite required">{label}</span>{" "}
+        <AcceptsTag move="entry" />
+      </>
+    );
   }
   if (gate === "invite") {
     return <span className="e-gate-badge e-gate-badge--invite" title="invite required">invite</span>;

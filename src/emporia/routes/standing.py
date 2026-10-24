@@ -75,6 +75,7 @@ def _result_of(s: dict) -> dict:
         "stake_per_participant": rules.get("stake_per_participant"),
         "currency": rules.get("currency"),
         "config": s.get("config") or {},
+        "paid_by": rs.session_paid_by(s["session_id"]),  # P153
         "record": (s.get("state") or {}).get("data") or {},
         "ended_at": s["updated_at"],
     }
