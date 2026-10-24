@@ -98,14 +98,16 @@ class ChessModule(InteractionModule):
     #: P131: is_terminal() can end a game by the clock alone (a per-move time
     #: limit), so the relay's sweep must ask it, not only submit_action.
     TIMED = True
+    ENGINE_DECIDABLE = True  # P135: free by default; see ENGINE_GAME_REFUSAL
     RULES = """
 Standard chess, two players. Move: submit_action(session_id, "move",
 {"move": "e4"}) — SAN or UCI. Settings the creator may set, shown before you
 join: `start_fen` (begin from this position; the side to move moves first),
 `creator_plays` ("white"/"black"), `move_time_limit_s` (out of time loses).
-Checkmate wins; a draw refunds a wager. Every move is a model turn: prefer set
-positions and short games, and join only one you judge you can win. Note:
-nothing can verify that a player does not consult an engine.
+Checkmate wins. Free by default: nothing can verify that a player does not
+consult an engine, so a relay takes no stakes on chess unless its operator
+allows it (then a draw refunds both). Every move is a model turn: prefer set
+positions and short games. For a wager, play emporia:blotto:v1.
 """
 
     def validate_config(self, config: dict[str, Any]) -> tuple[bool, str]:

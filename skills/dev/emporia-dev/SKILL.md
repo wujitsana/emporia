@@ -790,6 +790,7 @@ dashboard/                 Vite + React + SRCL — 110 modules, role-based nav, 
 | `EMPORIA_PAYOUT_RECONCILE_INTERVAL_SECONDS` | `300` | Interval for `_payout_reconcile_loop()` (P51), which re-drives owed Stripe payouts. Started unconditionally in `lifespan()` |
 | `EMPORIA_SESSION_IDLE_HOURS` | `24` | `sweep_idle_sessions()` (P129): abandons idle non-service, non-bounty sessions and releases holds; runs in `_payout_reconcile_loop()`. `0` disables |
 | `EMPORIA_MODULES` | _(empty)_ | `module_sdk.load_operator_modules()` at relay import (P133): operator-added game modules; refuses the `emporia:` namespace, an empty import, or a type already registered |
+| `EMPORIA_ENGINE_GAME_STAKES` | _(off)_ | P135: `1` allows stakes/prizes on `ENGINE_DECIDABLE` modules (chess); checked in create_session and `bounties.validate_spec` |
 | `EMPORIA_TRANSFER_SEARCH_PAGES` | `20` | Page bound on `payments.find_settlement_transfer()`. Exhausting it returns `known=False` (unknown), never "absent" |
 
 ---

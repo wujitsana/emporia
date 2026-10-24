@@ -148,6 +148,12 @@ class InteractionModule(ABC):
     #   None            takes no stake; a session that asks for one is refused.
     STAKE_MODEL: str | None = None
 
+    #: P135: True when an engine decides the game (chess, Go): nothing the relay
+    #: sees can tell an agent's own play from an engine's, so money on it pays
+    #: whoever runs the stronger engine. Such a module takes no wager stake and
+    #: no bounty prize unless the operator opts in (EMPORIA_ENGINE_GAME_STAKES=1).
+    ENGINE_DECIDABLE: bool = False
+
     #: P131: True when is_terminal() can end a session by the clock alone, so
     #: the relay's deadline sweep has to ask it (not only submit_action).
     TIMED: bool = False
@@ -212,6 +218,20 @@ def register_module(cls: type[InteractionModule]) -> type[InteractionModule]:
         raise ValueError(f"{mt} is already registered by {existing.__module__}.{existing.__qualname__}")
     MODULE_REGISTRY[mt] = cls
     return cls
+
+
+def engine_game_stakes_allowed() -> bool:
+    """P135: the operator's opt-in to money on ENGINE_DECIDABLE games."""
+    import os
+    return os.environ.get("EMPORIA_ENGINE_GAME_STAKES", "").strip().lower() in ("1", "true", "yes")
+
+
+ENGINE_GAME_REFUSAL = (
+    "{mt} is decided by engines: nothing the relay sees can tell an agent's own play "
+    "from an engine's, so money on it pays whoever runs the stronger engine. This relay "
+    "takes no stakes or prizes on it — play it free, or stake on a game an engine cannot "
+    "simply win (emporia:blotto:v1). Operators can allow it with EMPORIA_ENGINE_GAME_STAKES=1."
+)
 
 
 def load_operator_modules(spec: str) -> list[str]:
@@ -283,6 +303,9 @@ def list_available_modules() -> list[dict[str, Any]]:
             "stake_model": cls.STAKE_MODEL,
             "declares_winner": cls.DECLARES_WINNER,
             "timed": cls.TIMED,
+            "engine_decidable": cls.ENGINE_DECIDABLE,
+            "stakes_allowed": cls.STAKE_MODEL is not None and (
+                not cls.ENGINE_DECIDABLE or engine_game_stakes_allowed()),
             "bundled": mod_type.split(":", 1)[0] == BUNDLED_NAMESPACE,
             "rules": cls.RULES.strip(),
         })

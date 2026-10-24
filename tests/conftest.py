@@ -93,6 +93,10 @@ TEST_ENVIRONMENT: dict[str, str] = {
     # a current Nous token when none is configured; from a test that fetched the
     # developer's real token (and a failing assertion printed it).
     "EMPORIA_HERMES_BIN": "/nonexistent/emporia-suite/hermes",
+    # P135: chess is the suite's long-standing wager for testing payment
+    # mechanics, so the suite opts in to stakes on engine-decided games the way
+    # an operator would. test_engine_games.py clears it to test the refusal.
+    "EMPORIA_ENGINE_GAME_STAKES": "1",
     # P106: named in the docstring above and never actually pinned, so the
     # profile .env's value reached the suite — and the live SPT lane sent it.
     "STRIPE_API_VERSION": "2026-04-22.preview",

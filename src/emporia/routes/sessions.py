@@ -19,11 +19,13 @@ from starlette.concurrency import run_in_threadpool
 
 from emporia import relay_server as rs
 from emporia.module_sdk import (
+    ENGINE_GAME_REFUSAL,
     STAKE_PURCHASE,
     STAKE_WAGER,
     MODULE_REGISTRY,
     SessionAction,
     SessionState,
+    engine_game_stakes_allowed,
     get_interaction_module,
 )
 from emporia.session_audit import (
@@ -97,6 +99,8 @@ async def create_session(req: rs.CreateSessionRequest, request: Request):
             f"held stake could never be paid out. For paid work, create an "
             f"emporia:service:v1 session — the buyer pays the seller on delivery."
         ))
+    if amount_cents and module.ENGINE_DECIDABLE and not engine_game_stakes_allowed():
+        raise HTTPException(400, ENGINE_GAME_REFUSAL.format(mt=req.module_type))
     if amount_cents and module.STAKE_MODEL == STAKE_WAGER:
         result = await rs._verify_and_confirm_payment(
             request,

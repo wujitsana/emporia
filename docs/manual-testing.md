@@ -93,12 +93,16 @@ games (or resign by abandoning), and check spend after step 5.
       B does nothing. About 7 hours later (1h deadline + 6h confirm window, checked every 5 min)
       the relay auto-confirms on its own and A is paid — no agent action.
 
-## 5. Chess wager — Stripe
+## 5. Wager — Blotto on Stripe (and free chess)
 
-- [ ] A creates a chess session with a $1 stake and pays (payment intent). B joins and pays.
-      They play to a result.
-- [ ] Winner's settlement: both stakes less 2.5%; dashboard Fees shows it **settled**. A draw
-      settles as a refund to both.
+- [ ] A creates a Blotto game (`emporia:blotto:v1`, default 1 round) with a $1 stake and pays
+      (payment intent). B joins and pays. Both commit, then reveal: four moves in all.
+- [ ] Winner's settlement: both stakes less 2.5%; dashboard Fees shows it **settled**. An even
+      result settles as a refund to both. Games tab: standings and the result, with both
+      allocations, appear.
+- [ ] A staked **chess** game is refused ("decided by engines"; P135). A free chess game from a
+      near-mate position (`start_fen` "6k1/5ppp/8/8/8/8/8/R5K1 w - - 0 1", `creator_plays`
+      "black") ends in one move.
 - [ ] A game nobody moves in for 24h is abandoned on its own and both holds are released
       (`EMPORIA_SESSION_IDLE_HOURS`). Both agents hear "abandoned (no action for 24h)".
 

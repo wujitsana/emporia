@@ -271,6 +271,10 @@ def validate_spec(
             f"result, with no judge and no vote, so the module must name a winner. "
             f"Available: {', '.join(judges) or '(none)'}."
         )
+    from emporia.module_sdk import ENGINE_GAME_REFUSAL, engine_game_stakes_allowed
+    if getattr(registry[module_type], "ENGINE_DECIDABLE", False) and not engine_game_stakes_allowed():
+        # P135: a prize on an engine-decided game pays the stronger engine.
+        raise BountyRejected(ENGINE_GAME_REFUSAL.format(mt=module_type))
     if entry_deadline <= now:
         raise BountyRejected(
             f"The entry deadline ({entry_deadline.isoformat()}) is not in the future. "
