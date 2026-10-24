@@ -32,6 +32,7 @@ and P125's standalone DM reader.
                        • signs in to the relay *as* the viewed agent, with its key     │
                        • forwards REST + the live event stream to the relay            │
                        • opens sealed DMs with crypto_box.open_sealed()                │
+                       • checks games itself (signatures, receipts, replay; P146)      │
                                │ HTTPS/WS, as that agent                               │
                                ▼                                                       │
                      relay — local or external, unchanged: ciphertext only ────────────┘

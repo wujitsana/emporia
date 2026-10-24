@@ -79,3 +79,34 @@ def test_standalone_answers_only_its_link_holder_on_localhost(client):
                          base_url="http://attacker.example")
     rebound.cookies.set(COOKIE, "s" * 32)
     assert rebound.get("/agents").status_code == 401, "a non-local Host is refused"
+
+
+def test_the_console_checks_a_game_itself_with_the_agents_own_receipts(client):
+    """P146: the dashboard's verdict comes from this machine, not the relay."""
+    import uuid
+
+    from emporia import commit_reveal
+    from tests.test_emporia import _register_keyed, _signed_action_body
+    a, b = f"cv_{uuid.uuid4().hex[:6]}", f"cw_{uuid.uuid4().hex[:6]}"
+    for x in (a, b):
+        _register_keyed(client, x)
+    sid = client.post("/sessions", json={"module_type": "emporia:blotto:v1", "creator_agent_id": a},
+                      headers={"x-emporia-agent-id": a}).json()["session_id"]
+    client.post(f"/sessions/{sid}/join", json={"agent_id": b}, headers={"x-emporia-agent-id": b})
+    moves, nonces = {a: [30, 30, 30, 5, 5], b: [20] * 5}, {a: commit_reveal.new_nonce(), b: commit_reveal.new_nonce()}
+    rdir = identity.KEY_DIR / "receipts"
+    rdir.mkdir(exist_ok=True)
+    for action in ("commit", "reveal"):
+        for x in (a, b):
+            payload = ({"commitment": commit_reveal.commitment(moves[x], nonces[x])} if action == "commit"
+                       else {"move": moves[x], "nonce": nonces[x]})
+            r = client.post(f"/sessions/{sid}/action",
+                            json=_signed_action_body(client, sid, x, action, payload, "Reading this opponent"))
+            if x == a:
+                with (rdir / f"{a}.{sid}.jsonl").open("a") as f:
+                    f.write(json.dumps(r.json()["receipt"]) + "\n")
+    c = TestClient(build_app(_console()))
+    report = c.get(f"/verify/{a}/{sid}").json()
+    assert report["verdict"] == "ok", [f for f in report["findings"] if f["status"] != "ok"]
+    assert sum(f["check"] == "receipt" and f["status"] == "ok" for f in report["findings"]) == 2
+    assert c.get(f"/verify/{a}/sess_missing").status_code == 404

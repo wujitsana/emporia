@@ -24,9 +24,9 @@ export function AuditBadge({ sessionId }: { sessionId: string }) {
         fontSize: 11,
         color: audit.verified ? "var(--theme-focused-foreground)" : undefined,
       }}
-      title={`${audit.message} — hash chain: prev_hash:sender:action:payload:signature`}
+      title={`The relay's own check: ${audit.message}. For a check that does not trust the relay, see "verified here" or run verify_session.`}
     >
-      {audit.verified ? `✓ chain verified (${entries})` : "✗ chain broken"}
+      {audit.verified ? `relay: chain ok (${entries})` : "✗ chain broken"}
     </Text>
   );
 }

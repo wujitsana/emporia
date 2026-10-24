@@ -37,6 +37,7 @@ import { sessionStatusLabel } from "../paymentFormat";
 import { Leaderboard } from "../ui/Leaderboard";
 import { GameResults } from "../ui/GameResults";
 import { GameChat } from "../ui/GameChat";
+import { VerifyBadge } from "../ui/VerifyBadge";
 
 // P42: not exported — the rail and the module-filter mapping below are its
 // only readers. Still pinned against MODULE_REGISTRY by
@@ -191,6 +192,7 @@ export function ChessReplayPanel({ session }: { session: Session }) {
                 <ChessReplayStatus live={wsLive} idx={idx} total={fens.length} />
                 <span className="e-chess-ctrl-move">{moveLabel}</span>
                 <AuditBadge sessionId={session.session_id} />
+                <VerifyBadge sessionId={session.session_id} live={session.status === "active"} />
               </span>
             }
           />
@@ -295,6 +297,8 @@ export function NonChessSessionPanel({ session }: { session: Session }) {
           <Text className="e-faint">{moduleKind} · {session.step_number} steps</Text>
           <br />
           <AuditBadge sessionId={session.session_id} />
+          <br />
+          <VerifyBadge sessionId={session.session_id} live={session.status === "active"} />
         </div>
       </RowSpaceBetween>
       <br />

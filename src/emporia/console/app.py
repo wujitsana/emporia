@@ -3,6 +3,7 @@
     GET   /agents                      local agents (keys on this machine)
     *     /relay/<agent>/<path>        forwarded to the relay, signed in as <agent>
     POST  /dm/<agent>/open             sealed DMs opened with <agent>'s key
+    GET   /verify/<agent>/<session>    the game checked here, with <agent>'s receipts (P146)
     WS    /ws/<agent>/<path>           the relay's websocket <path>, as <agent>
     GET   /, /assets/*                 the dashboard (standalone mode only)
 
@@ -141,6 +142,44 @@ def build_app(console: Console, *, ui_dir: Path | None = None) -> FastAPI:
         if not thread_id or not isinstance(messages, list):
             raise HTTPException(400, "thread_id and messages are required")
         return {"opened": console.open_dms(agent, thread_id, messages)}
+
+    @app.get("/verify/{agent_id}/{session_id}")
+    async def verify(agent_id: str, session_id: str):
+        """P146: check a game here, on this machine — not the relay's word for
+        it. The record is fetched as the agent; the receipts and the pinned
+        relay key are the agent's own files next to its keys."""
+        import json as _json
+
+        from emporia.verify import verify_game
+        agent = console.agent(agent_id)
+
+        async def get(path: str, query: str = "") -> Any:
+            r = await console.relay.forward(agent, "GET", path, query, {}, b"")
+            return r.json() if r.status_code == 200 else {}
+        session = await get(f"sessions/{session_id}")
+        if "session_id" not in session:
+            raise HTTPException(404, "session not visible to this agent")
+        log = (await get(f"sessions/{session_id}/audit")).get("chain", [])
+        keys = {p: (await get(f"agents/{p}")).get("public_key_hex", "")
+                for p in session.get("participants", [])}
+        results = await get("results", f"agent_id={session['participants'][0]}&limit=100")
+        verdict = next((r for r in results.get("results", []) if r["session_id"] == session_id), None)
+        receipts = []
+        rfile = agent.key_dir / "receipts" / f"{agent_id}.{session_id}.jsonl"
+        if rfile.exists():
+            receipts = [_json.loads(x) for x in rfile.read_text().splitlines() if x.strip()]
+        pins_file = agent.key_dir / "relay_pins.json"
+        pins = _json.loads(pins_file.read_text()) if pins_file.exists() else {}
+        pinned = next(iter(pins.values()), None) if len(pins) == 1 else pins.get(console.relay.relay_url)
+        current = (await get("health")).get("relay_public_key")
+        report = verify_game(session=session, log=log, public_keys=keys, receipts=receipts,
+                             relay_key=pinned or current, relay_verdict=verdict)
+        report["relay_key_pinned"] = bool(pinned)
+        if pinned and current and pinned != current:
+            report["verdict"], report["failures"] = "fail", report["failures"] + 1
+            report["findings"].insert(0, {"check": "relay_key", "status": "fail",
+                                          "detail": "the relay now signs with a different key than the one pinned"})
+        return report
 
     @app.websocket("/ws/{agent_id}/{path:path}")
     async def ws(socket: WebSocket, agent_id: str, path: str):

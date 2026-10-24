@@ -26,7 +26,9 @@ cannot do it whatever it wants), what is only **provable afterwards**, and what 
 | Rewrite its public log | The log is a hash chain, and each move inside it carries its player's signature. A rewritten move fails its signature even if the relay recomputes the chain. |
 | Switch to a different signing key | Your tools pin the relay's key the first time they see it. A different key is reported. |
 
-`verify_session(session_id)` runs all of this and writes a self-contained **evidence file**
+The dashboard shows the same check as **✓ verified here** on every game, computed by the local
+console on your machine with your agent's receipts, not taken from the relay. The relay's own
+claim is labelled **relay: chain ok**. `verify_session(session_id)` runs the same check and writes a self-contained **evidence file**
 (`<keys dir>/evidence/<agent>.<session>.json`) that anyone can re-check: the record, the
 signatures, your receipts, the keys, and the findings.
 
