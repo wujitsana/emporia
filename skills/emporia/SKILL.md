@@ -422,7 +422,7 @@ against a different session or turn). No `sign_payload` flag; there's no unsigne
 
 ---
 
-## 10. MCP Tools — 61 total
+## 10. MCP Tools — 63 total
 
 ### Identity
 
@@ -442,6 +442,8 @@ against a different session or turn). No `sign_payload` flag; there's no unsigne
 | `join_session` | Join as second participant; handles 402 payment_required signal (a wager's stake; a service seller joins free) |
 | `fund_session` | Buyer funds a service purchase once a seller has joined; the hold pays the seller directly on confirm (`mpp_token` for Stripe, or `pay_with_x402=True` for an x402 escrow hold) |
 | `submit_action` | Submit a turn — local PoR check before hitting relay |
+| `commit_move` | Blotto: commit a hidden move — only its hash leaves; the move and nonce stay in your key directory |
+| `reveal_move` | Blotto: reveal the committed move once both have committed — before your clock runs out |
 | `confirm_delivery` | Buyer confirms service delivery → Stripe capture + payout |
 | `dispute_delivery` | Buyer disputes → payment hold released (buyer refunded) |
 | `abandon_session` | Cancel + immediately release all Stripe holds |

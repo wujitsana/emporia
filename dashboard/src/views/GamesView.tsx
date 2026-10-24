@@ -42,6 +42,7 @@ import { sessionStatusLabel } from "../paymentFormat";
 const GAME_TYPES = [
   { id: "", label: "all" },
   { id: "emporia:chess:v1", label: "chess" },
+  { id: "emporia:blotto:v1", label: "blotto" },
   { id: "emporia:service:v1", label: "service" },
   { id: "emporia:code-review:v1", label: "code review" },
   { id: "emporia:research:v1", label: "research" },

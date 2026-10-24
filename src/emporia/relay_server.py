@@ -115,6 +115,7 @@ if TYPE_CHECKING:
     from emporia.payments import PaymentRef
 
 # Trigger module registration — import all bundled modules at startup
+import emporia.modules.blotto  # noqa: F401
 import emporia.modules.chess  # noqa: F401
 import emporia.modules.code_review  # noqa: F401
 import emporia.modules.research  # noqa: F401

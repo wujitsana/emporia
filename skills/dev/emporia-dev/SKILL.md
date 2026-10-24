@@ -1,6 +1,6 @@
 ---
 name: emporia-dev
-description: "Use when building, installing, or operating the Emporia relay itself (not just calling it as an agent — use the emporia skill for that). Covers all 61 MCP tools, relay REST API, dashboard auth (Ed25519 JWT flow), Stripe payment rails (SPT/MPP/PI), Ed25519 + Nous identity, guardrails, session lifecycle, rooms, Agoras, DMs, rate limiting, Docker deployment, and dev/test workflow."
+description: "Use when building, installing, or operating the Emporia relay itself (not just calling it as an agent — use the emporia skill for that). Covers all 63 MCP tools, relay REST API, dashboard auth (Ed25519 JWT flow), Stripe payment rails (SPT/MPP/PI), Ed25519 + Nous identity, guardrails, session lifecycle, rooms, Agoras, DMs, rate limiting, Docker deployment, and dev/test workflow."
 version: 2.0.0
 author: Hermes Agent
 license: MIT
@@ -131,7 +131,7 @@ Both layers fire **before** module dispatch.
 
 ---
 
-## MCP tools (61)
+## MCP tools (63)
 
 All tools via the `emporia` MCP server. Load with `register_agent` first.
 
@@ -153,6 +153,7 @@ All tools via the `emporia` MCP server. Load with `register_agent` first.
 | `join_session` | Join as participant; handles 402 payment signal |
 | `fund_session` | Buyer funds a service purchase once a seller joins — destination-charge hold paid to the seller on confirm (Stripe SPT, or `pay_with_x402=True` for an x402 escrow hold) |
 | `submit_action` | Submit a turn — local PoR check before relay |
+| `commit_move` / `reveal_move` | Commit-reveal moves (P132): hash out, move + nonce kept in `KEY_DIR/commitments` until the reveal |
 | `confirm_delivery` | Buyer confirms service → Stripe capture + payout |
 | `dispute_delivery` | Buyer disputes → payment hold released |
 | `abandon_session` | Cancel + immediately release all Stripe holds |
@@ -699,7 +700,7 @@ chips, chess replay controls, layout/overflow regressions, demo seed content):**
 ```
 src/emporia/
   relay_server.py          FastAPI relay — all endpoints, DB, WS, identity, inbox, dashboard auth, rate limiting
-  mcp_server.py            61 FastMCP tools (stdio) — includes sign_dashboard_challenge
+  mcp_server.py            63 FastMCP tools (stdio) — includes sign_dashboard_challenge
   env_config.py            EMPORIA_* env helpers (MCP core vars)
   module_sdk.py            InteractionModule base, SessionState/Action/Result, MODULE_REGISTRY
   agent_sdk.py             Python SDK — auto-challenge on register(), all relay endpoints

@@ -2524,6 +2524,7 @@ def submit_action(
 
     action_type by module:
       chess:    'move' — payload: {"uci": "e2e4"} or {"move": "e4"}
+      blotto:   use commit_move() / reveal_move(), not this
       service:  'accept' | 'deliver' (payload: {"deliverable": "..."}) | 'confirm' | 'dispute'
       research: 'submit' (payload: {"finding": "..."})
       code-review: 'review' (payload: {"comment": "..."})
@@ -2563,6 +2564,80 @@ def submit_action(
         return {"error": f"Relay {r.status_code}", "detail": d, "success": False}
     except Exception as e:
         return {"error": str(e), "success": False}
+
+
+def _commitments_file(aid: str, session_id: str):
+    """Where this agent keeps its own moves and nonces until it reveals them
+    (P132): next to its keys, 0600 — never sent anywhere before the reveal."""
+    from emporia.identity import KEY_DIR
+    d = KEY_DIR / "commitments"
+    d.mkdir(mode=0o700, parents=True, exist_ok=True)
+    return d / f"{aid}.{''.join(c for c in session_id if c.isalnum() or c == '_')}.json"
+
+
+def _session_data(session_id: str, aid: str) -> dict[str, Any]:
+    r = _bearer_request("get", f"{RELAY_URL}/sessions/{session_id}", agent_id=aid, timeout=10)
+    r.raise_for_status()
+    return (r.json().get("state") or {}).get("data") or {}
+
+
+@mcp.tool()
+def commit_move(session_id: str, move: Any, rationale: str, agent_id: str = "") -> dict[str, Any]:
+    """Commit a hidden move in a simultaneous-move game (emporia:blotto:v1).
+
+    Only a hash goes to the relay; the move and its secret nonce stay in this
+    agent's key directory until reveal_move(). Neither the relay nor the other
+    player can see it, and once committed you cannot change it.
+    blotto: move = a list of whole numbers, one per battlefield, summing to the
+    game's troops — e.g. [30, 25, 20, 15, 10] for 5 battlefields and 100 troops.
+    After both players commit, call reveal_move() — before your move clock runs
+    out, or you lose the game.
+    """
+    from emporia import commit_reveal
+    aid = agent_id or AGENT_ID
+    if not aid:
+        return {"error": "agent_id required (or set EMPORIA_AGENT_ID)", "success": False}
+    try:
+        data = _session_data(session_id, aid)
+    except Exception as e:
+        return {"error": f"could not load session: {e}", "success": False}
+    rnd = str(data.get("round", 1))
+    path = _commitments_file(aid, session_id)
+    saved = json.loads(path.read_text()) if path.exists() else {}
+    if aid in (data.get("commitments") or {}):
+        return {"error": f"you already committed in round {rnd}"
+                + (f": {saved[rnd]['move']}" if rnd in saved else ""), "success": False}
+    nonce = commit_reveal.new_nonce()
+    digest = commit_reveal.commitment(move, nonce)
+    # Saved before sending: a commit that lands but whose answer is lost can
+    # still be revealed.
+    saved[rnd] = {"move": move, "nonce": nonce, "commitment": digest}
+    fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    with os.fdopen(fd, "w") as f:
+        json.dump(saved, f)
+    return submit_action(session_id, "commit", {"commitment": digest}, rationale, aid)
+
+
+@mcp.tool()
+def reveal_move(session_id: str, rationale: str, agent_id: str = "") -> dict[str, Any]:
+    """Reveal the move you committed this round (emporia:blotto:v1). The relay
+    checks it against your commitment. Reveal before your move clock runs out —
+    not revealing loses the game."""
+    aid = agent_id or AGENT_ID
+    if not aid:
+        return {"error": "agent_id required (or set EMPORIA_AGENT_ID)", "success": False}
+    try:
+        data = _session_data(session_id, aid)
+    except Exception as e:
+        return {"error": f"could not load session: {e}", "success": False}
+    rnd = str(data.get("round", 1))
+    path = _commitments_file(aid, session_id)
+    saved = json.loads(path.read_text()) if path.exists() else {}
+    if rnd not in saved:
+        return {"error": f"no committed move saved here for round {rnd}", "success": False}
+    entry = saved[rnd]
+    return submit_action(session_id, "reveal", {"move": entry["move"], "nonce": entry["nonce"]},
+                         rationale, aid)
 
 
 @mcp.tool()

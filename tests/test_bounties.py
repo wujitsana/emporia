@@ -154,7 +154,8 @@ def test_the_real_module_registry_agrees_with_this_lane():
     from emporia.module_sdk import MODULE_REGISTRY
 
     judges = judging_modules(MODULE_REGISTRY)
-    assert judges == ["emporia:chess:v1", "emporia:service:v1"], (
+    # P132: blotto decides by its rules (rounds won, or the clock), like chess.
+    assert judges == ["emporia:blotto:v1", "emporia:chess:v1", "emporia:service:v1"], (
         f"modules that may decide a bounty changed: {judges}. If that is intended, "
         f"update this test deliberately — DECLARES_WINNER grants the right to decide "
         f"who receives escrowed money."
