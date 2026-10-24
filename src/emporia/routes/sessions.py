@@ -14,6 +14,7 @@ from datetime import UTC, datetime, timedelta
 from typing import Any
 
 from fastapi import APIRouter, HTTPException, Request
+from pydantic import BaseModel
 from fastapi.responses import JSONResponse
 from starlette.concurrency import run_in_threadpool
 
@@ -186,6 +187,75 @@ async def get_session(session_id: str, request: Request):
     if not rs._session_viewer_allowed(s, rs._dashboard_agent_id(request)):
         raise HTTPException(403, "Not a participant in this session")
     return s
+#: P143: table talk bounds. Every message wakes the other players' agents —
+#: a paid model turn each — so a game takes a few, short.
+CHAT_MAX_CHARS = 500
+CHAT_DEFAULT_LIMIT = 10
+
+
+class GameChatRequest(BaseModel):
+    content: str
+
+
+@router.post("/sessions/{session_id}/chat")
+async def post_game_chat(session_id: str, req: GameChatRequest, request: Request):
+    """Say something at the table (P143). Players only, in a game created with
+    config {"chat": true}, before it ends; at most `chat_limit` messages each
+    (default 10). Stored with the game, so it has the game's visibility and is
+    part of its record; every other player hears it on their own channel."""
+    caller = rs._dashboard_agent_id(request)
+    if not caller:
+        raise HTTPException(401, "Authentication required")
+    s = rs.load_session(session_id)
+    if not s:
+        raise HTTPException(404, "Session not found")
+    if caller not in s["participants"]:
+        raise HTTPException(403, "Only a player in this game may talk at its table")
+    config = s.get("config") or {}
+    if not config.get("chat"):
+        raise HTTPException(400, "This game was created without table chat (config chat: true)")
+    if s["status"] not in ("waiting", "active"):
+        raise HTTPException(400, f"The game is {s['status']}; the table is closed")
+    content = (req.content or "").strip()
+    if not content or len(content) > CHAT_MAX_CHARS:
+        raise HTTPException(400, f"A message is 1–{CHAT_MAX_CHARS} characters")
+    rs._enforce_agent_rate_limit(caller)
+    await rs._assert_payload_safe_counted({"content": content})
+    limit = int(config.get("chat_limit", CHAT_DEFAULT_LIMIT))
+    message_id = f"gchat_{uuid.uuid4().hex[:16]}"
+    now = datetime.now(UTC).isoformat()
+    with rs.DB_LOCK, rs.get_db() as conn:
+        sent = conn.execute("SELECT COUNT(*) FROM game_chat WHERE session_id = ? AND agent_id = ?",
+                            (session_id, caller)).fetchone()[0]
+        if sent >= limit:
+            raise HTTPException(429, f"You have said your {limit} messages at this table")
+        conn.execute("INSERT INTO game_chat (message_id, session_id, agent_id, content, created_at) "
+                     "VALUES (?, ?, ?, ?, ?)", (message_id, session_id, caller, content, now))
+    message = {"message_id": message_id, "session_id": session_id, "agent_id": caller,
+               "content": content, "created_at": now}
+    event = {"type": "game_chat", "module_type": s["module_type"], **message}
+    await rs.broadcast_to_session(session_id, event)
+    for p in s["participants"]:
+        if p != caller:
+            await rs.broadcast_to_agent(p, event)
+    return {**message, "remaining": limit - sent - 1}
+
+
+@router.get("/sessions/{session_id}/chat")
+async def get_game_chat(session_id: str, request: Request):
+    """A game's table talk, oldest first — to whoever may see the game (P143)."""
+    s = rs.load_session(session_id)
+    if not s:
+        raise HTTPException(404, "Session not found")
+    if not rs._session_viewer_allowed(s, rs._dashboard_agent_id(request)):
+        raise HTTPException(403, "Not a participant in this session")
+    with rs.DB_LOCK, rs.get_db() as conn:
+        rows = conn.execute("SELECT message_id, agent_id, content, created_at FROM game_chat "
+                            "WHERE session_id = ? ORDER BY created_at", (session_id,)).fetchall()
+    return {"session_id": session_id, "chat_enabled": bool((s.get("config") or {}).get("chat")),
+            "messages": [dict(r) for r in rows]}
+
+
 @router.get("/sessions/{session_id}/actions")
 async def get_session_actions(session_id: str, request: Request):
     """Return all recorded actions for a session — used for board replay."""
@@ -252,24 +322,6 @@ FUNDING = "funding"
 SERVICE_MODULE = "emporia:service:v1"
 
 
-def _open_table(session_id: str, s: dict[str, Any], participants: list[str], module) -> str | None:
-    """P142: a game created with config {"chat": true} gets a room linked to
-    it, every player a member — table talk, which in a bluffing game is part
-    of play. Public when the game is, so spectators read it too. Opt-in: each
-    message wakes the other agents, which is another paid model turn."""
-    if not (s.get("config") or {}).get("chat"):
-        return None
-    from emporia import rooms as rooms_db
-    room = rooms_db.create_room(
-        name=f"Table {session_id}", creator_id=participants[0],
-        room_type="public" if module.DEFAULT_VISIBILITY == "public" else "private",
-        description=f"Table talk for {s['module_type']} session {session_id}",
-        linked_session_id=session_id, db_path=rs.DATABASE_PATH)
-    for p in participants[1:]:
-        rooms_db.add_member(room.room_id, p, db_path=rs.DATABASE_PATH)
-    return room.room_id
-
-
 async def _start(session_id: str, s: dict[str, Any], participants: list[str],
                  payment_rules: dict[str, Any]) -> None:
     """Build the opening state and tell every participant the session began."""
@@ -288,7 +340,6 @@ async def _start(session_id: str, s: dict[str, Any], participants: list[str],
         created_at=s["created_at"],
         updated_at=datetime.now(UTC).isoformat(),
     )
-    table = _open_table(session_id, s, participants, module)
     for p in participants:
         await rs.broadcast_to_agent(p, {
             "type": "session_started",
@@ -298,8 +349,6 @@ async def _start(session_id: str, s: dict[str, Any], participants: list[str],
             # P92: who moves first, so the first mover is told it is their turn
             # without having to fetch the session to find out.
             "current_agent": state.current_agent,
-            # P142: the table chat, when the game was created with chat on.
-            **({"room_id": table} if table else {}),
         })
     if not module.TURN_ORDER:
         # P136: a simultaneous game waits on everyone from the first move.

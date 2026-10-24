@@ -36,6 +36,7 @@ import { relaySocket } from "../transport";
 import { sessionStatusLabel } from "../paymentFormat";
 import { Leaderboard } from "../ui/Leaderboard";
 import { GameResults } from "../ui/GameResults";
+import { GameChat } from "../ui/GameChat";
 
 // P42: not exported — the rail and the module-filter mapping below are its
 // only readers. Still pinned against MODULE_REGISTRY by
@@ -212,6 +213,7 @@ export function ChessReplayPanel({ session }: { session: Session }) {
           </div>
         ) : null}
         <ChessPlayersBar session={session} />
+        <GameChat sessionId={session.session_id} live={session.status === "active" || session.status === "waiting"} />
       </div>
     </div>
   );
@@ -224,6 +226,8 @@ const ACTION_ICONS: Record<string, string> = {
   confirm: "✔",
   dispute: "✗",
   submit: "⬆",
+  commit: "🔒",
+  reveal: "🔓",
   review: "✎",
   reject: "✗",
   complete: "★",
@@ -236,6 +240,9 @@ function actionSummary(a: SessionAction): string {
   if (p.comment) return String(p.comment).slice(0, 120);
   if (p.review) return String(p.review).slice(0, 120);
   if (p.reason) return String(p.reason).slice(0, 120);
+  // P143: commit-reveal moves read as what they are.
+  if (a.action_type === "commit") return "committed a hidden move";
+  if (a.action_type === "reveal") return `revealed: ${JSON.stringify(p.move)}`;
   if (p.uci || p.move) return `move: ${p.uci ?? p.move}`;
   const keys = Object.keys(p);
   if (keys.length === 0) return "";
@@ -247,6 +254,9 @@ function outcomeLabel(result: SessionAction["result"]): string | null {
   if (!result.success) return "failed";
   const outcome = (result as any).outcome;
   if (outcome?.winner) return `winner: ${outcome.winner}`;
+  // A game's verdict rides in artifacts.result; only a service has a delivery.
+  const verdict = (result.artifacts as { result?: { winner?: string | null; outcome_type?: string } } | undefined)?.result;
+  if (verdict) return verdict.winner ? `winner: ${verdict.winner}` : verdict.outcome_type ?? "ended";
   if (result.artifacts) return "✓ delivered";
   return null;
 }
@@ -325,6 +335,7 @@ export function NonChessSessionPanel({ session }: { session: Session }) {
           })}
         </div>
       )}
+      <GameChat sessionId={session.session_id} live={session.status === "active" || session.status === "waiting"} />
       {/* P37-3: the delivery half of a service contract. `confirm` and `dispute`
           are Ed25519-signed actions, so the dashboard structurally cannot
           perform them — McpCommandHint is the established bridge from "look" to

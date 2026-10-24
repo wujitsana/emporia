@@ -3171,6 +3171,8 @@ def test_every_route_has_a_reviewed_auth_posture():
     """
 
     _AUTHENTICATED: set[tuple[str, str]] = {
+        # P143: table talk — the caller must be a player in that game.
+        ("POST", "/sessions/{session_id}/chat"),
         # P72-4: both resolve the caller and reject. /bounties binds the funder
         # so a bounty cannot be posted in someone else's name; /enter is the
         # Sybil gate itself and is meaningless without a caller identity.
@@ -3274,6 +3276,8 @@ def test_every_route_has_a_reviewed_auth_posture():
         # P134: finished games — public ones to anyone, others to their players
         # and the operator (_session_viewer_allowed per row).
         ("GET", "/results"),
+        # P143: a game's table talk — same viewer rule as the session.
+        ("GET", "/sessions/{session_id}/chat"),
         # Closed in N4-2 (R1(a)) — was _KNOWN_UNGATED; reuses the same
         # three-tier rule as GET /payments/records via
         # _settlement_resource_viewer_allowed.
@@ -28189,7 +28193,7 @@ def test_the_membership_rule_is_written_in_exactly_one_place():
 # P61 — the schema has a version, and the version has to stay honest
 # ---------------------------------------------------------------------------
 
-# 29 tables, 268 columns, at SCHEMA_VERSION 5. Recomputed by the test below;
+# 30 tables, 273 columns, at SCHEMA_VERSION 6. Recomputed by the test below;
 # when it fails, read *why* before touching this string.
 #
 # V1 -> V2 (P72-4): `bounty_entries` and its UNIQUE (listing_id, nous_user_id)
@@ -28209,7 +28213,10 @@ def test_the_membership_rule_is_written_in_exactly_one_place():
 # V4 -> V5 (P129): `settlements.platform_fee_atomic`/`winner_payout_atomic`, an
 # escrow capture's split to the atomic unit. A V4 relay would keep writing
 # settlements without them, so the ledger would disagree with the chain again.
-_SCHEMA_FINGERPRINT_V5 = "cf2c4c5a551b788ae587e496b41239b0afbabd9495f8e2a80848a3ea0bf93fd1"
+#
+# V5 -> V6 (P143): `game_chat`, table talk stored inside its game. A V5 relay
+# would serve a V6 database without the chat its games' records include.
+_SCHEMA_FINGERPRINT_V6 = "80be42dc0d32c93e02066309dccfa9c2b825b9d0204f9fa36d35452bbd27fe86"
 
 
 def _schema_fingerprint(db_path) -> tuple[str, int, int]:
@@ -28249,9 +28256,9 @@ def test_a_schema_change_requires_a_version_bump():
     from emporia.relay_server import SCHEMA_VERSION
 
     fingerprint, tables, columns = _schema_fingerprint(_test_db)
-    assert (SCHEMA_VERSION, fingerprint) == (5, _SCHEMA_FINGERPRINT_V5), (
+    assert (SCHEMA_VERSION, fingerprint) == (6, _SCHEMA_FINGERPRINT_V6), (
         f"the schema changed ({tables} tables, {columns} columns) or the version "
-        f"moved. Bump SCHEMA_VERSION *and* update _SCHEMA_FINGERPRINT_V5 — in "
+        f"moved. Bump SCHEMA_VERSION *and* update _SCHEMA_FINGERPRINT_V6 — in "
         f"that order, and never the fingerprint alone.\n"
         f"  code version: {SCHEMA_VERSION}\n  fingerprint:  {fingerprint}"
     )

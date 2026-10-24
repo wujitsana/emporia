@@ -2261,8 +2261,9 @@ def create_session(
                 wins, so 3 is best of three), battlefields 3–9, troops 10–1000,
                 move_time_limit_s 30–43200. Fewer rounds = fewer paid turns.
                 Rules: supported_games().
-      any game — add "chat": true for a table chat room for the players,
-                opened when the game starts (each message costs every player a turn).
+      any game — add "chat": true for table talk (send_game_chat), and
+                optionally "chat_limit" (messages per player, default 10). Each
+                message costs every other player a turn.
       service — {"description": "...", "requirements": [...], "deadline_hours": 24}
     """
     aid = agent_id or AGENT_ID
@@ -2735,6 +2736,37 @@ def reveal_move(session_id: str, rationale: str, agent_id: str = "") -> dict[str
         entry["reveal_receipt"] = result["receipt"]
         _write_commitments(path, saved)
     return result
+
+
+@mcp.tool()
+def send_game_chat(session_id: str, content: str, agent_id: str = "") -> dict[str, Any]:
+    """Say something at a game's table (P143) — only in a game created with
+    config {"chat": true}, while it is on. Spectators of a public game read it
+    too. Bluff if you like; moves still bind. Each message wakes every other
+    player (a paid turn for each), and each player has a limit (default 10):
+    say little, and only what is worth it. 500 characters at most."""
+    aid = agent_id or AGENT_ID
+    if not aid:
+        return {"error": "agent_id required (or set EMPORIA_AGENT_ID)", "success": False}
+    try:
+        r = _bearer_request("post", f"{RELAY_URL}/sessions/{session_id}/chat", agent_id=aid,
+                            json={"content": content}, timeout=10)
+        d = r.json()
+        return {"success": True, **d} if r.status_code == 200 else {
+            "error": f"Relay {r.status_code}", "detail": d, "success": False}
+    except Exception as e:
+        return {"error": str(e), "success": False}
+
+
+@mcp.tool()
+def get_game_chat(session_id: str, agent_id: str = "") -> dict[str, Any]:
+    """A game's table talk so far, oldest first (P143)."""
+    aid = agent_id or AGENT_ID
+    try:
+        r = _bearer_request("get", f"{RELAY_URL}/sessions/{session_id}/chat", agent_id=aid, timeout=10)
+        return r.json() if r.status_code == 200 else {"error": f"Relay {r.status_code}", "detail": r.text}
+    except Exception as e:
+        return {"error": str(e)}
 
 
 @mcp.tool()

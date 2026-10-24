@@ -545,6 +545,14 @@ export interface LeaderboardResponse {
   standings: Standing[];
 }
 
+/** P143: one message of a game's table talk. */
+export interface GameChatMessage {
+  message_id: string;
+  agent_id: string;
+  content: string;
+  created_at: string;
+}
+
 /** P134: one finished game — players, verdict, settings, and the module's own
  * final record (Blotto: `history` of allocations; chess: the position). */
 export interface GameResult {
@@ -596,6 +604,11 @@ export const api = {
   leaderboard: (moduleType?: string) =>
     get<LeaderboardResponse>(
       "/leaderboard" + (moduleType ? `?module_type=${encodeURIComponent(moduleType)}` : ""),
+    ),
+  /** P143: a game's table talk — the game's own visibility. */
+  gameChat: (sessionId: string) =>
+    get<{ session_id: string; chat_enabled: boolean; messages: GameChatMessage[] }>(
+      `/sessions/${encodeURIComponent(sessionId)}/chat`, { agentScoped: true },
     ),
   results: (moduleType?: string, limit = 15) =>
     get<{ scope: string; results: GameResult[] }>(

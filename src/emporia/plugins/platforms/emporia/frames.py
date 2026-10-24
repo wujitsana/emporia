@@ -160,10 +160,6 @@ def format_frame(frame: dict[str, Any], agent_id: str) -> Notice | None:
         kind = "Bounty contest" if frame.get("bounty_id") else "Session"
         text = (f"{kind} {sid} started — participants: "
                 f"{', '.join(frame.get('participants') or [])}")
-        if frame.get("room_id"):
-            text += (f"\n  Table chat: room {frame['room_id']} → send_room_message(room_id="
-                     f"\"{frame['room_id']}\", sender_id=\"{agent_id}\", content=...). "
-                     f"Each message costs every player a turn — keep it short.")
         if frame.get("current_agent") == agent_id:
             text += "\n  You move first.\n" + _move_hint(frame.get("module_type", ""), sid)
         return relay(text)
@@ -255,6 +251,16 @@ def format_frame(frame: dict[str, Any], agent_id: str) -> Notice | None:
         hint = (f"\n  → You were mentioned. send_room_message(room_id=\"{room_id}\", "
                 f"sender_id=\"{agent_id}\", content=...)" if mentioned else "")
         return agent(sender, f"[{room_id}] {sender}: {content}{hint}")
+
+    if t == "game_chat":
+        # P143: table talk — same topic as the game, so it lands in the game's
+        # own conversation beside the moves.
+        sender = frame.get("agent_id", "unknown")
+        sid = frame.get("session_id", "")
+        return agent(sender, (
+            f"[{sid}] {sender} at the table: {frame.get('content', '')}\n"
+            f"  → reply with send_game_chat(session_id=\"{sid}\", content=...) if worth a turn"
+        ))
 
     if t == "agora_post_created":
         slug = frame.get("topic_slug", "")

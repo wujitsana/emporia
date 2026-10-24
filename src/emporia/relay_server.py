@@ -741,6 +741,16 @@ def init_db() -> None:
                 updated_at TEXT NOT NULL
             );
 
+            -- P143: table talk, inside the game it belongs to — same
+            -- visibility as the session, part of its record.
+            CREATE TABLE IF NOT EXISTS game_chat (
+                message_id TEXT PRIMARY KEY,
+                session_id TEXT NOT NULL,
+                agent_id TEXT NOT NULL,
+                content TEXT NOT NULL,
+                created_at TEXT NOT NULL
+            );
+
             CREATE TABLE IF NOT EXISTS bounty_entries (
                 listing_id TEXT NOT NULL,
                 agent_id TEXT NOT NULL,
@@ -1005,6 +1015,7 @@ def init_db() -> None:
             CREATE INDEX IF NOT EXISTS idx_sessions_status ON sessions(status);
             CREATE INDEX IF NOT EXISTS idx_sessions_module ON sessions(module_type);
             CREATE INDEX IF NOT EXISTS idx_actions_session ON actions(session_id);
+            CREATE INDEX IF NOT EXISTS idx_game_chat_session ON game_chat(session_id, created_at);
             CREATE INDEX IF NOT EXISTS idx_messages_to ON messages(to_agent);
             CREATE INDEX IF NOT EXISTS idx_messages_from ON messages(from_agent);
             CREATE INDEX IF NOT EXISTS idx_listings_type ON listings(listing_type);
@@ -2755,7 +2766,7 @@ def _normalize_agent_id(agent_id: str) -> str:
 # orphaned rows nobody notices for months.
 _RENAME_COLUMNS: tuple[tuple[str, str], ...] = (
     ("access_entitlements", "agent_id"), ("access_removals", "agent_id"),
-    ("bounty_entries", "agent_id"),
+    ("bounty_entries", "agent_id"), ("game_chat", "agent_id"),
     ("escrow_holds", "payer_agent_id"), ("escrow_holds", "receiver_agent_id"),
     ("access_removals", "removed_by"), ("actions", "agent_id"),
     ("agent_inbox", "agent_id"), ("agora_comments", "author_id"),
@@ -2807,6 +2818,8 @@ _NON_AGENT_COLUMNS: frozenset[tuple[str, str]] = frozenset({
     # not handles, and the PaymentInfo they sit in is what the payer signed —
     # rewriting either would make the hold uncapturable.
     ("escrow_holds", "hold_hash"), ("escrow_holds", "session_id"),
+    ("game_chat", "message_id"), ("game_chat", "session_id"), ("game_chat", "content"),
+    ("game_chat", "created_at"),
     ("escrow_holds", "payer_address"), ("escrow_holds", "receiver_address"),
     ("escrow_holds", "network"), ("escrow_holds", "amount_atomic"),
     ("escrow_holds", "payment_info_json"), ("escrow_holds", "state"),

@@ -172,14 +172,24 @@ def test_every_accepted_move_comes_with_a_receipt_the_relay_signed(client):
     assert not identity.verify_action_receipt(forged, identity.get_relay_public_key_hex())
 
 
-def test_a_game_with_chat_on_opens_a_table_for_its_players(client):
-    """P142: table talk is opt-in — every message costs each player a turn."""
-    from emporia import rooms as rooms_db
+
+def test_table_talk_lives_in_the_game(client):
+    """P143: chat is part of the game — its visibility, its record, its players."""
     from tests.test_platform_bridge import _agent_events
-    sid, a, b = _game(client, {"chat": True})
-    room = rooms_db.get_room_for_session(sid, db_path=rs.DATABASE_PATH)
-    assert room and set(room.members) == {a, b} and room.room_type == "public"
-    [started] = [e for e in _agent_events(b, "session_started") if e["session_id"] == sid]
-    assert started["room_id"] == room.room_id
-    quiet, _, _ = _game(client)
-    assert rooms_db.get_room_for_session(quiet, db_path=rs.DATABASE_PATH) is None, "off by default"
+    sid, a, b = _game(client, {"chat": True, "chat_limit": 2})
+    hdr = lambda who: {"x-emporia-agent-id": who}  # noqa: E731
+    r = client.post(f"/sessions/{sid}/chat", json={"content": "I'm going heavy on the left."}, headers=hdr(a))
+    assert r.status_code == 200 and r.json()["remaining"] == 1
+    [heard] = [e for e in _agent_events(b, "game_chat") if e["session_id"] == sid]
+    assert heard["content"] == "I'm going heavy on the left." and heard["agent_id"] == a
+    outsider = f"bo_{uuid.uuid4().hex[:8]}"
+    _register_keyed(client, outsider)
+    assert client.post(f"/sessions/{sid}/chat", json={"content": "hi"}, headers=hdr(outsider)).status_code == 403
+    assert client.get(f"/sessions/{sid}/chat", headers=hdr(outsider)).json()["messages"][0]["agent_id"] == a, \
+        "a public game's talk is public, like its moves"
+    client.post(f"/sessions/{sid}/chat", json={"content": "really."}, headers=hdr(a))
+    assert client.post(f"/sessions/{sid}/chat", json={"content": "three"}, headers=hdr(a)).status_code == 429
+    assert client.post(f"/sessions/{sid}/chat", json={"content": "x" * 501}, headers=hdr(b)).status_code == 400
+    quiet, qa, _ = _game(client)
+    assert client.post(f"/sessions/{quiet}/chat", json={"content": "hi"}, headers=hdr(qa)).status_code == 400, \
+        "off unless the game was created with chat"
