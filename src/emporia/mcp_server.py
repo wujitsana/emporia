@@ -2451,7 +2451,7 @@ def fund_session(session_id: str, mpp_token: str = "", agent_id: str = "",
     (network allowlist, your per-payment cap, the session's stake, a fee cap)
     and signed with this agent's x402 wallet; your USDC moves into Base's
     Commerce Payments escrow, never to the relay, and you can reclaim it
-    yourself if the relay never acts.
+    yourself if the relay never acts: reclaim_escrow(), after the hold's expiry.
     """
     aid = agent_id or AGENT_ID
     if not aid:
@@ -2466,9 +2466,20 @@ def fund_session(session_id: str, mpp_token: str = "", agent_id: str = "",
             sess = _bearer_request("get", f"{RELAY_URL}/sessions/{session_id}",
                                    agent_id=aid, timeout=10).json()
             stake = (sess.get("payment_rules") or {}).get("stake_per_participant", "0")
+            offer = r.json()["escrow"]
             header = agent_wallet.sign_escrow(
-                aid, r.json()["escrow"],
+                aid, offer,
                 expected_amount=int(_x402_amount_atomic(int(round(float(stake) * 100)))))
+            # P145: keep the hold as this agent signed it — enough to reclaim
+            # it on chain with no help from the relay.
+            try:
+                hold = {"offer": offer, "payer": agent_wallet.address(aid), "relay_url": RELAY_URL}
+                fd = os.open(_agent_dir(aid, "holds", session_id, ".json"),
+                             os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+                with os.fdopen(fd, "w") as f:
+                    json.dump(hold, f, sort_keys=True)
+            except Exception as e:  # the payment itself is not blocked by this
+                logger.warning("could not keep the escrow hold for %s: %s", session_id, e)
             r = _bearer_request("post", url, agent_id=aid,
                                 headers={"PAYMENT-ESCROW": header}, timeout=_CHAIN_TIMEOUT_S)
         d = r.json()
@@ -2628,10 +2639,151 @@ def submit_action(
         r = _bearer_request("post", f"{RELAY_URL}/sessions/{session_id}/action", agent_id=aid, json=body, timeout=_CHAIN_TIMEOUT_S)
         d = r.json()
         if r.status_code == 200:
+            if d.get("receipt"):
+                _keep_receipt(aid, session_id, d["receipt"])
             return {"success": True, **d}
         return {"error": f"Relay {r.status_code}", "detail": d, "success": False}
     except Exception as e:
         return {"error": str(e), "success": False}
+
+
+def _agent_dir(aid: str, kind: str, session_id: str, suffix: str):
+    """A per-agent file next to its keys (0700 dir): commitments, receipts,
+    evidence. Never sent anywhere unless the agent chooses to."""
+    from emporia.identity import KEY_DIR
+    d = KEY_DIR / kind
+    d.mkdir(mode=0o700, parents=True, exist_ok=True)
+    return d / f"{aid}.{''.join(c for c in session_id if c.isalnum() or c == '_')}{suffix}"
+
+
+def _keep_receipt(aid: str, session_id: str, receipt: dict) -> None:
+    """P144: every receipt the relay signs for this agent, kept as evidence."""
+    try:
+        with _agent_dir(aid, "receipts", session_id, ".jsonl").open("a") as f:
+            f.write(json.dumps(receipt, sort_keys=True) + "\n")
+    except OSError as e:
+        logger.warning("could not keep a receipt for %s: %s", session_id, e)
+
+
+def _pinned_relay_key(current: str | None) -> tuple[str | None, bool]:
+    """(the relay key pinned for RELAY_URL, whether `current` differs). The
+    first key seen is pinned; a relay that later signs with another key is
+    reported, not silently trusted (P144)."""
+    from emporia.identity import KEY_DIR
+    path = KEY_DIR / "relay_pins.json"
+    pins = json.loads(path.read_text()) if path.exists() else {}
+    pinned = pins.get(RELAY_URL)
+    if pinned is None and current:
+        pins[RELAY_URL] = pinned = current
+        KEY_DIR.mkdir(parents=True, exist_ok=True)
+        fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+        with os.fdopen(fd, "w") as f:
+            json.dump(pins, f)
+    return pinned, bool(current and pinned and current != pinned)
+
+
+@mcp.tool()
+def verify_session(session_id: str, agent_id: str = "") -> dict[str, Any]:
+    """Check a game without trusting the relay (P144), and keep the evidence.
+
+    Recomputes the public log's hash chain, checks every move's signature
+    against its player's key, checks every receipt this agent holds is in the
+    log unchanged, and replays the moves through the game's rules to see
+    whether the relay's declared result is what they give. Writes a
+    self-contained evidence file (path in the result) anyone can re-check.
+    Use it after a result you doubt, or routinely for money games. If it
+    fails: do not play there again, and share the evidence file.
+    """
+    from emporia.verify import verify_game
+    aid = agent_id or AGENT_ID
+    try:
+        get = lambda path, **kw: _bearer_request("get", f"{RELAY_URL}{path}", agent_id=aid,  # noqa: E731
+                                                 timeout=15, **kw)
+        session = get(f"/sessions/{session_id}").json()
+        if "session_id" not in session:
+            return {"error": "could not load the session", "detail": session, "success": False}
+        log = get(f"/sessions/{session_id}/audit").json().get("chain", [])
+        keys = {}
+        for p in session.get("participants", []):
+            keys[p] = (get(f"/agents/{p}").json() or {}).get("public_key_hex", "")
+        current_key = (get("/health").json() or {}).get("relay_public_key")
+        results = get("/results", params={"agent_id": session["participants"][0], "limit": 100}).json()
+        verdict = next((r for r in results.get("results", []) if r["session_id"] == session_id), None)
+    except Exception as e:
+        return {"error": f"could not fetch the record: {e}", "success": False}
+    pinned, rotated = _pinned_relay_key(current_key)
+    receipts = []
+    rpath = _agent_dir(aid, "receipts", session_id, ".jsonl")
+    if rpath.exists():
+        receipts = [json.loads(line) for line in rpath.read_text().splitlines() if line.strip()]
+    report = verify_game(session=session, log=log, public_keys=keys, receipts=receipts,
+                         relay_key=pinned, relay_verdict=verdict)
+    if rotated:
+        report["findings"].insert(0, {"check": "relay_key", "status": "fail",
+                                      "detail": f"the relay now presents key {current_key[:16]}…, not the "
+                                                f"{pinned[:16]}… pinned at first contact"})
+        report["verdict"], report["failures"] = "fail", report["failures"] + 1
+    evidence = {"relay_url": RELAY_URL, "verified_by": aid, "verified_at": time.time(),
+                "report": report, "session": session, "log": log, "public_keys": keys,
+                "receipts": receipts, "relay_key_pinned": pinned, "relay_key_now": current_key,
+                "relay_verdict": verdict}
+    epath = _agent_dir(aid, "evidence", session_id, ".json")
+    fd = os.open(epath, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    with os.fdopen(fd, "w") as f:
+        json.dump(evidence, f, indent=1, sort_keys=True)
+    return {"success": True, "verdict": report["verdict"], "failures": report["failures"],
+            "unchecked": report["unchecked"],
+            "problems": [f["detail"] for f in report["findings"] if f["status"] == "fail"],
+            "evidence_file": str(epath)}
+
+
+@mcp.tool()
+def reclaim_escrow(session_id: str, agent_id: str = "") -> dict[str, Any]:
+    """Take back an x402 escrow hold you funded that the relay never settled
+    (P145) — straight from the escrow contract, with no help from the relay.
+
+    For a relay that went quiet or rogue: after the hold's authorization
+    expiry the contract lets only you, the payer, reclaim what it still
+    holds. Uses the hold as you signed it (saved when you funded), your own
+    x402 wallet, and a public RPC (or EMPORIA_X402_RPC_URL). Your wallet pays
+    the gas, so it needs a little ETH on that network. Before the expiry it
+    tells you when; if nothing is left to reclaim it says so.
+    """
+    import asyncio
+
+    from emporia import agent_wallet, escrow, escrow_chain
+    from emporia.operator_signer import LocalKeySigner
+    from eth_account import Account
+    aid = agent_id or AGENT_ID
+    path = _agent_dir(aid, "holds", session_id, ".json")
+    if not path.exists():
+        return {"success": False, "error": f"no hold saved here for {session_id} — it was funded "
+                                           f"elsewhere, or before reclaim was possible (P145)"}
+    hold = json.loads(path.read_text())
+    offer = hold["offer"]
+    info = escrow.PaymentInfo.from_json({**offer["payment_info"], "payer": hold["payer"]})
+    cfg = escrow_chain.payer_config(offer)
+    if not cfg.rpc_url:
+        return {"success": False, "error": f"no RPC for chain {cfg.chain_id}: set EMPORIA_X402_RPC_URL"}
+    try:
+        state = asyncio.run(escrow_chain.payment_state(cfg, info))
+    except Exception as e:
+        return {"success": False, "error": f"could not read the escrow: {e}"}
+    if not state["capturable"]:
+        return {"success": False, "error": "nothing left to reclaim — the hold was captured, "
+                                           "voided or already reclaimed", "state": state}
+    if time.time() < info.authorization_expiry:
+        return {"success": False, "error": "too early: the contract allows a reclaim from "
+                f"{time.strftime('%Y-%m-%d %H:%M UTC', time.gmtime(info.authorization_expiry))}",
+                "capturable": state["capturable"]}
+    signer = LocalKeySigner(Account.from_key(agent_wallet.load_key(aid)))
+    try:
+        tx = asyncio.run(escrow_chain.reclaim(cfg, signer, info))
+    except Exception as e:
+        return {"success": False, "error": f"reclaim failed: {e}",
+                "hint": "the wallet needs ETH on this network for gas"}
+    return {"success": True, "transaction": tx, "reclaimed_atomic": state["capturable"],
+            "network": cfg.network}
 
 
 def _commitments_file(aid: str, session_id: str):

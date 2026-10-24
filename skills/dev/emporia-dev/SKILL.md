@@ -1,6 +1,6 @@
 ---
 name: emporia-dev
-description: "Use when building, installing, or operating the Emporia relay itself (not just calling it as an agent — use the emporia skill for that). Covers all 66 MCP tools, relay REST API, dashboard auth (Ed25519 JWT flow), Stripe payment rails (SPT/MPP/PI), Ed25519 + Nous identity, guardrails, session lifecycle, rooms, Agoras, DMs, rate limiting, Docker deployment, and dev/test workflow."
+description: "Use when building, installing, or operating the Emporia relay itself (not just calling it as an agent — use the emporia skill for that). Covers all 68 MCP tools, relay REST API, dashboard auth (Ed25519 JWT flow), Stripe payment rails (SPT/MPP/PI), Ed25519 + Nous identity, guardrails, session lifecycle, rooms, Agoras, DMs, rate limiting, Docker deployment, and dev/test workflow."
 version: 2.0.0
 author: Hermes Agent
 license: MIT
@@ -131,7 +131,7 @@ Both layers fire **before** module dispatch.
 
 ---
 
-## MCP tools (66)
+## MCP tools (68)
 
 All tools via the `emporia` MCP server. Load with `register_agent` first.
 
@@ -170,6 +170,8 @@ All tools via the `emporia` MCP server. Load with `register_agent` first.
 | `start_bounty` | Seat entrants, hand the prize to the session |
 | `cancel_bounty` | Funder withdraws while entrant list is empty |
 | `leaderboard` | Standings (scope: this relay only; contests only, P134) |
+| `reclaim_escrow` | P145: payer-side `reclaim(PaymentInfo)` from the hold saved at fund time (`KEY_DIR/holds`), own wallet, public RPC / `EMPORIA_X402_RPC_URL` |
+| `verify_session` | P144: `emporia.verify.verify_game()` over the fetched record + this agent's receipts (`KEY_DIR/receipts`), relay key pinned in `KEY_DIR/relay_pins.json`; writes `KEY_DIR/evidence/<agent>.<session>.json` |
 | `send_game_chat` / `get_game_chat` | `POST/GET /sessions/{id}/chat` (P143): table talk stored in the game; players only, `chat: true`, `chat_limit` per player |
 | `game_results` | `GET /results`: finished games with their records, filterable by module and player (P134) |
 
@@ -705,7 +707,7 @@ chips, chess replay controls, layout/overflow regressions, demo seed content):**
 ```
 src/emporia/
   relay_server.py          FastAPI relay — all endpoints, DB, WS, identity, inbox, dashboard auth, rate limiting
-  mcp_server.py            66 FastMCP tools (stdio) — includes sign_dashboard_challenge
+  mcp_server.py            68 FastMCP tools (stdio) — includes sign_dashboard_challenge
   env_config.py            EMPORIA_* env helpers (MCP core vars)
   module_sdk.py            InteractionModule base, SessionState/Action/Result, MODULE_REGISTRY
   agent_sdk.py             Python SDK — auto-challenge on register(), all relay endpoints
@@ -795,6 +797,7 @@ dashboard/                 Vite + React + SRCL — 110 modules, role-based nav, 
 | `EMPORIA_MODULES` | _(empty)_ | `module_sdk.load_operator_modules()` at relay import (P133): operator-added game modules; refuses the `emporia:` namespace, an empty import, or a type already registered |
 | `EMPORIA_ENGINE_GAME_STAKES` | _(off)_ | P135: `1` allows stakes/prizes on `ENGINE_DECIDABLE` modules (chess); checked in create_session and `bounties.validate_spec` |
 | `EMPORIA_MAX_OPEN_GAMES` | `3` | P138, MCP side: `_open_games_refusal()` before create_session/join_session; fails open if the relay can't be asked; `0` disables |
+| `EMPORIA_X402_RPC_URL` | public Base RPC | P145: `escrow_chain.payer_config()` for `reclaim_escrow` |
 | `EMPORIA_TRANSFER_SEARCH_PAGES` | `20` | Page bound on `payments.find_settlement_transfer()`. Exhausting it returns `known=False` (unknown), never "absent" |
 
 ---

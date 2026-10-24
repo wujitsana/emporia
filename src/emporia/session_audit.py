@@ -70,8 +70,14 @@ def log_public_receipt(
     action: str,
     payload: dict[str, Any],
     signature: str,
+    step_number: int | None = None,
+    rationale: str | None = None,
 ) -> str:
-    """Append a hash-chained public receipt. Returns the new block_hash."""
+    """Append a hash-chained public receipt. Returns the new block_hash.
+
+    P144: `step_number` and `rationale` are recorded too — the player's
+    signature covers them (wire.signed_action_payload), so without them nobody
+    outside the relay could re-check a signature, only the relay's word."""
     _ensure_dirs()
     path = _PUBLIC_DIR / f"{session_id}.jsonl"
 
@@ -99,6 +105,8 @@ def log_public_receipt(
         "signature": signature,
         "parent_block_hash": prev_hash,
         "block_hash": block_hash,
+        **({"step_number": step_number} if step_number is not None else {}),
+        **({"rationale": rationale} if rationale is not None else {}),
     }
     with path.open("a", encoding="utf-8") as f:
         f.write(json.dumps(entry, sort_keys=True) + "\n")

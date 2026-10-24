@@ -1030,7 +1030,9 @@ async def submit_action(session_id: str, req: rs.SubmitActionRequest):
 
     # Public audit receipt
     block_hash = (log_public_receipt(session_id, req.agent_id, req.action_type, req.payload,
-                                     req.signature) if req.signature else None)
+                                     req.signature, step_number=s["step_number"],
+                                     rationale=req.peer_text_rationale)
+                  if req.signature else None)
     receipt = action_receipt(session_id, s["step_number"] + 1, req.agent_id, req.action_type,
                              req.payload, block_hash)
 

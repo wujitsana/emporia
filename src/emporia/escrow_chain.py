@@ -39,6 +39,7 @@ _SELECTORS = {
     "authorize": keccak(text=f"authorize({_INFO_TUPLE},uint256,address,bytes)")[:4],
     "capture": keccak(text=f"capture({_INFO_TUPLE},uint256,uint256,address)")[:4],
     "void": keccak(text=f"void({_INFO_TUPLE})")[:4],
+    "reclaim": keccak(text=f"reclaim({_INFO_TUPLE})")[:4],
     "paymentState": keccak(text="paymentState(bytes32)")[:4],
 }
 _TX_LOCK = asyncio.Lock()
@@ -167,6 +168,31 @@ async def capture(cfg: EscrowConfig, signer: Any, info: escrow.PaymentInfo, amou
     data = _SELECTORS["capture"] + encode(
         [_INFO_TUPLE, "uint256", "uint256", "address"],
         [info.as_tuple(), amount, escrow.fee_amount(info, amount), info.fee_receiver])
+    return await _send(cfg, signer, data)
+
+
+#: P145: public RPC endpoints a payer can use with no relay involved.
+PUBLIC_RPC = {84532: "https://sepolia.base.org", 8453: "https://mainnet.base.org"}
+
+
+def payer_config(offer: dict, rpc_url: str | None = None) -> EscrowConfig:
+    """The escrow, as the payer knows it from the offer it signed (P145) —
+    nothing from the relay at reclaim time, which may be the party that went
+    quiet."""
+    chain_id = int(offer["chain_id"])
+    info = offer["payment_info"]
+    return EscrowConfig(
+        network=offer["network"], chain_id=chain_id,
+        rpc_url=rpc_url or os.getenv("EMPORIA_X402_RPC_URL", "") or PUBLIC_RPC.get(chain_id, ""),
+        contract=to_checksum_address(offer["escrow"]), collector=to_checksum_address(offer["collector"]),
+        token=to_checksum_address(info["token"]), token_name=offer["token_name"],
+        token_version=offer["token_version"], fee_receiver=to_checksum_address(info["fee_receiver"]))
+
+
+async def reclaim(cfg: EscrowConfig, signer: Any, info: escrow.PaymentInfo) -> str:
+    """The payer takes back a hold the operator never captured or voided —
+    callable only by the payer, only after its authorization expiry (P145)."""
+    data = _SELECTORS["reclaim"] + encode([_INFO_TUPLE], [info.as_tuple()])
     return await _send(cfg, signer, data)
 
 

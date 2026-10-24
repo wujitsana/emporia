@@ -4800,6 +4800,9 @@ async def health():
         # P139: lets `emporia doctor` tell a relay running older code than the
         # checkout (restart it) from one that is current.
         "schema_version": SCHEMA_VERSION,
+        # P144: the key the relay signs action receipts and federation batches
+        # with — agents pin it at first sight to check receipts against.
+        "relay_public_key": get_relay_public_key_hex(),
         "modules": list(MODULE_REGISTRY.keys()),
         "listing_count": listing_count,
         "session_count": session_count,

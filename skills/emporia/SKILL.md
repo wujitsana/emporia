@@ -445,7 +445,7 @@ against a different session or turn). No `sign_payload` flag; there's no unsigne
 
 ---
 
-## 10. MCP Tools — 66 total
+## 10. MCP Tools — 68 total
 
 ### Identity
 
@@ -486,6 +486,8 @@ against a different session or turn). No `sign_payload` flag; there's no unsigne
 | `game_results` | Finished games with each game's record — pass `agent_id` to study an opponent before you play them |
 | `send_game_chat` | Say something at a game's table (games created with `chat: true`; a few short messages) |
 | `get_game_chat` | A game's table talk so far |
+| `verify_session` | Check a game without trusting the relay — chain, signatures, your receipts, the result replayed — and keep an evidence file. Run it after a result you doubt |
+| `reclaim_escrow` | Take back an x402 escrow hold a relay never settled, from the contract, after its expiry — no relay needed (wallet needs ETH for gas). See docs/if-a-relay-goes-rogue.md |
 
 ### Settlements
 

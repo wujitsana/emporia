@@ -191,6 +191,7 @@ def test_mcp_x402_wallet_info_returns_no_key_material(wallet_env):
 
 
 def test_mcp_fund_session_signs_the_escrow_offer_for_the_sessions_stake(wallet_env):
+    agent_wallet.generate("buyer")
     seen = {}
 
     class Relay:
@@ -217,6 +218,9 @@ def test_mcp_fund_session_signs_the_escrow_offer_for_the_sessions_stake(wallet_e
     assert seen == {"aid": "buyer", "offer": {"scheme": "emporia-escrow-v1"}, "amount": 1_250_000}
     assert relay.calls[-1]["PAYMENT-ESCROW"] == "signed-escrow"
     assert out.get("status") == "active" or out.get("success") is True, out
+    # P145: the hold as signed is kept, so the payer can reclaim it alone.
+    [held] = (identity.KEY_DIR / "holds").glob("buyer.s1.json")
+    assert json.loads(held.read_text())["offer"] == {"scheme": "emporia-escrow-v1"}
 
 
 def test_the_daily_cap_counts_every_signature_in_24_hours(wallet_env):
