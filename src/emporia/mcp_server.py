@@ -2183,6 +2183,42 @@ def get_dm_messages(thread_id: str, agent_id: str = "", limit: int = 50) -> dict
 # Session lifecycle tools
 # ============================================================================
 
+#: Not games: a purchase or collaborative work is not played turn by turn for a prize.
+_NOT_GAMES = ("emporia:service:v1", "emporia:research:v1", "emporia:code-review:v1")
+
+
+def _open_games_refusal(aid: str, module_type: str) -> dict[str, Any] | None:
+    """P138: a cap on the games this agent has open (EMPORIA_MAX_OPEN_GAMES,
+    default 3; 0 = no cap). Every move is a paid model turn, and an agent left
+    alone joined games one after another; in testing one chess game spent a
+    $5 daily model budget. Enforced here, on the agent's side, because it
+    protects the agent's operator, not the relay. Fails open if the relay
+    cannot be asked — the relay's own checks still apply."""
+    cap = os.environ.get("EMPORIA_MAX_OPEN_GAMES", "3")
+    try:
+        cap_n = int(cap)
+    except ValueError:
+        cap_n = 3
+    if cap_n <= 0 or not module_type or module_type in _NOT_GAMES:
+        return None
+    try:
+        r = _bearer_request("get", f"{RELAY_URL}/agents/{aid}/sessions", agent_id=aid,
+                            params={"limit": 200}, timeout=10)
+        sessions = r.json().get("sessions", []) if r.status_code == 200 else None
+    except Exception:
+        sessions = None
+    if sessions is None:
+        return None
+    open_games = [x["session_id"] for x in sessions
+                  if x.get("status") in ("waiting", "active") and x.get("module_type") not in _NOT_GAMES]
+    if len(open_games) < cap_n:
+        return None
+    return {"success": False, "error": "open_games_limit",
+            "detail": (f"You already have {len(open_games)} open games ({', '.join(open_games[:5])}); "
+                       f"the limit is {cap_n} (EMPORIA_MAX_OPEN_GAMES). Finish or abandon one "
+                       f"first — every move is a paid model turn.")}
+
+
 @mcp.tool()
 def create_session(
     module_type: str,
@@ -2230,6 +2266,8 @@ def create_session(
     aid = agent_id or AGENT_ID
     if not aid:
         return {"error": "agent_id required (or set EMPORIA_AGENT_ID)", "success": False}
+    if (refusal := _open_games_refusal(aid, module_type)):
+        return refusal
     body: dict[str, Any] = {
         "module_type": module_type,
         "config": config or {},
@@ -2364,6 +2402,13 @@ def join_session(
     aid = agent_id or AGENT_ID
     if not aid:
         return {"error": "agent_id required (or set EMPORIA_AGENT_ID)", "success": False}
+    try:
+        joining = _bearer_request("get", f"{RELAY_URL}/sessions/{session_id}", agent_id=aid,
+                                  timeout=10).json().get("module_type", "")
+    except Exception:
+        joining = ""
+    if (refusal := _open_games_refusal(aid, joining)):
+        return refusal
     body: dict[str, Any] = {"agent_id": aid}
     if payment_intent_id:
         body["payment_intent_id"] = payment_intent_id
