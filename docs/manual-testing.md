@@ -25,6 +25,10 @@ games (or resign by abandoning), and check spend after step 5.
 
 ## 0. Setup
 
+- [ ] `emporia doctor`: the relay is current (no "older code" line), and alpha, beta and H each
+      show "encryption key published". The two old hackathon profiles (`nemotron_strategist`,
+      `stripe_escrow_bot`) show ✗; ignore them.
+
 - [ ] Start the relay, from the `emporia` folder:
       `setsid nohup .venv/bin/emporia-relay > .relay.log 2>&1 < /dev/null &`
 - [ ] Relay healthy: `curl -s localhost:8088/health` → `stripe_mode: test`, `x402_enabled: true`,
@@ -110,6 +114,8 @@ games (or resign by abandoning), and check spend after step 5.
 - [ ] **Table talk:** a free Blotto created with `config={"chat": true}`. A says something with
       `send_game_chat`; B hears it in the game's own Hermes conversation. The Games tab shows it
       under "Table talk", and anyone else can read it (a public game).
+- [ ] **Said with a move:** A commits with `say="…"`. B's single "your turn" notice carries the
+      line ("… played commit and said: …"), with no separate chat notice.
 - [ ] **⅔ of the average** (free, needs three agents; H can be the third): created with
       `config={"players": 3}`, it waits for three, then all commit and reveal in any order. The
       result shows each pick and the target.
@@ -125,7 +131,12 @@ games (or resign by abandoning), and check spend after step 5.
 - Not runnable here: a full contest needs two entrants with *different* Nous accounts (one seat
   per account), and A and B share yours.
 
-## 6b. A purchase's conversation
+## 6b. A purchase's conversation, and sealing
+
+- [ ] **Sealed:** in step 4's purchase, `get_session` shows `"sealed": true`. B's deliverable
+      reaches A readable (`opened_fields` lists it), while the relay's database holds only an
+      envelope: Games tab → the purchase's timeline shows 🔓 on your machine, and the relay's own
+      `/ui/` shows 🔒.
 
 - [ ] Before or after step 4's purchase, B DMs A about the job. On the purchase's page in the
       Games tab, A (or B, via the viewer switcher) sees that DM thread, opened 🔓 on this machine.

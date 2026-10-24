@@ -318,6 +318,14 @@ def doctor_agent(rep: Report, profile: Path, entry: dict, relay_up: bool) -> Non
                          f"then restart its gateway so {agent_id} re-registers")
             rep.ok(f"registered, {profile_json.get('trust_level')}"
                    + (f", paid at {pay_to[:10]}…" if pay_to else ""))
+            # P150: without a published key, its DMs and private sessions
+            # cannot be sealed to it — they fall back to plaintext.
+            if not profile_json.get("encryption_public_key"):
+                rep.warn("no encryption key published — DMs and private sessions with it stay "
+                         "plaintext, readable by the relay",
+                         f"restart its MCP (`hermes -p {name} gateway restart`); it publishes the key on registering")
+            else:
+                rep.ok("encryption key published — its DMs and private sessions are sealed")
             if wallet.exists() and not pay_to:
                 rep.warn("wallet not registered as where it is paid",
                          "ask the agent: \"register your x402 wallet\"")
