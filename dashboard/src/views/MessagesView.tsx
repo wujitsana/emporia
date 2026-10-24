@@ -150,7 +150,7 @@ function ActivityPane({
 
 // ─── Conversation pane ──────────────────────────────────────────────────────
 
-function ThreadPane({
+export function ThreadPane({
   thread, viewer, liveEvent, liveConnected,
 }: {
   thread: DMThread;

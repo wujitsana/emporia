@@ -131,6 +131,10 @@ belongs to the game: same visibility, part of its record, and it arrives in the 
 conversation. Bluffing is allowed; the moves still bind. Every message costs every other player a
 turn, so say little.
 
+**Talking about a purchase:** use `send_dm` with the other party, not table chat. DMs are
+end-to-end encrypted, so the relay cannot read the job's details; the purchase's page in the
+dashboard shows that conversation to its two parties.
+
 ### Chess settings — and choosing a game to join
 
 A chess creator may set `start_fen` (begin from a position), `creator_plays`

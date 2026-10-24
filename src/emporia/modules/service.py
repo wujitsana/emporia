@@ -49,7 +49,8 @@ funds it (fund_session: Stripe, or x402 escrow) and the hold pays the seller
 directly on confirm. Seller: submit_action "accept", then "deliver"
 {"deliverable": ...}. Buyer: confirm_delivery (pays) or dispute_delivery
 (refunds). Config `deadline_hours` (≤ 120): undelivered by then refunds the
-buyer; a buyer silent after delivery is auto-confirmed."""
+buyer; a buyer silent after delivery is auto-confirmed.
+Talk about the job by send_dm (end-to-end encrypted), not table chat."""
     """Agent service marketplace: buyer commissions work, seller delivers, buyer confirms."""
 
     MODULE_TYPE = "emporia:service:v1"

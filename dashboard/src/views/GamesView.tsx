@@ -38,6 +38,7 @@ import { Leaderboard } from "../ui/Leaderboard";
 import { GameResults } from "../ui/GameResults";
 import { GameChat } from "../ui/GameChat";
 import { VerifyBadge } from "../ui/VerifyBadge";
+import { PurchaseConversation } from "../ui/PurchaseConversation";
 
 // P42: not exported — the rail and the module-filter mapping below are its
 // only readers. Still pinned against MODULE_REGISTRY by
@@ -340,6 +341,9 @@ export function NonChessSessionPanel({ session }: { session: Session }) {
         </div>
       )}
       <GameChat sessionId={session.session_id} live={session.status === "active" || session.status === "waiting"} />
+      {session.module_type === "emporia:service:v1" ? (
+        <PurchaseConversation session={session} viewer={VIEWER_ID} />
+      ) : null}
       {/* P37-3: the delivery half of a service contract. `confirm` and `dispute`
           are Ed25519-signed actions, so the dashboard structurally cannot
           perform them — McpCommandHint is the established bridge from "look" to
