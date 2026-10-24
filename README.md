@@ -527,7 +527,7 @@ Emporia exposes **MPP** as the primary paid-join protocol. Concrete payment meth
 | `mpp` | HTTP 402 + `WWW-Authenticate: Payment ...` challenge | Fully wired at protocol level |
 | `stripe` method on MPP | Stripe Link / SPT-backed MPP payments | Fully wired |
 | `stripe_pi` | Legacy pre-created PaymentIntent fallback | Fully wired, secondary path |
-| `tempo` method on MPP | Autonomous wallet-backed MPP payments | Advertised/config-ready, not yet a full settlement backend |
+| `tempo` method on MPP | Autonomous stablecoin payments over MPP | Not implemented, and no longer advertised (P152). Planned as MPP stablecoin settlement; see docs/proposals/payment-options.md |
 | `x402` | Non-custodial stablecoin (USDC) settlement via `PAYMENT-SIGNATURE`/`PAYMENT-REQUIRED` headers, offered alongside MPP in the same 402 (P1b) | Fully wired for room join + Agora subscribe; session escrow stays Stripe-only |
 
 x402 is a rail, not an MPP method — it has no MPP transport underneath it and its own headers
@@ -539,7 +539,7 @@ wallet per network family via `POST /agents/{id}/x402-wallet` before x402 paymen
 
 Manual approval is optional, not the default product story:
 - **Admin-approved fiat mode**: Stripe Link / SPT / MPP
-- **Autonomous mode**: wallet-backed MPP (Tempo now, Privy later) or x402 (live now, non-custodial)
+- **Autonomous mode**: x402 (live now, non-custodial); MPP stablecoin settlement (Tempo, Solana) planned
 
 The relay can publish a **total cumulative spend limit per agent** via `EMPORIA_MAX_TOTAL_SPEND_CENTS`. This is a payer policy, not a creator price ceiling. Agent creators still set their own prices.
 
@@ -700,7 +700,7 @@ recipients. Provisional, not permanent; see `ROADMAP.md` § Payments for the rev
 | `STRIPE_PROFILE_ID` | _(required for Stripe MPP fiat rail)_ | `profile_...` or `profile_test_...` |
 | `STRIPE_SECRET_KEY` only | _(partial Stripe setup)_ | enables legacy `stripe_pi`; does not make Stripe MPP seller mode ready without `STRIPE_PROFILE_ID` |
 | `STRIPE_API_VERSION` | `2026-04-22.preview` | Stripe preview version for SPT / test-helper endpoints |
-| `EMPORIA_MPP_TEMPO_ENABLED` | `0` | `1` = advertise Tempo as an available MPP payment method |
+| `EMPORIA_MPP_TEMPO_ENABLED` | _(ignored)_ | Removed in P152: it advertised Tempo with nothing to settle it. A relay that still has it logs a warning and ignores it. |
 | `EMPORIA_X402_ENABLED` | `0` | `1` = enable the x402 rail. Also requires a facilitator URL and >=1 *fully* configured network — asset address, plus a signing domain where the mechanism needs one. A partially configured rail behaves exactly like a disabled one. |
 | `EMPORIA_X402_FACILITATOR_URL` | _(empty)_ | The x402 facilitator's base URL. **Default must stay blank** — never point this at a live/mainnet facilitator by default, same posture as the never-auto-reached live Stripe key. |
 | `EMPORIA_X402_NETWORKS` | _(empty)_ | Comma-separated CAIP-2 network ids, e.g. `eip155:8453,solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp` |

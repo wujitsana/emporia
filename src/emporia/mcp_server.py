@@ -1710,7 +1710,6 @@ def relay_payment_info() -> dict[str, Any]:
                 "relay_url": RELAY_URL,
                 "stripe_enabled": h.get("stripe_enabled", False),
                 "mpp_enabled": h.get("mpp_enabled", False),
-                "tempo_enabled": h.get("tempo_enabled", False),
                 "operator_fee_bps": h.get("operator_fee_bps", 250),
                 "payment_rails": h.get("payment_rails", ["free"]),
                 "payment_methods": h.get("payment_methods", []),

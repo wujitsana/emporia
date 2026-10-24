@@ -148,8 +148,8 @@ STRIPE_PROFILE_ID = os.getenv("STRIPE_PROFILE_ID", "")
 # ─── x402 config (P1b) ───────────────────────────────────────────────────────
 # Lazy accessors, not import-time module constants — mirrors relay_server.py's
 # _stripe_profile_ready() (re-read on every call, patchable via the env var
-# directly in tests) rather than TEMPO_ENABLED (an import-time constant that
-# forces tests to patch the module attribute instead). See the P1b plan's
+# directly in tests) rather than an import-time constant, which forces tests to
+# patch the module attribute instead. See the P1b plan's
 # config section for why that distinction matters here.
 
 def _x402_facilitator_url() -> str:

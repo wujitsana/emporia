@@ -14,7 +14,7 @@ A router reaches shared relay state through the *module object*:
 not `from emporia.relay_server import DB_LOCK, get_db`. The difference is when
 the name resolves. A module-scope `from ... import` binds the value once at
 import; `rs.NAME` looks it up on every call. The suite has 43 sites that patch
-`emporia.relay_server.<name>` — `_assert_payload_safe_counted`, `TEMPO_ENABLED`,
+`emporia.relay_server.<name>` — `_assert_payload_safe_counted`,
 `record_payment`, `_fetch_federation_batch` and more — and every one of those
 patches replaces an attribute on the module object. Bind early and the router
 holds the original, the patch does nothing, and the test passes for the wrong

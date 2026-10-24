@@ -768,7 +768,6 @@ def install_into_profile(
     stripe_secret_key: str | None = None,
     stripe_profile_id: str | None = None,
     stripe_api_version: str | None = None,
-    tempo_enabled: bool = False,
     max_budget_cents: int | None = None,
     nous_token: str | None = None,
     no_guardrails: bool = False,
@@ -841,10 +840,8 @@ def install_into_profile(
         env_block["STRIPE_API_VERSION"] = stripe_api_version
         changed = True
         print("  + env.STRIPE_API_VERSION")
-    if tempo_enabled and env_block.get("EMPORIA_MPP_TEMPO_ENABLED") != "1":
-        env_block["EMPORIA_MPP_TEMPO_ENABLED"] = "1"
+    if env_block.pop("EMPORIA_MPP_TEMPO_ENABLED", None) is not None:  # P152: no longer a setting
         changed = True
-        print("  + env.EMPORIA_MPP_TEMPO_ENABLED=1")
     if max_budget_cents is not None:
         if max_budget_cents > 0:
             if env_block.get("EMPORIA_MAX_TOTAL_SPEND_CENTS") != str(max_budget_cents):
@@ -924,8 +921,7 @@ def install_into_profile(
     elif not stripe_secret_key:
         env_lines = [ln for ln in env_lines if not ln.startswith("STRIPE_PROFILE_ID=")]
     env_lines = [ln for ln in env_lines if not ln.startswith("EMPORIA_NEMO_GUARDRAILS_ENABLED=")]
-    if tempo_enabled:
-        env_lines, _ = _set_env_line(env_lines, "EMPORIA_MPP_TEMPO_ENABLED", "1")
+    env_lines = [ln for ln in env_lines if not ln.startswith("EMPORIA_MPP_TEMPO_ENABLED=")]
     if max_budget_cents is not None:
         if max_budget_cents > 0:
             env_lines, _ = _set_env_line(env_lines, "EMPORIA_MAX_TOTAL_SPEND_CENTS", str(max_budget_cents))
@@ -1308,7 +1304,6 @@ def bootstrap_test_profiles(
     stripe_secret_key: str | None = None,
     stripe_profile_id: str | None = None,
     stripe_api_version: str | None = None,
-    tempo_enabled: bool = False,
     max_budget_cents: int | None = None,
     nous_token: str | None = None,
     dry_run: bool = False,
@@ -1664,8 +1659,6 @@ def main() -> None:
                         help="Stripe Machine Payments profile ID (profile_... / profile_test_...); use 'auto' to discover from env files or Stripe API (sk_* keys only)")
     parser.add_argument("--stripe-api-version", default=os.getenv("STRIPE_API_VERSION", "2026-04-22.preview"),
                         help="Stripe API version for SPT/MPP preview endpoints")
-    parser.add_argument("--tempo-enabled", action="store_true",
-                        help="Advertise Tempo as an available MPP payment method on the relay")
     parser.add_argument("--max-budget-cents", type=int, default=int(os.getenv("EMPORIA_MAX_TOTAL_SPEND_CENTS", "0")),
                         help="Optional total cumulative spend limit per agent in cents (0 = unlimited)")
     parser.add_argument("--nous-token", default=None, metavar="JWT",
@@ -1781,7 +1774,6 @@ def main() -> None:
             stripe_secret_key=stripe_key,
             stripe_profile_id=stripe_profile_id,
             stripe_api_version=args.stripe_api_version,
-            tempo_enabled=args.tempo_enabled,
             max_budget_cents=args.max_budget_cents,
             nous_token=nous_token,
             no_guardrails=args.no_guardrails,
@@ -1841,7 +1833,6 @@ def main() -> None:
             stripe_secret_key=stripe_key,
             stripe_profile_id=stripe_profile_id,
             stripe_api_version=args.stripe_api_version,
-            tempo_enabled=args.tempo_enabled,
             max_budget_cents=args.max_budget_cents,
             nous_token=nous_token,
             dry_run=args.dry_run,

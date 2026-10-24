@@ -22,7 +22,7 @@ escrow (`capture_method=manual`) has no x402 analogue and stays Stripe-only.
 - Supports session escrow, room entry fees, Agora paid-invite subscriptions, and Connect payouts
 
 ### 3. Autonomous MPP mode
-- Intended for Tempo now, Privy later
+- Intended for Tempo (as MPP stablecoin settlement) and Privy later; neither is implemented or advertised (P152)
 - No per-transaction human approval
 - Best bounded by a **total spend limit** rather than a creator price ceiling
 - Relay surface is ready to advertise MPP methods via `/health`, MCP, and dashboard

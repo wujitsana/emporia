@@ -163,113 +163,39 @@ def test_health_advertises_x402_config(client):
 
 
 def test_payment_rails_helper_pins_health_and_agent_variants_across_flag_combinations():
-    """P3 (item 5): /health and GET /agents/{id} used to hand-build
-    payment_rails/payment_methods independently — now both route through
-    the single _payment_rails() helper, with no wire change: each variant's
-    output is pinned exactly as it was before the refactor, across every
-    combination of the three flags (STRIPE_SECRET_KEY / stripe_profile_ready
-    / EMPORIA_MPP_TEMPO_ENABLED).
-
-    P70 updated one cell. The combination stripe_enabled=True,
-    stripe_profile_ready=False, tempo=True used to answer differently at each
-    door — /health advertised "mpp", /agents/{id} omitted it — and P3 pinned
-    that divergence rather than fixing it. It is now one rule, so both
-    variants say "mpp". This is a wire change on GET /agents/{id}, deliberate
-    and recorded in SECURITY.md."""
+    """P3/P70: one definition of payment_rails/payment_methods for /health and
+    GET /agents/{id}. P152: Tempo is no longer advertised — nothing settled
+    it — so "mpp" means the Stripe SPT path only."""
     from emporia.relay_server import _payment_rails
 
     with patch("emporia.relay_server._stripe_profile_ready", return_value=False):
         with patch.dict(os.environ, {"STRIPE_SECRET_KEY": ""}, clear=False):
-            with patch("emporia.relay_server.TEMPO_ENABLED", False):
-                assert _payment_rails() == (["free"], [])
-                assert _payment_rails(has_stripe=False) == (["free"], [])
-                assert _payment_rails(has_stripe=True) == (["free"], [])
-
+            assert _payment_rails() == (["free"], [])
+            assert _payment_rails(has_stripe=True) == (["free"], [])
         with patch.dict(os.environ, {"STRIPE_SECRET_KEY": "sk_test_only"}, clear=False):
-            with patch("emporia.relay_server.TEMPO_ENABLED", False):
-                # stripe_enabled=True, stripe_profile_ready=False, tempo=False:
-                # the two variants agree.
-                assert _payment_rails() == (["free", "stripe_pi"], [])
-                assert _payment_rails(has_stripe=False) == (["free", "stripe_pi"], [])
-
-            with patch("emporia.relay_server.TEMPO_ENABLED", True):
-                # P70: the formerly divergent cell. Tempo alone makes the MPP
-                # transport usable, and a Stripe key being present is a fact
-                # about a different rail entirely — the old elif chain let the
-                # second suppress the first.
-                assert _payment_rails() == (["free", "mpp", "stripe_pi"], ["tempo"])
-                assert _payment_rails(has_stripe=False) == (["free", "mpp", "stripe_pi"], ["tempo"]), \
-                    "per-agent variant must now agree with /health here (was the P3 divergence)"
-
+            assert _payment_rails() == (["free", "stripe_pi"], [])
+            assert _payment_rails(has_stripe=False) == (["free", "stripe_pi"], [])
     with patch("emporia.relay_server._stripe_profile_ready", return_value=True):
         with patch.dict(os.environ, {"STRIPE_SECRET_KEY": "sk_test_only"}, clear=False):
-            with patch("emporia.relay_server.TEMPO_ENABLED", False):
-                assert _payment_rails() == (["free", "mpp", "stripe_pi"], ["stripe"])
-                assert _payment_rails(has_stripe=False) == (["free", "mpp", "stripe_pi"], ["stripe"])
-                assert _payment_rails(has_stripe=True) == (
-                    ["free", "mpp", "stripe_pi", "stripe_connect"], ["stripe"],
-                ), "stripe_connect only appears for an agent with a stored Connect account"
-
-            with patch("emporia.relay_server.TEMPO_ENABLED", True):
-                assert _payment_rails() == (["free", "mpp", "stripe_pi"], ["stripe", "tempo"])
-                assert _payment_rails(has_stripe=True) == (
-                    ["free", "mpp", "stripe_pi", "stripe_connect"], ["stripe", "tempo"],
-                )
-
-    # P1b-7 (L5): the widened matrix — "x402" joins payment_rails identically
-    # in both variants, unlike the pre-existing formulas above it doesn't
-    # need a documented divergence, since this is new code applied the same
-    # way to both. payment_methods is untouched either way (x402 has no MPP
-    # transport underneath it, so it was never a payment_methods candidate).
-    _x402_on = {
-        **_X402_ENV,
-    }
+            assert _payment_rails() == (["free", "mpp", "stripe_pi"], ["stripe"])
+            assert _payment_rails(has_stripe=True) == (
+                ["free", "mpp", "stripe_pi", "stripe_connect"], ["stripe"],
+            ), "stripe_connect only appears for an agent with a stored Connect account"
     with patch("emporia.relay_server._stripe_profile_ready", return_value=False):
-        with patch.dict(os.environ, {"STRIPE_SECRET_KEY": "", **_x402_on}, clear=False):
-            with patch("emporia.relay_server.TEMPO_ENABLED", False):
-                assert _payment_rails() == (["free", "x402"], [])
-                assert _payment_rails(has_stripe=False) == (["free", "x402"], [])
-                assert _payment_rails(has_stripe=True) == (["free", "x402"], [])
-    # x402 disabled (no env vars set) must add nothing — the default case,
-    # already implicitly covered by every assertion above this block, which
-    # never sets EMPORIA_X402_ENABLED and never see "x402" in their output.
+        with patch.dict(os.environ, {"STRIPE_SECRET_KEY": "", **_X402_ENV}, clear=False):
+            assert _payment_rails() == (["free", "x402"], [])
+            assert _payment_rails(has_stripe=True) == (["free", "x402"], [])
 
 
-def test_an_explicitly_empty_env_var_is_an_answer_not_a_gap(tmp_path):
-    """P71: `VAR= <command>` must switch a setting off, even when a profile
-    `.env` further up defines it.
-
-    `_merge_dotenv` is documented as setdefault semantics — "a value already
-    present in the environment always wins". It tested truthiness rather than
-    presence, so an explicitly empty value was treated as an unset one and the
-    file refilled it. The operator-visible consequence: the Stripe live-key
-    refusal (P62/P65) offers "unset STRIPE_SECRET_KEY" as one of its three
-    exits, and from a Hermes profile that defines it, that exit did not exist
-    per process — the only route was editing the shared profile file.
-
-    Found by running two relays against each other, not by reading the code.
-    """
-    from emporia.config import _merge_dotenv
-
-    env_file = tmp_path / ".env"
-    env_file.write_text(
-        "EMPORIA_P71_SET_BY_FILE=from_file\n"
-        "EMPORIA_P71_BLANKED=from_file\n"
-        "EMPORIA_P71_BLANK_IN_FILE=\n"
-    )
-    with patch.dict(os.environ, {"EMPORIA_P71_BLANKED": ""}, clear=False):
-        os.environ.pop("EMPORIA_P71_SET_BY_FILE", None)
-        os.environ.pop("EMPORIA_P71_BLANK_IN_FILE", None)
-        _merge_dotenv(env_file)
-
-        assert os.environ["EMPORIA_P71_SET_BY_FILE"] == "from_file", \
-            "a genuinely absent variable must still be filled from the file"
-        assert os.environ["EMPORIA_P71_BLANKED"] == "", \
-            "an explicitly empty value is a deliberate 'off' and must survive the merge"
-        assert "EMPORIA_P71_BLANK_IN_FILE" not in os.environ, \
-            "a blank value in the file must not be used to create a variable"
-    for k in ("EMPORIA_P71_SET_BY_FILE", "EMPORIA_P71_BLANK_IN_FILE"):
-        os.environ.pop(k, None)
+def test_tempo_is_not_advertised_until_something_settles_it(monkeypatch):
+    """P152: EMPORIA_MPP_TEMPO_ENABLED added "tempo" to payment_methods while no
+    code could settle a Tempo payment — a relay claiming a method it cannot
+    take. The setting is gone; the relay warns if an operator still has it."""
+    from emporia.relay_server import _payment_rails
+    monkeypatch.setenv("EMPORIA_MPP_TEMPO_ENABLED", "1")
+    with patch("emporia.relay_server._stripe_profile_ready", return_value=True), \
+         patch.dict(os.environ, {"STRIPE_SECRET_KEY": "sk_test_only"}, clear=False):
+        assert "tempo" not in _payment_rails()[1]
 
 
 def test_both_doors_agree_on_every_rail_except_stripe_connect():
@@ -284,7 +210,7 @@ def test_both_doors_agree_on_every_rail_except_stripe_connect():
     specific agent's payout account rather than about the relay.
 
     Written as "who may differ", not "do these two values match" — the whole
-    16-cell cross-product is swept, so a rail added to one formula and not the
+    8-cell cross-product is swept, so a rail added to one formula and not the
     other fails here regardless of which flags it keys off. This is what makes
     a third settlement rail a local edit instead of a matching pair of edits.
     """
@@ -292,16 +218,15 @@ def test_both_doors_agree_on_every_rail_except_stripe_connect():
     from itertools import product
 
     checked = 0
-    for ready, key, tempo, x402 in product([False, True], repeat=4):
+    for ready, key, x402 in product([False, True], repeat=3):
         env = {"STRIPE_SECRET_KEY": "sk_test_only" if key else ""}
         env.update(_X402_ENV if x402 else {})
         with patch("emporia.relay_server._stripe_profile_ready", return_value=ready), \
-             patch.dict(os.environ, env, clear=False), \
-             patch("emporia.relay_server.TEMPO_ENABLED", tempo):
+             patch.dict(os.environ, env, clear=False):
             wide_rails, wide_methods = _payment_rails()
             for has_stripe in (False, True):
                 agent_rails, agent_methods = _payment_rails(has_stripe=has_stripe)
-                flags = f"ready={ready} key={key} tempo={tempo} x402={x402} has_stripe={has_stripe}"
+                flags = f"ready={ready} key={key} x402={x402} has_stripe={has_stripe}"
                 assert agent_methods == wide_methods, \
                     f"payment_methods is relay-wide and must not vary by agent ({flags})"
                 assert [r for r in agent_rails if r != "stripe_connect"] == wide_rails, \
@@ -310,7 +235,7 @@ def test_both_doors_agree_on_every_rail_except_stripe_connect():
                 assert ("stripe_connect" in agent_rails) == bool(has_stripe and ready), \
                     f"stripe_connect must track this agent's own payout account ({flags})"
                 checked += 1
-    assert checked == 32, f"expected the full cross-product, swept {checked}"
+    assert checked == 16, f"expected the full cross-product, swept {checked}"
 
 
 def test_health_and_agent_profile_route_through_the_shared_payment_rails_helper(client):

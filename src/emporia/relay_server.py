@@ -155,7 +155,13 @@ WRITE_REQUIRES_NOUS = os.getenv("EMPORIA_WRITE_REQUIRES_NOUS", "0").strip() == "
 REQUIRE_CHALLENGE = os.getenv("EMPORIA_REQUIRE_CHALLENGE", "1").strip() == "1"
 OPERATOR_FEE_BPS = int(os.getenv("OPERATOR_FEE_BPS", "250"))
 MAX_TOTAL_SPEND_CENTS = int(os.getenv("EMPORIA_MAX_TOTAL_SPEND_CENTS", "0"))
-TEMPO_ENABLED = os.getenv("EMPORIA_MPP_TEMPO_ENABLED", "0").strip() == "1"
+# P152: EMPORIA_MPP_TEMPO_ENABLED used to advertise "tempo" as an MPP method
+# with nothing able to settle it. Gone until Tempo settlement exists; an
+# operator who still sets it is told rather than silently ignored.
+if os.getenv("EMPORIA_MPP_TEMPO_ENABLED", "").strip() == "1":
+    logging.getLogger("emporia.relay").warning(
+        "EMPORIA_MPP_TEMPO_ENABLED is ignored: Tempo settlement is not implemented, so the relay "
+        "no longer advertises it (P152)")
 LOG_DIR = Path(os.getenv("EMPORIA_LOG_DIR", "./.local/logs")).expanduser()
 # P55: resolved through emporia.config, the package's only reader of
 # EMPORIA_DB_PATH. Still captured once here — 111 call sites in the suite treat
@@ -4756,8 +4762,6 @@ def _payment_rails(*, has_stripe: bool | None = None) -> tuple[list[str], list[s
     payment_methods: list[str] = []
     if stripe_profile_ready:
         payment_methods.append("stripe")
-    if TEMPO_ENABLED:
-        payment_methods.append("tempo")
 
     # One condition per rail. No elif — the conditions are independent.
     payment_rails = ["free"]
@@ -4828,7 +4832,6 @@ async def health():
         "stripe_profile_ready": stripe_profile_ready,
         "stripe_profile_id": _stripe_profile_id(),
         "stripe_api_version": os.getenv("STRIPE_API_VERSION", "2026-04-22.preview"),
-        "tempo_enabled": TEMPO_ENABLED,
         "max_total_spend_cents": MAX_TOTAL_SPEND_CENTS,
         "payment_rails": payment_rails,
         "stripe_mpp_admin_notice": _stripe_mpp_admin_notice(),
