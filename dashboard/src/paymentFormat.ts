@@ -165,9 +165,13 @@ export function sessionStatusLabel(status: string): string {
 /** P153: what can pay for something, before anyone does. */
 export type MoneyMove = "entry" | "purchase" | "wager" | "bounty_held" | "bounty_promised";
 
+/** P154: two-player games — an x402 wager needs the payee known when signed. */
+export const TWO_PLAYER_GAMES = new Set(["emporia:blotto:v1", "emporia:chess:v1"]);
+
 export function acceptsLabel(
   move: MoneyMove,
   h: { stripe_enabled?: boolean; x402_enabled?: boolean; x402_escrow_network?: string | null } | null,
+  moduleType?: string,
 ): string {
   const card = !!h?.stripe_enabled;
   const usdc = !!h?.x402_enabled;
@@ -181,8 +185,9 @@ export function acceptsLabel(
       if (card) ways.push("card");
       if (h?.x402_escrow_network) ways.push("USDC escrow");
       break;
-    case "wager":            // the winner is unknown until the end: card holds only, for now
+    case "wager":            // card; or (P154) USDC escrow, each stake held for the opponent
       if (card) ways.push("card");
+      if (h?.x402_escrow_network && moduleType && TWO_PLAYER_GAMES.has(moduleType)) ways.push("USDC escrow");
       break;
     case "bounty_held":
       if (card) ways.push("card");

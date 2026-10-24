@@ -18,7 +18,7 @@ export function SessionMoney({ session }: { session: Session }) {
   return (
     <Text className="e-dim" style={{ fontSize: 11 }}>
       {purchase ? "price" : "stake"} {stake.toFixed(2)} {(rules?.currency ?? "").toUpperCase()} ·{" "}
-      {paid.length ? <PaidByTag rails={paid} /> : <AcceptsTag move={purchase ? "purchase" : "wager"} />}
+      {paid.length ? <PaidByTag rails={paid} /> : <AcceptsTag move={purchase ? "purchase" : "wager"} moduleType={session.module_type} />}
     </Text>
   );
 }

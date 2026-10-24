@@ -106,6 +106,11 @@ games (or resign by abandoning), and check spend after step 5.
 - [ ] Winner's settlement: both stakes less 2.5%; dashboard Fees shows it **settled**. An even
       result settles as a refund to both. Games tab: standings and the result, with both
       allocations, appear.
+- [ ] **USDC wager (x402, no card):** A creates a Blotto with `payment_mode="x402"`, stake $0.50.
+      B joins; both get "stake to start" notices and call `fund_session(pay_with_x402=True)`. The
+      game starts after the second stake. After the result, the loser's hold is captured to the winner
+      (Base Sepolia), the winner's own is voided back, and Fees shows $0.975 to the winner on a $1.00
+      pot. Testnet USDC moves: approve first.
 - [ ] A staked **chess** game is refused ("decided by engines"; P135). A free chess game from a
       near-mate position (`start_fen` "6k1/5ppp/8/8/8/8/8/R5K1 w - - 0 1", `creator_plays`
       "black") ends in one move.

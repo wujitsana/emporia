@@ -2583,6 +2583,19 @@ def get_escrow_hold(hold_hash: str) -> dict[str, Any] | None:
     return hold
 
 
+def escrow_holds_for_session(session_id: str) -> list[dict[str, Any]]:
+    """Every hold placed for one session, oldest first (P154: a wager has two)."""
+    with DB_LOCK, get_db() as conn:
+        rows = conn.execute("SELECT * FROM escrow_holds WHERE session_id = ? ORDER BY created_at",
+                            (session_id,)).fetchall()
+    holds = []
+    for row in rows:
+        hold = dict(row)
+        hold["payment_info"] = json.loads(hold.pop("payment_info_json"))
+        holds.append(hold)
+    return holds
+
+
 def escrow_holds_in_states(states: tuple[str, ...], limit: int = 100) -> list[dict[str, Any]]:
     """Holds in any of `states`, oldest first — the reconciler's queue (P111)."""
     marks = ",".join("?" * len(states))
@@ -2623,7 +2636,10 @@ def idle_sessions(before: str, exclude_module: str, limit: int = 200) -> list[di
     than `exclude_module` (P129's idle sweep; service sessions have deadlines)."""
     with DB_LOCK, get_db() as conn:
         rows = conn.execute(
-            "SELECT * FROM sessions WHERE status IN ('waiting', 'active') AND updated_at < ? "
+            # P154: and a wager waiting for its stakes — a half-funded one holds
+            # a player's money until the sweep voids it.
+            "SELECT * FROM sessions WHERE status IN ('waiting', 'active', 'awaiting_funding') "
+            "AND updated_at < ? "
             "AND module_type != ? ORDER BY updated_at LIMIT ?",
             (before, exclude_module, limit)).fetchall()
     return [_session_row_to_dict(r) for r in rows]

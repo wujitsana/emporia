@@ -128,7 +128,7 @@ export function ListingsView({
         ? (
           <span key="pay">
             <span style={{ color: "var(--theme-focused-foreground)" }}>${l.price_usd}</span>{" "}
-            <AcceptsTag move={l.module_type === "emporia:service:v1" || !l.module_type ? "purchase" : "wager"} />
+            <AcceptsTag move={l.module_type === "emporia:service:v1" || !l.module_type ? "purchase" : "wager"} moduleType={l.module_type} />
           </span>
         )
         : <span key="pay" className="e-faint">free</span>,

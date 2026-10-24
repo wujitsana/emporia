@@ -21,7 +21,8 @@ Live Stripe additionally needs Connect onboarding (KYC) per seller and a webhook
 |---|---|---|---|
 | Room entry, Agora subscription | Yes (creator) | Stripe, x402 exact | x402 exact is fee-free |
 | Service purchase | Yes (seller) | Stripe destination, **x402 escrow** | Escrow is the autonomous option |
-| Chess wager | **No** (winner unknown) | Stripe only | x402 signs a fixed payee, so it cannot stake a wager |
+| Wager (two players) | Yes, once both join: the opponent | Stripe, **x402 escrow** (P154) | Each stake is held for the opponent; the loser's is captured to the winner, the winner's voided back. Fee 2× on one stake = 2.5% of the pot |
+| Wager (3+ players) | **No** (winner unknown) | Stripe only | Still needs an arbiter escrow or Lightning hold invoices |
 | Bounty, held | No (winner unknown) | Stripe only | Prize reserved up front |
 | Bounty, promised | Yes, after the result | x402 exact | Backed only by the funder's reputation (default flag) |
 

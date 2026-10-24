@@ -96,6 +96,8 @@ describe("what pays for what (P153)", () => {
     expect(acceptsLabel("purchase", { ...both, x402_escrow_network: null })).toBe("accepts card");
     expect(acceptsLabel("bounty_promised", both)).toBe("accepts USDC, paid after the result");
     expect(acceptsLabel("entry", {})).toBe("no payment rail on this relay");
+    expect(acceptsLabel("wager", both, "emporia:blotto:v1")).toBe("accepts card · USDC escrow");
+    expect(acceptsLabel("wager", both, "emporia:two-thirds:v1")).toBe("accepts card");
   });
   it("says after paying how", () => {
     expect(paidByLabel(["stripe"])).toBe("paid by card");

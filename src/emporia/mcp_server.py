@@ -2293,6 +2293,9 @@ def create_session(
     first, then pass its payment_intent_id here with payment_mode='stripe_pi' —
     the same path join_session takes. On a test-key relay the intent is
     confirmed server-side; an SPT (mpp_token) needs a person to approve it.
+    Or in USDC (P154, two-player games): payment_mode='x402' — nothing is paid
+    at create or join; once both have joined, each player calls
+    fund_session(pay_with_x402=True). Both need a registered x402 wallet.
 
     Stakes depend on the module (P95):
       chess (a wager) — every player stakes, the creator included: pass an SPT
@@ -2514,6 +2517,11 @@ def fund_session(session_id: str, mpp_token: str = "", agent_id: str = "",
     and signed with this agent's x402 wallet; your USDC moves into Base's
     Commerce Payments escrow, never to the relay, and you can reclaim it
     yourself if the relay never acts: reclaim_escrow(), after the hold's expiry.
+
+    Also stakes an x402 wager (P154) — a two-player game created with
+    payment_mode='x402': once both have joined, each player calls this with
+    pay_with_x402=True. Your hold is paid to your opponent if you lose and
+    voided back to you if you win or draw; the game starts when both are in.
     """
     aid = agent_id or AGENT_ID
     if not aid:

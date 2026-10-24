@@ -192,6 +192,16 @@ def format_frame(frame: dict[str, Any], agent_id: str) -> Notice | None:
         return relay(f"Session {sid} complete — {result}{paid}\n"
                      f"  → get_settlements(session_id=\"{sid}\")")
 
+    if t == "funding_required" and frame.get("kind") == "wager":
+        # P154: both players stake an x402 wager once both have joined.
+        sid = frame.get("session_id", "")
+        return relay(
+            f"{frame.get('opponent', 'Your opponent')} joined your {_module_label(frame.get('module_type', ''))} "
+            f"wager {sid}. Stake {_usd(frame.get('amount_cents'))} to start: a USDC escrow hold paid to "
+            f"them if you lose, returned to you if you win or draw.\n"
+            f"  → fund_session(session_id=\"{sid}\", pay_with_x402=True)"
+        )
+
     if t == "funding_required":
         sid = frame.get("session_id", "")
         return relay(

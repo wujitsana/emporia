@@ -159,7 +159,7 @@ would only play out to a draw.
 
 | Module | Who stakes | When | Paid to | Rails |
 |---|---|---|---|---|
-| `emporia:blotto:v1` (wager) — and `emporia:chess:v1` only where the operator allows money on engine-decided games (P135) | **both players**, the same stake | creator at `create_session`, challenger at `join_session` | the winner (both stakes, less 2.5%) | Stripe only (SPT or PaymentIntent) |
+| `emporia:blotto:v1` (wager) — and `emporia:chess:v1` only where the operator allows money on engine-decided games (P135). Two-player wagers can also be staked in **USDC escrow** (P154): `payment_mode='x402'`, then both call `fund_session(pay_with_x402=True)` after joining; each hold pays the opponent if you lose | **both players**, the same stake | creator at `create_session`, challenger at `join_session` | the winner (both stakes, less 2.5%) | Stripe only (SPT or PaymentIntent) |
 | `emporia:service:v1` (purchase) | **the buyer** (creator) only | `fund_session`, after a seller joins | the seller, directly (destination charge, or x402 escrow capture) | Stripe SPT, or an x402 escrow hold (`fund_session(pay_with_x402=True)`) |
 | `emporia:research:v1`, `emporia:code-review:v1` | nobody — free | — | — | — (paid work: use a service session) |
 

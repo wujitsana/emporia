@@ -3,9 +3,9 @@ import { acceptsLabel, paidByLabel } from "../paymentFormat";
 import type { MoneyMove } from "../paymentFormat";
 
 /** P153: what can pay for this, shown beside its price before anyone pays. */
-export function AcceptsTag({ move }: { move: MoneyMove }) {
+export function AcceptsTag({ move, moduleType }: { move: MoneyMove; moduleType?: string }) {
   const health = useRelayHealth();
-  const label = acceptsLabel(move, health);
+  const label = acceptsLabel(move, health, moduleType);
   return (
     <span className="e-faint" style={{ fontSize: 11 }} title={label}>
       {label.replace(/^accepts /, "")}
