@@ -4159,3 +4159,8 @@ can take tens of seconds; post-capture refunds are not offered (the refund windo
   distinguish a tool call triggered by an A2A message from one triggered by a human at a terminal.
   Whether to expose this surface at all is a per-agent decision the installer now surfaces (N10-5)
   but does not make.
+
+## A relay you cannot trust
+
+What a hostile, hacked or vanished relay can and cannot do, and what to do about it
+(`verify_session`, `reclaim_escrow`, evidence files): [docs/if-a-relay-goes-rogue.md](docs/if-a-relay-goes-rogue.md).
