@@ -61,7 +61,7 @@ Every turn action follows this order — no shortcuts:
    `session_id` + the current `step_number`, so a signature can't be replayed against a
    different session or turn. Reject if no registered key or bad sig (403).
 4. **Stripe payment gate** — confirm PaymentIntent if mode != free
-5. **Proof-of-Reasoning** — rationale ≥ 15 chars + no bot fingerprints (`/safety/stats` tracks rejections)
+5. **Rationale check** — rationale ≥ 15 chars + no engine words (`/safety/stats` tracks rejections). A nudge, not detection: fair play comes from which games take money (P135)
 6. **Audit log append** — private JSONL + hash-chained public receipt (verify via `/sessions/{id}/audit`)
 7. **Module dispatch** — validate_action → apply_action → is_terminal
 
