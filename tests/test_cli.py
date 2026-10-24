@@ -97,3 +97,16 @@ def test_setup_relay_writes_the_testnet_preset_and_makes_an_operator_key(profile
     assert "EMPORIA_OPERATOR_ADDRESS=0x" in dotenv
     assert "PRIVATE" not in dotenv.replace("EMPORIA_OPERATOR_PRIVATE_KEY", ""), "no key in the .env"
     assert cli.main(["setup", "relay", "--fee-receiver", "not-an-address", "--yes"]) == 1
+
+
+def test_doctor_says_when_the_relay_needs_a_restart():
+    """P139: code changes need a relay restart, and nothing said when one was owed."""
+    from emporia.module_sdk import MODULE_REGISTRY
+    from emporia.schema import SCHEMA_VERSION
+    import emporia.relay_server  # noqa: F401  (registers the bundled games)
+    bundled = [t for t in MODULE_REGISTRY if t.startswith("emporia:")]
+    assert cli._relay_code_behind({"schema_version": SCHEMA_VERSION, "modules": bundled}) == ""
+    assert "schema" in cli._relay_code_behind({"schema_version": SCHEMA_VERSION - 1, "modules": bundled})
+    assert "emporia:two-thirds:v1" in cli._relay_code_behind(
+        {"schema_version": SCHEMA_VERSION, "modules": [t for t in bundled if "two-thirds" not in t]})
+    assert cli._relay_code_behind({"modules": bundled}) == "it reports no schema version"

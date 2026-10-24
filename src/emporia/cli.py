@@ -194,6 +194,27 @@ def _signed_get(agent_id: str, key_dir: Path, path: str) -> tuple[int, Any]:
         return 0, str(e)
 
 
+def _relay_code_behind(h: dict) -> str:
+    """P139: why the running relay is older than this checkout, or "". Code
+    changes need a relay restart, and nothing said when one was owed."""
+    from emporia.schema import SCHEMA_VERSION
+    running = h.get("schema_version")
+    if running is None:
+        return "it reports no schema version"
+    if running < SCHEMA_VERSION:
+        return f"schema {running}, checkout {SCHEMA_VERSION}"
+    import importlib
+    import pkgutil
+
+    import emporia.modules
+    from emporia.module_sdk import MODULE_REGISTRY
+    for m in pkgutil.iter_modules(emporia.modules.__path__):
+        importlib.import_module(f"emporia.modules.{m.name}")
+    missing = sorted(t for t in MODULE_REGISTRY
+                     if t.startswith("emporia:") and t not in (h.get("modules") or []))
+    return f"missing games: {', '.join(missing)}" if missing else ""
+
+
 def doctor_relay(rep: Report) -> dict | None:
     rep.section(f"Relay  {relay_url()}")
     h = health()
@@ -201,6 +222,10 @@ def doctor_relay(rep: Report) -> dict | None:
         rep.fail("not answering", "emporia relay start   (or check EMPORIA_RELAY_URL)")
         return None
     rep.ok(f"answering — v{h.get('version')}, fee {h.get('operator_fee_bps', 0) / 100:.1f}%")
+    stale = _relay_code_behind(h)
+    if stale:
+        rep.fail(f"the relay runs older code than this checkout ({stale})",
+                 "emporia relay stop && emporia relay start")
     mode = h.get("stripe_mode")
     if not h.get("stripe_enabled"):
         rep.warn("Stripe off", "set STRIPE_SECRET_KEY (an sk_test_ key for testing) in the relay's .env")

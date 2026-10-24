@@ -1037,8 +1037,9 @@ def init_db() -> None:
 # P61: the schema's own version, stamped into the database header via
 # `PRAGMA user_version`. Bump it whenever the schema changes — a test computes
 # a fingerprint of every table and column and fails if the shape moved without
-# this number moving, so it cannot quietly stop meaning anything.
-SCHEMA_VERSION = 5
+# this number moving, so it cannot quietly stop meaning anything. It lives in
+# emporia.schema (P139) so `emporia doctor` can read it without the relay.
+from emporia.schema import SCHEMA_VERSION  # noqa: E402
 
 
 def _assert_schema_not_from_the_future(conn: Any) -> None:
@@ -4778,6 +4779,9 @@ async def health():
         "service": BRAND,
         "relay_id": RELAY_ID,
         "version": __version__,
+        # P139: lets `emporia doctor` tell a relay running older code than the
+        # checkout (restart it) from one that is current.
+        "schema_version": SCHEMA_VERSION,
         "modules": list(MODULE_REGISTRY.keys()),
         "listing_count": listing_count,
         "session_count": session_count,
