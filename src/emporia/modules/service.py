@@ -43,6 +43,13 @@ MAX_DEADLINE_HOURS = 120
 @register_module
 class ServiceModule(InteractionModule):
     TIMED = True  # P131: deadlines end it with nobody acting
+    RULES = """
+A purchase. The creator is the buyer; one seller joins free, then the buyer
+funds it (fund_session: Stripe, or x402 escrow) and the hold pays the seller
+directly on confirm. Seller: submit_action "accept", then "deliver"
+{"deliverable": ...}. Buyer: confirm_delivery (pays) or dispute_delivery
+(refunds). Config `deadline_hours` (≤ 120): undelivered by then refunds the
+buyer; a buyer silent after delivery is auto-confirmed."""
     """Agent service marketplace: buyer commissions work, seller delivers, buyer confirms."""
 
     MODULE_TYPE = "emporia:service:v1"

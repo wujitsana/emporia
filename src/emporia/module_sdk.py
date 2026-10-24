@@ -11,7 +11,9 @@ Terminology:
 
 from __future__ import annotations
 
+import importlib
 import json
+import re
 from abc import ABC, abstractmethod
 from dataclasses import asdict, dataclass, field
 from datetime import UTC, datetime
@@ -93,6 +95,11 @@ class InteractionModule(ABC):
     """
 
     MODULE_TYPE: str = "emporia:generic:v1"
+    #: P133: the rules, for agents, in plain text — served by the relay's
+    #: /modules, so an agent on any system learns a game from the relay that
+    #: hosts it, with nothing to install. Say how to win, how to move, the
+    #: clock, and what a draw does.
+    RULES: str = ""
     MIN_PARTICIPANTS: int = 2
     MAX_PARTICIPANTS: int = 8
 
@@ -187,10 +194,53 @@ class InteractionModule(ABC):
 
 MODULE_REGISTRY: dict[str, type[InteractionModule]] = {}
 
+#: `<namespace>:<name>:v<N>` — lowercase. `emporia:` is the bundled games' own.
+MODULE_TYPE_RE = re.compile(r"[a-z0-9][a-z0-9-]*:[a-z0-9][a-z0-9-]*:v[0-9]+")
+BUNDLED_NAMESPACE = "emporia"
+
 
 def register_module(cls: type[InteractionModule]) -> type[InteractionModule]:
-    MODULE_REGISTRY[cls.MODULE_TYPE] = cls
+    """Add a module to the registry. P133: a type is registered once — a
+    second class under the same name used to replace the first silently, so any
+    import could swap out `emporia:chess:v1`, which decides who is paid."""
+    mt = cls.MODULE_TYPE
+    if not MODULE_TYPE_RE.fullmatch(mt or ""):
+        raise ValueError(f"MODULE_TYPE {mt!r} must look like 'namespace:name:v1' (lowercase)")
+    existing = MODULE_REGISTRY.get(mt)
+    if existing is not None and existing is not cls and (
+            existing.__module__, existing.__qualname__) != (cls.__module__, cls.__qualname__):
+        raise ValueError(f"{mt} is already registered by {existing.__module__}.{existing.__qualname__}")
+    MODULE_REGISTRY[mt] = cls
     return cls
+
+
+def load_operator_modules(spec: str) -> list[str]:
+    """Import an operator's own game modules (P133): `spec` is a comma-separated
+    list of importable Python modules (EMPORIA_MODULES), each registering its
+    classes with @register_module. Returns the module types they added.
+
+    Explicit and loud on purpose: a module that declares a winner decides who
+    receives staked money, so nothing loads by being installed, and a
+    configured module that fails to import stops the relay rather than
+    quietly serving without it. Operator modules name their own namespace — `emporia:`
+    is reserved for the bundled games.
+    """
+    added: list[str] = []
+    for name in (n.strip() for n in spec.split(",")):
+        if not name:
+            continue
+        before = set(MODULE_REGISTRY)
+        importlib.import_module(name)
+        new = sorted(set(MODULE_REGISTRY) - before)
+        for mt in new:
+            if mt.split(":", 1)[0] == BUNDLED_NAMESPACE:
+                del MODULE_REGISTRY[mt]
+                raise ValueError(f"{name}: operator module {mt} uses the reserved "
+                                 f"'{BUNDLED_NAMESPACE}:' namespace — name your own")
+        if not new:
+            raise ValueError(f"{name} registered no module (decorate the class with @register_module)")
+        added += new
+    return added
 
 
 def get_interaction_module(module_type: str) -> InteractionModule:
@@ -223,11 +273,17 @@ class SessionOutcome:
 def list_available_modules() -> list[dict[str, Any]]:
     """Return list of available modules with metadata."""
     result = []
-    for mod_type, cls in MODULE_REGISTRY.items():
+    for mod_type, cls in sorted(MODULE_REGISTRY.items()):
         result.append({
             "module_type": mod_type,
             "min_participants": cls.MIN_PARTICIPANTS,
             "max_participants": cls.MAX_PARTICIPANTS,
             "payment_mode": cls.PAYMENT_RULES.mode,
+            # P133: what an agent needs to choose and play a game it has never seen.
+            "stake_model": cls.STAKE_MODEL,
+            "declares_winner": cls.DECLARES_WINNER,
+            "timed": cls.TIMED,
+            "bundled": mod_type.split(":", 1)[0] == BUNDLED_NAMESPACE,
+            "rules": cls.RULES.strip(),
         })
     return result

@@ -120,6 +120,11 @@ import emporia.modules.chess  # noqa: F401
 import emporia.modules.code_review  # noqa: F401
 import emporia.modules.research  # noqa: F401
 import emporia.modules.service  # noqa: F401
+# P133: an operator's own games (EMPORIA_MODULES=pkg.module,...), loaded
+# explicitly — a module that names winners decides who is paid.
+from emporia.module_sdk import load_operator_modules as _load_operator_modules  # noqa: E402
+
+_OPERATOR_MODULES = _load_operator_modules(os.environ.get("EMPORIA_MODULES", ""))
 
 # ============================================================================
 # Configuration
@@ -5050,7 +5055,9 @@ async def dashboard_poll(challenge_id: str):
 
 @app.get("/modules")
 async def list_modules():
-    return {"modules": list(MODULE_REGISTRY.keys())}
+    """Every game this relay hosts, with its rules for agents (P133)."""
+    from emporia.module_sdk import list_available_modules
+    return {"modules": list_available_modules()}
 
 
 # ============================================================================

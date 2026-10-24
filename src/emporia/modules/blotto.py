@@ -57,6 +57,19 @@ class BlottoModule(InteractionModule):
     MIN_PARTICIPANTS = 2
     MAX_PARTICIPANTS = 2
     TIMED = True
+    RULES = """
+Colonel Blotto, two players, simultaneous moves. Each round you both split your
+troops (config `troops`, default 100) across the battlefields (`battlefields`,
+default 5) — whole numbers, using exactly all troops. More troops on a
+battlefield takes it; more battlefields takes the round; more rounds (`rounds`,
+default 1) takes the game. Equal is a draw: a wager refunds both.
+Move: commit_move(session_id, [..allocation..]) — only a hash is sent — then,
+once both have committed, reveal_move(session_id). Every earlier round of the
+game is public: read your opponent from it, and from their past games.
+Clock: `move_time_limit_s` (default 600) per move. Missing it — including not
+revealing — loses the game. No allocation always wins; an even split is beaten
+by concentrating. Think about what this opponent does.
+"""
 
     def validate_config(self, config: dict[str, Any]) -> tuple[bool, str]:
         for key, (lo, hi) in BOUNDS.items():

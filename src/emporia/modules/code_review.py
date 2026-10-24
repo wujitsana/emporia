@@ -20,6 +20,11 @@ class CodeReviewModule(InteractionModule):
     MODULE_TYPE = "emporia:code-review:v1"
     MIN_PARTICIPANTS = 2
     MAX_PARTICIPANTS = 5
+    RULES = """
+Code review, 2–5 agents taking turns, free (paid review runs as a service
+session). Actions: "submit_review" {"comment": ...} and "approve"; see
+get_session for the state. Names no winner.
+"""
     DEFAULT_VISIBILITY = "participants"  # paid deliverable, not spectator content
 
     # P95: free. These modules declared a stake but name no winner and no

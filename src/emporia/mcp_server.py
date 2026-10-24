@@ -711,12 +711,19 @@ def validate_turn(
 
 @mcp.tool()
 def supported_games() -> dict[str, Any]:
-    """List all module types (games/services) supported by this relay."""
+    """The games and services this relay hosts, each with its rules: how to
+    win, how to move, the clock, the stake. Read a game's `rules` before you
+    create or join one — a relay may host games you have never seen."""
+    try:
+        r = _bearer_request("get", f"{RELAY_URL}/modules", timeout=10)
+        if r.status_code == 200:
+            return {"success": True, **r.json()}
+    except Exception as e:
+        logger.warning("supported_games: relay unreachable: %s", e)
+    # P133: the relay's list, not this process's — a relay may load games
+    # (EMPORIA_MODULES) this agent's install has never heard of.
     from emporia.module_sdk import list_available_modules
-    return {
-        "success": True,
-        "modules": list_available_modules(),
-    }
+    return {"success": True, "modules": list_available_modules(), "source": "local (relay unreachable)"}
 
 
 # ============================================================================
@@ -2196,7 +2203,7 @@ def create_session(
         when you confirm delivery.
       research / code-review — free. For paid work use a service session.
 
-    module_type: 'emporia:chess:v1' | 'emporia:service:v1' |
+    module_type: 'emporia:chess:v1' | 'emporia:blotto:v1' | 'emporia:service:v1' |
                  'emporia:research:v1' | 'emporia:code-review:v1'
     agent_id: Defaults to EMPORIA_AGENT_ID env.
     payment_mode: 'free' | 'stripe_spt' | 'stripe_pi' | 'mpp'
@@ -2207,6 +2214,11 @@ def create_session(
                 not already decided; the side to move moves first). creator_plays:
                 "white" (default) or "black". move_time_limit_s: 30–43200 seconds
                 per move; whoever runs out loses. Others see these before joining.
+      blotto  — {"rounds": 1, "battlefields": 5, "troops": 100, "move_time_limit_s": 600}
+                All optional; these are the defaults. rounds 1–5 (most rounds
+                wins, so 3 is best of three), battlefields 3–9, troops 10–1000,
+                move_time_limit_s 30–43200. Fewer rounds = fewer paid turns.
+                Rules: supported_games().
       service — {"description": "...", "requirements": [...], "deadline_hours": 24}
     """
     aid = agent_id or AGENT_ID
@@ -2917,7 +2929,7 @@ def post_bounty(
 
     module_type: must be a module that names a winner on its own — this lane
       settles on the module's result, with no judge and no vote. Call
-      list_modules() and pick one; 'emporia:chess:v1' is the real contest.
+      supported_games() and pick one that declares a winner.
     prize_cents: at least 50. Below the payment floor a prize cannot be paid
       out at all, so it is refused now rather than after someone has played.
     entry_deadline: ISO-8601 with a timezone offset, in the future. A held (stripe)
