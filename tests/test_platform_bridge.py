@@ -364,3 +364,33 @@ def test_an_idle_game_is_abandoned_and_every_stake_released(client, monkeypatch)
     assert released == [], "abandoned once"
     monkeypatch.setenv("EMPORIA_SESSION_IDLE_HOURS", "0")
     assert asyncio.run(routes.sweep_idle_sessions()) == {"idle_abandoned": 0}
+
+
+def test_a_cancelled_card_hold_is_recorded_as_released(client, monkeypatch):
+    """P130: abandon cancelled the Stripe holds, and the payment rows still
+    said `confirmed` — the ledger showed stakes as taken that were not."""
+    import asyncio
+    from datetime import UTC, datetime
+
+    from emporia import payments
+    from emporia import relay_server as rs
+    from emporia.routes import sessions as routes
+
+    sid, white, black = _game(client)
+    with rs.DB_LOCK, rs.get_db() as conn:
+        for who, pi in ((white, f"pi_{sid}_w"), (black, f"pi_{sid}_b")):
+            conn.execute(
+                "INSERT INTO payments (payment_id, session_id, agent_id, amount_cents, currency, "
+                "payment_intent_id, payment_type, status, created_at, rail) "
+                "VALUES (?, ?, ?, 100, 'usd', ?, 'session_stake', 'confirmed', ?, 'stripe')",
+                (uuid.uuid4().hex, sid, who, pi, datetime.now(UTC).isoformat()))
+
+    async def cancel(pi):
+        # One hold cancels; the other was already captured and must stay as it was.
+        return {"payment_intent_id": pi,
+                "status": "canceled" if pi.endswith("_w") else "already_finalized"}
+    monkeypatch.setattr(payments, "cancel_payment_hold", cancel)
+
+    asyncio.run(routes._abandon(rs.load_session(sid), reason="test"))
+    status = {p["agent_id"]: p["status"] for p in rs.get_session_payments(sid)}
+    assert status == {white: "released", black: "confirmed"}

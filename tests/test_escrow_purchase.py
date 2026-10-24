@@ -196,6 +196,8 @@ def test_a_dispute_voids_the_hold_back_to_the_buyer(client, chain):
     _act(client, sid, buyer, "dispute", {"reason": "wrong"})
     assert len(chain.voided) == 1 and not chain.captured
     assert _sql("SELECT state FROM escrow_holds WHERE session_id = ?", sid)[0]["state"] == "voided"
+    assert _sql("SELECT status FROM payments WHERE session_id = ?", sid)[0]["status"] == \
+        "released", "P130: the ledger says the stake went back"
 
 
 def test_abandoning_voids_the_hold(client, chain):
@@ -204,6 +206,22 @@ def test_abandoning_voids_the_hold(client, chain):
                                                 expected_amount=AMOUNT))
     assert client.post(f"/sessions/{sid}/abandon", json={}, headers=_hdr(buyer)).status_code == 200
     assert len(chain.voided) == 1
+    assert _sql("SELECT status FROM payments WHERE session_id = ?", sid)[0]["status"] == "released"
+
+
+def test_a_failed_void_leaves_the_payment_confirmed_until_it_lands(client, chain):
+    from emporia.escrow_chain import EscrowChainError
+
+    sid, buyer, seller = _purchase(client)
+    _fund(client, sid, buyer, escrow.sign_offer(_offer(client, sid, buyer), PAYER.key.hex(),
+                                                expected_amount=AMOUNT))
+    chain.fail_void = EscrowChainError("eth_estimateGas failed: upstream timeout")
+    assert client.post(f"/sessions/{sid}/abandon", json={}, headers=_hdr(buyer)).status_code == 200
+    assert _sql("SELECT status FROM payments WHERE session_id = ?", sid)[0]["status"] == "confirmed"
+    chain.fail_void = None
+    assert _reconcile()["escrow_voided"] >= 1
+    assert _sql("SELECT status FROM payments WHERE session_id = ?", sid)[0]["status"] == \
+        "released", "the reconciler's void records it too"
 
 
 @pytest.mark.parametrize("change", [

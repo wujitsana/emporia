@@ -2593,6 +2593,14 @@ def update_escrow_hold(hold_hash: str, *, state: str, **tx: str) -> None:
                      (state, datetime.now(UTC).isoformat(), *cols.values(), hold_hash))
 
 
+def mark_payment_released(payment_intent_id: str) -> None:
+    """A held stake went back to its payer (P130). Only from `confirmed`, so a
+    payment already refunded or captured keeps what it says."""
+    with DB_LOCK, get_db() as conn:
+        conn.execute("UPDATE payments SET status = 'released' WHERE payment_intent_id = ? "
+                     "AND status = 'confirmed'", (payment_intent_id,))
+
+
 def get_session_payments(session_id: str) -> list[dict[str, Any]]:
     with DB_LOCK, get_db() as conn:
         rows = conn.execute(

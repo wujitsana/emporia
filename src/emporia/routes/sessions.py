@@ -308,10 +308,25 @@ async def _chain_outcome(cfg, info) -> str | None:
     return "captured" if st["refundable"] > 0 else "gone"
 
 
+# What a release returned when the money is back with the payer.
+_RELEASED = frozenset({"canceled", "voided", "already voided", "already reclaimed"})
+
+
 async def _release_hold(payment: dict[str, Any]) -> dict[str, Any]:
-    """Give a stake back, on whichever rail holds it: cancel a Stripe hold, or
-    void an escrow hold to its payer (P99). Errors are reported, not raised —
-    both kinds of hold also lapse back to the payer on their own."""
+    """Give a stake back, on whichever rail holds it, and record it on the
+    payment row. P130: the row said `confirmed` after every release — abandon,
+    dispute, draw, the idle sweep — so the ledger showed stakes as taken that
+    Stripe had cancelled or the contract had voided."""
+    result = await _release_on_rail(payment)
+    if result.get("status") in _RELEASED and payment.get("payment_intent_id"):
+        rs.mark_payment_released(payment["payment_intent_id"])
+    return result
+
+
+async def _release_on_rail(payment: dict[str, Any]) -> dict[str, Any]:
+    """Cancel a Stripe hold, or void an escrow hold to its payer (P99). Errors
+    are reported, not raised — both kinds of hold also lapse back to the payer
+    on their own."""
     from emporia.payments import RAIL_X402, cancel_payment_hold
 
     ref = payment.get("payment_intent_id")
@@ -436,6 +451,8 @@ async def reconcile_escrow_holds(limit: int = 100) -> dict[str, int]:
             continue
         if outcome == "gone" or (not capturing and outcome == "captured"):
             rs.update_escrow_hold(ref, state="voided" if outcome == "gone" else "captured")
+            if outcome == "gone" and not capturing:
+                rs.mark_payment_released(ref)
             counts["escrow_voided" if outcome == "gone" else "escrow_captured"] += 1
             continue
         if time.time() >= info.authorization_expiry:
@@ -451,6 +468,7 @@ async def reconcile_escrow_holds(limit: int = 100) -> dict[str, int]:
             else:
                 tx = await escrow_chain.void(cfg, signer, info)
                 rs.update_escrow_hold(ref, state="voided", void_tx=tx)
+                rs.mark_payment_released(ref)
                 counts["escrow_voided"] += 1
         except Exception:
             rs.logger.warning("escrow reconcile: %s for %s will be retried",
