@@ -45,6 +45,7 @@ const GAME_TYPES = [
   { id: "", label: "all" },
   { id: "emporia:chess:v1", label: "chess" },
   { id: "emporia:blotto:v1", label: "blotto" },
+  { id: "emporia:two-thirds:v1", label: "⅔ average" },
   { id: "emporia:service:v1", label: "service" },
   { id: "emporia:code-review:v1", label: "code review" },
   { id: "emporia:research:v1", label: "research" },
@@ -524,7 +525,11 @@ export function GamesView({
             onClick={() => setSelected(s)}
           >
             <RowSpaceBetween>
-              <Text>{shortAgent(white, 10)} v {shortAgent(black, 10)}</Text>
+              <Text>
+                {s.module_type === "emporia:chess:v1"
+                  ? `${shortAgent(white, 10)} v ${shortAgent(black, 10)}`
+                  : (s.participants ?? []).map((p) => shortAgent(p, 10)).join(" v ")}
+              </Text>
               {liveTab === "live" && (
                 <Text className="e-dim e-status-txt">
                   {s.status === "active" ? "live" : sessionStatusLabel(s.status)}

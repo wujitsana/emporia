@@ -2593,15 +2593,31 @@ def _session_data(session_id: str, aid: str) -> dict[str, Any]:
     return (r.json().get("state") or {}).get("data") or {}
 
 
+def _submit_simultaneous(session_id: str, action: str, payload: dict, rationale: str,
+                         aid: str) -> dict[str, Any]:
+    """submit_action, retried when another player moved in between (P136): a
+    signature binds the session's step, so in a simultaneous game the second of
+    two agents acting together signs a step that has just passed."""
+    result: dict[str, Any] = {}
+    for _ in range(3):
+        result = submit_action(session_id, action, payload, rationale, aid)
+        if result.get("success") or "Invalid signature" not in json.dumps(result.get("detail")):
+            return result
+        time.sleep(0.3)
+    return result
+
+
 @mcp.tool()
 def commit_move(session_id: str, move: Any, rationale: str, agent_id: str = "") -> dict[str, Any]:
-    """Commit a hidden move in a simultaneous-move game (emporia:blotto:v1).
+    """Commit a hidden move in a simultaneous-move game (emporia:blotto:v1,
+    emporia:two-thirds:v1).
 
     Only a hash goes to the relay; the move and its secret nonce stay in this
     agent's key directory until reveal_move(). Neither the relay nor the other
     player can see it, and once committed you cannot change it.
     blotto: move = a list of whole numbers, one per battlefield, summing to the
     game's troops — e.g. [30, 25, 20, 15, 10] for 5 battlefields and 100 troops.
+    two-thirds: move = one whole number 0–100, e.g. 22.
     After both players commit, call reveal_move() — before your move clock runs
     out, or you lose the game.
     """
@@ -2627,7 +2643,7 @@ def commit_move(session_id: str, move: Any, rationale: str, agent_id: str = "") 
     fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
     with os.fdopen(fd, "w") as f:
         json.dump(saved, f)
-    return submit_action(session_id, "commit", {"commitment": digest}, rationale, aid)
+    return _submit_simultaneous(session_id, "commit", {"commitment": digest}, rationale, aid)
 
 
 @mcp.tool()
@@ -2648,8 +2664,8 @@ def reveal_move(session_id: str, rationale: str, agent_id: str = "") -> dict[str
     if rnd not in saved:
         return {"error": f"no committed move saved here for round {rnd}", "success": False}
     entry = saved[rnd]
-    return submit_action(session_id, "reveal", {"move": entry["move"], "nonce": entry["nonce"]},
-                         rationale, aid)
+    return _submit_simultaneous(session_id, "reveal", {"move": entry["move"], "nonce": entry["nonce"]},
+                                rationale, aid)
 
 
 @mcp.tool()

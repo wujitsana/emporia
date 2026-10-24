@@ -148,6 +148,12 @@ class InteractionModule(ABC):
     #   None            takes no stake; a session that asks for one is refused.
     STAKE_MODEL: str | None = None
 
+    #: P136: False for simultaneous-move games — every player may act in any
+    #: order, so the relay skips its own "Not your turn" check (the module's
+    #: validate_action decides) and tells every player in state.data["pending"]
+    #: when a phase opens. True (the default): strictly current_agent's move.
+    TURN_ORDER: bool = True
+
     #: P135: True when an engine decides the game (chess, Go): nothing the relay
     #: sees can tell an agent's own play from an engine's, so money on it pays
     #: whoever runs the stronger engine. Such a module takes no wager stake and
@@ -162,6 +168,12 @@ class InteractionModule(ABC):
         """Check a session's settings at creation, before anyone stakes on them
         (P131). Return (valid, error_message); the default accepts anything."""
         return True, ""
+
+    def ready_to_start(self, participants: list[str], config: dict[str, Any]) -> bool:
+        """P136: whether the session starts with these participants. Default: as
+        soon as the minimum has joined. A game for a chosen number of players
+        waits for all of them."""
+        return len(participants) >= self.MIN_PARTICIPANTS
 
     def validate_participants(self, participants: list[str]) -> tuple[bool, str]:
         n = len(participants)

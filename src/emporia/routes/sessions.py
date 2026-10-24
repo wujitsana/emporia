@@ -280,6 +280,11 @@ async def _start(session_id: str, s: dict[str, Any], participants: list[str],
             # without having to fetch the session to find out.
             "current_agent": state.current_agent,
         })
+    if not module.TURN_ORDER:
+        # P136: a simultaneous game waits on everyone from the first move.
+        for p in state.data.get("pending") or participants:
+            await rs.broadcast_to_agent(p, {"type": "your_turn", "session_id": session_id,
+                                            "module_type": s["module_type"], "step_number": 0})
 
 
 ESCROW_HEADER = "PAYMENT-ESCROW"
@@ -748,9 +753,11 @@ async def join_session(session_id: str, req: rs.JoinSessionRequest, request: Req
         rs._enforce_agent_rate_limit(req.agent_id)
 
     module = get_interaction_module(s["module_type"])
-    valid, err = module.validate_participants(s["participants"] + [req.agent_id])
-    if not valid:
-        raise HTTPException(400, err)
+    # P136: a join checks room left, not the minimum — the minimum is when the
+    # game starts (ready_to_start). Checking it here refused the second of three
+    # players, so no game of more than two could ever fill.
+    if len(s["participants"]) + 1 > module.MAX_PARTICIPANTS:
+        raise HTTPException(400, f"Max {module.MAX_PARTICIPANTS} participants — this game is full")
 
     # Payment gate. P95: only a wager charges the joiner — every participant
     # stakes, and the creator already has. A purchase's joiner is the seller,
@@ -806,7 +813,7 @@ async def join_session(session_id: str, req: rs.JoinSessionRequest, request: Req
     participants = s["participants"] + [req.agent_id]
     rs.add_participant(session_id, req.agent_id, stake_paid=stake_paid)
 
-    if len(participants) >= module.MIN_PARTICIPANTS and purchase:
+    if module.ready_to_start(participants, s["config"]) and purchase:
         # P95: the seller is known now, so the buyer can fund a hold that pays
         # them directly. Nothing can be played until it is.
         rs.save_session(
@@ -829,7 +836,7 @@ async def join_session(session_id: str, req: rs.JoinSessionRequest, request: Req
             "seller_id": req.agent_id,
             "amount_cents": amount_cents,
         })
-    elif len(participants) >= module.MIN_PARTICIPANTS:
+    elif module.ready_to_start(participants, s["config"]):
         await _start(session_id, s, participants, payment_rules)
     else:
         rs.save_session(
@@ -858,7 +865,8 @@ async def submit_action(session_id: str, req: rs.SubmitActionRequest):
         raise HTTPException(404, "Session not found")
     if s["status"] != "active":
         raise HTTPException(400, f"Session not active: {s['status']}")
-    if req.agent_id != s["current_agent"]:
+    # P136: a simultaneous-move module (TURN_ORDER False) decides who may act.
+    if get_interaction_module(s["module_type"]).TURN_ORDER and req.agent_id != s["current_agent"]:
         raise HTTPException(400, "Not your turn")
     if req.agent_id not in s["participants"]:
         raise HTTPException(400, "Not a participant")
@@ -971,6 +979,16 @@ async def submit_action(session_id: str, req: rs.SubmitActionRequest):
     settlement_record: dict[str, Any] | None = None
     if is_over:
         settlement_record = await _finish_session(session_id, s, module, outcome)
+    elif not module.TURN_ORDER:
+        # P136: everyone may move; when a phase opens, tell everyone it waits on.
+        before = (s.get("state") or {}).get("data") or {}
+        if new_state.data.get("phase") != before.get("phase"):
+            for agent in new_state.data.get("pending") or []:
+                await rs.broadcast_to_agent(agent, {
+                    "type": "your_turn", "session_id": session_id,
+                    "module_type": s["module_type"], "step_number": s["step_number"] + 1,
+                    "last_action": {"agent_id": req.agent_id, "action_type": req.action_type},
+                })
     elif new_state.current_agent and new_state.current_agent != req.agent_id:
         # P92: nothing told an agent it was their move unless it was watching
         # the session socket, so an agent driven by its own channel waited on a

@@ -120,6 +120,7 @@ import emporia.modules.chess  # noqa: F401
 import emporia.modules.code_review  # noqa: F401
 import emporia.modules.research  # noqa: F401
 import emporia.modules.service  # noqa: F401
+import emporia.modules.two_thirds  # noqa: F401
 # P133: an operator's own games (EMPORIA_MODULES=pkg.module,...), loaded
 # explicitly — a module that names winners decides who is paid.
 from emporia.module_sdk import load_operator_modules as _load_operator_modules  # noqa: E402
