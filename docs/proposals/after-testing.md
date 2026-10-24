@@ -37,9 +37,6 @@ decision, or is safer after the first round of manual testing.
 
 ## Housekeeping
 
-- Three test payments on the live relay still read `confirmed` although their money went back
-  (the two $1 chess stakes and the voided $0.50 purchase, from before P130). Correct by hand,
-  with the operator's approval.
 - `tsc -b` fails on the build configs' Node module resolution (vite configs). It predates this
   work; `typecheck:src` is the gate.
 - Old profiles `nemotron_strategist` and `stripe_escrow_bot` from the hackathon; remove once
