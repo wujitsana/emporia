@@ -172,7 +172,7 @@ def format_frame(frame: dict[str, Any], agent_id: str) -> Notice | None:
         said = last.get("say") or ""
         if said and _looks_encrypted({}, said):  # P149: sealed — opened by the agent's tools
             said = f"(sealed — read it with get_game_chat(session_id=\"{sid}\"))"
-        by += (f" and said: \"{said}\"." if said else "." if last else "")
+        by += (f" and said: \"{said}\"" if said else "." if last else "")
         return relay(
             f"Your turn in {_module_label(frame.get('module_type', ''))} session {sid}.{by}\n"
             + _move_hint(frame.get("module_type", ""), sid)
