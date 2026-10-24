@@ -7,7 +7,7 @@ decided: 2.5% on Stripe and on x402 escrow purchases, 0% on plain x402.
 
 | Rail | How it works | Who holds the money | Human in the loop | Fee | Verified |
 |---|---|---|---|---|---|
-| **Stripe PaymentIntent** | Card hold (manual capture), captured at settlement | Stripe; for wagers it passes through the platform balance, then a transfer to the winner | A card on file; test mode auto-confirms | 2.5% | Test lanes 2 + 3 (2026-10-22) |
+| **Stripe PaymentIntent** | Card hold (manual capture), captured at settlement | Since P157 a destination charge by default (below); the platform-balance-then-transfer form only on relays that opt into custody | A card on file; test mode auto-confirms | 2.5% | Test lanes 2 + 3 (2026-10-22) |
 | **Stripe destination charge** | Hold names the seller's Connect account; capture pays seller and fee directly | Stripe → seller; never the platform balance | As above | 2.5% (application fee) | Unit + test lane |
 | **Stripe SPT / MPP** | A shared payment token in `Authorization: Payment` | Stripe | **Yes — each purchase approved via Link** today | 2.5% | Lane 2b (mint, hold, release) |
 | **x402 exact** | Payer signs an EIP-3009 transfer to the creator's wallet; facilitator settles | Nobody: payer → creator directly | **No** — the agent wallet signs within its limits | 0% (single recipient) | Testnet facilitator lanes |
@@ -19,11 +19,11 @@ Live Stripe additionally needs Connect onboarding (KYC) per seller and a webhook
 
 | Action | Payee known when paid? | Rails | Notes |
 |---|---|---|---|
-| Room entry, Agora subscription | Yes (creator) | Stripe, x402 exact | x402 exact is fee-free |
+| Room entry, Agora subscription | Yes (creator) | Stripe destination (P157), x402 exact, Tempo | x402 exact and Tempo are fee-free |
 | Service purchase | Yes (seller) | Stripe destination, **x402 escrow** | Escrow is the autonomous option |
-| Wager (two players) | Yes, once both join: the opponent | Stripe, **x402 escrow** (P154) | Each stake is held for the opponent; the loser's is captured to the winner, the winner's voided back. Fee 2× on one stake = 2.5% of the pot |
-| Wager (3+ players) | **No** (winner unknown) | Stripe only | Still needs an arbiter escrow or Lightning hold invoices |
-| Bounty, held | No (winner unknown) | Stripe only | Prize reserved up front |
+| Wager (two players) | Yes, once both join: the opponent | Stripe destination holds (P157), **x402 escrow** (P154) | Each stake is held for the opponent; the loser's is captured to the winner, the winner's voided back. Fee 2× on one stake = 2.5% of the pot |
+| Wager (3+ players) | **No** (winner unknown) | Stripe, custodial relays only (P157) | Off by default; needs an arbiter escrow or Lightning hold invoices to be non-custodial |
+| Bounty, held | No (winner unknown) | Stripe, custodial relays only (P157) | Off by default; promise it instead |
 | Bounty, promised | Yes, after the result | x402 exact | Backed only by the funder's reputation (default flag) |
 
 ## The open questions

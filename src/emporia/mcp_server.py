@@ -2309,17 +2309,21 @@ def create_session(
 ) -> dict[str, Any]:
     """Create a new session on the relay. Creator auto-joins as first participant.
 
-    Staking a wager without a human (P137): create_payment_intent(amount_cents)
-    first, then pass its payment_intent_id here with payment_mode='stripe_pi' —
-    the same path join_session takes. On a test-key relay the intent is
-    confirmed server-side; an SPT (mpp_token) needs a person to approve it.
+    Staking a wager without a human (P137): once both have joined,
+    create_payment_intent(session_id=...) and pass its payment_intent_id to
+    fund_session. On a test-key relay the intent is confirmed server-side; an
+    SPT (mpp_token) needs a person to approve it.
     Or in USDC (P154, two-player games): payment_mode='x402' — nothing is paid
     at create or join; once both have joined, each player calls
     fund_session(pay_with_x402=True). Both need a registered x402 wallet.
 
     Stakes depend on the module (P95):
-      chess (a wager) — every player stakes, the creator included: pass an SPT
-        as mpp_token, or get back a 402 with the challenge. Stripe only.
+      a two-player game (a wager) — on a card (P157): nothing is paid at
+        create or join; once both have joined each player stakes with
+        fund_session(mpp_token=... or payment_intent_id=...). Each stake is a
+        card hold paid to the opponent if you lose, so both need an active
+        Stripe account (start_stripe_onboarding). Games of 3+ take no card
+        stakes unless the relay operator holds them (EMPORIA_CUSTODIAL_CARDS).
       service (a purchase) — you are the buyer and pay nothing now. A seller
         joins free; then you fund_session() and the hold pays them directly
         when you confirm delivery.
@@ -2526,7 +2530,7 @@ def join_session(
 
 @mcp.tool()
 def fund_session(session_id: str, mpp_token: str = "", agent_id: str = "",
-                 pay_with_x402: bool = False) -> dict[str, Any]:
+                 pay_with_x402: bool = False, payment_intent_id: str = "") -> dict[str, Any]:
     """Fund a service purchase you created, once a seller has joined (P95).
 
     The hold pays the seller directly: it is a Stripe destination charge to
@@ -2542,13 +2546,21 @@ def fund_session(session_id: str, mpp_token: str = "", agent_id: str = "",
     payment_mode='x402': once both have joined, each player calls this with
     pay_with_x402=True. Your hold is paid to your opponent if you lose and
     voided back to you if you win or draw; the game starts when both are in.
+
+    And stakes a card wager (P157) — a two-player game staked on a card: once
+    both have joined, each player calls this with mpp_token, or with a
+    payment_intent_id from create_payment_intent(session_id=...). Your hold is
+    a card payment to your opponent's Stripe account, captured only if you
+    lose; the relay never holds it.
     """
     aid = agent_id or AGENT_ID
     if not aid:
         return {"error": "agent_id required (or set EMPORIA_AGENT_ID)", "success": False}
     try:
         url = f"{RELAY_URL}/sessions/{session_id}/fund"
-        r = _bearer_request("post", url, agent_id=aid, payment_token=mpp_token, timeout=15)
+        r = _bearer_request("post", url, agent_id=aid, payment_token=mpp_token, timeout=15,
+                            **({"json": {"payment_intent_id": payment_intent_id}}
+                               if payment_intent_id else {}))
         if pay_with_x402 and r.status_code == 402 and (r.json() or {}).get("escrow"):
             from emporia import agent_wallet
             from emporia.payments import _x402_amount_atomic

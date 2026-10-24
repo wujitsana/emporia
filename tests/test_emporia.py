@@ -46,6 +46,14 @@ from conftest import TEST_DB as _test_db  # noqa: E402
 from emporia.relay_server import app, init_db
 
 
+@pytest.fixture(autouse=True)
+def _custodial_cards(monkeypatch):
+    """P157: this file tests the card flows that hold money on the operator's
+    balance (platform charges, transfer-to-winner, held prizes) — the opt-in
+    path. The default, non-custodial one: tests/test_noncustodial_cards.py."""
+    monkeypatch.setenv("EMPORIA_CUSTODIAL_CARDS", "1")
+
+
 # _init_test_db moved to conftest.py (P72-4) — a session fixture in a test
 # module only runs when that module is collected.
 

@@ -186,6 +186,8 @@ async def join_room(room_id: str, req: rs.JoinRoomRequest, request: Request):
         # payout_winner() call, and a rejoin with a *fresh* PI was a second
         # real charge for one purchase.
         if not entitlements.has_access("room", room_id, req.agent_id, db_path=rs.DATABASE_PATH):
+            # P157: a card entry is a destination charge to the creator.
+            dest, fee, card_off = rs.card_payee(room.creator_id, amount_cents)
             result = await rs._verify_and_confirm_payment(
                 request,
                 agent_id=req.agent_id,
@@ -204,6 +206,9 @@ async def join_room(room_id: str, req: rs.JoinRoomRequest, request: Request):
                 ),
                 challenge_resource=f"emporia:room:{room_id}",
                 creator_id=room.creator_id,
+                destination_account=dest,
+                application_fee_cents=fee,
+                card_unavailable=card_off,
             )
             if isinstance(result, JSONResponse):
                 return result

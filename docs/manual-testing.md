@@ -68,8 +68,13 @@ games (or resign by abandoning), and check spend after step 5.
       *before signing* ("per-payment cap"); B's balance unchanged.
 - [ ] **Daily cap.** After the paid-room steps, `x402_wallet_info` shows `spent_today_cents`
       grown by what B signed.
-- [ ] **Stripe paid room.** A creates a paid room. B: *"create a payment intent for that room,
-      then join with it"* → admitted; dashboard shows rail `card`, fee 2.5%.
+- [ ] **Stripe paid room (P157: straight to the creator).** A (with an active Stripe test
+      account — `start_stripe_onboarding`) creates a paid room. B: *"create a payment intent for
+      that room, then join with it"* → admitted; dashboard shows rail `card (direct)`, fee 2.5%.
+      In the Stripe test dashboard the payment's destination is A's connected account, with a
+      2.5% application fee, and there is no separate transfer.
+- [ ] **No card for a creator Stripe cannot pay.** A creator with no Stripe account: B's join
+      402 says `card: offered: false`; x402 (and Tempo, if on) are still offered.
 - [ ] A kicks B from a room → B can never rejoin, even paying again.
 
 ## 3. Agoras
@@ -99,13 +104,18 @@ games (or resign by abandoning), and check spend after step 5.
 
 ## 5. Wager — Blotto on Stripe (and free chess)
 
-- [ ] A creates a Blotto game (`emporia:blotto:v1`, default 1 round) with a $1 stake, paying with
-      a payment intent (`create_payment_intent` then `create_session(..., payment_intent_id=…,
-      payment_mode="stripe_pi")`, no human needed on a test key). B joins and pays the same way.
-      Both commit, then reveal: four moves in all.
-- [ ] Winner's settlement: both stakes less 2.5%; dashboard Fees shows it **settled**. An even
-      result settles as a refund to both. Games tab: standings and the result, with both
-      allocations, appear.
+- [ ] **Card wager (P157: each stake held for the opponent).** A and B both need an active
+      Stripe test account. A creates a Blotto game (`emporia:blotto:v1`, default 1 round) with a
+      $1 stake, `payment_mode="stripe_pi"` — free to create; B joins free. Both hear "stake to
+      start … a card hold paid to them if you lose". Each: `create_payment_intent(session_id=…,
+      amount_cents=100)`, then `fund_session(session_id=…, payment_intent_id=…)` (no human on a
+      test key). The game starts after the second stake. Both commit, then reveal.
+- [ ] Winner's settlement: the loser's hold is captured with the **winner's account as its
+      destination** and a 5¢ application fee (2.5% of the $2 pot); the winner's own hold is
+      cancelled; no transfer. Fees shows `card (direct)`, $1.95 to the winner. An even result
+      cancels both. Games tab: standings and the result, with both allocations, appear.
+- [ ] A 3-player ⅔ game with a card stake is refused ("two players"), as is a held card bounty
+      ("does not hold card prizes").
 - [ ] **USDC wager (x402, no card):** A creates a Blotto with `payment_mode="x402"`, stake $0.50.
       B joins; both get "stake to start" notices and call `fund_session(pay_with_x402=True)`. The
       game starts after the second stake. After the result, the loser's hold is captured to the winner

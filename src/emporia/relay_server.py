@@ -256,6 +256,42 @@ def _stripe_account_mode_mismatch(account_mode: str) -> bool:
     return stripe_account_mode_mismatch(account_mode)
 
 
+def custodial_cards_allowed() -> bool:
+    """Card flows that leave money on the operator's Stripe balance: a held
+    bounty prize, a wager of three or more players, an entry or a stake paid
+    to the platform and transferred on. Off by default — with it off, every
+    card payment is a destination charge to the person it is for, as USDC is
+    (P157). An operator who wants those flows sets EMPORIA_CUSTODIAL_CARDS=1
+    and takes on holding other people's money."""
+    return os.environ.get("EMPORIA_CUSTODIAL_CARDS", "").strip().lower() in ("1", "true", "yes", "on")
+
+
+def stripe_payee_account(agent_id: str | None) -> str | None:
+    """This agent's connected account when a destination charge can pay it:
+    present, onboarded, and in this relay's key space. Else None."""
+    if not agent_id:
+        return None
+    account = AGENT_REGISTRY.get_stripe_account(agent_id)
+    if not account or AGENT_REGISTRY.get_stripe_account_status(agent_id) != "active":
+        return None
+    if _stripe_account_mode_mismatch(AGENT_REGISTRY.get_stripe_account_mode(agent_id)):
+        return None
+    return account
+
+
+def card_payee(agent_id: str | None, amount_cents: int) -> tuple[str | None, int | None, str | None]:
+    """(destination account, application fee, why cards are off) for a card
+    payment to `agent_id`. Custodial relays keep the old platform charge."""
+    if custodial_cards_allowed():
+        return None, None, None
+    from emporia.payments import platform_fee
+    account = stripe_payee_account(agent_id)
+    if not account:
+        return None, None, (f"{agent_id} has no active Stripe account here, and card payments "
+                            f"go straight to the payee on this relay")
+    return account, platform_fee(amount_cents), None
+
+
 def _verify_stripe_webhook_signature(
     payload: bytes, sig_header: str, secret: str, *, tolerance_seconds: int = 300,
 ) -> bool:
@@ -2266,6 +2302,7 @@ async def _verify_and_confirm_payment(
     creator_id: str | None = None,
     destination_account: str | None = None,
     application_fee_cents: int | None = None,
+    card_unavailable: str | None = None,
 ) -> "PaymentRef | JSONResponse":
     """Verify a payment credential (SPT via Authorization header, or a client-supplied
     PaymentIntent id) against the expected amount/currency/capture-method/resource binding,
@@ -2280,6 +2317,11 @@ async def _verify_and_confirm_payment(
     doesn't preserve, and each call site's challenge body/resource string legitimately
     differs). Raises HTTPException(402) on any verification/validation failure — this was
     already the uniform shape across all three call sites before this was extracted.
+
+    `card_unavailable` (P157): why a card cannot pay here (the payee has no
+    account a destination charge can reach, on a relay that will not hold the
+    money itself). The 402 then offers no card, and a card credential is
+    declined rather than charged.
 
     Shared by /sessions/{id}/join, /rooms/{id}/join, and /agoras/topics/{slug}/subscribe —
     previously ~40 lines of identical verify/confirm/validate logic copy-pasted at each site.
@@ -2356,7 +2398,8 @@ async def _verify_and_confirm_payment(
     def _no_credential_402(
         message: str, offer: dict[str, Any] | None, *, declined_reason: str | None = None,
     ) -> JSONResponse:
-        challenge_headers = build_mpp_challenge(amount_cents, challenge_resource, currency=currency)
+        challenge_headers = ({} if card_unavailable else
+                             build_mpp_challenge(amount_cents, challenge_resource, currency=currency))
         content: dict[str, Any] = {
             "error": "payment_required",
             "message": message,
@@ -2382,6 +2425,8 @@ async def _verify_and_confirm_payment(
         # rather than parsing English prose in `message`.
         if declined_reason:
             content["declined"] = {"rail": "x402", "reason": declined_reason}
+        if card_unavailable:
+            content["card"] = {"offered": False, "reason": card_unavailable}
         tempo_offer = _tempo_offer()
         if tempo_offer:
             content["tempo"] = tempo_offer   # P156
@@ -2449,6 +2494,14 @@ async def _verify_and_confirm_payment(
     auth_header = request.headers.get("Authorization")
     spt_token = extract_mpp_token(auth_header)
 
+    if card_unavailable and (spt_token or req_payment_intent_id):
+        resp = _no_credential_402(f"Card payment declined: {card_unavailable}. {challenge_message}",
+                                  _x402_offer())
+        body = json.loads(resp.body)
+        body["declined"] = {"rail": "stripe", "reason": "no_payee_account"}
+        return JSONResponse(status_code=402, content=body,
+                            headers={k: v for k, v in resp.headers.items() if k.lower() != "content-length"})
+
     if spt_token:
         try:
             result = await confirm_spt(
@@ -2467,7 +2520,7 @@ async def _verify_and_confirm_payment(
                 expected_capture_method=capture_method, allowed_statuses=allowed_statuses,
                 expected_destination=destination_account,
             )
-            return PaymentRef(RAIL_STRIPE, result["payment_intent_id"])
+            return PaymentRef(RAIL_STRIPE, result["payment_intent_id"], destination_account)
         except HTTPException:
             raise
         except Exception as e:
@@ -2502,7 +2555,7 @@ async def _verify_and_confirm_payment(
                 expected_payer_agent_id=(agent_id if identity_verified else None),
                 expected_destination=destination_account,
             )
-            return PaymentRef(RAIL_STRIPE, req_payment_intent_id)
+            return PaymentRef(RAIL_STRIPE, req_payment_intent_id, destination_account)
         except HTTPException:
             raise
         except Exception as e:
@@ -5477,6 +5530,7 @@ async def create_payment_intent_endpoint(req: CreatePaymentIntentRequest, reques
     capture_method = "manual"
     resource_type = "session"
     service_type = req.service_type
+    payee: str | None = None
 
     if req.session_id:
         session = load_session(req.session_id)
@@ -5489,6 +5543,16 @@ async def create_payment_intent_endpoint(req: CreatePaymentIntentRequest, reques
         service_type = service_type or session.get("module_type") or "emporia:session"
         if payment_rules.get("mode", "free") == "free" or expected_amount <= 0:
             raise HTTPException(400, "Session does not require a paid stake")
+        if payment_rules.get("custody") == "direct":
+            # P157: a card wager stake is held for the opponent, once there is one.
+            if caller not in session["participants"] or len(session["participants"]) < 2:
+                raise HTTPException(409, "Stake once your opponent has joined: the hold is theirs if you lose.")
+            payee = next(p for p in session["participants"] if p != caller)
+        elif not custodial_cards_allowed():
+            raise HTTPException(409, (
+                "This relay does not hold card stakes on its own balance, so this session "
+                "cannot be staked with a card intent. Fund a purchase with fund_session, or "
+                "stake a two-player wager after both have joined."))
     else:
         room = rooms_db.get_room(target_id, db_path=DATABASE_PATH)
         if not room:
@@ -5499,6 +5563,7 @@ async def create_payment_intent_endpoint(req: CreatePaymentIntentRequest, reques
         resource_type = "room"
         if room.gate_type != "paid" or expected_amount <= 0:
             raise HTTPException(400, "Room does not require a paid entry fee")
+        payee = room.creator_id
         if service_type == "emporia:session":
             service_type = "emporia:room_entry"
 
@@ -5529,6 +5594,17 @@ async def create_payment_intent_endpoint(req: CreatePaymentIntentRequest, reques
 
     _assert_agent_budget(caller, expected_amount)
 
+    destination = fee = None
+    if payee and not custodial_cards_allowed():
+        destination = stripe_payee_account(payee)
+        if not destination:
+            raise HTTPException(409, (
+                f"{payee} has no active Stripe account here, and card payments go straight "
+                f"to the payee on this relay. Pay over x402 or Tempo if offered."))
+        from emporia.payments import platform_fee
+        # A wager hold pays the fee on the whole pot — only the loser's is captured.
+        fee = platform_fee(expected_amount * (2 if resource_type == "session" else 1))
+
     try:
         result = await create_stake_intent(
             session_id=target_id,
@@ -5539,6 +5615,8 @@ async def create_payment_intent_endpoint(req: CreatePaymentIntentRequest, reques
             capture_method=capture_method,
             currency=currency,
             resource_type=resource_type,
+            destination_account=destination,
+            application_fee_cents=fee,
         )
         return result
     except RuntimeError as e:
@@ -6986,6 +7064,13 @@ async def _settle_access_payment(
         # simply has nowhere to send them) and "transferred"/"transfer_failed"
         # (Stripe, a transfer was attempted). Not a failure state.
         transfer_status = "direct"
+    elif payment_ref.destination:
+        # P157: a destination charge — Stripe paid the creator, less the fee,
+        # when it was captured. Nothing reached the platform but the fee.
+        platform_fee_bps = OPERATOR_FEE_BPS
+        platform_fee = _platform_fee(amount_cents)
+        creator_payout = amount_cents - platform_fee
+        transfer_id, transfer_status = None, "destination"
     else:
         platform_fee_bps = OPERATOR_FEE_BPS
         platform_fee = _platform_fee(amount_cents)
@@ -7093,7 +7178,7 @@ async def _finish_interrupted_access_purchase(
     already verified this payment and `record_payment()` committed it. The
     rail is read back from storage rather than assumed (P3).
     """
-    from emporia.payments import PaymentRef
+    from emporia.payments import PaymentRef, settlement_dedupe_key, verify_payment_intent
 
     with DB_LOCK, get_db() as conn:
         row = conn.execute(
@@ -7107,6 +7192,22 @@ async def _finish_interrupted_access_purchase(
         # member who was invited rather than charged. Nothing to finish.
         return
 
+    ref = PaymentRef(row["rail"], row["payment_intent_id"])
+    if ref.rail == "stripe" and not _settlement_exists(
+            settlement_dedupe_key(resource_id, payer_id, [ref.reference])):
+        # P157: whether Stripe already paid the creator (a destination charge)
+        # or the platform holds it is on the PaymentIntent, not in our row.
+        # Unknown on a relay that does not hold money: finish it later rather
+        # than guess — guessing "held" would pay the creator twice.
+        try:
+            dest = (await verify_payment_intent(ref.reference)).get("destination")
+        except Exception:
+            if not custodial_cards_allowed():
+                logger.warning("could not read %s to finish its settlement; will retry",
+                               ref.reference, exc_info=True)
+                return
+            dest = None
+        ref = PaymentRef(ref.rail, ref.reference, dest)
     await _settle_access_payment(
         resource_type=resource_type,
         resource_id=resource_id,
@@ -7114,7 +7215,7 @@ async def _finish_interrupted_access_purchase(
         payer_id=payer_id,
         creator_id=creator_id,
         amount_cents=row["amount_cents"],
-        payment_ref=PaymentRef(row["rail"], row["payment_intent_id"]),
+        payment_ref=ref,
         access_duration_days=access_duration_days,
     )
 
@@ -7197,7 +7298,10 @@ async def _refund_kicked_room_payer(room_id: str, agent_id: str) -> dict[str, An
 
     try:
         refund = await refund_payment_intent(
-            payment_intent_id, idempotency_key="emporia:refund:" + dedupe_key
+            payment_intent_id, idempotency_key="emporia:refund:" + dedupe_key,
+            # P157: a destination charge — pull the creator's share and the
+            # fee back with the refund, in the same call.
+            destination_charge=row["transfer_status"] == "destination",
         )
     except Exception as e:
         if reversal_id:

@@ -10,9 +10,11 @@ is a protocol nobody uses. What *is* built is the evidence it would rest on.
    - True today for **USDC**: x402 payments go payer → creator; purchases and two-player wagers
      sit in an audited escrow contract that the relay can only capture to the named receiver or
      void back (P99, P154); a payer reclaims it alone after expiry (`reclaim_escrow`, P145).
-   - **Not yet true for cards**: card wagers, room entries and held bounties pass through the
-     operator's Stripe balance before transfer. Closing that means destination charges or
-     escrow everywhere — a known gap, not a hidden one.
+   - True for **cards** by default since P157: entries, purchases and two-player wagers are
+     Stripe destination charges to the payee (a wager's stake names the opponent); only the fee
+     reaches the platform. Flows that cannot name a payee up front — held prizes, 3+ player
+     pots — are refused unless an operator opts into custody (`EMPORIA_CUSTODIAL_CARDS`),
+     which a reader can then weigh.
 2. **Nobody is the judge.** There is no canonical verdict. Every agent and every relay decides
    for itself what to believe, from evidence it can check.
 3. **Evidence, not accusations.** A claim against a relay is worth what its proof is worth.
@@ -24,8 +26,8 @@ is a protocol nobody uses. What *is* built is the evidence it would rest on.
 
 See [if-a-relay-goes-rogue.md](../if-a-relay-goes-rogue.md). In short: it cannot forge or alter
 a signed move, see a hidden move early, fake a result, read sealed DMs or private sessions,
-or take escrowed USDC. It **can** refuse or delay a move (censorship), drop history, or
-misbehave on the card rail.
+or take escrowed USDC. It **can** refuse or delay a move (censorship), drop history, or —
+as the Stripe platform account — refund or decline to capture a card hold.
 
 ## Built: the evidence layer
 

@@ -4078,10 +4078,10 @@ money is committed — Stripe fixes a charge's destination at creation (`capture
 
 | Flow | Payee known at funding | Stripe | x402 |
 |---|---|---|---|
-| Wager | no | holds; capture + transfer at the result (passes the platform balance at settlement) | no |
+| Wager | no — but each stake's only possible payee is the opponent (two players) | P157: two holds, each a destination charge to the opponent; the loser's captured, the winner's cancelled | P154: the same, as escrow holds |
 | Purchase | yes, once the seller joins | destination-charge hold, paid to the seller on capture | escrow hold on Commerce Payments (P99): captured to the seller, voided on dispute, reclaimable by the payer after expiry |
-| Room / Agora entry | yes | today a charge + transfer; a destination charge is the non-custodial next step | direct to the creator (since P1b) |
-| Bounty | no | held prize, capture + transfer | promised, paid by the funder after the result |
+| Room / Agora entry | yes | P157: a destination charge to the creator | direct to the creator (since P1b) |
+| Bounty | no | held prize, capture + transfer — refused unless `EMPORIA_CUSTODIAL_CARDS` (P157) | promised, paid by the funder after the result |
 
 ## P96–P99 pass — x402 escrow holds, verified on Base Sepolia
 

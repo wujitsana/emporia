@@ -123,6 +123,9 @@ class PaymentRef:
 
     rail: str
     reference: str
+    # P157: the connected account a Stripe destination charge pays on capture
+    # (None for a platform charge, and on every other rail).
+    destination: str | None = None
 
 
 STRIPE_API_BASE = os.getenv("STRIPE_API_BASE", "https://api.stripe.com/v1")
@@ -954,8 +957,14 @@ async def create_stake_intent(
     capture_method: str = "manual",
     currency: str = "usd",
     resource_type: str = "session",
+    destination_account: str | None = None,
+    application_fee_cents: int | None = None,
 ) -> dict[str, Any]:
     """Create a Stripe PaymentIntent for a session stake using manual capture (escrow).
+
+    `destination_account` (P157): a destination charge to that connected account,
+    less `application_fee_cents` — the intent the relay will accept when it does
+    not hold card money itself.
 
     capture_method=manual: funds are authorized (held) at join time but NOT captured
     until the session completes and a winner is determined. If the session never
@@ -996,6 +1005,10 @@ async def create_stake_intent(
                 "currency": currency.lower(),
                 "payment_method_types[]": pm_types,
                 "capture_method": capture_method,
+                **({"transfer_data[destination]": destination_account}
+                   if destination_account else {}),
+                **({"application_fee_amount": str(application_fee_cents)}
+                   if destination_account and application_fee_cents else {}),
                 **metadata,
             },
         )
@@ -1642,6 +1655,7 @@ async def refund_payment_intent(
     *,
     reason: str = "requested_by_customer",
     idempotency_key: str,
+    destination_charge: bool = False,
 ) -> dict[str, Any]:
     """Refund a payment directly by its PaymentIntent id (P2-7, kick-with-refund).
 
@@ -1665,6 +1679,10 @@ async def refund_payment_intent(
                 "payment_intent": payment_intent_id,
                 "reason": reason,
                 "metadata[protocol]": "emporia:v1",
+                # P157: a destination charge's money is with the payee; take
+                # it back from them, and the fee from the platform.
+                **({"reverse_transfer": "true", "refund_application_fee": "true"}
+                   if destination_charge else {}),
             },
         )
         resp.raise_for_status()

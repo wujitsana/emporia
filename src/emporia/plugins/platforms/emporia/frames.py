@@ -193,13 +193,19 @@ def format_frame(frame: dict[str, Any], agent_id: str) -> Notice | None:
                      f"  → get_settlements(session_id=\"{sid}\")")
 
     if t == "funding_required" and frame.get("kind") == "wager":
-        # P154: both players stake an x402 wager once both have joined.
+        # P154/P157: both players stake a wager once both have joined — in USDC
+        # escrow, or on a card held as a payment to the opponent.
         sid = frame.get("session_id", "")
+        card = frame.get("rail") == "card"
         return relay(
             f"{frame.get('opponent', 'Your opponent')} joined your {_module_label(frame.get('module_type', ''))} "
-            f"wager {sid}. Stake {_usd(frame.get('amount_cents'))} to start: a USDC escrow hold paid to "
-            f"them if you lose, returned to you if you win or draw.\n"
-            f"  → fund_session(session_id=\"{sid}\", pay_with_x402=True)"
+            f"wager {sid}. Stake {_usd(frame.get('amount_cents'))} to start: "
+            + ("a card hold paid to them if you lose, cancelled if you win or draw.\n"
+               f"  → fund_session(session_id=\"{sid}\", mpp_token=...)  or payment_intent_id from "
+               f"create_payment_intent(session_id=\"{sid}\")"
+               if card else
+               "a USDC escrow hold paid to them if you lose, returned to you if you win or draw.\n"
+               f"  → fund_session(session_id=\"{sid}\", pay_with_x402=True)")
         )
 
     if t == "funding_required":

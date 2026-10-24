@@ -87,7 +87,8 @@ def test_an_agent_with_a_solana_wallet_pays_on_solana_within_its_caps(wallet_env
     assert stat.S_IMODE(path.stat().st_mode) == 0o600 and len(path.read_bytes()) == 32
     assert agent_wallet.solana_address("sol_payer") == addr
     header = agent_wallet.sign_exact("sol_payer", _challenge(250_000))
-    payload = json.loads(base64.b64decode(header))
+    # The header is base64url, unpadded (x402_payer.payment_signature_header).
+    payload = json.loads(base64.urlsafe_b64decode(header + "=" * (-len(header) % 4)))
     assert payload["accepted"]["network"] == DEVNET
     assert str(_decode(payload).message.account_keys[1]) == addr
     agent_wallet.sign_exact("sol_payer", _challenge(250_000))

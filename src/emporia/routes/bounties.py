@@ -206,6 +206,15 @@ async def create_bounty(req: CreateBountyRequest, request: Request):
             rail=RAIL_X402, payment_intent_id=None,
         )
 
+    if not rs.custodial_cards_allowed():
+        # P157: a held prize waits on the operator's balance for a winner who
+        # does not exist yet — custody, which this relay does not take.
+        raise HTTPException(400, (
+            "This relay does not hold card prizes: the money would sit on the operator's "
+            "balance until a winner exists. Back the prize with a promise (rail='x402'), paid "
+            "straight to the winner after the result."
+        ))
+
     paid = await rs._verify_and_confirm_payment(
         request,
         agent_id=caller,

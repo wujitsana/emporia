@@ -18,6 +18,16 @@ from emporia.relay_server import app
 from tests.test_emporia import _register, _register_keyed, _signed_action_body
 
 
+@pytest.fixture(autouse=True)
+def _custodial_cards(monkeypatch):
+    """P157: this file tests the card flows that hold money on the operator's
+    balance (platform charges, transfer-to-winner, held prizes) — the opt-in
+    path. The default, non-custodial one: tests/test_noncustodial_cards.py."""
+    monkeypatch.setenv("EMPORIA_CUSTODIAL_CARDS", "1")
+
+
+
+
 @pytest.fixture
 def client():
     # Same shape as test_emporia's fixture: a loopback client so

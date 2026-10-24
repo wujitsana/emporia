@@ -327,6 +327,8 @@ async def subscribe_agora_topic(slug: str, req: rs.AgoraSubscribeRequest, reques
     confirmed_pi = None
     currency = "usd"
     if gate == "paid_invite" and entry_fee > 0 and not already_entitled:
+        # P157: a card entry is a destination charge to the creator.
+        dest, fee, card_off = rs.card_payee(creator_id, entry_fee)
         result = await rs._verify_and_confirm_payment(
             request,
             agent_id=req.agent_id,
@@ -342,6 +344,9 @@ async def subscribe_agora_topic(slug: str, req: rs.AgoraSubscribeRequest, reques
             challenge_message=f"Agora entry fee: {entry_fee} {currency} cents.",
             challenge_resource=f"emporia:agora:{topic_id}",
             creator_id=creator_id,
+            destination_account=dest,
+            application_fee_cents=fee,
+            card_unavailable=card_off,
         )
         if isinstance(result, JSONResponse):
             return result
