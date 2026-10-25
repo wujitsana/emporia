@@ -69,7 +69,7 @@ sessions) and, if it has wallets, wallet keys or one recovery phrase.
 |---|---|---|
 | **Profile `.env`** (default) | `--keys env` | Hermes refuses its file tools any `.env`, starts terminal and code children without key-named variables, masks secret assignments in output. Defence in depth, not a wall |
 | Key files | `--keys files` | 0600 files; none from Hermes |
-| 1Password / Bitwarden / a command / an env var | `emporia identity store\|link`, `emporia wallet import --link` | Read when needed, never written to disk; the password manager's token sits in the agent's environment |
+| A password manager or remote vault | `emporia identity store\|link`, `emporia wallet import --link` | Read when needed, never written to disk; the vault's access token sits in the agent's `.env` |
 | AWS KMS, hosted wallets | planned ([roadmap](../ROADMAP.md)) | The machine never holds the key |
 
 ```bash
@@ -78,6 +78,27 @@ emporia identity store NAME --to env      # move key files into its .env (checks
 emporia identity store NAME --to 1password  # 1Password documents; `op` reads the files itself
 emporia wallet store NAME           # move wallet key files (or the phrase) into its .env
 ```
+
+**Password managers and remote vaults.** A linked key is read through the vault's own command
+line tool when the agent first signs, kept in memory, never written to disk. The setup offers:
+
+| Vault | What it runs | Access token in the agent's `.env` |
+|---|---|---|
+| 1Password | `op read op://Vault/Item/field` | `OP_SERVICE_ACCOUNT_TOKEN` |
+| Bitwarden | `bw get password\|notes ITEM` | `BW_SESSION` |
+| HashiCorp Vault | `vault kv get -field=key PATH` | `VAULT_ADDR`, `VAULT_TOKEN` |
+| AWS Secrets Manager | `aws secretsmanager get-secret-value …` | AWS credentials |
+| Google Secret Manager | `gcloud secrets versions access latest …` | a service account |
+| Azure Key Vault | `az keyvault secret show …` | a service principal |
+| Doppler | `doppler secrets get --plain NAME` | `DOPPLER_TOKEN` |
+| Infisical | `infisical secrets get --plain NAME` | `INFISICAL_TOKEN` |
+| Anything else | any command that prints the key | whatever it needs |
+
+A vault keeps keys off the disk and gives you one place to revoke and audit them, but at the
+moment of signing the key is in the agent's process. Hermes starts the agent's terminal and code
+without variables named like tokens or keys, and Emporia's plugin refuses commands that name these
+tokens, so the agent's own tools cannot use the vault — but the strongest option, keys the machine
+never holds (KMS), is still planned.
 
 Linking a key to a password manager refuses a source holding a different key — that would
 silently be a different agent. The agent's own process must be able to read it unattended:
@@ -111,6 +132,13 @@ env var is linked (read where it is, never copied) while a key file is copied in
 storage; or `--use-found-keys link|copy` without a terminal. Anything else you have — 1Password,
 Bitwarden, a key you paste — is the "Use any wallet you already have" choice, or
 `emporia wallet import NAME`. An agent's existing keys are never replaced.
+
+**How the search stays safe.** It reads only those names and that one file; each candidate is
+parsed in memory to show the address it gives, and nothing is printed, logged or stored unless you
+choose to use it. A secret is handed to the step that stores it on standard input, never on a
+command line. A key found only in your shell (not in the agent's `.env`) is **copied**, not linked:
+the agent's own process would not have that variable later, and its wallet would quietly stop
+working.
 
 ```bash
 emporia wallet show NAME            # addresses, networks, balances, limits
@@ -190,7 +218,16 @@ review, as in §1.
 | ! developer role on the local backend | Its terminal shares a disk with its identity key | Sandboxed backend, or keys in its `.env` |
 | ! pays up to its caps without ever asking you | No approval threshold | `emporia wallet limits NAME --approve-above-cents 500` |
 
-## 6. What else protects keys
+## 6. When an agent runs `emporia` itself
+
+The setup skill lets an agent run `emporia` to help you. Reading is free (`doctor`, `setup` on its
+own, `wallet show`, `identity show`, `role NAME`). Anything that changes an agent's **keys, wallets,
+limits or role** — `setup agent|relay|stripe`, `role NAME ROLE`, `identity store|link`,
+`wallet create|import|store|register|limits` — goes to **Hermes's approval prompt**, which only you
+can answer. So a developer agent cannot, for instance, give a marketplace agent back its terminal or
+raise its caps. Outside Hermes, keep the `emporia` command out of the agent's reach.
+
+## 7. What else protects keys
 
 - **Nothing an agent sends may carry a secret.** Every message, offer and payment request its tools
   send is checked before it is sealed; its own keys and phrase, any recovery phrase, Solana
@@ -200,7 +237,7 @@ review, as in §1.
   not a disguised command — the role and the backend are the walls.
 - **Agents are told** that other agents are strangers and that a request for a key is an attack.
 
-## 7. What is not covered yet
+## 8. What is not covered yet
 
 See [ROADMAP.md](../ROADMAP.md) and [SECURITY.md](../SECURITY.md) § Open questions:
 keys the machine never holds (AWS KMS, a hosted wallet, a separate signing service), limits

@@ -33,11 +33,15 @@ or decline to capture a card hold. What to do about a relay that misbehaves:
   one keys directory (`EMPORIA_KEYS_DIR`), and never sent anywhere. Registration proves possession
   by signing a one-time nonce (`POST /agents/challenge`). The agent's `stable_id` is derived from its
   first key, so it survives key rotation, renames and trust upgrades.
+- **Changing keys, wallets, limits or roles needs the operator** when an agent runs the `emporia`
+  command: Emporia's Hermes plugin sends those commands to Hermes's approval prompt (P170); reading
+  stays free.
 - **Where the keys live** is the operator's choice: the agent profile's `.env` (P165, the setup
   default — Hermes hides `.env` files from the agent's own tools, strips key-named variables from
   its terminal, and masks secret assignments in output), 0600 key files, or linked — read when
   needed from 1Password, Bitwarden, any command that prints a secret, or an environment variable,
-  never written to disk (P164). Linking checks the source holds the same key. None of these is a
+  never written to disk (P164; HashiCorp Vault, AWS, Google and Azure secret stores, Doppler and
+  Infisical too, P170). Linking checks the source holds the same key. None of these is a
   wall against an agent determined to read its own keys; keys the machine never holds (KMS, a
   hosted wallet) are.
 - **Nous verification** (`nous_verified`) ties an agent to a Nous account. Several agents may share

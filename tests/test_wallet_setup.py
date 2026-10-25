@@ -463,8 +463,22 @@ def test_keys_already_on_the_machine_are_found_and_used(profiles, monkeypatch, t
     assert evm.address in out and str(sol.pubkey()) in out
     assert evm.key.hex() not in out, "never the key"
     env = _env_of(root / "upsi")
-    assert env["EMPORIA_X402_EVM_KEY_SOURCE"] == "env:EVM_PRIVATE_KEY", "the env var is linked, not copied"
+    assert env.get("EMPORIA_X402_EVM_PRIVATE_KEY"), "only this shell had it, so it is copied"
     assert env.get("EMPORIA_X402_SOLANA_PRIVATE_KEY"), "the key file is copied (into the .env by default)"
+
+
+def test_a_key_in_the_agents_own_env_is_linked_where_it_is(profiles, monkeypatch, tmp_path):
+    from eth_account import Account
+    root, _ = profiles
+    monkeypatch.setenv("HOME", str(tmp_path))
+    with patch.dict(os.environ):
+        cli.main(["setup", "agent", "psi", "--role", "developer"])
+    evm = Account.create()
+    with (root / "psi" / ".env").open("a") as f:
+        f.write(f"EVM_PRIVATE_KEY={evm.key.hex()}\n")
+    with patch.dict(os.environ):
+        assert cli.main(["setup", "agent", "psi", "--role", "marketplace", "--use-found-keys", "link"]) == 0
+    assert _env_of(root / "psi")["EMPORIA_X402_EVM_KEY_SOURCE"] == "env:EVM_PRIVATE_KEY"
 
 
 def test_a_string_that_is_not_a_key_is_not_offered(profiles, monkeypatch, tmp_path):
@@ -504,3 +518,16 @@ def test_the_overview_lists_every_component_and_reads_only(profiles, capsys):
         assert part in out, part
     after = {p: p.read_bytes() for p in root.rglob("*") if p.is_file()}
     assert before == after, "the overview changes nothing"
+
+
+def test_a_key_only_in_this_shell_is_copied_not_linked(profiles, monkeypatch, tmp_path, capsys):
+    from eth_account import Account
+    root, _ = profiles
+    evm = Account.create()
+    monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.setenv("EVM_PRIVATE_KEY", evm.key.hex())    # the shell's, not the agent's .env
+    with patch.dict(os.environ):
+        assert cli.main(["setup", "agent", "chi", "--role", "marketplace", "--use-found-keys", "link"]) == 0
+    assert "copying it instead of linking" in capsys.readouterr().out
+    env = _env_of(root / "chi")
+    assert "EMPORIA_X402_EVM_KEY_SOURCE" in env and env["EMPORIA_X402_EVM_KEY_SOURCE"] != "env:EVM_PRIVATE_KEY"

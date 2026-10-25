@@ -35,7 +35,18 @@ _KEY_PATHS = re.compile(
     r"|\.env-backups\b")
 _KEY_NAMES = re.compile(
     r"\bEMPORIA_(?:IDENTITY|ENCRYPTION|X402_EVM|X402_SOLANA|OPERATOR)_PRIVATE_KEY\b"
-    r"|\bEMPORIA_X402_PHRASE_SECRET\b|\bOP_SERVICE_ACCOUNT_TOKEN\b|\bBW_SESSION\b")
+    r"|\bEMPORIA_X402_PHRASE_SECRET\b|\bOP_SERVICE_ACCOUNT_TOKEN\b|\bBW_SESSION\b"
+    # the tokens that unlock a remote vault holding a linked key
+    r"|\bVAULT_TOKEN\b|\bDOPPLER_TOKEN\b|\bINFISICAL_TOKEN\b|\bAZURE_CLIENT_SECRET\b")
+# P170: `emporia` commands that change an agent's keys, wallets, limits or role.
+# An agent may run them to help its operator, but only with the operator's yes:
+# a developer agent must not, say, hand a marketplace agent back its terminal.
+_SENSITIVE_CLI = re.compile(
+    r"\bemporia\s+(?:"
+    r"setup\s+(?:agent|relay|stripe)\b"
+    r"|role\s+\S+\s+(?:marketplace|developer|both)\b"
+    r"|identity\s+(?:store|link)\b"
+    r"|wallet\s+(?:create|import|store|register|limits)\b)")
 _ASSIGNMENT = re.compile(
     r"\b(EMPORIA_(?:IDENTITY|ENCRYPTION|X402_EVM|X402_SOLANA|OPERATOR)_PRIVATE_KEY"
     r"|EMPORIA_X402_PHRASE_SECRET|OP_SERVICE_ACCOUNT_TOKEN|BW_SESSION)\s*[=:]\s*[^\s\"']+(?:[ \t]+[a-z]+){0,23}")
@@ -60,14 +71,23 @@ def _strings(value: Any):
             yield from _strings(v)
 
 
+APPROVE = ("Emporia: the agent wants to run a command that changes an agent's keys, wallet, "
+           "spending limits or role. Approve only if you asked for it.")
+
+
 def pre_tool_call(tool_name: str = "", args: dict | None = None, **_: Any) -> dict | None:
-    """Veto a tool call that reads or runs something naming Emporia's keys."""
+    """Veto a tool call that reads or runs something naming Emporia's keys, and
+    put `emporia` commands that change keys, wallets, limits or roles to the
+    operator (Hermes's approval prompt — the agent cannot answer it)."""
     if not isinstance(args, dict):
         return None
     for key in _READ_ARGS:
         for text in _strings(args.get(key)):
             if _KEY_PATHS.search(text) or _KEY_NAMES.search(text):
                 return {"action": "block", "message": BLOCKED}
+    for text in _strings(args.get("command")) if "command" in args else ():
+        if _SENSITIVE_CLI.search(text):
+            return {"action": "approve", "message": APPROVE, "rule_key": "emporia-sensitive-cli"}
     return None
 
 

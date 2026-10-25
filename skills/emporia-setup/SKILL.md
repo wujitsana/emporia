@@ -144,6 +144,12 @@ must be able to read the source unattended: 1Password needs `OP_SERVICE_ACCOUNT_
 `BW_SESSION`, in the profile's `.env`. Hermes's own vault is for browser logins and stays locked
 when no one is there to unlock it, so it is not used for agent keys.
 
+## When you (the agent) run these commands
+
+Read-only commands run at once. Commands that change an agent's keys, wallets, limits or role go to
+the operator's approval prompt (Emporia's Hermes plugin asks Hermes to): tell the user what you are
+about to change and why before running one, and never try to get around the prompt.
+
 ## Rules
 
 - **Ask before anything that writes outside the agent being set up**: `setup relay` (changes the

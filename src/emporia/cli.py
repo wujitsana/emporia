@@ -1077,9 +1077,15 @@ def _ask_source() -> str:
     """Where a linked key lives, as a source reference (never the secret)."""
     import shlex
     where = choose("Where does it live?", [
-        ("op", "1Password — read with `op read op://Vault/Item/field`"),
-        ("bw", "Bitwarden — read with `bw get password|notes ITEM`"),
-        ("env", "An environment variable the agent's process has"),
+        ("op", "1Password — `op read` (needs OP_SERVICE_ACCOUNT_TOKEN in its .env)"),
+        ("bw", "Bitwarden — `bw get` (needs BW_SESSION)"),
+        ("vault", "HashiCorp Vault — `vault kv get` (needs VAULT_ADDR, VAULT_TOKEN)"),
+        ("aws", "AWS Secrets Manager — `aws secretsmanager` (needs AWS credentials)"),
+        ("gcp", "Google Secret Manager — `gcloud secrets` (needs a service account)"),
+        ("azure", "Azure Key Vault — `az keyvault secret` (needs a service principal)"),
+        ("doppler", "Doppler — `doppler secrets get` (needs DOPPLER_TOKEN)"),
+        ("infisical", "Infisical — `infisical secrets get` (needs INFISICAL_TOKEN)"),
+        ("env", "An environment variable in its .env"),
         ("cmd", "Another command that prints it"),
     ])
     if where == "op":
@@ -1087,6 +1093,21 @@ def _ask_source() -> str:
     if where == "bw":
         field = choose("Which field?", [("password", "password"), ("notes", "notes")])
         return f"cmd:bw get {field} " + shlex.quote(prompt("Item name or id"))
+    if where == "vault":
+        return (f"cmd:vault kv get -field={shlex.quote(prompt('Field', 'key'))} "
+                + shlex.quote(prompt("Secret path (e.g. secret/emporia/alpha)")))
+    if where == "aws":
+        return ("cmd:aws secretsmanager get-secret-value --query SecretString --output text --secret-id "
+                + shlex.quote(prompt("Secret name or ARN")))
+    if where == "gcp":
+        return "cmd:gcloud secrets versions access latest --secret=" + shlex.quote(prompt("Secret name"))
+    if where == "azure":
+        return (f"cmd:az keyvault secret show --query value -o tsv --vault-name "
+                f"{shlex.quote(prompt('Vault name'))} --name {shlex.quote(prompt('Secret name'))}")
+    if where == "doppler":
+        return "cmd:doppler secrets get --plain " + shlex.quote(prompt("Secret name"))
+    if where == "infisical":
+        return "cmd:infisical secrets get --plain " + shlex.quote(prompt("Secret name"))
     if where == "env":
         return "env:" + prompt("Variable name")
     return "cmd:" + prompt("Command")
@@ -1222,6 +1243,13 @@ def _use_found(profile: Path, agent_id: str, found: dict[str, str], how: str) ->
     """Link (`env:` only — a file is copied) or copy a found key into the agent's
     storage. Never replaces a key it already has."""
     kind = found["kind"]
+    if how == "link" and found["ref"].startswith("env:") \
+            and found["ref"][4:] not in installer().harvest_env(profile):
+        # Only this shell has it: the agent's own process will not, so a link
+        # would leave it without a wallet. Copy it instead, and say so.
+        print(f"  {found['where']} is set in this shell, not in {profile.name}'s .env, so the agent "
+              f"could not read it later — copying it instead of linking.")
+        how = "copy"
     if how == "link" and found["ref"].startswith("env:"):
         return _link_wallet(profile, agent_id, kind, found["ref"]) == 0
     secret = (Path(found["ref"][5:]).read_text() if found["ref"].startswith("file:")
