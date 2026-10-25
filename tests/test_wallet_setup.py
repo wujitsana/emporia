@@ -166,7 +166,7 @@ def test_setup_agent_asks_and_one_phrase_is_the_recommended_choice(profiles, mon
     root, _ = profiles
     monkeypatch.setattr(cli, "health", lambda timeout=3.0: None)
     # existing profile? no · wallets: 3 (one phrase) · networks: Enter · caps: 5, 20
-    _typing(monkeypatch, "3", "", "5", "20")
+    _typing(monkeypatch, "3", "", "5", "20", "2")   # … and ask above $2
     with patch.dict(os.environ):
         assert cli.main(["setup", "agent", "zeta", "--keys", "files"]) == 0
     keys = root / "zeta" / "home" / ".hermes" / "keys"
@@ -174,6 +174,7 @@ def test_setup_agent_asks_and_one_phrase_is_the_recommended_choice(profiles, mon
                                                          "zeta.x402.ed25519"}
     dotenv = (root / "zeta" / ".env").read_text()
     assert "EMPORIA_X402_MAX_PAYMENT_CENTS=500" in dotenv and "EMPORIA_X402_MAX_DAILY_CENTS=2000" in dotenv
+    assert "EMPORIA_PAYMENT_APPROVAL_CENTS=200" in dotenv
     out = capsys.readouterr().out
     assert "one recovery phrase" in out and "Emporia never prints it" in out
     phrase = (keys / "zeta.x402.phrase").read_text().strip()

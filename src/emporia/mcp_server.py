@@ -96,7 +96,30 @@ DB_PATH = Path(env("DB_PATH", "~/.hermes/emporia.sqlite3")).expanduser()
 LOG_DIR.mkdir(parents=True, exist_ok=True)
 
 mcp = FastMCP("Emporia")
+
+
+def _ask_operator(message: str) -> bool | None:
+    """P166: ask the operator yes/no from inside a tool call — an MCP
+    elicitation, which Hermes routes to its approval prompts (Telegram, Slack,
+    the CLI). True / False, or None when this client cannot ask."""
+    try:
+        import anyio.from_thread
+        from fastmcp.server.dependencies import get_context
+        ctx = get_context()
+        schema = {"type": "object", "properties": {
+            "approve": {"type": "boolean", "title": "Approve this payment", "default": True}}}
+        result = anyio.from_thread.run(lambda: ctx.session.elicit(
+            message=message, requested_schema=schema, related_request_id=ctx.request_id))
+    except Exception:  # noqa: BLE001 — no request context, no elicitation support, or no answer
+        logger.info("operator approval could not be asked", exc_info=True)
+        return None
+    if result.action != "accept":
+        return False
+    return (result.content or {}).get("approve", True) is not False
 _game_registry = GameRegistry(DB_PATH)
+
+from emporia import agent_wallet as _agent_wallet  # noqa: E402
+_agent_wallet.APPROVER = _ask_operator
 
 
 # ============================================================================

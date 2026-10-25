@@ -389,6 +389,36 @@ def _ledger_path(agent_id: str) -> Path:
     return path.with_name(path.name.removesuffix(".secp256k1") + ".spend.json")
 
 
+# P166: above a threshold the operator decides, not the agent. The MCP server
+# sets APPROVER to a function that asks them (an MCP elicitation, which Hermes
+# routes to its approval prompts — Telegram, Slack, the CLI). It returns True
+# (approved), False (declined) or None (no way to ask here); None refuses.
+APPROVER = None
+
+
+def approval_threshold_cents() -> int | None:
+    raw = os.environ.get("EMPORIA_PAYMENT_APPROVAL_CENTS", "").strip()
+    return int(raw) if raw else None
+
+
+def require_approval(agent_id: str, amount_atomic: int, what: str) -> None:
+    """Ask the operator before a payment above EMPORIA_PAYMENT_APPROVAL_CENTS.
+    Runs after the caps, so nothing above a cap is ever put to them."""
+    limit = approval_threshold_cents()
+    if limit is None or amount_atomic <= limit * _USDC_ATOMIC_PER_CENT:
+        return
+    message = (f"Emporia: {agent_id} wants to pay {amount_atomic / 1e6:.2f} {what}. "
+               f"Above your ${limit / 100:.2f} approval threshold. Approve this payment?")
+    answer = APPROVER(message) if APPROVER else None
+    if answer is None:
+        raise AgentWalletError(
+            f"this payment ({amount_atomic / 1e6:.2f}) needs your operator's approval (above "
+            f"${limit / 100:.2f}, EMPORIA_PAYMENT_APPROVAL_CENTS) and this agent's app cannot ask "
+            f"them. Not paid.")
+    if not answer:
+        raise AgentWalletError("your operator declined this payment. Not paid; don't retry it.")
+
+
 def _charge_daily(agent_id: str, amount_atomic: int) -> None:
     """Refuse if this payment would take the last 24 hours' signed total past
     the daily cap; otherwise record it. Called just before signing."""
@@ -443,6 +473,9 @@ def sign_exact(agent_id: str, body: dict, network: str = "") -> str:
         raise AgentWalletError(
             f"the relay asks for {amount / 1e6:.2f} USDC, above this agent's "
             f"{cap / 1e6:.2f} USDC per-payment cap (EMPORIA_X402_MAX_PAYMENT_CENTS)")
+    from emporia.networks import label
+    require_approval(agent_id, amount, f"USDC on {label(requirement.get('network') or '')} to "
+                                       f"{str(requirement.get('payTo'))[:12]}…")
     from emporia.payments import x402_network_family
     if x402_network_family(requirement.get("network") or "") == "svm":
         # P155: Solana — a partially signed transaction, the facilitator pays fees.
@@ -473,6 +506,9 @@ def pay_tempo(agent_id: str, offer: dict) -> str:
         raise AgentWalletError(
             f"the relay asks for {amount / 1e6:.2f}, above this agent's {cap / 1e6:.2f} "
             f"per-payment cap (EMPORIA_X402_MAX_PAYMENT_CENTS)")
+    from emporia.networks import label
+    require_approval(agent_id, amount, f"in stablecoin on {label(network)} to "
+                                       f"{str(offer['request'].get('recipient'))[:12]}…")
     key = load_key(agent_id)
     _charge_daily(agent_id, amount)
     return tempo.pay(offer, key)
@@ -487,6 +523,9 @@ def sign_escrow(agent_id: str, offer: dict, *, expected_amount: int) -> str:
         raise AgentWalletError(
             f"the hold is {expected_amount / 1e6:.2f} USDC, above this agent's per-payment cap")
     key, networks = load_key(agent_id), allowed_networks()
+    from emporia.networks import label
+    require_approval(agent_id, expected_amount, f"USDC into an escrow hold on "
+                                                f"{label(offer.get('network') or '')}")
     _charge_daily(agent_id, expected_amount)
     return escrow.sign_offer(offer, key, expected_amount=expected_amount,
                              allowed_networks=networks)

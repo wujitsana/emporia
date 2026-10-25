@@ -348,9 +348,12 @@ def doctor_agent(rep: Report, profile: Path, entry: dict, relay_up: bool) -> Non
     wallet = key_dir / f"{_keyfile_stem(agent_id)}.x402.secp256k1"
     sol_wallet = key_dir / f"{_keyfile_stem(agent_id)}.x402.ed25519"
     pay_nets = resolve_list(dotenv.get("EMPORIA_X402_PAY_NETWORKS", ""))
-    no_key = [n for n in pay_nets
-              if not (sol_wallet if family(n) == "svm" else wallet).exists()]
-    if not wallet.exists() and not sol_wallet.exists():
+    # P165: a wallet may be a key file, or kept in the .env / linked (a source).
+    phrase_src = bool(dotenv.get("EMPORIA_X402_PHRASE_SOURCE"))
+    has = {"evm": wallet.exists() or phrase_src or bool(dotenv.get("EMPORIA_X402_EVM_KEY_SOURCE")),
+           "svm": sol_wallet.exists() or phrase_src or bool(dotenv.get("EMPORIA_X402_SOLANA_KEY_SOURCE"))}
+    no_key = [n for n in pay_nets if not has.get(family(n) or "", False)]
+    if not has["evm"] and not has["svm"]:
         rep.warn("no wallet — can pay by card only", f"emporia wallet create {name}")
     elif not pay_nets:
         rep.fail("a wallet but no EMPORIA_X402_PAY_NETWORKS — it will pay on no network",
@@ -359,7 +362,10 @@ def doctor_agent(rep: Report, profile: Path, entry: dict, relay_up: bool) -> Non
         rep.fail(f"allowed to pay on {', '.join(label(n) for n in no_key)} with no wallet for it",
                  f"emporia wallet create {name}" + (" --solana" if any(family(n) == "svm" for n in no_key) else ""))
     else:
-        rep.ok(f"wallet{'s' if wallet.exists() and sol_wallet.exists() else ''}, pays on "
+        if not dotenv.get("EMPORIA_PAYMENT_APPROVAL_CENTS"):
+            rep.warn("pays up to its caps without ever asking you",
+                     f"emporia wallet limits {name} --approve-above-cents 500")
+        rep.ok(f"wallet{'s' if has['evm'] and has['svm'] else ''}, pays on "
                f"{', '.join(label(n) for n in pay_nets)}, "
                f"≤ ${int(dotenv.get('EMPORIA_X402_MAX_PAYMENT_CENTS', 1000)) / 100:.2f} each, "
                f"≤ ${int(dotenv.get('EMPORIA_X402_MAX_DAILY_CENTS', 5000)) / 100:.2f}/day")
@@ -395,9 +401,9 @@ def doctor_agent(rep: Report, profile: Path, entry: dict, relay_up: bool) -> Non
                          f"restart its MCP (`hermes -p {name} gateway restart`); it publishes the key on registering")
             else:
                 rep.ok("encryption key published — its DMs and private sessions are sealed")
-            if wallet.exists() and not pay_to:
+            if has["evm"] and not pay_to:
                 rep.warn("EVM wallet not registered as where it is paid", f"emporia wallet register {name}")
-            if sol_wallet.exists() and not (profile_json.get("x402_pay_to") or {}).get("svm"):
+            if has["svm"] and not (profile_json.get("x402_pay_to") or {}).get("svm"):
                 rep.warn("Solana wallet not registered as where it is paid", f"emporia wallet register {name}")
         else:
             rep.warn("not registered on this relay yet",
@@ -504,12 +510,16 @@ def cmd_setup_agent(args: argparse.Namespace) -> int:
     if wallet and _TTY and not (args.wallet or args.solana):
         args.max_payment_cents = prompt_cents("Largest single payment", args.max_payment_cents)
         args.max_daily_cents = prompt_cents("Most it may spend in 24 hours", args.max_daily_cents)
+        args.approve_above_cents = prompt_cents(
+            "Ask you before any single payment above (0 = always ask)", args.approve_above_cents)
     inst.create_profile(
         name=name, relay_url=relay_url(), current_profile_dir=me, inherit_env=args.inherit_env,
         sync_model=bool(sync_model), x402_pay_networks=networks,
         x402_max_payment_cents=args.max_payment_cents if wallet else None,
         x402_max_daily_cents=args.max_daily_cents if wallet else None,
     )
+    if wallet:   # P166: above this the agent asks its operator, through its own app
+        merge_env_file(profile / ".env", {"EMPORIA_PAYMENT_APPROVAL_CENTS": str(args.approve_above_cents)})
     if storage == "env":
         # P165: everything this agent creates from now on — its identity and
         # encryption keys at first start, its wallets now — goes to its .env.
@@ -1094,7 +1104,8 @@ def cmd_wallet(args: argparse.Namespace) -> int:
         return 0
 
     if args.action == "limits" and _TTY and not (args.networks or args.max_payment_cents is not None
-                                                  or args.max_daily_cents is not None):
+                                                  or args.max_daily_cents is not None
+                                                  or args.approve_above_cents is not None):
         fams = [f for f in ("evm", "svm") if _wallet_address(profile, agent_id, f == "svm")]
         current = resolve_list(dotenv.get("EMPORIA_X402_PAY_NETWORKS", ""))
         args.networks = ",".join(_choose_networks(fams, current)) or ""
@@ -1102,6 +1113,9 @@ def cmd_wallet(args: argparse.Namespace) -> int:
             "Largest single payment", int(dotenv.get("EMPORIA_X402_MAX_PAYMENT_CENTS", 1000)))
         args.max_daily_cents = prompt_cents(
             "Most it may spend in 24 hours", int(dotenv.get("EMPORIA_X402_MAX_DAILY_CENTS", 2500)))
+        args.approve_above_cents = prompt_cents(
+            "Ask you before any single payment above (0 = always ask)",
+            int(dotenv.get("EMPORIA_PAYMENT_APPROVAL_CENTS", 500)))
     if args.action == "limits":
         updates: dict[str, str] = {}
         if args.networks:
@@ -1120,8 +1134,11 @@ def cmd_wallet(args: argparse.Namespace) -> int:
             updates["EMPORIA_X402_MAX_PAYMENT_CENTS"] = str(args.max_payment_cents)
         if args.max_daily_cents is not None:
             updates["EMPORIA_X402_MAX_DAILY_CENTS"] = str(args.max_daily_cents)
+        if args.approve_above_cents is not None:
+            updates["EMPORIA_PAYMENT_APPROVAL_CENTS"] = str(args.approve_above_cents)
         if not updates:
-            print("wallet limits: give --networks, --max-payment-cents and/or --max-daily-cents")
+            print("wallet limits: give --networks, --max-payment-cents, --max-daily-cents and/or "
+                  "--approve-above-cents")
             return 1
         changed = merge_env_file(profile / ".env", updates)
         for k in updates:
@@ -1144,8 +1161,10 @@ def cmd_wallet(args: argparse.Namespace) -> int:
             print(f"          pays on {label(n)}" + (f": {bal:,.2f} USDC" if bal is not None else ""))
     if not allowed:
         print(f"  pays on no network — emporia wallet limits {args.name} --networks base-sepolia")
+    approve = dotenv.get("EMPORIA_PAYMENT_APPROVAL_CENTS", "")
     print(f"  limits  ${int(dotenv.get('EMPORIA_X402_MAX_PAYMENT_CENTS', 1000)) / 100:.2f} a payment, "
-          f"${int(dotenv.get('EMPORIA_X402_MAX_DAILY_CENTS', 5000)) / 100:.2f} a day")
+          f"${int(dotenv.get('EMPORIA_X402_MAX_DAILY_CENTS', 5000)) / 100:.2f} a day; "
+          + (f"asks you above ${int(approve) / 100:.2f}" if approve else "never asks you"))
     h = health()
     if h:
         offered = [label(n) for n in h.get("x402_networks") or []]
@@ -1392,6 +1411,8 @@ def build_parser() -> argparse.ArgumentParser:
     ag.add_argument("name", nargs="?", default="")
     ag.add_argument("--wallet", action="store_true", help="give it an EVM wallet (USDC on Base, Tempo)")
     ag.add_argument("--solana", action="store_true", help="give it a Solana wallet (USDC on Solana)")
+    ag.add_argument("--approve-above-cents", type=int, default=500,
+                    help="ask the operator before any payment above this (default $5)")
     ag.add_argument("--keys", choices=["env", "files"], default="",
                     help="where its keys are kept: its profile .env (recommended) or key files")
     ag.add_argument("--separate-keys", action="store_true",
@@ -1441,6 +1462,8 @@ def build_parser() -> argparse.ArgumentParser:
                     help="limits: where it may pay, e.g. base-sepolia,solana-devnet,tempo-moderato")
     wl.add_argument("--max-payment-cents", type=int, default=None)
     wl.add_argument("--max-daily-cents", type=int, default=None)
+    wl.add_argument("--approve-above-cents", type=int, default=None,
+                    help="limits: ask the operator before any payment above this")
     wl.add_argument("--offline", action="store_true", help="show: skip the balance lookups")
     wl.add_argument("--remove-files", action="store_true", help="store: remove the key files after")
     wl.add_argument("--key-file", default="",
