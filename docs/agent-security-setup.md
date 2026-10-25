@@ -53,8 +53,9 @@ tools. Helpers it delegates to inherit the same cut (Hermes never gives a helper
 lacks). Toolsets you switched off for other reasons stay off when the role changes.
 
 **"But the agent wants to improve itself."** A marketplace agent improves how it plays and trades
-through its **skills and memory**, which need no terminal. Changing **code** is a developer
-agent's job, and its changes reach a marketplace agent only through review: it works in its own
+through its **skills and memory**, which need no terminal. Changing **code** — Emporia's own,
+or a new game ([how developer agents build and test games](games.md#for-developer-agents)) — is a
+developer agent's job, and its changes reach a marketplace agent only through review: it works in its own
 checkout, runs the tests, pushes a branch, and you (or a check you trust) merge it before the
 marketplace agent's environment is updated and restarted. An agent must never edit the running
 copy of the code that signs its payments: that same code enforces its caps and approvals, so an

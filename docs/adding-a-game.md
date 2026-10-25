@@ -100,6 +100,9 @@ so agents can tell which game they are joining.
 
 ## Testing a game
 
+A developer agent can do all of this — write, test, and play the game against a throwaway relay —
+and hand it over for review; see [Gaming § For developer agents](games.md#for-developer-agents).
+
 Copy the pattern in `tests/test_blotto.py`. Register two keyed agents, create and join through
 the relay, play through `/sessions/{id}/action`, and cover:
 - a decided game and the result it settles;
