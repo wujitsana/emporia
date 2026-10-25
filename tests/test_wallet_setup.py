@@ -166,7 +166,8 @@ def test_setup_agent_asks_and_one_phrase_is_the_recommended_choice(profiles, mon
     root, _ = profiles
     monkeypatch.setattr(cli, "health", lambda timeout=3.0: None)
     # existing profile? no · wallets: 3 (one phrase) · networks: Enter · caps: 5, 20
-    _typing(monkeypatch, "3", "", "5", "20", "2")   # … and ask above $2
+    # role: 1 (marketplace) · wallets: 3 (one phrase) · networks: Enter · caps: 5, 20 · ask above $2
+    _typing(monkeypatch, "1", "3", "", "5", "20", "2")
     with patch.dict(os.environ):
         assert cli.main(["setup", "agent", "zeta", "--keys", "files"]) == 0
     keys = root / "zeta" / "home" / ".hermes" / "keys"
@@ -393,3 +394,50 @@ def test_an_agent_without_a_wallet_is_a_full_agent_that_cannot_pay(profiles, cap
     assert "EMPORIA_X402_PAY_NETWORKS" not in (root / "omi" / ".env").read_text()
     assert cli.main(["wallet", "show", "omi", "--offline"]) == 0
     assert "none" in capsys.readouterr().out
+
+
+# -- P168: roles ----------------------------------------------------------------
+
+def test_a_marketplace_agent_has_no_tool_that_reaches_its_keys(profiles, capsys):
+    root, _ = profiles
+    with patch.dict(os.environ):
+        assert cli.main(["setup", "agent", "pi", "--role", "marketplace", "--wallet"]) == 0
+    off = cli._disabled_toolsets(root / "pi")
+    assert set(cli.MARKETPLACE_OFF) <= set(off)
+    out = capsys.readouterr().out
+    assert "Summary for pi" in out and "Role        marketplace" in out
+
+
+def test_a_developer_agent_gets_no_wallet_even_if_asked(profiles, capsys):
+    root, _ = profiles
+    with patch.dict(os.environ):
+        assert cli.main(["setup", "agent", "rho", "--role", "developer", "--wallet"]) == 0
+    assert "holds no wallet" in capsys.readouterr().out
+    assert not cli._has_wallet(root / "rho", "rho")
+    assert cli._disabled_toolsets(root / "rho") == []
+
+
+def test_both_on_local_is_refused_without_a_yes_and_doctor_fails_it(profiles, capsys):
+    root, _ = profiles
+    with patch.dict(os.environ):
+        cli.main(["setup", "agent", "sig", "--role", "marketplace", "--wallet", "--keys", "files"])
+    assert cli.main(["role", "sig", "both"]) == 1, "no terminal to say yes, so nothing changed"
+    assert cli.profile_role(root / "sig", True) == "marketplace"
+    assert cli.main(["role", "sig", "both", "--yes"]) == 0
+    assert cli.profile_role(root / "sig", True) == "both"
+    assert cli._role_warnings("both", True, "local")
+    assert cli.main(["role", "sig", "marketplace"]) == 0
+    assert cli.profile_role(root / "sig", True) == "marketplace"
+
+
+def test_a_role_keeps_toolsets_the_operator_turned_off(profiles):
+    root, _ = profiles
+    with patch.dict(os.environ):
+        cli.main(["setup", "agent", "tau", "--role", "developer"])
+    cfg = cli.installer().load_yaml(root / "tau" / "config.yaml")
+    cfg.setdefault("agent", {})["disabled_toolsets"] = ["tts"]
+    cli.installer().save_yaml(root / "tau" / "config.yaml", cfg)
+    cli.apply_role(root / "tau", "marketplace")
+    assert "tts" in cli._disabled_toolsets(root / "tau")
+    cli.apply_role(root / "tau", "developer")
+    assert cli._disabled_toolsets(root / "tau") == ["tts"]

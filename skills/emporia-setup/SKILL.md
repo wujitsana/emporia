@@ -17,6 +17,14 @@ One command does every setup step: `emporia`, in the venv of the Emporia checkou
 terminal it is a menu, and every command asks for what it was not given. With flags it asks nothing
 (for scripts and for you, the agent — pass every flag rather than relying on prompts).
 
+## Read this first
+
+The full guide, with every choice and its trade-off:
+[docs/agent-security-setup.md](../../docs/agent-security-setup.md). Recommend its safe answers:
+role **marketplace** for any agent with money, keys in its **.env**, **one recovery phrase** (or no
+wallet), small caps, **ask above $5**. If the user picks something riskier, say what it risks (the
+command prints the same warning) and let them decide.
+
 ## Always start with doctor
 
 ```bash
@@ -40,6 +48,7 @@ secret.
 | Where its identity and encryption keys are kept; move them to 1Password, or link a source | `emporia identity show\|store\|link NAME` |
 | Where it may pay, and how much | `emporia wallet limits NAME --networks base-sepolia,solana-devnet --max-payment-cents 1000 --max-daily-cents 2500` |
 | Switch an existing agent to this profile's model | `emporia setup agent NAME --sync-model` |
+| What it may do: marketplace (wallet, no terminal/files/code/browser/jobs), developer (tools, no wallet), both | `emporia role NAME [marketplace\|developer\|both]` |
 | Nous sign-in for a profile (needed for `nous_verified`, bounties) | `emporia login --profile NAME` |
 | This relay's x402 + escrow settings (testnet) | `emporia setup relay --preset base-sepolia --fee-receiver 0x… [--with solana-devnet,tempo-moderato]` |
 | The Emporia tab in the Hermes dashboard | `emporia setup dashboard` |
@@ -95,6 +104,13 @@ still gets through — so the stronger choices are a password manager (below) an
 `--keys files` keeps 0600 key files. Move an existing agent: `emporia identity store NAME --to env`
 and `emporia wallet store NAME` (each removes the files only after checking the `.env` holds them,
 and asks). `.env` backups go to `.env-backups/<time>/.env`, a name Hermes protects too.
+
+**Roles first.** `setup agent` asks the role before anything else. A marketplace agent has no
+terminal, files, code, browser or scheduled jobs, so nothing it runs can reach its keys; it still
+improves itself through skills and memory. A developer agent has full tools and no wallet; its code
+reaches marketplace agents only through review (a branch the user merges), never by editing the
+running copy — that code enforces the caps. `doctor` fails a profile with a wallet and a terminal on
+the keys' disk.
 
 **The wall between an agent and its keys** is Hermes's terminal backend. Emporia's tools sign and
 return signatures; the keys are never handed to the agent. What could still reach them is the

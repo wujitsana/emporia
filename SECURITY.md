@@ -125,6 +125,10 @@ only pay that payee or go back to the payer. Details: [docs/payments.md](docs/pa
   is imported.
 - Kicks and removals are permanent per resource; a removed agent cannot pay its way back in.
 
+The setup choices that put these into practice — roles, key storage, wallets, approvals,
+sandboxed terminals — are explained step by step in
+[docs/agent-security-setup.md](docs/agent-security-setup.md).
+
 ## Known limits
 
 - **Metadata is visible to the relay**: who messages whom, when, and how large; public games and

@@ -6,6 +6,7 @@
     emporia setup agent NAME           a slim agent profile (model + its key + Emporia)
     emporia setup relay                this machine's relay: x402/escrow preset, operator key
     emporia setup dashboard            the Emporia tab in the Hermes dashboard
+    emporia role NAME [marketplace|developer|both]  what its tools may reach (marketplace for money)
     emporia identity show|store|link NAME  where its identity and encryption keys are kept
     emporia wallet show|create|import|register|limits NAME
                                        an agent's wallets: addresses, networks, balances,
@@ -369,16 +370,25 @@ def doctor_agent(rep: Report, profile: Path, entry: dict, relay_up: bool) -> Non
                f"{', '.join(label(n) for n in pay_nets)}, "
                f"≤ ${int(dotenv.get('EMPORIA_X402_MAX_PAYMENT_CENTS', 1000)) / 100:.2f} each, "
                f"≤ ${int(dotenv.get('EMPORIA_X402_MAX_DAILY_CENTS', 5000)) / 100:.2f}/day")
-    # P167: the wall between an agent's own tools and its keys is a sandboxed
-    # terminal backend; on `local` they share a disk (the plugin's guard narrows it).
-    backend = str(((inst.load_yaml(profile / "config.yaml").get("terminal") or {}).get("backend")) or "local")
-    if backend == "local":
-        rep.warn("its terminal and file tools run on the same disk as its keys (terminal backend: local) "
-                 "— the Emporia plugin blocks the obvious reads, but a disguised one gets through",
-                 "set terminal.backend to docker, modal, daytona or ssh in its config.yaml, so its tools "
-                 "run in a sandbox that cannot reach the keys")
+    # P167/P168: what its own tools can reach. A wallet plus a shell on the
+    # keys' disk is the one combination that puts money in reach.
+    backend = _backend(profile)
+    role = profile_role(profile, has["evm"] or has["svm"])
+    if role == "marketplace":
+        rep.ok("role marketplace — no terminal, files, code, browser or jobs: its tools cannot reach its keys")
+    elif role == "both" and backend == "local":
+        rep.fail("has a wallet AND a terminal on the same disk as its keys (backend: local) — a "
+                 "prompt-injected agent could read its keys or raise its own limits",
+                 f"emporia role {name} marketplace   (or a sandboxed terminal backend: docker, modal, daytona, ssh)")
+    elif role == "both":
+        rep.warn(f"has a wallet and full tools, sandboxed ({backend}) — keep changes to its running code "
+                 f"behind review")
+    elif backend == "local":
+        rep.warn("developer role on the local backend — its terminal shares a disk with its identity key",
+                 "a sandboxed terminal backend, or `emporia identity store "
+                 f"{name} --to env` so Hermes hides the key from its tools")
     else:
-        rep.ok(f"its terminal and file tools run in a sandbox ({backend}), away from its keys")
+        rep.ok(f"developer role, sandboxed ({backend}), no wallet")
     plugin = profile / "plugins" / "platforms" / "emporia"
     repo_digest = inst._tree_digest(REPO / "hermes_plugin" / "emporia")
     if not plugin.exists():
@@ -503,11 +513,21 @@ def cmd_setup_agent(args: argparse.Namespace) -> int:
           f"key, and Emporia (MCP, skill, platform plugin, own keys).")
     sync_model = args.sync_model or (existing and me is not None and me != profile and ask(
         f"Use the same model and API key as {me.name if me else 'this profile'}?", True))
+    print("\nFirst, its role. This decides which of its own tools could ever reach its keys.")
+    role = args.role or choose("What will this agent do?", ROLES, 0)
+    if role == "developer" and (args.wallet or args.solana):
+        print("  ! A developer agent holds no wallet (its tools could reach the keys). Wallet flags ignored.")
+        args.wallet = args.solana = False
+    if role == "both" and (_backend(profile) if (profile / "config.yaml").exists() else "local") == "local" \
+            and _TTY and not ask(
+            "  A wallet plus full tools on the `local` backend puts its keys in its tools' reach. Continue?",
+            False):
+        return 1
     storage = args.keys or choose("Where should its keys be kept?", [
         ("env", "In its profile .env (recommended) — Hermes hides .env files from the agent's own tools"),
         ("files", "In key files in its keys folder"),
     ])
-    mode = _wallet_mode(args)
+    mode = "none" if role == "developer" else _wallet_mode(args)
     families = {"none": [], "evm": ["evm"], "solana": ["svm"]}.get(mode, ["evm", "svm"])
     if args.pay_networks:
         from emporia.networks import resolve_list
@@ -569,8 +589,35 @@ def cmd_setup_agent(args: argparse.Namespace) -> int:
                           f"print({f!r} + ' wallet', 'registered' if w.get('success') else "
                           f"w.get('error') or w.get('detail'))\n" for f in families)))
             print("  " + (r.stdout.strip().replace("\n", "\n  ") or r.stderr.strip()[-300:]))
+    # P168: the role decides its tools; then say plainly what was set up.
+    apply_role(profile, role)
+    _setup_summary(profile, name, role)
     inst.print_restart_instructions(list(inst._TOUCHED_PROFILES))
     return 0
+
+
+def _setup_summary(profile: Path, name: str, role: str) -> None:
+    from emporia.networks import label, resolve_list
+    _, agent_id, _ = _agent(name)
+    dotenv = installer().harvest_env(profile)
+    wallets = [w for w, solana in (("EVM", False), ("Solana", True)) if _wallet_address(profile, agent_id, solana)]
+    backend = _backend(profile)
+    nets = resolve_list(dotenv.get("EMPORIA_X402_PAY_NETWORKS", ""))
+    approve = dotenv.get("EMPORIA_PAYMENT_APPROVAL_CENTS", "")
+    print(f"\nSummary for {name}")
+    print(f"  Role        {role} — " + dict(ROLES)[role].split(" — ", 1)[1].split(". ")[0])
+    print(f"  Tools off   {', '.join(_disabled_toolsets(profile)) or 'none (full Hermes tools)'}")
+    print(f"  Terminal    {backend}" + ("  (same disk as its keys)" if backend == "local" and role != "marketplace" else ""))
+    print(f"  Keys        {'in its .env (hidden from its tools by Hermes)' if dotenv.get('EMPORIA_KEY_STORAGE') == 'env' else 'key files'}")
+    print(f"  Wallets     {', '.join(wallets) or 'none — it cannot pay or be paid (add one any time)'}")
+    if wallets:
+        print(f"  Pays on     {', '.join(label(n) for n in nets) or 'no network yet'}")
+        print(f"  Limits      ${int(dotenv.get('EMPORIA_X402_MAX_PAYMENT_CENTS', 1000)) / 100:.2f} a payment, "
+              f"${int(dotenv.get('EMPORIA_X402_MAX_DAILY_CENTS', 5000)) / 100:.2f} a day; "
+              + (f"asks you above ${int(approve) / 100:.2f}" if approve else "never asks you"))
+    for w in _role_warnings(role, bool(wallets), backend):
+        print(f"  ! {w}")
+    print(f"  Check it any time: emporia doctor --profile {name}")
 
 
 _BASE_SEPOLIA = {
@@ -1183,6 +1230,120 @@ def cmd_wallet(args: argparse.Namespace) -> int:
     return 0
 
 
+# ─── roles ───────────────────────────────────────────────────────────────────
+# P168: what an agent may do decides what its tools may reach. A wallet and a
+# shell on the same disk is the one combination that puts money in reach of a
+# prompt-injected agent — so the role is chosen first, and everything after it
+# (wallets, tools, warnings) follows from it.
+
+# Hermes toolsets a marketplace agent goes without. Each could reach the keys:
+# terminal/file/code directly, the browser through file:// paths, scheduled jobs
+# by starting a new agent with full tools. Delegated helpers inherit the cut.
+MARKETPLACE_OFF = ["terminal", "file", "code_execution", "computer_use", "browser", "cronjob"]
+
+ROLES = [
+    ("marketplace",
+     "Marketplace agent (recommended for money) — plays, trades, chats, may hold a wallet. "
+     "No terminal, files, code, browser or scheduled jobs, so nothing it runs can reach its keys. "
+     "It still improves itself through its skills and memory."),
+    ("developer",
+     "Developer agent — writes and tests code with full tools, and holds NO wallet, so there is no "
+     "money for its tools to reach. Its code reaches a marketplace agent only through review "
+     "(a branch you merge), never by editing the running copy."),
+    ("both",
+     "Both — a wallet AND full tools. Not recommended: on the `local` terminal backend its tools can "
+     "read its wallet keys and rewrite its own limits. Only with a sandboxed backend "
+     "(docker, modal, daytona, ssh)."),
+]
+
+
+def _disabled_toolsets(profile: Path) -> list[str]:
+    cfg = installer().load_yaml(profile / "config.yaml")
+    raw = (cfg.get("agent") or {}).get("disabled_toolsets") or []
+    return [raw] if isinstance(raw, str) else list(raw)
+
+
+def _backend(profile: Path) -> str:
+    cfg = installer().load_yaml(profile / "config.yaml")
+    return str((cfg.get("terminal") or {}).get("backend") or "local")
+
+
+def profile_role(profile: Path, has_wallet: bool) -> str:
+    """The role a profile's settings amount to, whatever it was set up as."""
+    if set(MARKETPLACE_OFF) <= set(_disabled_toolsets(profile)):
+        return "marketplace"
+    return "both" if has_wallet else "developer"
+
+
+def apply_role(profile: Path, role: str) -> list[str]:
+    """Set the profile's Hermes toolsets for `role`; returns the toolsets now off.
+    Toolsets the operator switched off for other reasons stay off."""
+    inst = installer()
+    cfg_path = profile / "config.yaml"
+    cfg = inst.load_yaml(cfg_path)
+    current = _disabled_toolsets(profile)
+    if role == "marketplace":
+        new = current + [t for t in MARKETPLACE_OFF if t not in current]
+    else:
+        new = [t for t in current if t not in MARKETPLACE_OFF]
+    if new != current:
+        cfg.setdefault("agent", {})["disabled_toolsets"] = new
+        inst.save_yaml(cfg_path, cfg)
+    return new
+
+
+def _has_wallet(profile: Path, agent_id: str) -> bool:
+    return any(_wallet_address(profile, agent_id, solana) for solana in (False, True))
+
+
+def _role_warnings(role: str, has_wallet: bool, backend: str) -> list[str]:
+    out = []
+    if role == "both" and backend == "local":
+        out.append("It has a wallet AND a terminal on the same disk as its keys (terminal backend: local). "
+                   "A prompt-injected agent could read its keys or raise its own limits. Choose "
+                   "`marketplace`, or move its terminal to a sandbox (docker, modal, daytona, ssh).")
+    elif role == "both":
+        out.append(f"It has a wallet and full tools, sandboxed ({backend}). Keep code changes to the running "
+                   f"copy behind review: code that can edit its own signer can lift its own limits.")
+    if role == "developer" and has_wallet:
+        out.append("A developer agent should hold no wallet, but this one has one. Move its funds and "
+                   "stop using the wallet, or make it a marketplace agent.")
+    if role == "developer" and backend == "local":
+        out.append("Its terminal shares a disk with its identity key (backend: local). Prefer a sandboxed "
+                   "backend, or keep its keys in its .env, where Hermes hides them from its tools.")
+    return out
+
+
+def cmd_role(args: argparse.Namespace) -> int:
+    if not args.name:
+        args.name = _pick_agent() if _TTY else ""
+    profile, agent_id, env = _agent(args.name)
+    if not env:
+        print(f"role: {args.name or '(none)'} is not an Emporia agent profile")
+        return 1
+    has_wallet = _has_wallet(profile, agent_id)
+    current = profile_role(profile, has_wallet)
+    backend = _backend(profile)
+    print(f"{args.name}: role {current}, terminal backend {backend}, "
+          f"{'has a wallet' if has_wallet else 'no wallet'}")
+    role = args.role or (choose("Which role?", ROLES, [k for k, _ in ROLES].index(
+        "marketplace" if has_wallet else current)) if _TTY else "")
+    if not role:
+        for w in _role_warnings(current, has_wallet, backend):
+            print(f"  ! {w}")
+        return 0
+    warnings = _role_warnings(role, has_wallet, backend)
+    for w in warnings:
+        print(f"  ! {w}")
+    if role == "both" and backend == "local" and not args.yes and not ask("Set it anyway?", False):
+        print("  Nothing changed.")
+        return 1
+    off = apply_role(profile, role)
+    print(f"  role {role}: Hermes toolsets off — {', '.join(off) if off else 'none'}")
+    installer().print_restart_instructions([profile])
+    return 0
+
+
 # ─── identity keys ───────────────────────────────────────────────────────────
 # P164: an agent's identity (Ed25519) and encryption (X25519) keys may live in a
 # password manager instead of files. Linking checks the source gives the SAME
@@ -1363,6 +1524,7 @@ def cmd_menu(args: argparse.Namespace) -> int:
             ("doctor", "Check everything (read-only)"),
             ("agent", "Set up or repair an agent"),
             ("wallet", "An agent's wallets"),
+            ("role", "An agent's role: marketplace, developer or both (what its tools may reach)"),
             ("identity", "Where an agent's identity keys are kept (files, 1Password, …)"),
             ("relay-setup", "Set up this machine's relay (payments, operator key)"),
             ("relay", "Start, stop or inspect the relay"),
@@ -1373,7 +1535,7 @@ def cmd_menu(args: argparse.Namespace) -> int:
         if what == "quit":
             return 0
         argv = {"doctor": ["doctor"], "agent": ["setup", "agent"], "wallet": ["wallet"],
-                "identity": ["identity"],
+                "identity": ["identity"], "role": ["role"],
                 "relay-setup": ["setup", "relay"], "login": ["login"],
                 "dashboard": ["setup", "dashboard"]}.get(what)
         if what == "relay":
@@ -1423,6 +1585,9 @@ def build_parser() -> argparse.ArgumentParser:
     ag.add_argument("--solana", action="store_true", help="give it a Solana wallet (USDC on Solana)")
     ag.add_argument("--approve-above-cents", type=int, default=500,
                     help="ask the operator before any payment above this (default $5)")
+    ag.add_argument("--role", choices=["marketplace", "developer", "both"], default="",
+                    help="marketplace (wallet, no terminal/files — recommended for money), developer "
+                         "(tools, no wallet) or both (not recommended on the local backend)")
     ag.add_argument("--keys", choices=["env", "files"], default="",
                     help="where its keys are kept: its profile .env (recommended) or key files")
     ag.add_argument("--separate-keys", action="store_true",
@@ -1447,6 +1612,11 @@ def build_parser() -> argparse.ArgumentParser:
                     help="also take payments on: solana-devnet, tempo-moderato (comma-separated)")
     rl.add_argument("--yes", action="store_true", help="write without asking")
     rl.set_defaults(func=cmd_setup_relay)
+    rp = sub.add_parser("role", help="what an agent may do: marketplace, developer or both")
+    rp.add_argument("name", nargs="?", default="")
+    rp.add_argument("role", nargs="?", default="", choices=["", "marketplace", "developer", "both"])
+    rp.add_argument("--yes", action="store_true", help="set `both` on the local backend without asking")
+    rp.set_defaults(func=cmd_role)
     idp = sub.add_parser("identity", help="where an agent's identity and encryption keys are kept")
     idp.add_argument("action", nargs="?", default="", choices=["", "show", "store", "link"])
     idp.add_argument("name", nargs="?", default="")
