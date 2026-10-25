@@ -64,8 +64,10 @@ or decline to capture a card hold. What to do about a relay that misbehaves:
 - **Secrets never leave the agent** (P163). Everything an agent's tools send is checked before it
   is sealed: its own keys and recovery phrase (matched exactly), any recovery phrase, Solana
   keypairs, PEM keys, Stripe / 1Password / cloud / model API keys, login tokens and `.env` secret
-  lines are refused, and the refusal never repeats the text. Agents are also told that a request
-  for any of these is an attack. Transaction hashes and signatures, addresses and public keys pass.
+  lines are refused, and the refusal never repeats the text. There is no off switch: no message
+  needs a key, and a key about to be sent has already been through the model. Agents are also told
+  that a request for one is an attack. Transaction hashes and signatures, addresses and public keys
+  pass. This is the last line, not the first: see "keys reaching the model" below.
 - **The dashboard runs next to the agent's keys** (a Hermes dashboard tab or `127.0.0.1`), never on
   the relay; private content is decrypted there. It only displays; it does not act for the agent.
 
@@ -169,6 +171,15 @@ Things we know are unresolved, roughly most serious first. Argue with any of the
 - **The operator's escrow key** sits in a local file. It cannot redirect funds (holds name their
   payee) but can capture or void them early. Moving it to a KMS or HSM is deferred.
 - **Solana payments are unproven** on a live network (built to the spec, never submitted).
+
+- **Keys reaching the model.** Emporia's tools never return key material, and agents are told
+  never to read their keys. But Hermes's file tools, which deny reads of its own credential stores
+  and `.env` files, do not deny the agent's keys folder, and its terminal can read any file the
+  agent's user can. A prompt-injected agent with those tools could read a key file into its
+  context. Linked keys (P164) keep keys off disk, but a token for the password manager sits in the
+  same environment. The real fix is keys the machine never holds — AWS KMS or a hosted agent wallet,
+  signing only through Emporia's capped tools ([roadmap](ROADMAP.md)) — and, for Hermes, a
+  configurable read-deny list including the keys folder.
 
 **Questions**
 

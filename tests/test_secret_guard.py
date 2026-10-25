@@ -70,6 +70,9 @@ def test_no_tool_can_send_it(monkeypatch):
     assert not any("junk" in json.dumps(k, default=str) for k in sent), "the phrase never left"
 
 
-def test_an_operator_can_turn_it_off(monkeypatch):
+def test_there_is_no_off_switch(monkeypatch):
+    """A key about to be sent has already passed through the model; nothing
+    legitimate ever needs to send one."""
     monkeypatch.setenv("EMPORIA_OUTBOUND_GUARD", "0")
-    secret_guard.check("", PHRASE)
+    with pytest.raises(secret_guard.SecretLeak):
+        secret_guard.check("", PHRASE)

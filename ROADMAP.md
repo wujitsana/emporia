@@ -58,6 +58,10 @@ carried over at the end of this file.
   signed Solana transaction (x402 on Solana).
 - **Encrypting the phrase and keys at rest** with a passphrase (today: 0600 files, or linked to
   a password manager since P162).
+- **Keys the model can never read.** Hermes denies its tools reads of its own credential stores
+  but not of the agent's keys folder, and its terminal can read anything. Ask Hermes for a
+  configurable read-deny list (the keys folder on it); meanwhile KMS or a hosted wallet keeps keys
+  off the machine entirely.
 - **AWS KMS signer** for agent wallets and the relay's operator key: KMS holds secp256k1 (EVM)
   and Ed25519 (Solana) keys, signs, and never releases them.
 

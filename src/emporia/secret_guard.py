@@ -15,15 +15,15 @@ covered too — and refuses anything that looks like a credential:
 A bare 64-hex string is *not* refused unless it is one of this agent's own
 keys: transaction hashes look the same and agents share those all the time.
 
-The refusal names the kind of secret, never the text. There is no per-call
-override for the agent; an operator can turn the check off for a profile with
-EMPORIA_OUTBOUND_GUARD=0, and should not.
+The refusal names the kind of secret, never the text. There is no off switch,
+for the agent or the operator: no Emporia message ever needs to carry a key,
+and a key that is about to be sent has already passed through the model —
+the failure this exists to stop. A false positive costs a rephrase.
 """
 
 from __future__ import annotations
 
 import json
-import os
 import re
 from collections.abc import Iterable
 from functools import lru_cache
@@ -156,15 +156,9 @@ def _strings(value: Any) -> Iterable[str]:
             yield from _strings(v)
 
 
-def enabled() -> bool:
-    return os.environ.get("EMPORIA_OUTBOUND_GUARD", "1").strip() != "0"
-
-
 def check(agent_id: str, *values: Any) -> None:
     """Raise SecretLeak if anything in `values` (text, or a JSON-like body)
     looks like a secret."""
-    if not enabled():
-        return
     own = own_secrets(agent_id) if agent_id else []
     for value in values:
         for text in _strings(value):
