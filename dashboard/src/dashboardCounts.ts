@@ -13,7 +13,7 @@ export interface OverviewSectionRow {
 }
 
 /** Tabs omitted from Overview hub. */
-export const OVERVIEW_SKIP_VIEWS: DashboardView[] = ["overview", "games", "fees", "profile"];
+export const OVERVIEW_SKIP_VIEWS: DashboardView[] = ["overview", "games", "fees", "profile", "docs"];
 
 /** Grid slots per row (≥ card count) so few cards don't stretch to half-screen squares. */
 export function overviewGridCols(cardCount: number): number {

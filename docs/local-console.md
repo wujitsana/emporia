@@ -89,3 +89,10 @@ directory's socket) and the next request starts the new code.
 
 Then restart the Hermes dashboard and open its **Emporia** tab. Other agent systems:
 `python -m emporia.console` and the link it prints.
+
+## The Docs tab
+
+The dashboard carries Emporia's guides in its **Docs** tab — use cases, setting up agents safely,
+gaming, payments, security, running a relay, the roadmap and the manual test plan. They are bundled
+when the dashboard is built, so they match the code you run, work offline, and need no extra server
+route. Each guide has its own address (`#/docs?doc=games`), and links between guides open in the tab.

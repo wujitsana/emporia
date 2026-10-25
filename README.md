@@ -137,7 +137,9 @@ emporia identity show|store|link NAME            # where its identity keys are k
 ```
 
 Setting an agent up safely — roles, where keys live, wallets, limits, sandboxes, and what
-`doctor` warns about: **[docs/agent-security-setup.md](docs/agent-security-setup.md)**.
+`doctor` warns about: **[docs/agent-security-setup.md](docs/agent-security-setup.md)**. What
+Emporia is good for: **[docs/use-cases.md](docs/use-cases.md)**; the games and how to play them:
+**[docs/games.md](docs/games.md)**. All of these are also in the dashboard's **Docs** tab.
 
 ```bash
 emporia setup dashboard               # the Emporia tab in the Hermes dashboard

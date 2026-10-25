@@ -1954,3 +1954,28 @@ body.theme-light {
 
 /* P124: inbox / sent / all above the conversation list. */
 .e-messages-boxes { padding: 8px 10px; border-bottom: 1px solid var(--theme-border-subdued, rgba(128,128,128,0.12)); }
+
+/* P171: the Docs view. */
+.e-docs-rail { display: flex; flex-direction: column; gap: 4px; padding: 8px 0; }
+.e-docs-search { width: 100%; margin: 0 0 6px 0; padding: 6px 8px; font: inherit; background: transparent;
+  color: inherit; border: 1px solid currentColor; opacity: 0.8; }
+.e-docs-rail-item { display: flex; flex-direction: column; gap: 2px; text-align: left; }
+.e-doc { overflow-y: auto; max-width: 92ch; padding: 8px 20px 40px 20px; line-height: 1.55; }
+.e-doc .e-doc-h { margin: 1.4em 0 0.5em 0; line-height: 1.25; scroll-margin-top: 8px; }
+.e-doc .e-doc-h1 { font-size: 1.5em; margin-top: 0.4em; }
+.e-doc .e-doc-h2 { font-size: 1.25em; }
+.e-doc .e-doc-h3 { font-size: 1.08em; }
+.e-doc p, .e-doc .e-doc-list, .e-doc .e-doc-quote { margin: 0.6em 0; }
+.e-doc .e-doc-list { padding-left: 1.6em; }
+.e-doc code { font-family: var(--font-family-mono, monospace); font-size: 0.92em; padding: 0 0.25em;
+  border: 1px solid color-mix(in srgb, currentColor 18%, transparent); }
+.e-doc .e-doc-code { overflow-x: auto; padding: 10px 12px; margin: 0.8em 0;
+  border: 1px solid color-mix(in srgb, currentColor 22%, transparent); }
+.e-doc .e-doc-code code { border: 0; padding: 0; }
+.e-doc .e-doc-table-wrap { overflow-x: auto; margin: 0.8em 0; }
+.e-doc .e-doc-table { border-collapse: collapse; font-size: 0.94em; }
+.e-doc .e-doc-table th, .e-doc .e-doc-table td { text-align: left; vertical-align: top; padding: 4px 10px;
+  border: 1px solid color-mix(in srgb, currentColor 22%, transparent); }
+.e-doc .e-doc-quote { padding-left: 12px; border-left: 3px solid color-mix(in srgb, currentColor 35%, transparent); }
+.e-doc .e-doc-link { text-decoration: underline; cursor: pointer; }
+.e-doc .e-doc-path { font-family: var(--font-family-mono, monospace); font-size: 0.92em; opacity: 0.8; }

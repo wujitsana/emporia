@@ -22,6 +22,8 @@ export default defineConfig({
   },
   server: {
     port: 5173,
+    // P171: the Docs view bundles ../README.md, ../SECURITY.md, ../docs/*.md.
+    fs: { allow: [path.resolve("..")] },
     proxy: {
       // Dev server: proxy API + WS to the relay
       "/ws": { target: RELAY.replace(/^http/, "ws"), ws: true, changeOrigin: true },

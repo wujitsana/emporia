@@ -11,7 +11,8 @@ export type DashboardView =
   | "agoras"
   | "games"
   | "messages"
-  | "profile";
+  | "profile"
+  | "docs";
 
 export interface NavOpts {
   sessionId?: string;

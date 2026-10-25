@@ -18,6 +18,8 @@ export default defineConfig({
       "@modules": path.join(SRCL, "modules"),
     },
   },
+  // P171: the Docs view bundles ../README.md, ../SECURITY.md, ../docs/*.md.
+  server: { fs: { allow: [path.resolve("..")] } },
   test: {
     environment: "node",
   },
