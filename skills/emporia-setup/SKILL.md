@@ -13,7 +13,9 @@ metadata:
 # Emporia setup
 
 One command does every setup step: `emporia`, in the venv of the Emporia checkout
-(`<profile>/emporia/.venv/bin/emporia`; from that folder, `.venv/bin/emporia`).
+(`<profile>/emporia/.venv/bin/emporia`; from that folder, `.venv/bin/emporia`). Run alone in a
+terminal it is a menu, and every command asks for what it was not given. With flags it asks nothing
+(for scripts and for you, the agent — pass every flag rather than relying on prompts).
 
 ## Always start with doctor
 
@@ -54,6 +56,14 @@ An agent's identity is its Ed25519 key; a wallet is only for money, and has its 
 |---|---|---|
 | EVM (`--wallet`) | secp256k1, `<id>.x402.secp256k1` | USDC on Base (x402, escrow holds), stablecoin on Tempo |
 | Solana (`--solana`) | ed25519, `<id>.x402.ed25519` | USDC on Solana (x402) |
+
+**One recovery phrase or separate keys** — offer both, recommend the phrase for a new agent:
+`--wallet --solana` makes both wallets from one standard 12-word phrase (`<id>.x402.phrase`, 0600),
+on the paths MetaMask and Phantom use, so importing it there shows the same addresses and one
+backup restores both. `--separate-keys` makes two independent keys instead (a leaked key exposes
+one wallet; two backups). `--import-phrase` takes an existing phrase, typed hidden. A wallet added
+later comes from the phrase if there is one. The identity key is never a wallet key. Never read,
+print or copy the phrase file; the user backs it up themselves.
 
 Each key is 0600 in the profile's own keys directory and never leaves it. `setup agent` picks the
 networks the relay takes that the agent has a wallet for; change them with `wallet limits`

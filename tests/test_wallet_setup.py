@@ -121,3 +121,82 @@ def test_setup_relay_adds_solana_devnet_with_the_facilitators_fee_payer(profiles
     assert "EMPORIA_X402_ASSET_SOLANA_ETWTRABZAYQ6IMFEYKOURU166VU2XQA1=4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU" in dotenv
     assert 'EMPORIA_X402_EXTRA_SOLANA_ETWTRABZAYQ6IMFEYKOURU166VU2XQA1={"feePayer": "FeePayer111"}' in dotenv
     assert "EMPORIA_TEMPO_NETWORK=eip155:42431" in dotenv
+
+
+# -- P161: one recovery phrase, or separate keys ------------------------------
+
+HARDHAT = "test test test test test test test test test test test junk"
+
+
+def test_one_phrase_gives_the_addresses_wallet_apps_show(tmp_path):
+    """MetaMask's path gives the well-known Hardhat address for this phrase;
+    the Solana address was checked against an independent SLIP-0010 derivation
+    (Phantom's path)."""
+    with patch.object(identity, "KEY_DIR", tmp_path):
+        made = agent_wallet.generate_from_phrase("ph", HARDHAT)
+        assert made == {"evm": "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266",
+                        "svm": "oeYf6KAJkLYhBuR8CiGc6L4D4Xtfepr85fuDgA9kq96"}
+        assert agent_wallet.address("ph") == made["evm"] and agent_wallet.solana_address("ph") == made["svm"]
+        for f in ("ph.x402.phrase", "ph.x402.secp256k1", "ph.x402.ed25519"):
+            assert stat.S_IMODE((tmp_path / f).stat().st_mode) == 0o600
+        with pytest.raises(agent_wallet.AgentWalletError, match="already exists"):
+            agent_wallet.generate_from_phrase("ph")
+        with pytest.raises(agent_wallet.AgentWalletError, match="not a valid"):
+            agent_wallet.generate_from_phrase("other", "test " * 12)
+
+
+def test_a_wallet_added_later_comes_from_the_same_phrase(tmp_path):
+    with patch.object(identity, "KEY_DIR", tmp_path):
+        agent_wallet.generate_from_phrase("half", HARDHAT, families=("evm",))
+        assert not agent_wallet.solana_wallet_path("half").exists()
+        assert agent_wallet.add_from_phrase("half", "svm") == "oeYf6KAJkLYhBuR8CiGc6L4D4Xtfepr85fuDgA9kq96"
+        agent_wallet.generate("sep")
+        with pytest.raises(agent_wallet.AgentWalletError, match="no recovery phrase"):
+            agent_wallet.add_from_phrase("sep", "svm")
+
+
+def _typing(monkeypatch, *answers):
+    """Run the CLI as if a person typed `answers` at its prompts."""
+    it = iter(answers)
+    monkeypatch.setattr(cli, "_TTY", True)
+    monkeypatch.setattr("builtins.input", lambda *_: next(it))
+
+
+def test_setup_agent_asks_and_one_phrase_is_the_recommended_choice(profiles, monkeypatch, capsys):
+    root, _ = profiles
+    monkeypatch.setattr(cli, "health", lambda timeout=3.0: None)
+    # existing profile? no · wallets: 3 (one phrase) · networks: Enter · caps: 5, 20
+    _typing(monkeypatch, "3", "", "5", "20")
+    with patch.dict(os.environ):
+        assert cli.main(["setup", "agent", "zeta"]) == 0
+    keys = root / "zeta" / "home" / ".hermes" / "keys"
+    assert {p.name for p in keys.glob("zeta.x402.*")} == {"zeta.x402.phrase", "zeta.x402.secp256k1",
+                                                         "zeta.x402.ed25519"}
+    dotenv = (root / "zeta" / ".env").read_text()
+    assert "EMPORIA_X402_MAX_PAYMENT_CENTS=500" in dotenv and "EMPORIA_X402_MAX_DAILY_CENTS=2000" in dotenv
+    out = capsys.readouterr().out
+    assert "one recovery phrase" in out and "Emporia never prints it" in out
+    phrase = (keys / "zeta.x402.phrase").read_text().strip()
+    assert phrase not in out, "the phrase is never printed"
+
+
+def test_separate_keys_stay_an_option(profiles):
+    root, _ = profiles
+    with patch.dict(os.environ):
+        assert cli.main(["setup", "agent", "eta", "--wallet", "--solana", "--separate-keys"]) == 0
+    keys = root / "eta" / "home" / ".hermes" / "keys"
+    assert {p.name for p in keys.glob("eta.x402.*")} == {"eta.x402.secp256k1", "eta.x402.ed25519"}
+
+
+def test_the_wallet_menu_picks_the_agent_and_the_action(profiles, monkeypatch, capsys):
+    with patch.dict(os.environ):
+        cli.main(["setup", "agent", "theta"])
+    _typing(monkeypatch, "1", "1")          # agent 1 (theta) · show
+    assert cli.main(["wallet"]) == 0
+    assert "Wallets for theta" in capsys.readouterr().out
+
+
+def test_without_a_terminal_emporia_alone_prints_help(monkeypatch, capsys):
+    monkeypatch.setattr(cli, "_TTY", False)
+    assert cli.main([]) == 2
+    assert "doctor" in capsys.readouterr().out

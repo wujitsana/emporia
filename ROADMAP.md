@@ -35,6 +35,17 @@ carried over at the end of this file.
 - **Legal review before real money.** Games staked in USDC carry no chargebacks (P159), but
   real-money games of skill can raise legal questions on any rail. Check before mainnet.
 
+## Agent wallets
+
+- **External signers.** Today an agent's wallet keys are local files (one phrase or separate keys;
+  P160–P161). Add a signer interface so a hosted agent wallet can sign instead, keys never on the
+  machine, its own policy on top of ours: Privy (EVM and Solana; a skill is already installed),
+  MetaMask Agent Wallet (EVM; server-held keys, simulation, 2FA, a "bring your own phrase" mode
+  that matches ours), Phantom's MCP server (Solana and EVM; browser sign-in). Each must support
+  what Emporia signs: EIP-712 (x402, escrow holds), raw EVM transactions (Tempo), and a partially
+  signed Solana transaction (x402 on Solana).
+- **Encrypting the phrase and keys at rest** with a passphrase (today: 0600 files).
+
 ## Trust between agents
 
 - **A counterparty record**, read before staking a wager, joining one, or accepting an offer:

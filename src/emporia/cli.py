@@ -82,6 +82,56 @@ def ask(question: str, default: bool) -> bool:
     return default if not answer else answer.startswith("y")
 
 
+def prompt(question: str, default: str = "") -> str:
+    """A typed answer, or `default` on Enter (and always when not interactive)."""
+    if not _TTY:
+        return default
+    answer = input(f"{question}{f' [{default}]' if default else ''}: ").strip()
+    return answer or default
+
+
+def choose(question: str, options: list[tuple[str, str]], default: int = 0) -> str:
+    """One of `options` ((key, label) pairs), by number."""
+    if not _TTY:
+        return options[default][0]
+    print(question)
+    for i, (_, text) in enumerate(options, 1):
+        print(f"  {i}) {text}")
+    while True:
+        answer = input(f"Choose 1-{len(options)} [{default + 1}]: ").strip()
+        if not answer:
+            return options[default][0]
+        if answer.isdigit() and 1 <= int(answer) <= len(options):
+            return options[int(answer) - 1][0]
+        print("  Type a number from the list.")
+
+
+def choose_many(question: str, options: list[tuple[str, str]], ticked: set[str]) -> list[str]:
+    """Any of `options`, by numbers; Enter keeps the ticked ones."""
+    if not _TTY:
+        return [k for k, _ in options if k in ticked]
+    print(question)
+    for i, (key, text) in enumerate(options, 1):
+        print(f"  {i}) [{'x' if key in ticked else ' '}] {text}")
+    while True:
+        answer = input("Numbers separated by commas (Enter keeps the ticked ones): ").strip()
+        if not answer:
+            return [k for k, _ in options if k in ticked]
+        parts = [x for x in answer.replace(" ", "").split(",") if x]
+        if all(x.isdigit() and 1 <= int(x) <= len(options) for x in parts):
+            return [options[int(x) - 1][0] for x in parts]
+        print("  Type numbers from the list, like 1,3.")
+
+
+def prompt_cents(question: str, default: int) -> int:
+    while True:
+        raw = prompt(f"{question} in dollars", f"{default / 100:.2f}").lstrip("$")
+        try:
+            return round(float(raw) * 100)
+        except ValueError:
+            print("  A dollar amount, like 10 or 2.50.")
+
+
 class Report:
     """✓ / ! / ✗ lines with a fix under each problem; exit status 1 on any ✗."""
 
@@ -423,23 +473,29 @@ def _as_agent(profile: Path, code: str) -> subprocess.CompletedProcess:
 def cmd_setup_agent(args: argparse.Namespace) -> int:
     inst = installer()
     me = this_profile()
-    name = args.name
+    name = args.name or prompt("Agent name (its Hermes profile; lowercase, digits, - or _)")
+    if not name:
+        print("setup agent: a name is required")
+        return 1
     profile = profiles_root() / name
     existing = (profile / "config.yaml").exists()
     print(f"{'Updating' if existing else 'Creating'} agent profile {name} — bare: the model, its one API "
           f"key, and Emporia (MCP, skill, platform plugin, own keys).")
     sync_model = args.sync_model or (existing and me is not None and me != profile and ask(
         f"Use the same model and API key as {me.name if me else 'this profile'}?", True))
-    wallet = args.wallet or ask(f"Give {name} an EVM wallet, so it can pay and be paid in USDC on "
-                                f"Base and in stablecoin on Tempo?", False)
-    solana = args.solana or (wallet and ask(f"Also a Solana wallet, for USDC on Solana?", False))
-    families = (["evm"] if wallet else []) + (["svm"] if solana else [])
+    mode = _wallet_mode(args)
+    families = {"none": [], "evm": ["evm"], "solana": ["svm"]}.get(mode, ["evm", "svm"])
     if args.pay_networks:
         from emporia.networks import resolve_list
         networks = ",".join(resolve_list(args.pay_networks))
+    elif families and _TTY:
+        networks = ",".join(_choose_networks(families, []))
     else:   # P160: what this relay takes, on the wallets it has
         networks = ",".join(_default_networks(families))
-    wallet = wallet or solana
+    wallet = bool(families)
+    if wallet and _TTY and not (args.wallet or args.solana):
+        args.max_payment_cents = prompt_cents("Largest single payment", args.max_payment_cents)
+        args.max_daily_cents = prompt_cents("Most it may spend in 24 hours", args.max_daily_cents)
     inst.create_profile(
         name=name, relay_url=relay_url(), current_profile_dir=me, inherit_env=args.inherit_env,
         sync_model=bool(sync_model), x402_pay_networks=networks,
@@ -449,8 +505,7 @@ def cmd_setup_agent(args: argparse.Namespace) -> int:
     if wallet:
         from emporia.networks import NETWORKS, label
         _, agent_id, _ = _agent(name)
-        for kind in families:
-            address = _create_wallet(profile, agent_id, kind == "svm")
+        for kind, address in _make_wallets(profile, agent_id, mode).items():
             print(f"  {'Solana' if kind == 'svm' else 'x402'} wallet: {address}")
         nets = [n for n in networks.split(",") if n]
         print(f"  Pays on {', '.join(label(n) for n in nets) or 'no network'}; at most "
@@ -458,6 +513,8 @@ def cmd_setup_agent(args: argparse.Namespace) -> int:
         for n in nets:
             if n in NETWORKS and NETWORKS[n].faucet:
                 print(f"  Fund it on {label(n)}: {NETWORKS[n].faucet}")
+    if not args.register and _TTY and health():
+        args.register = ask(f"Register {name} on the relay now?", True)
     if args.register:
         if not health():
             print("  Not registered: the relay is not answering (emporia relay start, then re-run).")
@@ -562,6 +619,11 @@ def cmd_setup_relay(args: argparse.Namespace) -> int:
         print("setup relay: the only preset so far is base-sepolia (testnet)")
         return 1
     updates = dict(_BASE_SEPOLIA)
+    if not args.with_networks and not args.yes and _TTY:
+        args.with_networks = ",".join(choose_many(
+            "Base Sepolia (USDC and escrow) is always set up. Also take payments on:",
+            [("solana-devnet", "Solana devnet — USDC, fees paid by the facilitator"),
+             ("tempo-moderato", "Tempo Moderato — stablecoin straight to the payee")], set()))
     if args.with_networks:
         try:
             updates.update(_extra_networks([n for n in args.with_networks.split(",") if n.strip()],
@@ -648,6 +710,84 @@ def _create_wallet(profile: Path, agent_id: str, solana: bool) -> str | None:
     return found[0] if found else None
 
 
+WALLET_MODES = [
+    ("none", "No wallet — card payments only"),
+    ("evm", "EVM wallet — USDC on Base, stablecoin on Tempo"),
+    ("phrase", "EVM + Solana from one recovery phrase — one backup; imports into MetaMask and Phantom"),
+    ("separate", "EVM + Solana with separate keys — a lost or leaked key affects one wallet only"),
+    ("import", "Import a recovery phrase you already have (typed, never shown)"),
+]
+
+
+def _wallet_mode(args: argparse.Namespace, default: str = "none") -> str:
+    """Which wallets to make: from the flags, else asked."""
+    if getattr(args, "import_phrase", False):
+        return "import"
+    if args.wallet and args.solana:
+        return "separate" if args.separate_keys else "phrase"
+    if args.solana:
+        return "solana"
+    if args.wallet:
+        return "evm"
+    keys = [k for k, _ in WALLET_MODES]
+    return choose("Which wallets should it have?", WALLET_MODES, keys.index(default))
+
+
+def _make_wallets(profile: Path, agent_id: str, mode: str) -> dict[str, str]:
+    """Create what `mode` asks for; an existing key is kept, never replaced.
+    Returns {family: address}."""
+    import getpass
+    have = {f: _wallet_address(profile, agent_id, f == "svm") for f in ("evm", "svm")}
+    want = {"none": [], "evm": ["evm"], "solana": ["svm"], "phrase": ["evm", "svm"],
+            "separate": ["evm", "svm"], "import": ["evm", "svm"]}[mode]
+    missing = [f for f in want if not have[f]]
+    if mode in ("phrase", "import") and len(missing) == 2:
+        phrase = ""
+        if mode == "import":
+            phrase = getpass.getpass("Recovery phrase (hidden; 12 or 24 words): ") if _TTY else ""
+            if not phrase.strip():
+                print("  No phrase typed; nothing was created.")
+                return {f: a for f, a in have.items() if a}
+        env = {"PATH": os.defpath, "HOME": str(Path.home()), **_mcp_env(profile)}
+        r = subprocess.run([sys.executable, "-m", "emporia.agent_wallet", "generate-phrase",
+                            "--agent-id", agent_id, *(["--import-stdin"] if phrase else [])],
+                           env=env, input=phrase + "\n" if phrase else None,
+                           capture_output=True, text=True, timeout=60)
+        if r.returncode != 0:
+            print(f"  could not create the wallets: {r.stderr.strip()[-200:]}")
+        else:
+            print(f"  Recovery phrase saved (0600) in {profile.name}'s keys folder — the only backup of "
+                  f"both wallets. Copy it somewhere safe; Emporia never prints it.")
+    else:
+        for fam in missing:
+            if mode in ("phrase", "solana", "evm") and _has_phrase(profile, agent_id):
+                r = _wallet_cmd(profile, agent_id, "derive", *(["--solana"] if fam == "svm" else []))
+                if r.returncode == 0:
+                    continue
+            _create_wallet(profile, agent_id, fam == "svm")
+    return {f: a for f in ("evm", "svm") if (a := _wallet_address(profile, agent_id, f == "svm"))}
+
+
+def _has_phrase(profile: Path, agent_id: str) -> bool:
+    from emporia.identity import _keyfile_stem
+    key_dir = Path(_mcp_env(profile).get("EMPORIA_KEYS_DIR") or profile / "home" / ".hermes" / "keys")
+    return (key_dir / f"{_keyfile_stem(agent_id)}.x402.phrase").exists()
+
+
+def _choose_networks(families: list[str], current: list[str]) -> list[str]:
+    """Where it may pay: ticked are the current ones, else what the relay takes."""
+    from emporia.networks import NETWORKS, family, label
+    h = health() or {}
+    offered = list(dict.fromkeys([*(h.get("x402_networks") or []),
+                                  *([h["tempo_network"]] if h.get("tempo_network") else [])]))
+    candidates = [n for n in dict.fromkeys([*offered, *current,
+                                            *(k for k, v in NETWORKS.items() if v.testnet)])
+                  if family(n) in families]
+    ticked = set(current) or set(_default_networks(families))
+    opts = [(n, f"{label(n)}{'  — this relay takes it' if n in offered else ''}") for n in candidates]
+    return choose_many("Where may it pay? (it never pays anywhere else)", opts, ticked) if opts else []
+
+
 def _register_wallets(profile: Path, agent_id: str, families: list[str]) -> None:
     if not health():
         print("  Not registered: the relay is not answering (emporia relay start, then "
@@ -675,9 +815,28 @@ def _default_networks(families: list[str]) -> list[str]:
     return nets or (["eip155:84532"] if "evm" in families else [])
 
 
+def _pick_agent() -> str:
+    names = [p.name for p, _ in _agent_profiles(profiles_root())]
+    if not names:
+        return ""
+    return choose("Which agent?", [(n, n) for n in names])
+
+
 def cmd_wallet(args: argparse.Namespace) -> int:
     from emporia.networks import NETWORKS, family, label, resolve_list, stablecoin_balance
 
+    if not args.name:
+        args.name = _pick_agent() if _TTY else ""
+    if not args.name:
+        print("wallet: name the agent (emporia wallet show NAME)")
+        return 1
+    if not args.action:
+        args.action = choose(f"{args.name}'s wallets:", [
+            ("show", "Show addresses, networks, balances and limits"),
+            ("create", "Create a wallet"),
+            ("limits", "Change where it may pay and how much"),
+            ("register", "Register its wallets on the relay (where it is paid)"),
+        ]) if _TTY else "show"
     profile, agent_id, env = _agent(args.name)
     if not env:
         print(f"wallet: {args.name} is not an Emporia agent profile under {profiles_root()} "
@@ -686,17 +845,34 @@ def cmd_wallet(args: argparse.Namespace) -> int:
     dotenv = installer().harvest_env(profile)
 
     if args.action == "create":
-        kinds = (["evm"] if args.evm or not args.solana else []) + (["svm"] if args.solana else [])
-        for kind in kinds:
-            existed = _wallet_address(profile, agent_id, kind == "svm")
-            address = _create_wallet(profile, agent_id, kind == "svm")
+        before = {f: _wallet_address(profile, agent_id, f == "svm") for f in ("evm", "svm")}
+        args.wallet = args.wallet or args.evm
+        default = "solana" if before["evm"] and not before["svm"] else "evm"
+        if not (args.wallet or args.solana or args.import_phrase) and _TTY:
+            if before["evm"] and before["svm"]:
+                print(f"{args.name} already has both wallets; keys are never replaced.")
+                return 0
+            modes = WALLET_MODES[1:] + ([("solana", "Solana wallet only — USDC on Solana")]
+                                        if not before["svm"] else [])
+            mode = choose("Which wallets?", modes, [k for k, _ in modes].index(default))
+            if mode in ("phrase", "import") and (before["evm"] or before["svm"]):
+                print("  The existing wallet has no recovery phrase, so the new one gets its own key.")
+        elif not (args.wallet or args.solana or args.import_phrase):
+            mode = "evm"
+        else:
+            mode = _wallet_mode(args)
+        made = _make_wallets(profile, agent_id, mode)
+        for kind, address in made.items():
             name = "Solana" if kind == "svm" else "EVM"
-            print(f"{name} wallet {'(already there)' if existed else 'created'}: {address}")
-            for n in NETWORKS.values():
-                if n.family == kind and n.testnet and n.faucet:
-                    print(f"  fund on {label(n.caip2)}: {n.faucet}")
+            print(f"{name} wallet {'(already there)' if before[kind] else 'created'}: {address}")
+            if not before[kind]:
+                for n in NETWORKS.values():
+                    if n.family == kind and n.testnet and n.faucet:
+                        print(f"  fund on {label(n.caip2)}: {n.faucet}")
+        if not args.register and _TTY and health():
+            args.register = ask("Register them on the relay as where it is paid?", True)
         if args.register:
-            _register_wallets(profile, agent_id, kinds)
+            _register_wallets(profile, agent_id, list(made))
         print(f"Next: `emporia wallet limits {args.name} --networks ...` to choose where it may pay.")
         return 0
 
@@ -708,6 +884,15 @@ def cmd_wallet(args: argparse.Namespace) -> int:
         _register_wallets(profile, agent_id, kinds)
         return 0
 
+    if args.action == "limits" and _TTY and not (args.networks or args.max_payment_cents is not None
+                                                  or args.max_daily_cents is not None):
+        fams = [f for f in ("evm", "svm") if _wallet_address(profile, agent_id, f == "svm")]
+        current = resolve_list(dotenv.get("EMPORIA_X402_PAY_NETWORKS", ""))
+        args.networks = ",".join(_choose_networks(fams, current)) or ""
+        args.max_payment_cents = prompt_cents(
+            "Largest single payment", int(dotenv.get("EMPORIA_X402_MAX_PAYMENT_CENTS", 1000)))
+        args.max_daily_cents = prompt_cents(
+            "Most it may spend in 24 hours", int(dotenv.get("EMPORIA_X402_MAX_DAILY_CENTS", 2500)))
     if args.action == "limits":
         updates: dict[str, str] = {}
         if args.networks:
@@ -762,9 +947,52 @@ def cmd_wallet(args: argparse.Namespace) -> int:
 
 # ─── entry ───────────────────────────────────────────────────────────────────
 
+def cmd_menu(args: argparse.Namespace) -> int:
+    """`emporia` with nothing after it: what to do, by number (P161)."""
+    if not _TTY:
+        build_parser().print_help()
+        return 2
+    h = health()
+    print(f"Emporia — relay {relay_url()} {'answering' if h else 'not answering'}")
+    while True:
+        what = choose("\nWhat would you like to do?", [
+            ("doctor", "Check everything (read-only)"),
+            ("agent", "Set up or repair an agent"),
+            ("wallet", "An agent's wallets"),
+            ("relay-setup", "Set up this machine's relay (payments, operator key)"),
+            ("relay", "Start, stop or inspect the relay"),
+            ("login", "Nous sign-in for a profile"),
+            ("dashboard", "The Emporia tab in the Hermes dashboard"),
+            ("quit", "Quit"),
+        ])
+        if what == "quit":
+            return 0
+        argv = {"doctor": ["doctor"], "agent": ["setup", "agent"], "wallet": ["wallet"],
+                "relay-setup": ["setup", "relay"], "login": ["login"],
+                "dashboard": ["setup", "dashboard"]}.get(what)
+        if what == "relay":
+            argv = ["relay", choose("Relay:", [(a, a) for a in ("status", "start", "stop", "logs")])]
+        if what == "login":
+            argv += ["--profile", _pick_agent()]
+        sub = build_parser().parse_args(argv)
+        sub.func(sub)
+
+
+def cmd_setup_menu(args: argparse.Namespace) -> int:
+    """`emporia setup` with nothing after it: which part."""
+    if not _TTY:
+        print("setup: name what to set up — agent NAME, relay, or dashboard")
+        return 2
+    what = choose("Set up:", [("agent", "An agent"), ("relay", "This machine's relay"),
+                              ("dashboard", "The Emporia tab in the Hermes dashboard")])
+    sub = build_parser().parse_args(["setup", what])
+    return sub.func(sub)
+
+
 def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(prog="emporia", description=__doc__.splitlines()[0])
-    sub = p.add_subparsers(dest="command", required=True)
+    p.set_defaults(func=cmd_menu)
+    sub = p.add_subparsers(dest="command")
 
     d = sub.add_parser("doctor", help="check the relay, every agent profile and the dashboard tab")
     d.add_argument("--profile", default="", help="only this agent profile")
@@ -781,11 +1009,16 @@ def build_parser() -> argparse.ArgumentParser:
     lg.set_defaults(func=cmd_login)
 
     st = sub.add_parser("setup", help="set up an agent, this relay, or the dashboard tab")
-    ss = st.add_subparsers(dest="what", required=True)
+    st.set_defaults(func=cmd_setup_menu)
+    ss = st.add_subparsers(dest="what")
     ag = ss.add_parser("agent", help="create or update a slim agent profile")
-    ag.add_argument("name")
+    ag.add_argument("name", nargs="?", default="")
     ag.add_argument("--wallet", action="store_true", help="give it an EVM wallet (USDC on Base, Tempo)")
     ag.add_argument("--solana", action="store_true", help="give it a Solana wallet (USDC on Solana)")
+    ag.add_argument("--separate-keys", action="store_true",
+                    help="with --wallet --solana: two keys, not one recovery phrase for both")
+    ag.add_argument("--import-phrase", action="store_true",
+                    help="both wallets from a recovery phrase you type (hidden)")
     ag.add_argument("--pay-networks", default="",
                     help="where it may pay, e.g. base-sepolia,solana-devnet (default: what the relay takes)")
     ag.add_argument("--max-payment-cents", type=int, default=1000)
@@ -805,10 +1038,15 @@ def build_parser() -> argparse.ArgumentParser:
     rl.add_argument("--yes", action="store_true", help="write without asking")
     rl.set_defaults(func=cmd_setup_relay)
     wl = sub.add_parser("wallet", help="an agent's wallets: show, create, register, limits")
-    wl.add_argument("action", choices=["show", "create", "register", "limits"])
-    wl.add_argument("name", help="the agent's Hermes profile")
+    wl.add_argument("action", nargs="?", default="", choices=["", "show", "create", "register", "limits"])
+    wl.add_argument("name", nargs="?", default="", help="the agent's Hermes profile")
     wl.add_argument("--evm", action="store_true", help="create: the EVM wallet (Base, Tempo) — the default")
     wl.add_argument("--solana", action="store_true", help="create: the Solana wallet")
+    wl.add_argument("--wallet", action="store_true", help=argparse.SUPPRESS)
+    wl.add_argument("--separate-keys", action="store_true",
+                    help="create both: two keys, not one recovery phrase")
+    wl.add_argument("--import-phrase", action="store_true",
+                    help="create both from a recovery phrase you type (hidden)")
     wl.add_argument("--register", action="store_true", help="create: also register it on the relay")
     wl.add_argument("--networks", default="",
                     help="limits: where it may pay, e.g. base-sepolia,solana-devnet,tempo-moderato")
