@@ -119,7 +119,9 @@ def own_secrets(agent_id: str) -> list[str]:
     files = [identity._key_path(agent_id), agent_wallet.wallet_path(agent_id),
              agent_wallet.solana_wallet_path(agent_id)]
     raws = [p.read_bytes() for p in files if p.exists()]
-    raws += list(agent_wallet._SOURCE_CACHE.values())
+    raws += list(agent_wallet._SOURCE_CACHE.values()) + list(identity._LINKED.values())
+    if identity._enc_key_path(agent_id).exists():
+        raws.append(identity._enc_key_path(agent_id).read_bytes())
     for raw in raws:
         if len(raw) == 32:
             out.append(raw.hex())

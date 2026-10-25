@@ -22,6 +22,9 @@ _RESERVED_PREFIX = "_"          # _relay_identity.priv, _relay_jwt_secret.bin
 class LocalAgent:
     agent_id: str
     key_dir: Path
+    # P164: keys linked to a password manager or env var instead of files.
+    identity_source: str = ""
+    encryption_source: str = ""
 
     @property
     def identity_key(self) -> Path:
@@ -41,24 +44,45 @@ def hermes_key_dirs(profiles_root: Path) -> list[Path]:
     return sorted(p for p in profiles_root.glob("*/home/.hermes/keys") if p.is_dir())
 
 
+def _profile_env(key_dir: Path) -> dict[str, str]:
+    """The profile .env beside a Hermes keys directory (<profile>/home/.hermes/keys)."""
+    env_file = key_dir.parent.parent.parent / ".env"
+    out: dict[str, str] = {}
+    if len(key_dir.parts) >= 4 and env_file.is_file():
+        for line in env_file.read_text(errors="replace").splitlines():
+            if "=" in line and not line.lstrip().startswith("#"):
+                k, v = line.split("=", 1)
+                out[k.strip()] = v.strip().strip('"').strip("'")
+    return out
+
+
 def discover(key_dirs: list[Path]) -> dict[str, LocalAgent]:
     """`{agent_id: LocalAgent}` for every identity key found. An agent whose
     name is the profile directory holding the keys wins over a copy elsewhere."""
+    from emporia.identity import ENCRYPTION_KEY_SOURCE_VAR, IDENTITY_KEY_SOURCE_VAR
     found: dict[str, LocalAgent] = {}
     for d in key_dirs:
         profile = d.parent.parent.parent.name if len(d.parts) >= 4 else ""
+        env = _profile_env(d)
+        if profile and env.get(IDENTITY_KEY_SOURCE_VAR):
+            agent_id = env.get("EMPORIA_AGENT_ID") or profile
+            found[agent_id] = LocalAgent(agent_id, d, env[IDENTITY_KEY_SOURCE_VAR],
+                                         env.get(ENCRYPTION_KEY_SOURCE_VAR, ""))
         for f in sorted(d.glob("*.priv")):
             if f.name.endswith(".x25519.priv") or f.name.startswith(_RESERVED_PREFIX):
                 continue
             agent_id = f.name.removesuffix(".priv")
             own = agent_id == profile
-            if agent_id not in found or own:
-                found[agent_id] = LocalAgent(agent_id, d)
+            if (agent_id not in found or own) and not (found.get(agent_id) and found[agent_id].identity_source):
+                found[agent_id] = LocalAgent(agent_id, d, "", env.get(ENCRYPTION_KEY_SOURCE_VAR, "") if own else "")
     return found
 
 
 def load_identity_key(agent: LocalAgent):
     from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
+    if agent.identity_source:
+        from emporia.key_source import key32
+        return Ed25519PrivateKey.from_private_bytes(key32(agent.identity_source, _profile_env(agent.key_dir)))
     return Ed25519PrivateKey.from_private_bytes(agent.identity_key.read_bytes())
 
 
@@ -69,6 +93,13 @@ def load_encryption_keys(agent: LocalAgent, others: list[Path]) -> list:
     paths = [agent.encryption_key] + [d / agent.encryption_key.name for d in others
                                       if d != agent.key_dir]
     keys = []
+    if agent.encryption_source:
+        from emporia.key_source import KeySourceError, key32
+        try:
+            keys.append(X25519PrivateKey.from_private_bytes(
+                key32(agent.encryption_source, _profile_env(agent.key_dir))))
+        except (KeySourceError, ValueError):
+            pass
     for p in paths:
         if p.is_file():
             try:

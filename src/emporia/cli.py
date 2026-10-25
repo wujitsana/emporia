@@ -6,6 +6,7 @@
     emporia setup agent NAME           a slim agent profile (model + its key + Emporia)
     emporia setup relay                this machine's relay: x402/escrow preset, operator key
     emporia setup dashboard            the Emporia tab in the Hermes dashboard
+    emporia identity show|store|link NAME  where its identity and encryption keys are kept
     emporia wallet show|create|import|register|limits NAME
                                        an agent's wallets: addresses, networks, balances,
                                        spending limits; create keys only when asked
@@ -318,7 +319,10 @@ def doctor_agent(rep: Report, profile: Path, entry: dict, relay_up: bool) -> Non
         rep.ok("MCP entry names this profile's keys, .env and Hermes")
     key_dir = Path(env.get("EMPORIA_KEYS_DIR") or profile / "home" / ".hermes" / "keys")
     from emporia.identity import _keyfile_stem
-    if not (key_dir / f"{_keyfile_stem(agent_id)}.priv").exists():
+    linked_identity = inst.harvest_env(profile).get("EMPORIA_IDENTITY_KEY_SOURCE", "")
+    if linked_identity:
+        rep.ok("identity key linked (read from its source, not a file)")
+    elif not (key_dir / f"{_keyfile_stem(agent_id)}.priv").exists():
         rep.fail("no identity key", "it is created when the agent's MCP server first starts")
         return
     dotenv = inst.harvest_env(profile)
@@ -1104,6 +1108,134 @@ def cmd_wallet(args: argparse.Namespace) -> int:
     return 0
 
 
+# ─── identity keys ───────────────────────────────────────────────────────────
+# P164: an agent's identity (Ed25519) and encryption (X25519) keys may live in a
+# password manager instead of files. Linking checks the source gives the SAME
+# key — a different one would silently be a different agent.
+
+_KEYS = {"identity": ("EMPORIA_IDENTITY_KEY_SOURCE", ".priv"),
+         "encryption": ("EMPORIA_ENCRYPTION_KEY_SOURCE", ".x25519.priv")}
+
+
+def _key_file(profile: Path, agent_id: str, which: str) -> Path:
+    from emporia.identity import _keyfile_stem
+    key_dir = Path(_mcp_env(profile).get("EMPORIA_KEYS_DIR") or profile / "home" / ".hermes" / "keys")
+    return key_dir / f"{_keyfile_stem(agent_id)}{_KEYS[which][1]}"
+
+
+def _public_of(which: str, raw: bytes) -> str:
+    from cryptography.hazmat.primitives.asymmetric import ed25519, x25519
+    cls = ed25519.Ed25519PrivateKey if which == "identity" else x25519.X25519PrivateKey
+    return cls.from_private_bytes(raw).public_key().public_bytes_raw().hex()
+
+
+def _expected_public(profile: Path, agent_id: str, which: str) -> str | None:
+    """The public key this agent has now: from its key file, else what the relay has registered."""
+    f = _key_file(profile, agent_id, which)
+    if f.exists():
+        return _public_of(which, f.read_bytes())
+    import httpx
+    try:
+        d = httpx.get(f"{relay_url()}/agents/{agent_id}", timeout=5).json()
+    except Exception:  # noqa: BLE001
+        return None
+    return d.get("public_key_hex" if which == "identity" else "encryption_public_key") or None
+
+
+def _link_key(profile: Path, agent_id: str, which: str, ref: str) -> int:
+    from emporia.key_source import KeySourceError, key32
+    want = _expected_public(profile, agent_id, which)
+    if not want:
+        print(f"identity: no {which} key to match — neither a key file nor a registered key. "
+              f"Linking would make a different agent; nothing changed.")
+        return 1
+    try:
+        got = _public_of(which, key32(ref, installer().harvest_env(profile)))
+    except (KeySourceError, ValueError) as e:
+        print(f"identity: {e}")
+        return 1
+    if got != want:
+        print(f"identity: that source holds a different {which} key (public {got[:12]}…, this agent's is "
+              f"{want[:12]}…). Linking it would make a different agent; nothing changed.")
+        return 1
+    merge_env_file(profile / ".env", {_KEYS[which][0]: ref})
+    print(f"{which} key linked: read from the source when needed, public key {got[:12]}… (unchanged)")
+    return 0
+
+
+def cmd_identity(args: argparse.Namespace) -> int:
+    import shlex
+    if not args.name:
+        args.name = _pick_agent() if _TTY else ""
+    profile, agent_id, env = _agent(args.name)
+    if not env:
+        print(f"identity: {args.name or '(none)'} is not an Emporia agent profile")
+        return 1
+    if not args.action:
+        args.action = choose(f"{args.name}'s identity and encryption keys:", [
+            ("show", "Where they are kept"),
+            ("store", "Move them into 1Password (key files read by `op` itself; never on a command line)"),
+            ("link", "Read them from a password manager or env var you already put them in"),
+        ]) if _TTY else "show"
+    dotenv = installer().harvest_env(profile)
+
+    if args.action == "show":
+        print(f"Keys for {agent_id}  ({profile})")
+        for which, (var, _) in _KEYS.items():
+            ref = dotenv.get(var, "")
+            f = _key_file(profile, agent_id, which)
+            where = ("linked to " + ("an environment variable" if ref.startswith("env:") else
+                                     f"`{shlex.split(ref[4:])[0]}`" if ref.startswith("cmd:") else "a source")
+                     if ref else ("key file (0600)" if f.exists() else "none yet — made when its tools first start"))
+            print(f"  {which:10} {where}" + (f"   (a key file is also here: {f.name})" if ref and f.exists() else ""))
+        return 0
+
+    if args.action == "link":
+        which = args.key or (choose("Which key?", [("identity", "Identity (Ed25519) — signs every move"),
+                                                   ("encryption", "Encryption (X25519) — opens sealed DMs")])
+                             if _TTY else "identity")
+        ref = args.source or (_ask_source() if _TTY else "")
+        if not ref:
+            print("identity link: give --source env:NAME or cmd:COMMAND")
+            return 1
+        return _link_key(profile, agent_id, which, ref)
+
+    # store: into 1Password as documents, then linked
+    vault = args.vault or prompt("1Password vault", "Private")
+    rc = 0
+    for which in ("identity", "encryption"):
+        f = _key_file(profile, agent_id, which)
+        if not f.exists():
+            print(f"  {which}: no key file here, skipped")
+            continue
+        title = f"emporia {agent_id} {which} key"
+        r = subprocess.run(["op", "document", "create", str(f), "--title", title, "--vault", vault],
+                           capture_output=True, text=True, timeout=60) if _which("op") else None
+        if r is None or r.returncode != 0:
+            print(f"  {which}: 1Password did not take it — "
+                  f"{'the op CLI is not installed' if r is None else r.stderr.strip()[-200:]}")
+            rc = 1
+            continue
+        ref = "cmd:op document get " + shlex.quote(title) + " --vault " + shlex.quote(vault)
+        if _link_key(profile, agent_id, which, ref) != 0:
+            rc = 1
+            continue
+        if ask(f"  Delete the local {which} key file now that 1Password holds it? Keep it until you have "
+               f"checked the agent still starts", False):
+            f.unlink()
+            print(f"  removed {f.name}")
+    if rc == 0:
+        print(f"  The agent reads them with `op` when it starts: put OP_SERVICE_ACCOUNT_TOKEN (a service "
+              f"account with read access to {vault}) in {profile.name}'s .env, then restart its gateway.")
+        installer().print_restart_instructions([profile])
+    return rc
+
+
+def _which(cmd: str) -> bool:
+    import shutil
+    return shutil.which(cmd) is not None
+
+
 # ─── entry ───────────────────────────────────────────────────────────────────
 
 def cmd_menu(args: argparse.Namespace) -> int:
@@ -1118,6 +1250,7 @@ def cmd_menu(args: argparse.Namespace) -> int:
             ("doctor", "Check everything (read-only)"),
             ("agent", "Set up or repair an agent"),
             ("wallet", "An agent's wallets"),
+            ("identity", "Where an agent's identity keys are kept (files, 1Password, …)"),
             ("relay-setup", "Set up this machine's relay (payments, operator key)"),
             ("relay", "Start, stop or inspect the relay"),
             ("login", "Nous sign-in for a profile"),
@@ -1127,6 +1260,7 @@ def cmd_menu(args: argparse.Namespace) -> int:
         if what == "quit":
             return 0
         argv = {"doctor": ["doctor"], "agent": ["setup", "agent"], "wallet": ["wallet"],
+                "identity": ["identity"],
                 "relay-setup": ["setup", "relay"], "login": ["login"],
                 "dashboard": ["setup", "dashboard"]}.get(what)
         if what == "relay":
@@ -1196,6 +1330,13 @@ def build_parser() -> argparse.ArgumentParser:
                     help="also take payments on: solana-devnet, tempo-moderato (comma-separated)")
     rl.add_argument("--yes", action="store_true", help="write without asking")
     rl.set_defaults(func=cmd_setup_relay)
+    idp = sub.add_parser("identity", help="where an agent's identity and encryption keys are kept")
+    idp.add_argument("action", nargs="?", default="", choices=["", "show", "store", "link"])
+    idp.add_argument("name", nargs="?", default="")
+    idp.add_argument("--key", choices=["identity", "encryption"], default="")
+    idp.add_argument("--source", default="", help="link: env:NAME or cmd:COMMAND")
+    idp.add_argument("--vault", default="", help="store: the 1Password vault")
+    idp.set_defaults(func=cmd_identity)
     wl = sub.add_parser("wallet", help="an agent's wallets: show, create, register, limits")
     wl.add_argument("action", nargs="?", default="",
                     choices=["", "show", "create", "import", "register", "limits"])

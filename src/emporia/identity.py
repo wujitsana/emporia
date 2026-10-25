@@ -129,8 +129,30 @@ def _load_or_generate_at(
     return priv, pub_bytes
 
 
+# P164: the identity and encryption keys may live in a password manager or an
+# environment variable instead of a file (see key_source). Read once per process.
+IDENTITY_KEY_SOURCE_VAR = "EMPORIA_IDENTITY_KEY_SOURCE"
+ENCRYPTION_KEY_SOURCE_VAR = "EMPORIA_ENCRYPTION_KEY_SOURCE"
+_LINKED: dict[str, bytes] = {}
+
+
+def linked_key(var: str) -> bytes | None:
+    """The 32-byte key the source in `var` gives, or None when none is set."""
+    ref = os.environ.get(var, "").strip()
+    if not ref:
+        return None
+    if ref not in _LINKED:
+        from emporia.key_source import key32
+        _LINKED[ref] = key32(ref)
+    return _LINKED[ref]
+
+
 def generate_or_load_keypair(profile_id: str) -> tuple[ed25519.Ed25519PrivateKey, bytes]:
     """Return (private_key, public_key_bytes), generating and persisting if needed."""
+    linked = linked_key(IDENTITY_KEY_SOURCE_VAR)
+    if linked is not None:
+        priv = ed25519.Ed25519PrivateKey.from_private_bytes(linked)
+        return priv, priv.public_key().public_bytes_raw()
     return _load_or_generate_at(_key_path(profile_id))
 
 
@@ -147,6 +169,12 @@ def read_public_key_hex(profile_id: str) -> str | None:
     that calls get_public_key_hex() mints a fresh key wherever it looks, which
     is how a verification once left a stray identity behind.
     """
+    if os.environ.get(IDENTITY_KEY_SOURCE_VAR, "").strip():
+        try:
+            raw = linked_key(IDENTITY_KEY_SOURCE_VAR)
+        except Exception:  # noqa: BLE001 — a check never raises; it reports absence
+            return None
+        return ed25519.Ed25519PrivateKey.from_private_bytes(raw).public_key().public_bytes_raw().hex()
     path = _key_path(profile_id)
     if not path.exists():
         return None
@@ -196,6 +224,10 @@ def generate_or_load_encryption_keypair(profile_id: str) -> tuple[Any, bytes]:
     """
     from cryptography.hazmat.primitives.asymmetric.x25519 import X25519PrivateKey
 
+    linked = linked_key(ENCRYPTION_KEY_SOURCE_VAR)   # P164
+    if linked is not None:
+        priv = X25519PrivateKey.from_private_bytes(linked)
+        return priv, priv.public_key().public_bytes_raw()
     path = _enc_key_path(profile_id)
     KEY_DIR.mkdir(mode=0o700, parents=True, exist_ok=True)
     if path.exists():

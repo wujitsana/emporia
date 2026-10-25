@@ -258,30 +258,12 @@ _SOURCE_CACHE: dict[tuple[str, str], bytes] = {}
 
 
 def read_source(ref: str) -> str:
-    """The secret a reference points at. Errors name the source, never the value."""
-    import shlex
-    import subprocess
-
-    kind, _, rest = ref.strip().partition(":")
-    if kind == "env":
-        value = os.environ.get(rest.strip(), "")
-        if not value.strip():
-            raise AgentWalletError(f"the environment variable {rest.strip()} is not set for this agent")
-        return value
-    if kind == "cmd":
-        argv = shlex.split(rest)
-        if not argv:
-            raise AgentWalletError("cmd: needs a command, e.g. cmd:op read op://Vault/Item/key")
-        try:
-            r = subprocess.run(argv, capture_output=True, text=True, timeout=60)
-        except OSError as e:      # missing, or a PATH entry it may not run
-            raise AgentWalletError(f"{argv[0]} is not installed or not on PATH") from e
-        except subprocess.TimeoutExpired as e:
-            raise AgentWalletError(f"{argv[0]} did not answer within 60s (locked or waiting for sign-in?)") from e
-        if r.returncode != 0 or not r.stdout.strip():
-            raise AgentWalletError(f"{argv[0]} failed (exit {r.returncode}): {r.stderr.strip()[-200:]}")
-        return r.stdout
-    raise AgentWalletError("a key source is env:NAME or cmd:COMMAND")
+    """The secret a reference points at (see key_source). Errors name the source, never the value."""
+    from emporia.key_source import KeySourceError, read_text
+    try:
+        return read_text(ref)
+    except KeySourceError as e:
+        raise AgentWalletError(str(e)) from e
 
 
 def source_for(family: str) -> str:

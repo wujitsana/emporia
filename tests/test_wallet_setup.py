@@ -285,3 +285,49 @@ def test_wallet_link_stores_the_reference_not_the_key(profiles, monkeypatch, cap
     monkeypatch.setenv("KAPPA_SOL", json.dumps(list(bytes(__import__("solders.keypair", fromlist=["Keypair"]).Keypair()))))
     assert cli.main(["wallet", "import", "kappa", "--solana", "--from-env", "KAPPA_SOL"]) == 0
     assert list((root / "kappa").rglob("*.x402.ed25519"))
+
+
+# -- P164: identity and encryption keys in a password manager ------------------
+
+def test_an_identity_key_links_only_to_the_same_key(profiles, monkeypatch, capsys):
+    import sys
+    root, _ = profiles
+    with patch.dict(os.environ):
+        cli.main(["setup", "agent", "lam"])
+    keys = root / "lam" / "home" / ".hermes" / "keys"
+    with patch.object(identity, "KEY_DIR", keys):
+        identity.generate_or_load_keypair("lam")
+    key_file = keys / "lam.priv"
+    # Stand-ins for `op read …`: commands that print a key.
+    reader = keys.parent / "print_key.py"
+    reader.write_text(f"print(open({str(key_file)!r}, 'rb').read().hex())")
+    wrong = keys.parent / "print_other.py"
+    wrong.write_text(f"print({'11' * 32!r})")
+    good, other = f"cmd:{sys.executable} {reader}", f"cmd:{sys.executable} {wrong}"
+    assert cli.main(["identity", "link", "lam", "--key", "identity", "--source", other]) == 1
+    assert "different identity key" in capsys.readouterr().out
+    assert cli.main(["identity", "link", "lam", "--key", "identity", "--source", good]) == 0
+    assert "EMPORIA_IDENTITY_KEY_SOURCE=cmd:" in (root / "lam" / ".env").read_text()
+    # The agent now signs with the linked key, even with the file gone.
+    want = identity.ed25519.Ed25519PrivateKey.from_private_bytes(key_file.read_bytes())
+    monkeypatch.setattr(identity, "_LINKED", {})
+    monkeypatch.setenv("EMPORIA_IDENTITY_KEY_SOURCE", f"env:LAM_ID")
+    monkeypatch.setenv("LAM_ID", key_file.read_bytes().hex())
+    key_file.rename(keys / "moved.away")
+    priv, pub = identity.generate_or_load_keypair("lam")
+    assert pub == want.public_key().public_bytes_raw()
+    assert not key_file.exists(), "a linked key never writes a file"
+    assert cli.main(["identity", "show", "lam"]) == 0
+    assert "linked to" in capsys.readouterr().out
+
+
+def test_the_dashboard_finds_an_agent_whose_key_is_linked(tmp_path, monkeypatch):
+    from emporia.console import agents as console_agents
+    keys = tmp_path / "profiles" / "mu" / "home" / ".hermes" / "keys"
+    keys.mkdir(parents=True)
+    raw = os.urandom(32)
+    (tmp_path / "profiles" / "mu" / ".env").write_text(f"EMPORIA_IDENTITY_KEY_SOURCE=env:MU_KEY\nMU_KEY={raw.hex()}\n")
+    found = console_agents.discover([keys])
+    assert "mu" in found and found["mu"].identity_source == "env:MU_KEY"
+    key = console_agents.load_identity_key(found["mu"])
+    assert key.private_bytes_raw() == raw

@@ -37,6 +37,7 @@ secret.
 | An agent's wallets: addresses, networks, balances, limits | `emporia wallet show NAME` |
 | Create a wallet key (only on request; never replaces one) | `emporia wallet create NAME [--solana] [--register]` |
 | Register its wallets as where it is paid | `emporia wallet register NAME` |
+| Where its identity and encryption keys are kept; move them to 1Password, or link a source | `emporia identity show\|store\|link NAME` |
 | Where it may pay, and how much | `emporia wallet limits NAME --networks base-sepolia,solana-devnet --max-payment-cents 1000 --max-daily-cents 2500` |
 | Switch an existing agent to this profile's model | `emporia setup agent NAME --sync-model` |
 | Nous sign-in for a profile (needed for `nous_verified`, bounties) | `emporia login --profile NAME` |
@@ -83,6 +84,19 @@ payment, $25 a day). Solana needs no SOL: the facilitator pays the network fee.
 Test funds: USDC on Base Sepolia and Solana devnet from faucet.circle.com; pathUSD on Tempo
 Moderato from its RPC's `tempo_fundAddress`. `wallet show` prints balances (read from public
 RPCs). Mainnet networks work the same way; use them only when the user says so.
+
+## Identity keys in a password manager
+
+The identity key (signs every move) and encryption key (opens sealed DMs) are files by default.
+`emporia identity store NAME` puts both into 1Password as documents — `op` reads the files itself,
+so the keys never pass through a command line — and links them; it offers to delete the local files
+only after asking, and the user should keep them until the agent has restarted fine.
+`emporia identity link NAME --key identity --source '…'` links a key the user already stored
+elsewhere (Bitwarden: `cmd:bw get notes ITEM`; any env var: `env:NAME`). Linking is refused if the
+source holds a different key — that would silently be a different agent. The agent's own process
+must be able to read the source unattended: 1Password needs `OP_SERVICE_ACCOUNT_TOKEN`, Bitwarden
+`BW_SESSION`, in the profile's `.env`. Hermes's own vault is for browser logins and stays locked
+when no one is there to unlock it, so it is not used for agent keys.
 
 ## Rules
 
