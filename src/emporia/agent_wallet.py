@@ -182,7 +182,134 @@ def add_from_phrase(agent_id: str, family: str) -> str:
     return Account.from_key(evm_key).address if family == "evm" else x402_svm.address_of(sol_seed)
 
 
+_B58 = "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz"
+
+
+def _b58decode(text: str) -> bytes:
+    """Base58 (Bitcoin alphabet), as Solana wallets export secrets."""
+    n = 0
+    for ch in text:
+        if ch not in _B58:
+            raise AgentWalletError("a Solana secret key is base58, or a solana-keygen JSON array")
+        n = n * 58 + _B58.index(ch)
+    body = n.to_bytes((n.bit_length() + 7) // 8, "big") if n else b""
+    return b"\x00" * (len(text) - len(text.lstrip("1"))) + body
+
+
+def _parse_secret(family: str, secret: str) -> bytes:
+    """The 32 bytes a key file holds, from what wallets export: EVM — a hex
+    private key; Solana — a base58 secret (Phantom's 64-byte export, or a 32-byte
+    seed) or solana-keygen's JSON array of 64 numbers."""
+    import json as _json
+
+    text = secret.strip()
+    if family == "evm":
+        raw = text.removeprefix("0x")
+        if len(raw) != 64 or any(c not in "0123456789abcdefABCDEF" for c in raw):
+            raise AgentWalletError("an EVM private key is 64 hex characters (optionally 0x…)")
+        return bytes.fromhex(raw)
+    if text.startswith("["):
+        try:
+            data = bytes(_json.loads(text))
+        except (ValueError, TypeError) as e:
+            raise AgentWalletError("a solana-keygen key file is a JSON array of 64 numbers") from e
+    else:
+        data = _b58decode(text)
+    if len(data) == 64:
+        from solders.keypair import Keypair
+        kp = Keypair.from_bytes(data)          # checks the public half matches
+        return bytes(kp)[:32]
+    if len(data) == 32:
+        return data
+    raise AgentWalletError(f"a Solana secret key is 32 or 64 bytes, this is {len(data)}")
+
+
+def import_key(agent_id: str, family: str, secret: str) -> str:
+    """Bring in an existing wallet's key as this agent's `family` wallet.
+    Same rules as creating one: never replaces a key, 0600, never where git
+    tracks it. Returns the address."""
+    from eth_account import Account
+
+    from emporia import x402_svm
+    path = wallet_path(agent_id) if family == "evm" else solana_wallet_path(agent_id)
+    repo = _git_work_tree(path.parent.resolve())
+    if repo is not None and not _git_ignores(repo, path.resolve()):
+        raise AgentWalletError(f"{path} is inside the git working tree {repo}, and git does not "
+                               f"confirm it is ignored. A wallet key must never be committable.")
+    if path.exists():
+        raise AgentWalletError(f"{path} already exists; a wallet key is not replaced implicitly.")
+    raw = _parse_secret(family, secret)
+    identity.KEY_DIR.mkdir(mode=0o700, parents=True, exist_ok=True)
+    identity._write_secret_atomically(path, raw)
+    return Account.from_key(raw).address if family == "evm" else x402_svm.address_of(raw)
+
+
+# P162: a key can stay where the operator already keeps it — an environment
+# variable, 1Password, Bitwarden, or anything with a CLI that prints a secret —
+# and be read only when the wallet signs. Nothing is written to disk. The
+# setting is a reference, never the secret:
+#   env:NAME                         an environment variable the agent's process has
+#   cmd:op read op://Vault/Item/key  1Password CLI (OP_SERVICE_ACCOUNT_TOKEN, unattended)
+#   cmd:bw get password ITEM         Bitwarden CLI (BW_SESSION)
+# One per wallet, or one recovery phrase for both. It wins over a key file.
+KEY_SOURCE_VARS = {"evm": "EMPORIA_X402_EVM_KEY_SOURCE", "svm": "EMPORIA_X402_SOLANA_KEY_SOURCE"}
+PHRASE_SOURCE_VAR = "EMPORIA_X402_PHRASE_SOURCE"
+_SOURCE_CACHE: dict[tuple[str, str], bytes] = {}
+
+
+def read_source(ref: str) -> str:
+    """The secret a reference points at. Errors name the source, never the value."""
+    import shlex
+    import subprocess
+
+    kind, _, rest = ref.strip().partition(":")
+    if kind == "env":
+        value = os.environ.get(rest.strip(), "")
+        if not value.strip():
+            raise AgentWalletError(f"the environment variable {rest.strip()} is not set for this agent")
+        return value
+    if kind == "cmd":
+        argv = shlex.split(rest)
+        if not argv:
+            raise AgentWalletError("cmd: needs a command, e.g. cmd:op read op://Vault/Item/key")
+        try:
+            r = subprocess.run(argv, capture_output=True, text=True, timeout=60)
+        except OSError as e:      # missing, or a PATH entry it may not run
+            raise AgentWalletError(f"{argv[0]} is not installed or not on PATH") from e
+        except subprocess.TimeoutExpired as e:
+            raise AgentWalletError(f"{argv[0]} did not answer within 60s (locked or waiting for sign-in?)") from e
+        if r.returncode != 0 or not r.stdout.strip():
+            raise AgentWalletError(f"{argv[0]} failed (exit {r.returncode}): {r.stderr.strip()[-200:]}")
+        return r.stdout
+    raise AgentWalletError("a key source is env:NAME or cmd:COMMAND")
+
+
+def source_for(family: str) -> str:
+    return (os.getenv(KEY_SOURCE_VARS[family], "").strip()
+            or (f"phrase:{os.getenv(PHRASE_SOURCE_VAR, '').strip()}"
+                if os.getenv(PHRASE_SOURCE_VAR, "").strip() else ""))
+
+
+def secret_from_source(family: str, ref: str | None = None) -> bytes | None:
+    """The 32 key bytes from the configured source, or None if none is set.
+    Read once per process."""
+    ref = source_for(family) if ref is None else ref
+    if not ref:
+        return None
+    if (family, ref) not in _SOURCE_CACHE:
+        if ref.startswith("phrase:"):
+            evm, sol = derive_from_phrase(read_source(ref.removeprefix("phrase:")))
+            raw = evm if family == "evm" else sol
+        else:
+            raw = _parse_secret(family, read_source(ref))
+        _SOURCE_CACHE[(family, ref)] = raw
+    return _SOURCE_CACHE[(family, ref)]
+
+
 def _load_solana_seed(agent_id: str) -> bytes:
+    linked = secret_from_source("svm")
+    if linked is not None:
+        return linked
     path = solana_wallet_path(agent_id)
     if not path.exists():
         raise AgentWalletError(f"{agent_id} has no Solana wallet. Create one with "
@@ -201,12 +328,15 @@ def solana_address(agent_id: str) -> str:
 def _families(agent_id: str) -> tuple[str, ...]:
     """The networks families this agent holds a key for."""
     return tuple(f for f, p in (("evm", wallet_path(agent_id)), ("svm", solana_wallet_path(agent_id)))
-                 if p.exists())
+                 if p.exists() or source_for(f))
 
 
 def load_key(agent_id: str) -> str:
     """The wallet's private key as hex. Never logged or returned to a caller
     outside this module's signing helpers."""
+    linked = secret_from_source("evm")
+    if linked is not None:
+        return "0x" + linked.hex()
     path = wallet_path(agent_id)
     if not path.exists():
         raise AgentWalletError(
@@ -365,7 +495,7 @@ def main(argv: list[str] | None = None) -> int:
     import argparse
 
     parser = argparse.ArgumentParser(description="An agent's x402 wallet")
-    parser.add_argument("command", choices=["generate", "generate-phrase", "derive", "address"])
+    parser.add_argument("command", choices=["generate", "generate-phrase", "derive", "import-key", "address"])
     parser.add_argument("--agent-id", default=os.getenv("EMPORIA_AGENT_ID", ""))
     parser.add_argument("--solana", action="store_true", help="the Solana wallet (P155), not the EVM one")
     parser.add_argument("--families", default="evm,svm",
@@ -384,6 +514,10 @@ def main(argv: list[str] | None = None) -> int:
             print(f"Recovery phrase written to {phrase_path(args.agent_id)} (0600).")
             for fam, addr in made.items():
                 print(f"Address ({fam}): {addr}")
+            return 0
+        if args.command == "import-key":   # the secret arrives on stdin, never argv
+            addr = import_key(args.agent_id, "svm" if args.solana else "evm", sys.stdin.read())
+            print(f"Address: {addr}")
             return 0
         if args.command == "derive":
             addr = add_from_phrase(args.agent_id, "svm" if args.solana else "evm")

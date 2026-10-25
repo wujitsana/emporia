@@ -6,7 +6,7 @@
     emporia setup agent NAME           a slim agent profile (model + its key + Emporia)
     emporia setup relay                this machine's relay: x402/escrow preset, operator key
     emporia setup dashboard            the Emporia tab in the Hermes dashboard
-    emporia wallet show|create|register|limits NAME
+    emporia wallet show|create|import|register|limits NAME
                                        an agent's wallets: addresses, networks, balances,
                                        spending limits; create keys only when asked
 
@@ -774,6 +774,154 @@ def _has_phrase(profile: Path, agent_id: str) -> bool:
     return (key_dir / f"{_keyfile_stem(agent_id)}.x402.phrase").exists()
 
 
+def _import_wallet(args: argparse.Namespace, profile: Path, agent_id: str) -> int:
+    """Bring in a wallet the agent (or its operator) already has. Either copy it
+    into the keys folder once (a phrase, a key, a key file, an environment
+    variable), or link it (P162): the key stays in an environment variable or a
+    password manager and is read only when the wallet signs. A secret is typed
+    hidden or read from where it lives, handed over on stdin, never printed; an
+    existing key is never replaced."""
+    import getpass
+    what = "phrase" if args.import_phrase else ("svm" if args.solana else "evm")
+    if args.link:
+        return _link_wallet(profile, agent_id, what, args.link)
+    if args.from_env:
+        secret = os.environ.get(args.from_env) or installer().harvest_env(profile).get(args.from_env, "")
+        if not secret.strip():
+            print(f"wallet import: {args.from_env} is not set here or in {profile.name}'s .env")
+            return 1
+    elif args.key_file:
+        secret = Path(args.key_file).expanduser().read_text()
+    elif _TTY:
+        how = choose("Where is the wallet now?", [
+            ("type", "I'll type or paste it (hidden) — a phrase, an EVM key or a Solana key"),
+            ("file", "A key file (solana-keygen JSON, or a hex EVM key)"),
+            ("env", "An environment variable — copied into the keys folder once"),
+            ("link", "1Password, Bitwarden or an environment variable — read each time it signs, "
+                     "never stored here"),
+            ("receive", "Nothing to import — just be paid at an address I give"),
+        ])
+        if how == "receive":
+            return _register_addresses(profile, agent_id, prompt("EVM address (0x…, Enter to skip)"),
+                                       prompt("Solana address (Enter to skip)"))
+        what = choose("What is it?", [
+            ("phrase", "A recovery phrase (12 or 24 words) — both wallets"),
+            ("evm", "An EVM private key (0x…, 64 hex characters)"),
+            ("svm", "A Solana secret key (base58 as Phantom exports it, or solana-keygen JSON)"),
+        ])
+        if how == "link":
+            return _link_wallet(profile, agent_id, what, _ask_source())
+        if how == "file":
+            secret = Path(prompt("Path to the file")).expanduser().read_text()
+        elif how == "env":
+            name = prompt("Variable name")
+            secret = os.environ.get(name) or installer().harvest_env(profile).get(name, "")
+        else:
+            secret = getpass.getpass("Paste it (hidden): ")
+        if not secret.strip():
+            print("wallet import: nothing to import")
+            return 1
+    else:
+        print("wallet import: give --key-file, --from-env or --link (with --solana or --import-phrase), "
+              "or run it in a terminal")
+        return 1
+    env = {"PATH": os.defpath, "HOME": str(Path.home()), **_mcp_env(profile)}
+    cmd = (["generate-phrase", "--import-stdin"] if what == "phrase"
+           else ["import-key", *(["--solana"] if what == "svm" else [])])
+    r = subprocess.run([sys.executable, "-m", "emporia.agent_wallet", *cmd, "--agent-id", agent_id],
+                       env=env, input=secret if secret.endswith("\n") else secret + "\n",
+                       capture_output=True, text=True, timeout=60)
+    if r.returncode != 0:
+        print(f"wallet import: {r.stderr.strip().removeprefix('error: ')[-300:]}")
+        return 1
+    for line in r.stdout.splitlines():
+        if line.startswith("Address"):
+            print(f"Imported — {line}")
+    if args.key_file:
+        print(f"  The key is now also in {profile.name}'s keys folder (0600). Delete {args.key_file} "
+              f"yourself if it should not stay there.")
+    return 0
+
+
+def _ask_source() -> str:
+    """Where a linked key lives, as a source reference (never the secret)."""
+    import shlex
+    where = choose("Where does it live?", [
+        ("op", "1Password — read with `op read op://Vault/Item/field`"),
+        ("bw", "Bitwarden — read with `bw get password|notes ITEM`"),
+        ("env", "An environment variable the agent's process has"),
+        ("cmd", "Another command that prints it"),
+    ])
+    if where == "op":
+        return "cmd:op read " + shlex.quote(prompt("1Password reference (op://Vault/Item/field)"))
+    if where == "bw":
+        field = choose("Which field?", [("password", "password"), ("notes", "notes")])
+        return f"cmd:bw get {field} " + shlex.quote(prompt("Item name or id"))
+    if where == "env":
+        return "env:" + prompt("Variable name")
+    return "cmd:" + prompt("Command")
+
+
+def _link_wallet(profile: Path, agent_id: str, what: str, ref: str) -> int:
+    """Point the wallet at a key source, after reading it once to show the
+    address it gives. Only the reference is written to the profile's .env."""
+    from eth_account import Account
+
+    from emporia import agent_wallet as aw
+    from emporia import x402_svm
+    if not ref.startswith(("env:", "cmd:")):
+        print("wallet link: a source is env:NAME or cmd:COMMAND")
+        return 1
+    families = ["evm", "svm"] if what == "phrase" else [what]
+    dotenv = installer().harvest_env(profile)
+    added = {k: v for k, v in dotenv.items() if k not in os.environ}
+    os.environ.update(added)      # an env: source may live in the agent's .env
+    try:
+        addresses = {}
+        for fam in families:
+            raw = aw.secret_from_source(fam, f"phrase:{ref}" if what == "phrase" else ref)
+            addresses[fam] = Account.from_key(raw).address if fam == "evm" else x402_svm.address_of(raw)
+    except aw.AgentWalletError as e:
+        print(f"wallet link: {e}")
+        return 1
+    finally:
+        for k in added:
+            os.environ.pop(k, None)
+    var = aw.PHRASE_SOURCE_VAR if what == "phrase" else aw.KEY_SOURCE_VARS[what]
+    merge_env_file(profile / ".env", {var: ref})
+    for fam, address in addresses.items():
+        print(f"{'Solana' if fam == 'svm' else 'EVM'} wallet linked: {address}  (read when it signs; "
+              f"not stored here)")
+    if any(_wallet_address(profile, agent_id, f == "svm") for f in families) and \
+            any((profile / "home").rglob(f"*.x402.{'secp256k1' if f == 'evm' else 'ed25519'}") for f in families):
+        print("  A key file exists too; the linked source is used instead of it.")
+    if ref.startswith("cmd:"):
+        tool = ref[4:].split()[0] if ref[4:].split() else ""
+        print(f"  The agent runs `{tool}` itself each time it starts signing, so {tool} must work in its "
+              f"process: 1Password — OP_SERVICE_ACCOUNT_TOKEN in {profile.name}'s .env; Bitwarden — "
+              f"BW_SESSION. Then restart its gateway.")
+    installer().print_restart_instructions([profile])
+    return 0
+
+
+def _register_addresses(profile: Path, agent_id: str, evm: str, svm: str) -> int:
+    """Register payout addresses with no key here: the agent can be paid there,
+    and pays from its own wallets (if any) as before."""
+    if not (evm or svm):
+        print("wallet register: no address given")
+        return 1
+    if not health():
+        print("wallet register: the relay is not answering (emporia relay start)")
+        return 1
+    code = "from emporia import mcp_server as m\n" + "".join(
+        f"w = m.register_x402_wallet(address={a!r}, agent_id={agent_id!r}, network_family={f!r})\n"
+        f"print({f!r}, 'registered' if w.get('success') else (w.get('error'), w.get('detail')))\n"
+        for f, a in (("evm", evm), ("svm", svm)) if a)
+    r = _as_agent(profile, code)
+    print("  " + (r.stdout.strip().replace("\n", "\n  ") or r.stderr.strip()[-300:]))
+    return 0 if r.returncode == 0 and "registered" in r.stdout else 1
+
+
 def _choose_networks(families: list[str], current: list[str]) -> list[str]:
     """Where it may pay: ticked are the current ones, else what the relay takes."""
     from emporia.networks import NETWORKS, family, label
@@ -835,7 +983,8 @@ def cmd_wallet(args: argparse.Namespace) -> int:
             ("show", "Show addresses, networks, balances and limits"),
             ("create", "Create a wallet"),
             ("limits", "Change where it may pay and how much"),
-            ("register", "Register its wallets on the relay (where it is paid)"),
+            ("import", "Bring in a wallet it already has (phrase, private key, key file)"),
+            ("register", "Register where it is paid (its wallets, or an address you give)"),
         ]) if _TTY else "show"
     profile, agent_id, env = _agent(args.name)
     if not env:
@@ -876,6 +1025,16 @@ def cmd_wallet(args: argparse.Namespace) -> int:
         print(f"Next: `emporia wallet limits {args.name} --networks ...` to choose where it may pay.")
         return 0
 
+    if args.action == "import":
+        return _import_wallet(args, profile, agent_id)
+
+    if args.action == "register" and (args.address or args.solana_address):
+        # Paid at a wallet Emporia holds no key for (a hardware wallet, an app).
+        return _register_addresses(profile, agent_id, args.address, args.solana_address)
+    if args.action == "register" and _TTY and ask(
+            "Be paid at an address you give (a wallet whose key stays elsewhere)?", False):
+        return _register_addresses(profile, agent_id, prompt("EVM address (0x…, Enter to skip)"),
+                                   prompt("Solana address (Enter to skip)"))
     if args.action == "register":
         kinds = [k for k, solana in (("evm", False), ("svm", True)) if _wallet_address(profile, agent_id, solana)]
         if not kinds:
@@ -1038,7 +1197,8 @@ def build_parser() -> argparse.ArgumentParser:
     rl.add_argument("--yes", action="store_true", help="write without asking")
     rl.set_defaults(func=cmd_setup_relay)
     wl = sub.add_parser("wallet", help="an agent's wallets: show, create, register, limits")
-    wl.add_argument("action", nargs="?", default="", choices=["", "show", "create", "register", "limits"])
+    wl.add_argument("action", nargs="?", default="",
+                    choices=["", "show", "create", "import", "register", "limits"])
     wl.add_argument("name", nargs="?", default="", help="the agent's Hermes profile")
     wl.add_argument("--evm", action="store_true", help="create: the EVM wallet (Base, Tempo) — the default")
     wl.add_argument("--solana", action="store_true", help="create: the Solana wallet")
@@ -1053,6 +1213,14 @@ def build_parser() -> argparse.ArgumentParser:
     wl.add_argument("--max-payment-cents", type=int, default=None)
     wl.add_argument("--max-daily-cents", type=int, default=None)
     wl.add_argument("--offline", action="store_true", help="show: skip the balance lookups")
+    wl.add_argument("--key-file", default="",
+                    help="import: a file holding the key (a solana-keygen JSON with --solana, or a hex EVM key)")
+    wl.add_argument("--from-env", default="", help="import: copy the key from this environment variable once")
+    wl.add_argument("--link", default="",
+                    help="import: don't copy — read the key when signing from env:NAME or cmd:COMMAND "
+                         "(e.g. 'cmd:op read op://Vault/Item/key')")
+    wl.add_argument("--address", default="", help="register: be paid at this EVM address (no key here)")
+    wl.add_argument("--solana-address", default="", help="register: be paid at this Solana address")
     wl.set_defaults(func=cmd_wallet)
     db = ss.add_parser("dashboard", help="the Emporia tab in the Hermes dashboard")
     db.add_argument("--hermes-home", default="")

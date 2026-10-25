@@ -2708,8 +2708,14 @@ def x402_wallet_info(agent_id: str = "") -> dict[str, Any]:
         out["address"] = agent_wallet.address(aid)
     except agent_wallet.AgentWalletError as e:
         out["address"], out["wallet_error"] = None, str(e)
-    if agent_wallet.solana_wallet_path(aid).exists():  # P155
+    if "svm" in agent_wallet._families(aid):  # P155; P162: or linked
         out["solana_address"] = agent_wallet.solana_address(aid)
+    # P162: where each key lives — the kind of source only, never its reference.
+    out["key_storage"] = {f: ({"env": "environment variable", "cmd": "password manager / command",
+                              "phrase": "recovery phrase (linked)"}
+                              .get(agent_wallet.source_for(f).split(":", 1)[0], "linked")
+                              if agent_wallet.source_for(f) else "key file")
+                          for f in agent_wallet._families(aid)}
     try:
         out["pay_networks"] = agent_wallet.allowed_networks()
     except agent_wallet.AgentWalletError as e:

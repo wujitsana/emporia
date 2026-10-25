@@ -200,3 +200,88 @@ def test_without_a_terminal_emporia_alone_prints_help(monkeypatch, capsys):
     monkeypatch.setattr(cli, "_TTY", False)
     assert cli.main([]) == 2
     assert "doctor" in capsys.readouterr().out
+
+
+# -- an agent that already has a key ------------------------------------------
+
+def test_an_existing_key_comes_in_from_any_common_export(tmp_path):
+    from eth_account import Account
+    from solders.keypair import Keypair
+    evm, sol = Account.create(), Keypair()
+    with patch.object(identity, "KEY_DIR", tmp_path):
+        assert agent_wallet.import_key("a", "evm", evm.key.hex()) == evm.address
+        assert agent_wallet.import_key("b", "svm", str(sol)) == str(sol.pubkey()), "Phantom's base58 export"
+        assert agent_wallet.import_key("c", "svm", json.dumps(list(bytes(sol)))) == str(sol.pubkey()), \
+            "solana-keygen's JSON file"
+        with pytest.raises(agent_wallet.AgentWalletError, match="already exists"):
+            agent_wallet.import_key("a", "evm", Account.create().key.hex())
+        assert agent_wallet.address("a") == evm.address, "never replaced"
+        with pytest.raises(agent_wallet.AgentWalletError, match="64 hex"):
+            agent_wallet.import_key("d", "evm", "not a key")
+        bad = bytearray(bytes(sol)); bad[40] ^= 1
+        with pytest.raises(Exception):
+            agent_wallet.import_key("e", "svm", json.dumps(list(bad))), "a mismatched public half is refused"
+
+
+def test_wallet_import_reads_a_key_file_and_never_prints_it(profiles, tmp_path, capsys):
+    from solders.keypair import Keypair
+    root, _ = profiles
+    with patch.dict(os.environ):
+        cli.main(["setup", "agent", "iota"])
+    sol = Keypair()
+    keyfile = tmp_path / "id.json"
+    keyfile.write_text(json.dumps(list(bytes(sol))))
+    assert cli.main(["wallet", "import", "iota", "--solana", "--key-file", str(keyfile)]) == 0
+    out = capsys.readouterr().out
+    assert str(sol.pubkey()) in out and str(sol) not in out
+    assert (root / "iota" / "home" / ".hermes" / "keys" / "iota.x402.ed25519").exists()
+    assert cli.main(["wallet", "import", "iota", "--solana", "--key-file", str(keyfile)]) == 1, \
+        "a second import does not replace the first"
+
+
+# -- P162: a key that stays in the environment or a password manager ---------
+
+def test_a_linked_key_signs_without_ever_being_written(tmp_path, monkeypatch):
+    import sys
+    from eth_account import Account
+    acct = Account.create()
+    monkeypatch.setattr(identity, "KEY_DIR", tmp_path)
+    monkeypatch.setattr(agent_wallet, "_SOURCE_CACHE", {})
+    monkeypatch.setenv("MY_WALLET_KEY", acct.key.hex())
+    monkeypatch.setenv("EMPORIA_X402_EVM_KEY_SOURCE", "env:MY_WALLET_KEY")
+    monkeypatch.setenv("EMPORIA_X402_PAY_NETWORKS", BASE)
+    assert agent_wallet.address("linked") == acct.address
+    assert agent_wallet._families("linked") == ("evm",)
+    agent_wallet.sign_exact("linked", _challenge(BASE))
+    assert not [f for f in tmp_path.glob("*.x402.*") if not f.name.endswith(".spend.json")], \
+        "no key on disk (only the daily-spend ledger)"
+    # A password manager is any command that prints the secret (here, a stand-in for `op read`).
+    monkeypatch.setattr(agent_wallet, "_SOURCE_CACHE", {})
+    monkeypatch.delenv("EMPORIA_X402_EVM_KEY_SOURCE")
+    monkeypatch.setenv("EMPORIA_X402_PHRASE_SOURCE", f"cmd:{sys.executable} -c 'print(\"{HARDHAT}\")'")
+    assert agent_wallet.address("linked") == "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266"
+    assert agent_wallet.solana_address("linked") == "oeYf6KAJkLYhBuR8CiGc6L4D4Xtfepr85fuDgA9kq96"
+    monkeypatch.setattr(agent_wallet, "_SOURCE_CACHE", {})
+    monkeypatch.setenv("EMPORIA_X402_PHRASE_SOURCE", "cmd:definitely-not-a-password-manager read x")
+    with pytest.raises(agent_wallet.AgentWalletError, match="not installed"):
+        agent_wallet.address("linked")
+
+
+def test_wallet_link_stores_the_reference_not_the_key(profiles, monkeypatch, capsys):
+    from eth_account import Account
+    root, _ = profiles
+    with patch.dict(os.environ):
+        cli.main(["setup", "agent", "kappa"])
+    acct = Account.create()
+    monkeypatch.setenv("KAPPA_KEY", acct.key.hex())
+    assert cli.main(["wallet", "import", "kappa", "--link", "env:KAPPA_KEY"]) == 0
+    dotenv = (root / "kappa" / ".env").read_text()
+    assert "EMPORIA_X402_EVM_KEY_SOURCE=env:KAPPA_KEY" in dotenv and acct.key.hex() not in dotenv
+    out = capsys.readouterr().out
+    assert acct.address in out and acct.key.hex() not in out
+    assert not list((root / "kappa").rglob("*.x402.secp256k1")), "linked, not copied"
+    assert cli.main(["wallet", "import", "kappa", "--link", "env:NOT_SET_ANYWHERE"]) == 1
+    # Copying from an environment variable is the other choice: a key file, made once.
+    monkeypatch.setenv("KAPPA_SOL", json.dumps(list(bytes(__import__("solders.keypair", fromlist=["Keypair"]).Keypair()))))
+    assert cli.main(["wallet", "import", "kappa", "--solana", "--from-env", "KAPPA_SOL"]) == 0
+    assert list((root / "kappa").rglob("*.x402.ed25519"))

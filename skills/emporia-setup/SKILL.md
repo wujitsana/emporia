@@ -65,6 +65,15 @@ one wallet; two backups). `--import-phrase` takes an existing phrase, typed hidd
 later comes from the phrase if there is one. The identity key is never a wallet key. Never read,
 print or copy the phrase file; the user backs it up themselves.
 
+**A wallet the agent already has** — `emporia wallet import NAME` (it asks): copy it in once (a
+phrase, a key typed hidden, a key file, an environment variable: `--key-file`, `--from-env`), or
+**link** it so the key stays where it is and is read only when the wallet signs, never written here
+(`--link env:NAME`, `--link 'cmd:op read op://Vault/Item/key'` for 1Password, `--link 'cmd:bw get
+password ITEM'` for Bitwarden; with `--import-phrase` for a phrase, `--solana` for a Solana key).
+A linked password manager must work in the agent's own process: 1Password needs
+`OP_SERVICE_ACCOUNT_TOKEN`, Bitwarden `BW_SESSION`, in the profile's `.env`. Or be paid at an
+address whose key never comes here: `emporia wallet register NAME --address 0x… --solana-address …`.
+
 Each key is 0600 in the profile's own keys directory and never leaves it. `setup agent` picks the
 networks the relay takes that the agent has a wallet for; change them with `wallet limits`
 (short names: `base-sepolia`, `base`, `solana-devnet`, `solana`, `tempo-moderato`, `tempo`, or a
