@@ -176,14 +176,16 @@ Things we know are unresolved, roughly most serious first. Argue with any of the
   payee) but can capture or void them early. Moving it to a KMS or HSM is deferred.
 - **Solana payments are unproven** on a live network (built to the spec, never submitted).
 
-- **Keys reaching the model.** Emporia's tools never return key material, and agents are told
-  never to read their keys. But Hermes's file tools, which deny reads of its own credential stores
-  and `.env` files, do not deny the agent's keys folder, and its terminal can read any file the
-  agent's user can. A prompt-injected agent with those tools could read a key file into its
-  context. Linked keys (P164) keep keys off disk, but a token for the password manager sits in the
-  same environment. The real fix is keys the machine never holds — AWS KMS or a hosted agent wallet,
-  signing only through Emporia's capped tools ([roadmap](ROADMAP.md)) — and, for Hermes, a
-  configurable read-deny list including the keys folder.
+- **Keys reaching the model.** Emporia's tools never return key material; keys are used only to
+  sign. The agent's *own* tools are the risk: on Hermes's `local` terminal backend its terminal and
+  file tools share a disk with the keys. The wall is a sandboxed backend (`docker`, `modal`,
+  `daytona`, `ssh`): those tools then cannot reach the keys at all, and `emporia doctor` warns when a
+  profile is on `local`. On `local`, Emporia's Hermes plugin vetoes tool calls naming the keys
+  folder, key files or key variables, and hides key values in results (P167) — it stops the
+  obvious, not a disguised command. Keys the machine never holds (KMS, a hosted wallet) remain the
+  strongest option.
+- **Payments above a threshold need the operator** (P166), asked through the agent's own app; an
+  app that cannot ask means no payment. Below it, a compromised agent can still spend up to its caps.
 
 **Questions**
 

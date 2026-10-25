@@ -369,6 +369,16 @@ def doctor_agent(rep: Report, profile: Path, entry: dict, relay_up: bool) -> Non
                f"{', '.join(label(n) for n in pay_nets)}, "
                f"≤ ${int(dotenv.get('EMPORIA_X402_MAX_PAYMENT_CENTS', 1000)) / 100:.2f} each, "
                f"≤ ${int(dotenv.get('EMPORIA_X402_MAX_DAILY_CENTS', 5000)) / 100:.2f}/day")
+    # P167: the wall between an agent's own tools and its keys is a sandboxed
+    # terminal backend; on `local` they share a disk (the plugin's guard narrows it).
+    backend = str(((inst.load_yaml(profile / "config.yaml").get("terminal") or {}).get("backend")) or "local")
+    if backend == "local":
+        rep.warn("its terminal and file tools run on the same disk as its keys (terminal backend: local) "
+                 "— the Emporia plugin blocks the obvious reads, but a disguised one gets through",
+                 "set terminal.backend to docker, modal, daytona or ssh in its config.yaml, so its tools "
+                 "run in a sandbox that cannot reach the keys")
+    else:
+        rep.ok(f"its terminal and file tools run in a sandbox ({backend}), away from its keys")
     plugin = profile / "plugins" / "platforms" / "emporia"
     repo_digest = inst._tree_digest(REPO / "hermes_plugin" / "emporia")
     if not plugin.exists():

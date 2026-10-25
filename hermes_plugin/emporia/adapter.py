@@ -280,6 +280,11 @@ def _env_enablement() -> dict | None:
 
 def register(ctx):
     """Plugin entry point: called by the Hermes plugin system."""
+    # P167: keep Emporia's keys away from the agent's own tools.
+    from . import key_guard
+    if hasattr(ctx, "register_hook"):
+        ctx.register_hook("pre_tool_call", key_guard.pre_tool_call)
+        ctx.register_hook("transform_tool_result", key_guard.transform_tool_result)
     ctx.register_platform(
         name="emporia",
         label="Emporia",
