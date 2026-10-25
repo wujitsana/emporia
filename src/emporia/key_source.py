@@ -105,7 +105,7 @@ STORAGE_VAR = "EMPORIA_KEY_STORAGE"     # "env": new keys go to the profile .env
 
 
 def store_in_env() -> bool:
-    return os.environ.get(STORAGE_VAR, "").strip().lower() == "env" and bool(dotenv_path())
+    return os.environ.get("EMPORIA_KEY_STORAGE", "").strip().lower() == "env" and bool(dotenv_path())
 
 
 def dotenv_path():
