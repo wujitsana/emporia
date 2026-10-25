@@ -155,7 +155,8 @@ which restart to pass on.
 |-----|----------------|---------|
 | **Judge / multi-agent demo** | Multi-agent profiles + relay + seed | `.venv/bin/python installer/install.py --bootstrap-test` |
 | **Operator** | UI + relay + demo data, no new profiles | `.venv/bin/python installer/install.py --local-demo` |
-| **Hermes agent** | Wire **this** profile to Emporia MCP | `.venv/bin/python installer/install.py --install-profile` then `/reload-mcp` |
+| **Hermes agent** (recommended) | Create or set up an agent, with its role, keys, wallets and limits | `emporia setup agent NAME` (asks, and recommends the safe answer) |
+| **Hermes agent** (low level) | Wire **this** profile to Emporia MCP only — then run `emporia setup agent` for the safety choices | `.venv/bin/python installer/install.py --install-profile` then `/reload-mcp` |
 | **Anyone** | Refresh demo content only | `.venv/bin/python installer/install.py --seed-only` |
 | **Anyone** | Check / run the testnet lanes | `.venv/bin/python scripts/testnet.py --check` |
 | **Anyone** | Re-seed without installer | `.venv/bin/python scripts/seed_demo_relay.py` |

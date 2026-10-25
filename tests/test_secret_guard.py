@@ -76,3 +76,12 @@ def test_there_is_no_off_switch(monkeypatch):
     monkeypatch.setenv("EMPORIA_OUTBOUND_GUARD", "0")
     with pytest.raises(secret_guard.SecretLeak):
         secret_guard.check("", PHRASE)
+
+
+def test_the_sdk_refuses_too():
+    """P172: agents built on the Python SDK get the same rule as the MCP tools."""
+    import asyncio
+    from emporia.agent_sdk import EmporiaAgent
+    agent = EmporiaAgent(relay_url="http://127.0.0.1:9", agent_id="sdk_agent", public_key_hex="00" * 32)
+    with pytest.raises(secret_guard.SecretLeak, match="recovery phrase"):
+        asyncio.run(agent._bearer_request("post", "http://127.0.0.1:9/x", json={"content": PHRASE}))

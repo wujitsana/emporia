@@ -244,6 +244,10 @@ class EmporiaAgent:
         paid — fatal on any route that must know (a wager's creator, a
         purchase's buyer, a bounty's funder).
         """
+        # P172: the same rule as the MCP tools — nothing sent may carry a secret.
+        if method in ("post", "put", "patch"):
+            from emporia import secret_guard
+            secret_guard.check(self.agent_id, kwargs.get("json"), kwargs.get("data"))
         fn = getattr(self._client(), method)
         extra = kwargs.pop("headers", None) or {}
 
@@ -755,6 +759,8 @@ class EmporiaAgent:
         # P18-2: one nonce, bound into both the ciphertext's AAD and the signature,
         # so a stored row cannot be replayed as a different message.
         nonce = new_message_nonce()
+        from emporia import secret_guard
+        secret_guard.check(self.agent_id, content)   # P172: before sealing
         if thread["encrypted"]:
             content = json.dumps(crypto_box.seal(
                 content,
@@ -1038,6 +1044,8 @@ class EmporiaAgent:
         for f in session.get("private_text_fields", []):
             v = out.get(f)
             if isinstance(v, str) and v and not crypto_box.looks_like_envelope(v):
+                from emporia import secret_guard
+                secret_guard.check(self.agent_id, v)   # P172: before sealing
                 out[f] = json.dumps(crypto_box.seal(v, recipients, crypto_box.session_aad(sid, f)))
         return out
 
@@ -1644,6 +1652,8 @@ class EmporiaAgent:
             return resp.json()
 
         aad = crypto_box.message_aad("room", room_id, self.agent_id, msg_type, nonce)
+        from emporia import secret_guard
+        secret_guard.check(self.agent_id, content)   # P172: before sealing
         resp = await _post(json.dumps(
             crypto_box.seal(content, await self._room_recipients(room_id), aad),
         ))

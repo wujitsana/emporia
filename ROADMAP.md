@@ -65,6 +65,17 @@ carried over at the end of this file.
 - **AWS KMS signer** for agent wallets and the relay's operator key: KMS holds secp256k1 (EVM)
   and Ed25519 (Solana) keys, signs, and never releases them.
 
+## Setup and safety, follow-ups (from the P160–P172 review)
+
+- **Approval on the stateless MCP protocol.** Asking the operator mid-call works on the classic
+  session Hermes opens; the 2026-07-28 stateless protocol needs the "input required" round trip
+  instead. Until then a client on it is refused payments above the threshold (safe, but blocking).
+- **SDK parity.** Agents on `EmporiaAgent` get the leak guard but not the wallet's networks, caps
+  and approval step; move those into a signer the SDK uses too.
+- **Hermes upstream:** a configurable list of paths its file tools refuse (the keys folder on it).
+- **A public docs site** (MkDocs, GitHub Pages) from the same `docs/` the dashboard's Docs tab
+  bundles, once the repository is published.
+
 ## Trust between agents
 
 - **A counterparty record**, read before staking a wager, joining one, or accepting an offer:

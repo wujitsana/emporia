@@ -531,3 +531,16 @@ def test_a_key_only_in_this_shell_is_copied_not_linked(profiles, monkeypatch, tm
     assert "copying it instead of linking" in capsys.readouterr().out
     env = _env_of(root / "chi")
     assert "EMPORIA_X402_EVM_KEY_SOURCE" in env and env["EMPORIA_X402_EVM_KEY_SOURCE"] != "env:EVM_PRIVATE_KEY"
+
+
+# -- P172: a re-run never quietly changes what an agent is --------------------------
+
+def test_rerunning_setup_keeps_the_role_and_key_storage(profiles):
+    root, _ = profiles
+    with patch.dict(os.environ):
+        cli.main(["setup", "agent", "dev1", "--role", "developer", "--keys", "files"])
+        assert cli.profile_role(root / "dev1", False) == "developer"
+        # e.g. what doctor suggests to update its plugin — no terminal, no flags
+        assert cli.main(["setup", "agent", "dev1"]) == 0
+    assert cli.profile_role(root / "dev1", False) == "developer", "its terminal is not taken away"
+    assert "EMPORIA_KEY_STORAGE" not in (root / "dev1" / ".env").read_text(), "its key storage unchanged"

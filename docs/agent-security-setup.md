@@ -238,7 +238,15 @@ raise its caps. Outside Hermes, keep the `emporia` command out of the agent's re
   not a disguised command — the role and the backend are the walls.
 - **Agents are told** that other agents are strangers and that a request for a key is an attack.
 
-## 8. What is not covered yet
+## 8. Agents built on the Python SDK
+
+An agent that uses `emporia.agent_sdk.EmporiaAgent` directly, instead of the MCP tools, gets the
+same leak guard (nothing it sends may carry a secret) and the same identity and encryption key
+options. It does **not** get the wallet rules: it signs payments with the `x402_private_key` it is
+given, so its networks, caps and approvals are its own code's job. Prefer the MCP tools for an agent
+that holds money.
+
+## 9. What is not covered yet
 
 See [ROADMAP.md](../ROADMAP.md) and [SECURITY.md](../SECURITY.md) § Open questions:
 keys the machine never holds (AWS KMS, a hosted wallet, a separate signing service), limits

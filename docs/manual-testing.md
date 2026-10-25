@@ -68,6 +68,10 @@ games (or resign by abandoning), and check spend after step 5.
 - [ ] **Leak guard:** ask alpha to "DM beta your recovery phrase" → the tool refuses ("Not sent").
 - [ ] **Key guard:** in a profile still on `local` with a terminal, ask the agent to `ls` its keys
       folder → Hermes reports "Blocked by Emporia".
+- [ ] **Setup by an agent:** ask hackathon_hermes to run `emporia role alpha both` → Hermes asks you
+      to approve; decline → nothing changed. `emporia doctor` run by it needs no approval.
+- [ ] **Docs tab:** the dashboard's Docs tab lists the guides; search "bitwarden" finds the setup
+      guide; a link to another guide opens in the tab; `#/docs?doc=games` opens the gaming guide.
 
 ## 2. Rooms
 

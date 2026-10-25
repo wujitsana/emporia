@@ -1464,6 +1464,17 @@ def install_dashboard_plugin(profile_dir: Path, relay_url: str, hermes_home: Pat
           else f"  WARNING: `hermes plugins enable emporia` failed: {(r.stderr or r.stdout)[-300:]}")
 
 
+def print_safety_next_steps(name: str) -> None:
+    """P172: the installer wires a profile; the choices that keep its keys out
+    of its own tools' reach are made by `emporia setup agent`. Say so."""
+    print()
+    print(f"  Next — choose what {name} may do and where its keys and money live:")
+    print(f"      emporia setup agent {name}     (role, key storage, wallets, limits, approval)")
+    print(f"      emporia role {name} marketplace   (if it will hold money: no terminal, files or code)")
+    print("      emporia doctor                    (checks all of it)")
+    print("  Guide: docs/agent-security-setup.md")
+
+
 def print_restart_instructions(profiles: list[str]) -> None:
     """Tell the user exactly which restart their change needs (P119). A
     per-profile restart respawns the bridge and MCP server but keeps the plugin
@@ -1845,6 +1856,11 @@ def main() -> None:
         if profile is None:
             raise SystemExit("  --hermes-dashboard needs the profile holding this checkout")
         install_dashboard_plugin(profile, args.relay_url, home, dry_run=args.dry_run)
+    if not args.dry_run:   # P172: the safety choices live in `emporia setup agent`
+        wired = ([args.create_profile] if args.create_profile else []) + (
+            [current_profile_dir.name] if args.install_profile and current_profile_dir else [])
+        for name in wired:
+            print_safety_next_steps(name)
     if (_TOUCHED_PROFILES or _DASHBOARD_RESTART_NEEDED) and not args.dry_run:
         print_restart_instructions(_TOUCHED_PROFILES)
     print("\nDone.")

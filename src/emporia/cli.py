@@ -515,7 +515,15 @@ def cmd_setup_agent(args: argparse.Namespace) -> int:
     sync_model = args.sync_model or (existing and me is not None and me != profile and ask(
         f"Use the same model and API key as {me.name if me else 'this profile'}?", True))
     print("\nFirst, its role. This decides which of its own tools could ever reach its keys.")
-    role = args.role or choose("What will this agent do?", ROLES, 0)
+    # An existing agent keeps its role unless told otherwise: re-running setup
+    # (to update its plugin, say) must not quietly take a developer's terminal.
+    current_role = None
+    if existing:
+        _, aid0, _ = _agent(name)
+        current_role = profile_role(profile, _has_wallet(profile, aid0))
+    keys = [k for k, _ in ROLES]
+    role = args.role or choose("What will this agent do?", ROLES,
+                               keys.index(current_role) if current_role in keys else 0)
     if role == "developer" and (args.wallet or args.solana):
         print("  ! A developer agent holds no wallet (its tools could reach the keys). Wallet flags ignored.")
         args.wallet = args.solana = False
@@ -524,6 +532,9 @@ def cmd_setup_agent(args: argparse.Namespace) -> int:
             "  A wallet plus full tools on the `local` backend puts its keys in its tools' reach. Continue?",
             False):
         return 1
+    if existing and not args.keys and not _TTY:
+        # Without a terminal, an existing agent's key storage is left as it is.
+        args.keys = "env" if inst.harvest_env(profile).get("EMPORIA_KEY_STORAGE") == "env" else "files"
     storage = args.keys or choose("Where should its keys be kept?", [
         ("env", "In its profile .env (recommended) — Hermes hides .env files from the agent's own tools"),
         ("files", "In key files in its keys folder"),
