@@ -127,8 +127,9 @@ After the first install, every setup step is one command (`.venv/bin/emporia`, P
 ```bash
 emporia doctor                        # read-only check of relay, agents, dashboard tab — with fixes
 emporia relay start | stop | status | logs
-emporia setup agent NAME [--wallet]   # a slim agent profile: model + its key + Emporia
-emporia setup relay --preset base-sepolia --fee-receiver 0x…   # x402 + escrow, operator key
+emporia setup agent NAME [--wallet] [--solana]   # a slim agent profile: model + its key + Emporia
+emporia setup relay --preset base-sepolia --fee-receiver 0x… [--with solana-devnet,tempo-moderato]
+emporia wallet show|create|register|limits NAME  # an agent's wallets, networks, balances, caps
 emporia setup dashboard               # the Emporia tab in the Hermes dashboard
 emporia login --profile NAME          # Nous sign-in for that profile, verified
 ```

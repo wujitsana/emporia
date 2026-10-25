@@ -827,6 +827,30 @@ def list_rooms(
 _CHAIN_TIMEOUT_S = 150
 
 
+def _payment_options(detail: Any, resp: httpx.Response | None = None) -> list[str]:
+    """P160: what a 402 offers, in words an agent can choose from — each way to
+    pay, on which network, and the argument that uses it."""
+    from emporia.networks import label
+    d = detail if isinstance(detail, dict) else {}
+    out: list[str] = []
+    card = d.get("card") or {}
+    if card.get("offered") is False:
+        out.append(f"card: not offered here ({card.get('reason', 'no payee account')})")
+    elif resp is not None and (getattr(resp, "headers", None) or {}).get("www-authenticate"):
+        out.append("card (Stripe): pass mpp_token=<spt>, or a payment_intent_id from create_payment_intent")
+    for req in ((d.get("x402") or {}).get("accepts") or []):
+        net = req.get("network", "")
+        out.append(f"USDC on {label(net)}, paid straight to the payee: pay_with_x402=True, "
+                   f"pay_network='{net}'")
+    if d.get("escrow"):
+        net = d["escrow"].get("network", "")
+        out.append(f"USDC escrow hold on {label(net)}: pay_with_x402=True")
+    if d.get("tempo"):
+        out.append(f"stablecoin on {label(d['tempo'].get('network', ''))}, straight to the payee: "
+                   f"pay_with_tempo=True")
+    return out
+
+
 def _tempo_paid_retry(r: httpx.Response, aid: str, method: str, url: str, **kwargs: Any) -> httpx.Response:
     """P156: answer a 402 by paying its Tempo offer from this agent's wallet,
     once — the transfer goes straight to the payee on Tempo, and the relay
@@ -839,17 +863,20 @@ def _tempo_paid_retry(r: httpx.Response, aid: str, method: str, url: str, **kwar
     return _bearer_request(method, url, agent_id=aid, headers={"PAYMENT-TEMPO": header}, **kwargs)
 
 
-def _x402_paid_retry(r: httpx.Response, aid: str, method: str, url: str, **kwargs: Any) -> httpx.Response:
+def _x402_paid_retry(r: httpx.Response, aid: str, method: str, url: str, network: str = "",
+                     **kwargs: Any) -> httpx.Response:
     """P104: answer a 402 by paying with this agent's x402 wallet, once.
 
     Signs only after agent_wallet's policy (network allowlist, per-payment cap);
     a refusal raises AgentWalletError, which the tool reports. A second 402 is
-    returned, not re-signed — the relay has said no to a valid signature."""
+    returned, not re-signed — the relay has said no to a valid signature.
+    `network` (P160): the CAIP-2 network to pay on; default, the agent's first
+    allowed network the relay offers."""
     from emporia import agent_wallet
 
     if r.status_code != 402:
         return r
-    header = agent_wallet.sign_exact(aid, r.json())
+    header = agent_wallet.sign_exact(aid, r.json(), network=network)
     return _bearer_request(method, url, agent_id=aid,
                            headers={"PAYMENT-SIGNATURE": header}, **kwargs)
 
@@ -862,6 +889,7 @@ def join_room(
     mpp_token: str = "",
     pay_with_x402: bool = False,
     pay_with_tempo: bool = False,
+    pay_network: str = "",
 ) -> dict[str, Any]:
     """Join a room. Gate logic:
       open            — just join (public rooms only)
@@ -878,6 +906,13 @@ def join_room(
 
     A kicked agent's rejoin — with or without payment — is always rejected
     (403); this is permanent, there is no un-kick.
+
+    Unpaid, a paid room answers payment_required with `options`: each way to
+    pay, on which network. pay_with_x402=True pays USDC from your wallet;
+    pay_network picks the network (e.g. 'eip155:84532' Base Sepolia,
+    'solana:EtWTRABZaYq6iMfeYKouRu166VU2xqa1' Solana devnet) — default, the
+    first of your allowed networks the relay offers. pay_with_tempo=True pays
+    on Tempo.
 
     Returns current room state on success. Forwards to the relay's
     POST /rooms/{id}/join so payment is actually verified server-side —
@@ -898,14 +933,15 @@ def join_room(
         r = _bearer_request("post", url, agent_id=agent_id, payment_token=mpp_token,
                             json=body, timeout=15)
         if pay_with_x402:
-            r = _x402_paid_retry(r, agent_id, "post", url, json=body, timeout=30)
+            r = _x402_paid_retry(r, agent_id, "post", url, network=pay_network, json=body, timeout=30)
         elif pay_with_tempo:   # P156: stablecoin on Tempo, straight to the creator
             r = _tempo_paid_retry(r, agent_id, "post", url, json=body, timeout=30)
         d = r.json()
         if r.status_code == 200:
             return {"success": True, **d}
         if r.status_code == 402:
-            return {"error": "payment_required", "detail": d, "success": False, "requires_payment": True}
+            return {"error": "payment_required", "options": _payment_options(d, r), "detail": d,
+                    "success": False, "requires_payment": True}
         return {"error": f"Relay {r.status_code}", "detail": d, "success": False}
     except Exception as e:
         return {"error": str(e), "success": False}
@@ -1876,7 +1912,7 @@ def invite_to_agora_topic(topic_slug: str, agent_id: str, invited_by: str) -> di
 @mcp.tool()
 def subscribe_agora_topic(topic_slug: str, agent_id: str, mpp_token: str = "",
                           payment_intent_id: str = "", pay_with_x402: bool = False,
-                          pay_with_tempo: bool = False) -> dict[str, Any]:
+                          pay_with_tempo: bool = False, pay_network: str = "") -> dict[str, Any]:
     """Subscribe to an Agora topic.
 
     open topics: subscribes immediately.
@@ -1891,6 +1927,8 @@ def subscribe_agora_topic(topic_slug: str, agent_id: str, mpp_token: str = "",
       free. If your entitlement's window *has* closed, this call is a
       renewal: pay again the same way as a first subscribe, no new invite
       required either way.
+    Unpaid, the answer lists `options` (each way to pay, and on which network);
+    pay_with_x402 + pay_network, or pay_with_tempo, pays from your own wallet.
     """
     try:
         body: dict[str, Any] = {"agent_id": agent_id}
@@ -1901,12 +1939,13 @@ def subscribe_agora_topic(topic_slug: str, agent_id: str, mpp_token: str = "",
         r = _bearer_request("post", url, agent_id=agent_id, payment_token=mpp_token,
                             json=body, timeout=10)
         if pay_with_x402:
-            r = _x402_paid_retry(r, agent_id, "post", url, json=body, timeout=30)
+            r = _x402_paid_retry(r, agent_id, "post", url, network=pay_network, json=body, timeout=30)
         elif pay_with_tempo:   # P156: stablecoin on Tempo, straight to the creator
             r = _tempo_paid_retry(r, agent_id, "post", url, json=body, timeout=30)
         if r.status_code == 402:
             return {
-                "error": "payment_required", "detail": r.json(), "success": False,
+                "error": "payment_required", "options": _payment_options(r.json(), r),
+                "detail": r.json(), "success": False,
                 "hint": "Use link-cli or mppx to pay the entry fee, then retry with Authorization: Payment <spt>",
             }
         if r.status_code == 200:
@@ -2373,7 +2412,7 @@ def create_session(
         if r.status_code in (200, 201):
             return {"success": True, **d}
         if r.status_code == 402:
-            return {"error": "payment_required", "detail": d,
+            return {"error": "payment_required", "options": _payment_options(d, r), "detail": d,
                     "www_authenticate": r.headers.get("www-authenticate", ""), "success": False}
         return {"error": f"Relay {r.status_code}", "detail": d, "success": False}
     except Exception as e:
@@ -2520,7 +2559,7 @@ def join_session(
             # escrow), so this was the one route where that reason mattered most
             # and the one whose client discarded it.
             return {
-                "error": "payment_required", "detail": d,
+                "error": "payment_required", "options": _payment_options(d, r), "detail": d,
                 "www_authenticate": r.headers.get("www-authenticate", ""), "success": False,
             }
         return {"error": f"Relay {r.status_code}", "detail": d, "success": False}
@@ -2588,7 +2627,7 @@ def fund_session(session_id: str, mpp_token: str = "", agent_id: str = "",
         if r.status_code == 200:
             return {"success": True, **d}
         if r.status_code == 402:
-            return {"error": "payment_required", "detail": d,
+            return {"error": "payment_required", "options": _payment_options(d, r), "detail": d,
                     "www_authenticate": r.headers.get("www-authenticate", ""), "success": False}
         return {"error": f"Relay {r.status_code}", "detail": d, "success": False}
     except Exception as e:
@@ -2596,7 +2635,7 @@ def fund_session(session_id: str, mpp_token: str = "", agent_id: str = "",
 
 
 @mcp.tool()
-def settle_promise(listing_id: str, agent_id: str = "") -> dict[str, Any]:
+def settle_promise(listing_id: str, agent_id: str = "", pay_network: str = "") -> dict[str, Any]:
     """Pay a promised (x402) bounty you funded, now that it has a winner (P104).
 
     The relay names the amount and the winner's wallet; this agent's x402
@@ -2613,7 +2652,7 @@ def settle_promise(listing_id: str, agent_id: str = "") -> dict[str, Any]:
         url = f"{RELAY_URL}/bounties/{listing_id}/settle-promise"
         r = _bearer_request("post", url, agent_id=aid, timeout=15)
         try:
-            r = _x402_paid_retry(r, aid, "post", url, timeout=60)
+            r = _x402_paid_retry(r, aid, "post", url, network=pay_network, timeout=60)
         except AgentWalletError as e:
             return {"error": str(e), "success": False}
         d = r.json()
@@ -2675,6 +2714,23 @@ def x402_wallet_info(agent_id: str = "") -> dict[str, Any]:
         out["pay_networks"] = agent_wallet.allowed_networks()
     except agent_wallet.AgentWalletError as e:
         out["pay_networks"], out["networks_error"] = [], str(e)
+    # P160: each network in words — whether you may pay there, whether you have
+    # the wallet it needs, and whether this relay takes payments on it.
+    from emporia.networks import family, label
+    try:
+        offered = set((_bearer_request("get", f"{RELAY_URL}/health", agent_id=aid, timeout=5).json()
+                       or {}).get("x402_networks") or [])
+    except Exception:
+        offered = None
+    have = {"evm": bool(out.get("address")), "svm": bool(out.get("solana_address"))}
+    out["networks"] = [{
+        "network": n, "name": label(n), "allowed": True,
+        "wallet": have.get(family(n) or "", False),
+        "offered_by_relay": None if offered is None else n in offered,
+    } for n in out["pay_networks"]] + ([{
+        "network": n, "name": label(n), "allowed": False, "wallet": have.get(family(n) or "", False),
+        "offered_by_relay": True,
+    } for n in sorted(offered - set(out["pay_networks"]))] if offered else [])
     # P120: whether the relay can pay this agent, said outright. An agent read
     # the old reply (address, no relay field) as "I have no wallet".
     try:

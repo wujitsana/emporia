@@ -4988,6 +4988,10 @@ async def health():
         "x402_enabled": _x402_enabled(),
         "x402_networks": _x402_networks(),
         "x402_facilitator": _x402_facilitator_url(),
+        # P160: whether cards are taken on games (P159) and whether this relay
+        # holds card money at all (P157), so a client says what is accepted.
+        "card_game_stakes": card_game_stakes_allowed(),
+        "custodial_cards": custodial_cards_allowed(),
     }
 
 

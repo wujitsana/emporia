@@ -277,6 +277,10 @@ export interface Health {
   x402_escrow_network?: string | null;
   /** P156: where entries can be paid in Tempo stablecoin; null = not offered. */
   tempo_network?: string | null;
+  /** P160: card money on games (P159) — off unless the operator has Stripe's approval. */
+  card_game_stakes?: boolean;
+  /** P160: whether this relay holds card money itself (held prizes, 3+ player pots). */
+  custodial_cards?: boolean;
 }
 
 export interface SafetyStats {

@@ -6,6 +6,9 @@
     emporia setup agent NAME           a slim agent profile (model + its key + Emporia)
     emporia setup relay                this machine's relay: x402/escrow preset, operator key
     emporia setup dashboard            the Emporia tab in the Hermes dashboard
+    emporia wallet show|create|register|limits NAME
+                                       an agent's wallets: addresses, networks, balances,
+                                       spending limits; create keys only when asked
 
 Everything here was a manual step at some point. The commands reuse the
 installer's own functions (installer/install.py), so there is one way each
@@ -229,8 +232,9 @@ def doctor_relay(rep: Report) -> dict | None:
     else:
         rep.ok(f"Stripe {mode} mode" + ("" if h.get("stripe_profile_ready")
                                          else " (no MPP profile — SPT/MPP payments unavailable)"))
+    from emporia.networks import label
     if h.get("x402_enabled"):
-        rep.ok(f"x402 on {', '.join(h.get('x402_networks') or [])}")
+        rep.ok(f"USDC (x402) on {', '.join(label(n) for n in h.get('x402_networks') or [])}")
     else:
         rep.warn("x402 off", "emporia setup relay --preset base-sepolia")
     if os.getenv("EMPORIA_ESCROW_NETWORK"):
@@ -245,6 +249,8 @@ def doctor_relay(rep: Report) -> dict | None:
                      "emporia setup relay --preset base-sepolia")
     else:
         rep.warn("escrow off — x402 service purchases unavailable", "emporia setup relay --preset base-sepolia")
+    if h.get("tempo_network"):
+        rep.ok(f"Tempo on {label(h['tempo_network'])}")
     return h
 
 
@@ -284,14 +290,23 @@ def doctor_agent(rep: Report, profile: Path, entry: dict, relay_up: bool) -> Non
     else:
         rep.warn("no current Nous login for this profile — registers key_only, can't enter bounties",
                  f"emporia login --profile {name}")
+    from emporia.networks import family, label, resolve_list
     wallet = key_dir / f"{_keyfile_stem(agent_id)}.x402.secp256k1"
-    if not wallet.exists():
-        rep.warn("no x402 wallet — can pay by Stripe only", f"emporia setup agent {name} --wallet")
-    elif not dotenv.get("EMPORIA_X402_PAY_NETWORKS"):
-        rep.fail("x402 wallet but no EMPORIA_X402_PAY_NETWORKS — it will pay on no network",
-                 f"emporia setup agent {name} --wallet")
+    sol_wallet = key_dir / f"{_keyfile_stem(agent_id)}.x402.ed25519"
+    pay_nets = resolve_list(dotenv.get("EMPORIA_X402_PAY_NETWORKS", ""))
+    no_key = [n for n in pay_nets
+              if not (sol_wallet if family(n) == "svm" else wallet).exists()]
+    if not wallet.exists() and not sol_wallet.exists():
+        rep.warn("no wallet — can pay by card only", f"emporia wallet create {name}")
+    elif not pay_nets:
+        rep.fail("a wallet but no EMPORIA_X402_PAY_NETWORKS — it will pay on no network",
+                 f"emporia wallet limits {name} --networks base-sepolia")
+    elif no_key:
+        rep.fail(f"allowed to pay on {', '.join(label(n) for n in no_key)} with no wallet for it",
+                 f"emporia wallet create {name}" + (" --solana" if any(family(n) == "svm" for n in no_key) else ""))
     else:
-        rep.ok(f"x402 wallet, pays on {dotenv['EMPORIA_X402_PAY_NETWORKS']}, "
+        rep.ok(f"wallet{'s' if wallet.exists() and sol_wallet.exists() else ''}, pays on "
+               f"{', '.join(label(n) for n in pay_nets)}, "
                f"≤ ${int(dotenv.get('EMPORIA_X402_MAX_PAYMENT_CENTS', 1000)) / 100:.2f} each, "
                f"≤ ${int(dotenv.get('EMPORIA_X402_MAX_DAILY_CENTS', 5000)) / 100:.2f}/day")
     plugin = profile / "plugins" / "platforms" / "emporia"
@@ -327,8 +342,9 @@ def doctor_agent(rep: Report, profile: Path, entry: dict, relay_up: bool) -> Non
             else:
                 rep.ok("encryption key published — its DMs and private sessions are sealed")
             if wallet.exists() and not pay_to:
-                rep.warn("wallet not registered as where it is paid",
-                         "ask the agent: \"register your x402 wallet\"")
+                rep.warn("EVM wallet not registered as where it is paid", f"emporia wallet register {name}")
+            if sol_wallet.exists() and not (profile_json.get("x402_pay_to") or {}).get("svm"):
+                rep.warn("Solana wallet not registered as where it is paid", f"emporia wallet register {name}")
         else:
             rep.warn("not registered on this relay yet",
                      f"start its gateway or MCP (`hermes -p {name} gateway restart`)")
@@ -414,8 +430,16 @@ def cmd_setup_agent(args: argparse.Namespace) -> int:
           f"key, and Emporia (MCP, skill, platform plugin, own keys).")
     sync_model = args.sync_model or (existing and me is not None and me != profile and ask(
         f"Use the same model and API key as {me.name if me else 'this profile'}?", True))
-    wallet = args.wallet or ask(f"Give {name} an x402 wallet so it can pay in USDC?", False)
-    networks = args.pay_networks if wallet else ""
+    wallet = args.wallet or ask(f"Give {name} an EVM wallet, so it can pay and be paid in USDC on "
+                                f"Base and in stablecoin on Tempo?", False)
+    solana = args.solana or (wallet and ask(f"Also a Solana wallet, for USDC on Solana?", False))
+    families = (["evm"] if wallet else []) + (["svm"] if solana else [])
+    if args.pay_networks:
+        from emporia.networks import resolve_list
+        networks = ",".join(resolve_list(args.pay_networks))
+    else:   # P160: what this relay takes, on the wallets it has
+        networks = ",".join(_default_networks(families))
+    wallet = wallet or solana
     inst.create_profile(
         name=name, relay_url=relay_url(), current_profile_dir=me, inherit_env=args.inherit_env,
         sync_model=bool(sync_model), x402_pay_networks=networks,
@@ -423,20 +447,17 @@ def cmd_setup_agent(args: argparse.Namespace) -> int:
         x402_max_daily_cents=args.max_daily_cents if wallet else None,
     )
     if wallet:
-        env = {**os.environ, "EMPORIA_DOTENV": str(profile / ".env")}
-        env.pop("EMPORIA_NO_DOTENV", None)
-        env.pop("EMPORIA_KEYS_DIR", None)
-        r = subprocess.run([sys.executable, "-m", "emporia.agent_wallet", "address", "--agent-id", name],
-                           env=env, capture_output=True, text=True)
-        if r.returncode != 0:
-            r = subprocess.run([sys.executable, "-m", "emporia.agent_wallet", "generate",
-                                "--agent-id", name], env=env, capture_output=True, text=True)
-        found = [ln.removeprefix("Address: ").strip() for ln in r.stdout.splitlines()
-                 if ln.startswith("Address: ") or ln.startswith("0x")]
-        address = found[0] if found else ""
-        print(f"  x402 wallet: {address or r.stderr.strip()[-200:]}")
-        print(f"  Fund it with test USDC on {networks} before it pays; it signs at most "
+        from emporia.networks import NETWORKS, label
+        _, agent_id, _ = _agent(name)
+        for kind in families:
+            address = _create_wallet(profile, agent_id, kind == "svm")
+            print(f"  {'Solana' if kind == 'svm' else 'x402'} wallet: {address}")
+        nets = [n for n in networks.split(",") if n]
+        print(f"  Pays on {', '.join(label(n) for n in nets) or 'no network'}; at most "
               f"${args.max_payment_cents / 100:.2f} a payment and ${args.max_daily_cents / 100:.2f} a day.")
+        for n in nets:
+            if n in NETWORKS and NETWORKS[n].faucet:
+                print(f"  Fund it on {label(n)}: {NETWORKS[n].faucet}")
     if args.register:
         if not health():
             print("  Not registered: the relay is not answering (emporia relay start, then re-run).")
@@ -445,9 +466,9 @@ def cmd_setup_agent(args: argparse.Namespace) -> int:
                 "from emporia import mcp_server as m\n"
                 f"r = m.register_agent(agent_id={name!r})\n"
                 "print('registered', r.get('trust_level') if r.get('success') else r.get('error'))\n"
-                + (f"w = m.register_x402_wallet(agent_id={name!r})\n"
-                   "print('wallet', 'registered' if w.get('success') else w.get('error') or w.get('detail'))\n"
-                   if wallet else "")))
+                + "".join(f"w = m.register_x402_wallet(agent_id={name!r}, network_family={f!r})\n"
+                          f"print({f!r} + ' wallet', 'registered' if w.get('success') else "
+                          f"w.get('error') or w.get('detail'))\n" for f in families)))
             print("  " + (r.stdout.strip().replace("\n", "\n  ") or r.stderr.strip()[-300:]))
     inst.print_restart_instructions(list(inst._TOUCHED_PROFILES))
     return 0
@@ -466,6 +487,37 @@ _BASE_SEPOLIA = {
     "EMPORIA_ESCROW_COLLECTOR": "0x8612dfdc421f80336cd14E8EF9cb1E765dB5ab88",
     "EMPORIA_OPERATOR_SIGNER": "env",
 }
+
+
+def _extra_networks(names: list[str], facilitator: str) -> dict[str, str]:
+    """P160: settings that add a testnet beside the base preset. Solana needs
+    the facilitator's fee payer, read from its /supported list (public)."""
+    import json
+    import re
+
+    import httpx
+
+    from emporia.networks import NETWORKS, resolve
+    updates: dict[str, str] = {}
+    for name in names:
+        net = resolve(name)
+        if net == "solana:EtWTRABZaYq6iMfeYKouRu166VU2xqa1":
+            kinds = httpx.get(f"{facilitator.rstrip('/')}/supported", timeout=15).json().get("kinds") or []
+            fee_payer = next(((k.get("extra") or {}).get("feePayer") for k in kinds
+                              if k.get("network") == net and k.get("scheme") == "exact"), None)
+            if not fee_payer:
+                raise ValueError(f"the facilitator {facilitator} does not offer Solana devnet")
+            suffix = re.sub(r"[:-]", "_", net.upper())
+            updates[f"EMPORIA_X402_ASSET_{suffix}"] = NETWORKS[net].usdc
+            updates[f"EMPORIA_X402_EXTRA_{suffix}"] = json.dumps({"feePayer": fee_payer})
+            updates["EMPORIA_X402_NETWORKS"] = ",".join(
+                [*_BASE_SEPOLIA["EMPORIA_X402_NETWORKS"].split(","), net])
+        elif net == "eip155:42431":
+            updates["EMPORIA_TEMPO_NETWORK"] = net
+            updates["EMPORIA_TEMPO_TOKEN"] = NETWORKS[net].usdc
+        else:
+            raise ValueError(f"no testnet preset for {name!r} — choose solana-devnet or tempo-moderato")
+    return updates
 
 
 def merge_env_file(path: Path, updates: dict[str, str]) -> list[str]:
@@ -510,6 +562,13 @@ def cmd_setup_relay(args: argparse.Namespace) -> int:
         print("setup relay: the only preset so far is base-sepolia (testnet)")
         return 1
     updates = dict(_BASE_SEPOLIA)
+    if args.with_networks:
+        try:
+            updates.update(_extra_networks([n for n in args.with_networks.split(",") if n.strip()],
+                                           _BASE_SEPOLIA["EMPORIA_X402_FACILITATOR_URL"]))
+        except Exception as e:  # noqa: BLE001
+            print(f"setup relay: {e}")
+            return 1
     fee = args.fee_receiver or os.getenv("EMPORIA_ESCROW_FEE_RECEIVER", "")
     if not fee and _TTY:
         fee = input("Address that receives the 2.5% fee (a wallet you control, ideally a Safe): ").strip()
@@ -555,6 +614,152 @@ def cmd_setup_dashboard(args: argparse.Namespace) -> int:
     return 0
 
 
+# ─── wallet ──────────────────────────────────────────────────────────────────
+# P160: an agent's wallets in one place. Keys are created only on request, never
+# overwritten, mode 0600, and never printed; addresses and balances are public.
+
+def _agent(name: str) -> tuple[Path, str, dict[str, str]]:
+    profile = profiles_root() / name
+    env = _mcp_env(profile) if (profile / "config.yaml").exists() else {}
+    return profile, env.get("EMPORIA_AGENT_ID") or name, env
+
+
+def _wallet_cmd(profile: Path, agent_id: str, *args: str) -> subprocess.CompletedProcess:
+    """`python -m emporia.agent_wallet ...` as the agent: its own keys directory."""
+    env = {"PATH": os.defpath, "HOME": str(Path.home()), **_mcp_env(profile)}
+    return subprocess.run([sys.executable, "-m", "emporia.agent_wallet", *args, "--agent-id", agent_id],
+                          env=env, capture_output=True, text=True, timeout=60)
+
+
+def _wallet_address(profile: Path, agent_id: str, solana: bool) -> str | None:
+    r = _wallet_cmd(profile, agent_id, "address", *(["--solana"] if solana else []))
+    return r.stdout.strip().splitlines()[-1] if r.returncode == 0 and r.stdout.strip() else None
+
+
+def _create_wallet(profile: Path, agent_id: str, solana: bool) -> str | None:
+    """The address, creating the key if there is none. Never replaces a key."""
+    existing = _wallet_address(profile, agent_id, solana)
+    if existing:
+        return existing
+    r = _wallet_cmd(profile, agent_id, "generate", *(["--solana"] if solana else []))
+    found = [ln.removeprefix("Address: ").strip() for ln in r.stdout.splitlines() if ln.startswith("Address: ")]
+    if not found:
+        print(f"  could not create the {'Solana' if solana else 'EVM'} wallet: {r.stderr.strip()[-200:]}")
+    return found[0] if found else None
+
+
+def _register_wallets(profile: Path, agent_id: str, families: list[str]) -> None:
+    if not health():
+        print("  Not registered: the relay is not answering (emporia relay start, then "
+              f"`emporia wallet register {profile.name}`).")
+        return
+    code = "from emporia import mcp_server as m\n" + "".join(
+        f"w = m.register_x402_wallet(agent_id={agent_id!r}, network_family={f!r})\n"
+        f"print({f!r}, 'registered' if w.get('success') else (w.get('error') or w.get('detail')))\n"
+        for f in families)
+    r = _as_agent(profile, code)
+    for line in (r.stdout.strip() or r.stderr.strip()[-300:]).splitlines():
+        print(f"  {'EVM' if line.startswith('evm') else 'Solana' if line.startswith('svm') else ''} "
+              f"{line.split(' ', 1)[-1]}")
+
+
+def _default_networks(families: list[str]) -> list[str]:
+    """What an agent pays on by default: the relay's x402 networks it has a
+    wallet for, plus Tempo for an EVM wallet; Base Sepolia when the relay is
+    not answering."""
+    from emporia.networks import family
+    h = health() or {}
+    nets = [n for n in (h.get("x402_networks") or []) if family(n) in families]
+    if "evm" in families and h.get("tempo_network"):
+        nets.append(h["tempo_network"])
+    return nets or (["eip155:84532"] if "evm" in families else [])
+
+
+def cmd_wallet(args: argparse.Namespace) -> int:
+    from emporia.networks import NETWORKS, family, label, resolve_list, stablecoin_balance
+
+    profile, agent_id, env = _agent(args.name)
+    if not env:
+        print(f"wallet: {args.name} is not an Emporia agent profile under {profiles_root()} "
+              f"(emporia setup agent {args.name})")
+        return 1
+    dotenv = installer().harvest_env(profile)
+
+    if args.action == "create":
+        kinds = (["evm"] if args.evm or not args.solana else []) + (["svm"] if args.solana else [])
+        for kind in kinds:
+            existed = _wallet_address(profile, agent_id, kind == "svm")
+            address = _create_wallet(profile, agent_id, kind == "svm")
+            name = "Solana" if kind == "svm" else "EVM"
+            print(f"{name} wallet {'(already there)' if existed else 'created'}: {address}")
+            for n in NETWORKS.values():
+                if n.family == kind and n.testnet and n.faucet:
+                    print(f"  fund on {label(n.caip2)}: {n.faucet}")
+        if args.register:
+            _register_wallets(profile, agent_id, kinds)
+        print(f"Next: `emporia wallet limits {args.name} --networks ...` to choose where it may pay.")
+        return 0
+
+    if args.action == "register":
+        kinds = [k for k, solana in (("evm", False), ("svm", True)) if _wallet_address(profile, agent_id, solana)]
+        if not kinds:
+            print(f"wallet: {args.name} has no wallet to register (emporia wallet create {args.name})")
+            return 1
+        _register_wallets(profile, agent_id, kinds)
+        return 0
+
+    if args.action == "limits":
+        updates: dict[str, str] = {}
+        if args.networks:
+            nets = resolve_list(args.networks)
+            unknown = [n for n in nets if family(n) is None]
+            if unknown:
+                print(f"wallet: unknown network(s) {', '.join(unknown)} — use a CAIP-2 id or one of "
+                      f"base-sepolia, base, solana-devnet, solana, tempo-moderato, tempo")
+                return 1
+            for n in nets:
+                if not _wallet_address(profile, agent_id, family(n) == "svm"):
+                    print(f"  ! no {'Solana' if family(n) == 'svm' else 'EVM'} wallet yet for {label(n)} "
+                          f"— emporia wallet create {args.name}{' --solana' if family(n) == 'svm' else ''}")
+            updates["EMPORIA_X402_PAY_NETWORKS"] = ",".join(nets)
+        if args.max_payment_cents is not None:
+            updates["EMPORIA_X402_MAX_PAYMENT_CENTS"] = str(args.max_payment_cents)
+        if args.max_daily_cents is not None:
+            updates["EMPORIA_X402_MAX_DAILY_CENTS"] = str(args.max_daily_cents)
+        if not updates:
+            print("wallet limits: give --networks, --max-payment-cents and/or --max-daily-cents")
+            return 1
+        changed = merge_env_file(profile / ".env", updates)
+        for k in updates:
+            print(f"  {k}={updates[k]}{'' if k in changed else '  (unchanged)'}")
+        if changed:
+            installer().print_restart_instructions([profile])
+        return 0
+
+    # show
+    print(f"Wallets for {agent_id}  ({profile})")
+    allowed = resolve_list(dotenv.get("EMPORIA_X402_PAY_NETWORKS", ""))
+    for kind, solana, name in (("evm", False, "EVM"), ("svm", True, "Solana")):
+        address = _wallet_address(profile, agent_id, solana)
+        if not address:
+            print(f"  {name:7} none — emporia wallet create {args.name}{' --solana' if solana else ''}")
+            continue
+        print(f"  {name:7} {address}")
+        for n in [n for n in allowed if family(n) == kind]:
+            bal = stablecoin_balance(n, address) if not args.offline else None
+            print(f"          pays on {label(n)}" + (f": {bal:,.2f} USDC" if bal is not None else ""))
+    if not allowed:
+        print(f"  pays on no network — emporia wallet limits {args.name} --networks base-sepolia")
+    print(f"  limits  ${int(dotenv.get('EMPORIA_X402_MAX_PAYMENT_CENTS', 1000)) / 100:.2f} a payment, "
+          f"${int(dotenv.get('EMPORIA_X402_MAX_DAILY_CENTS', 5000)) / 100:.2f} a day")
+    h = health()
+    if h:
+        offered = [label(n) for n in h.get("x402_networks") or []]
+        print(f"  relay   takes USDC on {', '.join(offered) or 'no network'}"
+              + (f"; Tempo on {label(h['tempo_network'])}" if h.get("tempo_network") else ""))
+    return 0
+
+
 # ─── entry ───────────────────────────────────────────────────────────────────
 
 def build_parser() -> argparse.ArgumentParser:
@@ -579,8 +784,10 @@ def build_parser() -> argparse.ArgumentParser:
     ss = st.add_subparsers(dest="what", required=True)
     ag = ss.add_parser("agent", help="create or update a slim agent profile")
     ag.add_argument("name")
-    ag.add_argument("--wallet", action="store_true", help="give it an x402 wallet")
-    ag.add_argument("--pay-networks", default="eip155:84532")
+    ag.add_argument("--wallet", action="store_true", help="give it an EVM wallet (USDC on Base, Tempo)")
+    ag.add_argument("--solana", action="store_true", help="give it a Solana wallet (USDC on Solana)")
+    ag.add_argument("--pay-networks", default="",
+                    help="where it may pay, e.g. base-sepolia,solana-devnet (default: what the relay takes)")
     ag.add_argument("--max-payment-cents", type=int, default=1000)
     ag.add_argument("--max-daily-cents", type=int, default=2500)
     ag.add_argument("--sync-model", action="store_true",
@@ -593,8 +800,22 @@ def build_parser() -> argparse.ArgumentParser:
     rl = ss.add_parser("relay", help="x402 + escrow preset and the operator key")
     rl.add_argument("--preset", default="base-sepolia")
     rl.add_argument("--fee-receiver", default="")
+    rl.add_argument("--with", dest="with_networks", default="",
+                    help="also take payments on: solana-devnet, tempo-moderato (comma-separated)")
     rl.add_argument("--yes", action="store_true", help="write without asking")
     rl.set_defaults(func=cmd_setup_relay)
+    wl = sub.add_parser("wallet", help="an agent's wallets: show, create, register, limits")
+    wl.add_argument("action", choices=["show", "create", "register", "limits"])
+    wl.add_argument("name", help="the agent's Hermes profile")
+    wl.add_argument("--evm", action="store_true", help="create: the EVM wallet (Base, Tempo) — the default")
+    wl.add_argument("--solana", action="store_true", help="create: the Solana wallet")
+    wl.add_argument("--register", action="store_true", help="create: also register it on the relay")
+    wl.add_argument("--networks", default="",
+                    help="limits: where it may pay, e.g. base-sepolia,solana-devnet,tempo-moderato")
+    wl.add_argument("--max-payment-cents", type=int, default=None)
+    wl.add_argument("--max-daily-cents", type=int, default=None)
+    wl.add_argument("--offline", action="store_true", help="show: skip the balance lookups")
+    wl.set_defaults(func=cmd_wallet)
     db = ss.add_parser("dashboard", help="the Emporia tab in the Hermes dashboard")
     db.add_argument("--hermes-home", default="")
     db.set_defaults(func=cmd_setup_dashboard)

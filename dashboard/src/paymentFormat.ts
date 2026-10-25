@@ -59,10 +59,18 @@ export function explorerTxUrl(network: string, tx: string | null | undefined): s
   return base && tx ? `${base}/tx/${tx}` : null;
 }
 
+/** P160: the same names as src/emporia/networks.py. */
+const NETWORK_NAMES: Record<string, string> = {
+  "eip155:8453": "Base",
+  "eip155:84532": "Base Sepolia",
+  "solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp": "Solana",
+  "solana:EtWTRABZaYq6iMfeYKouRu166VU2xqa1": "Solana devnet",
+  "eip155:4217": "Tempo",
+  "eip155:42431": "Tempo Moderato",
+};
+
 export function networkLabel(network: string): string {
-  if (network === "eip155:8453") return "Base";
-  if (network === "eip155:84532") return "Base Sepolia";
-  return network;
+  return NETWORK_NAMES[network] ?? network;
 }
 
 /** Micro-dollars (= USDC atomic units, 6 decimals) as dollars. Whole cents as
@@ -170,29 +178,36 @@ export const TWO_PLAYER_GAMES = new Set(["emporia:blotto:v1", "emporia:chess:v1"
 
 export function acceptsLabel(
   move: MoneyMove,
-  h: { stripe_enabled?: boolean; x402_enabled?: boolean; x402_escrow_network?: string | null;
-       tempo_network?: string | null } | null,
+  h: { stripe_enabled?: boolean; x402_enabled?: boolean; x402_networks?: string[];
+       x402_escrow_network?: string | null; tempo_network?: string | null;
+       card_game_stakes?: boolean; custodial_cards?: boolean } | null,
   moduleType?: string,
 ): string {
   const card = !!h?.stripe_enabled;
   const usdc = !!h?.x402_enabled;
+  // P160: name the networks, so a reader knows which wallet and which chain.
+  const on = (nets: (string | null | undefined)[]) => {
+    const names = nets.filter((n): n is string => !!n).map(networkLabel);
+    return names.length ? ` (${names.join(", ")})` : "";
+  };
   const ways: string[] = [];
   switch (move) {
     case "entry":            // a room or an Agora: card, or stablecoin straight to its creator
       if (card) ways.push("card");
-      if (usdc) ways.push("USDC");
-      if (h?.tempo_network) ways.push("Tempo");
+      if (usdc) ways.push(`USDC${on(h?.x402_networks ?? [])}`);
+      if (h?.tempo_network) ways.push(`Tempo${on([h.tempo_network])}`);
       break;
     case "purchase":         // card held for the seller, or USDC held in escrow
       if (card) ways.push("card");
-      if (h?.x402_escrow_network) ways.push("USDC escrow");
+      if (h?.x402_escrow_network) ways.push(`USDC escrow${on([h.x402_escrow_network])}`);
       break;
-    case "wager":            // card; or (P154) USDC escrow, each stake held for the opponent
-      if (card) ways.push("card");
-      if (h?.x402_escrow_network && moduleType && TWO_PLAYER_GAMES.has(moduleType)) ways.push("USDC escrow");
+    case "wager":            // (P154) USDC escrow, each stake held for the opponent; cards only by opt-in (P159)
+      if (card && h?.card_game_stakes) ways.push("card");
+      if (h?.x402_escrow_network && moduleType && TWO_PLAYER_GAMES.has(moduleType))
+        ways.push(`USDC escrow${on([h.x402_escrow_network])}`);
       break;
-    case "bounty_held":
-      if (card) ways.push("card");
+    case "bounty_held":      // a held card prize needs both opt-ins (P157, P159)
+      if (card && h?.card_game_stakes && h?.custodial_cards) ways.push("card");
       break;
     case "bounty_promised":
       if (usdc) ways.push("USDC, paid after the result");

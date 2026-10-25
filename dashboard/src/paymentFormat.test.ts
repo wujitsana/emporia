@@ -92,13 +92,23 @@ describe("what pays for what (P153)", () => {
   const both = { stripe_enabled: true, x402_enabled: true, x402_escrow_network: "eip155:84532" };
   it("says before paying what is accepted", () => {
     expect(acceptsLabel("entry", both)).toBe("accepts card · USDC");
-    expect(acceptsLabel("purchase", both)).toBe("accepts card · USDC escrow");
+    expect(acceptsLabel("purchase", both)).toBe("accepts card · USDC escrow (Base Sepolia)");
     expect(acceptsLabel("purchase", { ...both, x402_escrow_network: null })).toBe("accepts card");
     expect(acceptsLabel("bounty_promised", both)).toBe("accepts USDC, paid after the result");
     expect(acceptsLabel("entry", {})).toBe("no payment rail on this relay");
-    expect(acceptsLabel("entry", { ...both, tempo_network: "eip155:42431" })).toBe("accepts card · USDC · Tempo");
-    expect(acceptsLabel("wager", both, "emporia:blotto:v1")).toBe("accepts card · USDC escrow");
-    expect(acceptsLabel("wager", both, "emporia:two-thirds:v1")).toBe("accepts card");
+    expect(acceptsLabel("entry", { ...both, tempo_network: "eip155:42431" }))
+      .toBe("accepts card · USDC · Tempo (Tempo Moderato)");
+  });
+  it("names the networks USDC is taken on (P160)", () => {
+    const nets = { ...both, x402_networks: ["eip155:84532", "solana:EtWTRABZaYq6iMfeYKouRu166VU2xqa1"] };
+    expect(acceptsLabel("entry", nets)).toBe("accepts card · USDC (Base Sepolia, Solana devnet)");
+  });
+  it("offers no card on games unless the operator opted in (P159)", () => {
+    expect(acceptsLabel("wager", both, "emporia:blotto:v1")).toBe("accepts USDC escrow (Base Sepolia)");
+    expect(acceptsLabel("wager", both, "emporia:two-thirds:v1")).toBe("no payment rail on this relay");
+    expect(acceptsLabel("wager", { ...both, card_game_stakes: true }, "emporia:blotto:v1"))
+      .toBe("accepts card · USDC escrow (Base Sepolia)");
+    expect(acceptsLabel("bounty_held", both)).toBe("no payment rail on this relay");
   });
   it("says after paying how", () => {
     expect(paidByLabel(["stripe"])).toBe("paid by card");

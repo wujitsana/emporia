@@ -181,6 +181,10 @@ def test_mcp_x402_wallet_info_returns_no_key_material(wallet_env):
     with patch.object(mcp_server, "_bearer_request", return_value=unregistered):
         info = mcp_server.x402_wallet_info(agent_id="info_agent")
     note = info.pop("note")
+    # P160: each network in words — allowed here, the wallet it needs is present.
+    [net] = info.pop("networks")
+    assert (net["network"], net["name"], net["allowed"], net["wallet"]) == \
+        (NET, "Base Sepolia (testnet)", True, True)
     assert info == {"agent_id": "info_agent", "max_payment_cents": 500,
                     "max_daily_cents": 5000, "spent_today_cents": 0,
                     "address": addr, "pay_networks": [NET], "registered_on_relay": None}

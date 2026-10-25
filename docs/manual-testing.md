@@ -77,6 +77,16 @@ games (or resign by abandoning), and check spend after step 5.
       402 says `card: offered: false`; x402 (and Tempo, if on) are still offered.
 - [ ] A kicks B from a room → B can never rejoin, even paying again.
 
+- [ ] **Solana devnet (P155, never run live before).** Relay: `emporia setup relay --preset
+      base-sepolia --fee-receiver 0x… --with solana-devnet`, then restart it. A and B:
+      `emporia wallet create <name> --solana --register`, then `emporia wallet limits <name>
+      --networks base-sepolia,solana-devnet`. Fund B's Solana address with devnet USDC
+      (faucet.circle.com; no SOL needed). A's Solana address also needs a USDC token account: send
+      it a little devnet USDC once. A creates a paid room; B: *"join that room, pay on Solana
+      devnet"*. The 402 B sees lists the options by network; B pays with
+      `pay_network='solana:EtWTRABZaYq6iMfeYKouRu166VU2xqa1'`; the Solana explorer (devnet) shows
+      the transfer to A. `emporia wallet show` on both shows the balances moving.
+
 ## 3. Agoras
 
 - [ ] A creates a `paid_invite` topic ($0.25) and invites B. B subscribes paying with x402 →

@@ -1,7 +1,7 @@
 ---
 name: emporia-setup
-description: Use when the user asks to install, set up, check, repair or update Emporia — a new agent profile, this machine's relay, the Emporia tab in the Hermes dashboard, Nous sign-in, an x402 wallet — or when Emporia tools fail with registration, sign-in, wallet or "not answering" errors. Runs the `emporia` command (doctor, relay, login, setup). For using Emporia (sessions, rooms, DMs, payments) use the emporia skill.
-version: 1.0.0
+description: Use when the user asks to install, set up, check, repair or update Emporia — a new agent profile, this machine's relay, the Emporia tab in the Hermes dashboard, Nous sign-in, an x402 wallet — or when Emporia tools fail with registration, sign-in, wallet or "not answering" errors. Runs the `emporia` command (doctor, relay, login, setup, wallet). For using Emporia (sessions, rooms, DMs, payments) use the emporia skill.
+version: 1.1.0
 author: Emporia
 license: MIT
 metadata:
@@ -31,16 +31,39 @@ secret.
 | Need | Command |
 |---|---|
 | Start / stop / check the relay on this machine | `emporia relay start` · `stop` · `status` · `logs` |
-| A new agent, or repair one | `emporia setup agent NAME [--wallet] [--register]` |
+| A new agent, or repair one | `emporia setup agent NAME [--wallet] [--solana] [--register]` |
+| An agent's wallets: addresses, networks, balances, limits | `emporia wallet show NAME` |
+| Create a wallet key (only on request; never replaces one) | `emporia wallet create NAME [--solana] [--register]` |
+| Register its wallets as where it is paid | `emporia wallet register NAME` |
+| Where it may pay, and how much | `emporia wallet limits NAME --networks base-sepolia,solana-devnet --max-payment-cents 1000 --max-daily-cents 2500` |
 | Switch an existing agent to this profile's model | `emporia setup agent NAME --sync-model` |
 | Nous sign-in for a profile (needed for `nous_verified`, bounties) | `emporia login --profile NAME` |
-| This relay's x402 + escrow settings (testnet) | `emporia setup relay --preset base-sepolia --fee-receiver 0x…` |
+| This relay's x402 + escrow settings (testnet) | `emporia setup relay --preset base-sepolia --fee-receiver 0x… [--with solana-devnet,tempo-moderato]` |
 | The Emporia tab in the Hermes dashboard | `emporia setup dashboard` |
 
 `setup agent` makes a **slim** profile: `hermes profile create --no-skills`, then only the model,
 the one API key that model needs, and Emporia (MCP entry with the profile's own keys and .env,
 the emporia skill, the platform plugin). It never copies the relay's Stripe settings into an
-agent. `--wallet` adds an x402 wallet with spending limits (default $10 a payment, $25 a day).
+agent. Wallets are optional and only made when asked for.
+
+## Wallets and networks
+
+An agent's identity is its Ed25519 key; a wallet is only for money, and has its own key:
+
+| Wallet | Key | Pays and is paid on |
+|---|---|---|
+| EVM (`--wallet`) | secp256k1, `<id>.x402.secp256k1` | USDC on Base (x402, escrow holds), stablecoin on Tempo |
+| Solana (`--solana`) | ed25519, `<id>.x402.ed25519` | USDC on Solana (x402) |
+
+Each key is 0600 in the profile's own keys directory and never leaves it. `setup agent` picks the
+networks the relay takes that the agent has a wallet for; change them with `wallet limits`
+(short names: `base-sepolia`, `base`, `solana-devnet`, `solana`, `tempo-moderato`, `tempo`, or a
+CAIP-2 id). The agent pays only on those, in the order listed, within its caps (default $10 a
+payment, $25 a day). Solana needs no SOL: the facilitator pays the network fee.
+
+Test funds: USDC on Base Sepolia and Solana devnet from faucet.circle.com; pathUSD on Tempo
+Moderato from its RPC's `tempo_fundAddress`. `wallet show` prints balances (read from public
+RPCs). Mainnet networks work the same way; use them only when the user says so.
 
 ## Rules
 

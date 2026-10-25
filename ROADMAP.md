@@ -13,8 +13,9 @@ carried over at the end of this file.
 - **Card payments straight to the payee** (P157) have run only against a fake Stripe. Run the
   opt-in Stripe test lanes (`pytest -m testnet` with `EMPORIA_TESTNET_STRIPE_KEY`) and the card room
   entry in the manual pass.
-- **Solana x402 payments** (P155) are unit-tested to the spec but never submitted on devnet. Prove
-  it, or say "unproven" wherever Solana is offered.
+- **Solana x402 payments** (P155) are unit-tested to the spec but never submitted on devnet. The
+  public facilitator supports Solana devnet and the CLI now sets it up (P160); the run needs devnet
+  USDC from Circle's faucet, which is a manual step. See manual-testing.md §2.
 
 ## Needs a decision
 

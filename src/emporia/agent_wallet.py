@@ -197,15 +197,32 @@ def _charge_daily(agent_id: str, amount_atomic: int) -> None:
         identity._write_secret_atomically(path, json.dumps(entries).encode())
 
 
-def sign_exact(agent_id: str, body: dict) -> str:
+def sign_exact(agent_id: str, body: dict, network: str = "") -> str:
     """A relay's x402 402 body in, the PAYMENT-SIGNATURE value out — after the
-    network allowlist and the per-payment cap."""
+    network allowlist and the per-payment cap.
+
+    P160: which network pays is the agent's choice, not the relay's listing
+    order: `network` if given (it must be on the allowlist), else the first
+    network in EMPORIA_X402_PAY_NETWORKS that the relay offers and this agent
+    has a wallet for."""
     from emporia import x402_payer
 
     nets = allowed_networks()
+    if network and network not in nets:
+        raise AgentWalletError(
+            f"{network} is not one of the networks this agent may pay on "
+            f"(EMPORIA_X402_PAY_NETWORKS: {', '.join(nets)})")
     challenge = x402_payer.payment_required_from(body)
     families = _families(agent_id) or ("evm",)
-    requirement = x402_payer.select_requirement(challenge, networks=nets, families=families)
+    requirement, refusals = None, []
+    for net in ([network] if network else nets):
+        try:
+            requirement = x402_payer.select_requirement(challenge, networks=[net], families=families)
+            break
+        except x402_payer.X402PayerError as e:
+            refusals.append(str(e))
+    if requirement is None:
+        raise x402_payer.X402PayerError("nothing offered here can be paid: " + "; ".join(refusals))
     amount = int(requirement.get("amount") or 0)
     cap = max_payment_cents() * _USDC_ATOMIC_PER_CENT
     if amount > cap:
