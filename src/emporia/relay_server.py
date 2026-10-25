@@ -2362,7 +2362,7 @@ async def _verify_and_confirm_payment(
     explicitly** — never silently ignored in favor of the SPT/direct-PI
     branches below. A `PAYMENT-SIGNATURE` header is the payer explicitly
     choosing x402; falling through to Stripe would override that choice
-    (see `ROADMAP.md`'s composable-payment-options principle). This was a
+    (see `docs/archive/roadmap-hackathon-era.md`'s composable-payment-options principle). This was a
     real gap in P1b-5: the branch used to route on the header's mere
     presence, with no `_x402_enabled()` check at all, so a disabled relay
     or a route with no creator (session escrow) still tried to verify and
@@ -2881,7 +2881,7 @@ def record_settlement(settlement: dict[str, Any]) -> None:
 # identity._key_path()'s own filename sanitization, so the id stored here always matches
 # the id its keyfile is named for.
 #
-# Deliberately NOT built here (see ROADMAP.md): a stable content-addressed id distinct
+# Deliberately NOT built here (see docs/archive/roadmap-hackathon-era.md): a stable content-addressed id distinct
 # from this mutable display name, transfer/release semantics, or reserved/premium names
 # gated on trust_level — full namespace ownership is a bigger design than this warrants
 # before x402, so this stays scoped to charset/normalization/collision only.
@@ -3170,7 +3170,7 @@ def stable_id_for(public_key_hex: str) -> str:
     identity — which works right up until any one of them has to change. This
     separates the third out.
 
-    Why the pubkey and not the alternatives ROADMAP.md proposed:
+    Why the pubkey and not the alternatives docs/archive/roadmap-hackathon-era.md proposed:
 
     * `identity.content_address_for(name, nous_user_id)` puts the **name inside
       the digest** (`sha3_256(f"emporia:v1:{normalized}:{material}")`), so it
@@ -6546,7 +6546,7 @@ class DisputeDeliveryRequest(BaseModel):
 
 @app.delete("/admin/sessions/{session_id}")
 async def delete_session(session_id: str, request: Request, force: bool = False):
-    """P4-5 (ROADMAP.md § Architecture cleanup): operator-only cleanup for a
+    """P4-5 (docs/archive/roadmap-hackathon-era.md § Architecture cleanup): operator-only cleanup for a
     finished session's operational rows. Hard-deletes `participants`,
     `actions`, `messages`, and the `sessions` row itself — one transaction,
     so this never leaves a session half-deleted.
@@ -6557,7 +6557,7 @@ async def delete_session(session_id: str, request: Request, force: bool = False)
     oversight the cascade should eventually "finish": the response reports
     exactly how many of each were retained. The `settlements.session_id`
     column is overloaded (session/room/topic escrow all key off it — see
-    SECURITY.md's N4-R1) but the `sess_`/`room_`/`tpc_` id prefixes make a
+    docs/security-log.md's N4-R1) but the `sess_`/`room_`/`tpc_` id prefixes make a
     `WHERE session_id = ?` count on this table unambiguous.
 
     Also does NOT rewrite the audit trail. `_write_audit_line()` appends to
@@ -6612,7 +6612,7 @@ async def delete_session(session_id: str, request: Request, force: bool = False)
     # this function doesn't belong under the lock. P5-3 put it there anyway.
     # Nothing here awaits, so this isn't the same async-starvation class as
     # the Agora/Stripe DB_LOCK-across-a-network-round-trip bug this codebase
-    # already fixed once (ROADMAP.md § Architecture cleanup) — but it's the
+    # already fixed once (docs/archive/roadmap-hackathon-era.md § Architecture cleanup) — but it's the
     # same shape of mistake, so it gets fixed the same way: two short
     # DB_LOCK-held blocks (count, then delete) with the file write in
     # between, holding no lock.
@@ -7003,7 +7003,7 @@ async def _settle_access_payment(
     structurally separate from the platform→creator transfer hop
     (Stripe-only, skipped via the `if creator_stripe:` guard and the
     "no_stripe_account" sentinel below). Per the non-custodial x402 decision
-    (ROADMAP.md § Payments), `payout_winner()` has no counterpart at all on
+    (docs/archive/roadmap-hackathon-era.md § Payments), `payout_winner()` has no counterpart at all on
     a rail where the payment itself is the settlement — a real second rail
     would skip this transfer entirely, not call into a different transfer
     implementation, so there is nothing to dispatch to yet. See
@@ -7012,7 +7012,7 @@ async def _settle_access_payment(
 
     settle() (session escrow, capture-then-transfer) is deliberately not
     routed through here — escrow has no x402 analogue and stays Stripe-only
-    (ROADMAP.md § Payments), and its own "pending_connect" initial sentinel
+    (docs/archive/roadmap-hackathon-era.md § Payments), and its own "pending_connect" initial sentinel
     stays distinct from this function's "no_stripe_account" for the same
     condition; unifying the two is a behavior change, not this pass's job.
 
@@ -7027,7 +7027,7 @@ async def _settle_access_payment(
     `payTo`, resolved and asserted in _verify_x402_payment() before this
     function is ever reached), so there is no platform-held balance to take
     a cut from or transfer out of. The platform fee is 0% on x402 for now —
-    a provisional decision, not a permanent one (see ROADMAP.md § Payments
+    a provisional decision, not a permanent one (see docs/archive/roadmap-hackathon-era.md § Payments
     for the revisit trigger: a cross-chain splitter mechanism). The Stripe
     branch below is untouched, byte-for-byte.
     """
@@ -7586,7 +7586,7 @@ def _topic_can_read(
     test_public_paid_invite_topic_entry_fee_gates_nothing_for_reads_or_posts until
     this pass. This now matches `_settlement_resource_viewer_allowed()`'s existing
     is_paid rule for the same topics (N5-R1) instead of contradicting it. Provisional
-    — see ROADMAP.md § Payments for the revisit trigger (real usage data)."""
+    — see docs/archive/roadmap-hackathon-era.md § Payments for the revisit trigger (real usage data)."""
     if visibility == "public" and not _topic_is_paid(gate_type, entry_fee_cents):
         return True
     if not agent_id:

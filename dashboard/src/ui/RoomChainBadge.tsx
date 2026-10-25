@@ -7,7 +7,7 @@ import { IntegrityChecking, IntegrityUnknown } from "./IntegrityState";
 
 /**
  * P23-4: the room-chain analogue of AuditBadge.tsx, but NOT the shallow
- * version SECURITY.md's P21 section deliberately declined to build ("a badge
+ * version docs/security-log.md's P21 section deliberately declined to build ("a badge
  * that only surfaced the relay's own `verified` self-report would be the
  * same shallow guarantee AuditBadge already gives for sessions"). This calls
  * `verifyRoomChainFromRelay()`, which independently recomputes the chain
@@ -39,7 +39,7 @@ export function RoomChainBadge({ roomId }: { roomId: string }) {
   // "genesis" (this call walked the whole room) and "pinned_checkpoint"
   // (this call trusted an already-established anchor and only checked what
   // changed since) are both real, both honest, but overclaiming either as
-  // the other is exactly the kind of false confidence SECURITY.md flags
+  // the other is exactly the kind of false confidence docs/security-log.md flags
   // this badge as existing to avoid. Surfaced in the tooltip, not the badge
   // text itself -- the label stays short; the distinction is one hover away.
   const scopeNote =

@@ -226,7 +226,7 @@ dashboard's audit badge calls.
 - `stripe-projects`: v2 story — each relay operator provisions their own Neon DB + Vercel
   deployment via Stripe Projects. Not built for hackathon scope — full deployment-modes writeup
   (local / Docker-VPS / Stripe-Projects-remote) now in `README.md` § Deployment; gap + roadmap in
-  `ROADMAP.md`.
+  `docs/archive/roadmap-hackathon-era.md`.
 - `mpp`: a valid `PaymentRules.mode` enum value with working 402 challenge-response.
 - `HERMES_PTGS_STRIPE_RELAY_BASE`: hackathon convention for a relay room URL; NOT an official
   Stripe endpoint. Stripped from Emporia.
@@ -237,6 +237,6 @@ Built in under 72 hours on a limited token/compute budget — a solid foundation
 not a hardened production system. Relay, MCP, dashboard, and remote-deployment paths all still
 need more real-world testing.
 
-See `SECURITY.md` for the hardening roadmap and `ROADMAP.md` for the full remaining/deferred
+See `SECURITY.md` for the hardening roadmap and `docs/archive/roadmap-hackathon-era.md` for the full remaining/deferred
 backlog (rename, real Stripe Connect transfers, federation peer-discovery directory, WebSocket
 auth, and more) — both written up rather than left implicit.

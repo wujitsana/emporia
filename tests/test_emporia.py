@@ -1271,7 +1271,7 @@ def test_challenge_cannot_be_reused(client):
 
     Note: this exercises sequential double-consumption, which the pre-fix code already
     rejected too (DB_LOCK serializes the whole check-then-write within one process) — it
-    does not by itself prove the TOCTOU race (SECURITY.md) is closed, since that only
+    does not by itself prove the TOCTOU race (docs/security-log.md) is closed, since that only
     manifests across multiple processes sharing one DB file, which this single-process
     test suite doesn't exercise. Kept as a behavioral regression guard regardless."""
     with tempfile.TemporaryDirectory() as d:
@@ -2869,7 +2869,7 @@ def _identity_like_offenders(dependant, identity_like: set[str]) -> set[str]:
     or a field on a Pydantic request body — the three surfaces a caller can plant an
     unverified identity claim on. Query+body coverage landed in N2-2 (N2 review R4); path
     params are added in N3-1 (N3 review R4) — the *original* identity-as-proof Critical
-    (SECURITY.md's `GET /agents/{id}/inbox`) lived on a path param, and nothing prevented a
+    (docs/security-log.md's `GET /agents/{id}/inbox`) lived on a path param, and nothing prevented a
     new `/agents/{agent_id}/<write>` route from regressing there.
 
     A body whose annotation has no `model_fields` (a raw `dict`/`list` body, not a Pydantic
@@ -2909,7 +2909,7 @@ def test_no_new_identity_as_proof_params():
     """Guard against reintroducing the class of bug where an endpoint trusts a bare
     identity claim — a query param (viewer_id, agent_id, ...), a PATH param, or a Pydantic
     request-body field (sender_id, voter_id, ...) — as the caller's identity with no
-    signature or session behind it (see SECURITY.md, task #7 / N1 review R6, N2 review
+    signature or session behind it (see docs/security-log.md, task #7 / N1 review R6, N2 review
     R1/R4, N3 review R1/R4).
 
     Covers query params, path params, and body params, across HTTP and WebSocket routes.
@@ -3848,7 +3848,7 @@ def test_delete_session_audit_write_does_not_hold_db_lock(client):
     deliberately writes its audit line AFTER releasing DB_LOCK — direct
     precedent this endpoint should have followed. Same shape of mistake
     this codebase already fixed once for Agora subscribe/the Stripe
-    round-trip (ROADMAP.md), just with a file write instead of a network
+    round-trip (docs/archive/roadmap-hackathon-era.md), just with a file write instead of a network
     call. Verified by asserting DB_LOCK._is_owned() is False at the moment
     _write_audit_line() runs — must fail pre-fix (True: lock held)."""
     from emporia import relay_server
@@ -7171,7 +7171,7 @@ def test_public_paid_invite_topic_entry_fee_gates_reads_and_posts(mock_verify, m
     paid_invite topic now means discoverable/listed, not readable — `_topic_can_read()`
     checks the entitlement for paid topics regardless of visibility, matching the rule
     `_settlement_resource_viewer_allowed()` already applied to these same topics (N5-R1)
-    instead of contradicting it. Provisional, not final — see ROADMAP.md § Payments for
+    instead of contradicting it. Provisional, not final — see docs/archive/roadmap-hackathon-era.md § Payments for
     the revisit trigger (real usage data on whether paid communities want a free-to-read
     shopfront).
 
@@ -9331,7 +9331,7 @@ def test_verify_chain_empty_room_is_trivially_valid(rooms_db_path):
 
 def test_verify_chain_recomputes_and_matches_a_genuine_chain(rooms_db_path):
     """P21-7: chain_hash was computed and stored since P18, verified by nothing
-    until now (SECURITY.md recorded this gap since P19). A genuine, untouched
+    until now (docs/security-log.md recorded this gap since P19). A genuine, untouched
     chain must recompute clean and report the true head + count."""
     from emporia.rooms import create_room, post_message, verify_chain
     room = create_room("Chain Room", "agent_alice", db_path=rooms_db_path)
@@ -19732,7 +19732,7 @@ def test_gaming_lobby_post_rejects_oversized_metadata(client):
 
 
 # ============================================================================
-# P21-7: room chain verification, end to end -- the fix direction SECURITY.md
+# P21-7: room chain verification, end to end -- the fix direction docs/security-log.md
 # has recorded since P19 (chain_hash computed and stored, verified nowhere)
 # ============================================================================
 
@@ -19984,7 +19984,7 @@ def test_mcp_verify_room_chain_verifies_a_room_past_the_old_1000_message_cap(pro
 
 # ============================================================================
 # P23-1: audit of P21 -- two of verify_room_chain()'s own documented fail-closed
-# paths (SECURITY.md's "Still open" list: the 1000-message cap, and the
+# paths (docs/security-log.md's "Still open" list: the 1000-message cap, and the
 # federation-peer-style key-mismatch check) had no test coverage. Both are
 # confirmed correct by reading the code (agent_sdk.py:860-978); these tests
 # pin that behavior so a future refactor can't silently regress it.
@@ -19993,7 +19993,7 @@ def test_mcp_verify_room_chain_verifies_a_room_past_the_old_1000_message_cap(pro
 def test_sdk_verify_room_chain_fails_closed_when_history_exceeds_max_messages():
     """A room with more messages than `max_messages` must report verified=False
     with a "could not fetch full history" reason -- never a false "verified: True"
-    computed over a truncated suffix. This is the exact property SECURITY.md's
+    computed over a truncated suffix. This is the exact property docs/security-log.md's
     "Still open" list names ("a large room's full history can silently never be
     verifiable... no pagination-beyond-the-cap path exists") but which no test
     exercised until now.
@@ -20086,7 +20086,7 @@ def test_sdk_verify_room_chain_detects_relay_signing_key_change_since_pin():
 # ============================================================================
 # P24-1 (W1): the streaming backward walk removes the old hard cap that made
 # a room over 1000 messages "silently never verifiable from genesis"
-# (SECURITY.md). Direct rooms.post_message()/DATABASE_PATH writes keep setup
+# (docs/security-log.md). Direct rooms.post_message()/DATABASE_PATH writes keep setup
 # fast; verification itself still goes over real HTTP through
 # verify_room_chain(), the same path a real caller uses.
 # ============================================================================
@@ -21745,7 +21745,7 @@ def test_lifespan_second_run_does_not_see_a_stale_task_from_the_first():
 # P37-4: the endpoints whose bodies must carry an Ed25519 signature over the
 # action itself. The browser holds no signing key, so these are the ones the
 # dashboard can never call however its auth is arranged -- the actual boundary
-# of the "dashboard doesn't write" rule, which ROADMAP.md had been describing
+# of the "dashboard doesn't write" rule, which docs/archive/roadmap-hackathon-era.md had been describing
 # as plain read-only. It is not: the dashboard already votes on Agora posts and
 # marks its own inbox read, both caller-authenticated and neither signed.
 _ACTION_SIGNED_ROUTES = [
@@ -22490,7 +22490,7 @@ def test_p28_a_full_paid_room_refuses_before_taking_the_money(
 
 
 def test_p28_encrypted_room_membership_is_capped(rooms_db_path):
-    """P28-2 (SECURITY.md's "No member cap on encrypted rooms"): every send to
+    """P28-2 (docs/security-log.md's "No member cap on encrypted rooms"): every send to
     an encrypted room wraps the content key once per member, so membership is
     an input to *every future message's* size. Past a threshold each wrap set
     alone exceeds MAX_CONTENT_BYTES and nobody can send anything -- the room is
@@ -22518,7 +22518,7 @@ def test_p28_the_cap_leaves_real_room_for_a_real_message():
     """P28-2: the cap is only meaningful if a room *at* it can still send
     something worth sending. Measures the actual envelope rather than trusting
     the estimate, and pins both directions: a full-cap wrap set has to leave
-    most of the budget for content, and the uncapped size SECURITY.md warned
+    most of the budget for content, and the uncapped size docs/security-log.md warned
     about has to genuinely exceed it -- otherwise the cap is guarding nothing.
     """
     import json as _json
@@ -24082,7 +24082,7 @@ def test_x402_malformed_extra_env_disables_the_network_rather_than_half_signing(
 #
 # The interoperability half — that the public facilitator agrees — is the
 # `testnet`-marked test at the end of this section, excluded from the default
-# run. It was executed during P45 and recorded in SECURITY.md.
+# run. It was executed during P45 and recorded in docs/security-log.md.
 # ============================================================================
 
 # A fixed key, so a failure is reproducible. It is deliberately a *publicly
@@ -25101,7 +25101,7 @@ def test_testnet_paid_room_join_settles_through_mpp_spt(client, monkeypatch):
 # key, the display handle, and the identity. That works until any one of them
 # needs to change, and then none of them can.
 #
-# ROADMAP.md proposed anchoring on `content_address_for()` or on
+# docs/archive/roadmap-hackathon-era.md proposed anchoring on `content_address_for()` or on
 # `nous_user_id`. Both were checked against the code and both are wrong:
 #
 #   * `identity.content_address_for(name, nous_user_id)` digests
@@ -26119,7 +26119,7 @@ def test_eip3009_constants_are_the_keccak_of_their_own_signatures():
 
     Both were also checked against Base Sepolia during P48 against P45's real
     settlement, which is the half this pure derivation can't cover — see the
-    testnet tier below and SECURITY.md's P48 pass.
+    testnet tier below and docs/security-log.md's P48 pass.
     """
     from eth_utils import keccak
 

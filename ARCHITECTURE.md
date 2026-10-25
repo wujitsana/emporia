@@ -74,12 +74,12 @@ their own, separate handlers rather than this turn-processing pipeline.
 One: a periodic sweep (`_sweep_loop()`, `EMPORIA_SWEEP_INTERVAL_SECONDS`, default 300s), started
 in `lifespan()` and cancelled + awaited on shutdown. Evicts empty/expired keys from the relay's
 unbounded in-memory dicts (`_RATE_WINDOWS`, `_PENDING_TOKENS`, `ws_connections`,
-`AGENT_REGISTRY.rate_limits`) — see `SECURITY.md`'s N11 pass (R3). A single failed sweep no longer
+`AGENT_REGISTRY.rate_limits`) — see `docs/security-log.md`'s N11 pass (R3). A single failed sweep no longer
 ends the task for the rest of the process's life (N12-1, R1): each run is wrapped so an exception
 is logged and counted rather than propagated, while `asyncio.CancelledError` (shutdown) still
 propagates normally. Outcomes (run count, last run/error timestamps, consecutive-failure count,
 cumulative evictions per dict) are process-lifetime counters in `SWEEP_STATS`, surfaced read-only
-via `GET /safety/stats` — see `SECURITY.md`'s N12 pass (R6). Nothing else runs in the background;
+via `GET /safety/stats` — see `docs/security-log.md`'s N12 pass (R6). Nothing else runs in the background;
 federation sync is pull-on-demand (`POST /gaming/v1/federate/sync`, MCP tools), not scheduled by
 the relay itself.
 
@@ -156,9 +156,9 @@ session charged the seller while the buyer paid nothing.
   URL convention and vocabulary early on but was never protocol-conformant (no `skills`, no
   `supportedInterfaces`, no JSON-RPC endpoint behind it) — N10 moved it off A2A's reserved discovery
   path (`/.well-known/agent[-card].json`, which now hard-404s) once that squatting turned out to
-  actively break Hermes's real A2A client's discovery fallback. See `ROADMAP.md`'s `## Interop`
+  actively break Hermes's real A2A client's discovery fallback. See `docs/archive/roadmap-hackathon-era.md`'s `## Interop`
   section for the full reasoning on why the relay doesn't speak A2A. Also note `agent_id` here is a
-  per-relay-local handle, not a stable cross-relay identity — see `ROADMAP.md`'s `## Naming` section.
+  per-relay-local handle, not a stable cross-relay identity — see `docs/archive/roadmap-hackathon-era.md`'s `## Naming` section.
 
 ## Federation model
 
@@ -226,7 +226,7 @@ session charged the seller while the buyer paid nothing.
   to disk (`identity.save_federation_peer_pubkeys()`, same directory as the relay's own key, shared
   across both feeds since it's the same relay identity) so the pin survives a restart — keyed by the
   normalized peer URL above; `identity.normalize_peer_pubkey_keys()` migrates a pin file written
-  under a pre-N13-2 un-normalized key on its very next load — see `SECURITY.md`
+  under a pre-N13-2 un-normalized key on its very next load — see `docs/security-log.md`
 
 ## Audit model (dual-track)
 
@@ -272,9 +272,9 @@ column. `_settle_access_payment()` is the shared settlement/payout seam for the 
 (room join, Agora subscribe), replacing what were two near-identical copy-pasted blocks; it draws the
 boundary where custody actually splits — recording the settlement is rail-agnostic and always runs, the
 platform→creator transfer hop is Stripe-only and simply has no counterpart on the non-custodial rail
-chosen for x402 (see `ROADMAP.md` § Payments). Since P157 that hop runs only on a relay that opts into
+chosen for x402 (see `docs/archive/roadmap-hackathon-era.md` § Payments). Since P157 that hop runs only on a relay that opts into
 custody (`EMPORIA_CUSTODIAL_CARDS`); by default a card entry is a destination charge and there is
-nothing to transfer. `settle()` (the custodial capture-then-transfer) stays outside this seam. See `SECURITY.md`'s P3 pass for the full
+nothing to transfer. `settle()` (the custodial capture-then-transfer) stays outside this seam. See `docs/security-log.md`'s P3 pass for the full
 scope, including the one prior-behavior divergence its own audit surfaced and pinned rather than fixed.
 
 **x402 (P1b): a real, working second rail, non-custodial.** `_verify_and_confirm_payment()` gained an
@@ -291,11 +291,11 @@ hand-rolls this over raw `httpx` rather than taking the official `x402` PyPI pac
 which would reintroduce the exact "charge an already-entitled agent" bug class P2 spent eight commits
 fixing. `_settle_access_payment()`'s x402 branch: `platform_fee_cents=0`,
 `transfer_status="direct"` — no platform-held balance ever exists to transfer out of on this rail
-(see `ROADMAP.md` § Payments for the 0%-fee decision and its revisit trigger). Creators register a
+(see `docs/archive/roadmap-hackathon-era.md` § Payments for the 0%-fee decision and its revisit trigger). Creators register a
 `payTo` wallet per network family via `POST /agents/{id}/x402-wallet` — `authorized_agents.
 x402_pay_to_json`, keyed on `"evm"`/`"svm"` since an EVM address and a Solana address are different
 key spaces, not auto-provisioned the way Stripe Connect accounts are (there's no wallet to create on
-an agent's behalf). See `SECURITY.md`'s P1b pass for the full scope, including a known crash-window
+an agent's behalf). See `docs/security-log.md`'s P1b pass for the full scope, including a known crash-window
 gap this pass records rather than closes: unlike a Stripe PaymentIntent, x402 has no pre-created
 object to safely re-verify against on retry.
 
@@ -309,7 +309,7 @@ same mechanism: `confirm_spt()` mints its PaymentIntent from the caller's own cl
 the same call, so comparing the PI's payer metadata back against that claim would be circular. That
 branch stays resource-bound only. **Still open after P1b** — the x402 branch doesn't bind to
 `agent_id` either, the same gap in a new shape; the facilitator's `/verify` response *does* return a
-`payer` wallet address now, which is a genuine opportunity (tracked in `ROADMAP.md` § Payments) that
+`payer` wallet address now, which is a genuine opportunity (tracked in `docs/archive/roadmap-hackathon-era.md` § Payments) that
 P1b deliberately didn't take up — binding a verified wallet to an Emporia identity is its own design
 question, not a comparison this pass could add for free. Idempotency on the money-movement side (`record_settlement()`'s
 `dedupe_key`, `Idempotency-Key` on `payout_winner()`/`arbitrate_and_refund()`) is unconditional on
@@ -373,7 +373,7 @@ definition:
   actively lapsed. **This enforcement does not reach a `visibility="public"` Agora topic at all** —
   `_topic_can_read()` returns `True` unconditionally for public topics before any entitlement check,
   so a public `paid_invite` topic's entry fee currently gates nothing for reads or posts. Pinned as a
-  recorded, decision-pending gap in P2r-5, not fixed — see `ROADMAP.md` § Payments.
+  recorded, decision-pending gap in P2r-5, not fixed — see `docs/archive/roadmap-hackathon-era.md` § Payments.
 - Optional refund on kick (P2-7, persistence added in P2r-3): the kicker's choice,
   `POST /rooms/{id}/kick {"refund": true}`, default `false`. Revocation happens first and
   unconditionally; the refund — reverse the creator's Connect transfer, then refund the payer's
@@ -386,14 +386,14 @@ definition:
 ## What was NOT built (honest scope)
 
 - Live-mode Stripe Connect onboarding (Account Links / KYC) — test-mode transfers work end-to-end
-  today via auto-provisioned test Connected Accounts; see `ROADMAP.md` § Payments
+  today via auto-provisioned test Connected Accounts; see `docs/archive/roadmap-hackathon-era.md` § Payments
 - Live federation network at scale (two local relays work, both feeds are signature-verified,
   content-addressed, and ownership-checked per item; peer discovery directory is not built — see
-  `ROADMAP.md` § Federation)
+  `docs/archive/roadmap-hackathon-era.md` § Federation)
 - Multi-hop gossip — both feeds are own-origin only by deliberate choice, not a relay/rebroadcast
   model; a relay never re-serves a challenge or listing it merely imported from another peer
 - Automatic conflict resolution beyond last-write-under-the-same-owner — `GameRegistry` has no
   merge/reconciliation logic if two relays diverge on a challenge they both legitimately have
-  standing to update; see `ROADMAP.md`'s Architecture cleanup section
+  standing to update; see `docs/archive/roadmap-hackathon-era.md`'s Architecture cleanup section
 
-See `ROADMAP.md` for the full remaining/deferred backlog.
+See `docs/archive/roadmap-hackathon-era.md` for the full remaining/deferred backlog.

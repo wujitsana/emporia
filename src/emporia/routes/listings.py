@@ -123,7 +123,7 @@ async def get_listings(
                 # PaymentMode in engine/game_registry.py) — "stripe_link" here is
                 # that axis's own value, deliberately not renamed by the P3 gate_type
                 # rename. Reconciling the two vocabularies is out of scope (see
-                # ROADMAP.md's P3 section).
+                # docs/archive/roadmap-hackathon-era.md's P3 section).
                 "payment_mode": "stripe_link" if room.gate_type == "paid" else "free",
                 "price_usd": f"{room.entry_fee_cents / 100:.2f}" if room.gate_type == "paid" else "0",
                 "created_at": room.created_at,

@@ -66,7 +66,7 @@ mechanics; where they mention a transfer to a creator, that is the opt-in custod
   (`network_family: "evm" | "svm"`, since an EVM address and a Solana address are different key
   spaces)
 - Platform fee on `exact` is **0%** — the payment settles directly to the creator's wallet, and no
-  split mechanism exists in the protocol or any facilitator today; provisional, see `ROADMAP.md` §
+  split mechanism exists in the protocol or any facilitator today; provisional, see `docs/archive/roadmap-hackathon-era.md` §
   Payments
 - `exact` pays room joins, Agora subscriptions and promised bounties. Purchases and wagers use the
   escrow scheme instead (P99, P154): a hold the relay can only capture to the named payee or void

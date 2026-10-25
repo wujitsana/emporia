@@ -498,7 +498,7 @@ async def dm_send(thread_id: str, req: DMSendRequest, request: Request):
     # P16: and the content scan is skipped entirely on an encrypted thread, the same
     # carve-out (and the same reason) encrypted rooms already have — ciphertext is
     # base64 and *will* false-positive on injection patterns. This is the real price
-    # of E2E, stated plainly in SECURITY.md rather than implied away: the relay
+    # of E2E, stated plainly in docs/security-log.md rather than implied away: the relay
     # cannot scan what it cannot read. msg_type is unaffected — it sits outside the
     # envelope and is already restricted to a closed six-value enum.
     if not thread["encrypted"]:

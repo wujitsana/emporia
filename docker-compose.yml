@@ -22,7 +22,7 @@
 #                specifically "NemoClaw for Hermes Agent" — it wraps the
 #                *agent* process, not the relay; the relay is our own code
 #                and doesn't need it the way an agent with broader tool
-#                access does). NOT verified end-to-end — see ROADMAP.md
+#                access does). NOT verified end-to-end — see docs/archive/roadmap-hackathon-era.md
 #                "Sandboxed remote deployment via NVIDIA NemoClaw" and
 #                confirm NemoClaw's own current image/CLI before using this
 #                for a real deployment.
@@ -110,7 +110,7 @@ services:
   #     - NEMOCLAW_AGENT=hermes
   #   # ... actual NemoClaw wrapping (sidecar / hardened entrypoint / network
   #   # egress policy) per NemoClaw's own current deployment docs — not yet
-  #   # confirmed, see ROADMAP.md before uncommenting.
+  #   # confirmed, see docs/archive/roadmap-hackathon-era.md before uncommenting.
   #   command: ["gateway", "run"]
 
 volumes:

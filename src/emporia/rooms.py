@@ -302,7 +302,7 @@ def verify_chain(
     limit: int | None = None,
 ) -> ChainVerification:
     """Recompute a room's message chain and compare against each stored
-    `chain_hash` — the verifier `chain_hash` never had (SECURITY.md recorded it
+    `chain_hash` — the verifier `chain_hash` never had (docs/security-log.md recorded it
     as "computed and stored, verified nowhere" since P18).
 
     Unlike `session_audit.verify_chain()`, which recomputes from *stored* fields
@@ -725,7 +725,7 @@ def verify_chain_page(
     here.
 
     Exists because a room's chain can no longer be verified in one
-    forward pass that loads every message at once (SECURITY.md recorded that
+    forward pass that loads every message at once (docs/security-log.md recorded that
     a room over the old 1000-message cap "can silently never be verifiable
     from genesis"). Walking backward instead — the only direction the relay's
     own pagination (`get_messages`, `before=created_at`) supports — lets a
@@ -764,7 +764,7 @@ def verify_chain_page(
         deferred cross-page check specifically — says so distinctly, since a
         failure there can also mean `get_messages`' own known page-boundary
         gap silently dropped a message on a `created_at` tie, not just
-        tampering; see that function's docstring and SECURITY.md); `new_expected`
+        tampering; see that function's docstring and docs/security-log.md); `new_expected`
         is `None` and the caller must stop.
       - `ok=True, at_genesis=False`: `new_expected` is this page's own oldest
         message, deferred for the *next* (older) page to verify.

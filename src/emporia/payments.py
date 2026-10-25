@@ -344,7 +344,7 @@ def build_mpp_challenge(amount_cents: int, resource: str, currency: str = "usd")
 # ─── x402 / 402 helpers (P1b) ────────────────────────────────────────────────
 # x402 v2 spec: https://github.com/x402-foundation/x402/blob/main/specs/x402-specification-v2.md
 # A sibling of build_mpp_challenge() above, not one function with a flag —
-# ROADMAP.md is explicit that x402 stays a fully separate code path from
+# docs/archive/roadmap-hackathon-era.md is explicit that x402 stays a fully separate code path from
 # Stripe MPP. The two protocols share only the "HTTP 402, structured
 # challenge, wallet retries" shape; everything else (transport, settlement
 # backend, credential format) differs.
@@ -552,7 +552,7 @@ async def x402_settle_payment(payment_payload: dict[str, Any], payment_requireme
 #
 # Both constants below are the keccak of their own signature and are pinned
 # by a test that derives them rather than restating them. Verified against
-# Base Sepolia during P48 using P45's real settlement (see SECURITY.md).
+# Base Sepolia during P48 using P45's real settlement (see docs/security-log.md).
 # ---------------------------------------------------------------------------
 
 EIP3009_AUTHORIZATION_STATE_SELECTOR = "0xe94a0102"

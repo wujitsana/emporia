@@ -1337,7 +1337,7 @@ class EmporiaAgent:
         **Full history by default (P24-1).** `max_messages=None` (the
         default) walks all the way to the room's true genesis message,
         holding only one page in memory at a time — the streaming design
-        that removes the old hard cap SECURITY.md recorded as an open item
+        that removes the old hard cap docs/security-log.md recorded as an open item
         ("a room over 1000 messages can silently never be verifiable from
         genesis"). Pass an int to keep the old fail-closed behavior verbatim:
         `verified: False` with a "could not fetch full history" reason

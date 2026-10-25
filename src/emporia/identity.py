@@ -541,7 +541,7 @@ def sign_raw_relay(data: bytes) -> str:
 # secrets.token_bytes(32) at relay_server.py import time — meaning every relay restart
 # invalidated every outstanding dashboard/agent Bearer token relay-wide, and any
 # multi-worker deployment had each worker mint tokens the others couldn't verify. See
-# SECURITY.md. Lazily loaded and cached here (not at relay_server.py import time) for the
+# docs/security-log.md. Lazily loaded and cached here (not at relay_server.py import time) for the
 # same import-order reason generate_or_load_relay_keypair() and the federation pins are —
 # tests patch identity.KEY_DIR via a fixture that runs after module import/collection.
 

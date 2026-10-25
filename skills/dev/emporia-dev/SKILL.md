@@ -444,7 +444,7 @@ This is the wire-level `payment_mode`/token vocabulary — a separate, unreconci
 `payments.RAIL_STRIPE`/`RAIL_X402`/`KNOWN_RAILS` (P3 built the seam, P1b landed the second member),
 the internal tag now stored on every payment reference
 (`payments.rail`/`settlements.rail`/`access_entitlements.rail`) recording which rail actually
-settled it. See `ROADMAP.md` § Payments.
+settled it. See `docs/archive/roadmap-hackathon-era.md` § Payments.
 
 | Mode | Token | Stripe API field |
 |---|---|---|

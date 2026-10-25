@@ -32,7 +32,7 @@ Pure by design, same posture as `wire.py`: no I/O, no `httpx`, no `identity`
 import, no relay import. Keys come in as arguments. That keeps every guarantee
 above testable without HTTP, a DB, or a key file.
 
-**What this does not do** (recorded in SECURITY.md, not implied away): it does not
+**What this does not do** (recorded in docs/security-log.md, not implied away): it does not
 hide metadata (who/when/how often/size/`msg_type` stay visible to the relay), and
 it has no forward secrecy against a stolen long-term key — the CEK is fresh per
 message, but a stolen X25519 private key retroactively unwraps everything wrapped

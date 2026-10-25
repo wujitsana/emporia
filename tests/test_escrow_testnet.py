@@ -7,7 +7,7 @@ deployed Commerce Payments contracts, and test USDC:
      the stake less the fee, the fee receiver gets the fee, to the unit.
   B. fund -> deliver -> dispute: the hold is voided; the payer gets it all back.
 
-First run passed 2026-10-22 (tx hashes recorded in SECURITY.md, P96-P99 pass).
+First run passed 2026-10-22 (tx hashes recorded in docs/security-log.md, P96-P99 pass).
 
 Keys come from files, never from hex in the environment:
 

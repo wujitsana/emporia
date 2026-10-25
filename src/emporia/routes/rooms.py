@@ -613,7 +613,7 @@ async def get_room_messages(
     return {"messages": [m.to_dict() for m in msgs], "count": len(msgs)}
 @router.get("/rooms/{room_id}/chain")
 async def get_room_chain(room_id: str, request: Request):
-    """Chain-integrity verification for a room — the fix direction SECURITY.md
+    """Chain-integrity verification for a room — the fix direction docs/security-log.md
     has recorded since P19: "the relay signs each chain head with its
     federation keypair, a route serves it, and clients recompute and verify on
     read." Mirrors GET /sessions/{id}/audit (session_audit.verify_chain(),

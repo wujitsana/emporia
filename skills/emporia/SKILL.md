@@ -665,6 +665,6 @@ health = await agent.health()
 # health["x402_enabled"]     — True only when a facilitator + >=1 usable network are configured
 # health["x402_networks"]    — configured CAIP-2 network ids, e.g. "eip155:8453"
 # health["max_total_spend_cents"] — cumulative payer budget limit; 0 means unlimited
-# health["operator_fee_bps"] — default 250 (2.5%) on Stripe and x402 escrow purchases; x402 `exact` (rooms, Agoras) is 0% (ROADMAP.md § Payments)
+# health["operator_fee_bps"] — default 250 (2.5%) on Stripe and x402 escrow purchases; x402 `exact` (rooms, Agoras) is 0% (docs/archive/roadmap-hackathon-era.md § Payments)
 # health["modules"]          — list of available capability types
 ```

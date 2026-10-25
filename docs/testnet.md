@@ -223,7 +223,7 @@ python scripts/testnet.py --lane escrow
 Create the operator key with `python -m emporia.operator_signer generate` (it refuses to write anywhere
 git would track it). Fund it from a Base Sepolia faucet — check the network: Ethereum Sepolia ETH is
 on a different chain and has to be bridged. First run passed 2026-10-22; the transaction hashes are in
-SECURITY.md's P96–P99 section.
+docs/security-log.md's P96–P99 section.
 
 ## What this tier does and doesn't prove
 

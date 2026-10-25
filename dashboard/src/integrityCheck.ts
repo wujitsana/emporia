@@ -11,7 +11,7 @@
  * that line; decrypting does.
  *
  * Also ports `rooms.compute_chain_hash()` for client-side room chain
- * verification (the "AuditBadge for rooms" SECURITY.md's P21 section
+ * verification (the "AuditBadge for rooms" docs/security-log.md's P21 section
  * explicitly left as an opener for a later pass -- see its "Not built this
  * pass, and why").
  */
@@ -377,7 +377,7 @@ export interface RoomChainVerifyResult {
    *  call) vs "pinned_checkpoint" (stopped at a hash already committed to
    *  its whole prefix by an earlier genesis walk). Never both; a badge that
    *  only rendered `verified` would overclaim exactly the way the old
-   *  replay chip did (SECURITY.md). */
+   *  replay chip did (docs/security-log.md). */
   chain_verified_scope: "genesis" | "pinned_checkpoint" | null;
   /** P24-2 (W2): how much of the room's nonce history this call actually
    *  scanned for a duplicate -- "full_history" only when this call reached
