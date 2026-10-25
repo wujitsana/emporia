@@ -153,6 +153,12 @@ def generate_or_load_keypair(profile_id: str) -> tuple[ed25519.Ed25519PrivateKey
     if linked is not None:
         priv = ed25519.Ed25519PrivateKey.from_private_bytes(linked)
         return priv, priv.public_key().public_bytes_raw()
+    from emporia import key_source
+    if key_source.store_in_env() and not _key_path(profile_id).exists():
+        # P165: a new agent keeps its identity key in its profile .env.
+        priv = ed25519.Ed25519PrivateKey.generate()
+        key_source.save_key_to_env("identity", priv.private_bytes_raw().hex())
+        return priv, priv.public_key().public_bytes_raw()
     return _load_or_generate_at(_key_path(profile_id))
 
 
@@ -229,6 +235,11 @@ def generate_or_load_encryption_keypair(profile_id: str) -> tuple[Any, bytes]:
         priv = X25519PrivateKey.from_private_bytes(linked)
         return priv, priv.public_key().public_bytes_raw()
     path = _enc_key_path(profile_id)
+    from emporia import key_source
+    if key_source.store_in_env() and not path.exists():
+        priv = X25519PrivateKey.generate()      # P165: in the profile .env
+        key_source.save_key_to_env("encryption", priv.private_bytes_raw().hex())
+        return priv, priv.public_key().public_bytes_raw()
     KEY_DIR.mkdir(mode=0o700, parents=True, exist_ok=True)
     if path.exists():
         raw = path.read_bytes()

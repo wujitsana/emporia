@@ -17,7 +17,7 @@ def test_merge_env_file_changes_only_what_it_sets_and_keeps_a_backup(tmp_path):
     assert changed == ["EMPORIA_X402_ENABLED", "NEW"]
     assert env.read_text() == "# mine\nKEEP=1\nEMPORIA_X402_ENABLED=1\nNEW=x\n"
     assert stat.S_IMODE(env.stat().st_mode) == 0o600
-    [backup] = tmp_path.glob(".env.bak-*")
+    [backup] = tmp_path.glob(".env-backups/*/.env")   # P165: a name Hermes's tools refuse to read
     assert "EMPORIA_X402_ENABLED=0" in backup.read_text()
     assert cli.merge_env_file(env, {"NEW": "x"}) == [], "no change, no new backup"
 
@@ -44,7 +44,7 @@ def profiles(tmp_path, monkeypatch):
 def test_setup_agent_makes_a_slim_profile_with_its_own_wallet(profiles, capsys):
     root, _ = profiles
     with patch.dict(os.environ):
-        rc = cli.main(["setup", "agent", "gamma", "--wallet", "--max-daily-cents", "700"])
+        rc = cli.main(["setup", "agent", "gamma", "--keys", "files", "--wallet", "--max-daily-cents", "700"])
     assert rc == 0
     prof = root / "gamma"
     mcp_env = yaml.safe_load((prof / "config.yaml").read_text())["mcp_servers"]["emporia"]["env"]

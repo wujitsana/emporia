@@ -68,10 +68,23 @@ def generate(agent_id: str) -> str:
             f"ignored. A wallet key must never be committable.")
     if path.exists():
         raise AgentWalletError(f"{path} already exists; a wallet key is not replaced implicitly.")
-    identity.KEY_DIR.mkdir(mode=0o700, parents=True, exist_ok=True)
     account = Account.create()
-    identity._write_secret_atomically(path, bytes(account.key))
+    _keep(agent_id, "evm", bytes(account.key))
     return account.address
+
+
+def _keep(agent_id: str, family: str, raw: bytes) -> None:
+    """Store a new wallet key: in the profile .env when the agent keeps its keys
+    there (P165), else a 0600 file."""
+    from emporia import key_source
+    if key_source.store_in_env():
+        if source_for(family):
+            raise AgentWalletError(f"{agent_id} already has a {family} wallet key; it is not replaced implicitly.")
+        key_source.save_key_to_env(family, raw.hex())
+        return
+    path = wallet_path(agent_id) if family == "evm" else solana_wallet_path(agent_id)
+    identity.KEY_DIR.mkdir(mode=0o700, parents=True, exist_ok=True)
+    identity._write_secret_atomically(path, raw)
 
 
 def solana_wallet_path(agent_id: str) -> Path:
@@ -93,9 +106,8 @@ def generate_solana(agent_id: str) -> str:
                                f"confirm it is ignored. A wallet key must never be committable.")
     if path.exists():
         raise AgentWalletError(f"{path} already exists; a wallet key is not replaced implicitly.")
-    identity.KEY_DIR.mkdir(mode=0o700, parents=True, exist_ok=True)
     seed = _secrets.token_bytes(32)
-    identity._write_secret_atomically(path, seed)
+    _keep(agent_id, "svm", seed)
     return x402_svm.address_of(seed)
 
 
@@ -115,7 +127,7 @@ def phrase_path(agent_id: str) -> Path:
 
 
 def has_phrase(agent_id: str) -> bool:
-    return phrase_path(agent_id).exists()
+    return phrase_path(agent_id).exists() or bool(os.getenv(PHRASE_SOURCE_VAR, "").strip())
 
 
 def derive_from_phrase(phrase: str) -> tuple[bytes, bytes]:
@@ -154,14 +166,22 @@ def generate_from_phrase(agent_id: str, phrase: str | None = None,
             raise AgentWalletError(f"{path} already exists; a wallet key is not replaced implicitly.")
     phrase = " ".join((phrase or generate_mnemonic(12, Language.ENGLISH)).split()).lower()
     evm_key, sol_seed = derive_from_phrase(phrase)
-    identity.KEY_DIR.mkdir(mode=0o700, parents=True, exist_ok=True)
-    identity._write_secret_atomically(phrase_path(agent_id), (phrase + "\n").encode())
+    from emporia import key_source
+    if key_source.store_in_env():
+        # P165: the phrase alone, in the profile .env; both wallets derive from it.
+        key_source.save_key_to_env("phrase", phrase)
+        _SOURCE_CACHE.clear()
+    else:
+        identity.KEY_DIR.mkdir(mode=0o700, parents=True, exist_ok=True)
+        identity._write_secret_atomically(phrase_path(agent_id), (phrase + "\n").encode())
     out = {}
     if "evm" in families:
-        identity._write_secret_atomically(targets["evm"], evm_key)
+        if not key_source.store_in_env():
+            identity._write_secret_atomically(targets["evm"], evm_key)
         out["evm"] = Account.from_key(evm_key).address
     if "svm" in families:
-        identity._write_secret_atomically(targets["svm"], sol_seed)
+        if not key_source.store_in_env():
+            identity._write_secret_atomically(targets["svm"], sol_seed)
         out["svm"] = x402_svm.address_of(sol_seed)
     return out
 
@@ -239,8 +259,7 @@ def import_key(agent_id: str, family: str, secret: str) -> str:
     if path.exists():
         raise AgentWalletError(f"{path} already exists; a wallet key is not replaced implicitly.")
     raw = _parse_secret(family, secret)
-    identity.KEY_DIR.mkdir(mode=0o700, parents=True, exist_ok=True)
-    identity._write_secret_atomically(path, raw)
+    _keep(agent_id, family, raw)
     return Account.from_key(raw).address if family == "evm" else x402_svm.address_of(raw)
 
 

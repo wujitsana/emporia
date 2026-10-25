@@ -487,6 +487,10 @@ def cmd_setup_agent(args: argparse.Namespace) -> int:
           f"key, and Emporia (MCP, skill, platform plugin, own keys).")
     sync_model = args.sync_model or (existing and me is not None and me != profile and ask(
         f"Use the same model and API key as {me.name if me else 'this profile'}?", True))
+    storage = args.keys or choose("Where should its keys be kept?", [
+        ("env", "In its profile .env (recommended) — Hermes hides .env files from the agent's own tools"),
+        ("files", "In key files in its keys folder"),
+    ])
     mode = _wallet_mode(args)
     families = {"none": [], "evm": ["evm"], "solana": ["svm"]}.get(mode, ["evm", "svm"])
     if args.pay_networks:
@@ -506,6 +510,20 @@ def cmd_setup_agent(args: argparse.Namespace) -> int:
         x402_max_payment_cents=args.max_payment_cents if wallet else None,
         x402_max_daily_cents=args.max_daily_cents if wallet else None,
     )
+    if storage == "env":
+        # P165: everything this agent creates from now on — its identity and
+        # encryption keys at first start, its wallets now — goes to its .env.
+        merge_env_file(profile / ".env", {"EMPORIA_KEY_STORAGE": "env"})
+        # The installer made its identity key as a file while building the
+        # profile; it is brand new, so it moves without asking.
+        _, aid, _ = _agent(name)
+        fresh = [(w, f, f.read_bytes().hex()) for w in ("identity", "encryption")
+                 if (f := _key_file(profile, aid, w)).exists()]
+        if fresh and not existing and not inst.harvest_env(profile).get("EMPORIA_IDENTITY_KEY_SOURCE"):
+            _move_to_env(profile, fresh, True)
+        elif fresh and existing:
+            print(f"  Its existing keys are still files; move them with `emporia identity store {name} "
+                  f"--to env` and `emporia wallet store {name}`.")
     if wallet:
         from emporia.networks import NETWORKS, label
         _, agent_id, _ = _agent(name)
@@ -599,7 +617,11 @@ def merge_env_file(path: Path, updates: dict[str, str]) -> list[str]:
             changed.append(key)
     if changed:
         if path.exists():
-            backup = path.with_name(f"{path.name}.bak-{time.strftime('%Y%m%dT%H%M%S')}")
+            # P165: <dir>/.env-backups/<time>/.env — a file named .env, which
+            # Hermes's tools refuse to read, since a .env may now hold keys.
+            folder = path.parent / ".env-backups" / time.strftime("%Y%m%dT%H%M%S")
+            folder.mkdir(mode=0o700, parents=True, exist_ok=True)
+            backup = folder / ".env"
             backup.write_bytes(path.read_bytes())
             backup.chmod(0o600)
         path.write_text("\n".join(lines) + "\n")
@@ -988,6 +1010,7 @@ def cmd_wallet(args: argparse.Namespace) -> int:
             ("create", "Create a wallet"),
             ("limits", "Change where it may pay and how much"),
             ("import", "Bring in a wallet it already has (phrase, private key, key file)"),
+            ("store", "Move its wallet keys into its .env (Hermes hides .env from the agent's tools)"),
             ("register", "Register where it is paid (its wallets, or an address you give)"),
         ]) if _TTY else "show"
     profile, agent_id, env = _agent(args.name)
@@ -1031,6 +1054,29 @@ def cmd_wallet(args: argparse.Namespace) -> int:
 
     if args.action == "import":
         return _import_wallet(args, profile, agent_id)
+
+    if args.action == "store":     # P165: key files into the profile .env
+        from emporia.identity import _keyfile_stem
+        key_dir = _key_file(profile, agent_id, "identity").parent
+        stem = _keyfile_stem(agent_id)
+        phrase = key_dir / f"{stem}.x402.phrase"
+        if phrase.exists():   # the phrase alone; both wallets derive from it
+            items = [("phrase", phrase, " ".join(phrase.read_text().split()))]
+            extra = [f for f in (key_dir / f"{stem}.x402.secp256k1", key_dir / f"{stem}.x402.ed25519") if f.exists()]
+        else:
+            items = [(fam, f, f.read_bytes().hex()) for fam, f in
+                     (("evm", key_dir / f"{stem}.x402.secp256k1"), ("svm", key_dir / f"{stem}.x402.ed25519"))
+                     if f.exists()]
+            extra = []
+        if not items:
+            print(f"wallet store: {args.name} has no wallet key files to move")
+            return 1
+        rc = _move_to_env(profile, items, True if args.remove_files else None)
+        for f in extra:   # derived from the phrase, now in the .env
+            if rc == 0 and not phrase.exists() and f.exists():
+                f.unlink()
+                print(f"  removed {f.name} (derived from the phrase)")
+        return rc
 
     if args.action == "register" and (args.address or args.solana_address):
         # Paid at a wallet Emporia holds no key for (a hardware wallet, an app).
@@ -1163,6 +1209,33 @@ def _link_key(profile: Path, agent_id: str, which: str, ref: str) -> int:
     return 0
 
 
+def _move_to_env(profile: Path, items: list[tuple[str, Path, str]], remove: bool | None) -> int:
+    """Move key files into the profile .env: (what, file, value) each. The file
+    is removed only after the .env is checked to hold the same value."""
+    from emporia import key_source
+    moved = []
+    for what, f, value in items:
+        merge_env_file(profile / ".env", {key_source.ENV_KEY_NAMES[what]: value,
+                                          key_source.SOURCE_VARS[what]: f"env:{key_source.ENV_KEY_NAMES[what]}"})
+        if installer().harvest_env(profile).get(key_source.ENV_KEY_NAMES[what]) != value:
+            print(f"  {what}: the .env did not take it; the key file stays")
+            return 1
+        moved.append(f)
+        print(f"  {what}: now in {profile.name}'s .env")
+    merge_env_file(profile / ".env", {"EMPORIA_KEY_STORAGE": "env"})
+    if remove is None:
+        remove = ask("Remove the key files now? (The .env holds them; a leftover file is readable by the "
+                     "agent's tools, which is what this move is for.)", True)
+    for f in moved:
+        if remove and f.exists():
+            f.unlink()
+            print(f"  removed {f.name}")
+    if not remove:
+        print("  The key files are still there; remove them once the agent has restarted fine.")
+    installer().print_restart_instructions([profile])
+    return 0
+
+
 def cmd_identity(args: argparse.Namespace) -> int:
     import shlex
     if not args.name:
@@ -1174,7 +1247,7 @@ def cmd_identity(args: argparse.Namespace) -> int:
     if not args.action:
         args.action = choose(f"{args.name}'s identity and encryption keys:", [
             ("show", "Where they are kept"),
-            ("store", "Move them into 1Password (key files read by `op` itself; never on a command line)"),
+            ("store", "Move them into its .env (recommended) or 1Password"),
             ("link", "Read them from a password manager or env var you already put them in"),
         ]) if _TTY else "show"
     dotenv = installer().harvest_env(profile)
@@ -1200,7 +1273,18 @@ def cmd_identity(args: argparse.Namespace) -> int:
             return 1
         return _link_key(profile, agent_id, which, ref)
 
-    # store: into 1Password as documents, then linked
+    to = args.to or (choose("Move them where?", [
+        ("env", "Its profile .env (recommended) — Hermes hides .env files from the agent's tools"),
+        ("1password", "1Password (as documents; read with `op` when the agent starts)"),
+    ]) if _TTY else "env")
+    if to == "env":
+        items = [(w, f, f.read_bytes().hex()) for w in ("identity", "encryption")
+                 if (f := _key_file(profile, agent_id, w)).exists()]
+        if not items:
+            print("identity store: no key files to move")
+            return 1
+        return _move_to_env(profile, items, True if args.remove_files else None)
+    # into 1Password as documents, then linked
     vault = args.vault or prompt("1Password vault", "Private")
     rc = 0
     for which in ("identity", "encryption"):
@@ -1308,6 +1392,8 @@ def build_parser() -> argparse.ArgumentParser:
     ag.add_argument("name", nargs="?", default="")
     ag.add_argument("--wallet", action="store_true", help="give it an EVM wallet (USDC on Base, Tempo)")
     ag.add_argument("--solana", action="store_true", help="give it a Solana wallet (USDC on Solana)")
+    ag.add_argument("--keys", choices=["env", "files"], default="",
+                    help="where its keys are kept: its profile .env (recommended) or key files")
     ag.add_argument("--separate-keys", action="store_true",
                     help="with --wallet --solana: two keys, not one recovery phrase for both")
     ag.add_argument("--import-phrase", action="store_true",
@@ -1336,10 +1422,12 @@ def build_parser() -> argparse.ArgumentParser:
     idp.add_argument("--key", choices=["identity", "encryption"], default="")
     idp.add_argument("--source", default="", help="link: env:NAME or cmd:COMMAND")
     idp.add_argument("--vault", default="", help="store: the 1Password vault")
+    idp.add_argument("--to", choices=["env", "1password"], default="", help="store: where to")
+    idp.add_argument("--remove-files", action="store_true", help="store --to env: remove the key files after")
     idp.set_defaults(func=cmd_identity)
     wl = sub.add_parser("wallet", help="an agent's wallets: show, create, register, limits")
     wl.add_argument("action", nargs="?", default="",
-                    choices=["", "show", "create", "import", "register", "limits"])
+                    choices=["", "show", "create", "import", "store", "register", "limits"])
     wl.add_argument("name", nargs="?", default="", help="the agent's Hermes profile")
     wl.add_argument("--evm", action="store_true", help="create: the EVM wallet (Base, Tempo) — the default")
     wl.add_argument("--solana", action="store_true", help="create: the Solana wallet")
@@ -1354,6 +1442,7 @@ def build_parser() -> argparse.ArgumentParser:
     wl.add_argument("--max-payment-cents", type=int, default=None)
     wl.add_argument("--max-daily-cents", type=int, default=None)
     wl.add_argument("--offline", action="store_true", help="show: skip the balance lookups")
+    wl.add_argument("--remove-files", action="store_true", help="store: remove the key files after")
     wl.add_argument("--key-file", default="",
                     help="import: a file holding the key (a solana-keygen JSON with --solana, or a hex EVM key)")
     wl.add_argument("--from-env", default="", help="import: copy the key from this environment variable once")

@@ -71,7 +71,7 @@ def test_setup_agent_with_both_wallets_pays_where_the_relay_takes_usdc(profiles,
     monkeypatch.setattr(cli, "health", lambda timeout=3.0: {
         "x402_networks": [BASE, SOL], "tempo_network": "eip155:42431"})
     with patch.dict(os.environ):
-        assert cli.main(["setup", "agent", "delta", "--wallet", "--solana"]) == 0
+        assert cli.main(["setup", "agent", "delta", "--keys", "files", "--wallet", "--solana"]) == 0
     keys = root / "delta" / "home" / ".hermes" / "keys"
     for f in ("delta.x402.secp256k1", "delta.x402.ed25519"):
         assert stat.S_IMODE((keys / f).stat().st_mode) == 0o600
@@ -84,7 +84,7 @@ def test_setup_agent_with_both_wallets_pays_where_the_relay_takes_usdc(profiles,
 def test_wallet_create_never_replaces_a_key_and_limits_take_short_names(profiles, monkeypatch, capsys):
     root, _ = profiles
     with patch.dict(os.environ):
-        cli.main(["setup", "agent", "eps", "--wallet"])
+        cli.main(["setup", "agent", "eps", "--keys", "files", "--wallet"])
     key = root / "eps" / "home" / ".hermes" / "keys" / "eps.x402.secp256k1"
     before = key.read_bytes()
     assert cli.main(["wallet", "create", "eps"]) == 0
@@ -168,7 +168,7 @@ def test_setup_agent_asks_and_one_phrase_is_the_recommended_choice(profiles, mon
     # existing profile? no · wallets: 3 (one phrase) · networks: Enter · caps: 5, 20
     _typing(monkeypatch, "3", "", "5", "20")
     with patch.dict(os.environ):
-        assert cli.main(["setup", "agent", "zeta"]) == 0
+        assert cli.main(["setup", "agent", "zeta", "--keys", "files"]) == 0
     keys = root / "zeta" / "home" / ".hermes" / "keys"
     assert {p.name for p in keys.glob("zeta.x402.*")} == {"zeta.x402.phrase", "zeta.x402.secp256k1",
                                                          "zeta.x402.ed25519"}
@@ -183,14 +183,14 @@ def test_setup_agent_asks_and_one_phrase_is_the_recommended_choice(profiles, mon
 def test_separate_keys_stay_an_option(profiles):
     root, _ = profiles
     with patch.dict(os.environ):
-        assert cli.main(["setup", "agent", "eta", "--wallet", "--solana", "--separate-keys"]) == 0
+        assert cli.main(["setup", "agent", "eta", "--keys", "files", "--wallet", "--solana", "--separate-keys"]) == 0
     keys = root / "eta" / "home" / ".hermes" / "keys"
     assert {p.name for p in keys.glob("eta.x402.*")} == {"eta.x402.secp256k1", "eta.x402.ed25519"}
 
 
 def test_the_wallet_menu_picks_the_agent_and_the_action(profiles, monkeypatch, capsys):
     with patch.dict(os.environ):
-        cli.main(["setup", "agent", "theta"])
+        cli.main(["setup", "agent", "theta", "--keys", "files"])
     _typing(monkeypatch, "1", "1")          # agent 1 (theta) · show
     assert cli.main(["wallet"]) == 0
     assert "Wallets for theta" in capsys.readouterr().out
@@ -227,7 +227,7 @@ def test_wallet_import_reads_a_key_file_and_never_prints_it(profiles, tmp_path, 
     from solders.keypair import Keypair
     root, _ = profiles
     with patch.dict(os.environ):
-        cli.main(["setup", "agent", "iota"])
+        cli.main(["setup", "agent", "iota", "--keys", "files"])
     sol = Keypair()
     keyfile = tmp_path / "id.json"
     keyfile.write_text(json.dumps(list(bytes(sol))))
@@ -271,7 +271,7 @@ def test_wallet_link_stores_the_reference_not_the_key(profiles, monkeypatch, cap
     from eth_account import Account
     root, _ = profiles
     with patch.dict(os.environ):
-        cli.main(["setup", "agent", "kappa"])
+        cli.main(["setup", "agent", "kappa", "--keys", "files"])
     acct = Account.create()
     monkeypatch.setenv("KAPPA_KEY", acct.key.hex())
     assert cli.main(["wallet", "import", "kappa", "--link", "env:KAPPA_KEY"]) == 0
@@ -293,7 +293,7 @@ def test_an_identity_key_links_only_to_the_same_key(profiles, monkeypatch, capsy
     import sys
     root, _ = profiles
     with patch.dict(os.environ):
-        cli.main(["setup", "agent", "lam"])
+        cli.main(["setup", "agent", "lam", "--keys", "files"])
     keys = root / "lam" / "home" / ".hermes" / "keys"
     with patch.object(identity, "KEY_DIR", keys):
         identity.generate_or_load_keypair("lam")
@@ -331,3 +331,64 @@ def test_the_dashboard_finds_an_agent_whose_key_is_linked(tmp_path, monkeypatch)
     assert "mu" in found and found["mu"].identity_source == "env:MU_KEY"
     key = console_agents.load_identity_key(found["mu"])
     assert key.private_bytes_raw() == raw
+
+
+# -- P165: keys in the profile .env -------------------------------------------
+
+def _env_of(profile):
+    return dict(line.split("=", 1) for line in (profile / ".env").read_text().splitlines()
+                if "=" in line and not line.startswith("#"))
+
+
+def test_a_new_agent_keeps_its_keys_in_its_env_by_default(profiles, monkeypatch, capsys):
+    root, _ = profiles
+    with patch.dict(os.environ):
+        assert cli.main(["setup", "agent", "nu", "--wallet", "--solana"]) == 0
+    env = _env_of(root / "nu")
+    assert env["EMPORIA_KEY_STORAGE"] == "env"
+    assert env["EMPORIA_X402_PHRASE_SOURCE"] == "env:EMPORIA_X402_PHRASE_SECRET"
+    assert len(env["EMPORIA_X402_PHRASE_SECRET"].split()) == 12
+    assert not list((root / "nu").rglob("*.x402.*")), "no wallet key files"
+    out = capsys.readouterr().out
+    assert env["EMPORIA_X402_PHRASE_SECRET"] not in out
+    # Its identity key, made at first start, goes there too.
+    keys = root / "nu" / "home" / ".hermes" / "keys"
+    with patch.object(identity, "KEY_DIR", keys), \
+         patch.dict(os.environ, {"EMPORIA_KEY_STORAGE": "env", "EMPORIA_DOTENV": str(root / "nu" / ".env")}):
+        monkeypatch.setattr(identity, "_LINKED", {})
+        _, pub = identity.generate_or_load_keypair("nu")
+        assert not (keys / "nu.priv").exists()
+        assert identity.generate_or_load_keypair("nu")[1] == pub, "the same key on the next start"
+    env = _env_of(root / "nu")
+    assert env["EMPORIA_IDENTITY_KEY_SOURCE"] == "env:EMPORIA_IDENTITY_PRIVATE_KEY"
+
+
+def test_existing_key_files_move_into_the_env_with_the_same_addresses(profiles, capsys):
+    root, _ = profiles
+    with patch.dict(os.environ):
+        cli.main(["setup", "agent", "xi", "--keys", "files", "--wallet", "--solana"])
+    keys = root / "xi" / "home" / ".hermes" / "keys"
+    with patch.object(identity, "KEY_DIR", keys):
+        identity.generate_or_load_keypair("xi")
+        before = (agent_wallet.address("xi"), agent_wallet.solana_address("xi"))
+        pub_before = identity.read_public_key_hex("xi")
+    assert cli.main(["identity", "store", "xi", "--to", "env", "--remove-files"]) == 0
+    assert cli.main(["wallet", "store", "xi", "--remove-files"]) == 0
+    assert not list(keys.glob("xi.*priv")) and not list(keys.glob("xi.x402.*"))
+    env = _env_of(root / "xi")
+    with patch.object(identity, "KEY_DIR", keys), patch.dict(os.environ, env):
+        agent_wallet._SOURCE_CACHE.clear()
+        identity._LINKED.clear()
+        assert (agent_wallet.address("xi"), agent_wallet.solana_address("xi")) == before
+        assert identity.read_public_key_hex("xi") == pub_before
+    assert list((root / "xi").glob(".env-backups/*/.env")), "backups under a protected name"
+    assert not list((root / "xi").glob(".env.bak*"))
+
+
+def test_an_agent_without_a_wallet_is_a_full_agent_that_cannot_pay(profiles, capsys):
+    root, _ = profiles
+    with patch.dict(os.environ):
+        assert cli.main(["setup", "agent", "omi"]) == 0   # no wallet chosen
+    assert "EMPORIA_X402_PAY_NETWORKS" not in (root / "omi" / ".env").read_text()
+    assert cli.main(["wallet", "show", "omi", "--offline"]) == 0
+    assert "none" in capsys.readouterr().out

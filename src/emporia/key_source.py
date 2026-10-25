@@ -78,3 +78,64 @@ def key32(ref: str, env: dict[str, str] | None = None) -> bytes:
     except (binascii.Error, ValueError):
         pass
     raise KeySourceError("the source did not give a 32-byte key (raw, 64 hex characters, or base64)")
+
+
+# P165: keys kept in the agent profile's .env. Hermes treats that file as
+# secret: its file tools refuse to read any .env, its terminal and code tools
+# start children without variables whose names hold KEY/TOKEN/SECRET, and it
+# masks secret-looking assignments in terminal output. That is defence in
+# depth around the model, not a boundary (a deliberately disguised read still
+# gets through) — better than a key file, which has none of it. The names all
+# contain KEY or SECRET so those rules apply.
+ENV_KEY_NAMES = {
+    "identity": "EMPORIA_IDENTITY_PRIVATE_KEY",
+    "encryption": "EMPORIA_ENCRYPTION_PRIVATE_KEY",
+    "evm": "EMPORIA_X402_EVM_PRIVATE_KEY",
+    "svm": "EMPORIA_X402_SOLANA_PRIVATE_KEY",
+    "phrase": "EMPORIA_X402_PHRASE_SECRET",
+}
+SOURCE_VARS = {
+    "identity": "EMPORIA_IDENTITY_KEY_SOURCE",
+    "encryption": "EMPORIA_ENCRYPTION_KEY_SOURCE",
+    "evm": "EMPORIA_X402_EVM_KEY_SOURCE",
+    "svm": "EMPORIA_X402_SOLANA_KEY_SOURCE",
+    "phrase": "EMPORIA_X402_PHRASE_SOURCE",
+}
+STORAGE_VAR = "EMPORIA_KEY_STORAGE"     # "env": new keys go to the profile .env, not files
+
+
+def store_in_env() -> bool:
+    return os.environ.get(STORAGE_VAR, "").strip().lower() == "env" and bool(dotenv_path())
+
+
+def dotenv_path():
+    from pathlib import Path
+    p = os.environ.get("EMPORIA_DOTENV", "").strip()
+    return Path(p) if p else None
+
+
+def set_env_lines(path, updates: dict[str, str]) -> None:
+    """Set `updates` in a .env, keeping every other line; 0600; no backup
+    beside it (a `.env.bak` is not a name Hermes protects)."""
+    lines = path.read_text().splitlines() if path.exists() else []
+    seen = set()
+    for i, line in enumerate(lines):
+        k = line.split("=", 1)[0].strip() if "=" in line and not line.lstrip().startswith("#") else ""
+        if k in updates:
+            lines[i] = f"{k}={updates[k]}"
+            seen.add(k)
+    lines += [f"{k}={v}" for k, v in updates.items() if k not in seen]
+    fd = os.open(str(path), os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    with os.fdopen(fd, "w") as f:
+        f.write("\n".join(lines) + "\n")
+    os.chmod(path, 0o600)
+
+
+def save_key_to_env(what: str, value: str, path=None) -> None:
+    """Keep a new key in the profile .env and point its source at it, here and
+    for every later start of the agent."""
+    path = path or dotenv_path()
+    name, source = ENV_KEY_NAMES[what], SOURCE_VARS[what]
+    set_env_lines(path, {name: value, source: f"env:{name}"})
+    os.environ[name] = value
+    os.environ[source] = f"env:{name}"
