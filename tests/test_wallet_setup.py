@@ -441,3 +441,66 @@ def test_a_role_keeps_toolsets_the_operator_turned_off(profiles):
     assert "tts" in cli._disabled_toolsets(root / "tau")
     cli.apply_role(root / "tau", "developer")
     assert cli._disabled_toolsets(root / "tau") == ["tts"]
+
+
+# -- P169: bring your own keys ----------------------------------------------------
+
+def test_keys_already_on_the_machine_are_found_and_used(profiles, monkeypatch, tmp_path, capsys):
+    from eth_account import Account
+    from solders.keypair import Keypair
+    root, _ = profiles
+    evm, sol = Account.create(), Keypair()
+    home = tmp_path / "home"
+    (home / ".config" / "solana").mkdir(parents=True)
+    (home / ".config" / "solana" / "id.json").write_text(json.dumps(list(bytes(sol))))
+    monkeypatch.setenv("HOME", str(home))
+    monkeypatch.setenv("EVM_PRIVATE_KEY", evm.key.hex())
+    found = cli.byo_candidates(root / "nothing-here")
+    assert {(f["kind"], f["address"]) for f in found} == {("evm", evm.address), ("svm", str(sol.pubkey()))}
+    with patch.dict(os.environ):
+        assert cli.main(["setup", "agent", "upsi", "--role", "marketplace", "--use-found-keys", "link"]) == 0
+    out = capsys.readouterr().out
+    assert evm.address in out and str(sol.pubkey()) in out
+    assert evm.key.hex() not in out, "never the key"
+    env = _env_of(root / "upsi")
+    assert env["EMPORIA_X402_EVM_KEY_SOURCE"] == "env:EVM_PRIVATE_KEY", "the env var is linked, not copied"
+    assert env.get("EMPORIA_X402_SOLANA_PRIVATE_KEY"), "the key file is copied (into the .env by default)"
+
+
+def test_a_string_that_is_not_a_key_is_not_offered(profiles, monkeypatch, tmp_path):
+    root, _ = profiles
+    monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.setenv("PRIVATE_KEY", "not-a-key")
+    monkeypatch.setenv("MNEMONIC", "hello world")
+    assert cli.byo_candidates(root / "x") == []
+
+
+# -- P169: Stripe and the overview ------------------------------------------------
+
+def test_setup_stripe_writes_the_key_from_an_env_var_and_never_prints_it(profiles, monkeypatch, capsys):
+    _, op = profiles
+    monkeypatch.setenv("MY_STRIPE", "sk_test_" + "k" * 24)
+    assert cli.main(["setup", "stripe", "--stripe-key-env", "MY_STRIPE",
+                     "--stripe-profile-id", "profile_test_x"]) == 0
+    env = _env_of(op)
+    assert env["STRIPE_SECRET_KEY"] == "sk_test_" + "k" * 24 and env["STRIPE_PROFILE_ID"] == "profile_test_x"
+    out = capsys.readouterr().out
+    assert "k" * 24 not in out and "Accounts v1" in out
+    monkeypatch.setenv("NOT_STRIPE", "hello")
+    assert cli.main(["setup", "stripe", "--stripe-key-env", "NOT_STRIPE"]) == 0
+    assert "not a Stripe secret key" in capsys.readouterr().out
+    assert _env_of(op)["STRIPE_SECRET_KEY"] == "sk_test_" + "k" * 24, "unchanged"
+
+
+def test_the_overview_lists_every_component_and_reads_only(profiles, capsys):
+    root, op = profiles
+    with patch.dict(os.environ):
+        cli.main(["setup", "agent", "phi", "--role", "marketplace", "--wallet"])
+    before = {p: p.read_bytes() for p in root.rglob("*") if p.is_file()}
+    assert cli.main(["setup"]) == 0
+    out = capsys.readouterr().out
+    for part in ("Relay", "USDC payments", "Escrow holds", "Cards (Stripe)", "Federation", "Risky switches",
+                 "phi", "marketplace", "Emporia tab", "AWS KMS signer", "Key recovery"):
+        assert part in out, part
+    after = {p: p.read_bytes() for p in root.rglob("*") if p.is_file()}
+    assert before == after, "the overview changes nothing"

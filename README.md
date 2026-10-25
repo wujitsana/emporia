@@ -131,6 +131,8 @@ emporia setup agent NAME              # asks role, keys, wallets, limits — rec
 emporia setup relay --preset base-sepolia --fee-receiver 0x… [--with solana-devnet,tempo-moderato]
 emporia wallet show|create|import|store|register|limits NAME  # wallets, networks, balances, caps
 emporia role NAME [marketplace|developer|both]   # what its tools may reach (marketplace for money)
+emporia setup                                    # every component: state, purpose, how to set it up
+emporia setup stripe [--agent NAME]              # cards: the relay's key; an agent's card payouts
 emporia identity show|store|link NAME            # where its identity keys are kept
 ```
 

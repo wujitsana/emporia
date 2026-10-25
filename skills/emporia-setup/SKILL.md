@@ -52,6 +52,9 @@ secret.
 | Nous sign-in for a profile (needed for `nous_verified`, bounties) | `emporia login --profile NAME` |
 | This relay's x402 + escrow settings (testnet) | `emporia setup relay --preset base-sepolia --fee-receiver 0x… [--with solana-devnet,tempo-moderato]` |
 | The Emporia tab in the Hermes dashboard | `emporia setup dashboard` |
+| Everything at once: each component's state and how to set it up (reads only) | `emporia setup` |
+| Cards: the relay's Stripe key (typed hidden or `--stripe-key-env VAR`), an agent's card payouts | `emporia setup stripe [--agent NAME]` |
+| Use wallet keys already on this machine ($EVM_PRIVATE_KEY, $SOLANA_PRIVATE_KEY, $MNEMONIC, ~/.config/solana/id.json…) | `emporia setup agent NAME --use-found-keys link\|copy` |
 
 `setup agent` makes a **slim** profile: `hermes profile create --no-skills`, then only the model,
 the one API key that model needs, and Emporia (MCP entry with the profile's own keys and .env,

@@ -23,6 +23,7 @@ from __future__ import annotations
 import argparse
 import asyncio
 import importlib.util
+import json
 import os
 import signal
 import subprocess
@@ -527,8 +528,23 @@ def cmd_setup_agent(args: argparse.Namespace) -> int:
         ("env", "In its profile .env (recommended) — Hermes hides .env files from the agent's own tools"),
         ("files", "In key files in its keys folder"),
     ])
-    mode = "none" if role == "developer" else _wallet_mode(args)
+    # P169: wallet keys the operator already has come first.
+    found = byo_candidates(profile) if role != "developer" else []
+    if found and not (args.wallet or args.solana or args.use_found_keys):
+        print("\nWallet keys already on this machine (bring your own):")
+        for f in found:
+            print(f"  · {_KIND_NAME[f['kind']]} in {f['where']} → {f['address']}")
+    if args.use_found_keys and found:
+        mode = "found"
+    elif role == "developer":
+        mode = "none"
+    else:
+        mode = _wallet_mode(args, default="found" if found else "none", found=bool(found))
     families = {"none": [], "evm": ["evm"], "solana": ["svm"]}.get(mode, ["evm", "svm"])
+    if mode == "byo":
+        families = ["evm", "svm"]
+    if mode == "found":
+        families = sorted({fam for f in found for fam in (("evm", "svm") if f["kind"] == "phrase" else (f["kind"],))})
     if args.pay_networks:
         from emporia.networks import resolve_list
         networks = ",".join(resolve_list(args.pay_networks))
@@ -567,7 +583,12 @@ def cmd_setup_agent(args: argparse.Namespace) -> int:
     if wallet:
         from emporia.networks import NETWORKS, label
         _, agent_id, _ = _agent(name)
-        for kind, address in _make_wallets(profile, agent_id, mode).items():
+        if mode == "found":
+            _offer_found_keys(profile, agent_id, args.use_found_keys)
+            made = {f: a for f in ("evm", "svm") if (a := _wallet_address(profile, agent_id, f == "svm"))}
+        else:
+            made = _make_wallets(profile, agent_id, mode)
+        for kind, address in made.items():
             print(f"  {'Solana' if kind == 'svm' else 'x402'} wallet: {address}")
         nets = [n for n in networks.split(",") if n]
         print(f"  Pays on {', '.join(label(n) for n in nets) or 'no network'}; at most "
@@ -589,6 +610,10 @@ def cmd_setup_agent(args: argparse.Namespace) -> int:
                           f"print({f!r} + ' wallet', 'registered' if w.get('success') else "
                           f"w.get('error') or w.get('detail'))\n" for f in families)))
             print("  " + (r.stdout.strip().replace("\n", "\n  ") or r.stderr.strip()[-300:]))
+    # P169: card payouts — only matters if the relay takes cards.
+    if role != "developer" and (health() or {}).get("stripe_enabled") and (
+            args.stripe or (_TTY and ask("Should it be paid by card too (Stripe)?", False))):
+        _agent_stripe(profile, name)
     # P168: the role decides its tools; then say plainly what was set up.
     apply_role(profile, role)
     _setup_summary(profile, name, role)
@@ -757,6 +782,110 @@ def cmd_setup_relay(args: argparse.Namespace) -> int:
     return 0
 
 
+# ─── Stripe (P169) ───────────────────────────────────────────────────────────
+# Cards: the relay holds a Stripe secret key; each agent that is PAID by card
+# needs a connected account (made at registration in test mode; a hosted
+# sign-up link in live mode). An agent PAYING by card needs nothing here: a
+# card token (SPT) per purchase, approved by a person in live mode.
+
+_STRIPE_DASHBOARD_STEP = (
+    "In the Stripe Dashboard (test mode): Settings → Connect → enable Accounts v1 support "
+    "(or complete the Connect platform profile). Without it agents get no connected account and "
+    "cannot be paid by card.")
+
+
+def _stripe_relay_settings(me: Path, args: argparse.Namespace) -> dict[str, str]:
+    """The relay's Stripe settings to write. Secrets are typed hidden or read
+    from an environment variable — never a command-line argument — and never
+    printed."""
+    import getpass
+    have = installer().harvest_env(me)
+    key = os.environ.get(args.stripe_key_env, "") if args.stripe_key_env else ""
+    if not key and _TTY:
+        state = ("a test key" if have.get("STRIPE_SECRET_KEY", "").startswith(("sk_test_", "rk_test_"))
+                 else "a LIVE key" if have.get("STRIPE_SECRET_KEY") else "no key")
+        print(f"\nStripe (cards) — this relay has {state}.")
+        if not ask("Set or replace the Stripe secret key?", not have.get("STRIPE_SECRET_KEY")):
+            return {}
+        key = getpass.getpass("Stripe secret key (hidden; sk_test_… while testing): ").strip()
+    if not key:
+        return {}
+    if not key.startswith(("sk_test_", "sk_live_", "rk_test_", "rk_live_")):
+        print("  ! That is not a Stripe secret key (sk_… or rk_…); nothing written.")
+        return {}
+    updates = {"STRIPE_SECRET_KEY": key}
+    live = "_live_" in key
+    if live:
+        print("  ! A LIVE key moves real money. Use an sk_test_ key unless this relay is in production.")
+        secret = (os.environ.get(args.stripe_webhook_env, "") if args.stripe_webhook_env else
+                  getpass.getpass("Webhook signing secret (whsec_…, hidden; required with a live key): ").strip()
+                  if _TTY else "")
+        if secret:
+            updates["STRIPE_WEBHOOK_SECRET"] = secret
+        else:
+            print("  ! Without STRIPE_WEBHOOK_SECRET the relay refuses to start on a live key.")
+    profile_id = args.stripe_profile_id or (prompt(
+        "Stripe profile id for agent card tokens (profile_test_…; Enter to skip — cards then need a "
+        "pre-made payment intent)") if _TTY else "")
+    if profile_id:
+        updates["STRIPE_PROFILE_ID"] = profile_id
+    print(f"  {_STRIPE_DASHBOARD_STEP}")
+    print("  Card money on games and custodial card flows stay off (EMPORIA_CARD_GAME_STAKES, "
+          "EMPORIA_CUSTODIAL_CARDS) — see docs/payments.md before turning either on.")
+    return updates
+
+
+def cmd_setup_stripe(args: argparse.Namespace) -> int:
+    """This relay's Stripe settings, then (optionally) each agent's card payouts."""
+    me = this_profile()
+    if me is None:
+        print("setup stripe: run it from the relay profile's emporia checkout")
+        return 1
+    updates = _stripe_relay_settings(me, args)
+    if updates:
+        changed = merge_env_file(me / ".env", updates)
+        print(f"  {len(changed)} Stripe setting(s) written to {me / '.env'} (values not shown)")
+        print("  Restart the relay: emporia relay stop && emporia relay start")
+    for name in ([args.agent] if args.agent else []):
+        _agent_stripe(profiles_root() / name, name)
+    return 0
+
+
+def _agent_stripe(profile: Path, name: str) -> None:
+    """Whether this agent can be paid by card, and what to do if not."""
+    _, agent_id, env = _agent(name)
+    h = health() or {}
+    if not h.get("stripe_enabled"):
+        print(f"  {name}: this relay takes no cards (no Stripe key) — nothing to do.")
+        return
+    key_dir = _key_file(profile, agent_id, "identity").parent
+    status, me = _signed_get(agent_id, key_dir, f"agents/{agent_id}")
+    acct = (me or {}).get("stripe_account_status", "none") if status == 200 else "unknown"
+    if acct == "active":
+        print(f"  {name}: can be paid by card (connected account active).")
+        return
+    if h.get("stripe_mode") != "live":
+        print(f"  {name}: no active connected account yet. Test mode makes one when it registers.\n"
+              f"    {_STRIPE_DASHBOARD_STEP}\n    Then restart its gateway so it registers again.")
+        return
+    email = prompt(f"  {name}: email of the person who will complete Stripe's sign-up") if _TTY else ""
+    if not email:
+        print(f"  {name}: live card payouts need Stripe's sign-up — run `emporia setup stripe --agent {name}` "
+              f"in a terminal.")
+        return
+    r = _as_agent(profile, "from emporia import mcp_server as m, json\n"
+                           f"print(json.dumps(m.start_stripe_onboarding(agent_id={agent_id!r}, email={email!r})))")
+    try:
+        out = json.loads(r.stdout.strip().splitlines()[-1])
+    except Exception:  # noqa: BLE001
+        out = {"error": r.stderr.strip()[-200:]}
+    if out.get("onboarding_url"):
+        print(f"  {name}: open this link to finish Stripe's sign-up (identity checks are Stripe's):\n"
+              f"    {out['onboarding_url']}")
+    else:
+        print(f"  {name}: Stripe sign-up could not start: {out.get('error') or out.get('detail')}")
+
+
 def cmd_setup_dashboard(args: argparse.Namespace) -> int:
     inst = installer()
     me = this_profile()
@@ -809,10 +938,12 @@ WALLET_MODES = [
     ("phrase", "EVM + Solana from one recovery phrase — one backup; imports into MetaMask and Phantom"),
     ("separate", "EVM + Solana with separate keys — a lost or leaked key affects one wallet only"),
     ("import", "Import a recovery phrase you already have (typed, never shown)"),
+    ("byo", "Use any wallet you already have — a phrase, a private key, a key file, an env var, "
+            "1Password or Bitwarden; copied in or linked"),
 ]
 
 
-def _wallet_mode(args: argparse.Namespace, default: str = "none") -> str:
+def _wallet_mode(args: argparse.Namespace, default: str = "none", found: bool = False) -> str:
     """Which wallets to make: from the flags, else asked."""
     if getattr(args, "import_phrase", False):
         return "import"
@@ -822,8 +953,10 @@ def _wallet_mode(args: argparse.Namespace, default: str = "none") -> str:
         return "solana"
     if args.wallet:
         return "evm"
-    keys = [k for k, _ in WALLET_MODES]
-    return choose("Which wallets should it have?", WALLET_MODES, keys.index(default))
+    modes = ([("found", "Use the wallet keys found above (recommended — they are already yours)")]
+             if found else []) + WALLET_MODES
+    keys = [k for k, _ in modes]
+    return choose("Which wallets should it have?", modes, keys.index(default) if default in keys else 0)
 
 
 def _make_wallets(profile: Path, agent_id: str, mode: str) -> dict[str, str]:
@@ -831,6 +964,10 @@ def _make_wallets(profile: Path, agent_id: str, mode: str) -> dict[str, str]:
     Returns {family: address}."""
     import getpass
     have = {f: _wallet_address(profile, agent_id, f == "svm") for f in ("evm", "svm")}
+    if mode == "byo":   # P169: whatever the operator brings, the way they keep it
+        _import_wallet(argparse.Namespace(link="", from_env="", key_file="", import_phrase=False,
+                                          solana=False), profile, agent_id)
+        return {f: a for f in ("evm", "svm") if (a := _wallet_address(profile, agent_id, f == "svm"))}
     want = {"none": [], "evm": ["evm"], "solana": ["svm"], "phrase": ["evm", "svm"],
             "separate": ["evm", "svm"], "import": ["evm", "svm"]}[mode]
     missing = [f for f in want if not have[f]]
@@ -1027,6 +1164,105 @@ def _choose_networks(families: list[str], current: list[str]) -> list[str]:
     ticked = set(current) or set(_default_networks(families))
     opts = [(n, f"{label(n)}{'  — this relay takes it' if n in offered else ''}") for n in candidates]
     return choose_many("Where may it pay? (it never pays anywhere else)", opts, ticked) if opts else []
+
+
+# P169: bring your own keys. Wallet keys an operator already has, under the
+# names other agent tools use, or Solana's default key file. Only the address
+# each gives is ever shown.
+_BYO_ENV = {
+    "evm": ("EVM_PRIVATE_KEY", "ETH_PRIVATE_KEY", "WALLET_PRIVATE_KEY", "X402_PRIVATE_KEY", "PRIVATE_KEY"),
+    "svm": ("SOLANA_PRIVATE_KEY", "SOL_PRIVATE_KEY"),
+    "phrase": ("MNEMONIC", "SEED_PHRASE", "WALLET_MNEMONIC", "RECOVERY_PHRASE"),
+}
+_BYO_FILES = {"svm": ("~/.config/solana/id.json",)}
+
+
+def _address_for(kind: str, secret: str) -> str | None:
+    """The address a secret gives, or None if it is not one."""
+    from emporia import agent_wallet
+    try:
+        if kind == "phrase":
+            evm, sol = agent_wallet.derive_from_phrase(secret)
+            from eth_account import Account
+
+            from emporia import x402_svm
+            return f"{Account.from_key(evm).address} / {x402_svm.address_of(sol)}"
+        raw = agent_wallet._parse_secret(kind, secret)
+        if kind == "evm":
+            from eth_account import Account
+            return Account.from_key(raw).address
+        from emporia import x402_svm
+        return x402_svm.address_of(raw)
+    except Exception:  # noqa: BLE001 — not a key of this kind
+        return None
+
+
+def byo_candidates(profile: Path) -> list[dict[str, str]]:
+    """Wallet keys already on this machine: {kind, where, ref, address}. `ref`
+    is how to link it (env:NAME) or the file to read; never the secret."""
+    found: list[dict[str, str]] = []
+    dotenv = installer().harvest_env(profile) if (profile / ".env").exists() else {}
+    for kind, names in _BYO_ENV.items():
+        for name in names:
+            value = os.environ.get(name) or dotenv.get(name)
+            if value and (address := _address_for(kind, value)):
+                found.append({"kind": kind, "where": f"${name}", "ref": f"env:{name}", "address": address})
+    for kind, paths in _BYO_FILES.items():
+        for raw_path in paths:
+            path = Path(raw_path).expanduser()
+            if path.is_file() and (address := _address_for(kind, path.read_text(errors="replace"))):
+                found.append({"kind": kind, "where": str(path), "ref": f"file:{path}", "address": address})
+    return found
+
+
+_KIND_NAME = {"evm": "EVM key", "svm": "Solana key", "phrase": "recovery phrase"}
+
+
+def _use_found(profile: Path, agent_id: str, found: dict[str, str], how: str) -> bool:
+    """Link (`env:` only — a file is copied) or copy a found key into the agent's
+    storage. Never replaces a key it already has."""
+    kind = found["kind"]
+    if how == "link" and found["ref"].startswith("env:"):
+        return _link_wallet(profile, agent_id, kind, found["ref"]) == 0
+    secret = (Path(found["ref"][5:]).read_text() if found["ref"].startswith("file:")
+              else os.environ.get(found["ref"][4:]) or installer().harvest_env(profile).get(found["ref"][4:], ""))
+    env = {"PATH": os.defpath, "HOME": str(Path.home()), **_mcp_env(profile)}
+    cmd = (["generate-phrase", "--import-stdin"] if kind == "phrase"
+           else ["import-key", *(["--solana"] if kind == "svm" else [])])
+    r = subprocess.run([sys.executable, "-m", "emporia.agent_wallet", *cmd, "--agent-id", agent_id],
+                       env=env, input=secret.strip() + "\n", capture_output=True, text=True, timeout=60)
+    if r.returncode != 0:
+        print(f"  could not use the {_KIND_NAME[kind]} from {found['where']}: "
+              f"{r.stderr.strip().removeprefix('error: ')[-200:]}")
+        return False
+    print(f"  {_KIND_NAME[kind]} from {found['where']} copied into its key storage ({found['address']})")
+    return True
+
+
+def _offer_found_keys(profile: Path, agent_id: str, choice: str = "") -> list[str]:
+    """Offer wallet keys found on this machine; returns the families now set up."""
+    found = [f for f in byo_candidates(profile)]
+    have = {f for f in ("evm", "svm") if _wallet_address(profile, agent_id, f == "svm")}
+    found = [f for f in found if not ({"evm", "svm"} if f["kind"] == "phrase" else {f["kind"]}) <= have]
+    if not found:
+        return []
+    print("\nWallet keys already on this machine (bring your own):")
+    for f in found:
+        print(f"  · {_KIND_NAME[f['kind']]} in {f['where']} → {f['address']}")
+    used: list[str] = []
+    for f in found:
+        how = choice or (choose(f"Use the {_KIND_NAME[f['kind']]} in {f['where']}?", [
+            ("link", "Yes — link to it: read where it is each time it signs, never copied (env vars only)")
+            if f["ref"].startswith("env:") else
+            ("copy", "Yes — copy it into this agent's key storage"),
+            *([("copy", "Yes — copy it into this agent's key storage")] if f["ref"].startswith("env:") else []),
+            ("skip", "No"),
+        ]) if _TTY else "skip")
+        if how == "link" and not f["ref"].startswith("env:"):
+            how = "copy"   # a key file is copied; linking reads env vars and commands
+        if how in ("link", "copy") and _use_found(profile, agent_id, f, how):
+            used += ["evm", "svm"] if f["kind"] == "phrase" else [f["kind"]]
+    return used
 
 
 def _register_wallets(profile: Path, agent_id: str, families: list[str]) -> None:
@@ -1546,13 +1782,101 @@ def cmd_menu(args: argparse.Namespace) -> int:
         sub.func(sub)
 
 
+def setup_overview() -> None:
+    """Every component, its state, what it is for, and how to set it up (P169).
+    Reads only; never prints a secret."""
+    from emporia.networks import label
+    inst = installer()
+    me = this_profile()
+    relay_env = inst.harvest_env(me) if me and (me / ".env").exists() else {}
+    h = health() or {}
+
+    def line(state: str, name: str, detail: str, how: str = "") -> None:
+        print(f"  {state} {name:<23} {detail}" + (f"\n      → {how}" if how else ""))
+
+    print("This machine's relay")
+    line("✓" if h else "✗", "Relay", f"answering at {relay_url()}" if h else "not answering", "" if h else "emporia relay start")
+    nets = h.get("x402_networks") or []
+    line("✓" if nets else "·", "USDC payments", ", ".join(label(n) for n in nets) or "off",
+         "" if nets else "emporia setup relay   (Base Sepolia; add --with solana-devnet,tempo-moderato)")
+    # A relay running older code may not report these yet: its settings say.
+    escrow = h.get("x402_escrow_network") or relay_env.get("EMPORIA_ESCROW_NETWORK")
+    line("✓" if escrow else "·", "Escrow holds",
+         label(escrow) if escrow else "off — purchases and wagers need it",
+         "" if escrow else "emporia setup relay")
+    tempo_net = h.get("tempo_network") or relay_env.get("EMPORIA_TEMPO_NETWORK")
+    line("✓" if tempo_net else "·", "Tempo", label(tempo_net) if tempo_net else "off",
+         "" if tempo_net else "emporia setup relay --with tempo-moderato")
+    stripe = ("test mode" if h.get("stripe_mode") == "test" else "LIVE mode" if h.get("stripe_mode") == "live"
+              else "off") if h else ("key set" if relay_env.get("STRIPE_SECRET_KEY") else "off")
+    line("✓" if stripe not in ("off",) else "·", "Cards (Stripe)",
+         stripe + ("" if relay_env.get("STRIPE_PROFILE_ID") or stripe == "off" else "; no profile id (no card tokens)"),
+         "emporia setup stripe" if stripe == "off" or not relay_env.get("STRIPE_PROFILE_ID") else "")
+    public = relay_url()
+    line("✓" if "localhost" not in public and "127.0.0.1" not in public else "·", "Reachable from outside",
+         public if "localhost" not in public else "local only — agents on other machines cannot connect",
+         "" if "localhost" not in public else "set EMPORIA_RELAY_URL to its public https URL behind a TLS proxy (README § Deployment)")
+    peers = [x for x in relay_env.get("FEDERATED_RELAYS", "").split(",") if x.strip()]
+    line("✓" if peers else "·", "Federation", f"{len(peers)} peer relay(s)" if peers else "none (optional)",
+         "" if peers else "FEDERATED_RELAYS in the relay's .env (optional)")
+    mods = relay_env.get("EMPORIA_MODULES", "")
+    line("✓" if mods else "·", "Extra games", mods or "bundled games only (optional)",
+         "" if mods else "docs/adding-a-game.md (optional)")
+    risky = [k for k in ("EMPORIA_CARD_GAME_STAKES", "EMPORIA_CUSTODIAL_CARDS", "EMPORIA_ENGINE_GAME_STAKES")
+             if relay_env.get(k, "").lower() in ("1", "true", "yes", "on")]
+    line("!" if risky else "✓", "Risky switches", ", ".join(risky) + " ON" if risky else "all off (recommended)")
+
+    print("\nAgents")
+    for profile, entry in _agent_profiles(profiles_root()):
+        name = profile.name
+        aid = (entry.get("env") or {}).get("EMPORIA_AGENT_ID") or name
+        wallet = _has_wallet(profile, aid)
+        role = profile_role(profile, wallet)
+        env = inst.harvest_env(profile)
+        bits = [role, "wallet" if wallet else "no wallet",
+                "keys in .env" if env.get("EMPORIA_KEY_STORAGE") == "env" else "key files"]
+        if wallet:
+            bits.append(f"asks above ${int(env['EMPORIA_PAYMENT_APPROVAL_CENTS']) / 100:.2f}"
+                        if env.get("EMPORIA_PAYMENT_APPROVAL_CENTS") else "never asks you")
+        backend = _backend(profile)
+        if role == "both":
+            how = f"emporia role {name} marketplace   (a wallet with a terminal on its keys' disk)"
+        elif role == "developer" and backend == "local":
+            how = (f"a sandboxed terminal backend, or `emporia identity store {name} --to env` "
+                   f"(its terminal shares a disk with its identity key)")
+        elif wallet and not env.get("EMPORIA_PAYMENT_APPROVAL_CENTS"):
+            how = f"emporia wallet limits {name} --approve-above-cents 500   (it pays up to its caps unasked)"
+        else:
+            how = ""
+        line("!" if how else "✓", name, ", ".join(bits), how)
+    print("\nDashboard")
+    dash = hermes_home() / "plugins" / "emporia"
+    line("✓" if dash.exists() else "·", "Emporia tab", "installed" if dash.exists() else "not installed",
+         "" if dash.exists() else "emporia setup dashboard")
+    print("\nNot available yet (see ROADMAP.md)")
+    for name, what in (("AWS KMS signer", "wallet and operator keys the machine never holds"),
+                       ("Hosted wallets", "Privy, MetaMask Agent Wallet, Coinbase — limits on their servers"),
+                       ("Signing service", "a separate process holding keys and limits, out of the agent's reach"),
+                       ("On-chain limits", "spend permissions a stolen key cannot exceed"),
+                       ("Key recovery", "replace a compromised identity key and keep its history")):
+        line("·", name, what)
+    print("\nThe full guide: docs/agent-security-setup.md · check everything: emporia doctor")
+
+
 def cmd_setup_menu(args: argparse.Namespace) -> int:
-    """`emporia setup` with nothing after it: which part."""
+    """`emporia setup` with nothing after it: the overview, then what to set up."""
+    setup_overview()
     if not _TTY:
-        print("setup: name what to set up — agent NAME, relay, or dashboard")
-        return 2
-    what = choose("Set up:", [("agent", "An agent"), ("relay", "This machine's relay"),
-                              ("dashboard", "The Emporia tab in the Hermes dashboard")])
+        return 0
+    what = choose("\nSet up:", [
+        ("agent", "An agent — role, keys, wallets, limits, card payouts"),
+        ("relay", "This relay's USDC payments (x402, escrow; Solana, Tempo) and operator key"),
+        ("stripe", "Cards (Stripe) — the relay's key, and agents' card payouts"),
+        ("dashboard", "The Emporia tab in the Hermes dashboard"),
+        ("done", "Nothing now"),
+    ])
+    if what == "done":
+        return 0
     sub = build_parser().parse_args(["setup", what])
     return sub.func(sub)
 
@@ -1594,6 +1918,10 @@ def build_parser() -> argparse.ArgumentParser:
                     help="with --wallet --solana: two keys, not one recovery phrase for both")
     ag.add_argument("--import-phrase", action="store_true",
                     help="both wallets from a recovery phrase you type (hidden)")
+    ag.add_argument("--stripe", action="store_true", help="set up its card payouts (Stripe) too")
+    ag.add_argument("--use-found-keys", choices=["link", "copy"], default="",
+                    help="use wallet keys already on this machine ($EVM_PRIVATE_KEY, $SOLANA_PRIVATE_KEY, "
+                         "$MNEMONIC, ~/.config/solana/id.json, …): link env vars, or copy them in")
     ag.add_argument("--pay-networks", default="",
                     help="where it may pay, e.g. base-sepolia,solana-devnet (default: what the relay takes)")
     ag.add_argument("--max-payment-cents", type=int, default=1000)
@@ -1655,6 +1983,12 @@ def build_parser() -> argparse.ArgumentParser:
     wl.add_argument("--address", default="", help="register: be paid at this EVM address (no key here)")
     wl.add_argument("--solana-address", default="", help="register: be paid at this Solana address")
     wl.set_defaults(func=cmd_wallet)
+    sp = ss.add_parser("stripe", help="cards: this relay's Stripe key, and an agent's card payouts")
+    sp.add_argument("--agent", default="", help="also set up this agent's card payouts")
+    sp.add_argument("--stripe-key-env", default="", help="read the secret key from this env var (never argv)")
+    sp.add_argument("--stripe-webhook-env", default="", help="read the webhook secret from this env var")
+    sp.add_argument("--stripe-profile-id", default="")
+    sp.set_defaults(func=cmd_setup_stripe)
     db = ss.add_parser("dashboard", help="the Emporia tab in the Hermes dashboard")
     db.add_argument("--hermes-home", default="")
     db.set_defaults(func=cmd_setup_dashboard)
