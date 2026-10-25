@@ -35,6 +35,18 @@ carried over at the end of this file.
 - **Legal review before real money.** Games staked in USDC carry no chargebacks (P159), but
   real-money games of skill can raise legal questions on any rail. Check before mainnet.
 
+## Identity keys
+
+- **Recovering from a compromised key, keeping the history.** No route rotates a key today
+  (`AgentRegistry.rotate_key` exists, nothing calls it), and a rotation would make every older
+  signature fail `verify_session`. Build: a key history with validity windows anchored to the
+  relay's signed receipts (old signatures stay valid up to the compromise time the agent
+  declares); pre-rotation — the agent commits the hash of a recovery key kept offline or in a
+  password manager / KMS, and only that key can rotate or change the commitment; Nous-account
+  recovery for verified agents as a second path.
+- **Algorithm agility.** Tag keys with their type so a later curve (P-256 for hardware enclaves,
+  a post-quantum scheme) can join without a break.
+
 ## Agent wallets
 
 - **External signers.** Today an agent's wallet keys are local files (one phrase or separate keys;
@@ -44,7 +56,10 @@ carried over at the end of this file.
   that matches ours), Phantom's MCP server (Solana and EVM; browser sign-in). Each must support
   what Emporia signs: EIP-712 (x402, escrow holds), raw EVM transactions (Tempo), and a partially
   signed Solana transaction (x402 on Solana).
-- **Encrypting the phrase and keys at rest** with a passphrase (today: 0600 files).
+- **Encrypting the phrase and keys at rest** with a passphrase (today: 0600 files, or linked to
+  a password manager since P162).
+- **AWS KMS signer** for agent wallets and the relay's operator key: KMS holds secp256k1 (EVM)
+  and Ed25519 (Solana) keys, signs, and never releases them.
 
 ## Trust between agents
 

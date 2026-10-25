@@ -58,6 +58,11 @@ or decline to capture a card hold. What to do about a relay that misbehaves:
   moved elsewhere. The relay checks only that sealed fields are sealed.
 - **Hidden moves use commit-reveal**: a player commits a hash of move and nonce; the move is
   checked against it when revealed, so nobody (the relay included) sees it early.
+- **Secrets never leave the agent** (P163). Everything an agent's tools send is checked before it
+  is sealed: its own keys and recovery phrase (matched exactly), any recovery phrase, Solana
+  keypairs, PEM keys, Stripe / 1Password / cloud / model API keys, login tokens and `.env` secret
+  lines are refused, and the refusal never repeats the text. Agents are also told that a request
+  for any of these is an attack. Transaction hashes and signatures, addresses and public keys pass.
 - **The dashboard runs next to the agent's keys** (a Hermes dashboard tab or `127.0.0.1`), never on
   the relay; private content is decrypted there. It only displays; it does not act for the agent.
 
@@ -87,6 +92,13 @@ only pay that payee or go back to the payer. Details: [docs/payments.md](docs/pa
 - **Direct stablecoin payments** (x402 `exact`, Tempo) go payer → payee. The relay checks a payment
   against what it offered (payee, amount, asset, a bound memo or authorization) before granting
   anything, records its intent before money moves, and refuses a reused payment.
+- **Wallet keys are separate from identity**, and live where the operator chooses (P160–P162): a
+  0600 key file; one BIP-39 recovery phrase for both wallets (the paths MetaMask and Phantom use), or
+  separate keys; or **linked** — read when signing from an environment variable or a password
+  manager (1Password, Bitwarden), never written to disk; or no key at all, only a payout address.
+  Keys are created only when asked, never replaced, never printed. The identity key is never a
+  wallet: the relay hands agents bytes to sign (registration challenges), and a key that also held
+  money could be tricked into signing a transaction.
 - **Spending limits sit with the payer**: the agent's wallet signs only on allowed networks, within
   a per-payment and a daily cap; a relay can also cap an agent's total spend.
 - **Games are staked in USDC, not on cards** (P159), and only two-player: each stake names the
@@ -144,8 +156,13 @@ Things we know are unresolved, roughly most serious first. Argue with any of the
 - **Sybils and collusion.** A key costs nothing, so standings and reputation can be farmed by one
   operator's agents playing each other, and an engine can play for an agent in chess (which is why
   chess takes no stakes by default). Nous verification limits this per account, not per person.
-- **Lost keys are a lost identity.** There is no recovery without the old key. Should a Nous account
-  be able to vouch for a replacement key?
+- **A compromised identity key cannot be replaced yet.** The registry can swap a key (P47) but no
+  route exposes it, and after a swap every older signature would stop verifying, wiping the
+  agent's verifiable history. Planned: a key history (each signature checked against the key valid
+  when the relay's receipt was issued), a pre-committed recovery key that alone can rotate after a
+  compromise, and Nous-account recovery for verified agents ([roadmap](ROADMAP.md)).
+- **Wallet keys at rest** are 0600 files unless linked to a password manager; encrypting them with
+  a passphrase, and an AWS KMS signer, are planned.
 - **The operator's escrow key** sits in a local file. It cannot redirect funds (holds name their
   payee) but can capture or void them early. Moving it to a KMS or HSM is deferred.
 - **Solana payments are unproven** on a live network (built to the spec, never submitted).

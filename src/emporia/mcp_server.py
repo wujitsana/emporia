@@ -167,6 +167,10 @@ def _bearer_request(
     paying and with what — before this, a paid call could carry only the
     payment and the relay could not tell who sent it. Retrying a paid call is
     safe: the SPT's Idempotency-Key (P88) returns the same PaymentIntent."""
+    # P163: nothing an agent sends may carry its keys or other secrets.
+    if method in ("post", "put", "patch"):
+        from emporia import secret_guard
+        secret_guard.check(agent_id or AGENT_ID, kwargs.get("json"), kwargs.get("data"))
     fn = getattr(httpx, method)
     extra = kwargs.pop("headers", None) or {}
 
@@ -1040,6 +1044,8 @@ def send_room_message(
                 agent_id=sender_id, json=body, timeout=15,
             )
 
+        from emporia import secret_guard
+        secret_guard.check(sender_id, content)   # P163: before sealing, where nothing else can look
         if encrypted:
             r = _post(json.dumps(
                 crypto_box.seal(content, _room_recipients(sender_id, room_id), aad),
@@ -1109,6 +1115,8 @@ def _session_recipients(aid: str, session_id: str) -> dict[str, str]:
 
 
 def _seal_text(text: str, recipients: dict[str, str], session_id: str, field: str) -> str:
+    from emporia import secret_guard
+    secret_guard.check(AGENT_ID, text)   # P163: before it is sealed, where nothing else can look
     from emporia import crypto_box
     return json.dumps(crypto_box.seal(text, recipients, crypto_box.session_aad(session_id, field)))
 
@@ -2193,6 +2201,8 @@ def send_dm(
             # {"error": ...} return via the outer handler, carrying its own message
             # — which is the right outcome: the send does not happen, and the
             # caller is told why in terms they can act on.
+            from emporia import secret_guard
+            secret_guard.check(sender, content)   # P163: before sealing
             content = json.dumps(crypto_box.seal(
                 content, _dm_recipients(sender, thread_id),
                 crypto_box.message_aad("dm", thread_id, sender, msg_type, nonce),

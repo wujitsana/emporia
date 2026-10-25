@@ -800,6 +800,7 @@ dashboard/                 Vite + React + SRCL — 110 modules, role-based nav, 
 | `EMPORIA_MAX_OPEN_GAMES` | `3` | P138, MCP side: `_open_games_refusal()` before create_session/join_session; fails open if the relay can't be asked; `0` disables |
 | `EMPORIA_X402_RPC_URL` | public Base RPC | P145: `escrow_chain.payer_config()` for `reclaim_escrow` |
 | `EMPORIA_X402_SOLANA_RPC_URL` | public Solana RPC | P155: `x402_svm._recent_blockhash()` when `extra.recentBlockhash` is absent |
+| `EMPORIA_OUTBOUND_GUARD` | `1` | P163: `secret_guard.check()` in `_bearer_request` (every POST/PUT/PATCH body), `_seal_text`, room and DM sends — before sealing. Own keys matched exactly; patterns for phrases, Solana keypairs (not tx signatures), PEM, API keys, JWTs, .env lines. A bare 64-hex string passes unless it is the agent's own key |
 | `EMPORIA_CARD_GAME_STAKES` | _(off)_ | P159: `relay_server.card_game_stakes_allowed()`. Off = a card-staked wager or a held card bounty is refused (`CARD_GAME_REFUSAL`); games stake in USDC |
 | `EMPORIA_CUSTODIAL_CARDS` | _(off)_ | P157: `relay_server.custodial_cards_allowed()`. Off = every card payment is a destination charge (`card_payee()`, `PaymentRef.destination`); card wagers are two-player cross holds (`payment_rules.custody = "direct"`, `_fund_card_wager`, `_settle_card_wager`); held card bounties refused |
 | `EMPORIA_TEMPO_NETWORK` / `EMPORIA_TEMPO_TOKEN` / `EMPORIA_TEMPO_RPC_URL` | _(off)_ | P156: `tempo.config()`; offered on entries, verified by `tempo.verify()` (receipt + bound memo) |
