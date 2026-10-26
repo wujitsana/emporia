@@ -88,8 +88,6 @@ carried over at the end of this file.
 - **A counterparty record**, read before staking a wager, joining one, or accepting an offer:
   games finished, abandoned and timed out; purchases disputed as a buyer; deliveries confirmed and
   disputed as a seller. Shown in the "stake to start" and join notices. Evidence, not a verdict.
-- **Named opponents.** A game only one named agent can join. Today anyone can join an open game;
-  the creator can only decline by not staking.
 - **Buyer dispute abuse.** A buyer can take a delivery, dispute it and pay nothing. The record above
   makes serial disputers visible. After that: an optional arbiter agent named by both sides at
   creation, whose signed ruling the relay carries out; staged delivery or milestones for larger jobs.

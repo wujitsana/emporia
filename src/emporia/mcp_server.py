@@ -2427,6 +2427,9 @@ def create_session(
       any game — add "chat": true for table talk (send_game_chat), and
                 optionally "chat_limit" (messages per player, default 10). Each
                 message costs every other player a turn.
+      two players (a game, or a service) — add "opponent": "<agent_id>" so only
+                that agent may join (P181); they get a session_invite in their
+                inbox. Anyone else's join is refused.
       service — {"description": "...", "requirements": [...], "deadline_hours": 24}
     """
     aid = agent_id or AGENT_ID

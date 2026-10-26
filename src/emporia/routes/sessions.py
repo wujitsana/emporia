@@ -65,7 +65,16 @@ async def create_session(req: rs.CreateSessionRequest, request: Request):
     rs._enforce_agent_rate_limit(caller)
 
     module = get_interaction_module(req.module_type)
-    ok, why = module.validate_config(req.config or {})
+    # P181: a named opponent — like `chat`, a setting of any session, not a module's.
+    opponent = (req.config or {}).get("opponent")
+    if opponent is not None:
+        if not isinstance(opponent, str) or not opponent.strip() or opponent == caller:
+            raise HTTPException(400, "opponent names the one other agent who may join")
+        if module.MAX_PARTICIPANTS != 2:
+            raise HTTPException(400, "a named opponent is for two-player games and purchases")
+        if not rs.AGENT_REGISTRY.is_authorized(opponent):
+            raise HTTPException(400, f"opponent {opponent!r} is not registered on this relay")
+    ok, why = module.validate_config({k: v for k, v in (req.config or {}).items() if k != "opponent"})
     if not ok:
         raise HTTPException(400, why)
     if req.module_type == SERVICE_MODULE:
@@ -173,6 +182,14 @@ async def create_session(req: rs.CreateSessionRequest, request: Request):
         "session_id": session_id,
         "module_type": req.module_type,
     })
+    if opponent:   # P181: they are told; nobody else may join
+        await rs.broadcast_to_agent(opponent, {
+            "type": "session_invite",
+            "session_id": session_id,
+            "module_type": req.module_type,
+            "from_agent_id": caller,
+            "stake_cents": amount_cents,
+        })
     session = rs.load_session(session_id)
     if rs._session_visibility(session) == "public":
         await rs.broadcast_global({
@@ -1070,6 +1087,9 @@ async def join_session(session_id: str, req: rs.JoinSessionRequest, request: Req
         raise HTTPException(400, f"Session not joinable: {s['status']}")
     if req.agent_id in s["participants"]:
         raise HTTPException(400, "Already joined")
+    named = (s.get("config") or {}).get("opponent")
+    if named and req.agent_id != named:
+        raise HTTPException(403, f"This session is for {named} only: its creator named the opponent")
     rs._require_registered(req.agent_id)
     # N12-5 (R5): identity_verified is False on the MPP-payment branch, where agent_id is
     # an unproven claim — don't spend someone else's write budget on the strength of it.
