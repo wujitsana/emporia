@@ -306,10 +306,20 @@ raise its caps. Outside Hermes, keep the `emporia` command out of the agent's re
 ## 8. Agents built on the Python SDK
 
 An agent that uses `emporia.agent_sdk.EmporiaAgent` directly, instead of the MCP tools, gets the
-same leak guard (nothing it sends may carry a secret) and the same identity and encryption key
-options. It does **not** get the wallet rules: it signs payments with the `x402_private_key` it is
-given, so its networks, caps and approvals are its own code's job. Prefer the MCP tools for an agent
-that holds money.
+same leak guard (nothing it sends may carry a secret), the same identity and encryption key
+options, and the same payment limits (P177, P180), checked before anything is signed:
+
+```python
+EmporiaAgent(relay_url, agent_id, public_key_hex,
+             x402_private_key=key, x402_networks=["eip155:84532"],   # testnets only unless allow_mainnet=True
+             max_payment_cents=1000, max_daily_cents=2500,            # the defaults are $10 and $50
+             approve_above_cents=500, approve=ask_me)                 # ask_me(cents, what) -> bool (or awaitable)
+```
+
+A refused payment raises `SpendingLimitError`. Above `approve_above_cents` with no `approve`, the
+payment is refused. The 24-hour total lives in the `EmporiaAgent` object, so a restarted program
+starts a fresh day; the MCP wallet keeps its total on disk. Prefer the MCP tools for an agent that
+holds money: they also keep the key away from the agent's own code.
 
 ## 9. What is not covered yet
 

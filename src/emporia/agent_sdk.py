@@ -34,6 +34,15 @@ def _ws_url(http_url: str, path: str) -> str:
     return urllib.parse.urljoin(base.geturl(), path)
 
 
+class SpendingLimitError(RuntimeError):
+    """P180: a payment refused before signing — above a cap, past the daily
+    total, or not approved. Nothing was signed."""
+
+
+_USDC_ATOMIC_PER_CENT = 10_000      # 6 decimals
+_DAY_S = 24 * 3600
+
+
 class PaymentRequiredError(httpx.HTTPStatusError):
     """Raised by the three paid-entry methods (join_session, join_room,
     subscribe_agora_topic) on a 402. `.detail` is the parsed response body
@@ -102,6 +111,10 @@ class EmporiaAgent:
         x402_private_key: str | None = None,
         x402_networks: list[str] | None = None,
         allow_mainnet: bool = False,
+        max_payment_cents: int = 1_000,
+        max_daily_cents: int = 5_000,
+        approve_above_cents: int | None = None,
+        approve: Callable[[int, str], bool | Awaitable[bool]] | None = None,
     ) -> None:
         self.relay_url = relay_url.rstrip("/")
         self.agent_id = agent_id
@@ -125,6 +138,15 @@ class EmporiaAgent:
                                          else [k for k, v in NETWORKS.items() if v.testnet])
                              if is_testnet(n)]
         self._x402_networks = x402_networks
+        # P180: the same limits an MCP agent's wallet applies, before anything
+        # is signed: a per-payment cap, a 24-hour total (kept for this object's
+        # lifetime), and above `approve_above_cents` your `approve(cents, what)`
+        # must say yes — with no `approve` given, such a payment is refused.
+        self._max_payment_cents = max_payment_cents
+        self._max_daily_cents = max_daily_cents
+        self._approve_above_cents = approve_above_cents
+        self._approve = approve
+        self._spent: list[tuple[float, int]] = []
         self._bearer_token: str | None = None
         self._bearer_exp: float = 0.0
 
@@ -432,15 +454,44 @@ class EmporiaAgent:
             session = (await self._bearer_request(
                 "get", f"{self.relay_url}/sessions/{session_id}")).json()
             stake = (session.get("payment_rules") or {}).get("stake_per_participant", "0")
-            header = sign_offer(
-                offer, self._x402_private_key,
-                expected_amount=int(_x402_amount_atomic(int(round(float(stake) * 100)))),
-                allowed_networks=self._x402_networks,
-            )
+            expected = int(_x402_amount_atomic(int(round(float(stake) * 100))))
+            await self._check_spend(expected, f"an escrow hold for session {session_id}")   # P180
+            try:
+                header = sign_offer(
+                    offer, self._x402_private_key,
+                    expected_amount=expected,
+                    allowed_networks=self._x402_networks,
+                )
+            except Exception:
+                self._spent.pop()      # refused by the offer checks: nothing was signed
+                raise
             resp = await self._bearer_request("post", url, headers={"PAYMENT-ESCROW": header})
         _raise_for_status_or_payment(resp)
         return resp.json()
 
+
+    async def _check_spend(self, amount_atomic: int, what: str) -> None:
+        """P180: refuse (SpendingLimitError) a payment above the cap, past the
+        24-hour total, or above the approval threshold without a yes; else
+        record it. Called just before signing."""
+        import time as _time
+
+        cents = -(-amount_atomic // _USDC_ATOMIC_PER_CENT)
+        if amount_atomic > self._max_payment_cents * _USDC_ATOMIC_PER_CENT:
+            raise SpendingLimitError(f"{what}: ${cents / 100:.2f} is above this agent's "
+                                     f"${self._max_payment_cents / 100:.2f} per-payment cap")
+        now = _time.time()
+        self._spent = [(t, a) for t, a in self._spent if now - t < _DAY_S]
+        if sum(a for _, a in self._spent) + amount_atomic > self._max_daily_cents * _USDC_ATOMIC_PER_CENT:
+            raise SpendingLimitError(f"{what}: would take this agent past its "
+                                     f"${self._max_daily_cents / 100:.2f} in 24 hours")
+        if self._approve_above_cents is not None and cents > self._approve_above_cents:
+            answer = self._approve(cents, what) if self._approve else False
+            if asyncio.iscoroutine(answer) or isinstance(answer, Awaitable):
+                answer = await answer
+            if answer is not True:
+                raise SpendingLimitError(f"{what}: ${cents / 100:.2f} needs approval and was not approved")
+        self._spent.append((now, amount_atomic))
 
     async def _pay_and_retry_x402(
         self,
@@ -471,11 +522,16 @@ class EmporiaAgent:
         # Imported here, not at module scope: signing lives in the optional
         # `x402` extra, and an SDK user who never pays with x402 must not need
         # 19 packages of EIP-712 machinery installed to import this module.
-        from emporia.x402_payer import sign_challenge
-
-        header = sign_challenge(
-            _payment_detail(resp), self._x402_private_key, networks=self._x402_networks,
+        from emporia.x402_payer import (
+            build_payment_payload, payment_required_from, payment_signature_header, select_requirement,
         )
+
+        challenge = payment_required_from(_payment_detail(resp))
+        requirement = select_requirement(challenge, networks=self._x402_networks)
+        await self._check_spend(int(requirement.get("amount") or 0),
+                                f"USDC on {requirement.get('network')} to {str(requirement.get('payTo'))[:12]}…")
+        header = payment_signature_header(
+            build_payment_payload(requirement, self._x402_private_key, resource=challenge.get("resource")))
         return await retry(header)
 
     async def join_session(
