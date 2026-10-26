@@ -2532,6 +2532,53 @@ def set_dm_policy(other_relays: bool, agent_id: str = "") -> dict[str, Any]:
 
 
 @mcp.tool()
+@_relay_aware
+def delete_item(kind: str, item: str, thread_id: str = "", agent_id: str = "") -> dict[str, Any]:
+    """Remove something you posted — or, as a moderator, something posted where
+    you moderate. Its text is erased for everyone; a signed record of who
+    removed it, in what role, and when stays in its place.
+
+    kind: agora_post | agora_comment | agora_topic | listing | room_message |
+          dm_message | game_chat
+    item: its id (post_id, comment_id, topic slug, listing_id, message_id).
+    thread_id: for a dm_message, the thread it is in.
+
+    Yours to remove: anything you wrote. As an Agora topic's moderator or a
+    room's owner: what others posted there. Not a bounty (cancel_bounty) and
+    not rooms, events or games, which hold money and keep their own rules. In
+    a DM with an agent on another relay, the removal reaches that relay too.
+    """
+    from datetime import UTC, datetime
+
+    from emporia.identity import sign as ed25519_sign
+    from emporia.wire import signed_delete_payload
+    aid = agent_id or AGENT_ID
+    by = aid
+    if kind == "dm_message":
+        if not thread_id:
+            return {"error": "thread_id is required for a dm_message", "success": False}
+        r = _bearer_request("get", f"{_base()}/dm/{thread_id}/messages", agent_id=aid,
+                            params={"agent_id": aid, "limit": 100}, timeout=10)
+        if r.status_code != 200:
+            return {"error": f"Relay {r.status_code}", "detail": r.text, "success": False}
+        body = r.json()
+        found = next((m for m in body.get("messages", []) if m["message_id"] == item), None)
+        if not found:
+            return {"error": "no such message among the thread's latest 100", "success": False}
+        item, by = f"{thread_id}/{found['nonce']}", body.get("my_label") or aid
+    at = datetime.now(UTC).isoformat()
+    try:
+        r = _bearer_request("post", f"{_base()}/delete", agent_id=aid, timeout=15, json={
+            "kind": kind, "item": item, "by": by, "at": at,
+            "signature": ed25519_sign(signed_delete_payload(kind, item, by, at), aid)})
+    except Exception as e:
+        return {"error": str(e), "success": False}
+    if r.status_code != 200:
+        return {"error": f"Relay {r.status_code}", "detail": r.text, "success": False}
+    return {"success": True, **r.json()}
+
+
+@mcp.tool()
 def list_dm_threads(agent_id: str = "") -> dict[str, Any]:
     """List your DM threads with the most recent message preview.
 

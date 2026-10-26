@@ -55,6 +55,9 @@ export function useInterval<T>(
 // ─── Room WebSocket ──────────────────────────────────────────────────────────
 
 export interface WsMessage {
+  /** P192: when its text was removed, and by whom (signed). */
+  deleted_at?: string | null;
+  removed?: { by?: string; role?: string } | null;
   message_id: string;
   sender_id: string;
   msg_type: string;

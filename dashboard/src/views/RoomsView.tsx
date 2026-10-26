@@ -138,8 +138,10 @@ export function RoomsView({ initialRoomId, navigate }: { initialRoomId: string |
     // transform) — for an encrypted room that's the envelope, which is what
     // was actually signed; verifying against dmDisplayContent()'s output
     // (the 🔒 placeholder) would never match any real signature.
-    verified: verifyMessageSignature("room", roomId, m, pubkeys[m.sender_id] || ""),
+    // P192: a removed message has no text to check; its removal is shown instead.
+    verified: m.deleted_at ? null : verifyMessageSignature("room", roomId, m, pubkeys[m.sender_id] || ""),
     replayed: m.replayed,
+    removed: m.deleted_at ? (m.removed ?? null) : undefined,
   }));
 
   return (

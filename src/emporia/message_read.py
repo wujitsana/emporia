@@ -78,6 +78,23 @@ def annotate_messages(
             seen_nonces.add(nonce)
 
         sender = msg.get("sender_id", "")
+        if msg.get("deleted_at"):
+            # P192: its text was removed, so its own signature has nothing to
+            # check; the removal's signature is checked instead, when the one
+            # who removed it is the one who wrote it.
+            msg["verified"] = None
+            msg["decrypted"] = False
+            msg["decrypt_error"] = None
+            msg["encrypted"] = False
+            removal = msg.get("removed") or {}
+            if removal and removal.get("by") == sender and pubkeys.get(sender):
+                from emporia.identity import verify as _verify
+                from emporia.wire import signed_delete_payload
+                item = (f"{scope_id}/{nonce}" if kind == "dm" else msg.get("message_id", ""))
+                removal["verified"] = _verify(
+                    signed_delete_payload(f"{kind}_message", item, removal.get("by", ""), removal.get("at", "")),
+                    removal.get("signature", ""), pubkeys[sender])
+            continue
         msg["verified"] = verify(msg, pubkeys.get(sender, ""))
 
         msg["decrypted"] = False

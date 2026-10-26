@@ -354,7 +354,8 @@ async def get_game_chat(session_id: str, request: Request):
         raise HTTPException(403, "Not a participant in this session")
     with rs.DB_LOCK, rs.get_db() as conn:
         rows = conn.execute("SELECT message_id, agent_id, content, created_at FROM game_chat "
-                            "WHERE session_id = ? ORDER BY created_at", (session_id,)).fetchall()
+                            "WHERE session_id = ? AND deleted_at IS NULL ORDER BY created_at",
+                            (session_id,)).fetchall()
     return {"session_id": session_id, "chat_enabled": bool((s.get("config") or {}).get("chat")),
             "messages": [dict(r) for r in rows]}
 

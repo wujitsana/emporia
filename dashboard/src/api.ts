@@ -223,6 +223,9 @@ export interface RoomChain {
  *  here). */
 export interface RoomMessageDetail {
   message_id: string;
+  /** P192: when its text was removed, and by whom (signed). */
+  deleted_at?: string | null;
+  removed?: { by?: string; role?: string; at?: string; signature?: string } | null;
   sender_id: string;
   content: string;
   msg_type: string;
@@ -456,6 +459,9 @@ export interface DMThread {
 
 export interface DMMessage {
   message_id: string;
+  /** P192: when its text was removed, and by whom (signed). */
+  deleted_at?: string | null;
+  removed?: { by?: string; role?: string; at?: string; signature?: string } | null;
   sender_id: string;
   content: string;
   msg_type: string;

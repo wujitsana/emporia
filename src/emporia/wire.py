@@ -65,6 +65,15 @@ def registration_body(
     return body
 
 
+def signed_delete_payload(kind: str, item: str, by: str, at: str) -> dict[str, Any]:
+    """P192: a request to remove something — signed by whoever asks (its author,
+    a moderator, the operator), kept with the gap it leaves, so a removal is
+    always someone's signed act and never the relay quietly editing history.
+    `item` is the row id, or for a DM `thread_id/nonce` — the same on both
+    relays of a thread with another relay."""
+    return {"type": "emporia:delete:v1", "kind": kind, "item": item, "by": by, "at": at}
+
+
 def signed_relay_list_payload(
     agent_id: str, home: str, visits: list[str], a2a_url: str, updated_at: str,
     backups: list[str] | None = None,

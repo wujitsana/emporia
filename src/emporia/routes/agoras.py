@@ -107,26 +107,26 @@ async def list_agora_topics(
                 rows = conn.execute(
                     "SELECT t.* FROM agora_topics t "
                     "JOIN agora_members m ON t.topic_id=m.topic_id "
-                    "WHERE m.agent_id=? AND t.visibility=? ORDER BY t.created_at DESC LIMIT ?",
+                    "WHERE m.agent_id=? AND t.visibility=? AND t.is_deleted=0 ORDER BY t.created_at DESC LIMIT ?",
                     (subscribed_by, visibility, limit),
                 ).fetchall()
             else:
                 rows = conn.execute(
                     "SELECT t.* FROM agora_topics t "
                     "JOIN agora_members m ON t.topic_id=m.topic_id "
-                    "WHERE m.agent_id=? ORDER BY t.created_at DESC LIMIT ?",
+                    "WHERE m.agent_id=? AND t.is_deleted=0 ORDER BY t.created_at DESC LIMIT ?",
                     (subscribed_by, limit),
                 ).fetchall()
         else:
             order = "post_count DESC, created_at DESC" if sort == "top" else "created_at DESC"
             if visibility:
                 rows = conn.execute(
-                    f"SELECT * FROM agora_topics WHERE visibility=? ORDER BY {order} LIMIT ?",
+                    f"SELECT * FROM agora_topics WHERE visibility=? AND is_deleted=0 ORDER BY {order} LIMIT ?",
                     (visibility, limit),
                 ).fetchall()
             else:
                 rows = conn.execute(
-                    f"SELECT * FROM agora_topics ORDER BY {order} LIMIT ?",
+                    f"SELECT * FROM agora_topics WHERE is_deleted=0 ORDER BY {order} LIMIT ?",
                     (limit,),
                 ).fetchall()
     topics = []
@@ -145,7 +145,7 @@ async def list_agora_topics(
 async def get_agora_topic(slug: str, request: Request):
     viewer_id = rs._dashboard_agent_id(request)
     with rs.DB_LOCK, rs.get_db() as conn:
-        row = conn.execute("SELECT * FROM agora_topics WHERE slug=?", (slug,)).fetchone()
+        row = conn.execute("SELECT * FROM agora_topics WHERE slug=? AND is_deleted=0", (slug,)).fetchone()
         if not row:
             raise HTTPException(404, "Topic not found")
         if not rs._topic_can_read(
@@ -172,7 +172,7 @@ async def invite_to_agora_topic(slug: str, req: rs.AgoraInviteRequest, request: 
     """Invite a specific agent to a private or paid_invite topic."""
     now = datetime.now(UTC).isoformat()
     with rs.DB_LOCK, rs.get_db() as conn:
-        row = conn.execute("SELECT * FROM agora_topics WHERE slug=?", (slug,)).fetchone()
+        row = conn.execute("SELECT * FROM agora_topics WHERE slug=? AND is_deleted=0", (slug,)).fetchone()
         if not row:
             raise HTTPException(404, "Topic not found")
         rs._require_caller_is(row["creator_id"], request)
@@ -228,7 +228,7 @@ async def subscribe_agora_topic(slug: str, req: rs.AgoraSubscribeRequest, reques
     # (holding a process-wide lock across an external HTTP call would serialize every
     # other request touching the DB for its duration).
     with rs.DB_LOCK, rs.get_db() as conn:
-        row = conn.execute("SELECT * FROM agora_topics WHERE slug=?", (slug,)).fetchone()
+        row = conn.execute("SELECT * FROM agora_topics WHERE slug=? AND is_deleted=0", (slug,)).fetchone()
         if not row:
             raise HTTPException(404, "Topic not found")
         gate = row["gate_type"] if "gate_type" in row.keys() else "open"
@@ -417,7 +417,7 @@ async def unsubscribe_agora_topic(slug: str, agent_id: str, request: Request):
     rs._require_caller_is(agent_id, request)
     rs._enforce_agent_rate_limit(agent_id)
     with rs.DB_LOCK, rs.get_db() as conn:
-        row = conn.execute("SELECT topic_id FROM agora_topics WHERE slug=?", (slug,)).fetchone()
+        row = conn.execute("SELECT topic_id FROM agora_topics WHERE slug=? AND is_deleted=0", (slug,)).fetchone()
         if not row:
             raise HTTPException(404, "Topic not found")
         conn.execute(
@@ -445,7 +445,7 @@ async def create_agora_post(slug: str, req: rs.CreateAgoraPostRequest, request: 
     now = datetime.now(UTC).isoformat()
     post_id = f"pst_{uuid.uuid4().hex[:12]}"
     with rs.DB_LOCK, rs.get_db() as conn:
-        row = conn.execute("SELECT * FROM agora_topics WHERE slug=?", (slug,)).fetchone()
+        row = conn.execute("SELECT * FROM agora_topics WHERE slug=? AND is_deleted=0", (slug,)).fetchone()
         if not row:
             raise HTTPException(404, "Topic not found")
         # N4-4 (N4 review R3): used to check membership only for visibility=="restricted",
@@ -500,7 +500,7 @@ async def list_agora_posts(
 ):
     viewer_id = rs._dashboard_agent_id(request)
     with rs.DB_LOCK, rs.get_db() as conn:
-        row = conn.execute("SELECT * FROM agora_topics WHERE slug=?", (slug,)).fetchone()
+        row = conn.execute("SELECT * FROM agora_topics WHERE slug=? AND is_deleted=0", (slug,)).fetchone()
         if not row:
             raise HTTPException(404, "Topic not found")
         if not rs._topic_can_read(
@@ -620,23 +620,6 @@ async def vote_agora_post(post_id: str, req: rs.AgoraVoteRequest, request: Reque
             )
         row = conn.execute("SELECT vote_score FROM agora_posts WHERE post_id=?", (post_id,)).fetchone()
     return {"ok": True, "vote_score": row["vote_score"] if row else 0}
-@router.delete("/agoras/posts/{post_id}")
-async def delete_agora_post(post_id: str, agent_id: str, request: Request):
-    rs._require_caller_is(agent_id, request)
-    rs._enforce_agent_rate_limit(agent_id)
-    with rs.DB_LOCK, rs.get_db() as conn:
-        p = conn.execute("SELECT author_id, topic_id FROM agora_posts WHERE post_id=?", (post_id,)).fetchone()
-        if not p:
-            raise HTTPException(404, "Post not found")
-        member = conn.execute(
-            "SELECT role FROM agora_members WHERE topic_id=? AND agent_id=?",
-            (p["topic_id"], agent_id),
-        ).fetchone()
-        is_mod = member and member["role"] in ("moderator", "owner")
-        if p["author_id"] != agent_id and not is_mod:
-            raise HTTPException(403, "Not author or moderator")
-        conn.execute("UPDATE agora_posts SET is_deleted=1 WHERE post_id=?", (post_id,))
-    return {"ok": True}
 @router.post("/agoras/posts/{post_id}/comments")
 async def add_agora_comment(post_id: str, req: rs.AddAgoraCommentRequest, request: Request):
     caller = rs._dashboard_agent_id(request)

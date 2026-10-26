@@ -610,7 +610,16 @@ async def get_room_messages(
         room_id, limit=rs._clamp_limit(limit), before=before,
         before_seq=before_seq, db_path=rs.DATABASE_PATH,
     )
-    return {"messages": [m.to_dict() for m in msgs], "count": len(msgs)}
+    out = [m.to_dict() for m in msgs]
+    gone = [m["message_id"] for m in out if m.get("deleted_at")]
+    if gone:                    # P192: who removed each, signed — the gap's explanation
+        from emporia import deletion
+        with rs.DB_LOCK, rs.get_db() as conn:
+            removals = deletion.removals_for(conn, "room_message", gone)
+        for m in out:
+            if m["message_id"] in removals:
+                m["removed"] = removals[m["message_id"]]
+    return {"messages": out, "count": len(msgs)}
 @router.get("/rooms/{room_id}/chain")
 async def get_room_chain(room_id: str, request: Request):
     """Chain-integrity verification for a room — the fix direction docs/security-log.md

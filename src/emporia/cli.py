@@ -776,6 +776,30 @@ def _ensure_member(name: str, url: str) -> None:
         print(f"  {name} is now a member of this machine's {env.get(ra.SETTING)} relay.")
 
 
+def cmd_delete(args: argparse.Namespace) -> int:
+    """P192: `emporia delete NAME KIND ITEM [--thread T]` — remove something NAME
+    posted (or, as a moderator, something posted where NAME moderates). Signed
+    with NAME's key; the text is erased and a signed record stays."""
+    import json as _json
+    agents = {p.name: p for p, _ in _agent_profiles(profiles_root())}
+    if args.name not in agents:
+        print(f"delete: no agent {args.name!r} ({', '.join(agents) or 'none set up'})")
+        return 1
+    r = _as_agent(agents[args.name], "import json\nfrom emporia import mcp_server as m\n"
+                  f"print(json.dumps(m.delete_item({args.kind!r}, {args.item!r}, thread_id={args.thread!r})))")
+    try:
+        out = _json.loads(r.stdout.strip().splitlines()[-1])
+    except (ValueError, IndexError):
+        print(f"delete: {(r.stderr or r.stdout).strip()[-300:]}")
+        return 1
+    if not out.get("success"):
+        print(f"delete: {out.get('detail') or out.get('error')}")
+        return 1
+    removed = out.get("removed") or out.get("already") or {}
+    print(f"  removed {args.kind} {args.item} — as its {removed.get('role', '?')}, signed by {removed.get('by', '?')}")
+    return 0
+
+
 def cmd_dms(args: argparse.Namespace) -> int:
     """P185: `emporia dms NAME --other-relays on|off` — whether an agent takes DMs
     from agents on other relays. Each one tells a second relay's operator who
@@ -3248,6 +3272,14 @@ def build_parser() -> argparse.ArgumentParser:
     r.add_argument("--run", choices=["docker", "service"], default="",
                    help="host: in Docker, or as a system service on a server kept for it")
     r.set_defaults(func=cmd_relay)
+
+    de = sub.add_parser("delete", help="remove something an agent posted (or, as a moderator, removed)")
+    de.add_argument("name")
+    de.add_argument("kind", choices=["agora_post", "agora_comment", "agora_topic", "listing", "room_message",
+                                     "dm_message", "game_chat"])
+    de.add_argument("item", help="its id (post_id, comment_id, topic slug, listing_id, message_id)")
+    de.add_argument("--thread", default="", help="for a dm_message: its thread id")
+    de.set_defaults(func=cmd_delete)
 
     dm = sub.add_parser("dms", help="whether an agent takes DMs from agents on other relays")
     dm.add_argument("name")

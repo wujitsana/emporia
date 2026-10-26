@@ -1185,6 +1185,7 @@ def init_db() -> None:
         # Rooms schema (separate DDL to keep clean)
         rooms_db.init_rooms_schema(conn)
         _migrate_rooms(conn)
+        _migrate_deletions(conn)     # P192: after every table it marks exists
 
         # P36-1: indexes come AFTER the column migrations, always. They used to
         # sit in the same executescript as the CREATE TABLE statements, which is
@@ -1641,6 +1642,20 @@ def _drop_challenge_lobby(conn: Any) -> None:
     """P188: the challenge lobby is retired — open games travel in the signed
     open-sessions feed. Its cards were adverts, never money or results."""
     conn.execute("DROP TABLE IF EXISTS challenges")
+
+
+def _migrate_deletions(conn: Any) -> None:
+    """P192: removals — the signed record of who removed what, and the marks on
+    the rows whose text was erased (emporia.deletion)."""
+    conn.execute("""CREATE TABLE IF NOT EXISTS deletions (
+        kind TEXT NOT NULL, item TEXT NOT NULL, deleted_by TEXT NOT NULL, role TEXT NOT NULL,
+        deleted_at TEXT NOT NULL, signature TEXT NOT NULL, PRIMARY KEY (kind, item))""")
+    for table, col, decl in (("agora_topics", "is_deleted", "INTEGER NOT NULL DEFAULT 0"),
+                             ("room_messages", "deleted_at", "TEXT"), ("dm_messages", "deleted_at", "TEXT"),
+                             ("game_chat", "deleted_at", "TEXT")):
+        cols = {r[1] for r in conn.execute(f"PRAGMA table_info({table})").fetchall()}
+        if cols and col not in cols:
+            conn.execute(f"ALTER TABLE {table} ADD COLUMN {col} {decl}")
 
 
 def _migrate_carried_records(conn: Any) -> None:
@@ -3078,6 +3093,7 @@ _RENAME_COLUMNS: tuple[tuple[str, str], ...] = (
     ("agora_topics", "creator_id"), ("agora_votes", "voter_id"),
     ("dm_messages", "sender_id"),
     ("dm_threads", "agent_a"), ("dm_threads", "agent_b"), ("dm_threads", "local_agent"),
+    ("deletions", "deleted_by"),
     ("events", "organizer_id"), ("listings", "agent_id"),
     ("messages", "from_agent"), ("messages", "to_agent"),
     ("participants", "agent_id"), ("payments", "agent_id"),
@@ -3215,6 +3231,9 @@ _NON_AGENT_COLUMNS: frozenset[tuple[str, str]] = frozenset({
     ("listings", "module_type"), ("listings", "origin_relay"), ("listings", "expires_at"),
     ("listings", "federated_from"), ("listings", "agent_public_key_hex"),
     ("authorized_agents", "relay_list_json"), ("authorized_agents", "carried_records_json"),
+    ("deletions", "kind"), ("deletions", "item"), ("deletions", "role"), ("deletions", "deleted_at"),
+    ("deletions", "signature"), ("agora_topics", "is_deleted"), ("room_messages", "deleted_at"),
+    ("dm_messages", "deleted_at"), ("game_chat", "deleted_at"),
     ("listings", "metadata_json"), ("listings", "created_at"),
     # messages
     ("messages", "message_id"), ("messages", "session_id"), ("messages", "type"),
@@ -7873,6 +7892,7 @@ def main():
 from emporia.routes import agents as _agent_routes
 from emporia.routes import bounties as _bounty_routes
 from emporia.routes import standing as _standing_routes  # noqa: E402
+from emporia.routes import deletion as _deletion_routes  # noqa: E402
 from emporia.routes import agoras as _agora_routes  # noqa: E402
 from emporia.routes import dm as _dm_routes  # noqa: E402
 from emporia.routes import events as _events_routes  # noqa: E402
@@ -7891,3 +7911,4 @@ app.include_router(_session_routes.router)
 app.include_router(_agent_routes.router)
 app.include_router(_bounty_routes.router)
 app.include_router(_standing_routes.router)
+app.include_router(_deletion_routes.router)

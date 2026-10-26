@@ -210,8 +210,9 @@ export function ThreadPane({
       ? `🔓 ${opened[m.message_id]}`
       : dmDisplayContent(m.content),
     created_at: m.created_at,
-    verified: verifyMessageSignature("dm", thread.thread_id, m, pubkeys[m.sender_id] || ""),
+    verified: m.deleted_at ? null : verifyMessageSignature("dm", thread.thread_id, m, pubkeys[m.sender_id] || ""),
     replayed: m.replayed,
+    removed: m.deleted_at ? (m.removed ?? null) : undefined,
   }));
 
   return (

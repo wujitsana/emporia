@@ -34,6 +34,8 @@ export type ChatLine = {
    *  markReplayedNonces) -- per-call state only, same standing limitation
    *  the Python-side annotate_messages() documents. */
   replayed?: boolean;
+  /** P192: its text was removed — by whom, in what role. */
+  removed?: { by?: string; role?: string } | null;
 };
 
 type ReadOnlyChatProps = {
@@ -43,6 +45,13 @@ type ReadOnlyChatProps = {
   footer?: ReactNode;
   endRef?: React.RefObject<HTMLDivElement | null>;
 };
+
+/** P192: how a removed message reads — who removed it, in what role. */
+function removedLabel(removed: { by?: string; role?: string } | null): string {
+  if (!removed) return "removed";
+  return removed.role === "author" ? `removed by ${removed.by ?? "its author"}`
+    : `removed by ${removed.by ?? "?"} (${removed.role ?? "?"})`;
+}
 
 /** Discover-only transcript — uniform rows, agents distinguished by avatar + colour. */
 export function ReadOnlyChat({
@@ -86,7 +95,11 @@ export function ReadOnlyChat({
                       <span style={{ fontSize: 10, color: "var(--theme-warning, #c33)" }} title="This message's nonce was already seen earlier on this page -- a possible replay">⚠ replay</span>
                     )}
                   </div>
-                  <div className="e-chat-line__content">{m.content}</div>
+                  <div className="e-chat-line__content">
+                    {m.removed !== undefined
+                      ? <span className="e-faint">{removedLabel(m.removed)}</span>
+                      : m.content}
+                  </div>
                 </div>
               </div>
             );

@@ -2183,7 +2183,6 @@ def test_no_new_identity_as_proof_params():
         ("DELETE", "/agoras/topics/{slug}/subscribe"),  # agent_id: _require_caller_is-checked
         ("GET", "/messages"),  # agent_id: _require_caller_is-checked (N1-5)
         ("GET", "/agoras/feed"),  # agent_id: _require_caller_is-checked (N1-6)
-        ("DELETE", "/agoras/posts/{post_id}"),  # agent_id: _require_caller_is-checked (N1-6)
         ("GET", "/dm"),  # agent_id: _require_caller_is-checked (N1-6)
         ("GET", "/dm/{thread_id}/messages"),  # agent_id: _require_caller_is-checked (N1-6)
         ("GET", "/agoras/topics"),  # subscribed_by: _require_caller_is-checked (N2-6)
@@ -2339,6 +2338,8 @@ def test_every_route_has_a_reviewed_auth_posture():
     """
 
     _AUTHENTICATED: set[tuple[str, str]] = {
+        ("POST", "/delete"),  # P192: the caller, signing its removal
+        ("POST", "/federation/v1/dm-delete"),  # P192: a linked relay, signed with its pinned key
         ("POST", "/agents/{agent_id}/carried-record"),  # P190: the agent itself
         ("POST", "/agents/{agent_id}/dm-policy"),  # P185: the agent itself
         ("GET", "/federation/v1/agents/{agent_id}"),  # P185: a linked relay, signed with its pinned key
@@ -2424,7 +2425,6 @@ def test_every_route_has_a_reviewed_auth_posture():
         # catch is a separate, deeper class.
         ("POST", "/agoras/topics/{slug}/posts"),
         ("POST", "/agoras/posts/{post_id}/vote"),
-        ("DELETE", "/agoras/posts/{post_id}"),
         ("POST", "/agoras/posts/{post_id}/comments"),
         ("POST", "/agoras/comments/{comment_id}/vote"),
         ("GET", "/agoras/feed"),
@@ -10472,41 +10472,6 @@ def test_agora_feed_requires_own_identity(client):
     assert r.status_code == 200
     assert r.json()["count"] >= 1
 
-
-def test_delete_agora_post_requires_own_identity(client):
-    """DELETE /agoras/posts/{id} used to authorize the *claimed* agent_id in the query
-    string with no check the caller actually was that agent — anyone could soft-delete
-    any post by naming its author."""
-    _register(client, "del_author")
-    _register(client, "del_mallory")
-    r = client.post("/agoras/topics", json={
-        "name": "Delete Topic", "description": "d", "visibility": "public",
-        "gate_type": "open", "creator_id": "del_author",
-    },
-        headers={"x-emporia-agent-id": "del_author"})
-    slug = r.json()["slug"]
-    r2 = client.post(f"/agoras/topics/{slug}/posts", json={
-        "author_id": "del_author", "title": "mine", "content": "content",
-    },
-        headers={"x-emporia-agent-id": "del_author"})
-    post_id = r2.json()["post_id"]
-
-    r = client.delete(
-        f"/agoras/posts/{post_id}", params={"agent_id": "del_author"},
-        headers={"x-emporia-agent-id": "del_mallory"},
-    )
-    assert r.status_code == 403
-
-    r = client.delete(
-        f"/agoras/posts/{post_id}", params={"agent_id": "del_author"},
-        headers={"x-emporia-agent-id": "del_author"},
-    )
-    assert r.status_code == 200
-
-
-# ============================================================================
-# ServiceModule unit tests
-# ============================================================================
 
 def test_service_module_registered():
     from emporia.module_sdk import MODULE_REGISTRY
@@ -27329,7 +27294,7 @@ def test_the_membership_rule_is_written_in_exactly_one_place():
 # P61 — the schema has a version, and the version has to stay honest
 # ---------------------------------------------------------------------------
 
-# 30 tables, 275 columns, at SCHEMA_VERSION 7. Recomputed by the test below;
+# 31 tables, 285 columns, at SCHEMA_VERSION 7. Recomputed by the test below;
 # when it fails, read *why* before touching this string.
 #
 # V1 -> V2 (P72-4): `bounty_entries` and its UNIQUE (listing_id, nous_user_id)
@@ -27352,7 +27317,7 @@ def test_the_membership_rule_is_written_in_exactly_one_place():
 #
 # V5 -> V6 (P143): `game_chat`, table talk stored inside its game. A V5 relay
 # would serve a V6 database without the chat its games' records include.
-_SCHEMA_FINGERPRINT_V7 = "00e8c53083df1bbdbad904b040c576f62236bea9c3a5aa9b8a319dbacb4dab11"
+_SCHEMA_FINGERPRINT_V7 = "b75731b970d865911fc38862326bf6d85b7abff19808f6db413b1a76a842ef72"
 
 
 def _schema_fingerprint(db_path) -> tuple[str, int, int]:

@@ -274,7 +274,7 @@ def _verify_dm_chain(thread_id: str, limit: int | None = None) -> DmChainVerific
         if chained_total:
             if limit is None or chained_total <= limit:
                 rows = conn.execute(
-                    "SELECT sender_id, content, created_at, chain_hash FROM dm_messages "
+                    "SELECT sender_id, content, created_at, chain_hash, deleted_at FROM dm_messages "
                     "WHERE thread_id = ? AND chain_hash IS NOT NULL "
                     "ORDER BY created_at ASC, rowid ASC",
                     (thread_id,),
@@ -283,7 +283,7 @@ def _verify_dm_chain(thread_id: str, limit: int | None = None) -> DmChainVerific
                 # Newest-first + LIMIT, then reversed — the only shape
                 # idx_dm_messages_thread can serve without reading the thread.
                 rows = conn.execute(
-                    "SELECT sender_id, content, created_at, chain_hash FROM dm_messages "
+                    "SELECT sender_id, content, created_at, chain_hash, deleted_at FROM dm_messages "
                     "WHERE thread_id = ? AND chain_hash IS NOT NULL "
                     "ORDER BY created_at DESC, rowid DESC LIMIT ?",
                     (thread_id, limit + 1),
@@ -308,10 +308,7 @@ def _verify_dm_chain(thread_id: str, limit: int | None = None) -> DmChainVerific
         scope = "recent_window"
 
     for offset, row in enumerate(walk):
-        expected = rooms_db.compute_chain_hash(
-            prev_hash, row["sender_id"], row["content"], row["created_at"],
-        )
-        if row["chain_hash"] != expected:
+        if not rooms_db.link_ok(prev_hash, row):
             return DmChainVerification(
                 False, f"hash mismatch at message {first_index + offset}",
                 None, chained_total, unchained_prefix, offset, scope,
@@ -763,9 +760,17 @@ async def dm_messages(
             # paginating client can build a cursor that can't skip a message
             # sharing a timestamp with the page boundary. See `before_seq`.
             "seq": r["seq"],
+            # P192: when its text was removed; the record of who did is below.
+            "deleted_at": r["deleted_at"],
         }
         for r in reversed(rows)
     ]
+    gone = {f"{thread_id}/{m['nonce']}": m for m in messages if m.get("deleted_at")}
+    if gone:
+        from emporia import deletion
+        with rs.DB_LOCK, rs.get_db() as conn:
+            for item, removal in deletion.removals_for(conn, "dm_message", list(gone)).items():
+                gone[item]["removed"] = removal
     return {"thread_id": thread_id, "messages": messages, "my_label": _my_label(thread, agent_id)}
 
 

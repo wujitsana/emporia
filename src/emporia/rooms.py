@@ -107,7 +107,8 @@ CREATE TABLE IF NOT EXISTS room_messages (
     signature TEXT,
     nonce TEXT,
     metadata_json TEXT NOT NULL DEFAULT '{}',
-    created_at TEXT NOT NULL
+    created_at TEXT NOT NULL,
+    deleted_at TEXT
 );
 
 CREATE INDEX IF NOT EXISTS idx_room_messages_room ON room_messages(room_id);
@@ -120,6 +121,10 @@ CREATE INDEX IF NOT EXISTS idx_rooms_session ON rooms(linked_session_id);
 
 def init_rooms_schema(conn: sqlite3.Connection) -> None:
     conn.executescript(ROOMS_DDL)
+    # P192: when a message's text was removed — added to rooms made before it.
+    cols = {r[1] for r in conn.execute("PRAGMA table_info(room_messages)").fetchall()}
+    if "deleted_at" not in cols:
+        conn.execute("ALTER TABLE room_messages ADD COLUMN deleted_at TEXT")
 
 
 # ============================================================================
@@ -185,6 +190,8 @@ class RoomMessage:
     # client can build a cursor that can't skip a message sharing a timestamp
     # with the page boundary. None when the row wasn't read with it.
     seq: int | None = None
+    # P192: when its text was removed (emporia.deletion); None if it was not.
+    deleted_at: str | None = None
 
     def to_dict(self) -> dict[str, Any]:
         d = asdict(self)
@@ -239,7 +246,25 @@ def _row_to_message(row: sqlite3.Row) -> RoomMessage:
         metadata=json.loads(row["metadata_json"] or "{}"),
         created_at=row["created_at"],
         seq=row["seq"] if "seq" in row.keys() else None,
+        deleted_at=row["deleted_at"] if "deleted_at" in row.keys() else None,
     )
+
+
+def _removed(msg: Any) -> bool:
+    try:
+        return bool(msg["deleted_at"])
+    except (KeyError, IndexError):
+        return False
+
+
+def link_ok(prev_hash: str | None, msg: Any) -> bool:
+    """P192: does `msg` chain onto `prev_hash`? A removed message's text is gone,
+    so its own link cannot be recomputed: its stored hash is taken, the next
+    message must still chain onto it, and the gap carries its signed removal —
+    a reader sees a removal, never what looks like tampering."""
+    if _removed(msg):
+        return True
+    return compute_chain_hash(prev_hash, msg["sender_id"], msg["content"], msg["created_at"]) == msg["chain_hash"]
 
 
 def compute_chain_hash(
@@ -341,7 +366,7 @@ def verify_chain(
             )
         if limit is None or total <= limit:
             rows = conn.execute(
-                "SELECT sender_id, content, created_at, chain_hash FROM room_messages "
+                "SELECT sender_id, content, created_at, chain_hash, deleted_at FROM room_messages "
                 "WHERE room_id = ? ORDER BY created_at ASC, rowid ASC",
                 (room_id,),
             ).fetchall()
@@ -350,7 +375,7 @@ def verify_chain(
             # index can serve cheaply; reverse it back to the ascending order the
             # recompute needs. The rowid tiebreak mirrors _last_chain_hash() (P21-7).
             rows = conn.execute(
-                "SELECT sender_id, content, created_at, chain_hash FROM room_messages "
+                "SELECT sender_id, content, created_at, chain_hash, deleted_at FROM room_messages "
                 "WHERE room_id = ? ORDER BY created_at DESC, rowid DESC LIMIT ?",
                 (room_id, limit + 1),
             ).fetchall()
@@ -366,8 +391,7 @@ def verify_chain(
         walk, first_index, scope = rows[1:], total - len(rows) + 1, "recent_window"
 
     for offset, row in enumerate(walk):
-        expected = compute_chain_hash(prev_hash, row["sender_id"], row["content"], row["created_at"])
-        if row["chain_hash"] != expected:
+        if not link_ok(prev_hash, row):
             return ChainVerification(
                 False, f"hash mismatch at message {first_index + offset}",
                 None, total, offset, scope,
@@ -786,10 +810,7 @@ def verify_chain_page(
             )
     else:
         pending = expected
-        recomputed = compute_chain_hash(
-            newest["chain_hash"], pending["sender_id"], pending["content"], pending["created_at"],
-        )
-        if recomputed != pending["chain_hash"]:
+        if not link_ok(newest["chain_hash"], pending):
             return (
                 False, None,
                 "hash mismatch at a page boundary — either history was "
@@ -799,16 +820,12 @@ def verify_chain_page(
             )
 
     for older, newer in zip(page, page[1:]):
-        recomputed = compute_chain_hash(
-            older["chain_hash"], newer["sender_id"], newer["content"], newer["created_at"],
-        )
-        if recomputed != newer["chain_hash"]:
+        if not link_ok(older["chain_hash"], newer):
             return False, None, "hash mismatch within a page — history may have been rewritten"
 
     oldest = page[0]
     if at_genesis:
-        genesis_expected = compute_chain_hash(None, oldest["sender_id"], oldest["content"], oldest["created_at"])
-        if genesis_expected != oldest["chain_hash"]:
+        if not link_ok(None, oldest):
             return (
                 False, None,
                 "genesis message does not chain from an empty prior — "
