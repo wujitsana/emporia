@@ -60,14 +60,15 @@ _SENSITIVE = (
 _PERSON_ONLY = (("wallet", {"backup", "mainnet"}), ("relay", {"host"}))
 # P183: other ways to open a relay to other machines — telling it to listen on
 # another address (in a command or a file the agent writes), or starting the
-# Docker relay. The relay itself refuses another address outside a container.
+# Docker relay or its system service. The relay itself refuses another address
+# outside a container.
 _NOT_LOCAL = r"(?!['\"]?(?:127\.0\.0\.1|localhost|::1)\b)"
 _RELAY_SETTING = re.compile(r"\bEMPORIA_RELAY_HOST['\"]?\s*[=:]\s*" + _NOT_LOCAL)
 # Its folder (`relay host`'s default): its settings, including where its fee goes.
 _RELAY_FOLDER = re.compile(r"\bemporia-relay/|\bemporia-relay\b\s*$")
 _OPENS_RELAY = re.compile(
     r"\brelay_server\b[^\n]*--host[= ]\s*" + _NOT_LOCAL
-    + r"|\bdocker\b[^\n]*\bemporia[-_]relay\b|\bemporia[-_]relay\b[^\n]*\bdocker\b")
+    + r"|\b(?:docker|systemctl)\b[^\n]*\bemporia[-_]relay\b|\bemporia[-_]relay\b[^\n]*\b(?:docker|systemctl)\b")
 
 
 def _cli_matches(text: str, rules) -> bool:

@@ -87,6 +87,11 @@ games (or resign by abandoning), and check spend after step 5.
       `emporia relay host` → folder, domain, Nous yes, payments with your fee address → it builds,
       makes the operator key, starts; `https://<domain>/health` answers;
       `curl http://127.0.0.1:8089/health` answers; `docker compose down` in its folder stops it.
+- [ ] **Relay as a service (a spare Linux server or VM, no Docker):** checkout in `/opt/emporia`,
+      `emporia relay host --run service --admin <a Hermes profile there>` → it shows the sudo steps
+      and runs them; `systemctl status emporia-relay` is active, as user `emporia-relay`;
+      `ss -ltn` shows `127.0.0.1:8089` only; as yourself `cat <folder>/data/keys/*` and editing
+      `<folder>/.env` are refused; Caddy with the written Caddyfile serves `https://<domain>/health`.
 - [ ] **Mainnet lock:** `emporia wallet limits alpha --networks base` → refused (locked).
       `emporia wallet mainnet alpha` → warning, threshold, type `alpha`, pick networks; doctor
       shows "mainnet unlocked"; `emporia wallet mainnet alpha --lock` → testnets only again. Ask

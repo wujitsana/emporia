@@ -152,3 +152,8 @@ def test_an_agent_cannot_open_the_relay_to_other_machines(tool, args):
 ])
 def test_a_relay_on_this_machine_only_is_fine(command):
     assert guard.pre_tool_call("terminal", {"command": command}) is None
+
+
+def test_an_agent_cannot_start_the_relay_service():
+    r = guard.pre_tool_call("terminal", {"command": "sudo systemctl enable --now emporia-relay"})
+    assert r and r["action"] == "block"

@@ -5,10 +5,22 @@ reach runs in a container, behind https, with its settings in its own folder —
 compose.yaml, Caddyfile and a .env — not in a Hermes profile's .env. Its keys and
 database live in a Docker volume.
 
-Docker runs on the host, and Hermes itself often runs in a container that cannot
-reach it, so every path in compose.yaml is relative to its folder: the person
-runs `docker compose` there, on the host, wherever that folder is mounted. A
-Hermes agent that administers the relay (optional) runs in Docker beside it too.
+Two ways to run it:
+
+* **Docker** — compose.yaml with the relay and Caddy. Docker runs on the host,
+  and Hermes itself often runs in a container that cannot reach it, so every
+  path in compose.yaml is relative to its folder: the person runs `docker
+  compose` there, on the host. A Hermes agent that administers the relay
+  (optional) runs in Docker beside it too.
+* **A system service** — for a server kept just for the relay, without Docker:
+  a systemd unit running this checkout's relay as its own system user, and
+  Caddy installed on the server in front of it. Its keys and database go in the
+  folder's `data/`, which only that user reads; its .env belongs to root. A
+  Hermes agent on the same server (optional) is its operator and reaches it
+  only over http — its tools cannot read the relay's keys or change its settings.
+
+Either way the relay itself listens on 127.0.0.1; only the https proxy faces
+the internet.
 """
 
 from __future__ import annotations
@@ -86,8 +98,60 @@ volumes:
 """
 
 
-def caddyfile(domain: str) -> str:
-    return f"{MARK}\n{domain} {{\n\treverse_proxy relay:8088\n}}\n"
+def caddyfile(domain: str, upstream: str = "relay:8088") -> str:
+    return f"{MARK}\n{domain} {{\n\treverse_proxy {upstream}\n}}\n"
+
+
+SERVICE = "emporia-relay.service"
+SERVICE_USER = "emporia-relay"
+
+
+def service_unit(exe: Path, repo: Path, folder: Path, user: str) -> str:
+    return f"""{MARK} — re-running it rewrites this file.
+# Install: sudo cp {folder / SERVICE} /etc/systemd/system/
+#          sudo systemctl daemon-reload && sudo systemctl enable --now emporia-relay
+[Unit]
+Description=Emporia relay
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+User={user}
+WorkingDirectory={repo}
+EnvironmentFile={folder / ".env"}
+ExecStart={exe}
+Restart=on-failure
+RestartSec=5
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=read-only
+ReadWritePaths={folder / "data"}
+
+[Install]
+WantedBy=multi-user.target
+"""
+
+
+def service_settings(folder: Path) -> dict[str, str]:
+    """Where a service relay keeps its state, and that it reads only its own .env."""
+    data = folder / "data"
+    return {
+        "EMPORIA_NO_DOTENV": "1",                 # never a Hermes profile's .env
+        "EMPORIA_RELAY_HOST": "127.0.0.1",
+        "EMPORIA_RELAY_PORT": str(LOCAL_PORT),
+        "EMPORIA_KEYS_DIR": str(data / "keys"),
+        "EMPORIA_DB_PATH": str(data / "emporia.sqlite3"),
+        "EMPORIA_LOG_DIR": str(data / "logs"),
+    }
+
+
+def write_service_files(folder: Path, exe: Path, repo: Path, domain: str, user: str) -> list[Path]:
+    (folder / "data").mkdir(parents=True, exist_ok=True, mode=0o700)
+    files = {folder / SERVICE: service_unit(exe, repo, folder, user)}
+    if domain:
+        files[folder / "Caddyfile"] = caddyfile(domain, f"127.0.0.1:{LOCAL_PORT}")
+    return _write(files)
 
 
 def write_files(folder: Path, repo: Path, domain: str, admin: Path | None = None) -> list[Path]:
@@ -103,6 +167,11 @@ def write_files(folder: Path, repo: Path, domain: str, admin: Path | None = None
     files = {folder / "compose.yaml": compose_yaml(rel(repo), bool(domain), rel(admin) if admin else "")}
     if domain:
         files[folder / "Caddyfile"] = caddyfile(domain)
+    return _write(files)
+
+
+def _write(files: dict[Path, str]) -> list[Path]:
+    """Refuses to replace a file `emporia relay host` did not make."""
     for path in files:
         if path.exists() and MARK not in path.read_text():
             raise FileExistsError(f"{path} was not made by `emporia relay host` — move it, or pick another folder")

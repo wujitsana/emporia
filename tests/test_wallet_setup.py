@@ -834,7 +834,7 @@ def test_relay_host_writes_its_own_folder_and_refuses_an_agent(profiles, monkeyp
     monkeypatch.setattr("shutil.which", lambda _: None)            # no Docker here
     folder = tmp_path / "emporia-relay"
     _typing(monkeypatch, "", "y", "0x" + "ab" * 20)              # Nous · payments · fee address
-    assert cli.main(["relay", "host", "--dir", str(folder), "--domain", "relay.example.com",
+    assert cli.main(["relay", "host", "--run", "docker", "--dir", str(folder), "--domain", "relay.example.com",
                      "--admin", "keeper"]) == 0
     out = capsys.readouterr().out
     assert "On the host" in out and "docker compose --profile admin up -d" in out
@@ -852,7 +852,8 @@ def test_relay_host_writes_its_own_folder_and_refuses_an_agent(profiles, monkeyp
     assert "EMPORIA_ESCROW_FEE_RECEIVER" not in _env_of(root / "keeper")      # the relay's, in its own folder
     (folder / "compose.yaml").write_text("services: {}\n")            # someone else's: not replaced
     _typing(monkeypatch)
-    assert cli.main(["relay", "host", "--dir", str(folder), "--domain", "relay.example.com", "--admin", ""]) == 1
+    assert cli.main(["relay", "host", "--run", "docker", "--dir", str(folder), "--domain", "relay.example.com",
+                     "--admin", ""]) == 1
     monkeypatch.setenv("HERMES_SESSION_ID", "x")                          # an agent's terminal
     assert cli.main(["relay", "host", "--dir", str(folder)]) == 1
     assert "only a person" in capsys.readouterr().out
@@ -865,3 +866,26 @@ def test_an_old_local_relay_is_named_with_how_to_restart_it(profiles, monkeypatc
     _typing(monkeypatch, "")
     assert cli._choose_relay() == cli.LOCAL_RELAY
     assert "emporia relay stop && emporia relay start" in capsys.readouterr().out
+
+
+def test_relay_host_as_a_service_on_a_server_of_its_own(profiles, monkeypatch, capsys, tmp_path):
+    """No Docker: a systemd unit as its own user, its state in its folder, Caddy
+    in front of 127.0.0.1 — and a Hermes agent on the same server as its operator."""
+    root, _ = profiles
+    with patch.dict(os.environ):
+        assert cli.main(["setup", "agent", "warden"]) == 0
+    monkeypatch.setattr("shutil.which", lambda _: None)            # nothing runs here: commands are shown
+    folder = tmp_path / "emporia-relay"
+    _typing(monkeypatch, "", "n")                                  # Nous · no payments
+    assert cli.main(["relay", "host", "--run", "service", "--dir", str(folder), "--domain", "relay.example.com",
+                     "--admin", "warden"]) == 0
+    out = capsys.readouterr().out
+    assert "useradd --system" in out and "systemctl" in out and "caddyserver.com" in out
+    unit = (folder / "emporia-relay.service").read_text()
+    assert "User=emporia-relay" in unit and f"EnvironmentFile={folder / '.env'}" in unit
+    assert f"ReadWritePaths={folder / 'data'}" in unit and "ProtectSystem=strict" in unit
+    assert "reverse_proxy 127.0.0.1:8089" in (folder / "Caddyfile").read_text()
+    env = _env_of(folder)
+    assert env["EMPORIA_NO_DOTENV"] == "1" and env["EMPORIA_RELAY_HOST"] == "127.0.0.1"
+    assert env["EMPORIA_KEYS_DIR"] == str(folder / "data" / "keys") and env["EMPORIA_AGENT_ID"]
+    assert _env_of(root / "warden")["EMPORIA_RELAY_URL"] == "http://127.0.0.1:8089"

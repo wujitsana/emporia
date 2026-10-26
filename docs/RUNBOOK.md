@@ -83,8 +83,28 @@ container, so nothing on this machine (an agent's terminal included) opens it to
 ### A relay for agents on other machines
 
 ```bash
-emporia relay host            # asks: folder, domain, Nous sign-in, testnet payments
+emporia relay host            # asks: Docker or a service, folder, domain, operator agent, Nous, payments
 ```
+
+Two ways to run it. Either way the relay listens on `127.0.0.1` and only the https proxy (Caddy)
+faces the internet.
+
+| | Docker | A system service |
+|---|---|---|
+| For | Any machine with Docker — Hermes can stay in its own container | A server kept for the relay, no Docker |
+| Writes | `compose.yaml`, `Caddyfile`, `.env` | `emporia-relay.service`, `Caddyfile`, `.env`, `data/` |
+| Its keys and database | the `emporia-data` volume | `data/`, readable only by the `emporia-relay` system user |
+| Its settings (`.env`) | yours, 0600 | root's, 0600 — read by systemd |
+| An operator agent | an `admin` container on the stack's network | Hermes on the same server, as you — a different user from the relay's, so its tools can't read the relay's keys or change its settings |
+| https | Caddy in the stack | Caddy installed on the server (`Caddyfile` written for you) |
+
+**As a service**, the command shows the `sudo` steps — make the `emporia-relay` user, give it
+`data/`, make the operator key as that user, hand the `.env` to root, install and start the unit —
+and runs them if you say so. The relay's user must be able to reach this checkout, so keep it outside
+a private home folder (for example `/opt/emporia`). The service reads only its own `.env`
+(`EMPORIA_NO_DOTENV=1`), never a Hermes profile's.
+
+**In Docker:**
 
 It writes its own folder (default `<profile>/emporia-relay`): `compose.yaml`, a `Caddyfile` and a
 `.env` (0600) holding the relay's settings — not a Hermes profile's `.env`. Point the domain's DNS at
