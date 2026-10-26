@@ -18,6 +18,23 @@ def host_of(url: str) -> str:
     return (urlparse((url or "").strip().rstrip("/")).netloc or "").lower()
 
 
+_LOOPBACK = {"localhost", "127.0.0.1", "::1", "[::1]"}
+
+
+def canonical_host(host: str) -> str:
+    """One spelling for one machine's loopback: `localhost:8088`, `127.0.0.1:8088`
+    and `[::1]:8088` are the same relay."""
+    host = (host or "").lower()
+    name, _, port = host.rpartition(":") if host.count(":") == 1 or host.startswith("[") else (host, "", "")
+    if not name:
+        name, port = host, ""
+    return f"loopback:{port}" if name in _LOOPBACK else host
+
+
+def same_host(a: str, b: str) -> bool:
+    return bool(a) and canonical_host(a) == canonical_host(b)
+
+
 def own_host() -> str:
     from emporia import relay_server as rs
     return host_of(rs.RELAY_BASE_URL)

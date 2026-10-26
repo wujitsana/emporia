@@ -190,15 +190,20 @@ export function ThreadPane({
   }, [liveEvent, thread.thread_id, loadMsgs]);
 
   // P23-4: pubkeys for verifyMessageSignature() — the two participants.
+  const senders = [...new Set(messages.map((m) => m.sender_id))].sort().join("|");
   useEffect(() => {
     let cancelled = false;
+    // P185: in a thread with another relay's agent, both sides sign as their
+    // address (`alpha@host`); an address's key comes from where it is pinned.
+    const ids = [...new Set([viewer, thread.other_agent, ...senders.split("|").filter(Boolean)])];
     Promise.all(
-      [viewer, thread.other_agent].map((id) =>
-        api.agentProfile(id).then((a) => [id, a.public_key_hex || ""] as const).catch(() => [id, ""] as const),
+      ids.map((id) =>
+        (id.includes("@") ? api.agentKeys(id) : api.agentProfile(id))
+          .then((a) => [id, a.public_key_hex || ""] as const).catch(() => [id, ""] as const),
       ),
     ).then((pairs) => { if (!cancelled) setPubkeys(Object.fromEntries(pairs)); });
     return () => { cancelled = true; };
-  }, [thread.other_agent, viewer]);
+  }, [thread.other_agent, viewer, senders]);
 
   // P23-4: markReplayedNonces() needs the whole page at once.
   const chatLines = markReplayedNonces(messages).map((m) => ({

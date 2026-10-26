@@ -745,7 +745,9 @@ class EmporiaAgent:
         verification that couldn't run reports `None` ("unknown"), and a thread
         must stay readable even when one lookup fails."""
         try:
-            resp = await self._bearer_request("get", f"{self.relay_url}/agents/{agent_id}")
+            # P185: an address (`bob@host`) is looked up where its keys are pinned.
+            path = f"/agents/{agent_id}/encryption-key" if "@" in agent_id else f"/agents/{agent_id}"
+            resp = await self._bearer_request("get", f"{self.relay_url}{path}")
             resp.raise_for_status()
             return resp.json().get("public_key_hex", "") or ""
         except Exception:
@@ -777,9 +779,11 @@ class EmporiaAgent:
         this agent, so it can read its own messages back."""
         from emporia.identity import get_encryption_public_key_hex
 
-        recipients = {self.agent_id: get_encryption_public_key_hex(self.profile_id)}
+        # P185: in a thread with another relay's agent both are named by address.
+        me = thread.get("my_label") or self.agent_id
+        recipients = {me: get_encryption_public_key_hex(self.profile_id)}
         for participant in (thread["agent_a"], thread["agent_b"]):
-            if participant != self.agent_id:
+            if participant != me:
                 recipients[participant] = await self._peer_encryption_key(participant)
         return recipients
 
@@ -828,7 +832,7 @@ class EmporiaAgent:
             content = json.dumps(crypto_box.seal(
                 content,
                 await self._thread_recipients(thread),
-                crypto_box.message_aad("dm", thread_id, self.agent_id, msg_type, nonce),
+                crypto_box.message_aad("dm", thread_id, thread.get("my_label") or self.agent_id, msg_type, nonce),
             ))
         signed_payload = signed_dm_thread_payload(thread_id, content, msg_type, nonce)
         resp = await self._bearer_request(
@@ -865,7 +869,7 @@ class EmporiaAgent:
         for sender in {m.get("sender_id", "") for m in messages}:
             pubkeys[sender] = await self._sender_public_key(sender)
         message_read.annotate_messages(
-            messages, kind="dm", scope_id=thread_id, viewer_agent_id=self.agent_id,
+            messages, kind="dm", scope_id=thread_id, viewer_agent_id=body.get("my_label") or self.agent_id,
             private_key=priv, pubkeys=pubkeys,
             verify=lambda msg, pk: verify_dm_message(thread_id, msg, pk),
         )

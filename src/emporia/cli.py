@@ -650,7 +650,8 @@ def cmd_relay_links(args: argparse.Namespace) -> int:
         h = health(timeout=3, url=url)
         try:
             theirs = httpx.get(f"{url}/federation/peers", timeout=3).json().get("peers", [])
-            back = any(normalize_peer_url(x.get("url", "")) == me_url for x in theirs)
+            from emporia.addresses import host_of, same_host
+            back = any(same_host(host_of(x.get("url", "")), host_of(me_url)) for x in theirs)
         except (httpx.HTTPError, ValueError):
             back = None
         state = "not answering" if not h else _relay_brief(h)
@@ -1110,7 +1111,28 @@ def doctor_relay(rep: Report) -> dict | None:
         rep.warn("escrow off — x402 service purchases unavailable", "emporia setup relay --preset base-sepolia")
     if h.get("tempo_network"):
         rep.ok(f"Tempo on {label(h['tempo_network'])}")
+    doctor_federation(rep, h)
     return h
+
+
+def doctor_federation(rep: Report, h: dict) -> None:
+    """P186–P193: who may use the relay, its links, and whether its name lines up."""
+    from emporia.addresses import host_of, same_host
+    access = h.get("access", "open")
+    links = [u for u in os.getenv("FEDERATED_RELAYS", "").split(",") if u.strip()]
+    rep.ok(f"who may use it: {access}" + (f"; linked to {len(links)} relay(s)" if links else "; standalone"))
+    if links and access == "closed":
+        rep.warn("it is closed, so its links do nothing — it neither pulls from them nor serves them",
+                 "emporia relay unlink URL, or emporia relay access read-only")
+    if os.getenv("EMPORIA_FEDERATED_DMS", "") == "1" and not links:
+        rep.warn("DMs with other relays are on, but it is linked to none", "emporia relay link URL")
+    if links:
+        rep.ok("check each link goes both ways: emporia relay links")
+    own = h.get("host", "")
+    if own and not same_host(own, host_of(relay_url())):
+        rep.warn(f"agents here reach it as {host_of(relay_url())}, it names itself {own} — other relays, "
+                 "addresses and DMs use the second",
+                 "fine behind a proxy; otherwise set EMPORIA_RELAY_URL in the relay's .env to the address others use")
 
 
 def doctor_agent(rep: Report, profile: Path, entry: dict, relay_up: bool) -> None:

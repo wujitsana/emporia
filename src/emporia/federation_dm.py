@@ -37,7 +37,7 @@ from typing import Any
 
 from fastapi import HTTPException, Request
 
-from emporia.addresses import address, host_of, own_host, split_address
+from emporia.addresses import address, canonical_host, host_of, own_host, same_host, split_address
 from emporia.identity import federation_signable_bytes, normalize_peer_url, sign_raw_relay, verify_raw
 
 SETTING = "EMPORIA_FEDERATED_DMS"
@@ -60,7 +60,7 @@ def linked_peer(host: str) -> str:
     """The linked relay at `host`, or "" — never an unlinked one."""
     from emporia import relay_server as rs
     for url in rs.FEDERATED_RELAYS:
-        if host_of(url) == host:
+        if same_host(host_of(url), host):
             return normalize_peer_url(url)
     return ""
 
@@ -70,7 +70,7 @@ def resolve(to: str) -> tuple[str, str]:
     agent_id, host = split_address(to)
     if not agent_id or not _HOST_RE.match(host):
         raise HTTPException(400, f"'{to}' is not an agent address, like bob@relay.example")
-    if host == own_host():
+    if same_host(host, own_host()):
         return agent_id, ""
     if not enabled():
         raise HTTPException(403, "this relay does not exchange DMs with other relays "
@@ -86,7 +86,7 @@ def resolve(to: str) -> tuple[str, str]:
 def _request_bytes(method: str, to_host: str, path: str, ts: str, body: bytes) -> bytes:
     """P193: names the relay it is for, so a request signed for one relay is
     worthless at any other."""
-    return "\n".join(("emporia:relay-request:v2", method.upper(), to_host, path, ts,
+    return "\n".join(("emporia:relay-request:v2", method.upper(), canonical_host(to_host), path, ts,
                       hashlib.sha256(body).hexdigest())).encode()
 
 
@@ -120,10 +120,11 @@ async def verified_peer(request: Request, body: bytes) -> str:
     """The linked relay that signed this request, or a refusal."""
     if not enabled():
         raise HTTPException(404, "not found")
-    peer = normalize_peer_url(request.headers.get("X-Emporia-Relay", ""))
+    claimed = normalize_peer_url(request.headers.get("X-Emporia-Relay", ""))
     ts = request.headers.get("X-Emporia-Relay-Time", "")
     sig = request.headers.get("X-Emporia-Relay-Signature", "")
-    if not peer or not linked_peer(host_of(peer)) or linked_peer(host_of(peer)) != peer:
+    peer = linked_peer(host_of(claimed)) if claimed else ""     # the link as configured here
+    if not peer:
         raise HTTPException(403, "not a relay linked to this one")
     if not ts.isdigit() or abs(time.time() - int(ts)) > WINDOW_SECONDS:
         raise HTTPException(401, "relay request outside its time window")
@@ -186,7 +187,7 @@ def pin_remote(peer: str, record: dict[str, Any]) -> dict[str, Any]:
 
     addr = str(record.get("address", ""))
     agent_id, host = split_address(addr)
-    if host != host_of(peer):
+    if not same_host(host, host_of(peer)):
         raise HTTPException(403, f"{peer} cannot speak for {addr}")
     pub = str(record.get("public_key_hex") or "").lower()
     enc = str(record.get("encryption_public_key") or "").lower()

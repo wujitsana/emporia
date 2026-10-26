@@ -544,14 +544,18 @@ def _publish_relay_list(aid: str) -> str:
 
     from emporia.identity import sign as ed25519_sign
     from emporia.wire import signed_relay_list_payload
-    visits = _visits()
+    # P193: where it visits is its own business — named in its public list only
+    # if its operator chose (EMPORIA_PUBLISH_VISITS=1). Its visits still get the
+    # list (without them), so each can show its card.
+    visiting = _visits()
+    visits = visiting if os.getenv("EMPORIA_PUBLISH_VISITS", "").strip() == "1" else []
     backups = _backups()
     a2a = os.getenv("EMPORIA_A2A_URL", "").strip()
     stamp = datetime.now(UTC).isoformat()
     body = {"home": RELAY_URL, "visits": visits, "backups": backups, "a2a_url": a2a, "updated_at": stamp,
             "signature": ed25519_sign(signed_relay_list_payload(aid, RELAY_URL, visits, a2a, stamp, backups), aid)}
     results = []
-    for relay in dict.fromkeys([RELAY_URL, *visits, *backups]):
+    for relay in dict.fromkeys([RELAY_URL, *visiting, *backups]):
         try:
             r = _bearer_request("post", f"{relay}/agents/{aid}/relay-list", agent_id=aid, json=body, timeout=10)
             results.append(f"{relay}: {'ok' if r.status_code == 200 else r.status_code}")

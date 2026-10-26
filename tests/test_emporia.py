@@ -27613,7 +27613,6 @@ _DASHBOARD_UNSURFACED_GETS: dict[str, str] = {
 
     # Agent-only by design, or nothing a human could read anyway.
     "/messages": "agent-to-agent messaging; the dashboard is not an agent",
-    "/agents/{}/encryption-key": "X25519 public key — the relay holds no plaintext to show",
     "/rooms/{}/encryption-keys": "same; membership coverage data, not content",
 
     # Detail endpoints whose data the dashboard already has from the list plus

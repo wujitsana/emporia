@@ -68,3 +68,26 @@ def test_agent_card_checks_every_signature(client):
         out = mcp_server.agent_card("ad_checked")
     assert out["success"] and out["verified"], out
     assert all(v for k, v in out["checks"].items() if k != "relay_key_changed_since_first_seen")
+
+
+def test_home_is_judged_by_where_the_list_was_sent_not_how_it_is_spelled(client):
+    """A relay in Docker calls itself https://relay.example; agents on its own
+    machine reach it at 127.0.0.1:8089. Their lists name that, and they have not
+    moved away — but a list naming another relay, sent here, is a move."""
+    from emporia import moves
+    from emporia.identity import sign
+    from emporia.wire import signed_relay_list_payload
+    _register_keyed(client, "ad_home")
+
+    def publish(home, when, host):
+        stamp = when.isoformat()
+        return client.post("/agents/ad_home/relay-list", headers={**_as("ad_home"), "host": host},
+                           json={"home": home, "visits": [], "a2a_url": "", "updated_at": stamp,
+                                 "signature": sign(signed_relay_list_payload("ad_home", home, [], "", stamp), "ad_home")})
+    now = datetime.now(UTC)
+    assert publish("http://127.0.0.1:8089", now, "127.0.0.1:8089").status_code == 200
+    assert moves.moved_to("ad_home") == ""
+    assert publish("http://localhost:8089", now + timedelta(seconds=1), "127.0.0.1:8089").status_code == 200
+    assert moves.moved_to("ad_home") == ""                          # loopback spellings are one host
+    assert publish("https://new-home.example", now + timedelta(seconds=2), "127.0.0.1:8089").status_code == 200
+    assert moves.moved_to("ad_home") == "ad_home@new-home.example"

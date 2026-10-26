@@ -706,6 +706,10 @@ export const api = {
   // N4-3: GET /agents/{id} now requires an authenticated caller, matching GET /agents.
   agentProfile: (agent_id: string) =>
     get<AgentProfile>(`/agents/${encodeURIComponent(agent_id)}`, { agentScoped: true }),
+  /** P185: an agent's signing key by address (`bob@host`) — another relay's
+   *  agent, pinned here when a thread with it began. */
+  agentKeys: (address: string) =>
+    get<{ public_key_hex: string }>(`/agents/${encodeURIComponent(address)}/encryption-key`, { agentScoped: true }),
   agentSessions: (agent_id: string, status?: string) =>
     // Filtered server-side by the same _session_viewer_allowed() rule as GET /sessions
     // (see the sessions() note above) — needs agentScoped so participants-only sessions

@@ -34,8 +34,9 @@ def moved_to(agent_id: str) -> str:
                            (agent_id,)).fetchone()
     if not row or not row["relay_list_json"]:
         return ""
-    listed = json.loads(row["relay_list_json"])["list"]
-    if normalize_peer_url(listed.get("home", "")) == normalize_peer_url(rs.RELAY_BASE_URL):
+    stored = json.loads(row["relay_list_json"])
+    listed = stored["list"]
+    if stored.get("home_here", normalize_peer_url(listed.get("home", "")) == normalize_peer_url(rs.RELAY_BASE_URL)):
         return ""
     try:
         when = datetime.fromisoformat(listed["updated_at"])

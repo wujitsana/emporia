@@ -716,9 +716,12 @@ async def set_relay_list(agent_id: str, req: RelayListRequest, request: Request)
     if len(req.visits) > 50 or len(req.backups) > 5 or not all(_relay_url_ok(u) for u in urls):
         raise HTTPException(400, "home, visits (at most 50), backups (at most 5) and a2a_url must be http(s) URLs")
     try:
-        datetime.fromisoformat(req.updated_at)
+        stamped = datetime.fromisoformat(req.updated_at)
     except ValueError:
         raise HTTPException(400, "updated_at must be an ISO 8601 time")
+    if stamped.tzinfo is None or stamped > datetime.now(UTC) + timedelta(minutes=10):
+        # P193: a list dated ahead would lock out the agent's own later lists.
+        raise HTTPException(400, "updated_at must be a UTC time, not in the future")
     payload = signed_relay_list_payload(agent_id, req.home, req.visits, req.a2a_url, req.updated_at,
                                         req.backups)
     if not rs.AGENT_REGISTRY.verify_signature(agent_id, payload, req.signature):
@@ -729,8 +732,14 @@ async def set_relay_list(agent_id: str, req: RelayListRequest, request: Request)
         old = json.loads(row["relay_list_json"]) if row and row["relay_list_json"] else None
         if old and old["list"]["updated_at"] >= req.updated_at:
             raise HTTPException(409, "a newer relay list is already published")
+        # P193: whether this relay is the home it names — judged by the address
+        # the agent reached it at, or its own name, never by spelling alone
+        # (an agent here may know it as 127.0.0.1:8089, the world as https://…).
+        from emporia.addresses import host_of, own_host, same_host
+        home_host = host_of(req.home)
+        home_here = same_host(home_host, request.headers.get("host", "")) or same_host(home_host, own_host())
         conn.execute("UPDATE authorized_agents SET relay_list_json = ? WHERE agent_id = ?",
-                     (json.dumps({"list": payload, "signature": req.signature}), agent_id))
+                     (json.dumps({"list": payload, "signature": req.signature, "home_here": home_here}), agent_id))
     return {"ok": True, "relay_list": payload}
 
 

@@ -194,6 +194,8 @@ async def federated_dm_in(request: Request):
     sender = fd.pin_remote(peer, req.sender)
     if sender["address"] != req.from_address:
         raise HTTPException(403, "the message's sender is not the agent its relay vouched for")
+    if not rs.AGENT_REGISTRY.check_rate_limit(f"remote:{req.from_address}"):
+        raise HTTPException(429, "too many messages from that agent")   # P193: one sender, not its whole relay
     if not rs.AGENT_REGISTRY.is_authorized(req.to_agent):
         raise HTTPException(404, "not found")
     from emporia import moves
