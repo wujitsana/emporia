@@ -70,8 +70,13 @@ carried over at the end of this file.
 - **Approval on the stateless MCP protocol.** Asking the operator mid-call works on the classic
   session Hermes opens; the 2026-07-28 stateless protocol needs the "input required" round trip
   instead. Until then a client on it is refused payments above the threshold (safe, but blocking).
-- **SDK parity.** Agents on `EmporiaAgent` get the leak guard but not the wallet's networks, caps
-  and approval step; move those into a signer the SDK uses too.
+- **SDK parity.** Agents on `EmporiaAgent` get the leak guard and the testnet lock (P177) but not
+  the wallet's caps and approval step; move those into a signer the SDK uses too.
+- **Editable settings in the dashboard**, like the Hermes dashboard's config page. Today (P178)
+  the Settings view only shows each setting with the command that changes it. Editing needs a
+  write route on the local console with its own confirmation step, kept away from anything an
+  agent's browser tool could click; caps, approval threshold, testnet networks and the relay URL
+  first. Mainnet unlock and phrase backup stay in a person's terminal either way.
 - **Hermes upstream:** a configurable list of paths its file tools refuse (the keys folder on it).
 - **Split `src/emporia/cli.py`** (2,100 lines: doctor, setup, wallet, identity, role, Stripe,
   overview) into a package, one module per command, sharing the agent-state helpers.

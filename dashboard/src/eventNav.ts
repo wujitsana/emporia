@@ -12,7 +12,8 @@ export type DashboardView =
   | "games"
   | "messages"
   | "profile"
-  | "docs";
+  | "docs"
+  | "settings";
 
 export interface NavOpts {
   sessionId?: string;

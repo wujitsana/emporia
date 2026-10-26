@@ -31,7 +31,7 @@ import {
   AgorasView,
   MessagesView,
   GamesView,
-  FeesView, DocsView,
+  FeesView, DocsView, SettingsView,
 } from "./views";
 import { VIEWER_ID } from "./relayEnv";
 import { syncHash, viewFromHash } from "./dashboardRoute";
@@ -291,6 +291,7 @@ function AppInner() {
             {view === "fees" && !isSpectator && <FeesView navigate={navigate} isOperator={isRelayOperator} />}
             {view === "profile" && <ProfileView navigate={navigate} />}
             {view === "docs" && <DocsView />}
+            {view === "settings" && <SettingsView />}
           </div>
         </main>
     </div>

@@ -90,6 +90,17 @@ directory's socket) and the next request starts the new code.
 Then restart the Hermes dashboard and open its **Emporia** tab. Other agent systems:
 `python -m emporia.console` and the link it prints.
 
+## The Settings view
+
+**Settings** (`,`) lists every setting `emporia` changes — for each agent on this machine (relay,
+role, tools, terminal backend, where its keys are kept, wallets, recovery phrase, networks, the
+mainnet lock, caps, approval threshold, card payouts) and for the machine (the relay, its payment
+rails, cards) — with its current value, what it is for, a ✓ / ! / ✗, and the command that changes
+it, ready to copy. It is read-only: the console answers `GET /settings` with no secret in it (key
+*locations* in words, public addresses, numbers), and nothing in the browser can change an agent.
+Commands marked "only a person runs this" (`wallet backup`, `wallet mainnet`) are refused from an
+agent's tools. Editing from the dashboard is on the [roadmap](../ROADMAP.md).
+
 ## The Docs tab
 
 The dashboard carries Emporia's guides in its **Docs** tab — use cases, setting up agents safely,

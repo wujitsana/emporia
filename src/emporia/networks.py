@@ -71,7 +71,8 @@ def is_testnet(caip2: str) -> bool:
 
 
 def mainnet_unlocked(env: dict[str, str] | None = None) -> bool:
-    return (os.environ if env is None else env).get(MAINNET_VAR, "").strip().lower() in ("1", "true", "yes", "on")
+    raw = os.getenv("EMPORIA_X402_MAINNET", "") if env is None else env.get(MAINNET_VAR, "")
+    return raw.strip().lower() in ("1", "true", "yes", "on")
 
 
 def family(caip2: str) -> str | None:

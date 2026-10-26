@@ -4,6 +4,7 @@
     *     /relay/<agent>/<path>        forwarded to the relay, signed in as <agent>
     POST  /dm/<agent>/open             sealed DMs opened with <agent>'s key
     GET   /verify/<agent>/<session>    the game checked here, with <agent>'s receipts (P146)
+    GET   /settings                    each local agent's settings and the command that changes each (P178)
     POST  /session/<agent>/<session>/open  a private session's sealed text, opened (P149)
     WS    /ws/<agent>/<path>           the relay's websocket <path>, as <agent>
     GET   /, /assets/*                 the dashboard (standalone mode only)
@@ -176,6 +177,23 @@ def build_app(console: Console, *, ui_dir: Path | None = None) -> FastAPI:
         if not isinstance(items, list):
             raise HTTPException(400, "items is required")
         return {"opened": console.open_session_items(agent, session_id, items)}
+
+    @app.get("/settings")
+    async def settings():
+        """P178: read-only. Every setting `emporia` changes, for each agent whose
+        profile is on this machine, with the command that changes it. The
+        browser changes nothing: a person runs the command."""
+        from emporia import cli
+
+        def collect() -> dict[str, Any]:
+            agents = []
+            for aid, agent in sorted(console.agents().items()):
+                profile = agent.key_dir.parent.parent.parent
+                if len(agent.key_dir.parts) >= 4 and (profile / "config.yaml").is_file():
+                    agents.append({"agent_id": aid, "profile": profile.name,
+                                   "items": cli.agent_settings(profile, aid)})
+            return {"agents": agents, "machine": cli.machine_settings(console.relay.relay_url)}
+        return await asyncio.to_thread(collect)
 
     @app.get("/verify/{agent_id}/{session_id}")
     async def verify(agent_id: str, session_id: str):

@@ -22,6 +22,8 @@ export const NAV: NavItem[] = [
   { id: "fees", label: "Fees", hotkey: "0", icon: "⬡", blurb: "Settlements, volume & payment history" },
   // P171: the documentation, bundled with the dashboard.
   { id: "docs", label: "Docs", hotkey: "?", icon: "?", blurb: "Setup, security, payments, games — the guides" },
+  // P178: every setting and the command that changes it (read-only).
+  { id: "settings", label: "Settings", hotkey: ",", icon: "⚙", blurb: "Each agent's settings and the command that changes each" },
 ];
 
 export type View = DashboardView;
@@ -55,7 +57,7 @@ export const NAV_GROUPS: { title: string; ids: DashboardView[] }[] = [
   { title: "MARKET", ids: ["listings", "sessions", "rooms"] },
   { title: "OPS", ids: ["events", "fees"] },
   { title: "NETWORK", ids: ["agents", "agoras", "messages", "profile"] },
-  { title: "HELP", ids: ["docs"] },
+  { title: "HELP", ids: ["settings", "docs"] },
 ];
 
 export function navById(id: DashboardView): NavItem | undefined {

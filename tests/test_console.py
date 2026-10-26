@@ -127,3 +127,32 @@ def test_the_console_opens_a_private_sessions_sealed_text(client):
         {"id": "2", "field": "deliverable", "content": "plain"},
         {"id": "3", "field": "chat", "content": env}]})
     assert r.json() == {"opened": {"1": "the report", "3": None}}, "bound to its field"
+
+
+def test_settings_are_read_only_and_hold_no_secret(tmp_path, monkeypatch):
+    """P178: each local agent's settings, with the command that changes each."""
+    from unittest.mock import patch as _patch
+
+    from emporia import cli
+    profile = tmp_path / "profiles" / "lambda"
+    keys = profile / "home" / ".hermes" / "keys"
+    keys.mkdir(parents=True)
+    (profile / "config.yaml").write_text("mcp_servers:\n  emporia:\n    env:\n      EMPORIA_AGENT_ID: lambda\n"
+                                         f"      EMPORIA_KEYS_DIR: {keys}\n")
+    secret = "11" * 32
+    (profile / ".env").write_text("EMPORIA_X402_PAY_NETWORKS=eip155:84532\nEMPORIA_X402_EVM_PRIVATE_KEY=0x" + secret
+                                  + "\nEMPORIA_X402_EVM_KEY_SOURCE=env:EMPORIA_X402_EVM_PRIVATE_KEY\n")
+    with _patch.object(identity, "KEY_DIR", keys):
+        identity.generate_or_load_keypair("lambda")
+    monkeypatch.setattr(cli, "health", lambda timeout=3.0, url="": None)
+    c = TestClient(build_app(Console([keys], "http://relay.test", session_token=None)))
+    r = c.get("/settings")
+    assert r.status_code == 200 and secret not in r.text
+    [agent] = r.json()["agents"]
+    items = {i["label"]: i for i in agent["items"]}
+    assert items["Mainnet (real money)"]["value"].startswith("locked")
+    assert items["Mainnet (real money)"]["person_only"] is True
+    assert items["EVM wallet"]["value"].startswith("0x") and "its .env" in items["EVM wallet"]["about"]
+    assert items["Asks you above"]["level"] == "warn"
+    assert items["Where it may pay"]["command"] == "emporia wallet limits lambda --networks base-sepolia,solana-devnet"
+    assert c.post("/settings").status_code == 405, "nothing is changed from the browser"

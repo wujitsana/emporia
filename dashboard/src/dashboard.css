@@ -1979,3 +1979,23 @@ body.theme-light {
 .e-doc .e-doc-quote { padding-left: 12px; border-left: 3px solid color-mix(in srgb, currentColor 35%, transparent); }
 .e-doc .e-doc-link { text-decoration: underline; cursor: pointer; }
 .e-doc .e-doc-path { font-family: var(--font-family-mono, monospace); font-size: 0.92em; opacity: 0.8; }
+
+/* P178: the Settings view (read-only). */
+.e-settings { overflow-y: auto; max-width: 100ch; padding: 8px 20px 40px 20px; }
+.e-settings-group { margin: 0 0 18px 0; }
+.e-settings-title { font-size: 1.05em; margin: 12px 0 6px 0; }
+.e-setting { padding: 8px 0; border-bottom: 1px solid var(--theme-border-subdued, rgba(128,128,128,0.12));
+  display: flex; flex-direction: column; gap: 3px; }
+.e-setting-head { display: flex; gap: 8px; align-items: baseline; flex-wrap: wrap; }
+.e-setting-mark { width: 1.2em; text-align: center; }
+.e-setting-label { font-weight: 600; }
+.e-setting-value { font-family: var(--font-family-mono, monospace); overflow-wrap: anywhere; }
+.e-setting-warn .e-setting-mark { color: #c8901a; }
+.e-setting-danger .e-setting-mark, .e-setting-danger .e-setting-value { color: #d9534f; }
+.e-setting-about, .e-setting-cmd, .e-setting-note { padding-left: calc(1.2em + 8px); }
+.e-setting-cmd { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.e-setting-cmd code { font-family: var(--font-family-mono, monospace); font-size: 0.92em; padding: 1px 6px;
+  border: 1px solid color-mix(in srgb, currentColor 18%, transparent); overflow-wrap: anywhere; }
+.e-setting-copy { font: inherit; font-size: 0.85em; padding: 1px 8px; background: transparent; color: inherit;
+  border: 1px solid color-mix(in srgb, currentColor 35%, transparent); cursor: pointer; }
+.e-settings-foot { display: block; margin-top: 16px; }

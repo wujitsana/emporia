@@ -829,6 +829,134 @@ def _setup_summary(profile: Path, name: str, role: str) -> None:
     print(f"  Check it any time: emporia doctor --profile {name}")
 
 
+def _where_kept(ref: str, has_file: bool) -> str:
+    """Where a key lives, in words — never the reference itself."""
+    from emporia.key_source import ENV_KEY_NAMES
+    if ref.startswith("env:"):
+        return "its .env" if ref[4:] in ENV_KEY_NAMES.values() else "an environment variable (linked)"
+    if ref.startswith("cmd:"):
+        return "a password manager or vault (linked)"
+    return "a key file (0600)" if has_file else "not made yet (made at its first start)"
+
+
+def machine_settings(url: str = "") -> list[dict[str, Any]]:
+    """P178: this machine's side — the relay the dashboard reads and what it
+    takes — for the Settings view. Read-only, public facts only."""
+    h = health(timeout=3, url=url)
+    base = (url or relay_url()).rstrip("/")
+    local = installer()._is_local_relay(base)
+    row = lambda label_, value, about, command="", level="ok": {   # noqa: E731
+        "group": "Relay", "label": label_, "value": value, "about": about, "command": command,
+        "level": level, "person_only": False}
+    out = [row("Relay", f"{base} — " + (_relay_brief(h) if h else "not answering"),
+               "The relay this dashboard reads. Agents choose theirs in their own settings.",
+               "emporia relay status" if h else ("emporia relay start" if local else ""),
+               "ok" if h else "warn")]
+    if local:
+        out += [row("Its payment rails", "USDC on " + (", ".join(h.get("x402_networks") or []) or "nothing")
+                    if h else "—", "What this machine's relay takes: x402 USDC, escrow holds, Tempo.",
+                    "emporia setup relay"),
+                row("Cards", (h or {}).get("stripe_mode") or "off", "The relay's Stripe key, typed hidden.",
+                    "emporia setup stripe")]
+    out += [row("Everything at once", "", "Each component's state and how to set it up; changes nothing.",
+                "emporia setup"),
+            row("Checks", "", "✓ / ! / ✗ for every agent, with the fix under each problem.", "emporia doctor"),
+            row("This tab", "", "Install or refresh the Emporia tab in the Hermes dashboard.",
+                "emporia setup dashboard")]
+    return out
+
+
+def agent_settings(profile: Path, agent_id: str) -> list[dict[str, Any]]:
+    """P178: every setting `emporia` changes for an agent — its value, what it
+    is for, and the command that changes it — for the dashboard's Settings view
+    and anything else that wants to show them. Read-only. Nothing secret: key
+    *locations* in words, public addresses, numbers. `level` is ok, warn or
+    danger; `person_only` marks a command only a person runs, in their own
+    terminal."""
+    from emporia.key_source import SOURCE_VARS
+    from emporia.networks import label, mainnet_unlocked, resolve_list
+    name = profile.name
+    env = installer().harvest_env(profile) if (profile / ".env").exists() else {}
+    has = wallet_presence(profile, agent_id)
+    wallet = has["evm"] or has["svm"]
+    role, backend = profile_role(profile, wallet), _backend(profile)
+    nets = resolve_list(env.get("EMPORIA_X402_PAY_NETWORKS", ""))
+    unlocked = mainnet_unlocked(env)
+    approve = env.get("EMPORIA_PAYMENT_APPROVAL_CENTS", "")
+    phrase = _phrase_state(profile, agent_id)
+    cents = lambda var, default: f"${int(env.get(var, default)) / 100:.2f}"   # noqa: E731
+
+    def item(group, label_, value, about, command="", level="ok", person_only=False):
+        return {"group": group, "label": label_, "value": value, "about": about, "command": command,
+                "level": level, "person_only": person_only}
+
+    out = [
+        item("Relay", "Relay", env.get("EMPORIA_RELAY_URL") or relay_url(),
+             "Where it meets other agents. Agents see each other only on the same relay (or linked ones).",
+             f"emporia relay use URL {name}"),
+        item("Role", "Role", role,
+             dict(ROLES)[role].split(" — ", 1)[1].split(". ")[0] + ".",
+             f"emporia role {name} marketplace|developer|both",
+             "danger" if role == "both" and backend == "local" else "ok"),
+        item("Role", "Tools turned off", ", ".join(_disabled_toolsets(profile)) or "none (full Hermes tools)",
+             "What the role takes away so its own tools cannot reach its keys.", f"emporia role {name}"),
+        item("Role", "Terminal backend", backend,
+             "local runs its terminal on the same disk as its keys; docker, ssh, modal and daytona do not.",
+             "", "warn" if backend == "local" and role != "marketplace" else "ok"),
+        item("Keys", "Identity and encryption keys",
+             _where_kept(env.get(SOURCE_VARS["identity"], ""), _key_file(profile, agent_id, "identity").exists()),
+             "Its identity key signs every move; its encryption key opens sealed DMs.",
+             f"emporia identity store {name} --to env"),
+    ]
+    if wallet:
+        for fam, title in (("evm", "EVM wallet"), ("svm", "Solana wallet")):
+            if has[fam]:
+                out.append(item("Wallets", title, _wallet_address(profile, agent_id, fam == "svm") or "(linked)",
+                                "Its public address — where it pays from and is paid. Its key is in "
+                                + _where_kept(env.get(SOURCE_VARS[fam], "") or env.get(SOURCE_VARS["phrase"], ""),
+                                              True) + ".",
+                                f"emporia wallet show {name}"))
+        missing = [t for f, t in (("evm", "EVM"), ("svm", "Solana")) if not has[f]]
+        if missing:
+            out.append(item("Wallets", f"{' and '.join(missing)} wallet", "none",
+                            "Add one any time; keys are never replaced.",
+                            f"emporia wallet create {name}" + (" --solana" if missing == ["Solana"] else "")))
+        out.append(item("Wallets", "Recovery phrase",
+                        {"file": "stored beside its keys — not backed up", "env": "stored in its .env — not backed up",
+                         "linked": "in your password manager or vault", "": "not kept here"}[phrase],
+                        "The backup of both wallets belongs on paper, off this machine.",
+                        f"emporia wallet backup {name}" if phrase in ("file", "env") else "",
+                        "warn" if phrase in ("file", "env") else "ok", person_only=phrase in ("file", "env")))
+        out += [
+            item("Payments", "Where it may pay", ", ".join(label(n) for n in nets) or "nowhere yet",
+                 "It never pays on any other network.",
+                 f"emporia wallet limits {name} --networks base-sepolia,solana-devnet",
+                 "ok" if nets else "warn"),
+            item("Payments", "Mainnet (real money)", "UNLOCKED" if unlocked else "locked — testnets only",
+                 "Only a person unlocks real money, in their own terminal, after a warning.",
+                 f"emporia wallet mainnet {name}" + (" --lock" if unlocked else ""),
+                 "danger" if unlocked else "ok", person_only=not unlocked),
+            item("Payments", "Largest single payment", cents("EMPORIA_X402_MAX_PAYMENT_CENTS", 1000),
+                 "A payment above this is refused before it is signed.",
+                 f"emporia wallet limits {name} --max-payment-cents 1000"),
+            item("Payments", "Most in 24 hours", cents("EMPORIA_X402_MAX_DAILY_CENTS", 5000),
+                 "The most a compromised agent can spend in a day.",
+                 f"emporia wallet limits {name} --max-daily-cents 2500"),
+            item("Payments", "Asks you above", f"${int(approve) / 100:.2f}" if approve else "never asks",
+                 "Larger payments wait for your yes, through its own app.",
+                 f"emporia wallet limits {name} --approve-above-cents 500", "ok" if approve else "warn"),
+        ]
+    else:
+        out.append(item("Wallets", "Wallets", "none — it cannot pay or be paid",
+                        "A complete agent without one: free games, talk, open rooms.",
+                        "" if role == "developer" else f"emporia wallet create {name}"))
+    if role != "developer":
+        out.append(item("Payments", "Card payouts (Stripe)", "see its Stripe status",
+                        "Whether it can be paid by card, if the relay takes cards.",
+                        f"emporia setup stripe --agent {name}"))
+    return out
+
+
 _BASE_SEPOLIA = {
     "EMPORIA_X402_ENABLED": "1",
     "EMPORIA_X402_FACILITATOR_URL": "https://x402.org/facilitator",
