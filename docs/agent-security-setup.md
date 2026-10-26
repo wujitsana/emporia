@@ -138,7 +138,8 @@ the terminal's scrollback — asks for three of its words to check you wrote it 
   MetaMask or Phantom.
 - **Lost the paper?** The agent keeps working; its keys still sign. Move the funds to a new wallet
   and make a new phrase.
-- **Nobody could be shown it** — setup run without a terminal, or by an agent: the phrase is kept
+- **Not now, or nobody could be shown it** — you answered no to "Back up the recovery phrase
+  now?", or setup ran without a terminal or by an agent: the phrase is kept
   beside the keys until you run **`emporia wallet backup NAME`** in your own terminal, which shows it
   once, checks three words and removes it (also from old `.env` backups). `emporia doctor` reminds
   you until then. The Hermes plugin refuses `wallet backup` from an agent's tools and hides a shown

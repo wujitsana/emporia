@@ -1044,18 +1044,21 @@ def _can_reveal() -> bool:
     return _TTY and not any(k.startswith("HERMES_SESSION_") for k in os.environ)
 
 
-def _show_phrase(phrase: str) -> bool:
-    """Show the phrase once, then ask for three of its words. True when the
-    person has written it down; False keeps it stored for `wallet backup`."""
+def _show_phrase(phrase: str, name: str) -> bool:
+    """Ask whether to back the phrase up now; if so, show it once and ask for
+    three of its words. True when the person has written it down; False keeps
+    it stored for `emporia wallet backup NAME`."""
     import getpass
     import secrets
     words = phrase.split()
-    print("\n  The wallets' recovery phrase is about to be shown, once. Write the words down on")
-    print("  paper, in order. Anyone with them controls both wallets — don't photograph them,")
-    print("  paste them into a chat, or give them to an agent. Emporia keeps no copy once you")
-    print("  have confirmed them; this machine keeps only the keys.")
-    if not ask("  Show it now? (No: it stays stored here until `emporia wallet backup`)", True):
+    print("\n  Both wallets come from one 12-word recovery phrase — their only backup. Backing it")
+    print("  up shows it once, for you to write on paper; after that this machine keeps only the")
+    print(f"  keys. Not now? It stays stored beside the keys until you run `emporia wallet backup {name}`.")
+    if not ask("  Back up the recovery phrase now?", True):
         return False
+    print("\n  Write the words on paper, in order. Anyone with them controls both wallets — don't")
+    print("  photograph them, paste them into a chat, or give them to an agent.")
+    input("  Press Enter to show them… ")
     for _attempt in range(2):
         # The alternate screen: the words leave no scrollback once it closes.
         sys.stdout.write("\x1b[?1049h\x1b[H")
@@ -1129,7 +1132,7 @@ def _make_wallets(profile: Path, agent_id: str, mode: str) -> dict[str, str]:
         elif _can_reveal():
             from emporia import agent_wallet as aw
             phrase = aw.new_phrase()
-            kept = not _show_phrase(phrase)
+            kept = not _show_phrase(phrase, profile.name)
             r = _store_secret(profile, agent_id, "phrase", phrase, keep_phrase=kept)
         else:   # nobody here can be shown it: keep it until someone can
             r = _wallet_cmd(profile, agent_id, "generate-phrase")
@@ -1137,8 +1140,10 @@ def _make_wallets(profile: Path, agent_id: str, mode: str) -> dict[str, str]:
         if r.returncode != 0:
             print(f"  could not create the wallets: {r.stderr.strip()[-200:]}")
         elif kept:
-            print(f"  ! The recovery phrase is stored beside the keys until you back it up. In your own "
-                  f"terminal (never through an agent): emporia wallet backup {profile.name}")
+            print(f"  ! Not backed up yet: the recovery phrase stays stored beside the keys. Back it up any "
+                  f"time, in your own terminal (never through an agent):\n"
+                  f"      emporia wallet backup {profile.name}\n"
+                  f"    `emporia doctor` reminds you until then.")
         else:
             print("  Keys stored. The recovery phrase is not kept on this machine — your copy is the "
                   "only one.")
@@ -1210,7 +1215,7 @@ def _backup_phrase(profile: Path, agent_id: str) -> int:
         print(f"wallet backup: the stored phrase does not read ({e}); nothing changed.")
         return 1
     before = {f: _wallet_address(profile, agent_id, f == "svm") for f in ("evm", "svm")}
-    if not _show_phrase(phrase):
+    if not _show_phrase(phrase, name):
         print("Nothing changed: the phrase stays stored until you back it up.")
         return 1
     if state == "env":

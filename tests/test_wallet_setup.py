@@ -169,7 +169,7 @@ def test_setup_agent_asks_and_one_phrase_is_the_recommended_choice(profiles, mon
     # role: 1 (marketplace) · wallets: 3 (one phrase) · networks: Enter · caps: 5, 20 · ask above $2
     _typing(monkeypatch, "1", "3", "", "5", "20", "2")
     shown = []
-    monkeypatch.setattr(cli, "_show_phrase", lambda phrase: shown.append(phrase) or True)
+    monkeypatch.setattr(cli, "_show_phrase", lambda phrase, name: shown.append(phrase) or True)
     with patch.dict(os.environ):
         assert cli.main(["setup", "agent", "zeta", "--keys", "files"]) == 0
     keys = root / "zeta" / "home" / ".hermes" / "keys"
@@ -593,16 +593,20 @@ def test_reading_for_a_profile_never_uses_the_callers_key(monkeypatch):
 def test_the_phrase_is_shown_once_and_three_words_confirm_it(monkeypatch, capsys):
     phrase = agent_wallet.new_phrase()
     words = phrase.split()
-    _typing(monkeypatch, "", "")                       # show it: yes · Enter once written down
+    _typing(monkeypatch, "", "", "")   # back up now: yes · Enter to show · Enter once written down
     monkeypatch.setattr("getpass.getpass", lambda q: words[int(q.split("#")[1].split()[0]) - 1])
-    assert cli._show_phrase(phrase)
+    assert cli._show_phrase(phrase, "kappa")
     out = capsys.readouterr().out
+    assert "emporia wallet backup kappa" in out, "says how to back it up later"
     assert cli.PHRASE_BEGIN in out and "\x1b[?1049h" in out and "\x1b[?1049l" in out, "on the alternate screen"
-    _typing(monkeypatch, "", "", "n")                  # wrong words · don't show again
+    _typing(monkeypatch, "", "", "", "n")              # wrong words · don't show again
     monkeypatch.setattr("getpass.getpass", lambda q: "wrong")
-    assert not cli._show_phrase(phrase)
+    assert not cli._show_phrase(phrase, "kappa")
+    capsys.readouterr()
     _typing(monkeypatch, "n")                          # not now
-    assert not cli._show_phrase(phrase)
+    assert not cli._show_phrase(phrase, "kappa")
+    later = capsys.readouterr().out
+    assert cli.PHRASE_BEGIN not in later and "wallet backup kappa" in later
 
 
 def test_no_terminal_or_an_agents_terminal_never_shows_it(monkeypatch):
@@ -625,7 +629,7 @@ def test_a_phrase_nobody_saw_is_kept_until_backed_up(profiles, monkeypatch, caps
     assert cli.main(["wallet", "backup", "pi"]) == 1, "refused without a person's terminal"
     assert (keys / "pi.x402.phrase").exists()
     _typing(monkeypatch)
-    monkeypatch.setattr(cli, "_show_phrase", lambda p: p == phrase)
+    monkeypatch.setattr(cli, "_show_phrase", lambda p, name: p == phrase)
     assert cli.main(["wallet", "backup", "pi"]) == 0
     assert not (keys / "pi.x402.phrase").exists()
     assert {f: cli._wallet_address(root / "pi", "pi", f == "svm") for f in ("evm", "svm")} == before
@@ -650,7 +654,7 @@ def test_backup_of_a_phrase_kept_in_the_env_gives_its_wallets_their_keys(profile
     before = {f: cli._wallet_address(profile, "rho", f == "svm") for f in ("evm", "svm")}
     assert all(before.values())
     _typing(monkeypatch)
-    monkeypatch.setattr(cli, "_show_phrase", lambda p: True)
+    monkeypatch.setattr(cli, "_show_phrase", lambda p, name: True)
     with patch.dict(os.environ):
         assert cli.main(["wallet", "backup", "rho"]) == 0
     env = _env_of(profile)
