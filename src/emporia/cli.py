@@ -1010,6 +1010,43 @@ def doctor_agent(rep: Report, profile: Path, entry: dict, relay_up: bool) -> Non
         else:
             rep.warn("not registered on this relay yet",
                      f"start its gateway or MCP (`hermes -p {name} gateway restart`)")
+    doctor_a2a(rep, profile, has["evm"] or has["svm"])
+
+
+def a2a_state(profile: Path) -> tuple[bool, bool]:
+    """(Hermes's A2A platform is on for this profile, it is limited to trusted peers)."""
+    inst = installer()
+    cfg = inst.load_yaml(profile / "config.yaml") if (profile / "config.yaml").exists() else {}
+    a2a = ((cfg.get("gateway") or {}).get("platforms") or {}).get("a2a") or {}
+    listed = any(isinstance(x, dict) and x.get("platform") == "a2a" for x in (cfg.get("platforms") or []))
+    on = bool(a2a.get("enabled")) or listed
+    trusted = bool((cfg.get("a2a") or {}).get("trusted_peers") or inst.harvest_env(profile).get("A2A_TRUSTED_PEERS"))
+    return on, trusted
+
+
+def doctor_a2a(rep: Report, profile: Path, has_wallet: bool) -> None:
+    """P187: Hermes's A2A platform puts a remote agent's task into this agent's
+    live session. On an agent with a wallet, that is a stranger asking it to act."""
+    on, trusted = a2a_state(profile)
+    if not on:
+        return
+    if has_wallet and not trusted:
+        rep.warn("A2A is on and this agent has a wallet: any A2A peer with a token can ask it to act. "
+                 "Its spending caps and approval step still apply",
+                 "set A2A_TRUSTED_PEERS (or a2a.trusted_peers) in its profile, or turn A2A off for it")
+    else:
+        rep.ok("A2A is on" + (", limited to trusted peers" if trusted else " (no wallet here)"))
+
+
+def doctor_hermes_plugins(rep: Report) -> None:
+    """An old plugin in Hermes's own plugins folder at platforms/a2a would load
+    in place of Hermes's A2A plugin if A2A is ever turned on."""
+    shadow = hermes_home() / "plugins" / "platforms" / "a2a" / "plugin.yaml"
+    if shadow.exists() and "a2a-platform" not in shadow.read_text():
+        rep.section("Hermes plugins")
+        rep.warn(f"{shadow.parent} is not Hermes's A2A plugin (an older one with the same folder name); "
+                 "turning A2A on would load it instead",
+                 f"move it aside: mv {shadow.parent} {shadow.parent}.old")
 
 
 def doctor_dashboard(rep: Report) -> None:
@@ -1057,6 +1094,7 @@ def cmd_doctor(args: argparse.Namespace) -> int:
     for profile, entry in agents:
         doctor_agent(rep, profile, entry, relay_up=h is not None)
     doctor_dashboard(rep)
+    doctor_hermes_plugins(rep)
     print("\n" + ("Problems found (✗) — fix them in order." if rep.failed
                   else "No problems found. Warnings (!) are optional."))
     return 1 if rep.failed else 0

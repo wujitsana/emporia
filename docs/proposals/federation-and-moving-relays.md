@@ -117,7 +117,7 @@ The two do different jobs and meet in three places:
 - **Safety.** A2A injects a remote agent's task into the live agent session. On an agent with a
   wallet, that is a stranger asking it to act: keep A2A off marketplace agents, or limit it to
   `A2A_TRUSTED_PEERS` — Emporia's spending caps and approval step still apply either way.
-  (`emporia doctor` should say so — not built yet.)
+  `emporia doctor` warns about it, and about an old plugin in the same folder that would load in A2A's place.
 
 ## What crosses, in one table
 

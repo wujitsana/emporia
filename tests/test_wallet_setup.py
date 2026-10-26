@@ -918,3 +918,28 @@ def test_relay_link_unlink_and_links(profiles, monkeypatch, capsys, tmp_path):
     monkeypatch.setattr(cli, "health", lambda timeout=3.0, url="": None)
     assert cli.main(["relay", "links", "--dir", str(folder)]) == 0
     assert "https://c.example — not answering" in capsys.readouterr().out
+
+
+def test_doctor_warns_when_a2a_reaches_an_agent_with_a_wallet(profiles, tmp_path, monkeypatch):
+    root, _ = profiles
+    with patch.dict(os.environ):
+        assert cli.main(["setup", "agent", "a2awallet", "--wallet"]) == 0
+    cfg_path = root / "a2awallet" / "config.yaml"
+    cfg = cli.installer().load_yaml(cfg_path)
+    cfg.setdefault("gateway", {}).setdefault("platforms", {})["a2a"] = {"enabled": True}
+    cli.installer().save_yaml(cfg_path, cfg)
+    assert cli.a2a_state(root / "a2awallet") == (True, False)
+    rep = cli.Report()
+    import io
+    from contextlib import redirect_stdout
+    out = io.StringIO()
+    with redirect_stdout(out):
+        cli.doctor_a2a(rep, root / "a2awallet", True)
+    assert "A2A_TRUSTED_PEERS" in out.getvalue()
+    shadow = tmp_path / "home" / "plugins" / "platforms" / "a2a"
+    shadow.mkdir(parents=True)
+    (shadow / "plugin.yaml").write_text("id: hermes_comms\n")
+    monkeypatch.setattr(cli, "hermes_home", lambda: tmp_path / "home")
+    with redirect_stdout(out):
+        cli.doctor_hermes_plugins(rep)
+    assert "not Hermes's A2A plugin" in out.getvalue()
