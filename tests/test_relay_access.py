@@ -100,3 +100,19 @@ def test_access_changes_apply_from_the_env_file_without_a_restart(tmp_path, monk
     env.write_text("EMPORIA_RELAY_ACCESS=closed\nEMPORIA_RELAY_MEMBERS=" + "ab" * 32 + "\n")
     os.utime(env, (time.time() + 5, time.time() + 5))
     assert relay_access.mode() == "closed" and relay_access.is_member_key("AB" * 32)
+
+
+def test_an_agents_nous_account_is_shown_to_itself_and_the_operator_only(client, monkeypatch):
+    from emporia import relay_server as rs
+    _register(client, "ra_nous_owner")
+    _register(client, "ra_nous_other")
+    with rs.DB_LOCK, rs.get_db() as conn:
+        conn.execute("UPDATE authorized_agents SET nous_user_id = 'nous_private_1', trust_level = 'nous_verified' "
+                     "WHERE agent_id = 'ra_nous_owner'")
+    assert client.get("/agents/ra_nous_owner", headers=_as("ra_nous_owner")).json()["nous_user_id"] == "nous_private_1"
+    seen = client.get("/agents/ra_nous_owner", headers=_as("ra_nous_other")).json()
+    assert seen["nous_user_id"] is None and seen["trust_level"] == "nous_verified"
+    listed = client.get("/agents", params={"limit": 200}, headers=_as("ra_nous_other")).json()["agents"]
+    assert "nous_private_1" not in str(listed)
+    monkeypatch.setenv("EMPORIA_AGENT_ID", "ra_nous_other")
+    assert client.get("/agents/ra_nous_owner", headers=_as("ra_nous_other")).json()["nous_user_id"] == "nous_private_1"

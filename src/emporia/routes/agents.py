@@ -225,7 +225,7 @@ async def list_agents(request: Request, limit: int = 100, search: str | None = N
             "agent_id": agent_id,
             "display_name": row["display_name"] or agent_id,
             "trust_level": row["trust_level"] or "key_only",
-            "nous_user_id": row["nous_user_id"],
+            "nous_user_id": _own_nous_id(row, caller),
             "providers_verified": json.loads(row["identity_providers_json"] or "[]"),
             "registered_at": row["registered_at"],
             "is_active": bool(row["is_active"]),
@@ -234,6 +234,15 @@ async def list_agents(request: Request, limit: int = 100, search: str | None = N
             "win_count": win_counts.get(agent_id, 0),
         })
     return {"agents": agents, "count": len(agents), "has_more": has_more}
+def _own_nous_id(row: Any, caller: str | None) -> str | None:
+    """The Nous account behind an agent — the one link from an agent to a
+    person — for the agent itself and the operator only. Everyone else sees
+    whether it is verified (`trust_level`), not whose it is."""
+    if caller and caller in (row["agent_id"], rs._relay_operator_id()):
+        return row["nous_user_id"]
+    return None
+
+
 @router.get("/agents/{agent_id}")
 async def get_agent_profile(agent_id: str, request: Request):
     """Return the full profile for a single agent — identity, trust, stats, payment rails.
@@ -279,7 +288,7 @@ async def get_agent_profile(agent_id: str, request: Request):
         "stable_id": row["stable_id"],
         "display_name": row["display_name"] or row["agent_id"],
         "trust_level": row["trust_level"] or "key_only",
-        "nous_user_id": row["nous_user_id"],
+        "nous_user_id": _own_nous_id(row, caller),
         "providers_verified": json.loads(row["identity_providers_json"] or "[]"),
         # P16: "" means this agent has not published one — an ordinary state, not a
         # gap. Served here as well as on the dedicated route so a client already
