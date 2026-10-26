@@ -448,6 +448,7 @@ def register_agent(
         if r.status_code in (200, 201):
             published = _publish_relay_list(data.get("agent_id") or agent_id)
             _keep_own_record(data.get("agent_id") or agent_id)
+            _archive_in_background(data.get("agent_id") or agent_id)
             return {"success": True, "agent_id": data.get("agent_id"), "trust_level": data.get("trust_level"),
                     "address": data.get("address"), "fingerprint": data.get("fingerprint"),
                     "relay_list": published}
@@ -471,6 +472,23 @@ def _backups() -> list[str]:
     return [u.strip().rstrip("/") for u in os.getenv("EMPORIA_BACKUP_RELAYS", "").split(",") if u.strip()]
 
 
+def _archive_in_background(aid: str) -> None:
+    """P194: refresh the agent's own archive without holding up registration."""
+    import threading
+    relay = _base()
+
+    def run() -> None:
+        token = _RELAY_CTX.set(relay)
+        try:
+            archive_now(agent_id=aid)
+        except Exception:  # noqa: BLE001
+            logger.info("archive run failed", exc_info=True)
+        finally:
+            _RELAY_CTX.reset(token)
+    if os.getenv("EMPORIA_NO_ARCHIVE", "").strip() != "1":
+        threading.Thread(target=run, daemon=True, name="emporia-archive").start()
+
+
 def _keep_own_record(aid: str) -> None:
     """P190: keep this agent's latest record, as its relay signed it, in its own
     keys folder — so a move can carry it even if that relay is gone by then."""
@@ -488,6 +506,19 @@ def _keep_own_record(aid: str) -> None:
             f.write(r.text)
     except Exception:  # noqa: BLE001 — a convenience, never a reason to fail registering
         logger.info("could not keep a copy of this agent's record", exc_info=True)
+
+
+def leave_relay_as(relay: str, agent_id: str = "") -> dict[str, Any]:
+    """P195: leave a relay (home included). Not a tool — its operator runs
+    `emporia agent leave` or `emporia agent delete`."""
+    aid = agent_id or AGENT_ID
+    url = relay.rstrip("/")
+    try:
+        r = _bearer_request("post", f"{url}/agents/{aid}/leave", agent_id=aid, timeout=15)
+    except Exception as e:  # noqa: BLE001
+        return {"success": False, "error": f"{url} did not answer: {e}"}
+    body = r.json() if r.headers.get("content-type", "").startswith("application/json") else {"detail": r.text}
+    return {"success": r.status_code == 200, "status": r.status_code, **body}
 
 
 def move_home(old: str, agent_id: str = "") -> dict[str, Any]:
@@ -790,15 +821,21 @@ def visit_relay(relay: str, agent_id: str = "") -> dict[str, Any]:
 
 @mcp.tool()
 def leave_relay(relay: str, agent_id: str = "") -> dict[str, Any]:
-    """Stop visiting a relay: its notices stop and it leaves this agent's relay
-    list. Anything still open there stays there — finish it first."""
+    """Stop visiting a relay: leave it (its listings go, it can no longer act
+    there), its notices stop, and it leaves this agent's relay list. Refused
+    while a game, purchase, escrow hold or bounty is still open there."""
     from emporia import visits
     aid = agent_id or AGENT_ID
     url = relay.strip().rstrip("/")
     if url not in _visits():
         return {"error": f"not visiting {url}", "success": False}
+    # P195: and leave it there too — refused while something is still open on it.
+    r = _bearer_request("post", f"{url}/agents/{aid}/leave", agent_id=aid, timeout=15)
+    if r.status_code == 409:
+        return {"error": f"still open on {url} — finish it first", "detail": r.json().get("detail"),
+                "success": False}
     visits.save([u for u in _visits() if u != url])
-    return {"success": True, "relay": url, "relay_list": _publish_relay_list(aid)}
+    return {"success": True, "relay": url, "left": r.status_code == 200, "relay_list": _publish_relay_list(aid)}
 
 
 @mcp.tool()
@@ -2533,6 +2570,200 @@ def set_dm_policy(other_relays: bool, agent_id: str = "") -> dict[str, Any]:
     r = _bearer_request("post", f"{_base()}/agents/{aid}/dm-policy", agent_id=aid,
                         json={"other_relays": other_relays}, timeout=10)
     return {"success": r.status_code == 200, **(r.json() if r.status_code == 200 else {"error": r.text})}
+
+
+# ─── P194: the agent's own archive ───────────────────────────────────────────
+
+def _archive_dir(relay: str) -> Path:
+    from emporia.addresses import host_of
+    from emporia.identity import KEY_DIR
+    d = KEY_DIR / "archive" / host_of(relay).replace(":", "_")
+    d.mkdir(mode=0o700, parents=True, exist_ok=True)
+    return d
+
+
+def _append_new(path: Path, rows: list[dict[str, Any]], key: str) -> int:
+    """Append rows not already in `path` (JSON lines, keyed by `key`); 0600."""
+    seen = set()
+    if path.exists():
+        for line in path.read_text().splitlines():
+            try:
+                seen.add(json.loads(line).get(key))
+            except ValueError:
+                continue
+    new = [r for r in rows if r.get(key) not in seen]
+    if new:
+        fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_APPEND, 0o600)
+        with os.fdopen(fd, "a") as f:
+            for r in sorted(new, key=lambda x: (x.get("created_at") or "", x.get("seq") or 0)):
+                f.write(json.dumps(r, sort_keys=True) + "\n")
+    return len(new)
+
+
+def _pages(path: str, aid: str, params: dict[str, Any], stop_at: set[str], key: str = "message_id",
+           max_pages: int = 20) -> list[dict[str, Any]]:
+    """Walk a message list newest-first until it reaches what is already kept."""
+    out: list[dict[str, Any]] = []
+    cursor: dict[str, Any] = {}
+    for _ in range(max_pages):
+        r = _bearer_request("get", f"{_base()}{path}", agent_id=aid, params={**params, **cursor, "limit": 100},
+                            timeout=20)
+        if r.status_code != 200:
+            break
+        page = r.json().get("messages", [])
+        if not page:
+            break
+        out.extend(page)
+        if any(m.get(key) in stop_at for m in page) or len(page) < 100:
+            break
+        oldest = min(page, key=lambda m: (m.get("created_at") or "", m.get("seq") or 0))
+        cursor = {"before": oldest.get("created_at"), "before_seq": oldest.get("seq")}
+    return out
+
+
+def _kept_ids(path: Path, key: str) -> set[str]:
+    if not path.exists():
+        return set()
+    out = set()
+    for line in path.read_text().splitlines():
+        try:
+            out.add(json.loads(line).get(key))
+        except ValueError:
+            continue
+    return out
+
+
+@mcp.tool()
+@_relay_aware
+def archive_now(agent_id: str = "") -> dict[str, Any]:
+    """Keep this agent's own copy of everything it is part of on this relay, on
+    its own machine: its DM threads (still sealed, as stored), the rooms it
+    belongs to, its posts and listings, and its games and purchases with the
+    relay's signed public log. Only what is new since the last run is fetched.
+
+    So a relay that goes away, or removes things, does not take this agent's
+    history with it. Kept next to its keys, out of reach of its other tools;
+    its operator reads it with `emporia archive NAME`. Runs on its own when the
+    agent registers; call it any time (with `relay=` for a relay it visits).
+    """
+    aid = agent_id or AGENT_ID
+    root = _archive_dir(_base())
+    counts: dict[str, int] = {}
+    try:
+        threads = _bearer_request("get", f"{_base()}/dm", agent_id=aid, params={"agent_id": aid, "limit": 200},
+                                  timeout=20)
+        for t in (threads.json() if threads.status_code == 200 else []):
+            path = root / "dms" / f"{t['thread_id']}.jsonl"
+            path.parent.mkdir(mode=0o700, exist_ok=True)
+            msgs = _pages(f"/dm/{t['thread_id']}/messages", aid, {"agent_id": aid}, _kept_ids(path, "message_id"))
+            counts["dm_messages"] = counts.get("dm_messages", 0) + _append_new(
+                path, [{**m, "thread_with": t.get("other_agent")} for m in msgs], "message_id")
+        rooms = _bearer_request("get", f"{_base()}/rooms", agent_id=aid, params={"limit": 200}, timeout=20)
+        for room in (rooms.json().get("rooms", []) if rooms.status_code == 200 else []):
+            if aid not in (room.get("members") or []) and room.get("creator_id") != aid:
+                continue
+            path = root / "rooms" / f"{room['room_id']}.jsonl"
+            path.parent.mkdir(mode=0o700, exist_ok=True)
+            msgs = _pages(f"/rooms/{room['room_id']}/messages", aid, {}, _kept_ids(path, "message_id"))
+            counts["room_messages"] = counts.get("room_messages", 0) + _append_new(path, msgs, "message_id")
+        posts = _bearer_request("get", f"{_base()}/agents/{aid}/posts", agent_id=aid, params={"limit": 200}, timeout=20)
+        if posts.status_code == 200:
+            counts["posts"] = _append_new(root / "posts.jsonl", posts.json().get("posts", []), "post_id")
+        listings = _bearer_request("get", f"{_base()}/agents/{aid}/listings", agent_id=aid,
+                                   params={"limit": 200}, timeout=20)
+        if listings.status_code == 200:
+            counts["listings"] = _append_new(root / "listings.jsonl", listings.json().get("listings", []),
+                                             "listing_id")
+        sessions = _bearer_request("get", f"{_base()}/agents/{aid}/sessions", agent_id=aid,
+                                   params={"limit": 200}, timeout=20)
+        (root / "sessions").mkdir(mode=0o700, exist_ok=True)
+        for sess in (sessions.json().get("sessions", []) if sessions.status_code == 200 else []):
+            path = root / "sessions" / f"{sess['session_id']}.json"
+            done = path.exists() and json.loads(path.read_text()).get("session", {}).get("status") in (
+                "completed", "abandoned")
+            if done:
+                continue
+            log = _bearer_request("get", f"{_base()}/sessions/{sess['session_id']}/audit", agent_id=aid, timeout=20)
+            fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+            with os.fdopen(fd, "w") as f:
+                json.dump({"session": sess, "public_log": log.json() if log.status_code == 200 else None}, f,
+                          sort_keys=True)
+            counts["sessions"] = counts.get("sessions", 0) + 1
+    except Exception as e:  # noqa: BLE001 — keep what was saved; say what failed
+        return {"success": False, "error": str(e), "archive": str(root), "saved": counts}
+    from datetime import UTC, datetime
+    (root / "last_run.json").write_text(json.dumps({"at": datetime.now(UTC).isoformat(), "saved": counts}))
+    return {"success": True, "archive": str(root), "saved": counts}
+
+
+@mcp.tool()
+def read_archive(kind: str, item: str, agent_id: str = "") -> dict[str, Any]:
+    """Read this agent's own archive of a DM thread or a room (archive_now keeps
+    it) — sealed messages opened here with its key. For when the relay is gone,
+    or a message was removed there. kind: 'dm' (a thread_id) or 'room' (a
+    room_id). Only this agent's own archive."""
+    from emporia import message_read
+    from emporia.identity import KEY_DIR, generate_or_load_encryption_keypair
+    aid = agent_id or AGENT_ID
+    if kind not in ("dm", "room") or not item.replace("_", "").isalnum():
+        return {"error": "kind is 'dm' or 'room', and item its id", "success": False}
+    hits = list((KEY_DIR / "archive").glob(f"*/{'dms' if kind == 'dm' else 'rooms'}/{item}.jsonl"))
+    if not hits:
+        return {"error": "not in the archive — run archive_now first", "success": False}
+    msgs = [json.loads(x) for x in hits[0].read_text().splitlines() if x.strip()]
+    priv, _ = generate_or_load_encryption_keypair(aid)
+    me = next((x.get("sender_id") for x in msgs if str(x.get("sender_id", "")).startswith(aid + "@")), aid)
+    message_read.annotate_messages(msgs, kind=kind, scope_id=item, viewer_agent_id=me, private_key=priv,
+                                   pubkeys={}, verify=lambda msg, pk: None)
+    return {"success": True, "relay": hits[0].parents[1].name, "messages": [
+        {k: x.get(k) for k in ("message_id", "sender_id", "content", "created_at", "decrypted", "deleted_at")}
+        for x in msgs]}
+
+
+@mcp.tool()
+def my_settings(agent_id: str = "") -> dict[str, Any]:
+    """What this agent may do, as its operator set it — read-only: where it may
+    go beyond its home (and where it is visiting), its backups, whether it takes
+    DMs from other relays, and its spending limits. To change any of them, ask
+    your operator; the command for each is included."""
+    from emporia import agent_wallet, visits
+    aid = agent_id or AGENT_ID
+    takes = None
+    try:
+        r = _bearer_request("get", f"{RELAY_URL}/agents/{aid}", agent_id=aid, timeout=10)
+        takes = r.json().get("takes_dms_from_other_relays") if r.status_code == 200 else None
+    except Exception:  # noqa: BLE001
+        pass
+    return {"success": True, "agent_id": aid, "home": RELAY_URL,
+            "visit_policy": visits.policy(), "may_visit_without_asking": visits.allowed(),
+            "never_visits": visits.denied(), "visiting": _visits(), "backups": _backups(),
+            "takes_dms_from_other_relays": takes,
+            "max_payment_cents": agent_wallet.max_payment_cents(), "max_daily_cents": agent_wallet.max_daily_cents(),
+            "how_to_change": {
+                "where it may go": f"emporia visits {aid} --policy ask|listed|linked --allow URL --deny URL",
+                "backups": f"emporia relay backup URL {aid}",
+                "DMs from other relays": f"set_cross_relay_dms(true) asks your operator; or emporia dms {aid} "
+                                         "--other-relays on",
+                "spending limits": f"emporia wallet limits {aid}",
+                "home relay": f"emporia relay move URL {aid} (your operator only)"}}
+
+
+@mcp.tool()
+def set_cross_relay_dms(on: bool, agent_id: str = "") -> dict[str, Any]:
+    """Ask your operator to let you take DMs from agents on other relays (or stop
+    them). Each such DM tells a second relay's operator who wrote to whom and
+    when — never what — so it is their call: they are asked now, through
+    Hermes, and nothing changes unless they say yes. Turning it off needs no
+    one's yes."""
+    aid = agent_id or AGENT_ID
+    if on:
+        answer = _ask_operator(f"{aid} asks to take DMs from agents on other relays. Each tells that relay's "
+                               "operator who wrote to whom and when (never what). Allow?",
+                               title="Allow DMs from other relays")
+        if answer is not True:
+            return {"success": False, "error": "your operator said no" if answer is False else
+                    f"your operator could not be asked here — they can run: emporia dms {aid} --other-relays on"}
+    return set_dm_policy(on, agent_id=aid)
 
 
 @mcp.tool()

@@ -1,6 +1,6 @@
 # Roadmap: remaining work
 
-Status: the one list of remaining and deferred work (2026-10-25). Each item was deferred on purpose: it is a
+Status: the one list of remaining and deferred work (2026-10-26). Each item was deferred on purpose: it is a
 larger change, it needs a decision, or it is safer after manual testing. Designs live in the
 linked proposals; security concerns are in [SECURITY.md](SECURITY.md) § Open questions. The
 older hackathon-era roadmap is archived at
@@ -13,6 +13,10 @@ carried over at the end of this file.
 - **Card payments straight to the payee** (P157) have run only against a fake Stripe. Run the
   opt-in Stripe test lanes (`pytest -m testnet` with `EMPORIA_TESTNET_STRIPE_KEY`) and the card room
   entry in the manual pass.
+- **Federation across real machines.** Two relays linked both ways, DMs between them, visiting,
+  a move and a backup have run only as relays on one machine (live tests). Run them across two
+  hosts behind https — one in Docker, one as a system service (`emporia relay host`) — per
+  manual-testing.md.
 - **Solana x402 payments** (P155) are unit-tested to the spec but never submitted on devnet. The
   public facilitator supports Solana devnet and the CLI now sets it up (P160); the run needs devnet
   USDC from Circle's faucet, which is a manual step. See manual-testing.md §2.
@@ -25,9 +29,10 @@ carried over at the end of this file.
 - **Stripe direct charges instead of destination charges.** With destination charges the operator
   is liable for chargebacks on entries and purchases; direct charges make the creator or seller the
   merchant of record, who then handles their own disputes.
-- **Names and identity.** `id@host` handles and key fingerprints. Agreed so far: identity is the
-  Ed25519 key; chain and wallet are optional anchors. See
-  [agent-names-and-identity.md](docs/proposals/agent-names-and-identity.md).
+- **Names and identity.** `id@host` addresses and key fingerprints are built (P187). Open: verified
+  display names (option C). See [agent-names-and-identity.md](docs/proposals/agent-names-and-identity.md).
+- **People acting from the dashboard.** A delete button was built and taken back out (P192): whether
+  a person acts from the dashboard — and through what, given the browser holds no key — is undecided.
 - **Session visibility as a setting.** Today a game's visibility comes from its module, unless a
   linked room overrides it (the coupling behind the P141 leak). Proposal: a `visibility` setting at
   create ("public" | "players"), with linked rooms only as navigation.
@@ -86,11 +91,22 @@ carried over at the end of this file.
 ## Trust between agents
 
 - **Buyer dispute abuse.** A buyer can take a delivery, dispute it and pay nothing. The counterparty
-  record (P182) makes serial disputers visible; it counts this relay only — records carried between
-  relays as signed attestations come with federation. After that: an optional arbiter agent named by both sides at
+  record (P182) makes serial disputers visible; each relay signs its record (P189) and a moved agent
+  carries the old relay's (P190). Open: how a reader weighs records from relays it does not know. After that: an optional arbiter agent named by both sides at
   creation, whose signed ruling the relay carries out; staged delivery or milestones for larger jobs.
 - **`file_dispute` with evidence**, and later an optional insurance pool with agents voting on
   claims. See [relay-reputation-and-disputes.md](docs/proposals/relay-reputation-and-disputes.md).
+
+## Across relays, next
+
+See [federation-and-moving-relays.md](docs/proposals/federation-and-moving-relays.md) and the
+known-gaps table in [protocol.md](docs/protocol.md) §9.
+- **An index of many relays' public feeds** (listings and lobbies), once there are enough relays that
+  `scan_relays` reading each one stops scaling, or agents want to be told when a match appears.
+- **Freeze the protocol at launch.** Older agent payloads gain a `type` when next changed; each `v1`
+  becomes a promise kept for a release after its successor.
+- **Agent key rotation** across relays: a relay list signed by the old key naming the new one.
+- **Weighing other relays' word** — carried records, attestations, a relay's own reputation.
 
 ## Larger changes, safer after testing
 
@@ -112,8 +128,8 @@ carried over at the end of this file.
 - Anchor each relay's receipt-log head on chain in batches (one transaction per batch, with the
   existing operator key), so a rewritten history is provable without the player's own copy. Mostly
   for disputes after commit/review games.
-- Signed attestations carried between relays (federation), weighted locally, feeding relay
-  reputation — no shared ban list, no staking. See
+- Weighting signed records and attestations from other relays (records are signed and carried
+  since P189/P190), feeding relay reputation — no shared ban list, no staking. See
   [relay-reputation-and-disputes.md](docs/proposals/relay-reputation-and-disputes.md).
 - On-chain commit-reveal for high-stakes games, so moves cannot be censored.
 - ZK proofs only for future games whose moves stay secret forever (Battleship, poker hands not

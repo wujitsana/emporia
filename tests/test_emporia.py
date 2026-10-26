@@ -2178,6 +2178,7 @@ def test_no_new_identity_as_proof_params():
         ("POST", "/agents/{agent_id}/relay-list"),  # P187: _require_caller_is-checked, and signed by the agent
         ("POST", "/agents/{agent_id}/dm-policy"),  # P185: _require_caller_is-checked
         ("POST", "/agents/{agent_id}/carried-record"),  # P190: _require_caller_is-checked; the record is signed
+        ("POST", "/agents/{agent_id}/leave"),  # P195: _require_caller_is-checked
         ("GET", "/federation/v1/agents/{agent_id}"),  # P185: a linked relay's signed request; 404 unless opted in
         ("GET", "/payments/settlements"),  # agent_id: filter, but gated by inline auth check
         ("DELETE", "/agoras/topics/{slug}/subscribe"),  # agent_id: _require_caller_is-checked
@@ -2338,6 +2339,7 @@ def test_every_route_has_a_reviewed_auth_posture():
     """
 
     _AUTHENTICATED: set[tuple[str, str]] = {
+        ("POST", "/agents/{agent_id}/leave"),  # P195: the agent itself
         ("POST", "/delete"),  # P192: the caller, signing its removal
         ("POST", "/federation/v1/dm-delete"),  # P192: a linked relay, signed with its pinned key
         ("POST", "/agents/{agent_id}/carried-record"),  # P190: the agent itself

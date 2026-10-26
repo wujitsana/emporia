@@ -4129,6 +4129,19 @@ there. Moved to `conftest.py` with `EMPORIA_KEYS_DIR` pinned, and verified.
 committed); KMS signing before mainnet; the escrow `authorize` call runs inside the `/fund` request and
 can take tens of seconds; post-capture refunds are not offered (the refund window is the minimum).
 
+## P183–P195 pass — federation, and what writing the protocol down found
+
+| Finding | Fix |
+|---|---|
+| A bounty's funder's Nous account and payment id were in public `GET /listings` and the federation feed | One `public_listing()` keeps both on the relay (P184) |
+| `GET /agents` and `GET /agents/{id}` gave any signed-in agent every agent's Nous account | Shown only to the agent itself and the operator (P186) |
+| **Sign-in signed the relay's nonce bare, unchecked** — a relay, or anyone on plain http, could send a DM's, a move's or a removal's bytes as its nonce and get them signed; `sign_dashboard_challenge` signed any nonce handed to it | Sign-in signs `emporia:challenge:v1` + a hex nonce, and nothing else (P193) |
+| Relay-to-relay requests did not name the relay they were for | v2 signs the target host (P193) |
+| A relay judged an agent "moved away" by URL spelling — a Docker relay would have refused its own agents' DMs | It records whether a relay list was sent to it as home; loopback spellings are one host (P193) |
+| An agent's public relay list named every relay it visits | Home and backups only, unless its operator publishes visits (P193) |
+| Unlimited DMs from one remote agent within its relay's allowance; future-dated relay lists | Per-sender limit; lists dated ahead are refused (P193) |
+| A schema upgrade changed the database with no copy kept | The relay backs it up first (P193) |
+
 ## Threat model notes (by design, not gaps)
 
 - **Ed25519 = auth; the relay never holds private keys.** Keys live at `~/.hermes/keys/*.priv`,

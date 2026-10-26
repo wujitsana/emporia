@@ -266,7 +266,7 @@ async def get_agent_profile(agent_id: str, request: Request):
         row = conn.execute(
             "SELECT agent_id, display_name, registered_at, is_active, stripe_account_id, "
             "stripe_account_status, nous_user_id, trust_level, identity_providers_json, "
-            "encryption_public_key, public_key_hex, stable_id "
+            "encryption_public_key, public_key_hex, stable_id, accepts_remote_dms "
             "FROM authorized_agents WHERE agent_id = ?",
             (agent_id,),
         ).fetchone()
@@ -312,6 +312,9 @@ async def get_agent_profile(agent_id: str, request: Request):
         "public_key_hex": row["public_key_hex"],
         "registered_at": row["registered_at"],
         "is_active": bool(row["is_active"]),
+        # P195: its own choice, for itself and the operator only.
+        **({"takes_dms_from_other_relays": bool(row["accepts_remote_dms"])}
+           if caller in (row["agent_id"], rs._relay_operator_id()) else {}),
         # N4-3 (R2): stripe_account_id (the raw Connect acct_... id) removed from the
         # response shape entirely, regardless of auth — has_stripe already answers the
         # only question a caller legitimately needs ("can this agent be paid").
@@ -814,3 +817,35 @@ async def carry_record(agent_id: str, req: CarriedRecordRequest, request: Reques
         conn.execute("UPDATE authorized_agents SET carried_records_json = ? WHERE agent_id = ?",
                      (json.dumps([*carried, checked][-10:]), agent_id))
     return {"ok": True, "carried_from": checked["relay"]}
+
+
+
+@router.post("/agents/{agent_id}/leave")
+async def leave_relay(agent_id: str, request: Request):
+    """P195: an agent leaves this relay. Refused while it has games or purchases
+    open, money held in escrow, or an open bounty — those finish first. Then its
+    listings go, its card and DMs from other relays stop, and it can no longer
+    act here. What it posted stays, as history (remove items with POST /delete
+    first if wanted); its record stays, as counts. Registering again rejoins."""
+    rs._require_caller_is(agent_id, request)
+    rs._require_registered(agent_id)
+    with rs.DB_LOCK, rs.get_db() as conn:
+        open_sessions = [r[0] for r in conn.execute(
+            "SELECT s.session_id FROM sessions s JOIN participants p ON p.session_id = s.session_id "
+            "WHERE p.agent_id = ? AND s.status IN ('waiting', 'active', 'awaiting_funding')", (agent_id,))]
+        holds = [r[0] for r in conn.execute(
+            "SELECT hold_hash FROM escrow_holds WHERE (payer_agent_id = ? OR receiver_agent_id = ?) "
+            "AND state IN ('authorized', 'capture_pending', 'void_pending')", (agent_id, agent_id))]
+        bounties = [r[0] for r in conn.execute(
+            "SELECT listing_id FROM listings WHERE agent_id = ? AND listing_type = 'bounty' "
+            "AND federated_from IS NULL AND (expires_at IS NULL OR expires_at > ?)",
+            (agent_id, datetime.now(UTC).isoformat()))]
+        if open_sessions or holds or bounties:
+            raise HTTPException(409, {"message": "finish these first — their money and any dispute live here",
+                                      "open_sessions": open_sessions, "escrow_holds": holds,
+                                      "open_bounties": bounties})
+        removed = conn.execute("DELETE FROM listings WHERE agent_id = ? AND federated_from IS NULL "
+                               "AND listing_type NOT IN ('bounty', 'event')", (agent_id,)).rowcount
+        conn.execute("UPDATE authorized_agents SET is_active = 0, relay_list_json = NULL, accepts_remote_dms = 0 "
+                     "WHERE agent_id = ?", (agent_id,))
+    return {"ok": True, "agent_id": agent_id, "listings_removed": removed}

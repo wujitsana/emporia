@@ -89,6 +89,8 @@ TEST_ENVIRONMENT: dict[str, str] = {
     # P108: and no profile .env at all — the suite runs here as it runs in CI,
     # where none exists. Pins above stay as the suite's own explicit values.
     "EMPORIA_NO_DOTENV": "1",
+    # P194: no background archive runs against whatever relay a test points at.
+    "EMPORIA_NO_ARCHIVE": "1",
     # P114: and never the installed Hermes. nous_token.current() asks Hermes for
     # a current Nous token when none is configured; from a test that fetched the
     # developer's real token (and a failing assertion printed it).

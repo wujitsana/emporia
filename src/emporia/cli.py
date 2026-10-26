@@ -801,6 +801,147 @@ def cmd_delete(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_archive(args: argparse.Namespace) -> int:
+    """P194: `emporia archive NAME` — refresh NAME's own archive of everything it
+    is part of on its relay (DMs, rooms, its posts and listings, its sessions);
+    `--read dm|room ID` shows one thread, sealed messages opened here with NAME's
+    key. Reading is for a person, in their own terminal."""
+    import json as _json
+    agents = {p.name: p for p, _ in _agent_profiles(profiles_root())}
+    if args.name not in agents:
+        print(f"archive: no agent {args.name!r} ({', '.join(agents) or 'none set up'})")
+        return 1
+    profile = agents[args.name]
+    if not args.read:
+        r = _as_agent(profile, "import json\nfrom emporia import mcp_server as m\nprint(json.dumps(m.archive_now()))",
+                      EMPORIA_NO_ARCHIVE="1")
+        try:
+            out = _json.loads(r.stdout.strip().splitlines()[-1])
+        except (ValueError, IndexError):
+            print(f"archive: {(r.stderr or r.stdout).strip()[-300:]}")
+            return 1
+        saved = out.get("saved") or {}
+        print(f"  {args.name}'s archive: {out.get('archive')}")
+        print("  new: " + (", ".join(f"{v} {k.replace('_', ' ')}" for k, v in saved.items() if v) or "nothing"))
+        if not out.get("success"):
+            print(f"  stopped early: {out.get('error')}")
+        return 0 if out.get("success") else 1
+    if not _persons_terminal():
+        print("archive --read: only a person reads an agent's archive, in their own terminal.")
+        return 1
+    kind, item = args.read
+    if kind not in ("dm", "room"):
+        print("archive --read: dm THREAD_ID or room ROOM_ID")
+        return 1
+    code = f"""import json
+from pathlib import Path
+from emporia import message_read, mcp_server as m
+from emporia.identity import KEY_DIR, generate_or_load_encryption_keypair
+hits = list((KEY_DIR / "archive").glob("*/{'dms' if kind == 'dm' else 'rooms'}/{item}.jsonl"))
+if not hits:
+    print(json.dumps({{"error": "not in the archive — run: emporia archive {args.name}"}}))
+else:
+    msgs = [json.loads(x) for x in hits[0].read_text().splitlines() if x.strip()]
+    priv, _ = generate_or_load_encryption_keypair(m.AGENT_ID)
+    me = next((x.get("sender_id") for x in msgs if x.get("sender_id", "").startswith(m.AGENT_ID + "@")), m.AGENT_ID)
+    message_read.annotate_messages(msgs, kind={kind!r}, scope_id={item!r}, viewer_agent_id=me, private_key=priv,
+                                   pubkeys={{}}, verify=lambda msg, pk: None)
+    print(json.dumps([[x.get("created_at", "")[:16], x.get("sender_id"), x.get("content"),
+                       x.get("deleted_at") is not None] for x in msgs]))"""
+    r = _as_agent(profile, code, EMPORIA_NO_ARCHIVE="1")
+    try:
+        rows = _json.loads(r.stdout.strip().splitlines()[-1])
+    except (ValueError, IndexError):
+        print(f"archive: {(r.stderr or r.stdout).strip()[-300:]}")
+        return 1
+    if isinstance(rows, dict):
+        print(f"archive: {rows['error']}")
+        return 1
+    for when, who, content, removed in rows:
+        print(f"  {when}  {who}: " + ("(removed)" if removed else content))
+    return 0
+
+
+def cmd_agent(args: argparse.Namespace) -> int:
+    """P195: `emporia agent leave URL NAME` and `emporia agent delete NAME`.
+
+    leave: NAME leaves one relay — a visit, a backup, or (with --home) its home.
+    Refused while a game, purchase, escrow hold or bounty is open there.
+    delete: NAME leaves every relay it is on, then its profile — keys, wallets,
+    archive — is moved to a private trash folder this command names, to purge by
+    hand once its wallets are empty. Only a person runs it."""
+    import json as _json
+    import shutil
+    agents = {p.name: p for p, _ in _agent_profiles(profiles_root())}
+    name = args.name
+    if name not in agents:
+        print(f"agent: no agent {name!r} ({', '.join(agents) or 'none set up'})")
+        return 1
+    profile = agents[name]
+    env = installer().harvest_env(profile)
+    home = (_mcp_env(profile).get("EMPORIA_RELAY_URL") or relay_url()).rstrip("/")
+    key_dir = Path(_mcp_env(profile).get("EMPORIA_KEYS_DIR") or profile / "home" / ".hermes" / "keys")
+    try:
+        visiting = _json.loads((key_dir / "visits.json").read_text()).get("visits", [])
+    except (OSError, ValueError):
+        visiting = []
+    backups = [u.strip().rstrip("/") for u in env.get("EMPORIA_BACKUP_RELAYS", "").split(",") if u.strip()]
+
+    def leave(url: str) -> dict:
+        r = _as_agent(profile, "import json\nfrom emporia import mcp_server as m\n"
+                      f"print(json.dumps(m.leave_relay_as({url!r})))", EMPORIA_NO_ARCHIVE="1")
+        try:
+            return _json.loads(r.stdout.strip().splitlines()[-1])
+        except (ValueError, IndexError):
+            return {"success": False, "error": (r.stderr or r.stdout).strip()[-300:]}
+
+    if args.action == "leave":
+        url = (args.url or "").rstrip("/")
+        if url == home and not args.home:
+            print(f"agent leave: {url} is {name}'s home — move it (emporia relay move URL {name}) or delete it; "
+                  "--home leaves it homeless")
+            return 1
+        out = leave(url)
+        if not out.get("success"):
+            print(f"agent leave: {url} refused — {out.get('detail') or out.get('error')}")
+            return 1
+        if url in visiting:
+            (key_dir / "visits.json").write_text(_json.dumps({"visits": [u for u in visiting if u != url]}))
+            (key_dir / "visits.json").chmod(0o600)
+        if url in backups:
+            merge_env_file(profile / ".env", {"EMPORIA_BACKUP_RELAYS": ",".join(u for u in backups if u != url)})
+        print(f"  {name} left {url} ({out.get('listings_removed', 0)} listing(s) removed).")
+        return 0
+
+    # delete
+    if not _persons_terminal():
+        print("agent delete: only a person deletes an agent, in their own terminal.")
+        return 1
+    wallets = [a for a in (_wallet_address(profile, name, False), _wallet_address(profile, name, True)) if a]
+    print(f"Deleting {name}: it leaves {home}" + (f", {len(visiting)} visit(s)" if visiting else "")
+          + (f", {len(backups)} backup(s)" if backups else "") + ", then its profile moves to a private trash folder.")
+    if wallets:
+        print(f"  ! Its wallets go with it: {', '.join(wallets)}. Move any funds out first.")
+    print(f"  Stop its gateway first: hermes -p {name} gateway stop")
+    if prompt(f"Type {name} to delete it") != name:
+        print("  Not deleted.")
+        return 1
+    for url in dict.fromkeys([*visiting, *backups, home]):
+        out = leave(url)
+        if not out.get("success") and out.get("status") == 409:
+            print(f"agent delete: {url} still has something open — {out.get('detail')}. Not deleted.")
+            return 1
+        print(f"  {'left' if out.get('success') else 'could not reach'} {url}")
+    trash = profiles_root() / ".deleted"
+    trash.mkdir(mode=0o700, exist_ok=True)
+    target = trash / f"{name}-{time.strftime('%Y%m%dT%H%M%S')}"
+    shutil.move(str(profile), str(target))
+    target.chmod(0o700)
+    print(f"  {name}'s profile is now {target} — its keys and wallets are there until you purge it:\n"
+          f"    rm -rf {target}")
+    return 0
+
+
 def cmd_dms(args: argparse.Namespace) -> int:
     """P185: `emporia dms NAME --other-relays on|off` — whether an agent takes DMs
     from agents on other relays. Each one tells a second relay's operator who
@@ -3294,6 +3435,20 @@ def build_parser() -> argparse.ArgumentParser:
     r.add_argument("--run", choices=["docker", "service"], default="",
                    help="host: in Docker, or as a system service on a server kept for it")
     r.set_defaults(func=cmd_relay)
+
+    ag2 = sub.add_parser("agent", help="an agent leaves a relay, or is deleted from this machine")
+    ag2.add_argument("action", choices=["leave", "delete"])
+    ag2.add_argument("url_or_name", help="leave: the relay's URL; delete: the agent")
+    ag2.add_argument("name", nargs="?", default="", help="leave: the agent")
+    ag2.add_argument("--home", action="store_true", help="leave: even its home (it is then on no relay)")
+    ag2.set_defaults(func=lambda a: cmd_agent(argparse.Namespace(
+        action=a.action, url=a.url_or_name if a.action == "leave" else "",
+        name=a.name if a.action == "leave" else a.url_or_name, home=a.home)))
+
+    ar = sub.add_parser("archive", help="an agent's own copy of everything it is part of on its relay")
+    ar.add_argument("name")
+    ar.add_argument("--read", nargs=2, metavar=("dm|room", "ID"), help="show one thread, opened here")
+    ar.set_defaults(func=cmd_archive)
 
     de = sub.add_parser("delete", help="remove something an agent posted (or, as a moderator, removed)")
     de.add_argument("name")
