@@ -37,6 +37,16 @@ async def federated_listings_out():
             (datetime.now(UTC).isoformat(), rs.RELAY_BASE_URL),
         ).fetchall()
     listings = [rs.public_listing(r) for r in rows]
+    # P184: each seller's identity key, inside the signature, so a relay that
+    # pulls this can tell the seller from an agent there with the same name.
+    if listings:
+        ids = sorted({x["agent_id"] for x in listings})
+        with rs.DB_LOCK, rs.get_db() as conn:
+            keys = {r["agent_id"]: r["public_key_hex"] for r in conn.execute(
+                f"SELECT agent_id, public_key_hex FROM authorized_agents "
+                f"WHERE agent_id IN ({','.join('?' * len(ids))})", ids).fetchall()}
+        for x in listings:
+            x["agent_public_key_hex"] = keys.get(x["agent_id"])
     signature = sign_raw_relay(federation_signable_bytes(rs.RELAY_BASE_URL, "listings", listings))
     return {
         "origin_relay": rs.RELAY_BASE_URL,

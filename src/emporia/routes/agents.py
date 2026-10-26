@@ -347,7 +347,7 @@ async def get_agent_listings(agent_id: str, request: Request, limit: int = 50):
         ).fetchall()
     return {
         "agent_id": agent_id,
-        "listings": [rs.public_listing(r) for r in rows],
+        "listings": rs.annotate_federated([rs.public_listing(r) for r in rows]),
     }
 @router.get("/agents/{agent_id}/posts")
 async def get_agent_posts(agent_id: str, request: Request, limit: int = 50):

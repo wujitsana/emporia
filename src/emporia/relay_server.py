@@ -686,6 +686,29 @@ def public_listing(row: Any) -> dict[str, Any]:
     return d
 
 
+def annotate_federated(listings: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """P184: a listing pulled from a linked relay says where the deal happens —
+    on that relay, which holds the money, the receipts and any dispute — and
+    whether an agent here goes by the same name with a different key."""
+    remote = [x for x in listings if x.get("federated_from")]
+    if not remote:
+        return listings
+    ids = sorted({x.get("agent_id", "") for x in remote})
+    with DB_LOCK, get_db() as conn:
+        local = {r["agent_id"]: r["public_key_hex"] for r in conn.execute(
+            f"SELECT agent_id, public_key_hex FROM authorized_agents WHERE agent_id IN ({','.join('?' * len(ids))})",
+            ids).fetchall()}
+    for x in remote:
+        x["deal_on"] = x["federated_from"]
+        x["how_to_deal"] = (f"On {x['federated_from']}, not here: join it with the same key "
+                            f"(`emporia relay use {x['federated_from']} NAME`) — the same key is the same agent there.")
+        here = local.get(x.get("agent_id", ""))
+        if here and x.get("agent_public_key_hex") and here != x["agent_public_key_hex"]:
+            x["name_clash"] = (f"'{x['agent_id']}' here is a different agent (another key) from the seller "
+                               f"on {x['federated_from']}.")
+    return listings
+
+
 def _clamp_limit(limit: int, max_limit: int = _MAX_LIMIT) -> int:
     """Bound a caller-supplied `limit` query param to [1, max_limit] (N3-6). Several
     LIMIT-bearing endpoints already did this inline as `min(limit, 200)`; the N3 review
@@ -1136,6 +1159,7 @@ def init_db() -> None:
         _migrate_settlement_refund_columns(conn)
         _migrate_settlement_atomic_columns(conn)
         _migrate_listings_federated_from(conn)
+        _migrate_listings_agent_key(conn)
         # escrow_holds (P99) is a new table, created above by CREATE TABLE IF
         # NOT EXISTS on any database, old or new, so it needs no migration.
         # Rename aroga_* → agora_* if old names still exist (typo fix)
@@ -1593,6 +1617,15 @@ def _migrate_settlement_atomic_columns(conn: Any) -> None:
     for col in ("platform_fee_atomic", "winner_payout_atomic"):
         if col not in cols:
             conn.execute(f"ALTER TABLE settlements ADD COLUMN {col} TEXT")
+
+
+def _migrate_listings_agent_key(conn: Any) -> None:
+    """Add `listings.agent_public_key_hex` (P184): the seller's identity key as
+    the relay it was pulled from vouched for it. A name is per relay; the key is
+    what says two listings, or a listing and an agent here, are the same agent."""
+    cols = {r[1] for r in conn.execute("PRAGMA table_info(listings)").fetchall()}
+    if "agent_public_key_hex" not in cols:
+        conn.execute("ALTER TABLE listings ADD COLUMN agent_public_key_hex TEXT")
 
 
 def _migrate_listings_federated_from(conn: Any) -> None:
@@ -3118,7 +3151,7 @@ _NON_AGENT_COLUMNS: frozenset[tuple[str, str]] = frozenset({
     ("listings", "listing_id"), ("listings", "title"), ("listings", "description"),
     ("listings", "listing_type"), ("listings", "payment_mode"), ("listings", "price_usd"),
     ("listings", "module_type"), ("listings", "origin_relay"), ("listings", "expires_at"),
-    ("listings", "federated_from"),
+    ("listings", "federated_from"), ("listings", "agent_public_key_hex"),
     ("listings", "metadata_json"), ("listings", "created_at"),
     # messages
     ("messages", "message_id"), ("messages", "session_id"), ("messages", "type"),
@@ -4046,6 +4079,7 @@ async def lifespan(app: FastAPI):
     # P23-3: only started when peers are actually configured -- a standalone
     # relay (the common case) shouldn't spin a task that does nothing every
     # EMPORIA_FEDERATION_SYNC_INTERVAL_SECONDS forever.
+    drop_unlinked_federated_rows()
     if FEDERATED_RELAYS:
         _FEDERATION_SYNC_TASK = asyncio.create_task(_federation_sync_loop())
     try:
@@ -6324,6 +6358,7 @@ async def _pull_federated_listings(peer_url: str) -> int:
 
     imported = 0
     rejected_foreign = 0
+    kept: set[str] = set()
     for listing in listings:
         if not listing.get("listing_id"):
             continue
@@ -6352,12 +6387,13 @@ async def _pull_federated_listings(peer_url: str) -> int:
             if existing and not _peer_owns_listing(existing, peer_url):
                 rejected_foreign += 1
                 continue
+            agent_key = str(listing.get("agent_public_key_hex") or "")
             conn.execute(
                 "INSERT OR REPLACE INTO listings "
                 "(listing_id, title, description, listing_type, agent_id, payment_mode, "
                 "price_usd, module_type, origin_relay, expires_at, metadata_json, created_at, "
-                "federated_from) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                "federated_from, agent_public_key_hex) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 (
                     listing["listing_id"],
                     listing.get("title", ""),
@@ -6372,9 +6408,21 @@ async def _pull_federated_listings(peer_url: str) -> int:
                     json.dumps(listing.get("metadata") or {}),
                     listing.get("created_at", datetime.now(UTC).isoformat()),
                     peer_url,
+                    agent_key if re.fullmatch(r"[0-9a-f]{64}", agent_key) else None,
                 ),
             )
         imported += 1
+        kept.add(listing["listing_id"])
+    # P184: the batch is the peer's whole current list, so a row it no longer
+    # sends was withdrawn or sold there. Only when the batch was not cut short.
+    if peer_batch_size <= _MAX_LIMIT:
+        with DB_LOCK, get_db() as conn:
+            stale = [r["listing_id"] for r in conn.execute(
+                "SELECT listing_id FROM listings WHERE federated_from = ?", (peer_url,)).fetchall()
+                if r["listing_id"] not in kept]
+            for listing_id in stale:
+                conn.execute("DELETE FROM listings WHERE listing_id = ? AND federated_from = ?",
+                             (listing_id, peer_url))
     sync_record: dict[str, Any] = {
         "ok": True,
         "imported": imported,
@@ -6523,6 +6571,7 @@ async def _sync_all_federated_peers() -> tuple[dict[str, int], dict[str, int]]:
     (not instead of) fixing the currently-known escape at its source.
     """
     peers = list(FEDERATED_RELAYS)
+    drop_unlinked_federated_rows()
     listing_results, lobby_results = await asyncio.gather(
         asyncio.gather(*(_pull_federated_listings(p) for p in peers), return_exceptions=True),
         asyncio.gather(*(_pull_federated_lobby(p) for p in peers), return_exceptions=True),
@@ -6542,6 +6591,17 @@ async def _sync_all_federated_peers() -> tuple[dict[str, int], dict[str, int]]:
         return counts
 
     return _coerce(listing_results), _coerce(lobby_results)
+
+
+def drop_unlinked_federated_rows() -> int:
+    """P184: listings pulled from a relay no longer linked go — unlinking a
+    relay must not leave its listings shown here forever."""
+    linked = [normalize_peer_url(u) for u in FEDERATED_RELAYS]
+    with DB_LOCK, get_db() as conn:
+        q = "DELETE FROM listings WHERE federated_from IS NOT NULL"
+        if linked:
+            q += f" AND federated_from NOT IN ({','.join('?' * len(linked))})"
+        return conn.execute(q, linked).rowcount
 
 
 _FEDERATION_SYNC_INTERVAL_SECONDS = float(os.getenv("EMPORIA_FEDERATION_SYNC_INTERVAL_SECONDS", "300"))

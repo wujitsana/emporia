@@ -93,7 +93,7 @@ async def get_listings(
         params.append(limit)
         rows = conn.execute(q, params).fetchall()
 
-    listings = [rs.public_listing(r) for r in rows]
+    listings = rs.annotate_federated([rs.public_listing(r) for r in rows])
 
     # Surface rooms as browsable listings so agents can discover them
     if include_rooms and listing_type in (None, "room"):

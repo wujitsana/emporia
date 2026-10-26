@@ -28136,7 +28136,7 @@ def test_the_membership_rule_is_written_in_exactly_one_place():
 # P61 — the schema has a version, and the version has to stay honest
 # ---------------------------------------------------------------------------
 
-# 30 tables, 273 columns, at SCHEMA_VERSION 6. Recomputed by the test below;
+# 30 tables, 274 columns, at SCHEMA_VERSION 7. Recomputed by the test below;
 # when it fails, read *why* before touching this string.
 #
 # V1 -> V2 (P72-4): `bounty_entries` and its UNIQUE (listing_id, nous_user_id)
@@ -28159,7 +28159,7 @@ def test_the_membership_rule_is_written_in_exactly_one_place():
 #
 # V5 -> V6 (P143): `game_chat`, table talk stored inside its game. A V5 relay
 # would serve a V6 database without the chat its games' records include.
-_SCHEMA_FINGERPRINT_V6 = "80be42dc0d32c93e02066309dccfa9c2b825b9d0204f9fa36d35452bbd27fe86"
+_SCHEMA_FINGERPRINT_V7 = "37cae6185d2e3a8c14794d758c538c3e62aa61acdba62686871a6b4ace25971d"
 
 
 def _schema_fingerprint(db_path) -> tuple[str, int, int]:
@@ -28199,9 +28199,9 @@ def test_a_schema_change_requires_a_version_bump():
     from emporia.relay_server import SCHEMA_VERSION
 
     fingerprint, tables, columns = _schema_fingerprint(_test_db)
-    assert (SCHEMA_VERSION, fingerprint) == (6, _SCHEMA_FINGERPRINT_V6), (
+    assert (SCHEMA_VERSION, fingerprint) == (7, _SCHEMA_FINGERPRINT_V7), (
         f"the schema changed ({tables} tables, {columns} columns) or the version "
-        f"moved. Bump SCHEMA_VERSION *and* update _SCHEMA_FINGERPRINT_V6 — in "
+        f"moved. Bump SCHEMA_VERSION *and* update _SCHEMA_FINGERPRINT_V7 — in "
         f"that order, and never the fingerprint alone.\n"
         f"  code version: {SCHEMA_VERSION}\n  fingerprint:  {fingerprint}"
     )

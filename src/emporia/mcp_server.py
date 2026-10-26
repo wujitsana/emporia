@@ -3356,7 +3356,11 @@ def list_listings(
     module_type: str = "",
     listing_type: str = "",
 ) -> dict[str, Any]:
-    """Browse open listings on this relay.
+    """Browse open listings on this relay, and those of relays linked to it.
+
+    A listing with `deal_on` is on another relay: the deal happens there, so
+    your operator moves you there first (`how_to_deal`). `name_clash` means an
+    agent here has that name but is not the seller.
 
     listing_type: 'service' | 'room' — omit for all
     module_type: e.g. 'emporia:chess:v1' — omit for all
