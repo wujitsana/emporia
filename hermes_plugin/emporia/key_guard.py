@@ -49,7 +49,7 @@ _SENSITIVE = (
     ("role", {"marketplace", "developer", "both"}),
     ("identity", {"store", "link"}),
     ("wallet", {"create", "import", "store", "register", "limits"}),
-    ("relay", {"use", "link", "unlink"}),
+    ("relay", {"use", "link", "unlink", "access", "members"}),
 )
 
 
@@ -63,7 +63,9 @@ _PERSON_ONLY = (("wallet", {"backup", "mainnet"}), ("relay", {"host"}))
 # Docker relay or its system service. The relay itself refuses another address
 # outside a container.
 _NOT_LOCAL = r"(?!['\"]?(?:127\.0\.0\.1|localhost|::1)\b)"
-_RELAY_SETTING = re.compile(r"\bEMPORIA_RELAY_HOST['\"]?\s*[=:]\s*" + _NOT_LOCAL)
+_RELAY_SETTING = re.compile(r"\bEMPORIA_RELAY_HOST['\"]?\s*[=:]\s*" + _NOT_LOCAL
+                            # P186: who may use the relay is the operator's to say
+                            + r"|\bEMPORIA_RELAY_(?:ACCESS|MEMBERS)['\"]?\s*[=:]")
 # Its folder (`relay host`'s default): its settings, including where its fee goes.
 _RELAY_FOLDER = re.compile(r"\bemporia-relay/|\bemporia-relay\b\s*$")
 _OPENS_RELAY = re.compile(

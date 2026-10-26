@@ -1,0 +1,102 @@
+"""P186: open, read-only and closed relays."""
+import pytest
+from fastapi.testclient import TestClient
+
+from emporia.relay_server import app
+from tests.test_emporia import _register
+
+
+@pytest.fixture
+def client():
+    return TestClient(app, client=("127.0.0.1", 51250))
+
+
+@pytest.fixture
+def remote():
+    """A visitor from elsewhere: no loopback, so no full /health either."""
+    return TestClient(app, client=("203.0.113.7", 51251))
+
+
+def _key(agent_id: str) -> str:
+    from emporia import relay_server as rs
+    with rs.DB_LOCK, rs.get_db() as conn:
+        return conn.execute("SELECT public_key_hex FROM authorized_agents WHERE agent_id = ?",
+                            (agent_id,)).fetchone()[0]
+
+
+def _as(agent_id: str) -> dict:
+    return {"x-emporia-agent-id": agent_id}
+
+
+def test_an_open_relay_is_as_before(client):
+    _register(client, "ra_open")
+    assert client.post("/listings", json={"title": "x", "listing_type": "service"},
+                       headers=_as("ra_open")).status_code == 200
+
+
+def test_a_closed_relay_serves_members_only(client, remote, monkeypatch):
+    _register(client, "ra_member")
+    _register(client, "ra_stranger")
+    monkeypatch.setenv("EMPORIA_RELAY_ACCESS", "closed")
+    monkeypatch.setenv("EMPORIA_RELAY_MEMBERS", _key("ra_member"))
+    assert client.post("/listings", json={"title": "mine", "listing_type": "service"},
+                       headers=_as("ra_member")).status_code == 200
+    r = client.post("/listings", json={"title": "theirs", "listing_type": "service"}, headers=_as("ra_stranger"))
+    assert r.status_code == 403 and "closed" in r.json()["detail"]
+    assert client.get("/listings").status_code == 403                    # nobody browses
+    assert client.get("/gaming/v1/federate/listings").status_code == 403  # nor pulls its feed
+    assert remote.get("/health").json() == {"status": "ok", "service": remote.get("/health").json()["service"],
+                                            "access": "closed"}
+    assert "version" in client.get("/health").json()                     # this machine sees it all
+
+
+def test_joining_a_closed_or_read_only_relay_takes_a_member_key(client, monkeypatch):
+    from emporia.identity import get_public_key_hex
+    monkeypatch.setenv("EMPORIA_RELAY_ACCESS", "read-only")
+    r = client.post("/agents/register", json={"agent_id": "ra_newcomer",
+                                              "public_key_hex": get_public_key_hex("ra_newcomer")})
+    assert r.status_code == 403 and "members add" in r.json()["detail"]
+    monkeypatch.setenv("EMPORIA_RELAY_MEMBERS", get_public_key_hex("ra_newcomer"))
+    r = client.post("/agents/register", json={"agent_id": "ra_newcomer",
+                                              "public_key_hex": get_public_key_hex("ra_newcomer")})
+    assert r.status_code == 200
+
+
+def test_a_read_only_relay_lets_anyone_browse_and_members_act(client, monkeypatch):
+    _register(client, "ra_ro_member")
+    _register(client, "ra_ro_visitor")
+    monkeypatch.setenv("EMPORIA_RELAY_ACCESS", "read-only")
+    monkeypatch.setenv("EMPORIA_RELAY_MEMBERS", _key("ra_ro_member"))
+    assert client.get("/listings").status_code == 200
+    assert client.get("/gaming/v1/federate/listings").status_code == 200
+    assert client.post("/listings", json={"title": "x", "listing_type": "service"},
+                       headers=_as("ra_ro_visitor")).status_code == 403
+    assert client.post("/listings", json={"title": "x", "listing_type": "service"},
+                       headers=_as("ra_ro_member")).status_code == 200
+
+
+def test_a_mistyped_mode_closes_rather_than_opens(monkeypatch):
+    from emporia import relay_access
+    monkeypatch.setenv("EMPORIA_RELAY_ACCESS", "opne")
+    assert relay_access.mode() == "closed"
+
+
+def test_the_operator_is_always_a_member(client, monkeypatch):
+    _register(client, "ra_operator")
+    monkeypatch.setenv("EMPORIA_RELAY_ACCESS", "closed")
+    monkeypatch.setenv("EMPORIA_AGENT_ID", "ra_operator")
+    monkeypatch.delenv("EMPORIA_RELAY_MEMBERS", raising=False)
+    assert client.get("/listings", headers=_as("ra_operator")).status_code == 200
+
+
+def test_access_changes_apply_from_the_env_file_without_a_restart(tmp_path, monkeypatch):
+    from emporia import relay_access
+    env = tmp_path / ".env"
+    env.write_text("EMPORIA_RELAY_ACCESS=open\n")
+    monkeypatch.setenv("EMPORIA_RELAY_ENV_FILE", str(env))
+    assert relay_access.mode() == "open"
+    import os
+    import time
+    env.write_text("EMPORIA_RELAY_ACCESS=closed\nEMPORIA_RELAY_MEMBERS=" + "ab" * 32 + "\n")
+    os.utime(env, (time.time() + 5, time.time() + 5))
+    assert relay_access.mode() == "closed" and relay_access.is_member_key("AB" * 32)

@@ -37,6 +37,7 @@ def _is_set(name: str) -> str:
 
 def settings() -> list[dict[str, Any]]:
     """The relay's settings, as its operator would change them."""
+    from emporia import relay_access
     from emporia import relay_server as rs
     from emporia.networks import is_testnet, label
     from emporia.payments import _x402_enabled, _x402_facilitator_url, _x402_networks
@@ -57,6 +58,10 @@ def settings() -> list[dict[str, Any]]:
         _item("Identity", "Public address", os.getenv("EMPORIA_DASHBOARD_BASE_URL") or "not set",
               "Its https address, behind a TLS proxy, for anyone off this machine.",
               f"EMPORIA_DASHBOARD_BASE_URL — {_RESTART} (README § Deployment)"),
+        _item("Access", "Who may use it", f"{relay_access.mode()} — {len(relay_access.members())} member(s)",
+              "open: any agent. read-only: anyone browses, members act. closed: members only, no federation.",
+              "emporia relay access open|read-only|closed · emporia relay members add NAME|KEY",
+              "warn" if relay_access.mode() == "open" and live else "ok"),
         _item("Access", "Nous sign-in to register", "required" if rs.REQUIRE_NOUS else "not required",
               "Recommended for a public relay: one verified account per agent seat.",
               f"EMPORIA_REQUIRE_NOUS=1 — {_RESTART}"),
@@ -110,7 +115,8 @@ def settings() -> list[dict[str, Any]]:
         _item("Games", "Idle games end after", f"{os.getenv('EMPORIA_SESSION_IDLE_HOURS', '24')} h",
               "A game nobody moves in is abandoned and stakes go back.", f"EMPORIA_SESSION_IDLE_HOURS — {_RESTART}"),
         _item("Federation", "Linked relays", ", ".join(rs.FEDERATED_RELAYS) or "none (standalone)",
-              "Relays that share listings and lobbies with this one.", f"FEDERATED_RELAYS — {_RESTART}"),
+              "Relays that share listings with this one; each links the other.",
+              "emporia relay link|unlink URL · emporia relay links"),
         _item("Operations", "Error tracking", "on" if os.getenv("SENTRY_DSN") else "off",
               "Sentry, if you use it.", f"SENTRY_DSN — {_RESTART}"),
         _item("Operations", "Log level", os.getenv("EMPORIA_LOG_LEVEL", "INFO"), "The relay's own logs.",

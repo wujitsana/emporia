@@ -806,13 +806,15 @@ def test_a_local_relay_starts_with_its_payments_or_keeps_the_current_one(profile
     monkeypatch.setattr(cli, "health", lambda timeout=3.0, url="": None)
     monkeypatch.setattr(cli, "cmd_relay", lambda a: started.append(a.action) or 0)
     monkeypatch.setattr(cli, "cmd_setup_relay", lambda a: payments.append(a.preset) or 0)
+    access = []
+    monkeypatch.setattr(cli, "cmd_relay_access", lambda a: access.append(a.url) or 0)
     with patch.dict(os.environ):
-        _typing(monkeypatch, "", "")                   # local (the default) · payments yes
+        _typing(monkeypatch, "", "", "")               # local (the default) · closed · payments yes
         assert cli._choose_relay() == cli.LOCAL_RELAY
-        assert started == ["start"] and payments == ["base-sepolia"]
+        assert started == ["start"] and payments == ["base-sepolia"] and access == ["closed"]
         assert "emporia relay host" in capsys.readouterr().out
         monkeypatch.setattr(cli, "cmd_relay", lambda a: 1)
-        _typing(monkeypatch, "", "n")                  # it does not start: keep the current one
+        _typing(monkeypatch, "", "3", "n")             # open · it does not start: keep the current one
         assert cli._choose_relay("https://old.example") == "https://old.example"
 
 
@@ -835,7 +837,7 @@ def test_relay_host_writes_its_own_folder_and_refuses_an_agent(profiles, monkeyp
     folder = tmp_path / "emporia-relay"
     _typing(monkeypatch, "", "y", "0x" + "ab" * 20)              # Nous · payments · fee address
     assert cli.main(["relay", "host", "--run", "docker", "--dir", str(folder), "--domain", "relay.example.com",
-                     "--admin", "keeper"]) == 0
+                     "--admin", "keeper", "--access", "open"]) == 0
     out = capsys.readouterr().out
     assert "On the host" in out and "docker compose --profile admin up -d" in out
     compose = yaml.safe_load((folder / "compose.yaml").read_text())
@@ -853,7 +855,7 @@ def test_relay_host_writes_its_own_folder_and_refuses_an_agent(profiles, monkeyp
     (folder / "compose.yaml").write_text("services: {}\n")            # someone else's: not replaced
     _typing(monkeypatch)
     assert cli.main(["relay", "host", "--run", "docker", "--dir", str(folder), "--domain", "relay.example.com",
-                     "--admin", ""]) == 1
+                     "--admin", "", "--access", "open"]) == 1
     monkeypatch.setenv("HERMES_SESSION_ID", "x")                          # an agent's terminal
     assert cli.main(["relay", "host", "--dir", str(folder)]) == 1
     assert "only a person" in capsys.readouterr().out
@@ -879,7 +881,7 @@ def test_relay_host_as_a_service_on_a_server_of_its_own(profiles, monkeypatch, c
     folder = tmp_path / "emporia-relay"
     _typing(monkeypatch, "", "n")                                  # Nous · no payments
     assert cli.main(["relay", "host", "--run", "service", "--dir", str(folder), "--domain", "relay.example.com",
-                     "--admin", "warden"]) == 0
+                     "--admin", "warden", "--access", "closed"]) == 0
     out = capsys.readouterr().out
     assert "useradd --system" in out and "systemctl" in out and "caddyserver.com" in out
     unit = (folder / "emporia-relay.service").read_text()
@@ -889,6 +891,7 @@ def test_relay_host_as_a_service_on_a_server_of_its_own(profiles, monkeypatch, c
     env = _env_of(folder)
     assert env["EMPORIA_NO_DOTENV"] == "1" and env["EMPORIA_RELAY_HOST"] == "127.0.0.1"
     assert env["EMPORIA_KEYS_DIR"] == str(folder / "data" / "keys") and env["EMPORIA_AGENT_ID"]
+    assert env["EMPORIA_RELAY_ACCESS"] == "closed" and len(env["EMPORIA_RELAY_MEMBERS"]) == 64   # warden
     assert _env_of(root / "warden")["EMPORIA_RELAY_URL"] == "http://127.0.0.1:8089"
 
 

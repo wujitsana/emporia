@@ -44,6 +44,9 @@ async def create_registration_challenge():
 async def register_agent(req: rs.RegisterAgentRequest):
     if not req.public_key_hex:
         raise HTTPException(400, "public_key_hex is required")
+    from emporia import relay_access
+    if why := relay_access.registration_refusal(req.public_key_hex):   # P186
+        raise HTTPException(403, why)
     if rs.REQUIRE_NOUS:
         has_nous = any(c.provider == "nous" and c.token for c in req.identity_claims)
         if not has_nous:

@@ -180,6 +180,8 @@ def cmd_relay(args: argparse.Namespace) -> int:
         return cmd_relay_host(args)
     if args.action in ("link", "unlink", "links"):
         return cmd_relay_links(args)
+    if args.action in ("access", "members"):
+        return cmd_relay_access(args)
     pid_file, log = _relay_files()
     if args.action == "status":
         h = health()
@@ -313,7 +315,8 @@ def _choose_relay(current: str = "") -> str:
     if choice == "local":
         return _start_local_relay(current)
     if choice == "host":
-        if cmd_relay_host(argparse.Namespace(dir="", domain="", fee_receiver="", admin=None, run="")) == 0:
+        if cmd_relay_host(argparse.Namespace(dir="", domain="", fee_receiver="", admin=None, run="", access="",
+                                             names=[])) == 0:
             print("  Then move this agent to it: emporia relay use URL NAME")
         return current or LOCAL_RELAY
     if choice == "remote":
@@ -335,6 +338,13 @@ def _start_local_relay(current: str) -> str:
     testnet payments, then start it. One for other machines is `relay host`."""
     print("  It listens on this machine only. For agents on other machines, run one in Docker behind https:\n"
           "    emporia relay host")
+    access = choose("Who may use it?", [
+        ("closed", "Only my agents — personal; members only, no links to other relays (recommended)"),
+        ("read-only", "My agents act; anyone who can reach it may browse"),
+        ("open", "Any agent that can reach it"),
+    ], 0)
+    if access != "open":
+        cmd_relay_access(argparse.Namespace(action="access", url=access, names=[], dir=""))
     if ask("Take testnet USDC payments and escrow on it now (Base Sepolia; needs an address for your fee)?", True):
         if cmd_setup_relay(argparse.Namespace(preset="base-sepolia", with_networks="", fee_receiver="",
                                               yes=False)) != 0:
@@ -420,6 +430,22 @@ def cmd_relay_host(args: argparse.Namespace) -> int:
                                              if run == "docker" else ""))
     updates = rh.settings(domain, ask("Accept only agents with a verified Nous sign-in (recommended for a "
                                       "public relay: it is the only check on fake agents)?", True))
+    access = getattr(args, "access", "") or choose("Who may use it?", [
+        ("open", "Any agent — a public relay"),
+        ("read-only", "Anyone may browse its listings; only agents you add act"),
+        ("closed", "Only agents you add — private; no links to other relays"),
+    ], 0)
+    updates["EMPORIA_RELAY_ACCESS"] = access
+    if access != "open":
+        keys = []
+        for ref in ([admin_name] if admin_name else []) + [
+                r for r in (args.names or []) if r]:
+            try:
+                keys.append(_member_key(ref)[0])
+            except ValueError as e:
+                print(f"  {e}")
+        updates["EMPORIA_RELAY_MEMBERS"] = ",".join(keys)
+        print(f"  {len(keys)} member(s); add more any time: emporia relay members add NAME|KEY --dir {folder}")
     if run == "service":
         updates.update(rh.service_settings(folder))
     payments = ask("Take testnet USDC payments and escrow (Base Sepolia)?", True)
@@ -625,6 +651,123 @@ def cmd_relay_links(args: argparse.Namespace) -> int:
         both = {True: "linked both ways", False: "one-way — they have not linked back", None: "can't tell"}[back]
         print(f"  {url} — {state}; {both}")
     return 0
+
+
+def _member_key(ref: str) -> tuple[str, str]:
+    """(public key, label) for an agent on this machine, by name — or a key given as is."""
+    import re
+    if re.fullmatch(r"[0-9a-fA-F]{64}", ref):
+        return ref.lower(), ref[:12] + "…"
+    agents = {p.name: (p, e) for p, e in _agent_profiles(profiles_root())}
+    if ref not in agents:
+        raise ValueError(f"no agent '{ref}' on this machine — give its public key (64 hex) instead")
+    profile, entry = agents[ref]
+    agent_id = (entry.get("env") or {}).get("EMPORIA_AGENT_ID") or ref
+    key = _expected_public(profile, agent_id, "identity")
+    if not key:   # kept in its .env or linked: ask its own environment, which never prints the key
+        r = _as_agent(profile, f"from emporia.identity import read_public_key_hex as r; print(r({agent_id!r}) or '')")
+        key = r.stdout.strip() if r.returncode == 0 else ""
+    if not key:
+        raise ValueError(f"{ref} has no identity key yet (emporia setup agent {ref})")
+    return key, ref
+
+
+def cmd_relay_access(args: argparse.Namespace) -> int:
+    """P186: `emporia relay access [open|read-only|closed]` and
+    `emporia relay members [add|remove NAME|KEY]` — who may use this relay."""
+    from emporia import relay_access as ra
+
+    env_path = _relay_env_path(args)
+    if env_path is None:
+        print("relay access: run it from the relay profile's emporia checkout, or give --dir for a hosted relay")
+        return 1
+    env = installer().harvest_env(env_path.parent) if env_path.exists() else {}
+    current = env.get(ra.SETTING, "open")
+    members = [k for k in env.get(ra.MEMBERS, "").split(",") if k.strip()]
+    updates: dict[str, str] = {}
+    if args.action == "access":
+        wanted = (args.url or "").strip().lower()
+        if not wanted:
+            print(f"This relay is {current}. Members: {len(members)}.")
+            for m, about in (("open", "anyone may join"), ("read-only", "anyone may browse; members act"),
+                             ("closed", "members only — personal; no links to other relays")):
+                print(f"  {m:10} {about}")
+            return 0
+        if wanted not in ra.MODES:
+            print(f"relay access: one of {', '.join(ra.MODES)}")
+            return 1
+        updates[ra.SETTING] = wanted
+        if wanted != "open" and not members:
+            mine = []
+            for p, _ in _agent_profiles(profiles_root()):
+                try:
+                    mine.append(_member_key(p.name)[0])
+                except ValueError:
+                    pass
+            if mine and (not _TTY or ask(f"Make this machine's {len(mine)} agent(s) its members?", True)):
+                updates[ra.MEMBERS] = ",".join(mine)
+    else:   # members
+        verb, refs = (args.url or "list"), args.names
+        if verb == "list":
+            print(f"This relay is {current}. Members (by key):" if members else
+                  f"This relay is {current}. No members listed (its operator agent always is one).")
+            names = {}
+            for p, _ in _agent_profiles(profiles_root()):
+                try:
+                    names[_member_key(p.name)[0]] = p.name
+                except ValueError:
+                    pass
+            for k in members:
+                print(f"  {k[:16]}…  {names.get(k.lower(), '(not on this machine)')}")
+            return 0
+        if verb not in ("add", "remove") or not refs:
+            print("relay members: add|remove NAME|KEY …, or list")
+            return 1
+        try:
+            keys = [_member_key(r) for r in refs]
+        except ValueError as e:
+            print(f"relay members: {e}")
+            return 1
+        for key, label in keys:
+            if verb == "add" and key not in members:
+                members.append(key)
+            elif verb == "remove" and key in members:
+                members.remove(key)
+            print(f"  {'added' if verb == 'add' else 'removed'} {label}")
+        updates[ra.MEMBERS] = ",".join(members)
+    try:
+        merge_env_file(env_path, updates)
+    except PermissionError:
+        print(f"relay access: {env_path} belongs to root (a relay run as a service) — set "
+              + " ".join(f"{k}={v}" for k, v in updates.items()) + " there with sudo")
+        return 1
+    if ra.SETTING in updates:
+        print(f"  This relay is now {updates[ra.SETTING]}"
+              + (" — it stops pulling from and serving linked relays." if updates[ra.SETTING] == "closed" else "."))
+    print("  The relay applies it within seconds (one run as a system service: at its next restart)."
+          + ("" if updates.get(ra.SETTING) != "closed" else
+             "\n  Restart it once so it also stops pulling from linked relays: emporia relay stop && emporia relay start"))
+    return 0
+
+
+def _ensure_member(name: str, url: str) -> None:
+    """P186: an agent set up here joins this machine's own read-only or closed relay
+    as a member — the person running setup is the one who decides."""
+    from emporia import relay_access as ra
+    me = this_profile()
+    if not me or not installer()._is_local_relay(url) or not (me / ".env").exists():
+        return
+    env = installer().harvest_env(me)
+    if env.get(ra.SETTING, "open") == "open":
+        return
+    try:
+        key, _ = _member_key(name)
+    except ValueError:
+        return
+    members = [k for k in env.get(ra.MEMBERS, "").split(",") if k.strip()]
+    if key not in members:
+        merge_env_file(me / ".env", {ra.MEMBERS: ",".join([*members, key])})
+        print(f"  {name} is now a member of this machine's {env.get(ra.SETTING)} relay.")
 
 
 def cmd_relay_use(args: argparse.Namespace) -> int:
@@ -1072,6 +1215,7 @@ def cmd_setup_agent(args: argparse.Namespace) -> int:
         for n in nets:
             if n in NETWORKS and NETWORKS[n].faucet:
                 print(f"  Fund it on {label(n)}: {NETWORKS[n].faucet}")
+    _ensure_member(name, chosen_relay or relay_url())
     if not args.register and _TTY and health():
         args.register = ask(f"Register {name} on the relay now?", True)
     if args.register:
@@ -1153,6 +1297,9 @@ def machine_settings(url: str = "") -> list[dict[str, Any]]:
                     "emporia setup relay"),
                 row("Cards", (h or {}).get("stripe_mode") or "off", "The relay's Stripe key, typed hidden.",
                     "emporia setup stripe")]
+    if h and h.get("access") and local:
+        out.append(row("Who may use it", h["access"], "open: any agent. read-only: anyone browses, members "
+                       "act. closed: members only — personal.", "emporia relay access"))
     out.append({**row("A relay for other machines", "",
                       "Behind https, in Docker or as a system service on a server kept for it; its settings "
                       "in its own folder. This machine's relay listens here only.", "emporia relay host"),
@@ -2824,7 +2971,8 @@ def build_parser() -> argparse.ArgumentParser:
 
     r = sub.add_parser("relay", help="start, stop or inspect this machine's relay; `use` moves agents to another; "
                                      "`host` runs one for other machines, in Docker behind https")
-    r.add_argument("action", choices=["start", "stop", "status", "logs", "use", "host", "link", "unlink", "links"])
+    r.add_argument("action", choices=["start", "stop", "status", "logs", "use", "host", "link", "unlink", "links",
+                                      "access", "members"])
     r.add_argument("url", nargs="?", default="", help="use, link, unlink: the other relay's URL")
     r.add_argument("names", nargs="*", help="use: the agents that move to it")
     r.add_argument("--lines", type=int, default=40)
@@ -2832,6 +2980,8 @@ def build_parser() -> argparse.ArgumentParser:
     r.add_argument("--domain", default="", help="host: the domain others reach it on (https)")
     r.add_argument("--fee-receiver", default="", help="host: the address that receives your fee")
     r.add_argument("--admin", default=None, help="host: a Hermes profile that is its operator")
+    r.add_argument("--access", choices=["open", "read-only", "closed"], default="",
+                   help="host: who may use it (default: asks; open for a public relay)")
     r.add_argument("--run", choices=["docker", "service"], default="",
                    help="host: in Docker, or as a system service on a server kept for it")
     r.set_defaults(func=cmd_relay)

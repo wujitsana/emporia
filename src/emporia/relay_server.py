@@ -4080,7 +4080,8 @@ async def lifespan(app: FastAPI):
     # relay (the common case) shouldn't spin a task that does nothing every
     # EMPORIA_FEDERATION_SYNC_INTERVAL_SECONDS forever.
     drop_unlinked_federated_rows()
-    if FEDERATED_RELAYS:
+    from emporia import relay_access
+    if FEDERATED_RELAYS and relay_access.federates():
         _FEDERATION_SYNC_TASK = asyncio.create_task(_federation_sync_loop())
     try:
         yield
@@ -4399,6 +4400,26 @@ app.add_middleware(
 # in a new exception before re-raising would defeat the dedupe and silently
 # double-report.
 _LOW_SIGNAL_PATHS = {"/health"}
+
+
+@app.middleware("http")
+async def relay_access_guard(request: Request, call_next):
+    """P186: a read-only or closed relay serves its members only (emporia.relay_access)."""
+    from emporia import relay_access
+    if relay_access.mode() != "open":
+        why = relay_access.refusal(request.method, request.url.path, _dashboard_agent_id(request))
+        if why:
+            return JSONResponse({"detail": why}, status_code=403)
+    return await call_next(request)
+
+
+async def _ws_refused(ws: WebSocket) -> bool:
+    """P186: the access mode, for a WebSocket — closed before it is accepted."""
+    from emporia import relay_access
+    if relay_access.mode() != "open" and relay_access.refusal("GET", ws.url.path, _ws_agent_id(ws)):
+        await ws.close(code=1008)
+        return True
+    return False
 
 
 @app.middleware("http")
@@ -5002,7 +5023,12 @@ def _payment_rails(*, has_stripe: bool | None = None) -> tuple[list[str], list[s
 
 
 @app.get("/health")
-async def health():
+async def health(request: Request):
+    from emporia import relay_access
+    access = relay_access.mode()
+    if access == "closed" and (request.client.host if request.client else "") not in ("127.0.0.1", "::1"):
+        # P186: a closed relay says only that it is up — not what it runs or takes.
+        return {"status": "ok", "service": BRAND, "access": access}
     listing_count = 0
     session_count = 0
     try:
@@ -5030,6 +5056,7 @@ async def health():
     return {
         "status": "ok",
         "service": BRAND,
+        "access": access,
         "relay_id": RELAY_ID,
         "version": __version__,
         # P139: lets `emporia doctor` tell a relay running older code than the
@@ -6966,6 +6993,8 @@ async def ws_global_events(ws: WebSocket):
       {"type": "event_created",   ...}
     Send {"type": "ping"} to keep alive; relay responds {"type": "pong"}.
     """
+    if await _ws_refused(ws):
+        return
     await ws.accept()
     ws_id = uuid.uuid4().hex[:12]
     logger.info("ws_connected", extra={"ws_id": ws_id, "channel": "global"})
@@ -7022,6 +7051,8 @@ async def ws_session(ws: WebSocket, session_id: str):
     it would receive anything later broadcast to that key. ws_room already rejects an
     unknown room_id; this now matches that fail-closed shape.
     """
+    if await _ws_refused(ws):
+        return
     s = load_session(session_id)
     if not s:
         logger.warning("ws_rejected", extra={"channel": "session", "session_id": session_id, "reason": "unknown_session"})
@@ -7053,6 +7084,8 @@ async def ws_session(ws: WebSocket, session_id: str):
 async def ws_agent(ws: WebSocket, agent_id: str):
     """Per-agent notification channel — private. Caller must be the agent itself (or the
     relay operator); see _ws_agent_id()."""
+    if await _ws_refused(ws):
+        return
     caller = _ws_agent_id(ws)
     owner = _relay_operator_id()
     if caller != agent_id and not (owner and caller == owner):
@@ -7555,6 +7588,8 @@ async def ws_room(ws: WebSocket, room_id: str):
     """Real-time room channel. Sends last 20 messages on connect. Private rooms require
     the caller to be an authenticated member (see _ws_agent_id()) — public rooms are open
     to any connection, matching GET /rooms/{id}/messages."""
+    if await _ws_refused(ws):
+        return
     room = rooms_db.get_room(room_id, db_path=DATABASE_PATH)
     if not room:
         logger.warning("ws_rejected", extra={"channel": "room", "room_id": room_id, "reason": "unknown_room"})

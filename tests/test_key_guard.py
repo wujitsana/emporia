@@ -163,3 +163,11 @@ def test_linking_relays_needs_the_operators_yes():
     for cmd in ("emporia relay link https://x.example", "emporia relay unlink https://x.example"):
         assert guard.pre_tool_call("terminal", {"command": cmd})["action"] == "approve"
     assert guard.pre_tool_call("terminal", {"command": "emporia relay links"}) is None
+
+
+def test_an_agent_cannot_open_its_relay_or_add_itself_as_a_member():
+    for args in ({"command": "echo EMPORIA_RELAY_ACCESS=open >> .env"},
+                 {"path": "/opt/data/profiles/x/.env", "content": "EMPORIA_RELAY_MEMBERS=" + "ab" * 32},
+                 {"command": "emporia relay access open"}):
+        r = guard.pre_tool_call("terminal", args)
+        assert r and r["action"] in ("block", "approve"), args

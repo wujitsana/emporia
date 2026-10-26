@@ -105,8 +105,11 @@ services:
     ports:
       # This machine only. Others reach it through https{"" if https else " — your own proxy"}.
       - "127.0.0.1:{LOCAL_PORT}:8088"
+    environment:
+      - EMPORIA_RELAY_ENV_FILE=/app/relay.env
     volumes:
       - emporia-data:/data     # its identity, operator key and database: never delete
+      - ./.env:/app/relay.env:ro   # who may use it, re-read when it changes
     logging:
       driver: json-file
       options:

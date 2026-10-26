@@ -87,6 +87,11 @@ games (or resign by abandoning), and check spend after step 5.
       `emporia relay host` → folder, domain, Nous yes, payments with your fee address → it builds,
       makes the operator key, starts; `https://<domain>/health` answers;
       `curl http://127.0.0.1:8089/health` answers; `docker compose down` in its folder stops it.
+- [ ] **Access modes:** `emporia relay access closed` → alpha and beta are offered as members;
+      `curl -s localhost:8088/listings` → 403 "closed"; alpha still plays (its key is a member);
+      `emporia relay members remove beta` → beta's next action is refused within seconds, no
+      restart; `emporia relay access read-only` → `curl` lists again, beta still cannot act;
+      `emporia relay access open` restores everything.
 - [ ] **Relay as a service (a spare Linux server or VM, no Docker):** checkout in `/opt/emporia`,
       `emporia relay host --run service --admin <a Hermes profile there>` → it shows the sudo steps
       and runs them; `systemctl status emporia-relay` is active, as user `emporia-relay`;
