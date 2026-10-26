@@ -33,7 +33,8 @@ def _challenge(*nets):
 
 @pytest.fixture
 def wallet_env(tmp_path):
-    env = {"EMPORIA_X402_PAY_NETWORKS": f"eip155:8453,{BASE}", "EMPORIA_X402_MAX_PAYMENT_CENTS": "500"}
+    env = {"EMPORIA_X402_PAY_NETWORKS": f"eip155:8453,{BASE}", "EMPORIA_X402_MAX_PAYMENT_CENTS": "500",
+           "EMPORIA_X402_MAINNET": "1"}
     with patch.object(identity, "KEY_DIR", tmp_path), patch.dict(os.environ, env):
         agent_wallet.generate("chooser")
         yield
@@ -49,6 +50,25 @@ def test_the_agents_own_order_decides_not_the_relays(wallet_env):
     assert _paid_network(agent_wallet.sign_exact("chooser", _challenge(BASE, "eip155:8453"), network=BASE)) == BASE
     with pytest.raises(agent_wallet.AgentWalletError, match="not one of the networks"):
         agent_wallet.sign_exact("chooser", _challenge(SOL), network=SOL)
+
+
+def test_mainnet_is_locked_until_unlocked(wallet_env):
+    """P177: with mainnet locked, a mainnet network on the list is skipped, and
+    a list of only mainnet networks pays nowhere."""
+    with patch.dict(os.environ, {"EMPORIA_X402_MAINNET": ""}):
+        assert agent_wallet.allowed_networks() == [BASE]
+        assert _paid_network(agent_wallet.sign_exact("chooser", _challenge(BASE, "eip155:8453"))) == BASE
+        with pytest.raises(agent_wallet.AgentWalletError, match="not one of the networks"):
+            agent_wallet.sign_exact("chooser", _challenge("eip155:8453"), network="eip155:8453")
+        with patch.dict(os.environ, {"EMPORIA_X402_PAY_NETWORKS": "eip155:8453,eip155:999"}):
+            with pytest.raises(agent_wallet.AgentWalletError, match="mainnet .real money. is locked"):
+                agent_wallet.allowed_networks()
+    from emporia.agent_sdk import EmporiaAgent
+    with patch.dict(os.environ, {"EMPORIA_X402_MAINNET": ""}):
+        assert EmporiaAgent("http://r", "a", "00", x402_networks=["eip155:8453", BASE])._x402_networks == [BASE]
+        assert "eip155:8453" not in EmporiaAgent("http://r", "a", "00")._x402_networks
+        assert EmporiaAgent("http://r", "a", "00", x402_networks=["eip155:8453"],
+                            allow_mainnet=True)._x402_networks == ["eip155:8453"]
 
 
 def test_a_402_lists_its_options_in_words():
@@ -168,6 +188,7 @@ def test_setup_agent_asks_and_one_phrase_is_the_recommended_choice(profiles, mon
     # existing profile? no · wallets: 3 (one phrase) · networks: Enter · caps: 5, 20
     # role: 1 (marketplace) · wallets: 3 (one phrase) · networks: Enter · caps: 5, 20 · ask above $2
     _typing(monkeypatch, "1", "3", "", "5", "20", "2")
+    monkeypatch.setattr(cli, "_choose_relay", lambda current="": "")   # P177: tested on its own
     shown = []
     monkeypatch.setattr(cli, "_show_phrase", lambda phrase, name: shown.append(phrase) or True)
     with patch.dict(os.environ):
@@ -611,10 +632,10 @@ def test_the_phrase_is_shown_once_and_three_words_confirm_it(monkeypatch, capsys
 
 def test_no_terminal_or_an_agents_terminal_never_shows_it(monkeypatch):
     monkeypatch.setattr(cli, "_TTY", False)
-    assert not cli._can_reveal()
+    assert not cli._persons_terminal()
     monkeypatch.setattr(cli, "_TTY", True)
     monkeypatch.setenv("HERMES_SESSION_ID", "s1")
-    assert not cli._can_reveal()
+    assert not cli._persons_terminal()
 
 
 def test_a_phrase_nobody_saw_is_kept_until_backed_up(profiles, monkeypatch, capsys):
@@ -703,3 +724,77 @@ def test_doctor_says_a_phrase_is_not_backed_up(profiles, capsys, monkeypatch):
     capsys.readouterr()
     cli.main(["doctor", "--profiles-root", str(root)])
     assert "emporia wallet backup upsilon" in capsys.readouterr().out
+
+
+# -- P177: Solana only, mainnet locked, which relay ---------------------------
+
+def test_setup_offers_a_solana_only_wallet(profiles, monkeypatch):
+    root, _ = profiles
+    monkeypatch.setattr(cli, "health", lambda timeout=3.0, url="": None)
+    monkeypatch.setattr(cli, "_choose_relay", lambda current="": "")
+    keys = [k for k, _ in cli.WALLET_MODES]
+    assert keys[:4] == ["none", "evm", "phrase", "separate"] and "solana" in keys, "earlier answers keep their numbers"
+    _typing(monkeypatch, "1", str(keys.index("solana") + 1), "", "5", "20", "2")
+    with patch.dict(os.environ):
+        assert cli.main(["setup", "agent", "phi", "--keys", "files"]) == 0
+    keys_dir = root / "phi" / "home" / ".hermes" / "keys"
+    assert [p.name for p in keys_dir.glob("phi.x402.*")] == ["phi.x402.ed25519"]
+    assert "solana:EtWTRABZaYq6iMfeYKouRu166VU2xqa1" in _env_of(root / "phi")["EMPORIA_X402_PAY_NETWORKS"]
+
+
+def test_mainnet_networks_are_refused_while_locked(profiles, capsys):
+    root, _ = profiles
+    with patch.dict(os.environ):
+        assert cli.main(["setup", "agent", "chi", "--wallet", "--pay-networks", "base"]) == 1
+        assert "mainnet (real money) is locked" in capsys.readouterr().out
+        assert cli.main(["setup", "agent", "chi", "--wallet"]) == 0
+        assert cli.main(["wallet", "limits", "chi", "--networks", "base,base-sepolia"]) == 1
+        assert cli.main(["wallet", "mainnet", "chi"]) == 1, "only a person's terminal unlocks it"
+        assert "own terminal" in capsys.readouterr().out
+        cli.merge_env_file(root / "chi" / ".env", {"EMPORIA_X402_MAINNET": "1"})
+        assert cli.main(["wallet", "limits", "chi", "--networks", "base,base-sepolia"]) == 0
+        assert cli.main(["wallet", "mainnet", "chi", "--lock"]) == 0
+    env = _env_of(root / "chi")
+    assert env["EMPORIA_X402_MAINNET"] == "0" and env["EMPORIA_X402_PAY_NETWORKS"] == "eip155:84532"
+
+
+def test_unlocking_mainnet_takes_a_warning_and_the_agents_name(profiles, monkeypatch, capsys):
+    root, _ = profiles
+    with patch.dict(os.environ):
+        assert cli.main(["setup", "agent", "psi", "--wallet"]) == 0
+    monkeypatch.setattr(cli, "health", lambda timeout=3.0, url="": None)
+    _typing(monkeypatch, "2", "nope")                  # ask above $2 · wrong name
+    assert cli.main(["wallet", "mainnet", "psi"]) == 1
+    assert "Mainnet means real money" in capsys.readouterr().out
+    assert _env_of(root / "psi").get("EMPORIA_X402_MAINNET", "") != "1"
+    _typing(monkeypatch, "psi", "")                    # the name · networks: as ticked
+    assert cli.main(["wallet", "mainnet", "psi"]) == 0
+    assert _env_of(root / "psi")["EMPORIA_X402_MAINNET"] == "1"
+
+
+def test_choose_relay_offers_the_one_in_use_then_local_remote_later(profiles, monkeypatch, capsys):
+    monkeypatch.setattr(cli, "_relays_in_use", lambda: {"https://relay.example": ["alpha"]})
+    monkeypatch.setattr(cli, "health", lambda timeout=3.0, url="":
+                        {"version": "1", "x402_networks": ["eip155:84532"]} if url == "https://relay.example" else None)
+    _typing(monkeypatch, "")                           # the default: the one in use
+    assert cli._choose_relay() == "https://relay.example"
+    out = capsys.readouterr().out
+    assert "used by alpha" in out and "Base Sepolia (testnet)" in out and "Run a relay on this machine" in out
+    _typing(monkeypatch, "3", "http://203.0.113.9:8088", "n", "https://relay.example")   # remote · plain http refused
+    assert cli._choose_relay() == "https://relay.example"
+    out = capsys.readouterr().out
+    assert "Not https" in out and "SECURITY.md" in out
+    _typing(monkeypatch, "5")      # its current one, the one in use, local, remote · later
+    assert cli._choose_relay("https://old.example") == "https://old.example"
+    assert "its current relay" in capsys.readouterr().out
+
+
+def test_relay_use_moves_agents_and_keeps_their_keys(profiles, capsys):
+    root, _ = profiles
+    with patch.dict(os.environ):
+        assert cli.main(["setup", "agent", "omega"]) == 0
+    assert cli.main(["relay", "use", "https://relay.example", "omega"]) == 0
+    cfg = cli.installer().load_yaml(root / "omega" / "config.yaml")
+    assert cfg["mcp_servers"]["emporia"]["env"]["EMPORIA_RELAY_URL"] == "https://relay.example"
+    assert _env_of(root / "omega")["EMPORIA_RELAY_URL"] == "https://relay.example"
+    assert cli.main(["relay", "use", "https://relay.example", "nobody"]) == 1

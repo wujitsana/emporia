@@ -12,6 +12,7 @@ network on.
 
 from __future__ import annotations
 
+import os
 from dataclasses import dataclass
 
 
@@ -56,6 +57,21 @@ def label(caip2: str) -> str:
     if n is None:
         return caip2
     return f"{n.label} (testnet)" if n.testnet else n.label
+
+
+# P177: agents pay on testnets only until a person unlocks mainnet (real money)
+# for that agent, in their own terminal (`emporia wallet mainnet NAME`). A
+# network not in the table counts as mainnet: only a known testnet is "test".
+MAINNET_VAR = "EMPORIA_X402_MAINNET"
+
+
+def is_testnet(caip2: str) -> bool:
+    n = NETWORKS.get(caip2)
+    return bool(n and n.testnet)
+
+
+def mainnet_unlocked(env: dict[str, str] | None = None) -> bool:
+    return (os.environ if env is None else env).get(MAINNET_VAR, "").strip().lower() in ("1", "true", "yes", "on")
 
 
 def family(caip2: str) -> str | None:

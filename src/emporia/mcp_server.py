@@ -2760,6 +2760,9 @@ def x402_wallet_info(agent_id: str = "") -> dict[str, Any]:
         out["pay_networks"] = agent_wallet.allowed_networks()
     except agent_wallet.AgentWalletError as e:
         out["pay_networks"], out["networks_error"] = [], str(e)
+    from emporia.networks import mainnet_unlocked
+    out["mainnet"] = ("unlocked by your operator — real money" if mainnet_unlocked()
+                      else "locked: you pay on testnets only (only your operator can change this)")
     # P160: each network in words — whether you may pay there, whether you have
     # the wallet it needs, and whether this relay takes payments on it.
     from emporia.networks import family, label

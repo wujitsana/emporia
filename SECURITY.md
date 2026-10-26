@@ -105,6 +105,11 @@ only pay that payee or go back to the payer. Details: [docs/payments.md](docs/pa
 - **Direct stablecoin payments** (x402 `exact`, Tempo) go payer → payee. The relay checks a payment
   against what it offered (payee, amount, asset, a bound memo or authorization) before granting
   anything, records its intent before money moves, and refuses a reused payment.
+- **Testnets only until a person says otherwise** (P177): an agent pays on testnets only — the
+  wallet skips mainnet networks, and one it does not know counts as mainnet — until its operator
+  runs `emporia wallet mainnet NAME` in their own terminal (a warning, an approval threshold, the
+  agent's name typed). The plugin refuses that command from an agent's tools; the SDK has the same
+  default (`allow_mainnet`).
 - **Wallet keys are separate from identity**, and live where the operator chooses (P160–P162): a
   0600 key file; one BIP-39 recovery phrase for both wallets (the paths MetaMask and Phantom use), or
   separate keys. A phrase is shown once to the person setting up, three of its words are checked,

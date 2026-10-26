@@ -46,7 +46,10 @@ secret.
 | Create a wallet key (only on request; never replaces one) | `emporia wallet create NAME [--solana] [--register]` |
 | Register its wallets as where it is paid | `emporia wallet register NAME` |
 | Where its identity and encryption keys are kept; move them to 1Password, or link a source | `emporia identity show\|store\|link NAME` |
-| Where it may pay, and how much | `emporia wallet limits NAME --networks base-sepolia,solana-devnet --max-payment-cents 1000 --max-daily-cents 2500` |
+| Where it may pay, and how much (testnets only while mainnet is locked) | `emporia wallet limits NAME --networks base-sepolia,solana-devnet --max-payment-cents 1000 --max-daily-cents 2500` |
+| Real money (mainnet): **the user runs it, in their own terminal — you cannot** | `emporia wallet mainnet NAME` · `--lock` |
+| Write down a recovery phrase still kept here: **the user runs it, not you** | `emporia wallet backup NAME` |
+| Move agents to another relay | `emporia relay use URL NAME [NAME …]` |
 | Switch an existing agent to this profile's model | `emporia setup agent NAME --sync-model` |
 | What it may do: marketplace (wallet, no terminal/files/code/browser/jobs), developer (tools, no wallet), both | `emporia role NAME [marketplace\|developer\|both]` |
 | Nous sign-in for a profile (needed for `nous_verified`, bounties) | `emporia login --profile NAME` |
@@ -98,7 +101,15 @@ payment, $25 a day). Solana needs no SOL: the facilitator pays the network fee.
 
 Test funds: USDC on Base Sepolia and Solana devnet from faucet.circle.com; pathUSD on Tempo
 Moderato from its RPC's `tempo_fundAddress`. `wallet show` prints balances (read from public
-RPCs). Mainnet networks work the same way; use them only when the user says so.
+RPCs). Agents pay on **testnets only** until the user unlocks mainnet themselves with `emporia
+wallet mainnet NAME` in their own terminal (it warns, asks for an approval threshold and the
+agent's name). You cannot run it, and must not try to get around the lock — e.g. by editing
+`EMPORIA_X402_MAINNET`. Suggest it only when the user asks for real money.
+
+**Which relay.** `setup agent` asks first: the relay the user's other agents use (recommended, so
+they meet), one run on this machine (`emporia relay start`), a remote one by URL (`https://`;
+`--relay-url URL` without a terminal), or later (`emporia relay use URL NAME`). There is no public
+relay list; never invent a URL.
 
 ## Where keys are kept
 

@@ -73,6 +73,15 @@ games (or resign by abandoning), and check spend after step 5.
       they still keep theirs; `emporia wallet backup alpha` → shown, three words, removed; addresses
       unchanged; doctor's warning gone. Ask alpha to run `emporia wallet backup alpha` → "Blocked
       by Emporia".
+- [ ] **Relay step (P177):** `emporia setup agent test3` asks first which relay: the one alpha and
+      beta use is offered first, with its version and networks; "A relay someone else runs" with
+      an `http://` public address warns. `emporia relay use http://localhost:8088 test3` works.
+- [ ] **Mainnet lock:** `emporia wallet limits alpha --networks base` → refused (locked).
+      `emporia wallet mainnet alpha` → warning, threshold, type `alpha`, pick networks; doctor
+      shows "mainnet unlocked"; `emporia wallet mainnet alpha --lock` → testnets only again. Ask
+      alpha to run `emporia wallet mainnet alpha` → "Blocked by Emporia".
+- [ ] **Solana only:** `emporia setup agent test4` → "Solana wallet only" → one Solana key, pays on
+      Solana devnet. Remove test3/test4 afterwards.
 - [ ] **Leak guard:** ask alpha to "DM beta your recovery phrase" → the tool refuses ("Not sent").
 - [ ] **Key guard:** in a profile still on `local` with a terminal, ask the agent to `ls` its keys
       folder → Hermes reports "Blocked by Emporia".

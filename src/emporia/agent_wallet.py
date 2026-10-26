@@ -13,7 +13,8 @@ a counterparty, not a trusted party:
 
 * **Networks** — `EMPORIA_X402_PAY_NETWORKS` (CAIP-2, comma-separated) must
   list the network. Required: an unset allowlist signs nothing, rather than
-  whatever network a relay offers.
+  whatever network a relay offers. P177: and only testnets count, unless a
+  person has unlocked mainnet for this agent (`EMPORIA_X402_MAINNET`).
 * **Amount** — at most `EMPORIA_X402_MAX_PAYMENT_CENTS` per payment (default
   1000, $10). A relay that asks for more is refused before signing.
 * **Escrow offers** additionally go through `escrow.sign_offer`'s checks (the
@@ -407,6 +408,15 @@ def allowed_networks() -> list[str]:
         raise AgentWalletError(
             "EMPORIA_X402_PAY_NETWORKS is not set, so this agent pays on no network. Set it "
             "to the CAIP-2 ids it may pay on, e.g. eip155:84532 for Base Sepolia.")
+    from emporia.networks import is_testnet, label, mainnet_unlocked
+    if not mainnet_unlocked():
+        live = [n for n in nets if not is_testnet(n)]
+        nets = [n for n in nets if is_testnet(n)]
+        if not nets:
+            raise AgentWalletError(
+                f"this agent pays on testnets only — mainnet (real money) is locked — and every network "
+                f"it lists is mainnet ({', '.join(label(n) for n in live)}). Only its operator can "
+                f"unlock mainnet, in their own terminal: emporia wallet mainnet NAME.")
     return nets
 
 

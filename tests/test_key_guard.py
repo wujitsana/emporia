@@ -115,6 +115,9 @@ def test_only_a_person_runs_wallet_backup():
         r = guard.pre_tool_call("terminal", {"command": cmd})
         assert r and r["action"] == "block", cmd
     assert guard.pre_tool_call("terminal", {"command": "emporia wallet show alpha"}) is None
+    r = guard.pre_tool_call("terminal", {"command": "emporia wallet mainnet alpha"})
+    assert r and r["action"] == "block", "P177: real money is a person's decision"
+    assert guard.pre_tool_call("terminal", {"command": "emporia relay use https://x alpha"})["action"] == "approve"
 
 
 def test_a_shown_phrase_is_hidden_from_tool_results():

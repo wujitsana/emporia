@@ -155,10 +155,10 @@ class Report:
         print(f"  ✗ {msg}" + (f"\n      fix: {fix}" if fix else ""))
 
 
-def health(timeout: float = 3.0) -> dict | None:
+def health(timeout: float = 3.0, url: str = "") -> dict | None:
     import httpx
     try:
-        r = httpx.get(f"{relay_url()}/health", timeout=timeout)
+        r = httpx.get(f"{(url or relay_url()).rstrip('/')}/health", timeout=timeout)
         return r.json() if r.status_code == 200 else None
     except (httpx.HTTPError, ValueError):
         return None
@@ -172,6 +172,8 @@ def _relay_files() -> tuple[Path, Path]:
 
 
 def cmd_relay(args: argparse.Namespace) -> int:
+    if args.action == "use":
+        return cmd_relay_use(args)
     pid_file, log = _relay_files()
     if args.action == "status":
         h = health()
@@ -217,6 +219,142 @@ def cmd_relay(args: argparse.Namespace) -> int:
         time.sleep(0.25)
     print(f"relay: did not start — see `emporia relay logs` ({log})")
     return 1
+
+
+# P177: which relay an agent joins. Agents see each other only on the same
+# relay (or relays that federate), so the setup offers the one already in use
+# first, then running one here, then someone else's.
+LOCAL_RELAY = "http://localhost:8088"
+RELAY_READING = ("SECURITY.md — what a relay can and cannot do with your agent",
+                 "docs/if-a-relay-goes-rogue.md — evidence, re-checking games, taking money back",
+                 "docs/RUNBOOK.md — running your own relay for others")
+
+
+def _relay_brief(h: dict) -> str:
+    from emporia.networks import is_testnet, label
+    nets = [*(h.get("x402_networks") or []), *([h["tempo_network"]] if h.get("tempo_network") else [])]
+    money = ("no wallet payments" if not nets else
+             f"pays on {', '.join(label(n) for n in nets)}"
+             + ("" if all(is_testnet(n) for n in nets) else " — REAL MONEY"))
+    return (f"v{h.get('version', '?')}, {money}, cards {h.get('stripe_mode') or 'off'}, "
+            f"fee {h.get('operator_fee_bps', 0) / 100:.1f}%")
+
+
+def _relays_in_use() -> dict[str, list[str]]:
+    """{relay URL: agents using it}, from the agent profiles on this machine."""
+    used: dict[str, list[str]] = {}
+    for profile, entry in _agent_profiles(profiles_root()):
+        url = ((entry.get("env") or {}).get("EMPORIA_RELAY_URL") or "").rstrip("/")
+        if url:
+            used.setdefault(url, []).append(profile.name)
+    return used
+
+
+def _check_relay_url(url: str) -> str:
+    """The URL, cleaned, if a person accepts it; "" if not."""
+    import urllib.parse
+    url = url.strip().rstrip("/")
+    parts = urllib.parse.urlparse(url)
+    if parts.scheme not in ("http", "https") or not parts.hostname:
+        print("  A relay URL starts with https:// (or http:// on this machine).")
+        return ""
+    local = parts.hostname in ("localhost", "127.0.0.1", "::1") or installer()._is_local_relay(url)
+    if parts.scheme == "http" and not local:
+        print("  ! Not https: its sign-in tokens and everything not end-to-end encrypted travel in the "
+              "clear. Ask its operator for the https address.")
+        if not ask("  Use it anyway?", False):
+            return ""
+    h = health(timeout=5, url=url)
+    if h:
+        print(f"  ✓ answering — {_relay_brief(h)}")
+    elif not ask("  It is not answering now. Use it anyway?", False):
+        return ""
+    return url
+
+
+def _choose_relay(current: str = "") -> str:
+    """Ask which relay the agent joins. Returns its URL."""
+    used = _relays_in_use()
+    candidates = list(dict.fromkeys([u for u in (current, *used, os.getenv("EMPORIA_RELAY_URL", "").rstrip("/"),
+                                                 LOCAL_RELAY) if u]))
+    up = {u: health(timeout=2, url=u) for u in candidates}
+    options, default = [], None
+    for u in candidates:
+        if not (up[u] or used.get(u) or u == current):
+            continue
+        who = used.get(u, [])
+        desc = (f"{u} — " + (_relay_brief(up[u]) if up[u] else "not answering now")
+                + (f"; used by {', '.join(who)}" if who else "") + ("  (its current relay)" if u == current else ""))
+        options.append((f"use:{u}", desc))
+        if default is None and up[u]:
+            default = len(options) - 1
+    if not up.get(LOCAL_RELAY):
+        options.append(("local", "Run a relay on this machine — to test, or to host your own (emporia relay start)"))
+    options.append(("remote", "A relay someone else runs — I have its URL"))
+    options.append(("later", f"Decide later — {current or LOCAL_RELAY} for now; change any time with "
+                             f"`emporia relay use URL NAME`"))
+    print("\nWhich relay should it join? Agents meet, play and trade only on the same relay "
+          "(or relays linked to it).")
+    if not up.get(LOCAL_RELAY) and default is None:
+        default = [k for k, _ in options].index("local")
+    choice = choose("Relay:", options, default or 0)
+    if choice.startswith("use:"):
+        return choice[4:]
+    if choice == "local":
+        os.environ["EMPORIA_RELAY_URL"] = LOCAL_RELAY
+        cmd_relay(argparse.Namespace(action="start", lines=40))
+        print("  Payment rails for it (testnet USDC, escrow): emporia setup relay   — see docs/RUNBOOK.md")
+        return LOCAL_RELAY
+    if choice == "remote":
+        print("  There is no public directory of relays yet: ask the relay's operator for its URL.")
+        print("  Before trusting one, read (also in the dashboard's Docs tab):")
+        for line in RELAY_READING:
+            print(f"    · {line}")
+        for _ in range(3):
+            url = _check_relay_url(prompt("Relay URL"))
+            if url:
+                return url
+        print(f"  Keeping {current or LOCAL_RELAY} for now: emporia relay use URL NAME when you have it.")
+        return current or LOCAL_RELAY
+    return current or LOCAL_RELAY
+
+
+def _set_agent_relay(profile: Path, url: str) -> None:
+    """Point an agent at `url`: its MCP entry, its profile env and its .env."""
+    inst = installer()
+    cfg_path = profile / "config.yaml"
+    cfg = inst.load_yaml(cfg_path)
+    entry = (cfg.get("mcp_servers") or {}).get("emporia") or {}
+    entry.setdefault("env", {})["EMPORIA_RELAY_URL"] = url
+    if isinstance(cfg.get("env"), dict) and "EMPORIA_RELAY_URL" in cfg["env"]:
+        cfg["env"]["EMPORIA_RELAY_URL"] = url
+    inst.save_yaml(cfg_path, cfg)
+    merge_env_file(profile / ".env", {"EMPORIA_RELAY_URL": url})
+
+
+def cmd_relay_use(args: argparse.Namespace) -> int:
+    """`emporia relay use URL [NAME ...]`: move agents to another relay."""
+    agents = {p.name: p for p, _ in _agent_profiles(profiles_root())}
+    if not args.url:
+        print("relay use: give the relay's URL — emporia relay use https://relay.example NAME")
+        return 1
+    url = _check_relay_url(args.url) if _TTY else args.url.strip().rstrip("/")
+    if not url:
+        return 1
+    names = args.names or (choose_many("Which agents move to it?", [(n, n) for n in agents], set())
+                           if _TTY else [])
+    unknown = [n for n in names if n not in agents]
+    if not names or unknown:
+        print(f"relay use: name the agents ({', '.join(agents) or 'none set up'})"
+              + (f"; not an Emporia agent: {', '.join(unknown)}" if unknown else ""))
+        return 1
+    for n in names:
+        _set_agent_relay(agents[n], url)
+        print(f"  {n} → {url}")
+    print("  Same identity key, so it is the same agent there; it registers on its next start. Its games, "
+          "rooms and history stay on the relay it left.")
+    installer().print_restart_instructions([agents[n] for n in names])
+    return 0
 
 
 # ─── doctor ──────────────────────────────────────────────────────────────────
@@ -370,6 +508,9 @@ def doctor_agent(rep: Report, profile: Path, entry: dict, relay_up: bool) -> Non
                f"{', '.join(label(n) for n in pay_nets)}, "
                f"≤ ${int(dotenv.get('EMPORIA_X402_MAX_PAYMENT_CENTS', 1000)) / 100:.2f} each, "
                f"≤ ${int(dotenv.get('EMPORIA_X402_MAX_DAILY_CENTS', 5000)) / 100:.2f}/day")
+    from emporia.networks import mainnet_unlocked
+    if (has["evm"] or has["svm"]) and mainnet_unlocked(dotenv):
+        rep.warn("mainnet unlocked — it may pay real money", f"emporia wallet mainnet {name} --lock")
     if _phrase_state(profile, agent_id) in ("file", "env"):
         rep.warn("its recovery phrase is stored beside its keys — not backed up yet",
                  f"emporia wallet backup {name}   (in your own terminal, never through an agent)")
@@ -533,6 +674,12 @@ def cmd_setup_agent(args: argparse.Namespace) -> int:
           f"key, and Emporia (MCP, skill, platform plugin, own keys).")
     sync_model = args.sync_model or (existing and me is not None and me != profile and ask(
         f"Use the same model and API key as {me.name if me else 'this profile'}?", True))
+    # P177: which relay it joins — one found, one run here, or a remote one.
+    current_relay = ((inst.load_yaml(profile / "config.yaml").get("mcp_servers") or {}).get("emporia") or {}) \
+        .get("env", {}).get("EMPORIA_RELAY_URL", "") if existing else ""
+    chosen_relay = (args.relay_url or (_choose_relay(current_relay) if _TTY else "")
+                    or current_relay or relay_url()).rstrip("/")
+    os.environ["EMPORIA_RELAY_URL"] = chosen_relay
     print("\nFirst, its role. This decides which of its own tools could ever reach its keys.")
     # An existing agent keeps its role unless told otherwise: re-running setup
     # (to update its plugin, say) must not quietly take a developer's terminal.
@@ -575,13 +722,17 @@ def cmd_setup_agent(args: argparse.Namespace) -> int:
         families = ["evm", "svm"]
     if mode == "found":
         families = sorted({fam for f in found for fam in (("evm", "svm") if f["kind"] == "phrase" else (f["kind"],))})
+    from emporia.networks import mainnet_unlocked
+    unlocked = existing and mainnet_unlocked(inst.harvest_env(profile))
     if args.pay_networks:
         from emporia.networks import resolve_list
+        if _locked_out(resolve_list(args.pay_networks), unlocked, name if existing else ""):
+            return 1
         networks = ",".join(resolve_list(args.pay_networks))
     elif families and _TTY:
-        networks = ",".join(_choose_networks(families, []))
+        networks = ",".join(_choose_networks(families, [], unlocked))
     else:   # P160: what this relay takes, on the wallets it has
-        networks = ",".join(_default_networks(families))
+        networks = ",".join(_default_networks(families, unlocked))
     wallet = bool(families)
     if wallet and _TTY and not (args.wallet or args.solana):
         args.max_payment_cents = prompt_cents("Largest single payment", args.max_payment_cents)
@@ -589,7 +740,7 @@ def cmd_setup_agent(args: argparse.Namespace) -> int:
         args.approve_above_cents = prompt_cents(
             "Ask you before any single payment above (0 = always ask)", args.approve_above_cents)
     inst.create_profile(
-        name=name, relay_url=relay_url(), current_profile_dir=me, inherit_env=args.inherit_env,
+        name=name, relay_url=chosen_relay, current_profile_dir=me, inherit_env=args.inherit_env,
         sync_model=bool(sync_model), x402_pay_networks=networks,
         x402_max_payment_cents=args.max_payment_cents if wallet else None,
         x402_max_daily_cents=args.max_daily_cents if wallet else None,
@@ -665,8 +816,11 @@ def _setup_summary(profile: Path, name: str, role: str) -> None:
     print(f"  Terminal    {backend}" + ("  (same disk as its keys)" if backend == "local" and role != "marketplace" else ""))
     print(f"  Keys        {'in its .env (hidden from its tools by Hermes)' if dotenv.get('EMPORIA_KEY_STORAGE') == 'env' else 'key files'}")
     print(f"  Wallets     {', '.join(wallets) or 'none — it cannot pay or be paid (add one any time)'}")
+    print(f"  Relay       {dotenv.get('EMPORIA_RELAY_URL') or relay_url()}")
     if wallets:
-        print(f"  Pays on     {', '.join(label(n) for n in nets) or 'no network yet'}")
+        from emporia.networks import mainnet_unlocked
+        print(f"  Pays on     {', '.join(label(n) for n in nets) or 'no network yet'}"
+              f"  ({'MAINNET UNLOCKED — real money' if mainnet_unlocked(dotenv) else 'testnets only; mainnet locked'})")
         print(f"  Limits      ${int(dotenv.get('EMPORIA_X402_MAX_PAYMENT_CENTS', 1000)) / 100:.2f} a payment, "
               f"${int(dotenv.get('EMPORIA_X402_MAX_DAILY_CENTS', 5000)) / 100:.2f} a day; "
               + (f"asks you above ${int(approve) / 100:.2f}" if approve else "never asks you"))
@@ -1038,7 +1192,7 @@ PHRASE_BEGIN = "──── RECOVERY PHRASE ────"
 PHRASE_END = "──── END OF RECOVERY PHRASE ────"
 
 
-def _can_reveal() -> bool:
+def _persons_terminal() -> bool:
     """A person's own terminal: interactive, and not a command an agent's
     terminal tool started (Hermes marks those with its session variables)."""
     return _TTY and not any(k.startswith("HERMES_SESSION_") for k in os.environ)
@@ -1087,6 +1241,7 @@ WALLET_MODES = [
     ("phrase", "EVM + Solana from one recovery phrase — shown once for you to write down; "
                "imports into MetaMask and Phantom"),
     ("separate", "EVM + Solana with separate keys — a lost or leaked key affects one wallet only"),
+    ("solana", "Solana wallet only — USDC on Solana"),
     ("import", "Import a recovery phrase you already have (typed, never shown)"),
     ("byo", "Use any wallet you already have — a phrase, a private key, a key file, an env var, "
             "1Password or Bitwarden; copied in or linked"),
@@ -1129,7 +1284,7 @@ def _make_wallets(profile: Path, agent_id: str, mode: str) -> dict[str, str]:
                 return {f: a for f, a in have.items() if a}
             r = _store_secret(profile, agent_id, "phrase", phrase)
             kept = False
-        elif _can_reveal():
+        elif _persons_terminal():
             from emporia import agent_wallet as aw
             phrase = aw.new_phrase()
             kept = not _show_phrase(phrase, profile.name)
@@ -1199,7 +1354,7 @@ def _backup_phrase(profile: Path, agent_id: str) -> int:
         print(f"{name} keeps no recovery phrase here — it was backed up already, or its wallets use "
               f"separate keys.")
         return 0
-    if not _can_reveal():
+    if not _persons_terminal():
         print("wallet backup: run this yourself, in your own terminal. It shows the recovery phrase, "
               "which must never reach an agent or a log.")
         return 1
@@ -1422,18 +1577,33 @@ def _register_addresses(profile: Path, agent_id: str, evm: str, svm: str) -> int
     return 0 if r.returncode == 0 and "registered" in r.stdout else 1
 
 
-def _choose_networks(families: list[str], current: list[str]) -> list[str]:
-    """Where it may pay: ticked are the current ones, else what the relay takes."""
-    from emporia.networks import NETWORKS, family, label
+def _choose_networks(families: list[str], current: list[str], mainnet: bool = False) -> list[str]:
+    """Where it may pay: ticked are the current ones, else what the relay takes.
+    P177: testnets only, unless mainnet is unlocked for this agent."""
+    from emporia.networks import NETWORKS, family, is_testnet, label
     h = health() or {}
     offered = list(dict.fromkeys([*(h.get("x402_networks") or []),
                                   *([h["tempo_network"]] if h.get("tempo_network") else [])]))
     candidates = [n for n in dict.fromkeys([*offered, *current,
-                                            *(k for k, v in NETWORKS.items() if v.testnet)])
-                  if family(n) in families]
-    ticked = set(current) or set(_default_networks(families))
+                                            *(k for k, v in NETWORKS.items() if v.testnet or mainnet)])
+                  if family(n) in families and (mainnet or is_testnet(n))]
+    ticked = set(current) or set(_default_networks(families, mainnet))
     opts = [(n, f"{label(n)}{'  — this relay takes it' if n in offered else ''}") for n in candidates]
+    if not mainnet:
+        print("  Testnets only: mainnet (real money) is locked. Its operator can unlock it later, in "
+              "their own terminal: emporia wallet mainnet NAME")
     return choose_many("Where may it pay? (it never pays anywhere else)", opts, ticked) if opts else []
+
+
+def _locked_out(nets: list[str], mainnet: bool, name: str) -> bool:
+    """True (and says why) when `nets` names a mainnet network while mainnet is locked."""
+    from emporia.networks import is_testnet, label
+    live = [n for n in nets if not is_testnet(n)]
+    if live and not mainnet:
+        print(f"  {', '.join(label(n) for n in live)}: mainnet (real money) is locked for {name or 'a new agent'}. "
+              f"Test on testnets first; to unlock, in your own terminal: emporia wallet mainnet {name or 'NAME'}")
+        return True
+    return False
 
 
 # P169: bring your own keys. Wallet keys an operator already has, under the
@@ -1553,16 +1723,18 @@ def _register_wallets(profile: Path, agent_id: str, families: list[str]) -> None
               f"{line.split(' ', 1)[-1]}")
 
 
-def _default_networks(families: list[str]) -> list[str]:
+def _default_networks(families: list[str], mainnet: bool = False) -> list[str]:
     """What an agent pays on by default: the relay's x402 networks it has a
-    wallet for, plus Tempo for an EVM wallet; Base Sepolia when the relay is
-    not answering."""
-    from emporia.networks import family
+    wallet for, plus Tempo for an EVM wallet; Base Sepolia (Solana devnet)
+    when the relay offers none. Testnets only while mainnet is locked."""
+    from emporia.networks import family, is_testnet
     h = health() or {}
     nets = [n for n in (h.get("x402_networks") or []) if family(n) in families]
     if "evm" in families and h.get("tempo_network"):
         nets.append(h["tempo_network"])
-    return nets or (["eip155:84532"] if "evm" in families else [])
+    nets = [n for n in nets if mainnet or is_testnet(n)]
+    return nets or ((["eip155:84532"] if "evm" in families else [])
+                    + (["solana:EtWTRABZaYq6iMfeYKouRu166VU2xqa1"] if families == ["svm"] else []))
 
 
 def _pick_agent() -> str:
@@ -1573,7 +1745,7 @@ def _pick_agent() -> str:
 
 
 def cmd_wallet(args: argparse.Namespace) -> int:
-    from emporia.networks import NETWORKS, family, label, resolve_list, stablecoin_balance
+    from emporia.networks import NETWORKS, family, label, mainnet_unlocked, resolve_list, stablecoin_balance
 
     if not args.name:
         args.name = _pick_agent() if _TTY else ""
@@ -1588,6 +1760,7 @@ def cmd_wallet(args: argparse.Namespace) -> int:
             ("import", "Bring in a wallet it already has (phrase, private key, key file)"),
             ("store", "Move its wallet keys into its .env (Hermes hides .env from the agent's tools)"),
             ("backup", "Write down its recovery phrase, then remove it from this machine"),
+            ("mainnet", "Allow or stop real-money (mainnet) payments — testnets only by default"),
             ("register", "Register where it is paid (its wallets, or an address you give)"),
         ]) if _TTY else "show"
     profile, agent_id, env = _agent(args.name)
@@ -1605,8 +1778,7 @@ def cmd_wallet(args: argparse.Namespace) -> int:
             if before["evm"] and before["svm"]:
                 print(f"{args.name} already has both wallets; keys are never replaced.")
                 return 0
-            modes = WALLET_MODES[1:] + ([("solana", "Solana wallet only — USDC on Solana")]
-                                        if not before["svm"] else [])
+            modes = [m for m in WALLET_MODES[1:] if m[0] != "solana" or not before["svm"]]
             mode = choose("Which wallets?", modes, [k for k, _ in modes].index(default))
         elif not (args.wallet or args.solana or args.import_phrase):
             mode = "evm"
@@ -1632,6 +1804,9 @@ def cmd_wallet(args: argparse.Namespace) -> int:
 
     if args.action == "backup":    # P175: show a stored phrase once, then remove it
         return _backup_phrase(profile, agent_id)
+
+    if args.action == "mainnet":   # P177: real money, only by a person, with a warning
+        return _set_mainnet(profile, agent_id, args.name, dotenv, lock=args.lock)
 
     if args.action == "store":     # P165: key files into the profile .env
         from emporia import agent_wallet as aw
@@ -1671,7 +1846,7 @@ def cmd_wallet(args: argparse.Namespace) -> int:
                                                   or args.approve_above_cents is not None):
         fams = [f for f in ("evm", "svm") if _wallet_address(profile, agent_id, f == "svm")]
         current = resolve_list(dotenv.get("EMPORIA_X402_PAY_NETWORKS", ""))
-        args.networks = ",".join(_choose_networks(fams, current)) or ""
+        args.networks = ",".join(_choose_networks(fams, current, mainnet_unlocked(dotenv))) or ""
         args.max_payment_cents = prompt_cents(
             "Largest single payment", int(dotenv.get("EMPORIA_X402_MAX_PAYMENT_CENTS", 1000)))
         args.max_daily_cents = prompt_cents(
@@ -1687,6 +1862,8 @@ def cmd_wallet(args: argparse.Namespace) -> int:
             if unknown:
                 print(f"wallet: unknown network(s) {', '.join(unknown)} — use a CAIP-2 id or one of "
                       f"base-sepolia, base, solana-devnet, solana, tempo-moderato, tempo")
+                return 1
+            if _locked_out(nets, mainnet_unlocked(dotenv), args.name):
                 return 1
             for n in nets:
                 if not _wallet_address(profile, agent_id, family(n) == "svm"):
@@ -1724,6 +1901,7 @@ def cmd_wallet(args: argparse.Namespace) -> int:
             print(f"          pays on {label(n)}" + (f": {bal:,.2f} USDC" if bal is not None else ""))
     if not allowed:
         print(f"  pays on no network — emporia wallet limits {args.name} --networks base-sepolia")
+    print(f"  mainnet {'UNLOCKED — it may pay real money' if mainnet_unlocked(dotenv) else 'locked — testnets only'}")
     approve = dotenv.get("EMPORIA_PAYMENT_APPROVAL_CENTS", "")
     print(f"  limits  ${int(dotenv.get('EMPORIA_X402_MAX_PAYMENT_CENTS', 1000)) / 100:.2f} a payment, "
           f"${int(dotenv.get('EMPORIA_X402_MAX_DAILY_CENTS', 5000)) / 100:.2f} a day; "
@@ -1733,6 +1911,58 @@ def cmd_wallet(args: argparse.Namespace) -> int:
         offered = [label(n) for n in h.get("x402_networks") or []]
         print(f"  relay   takes USDC on {', '.join(offered) or 'no network'}"
               + (f"; Tempo on {label(h['tempo_network'])}" if h.get("tempo_network") else ""))
+    return 0
+
+
+def _set_mainnet(profile: Path, agent_id: str, name: str, dotenv: dict[str, str], lock: bool) -> int:
+    """P177: let an agent pay real money, or stop it. Unlocking is a person's
+    decision, made in their own terminal after a warning; locking is always
+    allowed and drops its mainnet networks."""
+    from emporia.networks import MAINNET_VAR, is_testnet, label, mainnet_unlocked, resolve_list
+    nets = resolve_list(dotenv.get("EMPORIA_X402_PAY_NETWORKS", ""))
+    if lock:
+        keep = [n for n in nets if is_testnet(n)]
+        merge_env_file(profile / ".env", {MAINNET_VAR: "0", "EMPORIA_X402_PAY_NETWORKS": ",".join(keep)})
+        dropped = [label(n) for n in nets if n not in keep]
+        print(f"{name}: mainnet locked — it pays on testnets only"
+              + (f" (no longer on {', '.join(dropped)})" if dropped else "") + ".")
+        installer().print_restart_instructions([profile])
+        return 0
+    if mainnet_unlocked(dotenv):
+        print(f"{name} may already pay on mainnet. Lock it again: emporia wallet mainnet {name} --lock")
+        return 0
+    if not _persons_terminal():
+        print("wallet mainnet: run this yourself, in your own terminal — only a person turns on real money.")
+        return 1
+    role, backend = profile_role(profile, True), _backend(profile)
+    if role != "marketplace" and backend == "local":
+        print(f"wallet mainnet: {name} has a wallet and a terminal on the same disk as its keys. Make it a "
+              f"marketplace agent first (emporia role {name} marketplace), or give it a sandboxed backend.")
+        return 1
+    cap, day = int(dotenv.get("EMPORIA_X402_MAX_PAYMENT_CENTS", 1000)), int(dotenv.get("EMPORIA_X402_MAX_DAILY_CENTS", 5000))
+    approve = dotenv.get("EMPORIA_PAYMENT_APPROVAL_CENTS", "")
+    print(f"""
+  Mainnet means real money. Before {name} may pay with it:
+    · Test on testnets first. Emporia is young and has not been audited.
+    · A payment cannot be taken back, and a staked game can be lost. Games of skill for money
+      are regulated in many places — check yours.
+    · Its caps still apply: ${cap / 100:.2f} a payment, ${day / 100:.2f} a day. Keep them small.
+    · {'It asks you before any payment above $' + format(int(approve) / 100, '.2f') if approve
+       else 'It never asks you before paying — set an approval threshold below.'}
+    · Fund its wallet with only what you are ready to lose.""")
+    if not approve or int(approve) > 500:
+        merge_env_file(profile / ".env", {"EMPORIA_PAYMENT_APPROVAL_CENTS": str(
+            prompt_cents("Ask you before any single payment above (0 = always ask)", 0))})
+    if prompt(f"Type the agent's name ({name}) to let it pay real money").strip() != name:
+        print("Not unlocked: it still pays on testnets only.")
+        return 1
+    merge_env_file(profile / ".env", {MAINNET_VAR: "1"})
+    fams = [f for f in ("evm", "svm") if _wallet_address(profile, agent_id, f == "svm")]
+    chosen = _choose_networks(fams, nets, mainnet=True)
+    merge_env_file(profile / ".env", {"EMPORIA_X402_PAY_NETWORKS": ",".join(chosen)})
+    print(f"{name}: mainnet unlocked; pays on {', '.join(label(n) for n in chosen) or 'no network'}. "
+          f"Lock it again any time: emporia wallet mainnet {name} --lock")
+    installer().print_restart_instructions([profile])
     return 0
 
 
@@ -2163,8 +2393,10 @@ def build_parser() -> argparse.ArgumentParser:
     d.add_argument("--profiles-root", default="")
     d.set_defaults(func=cmd_doctor)
 
-    r = sub.add_parser("relay", help="start, stop or inspect this machine's relay")
-    r.add_argument("action", choices=["start", "stop", "status", "logs"])
+    r = sub.add_parser("relay", help="start, stop or inspect this machine's relay; `use` moves agents to another")
+    r.add_argument("action", choices=["start", "stop", "status", "logs", "use"])
+    r.add_argument("url", nargs="?", default="", help="use: the relay's URL")
+    r.add_argument("names", nargs="*", help="use: the agents that move to it")
     r.add_argument("--lines", type=int, default=40)
     r.set_defaults(func=cmd_relay)
 
@@ -2195,7 +2427,11 @@ def build_parser() -> argparse.ArgumentParser:
                     help="use wallet keys already on this machine ($EVM_PRIVATE_KEY, $SOLANA_PRIVATE_KEY, "
                          "$MNEMONIC, ~/.config/solana/id.json, …): link env vars, or copy them in")
     ag.add_argument("--pay-networks", default="",
-                    help="where it may pay, e.g. base-sepolia,solana-devnet (default: what the relay takes)")
+                    help="where it may pay, e.g. base-sepolia,solana-devnet (default: what the relay takes; "
+                         "testnets only until `emporia wallet mainnet NAME`)")
+    ag.add_argument("--relay-url", default="",
+                    help="the relay it joins (default: asked; without a terminal, its current one or "
+                         "$EMPORIA_RELAY_URL)")
     ag.add_argument("--max-payment-cents", type=int, default=1000)
     ag.add_argument("--max-daily-cents", type=int, default=2500)
     ag.add_argument("--sync-model", action="store_true",
@@ -2228,7 +2464,7 @@ def build_parser() -> argparse.ArgumentParser:
     idp.set_defaults(func=cmd_identity)
     wl = sub.add_parser("wallet", help="an agent's wallets: show, create, register, limits")
     wl.add_argument("action", nargs="?", default="",
-                    choices=["", "show", "create", "import", "store", "backup", "register", "limits"])
+                    choices=["", "show", "create", "import", "store", "backup", "mainnet", "register", "limits"])
     wl.add_argument("name", nargs="?", default="", help="the agent's Hermes profile")
     wl.add_argument("--evm", action="store_true", help="create: the EVM wallet (Base, Tempo) — the default")
     wl.add_argument("--solana", action="store_true", help="create: the Solana wallet")
@@ -2246,6 +2482,8 @@ def build_parser() -> argparse.ArgumentParser:
                     help="limits: ask the operator before any payment above this")
     wl.add_argument("--offline", action="store_true", help="show: skip the balance lookups")
     wl.add_argument("--remove-files", action="store_true", help="store: remove the key files after")
+    wl.add_argument("--lock", action="store_true",
+                    help="mainnet: lock it again (testnets only; drops mainnet networks)")
     wl.add_argument("--key-file", default="",
                     help="import: a file holding the key (a solana-keygen JSON with --solana, or a hex EVM key)")
     wl.add_argument("--from-env", default="", help="import: copy the key from this environment variable once")

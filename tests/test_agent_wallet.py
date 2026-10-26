@@ -183,6 +183,7 @@ def test_mcp_x402_wallet_info_returns_no_key_material(wallet_env):
     note = info.pop("note")
     # P160: each network in words — allowed here, the wallet it needs is present.
     assert info.pop("key_storage") == {"evm": "key file"}
+    assert info.pop("mainnet").startswith("locked"), "P177: testnets only until unlocked"
     [net] = info.pop("networks")
     assert (net["network"], net["name"], net["allowed"], net["wallet"]) == \
         (NET, "Base Sepolia (testnet)", True, True)

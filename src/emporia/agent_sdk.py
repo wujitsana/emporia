@@ -101,6 +101,7 @@ class EmporiaAgent:
         timeout: float = 30.0,
         x402_private_key: str | None = None,
         x402_networks: list[str] | None = None,
+        allow_mainnet: bool = False,
     ) -> None:
         self.relay_url = relay_url.rstrip("/")
         self.agent_id = agent_id
@@ -114,9 +115,15 @@ class EmporiaAgent:
         # see. Holding it is not enough to spend it: every paid method still
         # requires `pay_with_x402=True` per call.
         self._x402_private_key = x402_private_key
-        # An allowlist of CAIP-2 networks this agent will sign on, defaulting to
-        # "any EVM network the relay offers". A funded-on-testnet agent should
-        # set this rather than trust a relay not to advertise mainnet.
+        # An allowlist of CAIP-2 networks this agent will sign on. P177:
+        # testnets only — the known testnets by default, and mainnet networks
+        # dropped from a given list — unless `allow_mainnet` (or
+        # EMPORIA_X402_MAINNET) says real money is intended.
+        from emporia.networks import NETWORKS, is_testnet, mainnet_unlocked
+        if not (allow_mainnet or mainnet_unlocked()):
+            x402_networks = [n for n in (x402_networks if x402_networks is not None
+                                         else [k for k, v in NETWORKS.items() if v.testnet])
+                             if is_testnet(n)]
         self._x402_networks = x402_networks
         self._bearer_token: str | None = None
         self._bearer_exp: float = 0.0
