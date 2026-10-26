@@ -152,7 +152,8 @@ _LOOPBACK = {"127.0.0.1", "localhost", "::1"}
 
 
 def in_container() -> bool:
-    return any(Path(p).exists() for p in ("/.dockerenv", "/run/.containerenv"))
+    from emporia.relay_host import in_container as _in_container
+    return _in_container()
 
 
 def bind_refusal(host: str) -> str:

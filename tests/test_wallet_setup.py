@@ -875,6 +875,7 @@ def test_relay_host_as_a_service_on_a_server_of_its_own(profiles, monkeypatch, c
     with patch.dict(os.environ):
         assert cli.main(["setup", "agent", "warden"]) == 0
     monkeypatch.setattr("shutil.which", lambda _: None)            # nothing runs here: commands are shown
+    monkeypatch.setattr("emporia.relay_host.in_container", lambda: False)   # this test may run in one
     folder = tmp_path / "emporia-relay"
     _typing(monkeypatch, "", "n")                                  # Nous · no payments
     assert cli.main(["relay", "host", "--run", "service", "--dir", str(folder), "--domain", "relay.example.com",
@@ -889,3 +890,11 @@ def test_relay_host_as_a_service_on_a_server_of_its_own(profiles, monkeypatch, c
     assert env["EMPORIA_NO_DOTENV"] == "1" and env["EMPORIA_RELAY_HOST"] == "127.0.0.1"
     assert env["EMPORIA_KEYS_DIR"] == str(folder / "data" / "keys") and env["EMPORIA_AGENT_ID"]
     assert _env_of(root / "warden")["EMPORIA_RELAY_URL"] == "http://127.0.0.1:8089"
+
+
+def test_relay_host_asks_how_to_run_only_when_there_is_a_choice():
+    from emporia import relay_host as rh
+    assert rh.ways_to_run(True, True, True)[0] == ["docker"]        # Hermes in a container: Docker on the host
+    assert rh.ways_to_run(False, True, False)[0] == ["docker"]
+    assert rh.ways_to_run(False, False, True)[0] == ["service"]
+    assert rh.ways_to_run(False, True, True) == (["docker", "service"], "")

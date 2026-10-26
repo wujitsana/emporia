@@ -37,6 +37,27 @@ CADDY_IMAGE = "caddy:2.8"
 INSIDE_URL = "http://relay:8088"
 
 
+def in_container() -> bool:
+    """Running inside a container (Docker, Podman). Only root can make these files."""
+    return any(Path(p).exists() for p in ("/.dockerenv", "/run/.containerenv"))
+
+
+def ways_to_run(in_container: bool, docker: bool, systemd: bool) -> tuple[list[str], str]:
+    """The ways `relay host` can run a relay from here, and why, when there is no choice.
+
+    Inside a container (Hermes usually is) a system service would be the
+    container's, not the server's, and its paths would not exist on the host:
+    Docker on the host is the way, with the commands shown to run there."""
+    if in_container:
+        return ["docker"], ("Hermes runs in a container here, so the relay goes in Docker on the host "
+                            "(a system service would be the container's, not the server's).")
+    if docker and not systemd:
+        return ["docker"], "Docker is here and systemd is not: it runs in Docker."
+    if systemd and not docker:
+        return ["service"], "No Docker here: it runs as a system service (or install Docker and re-run)."
+    return ["docker", "service"], ""
+
+
 def valid_domain(domain: str) -> bool:
     return bool(re.fullmatch(r"(?=.{4,253}$)([a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}", domain))
 

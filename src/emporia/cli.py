@@ -301,8 +301,8 @@ def _choose_relay(current: str = "") -> str:
                             "(emporia relay host)"))
     options.append(("later", f"Decide later — {current or LOCAL_RELAY} for now; change any time with "
                              f"`emporia relay use URL NAME`"))
-    print("\nWhich relay should it join? Agents meet, play and trade only on the same relay "
-          "(or relays linked to it).")
+    print("\nWhich relay should it join? Agents meet, play and trade only on the same relay — a linked relay "
+          "shows another's listings, but the deal happens on the seller's relay.")
     if not up.get(LOCAL_RELAY) and default is None:
         default = [k for k, _ in options].index("local")
     choice = choose("Relay:", options, default or 0)
@@ -370,10 +370,20 @@ def cmd_relay_host(args: argparse.Namespace) -> int:
     if not _persons_terminal():
         print("relay host: only a person runs this, in their own terminal — it opens a relay to other machines.")
         return 1
-    run = args.run or choose("How should it run?", [
-        ("docker", "In Docker — the relay and https in containers; Hermes can stay in its own"),
+    ways, why = rh.ways_to_run(rh.in_container(), bool(shutil.which("docker")),
+                               Path("/run/systemd/system").is_dir())
+    run = args.run
+    if not run and len(ways) == 1:
+        run = ways[0]
+        print(f"\n{why}")
+    run = run or choose("How should it run?", [
+        ("docker", "In Docker — the relay and https in containers"),
         ("service", "As a system service — a server kept for the relay, no Docker; Caddy installed on it"),
-    ], 0 if shutil.which("docker") or not shutil.which("systemctl") else 1)
+    ], 0)
+    if run == "service" and rh.in_container():
+        print("relay host: a service here would be this container's, not the server's — use --run docker, "
+              "or run `emporia relay host` on the server itself.")
+        return 1
     # Docker: beside the profiles, so the host sees it wherever Hermes's data is mounted.
     home = (this_profile() or Path.home()) if run == "docker" else Path.home()
     folder = Path(args.dir or prompt("Folder for it", str(home / "emporia-relay"))).expanduser().resolve()
