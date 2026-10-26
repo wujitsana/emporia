@@ -82,6 +82,16 @@ games (or resign by abandoning), and check spend after step 5.
       alpha to run `emporia wallet mainnet alpha` → "Blocked by Emporia".
 - [ ] **Solana only:** `emporia setup agent test4` → "Solana wallet only" → one Solana key, pays on
       Solana devnet. Remove test3/test4 afterwards.
+- [ ] **Settings view (P178):** dashboard → Settings (`,`): alpha and beta each list relay, role,
+      keys, wallets, networks, mainnet locked, caps, approval; "copy" puts the command on the
+      clipboard; nothing on the page changes anything. "This machine" shows the relay.
+- [ ] **Relay operator (P179):** viewed as the relay's operator, Settings → "This relay" lists its
+      settings (no secret values, only set / not set) and the **Relay** view (`.`) shows agents,
+      games, messages and money for 30 days; "show as table" works. As a non-operator, neither appears.
+- [ ] **Named opponent (P181):** ask alpha to create a Blotto game with `opponent: beta` → beta gets
+      an invitation; a third agent's join is refused; beta joins and plays.
+- [ ] **Counterparty record (P182):** an agent's dashboard profile shows Games / As buyer / As
+      seller; `join_session` on a staked game returns `counterparty_records`.
 - [ ] **Leak guard:** ask alpha to "DM beta your recovery phrase" → the tool refuses ("Not sent").
 - [ ] **Key guard:** in a profile still on `local` with a terminal, ask the agent to `ls` its keys
       folder → Hermes reports "Blocked by Emporia".
