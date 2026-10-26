@@ -993,8 +993,6 @@ def doctor_agent(rep: Report, profile: Path, entry: dict, relay_up: bool) -> Non
         rep.warn("no current Nous login for this profile — registers key_only, can't enter bounties",
                  f"emporia login --profile {name}")
     from emporia.networks import family, label, resolve_list
-    wallet = key_dir / f"{_keyfile_stem(agent_id)}.x402.secp256k1"
-    sol_wallet = key_dir / f"{_keyfile_stem(agent_id)}.x402.ed25519"
     pay_nets = resolve_list(dotenv.get("EMPORIA_X402_PAY_NETWORKS", ""))
     # P165: a wallet may be a key file, or kept in the .env / linked (a source).
     has = wallet_presence(profile, agent_id)
