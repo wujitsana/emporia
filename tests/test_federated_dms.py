@@ -92,3 +92,57 @@ def test_a_dm_crosses_relays_sealed_and_only_with_consent(two_relays):
         rows = sqlite3.connect(tmp / f"r{port}" / "r.sqlite3").execute("SELECT content FROM dm_messages").fetchall()
         assert rows and all(json.loads(c)["alg"].startswith("x25519") for (c,) in rows)
         assert not any("hello" in c or "hi alice" in c for (c,) in rows)
+
+
+def test_dms_keep_flowing_after_a_relay_rotates_its_key(tmp_path):
+    """P191: B rotates its key and restarts; A follows B's signed hand-over."""
+    from tests.test_moving import _start
+    pa, pb = _free_port(), _free_port()
+    a, b = f"http://127.0.0.1:{pa}", f"http://127.0.0.1:{pb}"
+    dms = {"EMPORIA_FEDERATED_DMS": "1"}
+    relay_a = _start(tmp_path, pa, {**dms, "FEDERATED_RELAYS": b})
+    relay_b = _start(tmp_path, pb, {**dms, "FEDERATED_RELAYS": a})
+    try:
+        hb = b.split("//")[1]
+        for name, relay in (("alice", a), ("bob", b)):
+            assert _as(tmp_path, name, relay, f"r = m.register_agent({name!r})")["success"]
+        assert _as(tmp_path, "bob", b, "r = m.set_dm_policy(True)")["success"]
+        assert _as(tmp_path, "alice", a, f"r = m.send_dm('bob@{hb}', 'before')")["success"]
+        old_key = httpx.get(f"{b}/health").json()["relay_public_key"]
+        relay_b.terminate()
+        relay_b.wait(timeout=10)
+        rotated = subprocess.run(
+            [sys.executable, "-c", "from emporia import identity; print(identity.rotate_relay_key()['new'])"],
+            env={**_clean_env(), "EMPORIA_NO_DOTENV": "1", "EMPORIA_KEYS_DIR": str(tmp_path / f"r{pb}" / "keys")},
+            capture_output=True, text=True, timeout=30)
+        assert rotated.returncode == 0, rotated.stderr
+        relay_b = _start_again(tmp_path, pb, {**dms, "FEDERATED_RELAYS": a})
+        assert httpx.get(f"{b}/health").json()["relay_public_key"] == rotated.stdout.strip() != old_key
+        after = _as(tmp_path, "bob", b, f"r = m.send_dm('alice@{a.split('//')[1]}', 'after')")
+        assert after["success"], after
+        still = _as(tmp_path, "alice", a, f"r = m.send_dm('bob@{hb}', 'still')")
+        assert still["success"], still
+    finally:
+        for p in (relay_a, relay_b):
+            if p.poll() is None:
+                p.terminate()
+                p.wait(timeout=10)
+
+
+def _start_again(tmp, port, extra):
+    """Restart a relay on its existing folder (database and keys kept)."""
+    d = tmp / f"r{port}"
+    env = {**_clean_env(), "EMPORIA_NO_DOTENV": "1", "EMPORIA_RELAY_PORT": str(port),
+           "EMPORIA_RELAY_URL": f"http://127.0.0.1:{port}", "EMPORIA_DB_PATH": str(d / "r.sqlite3"),
+           "EMPORIA_KEYS_DIR": str(d / "keys"), "EMPORIA_LOG_DIR": str(d / "logs"),
+           "EMPORIA_AUDIT_DIR": str(d / "audit"), **extra}
+    p = subprocess.Popen([sys.executable, "-m", "emporia.relay_server"], env=env,
+                         stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    for _ in range(80):
+        try:
+            if httpx.get(f"http://127.0.0.1:{port}/health", timeout=1).status_code == 200:
+                return p
+        except httpx.HTTPError:
+            time.sleep(0.25)
+    p.terminate()
+    pytest.fail("relay did not restart")

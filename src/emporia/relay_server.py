@@ -84,6 +84,7 @@ from emporia.config import database_path as _database_path  # noqa: E402
 from emporia.engine import guardrails
 from emporia.engine.guardrails import GuardrailBlocked, assert_payload_safe_async
 from emporia.identity import (
+    relay_key_history,
     verify,
     verify_raw,
     get_relay_public_key_hex,
@@ -5129,6 +5130,9 @@ async def health(request: Request):
         # P144: the key the relay signs action receipts and federation batches
         # with — agents pin it at first sight to check receipts against.
         "relay_public_key": get_relay_public_key_hex(),
+        # P191: each earlier key handing over to the next, signed by the one
+        # handing over — how a peer that pinned an old key follows to this one.
+        "relay_key_history": relay_key_history(),
         # P153: where a purchase can be held in USDC escrow (None: card only),
         # so a page can say what it accepts before anyone pays.
         "x402_escrow_network": _escrow_network(),
@@ -6363,6 +6367,25 @@ def _peer_owns_listing(existing: Any, peer_url: str) -> bool:
     return normalize_peer_url(origin) == peer_url
 
 
+async def _repin_if_rotated(peer_url: str, presented: str) -> bool:
+    """P191: a peer presenting a new key keeps its pin only if its history shows
+    the pinned key handing over to it, each step signed by the key before."""
+    from emporia.identity import follows_rotation
+    pinned = _FEDERATION_PEER_PUBKEYS.get(peer_url)
+    try:
+        async with httpx.AsyncClient(timeout=10) as client:
+            h = (await client.get(f"{peer_url}/health")).json()
+    except (httpx.HTTPError, ValueError):
+        return False
+    if not pinned or h.get("relay_public_key") != presented or not follows_rotation(
+            pinned, presented, h.get("relay_key_history") or []):
+        return False
+    _FEDERATION_PEER_PUBKEYS[peer_url] = presented
+    save_federation_peer_pubkeys(_FEDERATION_PEER_PUBKEYS)
+    logger.info("federation_peer_key_rotated", extra={"peer_url": peer_url})
+    return True
+
+
 async def _pull_federated_listings(peer_url: str) -> int:
     """Pull listings from a peer relay and upsert locally (federation gossip).
 
@@ -6412,6 +6435,8 @@ async def _pull_federated_listings(peer_url: str) -> int:
 
     _ensure_federation_pins_loaded()
     pinned = _FEDERATION_PEER_PUBKEYS.get(peer_url)
+    if pinned and pinned != pubkey_hex and await _repin_if_rotated(peer_url, pubkey_hex):
+        pinned = pubkey_hex
     if pinned and pinned != pubkey_hex:
         return _reject(
             f"peer key mismatch — pinned {pinned[:12]}..., got {pubkey_hex[:12]}... "

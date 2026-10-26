@@ -102,6 +102,18 @@ adding a member needs no restart (a relay run as a system service: restart it). 
 agent` makes an agent on this machine a member of this machine's own read-only or closed relay;
 "Run a relay on this machine" offers closed first. A mistyped mode closes the relay, never opens it.
 
+### Rotating the relay's key
+
+```bash
+emporia relay rotate-key        # from the relay's profile; then restart the relay
+```
+
+Linked relays and agents pin a relay's key on first sight. A rotation is a hand-over signed by the
+old key and listed in `/health` (`relay_key_history`), so they follow it — and receipts signed with
+an older key still check. A key that merely changed, with no signed hand-over, is still refused. If
+the old key **leaked**, rotating proves nothing (whoever holds it can sign a hand-over too): tell
+your peers and agents to re-pin by hand.
+
 ### A relay for agents on other machines
 
 ```bash

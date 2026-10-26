@@ -553,6 +553,66 @@ def get_relay_public_key_hex() -> str:
     return pub_bytes.hex()
 
 
+# ─── P191: relay key rotation ────────────────────────────────────────────────
+# Peers and agents pin a relay's key on first sight, so a new key used to look
+# exactly like a hijack. A rotation is now a statement — "key OLD hands over to
+# key NEW at T" — signed by the old key, kept in a history the relay serves in
+# /health. Anyone holding the old pin can follow the chain to the new key, and
+# anything signed with an older key still checks against that key. It proves
+# continuity, not innocence: whoever holds an old key could sign a hand-over,
+# so a leaked key is a reason for peers to re-pin by hand, not to rotate.
+
+_RELAY_KEY_HISTORY_NAME = "_relay_key_history.json"
+
+
+def rotation_bytes(old_hex: str, new_hex: str, at: str) -> bytes:
+    body = {"type": "emporia:relay-key-rotation:v1", "old": old_hex, "new": new_hex, "at": at}
+    return b"emporia:relay-key-rotation:v1\n" + json.dumps(body, sort_keys=True, separators=(",", ":")).encode()
+
+
+def relay_key_history() -> list[dict[str, str]]:
+    path = KEY_DIR / _RELAY_KEY_HISTORY_NAME
+    try:
+        return json.loads(path.read_text())
+    except (OSError, ValueError):
+        return []
+
+
+def rotate_relay_key() -> dict[str, str]:
+    """Replace this relay's key with a new one, the hand-over signed by the old.
+    The running relay keeps signing with the old key until it restarts."""
+    from datetime import UTC, datetime
+    old_priv, old_pub = generate_or_load_relay_keypair()
+    new_priv = ed25519.Ed25519PrivateKey.generate()
+    new_hex = new_priv.public_key().public_bytes_raw().hex()
+    at = datetime.now(UTC).isoformat()
+    step = {"old": old_pub.hex(), "new": new_hex, "at": at,
+            "signature": old_priv.sign(rotation_bytes(old_pub.hex(), new_hex, at)).hex()}
+    history = [*relay_key_history(), step]
+    hist_path = KEY_DIR / _RELAY_KEY_HISTORY_NAME
+    tmp = hist_path.with_suffix(".tmp")
+    tmp.write_text(json.dumps(history, indent=1))
+    os.replace(tmp, hist_path)
+    key_path = KEY_DIR / _RELAY_KEY_PATH_NAME
+    key_path.unlink()            # the old private key goes; its public half stays in the history
+    _write_secret_atomically(key_path, new_priv.private_bytes_raw())
+    global _RELAY_KEYPAIR_CACHE
+    _RELAY_KEYPAIR_CACHE = None
+    return step
+
+
+def follows_rotation(pinned: str, current: str, history: list[dict[str, str]]) -> list[str]:
+    """The keys from `pinned` to `current`, each handed over by the one before —
+    or [] when the history does not lead there."""
+    chain, key = [pinned], pinned
+    for step in history:
+        if step.get("old") == key and verify_raw(rotation_bytes(step["old"], step.get("new", ""), step.get("at", "")),
+                                                 step.get("signature", ""), key):
+            key = step["new"]
+            chain.append(key)
+    return chain if key == current else []
+
+
 def receipt_bytes(body: dict) -> bytes:
     """The bytes an action receipt's signature covers (P140): its fields, minus
     the signature, as canonical JSON with a domain prefix so a receipt

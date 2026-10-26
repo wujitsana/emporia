@@ -59,7 +59,7 @@ _SENSITIVE = (
 # approvable from an agent's tools: `wallet backup` shows the recovery phrase,
 # `wallet mainnet` lets an agent pay real money, `relay host` (P183) opens a
 # relay to other machines.
-_PERSON_ONLY = (("wallet", {"backup", "mainnet"}), ("relay", {"host"}))
+_PERSON_ONLY = (("wallet", {"backup", "mainnet"}), ("relay", {"host", "rotate"}))
 # P183: other ways to open a relay to other machines — telling it to listen on
 # another address (in a command or a file the agent writes), or starting the
 # Docker relay or its system service. The relay itself refuses another address

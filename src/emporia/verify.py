@@ -40,7 +40,7 @@ def _payload_sha(payload: Any) -> str:
 
 
 def verify_game(*, session: dict[str, Any], log: list[dict[str, Any]], public_keys: dict[str, str],
-                receipts: list[dict[str, Any]], relay_key: str | None,
+                receipts: list[dict[str, Any]], relay_key: str | list[str] | None,
                 relay_verdict: dict[str, Any] | None) -> dict[str, Any]:
     findings: list[dict[str, Any]] = []
 
@@ -76,12 +76,16 @@ def verify_game(*, session: dict[str, Any], log: list[dict[str, Any]], public_ke
     for r in receipts:
         if r.get("session_id") != sid:
             continue
-        signed_by_relay = identity.verify_action_receipt(r, relay_key or r.get("relay_public_key"))
+        # P191: a relay that rotated its key signed older receipts with an older
+        # key in the chain the agent trusts; each receipt checks against its own.
+        trusted = [relay_key] if isinstance(relay_key, str) else list(relay_key or [])
+        named = r.get("relay_public_key")
+        signed_by_relay = identity.verify_action_receipt(r, named if named in trusted or not trusted else trusted[-1])
         if not signed_by_relay:
             note("receipt", FAIL, f"receipt for step {r.get('step_number')} is not signed by the relay key",
                  receipt=r)
             continue
-        if relay_key and r.get("relay_public_key") != relay_key:
+        if trusted and named not in trusted:
             note("receipt", FAIL, "receipt signed by a different relay key than the one pinned", receipt=r)
             continue
         logged = by_hash.get(r.get("block_hash"))

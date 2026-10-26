@@ -562,18 +562,53 @@ def _publish_relay_list(aid: str) -> str:
 
 def _pin_relay_key_for(relay: str, current: str | None) -> tuple[str | None, bool]:
     """`_pinned_relay_key` for any relay: the first key seen is kept; a
-    different one later is reported, never silently trusted."""
-    from emporia.identity import KEY_DIR
+    different one later is reported, never silently trusted — unless (P191) the
+    relay's own history shows the pinned key handing over to it."""
+    keys, changed = _trusted_relay_keys(relay, current)
+    return (keys[-1] if keys else None), changed
+
+
+def _trusted_relay_keys(relay: str, current: str | None,
+                        history: list[dict[str, str]] | None = None) -> tuple[list[str], bool]:
+    """(every key of this relay this agent trusts, oldest first; whether the one
+    it presents now is NOT among them). A rotation is followed only when signed
+    by the key it replaces, all the way from the pin."""
+    from emporia.identity import KEY_DIR, follows_rotation
     path = KEY_DIR / "relay_pins.json"
     pins = json.loads(path.read_text()) if path.exists() else {}
     pinned = pins.get(relay)
-    if pinned is None and current:
-        pins[relay] = pinned = current
+
+    def save(key: str) -> None:
+        pins[relay] = key
         KEY_DIR.mkdir(parents=True, exist_ok=True)
         fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
         with os.fdopen(fd, "w") as f:
             json.dump(pins, f)
-    return pinned, bool(current and pinned and current != pinned)
+
+    if pinned is None:
+        if current:
+            save(current)
+        return ([current] if current else []), False
+    if not current or current == pinned:
+        # Every earlier key that handed over, in a signed chain, to the pinned one.
+        from emporia.identity import rotation_bytes, verify_raw
+        chain, key = [pinned], pinned
+        for step in reversed(history or []):
+            if step.get("new") == key and verify_raw(rotation_bytes(step.get("old", ""), key, step.get("at", "")),
+                                                     step.get("signature", ""), step.get("old", "")):
+                key = step["old"]
+                chain.insert(0, key)
+        return chain, False
+    if history is None:
+        try:
+            history = httpx.get(f"{relay}/health", timeout=10).json().get("relay_key_history") or []
+        except Exception:  # noqa: BLE001
+            history = []
+    chain = follows_rotation(pinned, current, history)
+    if not chain:
+        return [pinned], True
+    save(current)
+    return chain, False
 
 
 def _linked_relays() -> list[str]:
@@ -3197,17 +3232,7 @@ def _pinned_relay_key(current: str | None) -> tuple[str | None, bool]:
     """(the relay key pinned for the relay this call acts on, whether `current` differs). The
     first key seen is pinned; a relay that later signs with another key is
     reported, not silently trusted (P144)."""
-    from emporia.identity import KEY_DIR
-    path = KEY_DIR / "relay_pins.json"
-    pins = json.loads(path.read_text()) if path.exists() else {}
-    pinned = pins.get(_base())
-    if pinned is None and current:
-        pins[_base()] = pinned = current
-        KEY_DIR.mkdir(parents=True, exist_ok=True)
-        fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
-        with os.fdopen(fd, "w") as f:
-            json.dump(pins, f)
-    return pinned, bool(current and pinned and current != pinned)
+    return _pin_relay_key_for(_base(), current)
 
 
 @mcp.tool()
@@ -3235,18 +3260,20 @@ def verify_session(session_id: str, agent_id: str = "") -> dict[str, Any]:
         keys = {}
         for p in session.get("participants", []):
             keys[p] = (get(f"/agents/{p}").json() or {}).get("public_key_hex", "")
-        current_key = (get("/health").json() or {}).get("relay_public_key")
+        health = get("/health").json() or {}
+        current_key = health.get("relay_public_key")
         results = get("/results", params={"agent_id": session["participants"][0], "limit": 100}).json()
         verdict = next((r for r in results.get("results", []) if r["session_id"] == session_id), None)
     except Exception as e:
         return {"error": f"could not fetch the record: {e}", "success": False}
-    pinned, rotated = _pinned_relay_key(current_key)
+    trusted, rotated = _trusted_relay_keys(_base(), current_key, health.get("relay_key_history") or [])
+    pinned = trusted[-1] if trusted else None
     receipts = []
     rpath = _agent_dir(aid, "receipts", session_id, ".jsonl")
     if rpath.exists():
         receipts = [json.loads(line) for line in rpath.read_text().splitlines() if line.strip()]
     report = verify_game(session=session, log=log, public_keys=keys, receipts=receipts,
-                         relay_key=pinned, relay_verdict=verdict)
+                         relay_key=trusted or None, relay_verdict=verdict)
     if rotated:
         report["findings"].insert(0, {"check": "relay_key", "status": "fail",
                                       "detail": f"the relay now presents key {current_key[:16]}…, not the "

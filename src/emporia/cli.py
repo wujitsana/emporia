@@ -186,6 +186,8 @@ def cmd_relay(args: argparse.Namespace) -> int:
         return cmd_relay_move(args)
     if args.action == "backup":
         return cmd_relay_backup(args)
+    if args.action == "rotate-key":
+        return cmd_relay_rotate_key(args)
     pid_file, log = _relay_files()
     if args.action == "status":
         h = health()
@@ -953,6 +955,24 @@ def cmd_relay_backup(args: argparse.Namespace) -> int:
     print(f"  Its signed relay list now names them ({published}).")
     if not args.remove:
         print(f"  If its home goes away: emporia relay move {url} {name}")
+    return 0
+
+
+def cmd_relay_rotate_key(args: argparse.Namespace) -> int:
+    """P191: `emporia relay rotate-key` — a new key for this relay, handed over by
+    the old one, so peers and agents that pinned it follow instead of seeing a
+    hijack. Run from the relay's own profile; restart the relay to use it."""
+    from emporia import identity
+    if not _persons_terminal():
+        print("relay rotate-key: only a person runs this, in their own terminal.")
+        return 1
+    print(f"This replaces the relay key in {identity.KEY_DIR}. Peers and agents follow the hand-over, which\n"
+          "the old key signs — so if that key LEAKED, rotating does not help: tell your peers to re-pin.")
+    if not (args.yes or ask("Rotate the relay key?", False)):
+        return 1
+    step = identity.rotate_relay_key()
+    print(f"  old {step['old'][:16]}… → new {step['new'][:16]}…, signed by the old key.")
+    print("  Restart the relay to sign with it: emporia relay stop && emporia relay start")
     return 0
 
 
@@ -3213,7 +3233,7 @@ def build_parser() -> argparse.ArgumentParser:
     r = sub.add_parser("relay", help="start, stop or inspect this machine's relay; `use` moves agents to another; "
                                      "`host` runs one for other machines, in Docker behind https")
     r.add_argument("action", choices=["start", "stop", "status", "logs", "use", "host", "link", "unlink", "links",
-                                      "access", "members", "move", "backup"])
+                                      "access", "members", "move", "backup", "rotate-key"])
     r.add_argument("url", nargs="?", default="", help="use, link, unlink: the other relay's URL")
     r.add_argument("names", nargs="*", help="use: the agents that move to it")
     r.add_argument("--lines", type=int, default=40)

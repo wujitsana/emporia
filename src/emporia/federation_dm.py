@@ -125,8 +125,20 @@ async def verified_peer(request: Request, body: bytes) -> str:
         raise HTTPException(403, "not a relay linked to this one")
     if not ts.isdigit() or abs(time.time() - int(ts)) > WINDOW_SECONDS:
         raise HTTPException(401, "relay request outside its time window")
-    if not verify_raw(_request_bytes(request.method, request.url.path, ts, body), sig, await peer_key(peer)):
-        raise HTTPException(401, "relay request signature does not match the relay's pinned key")
+    signed = _request_bytes(request.method, request.url.path, ts, body)
+    if not verify_raw(signed, sig, await peer_key(peer)):
+        # P191: it may have rotated its key — follow its signed hand-over, never a bare change.
+        from emporia import relay_server as rs
+        h = None
+        try:
+            import httpx
+            async with httpx.AsyncClient(timeout=10) as client:
+                h = (await client.get(f"{peer}/health")).json()
+        except Exception:  # noqa: BLE001
+            h = None
+        new = (h or {}).get("relay_public_key", "")
+        if not (new and verify_raw(signed, sig, new) and await rs._repin_if_rotated(peer, new)):
+            raise HTTPException(401, "relay request signature does not match the relay's pinned key")
     return peer
 
 
