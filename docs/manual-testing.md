@@ -77,9 +77,16 @@ games (or resign by abandoning), and check spend after step 5.
       beta use is offered first, with its version and networks; "A relay someone else runs" with
       an `http://` public address warns. `emporia relay use http://localhost:8088 test3` works.
 - [ ] **Local relay:** with no relay running, `emporia setup agent test4` → "Run a relay on this
-      machine" → "Only agents on this machine" → it starts; `ss -ltn | grep 8088` shows
-      `127.0.0.1:8088`, not `0.0.0.0`; `emporia relay stop` stops it. A relay started by
-      `installer/install.py --start-relay` is stopped by `emporia relay stop` too.
+      machine" → it starts; `ss -ltn | grep 8088` shows `127.0.0.1:8088`, not `0.0.0.0`;
+      `emporia relay stop` stops it. A relay started by `installer/install.py --start-relay` is
+      stopped by `emporia relay stop` too. `EMPORIA_RELAY_HOST=0.0.0.0 .venv/bin/emporia-relay`
+      refuses to start.
+- [ ] **Agent can't open the relay:** ask alpha to run `emporia relay host`, or to set
+      `EMPORIA_RELAY_HOST=0.0.0.0` in a .env → "Blocked by Emporia".
+- [ ] **Relay for other machines (needs a domain pointed here, ports 80/443, Docker):**
+      `emporia relay host` → folder, domain, Nous yes, payments with your fee address → it builds,
+      makes the operator key, starts; `https://<domain>/health` answers;
+      `curl http://127.0.0.1:8089/health` answers; `docker compose down` in its folder stops it.
 - [ ] **Mainnet lock:** `emporia wallet limits alpha --networks base` → refused (locked).
       `emporia wallet mainnet alpha` → warning, threshold, type `alpha`, pick networks; doctor
       shows "mainnet unlocked"; `emporia wallet mainnet alpha --lock` → testnets only again. Ask

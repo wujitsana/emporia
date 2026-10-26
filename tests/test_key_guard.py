@@ -128,3 +128,27 @@ def test_a_shown_phrase_is_hidden_from_tool_results():
     cut = guard.transform_tool_result("──── RECOVERY PHRASE ────\n 1. abandon")
     assert "abandon" not in cut, "a cut-off block is hidden too"
     assert guard.transform_tool_result("nothing here") is None
+
+
+@pytest.mark.parametrize("tool,args", [
+    ("terminal", {"command": "emporia relay host --domain relay.example.com"}),
+    ("terminal", {"command": "EMPORIA_RELAY_HOST=0.0.0.0 emporia relay start"}),
+    ("terminal", {"command": "uvicorn emporia.relay_server:app --host 0.0.0.0 --port 8088"}),
+    ("terminal", {"command": "cd ~/emporia-relay && docker compose up -d"}),
+    ("terminal", {"command": "cat /opt/data/profiles/x/emporia-relay/.env"}),
+    ("write_file", {"path": "/opt/data/profiles/x/.env", "content": "A=1\nEMPORIA_RELAY_HOST=0.0.0.0\n"}),
+    ("patch", {"path": "/opt/data/profiles/x/emporia-relay/compose.yaml", "new_string": "ports: [8088:8088]"}),
+])
+def test_an_agent_cannot_open_the_relay_to_other_machines(tool, args):
+    """P183: only a person opens a relay beyond this machine."""
+    r = guard.pre_tool_call(tool, args)
+    assert r and r["action"] == "block" and "relay" in r["message"]
+
+
+@pytest.mark.parametrize("command", [
+    "emporia relay start", "EMPORIA_RELAY_HOST=127.0.0.1 emporia relay start",
+    "uvicorn emporia.relay_server:app --host 127.0.0.1",
+    "grep -n 'os.getenv(\"EMPORIA_RELAY_HOST\", \"127.0.0.1\")' src/emporia/relay_server.py",
+])
+def test_a_relay_on_this_machine_only_is_fine(command):
+    assert guard.pre_tool_call("terminal", {"command": command}) is None

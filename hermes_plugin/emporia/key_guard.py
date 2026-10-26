@@ -55,14 +55,25 @@ _SENSITIVE = (
 
 # P175/P177: commands only a person runs, in their own terminal — never
 # approvable from an agent's tools: `wallet backup` shows the recovery phrase,
-# `wallet mainnet` lets an agent pay real money.
-_PERSON_ONLY = (("wallet", {"backup", "mainnet"}),)
+# `wallet mainnet` lets an agent pay real money, `relay host` (P183) opens a
+# relay to other machines.
+_PERSON_ONLY = (("wallet", {"backup", "mainnet"}), ("relay", {"host"}))
+# P183: other ways to open a relay to other machines — telling it to listen on
+# another address (in a command or a file the agent writes), or starting the
+# Docker relay. The relay itself refuses another address outside a container.
+_NOT_LOCAL = r"(?!['\"]?(?:127\.0\.0\.1|localhost|::1)\b)"
+_RELAY_SETTING = re.compile(r"\bEMPORIA_RELAY_HOST['\"]?\s*[=:]\s*" + _NOT_LOCAL)
+# Its folder (`relay host`'s default): its settings, including where its fee goes.
+_RELAY_FOLDER = re.compile(r"\bemporia-relay/|\bemporia-relay\b\s*$")
+_OPENS_RELAY = re.compile(
+    r"\brelay_server\b[^\n]*--host[= ]\s*" + _NOT_LOCAL
+    + r"|\bdocker\b[^\n]*\bemporia[-_]relay\b|\bemporia[-_]relay\b[^\n]*\bdocker\b")
 
 
 def _cli_matches(text: str, rules) -> bool:
     if not _EMPORIA_CLI.search(text):
         return False
-    words = set(re.findall(r"[a-z]+", text.lower()))
+    words = set(re.findall(r"[a-z][a-z0-9_]*", text.lower()))   # EMPORIA_RELAY_HOST is one word
     return any(cmd in words and words & actions for cmd, actions in rules)
 
 
@@ -87,8 +98,10 @@ BLOCKED = ("Blocked by Emporia: that would reach this agent's keys. Keys are use
 
 
 PERSON_ONLY = ("Blocked by Emporia: only a person runs this, in their own terminal — `emporia wallet "
-               "backup` shows a recovery phrase, `emporia wallet mainnet` turns on real money. Tell your "
-               "operator; never ask for the phrase.")
+               "backup` shows a recovery phrase, `emporia wallet mainnet` turns on real money, `emporia "
+               "relay host` opens a relay to other machines. Tell your operator; never ask for the phrase.")
+RELAY_OPEN = ("Blocked by Emporia: only a person opens a relay to other machines (`emporia relay host`, in "
+              "their own terminal). The relay on this machine listens on 127.0.0.1.")
 # The block the CLI prints around a recovery phrase (cli.PHRASE_BEGIN / PHRASE_END).
 _PHRASE_BLOCK = re.compile(r"──── RECOVERY PHRASE ────.*?(?:──── END OF RECOVERY PHRASE ────|\Z)", re.S)
 
@@ -118,8 +131,13 @@ def pre_tool_call(tool_name: str = "", args: dict | None = None, **_: Any) -> di
         for text in _strings(args.get(key)):
             if _KEY_PATHS.search(text) or _KEY_NAMES.search(text):
                 return {"action": "block", "message": BLOCKED}
+    if any(_RELAY_SETTING.search(text) for text in _strings(args)) or any(
+            _RELAY_FOLDER.search(text) for key in _READ_ARGS for text in _strings(args.get(key))):
+        return {"action": "block", "message": RELAY_OPEN}
     for key in ("command", "cmd", "code", "script"):
         for text in _strings(args.get(key)):
+            if _OPENS_RELAY.search(text):
+                return {"action": "block", "message": RELAY_OPEN}
             if _cli_matches(text, _PERSON_ONLY):
                 return {"action": "block", "message": PERSON_ONLY}
             if _sensitive_cli(text):

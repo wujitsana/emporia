@@ -205,7 +205,8 @@ payment approval out of any auto-approve mode. Below the threshold, a compromise
 | Choice | When |
 |---|---|
 | **A relay found here** — the one your other agents use, or one answering on this machine | Usually: agents meet, play and trade only on the same relay (or relays linked to it). A relay here running another version than this checkout says how to restart it |
-| Run a relay on this machine | To test, or to host your own. It asks who uses it — only this machine (listens on `127.0.0.1`, the default) or others too (every address; put https in front) — offers testnet USDC and escrow (`emporia setup relay`), then starts it |
+| Run a relay on this machine | To test. It listens on `127.0.0.1` only; it offers testnet USDC and escrow (`emporia setup relay`), then starts it |
+| Host one for agents on other machines | `emporia relay host`: its own Docker install behind https, its settings in its own folder (docs/RUNBOOK.md). Only a person runs it |
 | A relay someone else runs | You have its URL. It must be `https://` (plain `http` only on this machine); the setup checks it answers and shows what it pays on — **REAL MONEY** if it takes mainnet |
 | Decide later | Keeps `http://localhost:8088`; change any time |
 

@@ -176,6 +176,8 @@ def _relay_files() -> tuple[Path, Path]:
 def cmd_relay(args: argparse.Namespace) -> int:
     if args.action == "use":
         return cmd_relay_use(args)
+    if args.action == "host":
+        return cmd_relay_host(args)
     pid_file, log = _relay_files()
     if args.action == "status":
         h = health()
@@ -295,6 +297,7 @@ def _choose_relay(current: str = "") -> str:
     if not up.get(LOCAL_RELAY):
         options.append(("local", "Run a relay on this machine — to test, or to host your own (emporia relay start)"))
     options.append(("remote", "A relay someone else runs — I have its URL"))
+    options.append(("host", "Host one for agents on other machines — Docker, behind https (emporia relay host)"))
     options.append(("later", f"Decide later — {current or LOCAL_RELAY} for now; change any time with "
                              f"`emporia relay use URL NAME`"))
     print("\nWhich relay should it join? Agents meet, play and trade only on the same relay "
@@ -306,6 +309,10 @@ def _choose_relay(current: str = "") -> str:
         return choice[4:]
     if choice == "local":
         return _start_local_relay(current)
+    if choice == "host":
+        if cmd_relay_host(argparse.Namespace(dir="", domain="", fee_receiver="", admin=None)) == 0:
+            print("  Then move this agent to it: emporia relay use URL NAME")
+        return current or LOCAL_RELAY
     if choice == "remote":
         print("  There is no public directory of relays yet: ask the relay's operator for its URL.")
         print("  Before trusting one, read (also in the dashboard's Docs tab):")
@@ -321,19 +328,10 @@ def _choose_relay(current: str = "") -> str:
 
 
 def _start_local_relay(current: str) -> str:
-    """Run a relay on this machine: who may reach it, its testnet payments, then start it."""
-    me = this_profile()
-    public = choose("Who uses it?", [
-        ("here", "Only agents on this machine — to test (it listens on 127.0.0.1)"),
-        ("others", "Agents on other machines too — it listens on every address; put https in front of it"),
-    ], 0) == "others"
-    host = "0.0.0.0" if public else "127.0.0.1"
-    os.environ["EMPORIA_RELAY_HOST"] = host
-    if me:
-        merge_env_file(me / ".env", {"EMPORIA_RELAY_HOST": host})
-    if public:
-        print("  ! Others reach it only over https: a reverse proxy with a certificate in front of port 8088,\n"
-              "    and EMPORIA_RELAY_URL set to that https address — see docs/RUNBOOK.md.")
+    """Run a relay on this machine — it listens on 127.0.0.1 only — with its
+    testnet payments, then start it. One for other machines is `relay host`."""
+    print("  It listens on this machine only. For agents on other machines, run one in Docker behind https:\n"
+          "    emporia relay host")
     if ask("Take testnet USDC payments and escrow on it now (Base Sepolia; needs an address for your fee)?", True):
         if cmd_setup_relay(argparse.Namespace(preset="base-sepolia", with_networks="", fee_receiver="",
                                               yes=False)) != 0:
@@ -356,6 +354,106 @@ def _set_agent_relay(profile: Path, url: str) -> None:
         cfg["env"]["EMPORIA_RELAY_URL"] = url
     inst.save_yaml(cfg_path, cfg)
     merge_env_file(profile / ".env", {"EMPORIA_RELAY_URL": url})
+
+
+def _docker(folder: Path, *argv: str) -> subprocess.CompletedProcess:
+    return subprocess.run(["docker", "compose", *argv], cwd=folder, capture_output=True, text=True)
+
+
+def cmd_relay_host(args: argparse.Namespace) -> int:
+    """A relay for agents on other machines, in its own Docker install with
+    https in front (P183). Only a person runs it: it opens a relay to the
+    internet. Its settings live in its own folder, never in a Hermes profile."""
+    import re
+    import shutil
+
+    from emporia import relay_host as rh
+
+    if not _persons_terminal():
+        print("relay host: only a person runs this, in their own terminal — it opens a relay to other machines.")
+        return 1
+    # Beside the profiles, so the host — where Docker runs — sees it wherever Hermes's data is mounted.
+    home = this_profile() or Path.home()
+    folder = Path(args.dir or prompt("Folder for it", str(home / "emporia-relay"))).expanduser().resolve()
+    print("\nOthers reach it at https://<domain>. Point the domain's DNS (an A record) at this machine first;\n"
+          "ports 80 and 443 must be open for the certificate. Leave it blank if you put your own proxy in front.")
+    domain = (args.domain or prompt("Domain", "")).strip().lower()
+    if domain and not rh.valid_domain(domain):
+        print(f"relay host: {domain!r} is not a domain name, like relay.example.com")
+        return 1
+    print("\nIts operator — the agent that sees its settings and activity in the dashboard. A Hermes agent can run\n"
+          "it from Docker beside it (never on the host): name that agent's profile, or leave it blank.")
+    admin_name = (args.admin if args.admin is not None else prompt("Agent profile to run it", "")).strip()
+    admin = profiles_root() / admin_name if admin_name else None
+    if admin and not (admin / "config.yaml").exists():
+        print(f"relay host: no Hermes profile at {admin}")
+        return 1
+    try:
+        written = rh.write_files(folder, REPO, domain, admin)
+    except FileExistsError as e:
+        print(f"relay host: {e}")
+        return 1
+    operator = admin_name and (installer().harvest_env(admin).get("EMPORIA_AGENT_ID") or admin_name)
+    if admin:
+        # It runs only in the container now: there the relay is `relay`, on the stack's own network.
+        _set_agent_relay(admin, rh.INSIDE_URL)
+        print(f"  {admin_name} → {rh.INSIDE_URL} (inside the stack; run it there, not from the host's Hermes)")
+    updates = rh.settings(domain, ask("Accept only agents with a verified Nous sign-in (recommended for a "
+                                      "public relay: it is the only check on fake agents)?", True))
+    payments = ask("Take testnet USDC payments and escrow (Base Sepolia)?", True)
+    if payments:
+        fee = args.fee_receiver or prompt("Address that receives your fee (a wallet you control, ideally a Safe)")
+        if not re.fullmatch(r"0x[0-9a-fA-F]{40}", fee or ""):
+            print("  Not an address (0x and 40 hex) — no payments for now; re-run to add them.")
+            payments = False
+        else:
+            updates.update(_BASE_SEPOLIA)
+            updates["EMPORIA_ESCROW_FEE_RECEIVER"] = fee
+    if operator:
+        updates["EMPORIA_AGENT_ID"] = operator
+    env_path = folder / ".env"
+    merge_env_file(env_path, updates)
+    env_path.chmod(0o600)
+    for path in (*written, env_path):
+        print(f"  wrote {path}")
+    steps = [("build", ["build"])]
+    if payments and "EMPORIA_OPERATOR_ADDRESS" not in installer().harvest_env(folder):
+        steps.append(("operator key", ["run", "--rm", "relay", "python", "-m", "emporia.operator_signer", "generate"]))
+    steps.append(("start", ["--profile", "admin", "up", "-d"] if admin else ["up", "-d"]))
+    commands = "\n".join(f"    docker compose {' '.join(a)}" for _, a in steps)
+    reachable = bool(shutil.which("docker")) and subprocess.run(
+        ["docker", "info"], capture_output=True).returncode == 0
+    if not reachable:
+        print("\nDocker isn't reachable from here — Hermes is probably in a container itself. Docker runs on the host:")
+    if not reachable or not ask("Build and start it with Docker now?", True):
+        print(f"On the host, in this folder (wherever Hermes's data is mounted there) — {folder}:\n{commands}")
+        if payments:
+            print("  then put the operator key's address in its .env as EMPORIA_OPERATOR_ADDRESS=0x…")
+        return 0
+    for what, argv in steps:
+        print(f"  {what}…")
+        done = _docker(folder, *argv)
+        if done.returncode != 0:
+            print(f"relay host: `docker compose {' '.join(argv)}` failed:\n{(done.stderr or done.stdout)[-1500:]}")
+            return 1
+        if what == "operator key":
+            address = rh.operator_address(done.stdout)
+            merge_env_file(env_path, {"EMPORIA_OPERATOR_ADDRESS": address})
+            print(f"  operator key made inside its volume — address {address}; fund it with a little "
+                  "Base Sepolia ETH for gas.")
+    url = updates["EMPORIA_RELAY_URL"]
+    for _ in range(40):
+        if health(timeout=2, url=f"http://127.0.0.1:{rh.LOCAL_PORT}"):
+            break
+        time.sleep(1)
+    print(f"\n✓ Your relay runs in Docker (restarts with the machine). Others use {url}")
+    print(f"  This machine reaches it at http://127.0.0.1:{rh.LOCAL_PORT}. Move your agents to it:\n"
+          f"    emporia relay use {url} NAME …")
+    if admin:
+        print(f"  {admin_name} runs beside it in Docker as its operator; its dashboard shows the relay's settings "
+              "and activity.")
+    print("  Before others rely on it: docs/RUNBOOK.md (backups of the emporia-data volume, its fee, Stripe).")
+    return 0
 
 
 def cmd_relay_use(args: argparse.Namespace) -> int:
@@ -884,6 +982,9 @@ def machine_settings(url: str = "") -> list[dict[str, Any]]:
                     "emporia setup relay"),
                 row("Cards", (h or {}).get("stripe_mode") or "off", "The relay's Stripe key, typed hidden.",
                     "emporia setup stripe")]
+    out.append({**row("A relay for other machines", "",
+                      "Its own Docker install behind https, its settings in its own folder. This machine's "
+                      "relay listens here only.", "emporia relay host"), "person_only": True})
     out += [row("Everything at once", "", "Each component's state and how to set it up; changes nothing.",
                 "emporia setup"),
             row("Checks", "", "✓ / ! / ✗ for every agent, with the fix under each problem.", "emporia doctor"),
@@ -2429,7 +2530,8 @@ def cmd_menu(args: argparse.Namespace) -> int:
                 "relay-setup": ["setup", "relay"], "login": ["login"],
                 "dashboard": ["setup", "dashboard"]}.get(what)
         if what == "relay":
-            argv = ["relay", choose("Relay:", [(a, a) for a in ("status", "start", "stop", "logs")])]
+            argv = ["relay", choose("Relay:", [(a, a) for a in ("status", "start", "stop", "logs")]
+                                    + [("host", "host — a relay for other machines, in Docker behind https")])]
         if what == "login":
             argv += ["--profile", _pick_agent()]
         sub = build_parser().parse_args(argv)
@@ -2547,11 +2649,16 @@ def build_parser() -> argparse.ArgumentParser:
     d.add_argument("--profiles-root", default="")
     d.set_defaults(func=cmd_doctor)
 
-    r = sub.add_parser("relay", help="start, stop or inspect this machine's relay; `use` moves agents to another")
-    r.add_argument("action", choices=["start", "stop", "status", "logs", "use"])
+    r = sub.add_parser("relay", help="start, stop or inspect this machine's relay; `use` moves agents to another; "
+                                     "`host` runs one for other machines, in Docker behind https")
+    r.add_argument("action", choices=["start", "stop", "status", "logs", "use", "host"])
     r.add_argument("url", nargs="?", default="", help="use: the relay's URL")
     r.add_argument("names", nargs="*", help="use: the agents that move to it")
     r.add_argument("--lines", type=int, default=40)
+    r.add_argument("--dir", default="", help="host: its folder (default ~/emporia-relay)")
+    r.add_argument("--domain", default="", help="host: the domain others reach it on (https)")
+    r.add_argument("--fee-receiver", default="", help="host: the address that receives your fee")
+    r.add_argument("--admin", default=None, help="host: a Hermes profile that runs it, in Docker beside it")
     r.set_defaults(func=cmd_relay)
 
     lg = sub.add_parser("login", help="Nous sign-in for a Hermes profile, verified")

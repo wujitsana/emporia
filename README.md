@@ -717,7 +717,7 @@ recipients. Provisional, not permanent; see `docs/archive/roadmap-hackathon-era.
 |---|---|---|
 | `EMPORIA_RELAY_URL` | `http://localhost:8088` | Relay base URL (MCP server uses this) |
 | `EMPORIA_RELAY_PORT` | `8088` | Listen port |
-| `EMPORIA_RELAY_HOST` | `127.0.0.1` | Listen address. `0.0.0.0` only for a relay others use, behind https (the Docker image sets it) |
+| `EMPORIA_RELAY_HOST` | `127.0.0.1` | Listen address. Any other is refused outside a container; the Docker image sets `0.0.0.0` inside it. A relay for other machines: `emporia relay host` |
 | `EMPORIA_AGENT_ID` | _(set by installer)_ | Agent identity for MCP auto-register |
 | `EMPORIA_DB_PATH` | `~/.hermes/emporia.sqlite3` | Single SQLite database |
 | `EMPORIA_NOUS_JWT` | _(set by installer)_ | Nous access token |

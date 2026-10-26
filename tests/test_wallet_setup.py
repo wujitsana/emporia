@@ -784,7 +784,7 @@ def test_choose_relay_offers_the_one_in_use_then_local_remote_later(profiles, mo
     assert cli._choose_relay() == "https://relay.example"
     out = capsys.readouterr().out
     assert "Not https" in out and "SECURITY.md" in out
-    _typing(monkeypatch, "5")      # its current one, the one in use, local, remote · later
+    _typing(monkeypatch, "6")      # its current one, the one in use, local, remote, host · later
     assert cli._choose_relay("https://old.example") == "https://old.example"
     assert "its current relay" in capsys.readouterr().out
 
@@ -800,27 +800,62 @@ def test_relay_use_moves_agents_and_keeps_their_keys(profiles, capsys):
     assert cli.main(["relay", "use", "https://relay.example", "nobody"]) == 1
 
 
-def test_a_local_relay_listens_here_only_unless_others_use_it(profiles, monkeypatch, capsys):
-    root, _ = profiles
+def test_a_local_relay_starts_with_its_payments_or_keeps_the_current_one(profiles, monkeypatch, capsys):
     started, payments = [], []
     monkeypatch.setattr(cli, "_relays_in_use", lambda: {})
     monkeypatch.setattr(cli, "health", lambda timeout=3.0, url="": None)
-    monkeypatch.setattr(cli, "cmd_relay", lambda a: started.append(os.environ["EMPORIA_RELAY_HOST"]) or 0)
+    monkeypatch.setattr(cli, "cmd_relay", lambda a: started.append(a.action) or 0)
     monkeypatch.setattr(cli, "cmd_setup_relay", lambda a: payments.append(a.preset) or 0)
-    monkeypatch.setattr(cli, "this_profile", lambda: root / "relayhost")
-    (root / "relayhost").mkdir()
     with patch.dict(os.environ):
-        _typing(monkeypatch, "", "", "")               # local (the default) · this machine · payments yes
+        _typing(monkeypatch, "", "")                   # local (the default) · payments yes
         assert cli._choose_relay() == cli.LOCAL_RELAY
-        assert started == ["127.0.0.1"] and payments == ["base-sepolia"]
-        assert _env_of(root / "relayhost")["EMPORIA_RELAY_HOST"] == "127.0.0.1"
-        _typing(monkeypatch, "", "2", "n")             # local · others too · no payments yet
-        assert cli._choose_relay() == cli.LOCAL_RELAY
-        assert started[-1] == "0.0.0.0" and len(payments) == 1
-        assert "https" in capsys.readouterr().out
+        assert started == ["start"] and payments == ["base-sepolia"]
+        assert "emporia relay host" in capsys.readouterr().out
         monkeypatch.setattr(cli, "cmd_relay", lambda a: 1)
-        _typing(monkeypatch, "", "", "n")              # it does not start: keep the current one
+        _typing(monkeypatch, "", "n")                  # it does not start: keep the current one
         assert cli._choose_relay("https://old.example") == "https://old.example"
+
+
+def test_the_relay_listens_beyond_this_machine_only_in_a_container(monkeypatch):
+    from emporia import relay_server
+    monkeypatch.setattr(relay_server, "in_container", lambda: False)
+    assert relay_server.bind_refusal("127.0.0.1") == "" and relay_server.bind_refusal("") == ""
+    assert "emporia relay host" in relay_server.bind_refusal("0.0.0.0")
+    monkeypatch.setattr(relay_server, "in_container", lambda: True)
+    assert relay_server.bind_refusal("0.0.0.0") == ""
+
+
+def test_relay_host_writes_its_own_folder_and_refuses_an_agent(profiles, monkeypatch, capsys, tmp_path):
+    import yaml
+    root, _ = profiles
+    with patch.dict(os.environ):
+        assert cli.main(["setup", "agent", "keeper"]) == 0
+    monkeypatch.setattr(cli, "this_profile", lambda: root / "keeper")
+    monkeypatch.setattr("shutil.which", lambda _: None)            # no Docker here
+    folder = tmp_path / "emporia-relay"
+    _typing(monkeypatch, "", "y", "0x" + "ab" * 20)              # Nous · payments · fee address
+    assert cli.main(["relay", "host", "--dir", str(folder), "--domain", "relay.example.com",
+                     "--admin", "keeper"]) == 0
+    out = capsys.readouterr().out
+    assert "On the host" in out and "docker compose --profile admin up -d" in out
+    compose = yaml.safe_load((folder / "compose.yaml").read_text())
+    assert compose["services"]["relay"]["ports"] == ["127.0.0.1:8089:8088"]
+    assert compose["services"]["https"]["ports"] == ["80:80", "443:443"]
+    assert compose["services"]["admin"]["volumes"][0].endswith(":/opt/data")
+    assert not compose["services"]["relay"]["build"].startswith("/")          # host paths differ
+    assert "reverse_proxy relay:8088" in (folder / "Caddyfile").read_text()
+    env = _env_of(folder)
+    assert env["EMPORIA_RELAY_URL"] == "https://relay.example.com" and env["EMPORIA_REQUIRE_NOUS"] == "1"
+    assert env["EMPORIA_ESCROW_FEE_RECEIVER"] == "0x" + "ab" * 20
+    assert env["EMPORIA_AGENT_ID"] and oct((folder / ".env").stat().st_mode)[-3:] == "600"
+    assert _env_of(root / "keeper")["EMPORIA_RELAY_URL"] == "http://relay:8088"
+    assert "EMPORIA_ESCROW_FEE_RECEIVER" not in _env_of(root / "keeper")      # the relay's, in its own folder
+    (folder / "compose.yaml").write_text("services: {}\n")            # someone else's: not replaced
+    _typing(monkeypatch)
+    assert cli.main(["relay", "host", "--dir", str(folder), "--domain", "relay.example.com", "--admin", ""]) == 1
+    monkeypatch.setenv("HERMES_SESSION_ID", "x")                          # an agent's terminal
+    assert cli.main(["relay", "host", "--dir", str(folder)]) == 1
+    assert "only a person" in capsys.readouterr().out
 
 
 def test_an_old_local_relay_is_named_with_how_to_restart_it(profiles, monkeypatch, capsys):

@@ -51,6 +51,7 @@ import os
 import re
 import secrets
 import sqlite3
+import sys
 import threading
 import time
 import unicodedata
@@ -143,8 +144,40 @@ configure_sentry()
 logger = logging.getLogger("emporia.relay")
 
 RELAY_PORT = int(os.getenv("EMPORIA_RELAY_PORT", "8088"))
-# This machine only, unless the relay is hosted for others (0.0.0.0, behind https).
+# P183: this machine only. A relay others reach runs in a container behind
+# https (`emporia relay host`), so any other address is refused outside one —
+# an agent's tools on this machine cannot open its relay to the internet.
 RELAY_HOST = os.getenv("EMPORIA_RELAY_HOST", "127.0.0.1")
+_LOOPBACK = {"127.0.0.1", "localhost", "::1"}
+
+
+def in_container() -> bool:
+    return any(Path(p).exists() for p in ("/.dockerenv", "/run/.containerenv"))
+
+
+def bind_refusal(host: str) -> str:
+    """Why the relay will not listen on `host`; "" when it may."""
+    if not host or host in _LOOPBACK or in_container():
+        return ""
+    return (f"emporia relay: not listening on {host} — outside a container the relay listens on this machine "
+            f"only (127.0.0.1). For agents on other machines: emporia relay host (Docker, behind https).")
+
+
+def _uvicorn_host() -> str:
+    """The --host a `uvicorn emporia.relay_server:app` command line gives."""
+    if "uvicorn" not in Path(sys.argv[0]).name:
+        return ""
+    argv = sys.argv
+    for i, a in enumerate(argv):
+        if a == "--host" and i + 1 < len(argv):
+            return argv[i + 1]
+        if a.startswith("--host="):
+            return a.split("=", 1)[1]
+    return ""
+
+
+if _refusal := bind_refusal(_uvicorn_host()):
+    raise SystemExit(_refusal)
 RELAY_BASE_URL = os.getenv("EMPORIA_RELAY_URL", f"http://localhost:{RELAY_PORT}")
 RELAY_ID = os.getenv("EMPORIA_RELAY_ID", secrets.token_urlsafe(8))
 # Set EMPORIA_REQUIRE_NOUS=1 to reject registrations without a verified Nous identity.
@@ -7734,6 +7767,8 @@ def _require_encryption_keys_published(agent_ids: list[str]) -> None:
 # ============================================================================
 
 def main():
+    if refusal := bind_refusal(RELAY_HOST):
+        raise SystemExit(refusal)
     uvicorn.run(app, host=RELAY_HOST, port=RELAY_PORT)
 
 

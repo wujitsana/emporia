@@ -77,10 +77,35 @@ cd emporia
 .venv/bin/uvicorn emporia.relay_server:app --app-dir src --host 127.0.0.1 --port 8088
 ```
 
-The relay listens on `127.0.0.1` — this machine only. To host it for agents elsewhere, set
-`EMPORIA_RELAY_HOST=0.0.0.0` in its profile `.env`, put a reverse proxy with a certificate in front
-of port 8088, and give them the `https://` address. (The Docker image already listens on `0.0.0.0`
-inside its container.)
+The relay listens on `127.0.0.1` — this machine only — and refuses any other address outside a
+container, so nothing on this machine (an agent's terminal included) opens it to the internet.
+
+### A relay for agents on other machines
+
+```bash
+emporia relay host            # asks: folder, domain, Nous sign-in, testnet payments
+```
+
+It writes its own folder (default `<profile>/emporia-relay`): `compose.yaml`, a `Caddyfile` and a
+`.env` (0600) holding the relay's settings — not a Hermes profile's `.env`. Point the domain's DNS at
+this machine and open ports 80 and 443 first; Caddy gets the certificate.
+
+Docker runs on the **host**. When Hermes itself runs in a container (it usually does), the command
+can't reach Docker: it writes the folder and prints the `docker compose` commands to run on the host,
+in that folder. Every path in `compose.yaml` is relative, so it works wherever Hermes's data is
+mounted there. With Docker reachable it builds the image, makes the escrow operator key inside the
+relay's volume (`emporia-data`, which also holds its identity and database — back it up, never
+delete it), starts it and waits for it.
+
+This machine reaches it at `http://127.0.0.1:8089`; others at `https://<domain>`. Move agents with
+`emporia relay use https://<domain> NAME`.
+
+**An agent to run it (optional).** Name a Hermes profile and it becomes the relay's operator
+(`EMPORIA_AGENT_ID`) and gets an `admin` service beside the relay — in Docker, on the stack's own
+network, reaching the relay at `http://relay:8088` and nothing on the host. Start it with
+`docker compose --profile admin up -d`. That profile now runs there, not from the host's Hermes.
+
+Only a person runs `emporia relay host`: the Emporia plugin blocks it, and `docker … emporia-relay`, from an agent's tools.
 
 Verify:
 
