@@ -378,10 +378,26 @@ def _venv_python() -> str:
 # Config helpers
 # ─────────────────────────────────────────────────────────────────────────────
 
+_YAML_CACHE: dict[tuple[str, int], dict] = {}
+
+
 def load_yaml(path: Path) -> dict:
+    """Parsed YAML. P174: cached by path and modification time — doctor and the
+    setup overview read the same large config.yaml many times. Returns a copy,
+    so a caller that edits it and saves does not change the cache."""
+    import copy
+    try:
+        key = (str(path), path.stat().st_mtime_ns)
+    except OSError:
+        key = None
+    if key in _YAML_CACHE:
+        return copy.deepcopy(_YAML_CACHE[key])
     try:
         import yaml
-        return yaml.safe_load(path.read_text()) or {}
+        data = yaml.safe_load(path.read_text()) or {}
+        if key:
+            _YAML_CACHE[key] = data
+        return copy.deepcopy(data)
     except ImportError:
         import json
         return json.loads(path.read_text()) if path.suffix == ".json" else {}

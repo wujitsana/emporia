@@ -73,6 +73,8 @@ carried over at the end of this file.
 - **SDK parity.** Agents on `EmporiaAgent` get the leak guard but not the wallet's networks, caps
   and approval step; move those into a signer the SDK uses too.
 - **Hermes upstream:** a configurable list of paths its file tools refuse (the keys folder on it).
+- **Split `src/emporia/cli.py`** (2,100 lines: doctor, setup, wallet, identity, role, Stripe,
+  overview) into a package, one module per command, sharing the agent-state helpers.
 - **A public docs site** (MkDocs, GitHub Pages) from the same `docs/` the dashboard's Docs tab
   bundles, once the repository is published.
 

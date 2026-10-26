@@ -341,7 +341,8 @@ def doctor_agent(rep: Report, profile: Path, entry: dict, relay_up: bool) -> Non
     elif model:
         rep.ok(f"model {model.get('default') or model.get('provider')}")
     from emporia import nous_token
-    if nous_token.is_current(nous_token.from_hermes(profile) or ""):
+    if nous_token.is_current(_NOUS_TOKENS.get(profile) if profile in _NOUS_TOKENS
+                             else nous_token.from_hermes(profile) or ""):
         rep.ok("Nous login current (via Hermes)")
     else:
         rep.warn("no current Nous login for this profile — registers key_only, can't enter bounties",
@@ -351,9 +352,7 @@ def doctor_agent(rep: Report, profile: Path, entry: dict, relay_up: bool) -> Non
     sol_wallet = key_dir / f"{_keyfile_stem(agent_id)}.x402.ed25519"
     pay_nets = resolve_list(dotenv.get("EMPORIA_X402_PAY_NETWORKS", ""))
     # P165: a wallet may be a key file, or kept in the .env / linked (a source).
-    phrase_src = bool(dotenv.get("EMPORIA_X402_PHRASE_SOURCE"))
-    has = {"evm": wallet.exists() or phrase_src or bool(dotenv.get("EMPORIA_X402_EVM_KEY_SOURCE")),
-           "svm": sol_wallet.exists() or phrase_src or bool(dotenv.get("EMPORIA_X402_SOLANA_KEY_SOURCE"))}
+    has = wallet_presence(profile, agent_id)
     no_key = [n for n in pay_nets if not has.get(family(n) or "", False)]
     if not has["evm"] and not has["svm"]:
         rep.warn("no wallet — can pay by card only", f"emporia wallet create {name}")
@@ -451,12 +450,29 @@ def doctor_dashboard(rep: Report) -> None:
                  "emporia setup dashboard, then restart the Hermes dashboard")
 
 
+# P174: each Nous check asks Hermes in a process of its own (~0.7s); doctor asks
+# for every agent at once instead of one after another.
+_NOUS_TOKENS: dict[Path, str] = {}
+
+
+def _prefetch_nous_tokens(profiles: list[Path]) -> None:
+    from concurrent.futures import ThreadPoolExecutor
+
+    from emporia import nous_token
+    with ThreadPoolExecutor(max_workers=min(8, len(profiles) or 1)) as pool:
+        for profile, token in zip(profiles, pool.map(lambda p: nous_token.from_hermes(p) or "", profiles)):
+            _NOUS_TOKENS[profile] = token
+
+
 def cmd_doctor(args: argparse.Namespace) -> int:
     rep = Report()
+    agents = [(p, e) for p, e in _agent_profiles(Path(args.profiles_root) if args.profiles_root
+                                                  else profiles_root())
+              if not args.profile or p.name == args.profile]
+    # Only agents doctor will get as far as checking (a broken MCP entry stops earlier).
+    _prefetch_nous_tokens([p for p, e in agents if (e.get("env") or {}).get("EMPORIA_KEYS_DIR")])
     h = doctor_relay(rep)
-    for profile, entry in _agent_profiles(Path(args.profiles_root) if args.profiles_root else profiles_root()):
-        if args.profile and profile.name != args.profile:
-            continue
+    for profile, entry in agents:
         doctor_agent(rep, profile, entry, relay_up=h is not None)
     doctor_dashboard(rep)
     print("\n" + ("Problems found (✗) — fix them in order." if rep.failed
@@ -926,9 +942,70 @@ def _wallet_cmd(profile: Path, agent_id: str, *args: str) -> subprocess.Complete
                           env=env, capture_output=True, text=True, timeout=60)
 
 
+def _store_secret(profile: Path, agent_id: str, kind: str, secret: str) -> subprocess.CompletedProcess:
+    """Store a phrase or a key as this agent's wallet, in its own key storage —
+    the one way the CLI hands a secret over: on stdin, to the agent's own wallet
+    code, never on a command line (P174: was written out three times)."""
+    env = {"PATH": os.defpath, "HOME": str(Path.home()), **_mcp_env(profile)}
+    cmd = (["generate-phrase", "--import-stdin"] if kind == "phrase"
+           else ["import-key", *(["--solana"] if kind == "svm" else [])])
+    return subprocess.run([sys.executable, "-m", "emporia.agent_wallet", *cmd, "--agent-id", agent_id],
+                          env=env, input=secret.strip() + "\n", capture_output=True, text=True, timeout=60)
+
+
+def wallet_presence(profile: Path, agent_id: str) -> dict[str, bool]:
+    """Which wallets an agent has — a key file, or a key or phrase in its .env or
+    linked — without reading any key or vault. One check for doctor, the
+    overview and roles (P174)."""
+    from emporia import agent_wallet as aw
+    from emporia.identity import _keyfile_stem
+    dotenv = installer().harvest_env(profile) if (profile / ".env").exists() else {}
+    key_dir = _key_file(profile, agent_id, "identity").parent
+    stem = _keyfile_stem(agent_id)
+    phrase = bool(dotenv.get(aw.PHRASE_SOURCE_VAR))
+    return {fam: (key_dir / f"{stem}.x402.{suffix}").exists() or phrase or bool(dotenv.get(aw.KEY_SOURCE_VARS[fam]))
+            for fam, suffix in (("evm", "secp256k1"), ("svm", "ed25519"))}
+
+
 def _wallet_address(profile: Path, agent_id: str, solana: bool) -> str | None:
-    r = _wallet_cmd(profile, agent_id, "address", *(["--solana"] if solana else []))
-    return r.stdout.strip().splitlines()[-1] if r.returncode == 0 and r.stdout.strip() else None
+    """The agent's wallet address, worked out here in the same order its own
+    wallet uses: a linked source (or the phrase) first, then the key file.
+    P174: in-process — a helper process per lookup made `setup` and `doctor`
+    take seconds. One is still used for a key linked to a vault command, which
+    only the agent's own environment can run."""
+    from emporia import agent_wallet as aw
+    from emporia.identity import _keyfile_stem
+    fam = "svm" if solana else "evm"
+    dotenv = installer().harvest_env(profile) if (profile / ".env").exists() else {}
+    ref = dotenv.get(aw.KEY_SOURCE_VARS[fam], "").strip()
+    phrase_ref = dotenv.get(aw.PHRASE_SOURCE_VAR, "").strip()
+    try:
+        if ref or phrase_ref:
+            use = ref or phrase_ref
+            if not use.startswith("env:"):
+                r = _wallet_cmd(profile, agent_id, "address", *(["--solana"] if solana else []))
+                return r.stdout.strip().splitlines()[-1] if r.returncode == 0 and r.stdout.strip() else None
+            secret = dotenv.get(use[4:], "")
+            if not secret:
+                return None
+            if ref:
+                raw = aw._parse_secret(fam, secret)
+            else:
+                evm_raw, sol_raw = aw.derive_from_phrase(secret)
+                raw = sol_raw if solana else evm_raw
+        else:
+            key_dir = _key_file(profile, agent_id, "identity").parent
+            f = key_dir / f"{_keyfile_stem(agent_id)}.x402.{'ed25519' if solana else 'secp256k1'}"
+            if not f.exists():
+                return None
+            raw = f.read_bytes()
+        if solana:
+            from emporia import x402_svm
+            return x402_svm.address_of(raw)
+        from eth_account import Account
+        return Account.from_key(raw).address
+    except Exception:  # noqa: BLE001 — a key that does not parse is no wallet to show
+        return None
 
 
 def _create_wallet(profile: Path, agent_id: str, solana: bool) -> str | None:
@@ -1066,12 +1143,7 @@ def _import_wallet(args: argparse.Namespace, profile: Path, agent_id: str) -> in
         print("wallet import: give --key-file, --from-env or --link (with --solana or --import-phrase), "
               "or run it in a terminal")
         return 1
-    env = {"PATH": os.defpath, "HOME": str(Path.home()), **_mcp_env(profile)}
-    cmd = (["generate-phrase", "--import-stdin"] if what == "phrase"
-           else ["import-key", *(["--solana"] if what == "svm" else [])])
-    r = subprocess.run([sys.executable, "-m", "emporia.agent_wallet", *cmd, "--agent-id", agent_id],
-                       env=env, input=secret if secret.endswith("\n") else secret + "\n",
-                       capture_output=True, text=True, timeout=60)
+    r = _store_secret(profile, agent_id, what, secret)
     if r.returncode != 0:
         print(f"wallet import: {r.stderr.strip().removeprefix('error: ')[-300:]}")
         return 1
@@ -1267,11 +1339,7 @@ def _use_found(profile: Path, agent_id: str, found: dict[str, str], how: str) ->
         return _link_wallet(profile, agent_id, kind, found["ref"]) == 0
     secret = (Path(found["ref"][5:]).read_text() if found["ref"].startswith("file:")
               else os.environ.get(found["ref"][4:]) or installer().harvest_env(profile).get(found["ref"][4:], ""))
-    env = {"PATH": os.defpath, "HOME": str(Path.home()), **_mcp_env(profile)}
-    cmd = (["generate-phrase", "--import-stdin"] if kind == "phrase"
-           else ["import-key", *(["--solana"] if kind == "svm" else [])])
-    r = subprocess.run([sys.executable, "-m", "emporia.agent_wallet", *cmd, "--agent-id", agent_id],
-                       env=env, input=secret.strip() + "\n", capture_output=True, text=True, timeout=60)
+    r = _store_secret(profile, agent_id, kind, secret)
     if r.returncode != 0:
         print(f"  could not use the {_KIND_NAME[kind]} from {found['where']}: "
               f"{r.stderr.strip().removeprefix('error: ')[-200:]}")
@@ -1570,7 +1638,7 @@ def apply_role(profile: Path, role: str) -> list[str]:
 
 
 def _has_wallet(profile: Path, agent_id: str) -> bool:
-    return any(_wallet_address(profile, agent_id, solana) for solana in (False, True))
+    return any(wallet_presence(profile, agent_id).values())
 
 
 def _role_warnings(role: str, has_wallet: bool, backend: str) -> list[str]:
