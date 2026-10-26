@@ -943,3 +943,18 @@ def test_doctor_warns_when_a2a_reaches_an_agent_with_a_wallet(profiles, tmp_path
     with redirect_stdout(out):
         cli.doctor_hermes_plugins(rep)
     assert "not Hermes's A2A plugin" in out.getvalue()
+
+
+def test_emporia_visits_sets_where_an_agent_may_go(profiles, capsys):
+    root, _ = profiles
+    with patch.dict(os.environ):
+        assert cli.main(["setup", "agent", "roamer"]) == 0
+    assert cli.main(["visits", "roamer", "--policy", "listed", "--allow", "https://b.example/",
+                     "--deny", "https://shady.example"]) == 0
+    env = _env_of(root / "roamer")
+    assert env["EMPORIA_VISIT_POLICY"] == "listed" and env["EMPORIA_VISIT_RELAYS"] == "https://b.example"
+    assert env["EMPORIA_VISIT_DENY"] == "https://shady.example"
+    assert cli.main(["visits", "roamer", "--deny", "https://b.example"]) == 0     # moves it across
+    env = _env_of(root / "roamer")
+    assert env["EMPORIA_VISIT_RELAYS"] == "" and "https://b.example" in env["EMPORIA_VISIT_DENY"]
+    assert "only the relays allowed below" in capsys.readouterr().out

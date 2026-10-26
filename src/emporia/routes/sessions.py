@@ -213,7 +213,12 @@ async def list_sessions(request: Request, status: str | None = None, module_type
         q += " ORDER BY created_at DESC LIMIT 100"
         rows = conn.execute(q, params).fetchall()
     caller = rs._dashboard_agent_id(request)
-    sessions = [rs._session_row_to_dict(r) for r in rows]
+    sessions = []
+    for r in rows:
+        try:
+            sessions.append(rs._session_row_to_dict(r))
+        except ValueError:      # one damaged row is left out, not the whole list
+            continue
     return {"sessions": [s for s in sessions if rs._session_viewer_allowed(s, caller)]}
 @router.get("/sessions/{session_id}")
 async def get_session(session_id: str, request: Request):

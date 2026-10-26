@@ -16,7 +16,9 @@ wallet's own, so they hold on every relay alike.
 
 from __future__ import annotations
 
+import json
 import os
+from pathlib import Path
 
 POLICIES = ("ask", "listed", "linked")
 
@@ -56,3 +58,25 @@ def visit_needs_yes(url: str, linked: list[str]) -> bool:
         raise PermissionError(f"{url} is not among the relays this agent may visit "
                               f"(EMPORIA_VISIT_RELAYS; its operator adds it: emporia visits NAME --allow URL)")
     return True
+
+
+# ─── the relays this agent visits (it registered there with its key) ─────────
+
+def visits_file() -> Path:
+    from emporia.identity import KEY_DIR
+    return KEY_DIR.parent / "emporia_visits.json"
+
+
+def visiting() -> list[str]:
+    try:
+        return [u for u in json.loads(visits_file().read_text()).get("visits", []) if isinstance(u, str)]
+    except (OSError, ValueError):
+        return []
+
+
+def save(urls: list[str]) -> None:
+    path = visits_file()
+    path.parent.mkdir(parents=True, exist_ok=True)
+    fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    with os.fdopen(fd, "w") as f:
+        json.dump({"visits": sorted(set(urls))}, f)

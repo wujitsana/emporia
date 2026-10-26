@@ -50,6 +50,7 @@ _SENSITIVE = (
     ("identity", {"store", "link"}),
     ("wallet", {"create", "import", "store", "register", "limits"}),
     ("relay", {"use", "link", "unlink", "access", "members"}),
+    ("visits", {"policy", "allow", "deny", "forget"}),   # P188: where an agent may go
 )
 
 
@@ -65,7 +66,9 @@ _PERSON_ONLY = (("wallet", {"backup", "mainnet"}), ("relay", {"host"}))
 _NOT_LOCAL = r"(?!['\"]?(?:127\.0\.0\.1|localhost|::1)\b)"
 _RELAY_SETTING = re.compile(r"\bEMPORIA_RELAY_HOST['\"]?\s*[=:]\s*" + _NOT_LOCAL
                             # P186: who may use the relay is the operator's to say
-                            + r"|\bEMPORIA_RELAY_(?:ACCESS|MEMBERS)['\"]?\s*[=:]")
+                            + r"|\bEMPORIA_RELAY_(?:ACCESS|MEMBERS)['\"]?\s*[=:]"
+                            # P188: and where its agent may go
+                            + r"|\bEMPORIA_VISIT_(?:POLICY|RELAYS|DENY)['\"]?\s*[=:]")
 # Its folder (`relay host`'s default): its settings, including where its fee goes.
 _RELAY_FOLDER = re.compile(r"\bemporia-relay/|\bemporia-relay\b\s*$")
 _OPENS_RELAY = re.compile(

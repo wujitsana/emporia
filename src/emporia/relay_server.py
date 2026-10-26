@@ -712,8 +712,9 @@ def annotate_federated(listings: list[dict[str, Any]]) -> list[dict[str, Any]]:
             x["agent_fingerprint"] = fingerprint(local.get(x.get("agent_id", "")) or "")
     for x in (y for y in listings if y.get("federated_from")):
         x["deal_on"] = x["federated_from"]
-        x["how_to_deal"] = (f"On {x['federated_from']}, not here: join it with the same key "
-                            f"(`emporia relay use {x['federated_from']} NAME`) — the same key is the same agent there.")
+        x["how_to_deal"] = (f"On {x['federated_from']}, not here: visit it — visit_relay("
+                            f"'{x['federated_from']}'), with your operator's yes — and deal there. The same "
+                            f"key is the same agent there.")
         here = local.get(x.get("agent_id", ""))
         if here and x.get("agent_public_key_hex") and here != x["agent_public_key_hex"]:
             x["name_clash"] = (f"'{x['agent_id']}' here is a different agent (another key) from the seller "

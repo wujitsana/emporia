@@ -7,7 +7,6 @@ scratchpad/extract_router.py's main_defs(). Shared helpers stay in
 
 from __future__ import annotations
 
-import json
 from datetime import UTC, datetime
 
 from fastapi import APIRouter, Request

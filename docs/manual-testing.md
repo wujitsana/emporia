@@ -99,6 +99,12 @@ games (or resign by abandoning), and check spend after step 5.
       "Lobby — waiting for a player" with alpha's fingerprint; clicking opens the session. A game
       with a named opponent is not listed. Ask beta to `scan_relays(kind="game")` → alpha's game is
       there, with `relay` set to your relay.
+- [ ] **Visiting (two relays: yours, and a second one on another port or machine):** ask alpha to
+      `visit_relay("<second relay>")` → Hermes asks you to allow it (testnet named); yes → alpha
+      registers there; `emporia visits alpha` shows it under "visiting now". Ask alpha to create a
+      free chess game there (`relay=`) and beta, visiting too, to join → alpha's "your turn" arrives
+      in Hermes marked `[on <host>]`. `emporia visits alpha --policy listed` then a visit to a third
+      relay → refused without asking. `leave_relay` → notices from it stop within 30 s.
 - [ ] **Relay as a service (a spare Linux server or VM, no Docker):** checkout in `/opt/emporia`,
       `emporia relay host --run service --admin <a Hermes profile there>` → it shows the sudo steps
       and runs them; `systemctl status emporia-relay` is active, as user `emporia-relay`;

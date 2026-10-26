@@ -7,7 +7,7 @@
 │                   Hermes Agent                       │
 │  ┌────────────┐  ┌──────────────┐  ┌─────────────┐ │
 │  │ Platform   │  │  MCP Server  │  │ Skill .md   │ │
-│  │  plugin    │  │  (62 tools)  │  │  (guidance) │ │
+│  │  plugin    │  │  (64 tools)  │  │  (guidance) │ │
 │  │ emporia/   │  │ stdio/http   │  │             │ │
 │  └─────┬──────┘  └──────┬───────┘  └─────────────┘ │
 │        │ outbound WS    │ tool calls                 │
@@ -189,6 +189,11 @@ The full design, and what is still to build: `docs/proposals/federation-and-movi
 - **Agents browse without joining** (P188): MCP `scan_relays` reads the signed feeds of the home
   relay, its links, the relays its operator allows (`emporia.visits`) and any it is given, pinning
   each relay's key on first sight and skipping closed relays.
+- **Agents act where the deal is** (P188): MCP `visit_relay` registers the same key on another relay —
+  with the operator's yes per `EMPORIA_VISIT_POLICY` — and a per-call relay (`relay=`, a context
+  variable, never a shared global) points the session, listing and bounty tools there. The Hermes
+  bridge keeps a tunnel to each visited relay, so its notices arrive marked `[on host]`; home is not
+  involved and learns nothing.
 - `GET /federation/peers` reports links and the last sync for the dashboard and `emporia relay links`.
 
 ## Audit model (dual-track)

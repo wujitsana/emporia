@@ -58,6 +58,7 @@ must not trigger a payment gate. Replaced with plain httpx.get().
 from __future__ import annotations
 
 import hashlib
+import contextvars
 import json
 import logging
 import os
@@ -82,6 +83,67 @@ configure_logging()
 logger = logging.getLogger("emporia.mcp")
 
 RELAY_URL = env("RELAY_URL", "http://localhost:8088")
+
+# P188: the relay a tool call acts on. Home unless the call names a relay this
+# agent visits (see `_relay_aware`); per call, so concurrent calls never mix.
+_RELAY_CTX: contextvars.ContextVar[str] = contextvars.ContextVar("emporia_relay", default="")
+
+
+def _base() -> str:
+    return _RELAY_CTX.get() or RELAY_URL
+
+
+def _relay_aware(fn):
+    """Give a tool a `relay` argument: act on a relay this agent visits instead
+    of its home. It must have visited it first (`visit_relay`) — that is where
+    its operator's yes was asked for."""
+    import functools
+    import inspect
+
+    def enter(relay: str):
+        url = (relay or "").strip().rstrip("/")
+        if not url or url == RELAY_URL:
+            return None
+        if url not in _visits():
+            raise PermissionError(f"not visiting {url} — call visit_relay({url!r}) first")
+        return _RELAY_CTX.set(url)
+
+    def refused(e: Exception) -> dict[str, Any]:
+        return {"error": str(e), "success": False}
+
+    if inspect.iscoroutinefunction(fn):
+        @functools.wraps(fn)
+        async def wrapper(*args, relay: str = "", **kwargs):
+            try:
+                token = enter(relay)
+            except PermissionError as e:
+                return refused(e)
+            try:
+                return await fn(*args, **kwargs)
+            finally:
+                if token is not None:
+                    _RELAY_CTX.reset(token)
+    else:
+        @functools.wraps(fn)
+        def wrapper(*args, relay: str = "", **kwargs):
+            try:
+                token = enter(relay)
+            except PermissionError as e:
+                return refused(e)
+            try:
+                return fn(*args, **kwargs)
+            finally:
+                if token is not None:
+                    _RELAY_CTX.reset(token)
+    sig = inspect.signature(fn)
+    params = [*sig.parameters.values(),
+              inspect.Parameter("relay", inspect.Parameter.KEYWORD_ONLY, default="", annotation=str)]
+    wrapper.__signature__ = sig.replace(parameters=params)
+    wrapper.__annotations__ = {**getattr(fn, "__annotations__", {}), "relay": str}
+    wrapper.__doc__ = (fn.__doc__ or "") + (
+        "\n\n    relay: act on a relay this agent visits (its URL) instead of its home — after\n"
+        "        visit_relay(). Omit for home.\n")
+    return wrapper
 LOG_DIR = Path(env("LOG_DIR", "./.local/logs")).expanduser()
 AGENT_ID = env("AGENT_ID", "")
 DISPLAY_NAME = env("DISPLAY_NAME", AGENT_ID)
@@ -98,7 +160,7 @@ LOG_DIR.mkdir(parents=True, exist_ok=True)
 mcp = FastMCP("Emporia")
 
 
-def _ask_operator(message: str) -> bool | None:
+def _ask_operator(message: str, title: str = "Approve this payment") -> bool | None:
     """P166: ask the operator yes/no from inside a tool call — an MCP
     elicitation, which Hermes routes to its approval prompts (Telegram, Slack,
     the CLI). True / False, or None when this client cannot ask."""
@@ -107,7 +169,7 @@ def _ask_operator(message: str) -> bool | None:
         from fastmcp.server.dependencies import get_context
         ctx = get_context()
         schema = {"type": "object", "required": ["approve"], "properties": {
-            "approve": {"type": "boolean", "title": "Approve this payment", "default": False}}}
+            "approve": {"type": "boolean", "title": title, "default": False}}}
         result = anyio.from_thread.run(lambda: ctx.session.elicit(
             message=message, requested_schema=schema, related_request_id=ctx.request_id))
     except Exception:  # noqa: BLE001 — no request context, no elicitation support, or no answer
@@ -145,7 +207,7 @@ def _dashboard_bearer_headers(relay_url: str = "", agent_id: str = "") -> dict[s
     unreachable, agent not registered yet), so callers degrade to the pre-N1-3 behavior
     of an unauthenticated request rather than breaking calls to relays where auth isn't
     required (header-trusted local dev loop, or a public session)."""
-    target = relay_url or RELAY_URL
+    target = relay_url or _base()
     aid = agent_id or AGENT_ID
     if not aid:
         return {}
@@ -177,7 +239,7 @@ def _invalidate_dashboard_bearer(relay_url: str = "", agent_id: str = "") -> Non
     Call after a request comes back 401/403 despite sending a cached token — expiry
     early server-side, or a relay restart that rotated the JWT secret (now persisted,
     see identity.load_or_generate_relay_jwt_secret, but keep this as defense-in-depth)."""
-    target = relay_url or RELAY_URL
+    target = relay_url or _base()
     aid = agent_id or AGENT_ID
     _dashboard_token_cache.pop(f"{target}|{aid}", None)
 
@@ -199,9 +261,11 @@ def _bearer_request(
         secret_guard.check(agent_id or AGENT_ID, kwargs.get("json"), kwargs.get("data"))
     fn = getattr(httpx, method)
     extra = kwargs.pop("headers", None) or {}
+    # P188: a token is per relay — sign in to the relay this URL is on.
+    relay = next((r for r in (RELAY_URL, *_visits()) if url.startswith(r + "/")), _base())
 
     def headers() -> dict[str, str]:
-        identity = _dashboard_bearer_headers(agent_id=agent_id)
+        identity = _dashboard_bearer_headers(relay_url=relay, agent_id=agent_id)
         if not payment_token:
             return {**identity, **extra}
         out = {"Authorization": f"Payment {payment_token}"}
@@ -211,7 +275,7 @@ def _bearer_request(
 
     r = fn(url, headers=headers(), **kwargs)
     if r.status_code in (401, 403):
-        _invalidate_dashboard_bearer(agent_id=agent_id)
+        _invalidate_dashboard_bearer(relay_url=relay, agent_id=agent_id)
         r = fn(url, headers=headers(), **kwargs)
     return r
 
@@ -336,7 +400,7 @@ def register_agent(
         return {"error": f"could not load keypair for '{agent_id}': {e}", "success": False}
     try:
         # Step 1: request a one-time challenge nonce
-        ch_r = httpx.post(f"{RELAY_URL}/agents/challenge", timeout=5)
+        ch_r = httpx.post(f"{_base()}/agents/challenge", timeout=5)
         ch_r.raise_for_status()
         ch = ch_r.json()
         # Step 2: sign nonce with Ed25519 private key
@@ -375,7 +439,7 @@ def register_agent(
         encryption_key_signature=enc_sig,
     )
     try:
-        r = httpx.post(f"{RELAY_URL}/agents/register", json=payload, timeout=5)
+        r = httpx.post(f"{_base()}/agents/register", json=payload, timeout=5)
         data = r.json()
         if r.status_code in (200, 201):
             published = _publish_relay_list(data.get("agent_id") or agent_id)
@@ -389,17 +453,10 @@ def register_agent(
 
 # ─── P187: where this agent can be found ─────────────────────────────────────
 
-def _visits_file() -> Path:
-    from emporia.identity import KEY_DIR
-    return KEY_DIR.parent / "emporia_visits.json"
-
-
 def _visits() -> list[str]:
-    """The relays this agent has joined besides its home (P188 adds them)."""
-    try:
-        return [u for u in json.loads(_visits_file().read_text()).get("visits", []) if isinstance(u, str)]
-    except (OSError, ValueError):
-        return []
+    """The relays this agent has joined besides its home (visit_relay adds them)."""
+    from emporia.visits import visiting
+    return visiting()
 
 
 def _publish_relay_list(aid: str) -> str:
@@ -418,17 +475,11 @@ def _publish_relay_list(aid: str) -> str:
     results = []
     for relay in [RELAY_URL, *visits]:
         try:
-            r = _bearer_request("post", f"{relay}/agents/{aid}/relay-list", agent_id=aid, json=body, timeout=10) \
-                if relay == RELAY_URL else _visit_request(relay, "post", f"/agents/{aid}/relay-list", aid, json=body)
+            r = _bearer_request("post", f"{relay}/agents/{aid}/relay-list", agent_id=aid, json=body, timeout=10)
             results.append(f"{relay}: {'ok' if r.status_code == 200 else r.status_code}")
         except Exception as e:  # noqa: BLE001
             results.append(f"{relay}: {e}")
     return "; ".join(results)
-
-
-def _visit_request(relay: str, method: str, path: str, aid: str, **kwargs: Any) -> httpx.Response:
-    """A request to a relay this agent visits (P188). Until then, unsigned."""
-    return getattr(httpx, method)(f"{relay}{path}", timeout=10, **kwargs)
 
 
 def _pin_relay_key_for(relay: str, current: str | None) -> tuple[str | None, bool]:
@@ -449,7 +500,7 @@ def _pin_relay_key_for(relay: str, current: str | None) -> tuple[str | None, boo
 
 def _linked_relays() -> list[str]:
     try:
-        return [p["url"] for p in httpx.get(f"{RELAY_URL}/federation/peers", timeout=5).json().get("peers", [])]
+        return [p["url"] for p in httpx.get(f"{_base()}/federation/peers", timeout=5).json().get("peers", [])]
     except Exception:  # noqa: BLE001
         return []
 
@@ -561,6 +612,79 @@ def _stamp(iso: str | None) -> float:
 
 
 @mcp.tool()
+def visit_relay(relay: str, agent_id: str = "") -> dict[str, Any]:
+    """Join another relay with this agent's own key, to act there — play a game,
+    buy, sell — while its home stays where it is. Same key, same agent.
+
+    Its operator decides where it may go (EMPORIA_VISIT_POLICY): by default a
+    relay it has not visited before needs the operator's yes, asked now. A
+    closed relay refuses visitors; on a read-only one only its members act.
+    The wallet's spending limits hold there as everywhere. Notices from the
+    relay ("your turn", "result") reach this agent like any other.
+
+    Then pass `relay` to the session, listing and bounty tools to act there.
+    `leave_relay` ends the visit.
+    """
+    from emporia import visits
+    from emporia.addresses import fingerprint
+    aid = agent_id or AGENT_ID
+    url = relay.strip().rstrip("/")
+    if not url.startswith(("https://", "http://")):
+        return {"error": "a relay URL starts with https://", "success": False}
+    if url == RELAY_URL:
+        return {"success": True, "relay": url, "note": "that is this agent's home"}
+    if url in _visits():
+        return {"success": True, "relay": url, "note": "already visiting"}
+    try:
+        needs_yes = visits.visit_needs_yes(url, _linked_relays())
+        h = httpx.get(f"{url}/health", timeout=10).json()
+    except PermissionError as e:
+        return {"error": str(e), "success": False}
+    except Exception as e:  # noqa: BLE001
+        return {"error": f"{url} is not answering: {e}", "success": False}
+    if h.get("access") == "closed":
+        return {"error": f"{url} is closed — only its members use it", "success": False}
+    from emporia.networks import is_testnet
+    real_money = [n for n in (h.get("x402_networks") or []) if not is_testnet(n)]
+    if needs_yes:
+        answer = _ask_operator(
+            f"{aid} wants to visit {url}: register its key there and play, buy or sell on it"
+            + (f" — it takes REAL MONEY ({', '.join(real_money)})" if real_money else " (testnet)")
+            + ". Its spending limits still apply. Allow?", title="Allow this relay")
+        if answer is not True:
+            return {"error": f"not visiting {url}: " + (
+                "its operator said no" if answer is False else
+                "its operator could not be asked here — they can allow it: emporia visits "
+                f"{aid} --allow {url}"), "success": False}
+    token = _RELAY_CTX.set(url)
+    try:
+        registered = register_agent(aid)
+    finally:
+        _RELAY_CTX.reset(token)
+    if not registered.get("success"):
+        return {"error": f"{url} did not register this agent", "detail": registered.get("error"), "success": False}
+    visits.save([*_visits(), url])
+    published = _publish_relay_list(aid)
+    return {"success": True, "relay": url, "address": registered.get("address"),
+            "fingerprint": registered.get("fingerprint") or fingerprint(""), "access": h.get("access", "open"),
+            "relay_list": published,
+            "next": f"pass relay={url!r} to list_sessions, join_session, submit_action and the other session tools"}
+
+
+@mcp.tool()
+def leave_relay(relay: str, agent_id: str = "") -> dict[str, Any]:
+    """Stop visiting a relay: its notices stop and it leaves this agent's relay
+    list. Anything still open there stays there — finish it first."""
+    from emporia import visits
+    aid = agent_id or AGENT_ID
+    url = relay.strip().rstrip("/")
+    if url not in _visits():
+        return {"error": f"not visiting {url}", "success": False}
+    visits.save([u for u in _visits() if u != url])
+    return {"success": True, "relay": url, "relay_list": _publish_relay_list(aid)}
+
+
+@mcp.tool()
 def agent_card(agent: str) -> dict[str, Any]:
     """Look up an agent — here (`bob`) or on another relay (`bob@relay.example`) —
     and check it: its address, fingerprint, keys, where it lives and visits,
@@ -618,7 +742,7 @@ def start_stripe_onboarding(
         return {"error": "agent_id required (or set EMPORIA_AGENT_ID)", "success": False}
     try:
         r = _bearer_request(
-            "post", f"{RELAY_URL}/agents/{aid}/stripe-onboarding", agent_id=aid, timeout=10,
+            "post", f"{_base()}/agents/{aid}/stripe-onboarding", agent_id=aid, timeout=10,
             json={"email": email, "country": country},
         )
         if r.status_code != 200:
@@ -637,7 +761,7 @@ def list_agents(limit: int = 50, agent_id: str = "") -> dict[str, Any]:
     read and broke once that landed). Defaults to AGENT_ID.
     """
     try:
-        r = _bearer_request("get", f"{RELAY_URL}/agents", agent_id=agent_id, params={"limit": limit}, timeout=5)
+        r = _bearer_request("get", f"{_base()}/agents", agent_id=agent_id, params={"limit": limit}, timeout=5)
         r.raise_for_status()
         return {"success": True, **r.json()}
     except Exception as e:
@@ -703,7 +827,7 @@ def supported_games() -> dict[str, Any]:
     win, how to move, the clock, the stake. Read a game's `rules` before you
     create or join one — a relay may host games you have never seen."""
     try:
-        r = _bearer_request("get", f"{RELAY_URL}/modules", timeout=10)
+        r = _bearer_request("get", f"{_base()}/modules", timeout=10)
         if r.status_code == 200:
             return {"success": True, **r.json()}
     except Exception as e:
@@ -764,7 +888,7 @@ def create_room(
         "access_duration_days": access_duration_days,
     }
     try:
-        r = _bearer_request("post", f"{RELAY_URL}/rooms", agent_id=creator_id, json=body, timeout=15)
+        r = _bearer_request("post", f"{_base()}/rooms", agent_id=creator_id, json=body, timeout=15)
         d = r.json()
         if r.status_code == 200:
             return {"success": True, "room": d}
@@ -797,7 +921,7 @@ def list_rooms(
     """
     try:
         r = _bearer_request(
-            "get", f"{RELAY_URL}/rooms", agent_id=viewer_id or "",
+            "get", f"{_base()}/rooms", agent_id=viewer_id or "",
             params={k: v for k, v in {"room_type": room_type, "limit": limit}.items() if v is not None},
             timeout=10,
         )
@@ -917,7 +1041,7 @@ def join_room(
         # pay_with_x402 pays the entry fee from this agent's x402 wallet;
         # pay_with_tempo (P156) pays it in Tempo stablecoin from the same EVM
         # wallet, straight to the creator — the relay checks the receipt.
-        url = f"{RELAY_URL}/rooms/{room_id}/join"
+        url = f"{_base()}/rooms/{room_id}/join"
         r = _bearer_request("post", url, agent_id=agent_id, payment_token=mpp_token,
                             json=body, timeout=15)
         if pay_with_x402:
@@ -1000,7 +1124,7 @@ def send_room_message(
             }
 
         room_r = _bearer_request(
-            "get", f"{RELAY_URL}/rooms/{room_id}", agent_id=sender_id, timeout=10,
+            "get", f"{_base()}/rooms/{room_id}", agent_id=sender_id, timeout=10,
         )
         if room_r.status_code != 200:
             # P19-8 (H6): `room_r.status_code == 200 and bool(...)` used to fold
@@ -1024,7 +1148,7 @@ def send_room_message(
                 parent_message_id=parent_message_id,
             )
             return _bearer_request(
-                "post", f"{RELAY_URL}/rooms/{room_id}/message",
+                "post", f"{_base()}/rooms/{room_id}/message",
                 agent_id=sender_id, json=body, timeout=15,
             )
 
@@ -1068,7 +1192,7 @@ def _room_recipients(sender: str, room_id: str) -> dict[str, str]:
     from emporia.identity import get_encryption_public_key_hex, trust_peer_encryption_key
 
     r = _bearer_request(
-        "get", f"{RELAY_URL}/rooms/{room_id}/encryption-keys", agent_id=sender, timeout=10,
+        "get", f"{_base()}/rooms/{room_id}/encryption-keys", agent_id=sender, timeout=10,
     )
     r.raise_for_status()
     recipients: dict[str, str] = {}
@@ -1087,7 +1211,7 @@ def _session_recipients(aid: str, session_id: str) -> dict[str, str]:
     """P149: every player's key for a private session, trusted the same way as
     the DM and room paths (identity.trust_peer_encryption_key)."""
     from emporia.identity import get_encryption_public_key_hex, trust_peer_encryption_key
-    r = _bearer_request("get", f"{RELAY_URL}/sessions/{session_id}/encryption-keys",
+    r = _bearer_request("get", f"{_base()}/sessions/{session_id}/encryption-keys",
                         agent_id=aid, timeout=10)
     r.raise_for_status()
     out: dict[str, str] = {}
@@ -1169,7 +1293,7 @@ def get_room_messages(room_id: str, agent_id: str = "", limit: int = 50) -> dict
     from emporia.identity import generate_or_load_encryption_keypair, verify_room_message
     try:
         r = _bearer_request(
-            "get", f"{RELAY_URL}/rooms/{room_id}/messages",
+            "get", f"{_base()}/rooms/{room_id}/messages",
             agent_id=aid, params={"limit": limit}, timeout=10,
         )
         if r.status_code != 200:
@@ -1219,7 +1343,7 @@ def verify_dm_chain(
     from emporia import identity, rooms
     try:
         r = _bearer_request(
-            "get", f"{RELAY_URL}/dm/{thread_id}/chain", agent_id=aid, timeout=10,
+            "get", f"{_base()}/dm/{thread_id}/chain", agent_id=aid, timeout=10,
         )
         if r.status_code != 200:
             return {"error": f"Relay {r.status_code}", "detail": r.text, "success": False}
@@ -1276,7 +1400,7 @@ def verify_dm_chain(
             return result
 
         pins = identity.load_room_chain_heads()
-        pin_key = f"{RELAY_URL}|dm|{thread_id}"
+        pin_key = f"{_base()}|dm|{thread_id}"
         pinned = pins.get(pin_key)
 
         if pinned is not None and not (
@@ -1323,7 +1447,7 @@ def verify_dm_chain(
                 params["before"] = before
                 params["before_seq"] = before_seq
             page = _bearer_request(
-                "get", f"{RELAY_URL}/dm/{thread_id}/messages",
+                "get", f"{_base()}/dm/{thread_id}/messages",
                 agent_id=aid, timeout=10, params=params,
             )
             if page.status_code != 200:
@@ -1441,7 +1565,7 @@ def verify_room_chain(
         return {"error": "agent_id required (or set EMPORIA_AGENT_ID)", "success": False}
     from emporia import identity, rooms
     try:
-        r = _bearer_request("get", f"{RELAY_URL}/rooms/{room_id}/chain", agent_id=aid, timeout=10)
+        r = _bearer_request("get", f"{_base()}/rooms/{room_id}/chain", agent_id=aid, timeout=10)
         if r.status_code != 200:
             return {"error": f"Relay {r.status_code}", "detail": r.text, "success": False}
         data = r.json()
@@ -1493,7 +1617,7 @@ def verify_room_chain(
             return result
 
         pins = identity.load_room_chain_heads()
-        pin_key = f"{RELAY_URL}|{room_id}"
+        pin_key = f"{_base()}|{room_id}"
         pinned = pins.get(pin_key)
 
         # P25-1: same guard as agent_sdk.py -- load_room_chain_heads() only
@@ -1546,7 +1670,7 @@ def verify_room_chain(
                 **({"before": before, "before_seq": before_seq} if before else {}),
             }
             page = _bearer_request(
-                "get", f"{RELAY_URL}/rooms/{room_id}/messages", agent_id=aid,
+                "get", f"{_base()}/rooms/{room_id}/messages", agent_id=aid,
                 params=params, timeout=10,
             )
             if page.status_code != 200:
@@ -1660,7 +1784,7 @@ def kick_from_room(
     """
     try:
         r = _bearer_request(
-            "post", f"{RELAY_URL}/rooms/{room_id}/kick",
+            "post", f"{_base()}/rooms/{room_id}/kick",
             agent_id=creator_id,
             json={"target_agent_id": target_agent_id, "refund": refund},
             timeout=15,
@@ -1695,7 +1819,7 @@ def get_inbox(agent_id: str, unread_only: bool = True) -> dict[str, Any]:
     params: dict[str, Any] = {"unread_only": str(unread_only).lower()}
     try:
         r = _bearer_request(
-            "get", f"{RELAY_URL}/agents/{agent_id}/inbox",
+            "get", f"{_base()}/agents/{agent_id}/inbox",
             agent_id=agent_id, params=params, timeout=10.0,
         )
         if r.status_code == 200:
@@ -1715,7 +1839,7 @@ def mark_inbox_read(agent_id: str, inbox_ids: list[str]) -> dict[str, Any]:
     """
     try:
         r = _bearer_request(
-            "post", f"{RELAY_URL}/agents/{agent_id}/inbox/mark-read",
+            "post", f"{_base()}/agents/{agent_id}/inbox/mark-read",
             agent_id=agent_id, json=inbox_ids, timeout=10.0,
         )
         if r.status_code == 200:
@@ -1751,7 +1875,7 @@ def relay_payment_info() -> dict[str, Any]:
     Also returns operator fee and relay-side spend caps for sessions, rooms, and Agoras.
     """
     try:
-        r = httpx.get(f"{RELAY_URL}/health", timeout=10.0)
+        r = httpx.get(f"{_base()}/health", timeout=10.0)
         if r.status_code == 200:
             h = r.json()
             return {
@@ -1793,7 +1917,7 @@ def get_agent_profile(agent_id: str, caller_id: str = "") -> dict[str, Any]:
     more per-agent data than GET /agents, which N3-3 gated for the same reason.
     """
     try:
-        r = _bearer_request("get", f"{RELAY_URL}/agents/{agent_id}", agent_id=caller_id, timeout=10.0)
+        r = _bearer_request("get", f"{_base()}/agents/{agent_id}", agent_id=caller_id, timeout=10.0)
         if r.status_code == 200:
             return r.json()
         if r.status_code == 404:
@@ -1842,7 +1966,7 @@ def create_agora_topic(
     """
     try:
         r = _bearer_request(
-            "post", f"{RELAY_URL}/agoras/topics",
+            "post", f"{_base()}/agoras/topics",
             agent_id=creator_id,
             json={
                 "name": name, "description": description,
@@ -1876,9 +2000,9 @@ def list_agora_topics(
             params["visibility"] = visibility
         if subscribed_by:
             params["subscribed_by"] = subscribed_by
-            r = _bearer_request("get", f"{RELAY_URL}/agoras/topics", agent_id=subscribed_by, params=params, timeout=10)
+            r = _bearer_request("get", f"{_base()}/agoras/topics", agent_id=subscribed_by, params=params, timeout=10)
         else:
-            r = httpx.get(f"{RELAY_URL}/agoras/topics", params=params, timeout=10)
+            r = httpx.get(f"{_base()}/agoras/topics", params=params, timeout=10)
         return r.json() if r.status_code == 200 else {"error": f"Relay {r.status_code}"}
     except Exception as e:
         return {"error": str(e)}
@@ -1894,7 +2018,7 @@ def invite_to_agora_topic(topic_slug: str, agent_id: str, invited_by: str) -> di
     """
     try:
         r = _bearer_request(
-            "post", f"{RELAY_URL}/agoras/topics/{topic_slug}/invite",
+            "post", f"{_base()}/agoras/topics/{topic_slug}/invite",
             agent_id=invited_by,
             json={"invitee_id": agent_id},
             timeout=10,
@@ -1930,7 +2054,7 @@ def subscribe_agora_topic(topic_slug: str, agent_id: str, mpp_token: str = "",
         if payment_intent_id:
             body["payment_intent_id"] = payment_intent_id
         # P95: the payment and the payer's identity travel together.
-        url = f"{RELAY_URL}/agoras/topics/{topic_slug}/subscribe"
+        url = f"{_base()}/agoras/topics/{topic_slug}/subscribe"
         r = _bearer_request("post", url, agent_id=agent_id, payment_token=mpp_token,
                             json=body, timeout=10)
         if pay_with_x402:
@@ -1962,7 +2086,7 @@ def create_agora_post(
     """Create a post in an Agora topic. post_type: text | link | code | data."""
     try:
         r = _bearer_request(
-            "post", f"{RELAY_URL}/agoras/topics/{topic_slug}/posts",
+            "post", f"{_base()}/agoras/topics/{topic_slug}/posts",
             agent_id=author_id,
             json={
                 "title": title, "content": content,
@@ -1986,13 +2110,13 @@ def list_agora_posts(
     try:
         if agent_id and not topic_slug:
             r = _bearer_request(
-                "get", f"{RELAY_URL}/agoras/feed",
+                "get", f"{_base()}/agoras/feed",
                 agent_id=agent_id, params={"agent_id": agent_id, "sort": sort, "limit": limit}, timeout=10,
             )
         elif topic_slug:
             params: dict[str, Any] = {"sort": sort, "limit": limit}
             r = _bearer_request(
-                "get", f"{RELAY_URL}/agoras/topics/{topic_slug}/posts",
+                "get", f"{_base()}/agoras/topics/{topic_slug}/posts",
                 agent_id=agent_id, params=params, timeout=10,
             )
         else:
@@ -2012,7 +2136,7 @@ def add_agora_comment(
     """Add a comment to an Agora post. Set parent_comment_id to reply to a specific comment."""
     try:
         r = _bearer_request(
-            "post", f"{RELAY_URL}/agoras/posts/{post_id}/comments",
+            "post", f"{_base()}/agoras/posts/{post_id}/comments",
             agent_id=author_id,
             json={
                 "content": content,
@@ -2052,7 +2176,7 @@ def _vote_agora(kind: str, target_id: str, voter_id: str, value: int) -> dict[st
         return {"error": "value must be 1 (upvote) or -1 (downvote)"}
     try:
         r = _bearer_request(
-            "post", f"{RELAY_URL}/agoras/{kind}/{target_id}/vote",
+            "post", f"{_base()}/agoras/{kind}/{target_id}/vote",
             agent_id=voter_id,
             json={"value": value},
             timeout=10,
@@ -2072,7 +2196,7 @@ def _sender_public_key(caller: str, agent_id: str) -> str:
     couldn't run reports `None` ("unknown"), and a thread must stay readable even
     when one lookup fails."""
     try:
-        r = _bearer_request("get", f"{RELAY_URL}/agents/{agent_id}", agent_id=caller, timeout=10)
+        r = _bearer_request("get", f"{_base()}/agents/{agent_id}", agent_id=caller, timeout=10)
         return r.json().get("public_key_hex", "") or "" if r.status_code == 200 else ""
     except Exception:
         return ""
@@ -2091,7 +2215,7 @@ def _dm_recipients(sender: str, thread_id: str) -> dict[str, str]:
     from emporia.identity import get_encryption_public_key_hex, trust_peer_encryption_key
 
     thread_r = _bearer_request(
-        "get", f"{RELAY_URL}/dm/{thread_id}", agent_id=sender, timeout=10,
+        "get", f"{_base()}/dm/{thread_id}", agent_id=sender, timeout=10,
     )
     thread_r.raise_for_status()
     thread = thread_r.json()
@@ -2100,7 +2224,7 @@ def _dm_recipients(sender: str, thread_id: str) -> dict[str, str]:
         if participant == sender:
             continue
         key_r = _bearer_request(
-            "get", f"{RELAY_URL}/agents/{participant}/encryption-key",
+            "get", f"{_base()}/agents/{participant}/encryption-key",
             agent_id=sender, timeout=10,
         )
         key_r.raise_for_status()
@@ -2169,7 +2293,7 @@ def send_dm(
         if encrypted is not None:
             start_body["encrypted"] = encrypted
         start_r = _bearer_request(
-            "post", f"{RELAY_URL}/dm/start",
+            "post", f"{_base()}/dm/start",
             agent_id=sender,
             json=start_body,
             timeout=10,
@@ -2197,7 +2321,7 @@ def send_dm(
         # Send the message
         signed_payload = signed_dm_thread_payload(thread_id, content, msg_type, nonce)
         send_r = _bearer_request(
-            "post", f"{RELAY_URL}/dm/{thread_id}/send",
+            "post", f"{_base()}/dm/{thread_id}/send",
             agent_id=sender,
             json=dm_thread_message_envelope(
                 content, msg_type, ed25519_sign(signed_payload, sender), nonce=nonce,
@@ -2230,7 +2354,7 @@ def list_dm_threads(agent_id: str = "") -> dict[str, Any]:
         return {"error": "agent_id required (or set EMPORIA_AGENT_ID)", "success": False}
     try:
         r = _bearer_request(
-            "get", f"{RELAY_URL}/dm", agent_id=aid, params={"agent_id": aid}, timeout=10,
+            "get", f"{_base()}/dm", agent_id=aid, params={"agent_id": aid}, timeout=10,
         )
         # P20-6 (A5): GET /dm's own response is a bare JSON list (unlike GET
         # /rooms, which is a dict list_rooms above wraps with success=True) --
@@ -2264,7 +2388,7 @@ def get_dm_messages(thread_id: str, agent_id: str = "", limit: int = 50) -> dict
     from emporia.identity import generate_or_load_encryption_keypair, verify_dm_message
     try:
         r = _bearer_request(
-            "get", f"{RELAY_URL}/dm/{thread_id}/messages",
+            "get", f"{_base()}/dm/{thread_id}/messages",
             agent_id=aid, params={"agent_id": aid, "limit": limit}, timeout=10,
         )
         if r.status_code != 200:
@@ -2315,7 +2439,7 @@ def _open_games_refusal(aid: str, module_type: str) -> dict[str, Any] | None:
     if cap_n <= 0 or not module_type or module_type in _NOT_GAMES:
         return None
     try:
-        r = _bearer_request("get", f"{RELAY_URL}/agents/{aid}/sessions", agent_id=aid,
+        r = _bearer_request("get", f"{_base()}/agents/{aid}/sessions", agent_id=aid,
                             params={"limit": 200}, timeout=10)
         sessions = r.json().get("sessions", []) if r.status_code == 200 else None
     except Exception:
@@ -2333,6 +2457,7 @@ def _open_games_refusal(aid: str, module_type: str) -> dict[str, Any] | None:
 
 
 @mcp.tool()
+@_relay_aware
 def create_session(
     module_type: str,
     agent_id: str = "",
@@ -2406,7 +2531,7 @@ def create_session(
     if payment_intent_id:
         body["payment_intent_id"] = payment_intent_id
     try:
-        r = _bearer_request("post", f"{RELAY_URL}/sessions", agent_id=aid,
+        r = _bearer_request("post", f"{_base()}/sessions", agent_id=aid,
                             payment_token=mpp_token, json=body, timeout=10)
         d = r.json()
         if r.status_code in (200, 201):
@@ -2420,6 +2545,7 @@ def create_session(
 
 
 @mcp.tool()
+@_relay_aware
 def list_sessions(
     module_type: str = "",
     status: str = "",
@@ -2445,19 +2571,20 @@ def list_sessions(
     if status:
         params["status"] = status
     try:
-        r = _bearer_request("get", f"{RELAY_URL}/sessions", params=params, timeout=10)
+        r = _bearer_request("get", f"{_base()}/sessions", params=params, timeout=10)
         return r.json() if r.status_code == 200 else {"error": f"Relay {r.status_code}", "detail": r.text}
     except Exception as e:
         return {"error": str(e)}
 
 
 @mcp.tool()
+@_relay_aware
 def get_session(session_id: str) -> dict[str, Any]:
     """Fetch full session detail including current state, participants, and step number.
     A private session's sealed text (a deliverable, a dispute reason, review
     comments) is opened here for you; `opened_fields` lists what was (P149)."""
     try:
-        r = _bearer_request("get", f"{RELAY_URL}/sessions/{session_id}", timeout=10)
+        r = _bearer_request("get", f"{_base()}/sessions/{session_id}", timeout=10)
         if r.status_code != 200:
             return {"error": f"Relay {r.status_code}", "detail": r.text}
         d = r.json()
@@ -2506,7 +2633,7 @@ def create_payment_intent(
     if room_id:
         body["room_id"] = room_id
     try:
-        r = _bearer_request("post", f"{RELAY_URL}/payments/create-intent", agent_id=bid, json=body, timeout=15)
+        r = _bearer_request("post", f"{_base()}/payments/create-intent", agent_id=bid, json=body, timeout=15)
         d = r.json()
         if r.status_code == 200:
             return {"success": True, **d}
@@ -2516,6 +2643,7 @@ def create_payment_intent(
 
 
 @mcp.tool()
+@_relay_aware
 def join_session(
     session_id: str,
     agent_id: str = "",
@@ -2537,7 +2665,7 @@ def join_session(
     if not aid:
         return {"error": "agent_id required (or set EMPORIA_AGENT_ID)", "success": False}
     try:
-        session = _bearer_request("get", f"{RELAY_URL}/sessions/{session_id}", agent_id=aid, timeout=10).json()
+        session = _bearer_request("get", f"{_base()}/sessions/{session_id}", agent_id=aid, timeout=10).json()
         joining = session.get("module_type", "")
     except Exception:
         session, joining = {}, ""
@@ -2548,7 +2676,7 @@ def join_session(
         body["payment_intent_id"] = payment_intent_id
     try:
         # P95: the payment and the payer's identity travel together.
-        r = _bearer_request("post", f"{RELAY_URL}/sessions/{session_id}/join", agent_id=aid,
+        r = _bearer_request("post", f"{_base()}/sessions/{session_id}/join", agent_id=aid,
                             payment_token=mpp_token, json=body, timeout=10)
         d = r.json()
         if r.status_code == 200:
@@ -2572,6 +2700,7 @@ def join_session(
 
 
 @mcp.tool()
+@_relay_aware
 def counterparty_record(agent_id: str) -> dict[str, Any]:
     """An agent's record on this relay (P182) — read it before you stake
     against it, join its game, or buy from it: games finished, won, lost, lost
@@ -2580,7 +2709,7 @@ def counterparty_record(agent_id: str) -> dict[str, Any]:
     only, of what this relay saw: evidence, not a verdict. A new agent has no
     record, which is not the same as a bad one."""
     try:
-        r = _bearer_request("get", f"{RELAY_URL}/agents/{agent_id}/record", agent_id=AGENT_ID, timeout=10)
+        r = _bearer_request("get", f"{_base()}/agents/{agent_id}/record", agent_id=AGENT_ID, timeout=10)
         return {"success": r.status_code == 200, **r.json()}
     except Exception as e:
         return {"error": str(e), "success": False}
@@ -2601,6 +2730,7 @@ def _counterparties(session: dict[str, Any], me: str) -> dict[str, Any]:
 
 
 @mcp.tool()
+@_relay_aware
 def fund_session(session_id: str, mpp_token: str = "", agent_id: str = "",
                  pay_with_x402: bool = False, payment_intent_id: str = "") -> dict[str, Any]:
     """Fund a service purchase you created, once a seller has joined (P95).
@@ -2629,7 +2759,7 @@ def fund_session(session_id: str, mpp_token: str = "", agent_id: str = "",
     if not aid:
         return {"error": "agent_id required (or set EMPORIA_AGENT_ID)", "success": False}
     try:
-        url = f"{RELAY_URL}/sessions/{session_id}/fund"
+        url = f"{_base()}/sessions/{session_id}/fund"
         r = _bearer_request("post", url, agent_id=aid, payment_token=mpp_token, timeout=15,
                             **({"json": {"payment_intent_id": payment_intent_id}}
                                if payment_intent_id else {}))
@@ -2637,7 +2767,7 @@ def fund_session(session_id: str, mpp_token: str = "", agent_id: str = "",
             from emporia import agent_wallet
             from emporia.payments import _x402_amount_atomic
 
-            sess = _bearer_request("get", f"{RELAY_URL}/sessions/{session_id}",
+            sess = _bearer_request("get", f"{_base()}/sessions/{session_id}",
                                    agent_id=aid, timeout=10).json()
             stake = (sess.get("payment_rules") or {}).get("stake_per_participant", "0")
             offer = r.json()["escrow"]
@@ -2647,7 +2777,7 @@ def fund_session(session_id: str, mpp_token: str = "", agent_id: str = "",
             # P145: keep the hold as this agent signed it — enough to reclaim
             # it on chain with no help from the relay.
             try:
-                hold = {"offer": offer, "payer": agent_wallet.address(aid), "relay_url": RELAY_URL}
+                hold = {"offer": offer, "payer": agent_wallet.address(aid), "relay_url": _base()}
                 fd = os.open(_agent_dir(aid, "holds", session_id, ".json"),
                              os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
                 with os.fdopen(fd, "w") as f:
@@ -2668,6 +2798,7 @@ def fund_session(session_id: str, mpp_token: str = "", agent_id: str = "",
 
 
 @mcp.tool()
+@_relay_aware
 def settle_promise(listing_id: str, agent_id: str = "", pay_network: str = "") -> dict[str, Any]:
     """Pay a promised (x402) bounty you funded, now that it has a winner (P104).
 
@@ -2682,7 +2813,7 @@ def settle_promise(listing_id: str, agent_id: str = "", pay_network: str = "") -
         return {"error": "agent_id required (or set EMPORIA_AGENT_ID)", "success": False}
     try:
         from emporia.agent_wallet import AgentWalletError
-        url = f"{RELAY_URL}/bounties/{listing_id}/settle-promise"
+        url = f"{_base()}/bounties/{listing_id}/settle-promise"
         r = _bearer_request("post", url, agent_id=aid, timeout=15)
         try:
             r = _x402_paid_retry(r, aid, "post", url, network=pay_network, timeout=60)
@@ -2696,6 +2827,7 @@ def settle_promise(listing_id: str, agent_id: str = "", pay_network: str = "") -
 
 
 @mcp.tool()
+@_relay_aware
 def register_x402_wallet(address: str = "", network_family: str = "evm",
                          agent_id: str = "") -> dict[str, Any]:
     """Register where this agent is paid over x402 (P104).
@@ -2713,7 +2845,7 @@ def register_x402_wallet(address: str = "", network_family: str = "evm",
             from emporia import agent_wallet
             address = (agent_wallet.solana_address(aid) if network_family == "svm"
                        else agent_wallet.address(aid))
-        r = _bearer_request("post", f"{RELAY_URL}/agents/{aid}/x402-wallet", agent_id=aid,
+        r = _bearer_request("post", f"{_base()}/agents/{aid}/x402-wallet", agent_id=aid,
                             json={"network_family": network_family, "address": address},
                             timeout=10)
         d = r.json()
@@ -2760,7 +2892,7 @@ def x402_wallet_info(agent_id: str = "") -> dict[str, Any]:
     # the wallet it needs, and whether this relay takes payments on it.
     from emporia.networks import family, label
     try:
-        offered = set((_bearer_request("get", f"{RELAY_URL}/health", agent_id=aid, timeout=5).json()
+        offered = set((_bearer_request("get", f"{_base()}/health", agent_id=aid, timeout=5).json()
                        or {}).get("x402_networks") or [])
     except Exception:
         offered = None
@@ -2776,7 +2908,7 @@ def x402_wallet_info(agent_id: str = "") -> dict[str, Any]:
     # P120: whether the relay can pay this agent, said outright. An agent read
     # the old reply (address, no relay field) as "I have no wallet".
     try:
-        r = _bearer_request("get", f"{RELAY_URL}/agents/{aid}", agent_id=aid, timeout=10)
+        r = _bearer_request("get", f"{_base()}/agents/{aid}", agent_id=aid, timeout=10)
         pay_to = (r.json().get("x402_pay_to") or {}) if r.status_code == 200 else None
     except Exception:
         pay_to = None
@@ -2794,6 +2926,7 @@ def x402_wallet_info(agent_id: str = "") -> dict[str, Any]:
 
 
 @mcp.tool()
+@_relay_aware
 def submit_action(
     session_id: str,
     action_type: str,
@@ -2833,7 +2966,7 @@ def submit_action(
     from emporia.identity import sign as ed25519_sign
     from emporia.wire import action_envelope, signed_action_payload
     try:
-        sess_r = _bearer_request("get", f"{RELAY_URL}/sessions/{session_id}", agent_id=aid, timeout=10)
+        sess_r = _bearer_request("get", f"{_base()}/sessions/{session_id}", agent_id=aid, timeout=10)
         sess_r.raise_for_status()
         sess = sess_r.json()
         step_number = sess["step_number"]
@@ -2859,7 +2992,7 @@ def submit_action(
             aid, action_type, action_payload, rationale, ed25519_sign(signed_payload, aid), say=say,
         )
         # P110: a final move or a service's terminal action settles too.
-        r = _bearer_request("post", f"{RELAY_URL}/sessions/{session_id}/action", agent_id=aid, json=body, timeout=_CHAIN_TIMEOUT_S)
+        r = _bearer_request("post", f"{_base()}/sessions/{session_id}/action", agent_id=aid, json=body, timeout=_CHAIN_TIMEOUT_S)
         d = r.json()
         if r.status_code == 200:
             if d.get("receipt"):
@@ -2889,15 +3022,15 @@ def _keep_receipt(aid: str, session_id: str, receipt: dict) -> None:
 
 
 def _pinned_relay_key(current: str | None) -> tuple[str | None, bool]:
-    """(the relay key pinned for RELAY_URL, whether `current` differs). The
+    """(the relay key pinned for the relay this call acts on, whether `current` differs). The
     first key seen is pinned; a relay that later signs with another key is
     reported, not silently trusted (P144)."""
     from emporia.identity import KEY_DIR
     path = KEY_DIR / "relay_pins.json"
     pins = json.loads(path.read_text()) if path.exists() else {}
-    pinned = pins.get(RELAY_URL)
+    pinned = pins.get(_base())
     if pinned is None and current:
-        pins[RELAY_URL] = pinned = current
+        pins[_base()] = pinned = current
         KEY_DIR.mkdir(parents=True, exist_ok=True)
         fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
         with os.fdopen(fd, "w") as f:
@@ -2906,6 +3039,7 @@ def _pinned_relay_key(current: str | None) -> tuple[str | None, bool]:
 
 
 @mcp.tool()
+@_relay_aware
 def verify_session(session_id: str, agent_id: str = "") -> dict[str, Any]:
     """Check a game without trusting the relay (P144), and keep the evidence.
 
@@ -2920,7 +3054,7 @@ def verify_session(session_id: str, agent_id: str = "") -> dict[str, Any]:
     from emporia.verify import verify_game
     aid = agent_id or AGENT_ID
     try:
-        get = lambda path, **kw: _bearer_request("get", f"{RELAY_URL}{path}", agent_id=aid,  # noqa: E731
+        get = lambda path, **kw: _bearer_request("get", f"{_base()}{path}", agent_id=aid,  # noqa: E731
                                                  timeout=15, **kw)
         session = get(f"/sessions/{session_id}").json()
         if "session_id" not in session:
@@ -2946,7 +3080,7 @@ def verify_session(session_id: str, agent_id: str = "") -> dict[str, Any]:
                                       "detail": f"the relay now presents key {current_key[:16]}…, not the "
                                                 f"{pinned[:16]}… pinned at first contact"})
         report["verdict"], report["failures"] = "fail", report["failures"] + 1
-    evidence = {"relay_url": RELAY_URL, "verified_by": aid, "verified_at": time.time(),
+    evidence = {"relay_url": _base(), "verified_by": aid, "verified_at": time.time(),
                 "report": report, "session": session, "log": log, "public_keys": keys,
                 "receipts": receipts, "relay_key_pinned": pinned, "relay_key_now": current_key,
                 "relay_verdict": verdict}
@@ -2961,6 +3095,7 @@ def verify_session(session_id: str, agent_id: str = "") -> dict[str, Any]:
 
 
 @mcp.tool()
+@_relay_aware
 def reclaim_escrow(session_id: str, agent_id: str = "") -> dict[str, Any]:
     """Take back an x402 escrow hold you funded that the relay never settled
     (P145) — straight from the escrow contract, with no help from the relay.
@@ -3025,7 +3160,7 @@ def _write_commitments(path, saved: dict) -> None:
 
 
 def _session_data(session_id: str, aid: str) -> dict[str, Any]:
-    r = _bearer_request("get", f"{RELAY_URL}/sessions/{session_id}", agent_id=aid, timeout=10)
+    r = _bearer_request("get", f"{_base()}/sessions/{session_id}", agent_id=aid, timeout=10)
     r.raise_for_status()
     return (r.json().get("state") or {}).get("data") or {}
 
@@ -3045,6 +3180,7 @@ def _submit_simultaneous(session_id: str, action: str, payload: dict, rationale:
 
 
 @mcp.tool()
+@_relay_aware
 def commit_move(session_id: str, move: Any, rationale: str, agent_id: str = "",
                 say: str = "") -> dict[str, Any]:
     """Commit a hidden move in a simultaneous-move game (emporia:blotto:v1,
@@ -3091,6 +3227,7 @@ def commit_move(session_id: str, move: Any, rationale: str, agent_id: str = "",
 
 
 @mcp.tool()
+@_relay_aware
 def reveal_move(session_id: str, rationale: str, agent_id: str = "", say: str = "") -> dict[str, Any]:
     """Reveal the move you committed this round (emporia:blotto:v1). The relay
     checks it against your commitment. Reveal before your move clock runs out —
@@ -3117,6 +3254,7 @@ def reveal_move(session_id: str, rationale: str, agent_id: str = "", say: str = 
 
 
 @mcp.tool()
+@_relay_aware
 def send_game_chat(session_id: str, content: str, agent_id: str = "") -> dict[str, Any]:
     """Say something at a game's table (P143) — only in a game created with
     config {"chat": true}, while it is on. Spectators of a public game read it
@@ -3127,10 +3265,10 @@ def send_game_chat(session_id: str, content: str, agent_id: str = "") -> dict[st
     if not aid:
         return {"error": "agent_id required (or set EMPORIA_AGENT_ID)", "success": False}
     try:
-        sess = _bearer_request("get", f"{RELAY_URL}/sessions/{session_id}", agent_id=aid, timeout=10).json()
+        sess = _bearer_request("get", f"{_base()}/sessions/{session_id}", agent_id=aid, timeout=10).json()
         if sess.get("sealed"):  # P149: a private game's talk is sealed to its players
             content = _seal_text(content, _session_recipients(aid, session_id), session_id, "chat", aid)
-        r = _bearer_request("post", f"{RELAY_URL}/sessions/{session_id}/chat", agent_id=aid,
+        r = _bearer_request("post", f"{_base()}/sessions/{session_id}/chat", agent_id=aid,
                             json={"content": content}, timeout=10)
         d = r.json()
         return {"success": True, **d} if r.status_code == 200 else {
@@ -3140,11 +3278,12 @@ def send_game_chat(session_id: str, content: str, agent_id: str = "") -> dict[st
 
 
 @mcp.tool()
+@_relay_aware
 def get_game_chat(session_id: str, agent_id: str = "") -> dict[str, Any]:
     """A game's table talk so far, oldest first (P143)."""
     aid = agent_id or AGENT_ID
     try:
-        r = _bearer_request("get", f"{RELAY_URL}/sessions/{session_id}/chat", agent_id=aid, timeout=10)
+        r = _bearer_request("get", f"{_base()}/sessions/{session_id}/chat", agent_id=aid, timeout=10)
         if r.status_code != 200:
             return {"error": f"Relay {r.status_code}", "detail": r.text}
         d = r.json()
@@ -3158,6 +3297,7 @@ def get_game_chat(session_id: str, agent_id: str = "") -> dict[str, Any]:
 
 
 @mcp.tool()
+@_relay_aware
 def confirm_delivery(
     session_id: str,
     agent_id: str = "",
@@ -3175,7 +3315,7 @@ def confirm_delivery(
     from emporia.wire import DEFAULT_CONFIRM_RATIONALE, confirm_delivery_body, signed_action_payload
     effective_rationale = rationale or DEFAULT_CONFIRM_RATIONALE
     try:
-        sess_r = _bearer_request("get", f"{RELAY_URL}/sessions/{session_id}", agent_id=aid, timeout=10)
+        sess_r = _bearer_request("get", f"{_base()}/sessions/{session_id}", agent_id=aid, timeout=10)
         sess_r.raise_for_status()
         step_number = sess_r.json()["step_number"]
     except Exception as e:
@@ -3188,7 +3328,7 @@ def confirm_delivery(
         # P110: settles on chain for an escrow purchase; the relay waits up
         # to escrow_chain._RECEIPT_TIMEOUT_S for the receipt. 15s reported a
         # failure for a capture that went through on a slow block.
-        r = _bearer_request("post", f"{RELAY_URL}/sessions/{session_id}/confirm-delivery", agent_id=aid, json=body, timeout=_CHAIN_TIMEOUT_S)
+        r = _bearer_request("post", f"{_base()}/sessions/{session_id}/confirm-delivery", agent_id=aid, json=body, timeout=_CHAIN_TIMEOUT_S)
         d = r.json()
         return {"success": True, **d} if r.status_code == 200 else {"error": f"Relay {r.status_code}", "detail": d, "success": False}
     except Exception as e:
@@ -3196,6 +3336,7 @@ def confirm_delivery(
 
 
 @mcp.tool()
+@_relay_aware
 def dispute_delivery(
     session_id: str,
     reason: str,
@@ -3213,7 +3354,7 @@ def dispute_delivery(
     from emporia.identity import sign as ed25519_sign
     from emporia.wire import default_dispute_rationale, dispute_delivery_body, signed_action_payload
     try:
-        sess_r = _bearer_request("get", f"{RELAY_URL}/sessions/{session_id}", agent_id=aid, timeout=10)
+        sess_r = _bearer_request("get", f"{_base()}/sessions/{session_id}", agent_id=aid, timeout=10)
         sess_r.raise_for_status()
         sess = sess_r.json()
         step_number = sess["step_number"]
@@ -3233,7 +3374,7 @@ def dispute_delivery(
         body: dict[str, Any] = dispute_delivery_body(
             aid, reason, effective_rationale, ed25519_sign(signed_payload, aid),
         )
-        r = _bearer_request("post", f"{RELAY_URL}/sessions/{session_id}/dispute-delivery", agent_id=aid, json=body, timeout=_CHAIN_TIMEOUT_S)
+        r = _bearer_request("post", f"{_base()}/sessions/{session_id}/dispute-delivery", agent_id=aid, json=body, timeout=_CHAIN_TIMEOUT_S)
         d = r.json()
         return {"success": True, **d} if r.status_code == 200 else {"error": f"Relay {r.status_code}", "detail": d, "success": False}
     except Exception as e:
@@ -3241,6 +3382,7 @@ def dispute_delivery(
 
 
 @mcp.tool()
+@_relay_aware
 def abandon_session(
     session_id: str,
     agent_id: str = "",
@@ -3256,7 +3398,7 @@ def abandon_session(
     body: dict[str, Any] = {"agent_id": aid}
     try:
         r = _bearer_request(
-            "post", f"{RELAY_URL}/sessions/{session_id}/abandon", agent_id=aid, json=body, timeout=_CHAIN_TIMEOUT_S,
+            "post", f"{_base()}/sessions/{session_id}/abandon", agent_id=aid, json=body, timeout=_CHAIN_TIMEOUT_S,
         )
         d = r.json()
         return {"success": True, **d} if r.status_code == 200 else {"error": f"Relay {r.status_code}", "detail": d, "success": False}
@@ -3269,6 +3411,7 @@ def abandon_session(
 # ============================================================================
 
 @mcp.tool()
+@_relay_aware
 def create_listing(
     title: str,
     agent_id: str = "",
@@ -3301,7 +3444,7 @@ def create_listing(
     if module_type:
         body["module_type"] = module_type
     try:
-        r = _bearer_request("post", f"{RELAY_URL}/listings", agent_id=aid, json=body, timeout=10)
+        r = _bearer_request("post", f"{_base()}/listings", agent_id=aid, json=body, timeout=10)
         d = r.json()
         return {"success": True, **d} if r.status_code in (200, 201) else {"error": f"Relay {r.status_code}", "detail": d, "success": False}
     except Exception as e:
@@ -3309,6 +3452,7 @@ def create_listing(
 
 
 @mcp.tool()
+@_relay_aware
 def list_listings(
     module_type: str = "",
     listing_type: str = "",
@@ -3328,7 +3472,7 @@ def list_listings(
     if listing_type:
         params["listing_type"] = listing_type
     try:
-        r = httpx.get(f"{RELAY_URL}/listings", params=params, timeout=10)
+        r = httpx.get(f"{_base()}/listings", params=params, timeout=10)
         return r.json() if r.status_code == 200 else {"error": f"Relay {r.status_code}", "detail": r.text}
     except Exception as e:
         return {"error": str(e)}
@@ -3347,6 +3491,7 @@ def list_listings(
 # ============================================================================
 
 @mcp.tool()
+@_relay_aware
 def list_bounties(open_only: bool = True) -> dict[str, Any]:
     """See the funded contests on this relay.
 
@@ -3356,13 +3501,14 @@ def list_bounties(open_only: bool = True) -> dict[str, Any]:
     matters when deciding: a full contest cannot be entered.
     """
     try:
-        r = httpx.get(f"{RELAY_URL}/bounties", params={"open_only": open_only}, timeout=10)
+        r = httpx.get(f"{_base()}/bounties", params={"open_only": open_only}, timeout=10)
         return r.json() if r.status_code == 200 else {"error": f"Relay {r.status_code}", "detail": r.text}
     except Exception as e:
         return {"error": str(e)}
 
 
 @mcp.tool()
+@_relay_aware
 def enter_bounty(listing_id: str, agent_id: str = "") -> dict[str, Any]:
     """Enter a funded contest.
 
@@ -3388,7 +3534,7 @@ def enter_bounty(listing_id: str, agent_id: str = "") -> dict[str, Any]:
     if not aid:
         return {"error": "agent_id required (or set EMPORIA_AGENT_ID)", "success": False}
     try:
-        r = _bearer_request("post", f"{RELAY_URL}/bounties/{listing_id}/enter",
+        r = _bearer_request("post", f"{_base()}/bounties/{listing_id}/enter",
                             agent_id=aid, timeout=10)
         d = r.json()
         return {"success": True, **d} if r.status_code == 200 else {
@@ -3398,6 +3544,7 @@ def enter_bounty(listing_id: str, agent_id: str = "") -> dict[str, Any]:
 
 
 @mcp.tool()
+@_relay_aware
 def start_bounty(listing_id: str, agent_id: str = "") -> dict[str, Any]:
     """Run a contest whose seats are full (or whose deadline has passed with
     enough entrants).
@@ -3416,7 +3563,7 @@ def start_bounty(listing_id: str, agent_id: str = "") -> dict[str, Any]:
     if not aid:
         return {"error": "agent_id required (or set EMPORIA_AGENT_ID)", "success": False}
     try:
-        r = _bearer_request("post", f"{RELAY_URL}/bounties/{listing_id}/start",
+        r = _bearer_request("post", f"{_base()}/bounties/{listing_id}/start",
                             agent_id=aid, timeout=15)
         d = r.json()
         return {"success": True, **d} if r.status_code == 200 else {
@@ -3479,7 +3626,7 @@ def post_bounty(
     try:
         # P95: a held prize is paid as the bounty is posted — an SPT in
         # mpp_token. Without one this could only ever get the 402 back.
-        r = _bearer_request("post", f"{RELAY_URL}/bounties", agent_id=aid,
+        r = _bearer_request("post", f"{_base()}/bounties", agent_id=aid,
                             payment_token=mpp_token, json=body, timeout=15)
         d = r.json()
         return {"success": True, **d} if r.status_code == 200 else {
@@ -3500,7 +3647,7 @@ def cancel_bounty(listing_id: str, agent_id: str = "") -> dict[str, Any]:
     if not aid:
         return {"error": "agent_id required (or set EMPORIA_AGENT_ID)", "success": False}
     try:
-        r = _bearer_request("post", f"{RELAY_URL}/bounties/{listing_id}/cancel",
+        r = _bearer_request("post", f"{_base()}/bounties/{listing_id}/cancel",
                             agent_id=aid, timeout=15)
         d = r.json()
         return {"success": True, **d} if r.status_code == 200 else {
@@ -3510,6 +3657,7 @@ def cancel_bounty(listing_id: str, agent_id: str = "") -> dict[str, Any]:
 
 
 @mcp.tool()
+@_relay_aware
 def leaderboard(module_type: str = "") -> dict[str, Any]:
     """Standings on this relay: wins, entries, win rate, modules played.
 
@@ -3519,13 +3667,14 @@ def leaderboard(module_type: str = "") -> dict[str, Any]:
     """
     params = {"module_type": module_type} if module_type else {}
     try:
-        r = httpx.get(f"{RELAY_URL}/leaderboard", params=params, timeout=10)
+        r = httpx.get(f"{_base()}/leaderboard", params=params, timeout=10)
         return r.json() if r.status_code == 200 else {"error": f"Relay {r.status_code}", "detail": r.text}
     except Exception as e:
         return {"error": str(e)}
 
 
 @mcp.tool()
+@_relay_aware
 def game_results(module_type: str = "", agent_id: str = "", limit: int = 10) -> dict[str, Any]:
     """Finished games on this relay, newest first: players, winner, how it
     ended, stake, settings, and each game's full record (Blotto: every round's
@@ -3538,7 +3687,7 @@ def game_results(module_type: str = "", agent_id: str = "", limit: int = 10) -> 
     if agent_id:
         params["agent_id"] = agent_id
     try:
-        r = _bearer_request("get", f"{RELAY_URL}/results", params=params, timeout=10)
+        r = _bearer_request("get", f"{_base()}/results", params=params, timeout=10)
         return r.json() if r.status_code == 200 else {"error": f"Relay {r.status_code}", "detail": r.text}
     except Exception as e:
         return {"error": str(e)}
@@ -3549,6 +3698,7 @@ def game_results(module_type: str = "", agent_id: str = "", limit: int = 10) -> 
 # ============================================================================
 
 @mcp.tool()
+@_relay_aware
 def get_settlements(session_id: str = "") -> dict[str, Any]:
     """Fetch settlement records.
 
@@ -3562,12 +3712,12 @@ def get_settlements(session_id: str = "") -> dict[str, Any]:
             # N4-2/R1(a): this endpoint now applies the resource's own visibility rule
             # instead of returning settlements unconditionally — send a credential.
             r = _bearer_request(
-                "get", f"{RELAY_URL}/payments/settlements/{session_id}",
+                "get", f"{_base()}/payments/settlements/{session_id}",
                 agent_id=AGENT_ID, timeout=10,
             )
         else:
             # Unfiltered list requires the caller to be the relay operator.
-            r = _bearer_request("get", f"{RELAY_URL}/payments/settlements", agent_id=AGENT_ID, timeout=10)
+            r = _bearer_request("get", f"{_base()}/payments/settlements", agent_id=AGENT_ID, timeout=10)
         return r.json() if r.status_code == 200 else {"error": f"Relay {r.status_code}", "detail": r.text}
     except Exception as e:
         return {"error": str(e)}
@@ -3587,7 +3737,7 @@ def sign_dashboard_challenge(challenge_id: str, nonce: str, relay_url: str = "")
     The JWT is relay-scoped and expires in 1 hour. For localhost dashboards,
     this flow is unnecessary (localhost trust handles it automatically).
     """
-    target = relay_url or RELAY_URL
+    target = relay_url or _base()
     try:
         from emporia.identity import sign_raw
         sig_hex = sign_raw(nonce.encode(), AGENT_ID)

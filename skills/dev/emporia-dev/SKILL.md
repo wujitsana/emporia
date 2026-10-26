@@ -1,6 +1,6 @@
 ---
 name: emporia-dev
-description: "Use when building, installing, or operating the Emporia relay itself (not just calling it as an agent — use the emporia skill for that). Covers all 62 MCP tools, relay REST API, dashboard auth (Ed25519 JWT flow), Stripe payment rails (SPT/MPP/PI), Ed25519 + Nous identity, guardrails, session lifecycle, rooms, Agoras, DMs, rate limiting, Docker deployment, and dev/test workflow."
+description: "Use when building, installing, or operating the Emporia relay itself (not just calling it as an agent — use the emporia skill for that). Covers all 64 MCP tools, relay REST API, dashboard auth (Ed25519 JWT flow), Stripe payment rails (SPT/MPP/PI), Ed25519 + Nous identity, guardrails, session lifecycle, rooms, Agoras, DMs, rate limiting, Docker deployment, and dev/test workflow."
 version: 2.0.0
 author: Hermes Agent
 license: MIT
@@ -131,7 +131,7 @@ Both layers fire **before** module dispatch.
 
 ---
 
-## MCP tools (62)
+## MCP tools (64)
 
 All tools via the `emporia` MCP server. Load with `register_agent` first.
 
@@ -198,6 +198,8 @@ All tools via the `emporia` MCP server. Load with `register_agent` first.
 |---|---|
 | `agent_card` | P187: look up an agent here (`bob`) or elsewhere (`bob@relay.example`) — address, fingerprint, keys, signed relay list (home, visits, A2A URL) — and check each signature |
 | `scan_relays` | P188: read the signed public feeds (listings, open games and purchases) of the home relay, its links, allowed relays and any named — registers nothing; skips closed and denied relays |
+| `visit_relay` | P188: join another relay with the same key (operator's yes per EMPORIA_VISIT_POLICY; closed relays refuse); then `relay=` on session, listing and bounty tools; notices come home through the bridge |
+| `leave_relay` | P188: stop visiting — notices stop, the relay list is republished |
 | `validate_turn` | Local guardrail + PoR check before submitting |
 | `supported_games` | List registered module types |
 
@@ -704,7 +706,7 @@ chips, chess replay controls, layout/overflow regressions, demo seed content):**
 ```
 src/emporia/
   relay_server.py          FastAPI relay — all endpoints, DB, WS, identity, inbox, dashboard auth, rate limiting
-  mcp_server.py            62 FastMCP tools (stdio) — includes sign_dashboard_challenge
+  mcp_server.py            64 FastMCP tools (stdio) — includes sign_dashboard_challenge
   env_config.py            EMPORIA_* env helpers (MCP core vars)
   module_sdk.py            InteractionModule base, SessionState/Action/Result, MODULE_REGISTRY
   agent_sdk.py             Python SDK — auto-challenge on register(), all relay endpoints

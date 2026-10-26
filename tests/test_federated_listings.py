@@ -40,7 +40,7 @@ def _shown(client, listing_id: str) -> dict | None:
 async def test_a_federated_listing_says_where_the_deal_happens(client):
     assert await _pull([_listing("lst_p184_a")]) == 1
     shown = _shown(client, "lst_p184_a")
-    assert shown["deal_on"] == PEER and f"emporia relay use {PEER}" in shown["how_to_deal"]
+    assert shown["deal_on"] == PEER and f"visit_relay('{PEER}')" in shown["how_to_deal"]
     assert shown["agent_public_key_hex"] == SELLER_KEY and "name_clash" not in shown
 
 

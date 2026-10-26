@@ -171,3 +171,11 @@ def test_an_agent_cannot_open_its_relay_or_add_itself_as_a_member():
                  {"command": "emporia relay access open"}):
         r = guard.pre_tool_call("terminal", args)
         assert r and r["action"] in ("block", "approve"), args
+
+
+def test_where_an_agent_may_go_is_its_operators_call():
+    assert guard.pre_tool_call("terminal", {"command": "emporia visits alpha --allow https://x.example"})["action"] == "approve"
+    assert guard.pre_tool_call("terminal", {"command": "emporia visits alpha"}) is None
+    r = guard.pre_tool_call("write_file", {"path": "/opt/data/profiles/alpha/.env",
+                                           "content": "EMPORIA_VISIT_POLICY=linked\n"})
+    assert r and r["action"] == "block"

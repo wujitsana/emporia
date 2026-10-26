@@ -770,6 +770,53 @@ def _ensure_member(name: str, url: str) -> None:
         print(f"  {name} is now a member of this machine's {env.get(ra.SETTING)} relay.")
 
 
+def cmd_visits(args: argparse.Namespace) -> int:
+    """P188: `emporia visits NAME [--policy ask|listed|linked] [--allow URL] [--deny URL]
+    [--forget URL]` — where an agent may go beyond its home relay. Its operator's
+    call, in its profile; the agent cannot widen it."""
+    import json as _json
+    agents = {p.name: p for p, _ in _agent_profiles(profiles_root())}
+    if args.name not in agents:
+        print(f"visits: no agent {args.name!r} ({', '.join(agents) or 'none set up'})")
+        return 1
+    profile = agents[args.name]
+    env = installer().harvest_env(profile)
+    split = lambda raw: [u.strip().rstrip("/") for u in raw.split(",") if u.strip()]   # noqa: E731
+    allow, deny = split(env.get("EMPORIA_VISIT_RELAYS", "")), split(env.get("EMPORIA_VISIT_DENY", ""))
+    updates: dict[str, str] = {}
+    if args.policy:
+        updates["EMPORIA_VISIT_POLICY"] = args.policy
+    for url in (args.allow or []):
+        url = url.rstrip("/")
+        allow, deny = [*dict.fromkeys([*allow, url])], [u for u in deny if u != url]
+    for url in (args.deny or []):
+        url = url.rstrip("/")
+        deny, allow = [*dict.fromkeys([*deny, url])], [u for u in allow if u != url]
+    for url in (args.forget or []):
+        allow, deny = [u for u in allow if u != url.rstrip("/")], [u for u in deny if u != url.rstrip("/")]
+    if args.allow or args.deny or args.forget:
+        updates["EMPORIA_VISIT_RELAYS"], updates["EMPORIA_VISIT_DENY"] = ",".join(allow), ",".join(deny)
+    if updates:
+        merge_env_file(profile / ".env", updates)
+        print(f"  {args.name}: updated — it applies when its MCP server restarts "
+              f"(hermes -p {args.name} gateway restart)")
+        env = {**env, **updates}
+    key_dir = Path(_mcp_env(profile).get("EMPORIA_KEYS_DIR") or profile / "home" / ".hermes" / "keys")
+    try:
+        now = _json.loads((key_dir.parent / "emporia_visits.json").read_text()).get("visits", [])
+    except (OSError, ValueError):
+        now = []
+    policy = env.get("EMPORIA_VISIT_POLICY", "ask") or "ask"
+    print(f"{args.name} may visit: " + {"ask": "any relay, each new one with your yes",
+                                         "listed": "only the relays allowed below",
+                                         "linked": "the relays allowed below and those its home links to"}
+          .get(policy, policy))
+    print(f"  allowed without asking: {', '.join(allow) or 'none'}")
+    print(f"  never: {', '.join(deny) or 'none'}")
+    print(f"  visiting now: {', '.join(now) or 'none'}")
+    return 0
+
+
 def cmd_relay_use(args: argparse.Namespace) -> int:
     """`emporia relay use URL [NAME ...]`: move agents to another relay."""
     agents = {p.name: p for p, _ in _agent_profiles(profiles_root())}
@@ -3023,6 +3070,15 @@ def build_parser() -> argparse.ArgumentParser:
     r.add_argument("--run", choices=["docker", "service"], default="",
                    help="host: in Docker, or as a system service on a server kept for it")
     r.set_defaults(func=cmd_relay)
+
+    vs = sub.add_parser("visits", help="where an agent may go beyond its home relay")
+    vs.add_argument("name")
+    vs.add_argument("--policy", choices=["ask", "listed", "linked"], default="",
+                    help="ask: each new relay with your yes; listed: only allowed ones; linked: also its home's links")
+    vs.add_argument("--allow", action="append", help="a relay it may visit without asking")
+    vs.add_argument("--deny", action="append", help="a relay it never reads or visits")
+    vs.add_argument("--forget", action="append", help="take a relay off both lists")
+    vs.set_defaults(func=cmd_visits)
 
     lg = sub.add_parser("login", help="Nous sign-in for a Hermes profile, verified")
     lg.add_argument("--profile", default="", help="default: the profile holding this checkout")
