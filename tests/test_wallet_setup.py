@@ -798,3 +798,35 @@ def test_relay_use_moves_agents_and_keeps_their_keys(profiles, capsys):
     assert cfg["mcp_servers"]["emporia"]["env"]["EMPORIA_RELAY_URL"] == "https://relay.example"
     assert _env_of(root / "omega")["EMPORIA_RELAY_URL"] == "https://relay.example"
     assert cli.main(["relay", "use", "https://relay.example", "nobody"]) == 1
+
+
+def test_a_local_relay_listens_here_only_unless_others_use_it(profiles, monkeypatch, capsys):
+    root, _ = profiles
+    started, payments = [], []
+    monkeypatch.setattr(cli, "_relays_in_use", lambda: {})
+    monkeypatch.setattr(cli, "health", lambda timeout=3.0, url="": None)
+    monkeypatch.setattr(cli, "cmd_relay", lambda a: started.append(os.environ["EMPORIA_RELAY_HOST"]) or 0)
+    monkeypatch.setattr(cli, "cmd_setup_relay", lambda a: payments.append(a.preset) or 0)
+    monkeypatch.setattr(cli, "this_profile", lambda: root / "relayhost")
+    (root / "relayhost").mkdir()
+    with patch.dict(os.environ):
+        _typing(monkeypatch, "", "", "")               # local (the default) · this machine · payments yes
+        assert cli._choose_relay() == cli.LOCAL_RELAY
+        assert started == ["127.0.0.1"] and payments == ["base-sepolia"]
+        assert _env_of(root / "relayhost")["EMPORIA_RELAY_HOST"] == "127.0.0.1"
+        _typing(monkeypatch, "", "2", "n")             # local · others too · no payments yet
+        assert cli._choose_relay() == cli.LOCAL_RELAY
+        assert started[-1] == "0.0.0.0" and len(payments) == 1
+        assert "https" in capsys.readouterr().out
+        monkeypatch.setattr(cli, "cmd_relay", lambda a: 1)
+        _typing(monkeypatch, "", "", "n")              # it does not start: keep the current one
+        assert cli._choose_relay("https://old.example") == "https://old.example"
+
+
+def test_an_old_local_relay_is_named_with_how_to_restart_it(profiles, monkeypatch, capsys):
+    monkeypatch.setattr(cli, "_relays_in_use", lambda: {})
+    monkeypatch.setattr(cli, "health", lambda timeout=3.0, url="":
+                        {"version": "0.0.1"} if url == cli.LOCAL_RELAY else None)
+    _typing(monkeypatch, "")
+    assert cli._choose_relay() == cli.LOCAL_RELAY
+    assert "emporia relay stop && emporia relay start" in capsys.readouterr().out

@@ -235,10 +235,11 @@ Load the **`emporia`** skill for tool flows.
 # Auto (installer, seed, local_relay.py):
 .venv/bin/python installer/install.py --start-relay
 
-# Manual (any form — same app). Reads the profile .env; port EMPORIA_RELAY_PORT (8088):
+# Manual (any form — same app). Reads the profile .env; port EMPORIA_RELAY_PORT (8088),
+# address EMPORIA_RELAY_HOST (127.0.0.1 — this machine only):
 .venv/bin/emporia-relay
 .venv/bin/python relay/server.py
-.venv/bin/uvicorn emporia.relay_server:app --app-dir src --host 0.0.0.0 --port 8088
+.venv/bin/uvicorn emporia.relay_server:app --app-dir src --host 127.0.0.1 --port 8088
 
 # Detached, surviving the shell that started it (not a container restart):
 setsid nohup .venv/bin/emporia-relay > .relay.log 2>&1 < /dev/null &
@@ -716,6 +717,7 @@ recipients. Provisional, not permanent; see `docs/archive/roadmap-hackathon-era.
 |---|---|---|
 | `EMPORIA_RELAY_URL` | `http://localhost:8088` | Relay base URL (MCP server uses this) |
 | `EMPORIA_RELAY_PORT` | `8088` | Listen port |
+| `EMPORIA_RELAY_HOST` | `127.0.0.1` | Listen address. `0.0.0.0` only for a relay others use, behind https (the Docker image sets it) |
 | `EMPORIA_AGENT_ID` | _(set by installer)_ | Agent identity for MCP auto-register |
 | `EMPORIA_DB_PATH` | `~/.hermes/emporia.sqlite3` | Single SQLite database |
 | `EMPORIA_NOUS_JWT` | _(set by installer)_ | Nous access token |

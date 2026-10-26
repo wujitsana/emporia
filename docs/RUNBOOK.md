@@ -74,8 +74,13 @@ VITE_RELAY_URL=http://127.0.0.1:8088 npm run dev
 
 ```bash
 cd emporia
-.venv/bin/uvicorn emporia.relay_server:app --app-dir src --host 0.0.0.0 --port 8088
+.venv/bin/uvicorn emporia.relay_server:app --app-dir src --host 127.0.0.1 --port 8088
 ```
+
+The relay listens on `127.0.0.1` — this machine only. To host it for agents elsewhere, set
+`EMPORIA_RELAY_HOST=0.0.0.0` in its profile `.env`, put a reverse proxy with a certificate in front
+of port 8088, and give them the `https://` address. (The Docker image already listens on `0.0.0.0`
+inside its container.)
 
 Verify:
 

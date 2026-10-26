@@ -143,6 +143,8 @@ configure_sentry()
 logger = logging.getLogger("emporia.relay")
 
 RELAY_PORT = int(os.getenv("EMPORIA_RELAY_PORT", "8088"))
+# This machine only, unless the relay is hosted for others (0.0.0.0, behind https).
+RELAY_HOST = os.getenv("EMPORIA_RELAY_HOST", "127.0.0.1")
 RELAY_BASE_URL = os.getenv("EMPORIA_RELAY_URL", f"http://localhost:{RELAY_PORT}")
 RELAY_ID = os.getenv("EMPORIA_RELAY_ID", secrets.token_urlsafe(8))
 # Set EMPORIA_REQUIRE_NOUS=1 to reject registrations without a verified Nous identity.
@@ -7732,7 +7734,7 @@ def _require_encryption_keys_published(agent_ids: list[str]) -> None:
 # ============================================================================
 
 def main():
-    uvicorn.run(app, host="0.0.0.0", port=RELAY_PORT)
+    uvicorn.run(app, host=RELAY_HOST, port=RELAY_PORT)
 
 
 # ============================================================================

@@ -43,6 +43,7 @@ ENV EMPORIA_KEYS_DIR=/data/keys \
     EMPORIA_DB_PATH=/data/emporia.sqlite3 \
     EMPORIA_LOG_DIR=/data/logs \
     EMPORIA_RELAY_PORT=8088 \
+    EMPORIA_RELAY_HOST=0.0.0.0 \
     PATH="/app/.venv/bin:${PATH}"
 VOLUME ["/data"]
 
@@ -51,5 +52,5 @@ EXPOSE 8088
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s \
     CMD python -c "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8088/health', timeout=3)" || exit 1
 
-# Reads EMPORIA_RELAY_PORT itself and binds 0.0.0.0 — see src/emporia/relay_server.py:main()
+# Reads EMPORIA_RELAY_PORT and EMPORIA_RELAY_HOST (0.0.0.0 in a container) — see src/emporia/relay_server.py:main()
 CMD ["emporia-relay"]

@@ -50,39 +50,40 @@ def _sync_venv_deps() -> None:
         )
 
 
+def _pid_file() -> Path:
+    """Where `emporia relay start` keeps its pid, so `emporia relay stop` stops
+    a relay started here too: the profile holding this checkout, else the repo."""
+    for parent in EMPORIA_ROOT.parents:
+        if (parent / "config.yaml").exists():
+            return parent / "home" / ".hermes" / "emporia-relay.pid"
+    return EMPORIA_ROOT / "home" / ".hermes" / "emporia-relay.pid"
+
+
 def start_relay(relay_url: str) -> bool:
-    """Start uvicorn in the background. Returns True if /health within ~12s."""
+    """Start the relay in the background. Returns True if /health within ~12s.
+    It listens on EMPORIA_RELAY_HOST — 127.0.0.1, this machine only, unless set."""
     if not is_local_relay(relay_url):
         return False
     _sync_venv_deps()
-    port = relay_url.rstrip("/").rsplit(":", 1)[-1] if ":" in relay_url else "8088"
-    src = EMPORIA_ROOT / "src"
-    env = os.environ.copy()
+    port = urlparse(relay_url).port or 8088
+    env = {**os.environ, "EMPORIA_RELAY_PORT": str(port)}
     log_path = EMPORIA_ROOT / ".relay.log"
-    log = open(log_path, "w", encoding="utf-8")
-    subprocess.Popen(
-        [
-            venv_python(),
-            "-m",
-            "uvicorn",
-            "emporia.relay_server:app",
-            "--host",
-            "0.0.0.0",
-            "--port",
-            str(port),
-            "--app-dir",
-            str(src),
-        ],
-        cwd=str(EMPORIA_ROOT),
-        env=env,
-        stdout=log,
-        stderr=log,
+    log = open(log_path, "a", encoding="utf-8")
+    proc = subprocess.Popen(
+        [venv_python(), "-m", "emporia.relay_server"],
+        cwd=str(EMPORIA_ROOT), env=env, stdout=log, stderr=log,
+        stdin=subprocess.DEVNULL, start_new_session=True,
     )
+    pid_file = _pid_file()
+    pid_file.parent.mkdir(parents=True, exist_ok=True)
+    pid_file.write_text(str(proc.pid))
     for _ in range(12):
         time.sleep(1)
         if relay_healthy(relay_url, timeout=2):
-            print(f"  Relay started on {relay_url} (log: {log_path})")
+            print(f"  Relay started on {relay_url} (pid {proc.pid}, log: {log_path}; stop: emporia relay stop)")
             return True
+        if proc.poll() is not None:
+            break
     print(f"  Relay did not become healthy — see {log_path}")
     return False
 

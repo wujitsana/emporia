@@ -32,6 +32,8 @@ import time
 from pathlib import Path
 from typing import Any
 
+from emporia import __version__
+
 REPO = Path(__file__).resolve().parents[2]
 _RELAY_ONLY = ("STRIPE_SECRET_KEY", "STRIPE_PROFILE_ID", "STRIPE_API_VERSION",
                "STRIPE_WEBHOOK_SECRET", "EMPORIA_MPP_TEMPO_ENABLED")
@@ -285,6 +287,8 @@ def _choose_relay(current: str = "") -> str:
         who = used.get(u, [])
         desc = (f"{u} — " + (_relay_brief(up[u]) if up[u] else "not answering now")
                 + (f"; used by {', '.join(who)}" if who else "") + ("  (its current relay)" if u == current else ""))
+        if up[u] and u == LOCAL_RELAY and str(up[u].get("version")) != __version__:
+            desc += f" — not this checkout's v{__version__}; restart it: emporia relay stop && emporia relay start"
         options.append((f"use:{u}", desc))
         if default is None and up[u]:
             default = len(options) - 1
@@ -301,10 +305,7 @@ def _choose_relay(current: str = "") -> str:
     if choice.startswith("use:"):
         return choice[4:]
     if choice == "local":
-        os.environ["EMPORIA_RELAY_URL"] = LOCAL_RELAY
-        cmd_relay(argparse.Namespace(action="start", lines=40))
-        print("  Payment rails for it (testnet USDC, escrow): emporia setup relay   — see docs/RUNBOOK.md")
-        return LOCAL_RELAY
+        return _start_local_relay(current)
     if choice == "remote":
         print("  There is no public directory of relays yet: ask the relay's operator for its URL.")
         print("  Before trusting one, read (also in the dashboard's Docs tab):")
@@ -317,6 +318,31 @@ def _choose_relay(current: str = "") -> str:
         print(f"  Keeping {current or LOCAL_RELAY} for now: emporia relay use URL NAME when you have it.")
         return current or LOCAL_RELAY
     return current or LOCAL_RELAY
+
+
+def _start_local_relay(current: str) -> str:
+    """Run a relay on this machine: who may reach it, its testnet payments, then start it."""
+    me = this_profile()
+    public = choose("Who uses it?", [
+        ("here", "Only agents on this machine — to test (it listens on 127.0.0.1)"),
+        ("others", "Agents on other machines too — it listens on every address; put https in front of it"),
+    ], 0) == "others"
+    host = "0.0.0.0" if public else "127.0.0.1"
+    os.environ["EMPORIA_RELAY_HOST"] = host
+    if me:
+        merge_env_file(me / ".env", {"EMPORIA_RELAY_HOST": host})
+    if public:
+        print("  ! Others reach it only over https: a reverse proxy with a certificate in front of port 8088,\n"
+              "    and EMPORIA_RELAY_URL set to that https address — see docs/RUNBOOK.md.")
+    if ask("Take testnet USDC payments and escrow on it now (Base Sepolia; needs an address for your fee)?", True):
+        if cmd_setup_relay(argparse.Namespace(preset="base-sepolia", with_networks="", fee_receiver="",
+                                              yes=False)) != 0:
+            print("  Skipped — later: emporia setup relay, then emporia relay stop && emporia relay start")
+    os.environ["EMPORIA_RELAY_URL"] = LOCAL_RELAY
+    if cmd_relay(argparse.Namespace(action="start", lines=40)) != 0:
+        print(f"  Keeping {current or LOCAL_RELAY} for now; once `emporia relay start` works the agent finds it there.")
+        return current or LOCAL_RELAY
+    return LOCAL_RELAY
 
 
 def _set_agent_relay(profile: Path, url: str) -> None:
