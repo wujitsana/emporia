@@ -275,10 +275,12 @@ def test_wallet_link_stores_the_reference_not_the_key(profiles, monkeypatch, cap
     with patch.dict(os.environ):
         cli.main(["setup", "agent", "kappa", "--keys", "files"])
     acct = Account.create()
-    monkeypatch.setenv("KAPPA_KEY", acct.key.hex())
+    with (root / "kappa" / ".env").open("a") as f:      # in the agent's own .env, where it will look
+        f.write(f"KAPPA_KEY={acct.key.hex()}\n")
     assert cli.main(["wallet", "import", "kappa", "--link", "env:KAPPA_KEY"]) == 0
     dotenv = (root / "kappa" / ".env").read_text()
-    assert "EMPORIA_X402_EVM_KEY_SOURCE=env:KAPPA_KEY" in dotenv and acct.key.hex() not in dotenv
+    assert "EMPORIA_X402_EVM_KEY_SOURCE=env:KAPPA_KEY" in dotenv
+    assert dotenv.count(acct.key.hex()) == 1, "linked where it was, not copied"
     out = capsys.readouterr().out
     assert acct.address in out and acct.key.hex() not in out
     assert not list((root / "kappa").rglob("*.x402.secp256k1")), "linked, not copied"
@@ -544,3 +546,37 @@ def test_rerunning_setup_keeps_the_role_and_key_storage(profiles):
         assert cli.main(["setup", "agent", "dev1"]) == 0
     assert cli.profile_role(root / "dev1", False) == "developer", "its terminal is not taken away"
     assert "EMPORIA_KEY_STORAGE" not in (root / "dev1" / ".env").read_text(), "its key storage unchanged"
+
+
+# -- P173: review fixes ------------------------------------------------------------
+
+def test_a_phrase_in_the_env_is_never_overwritten(tmp_path, monkeypatch):
+    env = tmp_path / ".env"
+    monkeypatch.setattr(identity, "KEY_DIR", tmp_path)
+    monkeypatch.setenv("EMPORIA_KEY_STORAGE", "env")
+    monkeypatch.setenv("EMPORIA_DOTENV", str(env))
+    monkeypatch.setattr(agent_wallet, "_SOURCE_CACHE", {})
+    with patch.dict(os.environ):     # saving a key also sets it in this process; undo that after
+        first = agent_wallet.generate_from_phrase("keep", HARDHAT)
+        with pytest.raises(agent_wallet.AgentWalletError, match="not replaced"):
+            agent_wallet.generate_from_phrase("keep")            # a second phrase, e.g. an import
+        assert HARDHAT in env.read_text(), "the only copy is still there"
+        assert agent_wallet.address("keep") == first["evm"]
+
+
+def test_a_wallet_can_be_added_from_a_linked_phrase(tmp_path, monkeypatch):
+    monkeypatch.setattr(identity, "KEY_DIR", tmp_path)
+    monkeypatch.setattr(agent_wallet, "_SOURCE_CACHE", {})
+    monkeypatch.setenv("MY_PHRASE", HARDHAT)
+    monkeypatch.setenv("EMPORIA_X402_PHRASE_SOURCE", "env:MY_PHRASE")
+    assert agent_wallet.add_from_phrase("lnk", "svm") == "oeYf6KAJkLYhBuR8CiGc6L4D4Xtfepr85fuDgA9kq96"
+
+
+def test_reading_for_a_profile_never_uses_the_callers_key(monkeypatch):
+    from emporia import key_source
+    monkeypatch.setenv("EMPORIA_IDENTITY_PRIVATE_KEY", "11" * 32)       # the caller's own
+    alpha = {"EMPORIA_IDENTITY_PRIVATE_KEY": "22" * 32}
+    assert key_source.key32("env:EMPORIA_IDENTITY_PRIVATE_KEY", alpha) == bytes.fromhex("22" * 32)
+    with pytest.raises(key_source.KeySourceError):
+        key_source.key32("env:EMPORIA_IDENTITY_PRIVATE_KEY", {})        # alpha has none: no fallback
+    assert key_source.key32("env:EMPORIA_IDENTITY_PRIVATE_KEY") == bytes.fromhex("11" * 32), "the agent itself"

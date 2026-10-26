@@ -75,3 +75,20 @@ def test_a_stateless_session_cannot_ask_so_it_refuses():
     async def approve(message, response_type, params, context):
         return {"approve": True}
     assert "cannot ask" in _run(approve, 6_000_000, mode="auto")
+
+
+def test_a_form_left_unticked_declines():
+    async def accept_untouched(message, response_type, params, context):
+        return {"approve": False}
+    assert "declined" in _run(accept_untouched, 6_000_000)
+
+
+def test_the_form_asks_with_the_box_unticked():
+    seen = {}
+
+    async def look(message, response_type, params, context):
+        seen.update(params.requestedSchema if hasattr(params, "requestedSchema") else {})
+        return {"approve": True}
+    _run(look, 6_000_000)
+    assert seen.get("properties", {}).get("approve", {}).get("default") is False
+    assert "approve" in seen.get("required", [])

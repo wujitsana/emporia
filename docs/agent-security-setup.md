@@ -151,7 +151,9 @@ emporia wallet limits NAME --networks base-sepolia,solana-devnet \
 **Limits, in the order they apply:** the networks it may pay on; the per-payment cap; the daily
 cap; then, above the approval threshold, **your yes** — asked through the agent's own app (Hermes
 routes it to Telegram, Slack or the CLI). No answer, a decline, or an app that cannot ask means no
-payment. Below the threshold, a compromised agent can still spend up to its caps; keep them small.
+payment. An app that shows a form must have the box ticked; Hermes's approval button is itself the
+yes. **An agent app set to approve everything automatically approves these payments too** — keep
+payment approval out of any auto-approve mode. Below the threshold, a compromised agent can still spend up to its caps; keep them small.
 
 ## 4. Cards (Stripe)
 

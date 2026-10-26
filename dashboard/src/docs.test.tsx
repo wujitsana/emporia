@@ -89,3 +89,21 @@ describe("the bundled docs (P171)", () => {
     }
   });
 });
+
+describe("the Docs view (P173)", () => {
+  it("lands on a linked section of another doc and stays there", async () => {
+    const { DocsView } = await import("./views/DocsView");
+    const scrolled: string[] = [];
+    Element.prototype.scrollIntoView = function () { scrolled.push((this as Element).id); };
+    let toTop = 0;
+    const realScrollTo = Element.prototype.scrollTo;
+    Element.prototype.scrollTo = function () { toTop++; } as typeof Element.prototype.scrollTo;
+    window.location.hash = "#/docs?doc=games";
+    const { getAllByText } = render(<DocsView />);
+    toTop = 0;
+    fireEvent.click(getAllByText("use cases")[0]);     // → use-cases.md#contests-with-prizes-bounties
+    expect(scrolled).toContain("contests-with-prizes-bounties");
+    expect(toTop).toBe(0);
+    Element.prototype.scrollTo = realScrollTo;
+  });
+});

@@ -32,9 +32,13 @@ def read_bytes(ref: str, env: dict[str, str] | None = None) -> bytes:
     adds variables (a profile's .env, for a process that is not the agent)."""
     kind, _, rest = ref.strip().partition(":")
     if kind == "env":
-        value = os.environ.get(rest.strip(), "") or (env or {}).get(rest.strip(), "")
+        # P173: reading for a given profile (`env`), only that profile's own
+        # variables count. Every agent keeping keys in its .env uses the same
+        # names, so the caller's environment would hand back another agent's key.
+        name = rest.strip()
+        value = env.get(name, "") if env is not None else os.environ.get(name, "")
         if not value.strip():
-            raise KeySourceError(f"the environment variable {rest.strip()} is not set for this agent")
+            raise KeySourceError(f"the environment variable {name} is not set for this agent")
         return value.encode()
     if kind == "cmd":
         argv = shlex.split(rest)
@@ -54,8 +58,8 @@ def read_bytes(ref: str, env: dict[str, str] | None = None) -> bytes:
     raise KeySourceError("a key source is env:NAME or cmd:COMMAND")
 
 
-def read_text(ref: str) -> str:
-    return read_bytes(ref).decode(errors="strict")
+def read_text(ref: str, env: dict[str, str] | None = None) -> str:
+    return read_bytes(ref, env).decode(errors="strict")
 
 
 def key32(ref: str, env: dict[str, str] | None = None) -> bytes:

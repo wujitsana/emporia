@@ -71,3 +71,39 @@ def test_reading_with_the_emporia_command_stays_free(command):
 def test_a_remote_vault_token_is_never_read():
     for name in ("VAULT_TOKEN", "DOPPLER_TOKEN", "INFISICAL_TOKEN"):
         assert guard.pre_tool_call(tool_name="terminal", args={"command": f"echo ${name}"})["action"] == "block"
+
+
+# -- P173: review fixes ------------------------------------------------------------
+
+@pytest.mark.parametrize("command", [
+    "emporia role --yes alpha both",
+    "emporia wallet --max-daily-cents 999999 limits alpha",
+    "emporia identity --to env store alpha",
+    "python -m emporia.cli role alpha both",
+    ".venv/bin/python src/emporia/cli.py wallet import alpha",
+])
+def test_reordered_or_indirect_commands_still_need_the_operator(command):
+    out = guard.pre_tool_call(tool_name="terminal", args={"command": command})
+    assert out and out["action"] == "approve"
+
+
+def test_a_code_tool_running_the_command_needs_the_operator_too():
+    code = "import subprocess; subprocess.run(['emporia', 'role', 'alpha', 'both', '--yes'])"
+    assert guard.pre_tool_call(tool_name="execute_code", args={"code": code})["action"] == "approve"
+
+
+def test_always_covers_one_exact_command():
+    a = guard.pre_tool_call(tool_name="terminal", args={"command": "emporia wallet register alpha"})
+    b = guard.pre_tool_call(tool_name="terminal", args={"command": "emporia role alpha both"})
+    assert a["rule_key"] != b["rule_key"]
+
+
+@pytest.mark.parametrize("printed", [
+    "{'EMPORIA_X402_EVM_PRIVATE_KEY': '" + "ab" * 32 + "', 'HOME': '/x'}",
+    '{"EMPORIA_X402_PHRASE_SECRET": "test test test test test test test test test test test junk"}',
+    "VAULT_TOKEN=hvs." + "z" * 30,
+])
+def test_quoted_and_json_values_are_hidden(printed):
+    out = guard.transform_tool_result(result=printed)
+    assert out and "hidden by Emporia" in out
+    assert "ab" * 32 not in out and "junk" not in out and "z" * 30 not in out

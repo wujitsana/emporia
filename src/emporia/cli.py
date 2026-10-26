@@ -1135,20 +1135,22 @@ def _link_wallet(profile: Path, agent_id: str, what: str, ref: str) -> int:
         print("wallet link: a source is env:NAME or cmd:COMMAND")
         return 1
     families = ["evm", "svm"] if what == "phrase" else [what]
-    dotenv = installer().harvest_env(profile)
-    added = {k: v for k, v in dotenv.items() if k not in os.environ}
-    os.environ.update(added)      # an env: source may live in the agent's .env
+    from emporia.key_source import KeySourceError, read_text
     try:
+        # P173: read with this agent's own environment only — never the CLI's,
+        # which may hold another profile's key under the same name.
+        secret = read_text(ref, env=installer().harvest_env(profile))
         addresses = {}
+        if what == "phrase":
+            evm_raw, sol_raw = aw.derive_from_phrase(secret)
+            raws = {"evm": evm_raw, "svm": sol_raw}
+        else:
+            raws = {what: aw._parse_secret(what, secret)}
         for fam in families:
-            raw = aw.secret_from_source(fam, f"phrase:{ref}" if what == "phrase" else ref)
-            addresses[fam] = Account.from_key(raw).address if fam == "evm" else x402_svm.address_of(raw)
-    except aw.AgentWalletError as e:
+            addresses[fam] = Account.from_key(raws[fam]).address if fam == "evm" else x402_svm.address_of(raws[fam])
+    except (KeySourceError, aw.AgentWalletError, ValueError) as e:
         print(f"wallet link: {e}")
         return 1
-    finally:
-        for k in added:
-            os.environ.pop(k, None)
     var = aw.PHRASE_SOURCE_VAR if what == "phrase" else aw.KEY_SOURCE_VARS[what]
     merge_env_file(profile / ".env", {var: ref})
     for fam, address in addresses.items():

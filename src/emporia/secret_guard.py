@@ -109,7 +109,25 @@ def find(text: str, own: Iterable[str] = ()) -> str | None:
     return None
 
 
+_OWN_CACHE: dict[tuple, list[str]] = {}
+
+
 def own_secrets(agent_id: str) -> list[str]:
+    """Cached per agent and per state of its key files and linked keys (P173):
+    this runs on every send."""
+    from emporia import agent_wallet, identity
+    files = [identity._key_path(agent_id), identity._enc_key_path(agent_id),
+             agent_wallet.wallet_path(agent_id), agent_wallet.solana_wallet_path(agent_id),
+             agent_wallet.phrase_path(agent_id)]
+    state = (agent_id, tuple(f.stat().st_mtime_ns if f.exists() else 0 for f in files),
+             tuple(sorted(agent_wallet._SOURCE_CACHE)), tuple(sorted(identity._LINKED)))
+    if state not in _OWN_CACHE:
+        _OWN_CACHE.clear()
+        _OWN_CACHE[state] = _own_secrets_uncached(agent_id)
+    return _OWN_CACHE[state]
+
+
+def _own_secrets_uncached(agent_id: str) -> list[str]:
     """This agent's key material as text, the forms someone would paste it in:
     the identity key and wallet keys as hex, the Solana seed as base58 too,
     the recovery phrase. Read from the key files and from linked keys already

@@ -106,8 +106,8 @@ def _ask_operator(message: str) -> bool | None:
         import anyio.from_thread
         from fastmcp.server.dependencies import get_context
         ctx = get_context()
-        schema = {"type": "object", "properties": {
-            "approve": {"type": "boolean", "title": "Approve this payment", "default": True}}}
+        schema = {"type": "object", "required": ["approve"], "properties": {
+            "approve": {"type": "boolean", "title": "Approve this payment", "default": False}}}
         result = anyio.from_thread.run(lambda: ctx.session.elicit(
             message=message, requested_schema=schema, related_request_id=ctx.request_id))
     except Exception:  # noqa: BLE001 — no request context, no elicitation support, or no answer
@@ -115,7 +115,11 @@ def _ask_operator(message: str) -> bool | None:
         return None
     if result.action != "accept":
         return False
-    return (result.content or {}).get("approve", True) is not False
+    # P173: a client that shows the form must have the box ticked. A consent-only
+    # client (Hermes's approval prompt) answers "accept" with no content — that
+    # accept IS the operator's yes. Anything else declines.
+    content = result.content or {}
+    return content.get("approve") is True if content else True
 _game_registry = GameRegistry(DB_PATH)
 
 from emporia import agent_wallet as _agent_wallet  # noqa: E402
@@ -1137,9 +1141,12 @@ def _session_recipients(aid: str, session_id: str) -> dict[str, str]:
     return out
 
 
-def _seal_text(text: str, recipients: dict[str, str], session_id: str, field: str) -> str:
+def _seal_text(text: str, recipients: dict[str, str], session_id: str, field: str,
+               sender: str = "") -> str:
     from emporia import secret_guard
-    secret_guard.check(AGENT_ID, text)   # P163: before it is sealed, where nothing else can look
+    # P163: before it is sealed, where nothing else can look; P173: for the agent
+    # actually sending, so its own keys are matched exactly.
+    secret_guard.check(sender or AGENT_ID, text)
     from emporia import crypto_box
     return json.dumps(crypto_box.seal(text, recipients, crypto_box.session_aad(session_id, field)))
 
@@ -2846,9 +2853,9 @@ def submit_action(
             for f in sess.get("private_text_fields", []):
                 v = action_payload.get(f)
                 if isinstance(v, str) and v and not crypto_box.looks_like_envelope(v):
-                    action_payload[f] = _seal_text(v, recipients, session_id, f)
+                    action_payload[f] = _seal_text(v, recipients, session_id, f, aid)
             if say:
-                say = _seal_text(say, recipients, session_id, "chat")
+                say = _seal_text(say, recipients, session_id, "chat", aid)
         signed_payload = signed_action_payload(
             aid, action_type, action_payload, rationale, session_id, step_number, say=say,
         )
@@ -3126,7 +3133,7 @@ def send_game_chat(session_id: str, content: str, agent_id: str = "") -> dict[st
     try:
         sess = _bearer_request("get", f"{RELAY_URL}/sessions/{session_id}", agent_id=aid, timeout=10).json()
         if sess.get("sealed"):  # P149: a private game's talk is sealed to its players
-            content = _seal_text(content, _session_recipients(aid, session_id), session_id, "chat")
+            content = _seal_text(content, _session_recipients(aid, session_id), session_id, "chat", aid)
         r = _bearer_request("post", f"{RELAY_URL}/sessions/{session_id}/chat", agent_id=aid,
                             json={"content": content}, timeout=10)
         d = r.json()
@@ -3219,7 +3226,7 @@ def dispute_delivery(
     from emporia.wire import SEALED_DISPUTE_RATIONALE
     if sess.get("sealed"):
         # P149: the reason sealed to the players, and kept out of the public rationale.
-        reason = _seal_text(reason, _session_recipients(aid, session_id), session_id, "reason")
+        reason = _seal_text(reason, _session_recipients(aid, session_id), session_id, "reason", aid)
         effective_rationale = rationale or SEALED_DISPUTE_RATIONALE
     else:
         effective_rationale = rationale or default_dispute_rationale(reason)

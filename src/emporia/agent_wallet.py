@@ -164,9 +164,15 @@ def generate_from_phrase(agent_id: str, phrase: str | None = None,
                                    f"confirm it is ignored. A wallet key must never be committable.")
         if path.exists():
             raise AgentWalletError(f"{path} already exists; a wallet key is not replaced implicitly.")
+    from emporia import key_source
+    if key_source.store_in_env() and (os.getenv(PHRASE_SOURCE_VAR, "").strip()
+                                      or any(source_for(f) for f in families)):
+        # P173: in the .env there are no files for the checks above to find; a
+        # phrase or key already there is the only copy, so it is never replaced.
+        raise AgentWalletError(f"{agent_id} already has a wallet key or phrase in its .env; "
+                               f"it is not replaced implicitly.")
     phrase = " ".join((phrase or generate_mnemonic(12, Language.ENGLISH)).split()).lower()
     evm_key, sol_seed = derive_from_phrase(phrase)
-    from emporia import key_source
     if key_source.store_in_env():
         # P165: the phrase alone, in the profile .env; both wallets derive from it.
         key_source.save_key_to_env("phrase", phrase)
@@ -197,7 +203,10 @@ def add_from_phrase(agent_id: str, family: str) -> str:
     target = wallet_path(agent_id) if family == "evm" else solana_wallet_path(agent_id)
     if target.exists():
         raise AgentWalletError(f"{target} already exists; a wallet key is not replaced implicitly.")
-    evm_key, sol_seed = derive_from_phrase(phrase_path(agent_id).read_text())
+    # P173: the phrase may be a file or linked (the .env, a password manager).
+    phrase = (phrase_path(agent_id).read_text() if phrase_path(agent_id).exists()
+              else read_source(os.getenv(PHRASE_SOURCE_VAR, "")))
+    evm_key, sol_seed = derive_from_phrase(phrase)
     identity._write_secret_atomically(target, evm_key if family == "evm" else sol_seed)
     return Account.from_key(evm_key).address if family == "evm" else x402_svm.address_of(sol_seed)
 

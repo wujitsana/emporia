@@ -28,7 +28,10 @@ export function DocsView({ initialDocId }: { initialDocId?: string | null }) {
     }
   }, [docId]);
   const [query, setQuery] = useState("");
-  const [pendingAnchor, setPendingAnchor] = useState<string | null>(null);
+  // A section to scroll to once a newly opened doc has rendered. A ref, not
+  // state: clearing it must not re-run the scroll effect (P173: it used to
+  // scroll to the section and straight back to the top).
+  const pendingAnchor = useRef<string | null>(null);
   const mainRef = useRef<HTMLDivElement>(null);
   const doc = DOCS.find((d) => d.id === docId) ?? DOCS[0];
   const shown = useMemo(() => searchDocs(query), [query]);
@@ -39,19 +42,20 @@ export function DocsView({ initialDocId }: { initialDocId?: string | null }) {
     if (el) el.scrollIntoView({ block: "start" });
   };
 
-  // A link to another doc's section: switch, then scroll once it has rendered.
+  // A newly opened doc starts at the top, or at the section a link asked for.
   useEffect(() => {
-    if (pendingAnchor) {
-      scrollTo(pendingAnchor);
-      setPendingAnchor(null);
-    } else {
-      mainRef.current?.scrollTo?.({ top: 0 });
-    }
-  }, [docId, pendingAnchor]);
+    const anchor = pendingAnchor.current;
+    pendingAnchor.current = null;
+    if (anchor) scrollTo(anchor);
+    else mainRef.current?.scrollTo?.({ top: 0 });
+  }, [docId]);
 
   const body = useMemo(() => renderMarkdown(doc.text, {
     resolveLink: (href) => resolveDocLink(doc, href),
-    onDocLink: (id, anchor) => { setDocId(id); if (anchor) setPendingAnchor(anchor); },
+    onDocLink: (id, anchor) => {
+      pendingAnchor.current = anchor ?? null;
+      if (id === doc.id) { if (anchor) scrollTo(anchor); } else setDocId(id);
+    },
     onAnchor: scrollTo,
   }), [doc]);
 
