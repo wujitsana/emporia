@@ -2947,6 +2947,8 @@ def test_no_new_identity_as_proof_params():
     # inline) or pure public-lookup keys — not identity-as-proof.
     _SAFE_LOOKUPS = {
         ("GET", "/agents/{agent_id}/record"),  # P182: whose record to read; counts only, no auth decision
+        ("GET", "/agents/{agent_id}/card"),  # P187: whose card; public once the agent published a relay list
+        ("POST", "/agents/{agent_id}/relay-list"),  # P187: _require_caller_is-checked, and signed by the agent
         ("GET", "/payments/settlements"),  # agent_id: filter, but gated by inline auth check
         ("DELETE", "/agoras/topics/{slug}/subscribe"),  # agent_id: _require_caller_is-checked
         ("GET", "/messages"),  # agent_id: _require_caller_is-checked (N1-5)
@@ -3108,6 +3110,7 @@ def test_every_route_has_a_reviewed_auth_posture():
     """
 
     _AUTHENTICATED: set[tuple[str, str]] = {
+        ("POST", "/agents/{agent_id}/relay-list"),  # P187: the agent itself
         # P179: the relay operator only (_require_operator) — settings and aggregates.
         ("GET", "/operator/overview"),
         # P143: table talk — the caller must be a player in that game.
@@ -3252,6 +3255,7 @@ def test_every_route_has_a_reviewed_auth_posture():
     }
     _DELIBERATELY_PUBLIC: dict[tuple[str, str], str] = {
         ("GET", "/agents/{agent_id}/record"): "P182: an agent's record — counts only, read before staking or buying",
+        ("GET", "/agents/{agent_id}/card"): "P187: an agent's card — address, public keys, signed relay list; only once the agent published one, to be found from other relays",
         ("GET", "/health"): "operational health check, must work with no credential",
         ("GET", "/safety/stats"): "operator-facing guardrails posture, no per-agent data",
         ("GET", "/relay-card"): "public Emporia relay descriptor, by design (not an A2A card)",
@@ -28136,7 +28140,7 @@ def test_the_membership_rule_is_written_in_exactly_one_place():
 # P61 — the schema has a version, and the version has to stay honest
 # ---------------------------------------------------------------------------
 
-# 30 tables, 274 columns, at SCHEMA_VERSION 7. Recomputed by the test below;
+# 30 tables, 275 columns, at SCHEMA_VERSION 7. Recomputed by the test below;
 # when it fails, read *why* before touching this string.
 #
 # V1 -> V2 (P72-4): `bounty_entries` and its UNIQUE (listing_id, nous_user_id)
@@ -28159,7 +28163,7 @@ def test_the_membership_rule_is_written_in_exactly_one_place():
 #
 # V5 -> V6 (P143): `game_chat`, table talk stored inside its game. A V5 relay
 # would serve a V6 database without the chat its games' records include.
-_SCHEMA_FINGERPRINT_V7 = "37cae6185d2e3a8c14794d758c538c3e62aa61acdba62686871a6b4ace25971d"
+_SCHEMA_FINGERPRINT_V7 = "95e0d121f1fba2a38e994a1b000399ae2b3447f014057db267de55d210d0366a"
 
 
 def _schema_fingerprint(db_path) -> tuple[str, int, int]:
@@ -28444,6 +28448,7 @@ _DASHBOARD_UNSURFACED_GETS: dict[str, str] = {
     "/bounties/{}/promise-status": "P79: per-bounty funder-payment record. The board already flags a promised prize; this is the detail behind one, reached from a bounty rather than browsed — surfacing it as its own page would be a view of one row.",
     # Infrastructure and machine-facing descriptors — nothing for a human view.
     "/": "redirects to /ui/; it *is* the dashboard's front door",
+    "/agents/{}/card": "P187: an agent's card, for other relays' agents to find and check it — the dashboard already shows the agent's address and fingerprint on its profile",
     "/.well-known/agent-card.json": "A2A descriptor, machine-facing",
     "/.well-known/agent.json": "A2A descriptor, machine-facing",
     "/relay-card": "relay descriptor for peers, machine-facing",

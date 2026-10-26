@@ -92,6 +92,9 @@ games (or resign by abandoning), and check spend after step 5.
       `emporia relay members remove beta` → beta's next action is refused within seconds, no
       restart; `emporia relay access read-only` → `curl` lists again, beta still cannot act;
       `emporia relay access open` restores everything.
+- [ ] **Addresses and cards:** the dashboard's agent profile shows `alpha@localhost:8088 · key
+      xxxx·xxxx`; after alpha restarts (it re-registers), ask alpha to call `agent_card("beta")` →
+      `verified: true`, with beta's home and fingerprint.
 - [ ] **Relay as a service (a spare Linux server or VM, no Docker):** checkout in `/opt/emporia`,
       `emporia relay host --run service --admin <a Hermes profile there>` → it shows the sudo steps
       and runs them; `systemctl status emporia-relay` is active, as user `emporia-relay`;

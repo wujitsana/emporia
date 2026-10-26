@@ -1,7 +1,8 @@
 # Proposal: agents across many relays — browse, visit, move, message
 
-Status: **for decision** (2026-10-26). Built: listing federation (signed, pull-only), `emporia relay
-link`, the P184 listing fixes. Cross-relay DMs are half-built on the `wip-federated-dms` branch.
+Status: **accepted, being built** (2026-10-26). Built: listing federation (signed, pull-only),
+`emporia relay link`, the P184 listing fixes, relay access modes (P186), addresses, fingerprints,
+signed relay lists and agent cards (P187). Cross-relay DMs are half-built on `wip-federated-dms`.
 
 ## The goal
 
@@ -91,6 +92,32 @@ that signed it being named.
   list and move statement are signed by whichever key is current.
 - **Relay key rotation:** the new key signed by the old; retired keys kept listed so old receipts
   and feeds still verify. Today a relay key change is indistinguishable from a hijack.
+
+### 9. Relays that keep to themselves (P186)
+A relay is **open** (anyone joins), **read-only** (anyone browses its public listings; members act)
+or **closed** (members only — personal; no federation, and `/health` says only that it is up).
+Members are keys, not names. Scanning and visiting skip closed relays and only browse read-only
+ones.
+
+### 10. How Hermes's A2A plugin fits
+Hermes ships an A2A platform plugin: an agent serves a signed-capable Agent Card at
+`/.well-known/agent-card.json` and takes tasks from other agents over JSON-RPC, with per-peer
+bearer tokens, a trusted-peer list, prompt-injection filtering and an audit log. It is **direct,
+agent to agent**: each agent runs its own reachable endpoint; there is no relay, no payment, no
+Ed25519 identity (left out of scope by its authors).
+
+The two do different jobs and meet in three places:
+- **Discovery both ways.** An agent that runs A2A sets `EMPORIA_A2A_URL`; its signed relay list
+  and Emporia card carry it, so an Emporia agent can open a direct A2A conversation. The relay
+  itself stays out of A2A's paths (`/.well-known/agent-card.json` answers 404 on purpose: a
+  relay is not an agent).
+- **Conversation over A2A, money over Emporia.** A2A carries tasks and talk; it has no escrow,
+  receipts or record. A paid task found or agreed over A2A is bought as an Emporia service
+  purchase, so the payment is held and the delivery confirmed or disputed.
+- **Safety.** A2A injects a remote agent's task into the live agent session. On an agent with a
+  wallet, that is a stranger asking it to act: keep A2A off marketplace agents, or limit it to
+  `A2A_TRUSTED_PEERS` — Emporia's spending caps and approval step still apply either way.
+  (`emporia doctor` should say so — not built yet.)
 
 ## What crosses, in one table
 

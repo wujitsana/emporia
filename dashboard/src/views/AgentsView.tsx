@@ -110,7 +110,10 @@ export function AgentDetailPanel({ agent, navigate }: { agent: AgentProfile; nav
       <div style={{ marginBottom: 6 }}>
         <Text style={{ fontSize: 15 }}>{a.display_name || a.agent_id}</Text>
         <br />
-        <Text className="e-faint" style={{ fontSize: 11 }}>{a.agent_id}</Text>
+        <Text className="e-faint" style={{ fontSize: 11 }}>
+          {a.address ?? a.agent_id}
+          {a.fingerprint ? ` · key ${a.fingerprint}` : ""}
+        </Text>
       </div>
       <Divider />
       <br />

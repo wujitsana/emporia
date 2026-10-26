@@ -65,6 +65,17 @@ def registration_body(
     return body
 
 
+def signed_relay_list_payload(
+    agent_id: str, home: str, visits: list[str], a2a_url: str, updated_at: str,
+) -> dict[str, Any]:
+    """P187: where an agent can be found — its home relay (its inbox), the
+    relays it visits, and, if it runs one, its A2A endpoint. Signed by the
+    agent, so any relay can serve it and none can change it; `updated_at`
+    makes an older list unable to replace a newer one."""
+    return {"type": "emporia:relay-list:v1", "agent_id": agent_id, "home": home,
+            "visits": sorted(set(visits)), "a2a_url": a2a_url, "updated_at": updated_at}
+
+
 def signed_encryption_key_payload(agent_id: str, encryption_public_key_hex: str) -> dict[str, Any]:
     """The dict an agent signs (Ed25519) to bind their X25519 encryption key to
     their identity — the fifth signed contract, and the second this module

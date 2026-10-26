@@ -686,19 +686,33 @@ def public_listing(row: Any) -> dict[str, Any]:
     return d
 
 
+def _own_host() -> str:
+    from emporia.addresses import host_of
+    return host_of(RELAY_BASE_URL)
+
+
 def annotate_federated(listings: list[dict[str, Any]]) -> list[dict[str, Any]]:
     """P184: a listing pulled from a linked relay says where the deal happens —
     on that relay, which holds the money, the receipts and any dispute — and
-    whether an agent here goes by the same name with a different key."""
-    remote = [x for x in listings if x.get("federated_from")]
-    if not remote:
+    whether an agent here goes by the same name with a different key.
+    P187: every listing names its seller by address and fingerprint."""
+    from emporia.addresses import address, fingerprint, host_of
+    ids = sorted({x.get("agent_id", "") for x in listings})
+    if not ids:
         return listings
-    ids = sorted({x.get("agent_id", "") for x in remote})
     with DB_LOCK, get_db() as conn:
         local = {r["agent_id"]: r["public_key_hex"] for r in conn.execute(
             f"SELECT agent_id, public_key_hex FROM authorized_agents WHERE agent_id IN ({','.join('?' * len(ids))})",
             ids).fetchall()}
-    for x in remote:
+    here_host = _own_host()
+    for x in listings:
+        if x.get("federated_from"):
+            x["agent_address"] = address(x.get("agent_id", ""), host_of(x["federated_from"]))
+            x["agent_fingerprint"] = fingerprint(x.get("agent_public_key_hex") or "")
+        elif x.get("listing_type") != "room":
+            x["agent_address"] = address(x.get("agent_id", ""), here_host)
+            x["agent_fingerprint"] = fingerprint(local.get(x.get("agent_id", "")) or "")
+    for x in (y for y in listings if y.get("federated_from")):
         x["deal_on"] = x["federated_from"]
         x["how_to_deal"] = (f"On {x['federated_from']}, not here: join it with the same key "
                             f"(`emporia relay use {x['federated_from']} NAME`) — the same key is the same agent there.")
@@ -1160,6 +1174,7 @@ def init_db() -> None:
         _migrate_settlement_atomic_columns(conn)
         _migrate_listings_federated_from(conn)
         _migrate_listings_agent_key(conn)
+        _migrate_relay_list(conn)
         # escrow_holds (P99) is a new table, created above by CREATE TABLE IF
         # NOT EXISTS on any database, old or new, so it needs no migration.
         # Rename aroga_* → agora_* if old names still exist (typo fix)
@@ -1617,6 +1632,13 @@ def _migrate_settlement_atomic_columns(conn: Any) -> None:
     for col in ("platform_fee_atomic", "winner_payout_atomic"):
         if col not in cols:
             conn.execute(f"ALTER TABLE settlements ADD COLUMN {col} TEXT")
+
+
+def _migrate_relay_list(conn: Any) -> None:
+    """P187: the agent's signed relay list — where it lives and visits."""
+    cols = {r[1] for r in conn.execute("PRAGMA table_info(authorized_agents)").fetchall()}
+    if "relay_list_json" not in cols:
+        conn.execute("ALTER TABLE authorized_agents ADD COLUMN relay_list_json TEXT")
 
 
 def _migrate_listings_agent_key(conn: Any) -> None:
@@ -3152,6 +3174,7 @@ _NON_AGENT_COLUMNS: frozenset[tuple[str, str]] = frozenset({
     ("listings", "listing_type"), ("listings", "payment_mode"), ("listings", "price_usd"),
     ("listings", "module_type"), ("listings", "origin_relay"), ("listings", "expires_at"),
     ("listings", "federated_from"), ("listings", "agent_public_key_hex"),
+    ("authorized_agents", "relay_list_json"),
     ("listings", "metadata_json"), ("listings", "created_at"),
     # messages
     ("messages", "message_id"), ("messages", "session_id"), ("messages", "type"),
@@ -5057,6 +5080,8 @@ async def health(request: Request):
         "status": "ok",
         "service": BRAND,
         "access": access,
+        # P187: the host in this relay's agents' addresses (alpha@host).
+        "host": _own_host(),
         "relay_id": RELAY_ID,
         "version": __version__,
         # P139: lets `emporia doctor` tell a relay running older code than the

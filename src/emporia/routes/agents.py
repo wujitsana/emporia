@@ -16,7 +16,10 @@ from typing import Any
 
 import httpx
 from fastapi import APIRouter, HTTPException, Request
+from pydantic import BaseModel
 from starlette.concurrency import run_in_threadpool
+
+from emporia.addresses import address, fingerprint
 
 from emporia import relay_server as rs
 from emporia.standing import game_module_types, wins_sql
@@ -149,6 +152,8 @@ async def register_agent(req: rs.RegisterAgentRequest):
         # would have no way to notice a handle it re-registered was allocated to
         # a different identity than it expected.
         "stable_id": profile["stable_id"],
+        "address": address(canonical_id, rs._own_host()),
+        "fingerprint": fingerprint(req.public_key_hex),
         "display_name": profile["display_name"],
         "trust_level": profile["trust_level"],
         "nous_user_id": profile["nous_user_id"],
@@ -286,6 +291,9 @@ async def get_agent_profile(agent_id: str, request: Request):
         # identity (permanent, pubkey-anchored). A client that wants to remember
         # *who* someone is stores the latter — see stable_id_for()'s docstring.
         "stable_id": row["stable_id"],
+        # P187: its name beyond this relay, and what tells it apart from a namesake.
+        "address": address(row["agent_id"], rs._own_host()),
+        "fingerprint": fingerprint(row["public_key_hex"] or ""),
         "display_name": row["display_name"] or row["agent_id"],
         "trust_level": row["trust_level"] or "key_only",
         "nous_user_id": _own_nous_id(row, caller),
@@ -662,3 +670,81 @@ async def get_encryption_key(agent_id: str, request: Request):
         "signature": signature,
         "public_key_hex": row["public_key_hex"] if row else "",
     }
+
+
+
+# ─── P187: where an agent can be found ───────────────────────────────────────
+
+class RelayListRequest(BaseModel):
+    home: str
+    visits: list[str] = []
+    a2a_url: str = ""
+    updated_at: str
+    signature: str  # Ed25519 over wire.signed_relay_list_payload()
+
+
+def _relay_url_ok(url: str) -> bool:
+    from urllib.parse import urlparse
+    u = urlparse(url)
+    return u.scheme in ("https", "http") and bool(u.netloc) and len(url) <= 300
+
+
+@router.post("/agents/{agent_id}/relay-list")
+async def set_relay_list(agent_id: str, req: RelayListRequest, request: Request):
+    """Publish the agent's signed relay list: its home, the relays it visits
+    and, if it runs one, its A2A endpoint. Publishing it is the agent's choice
+    to be findable — its card is public from then on."""
+    from emporia.wire import signed_relay_list_payload
+    rs._require_caller_is(agent_id, request)
+    rs._require_registered(agent_id)
+    rs._enforce_agent_rate_limit(agent_id)
+    urls = [req.home, *req.visits, *([req.a2a_url] if req.a2a_url else [])]
+    if len(req.visits) > 50 or not all(_relay_url_ok(u) for u in urls):
+        raise HTTPException(400, "home, visits (at most 50) and a2a_url must be http(s) URLs")
+    try:
+        datetime.fromisoformat(req.updated_at)
+    except ValueError:
+        raise HTTPException(400, "updated_at must be an ISO 8601 time")
+    payload = signed_relay_list_payload(agent_id, req.home, req.visits, req.a2a_url, req.updated_at)
+    if not rs.AGENT_REGISTRY.verify_signature(agent_id, payload, req.signature):
+        raise HTTPException(403, "relay list signature does not match this agent's key")
+    with rs.DB_LOCK, rs.get_db() as conn:
+        row = conn.execute("SELECT relay_list_json FROM authorized_agents WHERE agent_id = ?",
+                           (agent_id,)).fetchone()
+        old = json.loads(row["relay_list_json"]) if row and row["relay_list_json"] else None
+        if old and old["list"]["updated_at"] >= req.updated_at:
+            raise HTTPException(409, "a newer relay list is already published")
+        conn.execute("UPDATE authorized_agents SET relay_list_json = ? WHERE agent_id = ?",
+                     (json.dumps({"list": payload, "signature": req.signature}), agent_id))
+    return {"ok": True, "relay_list": payload}
+
+
+@router.get("/agents/{agent_id}/card")
+async def agent_card(agent_id: str):
+    """An agent's card: its address, fingerprint, public keys and signed relay
+    list — what another relay's agent needs to find it, check it and message
+    it. Public only once the agent published a relay list (it chose to be
+    found); otherwise the same 404 as for no such agent. Signed by this relay."""
+    from emporia.identity import federation_signable_bytes, get_relay_public_key_hex, sign_raw_relay
+    with rs.DB_LOCK, rs.get_db() as conn:
+        row = conn.execute(
+            "SELECT agent_id, display_name, public_key_hex, encryption_public_key, encryption_key_signature, "
+            "relay_list_json FROM authorized_agents WHERE agent_id = ? AND is_active = 1", (agent_id,)).fetchone()
+    if not row or not row["relay_list_json"]:
+        raise HTTPException(404, f"No card for {agent_id}")
+    published = json.loads(row["relay_list_json"])
+    card = {
+        "address": address(row["agent_id"], rs._own_host()),
+        "agent_id": row["agent_id"],
+        "display_name": row["display_name"] or row["agent_id"],
+        "fingerprint": fingerprint(row["public_key_hex"] or ""),
+        "public_key_hex": row["public_key_hex"],
+        "encryption_public_key": row["encryption_public_key"] or "",
+        "encryption_key_signature": row["encryption_key_signature"] or "",
+        "relay_list": published["list"],
+        "relay_list_signature": published["signature"],
+        "a2a_url": published["list"].get("a2a_url", ""),
+        "relay": rs.RELAY_BASE_URL,
+    }
+    return {"card": card, "relay_public_key": get_relay_public_key_hex(),
+            "signature": sign_raw_relay(federation_signable_bytes(rs.RELAY_BASE_URL, "agent-card", [card]))}

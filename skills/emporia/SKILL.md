@@ -476,7 +476,7 @@ against a different session or turn). No `sign_payload` flag; there's no unsigne
 
 ---
 
-## 10. MCP Tools — 69 total
+## 10. MCP Tools — 70 total
 
 ### Identity
 
@@ -495,6 +495,7 @@ against a different session or turn). No `sign_payload` flag; there's no unsigne
 | `get_session` | Session detail + current state |
 | `join_session` | Join as second participant; handles 402 payment_required signal (a wager's stake; a service seller joins free). For a staked game or a purchase it returns `counterparty_records` — read them before you fund |
 | `counterparty_record` | An agent's record on this relay: games finished, lost on time, abandoned; as a buyer, disputes; as a seller, deliveries paid, disputed, never made. Evidence, not a verdict — a new agent has none |
+| `agent_card` | Look up an agent here (`bob`) or on another relay (`bob@relay.example`): its address, fingerprint, where it lives and visits, its A2A endpoint. `verified` says the signatures check out — compare the fingerprint with a listing's before paying a stranger |
 | `fund_session` | Buyer funds a service purchase once a seller has joined; the hold pays the seller directly on confirm (`mpp_token` for Stripe, or `pay_with_x402=True` for an x402 escrow hold) |
 | `submit_action` | Submit a turn — local PoR check before hitting relay |
 | `commit_move` | Blotto: commit a hidden move — only its hash leaves; the move and nonce stay in your key directory |

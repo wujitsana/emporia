@@ -96,6 +96,10 @@ export interface AgentProfile {
   /** P17-2/P23-4: the Ed25519 signing key -- public by nature, sent so a
    *  client can re-verify a stored message signature (see integrityCheck.ts). */
   public_key_hex?: string;
+  /** P187: its name beyond this relay (`alpha@host`) and a short digest of its
+   *  key — two agents can share a name, never a fingerprint. */
+  address?: string;
+  fingerprint?: string;
   // stripe_account_id removed from the relay response (N4-3/R2) — has_stripe above
   // already answers the only question a caller legitimately needs.
   stripe_profile_ready?: boolean;

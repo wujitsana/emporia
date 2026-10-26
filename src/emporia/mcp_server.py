@@ -379,10 +379,113 @@ def register_agent(
         r = httpx.post(f"{RELAY_URL}/agents/register", json=payload, timeout=5)
         data = r.json()
         if r.status_code in (200, 201):
-            return {"success": True, "agent_id": data.get("agent_id"), "trust_level": data.get("trust_level")}
+            published = _publish_relay_list(data.get("agent_id") or agent_id)
+            return {"success": True, "agent_id": data.get("agent_id"), "trust_level": data.get("trust_level"),
+                    "address": data.get("address"), "fingerprint": data.get("fingerprint"),
+                    "relay_list": published}
         return {"error": data, "success": False}
     except Exception as e:
         return {"error": str(e), "success": False}
+
+
+# ─── P187: where this agent can be found ─────────────────────────────────────
+
+def _visits_file() -> Path:
+    from emporia.identity import KEY_DIR
+    return KEY_DIR.parent / "emporia_visits.json"
+
+
+def _visits() -> list[str]:
+    """The relays this agent has joined besides its home (P188 adds them)."""
+    try:
+        return [u for u in json.loads(_visits_file().read_text()).get("visits", []) if isinstance(u, str)]
+    except (OSError, ValueError):
+        return []
+
+
+def _publish_relay_list(aid: str) -> str:
+    """Sign and publish where this agent lives and visits — at home and on every
+    relay it visits, so any of them can point to the others. Best effort: a
+    relay that refuses it changes nothing else."""
+    from datetime import UTC, datetime
+
+    from emporia.identity import sign as ed25519_sign
+    from emporia.wire import signed_relay_list_payload
+    visits = _visits()
+    a2a = os.getenv("EMPORIA_A2A_URL", "").strip()
+    stamp = datetime.now(UTC).isoformat()
+    body = {"home": RELAY_URL, "visits": visits, "a2a_url": a2a, "updated_at": stamp,
+            "signature": ed25519_sign(signed_relay_list_payload(aid, RELAY_URL, visits, a2a, stamp), aid)}
+    results = []
+    for relay in [RELAY_URL, *visits]:
+        try:
+            r = _bearer_request("post", f"{relay}/agents/{aid}/relay-list", agent_id=aid, json=body, timeout=10) \
+                if relay == RELAY_URL else _visit_request(relay, "post", f"/agents/{aid}/relay-list", aid, json=body)
+            results.append(f"{relay}: {'ok' if r.status_code == 200 else r.status_code}")
+        except Exception as e:  # noqa: BLE001
+            results.append(f"{relay}: {e}")
+    return "; ".join(results)
+
+
+def _visit_request(relay: str, method: str, path: str, aid: str, **kwargs: Any) -> httpx.Response:
+    """A request to a relay this agent visits (P188). Until then, unsigned."""
+    return getattr(httpx, method)(f"{relay}{path}", timeout=10, **kwargs)
+
+
+def _pin_relay_key_for(relay: str, current: str | None) -> tuple[str | None, bool]:
+    """`_pinned_relay_key` for any relay: the first key seen is kept; a
+    different one later is reported, never silently trusted."""
+    from emporia.identity import KEY_DIR
+    path = KEY_DIR / "relay_pins.json"
+    pins = json.loads(path.read_text()) if path.exists() else {}
+    pinned = pins.get(relay)
+    if pinned is None and current:
+        pins[relay] = pinned = current
+        KEY_DIR.mkdir(parents=True, exist_ok=True)
+        fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+        with os.fdopen(fd, "w") as f:
+            json.dump(pins, f)
+    return pinned, bool(current and pinned and current != pinned)
+
+
+@mcp.tool()
+def agent_card(agent: str) -> dict[str, Any]:
+    """Look up an agent — here (`bob`) or on another relay (`bob@relay.example`) —
+    and check it: its address, fingerprint, keys, where it lives and visits,
+    and its A2A endpoint if it runs one.
+
+    `checks` says what was verified: the relay list is signed by the agent's
+    own key, the fingerprint matches that key, and the card is signed by its
+    relay (whose key is pinned on first sight). Compare the fingerprint with
+    the one in a listing or offer before paying a stranger.
+    """
+    from emporia.addresses import base_url, fingerprint, is_address, split_address
+    from emporia.identity import federation_signable_bytes, verify, verify_raw
+    from emporia.wire import signed_relay_list_payload
+    agent_id, host = split_address(agent) if is_address(agent) else (agent, "")
+    relay = base_url(host) if host else RELAY_URL
+    try:
+        r = httpx.get(f"{relay}/agents/{agent_id}/card", timeout=10)
+    except Exception as e:
+        return {"error": f"{relay} did not answer: {e}", "success": False}
+    if r.status_code != 200:
+        return {"error": f"no card for {agent} — it has not published one, or does not exist", "success": False}
+    body = r.json()
+    card = body.get("card") or {}
+    lst = card.get("relay_list") or {}
+    pinned, changed = _pin_relay_key_for(relay, body.get("relay_public_key"))
+    checks = {
+        "relay_list_signed_by_agent": verify(
+            signed_relay_list_payload(lst.get("agent_id", ""), lst.get("home", ""), lst.get("visits") or [],
+                                      lst.get("a2a_url", ""), lst.get("updated_at", "")),
+            card.get("relay_list_signature", ""), card.get("public_key_hex", "")),
+        "fingerprint_matches_key": fingerprint(card.get("public_key_hex", "")) == card.get("fingerprint"),
+        "card_signed_by_relay": verify_raw(federation_signable_bytes(card.get("relay", ""), "agent-card", [card]),
+                                           body.get("signature", ""), pinned or ""),
+        "relay_key_changed_since_first_seen": changed,
+    }
+    ok = all(v for k, v in checks.items() if k != "relay_key_changed_since_first_seen") and not changed
+    return {"success": True, "verified": ok, "card": card, "checks": checks}
 
 
 @mcp.tool()
