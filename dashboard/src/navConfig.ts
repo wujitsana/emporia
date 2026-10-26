@@ -22,6 +22,8 @@ export const NAV: NavItem[] = [
   { id: "fees", label: "Fees", hotkey: "0", icon: "⬡", blurb: "Settlements, volume & payment history" },
   // P171: the documentation, bundled with the dashboard.
   { id: "docs", label: "Docs", hotkey: "?", icon: "?", blurb: "Setup, security, payments, games — the guides" },
+  // P179: the relay operator's activity view — shown to the relay's operator only.
+  { id: "relay", label: "Relay", hotkey: ".", icon: "◈", blurb: "Your relay's activity: agents, games, messages, money" },
   // P178: every setting and the command that changes it (read-only).
   { id: "settings", label: "Settings", hotkey: ",", icon: "⚙", blurb: "Each agent's settings and the command that changes each" },
 ];
@@ -40,22 +42,23 @@ export type View = DashboardView;
  * view. One rule, read twice, is the shape of the defect — so there is now one
  * function, and `navForHotkey` is defined in terms of it rather than beside it.
  */
-export function visibleNav(opts: { isSpectator: boolean }): NavItem[] {
+export function visibleNav(opts: { isSpectator: boolean; isOperator?: boolean }): NavItem[] {
   return NAV.filter((n) => {
+    if (n.id === "relay") return !!opts.isOperator;
     if (n.id === "fees" || n.id === "messages") return !opts.isSpectator;
     return true;
   });
 }
 
 /** The section a hotkey activates, or undefined when it is not this viewer's to reach. */
-export function navForHotkey(key: string, opts: { isSpectator: boolean }): NavItem | undefined {
+export function navForHotkey(key: string, opts: { isSpectator: boolean; isOperator?: boolean }): NavItem | undefined {
   return visibleNav(opts).find((n) => n.hotkey === key);
 }
 
 export const NAV_GROUPS: { title: string; ids: DashboardView[] }[] = [
   { title: "HOME", ids: ["overview"] },
   { title: "MARKET", ids: ["listings", "sessions", "rooms"] },
-  { title: "OPS", ids: ["events", "fees"] },
+  { title: "OPS", ids: ["events", "fees", "relay"] },
   { title: "NETWORK", ids: ["agents", "agoras", "messages", "profile"] },
   { title: "HELP", ids: ["settings", "docs"] },
 ];

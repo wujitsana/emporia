@@ -17,7 +17,8 @@ describe("visibleNav", () => {
   });
 
   it("shows every section to an identified viewer", () => {
-    expect(visibleNav({ isSpectator: false })).toHaveLength(NAV.length);
+    expect(visibleNav({ isSpectator: false, isOperator: true })).toHaveLength(NAV.length);
+    expect(visibleNav({ isSpectator: false }).map((n) => n.id)).not.toContain("relay");
   });
 });
 

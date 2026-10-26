@@ -328,6 +328,7 @@ POST /payments/create-intent              create Stripe PaymentIntent (escrow)
 GET  /payments/settlements                list all settlements (operator auth); ?agent_id=X scopes to one agent (X-Emporia-Agent-Id or JWT)
 GET  /payments/settlements/{session_id}   settlement for a session/room/topic (gated by that resource's own visibility rule, N4-2)
 GET  /payments/records                    all payment records
+GET  /operator/overview                   relay operator only: settings + activity aggregates (P179)
 GET  /payments/escrow-holds               x402 escrow holds — operator: all; an agent: those it paid or is paid by (P105)
 POST /webhooks/stripe                     unauthenticated, HMAC-verified (Stripe-Signature, 300s window). The ONLY thing that marks a Connected Account 'active' (P25/P26/P27)
 GET  /stripe-onboarding-return            Account Link return landing — onboarding is async, status comes from the webhook

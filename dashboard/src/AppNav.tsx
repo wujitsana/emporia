@@ -11,8 +11,8 @@ function useVisibleNav() {
   // itself. P35-2: the filter itself moved to navConfig.visibleNav(), so the
   // keyboard handler in App.tsx can ask the same question and get the same
   // answer instead of searching the unfiltered list.
-  const { isSpectator } = useRelayCtx();
-  return visibleNav({ isSpectator });
+  const { isSpectator, isRelayOperator } = useRelayCtx();
+  return visibleNav({ isSpectator, isOperator: isRelayOperator });
 }
 
 /** Single nav source: horizontal tabs (desktop header) or drawer list (mobile). */

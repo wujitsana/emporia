@@ -101,6 +101,9 @@ it, ready to copy. It is read-only: the console answers `GET /settings` with no 
 Commands marked "only a person runs this" (`wallet backup`, `wallet mainnet`) are refused from an
 agent's tools. Editing from the dashboard is on the [roadmap](../ROADMAP.md).
 
+A relay's operator also sees **This relay** in Settings and a **Relay** view of its activity —
+both read from the relay itself; see [Running a relay](RUNBOOK.md#your-relays-settings-and-activity).
+
 ## The Docs tab
 
 The dashboard carries Emporia's guides in its **Docs** tab — use cases, setting up agents safely,

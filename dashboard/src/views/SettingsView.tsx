@@ -13,11 +13,15 @@ import { useInterval } from "../hooks";
 import { consoleUrl, httpFetch, VIA_CONSOLE } from "../transport";
 import { VIEWER_ID } from "../relayEnv";
 import { groupItems, type SettingItem, type SettingsReport } from "../settings";
+import { api } from "../api";
+import { useRelayCtx } from "../relayCtx";
 
 
 const MACHINE = "__machine__";
+const RELAY = "__relay__";
 
 async function fetchSettings(): Promise<SettingsReport> {
+  if (!VIA_CONSOLE) return { agents: [], machine: [] };
   const r = await httpFetch(consoleUrl("/settings"));
   if (!r.ok) throw new Error(`settings ${r.status}`);
   return r.json();
@@ -63,16 +67,22 @@ function SettingRow({ item }: { item: SettingItem }) {
 }
 
 export function SettingsView() {
+  const { isRelayOperator } = useRelayCtx();
   const [report, loading, error] = useInterval(fetchSettings, 60_000);
+  // P179: the relay's own settings, for its operator — wherever the relay runs.
+  const [relay] = useInterval(
+    () => (isRelayOperator ? api.operatorOverview() : Promise.resolve(null)), 60_000, [isRelayOperator]);
   const [picked, setPicked] = useState<string | null>(null);
   const agents = useMemo(() => report?.agents ?? [], [report]);
-  const selected = picked ?? (agents.find((a) => a.agent_id === VIEWER_ID)?.agent_id ?? agents[0]?.agent_id ?? MACHINE);
+  const selected = picked ?? (agents.find((a) => a.agent_id === VIEWER_ID)?.agent_id ?? agents[0]?.agent_id
+    ?? (VIA_CONSOLE ? MACHINE : RELAY));
   const items = useMemo(
-    () => (selected === MACHINE ? report?.machine : agents.find((a) => a.agent_id === selected)?.items) ?? [],
-    [report, agents, selected]);
+    () => (selected === RELAY ? relay?.settings : selected === MACHINE ? report?.machine
+      : agents.find((a) => a.agent_id === selected)?.items) ?? [],
+    [report, relay, agents, selected]);
   const warnings = (list: SettingItem[]) => list.filter((i) => i.level !== "ok").length;
 
-  if (!VIA_CONSOLE) {
+  if (!VIA_CONSOLE && !isRelayOperator) {
     return (
       <ViewBody>
         <Text className="e-faint">
@@ -95,12 +105,24 @@ export function SettingsView() {
           </div>
         </FlatRailItem>
       ))}
-      <FlatRailItem selected={selected === MACHINE} onClick={() => setPicked(MACHINE)}>
-        <div className="e-docs-rail-item">
-          <Text>This machine</Text>
-          <Text className="e-faint">The relay, setup and checks</Text>
-        </div>
-      </FlatRailItem>
+      {VIA_CONSOLE && (
+        <FlatRailItem selected={selected === MACHINE} onClick={() => setPicked(MACHINE)}>
+          <div className="e-docs-rail-item">
+            <Text>This machine</Text>
+            <Text className="e-faint">The relay it reads, setup and checks</Text>
+          </div>
+        </FlatRailItem>
+      )}
+      {isRelayOperator && (
+        <FlatRailItem selected={selected === RELAY} onClick={() => setPicked(RELAY)}>
+          <div className="e-docs-rail-item">
+            <Text>This relay</Text>
+            <Text className="e-faint">
+              You run it{relay && warnings(relay.settings) ? ` · ${warnings(relay.settings)} to look at` : ""}
+            </Text>
+          </div>
+        </FlatRailItem>
+      )}
     </div>
   );
 

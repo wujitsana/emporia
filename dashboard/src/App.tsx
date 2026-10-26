@@ -31,7 +31,7 @@ import {
   AgorasView,
   MessagesView,
   GamesView,
-  FeesView, DocsView, SettingsView,
+  FeesView, DocsView, SettingsView, RelayView,
 } from "./views";
 import { VIEWER_ID } from "./relayEnv";
 import { syncHash, viewFromHash } from "./dashboardRoute";
@@ -177,7 +177,7 @@ function AppInner() {
       // P35-2: `navForHotkey` applies the same visibility rule the rendered
       // nav does. Searching the unfiltered NAV here is what let a spectator
       // reach the two sections the nav hides.
-      const found = navForHotkey(e.key, { isSpectator });
+      const found = navForHotkey(e.key, { isSpectator, isOperator: isRelayOperator });
       if (found) goToView(found.id);
     };
     window.addEventListener("keydown", handler);
@@ -185,7 +185,7 @@ function AppInner() {
     // `isSpectator` belongs here: the handler closes over it, and it stops being
     // constant the moment the dashboard/challenge login flow lands (the token
     // setter is already on the context).
-  }, [goToView, isSpectator]);
+  }, [goToView, isSpectator, isRelayOperator]);
 
   return (
     <RelayHealthCtx.Provider value={relayHealth}>
@@ -292,6 +292,7 @@ function AppInner() {
             {view === "profile" && <ProfileView navigate={navigate} />}
             {view === "docs" && <DocsView />}
             {view === "settings" && <SettingsView />}
+            {view === "relay" && isRelayOperator && <RelayView />}
           </div>
         </main>
     </div>

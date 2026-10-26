@@ -5033,6 +5033,21 @@ async def safety_stats():
     }
 
 
+@app.get("/operator/overview")
+async def operator_overview(request: Request):
+    """P179: the relay operator's view of their relay — every setting with how
+    to change it, and activity as aggregates (counts and sums; never a message
+    or an address). Operator only. See relay_admin."""
+    from emporia import relay_admin
+    _require_operator(_dashboard_agent_id(request), "operator overview")
+
+    def collect() -> dict[str, Any]:
+        with DB_LOCK, get_db() as conn:
+            stats = relay_admin.stats(conn)
+        return {"settings": relay_admin.settings(), "stats": stats}
+    return await asyncio.to_thread(collect)
+
+
 @app.get("/relay-card")
 async def relay_card():
     """Serve the owner agent's relay descriptor when EMPORIA_AGENT_ID is set.

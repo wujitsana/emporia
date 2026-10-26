@@ -3107,6 +3107,8 @@ def test_every_route_has_a_reviewed_auth_posture():
     """
 
     _AUTHENTICATED: set[tuple[str, str]] = {
+        # P179: the relay operator only (_require_operator) — settings and aggregates.
+        ("GET", "/operator/overview"),
         # P143: table talk — the caller must be a player in that game.
         ("POST", "/sessions/{session_id}/chat"),
         # P149: the players' encryption keys for sealing — players only.

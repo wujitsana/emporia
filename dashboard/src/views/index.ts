@@ -9,3 +9,4 @@ export { MessagesView } from "./MessagesView";
 export { FeesView } from "./FeesView";
 export { DocsView } from "./DocsView";
 export { SettingsView } from "./SettingsView";
+export { RelayView } from "./RelayView";

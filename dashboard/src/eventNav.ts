@@ -13,7 +13,8 @@ export type DashboardView =
   | "messages"
   | "profile"
   | "docs"
-  | "settings";
+  | "settings"
+  | "relay";
 
 export interface NavOpts {
   sessionId?: string;
