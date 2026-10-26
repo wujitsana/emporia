@@ -178,6 +178,8 @@ def cmd_relay(args: argparse.Namespace) -> int:
         return cmd_relay_use(args)
     if args.action == "host":
         return cmd_relay_host(args)
+    if args.action in ("link", "unlink", "links"):
+        return cmd_relay_links(args)
     pid_file, log = _relay_files()
     if args.action == "status":
         h = health()
@@ -547,6 +549,82 @@ def _caddy_steps(folder: Path, domain: str) -> None:
     if domain:
         print("\n  https: install Caddy (https://caddyserver.com/docs/install), then\n"
               f"    sudo cp {folder / 'Caddyfile'} /etc/caddy/Caddyfile && sudo systemctl reload caddy")
+
+
+def _relay_env_path(args: argparse.Namespace) -> Path | None:
+    """The relay's .env: a hosted relay's folder (--dir), else this profile's."""
+    if getattr(args, "dir", ""):
+        return Path(args.dir).expanduser().resolve() / ".env"
+    me = this_profile()
+    return me / ".env" if me else None
+
+
+def _links_of(env_path: Path) -> list[str]:
+    from emporia.identity import normalize_peer_url
+    raw = installer().harvest_env(env_path.parent).get("FEDERATED_RELAYS", "") if env_path.exists() else ""
+    return [normalize_peer_url(u) for u in raw.split(",") if u.strip()]
+
+
+def cmd_relay_links(args: argparse.Namespace) -> int:
+    """P184: `emporia relay link URL`, `unlink URL`, `links` — the relays this one
+    shares listings (and, when both sides allow it, DMs) with. Each side links
+    the other: a link is one-way until the other relay links back."""
+    from emporia.identity import normalize_peer_url
+
+    env_path = _relay_env_path(args)
+    if env_path is None:
+        print("relay links: run it from the relay profile's emporia checkout, or give --dir for a hosted relay")
+        return 1
+    links = _links_of(env_path)
+    if args.action in ("link", "unlink"):
+        if not args.url:
+            print(f"relay {args.action}: give the other relay's URL — emporia relay {args.action} https://relay.example")
+            return 1
+        url = normalize_peer_url(args.url)
+        if args.action == "link":
+            if url in links:
+                print(f"relay link: already linked to {url}")
+                return 0
+            url = _check_relay_url(url) if _TTY else url
+            if not url:
+                return 1
+            links.append(normalize_peer_url(url))
+        else:
+            if url not in links:
+                print(f"relay unlink: not linked to {url}")
+                return 1
+            links.remove(url)
+        try:
+            merge_env_file(env_path, {"FEDERATED_RELAYS": ",".join(links)})
+        except PermissionError:
+            print(f"relay {args.action}: {env_path} belongs to root (a relay run as a service) — set "
+                  f"FEDERATED_RELAYS={','.join(links)} there with sudo")
+            return 1
+        print(f"  {'linked to' if args.action == 'link' else 'unlinked from'} {url}"
+              + ("" if args.action == "link" else " — its listings go from here at the relay's next start"))
+        print("  Restart the relay to apply it: emporia relay stop && emporia relay start"
+              + ("  (or `docker compose restart relay` in its folder)" if getattr(args, "dir", "") else ""))
+        if args.action == "link":
+            print("  It is one-way until that relay links back to this one; ask its operator.")
+        return 0
+    # links
+    me_url = normalize_peer_url(installer().harvest_env(env_path.parent).get("EMPORIA_RELAY_URL", "")
+                                or relay_url())
+    if not links:
+        print("No linked relays: this relay stands alone. emporia relay link https://relay.example")
+        return 0
+    import httpx
+    for url in links:
+        h = health(timeout=3, url=url)
+        try:
+            theirs = httpx.get(f"{url}/federation/peers", timeout=3).json().get("peers", [])
+            back = any(normalize_peer_url(x.get("url", "")) == me_url for x in theirs)
+        except (httpx.HTTPError, ValueError):
+            back = None
+        state = "not answering" if not h else _relay_brief(h)
+        both = {True: "linked both ways", False: "one-way — they have not linked back", None: "can't tell"}[back]
+        print(f"  {url} — {state}; {both}")
+    return 0
 
 
 def cmd_relay_use(args: argparse.Namespace) -> int:
@@ -2625,7 +2703,8 @@ def cmd_menu(args: argparse.Namespace) -> int:
                 "dashboard": ["setup", "dashboard"]}.get(what)
         if what == "relay":
             argv = ["relay", choose("Relay:", [(a, a) for a in ("status", "start", "stop", "logs")]
-                                    + [("host", "host — a relay for other machines, in Docker behind https")])]
+                                    + [("host", "host — a relay for other machines, in Docker behind https"),
+                                       ("links", "links — the relays this one is linked to")])]
         if what == "login":
             argv += ["--profile", _pick_agent()]
         sub = build_parser().parse_args(argv)
@@ -2745,11 +2824,11 @@ def build_parser() -> argparse.ArgumentParser:
 
     r = sub.add_parser("relay", help="start, stop or inspect this machine's relay; `use` moves agents to another; "
                                      "`host` runs one for other machines, in Docker behind https")
-    r.add_argument("action", choices=["start", "stop", "status", "logs", "use", "host"])
-    r.add_argument("url", nargs="?", default="", help="use: the relay's URL")
+    r.add_argument("action", choices=["start", "stop", "status", "logs", "use", "host", "link", "unlink", "links"])
+    r.add_argument("url", nargs="?", default="", help="use, link, unlink: the other relay's URL")
     r.add_argument("names", nargs="*", help="use: the agents that move to it")
     r.add_argument("--lines", type=int, default=40)
-    r.add_argument("--dir", default="", help="host: its folder (default ~/emporia-relay)")
+    r.add_argument("--dir", default="", help="host: its folder (default ~/emporia-relay); link: a hosted relay's folder")
     r.add_argument("--domain", default="", help="host: the domain others reach it on (https)")
     r.add_argument("--fee-receiver", default="", help="host: the address that receives your fee")
     r.add_argument("--admin", default=None, help="host: a Hermes profile that is its operator")

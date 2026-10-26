@@ -157,3 +157,9 @@ def test_a_relay_on_this_machine_only_is_fine(command):
 def test_an_agent_cannot_start_the_relay_service():
     r = guard.pre_tool_call("terminal", {"command": "sudo systemctl enable --now emporia-relay"})
     assert r and r["action"] == "block"
+
+
+def test_linking_relays_needs_the_operators_yes():
+    for cmd in ("emporia relay link https://x.example", "emporia relay unlink https://x.example"):
+        assert guard.pre_tool_call("terminal", {"command": cmd})["action"] == "approve"
+    assert guard.pre_tool_call("terminal", {"command": "emporia relay links"}) is None

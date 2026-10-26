@@ -898,3 +898,20 @@ def test_relay_host_asks_how_to_run_only_when_there_is_a_choice():
     assert rh.ways_to_run(False, True, False)[0] == ["docker"]
     assert rh.ways_to_run(False, False, True)[0] == ["service"]
     assert rh.ways_to_run(False, True, True) == (["docker", "service"], "")
+
+
+def test_relay_link_unlink_and_links(profiles, monkeypatch, capsys, tmp_path):
+    """P184: links live in the relay's .env, one-way until the other links back."""
+    folder = tmp_path / "hosted"
+    folder.mkdir()
+    monkeypatch.setattr(cli, "_TTY", False)
+    assert cli.main(["relay", "link", "https://b.example/", "--dir", str(folder)]) == 0
+    assert cli.main(["relay", "link", "https://c.example", "--dir", str(folder)]) == 0
+    assert _env_of(folder)["FEDERATED_RELAYS"] == "https://b.example,https://c.example"
+    assert "one-way until" in capsys.readouterr().out
+    assert cli.main(["relay", "unlink", "https://b.example", "--dir", str(folder)]) == 0
+    assert _env_of(folder)["FEDERATED_RELAYS"] == "https://c.example"
+    assert cli.main(["relay", "unlink", "https://nope.example", "--dir", str(folder)]) == 1
+    monkeypatch.setattr(cli, "health", lambda timeout=3.0, url="": None)
+    assert cli.main(["relay", "links", "--dir", str(folder)]) == 0
+    assert "https://c.example — not answering" in capsys.readouterr().out

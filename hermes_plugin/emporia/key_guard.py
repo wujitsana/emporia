@@ -49,7 +49,7 @@ _SENSITIVE = (
     ("role", {"marketplace", "developer", "both"}),
     ("identity", {"store", "link"}),
     ("wallet", {"create", "import", "store", "register", "limits"}),
-    ("relay", {"use"}),
+    ("relay", {"use", "link", "unlink"}),
 )
 
 
