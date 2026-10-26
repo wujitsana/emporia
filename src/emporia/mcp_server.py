@@ -106,6 +106,10 @@ def _relay_aware(fn):
             return None
         if url not in _visits():
             raise PermissionError(f"not visiting {url} — call visit_relay({url!r}) first")
+        # The operator may have narrowed where it goes since the visit began.
+        from emporia import visits
+        if url in visits.denied() or (visits.policy() == "listed" and url not in visits.allowed()):
+            raise PermissionError(f"{url} is no longer allowed for this agent (EMPORIA_VISIT_POLICY / _DENY)")
         return _RELAY_CTX.set(url)
 
     def refused(e: Exception) -> dict[str, Any]:
@@ -2196,7 +2200,9 @@ def _sender_public_key(caller: str, agent_id: str) -> str:
     couldn't run reports `None` ("unknown"), and a thread must stay readable even
     when one lookup fails."""
     try:
-        r = _bearer_request("get", f"{_base()}/agents/{agent_id}", agent_id=caller, timeout=10)
+        # P185: an address (`bob@host`) is looked up where its keys are pinned.
+        path = f"/agents/{agent_id}/encryption-key" if "@" in agent_id else f"/agents/{agent_id}"
+        r = _bearer_request("get", f"{_base()}{path}", agent_id=caller, timeout=10)
         return r.json().get("public_key_hex", "") or "" if r.status_code == 200 else ""
     except Exception:
         return ""
@@ -2219,9 +2225,11 @@ def _dm_recipients(sender: str, thread_id: str) -> dict[str, str]:
     )
     thread_r.raise_for_status()
     thread = thread_r.json()
-    recipients = {sender: get_encryption_public_key_hex(sender)}
+    # P185: in a thread with another relay's agent both are named by address.
+    me = thread.get("my_label") or sender
+    recipients = {me: get_encryption_public_key_hex(sender)}
     for participant in (thread["agent_a"], thread["agent_b"]):
-        if participant == sender:
+        if participant == me:
             continue
         key_r = _bearer_request(
             "get", f"{_base()}/agents/{participant}/encryption-key",
@@ -2256,8 +2264,12 @@ def send_dm(
     happens automatically whenever the thread is encrypted — you never have to
     remember to do it.
 
+    To an agent on another relay, use its address (`bob@relay.example`): the
+    message goes relay to relay, always sealed, when both relays allow it and
+    that agent takes DMs from other relays.
+
     Args:
-        to_agent_id: Agent ID to message.
+        to_agent_id: Agent ID to message, or an address on another relay.
         content: Message text.
         from_agent_id: Your agent ID. Defaults to EMPORIA_AGENT_ID env.
         msg_type: "chat" (default), "collab", or "code".
@@ -2314,9 +2326,10 @@ def send_dm(
             # caller is told why in terms they can act on.
             from emporia import secret_guard
             secret_guard.check(sender, content)   # P163: before sealing
+            me = start_r.json().get("my_label") or sender
             content = json.dumps(crypto_box.seal(
                 content, _dm_recipients(sender, thread_id),
-                crypto_box.message_aad("dm", thread_id, sender, msg_type, nonce),
+                crypto_box.message_aad("dm", thread_id, me, msg_type, nonce),
             ))
         # Send the message
         signed_payload = signed_dm_thread_payload(thread_id, content, msg_type, nonce)
@@ -2340,6 +2353,15 @@ def send_dm(
         return {"error": f"Relay {send_r.status_code}", "detail": send_r.text, "success": False}
     except Exception as e:
         return {"error": str(e), "success": False}
+
+
+def set_dm_policy(other_relays: bool, agent_id: str = "") -> dict[str, Any]:
+    """P185: whether this agent takes DMs from agents on other relays. Not a
+    tool — its operator decides (`emporia dms NAME --other-relays on|off`)."""
+    aid = agent_id or AGENT_ID
+    r = _bearer_request("post", f"{_base()}/agents/{aid}/dm-policy", agent_id=aid,
+                        json={"other_relays": other_relays}, timeout=10)
+    return {"success": r.status_code == 200, **(r.json() if r.status_code == 200 else {"error": r.text})}
 
 
 @mcp.tool()
@@ -2403,7 +2425,7 @@ def get_dm_messages(thread_id: str, agent_id: str = "", limit: int = 50) -> dict
         for sender in {m.get("sender_id", "") for m in messages}:
             pubkeys[sender] = _sender_public_key(aid, sender)
         message_read.annotate_messages(
-            messages, kind="dm", scope_id=thread_id, viewer_agent_id=aid,
+            messages, kind="dm", scope_id=thread_id, viewer_agent_id=body.get("my_label") or aid,
             private_key=priv, pubkeys=pubkeys,
             verify=lambda msg, pk: verify_dm_message(thread_id, msg, pk),
         )

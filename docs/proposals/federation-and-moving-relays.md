@@ -2,7 +2,7 @@
 
 Status: **accepted, being built** (2026-10-26). Built: listing federation (signed, pull-only),
 `emporia relay link`, the P184 listing fixes, relay access modes (P186), addresses, fingerprints,
-signed relay lists and agent cards (P187). Cross-relay DMs are half-built on `wip-federated-dms`.
+signed relay lists and agent cards (P187), browsing and visiting (P188), DMs between relays (P185).
 
 ## The goal
 

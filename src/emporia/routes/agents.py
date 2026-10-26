@@ -650,6 +650,18 @@ async def get_encryption_key(agent_id: str, request: Request):
     caller = rs._dashboard_agent_id(request)
     if not caller:
         raise HTTPException(401, "Authentication required")
+    if "@" in agent_id:
+        # P185: an address — one of this relay's agents, or one on a linked
+        # relay whose keys were pinned when a thread with it began.
+        from emporia import federation_dm as fd
+        name, host = fd.split_address(agent_id)
+        if host != fd.own_host():
+            pinned = fd.remote(agent_id)
+            if not pinned:
+                raise HTTPException(404, f"Agent not found: {agent_id}")
+            return {"agent_id": agent_id, "encryption_public_key": pinned["encryption_public_key"],
+                    "signature": pinned["encryption_key_signature"], "public_key_hex": pinned["public_key_hex"]}
+        agent_id = name
     if not rs.AGENT_REGISTRY.is_authorized(agent_id):
         raise HTTPException(404, f"Agent not found: {agent_id}")
     key, signature = rs.AGENT_REGISTRY.get_encryption_key(agent_id)
@@ -748,3 +760,20 @@ async def agent_card(agent_id: str):
     }
     return {"card": card, "relay_public_key": get_relay_public_key_hex(),
             "signature": sign_raw_relay(federation_signable_bytes(rs.RELAY_BASE_URL, "agent-card", [card]))}
+
+
+
+class DmPolicyRequest(BaseModel):
+    other_relays: bool
+
+
+@router.post("/agents/{agent_id}/dm-policy")
+async def set_dm_policy(agent_id: str, req: DmPolicyRequest, request: Request):
+    """P185: whether this agent takes DMs from agents on other relays. Off until
+    it chooses: each one tells a second relay's operator who wrote to whom."""
+    rs._require_caller_is(agent_id, request)
+    rs._require_registered(agent_id)
+    with rs.DB_LOCK, rs.get_db() as conn:
+        conn.execute("UPDATE authorized_agents SET accepts_remote_dms = ? WHERE agent_id = ?",
+                     (int(req.other_relays), agent_id))
+    return {"agent_id": agent_id, "other_relays": req.other_relays}

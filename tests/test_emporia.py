@@ -2176,6 +2176,8 @@ def test_no_new_identity_as_proof_params():
         ("GET", "/agents/{agent_id}/record"),  # P182: whose record to read; counts only, no auth decision
         ("GET", "/agents/{agent_id}/card"),  # P187: whose card; public once the agent published a relay list
         ("POST", "/agents/{agent_id}/relay-list"),  # P187: _require_caller_is-checked, and signed by the agent
+        ("POST", "/agents/{agent_id}/dm-policy"),  # P185: _require_caller_is-checked
+        ("GET", "/federation/v1/agents/{agent_id}"),  # P185: a linked relay's signed request; 404 unless opted in
         ("GET", "/payments/settlements"),  # agent_id: filter, but gated by inline auth check
         ("DELETE", "/agoras/topics/{slug}/subscribe"),  # agent_id: _require_caller_is-checked
         ("GET", "/messages"),  # agent_id: _require_caller_is-checked (N1-5)
@@ -2336,6 +2338,9 @@ def test_every_route_has_a_reviewed_auth_posture():
     """
 
     _AUTHENTICATED: set[tuple[str, str]] = {
+        ("POST", "/agents/{agent_id}/dm-policy"),  # P185: the agent itself
+        ("GET", "/federation/v1/agents/{agent_id}"),  # P185: a linked relay, signed with its pinned key
+        ("POST", "/federation/v1/dm"),  # P185: a linked relay, signed with its pinned key
         ("POST", "/agents/{agent_id}/relay-list"),  # P187: the agent itself
         # P179: the relay operator only (_require_operator) — settings and aggregates.
         ("GET", "/operator/overview"),
@@ -27322,7 +27327,7 @@ def test_the_membership_rule_is_written_in_exactly_one_place():
 # P61 — the schema has a version, and the version has to stay honest
 # ---------------------------------------------------------------------------
 
-# 29 tables, 263 columns, at SCHEMA_VERSION 7. Recomputed by the test below;
+# 30 tables, 274 columns, at SCHEMA_VERSION 7. Recomputed by the test below;
 # when it fails, read *why* before touching this string.
 #
 # V1 -> V2 (P72-4): `bounty_entries` and its UNIQUE (listing_id, nous_user_id)
@@ -27345,7 +27350,7 @@ def test_the_membership_rule_is_written_in_exactly_one_place():
 #
 # V5 -> V6 (P143): `game_chat`, table talk stored inside its game. A V5 relay
 # would serve a V6 database without the chat its games' records include.
-_SCHEMA_FINGERPRINT_V7 = "770ae0c92450ccc0f3742b380ce2db32272bebeb0fc707cf3b3312c3e40a6af8"
+_SCHEMA_FINGERPRINT_V7 = "6d0c0d69a58cb479537e69a5cba5fa6f2ccc9981926383fb011817f44ac678cd"
 
 
 def _schema_fingerprint(db_path) -> tuple[str, int, int]:
@@ -27630,6 +27635,7 @@ _DASHBOARD_UNSURFACED_GETS: dict[str, str] = {
     "/bounties/{}/promise-status": "P79: per-bounty funder-payment record. The board already flags a promised prize; this is the detail behind one, reached from a bounty rather than browsed — surfacing it as its own page would be a view of one row.",
     # Infrastructure and machine-facing descriptors — nothing for a human view.
     "/": "redirects to /ui/; it *is* the dashboard's front door",
+    "/federation/v1/agents/{}": "P185: relay to relay only — a linked relay looking up an agent that takes DMs from other relays",
     "/agents/{}/card": "P187: an agent's card, for other relays' agents to find and check it — the dashboard already shows the agent's address and fingerprint on its profile",
     "/.well-known/agent-card.json": "A2A descriptor, machine-facing",
     "/.well-known/agent.json": "A2A descriptor, machine-facing",

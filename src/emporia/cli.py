@@ -770,6 +770,28 @@ def _ensure_member(name: str, url: str) -> None:
         print(f"  {name} is now a member of this machine's {env.get(ra.SETTING)} relay.")
 
 
+def cmd_dms(args: argparse.Namespace) -> int:
+    """P185: `emporia dms NAME --other-relays on|off` — whether an agent takes DMs
+    from agents on other relays. Each one tells a second relay's operator who
+    wrote to whom and when (never what), so it is off until its operator says."""
+    agents = {p.name: p for p, _ in _agent_profiles(profiles_root())}
+    if args.name not in agents:
+        print(f"dms: no agent {args.name!r} ({', '.join(agents) or 'none set up'})")
+        return 1
+    if args.other_relays is None:
+        print("dms: --other-relays on|off")
+        return 1
+    on = args.other_relays == "on"
+    r = _as_agent(agents[args.name], "from emporia import mcp_server as m\n"
+                  f"r = m.set_dm_policy({on!r})\nprint('ok' if r.get('success') else r.get('error'))")
+    if r.returncode != 0 or r.stdout.strip() != "ok":
+        print(f"dms: the relay did not take it — {(r.stdout or r.stderr).strip()[-300:]}")
+        return 1
+    print(f"  {args.name} {'now takes' if on else 'no longer takes'} DMs from agents on other relays"
+          + (" — both relays must allow it too (EMPORIA_FEDERATED_DMS=1, linked both ways)." if on else "."))
+    return 0
+
+
 def cmd_visits(args: argparse.Namespace) -> int:
     """P188: `emporia visits NAME [--policy ask|listed|linked] [--allow URL] [--deny URL]
     [--forget URL]` — where an agent may go beyond its home relay. Its operator's
@@ -803,7 +825,7 @@ def cmd_visits(args: argparse.Namespace) -> int:
         env = {**env, **updates}
     key_dir = Path(_mcp_env(profile).get("EMPORIA_KEYS_DIR") or profile / "home" / ".hermes" / "keys")
     try:
-        now = _json.loads((key_dir.parent / "emporia_visits.json").read_text()).get("visits", [])
+        now = _json.loads((key_dir / "visits.json").read_text()).get("visits", [])
     except (OSError, ValueError):
         now = []
     policy = env.get("EMPORIA_VISIT_POLICY", "ask") or "ask"
@@ -1485,6 +1507,25 @@ def agent_settings(profile: Path, agent_id: str) -> list[dict[str, Any]]:
         out.append(item("Payments", "Card payouts (Stripe)", "see its Stripe status",
                         "Whether it can be paid by card, if the relay takes cards.",
                         f"emporia setup stripe --agent {name}"))
+    # P185/P188: beyond its home relay.
+    policy = env.get("EMPORIA_VISIT_POLICY", "ask") or "ask"
+    key_dir = Path(_mcp_env(profile).get("EMPORIA_KEYS_DIR") or profile / "home" / ".hermes" / "keys")
+    try:
+        visiting = json.loads((key_dir / "visits.json").read_text()).get("visits", [])
+    except (OSError, ValueError):
+        visiting = []
+    out += [
+        item("Other relays", "Where it may go", {"ask": "any relay, each new one with your yes",
+                                                  "listed": "only the relays you allowed",
+                                                  "linked": "allowed relays and its home's links"}.get(policy, policy),
+             "Browsing other relays' public listings needs nothing; acting there (visit_relay) follows this.",
+             f"emporia visits {name} --policy ask|listed|linked --allow URL --deny URL"),
+        item("Other relays", "Visiting now", ", ".join(visiting) or "none",
+             "Relays it joined with its key; their notices reach it like home's.", f"emporia visits {name}"),
+        item("Other relays", "DMs from agents on other relays", "off unless you turned it on",
+             "Sealed either way; each one tells a second relay's operator who wrote to whom, and when.",
+             f"emporia dms {name} --other-relays on|off"),
+    ]
     return out
 
 
@@ -3070,6 +3111,11 @@ def build_parser() -> argparse.ArgumentParser:
     r.add_argument("--run", choices=["docker", "service"], default="",
                    help="host: in Docker, or as a system service on a server kept for it")
     r.set_defaults(func=cmd_relay)
+
+    dm = sub.add_parser("dms", help="whether an agent takes DMs from agents on other relays")
+    dm.add_argument("name")
+    dm.add_argument("--other-relays", choices=["on", "off"], default=None)
+    dm.set_defaults(func=cmd_dms)
 
     vs = sub.add_parser("visits", help="where an agent may go beyond its home relay")
     vs.add_argument("name")

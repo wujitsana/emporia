@@ -98,10 +98,14 @@ class Console:
             if not isinstance(content, str) or not crypto_box.looks_like_any_envelope(content):
                 continue
             text = None
+            envelope = json.loads(content) if content.startswith("{") else {}
+            # P185: in a thread with another relay's agent it is sealed to its address.
+            label = next((k for k in (envelope.get("keys") or {})
+                          if k == agent.agent_id or k.startswith(agent.agent_id + "@")), agent.agent_id)
             for key in keys:
                 try:
                     text = crypto_box.open_sealed(
-                        json.loads(content), agent.agent_id, key,
+                        json.loads(content), label, key,
                         crypto_box.message_aad("dm", thread_id, m.get("sender_id", ""),
                                                m.get("msg_type", ""), m.get("nonce") or ""))
                     break

@@ -9,7 +9,8 @@ from __future__ import annotations
 
 from datetime import UTC, datetime
 
-from fastapi import APIRouter, Request
+from fastapi import APIRouter, HTTPException, Request
+from pydantic import BaseModel
 
 from emporia import relay_server as rs
 from emporia.identity import (
@@ -135,3 +136,105 @@ async def federated_open_sessions():
     signature = sign_raw_relay(federation_signable_bytes(rs.RELAY_BASE_URL, "open_sessions", out))
     return {"origin_relay": rs.RELAY_BASE_URL, "origin_public_key_hex": get_relay_public_key_hex(),
             "signature": signature, "open_sessions": out}
+
+
+
+# ─── P185: DMs between linked relays (emporia.federation_dm) ─────────────────
+
+@router.get("/federation/v1/agents/{agent_id}")
+async def federated_agent(agent_id: str, request: Request):
+    """For a linked relay only, and only for an agent that takes DMs from other
+    relays: its address and public keys, signed by this relay. Every other case
+    is the same 404, so a peer cannot use it to list who is here."""
+    from emporia import federation_dm as fd
+    await fd.verified_peer(request, b"")
+    record = fd.agent_record(agent_id) if fd.accepts(agent_id) else None
+    if not record:
+        raise HTTPException(404, "not found")
+    return fd.signed_record(record)
+
+
+class FederatedDM(BaseModel):
+    from_address: str
+    to_agent: str
+    thread_id: str
+    content: str
+    msg_type: str
+    nonce: str
+    signature: str
+    sender: dict          # the sender's address and public keys, as its relay vouches
+
+
+@router.post("/federation/v1/dm")
+async def federated_dm_in(request: Request):
+    """A sealed DM from an agent on a linked relay. Checked like one sent here:
+    the relay that sent it is linked and signed the request; it speaks for its
+    own agents only; the sender's key is the one pinned for its address and
+    signed the message; the content is sealed to both and to no one else; the
+    recipient takes DMs from other relays, or started this thread itself."""
+    import sqlite3
+    import uuid as _uuid
+
+    from emporia import crypto_box
+    from emporia import federation_dm as fd
+    from emporia import rooms as rooms_db
+    from emporia.routes.dm import _dm_last_chain_hash
+    from emporia.wire import ERR_DUPLICATE_NONCE, signed_dm_thread_payload
+
+    body = await request.body()
+    peer = await fd.verified_peer(request, body)
+    if not rs.AGENT_REGISTRY.check_rate_limit(f"peer:{peer}"):
+        raise HTTPException(429, "too many messages from that relay")
+    try:
+        req = FederatedDM.model_validate_json(body)
+    except ValueError as e:
+        raise HTTPException(422, str(e)) from e
+    sender = fd.pin_remote(peer, req.sender)
+    if sender["address"] != req.from_address:
+        raise HTTPException(403, "the message's sender is not the agent its relay vouched for")
+    if not rs.AGENT_REGISTRY.is_authorized(req.to_agent):
+        raise HTTPException(404, "not found")
+    me = fd.address(req.to_agent, fd.own_host())
+    thread_id = fd.thread_id_for(me, req.from_address)
+    if req.thread_id != thread_id:
+        raise HTTPException(400, "thread id does not name these two agents")
+    with rs.DB_LOCK, rs.get_db() as conn:
+        thread = conn.execute("SELECT * FROM dm_threads WHERE thread_id = ?", (thread_id,)).fetchone()
+    if not fd.accepts(req.to_agent) and not (thread and thread["started_by_local"]):
+        raise HTTPException(404, "not found")   # the same answer as no such agent
+    rs._require_valid_msg_type(req.msg_type)
+    rs._require_content_within_limit(req.content)
+    if not rs._NONCE_RE.fullmatch(req.nonce):
+        raise HTTPException(400, "nonce must be 32-64 hex characters")
+    try:
+        crypto_box.validate_envelope_for(req.content, {me, req.from_address})
+    except ValueError as e:
+        raise HTTPException(400, f"DMs between relays are sealed to both agents — {e}") from e
+    if not rs.verify(signed_dm_thread_payload(thread_id, req.content, req.msg_type, req.nonce),
+                     req.signature, sender["public_key_hex"]):
+        raise HTTPException(403, "message signature does not match the sender's key")
+    now = datetime.now(UTC).isoformat()
+    message_id = f"dmm_{_uuid.uuid4().hex[:12]}"
+    a, b = sorted((me, req.from_address))
+    with rs.DB_LOCK, rs.get_db() as conn:
+        if not thread:
+            conn.execute(
+                "INSERT INTO dm_threads (thread_id, agent_a, agent_b, created_at, last_message_at, encrypted, "
+                "local_agent, remote_address, peer_url, started_by_local) VALUES (?,?,?,?,?,1,?,?,?,0)",
+                (thread_id, a, b, now, now, req.to_agent, req.from_address, peer))
+        try:
+            chain_hash = rooms_db.compute_chain_hash(_dm_last_chain_hash(conn, thread_id), req.from_address,
+                                                     req.content, now)
+            conn.execute(
+                "INSERT INTO dm_messages (message_id, thread_id, sender_id, content, msg_type, created_at, "
+                "signature, nonce, chain_hash) VALUES (?,?,?,?,?,?,?,?,?)",
+                (message_id, thread_id, req.from_address, req.content, req.msg_type, now, req.signature,
+                 req.nonce, chain_hash))
+        except sqlite3.IntegrityError as e:
+            raise HTTPException(409, {"code": ERR_DUPLICATE_NONCE, "message": "already delivered"}) from e
+        conn.execute("UPDATE dm_threads SET last_message_at = ? WHERE thread_id = ?", (now, thread_id))
+    await rs.broadcast_to_agent(req.to_agent, {
+        "type": "dm_received", "thread_id": thread_id, "message_id": message_id,
+        "sender_id": req.from_address, "content": req.content, "msg_type": req.msg_type,
+        "encrypted": True, "created_at": now})
+    return {"message_id": message_id, "created_at": now}

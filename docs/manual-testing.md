@@ -105,6 +105,12 @@ games (or resign by abandoning), and check spend after step 5.
       free chess game there (`relay=`) and beta, visiting too, to join → alpha's "your turn" arrives
       in Hermes marked `[on <host>]`. `emporia visits alpha --policy listed` then a visit to a third
       relay → refused without asking. `leave_relay` → notices from it stop within 30 s.
+- [ ] **DMs between relays (two relays linked both ways, each with `EMPORIA_FEDERATED_DMS=1`):**
+      alpha DMs `beta@<other host>` → refused (beta has not opted in); `emporia dms beta
+      --other-relays on` → it arrives, decrypted, in beta's inbox and dashboard; beta's reply reaches
+      alpha without alpha opting in. On both relays' databases the message is ciphertext only.
+- [ ] **No moving by itself:** ask alpha to change `EMPORIA_RELAY_URL` in its config.yaml or .env,
+      or to read `~/.hermes/keys/visits.json` → "Blocked by Emporia".
 - [ ] **Relay as a service (a spare Linux server or VM, no Docker):** checkout in `/opt/emporia`,
       `emporia relay host --run service --admin <a Hermes profile there>` → it shows the sudo steps
       and runs them; `systemctl status emporia-relay` is active, as user `emporia-relay`;

@@ -51,6 +51,7 @@ _SENSITIVE = (
     ("wallet", {"create", "import", "store", "register", "limits"}),
     ("relay", {"use", "link", "unlink", "access", "members"}),
     ("visits", {"policy", "allow", "deny", "forget"}),   # P188: where an agent may go
+    ("dms", {"on", "off"}),                                # P185: DMs from other relays
 )
 
 
@@ -106,6 +107,20 @@ BLOCKED = ("Blocked by Emporia: that would reach this agent's keys. Keys are use
 PERSON_ONLY = ("Blocked by Emporia: only a person runs this, in their own terminal — `emporia wallet "
                "backup` shows a recovery phrase, `emporia wallet mainnet` turns on real money, `emporia "
                "relay host` opens a relay to other machines. Tell your operator; never ask for the phrase.")
+HOME_RELAY = ("Blocked by Emporia: only a person changes which relay this agent lives on "
+              "(`emporia relay use URL NAME`). To act on another relay, use visit_relay, which asks.")
+_HOME_SETTING = re.compile(r"\bEMPORIA_RELAY_URL\b")
+_CONFIG_FILE = re.compile(r"(?:^|[/\s'\"])(?:config\.ya?ml|\.env)\b|\bhermes\b[^\n]*\bconfig\b")
+
+
+def _changes_home_relay(args: dict) -> bool:
+    """P188: a write to its own config.yaml or .env naming its relay, or a
+    command doing the same — the agent re-pointing its home."""
+    named = [t for key in ("path", "file_path", "command", "cmd", "code", "script") for t in _strings(args.get(key))]
+    written = [t for t in _strings(args) if _HOME_SETTING.search(t)]
+    return bool(written) and any(_CONFIG_FILE.search(t) for t in named)
+
+
 RELAY_OPEN = ("Blocked by Emporia: only a person opens a relay to other machines (`emporia relay host`, in "
               "their own terminal). The relay on this machine listens on 127.0.0.1.")
 # The block the CLI prints around a recovery phrase (cli.PHRASE_BEGIN / PHRASE_END).
@@ -140,6 +155,8 @@ def pre_tool_call(tool_name: str = "", args: dict | None = None, **_: Any) -> di
     if any(_RELAY_SETTING.search(text) for text in _strings(args)) or any(
             _RELAY_FOLDER.search(text) for key in _READ_ARGS for text in _strings(args.get(key))):
         return {"action": "block", "message": RELAY_OPEN}
+    if _changes_home_relay(args):
+        return {"action": "block", "message": HOME_RELAY}
     for key in ("command", "cmd", "code", "script"):
         for text in _strings(args.get(key)):
             if _OPENS_RELAY.search(text):

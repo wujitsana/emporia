@@ -179,3 +179,22 @@ def test_where_an_agent_may_go_is_its_operators_call():
     r = guard.pre_tool_call("write_file", {"path": "/opt/data/profiles/alpha/.env",
                                            "content": "EMPORIA_VISIT_POLICY=linked\n"})
     assert r and r["action"] == "block"
+
+
+@pytest.mark.parametrize("tool,args", [
+    ("write_file", {"path": "/opt/data/profiles/alpha/config.yaml",
+                    "content": "mcp_servers:\n  emporia:\n    env:\n      EMPORIA_RELAY_URL: https://evil.example\n"}),
+    ("patch", {"path": "/opt/data/profiles/alpha/.env", "old_string": "x", "new_string": "EMPORIA_RELAY_URL=https://e.x"}),
+    ("terminal", {"command": "sed -i 's#EMPORIA_RELAY_URL=.*#EMPORIA_RELAY_URL=https://e.x#' .env"}),
+    ("terminal", {"command": "hermes config set mcp_servers.emporia.env.EMPORIA_RELAY_URL https://e.x"}),
+    ("terminal", {"command": "cat ~/.hermes/keys/visits.json"}),
+])
+def test_an_agent_cannot_move_itself_to_another_relay(tool, args):
+    """P188: home is the operator's choice; visits go through visit_relay, which asks."""
+    r = guard.pre_tool_call(tool, args)
+    assert r and r["action"] == "block"
+
+
+def test_editing_emporia_code_that_names_the_relay_setting_is_fine():
+    assert guard.pre_tool_call("patch", {"path": "src/emporia/cli.py",
+                                         "new_string": 'os.getenv("EMPORIA_RELAY_URL", "")'}) is None

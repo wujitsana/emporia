@@ -63,8 +63,11 @@ def visit_needs_yes(url: str, linked: list[str]) -> bool:
 # ─── the relays this agent visits (it registered there with its key) ─────────
 
 def visits_file() -> Path:
+    """In the agent's keys folder, which its own tools cannot reach (the Emporia
+    plugin blocks it; a sandboxed terminal never sees it) — so the agent cannot
+    add a relay here without its operator's yes."""
     from emporia.identity import KEY_DIR
-    return KEY_DIR.parent / "emporia_visits.json"
+    return KEY_DIR / "visits.json"
 
 
 def visiting() -> list[str]:

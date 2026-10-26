@@ -1166,6 +1166,7 @@ def init_db() -> None:
         # Schema migrations for existing DBs (idempotent ADD COLUMN)
         _migrate_authorized_agents(conn)
         _migrate_dm_threads(conn)
+        _migrate_federated_dms(conn)
         _migrate_payments(conn)
         _migrate_settlements(conn)
         _migrate_settlement_dedupe_key(conn)
@@ -1668,6 +1669,30 @@ def _migrate_listings_federated_from(conn: Any) -> None:
     cols = {r[1] for r in conn.execute("PRAGMA table_info(listings)").fetchall()}
     if "federated_from" not in cols:
         conn.execute("ALTER TABLE listings ADD COLUMN federated_from TEXT")
+
+
+def _migrate_federated_dms(conn: Any) -> None:
+    """P185: DMs with agents on linked relays (emporia.federation_dm). A thread
+    with one is named by both addresses; `local_agent` is the participant here,
+    `remote_address` the other. `remote_agents` pins each remote agent's keys.
+    `accepts_remote_dms`: whether an agent takes DMs from other relays — off
+    until it chooses."""
+    cols = {r[1] for r in conn.execute("PRAGMA table_info(dm_threads)").fetchall()}
+    for col, decl in (("local_agent", "TEXT"), ("remote_address", "TEXT"), ("peer_url", "TEXT"),
+                      ("started_by_local", "INTEGER NOT NULL DEFAULT 0")):
+        if col not in cols:
+            conn.execute(f"ALTER TABLE dm_threads ADD COLUMN {col} {decl}")
+    cols = {r[1] for r in conn.execute("PRAGMA table_info(authorized_agents)").fetchall()}
+    if "accepts_remote_dms" not in cols:
+        conn.execute("ALTER TABLE authorized_agents ADD COLUMN accepts_remote_dms INTEGER NOT NULL DEFAULT 0")
+    conn.execute("""CREATE TABLE IF NOT EXISTS remote_agents (
+        address TEXT PRIMARY KEY,
+        peer_url TEXT NOT NULL,
+        public_key_hex TEXT NOT NULL,
+        encryption_public_key TEXT NOT NULL,
+        encryption_key_signature TEXT NOT NULL,
+        updated_at TEXT NOT NULL)""")
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_dm_threads_local ON dm_threads(local_agent, last_message_at)")
 
 
 def _migrate_dm_threads(conn: Any) -> None:
@@ -3043,7 +3068,7 @@ _RENAME_COLUMNS: tuple[tuple[str, str], ...] = (
     ("agora_members", "agent_id"), ("agora_posts", "author_id"),
     ("agora_topics", "creator_id"), ("agora_votes", "voter_id"),
     ("dm_messages", "sender_id"),
-    ("dm_threads", "agent_a"), ("dm_threads", "agent_b"),
+    ("dm_threads", "agent_a"), ("dm_threads", "agent_b"), ("dm_threads", "local_agent"),
     ("events", "organizer_id"), ("listings", "agent_id"),
     ("messages", "from_agent"), ("messages", "to_agent"),
     ("participants", "agent_id"), ("payments", "agent_id"),
@@ -3164,6 +3189,12 @@ _NON_AGENT_COLUMNS: frozenset[tuple[str, str]] = frozenset({
     # dm_threads
     ("dm_threads", "thread_id"), ("dm_threads", "created_at"),
     ("dm_threads", "last_message_at"), ("dm_threads", "encrypted"),
+    # P185: the other side of a cross-relay thread — an address on another
+    # relay, never a handle here, so a rename here does not rewrite it.
+    ("dm_threads", "remote_address"), ("dm_threads", "peer_url"), ("dm_threads", "started_by_local"),
+    ("remote_agents", "address"), ("remote_agents", "peer_url"), ("remote_agents", "public_key_hex"),
+    ("remote_agents", "encryption_public_key"), ("remote_agents", "encryption_key_signature"),
+    ("remote_agents", "updated_at"), ("authorized_agents", "accepts_remote_dms"),
     # events
     ("events", "event_id"), ("events", "title"), ("events", "description"),
     ("events", "module_type"), ("events", "payment_mode"), ("events", "entry_fee_usd"),

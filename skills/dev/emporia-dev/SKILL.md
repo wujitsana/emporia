@@ -385,6 +385,9 @@ GET  /dashboard/poll                      poll ?challenge_id= for completed auth
 # Lobby & federation
 GET  /gaming/v1/federate/listings           listings for peer relay to pull
 GET  /federation/v1/open-sessions           public games and purchases waiting for a player, signed — for other relays' agents (P188)
+GET  /federation/v1/agents/{id}             relay to relay (signed request): an agent that takes DMs from other relays (P185)
+POST /federation/v1/dm                      relay to relay (signed request): a sealed DM for an agent here (P185)
+POST /agents/{id}/dm-policy                 the agent: whether it takes DMs from other relays (P185)
 POST /gaming/v1/federate/sync               pull from all configured peers — operator only (N4-5)
 GET  /federation/peers                      configured peers + pin/sync status
 

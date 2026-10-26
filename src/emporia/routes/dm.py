@@ -72,6 +72,14 @@ async def dm_start(req: DMStartRequest, request: Request):
     if not caller:
         raise HTTPException(401, "Authentication required")
     rs._require_registered(caller)
+    from emporia.addresses import is_address
+    if is_address(req.to_agent):
+        from emporia import federation_dm as fd
+        agent_id, peer = fd.resolve(req.to_agent)
+        if peer:
+            rs._enforce_agent_rate_limit(caller)
+            return await _dm_start_remote(caller, agent_id, peer, req.encrypted)
+        req.to_agent = agent_id        # an address on this relay: an ordinary DM
     rs._require_registered(req.to_agent)
     rs._enforce_agent_rate_limit(caller)
     if caller == req.to_agent:
@@ -133,6 +141,68 @@ async def dm_start(req: DMStartRequest, request: Request):
         "thread_id": thread_id, "agent_a": a, "agent_b": b,
         "created": True, "encrypted": bool(want),
     }
+
+
+async def _dm_start_remote(caller: str, agent_id: str, peer: str, encrypted: bool | None) -> dict[str, Any]:
+    """P185: a thread with an agent on a linked relay — always sealed, named by
+    both addresses so both relays and both clients agree on it."""
+    from emporia import federation_dm as fd
+    if encrypted is False:
+        raise HTTPException(400, "DMs between relays are always end-to-end encrypted")
+    rs._require_encryption_keys_published([caller])
+    me = fd.address(caller, fd.own_host())
+    them = fd.address(agent_id, fd.host_of(peer))
+    thread_id = fd.thread_id_for(me, them)
+    with rs.DB_LOCK, rs.get_db() as conn:
+        replying = conn.execute("SELECT 1 FROM dm_threads WHERE thread_id = ?", (thread_id,)).fetchone()
+    if replying and fd.remote(them):
+        # A thread the other agent began: it chose to write here, and its keys
+        # were pinned when its first message arrived. Its opt-in is not needed.
+        return {"thread_id": thread_id, "agent_a": min(me, them), "agent_b": max(me, them), "created": False,
+                "encrypted": True, "federated": True, "my_label": me, "peer_label": them, "peer_relay": peer}
+    record = await fd.look_up(peer, agent_id)
+    them = record["address"]
+    thread_id = fd.thread_id_for(me, them)
+    a, b = sorted((me, them))
+    now = datetime.now(UTC).isoformat()
+    with rs.DB_LOCK, rs.get_db() as conn:
+        existing = conn.execute("SELECT thread_id FROM dm_threads WHERE thread_id = ?", (thread_id,)).fetchone()
+        if existing:
+            conn.execute("UPDATE dm_threads SET started_by_local = 1 WHERE thread_id = ?", (thread_id,))
+        else:
+            conn.execute(
+                "INSERT INTO dm_threads (thread_id, agent_a, agent_b, created_at, last_message_at, encrypted, "
+                "local_agent, remote_address, peer_url, started_by_local) VALUES (?,?,?,?,?,1,?,?,?,1)",
+                (thread_id, a, b, now, now, caller, them, peer))
+    return {"thread_id": thread_id, "agent_a": a, "agent_b": b, "created": not existing, "encrypted": True,
+            "federated": True, "my_label": me, "peer_label": them, "peer_relay": peer}
+
+
+async def _deliver_remote(thread: Any, caller: str, sender_label: str, req: "DMSendRequest",
+                          msg_type: str) -> None:
+    from emporia import federation_dm as fd
+    if not fd.enabled() or not fd.linked_peer(fd.host_of(thread["peer_url"] or "")):
+        raise HTTPException(403, "this relay no longer exchanges DMs with that one")
+    record = fd.agent_record(caller)
+    if not record:
+        raise HTTPException(409, "publish an encryption key first")
+    agent_id, _ = fd.split_address(thread["remote_address"])
+    r = await fd.call_peer(thread["peer_url"], "POST", "/federation/v1/dm", {
+        "from_address": sender_label, "to_agent": agent_id, "thread_id": thread["thread_id"],
+        "content": req.content, "msg_type": msg_type, "nonce": req.nonce, "signature": req.signature,
+        "sender": record})
+    if r.status_code != 200:
+        detail = (r.json() or {}).get("detail") if r.headers.get("content-type", "").startswith(
+            "application/json") else r.text[:200]
+        raise HTTPException(r.status_code if r.status_code in (403, 404, 409, 429) else 502,
+                            f"{thread['peer_url']} did not take it: {detail}")
+
+
+def _my_label(thread: Any, caller: str) -> str:
+    """How `caller` is named in this thread: its address in one with another relay."""
+    if thread["remote_address"] and thread["local_agent"] == caller:
+        return thread["agent_a"] if thread["agent_b"] == thread["remote_address"] else thread["agent_b"]
+    return caller
 
 
 def _dm_last_chain_hash(conn: Any, thread_id: str) -> str | None:
@@ -262,7 +332,7 @@ def _dm_thread_or_404(thread_id: str, caller: str) -> Any:
         ).fetchone()
     if not thread:
         raise HTTPException(404, "DM thread not found")
-    if caller not in (thread["agent_a"], thread["agent_b"]):
+    if caller not in (thread["agent_a"], thread["agent_b"]) and caller != thread["local_agent"]:
         raise HTTPException(403, "Not a participant in this thread")
     return thread
 
@@ -344,6 +414,10 @@ async def dm_thread_info(thread_id: str, request: Request):
         "encrypted": bool(thread["encrypted"]),
         "created_at": thread["created_at"],
         "last_message_at": thread["last_message_at"],
+        # P185: in a thread with another relay's agent, both are named by
+        # address — the label a client seals, signs and opens under.
+        "federated": bool(thread["remote_address"]),
+        "my_label": _my_label(thread, caller),
     }
 
 
@@ -506,6 +580,12 @@ async def dm_send(thread_id: str, req: DMSendRequest, request: Request):
             await rs._assert_payload_safe_counted({"content": req.content})
         except PermissionError as e:
             raise HTTPException(403, str(e))
+    # P185: in a thread with another relay's agent the sender is named by its
+    # address, and the message goes to that relay first — stored here only once
+    # it was accepted there, so the two copies never disagree.
+    sender_label = _my_label(thread, caller)
+    if thread["remote_address"]:
+        await _deliver_remote(thread, caller, sender_label, req, effective_msg_type)
     now = datetime.now(UTC).isoformat()
     message_id = f"dmm_{uuid.uuid4().hex[:12]}"
     with rs.DB_LOCK, rs.get_db() as conn:
@@ -515,12 +595,12 @@ async def dm_send(thread_id: str, req: DMSendRequest, request: Request):
             # onto it. The frame is rooms.compute_chain_hash() itself rather
             # than a copy — P21-7 made it public for exactly this reason.
             chain_hash = rooms_db.compute_chain_hash(
-                _dm_last_chain_hash(conn, thread_id), caller, req.content, now,
+                _dm_last_chain_hash(conn, thread_id), sender_label, req.content, now,
             )
             conn.execute(
                 "INSERT INTO dm_messages (message_id, thread_id, sender_id, content, "
                 "msg_type, created_at, signature, nonce, chain_hash) VALUES (?,?,?,?,?,?,?,?,?)",
-                (message_id, thread_id, caller, req.content, effective_msg_type, now,
+                (message_id, thread_id, sender_label, req.content, effective_msg_type, now,
                  req.signature, req.nonce, chain_hash),
             )
         except sqlite3.IntegrityError as e:
@@ -547,6 +627,9 @@ async def dm_send(thread_id: str, req: DMSendRequest, request: Request):
             "UPDATE dm_threads SET last_message_at=? WHERE thread_id=?", (now, thread_id)
         )
         recipient = thread["agent_b"] if caller == thread["agent_a"] else thread["agent_a"]
+    if thread["remote_address"]:
+        return {"message_id": message_id, "thread_id": thread_id, "created_at": now,
+                "delivered_to": thread["peer_url"]}
     event = {
         "type": "dm_received",
         "thread_id": thread_id,
@@ -583,14 +666,15 @@ async def dm_list(agent_id: str, request: Request, limit: int = 50):
             " ORDER BY created_at DESC LIMIT 1) AS last_content, "
             "(SELECT sender_id FROM dm_messages WHERE thread_id=t.thread_id "
             " ORDER BY created_at DESC LIMIT 1) AS last_sender "
-            "FROM dm_threads t WHERE t.agent_a=? OR t.agent_b=? "
+            "FROM dm_threads t WHERE t.agent_a=? OR t.agent_b=? OR t.local_agent=? "
             "ORDER BY t.last_message_at DESC LIMIT ?",
-            (agent_id, agent_id, limit),
+            (agent_id, agent_id, agent_id, limit),
         ).fetchall()
     return [
         {
             "thread_id": r["thread_id"],
-            "other_agent": r["agent_b"] if r["agent_a"] == agent_id else r["agent_a"],
+            "other_agent": r["remote_address"] or (r["agent_b"] if r["agent_a"] == agent_id else r["agent_a"]),
+            "federated": bool(r["remote_address"]),
             "last_message_at": r["last_message_at"],
             # P16: on an encrypted thread this preview is the raw envelope, which
             # is exactly right — the relay has nothing else to give. The `encrypted`
@@ -631,7 +715,7 @@ async def dm_messages(
         ).fetchone()
         if not thread:
             raise HTTPException(404, "DM thread not found")
-        if agent_id not in (thread["agent_a"], thread["agent_b"]):
+        if agent_id not in (thread["agent_a"], thread["agent_b"]) and agent_id != thread["local_agent"]:
             raise HTTPException(403, "Not a participant in this thread")
         if before and before_seq is not None:
             rows = conn.execute(
@@ -680,7 +764,7 @@ async def dm_messages(
         }
         for r in reversed(rows)
     ]
-    return {"thread_id": thread_id, "messages": messages}
+    return {"thread_id": thread_id, "messages": messages, "my_label": _my_label(thread, agent_id)}
 
 
 # ============================================================================

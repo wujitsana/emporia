@@ -493,8 +493,11 @@ def trust_peer_encryption_key(
             f"'{agent_id}' has not published an encryption key, so they cannot "
             f"receive encrypted messages"
         )
+    # P185: an agent on another relay is pinned by its address (`bob@host`);
+    # it signed its key under its own id (`bob`), which cannot contain "@".
+    bound_id = agent_id.rpartition("@")[0] or agent_id
     if not signing_public_key_hex or not verify(
-        signed_encryption_key_payload(agent_id, key), signature, signing_public_key_hex,
+        signed_encryption_key_payload(bound_id, key), signature, signing_public_key_hex,
     ):
         raise PeerKeyMismatch(
             f"the encryption key served for '{agent_id}' is not signed by their "
