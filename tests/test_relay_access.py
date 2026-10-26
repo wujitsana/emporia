@@ -116,3 +116,22 @@ def test_an_agents_nous_account_is_shown_to_itself_and_the_operator_only(client,
     assert "nous_private_1" not in str(listed)
     monkeypatch.setenv("EMPORIA_AGENT_ID", "ra_nous_other")
     assert client.get("/agents/ra_nous_owner", headers=_as("ra_nous_other")).json()["nous_user_id"] == "nous_private_1"
+
+
+def test_an_older_database_is_copied_aside_before_it_is_upgraded(tmp_path, monkeypatch):
+    """P193: a schema upgrade can drop and alter tables; the operator keeps the old copy."""
+    import sqlite3
+
+    from emporia import relay_server as rs
+    db = tmp_path / "old.sqlite3"
+    conn = sqlite3.connect(db)
+    conn.execute("CREATE TABLE challenges (challenge_id TEXT)")
+    conn.execute("INSERT INTO challenges VALUES ('kept')")
+    conn.execute("PRAGMA user_version = 6")
+    conn.commit()
+    monkeypatch.setattr(rs, "DATABASE_PATH", db)
+    snap = rs._snapshot_before_upgrade(conn)
+    assert snap and snap.name.startswith("old.sqlite3.before-v") and oct(snap.stat().st_mode)[-3:] == "600"
+    assert sqlite3.connect(snap).execute("SELECT challenge_id FROM challenges").fetchone() == ("kept",)
+    conn.execute(f"PRAGMA user_version = {rs.SCHEMA_VERSION}")
+    assert rs._snapshot_before_upgrade(conn) is None                # current: nothing to keep

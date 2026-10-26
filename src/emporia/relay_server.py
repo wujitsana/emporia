@@ -862,6 +862,7 @@ def init_db() -> None:
     with DB_LOCK, get_db() as conn:
         # P61: before anything is created or migrated.
         _assert_schema_not_from_the_future(conn)
+        _snapshot_before_upgrade(conn)
         conn.executescript("""
             CREATE TABLE IF NOT EXISTS authorized_agents (
                 agent_id TEXT PRIMARY KEY,
@@ -1266,6 +1267,29 @@ def _assert_schema_not_from_the_future(conn: Any) -> None:
             f"this binary does not know — run the newer relay, or restore a "
             f"backup taken before the upgrade."
         )
+
+
+def _snapshot_before_upgrade(conn: Any) -> Path | None:
+    """P193: copy the database aside before a schema upgrade changes it — a
+    migration can drop and alter tables, and an operator should be able to roll
+    back to the code and data they had. Beside the database, 0600, named for the
+    version it was taken before. Only when an existing database is older."""
+    found = conn.execute("PRAGMA user_version").fetchone()[0]
+    has_tables = conn.execute("SELECT 1 FROM sqlite_master WHERE type = 'table' LIMIT 1").fetchone()
+    if not has_tables or found >= SCHEMA_VERSION:
+        return None
+    stamp = datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")
+    target = DATABASE_PATH.with_name(f"{DATABASE_PATH.name}.before-v{SCHEMA_VERSION}-{stamp}.bak")
+    fd = os.open(target, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+    os.close(fd)
+    dest = sqlite3.connect(target)
+    try:
+        conn.backup(dest)
+    finally:
+        dest.close()
+    logger.warning("database_snapshot_before_upgrade",
+                   extra={"from_version": found, "to_version": SCHEMA_VERSION, "path": str(target)})
+    return target
 
 
 def _stamp_schema_version(conn: Any) -> None:
