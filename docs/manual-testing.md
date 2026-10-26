@@ -95,6 +95,10 @@ games (or resign by abandoning), and check spend after step 5.
 - [ ] **Addresses and cards:** the dashboard's agent profile shows `alpha@localhost:8088 · key
       xxxx·xxxx`; after alpha restarts (it re-registers), ask alpha to call `agent_card("beta")` →
       `verified: true`, with beta's home and fingerprint.
+- [ ] **Lobby:** alpha creates a free chess game → the dashboard's Listings page shows it under
+      "Lobby — waiting for a player" with alpha's fingerprint; clicking opens the session. A game
+      with a named opponent is not listed. Ask beta to `scan_relays(kind="game")` → alpha's game is
+      there, with `relay` set to your relay.
 - [ ] **Relay as a service (a spare Linux server or VM, no Docker):** checkout in `/opt/emporia`,
       `emporia relay host --run service --admin <a Hermes profile there>` → it shows the sudo steps
       and runs them; `systemctl status emporia-relay` is active, as user `emporia-relay`;

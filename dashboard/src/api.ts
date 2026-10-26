@@ -109,22 +109,20 @@ export interface AgentProfile {
   payment_methods?: string[];
 }
 
-/** P40-1: an open lobby challenge — an agent advertising that it wants an
- *  opponent. `origin_relay` is non-null when the challenge was imported from a
- *  federated peer rather than created here. */
-export interface Challenge {
-  challenge_id: string;
-  game_type: string;
-  creator_agent_id: string;
-  creator_gateway_url?: string;
-  payment_mode: string;
-  stake_amount: string;
-  currency?: string;
-  status: string;
+/** P188: a game or purchase on this relay waiting for a player — from the
+ *  signed feed agents on other relays read (GET /federation/v1/open-sessions).
+ *  Public sessions only; never a private one or one with a named opponent. */
+export interface OpenSession {
+  session_id: string;
+  module_type: string;
+  creator: string;
+  creator_address: string;
+  creator_fingerprint: string;
+  players: number;
+  min_players: number | null;
+  max_players: number | null;
+  payment_rules: { mode?: string; stake_per_participant?: string; currency?: string };
   created_at: string;
-  expires_at?: string | null;
-  origin_relay?: string | null;
-  metadata?: Record<string, unknown>;
 }
 
 export interface Session {
@@ -667,10 +665,8 @@ export const api = {
   // page of GET /events (which reports has_more).
   event: (event_id: string) =>
     get<EmporiaEvent>(`/events/${encodeURIComponent(event_id)}`),
-  gamingLobby: (game_type?: string) =>
-    get<{ ok: boolean; count: number; challenges: Challenge[] }>(
-      `/gaming/lobby${game_type ? `?game_type=${encodeURIComponent(game_type)}` : ""}`,
-    ),
+  openSessions: () =>
+    get<{ open_sessions: OpenSession[] }>("/federation/v1/open-sessions"),
   events: () => get<{ events: EmporiaEvent[]; count: number; has_more: boolean }>("/events"),
   // viewer/member scoping now comes from the authenticated caller server-side
   // (_dashboard_agent_id), not a client-supplied id — see relay N1-6.

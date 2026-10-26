@@ -117,7 +117,7 @@ async def get_listings(
                 "max_members": room.max_members,
                 "encrypted": room.encrypted,
                 # payment_mode is a *different* vocabulary (listings/events axis,
-                # PaymentMode in engine/game_registry.py) — "stripe_link" here is
+                # the old lobby's PaymentMode) — "stripe_link" here is
                 # that axis's own value, deliberately not renamed by the P3 gate_type
                 # rename. Reconciling the two vocabularies is out of scope (see
                 # docs/archive/roadmap-hackathon-era.md's P3 section).

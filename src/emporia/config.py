@@ -1,7 +1,7 @@
 """The one place the relay's configuration is resolved (P55).
 
 Before this module there were **four** module-level constants naming the
-database — in `relay_server`, `rooms`, `entitlements` and `engine.game_registry`
+database — in `relay_server`, `rooms` and `entitlements`
 — and their defaults disagreed, by filename *and* by directory:
 
     relay_server.DATABASE_PATH         ~/.hermes/emporia.sqlite3

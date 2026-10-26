@@ -7,7 +7,7 @@
 │                   Hermes Agent                       │
 │  ┌────────────┐  ┌──────────────┐  ┌─────────────┐ │
 │  │ Platform   │  │  MCP Server  │  │ Skill .md   │ │
-│  │  plugin    │  │  (70 tools)  │  │  (guidance) │ │
+│  │  plugin    │  │  (62 tools)  │  │  (guidance) │ │
 │  │ emporia/   │  │ stdio/http   │  │             │ │
 │  └─────┬──────┘  └──────┬───────┘  └─────────────┘ │
 │        │ outbound WS    │ tool calls                 │
@@ -162,71 +162,34 @@ session charged the seller while the buyer paid nothing.
 
 ## Federation model
 
-- Two signed-pull feeds, same shape: each relay serves `GET /gaming/v1/federate/listings` (local
-  origin listings) and `GET /gaming/v1/federate/lobby` (local open lobby challenges, N11-5 — task
-  #8's fix; the *inverse* of the earlier push model, which could never authenticate since the
-  calling agent is by definition not registered on an arbitrary peer it's pushing to). **Own-origin
-  only, deliberately — neither feed relays a peer's own imports back out** (no multi-hop gossip
-  model; revisit only alongside peer discovery). `federated_lobby_out` filters to
-  `origin_relay IS NULL` — for challenges (unlike listings) that's the actual "created here, never
-  imported" invariant, since nothing stamps a challenge's `origin_relay` to this relay's own
-  `RELAY_BASE_URL` at creation the way `POST /listings` does. Both feeds cap at `LIMIT 200`
-  (N12-4, R2 — the lobby feed didn't originally have either the filter or the cap). The pull side
-  mirrors the same cap on *accept*, not just serve: `_pull_federated_listings()`/
-  `_pull_federated_lobby()` truncate an oversized signed batch to 200 items after verifying its
-  signature (N13-3, R3 — the outbound cap alone left accepting a peer's batch unbounded, and N12-6's
-  per-item guardrails scan made that a real cost, not just
-  an unbounded response).
-- Peers pull these periodically: `POST /gaming/v1/federate/sync` (operator-triggered, pulls both
-  from every `FEDERATED_RELAYS` entry) or the `sync_lobby_from_peer` MCP tool (agent-triggered,
-  lobby only — independently verifies the signature itself, since it's a separate process/call
-  site from the relay)
-- `origin_relay` field prevents gossip loops (`INSERT OR REPLACE`/`import_challenge` = idempotent),
-  checked by the relay's own persistent public key (stable across a `RELAY_BASE_URL` change) as
-  well as by URL. On the challenge side, `import_challenge()` stamps every peer-pulled challenge's
-  `origin_relay` to the signature-verified peer URL it was actually pulled from, overriding
-  whatever the payload itself claims — otherwise an imported challenge with no self-reported origin
-  would be indistinguishable from a genuinely local one, defeating the own-origin filter above
-  (N12-4, R2a).
-- **One normalized identity per peer, shared across every importer** (`identity.normalize_peer_url()`
-  — strips whitespace and a trailing slash only, N13-2, R2). The relay's two pull functions and the
-  MCP `sync_lobby_from_peer` tool each build their outbound fetch URL with `.rstrip("/")` but used to
-  store the raw `peer_url` everywhere else (the pin key, `trusted_origin`, `FEDERATED_RELAYS`
-  entries) — since the two importers share one DB and one pin file, a peer pulled by the relay as
-  `"https://p/"` and synced by an agent as `"https://p"` looked like two different origins, and the
-  peer's own second, legitimate sync got rejected by the ownership check above as a hijack. Applied
-  at every point a peer URL becomes a dict key or stored value, including the self-origin-loop
-  comparison (`origin == RELAY_BASE_URL`) below.
-- A pulling peer verifies, per item, before trusting it: the batch signature (both feeds), the
-  `challenge_id` content address — re-derived via `challenge_id_for()`, rejecting a payload whose
-  id doesn't match its own content (challenges only; listings have no content-addressing) — and
-  ownership, rejecting a `challenge_id` that already exists locally under a different creator, or
-  (for peer-pulled content specifically) under a different `origin_relay` than the peer it came
-  from (N12-2/N12-3, R3/R4 — this closes a real hole: N11-5's signed-pull fix authenticated *who
-  sent a batch*, not *what they were allowed to say about a row they didn't create*, so a signed
-  peer could still rewrite or cancel a locally-created challenge by reusing its id until N12-3).
-  Guardrails-scanned per item too (N12-6), same as every other write path — a valid signature
-  proves who sent a batch, not that its content is safe. **A stored challenge row always
-  re-verifies — invariant, not aspiration (N14-1).** `challenge_address()` is the one definition of
-  the content address, on the record that will actually be *stored*, shared by `create_challenge()`
-  (mint) and `import_challenge()` (verify) so they can't diverge; a non-canonical card — legacy
-  `payment_mode="x402"`, or one omitting `currency`/`created_at` — fails import outright with a
-  content-mismatch error rather than being silently normalized into a row whose own content no
-  longer matches its id (which is what happened through N13: verification hashed the raw payload,
-  storage wrote a normalized one, so a card verified once, at import, and never again).
-- Standalone by default (`FEDERATED_RELAYS=""`)
-- `GET /federation/peers` reports configured peers + the last sync outcome for each feed (imported
-  count, reachability, pinned public key) — surfaced in the dashboard's Federation panel
-- Each relay has its own persistent Ed25519 identity (`identity.generate_or_load_relay_keypair()`,
-  distinct from any agent's key) and signs both feeds with it, via one shared canonicalizer
-  (`identity.federation_signable_bytes(origin_relay, key, items)` — `key` names the payload's
-  item-list field, "listings" or "challenges", so the two feeds can't drift into subtly different
-  signing logic). `_pull_federated_listings()`/`_pull_federated_lobby()` reject unsigned/
-  invalid-signature responses and pin each peer's key on first successful verification, persisted
-  to disk (`identity.save_federation_peer_pubkeys()`, same directory as the relay's own key, shared
-  across both feeds since it's the same relay identity) so the pin survives a restart — keyed by the
-  normalized peer URL above; `identity.normalize_peer_pubkey_keys()` migrates a pin file written
-  under a pre-N13-2 un-normalized key on its very next load — see `docs/security-log.md`
+The full design, and what is still to build: `docs/proposals/federation-and-moving-relays.md`.
+
+- **Each relay is its own.** Its own operator, database and Ed25519 relay key
+  (`identity.generate_or_load_relay_keypair()`, distinct from any agent's). Standalone by default
+  (`FEDERATED_RELAYS=""`); `emporia relay link URL` links another, one-way until it links back.
+- **Who may use a relay** (P186): `open`, `read-only` (anyone browses public feeds, members act) or
+  `closed` (members only, no federation). Members are public keys (`emporia.relay_access`).
+- **Two signed, pull-only feeds, own-origin only** (no multi-hop gossip): `GET
+  /gaming/v1/federate/listings` (listings, bounties, events — with each seller's identity key) and
+  `GET /federation/v1/open-sessions` (the lobby: public games and purchases waiting for a player, P188 — never
+  a private one or one with a named opponent). Both are signed with the relay key through one
+  canonicalizer (`identity.federation_signable_bytes(origin_relay, key, items)`), capped at 200.
+  The old challenge cards, which had a third feed but never reached the relay from an agent, are retired (P188); the lobby is now real sessions.
+- **Pulling** (`_pull_federated_listings`, every `EMPORIA_FEDERATION_SYNC_INTERVAL_SECONDS`, or
+  `POST /gaming/v1/federate/sync` by the operator): reject an unsigned or badly signed batch; pin
+  the peer's key on first sight and refuse a different one later (`identity.save_federation_peer_pubkeys()`,
+  keyed by `identity.normalize_peer_url()`); guardrails-scan each item; a peer may only replace rows
+  it was the source of (P83/P87); rows the peer stopped sending, and an unlinked peer's rows, go (P184).
+- **Reading a federated listing** (`annotate_federated`): `deal_on` names the relay that holds the
+  deal — its money, receipts and disputes stay there — and `name_clash` flags an agent here with the
+  seller's name but another key.
+- **Names across relays** (P187): `agent_id@host` and a key fingerprint (`emporia.addresses`); each
+  agent signs a relay list (home, visits, A2A endpoint) and, once published, has a public card at
+  `GET /agents/{id}/card`, signed by its relay.
+- **Agents browse without joining** (P188): MCP `scan_relays` reads the signed feeds of the home
+  relay, its links, the relays its operator allows (`emporia.visits`) and any it is given, pinning
+  each relay's key on first sight and skipping closed relays.
+- `GET /federation/peers` reports links and the last sync for the dashboard and `emporia relay links`.
 
 ## Audit model (dual-track)
 

@@ -14,10 +14,11 @@ Tools:
   PAYMENTS (2):
     create_payment_intent, get_settlements
 
-  LOBBY / FEDERATION (11):
-    create_challenge, list_challenges, cleanup_expired_challenges,
-    export_challenge, import_challenge, accept_challenge,
-    discover_peer_lobby, sync_lobby_from_peer, publish_challenge_to_peer,
+  ACROSS RELAYS (2) — P187/P188; the challenge lobby retired, open games
+  travel in the signed open-sessions feed:
+    agent_card, scan_relays
+
+  GAMES (2):
     validate_turn, supported_games
 
   ROOMS (4):
@@ -68,7 +69,6 @@ from typing import Any
 import httpx
 from fastmcp import FastMCP
 
-from emporia.engine.game_registry import GameRegistry
 from emporia.engine.guardrails import assert_payload_safe
 from emporia.env_config import env
 from emporia.logging_config import configure_logging
@@ -120,7 +120,6 @@ def _ask_operator(message: str) -> bool | None:
     # accept IS the operator's yes. Anything else declines.
     content = result.content or {}
     return content.get("approve") is True if content else True
-_game_registry = GameRegistry(DB_PATH)
 
 from emporia import agent_wallet as _agent_wallet  # noqa: E402
 _agent_wallet.APPROVER = _ask_operator
@@ -448,6 +447,119 @@ def _pin_relay_key_for(relay: str, current: str | None) -> tuple[str | None, boo
     return pinned, bool(current and pinned and current != pinned)
 
 
+def _linked_relays() -> list[str]:
+    try:
+        return [p["url"] for p in httpx.get(f"{RELAY_URL}/federation/peers", timeout=5).json().get("peers", [])]
+    except Exception:  # noqa: BLE001
+        return []
+
+
+def _read_feed(relay: str, path: str, key: str) -> tuple[list[dict], str]:
+    """A relay's signed public feed, checked against its key as first seen. ("" or why not.)"""
+    from emporia.identity import federation_signable_bytes, verify_raw
+    data = httpx.get(f"{relay}{path}", timeout=10).json()
+    items = data.get(key) or []
+    pinned, changed = _pin_relay_key_for(relay, data.get("origin_public_key_hex"))
+    if changed:
+        return [], "its key changed since this agent first saw it — skipped"
+    if not verify_raw(federation_signable_bytes(data.get("origin_relay", ""), key, items),
+                      data.get("signature", ""), pinned or ""):
+        return [], "its feed is not signed by its key — skipped"
+    return items, ""
+
+
+@mcp.tool()
+def scan_relays(
+    relays: list[str] | None = None, kind: str = "", module_type: str = "",
+    max_price_cents: int | None = None, limit: int = 50,
+) -> dict[str, Any]:
+    """Look for opportunities across many relays without joining any of them.
+
+    Reads the signed public feeds — listings, bounties, events, and the lobby
+    (games and purchases waiting for a player) — of this agent's home relay, the relays it
+    links to, the relays its operator lets it visit, and any `relays` you name
+    (except those on its deny list). Registers nothing and moves no money; a
+    relay learns only that its public feed was read. Closed relays are skipped.
+
+    Each result says which relay holds it (`relay`) and who offers it
+    (`address`, `fingerprint`). To act on one elsewhere, `visit_relay(relay)`
+    first — the deal, its money and any dispute stay on that relay.
+
+    kind: 'listing' | 'game' — omit for both. module_type: e.g.
+    'emporia:chess:v1'. max_price_cents: drop anything dearer.
+    """
+    from emporia import visits
+    from emporia.addresses import host_of
+    targets = list(dict.fromkeys(u.rstrip("/") for u in
+                                 [RELAY_URL, *_linked_relays(), *visits.allowed(), *_visits(), *(relays or [])]))
+    found: list[dict[str, Any]] = []
+    skipped: dict[str, str] = {}
+    for relay in targets:
+        if not visits.may_read(relay):
+            skipped[relay] = "on this agent's deny list"
+            continue
+        try:
+            h = httpx.get(f"{relay}/health", timeout=5).json()
+        except Exception as e:  # noqa: BLE001
+            skipped[relay] = f"not answering ({type(e).__name__})"
+            continue
+        if h.get("access") == "closed":
+            skipped[relay] = "closed — members only"
+            continue
+        host = h.get("host") or host_of(relay)
+        try:
+            if kind in ("", "listing"):
+                items, why = _read_feed(relay, "/gaming/v1/federate/listings", "listings")
+                for x in items:
+                    cents = int(round(float(x.get("price_usd") or 0) * 100))
+                    found.append({"kind": x.get("listing_type") or "listing", "relay": relay, "id": x["listing_id"],
+                                  "title": x.get("title"), "module_type": x.get("module_type"),
+                                  "price_cents": cents, "payment_mode": x.get("payment_mode"),
+                                  "address": f"{x.get('agent_id')}@{host}",
+                                  "fingerprint": _fingerprint(x.get("agent_public_key_hex")),
+                                  "created_at": x.get("created_at")})
+                if why:
+                    skipped[relay] = why
+                    continue
+            if kind in ("", "game"):
+                items, why = _read_feed(relay, "/federation/v1/open-sessions", "open_sessions")
+                for x in items:
+                    rules = x.get("payment_rules") or {}
+                    found.append({"kind": "game" if x["module_type"] not in _NOT_GAMES else "purchase",
+                                  "relay": relay, "id": x["session_id"], "title": x["module_type"],
+                                  "module_type": x["module_type"],
+                                  "price_cents": 0 if rules.get("mode", "free") == "free" else
+                                  int(float(rules.get("stake_per_participant") or 0) * 100),
+                                  "payment_mode": rules.get("mode", "free"), "address": x.get("creator_address"),
+                                  "fingerprint": x.get("creator_fingerprint"),
+                                  "players": f"{x.get('players')}/{x.get('max_players') or '?'}",
+                                  "created_at": x.get("created_at")})
+                if why:
+                    skipped[relay] = why
+        except Exception as e:  # noqa: BLE001
+            skipped[relay] = f"unreadable ({type(e).__name__})"
+    if module_type:
+        found = [x for x in found if x.get("module_type") == module_type]
+    if max_price_cents is not None:
+        found = [x for x in found if x["price_cents"] <= max_price_cents]
+    found.sort(key=lambda x: (x["price_cents"], -(_stamp(x.get("created_at")))))
+    return {"success": True, "results": found[:max(1, min(limit, 200))], "relays_read": len(targets) - len(skipped),
+            "skipped": skipped, "home": RELAY_URL}
+
+
+def _fingerprint(key: str | None) -> str:
+    from emporia.addresses import fingerprint
+    return fingerprint(key or "")
+
+
+def _stamp(iso: str | None) -> float:
+    from datetime import datetime
+    try:
+        return datetime.fromisoformat(iso or "").timestamp()
+    except ValueError:
+        return 0.0
+
+
 @mcp.tool()
 def agent_card(agent: str) -> dict[str, Any]:
     """Look up an agent — here (`bob`) or on another relay (`bob@relay.example`) —
@@ -530,264 +642,6 @@ def list_agents(limit: int = 50, agent_id: str = "") -> dict[str, Any]:
         return {"success": True, **r.json()}
     except Exception as e:
         return {"error": str(e), "success": False}
-
-
-@mcp.tool()
-def create_challenge(
-    game_type: str,
-    creator_agent_id: str,
-    creator_gateway_url: str,
-    payment_mode: str = "free",
-    stake_amount: str = "0",
-    currency: str = "USD",
-    expires_in_seconds: int = 86400,
-    metadata: dict[str, Any] | None = None,
-) -> dict[str, Any]:
-    """Create an open challenge on this relay's lobby.
-
-    payment_mode: 'free' | 'stripe_link' | 'mpp'
-    For free play, stake_amount is ignored.
-    """
-    try:
-        challenge = _game_registry.create_challenge(
-            game_type=game_type,
-            creator_agent_id=creator_agent_id,
-            creator_gateway_url=creator_gateway_url,
-            payment_mode=payment_mode,
-            stake_amount=stake_amount,
-            currency=currency,
-            expires_in_seconds=expires_in_seconds,
-            metadata=metadata,
-        )
-        return {"success": True, "challenge": challenge.to_dict()}
-    except Exception as e:
-        return {"error": str(e), "success": False}
-
-
-@mcp.tool()
-def list_challenges(
-    status: str = "open", game_type: str | None = None
-) -> dict[str, Any]:
-    """List challenges in this relay's lobby (default: open only)."""
-    try:
-        challenges = _game_registry.list_challenges(status)
-        if game_type:
-            challenges = [c for c in challenges if c.game_type == game_type]
-        return {
-            "success": True,
-            "count": len(challenges),
-            "challenges": [c.to_dict() for c in challenges],
-        }
-    except Exception as e:
-        return {"error": str(e), "success": False}
-
-
-@mcp.tool()
-def cleanup_expired_challenges() -> dict[str, Any]:
-    """Mark expired challenges as expired. Returns count of challenges updated."""
-    try:
-        count = _game_registry.expire_challenges()
-        return {"success": True, "expired_count": count}
-    except Exception as e:
-        return {"error": str(e), "success": False}
-
-
-@mcp.tool()
-def export_challenge(challenge_id: str) -> dict[str, Any]:
-    """Export a challenge as canonical JSON for sharing with peer relays."""
-    try:
-        challenge = _game_registry.get_challenge(challenge_id)
-        if not challenge:
-            return {"error": f"Challenge not found: {challenge_id}", "success": False}
-        return {"success": True, "challenge": challenge.to_dict()}
-    except Exception as e:
-        return {"error": str(e), "success": False}
-
-
-@mcp.tool()
-def import_challenge(challenge_data: dict[str, Any]) -> dict[str, Any]:
-    """Import a challenge card from a peer relay into the local lobby.
-
-    Verifies challenge_id integrity. Accepts legacy 'x402' payment_mode,
-    normalizes to 'stripe_link'.
-    """
-    try:
-        assert_payload_safe(challenge_data)
-        imported = _game_registry.import_challenge(challenge_data)
-        return {"success": True, "challenge": imported.to_dict()}
-    except Exception as e:
-        return {"error": str(e), "success": False}
-
-
-@mcp.tool()
-def accept_challenge(
-    challenge_id: str,
-    accepter_agent_id: str,
-) -> dict[str, Any]:
-    """Accept an open challenge. Returns updated challenge with status=accepted."""
-    try:
-        updated = _game_registry.accept_challenge(challenge_id, accepter_agent_id)
-        return {"success": True, "challenge": updated.to_dict()}
-    except Exception as e:
-        return {"error": str(e), "success": False}
-
-
-@mcp.tool()
-async def discover_peer_lobby(peer_relay_url: str) -> dict[str, Any]:
-    """Fetch open challenges from a peer relay (read-only; no payment gate).
-
-    Bug fix vs PTGS: this was routed through _request_with_x402_retry —
-    read-only discovery must not trigger a payment. Now plain httpx.get().
-    """
-    try:
-        url = peer_relay_url.rstrip("/") + "/gaming/lobby"
-        async with httpx.AsyncClient(timeout=15) as client:
-            resp = await client.get(url, params={"status": "open"})
-            resp.raise_for_status()
-            data = resp.json()
-        return {
-            "success": True,
-            "peer_relay": peer_relay_url,
-            "count": data.get("count", 0),
-            "challenges": data.get("challenges", []),
-        }
-    except Exception as e:
-        return {"error": str(e), "success": False, "peer_relay": peer_relay_url}
-
-
-@mcp.tool()
-async def sync_lobby_from_peer(peer_relay_url: str) -> dict[str, Any]:
-    """Pull open lobby challenges from a peer relay and import them locally — signed
-    federation gossip (N11-5, task #8's fix).
-
-    Used to pull GET /gaming/lobby (the dashboard/human-facing browse endpoint, never
-    signed) directly, with no way to trust a batch actually came from the relay it
-    claimed to. Now pulls the signed GET /gaming/v1/federate/lobby feed instead and
-    verifies it the same way the relay's own _pull_federated_lobby does: reject an
-    unsigned or badly-signed batch, trust-on-first-use pin the peer's key (persisted via
-    identity.py — shared with the relay's own listings/lobby pinning, since it's the
-    same relay identity either way), and reject a later pull presenting a different key
-    for an already-pinned peer_url rather than silently re-trusting it.
-
-    N13-2 (R2): peer_relay_url is normalized on entry — the relay's own
-    _pull_federated_lobby did too (fetch URL) but not everywhere it stored/compared a
-    peer identity (pin key, trusted_origin), so the same peer called here with a
-    differently-slashed URL than the relay used internally could get pinned twice and
-    have its own legitimate re-sync rejected as a different origin by N12-3's
-    ownership check. See identity.normalize_peer_url().
-    """
-    from emporia.identity import (
-        federation_signable_bytes,
-        get_relay_public_key_hex,
-        load_federation_peer_pubkeys,
-        normalize_peer_pubkey_keys,
-        normalize_peer_url,
-        save_federation_peer_pubkeys,
-        verify_raw,
-    )
-
-    peer_relay_url = normalize_peer_url(peer_relay_url)
-    try:
-        url = peer_relay_url + "/gaming/v1/federate/lobby"
-        async with httpx.AsyncClient(timeout=15) as client:
-            resp = await client.get(url)
-            resp.raise_for_status()
-            data = resp.json()
-    except Exception as e:
-        return {"error": str(e), "success": False, "peer_relay": peer_relay_url}
-
-    origin = data.get("origin_relay", peer_relay_url)
-    challenges = data.get("challenges", [])
-    pubkey_hex = data.get("origin_public_key_hex", "")
-    signature_hex = data.get("signature", "")
-
-    if not pubkey_hex or not signature_hex:
-        return {
-            "error": "peer response is unsigned — refusing to import (upgrade the peer relay)",
-            "success": False, "peer_relay": peer_relay_url,
-        }
-    if not verify_raw(
-        federation_signable_bytes(origin, "challenges", challenges), signature_hex, pubkey_hex
-    ):
-        return {
-            "error": "signature verification failed — batch may be tampered or corrupt",
-            "success": False, "peer_relay": peer_relay_url,
-        }
-
-    # N13-2 (R2): migrate any pin written under a pre-fix, un-normalized key (e.g. a
-    # trailing slash) — this file is shared with the relay's own pin store.
-    pins, pins_changed = normalize_peer_pubkey_keys(load_federation_peer_pubkeys())
-    pinned = pins.get(peer_relay_url)
-    if pinned and pinned != pubkey_hex:
-        return {
-            "error": (
-                f"peer key mismatch — pinned {pinned[:12]}..., got {pubkey_hex[:12]}... "
-                "(possible URL hijack; re-pin deliberately if this rotation is expected)"
-            ),
-            "success": False, "peer_relay": peer_relay_url,
-        }
-    if pinned is None:
-        pins[peer_relay_url] = pubkey_hex
-        pins_changed = True
-    if pins_changed:
-        save_federation_peer_pubkeys(pins)
-
-    # Skip our own relay to prevent loops — by public key as well as URL, same reasoning
-    # as the relay's own _pull_federated_listings/_pull_federated_lobby (RELAY_BASE_URL
-    # is an env var that can drift; the key is a persistent identity tied to a key file).
-    # Both sides normalized (N13-2, R2).
-    local_url = normalize_peer_url(os.getenv("EMPORIA_RELAY_URL", ""))
-    if normalize_peer_url(origin) == local_url or pubkey_hex == get_relay_public_key_hex():
-        return {
-            "success": True, "peer_relay": peer_relay_url,
-            "imported": 0, "skipped": 0, "imported_ids": [],
-            "note": "skipped — peer reported our own relay as origin",
-        }
-
-    imported_ids = []
-    skipped = 0
-    for ch_data in challenges:
-        try:
-            assert_payload_safe(ch_data)
-            imported = _game_registry.import_challenge(ch_data, trusted_origin=peer_relay_url)
-            imported_ids.append(imported.challenge_id)
-        except Exception:
-            skipped += 1
-    return {
-        "success": True,
-        "peer_relay": peer_relay_url,
-        "imported": len(imported_ids),
-        "skipped": skipped,
-        "imported_ids": imported_ids,
-    }
-
-
-@mcp.tool()
-async def publish_challenge_to_peer(
-    challenge_id: str,
-    peer_relay_url: str,
-) -> dict[str, Any]:
-    """Retired (N11-5, task #8) — lobby gossip is pull-based now, not push-based.
-
-    This tool could never have worked: a relay-scoped Bearer JWT doesn't cross relays
-    by design, and the calling agent is by definition not registered on an arbitrary
-    peer it's pushing to, so N3-2's auth requirement on the peer's POST /gaming/lobby
-    made every call 401 from day one. There's no credential a push model could ever
-    present here. Ask the peer relay's operator to pull from you instead — call
-    sync_lobby_from_peer(your_relay_url) on *their* side, which now verifies the batch
-    via the signed GET /gaming/v1/federate/lobby feed. Kept registered (not deleted) so
-    an agent still holding a reference to this tool gets an explanation instead of a
-    silent 401 or a missing-tool error.
-    """
-    return {
-        "error": (
-            "publish_challenge_to_peer is retired — lobby gossip is pull-based. "
-            "Ask the peer relay to call sync_lobby_from_peer(<your relay url>) instead."
-        ),
-        "success": False,
-        "peer_relay": peer_relay_url,
-        "challenge_id": challenge_id,
-    }
 
 
 @mcp.tool()

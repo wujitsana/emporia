@@ -54,45 +54,6 @@ async def federated_listings_out():
         "signature": signature,
         "listings": listings,
     }
-@router.get("/gaming/v1/federate/lobby")
-async def federated_lobby_out():
-    """Serve local open lobby challenges for federation pull by peer relays — the
-    signed, machine-to-machine counterpart to the human/dashboard-facing
-    GET /gaming/lobby (unchanged; still public by design, see _DELIBERATELY_PUBLIC).
-
-    N11-5 (task #8, R5): lobby gossip used to be push-shaped
-    (mcp_server.publish_challenge_to_peer POSTing to a peer's /gaming/lobby), which
-    can never authenticate — the calling agent is by definition not registered on the
-    peer it's pushing to, and a relay-scoped Bearer JWT doesn't cross relays by design.
-    Inverted to the same signed-pull model GET /gaming/v1/federate/listings already
-    uses: signed with this relay's own persistent Ed25519 key (see
-    identity.generate_or_load_relay_keypair()), so a pulling peer can verify the batch
-    actually came from here.
-
-    N12-4 (R2): this used to diverge from federated_listings_out in two ways it
-    shouldn't have. (a) No origin filter — this relay would sign and re-serve
-    challenges it had merely imported from another peer, so the signature attested
-    transport while a pulling peer read it as authorship; own-origin-only was the
-    user's explicit choice for this feed (no multi-hop relay model). `origin_relay=None`
-    is the actual "genuinely local, never imported" invariant for challenges — unlike
-    listings, nothing stamps a challenge's origin_relay to this relay's own
-    RELAY_BASE_URL at creation, and import_challenge() now stamps every peer-pulled
-    challenge with the verified peer_url regardless of what it claims about itself, so
-    None only ever means "created here." (b) No LIMIT, unlike listings' 200 — an
-    unbounded response on a public unauthenticated endpoint whose size an attacker
-    grows by creating challenges (same class as N4-5, N7-3).
-    """
-    challenges = [
-        c.to_dict()
-        for c in rs._game_registry.list_challenges("open", origin_relay=None, limit=rs._MAX_LIMIT)
-    ]
-    signature = sign_raw_relay(federation_signable_bytes(rs.RELAY_BASE_URL, "challenges", challenges))
-    return {
-        "origin_relay": rs.RELAY_BASE_URL,
-        "origin_public_key_hex": get_relay_public_key_hex(),
-        "signature": signature,
-        "challenges": challenges,
-    }
 @router.post("/gaming/v1/federate/sync")
 async def trigger_federation_sync(request: Request):
     """Manually trigger a federation pull from all configured peers.
@@ -110,8 +71,7 @@ async def trigger_federation_sync(request: Request):
     """
     caller = rs._dashboard_agent_id(request)
     rs._require_operator(caller, "Federation sync")
-    results, lobby_results = await rs._sync_all_federated_peers()
-    return {"synced": results, "synced_lobby": lobby_results}
+    return {"synced": await rs._sync_all_federated_peers()}
 @router.get("/federation/peers")
 async def federation_peers():
     """Configured federation peers + last gossip-sync outcome, for the dashboard."""
@@ -130,9 +90,49 @@ async def federation_peers():
                 "url": peer,
                 "pinned_public_key_hex": rs._FEDERATION_PEER_PUBKEYS.get(peer),
                 **rs._FEDERATION_LAST_SYNC.get(peer, {"ok": None, "imported": 0}),
-                "lobby_sync": rs._FEDERATION_LOBBY_LAST_SYNC.get(peer, {"ok": None, "imported": 0}),
             }
             for peer in rs.FEDERATED_RELAYS
         ],
         "imported_listing_count": imported_row["c"] if imported_row else 0,
     }
+
+
+
+@router.get("/federation/v1/open-sessions")
+async def federated_open_sessions():
+    """P188: the lobby — games and purchases on this relay waiting for a player, for agents
+    elsewhere to find — signed, like the listings feed. Only what anyone here
+    may already see: public sessions, no named opponent; never a private one.
+    Joining one happens here, where its stake, receipts and any dispute live."""
+    from emporia.addresses import address, fingerprint
+    from emporia.bounties import seats_for
+    from emporia.module_sdk import MODULE_REGISTRY
+    with rs.DB_LOCK, rs.get_db() as conn:
+        rows = conn.execute("SELECT * FROM sessions WHERE status = 'waiting' ORDER BY created_at DESC LIMIT ?",
+                            (rs._MAX_LIMIT,)).fetchall()
+        keys = {r["agent_id"]: r["public_key_hex"]
+                for r in conn.execute("SELECT agent_id, public_key_hex FROM authorized_agents").fetchall()}
+    host = rs._own_host()
+    out = []
+    for row in rows:
+        try:
+            s = rs._session_row_to_dict(row)
+        except ValueError:      # a damaged row is left out, not the whole feed
+            continue
+        if (s["config"] or {}).get("opponent") or not rs._session_viewer_allowed(s, None):
+            continue
+        creator = (s["participants"] or [""])[0]
+        try:
+            lo, hi = seats_for(s["module_type"], MODULE_REGISTRY)
+        except KeyError:
+            lo = hi = None
+        out.append({
+            "session_id": s["session_id"], "module_type": s["module_type"],
+            "creator": creator, "creator_address": address(creator, host),
+            "creator_fingerprint": fingerprint(keys.get(creator) or ""),
+            "players": len(s["participants"]), "min_players": lo, "max_players": hi,
+            "payment_rules": s["payment_rules"], "config": s["config"], "created_at": s["created_at"],
+        })
+    signature = sign_raw_relay(federation_signable_bytes(rs.RELAY_BASE_URL, "open_sessions", out))
+    return {"origin_relay": rs.RELAY_BASE_URL, "origin_public_key_hex": get_relay_public_key_hex(),
+            "signature": signature, "open_sessions": out}

@@ -3,7 +3,7 @@ import { AcceptsTag } from "../ui/PayTag";
 import Indent from "@components/Indent";
 import type { ReactElement } from "react";
 import { api } from "../api";
-import type { Challenge, Listing } from "../api";
+import type { Listing, OpenSession } from "../api";
 import { EMPTY_SEED_HINT } from "../navigation";
 import type { Navigate } from "../navigation";
 import { viewForListing } from "../listingNav";
@@ -13,7 +13,6 @@ import { ViewBody } from "../ui/layout";
 import { SlimCard } from "../ui/cards";
 import { useInterval } from "../hooks";
 import { expiryLabel } from "../discoveryFormat";
-import { relayHost } from "../relayFormat";
 import { AgentMoireAvatar } from "../AgentMoireAvatar";
 
 type RowCells = (string | ReactElement)[];
@@ -89,12 +88,11 @@ export function ListingsView({
   const [data, loading, error] = useInterval(() => api.listings(), 10_000, [refreshTrigger]);
   const listings: Listing[] = data?.listings ?? [];
 
-  /* P40-1: open challenges — an agent advertising that it wants an opponent.
-     GET /gaming/lobby has been served all along and no client called it, so the
-     demo's own seeded challenges were invisible. They belong beside listings:
-     both are discovery, one for services and one for games. */
-  const [lobby] = useInterval(() => api.gamingLobby(), 15_000, [refreshTrigger]);
-  const challenges: Challenge[] = lobby?.challenges ?? [];
+  /* P188: the lobby — games and purchases waiting for a player. They are real
+     sessions (the old challenge cards never reached the relay), and the same
+     signed list agents on other relays read. */
+  const [lobby] = useInterval(() => api.openSessions(), 15_000, [refreshTrigger]);
+  const waiting: OpenSession[] = lobby?.open_sessions ?? [];
 
   // P105: bounties are listings too (same table) and BountyBoard above
   // renders them. Left in here they showed a second time as a "$5.00" service
@@ -142,30 +140,26 @@ export function ListingsView({
     ];
   });
 
-  const challengeRows: RowCells[] = challenges.map((c) => {
-    const creator = c.creator_agent_id.length > 14
-      ? `…${c.creator_agent_id.slice(-12)}`
-      : c.creator_agent_id;
+  const waitingRows: RowCells[] = waiting.map((w) => {
+    const stake = w.payment_rules?.mode && w.payment_rules.mode !== "free"
+      ? `$${w.payment_rules.stake_per_participant ?? "?"}` : "";
     return [
       <span key="game" className="e-badge e-badge--dim">
-        {c.game_type.replace("emporia:", "").replace(/:v\d$/, "")}
+        {w.module_type.replace("emporia:", "").replace(/:v\d$/, "")}
       </span>,
       <span key="agent" style={{ display: "inline-flex", alignItems: "center", gap: 5 }}>
-        <AgentMoireAvatar agentId={c.creator_agent_id} size={18} />
-        <span className="e-dim" style={{ fontSize: 11 }}>{creator}</span>
+        <AgentMoireAvatar agentId={w.creator} size={18} />
+        <span className="e-dim" style={{ fontSize: 11 }}>{w.creator}</span>
+        {w.creator_fingerprint && <span className="e-faint" style={{ fontSize: 10 }}>{w.creator_fingerprint}</span>}
       </span>,
-      c.payment_mode !== "free"
-        ? <span key="stake" style={{ color: "var(--theme-focused-foreground)" }}>
-            ${c.stake_amount}
-          </span>
+      stake
+        ? <span key="stake" style={{ color: "var(--theme-focused-foreground)" }}>{stake}</span>
         : <span key="stake" className="e-faint">free</span>,
-      // A federated challenge is one imported from a peer relay. Worth showing:
-      // it is the only place the dashboard reveals that the lobby spans relays.
-      <span key="origin" className="e-faint" style={{ fontSize: 11 }}>
-        {relayHost(c.origin_relay) || "local"}
+      <span key="seats" className="e-faint" style={{ fontSize: 11 }}>
+        {w.players}/{w.max_players ?? "?"}
       </span>,
-      <span key="exp" className="e-faint" style={{ fontSize: 11 }}>
-        {expiryLabel(c.expires_at)}
+      <span key="age" className="e-faint" style={{ fontSize: 11 }}>
+        {new Date(w.created_at).toLocaleString()}
       </span>,
     ];
   });
@@ -213,16 +207,17 @@ export function ListingsView({
             />
           </SlimCard>
         )}
-        {challenges.length > 0 && (
-          <SlimCard title="Open challenges" action={<Text className="e-dim">{challenges.length}</Text>}>
+        {waiting.length > 0 && (
+          <SlimCard title="Lobby — waiting for a player" action={<Text className="e-dim">{waiting.length}</Text>}>
             <RowTable
-              headers={["GAME", "CREATOR", "STAKE", "RELAY", "EXPIRES"]}
-              rows={challengeRows}
-              keys={challenges.map((c) => c.challenge_id)}
+              headers={["GAME", "CREATOR", "STAKE", "SEATS", "OPENED"]}
+              rows={waitingRows}
+              keys={waiting.map((w) => w.session_id)}
+              onOpen={(i) => navigate("sessions", { sessionId: waiting[i].session_id })}
             />
           </SlimCard>
         )}
-        {listings.length === 0 && challenges.length === 0 && !loading && !error && (
+        {listings.length === 0 && waiting.length === 0 && !loading && !error && (
           <Text className="e-faint">{EMPTY_SEED_HINT}</Text>
         )}
       </Indent>

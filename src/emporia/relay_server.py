@@ -81,7 +81,6 @@ from starlette.responses import JSONResponse
 # this import is what ran the merge. See config.py's docstring.
 from emporia.config import database_path as _database_path  # noqa: E402
 
-from emporia.engine.game_registry import GameRegistry
 from emporia.engine import guardrails
 from emporia.engine.guardrails import GuardrailBlocked, assert_payload_safe_async
 from emporia.identity import (
@@ -217,7 +216,6 @@ _FEDERATION_LAST_SYNC: dict[str, dict[str, Any]] = {}
 
 # Same shape, for lobby-challenge gossip (N11-5) — kept separate from the listings
 # sync record above since the two feeds are pulled and can fail independently.
-_FEDERATION_LOBBY_LAST_SYNC: dict[str, dict[str, Any]] = {}
 
 # Trust-on-first-use pin of each peer's Ed25519 public key, keyed by peer_url. The first
 # successfully signature-verified pull from a peer pins its key; a later pull presenting a
@@ -1175,6 +1173,7 @@ def init_db() -> None:
         _migrate_listings_federated_from(conn)
         _migrate_listings_agent_key(conn)
         _migrate_relay_list(conn)
+        _drop_challenge_lobby(conn)
         # escrow_holds (P99) is a new table, created above by CREATE TABLE IF
         # NOT EXISTS on any database, old or new, so it needs no migration.
         # Rename aroga_* → agora_* if old names still exist (typo fix)
@@ -1632,6 +1631,12 @@ def _migrate_settlement_atomic_columns(conn: Any) -> None:
     for col in ("platform_fee_atomic", "winner_payout_atomic"):
         if col not in cols:
             conn.execute(f"ALTER TABLE settlements ADD COLUMN {col} TEXT")
+
+
+def _drop_challenge_lobby(conn: Any) -> None:
+    """P188: the challenge lobby is retired — open games travel in the signed
+    open-sessions feed. Its cards were adverts, never money or results."""
+    conn.execute("DROP TABLE IF EXISTS challenges")
 
 
 def _migrate_relay_list(conn: Any) -> None:
@@ -3036,7 +3041,7 @@ _RENAME_COLUMNS: tuple[tuple[str, str], ...] = (
     ("agora_invites", "agent_id"), ("agora_invites", "invited_by"),
     ("agora_members", "agent_id"), ("agora_posts", "author_id"),
     ("agora_topics", "creator_id"), ("agora_votes", "voter_id"),
-    ("challenges", "creator_agent_id"), ("dm_messages", "sender_id"),
+    ("dm_messages", "sender_id"),
     ("dm_threads", "agent_a"), ("dm_threads", "agent_b"),
     ("events", "organizer_id"), ("listings", "agent_id"),
     ("messages", "from_agent"), ("messages", "to_agent"),
@@ -3151,12 +3156,6 @@ _NON_AGENT_COLUMNS: frozenset[tuple[str, str]] = frozenset({
     ("authorized_agents", "encryption_key_signature"),
     ("authorized_agents", "stripe_account_status"),
     ("authorized_agents", "stripe_account_mode"), ("authorized_agents", "stable_id"),
-    # challenges
-    ("challenges", "challenge_id"), ("challenges", "game_type"),
-    ("challenges", "creator_gateway_url"), ("challenges", "payment_mode"),
-    ("challenges", "stake_amount"), ("challenges", "currency"), ("challenges", "status"),
-    ("challenges", "created_at"), ("challenges", "expires_at"), ("challenges", "origin_relay"),
-    ("challenges", "metadata_json"),
     # dm_messages
     ("dm_messages", "message_id"), ("dm_messages", "thread_id"), ("dm_messages", "content"),
     ("dm_messages", "msg_type"), ("dm_messages", "created_at"), ("dm_messages", "signature"),
@@ -6492,113 +6491,9 @@ async def _pull_federated_listings(peer_url: str) -> int:
 
 
 
-async def _pull_federated_lobby(peer_url: str) -> int:
-    """Pull open lobby challenges from a peer relay and import them locally (signed
-    federation gossip) — the inbound half of task #8's fix. Mirrors
-    _pull_federated_listings exactly (signature verify, TOFU key pin, mismatch
-    rejection, self-origin skip by public key); see that function's docstring for the
-    full rationale on each step.
-    """
-    peer_url = normalize_peer_url(peer_url)  # N13-2 (R2): one identity for this peer
-    try:
-        data = await _fetch_federation_batch(f"{peer_url}/gaming/v1/federate/lobby")
-    except Exception as e:
-        _FEDERATION_LOBBY_LAST_SYNC[peer_url] = {
-            "ok": False,
-            "imported": 0,
-            "error": str(e),
-            "synced_at": datetime.now(UTC).isoformat(),
-        }
-        return 0
-
-    origin = data.get("origin_relay", peer_url)
-    challenges = data.get("challenges", [])
-    pubkey_hex = data.get("origin_public_key_hex", "")
-    signature_hex = data.get("signature", "")
-
-    def _reject(reason: str) -> int:
-        _FEDERATION_LOBBY_LAST_SYNC[peer_url] = {
-            "ok": False,
-            "imported": 0,
-            "error": reason,
-            "synced_at": datetime.now(UTC).isoformat(),
-        }
-        return 0
-
-    if not pubkey_hex or not signature_hex:
-        return _reject("peer response is unsigned — refusing to import (upgrade the peer relay)")
-    try:
-        from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
-        Ed25519PublicKey.from_public_bytes(bytes.fromhex(pubkey_hex)).verify(
-            bytes.fromhex(signature_hex),
-            federation_signable_bytes(origin, "challenges", challenges),
-        )
-    except Exception:
-        return _reject("signature verification failed — batch may be tampered or corrupt")
-
-    _ensure_federation_pins_loaded()
-    pinned = _FEDERATION_PEER_PUBKEYS.get(peer_url)
-    if pinned and pinned != pubkey_hex:
-        return _reject(
-            f"peer key mismatch — pinned {pinned[:12]}..., got {pubkey_hex[:12]}... "
-            "(possible URL hijack; remove from FEDERATED_RELAYS and re-add to re-pin deliberately)"
-        )
-    if pinned is None:
-        _FEDERATION_PEER_PUBKEYS[peer_url] = pubkey_hex
-        save_federation_peer_pubkeys(_FEDERATION_PEER_PUBKEYS)
-
-    # Skip our own relay to prevent loops — same by-public-key reasoning as
-    # _pull_federated_listings (RELAY_BASE_URL is an env var that can drift; the key is
-    # a persistent identity tied to a key file). Both sides normalized (N13-2, R2).
-    if normalize_peer_url(origin) == normalize_peer_url(RELAY_BASE_URL) or pubkey_hex == get_relay_public_key_hex():
-        _FEDERATION_LOBBY_LAST_SYNC[peer_url] = {
-            "ok": True,
-            "imported": 0,
-            "note": "skipped — peer reported our own relay as origin",
-            "synced_at": datetime.now(UTC).isoformat(),
-        }
-        return 0
-
-    # N13-3 (R3): cap what we accept, mirroring the LIMIT this relay already applies to
-    # what it serves (federated_lobby_out, N12-4). Applied after signature verification
-    # (which covers the full, untruncated list — federation_signable_bytes was computed
-    # over it above) so this never invalidates a genuinely signed batch; only caps the
-    # unbounded CPU/DB-write/guardrails-scan (N12-6, including paid NIM calls when
-    # enabled) cost of importing it. A peer oversending isn't silently dropped — noted
-    # in the sync record below, which GET /federation/peers already surfaces.
-    peer_batch_size = len(challenges)
-    if peer_batch_size > _MAX_LIMIT:
-        challenges = challenges[:_MAX_LIMIT]
-
-    imported = 0
-    for challenge in challenges:
-        if not challenge.get("challenge_id"):
-            continue
-        try:
-            # N12-6: this is untrusted external content landing in a store the
-            # dashboard renders — MCP sync_lobby_from_peer already scanned each item
-            # it imports; this relay-side pull didn't. Rejects the individual item,
-            # not the whole batch, same as an id-verification or ownership failure.
-            await _assert_payload_safe_counted(challenge)
-            _game_registry.import_challenge(challenge, trusted_origin=peer_url)
-            imported += 1
-        except Exception:
-            continue
-    sync_record: dict[str, Any] = {
-        "ok": True,
-        "imported": imported,
-        "origin_relay": origin,
-        "synced_at": datetime.now(UTC).isoformat(),
-    }
-    if peer_batch_size > _MAX_LIMIT:
-        sync_record["truncated"] = True
-        sync_record["peer_batch_size"] = peer_batch_size
-    _FEDERATION_LOBBY_LAST_SYNC[peer_url] = sync_record
-    return imported
-
-
-async def _sync_all_federated_peers() -> tuple[dict[str, int], dict[str, int]]:
-    """Pull listings + lobby from every configured peer, concurrently.
+async def _sync_all_federated_peers() -> dict[str, int]:
+    """Pull listings from every configured peer, concurrently. (P188: the
+    challenge lobby, which this also pulled, is retired.)
 
     P23-3: used to be a `for peer in FEDERATED_RELAYS: await ...` loop -- both
     `_pull_federated_listings`/`_pull_federated_lobby` already catch and record
@@ -6624,10 +6519,8 @@ async def _sync_all_federated_peers() -> tuple[dict[str, int], dict[str, int]]:
     """
     peers = list(FEDERATED_RELAYS)
     drop_unlinked_federated_rows()
-    listing_results, lobby_results = await asyncio.gather(
-        asyncio.gather(*(_pull_federated_listings(p) for p in peers), return_exceptions=True),
-        asyncio.gather(*(_pull_federated_lobby(p) for p in peers), return_exceptions=True),
-    )
+    listing_results = await asyncio.gather(*(_pull_federated_listings(p) for p in peers),
+                                           return_exceptions=True)
 
     def _coerce(results: list) -> dict[str, int]:
         counts: dict[str, int] = {}
@@ -6642,7 +6535,7 @@ async def _sync_all_federated_peers() -> tuple[dict[str, int], dict[str, int]]:
                 counts[peer] = result
         return counts
 
-    return _coerce(listing_results), _coerce(lobby_results)
+    return _coerce(listing_results)
 
 
 def drop_unlinked_federated_rows() -> int:
@@ -7132,10 +7025,6 @@ async def ws_agent(ws: WebSocket, agent_id: str):
         ws_connections[key].discard(ws)
 
 
-# Gaming lobby moved to emporia/routes/gaming.py (P57).
-# `_game_registry` stayed: the federation routes above use it too (P57).
-
-_game_registry = GameRegistry(DATABASE_PATH)
 
 
 
@@ -7921,7 +7810,6 @@ from emporia.routes import bounties as _bounty_routes
 from emporia.routes import standing as _standing_routes  # noqa: E402
 from emporia.routes import agoras as _agora_routes  # noqa: E402
 from emporia.routes import dm as _dm_routes  # noqa: E402
-from emporia.routes import gaming as _gaming_routes  # noqa: E402
 from emporia.routes import events as _events_routes  # noqa: E402
 from emporia.routes import federation as _federation_routes  # noqa: E402
 from emporia.routes import listings as _listings_routes  # noqa: E402
@@ -7931,7 +7819,6 @@ from emporia.routes import sessions as _session_routes  # noqa: E402
 app.include_router(_listings_routes.router)
 app.include_router(_events_routes.router)
 app.include_router(_dm_routes.router)
-app.include_router(_gaming_routes.router)
 app.include_router(_federation_routes.router)
 app.include_router(_agora_routes.router)
 app.include_router(_room_routes.router)

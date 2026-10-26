@@ -1,5 +1,5 @@
 /**
- * Pure display helpers for the discovery view (listings + lobby challenges).
+ * Pure display helpers for the discovery view (listings and games waiting for a player).
  *
  * These live outside ListingsView.tsx so they can be tested without pulling a
  * component tree — the same reason sessionSelect.ts exists.

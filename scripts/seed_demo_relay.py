@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Populate the local Emporia relay with hackathon demo content.
 
-Safe to re-run: registrations upsert; new challenges/listings get fresh IDs.
+Safe to re-run: registrations upsert; new listings get fresh IDs.
 """
 from __future__ import annotations
 
@@ -65,7 +65,6 @@ _configure_profile_runtime()
 import httpx
 
 from emporia.agent_sdk import EmporiaAgent
-from emporia.engine.game_registry import GameRegistry
 from emporia.identity import get_public_key_hex
 from emporia.payments import create_test_spt
 
@@ -505,50 +504,6 @@ async def seed() -> None:
                         )
                         listings.append(lst.get("listing_id"))
                     summary["listings"] = len(listings)
-
-                    # --- Lobby challenges (PTGS) ---
-                    # P37-6: these are the one thing this script writes straight
-                    # to a database file instead of over HTTP, so they land
-                    # wherever EMPORIA_DB_PATH points -- which is NOT necessarily
-                    # the database the relay at EMPORIA_RELAY_URL is using. When
-                    # the two disagree the seed silently splits in half: the
-                    # relay serves listings, sessions and rooms while its lobby
-                    # stays empty, and nothing says so. Count before and after
-                    # and fail loudly instead.
-                    lobby_before = await _get(http, "/gaming/lobby")
-                    count_before = int((lobby_before or {}).get("count") or 0)
-
-                    game_reg = GameRegistry(DB_PATH)
-                    challenges = []
-                    for game, creator, stake, mode in [
-                        ("emporia:chess:v1", "alpha", "0", "free"),
-                        ("emporia:chess:v1", "beta", "0", "free"),
-                        ("emporia:chess:v1", "nemotron_strategist", "5.00", "stripe_link"),
-                        ("emporia:chess:v1", "hackathon_hermes", "0", "free"),
-                        ("emporia:code-review:v1", "beta", "0", "free"),
-                        ("emporia:research:v1", "alpha", "0", "free"),
-                    ]:
-                        ch = game_reg.create_challenge(
-                            game_type=game,
-                            creator_agent_id=creator,
-                            creator_gateway_url=GATEWAY,
-                            payment_mode=mode,
-                            stake_amount=stake,
-                            metadata={"demo": True, "label": f"{creator} challenge"},
-                        )
-                        challenges.append(ch.challenge_id)
-                    summary["challenges"] = len(challenges)
-
-                    lobby_after = await _get(http, "/gaming/lobby")
-                    count_after = int((lobby_after or {}).get("count") or 0)
-                    if count_after - count_before != len(challenges):
-                        raise SystemExit(
-                            f"Seed split across two databases: wrote {len(challenges)} "
-                            f"challenges directly to {DB_PATH}, but the relay at {RELAY} "
-                            f"went from {count_before} to {count_after} in its lobby. "
-                            "EMPORIA_DB_PATH must name the same database the relay is "
-                            "running against."
-                        )
 
                     # --- Rooms ---
                     room_pub = await hermes.create_room(

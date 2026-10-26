@@ -896,7 +896,7 @@ def build_relay_descriptor(
             "sessions": f"{base}/sessions",
             "messages": f"{base}/messages",
             "dm": f"{base}/dm",
-            "lobby": f"{base}/gaming/lobby",
+            "open_sessions": f"{base}/federation/v1/open-sessions",
             "rooms": f"{base}/rooms",
             "agoras": f"{base}/agoras/topics",
         },

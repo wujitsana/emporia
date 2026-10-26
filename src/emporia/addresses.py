@@ -49,7 +49,11 @@ def base_url(host: str) -> str:
 def fingerprint(public_key_hex: str) -> str:
     """`3f9a·c21e`: the first 32 bits of SHA-256 over the raw key, for people to
     compare at a glance. A tool compares the whole key."""
-    if not public_key_hex:
+    try:
+        raw = bytes.fromhex(public_key_hex or "")
+    except ValueError:
+        return ""   # not a key — nothing to show rather than a wrong digest
+    if not raw:
         return ""
-    digest = hashlib.sha256(bytes.fromhex(public_key_hex)).hexdigest()
+    digest = hashlib.sha256(raw).hexdigest()
     return f"{digest[:4]}·{digest[4:8]}"
