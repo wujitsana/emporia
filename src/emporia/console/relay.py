@@ -39,9 +39,10 @@ class RelayClient:
             cached = self._tokens.get(agent.agent_id)
             if cached and not fresh and cached[1] > time.time() + 30:
                 return cached[0]
+            from emporia.identity import challenge_bytes
             from emporia.wire import dashboard_session_body
             ch = (await self._http.post(f"{self.relay_url}/dashboard/challenge")).json()
-            signature = load_identity_key(agent).sign(ch["nonce"].encode()).hex()
+            signature = load_identity_key(agent).sign(challenge_bytes(ch["nonce"])).hex()
             r = await self._http.post(
                 f"{self.relay_url}/dashboard/session",
                 json=dashboard_session_body(agent.agent_id, ch["challenge_id"], signature))

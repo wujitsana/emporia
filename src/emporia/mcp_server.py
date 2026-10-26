@@ -221,10 +221,10 @@ def _dashboard_bearer_headers(relay_url: str = "", agent_id: str = "") -> dict[s
     if cached and cached[1] > now + 30:
         return {"Authorization": f"Bearer {cached[0]}"}
     try:
-        from emporia.identity import sign_raw
+        from emporia.identity import sign_challenge_nonce
         from emporia.wire import dashboard_session_body
         ch = httpx.post(f"{target}/dashboard/challenge", timeout=10).json()
-        sig_hex = sign_raw(ch["nonce"].encode(), aid)
+        sig_hex = sign_challenge_nonce(ch["nonce"], aid)
         r = httpx.post(
             f"{target}/dashboard/session",
             json=dashboard_session_body(aid, ch["challenge_id"], sig_hex),
@@ -398,7 +398,7 @@ def register_agent(
     Idempotent — safe to call on every start.
     """
     try:
-        from emporia.identity import get_public_key_hex, sign_raw
+        from emporia.identity import get_public_key_hex, sign_challenge_nonce
         pub_hex = get_public_key_hex(agent_id)
     except Exception as e:
         return {"error": f"could not load keypair for '{agent_id}': {e}", "success": False}
@@ -408,7 +408,7 @@ def register_agent(
         ch_r.raise_for_status()
         ch = ch_r.json()
         # Step 2: sign nonce with Ed25519 private key
-        sig_hex = sign_raw(ch["nonce"].encode(), agent_id)
+        sig_hex = sign_challenge_nonce(ch["nonce"], agent_id)
         # P16: publish the X25519 encryption key in the same round trip. Inside this
         # try because generate-or-load can raise on a corrupt key file, and N4-7's
         # rule for this module is that a raising call belongs behind the boundary
@@ -3985,8 +3985,8 @@ def sign_dashboard_challenge(challenge_id: str, nonce: str, relay_url: str = "")
     """
     target = relay_url or _base()
     try:
-        from emporia.identity import sign_raw
-        sig_hex = sign_raw(nonce.encode(), AGENT_ID)
+        from emporia.identity import sign_challenge_nonce
+        sig_hex = sign_challenge_nonce(nonce, AGENT_ID)
     except Exception as e:
         return {"error": f"could not sign nonce: {e}"}
 

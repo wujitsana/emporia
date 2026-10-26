@@ -826,10 +826,10 @@ def _legacy_self_computed_id(
 def _signed_challenge(client, profile_id: str) -> dict:
     """POST /agents/challenge, sign the nonce with a real Ed25519 key, and return the
     challenge_id/signature/public_key_hex a real register_agent MCP call would send."""
-    from emporia.identity import generate_or_load_keypair, sign_raw
+    from emporia.identity import generate_or_load_keypair, sign_challenge_nonce
     _, pub_bytes = generate_or_load_keypair(profile_id)
     ch = client.post("/agents/challenge").json()
-    sig_hex = sign_raw(ch["nonce"].encode(), profile_id)
+    sig_hex = sign_challenge_nonce(ch["nonce"], profile_id)
     return {
         "challenge_id": ch["challenge_id"],
         "challenge_signature": sig_hex,
@@ -11168,7 +11168,7 @@ def test_agent_sdk_bearer_token_value_uses_shared_wire_contract():
     agent = EmporiaAgent(relay_url="http://fake.invalid", agent_id="sdk_wire_agent", public_key_hex="ab" * 32)
     agent._http = MagicMock()
     ch_resp = MagicMock()
-    ch_resp.json.return_value = {"nonce": "test-nonce", "challenge_id": "ch_test"}
+    ch_resp.json.return_value = {"nonce": "ab" * 32, "challenge_id": "ch_test"}
     session_resp = MagicMock()
     session_resp.json.return_value = {"token": "jwt.test.token", "expires_in": 3600}
     agent._http.post = AsyncMock(side_effect=[ch_resp, session_resp])
@@ -11233,7 +11233,7 @@ def test_agent_sdk_register_uses_shared_wire_contract():
     )
     agent._http = MagicMock()
     ch_resp = MagicMock()
-    ch_resp.json.return_value = {"nonce": "test-nonce", "challenge_id": "ch_reg_test"}
+    ch_resp.json.return_value = {"nonce": "ab" * 32, "challenge_id": "ch_reg_test"}
     register_resp = MagicMock()
     register_resp.json.return_value = {"status": "registered", "agent_id": "sdk_register_agent"}
     agent._http.post = AsyncMock(side_effect=[ch_resp, register_resp])
@@ -14485,9 +14485,9 @@ def test_ws_agent_channel_header_auth_also_gated_by_flag():
 def _dashboard_jwt(client, agent_id: str) -> str:
     """Full /dashboard/challenge -> sign_raw -> /dashboard/session round trip, returning
     the issued Bearer token, exactly as sign_dashboard_challenge (mcp_server.py) does it."""
-    from emporia.identity import sign_raw
+    from emporia.identity import sign_challenge_nonce
     ch = client.post("/dashboard/challenge").json()
-    sig_hex = sign_raw(ch["nonce"].encode(), agent_id)
+    sig_hex = sign_challenge_nonce(ch["nonce"], agent_id)
     r = client.post("/dashboard/session", json={
         "agent_id": agent_id,
         "challenge_id": ch["challenge_id"],
@@ -14528,9 +14528,9 @@ def test_dashboard_jwt_rejects_wrong_key_signature():
     with patch.object(relay_server, "_HEADER_AUTH_TRUSTED_HOSTS", set()):
         client = TestClient(app, client=("127.0.0.1", 51216))
         _register_keyed(client, "jwt_victim")
-        from emporia.identity import sign_raw
+        from emporia.identity import sign_challenge_nonce
         ch = client.post("/dashboard/challenge").json()
-        wrong_sig = sign_raw(ch["nonce"].encode(), "jwt_attacker")
+        wrong_sig = sign_challenge_nonce(ch["nonce"], "jwt_attacker")
         r = client.post("/dashboard/session", json={
             "agent_id": "jwt_victim",
             "challenge_id": ch["challenge_id"],
@@ -26868,7 +26868,7 @@ def test_the_display_name_the_installer_collected_reaches_registration(monkeypat
         m.raise_for_status = MagicMock()
         m.status_code = 200
         if url.endswith("/agents/challenge"):
-            m.json.return_value = {"challenge_id": "ch_1", "nonce": "nonce-value"}
+            m.json.return_value = {"challenge_id": "ch_1", "nonce": "cd" * 32}
         else:
             captured.update(k.get("json") or {})
             m.json.return_value = {"agent_id": "p54_agent", "trust_level": "key_only"}

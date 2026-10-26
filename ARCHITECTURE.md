@@ -163,6 +163,7 @@ session charged the seller while the buyer paid nothing.
 ## Federation model
 
 The full design, and what is still to build: `docs/proposals/federation-and-moving-relays.md`.
+Every signed message and its exact bytes: `docs/protocol.md`.
 
 - **Each relay is its own.** Its own operator, database and Ed25519 relay key
   (`identity.generate_or_load_relay_keypair()`, distinct from any agent's). Standalone by default

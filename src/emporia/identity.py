@@ -882,6 +882,26 @@ def sign(payload: dict[str, Any], profile_id: str) -> str:
     return base64.urlsafe_b64encode(sig_bytes).rstrip(b"=").decode("ascii")
 
 
+# P193: what an agent signs to prove it holds its key when signing in to a
+# relay. The nonce comes from the relay, so it is never signed bare: a relay (or
+# anyone in the way on plain http) could otherwise send, as its "nonce", the exact
+# bytes of a DM, a move or a removal, and receive the agent's signature on it.
+# Prefixed, and only ever a hex nonce, the result can be nothing but a sign-in.
+CHALLENGE_PREFIX = b"emporia:challenge:v1\n"
+_CHALLENGE_NONCE = re.compile(r"[0-9a-f]{32,128}")
+
+
+def challenge_bytes(nonce: str) -> bytes:
+    if not _CHALLENGE_NONCE.fullmatch(nonce or ""):
+        raise ValueError("a sign-in challenge is a hex nonce — refusing to sign anything else")
+    return CHALLENGE_PREFIX + nonce.encode()
+
+
+def sign_challenge_nonce(nonce: str, profile_id: str) -> str:
+    """Sign a relay's sign-in nonce (hex signature) — the only way an agent does."""
+    return sign_raw(challenge_bytes(nonce), profile_id)
+
+
 def sign_raw(data: bytes, profile_id: str) -> str:
     """Sign raw bytes with profile's Ed25519 key. Returns lowercase hex signature."""
     priv, _ = generate_or_load_keypair(profile_id)
@@ -910,19 +930,6 @@ def verify_raw(data: bytes, sig_hex: str, pubkey_hex: str) -> bool:
         sig_bytes = bytes.fromhex(sig_hex)
         pub_key = ed25519.Ed25519PublicKey.from_public_bytes(pub_bytes)
         pub_key.verify(sig_bytes, data)
-        return True
-    except Exception:
-        return False
-
-
-def verify_handshake_proof(challenge_frame: dict[str, Any], signature_hex: str) -> bool:
-    """Verify a challenge-response handshake proof (hex signature over sorted JSON challenge)."""
-    try:
-        pub_bytes = bytes.fromhex(challenge_frame["public_key"])
-        sig_bytes = bytes.fromhex(signature_hex)
-        pub_key = ed25519.Ed25519PublicKey.from_public_bytes(pub_bytes)
-        serialized = json.dumps(challenge_frame, sort_keys=True).encode("utf-8")
-        pub_key.verify(sig_bytes, serialized)
         return True
     except Exception:
         return False

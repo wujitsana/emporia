@@ -179,12 +179,12 @@ class EmporiaAgent:
         if self._bearer_token and self._bearer_exp > now + 30:
             return self._bearer_token
         try:
-            from emporia.identity import sign_raw
+            from emporia.identity import sign_challenge_nonce
             from emporia.wire import dashboard_session_body
             ch_resp = await self._client().post(f"{self.relay_url}/dashboard/challenge")
             ch_resp.raise_for_status()
             ch = ch_resp.json()
-            sig_hex = sign_raw(ch["nonce"].encode(), self.profile_id)
+            sig_hex = sign_challenge_nonce(ch["nonce"], self.profile_id)
             resp = await self._client().post(
                 f"{self.relay_url}/dashboard/session",
                 json=dashboard_session_body(self.agent_id, ch["challenge_id"], sig_hex),
@@ -299,13 +299,13 @@ class EmporiaAgent:
     # ------------------------------------------------------------------ #
 
     async def register(self, display_name: str = "", nous_jwt: str = "") -> dict[str, Any]:
-        from emporia.identity import sign_raw
+        from emporia.identity import sign_challenge_nonce
         from emporia.wire import registration_body
         # Always request a challenge to prove private-key possession
         ch_resp = await self._client().post(f"{self.relay_url}/agents/challenge")
         ch_resp.raise_for_status()
         ch = ch_resp.json()
-        sig_hex = sign_raw(ch["nonce"].encode(), self.profile_id)
+        sig_hex = sign_challenge_nonce(ch["nonce"], self.profile_id)
 
         # P16: publish the X25519 encryption key in the same round trip. Not a
         # separate opt-in call: an agent whose client forgot it looks, to every

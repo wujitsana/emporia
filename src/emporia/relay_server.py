@@ -5414,7 +5414,8 @@ async def dashboard_session(req: DashboardSessionRequest):
 
     # Verify Ed25519 signature (raw bytes, hex sig — matches sign_dashboard_challenge's
     # sign_raw() on the client side; identity.verify() is for dict-payload/base64 sigs)
-    sig_ok = verify_raw(nonce.encode(), req.signature_hex, row["public_key_hex"])
+    from emporia.identity import challenge_bytes
+    sig_ok = verify_raw(challenge_bytes(nonce), req.signature_hex, row["public_key_hex"])  # P193
     if not sig_ok:
         raise HTTPException(403, "Invalid signature — ensure you signed the exact nonce bytes")
 
@@ -5493,7 +5494,8 @@ def _consume_challenge(challenge_id: str, public_key_hex: str, signature_hex: st
         pub_bytes = bytes.fromhex(public_key_hex)
         sig_bytes = bytes.fromhex(signature_hex)
         from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
-        Ed25519PublicKey.from_public_bytes(pub_bytes).verify(sig_bytes, nonce.encode())
+        from emporia.identity import challenge_bytes
+        Ed25519PublicKey.from_public_bytes(pub_bytes).verify(sig_bytes, challenge_bytes(nonce))  # P193
     except Exception:
         raise HTTPException(403, "Challenge signature invalid — key mismatch or bad signature")
 

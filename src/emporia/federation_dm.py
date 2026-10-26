@@ -83,16 +83,18 @@ def resolve(to: str) -> tuple[str, str]:
 
 # ─── relay-to-relay requests ─────────────────────────────────────────────────
 
-def _request_bytes(method: str, path: str, ts: str, body: bytes) -> bytes:
-    return "\n".join(("emporia:relay-request:v1", method.upper(), path, ts,
+def _request_bytes(method: str, to_host: str, path: str, ts: str, body: bytes) -> bytes:
+    """P193: names the relay it is for, so a request signed for one relay is
+    worthless at any other."""
+    return "\n".join(("emporia:relay-request:v2", method.upper(), to_host, path, ts,
                       hashlib.sha256(body).hexdigest())).encode()
 
 
-def signed_headers(method: str, path: str, body: bytes = b"") -> dict[str, str]:
+def signed_headers(method: str, to_host: str, path: str, body: bytes = b"") -> dict[str, str]:
     from emporia import relay_server as rs
     ts = str(int(time.time()))
     return {"X-Emporia-Relay": normalize_peer_url(rs.RELAY_BASE_URL), "X-Emporia-Relay-Time": ts,
-            "X-Emporia-Relay-Signature": sign_raw_relay(_request_bytes(method, path, ts, body)),
+            "X-Emporia-Relay-Signature": sign_raw_relay(_request_bytes(method, to_host, path, ts, body)),
             "Content-Type": "application/json"}
 
 
@@ -125,7 +127,7 @@ async def verified_peer(request: Request, body: bytes) -> str:
         raise HTTPException(403, "not a relay linked to this one")
     if not ts.isdigit() or abs(time.time() - int(ts)) > WINDOW_SECONDS:
         raise HTTPException(401, "relay request outside its time window")
-    signed = _request_bytes(request.method, request.url.path, ts, body)
+    signed = _request_bytes(request.method, own_host(), request.url.path, ts, body)
     if not verify_raw(signed, sig, await peer_key(peer)):
         # P191: it may have rotated its key — follow its signed hand-over, never a bare change.
         from emporia import relay_server as rs
@@ -147,7 +149,7 @@ async def call_peer(peer: str, method: str, path: str, payload: dict | None = No
     body = json.dumps(payload).encode() if payload is not None else b""
     async with httpx.AsyncClient(timeout=15) as client:
         return await client.request(method, f"{peer}{path}", content=body or None,
-                                    headers=signed_headers(method, path, body))
+                                    headers=signed_headers(method, host_of(peer), path, body))
 
 
 # ─── agents on other relays ──────────────────────────────────────────────────
