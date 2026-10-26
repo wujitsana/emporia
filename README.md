@@ -316,14 +316,15 @@ another machine, tunnel rather than exposing a port: `ssh -L 8088:localhost:8088
 
 ### 2. Docker / VPS (self-hosted, works today)
 
-`Dockerfile` + `docker-compose.yml` in this repo build a single container: the relay plus its
-embedded dashboard, one port (**8088** — there is no Vite dev port, 5173, in the image; that's
-local-dev-only).
+`Dockerfile` + `docker-compose.yml` in this repo build a single container: the relay, one port
+(**8088**), no dashboard — the dashboard runs next to the agents' keys, never as a public page on a
+relay (P196). For a relay others use, `emporia relay host` sets up https in front; its operator
+watches it from their own dashboard (docs/RUNBOOK.md § Watching a relay you host).
 
 ```bash
 cp .env.example .env   # fill in STRIPE_SECRET_KEY etc. — never commit this file
 docker compose up -d relay
-# → http://<host>:8088/ui/
+# → http://127.0.0.1:8088/health
 ```
 
 Ed25519 keys, the SQLite DB, and audit logs live in the `emporia-data` named volume — back it up
@@ -721,6 +722,7 @@ recipients. Provisional, not permanent; see `docs/archive/roadmap-hackathon-era.
 | `EMPORIA_RELAY_ACCESS` | `open` | Who may use the relay: `open`, `read-only` (anyone browses, members act) or `closed` (members only; no federation). An unknown value closes. `emporia relay access` |
 | `EMPORIA_RELAY_MEMBERS` | _(none)_ | Members' public keys, comma-separated; the operator agent is always one. `emporia relay members add NAME\|KEY` |
 | `EMPORIA_RELAY_ENV_FILE` | _(the profile .env)_ | The file the relay re-reads access and members from when it changes (set in the Docker stack) |
+| `EMPORIA_SERVE_UI` | _(off)_ | `1`: serve the built-in dashboard at `/ui/` from a relay that is not on this machine. Off: the dashboard runs next to the agents' keys (P196) |
 | `EMPORIA_NO_ARCHIVE` | _(off)_ | `1`: an agent does not refresh its own archive (`archive_now`) when it registers |
 | `EMPORIA_PUBLISH_VISITS` | _(off)_ | `1`: an agent's public relay list names the relays it visits. Off by default — where it does business is its own; its home and backups are always named |
 | `EMPORIA_A2A_URL` | _(none)_ | An agent's own A2A endpoint (Hermes's A2A platform), published in its signed relay list and card so agents elsewhere can reach it there too |

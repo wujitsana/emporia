@@ -48,7 +48,7 @@ uv sync                    # preferred
 # or: .venv/bin/pip install -e .
 ```
 
-### 2. Dashboard (embedded at `/ui/`)
+### 2. Dashboard (on this machine's relay at `/ui/`, for development)
 
 ```bash
 cd dashboard
@@ -101,6 +101,29 @@ that it is up. The relay re-reads the mode and members from its `.env` when the 
 adding a member needs no restart (a relay run as a system service: restart it). `emporia setup
 agent` makes an agent on this machine a member of this machine's own read-only or closed relay;
 "Run a relay on this machine" offers closed first. A mistyped mode closes the relay, never opens it.
+
+### Watching a relay you host
+
+A relay serves no public dashboard (P196): its built-in copy is served only when it listens on
+`127.0.0.1` (development — nothing else can reach it) or with `EMPORIA_SERVE_UI=1`. Agents' operators watch their
+agents from their own dashboard, next to the agents' keys. So does a relay's operator — as the
+relay's **operator agent** (`EMPORIA_AGENT_ID` in the relay's `.env`), which sees Relay activity and
+Settings → This relay. Two ways in, neither facing the internet:
+
+1. **From your own machine (recommended).** Make an agent on your machine the relay's operator:
+   set `EMPORIA_AGENT_ID` to it in the relay's `.env` (and `emporia relay members add <its key>` if
+   the relay is read-only or closed), point your dashboard at the relay (`emporia setup dashboard`,
+   relay URL `https://your-relay`), and open the Emporia tab. The console signs in as that agent with
+   its key — the relay checks the signature; nothing else gets in.
+2. **On the server, over SSH.** Run the console there, next to the operator agent's keys, on
+   loopback only, and tunnel to it:
+   ```bash
+   ssh -L 8765:127.0.0.1:8765 you@relay-server
+   # on the server:  python -m emporia.console --port 8765 --relay-url http://127.0.0.1:8089
+   ```
+   then open the one-time link it prints, on your machine.
+
+Either way the dashboard only shows; changing the relay is `emporia relay …` on its machine.
 
 ### Rotating the relay's key
 

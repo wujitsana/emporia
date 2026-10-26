@@ -1,24 +1,16 @@
-# Emporia relay — single container: FastAPI relay + embedded SRCL dashboard.
+# Emporia relay — a single container serving the REST/WS API on one port (8088).
 #
-# Serves everything on one port (default 8088): REST/WS API + dashboard at /ui/.
-# There is no separate Vite dev port (5173) in this image — that's a local-dev-only
-# server, not used for SSH/VPS/server deployment.
+# No dashboard (P196): the dashboard runs next to the agents' keys — a Hermes
+# dashboard tab or the local console — never as a public page on a relay. The
+# relay's operator watches it the same way, as its operator agent; see
+# docs/RUNBOOK.md § Watching a relay you host.
 #
 #   docker build -t emporia-relay .
 #   docker run -p 8088:8088 -v emporia-data:/data --env-file .env emporia-relay
 #
 # See docker-compose.yml for a ready-to-run stack (env file, volume, optional profiles).
 
-# ── Stage 1: build the embedded dashboard (Vite + React + SRCL) ─────────────
-FROM node:20-slim AS dashboard-builder
-WORKDIR /build/dashboard
-COPY dashboard/package.json dashboard/package-lock.json* ./
-RUN npm ci
-COPY dashboard/ ./
-# VITE_RELAY_URL='' → relative URLs; dashboard is served from the same origin as the API.
-RUN npm run build:embedded
-
-# ── Stage 2: relay runtime ───────────────────────────────────────────────────
+# ── Relay runtime ─────────────────────────────────────────────────────────────
 FROM python:3.12-slim AS runtime
 
 RUN pip install --no-cache-dir uv
@@ -35,8 +27,6 @@ COPY src/ ./src/
 # relay with EMPORIA_ESCROW_* set failed at the first /fund.
 RUN uv sync --frozen --no-dev --extra x402
 
-# Embedded dashboard build output — relay serves this at /ui/ (StaticFiles on dashboard/dist)
-COPY --from=dashboard-builder /build/dashboard/dist ./dashboard/dist
 
 # Ed25519 keys, SQLite DB, and JSONL audit logs must survive container restarts.
 ENV EMPORIA_KEYS_DIR=/data/keys \

@@ -26660,11 +26660,19 @@ def test_the_front_door_explains_itself_when_the_dashboard_is_not_built(client):
 
     from emporia import relay_server as rs
 
-    r = client.get("/", follow_redirects=False)
+    # P196: a relay serves its dashboard only on this machine; this suite may
+    # itself run in a container, where it would not.
+    monkeypatch_serves = patch.object(rs, "serves_dashboard", return_value=True)
+    monkeypatch_serves.start()
+    try:
+        r = client.get("/", follow_redirects=False)
+    finally:
+        monkeypatch_serves.stop()
     assert r.status_code in (307, 308), r.text
     assert r.headers["location"] == "/ui/", r.headers
 
-    with patch.object(rs, "_DASHBOARD_DIST", _Path("/nonexistent/dashboard/dist")):
+    with patch.object(rs, "_DASHBOARD_DIST", _Path("/nonexistent/dashboard/dist")), \
+         patch.object(rs, "serves_dashboard", return_value=True):
         r = client.get("/", follow_redirects=False)
     assert r.status_code == 200, (
         f"with no dashboard build there is nothing to redirect *to* — answering "

@@ -135,3 +135,15 @@ def test_an_older_database_is_copied_aside_before_it_is_upgraded(tmp_path, monke
     assert sqlite3.connect(snap).execute("SELECT challenge_id FROM challenges").fetchone() == ("kept",)
     conn.execute(f"PRAGMA user_version = {rs.SCHEMA_VERSION}")
     assert rs._snapshot_before_upgrade(conn) is None                # current: nothing to keep
+
+
+def test_a_hosted_relay_serves_no_dashboard(client, monkeypatch):
+    """P196: the dashboard runs next to the agents' keys, never as a public page."""
+    from emporia import relay_server as rs
+    monkeypatch.setattr(rs, "RELAY_HOST", "0.0.0.0")               # as in the Docker image
+    monkeypatch.delenv("EMPORIA_SERVE_UI", raising=False)
+    assert not rs.serves_dashboard()
+    r = client.get("/", follow_redirects=False)
+    assert r.status_code == 200 and "no page to browse" in r.text
+    monkeypatch.setenv("EMPORIA_SERVE_UI", "1")
+    assert rs.serves_dashboard()

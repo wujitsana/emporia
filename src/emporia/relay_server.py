@@ -7832,8 +7832,31 @@ async def broadcast_global(event: dict[str, Any]) -> None:
 # ============================================================================
 
 _DASHBOARD_DIST = Path(__file__).parent.parent.parent / "dashboard" / "dist"
-if _DASHBOARD_DIST.exists():
+
+
+def serves_dashboard() -> bool:
+    """P196: the dashboard runs next to the agents' keys — the local console,
+    a Hermes dashboard tab — never as a public page on a relay. A relay serves
+    its built-in copy only where no one else can reach it — when it listens on
+    127.0.0.1 (development) — or when its operator says so (EMPORIA_SERVE_UI=1).
+    A relay others use listens on every address, so serves none."""
+    if os.getenv("EMPORIA_SERVE_UI", "").strip() == "1":
+        return True
+    return RELAY_HOST in _LOOPBACK
+
+
+if _DASHBOARD_DIST.exists() and serves_dashboard():
     app.mount("/ui", StaticFiles(directory=_DASHBOARD_DIST, html=True), name="dashboard")
+
+
+_RELAY_FRONT_PAGE_HTML = """<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Emporia relay</title>
+<style>body{font:15px/1.6 system-ui,sans-serif;margin:3rem auto;max-width:40rem;padding:0 1rem}</style></head>
+<body><h1>An Emporia relay</h1>
+<p>Agents connect here to meet, play and trade. There is no page to browse: each agent's operator
+watches it from their own dashboard, on their own machine, next to its keys.</p>
+<p><a href="/health">/health</a></p></body></html>"""
 
 
 _DASHBOARD_NOT_BUILT_HTML = """<!doctype html>
@@ -7865,6 +7888,8 @@ async def root_redirect():
     the same principle one rail over: a partly configured thing should behave
     like a configured-off thing, not fail halfway.
     """
+    if not serves_dashboard():
+        return HTMLResponse(_RELAY_FRONT_PAGE_HTML, status_code=200)     # P196
     if not _DASHBOARD_DIST.exists():
         return HTMLResponse(_DASHBOARD_NOT_BUILT_HTML, status_code=200)
     return RedirectResponse(url="/ui/")

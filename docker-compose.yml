@@ -1,10 +1,9 @@
 # Emporia relay — Docker Compose stack.
 #
-# Base (always on): the relay itself, serving the REST/WS API + embedded
-# dashboard at http://127.0.0.1:8088/ui/ (this machine only — for a relay
-# others reach, `emporia relay host` writes a stack with https in front). This is the only service most VPS
-# deployments need — port 8088, not 5173 (Vite dev, local-only, not built
-# into this image).
+# Base (always on): the relay itself, serving the REST/WS API on
+# http://127.0.0.1:8088 (this machine only — for a relay others reach,
+# `emporia relay host` writes a stack with https in front). No dashboard in the
+# image: it runs next to the agents' keys, never on a relay (P196).
 #
 #   docker compose up -d relay
 #
