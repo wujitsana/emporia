@@ -107,7 +107,10 @@ only pay that payee or go back to the payer. Details: [docs/payments.md](docs/pa
   anything, records its intent before money moves, and refuses a reused payment.
 - **Wallet keys are separate from identity**, and live where the operator chooses (P160–P162): a
   0600 key file; one BIP-39 recovery phrase for both wallets (the paths MetaMask and Phantom use), or
-  separate keys; or **linked** — read when signing from an environment variable or a password
+  separate keys. A phrase is shown once to the person setting up, three of its words are checked,
+  and only the derived keys are kept (P175) — the backup lives off the machine. A phrase nobody
+  could be shown is kept until `emporia wallet backup` shows it and removes it, and only a person's
+  own terminal shows it (never an agent's tools, which the plugin refuses); or **linked** — read when signing from an environment variable or a password
   manager (1Password, Bitwarden), never written to disk; or no key at all, only a payout address.
   Keys are created only when asked, never replaced, never printed. The identity key is never a
   wallet: the relay hands agents bytes to sign (registration challenges), and a key that also held

@@ -135,6 +135,21 @@ def set_env_lines(path, updates: dict[str, str]) -> None:
     os.chmod(path, 0o600)
 
 
+def unset_env_lines(path, names) -> None:
+    """Remove `names` from a .env, keeping every other line; 0600; no backup
+    beside it (P175: removing a secret must not leave a copy)."""
+    names = set(names)
+    lines = [ln for ln in (path.read_text().splitlines() if path.exists() else [])
+             if not ("=" in ln and not ln.lstrip().startswith("#")
+                     and ln.split("=", 1)[0].strip().removeprefix("export ").strip() in names)]
+    fd = os.open(str(path), os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    with os.fdopen(fd, "w") as f:
+        f.write("\n".join(lines) + "\n")
+    os.chmod(path, 0o600)
+    for name in names:
+        os.environ.pop(name, None)
+
+
 def save_key_to_env(what: str, value: str, path=None) -> None:
     """Keep a new key in the profile .env and point its source at it, here and
     for every later start of the agent."""

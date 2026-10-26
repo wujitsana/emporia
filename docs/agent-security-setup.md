@@ -23,7 +23,7 @@ The recommended answers, in the order `setup agent` asks:
 |---|---|---|
 | Role | **marketplace** for any agent that holds money | No tool it can run reaches its keys |
 | Where keys are kept | **its profile `.env`** | Hermes hides `.env` files from the agent's own tools |
-| Wallets | **one recovery phrase for both** (EVM + Solana), or none | One backup; or nothing to steal |
+| Wallets | **one recovery phrase for both** (EVM + Solana), shown once for you to write down; or none | One backup, kept off the machine; or nothing to steal |
 | Wallet keys you already have | **use them** — env vars linked, key files copied | Yours already; nothing new to back up |
 | Where it may pay | what the relay takes, testnets while testing | It never pays anywhere else |
 | Spending caps | small: $10 a payment, $25 a day | The most a compromised agent can spend |
@@ -64,7 +64,8 @@ agent that can edit it can lift its own limits.
 ## 2. Where keys are kept
 
 An agent has an identity key (signs every move), an encryption key (opens sealed DMs and private
-sessions) and, if it has wallets, wallet keys or one recovery phrase.
+sessions) and, if it has wallets, wallet keys. A recovery phrase is not kept: you write it down
+(see [the recovery phrase](#the-recovery-phrase)).
 
 | Where | Setting | Protection from the agent's own tools |
 |---|---|---|
@@ -77,7 +78,8 @@ sessions) and, if it has wallets, wallet keys or one recovery phrase.
 emporia identity show NAME          # where its identity and encryption keys are
 emporia identity store NAME --to env      # move key files into its .env (checks, then removes the files)
 emporia identity store NAME --to 1password  # 1Password documents; `op` reads the files itself
-emporia wallet store NAME           # move wallet key files (or the phrase) into its .env
+emporia wallet store NAME           # move wallet key files into its .env
+emporia wallet backup NAME          # write down a phrase still kept here, then remove it (your own terminal)
 ```
 
 **Password managers and remote vaults.** A linked key is read through the vault's own command
@@ -118,11 +120,36 @@ or be paid. Add a wallet any time.
 | Choice | What it makes |
 |---|---|
 | EVM wallet | USDC on Base (direct and escrow holds), stablecoin on Tempo |
-| One recovery phrase for both (recommended) | EVM + Solana from one standard 12-word phrase, on the paths MetaMask and Phantom use — import it there and the addresses match |
+| One recovery phrase for both (recommended) | EVM + Solana from one standard 12-word phrase, on the paths MetaMask and Phantom use — import it there and the addresses match. Shown once for you to write down; only the keys stay here |
 | Separate keys | EVM + Solana, independent: a leaked key exposes one wallet; two backups |
 | Import | A phrase, an EVM private key, a Solana secret (Phantom export, solana-keygen file) |
 | Link | The key stays in a password manager or env var |
 | Receive only | `emporia wallet register NAME --address 0x… --solana-address …` — paid at a wallet whose key is never here |
+
+### The recovery phrase
+
+The phrase is the backup of both wallets, and a backup belongs off the machine that holds the
+keys. So the setup **shows it once** — on a screen that is cleared afterwards, leaving nothing in
+the terminal's scrollback — asks for three of its words to check you wrote it down, and then keeps
+**only the two keys** (in the `.env` or key files). Emporia keeps no copy of the phrase.
+
+- **Write it on paper, in order.** Don't photograph it, paste it into a chat, or give it to an
+  agent. Anyone with it controls both wallets, and it may control other accounts you add to it in
+  MetaMask or Phantom.
+- **Lost the paper?** The agent keeps working; its keys still sign. Move the funds to a new wallet
+  and make a new phrase.
+- **Nobody could be shown it** — setup run without a terminal, or by an agent: the phrase is kept
+  beside the keys until you run **`emporia wallet backup NAME`** in your own terminal, which shows it
+  once, checks three words and removes it (also from old `.env` backups). `emporia doctor` reminds
+  you until then. The Hermes plugin refuses `wallet backup` from an agent's tools and hides a shown
+  phrase from any tool result.
+- **An imported phrase** is not kept either: you have it already. A phrase **linked** from a
+  password manager stays there; that vault is its backup.
+- **Adding the second wallet later** to a phrase that is no longer kept asks you to type the phrase
+  again (hidden); it must give the wallet the agent already has.
+
+Keeping only the keys does not make these two wallets safer — whoever steals the keys can still
+empty them — but it keeps the master secret, and the only backup, off the machine.
 
 **Bring your own keys.** `setup agent` looks for wallet keys already on the machine, under the
 names other agent tools use — `$EVM_PRIVATE_KEY`, `$ETH_PRIVATE_KEY`, `$WALLET_PRIVATE_KEY`,

@@ -370,6 +370,9 @@ def doctor_agent(rep: Report, profile: Path, entry: dict, relay_up: bool) -> Non
                f"{', '.join(label(n) for n in pay_nets)}, "
                f"≤ ${int(dotenv.get('EMPORIA_X402_MAX_PAYMENT_CENTS', 1000)) / 100:.2f} each, "
                f"≤ ${int(dotenv.get('EMPORIA_X402_MAX_DAILY_CENTS', 5000)) / 100:.2f}/day")
+    if _phrase_state(profile, agent_id) in ("file", "env"):
+        rep.warn("its recovery phrase is stored beside its keys — not backed up yet",
+                 f"emporia wallet backup {name}   (in your own terminal, never through an agent)")
     # P167/P168: what its own tools can reach. A wallet plus a shell on the
     # keys' disk is the one combination that puts money in reach.
     backend = _backend(profile)
@@ -942,13 +945,18 @@ def _wallet_cmd(profile: Path, agent_id: str, *args: str) -> subprocess.Complete
                           env=env, capture_output=True, text=True, timeout=60)
 
 
-def _store_secret(profile: Path, agent_id: str, kind: str, secret: str) -> subprocess.CompletedProcess:
+def _store_secret(profile: Path, agent_id: str, kind: str, secret: str,
+                  keep_phrase: bool = False) -> subprocess.CompletedProcess:
     """Store a phrase or a key as this agent's wallet, in its own key storage —
     the one way the CLI hands a secret over: on stdin, to the agent's own wallet
-    code, never on a command line (P174: was written out three times)."""
+    code, never on a command line (P174: was written out three times).
+    `kind`: phrase, evm, svm, or derive-evm / derive-svm (the wallet missing
+    from a phrase typed again). A phrase is not kept unless `keep_phrase`."""
     env = {"PATH": os.defpath, "HOME": str(Path.home()), **_mcp_env(profile)}
-    cmd = (["generate-phrase", "--import-stdin"] if kind == "phrase"
-           else ["import-key", *(["--solana"] if kind == "svm" else [])])
+    cmd = {"phrase": ["generate-phrase", "--import-stdin", *(["--keep-phrase"] if keep_phrase else [])],
+           "evm": ["import-key"], "svm": ["import-key", "--solana"],
+           "derive-evm": ["derive", "--import-stdin"],
+           "derive-svm": ["derive", "--import-stdin", "--solana"]}[kind]
     return subprocess.run([sys.executable, "-m", "emporia.agent_wallet", *cmd, "--agent-id", agent_id],
                           env=env, input=secret.strip() + "\n", capture_output=True, text=True, timeout=60)
 
@@ -1020,10 +1028,61 @@ def _create_wallet(profile: Path, agent_id: str, solana: bool) -> str | None:
     return found[0] if found else None
 
 
+# P175: a recovery phrase is shown once, to the person setting up, and then not
+# kept: the backup belongs on paper, off the machine whose disk holds the keys.
+# Only a person at a terminal may see it — never an agent, whose tool output
+# goes to its model provider and its context. The Hermes plugin also refuses
+# `emporia wallet backup` from an agent's tools and hides the block between
+# these markers from any tool result.
+PHRASE_BEGIN = "──── RECOVERY PHRASE ────"
+PHRASE_END = "──── END OF RECOVERY PHRASE ────"
+
+
+def _can_reveal() -> bool:
+    """A person's own terminal: interactive, and not a command an agent's
+    terminal tool started (Hermes marks those with its session variables)."""
+    return _TTY and not any(k.startswith("HERMES_SESSION_") for k in os.environ)
+
+
+def _show_phrase(phrase: str) -> bool:
+    """Show the phrase once, then ask for three of its words. True when the
+    person has written it down; False keeps it stored for `wallet backup`."""
+    import getpass
+    import secrets
+    words = phrase.split()
+    print("\n  The wallets' recovery phrase is about to be shown, once. Write the words down on")
+    print("  paper, in order. Anyone with them controls both wallets — don't photograph them,")
+    print("  paste them into a chat, or give them to an agent. Emporia keeps no copy once you")
+    print("  have confirmed them; this machine keeps only the keys.")
+    if not ask("  Show it now? (No: it stays stored here until `emporia wallet backup`)", True):
+        return False
+    for _attempt in range(2):
+        # The alternate screen: the words leave no scrollback once it closes.
+        sys.stdout.write("\x1b[?1049h\x1b[H")
+        try:
+            print(f"\n  {PHRASE_BEGIN}\n")
+            for row in range(0, len(words), 3):
+                print("   " + "".join(f"{i + 1:>3}. {words[i]:<12}" for i in range(row, min(row + 3, len(words)))))
+            print(f"\n  {PHRASE_END}\n")
+            input("  Press Enter once you have written them down… ")
+        finally:   # Ctrl-C too: never leave the words on screen
+            sys.stdout.write("\x1b[?1049l")
+            sys.stdout.flush()
+        picks = sorted(secrets.SystemRandom().sample(range(len(words)), 3))
+        if all(getpass.getpass(f"  Word #{i + 1} (hidden): ").strip().lower() == words[i] for i in picks):
+            print("  ✓ Confirmed.")
+            return True
+        print("  That does not match.")
+        if not ask("  Show the phrase again?", True):
+            break
+    return False
+
+
 WALLET_MODES = [
     ("none", "No wallet — card payments only"),
     ("evm", "EVM wallet — USDC on Base, stablecoin on Tempo"),
-    ("phrase", "EVM + Solana from one recovery phrase — one backup; imports into MetaMask and Phantom"),
+    ("phrase", "EVM + Solana from one recovery phrase — shown once for you to write down; "
+               "imports into MetaMask and Phantom"),
     ("separate", "EVM + Solana with separate keys — a lost or leaked key affects one wallet only"),
     ("import", "Import a recovery phrase you already have (typed, never shown)"),
     ("byo", "Use any wallet you already have — a phrase, a private key, a key file, an env var, "
@@ -1060,36 +1119,136 @@ def _make_wallets(profile: Path, agent_id: str, mode: str) -> dict[str, str]:
             "separate": ["evm", "svm"], "import": ["evm", "svm"]}[mode]
     missing = [f for f in want if not have[f]]
     if mode in ("phrase", "import") and len(missing) == 2:
-        phrase = ""
         if mode == "import":
             phrase = getpass.getpass("Recovery phrase (hidden; 12 or 24 words): ") if _TTY else ""
             if not phrase.strip():
                 print("  No phrase typed; nothing was created.")
                 return {f: a for f, a in have.items() if a}
-        env = {"PATH": os.defpath, "HOME": str(Path.home()), **_mcp_env(profile)}
-        r = subprocess.run([sys.executable, "-m", "emporia.agent_wallet", "generate-phrase",
-                            "--agent-id", agent_id, *(["--import-stdin"] if phrase else [])],
-                           env=env, input=phrase + "\n" if phrase else None,
-                           capture_output=True, text=True, timeout=60)
+            r = _store_secret(profile, agent_id, "phrase", phrase)
+            kept = False
+        elif _can_reveal():
+            from emporia import agent_wallet as aw
+            phrase = aw.new_phrase()
+            kept = not _show_phrase(phrase)
+            r = _store_secret(profile, agent_id, "phrase", phrase, keep_phrase=kept)
+        else:   # nobody here can be shown it: keep it until someone can
+            r = _wallet_cmd(profile, agent_id, "generate-phrase")
+            kept = True
         if r.returncode != 0:
             print(f"  could not create the wallets: {r.stderr.strip()[-200:]}")
+        elif kept:
+            print(f"  ! The recovery phrase is stored beside the keys until you back it up. In your own "
+                  f"terminal (never through an agent): emporia wallet backup {profile.name}")
         else:
-            print(f"  Recovery phrase saved (0600) in {profile.name}'s keys folder — the only backup of "
-                  f"both wallets. Copy it somewhere safe; Emporia never prints it.")
+            print("  Keys stored. The recovery phrase is not kept on this machine — your copy is the "
+                  "only one.")
     else:
         for fam in missing:
-            if mode in ("phrase", "solana", "evm") and _has_phrase(profile, agent_id):
+            other = "svm" if fam == "evm" else "evm"
+            if mode in ("phrase", "solana", "evm") and _phrase_state(profile, agent_id):
                 r = _wallet_cmd(profile, agent_id, "derive", *(["--solana"] if fam == "svm" else []))
                 if r.returncode == 0:
                     continue
+            elif mode in ("phrase", "import") and have[other] and _TTY:
+                # P175: the phrase is not kept, so adding the other wallet under it means typing it again.
+                typed = getpass.getpass(f"  If the {'EVM' if other == 'evm' else 'Solana'} wallet came from a "
+                                        f"recovery phrase, type it to add this one under it (hidden; Enter "
+                                        f"for its own key): ")
+                if typed.strip():
+                    r = _store_secret(profile, agent_id, f"derive-{fam}", typed)
+                    if r.returncode == 0:
+                        continue
+                    print(f"  {r.stderr.strip().removeprefix('error: ')[-200:]} — it gets its own key.")
             _create_wallet(profile, agent_id, fam == "svm")
     return {f: a for f in ("evm", "svm") if (a := _wallet_address(profile, agent_id, f == "svm"))}
 
 
-def _has_phrase(profile: Path, agent_id: str) -> bool:
+def _phrase_state(profile: Path, agent_id: str) -> str:
+    """Where the agent's recovery phrase is: "file" or "env" (a copy Emporia
+    keeps, not yet backed up), "linked" (the operator's own variable or vault),
+    or "" (none kept)."""
+    from emporia import agent_wallet as aw
     from emporia.identity import _keyfile_stem
-    key_dir = Path(_mcp_env(profile).get("EMPORIA_KEYS_DIR") or profile / "home" / ".hermes" / "keys")
-    return (key_dir / f"{_keyfile_stem(agent_id)}.x402.phrase").exists()
+    from emporia.key_source import ENV_KEY_NAMES
+    key_dir = _key_file(profile, agent_id, "identity").parent
+    if (key_dir / f"{_keyfile_stem(agent_id)}.x402.phrase").exists():
+        return "file"
+    ref = (installer().harvest_env(profile) if (profile / ".env").exists() else {}).get(aw.PHRASE_SOURCE_VAR, "")
+    if not ref.strip():
+        return ""
+    return "env" if ref.strip() == f"env:{ENV_KEY_NAMES['phrase']}" else "linked"
+
+
+def _backup_phrase(profile: Path, agent_id: str) -> int:
+    """P175: show a stored recovery phrase once, have it confirmed, then remove
+    it from this machine. The wallets keep working from their keys."""
+    from emporia import agent_wallet as aw
+    from emporia.identity import _keyfile_stem
+    from emporia.key_source import ENV_KEY_NAMES, SOURCE_VARS, set_env_lines, unset_env_lines
+    name = profile.name
+    state = _phrase_state(profile, agent_id)
+    if state == "linked":
+        print(f"{name}'s recovery phrase is linked from your own variable or vault; Emporia keeps no copy.")
+        return 0
+    if not state:
+        print(f"{name} keeps no recovery phrase here — it was backed up already, or its wallets use "
+              f"separate keys.")
+        return 0
+    if not _can_reveal():
+        print("wallet backup: run this yourself, in your own terminal. It shows the recovery phrase, "
+              "which must never reach an agent or a log.")
+        return 1
+    key_dir = _key_file(profile, agent_id, "identity").parent
+    phrase_file = key_dir / f"{_keyfile_stem(agent_id)}.x402.phrase"
+    dotenv_file = profile / ".env"
+    dotenv = installer().harvest_env(profile)
+    phrase = " ".join((phrase_file.read_text() if state == "file"
+                       else dotenv.get(ENV_KEY_NAMES["phrase"], "")).split()).lower()
+    try:
+        raws = dict(zip(("evm", "svm"), aw.derive_from_phrase(phrase)))
+    except aw.AgentWalletError as e:
+        print(f"wallet backup: the stored phrase does not read ({e}); nothing changed.")
+        return 1
+    before = {f: _wallet_address(profile, agent_id, f == "svm") for f in ("evm", "svm")}
+    if not _show_phrase(phrase):
+        print("Nothing changed: the phrase stays stored until you back it up.")
+        return 1
+    if state == "env":
+        # Its wallets read the phrase; give each the key it gives first.
+        set_env_lines(dotenv_file, {k: v for fam in ("evm", "svm") if before[fam]
+                                    and not dotenv.get(SOURCE_VARS[fam])
+                                    for k, v in ((ENV_KEY_NAMES[fam], aw.env_value(fam, raws[fam])),
+                                                 (SOURCE_VARS[fam], f"env:{ENV_KEY_NAMES[fam]}"))})
+        unset_env_lines(dotenv_file, [ENV_KEY_NAMES["phrase"], SOURCE_VARS["phrase"]])
+    after = {f: _wallet_address(profile, agent_id, f == "svm") for f in ("evm", "svm")}
+    if after != before:
+        if state == "env":   # put it back as it was: the phrase is the only way to these wallets
+            set_env_lines(dotenv_file, {ENV_KEY_NAMES["phrase"]: phrase,
+                                        SOURCE_VARS["phrase"]: f"env:{ENV_KEY_NAMES['phrase']}"})
+        print("wallet backup: its keys do not give the same wallets as the phrase; the phrase was kept.")
+        return 1
+    if state == "file":
+        phrase_file.unlink()
+    scrubbed = _scrub_env_backups(profile, phrase)
+    print(f"Removed the recovery phrase from this machine{f' (and {scrubbed} old .env backups)' if scrubbed else ''}. "
+          f"Your written copy is now the only one; {name} keeps paying with its keys.")
+    if state == "env":
+        installer().print_restart_instructions([profile])
+    return 0
+
+
+def _scrub_env_backups(profile: Path, secret: str) -> int:
+    """Drop any line holding `secret` from the profile's dated .env backups
+    (merge_env_file keeps one per change). Returns how many changed."""
+    changed = 0
+    for backup in (profile / ".env-backups").glob("*/.env"):
+        lines = backup.read_text().splitlines()
+        keep = [ln for ln in lines if " ".join(ln.split("=", 1)[-1].split()).lower() != secret]
+        if keep != lines:
+            backup.write_text("\n".join(keep) + "\n")
+            backup.chmod(0o600)
+            changed += 1
+    return changed
 
 
 def _import_wallet(args: argparse.Namespace, profile: Path, agent_id: str) -> int:
@@ -1423,6 +1582,7 @@ def cmd_wallet(args: argparse.Namespace) -> int:
             ("limits", "Change where it may pay and how much"),
             ("import", "Bring in a wallet it already has (phrase, private key, key file)"),
             ("store", "Move its wallet keys into its .env (Hermes hides .env from the agent's tools)"),
+            ("backup", "Write down its recovery phrase, then remove it from this machine"),
             ("register", "Register where it is paid (its wallets, or an address you give)"),
         ]) if _TTY else "show"
     profile, agent_id, env = _agent(args.name)
@@ -1443,8 +1603,6 @@ def cmd_wallet(args: argparse.Namespace) -> int:
             modes = WALLET_MODES[1:] + ([("solana", "Solana wallet only — USDC on Solana")]
                                         if not before["svm"] else [])
             mode = choose("Which wallets?", modes, [k for k, _ in modes].index(default))
-            if mode in ("phrase", "import") and (before["evm"] or before["svm"]):
-                print("  The existing wallet has no recovery phrase, so the new one gets its own key.")
         elif not (args.wallet or args.solana or args.import_phrase):
             mode = "evm"
         else:
@@ -1467,27 +1625,25 @@ def cmd_wallet(args: argparse.Namespace) -> int:
     if args.action == "import":
         return _import_wallet(args, profile, agent_id)
 
+    if args.action == "backup":    # P175: show a stored phrase once, then remove it
+        return _backup_phrase(profile, agent_id)
+
     if args.action == "store":     # P165: key files into the profile .env
+        from emporia import agent_wallet as aw
         from emporia.identity import _keyfile_stem
         key_dir = _key_file(profile, agent_id, "identity").parent
         stem = _keyfile_stem(agent_id)
-        phrase = key_dir / f"{stem}.x402.phrase"
-        if phrase.exists():   # the phrase alone; both wallets derive from it
-            items = [("phrase", phrase, " ".join(phrase.read_text().split()))]
-            extra = [f for f in (key_dir / f"{stem}.x402.secp256k1", key_dir / f"{stem}.x402.ed25519") if f.exists()]
-        else:
-            items = [(fam, f, f.read_bytes().hex()) for fam, f in
-                     (("evm", key_dir / f"{stem}.x402.secp256k1"), ("svm", key_dir / f"{stem}.x402.ed25519"))
-                     if f.exists()]
-            extra = []
+        # P175: the keys only. A recovery phrase is backed up and removed, not moved.
+        items = [(fam, f, aw.env_value(fam, f.read_bytes())) for fam, f in
+                 (("evm", key_dir / f"{stem}.x402.secp256k1"), ("svm", key_dir / f"{stem}.x402.ed25519"))
+                 if f.exists()]
         if not items:
             print(f"wallet store: {args.name} has no wallet key files to move")
             return 1
         rc = _move_to_env(profile, items, True if args.remove_files else None)
-        for f in extra:   # derived from the phrase, now in the .env
-            if rc == 0 and not phrase.exists() and f.exists():
-                f.unlink()
-                print(f"  removed {f.name} (derived from the phrase)")
+        if _phrase_state(profile, agent_id) == "file":
+            print(f"  Its recovery phrase is still stored beside the keys. In your own terminal: "
+                  f"emporia wallet backup {args.name}")
         return rc
 
     if args.action == "register" and (args.address or args.solana_address):
@@ -1955,6 +2111,8 @@ def setup_overview() -> None:
                    f"(its terminal shares a disk with its identity key)")
         elif wallet and not env.get("EMPORIA_PAYMENT_APPROVAL_CENTS"):
             how = f"emporia wallet limits {name} --approve-above-cents 500   (it pays up to its caps unasked)"
+        elif _phrase_state(profile, aid) in ("file", "env"):
+            how = f"emporia wallet backup {name}   (its recovery phrase is not written down yet)"
         else:
             how = ""
         line("!" if how else "✓", name, ", ".join(bits), how)
@@ -2065,7 +2223,7 @@ def build_parser() -> argparse.ArgumentParser:
     idp.set_defaults(func=cmd_identity)
     wl = sub.add_parser("wallet", help="an agent's wallets: show, create, register, limits")
     wl.add_argument("action", nargs="?", default="",
-                    choices=["", "show", "create", "import", "store", "register", "limits"])
+                    choices=["", "show", "create", "import", "store", "backup", "register", "limits"])
     wl.add_argument("name", nargs="?", default="", help="the agent's Hermes profile")
     wl.add_argument("--evm", action="store_true", help="create: the EVM wallet (Base, Tempo) — the default")
     wl.add_argument("--solana", action="store_true", help="create: the Solana wallet")

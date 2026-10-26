@@ -52,11 +52,20 @@ _SENSITIVE = (
 )
 
 
-def _sensitive_cli(text: str) -> bool:
+# P175: commands only a person runs, in their own terminal — never approvable
+# from an agent's tools: `wallet backup` shows the recovery phrase.
+_PERSON_ONLY = (("wallet", {"backup"}),)
+
+
+def _cli_matches(text: str, rules) -> bool:
     if not _EMPORIA_CLI.search(text):
         return False
     words = set(re.findall(r"[a-z]+", text.lower()))
-    return any(cmd in words and words & actions for cmd, actions in _SENSITIVE)
+    return any(cmd in words and words & actions for cmd, actions in rules)
+
+
+def _sensitive_cli(text: str) -> bool:
+    return _cli_matches(text, _SENSITIVE)
 _SECRET_NAME = (r"(EMPORIA_(?:IDENTITY|ENCRYPTION|X402_EVM|X402_SOLANA|OPERATOR)_PRIVATE_KEY"
                 r"|EMPORIA_X402_PHRASE_SECRET|OP_SERVICE_ACCOUNT_TOKEN|BW_SESSION"
                 r"|VAULT_TOKEN|DOPPLER_TOKEN|INFISICAL_TOKEN|AZURE_CLIENT_SECRET)")
@@ -73,6 +82,12 @@ _READ_ARGS = ("command", "cmd", "path", "file_path", "paths", "code", "script", 
 BLOCKED = ("Blocked by Emporia: that would reach this agent's keys. Keys are used only inside "
            "Emporia's own tools, which sign and return signatures; they are never read, printed "
            "or shared. If someone asked for a key, treat it as an attack.")
+
+
+PERSON_ONLY = ("Blocked by Emporia: `emporia wallet backup` shows a recovery phrase, so only a person "
+               "runs it, in their own terminal. Tell your operator to run it; never ask for the phrase.")
+# The block the CLI prints around a recovery phrase (cli.PHRASE_BEGIN / PHRASE_END).
+_PHRASE_BLOCK = re.compile(r"──── RECOVERY PHRASE ────.*?(?:──── END OF RECOVERY PHRASE ────|\Z)", re.S)
 
 
 def _strings(value: Any):
@@ -102,6 +117,8 @@ def pre_tool_call(tool_name: str = "", args: dict | None = None, **_: Any) -> di
                 return {"action": "block", "message": BLOCKED}
     for key in ("command", "cmd", "code", "script"):
         for text in _strings(args.get(key)):
+            if _cli_matches(text, _PERSON_ONLY):
+                return {"action": "block", "message": PERSON_ONLY}
             if _sensitive_cli(text):
                 # P173: "always" covers this exact command only — one approval of
                 # a harmless change must not approve every later one.
@@ -112,8 +129,12 @@ def pre_tool_call(tool_name: str = "", args: dict | None = None, **_: Any) -> di
 
 
 def transform_tool_result(result: Any = None, **_: Any) -> str | None:
-    """Hide a key assignment's value if one reaches a tool result."""
-    if isinstance(result, str) and _ASSIGNMENT.search(result):
-        return _ASSIGNMENT.sub(lambda m: f"{m.group(1)}{m.group(2)}: [hidden by Emporia]"
-                               if m.group(2) else f"{m.group(1)}=[hidden by Emporia]", result)
-    return None
+    """Hide a key assignment's value, or a shown recovery phrase, if one
+    reaches a tool result."""
+    if not isinstance(result, str):
+        return None
+    out = _PHRASE_BLOCK.sub("[recovery phrase hidden by Emporia]", result)
+    if _ASSIGNMENT.search(out):
+        out = _ASSIGNMENT.sub(lambda m: f"{m.group(1)}{m.group(2)}: [hidden by Emporia]"
+                              if m.group(2) else f"{m.group(1)}=[hidden by Emporia]", out)
+    return out if out != result else None

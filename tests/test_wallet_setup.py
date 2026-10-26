@@ -168,18 +168,21 @@ def test_setup_agent_asks_and_one_phrase_is_the_recommended_choice(profiles, mon
     # existing profile? no · wallets: 3 (one phrase) · networks: Enter · caps: 5, 20
     # role: 1 (marketplace) · wallets: 3 (one phrase) · networks: Enter · caps: 5, 20 · ask above $2
     _typing(monkeypatch, "1", "3", "", "5", "20", "2")
+    shown = []
+    monkeypatch.setattr(cli, "_show_phrase", lambda phrase: shown.append(phrase) or True)
     with patch.dict(os.environ):
         assert cli.main(["setup", "agent", "zeta", "--keys", "files"]) == 0
     keys = root / "zeta" / "home" / ".hermes" / "keys"
-    assert {p.name for p in keys.glob("zeta.x402.*")} == {"zeta.x402.phrase", "zeta.x402.secp256k1",
-                                                         "zeta.x402.ed25519"}
+    # P175: shown once and written down, so only the keys are kept.
+    assert {p.name for p in keys.glob("zeta.x402.*")} == {"zeta.x402.secp256k1", "zeta.x402.ed25519"}
+    evm, sol = agent_wallet.derive_from_phrase(shown[0])
+    assert (keys / "zeta.x402.secp256k1").read_bytes() == evm and (keys / "zeta.x402.ed25519").read_bytes() == sol
     dotenv = (root / "zeta" / ".env").read_text()
     assert "EMPORIA_X402_MAX_PAYMENT_CENTS=500" in dotenv and "EMPORIA_X402_MAX_DAILY_CENTS=2000" in dotenv
     assert "EMPORIA_PAYMENT_APPROVAL_CENTS=200" in dotenv
     out = capsys.readouterr().out
-    assert "one recovery phrase" in out and "Emporia never prints it" in out
-    phrase = (keys / "zeta.x402.phrase").read_text().strip()
-    assert phrase not in out, "the phrase is never printed"
+    assert "one recovery phrase" in out and "not kept on this machine" in out
+    assert shown[0] not in out and shown[0] not in dotenv
 
 
 def test_separate_keys_stay_an_option(profiles):
@@ -378,7 +381,10 @@ def test_existing_key_files_move_into_the_env_with_the_same_addresses(profiles, 
         pub_before = identity.read_public_key_hex("xi")
     assert cli.main(["identity", "store", "xi", "--to", "env", "--remove-files"]) == 0
     assert cli.main(["wallet", "store", "xi", "--remove-files"]) == 0
-    assert not list(keys.glob("xi.*priv")) and not list(keys.glob("xi.x402.*"))
+    assert not list(keys.glob("xi.*priv"))
+    # P175: the keys move; the phrase is not moved but backed up and removed.
+    assert [p.name for p in keys.glob("xi.x402.*")] == ["xi.x402.phrase"]
+    assert "emporia wallet backup xi" in capsys.readouterr().out
     env = _env_of(root / "xi")
     with patch.object(identity, "KEY_DIR", keys), patch.dict(os.environ, env):
         agent_wallet._SOURCE_CACHE.clear()
@@ -580,3 +586,116 @@ def test_reading_for_a_profile_never_uses_the_callers_key(monkeypatch):
     with pytest.raises(key_source.KeySourceError):
         key_source.key32("env:EMPORIA_IDENTITY_PRIVATE_KEY", {})        # alpha has none: no fallback
     assert key_source.key32("env:EMPORIA_IDENTITY_PRIVATE_KEY") == bytes.fromhex("11" * 32), "the agent itself"
+
+
+# -- P175: the recovery phrase is shown once and not kept ---------------------
+
+def test_the_phrase_is_shown_once_and_three_words_confirm_it(monkeypatch, capsys):
+    phrase = agent_wallet.new_phrase()
+    words = phrase.split()
+    _typing(monkeypatch, "", "")                       # show it: yes · Enter once written down
+    monkeypatch.setattr("getpass.getpass", lambda q: words[int(q.split("#")[1].split()[0]) - 1])
+    assert cli._show_phrase(phrase)
+    out = capsys.readouterr().out
+    assert cli.PHRASE_BEGIN in out and "\x1b[?1049h" in out and "\x1b[?1049l" in out, "on the alternate screen"
+    _typing(monkeypatch, "", "", "n")                  # wrong words · don't show again
+    monkeypatch.setattr("getpass.getpass", lambda q: "wrong")
+    assert not cli._show_phrase(phrase)
+    _typing(monkeypatch, "n")                          # not now
+    assert not cli._show_phrase(phrase)
+
+
+def test_no_terminal_or_an_agents_terminal_never_shows_it(monkeypatch):
+    monkeypatch.setattr(cli, "_TTY", False)
+    assert not cli._can_reveal()
+    monkeypatch.setattr(cli, "_TTY", True)
+    monkeypatch.setenv("HERMES_SESSION_ID", "s1")
+    assert not cli._can_reveal()
+
+
+def test_a_phrase_nobody_saw_is_kept_until_backed_up(profiles, monkeypatch, capsys):
+    root, _ = profiles
+    with patch.dict(os.environ):
+        assert cli.main(["setup", "agent", "pi", "--keys", "files", "--wallet", "--solana"]) == 0
+    keys = root / "pi" / "home" / ".hermes" / "keys"
+    assert (keys / "pi.x402.phrase").exists(), "no terminal: nobody has written it down yet"
+    phrase = (keys / "pi.x402.phrase").read_text().strip()
+    assert "emporia wallet backup pi" in capsys.readouterr().out
+    before = {f: cli._wallet_address(root / "pi", "pi", f == "svm") for f in ("evm", "svm")}
+    assert cli.main(["wallet", "backup", "pi"]) == 1, "refused without a person's terminal"
+    assert (keys / "pi.x402.phrase").exists()
+    _typing(monkeypatch)
+    monkeypatch.setattr(cli, "_show_phrase", lambda p: p == phrase)
+    assert cli.main(["wallet", "backup", "pi"]) == 0
+    assert not (keys / "pi.x402.phrase").exists()
+    assert {f: cli._wallet_address(root / "pi", "pi", f == "svm") for f in ("evm", "svm")} == before
+    assert cli._phrase_state(root / "pi", "pi") == ""
+    assert "keeps no recovery phrase" in (cli.main(["wallet", "backup", "pi"]) == 0 and capsys.readouterr().out)
+
+
+def test_backup_of_a_phrase_kept_in_the_env_gives_its_wallets_their_keys(profiles, monkeypatch, capsys):
+    root, _ = profiles
+    with patch.dict(os.environ):
+        assert cli.main(["setup", "agent", "rho", "--wallet", "--solana"]) == 0
+    profile = root / "rho"
+    env = _env_of(profile)
+    phrase = env["EMPORIA_X402_PHRASE_SECRET"]
+    # As P165 kept it: the phrase alone, both wallets read from it.
+    from emporia.key_source import unset_env_lines
+    with patch.dict(os.environ):
+        unset_env_lines(profile / ".env", ["EMPORIA_X402_EVM_PRIVATE_KEY", "EMPORIA_X402_EVM_KEY_SOURCE",
+                                           "EMPORIA_X402_SOLANA_PRIVATE_KEY", "EMPORIA_X402_SOLANA_KEY_SOURCE"])
+    cli.merge_env_file(profile / ".env", {"EMPORIA_X402_MAX_PAYMENT_CENTS": "700"})   # leaves a backup
+    assert any(phrase in b.read_text() for b in profile.glob(".env-backups/*/.env"))
+    before = {f: cli._wallet_address(profile, "rho", f == "svm") for f in ("evm", "svm")}
+    assert all(before.values())
+    _typing(monkeypatch)
+    monkeypatch.setattr(cli, "_show_phrase", lambda p: True)
+    with patch.dict(os.environ):
+        assert cli.main(["wallet", "backup", "rho"]) == 0
+    env = _env_of(profile)
+    assert "EMPORIA_X402_PHRASE_SECRET" not in env and "EMPORIA_X402_PHRASE_SOURCE" not in env
+    assert env["EMPORIA_X402_EVM_PRIVATE_KEY"].startswith("0x")
+    assert {f: cli._wallet_address(profile, "rho", f == "svm") for f in ("evm", "svm")} == before
+    assert not any(phrase in b.read_text() for b in profile.glob(".env-backups/*/.env")), "no copy left behind"
+    assert phrase not in capsys.readouterr().out
+
+
+def test_a_solana_key_kept_in_the_env_reads_back(tmp_path):
+    dotenv = tmp_path / ".env"
+    dotenv.write_text("")
+    env = {"EMPORIA_KEY_STORAGE": "env", "EMPORIA_DOTENV": str(dotenv)}
+    with patch.object(identity, "KEY_DIR", tmp_path / "keys"), patch.dict(os.environ, env):
+        agent_wallet._SOURCE_CACHE.clear()
+        made = agent_wallet.generate_solana("sigma")
+        agent_wallet._SOURCE_CACHE.clear()
+        assert agent_wallet.solana_address("sigma") == made
+    # P165 stored it as hex; that still reads.
+    assert agent_wallet._parse_secret("svm", (b"\x07" * 32).hex()) == b"\x07" * 32
+
+
+def test_the_other_wallet_joins_a_phrase_typed_again(tmp_path):
+    phrase = agent_wallet.new_phrase()
+    with patch.object(identity, "KEY_DIR", tmp_path), patch.dict(os.environ):
+        made = agent_wallet.generate_from_phrase("tau", phrase, ("evm",), keep_phrase=False)
+        assert not agent_wallet.phrase_path("tau").exists()
+        with pytest.raises(agent_wallet.AgentWalletError, match="type it again"):
+            agent_wallet.add_from_phrase("tau", "svm")
+        with pytest.raises(agent_wallet.AgentWalletError, match="does not give the wallet"):
+            agent_wallet.add_from_phrase("tau", "svm", agent_wallet.new_phrase())
+        sol = agent_wallet.add_from_phrase("tau", "svm", phrase)
+        assert agent_wallet.address("tau") == made["evm"]
+        from emporia import x402_svm
+        assert sol == agent_wallet.solana_address("tau") == x402_svm.address_of(
+            agent_wallet.derive_from_phrase(phrase)[1])
+
+
+def test_doctor_says_a_phrase_is_not_backed_up(profiles, capsys, monkeypatch):
+    root, _ = profiles
+    with patch.dict(os.environ):
+        cli.main(["setup", "agent", "upsilon", "--keys", "files", "--wallet", "--solana"])
+    from emporia import nous_token
+    monkeypatch.setattr(nous_token, "from_hermes", lambda profile=None: None)
+    capsys.readouterr()
+    cli.main(["doctor", "--profiles-root", str(root)])
+    assert "emporia wallet backup upsilon" in capsys.readouterr().out

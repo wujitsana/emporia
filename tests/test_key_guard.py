@@ -107,3 +107,21 @@ def test_quoted_and_json_values_are_hidden(printed):
     out = guard.transform_tool_result(result=printed)
     assert out and "hidden by Emporia" in out
     assert "ab" * 32 not in out and "junk" not in out and "z" * 30 not in out
+
+
+def test_only_a_person_runs_wallet_backup():
+    for cmd in ("emporia wallet backup alpha", "python -m emporia.cli wallet alpha backup",
+                "cd x && emporia   wallet backup beta"):
+        r = guard.pre_tool_call("terminal", {"command": cmd})
+        assert r and r["action"] == "block", cmd
+    assert guard.pre_tool_call("terminal", {"command": "emporia wallet show alpha"}) is None
+
+
+def test_a_shown_phrase_is_hidden_from_tool_results():
+    out = ("setup…\n  ──── RECOVERY PHRASE ────\n    1. abandon      2. ability\n"
+           "  ──── END OF RECOVERY PHRASE ────\nPress Enter")
+    hidden = guard.transform_tool_result(out)
+    assert "abandon" not in hidden and "Press Enter" in hidden and "setup…" in hidden
+    cut = guard.transform_tool_result("──── RECOVERY PHRASE ────\n 1. abandon")
+    assert "abandon" not in cut, "a cut-off block is hidden too"
+    assert guard.transform_tool_result("nothing here") is None

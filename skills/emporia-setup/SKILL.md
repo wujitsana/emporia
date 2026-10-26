@@ -71,12 +71,15 @@ An agent's identity is its Ed25519 key; a wallet is only for money, and has its 
 | Solana (`--solana`) | ed25519, `<id>.x402.ed25519` | USDC on Solana (x402) |
 
 **One recovery phrase or separate keys** — offer both, recommend the phrase for a new agent:
-`--wallet --solana` makes both wallets from one standard 12-word phrase (`<id>.x402.phrase`, 0600),
-on the paths MetaMask and Phantom use, so importing it there shows the same addresses and one
-backup restores both. `--separate-keys` makes two independent keys instead (a leaked key exposes
-one wallet; two backups). `--import-phrase` takes an existing phrase, typed hidden. A wallet added
-later comes from the phrase if there is one. The identity key is never a wallet key. Never read,
-print or copy the phrase file; the user backs it up themselves.
+`--wallet --solana` makes both wallets from one standard 12-word phrase, on the paths MetaMask and
+Phantom use, so importing it there shows the same addresses and one backup restores both. Run by
+the user in their own terminal, setup shows the phrase once, checks three words, and keeps only
+the keys. Run by you (no person to show it to), the phrase is kept beside the keys and the user
+must run **`emporia wallet backup NAME` themselves, in their own terminal** — tell them to; you
+cannot run it (the plugin refuses it) and must never see the phrase. `--separate-keys` makes two
+independent keys instead (a leaked key exposes one wallet; two backups). `--import-phrase` takes an
+existing phrase, typed hidden by the user; it is not kept. The identity key is never a wallet key.
+Never read, print, copy or ask for a phrase.
 
 **A wallet the agent already has** — `emporia wallet import NAME` (it asks): copy it in once (a
 phrase, a key typed hidden, a key file, an environment variable: `--key-file`, `--from-env`), or

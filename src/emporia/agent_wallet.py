@@ -80,11 +80,21 @@ def _keep(agent_id: str, family: str, raw: bytes) -> None:
     if key_source.store_in_env():
         if source_for(family):
             raise AgentWalletError(f"{agent_id} already has a {family} wallet key; it is not replaced implicitly.")
-        key_source.save_key_to_env(family, raw.hex())
+        key_source.save_key_to_env(family, env_value(family, raw))
         return
     path = wallet_path(agent_id) if family == "evm" else solana_wallet_path(agent_id)
     identity.KEY_DIR.mkdir(mode=0o700, parents=True, exist_ok=True)
     identity._write_secret_atomically(path, raw)
+
+
+def env_value(family: str, raw: bytes) -> str:
+    """A wallet key as written to a .env — the form wallet apps import: EVM a
+    0x hex key, Solana the base58 keypair Phantom exports (P175: it was hex,
+    which the Solana parser could not read back)."""
+    if family == "evm":
+        return "0x" + raw.hex()
+    from solders.keypair import Keypair
+    return str(Keypair.from_seed(raw))
 
 
 def solana_wallet_path(agent_id: str) -> Path:
@@ -114,8 +124,12 @@ def generate_solana(agent_id: str) -> str:
 # P161: one recovery phrase can hold both wallets — the standard BIP-39 phrase a
 # wallet app uses, derived on the paths MetaMask (EVM) and Phantom (Solana) use,
 # so importing the phrase there shows the same two addresses. The derived keys
-# are written to the usual files, so signing is unchanged; the phrase is kept
-# beside them (0600) as the backup. The agent's identity key is never a wallet:
+# are stored like any wallet key (files or the .env), so signing is unchanged.
+# P175: the phrase is the backup, and a backup belongs off the machine. It is
+# shown once to the person setting up, who writes it down, and is then not
+# kept. Only when nobody could be shown it (setup run by an agent, or with no
+# terminal) is it kept beside the keys until `emporia wallet backup` shows it
+# and removes it. The agent's identity key is never a wallet:
 # rotating identity must not move money, and an identity signature must never be
 # a payment signature.
 EVM_PATH = "m/44'/60'/0'/0/0"
@@ -128,6 +142,13 @@ def phrase_path(agent_id: str) -> Path:
 
 def has_phrase(agent_id: str) -> bool:
     return phrase_path(agent_id).exists() or bool(os.getenv(PHRASE_SOURCE_VAR, "").strip())
+
+
+def new_phrase() -> str:
+    """A new 12-word BIP-39 recovery phrase."""
+    from eth_account.hdaccount import generate_mnemonic
+    from eth_account.types import Language
+    return generate_mnemonic(12, Language.ENGLISH)
 
 
 def derive_from_phrase(phrase: str) -> tuple[bytes, bytes]:
@@ -146,17 +167,18 @@ def derive_from_phrase(phrase: str) -> tuple[bytes, bytes]:
 
 
 def generate_from_phrase(agent_id: str, phrase: str | None = None,
-                         families: tuple[str, ...] = ("evm", "svm")) -> dict[str, str]:
+                         families: tuple[str, ...] = ("evm", "svm"),
+                         keep_phrase: bool = True) -> dict[str, str]:
     """Create the agent's wallets from one recovery phrase — a new 12-word one,
-    or `phrase` to import an existing wallet. Returns {family: address}. Refuses
-    if any file it would write exists; nothing is written unless all can be."""
+    or `phrase` to import an existing wallet. The keys are always stored; the
+    phrase too only with `keep_phrase` (P175: when nobody has written it down
+    yet). Returns {family: address}. Refuses if anything it would write
+    exists; nothing is written unless all can be."""
     from eth_account import Account
-    from eth_account.hdaccount import generate_mnemonic
-    from eth_account.types import Language
 
     from emporia import x402_svm
     targets = {"evm": wallet_path(agent_id), "svm": solana_wallet_path(agent_id)}
-    paths = [phrase_path(agent_id), *(targets[f] for f in families)]
+    paths = [*([phrase_path(agent_id)] if keep_phrase else []), *(targets[f] for f in families)]
     for path in paths:
         repo = _git_work_tree(path.parent.resolve())
         if repo is not None and not _git_ignores(repo, path.resolve()):
@@ -171,43 +193,56 @@ def generate_from_phrase(agent_id: str, phrase: str | None = None,
         # phrase or key already there is the only copy, so it is never replaced.
         raise AgentWalletError(f"{agent_id} already has a wallet key or phrase in its .env; "
                                f"it is not replaced implicitly.")
-    phrase = " ".join((phrase or generate_mnemonic(12, Language.ENGLISH)).split()).lower()
+    phrase = " ".join((phrase or new_phrase()).split()).lower()
     evm_key, sol_seed = derive_from_phrase(phrase)
-    if key_source.store_in_env():
-        # P165: the phrase alone, in the profile .env; both wallets derive from it.
-        key_source.save_key_to_env("phrase", phrase)
-        _SOURCE_CACHE.clear()
-    else:
-        identity.KEY_DIR.mkdir(mode=0o700, parents=True, exist_ok=True)
-        identity._write_secret_atomically(phrase_path(agent_id), (phrase + "\n").encode())
+    raws = {"evm": evm_key, "svm": sol_seed}
+    for fam in families:      # the keys, as any wallet key (a file or the .env)
+        _keep(agent_id, fam, raws[fam])
+    if keep_phrase:           # after the keys: in the .env a phrase would count as both
+        if key_source.store_in_env():
+            key_source.save_key_to_env("phrase", phrase)
+        else:
+            identity._write_secret_atomically(phrase_path(agent_id), (phrase + "\n").encode())
+    _SOURCE_CACHE.clear()
     out = {}
     if "evm" in families:
-        if not key_source.store_in_env():
-            identity._write_secret_atomically(targets["evm"], evm_key)
         out["evm"] = Account.from_key(evm_key).address
     if "svm" in families:
-        if not key_source.store_in_env():
-            identity._write_secret_atomically(targets["svm"], sol_seed)
         out["svm"] = x402_svm.address_of(sol_seed)
     return out
 
 
-def add_from_phrase(agent_id: str, family: str) -> str:
-    """Make the wallet `family` is missing from the agent's existing phrase, so
-    an agent that began with one wallet gets the other under the same backup."""
+def add_from_phrase(agent_id: str, family: str, phrase: str | None = None) -> str:
+    """Make the wallet `family` is missing from the agent's phrase, so an agent
+    that began with one wallet gets the other under the same backup. The
+    phrase is the stored one, or (P175: it is not normally kept) `phrase` as
+    typed again — which must give the wallet the agent already has."""
     from eth_account import Account
 
     from emporia import x402_svm
-    if not has_phrase(agent_id):
-        raise AgentWalletError(f"{agent_id} has no recovery phrase; its wallets use separate keys.")
-    target = wallet_path(agent_id) if family == "evm" else solana_wallet_path(agent_id)
-    if target.exists():
-        raise AgentWalletError(f"{target} already exists; a wallet key is not replaced implicitly.")
-    # P173: the phrase may be a file or linked (the .env, a password manager).
-    phrase = (phrase_path(agent_id).read_text() if phrase_path(agent_id).exists()
-              else read_source(os.getenv(PHRASE_SOURCE_VAR, "")))
+    other = "svm" if family == "evm" else "evm"
+    if phrase is None:
+        if not has_phrase(agent_id):
+            raise AgentWalletError(f"{agent_id} keeps no recovery phrase; type it again to add the "
+                                   f"other wallet under it, or create that wallet with its own key.")
+        # P173: the phrase may be a file or linked (the .env, a password manager).
+        phrase = (phrase_path(agent_id).read_text() if phrase_path(agent_id).exists()
+                  else read_source(os.getenv(PHRASE_SOURCE_VAR, "")))
     evm_key, sol_seed = derive_from_phrase(phrase)
-    identity._write_secret_atomically(target, evm_key if family == "evm" else sol_seed)
+    raws = {"evm": evm_key, "svm": sol_seed}
+    try:
+        current = (address if other == "evm" else solana_address)(agent_id)
+    except AgentWalletError:
+        current = None
+    mine = Account.from_key(evm_key).address if other == "evm" else x402_svm.address_of(sol_seed)
+    if current is not None and current != mine:
+        raise AgentWalletError("that phrase does not give the wallet this agent already has; "
+                               "check the words and their order")
+    if (wallet_path(agent_id) if family == "evm" else solana_wallet_path(agent_id)).exists() \
+            or (os.getenv(KEY_SOURCE_VARS[family], "").strip()):
+        raise AgentWalletError(f"{agent_id} already has a {family} wallet key; it is not replaced implicitly.")
+    _keep(agent_id, family, raws[family])
+    _SOURCE_CACHE.clear()
     return Account.from_key(evm_key).address if family == "evm" else x402_svm.address_of(sol_seed)
 
 
@@ -237,6 +272,8 @@ def _parse_secret(family: str, secret: str) -> bytes:
         if len(raw) != 64 or any(c not in "0123456789abcdefABCDEF" for c in raw):
             raise AgentWalletError("an EVM private key is 64 hex characters (optionally 0x…)")
         return bytes.fromhex(raw)
+    if len(text) == 64 and all(c in "0123456789abcdefABCDEF" for c in text):
+        return bytes.fromhex(text)    # a 32-byte seed as hex (how P165 first stored it)
     if text.startswith("["):
         try:
             data = bytes(_json.loads(text))
@@ -550,7 +587,10 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--families", default="evm,svm",
                         help="generate-phrase: which wallets the phrase makes (evm,svm)")
     parser.add_argument("--import-stdin", action="store_true",
-                        help="generate-phrase: read an existing phrase from stdin (never from argv)")
+                        help="generate-phrase, derive: read the phrase from stdin (never from argv)")
+    parser.add_argument("--keep-phrase", action="store_true",
+                        help="generate-phrase: keep the phrase beside the keys (the default for a "
+                             "new phrase nobody has seen; one read from stdin is not kept)")
     args = parser.parse_args(argv)
     if not args.agent_id:
         print("error: --agent-id (or EMPORIA_AGENT_ID) is required", file=sys.stderr)
@@ -559,8 +599,10 @@ def main(argv: list[str] | None = None) -> int:
         if args.command == "generate-phrase":
             phrase = sys.stdin.readline() if args.import_stdin else None
             fams = tuple(f.strip() for f in args.families.split(",") if f.strip())
-            made = generate_from_phrase(args.agent_id, phrase, fams)
-            print(f"Recovery phrase written to {phrase_path(args.agent_id)} (0600).")
+            keep = args.keep_phrase or not args.import_stdin
+            made = generate_from_phrase(args.agent_id, phrase, fams, keep_phrase=keep)
+            print("Recovery phrase kept beside the keys until it is backed up (emporia wallet backup)."
+                  if keep else "Keys stored; the recovery phrase was not kept.")
             for fam, addr in made.items():
                 print(f"Address ({fam}): {addr}")
             return 0
@@ -569,7 +611,8 @@ def main(argv: list[str] | None = None) -> int:
             print(f"Address: {addr}")
             return 0
         if args.command == "derive":
-            addr = add_from_phrase(args.agent_id, "svm" if args.solana else "evm")
+            addr = add_from_phrase(args.agent_id, "svm" if args.solana else "evm",
+                                   sys.stdin.readline() if args.import_stdin else None)
             print(f"Address: {addr}")
             return 0
         if args.command == "generate":
