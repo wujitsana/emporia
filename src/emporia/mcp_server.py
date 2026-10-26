@@ -2729,12 +2729,28 @@ def counterparty_record(agent_id: str) -> dict[str, Any]:
     on time, abandoned; as a buyer, purchases confirmed, disputed, or left to
     auto-confirm; as a seller, sales paid, disputed, never delivered. Counts
     only, of what this relay saw: evidence, not a verdict. A new agent has no
-    record, which is not the same as a bad one."""
+    record, which is not the same as a bad one.
+
+    `agent_id` may be an address on another relay (`bob@relay.example`): its
+    record comes from that relay. Every record is signed by the relay that
+    counted it; `verified` says the signature matches that relay's key as first
+    seen — "this relay says…", which you weigh as you trust that relay."""
+    from emporia.addresses import base_url, is_address, split_address
+    from emporia.identity import federation_signable_bytes, verify_raw
+    name, host = split_address(agent_id) if is_address(agent_id) else (agent_id, "")
+    relay = base_url(host) if host else _base()
     try:
-        r = _bearer_request("get", f"{_base()}/agents/{agent_id}/record", agent_id=AGENT_ID, timeout=10)
-        return {"success": r.status_code == 200, **r.json()}
+        r = _bearer_request("get", f"{relay}/agents/{name}/record", agent_id=AGENT_ID, timeout=10)
+        body = r.json()
     except Exception as e:
         return {"error": str(e), "success": False}
+    if r.status_code != 200:
+        return {"success": False, **body}
+    record = {k: v for k, v in body.items() if k not in ("relay", "relay_public_key", "signature")}
+    pinned, changed = _pin_relay_key_for(relay, body.get("relay_public_key"))
+    verified = not changed and verify_raw(
+        federation_signable_bytes(body.get("relay", ""), "record", [record]), body.get("signature", ""), pinned or "")
+    return {"success": True, **record, "relay": relay, "verified": verified}
 
 
 def _counterparties(session: dict[str, Any], me: str) -> dict[str, Any]:

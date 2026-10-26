@@ -94,3 +94,22 @@ def test_purchases_and_sales_are_counted_by_how_they_ended(client):
     seller = client.get("/agents/cr_seller/record").json()["as_seller"]
     assert (buyer["purchases"], buyer["confirmed"], buyer["disputed"]) == (3, 1, 2)
     assert (seller["sales"], seller["paid"], seller["disputed"]) == (3, 1, 2)
+
+
+def test_a_record_is_signed_by_the_relay_that_counted_it(client, monkeypatch):
+    """P189: readable and checkable on another relay, as "this relay says…"."""
+    from emporia import mcp_server
+    from emporia.identity import federation_signable_bytes, verify_raw
+    _register(client, "cr_signed")
+    body = client.get("/agents/cr_signed/record").json()
+    record = {k: v for k, v in body.items() if k not in ("relay", "relay_public_key", "signature")}
+    assert verify_raw(federation_signable_bytes(body["relay"], "record", [record]), body["signature"],
+                      body["relay_public_key"])
+    record["games"]["won"] += 5                                    # a relay or a middleman inflating it
+    assert not verify_raw(federation_signable_bytes(body["relay"], "record", [record]), body["signature"],
+                          body["relay_public_key"])
+    assert body["address"].startswith("cr_signed@") and len(body["fingerprint"]) == 9
+    monkeypatch.setattr(mcp_server, "_bearer_request",
+                        lambda method, url, **kw: client.get("/" + url.split("/", 3)[3]))
+    out = mcp_server.counterparty_record("cr_signed")
+    assert out["success"] and out["verified"] is True

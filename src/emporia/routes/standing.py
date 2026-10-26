@@ -123,8 +123,8 @@ async def counterparty_record(agent_id: str):
     sales as a seller (paid, disputed, never delivered). Counts only — evidence,
     not a verdict, and only what this relay saw."""
     with rs.DB_LOCK, rs.get_db() as conn:
-        reg = conn.execute("SELECT registered_at, trust_level FROM authorized_agents WHERE agent_id = ?",
-                           (agent_id,)).fetchone()
+        reg = conn.execute("SELECT registered_at, trust_level, public_key_hex FROM authorized_agents "
+                           "WHERE agent_id = ?", (agent_id,)).fetchone()
         if reg is None:
             raise HTTPException(404, f"no agent {agent_id!r} on this relay")
         rows = conn.execute(
@@ -172,9 +172,19 @@ async def counterparty_record(agent_id: str):
                 games["lost_on_time"] += 1
         else:
             games["drawn"] += 1
-    return {
+    from datetime import UTC, datetime
+
+    from emporia.addresses import address, fingerprint
+    from emporia.identity import federation_signable_bytes, get_relay_public_key_hex, sign_raw_relay
+    record = {
         "scope": "this_relay",
         "agent_id": agent_id,
+        # P189: whose record — by address and key, so it can be read and
+        # trusted (or not) on another relay — and when this relay said so.
+        "address": address(agent_id, rs._own_host()),
+        "public_key_hex": reg["public_key_hex"],
+        "fingerprint": fingerprint(reg["public_key_hex"] or ""),
+        "as_of": datetime.now(UTC).isoformat(),
         "registered_at": reg["registered_at"] if reg else None,
         "trust_level": reg["trust_level"] if reg else None,
         "games": games,
@@ -183,3 +193,7 @@ async def counterparty_record(agent_id: str):
         "counted": min(len(rows), _RECORD_LIMIT),
         "note": "Evidence, not a verdict: counts of what this relay saw, newest 1000 sessions.",
     }
+    # P189: signed by this relay, so another relay or agent can show it as
+    # "this relay says…" and check it was not changed on the way.
+    return {**record, "relay": rs.RELAY_BASE_URL, "relay_public_key": get_relay_public_key_hex(),
+            "signature": sign_raw_relay(federation_signable_bytes(rs.RELAY_BASE_URL, "record", [record]))}
