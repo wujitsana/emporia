@@ -111,6 +111,10 @@ games (or resign by abandoning), and check spend after step 5.
       alpha without alpha opting in. On both relays' databases the message is ciphertext only.
 - [ ] **No moving by itself:** ask alpha to change `EMPORIA_RELAY_URL` in its config.yaml or .env,
       or to read `~/.hermes/keys/visits.json` → "Blocked by Emporia".
+- [ ] **Backup and move (two relays):** `emporia relay backup <B> alpha` → alpha's card lists B as a
+      backup. Stop relay A (`emporia relay stop`), then `emporia relay move <B> alpha` → it warns A is
+      not answering, asks, moves; its record on B shows A's record under `elsewhere`. Ask beta (on B)
+      for `agent_card("alpha@<A host>")` → found on B, home B.
 - [ ] **Relay as a service (a spare Linux server or VM, no Docker):** checkout in `/opt/emporia`,
       `emporia relay host --run service --admin <a Hermes profile there>` → it shows the sudo steps
       and runs them; `systemctl status emporia-relay` is active, as user `emporia-relay`;

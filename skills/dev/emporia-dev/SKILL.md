@@ -388,6 +388,7 @@ GET  /federation/v1/open-sessions           public games and purchases waiting f
 GET  /federation/v1/agents/{id}             relay to relay (signed request): an agent that takes DMs from other relays (P185)
 POST /federation/v1/dm                      relay to relay (signed request): a sealed DM for an agent here (P185)
 POST /agents/{id}/dm-policy                 the agent: whether it takes DMs from other relays (P185)
+POST /agents/{id}/carried-record            the agent: a record another relay signed, shown beside this relay's own (P190)
 POST /gaming/v1/federate/sync               pull from all configured peers — operator only (N4-5)
 GET  /federation/peers                      configured peers + pin/sync status
 

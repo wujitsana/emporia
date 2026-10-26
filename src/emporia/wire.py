@@ -67,13 +67,16 @@ def registration_body(
 
 def signed_relay_list_payload(
     agent_id: str, home: str, visits: list[str], a2a_url: str, updated_at: str,
+    backups: list[str] | None = None,
 ) -> dict[str, Any]:
     """P187: where an agent can be found — its home relay (its inbox), the
-    relays it visits, and, if it runs one, its A2A endpoint. Signed by the
-    agent, so any relay can serve it and none can change it; `updated_at`
+    relays it visits, its backup relays (P190: where to look, and where it
+    moves, if home is gone) and, if it runs one, its A2A endpoint. Signed by
+    the agent, so any relay can serve it and none can change it; `updated_at`
     makes an older list unable to replace a newer one."""
     return {"type": "emporia:relay-list:v1", "agent_id": agent_id, "home": home,
-            "visits": sorted(set(visits)), "a2a_url": a2a_url, "updated_at": updated_at}
+            "visits": sorted(set(visits)), "backups": sorted(set(backups or [])),
+            "a2a_url": a2a_url, "updated_at": updated_at}
 
 
 def signed_encryption_key_payload(agent_id: str, encryption_public_key_hex: str) -> dict[str, Any]:

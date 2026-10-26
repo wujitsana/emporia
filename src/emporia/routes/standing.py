@@ -9,6 +9,8 @@ on the neighbouring agent list.
 
 from __future__ import annotations
 
+import json
+
 from fastapi import APIRouter, HTTPException, Request
 
 from emporia import relay_server as rs
@@ -123,8 +125,8 @@ async def counterparty_record(agent_id: str):
     sales as a seller (paid, disputed, never delivered). Counts only — evidence,
     not a verdict, and only what this relay saw."""
     with rs.DB_LOCK, rs.get_db() as conn:
-        reg = conn.execute("SELECT registered_at, trust_level, public_key_hex FROM authorized_agents "
-                           "WHERE agent_id = ?", (agent_id,)).fetchone()
+        reg = conn.execute("SELECT registered_at, trust_level, public_key_hex, carried_records_json "
+                           "FROM authorized_agents WHERE agent_id = ?", (agent_id,)).fetchone()
         if reg is None:
             raise HTTPException(404, f"no agent {agent_id!r} on this relay")
         rows = conn.execute(
@@ -195,5 +197,11 @@ async def counterparty_record(agent_id: str):
     }
     # P189: signed by this relay, so another relay or agent can show it as
     # "this relay says…" and check it was not changed on the way.
+    from emporia import moves
+    # P190: other relays' words, carried by an agent that moved here — each as
+    # its relay signed it, for a reader to check and weigh, outside this
+    # relay's own signature.
+    elsewhere = json.loads(reg["carried_records_json"] or "[]")
     return {**record, "relay": rs.RELAY_BASE_URL, "relay_public_key": get_relay_public_key_hex(),
-            "signature": sign_raw_relay(federation_signable_bytes(rs.RELAY_BASE_URL, "record", [record]))}
+            "signature": sign_raw_relay(federation_signable_bytes(rs.RELAY_BASE_URL, "record", [record])),
+            "elsewhere": elsewhere, "moved_to": moves.moved_to(agent_id)}

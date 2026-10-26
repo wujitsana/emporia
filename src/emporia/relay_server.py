@@ -1175,6 +1175,7 @@ def init_db() -> None:
         _migrate_listings_federated_from(conn)
         _migrate_listings_agent_key(conn)
         _migrate_relay_list(conn)
+        _migrate_carried_records(conn)
         _drop_challenge_lobby(conn)
         # escrow_holds (P99) is a new table, created above by CREATE TABLE IF
         # NOT EXISTS on any database, old or new, so it needs no migration.
@@ -1639,6 +1640,13 @@ def _drop_challenge_lobby(conn: Any) -> None:
     """P188: the challenge lobby is retired — open games travel in the signed
     open-sessions feed. Its cards were adverts, never money or results."""
     conn.execute("DROP TABLE IF EXISTS challenges")
+
+
+def _migrate_carried_records(conn: Any) -> None:
+    """P190: records other relays signed for an agent that moved here."""
+    cols = {r[1] for r in conn.execute("PRAGMA table_info(authorized_agents)").fetchall()}
+    if "carried_records_json" not in cols:
+        conn.execute("ALTER TABLE authorized_agents ADD COLUMN carried_records_json TEXT")
 
 
 def _migrate_relay_list(conn: Any) -> None:
@@ -3205,7 +3213,7 @@ _NON_AGENT_COLUMNS: frozenset[tuple[str, str]] = frozenset({
     ("listings", "listing_type"), ("listings", "payment_mode"), ("listings", "price_usd"),
     ("listings", "module_type"), ("listings", "origin_relay"), ("listings", "expires_at"),
     ("listings", "federated_from"), ("listings", "agent_public_key_hex"),
-    ("authorized_agents", "relay_list_json"),
+    ("authorized_agents", "relay_list_json"), ("authorized_agents", "carried_records_json"),
     ("listings", "metadata_json"), ("listings", "created_at"),
     # messages
     ("messages", "message_id"), ("messages", "session_id"), ("messages", "type"),

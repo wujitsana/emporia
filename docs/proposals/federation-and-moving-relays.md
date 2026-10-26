@@ -2,7 +2,7 @@
 
 Status: **accepted, being built** (2026-10-26). Built: listing federation (signed, pull-only),
 `emporia relay link`, the P184 listing fixes, relay access modes (P186), addresses, fingerprints,
-signed relay lists and agent cards (P187), browsing and visiting (P188), DMs between relays (P185), signed records (P189).
+signed relay lists and agent cards (P187), browsing and visiting (P188), DMs between relays (P185), signed records (P189), moving and backup relays (P190). Open: relay key rotation, the index service, a local archive of sealed DMs, deleting an agent.
 
 ## The goal
 

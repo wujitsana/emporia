@@ -266,7 +266,7 @@ def _bearer_request(
     fn = getattr(httpx, method)
     extra = kwargs.pop("headers", None) or {}
     # P188: a token is per relay — sign in to the relay this URL is on.
-    relay = next((r for r in (RELAY_URL, *_visits()) if url.startswith(r + "/")), _base())
+    relay = next((r for r in (RELAY_URL, *_visits(), *_backups()) if url.startswith(r + "/")), _base())
 
     def headers() -> dict[str, str]:
         identity = _dashboard_bearer_headers(relay_url=relay, agent_id=agent_id)
@@ -447,6 +447,7 @@ def register_agent(
         data = r.json()
         if r.status_code in (200, 201):
             published = _publish_relay_list(data.get("agent_id") or agent_id)
+            _keep_own_record(data.get("agent_id") or agent_id)
             return {"success": True, "agent_id": data.get("agent_id"), "trust_level": data.get("trust_level"),
                     "address": data.get("address"), "fingerprint": data.get("fingerprint"),
                     "relay_list": published}
@@ -463,6 +464,78 @@ def _visits() -> list[str]:
     return visiting()
 
 
+def _backups() -> list[str]:
+    """P190: relays its operator named as backups (`emporia relay backup`): it is
+    registered there, and they hold its relay list — where to look, and where
+    to move, if home is gone."""
+    return [u.strip().rstrip("/") for u in os.getenv("EMPORIA_BACKUP_RELAYS", "").split(",") if u.strip()]
+
+
+def _keep_own_record(aid: str) -> None:
+    """P190: keep this agent's latest record, as its relay signed it, in its own
+    keys folder — so a move can carry it even if that relay is gone by then."""
+    from emporia.addresses import host_of
+    from emporia.identity import KEY_DIR
+    try:
+        r = httpx.get(f"{_base()}/agents/{aid}/record", timeout=10)
+        if r.status_code != 200:
+            return
+        folder = KEY_DIR / "records"
+        folder.mkdir(parents=True, exist_ok=True)
+        path = folder / f"{host_of(_base()).replace(':', '_')}.json"
+        fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+        with os.fdopen(fd, "w") as f:
+            f.write(r.text)
+    except Exception:  # noqa: BLE001 — a convenience, never a reason to fail registering
+        logger.info("could not keep a copy of this agent's record", exc_info=True)
+
+
+def move_home(old: str, agent_id: str = "") -> dict[str, Any]:
+    """P190: make this relay (RELAY_URL, already the new one) the agent's home.
+    Not a tool — its operator runs `emporia relay move`. Works whether or not the
+    old relay still answers: the new relay list is signed by the agent's key,
+    and the record it carries is the copy it kept."""
+    from emporia.addresses import host_of
+    from emporia.identity import KEY_DIR
+    aid = agent_id or AGENT_ID
+    old = old.rstrip("/")
+    out: dict[str, Any] = {"home": RELAY_URL, "from": old}
+    registered = register_agent(aid)
+    if not registered.get("success"):
+        return {"success": False, "error": f"{RELAY_URL} did not register it: {registered.get('error')}"}
+    record = None
+    try:
+        r = httpx.get(f"{old}/agents/{aid}/record", timeout=10)
+        record = r.json() if r.status_code == 200 else None
+        out["old_relay"] = "answering"
+    except Exception:  # noqa: BLE001
+        out["old_relay"] = "not answering"
+    if record is None:
+        kept = KEY_DIR / "records" / f"{host_of(old).replace(':', '_')}.json"
+        if kept.exists():
+            record = json.loads(kept.read_text())
+            out["record_from"] = f"the copy kept at {record.get('as_of', '?')}"
+    if record:
+        r = _bearer_request("post", f"{RELAY_URL}/agents/{aid}/carried-record", agent_id=aid,
+                            json={"record": record}, timeout=10)
+        out["record_carried"] = r.status_code == 200 or r.text[:200]
+    else:
+        out["record_carried"] = "no record from the old relay to carry"
+    out["announced"] = _publish_relay_list(aid)
+    if out["old_relay"] == "answering":
+        try:
+            # The same signed list the new home now serves — the old relay can check it alone.
+            listed = httpx.get(f"{RELAY_URL}/agents/{aid}/card", timeout=10).json()["card"]
+            body = {**{k: listed["relay_list"][k] for k in ("home", "visits", "a2a_url", "updated_at")},
+                    "signature": listed["relay_list_signature"]}
+            r = httpx.post(f"{old}/agents/{aid}/relay-list", json=body, timeout=10,
+                           headers=_dashboard_bearer_headers(relay_url=old, agent_id=aid))
+            out["old_relay_told"] = r.status_code == 200
+        except Exception as e:  # noqa: BLE001
+            out["old_relay_told"] = f"no: {e}"
+    return {"success": True, **out}
+
+
 def _publish_relay_list(aid: str) -> str:
     """Sign and publish where this agent lives and visits — at home and on every
     relay it visits, so any of them can point to the others. Best effort: a
@@ -472,12 +545,13 @@ def _publish_relay_list(aid: str) -> str:
     from emporia.identity import sign as ed25519_sign
     from emporia.wire import signed_relay_list_payload
     visits = _visits()
+    backups = _backups()
     a2a = os.getenv("EMPORIA_A2A_URL", "").strip()
     stamp = datetime.now(UTC).isoformat()
-    body = {"home": RELAY_URL, "visits": visits, "a2a_url": a2a, "updated_at": stamp,
-            "signature": ed25519_sign(signed_relay_list_payload(aid, RELAY_URL, visits, a2a, stamp), aid)}
+    body = {"home": RELAY_URL, "visits": visits, "backups": backups, "a2a_url": a2a, "updated_at": stamp,
+            "signature": ed25519_sign(signed_relay_list_payload(aid, RELAY_URL, visits, a2a, stamp, backups), aid)}
     results = []
-    for relay in [RELAY_URL, *visits]:
+    for relay in dict.fromkeys([RELAY_URL, *visits, *backups]):
         try:
             r = _bearer_request("post", f"{relay}/agents/{aid}/relay-list", agent_id=aid, json=body, timeout=10)
             results.append(f"{relay}: {'ok' if r.status_code == 200 else r.status_code}")
@@ -700,32 +774,90 @@ def agent_card(agent: str) -> dict[str, Any]:
     the one in a listing or offer before paying a stranger.
     """
     from emporia.addresses import base_url, fingerprint, is_address, split_address
-    from emporia.identity import federation_signable_bytes, verify, verify_raw
-    from emporia.wire import signed_relay_list_payload
+    from emporia.identity import federation_signable_bytes, verify_raw
     agent_id, host = split_address(agent) if is_address(agent) else (agent, "")
     relay = base_url(host) if host else RELAY_URL
     try:
         r = httpx.get(f"{relay}/agents/{agent_id}/card", timeout=10)
     except Exception as e:
-        return {"error": f"{relay} did not answer: {e}", "success": False}
+        # P190: its relay is gone or down — ask the backups and visits its own
+        # signed list named, the last time this agent looked it up.
+        found = _card_from_elsewhere(agent)
+        if found:
+            return found
+        return {"error": f"{relay} did not answer ({e}), and none of the relays it listed has a card for it",
+                "success": False}
     if r.status_code != 200:
         return {"error": f"no card for {agent} — it has not published one, or does not exist", "success": False}
     body = r.json()
     card = body.get("card") or {}
-    lst = card.get("relay_list") or {}
     pinned, changed = _pin_relay_key_for(relay, body.get("relay_public_key"))
     checks = {
-        "relay_list_signed_by_agent": verify(
-            signed_relay_list_payload(lst.get("agent_id", ""), lst.get("home", ""), lst.get("visits") or [],
-                                      lst.get("a2a_url", ""), lst.get("updated_at", "")),
-            card.get("relay_list_signature", ""), card.get("public_key_hex", "")),
+        "relay_list_signed_by_agent": _relay_list_ok(card),
         "fingerprint_matches_key": fingerprint(card.get("public_key_hex", "")) == card.get("fingerprint"),
         "card_signed_by_relay": verify_raw(federation_signable_bytes(card.get("relay", ""), "agent-card", [card]),
                                            body.get("signature", ""), pinned or ""),
         "relay_key_changed_since_first_seen": changed,
     }
     ok = all(v for k, v in checks.items() if k != "relay_key_changed_since_first_seen") and not changed
+    if ok:
+        _remember_card(agent, card)
     return {"success": True, "verified": ok, "card": card, "checks": checks}
+
+
+def _relay_list_ok(card: dict[str, Any]) -> bool:
+    from emporia.identity import verify
+    from emporia.wire import signed_relay_list_payload
+    lst = card.get("relay_list") or {}
+    return verify(signed_relay_list_payload(lst.get("agent_id", ""), lst.get("home", ""), lst.get("visits") or [],
+                                            lst.get("a2a_url", ""), lst.get("updated_at", ""),
+                                            lst.get("backups") or []),
+                  card.get("relay_list_signature", ""), card.get("public_key_hex", ""))
+
+
+def _contacts_file() -> Path:
+    from emporia.identity import KEY_DIR
+    return KEY_DIR / "contacts.json"
+
+
+def _remember_card(agent: str, card: dict[str, Any]) -> None:
+    """Keep the last checked card of each agent looked up — its key and where it
+    said it lives — to find it again if its relay goes away."""
+    try:
+        path = _contacts_file()
+        known = json.loads(path.read_text()) if path.exists() else {}
+        known[agent] = {"public_key_hex": card.get("public_key_hex"), "relay_list": card.get("relay_list")}
+        path.parent.mkdir(parents=True, exist_ok=True)
+        fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+        with os.fdopen(fd, "w") as f:
+            json.dump(known, f)
+    except (OSError, ValueError):
+        logger.info("could not remember a card", exc_info=True)
+
+
+def _card_from_elsewhere(agent: str) -> dict[str, Any] | None:
+    """A newer card for `agent` from one of the relays its last known list
+    named (backups first) — accepted only when signed by the same agent key."""
+    from emporia.addresses import split_address
+    try:
+        known = json.loads(_contacts_file().read_text()).get(agent)
+    except (OSError, ValueError):
+        known = None
+    if not known:
+        return None
+    listed = known.get("relay_list") or {}
+    agent_id, _ = split_address(agent)
+    for relay in [*(listed.get("backups") or []), *(listed.get("visits") or [])]:
+        try:
+            card = httpx.get(f"{relay}/agents/{agent_id}/card", timeout=10).json()["card"]
+        except Exception:  # noqa: BLE001
+            continue
+        if card.get("public_key_hex") == known.get("public_key_hex") and _relay_list_ok(card) \
+                and (card["relay_list"].get("updated_at") or "") >= (listed.get("updated_at") or ""):
+            return {"success": True, "verified": True, "card": card, "found_on": relay,
+                    "note": f"its old relay did not answer; {relay}, which it listed, has its signed list — "
+                            f"home is now {card['relay_list'].get('home')}"}
+    return None
 
 
 @mcp.tool()
@@ -2746,11 +2878,13 @@ def counterparty_record(agent_id: str) -> dict[str, Any]:
         return {"error": str(e), "success": False}
     if r.status_code != 200:
         return {"success": False, **body}
-    record = {k: v for k, v in body.items() if k not in ("relay", "relay_public_key", "signature")}
+    from emporia.moves import signed_part
+    record = signed_part(body)
     pinned, changed = _pin_relay_key_for(relay, body.get("relay_public_key"))
     verified = not changed and verify_raw(
         federation_signable_bytes(body.get("relay", ""), "record", [record]), body.get("signature", ""), pinned or "")
-    return {"success": True, **record, "relay": relay, "verified": verified}
+    return {"success": True, **record, "relay": relay, "verified": verified,
+            "elsewhere": body.get("elsewhere") or [], "moved_to": body.get("moved_to", "")}
 
 
 def _counterparties(session: dict[str, Any], me: str) -> dict[str, Any]:

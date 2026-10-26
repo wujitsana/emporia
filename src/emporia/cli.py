@@ -182,6 +182,10 @@ def cmd_relay(args: argparse.Namespace) -> int:
         return cmd_relay_links(args)
     if args.action in ("access", "members"):
         return cmd_relay_access(args)
+    if args.action == "move":
+        return cmd_relay_move(args)
+    if args.action == "backup":
+        return cmd_relay_backup(args)
     pid_file, log = _relay_files()
     if args.action == "status":
         h = health()
@@ -839,6 +843,119 @@ def cmd_visits(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_relay_move(args: argparse.Namespace) -> int:
+    """P190: `emporia relay move URL NAME` — change an agent's home relay, with
+    its old relay's help or without it (gone, or refusing).
+
+    It registers the agent's key on the new relay, carries the record the old
+    relay signed (fresh, or the copy the agent kept), publishes a relay list
+    naming the new home — signed by the agent, so the old relay cannot fake or
+    block it — and tells the old relay, if it answers, which then says "moved to"
+    for 90 days. Open games and escrow holds must finish on the old relay
+    first; if it is gone, escrowed USDC comes back by `reclaim_escrow` after
+    the hold expires (docs/if-a-relay-goes-rogue.md)."""
+    import json as _json
+    agents = {p.name: p for p, _ in _agent_profiles(profiles_root())}
+    names = args.names or []
+    if not args.url or len(names) != 1 or names[0] not in agents:
+        print("relay move: emporia relay move https://new-relay.example NAME  (one agent at a time)")
+        return 1
+    name, new = names[0], args.url.rstrip("/")
+    profile = agents[name]
+    old = (_mcp_env(profile).get("EMPORIA_RELAY_URL") or relay_url()).rstrip("/")
+    if new == old:
+        print(f"relay move: {name} already lives on {new}")
+        return 1
+    h = health(timeout=5, url=new)
+    if not h:
+        print(f"relay move: {new} is not answering")
+        return 1
+    if h.get("access") in ("closed", "read-only"):
+        print(f"  {new} is {h['access']}: its operator must add {name}'s key as a member first "
+              f"(emporia relay members add <key>).")
+    if health(timeout=5, url=old):
+        r = _as_agent(profile, "import json\nfrom emporia import mcp_server as m\n"
+                      "r = m._bearer_request('get', f'{m.RELAY_URL}/agents/{m.AGENT_ID}/sessions', "
+                      "agent_id=m.AGENT_ID, timeout=10)\n"
+                      "print(json.dumps([s['session_id'] for s in r.json().get('sessions', []) "
+                      "if s.get('status') in ('waiting', 'active', 'awaiting_funding')]))")
+        try:
+            still_open = _json.loads(r.stdout.strip().splitlines()[-1])
+        except (ValueError, IndexError):
+            still_open = []
+        if still_open:
+            print(f"relay move: {name} still has games or purchases open on {old}: {', '.join(still_open)}.\n"
+                  "  Finish or abandon them first — their stakes and any dispute live there.")
+            return 1
+    else:
+        print(f"  ! {old} is not answering. Open games there cannot be checked or finished; USDC held in "
+              "escrow comes back with reclaim_escrow once its hold expires (docs/if-a-relay-goes-rogue.md).")
+        if not (args.yes or ask("Move anyway?", False)):
+            return 1
+    r = _as_agent(profile, "import json\nfrom emporia import mcp_server as m\n"
+                  f"print(json.dumps(m.move_home({old!r})))", EMPORIA_RELAY_URL=new)
+    try:
+        result = _json.loads(r.stdout.strip().splitlines()[-1])
+    except (ValueError, IndexError):
+        print(f"relay move: {(r.stderr or r.stdout).strip()[-400:]}")
+        return 1
+    if not result.get("success"):
+        print(f"relay move: {result.get('error')}")
+        return 1
+    _set_agent_relay(profile, new)
+    print(f"  {name} now lives on {new}.")
+    print(f"  Its record from {old}: " + ("carried" if result.get("record_carried") is True
+                                          else str(result.get("record_carried"))))
+    print(f"  Told {old}: " + ("yes — it says \"moved\" for 90 days" if result.get("old_relay_told") is True
+                              else "no — it is not answering; the signed relay list on the new relay is the proof"))
+    installer().print_restart_instructions([profile])
+    return 0
+
+
+def cmd_relay_backup(args: argparse.Namespace) -> int:
+    """P190: `emporia relay backup URL NAME [--remove]` — a relay that holds the
+    agent's signed relay list, so contacts can find it and it can move there at
+    once if its home goes away. It registers there with the same key; its home
+    stays where it is."""
+    import json as _json
+    agents = {p.name: p for p, _ in _agent_profiles(profiles_root())}
+    names = args.names or []
+    if not args.url or len(names) != 1 or names[0] not in agents:
+        print("relay backup: emporia relay backup https://backup-relay.example NAME [--remove]")
+        return 1
+    name, url = names[0], args.url.rstrip("/")
+    profile = agents[name]
+    current = [u.strip().rstrip("/") for u in installer().harvest_env(profile)
+               .get("EMPORIA_BACKUP_RELAYS", "").split(",") if u.strip()]
+    if args.remove:
+        backups = [u for u in current if u != url]
+    else:
+        if not health(timeout=5, url=url):
+            print(f"relay backup: {url} is not answering")
+            return 1
+        if len(current) >= 5 and url not in current:
+            print("relay backup: five backups at most")
+            return 1
+        backups = [*dict.fromkeys([*current, url])]
+    merge_env_file(profile / ".env", {"EMPORIA_BACKUP_RELAYS": ",".join(backups)})
+    code = ("import json\nfrom emporia import mcp_server as m\n"
+            + ("" if args.remove else
+               f"t = m._RELAY_CTX.set({url!r})\nr = m.register_agent(m.AGENT_ID)\nm._RELAY_CTX.reset(t)\n"
+               "assert r.get('success'), r\n")
+            + "print(json.dumps(m._publish_relay_list(m.AGENT_ID)))")
+    r = _as_agent(profile, code, EMPORIA_BACKUP_RELAYS=",".join(backups))
+    if r.returncode != 0:
+        print(f"relay backup: {url} did not register {name}: {(r.stderr or r.stdout).strip()[-300:]}")
+        merge_env_file(profile / ".env", {"EMPORIA_BACKUP_RELAYS": ",".join(current)})
+        return 1
+    published = _json.loads(r.stdout.strip().splitlines()[-1]) if r.stdout.strip() else ""
+    print(f"  {name}'s backups: {', '.join(backups) or 'none'}")
+    print(f"  Its signed relay list now names them ({published}).")
+    if not args.remove:
+        print(f"  If its home goes away: emporia relay move {url} {name}")
+    return 0
+
+
 def cmd_relay_use(args: argparse.Namespace) -> int:
     """`emporia relay use URL [NAME ...]`: move agents to another relay."""
     agents = {p.name: p for p, _ in _agent_profiles(profiles_root())}
@@ -1197,9 +1314,9 @@ def _mcp_env(profile: Path) -> dict[str, str]:
     return {k: str(v) for k, v in (entry.get("env") or {}).items() if k != "EMPORIA_NOUS_JWT"}
 
 
-def _as_agent(profile: Path, code: str) -> subprocess.CompletedProcess:
+def _as_agent(profile: Path, code: str, **env_over: str) -> subprocess.CompletedProcess:
     """Run `code` the way the agent's MCP server runs: its own env, nothing else."""
-    env = {"PATH": os.defpath, "HOME": str(Path.home()), **_mcp_env(profile)}
+    env = {"PATH": os.defpath, "HOME": str(Path.home()), **_mcp_env(profile), **env_over}
     return subprocess.run([sys.executable, "-c", code], env=env, capture_output=True, text=True,
                           timeout=120)
 
@@ -3096,7 +3213,7 @@ def build_parser() -> argparse.ArgumentParser:
     r = sub.add_parser("relay", help="start, stop or inspect this machine's relay; `use` moves agents to another; "
                                      "`host` runs one for other machines, in Docker behind https")
     r.add_argument("action", choices=["start", "stop", "status", "logs", "use", "host", "link", "unlink", "links",
-                                      "access", "members"])
+                                      "access", "members", "move", "backup"])
     r.add_argument("url", nargs="?", default="", help="use, link, unlink: the other relay's URL")
     r.add_argument("names", nargs="*", help="use: the agents that move to it")
     r.add_argument("--lines", type=int, default=40)
@@ -3104,6 +3221,8 @@ def build_parser() -> argparse.ArgumentParser:
     r.add_argument("--domain", default="", help="host: the domain others reach it on (https)")
     r.add_argument("--fee-receiver", default="", help="host: the address that receives your fee")
     r.add_argument("--admin", default=None, help="host: a Hermes profile that is its operator")
+    r.add_argument("--yes", action="store_true", help="move: go ahead even if the old relay is not answering")
+    r.add_argument("--remove", action="store_true", help="backup: stop using this relay as a backup")
     r.add_argument("--access", choices=["open", "read-only", "closed"], default="",
                    help="host: who may use it (default: asks; open for a public relay)")
     r.add_argument("--run", choices=["docker", "service"], default="",

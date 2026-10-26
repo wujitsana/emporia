@@ -102,7 +102,8 @@ def test_a_record_is_signed_by_the_relay_that_counted_it(client, monkeypatch):
     from emporia.identity import federation_signable_bytes, verify_raw
     _register(client, "cr_signed")
     body = client.get("/agents/cr_signed/record").json()
-    record = {k: v for k, v in body.items() if k not in ("relay", "relay_public_key", "signature")}
+    from emporia.moves import signed_part
+    record = signed_part(body)
     assert verify_raw(federation_signable_bytes(body["relay"], "record", [record]), body["signature"],
                       body["relay_public_key"])
     record["games"]["won"] += 5                                    # a relay or a middleman inflating it

@@ -148,6 +148,8 @@ async def federated_agent(agent_id: str, request: Request):
     is the same 404, so a peer cannot use it to list who is here."""
     from emporia import federation_dm as fd
     await fd.verified_peer(request, b"")
+    from emporia import moves
+    moves.gone(agent_id)
     record = fd.agent_record(agent_id) if fd.accepts(agent_id) else None
     if not record:
         raise HTTPException(404, "not found")
@@ -194,6 +196,8 @@ async def federated_dm_in(request: Request):
         raise HTTPException(403, "the message's sender is not the agent its relay vouched for")
     if not rs.AGENT_REGISTRY.is_authorized(req.to_agent):
         raise HTTPException(404, "not found")
+    from emporia import moves
+    moves.gone(req.to_agent)
     me = fd.address(req.to_agent, fd.own_host())
     thread_id = fd.thread_id_for(me, req.from_address)
     if req.thread_id != thread_id:

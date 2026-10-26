@@ -19,6 +19,7 @@ from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel
 from starlette.concurrency import run_in_threadpool
 
+from emporia import moves
 from emporia.addresses import address, fingerprint
 
 from emporia import relay_server as rs
@@ -690,6 +691,7 @@ async def get_encryption_key(agent_id: str, request: Request):
 class RelayListRequest(BaseModel):
     home: str
     visits: list[str] = []
+    backups: list[str] = []
     a2a_url: str = ""
     updated_at: str
     signature: str  # Ed25519 over wire.signed_relay_list_payload()
@@ -710,14 +712,15 @@ async def set_relay_list(agent_id: str, req: RelayListRequest, request: Request)
     rs._require_caller_is(agent_id, request)
     rs._require_registered(agent_id)
     rs._enforce_agent_rate_limit(agent_id)
-    urls = [req.home, *req.visits, *([req.a2a_url] if req.a2a_url else [])]
-    if len(req.visits) > 50 or not all(_relay_url_ok(u) for u in urls):
-        raise HTTPException(400, "home, visits (at most 50) and a2a_url must be http(s) URLs")
+    urls = [req.home, *req.visits, *req.backups, *([req.a2a_url] if req.a2a_url else [])]
+    if len(req.visits) > 50 or len(req.backups) > 5 or not all(_relay_url_ok(u) for u in urls):
+        raise HTTPException(400, "home, visits (at most 50), backups (at most 5) and a2a_url must be http(s) URLs")
     try:
         datetime.fromisoformat(req.updated_at)
     except ValueError:
         raise HTTPException(400, "updated_at must be an ISO 8601 time")
-    payload = signed_relay_list_payload(agent_id, req.home, req.visits, req.a2a_url, req.updated_at)
+    payload = signed_relay_list_payload(agent_id, req.home, req.visits, req.a2a_url, req.updated_at,
+                                        req.backups)
     if not rs.AGENT_REGISTRY.verify_signature(agent_id, payload, req.signature):
         raise HTTPException(403, "relay list signature does not match this agent's key")
     with rs.DB_LOCK, rs.get_db() as conn:
@@ -757,6 +760,7 @@ async def agent_card(agent_id: str):
         "relay_list_signature": published["signature"],
         "a2a_url": published["list"].get("a2a_url", ""),
         "relay": rs.RELAY_BASE_URL,
+        "moved_to": moves.moved_to(agent_id),   # P190: "" unless it moved away
     }
     return {"card": card, "relay_public_key": get_relay_public_key_hex(),
             "signature": sign_raw_relay(federation_signable_bytes(rs.RELAY_BASE_URL, "agent-card", [card]))}
@@ -777,3 +781,27 @@ async def set_dm_policy(agent_id: str, req: DmPolicyRequest, request: Request):
         conn.execute("UPDATE authorized_agents SET accepts_remote_dms = ? WHERE agent_id = ?",
                      (int(req.other_relays), agent_id))
     return {"agent_id": agent_id, "other_relays": req.other_relays}
+
+
+
+class CarriedRecordRequest(BaseModel):
+    record: dict   # GET /agents/{id}/record from the relay it came from, signature and all
+
+
+@router.post("/agents/{agent_id}/carried-record")
+async def carry_record(agent_id: str, req: CarriedRecordRequest, request: Request):
+    """P190: an agent that moved here brings the record its old relay signed. It
+    is shown beside this relay's own count as that relay's word, never merged."""
+    rs._require_caller_is(agent_id, request)
+    rs._require_registered(agent_id)
+    with rs.DB_LOCK, rs.get_db() as conn:
+        row = conn.execute("SELECT public_key_hex, carried_records_json FROM authorized_agents WHERE agent_id = ?",
+                           (agent_id,)).fetchone()
+    checked = moves.carried_record(req.record, row["public_key_hex"])
+    if checked.get("relay") == rs.RELAY_BASE_URL:
+        raise HTTPException(400, "that is this relay's own record")
+    carried = [r for r in json.loads(row["carried_records_json"] or "[]") if r.get("relay") != checked["relay"]]
+    with rs.DB_LOCK, rs.get_db() as conn:
+        conn.execute("UPDATE authorized_agents SET carried_records_json = ? WHERE agent_id = ?",
+                     (json.dumps([*carried, checked][-10:]), agent_id))
+    return {"ok": True, "carried_from": checked["relay"]}

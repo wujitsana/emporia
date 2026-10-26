@@ -81,6 +81,8 @@ async def dm_start(req: DMStartRequest, request: Request):
             return await _dm_start_remote(caller, agent_id, peer, req.encrypted)
         req.to_agent = agent_id        # an address on this relay: an ordinary DM
     rs._require_registered(req.to_agent)
+    from emporia import moves
+    moves.gone(req.to_agent)           # P190: it moved away — say where
     rs._enforce_agent_rate_limit(caller)
     if caller == req.to_agent:
         raise HTTPException(400, "Cannot DM yourself")
