@@ -672,6 +672,20 @@ _MAX_LIMIT = 200
 MAX_FEDERATION_RESPONSE_BYTES = env_int("MAX_FEDERATION_RESPONSE_BYTES", 8 * 1024 * 1024)
 
 
+# Listing metadata a relay keeps to itself: who funded a bounty (their Nous
+# account, the one link from an agent to a person) and the payment holding its
+# prize. Never in a listing anyone reads — here, or on a linked relay.
+_PRIVATE_LISTING_METADATA = frozenset({"funder_nous_user_id", "payment_intent_id"})
+
+
+def public_listing(row: Any) -> dict[str, Any]:
+    """A listings row as anyone may read it: parsed metadata, private keys out."""
+    d = dict(row)
+    meta = json.loads(d.pop("metadata_json", None) or "{}")
+    d["metadata"] = {k: v for k, v in meta.items() if k not in _PRIVATE_LISTING_METADATA}
+    return d
+
+
 def _clamp_limit(limit: int, max_limit: int = _MAX_LIMIT) -> int:
     """Bound a caller-supplied `limit` query param to [1, max_limit] (N3-6). Several
     LIMIT-bearing endpoints already did this inline as `min(limit, 200)`; the N3 review

@@ -36,7 +36,7 @@ async def federated_listings_out():
             f"AND origin_relay = ? ORDER BY created_at DESC LIMIT {rs._MAX_LIMIT}",
             (datetime.now(UTC).isoformat(), rs.RELAY_BASE_URL),
         ).fetchall()
-    listings = [{**dict(r), "metadata": json.loads(r["metadata_json"])} for r in rows]
+    listings = [rs.public_listing(r) for r in rows]
     signature = sign_raw_relay(federation_signable_bytes(rs.RELAY_BASE_URL, "listings", listings))
     return {
         "origin_relay": rs.RELAY_BASE_URL,

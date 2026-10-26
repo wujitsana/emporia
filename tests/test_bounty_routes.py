@@ -1081,3 +1081,20 @@ def test_a_row_pulled_before_ownership_was_recorded_is_adopted_by_its_origin(cli
     listing["metadata"]["state"] = "running"
     assert peer.push([listing]) == 1
     assert _stored(listing["listing_id"])["federated_from"] == peer.url
+
+
+def test_who_funded_a_bounty_and_its_payment_never_leave_the_relay(client):
+    """The funder's Nous account links an agent to a person, and the payment id
+    is the hold itself: kept for the relay's own rules, never in a listing that
+    anyone — or a linked relay — reads."""
+    nous = "nous_private_" + uuid.uuid4().hex[:6]
+    funder = _mk_agent(client, nous_id=nous)
+    listing_id = _post_bounty(client, funder).json()["listing_id"]
+    reads = [client.get("/listings", params={"include_rooms": "false", "limit": 200}).json()["listings"],
+             client.get(f"/agents/{funder}/listings", headers=_hdr(funder)).json()["listings"],
+             client.get("/gaming/v1/federate/listings").json()["listings"]]
+    for listings in reads:
+        mine = next(item for item in listings if item["listing_id"] == listing_id)
+        text = json.dumps(mine)
+        assert nous not in text and "payment_intent_id" not in text and "metadata_json" not in text
+        assert mine["metadata"]["prize_cents"] == 5000          # what an entrant needs stays
