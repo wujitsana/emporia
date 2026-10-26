@@ -9,7 +9,7 @@ on the neighbouring agent list.
 
 from __future__ import annotations
 
-from fastapi import APIRouter, Request
+from fastapi import APIRouter, HTTPException, Request
 
 from emporia import relay_server as rs
 from emporia.module_sdk import SessionState, get_interaction_module
@@ -110,3 +110,76 @@ async def results(request: Request, module_type: str | None = None,
             break
     return {"scope": "this_relay", "module_type": module_type, "agent_id": agent_id,
             "results": out}
+
+
+_RECORD_LIMIT = 1000
+
+
+@router.get("/agents/{agent_id}/record")
+async def counterparty_record(agent_id: str):
+    """P182: an agent's record on this relay, to read before staking against it,
+    joining its game, or buying from it: games finished, won, lost on time and
+    abandoned; purchases as a buyer (confirmed, disputed, left to auto-confirm);
+    sales as a seller (paid, disputed, never delivered). Counts only — evidence,
+    not a verdict, and only what this relay saw."""
+    with rs.DB_LOCK, rs.get_db() as conn:
+        reg = conn.execute("SELECT registered_at, trust_level FROM authorized_agents WHERE agent_id = ?",
+                           (agent_id,)).fetchone()
+        if reg is None:
+            raise HTTPException(404, f"no agent {agent_id!r} on this relay")
+        rows = conn.execute(
+            "SELECT * FROM sessions WHERE participants_json LIKE ? AND status IN ('completed', 'abandoned') "
+            "ORDER BY updated_at DESC LIMIT ?", (f'%"{agent_id}"%', _RECORD_LIMIT)).fetchall()
+    games = {"finished": 0, "won": 0, "lost": 0, "drawn": 0, "lost_on_time": 0, "abandoned": 0}
+    buyer = {"purchases": 0, "confirmed": 0, "disputed": 0, "left_to_auto_confirm": 0,
+             "not_delivered_to_them": 0, "cancelled": 0}
+    seller = {"sales": 0, "paid": 0, "disputed": 0, "never_delivered": 0, "cancelled": 0}
+    for row in rows:
+        sess = rs._session_row_to_dict(row)
+        if agent_id not in sess["participants"]:
+            continue
+        try:
+            module = get_interaction_module(sess["module_type"])
+            _, out = module.is_terminal(SessionState.from_dict(sess["state"]))
+        except ValueError:
+            continue
+        if sess["module_type"] == "emporia:service:v1":
+            data = (sess.get("state") or {}).get("data") or {}
+            side, rec = ("buyer", buyer) if data.get("buyer") == agent_id else ("seller", seller)
+            rec["purchases" if side == "buyer" else "sales"] += 1
+            st = out.get("status") if sess["status"] == "completed" else "cancelled"
+            if side == "buyer":
+                key = {"confirmed": "confirmed", "disputed": "disputed",
+                       "timeout_auto_confirmed": "left_to_auto_confirm",
+                       "timeout_no_delivery": "not_delivered_to_them"}.get(st, "cancelled")
+            else:
+                key = {"confirmed": "paid", "timeout_auto_confirmed": "paid", "disputed": "disputed",
+                       "timeout_no_delivery": "never_delivered"}.get(st, "cancelled")
+            rec[key] += 1
+            continue
+        if sess["module_type"] not in game_module_types():
+            continue
+        if sess["status"] == "abandoned":
+            games["abandoned"] += 1
+            continue
+        games["finished"] += 1
+        winner = out.get("winner")
+        if winner == agent_id:
+            games["won"] += 1
+        elif winner:
+            games["lost"] += 1
+            if out.get("termination") == "timeout":
+                games["lost_on_time"] += 1
+        else:
+            games["drawn"] += 1
+    return {
+        "scope": "this_relay",
+        "agent_id": agent_id,
+        "registered_at": reg["registered_at"] if reg else None,
+        "trust_level": reg["trust_level"] if reg else None,
+        "games": games,
+        "as_buyer": buyer,
+        "as_seller": seller,
+        "counted": min(len(rows), _RECORD_LIMIT),
+        "note": "Evidence, not a verdict: counts of what this relay saw, newest 1000 sessions.",
+    }

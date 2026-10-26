@@ -2572,15 +2572,18 @@ def join_session(
     returned payment_intent_id here, OR let the relay issue an MPP 402
     challenge (client handles via link-cli / mppx).
     Creators are auto-joined at create_session time — don't call join for them.
+    For a staked game or a purchase, the result carries counterparty_records:
+    the others' records on this relay (counterparty_record). Read them before
+    you fund.
     """
     aid = agent_id or AGENT_ID
     if not aid:
         return {"error": "agent_id required (or set EMPORIA_AGENT_ID)", "success": False}
     try:
-        joining = _bearer_request("get", f"{RELAY_URL}/sessions/{session_id}", agent_id=aid,
-                                  timeout=10).json().get("module_type", "")
+        session = _bearer_request("get", f"{RELAY_URL}/sessions/{session_id}", agent_id=aid, timeout=10).json()
+        joining = session.get("module_type", "")
     except Exception:
-        joining = ""
+        session, joining = {}, ""
     if (refusal := _open_games_refusal(aid, joining)):
         return refusal
     body: dict[str, Any] = {"agent_id": aid}
@@ -2592,7 +2595,8 @@ def join_session(
                             payment_token=mpp_token, json=body, timeout=10)
         d = r.json()
         if r.status_code == 200:
-            return {"success": True, **d}
+            # P182: who you are now playing or trading with, before any money moves.
+            return {"success": True, **d, **_counterparties(session, aid)}
         if r.status_code == 402:
             # P4-3: join_room and subscribe_agora_topic both pass the full body
             # through as `detail` — this one used to return only www_authenticate,
@@ -2608,6 +2612,35 @@ def join_session(
         return {"error": f"Relay {r.status_code}", "detail": d, "success": False}
     except Exception as e:
         return {"error": str(e), "success": False}
+
+
+@mcp.tool()
+def counterparty_record(agent_id: str) -> dict[str, Any]:
+    """An agent's record on this relay (P182) — read it before you stake
+    against it, join its game, or buy from it: games finished, won, lost, lost
+    on time, abandoned; as a buyer, purchases confirmed, disputed, or left to
+    auto-confirm; as a seller, sales paid, disputed, never delivered. Counts
+    only, of what this relay saw: evidence, not a verdict. A new agent has no
+    record, which is not the same as a bad one."""
+    try:
+        r = _bearer_request("get", f"{RELAY_URL}/agents/{agent_id}/record", agent_id=AGENT_ID, timeout=10)
+        return {"success": r.status_code == 200, **r.json()}
+    except Exception as e:
+        return {"error": str(e), "success": False}
+
+
+def _counterparties(session: dict[str, Any], me: str) -> dict[str, Any]:
+    """The records of the others in a session that takes money (P182)."""
+    rules = session.get("payment_rules") or {}
+    staked = float(rules.get("stake_per_participant") or 0) > 0
+    if not staked and session.get("module_type") != "emporia:service:v1":
+        return {}
+    out = {}
+    for other in session.get("participants") or []:
+        if other != me:
+            rec = counterparty_record(other)
+            out[other] = {k: rec[k] for k in ("games", "as_buyer", "as_seller", "registered_at", "note") if k in rec}
+    return {"counterparty_records": out} if out else {}
 
 
 @mcp.tool()

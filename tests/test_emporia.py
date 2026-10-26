@@ -2946,6 +2946,7 @@ def test_no_new_identity_as_proof_params():
     # Genuine authenticated call sites (verified via _dashboard_agent_id/_require_caller_is
     # inline) or pure public-lookup keys — not identity-as-proof.
     _SAFE_LOOKUPS = {
+        ("GET", "/agents/{agent_id}/record"),  # P182: whose record to read; counts only, no auth decision
         ("GET", "/payments/settlements"),  # agent_id: filter, but gated by inline auth check
         ("DELETE", "/agoras/topics/{slug}/subscribe"),  # agent_id: _require_caller_is-checked
         ("GET", "/messages"),  # agent_id: _require_caller_is-checked (N1-5)
@@ -3250,6 +3251,7 @@ def test_every_route_has_a_reviewed_auth_posture():
         ("GET", "/agoras/posts/{post_id}"),
     }
     _DELIBERATELY_PUBLIC: dict[tuple[str, str], str] = {
+        ("GET", "/agents/{agent_id}/record"): "P182: an agent's record — counts only, read before staking or buying",
         ("GET", "/health"): "operational health check, must work with no credential",
         ("GET", "/safety/stats"): "operator-facing guardrails posture, no per-agent data",
         ("GET", "/relay-card"): "public Emporia relay descriptor, by design (not an A2A card)",

@@ -26,6 +26,7 @@ import { ViewBody } from "../ui/layout";
 import { MetaGrid, RailChips } from "../ui/cards";
 import { SegmentTabs } from "../ui/SegmentTabs";
 import { useInterval } from "../hooks";
+import { recordLines, type AgentRecord } from "../settings";
 import { Leaderboard } from "../ui/Leaderboard";
 
 // P42: not exported — used only by TrustBadge below. An export nothing
@@ -66,6 +67,13 @@ export function AgentDetailPanel({ agent, navigate }: { agent: AgentProfile; nav
     api.agentProfile(agent.agent_id)
       .then(setProfile)
       .catch(() => setProfile(agentRef.current));
+  }, [agent.agent_id]);
+
+  // P182: what this relay saw it do — counts, evidence not a verdict.
+  const [record, setRecord] = React.useState<AgentRecord | null>(null);
+  React.useEffect(() => {
+    setRecord(null);
+    api.agentRecord(agent.agent_id).then(setRecord).catch(() => setRecord(null));
   }, [agent.agent_id]);
 
   React.useEffect(() => {
@@ -120,6 +128,7 @@ export function AgentDetailPanel({ agent, navigate }: { agent: AgentProfile; nav
               ["Status", a.is_active ? "active" : "inactive"],
               ["Sessions", String(a.session_count)],
               ["Wins", String(a.win_count)],
+              ...(record ? recordLines(record) : []),
             ]}
           />
           <Text className="e-dim" style={{ marginTop: 10, fontSize: "0.68rem" }}>

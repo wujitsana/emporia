@@ -1,4 +1,4 @@
-import type { OperatorOverview } from "./settings";
+import type { AgentRecord, OperatorOverview } from "./settings";
 import { SESSION_TOKEN_KEY, VIEWER_ID } from "./relayEnv";
 import { VIA_CONSOLE, httpFetch, relayHttpBase } from "./transport";
 
@@ -725,6 +725,8 @@ export const api = {
   // P40-4: raw payment records. No filter = relay operator only (the relay 403s
   // anyone else), which is why FeesView asks for these only when isOperator.
   escrowHolds: () => get<{ holds: EscrowHold[] }>("/payments/escrow-holds", { agentScoped: true }),
+  // P182: an agent's record on this relay — counts, read before staking or buying.
+  agentRecord: (agent_id: string) => get<AgentRecord>(`/agents/${encodeURIComponent(agent_id)}/record`),
   // P179: the relay's settings and activity (aggregates). Operator only: the relay 403s anyone else.
   operatorOverview: () => get<OperatorOverview>("/operator/overview", { agentScoped: true }),
   paymentRecords: () => get<{ payments: PaymentRecord[] }>("/payments/records", { agentScoped: true }),
