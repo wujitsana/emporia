@@ -322,7 +322,7 @@ def _choose_relay(current: str = "") -> str:
         return _start_local_relay(current)
     if choice == "host":
         if cmd_relay_host(argparse.Namespace(dir="", domain="", fee_receiver="", admin=None, run="", access="",
-                                             names=[])) == 0:
+                                             names=[], console_keys="")) == 0:
             print("  Then move this agent to it: emporia relay use URL NAME")
         return current or LOCAL_RELAY
     if choice == "remote":
@@ -421,7 +421,12 @@ def cmd_relay_host(args: argparse.Namespace) -> int:
         return 1
     try:
         if run == "docker":
-            written = rh.write_files(folder, REPO, domain, admin)
+            # P197: the operator's dashboard as a service, reading the operator
+            # agent's keys — the admin agent's, or a folder named here.
+            console_keys = (Path(args.console_keys).expanduser().resolve() if getattr(args, "console_keys", "")
+                            else (Path(_mcp_env(admin).get("EMPORIA_KEYS_DIR") or admin / "home" / ".hermes" / "keys")
+                                  if admin else None))
+            written = rh.write_files(folder, REPO, domain, admin, console_keys)
         else:
             exe = Path(sys.executable).with_name("emporia-relay")
             written = rh.write_service_files(folder, exe, REPO, domain, rh.SERVICE_USER)
@@ -485,6 +490,10 @@ def cmd_relay_host(args: argparse.Namespace) -> int:
           f"    emporia relay use {url} NAME …")
     if admin:
         print(f"  {admin_name} is its operator; its dashboard shows the relay's settings and activity.")
+    if run == "docker" and (admin or getattr(args, "console_keys", "")):
+        print(f"  Your dashboard on the server: docker compose --profile console up -d, then\n"
+              f"    ssh -L {rh.CONSOLE_PORT}:127.0.0.1:{rh.CONSOLE_PORT} you@server   and the link in "
+              "`docker compose logs console`")
     print("  Before others rely on it: docs/RUNBOOK.md (backups of its data, its fee, Stripe).")
     return 0
 
@@ -3430,6 +3439,8 @@ def build_parser() -> argparse.ArgumentParser:
     r.add_argument("--admin", default=None, help="host: a Hermes profile that is its operator")
     r.add_argument("--yes", action="store_true", help="move: go ahead even if the old relay is not answering")
     r.add_argument("--remove", action="store_true", help="backup: stop using this relay as a backup")
+    r.add_argument("--console-keys", default="",
+                   help="host: the operator agent's keys folder, for the dashboard service (default: --admin's)")
     r.add_argument("--access", choices=["open", "read-only", "closed"], default="",
                    help="host: who may use it (default: asks; open for a public relay)")
     r.add_argument("--run", choices=["docker", "service"], default="",

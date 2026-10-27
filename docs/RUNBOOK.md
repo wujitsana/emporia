@@ -115,13 +115,18 @@ Settings → This relay. Two ways in, neither facing the internet:
    the relay is read-only or closed), point your dashboard at the relay (`emporia setup dashboard`,
    relay URL `https://your-relay`), and open the Emporia tab. The console signs in as that agent with
    its key — the relay checks the signature; nothing else gets in.
-2. **On the server, over SSH.** Run the console there, next to the operator agent's keys, on
-   loopback only, and tunnel to it:
+2. **On the server, over SSH.** The relay's image also carries the console and its dashboard
+   (P197) — like Hermes's own image carries its dashboard — run as a separate service the relay never
+   touches. In a stack `emporia relay host` wrote (with `--admin`, or `--console-keys` naming the
+   operator agent's keys folder, mounted read-only):
    ```bash
-   ssh -L 8765:127.0.0.1:8765 you@relay-server
-   # on the server:  python -m emporia.console --port 8765 --relay-url http://127.0.0.1:8089
+   docker compose --profile console up -d          # listens on the server's 127.0.0.1:8765 only
+   docker compose logs console                     # the one-time link
+   ssh -L 8765:127.0.0.1:8765 you@relay-server     # from your machine, then open the link
    ```
-   then open the one-time link it prints, on your machine.
+   A relay run as a system service: run `python -m emporia.console --port 8765 --keys-dir <keys>
+   --relay-url http://127.0.0.1:8089` from the checkout on the server (after `npm run build:console`
+   in `dashboard/`), and tunnel the same way.
 
 Either way the dashboard only shows; changing the relay is `emporia relay …` on its machine.
 

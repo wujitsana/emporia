@@ -44,7 +44,16 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--relay-url", default=os.getenv("EMPORIA_RELAY_URL", "http://localhost:8088"))
     p.add_argument("--profiles-root", default="")
     p.add_argument("--keys-dir", action="append", default=[])
+    p.add_argument("--listen", default="127.0.0.1",
+                   help="address to listen on; anything but 127.0.0.1 only inside a container, published "
+                        "to the host's loopback (emporia relay host's console service)")
     args = p.parse_args(argv)
+    from emporia.relay_host import in_container
+    if args.listen not in ("127.0.0.1", "localhost", "::1") and not in_container():
+        # P197: as the relay: never reachable from another machine.
+        print("error: the console listens on this machine only (127.0.0.1); reach it over ssh -L",
+              file=sys.stderr)
+        return 1
 
     key_dirs = [Path(d).expanduser() for d in args.keys_dir] or hermes_key_dirs(
         Path(args.profiles_root).expanduser() if args.profiles_root else _profiles_root())
@@ -70,7 +79,7 @@ def main(argv: list[str] | None = None) -> int:
     print(f"Emporia console for {', '.join(sorted(found))} → relay {args.relay_url}")
     print("Open (once; it sets a session cookie for this browser):")
     print(f"  http://127.0.0.1:{args.port}/session?key={token}")
-    uvicorn.run(build_app(console, ui_dir=_ui_dir()), host="127.0.0.1", port=args.port,
+    uvicorn.run(build_app(console, ui_dir=_ui_dir()), host=args.listen, port=args.port,
                 log_level="warning")
     return 0
 

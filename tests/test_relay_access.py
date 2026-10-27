@@ -147,3 +147,11 @@ def test_a_hosted_relay_serves_no_dashboard(client, monkeypatch):
     assert r.status_code == 200 and "no page to browse" in r.text
     monkeypatch.setenv("EMPORIA_SERVE_UI", "1")
     assert rs.serves_dashboard()
+
+
+def test_the_console_listens_beyond_loopback_only_inside_a_container(monkeypatch, tmp_path, capsys):
+    """P197: like the relay, never reachable from another machine."""
+    from emporia.console import __main__ as console_main
+    monkeypatch.setattr("emporia.relay_host.in_container", lambda: False)
+    assert console_main.main(["--listen", "0.0.0.0", "--keys-dir", str(tmp_path)]) == 1
+    assert "ssh -L" in capsys.readouterr().err

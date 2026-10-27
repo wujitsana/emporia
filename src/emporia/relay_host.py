@@ -62,8 +62,12 @@ def valid_domain(domain: str) -> bool:
     return bool(re.fullmatch(r"(?=.{4,253}$)([a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}", domain))
 
 
-def compose_yaml(build: str, https: bool, admin: str = "") -> str:
-    """`build` and `admin` (a Hermes profile folder) are relative to the compose file."""
+CONSOLE_PORT = 8765
+
+
+def compose_yaml(build: str, https: bool, admin: str = "", console_keys: str = "") -> str:
+    """`build`, `admin` (a Hermes profile folder) and `console_keys` (the operator
+    agent's keys folder) are relative to the compose file."""
     proxy = f"""
   # https in front of the relay: Caddy gets and renews the certificate itself.
   https:
@@ -92,6 +96,24 @@ def compose_yaml(build: str, https: bool, admin: str = "") -> str:
       - {admin}:/opt/data
     command: ["gateway", "run"]
 """ if admin else ""
+    console = f"""
+  # The operator's dashboard (P197): the local console, from the same image, on
+  # this server's loopback only — reach it with  ssh -L {CONSOLE_PORT}:127.0.0.1:{CONSOLE_PORT} you@server
+  # and open the one-time link in  docker compose logs console.
+  # Start it when wanted:  docker compose --profile console up -d
+  console:
+    profiles: ["console"]
+    image: emporia-relay
+    restart: unless-stopped
+    command: ["python", "-m", "emporia.console", "--listen", "0.0.0.0", "--port", "{CONSOLE_PORT}",
+              "--relay-url", "{INSIDE_URL}", "--keys-dir", "/keys"]
+    ports:
+      - "127.0.0.1:{CONSOLE_PORT}:{CONSOLE_PORT}"
+    volumes:
+      - {console_keys}:/keys:ro   # the operator agent's keys — read here, never by the relay
+    depends_on:
+      - relay
+""" if console_keys else ""
     return f"""{MARK} — re-running it rewrites this file.
 # Start: docker compose up -d     Logs: docker compose logs -f relay
 name: emporia-relay
@@ -115,7 +137,7 @@ services:
       options:
         max-size: "10m"
         max-file: "5"
-{proxy}{agent}
+{proxy}{agent}{console}
 volumes:
   emporia-data:
 {"  caddy-data:" if https else ""}
@@ -178,7 +200,8 @@ def write_service_files(folder: Path, exe: Path, repo: Path, domain: str, user: 
     return _write(files)
 
 
-def write_files(folder: Path, repo: Path, domain: str, admin: Path | None = None) -> list[Path]:
+def write_files(folder: Path, repo: Path, domain: str, admin: Path | None = None,
+                console_keys: Path | None = None) -> list[Path]:
     """compose.yaml and (with a domain) the Caddyfile. Refuses to replace a file
     it did not make."""
     import os
@@ -188,7 +211,8 @@ def write_files(folder: Path, repo: Path, domain: str, admin: Path | None = None
         r = os.path.relpath(path, folder)
         return r if r.startswith(".") else f"./{r}"
 
-    files = {folder / "compose.yaml": compose_yaml(rel(repo), bool(domain), rel(admin) if admin else "")}
+    files = {folder / "compose.yaml": compose_yaml(rel(repo), bool(domain), rel(admin) if admin else "",
+                                                 rel(console_keys) if console_keys else "")}
     if domain:
         files[folder / "Caddyfile"] = caddyfile(domain)
     return _write(files)

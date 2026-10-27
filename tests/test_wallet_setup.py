@@ -844,6 +844,11 @@ def test_relay_host_writes_its_own_folder_and_refuses_an_agent(profiles, monkeyp
     assert compose["services"]["relay"]["ports"] == ["127.0.0.1:8089:8088"]
     assert compose["services"]["https"]["ports"] == ["80:80", "443:443"]
     assert compose["services"]["admin"]["volumes"][0].endswith(":/opt/data")
+    console = compose["services"]["console"]                          # P197: the operator's dashboard
+    assert console["profiles"] == ["console"] and console["ports"] == ["127.0.0.1:8765:8765"]
+    assert console["volumes"][0].endswith(":/keys:ro") and "--listen" in console["command"]
+    assert "ports" not in compose["services"]["relay"] or all(
+        p.startswith("127.0.0.1:") for p in compose["services"]["relay"]["ports"])
     assert not compose["services"]["relay"]["build"].startswith("/")          # host paths differ
     assert "reverse_proxy relay:8088" in (folder / "Caddyfile").read_text()
     env = _env_of(folder)
