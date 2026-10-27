@@ -580,3 +580,22 @@ def test_the_emporia_command_is_linked_onto_path_once(tmp_path, monkeypatch):
     assert installer.link_cli(bin_dir) is None                    # never over an existing one
     monkeypatch.setenv("PATH", "/usr/bin:/bin")
     assert installer.link_cli(tmp_path / "elsewhere") is None     # not on PATH: says how instead
+
+
+def test_setting_up_the_relays_own_profile_keeps_the_relays_settings(tmp_path, monkeypatch):
+    """P217: `emporia setup agent hackathon_hermes` — the relay's own profile, set up as
+    an agent — dropped the relay's Stripe key: the rule for *other* agents applied."""
+    import os
+    from unittest.mock import patch
+    relay = tmp_path / "profiles" / "relayhost"
+    relay.mkdir(parents=True)
+    (relay / ".env").write_text("STRIPE_SECRET_KEY=sk_test_relay_keeps\nSTRIPE_PROFILE_ID=profile_test_x\n")
+    (relay / "config.yaml").write_text(yaml.dump({"env": {"STRIPE_SECRET_KEY": "sk_test_relay_keeps"}}))
+    monkeypatch.setattr(installer, "install_platform_plugin", lambda *a, **k: None)
+    monkeypatch.setattr(installer, "_install_skill_link", lambda *a, **k: None)
+    monkeypatch.setattr(installer, "_hermes_profile_create", lambda name: None)
+    with patch.dict(os.environ):
+        installer.create_profile(name="relayhost", relay_url="http://127.0.0.1:8088", current_profile_dir=relay)
+    env_text = (relay / ".env").read_text()
+    assert "STRIPE_SECRET_KEY=sk_test_relay_keeps" in env_text and "STRIPE_PROFILE_ID=profile_test_x" in env_text
+    assert "sk_test" not in (relay / "config.yaml").read_text()          # still never in config.yaml

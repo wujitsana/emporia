@@ -1109,7 +1109,7 @@ def install_into_profile(
 # --create-profile
 # ─────────────────────────────────────────────────────────────────────────────
 
-def _merge_profile_env(env_path: Path, managed_lines: list[str]) -> list[str]:
+def _merge_profile_env(env_path: Path, managed_lines: list[str], keep_relay: bool = False) -> list[str]:
     """The installer's lines, then every line of the existing .env it does not
     manage (P115). It used to write the file whole, dropping anything the
     operator had added — and the relay's Stripe settings, which an agent
@@ -1119,7 +1119,7 @@ def _merge_profile_env(env_path: Path, managed_lines: list[str]) -> list[str]:
     if env_path.exists():
         for line in env_path.read_text().splitlines():
             key = line.split("=", 1)[0].strip() if "=" in line and not line.lstrip().startswith("#") else ""
-            if key and (key in managed or key in _RELAY_ONLY_ENV_KEYS):
+            if key and (key in managed or (key in _RELAY_ONLY_ENV_KEYS and not keep_relay)):
                 continue
             if line.strip():
                 kept.append(line)
@@ -1215,11 +1215,14 @@ def create_profile(
     config["agent"] = {"max_turns": 150}
     config["terminal"] = {"backend": "local", "home_mode": "auto"}
 
-    # Env block
+    # Env block. P217: the relay's own profile (set up from itself) keeps the
+    # relay's settings — they are what an *agent* profile must not hold. Setting
+    # hackathon_hermes up as an agent once dropped its relay's Stripe key.
+    own_relay = current_profile_dir is not None and profile_dir.resolve() == current_profile_dir.resolve()
     env_block: dict[str, str] = {**inherited_env}
     env_block["EMPORIA_RELAY_URL"] = relay_url
     env_block["EMPORIA_AGENT_ID"] = name
-    for k in _RELAY_ONLY_ENV_KEYS:
+    for k in () if own_relay else _RELAY_ONLY_ENV_KEYS:
         env_block.pop(k, None)
     if max_budget_cents is not None and max_budget_cents > 0:
         env_block["EMPORIA_MAX_TOTAL_SPEND_CENTS"] = str(max_budget_cents)
@@ -1286,7 +1289,8 @@ def create_profile(
     # Every inherited secret (P201: config.yaml no longer holds any), once.
     written = {ln.split("=", 1)[0] for ln in safe_env_lines}
     for k, v in env_block.items():
-        if (is_secret_name(k) or k in _SECRET_ENV_KEYS) and v and k not in written and k not in _RELAY_ONLY_ENV_KEYS:
+        if ((is_secret_name(k) or k in _SECRET_ENV_KEYS) and v and k not in written
+                and (own_relay or k not in _RELAY_ONLY_ENV_KEYS)):
             safe_env_lines.append(f"{k}={v}")
 
     # Export to current process so subsequent steps see the vars immediately
@@ -1300,7 +1304,7 @@ def create_profile(
     if dry_run:
         print(f"  [dry-run] Would write {env_path}")
     else:
-        _write_private(env_path, "\n".join(_merge_profile_env(env_path, safe_env_lines)) + "\n")
+        _write_private(env_path, "\n".join(_merge_profile_env(env_path, safe_env_lines, keep_relay=own_relay)) + "\n")
         print(f"  Saved: {env_path}")
         if moved := secure_profile(profile_dir):
             print(f"  Moved from config.yaml to .env: {', '.join(moved)}")
