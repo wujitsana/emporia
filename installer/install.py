@@ -1315,6 +1315,7 @@ def create_profile(
     # Install agent skill so it loads on start (dev skills optional)
     _install_skill_link(profile_dir, dry_run=dry_run, dev_skills=dev_skills)
     install_platform_plugin(profile_dir, dry_run=dry_run)
+    enable_dashboard_tab(profile_dir, dry_run=dry_run)
 
     print(f"\n  Agent ID : {name}")
     print(f"  Relay    : {relay_url}")
@@ -1662,6 +1663,27 @@ def install_dashboard_plugin(profile_dir: Path, relay_url: str, hermes_home: Pat
                        capture_output=True, text=True, timeout=60)
     print("  + plugins.enabled: emporia" if r.returncode == 0
           else f"  WARNING: `hermes plugins enable emporia` failed: {(r.stderr or r.stdout)[-300:]}")
+
+
+def enable_dashboard_tab(profile_dir: Path, dry_run: bool = False) -> None:
+    """P221: the Emporia dashboard tab, shown in this profile's dashboard too.
+    Hermes lists a plugin for a profile only when that profile's own config
+    enables it; the tab was enabled for the root profile alone, so it showed
+    only there. It is the same tab — every agent on this machine — from any of
+    them. Nothing when the tab is not installed."""
+    root = hermes_home_of(profile_dir)
+    if profile_dir == root or not (root / "plugins" / "emporia" / "plugin.yaml").exists():
+        return
+    enabled = ((load_yaml(profile_dir / "config.yaml").get("plugins") or {}).get("enabled") or [])
+    if "emporia" in enabled:
+        return
+    if dry_run:
+        print(f"  [dry-run] Would enable the Emporia dashboard tab for {profile_dir.name}")
+        return
+    r = subprocess.run(["hermes", "-p", profile_dir.name, "plugins", "enable", "emporia"],
+                       env={**os.environ, "HERMES_HOME": str(root)}, capture_output=True, text=True, timeout=60)
+    print(f"  + dashboard tab shown for {profile_dir.name}" if r.returncode == 0 else
+          f"  WARNING: `hermes -p {profile_dir.name} plugins enable emporia` failed: {(r.stderr or r.stdout)[-200:]}")
 
 
 def print_safety_next_steps(name: str) -> None:

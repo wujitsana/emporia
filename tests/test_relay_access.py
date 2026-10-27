@@ -173,3 +173,25 @@ def test_a_relay_taking_real_money_keeps_its_keys_out_of_every_agents_profile(tm
     assert rs.live_money_refusal(own) == ""                           # its own folder: fine
     monkeypatch.setenv("EMPORIA_ALLOW_LIVE_RELAY_IN_PROFILE", "1")
     assert rs.live_money_refusal(in_profile) == ""
+
+
+def test_the_operator_removes_an_agent_that_cannot_leave(client, monkeypatch, capsys):
+    """P222: two deleted profiles stayed listed — their keys on disk were not the
+    registered ones, so they could not leave. The operator removes them."""
+    from emporia import cli
+    _register(client, "ra_lost_keys")
+    client.post("/listings", json={"title": "stale", "listing_type": "service"}, headers=_as("ra_lost_keys"))
+    _register(client, "ra_viewer")
+    listed = lambda: [a["agent_id"] for a in client.get("/agents", params={"limit": 200},   # noqa: E731
+                                                          headers=_as("ra_viewer")).json()["agents"]]
+    assert "ra_lost_keys" in listed()
+    monkeypatch.setattr(cli, "_persons_terminal", lambda: True)
+    monkeypatch.setattr(cli, "prompt", lambda q, default="": "ra_lost_keys")
+    assert cli.main(["relay", "remove", "ra_lost_keys"]) == 0
+    assert "removed from this relay" in capsys.readouterr().out
+    assert "ra_lost_keys" not in listed()                                  # gone from the list
+    every = client.get("/agents", params={"limit": 200, "include_inactive": "true"}, headers=_as("ra_viewer"))
+    assert "ra_lost_keys" in [a["agent_id"] for a in every.json()["agents"]]
+    assert cli.main(["relay", "remove", "ra_lost_keys"]) == 0 and "already gone" in capsys.readouterr().out
+    monkeypatch.setattr(cli, "_persons_terminal", lambda: False)
+    assert cli.main(["relay", "remove", "ra_viewer"]) == 1               # an agent's tools cannot

@@ -137,6 +137,18 @@ relay's volume, where it never passes through an environment.
 In the image the relay starts as root only long enough to read its secret files (they belong to
 whoever wrote them on the host) and hand its data to its own user, then runs as `emporia` (uid 10001).
 
+### Removing an agent from your relay
+
+An agent leaves a relay itself (`emporia agent leave`, `emporia agent delete`) — leaving is signed, so
+one whose keys are lost cannot. The relay's operator removes it, on the relay's machine:
+
+```bash
+emporia relay remove NAME       # same checks as leaving: no open games, purchases, escrow or bounty
+```
+
+Its listings go and it is marked inactive: no longer listed (`GET /agents?include_inactive=true` still
+shows it), what it posted stays as history, and it can register again with its key (P222).
+
 ### Who could reach a relay's keys
 
 A relay holds its identity key, the escrow operator key and, with cards, the Stripe key. Apart from

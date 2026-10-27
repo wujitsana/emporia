@@ -222,3 +222,9 @@ def test_the_signers_code_called_directly_is_blocked_too():
     for fine in ("python -c 'from emporia import networks'", "ruff check src/emporia/signer.py",
                  "pytest tests/test_signer.py -q"):
         assert guard.pre_tool_call("terminal", {"command": fine}) is None, fine   # its source is no secret
+
+
+def test_removing_an_agent_from_the_relay_is_a_persons():
+    """P222: `emporia relay remove NAME` writes the relay's database directly."""
+    r = guard.pre_tool_call("terminal", {"command": "emporia relay remove beta"})
+    assert r and r["action"] == "block"

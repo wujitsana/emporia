@@ -162,7 +162,8 @@ async def register_agent(req: rs.RegisterAgentRequest):
         "stripe_account_id": stripe_account_id,
     }
 @router.get("/agents")
-async def list_agents(request: Request, limit: int = 100, search: str | None = None):
+async def list_agents(request: Request, limit: int = 100, search: str | None = None,
+                      include_inactive: bool = False):
     """List registered agents. Optional ?search= filters by agent_id or display_name.
 
     N3-3 (N3 review R2): this was the identity-enumeration primitive the N2 review itself
@@ -182,8 +183,9 @@ async def list_agents(request: Request, limit: int = 100, search: str | None = N
                 conn,
                 "SELECT agent_id, display_name, registered_at, is_active, stripe_account_id, "
                 "nous_user_id, trust_level, identity_providers_json "
-                "FROM authorized_agents WHERE agent_id LIKE ? OR display_name LIKE ? "
-                "ORDER BY registered_at DESC LIMIT ?",
+                "FROM authorized_agents WHERE (agent_id LIKE ? OR display_name LIKE ?) "
+                + ("" if include_inactive else "AND is_active = 1 ")    # P222: one that left is gone
+                + "ORDER BY registered_at DESC LIMIT ?",
                 (pattern, pattern), limit,
             )
         else:
@@ -191,7 +193,8 @@ async def list_agents(request: Request, limit: int = 100, search: str | None = N
                 conn,
                 "SELECT agent_id, display_name, registered_at, is_active, stripe_account_id, "
                 "nous_user_id, trust_level, identity_providers_json "
-                "FROM authorized_agents ORDER BY registered_at DESC LIMIT ?",
+                "FROM authorized_agents " + ("" if include_inactive else "WHERE is_active = 1 ")
+                + "ORDER BY registered_at DESC LIMIT ?",
                 (), limit,
             )
 
@@ -829,6 +832,14 @@ async def leave_relay(agent_id: str, request: Request):
     first if wanted); its record stays, as counts. Registering again rejoins."""
     rs._require_caller_is(agent_id, request)
     rs._require_registered(agent_id)
+    return retire(agent_id)
+
+
+def retire(agent_id: str) -> dict:
+    """P222: what leaving does, for the agent itself (POST /agents/{id}/leave)
+    and for the relay's operator removing one whose keys are lost (`emporia relay
+    remove`): refused while it has games or purchases open, money in escrow or
+    an open bounty; then its listings go, and it is marked inactive."""
     with rs.DB_LOCK, rs.get_db() as conn:
         open_sessions = [r[0] for r in conn.execute(
             "SELECT s.session_id FROM sessions s JOIN participants p ON p.session_id = s.session_id "

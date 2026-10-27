@@ -460,6 +460,8 @@ def cmd_relay(args: argparse.Namespace) -> int:
         return cmd_relay_overview(args)
     if args.action == "owner-key":
         return cmd_relay_owner_key(args)
+    if args.action == "remove":
+        return cmd_relay_remove(args)
     pid_file, log = _relay_files()
     if args.action == "status":
         h = health()
@@ -2258,6 +2260,51 @@ def cmd_relay_overview(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_relay_remove(args: argparse.Namespace) -> int:
+    """P222: `emporia relay remove NAME` — the relay's operator removes an agent
+    that cannot leave by itself (its keys are lost: leaving is signed). The same
+    as leaving: refused while it has games, purchases, escrow or a bounty open;
+    its listings go; it is marked inactive and no longer listed. A person runs
+    it, on the relay's machine (it writes the relay's database)."""
+    name = (args.url or "").strip()
+    if not name:
+        print("relay remove: emporia relay remove NAME")
+        return 1
+    if not _persons_terminal():
+        print("relay remove: only a person removes an agent from a relay, in their own terminal.")
+        return 1
+    from emporia import config
+    db = config.database_path()
+    if not db.exists():
+        print(f"relay remove: no relay database at {db} — run it on the relay's machine, from its profile")
+        return 1
+    from fastapi import HTTPException
+
+    from emporia import relay_server as rs
+    from emporia.routes import agents as agent_routes
+    with rs.DB_LOCK, rs.get_db() as conn:
+        row = conn.execute("SELECT is_active FROM authorized_agents WHERE agent_id = ?", (name,)).fetchone()
+    if row is None:
+        print(f"relay remove: {name!r} is not registered on this relay")
+        return 1
+    if not row[0]:
+        print(f"relay remove: {name} is already gone from this relay")
+        return 0
+    if prompt(f"Type {name} to remove it from this relay").strip() != name:
+        print("  Not removed.")
+        return 1
+    try:
+        out = agent_routes.retire(name)
+    except HTTPException as e:
+        detail = e.detail if isinstance(e.detail, dict) else {"message": e.detail}
+        print(f"relay remove: {detail.get('message')}: " + ", ".join(
+            f"{k} {v}" for k, v in detail.items() if k != "message" and v))
+        return 1
+    print(f"  {name} removed from this relay: inactive, {out['listings_removed']} listing(s) removed. What it posted stays, as "
+          f"history; it can register again with its key.")
+    return 0
+
+
 def cmd_relay_owner_key(args: argparse.Namespace) -> int:
     """P199: `emporia relay owner-key URL NAME [--keys-dir DIR]` — a key of your
     own to watch a relay you run, from your own machine, with no Hermes: made
@@ -2596,6 +2643,13 @@ def doctor_profile_secrets(rep: Report, profile: Path, dotenv: dict[str, str]) -
         rep.warn(f"{' and '.join(loose)} readable by other users", f"emporia agent secure {profile.name}")
     else:
         rep.ok("secrets only in its .env, owner-only")
+    # P221: the dashboard tab, when installed, shown in this profile's dashboard too.
+    root = hermes_home()
+    if (root / "plugins" / "emporia" / "plugin.yaml").exists() and profile.parent.name == "profiles":
+        enabled = (inst.load_yaml(profile / "config.yaml").get("plugins") or {}).get("enabled") or []
+        if "emporia" not in enabled:
+            rep.warn("the Emporia dashboard tab does not show in this profile's dashboard",
+                     f"hermes -p {profile.name} plugins enable emporia   (or emporia setup agent {profile.name})")
     # P206: the plugin is copied into each profile; an old copy lacks the key
     # guard, the secret declarations and the narrowed bridge — compare files.
     installed, source = profile / "plugins" / "platforms" / "emporia", REPO / "hermes_plugin" / "emporia"
@@ -4796,7 +4850,7 @@ def build_parser() -> argparse.ArgumentParser:
                                      "`host` runs one for other machines, in Docker behind https")
     r.add_argument("action", choices=["start", "stop", "status", "logs", "use", "host", "link", "unlink", "links",
                                       "access", "members", "move", "backup", "rotate-key",
-                                      "config", "overview", "owner-key"])
+                                      "config", "overview", "owner-key", "remove"])
     r.add_argument("url", nargs="?", default="", help="use, link, unlink: the other relay's URL")
     r.add_argument("names", nargs="*", help="use: the agents that move to it")
     r.add_argument("--lines", type=int, default=40)
