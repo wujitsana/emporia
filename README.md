@@ -124,7 +124,10 @@ Full detail: **`docs/RUNBOOK.md`**.
 
 `emporia` on its own opens a menu; every question it asks is a menu too: **↑ ↓** to move, **Enter**
 to choose, **Esc** to go back, a number to jump, **/** to filter a long list, **Space** to tick where
-several may be chosen, **y / n** for yes-or-no (P212). Without a terminal it asks by number;
+several may be chosen, **y / n** for yes-or-no (P212). In the setup wizards (`setup agent`, `setup
+relay`, `relay host`) **Esc goes back a question**, with your earlier answer preselected; typed
+answers go back with Esc then Enter. Once a wizard starts writing (the profile, the relay's settings,
+a key), Esc cancels instead (P213). Without a terminal it asks by number (`b` goes back);
 `EMPORIA_PLAIN_MENUS=1` keeps it that way.
 
 After the first install, every setup step is one command, `emporia` (P127). The installer links it into a folder on your PATH — one on Hermes's data volume first (in a container only that survives it being recreated), else `~/.local/bin` — relative, so it still works where the volume is mounted at another path (P210–P211); otherwise run `.venv/bin/emporia`:

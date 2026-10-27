@@ -93,75 +93,202 @@ def _menus():
     return menus if _TTY and menus.available() else None
 
 
+# ─── wizards: Esc goes back a question (P213) ─────────────────────────────────
+# A multi-step command decorated with @wizard records each answer. Esc (with no
+# Back option of its own) re-runs it from the top: the earlier answers are
+# replayed — printed, no menu opened — and it stops at the previous question,
+# with the previous answer preselected. Like Hermes's own setup, made quick:
+# what the steps between questions look up (relay health, the signer) is kept
+# for the whole wizard, so going back does not wait on the network again.
+# Once a wizard starts changing things (wizard_commit), Esc cancels instead —
+# replaying past a write would make it twice.
+
+class _Back(Exception):
+    pass
+
+
+_WIZARD: dict | None = None
+_NOTHING = object()
+
+
+def wizard(fn):
+    import copy
+    import functools
+
+    @functools.wraps(fn)
+    def run(args):
+        global _WIZARD
+        if not _TTY or _WIZARD is not None:      # not interactive, or inside another wizard
+            return fn(args)
+        replay, prefill, lookups = [], _NOTHING, {}
+        try:
+            while True:
+                _WIZARD = {"answers": [], "replay": list(replay), "prefill": prefill, "open": True,
+                           "lookups": lookups}
+                try:
+                    return fn(copy.copy(args))
+                except _Back:
+                    answers = _WIZARD["answers"]
+                    if not answers:
+                        raise Cancelled() from None
+                    replay, prefill = answers[:-1], answers[-1]
+                    print("  ← back")
+        finally:
+            _WIZARD = None
+    return run
+
+
+def wizard_commit() -> None:
+    """From here on the wizard changes things: Esc cancels rather than goes back."""
+    if _WIZARD is not None:
+        _WIZARD["open"] = False
+
+
+def _wiz_open() -> bool:
+    return _WIZARD is not None and _WIZARD["open"]
+
+
+def _wiz_replay():
+    """(True, answer) while replaying earlier answers."""
+    if _wiz_open() and _WIZARD["replay"]:
+        return True, _WIZARD["replay"].pop(0)
+    return False, None
+
+
+def _wiz_prefill(fallback):
+    """The answer last given to the question being asked again, once."""
+    if _wiz_open() and _WIZARD["prefill"] is not _NOTHING:
+        value, _WIZARD["prefill"] = _WIZARD["prefill"], _NOTHING
+        return value
+    return fallback
+
+
+def _wiz_record(value):
+    if _wiz_open():
+        _WIZARD["answers"].append(value)
+    return value
+
+
+def _back() -> None:
+    """Esc with no Back option of the question's own."""
+    raise _Back() if _wiz_open() else Cancelled()
+
+
+def _wiz_lookup(key, compute):
+    """Within a wizard, look a thing up once — replays reuse it. After its
+    first change, look again (a relay it started is now up)."""
+    if not _wiz_open():
+        return compute()
+    cache = _WIZARD["lookups"]
+    if key not in cache:
+        cache[key] = compute()
+    return cache[key]
+
+
 def ask(question: str, default: bool) -> bool:
     if not _TTY:
         return default
+    replayed, value = _wiz_replay()
+    if replayed:
+        print(f"{question} → {'yes' if value else 'no'}")
+        return _wiz_record(value)
+    default = _wiz_prefill(default)
     if m := _menus():
         answer = m.confirm(question, default)
         if answer is m.BACK:
-            raise Cancelled()
+            _back()
         print(f"{question} → {'yes' if answer else 'no'}")
-        return answer
+        return _wiz_record(answer)
     hint = "[Y/n]" if default else "[y/N]"
-    answer = input(f"{question} {hint} ").strip().lower()
-    return default if not answer else answer.startswith("y")
+    answer = input(f"{question} {hint}{' (b: back)' if _wiz_open() else ''} ").strip().lower()
+    if answer in ("b", "back") and _wiz_open():
+        _back()
+    return _wiz_record(default if not answer else answer.startswith("y"))
 
 
 def prompt(question: str, default: str = "") -> str:
-    """A typed answer, or `default` on Enter (and always when not interactive)."""
+    """A typed answer, or `default` on Enter (and always when not interactive).
+    In a wizard, Esc then Enter goes back."""
     if not _TTY:
         return default
-    answer = input(f"{question}{f' [{default}]' if default else ''}: ").strip()
-    return answer or default
+    replayed, value = _wiz_replay()
+    if replayed:
+        print(f"{question}: {value}")
+        return _wiz_record(value)
+    default = _wiz_prefill(default)
+    hint = "  (Esc ⏎ back)" if _wiz_open() else ""
+    answer = input(f"{question}{f' [{default}]' if default else ''}{hint}: ").strip()
+    if "\x1b" in answer:
+        _back()
+    return _wiz_record(answer or default)
 
 
 def choose(question: str, options: list[tuple[str, str]], default: int = 0) -> str:
     """One of `options` ((key, label) pairs), by number."""
     if not _TTY:
         return options[default][0]
-    back = next((k for k, _ in options if k in _BACK_KEYS), None)
+    keys = [k for k, _ in options]
+    replayed, value = _wiz_replay()
+    if replayed and value in keys:
+        print(f"{question} → {options[keys.index(value)][1]}")
+        return _wiz_record(value)
+    prior = _wiz_prefill(None)
+    default = keys.index(prior) if prior in keys else default
+    back = next((k for k in keys if k in _BACK_KEYS), None)
     if m := _menus():
         picked = m.select(question, [text for _, text in options], default)
         if picked is m.BACK:
             if back is None:
-                raise Cancelled()
-            picked = next(i for i, (k, _) in enumerate(options) if k == back)
+                _back()
+            picked = keys.index(back)
         print(f"{question} → {options[picked][1]}")
-        return options[picked][0]
+        return _wiz_record(options[picked][0])
     print(question)
     for i, (_, text) in enumerate(options, 1):
         print(f"  {i}) {text}")
     while True:
         answer = input(f"Choose 1-{len(options)} [{default + 1}]: ").strip()
         if not answer:
-            return options[default][0]
+            return _wiz_record(options[default][0])
         if answer.isdigit() and 1 <= int(answer) <= len(options):
-            return options[int(answer) - 1][0]
-        if answer.lower() in ("b", "q") and back is not None:    # P212: back, without arrows too
-            return back
-        print("  Type a number from the list." + (" (b: back)" if back else ""))
+            return _wiz_record(options[int(answer) - 1][0])
+        if answer.lower() in ("b", "q"):                          # P212: back, without arrows too
+            if back is not None:
+                return back
+            if _wiz_open():
+                _back()
+        print("  Type a number from the list." + (" (b: back)" if back or _wiz_open() else ""))
 
 
 def choose_many(question: str, options: list[tuple[str, str]], ticked: set[str]) -> list[str]:
     """Any of `options`, by numbers; Enter keeps the ticked ones."""
     if not _TTY:
         return [k for k, _ in options if k in ticked]
+    replayed, value = _wiz_replay()
+    if replayed:
+        print(f"{question} → {', '.join(t for k, t in options if k in value) or 'none'}")
+        return _wiz_record(value)
+    ticked = set(_wiz_prefill(ticked))
     if m := _menus():
         picked = m.checklist(question, [text for _, text in options],
                              {i for i, (k, _) in enumerate(options) if k in ticked})
+        if picked is m.BACK and _wiz_open():
+            _back()
         chosen = [k for k, _ in options if k in ticked] if picked is m.BACK else [options[i][0] for i in picked]
         print(f"{question} → {', '.join(t for k, t in options if k in chosen) or 'none'}")
-        return chosen
+        return _wiz_record(chosen)
     print(question)
     for i, (key, text) in enumerate(options, 1):
         print(f"  {i}) [{'x' if key in ticked else ' '}] {text}")
     while True:
         answer = input("Numbers separated by commas (Enter keeps the ticked ones): ").strip()
         if not answer:
-            return [k for k, _ in options if k in ticked]
+            return _wiz_record([k for k, _ in options if k in ticked])
+        if answer.lower() in ("b", "back") and _wiz_open():
+            _back()
         parts = [x for x in answer.replace(" ", "").split(",") if x]
         if all(x.isdigit() and 1 <= int(x) <= len(options) for x in parts):
-            return [options[int(x) - 1][0] for x in parts]
+            return _wiz_record([options[int(x) - 1][0] for x in parts])
         print("  Type numbers from the list, like 1,3.")
 
 
@@ -196,11 +323,14 @@ class Report:
 
 def health(timeout: float = 3.0, url: str = "") -> dict | None:
     import httpx
-    try:
-        r = httpx.get(f"{(url or relay_url()).rstrip('/')}/health", timeout=timeout)
-        return r.json() if r.status_code == 200 else None
-    except (httpx.HTTPError, ValueError):
-        return None
+
+    def look() -> dict | None:
+        try:
+            r = httpx.get(f"{(url or relay_url()).rstrip('/')}/health", timeout=timeout)
+            return r.json() if r.status_code == 200 else None
+        except (httpx.HTTPError, ValueError):
+            return None
+    return _wiz_lookup(("health", url or relay_url()), look)
 
 
 # ─── relay ───────────────────────────────────────────────────────────────────
@@ -385,6 +515,7 @@ def _choose_relay(current: str = "") -> str:
 def _start_local_relay(current: str) -> str:
     """Run a relay on this machine — it listens on 127.0.0.1 only — with its
     testnet payments, then start it. One for other machines is `relay host`."""
+    wizard_commit()        # P213: it starts a relay; no going back past that
     print("  It listens on this machine only. For agents on other machines, run one in Docker behind https:\n"
           "    emporia relay host")
     access = choose("Who may use it?", [
@@ -418,6 +549,7 @@ def _set_agent_relay(profile: Path, url: str) -> None:
     merge_env_file(profile / ".env", {"EMPORIA_RELAY_URL": url})
 
 
+@wizard
 def cmd_relay_host(args: argparse.Namespace) -> int:
     """A relay for agents on other machines, with https in front (P183): in
     Docker, or as a system service on a server kept for it. Only a person runs
@@ -509,6 +641,7 @@ def cmd_relay_host(args: argparse.Namespace) -> int:
     if admin:
         updates["EMPORIA_AGENT_ID"] = installer().harvest_env(admin).get("EMPORIA_AGENT_ID") or admin_name
     env_path = folder / ".env"
+    wizard_commit()        # P213: from here it writes the relay's settings
     merge_env_file(env_path, updates)
     env_path.chmod(0o600)
     for path in (*written, env_path):
@@ -1047,10 +1180,13 @@ def _signer_apart() -> bool:
 
 def _signer_up(url: str) -> dict | None:
     from emporia import signer_client
-    try:
-        return signer_client.Client(url, "", "").health()
-    except Exception:
-        return None
+
+    def look() -> dict | None:
+        try:
+            return signer_client.Client(url, "", "").health()
+        except Exception:
+            return None
+    return _wiz_lookup(("signer", url), look)
 
 
 def _signer_menu(args: argparse.Namespace, url: str) -> int:
@@ -2575,6 +2711,7 @@ def _as_agent(profile: Path, code: str, **env_over: str) -> subprocess.Completed
                           timeout=120)
 
 
+@wizard
 def cmd_setup_agent(args: argparse.Namespace) -> int:
     inst = installer()
     me = this_profile()
@@ -2662,6 +2799,7 @@ def cmd_setup_agent(args: argparse.Namespace) -> int:
         args.max_daily_cents = prompt_cents("Most it may spend in 24 hours", args.max_daily_cents)
         args.approve_above_cents = prompt_cents(
             "Ask you before any single payment above (0 = always ask)", args.approve_above_cents)
+    wizard_commit()        # P213: from here it writes the profile
     inst.create_profile(
         name=name, relay_url=chosen_relay, current_profile_dir=me, inherit_env=args.inherit_env,
         sync_model=bool(sync_model), x402_pay_networks=networks,
@@ -2999,6 +3137,7 @@ def merge_env_file(path: Path, updates: dict[str, str]) -> list[str]:
     return changed
 
 
+@wizard
 def cmd_setup_relay(args: argparse.Namespace) -> int:
     """This machine's relay: the x402 + escrow preset and its operator key.
     Every value written is public (contract and token addresses, URLs, your fee
@@ -3042,6 +3181,7 @@ def cmd_setup_relay(args: argparse.Namespace) -> int:
     if made:
         if not ask("No operator key yet. Create one (it captures and voids escrow holds, and pays gas)?", True):
             return 1
+        wizard_commit()    # P213: a key is made once
         address = operator_signer.generate_key()
         print(f"  operator key created: {operator_signer.key_path()} (0600), address {address}")
     updates["EMPORIA_OPERATOR_ADDRESS"] = address
@@ -3051,6 +3191,7 @@ def cmd_setup_relay(args: argparse.Namespace) -> int:
         print(f"  {k}={v}")
     if not args.yes and not ask("Write these?", True):
         return 1
+    wizard_commit()
     changed = merge_env_file(env_path, updates)
     print(f"  {len(changed)} setting(s) changed" + (" (backup beside it)" if changed else ""))
     if os.getenv("STRIPE_SECRET_KEY", "").startswith(("sk_live_", "rk_live_")):
