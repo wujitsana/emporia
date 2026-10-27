@@ -3282,7 +3282,8 @@ def _stripe_relay_settings(me: Path, args: argparse.Namespace) -> dict[str, str]
         state = ("a test key" if have.get("STRIPE_SECRET_KEY", "").startswith(("sk_test_", "rk_test_"))
                  else "a LIVE key" if have.get("STRIPE_SECRET_KEY") else "no key")
         print(f"\nStripe (cards) — this relay has {state}.")
-        if not ask("Set or replace the Stripe secret key?", not have.get("STRIPE_SECRET_KEY")):
+        if not ask("Replace the Stripe secret key?" if have.get("STRIPE_SECRET_KEY") else "Set the Stripe secret key?",
+                   not have.get("STRIPE_SECRET_KEY")):
             return {}
         key = getpass.getpass("Stripe secret key (hidden; sk_test_… while testing): ").strip()
     if not key:
