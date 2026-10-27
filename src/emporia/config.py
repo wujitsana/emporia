@@ -120,6 +120,40 @@ def load_profile_dotenv() -> None:
 load_profile_dotenv()
 
 
+# P200: the relay's secrets, kept as files rather than in its environment. An
+# environment variable shows in `docker inspect`, is inherited by every child
+# process and turns up in debug dumps; a file in a folder mounted read-only at
+# /run/secrets (EMPORIA_SECRETS_DIR, set in the image) does none of that. Each
+# file is named for its variable and holds only the value. Read once, at import,
+# while the image's relay is still root: the files belong to whoever wrote them
+# on the host, and the relay then drops to its own user (relay_server.main).
+SECRET_NAMES = ("STRIPE_SECRET_KEY", "STRIPE_WEBHOOK_SECRET", "EMPORIA_OPERATOR_PRIVATE_KEY")
+
+
+def secrets_dir() -> Path | None:
+    folder = os.getenv("EMPORIA_SECRETS_DIR", "").strip()
+    return Path(folder).expanduser() if folder else None
+
+
+def load_secret_files() -> list[str]:
+    """Fill each secret from its file; a value already in the environment wins,
+    as with the .env merge. The names loaded, never the values."""
+    folder = secrets_dir()
+    loaded: list[str] = []
+    for name in SECRET_NAMES if folder else ():
+        try:
+            value = (folder / name).read_text().strip()
+        except OSError:
+            continue
+        if value and name not in os.environ:
+            os.environ[name] = value
+            loaded.append(name)
+    return loaded
+
+
+load_secret_files()
+
+
 def database_path() -> Path:
     """The single SQLite file every store in this relay writes to.
 

@@ -4142,6 +4142,23 @@ can take tens of seconds; post-capture refunds are not offered (the refund windo
 | Unlimited DMs from one remote agent within its relay's allowance; future-dated relay lists | Per-sender limit; lists dated ahead are refused (P193) |
 | A schema upgrade changed the database with no copy kept | The relay backs it up first (P193) |
 
+## P200 pass — secrets in Docker, and the keys Emporia makes
+
+| Finding | Fix |
+|---|---|
+| A Docker relay took its Stripe key, webhook secret and any operator key given by value as environment variables (`env_file`) — readable with `docker inspect` by anyone who can run Docker, inherited by child processes | Secrets are files in `secrets/`, mounted read-only at `/run/secrets` (`EMPORIA_SECRETS_DIR`); `emporia relay config set NAME` takes one hidden, checks it, and removes any copy left in the `.env` |
+| The relay's container ran as root | It reads its secrets as root, gives its data to `emporia`, then drops to it (`EMPORIA_RUN_AS`) |
+| `relay config` sent a hosted relay's operator to `setup stripe`, which writes only this profile's `.env` | It sets a hosted relay's secrets itself |
+
+Checked and found sound: every key Emporia makes (agent identity and encryption keys, wallets, the
+relay's own key, the escrow operator key) comes from the operating system's secure random source
+through `cryptography` or `eth-account`, never Python's `random`; each is written 0600 from the
+instant it exists, atomically (`identity._write_secret_atomically`), in a 0700 folder; the operator
+key refuses to be made inside a git checkout that does not ignore it. What remains by design: keys
+are stored unencrypted, as SSH host keys are — an agent signs unattended, so a passphrase would have
+to sit beside the key. For more, keep agent keys in a password manager (`EMPORIA_*_KEY_SOURCE=cmd:…`,
+P162) and, before mainnet, the operator key in a cloud key service (planned).
+
 ## Threat model notes (by design, not gaps)
 
 - **Ed25519 = auth; the relay never holds private keys.** Keys live at `~/.hermes/keys/*.priv`,

@@ -7925,9 +7925,36 @@ def _require_encryption_keys_published(agent_ids: list[str]) -> None:
 # Main
 # ============================================================================
 
+def drop_root(name: str | None = None) -> str:
+    """P200: in the image the relay starts as root only to read its secret files
+    (config.load_secret_files, at import) and to give its data to its own user;
+    then it runs as that user (`EMPORIA_RUN_AS`). Returns who it now runs as, or
+    "" when there was nothing to drop."""
+    name = (name if name is not None else os.getenv("EMPORIA_RUN_AS", "")).strip()
+    if not name or os.getuid() != 0:
+        return ""
+    import pwd
+
+    user = pwd.getpwnam(name)
+    owned = {Path(p).expanduser() for p in (os.getenv("EMPORIA_KEYS_DIR", ""), os.getenv("EMPORIA_LOG_DIR", "")) if p}
+    owned.add(DATABASE_PATH.parent)
+    for top in owned:
+        top.mkdir(parents=True, exist_ok=True)
+        # A key the operator made with `docker compose run` is root's until now.
+        for path in [top, *top.rglob("*")]:
+            if path.lstat().st_uid != user.pw_uid and not path.is_symlink():
+                os.chown(path, user.pw_uid, user.pw_gid)
+    os.setgroups([])
+    os.setgid(user.pw_gid)
+    os.setuid(user.pw_uid)
+    os.environ.update(HOME=user.pw_dir)
+    return name
+
+
 def main():
     if refusal := bind_refusal(RELAY_HOST):
         raise SystemExit(refusal)
+    drop_root()
     uvicorn.run(app, host=RELAY_HOST, port=RELAY_PORT)
 
 

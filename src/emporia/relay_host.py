@@ -3,7 +3,9 @@
 A relay on this machine's own Python listens on 127.0.0.1 only. One that others
 reach runs in a container, behind https, with its settings in its own folder —
 compose.yaml, Caddyfile and a .env — not in a Hermes profile's .env. Its keys and
-database live in a Docker volume.
+database live in a Docker volume; its secrets (Stripe, an operator key given by
+value) in `secrets/`, one file each, mounted read-only — never environment
+variables, which `docker inspect` shows (P200).
 
 Two ways to run it:
 
@@ -110,6 +112,7 @@ services:
     volumes:
       - emporia-data:/data     # its identity, operator key and database: never delete
       - ./.env:/app/relay.env:ro   # who may use it, re-read when it changes
+      - ./secrets:/run/secrets:ro  # one file per secret: emporia relay config set NAME
     logging:
       driver: json-file
       options:
@@ -184,6 +187,7 @@ def write_files(folder: Path, repo: Path, domain: str, admin: Path | None = None
     import os
 
     folder.mkdir(parents=True, exist_ok=True)
+    (folder / "secrets").mkdir(mode=0o700, exist_ok=True)
     def rel(path: Path) -> str:   # "./" so compose binds a folder, not a named volume
         r = os.path.relpath(path, folder)
         return r if r.startswith(".") else f"./{r}"

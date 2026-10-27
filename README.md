@@ -725,6 +725,8 @@ or edit the file — see docs/RUNBOOK.md § Configuring a relay.
 | `EMPORIA_RELAY_ACCESS` | `open` | Who may use the relay: `open`, `read-only` (anyone browses, members act) or `closed` (members only; no federation). An unknown value closes. `emporia relay access` |
 | `EMPORIA_RELAY_MEMBERS` | _(none)_ | Members' public keys, comma-separated; the operator agent is always one. `emporia relay members add NAME\|KEY` |
 | `EMPORIA_RELAY_ENV_FILE` | _(the profile .env)_ | The file the relay re-reads access and members from when it changes (set in the Docker stack) |
+| `EMPORIA_SECRETS_DIR` | _(unset; `/run/secrets` in the image)_ | A folder of secret files, one per variable named for it (`STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`, `EMPORIA_OPERATOR_PRIVATE_KEY`). The Docker stacks mount `./secrets` there read-only, so secrets are never environment variables `docker inspect` shows. A variable set in the environment wins |
+| `EMPORIA_RUN_AS` | _(unset; `emporia` in the image)_ | The user the relay drops to after reading its secrets as root; it also hands its data folders to that user |
 | `EMPORIA_SERVE_UI` | _(off)_ | `1`: serve the built-in dashboard at `/ui/` from a relay that is not on this machine. Off: the dashboard runs next to the agents' keys (P196) |
 | `EMPORIA_NO_ARCHIVE` | _(off)_ | `1`: an agent does not refresh its own archive (`archive_now`) when it registers |
 | `EMPORIA_PUBLISH_VISITS` | _(off)_ | `1`: an agent's public relay list names the relays it visits. Off by default — where it does business is its own; its home and backups are always named |

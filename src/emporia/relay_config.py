@@ -5,8 +5,9 @@ profile's, or a hosted relay's folder). That file stays the one place: edit it b
 hand, or with `emporia relay config set NAME VALUE`, which checks the value
 first. This module is the list `emporia relay config` shows and checks against.
 
-Secrets are not set here — a value typed on a command line lands in shell
-history. Each has its own way in (`emporia setup stripe`, the operator key file).
+A secret is never given on the command line, where shell history keeps it:
+`emporia relay config set NAME` asks for it hidden. A relay in Docker keeps it
+as a file in its folder's secrets/ (P200), not in its .env.
 """
 
 from __future__ import annotations
@@ -25,7 +26,7 @@ class Setting:
     default: str = ""
     choices: tuple[str, ...] = ()
     live: bool = False          # applies without a restart
-    secret: str = ""            # if set: how to set it instead
+    secret: str = ""            # if set: a secret, typed hidden; this says where it comes from
     extra: dict = field(default_factory=dict)
 
 
@@ -63,10 +64,14 @@ SETTINGS: tuple[Setting, ...] = (
     Setting("EMPORIA_ESCROW_NETWORK", "Money", "Where it holds USDC in escrow.", "text"),
     Setting("EMPORIA_CUSTODIAL_CARDS", "Money", "Card money held on the operator's balance (opt-in).", "bool", "0"),
     Setting("EMPORIA_CARD_GAME_STAKES", "Money", "Card payments for game stakes (opt-in).", "bool", "0"),
-    Setting("STRIPE_SECRET_KEY", "Money", "Its Stripe key.", secret="emporia setup stripe (typed hidden)"),
-    Setting("STRIPE_WEBHOOK_SECRET", "Money", "Its Stripe webhook secret.", secret="emporia setup stripe"),
+    Setting("STRIPE_SECRET_KEY", "Money", "Its Stripe key.",
+            secret="From the Stripe dashboard: Developers → API keys (sk_test_… while testing).",
+            extra={"prefix": ("sk_test_", "sk_live_", "rk_test_", "rk_live_")}),
+    Setting("STRIPE_WEBHOOK_SECRET", "Money", "Its Stripe webhook secret.",
+            secret="From the Stripe dashboard: Developers → Webhooks → signing secret (whsec_…).",
+            extra={"prefix": ("whsec_",)}),
     Setting("EMPORIA_OPERATOR_PRIVATE_KEY", "Money", "The escrow operator key.",
-            secret="emporia setup relay (written to its own 0600 file)"),
+            secret="Better left unset: `emporia relay host` makes one in its own 0600 key file."),
     # Games
     Setting("EMPORIA_ENGINE_GAME_STAKES", "Games", "Stakes on games an engine wins (chess); off by default.",
             "bool", "0"),
@@ -86,8 +91,17 @@ BY_NAME = {s.name: s for s in SETTINGS}
 
 
 def check(setting: Setting, value: str) -> str:
-    """The value as it will be written, or ValueError saying why not."""
+    """The value as it will be written, or ValueError saying why not. A
+    secret's error never repeats the value."""
     value = value.strip()
+    if setting.secret:
+        if "prefix" in setting.extra and not value.startswith(setting.extra["prefix"]):
+            raise ValueError(f"not a {setting.extra['prefix'][0].rstrip('_')}_… value")
+        if setting.name == "EMPORIA_OPERATOR_PRIVATE_KEY" and not re.fullmatch(r"(0x)?[0-9a-fA-F]{64}", value):
+            raise ValueError("a private key, 64 hex")
+        if "\n" in value:
+            raise ValueError("one line")
+        return value
     if setting.kind == "bool":
         if value.lower() in ("1", "true", "yes", "on"):
             return "1"

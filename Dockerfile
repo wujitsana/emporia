@@ -6,7 +6,8 @@
 # docs/RUNBOOK.md § Watching a relay you host.
 #
 #   docker build -t emporia-relay .
-#   docker run -p 8088:8088 -v emporia-data:/data --env-file .env emporia-relay
+#   docker run -p 127.0.0.1:8088:8088 -v emporia-data:/data --env-file .env \
+#     -v "$PWD/secrets:/run/secrets:ro" emporia-relay
 #
 # See docker-compose.yml for a ready-to-run stack (env file, volume, optional profiles).
 
@@ -29,8 +30,15 @@ RUN uv sync --frozen --no-dev --extra x402
 
 
 # Ed25519 keys, SQLite DB, and JSONL audit logs must survive container restarts.
+# P200: secrets come as files in ./secrets, mounted read-only at /run/secrets —
+# never environment variables, which `docker inspect` shows to anyone with
+# Docker. The relay reads them as root at start, then runs as `emporia`.
+RUN useradd --system --uid 10001 --home-dir /data --shell /usr/sbin/nologin emporia \
+    && mkdir -p /data && chown emporia:emporia /data && chmod 700 /data
 ENV EMPORIA_KEYS_DIR=/data/keys \
     EMPORIA_DB_PATH=/data/emporia.sqlite3 \
+    EMPORIA_SECRETS_DIR=/run/secrets \
+    EMPORIA_RUN_AS=emporia \
     EMPORIA_LOG_DIR=/data/logs \
     EMPORIA_RELAY_PORT=8088 \
     EMPORIA_RELAY_HOST=0.0.0.0 \

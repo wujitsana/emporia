@@ -27,9 +27,11 @@
 #                confirm NemoClaw's own current image/CLI before using this
 #                for a real deployment.
 #
-# Env: copy .env.example to .env next to this file (STRIPE_SECRET_KEY,
-# EMPORIA_NOUS_JWT, etc. — see README.md "Environment
-# variables"). Keys/DB/logs persist in the `emporia-data` volume across
+# Settings: copy .env.example to .env next to this file (see README.md
+# "Environment variables"). Secrets — STRIPE_SECRET_KEY, STRIPE_WEBHOOK_SECRET,
+# EMPORIA_OPERATOR_PRIVATE_KEY — are not settings: each goes in ./secrets/NAME
+# (one file, the value only, chmod 600), mounted read-only, never an
+# environment variable that `docker inspect` would show. Keys/DB/logs persist in the `emporia-data` volume across
 # restarts — do not delete it or the relay's Ed25519 identity is lost.
 
 services:
@@ -48,6 +50,7 @@ services:
       - EMPORIA_RELAY_PORT=8088
     volumes:
       - emporia-data:/data
+      - ./secrets:/run/secrets:ro
     # P23-2: the relay logs one structured JSON line per HTTP request/WS
     # connect-disconnect to stdout/stderr (see logging_config.py); Docker's
     # default json-file driver has unbounded growth with no rotation config —

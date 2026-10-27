@@ -12,6 +12,7 @@ Thumbs.db
 .env
 .env.local
 .env.*.local
+secrets/
 .local/
 var/
 *.pem

@@ -116,8 +116,26 @@ emporia relay config --dir ~/emporia-relay   # a hosted relay's folder
 ```
 
 Who may use it and its members apply within seconds; everything else at the next restart (the
-command says which). Secrets — the Stripe key, the operator key — are not set this way, so they never
-land in shell history: `emporia setup stripe`, `emporia setup relay`.
+command says which).
+
+**Secrets are not settings** (P200). `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET` and
+`EMPORIA_OPERATOR_PRIVATE_KEY` are never typed on a command line, where shell history keeps them:
+`emporia relay config set STRIPE_SECRET_KEY` (no value) asks for it hidden and checks it. Where it
+goes depends on how the relay runs:
+
+| Relay | Where a secret is kept | Why |
+|---|---|---|
+| In Docker (`emporia relay host`, or the repo's `docker-compose.yml`) | `secrets/NAME` in its folder — one file, the value only, 0600 — mounted read-only at `/run/secrets` | An environment variable shows in `docker inspect` to anyone who can run Docker, is inherited by child processes and turns up in debug dumps; a file does none of that. Docker's own guidance: secrets, not environment variables |
+| As a system service | its `.env`, owned by root, 0600 (`sudoedit`) | systemd reads it as root; only root and the relay's user can see the running process's environment |
+| On this machine's Python | the profile's `.env` | Hermes keeps its tools away from `.env` files |
+
+The relay's settings stay in its `.env` (`env_file` in compose): they are not secret, and
+`emporia relay config` and the live re-read of access and members use that one file. The operator's
+escrow key is best not given at all: `emporia relay host` makes it in its own 0600 file in the
+relay's volume, where it never passes through an environment.
+
+In the image the relay starts as root only long enough to read its secret files (they belong to
+whoever wrote them on the host) and hand its data to its own user, then runs as `emporia` (uid 10001).
 
 ### Watching a relay you host
 
@@ -175,6 +193,8 @@ faces the internet.
 | Writes | `compose.yaml`, `Caddyfile`, `.env` | `emporia-relay.service`, `Caddyfile`, `.env`, `data/` |
 | Its keys and database | the `emporia-data` volume | `data/`, readable only by the `emporia-relay` system user |
 | Its settings (`.env`) | yours, 0600 | root's, 0600 — read by systemd |
+| Its secrets | `secrets/`, one file each, mounted read-only — never environment variables | in its `.env` |
+| Runs as | `emporia` inside the container, after reading its secrets | the `emporia-relay` system user |
 | An operator agent | an `admin` container on the stack's network | Hermes on the same server, as you — a different user from the relay's, so its tools can't read the relay's keys or change its settings |
 | https | Caddy in the stack | Caddy installed on the server (`Caddyfile` written for you) |
 

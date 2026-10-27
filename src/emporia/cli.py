@@ -1154,8 +1154,13 @@ def cmd_relay_config(args: argparse.Namespace) -> int:
     In a terminal with nothing after it: pick a setting, see its value and what it
     is for, give a new one (checked) or clear it. `show` lists them all;
     `set NAME VALUE` and `unset NAME` change one, for scripts. `--dir` names a
-    hosted relay's folder. Secrets are never set here: each says how."""
+    hosted relay's folder. A secret is never a value on the command line:
+    `set NAME` alone asks for it hidden (P200), and a relay in Docker keeps it
+    as a file in its folder's secrets/, not in its .env."""
+    import getpass
+
     from emporia import relay_config as rc
+    from emporia.identity import _write_secret_atomically
     from emporia.key_source import unset_env_lines
 
     env_path = _relay_env_path(args)
@@ -1163,19 +1168,54 @@ def cmd_relay_config(args: argparse.Namespace) -> int:
         print("relay config: run it from the relay profile's emporia checkout, or give --dir for a hosted relay")
         return 1
     current = installer().harvest_env(env_path.parent) if env_path.exists() else {}
+    # A relay in Docker reads secrets from files (its folder's secrets/, mounted
+    # at /run/secrets); one on this machine's Python, from its .env.
+    in_docker = (env_path.parent / "compose.yaml").exists()
+    secrets = env_path.parent / "secrets"
 
     def shown(st: "rc.Setting") -> str:
         if st.secret:
-            return "set" if current.get(st.name) else "not set"
+            if current.get(st.name):
+                return "set, in the .env — move it: set it again" if in_docker else "set"
+            return "set (file)" if in_docker and (secrets / st.name).exists() else "not set"
         value = current.get(st.name, "")
         if st.kind == "keys" and value:
             return f"{len([k for k in value.split(',') if k.strip()])} key(s)"
         return value or (f"{st.default} (default)" if st.default else "—")
 
-    def write(st: "rc.Setting", raw: str | None) -> int:
-        if st.secret:
-            print(f"  {st.name} is a secret — set it with: {st.secret}")
+    def write_secret(st: "rc.Setting", clear: bool) -> int:
+        if clear:
+            (secrets / st.name).unlink(missing_ok=True)
+            value = ""
+        else:
+            print(f"  {st.about} {st.secret}")
+            value = getpass.getpass(f"  {st.name} (hidden; Enter to leave it): ").strip() if _TTY else ""
+            if not value:
+                print("  Nothing written." + ("" if _TTY else " It is typed hidden, so run this in a terminal."))
+                return 1
+            try:
+                value = rc.check(st, value)
+            except ValueError as e:
+                print(f"  {st.name}: {e}; nothing written.")
+                return 1
+        try:
+            if st.name in current:
+                unset_env_lines(env_path, [st.name])     # the environment would win over the file
+            if in_docker and value:
+                secrets.mkdir(mode=0o700, exist_ok=True)
+                _write_secret_atomically(secrets / st.name, (value + "\n").encode())
+            elif value:
+                merge_env_file(env_path, {st.name: value})
+        except PermissionError:
+            print(f"  {env_path} belongs to root (a relay run as a service) — set {st.name} there with sudoedit")
             return 1
+        where = f"{secrets / st.name}" if in_docker else str(env_path)
+        print(f"  {st.name} {'cleared' if clear else 'written to ' + where} (value not shown)")
+        print("  Applies when the relay restarts" + (": docker compose up -d, in its folder" if in_docker
+                                                   else ": emporia relay stop && emporia relay start"))
+        return 0
+
+    def write(st: "rc.Setting", raw: str | None) -> int:
         if raw is None:
             was_set = st.name in current
             if was_set:
@@ -1202,11 +1242,18 @@ def cmd_relay_config(args: argparse.Namespace) -> int:
     verb = (args.url or "").strip()
     if verb in ("set", "unset"):
         names = args.names or []
-        if not names or names[0] not in rc.BY_NAME or (verb == "set" and len(names) != 2):
+        st = rc.BY_NAME.get(names[0]) if names else None
+        if st is not None and st.secret:
+            if len(names) > 1:
+                print(f"relay config: {st.name} is a secret — never on the command line, where shell history "
+                      f"keeps it. Run `emporia relay config set {st.name}` and type it hidden.")
+                return 1
+            return write_secret(st, clear=verb == "unset")
+        if st is None or (verb == "set" and len(names) != 2):
             print(f"relay config: {verb} NAME" + (" VALUE" if verb == "set" else "")
                   + f" — NAME one of: {', '.join(rc.BY_NAME)}")
             return 1
-        return write(rc.BY_NAME[names[0]], names[1] if verb == "set" else None)
+        return write(st, names[1] if verb == "set" else None)
     if verb not in ("", "show"):
         print("relay config: show, set NAME VALUE, unset NAME — or nothing, in a terminal, to choose")
         return 1
@@ -1228,7 +1275,8 @@ def cmd_relay_config(args: argparse.Namespace) -> int:
         st = rc.BY_NAME[picked]
         print(f"\n{st.name} — {st.about}\n  now: {shown(st)}")
         if st.secret:
-            print(f"  A secret — set it with: {st.secret}")
+            if write_secret(st, clear=False) == 0:
+                current = installer().harvest_env(env_path.parent)
             continue
         if st.choices:
             value = choose(f"{st.name}:", [(c, c) for c in st.choices], max(0, st.choices.index(

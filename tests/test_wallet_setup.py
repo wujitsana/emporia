@@ -974,8 +974,8 @@ def test_relay_config_shows_checks_and_writes_settings(tmp_path, monkeypatch, ca
     assert run("set", "EMPORIA_RELAY_ACCESS", "wide-open") == 1
     assert run("set", "FEDERATED_RELAYS", "https://b.example/,https://c.example") == 0
     assert _env_of(folder)["FEDERATED_RELAYS"] == "https://b.example,https://c.example"
-    assert run("set", "STRIPE_SECRET_KEY", "sk_live_x") == 1                  # secrets: not here
-    assert "emporia setup stripe" in capsys.readouterr().out
+    assert run("set", "STRIPE_SECRET_KEY", "sk_live_x") == 1                  # never on the command line
+    assert "type it hidden" in capsys.readouterr().out and "sk_live_x" not in _env_of(folder).values()
     assert run("set", "NOT_A_SETTING", "x") == 1
     assert run("unset", "OPERATOR_FEE_BPS") == 0 and "OPERATOR_FEE_BPS" not in _env_of(folder)
     assert run("show") == 0
@@ -992,3 +992,45 @@ def test_relay_config_is_interactive_in_a_terminal(tmp_path, monkeypatch):
     _typing(monkeypatch, str(fee), "400", str(len(names) + 1))   # pick the fee · 400 · done
     assert cli.main(["relay", "config", "--dir", str(folder)]) == 0
     assert _env_of(folder)["OPERATOR_FEE_BPS"] == "400"
+
+
+def test_a_docker_relays_secret_is_a_file_typed_hidden(tmp_path, monkeypatch, capsys):
+    """P200: a secret goes in secrets/NAME (0600), never its .env or argv."""
+    from emporia import relay_host as rh
+    folder = tmp_path / "docker-relay"
+    rh.write_files(folder, tmp_path, "")
+    (folder / ".env").write_text("STRIPE_SECRET_KEY=sk_test_old\n")
+    monkeypatch.setattr(cli, "_TTY", True)
+    monkeypatch.setattr("getpass.getpass", lambda *a, **k: "sk_test_new")
+    assert cli.main(["relay", "config", "set", "STRIPE_SECRET_KEY", "--dir", str(folder)]) == 0
+    secret = folder / "secrets" / "STRIPE_SECRET_KEY"
+    assert secret.read_text().strip() == "sk_test_new" and oct(secret.stat().st_mode)[-3:] == "600"
+    assert "STRIPE_SECRET_KEY" not in _env_of(folder)                     # the old copy is gone
+    assert "sk_test_new" not in capsys.readouterr().out
+    monkeypatch.setattr("getpass.getpass", lambda *a, **k: "not-a-key")
+    assert cli.main(["relay", "config", "set", "STRIPE_WEBHOOK_SECRET", "--dir", str(folder)]) == 1
+    assert cli.main(["relay", "config", "unset", "STRIPE_SECRET_KEY", "--dir", str(folder)]) == 0
+    assert not secret.exists()
+    assert "./secrets:/run/secrets:ro" in (folder / "compose.yaml").read_text()
+
+
+def test_the_relay_reads_secrets_from_files_and_the_environment_wins(tmp_path, monkeypatch):
+    from emporia import config
+    (tmp_path / "STRIPE_SECRET_KEY").write_text("sk_test_from_file\n")
+    (tmp_path / "STRIPE_WEBHOOK_SECRET").write_text("whsec_file\n")
+    monkeypatch.setenv("EMPORIA_SECRETS_DIR", str(tmp_path))
+    monkeypatch.delenv("STRIPE_SECRET_KEY", raising=False)
+    monkeypatch.setenv("STRIPE_WEBHOOK_SECRET", "whsec_env")
+    assert config.load_secret_files() == ["STRIPE_SECRET_KEY"]
+    import os
+    assert os.environ["STRIPE_SECRET_KEY"] == "sk_test_from_file" and os.environ["STRIPE_WEBHOOK_SECRET"] == "whsec_env"
+    monkeypatch.delenv("STRIPE_SECRET_KEY")
+
+
+def test_the_relay_drops_root_only_when_asked_and_only_as_root():
+    import os
+
+    from emporia import relay_server as rs
+    assert rs.drop_root("") == ""                                      # not in the image: nothing to drop
+    if os.getuid() != 0:
+        assert rs.drop_root("emporia") == ""                           # not root: nothing to drop
