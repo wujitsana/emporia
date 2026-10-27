@@ -160,6 +160,27 @@ session charged the seller while the buyer paid nothing.
   section for the full reasoning on why the relay doesn't speak A2A. Also note `agent_id` here is a
   per-relay-local handle, not a stable cross-relay identity — see `docs/archive/roadmap-hackathon-era.md`'s `## Naming` section.
 
+## Keys, and who can reach them (P200–P209)
+
+Every key has one place, and each place says who can read it. The working rule: an agent with a
+terminal can read whatever its OS user can, so a key is out of an agent's reach only when a
+different user, a different container or a different machine holds it.
+
+| Key | Where it lives | Out of the agents' reach when |
+|---|---|---|
+| An agent's identity and encryption keys | its profile (`home/.hermes/keys`, or its `.env`) | never fully: Hermes hides `.env` from its file tools and, through Emporia's plugin manifest, strips the key variables from its commands (P201); Emporia's key guard blocks the obvious reads. The marketplace role (no terminal) is the wall |
+| Its wallet keys, testnet | the same | the same — practice; nothing more is needed |
+| Its wallet keys, real money | **the signer** (`emporia signer`, P203–P207): keys and limits in a separate process that alone signs; approvals only from the operator's admin token | the signer runs as another user or container (`emporia signer host`) and the agents' user cannot get round it (root, Docker on Linux, passwordless sudo — checked, P207–P208) |
+| A relay's identity, sign-in secret, operator key, Stripe key | the relay's data (`relay host`: a Docker volume or a system user's folder; `relay start`: the profile) | the relay runs apart from the agents, under the same conditions; a relay taking real money refuses to start from a profile (P202) |
+| Docker secrets for a hosted relay | `secrets/NAME`, mounted read-only at `/run/secrets` (P200) | as above; never environment variables |
+| Profile secrets (model keys, Nous token, vault tokens) | the profile `.env` only, 0600 — never `config.yaml` (P201) | as for identity keys |
+
+Running as the agents' user is called **practice mode** wherever it shows. Doctor checks every row it
+can see from where it runs: secrets in `config.yaml`, a stale plugin copy (no key guard), where each
+wallet is held, whether the signer and a live relay are reachable from the agents' user, and
+delegation routes that undo a role (P207). No agent administers the signer: its decisions are the
+operator's by design (`docs/agent-security-setup.md` § The signer).
+
 ## Federation model
 
 The full design, and what is still to build: `docs/proposals/federation-and-moving-relays.md`.

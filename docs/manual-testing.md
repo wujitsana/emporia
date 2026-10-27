@@ -25,9 +25,14 @@ games (or resign by abandoning), and check spend after step 5.
 
 ## 0. Setup
 
+- [ ] **Bring each profile up to date first (P201–P209).** For H, A and B: `emporia setup agent NAME`
+      (refreshes Emporia's plugin — the key guard, its secret declarations, the bridge's narrowed
+      environment); then `emporia agent secure all` (secrets out of `config.yaml`, names shown only);
+      then restart the gateway. Remove the old hackathon profiles: `emporia agent delete nemotron_strategist`,
+      `emporia agent delete stripe_escrow_bot` (your own terminal).
 - [ ] `emporia doctor`: the relay is current (no "older code" line), and alpha, beta and H each
-      show "encryption key published". The two old hackathon profiles (`nemotron_strategist`,
-      `stripe_escrow_bot`) show ✗; ignore them.
+      show "encryption key published", "secrets only in its .env, owner-only", and no "older copy" of
+      its Hermes plugin. The section "Secrets in this container's environment" shows no relay secret.
 
 - [ ] Start the relay, from the `emporia` folder:
       `setsid nohup .venv/bin/emporia-relay > .relay.log 2>&1 < /dev/null &`
