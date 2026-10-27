@@ -25,6 +25,7 @@ the socket could pose as the signer and collect the operator's admin token.
 
 from __future__ import annotations
 
+import re
 from pathlib import Path
 
 from emporia.relay_host import MARK, _write
@@ -42,19 +43,45 @@ PORT = 8790
 PORT_URL = f"http://127.0.0.1:{PORT}"
 
 
-def compose_yaml(build: str, hermes_in_docker: bool = True) -> str:
+def data_source(mount: str, mountinfo: str | None = None) -> tuple[str, str]:
+    """P211: what Hermes's data folder (`mount`, inside its container) is on the
+    host — ("bind", host path), ("volume", its name) or ("", "") when it cannot
+    tell. From /proc/self/mountinfo: a guess to confirm, never relied on blind."""
+    try:
+        lines = (mountinfo if mountinfo is not None else Path("/proc/self/mountinfo").read_text()).splitlines()
+    except OSError:
+        return "", ""
+    for line in lines:
+        f = line.split()
+        if len(f) > 4 and f[4] == mount:
+            if m := re.fullmatch(r".*/volumes/([^/]+)/_data", f[3]):
+                return "volume", m.group(1)
+            if f[3] != "/":
+                return "bind", f[3]
+    return "", ""
+
+
+def compose_yaml(build: str, hermes_in_docker: bool = True, hermes_mount: str = "/opt/data",
+                 hermes_volume: str = "") -> str:
     """`build` is the checkout, relative to the compose file. Hermes in Docker
-    shares the socket volume; Hermes on the host reaches a port on 127.0.0.1."""
+    shares the socket volume; Hermes on the host reaches a port on 127.0.0.1.
+    `hermes_mount`: where Hermes's container has its data (its HERMES_HOME), so
+    the admin service sees the profiles at the paths their settings name;
+    `hermes_volume`: that data's named volume, when it is one."""
     env = f"""      - EMPORIA_SIGNER_DIR=/data/signer
       - EMPORIA_SIGNER_SOCKET={SOCKET}
       - EMPORIA_NO_DOTENV=1"""
     if hermes_in_docker:
         reach = f"""      - {SOCKET_VOLUME}:{SOCKET_DIR}       # the socket, shared with Hermes — nothing else is"""
         command, ports, admin_url = '["emporia", "signer", "serve"]', "", ""
-        data, hermes_home = "${HERMES_DATA:-~/.hermes}:/opt/data", "/opt/data"
+        hermes_home = hermes_mount
+        data = f"hermes-data:{hermes_mount}" if hermes_volume else f"${{HERMES_DATA}}:{hermes_mount}"
         volumes_tail = f"""  {SOCKET_VOLUME}:
     name: {SOCKET_VOLUME}
-"""
+""" + (f"""  hermes-data:                           # Hermes's own data volume
+    external: true
+    name: {hermes_volume}
+""" if hermes_volume else "")
     else:
         reach = ""
         command = f'["emporia", "signer", "serve", "--port", "{PORT}"]'
@@ -156,12 +183,13 @@ def service_env() -> str:
     return f"EMPORIA_SIGNER_DIR={STATE_DIR} EMPORIA_SIGNER_SOCKET={SOCKET}"
 
 
-def write_docker(folder: Path, repo: Path, hermes_data: str, hermes_in_docker: bool = True) -> list[Path]:
+def write_docker(folder: Path, repo: Path, hermes_data: str, hermes_in_docker: bool = True,
+                 hermes_mount: str = "/opt/data", hermes_volume: str = "") -> list[Path]:
     import os
     folder.mkdir(parents=True, exist_ok=True)
     rel = os.path.relpath(repo, folder)
     files = _write({folder / "compose.yaml": compose_yaml(rel if rel.startswith(".") else f"./{rel}",
-                                                          hermes_in_docker)})
+                                                          hermes_in_docker, hermes_mount, hermes_volume)})
     env = folder / ".env"
     if not env.exists():
         env.write_text(f"{MARK}\n# Hermes's data folder on the host — the one mounted at /opt/data in its container.\n"

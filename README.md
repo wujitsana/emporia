@@ -122,7 +122,7 @@ Full detail: **`docs/RUNBOOK.md`**.
 
 ### The `emporia` command
 
-After the first install, every setup step is one command, `emporia` (P127). The installer links it into `~/.local/bin` when that is on your PATH (P210); otherwise run `.venv/bin/emporia`:
+After the first install, every setup step is one command, `emporia` (P127). The installer links it into a folder on your PATH — one on Hermes's data volume first (in a container only that survives it being recreated), else `~/.local/bin` — relative, so it still works where the volume is mounted at another path (P210–P211); otherwise run `.venv/bin/emporia`:
 
 ```bash
 emporia doctor                        # read-only check of relay, agents, dashboard tab — with fixes

@@ -314,3 +314,36 @@ def test_doctor_fails_a_live_relay_whose_keys_the_agents_user_could_reach(monkey
     rep = cli.Report()
     cli.doctor_relay(rep)
     assert rep.failed and "takes real money (a live Stripe key)" in capsys.readouterr().out
+
+
+def test_the_admin_service_finds_hermes_data_however_it_is_mounted():
+    """P211: /opt/data in the official image, not always; a host folder or a named volume."""
+    from emporia import signer_host as sh
+    bind = "284 224 253:2 /home/wuji/.hermes /opt/data rw,relatime - ext4 /dev/vda2 rw"
+    volume = "301 224 253:2 /var/lib/docker/volumes/team_hermes/_data /srv/hermes rw - ext4 /dev/vda2 rw"
+    assert sh.data_source("/opt/data", bind) == ("bind", "/home/wuji/.hermes")
+    assert sh.data_source("/srv/hermes", volume) == ("volume", "team_hermes")
+    assert sh.data_source("/elsewhere", bind) == ("", "")
+    composed = sh.compose_yaml("../..", True, "/srv/hermes", "team_hermes")
+    assert "hermes-data:/srv/hermes" in composed and "name: team_hermes" in composed
+    assert "HERMES_HOME=/srv/hermes" in composed
+
+
+def test_the_emporia_link_goes_on_the_data_volume_and_is_relative(tmp_path, monkeypatch):
+    """P211: in a container only what is on Hermes's data volume survives it being recreated."""
+    import importlib.util
+    spec = importlib.util.spec_from_file_location("inst_p211", "installer/install.py")
+    inst = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(inst)
+    hermes = tmp_path / "data"
+    checkout = hermes / "profiles" / "p" / "emporia"
+    (checkout / ".venv" / "bin").mkdir(parents=True)
+    (checkout / ".venv" / "bin" / "emporia").write_text("#!/bin/sh\n")
+    (hermes / ".local" / "bin").mkdir(parents=True)
+    monkeypatch.setattr(inst, "_EMPORIA_DIR", checkout)
+    monkeypatch.setattr(inst.shutil, "which", lambda name: None)
+    monkeypatch.setenv("HERMES_HOME", str(hermes))
+    monkeypatch.setenv("PATH", f"/usr/bin:{hermes / '.local' / 'bin'}")
+    link = inst.link_cli()
+    assert link == hermes / ".local" / "bin" / "emporia" and not os.path.isabs(os.readlink(link))
+    assert link.resolve() == (checkout / ".venv" / "bin" / "emporia").resolve()

@@ -1351,20 +1351,44 @@ def _ensure_project_dependencies(*, dry_run: bool = False) -> None:
 def link_cli(bin_dir: Path | None = None) -> Path | None:
     """P210: `emporia` on PATH. The command lives in this checkout's .venv, and
     every doc says `emporia …`; a first install left it unreachable by that
-    name. Linked into the first of ~/.local/bin (or `bin_dir`) on PATH, never
-    over another `emporia`. Returns the link, or None when it says how instead."""
+    name. Never over another `emporia`. Returns the link, or None when it says
+    how instead.
+
+    P211: where. Hermes's data (HERMES_HOME) is often a volume — /opt/data in
+    the official image, ~/.hermes on a host — and in a container only what is
+    on it survives the container being recreated. So a folder on PATH inside
+    HERMES_HOME comes first, then ~/.local/bin; and the link is relative when
+    it and the command share that folder, so it still points right where the
+    same volume is mounted at another path."""
     exe = _EMPORIA_DIR / ".venv" / "bin" / "emporia"
     if not exe.exists() or shutil.which("emporia"):
         return None
-    target_dir = bin_dir or Path.home() / ".local" / "bin"
-    on_path = str(target_dir) in os.environ.get("PATH", "").split(os.pathsep)
-    link = target_dir / "emporia"
-    if not on_path or link.exists() or link.is_symlink():
+    on_path = [Path(d) for d in os.environ.get("PATH", "").split(os.pathsep) if d]
+    hermes = Path(os.environ.get("HERMES_HOME") or Path.home() / ".hermes").expanduser().resolve()
+    if bin_dir is not None:
+        target_dir = bin_dir if bin_dir in on_path else None
+    else:
+        inside = [d for d in on_path if d.resolve().is_relative_to(hermes)]
+        home_bin = Path.home() / ".local" / "bin"
+        target_dir = (inside[0] if inside else home_bin if home_bin in on_path else None)
+    link = target_dir / "emporia" if target_dir else None
+    if link is None or link.exists() or link.is_symlink():
         print(f"  `emporia` is not on PATH. Run it as {exe}, or: ln -s {exe} <a folder on your PATH>/emporia")
         return None
     target_dir.mkdir(parents=True, exist_ok=True)
-    link.symlink_to(exe)
+    try:
+        if target_dir.resolve().is_relative_to(hermes) and exe.resolve().is_relative_to(hermes):
+            link.symlink_to(os.path.relpath(exe.resolve(), target_dir.resolve()))
+        else:
+            link.symlink_to(exe)
+    except OSError as e:
+        print(f"  Could not link `emporia` ({e}); run it as {exe}")
+        return None
     print(f"  `emporia` → {link}")
+    in_box = any(Path(m).exists() for m in ("/.dockerenv", "/run/.containerenv"))
+    if in_box and not target_dir.resolve().is_relative_to(hermes):
+        print(f"  ! {target_dir} is not on Hermes's data volume ({hermes}): the link goes when the container is "
+              f"recreated — run the installer again then, or add a folder inside {hermes} to PATH.")
     return link
 
 

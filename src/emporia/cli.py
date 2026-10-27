@@ -1121,14 +1121,19 @@ def _signer_host(args: argparse.Namespace) -> int:
         return 1
     folder = Path(args.dir).expanduser() if args.dir else (this_profile() or Path.home()) / "emporia-signer"
     if run == "docker":
-        hermes_data = os.getenv("HERMES_HOME", "~/.hermes") if not in_box else "~/.hermes"
-        if not in_box:
-            hermes_data = str(Path(hermes_data).expanduser().resolve())
-        written = sh.write_docker(folder, REPO, hermes_data, hermes_in_docker=in_box)
+        # P211: Hermes's data is wherever its container mounts it (/opt/data in the
+        # official image, not always), and on the host a folder or a named volume.
+        mount = str(Path(os.getenv("HERMES_HOME") or Path.home() / ".hermes").expanduser().resolve())
+        kind, source = sh.data_source(mount) if in_box else ("", "")
+        hermes_data = mount if not in_box else source if kind == "bind" else "/path/to/hermes-data"
+        written = sh.write_docker(folder, REPO, hermes_data, hermes_in_docker=in_box, hermes_mount=mount,
+                                  hermes_volume=source if kind == "volume" else "")
         print(f"Wrote {', '.join(str(p) for p in written)}")
         if in_box:
-            print(f"  Check HERMES_DATA in {folder / '.env'}: Hermes's data folder on the host (mounted at /opt/data "
-                  f"in its container) — from inside, I cannot see where that is.")
+            print("  Hermes's data: " + (
+                f"the Docker volume {source!r}, mounted at {mount} in its container" if kind == "volume" else
+                f"{source} on the host, mounted at {mount} — check HERMES_DATA in {folder / '.env'}" if kind == "bind"
+                else f"mounted at {mount}; set HERMES_DATA in {folder / '.env'} to where it is on the host"))
         reachable = docker and subprocess.run(["docker", "info"], capture_output=True).returncode == 0
         intro = (f"1. On the host, in this folder (wherever Hermes's data is mounted there) — {folder}:"
                  if not reachable else f"1. In {folder}:")
