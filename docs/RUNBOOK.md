@@ -137,6 +137,22 @@ relay's volume, where it never passes through an environment.
 In the image the relay starts as root only long enough to read its secret files (they belong to
 whoever wrote them on the host) and hand its data to its own user, then runs as `emporia` (uid 10001).
 
+### Who could reach a relay's keys
+
+A relay holds its identity key, the escrow operator key and, with cards, the Stripe key. Apart from
+the agents means the same as for the signer (docs/agent-security-setup.md § The signer):
+
+| The relay runs | Its keys are out of the agents' reach when |
+|---|---|
+| From a Hermes profile (`emporia relay start`) | never — testnet only; a relay taking real money refuses to start there (P202) |
+| `relay host` in Docker, Hermes in Docker | Hermes's container has no Docker socket |
+| `relay host` in Docker or as a service, Hermes on the same Linux host | Hermes's user is not root, has no passwordless `sudo`, cannot use Docker (Docker access is root) |
+| `relay host` in Docker Desktop, Hermes on the same Mac | never — Docker Desktop runs as you; use the system-service way or its own server |
+| On its own server (any admin Hermes in its own container, no Docker socket) | always |
+
+`emporia relay host` warns when Hermes's user could get round it, and `emporia doctor` fails a relay
+on this machine that takes real money while it could (P208).
+
 ### Watching a relay you host
 
 A relay serves no public dashboard (P196): its built-in copy is served only when it listens on

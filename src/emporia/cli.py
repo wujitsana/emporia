@@ -476,6 +476,11 @@ def cmd_relay_host(args: argparse.Namespace) -> int:
     env_path.chmod(0o600)
     for path in (*written, env_path):
         print(f"  wrote {path}")
+    # P208: its keys are apart from Hermes only if Hermes's user cannot get round that.
+    if ways := _reachable_anyway(run == "docker"):
+        print(f"  ! Hermes runs here as a user for whom {'; '.join(ways)} — its agents could reach this relay's keys "
+              f"(identity, operator key, Stripe key). Fine on testnet; before real money take that away, or run the "
+              f"relay on its own server.")
     needs_key = payments and "EMPORIA_OPERATOR_ADDRESS" not in installer().harvest_env(folder)
     done = (_host_docker if run == "docker" else _host_service)(folder, env_path, needs_key, bool(admin), domain)
     if not done:
@@ -911,7 +916,7 @@ def cmd_signer(args: argparse.Namespace) -> int:
             print(f"signer: not reachable at {url} — {e}")
             return 1
         apart = h.get("uid") != os.getuid()
-        ways_round = _escalations() if apart else []
+        ways_round = _reachable_anyway(bool(h.get("in_container"))) if apart else []
         print(f"signer: running at {url}, as uid {h.get('uid')}" + (
             " — apart from this user, BUT " + "; ".join(ways_round) + ". Close that for it to be a wall."
             if ways_round else " — apart from this user" if apart else
@@ -976,11 +981,23 @@ def _escalations() -> list[str]:
     return found
 
 
+def _reachable_anyway(in_container: bool) -> list[str]:
+    """P208: which of _escalations() undo a separation, for something kept apart
+    in a container or not. On Linux any of them does: Docker access is root (a
+    container may mount /). On macOS Docker Desktop runs as the user, so its
+    containers reach only what the user can — a separate account stays apart;
+    something inside Docker Desktop does not."""
+    ways = _escalations()
+    if sys.platform == "darwin" and not in_container:
+        ways = [w for w in ways if "Docker" not in w]
+    return ways
+
+
 def _signer_apart() -> bool:
     """A signer answers, runs as another user than this one, and this user has
     no way around that (P207)."""
     h = _signer_up(_signer_url(_signer_args("")))
-    return bool(h) and h.get("uid") != os.getuid() and not _escalations()
+    return bool(h) and h.get("uid") != os.getuid() and not _reachable_anyway(bool(h.get("in_container")))
 
 
 def _signer_up(url: str) -> dict | None:
@@ -1307,7 +1324,8 @@ def _signer_policy(args: argparse.Namespace) -> int:
         # user, the agent's own processes can read the signer's folder — and so
         # approve its own payments or raise its limits.
         profile = profiles_root() / name
-        ways_round = _escalations() if profile.exists() else []
+        # Here (the profile is on this machine) the signer is a service, not a container.
+        ways_round = _reachable_anyway(False) if profile.exists() else []
         if ways_round and os.getenv("EMPORIA_ALLOW_HOT_AGENT_WALLET", "").strip() != "1":
             print(f"signer policy mainnet: the agents' user could reach the signer anyway — {'; '.join(ways_round)}. "
                   f"Close that first; testnet works as it is.")
@@ -2088,6 +2106,12 @@ def doctor_relay(rep: Report) -> dict | None:
         rep.warn("escrow off — x402 service purchases unavailable", "emporia setup relay --preset base-sepolia")
     if h.get("tempo_network"):
         rep.ok(f"Tempo on {label(h['tempo_network'])}")
+    # P208: a relay on this machine holding real money, and the agents' user
+    # able to get round whatever keeps its keys apart.
+    if h.get("live_money") and (ways := _reachable_anyway(bool(h.get("in_container")))):
+        rep.fail(f"this relay takes real money ({', '.join(h['live_money'])}), and the agents' user could reach its "
+                 f"keys anyway: {'; '.join(ways)}",
+                 "take that away from the user Hermes runs as, or run the relay on its own server")
     doctor_federation(rep, h)
     return h
 
@@ -2351,7 +2375,7 @@ def doctor_signer(rep: Report, profile: Path, dotenv: dict[str, str]) -> None:
     if h.get("uid") == os.getuid():
         rep.warn("its wallet is behind the signer in practice mode — the same user as the agents, so no protection "
                  "against a rogue agent (testnet only)", "emporia signer host")
-    elif ways_round := _escalations():
+    elif ways_round := _reachable_anyway(bool(h.get("in_container"))):
         rep.warn(f"the signer runs apart, but the agents' user could reach it anyway: {'; '.join(ways_round)}",
                  "take that away from the user Hermes runs as (docs/agent-security-setup.md § The signer)")
     else:

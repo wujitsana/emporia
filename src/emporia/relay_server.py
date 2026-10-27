@@ -5238,6 +5238,10 @@ async def health(request: Request):
         # the operator to walk Stripe's hosted KYC. Without this the dashboard
         # was telling test-mode operators to run a tool that 400s at them.
         "stripe_mode": _stripe_key_mode(),
+        # P208: for this machine's doctor — whether its keys guard real money,
+        # and whether it runs in a container (who could reach them differs).
+        "live_money": live_money(),
+        "in_container": in_container(),
         "stripe_profile_ready": stripe_profile_ready,
         "stripe_profile_id": _stripe_profile_id(),
         "stripe_api_version": os.getenv("STRIPE_API_VERSION", "2026-04-22.preview"),

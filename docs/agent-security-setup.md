@@ -165,10 +165,18 @@ signer's folder, so it adds no protection, and mainnet will not unlock there. Fo
 | On macOS or Windows, without Docker | not set up for you: run `emporia signer serve --port 8790` under a separate account yourself | a local port | that account's files are not readable by Hermes's |
 
 Hermes can connect to the socket but not replace it: its folder belongs to the signer. The wall holds
-only if the agents' user cannot get round it — not root, no control of Docker (Docker's socket
-mounted into Hermes's container, or the `docker` group on the host: either lets an agent start a
-container with the signer's volume), no passwordless `sudo`. `emporia signer status` and `emporia
-doctor` check all three, and mainnet will not unlock while any is there.
+only if the agents' user cannot get round it — not root, no passwordless `sudo`, and no control of
+Docker where that matters:
+
+- **Linux:** Docker access *is* root — the `docker` group, or Docker's socket mounted into Hermes's
+  container, lets an agent run a container that mounts `/`. Then nothing on the machine is apart, not
+  a container and not a system user: take Docker away from Hermes's user, run Hermes itself in Docker
+  without the socket, or keep the money on another machine.
+- **macOS:** Docker Desktop runs as you, so its containers reach only your files. A signer in Docker
+  Desktop is in your reach; one under a separate macOS account is not, Docker or no Docker.
+
+`emporia signer status` and `emporia doctor` check this (the signer's `/health` says whether it runs
+in a container), and mainnet will not unlock while the signer can be reached.
 
 With the signer apart, a **developer** agent may hold a wallet: `emporia setup agent NAME --role
 developer --wallet` puts it behind the signer at once, out of its terminal's reach.

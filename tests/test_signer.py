@@ -82,7 +82,9 @@ def test_a_wrong_token_is_refused(held, monkeypatch):
 
 def test_the_signer_says_whether_it_runs_apart_from_the_agents(held):
     _, app = held
-    assert app.get("/health").json() == {"service": "emporia-signer", "uid": os.getuid()}
+    from emporia.relay_host import in_container
+    assert app.get("/health").json() == {"service": "emporia-signer", "uid": os.getuid(),
+                                         "in_container": in_container()}
 
 
 def test_a_tester_adds_an_agent_to_the_signer_and_removes_it(profiles, tmp_path, monkeypatch, capsys):  # noqa: F811
@@ -290,3 +292,25 @@ def test_hermes_on_the_host_reaches_its_signer_container_on_a_loopback_port(tmp_
     assert f"HERMES_DATA={tmp_path / 'hermes'}" in (tmp_path / "box" / ".env").read_text()
     out = capsys.readouterr().out
     assert "--url http://127.0.0.1:8790" in out and "Not a wall yet" in out
+
+
+def test_what_gets_round_a_separation_depends_on_the_os_and_the_container(monkeypatch):
+    """P208: Docker access is root on Linux; on macOS Docker Desktop reaches only the user's files."""
+    from emporia import cli
+    monkeypatch.setattr(cli, "_escalations", lambda: ["this user can control Docker (/var/run/docker.sock)"])
+    monkeypatch.setattr(cli.sys, "platform", "linux")
+    assert cli._reachable_anyway(False) and cli._reachable_anyway(True)
+    monkeypatch.setattr(cli.sys, "platform", "darwin")
+    assert cli._reachable_anyway(False) == []          # a separate macOS account stays apart
+    assert cli._reachable_anyway(True)                  # a container in Docker Desktop does not
+
+
+def test_doctor_fails_a_live_relay_whose_keys_the_agents_user_could_reach(monkeypatch, capsys):
+    from emporia import cli
+    monkeypatch.setattr(cli, "_reachable_anyway", lambda in_container: ["this user has sudo without a password"])
+    monkeypatch.setattr(cli, "health", lambda timeout=3.0, url="": {
+        "version": "x", "live_money": ["a live Stripe key"], "in_container": True})
+    monkeypatch.setattr(cli, "doctor_federation", lambda rep, h: None)
+    rep = cli.Report()
+    cli.doctor_relay(rep)
+    assert rep.failed and "takes real money (a live Stripe key)" in capsys.readouterr().out

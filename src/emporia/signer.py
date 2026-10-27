@@ -252,8 +252,10 @@ def _admin(request: Request) -> None:
 
 @app.get("/health")
 def health() -> dict:
-    """Its user, so a client can tell whether it is apart from the agents."""
-    return {"service": "emporia-signer", "uid": os.getuid()}
+    """Its user and whether it runs in a container, so a client can tell
+    whether it is apart from the agents, and what could get round that."""
+    from emporia.relay_host import in_container
+    return {"service": "emporia-signer", "uid": os.getuid(), "in_container": in_container()}
 
 
 @app.get("/v1/wallet")
