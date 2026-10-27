@@ -2627,8 +2627,9 @@ def doctor_machine_secrets(rep: Report) -> None:
     seen by every process in it, and a relay started from a shell in it takes
     that value over its own .env's."""
     rep.section("Secrets in this container's environment")
+    from emporia.config import ENV_BEFORE_DOTENV     # P218: not what this profile's .env merged in
     leaked = [k for k in ("STRIPE_SECRET_KEY", "STRIPE_WEBHOOK_SECRET", "EMPORIA_OPERATOR_PRIVATE_KEY")
-              if os.environ.get(k)]
+              if k in ENV_BEFORE_DOTENV and os.environ.get(k)]
     if leaked:
         rep.warn(f"{', '.join(leaked)} set for the whole container — only the relay needs them, and a relay "
                  "started here would use these over its own .env's",

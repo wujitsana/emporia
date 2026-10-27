@@ -40,6 +40,11 @@ DEFAULT_DB_FILENAME = "~/.hermes/emporia.sqlite3"
 
 _dotenv_loaded = False
 
+# P218: the names the process environment held before any .env was merged in —
+# what the container (docker-compose) or the shell gave it. Doctor asks this, not
+# os.environ: after the merge a profile's own .env values look the same.
+ENV_BEFORE_DOTENV: frozenset[str] = frozenset(os.environ)
+
 
 def _merge_dotenv(path: Path) -> None:
     """Merge `path` into os.environ with **setdefault semantics**.
