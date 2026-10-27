@@ -24,6 +24,7 @@ import argparse
 import asyncio
 import importlib.util
 import json
+import io
 import os
 import signal
 import subprocess
@@ -124,7 +125,9 @@ def wizard(fn):
         try:
             while True:
                 _WIZARD = {"answers": [], "replay": list(replay), "prefill": prefill, "open": True,
-                           "lookups": lookups}
+                           "lookups": lookups, "muted": None}
+                if replay or prefill is not _NOTHING:   # P216: going back — its output is on screen already
+                    _mute()
                 try:
                     return fn(copy.copy(args))
                 except _Back:
@@ -132,10 +135,37 @@ def wizard(fn):
                     if not answers:
                         raise Cancelled() from None
                     replay, prefill = answers[:-1], answers[-1]
-                    print("  ← back")
+                    _unmute()
+                    print("  ← back\n")
         finally:
+            _unmute()
             _WIZARD = None
     return run
+
+
+def _mute() -> None:
+    """Hide output while earlier answers replay. Anything that asks on its own
+    (a hidden secret, a plain input) brings the screen back first."""
+    import builtins
+    import getpass
+    _WIZARD["muted"] = (sys.stdout, builtins.input, getpass.getpass)
+    sys.stdout = io.StringIO()
+
+    def speaking(original):
+        def ask_anyway(*a, **k):
+            _unmute()
+            return original(*a, **k)
+        return ask_anyway
+    builtins.input = speaking(builtins.input)
+    getpass.getpass = speaking(getpass.getpass)
+
+
+def _unmute() -> None:
+    import builtins
+    import getpass
+    if _WIZARD is not None and _WIZARD.get("muted"):
+        sys.stdout, builtins.input, getpass.getpass = _WIZARD["muted"]
+        _WIZARD["muted"] = None
 
 
 def wizard_commit() -> None:
@@ -149,14 +179,20 @@ def _wiz_open() -> bool:
 
 
 def _wiz_replay():
-    """(True, answer) while replaying earlier answers."""
+    """(True, answer) while replaying earlier answers. After the last one the
+    screen speaks again, for the question being asked anew."""
     if _wiz_open() and _WIZARD["replay"]:
-        return True, _WIZARD["replay"].pop(0)
+        value = _WIZARD["replay"].pop(0)
+        if not _WIZARD["replay"]:
+            _unmute()
+        return True, value
     return False, None
 
 
 def _wiz_prefill(fallback):
-    """The answer last given to the question being asked again, once."""
+    """The answer last given to the question being asked again, once. Every
+    question asked live comes through here: the screen speaks again first."""
+    _unmute()
     if _wiz_open() and _WIZARD["prefill"] is not _NOTHING:
         value, _WIZARD["prefill"] = _WIZARD["prefill"], _NOTHING
         return value
@@ -185,19 +221,25 @@ def _wiz_lookup(key, compute):
     return cache[key]
 
 
+def _said(question: str, answer: str) -> None:
+    """P216: an answer, as one short line and a breath: a label's detail
+    (after " — ") was for choosing, not for the record."""
+    print(f"{question} → {answer.split(' — ')[0]}\n")
+
+
 def ask(question: str, default: bool) -> bool:
     if not _TTY:
         return default
     replayed, value = _wiz_replay()
     if replayed:
-        print(f"{question} → {'yes' if value else 'no'}")
+        _said(question, "yes" if value else "no")
         return _wiz_record(value)
     default = _wiz_prefill(default)
     if m := _menus():
         answer = m.confirm(question, default)
         if answer is m.BACK:
             _back()
-        print(f"{question} → {'yes' if answer else 'no'}")
+        _said(question, "yes" if answer else "no")
         return _wiz_record(answer)
     hint = "[Y/n]" if default else "[y/N]"
     answer = input(f"{question} {hint}{' (b: back)' if _wiz_open() else ''} ").strip().lower()
@@ -213,13 +255,14 @@ def prompt(question: str, default: str = "") -> str:
         return default
     replayed, value = _wiz_replay()
     if replayed:
-        print(f"{question}: {value}")
+        _said(question, value)
         return _wiz_record(value)
     default = _wiz_prefill(default)
     hint = "  (Esc ⏎ back)" if _wiz_open() else ""
     answer = input(f"{question}{f' [{default}]' if default else ''}{hint}: ").strip()
     if "\x1b" in answer:
         _back()
+    print()
     return _wiz_record(answer or default)
 
 
@@ -230,8 +273,11 @@ def choose(question: str, options: list[tuple[str, str]], default: int = 0) -> s
     keys = [k for k, _ in options]
     replayed, value = _wiz_replay()
     if replayed and value in keys:
-        print(f"{question} → {options[keys.index(value)][1]}")
+        _said(question, options[keys.index(value)][1])
         return _wiz_record(value)
+    if replayed:            # the options changed since: stop replaying, ask from here, visibly
+        _WIZARD["replay"].clear()
+        _unmute()
     prior = _wiz_prefill(None)
     default = keys.index(prior) if prior in keys else default
     back = next((k for k in keys if k in _BACK_KEYS), None)
@@ -241,7 +287,7 @@ def choose(question: str, options: list[tuple[str, str]], default: int = 0) -> s
             if back is None:
                 _back()
             picked = keys.index(back)
-        print(f"{question} → {options[picked][1]}")
+        _said(question, options[picked][1])
         return _wiz_record(options[picked][0])
     print(question)
     for i, (_, text) in enumerate(options, 1):
@@ -266,7 +312,7 @@ def choose_many(question: str, options: list[tuple[str, str]], ticked: set[str])
         return [k for k, _ in options if k in ticked]
     replayed, value = _wiz_replay()
     if replayed:
-        print(f"{question} → {', '.join(t for k, t in options if k in value) or 'none'}")
+        _said(question, ", ".join(t.split(" — ")[0] for k, t in options if k in value) or "none")
         return _wiz_record(value)
     ticked = set(_wiz_prefill(ticked))
     if m := _menus():
@@ -275,7 +321,7 @@ def choose_many(question: str, options: list[tuple[str, str]], ticked: set[str])
         if picked is m.BACK and _wiz_open():
             _back()
         chosen = [k for k, _ in options if k in ticked] if picked is m.BACK else [options[i][0] for i in picked]
-        print(f"{question} → {', '.join(t for k, t in options if k in chosen) or 'none'}")
+        _said(question, ", ".join(t.split(" — ")[0] for k, t in options if k in chosen) or "none")
         return _wiz_record(chosen)
     print(question)
     for i, (key, text) in enumerate(options, 1):
@@ -2770,13 +2816,17 @@ def cmd_setup_agent(args: argparse.Namespace) -> int:
         print("\nWallet keys already on this machine (bring your own):")
         for f in found:
             print(f"  · {_KIND_NAME[f['kind']]} in {f['where']} → {f['address']}")
+    have = ({f: a for f in ("evm", "svm") if (a := _wallet_address(profile, _agent(name)[1], f == "svm"))}
+            if existing else {})
     if args.use_found_keys and found:
         mode = "found"
     elif role == "developer" and not behind_signer:
         mode = "none"
     else:
-        mode = _wallet_mode(args, default="found" if found else "none", found=bool(found))
+        mode = _wallet_mode(args, default="found" if found else "none", found=bool(found), have=have)
     families = {"none": [], "evm": ["evm"], "solana": ["svm"]}.get(mode, ["evm", "svm"])
+    if mode == "keep":
+        families = list(have)
     if mode == "byo":
         families = ["evm", "svm"]
     if mode == "found":
@@ -2793,6 +2843,13 @@ def cmd_setup_agent(args: argparse.Namespace) -> int:
     else:   # P160: what this relay takes, on the wallets it has
         networks = ",".join(_default_networks(families, unlocked))
     wallet = bool(families)
+    if existing:   # P216: its own limits are the defaults, not the built-in ones
+        current = inst.harvest_env(profile)
+        for attr, var, built_in in (("max_payment_cents", "EMPORIA_X402_MAX_PAYMENT_CENTS", 1000),
+                                    ("max_daily_cents", "EMPORIA_X402_MAX_DAILY_CENTS", 2500),
+                                    ("approve_above_cents", "EMPORIA_PAYMENT_APPROVAL_CENTS", 500)):
+            if getattr(args, attr) == built_in and current.get(var, "").isdigit():
+                setattr(args, attr, int(current[var]))
     if wallet and _TTY and not (args.wallet or args.solana):
         args.max_payment_cents = prompt_cents("Largest single payment", args.max_payment_cents)
         args.max_daily_cents = prompt_cents("Most it may spend in 24 hours", args.max_daily_cents)
@@ -2827,6 +2884,8 @@ def cmd_setup_agent(args: argparse.Namespace) -> int:
         if mode == "found":
             _offer_found_keys(profile, agent_id, args.use_found_keys)
             made = {f: a for f in ("evm", "svm") if (a := _wallet_address(profile, agent_id, f == "svm"))}
+        elif mode == "keep":
+            made = have
         else:
             made = _make_wallets(profile, agent_id, mode)
         for kind, address in made.items():
@@ -3482,8 +3541,10 @@ WALLET_MODES = [
 ]
 
 
-def _wallet_mode(args: argparse.Namespace, default: str = "none", found: bool = False) -> str:
-    """Which wallets to make: from the flags, else asked."""
+def _wallet_mode(args: argparse.Namespace, default: str = "none", found: bool = False,
+                 have: dict[str, str] | None = None) -> str:
+    """Which wallets to make: from the flags, else asked. P216: an agent that
+    already has wallets is offered to keep them, first and preselected."""
     if getattr(args, "import_phrase", False):
         return "import"
     if args.wallet and args.solana:
@@ -3492,8 +3553,11 @@ def _wallet_mode(args: argparse.Namespace, default: str = "none", found: bool = 
         return "solana"
     if args.wallet:
         return "evm"
-    modes = ([("found", "Use the wallet keys found above (recommended — they are already yours)")]
-             if found else []) + WALLET_MODES
+    kept = [("keep", "Keep its wallets — " + ", ".join(
+        f"{'Solana' if f == 'svm' else 'EVM'} {a[:6]}…{a[-4:]}" for f, a in (have or {}).items()))] if have else []
+    modes = kept + ([("found", "Use the wallet keys found above (recommended — they are already yours)")]
+                    if found and not have else []) + WALLET_MODES
+    default = "keep" if have else default
     keys = [k for k, _ in modes]
     return choose("Which wallets should it have?", modes, keys.index(default) if default in keys else 0)
 

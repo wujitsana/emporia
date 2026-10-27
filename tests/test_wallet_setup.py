@@ -1,4 +1,5 @@
 """P160: networks in words, the agent's choice of network, and wallets from the CLI."""
+import argparse
 import base64
 import json
 import os
@@ -340,7 +341,7 @@ def test_an_identity_key_links_only_to_the_same_key(profiles, monkeypatch, capsy
     # The agent now signs with the linked key, even with the file gone.
     want = identity.ed25519.Ed25519PrivateKey.from_private_bytes(key_file.read_bytes())
     monkeypatch.setattr(identity, "_LINKED", {})
-    monkeypatch.setenv("EMPORIA_IDENTITY_KEY_SOURCE", f"env:LAM_ID")
+    monkeypatch.setenv("EMPORIA_IDENTITY_KEY_SOURCE", "env:LAM_ID")
     monkeypatch.setenv("LAM_ID", key_file.read_bytes().hex())
     key_file.rename(keys / "moved.away")
     priv, pub = identity.generate_or_load_keypair("lam")
@@ -1052,3 +1053,29 @@ def test_an_unlocked_in_process_wallet_still_pays_testnets_only(tmp_path):
         os.environ["EMPORIA_X402_PAY_NETWORKS"] = "eip155:8453"
         with pytest.raises(agent_wallet.AgentWalletError, match="emporia signer add"):
             agent_wallet.allowed_networks()
+
+
+def test_setting_up_an_agent_again_keeps_its_wallets_and_its_limits(profiles, capsys):
+    """P216: re-running setup offered "which wallets should it have?" as if new,
+    and put the built-in limits back as the defaults."""
+    root, _ = profiles
+    with patch.dict(os.environ):
+        assert cli.main(["setup", "agent", "again", "--keys", "files", "--wallet", "--max-daily-cents", "700"]) == 0
+    key = root / "again" / "home" / ".hermes" / "keys" / "again.x402.secp256k1"
+    before = key.read_bytes()
+    capsys.readouterr()
+    with patch.dict(os.environ):
+        assert cli.main(["setup", "agent", "again", "--keys", "files"]) == 0
+    assert key.read_bytes() == before                                   # the same wallet
+    assert _env_of(root / "again")["EMPORIA_X402_MAX_DAILY_CENTS"] == "700"   # its own limit kept
+    assert cli._wallet_mode(argparse.Namespace(wallet=False, solana=False, import_phrase=False),
+                            have={"evm": "0x" + "ab" * 20}) == "keep"
+
+
+def test_an_answer_is_echoed_short_and_followed_by_a_blank_line(monkeypatch, capsys):
+    from emporia import menus
+    monkeypatch.setattr(cli, "_TTY", True)
+    monkeypatch.setattr(menus, "available", lambda: True)
+    monkeypatch.setattr(menus, "select", lambda *a, **k: 0)
+    cli.choose("Role?", [("m", "Marketplace agent — plays, trades, chats"), ("d", "Developer")])
+    assert capsys.readouterr().out == "Role? → Marketplace agent\n\n"

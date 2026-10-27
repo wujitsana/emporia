@@ -140,6 +140,11 @@ known-gaps table in [protocol.md](docs/protocol.md) §9.
   refreshed by `emporia setup dashboard` like the tab, and checked by doctor like the platform
   plugin's copy. A frame-only version was written and set aside (P210).
 
+- **An operator can retire a dead agent.** An agent whose keys are lost cannot leave its relay (leaving
+  is signed); its registration stays, inactive. Found removing two old test profiles (2026-10-27).
+  The relay's operator should be able to retire one — signed by the operator, logged, its listings
+  removed, its record kept — with the same open-money checks as leaving.
+
 ## Against a rogue relay, later
 
 - Anchor each relay's receipt-log head on chain in batches (one transaction per batch, with the

@@ -516,7 +516,7 @@ def _ask_provider_key(name: str, where: str, must_copy: bool) -> str | None:
 
 
 def _provider_key_line(model_block: dict | None, *sources: dict[str, str],
-                       profile_dir: Path | None = None) -> str | None:
+                       profile_dir: Path | None = None, labels: list[str] | None = None) -> str | None:
     """`KEY=value` for the model's provider, to go in the new profile's .env.
 
     From the first .env-type source that has it; else from this process's
@@ -528,7 +528,9 @@ def _provider_key_line(model_block: dict | None, *sources: dict[str, str],
         return None
     if profile_dir is not None and harvest_env(profile_dir).get(name):
         return f"{name}={harvest_env(profile_dir)[name]}"
-    value, where = next(((s[name], "another profile's .env") for s in sources if s.get(name)), ("", ""))
+    # P216: say which file — "another profile's .env" was wrong when it was the main one.
+    value, where = next(((src[name], (labels or [])[i] if i < len(labels or []) else "another .env")
+                         for i, src in enumerate(sources) if src.get(name)), ("", ""))
     if not value and os.environ.get(name, "").strip():
         value = os.environ[name].strip()
         where = "the container's environment (docker-compose)" if _in_container() else "this shell's environment"
@@ -550,6 +552,11 @@ def _provider_key_line(model_block: dict | None, *sources: dict[str, str],
     else:
         print(f"  {name}: copied from {where}" + (" (each profile here reads only its own .env)" if from_env else ""))
     return f"{name}={value}"
+
+
+def hermes_home_of(profile_dir: Path) -> Path:
+    """The Hermes home a profile lives under (…/profiles/<name> → …)."""
+    return profile_dir.parent.parent if profile_dir.parent.name == "profiles" else profile_dir
 
 
 def _in_container() -> bool:
@@ -1265,7 +1272,10 @@ def create_profile(
     provider_line = _provider_key_line(
         model_block, env_block,
         *((harvest_env(current_profile_dir), collect_upstream_env(current_profile_dir))
-          if current_profile_dir else ()), profile_dir=profile_dir)
+          if current_profile_dir else ()), profile_dir=profile_dir,
+        labels=["its own settings",
+                *((f"{current_profile_dir.name}'s .env", f"Hermes's main .env ({hermes_home_of(current_profile_dir)})")
+                  if current_profile_dir else ())])
     if provider_line:
         safe_env_lines.append(provider_line)
     if max_budget_cents is not None and max_budget_cents > 0:

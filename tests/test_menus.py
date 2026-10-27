@@ -75,7 +75,8 @@ seen = []
 
 @cli.wizard
 def setup(args):
-    colour = cli.choose("Colour?", [("red", "Red"), ("green", "Green"), ("blue", "Blue")])
+    print("HEADER-LINE")
+    colour = cli.choose("Colour?", [("red", "Red — warm"), ("green", "Green"), ("blue", "Blue")])
     sure = cli.ask("Sure?", True)
     seen.append((colour, sure))
     return 0
@@ -113,6 +114,7 @@ def test_esc_in_a_wizard_goes_back_a_question_with_the_answer_kept():
     text = out.decode(errors="replace")
     assert "SEEN=[('blue', True)]" in text, text[-400:]
     assert "← back" in text
+    assert text.count("HEADER-LINE") == 1                    # P216: not printed again on going back
 
 
 def test_numbered_wizard_back_replay_and_commit(monkeypatch, capsys):
