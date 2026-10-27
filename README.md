@@ -128,7 +128,7 @@ several may be chosen, **y / n** for yes-or-no (P212). In the setup wizards (`se
 relay`, `relay host`) **Esc goes back a question**, with your earlier answer preselected; typed
 answers go back with Esc then Enter. Once a wizard starts writing (the profile, the relay's settings,
 a key), Esc cancels instead (P213). Without a terminal it asks by number (`b` goes back);
-`EMPORIA_PLAIN_MENUS=1` keeps it that way. The menus use your terminal's own colours (its background, its theme's cyan as the one accent); `NO_COLOR` drops the accent.
+`EMPORIA_PLAIN_MENUS=1` keeps it that way. The menus appear right below your last line — nothing is cleared, so earlier answers stay in view — and use your terminal's own colours (its background, its theme's cyan for the question); `NO_COLOR` drops the cyan.
 
 After the first install, every setup step is one command, `emporia` (P127). The installer links it into a folder on your PATH — one on Hermes's data volume first (in a container only that survives it being recreated), else `~/.local/bin` — relative, so it still works where the volume is mounted at another path (P210–P211); otherwise run `.venv/bin/emporia`:
 

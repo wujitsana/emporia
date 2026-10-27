@@ -1,34 +1,46 @@
-"""Arrow-key menus for the `emporia` command (P212).
+"""Arrow-key menus for the `emporia` command (P212–P215).
 
 Every question the CLI asks goes through `cli.choose`, `cli.choose_many` and
-`cli.ask`. In a real terminal they show a menu, with the keys Hermes's own
-menus use:
+`cli.ask`. In a real terminal they show a menu **inline**, right below the
+last line — the screen is not cleared, so earlier answers stay in view — with
+the keys Hermes's own menus use:
 
     ↑ ↓      move (round the ends)      Enter   choose
     Esc      back                       1-9     jump to that line
     /        filter (long lists)        Space   tick (where several may be chosen)
     y / n    answer a yes-or-no question
 
-Anywhere else — no terminal, `TERM=dumb`, no curses (Windows), a test, or
-`EMPORIA_PLAIN_MENUS=1` — the CLI asks by number instead. A menu leaves the
-screen as it found it; the CLI then prints the answer as a normal line, so the
-scrollback still says what was chosen.
+Colours are the terminal's own: its foreground and background, its theme's
+cyan for the question, inverse for the highlighted line; NO_COLOR drops the
+cyan. A line too wide ends in "…" and the highlighted one is shown whole
+beneath. When it is answered the menu is erased and the CLI prints the answer
+as one line.
+
+Anywhere else — no terminal, `TERM=dumb`, no termios (Windows), a test, or
+`EMPORIA_PLAIN_MENUS=1` — the CLI asks by number instead.
 """
 
 from __future__ import annotations
 
 import os
+import select as _io
+import shutil
 import sys
+import textwrap
 
 BACK = object()          # Esc: the caller decides what "back" means there
 _LONG = 8                # lists longer than this can be filtered with /
+
+# Keys, as read: arrows arrive as ESC [ A or ESC O A, however the terminal sends them.
+_UP, _DOWN, _LEFT, _ENTER, _ESC, _SPACE, _DEL = "up", "down", "left", "enter", "esc", " ", "del"
 
 
 def available() -> bool:
     if os.getenv("EMPORIA_PLAIN_MENUS", "").strip() == "1" or os.getenv("TERM", "") in ("", "dumb"):
         return False
     try:
-        import curses  # noqa: F401
+        import termios  # noqa: F401
+        import tty  # noqa: F401
         return sys.stdin.isatty() and sys.stdout.isatty()
     except (ImportError, ValueError):
         return False
@@ -50,16 +62,85 @@ def confirm(question: str, default: bool):
     return picked if picked is BACK else picked == 0
 
 
+# ─── drawing ──────────────────────────────────────────────────────────────────
+
+def _style(text: str, *codes: str) -> str:
+    return f"\x1b[{';'.join(codes)}m{text}\x1b[0m" if codes else text
+
+
+def _render(title, hint, labels, shown, cursor, marks) -> list[str]:
+    cols, rows = shutil.get_terminal_size((80, 24))
+    width = max(20, cols - 1)
+    accent = () if os.getenv("NO_COLOR") else ("36",)
+    out = [_style(line, "1", *accent) for line in textwrap.wrap(title, width)[:3]] or [""]
+    out.append(_style(hint, "2"))
+    room = max(3, min(12, rows - len(out) - 4))
+    top = max(0, min(cursor - room + 1, len(shown) - room)) if cursor >= room else 0
+    for n in range(top, min(len(shown), top + room)):
+        i = shown[n]
+        text = f"{'›' if n == cursor else ' '} {marks[i] if marks else ''}{labels[i]}"
+        text = text if len(text) <= width else text[:width - 1] + "…"
+        out.append(_style(text, "7", "1") if n == cursor else text)
+    if len(shown) > room:
+        out.append(_style(f"  {len(shown) - room} more — ↑↓ to scroll", "2"))
+    if not shown:
+        out.append(_style("  nothing matches", "2"))
+    elif len(f"› {labels[shown[cursor]]}") > width:
+        out += [_style("  " + line, "2") for line in textwrap.wrap(labels[shown[cursor]], width - 2)]
+    return out
+
+
+class _Inline:
+    """Lines drawn below the cursor, redrawn in place, erased when done."""
+
+    def __init__(self):
+        self.drawn = 0
+
+    def draw(self, lines: list[str]) -> None:
+        up = f"\x1b[{self.drawn}F" if self.drawn else "\r"
+        sys.stdout.write(up + "\x1b[J" + "\r\n".join(lines))
+        sys.stdout.flush()
+        self.drawn = len(lines) - 1
+
+    def erase(self) -> None:
+        sys.stdout.write((f"\x1b[{self.drawn}F" if self.drawn else "\r") + "\x1b[J")
+        sys.stdout.flush()
+
+
+# ─── keys ─────────────────────────────────────────────────────────────────────
+
+def _read_key(fd: int) -> str:
+    ch = os.read(fd, 1)
+    if ch == b"\x1b":
+        if not _io.select([fd], [], [], 0.03)[0]:
+            return _ESC                                   # Esc alone: answered at once
+        seq = os.read(fd, 1)
+        if seq in (b"[", b"O"):
+            code = os.read(fd, 1)
+            return {b"A": _UP, b"B": _DOWN, b"D": _LEFT}.get(code, "")
+        return _ESC
+    if ch in (b"\r", b"\n"):
+        return _ENTER
+    if ch in (b"\x7f", b"\x08"):
+        return _DEL
+    if ch == b"\x03":
+        raise KeyboardInterrupt
+    return ch.decode(errors="ignore")
+
+
+# ─── the menu ─────────────────────────────────────────────────────────────────
+
 def _menu(title, labels, default, *, many, ticked=frozenset(), yes_no=False):
-    import curses
+    import termios
+    import tty
 
-    os.environ.setdefault("ESCDELAY", "25")          # Esc answers at once
-
-    def run(scr):
-        curses.curs_set(0)
-        scr.keypad(True)
-        _colours(curses)
-        cursor, chosen, query = min(default, len(labels) - 1), set(ticked), None
+    fd = sys.stdin.fileno()
+    saved = termios.tcgetattr(fd)
+    screen = _Inline()
+    cursor, chosen, query = min(default, len(labels) - 1), set(ticked), None
+    try:
+        tty.setcbreak(fd)
+        sys.stdout.write("\x1b[?25l")                      # hide the cursor while choosing
         while True:
             shown = [i for i, lab in enumerate(labels) if not query or query.lower() in lab.lower()]
             cursor = min(cursor, max(0, len(shown) - 1))
@@ -69,112 +150,37 @@ def _menu(title, labels, default, *, many, ticked=frozenset(), yes_no=False):
                 hint = f"filter: {query}▏ (Esc clears)"
             elif len(labels) > _LONG:
                 hint += " · / filter"
-            _draw(scr, curses, title, hint, [labels[i] for i in shown], cursor,
-                  [("[x] " if i in chosen else "[ ] ") for i in shown] if many else None)
-            k = _read_key(scr, curses)
-            if query is not None:                           # typing a filter
-                if k == 27:
+            marks = {i: ("[x] " if i in chosen else "[ ] ") for i in range(len(labels))} if many else None
+            screen.draw(_render(title, hint, labels, shown, cursor, marks))
+            k = _read_key(fd)
+            if query is not None:                          # typing a filter
+                if k == _ESC:
                     query = None
-                elif k in (curses.KEY_BACKSPACE, 127, 8):
+                elif k == _DEL:
                     query = query[:-1]
-                elif k in (10, 13, curses.KEY_ENTER) and shown:
+                elif k == _ENTER and shown:
                     return shown[cursor]
-                elif k in (curses.KEY_UP, curses.KEY_DOWN):
-                    cursor = (cursor + (1 if k == curses.KEY_DOWN else -1)) % max(1, len(shown))
-                elif 32 <= k < 127:
-                    query += chr(k)
+                elif k in (_UP, _DOWN):
+                    cursor = (cursor + (1 if k == _DOWN else -1)) % max(1, len(shown))
+                elif len(k) == 1 and k.isprintable():
+                    query += k
                 continue
-            ch = chr(k).lower() if 0 <= k < 256 else ""
-            if k in (10, 13, curses.KEY_ENTER):
+            if k == _ENTER:
                 return sorted(chosen) if many else shown[cursor]
-            if k in (27, curses.KEY_LEFT):
+            if k in (_ESC, _LEFT):
                 return BACK
-            if k in (curses.KEY_UP, curses.KEY_DOWN):
-                cursor = (cursor + (1 if k == curses.KEY_DOWN else -1)) % len(shown)
-            elif yes_no and ch in ("y", "n"):
-                return 0 if ch == "y" else 1
-            elif many and k == ord(" "):
+            if k in (_UP, _DOWN):
+                cursor = (cursor + (1 if k == _DOWN else -1)) % len(shown)
+            elif yes_no and k.lower() in ("y", "n"):
+                return 0 if k.lower() == "y" else 1
+            elif many and k == _SPACE:
                 chosen ^= {shown[cursor]}
-            elif k == ord("/") and len(labels) > _LONG:
+            elif k == "/" and len(labels) > _LONG:
                 query = ""
-            elif ord("1") <= k <= ord("9") and k - ord("1") < len(shown):
-                cursor = k - ord("1")
-
-    return curses.wrapper(run)
-
-
-def _read_key(scr, curses) -> int:
-    """A key, with arrows decoded however the terminal sends them: curses knows
-    the form its keypad mode asks for, but some terminals (and tmux setups)
-    send the other — which read raw would look like Esc, and cancel."""
-    k = scr.getch()
-    if k != 27:
-        return k
-    scr.nodelay(True)
-    try:
-        nxt = scr.getch()
-        if nxt in (ord("["), ord("O")):
-            return {ord("A"): curses.KEY_UP, ord("B"): curses.KEY_DOWN, ord("C"): curses.KEY_RIGHT,
-                    ord("D"): curses.KEY_LEFT}.get(scr.getch(), -1)
-        return 27
+            elif k.isdigit() and 1 <= int(k) <= len(shown):
+                cursor = int(k) - 1
     finally:
-        scr.nodelay(False)
-
-
-_ACCENT = 0
-
-
-def _colours(curses) -> None:
-    """P214: the terminal's own scheme. Its default foreground and background
-    stay (-1); the one accent is the theme's cyan, as the theme defines it;
-    the rest is bold, dim and inverse, which every theme draws its own way.
-    NO_COLOR (no-color.org) keeps it to those."""
-    global _ACCENT
-    _ACCENT = 0
-    try:
-        curses.start_color()
-        curses.use_default_colors()
-        if not os.getenv("NO_COLOR") and curses.has_colors():
-            curses.init_pair(1, curses.COLOR_CYAN, -1)
-            _ACCENT = curses.color_pair(1)
-    except curses.error:
-        pass
-
-
-def _draw(scr, curses, title, hint, rows, cursor, marks):
-    """The menu. A line too wide for the terminal ends in "…", and the
-    highlighted one is shown whole, wrapped, under the list (P214) — so nothing
-    is ever cut off unseen."""
-    import textwrap
-    scr.erase()
-    height, width = scr.getmaxyx()
-    usable = max(10, width - 1)
-
-    def put(y, text, attr=0):
-        if 0 <= y < height:
-            try:
-                scr.addnstr(y, 0, text, usable, attr)
-            except curses.error:
-                pass
-
-    def fit(text):
-        return text if len(text) <= usable else text[:usable - 1] + "…"
-
-    for y, line in enumerate(textwrap.wrap(title, usable)[:3] or [""]):
-        put(y, line, curses.A_BOLD | _ACCENT)
-    head = min(3, len(textwrap.wrap(title, usable)) or 1)
-    put(head, hint, curses.A_DIM)
-    lines = [f" {'›' if n == cursor else ' '} {marks[n] if marks else ''}{rows[n]}" for n in range(len(rows))]
-    full = (textwrap.wrap(rows[cursor], usable - 4) if rows and len(lines[cursor]) > usable else [])
-    room = max(1, height - head - 3 - (len(full) + 1 if full else 0))
-    top = max(0, min(cursor - room + 1, len(rows) - room)) if cursor >= room else 0
-    y = head + 2
-    for n in range(top, min(len(rows), top + room)):
-        put(y, fit(lines[n]), curses.A_REVERSE | curses.A_BOLD if n == cursor else 0)
-        y += 1
-    if not rows:
-        put(y, "   nothing matches", curses.A_DIM)
-    if full:
-        for i, line in enumerate(full):
-            put(y + 1 + i, "    " + line, curses.A_DIM)
-    scr.refresh()
+        screen.erase()
+        sys.stdout.write("\x1b[?25h")
+        sys.stdout.flush()
+        termios.tcsetattr(fd, termios.TCSADRAIN, saved)

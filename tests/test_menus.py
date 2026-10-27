@@ -143,3 +143,37 @@ def test_numbered_wizard_back_replay_and_commit(monkeypatch, capsys):
         setup(argparse.Namespace())
     _typing(monkeypatch, "1", "commit", "b", "1")          # after a commit, b just asks again
     assert setup(argparse.Namespace()) == 0 and calls[-1] == ("x", "commit")
+
+
+def test_the_menu_is_inline_and_leaves_the_screen_as_it_was():
+    """P215: no alternate screen, no clear — what was printed before stays; the
+    answer replaces the menu as one line."""
+    script = r'''
+from emporia import cli
+cli._TTY = True
+print("EARLIER OUTPUT")
+cli.choose("Pick one", [("a", "Alpha"), ("b", "Beta")])
+'''
+    pid, fd = pty.fork()
+    if pid == 0:
+        os.environ.update(TERM="xterm", EMPORIA_NO_DOTENV="1")
+        os.environ.pop("EMPORIA_PLAIN_MENUS", None)
+        os.execv(sys.executable, [sys.executable, "-c", script])
+    out = b""
+    for keys in ["\x1b[B\r"]:
+        end = time.time() + 0.7
+        while time.time() < end:
+            if select.select([fd], [], [], 0.05)[0]:
+                out += os.read(fd, 65536)
+        os.write(fd, keys.encode())
+    end = time.time() + 1.0
+    while time.time() < end:
+        if select.select([fd], [], [], 0.05)[0]:
+            try:
+                out += os.read(fd, 65536)
+            except OSError:
+                break
+    os.waitpid(pid, 0)
+    text = out.decode(errors="replace")
+    assert "\x1b[?1049h" not in text and "\x1b[2J" not in text          # no full-screen takeover
+    assert "EARLIER OUTPUT" in text and "Pick one → Beta" in text
