@@ -9,7 +9,7 @@ container) and is the only thing that can sign:
 * **Its own keys and policy.** Per agent, in `EMPORIA_SIGNER_DIR/agents/<id>/`:
   the wallet keys, and the rules — networks, per-payment and daily caps, the
   approval threshold, whether mainnet is unlocked. The agent cannot read or
-  change them; `emporia signer adopt` moves an agent's keys and rules here and
+  change them; `emporia signer add` moves an agent's keys and rules here and
   `emporia signer policy` changes the rules, both run by a person.
 * **Permission to ask, permission to pay.** An agent proves which agent it is
   with a token (`EMPORIA_SIGNER_TOKEN`); that lets it ask. Paying still has to

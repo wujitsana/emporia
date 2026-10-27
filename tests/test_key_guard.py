@@ -124,7 +124,7 @@ def test_only_a_person_runs_wallet_backup():
 def test_the_signer_is_a_persons_alone():
     """P203: its keys, limits and approvals are what the agent must not reach."""
     for cmd in ("emporia signer approve int_ab12", "emporia signer policy alpha set EMPORIA_X402_MAX_DAILY_CENTS 9",
-                "emporia signer adopt alpha", "cat ~/.emporia-signer/admin.token", "ls $EMPORIA_SIGNER_DIR",
+                "emporia signer add alpha", "cat ~/.emporia-signer/admin.token", "ls $EMPORIA_SIGNER_DIR",
                 "echo $EMPORIA_SIGNER_TOKEN"):
         r = guard.pre_tool_call("terminal", {"command": cmd})
         assert r and r["action"] == "block", cmd

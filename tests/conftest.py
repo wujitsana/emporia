@@ -203,3 +203,19 @@ def _init_test_db_for_every_module():
     init_db()
     yield
     # Teardown of the test root stays in pytest_sessionfinish (P60).
+
+
+# P204: the signer. Its folder defaults to beside Hermes's profiles — a real
+# one on a developer machine — and `emporia signer start` spawns a process. A
+# test answering yes to "start the signer?" once left one running there.
+@pytest.fixture(autouse=True)
+def _no_real_signer(monkeypatch):
+    monkeypatch.setenv("EMPORIA_SIGNER_DIR", str(TEST_ROOT / "signer"))
+    monkeypatch.delenv("EMPORIA_SIGNER_SOCKET", raising=False)
+    monkeypatch.delenv("EMPORIA_SIGNER_URL", raising=False)
+    from emporia import cli
+
+    def refuse(args, url):
+        print("signer: not started — the test suite starts no background signer")
+        return 1
+    monkeypatch.setattr(cli, "_signer_daemon", refuse)

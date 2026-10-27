@@ -187,7 +187,8 @@ def test_setup_agent_asks_and_one_phrase_is_the_recommended_choice(profiles, mon
     monkeypatch.setattr(cli, "health", lambda timeout=3.0: None)
     # existing profile? no · wallets: 3 (one phrase) · networks: Enter · caps: 5, 20
     # role: 1 (marketplace) · wallets: 3 (one phrase) · networks: Enter · caps: 5, 20 · ask above $2
-    _typing(monkeypatch, "1", "3", "", "5", "20", "2")
+    # · the signer (P204): Enter, not now
+    _typing(monkeypatch, "1", "3", "", "5", "20", "2", "")
     monkeypatch.setattr(cli, "_choose_relay", lambda current="": "")   # P177: tested on its own
     shown = []
     monkeypatch.setattr(cli, "_show_phrase", lambda phrase, name: shown.append(phrase) or True)
@@ -734,7 +735,7 @@ def test_setup_offers_a_solana_only_wallet(profiles, monkeypatch):
     monkeypatch.setattr(cli, "_choose_relay", lambda current="": "")
     keys = [k for k, _ in cli.WALLET_MODES]
     assert keys[:4] == ["none", "evm", "phrase", "separate"] and "solana" in keys, "earlier answers keep their numbers"
-    _typing(monkeypatch, "1", str(keys.index("solana") + 1), "", "5", "20", "2")
+    _typing(monkeypatch, "1", str(keys.index("solana") + 1), "", "5", "20", "2", "")
     with patch.dict(os.environ):
         assert cli.main(["setup", "agent", "phi", "--keys", "files"]) == 0
     keys_dir = root / "phi" / "home" / ".hermes" / "keys"
@@ -765,8 +766,9 @@ def test_unlocking_mainnet_takes_a_warning_and_the_agents_name(profiles, monkeyp
     monkeypatch.setattr(cli, "health", lambda timeout=3.0, url="": None)
     monkeypatch.setattr(cli, "_persons_terminal", lambda: True)
     monkeypatch.delenv("EMPORIA_ALLOW_HOT_AGENT_WALLET", raising=False)
+    _typing(monkeypatch, "n")                          # P204: move it behind the signer now? not yet
     assert cli.main(["wallet", "mainnet", "psi"]) == 1                # P203: only from behind the signer
-    assert "emporia signer adopt psi" in capsys.readouterr().out
+    assert "emporia signer add psi" in capsys.readouterr().out
     monkeypatch.setenv("EMPORIA_ALLOW_HOT_AGENT_WALLET", "1")         # …or with the risk accepted
     _typing(monkeypatch, "2", "nope")                  # ask above $2 · wrong name
     assert cli.main(["wallet", "mainnet", "psi"]) == 1
@@ -1048,5 +1050,5 @@ def test_an_unlocked_in_process_wallet_still_pays_testnets_only(tmp_path):
         os.environ.pop("EMPORIA_ALLOW_HOT_AGENT_WALLET", None)
         assert agent_wallet.allowed_networks() == [BASE]
         os.environ["EMPORIA_X402_PAY_NETWORKS"] = "eip155:8453"
-        with pytest.raises(agent_wallet.AgentWalletError, match="emporia signer adopt"):
+        with pytest.raises(agent_wallet.AgentWalletError, match="emporia signer add"):
             agent_wallet.allowed_networks()

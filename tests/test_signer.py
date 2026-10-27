@@ -83,8 +83,8 @@ def test_the_signer_says_whether_it_runs_apart_from_the_agents(held):
     assert app.get("/health").json() == {"service": "emporia-signer", "uid": os.getuid()}
 
 
-def test_a_tester_adopts_an_agent_pays_through_the_signer_and_releases_it(profiles, tmp_path, monkeypatch, capsys):
-    """Optional on testnet: adopt, pay, and release puts everything back."""
+def test_a_tester_adds_an_agent_to_the_signer_and_removes_it(profiles, tmp_path, monkeypatch, capsys):  # noqa: F811
+    """Optional on testnet: add, pay, and remove puts everything back."""
     from emporia import cli
     from tests.test_wallet_setup import _env_of
     root, _ = profiles
@@ -97,15 +97,58 @@ def test_a_tester_adopts_an_agent_pays_through_the_signer_and_releases_it(profil
     monkeypatch.setenv("EMPORIA_SIGNER_DIR", str(tmp_path / "sig"))
     keys = sorted(p.name for p in (prof / "home" / ".hermes" / "keys").glob("taster.x402.*"))
     assert keys
-    assert cli.main(["signer", "adopt", "taster", "--url", "unix:///run/s.sock"]) == 0
+    assert cli.main(["signer", "add", "taster", "--url", "unix:///run/s.sock"]) == 0
     after = _env_of(prof)
     assert after["EMPORIA_SIGNER_URL"] == "unix:///run/s.sock" and after["EMPORIA_SIGNER_TOKEN"]
     assert not list((prof / "home" / ".hermes" / "keys").glob("taster.x402.*"))       # out of the profile
     assert signer.policy("taster")["env"]["EMPORIA_X402_MAX_DAILY_CENTS"] == "700"      # its limits went too
     assert "token" not in capsys.readouterr().out.lower().replace("its own token", "")
-    assert cli.main(["signer", "release", "taster"]) == 0
+    assert cli.main(["signer", "remove", "taster"]) == 0
     assert sorted(p.name for p in (prof / "home" / ".hermes" / "keys").glob("taster.x402.*")) == keys
     back = _env_of(prof)
     assert "EMPORIA_SIGNER_URL" not in back and back.get("EMPORIA_X402_MAX_DAILY_CENTS") == before.get(
         "EMPORIA_X402_MAX_DAILY_CENTS")
     assert not signer.agent_dir("taster").exists()
+
+
+def test_the_signer_menu_starts_it_and_adds_an_agent(profiles, tmp_path, monkeypatch):  # noqa: F811
+    """`emporia signer` in a terminal: start it, add an agent — each by number."""
+    from emporia import cli
+    from tests.test_wallet_setup import _typing
+    root, _ = profiles
+    with patch.dict(os.environ):
+        assert cli.main(["setup", "agent", "menuist", "--keys", "files", "--wallet"]) == 0
+    monkeypatch.setattr(cli, "profiles_root", lambda: root)
+    monkeypatch.setattr(cli, "_persons_terminal", lambda: True)
+    monkeypatch.setattr(cli, "_TTY", True)
+    monkeypatch.setenv("EMPORIA_SIGNER_DIR", str(tmp_path / "sig"))
+    state = {"up": False, "calls": []}
+    monkeypatch.setattr(cli, "_signer_up", lambda url: {"uid": os.getuid()} if state["up"] else None)
+
+    def daemon(args, url):
+        state["up"] = args.action == "start"
+        state["calls"].append(args.action)
+        return 0
+    monkeypatch.setattr(cli, "_signer_daemon", daemon)
+    # start · add · menuist · done (stop, add, remove, pending, limits, done)
+    _typing(monkeypatch, "1", "2", "1", "6")
+    assert cli.main(["signer"]) == 0
+    assert state["calls"] == ["start"] and signer.policy("menuist")["token_sha256"]
+
+
+def test_setup_offers_to_start_the_signer_and_keep_the_new_wallet_there(profiles, tmp_path, monkeypatch):  # noqa: F811
+    from emporia import cli
+    root, _ = profiles
+    monkeypatch.setattr(cli, "profiles_root", lambda: root)
+    monkeypatch.setattr(cli, "_persons_terminal", lambda: True)
+    monkeypatch.setenv("EMPORIA_SIGNER_DIR", str(tmp_path / "sig"))
+    state = {"up": False}
+    monkeypatch.setattr(cli, "_signer_up", lambda url: {"uid": os.getuid()} if state["up"] else None)
+    monkeypatch.setattr(cli, "_signer_daemon", lambda args, url: state.update(up=True) or 0)
+    asked = []
+    monkeypatch.setattr(cli, "ask", lambda q, default=False: asked.append((q, default)) or ("signer" in q or default))
+    with patch.dict(os.environ):
+        assert cli.main(["setup", "agent", "offered", "--keys", "files", "--wallet"]) == 0
+    question = next((q, d) for q, d in asked if "signer" in q)
+    assert "this starts the signer" in question[0] and question[1] is False      # optional: no by default
+    assert state["up"] and signer.policy("offered")["token_sha256"]

@@ -3588,7 +3588,6 @@ def reclaim_escrow(session_id: str, agent_id: str = "") -> dict[str, Any]:
     the gas, so it needs a little ETH on that network. Before the expiry it
     tells you when; if nothing is left to reclaim it says so.
     """
-    import asyncio
 
     from emporia import agent_wallet
     aid = agent_id or AGENT_ID

@@ -470,7 +470,7 @@ def allowed_networks() -> list[str]:
         if not any(is_testnet(n) for n in nets):
             raise AgentWalletError(
                 "mainnet is unlocked for this agent, but its wallet keys are in its own process. Real money "
-                "is paid only from behind the signer: its operator runs `emporia signer adopt NAME`.")
+                "is paid only from behind the signer: its operator runs `emporia signer add NAME`.")
     if not unlocked:
         live = [n for n in nets if not is_testnet(n)]
         nets = [n for n in nets if is_testnet(n)]

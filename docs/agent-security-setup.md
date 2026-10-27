@@ -152,13 +152,17 @@ thing that can sign. An agent asks it, with a token; the rules decide. It can ru
 | As its own system user | the agents' user cannot read its folder | a server or VM |
 | In its own container, beside Hermes's | a separate filesystem; only a socket is shared | Hermes in Docker |
 
-**Trying it on testnet** takes two commands and undoes with one — the signer runs in the
-background as you, which tests everything but the isolation (`status` says so):
+**Trying it on testnet.** `emporia signer` in a terminal opens a menu — start it, add or remove an
+agent, answer approvals, change an agent's limits — and it is in the main `emporia` menu. `emporia
+setup agent` offers it when it makes a wallet (yes by default if the signer runs; if not, it offers
+to start it, no by default — testnet does not need it), and `emporia wallet mainnet` offers to move
+the wallet there before anything else. By hand: two commands, undone with one. Run as you, the
+signer tests everything but the isolation (`status` says so):
 
 ```bash
 emporia signer start             # beside Hermes's profiles (profiles/.signer), or ~/.emporia-signer
-emporia signer adopt alpha       # then restart the gateway; alpha pays as before, through the signer
-emporia signer release alpha     # its keys and limits back in its profile (testnet wallets only)
+emporia signer add alpha       # then restart the gateway; alpha pays as before, through the signer
+emporia signer remove alpha     # its keys and limits back in its profile (testnet wallets only)
 emporia signer stop
 ```
 
@@ -168,7 +172,7 @@ For real money, as its own user or container:
 
 ```bash
 emporia signer serve --socket /run/emporia-signer/signer.sock   # as the signer's user
-emporia signer adopt NAME        # its wallet keys and limits move in; the agent is pointed at it
+emporia signer add NAME        # its wallet keys and limits move in; the agent is pointed at it
 emporia signer status            # running, and as which user
 emporia signer policy NAME [set EMPORIA_X402_MAX_DAILY_CENTS 2000]
 emporia signer policy NAME mainnet [--lock]   # real money: a person, after a warning
@@ -177,7 +181,7 @@ emporia signer approve ID        # the agent's next try of that payment, within 
 emporia signer deny ID
 ```
 
-`adopt` refuses a wallet still holding its recovery phrase here (back it up first: `emporia wallet
+`add` refuses a wallet still holding its recovery phrase here (back it up first: `emporia wallet
 backup NAME`) and one linked to a password manager (not yet supported). It moves the old key files
 to the trash folder it names. Approvals are answered on the signer's side only: an answer typed into
 the agent's chat could have come from the agent. Every signer command but `emporia signer status` is a
@@ -225,7 +229,7 @@ Adopt an agent from the signer's container, with Hermes's data mounted for that 
 hands the new files to the signer's user):
 
 ```bash
-docker compose run --rm --user 0 -e HERMES_HOME=/opt/data -v ~/.hermes:/opt/data signer emporia signer adopt NAME
+docker compose run --rm --user 0 -e HERMES_HOME=/opt/data -v ~/.hermes:/opt/data signer emporia signer add NAME
 ```
 
 **Not covered yet:** the agent's identity and encryption keys still live in its own process — they
