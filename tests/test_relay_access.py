@@ -147,3 +147,29 @@ def test_a_hosted_relay_serves_no_dashboard(client, monkeypatch):
     assert r.status_code == 200 and "no page to browse" in r.text
     monkeypatch.setenv("EMPORIA_SERVE_UI", "1")
     assert rs.serves_dashboard()
+
+
+def test_a_relay_taking_real_money_keeps_its_keys_out_of_every_agents_profile(tmp_path, monkeypatch):
+    """P202: on testnet a relay may run from a Hermes profile (developing, trying
+    Emporia locally); with real money its keys must live apart from every agent."""
+    from emporia import relay_server as rs
+    profile = tmp_path / "profiles" / "dev"
+    (profile / "home" / ".hermes" / "keys").mkdir(parents=True)
+    (profile / "config.yaml").write_text("{}")
+    in_profile, own = profile / "home" / ".hermes" / "keys", tmp_path / "relay-data" / "keys"
+    own.mkdir(parents=True)
+    for k in ("STRIPE_SECRET_KEY", "EMPORIA_X402_ENABLED", "EMPORIA_X402_NETWORKS", "EMPORIA_ESCROW_NETWORK",
+              "EMPORIA_ALLOW_LIVE_RELAY_IN_PROFILE"):
+        monkeypatch.delenv(k, raising=False)
+    monkeypatch.setenv("STRIPE_SECRET_KEY", "sk_test_x")
+    monkeypatch.setenv("EMPORIA_ESCROW_NETWORK", "eip155:84532")
+    assert rs.live_money_refusal(in_profile) == ""                    # testnet: fine
+    monkeypatch.setenv("STRIPE_SECRET_KEY", "sk_live_x")
+    monkeypatch.setenv("EMPORIA_X402_ENABLED", "1")
+    monkeypatch.setenv("EMPORIA_X402_NETWORKS", "eip155:8453")
+    refusal = rs.live_money_refusal(in_profile)
+    assert "a live Stripe key and USDC on a mainnet" in refusal and "emporia relay host" in refusal
+    assert "sk_live_x" not in refusal
+    assert rs.live_money_refusal(own) == ""                           # its own folder: fine
+    monkeypatch.setenv("EMPORIA_ALLOW_LIVE_RELAY_IN_PROFILE", "1")
+    assert rs.live_money_refusal(in_profile) == ""

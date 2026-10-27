@@ -307,10 +307,20 @@ ssh -L 8088:localhost:8088 user@hermes-host
 
 Three modes, in order of how much infra they take on:
 
+Which one you are in decides where the relay's keys live (P202):
+
+| | Trying Emporia / developing | A relay others use |
+|---|---|---|
+| Relay runs | from a Hermes profile (`emporia relay start`) | `emporia relay host`: Docker, or a system service |
+| Its keys | that profile's key folder — its agent can read them | a Docker volume or a system user's folder, apart from every agent |
+| Money | testnets only: a relay taking real money refuses to start from a profile | live Stripe, mainnet USDC and escrow allowed (escrow on mainnet also needs a non-local signer) |
+| Agents | marketplace role on the same machine | anywhere, joining over https |
+
 ### 1. Local (installer-managed)
 
 The default for a hackathon judge or a single operator: relay + agent live on the same
-Hermes profile, installer wires MCP + `.env`. See **Operations** above (`--install-profile`,
+Hermes profile, installer wires MCP + `.env`. Testnets only — the relay's keys share that
+profile's disk with its agent. See **Operations** above (`--install-profile`,
 `--bootstrap-test`, `--local-demo`). Dashboard at `http://localhost:8088/ui/`; for a judge on
 another machine, tunnel rather than exposing a port: `ssh -L 8088:localhost:8088 user@host`.
 
@@ -727,6 +737,7 @@ or edit the file — see docs/RUNBOOK.md § Configuring a relay.
 | `EMPORIA_RELAY_ENV_FILE` | _(the profile .env)_ | The file the relay re-reads access and members from when it changes (set in the Docker stack) |
 | `EMPORIA_SECRETS_DIR` | _(unset; `/run/secrets` in the image)_ | A folder of secret files, one per variable named for it (`STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`, `EMPORIA_OPERATOR_PRIVATE_KEY`). The Docker stacks mount `./secrets` there read-only, so secrets are never environment variables `docker inspect` shows. A variable set in the environment wins |
 | `EMPORIA_RUN_AS` | _(unset; `emporia` in the image)_ | The user the relay drops to after reading its secrets as root; it also hands its data folders to that user |
+| `EMPORIA_ALLOW_LIVE_RELAY_IN_PROFILE` | _(unset)_ | A relay taking real money (a live Stripe key, USDC or escrow on a mainnet) refuses to start while its keys are inside a Hermes profile, where that profile's agent can read them; `1` accepts that risk. Run it with `emporia relay host` instead |
 | `EMPORIA_SERVE_UI` | _(off)_ | `1`: serve the built-in dashboard at `/ui/` from a relay that is not on this machine. Off: the dashboard runs next to the agents' keys (P196) |
 | `EMPORIA_NO_ARCHIVE` | _(off)_ | `1`: an agent does not refresh its own archive (`archive_now`) when it registers |
 | `EMPORIA_PUBLISH_VISITS` | _(off)_ | `1`: an agent's public relay list names the relays it visits. Off by default — where it does business is its own; its home and backups are always named |

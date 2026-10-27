@@ -164,6 +164,45 @@ def bind_refusal(host: str) -> str:
             f"only (127.0.0.1). For agents on other machines: emporia relay host (Docker, behind https).")
 
 
+def live_money() -> list[str]:
+    """P202: what makes this relay move real money, if anything."""
+    from emporia.networks import is_testnet
+    reasons = []
+    if (os.getenv("STRIPE_SECRET_KEY") or "").strip().startswith(("sk_live_", "rk_live_")):
+        reasons.append("a live Stripe key")
+    nets = [n.strip() for n in (os.getenv("EMPORIA_X402_NETWORKS") or "").split(",") if n.strip()]
+    if os.getenv("EMPORIA_X402_ENABLED", "").strip() == "1" and any(not is_testnet(n) for n in nets):
+        reasons.append("USDC on a mainnet")
+    escrow = (os.getenv("EMPORIA_ESCROW_NETWORK") or "").strip()
+    if escrow and not is_testnet(escrow):
+        reasons.append("escrow on a mainnet")
+    return reasons
+
+
+def profile_holding(keys_dir: Path) -> Path | None:
+    """The Hermes profile (a folder with config.yaml) the relay's keys are in, if any."""
+    for parent in keys_dir.resolve().parents:
+        if (parent / "config.yaml").exists():
+            return parent
+    return None
+
+
+def live_money_refusal(keys_dir: Path) -> str:
+    """P202: a relay moving real money keeps its keys away from every agent. In a
+    Hermes profile they share a disk — and a user — with that profile's agent,
+    whose terminal can read them: fine on testnet (developing, trying Emporia on
+    one machine), never with real money. `emporia relay host` puts them in a
+    Docker volume or under a system user of their own."""
+    reasons = live_money()
+    profile = profile_holding(keys_dir)
+    if not reasons or profile is None or os.getenv("EMPORIA_ALLOW_LIVE_RELAY_IN_PROFILE") == "1":
+        return ""
+    return (f"emporia relay: refusing to start — it would take {' and '.join(reasons)}, and its keys are in the "
+            f"Hermes profile {profile}, where that profile's agent can read them. Run it with `emporia relay host` "
+            f"(Docker, or a system service) so they live apart from every agent; or, accepting the risk, "
+            f"EMPORIA_ALLOW_LIVE_RELAY_IN_PROFILE=1.")
+
+
 def _uvicorn_host() -> str:
     """The --host a `uvicorn emporia.relay_server:app` command line gives."""
     if "uvicorn" not in Path(sys.argv[0]).name:
@@ -177,7 +216,9 @@ def _uvicorn_host() -> str:
     return ""
 
 
-if _refusal := bind_refusal(_uvicorn_host()):
+if _refusal := bind_refusal(_uvicorn_host()) or (
+        live_money_refusal(Path(os.getenv("EMPORIA_KEYS_DIR", "~/.hermes/keys")).expanduser())
+        if _uvicorn_host() or "uvicorn" in Path(sys.argv[0]).name else ""):
     raise SystemExit(_refusal)
 RELAY_BASE_URL = os.getenv("EMPORIA_RELAY_URL", f"http://localhost:{RELAY_PORT}")
 RELAY_ID = os.getenv("EMPORIA_RELAY_ID", secrets.token_urlsafe(8))
@@ -7952,7 +7993,8 @@ def drop_root(name: str | None = None) -> str:
 
 
 def main():
-    if refusal := bind_refusal(RELAY_HOST):
+    from emporia import identity as _identity
+    if refusal := bind_refusal(RELAY_HOST) or live_money_refusal(_identity.KEY_DIR):
         raise SystemExit(refusal)
     drop_root()
     uvicorn.run(app, host=RELAY_HOST, port=RELAY_PORT)
