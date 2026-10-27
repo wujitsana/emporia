@@ -308,12 +308,17 @@ mod.register(Ctx())
 from gateway.config import PlatformConfig
 from emporia_platform.adapter import EmporiaAdapter
 os.environ["EMPORIA_KEYS_DIR"] = "/launching/profile/keys"
+os.environ.update(TELEGRAM_BOT_TOKEN="t", OPENROUTER_API_KEY="k", GROKBOT_FEEDBACK_HEADER_SECRET="s",
+                  SOME_PRIVATE_THING="p", LANG_PLAIN="ok")
 a = EmporiaAdapter(PlatformConfig(enabled=True, extra={{
     "relay_url": "http://relay.test", "agent_id": "alpha", "python": "/x/python",
     "dotenv": "/profiles/alpha/.env"}}))
 env = a._bridge_env()
 print(json.dumps({{"dotenv": env.get("EMPORIA_DOTENV"),
-                   "emporia": sorted(k for k in env if k.startswith("EMPORIA_"))}}))
+                   "emporia": sorted(k for k in env if k.startswith("EMPORIA_")),
+                   "secrets": sorted(k for k in ("TELEGRAM_BOT_TOKEN", "OPENROUTER_API_KEY",
+                                                 "GROKBOT_FEEDBACK_HEADER_SECRET", "SOME_PRIVATE_THING") if k in env),
+                   "plain": "LANG_PLAIN" in env and "PATH" in env}}))
 ''')
     out = subprocess.run([str(HERMES_PYTHON), str(harness)], cwd="/opt/hermes",
                          env={**os.environ, "HERMES_HOME": str(tmp_path / "home"),
@@ -321,7 +326,8 @@ print(json.dumps({{"dotenv": env.get("EMPORIA_DOTENV"),
                          capture_output=True, text=True, timeout=60)
     assert out.returncode == 0, out.stderr[-2000:]
     result = json.loads(out.stdout.strip().splitlines()[-1])
-    assert result == {"dotenv": "/profiles/alpha/.env", "emporia": ["EMPORIA_DOTENV"]}
+    # P201: and none of the gateway's secrets — a bot token, a model key, docker-compose's.
+    assert result == {"dotenv": "/profiles/alpha/.env", "emporia": ["EMPORIA_DOTENV"], "secrets": [], "plain": True}
 
 
 def test_an_idle_game_is_abandoned_and_every_stake_released(client, monkeypatch):

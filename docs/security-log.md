@@ -4159,6 +4159,16 @@ are stored unencrypted, as SSH host keys are — an agent signs unattended, so a
 to sit beside the key. For more, keep agent keys in a password manager (`EMPORIA_*_KEY_SOURCE=cmd:…`,
 P162) and, before mainnet, the operator key in a cloud key service (planned).
 
+## P201 pass — where a profile's secrets live, and what reaches the agent's commands
+
+| Finding | Fix |
+|---|---|
+| **Hermes does not strip every key-named variable** from the agent's terminal, code and scripts — only a fixed list plus what platform plugins declare. Emporia's keys, Nous token, the relay's Stripe secrets and the vault tokens (1Password, Bitwarden, Vault, Doppler, Infisical, AWS, Azure) all reached the agent's commands; the docs and a code comment said otherwise | Emporia's platform plugin declares each `password: true`; checked against Hermes's own filter — only `PATH` passes |
+| The installer wrote Nous tokens, Stripe keys and model keys into `config.yaml`'s `env:` block (never read by Hermes) and the Nous token into the MCP entry; most `config.yaml`s were 0644 | Secrets go only to the `.env`; `emporia agent secure` moves existing ones (an MCP entry keeps `${NAME}`); doctor flags any |
+| A new profile's `.env` was written 0644 | Written 0600 from creation; `config.yaml` too |
+| The platform bridge got the gateway's whole environment minus `EMPORIA_*` — bot tokens, model keys, anything docker-compose set | Only non-secret names pass; the bridge reads its own from the profile's `.env` |
+| A model key moved into docker-compose silently stopped reaching every profile but the default (one multiplexed gateway gives each profile only its own `.env`'s keys) | `setup agent` asks to copy the standard key and says why; doctor fails a profile that cannot reach its model's key |
+
 ## Threat model notes (by design, not gaps)
 
 - **Ed25519 = auth; the relay never holds private keys.** Keys live at `~/.hermes/keys/*.priv`,

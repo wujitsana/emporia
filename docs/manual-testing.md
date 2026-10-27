@@ -131,7 +131,7 @@ games (or resign by abandoning), and check spend after step 5.
       the relay's `.env`, "applies when the relay restarts"; `emporia relay config set
       EMPORIA_RELAY_ACCESS wide` → refused, listing the choices; `emporia relay config show` lists all.
 - [ ] **Relay secrets (P200):** `emporia relay config set STRIPE_SECRET_KEY sk_test_x` → refused, "type it
-      hidden"; `emporia relay config set STRIPE_SECRET_KEY --dir <docker relay folder>` → asks hidden,
+      hidden"; `emporia relay config set STRIPE_SECRET_KEY --dir ~/emporia-relay` (a Docker relay's folder) → asks hidden,
       writes `secrets/STRIPE_SECRET_KEY` (0600), removes it from the `.env`. On the host:
       `docker compose up -d --build`, then `docker inspect emporia-relay | grep -c sk_` → 0;
       `docker top emporia-relay` → the relay runs as uid 10001, not root; `/health` shows Stripe configured.

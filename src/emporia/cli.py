@@ -868,6 +868,27 @@ else:
     return 0
 
 
+def cmd_agent_secure(name: str) -> int:
+    """P201: `emporia agent secure NAME|all` — every secret out of the profile's
+    config.yaml into its .env (Hermes never reads config.yaml's `env:`; an MCP
+    server's entry becomes `${NAME}`, filled from the .env), and both files
+    owner-only. Names are printed, never values. Restart the gateway after."""
+    root = profiles_root()
+    targets = sorted(p.parent for p in root.glob("*/config.yaml")) if name == "all" else [root / name]
+    if not targets or not (targets[0] / "config.yaml").exists():
+        print(f"agent secure: no profile {name!r} under {root}")
+        return 1
+    any_moved = False
+    for profile in targets:
+        moved = installer().secure_profile(profile)
+        any_moved = any_moved or bool(moved)
+        print(f"  {profile.name}: " + (f"moved to .env — {', '.join(moved)}" if moved else "nothing in config.yaml")
+              + "; config.yaml and .env owner-only")
+    if any_moved:
+        print("Restart the gateway so each profile's MCP servers are started again.")
+    return 0
+
+
 def cmd_agent(args: argparse.Namespace) -> int:
     """P195: `emporia agent leave URL NAME` and `emporia agent delete NAME`.
 
@@ -1523,11 +1544,18 @@ def doctor_agent(rep: Report, profile: Path, entry: dict, relay_up: bool) -> Non
     if leaked and profile != this_profile():
         rep.fail(f"holds the relay's settings: {', '.join(leaked)} (an agent never needs them)",
                  f"emporia setup agent {name}   (strips them)")
+    doctor_profile_secrets(rep, profile, dotenv)
     model = inst.load_yaml(profile / "config.yaml").get("model") or {}
     key_name = inst._PROVIDER_KEYS.get(str(model.get("provider") or "").lower())
-    if key_name and not (dotenv.get(key_name) or os.environ.get(key_name)):
-        rep.fail(f"model {model.get('default')} needs {key_name} in the profile .env",
-                 f"emporia setup agent {name}")
+    # P201: a multiplexed profile gets only its own .env's keys; the container's
+    # environment (docker-compose) counts only for one running its own gateway.
+    if key_name and not dotenv.get(key_name):
+        if inst.is_multiplexed(profile):
+            rep.fail(f"model {model.get('default')} needs {key_name} in this profile's .env — it shares the "
+                     "gateway with other profiles, so a key in docker-compose does not reach it",
+                     f"emporia setup agent {name}   (asks: the standard key, or another)")
+        elif not os.environ.get(key_name):
+            rep.fail(f"model {model.get('default')} needs {key_name}", f"emporia setup agent {name}")
     elif model:
         rep.ok(f"model {model.get('default') or model.get('provider')}")
     from emporia import nous_token
@@ -1636,6 +1664,41 @@ def a2a_state(profile: Path) -> tuple[bool, bool]:
     return on, trusted
 
 
+def doctor_profile_secrets(rep: Report, profile: Path, dotenv: dict[str, str]) -> None:
+    """P201: secrets only in the .env, both files owner-only, and Hermes told
+    which names are secret (the platform plugin's manifest)."""
+    inst = installer()
+    in_config = inst.secure_profile(profile, dry_run=True)
+    loose = [f.name for f in (profile / "config.yaml", profile / ".env") if f.exists() and f.stat().st_mode & 0o077]
+    if in_config:
+        rep.fail(f"config.yaml holds secrets: {', '.join(in_config)} — any tool that reads files can read them",
+                 f"emporia agent secure {profile.name}   (moves them to the .env)")
+    elif loose:
+        rep.warn(f"{' and '.join(loose)} readable by other users", f"emporia agent secure {profile.name}")
+    else:
+        rep.ok("secrets only in its .env, owner-only")
+    manifest = profile / "plugins" / "platforms" / "emporia" / "plugin.yaml"
+    if manifest.exists() and "EMPORIA_NOUS_JWT" not in manifest.read_text():
+        rep.warn("its Hermes plugin predates P201: the agent's commands can still see its keys and Nous token",
+                 f"emporia setup agent {profile.name}   (refreshes the plugin)")
+
+
+def doctor_machine_secrets(rep: Report) -> None:
+    """P201: what Docker hands the Hermes container. A relay-only secret there is
+    seen by every process in it, and a relay started from a shell in it takes
+    that value over its own .env's."""
+    rep.section("Secrets in this container's environment")
+    leaked = [k for k in ("STRIPE_SECRET_KEY", "STRIPE_WEBHOOK_SECRET", "EMPORIA_OPERATOR_PRIVATE_KEY")
+              if os.environ.get(k)]
+    if leaked:
+        rep.warn(f"{', '.join(leaked)} set for the whole container — only the relay needs them, and a relay "
+                 "started here would use these over its own .env's",
+                 "remove them from the Hermes service in docker-compose; keep them in the relay's .env "
+                 "(or its secrets/ folder in Docker)")
+    else:
+        rep.ok("no relay secret in the container's environment")
+
+
 def doctor_a2a(rep: Report, profile: Path, has_wallet: bool) -> None:
     """P187: Hermes's A2A platform puts a remote agent's task into this agent's
     live session. On an agent with a wallet, that is a stranger asking it to act."""
@@ -1707,6 +1770,7 @@ def cmd_doctor(args: argparse.Namespace) -> int:
         doctor_agent(rep, profile, entry, relay_up=h is not None)
     doctor_dashboard(rep)
     doctor_hermes_plugins(rep)
+    doctor_machine_secrets(rep)
     print("\n" + ("Problems found (✗) — fix them in order." if rep.failed
                   else "No problems found. Warnings (!) are optional."))
     return 1 if rep.failed else 0
@@ -3661,14 +3725,15 @@ def build_parser() -> argparse.ArgumentParser:
                    help="host: in Docker, or as a system service on a server kept for it")
     r.set_defaults(func=cmd_relay)
 
-    ag2 = sub.add_parser("agent", help="an agent leaves a relay, or is deleted from this machine")
-    ag2.add_argument("action", choices=["leave", "delete"])
-    ag2.add_argument("url_or_name", help="leave: the relay's URL; delete: the agent")
+    ag2 = sub.add_parser("agent", help="an agent leaves a relay, is deleted from this machine, or has its "
+                                       "secrets moved out of config.yaml (secure)")
+    ag2.add_argument("action", choices=["leave", "delete", "secure"])
+    ag2.add_argument("url_or_name", help="leave: the relay's URL; delete, secure: the agent (secure: or all)")
     ag2.add_argument("name", nargs="?", default="", help="leave: the agent")
     ag2.add_argument("--home", action="store_true", help="leave: even its home (it is then on no relay)")
-    ag2.set_defaults(func=lambda a: cmd_agent(argparse.Namespace(
-        action=a.action, url=a.url_or_name if a.action == "leave" else "",
-        name=a.name if a.action == "leave" else a.url_or_name, home=a.home)))
+    ag2.set_defaults(func=lambda a: cmd_agent_secure(a.url_or_name) if a.action == "secure" else cmd_agent(
+        argparse.Namespace(action=a.action, url=a.url_or_name if a.action == "leave" else "",
+                           name=a.name if a.action == "leave" else a.url_or_name, home=a.home)))
 
     ar = sub.add_parser("archive", help="an agent's own copy of everything it is part of on its relay")
     ar.add_argument("name")

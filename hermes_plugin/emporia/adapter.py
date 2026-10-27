@@ -68,6 +68,11 @@ def parse_line(raw: str) -> Optional[dict[str, Any]]:
     return data
 
 
+
+# Names that hold a secret: Hermes's own rule for a platform's settings
+# (_TOKEN, _SECRET, _KEY, _PASSWORD) plus JWTs, phrases and private keys.
+_SECRET_NAME = re.compile(r"(_TOKEN|_SECRET|_KEY|_PASSWORD|_JWT|_JSON)$|SECRET|PRIVATE|PHRASE", re.IGNORECASE)
+
 class EmporiaAdapter(BasePlatformAdapter):
     """Runs Emporia's bridge and dispatches each notice into the gateway."""
 
@@ -112,8 +117,13 @@ class EmporiaAdapter(BasePlatformAdapter):
         profile's .env. A multiplexed gateway's os.environ is the *launching*
         profile's, and the bridge's dotenv merge never overrides a value
         already set — so an inherited EMPORIA_KEYS_DIR would beat this
-        profile's own. Relay URL and agent id travel as arguments."""
-        env = {k: v for k, v in os.environ.items() if not k.startswith("EMPORIA_")}
+        profile's own. Relay URL and agent id travel as arguments.
+
+        P201: and no secret of the gateway's — a bot token, a model key, any
+        key docker-compose gave the container. The bridge reads its own from
+        this profile's .env."""
+        env = {k: v for k, v in os.environ.items()
+               if not k.startswith("EMPORIA_") and not _SECRET_NAME.search(k)}
         if self.dotenv:
             env["EMPORIA_DOTENV"] = self.dotenv
         return env

@@ -85,12 +85,14 @@ def key32(ref: str, env: dict[str, str] | None = None) -> bytes:
 
 
 # P165: keys kept in the agent profile's .env. Hermes treats that file as
-# secret: its file tools refuse to read any .env, its terminal and code tools
-# start children without variables whose names hold KEY/TOKEN/SECRET, and it
-# masks secret-looking assignments in terminal output. That is defence in
-# depth around the model, not a boundary (a deliberately disguised read still
-# gets through) — better than a key file, which has none of it. The names all
-# contain KEY or SECRET so those rules apply.
+# secret: its file tools refuse to read any .env, and it masks secret-looking
+# assignments in terminal output. Its terminal and code tools start children
+# without a fixed list of known credentials — not every name holding KEY or
+# SECRET, as this note once said (P201 found these passed). So the Emporia
+# platform plugin's plugin.yaml declares each of them `password: true`, which
+# puts them on that list for the profile it is installed in. That is defence
+# in depth around the model, not a boundary (a deliberately disguised read
+# still gets through) — better than a key file, which has none of it.
 ENV_KEY_NAMES = {
     "identity": "EMPORIA_IDENTITY_PRIVATE_KEY",
     "encryption": "EMPORIA_ENCRYPTION_PRIVATE_KEY",

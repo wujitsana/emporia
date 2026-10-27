@@ -8,6 +8,8 @@ import shutil
 import sys
 from pathlib import Path
 
+import yaml
+
 _INSTALLER_PATH = Path(__file__).resolve().parent.parent / "installer" / "install.py"
 _spec = importlib.util.spec_from_file_location("emporia_installer", _INSTALLER_PATH)
 installer = importlib.util.module_from_spec(_spec)
@@ -280,7 +282,9 @@ def test_an_agent_profile_never_gets_the_relays_stripe_settings(tmp_path, monkey
         assert k not in config_env, k
     assert "sk_live" not in env_text + yaml.dump(config_env)
     assert config_env["EMPORIA_AGENT_ID"] == "agent_one"
-    assert config_env.get("OPENROUTER_API_KEY") == "or-shared", "unrelated settings still inherit"
+    assert "OPENROUTER_API_KEY=or-shared" in env_text, "unrelated settings still inherit"
+    assert "OPENROUTER_API_KEY" not in config_env, "P201: secrets only in the .env"
+    assert oct((agent / ".env").stat().st_mode)[-3:] == "600" == oct((agent / "config.yaml").stat().st_mode)[-3:]
 
 
 def test_the_freshest_nous_login_wins(tmp_path, monkeypatch):
@@ -503,3 +507,63 @@ def test_the_dashboard_tab_installs_with_its_config_out_of_git_and_enabled(tmp_p
     assert "plugins" not in status, "the tab is invisible to the repo's git status"
     assert calls == [(["hermes", "plugins", "enable", "emporia"], str(home))]
     assert installer._DASHBOARD_RESTART_NEEDED
+
+
+def test_secrets_move_out_of_config_yaml_into_the_env(tmp_path):
+    """P201: Hermes never reads config.yaml's `env:`; any file tool can."""
+    profile = tmp_path / "profiles" / "p201"
+    profile.mkdir(parents=True)
+    (profile / "config.yaml").write_text(yaml.dump({
+        "env": {"EMPORIA_NOUS_JWT": "jwt-in-config", "OPENROUTER_API_KEY": "or-config", "EMPORIA_RELAY_URL": "u",
+                "EMPORIA_PUBLIC_KEY": "ab"},
+        "mcp_servers": {"emporia": {"env": {"EMPORIA_NOUS_JWT": "jwt-in-config", "EMPORIA_KEYS_DIR": "/k"}},
+                        "other": {"env": {"SOME_TOKEN": "${SOME_TOKEN}"}}}}))
+    (profile / "config.yaml").chmod(0o644)
+    (profile / ".env").write_text("OPENROUTER_API_KEY=or-env\n")
+    moved = installer.secure_profile(profile)
+    assert moved == ["EMPORIA_NOUS_JWT", "OPENROUTER_API_KEY"]
+    cfg = yaml.safe_load((profile / "config.yaml").read_text())
+    assert cfg["env"] == {"EMPORIA_RELAY_URL": "u", "EMPORIA_PUBLIC_KEY": "ab"}
+    assert cfg["mcp_servers"]["emporia"]["env"] == {"EMPORIA_NOUS_JWT": "${EMPORIA_NOUS_JWT}", "EMPORIA_KEYS_DIR": "/k"}
+    env = (profile / ".env").read_text()
+    assert "EMPORIA_NOUS_JWT=jwt-in-config" in env and "OPENROUTER_API_KEY=or-env" in env   # the .env's wins
+    assert "or-config" not in env
+    for f in ("config.yaml", ".env"):
+        assert oct((profile / f).stat().st_mode)[-3:] == "600"
+    assert installer.secure_profile(profile) == []                    # nothing left
+
+
+def test_a_docker_key_is_copied_only_for_a_profile_that_cannot_read_it(tmp_path, monkeypatch, capsys):
+    """P201: a multiplexed profile reads only its own .env, so a key docker-compose
+    gives the container must be copied; one with its own gateway reads it."""
+    profiles = tmp_path / "profiles"
+    shared, alone = profiles / "shared", profiles / "alone"
+    for p, cfg in ((shared, {}), (alone, {"gateway": {"standalone": True}})):
+        p.mkdir(parents=True)
+        (p / "config.yaml").write_text(yaml.dump(cfg))
+    monkeypatch.setenv("OPENROUTER_API_KEY", "or-from-compose")
+    monkeypatch.setattr("sys.stdin.isatty", lambda: False)
+    model = {"provider": "openrouter"}
+    assert installer.is_multiplexed(shared) and not installer.is_multiplexed(alone)
+    assert installer._provider_key_line(model, profile_dir=shared) == "OPENROUTER_API_KEY=or-from-compose"
+    assert "each profile here reads only its own .env" in capsys.readouterr().out
+    assert installer._provider_key_line(model, profile_dir=alone) is None
+    assert "nothing copied" in capsys.readouterr().out
+    assert installer._provider_key_line(model, {"OPENROUTER_API_KEY": "or-file"},
+                                        profile_dir=shared) == "OPENROUTER_API_KEY=or-file"   # a .env first
+
+
+def test_in_a_terminal_the_person_picks_the_standard_key_or_another(tmp_path, monkeypatch):
+    profile = tmp_path / "profiles" / "asked"
+    profile.mkdir(parents=True)
+    (profile / "config.yaml").write_text("{}")
+    monkeypatch.setenv("OPENROUTER_API_KEY", "or-standard")
+    monkeypatch.setattr("sys.stdin.isatty", lambda: True)
+    model = {"provider": "openrouter"}
+    monkeypatch.setattr("builtins.input", lambda *a: "")
+    assert installer._provider_key_line(model, profile_dir=profile) == "OPENROUTER_API_KEY=or-standard"
+    monkeypatch.setattr("builtins.input", lambda *a: "o")
+    monkeypatch.setattr("getpass.getpass", lambda *a: "or-its-own")
+    assert installer._provider_key_line(model, profile_dir=profile) == "OPENROUTER_API_KEY=or-its-own"
+    monkeypatch.setattr("builtins.input", lambda *a: "n")
+    assert installer._provider_key_line(model, profile_dir=profile) is None

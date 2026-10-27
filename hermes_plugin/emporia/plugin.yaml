@@ -48,3 +48,76 @@ optional_env:
     description: "Let every agent on the relay reach this agent (open marketplace)"
     prompt: "Allow all senders? (true/false)"
     password: false
+  # P201: the profile's secrets, declared so Hermes keeps them out of every
+  # command and script the agent runs (its terminal, code, cron scripts). Set
+  # by `emporia setup` in this profile's .env — never typed here.
+  - name: EMPORIA_IDENTITY_PRIVATE_KEY
+    description: "This agent's identity key, when kept in the .env — set by emporia setup, not here"
+    prompt: "EMPORIA_IDENTITY_PRIVATE_KEY"
+    password: true
+  - name: EMPORIA_ENCRYPTION_PRIVATE_KEY
+    description: "This agent's encryption key, when kept in the .env — set by emporia setup, not here"
+    prompt: "EMPORIA_ENCRYPTION_PRIVATE_KEY"
+    password: true
+  - name: EMPORIA_X402_EVM_PRIVATE_KEY
+    description: "This agent's EVM wallet key, when kept in the .env — set by emporia setup, not here"
+    prompt: "EMPORIA_X402_EVM_PRIVATE_KEY"
+    password: true
+  - name: EMPORIA_X402_SOLANA_PRIVATE_KEY
+    description: "This agent's Solana wallet key, when kept in the .env — set by emporia setup, not here"
+    prompt: "EMPORIA_X402_SOLANA_PRIVATE_KEY"
+    password: true
+  - name: EMPORIA_X402_PHRASE_SECRET
+    description: "This agent's wallet recovery phrase, when kept in the .env — set by emporia setup, not here"
+    prompt: "EMPORIA_X402_PHRASE_SECRET"
+    password: true
+  - name: EMPORIA_NOUS_JWT
+    description: "This agent's Nous sign-in token — set by emporia setup, not here"
+    prompt: "EMPORIA_NOUS_JWT"
+    password: true
+  - name: EMPORIA_OPERATOR_PRIVATE_KEY
+    description: "A relay's escrow operator key, when given by value — set by emporia setup, not here"
+    prompt: "EMPORIA_OPERATOR_PRIVATE_KEY"
+    password: true
+  - name: STRIPE_SECRET_KEY
+    description: "A relay's Stripe key (the relay's profile only) — set by emporia setup, not here"
+    prompt: "STRIPE_SECRET_KEY"
+    password: true
+  - name: STRIPE_WEBHOOK_SECRET
+    description: "A relay's Stripe webhook secret (the relay's profile only) — set by emporia setup, not here"
+    prompt: "STRIPE_WEBHOOK_SECRET"
+    password: true
+  # The vault tokens a linked key is read with (emporia identity link): the
+  # agent's own process reads the vault; its commands must not.
+  - name: OP_SERVICE_ACCOUNT_TOKEN
+    description: "A vault token for a linked key — set by emporia setup, not here"
+    prompt: "OP_SERVICE_ACCOUNT_TOKEN"
+    password: true
+  - name: BW_SESSION
+    description: "A vault token for a linked key — set by emporia setup, not here"
+    prompt: "BW_SESSION"
+    password: true
+  - name: VAULT_TOKEN
+    description: "A vault token for a linked key — set by emporia setup, not here"
+    prompt: "VAULT_TOKEN"
+    password: true
+  - name: DOPPLER_TOKEN
+    description: "A vault token for a linked key — set by emporia setup, not here"
+    prompt: "DOPPLER_TOKEN"
+    password: true
+  - name: INFISICAL_TOKEN
+    description: "A vault token for a linked key — set by emporia setup, not here"
+    prompt: "INFISICAL_TOKEN"
+    password: true
+  - name: AWS_SECRET_ACCESS_KEY
+    description: "A vault token for a linked key — set by emporia setup, not here"
+    prompt: "AWS_SECRET_ACCESS_KEY"
+    password: true
+  - name: AWS_SESSION_TOKEN
+    description: "A vault token for a linked key — set by emporia setup, not here"
+    prompt: "AWS_SESSION_TOKEN"
+    password: true
+  - name: AZURE_CLIENT_SECRET
+    description: "A vault token for a linked key — set by emporia setup, not here"
+    prompt: "AZURE_CLIENT_SECRET"
+    password: true

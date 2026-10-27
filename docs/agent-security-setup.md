@@ -70,7 +70,7 @@ sessions) and, if it has wallets, wallet keys. A recovery phrase is not kept: yo
 
 | Where | Setting | Protection from the agent's own tools |
 |---|---|---|
-| **Profile `.env`** (default) | `--keys env` | Hermes refuses its file tools any `.env`, starts terminal and code children without key-named variables, masks secret assignments in output. Defence in depth, not a wall |
+| **Profile `.env`** (default) | `--keys env` | Hermes refuses its file tools any `.env`, starts terminal and code children without the variables Emporia's plugin declares secret (P201), masks secret assignments in output. Defence in depth, not a wall |
 | Key files | `--keys files` | 0600 files; none from Hermes |
 | A password manager or remote vault | `emporia identity store\|link`, `emporia wallet import --link` | Read when needed, never written to disk; the vault's access token sits in the agent's `.env` |
 | AWS KMS, hosted wallets | planned ([roadmap](../ROADMAP.md)) | The machine never holds the key |
@@ -100,8 +100,9 @@ line tool when the agent first signs, kept in memory, never written to disk. The
 
 A vault keeps keys off the disk and gives you one place to revoke and audit them, but at the
 moment of signing the key is in the agent's process. Hermes starts the agent's terminal and code
-without variables named like tokens or keys, and Emporia's plugin refuses commands that name these
-tokens, so the agent's own tools cannot use the vault — but the strongest option, keys the machine
+without the vault tokens above (Emporia's plugin declares them secret, P201 — before, they reached
+the agent's commands), and Emporia's plugin refuses commands that name them, so the agent's own
+tools cannot use the vault — but the strongest option, keys the machine
 never holds (KMS), is still planned.
 
 Linking a key to a password manager refuses a source holding a different key — that would
@@ -112,6 +113,28 @@ unlock it. Backups of a `.env` go to `.env-backups/<time>/.env`, a name Hermes p
 
 The identity key is never a wallet, even though Solana uses the same curve: the relay hands
 agents bytes to sign, and a key that also held money could be tricked into signing a transaction.
+
+### Where each secret lives, by environment (P201)
+
+| What | Where it belongs | Never |
+|---|---|---|
+| An agent's keys, Nous token, vault token, model key | its profile `.env` (0600) | `config.yaml` — any tool that reads files reads it; Hermes never reads its `env:` block anyway |
+| A key docker-compose gives the Hermes container | only the **default** profile reads it | — |
+| The same key for another profile | copied into that profile's `.env` | relying on compose: profiles share one gateway (multiplexed) and each gets only its own `.env`'s keys |
+| A relay's Stripe key and webhook secret | the relay's `.env`; in Docker, `secrets/NAME` | the Hermes container's environment |
+
+`emporia setup agent` follows this. When the model's key is only in the container's environment it
+asks — the standard key (copied, and why), another, or none — and copies nothing for a profile that
+runs its own gateway (`gateway.standalone: true`), which reads the environment itself. `emporia
+doctor` checks each profile: secrets in `config.yaml`, files others can read, a model key a
+multiplexed profile cannot reach, a plugin too old to declare its secrets, and relay secrets in the
+container's environment. `emporia agent secure NAME|all` moves secrets out of `config.yaml` (names
+shown, never values); an MCP server's entry keeps `${NAME}`, which Hermes fills from the `.env`.
+
+**What Hermes keeps from the agent's commands.** Not every variable named like a key: a fixed list
+of known credentials, plus what each profile's platform plugins declare secret. Emporia's plugin
+declares its keys, the Nous token, the relay's Stripe secrets and the vault tokens. The bridge it
+starts gets none of the gateway's secrets — no bot token, no model key — only its profile's `.env`.
 
 ## 3. Wallets
 

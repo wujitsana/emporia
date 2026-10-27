@@ -403,12 +403,147 @@ def load_yaml(path: Path) -> dict:
         return json.loads(path.read_text()) if path.suffix == ".json" else {}
 
 
+def _write_private(path: Path, text: str) -> None:
+    """Write `path` owner-only (P201): 0600 from the instant it exists, and an
+    existing file is narrowed too. write_text() made a new .env 0644."""
+    fd = os.open(str(path), os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    with os.fdopen(fd, "w") as f:
+        f.write(text)
+    os.chmod(path, 0o600)
+
+
 def save_yaml(path: Path, data: dict) -> None:
     try:
         import yaml
-        path.write_text(yaml.dump(data, default_flow_style=False, sort_keys=False))
+        _write_private(path, yaml.dump(data, default_flow_style=False, sort_keys=False))
     except ImportError:
-        path.write_text(json.dumps(data, indent=2))
+        _write_private(path, json.dumps(data, indent=2))
+
+
+# P201: a profile's secrets live in its .env and nowhere else. Hermes's file
+# tools refuse to open a .env; config.yaml they read like any file, and older
+# installs left it 0644. Hermes never reads a top-level `env:` block, so a
+# secret there was only a copy waiting to be read.
+_SECRET_MARKERS = ("SECRET", "TOKEN", "JWT", "PASSWORD", "PHRASE", "PRIVATE")
+
+
+def is_secret_name(name: str) -> bool:
+    n = name.upper()
+    return n != "EMPORIA_PUBLIC_KEY" and (n.endswith("_KEY") or any(m in n for m in _SECRET_MARKERS))
+
+
+def secure_profile(profile_dir: Path, dry_run: bool = False) -> list[str]:
+    """Move every secret out of the profile's config.yaml into its .env, and
+    make both owner-only. Top-level `env:` / `environment:` entries are dropped
+    (Hermes reads neither); an MCP server's entry becomes `${NAME}`, which
+    Hermes fills from this profile's .env. Where the .env already holds a
+    different value, the .env's is kept: it is the one Hermes uses. Returns the
+    names moved, never values."""
+    config_path, env_path = profile_dir / "config.yaml", profile_dir / ".env"
+    if not config_path.exists():
+        return []
+    config = load_yaml(config_path)
+    have = harvest_env(profile_dir)
+    to_env: dict[str, str] = {}
+    moved: list[str] = []
+
+    def take(block: dict, keep_ref: bool) -> None:
+        for k in [k for k in block if is_secret_name(str(k))]:
+            value = _yaml_env_scalar(block[k])
+            if value.startswith("${"):
+                continue
+            if value and not have.get(k):
+                to_env.setdefault(str(k), value)
+            if keep_ref:
+                block[k] = f"${{{k}}}"
+            else:
+                del block[k]
+            moved.append(str(k))
+
+    for name in ("env", "environment"):
+        if isinstance(config.get(name), dict):
+            take(config[name], keep_ref=False)
+    for server in (config.get("mcp_servers") or {}).values():
+        if isinstance(server, dict) and isinstance(server.get("env"), dict):
+            take(server["env"], keep_ref=True)
+    if dry_run:
+        return sorted(set(moved))
+    if to_env:
+        lines = env_path.read_text().splitlines() if env_path.exists() else []
+        _write_private(env_path, "\n".join(lines + [f"{k}={v}" for k, v in to_env.items()]) + "\n")
+    if moved:
+        save_yaml(config_path, config)
+    for path in (config_path, env_path):
+        if path.exists():
+            os.chmod(path, 0o600)
+    return sorted(set(moved))
+
+
+def is_multiplexed(profile_dir: Path) -> bool:
+    """Whether this profile is served by the root's gateway, in one process with
+    other profiles. Then Hermes gives it only its own .env's credentials, never
+    the process environment (docker-compose). Only `gateway.standalone: true`
+    keeps a named profile's own gateway."""
+    if profile_dir.parent.name != "profiles":
+        return False   # the root (default) profile: the container's environment is its own
+    gateway = load_yaml(profile_dir / "config.yaml").get("gateway") or {}
+    return gateway.get("standalone") is not True
+
+
+def _ask_provider_key(name: str, where: str, must_copy: bool) -> str | None:
+    """In a terminal: the standard key, another, or none. None means skip."""
+    import getpass
+    note = (" It is copied into this agent's .env: each profile here gets only its own .env's keys."
+            if must_copy else "")
+    print(f"\n  The model needs {name}. Found in {where}.{note}")
+    answer = input("  Use that standard key? [Y/n, or o for another] ").strip().lower()
+    if answer in ("", "y", "yes"):
+        return "standard"
+    if answer.startswith("o"):
+        other = getpass.getpass(f"  {name} for this agent (hidden): ").strip()
+        return other or None
+    return None
+
+
+def _provider_key_line(model_block: dict | None, *sources: dict[str, str],
+                       profile_dir: Path | None = None) -> str | None:
+    """`KEY=value` for the model's provider, to go in the new profile's .env.
+
+    From the first .env-type source that has it; else from this process's
+    environment (a key docker-compose passes the container). That one is copied
+    only when the profile cannot read the environment itself (multiplexed, P201);
+    in a terminal the person chooses the standard key, another, or none."""
+    name = _PROVIDER_KEYS.get(str((model_block or {}).get("provider") or "").lower())
+    if not name:
+        return None
+    if profile_dir is not None and harvest_env(profile_dir).get(name):
+        return f"{name}={harvest_env(profile_dir)[name]}"
+    value, where = next(((s[name], "another profile's .env") for s in sources if s.get(name)), ("", ""))
+    if not value and os.environ.get(name, "").strip():
+        value = os.environ[name].strip()
+        where = "the container's environment (docker-compose)" if _in_container() else "this shell's environment"
+    if not value:
+        print(f"  WARNING: the model's provider needs {name}, and none was found to copy")
+        return None
+    from_env = where.endswith("environment") or "environment (" in where
+    must_copy = profile_dir is None or is_multiplexed(profile_dir)
+    if from_env and not must_copy:
+        print(f"  {name}: this profile runs its own gateway and reads it from {where} — nothing copied")
+        return None
+    if sys.stdin.isatty():
+        choice = _ask_provider_key(name, where, must_copy)
+        if choice is None:
+            print(f"  {name} not set — add it to {profile_dir / '.env' if profile_dir else 'the .env'} before it runs")
+            return None
+        if choice != "standard":
+            return f"{name}={choice}"
+    else:
+        print(f"  {name}: copied from {where}" + (" (each profile here reads only its own .env)" if from_env else ""))
+    return f"{name}={value}"
+
+
+def _in_container() -> bool:
+    return any(Path(p).exists() for p in ("/.dockerenv", "/run/.containerenv"))
 
 
 def harvest_env(profile_dir: Path) -> dict[str, str]:
@@ -602,18 +737,6 @@ _PROVIDER_KEYS = {
     "openrouter": "OPENROUTER_API_KEY", "nvidia": "NVIDIA_API_KEY",
     "anthropic": "ANTHROPIC_API_KEY", "openai": "OPENAI_API_KEY",
 }
-
-
-def _provider_key_line(model_block: dict | None, *sources: dict[str, str]) -> str | None:
-    """`KEY=value` for the model's provider, from the first source that has it."""
-    name = _PROVIDER_KEYS.get(str((model_block or {}).get("provider") or "").lower())
-    if not name:
-        return None
-    for src in sources:
-        if src.get(name):
-            return f"{name}={src[name]}"
-    print(f"  WARNING: the model's provider needs {name}, and none was found to copy")
-    return None
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -831,16 +954,8 @@ def install_into_profile(
     # the entry is inert either way.
 
     # Env block
+    # P201: secrets (the Stripe key, the Nous token) go only to the .env below.
     env_block = config.setdefault("env", {})
-    if stripe_secret_key:
-        if env_block.get("STRIPE_SECRET_KEY") != stripe_secret_key:
-            env_block["STRIPE_SECRET_KEY"] = stripe_secret_key
-            changed = True
-            print("  + env.STRIPE_SECRET_KEY")
-    elif "STRIPE_SECRET_KEY" in env_block:
-        env_block.pop("STRIPE_SECRET_KEY", None)
-        changed = True
-        print("  ~ removed env.STRIPE_SECRET_KEY (not configured)")
     if stripe_profile_id:
         if not _valid_stripe_profile_id(stripe_profile_id):
             print(f"  WARNING: ignoring invalid STRIPE_PROFILE_ID={stripe_profile_id!r} (expected profile_... or profile_test_...)")
@@ -868,15 +983,8 @@ def install_into_profile(
             env_block.pop("EMPORIA_MAX_TOTAL_SPEND_CENTS", None)
             changed = True
             print("  ~ removed total spend limit (unlimited)")
-    if nous_token and env_block.get("EMPORIA_NOUS_JWT") != nous_token:
-        env_block["EMPORIA_NOUS_JWT"] = nous_token
-        changed = True
-        print("  + env.EMPORIA_NOUS_JWT  (Nous identity verified)")
-        mcp_env = mcp_servers[MCP_TOOL_NAME].setdefault("env", {})
-        if mcp_env.get("EMPORIA_NOUS_JWT") != nous_token:
-            mcp_env["EMPORIA_NOUS_JWT"] = nous_token
-            changed = True
-            print(f"  ~ mcp_servers.{MCP_TOOL_NAME}.env.EMPORIA_NOUS_JWT")
+    if nous_token:
+        print("  + EMPORIA_NOUS_JWT in .env  (Nous identity verified)")
     if no_guardrails:
         _apply_guardrails_env(env_block, disabled=True)
         changed = True
@@ -969,10 +1077,12 @@ def install_into_profile(
 
     if c1 or c2 or c3 or c4 or c5 or env_dirty:
         if not dry_run:
-            env_file.write_text("\n".join(env_lines) + "\n")
+            _write_private(env_file, "\n".join(env_lines) + "\n")
             print(f"  Updated: {env_file}")
         else:
             print(f"  [dry-run] Would update: {env_file}")
+    if not dry_run and (moved := secure_profile(profile_dir)):
+        print(f"  Moved from config.yaml to .env: {', '.join(moved)}")
 
     write_dashboard_env(relay_url, agent_id, dry_run=dry_run)
     return True
@@ -1108,7 +1218,8 @@ def create_profile(
     # shimmed (no backcompat is owed here); the public key is available from
     # `emporia.identity.get_public_key_hex(agent_id)` and from the agent's own
     # profile on the relay.
-    config["env"] = env_block
+    # P201: secrets go to the .env below, never config.yaml.
+    config["env"] = {k: v for k, v in env_block.items() if not is_secret_name(k)}
 
     if dry_run:
         print(f"  [dry-run] Would write {config_path}")
@@ -1142,9 +1253,9 @@ def create_profile(
         safe_env_lines.append(f"EMPORIA_X402_MAX_DAILY_CENTS={x402_max_daily_cents}")
     # P117: the one key this profile's model needs, into the .env Hermes reads it from.
     provider_line = _provider_key_line(
-        model_block, harvest_env(profile_dir), env_block,
+        model_block, env_block,
         *((harvest_env(current_profile_dir), collect_upstream_env(current_profile_dir))
-          if current_profile_dir else ()))
+          if current_profile_dir else ()), profile_dir=profile_dir)
     if provider_line:
         safe_env_lines.append(provider_line)
     if max_budget_cents is not None and max_budget_cents > 0:
@@ -1152,9 +1263,11 @@ def create_profile(
     if nous_token:
         safe_env_lines.append(f"EMPORIA_NOUS_JWT={nous_token}")
     safe_env_lines.extend(_guardrails_env_lines(disabled=False))
-    for k in _SECRET_ENV_KEYS - _RELAY_ONLY_ENV_KEYS:
-        if k in env_block and env_block[k] and k != "EMPORIA_NOUS_JWT":
-            safe_env_lines.append(f"{k}={env_block[k]}")
+    # Every inherited secret (P201: config.yaml no longer holds any), once.
+    written = {ln.split("=", 1)[0] for ln in safe_env_lines}
+    for k, v in env_block.items():
+        if (is_secret_name(k) or k in _SECRET_ENV_KEYS) and v and k not in written and k not in _RELAY_ONLY_ENV_KEYS:
+            safe_env_lines.append(f"{k}={v}")
 
     # Export to current process so subsequent steps see the vars immediately
     os.environ["EMPORIA_AGENT_ID"] = name
@@ -1167,8 +1280,10 @@ def create_profile(
     if dry_run:
         print(f"  [dry-run] Would write {env_path}")
     else:
-        env_path.write_text("\n".join(_merge_profile_env(env_path, safe_env_lines)) + "\n")
+        _write_private(env_path, "\n".join(_merge_profile_env(env_path, safe_env_lines)) + "\n")
         print(f"  Saved: {env_path}")
+        if moved := secure_profile(profile_dir):
+            print(f"  Moved from config.yaml to .env: {', '.join(moved)}")
 
     if update_dashboard:
         write_dashboard_env(relay_url, name, dry_run=dry_run)
