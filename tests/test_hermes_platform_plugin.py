@@ -57,3 +57,25 @@ def test_doctor_fails_an_older_copy_of_the_plugin(tmp_path, capsys):
     rep = cli.Report()
     cli.doctor_profile_secrets(rep, profile, {})
     assert rep.failed and "key_guard.py" in capsys.readouterr().out
+
+
+def test_doctor_catches_delegation_that_undoes_a_role(tmp_path, monkeypatch, capsys):
+    """P207: Hermes's profile routes run a subagent as another profile, keys and terminal included."""
+    from emporia import cli
+    root = tmp_path / "profiles"
+    off = list(cli.MARKETPLACE_OFF)
+    for name, cfg in (("shop", {"agent": {"disabled_toolsets": off},
+                                "delegation": {"backend": "profile_routes",
+                                               "backends": {"profile_routes": {"profiles": [{"name": "coder"}]}}}}),
+                      ("coder", {"delegation": {"backends": {"model_map": {"options": [
+                          {"name": "fast", "model": "m", "api_key": "sk-plain"}]}}}})):
+        (root / name).mkdir(parents=True)
+        (root / name / "config.yaml").write_text(yaml.dump(cfg))
+    monkeypatch.setattr(cli, "_has_wallet", lambda profile, agent_id: False)
+    rep = cli.Report()
+    cli.doctor_delegation(rep, root / "shop")
+    assert rep.failed and "which has a terminal" in capsys.readouterr().out
+    rep = cli.Report()
+    cli.doctor_delegation(rep, root / "coder")
+    out = capsys.readouterr().out
+    assert rep.failed and "api_key in plain text" in out and "sk-plain" not in out

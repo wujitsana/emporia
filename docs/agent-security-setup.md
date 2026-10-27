@@ -152,6 +152,41 @@ thing that can sign. An agent asks it, with a token; the rules decide. It can ru
 | As its own system user | the agents' user cannot read its folder | a server or VM |
 | In its own container, beside Hermes's | a separate filesystem; only a socket is shared | Hermes in Docker |
 
+**Practice mode, and apart.** `emporia signer start` runs it as you — the same user as the agents.
+That is practice: the flow works (add, pay, approve, audit, remove), but a rogue agent could read the
+signer's folder, so it adds no protection, and mainnet will not unlock there. For protection, run it
+**apart** with `emporia signer host`:
+
+| Hermes runs | `emporia signer host` sets up | Shared with Hermes | A wall when |
+|---|---|---|---|
+| In Docker (any OS) | the signer in its own container, from this checkout's image, plus an `admin` service for your commands — run on the host | only the socket volume (`emporia-signer-socket`; two lines in Hermes's compose) | Hermes's container has no Docker socket mounted |
+| On a Linux host, without Docker | a systemd service under its own user, `emporia-signer` (folder in `/var/lib`, 0700) | only the socket, in `/run/emporia-signer` (0755) | Hermes's user is not root, not in the `docker` group, has no passwordless `sudo` |
+| On a host, with the signer in Docker (Linux, macOS, Windows) | the signer's container, listening on `127.0.0.1:8790` (a host process cannot reach a socket in a Docker volume; Docker Desktop passes none) | a local port; the token decides who may ask | Hermes's user cannot use Docker — on Docker Desktop every user can, so this is practice there; run Hermes in Docker instead |
+| On macOS or Windows, without Docker | not set up for you: run `emporia signer serve --port 8790` under a separate account yourself | a local port | that account's files are not readable by Hermes's |
+
+Hermes can connect to the socket but not replace it: its folder belongs to the signer. The wall holds
+only if the agents' user cannot get round it — not root, no control of Docker (Docker's socket
+mounted into Hermes's container, or the `docker` group on the host: either lets an agent start a
+container with the signer's volume), no passwordless `sudo`. `emporia signer status` and `emporia
+doctor` check all three, and mainnet will not unlock while any is there.
+
+With the signer apart, a **developer** agent may hold a wallet: `emporia setup agent NAME --role
+developer --wallet` puts it behind the signer at once, out of its terminal's reach.
+
+**Delegation.** Hermes's advanced delegation plugin can run a subagent *as another profile* — with
+that profile's keys, terminal and wallet. So a marketplace agent allowed to delegate to a profile
+with a terminal has a terminal, and any agent allowed to delegate to a wallet-holding profile can
+make it spend. `emporia doctor` fails the first and warns on the second, and fails a model route
+whose `api_key` sits in plain text in `config.yaml` (give it `provider:` instead). Subagents of the
+same profile (the default) keep its role; they inherit its Emporia tools (`inherit_mcp_toolsets`),
+and with them its limits, approvals and signer.
+
+**No agent administers the signer.** A relay can have a Hermes operator agent because managing a
+relay holds none of its keys; the signer's whole job is decisions no agent may make — approvals,
+limits, which wallets it holds. Its `admin` service is a container for your commands. An agent may
+read `emporia signer status` and `emporia signer audit`, nothing more. Approving from your phone needs
+your device to sign the approval, so that an agent relaying it cannot forge one; it is planned.
+
 **Trying it on testnet.** `emporia signer` in a terminal opens a menu — start it, add or remove an
 agent, answer approvals, change an agent's limits — and it is in the main `emporia` menu. `emporia
 setup agent` offers it when it makes a wallet (yes by default if the signer runs; if not, it offers

@@ -136,6 +136,11 @@ games (or resign by abandoning), and check spend after step 5.
       `emporia signer policy alpha set EMPORIA_PAYMENT_APPROVAL_CENTS 0`: its next payment says "intent int_…";
       `emporia signer approve int_…`; its retry pays. `emporia signer status` warns while it runs as the same user.
       `emporia signer remove alpha` → its key files and limits back in its profile; restart; it pays in-process again.
+- [ ] **Signer apart (P207):** `emporia signer host` (from Hermes's container) → writes `compose.yaml` and `.env`;
+      on the host: set `HERMES_DATA`, `docker compose up -d --build signer`, add the two socket-volume lines to Hermes's
+      compose and recreate it; `docker compose run --rm admin add alpha`; restart the gateway. From Hermes:
+      `emporia signer status` → "apart from this user"; alpha pays; `docker compose run --rm admin pending` / `approve`.
+      `emporia setup agent dev1 --role developer --wallet` → its wallet goes straight behind the signer.
 - [ ] **Relay secrets (P200):** `emporia relay config set STRIPE_SECRET_KEY sk_test_x` → refused, "type it
       hidden"; `emporia relay config set STRIPE_SECRET_KEY --dir ~/emporia-relay` (a Docker relay's folder) → asks hidden,
       writes `secrets/STRIPE_SECRET_KEY` (0600), removes it from the `.env`. On the host:

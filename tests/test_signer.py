@@ -1,6 +1,8 @@
 """P203: wallet keys and limits in a process of their own."""
+import json
 import os
 import re
+import time
 from unittest.mock import patch
 
 import pytest
@@ -97,14 +99,19 @@ def test_a_tester_adds_an_agent_to_the_signer_and_removes_it(profiles, tmp_path,
     monkeypatch.setenv("EMPORIA_SIGNER_DIR", str(tmp_path / "sig"))
     keys = sorted(p.name for p in (prof / "home" / ".hermes" / "keys").glob("taster.x402.*"))
     assert keys
+    ledger = prof / "home" / ".hermes" / "keys" / "taster.x402.spend.json"
+    ledger.write_text(json.dumps([[time.time(), 1_230_000]]))          # spent today, before the move
     assert cli.main(["signer", "add", "taster", "--url", "unix:///run/s.sock"]) == 0
+    with agent_wallet.scope(signer._scope("taster")):
+        assert agent_wallet.spent_today_atomic("taster") == 1_230_000     # P207: the daily cap carries over
+    assert "destroyed" in capsys.readouterr().out
     after = _env_of(prof)
     assert after["EMPORIA_SIGNER_URL"] == "unix:///run/s.sock" and after["EMPORIA_SIGNER_TOKEN"]
     assert not list((prof / "home" / ".hermes" / "keys").glob("taster.x402.*"))       # out of the profile
     assert signer.policy("taster")["env"]["EMPORIA_X402_MAX_DAILY_CENTS"] == "700"      # its limits went too
     assert "token" not in capsys.readouterr().out.lower().replace("its own token", "")
     assert cli.main(["signer", "remove", "taster"]) == 0
-    assert sorted(p.name for p in (prof / "home" / ".hermes" / "keys").glob("taster.x402.*")) == keys
+    assert set(keys) <= {p.name for p in (prof / "home" / ".hermes" / "keys").glob("taster.x402.*")}
     back = _env_of(prof)
     assert "EMPORIA_SIGNER_URL" not in back and back.get("EMPORIA_X402_MAX_DAILY_CENTS") == before.get(
         "EMPORIA_X402_MAX_DAILY_CENTS")
@@ -209,3 +216,77 @@ def test_an_agent_setting_up_a_wallet_is_not_offered_the_signer(profiles, monkey
     out = capsys.readouterr().out
     assert "the operator runs `emporia signer add helped`" in out
     assert not signer.agent_dir("helped").exists()
+
+
+def test_signer_host_writes_its_own_container_or_a_service(profiles, tmp_path, monkeypatch, capsys):  # noqa: F811
+    """P207: apart from the agents — a container beside Hermes's, or a system user."""
+    import yaml
+
+    from emporia import cli
+    from emporia import relay_host as rh
+    monkeypatch.setattr(cli, "_persons_terminal", lambda: True)
+    monkeypatch.setattr(rh, "in_container", lambda: True)            # Hermes in Docker, no Docker here
+    monkeypatch.setattr("shutil.which", lambda name: None)
+    assert cli.main(["signer", "host", "--dir", str(tmp_path / "box")]) == 0
+    compose = yaml.safe_load((tmp_path / "box" / "compose.yaml").read_text())
+    signer_svc = compose["services"]["signer"]
+    assert signer_svc["user"] == "10001" and "emporia-signer-socket:/run/emporia-signer" in signer_svc["volumes"]
+    assert not any("/opt/data" in v for v in signer_svc["volumes"])          # Hermes's data never in the signer
+    assert compose["volumes"]["emporia-signer-socket"]["name"] == "emporia-signer-socket"
+    out = capsys.readouterr().out
+    assert "external: true" in out and "docker compose run --rm admin add NAME" in out
+    assert cli.main(["signer", "host", "--run", "service", "--dir", str(tmp_path / "box")]) == 1   # not in a container
+    monkeypatch.setattr(rh, "in_container", lambda: False)
+    assert cli.main(["signer", "host", "--run", "service", "--dir", str(tmp_path / "svc")]) == 0
+    unit = (tmp_path / "svc" / "emporia-signer.service").read_text()
+    assert "User=emporia-signer" in unit and "StateDirectoryMode=0700" in unit and "RuntimeDirectoryMode=0755" in unit
+    assert "sudo env HERMES_HOME=" in capsys.readouterr().out
+
+
+def test_a_developer_may_hold_a_wallet_behind_a_signer_running_apart(profiles, monkeypatch, capsys):  # noqa: F811
+    from emporia import cli
+    added = []
+    monkeypatch.setattr(cli, "_persons_terminal", lambda: True)
+    monkeypatch.setattr(cli, "_signer_apart", lambda: True)
+    monkeypatch.setattr(cli, "_signer_add", lambda args, url: added.append(args.name) or 0)
+    with patch.dict(os.environ):
+        assert cli.main(["setup", "agent", "builder", "--role", "developer", "--keys", "files", "--wallet"]) == 0
+    assert added == ["builder"] and "out of its tools' reach" in capsys.readouterr().out
+    monkeypatch.setattr(cli, "_signer_apart", lambda: False)       # practice mode, or none: no wallet
+    with patch.dict(os.environ):
+        assert cli.main(["setup", "agent", "builder2", "--role", "developer", "--keys", "files", "--wallet"]) == 0
+    assert added == ["builder"] and "Wallet flags ignored" in capsys.readouterr().out
+
+
+def test_a_way_round_the_wall_means_it_is_not_apart(monkeypatch, capsys):
+    """P207: Docker or passwordless sudo for the agents' user undoes any separation."""
+    from emporia import cli
+    monkeypatch.setattr(cli, "_signer_up", lambda url: {"uid": os.getuid() + 1})
+    monkeypatch.setattr(cli, "_escalations", lambda: [])
+    assert cli._signer_apart()
+    monkeypatch.setattr(cli, "_escalations", lambda: ["this user can control Docker (/var/run/docker.sock)"])
+    assert not cli._signer_apart()
+    monkeypatch.setattr(signer_client.Client, "health", lambda self: {"uid": os.getuid() + 1})
+    assert cli.main(["signer", "status", "--url", "unix:///x.sock"]) == 0
+    assert "BUT this user can control Docker" in capsys.readouterr().out
+
+
+def test_hermes_on_the_host_reaches_its_signer_container_on_a_loopback_port(tmp_path, monkeypatch, capsys):
+    """P207: a host process cannot reach a socket in a Docker volume (Docker Desktop passes none)."""
+    import yaml
+
+    from emporia import cli
+    from emporia import relay_host as rh
+    monkeypatch.setattr(cli, "_persons_terminal", lambda: True)
+    monkeypatch.setattr(rh, "in_container", lambda: False)
+    monkeypatch.setattr("shutil.which", lambda name: "/usr/bin/docker" if name == "docker" else None)
+    monkeypatch.setattr(cli.subprocess, "run", lambda *a, **k: type("R", (), {"returncode": 1})())
+    monkeypatch.setattr(cli, "_escalations", lambda: ["this user can control Docker (/var/run/docker.sock)"])
+    monkeypatch.setenv("HERMES_HOME", str(tmp_path / "hermes"))
+    assert cli.main(["signer", "host", "--run", "docker", "--dir", str(tmp_path / "box")]) == 0
+    compose = yaml.safe_load((tmp_path / "box" / "compose.yaml").read_text().replace("${HERMES_DATA}", "/h"))
+    assert compose["services"]["signer"]["ports"] == ["127.0.0.1:8790:8790"]
+    assert "/h:/h" in compose["services"]["admin"]["volumes"]                  # profiles' paths match
+    assert f"HERMES_DATA={tmp_path / 'hermes'}" in (tmp_path / "box" / ".env").read_text()
+    out = capsys.readouterr().out
+    assert "--url http://127.0.0.1:8790" in out and "Not a wall yet" in out

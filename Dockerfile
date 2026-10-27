@@ -23,6 +23,8 @@ WORKDIR /app
 # project fails without it (P106 — the image had not built since init).
 COPY pyproject.toml uv.lock README.md ./
 COPY src/ ./src/
+# P207: `emporia signer add` (the signer's admin service) reads profiles with the installer's helpers.
+COPY installer/ ./installer/
 # --extra x402 (P106): the escrow operator (P96-P99) signs and ABI-encodes on
 # the relay itself, so the image needs eth-account/eth-abi. Without them a
 # relay with EMPORIA_ESCROW_* set failed at the first /fund.

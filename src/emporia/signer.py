@@ -70,9 +70,20 @@ def agent_dir(agent_id: str) -> Path:
     return signer_dir() / "agents" / identity._keyfile_stem(agent_id)
 
 
+def own(path: Path) -> None:
+    """P207: a file root wrote here (an admin container, sudo) belongs to the
+    signer's user, or the signer could no longer read its own folder."""
+    if os.getuid() != 0 or not signer_dir().exists():
+        return
+    owner = signer_dir().stat()
+    for p in [path, *(path.rglob("*") if path.is_dir() else [])]:
+        os.chown(p, owner.st_uid, owner.st_gid)
+
+
 def _write_json(path: Path, data) -> None:
     path.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
     identity._write_secret_atomically(path, json.dumps(data, indent=1).encode())
+    own(path.parent)
 
 
 def _read_json(path: Path, default):
@@ -112,6 +123,7 @@ def admin_token() -> str:
     if not path.exists():
         signer_dir().mkdir(mode=0o700, parents=True, exist_ok=True)
         identity._write_secret_atomically(path, secrets.token_urlsafe(32).encode())
+        own(path)
     return path.read_text().strip()
 
 
@@ -153,6 +165,7 @@ def add_settings(values: dict) -> list[str]:
         lines = (path.read_text().splitlines() if path.exists() else []) + [f"{k}={v}" for k, v in new.items()]
         signer_dir().mkdir(mode=0o700, parents=True, exist_ok=True)
         identity._write_secret_atomically(path, ("\n".join(lines) + "\n").encode())
+        own(path)
     return sorted(new)
 
 
@@ -324,22 +337,54 @@ def decide_intent(intent_id: str, verb: str, request: Request) -> dict:
         raise HTTPException(404, f"no pending intent {intent_id}") from None
 
 
+# Where `emporia signer host` puts it (P207): a socket shared with Hermes's
+# container, or — for Hermes on the host, where a container's socket cannot be
+# reached (Docker Desktop passes no Unix sockets) — a port on 127.0.0.1.
+HOSTED_SOCKET = Path("/run/emporia-signer/signer.sock")
+HOSTED_PORT = 8790
+
+
 def socket_path() -> Path:
+    """EMPORIA_SIGNER_SOCKET; else a signer running apart, if one answers there;
+    else practice mode's, beside its folder."""
     raw = os.getenv("EMPORIA_SIGNER_SOCKET", "").strip()
-    return Path(raw).expanduser() if raw else signer_dir().with_name(signer_dir().name + ".sock")
+    if raw:
+        return Path(raw).expanduser()
+    if HOSTED_SOCKET.is_socket():
+        return HOSTED_SOCKET
+    return signer_dir().with_name(signer_dir().name + ".sock")
 
 
 # Linux keeps a Unix socket's path in 108 bytes, its terminating zero included.
 _MAX_SOCKET_PATH = 107
 
 
+def default_url() -> str:
+    """Where to find the signer when nothing says: a hosted one that answers,
+    else practice mode's socket."""
+    if not os.getenv("EMPORIA_SIGNER_SOCKET", "").strip():
+        if HOSTED_SOCKET.is_socket():
+            return f"unix://{HOSTED_SOCKET}"
+        import httpx
+        try:
+            if httpx.get(f"http://127.0.0.1:{HOSTED_PORT}/health", timeout=1).json().get("service") == "emporia-signer":
+                return f"http://127.0.0.1:{HOSTED_PORT}"
+        except (httpx.HTTPError, ValueError):
+            pass
+    return f"unix://{socket_path()}"
+
+
 def serve(socket: str = "", port: int = 0) -> None:
     import uvicorn
+
+    from emporia.relay_host import in_container
     signer_dir().mkdir(mode=0o700, parents=True, exist_ok=True)
     admin_token()
     load_settings()
     if port:
-        uvicorn.run(app, host="127.0.0.1", port=port, log_level="warning")
+        # In its own container the port is published on the host's 127.0.0.1
+        # only (compose); the container's own interface is not the host's.
+        uvicorn.run(app, host="0.0.0.0" if in_container() else "127.0.0.1", port=port, log_level="warning")
         return
     sock = Path(socket) if socket else socket_path()
     if len(str(sock).encode()) > _MAX_SOCKET_PATH:

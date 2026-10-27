@@ -872,7 +872,7 @@ def _signer_url(args: argparse.Namespace) -> str:
     from emporia import signer
     if args.socket:
         os.environ["EMPORIA_SIGNER_SOCKET"] = args.socket
-    return args.url or os.getenv("EMPORIA_SIGNER_URL", "") or f"unix://{signer.socket_path()}"
+    return args.url or os.getenv("EMPORIA_SIGNER_URL", "") or signer.default_url()
 
 
 def cmd_signer(args: argparse.Namespace) -> int:
@@ -898,6 +898,8 @@ def cmd_signer(args: argparse.Namespace) -> int:
     url = _signer_url(args)
     if args.action in ("start", "stop", "logs"):
         return _signer_daemon(args, url)
+    if args.action == "host":
+        return _signer_host(args)
     if args.action == "audit":
         return _signer_audit(args.name)
     if args.action == "remove":
@@ -909,10 +911,12 @@ def cmd_signer(args: argparse.Namespace) -> int:
             print(f"signer: not reachable at {url} — {e}")
             return 1
         apart = h.get("uid") != os.getuid()
+        ways_round = _escalations() if apart else []
         print(f"signer: running at {url}, as uid {h.get('uid')}" + (
-            " — apart from this user" if apart else
-            " — the SAME user as this one: it enforces the rules, but this user's processes can read its keys. "
-            "Run it as its own user or container for real money."))
+            " — apart from this user, BUT " + "; ".join(ways_round) + ". Close that for it to be a wall."
+            if ways_round else " — apart from this user" if apart else
+            " — PRACTICE MODE: the same user as the agents, so it adds no protection against a rogue agent "
+            "(it can read the signer's folder). Testnet only; apart from them: emporia signer host"))
         return 0
     if args.action in ("pending", "approve", "deny"):
         admin = signer_client.Admin(url, signer.admin_token())
@@ -947,7 +951,36 @@ def cmd_signer(args: argparse.Namespace) -> int:
 
 
 def _signer_args(action: str, name: str = "", rest: list | None = None, lock: bool = False) -> argparse.Namespace:
-    return argparse.Namespace(action=action, name=name, rest=rest or [], dir="", port=0, url="", socket="", lock=lock)
+    return argparse.Namespace(action=action, name=name, rest=rest or [], dir="", port=0, url="", socket="", lock=lock,
+                              run="")
+
+
+def _escalations() -> list[str]:
+    """P207: ways this user (the agents') could reach a signer that runs apart
+    anyway. Any one of them makes its own container or user no wall."""
+    import shutil
+    found = []
+    if os.getuid() == 0:
+        found.append("the agents run as root")
+    for sock in ("/var/run/docker.sock", "/run/docker.sock"):
+        if os.path.exists(sock) and os.access(sock, os.R_OK | os.W_OK):
+            found.append(f"this user can control Docker ({sock}) — an agent could start a container with the "
+                         "signer's volume")
+            break
+    if shutil.which("sudo"):
+        try:
+            if subprocess.run(["sudo", "-n", "true"], capture_output=True, timeout=5).returncode == 0:
+                found.append("this user has sudo without a password")
+        except (OSError, subprocess.TimeoutExpired):
+            pass
+    return found
+
+
+def _signer_apart() -> bool:
+    """A signer answers, runs as another user than this one, and this user has
+    no way around that (P207)."""
+    h = _signer_up(_signer_url(_signer_args("")))
+    return bool(h) and h.get("uid") != os.getuid() and not _escalations()
 
 
 def _signer_up(url: str) -> dict | None:
@@ -969,9 +1002,11 @@ def _signer_menu(args: argparse.Namespace, url: str) -> int:
         up = _signer_up(url)
         held = sorted(p.name for p in (signer.signer_dir() / "agents").glob("*") if (p / "policy.json").exists())
         print(f"\nSigner — {'running' if up else 'not running'} at {url}" + (
-            "" if not up else " (as you: tests everything but the isolation)" if up.get("uid") == os.getuid()
-            else " (as its own user)") + f"; holds {', '.join(held) or 'no agent'}")
-        options = ([("stop", "Stop it")] if up else [("start", "Start it (in the background, as you)")])
+            "" if not up else " — practice mode: as you, no protection against a rogue agent (testnet only)"
+            if up.get("uid") == os.getuid() else " — apart from the agents") + f"; holds {', '.join(held) or 'no agent'}")
+        options = ([("stop", "Stop it")] if up else [
+            ("start", "Start it in practice mode (in the background, as you — testnet only)"),
+            ("host", "Run it apart from the agents (its own container or system user)")])
         if up:
             options += [("add", "Add an agent — its wallet keys and limits move in")]
             options += [("remove", "Remove an agent — its keys and limits go back to its profile"),
@@ -984,6 +1019,8 @@ def _signer_menu(args: argparse.Namespace, url: str) -> int:
             return 0
         if what in ("start", "stop"):
             _signer_daemon(_signer_args(what), url)
+        elif what == "host":
+            _signer_host(_signer_args("host"))
         elif what == "add":
             wallets = [p.name for p, _ in _agent_profiles(profiles_root())
                        if p.name not in held and _has_wallet(p, p.name)]
@@ -1033,6 +1070,90 @@ def _signer_limits_menu(name: str) -> None:
     value = prompt(labels[pick], env.get(pick, ""))
     if value:
         _signer_policy(_signer_args("policy", name, ["set", pick, value]))
+
+
+def _signer_host(args: argparse.Namespace) -> int:
+    """P207: `emporia signer host` — the signer apart from the agents. Hermes in
+    Docker: its own container beside Hermes's, sharing only a socket volume.
+    Hermes on the host: a system service under its own user. Writes the files and
+    shows the commands; runs them when it can and the person says so."""
+    import shutil
+
+    from emporia import relay_host as rh
+    from emporia import signer_host as sh
+    if not _persons_terminal():
+        print("signer host: only a person sets up where agents' wallet keys live, in their own terminal.")
+        return 1
+    in_box, docker, systemd = rh.in_container(), bool(shutil.which("docker")), bool(shutil.which("systemctl"))
+    ways = ["docker"] if in_box else [w for w, ok in (("docker", docker), ("service", systemd)) if ok] or [
+        "docker", "service"]
+    run = getattr(args, "run", "") or (ways[0] if len(ways) == 1 else choose("How should it run?", [
+        ("docker", "In its own container, beside Hermes's (Hermes runs in Docker)"),
+        ("service", "As a system service under its own user (Hermes runs on this host, without Docker)")]))
+    if in_box and run == "service":
+        print("signer host: Hermes runs in a container here — a service would be the container's. Its own "
+              "container it is (--run docker).")
+        return 1
+    folder = Path(args.dir).expanduser() if args.dir else (this_profile() or Path.home()) / "emporia-signer"
+    if run == "docker":
+        hermes_data = os.getenv("HERMES_HOME", "~/.hermes") if not in_box else "~/.hermes"
+        if not in_box:
+            hermes_data = str(Path(hermes_data).expanduser().resolve())
+        written = sh.write_docker(folder, REPO, hermes_data, hermes_in_docker=in_box)
+        print(f"Wrote {', '.join(str(p) for p in written)}")
+        if in_box:
+            print(f"  Check HERMES_DATA in {folder / '.env'}: Hermes's data folder on the host (mounted at /opt/data "
+                  f"in its container) — from inside, I cannot see where that is.")
+        reachable = docker and subprocess.run(["docker", "info"], capture_output=True).returncode == 0
+        intro = (f"1. On the host, in this folder (wherever Hermes's data is mounted there) — {folder}:"
+                 if not reachable else f"1. In {folder}:")
+        steps = [("start", ["docker", "compose", "up", "-d", "--build", "signer"])]
+        if _host_steps(steps, "Build and start it now?" if reachable else "", intro):
+            out = subprocess.run(steps[0][1], cwd=folder, capture_output=True, text=True)
+            print("  started" if out.returncode == 0 else f"  failed:\n{(out.stderr or out.stdout)[-1200:]}")
+        if in_box:
+            print("\n2. Add to Hermes's own compose file, then recreate its container (docker compose up -d):\n"
+                  + "\n".join("    " + ln for ln in sh.hermes_compose_lines().splitlines())
+                  + f"\n\n3. Move an agent's wallet in (on the host, in {folder}):\n"
+                  "    docker compose run --rm admin add NAME\n"
+                  "   then restart the gateway. Approvals and the log, the same way: docker compose run --rm admin "
+                  "pending | approve ID | audit\n"
+                  f"\nCheck from Hermes: emporia signer status --url {sh.URL}   (it should say: apart from this user)")
+            return 0
+        print(f"\n2. Move an agent's wallet in (in {folder}):\n"
+              f"    docker compose run --rm admin add NAME --url {sh.PORT_URL}\n"
+              "   then restart its gateway. Approvals and the log: docker compose run --rm admin pending | approve ID "
+              f"| audit\n\nCheck: emporia signer status --url {sh.PORT_URL}")
+        if ways_round := _escalations():
+            print(f"\n  ! Not a wall yet: Hermes runs here as a user for whom {'; '.join(ways_round)} — its agents "
+                  "could reach this container through Docker. It works, as practice. For a wall: on Linux, "
+                  "`emporia signer host --run service` (and keep Hermes's user out of the docker group); on macOS or "
+                  "Windows, run Hermes itself in Docker, with the signer beside it.")
+        return 0
+    exe = Path(sys.executable).with_name("emporia")
+    written = sh.write_service(folder, exe)
+    print(f"Wrote {', '.join(str(p) for p in written)}")
+    steps = [("its user", ["sudo", "sh", "-c", f"id -u {sh.SERVICE_USER} >/dev/null 2>&1 || useradd --system "
+                                               f"--no-create-home --shell /usr/sbin/nologin {sh.SERVICE_USER}"]),
+             ("can it run", ["sudo", "-u", sh.SERVICE_USER, "test", "-x", str(exe)]),
+             ("start", ["sudo", "sh", "-c", f"cp {folder / sh.SERVICE} /etc/systemd/system/ && systemctl "
+                                            "daemon-reload && systemctl enable --now emporia-signer"])]
+    runnable = systemd and bool(shutil.which("sudo"))
+    if _host_steps(steps, "Run these now (sudo asks for your password)?" if runnable else "",
+                   "1. On this machine, as a person with sudo:"):
+        for what, argv in steps:
+            out = subprocess.run(argv)
+            if out.returncode != 0:
+                print(f"signer host: `{' '.join(argv)}` failed" + (
+                    " — the signer's user cannot reach this checkout: put it outside a private home folder"
+                    if what == "can it run" else ""))
+                return 1
+    hermes_home = os.getenv("HERMES_HOME", str(Path.home() / ".hermes"))
+    print(f"\n2. Move an agent's wallet in, then restart its gateway:\n"
+          f"    sudo env HERMES_HOME={hermes_home} {sh.service_env()} {exe} signer add NAME\n"
+          f"   Approvals and the log: sudo env {sh.service_env()} {exe} signer pending | approve ID | audit\n"
+          f"\nCheck: emporia signer status --url {sh.URL}   (it should say: apart from this user)")
+    return 0
 
 
 def _signer_audit(name: str = "") -> int:
@@ -1090,7 +1211,8 @@ def _signer_daemon(args: argparse.Namespace, url: str) -> int:
     for _ in range(40):
         try:
             signer_client.Client(url, "", "").health()
-            print(f"signer: up at {url} (pid {proc.pid}; keys and limits in {folder})\n"
+            print(f"signer: up at {url} (pid {proc.pid}; keys and limits in {folder}) — practice mode: as you, so it "
+                  "adds no protection against a rogue agent; for that, emporia signer host\n"
                   "  Next: emporia signer add NAME — then restart the gateway. Undo: emporia signer remove NAME")
             return 0
         except Exception:
@@ -1185,6 +1307,11 @@ def _signer_policy(args: argparse.Namespace) -> int:
         # user, the agent's own processes can read the signer's folder — and so
         # approve its own payments or raise its limits.
         profile = profiles_root() / name
+        ways_round = _escalations() if profile.exists() else []
+        if ways_round and os.getenv("EMPORIA_ALLOW_HOT_AGENT_WALLET", "").strip() != "1":
+            print(f"signer policy mainnet: the agents' user could reach the signer anyway — {'; '.join(ways_round)}. "
+                  f"Close that first; testnet works as it is.")
+            return 1
         if (profile.exists() and profile.stat().st_uid == signer.signer_dir().stat().st_uid
                 and os.getenv("EMPORIA_ALLOW_HOT_AGENT_WALLET", "").strip() != "1"):
             print(f"signer policy mainnet: the signer's folder belongs to the same user as {name}'s profile, so "
@@ -1242,7 +1369,6 @@ def _signer_policy(args: argparse.Namespace) -> int:
 def _signer_add(args: argparse.Namespace, url: str) -> int:
     """Move an agent's wallet keys and limits into the signer and point it there."""
     import json as _json
-    import shutil
 
     from emporia import signer
     from emporia.agent_wallet import wallet_path
@@ -1301,23 +1427,35 @@ def _signer_add(args: argparse.Namespace, url: str) -> int:
         owner = signer.signer_dir().stat()
         for path in [signer.agent_dir(name), *signer.agent_dir(name).rglob("*")]:
             os.chown(path, owner.st_uid, owner.st_gid)
-    # Out of the profile: key files to the trash, key lines out of the .env.
+    # P207: the signer's copy checked, then the old copies destroyed — a trash
+    # folder in the profiles is still within the agents' reach. The 24-hour spend
+    # log goes with the keys, or the move would reset the daily cap.
     key_dir = Path(_mcp_env(profile).get("EMPORIA_KEYS_DIR") or profile / "home" / ".hermes" / "keys")
-    trash = profiles_root() / ".deleted" / f"{name}-wallet-{time.strftime('%Y%m%dT%H%M%S')}"
+    with agent_wallet.scope(scope):
+        if any(targets[f].read_bytes() != bytes.fromhex(h) for f, h in keys.items()):
+            print("signer add: the signer's copy does not read back as written; nothing removed from the profile.")
+            return 1
+        ledger = agent_wallet._ledger_path(name)
     from emporia.identity import _keyfile_stem
-    moved = [f for f in key_dir.glob(f"{_keyfile_stem(name)}.x402.*") if f.is_file()]
-    if moved:
-        trash.mkdir(mode=0o700, parents=True, exist_ok=True)
-        for f in moved:
-            shutil.move(str(f), str(trash / f.name))
+    old = [f for f in key_dir.glob(f"{_keyfile_stem(name)}.x402.*") if f.is_file()]
+    for f in old:
+        if f.name.endswith(".spend.json"):
+            _write_secret_atomically(ledger, f.read_bytes())
+    signer.own(signer.agent_dir(name))
+    for f in old:
+        with open(f, "r+b") as out:     # overwrite, then unlink
+            out.write(b"\0" * f.stat().st_size)
+            out.flush()
+            os.fsync(out.fileno())
+        f.unlink()
     unset_env_lines(profile / ".env", ["EMPORIA_X402_EVM_PRIVATE_KEY", "EMPORIA_X402_SOLANA_PRIVATE_KEY",
                                        "EMPORIA_X402_EVM_KEY_SOURCE", "EMPORIA_X402_SOLANA_KEY_SOURCE",
                                        "EMPORIA_X402_MAINNET"])
     merge_env_file(profile / ".env", {"EMPORIA_SIGNER_URL": url, "EMPORIA_SIGNER_TOKEN": token})
     print(f"{name}: its wallet ({', '.join(keys)}) is now held by the signer at {signer.signer_dir()}; its "
           f"limits moved with it (emporia signer policy {name}). The agent asks {url} with its own token.")
-    if moved:
-        print(f"  The old key files are in {trash} — delete it once the signer has paid once: rm -rf {trash}")
+    if old:
+        print(f"  Its old key files in the profile were destroyed ({len(old)}); the signer's copy is the only one.")
     print(f"  For real money the signer runs as its own user (or container): check with emporia signer status. "
           f"Then, as the signer's user: emporia signer policy {name} mainnet")
     installer().print_restart_instructions([profile])
@@ -2002,6 +2140,7 @@ def doctor_agent(rep: Report, profile: Path, entry: dict, relay_up: bool) -> Non
                  f"emporia setup agent {name}   (strips them)")
     doctor_profile_secrets(rep, profile, dotenv)
     doctor_signer(rep, profile, dotenv)
+    doctor_delegation(rep, profile)
     model = inst.load_yaml(profile / "config.yaml").get("model") or {}
     key_name = inst._PROVIDER_KEYS.get(str(model.get("provider") or "").lower())
     # P201: a multiplexed profile gets only its own .env's keys; the container's
@@ -2146,6 +2285,53 @@ def doctor_profile_secrets(rep: Report, profile: Path, dotenv: dict[str, str]) -
                      "then restart the gateway")
 
 
+def _api_keys_in(node, where: str = "") -> list[str]:
+    """Where a delegation block holds an api_key in plain text."""
+    found = []
+    if isinstance(node, dict):
+        for k, v in node.items():
+            if k == "api_key" and isinstance(v, str) and v.strip() and not v.strip().startswith("${"):
+                found.append(where or "delegation")
+            else:
+                found += _api_keys_in(v, f"{where}.{k}" if where else str(k))
+    elif isinstance(node, list):
+        for i, v in enumerate(node):
+            found += _api_keys_in(v, f"{where}[{i}]")
+    return found
+
+
+def doctor_delegation(rep: Report, profile: Path) -> None:
+    """P207: Hermes's delegation can run a subagent as another profile — with
+    that profile's keys, terminal and wallet. A role that delegation undoes is
+    no role: a marketplace agent routed to a profile with a terminal gets one,
+    and one routed to a profile holding a wallet can make it spend."""
+    inst = installer()
+    cfg = inst.load_yaml(profile / "config.yaml")
+    delegation = cfg.get("delegation") or {}
+    if keys := _api_keys_in(delegation):
+        rep.fail(f"config.yaml holds a model route's api_key in plain text ({', '.join(keys)})",
+                 "give the route `provider:` instead — Hermes then uses the key already in the .env")
+    if delegation.get("backend") != "profile_routes":
+        return
+    routes = ((delegation.get("backends") or {}).get("profile_routes") or {}).get("profiles") or []
+    names = [r.get("name") for r in routes if isinstance(r, dict) and r.get("name")]
+    me_wallet = _has_wallet(profile, profile.name)
+    mine = profile_role(profile, me_wallet)
+    for name in names:
+        target = profile.parent / name
+        if name == profile.name or not (target / "config.yaml").exists():
+            continue
+        t_wallet = _has_wallet(target, name)
+        t_role = profile_role(target, t_wallet)
+        if mine == "marketplace" and t_role != "marketplace":
+            rep.fail(f"it may delegate to {name}, which has a terminal — so it has one too, and its keys are in "
+                     "reach of a delegated task", f"remove {name} from its delegation profile routes")
+        elif t_wallet and mine != "marketplace":
+            rep.warn(f"it may delegate to {name}, which holds a wallet: a task it hands over can spend, within "
+                     f"{name}'s limits", f"remove {name} from its profile routes, or keep {name}'s wallet behind "
+                     "the signer with an approval threshold")
+
+
 def doctor_signer(rep: Report, profile: Path, dotenv: dict[str, str]) -> None:
     """P203: where this agent's wallet keys are, and whether that is apart from it."""
     url = dotenv.get("EMPORIA_SIGNER_URL", "")
@@ -2163,9 +2349,11 @@ def doctor_signer(rep: Report, profile: Path, dotenv: dict[str, str]) -> None:
                  "start it: emporia signer serve (as the signer's user)")
         return
     if h.get("uid") == os.getuid():
-        rep.warn("its wallet is behind the signer, but the signer runs as the same user as the agents — the rules "
-                 "hold, the keys are still on their side", "run it as its own user or container "
-                 "(docs/agent-security-setup.md § The signer)")
+        rep.warn("its wallet is behind the signer in practice mode — the same user as the agents, so no protection "
+                 "against a rogue agent (testnet only)", "emporia signer host")
+    elif ways_round := _escalations():
+        rep.warn(f"the signer runs apart, but the agents' user could reach it anyway: {'; '.join(ways_round)}",
+                 "take that away from the user Hermes runs as (docs/agent-security-setup.md § The signer)")
     else:
         rep.ok("its wallet keys and limits are held by the signer, apart from it")
 
@@ -2329,10 +2517,19 @@ def cmd_setup_agent(args: argparse.Namespace) -> int:
     keys = [k for k, _ in ROLES]
     role = args.role or choose("What will this agent do?", ROLES,
                                keys.index(current_role) if current_role in keys else 0)
-    if role == "developer" and (args.wallet or args.solana):
-        print("  ! A developer agent holds no wallet (its tools could reach the keys). Wallet flags ignored.")
+    # P207: with the signer apart from the agents, a wallet is out of its tools'
+    # reach whatever its role — so a developer may hold one, behind the signer.
+    behind_signer = False
+    if role in ("developer", "both") and (args.wallet or args.solana or role == "both") and _signer_apart():
+        behind_signer = _persons_terminal()
+    if role == "developer" and (args.wallet or args.solana) and not behind_signer:
+        print("  ! A developer agent holds no wallet (its tools could reach the keys) — unless the signer runs apart "
+              "from it (emporia signer host). Wallet flags ignored.")
         args.wallet = args.solana = False
-    if role == "both" and (_backend(profile) if (profile / "config.yaml").exists() else "local") == "local" \
+    elif behind_signer:
+        print("  Its wallet goes behind the signer, which runs apart from the agents — out of its tools' reach.")
+    if role == "both" and not behind_signer and (
+            _backend(profile) if (profile / "config.yaml").exists() else "local") == "local" \
             and _TTY and not ask(
             "  A wallet plus full tools on the `local` backend puts its keys in its tools' reach. Continue?",
             False):
@@ -2345,14 +2542,14 @@ def cmd_setup_agent(args: argparse.Namespace) -> int:
         ("files", "In key files in its keys folder"),
     ])
     # P169: wallet keys the operator already has come first.
-    found = byo_candidates(profile) if role != "developer" else []
+    found = byo_candidates(profile) if role != "developer" or behind_signer else []
     if found and not (args.wallet or args.solana or args.use_found_keys):
         print("\nWallet keys already on this machine (bring your own):")
         for f in found:
             print(f"  · {_KIND_NAME[f['kind']]} in {f['where']} → {f['address']}")
     if args.use_found_keys and found:
         mode = "found"
-    elif role == "developer":
+    elif role == "developer" and not behind_signer:
         mode = "none"
     else:
         mode = _wallet_mode(args, default="found" if found else "none", found=bool(found))
@@ -2431,9 +2628,11 @@ def cmd_setup_agent(args: argparse.Namespace) -> int:
                           f"print({f!r} + ' wallet', 'registered' if w.get('success') else "
                           f"w.get('error') or w.get('detail'))\n" for f in families)))
             print("  " + (r.stdout.strip().replace("\n", "\n  ") or r.stderr.strip()[-300:]))
+    if wallet and behind_signer:      # P207: the condition it was allowed a wallet on
+        _signer_add(_signer_args("add", name), _signer_url(_signer_args("")))
     # P204: offer the signer — yes by default when it already runs; optional on
     # testnet, so starting it is the person's choice (no by default).
-    if wallet and _persons_terminal() and not installer().harvest_env(profile).get("EMPORIA_SIGNER_URL"):
+    elif wallet and _persons_terminal() and not installer().harvest_env(profile).get("EMPORIA_SIGNER_URL"):
         surl = _signer_url(_signer_args(""))
         up = _signer_up(surl)
         question = ("The signer is running. Keep this wallet behind it (its keys and limits apart from the agent; "
@@ -4260,8 +4459,10 @@ def build_parser() -> argparse.ArgumentParser:
     sg = sub.add_parser("signer", help="agents' wallet keys in a process of their own — needed for real money, "
                                        "optional on testnet (start, add NAME; remove NAME undoes it)")
     sg.add_argument("action", nargs="?", default="",
-                    choices=["", "start", "stop", "logs", "serve", "status", "add", "remove", "policy",
+                    choices=["", "start", "stop", "logs", "serve", "host", "status", "add", "remove", "policy",
                              "pending", "approve", "deny", "audit"])
+    sg.add_argument("--run", choices=["docker", "service"], default="",
+                    help="host: its own container beside Hermes's, or a system service under its own user")
     sg.add_argument("name", nargs="?", default="", help="add, remove, policy: the agent; approve, deny: the intent")
     sg.add_argument("rest", nargs="*", help="policy: set NAME VALUE, or mainnet")
     sg.add_argument("--dir", default="", help="the signer's folder (default $EMPORIA_SIGNER_DIR or ~/.emporia-signer)")
