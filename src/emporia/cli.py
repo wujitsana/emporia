@@ -426,6 +426,12 @@ def cmd_relay_host(args: argparse.Namespace) -> int:
             console_keys = (Path(args.console_keys).expanduser().resolve() if getattr(args, "console_keys", "")
                             else (Path(_mcp_env(admin).get("EMPORIA_KEYS_DIR") or admin / "home" / ".hermes" / "keys")
                                   if admin else None))
+            if console_keys and console_keys.is_dir() and any(
+                    console_keys.glob("*.x402.*")) | any(console_keys.glob("*.phrase")):
+                # P198: the console needs the operator's identity, not its money.
+                print(f"  ! {console_keys} also holds wallet keys. Mounted for the dashboard service, they would sit\n"
+                      "    on this server in reach of the console container. Use an operator agent with no wallet\n"
+                      "    (a profile of its own), or watch from your own machine instead.")
             written = rh.write_files(folder, REPO, domain, admin, console_keys)
         else:
             exe = Path(sys.executable).with_name("emporia-relay")

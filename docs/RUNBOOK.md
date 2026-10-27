@@ -130,6 +130,18 @@ Settings → This relay. Two ways in, neither facing the internet:
 
 Either way the dashboard only shows; changing the relay is `emporia relay …` on its machine.
 
+**Safety, for either way:**
+- The console only reads as the agent (P198): it forwards reads, and the one write the dashboard
+  makes — marking the agent's own inbox read. Creating, joining, removing, and the operator's own
+  routes are refused at the console, whatever the operator's keys could do.
+- Its printed link opens once; the cookie it sets is a separate secret. A link seen again (in
+  `docker compose logs`, in shell history) opens nothing — restart the console for a new one.
+- Make the operator agent one **without a wallet**, in a profile of its own: whatever is in the keys
+  folder you mount on the server sits there, in reach of the console container. `relay host` warns
+  when the folder holds wallet keys.
+- Whoever controls the server already controls the relay and its operator key; the console does
+  not change that. Option 1 keeps the operator agent's keys off the server altogether.
+
 ### Rotating the relay's key
 
 ```bash

@@ -50,6 +50,10 @@ class Console:
         self.key_dirs = key_dirs
         self.relay = RelayClient(relay_url, transport=transport)
         self.session_token = session_token     # None in socket mode
+        # P198: the printed link works once; the cookie it sets is a separate
+        # secret, so a link seen again (logs, shell history) opens nothing.
+        self.link_key: str | None = session_token
+        self.cookie_secret = secrets.token_urlsafe(32)
 
     def agents(self) -> dict[str, LocalAgent]:
         return discover(self.key_dirs)
@@ -121,7 +125,7 @@ def _authorized(console: Console, cookies: dict[str, str], host: str) -> bool:
     name = host.split("]")[0] + "]" if host.startswith("[") else host.rsplit(":", 1)[0]
     if name not in _LOCAL_HOSTS:
         return False
-    return secrets.compare_digest(cookies.get(COOKIE, ""), console.session_token)
+    return secrets.compare_digest(cookies.get(COOKIE, ""), console.cookie_secret)
 
 
 def build_app(console: Console, *, ui_dir: Path | None = None) -> FastAPI:
@@ -146,10 +150,11 @@ def build_app(console: Console, *, ui_dir: Path | None = None) -> FastAPI:
 
     @app.get("/session")
     async def session(key: str = ""):
-        if console.session_token is None or not secrets.compare_digest(key, console.session_token):
-            raise HTTPException(401, "invalid link")
+        if console.link_key is None or not secrets.compare_digest(key, console.link_key):
+            raise HTTPException(401, "invalid link — each link opens once; restart the console for a new one")
+        console.link_key = None
         r = RedirectResponse("/", status_code=303)
-        r.set_cookie(COOKIE, console.session_token, httponly=True, samesite="strict",
+        r.set_cookie(COOKIE, console.cookie_secret, httponly=True, samesite="strict",
                      path="/")
         return r
 
@@ -160,6 +165,13 @@ def build_app(console: Console, *, ui_dir: Path | None = None) -> FastAPI:
     @app.api_route("/relay/{agent_id}/{path:path}",
                    methods=["GET", "POST", "PUT", "PATCH", "DELETE"])
     async def relay(agent_id: str, path: str, request: Request):
+        # P198: the dashboard watches; it does not act as the agent. Reads pass,
+        # and the one write it makes — marking its own inbox read. Anything else
+        # (create, join, delete, an operator route) is refused here, whatever
+        # the agent's keys could do.
+        writes_ok = request.method == "POST" and path.strip("/") == f"agents/{agent_id}/inbox/mark-read"
+        if request.method not in ("GET", "HEAD") and not writes_ok:
+            raise HTTPException(405, "the dashboard only reads — act through the agent or the emporia command")
         agent = console.agent(agent_id)
         r = await console.relay.forward(agent, request.method, path, request.url.query,
                                         dict(request.headers), await request.body())

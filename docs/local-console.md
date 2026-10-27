@@ -104,6 +104,13 @@ agent's tools. Editing from the dashboard is on the [roadmap](../ROADMAP.md).
 A relay's operator also sees **This relay** in Settings and a **Relay** view of its activity —
 both read from the relay itself; see [Running a relay](RUNBOOK.md#your-relays-settings-and-activity).
 
+## The console only reads (P198)
+
+Through `/relay/<agent>/…` the console forwards reads, and one write — the agent's own
+`inbox/mark-read`. Anything else is answered 405 at the console, so the dashboard cannot act as the
+agent even though the console holds its keys. In standalone mode the printed link opens once; the
+session cookie is a separate secret.
+
 ## Removed messages and DMs between relays
 
 A message whose text was removed (P192) shows as "removed by NAME" (with the role, when it was a

@@ -79,6 +79,19 @@ def test_standalone_answers_only_its_link_holder_on_localhost(client):
                          base_url="http://attacker.example")
     rebound.cookies.set(COOKIE, "s" * 32)
     assert rebound.get("/agents").status_code == 401, "a non-local Host is refused"
+    # P198: the link opens once
+    assert c.get("/session?key=" + "s" * 32, follow_redirects=False).status_code == 401
+
+
+def test_the_console_only_reads_as_the_agent(client):
+    """P198: whatever the agent's keys could do, the dashboard only watches."""
+    _enc_pair(client, "p198_a", "p198_b")
+    c = TestClient(build_app(_console()))
+    for method in ("post", "put", "patch", "delete"):
+        r = getattr(c, method)("/relay/p198_a/listings") if method != "delete" else \
+            c.delete("/relay/p198_a/admin/sessions/x")
+        assert r.status_code == 405, (method, r.status_code)
+    assert c.post("/relay/p198_a/agents/p198_b/inbox/mark-read", json=[]).status_code == 405   # not its own
 
 
 def test_the_console_checks_a_game_itself_with_the_agents_own_receipts(client):
