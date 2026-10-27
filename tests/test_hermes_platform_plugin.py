@@ -15,7 +15,8 @@ def test_every_key_emporia_can_keep_in_a_profile_env_is_declared_secret():
     secret = {e["name"] for e in entries if e.get("password") is True}
     expected = set(ENV_KEY_NAMES.values()) | {"EMPORIA_NOUS_JWT", "EMPORIA_OPERATOR_PRIVATE_KEY",
                                               "STRIPE_SECRET_KEY", "STRIPE_WEBHOOK_SECRET",
-                                              "OP_SERVICE_ACCOUNT_TOKEN", "BW_SESSION", "VAULT_TOKEN"}
+                                              "OP_SERVICE_ACCOUNT_TOKEN", "BW_SESSION", "VAULT_TOKEN",
+                                              "EMPORIA_SIGNER_TOKEN"}
     assert expected <= secret, expected - secret
 
 

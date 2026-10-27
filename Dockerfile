@@ -33,8 +33,11 @@ RUN uv sync --frozen --no-dev --extra x402
 # P200: secrets come as files in ./secrets, mounted read-only at /run/secrets —
 # never environment variables, which `docker inspect` shows to anyone with
 # Docker. The relay reads them as root at start, then runs as `emporia`.
+# P203: the same image runs the signer (`emporia signer serve`); its socket folder,
+# shared with the Hermes container as a volume, starts out the signer's.
 RUN useradd --system --uid 10001 --home-dir /data --shell /usr/sbin/nologin emporia \
-    && mkdir -p /data && chown emporia:emporia /data && chmod 700 /data
+    && mkdir -p /data /run/emporia-signer && chown emporia:emporia /data /run/emporia-signer \
+    && chmod 700 /data && chmod 755 /run/emporia-signer
 ENV EMPORIA_KEYS_DIR=/data/keys \
     EMPORIA_DB_PATH=/data/emporia.sqlite3 \
     EMPORIA_SECRETS_DIR=/run/secrets \

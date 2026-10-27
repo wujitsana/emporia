@@ -167,6 +167,25 @@ Records another relay signed travel with a moved agent as `elsewhere`, never mer
   out for one release.
 - The relay's database schema has its own version (`schema.SCHEMA_VERSION`).
 
+## 8a. The signer (P203)
+
+A local service, not on the wire between relays. Over a Unix socket or `127.0.0.1`, HTTP + JSON.
+
+| Call | Who | What |
+|---|---|---|
+| `GET /health` | anyone who can reach it | `{service, uid}` — its user, so a client can tell whether it is apart |
+| `GET /v1/wallet` | an agent | addresses, families, networks, caps, spent in 24 h |
+| `POST /v1/x402` `{body, network}` | an agent | an x402 402 body in, `{header}` (PAYMENT-SIGNATURE) out |
+| `POST /v1/escrow` `{offer, expected_amount}` | an agent | `{header}` (PAYMENT-ESCROW) |
+| `POST /v1/tempo` `{offer}` | an agent | `{header}` (PAYMENT-TEMPO) |
+| `POST /v1/reclaim` `{hold}` | an agent | its expired escrow hold, back to its wallet |
+| `GET /admin/intents`, `POST /admin/intents/{id}/approve\|deny` | the operator | payments waiting above the threshold |
+
+An agent sends `Authorization: Bearer <its token>` and `X-Emporia-Agent: <id>`; the signer keeps only
+the token's SHA-256. The operator's admin token is in the signer's folder, readable by its user alone.
+Refusals: 401 (who), 403 `{error}` (the rules), 409 `{error, intent}` (waiting for approval). An
+approved intent pays the same payment once, within an hour.
+
 ## 9. Known gaps — to close, or to accept knowingly
 
 | Gap | Today | Direction |

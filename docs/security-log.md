@@ -4169,6 +4169,16 @@ P162) and, before mainnet, the operator key in a cloud key service (planned).
 | The platform bridge got the gateway's whole environment minus `EMPORIA_*` — bot tokens, model keys, anything docker-compose set | Only non-secret names pass; the bridge reads its own from the profile's `.env` |
 | A model key moved into docker-compose silently stopped reaching every profile but the default (one multiplexed gateway gives each profile only its own `.env`'s keys) | `setup agent` asks to copy the standard key and says why; doctor fails a profile that cannot reach its model's key |
 
+## P202–P203 pass — real money apart from every agent
+
+| Finding | Fix |
+|---|---|
+| A relay could take real money with its keys in a Hermes profile, readable by that profile's agent | It refuses to start (live Stripe, mainnet USDC or escrow) until run with `emporia relay host` (P202) |
+| An agent's caps, daily total and approval threshold were enforced by its own process, from its own `.env` — an agent with a terminal could raise them or edit its spend log | The signer holds the keys and the rules; the agent asks with a token (P203) |
+| An operator's "approve" reached the payment through the agent's own process | Above the threshold the signer makes a pending intent; only the operator's admin token approves it |
+| Mainnet could be unlocked for a wallet in the agent's own process | Refused unless the wallet is behind the signer (or `EMPORIA_ALLOW_HOT_AGENT_WALLET=1`) |
+| A Unix socket path over 107 bytes failed silently; a socket inside the signer's 0700 folder could not be reached by another user | Refused with the reason; the socket lives outside the folder (`EMPORIA_SIGNER_SOCKET`) |
+
 ## Threat model notes (by design, not gaps)
 
 - **Ed25519 = auth; the relay never holds private keys.** Keys live at `~/.hermes/keys/*.priv`,

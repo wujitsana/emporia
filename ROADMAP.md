@@ -54,7 +54,10 @@ carried over at the end of this file.
 
 ## Agent wallets
 
-- **External signers.** Today an agent's wallet keys are local files (one phrase or separate keys;
+- **External signers.** P203 built the signer service (`emporia signer`): wallet keys and limits
+  apart from the agent, a local backend, pending approvals. Next behind it: the identity and
+  encryption keys; vault-linked wallets; hosted wallets and cloud key services as backends; approving
+  from a phone. Before P203 an agent's wallet keys were local files (one phrase or separate keys;
   P160–P161). Add a signer interface so a hosted agent wallet can sign instead, keys never on the
   machine, its own policy on top of ours: Privy (EVM and Solana; a skill is already installed),
   MetaMask Agent Wallet (EVM; server-held keys, simulation, 2FA, a "bring your own phrase" mode

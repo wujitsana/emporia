@@ -32,12 +32,14 @@ _KEY_PATHS = re.compile(
     r"|\bx402\.(?:secp256k1|ed25519|phrase)\b"       # wallet key files
     r"|\.x25519\.priv\b|[\w@.-]+\.priv\b"           # identity / encryption keys
     r"|relay_operator\.secp256k1\b|_relay_jwt_secret\b"
-    r"|\.env-backups\b")
+    r"|\.env-backups\b"
+    r"|\.emporia-signer\b|\bEMPORIA_SIGNER_DIR\b")       # P203: the signer's keys and limits
 _KEY_NAMES = re.compile(
     r"\bEMPORIA_(?:IDENTITY|ENCRYPTION|X402_EVM|X402_SOLANA|OPERATOR)_PRIVATE_KEY\b"
     r"|\bEMPORIA_X402_PHRASE_SECRET\b|\bOP_SERVICE_ACCOUNT_TOKEN\b|\bBW_SESSION\b"
     # the tokens that unlock a remote vault holding a linked key
-    r"|\bVAULT_TOKEN\b|\bDOPPLER_TOKEN\b|\bINFISICAL_TOKEN\b|\bAZURE_CLIENT_SECRET\b")
+    r"|\bVAULT_TOKEN\b|\bDOPPLER_TOKEN\b|\bINFISICAL_TOKEN\b|\bAZURE_CLIENT_SECRET\b"
+    r"|\bEMPORIA_SIGNER_TOKEN\b")
 # P170/P173: `emporia` commands that change an agent's keys, wallets, limits or
 # role. An agent may run them to help its operator, but only with the
 # operator's yes: a developer agent must not, say, hand a marketplace agent back
@@ -60,7 +62,9 @@ _SENSITIVE = (
 # approvable from an agent's tools: `wallet backup` shows the recovery phrase,
 # `wallet mainnet` lets an agent pay real money, `relay host` (P183) opens a
 # relay to other machines.
-_PERSON_ONLY = (("wallet", {"backup", "mainnet"}), ("relay", {"host", "rotate"}), ("agent", {"delete"}))
+_PERSON_ONLY = (("wallet", {"backup", "mainnet"}), ("relay", {"host", "rotate"}), ("agent", {"delete"}),
+                # P203: the signer is what an agent cannot change — its keys, limits and approvals
+                ("signer", {"serve", "adopt", "policy", "pending", "approve", "deny"}))
 # P183: other ways to open a relay to other machines — telling it to listen on
 # another address (in a command or a file the agent writes), or starting the
 # Docker relay or its system service. The relay itself refuses another address
@@ -90,7 +94,7 @@ def _sensitive_cli(text: str) -> bool:
     return _cli_matches(text, _SENSITIVE)
 _SECRET_NAME = (r"(EMPORIA_(?:IDENTITY|ENCRYPTION|X402_EVM|X402_SOLANA|OPERATOR)_PRIVATE_KEY"
                 r"|EMPORIA_X402_PHRASE_SECRET|OP_SERVICE_ACCOUNT_TOKEN|BW_SESSION"
-                r"|VAULT_TOKEN|DOPPLER_TOKEN|INFISICAL_TOKEN|AZURE_CLIENT_SECRET)")
+                r"|VAULT_TOKEN|DOPPLER_TOKEN|INFISICAL_TOKEN|AZURE_CLIENT_SECRET|EMPORIA_SIGNER_TOKEN)")
 # NAME=value, NAME: value, and the quoted forms a dict, a repr or JSON prints
 # ('NAME': 'value', "NAME": "word word …"). P173: quoted values were missed.
 _ASSIGNMENT = re.compile(

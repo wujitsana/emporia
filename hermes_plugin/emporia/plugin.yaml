@@ -121,3 +121,7 @@ optional_env:
     description: "A vault token for a linked key — set by emporia setup, not here"
     prompt: "AZURE_CLIENT_SECRET"
     password: true
+  - name: EMPORIA_SIGNER_TOKEN
+    description: "This agent's token for the signer that holds its wallet (P203) — set by emporia signer adopt"
+    prompt: "EMPORIA_SIGNER_TOKEN"
+    password: true

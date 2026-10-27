@@ -34,7 +34,7 @@ def _challenge(*nets):
 @pytest.fixture
 def wallet_env(tmp_path):
     env = {"EMPORIA_X402_PAY_NETWORKS": f"eip155:8453,{BASE}", "EMPORIA_X402_MAX_PAYMENT_CENTS": "500",
-           "EMPORIA_X402_MAINNET": "1"}
+           "EMPORIA_X402_MAINNET": "1", "EMPORIA_ALLOW_HOT_AGENT_WALLET": "1"}   # P203: in-process, accepted
     with patch.object(identity, "KEY_DIR", tmp_path), patch.dict(os.environ, env):
         agent_wallet.generate("chooser")
         yield
@@ -763,6 +763,11 @@ def test_unlocking_mainnet_takes_a_warning_and_the_agents_name(profiles, monkeyp
     with patch.dict(os.environ):
         assert cli.main(["setup", "agent", "psi", "--wallet"]) == 0
     monkeypatch.setattr(cli, "health", lambda timeout=3.0, url="": None)
+    monkeypatch.setattr(cli, "_persons_terminal", lambda: True)
+    monkeypatch.delenv("EMPORIA_ALLOW_HOT_AGENT_WALLET", raising=False)
+    assert cli.main(["wallet", "mainnet", "psi"]) == 1                # P203: only from behind the signer
+    assert "emporia signer adopt psi" in capsys.readouterr().out
+    monkeypatch.setenv("EMPORIA_ALLOW_HOT_AGENT_WALLET", "1")         # …or with the risk accepted
     _typing(monkeypatch, "2", "nope")                  # ask above $2 · wrong name
     assert cli.main(["wallet", "mainnet", "psi"]) == 1
     assert "Mainnet means real money" in capsys.readouterr().out
@@ -1034,3 +1039,14 @@ def test_the_relay_drops_root_only_when_asked_and_only_as_root():
     assert rs.drop_root("") == ""                                      # not in the image: nothing to drop
     if os.getuid() != 0:
         assert rs.drop_root("emporia") == ""                           # not root: nothing to drop
+
+
+def test_an_unlocked_in_process_wallet_still_pays_testnets_only(tmp_path):
+    """P203: mainnet from an agent's own process needs the signer (or the risk accepted)."""
+    env = {"EMPORIA_X402_PAY_NETWORKS": f"eip155:8453,{BASE}", "EMPORIA_X402_MAINNET": "1"}
+    with patch.object(identity, "KEY_DIR", tmp_path), patch.dict(os.environ, env):
+        os.environ.pop("EMPORIA_ALLOW_HOT_AGENT_WALLET", None)
+        assert agent_wallet.allowed_networks() == [BASE]
+        os.environ["EMPORIA_X402_PAY_NETWORKS"] = "eip155:8453"
+        with pytest.raises(agent_wallet.AgentWalletError, match="emporia signer adopt"):
+            agent_wallet.allowed_networks()

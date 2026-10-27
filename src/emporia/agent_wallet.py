@@ -30,11 +30,15 @@ a counterparty, not a trusted party:
 
 from __future__ import annotations
 
+import contextlib
+import contextvars
 import json
 import os
 import sys
 import threading
 import time
+from collections.abc import Callable
+from dataclasses import dataclass
 from pathlib import Path
 
 from emporia import identity
@@ -51,9 +55,50 @@ class AgentWalletError(RuntimeError):
     """The wallet cannot pay this, and the message says why."""
 
 
+# P203: where the rules and keys come from. In the agent's own process (testnet,
+# the default) they are its environment and its key directory. In the signer
+# (emporia.signer) each request runs in a Scope: that agent's policy and keys as
+# the signer keeps them, which the agent can neither read nor change.
+@dataclass(frozen=True)
+class Scope:
+    env: dict
+    key_dir: Path
+    approver: Callable | None = None
+
+
+_SCOPE: contextvars.ContextVar[Scope | None] = contextvars.ContextVar("emporia_wallet_scope", default=None)
+
+
+@contextlib.contextmanager
+def scope(s: Scope):
+    token = _SCOPE.set(s)
+    try:
+        yield
+    finally:
+        _SCOPE.reset(token)
+
+
+def _getenv(name: str, default: str = "") -> str:
+    s = _SCOPE.get()
+    return s.env.get(name, default) if s is not None else os.getenv(name, default)
+
+
+def _key_base(agent_id: str) -> Path:
+    s = _SCOPE.get()
+    return s.key_dir / f"{identity._keyfile_stem(agent_id)}.priv" if s is not None else identity._key_path(agent_id)
+
+
+def remote():
+    """The signer client when this agent's wallet keys are behind the signer
+    (EMPORIA_SIGNER_URL); None in the signer itself and for in-process wallets."""
+    if _SCOPE.get() is not None or not os.getenv("EMPORIA_SIGNER_URL", "").strip():
+        return None
+    from emporia import signer_client
+    return signer_client.Client.from_env()
+
+
 def wallet_path(agent_id: str) -> Path:
-    return identity._key_path(agent_id).with_name(
-        identity._key_path(agent_id).stem + ".x402.secp256k1")
+    return _key_base(agent_id).with_name(_key_base(agent_id).stem + ".x402.secp256k1")
 
 
 def generate(agent_id: str) -> str:
@@ -100,8 +145,7 @@ def env_value(family: str, raw: bytes) -> str:
 
 def solana_wallet_path(agent_id: str) -> Path:
     """P155: the agent's Solana key (a 32-byte ed25519 seed), beside its EVM one."""
-    return identity._key_path(agent_id).with_name(
-        identity._key_path(agent_id).stem + ".x402.ed25519")
+    return _key_base(agent_id).with_name(_key_base(agent_id).stem + ".x402.ed25519")
 
 
 def generate_solana(agent_id: str) -> str:
@@ -138,11 +182,11 @@ SOLANA_PATH = "m/44'/501'/0'/0'"
 
 
 def phrase_path(agent_id: str) -> Path:
-    return identity._key_path(agent_id).with_name(identity._key_path(agent_id).stem + ".x402.phrase")
+    return _key_base(agent_id).with_name(_key_base(agent_id).stem + ".x402.phrase")
 
 
 def has_phrase(agent_id: str) -> bool:
-    return phrase_path(agent_id).exists() or bool(os.getenv(PHRASE_SOURCE_VAR, "").strip())
+    return phrase_path(agent_id).exists() or bool(_getenv(PHRASE_SOURCE_VAR).strip())
 
 
 def new_phrase() -> str:
@@ -333,9 +377,9 @@ def read_source(ref: str) -> str:
 
 
 def source_for(family: str) -> str:
-    return (os.getenv(KEY_SOURCE_VARS[family], "").strip()
-            or (f"phrase:{os.getenv(PHRASE_SOURCE_VAR, '').strip()}"
-                if os.getenv(PHRASE_SOURCE_VAR, "").strip() else ""))
+    return (_getenv(KEY_SOURCE_VARS[family]).strip()
+            or (f"phrase:{_getenv(PHRASE_SOURCE_VAR).strip()}"
+                if _getenv(PHRASE_SOURCE_VAR).strip() else ""))
 
 
 def secret_from_source(family: str, ref: str | None = None) -> bytes | None:
@@ -369,12 +413,16 @@ def _load_solana_seed(agent_id: str) -> bytes:
 
 
 def solana_address(agent_id: str) -> str:
+    if (r := remote()) is not None:
+        return r.wallet()["solana_address"]
     from emporia import x402_svm
     return x402_svm.address_of(_load_solana_seed(agent_id))
 
 
 def _families(agent_id: str) -> tuple[str, ...]:
     """The networks families this agent holds a key for."""
+    if (r := remote()) is not None:
+        return tuple(r.wallet()["families"])
     return tuple(f for f, p in (("evm", wallet_path(agent_id)), ("svm", solana_wallet_path(agent_id)))
                  if p.exists() or source_for(f))
 
@@ -398,18 +446,32 @@ def load_key(agent_id: str) -> str:
 
 
 def address(agent_id: str) -> str:
+    if (r := remote()) is not None:
+        return r.wallet()["address"]
     from eth_account import Account
     return Account.from_key(load_key(agent_id)).address
 
 
 def allowed_networks() -> list[str]:
-    nets = [n.strip() for n in os.getenv("EMPORIA_X402_PAY_NETWORKS", "").split(",") if n.strip()]
+    if (r := remote()) is not None:
+        return r.wallet()["pay_networks"]
+    nets = [n.strip() for n in _getenv("EMPORIA_X402_PAY_NETWORKS").split(",") if n.strip()]
     if not nets:
         raise AgentWalletError(
             "EMPORIA_X402_PAY_NETWORKS is not set, so this agent pays on no network. Set it "
             "to the CAIP-2 ids it may pay on, e.g. eip155:84532 for Base Sepolia.")
     from emporia.networks import is_testnet, label, mainnet_unlocked
-    if not mainnet_unlocked():
+    s = _SCOPE.get()
+    unlocked = mainnet_unlocked(s.env if s is not None else None)
+    if unlocked and s is None and os.getenv("EMPORIA_ALLOW_HOT_AGENT_WALLET", "").strip() != "1":
+        # P203: real money only from behind the signer — here the key is in the
+        # agent's own process, which its tools may reach.
+        unlocked = False
+        if not any(is_testnet(n) for n in nets):
+            raise AgentWalletError(
+                "mainnet is unlocked for this agent, but its wallet keys are in its own process. Real money "
+                "is paid only from behind the signer: its operator runs `emporia signer adopt NAME`.")
+    if not unlocked:
         live = [n for n in nets if not is_testnet(n)]
         nets = [n for n in nets if is_testnet(n)]
         if not nets:
@@ -421,17 +483,23 @@ def allowed_networks() -> list[str]:
 
 
 def max_payment_cents() -> int:
-    raw = os.getenv("EMPORIA_X402_MAX_PAYMENT_CENTS", "").strip()
+    if (r := remote()) is not None:
+        return r.wallet()["max_payment_cents"]
+    raw = _getenv("EMPORIA_X402_MAX_PAYMENT_CENTS").strip()
     return int(raw) if raw else DEFAULT_MAX_PAYMENT_CENTS
 
 
 def max_daily_cents() -> int:
-    raw = os.getenv("EMPORIA_X402_MAX_DAILY_CENTS", "").strip()
+    if (r := remote()) is not None:
+        return r.wallet()["max_daily_cents"]
+    raw = _getenv("EMPORIA_X402_MAX_DAILY_CENTS").strip()
     return int(raw) if raw else DEFAULT_MAX_DAILY_CENTS
 
 
 def spent_today_atomic(agent_id: str) -> int:
     """USDC (atomic) this agent has signed for in the last 24 hours."""
+    if (r := remote()) is not None:
+        return r.wallet(fresh=True)["spent_today_atomic"]
     try:
         entries = json.loads(_ledger_path(agent_id).read_text())
     except (OSError, ValueError):
@@ -453,7 +521,7 @@ APPROVER = None
 
 
 def approval_threshold_cents() -> int | None:
-    raw = os.environ.get("EMPORIA_PAYMENT_APPROVAL_CENTS", "").strip()
+    raw = _getenv("EMPORIA_PAYMENT_APPROVAL_CENTS").strip()
     return int(raw) if raw else None
 
 
@@ -465,7 +533,9 @@ def require_approval(agent_id: str, amount_atomic: int, what: str) -> None:
         return
     message = (f"Emporia: {agent_id} wants to pay {amount_atomic / 1e6:.2f} {what}. "
                f"Above your ${limit / 100:.2f} approval threshold. Approve this payment?")
-    answer = APPROVER(message) if APPROVER else None
+    s = _SCOPE.get()
+    approver = s.approver if s is not None else APPROVER
+    answer = approver(message) if approver else None
     if answer is None:
         raise AgentWalletError(
             f"this payment ({amount_atomic / 1e6:.2f}) needs your operator's approval (above "
@@ -505,6 +575,8 @@ def sign_exact(agent_id: str, body: dict, network: str = "") -> str:
     order: `network` if given (it must be on the allowlist), else the first
     network in EMPORIA_X402_PAY_NETWORKS that the relay offers and this agent
     has a wallet for."""
+    if (r := remote()) is not None:
+        return r.call("x402", {"body": body, "network": network})["header"]
     from emporia import x402_payer
 
     nets = allowed_networks()
@@ -550,6 +622,8 @@ def pay_tempo(agent_id: str, offer: dict) -> str:
     """P156: pay a relay's Tempo offer from this agent's EVM wallet — a TIP-20
     transfer straight to the payee — after the same network allowlist,
     per-payment cap and daily cap as x402. Returns the PAYMENT-TEMPO value."""
+    if (r := remote()) is not None:
+        return r.call("tempo", {"offer": offer})["header"]
     from emporia import tempo
 
     network = offer.get("network") or ""
@@ -573,6 +647,8 @@ def pay_tempo(agent_id: str, offer: dict) -> str:
 def sign_escrow(agent_id: str, offer: dict, *, expected_amount: int) -> str:
     """A relay's escrow offer in, the PAYMENT-ESCROW value out — after the
     network allowlist, the per-payment cap, and escrow.sign_offer's checks."""
+    if (r := remote()) is not None:
+        return r.call("escrow", {"offer": offer, "expected_amount": expected_amount})["header"]
     from emporia import escrow
 
     if expected_amount > max_payment_cents() * _USDC_ATOMIC_PER_CENT:
@@ -585,6 +661,32 @@ def sign_escrow(agent_id: str, offer: dict, *, expected_amount: int) -> str:
     _charge_daily(agent_id, expected_amount)
     return escrow.sign_offer(offer, key, expected_amount=expected_amount,
                              allowed_networks=networks)
+
+
+def reclaim_escrow(agent_id: str, hold: dict) -> dict:
+    """Take back an expired escrow hold this agent funded: a transaction to the
+    escrow contract, from its wallet. {"transaction", "reclaimed_atomic", "network"}."""
+    if (r := remote()) is not None:
+        return r.call("reclaim", {"hold": hold})
+    import asyncio
+
+    from eth_account import Account
+
+    from emporia import escrow, escrow_chain
+    from emporia.operator_signer import LocalKeySigner
+    offer = hold["offer"]
+    info = escrow.PaymentInfo.from_json({**offer["payment_info"], "payer": hold["payer"]})
+    cfg = escrow_chain.payer_config(offer)
+    if not cfg.rpc_url:
+        raise AgentWalletError(f"no RPC for chain {cfg.chain_id}: set EMPORIA_X402_RPC_URL")
+    state = asyncio.run(escrow_chain.payment_state(cfg, info))
+    if not state["capturable"]:
+        raise AgentWalletError("nothing left to reclaim — the hold was captured, voided or already reclaimed")
+    if time.time() < info.authorization_expiry:
+        raise AgentWalletError("too early: the contract allows a reclaim from " + time.strftime(
+            "%Y-%m-%d %H:%M UTC", time.gmtime(info.authorization_expiry)))
+    tx = asyncio.run(escrow_chain.reclaim(cfg, LocalKeySigner(Account.from_key(load_key(agent_id))), info))
+    return {"transaction": tx, "reclaimed_atomic": state["capturable"], "network": cfg.network}
 
 
 def main(argv: list[str] | None = None) -> int:

@@ -130,6 +130,12 @@ games (or resign by abandoning), and check spend after step 5.
 - [ ] **Relay settings:** `emporia relay config` → pick `OPERATOR_FEE_BPS`, enter 300 → written to
       the relay's `.env`, "applies when the relay restarts"; `emporia relay config set
       EMPORIA_RELAY_ACCESS wide` → refused, listing the choices; `emporia relay config show` lists all.
+- [ ] **Signer (P203):** `emporia wallet mainnet alpha` → refused, "emporia signer adopt alpha".
+      `emporia signer serve --socket /run/emporia-signer/signer.sock` (another terminal), then
+      `emporia signer adopt alpha` → its key files go to `profiles/.deleted/alpha-wallet-…`, its `.env` gets
+      `EMPORIA_SIGNER_URL`/`TOKEN`; restart the gateway; alpha pays a testnet game as before. Set
+      `emporia signer policy alpha set EMPORIA_PAYMENT_APPROVAL_CENTS 0`: its next payment says "intent int_…";
+      `emporia signer approve int_…`; its retry pays. `emporia signer status` warns while it runs as the same user.
 - [ ] **Relay secrets (P200):** `emporia relay config set STRIPE_SECRET_KEY sk_test_x` → refused, "type it
       hidden"; `emporia relay config set STRIPE_SECRET_KEY --dir ~/emporia-relay` (a Docker relay's folder) → asks hidden,
       writes `secrets/STRIPE_SECRET_KEY` (0600), removes it from the `.env`. On the host:

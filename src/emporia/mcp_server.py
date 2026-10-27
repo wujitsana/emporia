@@ -3590,39 +3590,21 @@ def reclaim_escrow(session_id: str, agent_id: str = "") -> dict[str, Any]:
     """
     import asyncio
 
-    from emporia import agent_wallet, escrow, escrow_chain
-    from emporia.operator_signer import LocalKeySigner
-    from eth_account import Account
+    from emporia import agent_wallet
     aid = agent_id or AGENT_ID
     path = _agent_dir(aid, "holds", session_id, ".json")
     if not path.exists():
         return {"success": False, "error": f"no hold saved here for {session_id} — it was funded "
                                            f"elsewhere, or before reclaim was possible (P145)"}
-    hold = json.loads(path.read_text())
-    offer = hold["offer"]
-    info = escrow.PaymentInfo.from_json({**offer["payment_info"], "payer": hold["payer"]})
-    cfg = escrow_chain.payer_config(offer)
-    if not cfg.rpc_url:
-        return {"success": False, "error": f"no RPC for chain {cfg.chain_id}: set EMPORIA_X402_RPC_URL"}
     try:
-        state = asyncio.run(escrow_chain.payment_state(cfg, info))
-    except Exception as e:
-        return {"success": False, "error": f"could not read the escrow: {e}"}
-    if not state["capturable"]:
-        return {"success": False, "error": "nothing left to reclaim — the hold was captured, "
-                                           "voided or already reclaimed", "state": state}
-    if time.time() < info.authorization_expiry:
-        return {"success": False, "error": "too early: the contract allows a reclaim from "
-                f"{time.strftime('%Y-%m-%d %H:%M UTC', time.gmtime(info.authorization_expiry))}",
-                "capturable": state["capturable"]}
-    signer = LocalKeySigner(Account.from_key(agent_wallet.load_key(aid)))
-    try:
-        tx = asyncio.run(escrow_chain.reclaim(cfg, signer, info))
+        out = agent_wallet.reclaim_escrow(aid, json.loads(path.read_text()))
+    except agent_wallet.AgentWalletError as e:
+        return {"success": False, "error": str(e)}
     except Exception as e:
         return {"success": False, "error": f"reclaim failed: {e}",
                 "hint": "the wallet needs ETH on this network for gas"}
-    return {"success": True, "transaction": tx, "reclaimed_atomic": state["capturable"],
-            "network": cfg.network}
+    return {"success": True, "transaction": out["transaction"], "reclaimed_atomic": out["reclaimed_atomic"],
+            "network": out["network"]}
 
 
 def _commitments_file(aid: str, session_id: str):

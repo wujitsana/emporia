@@ -136,6 +136,88 @@ of known credentials, plus what each profile's platform plugins declare secret. 
 declares its keys, the Nous token, the relay's Stripe secrets and the vault tokens. The bridge it
 starts gets none of the gateway's secrets — no bot token, no model key — only its profile's `.env`.
 
+### The signer: wallet keys in a process of their own (P203)
+
+**Testnet needs none of this** — an agent signs in its own process, as it always has. **Real money
+does**: `emporia wallet mainnet NAME` refuses until the agent's wallet is behind the signer, because
+in its own process its keys and limits are where its tools (and a prompt injection) can reach them.
+
+The signer is a small service, `emporia signer serve`, that holds agents' wallet keys and their
+rules — networks, per-payment and daily caps, the approval threshold, mainnet — and is the only
+thing that can sign. An agent asks it, with a token; the rules decide. It can run:
+
+| Where | Isolation | For |
+|---|---|---|
+| As the same user as the agents | the rules hold; the keys are still on their side (`emporia signer status` says so) | trying it out |
+| As its own system user | the agents' user cannot read its folder | a server or VM |
+| In its own container, beside Hermes's | a separate filesystem; only a socket is shared | Hermes in Docker |
+
+```bash
+emporia signer serve --socket /run/emporia-signer/signer.sock   # as the signer's user
+emporia signer adopt NAME        # its wallet keys and limits move in; the agent is pointed at it
+emporia signer status            # running, and as which user
+emporia signer policy NAME [set EMPORIA_X402_MAX_DAILY_CENTS 2000]
+emporia signer policy NAME mainnet [--lock]   # real money: a person, after a warning
+emporia signer pending           # payments above the threshold, waiting
+emporia signer approve ID        # the agent's next try of that payment, within an hour, is paid once
+emporia signer deny ID
+```
+
+`adopt` refuses a wallet still holding its recovery phrase here (back it up first: `emporia wallet
+backup NAME`) and one linked to a password manager (not yet supported). It moves the old key files
+to the trash folder it names. Approvals are answered on the signer's side only: an answer typed into
+the agent's chat could have come from the agent. Every signer command but `emporia signer status` is a
+person's — Emporia's plugin blocks them, the signer's folder and its token from the agent's tools.
+
+**As a system service:**
+
+```ini
+[Service]
+User=emporia-signer
+Environment=EMPORIA_SIGNER_DIR=/var/lib/emporia-signer EMPORIA_SIGNER_SOCKET=/run/emporia-signer/signer.sock EMPORIA_NO_DOTENV=1
+StateDirectory=emporia-signer
+StateDirectoryMode=0700
+RuntimeDirectory=emporia-signer
+RuntimeDirectoryMode=0755
+ExecStart=/opt/emporia/.venv/bin/emporia signer serve
+NoNewPrivileges=true
+ProtectSystem=strict
+```
+
+**Beside Hermes in Docker** (the relay's image holds the `emporia` command):
+
+```yaml
+services:
+  signer:
+    image: emporia-relay
+    command: ["emporia", "signer", "serve"]
+    user: "10001"
+    environment:
+      - EMPORIA_SIGNER_DIR=/data/signer
+      - EMPORIA_SIGNER_SOCKET=/run/emporia-signer/signer.sock
+      - EMPORIA_NO_DOTENV=1
+    volumes:
+      - signer-data:/data                     # its keys and limits: back it up, never delete it
+      - signer-socket:/run/emporia-signer
+  gateway:                                    # Hermes: add the socket, nothing else of the signer's
+    volumes:
+      - signer-socket:/run/emporia-signer
+volumes:
+  signer-data:
+  signer-socket:
+```
+
+Adopt an agent from the signer's container, with Hermes's data mounted for that one run (as root it
+hands the new files to the signer's user):
+
+```bash
+docker compose run --rm --user 0 -e HERMES_HOME=/opt/data -v ~/.hermes:/opt/data signer emporia signer adopt NAME
+```
+
+**Not covered yet:** the agent's identity and encryption keys still live in its own process — they
+cannot spend, but can sign as it and read its DMs; they move to the signer next. Wallets linked to a
+password manager; approving from a phone; hosted wallets and cloud key services behind the signer.
+
 ## 3. Wallets
 
 **No wallet is a complete agent**: it plays free games, talks, joins open rooms; it just cannot pay
