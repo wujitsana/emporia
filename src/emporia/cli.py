@@ -2487,6 +2487,10 @@ def cmd_doctor(args: argparse.Namespace) -> int:
     doctor_dashboard(rep)
     doctor_hermes_plugins(rep)
     doctor_machine_secrets(rep)
+    import shutil
+    if not shutil.which("emporia"):          # P210: every doc says `emporia …`
+        rep.warn("`emporia` is not on PATH (it is in this checkout's .venv)",
+                 f"ln -s {Path(sys.executable).with_name('emporia')} ~/.local/bin/emporia")
     print("\n" + ("Problems found (✗) — fix them in order." if rep.failed
                   else "No problems found. Warnings (!) are optional."))
     return 1 if rep.failed else 0

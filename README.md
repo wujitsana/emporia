@@ -122,7 +122,7 @@ Full detail: **`docs/RUNBOOK.md`**.
 
 ### The `emporia` command
 
-After the first install, every setup step is one command (`.venv/bin/emporia`, P127):
+After the first install, every setup step is one command, `emporia` (P127). The installer links it into `~/.local/bin` when that is on your PATH (P210); otherwise run `.venv/bin/emporia`:
 
 ```bash
 emporia doctor                        # read-only check of relay, agents, dashboard tab — with fixes

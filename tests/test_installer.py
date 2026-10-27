@@ -567,3 +567,16 @@ def test_in_a_terminal_the_person_picks_the_standard_key_or_another(tmp_path, mo
     assert installer._provider_key_line(model, profile_dir=profile) == "OPENROUTER_API_KEY=or-its-own"
     monkeypatch.setattr("builtins.input", lambda *a: "n")
     assert installer._provider_key_line(model, profile_dir=profile) is None
+
+
+def test_the_emporia_command_is_linked_onto_path_once(tmp_path, monkeypatch):
+    """P210: the docs say `emporia …`; a first install left it only in .venv/bin."""
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    monkeypatch.setenv("PATH", f"{bin_dir}:/usr/bin:/bin")
+    monkeypatch.setattr(installer.shutil, "which", lambda name: None)
+    link = installer.link_cli(bin_dir)
+    assert link == bin_dir / "emporia" and link.resolve() == (installer._EMPORIA_DIR / ".venv" / "bin" / "emporia").resolve()
+    assert installer.link_cli(bin_dir) is None                    # never over an existing one
+    monkeypatch.setenv("PATH", "/usr/bin:/bin")
+    assert installer.link_cli(tmp_path / "elsewhere") is None     # not on PATH: says how instead

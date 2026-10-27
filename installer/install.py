@@ -1345,6 +1345,27 @@ def _ensure_project_dependencies(*, dry_run: bool = False) -> None:
     chk = subprocess.run([py, "-c", "import chess"], capture_output=True)
     if chk.returncode != 0:
         subprocess.run([py, "-m", "pip", "install", "chess>=1.10.0"], check=False)
+    link_cli()
+
+
+def link_cli(bin_dir: Path | None = None) -> Path | None:
+    """P210: `emporia` on PATH. The command lives in this checkout's .venv, and
+    every doc says `emporia …`; a first install left it unreachable by that
+    name. Linked into the first of ~/.local/bin (or `bin_dir`) on PATH, never
+    over another `emporia`. Returns the link, or None when it says how instead."""
+    exe = _EMPORIA_DIR / ".venv" / "bin" / "emporia"
+    if not exe.exists() or shutil.which("emporia"):
+        return None
+    target_dir = bin_dir or Path.home() / ".local" / "bin"
+    on_path = str(target_dir) in os.environ.get("PATH", "").split(os.pathsep)
+    link = target_dir / "emporia"
+    if not on_path or link.exists() or link.is_symlink():
+        print(f"  `emporia` is not on PATH. Run it as {exe}, or: ln -s {exe} <a folder on your PATH>/emporia")
+        return None
+    target_dir.mkdir(parents=True, exist_ok=True)
+    link.symlink_to(exe)
+    print(f"  `emporia` → {link}")
+    return link
 
 
 def _build_dashboard_embedded(*, dry_run: bool = False, relay_url: str = "") -> None:
