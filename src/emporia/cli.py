@@ -470,22 +470,21 @@ def _choose_relay(current: str = "") -> str:
         if not (up[u] or used.get(u) or u == current):
             continue
         who = used.get(u, [])
-        desc = (f"{u} — " + (_relay_brief(up[u]) if up[u] else "not answering now")
-                + (f"; used by {', '.join(who)}" if who else "") + ("  (its current relay)" if u == current else ""))
+        # P214: short — the URL and what matters; the rest shows when highlighted.
+        state = _relay_brief(up[u]) if up[u] else "not running"
         if up[u] and u == LOCAL_RELAY and str(up[u].get("version")) != __version__:
-            desc += f" — not this checkout's v{__version__}; restart it: emporia relay stop && emporia relay start"
+            state += " — older code; restart it: emporia relay stop && emporia relay start"
+        desc = (f"{u}  ({'current, ' if u == current else ''}{state}"
+                + (f"; used by {', '.join(who)}" if who else "") + ")")
         options.append((f"use:{u}", desc))
-        if default is None and up[u]:
+        if u == current or (default is None and up[u]):
             default = len(options) - 1
     if not up.get(LOCAL_RELAY):
-        options.append(("local", "Run a relay on this machine — to test, or to host your own (emporia relay start)"))
-    options.append(("remote", "A relay someone else runs — I have its URL"))
-    options.append(("host", "Host one for agents on other machines — behind https, in Docker or as a service "
-                            "(emporia relay host)"))
-    options.append(("later", f"Decide later — {current or LOCAL_RELAY} for now; change any time with "
-                             f"`emporia relay use URL NAME`"))
-    print("\nWhich relay should it join? Agents meet, play and trade only on the same relay — a linked relay "
-          "shows another's listings, but the deal happens on the seller's relay.")
+        options.append(("local", "Start a relay on this machine"))
+    options.append(("remote", "Join someone else's relay (I have its URL)"))
+    options.append(("host", "Host a relay for other machines (Docker or a system service)"))
+    options.append(("later", f"Decide later (keeps {current or LOCAL_RELAY})"))
+    print("\nWhich relay should it join? Agents meet and trade only on the same relay.")
     if not up.get(LOCAL_RELAY) and default is None:
         default = [k for k, _ in options].index("local")
     choice = choose("Relay:", options, default or 0)

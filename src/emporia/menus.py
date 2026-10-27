@@ -121,23 +121,39 @@ def _read_key(scr, curses) -> int:
 
 
 def _draw(scr, curses, title, hint, rows, cursor, marks):
+    """The menu. A line too wide for the terminal ends in "…", and the
+    highlighted one is shown whole, wrapped, under the list (P214) — so nothing
+    is ever cut off unseen."""
+    import textwrap
     scr.erase()
     height, width = scr.getmaxyx()
+    usable = max(10, width - 1)
 
     def put(y, text, attr=0):
         if 0 <= y < height:
             try:
-                scr.addnstr(y, 0, text, max(1, width - 1), attr)
+                scr.addnstr(y, 0, text, usable, attr)
             except curses.error:
                 pass
 
-    put(0, title, curses.A_BOLD)
-    put(1, hint, curses.A_DIM)
-    room = max(1, height - 3)
+    def fit(text):
+        return text if len(text) <= usable else text[:usable - 1] + "…"
+
+    for y, line in enumerate(textwrap.wrap(title, usable)[:3] or [""]):
+        put(y, line, curses.A_BOLD)
+    head = min(3, len(textwrap.wrap(title, usable)) or 1)
+    put(head, hint, curses.A_DIM)
+    lines = [f" {'›' if n == cursor else ' '} {marks[n] if marks else ''}{rows[n]}" for n in range(len(rows))]
+    full = (textwrap.wrap(rows[cursor], usable - 4) if rows and len(lines[cursor]) > usable else [])
+    room = max(1, height - head - 3 - (len(full) + 1 if full else 0))
     top = max(0, min(cursor - room + 1, len(rows) - room)) if cursor >= room else 0
-    for y, n in enumerate(range(top, min(len(rows), top + room)), start=3):
-        line = f" {'›' if n == cursor else ' '} {marks[n] if marks else ''}{rows[n]}"
-        put(y, line, curses.A_REVERSE if n == cursor else 0)
+    y = head + 2
+    for n in range(top, min(len(rows), top + room)):
+        put(y, fit(lines[n]), curses.A_REVERSE if n == cursor else 0)
+        y += 1
     if not rows:
-        put(3, "   nothing matches", curses.A_DIM)
+        put(y, "   nothing matches", curses.A_DIM)
+    if full:
+        for i, line in enumerate(full):
+            put(y + 1 + i, "    " + line, curses.A_DIM)
     scr.refresh()

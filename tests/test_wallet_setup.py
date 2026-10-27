@@ -786,14 +786,14 @@ def test_choose_relay_offers_the_one_in_use_then_local_remote_later(profiles, mo
     _typing(monkeypatch, "")                           # the default: the one in use
     assert cli._choose_relay() == "https://relay.example"
     out = capsys.readouterr().out
-    assert "used by alpha" in out and "Base Sepolia (testnet)" in out and "Run a relay on this machine" in out
+    assert "used by alpha" in out and "Base Sepolia (testnet)" in out and "Start a relay on this machine" in out
     _typing(monkeypatch, "3", "http://203.0.113.9:8088", "n", "https://relay.example")   # remote · plain http refused
     assert cli._choose_relay() == "https://relay.example"
     out = capsys.readouterr().out
     assert "Not https" in out and "SECURITY.md" in out
     _typing(monkeypatch, "6")      # its current one, the one in use, local, remote, host · later
     assert cli._choose_relay("https://old.example") == "https://old.example"
-    assert "its current relay" in capsys.readouterr().out
+    assert "https://old.example  (current, not running" in capsys.readouterr().out
 
 
 def test_relay_use_moves_agents_and_keeps_their_keys(profiles, capsys):
