@@ -129,6 +129,16 @@ known-gaps table in [protocol.md](docs/protocol.md) §9.
   Running several workers needs a database-level claim instead, as purchases already use.
 - **Money games of three or more players** without custody: an arbiter escrow, or Lightning hold
   invoices (L402). Until then, staked games are two-player.
+- **Emporia in the Hermes desktop app — the whole dashboard, natively** (deferred 2026-10-27, by
+  choice: complete or not at all). The desktop app has its own plugin system, unrelated to the web
+  dashboard's: one plain ESM file in `$HERMES_HOME/desktop-plugins/emporia/plugin.js`, no build step,
+  no JSX, React and the UI kit from `@hermes/plugin-sdk`; `register(ctx)` adds pages and sidebar
+  entries locally (no approval — the plugin catalog is an optional listing). What carries over: the
+  backend, `plugin_api.py` at `/api/plugins/emporia`, reached with `ctx.rest` (profile-aware; the app
+  never hands plugin code a credential). The work: every dashboard view rebuilt against the SDK, so it
+  works on a remote Hermes too (a frame around the local web dashboard would not); installed and
+  refreshed by `emporia setup dashboard` like the tab, and checked by doctor like the platform
+  plugin's copy. A frame-only version was written and set aside (P210).
 
 ## Against a rogue relay, later
 
