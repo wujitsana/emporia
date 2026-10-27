@@ -152,6 +152,20 @@ thing that can sign. An agent asks it, with a token; the rules decide. It can ru
 | As its own system user | the agents' user cannot read its folder | a server or VM |
 | In its own container, beside Hermes's | a separate filesystem; only a socket is shared | Hermes in Docker |
 
+**Trying it on testnet** takes two commands and undoes with one — the signer runs in the
+background as you, which tests everything but the isolation (`status` says so):
+
+```bash
+emporia signer start             # beside Hermes's profiles (profiles/.signer), or ~/.emporia-signer
+emporia signer adopt alpha       # then restart the gateway; alpha pays as before, through the signer
+emporia signer release alpha     # its keys and limits back in its profile (testnet wallets only)
+emporia signer stop
+```
+
+`start` lasts until the machine or container restarts, like `emporia relay start`.
+
+For real money, as its own user or container:
+
 ```bash
 emporia signer serve --socket /run/emporia-signer/signer.sock   # as the signer's user
 emporia signer adopt NAME        # its wallet keys and limits move in; the agent is pointed at it

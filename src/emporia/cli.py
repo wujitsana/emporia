@@ -895,6 +895,10 @@ def cmd_signer(args: argparse.Namespace) -> int:
     if args.dir:
         os.environ["EMPORIA_SIGNER_DIR"] = args.dir
     url = _signer_url(args)
+    if args.action in ("start", "stop", "logs"):
+        return _signer_daemon(args, url)
+    if args.action == "release":
+        return _signer_release(args)
     if args.action == "status":
         try:
             h = signer_client.Client(url, "", "").health()
@@ -935,6 +939,102 @@ def cmd_signer(args: argparse.Namespace) -> int:
     if args.action == "policy":
         return _signer_policy(args)
     return _signer_adopt(args, url)
+
+
+def _signer_daemon(args: argparse.Namespace, url: str) -> int:
+    """`emporia signer start|stop|logs`: the signer in the background as this
+    user — for trying it out. As its own user or container: docs/agent-security-setup.md."""
+    from emporia import signer, signer_client
+    folder = signer.signer_dir()
+    pid_file, log = folder / "signer.pid", folder / "signer.log"
+    if args.action == "logs":
+        print("".join(log.read_text().splitlines(keepends=True)[-40:]) if log.exists() else "signer: no log yet")
+        return 0
+    if args.action == "stop":
+        try:
+            pid = int(pid_file.read_text())
+            os.kill(pid, signal.SIGTERM)
+        except (OSError, ValueError):
+            print("signer: none started by `emporia signer start` is running")
+            return 1
+        pid_file.unlink(missing_ok=True)
+        print(f"signer: stopped (pid {pid})")
+        return 0
+    try:
+        signer_client.Client(url, "", "").health()
+        print(f"signer: already up at {url}")
+        return 0
+    except Exception:
+        pass
+    folder.mkdir(mode=0o700, parents=True, exist_ok=True)
+    argv = [sys.executable, "-m", "emporia.cli", "signer", "serve", "--dir", str(folder)]
+    if args.socket:
+        argv += ["--socket", args.socket]
+    if args.port:
+        argv += ["--port", str(args.port)]
+    with open(log, "ab") as out:
+        proc = subprocess.Popen(argv, cwd=REPO, stdout=out, stderr=out, stdin=subprocess.DEVNULL,
+                                start_new_session=True, env={**os.environ, "EMPORIA_NO_DOTENV": "1"})
+    pid_file.write_text(str(proc.pid))
+    for _ in range(40):
+        try:
+            signer_client.Client(url, "", "").health()
+            print(f"signer: up at {url} (pid {proc.pid}; keys and limits in {folder})\n"
+                  "  Next: emporia signer adopt NAME — then restart the gateway. Undo: emporia signer release NAME")
+            return 0
+        except Exception:
+            if proc.poll() is not None:
+                break
+            time.sleep(0.25)
+    print(f"signer: did not start — emporia signer logs\n{log.read_text()[-600:] if log.exists() else ''}")
+    return 1
+
+
+def _signer_release(args: argparse.Namespace) -> int:
+    """`emporia signer release NAME`: the reverse of adopt — the wallet keys go
+    back to the agent's own key files, its limits back to its .env. Testnet only:
+    a wallet that may pay real money stays behind the signer."""
+    import shutil
+
+    from emporia import agent_wallet, signer
+    from emporia.identity import _write_secret_atomically
+    from emporia.key_source import unset_env_lines
+    name = args.name
+    profile = profiles_root() / name
+    held = signer.agent_dir(name)
+    if not name or not (held / "policy.json").exists() or not (profile / "config.yaml").exists():
+        print(f"signer release: the signer holds no agent {name!r} here")
+        return 1
+    if not _persons_terminal():
+        print("signer release: only a person moves an agent's keys, in their own terminal.")
+        return 1
+    env = signer.policy(name).get("env", {})
+    from emporia.networks import mainnet_unlocked
+    if mainnet_unlocked(env):
+        print(f"signer release: {name} may pay real money; lock that first (emporia signer policy {name} mainnet "
+              f"--lock) — a wallet with real money stays behind the signer.")
+        return 1
+    key_dir = Path(_mcp_env(profile).get("EMPORIA_KEYS_DIR") or profile / "home" / ".hermes" / "keys")
+    with agent_wallet.scope(agent_wallet.Scope(env={}, key_dir=held / "keys")):
+        sources = {"evm": agent_wallet.wallet_path(name), "svm": agent_wallet.solana_wallet_path(name)}
+    with agent_wallet.scope(agent_wallet.Scope(env={}, key_dir=key_dir)):
+        targets = {"evm": agent_wallet.wallet_path(name), "svm": agent_wallet.solana_wallet_path(name)}
+    if any(targets[f].exists() for f in sources if sources[f].exists()):
+        print(f"signer release: {name} already has wallet key files in {key_dir}; not replaced.")
+        return 1
+    key_dir.mkdir(mode=0o700, parents=True, exist_ok=True)
+    moved = [f for f in sources if sources[f].exists()]
+    for fam in moved:
+        _write_secret_atomically(targets[fam], sources[fam].read_bytes())
+    unset_env_lines(profile / ".env", ["EMPORIA_SIGNER_URL", "EMPORIA_SIGNER_TOKEN"])
+    merge_env_file(profile / ".env", {k: v for k, v in env.items() if k != "EMPORIA_X402_MAINNET"})
+    trash = signer.signer_dir() / "released" / f"{held.name}-{time.strftime('%Y%m%dT%H%M%S')}"
+    trash.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
+    shutil.move(str(held), str(trash))
+    print(f"{name}: its wallet ({', '.join(moved)}) is back in {key_dir}, its limits in its .env. The signer's copy "
+          f"is in {trash} until you remove it.")
+    installer().print_restart_instructions([profile])
+    return 0
 
 
 def _signer_policy(args: argparse.Namespace) -> int:
@@ -3978,8 +4078,10 @@ def build_parser() -> argparse.ArgumentParser:
         argparse.Namespace(action=a.action, url=a.url_or_name if a.action == "leave" else "",
                            name=a.name if a.action == "leave" else a.url_or_name, home=a.home)))
 
-    sg = sub.add_parser("signer", help="agents' wallet keys in a process of their own — needed for real money")
-    sg.add_argument("action", choices=["serve", "status", "adopt", "policy", "pending", "approve", "deny"])
+    sg = sub.add_parser("signer", help="agents' wallet keys in a process of their own — needed for real money, "
+                                       "optional on testnet (start, adopt NAME; release NAME undoes it)")
+    sg.add_argument("action", choices=["start", "stop", "logs", "serve", "status", "adopt", "release", "policy",
+                                       "pending", "approve", "deny"])
     sg.add_argument("name", nargs="?", default="", help="adopt, policy: the agent; approve, deny: the intent")
     sg.add_argument("rest", nargs="*", help="policy: set NAME VALUE, or mainnet")
     sg.add_argument("--dir", default="", help="the signer's folder (default $EMPORIA_SIGNER_DIR or ~/.emporia-signer)")

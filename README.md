@@ -740,7 +740,7 @@ or edit the file — see docs/RUNBOOK.md § Configuring a relay.
 | `EMPORIA_ALLOW_LIVE_RELAY_IN_PROFILE` | _(unset)_ | A relay taking real money (a live Stripe key, USDC or escrow on a mainnet) refuses to start while its keys are inside a Hermes profile, where that profile's agent can read them; `1` accepts that risk. Run it with `emporia relay host` instead |
 | `EMPORIA_SIGNER_URL` | _(unset)_ | Set by `emporia signer adopt`: where this agent's wallet keys are held (`unix:///path/signer.sock` or `http://127.0.0.1:PORT`). Unset, it signs in its own process (testnet) |
 | `EMPORIA_SIGNER_TOKEN` | _(unset)_ | Set by `emporia signer adopt`: proves to the signer which agent asks. Secret |
-| `EMPORIA_SIGNER_DIR` | `~/.emporia-signer` | The signer's own folder (0700): agents' wallet keys, their limits, pending approvals, the admin token |
+| `EMPORIA_SIGNER_DIR` | `$HERMES_HOME/profiles/.signer`, else `~/.emporia-signer` | The signer's own folder (0700): agents' wallet keys, their limits, pending approvals, the admin token |
 | `EMPORIA_SIGNER_SOCKET` | beside `EMPORIA_SIGNER_DIR` | The signer's Unix socket — outside its folder, so agents of another user can reach it; at most 107 bytes |
 | `EMPORIA_ALLOW_HOT_AGENT_WALLET` | _(unset)_ | An agent pays on mainnet only from behind the signer; `1` accepts signing real money in its own process |
 | `EMPORIA_SERVE_UI` | _(off)_ | `1`: serve the built-in dashboard at `/ui/` from a relay that is not on this machine. Off: the dashboard runs next to the agents' keys (P196) |

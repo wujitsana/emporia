@@ -64,7 +64,7 @@ _SENSITIVE = (
 # relay to other machines.
 _PERSON_ONLY = (("wallet", {"backup", "mainnet"}), ("relay", {"host", "rotate"}), ("agent", {"delete"}),
                 # P203: the signer is what an agent cannot change — its keys, limits and approvals
-                ("signer", {"serve", "adopt", "policy", "pending", "approve", "deny"}))
+                ("signer", {"serve", "start", "stop", "adopt", "release", "policy", "pending", "approve", "deny"}))
 # P183: other ways to open a relay to other machines — telling it to listen on
 # another address (in a command or a file the agent writes), or starting the
 # Docker relay or its system service. The relay itself refuses another address

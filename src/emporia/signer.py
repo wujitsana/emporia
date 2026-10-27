@@ -51,7 +51,15 @@ _LOCK = threading.Lock()
 
 
 def signer_dir() -> Path:
-    return Path(os.getenv("EMPORIA_SIGNER_DIR", "~/.emporia-signer")).expanduser()
+    """EMPORIA_SIGNER_DIR; else, beside Hermes's profiles (its home is often a
+    data root, not a place for loose folders); else ~/.emporia-signer."""
+    explicit = os.getenv("EMPORIA_SIGNER_DIR", "").strip()
+    if explicit:
+        return Path(explicit).expanduser()
+    hermes = os.getenv("HERMES_HOME", "").strip()
+    if hermes and (Path(hermes) / "profiles").is_dir():
+        return Path(hermes) / "profiles" / ".signer"
+    return Path("~/.emporia-signer").expanduser()
 
 
 def agent_dir(agent_id: str) -> Path:
