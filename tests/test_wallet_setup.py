@@ -844,11 +844,6 @@ def test_relay_host_writes_its_own_folder_and_refuses_an_agent(profiles, monkeyp
     assert compose["services"]["relay"]["ports"] == ["127.0.0.1:8089:8088"]
     assert compose["services"]["https"]["ports"] == ["80:80", "443:443"]
     assert compose["services"]["admin"]["volumes"][0].endswith(":/opt/data")
-    console = compose["services"]["console"]                          # P197: the operator's dashboard
-    assert console["profiles"] == ["console"] and console["ports"] == ["127.0.0.1:8765:8765"]
-    assert console["volumes"][0].endswith(":/keys:ro") and "--listen" in console["command"]
-    assert "ports" not in compose["services"]["relay"] or all(
-        p.startswith("127.0.0.1:") for p in compose["services"]["relay"]["ports"])
     assert not compose["services"]["relay"]["build"].startswith("/")          # host paths differ
     assert "reverse_proxy relay:8088" in (folder / "Caddyfile").read_text()
     env = _env_of(folder)
@@ -963,3 +958,37 @@ def test_emporia_visits_sets_where_an_agent_may_go(profiles, capsys):
     env = _env_of(root / "roamer")
     assert env["EMPORIA_VISIT_RELAYS"] == "" and "https://b.example" in env["EMPORIA_VISIT_DENY"]
     assert "only the relays allowed below" in capsys.readouterr().out
+
+
+def test_relay_config_shows_checks_and_writes_settings(tmp_path, monkeypatch, capsys):
+    """P199: one place — the relay's .env — and a command that checks before it writes."""
+    folder = tmp_path / "hosted"
+    folder.mkdir()
+    monkeypatch.setattr(cli, "_TTY", False)
+    run = lambda *a: cli.main(["relay", "config", *a, "--dir", str(folder)])   # noqa: E731
+    assert run("set", "OPERATOR_FEE_BPS", "300") == 0 and _env_of(folder)["OPERATOR_FEE_BPS"] == "300"
+    assert run("set", "OPERATOR_FEE_BPS", "lots") == 1
+    assert run("set", "OPERATOR_FEE_BPS", "5000") == 1                       # at most 20%
+    assert run("set", "EMPORIA_RELAY_ACCESS", "closed") == 0
+    assert "Applies within seconds" in capsys.readouterr().out
+    assert run("set", "EMPORIA_RELAY_ACCESS", "wide-open") == 1
+    assert run("set", "FEDERATED_RELAYS", "https://b.example/,https://c.example") == 0
+    assert _env_of(folder)["FEDERATED_RELAYS"] == "https://b.example,https://c.example"
+    assert run("set", "STRIPE_SECRET_KEY", "sk_live_x") == 1                  # secrets: not here
+    assert "emporia setup stripe" in capsys.readouterr().out
+    assert run("set", "NOT_A_SETTING", "x") == 1
+    assert run("unset", "OPERATOR_FEE_BPS") == 0 and "OPERATOR_FEE_BPS" not in _env_of(folder)
+    assert run("show") == 0
+    out = capsys.readouterr().out
+    assert "EMPORIA_RELAY_ACCESS" in out and "closed" in out and "250 (default)" in out
+
+
+def test_relay_config_is_interactive_in_a_terminal(tmp_path, monkeypatch):
+    folder = tmp_path / "hosted2"
+    folder.mkdir()
+    from emporia import relay_config as rc
+    names = [s.name for s in rc.SETTINGS]
+    fee = names.index("OPERATOR_FEE_BPS") + 1
+    _typing(monkeypatch, str(fee), "400", str(len(names) + 1))   # pick the fee · 400 · done
+    assert cli.main(["relay", "config", "--dir", str(folder)]) == 0
+    assert _env_of(folder)["OPERATOR_FEE_BPS"] == "400"

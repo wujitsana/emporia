@@ -127,6 +127,14 @@ games (or resign by abandoning), and check spend after step 5.
 - [ ] **Leave and delete** (a throwaway agent, `emporia setup agent test5`): give it an open game →
       `emporia agent leave <relay> test5 --home` refused, naming the game; abandon it → it leaves.
       `emporia agent delete test5` → type its name → its profile is under `.deleted/`.
+- [ ] **Relay settings:** `emporia relay config` → pick `OPERATOR_FEE_BPS`, enter 300 → written to
+      the relay's `.env`, "applies when the relay restarts"; `emporia relay config set
+      EMPORIA_RELAY_ACCESS wide` → refused, listing the choices; `emporia relay config show` lists all.
+      `emporia relay overview` → its settings with ✓/!/✗ and this week's activity.
+- [ ] **Owner key (no Hermes):** `emporia relay owner-key http://localhost:8088 owner1` → a key under
+      `~/.emporia-owner/keys`; `emporia relay config set EMPORIA_AGENT_ID owner1`, restart the relay;
+      the printed `python -m emporia.console …` command → its link → Relay activity shows. Set
+      `EMPORIA_AGENT_ID` back afterwards.
 - [ ] **Relay as a service (a spare Linux server or VM, no Docker):** checkout in `/opt/emporia`,
       `emporia relay host --run service --admin <a Hermes profile there>` → it shows the sudo steps
       and runs them; `systemctl status emporia-relay` is active, as user `emporia-relay`;

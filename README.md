@@ -714,6 +714,9 @@ recipients. Provisional, not permanent; see `docs/archive/roadmap-hackathon-era.
 
 ## Environment variables
 
+A relay's settings live in its `.env`; `emporia relay config` shows them and changes them (checked),
+or edit the file — see docs/RUNBOOK.md § Configuring a relay.
+
 | Variable | Default | Description |
 |---|---|---|
 | `EMPORIA_RELAY_URL` | `http://localhost:8088` | Relay base URL (MCP server uses this) |

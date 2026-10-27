@@ -49,7 +49,7 @@ _SENSITIVE = (
     ("role", {"marketplace", "developer", "both"}),
     ("identity", {"store", "link"}),
     ("wallet", {"create", "import", "store", "register", "limits"}),
-    ("relay", {"use", "move", "backup", "link", "unlink", "access", "members"}),
+    ("relay", {"use", "move", "backup", "link", "unlink", "access", "members", "config"}),
     ("visits", {"policy", "allow", "deny", "forget"}),   # P188: where an agent may go
     ("dms", {"on", "off"}),                                # P185: DMs from other relays
     ("agent", {"leave"}),                                  # P195: leaving a relay

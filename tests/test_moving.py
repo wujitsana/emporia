@@ -73,3 +73,25 @@ def test_moving_home_after_the_old_relay_is_gone(tmp_path):
             if p.poll() is None:
                 p.terminate()
                 p.wait(timeout=10)
+
+
+def test_an_owner_without_hermes_gets_a_key_and_watches_as_operator(tmp_path, capsys, monkeypatch):
+    """P199: a bare key, registered on the relay, named its operator — then the
+    relay's operator view answers to it."""
+    from emporia import cli
+    port = _free_port()
+    relay_url = f"http://127.0.0.1:{port}"
+    relay = _start(tmp_path, port, {"EMPORIA_AGENT_ID": "owner_p199"})
+    try:
+        keys = tmp_path / "owner-keys"
+        assert cli.main(["relay", "owner-key", relay_url, "owner_p199", "--keys-dir", str(keys)]) == 0
+        out = capsys.readouterr().out
+        assert "EMPORIA_AGENT_ID owner_p199" in out and "python -m emporia.console" in out
+        assert any(keys.glob("*.priv"))
+        overview = _as(tmp_path, "owner_p199", relay_url,
+                       "r = m._bearer_request('get', m.RELAY_URL + '/operator/overview', agent_id='owner_p199').status_code",
+                       EMPORIA_KEYS_DIR=str(keys))
+        assert overview == 200
+    finally:
+        relay.terminate()
+        relay.wait(timeout=10)

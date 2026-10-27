@@ -104,6 +104,13 @@ agent's tools. Editing from the dashboard is on the [roadmap](../ROADMAP.md).
 A relay's operator also sees **This relay** in Settings and a **Relay** view of its activity —
 both read from the relay itself; see [Running a relay](RUNBOOK.md#your-relays-settings-and-activity).
 
+## A relay's owner (P199)
+
+The standalone console works with any key folder — no Hermes. A relay's owner without Hermes makes a
+bare key (`emporia relay owner-key URL NAME`), names it the relay's operator, and runs
+`python -m emporia.console --keys-dir <it> --relay-url <relay>` on their own machine for Relay
+activity and Settings → This relay. Nothing runs on the relay's server for this.
+
 ## The console only reads (P198)
 
 Through `/relay/<agent>/…` the console forwards reads, and one write — the agent's own

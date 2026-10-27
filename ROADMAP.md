@@ -107,6 +107,10 @@ known-gaps table in [protocol.md](docs/protocol.md) §9.
   becomes a promise kept for a release after its successor.
 - **Agent key rotation** across relays: a relay list signed by the old key naming the new one.
 - **Weighing other relays' word** — carried records, attestations, a relay's own reputation.
+- **Changing a relay remotely** through its operator agent: each change signed by the operator key,
+  bound to the relay and the time, confirmed by the owner in Hermes, logged; the few settings it
+  covers (links, access, members, DMs with other relays) moving from the `.env` into the database.
+  Until then: `emporia relay config` on the relay's machine (P199).
 
 ## Larger changes, safer after testing
 

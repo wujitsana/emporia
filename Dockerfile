@@ -1,24 +1,14 @@
 # Emporia relay — a single container serving the REST/WS API on one port (8088).
 #
-# The relay serves no dashboard (P196). The image also carries the local
-# console and its dashboard (P197), run as a separate service only when asked
-# — `docker compose --profile console up -d` in a stack `emporia relay host`
-# wrote — listening on the server's loopback, for its operator over SSH, with
-# the operator agent's keys mounted read-only. See docs/RUNBOOK.md § Watching a
-# relay you host.
+# No dashboard (P196): the dashboard runs next to the agents' keys — a Hermes
+# dashboard tab or the local console — never as a public page on a relay. The
+# relay's operator watches it the same way, as its operator agent; see
+# docs/RUNBOOK.md § Watching a relay you host.
 #
 #   docker build -t emporia-relay .
 #   docker run -p 8088:8088 -v emporia-data:/data --env-file .env emporia-relay
 #
 # See docker-compose.yml for a ready-to-run stack (env file, volume, optional profiles).
-
-# ── The console's dashboard (P197) ────────────────────────────────────────────
-FROM node:20-slim AS console-dashboard
-WORKDIR /build/dashboard
-COPY dashboard/package.json dashboard/package-lock.json* ./
-RUN npm ci
-COPY dashboard/ ./
-RUN npm run build:console
 
 # ── Relay runtime ─────────────────────────────────────────────────────────────
 FROM python:3.12-slim AS runtime
@@ -36,9 +26,6 @@ COPY src/ ./src/
 # the relay itself, so the image needs eth-account/eth-abi. Without them a
 # relay with EMPORIA_ESCROW_* set failed at the first /fund.
 RUN uv sync --frozen --no-dev --extra x402
-
-# P197: for the console service only — the relay never serves it.
-COPY --from=console-dashboard /build/dashboard/dist-console ./dashboard/dist-console
 
 
 # Ed25519 keys, SQLite DB, and JSONL audit logs must survive container restarts.

@@ -102,45 +102,51 @@ adding a member needs no restart (a relay run as a system service: restart it). 
 agent` makes an agent on this machine a member of this machine's own read-only or closed relay;
 "Run a relay on this machine" offers closed first. A mistyped mode closes the relay, never opens it.
 
+### Configuring a relay
+
+A relay is configured by its `.env` — this profile's, or a hosted relay's folder. That file is the one
+place: edit it by hand, or let `emporia relay config` check values first (P199):
+
+```bash
+emporia relay config                      # in a terminal: pick a setting, see it, change it
+emporia relay config show                 # every setting, its value, now or at restart
+emporia relay config set OPERATOR_FEE_BPS 300
+emporia relay config unset EMPORIA_SERVE_UI
+emporia relay config --dir ~/emporia-relay   # a hosted relay's folder
+```
+
+Who may use it and its members apply within seconds; everything else at the next restart (the
+command says which). Secrets — the Stripe key, the operator key — are not set this way, so they never
+land in shell history: `emporia setup stripe`, `emporia setup relay`.
+
 ### Watching a relay you host
 
 A relay serves no public dashboard (P196): its built-in copy is served only when it listens on
-`127.0.0.1` (development — nothing else can reach it) or with `EMPORIA_SERVE_UI=1`. Agents' operators watch their
-agents from their own dashboard, next to the agents' keys. So does a relay's operator — as the
-relay's **operator agent** (`EMPORIA_AGENT_ID` in the relay's `.env`), which sees Relay activity and
-Settings → This relay. Two ways in, neither facing the internet:
+`127.0.0.1` (development — nothing else can reach it) or with `EMPORIA_SERVE_UI=1`. How its owner
+watches and runs it depends on what they have — no agent, and no Hermes, needed:
 
-1. **From your own machine (recommended).** Make an agent on your machine the relay's operator:
-   set `EMPORIA_AGENT_ID` to it in the relay's `.env` (and `emporia relay members add <its key>` if
-   the relay is read-only or closed), point your dashboard at the relay (`emporia setup dashboard`,
-   relay URL `https://your-relay`), and open the Emporia tab. The console signs in as that agent with
-   its key — the relay checks the signature; nothing else gets in.
-2. **On the server, over SSH.** The relay's image also carries the console and its dashboard
-   (P197) — like Hermes's own image carries its dashboard — run as a separate service the relay never
-   touches. In a stack `emporia relay host` wrote (with `--admin`, or `--console-keys` naming the
-   operator agent's keys folder, mounted read-only):
-   ```bash
-   docker compose --profile console up -d          # listens on the server's 127.0.0.1:8765 only
-   docker compose logs console                     # the one-time link
-   ssh -L 8765:127.0.0.1:8765 you@relay-server     # from your machine, then open the link
-   ```
-   A relay run as a system service: run `python -m emporia.console --port 8765 --keys-dir <keys>
-   --relay-url http://127.0.0.1:8089` from the checkout on the server (after `npm run build:console`
-   in `dashboard/`), and tunnel the same way.
+| You have | Watch it with | Change it with |
+|---|---|---|
+| SSH to the server | `emporia relay overview` there — every setting (✓ / ! / ✗) and its activity | `emporia relay config`, `emporia relay …` there |
+| Python on your own machine | an **owner key**: `emporia relay owner-key https://your-relay NAME`, then the standalone console it prints | the same, over SSH |
+| Hermes | an agent of yours named the relay's operator, in the Emporia tab | the same, over SSH |
 
-Either way the dashboard only shows; changing the relay is `emporia relay …` on its machine.
+`relay overview` reads the relay directly; whoever can run it already holds the relay, so it needs no
+sign-in. In Docker: `docker compose exec relay emporia relay overview`.
 
-**Safety, for either way:**
-- The console only reads as the agent (P198): it forwards reads, and the one write the dashboard
-  makes — marking the agent's own inbox read. Creating, joining, removing, and the operator's own
-  routes are refused at the console, whatever the operator's keys could do.
-- Its printed link opens once; the cookie it sets is a separate secret. A link seen again (in
-  `docker compose logs`, in shell history) opens nothing — restart the console for a new one.
-- Make the operator agent one **without a wallet**, in a profile of its own: whatever is in the keys
-  folder you mount on the server sits there, in reach of the console container. `relay host` warns
-  when the folder holds wallet keys.
-- Whoever controls the server already controls the relay and its operator key; the console does
-  not change that. Option 1 keeps the operator agent's keys off the server altogether.
+An **owner key** is a bare identity — no profile, no wallet, no marketplace role — kept 0700 on your
+machine (`~/.emporia-owner/keys`). The command registers it on the relay; you then make it the
+operator on the relay's machine (`emporia relay config set EMPORIA_AGENT_ID NAME`, restart), and
+`python -m emporia.console --keys-dir … --relay-url https://your-relay` shows Relay activity and
+Settings → This relay. A read-only or closed relay needs the key added as a member first
+(`emporia relay members add <key>`). With Hermes, the operator can be any agent of yours instead —
+best one without a wallet, in a profile of its own.
+
+**Safety.** The dashboard only shows: the console forwards reads, and marking the agent's own inbox
+read, and refuses anything else, whatever its keys could do (P198). The standalone console's link
+opens once; its cookie is a separate secret. The operator's key never needs to be on the server.
+Changing a relay remotely, through its operator agent with the owner's yes each time, is on the
+roadmap; until then changes are made on the relay's machine.
 
 ### Rotating the relay's key
 

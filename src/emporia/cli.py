@@ -188,6 +188,12 @@ def cmd_relay(args: argparse.Namespace) -> int:
         return cmd_relay_backup(args)
     if args.action == "rotate-key":
         return cmd_relay_rotate_key(args)
+    if args.action == "config":
+        return cmd_relay_config(args)
+    if args.action == "overview":
+        return cmd_relay_overview(args)
+    if args.action == "owner-key":
+        return cmd_relay_owner_key(args)
     pid_file, log = _relay_files()
     if args.action == "status":
         h = health()
@@ -322,7 +328,7 @@ def _choose_relay(current: str = "") -> str:
         return _start_local_relay(current)
     if choice == "host":
         if cmd_relay_host(argparse.Namespace(dir="", domain="", fee_receiver="", admin=None, run="", access="",
-                                             names=[], console_keys="")) == 0:
+                                             names=[])) == 0:
             print("  Then move this agent to it: emporia relay use URL NAME")
         return current or LOCAL_RELAY
     if choice == "remote":
@@ -421,18 +427,7 @@ def cmd_relay_host(args: argparse.Namespace) -> int:
         return 1
     try:
         if run == "docker":
-            # P197: the operator's dashboard as a service, reading the operator
-            # agent's keys — the admin agent's, or a folder named here.
-            console_keys = (Path(args.console_keys).expanduser().resolve() if getattr(args, "console_keys", "")
-                            else (Path(_mcp_env(admin).get("EMPORIA_KEYS_DIR") or admin / "home" / ".hermes" / "keys")
-                                  if admin else None))
-            if console_keys and console_keys.is_dir() and any(
-                    console_keys.glob("*.x402.*")) | any(console_keys.glob("*.phrase")):
-                # P198: the console needs the operator's identity, not its money.
-                print(f"  ! {console_keys} also holds wallet keys. Mounted for the dashboard service, they would sit\n"
-                      "    on this server in reach of the console container. Use an operator agent with no wallet\n"
-                      "    (a profile of its own), or watch from your own machine instead.")
-            written = rh.write_files(folder, REPO, domain, admin, console_keys)
+            written = rh.write_files(folder, REPO, domain, admin)
         else:
             exe = Path(sys.executable).with_name("emporia-relay")
             written = rh.write_service_files(folder, exe, REPO, domain, rh.SERVICE_USER)
@@ -496,10 +491,6 @@ def cmd_relay_host(args: argparse.Namespace) -> int:
           f"    emporia relay use {url} NAME …")
     if admin:
         print(f"  {admin_name} is its operator; its dashboard shows the relay's settings and activity.")
-    if run == "docker" and (admin or getattr(args, "console_keys", "")):
-        print(f"  Your dashboard on the server: docker compose --profile console up -d, then\n"
-              f"    ssh -L {rh.CONSOLE_PORT}:127.0.0.1:{rh.CONSOLE_PORT} you@server   and the link in "
-              "`docker compose logs console`")
     print("  Before others rely on it: docs/RUNBOOK.md (backups of its data, its fee, Stripe).")
     return 0
 
@@ -1154,6 +1145,173 @@ def cmd_relay_rotate_key(args: argparse.Namespace) -> int:
     step = identity.rotate_relay_key()
     print(f"  old {step['old'][:16]}… → new {step['new'][:16]}…, signed by the old key.")
     print("  Restart the relay to sign with it: emporia relay stop && emporia relay start")
+    return 0
+
+
+def cmd_relay_config(args: argparse.Namespace) -> int:
+    """P199: `emporia relay config` — the relay's settings, in its .env.
+
+    In a terminal with nothing after it: pick a setting, see its value and what it
+    is for, give a new one (checked) or clear it. `show` lists them all;
+    `set NAME VALUE` and `unset NAME` change one, for scripts. `--dir` names a
+    hosted relay's folder. Secrets are never set here: each says how."""
+    from emporia import relay_config as rc
+    from emporia.key_source import unset_env_lines
+
+    env_path = _relay_env_path(args)
+    if env_path is None:
+        print("relay config: run it from the relay profile's emporia checkout, or give --dir for a hosted relay")
+        return 1
+    current = installer().harvest_env(env_path.parent) if env_path.exists() else {}
+
+    def shown(st: "rc.Setting") -> str:
+        if st.secret:
+            return "set" if current.get(st.name) else "not set"
+        value = current.get(st.name, "")
+        if st.kind == "keys" and value:
+            return f"{len([k for k in value.split(',') if k.strip()])} key(s)"
+        return value or (f"{st.default} (default)" if st.default else "—")
+
+    def write(st: "rc.Setting", raw: str | None) -> int:
+        if st.secret:
+            print(f"  {st.name} is a secret — set it with: {st.secret}")
+            return 1
+        if raw is None:
+            was_set = st.name in current
+            if was_set:
+                unset_env_lines(env_path, [st.name])
+            print(f"  {st.name} cleared" + ("" if was_set else " (it was not set)") + (
+                f" — back to its default, {st.default}" if st.default else ""))
+        else:
+            try:
+                value = rc.check(st, raw)
+            except ValueError as e:
+                print(f"  {st.name}: {e}")
+                return 1
+            try:
+                merge_env_file(env_path, {st.name: value})
+            except PermissionError:
+                print(f"  {env_path} belongs to root (a relay run as a service) — set {st.name}={value} there with sudo")
+                return 1
+            print(f"  {st.name}={value if st.kind != 'keys' else '…'}")
+        print("  Applies within seconds." if st.live else
+              "  Applies when the relay restarts: emporia relay stop && emporia relay start"
+              + ("  (or `docker compose restart relay` in its folder)" if getattr(args, "dir", "") else ""))
+        return 0
+
+    verb = (args.url or "").strip()
+    if verb in ("set", "unset"):
+        names = args.names or []
+        if not names or names[0] not in rc.BY_NAME or (verb == "set" and len(names) != 2):
+            print(f"relay config: {verb} NAME" + (" VALUE" if verb == "set" else "")
+                  + f" — NAME one of: {', '.join(rc.BY_NAME)}")
+            return 1
+        return write(rc.BY_NAME[names[0]], names[1] if verb == "set" else None)
+    if verb not in ("", "show"):
+        print("relay config: show, set NAME VALUE, unset NAME — or nothing, in a terminal, to choose")
+        return 1
+    if verb == "show" or not _TTY:
+        print(f"Relay settings — {env_path}")
+        group = ""
+        for st in rc.SETTINGS:
+            if st.group != group:
+                group = st.group
+                print(f"\n{group}")
+            print(f"  {st.name:44} {shown(st):26} {'now' if st.live else 'at restart'}")
+        print("\nChange one: emporia relay config set NAME VALUE (or edit the .env); or run it in a terminal to choose.")
+        return 0
+    while True:
+        picked = choose("Which setting?", [(st.name, f"{st.group:11} {st.name} = {shown(st)}") for st in rc.SETTINGS]
+                        + [("done", "Done")], len(rc.SETTINGS))
+        if picked == "done":
+            return 0
+        st = rc.BY_NAME[picked]
+        print(f"\n{st.name} — {st.about}\n  now: {shown(st)}")
+        if st.secret:
+            print(f"  A secret — set it with: {st.secret}")
+            continue
+        if st.choices:
+            value = choose(f"{st.name}:", [(c, c) for c in st.choices], max(0, st.choices.index(
+                current.get(st.name, st.default)) if current.get(st.name, st.default) in st.choices else 0))
+        elif st.kind == "bool":
+            value = "1" if ask(f"Turn {st.name} on?", current.get(st.name, st.default) == "1") else "0"
+        else:
+            value = prompt(f"New value (empty to clear{', default ' + st.default if st.default else ''})",
+                           current.get(st.name, ""))
+        if write(st, value if value != "" else None) == 0:
+            current = installer().harvest_env(env_path.parent)
+
+
+def cmd_relay_overview(args: argparse.Namespace) -> int:
+    """P199: `emporia relay overview` — this relay's settings and activity, read
+    straight from it on its own machine. No agent, no sign-in: whoever can run
+    this already holds the relay. A hosted relay: run it inside its container,
+    `docker compose exec relay emporia relay overview`."""
+    if getattr(args, "dir", ""):
+        print("relay overview: run it where the relay runs —\n"
+              f"  in Docker:  cd {args.dir} && docker compose exec relay emporia relay overview\n"
+              "  as a service: sudo sh -c 'set -a; . <folder>/.env; emporia relay overview'")
+        return 1
+    from emporia import relay_admin
+    from emporia import relay_server as rs
+    mark = {"ok": "✓", "warn": "!", "danger": "✗"}
+    group = ""
+    print(f"Relay {rs.RELAY_BASE_URL}")
+    for item in relay_admin.settings():
+        if item["group"] != group:
+            group = item["group"]
+            print(f"\n{group}")
+        print(f"  {mark.get(item['level'], ' ')} {item['label']}: {item['value']}")
+        if item["level"] != "ok" and item.get("command"):
+            print(f"      change: {item['command']}")
+    with rs.DB_LOCK, rs.get_db() as conn:
+        st = relay_admin.stats(conn)
+    dollars = lambda c: f"${c / 100:,.2f}"   # noqa: E731
+    a, ss, cm, mo = st["agents"], st["sessions"], st["community"], st["money"]
+    print("\nActivity")
+    print(f"  agents: {a['registered']} ({a.get('new_7d', 0)} new this week, {a.get('active_7d', 0)} active)")
+    print(f"  games and sessions this week: {ss.get('created_7d', 0)}")
+    print(f"  messages this week: {cm.get('room_messages_7d', 0)} in rooms, {cm.get('dm_messages_7d', 0)} direct (sealed)")
+    print(f"  payments, 30 days: {dollars(sum(p['cents_30d'] for p in mo['payments']))}; "
+          f"your fees, 30 days: {dollars(sum(f['fee_cents_30d'] for f in mo['fees']))}")
+    print("\nChange a setting: emporia relay config")
+    return 0
+
+
+def cmd_relay_owner_key(args: argparse.Namespace) -> int:
+    """P199: `emporia relay owner-key URL NAME [--keys-dir DIR]` — a key of your
+    own to watch a relay you run, from your own machine, with no Hermes: made
+    here if it does not exist, registered on the relay. Then name it the
+    relay's operator there, and open the standalone console with it."""
+    import json as _json
+    names = args.names or []
+    if not args.url or len(names) != 1:
+        print("relay owner-key: emporia relay owner-key https://your-relay NAME [--keys-dir DIR]")
+        return 1
+    url, name = args.url.rstrip("/"), names[0]
+    keys = Path(args.keys_dir or Path.home() / ".emporia-owner" / "keys").expanduser().resolve()
+    keys.mkdir(mode=0o700, parents=True, exist_ok=True)
+    env = {"PATH": os.defpath, "HOME": str(Path.home()), "EMPORIA_NO_DOTENV": "1", "EMPORIA_NO_ARCHIVE": "1",
+           "EMPORIA_KEYS_DIR": str(keys), "EMPORIA_RELAY_URL": url, "EMPORIA_AGENT_ID": name}
+    r = subprocess.run([sys.executable, "-c", "import json\nfrom emporia import mcp_server as m\n"
+                        f"r = m.register_agent({name!r})\nprint(json.dumps(r))"],
+                       env=env, capture_output=True, text=True, timeout=60)
+    try:
+        out = _json.loads(r.stdout.strip().splitlines()[-1])
+    except (ValueError, IndexError):
+        print(f"relay owner-key: {(r.stderr or r.stdout).strip()[-300:]}")
+        return 1
+    if not out.get("success"):
+        print(f"relay owner-key: {url} did not register it — {out.get('error')}")
+        if "members" in str(out.get("error")):
+            print("  The relay is read-only or closed: on its machine, first\n"
+                  "    emporia relay members add <the key below>")
+        return 1
+    print(f"  {name}'s key: {keys} (0700) — fingerprint {out.get('fingerprint')}")
+    print(f"  On the relay's machine, make it the operator:\n"
+          f"    emporia relay config set EMPORIA_AGENT_ID {name}      (then restart the relay)")
+    print(f"  Then watch it from here:\n"
+          f"    python -m emporia.console --keys-dir {keys} --relay-url {url}")
     return 0
 
 
@@ -3314,7 +3472,9 @@ def cmd_menu(args: argparse.Namespace) -> int:
         if what == "relay":
             argv = ["relay", choose("Relay:", [(a, a) for a in ("status", "start", "stop", "logs")]
                                     + [("host", "host — a relay for other machines, in Docker behind https"),
-                                       ("links", "links — the relays this one is linked to")])]
+                                       ("links", "links — the relays this one is linked to"),
+                                       ("config", "config — every setting of this relay, to see or change"),
+                                       ("overview", "overview — its settings and activity")])]
         if what == "login":
             argv += ["--profile", _pick_agent()]
         sub = build_parser().parse_args(argv)
@@ -3435,7 +3595,8 @@ def build_parser() -> argparse.ArgumentParser:
     r = sub.add_parser("relay", help="start, stop or inspect this machine's relay; `use` moves agents to another; "
                                      "`host` runs one for other machines, in Docker behind https")
     r.add_argument("action", choices=["start", "stop", "status", "logs", "use", "host", "link", "unlink", "links",
-                                      "access", "members", "move", "backup", "rotate-key"])
+                                      "access", "members", "move", "backup", "rotate-key",
+                                      "config", "overview", "owner-key"])
     r.add_argument("url", nargs="?", default="", help="use, link, unlink: the other relay's URL")
     r.add_argument("names", nargs="*", help="use: the agents that move to it")
     r.add_argument("--lines", type=int, default=40)
@@ -3445,8 +3606,7 @@ def build_parser() -> argparse.ArgumentParser:
     r.add_argument("--admin", default=None, help="host: a Hermes profile that is its operator")
     r.add_argument("--yes", action="store_true", help="move: go ahead even if the old relay is not answering")
     r.add_argument("--remove", action="store_true", help="backup: stop using this relay as a backup")
-    r.add_argument("--console-keys", default="",
-                   help="host: the operator agent's keys folder, for the dashboard service (default: --admin's)")
+    r.add_argument("--keys-dir", default="", help="owner-key: where to keep the key (default ~/.emporia-owner/keys)")
     r.add_argument("--access", choices=["open", "read-only", "closed"], default="",
                    help="host: who may use it (default: asks; open for a public relay)")
     r.add_argument("--run", choices=["docker", "service"], default="",
