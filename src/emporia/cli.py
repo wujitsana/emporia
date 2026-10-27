@@ -348,23 +348,69 @@ def prompt_cents(question: str, default: int) -> int:
 
 
 class Report:
-    """✓ / ! / ✗ lines with a fix under each problem; exit status 1 on any ✗."""
+    """✓ / ! / ✗ lines with a fix under each problem; exit status 1 on any ✗.
 
-    def __init__(self) -> None:
+    P219: `compact` (what `emporia doctor` uses, unless --all) keeps a section's
+    passing checks to one line — "✓ 8 checks pass" — and spells out only what
+    needs a look; lines wrap to the terminal, a fix sits under its line as
+    "→ …", and in a terminal ✓ ! ✗ take the theme's green, yellow and red
+    (NO_COLOR: none). Without `compact`, every line prints as it comes."""
+
+    def __init__(self, compact: bool = False) -> None:
         self.failed = False
+        self.compact = compact
+        self._title: str | None = None
+        self._items: list[tuple[str, str, str]] = []
+        tty = sys.stdout.isatty() and not os.getenv("NO_COLOR")
+        self._paint = (lambda text, code: f"\x1b[{code}m{text}\x1b[0m") if tty else (lambda text, code: text)
 
     def section(self, title: str) -> None:
-        print(f"\n{title}")
+        if not self.compact:
+            print(f"\n{title}")
+            return
+        self.flush()
+        self._title = title
 
     def ok(self, msg: str) -> None:
-        print(f"  ✓ {msg}")
+        self._add("✓", msg, "")
 
     def warn(self, msg: str, fix: str = "") -> None:
-        print(f"  ! {msg}" + (f"\n      fix: {fix}" if fix else ""))
+        self._add("!", msg, fix)
 
     def fail(self, msg: str, fix: str = "") -> None:
         self.failed = True
-        print(f"  ✗ {msg}" + (f"\n      fix: {fix}" if fix else ""))
+        self._add("✗", msg, fix)
+
+    def _add(self, mark: str, msg: str, fix: str) -> None:
+        if not self.compact:
+            print(f"  {mark} {msg}" + (f"\n      fix: {fix}" if fix else ""))
+            return
+        self._items.append((mark, msg, fix))
+
+    def flush(self) -> None:
+        """Print the section gathered so far (compact only)."""
+        import shutil
+        import textwrap
+        if not self.compact or (self._title is None and not self._items):
+            return
+        width = max(40, shutil.get_terminal_size((100, 24)).columns - 1)
+        colour = {"✓": "32", "!": "33", "✗": "31"}
+        if self._title is not None:
+            print("\n" + self._paint(self._title, "1"))
+        passed = [i for i in self._items if i[0] == "✓"]
+        shown = [i for i in self._items if i[0] != "✓"]
+        if passed:
+            print("  " + self._paint("✓", colour["✓"]) + (
+                f" {passed[0][1]}" if len(passed) == 1 else f" {len(passed)} checks pass"))
+        for mark, msg, fix in sorted(shown, key=lambda i: i[0] != "✗"):
+            lines = textwrap.wrap(msg, width - 4) or [""]
+            print("  " + self._paint(mark, colour[mark]) + " " + lines[0])
+            for more in lines[1:]:
+                print("    " + more)
+            if fix:
+                for i, line in enumerate(textwrap.wrap(fix, width - 8)):
+                    print(("    → " if i == 0 else "      ") + self._paint(line, "2"))
+        self._title, self._items = None, []
 
 
 def health(timeout: float = 3.0, url: str = "") -> dict | None:
@@ -2626,7 +2672,7 @@ def doctor_machine_secrets(rep: Report) -> None:
     """P201: what Docker hands the Hermes container. A relay-only secret there is
     seen by every process in it, and a relay started from a shell in it takes
     that value over its own .env's."""
-    rep.section("Secrets in this container's environment")
+    rep.section("This machine")
     from emporia.config import ENV_BEFORE_DOTENV     # P218: not what this profile's .env merged in
     leaked = [k for k in ("STRIPE_SECRET_KEY", "STRIPE_WEBHOOK_SECRET", "EMPORIA_OPERATOR_PRIVATE_KEY")
               if k in ENV_BEFORE_DOTENV and os.environ.get(k)]
@@ -2699,7 +2745,7 @@ def _prefetch_nous_tokens(profiles: list[Path]) -> None:
 
 
 def cmd_doctor(args: argparse.Namespace) -> int:
-    rep = Report()
+    rep = Report(compact=not getattr(args, "all", False))
     agents = [(p, e) for p, e in _agent_profiles(Path(args.profiles_root) if args.profiles_root
                                                   else profiles_root())
               if not args.profile or p.name == args.profile]
@@ -2715,8 +2761,10 @@ def cmd_doctor(args: argparse.Namespace) -> int:
     if not shutil.which("emporia"):          # P210: every doc says `emporia …`
         rep.warn("`emporia` is not on PATH (it is in this checkout's .venv)",
                  f"ln -s {Path(sys.executable).with_name('emporia')} ~/.local/bin/emporia")
+    rep.flush()
     print("\n" + ("Problems found (✗) — fix them in order." if rep.failed
-                  else "No problems found. Warnings (!) are optional."))
+                  else "No problems found. Warnings (!) are optional.")
+          + ("" if getattr(args, "all", False) else "  Every check: emporia doctor --all"))
     return 1 if rep.failed else 0
 
 
@@ -4719,6 +4767,7 @@ def build_parser() -> argparse.ArgumentParser:
     d = sub.add_parser("doctor", help="check the relay, every agent profile and the dashboard tab")
     d.add_argument("--profile", default="", help="only this agent profile")
     d.add_argument("--profiles-root", default="")
+    d.add_argument("--all", action="store_true", help="every check, not just a count of those that pass")
     d.set_defaults(func=cmd_doctor)
 
     r = sub.add_parser("relay", help="start, stop or inspect this machine's relay; `use` moves agents to another; "
