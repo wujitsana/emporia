@@ -62,6 +62,22 @@ def confirm(question: str, default: bool):
     return picked if picked is BACK else picked == 0
 
 
+# ─── headings (P220) ─────────────────────────────────────────────────────────
+
+def heading(title: str, note: str = "") -> None:
+    """A section of the CLI's output: a blank line, the title in bold running
+    into a dim rule, and an optional one-line note beneath — the same look as
+    `emporia doctor`. Plain text when not a terminal or NO_COLOR is set."""
+    tty = sys.stdout.isatty() and not os.getenv("NO_COLOR")
+    paint = (lambda text, code: f"\x1b[{code}m{text}\x1b[0m") if tty else (lambda text, code: text)
+    width = max(40, shutil.get_terminal_size((100, 24)).columns - 1)
+    title = " ".join(title.split())
+    print("\n" + paint(title, "1") + " " + paint("─" * max(3, min(width, 72) - len(title) - 1), "2"))
+    if note:
+        for line in textwrap.wrap(note, min(width, 72) - 2):
+            print("  " + paint(line, "2"))
+
+
 # ─── drawing ──────────────────────────────────────────────────────────────────
 
 def _style(text: str, *codes: str) -> str:

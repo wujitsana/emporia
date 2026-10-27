@@ -89,6 +89,12 @@ class Cancelled(Exception):
 _BACK_KEYS = ("back", "done", "quit", "cancel")
 
 
+def heading(title: str, note: str = "") -> None:
+    """P220: a section of output — see emporia.menus.heading."""
+    from emporia.menus import heading as draw
+    draw(title, note)
+
+
 def _menus():
     from emporia import menus
     return menus if _TTY and menus.available() else None
@@ -396,9 +402,7 @@ class Report:
         width = max(40, shutil.get_terminal_size((100, 24)).columns - 1)
         colour = {"✓": "32", "!": "33", "✗": "31"}
         if self._title is not None:      # the title, then a quiet rule to the edge
-            title = " ".join(self._title.split())
-            rule = "─" * max(3, min(width, 72) - len(title) - 1)
-            print("\n" + self._paint(title, "1") + " " + self._paint(rule, "2"))
+            heading(self._title)
         passed = [i for i in self._items if i[0] == "✓"]
         shown = [i for i in self._items if i[0] != "✓"]
         if passed:
@@ -579,7 +583,6 @@ def _choose_relay(current: str = "") -> str:
     options.append(("remote", "Join someone else's relay (I have its URL)"))
     options.append(("host", "Host a relay for other machines (Docker or a system service)"))
     options.append(("later", f"Decide later (keeps {current or LOCAL_RELAY})"))
-    print("\nWhich relay should it join? Agents meet and trade only on the same relay.")
     if not up.get(LOCAL_RELAY) and default is None:
         default = [k for k, _ in options].index("local")
     choice = choose("Relay:", options, default or 0)
@@ -660,9 +663,10 @@ def cmd_relay_host(args: argparse.Namespace) -> int:
     ways, why = rh.ways_to_run(rh.in_container(), bool(shutil.which("docker")),
                                Path("/run/systemd/system").is_dir())
     run = args.run
+    heading("Host a relay", "For agents on other machines — behind https, in Docker or as a system service.")
     if not run and len(ways) == 1:
         run = ways[0]
-        print(f"\n{why}")
+        print(f"  {why}")
     run = run or choose("How should it run?", [
         ("docker", "In Docker — the relay and https in containers"),
         ("service", "As a system service — a server kept for the relay, no Docker; Caddy installed on it"),
@@ -674,15 +678,16 @@ def cmd_relay_host(args: argparse.Namespace) -> int:
     # Docker: beside the profiles, so the host sees it wherever Hermes's data is mounted.
     home = (this_profile() or Path.home()) if run == "docker" else Path.home()
     folder = Path(args.dir or prompt("Folder for it", str(home / "emporia-relay"))).expanduser().resolve()
-    print("\nOthers reach it at https://<domain>. Point the domain's DNS (an A record) at this machine first;\n"
-          "ports 80 and 443 must be open for the certificate. Leave it blank if you put your own proxy in front.")
+    heading("Its address", "Others reach it at https://<domain>. Point the domain's DNS (an A record) at this "
+            "machine first; ports 80 and 443 must be open for the certificate. Leave it blank if you put your own "
+            "proxy in front.")
     domain = (args.domain or prompt("Domain", "")).strip().lower()
     if domain and not rh.valid_domain(domain):
         print(f"relay host: {domain!r} is not a domain name, like relay.example.com")
         return 1
     where = "in Docker beside it" if run == "docker" else "on this server, as its own user"
-    print(f"\nIts operator — the agent that sees its settings and activity in the dashboard. A Hermes agent can run\n"
-          f"it {where}: name that agent's profile, or leave it blank.")
+    heading("Its operator", f"The agent that sees its settings and activity. A Hermes agent can run it {where}: "
+            "name that agent's profile, or leave it blank.")
     admin_name = (args.admin if args.admin is not None else prompt("Agent profile to run it", "")).strip()
     admin = profiles_root() / admin_name if admin_name else None
     if admin and not (admin / "config.yaml").exists():
@@ -703,6 +708,7 @@ def cmd_relay_host(args: argparse.Namespace) -> int:
         _set_agent_relay(admin, inside)
         print(f"  {admin_name} → {inside}" + (" (inside the stack; run it there, not from the host's Hermes)"
                                              if run == "docker" else ""))
+    heading("Who may use it")
     updates = rh.settings(domain, ask("Accept only agents with a verified Nous sign-in (recommended for a "
                                       "public relay: it is the only check on fake agents)?", True))
     access = getattr(args, "access", "") or choose("Who may use it?", [
@@ -723,6 +729,7 @@ def cmd_relay_host(args: argparse.Namespace) -> int:
         print(f"  {len(keys)} member(s); add more any time: emporia relay members add NAME|KEY --dir {folder}")
     if run == "service":
         updates.update(rh.service_settings(folder))
+    heading("Payments")
     payments = ask("Take testnet USDC payments and escrow (Base Sepolia)?", True)
     if payments:
         fee = args.fee_receiver or prompt("Address that receives your fee (a wallet you control, ideally a Safe)")
@@ -736,6 +743,7 @@ def cmd_relay_host(args: argparse.Namespace) -> int:
         updates["EMPORIA_AGENT_ID"] = installer().harvest_env(admin).get("EMPORIA_AGENT_ID") or admin_name
     env_path = folder / ".env"
     wizard_commit()        # P213: from here it writes the relay's settings
+    heading("Saving")
     merge_env_file(env_path, updates)
     env_path.chmod(0o600)
     for path in (*written, env_path):
@@ -1379,6 +1387,8 @@ def _signer_host(args: argparse.Namespace) -> int:
     in_box, docker, systemd = rh.in_container(), bool(shutil.which("docker")), bool(shutil.which("systemctl"))
     ways = ["docker"] if in_box else [w for w, ok in (("docker", docker), ("service", systemd)) if ok] or [
         "docker", "service"]
+    heading("The signer, apart from the agents", "Its own container beside Hermes's, or a system service "
+            "under its own user.")
     run = getattr(args, "run", "") or (ways[0] if len(ways) == 1 else choose("How should it run?", [
         ("docker", "In its own container, beside Hermes's (Hermes runs in Docker)"),
         ("service", "As a system service under its own user (Hermes runs on this host, without Docker)")]))
@@ -2818,17 +2828,19 @@ def cmd_setup_agent(args: argparse.Namespace) -> int:
         return 1
     profile = profiles_root() / name
     existing = (profile / "config.yaml").exists()
-    print(f"{'Updating' if existing else 'Creating'} agent profile {name} — bare: the model, its one API "
-          f"key, and Emporia (MCP, skill, platform plugin, own keys).")
+    heading(f"{'Update' if existing else 'New'} agent: {name}",
+            "Its model and API key, and Emporia: its tools, skill, platform plugin and its own keys.")
     sync_model = args.sync_model or (existing and me is not None and me != profile and ask(
         f"Use the same model and API key as {me.name if me else 'this profile'}?", True))
     # P177: which relay it joins — one found, one run here, or a remote one.
     current_relay = ((inst.load_yaml(profile / "config.yaml").get("mcp_servers") or {}).get("emporia") or {}) \
         .get("env", {}).get("EMPORIA_RELAY_URL", "") if existing else ""
+    if _TTY and not args.relay_url:
+        heading("Relay", "Agents meet and trade only on the same relay.")
     chosen_relay = (args.relay_url or (_choose_relay(current_relay) if _TTY else "")
                     or current_relay or relay_url()).rstrip("/")
     os.environ["EMPORIA_RELAY_URL"] = chosen_relay
-    print("\nFirst, its role. This decides which of its own tools could ever reach its keys.")
+    heading("Role and keys", "Its role decides which of its own tools could ever reach its keys.")
     # An existing agent keeps its role unless told otherwise: re-running setup
     # (to update its plugin, say) must not quietly take a developer's terminal.
     current_role = None
@@ -2870,6 +2882,8 @@ def cmd_setup_agent(args: argparse.Namespace) -> int:
             print(f"  · {_KIND_NAME[f['kind']]} in {f['where']} → {f['address']}")
     have = ({f: a for f in ("evm", "svm") if (a := _wallet_address(profile, _agent(name)[1], f == "svm"))}
             if existing else {})
+    if _TTY and role != "developer" or behind_signer:
+        heading("Wallets")
     if args.use_found_keys and found:
         mode = "found"
     elif role == "developer" and not behind_signer:
@@ -2903,11 +2917,13 @@ def cmd_setup_agent(args: argparse.Namespace) -> int:
             if getattr(args, attr) == built_in and current.get(var, "").isdigit():
                 setattr(args, attr, int(current[var]))
     if wallet and _TTY and not (args.wallet or args.solana):
+        heading("Spending limits", "It never pays more than these, whatever it is asked.")
         args.max_payment_cents = prompt_cents("Largest single payment", args.max_payment_cents)
         args.max_daily_cents = prompt_cents("Most it may spend in 24 hours", args.max_daily_cents)
         args.approve_above_cents = prompt_cents(
             "Ask you before any single payment above (0 = always ask)", args.approve_above_cents)
     wizard_commit()        # P213: from here it writes the profile
+    heading("Saving")
     inst.create_profile(
         name=name, relay_url=chosen_relay, current_profile_dir=me, inherit_env=args.inherit_env,
         sync_model=bool(sync_model), x402_pay_networks=networks,
@@ -2949,6 +2965,8 @@ def cmd_setup_agent(args: argparse.Namespace) -> int:
             if n in NETWORKS and NETWORKS[n].faucet:
                 print(f"  Fund it on {label(n)}: {NETWORKS[n].faucet}")
     _ensure_member(name, chosen_relay or relay_url())
+    if _TTY or args.register:
+        heading("On the relay")
     if not args.register and _TTY and health():
         args.register = ask(f"Register {name} on the relay now?", True)
     if args.register:
@@ -2998,7 +3016,7 @@ def _setup_summary(profile: Path, name: str, role: str) -> None:
     backend = _backend(profile)
     nets = resolve_list(dotenv.get("EMPORIA_X402_PAY_NETWORKS", ""))
     approve = dotenv.get("EMPORIA_PAYMENT_APPROVAL_CENTS", "")
-    print(f"\nSummary for {name}")
+    heading(f"Summary: {name}")
     print(f"  Role        {role} — " + dict(ROLES)[role].split(" — ", 1)[1].split(". ")[0])
     print(f"  Tools off   {', '.join(_disabled_toolsets(profile)) or 'none (full Hermes tools)'}")
     print(f"  Terminal    {backend}" + ("  (same disk as its keys)" if backend == "local" and role != "marketplace" else ""))
@@ -3296,9 +3314,10 @@ def cmd_setup_relay(args: argparse.Namespace) -> int:
         print(f"  operator key created: {operator_signer.key_path()} (0600), address {address}")
     updates["EMPORIA_OPERATOR_ADDRESS"] = address
     env_path = me / ".env"
-    print(f"Will set in {env_path}:")
+    heading("Relay payments: x402 and escrow")
+    print(f"  Will set in {env_path}:")
     for k, v in updates.items():
-        print(f"  {k}={v}")
+        print(f"    {k}={v}")
     if not args.yes and not ask("Write these?", True):
         return 1
     wizard_commit()
@@ -3333,7 +3352,7 @@ def _stripe_relay_settings(me: Path, args: argparse.Namespace) -> dict[str, str]
     if not key and _TTY:
         state = ("a test key" if have.get("STRIPE_SECRET_KEY", "").startswith(("sk_test_", "rk_test_"))
                  else "a LIVE key" if have.get("STRIPE_SECRET_KEY") else "no key")
-        print(f"\nStripe (cards) — this relay has {state}.")
+        heading("Stripe (cards)", f"This relay has {state}.")
         if not ask("Replace the Stripe secret key?" if have.get("STRIPE_SECRET_KEY") else "Set the Stripe secret key?",
                    not have.get("STRIPE_SECRET_KEY")):
             return {}
@@ -4963,6 +4982,9 @@ def main(argv: list[str] | None = None) -> int:
     except Cancelled:
         print("Cancelled.")
         return 130
+    finally:      # P220: in a terminal, a blank line before the next prompt
+        if sys.stdout.isatty():
+            print()
 
 
 if __name__ == "__main__":

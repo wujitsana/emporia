@@ -1679,7 +1679,13 @@ def print_restart_instructions(profiles: list[str]) -> None:
     """Tell the user exactly which restart their change needs (P119). A
     per-profile restart respawns the bridge and MCP server but keeps the plugin
     code the gateway loaded at startup; there is no plugin reload."""
-    print()
+    if not (_DASHBOARD_RESTART_NEEDED or _GATEWAY_RESTART_NEEDED or profiles):
+        return
+    try:     # P220: a heading like the rest of the CLI's output
+        from emporia.menus import heading
+        heading("Next")
+    except ImportError:
+        print()
     if _DASHBOARD_RESTART_NEEDED:
         print("  RESTART THE HERMES DASHBOARD — the Emporia tab was installed or changed.")
         print("  It loads plugins only when it starts: restart the `hermes dashboard` process,")

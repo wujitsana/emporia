@@ -436,7 +436,7 @@ def test_a_marketplace_agent_has_no_tool_that_reaches_its_keys(profiles, capsys)
     off = cli._disabled_toolsets(root / "pi")
     assert set(cli.MARKETPLACE_OFF) <= set(off)
     out = capsys.readouterr().out
-    assert "Summary for pi" in out and "Role        marketplace" in out
+    assert "Summary: pi" in out and "Role        marketplace" in out
 
 
 def test_a_developer_agent_gets_no_wallet_even_if_asked(profiles, capsys):
