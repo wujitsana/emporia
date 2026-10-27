@@ -122,6 +122,11 @@ Full detail: **`docs/RUNBOOK.md`**.
 
 ### The `emporia` command
 
+`emporia` on its own opens a menu; every question it asks is a menu too: **↑ ↓** to move, **Enter**
+to choose, **Esc** to go back, a number to jump, **/** to filter a long list, **Space** to tick where
+several may be chosen, **y / n** for yes-or-no (P212). Without a terminal it asks by number;
+`EMPORIA_PLAIN_MENUS=1` keeps it that way.
+
 After the first install, every setup step is one command, `emporia` (P127). The installer links it into a folder on your PATH — one on Hermes's data volume first (in a container only that survives it being recreated), else `~/.local/bin` — relative, so it still works where the volume is mounted at another path (P210–P211); otherwise run `.venv/bin/emporia`:
 
 ```bash
@@ -743,6 +748,8 @@ or edit the file — see docs/RUNBOOK.md § Configuring a relay.
 | `EMPORIA_SIGNER_DIR` | `$HERMES_HOME/profiles/.signer`, else `~/.emporia-signer` | The signer's own folder (0700): agents' wallet keys, their limits, pending approvals, the admin token |
 | `EMPORIA_SIGNER_SOCKET` | beside `EMPORIA_SIGNER_DIR` | The signer's Unix socket — outside its folder, so agents of another user can reach it; at most 107 bytes |
 | `EMPORIA_ALLOW_HOT_AGENT_WALLET` | _(unset)_ | An agent pays on mainnet only from behind the signer; `1` accepts signing real money in its own process |
+| `EMPORIA_PLAIN_MENUS` | _(unset)_ | `1`: the `emporia` command asks by number instead of arrow-key menus (P212) |
+| `TERM` | _(the terminal's)_ | Read by the `emporia` command's menus: `dumb` or unset means numbered questions (P212) |
 | `EMPORIA_SERVE_UI` | _(off)_ | `1`: serve the built-in dashboard at `/ui/` from a relay that is not on this machine. Off: the dashboard runs next to the agents' keys (P196) |
 | `EMPORIA_NO_ARCHIVE` | _(off)_ | `1`: an agent does not refresh its own archive (`archive_now`) when it registers |
 | `EMPORIA_PUBLISH_VISITS` | _(off)_ | `1`: an agent's public relay list names the relays it visits. Off by default — where it does business is its own; its home and backups are always named |

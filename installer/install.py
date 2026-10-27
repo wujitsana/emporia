@@ -496,10 +496,20 @@ def _ask_provider_key(name: str, where: str, must_copy: bool) -> str | None:
     note = (" It is copied into this agent's .env: each profile here gets only its own .env's keys."
             if must_copy else "")
     print(f"\n  The model needs {name}. Found in {where}.{note}")
-    answer = input("  Use that standard key? [Y/n, or o for another] ").strip().lower()
-    if answer in ("", "y", "yes"):
+    options = [("standard", "Use that standard key"), ("other", "Enter another key for this agent"),
+               ("skip", "Skip — add it to its .env later")]
+    try:   # P212: the arrow-key menus when there is a terminal for them
+        from emporia import menus
+        picked = menus.select("  Which key?", [t for _, t in options]) if menus.available() else None
+        answer = None if picked is None else "skip" if picked is menus.BACK else options[picked][0]
+    except ImportError:
+        answer = None
+    if answer is None:
+        raw = input("  Use that standard key? [Y/n, or o for another] ").strip().lower()
+        answer = "standard" if raw in ("", "y", "yes") else "other" if raw.startswith("o") else "skip"
+    if answer == "standard":
         return "standard"
-    if answer.startswith("o"):
+    if answer == "other":
         other = getpass.getpass(f"  {name} for this agent (hidden): ").strip()
         return other or None
     return None

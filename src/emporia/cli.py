@@ -79,9 +79,29 @@ def hermes_home() -> Path:
     return Path(os.getenv("HERMES_HOME") or Path.home() / ".hermes")
 
 
+class Cancelled(Exception):
+    """Esc (or `b`) where a question has no Back of its own: the command stops,
+    as Ctrl-C would, before anything further is changed."""
+
+
+# P212: the option a menu's Esc means, when it has one.
+_BACK_KEYS = ("back", "done", "quit", "cancel")
+
+
+def _menus():
+    from emporia import menus
+    return menus if _TTY and menus.available() else None
+
+
 def ask(question: str, default: bool) -> bool:
     if not _TTY:
         return default
+    if m := _menus():
+        answer = m.confirm(question, default)
+        if answer is m.BACK:
+            raise Cancelled()
+        print(f"{question} → {'yes' if answer else 'no'}")
+        return answer
     hint = "[Y/n]" if default else "[y/N]"
     answer = input(f"{question} {hint} ").strip().lower()
     return default if not answer else answer.startswith("y")
@@ -99,6 +119,15 @@ def choose(question: str, options: list[tuple[str, str]], default: int = 0) -> s
     """One of `options` ((key, label) pairs), by number."""
     if not _TTY:
         return options[default][0]
+    back = next((k for k, _ in options if k in _BACK_KEYS), None)
+    if m := _menus():
+        picked = m.select(question, [text for _, text in options], default)
+        if picked is m.BACK:
+            if back is None:
+                raise Cancelled()
+            picked = next(i for i, (k, _) in enumerate(options) if k == back)
+        print(f"{question} → {options[picked][1]}")
+        return options[picked][0]
     print(question)
     for i, (_, text) in enumerate(options, 1):
         print(f"  {i}) {text}")
@@ -108,13 +137,21 @@ def choose(question: str, options: list[tuple[str, str]], default: int = 0) -> s
             return options[default][0]
         if answer.isdigit() and 1 <= int(answer) <= len(options):
             return options[int(answer) - 1][0]
-        print("  Type a number from the list.")
+        if answer.lower() in ("b", "q") and back is not None:    # P212: back, without arrows too
+            return back
+        print("  Type a number from the list." + (" (b: back)" if back else ""))
 
 
 def choose_many(question: str, options: list[tuple[str, str]], ticked: set[str]) -> list[str]:
     """Any of `options`, by numbers; Enter keeps the ticked ones."""
     if not _TTY:
         return [k for k, _ in options if k in ticked]
+    if m := _menus():
+        picked = m.checklist(question, [text for _, text in options],
+                             {i for i, (k, _) in enumerate(options) if k in ticked})
+        chosen = [k for k, _ in options if k in ticked] if picked is m.BACK else [options[i][0] for i in picked]
+        print(f"{question} → {', '.join(t for k, t in options if k in chosen) or 'none'}")
+        return chosen
     print(question)
     for i, (key, text) in enumerate(options, 1):
         print(f"  {i}) [{'x' if key in ticked else ' '}] {text}")
@@ -4361,7 +4398,10 @@ def cmd_menu(args: argparse.Namespace) -> int:
         if what == "login":
             argv += ["--profile", _pick_agent()]
         sub = build_parser().parse_args(argv)
-        sub.func(sub)
+        try:
+            sub.func(sub)
+        except Cancelled:             # P212: Esc in a step brings you back here
+            print("  Back to the menu.")
 
 
 def setup_overview() -> None:
@@ -4660,7 +4700,11 @@ def main(argv: list[str] | None = None) -> int:
     from emporia.config import load_profile_dotenv
     load_profile_dotenv()
     args = build_parser().parse_args(argv)
-    return args.func(args)
+    try:
+        return args.func(args)
+    except Cancelled:
+        print("Cancelled.")
+        return 130
 
 
 if __name__ == "__main__":
