@@ -58,6 +58,7 @@ def _menu(title, labels, default, *, many, ticked=frozenset(), yes_no=False):
     def run(scr):
         curses.curs_set(0)
         scr.keypad(True)
+        _colours(curses)
         cursor, chosen, query = min(default, len(labels) - 1), set(ticked), None
         while True:
             shown = [i for i, lab in enumerate(labels) if not query or query.lower() in lab.lower()]
@@ -120,6 +121,26 @@ def _read_key(scr, curses) -> int:
         scr.nodelay(False)
 
 
+_ACCENT = 0
+
+
+def _colours(curses) -> None:
+    """P214: the terminal's own scheme. Its default foreground and background
+    stay (-1); the one accent is the theme's cyan, as the theme defines it;
+    the rest is bold, dim and inverse, which every theme draws its own way.
+    NO_COLOR (no-color.org) keeps it to those."""
+    global _ACCENT
+    _ACCENT = 0
+    try:
+        curses.start_color()
+        curses.use_default_colors()
+        if not os.getenv("NO_COLOR") and curses.has_colors():
+            curses.init_pair(1, curses.COLOR_CYAN, -1)
+            _ACCENT = curses.color_pair(1)
+    except curses.error:
+        pass
+
+
 def _draw(scr, curses, title, hint, rows, cursor, marks):
     """The menu. A line too wide for the terminal ends in "…", and the
     highlighted one is shown whole, wrapped, under the list (P214) — so nothing
@@ -140,7 +161,7 @@ def _draw(scr, curses, title, hint, rows, cursor, marks):
         return text if len(text) <= usable else text[:usable - 1] + "…"
 
     for y, line in enumerate(textwrap.wrap(title, usable)[:3] or [""]):
-        put(y, line, curses.A_BOLD)
+        put(y, line, curses.A_BOLD | _ACCENT)
     head = min(3, len(textwrap.wrap(title, usable)) or 1)
     put(head, hint, curses.A_DIM)
     lines = [f" {'›' if n == cursor else ' '} {marks[n] if marks else ''}{rows[n]}" for n in range(len(rows))]
@@ -149,7 +170,7 @@ def _draw(scr, curses, title, hint, rows, cursor, marks):
     top = max(0, min(cursor - room + 1, len(rows) - room)) if cursor >= room else 0
     y = head + 2
     for n in range(top, min(len(rows), top + room)):
-        put(y, fit(lines[n]), curses.A_REVERSE if n == cursor else 0)
+        put(y, fit(lines[n]), curses.A_REVERSE | curses.A_BOLD if n == cursor else 0)
         y += 1
     if not rows:
         put(y, "   nothing matches", curses.A_DIM)

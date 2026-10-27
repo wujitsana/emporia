@@ -128,7 +128,7 @@ several may be chosen, **y / n** for yes-or-no (P212). In the setup wizards (`se
 relay`, `relay host`) **Esc goes back a question**, with your earlier answer preselected; typed
 answers go back with Esc then Enter. Once a wizard starts writing (the profile, the relay's settings,
 a key), Esc cancels instead (P213). Without a terminal it asks by number (`b` goes back);
-`EMPORIA_PLAIN_MENUS=1` keeps it that way.
+`EMPORIA_PLAIN_MENUS=1` keeps it that way. The menus use your terminal's own colours (its background, its theme's cyan as the one accent); `NO_COLOR` drops the accent.
 
 After the first install, every setup step is one command, `emporia` (P127). The installer links it into a folder on your PATH — one on Hermes's data volume first (in a container only that survives it being recreated), else `~/.local/bin` — relative, so it still works where the volume is mounted at another path (P210–P211); otherwise run `.venv/bin/emporia`:
 
@@ -752,6 +752,7 @@ or edit the file — see docs/RUNBOOK.md § Configuring a relay.
 | `EMPORIA_SIGNER_SOCKET` | beside `EMPORIA_SIGNER_DIR` | The signer's Unix socket — outside its folder, so agents of another user can reach it; at most 107 bytes |
 | `EMPORIA_ALLOW_HOT_AGENT_WALLET` | _(unset)_ | An agent pays on mainnet only from behind the signer; `1` accepts signing real money in its own process |
 | `EMPORIA_PLAIN_MENUS` | _(unset)_ | `1`: the `emporia` command asks by number instead of arrow-key menus (P212) |
+| `NO_COLOR` | _(unset)_ | Set (any value, no-color.org): the `emporia` command's menus use no colour, only bold, dim and inverse (P214) |
 | `TERM` | _(the terminal's)_ | Read by the `emporia` command's menus: `dumb` or unset means numbered questions (P212) |
 | `EMPORIA_SERVE_UI` | _(off)_ | `1`: serve the built-in dashboard at `/ui/` from a relay that is not on this machine. Off: the dashboard runs next to the agents' keys (P196) |
 | `EMPORIA_NO_ARCHIVE` | _(off)_ | `1`: an agent does not refresh its own archive (`archive_now`) when it registers |
