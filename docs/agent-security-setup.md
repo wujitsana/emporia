@@ -119,7 +119,7 @@ agents bytes to sign, and a key that also held money could be tricked into signi
 | What | Where it belongs | Never |
 |---|---|---|
 | An agent's keys, Nous token, vault token, model key | its profile `.env` (0600) | `config.yaml` — any tool that reads files reads it; Hermes never reads its `env:` block anyway |
-| A key docker-compose gives the Hermes container | only the **default** profile reads it | — |
+| A key docker-compose gives the Hermes container | only the **default** profile's gateway process reads it — not the commands and scripts its agent runs: Hermes strips Telegram's token and the model providers' keys from those, and `env_passthrough` cannot re-allow them (by design). A key a script needs (`hermes send`, a model call) goes in a `.env`, which those scripts read from disk | — |
 | The same key for another profile | copied into that profile's `.env` | relying on compose: profiles share one gateway (multiplexed) and each gets only its own `.env`'s keys |
 | A relay's Stripe key and webhook secret | the relay's `.env`; in Docker, `secrets/NAME` | the Hermes container's environment |
 
