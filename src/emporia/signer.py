@@ -44,6 +44,10 @@ from fastapi import FastAPI, HTTPException, Request
 from emporia import agent_wallet, identity
 
 APPROVAL_TTL_S = 3600
+# P206: what the signer needs to reach the chains, signer-wide (its signer.env):
+# RPC URLs may carry a provider's key, so the file is the signer's alone.
+NETWORK_SETTINGS = ("EMPORIA_X402_RPC_URL", "EMPORIA_X402_SOLANA_RPC_URL", "EMPORIA_TEMPO_RPC_URL",
+                    "EMPORIA_TEMPO_NETWORK", "EMPORIA_TEMPO_TOKEN")
 # The rules a signer keeps per agent — the agent_wallet settings, nothing else.
 POLICY_NAMES = ("EMPORIA_X402_PAY_NETWORKS", "EMPORIA_X402_MAX_PAYMENT_CENTS", "EMPORIA_X402_MAX_DAILY_CENTS",
                 "EMPORIA_PAYMENT_APPROVAL_CENTS", "EMPORIA_X402_MAINNET")
@@ -114,6 +118,50 @@ def admin_token() -> str:
 def _scope(agent_id: str) -> agent_wallet.Scope:
     return agent_wallet.Scope(env=dict(policy(agent_id).get("env", {})), key_dir=agent_dir(agent_id) / "keys",
                               approver=lambda message: _decide(agent_id, message))
+
+
+# ─── signer-wide settings, and what it signed ────────────────────────────────
+
+def settings_path() -> Path:
+    return signer_dir() / "signer.env"
+
+
+_settings_seen: dict = {"mtime": None}
+
+
+def load_settings() -> None:
+    """signer.env into the environment, again whenever it changes."""
+    try:
+        mtime = settings_path().stat().st_mtime
+    except OSError:
+        return
+    if _settings_seen["mtime"] == mtime:
+        return
+    for line in settings_path().read_text().splitlines():
+        key, sep, value = line.strip().partition("=")
+        if sep and key in NETWORK_SETTINGS:
+            os.environ[key] = value.strip().strip('"').strip("'")
+    _settings_seen["mtime"] = mtime
+
+
+def add_settings(values: dict) -> list[str]:
+    """Network settings from an agent being added, where signer.env has none. Names added."""
+    path = settings_path()
+    have = {ln.partition("=")[0] for ln in (path.read_text().splitlines() if path.exists() else [])}
+    new = {k: v for k, v in values.items() if k in NETWORK_SETTINGS and v and k not in have}
+    if new:
+        lines = (path.read_text().splitlines() if path.exists() else []) + [f"{k}={v}" for k, v in new.items()]
+        signer_dir().mkdir(mode=0o700, parents=True, exist_ok=True)
+        identity._write_secret_atomically(path, ("\n".join(lines) + "\n").encode())
+    return sorted(new)
+
+
+def audit(entry: dict) -> None:
+    """One line per request, appended; only the signer writes it."""
+    path = signer_dir() / "audit.jsonl"
+    fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_APPEND, 0o600)
+    with os.fdopen(fd, "a") as f:
+        f.write(json.dumps({"at": time.time(), **entry}) + "\n")
 
 
 # ─── approvals ────────────────────────────────────────────────────────────────
@@ -214,15 +262,24 @@ def wallet(request: Request) -> dict:
 
 def _run(request: Request, fn):
     aid = _agent(request)
-    try:
-        with agent_wallet.scope(_scope(aid)):
-            return fn(aid)
-    except ApprovalPending as e:
-        raise HTTPException(409, {"error": str(e), "intent": e.intent_id}) from None
-    except agent_wallet.AgentWalletError as e:
-        raise HTTPException(403, {"error": str(e)}) from None
-    except Exception as e:   # a malformed offer, a refused requirement: say so, never a traceback
-        raise HTTPException(400, {"error": f"{type(e).__name__}: {e}"}) from None
+    op = request.url.path.rsplit("/", 1)[-1]
+    load_settings()
+    with agent_wallet.scope(_scope(aid)):
+        before = agent_wallet.spent_today_atomic(aid)
+        try:
+            out = fn(aid)
+        except ApprovalPending as e:
+            audit({"agent": aid, "op": op, "result": "waiting", "intent": e.intent_id})
+            raise HTTPException(409, {"error": str(e), "intent": e.intent_id}) from None
+        except agent_wallet.AgentWalletError as e:
+            audit({"agent": aid, "op": op, "result": "refused", "why": str(e)[:300]})
+            raise HTTPException(403, {"error": str(e)}) from None
+        except Exception as e:   # a malformed offer, a refused requirement: say so, never a traceback
+            audit({"agent": aid, "op": op, "result": "error", "why": f"{type(e).__name__}: {e}"[:300]})
+            raise HTTPException(400, {"error": f"{type(e).__name__}: {e}"}) from None
+        audit({"agent": aid, "op": op, "result": "signed",
+               "amount_atomic": agent_wallet.spent_today_atomic(aid) - before})
+        return out
 
 
 @app.post("/v1/x402")
@@ -280,6 +337,7 @@ def serve(socket: str = "", port: int = 0) -> None:
     import uvicorn
     signer_dir().mkdir(mode=0o700, parents=True, exist_ok=True)
     admin_token()
+    load_settings()
     if port:
         uvicorn.run(app, host="127.0.0.1", port=port, log_level="warning")
         return

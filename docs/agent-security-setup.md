@@ -148,7 +148,7 @@ thing that can sign. An agent asks it, with a token; the rules decide. It can ru
 
 | Where | Isolation | For |
 |---|---|---|
-| As the same user as the agents | the rules hold; the keys are still on their side (`emporia signer status` says so) | trying it out |
+| As the same user as the agents | the rules hold against a well-behaved agent; a rogue one could read the signer's folder, approve its own payments or change its limits (`emporia signer status` says so) | trying it out — **testnet only**: mainnet refuses to unlock here |
 | As its own system user | the agents' user cannot read its folder | a server or VM |
 | In its own container, beside Hermes's | a separate filesystem; only a socket is shared | Hermes in Docker |
 
@@ -179,7 +179,19 @@ emporia signer policy NAME mainnet [--lock]   # real money: a person, after a wa
 emporia signer pending           # payments above the threshold, waiting
 emporia signer approve ID        # the agent's next try of that payment, within an hour, is paid once
 emporia signer deny ID
+emporia signer audit [NAME]      # what it signed, refused and held back (its own append-only log)
 ```
+
+**When Hermes sets Emporia up for you.** An agent running `emporia setup agent` is never offered the
+signer — it is told to leave `emporia signer add NAME` to you — and every signer command that changes
+anything, and calling the signer's code from Python, is blocked from its tools. These protections
+live in Emporia's plugin, copied into each profile: `emporia doctor` fails a profile whose copy is
+older than the code (`emporia setup agent NAME` refreshes it; restart the gateway after).
+
+An approval is for exactly that payment: its amount, network, the whole payee address and what it
+buys (for escrow: the contract and the receiver). The signer keeps its own network settings (RPC
+URLs, which may carry a provider's key) in `signer.env` in its folder; `add` copies an agent's there
+when the signer has none.
 
 `add` refuses a wallet still holding its recovery phrase here (back it up first: `emporia wallet
 backup NAME`) and one linked to a password manager (not yet supported). It moves the old key files

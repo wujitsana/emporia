@@ -4177,6 +4177,10 @@ P162) and, before mainnet, the operator key in a cloud key service (planned).
 | An agent's caps, daily total and approval threshold were enforced by its own process, from its own `.env` — an agent with a terminal could raise them or edit its spend log | The signer holds the keys and the rules; the agent asks with a token (P203) |
 | An operator's "approve" reached the payment through the agent's own process | Above the threshold the signer makes a pending intent; only the operator's admin token approves it |
 | Mainnet could be unlocked for a wallet in the agent's own process | Refused unless the wallet is behind the signer (or `EMPORIA_ALLOW_HOT_AGENT_WALLET=1`) |
+| An approval matched the payment's text, which named only the payee address's first 12 characters (escrow: no payee) — a relay could grind a lookalike address and reuse it within the hour | The whole payee and what is bought; for escrow the contract and receiver (P206) |
+| The signer lacked agents' RPC settings; it had no record of what it signed; its default folder beside the profiles was not in the key guard | `signer.env`, copied on `add`; an append-only `audit.jsonl` (`emporia signer audit`); guarded (P206) |
+| A signer running as the agents' user could be driven from Python by a rogue agent — approving its own payments, changing its limits — with no `emporia signer` command for the guard to see | Mainnet unlocks only when the signer's folder belongs to another user; the guard blocks importing or running the signer's code (P206) |
+| **Live profiles ran an older copy of Emporia's plugin, without the key guard** — so P201's secret declarations, the bridge's narrowed environment and every guard rule were not in force | Doctor compares each profile's copy with the code and fails a stale one; `emporia setup agent NAME` refreshes it (P206) |
 | A Unix socket path over 107 bytes failed silently; a socket inside the signer's 0700 folder could not be reached by another user | Refused with the reason; the socket lives outside the folder (`EMPORIA_SIGNER_SOCKET`) |
 
 ## Threat model notes (by design, not gaps)

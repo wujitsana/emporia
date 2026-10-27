@@ -602,8 +602,10 @@ def sign_exact(agent_id: str, body: dict, network: str = "") -> str:
             f"the relay asks for {amount / 1e6:.2f} USDC, above this agent's "
             f"{cap / 1e6:.2f} USDC per-payment cap (EMPORIA_X402_MAX_PAYMENT_CENTS)")
     from emporia.networks import label
+    # P206: the whole payee and what is bought — an approval (the signer's) is for exactly this payment.
     require_approval(agent_id, amount, f"USDC on {label(requirement.get('network') or '')} to "
-                                       f"{str(requirement.get('payTo'))[:12]}…")
+                                       f"{requirement.get('payTo')} for "
+                                       f"{(challenge.get('resource') or {}).get('url') or 'a resource'}")
     from emporia.payments import x402_network_family
     if x402_network_family(requirement.get("network") or "") == "svm":
         # P155: Solana — a partially signed transaction, the facilitator pays fees.
@@ -638,7 +640,7 @@ def pay_tempo(agent_id: str, offer: dict) -> str:
             f"per-payment cap (EMPORIA_X402_MAX_PAYMENT_CENTS)")
     from emporia.networks import label
     require_approval(agent_id, amount, f"in stablecoin on {label(network)} to "
-                                       f"{str(offer['request'].get('recipient'))[:12]}…")
+                                       f"{offer['request'].get('recipient')}")
     key = load_key(agent_id)
     _charge_daily(agent_id, amount)
     return tempo.pay(offer, key)
@@ -657,7 +659,8 @@ def sign_escrow(agent_id: str, offer: dict, *, expected_amount: int) -> str:
     key, networks = load_key(agent_id), allowed_networks()
     from emporia.networks import label
     require_approval(agent_id, expected_amount, f"USDC into an escrow hold on "
-                                                f"{label(offer.get('network') or '')}")
+                                                f"{label(offer.get('network') or '')} (contract {offer.get('escrow')}, "
+                                                f"for {(offer.get('payment_info') or {}).get('receiver')})")
     _charge_daily(agent_id, expected_amount)
     return escrow.sign_offer(offer, key, expected_amount=expected_amount,
                              allowed_networks=networks)

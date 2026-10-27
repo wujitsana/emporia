@@ -33,7 +33,13 @@ _KEY_PATHS = re.compile(
     r"|\.x25519\.priv\b|[\w@.-]+\.priv\b"           # identity / encryption keys
     r"|relay_operator\.secp256k1\b|_relay_jwt_secret\b"
     r"|\.env-backups\b"
-    r"|\.emporia-signer\b|\bEMPORIA_SIGNER_DIR\b")       # P203: the signer's keys and limits
+    r"|\.emporia-signer\b|\bEMPORIA_SIGNER_DIR\b"       # P203: the signer's keys and limits
+    r"|\bprofiles/\.signer\b"                              # P206: and its default folder beside Hermes's
+    # P206: its code, called directly — run as the agents' user, it would
+    # approve, change limits or mint tokens without an `emporia signer` command.
+    # Its source is no secret: reading or linting signer.py is fine; running it is not.
+    r"|\bimport\s+emporia\.signer\b|\bfrom\s+emporia(?:\.signer)?\s+import\s+[\w\s,]*\b(?:signer|decide|save_policy"
+    r"|new_agent_token|admin_token)\b|-m\s+emporia\.signer\b")
 _KEY_NAMES = re.compile(
     r"\bEMPORIA_(?:IDENTITY|ENCRYPTION|X402_EVM|X402_SOLANA|OPERATOR)_PRIVATE_KEY\b"
     r"|\bEMPORIA_X402_PHRASE_SECRET\b|\bOP_SERVICE_ACCOUNT_TOKEN\b|\bBW_SESSION\b"

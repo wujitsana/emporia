@@ -39,3 +39,21 @@ def test_doctor_finds_secrets_in_config_yaml_and_secure_moves_them(tmp_path, mon
     monkeypatch.setenv("STRIPE_SECRET_KEY", "sk_test_container")
     cli.doctor_machine_secrets(rep)
     assert "STRIPE_SECRET_KEY set for the whole container" in capsys.readouterr().out
+
+
+def test_doctor_fails_an_older_copy_of_the_plugin(tmp_path, capsys):
+    """P206: live profiles ran a copy without the key guard; doctor now compares files."""
+    import shutil
+
+    from emporia import cli
+    profile = tmp_path / "profiles" / "oldcopy"
+    installed = profile / "plugins" / "platforms" / "emporia"
+    shutil.copytree(MANIFEST.parent, installed, ignore=shutil.ignore_patterns("__pycache__"))
+    (profile / "config.yaml").write_text("{}")
+    rep = cli.Report()
+    cli.doctor_profile_secrets(rep, profile, {})
+    assert not rep.failed
+    (installed / "key_guard.py").unlink()
+    rep = cli.Report()
+    cli.doctor_profile_secrets(rep, profile, {})
+    assert rep.failed and "key_guard.py" in capsys.readouterr().out

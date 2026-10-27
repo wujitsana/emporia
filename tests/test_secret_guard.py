@@ -2,6 +2,7 @@
 import json
 from unittest.mock import patch
 
+import httpx
 import pytest
 from eth_account import Account
 from solders.keypair import Keypair
@@ -65,6 +66,10 @@ def test_credentials_the_relay_needs_and_ciphertext_are_not_scanned():
 def test_no_tool_can_send_it(monkeypatch):
     sent = []
     monkeypatch.setattr(mcp_server.httpx, "post", lambda *a, **k: sent.append(k) or None)
+    # P206: the session lookup and sign-in before it reached whatever relay was
+    # configured, so the result depended on the machine; nothing leaves here now.
+    monkeypatch.setattr(mcp_server.httpx, "get", lambda *a, **k: httpx.Response(200, json={"sealed": False}))
+    monkeypatch.setattr(mcp_server, "_dashboard_bearer_headers", lambda **k: {})
     out = mcp_server.send_game_chat("sess_x", f"psst {PHRASE}", agent_id="leaky")
     assert out.get("success") is False and "recovery phrase" in out["error"]
     assert not any("junk" in json.dumps(k, default=str) for k in sent), "the phrase never left"

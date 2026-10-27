@@ -125,7 +125,7 @@ def test_the_signer_is_a_persons_alone():
     """P203: its keys, limits and approvals are what the agent must not reach."""
     for cmd in ("emporia signer approve int_ab12", "emporia signer policy alpha set EMPORIA_X402_MAX_DAILY_CENTS 9",
                 "emporia signer add alpha", "cat ~/.emporia-signer/admin.token", "ls $EMPORIA_SIGNER_DIR",
-                "echo $EMPORIA_SIGNER_TOKEN"):
+                "echo $EMPORIA_SIGNER_TOKEN", "cat /opt/data/profiles/.signer/agents/alpha/policy.json"):
         r = guard.pre_tool_call("terminal", {"command": cmd})
         assert r and r["action"] == "block", cmd
     assert guard.pre_tool_call("terminal", {"command": "emporia signer status"}) is None
@@ -209,3 +209,16 @@ def test_an_agent_cannot_move_itself_to_another_relay(tool, args):
 def test_editing_emporia_code_that_names_the_relay_setting_is_fine():
     assert guard.pre_tool_call("patch", {"path": "src/emporia/cli.py",
                                          "new_string": 'os.getenv("EMPORIA_RELAY_URL", "")'}) is None
+
+
+def test_the_signers_code_called_directly_is_blocked_too():
+    """P206: run as the agents' user, a python one-liner could approve its own payment."""
+    for cmd in ('python -c "from emporia import signer; signer.decide(\'int_1\', True)"',
+                'python3 -c "import emporia.signer as s; s.save_policy(\'alpha\', {})"',
+                "python -c 'from emporia import agent_wallet, signer'",
+                "python -c 'from emporia.signer import decide'"):
+        r = guard.pre_tool_call("terminal", {"command": cmd})
+        assert r and r["action"] == "block", cmd
+    for fine in ("python -c 'from emporia import networks'", "ruff check src/emporia/signer.py",
+                 "pytest tests/test_signer.py -q"):
+        assert guard.pre_tool_call("terminal", {"command": fine}) is None, fine   # its source is no secret

@@ -130,8 +130,8 @@ def test_the_signer_menu_starts_it_and_adds_an_agent(profiles, tmp_path, monkeyp
         state["calls"].append(args.action)
         return 0
     monkeypatch.setattr(cli, "_signer_daemon", daemon)
-    # start · add · menuist · done (stop, add, remove, pending, limits, done)
-    _typing(monkeypatch, "1", "2", "1", "6")
+    # start · add · menuist · done (stop, add, remove, pending, audit, limits, done)
+    _typing(monkeypatch, "1", "2", "1", "7")
     assert cli.main(["signer"]) == 0
     assert state["calls"] == ["start"] and signer.policy("menuist")["token_sha256"]
 
@@ -152,3 +152,60 @@ def test_setup_offers_to_start_the_signer_and_keep_the_new_wallet_there(profiles
     question = next((q, d) for q, d in asked if "signer" in q)
     assert "this starts the signer" in question[0] and question[1] is False      # optional: no by default
     assert state["up"] and signer.policy("offered")["token_sha256"]
+
+
+def test_an_approval_is_for_that_payee_only_and_every_outcome_is_audited(held):
+    """P206: an address sharing the approved one's first characters is not approved."""
+    import json
+    with pytest.raises(agent_wallet.AgentWalletError) as e:
+        agent_wallet.sign_exact(AGENT, _challenge_for(400))
+    intent = re.search(r"int_[0-9a-f]+", str(e.value)).group()
+    signer_client.Admin("unix:///x", signer.admin_token()).decide(intent, True)
+    lookalike = _challenge_for(400)
+    lookalike["x402"]["accepts"][0]["payTo"] = "0x" + "11" * 10 + "99" * 10      # same first 12 characters
+    with pytest.raises(agent_wallet.AgentWalletError, match="int_"):
+        agent_wallet.sign_exact(AGENT, lookalike)
+    assert agent_wallet.sign_exact(AGENT, _challenge_for(400))                    # the approved one pays
+    with pytest.raises(agent_wallet.AgentWalletError, match="per-payment cap"):
+        agent_wallet.sign_exact(AGENT, _challenge_for(600))
+    rows = [json.loads(ln) for ln in (signer.signer_dir() / "audit.jsonl").read_text().splitlines()]
+    assert [r["result"] for r in rows] == ["waiting", "waiting", "signed", "refused"]
+    assert rows[2]["amount_atomic"] == 400 * 10_000 and oct((signer.signer_dir() / "audit.jsonl").stat().st_mode)[-3:] == "600"
+
+
+def test_the_signer_takes_the_agents_network_settings(tmp_path, monkeypatch):
+    monkeypatch.setenv("EMPORIA_SIGNER_DIR", str(tmp_path / "s"))
+    monkeypatch.delenv("EMPORIA_X402_SOLANA_RPC_URL", raising=False)
+    assert signer.add_settings({"EMPORIA_X402_SOLANA_RPC_URL": "https://rpc.example/key", "OPENROUTER_API_KEY": "x"}) \
+        == ["EMPORIA_X402_SOLANA_RPC_URL"]
+    assert signer.add_settings({"EMPORIA_X402_SOLANA_RPC_URL": "https://other.example"}) == []   # the first stays
+    signer.load_settings()
+    assert os.environ["EMPORIA_X402_SOLANA_RPC_URL"] == "https://rpc.example/key"
+    assert oct(signer.settings_path().stat().st_mode)[-3:] == "600"
+    monkeypatch.delenv("EMPORIA_X402_SOLANA_RPC_URL")
+
+
+def test_real_money_needs_the_signer_to_run_as_another_user(profiles, tmp_path, monkeypatch, capsys):  # noqa: F811
+    """P206: as the agents' user, its folder is in their reach — testnet only."""
+    from emporia import cli
+    root, _ = profiles
+    with patch.dict(os.environ):
+        assert cli.main(["setup", "agent", "richer", "--keys", "files", "--wallet"]) == 0
+    monkeypatch.setattr(cli, "profiles_root", lambda: root)
+    monkeypatch.setattr(cli, "_persons_terminal", lambda: True)
+    monkeypatch.setenv("EMPORIA_SIGNER_DIR", str(tmp_path / "same-user"))
+    assert cli.main(["signer", "add", "richer", "--url", "unix:///run/s.sock"]) == 0
+    monkeypatch.delenv("EMPORIA_ALLOW_HOT_AGENT_WALLET", raising=False)
+    assert cli.main(["signer", "policy", "richer", "mainnet"]) == 1
+    assert "own user or container" in capsys.readouterr().out
+    assert signer.policy("richer")["env"].get("EMPORIA_X402_MAINNET") != "1"
+
+
+def test_an_agent_setting_up_a_wallet_is_not_offered_the_signer(profiles, monkeypatch, capsys):  # noqa: F811
+    from emporia import cli
+    monkeypatch.setattr(cli, "_persons_terminal", lambda: False)
+    with patch.dict(os.environ):
+        assert cli.main(["setup", "agent", "helped", "--keys", "files", "--wallet"]) == 0
+    out = capsys.readouterr().out
+    assert "the operator runs `emporia signer add helped`" in out
+    assert not signer.agent_dir("helped").exists()
