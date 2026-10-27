@@ -960,9 +960,16 @@ def _signer_args(action: str, name: str = "", rest: list | None = None, lock: bo
                               run="")
 
 
+_ESCALATIONS: list[str] | None = None
+
+
 def _escalations() -> list[str]:
     """P207: ways this user (the agents') could reach a signer that runs apart
-    anyway. Any one of them makes its own container or user no wall."""
+    anyway. Any one of them makes its own container or user no wall. Once per
+    command (P209): a failed `sudo -n` is written to the host's auth log."""
+    global _ESCALATIONS
+    if _ESCALATIONS is not None:
+        return list(_ESCALATIONS)
     import shutil
     found = []
     if os.getuid() == 0:
@@ -978,7 +985,8 @@ def _escalations() -> list[str]:
                 found.append("this user has sudo without a password")
         except (OSError, subprocess.TimeoutExpired):
             pass
-    return found
+    _ESCALATIONS = found
+    return list(found)
 
 
 def _reachable_anyway(in_container: bool) -> list[str]:
@@ -1283,6 +1291,9 @@ def _signer_remove(args: argparse.Namespace) -> int:
         key_dir.mkdir(mode=0o700, parents=True, exist_ok=True)
         for fam in moved:
             _write_secret_atomically(targets[fam], sources[fam].read_bytes())
+            if os.getuid() == 0:   # P209: from the signer's admin container — the agent's own files are its user's
+                owner = profile.stat()
+                os.chown(targets[fam], owner.st_uid, owner.st_gid)
     unset_env_lines(profile / ".env", ["EMPORIA_SIGNER_URL", "EMPORIA_SIGNER_TOKEN"])
     merge_env_file(profile / ".env", {k: v for k, v in env.items() if k != "EMPORIA_X402_MAINNET"})
     trash = signer.signer_dir() / "released" / f"{held.name}-{time.strftime('%Y%m%dT%H%M%S')}"
@@ -1324,8 +1335,14 @@ def _signer_policy(args: argparse.Namespace) -> int:
         # user, the agent's own processes can read the signer's folder — and so
         # approve its own payments or raise its limits.
         profile = profiles_root() / name
-        # Here (the profile is on this machine) the signer is a service, not a container.
-        ways_round = _reachable_anyway(False) if profile.exists() else []
+        # P209: judged where the agents run. In the signer's admin container (root,
+        # Hermes's data mounted) this machine is not theirs: Hermes's own
+        # `emporia signer status` and doctor judge it there.
+        from emporia.relay_host import in_container
+        ways_round = _reachable_anyway(False) if profile.exists() and not in_container() else []
+        if in_container():
+            print("  (Run `emporia signer status` from Hermes too: it checks that Hermes's user cannot reach the "
+                  "signer.)")
         if ways_round and os.getenv("EMPORIA_ALLOW_HOT_AGENT_WALLET", "").strip() != "1":
             print(f"signer policy mainnet: the agents' user could reach the signer anyway — {'; '.join(ways_round)}. "
                   f"Close that first; testnet works as it is.")

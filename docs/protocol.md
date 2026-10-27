@@ -173,7 +173,7 @@ A local service, not on the wire between relays. Over a Unix socket or `127.0.0.
 
 | Call | Who | What |
 |---|---|---|
-| `GET /health` | anyone who can reach it | `{service, uid}` — its user, so a client can tell whether it is apart |
+| `GET /health` | anyone who can reach it | `{service, uid, in_container}` — its user and whether it runs in a container, so a client can tell whether it is apart and what could get round that |
 | `GET /v1/wallet` | an agent | addresses, families, networks, caps, spent in 24 h |
 | `POST /v1/x402` `{body, network}` | an agent | an x402 402 body in, `{header}` (PAYMENT-SIGNATURE) out |
 | `POST /v1/escrow` `{offer, expected_amount}` | an agent | `{header}` (PAYMENT-ESCROW) |

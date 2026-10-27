@@ -213,7 +213,10 @@ def _no_real_signer(monkeypatch):
     monkeypatch.setenv("EMPORIA_SIGNER_DIR", str(TEST_ROOT / "signer"))
     monkeypatch.delenv("EMPORIA_SIGNER_SOCKET", raising=False)
     monkeypatch.delenv("EMPORIA_SIGNER_URL", raising=False)
-    from emporia import cli
+    from emporia import cli, signer
+    # P209: what this machine allows (sudo, Docker, root) is not the suite's to depend on.
+    monkeypatch.setattr(cli, "_ESCALATIONS", [])
+    monkeypatch.setattr(signer, "_PORT_ANSWERED", {"up": False})
 
     def refuse(args, url):
         print("signer: not started — the test suite starts no background signer")

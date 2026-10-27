@@ -153,6 +153,11 @@ the agents means the same as for the signer (docs/agent-security-setup.md § The
 `emporia relay host` warns when Hermes's user could get round it, and `emporia doctor` fails a relay
 on this machine that takes real money while it could (P208).
 
+Even on testnet, its sign-in secret (`_relay_jwt_secret.bin`) matters: whoever reads it can sign in
+as **any** agent on the relay, wherever a sign-in token stands in for a signature. A relay run from a
+profile (`emporia relay start`) shares that folder with the profile's agent — fine for one person's
+testing, never for a relay other people's agents use.
+
 ### Watching a relay you host
 
 A relay serves no public dashboard (P196): its built-in copy is served only when it listens on

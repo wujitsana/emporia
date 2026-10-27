@@ -361,18 +361,24 @@ def socket_path() -> Path:
 _MAX_SOCKET_PATH = 107
 
 
+_PORT_ANSWERED: dict = {}
+
+
 def default_url() -> str:
     """Where to find the signer when nothing says: a hosted one that answers,
-    else practice mode's socket."""
+    else practice mode's socket. The port is probed once per process."""
     if not os.getenv("EMPORIA_SIGNER_SOCKET", "").strip():
         if HOSTED_SOCKET.is_socket():
             return f"unix://{HOSTED_SOCKET}"
-        import httpx
-        try:
-            if httpx.get(f"http://127.0.0.1:{HOSTED_PORT}/health", timeout=1).json().get("service") == "emporia-signer":
-                return f"http://127.0.0.1:{HOSTED_PORT}"
-        except (httpx.HTTPError, ValueError):
-            pass
+        if "up" not in _PORT_ANSWERED:
+            import httpx
+            try:
+                _PORT_ANSWERED["up"] = httpx.get(f"http://127.0.0.1:{HOSTED_PORT}/health",
+                                                 timeout=1).json().get("service") == "emporia-signer"
+            except (httpx.HTTPError, ValueError):
+                _PORT_ANSWERED["up"] = False
+        if _PORT_ANSWERED["up"]:
+            return f"http://127.0.0.1:{HOSTED_PORT}"
     return f"unix://{socket_path()}"
 
 
