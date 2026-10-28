@@ -4301,3 +4301,21 @@ federated removal signed with the new key before then is refused.
 
 What a hostile, hacked or vanished relay can and cannot do, and what to do about it
 (`verify_session`, `reclaim_escrow`, evidence files): [docs/if-a-relay-goes-rogue.md](if-a-relay-goes-rogue.md).
+
+## P246 pass — a recovery key for a lost or stolen identity key
+
+| Finding | Fix |
+|---|---|
+| A rotation (P245) needs the current key, so a lost key was a lost identity, and a stolen key let the thief rotate it away from its owner | The agent may commit, signed by its current key, to the hash of a recovery key (`wire.signed_recovery_commitment_payload`, `POST /agents/{id}/recovery-commitment`); the commitment is a `by: "commit"` step of its key log. A recovery (`wire.signed_key_recovery_payload`, `POST /agents/{id}/key-recovery`, step `by: "recovery"`) is signed by that recovery key and gives the agent a new key without the old one. Schema 14 |
+| Replacing a commitment would let a thief lock the owner out of recovery | Only one commitment is live; a new one is refused until a recovery spends it, and a spent or earlier commitment is never accepted again. `wire.key_log_state` enforces it for every reader, not only the relay |
+| After a theft the old key's later signatures and the thief's rotation would still be accepted | `compromised_since` (default: the recovery's `at`) ends the old key's window; `old` must be the key just before it. Key changes at or after it are undone: the relay moves them to `agent_key_log_superseded` (served as evidence) and the validator reads a log with or without them the same. What the old key signs after that time checks against nobody. A recovery is never undone by a later one |
+| A relay (or a thief with the key) that commits and recovers in one go, or a recovery signed by some other key | Pins follow a log that is not an extension of theirs only when the difference is exactly steps a recovery undid, and each recovery spent a commitment already in the pinned log (`identity.follow_key_log`); a relay's pin of a remote agent uses the same check. Anything else is still `signing_key_changed` |
+| The caller of a recovery cannot sign in, so the route has no credential to check | The recovery signature is the authority: it must verify under the key that hashes to the live commitment, with a fresh `at` later than the last step. The path is throttled per IP in the sign-in bucket; a replay finds the commitment spent. Listed in the route-posture test as public with that reason; `GET /agents/{id}/key-log` is public because the log is already shown beside everything the agent signs |
+| Bearer tokens issued to the lost or stolen key would outlive the recovery | Tokens carry the time they were issued; `_SESSION_FLOOR[agent_id]` is the relay time of the agent's last recovery (rebuilt from the key log at start-up, moved by a rename) and `_jwt_decode` refuses older tokens. The encryption key and relay list the old key published are cleared too. Open WebSocket connections are not closed |
+| The person's side of it | `emporia agent recovery-key --out PATH` writes the key as one line (0600, never over a file, never to the terminal) before the commitment is sent, and removes it if the relay refuses; `emporia agent recover` reads it from a file, a `cmd:`/`env:` source or a hidden prompt, writes the new key to `.priv.new` before the relay hears of it, installs it as a rotation does (code shared in `key_rotation.install_identity_key`) and says to make a new recovery key. Both are person-only (the Hermes guard blocks `recovery-key` and `recover` from an agent) |
+
+What it does not do: someone holding both the identity key and the recovery key wins; an agent that
+never committed has no recovery; a thief who acts before the owner recovers has the key's powers
+until then. A relay can refuse to serve a recovery (it cannot forge one); clients that pinned the
+commitment accept it from any relay that serves it. The time old signatures are checked against is
+still the relay's recorded time.

@@ -384,13 +384,26 @@ def stable_id_for(public_key_hex: str) -> str:
     ).hexdigest()
 
 
+def recovery_commitment_for(recovery_public_key_hex: str) -> str:
+    """P246: what an agent publishes to commit to a recovery key without showing
+    it: the SHA3 of the key. Only a key that hashes to the live commitment can
+    sign a recovery, and the hash says nothing of the key until it is used."""
+    import hashlib
+
+    return hashlib.sha3_256(
+        b"emporia:recovery:v1:" + bytes.fromhex(recovery_public_key_hex.strip().lower())
+    ).hexdigest()
+
+
 # ─── P245: an agent's key log ────────────────────────────────────────────────
 # An agent's identity is the hash of its first (genesis) key. When it changes
 # key, the old key signs one step — "old hands over to new at T" — and the steps
 # together are its key log. Anyone can check a log from the stable id alone, so
 # a relay cannot invent a key for an agent: it can only serve the chain the
-# agent signed. A step has a `by` ("key" for now) so a later kind of step, signed
-# by something other than the key being replaced, can join without a new format.
+# agent signed. A step has a `by`: "key" (P245, signed by the key it replaces),
+# "commit" (P246, signed by the current key: a commitment to a recovery key) and
+# "recovery" (P246, signed by that recovery key: a new key for an agent that lost
+# or leaked its own).
 
 #: The longest key log a verifier reads. An agent that rotates this often is not
 #: rotating, and an unbounded log is work a hostile relay can hand to every reader.
@@ -404,6 +417,25 @@ def signed_key_rotation_payload(stable_id: str, old_key: str, new_key: str, at: 
     before."""
     return {"type": "emporia:agent-key-rotation:v1", "stable_id": stable_id, "old": old_key,
             "new": new_key, "at": at}
+
+
+def signed_recovery_commitment_payload(stable_id: str, commitment: str, at: str) -> dict[str, Any]:
+    """P246: what an agent signs, with its current key, to commit to a recovery
+    key — `commitment` is `recovery_commitment_for(recovery_public_key)`. One
+    step of its key log; there is at most one live commitment at a time."""
+    return {"type": "emporia:recovery-commitment:v1", "stable_id": stable_id, "commitment": commitment,
+            "at": at}
+
+
+def signed_key_recovery_payload(
+    stable_id: str, old_key: str, new_key: str, recovery_public_key: str, compromised_since: str, at: str,
+) -> dict[str, Any]:
+    """P246: what the RECOVERY key signs to give an agent a new key when its own
+    is lost or in the wrong hands. `old_key` is the key the agent had just before
+    `compromised_since`; the old key's time ends there, and key changes made
+    after it are undone."""
+    return {"type": "emporia:key-recovery:v1", "stable_id": stable_id, "old": old_key, "new": new_key,
+            "recovery_public_key": recovery_public_key, "compromised_since": compromised_since, "at": at}
 
 
 def _key_hex(value: Any) -> bool:
@@ -426,14 +458,95 @@ def when_of(value: Any) -> Any:
     return None
 
 
+def key_log_state(stable_id: str, log: Any, verify: Any, current_key: str = "") -> dict[str, Any] | None:
+    """P245/P246: read a key log. None when it is not valid for this stable id;
+    else `{"windows", "recovery_commit"}` — the keys the agent held, each with
+    its time (see `key_log_windows`), and for each recovery step the index of
+    the commitment step it spent.
+
+    Valid means: the first key-bearing step's old key hashes to the stable id,
+    each key step's old key is the key before's new key and signs it
+    (`verify(payload, signature, public_key_hex)`, as `identity.verify`), the
+    times strictly increase, and no key comes back. A commitment is signed by
+    the key current then, only when none is live and never twice. A recovery is
+    signed by a key that hashes to the live commitment, names as `old` the key
+    the agent had just before its `compromised_since`, and ends that key's time
+    there: the key steps made after it are undone. A log that still carries
+    them is read the same as one the relay rewrote without them.
+
+    `current_key` stands in for the genesis key where the log shows none (an
+    agent that has only committed)."""
+    if not isinstance(log, list) or len(log) > KEY_LOG_MAX_STEPS:
+        return None
+    genesis = next((str(x["old"]) for x in log if isinstance(x, dict) and _key_hex(x.get("old"))),
+                   str(current_key or "").lower())
+    if not _key_hex(genesis) or stable_id_for(genesis) != stable_id:
+        return None
+    windows: list[dict[str, str]] = [{"key": genesis, "from": "", "until": ""}]
+    seen = {genesis}                  # every key the agent held, including ones a recovery undid
+    commitments: set[str] = set()
+    live: tuple[str, Any, int] | None = None       # (commitment, its time, its index)
+    recovery_commit: dict[int, int] = {}
+    last = last_recovery = None
+    for i, step in enumerate(log):
+        if not isinstance(step, dict):
+            return None
+        at = step.get("at")
+        when = when_of(at)
+        by = step.get("by", "key")
+        if when is None or (last is not None and when <= last) or not isinstance(step.get("signature"), str):
+            return None
+        signature = step["signature"]
+        if by == "key":
+            old, new = step.get("old"), step.get("new")
+            if not (_key_hex(old) and _key_hex(new)) or new in seen or old != windows[-1]["key"]:
+                return None
+            if not verify(signed_key_rotation_payload(stable_id, old, new, at), signature, old):
+                return None
+            windows[-1]["until"] = at
+            windows.append({"key": new, "from": at, "until": ""})
+            seen.add(new)
+        elif by == "commit":
+            commitment = step.get("commitment")
+            if not _key_hex(commitment) or live is not None or commitment in commitments:
+                return None
+            if not verify(signed_recovery_commitment_payload(stable_id, commitment, at), signature,
+                          windows[-1]["key"]):
+                return None
+            commitments.add(commitment)
+            live = (commitment, when, i)
+        elif by == "recovery":
+            old, new, rk = step.get("old"), step.get("new"), step.get("recovery_public_key")
+            since = step.get("compromised_since")
+            since_when = when_of(since)
+            if not (_key_hex(old) and _key_hex(new) and _key_hex(rk)) or since_when is None or since_when > when:
+                return None
+            if last_recovery is not None and since_when <= last_recovery:
+                return None             # a recovery is never undone
+            if live is None or live[1] >= since_when or recovery_commitment_for(rk) != live[0]:
+                return None
+            if new in seen or rk in seen or new == rk:
+                return None
+            kept = [w for w in windows if not w["from"] or when_of(w["from"]) < since_when]
+            if kept[-1]["key"] != old:
+                return None
+            if not verify(signed_key_recovery_payload(stable_id, old, new, rk, since, at), signature, rk):
+                return None
+            windows = [*kept[:-1], {**kept[-1], "until": since}, {"key": new, "from": at, "until": ""}]
+            seen.add(new)
+            recovery_commit[i] = live[2]
+            live, last_recovery = None, when
+        else:
+            return None
+        last = when
+    return {"windows": windows, "recovery_commit": recovery_commit}
+
+
 def key_log_windows(stable_id: str, log: Any, verify: Any, current_key: str = "") -> list[dict[str, str]]:
     """P245: the keys an agent has held, each with the time it was the agent's —
     `[{"key", "from", "until"}]`, oldest first, the last with `until` "" — or []
-    when the log is not a valid one for this stable id. Valid means: the first
-    step's old key hashes to the stable id, each step's old key is the one
-    before's new key, each step is signed by its old key
-    (`verify(payload, signature, public_key_hex)`, as `identity.verify`), the
-    times strictly increase, and no key comes back.
+    when the log is not a valid one for this stable id (`key_log_state` says what
+    valid means). A key a recovery ended early has its `until` there.
 
     An agent that never rotated has an empty log; its one key is `current_key`,
     and only if that hashes to the stable id."""
@@ -442,34 +555,8 @@ def key_log_windows(stable_id: str, log: Any, verify: Any, current_key: str = ""
         if _key_hex(key) and stable_id_for(key) == stable_id:
             return [{"key": key, "from": "", "until": ""}]
         return []
-    if not isinstance(log, list) or len(log) > KEY_LOG_MAX_STEPS:
-        return []
-    windows: list[dict[str, str]] = []
-    seen: set[str] = set()
-    last = None
-    for i, step in enumerate(log):
-        if not isinstance(step, dict):
-            return []
-        old, new, at = step.get("old"), step.get("new"), step.get("at")
-        when = when_of(at)
-        if step.get("by", "key") != "key" or not (_key_hex(old) and _key_hex(new)) or when is None:
-            return []
-        if (last is not None and when <= last) or new in seen:
-            return []
-        if i == 0:
-            if stable_id_for(old) != stable_id:
-                return []
-            windows.append({"key": old, "from": "", "until": ""})
-            seen.add(old)
-        elif old != windows[-1]["key"]:
-            return []
-        if not verify(signed_key_rotation_payload(stable_id, old, new, at), str(step.get("signature") or ""), old):
-            return []
-        windows[-1]["until"] = at
-        windows.append({"key": new, "from": at, "until": ""})
-        seen.add(new)
-        last = when
-    return windows
+    state = key_log_state(stable_id, log, verify, current_key)
+    return state["windows"] if state else []
 
 
 def key_at(windows: list[dict[str, str]], when: Any = "") -> str:
@@ -488,6 +575,29 @@ def key_at(windows: list[dict[str, str]], when: Any = "") -> str:
         if (start is None or moment >= start) and (end is None or moment < end):
             return w["key"]
     return ""
+
+
+def key_before(windows: list[dict[str, str]], when: Any) -> str:
+    """P246: the key that was the agent's just before `when`: the newest key that
+    took over earlier than that. "" when `when` is not a time."""
+    moment = when_of(when)
+    if moment is None:
+        return ""
+    held = [w["key"] for w in windows if not w["from"] or when_of(w["from"]) < moment]
+    return held[-1] if held else ""
+
+
+def live_commitment(log: Any) -> str:
+    """P246: the recovery commitment a key log has not yet spent, or "". Reads the
+    steps as they are; `key_log_windows` is what says whether they are valid."""
+    live = ""
+    for step in log if isinstance(log, list) else []:
+        if isinstance(step, dict):
+            if step.get("by") == "commit":
+                live = str(step.get("commitment") or "")
+            elif step.get("by") == "recovery":
+                live = ""
+    return live
 
 
 def key_log_extends(old_log: list[dict[str, Any]], new_log: list[dict[str, Any]]) -> bool:

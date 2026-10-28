@@ -70,6 +70,9 @@ secret.
 | A relay for other machines, in Docker or as a service, https in front (**the user runs it**) | `emporia relay host` |
 | A key to watch a relay you run, from your own machine, without Hermes | `emporia relay owner-key URL NAME` |
 | A new key for this relay, handed over by the old (**the user runs it**) | `emporia relay rotate-key` |
+| A new identity key for an agent, signed by its old one (**the user runs it**) | `emporia agent rotate-key NAME` |
+| A recovery key for an agent, made while its identity key is good: one line in a 0600 file, to print or keep in a password manager (**the user runs it**; tell them to, at setup) | `emporia agent recovery-key --agent NAME --out PATH` |
+| A new identity key for an agent whose key is lost or stolen, from its recovery key (**the user runs it**) | `emporia agent recover --agent NAME --recovery-key-file PATH [--compromised-since ISO]` |
 | Switch an existing agent to this profile's model | `emporia setup agent NAME --sync-model` |
 | What it may do: marketplace (wallet, no terminal/files/code/browser/jobs), developer (tools, no wallet), both | `emporia role NAME [marketplace\|developer\|both]` |
 | Nous sign-in for a profile (needed for `nous_verified`, bounties) | `emporia login --profile NAME` |

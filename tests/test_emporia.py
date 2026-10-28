@@ -2244,6 +2244,9 @@ def test_no_new_identity_as_proof_params():
         ("POST", "/agents/{agent_id}/carried-record"),  # P190: _require_caller_is-checked; the record is signed
         ("POST", "/agents/{agent_id}/leave"),  # P195: _require_caller_is-checked
         ("POST", "/agents/{agent_id}/key-rotations"),  # P245: _require_caller_is-checked, and signed by the current key
+        ("POST", "/agents/{agent_id}/recovery-commitment"),  # P246: _require_caller_is-checked, signed by the current key
+        ("POST", "/agents/{agent_id}/key-recovery"),  # P246: names whose key to recover; the recovery signature is the authority
+        ("GET", "/agents/{agent_id}/key-log"),  # P246: whose key log; public, what every verifier is shown anyway
         ("GET", "/federation/v1/agents/{agent_id}"),  # P185: a linked relay's signed request; 404 unless opted in
         ("GET", "/payments/settlements"),  # agent_id: filter, but gated by inline auth check
         ("DELETE", "/agoras/topics/{slug}/subscribe"),  # agent_id: _require_caller_is-checked
@@ -2482,6 +2485,7 @@ def test_every_route_has_a_reviewed_auth_posture():
         ("WS", "/ws/agent/{agent_id}"),
         ("POST", "/rooms"),
         ("POST", "/agents/{agent_id}/key-rotations"),  # P245: the agent, signing with its current key
+        ("POST", "/agents/{agent_id}/recovery-commitment"),  # P246: the agent, signing with its current key
         ("POST", "/rooms/{room_id}/join"),
         ("POST", "/rooms/{room_id}/invite"),
         ("POST", "/rooms/{room_id}/kick"),
@@ -2563,6 +2567,8 @@ def test_every_route_has_a_reviewed_auth_posture():
     }
     _DELIBERATELY_PUBLIC: dict[tuple[str, str], str] = {
         ("GET", "/agents/{agent_id}/record"): "P182: an agent's record — counts only, read before staking or buying",
+        ("POST", "/agents/{agent_id}/key-recovery"): "P246: the agent has lost its key, so it cannot sign in; the recovery key it committed to in its key log signs the request, and that signature is the whole authority. Throttled like sign-in",
+        ("GET", "/agents/{agent_id}/key-log"): "P246: an agent's signed key log and the steps a recovery undid — what every verifier is shown beside anything the agent signed, and what an agent without its key needs to say which key it replaces",
         ("GET", "/agents/{agent_id}/card"): "P187: an agent's card — address, public keys, signed relay list; only once the agent published one, to be found from other relays",
         ("GET", "/health"): "operational health check, must work with no credential",
         ("GET", "/safety/stats"): "operator-facing guardrails posture, no per-agent data",
@@ -27384,7 +27390,7 @@ def test_the_membership_rule_is_written_in_exactly_one_place():
 # P61 — the schema has a version, and the version has to stay honest
 # ---------------------------------------------------------------------------
 
-# 36 tables, 326 columns, at SCHEMA_VERSION 13. Recomputed by the test below;
+# 37 tables, 334 columns, at SCHEMA_VERSION 14. Recomputed by the test below;
 # when it fails, read *why* before touching this string.
 #
 # V1 -> V2 (P72-4): `bounty_entries` and its UNIQUE (listing_id, nous_user_id)
@@ -27429,7 +27435,13 @@ def test_the_membership_rule_is_written_in_exactly_one_place():
 # log kept with a pulled listing (`listings.agent_key_log_json`) and a pinned
 # remote agent (`remote_agents.stable_id`, `key_log_json`). A V12 relay would
 # serve no key log, so other relays would drop a rotated agent's listings.
-_SCHEMA_FINGERPRINT_V13 = "a7db7f49a59063c89796c4f5372b1f6bf514d658139c16d0217972479cb3eafa"
+#
+# V13 -> V14 (P246): a key log step may be a commitment to a recovery key or a
+# recovery (`agent_key_log.commitment`, `recovery_public_key`, `compromised_since`,
+# `recorded_at`), and the steps a recovery undid are kept in
+# `agent_key_log_superseded`. A V13 relay would drop the new fields from the log it
+# serves, so no reader could check a recovery.
+_SCHEMA_FINGERPRINT_V14 = "9d14dff08f5b4b8a5716a80c3e590236d6b55e00464681b04c48295b599631a1"
 
 
 def _schema_fingerprint(db_path) -> tuple[str, int, int]:
@@ -27469,9 +27481,9 @@ def test_a_schema_change_requires_a_version_bump():
     from emporia.relay_server import SCHEMA_VERSION
 
     fingerprint, tables, columns = _schema_fingerprint(_test_db)
-    assert (SCHEMA_VERSION, fingerprint) == (13, _SCHEMA_FINGERPRINT_V13), (
+    assert (SCHEMA_VERSION, fingerprint) == (14, _SCHEMA_FINGERPRINT_V14), (
         f"the schema changed ({tables} tables, {columns} columns) or the version "
-        f"moved. Bump SCHEMA_VERSION *and* update _SCHEMA_FINGERPRINT_V13 — in "
+        f"moved. Bump SCHEMA_VERSION *and* update _SCHEMA_FINGERPRINT_V14 — in "
         f"that order, and never the fingerprint alone.\n"
         f"  code version: {SCHEMA_VERSION}\n  fingerprint:  {fingerprint}"
     )
@@ -27715,6 +27727,7 @@ _DASHBOARD_UNSURFACED_GETS: dict[str, str] = {
     # Infrastructure and machine-facing descriptors — nothing for a human view.
     "/": "redirects to /ui/; it *is* the dashboard's front door",
     "/federation/v1/agents/{}": "P185: relay to relay only — a linked relay looking up an agent that takes DMs from other relays",
+    "/agents/{}/key-log": "P246: for a verifier, and for an agent that lost its key; the same log is in /agents/{id}, which the dashboard reads",
     "/federation/v1/rooms": "P247: for other relays' agents to find a room; the dashboard shows this relay's rooms from /rooms",
     "/federation/v1/topics": "P247: for other relays' agents to find a topic; the dashboard shows this relay's topics from /agoras/topics",
     "/agents/{}/card": "P187: an agent's card, for other relays' agents to find and check it — the dashboard already shows the agent's address and fingerprint on its profile",

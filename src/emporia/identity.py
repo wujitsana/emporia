@@ -497,13 +497,43 @@ def follow_key_log(stable_id: str, pinned_key: str, pinned_log: list[dict[str, A
     (and `pinned_log`, what was known of the log) follow the agent to
     `served_key` — else []. It must be valid for the stable id, end at the
     served key, pass through the pinned key and extend the pinned log. A relay
-    cannot make one: it would need a step signed by a key the agent held."""
-    if not isinstance(served_log, list) or not served_log or not key_log_extends(pinned_log or [], served_log):
+    cannot make one: it would need a step signed by a key the agent held.
+
+    P246: one more way through. A recovery undoes the key changes made after its
+    `compromised_since`, so the served log may not extend the one pinned, or may
+    leave the pinned key out: that is followed only if each recovery in it spent
+    a commitment that was already in the pinned log, and what the pinned log has
+    that the served one lacks is exactly steps that recovery undid."""
+    from emporia import wire
+    pinned_log = pinned_log or []
+    if not isinstance(served_log, list) or not served_log:
         return []
-    windows = key_log_windows(stable_id, served_log)
-    keys = [w["key"] for w in windows]
-    if not windows or keys[-1] != served_key or pinned_key not in keys:
+    state = wire.key_log_state(stable_id, served_log, verify, served_key)
+    if not state or state["windows"][-1]["key"] != served_key:
         return []
+    windows = state["windows"]
+    shared = 0
+    while (shared < min(len(pinned_log), len(served_log))
+           and {"by": "key", **pinned_log[shared]} == {"by": "key", **served_log[shared]}):
+        shared += 1
+    if any(commit >= shared for at, commit in state["recovery_commit"].items() if at >= shared):
+        return []                       # it spent a commitment the pinned side never saw
+    recovered = any(at >= shared for at in state["recovery_commit"])
+    undone = pinned_log[shared:]
+    if undone:
+        first = served_log[shared] if shared < len(served_log) else {}
+        since = wire.when_of(first.get("compromised_since")) if first.get("by") == "recovery" else None
+        if since is None:
+            return []
+        for step in undone:
+            at = wire.when_of(step.get("at")) if isinstance(step, dict) else None
+            if at is None or at < since or step.get("by", "key") not in ("key", "commit"):
+                return []
+    keys = {w["key"] for w in windows}
+    if pinned_key not in keys:
+        held = {w["key"] for w in key_log_windows(stable_id, pinned_log, pinned_key)}
+        if not (recovered and pinned_key in held):
+            return []
     return windows
 
 
@@ -524,16 +554,17 @@ def _check_signing_pin(
     if not _valid_x25519_pubkey_hex(key):   # 64 hex chars; the same shape for Ed25519
         if not pin:
             return SigningKey(""), False
-        return SigningKey(pin["public_key_hex"], key_log_windows(pin.get("stable_id", ""), pin_log)), False
+        return SigningKey(pin["public_key_hex"], key_log_windows(pin.get("stable_id", ""), pin_log,
+                                                                 pin["public_key_hex"])), False
     if not pin:
-        windows = key_log_windows(stable_id, log) if log else []
+        windows = key_log_windows(stable_id, log, key) if log else []
         good = bool(windows) and windows[-1]["key"] == key
         pins[pin_id] = {"public_key_hex": key, "stable_id": stable_id or "", **({"key_log": log} if good else {})}
         save_peer_signing_keys(pins)
         return SigningKey(key, windows if good else []), False
     pinned_key, pinned_sid = pin["public_key_hex"], pin.get("stable_id", "")
     if pinned_sid and stable_id and pinned_sid != stable_id:
-        return SigningKey(pinned_key, key_log_windows(pinned_sid, pin_log)), True
+        return SigningKey(pinned_key, key_log_windows(pinned_sid, pin_log, pinned_key)), True
     windows = follow_key_log(stable_id or pinned_sid, pinned_key, pin_log, key, log)
     if windows:
         moved = {"public_key_hex": key, "stable_id": stable_id or pinned_sid, "key_log": log}
@@ -542,11 +573,11 @@ def _check_signing_pin(
             save_peer_signing_keys(pins)
         return SigningKey(key, windows), False
     if pinned_key != key:
-        return SigningKey(pinned_key, key_log_windows(pinned_sid, pin_log)), True
+        return SigningKey(pinned_key, key_log_windows(pinned_sid, pin_log, pinned_key)), True
     if stable_id and not pinned_sid:
         pin["stable_id"] = stable_id
         save_peer_signing_keys(pins)
-    return SigningKey(key, key_log_windows(pin.get("stable_id", ""), pin_log)), False
+    return SigningKey(key, key_log_windows(pin.get("stable_id", ""), pin_log, key)), False
 
 
 def pin_peer_signing_key(pin_id: str, public_key_hex: str, stable_id: str = "", key_log: Any = None) -> str:

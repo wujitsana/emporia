@@ -274,6 +274,7 @@ async def get_agent_profile(agent_id: str, request: Request):
             (agent_id,),
         ).fetchone()
         key_log = rs.agent_key_log(conn, row["stable_id"]) if row else []
+        superseded = rs.agent_key_log_superseded(conn, row["stable_id"]) if row else []
     if not row:
         raise HTTPException(status_code=404, detail=f"Agent not found: {agent_id}")
     with rs.DB_LOCK, rs.get_db() as conn:
@@ -317,6 +318,8 @@ async def get_agent_profile(agent_id: str, request: Request):
         # P245: the signed steps from the key its stable id was made from to the
         # one above. [] for an agent that never changed key.
         "key_log": key_log,
+        # P246: key changes a recovery undid, kept as evidence; not part of the log.
+        "key_log_superseded": superseded,
         "registered_at": row["registered_at"],
         "is_active": bool(row["is_active"]),
         # P195: its own choice, for itself and the operator only.
@@ -740,17 +743,11 @@ async def rotate_agent_key(agent_id: str, req: KeyRotationRequest, request: Requ
     innocence — whoever holds the old key can sign this step too."""
     import re
 
-    from emporia import deletion, wire
+    from emporia import wire
     rs._require_caller_is(agent_id, request)
     rs._require_registered(agent_id)
     rs._enforce_agent_rate_limit(agent_id)
-    when = wire.when_of(req.at)
-    if when is None:
-        raise HTTPException(400, "at must be an ISO 8601 time")
-    if abs(datetime.now(UTC) - when) > deletion.FRESH:
-        raise HTTPException(400, "the request is too old or too far ahead — sign it again")
-    if when > datetime.now(UTC) + _ROTATION_AHEAD:
-        raise HTTPException(400, "at is more than two minutes ahead of this relay's clock")
+    when = _signed_at(req.at)
     new = req.new_public_key_hex.strip().lower()
     if not re.fullmatch(r"[0-9a-f]{64}", new):
         raise HTTPException(400, "new_public_key_hex must be a 64-char lowercase hex string (Ed25519 public key)")
@@ -772,6 +769,139 @@ async def rotate_agent_key(agent_id: str, req: KeyRotationRequest, request: Requ
         raise HTTPException(409, str(e)) from e
     return {"agent_id": agent_id, "stable_id": row["stable_id"], "public_key_hex": new,
             "fingerprint": fingerprint(new), "key_log": [*log, step]}
+
+
+class RecoveryCommitmentRequest(BaseModel):
+    commitment: str
+    at: str
+    signature: str  # Ed25519, by the current key, over wire.signed_recovery_commitment_payload()
+
+
+def _signed_at(at: str) -> Any:
+    """The `at` of a key log step: an ISO time near this relay's clock. Things the
+    agent signs with a new key are dated by this relay's clock, and a key takes
+    over at `at`: a step dated ahead would leave them looking unsigned."""
+    from emporia import deletion, wire
+    when = wire.when_of(at)
+    if when is None:
+        raise HTTPException(400, "at must be an ISO 8601 time")
+    if abs(datetime.now(UTC) - when) > deletion.FRESH:
+        raise HTTPException(400, "the request is too old or too far ahead — sign it again")
+    if when > datetime.now(UTC) + _ROTATION_AHEAD:
+        raise HTTPException(400, "at is more than two minutes ahead of this relay's clock")
+    return when
+
+
+def _fresh_step_time(at: str, log: list[dict]) -> Any:
+    """`_signed_at`, and later than the last step of the log."""
+    from emporia import wire
+    when = _signed_at(at)
+    if log and (wire.when_of(log[-1]["at"]) or when) >= when:
+        raise HTTPException(409, "at must be later than the agent's last key change")
+    return when
+
+
+@router.post("/agents/{agent_id}/recovery-commitment")
+async def commit_recovery_key(agent_id: str, req: RecoveryCommitmentRequest, request: Request):
+    """P246: an agent commits to a recovery key — the hash of a key it keeps
+    elsewhere (`wire.recovery_commitment_for`) — signed by its current key and
+    added to its key log. Only one commitment is live at a time, so a thief who
+    holds the key cannot swap in their own; a recovery spends it."""
+    from emporia import wire
+    rs._require_caller_is(agent_id, request)
+    rs._require_registered(agent_id)
+    rs._enforce_agent_rate_limit(agent_id)
+    commitment = req.commitment.strip().lower()
+    if not _is_hex32(commitment):
+        raise HTTPException(400, "commitment must be a 64-char lowercase hex string (a SHA3-256 hash)")
+    with rs.DB_LOCK, rs.get_db() as conn:
+        row = conn.execute("SELECT public_key_hex, stable_id FROM authorized_agents WHERE agent_id = ?",
+                           (agent_id,)).fetchone()
+        log = rs.agent_key_log(conn, row["stable_id"])
+    if wire.live_commitment(log):
+        raise HTTPException(409, "this agent already has a recovery commitment; a recovery spends it")
+    _fresh_step_time(req.at, log)
+    if not rs.verify(wire.signed_recovery_commitment_payload(row["stable_id"], commitment, req.at), req.signature,
+                     row["public_key_hex"]):
+        raise HTTPException(403, "the commitment is not signed by this agent's current key")
+    step = {"by": "commit", "commitment": commitment, "at": req.at, "signature": req.signature}
+    try:
+        full = rs.AGENT_REGISTRY.add_recovery_commitment(agent_id, step)
+    except ValueError as e:
+        raise HTTPException(409, str(e)) from e
+    return {"agent_id": agent_id, "stable_id": row["stable_id"], "key_log": full}
+
+
+class KeyRecoveryRequest(BaseModel):
+    old_public_key_hex: str
+    new_public_key_hex: str
+    recovery_public_key_hex: str
+    compromised_since: str | None = None
+    at: str
+    signature: str  # Ed25519, by the recovery key, over wire.signed_key_recovery_payload()
+
+
+@router.post("/agents/{agent_id}/key-recovery")
+async def recover_agent_key(agent_id: str, req: KeyRecoveryRequest):
+    """P246: an agent whose key is lost or in the wrong hands takes a new one,
+    authorised by the recovery key it committed to (`recovery-commitment`). The
+    caller cannot sign in — that is the point — so the request carries no
+    credential: the recovery signature is the whole authority, and it holds only
+    if the key hashes to the commitment in the agent's key log. The old key's time
+    ends at `compromised_since` (default: `at`); key changes made from then on
+    are undone and kept as `superseded`. No operator approval, as for a rotation;
+    an operator can still remove an agent. The IP throttle on this path is the
+    sign-in one."""
+    from emporia import wire
+    with rs.DB_LOCK, rs.get_db() as conn:
+        row = conn.execute("SELECT stable_id FROM authorized_agents WHERE agent_id = ?", (agent_id,)).fetchone()
+        log = rs.agent_key_log(conn, row["stable_id"]) if row else []
+    if not row:
+        raise HTTPException(404, f"Agent not found: {agent_id}")
+    old, new, rk = (x.strip().lower() for x in (req.old_public_key_hex, req.new_public_key_hex,
+                                                req.recovery_public_key_hex))
+    if not (_is_hex32(old) and _is_hex32(new) and _is_hex32(rk)):
+        raise HTTPException(400, "keys must be 64-char lowercase hex strings (Ed25519 public keys)")
+    when = _fresh_step_time(req.at, log)
+    since = req.compromised_since or req.at
+    since_when = wire.when_of(since)
+    if since_when is None or since_when > when:
+        raise HTTPException(400, "compromised_since must be an ISO 8601 time, no later than at")
+    if not wire.live_commitment(log):
+        raise HTTPException(409, "this agent has no recovery commitment")
+    if wire.recovery_commitment_for(rk) != wire.live_commitment(log):
+        raise HTTPException(403, "that recovery key is not the one this agent committed to")
+    if not rs.verify(wire.signed_key_recovery_payload(row["stable_id"], old, new, rk, since, req.at),
+                     req.signature, rk):
+        raise HTTPException(403, "the recovery is not signed by the recovery key")
+    step = {"by": "recovery", "old": old, "new": new, "recovery_public_key": rk, "compromised_since": since,
+            "at": req.at, "signature": req.signature}
+    try:
+        done = rs.AGENT_REGISTRY.recover_key(agent_id, step)
+    except ValueError as e:
+        raise HTTPException(409, str(e)) from e
+    return {**done, "fingerprint": fingerprint(new)}
+
+
+@router.get("/agents/{agent_id}/key-log")
+async def get_agent_key_log(agent_id: str):
+    """P246: an agent's key log, and the steps a recovery undid. Public: it is what
+    every verifier is already shown beside anything the agent signed, and an agent
+    that lost its key needs it to say which key it is replacing."""
+    with rs.DB_LOCK, rs.get_db() as conn:
+        row = conn.execute("SELECT stable_id, public_key_hex FROM authorized_agents WHERE agent_id = ?",
+                           (agent_id,)).fetchone()
+        if not row:
+            raise HTTPException(404, f"Agent not found: {agent_id}")
+        log = rs.agent_key_log(conn, row["stable_id"])
+        undone = rs.agent_key_log_superseded(conn, row["stable_id"])
+    return {"agent_id": agent_id, "stable_id": row["stable_id"], "public_key_hex": row["public_key_hex"],
+            "key_log": log, "superseded": undone}
+
+
+def _is_hex32(value: str) -> bool:
+    import re
+    return re.fullmatch(r"[0-9a-f]{64}", value) is not None
 
 
 # ─── P187: where an agent can be found ───────────────────────────────────────

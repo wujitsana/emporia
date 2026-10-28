@@ -1868,26 +1868,17 @@ def cmd_agent_rotate_key(name: str, yes: bool = False, http: Any = None) -> int:
     profile's .env is not touched: the new one is left in a 0600 file to store
     there. Then the agent registers again, which signs its encryption-key
     binding and relay list with the new key. `http` is for tests."""
-    import shlex
-
     import httpx
 
     from emporia import key_rotation
-    from emporia.addresses import fingerprint
-    from emporia.identity import IDENTITY_KEY_SOURCE_VAR
-    if not _persons_terminal():
-        print("agent rotate-key: only a person runs this, in their own terminal.")
+    found = _agent_to_change("rotate-key", name)
+    if not found:
         return 1
-    profile, agent_id, env = _agent(name)
-    if not env:
-        print(f"agent rotate-key: {name or '(none)'} is not an Emporia agent profile")
-        return 1
-    dotenv = installer().harvest_env(profile)
-    source = dotenv.get(IDENTITY_KEY_SOURCE_VAR, "")
-    key_dir = _key_file(profile, agent_id, "identity").parent
+    profile, agent_id, _env, dotenv, source, key_dir = found
     print(f"This gives {agent_id} a new identity key on {relay_url()}. The old key signs the change, so peers that "
           "pinned it follow, and what it signed still checks.\n"
-          "If the old key LEAKED, this does not recover it: whoever holds it can sign a change too.")
+          "If the old key LEAKED or is lost, this does not recover it (whoever holds it can sign a change too): "
+          "make a recovery key first, with `emporia agent recovery-key`.")
     if not (yes or ask(f"Rotate {agent_id}'s key?", False)):
         return 1
     client = http or httpx.Client(base_url=relay_url(), timeout=15)
@@ -1899,6 +1890,19 @@ def cmd_agent_rotate_key(name: str, yes: bool = False, http: Any = None) -> int:
     finally:
         if http is None:
             client.close()
+    _after_key_change(profile, agent_id, out, source, dotenv)
+    return 0
+
+
+def _after_key_change(profile: Path, agent_id: str, out: dict[str, Any], source: str,
+                      dotenv: dict[str, str]) -> None:
+    """What the person is told, and the agent does, once the relay has its new
+    identity key (a rotation or a recovery): where the key is, then the agent
+    registers again, which signs its encryption-key binding and relay list with it."""
+    import shlex
+
+    from emporia.addresses import fingerprint
+    from emporia.identity import IDENTITY_KEY_SOURCE_VAR
     print(f"  {agent_id}: new key {fingerprint(out['new_public_key'])} (was {fingerprint(out['old_public_key'])}), "
           "on the relay.")
     republish_env: dict[str, str] = {}
@@ -1922,6 +1926,110 @@ def cmd_agent_rotate_key(name: str, yes: bool = False, http: Any = None) -> int:
     else:
         print("  Its encryption key and relay list are signed again with the new key.")
     installer().print_restart_instructions([profile])
+
+
+def _agent_to_change(command: str, name: str) -> tuple[Path, str, dict[str, str], dict[str, str], str, Path] | None:
+    """The agent a key command is about, in a person's own terminal: its profile,
+    id, env, .env, the linked key source (or "") and the folder its key lives in."""
+    from emporia.identity import IDENTITY_KEY_SOURCE_VAR
+    if not _persons_terminal():
+        print(f"agent {command}: only a person runs this, in their own terminal.")
+        return None
+    name = name or (this_profile().name if this_profile() else "")
+    profile, agent_id, env = _agent(name)
+    if not env:
+        print(f"agent {command}: {name or '(none)'} is not an Emporia agent profile")
+        return None
+    dotenv = installer().harvest_env(profile)
+    return (profile, agent_id, env, dotenv, dotenv.get(IDENTITY_KEY_SOURCE_VAR, ""),
+            _key_file(profile, agent_id, "identity").parent)
+
+
+def cmd_agent_recovery_key(name: str, out: str, http: Any = None) -> int:
+    """P246: `emporia agent recovery-key --out PATH` — a recovery key for an agent,
+    made while its identity key is still good. Its hash goes to the relay, signed
+    by the identity key; the key itself goes to PATH as one line (0600), never to
+    the screen. With it, `emporia agent recover` gives the agent a new identity
+    key even when the old one is lost or in someone else's hands. Only a person
+    runs it."""
+    import httpx
+
+    from emporia import key_recovery, key_rotation
+    if not out:
+        print("agent recovery-key: --out PATH says where to write the key (a file that does not exist yet)")
+        return 1
+    found = _agent_to_change("recovery-key", name)
+    if not found:
+        return 1
+    _profile, agent_id, _env, dotenv, source, key_dir = found
+    client = http or httpx.Client(base_url=relay_url(), timeout=15)
+    try:
+        made = key_recovery.make_recovery_key(agent_id, key_dir, client, Path(out).expanduser(), source=source,
+                                              source_env=dotenv)
+    except key_rotation.RotationError as e:
+        print(f"agent recovery-key: {e}")
+        return 1
+    finally:
+        if http is None:
+            client.close()
+    print(f"  {agent_id}: recovery key made; its hash is committed on {relay_url()}. The key is in {made['out']} "
+          "(owner-only), as one line.\n"
+          "  Print that line on paper, or store it in a password manager — either works — then delete the file.\n"
+          "  Anyone who has it can take the agent's identity, so keep it away from the machine the agent runs on,\n"
+          "  and never give it to an agent.")
+    return 0
+
+
+def cmd_agent_recover(name: str, key_file: str = "", key_source: str = "", compromised_since: str = "",
+                      yes: bool = False, http: Any = None) -> int:
+    """P246: `emporia agent recover` — a new identity key for an agent whose key is
+    lost or stolen, authorised by its recovery key. The old key's time ends at
+    --compromised-since (default: now); key changes made from then on are undone.
+    The agent keeps its name and identity. Only a person runs it."""
+    import getpass
+
+    import httpx
+
+    from emporia import key_recovery, key_rotation, key_source as ks
+    found = _agent_to_change("recover", name)
+    if not found:
+        return 1
+    profile, agent_id, _env, dotenv, source, key_dir = found
+    try:
+        if key_file:
+            text = Path(key_file).expanduser().read_text()
+        elif key_source:
+            text = ks.read_text(key_source, dotenv)
+        else:
+            text = getpass.getpass("Recovery key (the line you saved; nothing is shown as you type): ")
+        recovery = key_recovery.decode_recovery_key(text)
+    except (OSError, ks.KeySourceError, UnicodeDecodeError) as e:
+        print(f"agent recover: could not read the recovery key: {e}")
+        return 1
+    except key_rotation.RotationError as e:
+        print(f"agent recover: {e}")
+        return 1
+    print(f"This gives {agent_id} a new identity key on {relay_url()}, authorised by its recovery key. The old key is "
+          f"trusted for what it signed before {compromised_since or 'now'} and not after; key changes made from then "
+          "on are undone.\nWhoever holds BOTH the old key and the recovery key can still win; recovery protects an "
+          "agent that lost, or had stolen, one of them.")
+    if not (yes or ask(f"Recover {agent_id}'s identity?", False)):
+        return 1
+    client = http or httpx.Client(base_url=relay_url(), timeout=15)
+    try:
+        out = key_recovery.recover_identity_key(agent_id, key_dir, client, recovery,
+                                                compromised_since=compromised_since, source=source)
+    except key_rotation.RotationError as e:
+        print(f"agent recover: {e}")
+        return 1
+    finally:
+        if http is None:
+            client.close()
+    _after_key_change(profile, agent_id, out, source, dotenv)
+    if out["superseded"]:
+        print(f"  {len(out['superseded'])} key change(s) made after that time were undone; the relay keeps them "
+              "as evidence.")
+    print("  The recovery key is spent. Make a new one now: emporia agent recovery-key --out PATH")
     return 0
 
 
@@ -3208,6 +3316,8 @@ def _setup_summary(profile: Path, name: str, role: str) -> None:
               + (f"asks you above ${int(approve) / 100:.2f}" if approve else "never asks you"))
     for w in _role_warnings(role, bool(wallets), backend):
         print(f"  ! {w}")
+    print(f"  Recovery    make a recovery key now, in your own terminal, so a lost or stolen identity key is not the end of "
+          f"{name}: emporia agent recovery-key --agent {name} --out PATH (print it, or keep it in a password manager)")
     print(f"  Check it any time: emporia doctor --profile {name}")
 
 
@@ -4997,16 +5107,30 @@ def build_parser() -> argparse.ArgumentParser:
 
     ag2 = sub.add_parser("agent", help="an agent leaves a relay, is deleted from this machine, has its "
                                        "secrets moved out of config.yaml (secure), its plugin updated (refresh) "
-                                       "or its identity key changed (rotate-key)")
-    ag2.add_argument("action", choices=["leave", "delete", "secure", "refresh", "inbox-clear", "rotate-key"])
-    ag2.add_argument("url_or_name", help="leave: the relay's URL; delete, secure, refresh, inbox-clear, rotate-key: "
-                                         "the agent (secure, refresh, inbox-clear: or all)")
+                                       "or its identity key changed (rotate-key), given a recovery key "
+                                       "(recovery-key) or replaced with it when lost (recover)")
+    ag2.add_argument("action", choices=["leave", "delete", "secure", "refresh", "inbox-clear", "rotate-key",
+                                        "recovery-key", "recover"])
+    ag2.add_argument("url_or_name", nargs="?", default="",
+                     help="leave: the relay's URL; delete, secure, refresh, inbox-clear, rotate-key: "
+                          "the agent (secure, refresh, inbox-clear: or all)")
     ag2.add_argument("name", nargs="?", default="", help="leave: the agent")
     ag2.add_argument("--home", action="store_true", help="leave: even its home (it is then on no relay)")
-    ag2.add_argument("--yes", action="store_true", help="rotate-key: do not ask first")
+    ag2.add_argument("--yes", action="store_true", help="rotate-key, recover: do not ask first")
+    ag2.add_argument("--agent", default="", help="recovery-key, recover: the agent (default: this profile's)")
+    ag2.add_argument("--out", default="", help="recovery-key: the file to write the recovery key to (0600)")
+    ag2.add_argument("--recovery-key-file", default="", help="recover: a file holding the recovery key")
+    ag2.add_argument("--recovery-key-source", default="",
+                     help="recover: where the recovery key is kept, e.g. cmd:op read op://Vault/Item/field "
+                          "(without either, you are asked to type it)")
+    ag2.add_argument("--compromised-since", default="",
+                     help="recover: when the old key stopped being only yours (ISO time; default now)")
     ag2.set_defaults(func=lambda a: cmd_agent_secure(a.url_or_name) if a.action == "secure" else
                      cmd_agent_refresh(a.url_or_name) if a.action == "refresh" else
                      cmd_agent_rotate_key(a.url_or_name, a.yes) if a.action == "rotate-key" else
+                     cmd_agent_recovery_key(a.agent or a.url_or_name, a.out) if a.action == "recovery-key" else
+                     cmd_agent_recover(a.agent or a.url_or_name, a.recovery_key_file, a.recovery_key_source,
+                                       a.compromised_since, a.yes) if a.action == "recover" else
                      cmd_agent_inbox_clear(a.url_or_name) if a.action == "inbox-clear" else cmd_agent(
         argparse.Namespace(action=a.action, url=a.url_or_name if a.action == "leave" else "",
                            name=a.name if a.action == "leave" else a.url_or_name, home=a.home)))

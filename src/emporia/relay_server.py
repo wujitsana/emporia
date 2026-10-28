@@ -580,6 +580,10 @@ def _jwt_decode(token: str) -> dict | None:
         return None
     if payload.get("exp", 0) < time.time():
         return None
+    # P246: a token from before the agent's last key recovery was issued to a key it no longer has.
+    floor = _SESSION_FLOOR.get(str(payload.get("agent_id") or ""))
+    if floor is not None and payload.get("issued", 0) < floor:
+        return None
     return payload
 
 
@@ -1276,7 +1280,21 @@ def init_db() -> None:
                 at TEXT NOT NULL,
                 signed_by TEXT NOT NULL DEFAULT 'key',
                 signature TEXT NOT NULL,
+                commitment TEXT NOT NULL DEFAULT '',
+                recovery_public_key TEXT NOT NULL DEFAULT '',
+                compromised_since TEXT NOT NULL DEFAULT '',
+                recorded_at REAL NOT NULL DEFAULT 0,
                 PRIMARY KEY (stable_id, step_no)
+            );
+
+            -- P246: steps a recovery undid (a thief's key changes after the key was
+            -- lost), kept and served as evidence. They are no longer part of the log.
+            CREATE TABLE IF NOT EXISTS agent_key_log_superseded (
+                stable_id TEXT NOT NULL,
+                seq INTEGER NOT NULL,
+                step_json TEXT NOT NULL,
+                superseded_at TEXT NOT NULL,
+                PRIMARY KEY (stable_id, seq)
             );
 
             CREATE TABLE IF NOT EXISTS schema_migrations (
@@ -1289,6 +1307,7 @@ def init_db() -> None:
         _migrate_dm_threads(conn)
         _migrate_federated_dms(conn)
         _migrate_key_logs(conn)
+        _load_session_floors(conn)      # P246
         _migrate_payments(conn)
         _migrate_settlements(conn)
         _migrate_settlement_dedupe_key(conn)
@@ -1898,10 +1917,15 @@ def _migrate_federated_dms(conn: Any) -> None:
 def _migrate_key_logs(conn: Any) -> None:
     """P245: the key log a linked relay served, kept with the listing it signed
     and the remote agent pinned — so a reader here can check them without asking
-    the other relay again."""
+    the other relay again. P246: the fields a commitment or a recovery step adds
+    to this relay's own log."""
     for table, col, decl in (("listings", "agent_key_log_json", "TEXT"),
                              ("remote_agents", "stable_id", "TEXT NOT NULL DEFAULT ''"),
-                             ("remote_agents", "key_log_json", "TEXT NOT NULL DEFAULT '[]'")):
+                             ("remote_agents", "key_log_json", "TEXT NOT NULL DEFAULT '[]'"),
+                             ("agent_key_log", "commitment", "TEXT NOT NULL DEFAULT ''"),
+                             ("agent_key_log", "recovery_public_key", "TEXT NOT NULL DEFAULT ''"),
+                             ("agent_key_log", "compromised_since", "TEXT NOT NULL DEFAULT ''"),
+                             ("agent_key_log", "recorded_at", "REAL NOT NULL DEFAULT 0")):
         if col not in {r[1] for r in conn.execute(f"PRAGMA table_info({table})").fetchall()}:
             conn.execute(f"ALTER TABLE {table} ADD COLUMN {col} {decl}")
 
@@ -3427,6 +3451,10 @@ _NON_AGENT_COLUMNS: frozenset[tuple[str, str]] = frozenset({
     ("agent_key_log", "stable_id"), ("agent_key_log", "step_no"), ("agent_key_log", "old_key"),
     ("agent_key_log", "new_key"), ("agent_key_log", "at"), ("agent_key_log", "signed_by"),
     ("agent_key_log", "signature"), ("listings", "agent_key_log_json"),
+    ("agent_key_log", "commitment"), ("agent_key_log", "recovery_public_key"),
+    ("agent_key_log", "compromised_since"), ("agent_key_log", "recorded_at"),
+    ("agent_key_log_superseded", "stable_id"), ("agent_key_log_superseded", "seq"),
+    ("agent_key_log_superseded", "step_json"), ("agent_key_log_superseded", "superseded_at"),
     ("remote_agents", "stable_id"), ("remote_agents", "key_log_json"),
     ("room_adverts", "room_id"), ("room_adverts", "stable_id"), ("room_adverts", "public_key_hex"),
     ("room_adverts", "signature"), ("room_adverts", "advertised_at"),
@@ -3569,13 +3597,53 @@ def stable_id_for(public_key_hex: str) -> str:
 def agent_key_log(conn: Any, stable_id: str | None) -> list[dict[str, str]]:
     """P245: an agent's key log as this relay holds it — its signed steps, oldest
     first, in the form `wire.key_log_windows` reads. [] for an agent that never
-    changed key."""
+    changed key. P246: a step is a key change, a commitment to a recovery key or
+    a recovery."""
     if not stable_id:
         return []
-    return [{"old": r["old_key"], "new": r["new_key"], "at": r["at"], "by": r["signed_by"],
-             "signature": r["signature"]}
-            for r in conn.execute("SELECT * FROM agent_key_log WHERE stable_id = ? ORDER BY step_no",
-                                  (stable_id,)).fetchall()]
+    out = []
+    for r in conn.execute("SELECT * FROM agent_key_log WHERE stable_id = ? ORDER BY step_no",
+                          (stable_id,)).fetchall():
+        if r["signed_by"] == "commit":
+            out.append({"by": "commit", "commitment": r["commitment"], "at": r["at"], "signature": r["signature"]})
+        elif r["signed_by"] == "recovery":
+            out.append({"by": "recovery", "old": r["old_key"], "new": r["new_key"],
+                        "recovery_public_key": r["recovery_public_key"],
+                        "compromised_since": r["compromised_since"], "at": r["at"], "signature": r["signature"]})
+        else:
+            out.append({"old": r["old_key"], "new": r["new_key"], "at": r["at"], "by": r["signed_by"],
+                        "signature": r["signature"]})
+    return out
+
+
+def agent_key_log_superseded(conn: Any, stable_id: str | None) -> list[dict[str, Any]]:
+    """P246: the steps a recovery undid, as they were signed, oldest first."""
+    if not stable_id:
+        return []
+    return [json.loads(r["step_json"]) for r in conn.execute(
+        "SELECT step_json FROM agent_key_log_superseded WHERE stable_id = ? ORDER BY seq", (stable_id,)).fetchall()]
+
+
+def _write_key_log_step(conn: Any, stable_id: str, step_no: int, step: dict[str, Any]) -> None:
+    conn.execute(
+        "INSERT INTO agent_key_log (stable_id, step_no, old_key, new_key, at, signed_by, signature, commitment, "
+        "recovery_public_key, compromised_since, recorded_at) VALUES (?,?,?,?,?,?,?,?,?,?,?)",
+        (stable_id, step_no, step.get("old", ""), step.get("new", ""), step["at"], step.get("by", "key"),
+         step["signature"], step.get("commitment", ""), step.get("recovery_public_key", ""),
+         step.get("compromised_since", ""), time.time()))
+
+
+#: P246: when each agent's last recovery was recorded, by handle. A bearer token
+#: issued before then was issued to a key the agent no longer has.
+_SESSION_FLOOR: dict[str, float] = {}
+
+
+def _load_session_floors(conn: Any) -> None:
+    _SESSION_FLOOR.clear()
+    for r in conn.execute(
+            "SELECT a.agent_id, MAX(l.recorded_at) AS t FROM authorized_agents a JOIN agent_key_log l "
+            "ON l.stable_id = a.stable_id WHERE l.signed_by = 'recovery' GROUP BY a.agent_id").fetchall():
+        _SESSION_FLOOR[r["agent_id"]] = r["t"]
 
 
 class AgentRegistry:
@@ -3798,21 +3866,85 @@ class AgentRegistry:
             if twin:
                 raise ValueError(f"That key is already registered as '{twin['agent_id']}'")
             log = agent_key_log(conn, row["stable_id"])
-            held = {k for s in log for k in (s["old"], s["new"])}
+            held = {k for s in [*log, *agent_key_log_superseded(conn, row["stable_id"])]
+                    for k in (s.get("old"), s.get("new")) if k}
             if new_public_key_hex in held or stable_id_for(new_public_key_hex) == row["stable_id"]:
                 raise ValueError("this agent already held that key")
-            conn.execute(
-                "INSERT INTO agent_key_log (stable_id, step_no, old_key, new_key, at, signed_by, signature) "
-                "VALUES (?,?,?,?,?,?,?)",
-                (row["stable_id"], len(log), step["old"], step["new"], step["at"], step.get("by", "key"),
-                 step["signature"]),
-            )
+            _write_key_log_step(conn, row["stable_id"], len(log), step)
             conn.execute(
                 "UPDATE authorized_agents SET public_key_hex = ? WHERE agent_id = ?",
                 (new_public_key_hex, agent_id),
             )
         return {"agent_id": agent_id, "stable_id": row["stable_id"],
                 "public_key_hex": new_public_key_hex}
+
+    def add_recovery_commitment(self, agent_id: str, step: dict) -> list[dict]:
+        """P246: write a commitment step (signed by the agent's current key) to its
+        key log, and return the log. Refused unless the whole log with it is valid:
+        which also means no commitment is live, so a thief with the key cannot
+        replace the owner's, and none repeats an earlier one."""
+        from emporia import wire
+        with DB_LOCK, get_db() as conn:
+            row = conn.execute("SELECT public_key_hex, stable_id FROM authorized_agents WHERE agent_id = ?",
+                               (agent_id,)).fetchone()
+            if not row:
+                raise ValueError(f"Agent not found: {agent_id}")
+            log = agent_key_log(conn, row["stable_id"])
+            if wire.live_commitment(log):
+                raise ValueError("this agent already has a recovery commitment; a recovery spends it")
+            if not wire.key_log_windows(row["stable_id"], [*log, step], verify, row["public_key_hex"]):
+                raise ValueError("this commitment does not fit the agent's key log (not signed by its current "
+                                 "key, or one used before)")
+            _write_key_log_step(conn, row["stable_id"], len(log), step)
+        return [*log, step]
+
+    def recover_key(self, agent_id: str, step: dict) -> dict:
+        """P246: give an agent the new key a recovery step names, and rewrite its key
+        log. The step is signed by the recovery key the agent committed to, so
+        nothing here depends on the key being replaced. The log with the step
+        must be valid (`wire.key_log_state`); the key changes made at or after
+        its `compromised_since` are moved to `agent_key_log_superseded`. What the
+        old key published (encryption key, relay list) is cleared: the agent
+        signs it again with the new one. Bearer tokens issued so far stop working."""
+        from emporia import wire
+        with DB_LOCK, get_db() as conn:
+            row = conn.execute("SELECT public_key_hex, stable_id FROM authorized_agents WHERE agent_id = ?",
+                               (agent_id,)).fetchone()
+            if not row:
+                raise ValueError(f"Agent not found: {agent_id}")
+            sid, new = row["stable_id"], step["new"]
+            log = agent_key_log(conn, sid)
+            if not wire.key_log_windows(sid, [*log, step], verify, row["public_key_hex"]):
+                raise ValueError("this recovery does not follow from the agent's key log: it needs a live "
+                                 "commitment that this recovery key matches, `old` must be the key the agent had "
+                                 "just before `compromised_since`, and the key must be new to this agent")
+            since = wire.when_of(step["compromised_since"])
+            kept = [x for x in log if wire.when_of(x["at"]) < since]
+            undone = log[len(kept):]
+            rewritten = [*kept, step]
+            windows = wire.key_log_windows(sid, rewritten, verify, new)
+            if not windows or windows[-1]["key"] != new:
+                raise ValueError("the key log would not lead from the agent's stable id to the new key")
+            twin = conn.execute(
+                "SELECT agent_id FROM authorized_agents WHERE (stable_id = ? OR public_key_hex = ?) "
+                "AND agent_id != ?", (stable_id_for(new), new, agent_id)).fetchone()
+            if twin:
+                raise ValueError(f"That key is already registered as '{twin['agent_id']}'")
+            held = {k for x in agent_key_log_superseded(conn, sid) for k in (x.get("old"), x.get("new")) if k}
+            if new in held:
+                raise ValueError("this agent already held that key")
+            n = conn.execute("SELECT COUNT(*) FROM agent_key_log_superseded WHERE stable_id = ?", (sid,)).fetchone()[0]
+            for i, x in enumerate(undone):
+                conn.execute("INSERT INTO agent_key_log_superseded (stable_id, seq, step_json, superseded_at) "
+                             "VALUES (?,?,?,?)", (sid, n + i, json.dumps(x), step["at"]))
+            conn.execute("DELETE FROM agent_key_log WHERE stable_id = ? AND step_no >= ?", (sid, len(kept)))
+            _write_key_log_step(conn, sid, len(kept), step)
+            conn.execute(
+                "UPDATE authorized_agents SET public_key_hex = ?, encryption_public_key = '', "
+                "encryption_key_signature = '', relay_list_json = NULL WHERE agent_id = ?", (new, agent_id))
+            _SESSION_FLOOR[agent_id] = time.time()
+        return {"agent_id": agent_id, "stable_id": sid, "public_key_hex": new, "key_log": rewritten,
+                "superseded": undone}
 
     def rename(self, agent_id: str, new_agent_id: str) -> dict:
         """Move an agent to a new handle, carrying every reference with it (P47b).
@@ -3875,6 +4007,8 @@ class AgentRegistry:
                 )
             for table, column in _RENAME_JSON_COLUMNS:
                 _rename_in_json_column(conn, table, column, agent_id, new_agent_id)
+            if agent_id in _SESSION_FLOOR:      # P246: a recovery's cut-off goes with the agent
+                _SESSION_FLOOR[new_agent_id] = _SESSION_FLOOR.pop(agent_id)
 
         return {
             "agent_id": new_agent_id,
@@ -4477,7 +4611,8 @@ def _check_rate_limit(request: Request) -> JSONResponse | None:
     if ip in _RATE_LIMIT_EXEMPT_HOSTS or ip == "testclient":
         return None
     path = request.url.path
-    bucket = "auth" if path in _AUTH_PATHS else ("write" if request.method not in ("GET", "HEAD") else "default")
+    # P246: the key-recovery route takes no credential but a signature, so it is throttled like sign-in.
+    bucket = "auth" if path in _AUTH_PATHS or path.endswith("/key-recovery") else ("write" if request.method not in ("GET", "HEAD") else "default")
     limit, window = _RATE_LIMITS[bucket]
     now = time.time()
     key = (ip, bucket)
@@ -5684,6 +5819,7 @@ async def dashboard_session(req: DashboardSessionRequest):
         "agent_id": req.agent_id,
         "relay_id": RELAY_ID,
         "iat": int(now),
+        "issued": now,
         "exp": int(now + _JWT_TTL_SECONDS),
     })
     # Store under challenge_id so the polling dashboard can pick it up automatically

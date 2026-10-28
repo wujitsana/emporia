@@ -39,7 +39,7 @@ from typing import Any
 from fastapi import HTTPException, Request
 
 from emporia.addresses import address, canonical_host, host_of, own_host, same_host, split_address
-from emporia.identity import federation_signable_bytes, normalize_peer_url, sign_raw_relay, verify_raw
+from emporia.identity import federation_signable_bytes, follow_key_log, normalize_peer_url, sign_raw_relay, verify_raw
 
 SETTING = "EMPORIA_FEDERATED_DMS"
 WINDOW_SECONDS = 300
@@ -212,8 +212,8 @@ def pin_remote(peer: str, record: dict[str, Any]) -> dict[str, Any]:
         # A different key: only the agent's own signed steps from the pinned key to it will do.
         pinned_log = json.loads(row["key_log_json"] or "[]")
         pinned_id = row["stable_id"] or wire.stable_id_for(row["public_key_hex"])
-        if stable_id != pinned_id or row["public_key_hex"] not in {w["key"] for w in windows} \
-                or not wire.key_log_extends(pinned_log, log):
+        if stable_id != pinned_id or not follow_key_log(
+                pinned_id, row["public_key_hex"], pinned_log, pub, log):
             raise HTTPException(409, f"{addr} now presents a different identity key than the one pinned on "
                                      f"first contact, and its signed key log does not lead from that one "
                                      f"to this — refusing it")

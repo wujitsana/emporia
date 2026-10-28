@@ -44,6 +44,38 @@ def _session(http: Any, agent_id: str, priv: ed25519.Ed25519PrivateKey) -> dict[
     return {"Authorization": f"Bearer {r.json()['token']}"}
 
 
+def load_agent_key(agent_id: str, key_dir: Path, source: str = "",
+                   source_env: dict[str, str] | None = None) -> ed25519.Ed25519PrivateKey:
+    """The agent's identity key as it is kept now: in `source` (a password
+    manager, an environment variable) or in its key file in `key_dir`."""
+    try:
+        if source:
+            from emporia.key_source import key32
+            return ed25519.Ed25519PrivateKey.from_private_bytes(key32(source, source_env))
+        return load_identity_key(LocalAgent(agent_id, key_dir, identity_source=source))
+    except (OSError, ValueError) as e:
+        raise RotationError(f"could not read {agent_id}'s identity key: {e}") from e
+
+
+def install_identity_key(agent_id: str, key_dir: Path, new_file: Path, *, kept: str = "rotated") -> dict[str, Any]:
+    """Put the new key (in `new_file`, which the relay has taken) where the agent
+    reads its key from, the old one beside it as `<name>.<kept>-<time>`. Returns
+    `installed` (True), `new_key_file` and `kept_old_key_file` (None if the old key
+    was not a file here). Used after a rotation and after a recovery."""
+    live = LocalAgent(agent_id, key_dir).identity_key
+    out: dict[str, Any] = {"installed": True, "new_key_file": live, "kept_old_key_file": None}
+    if live.exists():
+        stamped = live.with_name(f"{live.name}.{kept}-{time.strftime('%Y%m%dT%H%M%SZ', time.gmtime())}")
+        backup, n = stamped, 0
+        while backup.exists():          # two changes in one second
+            n += 1
+            backup = stamped.with_name(f"{stamped.name}-{n}")
+        identity._write_secret_atomically(backup, live.read_bytes())
+        out["kept_old_key_file"] = backup
+    os.replace(new_file, live)
+    return out
+
+
 def rotate_identity_key(
     agent_id: str, key_dir: Path, http: Any, *, source: str = "", source_env: dict[str, str] | None = None,
 ) -> dict[str, Any]:
@@ -56,15 +88,7 @@ def rotate_identity_key(
     `new_key_file`, `installed`, `kept_old_key_file` (None if the old key was
     not a file here) and `key_log` as the relay now holds it."""
     stem = identity._keyfile_stem(agent_id)
-    agent = LocalAgent(agent_id, key_dir, identity_source=source)
-    try:
-        if source:
-            from emporia.key_source import key32
-            old_priv = ed25519.Ed25519PrivateKey.from_private_bytes(key32(source, source_env))
-        else:
-            old_priv = load_identity_key(agent)
-    except (OSError, ValueError) as e:
-        raise RotationError(f"could not read {agent_id}'s identity key: {e}") from e
+    old_priv = load_agent_key(agent_id, key_dir, source, source_env)
     old_pub = _public_hex(old_priv)
     new_file = key_dir / f"{stem}.priv.new"
 
@@ -123,16 +147,5 @@ def rotate_identity_key(
                            "key_log": key_log}
     if source:
         return out
-    # The relay has the new key: put it where the agent reads it, the old one beside it.
-    live = agent.identity_key
-    if live.exists():
-        kept = live.with_name(f"{live.name}.rotated-{time.strftime('%Y%m%dT%H%M%SZ', time.gmtime())}")
-        stamped, n = kept, 0
-        while kept.exists():            # two changes in one second
-            n += 1
-            kept = stamped.with_name(f"{stamped.name}-{n}")
-        identity._write_secret_atomically(kept, live.read_bytes())
-        out["kept_old_key_file"] = kept
-    os.replace(new_file, live)
-    out.update(installed=True, new_key_file=live)
+    out.update(install_identity_key(agent_id, key_dir, new_file))
     return out

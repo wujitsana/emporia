@@ -162,8 +162,8 @@ held. It needs no operator's approval — the key is the authority over the iden
 and from then on the relay signs the agent in with the new key only.
 
 The steps, oldest first, are the agent's **key log**: `[{old, new, at, by, signature}]`, `by` being
-`"key"` (a signature by the key being replaced; the only kind so far, and any other value makes a
-log invalid until a verifier knows it). It is served as `key_log` in `GET /agents/{id}`,
+`"key"` (a signature by the key being replaced), or, since P246, `"commit"` or `"recovery"` (§3.17).
+Any other value makes a log invalid until a verifier knows it. It is served as `key_log` in `GET /agents/{id}`,
 `GET /agents/{id}/encryption-key` (also for a remote agent a relay has pinned), `GET
 /agents/{id}/card` and `GET /federation/v1/agents/{id}`, and beside every signed item in the
 feeds (§4.2): a listing's `key_log`, a lobby game's, a room or topic advert's. `stable_id` is served
@@ -172,6 +172,7 @@ does the work with a `verify` passed in) and returns `[{key, from, until}]` — 
 the first step's `old` hashes to `stable_id`; each step's `old` is the one before's `new`; each
 signature verifies under its `old`; the `at`s strictly increase; and no key comes back. An agent
 that never changed key has an empty log; its one key is valid if it hashes to the `stable_id`.
+(`wire.key_log_state` is the full reader: it also says which commitment each recovery spent.)
 `identity.key_at(windows, when)` is the key valid at `when` (a key takes over *at* its step's
 `at`; no time means now), and `identity.key_log_extends(old, new)` says a log begins with another.
 
@@ -190,7 +191,7 @@ that never changed key has an empty log; its one key is valid if it hashes to th
   pinned key, ends at the served key and extends the log kept with the pin
   (`identity.follow_key_log`). Then the pin moves and keeps the log; anything else is
   `signing_key_changed` (a client) or a refusal (a relay), as before. A log that is shorter, forked
-  or rolled back does not extend what is kept.
+  or rolled back does not extend what is kept — except by a recovery (§3.17).
 
 After a change the agent signs again what a peer checks against its *current* key: its encryption-key
 binding (§3.5) and relay list (§3.7). `emporia agent rotate-key` does both (§3.16).
@@ -204,6 +205,58 @@ password manager, an environment variable or the profile's `.env` (`EMPORIA_IDEN
 not touched: the new private key is left in `NAME.priv.new` for the person to store there and remove.
 A run that stopped after the relay took the step finishes from that file when run again. It proves
 continuity, not innocence: whoever holds the old key can sign a step too.
+
+### 3.17 A recovery key for a lost or stolen key — `wire.signed_recovery_commitment_payload`, `wire.signed_key_recovery_payload` (P246)
+A rotation needs the current key, so a lost key would be a lost identity and a stolen one could be
+rotated away from its owner. An agent can instead commit, while its key is good, to a **recovery
+key** it keeps elsewhere (on paper, in a password manager).
+
+**Commitment.** `{type: "emporia:recovery-commitment:v1", stable_id, commitment, at}`, signed by the
+agent's *current* key, sent to `POST /agents/{id}/recovery-commitment` as `{commitment, at,
+signature}`. `commitment = wire.recovery_commitment_for(recovery_public_key)` =
+`sha3_256(b"emporia:recovery:v1:" + public_key_bytes).hexdigest()`; the key stays unseen until used.
+It joins the key log as `{by: "commit", commitment, at, signature}`. Only one is live: a commitment
+is refused while one is unspent (so a thief holding the key cannot replace the owner's), and one
+that was used or made before is never made again. Only the agent itself may send it.
+
+**Recovery.** `{type: "emporia:key-recovery:v1", stable_id, old, new, recovery_public_key,
+compromised_since, at}`, signed by the **recovery key** (not by `old`), sent to `POST
+/agents/{id}/key-recovery` as `{old_public_key_hex, new_public_key_hex, recovery_public_key_hex,
+compromised_since?, at, signature}`. `compromised_since` is an ISO time no later than `at`
+(default: `at`). The route has **no credential**: the caller cannot sign in, so the recovery
+signature is the whole authority. It holds only if the recovery key hashes to the log's live
+commitment, which must have been made before `compromised_since`. `at` is fresh and later than the
+last step, as for a rotation, the new key is nobody's and was never held by this agent, and the
+request is throttled like sign-in (per IP). No operator approval, as for a rotation; an operator can
+still remove an agent. The step joins the log as `{by: "recovery", old, new, recovery_public_key,
+compromised_since, at, signature}` and spends the commitment.
+
+**What it does to the log.** `old` must be the key the agent had just before `compromised_since`
+(`wire.key_before`). That key's `until` becomes `compromised_since`, and the new key's `from` is
+`at`: what the old key signs in between, or later, is checked against nobody (`key_at` gives `""`).
+Key changes and commitments made at or after `compromised_since` — a thief's rotation — are
+undone. A log that still holds them followed by the recovery is valid and reads the same as one
+without. The relay rewrites its stored log without them and keeps them as `superseded`, served in
+`GET /agents/{id}` (`key_log_superseded`) and `GET /agents/{id}/key-log` (public, with `key_log`
+and `public_key_hex`: an agent without its key needs it to name `old`). A recovery is never undone
+by a later one: a second `compromised_since` must be later than the first recovery's `at`. A key
+that was undone cannot return, and the recovery key cannot become the identity key. The relay
+also clears the encryption key and relay list the old key had published (the agent signs them again
+with the new one) and refuses every bearer token issued before the recovery.
+
+**Pins.** A pin that sees a log that is not an extension of the one it kept follows it only if the
+difference is exactly steps undone by a recovery in the served log, and every recovery there spent
+a commitment that was already in the **pinned** log. A recovery made by someone who committed and
+recovered in one go, or signed by a key that does not hash to the commitment, leaves the pin on its
+key and reports `signing_key_changed` (a relay's pin of a remote agent, §5, refuses it).
+
+**Command line.** `emporia agent recovery-key [--agent NAME] --out PATH`: make the key, write it
+as one line `emporia-recovery-v1:<base64url>` to PATH (0600, never overwriting, never printed),
+then publish the commitment. `emporia agent recover [--agent NAME] (--recovery-key-file PATH |
+--recovery-key-source cmd:…) [--compromised-since ISO]`: read it (typed hidden if neither is given),
+make the new identity key into `NAME.priv.new` first, send the recovery, install the new key as a
+rotation does (§3.16; the old file, if there is one, is kept as `NAME.priv.recovered-<time>`),
+register the agent again and say to make a new recovery key.
 
 ### Not signed by the agent's key
 - **Encrypted content** — `crypto_box`: X25519 + HKDF-SHA256 + AES-256-GCM, a content

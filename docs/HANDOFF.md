@@ -166,6 +166,9 @@ this", not that A said it: on listings, a relay is trusted to speak for its agen
    signature and the peer-key pin: they prove which relay sent it, a separate fact.
    - **Key rotation (P245):** after `emporia agent rotate-key` the agent's current key won't hash to
      its `stable_id`; its signed `key_log` leads from the key that does (`wire.key_verdict`).
+   - **Key recovery (P246):** the log may also hold `commit` and `recovery` steps, and after a
+     recovery the key that signed an item must be the key `key_at` gives for the time it was
+     recorded — read the log through `wire.key_log_windows`, never by walking the steps.
 6. **The same for the lobby:** `federated_open_sessions` (`/federation/v1/open-sessions`) is
    relay-signed only, so open games need the same treatment. Do it in the same item, or
    immediately after.

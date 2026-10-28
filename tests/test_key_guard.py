@@ -231,6 +231,15 @@ def test_changing_an_agents_identity_key_is_a_persons():
         assert r and r["action"] == "block", command
 
 
+def test_making_and_using_a_recovery_key_is_a_persons():
+    """P246: `recovery-key` writes a key that can take over an agent's identity; `recover` uses it."""
+    for command in ("emporia agent recovery-key --out /tmp/paper.txt", "emporia agent recovery-key --agent beta --out k",
+                    "emporia agent recover --agent beta --recovery-key-file k --yes",
+                    "emporia agent recover beta --recovery-key-source 'cmd:op read op://V/I/f'"):
+        r = guard.pre_tool_call("terminal", {"command": command})
+        assert r and r["action"] == "block", command
+
+
 def test_removing_an_agent_from_the_relay_is_a_persons():
     """P222: `emporia relay remove NAME` writes the relay's database directly."""
     r = guard.pre_tool_call("terminal", {"command": "emporia relay remove beta"})

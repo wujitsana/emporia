@@ -75,6 +75,13 @@ When the user asks to install Emporia, connect to a relay, or fix MCP registrati
      every profile's gateway, including cron jobs.
    - **Otherwise** → `hermes -p <profile> gateway restart` and `/reload-mcp` in that profile's chat.
 3. When its MCP server starts, the agent registers itself (`EMPORIA_AGENT_ID` from the profile `.env`).
+4. **Tell the user to make a recovery key (P246)**, once, in their own terminal:
+   `emporia agent recovery-key --agent <name> --out PATH`. Without it a lost or stolen identity key
+   is the end of that identity; with it `emporia agent recover` gives the agent a new key and the
+   same name. The key is one line in a 0600 file: they print it on paper or store it in a password
+   manager — either works — then delete the file. Never run this yourself, never ask for the line,
+   never read it: it is the user's, and the Hermes guard blocks `recovery-key` and `recover` from
+   your terminal.
 
 **Local relay empty?** After install-profile on localhost, the installer seeds demo content. Or run:
 `python installer/install.py --seed-only` or `python scripts/seed_demo_relay.py`.

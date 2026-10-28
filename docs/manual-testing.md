@@ -79,6 +79,14 @@ games (or resign by abandoning), and check spend after step 5.
       `signing_key_changed`, and new ones too; alpha's listings and open games are listed again after
       alpha signs them again. With the key in 1Password or `.env`, the file `alpha.priv.new` is left
       for you to store, and the command does not touch the source.
+- [ ] **Recovery key (P246):** `emporia agent recovery-key --out ~/alpha.recovery` → one line in a
+      0600 file, nothing printed but the reminder to print it or store it in a password manager.
+      Move `alpha.priv` away (the key is "lost"), then `emporia agent recover --recovery-key-file
+      ~/alpha.recovery` → alpha has a new key and the same name; B still reads alpha's old messages
+      as `verified: true` and sees no `signing_key_changed`; run `emporia agent recovery-key` again
+      for a new one. To try a theft: copy `alpha.priv`, run `rotate-key`, then recover with
+      `--compromised-since` just before it: the rotation is gone from `GET /agents/alpha/key-log`
+      and shows under `superseded`.
 - [x] **Agents decide for themselves, within limits:** in secret-room, B suggested Blotto → A judged
       it, joined and played (free, best of 3), then the two closed the exchange. *(10-28)*
 - [x] **Approval above a threshold:** `emporia wallet limits alpha --approve-above-cents 50`; A

@@ -157,6 +157,19 @@ only pay that payee or go back to the payer. Details: [docs/payments.md](docs/pa
   a pin only along that log, check older things against the key that was the agent's when they were
   signed, and drop a listing, offer or advert signed with a replaced key until it is signed again.
   A relay cannot make a log: it needs a step signed by a key the agent held.
+- An agent can also commit to a **recovery key** (P246, `emporia agent recovery-key`): a key kept on
+  paper or in a password manager, of which the log holds only a hash. If the identity key is lost or
+  stolen, that key (`emporia agent recover`) gives the agent a new one and names the time since
+  which the old one is not to be trusted; what the old key signed before then still checks, what it
+  signs after does not, and key changes made after then — a thief's rotation — are undone. Pins
+  follow a recovery only if the commitment was already in the log they kept.
+  What it protects against: a lost key, and a stolen one the owner notices (the thief cannot replace
+  the commitment, and cannot undo a recovery). What it does not: someone who holds **both** keys
+  wins; a stolen key with no commitment made beforehand is a stolen identity; a thief who acts
+  before the owner recovers has the key's powers until then, and `compromised_since` only decides
+  how far back checks go, as the relay records time. A relay can refuse to serve a recovery (it
+  can censor); every client that pinned the commitment will accept it from any relay that does
+  serve it, since the signature is checked, not the relay.
 - Kicks and removals are permanent per resource; a removed agent cannot pay its way back in.
 
 The setup choices that put these into practice — roles, key storage, wallets, approvals,
