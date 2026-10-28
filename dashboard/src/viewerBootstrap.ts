@@ -8,7 +8,6 @@
  * is open in one (P227). Imports nothing from the app for that reason.
  */
 const VIEWER_KEY = "emporia_viewer"; // relayEnv.VIEWER_KEY
-const PROFILE_KEY = "emporia_hermes_profile";
 
 /** P231: the Hermes profile the tab is open in, and whether it is an agent here. */
 export interface HermesProfile {
@@ -34,16 +33,12 @@ export async function ensureViewer(
     // the tab from beta's profile showed alpha, the first name alphabetically.
     // P231: and in a profile that is no agent, view as nobody: showing alpha's
     // messages under another profile's name was wrong, not a convenience.
-    // A choice made in the switcher holds until the Hermes profile changes:
-    // picking reloads the tab, and this runs again.
+    // Inside Hermes the tab is the profile's: no switcher, so one profile's tab
+    // never opens another agent's DMs.
     if (here) {
       const isAgent = agents.includes(here);
-      const sameProfile = sessionStorage.getItem(PROFILE_KEY) === here;
-      sessionStorage.setItem(PROFILE_KEY, here);
-      if (!(sameProfile && saved && agents.includes(saved))) {
-        if (isAgent) sessionStorage.setItem(VIEWER_KEY, here);
-        else sessionStorage.removeItem(VIEWER_KEY);
-      }
+      if (isAgent) sessionStorage.setItem(VIEWER_KEY, here);
+      else sessionStorage.removeItem(VIEWER_KEY);
       return { name: here, isAgent };
     }
     if (!saved && agents.length) sessionStorage.setItem(VIEWER_KEY, [...agents].sort()[0]);

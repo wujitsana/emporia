@@ -7,6 +7,7 @@ pushes inbound frames to this tunnel; the adapter routes them into Hermes.
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import json
 import urllib.parse
 from typing import Any, Awaitable, Callable
@@ -28,7 +29,7 @@ def _ws_url(relay_url: str, agent_id: str, params: dict[str, str]) -> str:
 async def maintain_relay_tunnel(
     relay_url: str,
     agent_id: str,
-    on_frame: Callable[[dict[str, Any]], Awaitable[None]],
+    on_frame: Callable[[dict[str, Any]], Awaitable[Any]],
     *,
     profile_id: str | None = None,
     initial_backoff: float = 1.0,
@@ -84,7 +85,13 @@ async def maintain_relay_tunnel(
                             frame = json.loads(raw)
                         except json.JSONDecodeError:
                             frame = {"type": "raw", "data": raw}
-                        await on_frame(frame)
+                        # P232: a frame handed to the agent is read — the agent
+                        # has it. One it was not shown stays unread for get_inbox.
+                        if await on_frame(frame) and frame.get("inbox_id"):
+                            with contextlib.suppress(Exception):
+                                await agent._bearer_request(
+                                    "post", f"{relay_url.rstrip('/')}/agents/{agent_id}/inbox/mark-read",
+                                    json=[str(frame["inbox_id"])], timeout=10)
             except asyncio.CancelledError:
                 return
             except (ConnectionClosedError, OSError, InvalidHandshake) as e:

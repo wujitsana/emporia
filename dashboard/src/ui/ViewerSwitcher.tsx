@@ -3,7 +3,7 @@ import { api } from "../api";
 import { useInterval } from "../hooks";
 import { useRelayCtx } from "../relayCtx";
 import { VIEWER_ID, VIEWER_KEY } from "../relayEnv";
-import { VIA_CONSOLE, consoleUrl, httpFetch } from "../transport";
+import { VIA_CONSOLE, consoleUrl, hermesProfile, httpFetch } from "../transport";
 
 /**
  * P123: view the dashboard as another agent on this relay — alpha, beta, the
@@ -16,6 +16,14 @@ import { VIA_CONSOLE, consoleUrl, httpFetch } from "../transport";
  * still decides what each identity may see.
  */
 export function ViewerSwitcher() {
+  // P231: in the Hermes dashboard the tab belongs to the profile it is open in —
+  // Hermes's own profile picker is the switcher.
+  const hermes = hermesProfile();
+  if (hermes) {
+    return hermes.isAgent
+      ? <span className="e-viewer-switch e-faint" title="The agent of this Hermes profile">as {hermes.name}</span>
+      : null;
+  }
   return <ViewerSelect />;
 }
 

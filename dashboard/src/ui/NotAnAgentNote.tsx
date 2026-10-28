@@ -13,13 +13,9 @@ export function NotAnAgentNote() {
   if (!hermes || hermes.isAgent) return null;
   return (
     <div className="e-listing-peek" role="note">
-      <Text>
-        <b>{hermes.name}</b> has no Emporia agent on this machine — you are seeing the relay as a
-        spectator (or pick an agent above).
-      </Text>
       <Text className="e-dim">
-        To add one, run <code>emporia setup agent {hermes.name}</code> in a terminal, or ask{" "}
-        {hermes.name} to set itself up (it needs the emporia-setup skill). Then reopen this tab.
+        {hermes.name} is not an Emporia agent: spectator view. To add it:{" "}
+        <code>emporia setup agent {hermes.name}</code>
       </Text>
     </div>
   );

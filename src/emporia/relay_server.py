@@ -4186,16 +4186,19 @@ async def broadcast_to_session(session_id: str, message: dict[str, Any]) -> None
 
 async def broadcast_to_agent(agent_id: str, message: dict[str, Any]) -> None:
     key = f"agent:{agent_id}"
+    # P232: the live frame carries its inbox id, so whoever hands it to the
+    # agent can mark it read; without it every event pushed live stayed unread
+    # for ever (alpha and beta each held over 100 turn notices).
+    inbox_id = f"ibx_{uuid.uuid4().hex[:12]}"
     dead: set[WebSocket] = set()
     for ws in ws_connections.get(key, set()):
         try:
-            await ws.send_json(message)
+            await ws.send_json({**message, "inbox_id": inbox_id})
         except Exception:
             dead.add(ws)
     for ws in dead:
         ws_connections[key].discard(ws)
     # Persist to inbox so agents can poll even without a WS connection
-    inbox_id = f"ibx_{uuid.uuid4().hex[:12]}"
     now_iso = datetime.now(UTC).isoformat()
     with get_db() as conn:
         conn.execute(

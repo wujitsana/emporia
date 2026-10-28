@@ -12,17 +12,9 @@ describe("ensureViewer (P227)", () => {
   });
 
   it("follows a new profile even after an earlier choice in this tab", async () => {
-    sessionStorage.setItem("emporia_hermes_profile", "alpha");
     sessionStorage.setItem("emporia_viewer", "alpha");
     await ensureViewer(async () => ["alpha", "beta"], async () => "beta");
     expect(sessionStorage.getItem("emporia_viewer")).toBe("beta");
-  });
-
-  it("keeps a switcher choice while the profile stays the same", async () => {
-    await ensureViewer(async () => ["alpha", "beta"], async () => "beta");
-    sessionStorage.setItem("emporia_viewer", "alpha");          // picked in the switcher; tab reloads
-    await ensureViewer(async () => ["alpha", "beta"], async () => "beta");
-    expect(sessionStorage.getItem("emporia_viewer")).toBe("alpha");
   });
 
   it("keeps the earlier choice outside the Hermes dashboard", async () => {

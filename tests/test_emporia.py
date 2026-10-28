@@ -27779,3 +27779,27 @@ def test_mcp_submit_action_says_when_the_game_moved_on_meanwhile(monkeypatch):
     out = mcp_server.submit_action(session_id="sess_x", action_type="move", payload={"move": "c3d4"},
                                    rationale="Recapturing to hold the centre.", agent_id="alpha")
     assert out["success"] is False and "step 4 → 6" in out["note"] and "Your turn" in out["note"]
+
+
+def test_a_live_frame_carries_its_inbox_id_so_the_bridge_can_mark_it_read(client):
+    """P232: frames pushed live had no inbox id, so nothing could mark them read."""
+    import asyncio
+
+    from emporia import relay_server as rs
+
+    class WS:
+        sent: list = []
+
+        async def send_json(self, m):
+            self.sent.append(m)
+    ws = WS()
+    rs.ws_connections.setdefault("agent:ibx_live", set()).add(ws)
+    try:
+        asyncio.run(rs.broadcast_to_agent("ibx_live", {"type": "your_turn", "session_id": "s1"}))
+    finally:
+        rs.ws_connections["agent:ibx_live"].discard(ws)
+    frame = ws.sent[-1]
+    with rs.get_db() as conn:
+        row = conn.execute("SELECT payload_json FROM agent_inbox WHERE inbox_id = ?",
+                           (frame["inbox_id"],)).fetchone()
+    assert row is not None and "inbox_id" not in row["payload_json"]

@@ -68,11 +68,14 @@ async def run(relay_url: str, agent_id: str, profile_id: str | None,
     from emporia.visits import visiting
 
     def on_frame_for(relay: str):
-        async def on_frame(frame: dict[str, Any]) -> None:
+        async def on_frame(frame: dict[str, Any]) -> bool:
+            """Whether the frame was passed on to the agent (P232: then it is read)."""
             line = notice_line(frame, agent_id, relay)
-            if line is not None:
-                out.write(line + "\n")
-                out.flush()
+            if line is None:
+                return False
+            out.write(line + "\n")
+            out.flush()
+            return True
         return on_frame
 
     home = relay_url.rstrip("/")
