@@ -848,13 +848,19 @@ def generate_keypair(profile_id: str, dry_run: bool = False, *,
     """
     from emporia import identity
 
+    # Only for this key: left set, it pointed every later key read in the same
+    # process (a menu's next step, the relay's JWT secret) at this profile.
+    before = identity.KEY_DIR
     if keys_dir is not None:
         identity.KEY_DIR = Path(keys_dir)
-    key_path = identity.KEY_DIR / f"{profile_id}.priv"
-    if dry_run:
-        print(f"  [dry-run] Would generate keypair at {key_path}")
-        return ("dryrun_pubkey_hex_placeholder", str(key_path))
-    _, pub_bytes = identity.generate_or_load_keypair(profile_id)
+    try:
+        key_path = identity.KEY_DIR / f"{profile_id}.priv"
+        if dry_run:
+            print(f"  [dry-run] Would generate keypair at {key_path}")
+            return ("dryrun_pubkey_hex_placeholder", str(key_path))
+        _, pub_bytes = identity.generate_or_load_keypair(profile_id)
+    finally:
+        identity.KEY_DIR = before
     pub_hex = pub_bytes.hex()
     if key_path.exists():
         print(f"  keypair: {key_path} (existing)")
