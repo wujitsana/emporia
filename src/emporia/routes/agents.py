@@ -273,6 +273,7 @@ async def get_agent_profile(agent_id: str, request: Request):
             "FROM authorized_agents WHERE agent_id = ?",
             (agent_id,),
         ).fetchone()
+        key_log = rs.agent_key_log(conn, row["stable_id"]) if row else []
     if not row:
         raise HTTPException(status_code=404, detail=f"Agent not found: {agent_id}")
     with rs.DB_LOCK, rs.get_db() as conn:
@@ -313,6 +314,9 @@ async def get_agent_profile(agent_id: str, request: Request):
         # nature — it is what every signature on this relay is checked against — and
         # this route already requires an authenticated caller (N4-3).
         "public_key_hex": row["public_key_hex"],
+        # P245: the signed steps from the key its stable id was made from to the
+        # one above. [] for an agent that never changed key.
+        "key_log": key_log,
         "registered_at": row["registered_at"],
         "is_active": bool(row["is_active"]),
         # P195: its own choice, for itself and the operator only.
@@ -374,7 +378,7 @@ async def get_agent_listings(agent_id: str, request: Request, limit: int = 50):
         ).fetchall()
     return {
         "agent_id": agent_id,
-        "listings": rs.annotate_federated([rs.public_listing(r) for r in rows]),
+        "listings": rs.annotate_federated(rs.public_listings(rows)),
     }
 @router.get("/agents/{agent_id}/posts")
 async def get_agent_posts(agent_id: str, request: Request, limit: int = 50):
@@ -683,15 +687,17 @@ async def get_encryption_key(agent_id: str, request: Request):
             if not pinned:
                 raise HTTPException(404, f"Agent not found: {agent_id}")
             return {"agent_id": agent_id, "encryption_public_key": pinned["encryption_public_key"],
-                    "signature": pinned["encryption_key_signature"], "public_key_hex": pinned["public_key_hex"]}
+                    "signature": pinned["encryption_key_signature"], "public_key_hex": pinned["public_key_hex"],
+                    "stable_id": pinned["stable_id"], "key_log": json.loads(pinned["key_log_json"] or "[]")}
         agent_id = name
     if not rs.AGENT_REGISTRY.is_authorized(agent_id):
         raise HTTPException(404, f"Agent not found: {agent_id}")
     key, signature = rs.AGENT_REGISTRY.get_encryption_key(agent_id)
     with rs.DB_LOCK, rs.get_db() as conn:
         row = conn.execute(
-            "SELECT public_key_hex FROM authorized_agents WHERE agent_id = ?", (agent_id,)
+            "SELECT public_key_hex, stable_id FROM authorized_agents WHERE agent_id = ?", (agent_id,)
         ).fetchone()
+        key_log = rs.agent_key_log(conn, row["stable_id"]) if row else []
     # The Ed25519 key rides along so the caller can check the binding without a
     # second round trip. Be precise about what that buys: against a relay that
     # substitutes *both* halves on first contact it buys nothing — that's the TOFU
@@ -704,8 +710,68 @@ async def get_encryption_key(agent_id: str, request: Request):
         "encryption_public_key": key,
         "signature": signature,
         "public_key_hex": row["public_key_hex"] if row else "",
+        # P245: with its stable id and key log, so a client can follow a rotation
+        # from the key it pinned (`identity.pinned_signing_key`).
+        "stable_id": row["stable_id"] if row else "",
+        "key_log": key_log,
     }
 
+
+
+class KeyRotationRequest(BaseModel):
+    new_public_key_hex: str
+    at: str
+    signature: str  # Ed25519, by the current key, over wire.signed_key_rotation_payload()
+
+
+#: P245: how far ahead of this relay's clock a rotation's `at` may be. Things the
+#: agent signs with the new key are dated by this relay's clock, and a key takes
+#: over at `at`: a step dated well ahead would leave them looking unsigned.
+_ROTATION_AHEAD = timedelta(minutes=2)
+
+
+@router.post("/agents/{agent_id}/key-rotations")
+async def rotate_agent_key(agent_id: str, req: KeyRotationRequest, request: Request):
+    """P245: an agent changes its Ed25519 key, keeping its identity. The step
+    is signed by the key being replaced (`wire.signed_key_rotation_payload`)
+    and added to the agent's key log, which this relay serves to anyone who
+    checks what the agent signed. No operator approval: the key is the
+    authority over the identity, not the relay. It proves continuity, not
+    innocence — whoever holds the old key can sign this step too."""
+    import re
+
+    from emporia import deletion, wire
+    rs._require_caller_is(agent_id, request)
+    rs._require_registered(agent_id)
+    rs._enforce_agent_rate_limit(agent_id)
+    when = wire.when_of(req.at)
+    if when is None:
+        raise HTTPException(400, "at must be an ISO 8601 time")
+    if abs(datetime.now(UTC) - when) > deletion.FRESH:
+        raise HTTPException(400, "the request is too old or too far ahead — sign it again")
+    if when > datetime.now(UTC) + _ROTATION_AHEAD:
+        raise HTTPException(400, "at is more than two minutes ahead of this relay's clock")
+    new = req.new_public_key_hex.strip().lower()
+    if not re.fullmatch(r"[0-9a-f]{64}", new):
+        raise HTTPException(400, "new_public_key_hex must be a 64-char lowercase hex string (Ed25519 public key)")
+    with rs.DB_LOCK, rs.get_db() as conn:
+        row = conn.execute("SELECT public_key_hex, stable_id FROM authorized_agents WHERE agent_id = ?",
+                           (agent_id,)).fetchone()
+        log = rs.agent_key_log(conn, row["stable_id"])
+    old = row["public_key_hex"]
+    if not rs.verify(wire.signed_key_rotation_payload(row["stable_id"], old, new, req.at), req.signature, old):
+        raise HTTPException(403, "the step is not signed by this agent's current key")
+    step = {"old": old, "new": new, "at": req.at, "by": "key", "signature": req.signature}
+    if log and (wire.when_of(log[-1]["at"]) or when) >= when:
+        raise HTTPException(409, "at must be later than the agent's last key change")
+    if not wire.key_log_windows(row["stable_id"], [*log, step], rs.verify):
+        raise HTTPException(409, "this agent's key log would not lead from its stable id to the new key")
+    try:
+        rs.AGENT_REGISTRY.rotate_key(agent_id, new, step)
+    except ValueError as e:
+        raise HTTPException(409, str(e)) from e
+    return {"agent_id": agent_id, "stable_id": row["stable_id"], "public_key_hex": new,
+            "fingerprint": fingerprint(new), "key_log": [*log, step]}
 
 
 # ─── P187: where an agent can be found ───────────────────────────────────────
@@ -774,8 +840,10 @@ async def agent_card(agent_id: str):
     from emporia.identity import federation_signable_bytes, get_relay_public_key_hex, sign_raw_relay
     with rs.DB_LOCK, rs.get_db() as conn:
         row = conn.execute(
-            "SELECT agent_id, display_name, public_key_hex, encryption_public_key, encryption_key_signature, "
-            "relay_list_json FROM authorized_agents WHERE agent_id = ? AND is_active = 1", (agent_id,)).fetchone()
+            "SELECT agent_id, display_name, public_key_hex, stable_id, encryption_public_key, "
+            "encryption_key_signature, relay_list_json FROM authorized_agents "
+            "WHERE agent_id = ? AND is_active = 1", (agent_id,)).fetchone()
+        key_log = rs.agent_key_log(conn, row["stable_id"]) if row else []
     if not row or not row["relay_list_json"]:
         raise HTTPException(404, f"No card for {agent_id}")
     published = json.loads(row["relay_list_json"])
@@ -785,6 +853,8 @@ async def agent_card(agent_id: str):
         "display_name": row["display_name"] or row["agent_id"],
         "fingerprint": fingerprint(row["public_key_hex"] or ""),
         "public_key_hex": row["public_key_hex"],
+        "stable_id": row["stable_id"],          # P245
+        "key_log": key_log,
         "encryption_public_key": row["encryption_public_key"] or "",
         "encryption_key_signature": row["encryption_key_signature"] or "",
         "relay_list": published["list"],

@@ -73,6 +73,12 @@ games (or resign by abandoning), and check spend after step 5.
       no mark-read buttons; the unread badge counts real unread events.
 - [x] `emporia agent inbox-clear all` clears the old backlog once; new events clear as the agent's
       bridge delivers them.
+- [ ] **Key rotation (P245):** `emporia agent rotate-key alpha` → the old key file is kept as
+      `alpha.priv.rotated-…`, the new fingerprint is printed, alpha's gateway restarts and signs in.
+      B (which had talked to alpha before) reads alpha's old messages as `verified: true` with no
+      `signing_key_changed`, and new ones too; alpha's listings and open games are listed again after
+      alpha signs them again. With the key in 1Password or `.env`, the file `alpha.priv.new` is left
+      for you to store, and the command does not touch the source.
 - [x] **Agents decide for themselves, within limits:** in secret-room, B suggested Blotto → A judged
       it, joined and played (free, best of 3), then the two closed the exchange. *(10-28)*
 - [x] **Approval above a threshold:** `emporia wallet limits alpha --approve-above-cents 50`; A

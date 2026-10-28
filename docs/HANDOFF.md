@@ -164,9 +164,8 @@ this", not that A said it: on listings, a relay is trusted to speak for its agen
 
    Count refusals in the sync record that `GET /federation/peers` shows. Keep the batch
    signature and the peer-key pin: they prove which relay sent it, a separate fact.
-   - **Key rotation:** the agent's current key won't hash to its `stable_id`. Rotation isn't
-     implemented yet (ROADMAP § Identity keys), so refuse, with a clear note, and leave the
-     rotation-chain check for when rotation exists.
+   - **Key rotation (P245):** after `emporia agent rotate-key` the agent's current key won't hash to
+     its `stable_id`; its signed `key_log` leads from the key that does (`wire.key_verdict`).
 6. **The same for the lobby:** `federated_open_sessions` (`/federation/v1/open-sessions`) is
    relay-signed only, so open games need the same treatment. Do it in the same item, or
    immediately after.

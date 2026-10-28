@@ -944,6 +944,30 @@ def _register_keyed(client, agent_id: str) -> None:
     client.post("/agents/register", json={"agent_id": agent_id, "public_key_hex": pub_hex})
 
 
+def _rotate_keyed(client, agent_id: str) -> str:
+    """P245: change `agent_id`'s key (registered with _register_keyed) through
+    POST /agents/{id}/key-rotations, as `emporia agent rotate-key` does: the step
+    signed by the old key, then the new key written over the key file. Returns
+    the new public key."""
+    from datetime import UTC, datetime
+
+    from cryptography.hazmat.primitives.asymmetric import ed25519
+
+    from emporia import identity, wire
+    headers = {"x-emporia-agent-id": agent_id}
+    stable_id = client.get(f"/agents/{agent_id}", headers=headers).json()["stable_id"]
+    old = identity.get_public_key_hex(agent_id)
+    new_priv = ed25519.Ed25519PrivateKey.generate()
+    new = new_priv.public_key().public_bytes_raw().hex()
+    at = datetime.now(UTC).isoformat()
+    r = client.post(f"/agents/{agent_id}/key-rotations", headers=headers, json={
+        "new_public_key_hex": new, "at": at,
+        "signature": identity.sign(wire.signed_key_rotation_payload(stable_id, old, new, at), agent_id)})
+    assert r.status_code == 200, r.text
+    identity._write_secret_atomically(identity._key_path(agent_id), new_priv.private_bytes_raw())
+    return new
+
+
 def _signed_room(agent_id: str, body: dict) -> dict:
     """P243: a `POST /rooms` body signed by its creator over every setting (with
     the relay's defaults filled in, as the relay verifies them)."""
@@ -2219,6 +2243,7 @@ def test_no_new_identity_as_proof_params():
         ("POST", "/agents/{agent_id}/dm-policy"),  # P185: _require_caller_is-checked
         ("POST", "/agents/{agent_id}/carried-record"),  # P190: _require_caller_is-checked; the record is signed
         ("POST", "/agents/{agent_id}/leave"),  # P195: _require_caller_is-checked
+        ("POST", "/agents/{agent_id}/key-rotations"),  # P245: _require_caller_is-checked, and signed by the current key
         ("GET", "/federation/v1/agents/{agent_id}"),  # P185: a linked relay's signed request; 404 unless opted in
         ("GET", "/payments/settlements"),  # agent_id: filter, but gated by inline auth check
         ("DELETE", "/agoras/topics/{slug}/subscribe"),  # agent_id: _require_caller_is-checked
@@ -2456,6 +2481,7 @@ def test_every_route_has_a_reviewed_auth_posture():
         ("GET", "/messages"),
         ("WS", "/ws/agent/{agent_id}"),
         ("POST", "/rooms"),
+        ("POST", "/agents/{agent_id}/key-rotations"),  # P245: the agent, signing with its current key
         ("POST", "/rooms/{room_id}/join"),
         ("POST", "/rooms/{room_id}/invite"),
         ("POST", "/rooms/{room_id}/kick"),
@@ -24400,24 +24426,19 @@ def test_key_rotation_preserves_the_stable_id(client):
     followed the key would rename the agent every time it did the right thing
     security-wise. Registration is documented as safe to call on every start,
     so this path is ordinary, not exotic."""
-    from emporia.relay_server import AGENT_REGISTRY
-
-    first = client.post("/agents/register", json={
-        "agent_id": "p47_rotate", "public_key_hex": _p47_pubkey("rot_v1"),
-    })
-    assert first.status_code == 200, first.text
-    original = first.json()["stable_id"]
+    _register_keyed(client, "p47_rotate")
+    original = client.get("/agents/p47_rotate", headers={"x-emporia-agent-id": "p47_rotate"}).json()["stable_id"]
 
     # A rotation is not something register() will do for you — a taken handle
     # under a different key is refused (that check is what makes the handle
-    # ownable at all). Rotation goes through the registry's own path.
-    AGENT_REGISTRY.rotate_key("p47_rotate", _p47_pubkey("rot_v2"))
+    # ownable at all). Rotation is its own route (P245), signed by the old key.
+    new_key = _rotate_keyed(client, "p47_rotate")
 
     profile = client.get("/agents/p47_rotate", headers={"x-emporia-agent-id": "p47_rotate"})
     assert profile.status_code == 200, profile.text
     assert profile.json()["stable_id"] == original, \
         "rotating the signing key must not change who the agent is"
-    assert profile.json()["public_key_hex"] == _p47_pubkey("rot_v2")
+    assert profile.json()["public_key_hex"] == new_key
 
 
 def test_re_registering_after_a_rotation_does_not_reallocate_identity(client):
@@ -24432,18 +24453,14 @@ def test_re_registering_after_a_rotation_does_not_reallocate_identity(client):
     left every other P47 test green: the rotation test never touches the UPSERT,
     and the trust-upgrade test re-registers with an unchanged key, so
     `excluded.stable_id` happens to equal what is already stored."""
-    from emporia.relay_server import AGENT_REGISTRY
+    _register_keyed(client, "p47_reregister")
+    original = client.get("/agents/p47_reregister",
+                          headers={"x-emporia-agent-id": "p47_reregister"}).json()["stable_id"]
 
-    first = client.post("/agents/register", json={
-        "agent_id": "p47_reregister", "public_key_hex": _p47_pubkey("rereg_v1"),
-    })
-    assert first.status_code == 200, first.text
-    original = first.json()["stable_id"]
-
-    AGENT_REGISTRY.rotate_key("p47_reregister", _p47_pubkey("rereg_v2"))
+    new_key = _rotate_keyed(client, "p47_reregister")
 
     again = client.post("/agents/register", json={
-        "agent_id": "p47_reregister", "public_key_hex": _p47_pubkey("rereg_v2"),
+        "agent_id": "p47_reregister", "public_key_hex": new_key,
     })
     assert again.status_code == 200, again.text
     assert again.json()["stable_id"] == original, (
@@ -27367,7 +27384,7 @@ def test_the_membership_rule_is_written_in_exactly_one_place():
 # P61 — the schema has a version, and the version has to stay honest
 # ---------------------------------------------------------------------------
 
-# 35 tables, 316 columns, at SCHEMA_VERSION 12. Recomputed by the test below;
+# 36 tables, 326 columns, at SCHEMA_VERSION 13. Recomputed by the test below;
 # when it fails, read *why* before touching this string.
 #
 # V1 -> V2 (P72-4): `bounty_entries` and its UNIQUE (listing_id, nous_user_id)
@@ -27407,7 +27424,12 @@ def test_the_membership_rule_is_written_in_exactly_one_place():
 # V11 -> V12 (P247): `room_adverts` and `topic_adverts`, an owner's signed advert
 # of a room or public topic. A V11 relay would serve empty room and topic feeds
 # from a V12 database.
-_SCHEMA_FINGERPRINT_V12 = "74eca2af9e7da242fc04c8b0364d6d56f7c964c7de68ae3ad0020cb1199b999e"
+#
+# V12 -> V13 (P245): `agent_key_log`, an agent's signed key changes, and the key
+# log kept with a pulled listing (`listings.agent_key_log_json`) and a pinned
+# remote agent (`remote_agents.stable_id`, `key_log_json`). A V12 relay would
+# serve no key log, so other relays would drop a rotated agent's listings.
+_SCHEMA_FINGERPRINT_V13 = "a7db7f49a59063c89796c4f5372b1f6bf514d658139c16d0217972479cb3eafa"
 
 
 def _schema_fingerprint(db_path) -> tuple[str, int, int]:
@@ -27447,9 +27469,9 @@ def test_a_schema_change_requires_a_version_bump():
     from emporia.relay_server import SCHEMA_VERSION
 
     fingerprint, tables, columns = _schema_fingerprint(_test_db)
-    assert (SCHEMA_VERSION, fingerprint) == (12, _SCHEMA_FINGERPRINT_V12), (
+    assert (SCHEMA_VERSION, fingerprint) == (13, _SCHEMA_FINGERPRINT_V13), (
         f"the schema changed ({tables} tables, {columns} columns) or the version "
-        f"moved. Bump SCHEMA_VERSION *and* update _SCHEMA_FINGERPRINT_V12 — in "
+        f"moved. Bump SCHEMA_VERSION *and* update _SCHEMA_FINGERPRINT_V13 — in "
         f"that order, and never the fingerprint alone.\n"
         f"  code version: {SCHEMA_VERSION}\n  fingerprint:  {fingerprint}"
     )

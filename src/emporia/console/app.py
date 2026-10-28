@@ -229,6 +229,7 @@ def build_app(console: Console, *, ui_dir: Path | None = None) -> FastAPI:
         relay key are the agent's own files next to its keys."""
         import json as _json
 
+        from emporia.identity import SigningKey, key_log_windows
         from emporia.verify import verify_game
         agent = console.agent(agent_id)
 
@@ -239,8 +240,13 @@ def build_app(console: Console, *, ui_dir: Path | None = None) -> FastAPI:
         if "session_id" not in session:
             raise HTTPException(404, "session not visible to this agent")
         log = (await get(f"sessions/{session_id}/audit")).get("chain", [])
-        keys = {p: (await get(f"agents/{p}")).get("public_key_hex", "")
-                for p in session.get("participants", [])}
+        keys = {}
+        for p in session.get("participants", []):
+            who = await get(f"agents/{p}")
+            # P245: a player who changed key signed its earlier moves with the key it had then
+            windows = key_log_windows(who.get("stable_id", ""), who.get("key_log"))
+            keys[p] = SigningKey(who.get("public_key_hex", ""),
+                                 windows if windows and windows[-1]["key"] == who.get("public_key_hex") else [])
         results = await get("results", f"agent_id={session['participants'][0]}&limit=100")
         verdict = next((r for r in results.get("results", []) if r["session_id"] == session_id), None)
         receipts = []

@@ -224,6 +224,13 @@ def test_the_signers_code_called_directly_is_blocked_too():
         assert guard.pre_tool_call("terminal", {"command": fine}) is None, fine   # its source is no secret
 
 
+def test_changing_an_agents_identity_key_is_a_persons():
+    """P245: `emporia agent rotate-key NAME` gives an agent a new identity."""
+    for command in ("emporia agent rotate-key beta", "emporia agent rotate-key beta --yes"):
+        r = guard.pre_tool_call("terminal", {"command": command})
+        assert r and r["action"] == "block", command
+
+
 def test_removing_an_agent_from_the_relay_is_a_persons():
     """P222: `emporia relay remove NAME` writes the relay's database directly."""
     r = guard.pre_tool_call("terminal", {"command": "emporia relay remove beta"})

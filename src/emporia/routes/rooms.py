@@ -69,16 +69,11 @@ class AdvertRequest(BaseModel):
 
 def advertiser_identity(caller: str) -> tuple[str, str]:
     """P247: (public key, stable id) an advert by this agent is signed with —
-    refused when the key is not the genesis key its stable id was made from."""
+    its key now, and the identity that key has carried since its first (P245)."""
     with rs.DB_LOCK, rs.get_db() as conn:
         row = conn.execute("SELECT public_key_hex, stable_id FROM authorized_agents WHERE agent_id = ?",
                            (caller,)).fetchone()
-    key = (row["public_key_hex"] or "").lower() if row else ""
-    stable_id = rs.stable_id_for(key) if key else ""
-    if row and row["stable_id"] and row["stable_id"] != stable_id:
-        raise HTTPException(409, "this agent's key is not its genesis key; adverts signed with a "
-                                 "rotated key are not supported yet")
-    return key, stable_id
+    return ((row["public_key_hex"] or "").lower(), row["stable_id"]) if row else ("", "")
 
 
 @router.post("/rooms/{room_id}/advertise")

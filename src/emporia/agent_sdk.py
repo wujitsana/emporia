@@ -796,9 +796,13 @@ class EmporiaAgent:
 
         P244: pinned on first sight (`identity.pinned_signing_key`), and the
         pinned key is what comes back, so a relay serving another key gets
-        `False`, not a pass. `agent_id` is added to `changed` when it did."""
+        `False`, not a pass. `agent_id` is added to `changed` when it did.
+
+        P245: unless the agent's own signed key log leads from the pinned key to
+        the served one; the pin then moves, and older items are checked against
+        the key that signed them (`identity.signing_key_for`)."""
         from emporia.identity import pinned_signing_key
-        served, stable_id = "", ""
+        served, stable_id, key_log = "", "", None
         try:
             # P185: an address (`bob@host`) is looked up where its keys are pinned.
             path = f"/agents/{agent_id}/encryption-key" if "@" in agent_id else f"/agents/{agent_id}"
@@ -806,9 +810,10 @@ class EmporiaAgent:
             resp.raise_for_status()
             body = resp.json()
             served, stable_id = body.get("public_key_hex", "") or "", body.get("stable_id", "") or ""
+            key_log = body.get("key_log")
         except Exception:
             pass
-        return pinned_signing_key(agent_id, self.relay_url, served, stable_id, changed)
+        return pinned_signing_key(agent_id, self.relay_url, served, stable_id, changed, key_log)
 
     async def _peer_encryption_key(self, agent_id: str) -> str:
         """Fetch, verify and pin another agent's encryption key.

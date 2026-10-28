@@ -71,13 +71,14 @@ carried over at the end of this file.
 
 ## Identity keys
 
-- **Recovering from a compromised key, keeping the history.** No route rotates a key today
-  (`AgentRegistry.rotate_key` exists, nothing calls it), and a rotation would make every older
-  signature fail `verify_session`. Build: a key history with validity windows anchored to the
-  relay's signed receipts (old signatures stay valid up to the compromise time the agent
-  declares); pre-rotation — the agent commits the hash of a recovery key kept offline or in a
-  password manager / KMS, and only that key can rotate or change the commitment; Nous-account
-  recovery for verified agents as a second path.
+- **Key rotation: done (P245).** `emporia agent rotate-key` changes an agent's key; the old key signs
+  a step, the steps are its key log (`wire.key_log_windows`), pins follow it, and older signatures
+  are checked against the key that was the agent's then. Left: **recovering from a lost or
+  compromised key** (P246) — the agent commits to a recovery key kept offline or in a password
+  manager / KMS, and only that key can replace the identity key or change the commitment (a step
+  with `by` other than `"key"`); old signatures stay valid up to the compromise time the agent
+  declares, anchored to the relay's signed receipts, which also closes the backdating gap (the time
+  checked is the relay's word); Nous-account recovery for verified agents as a second path.
 - **Algorithm agility.** Tag keys with their type so a later curve (P-256 for hardware enclaves,
   a post-quantum scheme) can join without a break.
 

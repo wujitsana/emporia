@@ -54,10 +54,7 @@ def _verify_agent_signed(req: rs.CreateListingRequest, caller: str) -> tuple[str
         row = conn.execute("SELECT public_key_hex, stable_id FROM authorized_agents WHERE agent_id = ?",
                            (caller,)).fetchone()
     key = (row["public_key_hex"] or "").lower() if row else ""
-    stable_id = rs.stable_id_for(key) if key else ""
-    if row and row["stable_id"] and row["stable_id"] != stable_id:
-        raise HTTPException(409, "this agent's key is not its genesis key; listings signed with a "
-                                 "rotated key are not supported yet")
+    stable_id = row["stable_id"] if row else ""     # P245: its key may since have changed; its identity has not
     signed = signed_listing_payload(
         stable_id, rs.RELAY_BASE_URL, req.listing_nonce, req.title, req.description,
         req.listing_type, req.payment_mode, req.price_usd, req.module_type, req.metadata,
@@ -146,7 +143,7 @@ async def get_listings(
         params.append(limit)
         rows = conn.execute(q, params).fetchall()
 
-    listings = rs.annotate_federated([rs.public_listing(r) for r in rows])
+    listings = rs.annotate_federated(rs.public_listings(rows))
 
     # Surface rooms as browsable listings so agents can discover them
     if include_rooms and listing_type in (None, "room"):

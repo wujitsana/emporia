@@ -414,8 +414,8 @@ def signing_pin_id(agent_id: str, relay_url: str) -> str:
     return addresses.address(name, addresses.canonical_host(host))
 
 
-def load_peer_signing_keys() -> dict[str, dict[str, str]]:
-    """{pin_id: {"public_key_hex", "stable_id"}}, or {} if none. A corrupt file
+def load_peer_signing_keys() -> dict[str, dict[str, Any]]:
+    """{pin_id: {"public_key_hex", "stable_id", "key_log"}}, or {} if none. A corrupt file
     is set aside and logged, never silently reset (same policy as
     `load_peer_encryption_keys()`)."""
     path = KEY_DIR / _PEER_SIGNING_KEYS_FILE_NAME
@@ -438,7 +438,7 @@ def load_peer_signing_keys() -> dict[str, dict[str, str]]:
         return {}
 
 
-def save_peer_signing_keys(pins: dict[str, dict[str, str]]) -> None:
+def save_peer_signing_keys(pins: dict[str, dict[str, Any]]) -> None:
     """Persist the pin map. A write failure raises: a pin that was not kept would
     let the next read accept a swapped key."""
     KEY_DIR.mkdir(mode=0o700, parents=True, exist_ok=True)
@@ -448,45 +448,126 @@ def save_peer_signing_keys(pins: dict[str, dict[str, str]]) -> None:
     )
 
 
-def _check_signing_pin(pin_id: str, public_key_hex: str, stable_id: str = "") -> tuple[str, bool]:
+class SigningKey(str):
+    """A peer's current signing key, which also knows the keys it replaced (P245).
+    It is the key as a string, so it works wherever a key does; `signing_key_for`
+    picks the one that was the agent's at a given time."""
+
+    windows: list[dict[str, str]]
+
+    def __new__(cls, key: str, windows: list[dict[str, str]] | None = None):
+        obj = super().__new__(cls, key)
+        obj.windows = windows or []
+        return obj
+
+
+def signing_key_for(key: str, when: Any = "") -> str:
+    """The key to check something against that was signed at `when` (the time
+    its relay recorded for it): the key that was the agent's then if `key` knows
+    its key log, else `key`. "" when the agent had no key at that time — which
+    is a failed check, not an unknown one."""
+    windows = getattr(key, "windows", None)
+    if not windows:
+        return str(key or "")
+    return key_at(windows, when)
+
+
+def key_log_windows(stable_id: str, log: Any, current_key: str = "") -> list[dict[str, str]]:
+    """P245: the keys an agent has held and when, from its signed key log — []
+    unless the log is valid for this stable id. See `wire.key_log_windows`."""
+    from emporia import wire
+    return wire.key_log_windows(stable_id, log, verify, current_key)
+
+
+def key_at(windows: list[dict[str, str]], when: Any = "") -> str:
+    """P245: the key valid at `when` ("" when none; no time means now)."""
+    from emporia import wire
+    return wire.key_at(windows, when)
+
+
+def key_log_extends(old_log: list[dict[str, Any]], new_log: list[dict[str, Any]]) -> bool:
+    """P245: whether `new_log` begins with all of `old_log`."""
+    from emporia import wire
+    return wire.key_log_extends(old_log, new_log)
+
+
+def follow_key_log(stable_id: str, pinned_key: str, pinned_log: list[dict[str, Any]],
+                   served_key: str, served_log: Any) -> list[dict[str, str]]:
+    """P245: the windows of a served key log if it lets a holder of `pinned_key`
+    (and `pinned_log`, what was known of the log) follow the agent to
+    `served_key` — else []. It must be valid for the stable id, end at the
+    served key, pass through the pinned key and extend the pinned log. A relay
+    cannot make one: it would need a step signed by a key the agent held."""
+    if not isinstance(served_log, list) or not served_log or not key_log_extends(pinned_log or [], served_log):
+        return []
+    windows = key_log_windows(stable_id, served_log)
+    keys = [w["key"] for w in windows]
+    if not windows or keys[-1] != served_key or pinned_key not in keys:
+        return []
+    return windows
+
+
+def _check_signing_pin(
+    pin_id: str, public_key_hex: str, stable_id: str = "", key_log: Any = None,
+) -> tuple[SigningKey, bool]:
     """`(key to verify against, whether the served key differs from the pin)`.
-    The one place a signed key log (P245) can plug in: where the served key
-    differs from the pin, ask whether the log shows a signed rotation to it
-    before answering "changed"."""
+    A served key other than the pinned one is accepted, and the pin moved, only
+    when the served key log (P245) shows the agent's own signed steps from the
+    pinned key to it; otherwise the pinned key is returned and the caller
+    reports "changed". The returned key carries the windows of the log, so
+    older items are checked against the key that signed them."""
     key = (public_key_hex or "").strip().lower()
+    log = key_log if isinstance(key_log, list) else []
     pins = load_peer_signing_keys()
     pin = pins.get(pin_id)
+    pin_log = (pin or {}).get("key_log") or []
     if not _valid_x25519_pubkey_hex(key):   # 64 hex chars; the same shape for Ed25519
-        return (pin["public_key_hex"] if pin else ""), False
+        if not pin:
+            return SigningKey(""), False
+        return SigningKey(pin["public_key_hex"], key_log_windows(pin.get("stable_id", ""), pin_log)), False
     if not pin:
-        pins[pin_id] = {"public_key_hex": key, "stable_id": stable_id or ""}
+        windows = key_log_windows(stable_id, log) if log else []
+        good = bool(windows) and windows[-1]["key"] == key
+        pins[pin_id] = {"public_key_hex": key, "stable_id": stable_id or "", **({"key_log": log} if good else {})}
         save_peer_signing_keys(pins)
-        return key, False
-    if pin["public_key_hex"] != key or (stable_id and pin.get("stable_id") and pin["stable_id"] != stable_id):
-        return pin["public_key_hex"], True
-    if stable_id and not pin.get("stable_id"):
+        return SigningKey(key, windows if good else []), False
+    pinned_key, pinned_sid = pin["public_key_hex"], pin.get("stable_id", "")
+    if pinned_sid and stable_id and pinned_sid != stable_id:
+        return SigningKey(pinned_key, key_log_windows(pinned_sid, pin_log)), True
+    windows = follow_key_log(stable_id or pinned_sid, pinned_key, pin_log, key, log)
+    if windows:
+        moved = {"public_key_hex": key, "stable_id": stable_id or pinned_sid, "key_log": log}
+        if pin != moved:
+            pins[pin_id] = moved
+            save_peer_signing_keys(pins)
+        return SigningKey(key, windows), False
+    if pinned_key != key:
+        return SigningKey(pinned_key, key_log_windows(pinned_sid, pin_log)), True
+    if stable_id and not pinned_sid:
         pin["stable_id"] = stable_id
         save_peer_signing_keys(pins)
-    return key, False
+    return SigningKey(key, key_log_windows(pin.get("stable_id", ""), pin_log)), False
 
 
-def pin_peer_signing_key(pin_id: str, public_key_hex: str, stable_id: str = "") -> str:
+def pin_peer_signing_key(pin_id: str, public_key_hex: str, stable_id: str = "", key_log: Any = None) -> str:
     """Trust-on-first-use for a signing key: the first key seen is pinned and
     returned; later the same key is returned; a different key returns the
     **pinned** one and leaves the pin alone, so anything signed with the
-    swapped-in key fails to verify. An empty or malformed served key returns the
-    pinned key, or "" if there is none."""
-    return _check_signing_pin(pin_id, public_key_hex, stable_id)[0]
+    swapped-in key fails to verify — unless the agent's signed key log (P245)
+    leads from the pinned key to it, which moves the pin. An empty or malformed
+    served key returns the pinned key, or "" if there is none."""
+    return _check_signing_pin(pin_id, public_key_hex, stable_id, key_log)[0]
 
 
 def pinned_signing_key(
     agent_id: str, relay_url: str, public_key_hex: str, stable_id: str = "",
-    changed: list[str] | None = None,
-) -> str:
+    changed: list[str] | None = None, key_log: Any = None,
+) -> SigningKey:
     """What both clients call on a signing key a relay served: pin it by
-    `signing_pin_id()`, return the key to verify with, and add `agent_id` to
-    `changed` when the served key was not the pinned one."""
-    key, differs = _check_signing_pin(signing_pin_id(agent_id, relay_url), public_key_hex, stable_id)
+    `signing_pin_id()`, return the key to verify with (it knows the keys it
+    replaced; see `signing_key_for`), and add `agent_id` to `changed` when the
+    served key was not the pinned one and no signed key log explained it."""
+    key, differs = _check_signing_pin(signing_pin_id(agent_id, relay_url), public_key_hex, stable_id, key_log)
     if differs and changed is not None and agent_id not in changed:
         changed.append(agent_id)
     return key
@@ -494,7 +575,8 @@ def pinned_signing_key(
 
 def trust_new_signing_key(pin_id: str, public_key_hex: str, stable_id: str = "") -> None:
     """Replace a signing-key pin after an out-of-band fingerprint check, the
-    human-chosen twin of `trust_new_encryption_key()`. Never called by a read path."""
+    human-chosen twin of `trust_new_encryption_key()`. Never called by a read path.
+    The key log kept with the old pin goes with it."""
     key = (public_key_hex or "").strip().lower()
     if not _valid_x25519_pubkey_hex(key):
         raise ValueError(f"not a valid Ed25519 public key: {public_key_hex!r}")
@@ -537,12 +619,14 @@ def verify_dm_message(
     nonce = message.get("nonce")
     if not signature or not nonce or not sender_public_key_hex:
         return None
-    return verify(
+    # P245: the key the sender had when the relay recorded the message.
+    key = signing_key_for(sender_public_key_hex, message.get("created_at"))
+    return bool(key) and verify(
         signed_dm_thread_payload(
             thread_id, message.get("content", ""), message.get("msg_type", ""), nonce,
         ),
         signature,
-        sender_public_key_hex,
+        key,
     )
 
 
@@ -558,16 +642,18 @@ def verify_room_acts(room: dict[str, Any], creator_public_key_hex: str) -> dict[
     settings: bool | None = None
     if create and creator_public_key_hex:
         payload = create.get("payload") or {}
-        settings = (verify(payload, create.get("signature", ""), creator_public_key_hex)
+        key = signing_key_for(creator_public_key_hex, create.get("at"))   # P245: the key it had at the time
+        settings = (bool(key) and verify(payload, create.get("signature", ""), key)
                     and all(payload.get(k) == room.get(k) for k in ROOM_SIGNED_SETTINGS))
     checked = []
     for a in acts:
         if a.get("act") == "create":
             continue
         payload = a.get("payload") or {}
+        key = signing_key_for(creator_public_key_hex, a.get("at"))
         checked.append({"act": a.get("act"), "target": a.get("target"), "at": a.get("at"),
-                        "verified": bool(creator_public_key_hex) and payload.get("room_id") == room.get("room_id")
-                        and verify(payload, a.get("signature", ""), creator_public_key_hex)})
+                        "verified": bool(key) and payload.get("room_id") == room.get("room_id")
+                        and verify(payload, a.get("signature", ""), key)})
     return {"settings": settings, "acts": checked}
 
 
@@ -577,9 +663,10 @@ def verify_agora_post(topic_slug: str, post: dict[str, Any], author_public_key_h
     from emporia.wire import signed_agora_post_payload
     if not post.get("signature") or not post.get("nonce") or not author_public_key_hex:
         return None
-    return verify(signed_agora_post_payload(topic_slug, post.get("title", ""), post.get("content", ""),
-                                            post.get("post_type", ""), post.get("flair"), post["nonce"]),
-                  post["signature"], author_public_key_hex)
+    key = signing_key_for(author_public_key_hex, post.get("created_at"))   # P245
+    return bool(key) and verify(signed_agora_post_payload(topic_slug, post.get("title", ""), post.get("content", ""),
+                                                          post.get("post_type", ""), post.get("flair"), post["nonce"]),
+                                post["signature"], key)
 
 
 def verify_agora_comment(comment: dict[str, Any], author_public_key_hex: str) -> bool | None:
@@ -587,9 +674,10 @@ def verify_agora_comment(comment: dict[str, Any], author_public_key_hex: str) ->
     from emporia.wire import signed_agora_comment_payload
     if not comment.get("signature") or not comment.get("nonce") or not author_public_key_hex:
         return None
-    return verify(signed_agora_comment_payload(comment.get("post_id", ""), comment.get("parent_comment_id"),
-                                               comment.get("content", ""), comment["nonce"]),
-                  comment["signature"], author_public_key_hex)
+    key = signing_key_for(author_public_key_hex, comment.get("created_at"))   # P245
+    return bool(key) and verify(signed_agora_comment_payload(comment.get("post_id", ""), comment.get("parent_comment_id"),
+                                                             comment.get("content", ""), comment["nonce"]),
+                                comment["signature"], key)
 
 
 def verify_room_message(
@@ -614,12 +702,13 @@ def verify_room_message(
     nonce = message.get("nonce")
     if not signature or not nonce or not sender_public_key_hex:
         return None
-    return verify(
+    key = signing_key_for(sender_public_key_hex, message.get("created_at"))   # P245
+    return bool(key) and verify(
         signed_room_message_payload(
             room_id, message.get("content", ""), message.get("msg_type", ""), nonce,
         ),
         signature,
-        sender_public_key_hex,
+        key,
     )
 
 
@@ -1037,9 +1126,14 @@ def sign(payload: dict[str, Any], profile_id: str) -> str:
     Returns base64url-encoded signature (no padding).
     """
     priv, _ = generate_or_load_keypair(profile_id)
+    return sign_payload(priv, payload)
+
+
+def sign_payload(priv: ed25519.Ed25519PrivateKey, payload: dict[str, Any]) -> str:
+    """`sign()` with a key in hand rather than a profile's — for the one moment
+    two keys are in play (P245: the old key signs the step to the new one)."""
     serialized = json.dumps(payload, sort_keys=True, separators=(",", ":")).encode("utf-8")
-    sig_bytes = priv.sign(serialized)
-    return base64.urlsafe_b64encode(sig_bytes).rstrip(b"=").decode("ascii")
+    return base64.urlsafe_b64encode(priv.sign(serialized)).rstrip(b"=").decode("ascii")
 
 
 # P193: what an agent signs to prove it holds its key when signing in to a

@@ -719,11 +719,31 @@ _PRIVATE_LISTING_METADATA = frozenset({"funder_nous_user_id", "payment_intent_id
 
 
 def public_listing(row: Any) -> dict[str, Any]:
-    """A listings row as anyone may read it: parsed metadata, private keys out."""
+    """A listings row as anyone may read it: parsed metadata, private keys out.
+    P245: a listing pulled from another relay carries the key log that relay
+    served with it (`key_log`); `public_listings` fills in the others'."""
     d = dict(row)
     meta = json.loads(d.pop("metadata_json", None) or "{}")
     d["metadata"] = {k: v for k, v in meta.items() if k not in _PRIVATE_LISTING_METADATA}
+    kept = d.pop("agent_key_log_json", None)
+    if d.get("federated_from"):
+        d["key_log"] = json.loads(kept or "[]")
     return d
+
+
+def public_listings(rows: list[Any]) -> list[dict[str, Any]]:
+    """`public_listing` for each row, and for this relay's own listings the key
+    log of the agent that signed them (P245), so a reader can check the key
+    against the stable id after the agent has changed key."""
+    out = [public_listing(r) for r in rows]
+    own = sorted({x["agent_stable_id"] for x in out if not x.get("federated_from") and x.get("agent_stable_id")})
+    if own:
+        with DB_LOCK, get_db() as conn:
+            logs = {sid: agent_key_log(conn, sid) for sid in own}
+        for x in out:
+            if not x.get("federated_from") and x.get("agent_stable_id"):
+                x["key_log"] = logs[x["agent_stable_id"]]
+    return out
 
 
 def _own_host() -> str:
@@ -1026,7 +1046,8 @@ def init_db() -> None:
                 agent_public_key_hex TEXT,
                 agent_stable_id TEXT,
                 listing_nonce TEXT,
-                signature TEXT
+                signature TEXT,
+                agent_key_log_json TEXT
             );
 
             CREATE TABLE IF NOT EXISTS events (
@@ -1244,6 +1265,20 @@ def init_db() -> None:
                 advertised_at TEXT NOT NULL
             );
 
+            -- P245: an agent's key log, one row per signed step, by its stable id. Only
+            -- this relay's own agents; what a linked relay served of its agents is kept
+            -- beside the listing or remote agent it came with.
+            CREATE TABLE IF NOT EXISTS agent_key_log (
+                stable_id TEXT NOT NULL,
+                step_no INTEGER NOT NULL,
+                old_key TEXT NOT NULL,
+                new_key TEXT NOT NULL,
+                at TEXT NOT NULL,
+                signed_by TEXT NOT NULL DEFAULT 'key',
+                signature TEXT NOT NULL,
+                PRIMARY KEY (stable_id, step_no)
+            );
+
             CREATE TABLE IF NOT EXISTS schema_migrations (
                 key TEXT PRIMARY KEY,
                 applied_at TEXT NOT NULL
@@ -1253,6 +1288,7 @@ def init_db() -> None:
         _migrate_authorized_agents(conn)
         _migrate_dm_threads(conn)
         _migrate_federated_dms(conn)
+        _migrate_key_logs(conn)
         _migrate_payments(conn)
         _migrate_settlements(conn)
         _migrate_settlement_dedupe_key(conn)
@@ -1853,8 +1889,21 @@ def _migrate_federated_dms(conn: Any) -> None:
         public_key_hex TEXT NOT NULL,
         encryption_public_key TEXT NOT NULL,
         encryption_key_signature TEXT NOT NULL,
-        updated_at TEXT NOT NULL)""")
+        updated_at TEXT NOT NULL,
+        stable_id TEXT NOT NULL DEFAULT '',
+        key_log_json TEXT NOT NULL DEFAULT '[]')""")
     conn.execute("CREATE INDEX IF NOT EXISTS idx_dm_threads_local ON dm_threads(local_agent, last_message_at)")
+
+
+def _migrate_key_logs(conn: Any) -> None:
+    """P245: the key log a linked relay served, kept with the listing it signed
+    and the remote agent pinned — so a reader here can check them without asking
+    the other relay again."""
+    for table, col, decl in (("listings", "agent_key_log_json", "TEXT"),
+                             ("remote_agents", "stable_id", "TEXT NOT NULL DEFAULT ''"),
+                             ("remote_agents", "key_log_json", "TEXT NOT NULL DEFAULT '[]'")):
+        if col not in {r[1] for r in conn.execute(f"PRAGMA table_info({table})").fetchall()}:
+            conn.execute(f"ALTER TABLE {table} ADD COLUMN {col} {decl}")
 
 
 def _migrate_dm_threads(conn: Any) -> None:
@@ -3375,6 +3424,10 @@ _NON_AGENT_COLUMNS: frozenset[tuple[str, str]] = frozenset({
     ("session_offers", "session_id"), ("session_offers", "stable_id"),
     ("session_offers", "public_key_hex"), ("session_offers", "signature"),
     ("session_offers", "offered_at"),
+    ("agent_key_log", "stable_id"), ("agent_key_log", "step_no"), ("agent_key_log", "old_key"),
+    ("agent_key_log", "new_key"), ("agent_key_log", "at"), ("agent_key_log", "signed_by"),
+    ("agent_key_log", "signature"), ("listings", "agent_key_log_json"),
+    ("remote_agents", "stable_id"), ("remote_agents", "key_log_json"),
     ("room_adverts", "room_id"), ("room_adverts", "stable_id"), ("room_adverts", "public_key_hex"),
     ("room_adverts", "signature"), ("room_adverts", "advertised_at"),
     ("topic_adverts", "topic_id"), ("topic_adverts", "stable_id"), ("topic_adverts", "public_key_hex"),
@@ -3513,6 +3566,18 @@ def stable_id_for(public_key_hex: str) -> str:
     return _stable_id_for(public_key_hex)
 
 
+def agent_key_log(conn: Any, stable_id: str | None) -> list[dict[str, str]]:
+    """P245: an agent's key log as this relay holds it — its signed steps, oldest
+    first, in the form `wire.key_log_windows` reads. [] for an agent that never
+    changed key."""
+    if not stable_id:
+        return []
+    return [{"old": r["old_key"], "new": r["new_key"], "at": r["at"], "by": r["signed_by"],
+             "signature": r["signature"]}
+            for r in conn.execute("SELECT * FROM agent_key_log WHERE stable_id = ? ORDER BY step_no",
+                                  (stable_id,)).fetchall()]
+
+
 class AgentRegistry:
     def __init__(self) -> None:
         self.rate_limits: dict[str, list[float]] = defaultdict(list)
@@ -3590,9 +3655,11 @@ class AgentRegistry:
                 # conflict instead of surfacing an IntegrityError.
                 derived_stable_id = stable_id_for(public_key_hex)
                 if not existing_row:
+                    # P245: also a key some agent now holds after rotating — its
+                    # stable id is from an earlier key, so it would not match above.
                     twin = conn.execute(
-                        "SELECT agent_id FROM authorized_agents WHERE stable_id = ?",
-                        (derived_stable_id,),
+                        "SELECT agent_id FROM authorized_agents WHERE stable_id = ? OR public_key_hex = ?",
+                        (derived_stable_id, public_key_hex),
                     ).fetchone()
                     if twin:
                         raise ValueError(
@@ -3685,26 +3752,33 @@ class AgentRegistry:
         except Exception as e:
             raise ValueError(f"Registration failed: {e}") from e
 
-    def rotate_key(self, agent_id: str, new_public_key_hex: str) -> dict:
-        """Replace an agent's Ed25519 signing key, keeping its identity (P47).
+    def rotate_key(self, agent_id: str, new_public_key_hex: str, step: dict) -> dict:
+        """Replace an agent's Ed25519 signing key, keeping its identity (P47),
+        and write the step to its key log (P245).
 
         Not reachable through `register()` by design: that path refuses a taken
         handle presented under a different key, and it has to — that refusal is
         what makes a handle ownable at all. Rotation is therefore its own
-        operation, and the caller is responsible for having proved control of
-        the *current* key first (the route does; see `rotate_agent_key`).
+        operation, and the caller (`POST /agents/{id}/key-rotations`) is
+        responsible for having checked the step: signed by the *current* key,
+        fresh, and later than the step before.
 
         `stable_id` is untouched. That is the point: an agent that rotates its
         key for good reasons must not be renamed by the relay for doing so.
-        Note what this means downstream — signatures made under the old key stop
-        verifying immediately, which is the correct behaviour for a rotation and
-        the wrong behaviour for a compromise recovery that wants to keep them.
+        What was signed with the old key stays checkable: anyone can read the
+        log and ask which key was the agent's when something was signed
+        (`wire.key_at`).
+
+        The new key must be nobody's: not any agent's current key, not the key
+        any agent's identity was made from, and not one this agent already
+        held — the same one-key-one-identity rule registration enforces.
         """
         try:
             if len(bytes.fromhex(new_public_key_hex)) != 32:
                 raise ValueError()
         except ValueError:
             raise ValueError("public_key_hex must be a 64-char hex string (Ed25519 public key)")
+        new_public_key_hex = new_public_key_hex.lower()
 
         with DB_LOCK, get_db() as conn:
             row = conn.execute(
@@ -3713,15 +3787,26 @@ class AgentRegistry:
             ).fetchone()
             if not row:
                 raise ValueError(f"Agent not found: {agent_id}")
-            # The new key must not already belong to someone else — same
-            # one-key-one-identity rule registration enforces, checked here so
-            # rotation can't be used to walk around it.
+            if row["public_key_hex"] != step["old"] or step["new"] != new_public_key_hex \
+                    or step["old"] == step["new"]:
+                raise ValueError("that step does not replace this agent's current key")
             twin = conn.execute(
-                "SELECT agent_id FROM authorized_agents WHERE stable_id = ? AND agent_id != ?",
-                (stable_id_for(new_public_key_hex), agent_id),
+                "SELECT agent_id FROM authorized_agents WHERE (stable_id = ? OR public_key_hex = ?) "
+                "AND agent_id != ?",
+                (stable_id_for(new_public_key_hex), new_public_key_hex, agent_id),
             ).fetchone()
             if twin:
                 raise ValueError(f"That key is already registered as '{twin['agent_id']}'")
+            log = agent_key_log(conn, row["stable_id"])
+            held = {k for s in log for k in (s["old"], s["new"])}
+            if new_public_key_hex in held or stable_id_for(new_public_key_hex) == row["stable_id"]:
+                raise ValueError("this agent already held that key")
+            conn.execute(
+                "INSERT INTO agent_key_log (stable_id, step_no, old_key, new_key, at, signed_by, signature) "
+                "VALUES (?,?,?,?,?,?,?)",
+                (row["stable_id"], len(log), step["old"], step["new"], step["at"], step.get("by", "key"),
+                 step["signature"]),
+            )
             conn.execute(
                 "UPDATE authorized_agents SET public_key_hex = ? WHERE agent_id = ?",
                 (new_public_key_hex, agent_id),
@@ -6716,8 +6801,9 @@ async def _pull_federated_listings(peer_url: str) -> int:
                 "INSERT OR REPLACE INTO listings "
                 "(listing_id, title, description, listing_type, agent_id, payment_mode, "
                 "price_usd, module_type, origin_relay, expires_at, metadata_json, created_at, "
-                "federated_from, agent_public_key_hex, agent_stable_id, listing_nonce, signature) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                "federated_from, agent_public_key_hex, agent_stable_id, listing_nonce, signature, "
+                "agent_key_log_json) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 (
                     listing["listing_id"],
                     listing.get("title", ""),
@@ -6736,6 +6822,7 @@ async def _pull_federated_listings(peer_url: str) -> int:
                     listing["agent_stable_id"],
                     listing["listing_nonce"],
                     listing["signature"],
+                    json.dumps(listing.get("key_log") or []),
                 ),
             )
         imported += 1

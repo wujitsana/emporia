@@ -22,7 +22,8 @@ Relay to relay, every request is signed with the sending relay's Ed25519 key
 (`X-Emporia-Relay*` headers) and checked against the key pinned for it on first
 contact, inside a five-minute window. A relay speaks only for its own agents: a
 message from `alice@a.example` is accepted only from the relay at `a.example`.
-Each remote agent's identity key is pinned too; a different one is refused.
+Each remote agent's identity key is pinned too; a different one is refused,
+unless the agent's own signed key log (P245) leads from the pinned key to it.
 """
 
 from __future__ import annotations
@@ -156,16 +157,19 @@ async def call_peer(peer: str, method: str, path: str, payload: dict | None = No
 # ─── agents on other relays ──────────────────────────────────────────────────
 
 def agent_record(agent_id: str) -> dict[str, Any] | None:
-    """What a linked relay may know of an agent here: its address and public
-    keys. Nothing else — no wallets, no Nous account, no activity."""
+    """What a linked relay may know of an agent here: its address, public keys
+    and the signed key log that leads to the current one. Nothing else — no
+    wallets, no Nous account, no activity."""
     from emporia import relay_server as rs
     with rs.DB_LOCK, rs.get_db() as conn:
         row = conn.execute(
-            "SELECT agent_id, public_key_hex, encryption_public_key, encryption_key_signature "
+            "SELECT agent_id, public_key_hex, stable_id, encryption_public_key, encryption_key_signature "
             "FROM authorized_agents WHERE agent_id = ? AND is_active = 1", (agent_id,)).fetchone()
+        log = rs.agent_key_log(conn, row["stable_id"]) if row else []
     if not row or not row["encryption_public_key"]:
         return None
     return {"address": address(row["agent_id"], own_host()), "public_key_hex": row["public_key_hex"],
+            "stable_id": row["stable_id"], "key_log": log,    # P245: how a pin follows a rotation
             "encryption_public_key": row["encryption_public_key"],
             "encryption_key_signature": row["encryption_key_signature"]}
 
@@ -179,10 +183,12 @@ def accepts(agent_id: str) -> bool:
 
 
 def pin_remote(peer: str, record: dict[str, Any]) -> dict[str, Any]:
-    """Pin a remote agent's identity key on first contact; refuse a different
-    one. Its encryption key may change only with a binding its pinned identity
-    key signed."""
+    """Pin a remote agent's identity key on first contact. A different key later
+    is accepted only when the agent's own signed key log (P245) leads from the
+    pinned key to it; otherwise it is refused. The encryption key may change
+    only with a binding the identity key signed."""
     from emporia import relay_server as rs
+    from emporia import wire
     from emporia.wire import signed_encryption_key_payload
 
     addr = str(record.get("address", ""))
@@ -194,22 +200,38 @@ def pin_remote(peer: str, record: dict[str, Any]) -> dict[str, Any]:
     enc_sig = str(record.get("encryption_key_signature") or "")
     if not re.fullmatch(r"[0-9a-f]{64}", pub) or not re.fullmatch(r"[0-9a-f]{64}", enc):
         raise HTTPException(422, f"{addr} has no usable keys")
+    log = record.get("key_log") or []
+    stable_id = str(record.get("stable_id") or "")
+    windows = wire.key_log_windows(stable_id, log, rs.verify, pub)
+    if not windows or windows[-1]["key"] != pub:
+        raise HTTPException(422, f"{addr}'s key log does not lead from its stable id to the key it presents")
     with rs.DB_LOCK, rs.get_db() as conn:
-        row = conn.execute("SELECT public_key_hex FROM remote_agents WHERE address = ?", (addr,)).fetchone()
+        row = conn.execute("SELECT public_key_hex, stable_id, key_log_json FROM remote_agents WHERE address = ?",
+                           (addr,)).fetchone()
     if row and row["public_key_hex"] != pub:
-        raise HTTPException(409, f"{addr} now presents a different identity key than the one pinned on "
-                                 f"first contact — refusing it")
+        # A different key: only the agent's own signed steps from the pinned key to it will do.
+        pinned_log = json.loads(row["key_log_json"] or "[]")
+        pinned_id = row["stable_id"] or wire.stable_id_for(row["public_key_hex"])
+        if stable_id != pinned_id or row["public_key_hex"] not in {w["key"] for w in windows} \
+                or not wire.key_log_extends(pinned_log, log):
+            raise HTTPException(409, f"{addr} now presents a different identity key than the one pinned on "
+                                     f"first contact, and its signed key log does not lead from that one "
+                                     f"to this — refusing it")
+    elif row and (row["stable_id"] or stable_id) != stable_id:
+        raise HTTPException(409, f"{addr} now presents a different identity than the one pinned on first contact")
     if not rs.verify(signed_encryption_key_payload(agent_id, enc), enc_sig, pub):
         raise HTTPException(422, f"{addr}'s encryption key is not signed by its identity key")
     with rs.DB_LOCK, rs.get_db() as conn:
         conn.execute(
             "INSERT INTO remote_agents (address, peer_url, public_key_hex, encryption_public_key, "
-            "encryption_key_signature, updated_at) VALUES (?,?,?,?,?,?) ON CONFLICT(address) DO UPDATE SET "
+            "encryption_key_signature, updated_at, stable_id, key_log_json) VALUES (?,?,?,?,?,?,?,?) "
+            "ON CONFLICT(address) DO UPDATE SET public_key_hex = excluded.public_key_hex, "
             "encryption_public_key = excluded.encryption_public_key, "
-            "encryption_key_signature = excluded.encryption_key_signature, updated_at = excluded.updated_at",
-            (addr, peer, pub, enc, enc_sig, datetime.now(UTC).isoformat()))
+            "encryption_key_signature = excluded.encryption_key_signature, updated_at = excluded.updated_at, "
+            "stable_id = excluded.stable_id, key_log_json = excluded.key_log_json",
+            (addr, peer, pub, enc, enc_sig, datetime.now(UTC).isoformat(), stable_id, json.dumps(log)))
     return {"address": addr, "public_key_hex": pub, "encryption_public_key": enc,
-            "encryption_key_signature": enc_sig}
+            "encryption_key_signature": enc_sig, "stable_id": stable_id, "key_log": log}
 
 
 def remote(addr: str) -> dict[str, Any] | None:

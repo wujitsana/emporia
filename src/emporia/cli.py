@@ -1856,6 +1856,75 @@ def cmd_agent_inbox_clear(name: str) -> int:
     return 1 if failed else 0
 
 
+def cmd_agent_rotate_key(name: str, yes: bool = False, http: Any = None) -> int:
+    """P245: `emporia agent rotate-key NAME` — a new identity key for an agent,
+    the change signed by its old key and added to the key log its relay serves,
+    so everyone who pinned the old key follows it and what it signed still
+    checks. The agent keeps its name and identity. Only a person runs it.
+
+    The new key is written to disk before the relay hears of it. A key kept in
+    a file is replaced and the old file kept beside it (`.rotated-<time>`, never
+    deleted); a key kept in a password manager, an environment variable or the
+    profile's .env is not touched: the new one is left in a 0600 file to store
+    there. Then the agent registers again, which signs its encryption-key
+    binding and relay list with the new key. `http` is for tests."""
+    import shlex
+
+    import httpx
+
+    from emporia import key_rotation
+    from emporia.addresses import fingerprint
+    from emporia.identity import IDENTITY_KEY_SOURCE_VAR
+    if not _persons_terminal():
+        print("agent rotate-key: only a person runs this, in their own terminal.")
+        return 1
+    profile, agent_id, env = _agent(name)
+    if not env:
+        print(f"agent rotate-key: {name or '(none)'} is not an Emporia agent profile")
+        return 1
+    dotenv = installer().harvest_env(profile)
+    source = dotenv.get(IDENTITY_KEY_SOURCE_VAR, "")
+    key_dir = _key_file(profile, agent_id, "identity").parent
+    print(f"This gives {agent_id} a new identity key on {relay_url()}. The old key signs the change, so peers that "
+          "pinned it follow, and what it signed still checks.\n"
+          "If the old key LEAKED, this does not recover it: whoever holds it can sign a change too.")
+    if not (yes or ask(f"Rotate {agent_id}'s key?", False)):
+        return 1
+    client = http or httpx.Client(base_url=relay_url(), timeout=15)
+    try:
+        out = key_rotation.rotate_identity_key(agent_id, key_dir, client, source=source, source_env=dotenv)
+    except key_rotation.RotationError as e:
+        print(f"agent rotate-key: {e}")
+        return 1
+    finally:
+        if http is None:
+            client.close()
+    print(f"  {agent_id}: new key {fingerprint(out['new_public_key'])} (was {fingerprint(out['old_public_key'])}), "
+          "on the relay.")
+    republish_env: dict[str, str] = {}
+    if out["installed"]:
+        print(f"  The new key is {out['new_key_file']}.")
+        if out["kept_old_key_file"]:
+            print(f"  The old key is kept as {out['kept_old_key_file']} — remove it once you are sure the agent "
+                  "works; it is no longer the agent's key.")
+    else:
+        print(f"  Its key is kept in {source!r}, which I did not touch. The new private key is in "
+              f"{out['new_key_file']} (owner-only): store it in that source, then remove the file. Until you do, "
+              "the agent cannot sign in.")
+        republish_env = {IDENTITY_KEY_SOURCE_VAR: f"cmd:cat {shlex.quote(str(out['new_key_file']))}"}
+    # Registering again publishes its encryption key and relay list signed with the new key.
+    r = _as_agent(profile, "from emporia import mcp_server as m\n"
+                  "r = m.register_agent(m.AGENT_ID)\nprint('ok' if r.get('success') else r.get('error'))",
+                  **republish_env)
+    if r.returncode != 0 or r.stdout.strip().splitlines()[-1:] != ["ok"]:
+        print(f"  It could not sign its encryption key and relay list with the new key yet "
+              f"({(r.stdout or r.stderr).strip()[-200:]}); they are signed again when the agent next starts.")
+    else:
+        print("  Its encryption key and relay list are signed again with the new key.")
+    installer().print_restart_instructions([profile])
+    return 0
+
+
 def cmd_agent(args: argparse.Namespace) -> int:
     """P195: `emporia agent leave URL NAME` and `emporia agent delete NAME`.
 
@@ -4927,14 +4996,17 @@ def build_parser() -> argparse.ArgumentParser:
     r.set_defaults(func=cmd_relay)
 
     ag2 = sub.add_parser("agent", help="an agent leaves a relay, is deleted from this machine, has its "
-                                       "secrets moved out of config.yaml (secure) or its plugin updated (refresh)")
-    ag2.add_argument("action", choices=["leave", "delete", "secure", "refresh", "inbox-clear"])
-    ag2.add_argument("url_or_name", help="leave: the relay's URL; delete, secure, refresh, inbox-clear: the agent "
-                                         "(secure, refresh, inbox-clear: or all)")
+                                       "secrets moved out of config.yaml (secure), its plugin updated (refresh) "
+                                       "or its identity key changed (rotate-key)")
+    ag2.add_argument("action", choices=["leave", "delete", "secure", "refresh", "inbox-clear", "rotate-key"])
+    ag2.add_argument("url_or_name", help="leave: the relay's URL; delete, secure, refresh, inbox-clear, rotate-key: "
+                                         "the agent (secure, refresh, inbox-clear: or all)")
     ag2.add_argument("name", nargs="?", default="", help="leave: the agent")
     ag2.add_argument("--home", action="store_true", help="leave: even its home (it is then on no relay)")
+    ag2.add_argument("--yes", action="store_true", help="rotate-key: do not ask first")
     ag2.set_defaults(func=lambda a: cmd_agent_secure(a.url_or_name) if a.action == "secure" else
                      cmd_agent_refresh(a.url_or_name) if a.action == "refresh" else
+                     cmd_agent_rotate_key(a.url_or_name, a.yes) if a.action == "rotate-key" else
                      cmd_agent_inbox_clear(a.url_or_name) if a.action == "inbox-clear" else cmd_agent(
         argparse.Namespace(action=a.action, url=a.url_or_name if a.action == "leave" else "",
                            name=a.name if a.action == "leave" else a.url_or_name, home=a.home)))

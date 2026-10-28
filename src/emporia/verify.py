@@ -66,7 +66,9 @@ def verify_game(*, session: dict[str, Any], log: list[dict[str, Any]], public_ke
         signed = signed_action_payload(sender, e.get("action", ""), e.get("payload", {}),
                                        e.get("rationale", ""), sid, e["step_number"],
                                        say=e.get("say", ""))
-        good = identity.verify(signed, sig, key)
+        # P245: the key the player had when the relay logged the move.
+        at_key = identity.signing_key_for(key, e.get("timestamp"))
+        good = bool(at_key) and identity.verify(signed, sig, at_key)
         note("move_signature", OK if good else FAIL,
              f"entry {i} ({sender} {e.get('action')}): " + ("signed by its player" if good else
                                                              "signature does not match what was logged"),

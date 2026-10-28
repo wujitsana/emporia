@@ -2625,9 +2625,14 @@ def _sender_public_key(caller: str, agent_id: str, changed: list[str] | None = N
 
     P244: the key is pinned on first sight (`identity.pinned_signing_key`) and the
     pinned key is what comes back, so a relay that serves a different one gets
-    `False`, not a pass. `agent_id` is added to `changed` when it did."""
+    `False`, not a pass. `agent_id` is added to `changed` when it did.
+
+    P245: the exception is a key the agent's own signed key log leads to from
+    the pinned one; the pin then moves, and what comes back also knows the
+    keys it replaced, so older items are checked against the key that signed
+    them (`identity.signing_key_for`)."""
     from emporia.identity import pinned_signing_key
-    served, stable_id = "", ""
+    served, stable_id, key_log = "", "", None
     try:
         # P185: an address (`bob@host`) is looked up where its keys are pinned.
         path = f"/agents/{agent_id}/encryption-key" if "@" in agent_id else f"/agents/{agent_id}"
@@ -2635,9 +2640,10 @@ def _sender_public_key(caller: str, agent_id: str, changed: list[str] | None = N
         if r.status_code == 200:
             body = r.json()
             served, stable_id = body.get("public_key_hex", "") or "", body.get("stable_id", "") or ""
+            key_log = body.get("key_log")
     except Exception:
         pass
-    return pinned_signing_key(agent_id, _base(), served, stable_id, changed)
+    return pinned_signing_key(agent_id, _base(), served, stable_id, changed, key_log)
 
 
 def _flag_changed_keys(result: dict[str, Any], changed: list[str]) -> dict[str, Any]:

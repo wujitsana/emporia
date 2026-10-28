@@ -41,7 +41,10 @@ async def federated_listings_out():
             f"ORDER BY created_at DESC LIMIT {rs._MAX_LIMIT}",
             (datetime.now(UTC).isoformat(), rs.RELAY_BASE_URL),
         ).fetchall()
-    listings = [rs.public_listing(r) for r in rows]
+    from emporia.identity import verify
+    from emporia.wire import listing_verdict
+    # P245: not one signed with a key its agent has since replaced; the agent signs it again.
+    listings = [x for x in rs.public_listings(rows) if not listing_verdict(x, verify)]
     for x in listings:
         x.pop("federated_from", None)
     signature = sign_raw_relay(federation_signable_bytes(rs.RELAY_BASE_URL, "listings", listings))
@@ -109,6 +112,7 @@ def _lobby_items() -> list[dict]:
                             "(SELECT session_id FROM session_offers) ORDER BY created_at DESC LIMIT ?",
                             (rs._MAX_LIMIT,)).fetchall()
         offers = {r["session_id"]: r for r in conn.execute("SELECT * FROM session_offers").fetchall()}
+        logs = {sid: rs.agent_key_log(conn, sid) for sid in {o["stable_id"] for o in offers.values()}}
     host = rs._own_host()
     out = []
     for row in rows:
@@ -129,6 +133,7 @@ def _lobby_items() -> list[dict]:
             "creator": creator, "creator_address": address(creator, host),
             "creator_fingerprint": fingerprint(offer["public_key_hex"]),
             "creator_public_key_hex": offer["public_key_hex"], "creator_stable_id": offer["stable_id"],
+            "key_log": logs[offer["stable_id"]],    # P245: how the key follows from the stable id
             "offer_signature": offer["signature"],
             "players": len(s["participants"]), "min_players": lo, "max_players": hi,
             "payment_rules": s["payment_rules"], "config": s["config"], "created_at": s["created_at"],
@@ -172,8 +177,10 @@ def _advert_feed(kind: str) -> list[dict]:
                 "FROM topic_adverts a "
                 "JOIN agora_topics t ON t.topic_id = a.topic_id WHERE t.is_deleted = 0 "
                 "ORDER BY a.advertised_at DESC LIMIT ?", (rs._MAX_LIMIT,)).fetchall()
+        logs = {sid: rs.agent_key_log(conn, sid) for sid in {a["stable_id"] for a in adverts}}
     for a in adverts:
         owner = {"owner_public_key_hex": a["public_key_hex"], "owner_stable_id": a["stable_id"],
+                 "key_log": logs[a["stable_id"]],    # P245
                  "advert_signature": a["signature"], "origin_relay": rs.RELAY_BASE_URL}
         if kind == "rooms":
             room = rooms_db.get_room(a["room_id"], db_path=rs.DATABASE_PATH)

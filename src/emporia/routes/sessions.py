@@ -224,10 +224,7 @@ async def offer_session(session_id: str, req: OfferSessionRequest, request: Requ
         row = conn.execute("SELECT public_key_hex, stable_id FROM authorized_agents WHERE agent_id = ?",
                            (caller,)).fetchone()
     key = (row["public_key_hex"] or "").lower() if row else ""
-    stable_id = rs.stable_id_for(key) if key else ""
-    if row and row["stable_id"] and row["stable_id"] != stable_id:
-        raise HTTPException(409, "this agent's key is not its genesis key; offers signed with a "
-                                 "rotated key are not supported yet")
+    stable_id = row["stable_id"] if row else ""     # P245: its key may since have changed; its identity has not
     signed = signed_open_session_payload(stable_id, rs.RELAY_BASE_URL, session_id, s["module_type"],
                                          s["config"] or {}, s["payment_rules"] or {})
     if not key or not rs.verify(signed, req.signature, key):

@@ -88,12 +88,15 @@ def annotate_messages(
             msg["encrypted"] = False
             removal = msg.get("removed") or {}
             if removal and removal.get("by") == sender and pubkeys.get(sender):
+                from emporia.identity import signing_key_for
                 from emporia.identity import verify as _verify
                 from emporia.wire import signed_delete_payload
                 item = (f"{scope_id}/{nonce}" if kind == "dm" else msg.get("message_id", ""))
-                removal["verified"] = _verify(
+                # P245: the key it had when it signed the removal.
+                key = signing_key_for(pubkeys[sender], removal.get("at"))
+                removal["verified"] = bool(key) and _verify(
                     signed_delete_payload(f"{kind}_message", item, removal.get("by", ""), removal.get("at", "")),
-                    removal.get("signature", ""), pubkeys[sender])
+                    removal.get("signature", ""), key)
             continue
         msg["verified"] = verify(msg, pubkeys.get(sender, ""))
 

@@ -384,6 +384,135 @@ def stable_id_for(public_key_hex: str) -> str:
     ).hexdigest()
 
 
+# ─── P245: an agent's key log ────────────────────────────────────────────────
+# An agent's identity is the hash of its first (genesis) key. When it changes
+# key, the old key signs one step — "old hands over to new at T" — and the steps
+# together are its key log. Anyone can check a log from the stable id alone, so
+# a relay cannot invent a key for an agent: it can only serve the chain the
+# agent signed. A step has a `by` ("key" for now) so a later kind of step, signed
+# by something other than the key being replaced, can join without a new format.
+
+#: The longest key log a verifier reads. An agent that rotates this often is not
+#: rotating, and an unbounded log is work a hostile relay can hand to every reader.
+KEY_LOG_MAX_STEPS = 100
+
+
+def signed_key_rotation_payload(stable_id: str, old_key: str, new_key: str, at: str) -> dict[str, Any]:
+    """P245: what an agent signs, with the key it is replacing, to change key —
+    one step of its key log. Named by stable id so the step can't be moved to
+    another agent; `at` is the agent's clock and must be later than the step
+    before."""
+    return {"type": "emporia:agent-key-rotation:v1", "stable_id": stable_id, "old": old_key,
+            "new": new_key, "at": at}
+
+
+def _key_hex(value: Any) -> bool:
+    import re
+    return isinstance(value, str) and re.fullmatch(r"[0-9a-f]{64}", value) is not None
+
+
+def when_of(value: Any) -> Any:
+    """A time as a UTC datetime — from an ISO string (no zone means UTC) or a
+    number of seconds — or None when it is neither. Empty is None too."""
+    from datetime import UTC, datetime
+    try:
+        if isinstance(value, (int, float)) and not isinstance(value, bool):
+            return datetime.fromtimestamp(value, UTC)
+        if isinstance(value, str) and value:
+            when = datetime.fromisoformat(value)
+            return when if when.tzinfo else when.replace(tzinfo=UTC)
+    except (ValueError, OverflowError, OSError):
+        pass
+    return None
+
+
+def key_log_windows(stable_id: str, log: Any, verify: Any, current_key: str = "") -> list[dict[str, str]]:
+    """P245: the keys an agent has held, each with the time it was the agent's —
+    `[{"key", "from", "until"}]`, oldest first, the last with `until` "" — or []
+    when the log is not a valid one for this stable id. Valid means: the first
+    step's old key hashes to the stable id, each step's old key is the one
+    before's new key, each step is signed by its old key
+    (`verify(payload, signature, public_key_hex)`, as `identity.verify`), the
+    times strictly increase, and no key comes back.
+
+    An agent that never rotated has an empty log; its one key is `current_key`,
+    and only if that hashes to the stable id."""
+    if not log:
+        key = str(current_key or "").lower()
+        if _key_hex(key) and stable_id_for(key) == stable_id:
+            return [{"key": key, "from": "", "until": ""}]
+        return []
+    if not isinstance(log, list) or len(log) > KEY_LOG_MAX_STEPS:
+        return []
+    windows: list[dict[str, str]] = []
+    seen: set[str] = set()
+    last = None
+    for i, step in enumerate(log):
+        if not isinstance(step, dict):
+            return []
+        old, new, at = step.get("old"), step.get("new"), step.get("at")
+        when = when_of(at)
+        if step.get("by", "key") != "key" or not (_key_hex(old) and _key_hex(new)) or when is None:
+            return []
+        if (last is not None and when <= last) or new in seen:
+            return []
+        if i == 0:
+            if stable_id_for(old) != stable_id:
+                return []
+            windows.append({"key": old, "from": "", "until": ""})
+            seen.add(old)
+        elif old != windows[-1]["key"]:
+            return []
+        if not verify(signed_key_rotation_payload(stable_id, old, new, at), str(step.get("signature") or ""), old):
+            return []
+        windows[-1]["until"] = at
+        windows.append({"key": new, "from": at, "until": ""})
+        seen.add(new)
+        last = when
+    return windows
+
+
+def key_at(windows: list[dict[str, str]], when: Any = "") -> str:
+    """P245: the key that was the agent's at `when` (a time, or seconds), or ""
+    when none was. No time means now: the current key. A time a key took over
+    belongs to the new key."""
+    if not windows:
+        return ""
+    if when is None or when == "":
+        return windows[-1]["key"]
+    moment = when_of(when)
+    if moment is None:
+        return ""
+    for w in windows:
+        start, end = when_of(w["from"]), when_of(w["until"])
+        if (start is None or moment >= start) and (end is None or moment < end):
+            return w["key"]
+    return ""
+
+
+def key_log_extends(old_log: list[dict[str, Any]], new_log: list[dict[str, Any]]) -> bool:
+    """P245: whether `new_log` is `old_log` and perhaps more steps after it — a
+    log that rewrites or drops a step it was known by does not extend it."""
+    return len(new_log) >= len(old_log) and all(
+        {"by": "key", **a} == {"by": "key", **b} for a, b in zip(old_log, new_log))
+
+
+def key_verdict(stable_id: str, key: str, log: Any, verify: Any) -> str:
+    """P245: why `key` can't be taken as the key `stable_id` signs with now, or
+    "" when it can: it must be the last key of a valid key log for that stable
+    id. A listing, offer or advert signed with a key since replaced is refused —
+    its agent signs it again with the new one."""
+    key = str(key or "").lower()
+    if not _key_hex(key):
+        return "no agent key"
+    windows = key_log_windows(stable_id, log, verify, current_key=key)
+    if not windows:
+        return "its key is not the one its stable id was made from, and no valid key log leads from that one to it"
+    if windows[-1]["key"] != key:
+        return "it is signed with a key its agent has since replaced; the agent signs it again with its new key"
+    return ""
+
+
 #: P240: the longest a listing may stay up. The client picks `expires_at` (it is
 #: inside the signature); the relay refuses one further out than this.
 MAX_LISTING_HOURS = 30 * 24
@@ -461,21 +590,17 @@ def listing_verdict(listing: dict[str, Any], verify: Any) -> str:
     `identity.verify`, passed in so this module stays free of crypto imports.
 
     The key vouches for itself: the stable id is the hash of the agent's genesis
-    key, so a relay can't hand over a key it made up under someone's id. Once
-    keys can rotate, a current key won't hash to the stable id; until then
-    such a listing is refused rather than half-checked."""
+    key, so a relay can't hand over a key it made up under someone's id. P245:
+    after a rotation the current key no longer hashes to the stable id; the
+    listing then carries the agent's signed `key_log`, and the key must be the
+    log's last."""
     key = str(listing.get("agent_public_key_hex") or "").lower()
     if not listing.get("signature") or not listing.get("listing_nonce"):
         return "unsigned by its agent"
-    if len(key) != 64:
-        return "no agent key"
-    try:
-        derived = stable_id_for(key)
-    except ValueError:
-        return "no agent key"
-    if derived != listing.get("agent_stable_id"):
-        return "its key is not the one its stable id was made from (key rotation is not supported yet)"
-    if listing.get("listing_id") != listing_id_for(derived, str(listing["listing_nonce"])):
+    stable_id = str(listing.get("agent_stable_id") or "")
+    if why := key_verdict(stable_id, key, listing.get("key_log"), verify):
+        return why
+    if listing.get("listing_id") != listing_id_for(stable_id, str(listing["listing_nonce"])):
         return "its id is not the one its agent's nonce makes"
     if not verify(listing_fields_as_signed(listing), str(listing["signature"]), key):
         return "its agent's signature does not match"
@@ -501,20 +626,16 @@ def signed_open_session_payload(
 def open_session_verdict(item: dict[str, Any], origin_relay: str, verify: Any) -> str:
     """P241: why an open game in a relay's lobby feed can't be taken as its
     creator's own offer, or "" when it can. The lobby counterpart of
-    `listing_verdict`; `origin_relay` is the relay serving the feed."""
+    `listing_verdict`; `origin_relay` is the relay serving the feed. P245: the
+    creator's key is the last of the item's `key_log`."""
     key = str(item.get("creator_public_key_hex") or "").lower()
     if not item.get("offer_signature"):
         return "not offered by its creator"
-    if len(key) != 64:
-        return "no creator key"
-    try:
-        derived = stable_id_for(key)
-    except ValueError:
-        return "no creator key"
-    if derived != item.get("creator_stable_id"):
-        return "its key is not the one its stable id was made from (key rotation is not supported yet)"
+    stable_id = str(item.get("creator_stable_id") or "")
+    if why := key_verdict(stable_id, key, item.get("key_log"), verify):
+        return why.replace("no agent key", "no creator key")
     signed = signed_open_session_payload(
-        derived, origin_relay, str(item.get("session_id") or ""), str(item.get("module_type") or ""),
+        stable_id, origin_relay, str(item.get("session_id") or ""), str(item.get("module_type") or ""),
         item.get("config") or {}, item.get("payment_rules") or {})
     if not verify(signed, str(item["offer_signature"]), key):
         return "its creator's signature does not match"
@@ -593,26 +714,21 @@ def signed_room_advert_payload(
             "access_duration_days": access_duration_days}
 
 
-def _advert_owner(item: dict[str, Any]) -> tuple[str, str]:
-    """(stable id, "") of an advert's owner, or ("", why not) if the key doesn't make it."""
-    key = str(item.get("owner_public_key_hex") or "").lower()
+def _advert_owner(item: dict[str, Any], verify: Any) -> tuple[str, str]:
+    """(stable id, "") of an advert's owner, or ("", why not) if the key isn't
+    the last of the item's `key_log` (P245) for it."""
     if not item.get("advert_signature"):
         return "", "not advertised by its owner"
-    if len(key) != 64:
-        return "", "no owner key"
-    try:
-        derived = stable_id_for(key)
-    except ValueError:
-        return "", "no owner key"
-    if derived != item.get("owner_stable_id"):
-        return "", "its key is not the one its stable id was made from (key rotation is not supported yet)"
-    return derived, ""
+    stable_id = str(item.get("owner_stable_id") or "")
+    if why := key_verdict(stable_id, str(item.get("owner_public_key_hex") or ""), item.get("key_log"), verify):
+        return "", why.replace("no agent key", "no owner key")
+    return stable_id, ""
 
 
 def room_advert_verdict(item: dict[str, Any], origin_relay: str, verify: Any) -> str:
     """P247: why a room in a relay's feed can't be taken as its creator's own
     advert, or "" when it can. `origin_relay` is the relay serving the feed."""
-    derived, why = _advert_owner(item)
+    derived, why = _advert_owner(item, verify)
     if why:
         return why
     if item.get("origin_relay") != origin_relay:
@@ -643,7 +759,7 @@ def signed_topic_advert_payload(
 
 def topic_advert_verdict(item: dict[str, Any], origin_relay: str, verify: Any) -> str:
     """P247: `room_advert_verdict` for an Agora topic."""
-    derived, why = _advert_owner(item)
+    derived, why = _advert_owner(item, verify)
     if why:
         return why
     if item.get("origin_relay") != origin_relay:
