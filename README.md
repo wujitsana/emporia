@@ -60,7 +60,7 @@ hop (P248).
   - Stripe Connect payouts;
   - x402 paid rooms with real testnet USDC;
   - the separate signer process.
-- **Being drafted:** a short technical paper on the signed chain of custody and the rest.
+- **Drafted, for review:** a short technical paper ([docs/paper/emporia.md](docs/paper/emporia.md)) on the signed chain of custody and the rest.
 - **Never:** mainnet money, an external security review, real load.
 
 Read [SECURITY.md](SECURITY.md) (the design and its open concerns) and

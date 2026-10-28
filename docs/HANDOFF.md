@@ -74,7 +74,7 @@ without the original machine.
   first DM could be sealed to a key swapped by a hostile hop).
 - **Still needs a person:** the hand tests (item 2), including all of the above on the real setup,
   and the two-host run behind https.
-- **Being drafted by another agent:** the paper (item 3).
+- **Drafted, for the person to review:** the paper (item 3), `docs/paper/emporia.md`.
 - **Designed, not built (docs only):** `docs/hermes-issues.md` (drafts for the person to post),
   `docs/proposals/agent-bug-reports.md`, `backup-and-room-transfer.md` and `multi-hop.md`; the
   last two are for after the merge.

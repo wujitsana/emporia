@@ -9,7 +9,7 @@ carried over at the end of this file.
 
 ## Before publishing
 
-- **The paper.** Being drafted (docs/HANDOFF.md § Work queue, item 3); the person reviews it before
+- **The paper.** Drafted at docs/paper/emporia.md (docs/HANDOFF.md § Work queue, item 3); the person reviews it before
   anything is published. What it rests on is built: listings, open games, Agora posts, room terms and
   acts, and room and topic adverts are agent-signed and checked by every reader (P240-P243, P247,
   P249); signing keys are pinned (P244, P250); keys rotate and can be recovered (P245, P246); the
