@@ -944,6 +944,24 @@ def _register_keyed(client, agent_id: str) -> None:
     client.post("/agents/register", json={"agent_id": agent_id, "public_key_hex": pub_hex})
 
 
+def _signed_post(agent_id: str, slug: str, body: dict) -> dict:
+    """P242: an Agora post body signed by `agent_id` (registered with _register_keyed)."""
+    from emporia.identity import sign
+    from emporia.wire import new_message_nonce, signed_agora_post_payload
+    nonce = new_message_nonce()
+    return {**body, "nonce": nonce, "signature": sign(signed_agora_post_payload(
+        slug, body["title"], body["content"], body.get("post_type", "text"), body.get("flair"), nonce), agent_id)}
+
+
+def _signed_comment(agent_id: str, post_id: str, body: dict) -> dict:
+    """P242: an Agora comment body signed by `agent_id`."""
+    from emporia.identity import sign
+    from emporia.wire import new_message_nonce, signed_agora_comment_payload
+    nonce = new_message_nonce()
+    return {**body, "nonce": nonce, "signature": sign(signed_agora_comment_payload(
+        post_id, body.get("parent_comment_id"), body["content"], nonce), agent_id)}
+
+
 def _signed_listing(client, agent_id: str, title: str = "A listing", *, hours: int = 72,
                     **fields) -> dict:
     """P240: a `POST /listings` body signed by `agent_id` (registered with
@@ -6411,8 +6429,8 @@ def test_public_paid_invite_topic_entry_fee_gates_reads_and_posts(mock_verify, m
     itself stays visible (public still means discoverable); the creator (auto-subscribed
     as owner) is unaffected; a paying member gets both read and write back."""
     _register(client, "p1b1_owner")
-    _register(client, "p1b1_stranger")
-    _register(client, "p1b1_payer")
+    _register_keyed(client, "p1b1_stranger")
+    _register_keyed(client, "p1b1_payer")
     mock_payout.return_value = {"transfer_id": "tr_p1b1"}
 
     r = client.post("/agoras/topics", json={
@@ -6428,7 +6446,7 @@ def test_public_paid_invite_topic_entry_fee_gates_reads_and_posts(mock_verify, m
     assert stranger_read.status_code == 403, stranger_read.text
 
     stranger_post = client.post(f"/agoras/topics/{slug}/posts",
-        json={"title": "never paid a cent", "content": "..."},
+        json=_signed_post("p1b1_stranger", slug, {"title": "never paid a cent", "content": "..."}),
         headers={"x-emporia-agent-id": "p1b1_stranger"})
     assert stranger_post.status_code == 403, stranger_post.text
 
@@ -6462,7 +6480,7 @@ def test_public_paid_invite_topic_entry_fee_gates_reads_and_posts(mock_verify, m
     assert payer_read.status_code == 200, payer_read.text
 
     payer_post = client.post(f"/agoras/topics/{slug}/posts",
-        json={"title": "paid up", "content": "..."},
+        json=_signed_post("p1b1_payer", slug, {"title": "paid up", "content": "..."}),
         headers={"x-emporia-agent-id": "p1b1_payer"})
     assert payer_post.status_code == 200, payer_post.text
 
@@ -9922,21 +9940,22 @@ def test_attributed_content_creation_requires_authentication(prod_client):
 
     r = prod_client.post(
         f"/agoras/topics/{slug}/posts",
-        json={"title": "Forged post", "content": "c"},
+        json=_signed_post("attr_real", slug, {"title": "Forged post", "content": "c"}),
     )
     assert r.status_code == 401
     r = prod_client.post(
-        f"/agoras/topics/{slug}/posts", json={"title": "Real post", "content": "c"},
+        f"/agoras/topics/{slug}/posts", json=_signed_post("attr_real", slug, {"title": "Real post", "content": "c"}),
         headers=bearer_for(prod_client, "attr_real"),
     )
     assert r.status_code == 200
     assert r.json()["author_id"] == "attr_real"
     post_id = r.json()["post_id"]
 
-    r = prod_client.post(f"/agoras/posts/{post_id}/comments", json={"content": "Forged comment"})
+    r = prod_client.post(f"/agoras/posts/{post_id}/comments",
+                         json=_signed_comment("attr_real", post_id, {"content": "Forged comment"}))
     assert r.status_code == 401
     r = prod_client.post(
-        f"/agoras/posts/{post_id}/comments", json={"content": "Real comment"},
+        f"/agoras/posts/{post_id}/comments", json=_signed_comment("attr_real", post_id, {"content": "Real comment"}),
         headers=bearer_for(prod_client, "attr_real"),
     )
     assert r.status_code == 200
@@ -9977,7 +9996,7 @@ def test_vote_ballot_stuffing_closed(prod_client):
     )
     slug = r.json()["slug"]
     r = prod_client.post(
-        f"/agoras/topics/{slug}/posts", json={"title": "t", "content": "c"},
+        f"/agoras/topics/{slug}/posts", json=_signed_post("vote_author", slug, {"title": "t", "content": "c"}),
         headers=bearer_for(prod_client, "vote_author"),
     )
     post_id = r.json()["post_id"]
@@ -10264,7 +10283,7 @@ def test_agora_subscribed_by_requires_caller_match(prod_client):
 
 
 def test_agora_topic_and_posts_require_membership_for_private(client):
-    _register(client, "atp_owner")
+    _register_keyed(client, "atp_owner")
     _register(client, "atp_stranger")
     r = client.post("/agoras/topics", json={
         "name": "Private Circle", "description": "d", "visibility": "private",
@@ -10272,9 +10291,9 @@ def test_agora_topic_and_posts_require_membership_for_private(client):
     },
         headers={"x-emporia-agent-id": "atp_owner"})
     slug = r.json()["slug"]
-    r2 = client.post(f"/agoras/topics/{slug}/posts", json={
+    r2 = client.post(f"/agoras/topics/{slug}/posts", json=_signed_post("atp_owner", slug, {
         "author_id": "atp_owner", "title": "secret post", "content": "top secret content",
-    },
+    }),
         headers={"x-emporia-agent-id": "atp_owner"})
     assert r2.status_code == 200, r2.text
     post_id = r2.json()["post_id"]
@@ -10303,7 +10322,7 @@ def test_agent_posts_filters_by_topic_visibility(client):
     GET /agoras/topics/{slug}/posts. Confirms a private-topic post is invisible to an
     anonymous caller and a non-member, visible to a member, and a public-topic post from
     the same author stays visible to everyone regardless."""
-    _register(client, "agp_author")
+    _register_keyed(client, "agp_author")
     _register(client, "agp_member")
     _register(client, "agp_stranger")
 
@@ -10314,7 +10333,7 @@ def test_agent_posts_filters_by_topic_visibility(client):
     private_slug = r.json()["slug"]
     r = client.post(
         f"/agoras/topics/{private_slug}/posts",
-        json={"author_id": "agp_author", "title": "secret", "content": "private content"},
+        json=_signed_post("agp_author", private_slug, {"author_id": "agp_author", "title": "secret", "content": "private content"}),
         headers={"x-emporia-agent-id": "agp_author"},
     )
     private_post_id = r.json()["post_id"]
@@ -10334,7 +10353,7 @@ def test_agent_posts_filters_by_topic_visibility(client):
     public_slug = r.json()["slug"]
     r = client.post(
         f"/agoras/topics/{public_slug}/posts",
-        json={"author_id": "agp_author", "title": "public", "content": "public content"},
+        json=_signed_post("agp_author", public_slug, {"author_id": "agp_author", "title": "public", "content": "public content"}),
         headers={"x-emporia-agent-id": "agp_author"},
     )
     public_post_id = r.json()["post_id"]
@@ -10367,9 +10386,9 @@ def test_agora_writes_gated_by_topic_visibility(client):
     membership only for visibility=="restricted", not "private", so any registered
     non-member could post into a private topic too. Confirms a non-member is refused on
     all four writes and a real member (and the author) can perform them."""
-    _register(client, "agw_owner")
-    _register(client, "agw_member")
-    _register(client, "agw_stranger")
+    _register_keyed(client, "agw_owner")
+    _register_keyed(client, "agw_member")
+    _register_keyed(client, "agw_stranger")
 
     r = client.post("/agoras/topics", json={
         "name": "AGW Private Topic", "description": "d", "visibility": "private",
@@ -10388,13 +10407,13 @@ def test_agora_writes_gated_by_topic_visibility(client):
     # Posting: non-member refused, member (and author) allowed.
     r = client.post(
         f"/agoras/topics/{slug}/posts",
-        json={"author_id": "agw_stranger", "title": "x", "content": "x"},
+        json=_signed_post("agw_stranger", slug, {"author_id": "agw_stranger", "title": "x", "content": "x"}),
         headers={"x-emporia-agent-id": "agw_stranger"},
     )
     assert r.status_code == 403, r.text
     r = client.post(
         f"/agoras/topics/{slug}/posts",
-        json={"author_id": "agw_owner", "title": "secret", "content": "secret content"},
+        json=_signed_post("agw_owner", slug, {"author_id": "agw_owner", "title": "secret", "content": "secret content"}),
         headers={"x-emporia-agent-id": "agw_owner"},
     )
     assert r.status_code == 200, r.text
@@ -10414,12 +10433,12 @@ def test_agora_writes_gated_by_topic_visibility(client):
 
     # Commenting: non-member refused, member allowed.
     r = client.post(
-        f"/agoras/posts/{post_id}/comments", json={"content": "sneaking a look"},
+        f"/agoras/posts/{post_id}/comments", json=_signed_comment("agw_stranger", post_id, {"content": "sneaking a look"}),
         headers={"x-emporia-agent-id": "agw_stranger"},
     )
     assert r.status_code == 403, r.text
     r = client.post(
-        f"/agoras/posts/{post_id}/comments", json={"content": "legit reply"},
+        f"/agoras/posts/{post_id}/comments", json=_signed_comment("agw_member", post_id, {"content": "legit reply"}),
         headers={"x-emporia-agent-id": "agw_member"},
     )
     assert r.status_code == 200, r.text
@@ -10439,7 +10458,7 @@ def test_agora_writes_gated_by_topic_visibility(client):
 
 
 def test_agora_feed_requires_own_identity(client):
-    _register(client, "feed_owner")
+    _register_keyed(client, "feed_owner")
     _register(client, "feed_stranger")
     r = client.post("/agoras/topics", json={
         "name": "Feed Topic", "description": "d", "visibility": "public",
@@ -10447,9 +10466,9 @@ def test_agora_feed_requires_own_identity(client):
     },
         headers={"x-emporia-agent-id": "feed_owner"})
     slug = r.json()["slug"]
-    client.post(f"/agoras/topics/{slug}/posts", json={
+    client.post(f"/agoras/topics/{slug}/posts", json=_signed_post("feed_owner", slug, {
         "author_id": "feed_owner", "title": "hello", "content": "world",
-    },
+    }),
         headers={"x-emporia-agent-id": "feed_owner"})
 
     assert client.get("/agoras/feed", params={"agent_id": "feed_owner"}).status_code == 403
@@ -13412,7 +13431,7 @@ def test_agent_posts_reuses_one_connection_per_request_not_per_row(mock_verify, 
 
     owner = "p1br3_conn_owner"
     viewer = "p1br3_conn_viewer"
-    _register(client, owner)
+    _register_keyed(client, owner)
     _register(client, viewer)
 
     r = client.post("/agoras/topics", json={
@@ -13425,7 +13444,7 @@ def test_agent_posts_reuses_one_connection_per_request_not_per_row(mock_verify, 
 
     for i in range(5):
         post = client.post(f"/agoras/topics/{slug}/posts",
-            json={"title": f"post {i}", "content": "..."},
+            json=_signed_post(owner, slug, {"title": f"post {i}", "content": "..."}),
             headers={"x-emporia-agent-id": owner})
         assert post.status_code == 200, post.text
 
@@ -16957,12 +16976,12 @@ def test_content_limit_now_covers_every_content_bearing_route(client):
     topic = client.post("/agoras/topics", json={"name": "p19 lim topic", "description": ""},
                         headers={"X-Emporia-Agent-Id": "p19_lim_a"}).json()
     slug = topic["slug"]
-    r = client.post(f"/agoras/topics/{slug}/posts", json={"title": "ok", "content": big},
+    r = client.post(f"/agoras/topics/{slug}/posts", json=_signed_post("p19_lim_a", slug, {"title": "ok", "content": big}),
                     headers={"X-Emporia-Agent-Id": "p19_lim_a"})
     assert r.status_code == 400 and "content" in r.text, r.text
-    post = client.post(f"/agoras/topics/{slug}/posts", json={"title": "ok", "content": "fine"},
+    post = client.post(f"/agoras/topics/{slug}/posts", json=_signed_post("p19_lim_a", slug, {"title": "ok", "content": "fine"}),
                        headers={"X-Emporia-Agent-Id": "p19_lim_a"}).json()
-    r = client.post(f"/agoras/posts/{post['post_id']}/comments", json={"content": big},
+    r = client.post(f"/agoras/posts/{post['post_id']}/comments", json=_signed_comment("p19_lim_a", post['post_id'], {"content": big}),
                     headers={"X-Emporia-Agent-Id": "p19_lim_a"})
     assert r.status_code == 400 and "content" in r.text, r.text
 
@@ -18331,12 +18350,12 @@ def test_content_limit_now_covers_the_fields_p19_7_missed(client):
     topic = client.post("/agoras/topics", json={"name": "p20 lim topic", "description": ""},
                         headers={"X-Emporia-Agent-Id": "p20_lim_a"}).json()
     slug = topic["slug"]
-    r = client.post(f"/agoras/topics/{slug}/posts", json={"title": big, "content": "fine"},
+    r = client.post(f"/agoras/topics/{slug}/posts", json=_signed_post("p20_lim_a", slug, {"title": big, "content": "fine"}),
                     headers={"X-Emporia-Agent-Id": "p20_lim_a"})
     assert r.status_code == 400 and "title" in r.text, r.text
     r = client.post(
         f"/agoras/topics/{slug}/posts",
-        json={"title": "ok", "content": "fine", "flair": big},
+        json=_signed_post("p20_lim_a", slug, {"title": "ok", "content": "fine", "flair": big}),
         headers={"X-Emporia-Agent-Id": "p20_lim_a"},
     )
     assert r.status_code == 400 and "flair" in r.text, r.text
@@ -24535,7 +24554,7 @@ def _p47_agent_with_data(client, agent_id: str) -> dict[str, str]:
     slug = topic.json()["slug"]
 
     post = client.post(f"/agoras/topics/{slug}/posts",
-        json={"title": "first", "content": "posted under the old handle"},
+        json=_signed_post(agent_id, slug, {"title": "first", "content": "posted under the old handle"}),
         headers={"x-emporia-agent-id": agent_id})
     assert post.status_code == 200, post.text
 
@@ -27305,7 +27324,7 @@ def test_the_membership_rule_is_written_in_exactly_one_place():
 # P61 — the schema has a version, and the version has to stay honest
 # ---------------------------------------------------------------------------
 
-# 32 tables, 293 columns, at SCHEMA_VERSION 9. Recomputed by the test below;
+# 32 tables, 297 columns, at SCHEMA_VERSION 10. Recomputed by the test below;
 # when it fails, read *why* before touching this string.
 #
 # V1 -> V2 (P72-4): `bounty_entries` and its UNIQUE (listing_id, nous_user_id)
@@ -27335,7 +27354,10 @@ def test_the_membership_rule_is_written_in_exactly_one_place():
 #
 # V8 -> V9 (P241): `session_offers`, a creator's signed offer of an open game.
 # A V8 relay would serve an empty lobby from a V9 database.
-_SCHEMA_FINGERPRINT_V9 = "2c28d823636e9453e6c5da15ac9704115e6486253fcc01dc49e144a498ff25ea"
+#
+# V9 -> V10 (P242): `agora_posts`/`agora_comments` `nonce` and `signature` —
+# each post and comment its author's signed word.
+_SCHEMA_FINGERPRINT_V10 = "4064ea2687399167f8749918cc49453bcabde4a025f85edcd4fb898b888af465"
 
 
 def _schema_fingerprint(db_path) -> tuple[str, int, int]:
@@ -27375,9 +27397,9 @@ def test_a_schema_change_requires_a_version_bump():
     from emporia.relay_server import SCHEMA_VERSION
 
     fingerprint, tables, columns = _schema_fingerprint(_test_db)
-    assert (SCHEMA_VERSION, fingerprint) == (9, _SCHEMA_FINGERPRINT_V9), (
+    assert (SCHEMA_VERSION, fingerprint) == (10, _SCHEMA_FINGERPRINT_V10), (
         f"the schema changed ({tables} tables, {columns} columns) or the version "
-        f"moved. Bump SCHEMA_VERSION *and* update _SCHEMA_FINGERPRINT_V9 — in "
+        f"moved. Bump SCHEMA_VERSION *and* update _SCHEMA_FINGERPRINT_V10 — in "
         f"that order, and never the fingerprint alone.\n"
         f"  code version: {SCHEMA_VERSION}\n  fingerprint:  {fingerprint}"
     )

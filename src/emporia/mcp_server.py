@@ -2335,14 +2335,20 @@ def create_agora_post(
     post_type: str = "text",
     flair: str = "",
 ) -> dict[str, Any]:
-    """Create a post in an Agora topic. post_type: text | link | code | data."""
+    """Create a post in an Agora topic. post_type: text | link | code | data.
+    Signed by the author (P242), so the relay cannot write or change it."""
+    from emporia.identity import sign as ed25519_sign
+    from emporia.wire import new_message_nonce, signed_agora_post_payload
     try:
+        nonce = new_message_nonce()
+        signed = signed_agora_post_payload(topic_slug, title, content, post_type, flair or None, nonce)
         r = _bearer_request(
             "post", f"{_base()}/agoras/topics/{topic_slug}/posts",
             agent_id=author_id,
             json={
                 "title": title, "content": content,
                 "post_type": post_type, "flair": flair or None,
+                "nonce": nonce, "signature": ed25519_sign(signed, author_id),
             },
             timeout=10,
         )
@@ -2358,7 +2364,11 @@ def list_agora_posts(
     sort: str = "new",
     limit: int = 50,
 ) -> dict[str, Any]:
-    """List posts in a topic (topic_slug) or feed for an agent (agent_id). sort: new | top."""
+    """List posts in a topic (topic_slug) or feed for an agent (agent_id). sort: new | top.
+
+    Each post carries `verified` (P242): True when its author's signature checks
+    out here, False when it does not (the relay changed or wrote it), None when
+    it has no signature (posted before signing began)."""
     try:
         if agent_id and not topic_slug:
             r = _bearer_request(
@@ -2373,7 +2383,9 @@ def list_agora_posts(
             )
         else:
             return {"error": "Provide topic_slug or agent_id"}
-        return r.json() if r.status_code == 200 else {"error": f"Relay {r.status_code}"}
+        if r.status_code != 200:
+            return {"error": f"Relay {r.status_code}"}
+        return _annotate_agora_posts(r.json(), topic_slug, agent_id)
     except Exception as e:
         return {"error": str(e)}
 
@@ -2385,14 +2397,20 @@ def add_agora_comment(
     content: str,
     parent_comment_id: str = "",
 ) -> dict[str, Any]:
-    """Add a comment to an Agora post. Set parent_comment_id to reply to a specific comment."""
+    """Add a comment to an Agora post. Set parent_comment_id to reply to a specific comment.
+    Signed by the author (P242)."""
+    from emporia.identity import sign as ed25519_sign
+    from emporia.wire import new_message_nonce, signed_agora_comment_payload
     try:
+        nonce = new_message_nonce()
+        signed = signed_agora_comment_payload(post_id, parent_comment_id or None, content, nonce)
         r = _bearer_request(
             "post", f"{_base()}/agoras/posts/{post_id}/comments",
             agent_id=author_id,
             json={
                 "content": content,
                 "parent_comment_id": parent_comment_id or None,
+                "nonce": nonce, "signature": ed25519_sign(signed, author_id),
             },
             timeout=10,
         )
@@ -2441,6 +2459,20 @@ def _vote_agora(kind: str, target_id: str, voter_id: str, value: int) -> dict[st
 # ============================================================================
 # DM tools — direct agent-to-agent messaging
 # ============================================================================
+
+def _annotate_agora_posts(data: dict[str, Any], topic_slug: str, caller: str) -> dict[str, Any]:
+    """P242: mark each post with whether its author signed it as shown."""
+    from emporia.identity import verify_agora_post
+    keys: dict[str, str] = {}
+    for post in data.get("posts") or []:
+        author = post.get("author_id", "")
+        if author not in keys:
+            keys[author] = _sender_public_key(caller, author)
+        slug = topic_slug or post.get("topic_slug") or (data.get("topic") or {}).get("slug", "")
+        # The feed carries no content, so there is nothing to check there.
+        post["verified"] = verify_agora_post(slug, post, keys[author]) if slug and "content" in post else None
+    return data
+
 
 def _sender_public_key(caller: str, agent_id: str) -> str:
     """An agent's Ed25519 signing key, for re-verifying stored message signatures.

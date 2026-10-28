@@ -8,6 +8,7 @@ scratchpad/extract_router.py's main_defs(). Shared helpers stay in
 from __future__ import annotations
 
 import json
+import sqlite3
 import uuid
 from datetime import UTC, datetime
 from typing import Any
@@ -17,8 +18,18 @@ from fastapi.responses import JSONResponse
 
 from emporia import entitlements
 from emporia import relay_server as rs
+from emporia.wire import ERR_DUPLICATE_NONCE, signed_agora_comment_payload, signed_agora_post_payload
 
 router = APIRouter()
+
+
+def _require_author_signed(caller: str, nonce: str, signature: str, signed: dict) -> None:
+    """P242: an Agora post or comment is its author's signed word — checked
+    against the caller's registered key — so no relay writes or edits one."""
+    if not rs._NONCE_RE.fullmatch(nonce):
+        raise HTTPException(400, "nonce must be 32-64 hex characters")
+    if not rs.AGENT_REGISTRY.verify_signature(caller, signed, signature):
+        raise HTTPException(403, "signature does not match this agent's key")
 
 
 @router.post("/agoras/topics")
@@ -436,6 +447,9 @@ async def create_agora_post(slug: str, req: rs.CreateAgoraPostRequest, request: 
         raise HTTPException(401, "Authentication required")
     rs._require_registered(caller)
     rs._enforce_agent_rate_limit(caller)
+    # P242: the author's signature first, before the (possibly paid) guardrails scan.
+    _require_author_signed(caller, req.nonce, req.signature, signed_agora_post_payload(
+        slug, req.title, req.content, req.post_type, req.flair, req.nonce))
     # P21-5 (B5): title/flair/content bounded automatically — see
     # _require_payload_content_within_limit.
     try:
@@ -456,12 +470,15 @@ async def create_agora_post(slug: str, req: rs.CreateAgoraPostRequest, request: 
             row["visibility"], row["gate_type"], row["entry_fee_cents"], caller, row["topic_id"], conn,
         ):
             raise HTTPException(403, "Private topic — must be a member to post")
-        conn.execute(
-            "INSERT INTO agora_posts (post_id, topic_id, author_id, title, content, "
-            "post_type, flair, created_at) VALUES (?,?,?,?,?,?,?,?)",
-            (post_id, row["topic_id"], caller, req.title, req.content,
-             req.post_type, req.flair, now),
-        )
+        try:
+            conn.execute(
+                "INSERT INTO agora_posts (post_id, topic_id, author_id, title, content, "
+                "post_type, flair, created_at, nonce, signature) VALUES (?,?,?,?,?,?,?,?,?,?)",
+                (post_id, row["topic_id"], caller, req.title, req.content,
+                 req.post_type, req.flair, now, req.nonce, req.signature),
+            )
+        except sqlite3.IntegrityError as e:
+            raise HTTPException(409, {"code": ERR_DUPLICATE_NONCE, "message": "already posted"}) from e
         conn.execute(
             "UPDATE agora_topics SET post_count=post_count+1 WHERE topic_id=?",
             (row["topic_id"],),
@@ -526,6 +543,7 @@ async def list_agora_posts(
                 "flair": p["flair"], "vote_score": p["vote_score"],
                 "comment_count": p["comment_count"], "is_pinned": bool(p["is_pinned"]),
                 "is_locked": bool(p["is_locked"]), "created_at": p["created_at"],
+                "nonce": p["nonce"], "signature": p["signature"],
             }
             for p in posts
         ],
@@ -560,13 +578,13 @@ async def get_agora_post(post_id: str, request: Request):
         "post_type": p["post_type"], "flair": p["flair"],
         "vote_score": p["vote_score"], "comment_count": p["comment_count"],
         "is_pinned": bool(p["is_pinned"]), "is_locked": bool(p["is_locked"]),
-        "created_at": p["created_at"],
+        "created_at": p["created_at"], "nonce": p["nonce"], "signature": p["signature"],
         "comments": [
             {
                 "comment_id": c["comment_id"], "post_id": c["post_id"],
                 "parent_comment_id": c["parent_comment_id"], "author_id": c["author_id"],
                 "content": c["content"], "vote_score": c["vote_score"],
-                "created_at": c["created_at"],
+                "created_at": c["created_at"], "nonce": c["nonce"], "signature": c["signature"],
             }
             for c in comments
         ],
@@ -627,6 +645,9 @@ async def add_agora_comment(post_id: str, req: rs.AddAgoraCommentRequest, reques
         raise HTTPException(401, "Authentication required")
     rs._require_registered(caller)
     rs._enforce_agent_rate_limit(caller)
+    # P242: the author's signature first, before the (possibly paid) guardrails scan.
+    _require_author_signed(caller, req.nonce, req.signature, signed_agora_comment_payload(
+        post_id, req.parent_comment_id, req.content, req.nonce))
     # P21-5 (B5): content bounded automatically — see
     # _require_payload_content_within_limit.
     try:
@@ -652,11 +673,15 @@ async def add_agora_comment(post_id: str, req: rs.AddAgoraCommentRequest, reques
             raise HTTPException(403, "Private topic")
         if p["is_locked"]:
             raise HTTPException(403, "Post is locked")
-        conn.execute(
-            "INSERT INTO agora_comments (comment_id, post_id, parent_comment_id, "
-            "author_id, content, created_at) VALUES (?,?,?,?,?,?)",
-            (comment_id, post_id, req.parent_comment_id, caller, req.content, now),
-        )
+        try:
+            conn.execute(
+                "INSERT INTO agora_comments (comment_id, post_id, parent_comment_id, "
+                "author_id, content, created_at, nonce, signature) VALUES (?,?,?,?,?,?,?,?)",
+                (comment_id, post_id, req.parent_comment_id, caller, req.content, now,
+                 req.nonce, req.signature),
+            )
+        except sqlite3.IntegrityError as e:
+            raise HTTPException(409, {"code": ERR_DUPLICATE_NONCE, "message": "already posted"}) from e
         conn.execute(
             "UPDATE agora_posts SET comment_count=comment_count+1 WHERE post_id=?", (post_id,)
         )

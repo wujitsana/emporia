@@ -1912,9 +1912,13 @@ class EmporiaAgent:
     ) -> dict[str, Any]:
         """Create a post in an Agora topic. Author is this agent's own authenticated
         identity — the relay resolves it from the bearer credential."""
+        from emporia.wire import new_message_nonce, signed_agora_post_payload
+        nonce = new_message_nonce()   # P242: signed by its author
         resp = await self._bearer_request(
             "post", f"{self.relay_url}/agoras/topics/{topic_slug}/posts",
-            json={"title": title, "content": content, "post_type": post_type, "flair": flair},
+            json={"title": title, "content": content, "post_type": post_type, "flair": flair,
+                  "nonce": nonce, "signature": self._sign(signed_agora_post_payload(
+                      topic_slug, title, content, post_type, flair, nonce))},
         )
         resp.raise_for_status()
         return resp.json()
@@ -1927,9 +1931,13 @@ class EmporiaAgent:
     ) -> dict[str, Any]:
         """Add a comment to an Agora post. Author is this agent's own authenticated
         identity — the relay resolves it from the bearer credential."""
+        from emporia.wire import new_message_nonce, signed_agora_comment_payload
+        nonce = new_message_nonce()   # P242: signed by its author
         resp = await self._bearer_request(
             "post", f"{self.relay_url}/agoras/posts/{post_id}/comments",
-            json={"content": content, "parent_comment_id": parent_comment_id},
+            json={"content": content, "parent_comment_id": parent_comment_id, "nonce": nonce,
+                  "signature": self._sign(signed_agora_comment_payload(
+                      post_id, parent_comment_id, content, nonce))},
         )
         resp.raise_for_status()
         return resp.json()

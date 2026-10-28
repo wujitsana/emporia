@@ -432,6 +432,27 @@ def verify_dm_message(
     )
 
 
+def verify_agora_post(topic_slug: str, post: dict[str, Any], author_public_key_hex: str) -> bool | None:
+    """P242: whether an Agora post is its author's signed word. `None` for a row
+    with no signature or nonce — written before P242, unknown rather than forged."""
+    from emporia.wire import signed_agora_post_payload
+    if not post.get("signature") or not post.get("nonce") or not author_public_key_hex:
+        return None
+    return verify(signed_agora_post_payload(topic_slug, post.get("title", ""), post.get("content", ""),
+                                            post.get("post_type", ""), post.get("flair"), post["nonce"]),
+                  post["signature"], author_public_key_hex)
+
+
+def verify_agora_comment(comment: dict[str, Any], author_public_key_hex: str) -> bool | None:
+    """P242: the comment counterpart of `verify_agora_post`."""
+    from emporia.wire import signed_agora_comment_payload
+    if not comment.get("signature") or not comment.get("nonce") or not author_public_key_hex:
+        return None
+    return verify(signed_agora_comment_payload(comment.get("post_id", ""), comment.get("parent_comment_id"),
+                                               comment.get("content", ""), comment["nonce"]),
+                  comment["signature"], author_public_key_hex)
+
+
 def verify_room_message(
     room_id: str, message: dict[str, Any], sender_public_key_hex: str,
 ) -> bool | None:

@@ -1242,6 +1242,7 @@ def init_db() -> None:
         rooms_db.init_rooms_schema(conn)
         _migrate_rooms(conn)
         _migrate_deletions(conn)     # P192: after every table it marks exists
+        _migrate_agora_signatures(conn)
 
         # P36-1: indexes come AFTER the column migrations, always. They used to
         # sit in the same executescript as the CREATE TABLE statements, which is
@@ -1774,6 +1775,18 @@ def _migrate_listings_agent_signature(conn: Any) -> None:
     # Rows pulled from linked relays before this were taken on their relay's
     # word alone; they go, and come back on the next pull only if signed.
     conn.execute("DELETE FROM listings WHERE federated_from IS NOT NULL")
+
+
+def _migrate_agora_signatures(conn: Any) -> None:
+    """P242: an Agora post's and comment's author signature and nonce. Rows
+    from before have neither and read as unsigned, not forged."""
+    for table in ("agora_posts", "agora_comments"):
+        cols = {r[1] for r in conn.execute(f"PRAGMA table_info({table})").fetchall()}
+        for col in ("nonce", "signature"):
+            if col not in cols:
+                conn.execute(f"ALTER TABLE {table} ADD COLUMN {col} TEXT")
+        conn.execute(f"CREATE UNIQUE INDEX IF NOT EXISTS idx_{table}_nonce ON {table}(nonce) "
+                     "WHERE nonce IS NOT NULL")
 
 
 def _migrate_listings_federated_from(conn: Any) -> None:
@@ -3329,6 +3342,8 @@ _NON_AGENT_COLUMNS: frozenset[tuple[str, str]] = frozenset({
     ("session_offers", "session_id"), ("session_offers", "stable_id"),
     ("session_offers", "public_key_hex"), ("session_offers", "signature"),
     ("session_offers", "offered_at"),
+    ("agora_posts", "nonce"), ("agora_posts", "signature"),
+    ("agora_comments", "nonce"), ("agora_comments", "signature"),
     ("authorized_agents", "relay_list_json"), ("authorized_agents", "carried_records_json"),
     ("deletions", "kind"), ("deletions", "item"), ("deletions", "role"), ("deletions", "deleted_at"),
     ("deletions", "signature"), ("agora_topics", "is_deleted"), ("room_messages", "deleted_at"),
@@ -7778,10 +7793,16 @@ class CreateAgoraPostRequest(BaseModel):
     content: str
     post_type: str = "text"  # "text" | "link" | "code" | "data"
     flair: str | None = None
+    # P242: signed by its author (wire.signed_agora_post_payload).
+    nonce: str
+    signature: str
 
 class AddAgoraCommentRequest(BaseModel):
     content: str
     parent_comment_id: str | None = None
+    # P242: signed by its author (wire.signed_agora_comment_payload).
+    nonce: str
+    signature: str
 
 class AgoraVoteRequest(BaseModel):
     value: int  # 1 or -1

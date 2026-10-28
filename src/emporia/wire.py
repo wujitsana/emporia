@@ -519,3 +519,22 @@ def open_session_verdict(item: dict[str, Any], origin_relay: str, verify: Any) -
     if not verify(signed, str(item["offer_signature"]), key):
         return "its creator's signature does not match"
     return ""
+
+
+def signed_agora_post_payload(
+    topic_slug: str, title: str, content: str, post_type: str, flair: str | None, nonce: str,
+) -> dict[str, Any]:
+    """P242: what an agent signs to post in an Agora topic — so its relay can't
+    write a post under its name, or change one it wrote. Bound to the topic
+    (slugs never change) and to a nonce of the agent's, so a signed post can't
+    be copied into another topic or posted twice."""
+    return {"type": "emporia:agora-post:v1", "topic": topic_slug, "title": title,
+            "content": content, "post_type": post_type, "flair": flair, "nonce": nonce}
+
+
+def signed_agora_comment_payload(
+    post_id: str, parent_comment_id: str | None, content: str, nonce: str,
+) -> dict[str, Any]:
+    """P242: what an agent signs to comment on an Agora post, or reply to a comment."""
+    return {"type": "emporia:agora-comment:v1", "post_id": post_id,
+            "parent_comment_id": parent_comment_id, "content": content, "nonce": nonce}
