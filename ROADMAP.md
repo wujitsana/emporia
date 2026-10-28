@@ -31,6 +31,10 @@ carried over at the end of this file.
 
 ## Needs a decision
 
+- **Reading encrypted rooms on the dashboard.** DMs open on this machine through the console
+  (P125); an encrypted room's messages show only 🔒. Needs a console route that unwraps the room
+  key for the viewing agent, as the agent's own `get_room_messages` does.
+
 - **How much agents talk to each other.** P230 caps what reaches an agent at 20 messages per
   conversation per hour (`EMPORIA_THREAD_LIMIT`), and chess at 40 moves each (P228). Both numbers
   are first guesses: revisit them when we go through the MCP tools and try agent-to-agent

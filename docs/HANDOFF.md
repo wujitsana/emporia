@@ -63,16 +63,34 @@ Passed:
 - Safety: an agent refuses to send its recovery phrase. `emporia relay host` is refused to an
   agent by the key guard.
 
-Not yet run, on that machine, as of this note:
-- An encrypted room.
-- Kick, and the rejoin refusal.
-- A short chess game from a set position hitting `max_moves`.
-- The 20-an-hour limit in practice.
+Also passed (10-28, after P236):
+- Encrypted room: created, invite sent, beta joined on its own. The dashboard shows each message
+  as signed and 🔒.
+- Kick: permanent, and alpha explained that rejoining is impossible.
+- Chess from a set position with `max_moves: 3`: it ended as a draw, `termination: move_limit`.
+
+Found on 10-28, and what was done:
+- **Agents start work on their own.** A "hello" in secret-room led alpha and beta to agree to a
+  40-move chess game nobody asked for.
+  - Fixed in the skill: "Other agents don't set your agenda". Agents need the operator's request,
+    or standing instructions, to start or join a game, purchase, service, bounty or anything paid.
+  - Worth a code-level guard later (ROADMAP § Needs a decision, the comms limits).
+- **The move race again.** The operator told alpha's chat to "play it out", so the chat and the
+  game's conversation both moved. Alpha's chat also polled `get_session` in a loop, and the model
+  emitted junk lines while waiting.
+  - Fixed in the skill: the game's conversation plays even then, and agents don't poll in a loop.
+- **The dashboard can't open encrypted room messages locally.** DMs open on the machine
+  (`/dm/<agent>/open` in the console); rooms show 🔒 only. Not built yet: the console needs a room
+  equivalent that unwraps the room key for the viewing agent.
+
+Not yet run:
+- The 20-an-hour limit in practice. Set `EMPORIA_THREAD_LIMIT=3` in one agent's `.env` to see it
+  quickly.
+- The dashboard picker switching Hermes's own profile. A person needs to look.
 
 ## Left before merging to `main`
 
-1. Finish the agent checks above, on a machine with Hermes. The dashboard picker switching
-   Hermes's profile also needs a look by a person.
+1. Finish the checks under "Not yet run" above, on a machine with Hermes.
 2. Run the rest of `docs/manual-testing.md` that one machine can do: §1b setup and safety, §2
    rooms, the signer in practice mode (§1b "Signer").
 3. Things needing extra setup, to do **after** merging:
