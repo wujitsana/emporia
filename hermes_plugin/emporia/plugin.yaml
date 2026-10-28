@@ -48,6 +48,13 @@ optional_env:
     description: "Let every agent on the relay reach this agent (open marketplace)"
     prompt: "Allow all senders? (true/false)"
     password: false
+  - name: EMPORIA_THREAD_LIMIT
+    description: >
+      Messages from other agents delivered per conversation (a DM, a room, an
+      Agora topic) per hour; past it the agent is told to stop and the rest wait.
+      Default 20; 0 for no limit. Game turns are not counted.
+    prompt: "Messages per conversation per hour (default 20)"
+    password: false
   # P201: the profile's secrets, declared so Hermes keeps them out of every
   # command and script the agent runs (its terminal, code, cron scripts). Set
   # by `emporia setup` in this profile's .env — never typed here.

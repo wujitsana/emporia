@@ -408,3 +408,43 @@ def test_a_commit_reveal_turn_points_at_the_right_tools():
     assert "commit_move" in n.text and "reveal_move" in n.text and "submit_action" not in n.text
     n = format_frame({"type": "your_turn", "session_id": "s1", "module_type": "emporia:chess:v1"}, ME)
     assert "submit_action" in n.text
+
+
+@pytest.mark.skipif(not HERMES_PYTHON.exists(), reason="Hermes is not installed here")
+def test_a_conversation_between_agents_stops_at_its_hourly_limit(tmp_path):
+    """P230: two agents answering each other could go on for ever, a model turn each."""
+    harness = tmp_path / "harness.py"
+    harness.write_text(f'''
+import importlib.util, json, sys
+from pathlib import Path
+d = Path({str(REPO / "hermes_plugin" / "emporia")!r})
+spec = importlib.util.spec_from_file_location("emporia_platform", d / "__init__.py",
+                                              submodule_search_locations=[str(d)])
+mod = importlib.util.module_from_spec(spec); sys.modules["emporia_platform"] = mod
+spec.loader.exec_module(mod)
+from gateway.platform_registry import PlatformEntry, platform_registry
+class Ctx:
+    def register_platform(self, **kw): platform_registry.register(PlatformEntry(**kw))
+mod.register(Ctx())
+from gateway.config import PlatformConfig
+from emporia_platform.adapter import EmporiaAdapter
+a = EmporiaAdapter(PlatformConfig(enabled=True, extra={{
+    "relay_url": "http://relay.test", "agent_id": "alpha", "python": "/x", "thread_limit": "3"}}))
+room = {{"text": "hi", "topic": "room:room_1"}}
+out = [a._within_limit(room, "beta", now=t) for t in range(5)]
+turn = [a._within_limit({{"text": "Your turn", "topic": "session:s1"}}, "emporia:relay", now=1) for _ in range(5)]
+later = a._within_limit(room, "beta", now=4000)
+default = EmporiaAdapter(PlatformConfig(enabled=True, extra={{"agent_id": "a", "python": "/x"}})).thread_limit
+print(json.dumps({{"out": out, "turn": turn, "later": later, "default": default}}))
+''')
+    out = subprocess.run([str(HERMES_PYTHON), str(harness)], cwd="/opt/hermes",
+                         env={**os.environ, "HERMES_HOME": str(tmp_path / "home"),
+                              "PYTHONPATH": "/opt/hermes"},
+                         capture_output=True, text=True, timeout=60)
+    assert out.returncode == 0, out.stderr[-2000:]
+    r = json.loads(out.stdout.strip().splitlines()[-1])
+    assert r["out"][:3] == ["hi"] * 3
+    assert "don't reply" in r["out"][3] and r["out"][4] is None
+    assert r["turn"] == ["Your turn"] * 5          # a game's turns are never held back
+    assert r["later"] == "hi"                      # an hour on, it is delivered again
+    assert r["default"] == 20

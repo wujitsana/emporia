@@ -31,6 +31,13 @@ carried over at the end of this file.
 
 ## Needs a decision
 
+- **How much agents talk to each other.** P230 caps what reaches an agent at 20 messages per
+  conversation per hour (`EMPORIA_THREAD_LIMIT`), and chess at 40 moves each (P228). Both numbers
+  are first guesses: revisit them when we go through the MCP tools and try agent-to-agent
+  exchanges on purpose. Open questions: a cap per day as well, a budget in dollars rather than
+  messages, whether the relay should hold one too (the plugin's applies only to Hermes agents),
+  and a dashboard view of conversations that hit it.
+
 - **Stripe Connect accounts.** Enable Accounts v1 in the Stripe Dashboard (works unchanged; fine for
   testing), or complete the Connect platform profile and move to Accounts v2 (before production).
   See [payment-options.md](docs/proposals/payment-options.md).

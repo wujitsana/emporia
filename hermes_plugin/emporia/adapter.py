@@ -28,6 +28,7 @@ import json
 import logging
 import os
 import re
+import time
 from typing import Any, Optional
 
 from gateway.config import Platform
@@ -44,6 +45,11 @@ BRIDGE_MODULE = "emporia.plugins.platforms.emporia.bridge"
 _MAX_BACKOFF = 60.0
 # A topic from the bridge (P129): `kind:id`, plain characters only.
 _TOPIC_RE = re.compile(r"(session|dm|room|agora):[A-Za-z0-9_.:@-]{1,90}")
+# P230: agent-to-agent messages delivered per conversation per hour. Each one
+# is a model turn; two agents answering each other can go on indefinitely.
+# A game's turns are not counted: the game's own limits end it.
+DEFAULT_THREAD_LIMIT = 20
+_THREAD_WINDOW_S = 3600.0
 
 
 def _setting(extra: dict, env: str, key: str, default: str = "") -> str:
@@ -89,6 +95,12 @@ class EmporiaAdapter(BasePlatformAdapter):
         # another profile's key directory, and a sign-in the relay refused.
         self.dotenv = _setting(extra, "EMPORIA_DOTENV", "dotenv")
         self._dedup = MessageDeduplicator()
+        try:
+            self.thread_limit = int(_setting(extra, "EMPORIA_THREAD_LIMIT", "thread_limit",
+                                             str(DEFAULT_THREAD_LIMIT)))
+        except ValueError:
+            self.thread_limit = DEFAULT_THREAD_LIMIT
+        self._thread_seen: dict[str, list[float]] = {}
         self._proc: Optional[asyncio.subprocess.Process] = None
         self._run_task: Optional[asyncio.Task] = None
         self._stopping = False
@@ -235,13 +247,40 @@ class EmporiaAdapter(BasePlatformAdapter):
         if not self._message_handler:
             return
         sender = str(notice.get("sender") or "emporia:relay")
+        text = self._within_limit(notice, sender)
+        if text is None:
+            return
         chat_id, chat_name = self.chat_for(notice)
         source = self.build_source(
             chat_id=chat_id, chat_name=chat_name, chat_type="dm",
             user_id=sender, user_name=sender, message_id=message_id or None)
         await self.handle_message(MessageEvent(
-            text=notice["text"], message_type=MessageType.TEXT, source=source,
+            text=text, message_type=MessageType.TEXT, source=source,
             message_id=message_id or None, timestamp=datetime.datetime.now()))
+
+    def _within_limit(self, notice: dict[str, Any], sender: str, now: Optional[float] = None) -> Optional[str]:
+        """The notice's text, or None when this conversation is over its hourly
+        limit (P230). The first notice past the limit becomes a note saying so,
+        so the agent stops rather than wondering; the rest are not delivered
+        until the hour has room again. The relay keeps every message — the
+        operator reads the thread in the dashboard. EMPORIA_THREAD_LIMIT=0: none."""
+        topic = notice.get("topic")
+        if (self.thread_limit <= 0 or sender.startswith("emporia:") or not isinstance(topic, str)
+                or not topic.startswith(("dm:", "room:", "agora:"))):
+            return notice["text"]
+        now = time.monotonic() if now is None else now
+        seen = [t for t in self._thread_seen.get(topic, []) if now - t < _THREAD_WINDOW_S]
+        seen.append(now)
+        self._thread_seen[topic] = seen
+        if len(seen) <= self.thread_limit:
+            return notice["text"]
+        if len(seen) == self.thread_limit + 1:
+            return (f"[Emporia] {topic}: {self.thread_limit} messages from other agents here in the "
+                    "last hour. Further ones are not delivered to you until it slows down, so this "
+                    "exchange is over for now: don't reply. Your operator can read the conversation in "
+                    "the dashboard and pick it up with you.")
+        logger.info("Emporia: %s over its hourly limit (%d) — a notice not delivered", topic, self.thread_limit)
+        return None
 
     async def send(self, chat_id: str, content: str, reply_to: Optional[str] = None,
                    metadata: Optional[dict[str, Any]] = None) -> SendResult:
