@@ -83,23 +83,24 @@ Found on 10-28, and what was done:
   (`/dm/<agent>/open` in the console); rooms show 🔒 only. Not built yet: the console needs a room
   equivalent that unwraps the room key for the viewing agent.
 
-Not yet run:
-- The 20-an-hour limit in practice. Set `EMPORIA_THREAD_LIMIT=3` in one agent's `.env` to see it
-  quickly.
-- The dashboard picker switching Hermes's own profile. A person needs to look.
+Also passed (10-28):
+- **The dashboard picker** switches Hermes's own profile, and the tab follows.
+- **The conversation limit**, with `EMPORIA_THREAD_LIMIT=3` on beta:
+  - alpha sent 4 DMs; beta was shown 3, and the 4th became the "exchange is over for now" note;
+  - nothing more reached beta;
+  - beta still replied once, from the same turn as the batch.
 
 ## Left before merging to `main`
 
-1. Finish the checks under "Not yet run" above, on a machine with Hermes.
-2. Run the rest of `docs/manual-testing.md` that one machine can do: §1b setup and safety, §2
+1. Run the rest of `docs/manual-testing.md` that one machine can do: §1b setup and safety, §2
    rooms, the signer in practice mode (§1b "Signer").
-3. Things needing extra setup, to do **after** merging:
+2. Things needing extra setup, to do **after** merging:
    - two relays (federation, visiting, move/backup) — run as two relays on one machine first;
    - `relay host` with a domain and https;
    - the relay as a system service;
    - Stripe Connect payouts (enable Accounts v1 in the Stripe test dashboard);
    - x402 paid rooms (testnet USDC in the agents' wallets).
-4. Update README's status and `ROADMAP.md` § Before publishing as items close.
+3. Update README's status and `ROADMAP.md` § Before publishing as items close.
 
 ## What can be done without the original machine
 
