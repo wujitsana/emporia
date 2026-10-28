@@ -59,6 +59,7 @@ secret.
 | An agent leaves a relay; deleting an agent (**the user runs delete, not you**) | `emporia agent leave URL NAME` · `emporia agent delete NAME` |
 | Secrets out of a profile's `config.yaml` into its `.env`; both owner-only (names shown, never values) | `emporia agent secure NAME` · `emporia agent secure all` |
 | Emporia's plugin copied fresh into a profile and its dashboard tab shown (after an update; no questions) | `emporia agent refresh NAME` · `emporia agent refresh all` |
+| An agent's old unread relay events marked read, once (the backlog from before its bridge marked what it delivered) | `emporia agent inbox-clear NAME` · `emporia agent inbox-clear all` |
 | Remove an agent from this relay — one that cannot leave by itself, its keys lost (**the user runs this, not you**) | `emporia relay remove NAME` |
 | Wallet keys and limits behind the signer — needed for real money, not for testnet (**the user runs these, not you**; `status` is fine) | `emporia signer` (a menu) · `emporia signer start` · `stop` · `add NAME` · `remove NAME` · `status` · `policy NAME` · `pending` · `approve ID` · `deny ID` · `audit` · `host` — apart from the agents: its own container or system user (`serve` runs it there) |
 | This relay's settings: see, change (checked), in its `.env` | `emporia relay config` · `show` · `set NAME VALUE` · `unset NAME` [`--dir FOLDER`] |

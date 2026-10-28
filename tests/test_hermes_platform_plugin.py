@@ -112,3 +112,24 @@ def test_doctor_catches_delegation_that_undoes_a_role(tmp_path, monkeypatch, cap
     cli.doctor_delegation(rep, root / "coder")
     out = capsys.readouterr().out
     assert rep.failed and "api_key in plain text" in out and "sk-plain" not in out
+
+
+def test_inbox_clear_marks_each_agents_backlog_read(tmp_path, monkeypatch, capsys):
+    """P235: a person clears the backlog from before bridges marked what they delivered."""
+    from emporia import cli
+    root = tmp_path / "profiles"
+    for name in ("alpha", "beta"):
+        (root / name).mkdir(parents=True)
+        (root / name / "config.yaml").write_text(yaml.dump(
+            {"mcp_servers": {"emporia": {"env": {"EMPORIA_AGENT_ID": name}}}}))
+    monkeypatch.setattr(cli, "profiles_root", lambda: root)
+    calls = []
+
+    def fake(agent_id, key_dir, path, method="GET"):
+        calls.append((agent_id, path, method))
+        return 200, {"marked": 3}
+    monkeypatch.setattr(cli, "_signed_get", fake)
+    assert cli.main(["agent", "inbox-clear", "all"]) == 0
+    assert calls == [("alpha", "agents/alpha/inbox/mark-all-read", "POST"),
+                     ("beta", "agents/beta/inbox/mark-all-read", "POST")]
+    assert "alpha: 3 marked read" in capsys.readouterr().out

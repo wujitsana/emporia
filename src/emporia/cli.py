@@ -1833,6 +1833,29 @@ def cmd_agent_refresh(name: str) -> int:
     return 0
 
 
+def cmd_agent_inbox_clear(name: str) -> int:
+    """P235: `emporia agent inbox-clear NAME|all` — every unread event in an
+    agent's relay inbox marked read, once. For the backlog from before an
+    agent's bridge marked what it delivered (P233): old turn notices of games
+    long over. Run by a person; the dashboard marks nothing read (P234)."""
+    names = [p.name for p, _ in _agent_profiles(profiles_root())] if name == "all" else [name]
+    if not names:
+        print(f"agent inbox-clear: no agent profile under {profiles_root()}")
+        return 1
+    failed = False
+    for n in names:
+        profile, agent_id, _ = _agent(n)
+        key_dir = _key_file(profile, agent_id, "identity").parent
+        status, body = _signed_get(agent_id, key_dir, f"agents/{agent_id}/inbox/mark-all-read", "POST")
+        if status == 200:
+            print(f"  {n}: {body.get('marked', 0)} marked read")
+        else:
+            failed = True
+            print(f"  {n}: not cleared ({status or body}) — is the relay running current code? "
+                  "emporia relay restart")
+    return 1 if failed else 0
+
+
 def cmd_agent(args: argparse.Namespace) -> int:
     """P195: `emporia agent leave URL NAME` and `emporia agent delete NAME`.
 
@@ -2411,15 +2434,15 @@ def _agent_profiles(root: Path) -> list[tuple[Path, dict]]:
     return out
 
 
-def _signed_get(agent_id: str, key_dir: Path, path: str) -> tuple[int, Any]:
-    """GET `path` on the relay as `agent_id`, signed with its own key."""
+def _signed_get(agent_id: str, key_dir: Path, path: str, method: str = "GET") -> tuple[int, Any]:
+    """GET (or `method`) `path` on the relay as `agent_id`, signed with its own key."""
     from emporia.console.agents import LocalAgent
     from emporia.console.relay import RelayClient
 
     async def go():
         client = RelayClient(relay_url(), timeout=10)
         try:
-            r = await client.forward(LocalAgent(agent_id, key_dir), "GET", path, "", {}, b"")
+            r = await client.forward(LocalAgent(agent_id, key_dir), method, path, "", {}, b"")
             return r.status_code, (r.json() if r.content else None)
         finally:
             await client.close()
@@ -4899,13 +4922,14 @@ def build_parser() -> argparse.ArgumentParser:
 
     ag2 = sub.add_parser("agent", help="an agent leaves a relay, is deleted from this machine, has its "
                                        "secrets moved out of config.yaml (secure) or its plugin updated (refresh)")
-    ag2.add_argument("action", choices=["leave", "delete", "secure", "refresh"])
-    ag2.add_argument("url_or_name", help="leave: the relay's URL; delete, secure, refresh: the agent "
-                                         "(secure, refresh: or all)")
+    ag2.add_argument("action", choices=["leave", "delete", "secure", "refresh", "inbox-clear"])
+    ag2.add_argument("url_or_name", help="leave: the relay's URL; delete, secure, refresh, inbox-clear: the agent "
+                                         "(secure, refresh, inbox-clear: or all)")
     ag2.add_argument("name", nargs="?", default="", help="leave: the agent")
     ag2.add_argument("--home", action="store_true", help="leave: even its home (it is then on no relay)")
     ag2.set_defaults(func=lambda a: cmd_agent_secure(a.url_or_name) if a.action == "secure" else
-                     cmd_agent_refresh(a.url_or_name) if a.action == "refresh" else cmd_agent(
+                     cmd_agent_refresh(a.url_or_name) if a.action == "refresh" else
+                     cmd_agent_inbox_clear(a.url_or_name) if a.action == "inbox-clear" else cmd_agent(
         argparse.Namespace(action=a.action, url=a.url_or_name if a.action == "leave" else "",
                            name=a.name if a.action == "leave" else a.url_or_name, home=a.home)))
 
