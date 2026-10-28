@@ -476,6 +476,16 @@ def cmd_relay(args: argparse.Namespace) -> int:
         lines = log.read_text(errors="replace").splitlines() if log.exists() else []
         print("\n".join(lines[-args.lines:]) or f"(no log at {log})")
         return 0
+    if args.action == "restart":
+        # P229: new relay code takes effect only in a new process. Stop, wait
+        # until the port is free, start.
+        if cmd_relay(argparse.Namespace(**{**vars(args), "action": "stop"})) != 0:
+            return 1
+        for _ in range(40):
+            if not health(timeout=1):
+                break
+            time.sleep(0.25)
+        return cmd_relay(argparse.Namespace(**{**vars(args), "action": "start"}))
     if args.action == "stop":
         try:
             pid = int(pid_file.read_text())
@@ -574,7 +584,7 @@ def _choose_relay(current: str = "") -> str:
         # P214: short — the URL and what matters; the rest shows when highlighted.
         state = _relay_brief(up[u]) if up[u] else "not running"
         if up[u] and u == LOCAL_RELAY and str(up[u].get("version")) != __version__:
-            state += " — older code; restart it: emporia relay stop && emporia relay start"
+            state += " — older code; restart it: emporia relay restart"
         desc = (f"{u}  ({'current, ' if u == current else ''}{state}"
                 + (f"; used by {', '.join(who)}" if who else "") + ")")
         options.append((f"use:{u}", desc))
@@ -627,7 +637,7 @@ def _start_local_relay(current: str) -> str:
     if ask("Take testnet USDC payments and escrow on it now (Base Sepolia; needs an address for your fee)?", True):
         if cmd_setup_relay(argparse.Namespace(preset="base-sepolia", with_networks="", fee_receiver="",
                                               yes=False)) != 0:
-            print("  Skipped — later: emporia setup relay, then emporia relay stop && emporia relay start")
+            print("  Skipped — later: emporia setup relay, then emporia relay restart")
     os.environ["EMPORIA_RELAY_URL"] = LOCAL_RELAY
     if cmd_relay(argparse.Namespace(action="start", lines=40)) != 0:
         print(f"  Keeping {current or LOCAL_RELAY} for now; once `emporia relay start` works the agent finds it there.")
@@ -919,7 +929,7 @@ def cmd_relay_links(args: argparse.Namespace) -> int:
             return 1
         print(f"  {'linked to' if args.action == 'link' else 'unlinked from'} {url}"
               + ("" if args.action == "link" else " — its listings go from here at the relay's next start"))
-        print("  Restart the relay to apply it: emporia relay stop && emporia relay start"
+        print("  Restart the relay to apply it: emporia relay restart"
               + ("  (or `docker compose restart relay` in its folder)" if getattr(args, "dir", "") else ""))
         if args.action == "link":
             print("  It is one-way until that relay links back to this one; ask its operator.")
@@ -1038,7 +1048,7 @@ def cmd_relay_access(args: argparse.Namespace) -> int:
               + (" — it stops pulling from and serving linked relays." if updates[ra.SETTING] == "closed" else "."))
     print("  The relay applies it within seconds (one run as a system service: at its next restart)."
           + ("" if updates.get(ra.SETTING) != "closed" else
-             "\n  Restart it once so it also stops pulling from linked relays: emporia relay stop && emporia relay start"))
+             "\n  Restart it once so it also stops pulling from linked relays: emporia relay restart"))
     return 0
 
 
@@ -2099,7 +2109,7 @@ def cmd_relay_rotate_key(args: argparse.Namespace) -> int:
         return 1
     step = identity.rotate_relay_key()
     print(f"  old {step['old'][:16]}… → new {step['new'][:16]}…, signed by the old key.")
-    print("  Restart the relay to sign with it: emporia relay stop && emporia relay start")
+    print("  Restart the relay to sign with it: emporia relay restart")
     return 0
 
 
@@ -2167,7 +2177,7 @@ def cmd_relay_config(args: argparse.Namespace) -> int:
         where = f"{secrets / st.name}" if in_docker else str(env_path)
         print(f"  {st.name} {'cleared' if clear else 'written to ' + where} (value not shown)")
         print("  Applies when the relay restarts" + (": docker compose up -d, in its folder" if in_docker
-                                                   else ": emporia relay stop && emporia relay start"))
+                                                   else ": emporia relay restart"))
         return 0
 
     def write(st: "rc.Setting", raw: str | None) -> int:
@@ -2190,7 +2200,7 @@ def cmd_relay_config(args: argparse.Namespace) -> int:
                 return 1
             print(f"  {st.name}={value if st.kind != 'keys' else '…'}")
         print("  Applies within seconds." if st.live else
-              "  Applies when the relay restarts: emporia relay stop && emporia relay start"
+              "  Applies when the relay restarts: emporia relay restart"
               + ("  (or `docker compose restart relay` in its folder)" if getattr(args, "dir", "") else ""))
         return 0
 
@@ -2445,7 +2455,7 @@ def doctor_relay(rep: Report) -> dict | None:
     stale = _relay_code_behind(h)
     if stale:
         rep.fail(f"the relay runs older code than this checkout ({stale})",
-                 "emporia relay stop && emporia relay start")
+                 "emporia relay restart")
     mode = h.get("stripe_mode")
     if not h.get("stripe_enabled"):
         rep.warn("Stripe off", "set STRIPE_SECRET_KEY (an sk_test_ key for testing) in the relay's .env")
@@ -3400,7 +3410,7 @@ def cmd_setup_relay(args: argparse.Namespace) -> int:
     if os.getenv("STRIPE_SECRET_KEY", "").startswith(("sk_live_", "rk_live_")):
         print("  ! STRIPE_SECRET_KEY is a live key — use an sk_test_ key for testing.")
     print(f"  Fund the operator {address} with a little Base Sepolia ETH for gas.")
-    print("  Restart the relay: emporia relay stop && emporia relay start")
+    print("  Restart the relay: emporia relay restart")
     return 0
 
 
@@ -3468,7 +3478,7 @@ def cmd_setup_stripe(args: argparse.Namespace) -> int:
     if updates:
         changed = merge_env_file(me / ".env", updates)
         print(f"  {len(changed)} Stripe setting(s) written to {me / '.env'} (values not shown)")
-        print("  Restart the relay: emporia relay stop && emporia relay start")
+        print("  Restart the relay: emporia relay restart")
     for name in ([args.agent] if args.agent else []):
         _agent_stripe(profiles_root() / name, name)
     return 0
@@ -4868,7 +4878,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     r = sub.add_parser("relay", help="start, stop or inspect this machine's relay; `use` moves agents to another; "
                                      "`host` runs one for other machines, in Docker behind https")
-    r.add_argument("action", choices=["start", "stop", "status", "logs", "use", "host", "link", "unlink", "links",
+    r.add_argument("action", choices=["start", "stop", "restart", "status", "logs", "use", "host", "link", "unlink", "links",
                                       "access", "members", "move", "backup", "rotate-key",
                                       "config", "overview", "owner-key", "remove"])
     r.add_argument("url", nargs="?", default="", help="use, link, unlink: the other relay's URL")

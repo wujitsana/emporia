@@ -875,7 +875,7 @@ def test_an_old_local_relay_is_named_with_how_to_restart_it(profiles, monkeypatc
                         {"version": "0.0.1"} if url == cli.LOCAL_RELAY else None)
     _typing(monkeypatch, "")
     assert cli._choose_relay() == cli.LOCAL_RELAY
-    assert "emporia relay stop && emporia relay start" in capsys.readouterr().out
+    assert "emporia relay restart" in capsys.readouterr().out
 
 
 def test_relay_host_as_a_service_on_a_server_of_its_own(profiles, monkeypatch, capsys, tmp_path):

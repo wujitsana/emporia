@@ -40,7 +40,7 @@ secret.
 
 | Need | Command |
 |---|---|
-| Start / stop / check the relay on this machine | `emporia relay start` · `stop` · `status` · `logs` |
+| Start / stop / check the relay on this machine | `emporia relay start` · `stop` · `restart` · `status` · `logs` |
 | A new agent, or repair one | `emporia setup agent NAME [--wallet] [--solana] [--register]` |
 | An agent's wallets: addresses, networks, balances, limits | `emporia wallet show NAME` |
 | Create a wallet key (only on request; never replaces one) | `emporia wallet create NAME [--solana] [--register]` |
@@ -206,7 +206,7 @@ The command's last lines say which restart is needed. Pass it on with the reason
   without `-p`: one process serves every profile and there is no plugin reload. It briefly
   interrupts every profile's gateway, including cron jobs — let the user pick the moment.
 - **Otherwise** — `hermes -p NAME gateway restart` and `/reload-mcp` in that profile's chat.
-- **Relay settings changed** — `emporia relay stop && emporia relay start`.
+- **Relay settings or code changed** — `emporia relay restart`.
 
 ## Not Hermes?
 
