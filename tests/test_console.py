@@ -91,8 +91,9 @@ def test_the_console_only_reads_as_the_agent(client):
         r = getattr(c, method)("/relay/p198_a/listings") if method != "delete" else \
             c.delete("/relay/p198_a/admin/sessions/x")
         assert r.status_code == 405, (method, r.status_code)
-    assert c.post("/relay/p198_a/agents/p198_b/inbox/mark-read", json=[]).status_code == 405   # not its own
-    assert c.post("/relay/p198_a/agents/p198_b/inbox/mark-all-read").status_code == 405         # P232: nor here
+    # P234: nor marking its own inbox read — read means the agent has had it
+    assert c.post("/relay/p198_a/agents/p198_a/inbox/mark-read", json=[]).status_code == 405
+    assert c.post("/relay/p198_a/agents/p198_a/inbox/mark-all-read").status_code == 405
 
 
 def test_the_console_checks_a_game_itself_with_the_agents_own_receipts(client):

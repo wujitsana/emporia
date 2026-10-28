@@ -782,16 +782,6 @@ export const api = {
       `/agents/${encodeURIComponent(agent_id)}/inbox?unread_only=${unread_only}&limit=${limit}`,
       { agentScoped: true }
     ),
-  /** P232: every unread event, not only the page shown. */
-  markInboxAllRead: (agent_id: string) =>
-    post<{ ok: boolean; marked: number }>(
-      `/agents/${encodeURIComponent(agent_id)}/inbox/mark-all-read`, {}),
-  markInboxRead: (agent_id: string, inbox_ids: string[]) =>
-    post<{ ok: boolean; marked: number }>(
-      `/agents/${encodeURIComponent(agent_id)}/inbox/mark-read`,
-      inbox_ids
-    ),
-
   // DMs — sender is the authenticated caller (agentHeaders()), not a body field (N2-4).
   dmThreads: (agent_id: string) =>
     get<DMThread[]>(`/dm?agent_id=${encodeURIComponent(agent_id)}`, { agentScoped: true }),

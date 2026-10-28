@@ -16,15 +16,52 @@ import { VIA_CONSOLE, consoleUrl, hermesProfile, httpFetch } from "../transport"
  * still decides what each identity may see.
  */
 export function ViewerSwitcher() {
-  // P231: in the Hermes dashboard the tab belongs to the profile it is open in —
-  // Hermes's own profile picker is the switcher.
   const hermes = hermesProfile();
-  if (hermes) {
-    return hermes.isAgent
-      ? <span className="e-viewer-switch e-faint" title="The agent of this Hermes profile">as {hermes.name}</span>
-      : null;
-  }
-  return <ViewerSelect />;
+  return hermes ? <HermesProfileSelect current={hermes} /> : <ViewerSelect />;
+}
+
+/**
+ * P234: inside the Hermes dashboard the tab belongs to a Hermes profile, so
+ * picking an agent switches *Hermes's* profile — its own picker follows (it
+ * reads ?profile= from the URL) and the tab reloads as that agent. Only
+ * agents registered on the relay, with keys here and a Hermes profile.
+ */
+function HermesProfileSelect({ current }: { current: { name: string; isAgent: boolean } }) {
+  const [ids, setIds] = React.useState<string[]>([]);
+  React.useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      const local: string[] = await httpFetch(consoleUrl("/agents")).then((r) => r.json())
+        .then((d) => d.agents ?? []).catch(() => []);
+      const profiles: string[] = await httpFetch("/api/profiles").then((r) => r.json())
+        .then((d) => (d.profiles ?? []).map((p: { name: string }) => p.name)).catch(() => []);
+      const asker = local.find((a) => profiles.includes(a));
+      const registered: string[] = asker
+        ? await httpFetch(`${consoleUrl(`/relay/${encodeURIComponent(asker)}`)}/agents`).then((r) => r.json())
+          .then((d) => (d.agents ?? []).map((a: { agent_id: string }) => a.agent_id)).catch(() => [])
+        : [];
+      if (!cancelled) setIds(local.filter((a) => profiles.includes(a) && registered.includes(a)).sort());
+    })();
+    return () => { cancelled = true; };
+  }, []);
+
+  const choose = (e: React.ChangeEvent<HTMLSelectElement>) => {
+    if (!e.target.value) return;
+    const url = new URL(window.location.href);
+    url.searchParams.set("profile", e.target.value);
+    window.history.pushState(null, "", url.toString());
+    window.dispatchEvent(new PopStateEvent("popstate"));
+  };
+
+  return (
+    <label className="e-viewer-switch" title="Switch the Hermes profile to this agent's">
+      <span className="e-faint">as</span>
+      <select value={current.isAgent ? current.name : ""} onChange={choose} aria-label="Agent">
+        {!current.isAgent && <option value="">choose an agent</option>}
+        {ids.map((id) => <option key={id} value={id}>{id}</option>)}
+      </select>
+    </label>
+  );
 }
 
 function ViewerSelect() {

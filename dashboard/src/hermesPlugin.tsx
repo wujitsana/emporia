@@ -77,8 +77,12 @@ async function mount(host: HTMLElement, sdk: HermesPluginSdk): Promise<() => voi
   window.__EMPORIA_HERMES_PROFILE__ = await ensureViewer(
     () => sdk.authedFetch("/api/plugins/emporia/agents")
       .then((r) => r.json()).then((d) => d.agents as string[]),
-    async () => HERMES_PROFILE || sdk.authedFetch("/api/plugins/emporia/_hermes_profile")
-      .then((r) => r.json()).then((d) => String(d.profile ?? "")),
+    // P234: never "" inside Hermes — that read as "not in Hermes" and kept the
+    // last agent's view, DMs included, in the default profile.
+    async () => HERMES_PROFILE || new URLSearchParams(window.location.search).get("profile")
+      || await sdk.authedFetch("/api/plugins/emporia/_hermes_profile")
+        .then((r) => r.json()).then((d) => String(d.profile ?? "")).catch(() => "")
+      || "default",
   );
   const { setThemeRoot } = await import("./themeConfig");
   setThemeRoot(container);

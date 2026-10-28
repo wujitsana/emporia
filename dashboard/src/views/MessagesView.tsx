@@ -58,14 +58,12 @@ const EVENT_ICONS: Record<string, string> = {
 };
 
 function ActivityPane({
-  navigate, events, loading, error, markRead, markAllRead,
+  navigate, events, loading, error,
 }: {
   navigate: Navigate;
   events: InboxEvent[];
   loading: boolean;
   error: string | null;
-  markRead: (ids: string[]) => void;
-  markAllRead: () => void;
 }) {
   const [showAll, setShowAll] = useState(false);
   const shown = showAll ? events : events.filter((e) => !e.is_read);
@@ -76,7 +74,6 @@ function ActivityPane({
       <div className="e-messages-pane__toolbar">
         <Text className="e-dim">{unread.length > 0 ? `${unread.length} unread` : "no unread"}</Text>
         <div style={{ display: "flex", gap: 6 }}>
-          {unread.length > 0 && <ActionButton onClick={markAllRead}>mark all read</ActionButton>}
           <ActionButton onClick={() => setShowAll((v) => !v)}>
             {showAll ? "unread only" : "show all"}
           </ActionButton>
@@ -87,7 +84,6 @@ function ActivityPane({
         {shown.length === 0 ? (
           <Indent><Text className="e-faint">{showAll ? "No activity yet." : "Nothing new."}</Text></Indent>
         ) : shown.map((ev) => {
-          const markThis = () => markRead([ev.inbox_id]);
           const p = ev.payload;
           let title = ev.event_type.replace(/_/g, " ");
           let detail: React.ReactNode = null;
@@ -99,7 +95,7 @@ function ActivityPane({
             const sid = (p.session_id as string) ?? null;
             title = "challenge";
             detail = <><AgentLink agent_id={from} navigate={navigate} /> {sid ? `· session …${sid.slice(-8)}` : ""}</>;
-            if (sid) action = () => { navigate("sessions", { sessionId: sid }); markThis(); };
+            if (sid) action = () => { navigate("sessions", { sessionId: sid }) };
           } else if (ev.event_type === "agora_invite") {
             const name = (p.name as string) ?? (p.slug as string) ?? "topic";
             const by = (p.invited_by as string) ?? "creator";
@@ -107,7 +103,7 @@ function ActivityPane({
             const fee = (p.entry_fee_cents as number) ?? 0;
             title = `invited to ${name}`;
             detail = <>by <AgentLink agent_id={by} navigate={navigate} />{gate === "paid_invite" && fee > 0 ? ` · $${(fee / 100).toFixed(2)} entry` : ""}</>;
-            action = () => { navigate("agoras"); markThis(); };
+            action = () => { navigate("agoras") };
             actionLabel = "open agoras";
           } else if (ev.event_type === "room_invite") {
             const name = (p.room_name as string) ?? "room";
@@ -115,13 +111,13 @@ function ActivityPane({
             const rid = (p.room_id as string) ?? null;
             title = `invited to ${name}`;
             detail = <>by <AgentLink agent_id={by} navigate={navigate} /></>;
-            if (rid) action = () => { navigate("rooms", { roomId: rid }); markThis(); };
+            if (rid) action = () => { navigate("rooms", { roomId: rid }) };
             actionLabel = "open room";
           } else if (ev.event_type === "session_update" || ev.event_type === "session_completed") {
             const sid = (p.session_id as string) ?? null;
             title = ev.event_type === "session_completed" ? "session completed" : "session update";
             detail = sid ? `…${sid.slice(-10)}` : null;
-            if (sid) action = () => { navigate("sessions", { sessionId: sid }); markThis(); };
+            if (sid) action = () => { navigate("sessions", { sessionId: sid }) };
           } else {
             const keys = Object.keys(p).slice(0, 2);
             detail = keys.map((k) => `${k}: ${String(p[k]).slice(0, 24)}`).join(" · ") || null;
@@ -138,7 +134,6 @@ function ActivityPane({
                 {detail && <Text className="e-dim" style={{ fontSize: 12, marginTop: 2 }}>{detail}</Text>}
                 <div style={{ display: "flex", gap: 6, marginTop: 4 }}>
                   {action && <ActionButton onClick={action}>{actionLabel}</ActionButton>}
-                  {!ev.is_read && !action && <ActionButton onClick={markThis}>dismiss</ActionButton>}
                 </div>
               </div>
             </div>
@@ -297,18 +292,10 @@ export function MessagesView({
 
   const { activity, unreadByThread } = splitInbox(events);
 
-  const markRead = useCallback(async (ids: string[]) => {
-    if (!viewer || !ids.length) return;
-    await api.markInboxRead(viewer, ids).catch(() => {});
-    setEvents((prev) => prev.map((e) => (ids.includes(e.inbox_id) ? { ...e, is_read: true } : e)));
-  }, [viewer]);
-
-  // P232: all of them on the relay, not only the page loaded here.
-  const markAllRead = useCallback(async () => {
-    if (!viewer) return;
-    await api.markInboxAllRead(viewer).catch(() => {});
-    setEvents((prev) => prev.map((e) => ({ ...e, is_read: true })));
-  }, [viewer]);
+  // P234: the dashboard marks nothing read. Read means the agent has had it —
+  // its bridge marks an event read when it hands it over (P233); a person
+  // clicking here hid events from an agent that had not seen them. Human
+  // actions in the dashboard are deferred.
 
   // Default selection: the newest conversation, else Activity.
   useEffect(() => {
@@ -317,11 +304,6 @@ export function MessagesView({
     }
   }, [selected, threads, loading]);
 
-  // Opening a conversation reads it: its DM inbox events are marked read.
-  const openUnread = selected && selected !== ACTIVITY ? unreadByThread[selected] : undefined;
-  useEffect(() => {
-    if (openUnread?.length) markRead(openUnread);
-  }, [openUnread, markRead]);
 
   // P126: start on "all" when nothing is waiting — otherwise the conversation
   // opened by default sits in a list that shows "nothing here".
@@ -405,7 +387,7 @@ export function MessagesView({
           {error ? <AlertBanner>{error}</AlertBanner> : null}
           {selected === ACTIVITY ? (
             <ActivityPane navigate={navigate} events={activity} loading={loading}
-                          error={null} markRead={markRead} markAllRead={markAllRead} />
+                          error={null} />
           ) : active ? (
             <ThreadPane key={active.thread_id} thread={active} viewer={viewer}
                         liveEvent={liveEvent} liveConnected={liveConnected} />

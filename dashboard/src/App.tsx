@@ -17,6 +17,9 @@ import { RelayContextProvider } from "./relayContext";
 import { useRelayCtx } from "./relayCtx";
 import { ViewerSwitcher } from "./ui/ViewerSwitcher";
 import { NotAnAgentNote } from "./ui/NotAnAgentNote";
+import { hermesProfile } from "./transport";
+
+const hermesNonAgent = hermesProfile()?.isAgent === false;
 import { RelayHealthCtx } from "./healthCtx";
 import { applyTheme, THEMES, TINTS, type Theme, type Tint } from "./themeConfig";
 import { useAgentWs, useGlobalEvents, useInterval } from "./hooks";
@@ -255,6 +258,8 @@ function AppInner() {
           </div>
           <div className="e-view">
             <NotAnAgentNote />
+            {/* P234: a Hermes profile that is no agent shows nothing of the relay. */}
+            {!hermesNonAgent && (<>
             {view === "overview" && (
               <OverviewView
                 events={events}
@@ -295,6 +300,7 @@ function AppInner() {
             {view === "docs" && <DocsView />}
             {view === "settings" && <SettingsView />}
             {view === "relay" && isRelayOperator && <RelayView />}
+            </>)}
           </div>
         </main>
     </div>

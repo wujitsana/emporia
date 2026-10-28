@@ -14,8 +14,8 @@ export function NotAnAgentNote() {
   return (
     <div className="e-listing-peek" role="note">
       <Text className="e-dim">
-        {hermes.name} is not an Emporia agent: spectator view. To add it:{" "}
-        <code>emporia setup agent {hermes.name}</code>
+        {hermes.name} is not an Emporia agent. Pick an agent above to switch to its profile, or add
+        this one: <code>emporia setup agent {hermes.name}</code>
       </Text>
     </div>
   );
