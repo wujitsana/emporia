@@ -13,6 +13,8 @@ without the original machine.
   Don't add to them.
 - **Change log:** each change is a numbered `P…` commit; `docs/security-log.md` records the
   security-relevant ones. P200–P239 were this last stretch.
+- **Commit author:** `wujitsana <wujitsana@gmail.com>` (`git config user.name wujitsana`,
+  `git config user.email wujitsana@gmail.com` in a fresh clone), so the profile shows on each commit.
 - **Plans:** `ROADMAP.md` (what's next, open decisions), `docs/manual-testing.md` (the hand-test
   plan), `docs/agent-security-setup.md` (keys, roles, the signer, environments).
 

@@ -788,19 +788,27 @@ class EmporiaAgent:
         resp.raise_for_status()
         return resp.json()
 
-    async def _sender_public_key(self, agent_id: str) -> str:
-        """An agent's Ed25519 signing key, for re-verifying stored message
-        signatures. Returns `""` rather than raising if it can't be fetched — a
-        verification that couldn't run reports `None` ("unknown"), and a thread
-        must stay readable even when one lookup fails."""
+    async def _sender_public_key(self, agent_id: str, changed: list[str] | None = None) -> str:
+        """An agent's Ed25519 signing key, for re-verifying stored signatures.
+        Returns `""` rather than raising if it can't be fetched — a verification
+        that couldn't run reports `None` ("unknown"), and a thread must stay
+        readable even when one lookup fails.
+
+        P244: pinned on first sight (`identity.pinned_signing_key`), and the
+        pinned key is what comes back, so a relay serving another key gets
+        `False`, not a pass. `agent_id` is added to `changed` when it did."""
+        from emporia.identity import pinned_signing_key
+        served, stable_id = "", ""
         try:
             # P185: an address (`bob@host`) is looked up where its keys are pinned.
             path = f"/agents/{agent_id}/encryption-key" if "@" in agent_id else f"/agents/{agent_id}"
             resp = await self._bearer_request("get", f"{self.relay_url}{path}")
             resp.raise_for_status()
-            return resp.json().get("public_key_hex", "") or ""
+            body = resp.json()
+            served, stable_id = body.get("public_key_hex", "") or "", body.get("stable_id", "") or ""
         except Exception:
-            return ""
+            pass
+        return pinned_signing_key(agent_id, self.relay_url, served, stable_id, changed)
 
     async def _peer_encryption_key(self, agent_id: str) -> str:
         """Fetch, verify and pin another agent's encryption key.
@@ -915,13 +923,16 @@ class EmporiaAgent:
         # P21-4: the only I/O the old inline loop did — resolved once per distinct
         # sender before handing off to the shared, pure annotate_messages().
         pubkeys: dict[str, str] = {}
+        changed: list[str] = []
         for sender in {m.get("sender_id", "") for m in messages}:
-            pubkeys[sender] = await self._sender_public_key(sender)
+            pubkeys[sender] = await self._sender_public_key(sender, changed)
         message_read.annotate_messages(
             messages, kind="dm", scope_id=thread_id, viewer_agent_id=body.get("my_label") or self.agent_id,
             private_key=priv, pubkeys=pubkeys,
             verify=lambda msg, pk: verify_dm_message(thread_id, msg, pk),
         )
+        if changed:   # P244: the relay served a signing key other than the pinned one
+            body["signing_key_changed"] = sorted(changed)
         return body
 
     # ------------------------------------------------------------------ #
@@ -1191,13 +1202,19 @@ class EmporiaAgent:
         # P21-4: the only I/O the old inline loop did — resolved once per distinct
         # sender before handing off to the shared, pure annotate_messages().
         pubkeys: dict[str, str] = {}
+        changed: list[str] = []
         for sender in {m.get("sender_id", "") for m in messages}:
-            pubkeys[sender] = await self._sender_public_key(sender)
+            pubkeys[sender] = await self._sender_public_key(sender, changed)
         message_read.annotate_messages(
             messages, kind="room", scope_id=room_id, viewer_agent_id=self.agent_id,
             private_key=priv, pubkeys=pubkeys,
             verify=lambda msg, pk: verify_room_message(room_id, msg, pk),
         )
+        # P244: this returns a bare list, so the flag sits on each message from
+        # an agent whose served signing key was not the pinned one.
+        for m in messages:
+            if m.get("sender_id") in changed:
+                m["signing_key_changed"] = True
         return messages
 
     async def verify_dm_chain(

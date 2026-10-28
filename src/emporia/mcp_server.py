@@ -1160,7 +1160,8 @@ def check_room(room_id: str, agent_id: str = "") -> dict[str, Any]:
     shows different ones (or the signature fails) — treat the room as
     tampered with; None for a room made before rooms were signed. `acts`
     lists each invite and kick, each `verified` True only if the creator
-    signed it.
+    signed it. The creator's key is pinned on first sight (P244);
+    `signing_key_changed` names them if the relay now serves a different one.
     """
     from emporia.identity import verify_room_acts
     aid = agent_id or AGENT_ID
@@ -1172,8 +1173,10 @@ def check_room(room_id: str, agent_id: str = "") -> dict[str, Any]:
             return {"error": f"Relay {r.status_code}", "detail": r.text, "success": False}
         room = r.json()
         creator = room.get("creator_id", "")
-        return {"success": True, "room_id": room_id, "creator_id": creator,
-                **verify_room_acts(room, _sender_public_key(aid, creator))}
+        changed: list[str] = []
+        return _flag_changed_keys(
+            {"success": True, "room_id": room_id, "creator_id": creator,
+             **verify_room_acts(room, _sender_public_key(aid, creator, changed))}, changed)
     except Exception as e:
         return {"error": str(e), "success": False}
 
@@ -1586,8 +1589,9 @@ def get_room_messages(room_id: str, agent_id: str = "", limit: int = 50) -> dict
         # distinct sender before handing off to the shared, pure
         # annotate_messages().
         pubkeys: dict[str, str] = {}
+        changed: list[str] = []
         for sender in {m.get("sender_id", "") for m in messages}:
-            pubkeys[sender] = _sender_public_key(aid, sender)
+            pubkeys[sender] = _sender_public_key(aid, sender, changed)
         message_read.annotate_messages(
             messages, kind="room", scope_id=room_id, viewer_agent_id=aid,
             private_key=priv, pubkeys=pubkeys,
@@ -1597,7 +1601,7 @@ def get_room_messages(room_id: str, agent_id: str = "", limit: int = 50) -> dict
         # send_room_message, kick_from_room) returns a `success` key; this one
         # didn't.
         body["success"] = True
-        return body
+        return _flag_changed_keys(body, changed)
     except Exception as e:
         return {"error": str(e), "success": False}
 
@@ -2518,28 +2522,46 @@ def _annotate_agora_posts(data: dict[str, Any], topic_slug: str, caller: str) ->
     """P242: mark each post with whether its author signed it as shown."""
     from emporia.identity import verify_agora_post
     keys: dict[str, str] = {}
+    changed: list[str] = []
     for post in data.get("posts") or []:
         author = post.get("author_id", "")
         if author not in keys:
-            keys[author] = _sender_public_key(caller, author)
+            keys[author] = _sender_public_key(caller, author, changed)
         slug = topic_slug or post.get("topic_slug") or (data.get("topic") or {}).get("slug", "")
         # The feed carries no content, so there is nothing to check there.
         post["verified"] = verify_agora_post(slug, post, keys[author]) if slug and "content" in post else None
-    return data
+    return _flag_changed_keys(data, changed)
 
 
-def _sender_public_key(caller: str, agent_id: str) -> str:
-    """An agent's Ed25519 signing key, for re-verifying stored message signatures.
+def _sender_public_key(caller: str, agent_id: str, changed: list[str] | None = None) -> str:
+    """An agent's Ed25519 signing key, for re-verifying stored signatures.
     Returns `""` rather than raising if it can't be fetched — a verification that
     couldn't run reports `None` ("unknown"), and a thread must stay readable even
-    when one lookup fails."""
+    when one lookup fails.
+
+    P244: the key is pinned on first sight (`identity.pinned_signing_key`) and the
+    pinned key is what comes back, so a relay that serves a different one gets
+    `False`, not a pass. `agent_id` is added to `changed` when it did."""
+    from emporia.identity import pinned_signing_key
+    served, stable_id = "", ""
     try:
         # P185: an address (`bob@host`) is looked up where its keys are pinned.
         path = f"/agents/{agent_id}/encryption-key" if "@" in agent_id else f"/agents/{agent_id}"
         r = _bearer_request("get", f"{_base()}{path}", agent_id=caller, timeout=10)
-        return r.json().get("public_key_hex", "") or "" if r.status_code == 200 else ""
+        if r.status_code == 200:
+            body = r.json()
+            served, stable_id = body.get("public_key_hex", "") or "", body.get("stable_id", "") or ""
     except Exception:
-        return ""
+        pass
+    return pinned_signing_key(agent_id, _base(), served, stable_id, changed)
+
+
+def _flag_changed_keys(result: dict[str, Any], changed: list[str]) -> dict[str, Any]:
+    """P244: say plainly, in `signing_key_changed`, which agents' signing keys were
+    not the ones pinned. Their content failed to verify; nothing here repins."""
+    if changed:
+        result["signing_key_changed"] = sorted(changed)
+    return result
 
 
 def _dm_recipients(sender: str, thread_id: str) -> dict[str, str]:
@@ -2997,8 +3019,9 @@ def get_dm_messages(thread_id: str, agent_id: str = "", limit: int = 50) -> dict
         # distinct sender before handing off to the shared, pure
         # annotate_messages().
         pubkeys: dict[str, str] = {}
+        changed: list[str] = []
         for sender in {m.get("sender_id", "") for m in messages}:
-            pubkeys[sender] = _sender_public_key(aid, sender)
+            pubkeys[sender] = _sender_public_key(aid, sender, changed)
         message_read.annotate_messages(
             messages, kind="dm", scope_id=thread_id, viewer_agent_id=body.get("my_label") or aid,
             private_key=priv, pubkeys=pubkeys,
@@ -3008,7 +3031,7 @@ def get_dm_messages(thread_id: str, agent_id: str = "", limit: int = 50) -> dict
         # sibling tool didn't, so a caller checking result.get("success") on every
         # read tool treated a successful DM read as a failure.
         body["success"] = True
-        return body
+        return _flag_changed_keys(body, changed)
     except Exception as e:
         return {"error": str(e), "success": False}
 
@@ -3706,9 +3729,9 @@ def verify_session(session_id: str, agent_id: str = "") -> dict[str, Any]:
         if "session_id" not in session:
             return {"error": "could not load the session", "detail": session, "success": False}
         log = get(f"/sessions/{session_id}/audit").json().get("chain", [])
-        keys = {}
+        keys, changed = {}, []
         for p in session.get("participants", []):
-            keys[p] = (get(f"/agents/{p}").json() or {}).get("public_key_hex", "")
+            keys[p] = _sender_public_key(aid, p, changed)
         health = get("/health").json() or {}
         current_key = health.get("relay_public_key")
         results = get("/results", params={"agent_id": session["participants"][0], "limit": 100}).json()
@@ -3728,6 +3751,11 @@ def verify_session(session_id: str, agent_id: str = "") -> dict[str, Any]:
                                       "detail": f"the relay now presents key {current_key[:16]}…, not the "
                                                 f"{pinned[:16]}… pinned at first contact"})
         report["verdict"], report["failures"] = "fail", report["failures"] + 1
+    for p in sorted(changed):
+        report["findings"].insert(0, {"check": "signing_key", "status": "fail",
+                                      "detail": f"the relay now serves a different signing key for {p} than the "
+                                                f"one pinned at first sight; moves are checked against the pinned key"})
+        report["verdict"], report["failures"] = "fail", report["failures"] + 1
     evidence = {"relay_url": _base(), "verified_by": aid, "verified_at": time.time(),
                 "report": report, "session": session, "log": log, "public_keys": keys,
                 "receipts": receipts, "relay_key_pinned": pinned, "relay_key_now": current_key,
@@ -3736,10 +3764,11 @@ def verify_session(session_id: str, agent_id: str = "") -> dict[str, Any]:
     fd = os.open(epath, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
     with os.fdopen(fd, "w") as f:
         json.dump(evidence, f, indent=1, sort_keys=True)
-    return {"success": True, "verdict": report["verdict"], "failures": report["failures"],
-            "unchecked": report["unchecked"],
-            "problems": [f["detail"] for f in report["findings"] if f["status"] == "fail"],
-            "evidence_file": str(epath)}
+    return _flag_changed_keys(
+        {"success": True, "verdict": report["verdict"], "failures": report["failures"],
+         "unchecked": report["unchecked"],
+         "problems": [f["detail"] for f in report["findings"] if f["status"] == "fail"],
+         "evidence_file": str(epath)}, changed)
 
 
 @mcp.tool()

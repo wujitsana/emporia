@@ -389,6 +389,120 @@ def pin_peer_encryption_key(agent_id: str, public_key_hex: str) -> str:
     return key
 
 
+# ---------------------------------------------------------------------------
+# P244: pin other agents' Ed25519 signing keys
+# ---------------------------------------------------------------------------
+# Clients re-verify posts, room acts and messages against the author's signing
+# key, but they fetched that key from the relay that serves the content. A
+# hostile relay could serve a key it made up plus content signed with it, and
+# it verified. Pinning the key on first sight makes a swap show up as `False`
+# plus a plain "key changed" report. First contact is still trust-on-first-use.
+
+_PEER_SIGNING_KEYS_FILE_NAME = "peer_signing_keys.json"
+
+
+def signing_pin_id(agent_id: str, relay_url: str) -> str:
+    """The pin's name: `agent_id@host`. An agent on another relay is already
+    named by its address (P185); one on the client's own relay gets that relay's
+    host, so the same name on two relays is two pins and a namesake never
+    collides. Loopback spellings count as one host."""
+    from emporia import addresses
+    if addresses.is_address(agent_id):
+        name, host = addresses.split_address(agent_id)
+    else:
+        name, host = agent_id, addresses.host_of(relay_url)
+    return addresses.address(name, addresses.canonical_host(host))
+
+
+def load_peer_signing_keys() -> dict[str, dict[str, str]]:
+    """{pin_id: {"public_key_hex", "stable_id"}}, or {} if none. A corrupt file
+    is set aside and logged, never silently reset (same policy as
+    `load_peer_encryption_keys()`)."""
+    path = KEY_DIR / _PEER_SIGNING_KEYS_FILE_NAME
+    try:
+        data = json.loads(path.read_text())
+        return data if isinstance(data, dict) else {}
+    except FileNotFoundError:
+        return {}
+    except (json.JSONDecodeError, OSError) as e:
+        import logging
+        logging.getLogger("emporia.identity").warning(
+            "peer signing-key pin map at %s is corrupt/unreadable (%s) — every "
+            "previously-pinned peer is being reset to trust-on-first-use; preserving "
+            "the damaged file for inspection", path, e,
+        )
+        try:
+            path.rename(path.with_name(f"{path.name}.corrupt-{int(time.time())}"))
+        except OSError:
+            pass
+        return {}
+
+
+def save_peer_signing_keys(pins: dict[str, dict[str, str]]) -> None:
+    """Persist the pin map. A write failure raises: a pin that was not kept would
+    let the next read accept a swapped key."""
+    KEY_DIR.mkdir(mode=0o700, parents=True, exist_ok=True)
+    _write_secret_atomically(
+        KEY_DIR / _PEER_SIGNING_KEYS_FILE_NAME,
+        json.dumps(pins, sort_keys=True, indent=2).encode(),
+    )
+
+
+def _check_signing_pin(pin_id: str, public_key_hex: str, stable_id: str = "") -> tuple[str, bool]:
+    """`(key to verify against, whether the served key differs from the pin)`.
+    The one place a signed key log (P245) can plug in: where the served key
+    differs from the pin, ask whether the log shows a signed rotation to it
+    before answering "changed"."""
+    key = (public_key_hex or "").strip().lower()
+    pins = load_peer_signing_keys()
+    pin = pins.get(pin_id)
+    if not _valid_x25519_pubkey_hex(key):   # 64 hex chars; the same shape for Ed25519
+        return (pin["public_key_hex"] if pin else ""), False
+    if not pin:
+        pins[pin_id] = {"public_key_hex": key, "stable_id": stable_id or ""}
+        save_peer_signing_keys(pins)
+        return key, False
+    if pin["public_key_hex"] != key or (stable_id and pin.get("stable_id") and pin["stable_id"] != stable_id):
+        return pin["public_key_hex"], True
+    if stable_id and not pin.get("stable_id"):
+        pin["stable_id"] = stable_id
+        save_peer_signing_keys(pins)
+    return key, False
+
+
+def pin_peer_signing_key(pin_id: str, public_key_hex: str, stable_id: str = "") -> str:
+    """Trust-on-first-use for a signing key: the first key seen is pinned and
+    returned; later the same key is returned; a different key returns the
+    **pinned** one and leaves the pin alone, so anything signed with the
+    swapped-in key fails to verify. An empty or malformed served key returns the
+    pinned key, or "" if there is none."""
+    return _check_signing_pin(pin_id, public_key_hex, stable_id)[0]
+
+
+def pinned_signing_key(
+    agent_id: str, relay_url: str, public_key_hex: str, stable_id: str = "",
+    changed: list[str] | None = None,
+) -> str:
+    """What both clients call on a signing key a relay served: pin it by
+    `signing_pin_id()`, return the key to verify with, and add `agent_id` to
+    `changed` when the served key was not the pinned one."""
+    key, differs = _check_signing_pin(signing_pin_id(agent_id, relay_url), public_key_hex, stable_id)
+    if differs and changed is not None and agent_id not in changed:
+        changed.append(agent_id)
+    return key
+
+
+def trust_new_signing_key(pin_id: str, public_key_hex: str, stable_id: str = "") -> None:
+    """Replace a signing-key pin after an out-of-band fingerprint check, the
+    human-chosen twin of `trust_new_encryption_key()`. Never called by a read path."""
+    key = (public_key_hex or "").strip().lower()
+    if not _valid_x25519_pubkey_hex(key):
+        raise ValueError(f"not a valid Ed25519 public key: {public_key_hex!r}")
+    pins = load_peer_signing_keys()
+    pins[pin_id] = {"public_key_hex": key, "stable_id": stable_id or ""}
+    save_peer_signing_keys(pins)
+
+
 def verify_dm_message(
     thread_id: str, message: dict[str, Any], sender_public_key_hex: str,
 ) -> bool | None:
