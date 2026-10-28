@@ -89,6 +89,127 @@ Also passed (10-28):
   - nothing more reached beta;
   - beta still replied once, from the same turn as the batch.
 
+## Work queue, in priority order
+
+For the cloud agent. Work top-down, one numbered `P…` commit (or a few) per item, tests with each.
+Push to `post-hackathon` only when the user says so. Items marked **(machine)** need the user's
+Hermes setup; leave those for a person.
+
+### 1. Agent-signed listings — a chain of custody across relays (before the merge)
+
+**Why.** Today an agent creates a listing over an authenticated request, and no signature from
+the agent is stored. When a peer pulls listings, the origin relay signs the batch with *its own*
+key, embedding each seller's public key (P184). That proves "relay R says agent A, key K, listed
+this", not that A said it: on listings, a relay is trusted to speak for its agents.
+- Laundering is blocked today only because listings travel one hop: a relay serves only listings
+  created on it (`origin_relay = RELAY_BASE_URL` in `federated_listings_out`).
+- The fix makes each listing verifiable end to end, agent → origin relay → receiver, without
+  trusting any relay in between. It is the claim the paper (item 3) rests on, and someone will ask.
+
+**Build:**
+1. **`wire.py`:** `signed_listing_payload(agent_id, origin_relay, listing_nonce, title, description,
+   listing_type, payment_mode, price_usd, module_type, public_metadata, expires_at)`, following
+   `signed_action_payload` and `signed_room_message_payload`.
+   - `listing_nonce` is chosen by the client (`wire.new_message_nonce()`), so the signature
+     can be made before the relay assigns `listing_id`. Make the relay derive `listing_id`
+     from it, or store both.
+   - Sign only the **public** metadata. `public_listing()` strips `_PRIVATE_LISTING_METADATA`,
+     and a receiver must be able to rebuild exactly what was signed.
+   - `expires_at` is absolute, chosen by the client, and bounded by the relay (today the relay
+     computes it from `expires_in_hours`).
+2. **`POST /listings`** (`routes/listings.py`, `CreateListingRequest`): require `signature` and
+   `listing_nonce`, and verify against the caller's registered key before inserting.
+   - No backward compatibility is owed: an unsigned create is refused, with a version bump.
+   - Store the signature and the signed fields: schema migration, new columns, bump
+     `SCHEMA_VERSION`.
+   - Check every *other* path that writes `listings` (bounties via `post_bounty`, events,
+     anything else `INSERT INTO listings`). Each either gets an agent signature too, or is
+     marked relay-authored and excluded from federation. Don't leave a silent unsigned path.
+3. **Callers sign automatically:** `mcp_server.create_listing` and `agent_sdk.create_listing`
+   (and the bounty and event tools, if they create listings), as `submit_action` does.
+4. **Federation out** (`federated_listings_out`): include `signature`, `listing_nonce`, the signed
+   fields as signed, `agent_public_key_hex` (already there) and the agent's `stable_id`.
+5. **Federation in** (the importer in `relay_server.py` around the P83/P87 ownership checks).
+   Per listing, refuse it unless:
+   - the agent's signature verifies against `agent_public_key_hex`; and
+   - `stable_id_for(agent_public_key_hex) == stable_id`. The `stable_id` is the SHA3 of the
+     genesis key (P47), so the key vouches for itself, and a relay can't substitute a key it
+     made up.
+
+   Count refusals in the sync record that `GET /federation/peers` shows. Keep the batch
+   signature and the peer-key pin: they prove which relay sent it, a separate fact.
+   - **Key rotation:** the agent's current key won't hash to its `stable_id`. Rotation isn't
+     implemented yet (ROADMAP § Identity keys), so refuse, with a clear note, and leave the
+     rotation-chain check for when rotation exists.
+6. **The same for the lobby:** `federated_open_sessions` (`/federation/v1/open-sessions`) is
+   relay-signed only, so open games need the same treatment. Do it in the same item, or
+   immediately after.
+7. **Clients check too:** `scan_relays`, and anything in the MCP or SDK that reads another relay's
+   listings, verifies the agent signature itself rather than trusting the relay that served it.
+8. **Tests:**
+   - a forged listing (right relay signature, wrong agent signature) is refused on import;
+   - a listing whose key doesn't hash to its `stable_id` is refused;
+   - a relay re-serving another relay's listing can't alter a field without the check failing;
+   - unsigned creates are refused;
+   - MCP and SDK creates verify end to end through a real relay round trip.
+9. **Docs:**
+   - `docs/protocol.md` §4 (the signed-batch table, plus a per-listing signature row);
+   - `SECURITY.md` and `docs/security-log.md` (the finding and the fix);
+   - README "How it fits together", if it mentions federation;
+   - the `emporia-dev` skill's route and tool notes.
+10. **Then, optionally:** with listings verifiable end to end, relays could re-serve listings
+    pulled from peers (multi-hop discovery) without trusting the middle hop. That's a separate
+    decision for the user; don't build it unasked.
+
+### 2. Remaining hand tests before the merge **(machine)**
+
+`docs/manual-testing.md` §1b (setup and safety, the signer in practice mode) and the rest of §2.
+Also item 1 above, on the real setup: two agents' listings visible, and a forged one refused.
+
+### 3. The paper — after item 1 lands
+
+A short technical paper, `docs/paper/` (Markdown is fine), on what is unusual here, each claim
+pointing to its code and tests:
+- **Chain of custody for listings across independently run relays** (item 1). Why one hop was
+  the safe default, and what end-to-end signatures allow.
+- **Self-certifying agent identity:** `stable_id` = SHA3 of the genesis key, and handles that
+  can be renamed (P47).
+- **Non-custodial payments across chains:** x402 direct and escrow holds (Base, Solana), Tempo,
+  Stripe destination charges. The relay holds nobody's money; an escrow hold is reclaimable
+  without the relay.
+- **Privacy from the operator:** end-to-end encrypted DMs and rooms, sealed DMs between relays
+  with consent, hash chains any client can recompute against a pinned head.
+- **Fairness without anti-cheat:** money only on games an engine can't simply win (P132–P136).
+- **Agents acting for people:**
+  - roles;
+  - keys kept from the agent's own tools;
+  - caps, and approval through the agent's own app;
+  - what only a person may do;
+  - agents deciding among themselves within limits enforced in code.
+- **Honest limits:**
+  - metadata is visible to relays;
+  - one hop before item 1;
+  - no external review, no mainnet, no load test.
+
+No competitor or other-project names (standing rule). Draft it; the user reviews before anything
+is published.
+
+### 4. Smaller items, any order
+
+- **Rooms can't be edited or deleted**, and a "private + paid" room is listed publicly. **Needs
+  the user's decision** (ROADMAP § Needs a decision); propose options, don't build.
+- **Hermes issues to draft** (text only; the user posts them): the four behaviours under "Hermes
+  behaviours this code works around" below.
+- **Agents write bug reports; a person files them** (ROADMAP § Before publishing). Design it
+  first: where the report goes, and what it contains.
+- **README status and `ROADMAP.md` § Before publishing:** update as items close.
+
+### Later, by the user's ordering
+
+- **Signer phase 2.** Waits for phase 1's hand test, item 2.
+- **Revisit the conversation and chess limits** when trying agent comms on purpose.
+- **Desktop app plugin:** deferred.
+
 ## Left before merging to `main`
 
 1. Run the rest of `docs/manual-testing.md` that one machine can do: §1b setup and safety, §2

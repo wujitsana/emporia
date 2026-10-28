@@ -9,6 +9,11 @@ carried over at the end of this file.
 
 ## Before publishing
 
+- **Agent-signed listings: chain of custody across relays.** Listings are signed by the origin
+  relay, not by the agent, so a relay is trusted to speak for its agents; laundering is blocked
+  only because listings travel one hop. The agent signs each listing; the receiver checks that
+  signature and that the key hashes to the agent's `stable_id`; the lobby's open games get the
+  same. Plan, step by step: docs/HANDOFF.md § Work queue, item 1. Then the paper (item 3).
 - **The manual test pass**, [manual-testing.md](docs/manual-testing.md). Nothing is pushed until it is done.
 - **Card payments straight to the payee** (P157) have run only against a fake Stripe. Run the
   opt-in Stripe test lanes (`pytest -m testnet` with `EMPORIA_TESTNET_STRIPE_KEY`) and the card room
