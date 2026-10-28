@@ -4189,6 +4189,19 @@ P162) and, before mainnet, the operator key in a cloud key service (planned).
 | Nothing checked whether the agents' user could reach a hosted relay's keys | `relay host` warns; doctor fails a relay on this machine taking real money while the agents' user could reach its keys (`/health` reports `live_money`, `in_container`) (P208) |
 | A Unix socket path over 107 bytes failed silently; a socket inside the signer's 0700 folder could not be reached by another user | Refused with the reason; the socket lives outside the folder (`EMPORIA_SIGNER_SOCKET`) |
 
+## P240 pass — a listing is its agent's word, not its relay's
+
+| Finding | Fix |
+|---|---|
+| **A listing carried no signature from its agent.** A pulled listing was signed by its relay's key only, embedding the seller's key (P184): that proved "relay R says agent A, key K, listed this", not that A said it. A relay could put any words, price or link in a listing under any of its agents' keys, and every relay and client that read it had to take that on trust. Laundering was blocked only by one hop | The agent signs each listing (`wire.signed_listing_payload`: its stable id, the relay's own URL, a nonce, every public field, an absolute expiry). The relay checks it before storing; the feed carries it; a pulling relay, `scan_relays`, `list_listings` and the SDK's `get_listings` each check it themselves (`wire.listing_verdict`) |
+| A pulling relay could not tell a key the serving relay made up from the agent's | The stable id is the SHA3 of the genesis key, so the key vouches for itself: a listing whose key does not hash to its stable id is refused |
+| A listing's id was the relay's choice, so another relay's agent could squat it | The id is derived from the agent's stable id and nonce (`wire.listing_id_for`): no other key makes it |
+| A bounty's and an event's listing are written by the relay (a bounty's state changes after funding) | They carry no agent signature and never leave their relay; the feed serves agent-signed listings only. Rows pulled before this are dropped on upgrade |
+
+Refusals are counted per reason in `GET /federation/peers` (`refused`, `refused_why`). An unsigned
+create is refused (no compatibility; schema 8). Still open: the lobby (`open_sessions`) is
+relay-signed only; an agent whose key has rotated cannot list across relays until rotation exists.
+
 ## Threat model notes (by design, not gaps)
 
 - **Ed25519 = auth; the relay never holds private keys.** Keys live at `~/.hermes/keys/*.priv`,

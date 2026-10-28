@@ -26,27 +26,24 @@ router = APIRouter()
 async def federated_listings_out():
     """Serve local listings for federation pull by peer relays.
 
-    Signed with this relay's own Ed25519 key (persisted, distinct from any agent's key —
+    The batch is signed with this relay's own Ed25519 key (persisted, distinct from any agent's key —
     see identity.generate_or_load_relay_keypair()) so a pulling peer can verify the batch
     actually came from here unaltered, rather than trusting the HTTP response wholesale.
     """
+    # P240: only listings their agent signed. Each carries that signature, the
+    # nonce and stable id it was made with, and the agent's key, so a relay that
+    # pulls it checks the agent's word, not just this relay's. A listing this
+    # relay wrote itself (a bounty, an event's) has no signature and stays here.
     with rs.DB_LOCK, rs.get_db() as conn:
         rows = conn.execute(
             "SELECT * FROM listings WHERE (expires_at IS NULL OR expires_at > ?) "
-            f"AND origin_relay = ? ORDER BY created_at DESC LIMIT {rs._MAX_LIMIT}",
+            "AND origin_relay = ? AND signature IS NOT NULL "
+            f"ORDER BY created_at DESC LIMIT {rs._MAX_LIMIT}",
             (datetime.now(UTC).isoformat(), rs.RELAY_BASE_URL),
         ).fetchall()
     listings = [rs.public_listing(r) for r in rows]
-    # P184: each seller's identity key, inside the signature, so a relay that
-    # pulls this can tell the seller from an agent there with the same name.
-    if listings:
-        ids = sorted({x["agent_id"] for x in listings})
-        with rs.DB_LOCK, rs.get_db() as conn:
-            keys = {r["agent_id"]: r["public_key_hex"] for r in conn.execute(
-                f"SELECT agent_id, public_key_hex FROM authorized_agents "
-                f"WHERE agent_id IN ({','.join('?' * len(ids))})", ids).fetchall()}
-        for x in listings:
-            x["agent_public_key_hex"] = keys.get(x["agent_id"])
+    for x in listings:
+        x.pop("federated_from", None)
     signature = sign_raw_relay(federation_signable_bytes(rs.RELAY_BASE_URL, "listings", listings))
     return {
         "origin_relay": rs.RELAY_BASE_URL,

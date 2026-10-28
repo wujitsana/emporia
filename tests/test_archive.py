@@ -7,7 +7,7 @@ from fastapi.testclient import TestClient
 from emporia import wire
 from emporia.identity import sign
 from emporia.relay_server import app
-from tests.test_emporia import _register_keyed
+from tests.test_emporia import _register_keyed, _signed_listing
 
 
 @pytest.fixture
@@ -37,7 +37,7 @@ def test_archive_keeps_dms_rooms_posts_listings_and_sessions_and_only_fetches_wh
         "signature": sign(wire.signed_room_message_payload(room, "room line", "chat", n2), "ar_me")})
     slug = client.post("/agoras/topics", json={"name": "Archive topic"}, headers=_h("ar_me")).json()["slug"]
     client.post(f"/agoras/topics/{slug}/posts", json={"title": "t", "content": "mine"}, headers=_h("ar_me"))
-    client.post("/listings", json={"title": "Archive listing", "listing_type": "service"}, headers=_h("ar_me"))
+    client.post("/listings", json=_signed_listing(client, "ar_me", "Archive listing"), headers=_h("ar_me"))
     client.post("/sessions", json={"module_type": "emporia:chess:v1", "creator_agent_id": "ar_me", "config": {},
                                    "payment_rules": {"mode": "free"}}, headers=_h("ar_me"))
 
@@ -65,7 +65,8 @@ def test_an_agent_leaves_a_relay_only_once_nothing_is_open_there(client):
     sess = client.post("/sessions", json={"module_type": "emporia:chess:v1", "creator_agent_id": "lv_agent",
                                           "config": {}, "payment_rules": {"mode": "free"}},
                        headers=_h("lv_agent")).json()["session_id"]
-    client.post("/listings", json={"title": "Leaving", "listing_type": "service"}, headers=_h("lv_agent"))
+    assert client.post("/listings", json=_signed_listing(client, "lv_agent", "Leaving"),
+                       headers=_h("lv_agent")).status_code == 200
     r = client.post("/agents/lv_agent/leave", headers=_h("lv_agent"))
     assert r.status_code == 409 and sess in r.json()["detail"]["open_sessions"]
     from emporia import relay_server as rs
@@ -73,7 +74,7 @@ def test_an_agent_leaves_a_relay_only_once_nothing_is_open_there(client):
         conn.execute("UPDATE sessions SET status = 'abandoned' WHERE session_id = ?", (sess,))
     r = client.post("/agents/lv_agent/leave", headers=_h("lv_agent"))
     assert r.status_code == 200 and r.json()["listings_removed"] == 1
-    assert client.post("/listings", json={"title": "x", "listing_type": "service"},
+    assert client.post("/listings", json=_signed_listing(client, "lv_agent", "x"),
                        headers=_h("lv_agent")).status_code in (401, 403)
     assert client.get("/agents/lv_agent/card").status_code == 404
 

@@ -9,11 +9,10 @@ carried over at the end of this file.
 
 ## Before publishing
 
-- **Agent-signed listings: chain of custody across relays.** Listings are signed by the origin
-  relay, not by the agent, so a relay is trusted to speak for its agents; laundering is blocked
-  only because listings travel one hop. The agent signs each listing; the receiver checks that
-  signature and that the key hashes to the agent's `stable_id`; the lobby's open games get the
-  same. Plan, step by step: docs/HANDOFF.md § Work queue, item 1. Then the paper (item 3).
+- **Agent-signed open games.** Listings carry their agent's signature and every reader checks it
+  (P240, docs/protocol.md §4.2a). The lobby (`/federation/v1/open-sessions`) is still signed by
+  its relay only: open games get the same treatment next. Then the paper (docs/HANDOFF.md § Work
+  queue, item 3).
 - **The manual test pass**, [manual-testing.md](docs/manual-testing.md). Nothing is pushed until it is done.
 - **Card payments straight to the payee** (P157) have run only against a fake Stripe. Run the
   opt-in Stripe test lanes (`pytest -m testnet` with `EMPORIA_TESTNET_STRIPE_KEY`) and the card room
@@ -62,6 +61,13 @@ carried over at the end of this file.
   linked room overrides it (the coupling behind the P141 leak). Proposal: a `visibility` setting at
   create ("public" | "players"), with linked rooms only as navigation.
 - **The rationale word check.** Kept as a nudge (P135). Remove it entirely?
+- **Bounties across relays.** Since P240 a bounty stays on its relay: its state is the relay's,
+  so it carries no agent signature, and linked relays (and `scan_relays`) no longer see it.
+  Option: the funder signs the offer (title, prize, game, deadline, rail) and the relay signs the
+  state beside it.
+- **Listings across more than one hop.** With listings verifiable end to end (P240), a relay could
+  re-serve listings it pulled from its peers without anyone trusting the middle relay. Wider
+  discovery, more relay load and less operator control over what is shown. Not built.
 - **Legal review before real money.** Games staked in USDC carry no chargebacks (P159), but
   real-money games of skill can raise legal questions on any rail. Check before mainnet.
 

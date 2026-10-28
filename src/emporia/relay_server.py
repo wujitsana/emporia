@@ -1022,7 +1022,11 @@ def init_db() -> None:
                 expires_at TEXT,
                 metadata_json TEXT NOT NULL DEFAULT '{}',
                 created_at TEXT NOT NULL,
-                federated_from TEXT
+                federated_from TEXT,
+                agent_public_key_hex TEXT,
+                agent_stable_id TEXT,
+                listing_nonce TEXT,
+                signature TEXT
             );
 
             CREATE TABLE IF NOT EXISTS events (
@@ -1217,6 +1221,7 @@ def init_db() -> None:
         _migrate_settlement_atomic_columns(conn)
         _migrate_listings_federated_from(conn)
         _migrate_listings_agent_key(conn)
+        _migrate_listings_agent_signature(conn)
         _migrate_relay_list(conn)
         _migrate_carried_records(conn)
         _drop_challenge_lobby(conn)
@@ -1744,6 +1749,22 @@ def _migrate_listings_agent_key(conn: Any) -> None:
     cols = {r[1] for r in conn.execute("PRAGMA table_info(listings)").fetchall()}
     if "agent_public_key_hex" not in cols:
         conn.execute("ALTER TABLE listings ADD COLUMN agent_public_key_hex TEXT")
+
+
+def _migrate_listings_agent_signature(conn: Any) -> None:
+    """P240: the agent's own signature over a listing, and what it signed with —
+    so a relay that pulls the listing can check the agent said it. A row with no
+    signature was written by the relay (a bounty, an event's listing) and never
+    leaves it."""
+    cols = {r[1] for r in conn.execute("PRAGMA table_info(listings)").fetchall()}
+    if "signature" in cols:
+        return
+    for col in ("agent_stable_id", "listing_nonce", "signature"):
+        if col not in cols:
+            conn.execute(f"ALTER TABLE listings ADD COLUMN {col} TEXT")
+    # Rows pulled from linked relays before this were taken on their relay's
+    # word alone; they go, and come back on the next pull only if signed.
+    conn.execute("DELETE FROM listings WHERE federated_from IS NOT NULL")
 
 
 def _migrate_listings_federated_from(conn: Any) -> None:
@@ -3295,6 +3316,7 @@ _NON_AGENT_COLUMNS: frozenset[tuple[str, str]] = frozenset({
     ("listings", "listing_type"), ("listings", "payment_mode"), ("listings", "price_usd"),
     ("listings", "module_type"), ("listings", "origin_relay"), ("listings", "expires_at"),
     ("listings", "federated_from"), ("listings", "agent_public_key_hex"),
+    ("listings", "agent_stable_id"), ("listings", "listing_nonce"), ("listings", "signature"),
     ("authorized_agents", "relay_list_json"), ("authorized_agents", "carried_records_json"),
     ("deletions", "kind"), ("deletions", "item"), ("deletions", "role"), ("deletions", "deleted_at"),
     ("deletions", "signature"), ("agora_topics", "is_deleted"), ("room_messages", "deleted_at"),
@@ -3421,9 +3443,8 @@ def stable_id_for(public_key_hex: str) -> str:
     identity rather than renaming the agent for doing the right thing. Hex is
     lowercased before hashing: the same key written two ways is one key.
     """
-    return hashlib.sha3_256(
-        b"emporia:agent:v1:" + bytes.fromhex(public_key_hex.strip().lower())
-    ).hexdigest()
+    from emporia.wire import stable_id_for as _stable_id_for
+    return _stable_id_for(public_key_hex)
 
 
 class AgentRegistry:
@@ -5040,14 +5061,18 @@ class SendMessageRequest(BaseModel):
 
 
 class CreateListingRequest(BaseModel):
+    """P240: signed by the agent (`wire.signed_listing_payload`). `expires_at`
+    is the agent's, inside the signature; `listing_nonce` makes the id."""
     title: str
     description: str = ""
     listing_type: str = "service"
     payment_mode: str = "free"
     price_usd: str = "0"
     module_type: str | None = None
-    expires_in_hours: int = 72
+    expires_at: str
     metadata: dict[str, Any] = Field(default_factory=dict)
+    listing_nonce: str
+    signature: str
 
 
 class CreateEventRequest(BaseModel):
@@ -5178,7 +5203,8 @@ async def health(request: Request):
     access = relay_access.mode()
     if access == "closed" and (request.client.host if request.client else "") not in ("127.0.0.1", "::1"):
         # P186: a closed relay says only that it is up — not what it runs or takes.
-        return {"status": "ok", "service": BRAND, "access": access}
+        # P240: and its own URL, which its members sign their listings for.
+        return {"status": "ok", "service": BRAND, "access": access, "relay_url": RELAY_BASE_URL}
     listing_count = 0
     session_count = 0
     try:
@@ -5209,6 +5235,8 @@ async def health(request: Request):
         "access": access,
         # P187: the host in this relay's agents' addresses (alpha@host).
         "host": _own_host(),
+        # P240: this relay's own URL — what an agent signs as a listing's origin.
+        "relay_url": RELAY_BASE_URL,
         "relay_id": RELAY_ID,
         "version": __version__,
         # P139: lets `emporia doctor` tell a relay running older code than the
@@ -6565,11 +6593,24 @@ async def _pull_federated_listings(peer_url: str) -> int:
     if peer_batch_size > _MAX_LIMIT:
         listings = listings[:_MAX_LIMIT]
 
+    from emporia.wire import listing_verdict
+
     imported = 0
     rejected_foreign = 0
+    refused: dict[str, int] = {}
     kept: set[str] = set()
     for listing in listings:
         if not listing.get("listing_id"):
+            continue
+        # P240: the agent's own word, checked here, not taken from the relay
+        # that sent it — the batch signature says which relay sent it, a
+        # separate fact. One hop still: a listing must name the relay that
+        # served it as its origin.
+        why = listing_verdict(listing, verify)
+        if not why and listing.get("origin_relay") != origin:
+            why = "it was put up on another relay than the one serving it"
+        if why:
+            refused[why] = refused.get(why, 0) + 1
             continue
         try:
             # N12-6: untrusted external content landing in a store the dashboard
@@ -6596,13 +6637,12 @@ async def _pull_federated_listings(peer_url: str) -> int:
             if existing and not _peer_owns_listing(existing, peer_url):
                 rejected_foreign += 1
                 continue
-            agent_key = str(listing.get("agent_public_key_hex") or "")
             conn.execute(
                 "INSERT OR REPLACE INTO listings "
                 "(listing_id, title, description, listing_type, agent_id, payment_mode, "
                 "price_usd, module_type, origin_relay, expires_at, metadata_json, created_at, "
-                "federated_from, agent_public_key_hex) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                "federated_from, agent_public_key_hex, agent_stable_id, listing_nonce, signature) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 (
                     listing["listing_id"],
                     listing.get("title", ""),
@@ -6617,7 +6657,10 @@ async def _pull_federated_listings(peer_url: str) -> int:
                     json.dumps(listing.get("metadata") or {}),
                     listing.get("created_at", datetime.now(UTC).isoformat()),
                     peer_url,
-                    agent_key if re.fullmatch(r"[0-9a-f]{64}", agent_key) else None,
+                    str(listing["agent_public_key_hex"]).lower(),
+                    listing["agent_stable_id"],
+                    listing["listing_nonce"],
+                    listing["signature"],
                 ),
             )
         imported += 1
@@ -6643,6 +6686,9 @@ async def _pull_federated_listings(peer_url: str) -> int:
         sync_record["peer_batch_size"] = peer_batch_size
     if rejected_foreign:
         sync_record["rejected_not_owner"] = rejected_foreign
+    if refused:
+        sync_record["refused"] = sum(refused.values())
+        sync_record["refused_why"] = refused
     _FEDERATION_LAST_SYNC[peer_url] = sync_record
     return imported
 

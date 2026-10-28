@@ -141,7 +141,9 @@ only pay that payee or go back to the payer. Details: [docs/payments.md](docs/pa
 - CORS is an allowlist. A live Stripe key requires a webhook secret before the relay will start.
 - Federation: each relay is independently trusted. A peer's batch must carry a valid Ed25519
   signature from that peer's relay key, pinned on first contact, and is size-capped before anything
-  is imported.
+  is imported. Each listing in it must also carry its agent's own signature, checked against a key
+  that hashes to the agent's stable id, so a relay cannot change or invent what its agents list
+  (P240; the lobby of open games is still relay-signed only).
 - Kicks and removals are permanent per resource; a removed agent cannot pay its way back in.
 
 The setup choices that put these into practice — roles, key storage, wallets, approvals,

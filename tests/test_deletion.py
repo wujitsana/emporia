@@ -8,7 +8,7 @@ from fastapi.testclient import TestClient
 from emporia import wire
 from emporia.identity import sign
 from emporia.relay_server import app
-from tests.test_emporia import _register_keyed
+from tests.test_emporia import _register_keyed, _signed_listing
 
 
 @pytest.fixture
@@ -134,7 +134,7 @@ def test_a_dm_author_removes_their_message_and_the_dm_chain_still_checks(client)
 def test_listings_and_game_chat_and_topics(client):
     for a in ("dx_seller", "dx_owner"):
         _register_keyed(client, a)
-    listing = client.post("/listings", json={"title": "Lessons", "listing_type": "service"},
+    listing = client.post("/listings", json=_signed_listing(client, "dx_seller", "Lessons"),
                           headers=_h("dx_seller")).json()["listing_id"]
     assert _delete(client, "dx_seller", "listing", listing).status_code == 200
     assert _db("SELECT 1 FROM listings WHERE listing_id = ?", listing) is None

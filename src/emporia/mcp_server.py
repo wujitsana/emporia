@@ -674,14 +674,15 @@ def scan_relays(
 ) -> dict[str, Any]:
     """Look for opportunities across many relays without joining any of them.
 
-    Reads the signed public feeds — listings, bounties, events, and the lobby
+    Reads the signed public feeds — listings its sellers signed, and the lobby
     (games and purchases waiting for a player) — of this agent's home relay, the relays it
     links to, the relays its operator lets it visit, and any `relays` you name
     (except those on its deny list). Registers nothing and moves no money; a
     relay learns only that its public feed was read. Closed relays are skipped.
 
     Each result says which relay holds it (`relay`) and who offers it
-    (`address`, `fingerprint`). To act on one elsewhere, `visit_relay(relay)`
+    (`address`, `fingerprint`). A listing its seller did not sign is left out
+    (`refused_unsigned_or_forged` counts them per relay). To act on one elsewhere, `visit_relay(relay)`
     first — the deal, its money and any dispute stay on that relay.
 
     kind: 'listing' | 'game' — omit for both. module_type: e.g.
@@ -689,6 +690,9 @@ def scan_relays(
     """
     from emporia import visits
     from emporia.addresses import host_of
+    from emporia.identity import verify
+    from emporia.wire import listing_verdict
+    refused: dict[str, int] = {}
     targets = list(dict.fromkeys(u.rstrip("/") for u in
                                  [RELAY_URL, *_linked_relays(), *visits.allowed(), *_visits(), *(relays or [])]))
     found: list[dict[str, Any]] = []
@@ -710,6 +714,11 @@ def scan_relays(
             if kind in ("", "listing"):
                 items, why = _read_feed(relay, "/gaming/v1/federate/listings", "listings")
                 for x in items:
+                    # P240: the seller's own signature, checked here — the relay's
+                    # signature on the feed says only which relay served it.
+                    if listing_verdict(x, verify) or x.get("origin_relay") != h.get("relay_url"):
+                        refused[relay] = refused.get(relay, 0) + 1
+                        continue
                     cents = int(round(float(x.get("price_usd") or 0) * 100))
                     found.append({"kind": x.get("listing_type") or "listing", "relay": relay, "id": x["listing_id"],
                                   "title": x.get("title"), "module_type": x.get("module_type"),
@@ -743,7 +752,8 @@ def scan_relays(
         found = [x for x in found if x["price_cents"] <= max_price_cents]
     found.sort(key=lambda x: (x["price_cents"], -(_stamp(x.get("created_at")))))
     return {"success": True, "results": found[:max(1, min(limit, 200))], "relays_read": len(targets) - len(skipped),
-            "skipped": skipped, "home": RELAY_URL}
+            "skipped": skipped, "home": RELAY_URL,
+            **({"refused_unsigned_or_forged": refused} if refused else {})}
 
 
 def _fingerprint(key: str | None) -> str:
@@ -3936,22 +3946,43 @@ def create_listing(
     aid = agent_id or AGENT_ID
     if not aid:
         return {"error": "agent_id required (or set EMPORIA_AGENT_ID)", "success": False}
-    body: dict[str, Any] = {
-        "title": title,
-        "description": description,
-        "listing_type": listing_type,
-        "payment_mode": payment_mode,
-        "price_usd": price_usd,
-        "expires_in_hours": expires_in_hours,
-    }
-    if module_type:
-        body["module_type"] = module_type
     try:
+        # P240: signed by this agent, so relays that pull it can check it was.
+        body = _signed_listing_body(aid, title, description, listing_type, payment_mode,
+                                    price_usd, module_type or None, {}, expires_in_hours)
         r = _bearer_request("post", f"{_base()}/listings", agent_id=aid, json=body, timeout=10)
         d = r.json()
         return {"success": True, **d} if r.status_code in (200, 201) else {"error": f"Relay {r.status_code}", "detail": d, "success": False}
     except Exception as e:
         return {"error": str(e), "success": False}
+
+
+def _signed_listing_body(
+    aid: str, title: str, description: str, listing_type: str, payment_mode: str,
+    price_usd: str, module_type: str | None, metadata: dict[str, Any], expires_in_hours: int,
+) -> dict[str, Any]:
+    """P240: a `POST /listings` body this agent has signed, for the relay it is
+    posting to — named by the URL the relay gives for itself, which can differ
+    from the one this agent reaches it at (a container, a proxy)."""
+    from emporia.identity import get_public_key_hex
+    from emporia.identity import sign as ed25519_sign
+    from emporia.wire import (
+        listing_expires_at,
+        new_message_nonce,
+        signed_listing_payload,
+        stable_id_for,
+    )
+    origin = httpx.get(f"{_base()}/health", timeout=10).json().get("relay_url")
+    if not origin:
+        raise RuntimeError("this relay does not say its own URL — it predates signed listings; upgrade it")
+    nonce, expires_at = new_message_nonce(), listing_expires_at(expires_in_hours)
+    signed = signed_listing_payload(stable_id_for(get_public_key_hex(aid)), origin, nonce, title,
+                                    description, listing_type, payment_mode, price_usd, module_type,
+                                    metadata, expires_at)
+    return {"title": title, "description": description, "listing_type": listing_type,
+            "payment_mode": payment_mode, "price_usd": price_usd, "module_type": module_type,
+            "metadata": metadata, "expires_at": expires_at, "listing_nonce": nonce,
+            "signature": ed25519_sign(signed, aid)}
 
 
 @mcp.tool()
@@ -3964,7 +3995,9 @@ def list_listings(
 
     A listing with `deal_on` is on another relay: the deal happens there, so
     your operator moves you there first (`how_to_deal`). `name_clash` means an
-    agent here has that name but is not the seller.
+    agent here has that name but is not the seller. A listing from another
+    relay is checked against its seller's signature here; any that fail are
+    left out (`refused_federated`).
 
     listing_type: 'service' | 'room' — omit for all
     module_type: e.g. 'emporia:chess:v1' — omit for all
@@ -3976,9 +4009,24 @@ def list_listings(
         params["listing_type"] = listing_type
     try:
         r = httpx.get(f"{_base()}/listings", params=params, timeout=10)
-        return r.json() if r.status_code == 200 else {"error": f"Relay {r.status_code}", "detail": r.text}
+        if r.status_code != 200:
+            return {"error": f"Relay {r.status_code}", "detail": r.text}
+        return _drop_unsigned_federated(r.json())
     except Exception as e:
         return {"error": str(e)}
+
+
+def _drop_unsigned_federated(data: dict[str, Any]) -> dict[str, Any]:
+    """P240: a listing this relay pulled from another is checked here against its
+    seller's own signature, not taken on this relay's word; one that fails is
+    left out and counted (`refused_federated`)."""
+    from emporia.identity import verify
+    from emporia.wire import listing_verdict
+    listings = data.get("listings") or []
+    kept = [x for x in listings if not x.get("federated_from") or not listing_verdict(x, verify)]
+    if len(kept) != len(listings):
+        data = {**data, "listings": kept, "count": len(kept), "refused_federated": len(listings) - len(kept)}
+    return data
 
 
 # ============================================================================

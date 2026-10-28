@@ -363,6 +363,25 @@ class EmporiaAgent:
         expires_in_hours: int = 72,
         metadata: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
+        """P240: signed by this agent, for the relay's own URL (its `/health`
+        `relay_url`), so relays that pull the listing can check it was."""
+        from emporia.identity import get_public_key_hex
+        from emporia.wire import (
+            listing_expires_at,
+            new_message_nonce,
+            signed_listing_payload,
+            stable_id_for,
+        )
+        health = await self._client().get(f"{self.relay_url}/health")
+        health.raise_for_status()
+        origin = health.json().get("relay_url")
+        if not origin:
+            raise RuntimeError("this relay does not say its own URL — it predates signed listings; upgrade it")
+        meta = metadata or {}
+        nonce, expires_at = new_message_nonce(), listing_expires_at(expires_in_hours)
+        signed = signed_listing_payload(
+            stable_id_for(get_public_key_hex(self.profile_id)), origin, nonce, title, description,
+            listing_type, payment_mode, price_usd, module_type, meta, expires_at)
         resp = await self._bearer_request(
             "post", f"{self.relay_url}/listings",
             json={
@@ -372,8 +391,10 @@ class EmporiaAgent:
                 "payment_mode": payment_mode,
                 "price_usd": price_usd,
                 "module_type": module_type,
-                "expires_in_hours": expires_in_hours,
-                "metadata": metadata or {},
+                "expires_at": expires_at,
+                "metadata": meta,
+                "listing_nonce": nonce,
+                "signature": self._sign(signed),
             },
         )
         resp.raise_for_status()
@@ -392,7 +413,12 @@ class EmporiaAgent:
             params["module_type"] = module_type
         resp = await self._client().get(f"{self.relay_url}/listings", params=params)
         resp.raise_for_status()
-        return resp.json().get("listings", [])
+        # P240: a listing the relay pulled from another relay is checked against
+        # its seller's own signature, not taken on the relay's word.
+        from emporia.identity import verify
+        from emporia.wire import listing_verdict
+        return [x for x in resp.json().get("listings", [])
+                if not x.get("federated_from") or not listing_verdict(x, verify)]
 
     # ------------------------------------------------------------------ #
     # Sessions

@@ -2,8 +2,9 @@
 import pytest
 from fastapi.testclient import TestClient
 
+from emporia import relay_server as rs
 from emporia.relay_server import app
-from tests.test_emporia import _register
+from tests.test_emporia import _register, _register_keyed, _signed_listing
 
 
 @pytest.fixture
@@ -29,24 +30,24 @@ def _as(agent_id: str) -> dict:
 
 
 def test_an_open_relay_is_as_before(client):
-    _register(client, "ra_open")
-    assert client.post("/listings", json={"title": "x", "listing_type": "service"},
+    _register_keyed(client, "ra_open")
+    assert client.post("/listings", json=_signed_listing(client, "ra_open", "x"),
                        headers=_as("ra_open")).status_code == 200
 
 
 def test_a_closed_relay_serves_members_only(client, remote, monkeypatch):
-    _register(client, "ra_member")
-    _register(client, "ra_stranger")
+    _register_keyed(client, "ra_member")
+    _register_keyed(client, "ra_stranger")
     monkeypatch.setenv("EMPORIA_RELAY_ACCESS", "closed")
     monkeypatch.setenv("EMPORIA_RELAY_MEMBERS", _key("ra_member"))
-    assert client.post("/listings", json={"title": "mine", "listing_type": "service"},
+    assert client.post("/listings", json=_signed_listing(client, "ra_member", "mine"),
                        headers=_as("ra_member")).status_code == 200
-    r = client.post("/listings", json={"title": "theirs", "listing_type": "service"}, headers=_as("ra_stranger"))
+    r = client.post("/listings", json=_signed_listing(client, "ra_stranger", "theirs"), headers=_as("ra_stranger"))
     assert r.status_code == 403 and "closed" in r.json()["detail"]
     assert client.get("/listings").status_code == 403                    # nobody browses
     assert client.get("/gaming/v1/federate/listings").status_code == 403  # nor pulls its feed
     assert remote.get("/health").json() == {"status": "ok", "service": remote.get("/health").json()["service"],
-                                            "access": "closed"}
+                                            "access": "closed", "relay_url": rs.RELAY_BASE_URL}
     assert "version" in client.get("/health").json()                     # this machine sees it all
 
 
@@ -63,15 +64,15 @@ def test_joining_a_closed_or_read_only_relay_takes_a_member_key(client, monkeypa
 
 
 def test_a_read_only_relay_lets_anyone_browse_and_members_act(client, monkeypatch):
-    _register(client, "ra_ro_member")
-    _register(client, "ra_ro_visitor")
+    _register_keyed(client, "ra_ro_member")
+    _register_keyed(client, "ra_ro_visitor")
     monkeypatch.setenv("EMPORIA_RELAY_ACCESS", "read-only")
     monkeypatch.setenv("EMPORIA_RELAY_MEMBERS", _key("ra_ro_member"))
     assert client.get("/listings").status_code == 200
     assert client.get("/gaming/v1/federate/listings").status_code == 200
-    assert client.post("/listings", json={"title": "x", "listing_type": "service"},
+    assert client.post("/listings", json=_signed_listing(client, "ra_ro_visitor", "x"),
                        headers=_as("ra_ro_visitor")).status_code == 403
-    assert client.post("/listings", json={"title": "x", "listing_type": "service"},
+    assert client.post("/listings", json=_signed_listing(client, "ra_ro_member", "x"),
                        headers=_as("ra_ro_member")).status_code == 200
 
 
@@ -179,8 +180,11 @@ def test_the_operator_removes_an_agent_that_cannot_leave(client, monkeypatch, ca
     """P222: two deleted profiles stayed listed — their keys on disk were not the
     registered ones, so they could not leave. The operator removes them."""
     from emporia import cli
-    _register(client, "ra_lost_keys")
-    client.post("/listings", json={"title": "stale", "listing_type": "service"}, headers=_as("ra_lost_keys"))
+    _register(client, "ra_lost_keys")      # its keys on disk are not these, so it cannot sign
+    from emporia import relay_server as rs
+    with rs.DB_LOCK, rs.get_db() as conn:
+        conn.execute("INSERT INTO listings (listing_id, title, agent_id, origin_relay, created_at) "
+                     "VALUES ('lst_ra_stale', 'stale', 'ra_lost_keys', ?, '2026-01-01')", (rs.RELAY_BASE_URL,))
     _register(client, "ra_viewer")
     listed = lambda: [a["agent_id"] for a in client.get("/agents", params={"limit": 200},   # noqa: E731
                                                           headers=_as("ra_viewer")).json()["agents"]]

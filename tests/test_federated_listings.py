@@ -7,10 +7,9 @@ from fastapi.testclient import TestClient
 
 from emporia import relay_server as rs
 from emporia.relay_server import app
-from tests.test_emporia import _make_peer_batch, _register
+from tests.test_emporia import _make_peer_batch, _peer_listing, _register
 
 PEER = "https://peer-p184.example"
-SELLER_KEY = "ab" * 32
 
 
 @pytest.fixture
@@ -18,11 +17,8 @@ def client():
     return TestClient(app, client=("127.0.0.1", 51240))
 
 
-def _listing(listing_id: str, agent_id: str = "p184_seller") -> dict:
-    return {"listing_id": listing_id, "title": "Lessons", "description": "", "listing_type": "service",
-            "agent_id": agent_id, "payment_mode": "free", "price_usd": "0", "module_type": None,
-            "expires_at": None, "metadata": {}, "created_at": "2026-01-01T00:00:00+00:00",
-            "agent_public_key_hex": SELLER_KEY}
+def _listing(agent_id: str = "p184_seller") -> dict:
+    return _peer_listing(PEER, "Lessons", seller="p184_seller", agent_id=agent_id)
 
 
 async def _pull(items: list[dict]) -> int:
@@ -38,39 +34,43 @@ def _shown(client, listing_id: str) -> dict | None:
 
 
 async def test_a_federated_listing_says_where_the_deal_happens(client):
-    assert await _pull([_listing("lst_p184_a")]) == 1
-    shown = _shown(client, "lst_p184_a")
+    x = _listing()
+    assert await _pull([x]) == 1
+    shown = _shown(client, x["listing_id"])
     assert shown["deal_on"] == PEER and f"visit_relay('{PEER}')" in shown["how_to_deal"]
-    assert shown["agent_public_key_hex"] == SELLER_KEY and "name_clash" not in shown
+    assert shown["agent_public_key_hex"] == x["agent_public_key_hex"] and "name_clash" not in shown
 
 
 async def test_an_agent_here_with_the_sellers_name_is_flagged(client):
     _register(client, "p184_clash")          # a different key from the seller's
-    assert await _pull([_listing("lst_p184_b", agent_id="p184_clash")]) == 1
-    assert "different agent" in _shown(client, "lst_p184_b")["name_clash"]
+    x = _listing(agent_id="p184_clash")
+    assert await _pull([x]) == 1
+    assert "different agent" in _shown(client, x["listing_id"])["name_clash"]
 
 
 async def test_a_listing_the_peer_withdrew_goes(client):
-    await _pull([_listing("lst_p184_c"), _listing("lst_p184_d")])
-    await _pull([_listing("lst_p184_d")])
-    assert _shown(client, "lst_p184_c") is None and _shown(client, "lst_p184_d") is not None
+    c, d = _listing(), _listing()
+    await _pull([c, d])
+    await _pull([d])
+    assert _shown(client, c["listing_id"]) is None and _shown(client, d["listing_id"]) is not None
 
 
 async def test_an_unlinked_relays_listings_go(client, monkeypatch):
-    await _pull([_listing("lst_p184_e")])
+    e = _listing()
+    await _pull([e])
     monkeypatch.setattr(rs, "FEDERATED_RELAYS", [PEER])
     rs.drop_unlinked_federated_rows()
-    assert _shown(client, "lst_p184_e") is not None
+    assert _shown(client, e["listing_id"]) is not None
     monkeypatch.setattr(rs, "FEDERATED_RELAYS", [])
     rs.drop_unlinked_federated_rows()
-    assert _shown(client, "lst_p184_e") is None
+    assert _shown(client, e["listing_id"]) is None
 
 
 def test_the_feed_carries_each_sellers_key_inside_the_signature(client):
-    from tests.test_emporia import _register_keyed
+    from tests.test_emporia import _register_keyed, _signed_listing
     agent = "p184_local"
     _register_keyed(client, agent)
-    r = client.post("/listings", json={"title": "Mine", "listing_type": "service"},
+    r = client.post("/listings", json=_signed_listing(client, agent, "Mine"),
                     headers={"x-emporia-agent-id": agent})
     assert r.status_code == 200, r.text
     feed = client.get("/gaming/v1/federate/listings").json()

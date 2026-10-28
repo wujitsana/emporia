@@ -6,7 +6,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from emporia.relay_server import app
-from tests.test_emporia import _register, _register_keyed
+from tests.test_emporia import _register, _register_keyed, _signed_listing
 
 
 @pytest.fixture
@@ -40,8 +40,8 @@ def test_the_feed_lists_open_public_games_only(client):
 def test_scan_relays_reads_without_joining_and_skips_what_it_must(client, monkeypatch):
     from emporia import mcp_server
     _register_keyed(client, "sc_seller")
-    client.post("/listings", json={"title": "Chess lessons", "listing_type": "service", "price_usd": "3.00"},
-                headers={"x-emporia-agent-id": "sc_seller"})
+    assert client.post("/listings", json=_signed_listing(client, "sc_seller", "Chess lessons", price_usd="3.00"),
+                       headers={"x-emporia-agent-id": "sc_seller"}).status_code == 200
     game = _session(client, "sc_seller")
     monkeypatch.setattr(mcp_server, "RELAY_URL", "http://relay-under-test")
     monkeypatch.setattr(mcp_server, "_linked_relays", lambda: [])
