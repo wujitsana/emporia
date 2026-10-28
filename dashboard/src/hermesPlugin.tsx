@@ -37,6 +37,12 @@ declare global {
   }
 }
 
+// P227: the Hermes profile this bundle was loaded for — Hermes tags each
+// plugin script with it (data-hermes-profile) and reloads the bundle when the
+// profile changes. Read now: currentScript is only set while this runs.
+const HERMES_PROFILE = (document.currentScript as HTMLScriptElement | null)
+  ?.getAttribute("data-hermes-profile") ?? "";
+
 // The directory this script was served from: /dashboard-plugins/emporia/dist/.
 const BASE = new URL(".", (document.currentScript as HTMLScriptElement | null)?.src
   ?? window.location.href).toString();
@@ -69,7 +75,7 @@ async function mount(host: HTMLElement, sdk: HermesPluginSdk): Promise<() => voi
   await ensureViewer(
     () => sdk.authedFetch("/api/plugins/emporia/agents")
       .then((r) => r.json()).then((d) => d.agents as string[]),
-    () => sdk.authedFetch("/api/plugins/emporia/_hermes_profile")
+    async () => HERMES_PROFILE || sdk.authedFetch("/api/plugins/emporia/_hermes_profile")
       .then((r) => r.json()).then((d) => String(d.profile ?? "")),
   );
   const { setThemeRoot } = await import("./themeConfig");
