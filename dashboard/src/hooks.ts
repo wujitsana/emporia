@@ -191,10 +191,27 @@ export function useRoomWs(
   relayUrl: string,
   roomId: string | null,
   agentId: string | null,
+  fetchHistory?: (roomId: string) => Promise<WsMessage[]>,
 ): RoomWsState {
   const [messages, setMessages] = useState<WsMessage[]>([]);
   const [connected, setConnected] = useState(false);
   const wsRef = useRef<WebSocket | null>(null);
+  const fetchRef = useRef(fetchHistory);
+  fetchRef.current = fetchHistory;
+
+  // P236: the messages by plain request whenever the socket is not open. In a
+  // Hermes profile other than the one the dashboard was launched as, Hermes
+  // refuses a plugin's websockets ("does not carry websockets yet"), so a room
+  // opened there showed no messages at all.
+  useEffect(() => {
+    if (!roomId || connected || !fetchRef.current) return;
+    let cancelled = false;
+    const load = () => fetchRef.current?.(roomId)
+      .then((m) => { if (!cancelled) setMessages(m); }).catch(() => {});
+    load();
+    const id = setInterval(load, 5_000);
+    return () => { cancelled = true; clearInterval(id); };
+  }, [roomId, connected]);
 
   useEffect(() => {
     // P24-5 (W5, F2): clear unconditionally on every roomId change, not just

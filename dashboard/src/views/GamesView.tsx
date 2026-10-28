@@ -99,6 +99,16 @@ export function ChessReplayPanel({ session }: { session: Session }) {
     return () => { cancelled = true; };
   }, [session.session_id, applyReplay]);
 
+  // P236: without the socket (a Hermes profile other than the launch one),
+  // follow a live game by asking every few seconds.
+  useEffect(() => {
+    if (!sessionIsActive(session.status) || wsLive) return;
+    const id = setInterval(() => {
+      api.sessionActions(session.session_id).then((r) => applyReplay(r.actions)).catch(() => {});
+    }, 5_000);
+    return () => clearInterval(id);
+  }, [session.session_id, session.status, wsLive, applyReplay]);
+
   useEffect(() => {
     if (!sessionIsActive(session.status)) return;
     let closed = false;

@@ -27,7 +27,10 @@ export function RoomsView({ initialRoomId, navigate }: { initialRoomId: string |
   const [selected, setSelected] = useState<Room | null>(null);
   const endRef = useRef<HTMLDivElement>(null);
 
-  const { messages, connected: wsConnected } = useRoomWs(RELAY, selected?.room_id ?? null, VIEWER_ID);
+  const { messages, connected: wsConnected } = useRoomWs(
+    RELAY, selected?.room_id ?? null, VIEWER_ID,
+    (id) => api.roomMessages(id).then((r) => r.messages as unknown as WsMessage[]),
+  );
 
   // P23-4: pubkeys needed for verifyMessageSignature() -- fetched on demand,
   // one round trip per distinct sender seen, cached for the life of the view
