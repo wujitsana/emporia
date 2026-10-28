@@ -8057,8 +8057,12 @@ async def _refund_kicked_room_payer(room_id: str, agent_id: str) -> dict[str, An
 
 
 def _room_member_encryption_keys(room: Any) -> dict[str, dict[str, str]]:
-    """`{agent_id: {encryption_public_key, signature, public_key_hex}}` for every
-    member of `room`, in one query per member.
+    """`{agent_id: {encryption_public_key, signature, public_key_hex, stable_id,
+    key_log}}` for every member of `room`, in one query per member.
+
+    P250: with the stable id and key log, so a client checking the binding
+    against the signing key it pinned can follow a rotation (as
+    `GET /agents/{id}/encryption-key` lets it) instead of refusing the member.
 
     Keyed on `room.members` — *structural* membership — rather than
     `rooms_db.is_member()`, which additionally requires an active entitlement on a
@@ -8079,21 +8083,21 @@ def _room_member_encryption_keys(room: Any) -> dict[str, dict[str, str]]:
     with DB_LOCK, get_db() as conn:
         rows = conn.execute(
             "SELECT agent_id, encryption_public_key, encryption_key_signature, "
-            f"public_key_hex FROM authorized_agents WHERE agent_id IN ({placeholders})",
+            f"public_key_hex, stable_id FROM authorized_agents WHERE agent_id IN ({placeholders})",
             room.members,
         ).fetchall()
-    found = {
-        row["agent_id"]: {
-            "encryption_public_key": row["encryption_public_key"] or "",
-            "signature": row["encryption_key_signature"] or "",
-            "public_key_hex": row["public_key_hex"] or "",
+        found = {
+            row["agent_id"]: {
+                "encryption_public_key": row["encryption_public_key"] or "",
+                "signature": row["encryption_key_signature"] or "",
+                "public_key_hex": row["public_key_hex"] or "",
+                "stable_id": row["stable_id"] or "",
+                "key_log": agent_key_log(conn, row["stable_id"]),
+            }
+            for row in rows
         }
-        for row in rows
-    }
-    return {
-        member: found.get(member, {"encryption_public_key": "", "signature": "", "public_key_hex": ""})
-        for member in room.members
-    }
+    empty = {"encryption_public_key": "", "signature": "", "public_key_hex": "", "stable_id": "", "key_log": []}
+    return {member: found.get(member, empty) for member in room.members}
 
 
 

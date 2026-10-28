@@ -1640,7 +1640,7 @@ def _room_recipients(sender: str, room_id: str) -> dict[str, str]:
             continue
         recipients[member] = trust_peer_encryption_key(
             member, entry.get("encryption_public_key", ""), entry.get("signature", ""),
-            entry.get("public_key_hex", ""),
+            entry.get("public_key_hex", ""), _base(), entry.get("stable_id", ""), entry.get("key_log"),
         )
     return recipients
 
@@ -1656,7 +1656,7 @@ def _session_recipients(aid: str, session_id: str) -> dict[str, str]:
     for player, entry in r.json().get("keys", {}).items():
         out[player] = (get_encryption_public_key_hex(aid) if player == aid else trust_peer_encryption_key(
             player, entry.get("encryption_public_key", ""), entry.get("signature", ""),
-            entry.get("public_key_hex", "")))
+            entry.get("public_key_hex", ""), _base(), entry.get("stable_id", ""), entry.get("key_log")))
     return out
 
 
@@ -2772,7 +2772,7 @@ def _dm_recipients(sender: str, thread_id: str) -> dict[str, str]:
         body = key_r.json()
         recipients[participant] = trust_peer_encryption_key(
             participant, body.get("encryption_public_key", ""), body.get("signature", ""),
-            body.get("public_key_hex", ""),
+            body.get("public_key_hex", ""), _base(), body.get("stable_id", ""), body.get("key_log"),
         )
     return recipients
 

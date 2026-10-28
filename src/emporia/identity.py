@@ -748,6 +748,9 @@ def trust_peer_encryption_key(
     encryption_public_key_hex: str,
     signature: str,
     signing_public_key_hex: str,
+    relay_url: str,
+    stable_id: str = "",
+    key_log: Any = None,
 ) -> str:
     """Validate a peer's encryption key as served by a relay, then pin it. Returns
     the key to seal to.
@@ -764,6 +767,13 @@ def trust_peer_encryption_key(
     detectable over time. Neither closes first contact completely; that needs an
     out-of-band fingerprint comparison, which is what
     `encryption_key_fingerprint()` is for.
+
+    P250: the binding is checked against the signing key this client pinned for
+    the peer on `relay_url` (`pinned_signing_key()`), not the one served in the
+    same answer — else a hop could swap both and get a first message sealed to
+    its own key. A served key that is not the pinned one is accepted only when
+    the served `stable_id` / `key_log` show the peer's own signed steps to it;
+    otherwise this refuses. The first signing key seen is still pinned on trust.
     """
     from emporia.wire import signed_encryption_key_payload
 
@@ -776,8 +786,15 @@ def trust_peer_encryption_key(
     # P185: an agent on another relay is pinned by its address (`bob@host`);
     # it signed its key under its own id (`bob`), which cannot contain "@".
     bound_id = agent_id.rpartition("@")[0] or agent_id
-    if not signing_public_key_hex or not verify(
-        signed_encryption_key_payload(bound_id, key), signature, signing_public_key_hex,
+    changed: list[str] = []
+    signing_key = pinned_signing_key(agent_id, relay_url, signing_public_key_hex, stable_id, changed, key_log)
+    if changed:
+        raise PeerKeyMismatch(
+            f"the signing key served for '{agent_id}' is not the one pinned for them, and their signed "
+            f"key log does not lead to it — refusing to encrypt"
+        )
+    if not signing_key or not verify(
+        signed_encryption_key_payload(bound_id, key), signature, str(signing_key),
     ):
         raise PeerKeyMismatch(
             f"the encryption key served for '{agent_id}' is not signed by their "

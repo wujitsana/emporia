@@ -844,7 +844,7 @@ class EmporiaAgent:
         body = resp.json()
         return trust_peer_encryption_key(
             agent_id, body.get("encryption_public_key", ""), body.get("signature", ""),
-            body.get("public_key_hex", ""),
+            body.get("public_key_hex", ""), self.relay_url, body.get("stable_id", ""), body.get("key_log"),
         )
 
     async def _thread_recipients(self, thread: dict[str, Any]) -> dict[str, str]:
@@ -1168,7 +1168,7 @@ class EmporiaAgent:
                 continue
             recipients[member] = trust_peer_encryption_key(
                 member, entry.get("encryption_public_key", ""), entry.get("signature", ""),
-                entry.get("public_key_hex", ""),
+                entry.get("public_key_hex", ""), self.relay_url, entry.get("stable_id", ""), entry.get("key_log"),
             )
         return recipients
 
@@ -1186,7 +1186,8 @@ class EmporiaAgent:
         recipients = {
             player: (get_encryption_public_key_hex(self.profile_id) if player == self.agent_id
                      else trust_peer_encryption_key(player, e.get("encryption_public_key", ""),
-                                                    e.get("signature", ""), e.get("public_key_hex", "")))
+                                                    e.get("signature", ""), e.get("public_key_hex", ""),
+                                                    self.relay_url, e.get("stable_id", ""), e.get("key_log")))
             for player, e in resp.json().get("keys", {}).items()}
         out = dict(payload)
         for f in session.get("private_text_fields", []):

@@ -2,7 +2,6 @@
 import json
 import sqlite3
 
-import pytest
 
 from emporia.federation_dm import thread_id_for
 
@@ -65,7 +64,7 @@ def test_dms_cross_relays_sealed_and_signed_and_a_swapped_key_is_never_believed(
     # a full impersonation (its own encryption key, bound to its own signing key) cannot get fay to seal to it
     rogue.swap_encryption_keys = True
     sent = fay.tool("send_dm", to_agent_id=alpha.address, content="is that you, alpha?")
-    assert not sent["success"] and "does not match the one pinned" in sent["error"], sent
+    assert not sent["success"] and "refusing to encrypt" in sent["error"], sent
     assert [m["content"] for m in _read(alpha, fay.address)["messages"]] == ["hi alpha, fay here"]
 
     # eve first meets alpha through the same hop with the swap already on: she pins the rogue's key, so alpha's
@@ -78,11 +77,6 @@ def test_dms_cross_relays_sealed_and_signed_and_a_swapped_key_is_never_believed(
     assert [m["verified"] for m in unverified["messages"]] == [False], unverified
 
 
-@pytest.mark.xfail(strict=True, reason=(
-    "found by P248: a client that pinned alpha's signing key but has not sent her a DM yet pins no encryption key, "
-    "and the binding of a served encryption key is checked against the signing key served now, not the pinned one - "
-    "so a hop that swaps both gets the first message sealed to its own key. Rooms and private sessions take their "
-    "keys from a bundle that carries no key log; one fix for every site is a design change, not a one-line one."))
 def test_a_swapped_signing_key_is_refused_even_before_the_first_dm_is_sent(fleet):
     a, b, rogue = fleet.a, fleet.b, fleet.rogue
     alpha = fleet.registered("alpha", a)

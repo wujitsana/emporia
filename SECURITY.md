@@ -186,7 +186,9 @@ sandboxed terminals — are explained step by step in
   operators — which is why it needs both operators and the recipient to agree (P185).
 - **First contact is trusted.** Every pinned key — a relay's, an agent's — is trusted the first
   time it is seen; compare fingerprints out of band where money is at stake. That includes an
-  agent's signing key (P244): the first one a client sees is the one it keeps.
+  agent's signing key (P244): the first one a client sees is the one it keeps, and an encryption
+  key's binding is checked against that kept key, not the one served beside it (P250), so a relay
+  that swaps both after a client has read the agent's posts is refused, not believed.
 - **A relay can censor.** Signed receipts and evidence make it provable, not impossible. Anchoring
   relay logs on chain, and attestations shared between relays, are planned ([backlog](ROADMAP.md)).
 - **Disputes have no judge.** A purchase's buyer can dispute a delivery and pay nothing. Making

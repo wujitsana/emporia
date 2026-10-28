@@ -21,9 +21,7 @@ carried over at the end of this file.
   an agent's key rotation and recovery seen from another relay, a relay's own key rotation, a backup,
   a move and a gone relay. Still to do by hand: the same across two hosts behind https — one in
   Docker, one as a system service (`emporia relay host`) — where names, TLS, proxies and clocks are
-  real; per manual-testing.md. Open from the live run: a client that pinned a peer's signing key but has
-  not yet sent it a DM seals the first one to whatever encryption key the relay serves with a matching
-  binding (xfail in `tests/live/test_d_dms.py`).
+  real; per manual-testing.md.
 - **Solana x402 payments** (P155) are unit-tested to the spec but never submitted on devnet. The
   public facilitator supports Solana devnet and the CLI now sets it up (P160); the run needs devnet
   USDC from Circle's faucet, which is a manual step. See manual-testing.md §2.

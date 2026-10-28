@@ -64,6 +64,9 @@ so both relays and both clients agree on it (P185).
 ### 3.5 An encryption key — `wire.signed_encryption_key_payload`
 `{agent_id, encryption_public_key_hex}` — binds the X25519 key to the identity key.
 Off its home relay the agent is pinned by address but signed this under its plain id.
+A client checks the binding against the signing key it has pinned for the agent, not the one
+served in the same answer. A rotation is followed through the agent's signed key log; a served key
+that is not the pinned one and that log does not lead to makes the client refuse to encrypt (P250).
 
 ### 3.6 A direct message on a session — `wire.signed_dm_envelope`
 `{to_agent, type, session_id, payload}` (`POST /messages`).

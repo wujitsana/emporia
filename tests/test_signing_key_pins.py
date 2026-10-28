@@ -222,3 +222,66 @@ def test_verify_session_checks_moves_against_the_pinned_key(client, relay):
     assert mcp_server._sender_public_key("pin_viewer", "pin_vs_player", changed) == get_public_key_hex("pin_vs_player")
     assert changed == ["pin_vs_player"]
     assert json.dumps(mcp_server._flag_changed_keys({}, changed)) == '{"signing_key_changed": ["pin_vs_player"]}'
+
+
+# --- P250: an encryption key's binding is checked against the pinned signing key ----------
+
+def _ed():
+    from cryptography.hazmat.primitives.asymmetric import ed25519
+    priv = ed25519.Ed25519PrivateKey.generate()
+    return priv, priv.public_key().public_bytes_raw().hex()
+
+
+def _served_enc(name: str, priv):
+    """What a relay serves for `name`: an encryption key bound by `priv`."""
+    import os
+
+    from emporia import wire
+    enc = os.urandom(32).hex()
+    return enc, identity.sign_payload(priv, wire.signed_encryption_key_payload(name, enc))
+
+
+def test_swapping_both_keys_before_any_dm_is_refused():
+    url = "https://pin250.example"
+    real, real_hex = _ed()
+    rogue, rogue_hex = _ed()
+    identity.pinned_signing_key("pin250_swap", url, real_hex, "sid250")      # e.g. read its posts
+    enc, sig = _served_enc("pin250_swap", rogue)                            # a hop swaps both halves
+    with pytest.raises(identity.PeerKeyMismatch, match="signing key"):
+        identity.trust_peer_encryption_key("pin250_swap", enc, sig, rogue_hex, url, "sid250", [])
+    assert "pin250_swap" not in identity.load_peer_encryption_keys()          # nothing was pinned
+    assert identity.load_peer_signing_keys()["pin250_swap@pin250.example"]["public_key_hex"] == real_hex
+    enc, sig = _served_enc("pin250_swap", real)                              # the genuine pair still works
+    assert identity.trust_peer_encryption_key("pin250_swap", enc, sig, real_hex, url, "sid250", []) == enc
+
+
+def test_a_rotated_peer_with_a_valid_log_is_accepted():
+    from emporia import wire
+    url = "https://pin250.example"
+    old, old_hex = _ed()
+    new, new_hex = _ed()
+    stable = wire.stable_id_for(old_hex)
+    at = "2026-01-01T00:10:00+00:00"
+    log = [{"old": old_hex, "new": new_hex, "at": at, "by": "key",
+            "signature": identity.sign_payload(old, wire.signed_key_rotation_payload(stable, old_hex, new_hex, at))}]
+    identity.pinned_signing_key("pin250_rot", url, old_hex, stable)
+    enc, sig = _served_enc("pin250_rot", new)
+    assert identity.trust_peer_encryption_key("pin250_rot", enc, sig, new_hex, url, stable, log) == enc
+    assert identity.load_peer_signing_keys()["pin250_rot@pin250.example"]["public_key_hex"] == new_hex
+    # a stranger's key with the same log is not explained by it
+    other, other_hex = _ed()
+    enc2, sig2 = _served_enc("pin250_rot", other)
+    with pytest.raises(identity.PeerKeyMismatch):
+        identity.trust_peer_encryption_key("pin250_rot", enc2, sig2, other_hex, url, stable, log)
+
+
+def test_first_contact_with_no_pin_is_unchanged():
+    url = "https://pin250.example"
+    priv, pub = _ed()
+    enc, sig = _served_enc("pin250_new", priv)
+    assert identity.trust_peer_encryption_key("pin250_new", enc, sig, pub, url) == enc
+    assert identity.load_peer_signing_keys()["pin250_new@pin250.example"]["public_key_hex"] == pub
+    other, _ = _ed()                                    # a binding by some other key is refused, pin or not
+    enc2, sig2 = _served_enc("pin250_new2", other)
+    with pytest.raises(identity.PeerKeyMismatch, match="not signed"):
+        identity.trust_peer_encryption_key("pin250_new2", enc2, sig2, pub, url)
