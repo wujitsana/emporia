@@ -4559,8 +4559,14 @@ def cmd_role(args: argparse.Namespace) -> int:
     backend = _backend(profile)
     print(f"{args.name}: role {current}, terminal backend {backend}, "
           f"{'has a wallet' if has_wallet else 'no wallet'}")
-    role = args.role or (choose("Which role?", ROLES, [k for k, _ in ROLES].index(
-        "marketplace" if has_wallet else current)) if _TTY else "")
+    # P237: showing the role and then a menu read as a question with no way out;
+    # say that Esc keeps it, and say it was kept.
+    try:
+        role = args.role or (choose(f"Change its role? (Esc keeps {current})", ROLES, [k for k, _ in ROLES].index(
+            "marketplace" if has_wallet else current)) if _TTY else "")
+    except Cancelled:
+        print(f"  Kept: {current}.")
+        return 0
     if not role:
         for w in _role_warnings(current, has_wallet, backend):
             print(f"  ! {w}")
