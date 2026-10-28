@@ -31,3 +31,19 @@ export function relayHost(url?: string | null): string {
   // half to guard.
   return host.slice(0, MAX_HOST_CHARS);
 }
+
+/** P228: when something happened, readable at a glance — the time alone for
+ *  today, the date as well for anything older (chat lines showed a bare clock
+ *  time, so yesterday's 21:04 read like today's). "" for a missing or bad value. */
+export function whenText(iso?: string | null, now: Date = new Date()): string {
+  if (!iso) return "";
+  const t = new Date(iso);
+  if (Number.isNaN(t.getTime())) return "";
+  const time = t.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+  if (t.toDateString() === now.toDateString()) return time;
+  const date = t.toLocaleDateString([], {
+    month: "short", day: "numeric",
+    ...(t.getFullYear() === now.getFullYear() ? {} : { year: "numeric" }),
+  });
+  return `${date}, ${time}`;
+}

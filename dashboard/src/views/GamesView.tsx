@@ -34,6 +34,7 @@ import { McpCommandHint } from "../ui/McpCommandHint";
 import { useInterval } from "../hooks";
 import { relaySocket } from "../transport";
 import { sessionStatusLabel } from "../paymentFormat";
+import { whenText } from "../relayFormat";
 import { Leaderboard } from "../ui/Leaderboard";
 import { GameResults } from "../ui/GameResults";
 import { GameChat } from "../ui/GameChat";
@@ -194,6 +195,7 @@ export function ChessReplayPanel({ session }: { session: Session }) {
               <span className="e-chess-replay-status">
                 <ChessReplayStatus live={wsLive} idx={idx} total={fens.length} />
                 <span className="e-chess-ctrl-move">{moveLabel}</span>
+                {session.created_at && <span className="e-faint">started {whenText(session.created_at)}</span>}
                 <AuditBadge sessionId={session.session_id} />
                 <VerifyBadge sessionId={session.session_id} live={session.status === "active"} />
               </span>
@@ -310,6 +312,7 @@ export function NonChessSessionPanel({ session }: { session: Session }) {
           <Text className="e-dim e-status-txt">{sessionStatusLabel(session.status)}</Text>
           <br />
           <Text className="e-faint">{moduleKind} · {session.step_number} steps</Text>
+          {session.created_at && (<><br /><Text className="e-faint">started {whenText(session.created_at)}</Text></>)}
           <br />
           <AuditBadge sessionId={session.session_id} />
           <br />
@@ -582,7 +585,7 @@ export function GamesView({
             <Text className="e-dim">
               {s.module_type.replace("emporia:", "").replace(":v1", "")} · {hint}
             </Text>
-            <Text className="e-faint">…{s.session_id.slice(-8)}</Text>
+            <Text className="e-faint">…{s.session_id.slice(-8)}{s.created_at ? ` · ${whenText(s.created_at)}` : ""}</Text>
           </FlatRailItem>
           );
         })

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { relayHost } from "./relayFormat";
+import { relayHost, whenText } from "./relayFormat";
 
 // P42: one relayHost, not two. RelayStrip.tsx had one (for federation peers) and
 // P40 added a second in discoveryFormat.ts (for a lobby challenge's
@@ -28,5 +28,19 @@ describe("relayHost", () => {
 
   it("strips the protocol and truncates an unparseable origin", () => {
     expect(relayHost(`https://${"x".repeat(200)}`)).toHaveLength(48);
+  });
+});
+
+describe("whenText (P228)", () => {
+  const now = new Date(2026, 9, 28, 12, 0);
+  it("is the time alone for today", () => {
+    expect(whenText(new Date(2026, 9, 28, 9, 5).toISOString(), now)).not.toMatch(/Oct/);
+  });
+  it("adds the date for an earlier day", () => {
+    expect(whenText(new Date(2026, 9, 23, 21, 4).toISOString(), now)).toMatch(/23/);
+  });
+  it("is empty for nothing", () => {
+    expect(whenText(undefined, now)).toBe("");
+    expect(whenText("not a date", now)).toBe("");
   });
 });

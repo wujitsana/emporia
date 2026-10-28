@@ -111,3 +111,20 @@ def test_states_from_before_colours_were_stored_still_settle():
     res = m.apply_action(board_state, SessionAction(
         agent_id="w", action_type="move", payload={"uci": "a1a8"}))
     assert res.artifacts["result"]["winner"] == "w"
+
+
+def test_a_game_ends_in_a_draw_at_its_move_limit():
+    """P228: every move is a model turn; a game no one is winning still ends."""
+    m = ChessModule()
+    assert m.validate_config({"max_moves": 0})[0] is False
+    assert m.validate_config({"max_moves": True})[0] is False
+    assert m.validate_config({"max_moves": 1}) == (True, "")
+    state = m.initial_state(["w", "b"], {"max_moves": 1})
+    assert state.data["max_plies"] == 2
+    for agent, uci in (("w", "e2e4"), ("b", "e7e5")):
+        assert m.is_terminal(state) == (False, {})
+        state = m.apply_action(state, SessionAction(agent_id=agent, action_type="move",
+                                                    payload={"uci": uci})).new_state
+    over, outcome = m.is_terminal(state)
+    assert over and outcome == {"winner": None, "outcome_type": "draw", "termination": "move_limit"}
+    assert m.initial_state(["w", "b"], {}).data["max_plies"] == 80      # 40 each by default

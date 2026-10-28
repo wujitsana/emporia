@@ -1,6 +1,7 @@
 import Text from "@components/Text";
 import type { ReactNode } from "react";
 import { AgentMoireAvatar } from "../AgentMoireAvatar";
+import { whenText } from "../relayFormat";
 
 /* 10 well-separated hues — shared with AgentMoireAvatar */
 const SENDER_PALETTE = [210, 0, 145, 280, 35, 175, 320, 60, 255, 100] as const;
@@ -77,8 +78,8 @@ export function ReadOnlyChat({
                     <span className="e-chat-line__name" style={{ color }}>{m.sender_id}</span>
                     {m.msg_type && <span className="e-chat-line__type">{m.msg_type}</span>}
                     {m.created_at && (
-                      <span className="e-chat-line__time">
-                        {new Date(m.created_at).toLocaleTimeString()}
+                      <span className="e-chat-line__time" title={new Date(m.created_at).toLocaleString()}>
+                        {whenText(m.created_at)}
                       </span>
                     )}
                     {/* P23-4: `undefined`/`null` (not wired up, or nothing to

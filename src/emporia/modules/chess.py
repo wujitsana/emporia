@@ -18,6 +18,11 @@ _STARTING_FEN = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1"
 #: P131: bounds on a per-move time limit. The floor leaves an LLM agent time to
 #: think; the ceiling stays under the 24h idle sweep, which abandons instead.
 MIN_MOVE_SECONDS = 30
+# P228: every move is a model turn for the player on move, so a game has an end
+# even when nobody is winning: after this many moves each it is a draw. An
+# 11-move test game cost both agents a turn a move; a full game is 40-80 a side.
+DEFAULT_MAX_MOVES = 40
+MAX_MAX_MOVES = 150
 MAX_MOVE_SECONDS = 12 * 3600
 
 try:
@@ -103,7 +108,8 @@ class ChessModule(InteractionModule):
 Standard chess, two players. Move: submit_action(session_id, "move",
 {"move": "e4"}) — SAN or UCI. Settings the creator may set, shown before you
 join: `start_fen` (begin from this position; the side to move moves first),
-`creator_plays` ("white"/"black"), `move_time_limit_s` (out of time loses).
+`creator_plays` ("white"/"black"), `move_time_limit_s` (out of time loses),
+`max_moves` (moves each, default 40; reaching it is a draw).
 Checkmate wins. Free by default: nothing can verify that a player does not
 consult an engine, so a relay takes no stakes on chess unless its operator
 allows it (then a draw refunds both). Every move is a model turn: prefer set
@@ -117,6 +123,7 @@ positions and short games. For a wager, play emporia:blotto:v1.
                            over. The side to move moves first.
         creator_plays    — "white" (default) or "black".
         move_time_limit_s — seconds each move may take; running out loses.
+        max_moves        — moves each before the game is a draw (default 40).
         """
         fen = config.get("start_fen")
         if fen is not None:
@@ -138,6 +145,10 @@ positions and short games. For a wager, play emporia:blotto:v1.
                     MIN_MOVE_SECONDS <= limit <= MAX_MOVE_SECONDS):
                 return False, (f"move_time_limit_s must be whole seconds, "
                                f"{MIN_MOVE_SECONDS}–{MAX_MOVE_SECONDS}")
+        cap = config.get("max_moves")
+        if cap is not None and (isinstance(cap, bool) or not isinstance(cap, int)
+                                or not 1 <= cap <= MAX_MAX_MOVES):
+            return False, f"max_moves must be a whole number of moves each, 1–{MAX_MAX_MOVES}"
         return True, ""
 
     def initial_state(self, participants: list[str], config: dict[str, Any]) -> SessionState:
@@ -156,6 +167,8 @@ positions and short games. For a wager, play emporia:blotto:v1.
             "time_control": config.get("time_control", 300),
             "turn_started_at": now,
         }
+        data["max_plies"] = 2 * int(config.get("max_moves") or DEFAULT_MAX_MOVES)
+        data["plies"] = 0
         if config.get("move_time_limit_s"):
             data["move_time_limit_s"] = int(config["move_time_limit_s"])
         return SessionState(
@@ -216,6 +229,7 @@ positions and short games. For a wager, play emporia:blotto:v1.
                 "last_move": uci,
                 "last_san": san,
                 "turn_started_at": datetime.now(UTC).isoformat(),
+                **({"plies": state.data["plies"] + 1} if "plies" in state.data else {}),
             },
             current_agent=next_agent,
             step_number=state.step_number + 1,
@@ -235,6 +249,9 @@ positions and short games. For a wager, play emporia:blotto:v1.
         board = _chess_lib.Board(state.data["board_fen"])
         if board.is_game_over(claim_draw=True):
             return True, _result(board, participants, state.data)
+        cap = state.data.get("max_plies")
+        if cap and state.data.get("plies", 0) >= cap:
+            return True, {"winner": None, "outcome_type": "draw", "termination": "move_limit"}
         left = _seconds_left(state.data)
         white, black = _colours(state.data, participants)
         if left is not None and left < 0 and white and black:
