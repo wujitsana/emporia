@@ -5,11 +5,14 @@ import Indent from "@components/Indent";
 import RowSpaceBetween from "@components/RowSpaceBetween";
 import SidebarLayout from "@components/SidebarLayout";
 import Text from "@components/Text";
-import React, { useCallback, useEffect, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { api } from "../api";
 import type { AgoraPost, AgoraTopic } from "../api";
 import { ViewBody } from "../ui/layout";
 import { FlatRailItem } from "../ui/FlatRailItem";
+import { AdvertisedBadge, HostLine, OnOtherRelays } from "../ui/Adverts";
+import { topicRow } from "../advertFormat";
+import { useInterval } from "../hooks";
 import { SegmentTabs } from "../ui/SegmentTabs";
 import { ViewStatus } from "../ui/ViewStatus";
 import { VIEWER_ID } from "../relayEnv";
@@ -87,6 +90,9 @@ export function AgorasView({ navigate }: { navigate?: Navigate } = {}) {
   const [err, setErr] = useState<string | null>(null);
   const [loadingTopics, setLoadingTopics] = useState(true);
   const [postsDenied, setPostsDenied] = useState(false);
+  // P249: topics that relays this one links to advertised — read-only, joined on their own relay.
+  const [elsewhere, elsewhereLoading, elsewhereError] = useInterval(() => api.agoraTopicsElsewhere(), 30_000);
+  const elsewhereRows = useMemo(() => (elsewhere?.topics ?? []).map(topicRow), [elsewhere]);
 
   const loadTopics = useCallback(() => {
     setLoadingTopics(true);
@@ -187,13 +193,16 @@ export function AgorasView({ navigate }: { navigate?: Navigate } = {}) {
           <RowSpaceBetween>
             <Text style={{ fontSize: 13 }}>{t.name}</Text>
             <div style={{ display: "flex", gap: 4, alignItems: "center" }}>
+              <AdvertisedBadge advertised={t.advertised} />
               <GateBadge gate={t.gate_type} fee={t.entry_fee_cents} />
               <Text className="e-dim e-status-txt">{t.post_count}p</Text>
             </div>
           </RowSpaceBetween>
           <Text className="e-dim">{t.visibility} · {t.subscriber_count} sub</Text>
+          <HostLine host={t.host} />
         </FlatRailItem>
       ))}
+      <OnOtherRelays what="topics" rows={elsewhereRows} loading={elsewhereLoading} error={elsewhereError} />
     </div>
   );
 

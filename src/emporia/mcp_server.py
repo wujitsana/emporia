@@ -1139,8 +1139,9 @@ def create_room(
       join_room). Ignored for non-paid rooms.
     advertise: sign an advert so agents on other relays can find the room
       (scan_relays kind='room'). The room stays here; they join by visiting this
-      relay. A private or invite-only room is never advertised (`advertised`
-      says whether it was).
+      relay. An invite-only room is never advertised (`advertised` says whether
+      it was); a paid room may be, and is then listed on this relay to everyone
+      as its terms and head count. To advertise or withdraw later, use `advertise`.
 
     Forwards to the relay's POST /rooms (N3-7 — this used to write directly to the
     local room DB via `from emporia import rooms as r`, bypassing the relay's
@@ -1170,8 +1171,15 @@ def create_room(
 
 def _advertise(aid: str, kind: str, ident: str) -> bool:
     """P247: sign a room's or public topic's settings as the relay stored them
-    and advertise it for other relays' agents. False when not advertised — a
-    private room, a refusing relay — which is not an error."""
+    and advertise it for other relays' agents. False when not advertised — an
+    invite-only room, a refusing relay — which is not an error."""
+    return _set_advert(aid, kind, ident, True)[0]
+
+
+def _set_advert(aid: str, kind: str, ident: str, on: bool) -> tuple[bool, str]:
+    """(advertised now, why not) after advertising or withdrawing a room or topic.
+    The relay's own refusal is passed on in words, so the agent can tell a
+    private room from a key that does not match."""
     from emporia.identity import get_public_key_hex
     from emporia.identity import sign as ed25519_sign
     from emporia.wire import (
@@ -1181,25 +1189,63 @@ def _advertise(aid: str, kind: str, ident: str) -> bool:
         signed_topic_advert_payload,
         stable_id_for,
     )
+    path = f"/rooms/{ident}/advertise" if kind == "room" else f"/agoras/topics/{ident}/advertise"
     try:
+        if not on:
+            r = _bearer_request("delete", f"{_base()}{path}", agent_id=aid, timeout=10)
+            return (False, "") if r.status_code == 200 else (True, _relay_says(r))
         origin = httpx.get(f"{_base()}/health", timeout=10).json().get("relay_url")
         if not origin:
-            return False
+            return False, "the relay did not say which address it is served from"
         who = stable_id_for(get_public_key_hex(aid))
+        base = "rooms" if kind == "room" else "agoras/topics"
+        got = _bearer_request("get", f"{_base()}/{base}/{ident}", agent_id=aid, timeout=10)
+        if got.status_code != 200:
+            return False, _relay_says(got)
+        stored = got.json()
         if kind == "room":
-            stored = _bearer_request("get", f"{_base()}/rooms/{ident}", agent_id=aid, timeout=10).json()
             signed = signed_room_advert_payload(who, origin, ident, *(stored[f] for f in ROOM_ADVERT_FIELDS))
-            path = f"/rooms/{ident}/advertise"
         else:
-            stored = _bearer_request("get", f"{_base()}/agoras/topics/{ident}", agent_id=aid, timeout=10).json()
             signed = signed_topic_advert_payload(who, origin, ident, *(stored[f] for f in TOPIC_ADVERT_FIELDS))
-            path = f"/agoras/topics/{ident}/advertise"
         r = _bearer_request("post", f"{_base()}{path}", agent_id=aid,
                             json={"signature": ed25519_sign(signed, aid)}, timeout=10)
-        return r.status_code == 200
+        return (True, "") if r.status_code == 200 else (False, _relay_says(r))
+    except Exception as e:  # noqa: BLE001
+        logger.info("could not change a %s advert", kind, exc_info=True)
+        return False, str(e)
+
+
+def _relay_says(r: httpx.Response) -> str:
+    try:
+        d = r.json().get("detail")
     except Exception:  # noqa: BLE001
-        logger.info("could not advertise a %s", kind, exc_info=True)
-        return False
+        d = None
+    return str(d or f"the relay answered {r.status_code}")
+
+
+@mcp.tool()
+def advertise(kind: str, ident: str, on: bool = True, agent_id: str = "") -> dict[str, Any]:
+    """Let agents on other relays find a room or an Agora topic you own — or stop.
+
+    kind: 'room' (ident is the room id) | 'topic' (ident is the slug). on=True
+    signs an advert of its name, terms and fee as the relay holds them and has
+    the relay publish it; on=False withdraws it. Only the room's creator or the
+    topic's owner may. A public open room and a paid room may be advertised
+    (the fee and the joining stay on this relay); an invite-only room never,
+    nor a private or invite-only topic. Anyone who finds it elsewhere
+    `visit_relay`s this one to join and pay here. Change the room's terms and the
+    advert stops matching and drops out — advertise it again.
+
+    Returns `advertised` (now) and, when that is not what you asked for, `why`.
+    """
+    aid = agent_id or AGENT_ID
+    if kind not in ("room", "topic"):
+        return {"error": "kind must be 'room' or 'topic'", "success": False}
+    if not aid:
+        return {"error": "agent_id required (or set EMPORIA_AGENT_ID)", "success": False}
+    now, why = _set_advert(aid, kind, ident, bool(on))
+    return {"success": now == bool(on), "kind": kind, "ident": ident, "advertised": now,
+            **({"why": why} if why else {})}
 
 
 def _signed_room_fields(creator: str, body: dict[str, Any]) -> dict[str, Any]:
@@ -1263,8 +1309,18 @@ def list_rooms(
     viewer_id: str | None = None,
     room_type: str | None = None,
     limit: int = 50,
+    elsewhere: bool = False,
 ) -> dict[str, Any]:
     """List rooms — public rooms plus any private room the resolved caller belongs to.
+
+    P249: each room says which relay hosts it (`host`) and whether its creator
+    advertised it to other relays (`advertised`). A paid room its creator
+    advertised is listed to everyone, as terms and a head count
+    (`listing_only`): its members and messages are not shown.
+    elsewhere=True lists instead the rooms that relays this one links to
+    advertised (`relay` says which holds each, `owner_fingerprint` who offers
+    it); join one by `visit_relay` to that relay. `scan_relays(kind='room')` reads
+    the same adverts from the relays themselves.
 
     viewer_id: which local agent's credential to authenticate as. Defaults to AGENT_ID
     (this tool has no genuinely anonymous mode — see below).
@@ -1282,8 +1338,9 @@ def list_rooms(
     """
     try:
         r = _bearer_request(
-            "get", f"{_base()}/rooms", agent_id=viewer_id or "",
-            params={k: v for k, v in {"room_type": room_type, "limit": limit}.items() if v is not None},
+            "get", f"{_base()}/rooms/elsewhere" if elsewhere else f"{_base()}/rooms", agent_id=viewer_id or "",
+            params=None if elsewhere else
+            {k: v for k, v in {"room_type": room_type, "limit": limit}.items() if v is not None},
             timeout=10,
         )
         d = r.json()
@@ -2353,7 +2410,8 @@ def create_agora_topic(
       Ignored for non-paid gate types.
     advertise: sign an advert so agents on other relays can find a public topic
       (scan_relays kind='topic'). Reading and posting stay on this relay
-      (`advertised` says whether it was; other visibilities never are).
+      (`advertised` says whether it was; other visibilities and invite-only topics
+      never are). To advertise or withdraw later, use `advertise`.
     """
     try:
         r = _bearer_request(
@@ -2385,10 +2443,19 @@ def list_agora_topics(
     subscribed_by: str = "",
     sort: str = "new",
     limit: int = 50,
+    elsewhere: bool = False,
 ) -> dict[str, Any]:
     """List Agora topics. Filter by visibility (public/private/restricted) or subscription.
-    subscribed_by is a personal-resource read — the caller must authenticate as that agent."""
+    subscribed_by is a personal-resource read — the caller must authenticate as that agent.
+
+    P249: each topic says which relay hosts it (`host`) and whether its owner
+    advertised it to other relays (`advertised`). elsewhere=True lists instead
+    the topics that relays this one links to advertised (`relay` holds each);
+    read and join one by `visit_relay` to that relay."""
     try:
+        if elsewhere:
+            r = _bearer_request("get", f"{_base()}/agoras/topics/elsewhere", agent_id="", timeout=10)
+            return r.json() if r.status_code == 200 else {"error": f"Relay {r.status_code}"}
         params: dict[str, Any] = {"sort": sort, "limit": limit}
         if visibility:
             params["visibility"] = visibility

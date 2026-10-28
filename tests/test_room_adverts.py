@@ -78,14 +78,92 @@ def test_an_advertised_room_is_in_the_feed_and_verifies(client):
     assert item["join_url"].endswith(f"/rooms/{advertised}/join") and item["owner_stable_id"]
 
 
-def test_private_and_invite_rooms_cannot_be_advertised(client):
+def test_invite_rooms_are_never_advertised_or_listed_to_outsiders(client):
     _register_keyed(client, "ra_priv")
+    _register_keyed(client, "ra_out")
     invite = _room(client, "ra_priv", room_type="private", gate_type="invite")
-    paid = _room(client, "ra_priv", room_type="private", gate_type="paid", entry_fee_cents=500)
-    for rid in (invite, paid):
-        r = client.post(f"/rooms/{rid}/advertise", json={"signature": "00" * 64}, headers=_as("ra_priv"))
-        assert r.status_code == 400
-    assert not {x["room_id"] for x in _rooms(client)["rooms"]} & {invite, paid}
+    r = client.post(f"/rooms/{invite}/advertise", json={"signature": "00" * 64}, headers=_as("ra_priv"))
+    assert r.status_code == 400
+    assert invite not in {x["room_id"] for x in _rooms(client)["rooms"]}
+    for who in (_as("ra_out"), {}):
+        assert invite not in {x["room_id"] for x in client.get("/rooms", headers=who).json()["rooms"]}
+        assert invite not in {x["listing_id"] for x in client.get("/listings?listing_type=room&limit=200", headers=who).json()["listings"]}
+        assert client.get(f"/rooms/{invite}", headers=who).status_code == 403
+    # a creator still sees it, as one of their own
+    assert invite in {x["room_id"] for x in client.get("/rooms", headers=_as("ra_priv")).json()["rooms"]}
+
+
+def test_a_paid_room_is_advertised_only_when_its_creator_chooses(client):
+    _register_keyed(client, "ra_paid")
+    _register_keyed(client, "ra_buyer")
+    quiet = _room(client, "ra_paid", room_type="private", gate_type="paid", entry_fee_cents=500)
+    shown = _room(client, "ra_paid", room_type="private", gate_type="paid", entry_fee_cents=700,
+                  currency="USD", access_duration_days=30, name="Paid club", description="weekly notes")
+    # not advertised: nobody outside sees it, and the detail is closed
+    assert quiet not in {x["room_id"] for x in client.get("/rooms", headers=_as("ra_buyer")).json()["rooms"]}
+    assert client.get(f"/rooms/{quiet}", headers=_as("ra_buyer")).status_code == 403
+    assert client.post(f"/rooms/{shown}/advertise", json=_room_advert(client, "ra_paid", shown),
+                       headers=_as("ra_paid")).status_code == 200
+    assert shown in {x["room_id"] for x in _rooms(client)["rooms"]}
+    item = next(x for x in _rooms(client)["rooms"] if x["room_id"] == shown)
+    assert item["gate_type"] == "paid" and item["entry_fee_cents"] == 700 and item["join_url"].endswith("/join")
+
+    # listed to everyone on its own relay — a stranger, and nobody at all
+    for who in (_as("ra_buyer"), {}):
+        listed = client.get("/rooms", headers=who).json()["rooms"]
+        assert quiet not in {x["room_id"] for x in listed}
+        card = next(x for x in listed if x["room_id"] == shown)
+        assert card["advertised"] is True and card["listing_only"] is True and card["host"]
+        assert (card["name"], card["description"], card["entry_fee_cents"], card["currency"],
+                card["access_duration_days"], card["member_count"], card["encrypted"]) == (
+            "Paid club", "weekly notes", 700, "USD", 30, 1, False)
+        # nothing else: no roster, no session link, no internal timestamps
+        assert set(card) == {"room_id", "name", "description", "room_type", "gate_type", "entry_fee_cents",
+                             "currency", "access_duration_days", "max_members", "member_count", "encrypted",
+                             "creator_id", "created_at", "listing_only", "advertised", "host"}
+        assert "ra_paid" not in str(card["member_count"])
+        # one listing in the marketplace feed too
+        assert shown in {x["listing_id"] for x in client.get("/listings?listing_type=room&limit=200", headers=who).json()["listings"]}
+        # the room itself stays shut: terms only, never messages or the chain
+        detail = client.get(f"/rooms/{shown}", headers=who)
+        assert detail.status_code == 200 and detail.json()["listing_only"] is True
+        assert "members" not in detail.json() and [a["act"] for a in detail.json()["signed_acts"]] == ["create"]
+        for path in ("messages", "chain", "encryption-keys"):
+            assert client.get(f"/rooms/{shown}/{path}", headers=who).status_code in (401, 403)
+    # the creator sees the full room, still marked advertised
+    own = client.get(f"/rooms/{shown}", headers=_as("ra_paid")).json()
+    assert own["advertised"] is True and own["members"] == ["ra_paid"]
+    assert client.get("/rooms", headers=_as("ra_paid")).json()["rooms"][0].get("listing_only") is None
+    # withdrawing takes it off the list again
+    assert client.delete(f"/rooms/{shown}/advertise", headers=_as("ra_paid")).status_code == 200
+    assert shown not in {x["room_id"] for x in client.get("/rooms", headers=_as("ra_buyer")).json()["rooms"]}
+    assert client.get(f"/rooms/{shown}", headers=_as("ra_buyer")).status_code == 403
+
+
+def test_responses_say_where_things_live_and_whether_they_are_advertised(client):
+    _register_keyed(client, "ra_where2")
+    adv, plain = _room(client, "ra_where2"), _room(client, "ra_where2")
+    client.post(f"/rooms/{adv}/advertise", json=_room_advert(client, "ra_where2", adv), headers=_as("ra_where2"))
+    by_id = {x["room_id"]: x for x in client.get("/rooms", headers=_as("ra_where2")).json()["rooms"]}
+    assert by_id[adv]["advertised"] is True and by_id[plain]["advertised"] is False
+    assert by_id[adv]["host"] == by_id[plain]["host"] != ""
+    assert client.get(f"/rooms/{plain}", headers=_as("ra_where2")).json()["advertised"] is False
+    pub, other = _topic(client, "ra_where2", "wh-pub"), _topic(client, "ra_where2", "wh-plain")
+    client.post(f"/agoras/topics/{pub}/advertise", json=_topic_advert(client, "ra_where2", pub),
+                headers=_as("ra_where2"))
+    topics = {t["slug"]: t for t in client.get("/agoras/topics", headers=_as("ra_where2")).json()["topics"]}
+    assert topics[pub]["advertised"] is True and topics[other]["advertised"] is False and topics[pub]["host"]
+    assert client.get(f"/agoras/topics/{pub}", headers=_as("ra_where2")).json()["advertised"] is True
+    assert client.get(f"/agoras/topics/{other}", headers=_as("ra_where2")).json()["advertised"] is False
+
+
+def test_an_invite_only_topic_is_not_advertised(client):
+    _register_keyed(client, "ta_inv")
+    r = client.post("/agoras/topics", json={"name": "Club", "description": "x", "slug": "ta-inv-club",
+                                            "visibility": "public", "gate_type": "invite"}, headers=_as("ta_inv"))
+    assert r.status_code == 200, r.text
+    assert client.post("/agoras/topics/ta-inv-club/advertise", json={"signature": "00" * 64},
+                       headers=_as("ta_inv")).status_code == 400
 
 
 def test_only_the_creator_advertises_a_room(client):
@@ -226,3 +304,146 @@ def test_the_mcp_tools_advertise_and_scan_relays_drops_forged_adverts(client, mo
     assert rid not in {x["id"] for x in forged["results"]}
     assert "ra-mcp-topic" not in {x["id"] for x in forged["results"]}
     assert forged["refused_unsigned_or_forged"]["http://relay-under-test"] >= 2
+
+
+# ─── P249: a relay pulls the adverts of the relays it links to ───────────────
+
+PEER = "https://peer-p249.example"
+
+
+def _peer_feed(kind: str, items: list, priv, origin: str = PEER) -> dict:
+    """A linked relay's rooms or topics feed, signed with its relay key."""
+    from emporia.identity import federation_signable_bytes
+    return {"origin_relay": origin, "origin_public_key_hex": priv.public_key().public_bytes_raw().hex(),
+            "signature": priv.sign(federation_signable_bytes(origin, kind, items)).hex(), kind: items}
+
+
+def _remote_room(owner: str, room_id: str, **over) -> dict:
+    fields = {"name": "Remote club", "description": "tips", "room_type": "private", "gate_type": "paid",
+              "entry_fee_cents": 900, "currency": "USD", "max_members": None, "encrypted": False,
+              "access_duration_days": 30, **over}
+    key = get_public_key_hex(owner)
+    stable = wire.stable_id_for(key)
+    signature = sign(wire.signed_room_advert_payload(
+        stable, PEER, room_id, *(fields[f] for f in wire.ROOM_ADVERT_FIELDS)), owner)
+    return {"room_id": room_id, **fields, "join_url": f"{PEER}/rooms/{room_id}/join",
+            "created_at": "2026-10-01T00:00:00+00:00", "owner_public_key_hex": key, "owner_stable_id": stable,
+            "advert_signature": signature, "origin_relay": PEER, "owner_address": f"{owner}@peer-p249.example"}
+
+
+def _remote_topic(owner: str, slug: str) -> dict:
+    fields = {"name": "Remote topic", "description": "talk", "gate_type": "open", "entry_fee_cents": 0}
+    key = get_public_key_hex(owner)
+    stable = wire.stable_id_for(key)
+    return {"slug": slug, **fields, "join_url": f"{PEER}/agoras/topics/{slug}", "owner_public_key_hex": key,
+            "owner_stable_id": stable, "origin_relay": PEER, "owner_address": f"{owner}@peer-p249.example",
+            "advert_signature": sign(wire.signed_topic_advert_payload(
+                stable, PEER, slug, *(fields[f] for f in wire.TOPIC_ADVERT_FIELDS)), owner)}
+
+
+async def _pull(feeds: dict, priv, *, pin: bool = True):
+    from unittest.mock import AsyncMock
+
+    from emporia import relay_server as rs
+
+    async def fake(url, **kw):
+        kind = url.rsplit("/", 1)[1]
+        return _peer_feed(kind, feeds.get(kind, []), priv)
+
+    if pin:
+        rs._FEDERATION_PEER_PUBKEYS[PEER] = priv.public_key().public_bytes_raw().hex()
+    rs._FEDERATION_LAST_SYNC[PEER] = {"ok": True, "imported": 0}
+    with patch("emporia.relay_server._fetch_federation_batch", AsyncMock(side_effect=fake)):
+        await rs._pull_federated_adverts(PEER)
+    return rs._FEDERATION_LAST_SYNC[PEER]
+
+
+async def test_a_pulled_advert_is_verified_stored_served_and_dropped_when_withdrawn(client):
+    from cryptography.hazmat.primitives.asymmetric import ed25519
+
+    from emporia import relay_server as rs
+    _register_keyed(client, "pa_reader")
+    priv = ed25519.Ed25519PrivateKey.generate()
+    good = _remote_room("pa_seller", "room_pa_good")
+    forged = _remote_room("pa_seller", "room_pa_forged")
+    forged["entry_fee_cents"] = 1          # the relay changed the fee after the owner signed
+    other_relay = _remote_room("pa_seller", "room_pa_moved")
+    other_relay["origin_relay"] = "https://elsewhere.example"
+    bad_join = _remote_room("pa_seller", "room_pa_join")
+    bad_join["join_url"] = "https://elsewhere.example/pay"
+    topic = _remote_topic("pa_seller", "pa-topic")
+    sync = await _pull({"rooms": [good, forged, other_relay, bad_join], "topics": [topic]}, priv)
+    assert sync["adverts"] == 3 and sync["adverts_refused"] == 2 and sync["adverts_refused_why"]
+
+    rooms = client.get("/rooms/elsewhere", headers=_as("pa_reader")).json()["rooms"]
+    assert {x["room_id"] for x in rooms} == {"room_pa_good", "room_pa_join"}
+    one = next(x for x in rooms if x["room_id"] == "room_pa_good")
+    assert one["relay"] == PEER and one["host"] == "peer-p249.example" and one["verified"] is True
+    assert one["owner_fingerprint"] and one["owner_address"].startswith("pa_seller@")
+    assert (one["name"], one["entry_fee_cents"], one["gate_type"]) == ("Remote club", 900, "paid")
+    # the join link is built from the signed origin, not the feed's own text
+    assert next(x for x in rooms if x["room_id"] == "room_pa_join")["join_url"] == f"{PEER}/rooms/room_pa_join/join"
+    topics = client.get("/agoras/topics/elsewhere", headers=_as("pa_reader")).json()["topics"]
+    assert [t["slug"] for t in topics] == ["pa-topic"] and topics[0]["join_url"] == f"{PEER}/agoras/topics/pa-topic"
+
+    # the next pull no longer carries two of them: those are gone here
+    sync = await _pull({"rooms": [good], "topics": []}, priv)
+    assert [x["room_id"] for x in client.get("/rooms/elsewhere", headers=_as("pa_reader")).json()["rooms"]] == \
+        ["room_pa_good"]
+    assert client.get("/agoras/topics/elsewhere", headers=_as("pa_reader")).json()["topics"] == []
+    assert "adverts_refused" not in sync
+    # unlinking the relay drops what it advertised
+    with patch.object(rs, "FEDERATED_RELAYS", []):
+        rs.drop_unlinked_federated_rows()
+    assert client.get("/rooms/elsewhere", headers=_as("pa_reader")).json()["rooms"] == []
+
+
+async def test_a_feed_not_signed_by_the_pinned_relay_adds_nothing(client):
+    from cryptography.hazmat.primitives.asymmetric import ed25519
+
+    from emporia import relay_server as rs
+    _register_keyed(client, "pa_reader2")
+    pinned, impostor = ed25519.Ed25519PrivateKey.generate(), ed25519.Ed25519PrivateKey.generate()
+    room = _remote_room("pa_seller2", "room_pa_imp")
+    rs._FEDERATION_PEER_PUBKEYS[PEER] = pinned.public_key().public_bytes_raw().hex()
+    sync = await _pull({"rooms": [room]}, impostor, pin=False)
+    assert "not from the relay" in sync["adverts_error"]
+    assert client.get("/rooms/elsewhere", headers=_as("pa_reader2")).json()["rooms"] == []
+
+
+def test_the_elsewhere_lists_need_a_caller(client):
+    assert client.get("/rooms/elsewhere").status_code == 401
+    assert client.get("/agoras/topics/elsewhere").status_code == 401
+
+
+def test_the_advertise_tool_and_the_elsewhere_lists(client, monkeypatch):
+    from emporia import mcp_server
+    _register_keyed(client, "ra_tool")
+    monkeypatch.setattr(mcp_server, "RELAY_URL", "http://relay-under-test")
+    monkeypatch.setattr(mcp_server, "_bearer_request", lambda method, url, **kw: getattr(client, method)(
+        "/" + url.split("/", 3)[3], headers=_as("ra_tool"),
+        **{k: v for k, v in kw.items() if k in ("json", "params")}))
+
+    def fake_get(url, timeout=10, **kw):
+        return client.get(url[len("http://relay-under-test"):])
+
+    with patch("httpx.get", fake_get):
+        paid = mcp_server.create_room("sell", "ra_tool", room_type="private", gate_type="paid", entry_fee_cents=300)
+        invite = mcp_server.create_room("closed", "ra_tool", room_type="private", gate_type="invite")
+        topic = mcp_server.create_agora_topic("Tool topic", "ra_tool", slug="ra-tool-topic")
+        pid, iid = paid["room"]["room_id"], invite["room"]["room_id"]
+        assert paid["advertised"] is False
+        on = mcp_server.advertise("room", pid, agent_id="ra_tool")
+        assert on == {"success": True, "kind": "room", "ident": pid, "advertised": True}
+        refused = mcp_server.advertise("room", iid, agent_id="ra_tool")
+        assert refused["success"] is False and refused["advertised"] is False and "invite-only" in refused["why"]
+        assert mcp_server.advertise("topic", topic["slug"], agent_id="ra_tool")["advertised"] is True
+        listed = mcp_server.list_rooms(viewer_id="ra_tool")["rooms"]
+        assert {x["room_id"]: x["advertised"] for x in listed}[pid] is True
+        assert [t["advertised"] for t in mcp_server.list_agora_topics()["topics"]
+                if t["slug"] == topic["slug"]] == [True]
+        assert mcp_server.list_rooms(viewer_id="ra_tool", elsewhere=True)["rooms"] == []
+        off = mcp_server.advertise("room", pid, on=False, agent_id="ra_tool")
+        assert off["advertised"] is False and off["success"] is True
+        assert mcp_server.advertise("sky", "x", agent_id="ra_tool")["success"] is False
+    assert pid not in {x["room_id"] for x in _rooms(client)["rooms"]}

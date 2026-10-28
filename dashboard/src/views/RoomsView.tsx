@@ -3,6 +3,8 @@ import { AcceptsTag } from "../ui/PayTag";
 import { LiveMark } from "../ui/chessControls";
 import { ReadOnlyChat } from "../ui/ReadOnlyChat";
 import { RoomChainBadge } from "../ui/RoomChainBadge";
+import { AdvertisedBadge, HostLine, OnOtherRelays } from "../ui/Adverts";
+import { feeLabel, roomRow } from "../advertFormat";
 import { RELAY, VIEWER_ID } from "../relayEnv";
 import { VIA_CONSOLE, consoleUrl, httpFetch } from "../transport";
 import { ViewStatus } from "../ui/ViewStatus";
@@ -25,11 +27,15 @@ export function RoomsView({ initialRoomId, navigate }: { initialRoomId: string |
   // every effect depending on it re-ran on every render — which is what made the
   // deep-link effect below snap the selection back (see its own note).
   const rooms: Room[] = useMemo(() => data?.rooms ?? [], [data]);
+  // P249: rooms that relays this one links to advertised — read-only, joined on their own relay.
+  const [elsewhere, elsewhereLoading, elsewhereError] = useInterval(() => api.roomsElsewhere(), 30_000);
+  const elsewhereRows = useMemo(() => (elsewhere?.rooms ?? []).map(roomRow), [elsewhere]);
   const [selected, setSelected] = useState<Room | null>(null);
   const endRef = useRef<HTMLDivElement>(null);
 
   const { messages, connected: wsConnected } = useRoomWs(
-    RELAY, selected?.room_id ?? null, VIEWER_ID,
+    // P249: an advertised paid room the viewer is not in has no messages to show.
+    RELAY, selected && !selected.listing_only ? selected.room_id : null, VIEWER_ID,
     (id) => api.roomMessages(id).then((r) => r.messages as unknown as WsMessage[]),
   );
 
@@ -89,6 +95,7 @@ export function RoomsView({ initialRoomId, navigate }: { initialRoomId: string |
               <Text style={{ fontSize: 13 }}>{r.name}</Text>
               <div style={{ display: "flex", gap: 4, alignItems: "center" }}>
                 {r.encrypted && <span title="Encrypted" style={{ fontSize: 11 }}>🔒</span>}
+                <AdvertisedBadge advertised={r.advertised} />
                 {r.entry_fee_cents > 0 && (
                   <>
                     <span className="e-gate-badge e-gate-badge--paid" title="paid entry">
@@ -103,6 +110,7 @@ export function RoomsView({ initialRoomId, navigate }: { initialRoomId: string |
             <Text className="e-dim">
               {r.gate_type} · {r.members?.length ?? r.member_count ?? "?"} members
             </Text>
+            <HostLine host={r.host} />
             {r.linked_session_id && (
               <button
                 type="button"
@@ -119,6 +127,7 @@ export function RoomsView({ initialRoomId, navigate }: { initialRoomId: string |
           </FlatRailItem>
         ))
       )}
+      <OnOtherRelays what="rooms" rows={elsewhereRows} loading={elsewhereLoading} error={elsewhereError} />
     </>
   );
 
@@ -126,7 +135,7 @@ export function RoomsView({ initialRoomId, navigate }: { initialRoomId: string |
   // must run over the whole page before mapping to ChatLine -- markReplayedNonces
   // tracks nonces across the array, so it has to see every message at once,
   // not be called per-row.
-  const roomId = selected?.room_id ?? "";
+  const roomId = selected && !selected.listing_only ? selected.room_id : "";
   // P238: an encrypted room's messages, opened on this machine with the viewing
   // agent's own key, as DMs are (P125). Against a relay directly they stay 🔒.
   const [opened, setOpened] = useState<Record<string, string>>({});
@@ -175,12 +184,14 @@ export function RoomsView({ initialRoomId, navigate }: { initialRoomId: string |
         selected ? (
           <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
             {wsConnected && <LiveMark live />}
+            <HostLine host={selected.host} />
+            <AdvertisedBadge advertised={selected.advertised} />
             {/* P24-5 (W5, F2): key forces a remount on room switch so the badge's
                 own polling state can't briefly render the previous room's verdict
                 against the new room's id -- useInterval itself intentionally does
                 not reset on a dep change (EventsView/ListingsView rely on that to
                 avoid blanking on a manual refresh), so the reset has to happen here. */}
-            <RoomChainBadge key={selected.room_id} roomId={selected.room_id} />
+            {!selected.listing_only && <RoomChainBadge key={selected.room_id} roomId={selected.room_id} />}
           </div>
         ) : undefined
       }
@@ -188,7 +199,22 @@ export function RoomsView({ initialRoomId, navigate }: { initialRoomId: string |
       <SidebarLayout sidebar={roomSidebar} defaultSidebarWidth={26}>
         <div className="e-split-main">
           <ViewStatus loading={loading} error={error} />
-          {selected ? (
+          {selected?.listing_only ? (
+            <Indent>
+              <Text>{selected.name}</Text>
+              <Text className="e-dim">{selected.description}</Text>
+              <Text className="e-faint">
+                Paid room · {feeLabel(selected.entry_fee_cents, selected.currency)}
+                {selected.access_duration_days ? ` for ${selected.access_duration_days} days` : ""} ·{" "}
+                {selected.member_count ?? "?"} members{selected.encrypted ? " · encrypted" : ""}
+              </Text>
+              <Text className="e-faint">
+                {selected.advertised ? "Its creator advertised it to other relays. " : ""}
+                Joining and paying happen on {selected.host || "this relay"}; its members and messages are for those
+                who have joined.
+              </Text>
+            </Indent>
+          ) : selected ? (
             <ReadOnlyChat
               messages={chatLines}
               viewerId={VIEWER_ID ?? ""}

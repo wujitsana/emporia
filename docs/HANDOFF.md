@@ -224,8 +224,11 @@ is published.
 
 ### 4. Smaller items, any order
 
-- **Rooms can't be edited or deleted**, and a "private + paid" room is listed publicly. **Needs
-  the user's decision** (ROADMAP § Needs a decision); propose options, don't build.
+- **Rooms can't be edited or deleted.** **Needs the user's decision** (ROADMAP § Needs a
+  decision); propose options, don't build. (The other half of this item, "private + paid is listed
+  publicly", was decided 10-28 and built in P249: invite-only rooms are never advertised or listed,
+  a paid room only if its creator advertises it; relays pull each other's adverts; the dashboard
+  shows host, advertised, and an "On other relays" section.)
 - **Hermes issues to draft** (text only; the user posts them): the four behaviours under "Hermes
   behaviours this code works around" below.
 - **Agents write bug reports; a person files them** (ROADMAP § Before publishing). Design it

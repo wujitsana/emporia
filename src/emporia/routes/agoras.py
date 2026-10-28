@@ -16,7 +16,7 @@ from typing import Any
 from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import JSONResponse
 
-from emporia import entitlements
+from emporia import adverts, entitlements
 from emporia import relay_server as rs
 from emporia.routes.rooms import AdvertRequest, advertiser_identity
 from emporia.wire import (
@@ -115,8 +115,8 @@ async def advertise_agora_topic(slug: str, req: AdvertRequest, request: Request)
         raise HTTPException(404, "Topic not found")
     if row["creator_id"] != caller:
         raise HTTPException(403, "only the topic's owner advertises it")
-    if row["visibility"] != "public":
-        raise HTTPException(400, "only a public topic is advertised")
+    if not adverts.topic_may_be_advertised(row["visibility"], row["gate_type"]):
+        raise HTTPException(400, "only a public topic that is not invite-only is advertised")
     key, stable_id = advertiser_identity(caller)
     signed = signed_topic_advert_payload(stable_id, rs.RELAY_BASE_URL, slug,
                                          *(row[f] for f in TOPIC_ADVERT_FIELDS))
@@ -193,6 +193,7 @@ async def list_agora_topics(
                     f"SELECT * FROM agora_topics WHERE is_deleted=0 ORDER BY {order} LIMIT ?",
                     (limit,),
                 ).fetchall()
+    advertised = {x["slug"] for x in adverts.own_topic_adverts({r["slug"] for r in rows})}
     topics = []
     for r in rows:
         topics.append({
@@ -203,8 +204,18 @@ async def list_agora_topics(
             "creator_id": r["creator_id"], "created_at": r["created_at"],
             "post_count": r["post_count"], "subscriber_count": r["subscriber_count"],
             "flair_options": json.loads(r["flair_options"] or "[]"),
+            "advertised": r["slug"] in advertised, "host": rs._own_host(),
         })
     return {"topics": topics, "count": len(topics)}
+@router.get("/agoras/topics/elsewhere")
+async def agora_topics_elsewhere(request: Request):
+    """P249: public topics their owners advertised on relays this one links to —
+    checked against the owner's signature when pulled and again now. Joining and
+    any fee are on the relay named in `relay`, not here."""
+    if not rs._dashboard_agent_id(request):
+        raise HTTPException(401, "Authentication required")
+    found = adverts.elsewhere("topics")
+    return {"topics": found, "count": len(found)}
 @router.get("/agoras/topics/{slug}")
 async def get_agora_topic(slug: str, request: Request):
     viewer_id = rs._dashboard_agent_id(request)
@@ -231,6 +242,7 @@ async def get_agora_topic(slug: str, request: Request):
         "post_count": row["post_count"], "subscriber_count": row["subscriber_count"],
         "flair_options": json.loads(row["flair_options"] or "[]"),
         "viewer_role": member_role,
+        "advertised": bool(adverts.own_topic_adverts({slug})), "host": rs._own_host(),
     }
 @router.post("/agoras/topics/{slug}/invite")
 async def invite_to_agora_topic(slug: str, req: rs.AgoraInviteRequest, request: Request):

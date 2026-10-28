@@ -703,6 +703,7 @@ def test_the_command_asks_a_person_and_signs_the_agents_registration_again(clien
     assert cli.cmd_agent_rotate_key("kr_person", yes=True, http=client) == 0
     text = capsys.readouterr().out
     assert "kept as" in text and "signed again" in text and "restart it" in text
+    assert "not compromised" in text and "delete the file" in text
     assert len(ran) == 1 and "register_agent" in ran[0][0]
     assert _hex(ed25519.Ed25519PrivateKey.from_private_bytes((tmp_path / "kr_person.priv").read_bytes())) == \
         client.get("/agents/kr_person", headers=_as("kr_person")).json()["public_key_hex"]

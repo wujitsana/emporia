@@ -160,48 +160,10 @@ def _advert_feed(kind: str) -> list[dict]:
     """P247: the rooms or topics their owners advertised whose advert still
     matches what is stored here — so a changed or deleted one drops out of the
     feed on its own. Each item names its origin relay and carries the owner's
-    key, stable id and signature for the reader to check, and where to join."""
-    from emporia import rooms as rooms_db
-    from emporia.addresses import address, fingerprint
-    from emporia.identity import verify
-    from emporia.wire import ROOM_ADVERT_FIELDS, TOPIC_ADVERT_FIELDS, room_advert_verdict, topic_advert_verdict
-    host = rs._own_host()
-    out: list[dict] = []
-    with rs.DB_LOCK, rs.get_db() as conn:
-        if kind == "rooms":
-            adverts = conn.execute("SELECT * FROM room_adverts ORDER BY advertised_at DESC LIMIT ?",
-                                   (rs._MAX_LIMIT,)).fetchall()
-        else:
-            adverts = conn.execute(
-                "SELECT a.*, t.slug, t.name, t.description, t.gate_type, t.entry_fee_cents, t.visibility, t.creator_id "
-                "FROM topic_adverts a "
-                "JOIN agora_topics t ON t.topic_id = a.topic_id WHERE t.is_deleted = 0 "
-                "ORDER BY a.advertised_at DESC LIMIT ?", (rs._MAX_LIMIT,)).fetchall()
-        logs = {sid: rs.agent_key_log(conn, sid) for sid in {a["stable_id"] for a in adverts}}
-    for a in adverts:
-        owner = {"owner_public_key_hex": a["public_key_hex"], "owner_stable_id": a["stable_id"],
-                 "key_log": logs[a["stable_id"]],    # P245
-                 "advert_signature": a["signature"], "origin_relay": rs.RELAY_BASE_URL}
-        if kind == "rooms":
-            room = rooms_db.get_room(a["room_id"], db_path=rs.DATABASE_PATH)
-            if not room or room.room_type == "private" or room.gate_type == "invite":
-                continue
-            creator = room.creator_id
-            item = {"room_id": room.room_id, **{f: getattr(room, f) for f in ROOM_ADVERT_FIELDS},
-                    "join_url": f"{rs.RELAY_BASE_URL}/rooms/{room.room_id}/join", "created_at": room.created_at,
-                    **owner}
-            verdict = room_advert_verdict(item, rs.RELAY_BASE_URL, verify)
-        else:
-            if a["visibility"] != "public":
-                continue
-            creator = a["creator_id"]
-            item = {"slug": a["slug"], **{f: a[f] for f in TOPIC_ADVERT_FIELDS},
-                    "join_url": f"{rs.RELAY_BASE_URL}/agoras/topics/{a['slug']}", **owner}
-            verdict = topic_advert_verdict(item, rs.RELAY_BASE_URL, verify)
-        if not verdict:
-            out.append({**item, "owner_address": address(creator, host),
-                        "owner_fingerprint": fingerprint(a["public_key_hex"])})
-    return out
+    key, stable id and signature for the reader to check, and where to join.
+    P249: only what `emporia.adverts` allows — a private invite-only room never."""
+    from emporia import adverts
+    return [item for _, item in adverts.own_room_adverts()] if kind == "rooms" else adverts.own_topic_adverts()
 
 
 @router.get("/federation/v1/rooms")

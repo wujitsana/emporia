@@ -176,10 +176,55 @@ export interface Room {
   gate_type: string;
   entry_fee_cents: number;
   creator_id: string;
-  members: string[];
+  members?: string[];
   member_count?: number;
   encrypted: boolean;
   linked_session_id?: string;
+  currency?: string;
+  access_duration_days?: number | null;
+  /** P249: the relay that holds the room, and whether its creator advertised it to other relays. */
+  host?: string;
+  advertised?: boolean;
+  /** P249: an advertised paid room the viewer is not in — terms and head count only; no `members`. */
+  listing_only?: boolean;
+}
+
+/** P249: a room that a linked relay's creator advertised (GET /rooms/elsewhere). Joining and paying
+ *  happen on `relay`; the dashboard only reads. */
+export interface RoomElsewhere {
+  room_id: string;
+  name: string;
+  description: string;
+  room_type: string;
+  gate_type: string;
+  entry_fee_cents: number;
+  currency: string;
+  access_duration_days: number | null;
+  max_members: number | null;
+  encrypted: boolean;
+  relay: string;
+  host: string;
+  owner_address: string;
+  owner_fingerprint: string;
+  owner_stable_id: string;
+  join_url: string;
+  verified: boolean;
+}
+
+/** P249: an Agora topic that a linked relay's owner advertised (GET /agoras/topics/elsewhere). */
+export interface TopicElsewhere {
+  slug: string;
+  name: string;
+  description: string;
+  gate_type: string;
+  entry_fee_cents: number;
+  relay: string;
+  host: string;
+  owner_address: string;
+  owner_fingerprint: string;
+  owner_stable_id: string;
+  join_url: string;
+  verified: boolean;
 }
 
 /** P23-4: GET /rooms/{id}/chain's response shape -- a relay-signed attestation
@@ -415,6 +460,9 @@ export interface AgoraTopic {
   subscriber_count: number;
   flair_options: string[];
   viewer_role?: string | null;
+  /** P249: the relay that holds the topic, and whether its owner advertised it to other relays. */
+  host?: string;
+  advertised?: boolean;
 }
 
 export interface AgoraPost {
@@ -677,6 +725,11 @@ export const api = {
   // viewer/member scoping now comes from the authenticated caller server-side
   // (_dashboard_agent_id), not a client-supplied id — see relay N1-6.
   rooms: () => get<{ rooms: Room[]; count: number }>("/rooms", { agentScoped: true }),
+  // P249: rooms that relays this one links to advertised — read-only; joining is on their relay.
+  roomsElsewhere: () =>
+    get<{ rooms: RoomElsewhere[]; count: number }>("/rooms/elsewhere", { agentScoped: true }),
+  agoraTopicsElsewhere: () =>
+    get<{ topics: TopicElsewhere[]; count: number }>("/agoras/topics/elsewhere", { agentScoped: true }),
   // P23-4: for client-side (pin-backed) room chain verification -- see
   // integrityCheck.ts. agentScoped: true so a private room's gate (membership
   // check server-side) sees the caller; public rooms ignore the header.

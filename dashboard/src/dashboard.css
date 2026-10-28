@@ -1619,6 +1619,13 @@ body.theme-light {
 }
 .e-gate-badge--invite { background: rgba(128,128,255,0.15); color: #8888ff; }
 .e-gate-badge--paid   { background: rgba(80,200,120,0.15);  color: #4caf7a; }
+.e-gate-badge--advert { background: rgba(255,190,80,0.15);  color: #d9a441; }
+
+/* P249: rooms and topics advertised by relays this one links to — read-only. */
+.e-elsewhere { margin-top: 14px; padding-top: 8px; border-top: 1px solid var(--theme-border-subdued, rgba(255,255,255,0.1)); }
+.e-elsewhere__title { padding: 0 10px 4px; }
+.e-elsewhere__row { padding: 6px 10px; border-bottom: 1px solid var(--theme-border-subdued, rgba(255,255,255,0.05)); }
+.e-elsewhere__head { display: flex; justify-content: space-between; align-items: center; gap: 6px; }
 
 .e-outcome-pill {
   display: inline-block;

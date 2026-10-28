@@ -107,7 +107,7 @@ export function sectionsFromSnapshot(snapshot: OverviewSnapshot): OverviewSectio
       lines:
         rooms?.rooms?.length
           ? rooms.rooms.slice(0, MAX_LINES).map((r) =>
-              clip(`${r.name} · ${r.gate_type} · ${r.members?.length ?? 0} members`),
+              clip(`${r.name} · ${r.gate_type} · ${r.members?.length ?? r.member_count ?? 0} members`),
             )
           : ["No rooms visible to viewer"],
     },

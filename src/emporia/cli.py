@@ -1895,7 +1895,7 @@ def cmd_agent_rotate_key(name: str, yes: bool = False, http: Any = None) -> int:
 
 
 def _after_key_change(profile: Path, agent_id: str, out: dict[str, Any], source: str,
-                      dotenv: dict[str, str]) -> None:
+                      dotenv: dict[str, str], *, recovered: bool = False) -> None:
     """What the person is told, and the agent does, once the relay has its new
     identity key (a rotation or a recovery): where the key is, then the agent
     registers again, which signs its encryption-key binding and relay list with it."""
@@ -1908,9 +1908,14 @@ def _after_key_change(profile: Path, agent_id: str, out: dict[str, Any], source:
     republish_env: dict[str, str] = {}
     if out["installed"]:
         print(f"  The new key is {out['new_key_file']}.")
-        if out["kept_old_key_file"]:
-            print(f"  The old key is kept as {out['kept_old_key_file']} — remove it once you are sure the agent "
-                  "works; it is no longer the agent's key.")
+        if out["kept_old_key_file"] and recovered:
+            print(f"  The old key is kept as {out['kept_old_key_file']}. That key is compromised: it is kept only "
+                  "as evidence, the relay refuses what it signs from the time you gave onward, and nothing needs it. "
+                  "You may delete the file.")
+        elif out["kept_old_key_file"]:
+            print(f"  The old key is kept as {out['kept_old_key_file']}. It is not compromised, just no longer used "
+                  "(the relay still accepts what it signed before). You may delete the file once you are satisfied "
+                  "the agent works with the new one.")
     else:
         print(f"  Its key is kept in {source!r}, which I did not touch. The new private key is in "
               f"{out['new_key_file']} (owner-only): store it in that source, then remove the file. Until you do, "
@@ -2025,7 +2030,7 @@ def cmd_agent_recover(name: str, key_file: str = "", key_source: str = "", compr
     finally:
         if http is None:
             client.close()
-    _after_key_change(profile, agent_id, out, source, dotenv)
+    _after_key_change(profile, agent_id, out, source, dotenv, recovered=True)
     if out["superseded"]:
         print(f"  {len(out['superseded'])} key change(s) made after that time were undone; the relay keeps them "
               "as evidence.")

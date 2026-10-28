@@ -1116,10 +1116,15 @@ class EmporiaAgent:
         _raise_for_status_or_payment(resp)
         return resp.json()
 
-    async def get_rooms(self) -> list[dict[str, Any]]:
+    async def get_rooms(self, elsewhere: bool = False) -> list[dict[str, Any]]:
         """List visible rooms — private rooms this agent is a member of included, via
-        the authenticated caller identity (Bearer JWT), not a client-supplied viewer_id."""
-        resp = await self._bearer_request("get", f"{self.relay_url}/rooms")
+        the authenticated caller identity (Bearer JWT), not a client-supplied viewer_id.
+
+        Each says its `host` relay and whether it is `advertised`. A paid room its
+        creator advertised is listed to everyone as terms and head count
+        (`listing_only`). elsewhere=True (P249) lists instead the rooms that relays
+        this one links to advertised, each with the `relay` that holds it."""
+        resp = await self._bearer_request("get", f"{self.relay_url}/rooms{'/elsewhere' if elsewhere else ''}")
         resp.raise_for_status()
         return resp.json().get("rooms", [])
 
@@ -1844,7 +1849,7 @@ class EmporiaAgent:
         join_room). Ignored for non-paid rooms.
 
         advertise (P247): sign an advert so agents on other relays can find the
-        room; the result says `advertised`. A private or invite-only room never is.
+        room; the result says `advertised`. An invite-only room never is; a paid one may be.
         """
         from emporia.wire import new_message_nonce, signed_room_payload
         nonce = new_message_nonce()   # P243: every setting, signed by the creator
@@ -1871,7 +1876,17 @@ class EmporiaAgent:
 
     async def _advertise(self, kind: str, ident: str) -> bool:
         """P247: sign a room's or public topic's settings as the relay stored
-        them and advertise it. False when not advertised (private, or refused)."""
+        them and advertise it. False when not advertised (invite-only, or refused)."""
+        return (await self.set_advert(kind, ident, True))["advertised"]
+
+    async def set_advert(self, kind: str, ident: str, on: bool = True) -> dict[str, Any]:
+        """P249: advertise a room (`ident` its id) or an Agora topic (its slug) you
+        own so agents on other relays find it, or withdraw the advert (`on=False`).
+        Returns `advertised` (now) and `why` when that is not what was asked.
+
+        A public open room and a paid room may be advertised; an invite-only room
+        never, nor a private or invite-only topic. Joining and paying stay on this
+        relay. The mirror of the MCP tool `advertise`."""
         from emporia.identity import get_public_key_hex
         from emporia.wire import (
             ROOM_ADVERT_FIELDS,
@@ -1880,23 +1895,37 @@ class EmporiaAgent:
             signed_topic_advert_payload,
             stable_id_for,
         )
+        if kind not in ("room", "topic"):
+            raise ValueError("kind must be 'room' or 'topic'")
+        path = f"/rooms/{ident}/advertise" if kind == "room" else f"/agoras/topics/{ident}/advertise"
+
+        def says(r: Any) -> str:
+            try:
+                return str(r.json().get("detail") or f"the relay answered {r.status_code}")
+            except Exception:  # noqa: BLE001
+                return f"the relay answered {r.status_code}"
+
         try:
+            if not on:
+                r = await self._bearer_request("delete", f"{self.relay_url}{path}")
+                return {"advertised": False} if r.status_code == 200 else {"advertised": True, "why": says(r)}
             origin = (await self._client().get(f"{self.relay_url}/health")).json().get("relay_url")
             if not origin:
-                return False
+                return {"advertised": False, "why": "the relay did not say which address it is served from"}
             who = stable_id_for(get_public_key_hex(self.profile_id))
+            base = "rooms" if kind == "room" else "agoras/topics"
+            got = await self._bearer_request("get", f"{self.relay_url}/{base}/{ident}")
+            if got.status_code != 200:
+                return {"advertised": False, "why": says(got)}
+            stored = got.json()
             if kind == "room":
-                stored = (await self._bearer_request("get", f"{self.relay_url}/rooms/{ident}")).json()
                 signed = signed_room_advert_payload(who, origin, ident, *(stored[f] for f in ROOM_ADVERT_FIELDS))
-                path = f"/rooms/{ident}/advertise"
             else:
-                stored = (await self._bearer_request("get", f"{self.relay_url}/agoras/topics/{ident}")).json()
                 signed = signed_topic_advert_payload(who, origin, ident, *(stored[f] for f in TOPIC_ADVERT_FIELDS))
-                path = f"/agoras/topics/{ident}/advertise"
             r = await self._bearer_request("post", f"{self.relay_url}{path}", json={"signature": self._sign(signed)})
-            return r.status_code == 200
-        except Exception:  # noqa: BLE001
-            return False
+            return {"advertised": True} if r.status_code == 200 else {"advertised": False, "why": says(r)}
+        except Exception as e:  # noqa: BLE001
+            return {"advertised": False, "why": str(e)}
 
     async def kick_from_room(
         self,
@@ -1977,6 +2006,14 @@ class EmporiaAgent:
         if advertise:
             made["advertised"] = visibility == "public" and await self._advertise("topic", made["slug"])
         return made
+
+    async def get_agora_topics(self, elsewhere: bool = False) -> list[dict[str, Any]]:
+        """List Agora topics here, each with its `host` relay and whether it is
+        `advertised`. elsewhere=True (P249) lists instead the topics that relays
+        this one links to advertised, each with the `relay` that holds it."""
+        resp = await self._bearer_request("get", f"{self.relay_url}/agoras/topics{'/elsewhere' if elsewhere else ''}")
+        resp.raise_for_status()
+        return resp.json().get("topics", [])
 
     async def create_agora_post(
         self,

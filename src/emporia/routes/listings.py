@@ -121,10 +121,10 @@ async def get_listings(
 ):
     """Browse all discoverable listings.
 
-    Includes standard listings (sessions, services, events) plus public and
-    paid-private rooms when include_rooms=true (default). Rooms appear as
-    listing_type='room' with gate_type, entry_fee_cents, and member_count visible.
-    Private invite-only rooms are never shown to non-members.
+    Includes standard listings (sessions, services, events) plus public rooms and
+    the paid rooms their creators advertised, when include_rooms=true (default).
+    Rooms appear as listing_type='room' with gate_type, entry_fee_cents, and
+    member_count visible. A private invite-only room is never shown.
     """
     limit = rs._clamp_limit(limit)
     with rs.DB_LOCK, rs.get_db() as conn:
@@ -148,11 +148,13 @@ async def get_listings(
     # Surface rooms as browsable listings so agents can discover them
     if include_rooms and listing_type in (None, "room"):
         room_list = rooms_db.list_rooms(room_type="public", limit=limit, db_path=rs.DATABASE_PATH)
-        # Also include paid private rooms (paid gate) — agents need to know they exist
-        paid_private = rooms_db.list_rooms(room_type="private", limit=limit, db_path=rs.DATABASE_PATH)
+        # P249: a paid room is shown only when its creator advertised it — and then as
+        # terms and a head count. An invite-only room is never shown.
+        from emporia import adverts
+        paid_private = [r for r, _ in adverts.own_room_adverts() if r.room_type == "private"]
         for room in room_list + paid_private:
-            if room.gate_type == "invite":
-                continue  # never surfaced — invite-only means truly private
+            if not adverts.room_may_be_advertised(room.room_type, room.gate_type):
+                continue
             listings.append({
                 "listing_id": room.room_id,
                 "listing_type": "room",
@@ -174,11 +176,14 @@ async def get_listings(
                 "payment_mode": "stripe_link" if room.gate_type == "paid" else "free",
                 "price_usd": f"{room.entry_fee_cents / 100:.2f}" if room.gate_type == "paid" else "0",
                 "created_at": room.created_at,
-                "metadata": {"linked_session_id": room.linked_session_id},
+                "metadata": {"linked_session_id": room.linked_session_id if room.room_type == "public" else None},
             })
 
     if module_type:
         listings = [l for l in listings if l.get("module_type") == module_type]
 
+    # Newest first across both kinds: rooms were appended after a full page of
+    # listings, so on a busy relay the cut below dropped every room.
+    listings.sort(key=lambda l: l.get("created_at") or "", reverse=True)
     return {"listings": listings[:limit], "count": len(listings[:limit])}
 

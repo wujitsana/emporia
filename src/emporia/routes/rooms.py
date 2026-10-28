@@ -18,7 +18,7 @@ from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 from starlette.concurrency import run_in_threadpool
 
-from emporia import entitlements
+from emporia import adverts, entitlements
 from emporia import relay_server as rs
 from emporia import rooms as rooms_db
 from emporia.identity import federation_signable_bytes, get_relay_public_key_hex, sign_raw_relay
@@ -80,7 +80,8 @@ def advertiser_identity(caller: str) -> tuple[str, str]:
 async def advertise_room(room_id: str, req: AdvertRequest, request: Request):
     """P247: the creator has this room found from other relays, signing its
     settings as stored here (`wire.signed_room_advert_payload`). The room stays
-    here; a private room or an invite-only one is never advertised."""
+    here; an invite-only room is never advertised. A paid room may be: the
+    advert only says where to go, and joining and paying happen here."""
     caller = rs._dashboard_agent_id(request)
     if not caller:
         raise HTTPException(401, "Authentication required")
@@ -89,8 +90,8 @@ async def advertise_room(room_id: str, req: AdvertRequest, request: Request):
         raise HTTPException(404, "Room not found")
     if room.creator_id != caller:
         raise HTTPException(403, "only the room's creator advertises it")
-    if room.room_type == "private" or room.gate_type == "invite":
-        raise HTTPException(400, "a private or invite-only room is never advertised")
+    if not adverts.room_may_be_advertised(room.room_type, room.gate_type):
+        raise HTTPException(400, "an invite-only room is never advertised; only a public open room or a paid one is")
     key, stable_id = advertiser_identity(caller)
     signed = signed_room_advert_payload(
         stable_id, rs.RELAY_BASE_URL, room_id, room.name, room.description, room.room_type, room.gate_type,
@@ -195,33 +196,79 @@ async def create_room_endpoint(req: rs.CreateRoomRequest, request: Request):
         return room.to_dict(viewer_id=caller, db_path=rs.DATABASE_PATH)
     except Exception as e:
         raise HTTPException(422, str(e))
+def _card(room: rooms_db.Room, *, advertised: bool) -> dict[str, Any]:
+    """P249: what anyone may see of a paid room its creator advertised — the
+    terms of joining and the head count, never who is in it, what was said, or
+    which game session it is tied to."""
+    return {
+        "room_id": room.room_id, "name": room.name, "description": room.description,
+        "room_type": room.room_type, "gate_type": room.gate_type, "entry_fee_cents": room.entry_fee_cents,
+        "currency": room.currency, "access_duration_days": room.access_duration_days,
+        "max_members": room.max_members, "member_count": len(room.members), "encrypted": room.encrypted,
+        "creator_id": room.creator_id, "created_at": room.created_at,
+        "listing_only": True, "advertised": advertised, "host": rs._own_host(),
+    }
+
+
+def _shown(room: rooms_db.Room, viewer_id: str | None, advertised: bool) -> dict[str, Any]:
+    """A room as `viewer_id` may see it: in full for a public room or one they are
+    in, as a card for an advertised paid room they are not."""
+    if room.room_type == "public" or rooms_db.is_member(room.room_id, viewer_id or "", db_path=rs.DATABASE_PATH):
+        return {**room.to_dict(viewer_id=viewer_id, db_path=rs.DATABASE_PATH),
+                "advertised": advertised, "host": rs._own_host()}
+    return _card(room, advertised=advertised)
+
+
 @router.get("/rooms")
 async def list_rooms_endpoint(
     request: Request,
     room_type: str | None = None,
     limit: int = 50,
 ):
+    """Public rooms, the private ones the caller is in, and — P249 — any paid room
+    its creator advertised, as a card (terms and head count only). Each says
+    which relay hosts it and whether it is advertised to other relays."""
     viewer_id = rs._dashboard_agent_id(request)
-    room_list = rooms_db.list_rooms(
-        viewer_id=viewer_id,
-        room_type=room_type,
-        limit=rs._clamp_limit(limit),
-        db_path=rs.DATABASE_PATH,
-    )
+    limit = rs._clamp_limit(limit)
+    room_list = rooms_db.list_rooms(viewer_id=viewer_id, room_type=room_type, limit=limit,
+                                    db_path=rs.DATABASE_PATH)
+    adverts_here = {room.room_id: room for room, _ in adverts.own_room_adverts()}
+    seen = {r.room_id for r in room_list}
+    room_list += [r for rid, r in adverts_here.items()
+                  if rid not in seen and (not room_type or r.room_type == room_type)]
+    room_list = sorted(room_list, key=lambda r: r.created_at, reverse=True)[:limit]
     return {
-        "rooms": [r.to_dict(viewer_id=viewer_id, db_path=rs.DATABASE_PATH) for r in room_list],
+        "rooms": [_shown(r, viewer_id, r.room_id in adverts_here) for r in room_list],
         "count": len(room_list),
     }
+
+
+@router.get("/rooms/elsewhere")
+async def rooms_elsewhere(request: Request):
+    """P249: rooms their creators advertised on relays this one links to — each
+    checked against the creator's signature when pulled and again now. Joining
+    and paying happen on the relay named in `relay`, not here."""
+    if not rs._dashboard_agent_id(request):
+        raise HTTPException(401, "Authentication required")
+    found = adverts.elsewhere("rooms")
+    return {"rooms": found, "count": len(found)}
+
+
 @router.get("/rooms/{room_id}")
 async def get_room_endpoint(room_id: str, request: Request):
     viewer_id = rs._dashboard_agent_id(request)
     room = rooms_db.get_room(room_id, db_path=rs.DATABASE_PATH)
     if not room:
         raise HTTPException(404, "Room not found")
+    advertised = room_id in {r.room_id for r, _ in adverts.own_room_adverts({room_id})}
     if room.room_type == "private" and not rooms_db.is_member(room_id, viewer_id or "", db_path=rs.DATABASE_PATH):
-        raise HTTPException(403, "Private room — not a member")
+        if not advertised:
+            raise HTTPException(403, "Private room — not a member")
+        # An advertised paid room: its terms and the creator's signed settings, to check before paying.
+        return {**_card(room, advertised=True), "signed_acts": [a for a in _acts(room_id) if a["act"] == "create"]}
     # P243: the creator's signed acts, for a member to check the room against.
-    return {**room.to_dict(viewer_id=viewer_id, db_path=rs.DATABASE_PATH), "signed_acts": _acts(room_id)}
+    return {**room.to_dict(viewer_id=viewer_id, db_path=rs.DATABASE_PATH), "signed_acts": _acts(room_id),
+            "advertised": advertised, "host": rs._own_host()}
 @router.post("/rooms/{room_id}/join")
 async def join_room(room_id: str, req: rs.JoinRoomRequest, request: Request):
     identity_verified = rs._require_caller_unless_mpp_payment(req.agent_id, request)

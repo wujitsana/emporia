@@ -568,6 +568,20 @@ def test_the_commands_never_print_a_key_and_write_the_recovery_key_0600(client, 
     assert "nothing to recover" in capsys.readouterr().out
 
 
+def test_the_old_key_left_after_a_recovery_is_said_to_be_compromised_evidence(client, tmp_path, monkeypatch, capsys):
+    _agent(client, tmp_path, "kc_stolen")
+    cli = _cli(monkeypatch, tmp_path, "kc_stolen", [])
+    assert cli.cmd_agent_recovery_key("kc_stolen", str(tmp_path / "r.txt"), http=client) == 0
+    capsys.readouterr()
+    _tick()
+    assert cli.cmd_agent_recover("kc_stolen", key_file=str(tmp_path / "r.txt"), yes=True, http=client) == 0
+    text = capsys.readouterr().out
+    kept = [f for f in tmp_path.iterdir() if ".recovered-" in f.name]
+    assert len(kept) == 1 and kept[0].name in text
+    assert "compromised" in text and "evidence" in text and "delete the file" in text
+    assert "not compromised" not in text
+
+
 def test_a_recovery_key_can_be_read_from_a_password_manager_command_and_a_bad_one_is_said_so(
         client, tmp_path, monkeypatch, capsys):
     _agent(client, tmp_path, "kc_src")

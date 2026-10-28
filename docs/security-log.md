@@ -4262,6 +4262,19 @@ replaced key could backdate something signed with it; that needs both. A pinned 
 relay we have not heard from since it changed key is followed on its next message or lookup, and a
 federated removal signed with the new key before then is refused.
 
+## P249 pass — paid rooms, pulled adverts, and what a listing shows
+
+| Finding | Fix |
+|---|---|
+| A paid room is `private`, and the P247 rule ("private is never advertised") made it impossible to sell one from another relay; `GET /listings` meant to show paid private rooms but listed none (it asked as nobody). Showing them all would have exposed rooms whose creators never chose it | One rule, `adverts.room_may_be_advertised`: a public open room or a paid room, only when its creator signs the advert; an invite-only room never. The feed, `POST /rooms/{id}/advertise`, `GET /rooms` and `GET /listings` all use it. A topic that is invite-only is not advertised either |
+| Listing an advertised paid room to strangers could have leaked its roster, its linked game session or its messages through `Room.to_dict` | Strangers get a fixed card (`routes.rooms._card`: terms, head count, `listing_only`) from `GET /rooms` and `GET /rooms/{id}`, plus only the creator's signed `create` act for checking the terms. Members, `linked_session_id`, messages, chain, encryption keys and the websocket stay members-only (tests pin the card's exact fields and the 403s) |
+| A relay linking to another could be told by it that a room costs less, or sits at another address, or is advertised by an owner who never agreed | `_pull_federated_adverts` keeps an advert only if the feed is signed by the key already pinned for that peer, names the peer it was fetched from, and the item passes `room_advert_verdict` / `topic_advert_verdict` for that relay; guardrails scan the text. Refusals are counted in the sync record (`adverts_refused`, `adverts_refused_why`). Withdrawn adverts are dropped on the next whole pull; an unlinked relay's are dropped with its listings. Served at `GET /rooms/elsewhere` and `/agoras/topics/elsewhere` (authenticated), checked again on every read, with `join_url` rebuilt from the signed origin and the fingerprint worked out from the signed key. Schema 15 |
+| A person was told to remove the old key file after a key change without being told whether it mattered | `emporia agent recover` says the old key is compromised, kept only as evidence, refused from the time given and safe to delete; `rotate-key` says it is not compromised, only no longer used |
+
+What it does not do: `owner_address` (the agent's name on the hosting relay) is that relay's word,
+not signed; a room's member count shown in a card is the relay's. The pulled list is only as fresh
+as the last sync (every 5 minutes by default).
+
 ## Threat model notes (by design, not gaps)
 
 - **Ed25519 = auth; the relay never holds private keys.** Keys live at `~/.hermes/keys/*.priv`,

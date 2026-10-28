@@ -1297,6 +1297,18 @@ def init_db() -> None:
                 PRIMARY KEY (stable_id, seq)
             );
 
+            -- P249: rooms and topics other relays' owners advertised, as pulled from a linked
+            -- relay — each already checked against its owner's signature. The advert is kept
+            -- whole so it can be checked again when it is served.
+            CREATE TABLE IF NOT EXISTS elsewhere_adverts (
+                kind TEXT NOT NULL,
+                peer_url TEXT NOT NULL,
+                ident TEXT NOT NULL,
+                item_json TEXT NOT NULL,
+                pulled_at TEXT NOT NULL,
+                PRIMARY KEY (kind, peer_url, ident)
+            );
+
             CREATE TABLE IF NOT EXISTS schema_migrations (
                 key TEXT PRIMARY KEY,
                 applied_at TEXT NOT NULL
@@ -3460,6 +3472,8 @@ _NON_AGENT_COLUMNS: frozenset[tuple[str, str]] = frozenset({
     ("room_adverts", "signature"), ("room_adverts", "advertised_at"),
     ("topic_adverts", "topic_id"), ("topic_adverts", "stable_id"), ("topic_adverts", "public_key_hex"),
     ("topic_adverts", "signature"), ("topic_adverts", "advertised_at"),
+    ("elsewhere_adverts", "kind"), ("elsewhere_adverts", "peer_url"), ("elsewhere_adverts", "ident"),
+    ("elsewhere_adverts", "item_json"), ("elsewhere_adverts", "pulled_at"),
     ("agora_posts", "nonce"), ("agora_posts", "signature"),
     ("agora_comments", "nonce"), ("agora_comments", "signature"),
     ("room_acts", "act_id"), ("room_acts", "room_id"), ("room_acts", "act"), ("room_acts", "at"),
@@ -6993,6 +7007,82 @@ async def _pull_federated_listings(peer_url: str) -> int:
 
 
 
+async def _pull_federated_adverts(peer_url: str) -> None:
+    """P249: pull the rooms and Agora topics a linked relay's owners advertised,
+    keep the ones whose owner's signature checks out, and drop what the relay no
+    longer sends — a withdrawn advert leaves here on the next pull.
+
+    The feed must be signed by the relay key this relay pinned for that peer
+    (the same pin the listings use) and must name the relay it was fetched from;
+    each advert must then carry its owner's own signature over the terms and
+    that relay (`wire.room_advert_verdict`). Forged ones are counted in the
+    peer's sync record (`adverts_refused`, `adverts_refused_why`), as listings
+    are. A peer that does not serve the feeds is left as it was."""
+    from emporia.adverts import verdict_for
+    peer_url = normalize_peer_url(peer_url)
+    _ensure_federation_pins_loaded()
+    record: dict[str, Any] = {}
+    refused: dict[str, int] = {}
+    kept_total = 0
+    for kind in ("rooms", "topics"):
+        try:
+            data = await _fetch_federation_batch(f"{peer_url}/federation/v1/{kind}")
+        except Exception as e:  # noqa: BLE001 — an older peer has no feed; keep what we have
+            record["adverts_error"] = str(e)[:200]
+            continue
+        origin = data.get("origin_relay", peer_url)
+        items = data.get(kind) or []
+        pubkey_hex, signature_hex = data.get("origin_public_key_hex", ""), data.get("signature", "")
+        pinned = _FEDERATION_PEER_PUBKEYS.get(peer_url)
+        try:
+            from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
+            Ed25519PublicKey.from_public_bytes(bytes.fromhex(pubkey_hex)).verify(
+                bytes.fromhex(signature_hex), federation_signable_bytes(origin, kind, items))
+        except Exception:  # noqa: BLE001
+            record["adverts_error"] = f"the {kind} feed is not signed by the relay's key"
+            continue
+        if pinned != pubkey_hex or normalize_peer_url(origin) != peer_url or not isinstance(items, list):
+            # Only a relay already pinned by a listings pull is believed, and only about itself.
+            record["adverts_error"] = f"the {kind} feed is not from the relay this one linked"
+            continue
+        truncated = len(items) > _MAX_LIMIT
+        keep: dict[str, str] = {}
+        for item in items[:_MAX_LIMIT]:
+            if not isinstance(item, dict):
+                why = "not an advert"
+            else:
+                ident = str(item.get("room_id" if kind == "rooms" else "slug") or "")
+                why = verdict_for(kind, item, origin) if ident else "it names nothing"
+            if not why:
+                try:
+                    await _assert_payload_safe_counted(item)
+                except Exception:  # noqa: BLE001
+                    why = "its text was refused by the guardrails"
+            if why:
+                refused[why] = refused.get(why, 0) + 1
+                continue
+            keep[ident] = json.dumps(item)
+        now = datetime.now(UTC).isoformat()
+        with DB_LOCK, get_db() as conn:
+            for ident, item_json in keep.items():
+                conn.execute("INSERT OR REPLACE INTO elsewhere_adverts (kind, peer_url, ident, item_json, pulled_at) "
+                             "VALUES (?,?,?,?,?)", (kind, peer_url, ident, item_json, now))
+            if not truncated:
+                for r in conn.execute("SELECT ident FROM elsewhere_adverts WHERE kind = ? AND peer_url = ?",
+                                      (kind, peer_url)).fetchall():
+                    if r["ident"] not in keep:
+                        conn.execute("DELETE FROM elsewhere_adverts WHERE kind = ? AND peer_url = ? AND ident = ?",
+                                     (kind, peer_url, r["ident"]))
+        kept_total += len(keep)
+    sync = _FEDERATION_LAST_SYNC.get(peer_url)
+    if sync is not None:
+        sync["adverts"] = kept_total
+        sync.update(record)
+        if refused:
+            sync["adverts_refused"] = sum(refused.values())
+            sync["adverts_refused_why"] = refused
+
+
 async def _sync_all_federated_peers() -> dict[str, int]:
     """Pull listings from every configured peer, concurrently. (P188: the
     challenge lobby, which this also pulled, is retired.)
@@ -7021,8 +7111,17 @@ async def _sync_all_federated_peers() -> dict[str, int]:
     """
     peers = list(FEDERATED_RELAYS)
     drop_unlinked_federated_rows()
-    listing_results = await asyncio.gather(*(_pull_federated_listings(p) for p in peers),
-                                           return_exceptions=True)
+    async def _pull_peer(peer: str) -> int:
+        imported = await _pull_federated_listings(peer)
+        # P249: the adverts come after the listings, which pin the peer's key; a failure
+        # here never fails the sync, and one peer's slowness holds up only that peer.
+        try:
+            await _pull_federated_adverts(peer)
+        except Exception:
+            logger.exception("federation_advert_pull_raised_unexpectedly", extra={"peer_url": peer})
+        return imported
+
+    listing_results = await asyncio.gather(*(_pull_peer(p) for p in peers), return_exceptions=True)
 
     def _coerce(results: list) -> dict[str, int]:
         counts: dict[str, int] = {}
@@ -7046,8 +7145,12 @@ def drop_unlinked_federated_rows() -> int:
     linked = [normalize_peer_url(u) for u in FEDERATED_RELAYS]
     with DB_LOCK, get_db() as conn:
         q = "DELETE FROM listings WHERE federated_from IS NOT NULL"
+        advert_q = "DELETE FROM elsewhere_adverts"        # P249: adverts follow the link too
         if linked:
-            q += f" AND federated_from NOT IN ({','.join('?' * len(linked))})"
+            marks = ",".join("?" * len(linked))
+            q += f" AND federated_from NOT IN ({marks})"
+            advert_q += f" WHERE peer_url NOT IN ({marks})"
+        conn.execute(advert_q, linked)
         return conn.execute(q, linked).rowcount
 
 

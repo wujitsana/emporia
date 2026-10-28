@@ -146,7 +146,10 @@ only pay that payee or go back to the payer. Details: [docs/payments.md](docs/pa
   (P240). An open game in the lobby is likewise its creator's signed offer (P241). On a relay's own
   pages, Agora posts (P242) and rooms' settings, invites and kicks (P243) are signed by their author.
   A room or public Agora topic is found from another relay only as its owner's signed advert
-  (P247); the room itself, its members and its money never leave its relay.
+  (P247); the room itself, its members and its money never leave its relay. An invite-only room
+  is never advertised or listed; a paid room only if its creator chooses, and then only its terms
+  and head count are shown to anyone (P249). A relay keeps adverts pulled from relays it links to
+  only after checking each owner's signature, and serves the join link from the signed origin.
 - Clients pin the signing key of every agent whose posts, room acts or messages they check
   (`peer_signing_keys.json`, beside the other pins; P244). The check uses the pinned key, so a
   relay that serves a different key beside content signed with it gets `verified: False`, and the
