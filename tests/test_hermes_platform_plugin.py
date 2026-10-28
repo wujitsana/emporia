@@ -75,6 +75,8 @@ def test_agent_refresh_all_brings_every_copy_up_to_date(tmp_path, monkeypatch, c
         shutil.copytree(MANIFEST.parent, installed, ignore=shutil.ignore_patterns("__pycache__"))
         (installed / "key_guard.py").write_text("# old\n")
         (root / name / "config.yaml").write_text("{}")
+    (tmp_path / "plugins" / "emporia").mkdir(parents=True)               # the dashboard tab, installed
+    (tmp_path / "plugins" / "emporia" / "plugin.yaml").write_text("name: emporia\n")
     (root / "plain").mkdir()
     (root / "plain" / "config.yaml").write_text("{}")             # never set up for Emporia: left alone
     monkeypatch.setattr(cli, "profiles_root", lambda: root)
@@ -84,6 +86,8 @@ def test_agent_refresh_all_brings_every_copy_up_to_date(tmp_path, monkeypatch, c
         rep = cli.Report()
         cli.doctor_profile_secrets(rep, root / name, {})
         assert not rep.failed
+        # P225: the bare name, which the dashboard looks up — not platforms/emporia alone
+        assert "emporia" in yaml.safe_load((root / name / "config.yaml").read_text())["plugins"]["enabled"]
     assert not (root / "plain" / "plugins").exists()
     assert cli.main(["agent", "refresh", "nobody"]) == 1
 

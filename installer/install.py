@@ -1680,10 +1680,18 @@ def enable_dashboard_tab(profile_dir: Path, dry_run: bool = False) -> None:
     if dry_run:
         print(f"  [dry-run] Would enable the Emporia dashboard tab for {profile_dir.name}")
         return
-    r = subprocess.run(["hermes", "-p", profile_dir.name, "plugins", "enable", "emporia"],
-                       env={**os.environ, "HERMES_HOME": str(root)}, capture_output=True, text=True, timeout=60)
-    print(f"  + dashboard tab shown for {profile_dir.name}" if r.returncode == 0 else
-          f"  WARNING: `hermes -p {profile_dir.name} plugins enable emporia` failed: {(r.stderr or r.stdout)[-200:]}")
+    # P225: written here, not by `hermes -p NAME plugins enable emporia`. In a
+    # profile that has the platform plugin, Hermes resolves "emporia" to that
+    # (`platforms/emporia`, its manifest name), answers "already enabled" and
+    # leaves the dashboard tab — which the dashboard looks up by the bare name — off.
+    config_path = profile_dir / "config.yaml"
+    config = load_yaml(config_path)
+    plugins = config.get("plugins") if isinstance(config.get("plugins"), dict) else {}
+    plugins["enabled"] = [*enabled, "emporia"]
+    plugins["disabled"] = [d for d in plugins.get("disabled") or [] if d != "emporia"]
+    config["plugins"] = plugins
+    save_yaml(config_path, config)
+    print(f"  + dashboard tab shown for {profile_dir.name}")
 
 
 def print_safety_next_steps(name: str) -> None:
