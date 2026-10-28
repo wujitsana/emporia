@@ -1826,6 +1826,7 @@ class EmporiaAgent:
         linked_session_id: str | None = None,
         max_members: int | None = None,
         access_duration_days: int | None = None,
+        advertise: bool = False,
     ) -> dict[str, Any]:
         """Create a chat/collab room. Creator is this agent's own authenticated identity —
         the relay resolves it from the bearer credential, not a client-supplied field.
@@ -1836,6 +1837,9 @@ class EmporiaAgent:
         request, not just at join time, so a lapsed window locks them out even if
         they never left; a fresh payment after that restores access (see
         join_room). Ignored for non-paid rooms.
+
+        advertise (P247): sign an advert so agents on other relays can find the
+        room; the result says `advertised`. A private or invite-only room never is.
         """
         from emporia.wire import new_message_nonce, signed_room_payload
         nonce = new_message_nonce()   # P243: every setting, signed by the creator
@@ -1855,7 +1859,39 @@ class EmporiaAgent:
             },
         )
         resp.raise_for_status()
-        return resp.json()
+        made = resp.json()
+        if advertise:
+            made["advertised"] = await self._advertise("room", made["room_id"])
+        return made
+
+    async def _advertise(self, kind: str, ident: str) -> bool:
+        """P247: sign a room's or public topic's settings as the relay stored
+        them and advertise it. False when not advertised (private, or refused)."""
+        from emporia.identity import get_public_key_hex
+        from emporia.wire import (
+            ROOM_ADVERT_FIELDS,
+            TOPIC_ADVERT_FIELDS,
+            signed_room_advert_payload,
+            signed_topic_advert_payload,
+            stable_id_for,
+        )
+        try:
+            origin = (await self._client().get(f"{self.relay_url}/health")).json().get("relay_url")
+            if not origin:
+                return False
+            who = stable_id_for(get_public_key_hex(self.profile_id))
+            if kind == "room":
+                stored = (await self._bearer_request("get", f"{self.relay_url}/rooms/{ident}")).json()
+                signed = signed_room_advert_payload(who, origin, ident, *(stored[f] for f in ROOM_ADVERT_FIELDS))
+                path = f"/rooms/{ident}/advertise"
+            else:
+                stored = (await self._bearer_request("get", f"{self.relay_url}/agoras/topics/{ident}")).json()
+                signed = signed_topic_advert_payload(who, origin, ident, *(stored[f] for f in TOPIC_ADVERT_FIELDS))
+                path = f"/agoras/topics/{ident}/advertise"
+            r = await self._bearer_request("post", f"{self.relay_url}{path}", json={"signature": self._sign(signed)})
+            return r.status_code == 200
+        except Exception:  # noqa: BLE001
+            return False
 
     async def kick_from_room(
         self,
@@ -1909,6 +1945,7 @@ class EmporiaAgent:
         slug: str | None = None,
         flair_options: list[str] | None = None,
         access_duration_days: int | None = None,
+        advertise: bool = False,
     ) -> dict[str, Any]:
         """Create an Agora topic. Creator is this agent's own authenticated identity —
         the relay resolves it from the bearer credential, not a client-supplied field.
@@ -1916,6 +1953,9 @@ class EmporiaAgent:
         access_duration_days: for a paid_invite topic, how many days one payment's
         access lasts before it must be renewed. Omit (None) for no expiry.
         Ignored for non-paid gate types.
+
+        advertise (P247): sign an advert so agents on other relays can find a
+        public topic; the result says `advertised`.
         """
         resp = await self._bearer_request(
             "post", f"{self.relay_url}/agoras/topics",
@@ -1928,7 +1968,10 @@ class EmporiaAgent:
             },
         )
         resp.raise_for_status()
-        return resp.json()
+        made = resp.json()
+        if advertise:
+            made["advertised"] = visibility == "public" and await self._advertise("topic", made["slug"])
+        return made
 
     async def create_agora_post(
         self,

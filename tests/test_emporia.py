@@ -2459,11 +2459,15 @@ def test_every_route_has_a_reviewed_auth_posture():
         ("POST", "/rooms/{room_id}/join"),
         ("POST", "/rooms/{room_id}/invite"),
         ("POST", "/rooms/{room_id}/kick"),
+        ("POST", "/rooms/{room_id}/advertise"),  # P247: the creator only
+        ("DELETE", "/rooms/{room_id}/advertise"),
         ("POST", "/rooms/{room_id}/message"),
         ("POST", "/agoras/topics"),
         ("POST", "/agoras/topics/{slug}/invite"),
         ("POST", "/agoras/topics/{slug}/subscribe"),
         ("DELETE", "/agoras/topics/{slug}/subscribe"),
+        ("POST", "/agoras/topics/{slug}/advertise"),  # P247: the topic's owner only
+        ("DELETE", "/agoras/topics/{slug}/advertise"),
         # This route plus the four below were missing _topic_can_read entirely — fixed
         # in N4-4 (R3), but were already correctly _AUTHENTICATED under this guard's
         # definition even before that fix, since a caller was always resolved and
@@ -2552,6 +2556,8 @@ def test_every_route_has_a_reviewed_auth_posture():
         ("GET", "/events/{event_id}"): "public event discovery, same shape as GET /listings",
         ("GET", "/gaming/v1/federate/listings"): "public federation feed, integrity via relay signature not caller auth",
         ("GET", "/federation/v1/open-sessions"): "P188: public games waiting for a player, signed for other relays' agents — only what GET /sessions already shows anyone",
+        ("GET", "/federation/v1/rooms"): "P247: rooms their creator advertised, signed for other relays' agents — only public, open-gate rooms, each carrying its creator's signature",
+        ("GET", "/federation/v1/topics"): "P247: public Agora topics their owner advertised, signed for other relays' agents",
         ("GET", "/federation/peers"): "operator topology disclosure — arguably should be operator-only, not tightened this pass",
         ("WS", "/ws/events"): "global public event stream by design (N0-2/N3-5) — content is gated per-event at broadcast time, not at connect time",
         ("GET", "/"): "static redirect to /ui/",
@@ -27361,7 +27367,7 @@ def test_the_membership_rule_is_written_in_exactly_one_place():
 # P61 — the schema has a version, and the version has to stay honest
 # ---------------------------------------------------------------------------
 
-# 33 tables, 306 columns, at SCHEMA_VERSION 11. Recomputed by the test below;
+# 35 tables, 316 columns, at SCHEMA_VERSION 12. Recomputed by the test below;
 # when it fails, read *why* before touching this string.
 #
 # V1 -> V2 (P72-4): `bounty_entries` and its UNIQUE (listing_id, nous_user_id)
@@ -27397,7 +27403,11 @@ def test_the_membership_rule_is_written_in_exactly_one_place():
 #
 # V10 -> V11 (P243): `room_acts`, a room's creation, invites and kicks, each as
 # its creator signed it.
-_SCHEMA_FINGERPRINT_V11 = "368ad7dad97f7de75cc1fa88cb823558f27df4dfa81678a7a756193c11255112"
+#
+# V11 -> V12 (P247): `room_adverts` and `topic_adverts`, an owner's signed advert
+# of a room or public topic. A V11 relay would serve empty room and topic feeds
+# from a V12 database.
+_SCHEMA_FINGERPRINT_V12 = "74eca2af9e7da242fc04c8b0364d6d56f7c964c7de68ae3ad0020cb1199b999e"
 
 
 def _schema_fingerprint(db_path) -> tuple[str, int, int]:
@@ -27437,9 +27447,9 @@ def test_a_schema_change_requires_a_version_bump():
     from emporia.relay_server import SCHEMA_VERSION
 
     fingerprint, tables, columns = _schema_fingerprint(_test_db)
-    assert (SCHEMA_VERSION, fingerprint) == (11, _SCHEMA_FINGERPRINT_V11), (
+    assert (SCHEMA_VERSION, fingerprint) == (12, _SCHEMA_FINGERPRINT_V12), (
         f"the schema changed ({tables} tables, {columns} columns) or the version "
-        f"moved. Bump SCHEMA_VERSION *and* update _SCHEMA_FINGERPRINT_V11 — in "
+        f"moved. Bump SCHEMA_VERSION *and* update _SCHEMA_FINGERPRINT_V12 — in "
         f"that order, and never the fingerprint alone.\n"
         f"  code version: {SCHEMA_VERSION}\n  fingerprint:  {fingerprint}"
     )
@@ -27683,6 +27693,8 @@ _DASHBOARD_UNSURFACED_GETS: dict[str, str] = {
     # Infrastructure and machine-facing descriptors — nothing for a human view.
     "/": "redirects to /ui/; it *is* the dashboard's front door",
     "/federation/v1/agents/{}": "P185: relay to relay only — a linked relay looking up an agent that takes DMs from other relays",
+    "/federation/v1/rooms": "P247: for other relays' agents to find a room; the dashboard shows this relay's rooms from /rooms",
+    "/federation/v1/topics": "P247: for other relays' agents to find a topic; the dashboard shows this relay's topics from /agoras/topics",
     "/agents/{}/card": "P187: an agent's card, for other relays' agents to find and check it — the dashboard already shows the agent's address and fingerprint on its profile",
     "/.well-known/agent-card.json": "A2A descriptor, machine-facing",
     "/.well-known/agent.json": "A2A descriptor, machine-facing",

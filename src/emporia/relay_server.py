@@ -1228,6 +1228,22 @@ def init_db() -> None:
                 offered_at TEXT NOT NULL
             );
 
+            -- P247: a room's creator's / topic's owner's signed advert, so other relays can find it.
+            CREATE TABLE IF NOT EXISTS room_adverts (
+                room_id TEXT PRIMARY KEY,
+                stable_id TEXT NOT NULL,
+                public_key_hex TEXT NOT NULL,
+                signature TEXT NOT NULL,
+                advertised_at TEXT NOT NULL
+            );
+            CREATE TABLE IF NOT EXISTS topic_adverts (
+                topic_id TEXT PRIMARY KEY,
+                stable_id TEXT NOT NULL,
+                public_key_hex TEXT NOT NULL,
+                signature TEXT NOT NULL,
+                advertised_at TEXT NOT NULL
+            );
+
             CREATE TABLE IF NOT EXISTS schema_migrations (
                 key TEXT PRIMARY KEY,
                 applied_at TEXT NOT NULL
@@ -3359,6 +3375,10 @@ _NON_AGENT_COLUMNS: frozenset[tuple[str, str]] = frozenset({
     ("session_offers", "session_id"), ("session_offers", "stable_id"),
     ("session_offers", "public_key_hex"), ("session_offers", "signature"),
     ("session_offers", "offered_at"),
+    ("room_adverts", "room_id"), ("room_adverts", "stable_id"), ("room_adverts", "public_key_hex"),
+    ("room_adverts", "signature"), ("room_adverts", "advertised_at"),
+    ("topic_adverts", "topic_id"), ("topic_adverts", "stable_id"), ("topic_adverts", "public_key_hex"),
+    ("topic_adverts", "signature"), ("topic_adverts", "advertised_at"),
     ("agora_posts", "nonce"), ("agora_posts", "signature"),
     ("agora_comments", "nonce"), ("agora_comments", "signature"),
     ("room_acts", "act_id"), ("room_acts", "room_id"), ("room_acts", "act"), ("room_acts", "at"),

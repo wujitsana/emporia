@@ -570,3 +570,86 @@ def signed_room_kick_payload(room_id: str, agent_id: str, refund: bool, at: str)
     removed except by the creator's signed act. `at` as for an invite."""
     return {"type": "emporia:room-kick:v1", "room_id": room_id, "agent_id": agent_id,
             "refund": refund, "at": at}
+
+
+#: P247: the room settings a finder reads in an advert, all of them signed.
+ROOM_ADVERT_FIELDS = ("name", "description", "room_type", "gate_type", "entry_fee_cents", "currency",
+                      "max_members", "encrypted", "access_duration_days")
+
+
+def signed_room_advert_payload(
+    stable_id: str, origin_relay: str, room_id: str, name: str, description: str, room_type: str,
+    gate_type: str, entry_fee_cents: int, currency: str, max_members: int | None, encrypted: bool,
+    access_duration_days: int | None,
+) -> dict[str, Any]:
+    """P247: what a room's creator signs to have it found from other relays —
+    the terms a joiner will meet, named by stable id and the relay that hosts
+    the room, as `signed_open_session_payload` is. The room itself never moves:
+    its order, members and money stay on that relay."""
+    return {"type": "emporia:room-advert:v1", "stable_id": stable_id, "origin_relay": origin_relay,
+            "room_id": room_id, "name": name, "description": description, "room_type": room_type,
+            "gate_type": gate_type, "entry_fee_cents": entry_fee_cents, "currency": currency,
+            "max_members": max_members, "encrypted": encrypted,
+            "access_duration_days": access_duration_days}
+
+
+def _advert_owner(item: dict[str, Any]) -> tuple[str, str]:
+    """(stable id, "") of an advert's owner, or ("", why not) if the key doesn't make it."""
+    key = str(item.get("owner_public_key_hex") or "").lower()
+    if not item.get("advert_signature"):
+        return "", "not advertised by its owner"
+    if len(key) != 64:
+        return "", "no owner key"
+    try:
+        derived = stable_id_for(key)
+    except ValueError:
+        return "", "no owner key"
+    if derived != item.get("owner_stable_id"):
+        return "", "its key is not the one its stable id was made from (key rotation is not supported yet)"
+    return derived, ""
+
+
+def room_advert_verdict(item: dict[str, Any], origin_relay: str, verify: Any) -> str:
+    """P247: why a room in a relay's feed can't be taken as its creator's own
+    advert, or "" when it can. `origin_relay` is the relay serving the feed."""
+    derived, why = _advert_owner(item)
+    if why:
+        return why
+    if item.get("origin_relay") != origin_relay:
+        return "it names a different relay than the one serving it"
+    signed = signed_room_advert_payload(
+        derived, origin_relay, str(item.get("room_id") or ""),
+        *(item.get(f) for f in ROOM_ADVERT_FIELDS))
+    if not verify(signed, str(item["advert_signature"]), str(item["owner_public_key_hex"]).lower()):
+        return "its creator's signature does not match"
+    return ""
+
+
+#: P247: the topic settings a finder reads in an advert, all of them signed.
+TOPIC_ADVERT_FIELDS = ("name", "description", "gate_type", "entry_fee_cents")
+
+
+def signed_topic_advert_payload(
+    stable_id: str, origin_relay: str, slug: str, name: str, description: str, gate_type: str,
+    entry_fee_cents: int,
+) -> dict[str, Any]:
+    """P247: what an Agora topic's owner signs to have it found from other
+    relays, its gate and fee included so a relay cannot show a paid topic as
+    free. Slugs never change, so the slug and the relay name the topic."""
+    return {"type": "emporia:topic-advert:v1", "stable_id": stable_id, "origin_relay": origin_relay,
+            "slug": slug, "name": name, "description": description, "gate_type": gate_type,
+            "entry_fee_cents": entry_fee_cents}
+
+
+def topic_advert_verdict(item: dict[str, Any], origin_relay: str, verify: Any) -> str:
+    """P247: `room_advert_verdict` for an Agora topic."""
+    derived, why = _advert_owner(item)
+    if why:
+        return why
+    if item.get("origin_relay") != origin_relay:
+        return "it names a different relay than the one serving it"
+    signed = signed_topic_advert_payload(derived, origin_relay, str(item.get("slug") or ""),
+                                         *(item.get(f) for f in TOPIC_ADVERT_FIELDS))
+    if not verify(signed, str(item["advert_signature"]), str(item["owner_public_key_hex"]).lower()):
+        return "its owner's signature does not match"
+    return ""

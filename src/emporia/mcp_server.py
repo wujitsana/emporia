@@ -674,25 +674,27 @@ def scan_relays(
 ) -> dict[str, Any]:
     """Look for opportunities across many relays without joining any of them.
 
-    Reads the signed public feeds — listings its sellers signed, and the lobby
-    (games and purchases waiting for a player) — of this agent's home relay, the relays it
+    Reads the signed public feeds — listings its sellers signed, the lobby
+    (games and purchases waiting for a player), and the rooms and Agora topics
+    their owners advertised — of this agent's home relay, the relays it
     links to, the relays its operator lets it visit, and any `relays` you name
     (except those on its deny list). Registers nothing and moves no money; a
     relay learns only that its public feed was read. Closed relays are skipped.
 
     Each result says which relay holds it (`relay`) and who offers it
-    (`address`, `fingerprint`). A listing its seller did not sign, or a game its
-    creator did not offer, is left out (`refused_unsigned_or_forged` counts them
-    per relay). To act on one elsewhere, `visit_relay(relay)`
-    first — the deal, its money and any dispute stay on that relay.
+    (`address`, `fingerprint`). A listing its seller did not sign, a game its
+    creator did not offer, or a room or topic its owner did not advertise, is
+    left out (`refused_unsigned_or_forged` counts them per relay). To act on
+    one elsewhere, `visit_relay(relay)` first — the deal, its money, a room's
+    members and a topic's posts stay on that relay.
 
-    kind: 'listing' | 'game' — omit for both. module_type: e.g.
+    kind: 'listing' | 'game' | 'room' | 'topic' — omit for all. module_type: e.g.
     'emporia:chess:v1'. max_price_cents: drop anything dearer.
     """
     from emporia import visits
     from emporia.addresses import host_of
     from emporia.identity import verify
-    from emporia.wire import listing_verdict, open_session_verdict
+    from emporia.wire import listing_verdict, open_session_verdict, room_advert_verdict, topic_advert_verdict
     refused: dict[str, int] = {}
     targets = list(dict.fromkeys(u.rstrip("/") for u in
                                  [RELAY_URL, *_linked_relays(), *visits.allowed(), *_visits(), *(relays or [])]))
@@ -747,6 +749,41 @@ def scan_relays(
                                   "fingerprint": x.get("creator_fingerprint"),
                                   "players": f"{x.get('players')}/{x.get('max_players') or '?'}",
                                   "created_at": x.get("created_at")})
+                if why:
+                    skipped[relay] = why
+                    continue
+            if kind in ("", "room"):
+                items, why = _read_feed(relay, "/federation/v1/rooms", "rooms")
+                for x in items:
+                    # P247: the creator's own advert, checked here.
+                    if room_advert_verdict(x, h.get("relay_url") or "", verify):
+                        refused[relay] = refused.get(relay, 0) + 1
+                        continue
+                    found.append({"kind": "room", "relay": relay, "id": x["room_id"], "title": x.get("name"),
+                                  "description": x.get("description"), "module_type": None,
+                                  "price_cents": int(x.get("entry_fee_cents") or 0),
+                                  "payment_mode": x.get("gate_type"), "address": x.get("owner_address"),
+                                  # Built from the signed origin, not the feed's unsigned join_url,
+                                  # so a relay cannot send a buyer to another host to pay.
+                                  "fingerprint": x.get("owner_fingerprint"),
+                                  "join_url": f"{x['origin_relay']}/rooms/{x['room_id']}/join",
+                                  "created_at": x.get("created_at")})
+                if why:
+                    skipped[relay] = why
+                    continue
+            if kind in ("", "topic"):
+                items, why = _read_feed(relay, "/federation/v1/topics", "topics")
+                for x in items:
+                    if topic_advert_verdict(x, h.get("relay_url") or "", verify):
+                        refused[relay] = refused.get(relay, 0) + 1
+                        continue
+                    found.append({"kind": "topic", "relay": relay, "id": x["slug"], "title": x.get("name"),
+                                  "description": x.get("description"), "module_type": None,
+                                  "price_cents": int(x.get("entry_fee_cents") or 0),
+                                  "payment_mode": x.get("gate_type"), "address": x.get("owner_address"),
+                                  "fingerprint": x.get("owner_fingerprint"),
+                                  "join_url": f"{x['origin_relay']}/agoras/topics/{x['slug']}",
+                                  "created_at": None})
                 if why:
                     skipped[relay] = why
         except Exception as e:  # noqa: BLE001
@@ -1082,6 +1119,7 @@ def create_room(
     encrypted: bool = False,
     linked_session_id: str | None = None,
     access_duration_days: int | None = None,
+    advertise: bool = False,
 ) -> dict[str, Any]:
     """Create a chat/collab room.
 
@@ -1099,6 +1137,10 @@ def create_room(
       request, not just at join time, so a lapsed window locks them out even if
       they never left; a fresh payment after that restores access (see
       join_room). Ignored for non-paid rooms.
+    advertise: sign an advert so agents on other relays can find the room
+      (scan_relays kind='room'). The room stays here; they join by visiting this
+      relay. A private or invite-only room is never advertised (`advertised`
+      says whether it was).
 
     Forwards to the relay's POST /rooms (N3-7 — this used to write directly to the
     local room DB via `from emporia import rooms as r`, bypassing the relay's
@@ -1119,10 +1161,45 @@ def create_room(
         r = _bearer_request("post", f"{_base()}/rooms", agent_id=creator_id, json=body, timeout=15)
         d = r.json()
         if r.status_code == 200:
-            return {"success": True, "room": d}
+            return {"success": True, "room": d,
+                    "advertised": bool(advertise) and _advertise(creator_id, "room", d["room_id"])}
         return {"error": f"Relay {r.status_code}", "detail": d, "success": False}
     except Exception as e:
         return {"error": str(e), "success": False}
+
+
+def _advertise(aid: str, kind: str, ident: str) -> bool:
+    """P247: sign a room's or public topic's settings as the relay stored them
+    and advertise it for other relays' agents. False when not advertised — a
+    private room, a refusing relay — which is not an error."""
+    from emporia.identity import get_public_key_hex
+    from emporia.identity import sign as ed25519_sign
+    from emporia.wire import (
+        ROOM_ADVERT_FIELDS,
+        TOPIC_ADVERT_FIELDS,
+        signed_room_advert_payload,
+        signed_topic_advert_payload,
+        stable_id_for,
+    )
+    try:
+        origin = httpx.get(f"{_base()}/health", timeout=10).json().get("relay_url")
+        if not origin:
+            return False
+        who = stable_id_for(get_public_key_hex(aid))
+        if kind == "room":
+            stored = _bearer_request("get", f"{_base()}/rooms/{ident}", agent_id=aid, timeout=10).json()
+            signed = signed_room_advert_payload(who, origin, ident, *(stored[f] for f in ROOM_ADVERT_FIELDS))
+            path = f"/rooms/{ident}/advertise"
+        else:
+            stored = _bearer_request("get", f"{_base()}/agoras/topics/{ident}", agent_id=aid, timeout=10).json()
+            signed = signed_topic_advert_payload(who, origin, ident, *(stored[f] for f in TOPIC_ADVERT_FIELDS))
+            path = f"/agoras/topics/{ident}/advertise"
+        r = _bearer_request("post", f"{_base()}{path}", agent_id=aid,
+                            json={"signature": ed25519_sign(signed, aid)}, timeout=10)
+        return r.status_code == 200
+    except Exception:  # noqa: BLE001
+        logger.info("could not advertise a %s", kind, exc_info=True)
+        return False
 
 
 def _signed_room_fields(creator: str, body: dict[str, Any]) -> dict[str, Any]:
@@ -2252,6 +2329,7 @@ def create_agora_topic(
     slug: str = "",
     flair_options: list[str] | None = None,
     access_duration_days: int | None = None,
+    advertise: bool = False,
 ) -> dict[str, Any]:
     """Create an Agora topic (agent forum).
 
@@ -2273,6 +2351,9 @@ def create_agora_topic(
     access_duration_days: for a paid_invite topic, how many days one payment's
       access lasts before it must be renewed. Omit (None) for no expiry.
       Ignored for non-paid gate types.
+    advertise: sign an advert so agents on other relays can find a public topic
+      (scan_relays kind='topic'). Reading and posting stay on this relay
+      (`advertised` says whether it was; other visibilities never are).
     """
     try:
         r = _bearer_request(
@@ -2289,7 +2370,10 @@ def create_agora_topic(
             timeout=10,
         )
         if r.status_code in (200, 201):
-            return r.json()
+            made = r.json()
+            if advertise:
+                made["advertised"] = visibility == "public" and _advertise(creator_id, "topic", made["slug"])
+            return made
         return {"error": f"Relay {r.status_code}", "detail": r.text}
     except Exception as e:
         return {"error": str(e)}

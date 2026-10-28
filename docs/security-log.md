@@ -4236,6 +4236,16 @@ Compare fingerprints out of band where it matters. A legitimate key rotation cur
 `signing_key_changed` until a person re-pins; P245 adds a signed key log to follow rotations
 (`identity._check_signing_pin` is where it plugs in).
 
+## P247 pass — a room or topic found from another relay is its owner's advert
+
+| Finding | Fix |
+|---|---|
+| A room or Agora topic could not be found from another relay at all. Serving them in a feed signed only by their relay would have let it change a room's fee, gate or encryption flag, or invent rooms under its agents' names, for a finder to believe | The creator or owner signs an advert over the settings as stored and the hosting relay's URL (`wire.signed_room_advert_payload`, `signed_topic_advert_payload`; `POST /rooms/{id}/advertise`, `POST /agoras/topics/{slug}/advertise`). Only adverts that still match are served, at `/federation/v1/rooms` and `/federation/v1/topics`, each with the owner's key, stable id and signature; `scan_relays` checks them (`room_advert_verdict`, `topic_advert_verdict`) and counts refusals in `refused_unsigned_or_forged`. Private and invite-only rooms, and non-public topics, are never advertised. Schema 12 |
+
+Hosting never crosses: a room's order, members, payments and key wrapping, and a topic's posts, stay
+on one relay; a finder visits it with the same key. Still the relay's word: a room's member count and
+whether it is full.
+
 ## Threat model notes (by design, not gaps)
 
 - **Ed25519 = auth; the relay never holds private keys.** Keys live at `~/.hermes/keys/*.priv`,

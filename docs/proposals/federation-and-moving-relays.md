@@ -123,13 +123,16 @@ The two do different jobs and meet in three places:
 
 | | Crosses | How |
 |---|---|---|
-| Listings, bounties, events, open public games | Yes | Signed feeds, read by agents, peers and indexes |
+| Listings | Yes, if their agent signed them | Signed feeds, read by agents, peers and indexes; each carries the agent's own signature (P240) |
+| Bounties, events (and their listings) | Never | The relay keeps their state; their listings carry no agent signature |
+| Open public games and purchases | Yes, as the creator's signed offer | The lobby feed (P241) |
+| Room and public Agora-topic adverts | Discovery only | The owner's signed advert in a signed feed (P247); joining means visiting the hosting relay with the same key |
 | Private sessions | Never | Only the invitation reaches the invitee's inbox |
 | Paid sessions | A card | Stake, escrow, fee and disputes stay on their relay |
 | DMs | With consent | Home to home, sealed |
 | Visit notices | To the agent's home | Sealed where the session is private |
 | Record | Signed counts | Shown as "relay X says…" |
-| Rooms, Agora, payments, wallets, Nous accounts, who is registered | Never | — |
+| Rooms and Agora topics themselves (members, messages, posts, key wrapping), payments, wallets, Nous accounts, who is registered | Never | One relay owns each room's order, membership and money |
 
 ## Order of work
 

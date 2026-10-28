@@ -15,6 +15,7 @@ from typing import Any
 
 from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import JSONResponse
+from pydantic import BaseModel
 from starlette.concurrency import run_in_threadpool
 
 from emporia import entitlements
@@ -23,6 +24,7 @@ from emporia import rooms as rooms_db
 from emporia.identity import federation_signable_bytes, get_relay_public_key_hex, sign_raw_relay
 from emporia.wire import (
     ERR_DUPLICATE_NONCE,
+    signed_room_advert_payload,
     signed_room_invite_payload,
     signed_room_kick_payload,
     signed_room_payload,
@@ -59,6 +61,68 @@ def _acts(room_id: str) -> list[dict]:
                             "WHERE room_id = ? ORDER BY rowid", (room_id,)).fetchall()
     return [{"act": r["act"], "target": r["target"], "by": r["by_agent"], "at": r["at"],
              "payload": json.loads(r["payload_json"]), "signature": r["signature"]} for r in rows]
+
+
+class AdvertRequest(BaseModel):
+    signature: str
+
+
+def advertiser_identity(caller: str) -> tuple[str, str]:
+    """P247: (public key, stable id) an advert by this agent is signed with —
+    refused when the key is not the genesis key its stable id was made from."""
+    with rs.DB_LOCK, rs.get_db() as conn:
+        row = conn.execute("SELECT public_key_hex, stable_id FROM authorized_agents WHERE agent_id = ?",
+                           (caller,)).fetchone()
+    key = (row["public_key_hex"] or "").lower() if row else ""
+    stable_id = rs.stable_id_for(key) if key else ""
+    if row and row["stable_id"] and row["stable_id"] != stable_id:
+        raise HTTPException(409, "this agent's key is not its genesis key; adverts signed with a "
+                                 "rotated key are not supported yet")
+    return key, stable_id
+
+
+@router.post("/rooms/{room_id}/advertise")
+async def advertise_room(room_id: str, req: AdvertRequest, request: Request):
+    """P247: the creator has this room found from other relays, signing its
+    settings as stored here (`wire.signed_room_advert_payload`). The room stays
+    here; a private room or an invite-only one is never advertised."""
+    caller = rs._dashboard_agent_id(request)
+    if not caller:
+        raise HTTPException(401, "Authentication required")
+    room = rooms_db.get_room(room_id, db_path=rs.DATABASE_PATH)
+    if not room:
+        raise HTTPException(404, "Room not found")
+    if room.creator_id != caller:
+        raise HTTPException(403, "only the room's creator advertises it")
+    if room.room_type == "private" or room.gate_type == "invite":
+        raise HTTPException(400, "a private or invite-only room is never advertised")
+    key, stable_id = advertiser_identity(caller)
+    signed = signed_room_advert_payload(
+        stable_id, rs.RELAY_BASE_URL, room_id, room.name, room.description, room.room_type, room.gate_type,
+        room.entry_fee_cents, room.currency, room.max_members, room.encrypted, room.access_duration_days)
+    if not key or not rs.verify(signed, req.signature, key):
+        raise HTTPException(403, "advert signature does not match this room's settings and this agent's key")
+    with rs.DB_LOCK, rs.get_db() as conn:
+        conn.execute("INSERT OR REPLACE INTO room_adverts (room_id, stable_id, public_key_hex, signature, "
+                     "advertised_at) VALUES (?,?,?,?,?)",
+                     (room_id, stable_id, key, req.signature, datetime.now(UTC).isoformat()))
+    return {"room_id": room_id, "advertised": True}
+
+
+@router.delete("/rooms/{room_id}/advertise")
+async def withdraw_room_advert(room_id: str, request: Request):
+    """P247: the creator stops advertising the room."""
+    caller = rs._dashboard_agent_id(request)
+    if not caller:
+        raise HTTPException(401, "Authentication required")
+    room = rooms_db.get_room(room_id, db_path=rs.DATABASE_PATH)
+    if not room:
+        raise HTTPException(404, "Room not found")
+    if room.creator_id != caller:
+        raise HTTPException(403, "only the room's creator withdraws its advert")
+    with rs.DB_LOCK, rs.get_db() as conn:
+        conn.execute("DELETE FROM room_adverts WHERE room_id = ?", (room_id,))
+    return {"room_id": room_id, "advertised": False}
 
 
 @router.post("/rooms")
