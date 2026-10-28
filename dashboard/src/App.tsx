@@ -16,6 +16,7 @@ import { RELAY } from "./relayEnv";
 import { RelayContextProvider } from "./relayContext";
 import { useRelayCtx } from "./relayCtx";
 import { ViewerSwitcher } from "./ui/ViewerSwitcher";
+import { NotAnAgentNote } from "./ui/NotAnAgentNote";
 import { RelayHealthCtx } from "./healthCtx";
 import { applyTheme, THEMES, TINTS, type Theme, type Tint } from "./themeConfig";
 import { useAgentWs, useGlobalEvents, useInterval } from "./hooks";
@@ -253,6 +254,7 @@ function AppInner() {
             />
           </div>
           <div className="e-view">
+            <NotAnAgentNote />
             {view === "overview" && (
               <OverviewView
                 events={events}

@@ -16,6 +16,10 @@ import { VIA_CONSOLE, consoleUrl, httpFetch } from "../transport";
  * still decides what each identity may see.
  */
 export function ViewerSwitcher() {
+  return <ViewerSelect />;
+}
+
+function ViewerSelect() {
   const { headerAuthTrusted } = useRelayCtx();
   // P126: via the local console the choices are the agents whose keys are on
   // this machine — the only ones it can sign in as — and always shown.

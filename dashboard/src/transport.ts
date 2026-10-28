@@ -37,6 +37,15 @@ export const MODE: Mode = hermesSdk()
   ? "hermes"
   : import.meta.env.VITE_EMPORIA_MODE === "console" ? "console" : "relay";
 
+/** P231: inside the Hermes dashboard, the Hermes profile the tab is open in —
+ *  the tab views as that profile's agent and offers no switcher. Null elsewhere. */
+export function hermesProfile(): { name: string; isAgent: boolean } | null {
+  return typeof window !== "undefined"
+    ? (window as { __EMPORIA_HERMES_PROFILE__?: { name: string; isAgent: boolean } | null })
+      .__EMPORIA_HERMES_PROFILE__ ?? null
+    : null;
+}
+
 /** Whether the local console is in front: local agents, signed requests, DMs opened. */
 export const VIA_CONSOLE = MODE !== "relay";
 

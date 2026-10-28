@@ -19,6 +19,7 @@
 import { createRoot } from "react-dom/client";
 import type { Root } from "react-dom/client";
 import { ensureViewer } from "./viewerBootstrap";
+import type { HermesProfile } from "./viewerBootstrap";
 
 interface HermesPluginSdk {
   React: { createElement: (...a: unknown[]) => unknown };
@@ -34,6 +35,7 @@ declare global {
   interface Window {
     __HERMES_PLUGIN_SDK__?: HermesPluginSdk;
     __HERMES_PLUGINS__?: { register: (name: string, component: unknown) => void };
+    __EMPORIA_HERMES_PROFILE__?: HermesProfile | null;
   }
 }
 
@@ -72,7 +74,7 @@ async function mount(host: HTMLElement, sdk: HermesPluginSdk): Promise<() => voi
   shadow.append(style, container);
 
   window.__EMPORIA_HERMES_SDK__ = { authedFetch: sdk.authedFetch, buildWsUrl: sdk.buildWsUrl };
-  await ensureViewer(
+  window.__EMPORIA_HERMES_PROFILE__ = await ensureViewer(
     () => sdk.authedFetch("/api/plugins/emporia/agents")
       .then((r) => r.json()).then((d) => d.agents as string[]),
     async () => HERMES_PROFILE || sdk.authedFetch("/api/plugins/emporia/_hermes_profile")
