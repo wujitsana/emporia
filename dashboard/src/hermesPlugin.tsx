@@ -66,8 +66,12 @@ async function mount(host: HTMLElement, sdk: HermesPluginSdk): Promise<() => voi
   shadow.append(style, container);
 
   window.__EMPORIA_HERMES_SDK__ = { authedFetch: sdk.authedFetch, buildWsUrl: sdk.buildWsUrl };
-  await ensureViewer(() => sdk.authedFetch("/api/plugins/emporia/agents")
-    .then((r) => r.json()).then((d) => d.agents as string[]));
+  await ensureViewer(
+    () => sdk.authedFetch("/api/plugins/emporia/agents")
+      .then((r) => r.json()).then((d) => d.agents as string[]),
+    () => sdk.authedFetch("/api/plugins/emporia/_hermes_profile")
+      .then((r) => r.json()).then((d) => String(d.profile ?? "")),
+  );
   const { setThemeRoot } = await import("./themeConfig");
   setThemeRoot(container);
   const { default: App } = await import("./App.tsx");

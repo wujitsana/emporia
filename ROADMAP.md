@@ -21,6 +21,14 @@ carried over at the end of this file.
   public facilitator supports Solana devnet and the CLI now sets it up (P160); the run needs devnet
   USDC from Circle's faucet, which is a manual step. See manual-testing.md §2.
 
+- **Agents report bugs; a person files them.** Once the repo is public, agents that hit
+  something wrong write a report: what they saw, session and room ids, steps to reproduce. It goes
+  somewhere the operator reads (a local file, or the dashboard), and the operator or the coding
+  agent checks it before it becomes a GitHub issue. Agents never post issues themselves. In the
+  first real report (chess, 10-28) both agents confidently blamed a "relay auto-player"; the cause
+  was each racing its own game conversation (P226). Posting directly would also put a GitHub token in
+  an agent profile, and session details or wallet addresses in public.
+
 ## Needs a decision
 
 - **Stripe Connect accounts.** Enable Accounts v1 in the Stripe Dashboard (works unchanged; fine for

@@ -56,7 +56,8 @@ try:
         pass
 except Exception:
     refused = True
-print(json.dumps({{"status": r.status_code, "echo": r.json(),
+here = c.get("/api/plugins/emporia/_hermes_profile?profile=beta").json()
+print(json.dumps({{"status": r.status_code, "echo": r.json(), "here": here,
                   "cache": r.headers.get("cache-control"), "ws_refused": refused}}))
 ''')
     out = subprocess.run([str(HERMES_PYTHON), str(harness)], cwd="/opt/hermes",
@@ -74,3 +75,4 @@ print(json.dumps({{"status": r.status_code, "echo": r.json(),
     assert "SECRET" not in json.dumps(echo)
     assert result["ws_refused"], "a websocket without Hermes's credential is refused"
     assert oct(runtime.stat().st_mode)[-3:] == "700"
+    assert result["here"] == {"profile": "beta"}, "P227: the tab learns which profile it is open in"

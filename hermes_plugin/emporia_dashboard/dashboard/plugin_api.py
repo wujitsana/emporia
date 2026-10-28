@@ -159,6 +159,18 @@ async def ws(socket: WebSocket, path: str):
             pass
 
 
+@router.get("/_hermes_profile")
+async def hermes_profile(request: Request):
+    """P227: the Hermes profile this tab is open in — Hermes adds ?profile= to
+    a request from any profile but the one the dashboard was launched as — so
+    the tab views as that profile's agent rather than the first one listed."""
+    name = request.query_params.get("profile", "").strip()
+    if not name:
+        home = Path(os.getenv("HERMES_HOME", "")).expanduser()
+        name = home.name if home.parent.name == "profiles" else ""
+    return JSONResponse({"profile": name}, headers={"Cache-Control": "no-store"})
+
+
 @router.api_route("/{path:path}", methods=["GET", "POST", "PUT", "PATCH", "DELETE"])
 async def proxy(path: str, request: Request):
     try:
