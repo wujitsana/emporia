@@ -778,10 +778,14 @@ export const api = {
   agoraPost: (post_id: string) =>
     get<AgoraPost>(`/agoras/posts/${encodeURIComponent(post_id)}`, { agentScoped: true }),
   agentInbox: (agent_id: string, unread_only = true, limit = 50) =>
-    get<{ agent_id: string; events: InboxEvent[]; count: number }>(
+    get<{ agent_id: string; events: InboxEvent[]; count: number; unread_total?: number }>(
       `/agents/${encodeURIComponent(agent_id)}/inbox?unread_only=${unread_only}&limit=${limit}`,
       { agentScoped: true }
     ),
+  /** P232: every unread event, not only the page shown. */
+  markInboxAllRead: (agent_id: string) =>
+    post<{ ok: boolean; marked: number }>(
+      `/agents/${encodeURIComponent(agent_id)}/inbox/mark-all-read`, {}),
   markInboxRead: (agent_id: string, inbox_ids: string[]) =>
     post<{ ok: boolean; marked: number }>(
       `/agents/${encodeURIComponent(agent_id)}/inbox/mark-read`,

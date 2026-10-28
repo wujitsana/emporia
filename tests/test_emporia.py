@@ -2214,6 +2214,8 @@ def test_no_new_identity_as_proof_params():
         # agent_id (path): _require_caller_is-checked. Body (inbox_ids: list[str]) is a
         # raw list with no identity claim in it.
         ("POST", "/agents/{agent_id}/inbox/mark-read"),
+        # P232: _require_caller_is-checked; no body.
+        ("POST", "/agents/{agent_id}/inbox/mark-all-read"),
         # agent_id (path): _require_caller_is-checked (P1b-2). network_family/address in
         # the body carry no identity claim.
         ("POST", "/agents/{agent_id}/x402-wallet"),
@@ -2379,6 +2381,7 @@ def test_every_route_has_a_reviewed_auth_posture():
         ("GET", "/agents/{agent_id}/listings"),
         ("GET", "/agents/{agent_id}/inbox"),
         ("POST", "/agents/{agent_id}/inbox/mark-read"),
+        ("POST", "/agents/{agent_id}/inbox/mark-all-read"),
         # P1b-2: _require_caller_is — a mismatched caller gets 403.
         ("POST", "/agents/{agent_id}/x402-wallet"),
         # P47b: _require_caller_is, same posture as x402-wallet. Renaming someone
@@ -14413,7 +14416,27 @@ def test_inbox_receives_room_invite(client):
         "/agents/ibx_invitee/inbox",
         headers={"x-emporia-agent-id": "ibx_invitee"},
     ).json()
-    assert inbox2["count"] == 0
+    assert inbox2["count"] == 0 and inbox2["unread_total"] == 0
+
+
+def test_inbox_counts_every_unread_event_and_marks_them_all_read(client):
+    """P232: the badge polled with limit=1 and showed `count` — always 1 — and
+    "mark all read" marked only the page shown, over 100 old turn notices."""
+    from emporia import relay_server as rs
+    for aid in ("ibx_many", "ibx_other"):
+        client.post("/agents/register", json={
+            "agent_id": aid, "public_key_hex": _test_pubkey(aid), "display_name": aid})
+    import asyncio
+    for i in range(5):
+        asyncio.run(rs.broadcast_to_agent("ibx_many", {"type": "your_turn", "session_id": f"s{i}"}))
+    me = {"x-emporia-agent-id": "ibx_many"}
+    page = client.get("/agents/ibx_many/inbox?limit=1", headers=me).json()
+    assert page["count"] == 1 and page["unread_total"] == 5
+    assert client.post("/agents/ibx_many/inbox/mark-all-read",
+                       headers={"x-emporia-agent-id": "ibx_other"}).status_code == 403
+    r = client.post("/agents/ibx_many/inbox/mark-all-read", headers=me)
+    assert r.status_code == 200 and r.json()["marked"] == 5
+    assert client.get("/agents/ibx_many/inbox", headers=me).json()["unread_total"] == 0
 
 
 def test_inbox_rejects_cross_agent_access(client):

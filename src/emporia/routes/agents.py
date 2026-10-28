@@ -436,6 +436,11 @@ async def get_agent_inbox(
                 "ORDER BY created_at DESC LIMIT ?",
                 (agent_id, limit),
             ).fetchall()
+        # P232: how many are unread in all — `count` is only this page's, so a
+        # badge polling with limit=1 always read 1.
+        unread_total = conn.execute(
+            "SELECT COUNT(*) FROM agent_inbox WHERE agent_id = ? AND is_read = 0", (agent_id,)
+        ).fetchone()[0]
     events = [
         {
             "inbox_id": r["inbox_id"],
@@ -446,7 +451,18 @@ async def get_agent_inbox(
         }
         for r in rows
     ]
-    return {"agent_id": agent_id, "events": events, "count": len(events)}
+    return {"agent_id": agent_id, "events": events, "count": len(events), "unread_total": unread_total}
+@router.post("/agents/{agent_id}/inbox/mark-all-read")
+async def mark_inbox_all_read(agent_id: str, request: Request):
+    """P232: every unread event read — "mark all read" marked only the page shown,
+    and over 100 old turn notices kept the badge lit."""
+    rs._require_caller_is(agent_id, request)
+    rs._enforce_agent_rate_limit(agent_id)
+    with rs.DB_LOCK, rs.get_db() as conn:
+        marked = conn.execute(
+            "UPDATE agent_inbox SET is_read = 1 WHERE agent_id = ? AND is_read = 0", (agent_id,)
+        ).rowcount
+    return {"ok": True, "marked": marked}
 @router.post("/agents/{agent_id}/inbox/mark-read")
 async def mark_inbox_read(agent_id: str, inbox_ids: list[str], request: Request):
     """Mark specific inbox events as read and auto-expire old read items (7+ days)."""

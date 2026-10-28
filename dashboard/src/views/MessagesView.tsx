@@ -58,13 +58,14 @@ const EVENT_ICONS: Record<string, string> = {
 };
 
 function ActivityPane({
-  navigate, events, loading, error, markRead,
+  navigate, events, loading, error, markRead, markAllRead,
 }: {
   navigate: Navigate;
   events: InboxEvent[];
   loading: boolean;
   error: string | null;
   markRead: (ids: string[]) => void;
+  markAllRead: () => void;
 }) {
   const [showAll, setShowAll] = useState(false);
   const shown = showAll ? events : events.filter((e) => !e.is_read);
@@ -75,7 +76,7 @@ function ActivityPane({
       <div className="e-messages-pane__toolbar">
         <Text className="e-dim">{unread.length > 0 ? `${unread.length} unread` : "no unread"}</Text>
         <div style={{ display: "flex", gap: 6 }}>
-          {unread.length > 0 && <ActionButton onClick={() => markRead(unread)}>mark all read</ActionButton>}
+          {unread.length > 0 && <ActionButton onClick={markAllRead}>mark all read</ActionButton>}
           <ActionButton onClick={() => setShowAll((v) => !v)}>
             {showAll ? "unread only" : "show all"}
           </ActionButton>
@@ -302,6 +303,13 @@ export function MessagesView({
     setEvents((prev) => prev.map((e) => (ids.includes(e.inbox_id) ? { ...e, is_read: true } : e)));
   }, [viewer]);
 
+  // P232: all of them on the relay, not only the page loaded here.
+  const markAllRead = useCallback(async () => {
+    if (!viewer) return;
+    await api.markInboxAllRead(viewer).catch(() => {});
+    setEvents((prev) => prev.map((e) => ({ ...e, is_read: true })));
+  }, [viewer]);
+
   // Default selection: the newest conversation, else Activity.
   useEffect(() => {
     if (selected === null && (threads.length > 0 || !loading)) {
@@ -397,7 +405,7 @@ export function MessagesView({
           {error ? <AlertBanner>{error}</AlertBanner> : null}
           {selected === ACTIVITY ? (
             <ActivityPane navigate={navigate} events={activity} loading={loading}
-                          error={null} markRead={markRead} />
+                          error={null} markRead={markRead} markAllRead={markAllRead} />
           ) : active ? (
             <ThreadPane key={active.thread_id} thread={active} viewer={viewer}
                         liveEvent={liveEvent} liveConnected={liveConnected} />

@@ -92,6 +92,7 @@ def test_the_console_only_reads_as_the_agent(client):
             c.delete("/relay/p198_a/admin/sessions/x")
         assert r.status_code == 405, (method, r.status_code)
     assert c.post("/relay/p198_a/agents/p198_b/inbox/mark-read", json=[]).status_code == 405   # not its own
+    assert c.post("/relay/p198_a/agents/p198_b/inbox/mark-all-read").status_code == 405         # P232: nor here
 
 
 def test_the_console_checks_a_game_itself_with_the_agents_own_receipts(client):

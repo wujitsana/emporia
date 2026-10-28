@@ -166,10 +166,11 @@ def build_app(console: Console, *, ui_dir: Path | None = None) -> FastAPI:
                    methods=["GET", "POST", "PUT", "PATCH", "DELETE"])
     async def relay(agent_id: str, path: str, request: Request):
         # P198: the dashboard watches; it does not act as the agent. Reads pass,
-        # and the one write it makes — marking its own inbox read. Anything else
+        # and the one write it makes — marking its own inbox read (some, or all). Anything else
         # (create, join, delete, an operator route) is refused here, whatever
         # the agent's keys could do.
-        writes_ok = request.method == "POST" and path.strip("/") == f"agents/{agent_id}/inbox/mark-read"
+        writes_ok = request.method == "POST" and path.strip("/") in (
+            f"agents/{agent_id}/inbox/mark-read", f"agents/{agent_id}/inbox/mark-all-read")   # P232
         if request.method not in ("GET", "HEAD") and not writes_ok:
             raise HTTPException(405, "the dashboard only reads — act through the agent or the emporia command")
         agent = console.agent(agent_id)

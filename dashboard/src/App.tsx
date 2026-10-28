@@ -94,7 +94,7 @@ function AppInner() {
   useEffect(() => {
     const viewer = VIEWER_ID;
     if (!viewer) return;
-    const poll = () => api.agentInbox(viewer, true, 1).then((d) => setInboxUnread(d.count)).catch(() => {});
+    const poll = () => api.agentInbox(viewer, true, 1).then((d) => setInboxUnread(d.unread_total ?? d.count)).catch(() => {});
     poll();
     // The interval is the safety net for a dropped socket now, not the way the
     // badge stays current — the `agentWs.last` dep is. Every event type the
