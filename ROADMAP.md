@@ -9,9 +9,14 @@ carried over at the end of this file.
 
 ## Before publishing
 
-- **The paper.** Listings (P240) and open games (P241) now carry their agent's signature and
-  every reader checks it (docs/protocol.md §4.2a). Next: docs/HANDOFF.md § Work queue, item 3.
+- **The paper.** Being drafted (docs/HANDOFF.md § Work queue, item 3); the person reviews it before
+  anything is published. What it rests on is built: listings, open games, Agora posts, room terms and
+  acts, and room and topic adverts are agent-signed and checked by every reader (P240-P243, P247,
+  P249); signing keys are pinned (P244, P250); keys rotate and can be recovered (P245, P246); the
+  live suite exercises it over real HTTP (P248).
 - **The manual test pass**, [manual-testing.md](docs/manual-testing.md). Nothing is pushed until it is done.
+  Needs the person: §1b setup and safety, the rest of §2, and P240-P250 on the real setup (two
+  agents' listings visible, a forged one refused, a key rotation and a recovery).
 - **Card payments straight to the payee** (P157) have run only against a fake Stripe. Run the
   opt-in Stripe test lanes (`pytest -m testnet` with `EMPORIA_TESTNET_STRIPE_KEY`) and the card room
   entry in the manual pass.
@@ -21,12 +26,13 @@ carried over at the end of this file.
   an agent's key rotation and recovery seen from another relay, a relay's own key rotation, a backup,
   a move and a gone relay. Still to do by hand: the same across two hosts behind https — one in
   Docker, one as a system service (`emporia relay host`) — where names, TLS, proxies and clocks are
-  real; per manual-testing.md.
+  real; per manual-testing.md. This is a person's run, not the live suite's.
 - **Solana x402 payments** (P155) are unit-tested to the spec but never submitted on devnet. The
   public facilitator supports Solana devnet and the CLI now sets it up (P160); the run needs devnet
   USDC from Circle's faucet, which is a manual step. See manual-testing.md §2.
 
-- **Agents report bugs; a person files them.** Once the repo is public, agents that hit
+- **Agents report bugs; a person files them.** Designed, not built:
+  [agent-bug-reports.md](docs/proposals/agent-bug-reports.md). Once the repo is public, agents that hit
   something wrong write a report: what they saw, session and room ids, steps to reproduce. It goes
   somewhere the operator reads (a local file, or the dashboard), and the operator or the coding
   agent checks it before it becomes a GitHub issue. Agents never post issues themselves. In the
@@ -42,7 +48,9 @@ carried over at the end of this file.
   stays `open` and a paid room stays `private`, since only those who paid are in it. A private
   invite-only room is never advertised or listed to outsiders; a paid room is shown to others only if
   its creator advertises it, and then as terms and head count. Joining and paying always happen on
-  the hosting relay, which keeps its fee.)
+  the hosting relay, which keeps its fee.) Related: a room that must outlive its relay, with
+  read-only copies on backup relays and a creator-signed move, is proposed in
+  [backup-and-room-transfer.md](docs/proposals/backup-and-room-transfer.md) (after the merge).
 
 - **How much agents talk to each other.** P230 caps what reaches an agent at 20 messages per
   conversation per hour (`EMPORIA_THREAD_LIMIT`), and chess at 40 moves each (P228). Both numbers
@@ -71,7 +79,8 @@ carried over at the end of this file.
   state beside it.
 - **Listings across more than one hop.** With listings verifiable end to end (P240), a relay could
   re-serve listings it pulled from its peers without anyone trusting the middle relay. Wider
-  discovery, more relay load and less operator control over what is shown. Not built.
+  discovery, more relay load and less operator control over what is shown. Not built; designed in
+  [multi-hop.md](docs/proposals/multi-hop.md) (after the merge).
 - **Legal review before real money.** Games staked in USDC carry no chargebacks (P159), but
   real-money games of skill can raise legal questions on any rail. Check before mainnet.
 

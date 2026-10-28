@@ -54,6 +54,31 @@ without the original machine.
   - Times carry dates (P228).
   - Rooms and live games fall back to fetching every 5 s when the websocket is refused (P236).
 
+## This stretch (P240-P250)
+
+- **Signed by the agent, checked by every reader** (`docs/protocol.md` §3, §4.2a; details in
+  `docs/security-log.md`):
+  - listings (P240) and open games (P241), which travel between relays;
+  - Agora posts and comments (P242);
+  - a room's settings, invites and kicks, with the `check_room` tool (P243; 71 MCP tools);
+  - room and Agora-topic adverts (P247, P249): paid rooms can be advertised by their creator, and
+    relays pull each other's adverts.
+- **Keys:**
+  - clients pin other agents' signing keys (P244), and an encryption key's binding is checked
+    against the pinned signing key (P250);
+  - the key log and `emporia agent rotate-key` (P245);
+  - a recovery key for a lost or stolen key, `emporia agent recovery-key` and `recover` (P246).
+- **The live suite** (P248, `pytest -m live tests/live`): real relay processes over HTTP, with a
+  hostile hop in between. It found four bugs, all fixed: three in P248 (rotated agents could not
+  list; a move signed without the backups; a "moved" answer lost on a DM) and one in P250 (a
+  first DM could be sealed to a key swapped by a hostile hop).
+- **Still needs a person:** the hand tests (item 2), including all of the above on the real setup,
+  and the two-host run behind https.
+- **Being drafted by another agent:** the paper (item 3).
+- **Designed, not built (docs only):** `docs/hermes-issues.md` (drafts for the person to post),
+  `docs/proposals/agent-bug-reports.md`, `backup-and-room-transfer.md` and `multi-hop.md`; the
+  last two are for after the merge.
+
 ## Tested by hand on 10-27/28 (the user's machine: Hermes in Docker, local testnet relay)
 
 Passed:
@@ -94,7 +119,8 @@ Also passed (10-28):
 
 ## Work queue, in priority order
 
-For the cloud agent. Work top-down, one numbered `P…` commit (or a few) per item, tests with each.
+Item 1 is done; item 4's Hermes issues, bug-report design, proposals and status updates are done
+(see below). For the cloud agent. Work top-down, one numbered `P…` commit (or a few) per item, tests with each.
 Push to `post-hackathon` only when the user says so. Items marked **(machine)** need the user's
 Hermes setup; leave those for a person.
 
@@ -229,11 +255,14 @@ is published.
   publicly", was decided 10-28 and built in P249: invite-only rooms are never advertised or listed,
   a paid room only if its creator advertises it; relays pull each other's adverts; the dashboard
   shows host, advertised, and an "On other relays" section.)
-- **Hermes issues to draft** (text only; the user posts them): the four behaviours under "Hermes
-  behaviours this code works around" below.
-- **Agents write bug reports; a person files them** (ROADMAP § Before publishing). Design it
-  first: where the report goes, and what it contains.
-- **README status and `ROADMAP.md` § Before publishing:** update as items close.
+- **Hermes issues to draft** (text only; the user posts them): **done**, `docs/hermes-issues.md`.
+- **Agents write bug reports; a person files them** (ROADMAP § Before publishing): **design done**,
+  `docs/proposals/agent-bug-reports.md`; the smallest first version (a `report_problem` tool and
+  `emporia reports list|show`) is not built.
+- **Backup and room transfer; multi-hop:** proposals written (`docs/proposals/backup-and-room-transfer.md`,
+  `multi-hop.md`), for after the merge. Not built.
+- **README status and `ROADMAP.md` § Before publishing:** updated for P240-P250; update again as
+  items close.
 
 ### Later, by the user's ordering
 
