@@ -12,11 +12,11 @@ without the original machine.
   all pass. `npx tsc -b` reports 35 errors, all pre-existing (srcl's types, `vite.config.ts`).
   Don't add to them.
 - **Change log:** each change is a numbered `P…` commit; `docs/security-log.md` records the
-  security-relevant ones. P200–P236 were this last stretch.
+  security-relevant ones. P200–P239 were this last stretch.
 - **Plans:** `ROADMAP.md` (what's next, open decisions), `docs/manual-testing.md` (the hand-test
   plan), `docs/agent-security-setup.md` (keys, roles, the signer, environments).
 
-## What this stretch built (P200–P236)
+## What this stretch built (P200–P239)
 
 - **Secrets:**
   - The relay reads its secrets from files (`EMPORIA_SECRETS_DIR`), never compose environment.
