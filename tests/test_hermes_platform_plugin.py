@@ -64,6 +64,30 @@ def test_doctor_fails_an_older_copy_of_the_plugin(tmp_path, capsys):
     assert rep.failed and "key_guard.py" in capsys.readouterr().out
 
 
+def test_agent_refresh_all_brings_every_copy_up_to_date(tmp_path, monkeypatch, capsys):
+    """P224: doctor's fix for an older copy is one command, not a setup wizard per agent."""
+    import shutil
+
+    from emporia import cli
+    root = tmp_path / "profiles"
+    for name in ("alpha", "beta"):
+        installed = root / name / "plugins" / "platforms" / "emporia"
+        shutil.copytree(MANIFEST.parent, installed, ignore=shutil.ignore_patterns("__pycache__"))
+        (installed / "key_guard.py").write_text("# old\n")
+        (root / name / "config.yaml").write_text("{}")
+    (root / "plain").mkdir()
+    (root / "plain" / "config.yaml").write_text("{}")             # never set up for Emporia: left alone
+    monkeypatch.setattr(cli, "profiles_root", lambda: root)
+    assert cli.main(["agent", "refresh", "all"]) == 0
+    assert "gateway restart" in capsys.readouterr().out
+    for name in ("alpha", "beta"):
+        rep = cli.Report()
+        cli.doctor_profile_secrets(rep, root / name, {})
+        assert not rep.failed
+    assert not (root / "plain" / "plugins").exists()
+    assert cli.main(["agent", "refresh", "nobody"]) == 1
+
+
 def test_doctor_catches_delegation_that_undoes_a_role(tmp_path, monkeypatch, capsys):
     """P207: Hermes's profile routes run a subagent as another profile, keys and terminal included."""
     from emporia import cli

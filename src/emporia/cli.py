@@ -1802,6 +1802,27 @@ def cmd_agent_secure(name: str) -> int:
     return 0
 
 
+def cmd_agent_refresh(name: str) -> int:
+    """P224: `emporia agent refresh NAME|all` — the Emporia plugin copied fresh
+    into each profile that has one, and the dashboard tab shown in its
+    dashboard. No questions: what doctor's "older copy" and "tab does not show"
+    warnings ask for, without walking the whole setup wizard again."""
+    root = profiles_root()
+    targets = (sorted(p.parent.parent.parent for p in root.glob("*/plugins/platforms/emporia"))
+               if name == "all" else [root / name])
+    if not targets or not (targets[0] / "config.yaml").exists():
+        print(f"agent refresh: no profile {name!r} under {root}" if name != "all"
+              else f"agent refresh: no profile under {root} has the Emporia plugin")
+        return 1
+    inst = installer()
+    for profile in targets:
+        print(f"  {profile.name}:")
+        inst.install_platform_plugin(profile)
+        inst.enable_dashboard_tab(profile)
+    print("Restart the gateway so each agent loads the new plugin: hermes gateway restart")
+    return 0
+
+
 def cmd_agent(args: argparse.Namespace) -> int:
     """P195: `emporia agent leave URL NAME` and `emporia agent delete NAME`.
 
@@ -2583,8 +2604,7 @@ def doctor_agent(rep: Report, profile: Path, entry: dict, relay_up: bool) -> Non
         rep.warn("no Emporia platform plugin — relay events (DMs, your turn) won't reach the agent",
                  f"emporia setup agent {name}")
     elif inst._tree_digest(plugin) != repo_digest:
-        rep.warn("platform plugin is out of date",
-                 f"emporia setup agent {name}, then `hermes gateway restart`")
+        pass        # P224: the secrets section names the files that differ and the fix, once
     else:
         rep.ok("platform plugin current")
     if relay_up:
@@ -2649,7 +2669,7 @@ def doctor_profile_secrets(rep: Report, profile: Path, dotenv: dict[str, str]) -
         enabled = (inst.load_yaml(profile / "config.yaml").get("plugins") or {}).get("enabled") or []
         if "emporia" not in enabled:
             rep.warn("the Emporia dashboard tab does not show in this profile's dashboard",
-                     f"hermes -p {profile.name} plugins enable emporia   (or emporia setup agent {profile.name})")
+                     f"emporia agent refresh {profile.name}   (or: hermes -p {profile.name} plugins enable emporia)")
     # P206: the plugin is copied into each profile; an old copy lacks the key
     # guard, the secret declarations and the narrowed bridge — compare files.
     installed, source = profile / "plugins" / "platforms" / "emporia", REPO / "hermes_plugin" / "emporia"
@@ -2658,8 +2678,8 @@ def doctor_profile_secrets(rep: Report, profile: Path, dotenv: dict[str, str]) -
                        if not (installed / f.name).exists() or (installed / f.name).read_bytes() != f.read_bytes())
         if stale:
             rep.fail(f"its Hermes plugin is an older copy ({', '.join(stale)} differ): its key guard and secret "
-                     "protections may be missing", f"emporia setup agent {profile.name}   (refreshes the plugin), "
-                     "then restart the gateway")
+                     "protections may be missing", f"emporia agent refresh {profile.name}   (or all), then "
+                     "restart the gateway")
 
 
 def _api_keys_in(node, where: str = "") -> list[str]:
@@ -4867,13 +4887,15 @@ def build_parser() -> argparse.ArgumentParser:
                    help="host: in Docker, or as a system service on a server kept for it")
     r.set_defaults(func=cmd_relay)
 
-    ag2 = sub.add_parser("agent", help="an agent leaves a relay, is deleted from this machine, or has its "
-                                       "secrets moved out of config.yaml (secure)")
-    ag2.add_argument("action", choices=["leave", "delete", "secure"])
-    ag2.add_argument("url_or_name", help="leave: the relay's URL; delete, secure: the agent (secure: or all)")
+    ag2 = sub.add_parser("agent", help="an agent leaves a relay, is deleted from this machine, has its "
+                                       "secrets moved out of config.yaml (secure) or its plugin updated (refresh)")
+    ag2.add_argument("action", choices=["leave", "delete", "secure", "refresh"])
+    ag2.add_argument("url_or_name", help="leave: the relay's URL; delete, secure, refresh: the agent "
+                                         "(secure, refresh: or all)")
     ag2.add_argument("name", nargs="?", default="", help="leave: the agent")
     ag2.add_argument("--home", action="store_true", help="leave: even its home (it is then on no relay)")
-    ag2.set_defaults(func=lambda a: cmd_agent_secure(a.url_or_name) if a.action == "secure" else cmd_agent(
+    ag2.set_defaults(func=lambda a: cmd_agent_secure(a.url_or_name) if a.action == "secure" else
+                     cmd_agent_refresh(a.url_or_name) if a.action == "refresh" else cmd_agent(
         argparse.Namespace(action=a.action, url=a.url_or_name if a.action == "leave" else "",
                            name=a.name if a.action == "leave" else a.url_or_name, home=a.home)))
 
