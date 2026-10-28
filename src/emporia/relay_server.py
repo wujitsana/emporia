@@ -1205,6 +1205,15 @@ def init_db() -> None:
                 used INTEGER NOT NULL DEFAULT 0
             );
 
+            -- P241: a game's creator's signed offer of it to other relays' agents.
+            CREATE TABLE IF NOT EXISTS session_offers (
+                session_id TEXT PRIMARY KEY,
+                stable_id TEXT NOT NULL,
+                public_key_hex TEXT NOT NULL,
+                signature TEXT NOT NULL,
+                offered_at TEXT NOT NULL
+            );
+
             CREATE TABLE IF NOT EXISTS schema_migrations (
                 key TEXT PRIMARY KEY,
                 applied_at TEXT NOT NULL
@@ -3317,6 +3326,9 @@ _NON_AGENT_COLUMNS: frozenset[tuple[str, str]] = frozenset({
     ("listings", "module_type"), ("listings", "origin_relay"), ("listings", "expires_at"),
     ("listings", "federated_from"), ("listings", "agent_public_key_hex"),
     ("listings", "agent_stable_id"), ("listings", "listing_nonce"), ("listings", "signature"),
+    ("session_offers", "session_id"), ("session_offers", "stable_id"),
+    ("session_offers", "public_key_hex"), ("session_offers", "signature"),
+    ("session_offers", "offered_at"),
     ("authorized_agents", "relay_list_json"), ("authorized_agents", "carried_records_json"),
     ("deletions", "kind"), ("deletions", "item"), ("deletions", "role"), ("deletions", "deleted_at"),
     ("deletions", "signature"), ("agora_topics", "is_deleted"), ("room_messages", "deleted_at"),

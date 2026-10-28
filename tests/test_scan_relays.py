@@ -19,7 +19,13 @@ def _session(client, creator: str, config: dict | None = None) -> str:
                                        "config": config or {}, "payment_rules": {"mode": "free"}},
                     headers={"x-emporia-agent-id": creator})
     assert r.status_code == 200, r.text
-    return r.json()["session_id"]
+    sid = r.json()["session_id"]
+    if not (config or {}).get("opponent"):    # P241: offered to other relays' agents
+        from tests.test_signed_open_sessions import _offer_body
+        r = client.post(f"/sessions/{sid}/offer", json=_offer_body(client, creator, sid),
+                        headers={"x-emporia-agent-id": creator})
+        assert r.status_code == 200, r.text
+    return sid
 
 
 def test_the_feed_lists_open_public_games_only(client):

@@ -2396,6 +2396,7 @@ def test_every_route_has_a_reviewed_auth_posture():
         ("POST", "/sessions/{session_id}/abandon"),
         # P95: caller must be the session's buyer (participants[0]), checked inline.
         ("POST", "/sessions/{session_id}/fund"),
+        ("POST", "/sessions/{session_id}/offer"),  # P241: the creator only
         # P4-5: operator-only, same _require_operator() gate as federation sync above.
         ("DELETE", "/admin/sessions/{session_id}"),
         ("POST", "/messages"),
@@ -27304,7 +27305,7 @@ def test_the_membership_rule_is_written_in_exactly_one_place():
 # P61 — the schema has a version, and the version has to stay honest
 # ---------------------------------------------------------------------------
 
-# 31 tables, 288 columns, at SCHEMA_VERSION 8. Recomputed by the test below;
+# 32 tables, 293 columns, at SCHEMA_VERSION 9. Recomputed by the test below;
 # when it fails, read *why* before touching this string.
 #
 # V1 -> V2 (P72-4): `bounty_entries` and its UNIQUE (listing_id, nous_user_id)
@@ -27331,7 +27332,10 @@ def test_the_membership_rule_is_written_in_exactly_one_place():
 # V7 -> V8 (P240): `listings.agent_stable_id`, `listing_nonce`, `signature` —
 # the agent's own signature over a listing. A V7 relay would serve V8 rows to
 # its peers without them, and they would refuse every one.
-_SCHEMA_FINGERPRINT_V8 = "3032a1d8d86c4799a7f6f3fdf21e116cd92f7675d1e167b603a48d9b3c096ae1"
+#
+# V8 -> V9 (P241): `session_offers`, a creator's signed offer of an open game.
+# A V8 relay would serve an empty lobby from a V9 database.
+_SCHEMA_FINGERPRINT_V9 = "2c28d823636e9453e6c5da15ac9704115e6486253fcc01dc49e144a498ff25ea"
 
 
 def _schema_fingerprint(db_path) -> tuple[str, int, int]:
@@ -27371,9 +27375,9 @@ def test_a_schema_change_requires_a_version_bump():
     from emporia.relay_server import SCHEMA_VERSION
 
     fingerprint, tables, columns = _schema_fingerprint(_test_db)
-    assert (SCHEMA_VERSION, fingerprint) == (8, _SCHEMA_FINGERPRINT_V8), (
+    assert (SCHEMA_VERSION, fingerprint) == (9, _SCHEMA_FINGERPRINT_V9), (
         f"the schema changed ({tables} tables, {columns} columns) or the version "
-        f"moved. Bump SCHEMA_VERSION *and* update _SCHEMA_FINGERPRINT_V8 — in "
+        f"moved. Bump SCHEMA_VERSION *and* update _SCHEMA_FINGERPRINT_V9 — in "
         f"that order, and never the fingerprint alone.\n"
         f"  code version: {SCHEMA_VERSION}\n  fingerprint:  {fingerprint}"
     )

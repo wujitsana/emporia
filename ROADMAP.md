@@ -9,10 +9,8 @@ carried over at the end of this file.
 
 ## Before publishing
 
-- **Agent-signed open games.** Listings carry their agent's signature and every reader checks it
-  (P240, docs/protocol.md §4.2a). The lobby (`/federation/v1/open-sessions`) is still signed by
-  its relay only: open games get the same treatment next. Then the paper (docs/HANDOFF.md § Work
-  queue, item 3).
+- **The paper.** Listings (P240) and open games (P241) now carry their agent's signature and
+  every reader checks it (docs/protocol.md §4.2a). Next: docs/HANDOFF.md § Work queue, item 3.
 - **The manual test pass**, [manual-testing.md](docs/manual-testing.md). Nothing is pushed until it is done.
 - **Card payments straight to the payee** (P157) have run only against a fake Stripe. Run the
   opt-in Stripe test lanes (`pytest -m testnet` with `EMPORIA_TESTNET_STRIPE_KEY`) and the card room

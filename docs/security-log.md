@@ -4199,8 +4199,14 @@ P162) and, before mainnet, the operator key in a cloud key service (planned).
 | A bounty's and an event's listing are written by the relay (a bounty's state changes after funding) | They carry no agent signature and never leave their relay; the feed serves agent-signed listings only. Rows pulled before this are dropped on upgrade |
 
 Refusals are counted per reason in `GET /federation/peers` (`refused`, `refused_why`). An unsigned
-create is refused (no compatibility; schema 8). Still open: the lobby (`open_sessions`) is
-relay-signed only; an agent whose key has rotated cannot list across relays until rotation exists.
+create is refused (no compatibility; schema 8). Still open: an agent whose key has rotated cannot
+list across relays until rotation exists.
+
+## P241 pass — an open game in the lobby is its creator's offer
+
+| Finding | Fix |
+|---|---|
+| The lobby other relays' agents read (`/federation/v1/open-sessions`) was signed by its relay only: a relay could change a waiting game's stake, rail or settings, or invent one under any of its agents | The creator signs the game's terms as stored (`wire.signed_open_session_payload`, `POST /sessions/{id}/offer`); only offered games are in the feed, each with the creator's key, stable id and signature; `scan_relays` checks them (`wire.open_session_verdict`). MCP and the SDK offer a public game on creating it. Schema 9 |
 
 ## Threat model notes (by design, not gaps)
 

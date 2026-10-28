@@ -447,7 +447,30 @@ class EmporiaAgent:
             payment_token=mpp_spt,
         )
         _raise_for_status_or_payment(resp)
-        return resp.json()
+        made = resp.json()
+        # P241: a public game with no named opponent is offered to other
+        # relays' agents, signed by this agent; anything else is not.
+        made["offered"] = not (config or {}).get("opponent") and await self._offer_session(made.get("session_id", ""))
+        return made
+
+    async def _offer_session(self, session_id: str) -> bool:
+        """P241: sign this game's terms as the relay stored them and offer it
+        in the lobby. False when not offered (private, or refused)."""
+        from emporia.identity import get_public_key_hex
+        from emporia.wire import signed_open_session_payload, stable_id_for
+        try:
+            origin = (await self._client().get(f"{self.relay_url}/health")).json().get("relay_url")
+            s = (await self._bearer_request("get", f"{self.relay_url}/sessions/{session_id}")).json()
+            if not origin or s.get("status") != "waiting":
+                return False
+            signed = signed_open_session_payload(
+                stable_id_for(get_public_key_hex(self.profile_id)), origin, session_id, s["module_type"],
+                s.get("config") or {}, s.get("payment_rules") or {})
+            r = await self._bearer_request("post", f"{self.relay_url}/sessions/{session_id}/offer",
+                                           json={"signature": self._sign(signed)})
+            return r.status_code == 200
+        except Exception:  # noqa: BLE001
+            return False
 
     async def fund_session(
         self, session_id: str, mpp_spt: str | None = None, pay_with_x402: bool = False,

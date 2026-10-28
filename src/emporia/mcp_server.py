@@ -681,8 +681,9 @@ def scan_relays(
     relay learns only that its public feed was read. Closed relays are skipped.
 
     Each result says which relay holds it (`relay`) and who offers it
-    (`address`, `fingerprint`). A listing its seller did not sign is left out
-    (`refused_unsigned_or_forged` counts them per relay). To act on one elsewhere, `visit_relay(relay)`
+    (`address`, `fingerprint`). A listing its seller did not sign, or a game its
+    creator did not offer, is left out (`refused_unsigned_or_forged` counts them
+    per relay). To act on one elsewhere, `visit_relay(relay)`
     first — the deal, its money and any dispute stay on that relay.
 
     kind: 'listing' | 'game' — omit for both. module_type: e.g.
@@ -691,7 +692,7 @@ def scan_relays(
     from emporia import visits
     from emporia.addresses import host_of
     from emporia.identity import verify
-    from emporia.wire import listing_verdict
+    from emporia.wire import listing_verdict, open_session_verdict
     refused: dict[str, int] = {}
     targets = list(dict.fromkeys(u.rstrip("/") for u in
                                  [RELAY_URL, *_linked_relays(), *visits.allowed(), *_visits(), *(relays or [])]))
@@ -732,6 +733,10 @@ def scan_relays(
             if kind in ("", "game"):
                 items, why = _read_feed(relay, "/federation/v1/open-sessions", "open_sessions")
                 for x in items:
+                    # P241: the creator's own offer, checked here.
+                    if open_session_verdict(x, h.get("relay_url") or "", verify):
+                        refused[relay] = refused.get(relay, 0) + 1
+                        continue
                     rules = x.get("payment_rules") or {}
                     found.append({"kind": "game" if x["module_type"] not in _NOT_GAMES else "purchase",
                                   "relay": relay, "id": x["session_id"], "title": x["module_type"],
@@ -3041,13 +3046,38 @@ def create_session(
                             payment_token=mpp_token, json=body, timeout=10)
         d = r.json()
         if r.status_code in (200, 201):
-            return {"success": True, **d}
+            # P241: a public game with no named opponent is offered to other
+            # relays' agents, signed by this agent; anything else is not.
+            offered = not (config or {}).get("opponent") and _offer_session(aid, d.get("session_id", ""))
+            return {"success": True, **d, "offered": bool(offered)}
         if r.status_code == 402:
             return {"error": "payment_required", "options": _payment_options(d, r), "detail": d,
                     "www_authenticate": r.headers.get("www-authenticate", ""), "success": False}
         return {"error": f"Relay {r.status_code}", "detail": d, "success": False}
     except Exception as e:
         return {"error": str(e), "success": False}
+
+
+def _offer_session(aid: str, session_id: str) -> bool:
+    """P241: sign this game's terms, as the relay stored them, and offer it in
+    the lobby other relays' agents read. False when it is not offered — a
+    private game, or a relay that refuses — which is not an error."""
+    from emporia.identity import get_public_key_hex
+    from emporia.identity import sign as ed25519_sign
+    from emporia.wire import signed_open_session_payload, stable_id_for
+    try:
+        origin = httpx.get(f"{_base()}/health", timeout=10).json().get("relay_url")
+        s = _bearer_request("get", f"{_base()}/sessions/{session_id}", agent_id=aid, timeout=10).json()
+        if not origin or s.get("status") != "waiting":
+            return False
+        signed = signed_open_session_payload(stable_id_for(get_public_key_hex(aid)), origin, session_id,
+                                             s["module_type"], s.get("config") or {}, s.get("payment_rules") or {})
+        r = _bearer_request("post", f"{_base()}/sessions/{session_id}/offer", agent_id=aid,
+                            json={"signature": ed25519_sign(signed, aid)}, timeout=10)
+        return r.status_code == 200
+    except Exception:  # noqa: BLE001
+        logger.info("could not offer a session", exc_info=True)
+        return False
 
 
 @mcp.tool()

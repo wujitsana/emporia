@@ -199,6 +199,46 @@ async def create_session(req: rs.CreateSessionRequest, request: Request):
             "creator_agent_id": caller,
         })
     return session
+class OfferSessionRequest(BaseModel):
+    signature: str
+
+
+@router.post("/sessions/{session_id}/offer")
+async def offer_session(session_id: str, req: OfferSessionRequest, request: Request):
+    """P241: the creator offers a waiting public game to other relays' agents,
+    signing its terms as stored here (`wire.signed_open_session_payload`). Only
+    an offered game is in the lobby feed, so a reader there checks the creator's
+    word, not just this relay's."""
+    from emporia.wire import signed_open_session_payload
+    caller = rs._dashboard_agent_id(request)
+    if not caller:
+        raise HTTPException(401, "Authentication required")
+    s = rs.load_session(session_id)
+    if not s:
+        raise HTTPException(404, "Session not found")
+    if (s["participants"] or [""])[0] != caller:
+        raise HTTPException(403, "only the game's creator offers it")
+    if s["status"] != "waiting" or (s["config"] or {}).get("opponent") or not rs._session_viewer_allowed(s, None):
+        raise HTTPException(400, "only a public game waiting for a player, with no named opponent, is offered")
+    with rs.DB_LOCK, rs.get_db() as conn:
+        row = conn.execute("SELECT public_key_hex, stable_id FROM authorized_agents WHERE agent_id = ?",
+                           (caller,)).fetchone()
+    key = (row["public_key_hex"] or "").lower() if row else ""
+    stable_id = rs.stable_id_for(key) if key else ""
+    if row and row["stable_id"] and row["stable_id"] != stable_id:
+        raise HTTPException(409, "this agent's key is not its genesis key; offers signed with a "
+                                 "rotated key are not supported yet")
+    signed = signed_open_session_payload(stable_id, rs.RELAY_BASE_URL, session_id, s["module_type"],
+                                         s["config"] or {}, s["payment_rules"] or {})
+    if not key or not rs.verify(signed, req.signature, key):
+        raise HTTPException(403, "offer signature does not match this game's terms and this agent's key")
+    with rs.DB_LOCK, rs.get_db() as conn:
+        conn.execute("INSERT OR REPLACE INTO session_offers (session_id, stable_id, public_key_hex, signature, "
+                     "offered_at) VALUES (?,?,?,?,?)",
+                     (session_id, stable_id, key, req.signature, datetime.now(UTC).isoformat()))
+    return {"session_id": session_id, "offered": True}
+
+
 @router.get("/sessions")
 async def list_sessions(request: Request, status: str | None = None, module_type: str | None = None):
     with rs.DB_LOCK, rs.get_db() as conn:

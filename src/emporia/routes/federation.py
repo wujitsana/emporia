@@ -95,20 +95,20 @@ async def federation_peers():
 
 
 
-@router.get("/federation/v1/open-sessions")
-async def federated_open_sessions():
-    """P188: the lobby — games and purchases on this relay waiting for a player, for agents
-    elsewhere to find — signed, like the listings feed. Only what anyone here
-    may already see: public sessions, no named opponent; never a private one.
-    Joining one happens here, where its stake, receipts and any dispute live."""
+def _lobby_items() -> list[dict]:
+    """The lobby's items: each a game its creator offered (P241), whose offer
+    still matches its terms here — so this relay serves only what the creator
+    signed, and each item carries what a reader needs to check that."""
     from emporia.addresses import address, fingerprint
     from emporia.bounties import seats_for
+    from emporia.identity import verify
     from emporia.module_sdk import MODULE_REGISTRY
+    from emporia.wire import open_session_verdict
     with rs.DB_LOCK, rs.get_db() as conn:
-        rows = conn.execute("SELECT * FROM sessions WHERE status = 'waiting' ORDER BY created_at DESC LIMIT ?",
+        rows = conn.execute("SELECT * FROM sessions WHERE status = 'waiting' AND session_id IN "
+                            "(SELECT session_id FROM session_offers) ORDER BY created_at DESC LIMIT ?",
                             (rs._MAX_LIMIT,)).fetchall()
-        keys = {r["agent_id"]: r["public_key_hex"]
-                for r in conn.execute("SELECT agent_id, public_key_hex FROM authorized_agents").fetchall()}
+        offers = {r["session_id"]: r for r in conn.execute("SELECT * FROM session_offers").fetchall()}
     host = rs._own_host()
     out = []
     for row in rows:
@@ -118,18 +118,34 @@ async def federated_open_sessions():
             continue
         if (s["config"] or {}).get("opponent") or not rs._session_viewer_allowed(s, None):
             continue
+        offer = offers[s["session_id"]]
         creator = (s["participants"] or [""])[0]
         try:
             lo, hi = seats_for(s["module_type"], MODULE_REGISTRY)
         except KeyError:
             lo = hi = None
-        out.append({
+        item = {
             "session_id": s["session_id"], "module_type": s["module_type"],
             "creator": creator, "creator_address": address(creator, host),
-            "creator_fingerprint": fingerprint(keys.get(creator) or ""),
+            "creator_fingerprint": fingerprint(offer["public_key_hex"]),
+            "creator_public_key_hex": offer["public_key_hex"], "creator_stable_id": offer["stable_id"],
+            "offer_signature": offer["signature"],
             "players": len(s["participants"]), "min_players": lo, "max_players": hi,
             "payment_rules": s["payment_rules"], "config": s["config"], "created_at": s["created_at"],
-        })
+        }
+        if not open_session_verdict(item, rs.RELAY_BASE_URL, verify):
+            out.append(item)
+    return out
+
+
+@router.get("/federation/v1/open-sessions")
+async def federated_open_sessions():
+    """P188: the lobby — games and purchases on this relay waiting for a player, for agents
+    elsewhere to find — signed, like the listings feed. Only what anyone here
+    may already see: public sessions, no named opponent; never a private one.
+    Joining one happens here, where its stake, receipts and any dispute live.
+    P241: only games their creator offered, each with the creator's signature."""
+    out = _lobby_items()
     signature = sign_raw_relay(federation_signable_bytes(rs.RELAY_BASE_URL, "open_sessions", out))
     return {"origin_relay": rs.RELAY_BASE_URL, "origin_public_key_hex": get_relay_public_key_hex(),
             "signature": signature, "open_sessions": out}

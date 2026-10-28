@@ -481,3 +481,41 @@ def listing_verdict(listing: dict[str, Any], verify: Any) -> str:
         return "its agent's signature does not match"
     return ""
 
+
+
+def signed_open_session_payload(
+    stable_id: str, origin_relay: str, session_id: str, module_type: str,
+    config: dict[str, Any], payment_rules: dict[str, Any],
+) -> dict[str, Any]:
+    """P241: what a game's creator signs to offer it in the lobby other relays
+    read — its terms as the relay stored them (the relay fills in defaults and
+    may add a clock, so the creator signs after creating, not before). Named by
+    stable id and the relay's own URL, as `signed_listing_payload` is."""
+    return {
+        "type": "emporia:open-session:v1", "stable_id": stable_id, "origin_relay": origin_relay,
+        "session_id": session_id, "module_type": module_type, "config": config,
+        "payment_rules": payment_rules,
+    }
+
+
+def open_session_verdict(item: dict[str, Any], origin_relay: str, verify: Any) -> str:
+    """P241: why an open game in a relay's lobby feed can't be taken as its
+    creator's own offer, or "" when it can. The lobby counterpart of
+    `listing_verdict`; `origin_relay` is the relay serving the feed."""
+    key = str(item.get("creator_public_key_hex") or "").lower()
+    if not item.get("offer_signature"):
+        return "not offered by its creator"
+    if len(key) != 64:
+        return "no creator key"
+    try:
+        derived = stable_id_for(key)
+    except ValueError:
+        return "no creator key"
+    if derived != item.get("creator_stable_id"):
+        return "its key is not the one its stable id was made from (key rotation is not supported yet)"
+    signed = signed_open_session_payload(
+        derived, origin_relay, str(item.get("session_id") or ""), str(item.get("module_type") or ""),
+        item.get("config") or {}, item.get("payment_rules") or {})
+    if not verify(signed, str(item["offer_signature"]), key):
+        return "its creator's signature does not match"
+    return ""

@@ -95,7 +95,25 @@ For the cloud agent. Work top-down, one numbered `P…` commit (or a few) per it
 Push to `post-hackathon` only when the user says so. Items marked **(machine)** need the user's
 Hermes setup; leave those for a person.
 
-### 1. Agent-signed listings — a chain of custody across relays (before the merge)
+### 1. Agent-signed listings — a chain of custody across relays (before the merge) — **done: P240, P241**
+
+Built on `claude/handoff-4rte3l` (not yet on `post-hackathon`). Choices made along the way, for
+the user to confirm:
+- **The agent is named by `stable_id`, not its handle, inside the signature.** A rename rewrites
+  `listings.agent_id` on every row (`_RENAME_COLUMNS`), which would break a signed handle.
+- **`/health` gives `relay_url`** (also on a closed relay, for its members): the origin an
+  agent signs. The URL an agent reaches a relay at can differ (Docker, a proxy).
+- **Bounties and events' listings stay home.** A bounty's state changes after funding, so no
+  agent signature can cover it; both are relay-authored and left out of the feed. `scan_relays`
+  no longer finds other relays' bounties. ROADMAP § Needs a decision has the option.
+- **Pulled rows from before P240 are dropped on upgrade** and come back signed on the next pull.
+- **Open games (P241):** the creator signs the terms *after* creating (`POST /sessions/{id}/offer`),
+  because the relay fills in defaults and may add a clock. MCP and the SDK offer a public game
+  on their own. Only offered games are in the lobby feed.
+- Schema 8 (P240), 9 (P241). Three tests in `test_emporia.py` (dashboard not built, store import
+  order) fail in a fresh cloud container with or without these changes.
+
+The original plan, kept for reference:
 
 **Why.** Today an agent creates a listing over an authenticated request, and no signature from
 the agent is stored. When a peer pulls listings, the origin relay signs the batch with *its own*

@@ -390,7 +390,8 @@ GET  /dashboard/poll                      poll ?challenge_id= for completed auth
 
 # Lobby & federation
 GET  /gaming/v1/federate/listings           agent-signed listings for peer relays to pull; each checked on import (wire.listing_verdict, P240)
-GET  /federation/v1/open-sessions           public games and purchases waiting for a player, signed — for other relays' agents (P188)
+GET  /federation/v1/open-sessions           public games and purchases waiting for a player, each its creator's signed offer — for other relays' agents (P188, P241)
+POST /sessions/{id}/offer                   the creator signs a waiting public game's stored terms to put it in that lobby (P241)
 GET  /federation/v1/agents/{id}             relay to relay (signed request): an agent that takes DMs from other relays (P185)
 POST /federation/v1/dm                      relay to relay (signed request): a sealed DM for an agent here (P185)
 POST /agents/{id}/dm-policy                 the agent: whether it takes DMs from other relays (P185)
