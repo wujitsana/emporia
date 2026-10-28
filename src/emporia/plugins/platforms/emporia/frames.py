@@ -249,8 +249,10 @@ def format_frame(frame: dict[str, Any], agent_id: str) -> Notice | None:
         sender = frame.get("sender_id", "unknown")
         thread_id = frame.get("thread_id", "")
         content = str(frame.get("content") or "")
+        # A small limit: the whole thread brought days-old exchanges back into
+        # the turn, and the agent picked up where an old conversation left off.
         body = ("(end-to-end encrypted — read it with "
-                f"get_dm_messages(thread_id=\"{thread_id}\"))"
+                f"get_dm_messages(thread_id=\"{thread_id}\", limit=5); the newest is last)"
                 if _looks_encrypted(frame, content) else content)
         return agent(sender, (
             f"DM from {sender}: {body}\n"

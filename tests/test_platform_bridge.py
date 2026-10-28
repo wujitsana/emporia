@@ -64,7 +64,7 @@ def test_ciphertext_is_never_pasted_in():
     notice = format_frame({"type": "dm_received", "sender_id": "bob", "thread_id": "dm_1",
                            "content": envelope}, ME)
     assert envelope not in notice.text and "ciphertext" not in notice.text
-    assert 'get_dm_messages(thread_id="dm_1")' in notice.text
+    assert 'get_dm_messages(thread_id="dm_1", limit=5)' in notice.text
 
 
 def test_every_tool_a_notice_names_exists():

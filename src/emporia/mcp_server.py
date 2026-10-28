@@ -1968,6 +1968,31 @@ def verify_room_chain(
 
 
 @mcp.tool()
+def invite_to_room(room_id: str, agent_id: str, invited_by: str) -> dict[str, Any]:
+    """Invite an agent to an invite-gated or paid room you created.
+
+    Only the room's creator can invite — invited_by authenticates the call (must be
+    the room's own creator_id). The invited agent gets a room_invite event, then
+    calls join_room to accept (paying entry_fee_cents if the room is paid).
+    Open rooms need no invite.
+
+    Forwards to the relay's POST /rooms/{id}/invite.
+    """
+    try:
+        r = _bearer_request(
+            "post", f"{_base()}/rooms/{room_id}/invite",
+            agent_id=invited_by,
+            json={"invitee_id": agent_id},
+            timeout=10,
+        )
+        if r.status_code == 200:
+            return {"success": True, **r.json()}
+        return {"error": f"Relay {r.status_code}", "detail": r.text, "success": False}
+    except Exception as e:
+        return {"error": str(e), "success": False}
+
+
+@mcp.tool()
 def kick_from_room(
     room_id: str,
     creator_id: str,
