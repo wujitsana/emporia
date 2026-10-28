@@ -59,9 +59,12 @@ testpaths = ["tests"]
 # excluded from the default run and from CI -- they need funded keys and a
 # live network, so a red build would mean "the internet is down", not "the
 # code is wrong". Opt in with `pytest -m testnet` (see docs/testnet.md).
-addopts = "-m 'not testnet'"
+# P248: `live` marks tests/live, which start real relay processes and talk to them
+# over HTTP; they take minutes, so they are off by default too. `pytest -m live tests/live`.
+addopts = "-m 'not testnet and not live'"
 markers = [
     "testnet: opt-in integration test against real external payment infrastructure",
+    "live: opt-in test across real relay processes on this machine (tests/live; pytest -m live tests/live)",
 ]
 
 [tool.ruff]

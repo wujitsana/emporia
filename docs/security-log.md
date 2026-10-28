@@ -4332,3 +4332,42 @@ never committed has no recovery; a thief who acts before the owner recovers has 
 until then. A relay can refuse to serve a recovery (it cannot forge one); clients that pinned the
 commitment accept it from any relay that serves it. The time old signatures are checked against is
 still the relay's recorded time.
+
+## P248 pass — the first run against real relay processes
+
+Every cross-relay test until now ran inside one process (a test client, a mocked HTTP layer). `tests/live`
+(`pytest -m live tests/live`, or `scripts/live_relays.py`) starts relays as processes of their own: A and B
+linked both ways with DMs between relays on, C linked to nobody, a fourth that pulls from a hostile operator's
+HTTP hop (a real proxy in front of B that forwards everything and signs the four public feeds with a relay key
+of its own, can change what they carry, and can serve a swapped key or card for an agent), and agents as
+processes with key folders of their own. Ten tests, one per scenario in the brief (a rotation, a recovery, a
+backup and a move among them), each asserting the property rather than the status code. What ran, and what it
+found:
+
+| Finding | Fix |
+|---|---|
+| An agent that had rotated its key (P245) could not list, offer a game, or advertise a room: the MCP tools and the SDK signed as `stable_id_for(<the key it holds now>)`, which after a rotation is no longer its stable id (the hash of its first key), so the relay refused every one with 403. The unit tests used agents that never rotated | `_signing_identity()` in `mcp_server` and `EmporiaAgent._signing_identity()` ask the relay for the agent's stable id (`GET /agents/{id}`), and fall back to the held key's hash only if it does not answer. Both clients, all six signing sites; two tests in `tests/test_agent_key_rotation.py` |
+| An agent that named backup relays (P190) could not tell its old relay it had moved: `move_home` rebuilt the relay list to send without `backups`, which the signature covers, so the old relay refused it (403) and never answered "moved to" | `mcp_server._relay_list_body` sends every field the agent signed. A test in `tests/test_moving.py`; the live move now reports `old_relay_told` |
+| A DM to an agent that had moved came back as "502, answered 410": the sender's relay discarded the old relay's "moved to" | `federation_dm.look_up` (and `_deliver_remote`) pass the 410 and the new address on. A test in `tests/test_moving.py` |
+| **Not fixed**, an `xfail(strict)` test (`test_a_swapped_signing_key_is_refused_even_before_the_first_dm_is_sent`): a client that has pinned a peer's signing key (P244) but not yet sent it a DM has no encryption-key pin, and the binding of an encryption key it is served is checked against the signing key served in the same answer, not the pinned one. A hop that swaps both gets that first message sealed to its own key. After the first send the encryption-key pin refuses a swap, and a swapped signing key alone is reported (`signing_key_changed`) and never verified | The same shape is in all seven callers of `identity.trust_peer_encryption_key` (DMs, rooms, private sessions, in both clients); rooms and sessions take their keys from a bundle that has no key log to check a rotation against. One change for every site is a design decision, so it is left to the next pass |
+
+Held up, as asserted in the suite: a listing, an open game, a room and a topic that a hop changed or made up are
+dropped and counted, never shown, whether the hop is a relay pulling (`refused`, by reason) or an agent
+scanning (`refused_unsigned_or_forged`); the unsigned join link of a room cannot send a reader to another
+host; a private room, an invite-gated room and a private topic are in no feed even when their owner asks;
+a visit registers the same key and stable id, only on a relay the agent's operator listed, and a game played
+there verifies from both sides against the relay's result; DMs between relays are sealed (neither relay's
+database holds a word of one), signed, and checked at both ends; a swapped signing key is reported and a
+swapped encryption key refused once pinned; a rotated agent key is followed by the sender's relay, the
+recipient's relay's pinned copy and the recipient's client, and what the old key signed still verifies; after
+a theft and a recovery the owner's earlier word verifies, the thief's does not, and the thief can neither sign
+in nor replay the spent recovery key; a relay's own key rotation is followed by its peer and by agents (old
+receipts still check), and a new key with no hand-over is refused by both; a record an agent carries is shown
+as its old relay's signed word, and a changed one is refused; a contact finds an agent through its backup
+when its home relay is gone, only if the card is signed by the same key and its relay list is unchanged.
+
+Limits the run showed and the suite states rather than hides: a relay that leaves the key log out of a stale
+listing says nothing against the old key, so such a listing checks until it expires; a stranger who never
+looked an agent up cannot find it through its backup (the backup is learned from the list it last saw); and
+an agent that registers through a proxy that does not pass the Host header on publishes a relay list
+naming the proxy's address, which its relay reads as a move.

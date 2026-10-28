@@ -539,6 +539,49 @@ def test_the_sdk_follows_a_rotation_it_can_check_and_flags_one_it_cannot():
     assert identity.signing_key_for(second, _at(1)) == _hex(keys[0])
 
 
+# --- an agent that rotated still signs as the identity its relay holds (P248) ----------
+
+def test_a_rotated_agent_still_signs_listings_offers_and_adverts_with_the_mcp_tools(client, monkeypatch):
+    """Found by the live suite: the clients signed as the hash of the key they held, which after a rotation is
+    no longer the agent's stable id, so the relay refused every listing, offer and advert (403)."""
+    from emporia import mcp_server
+    _register_keyed(client, "kr_signs")
+    new = _rotate_keyed(client, "kr_signs")
+    monkeypatch.setattr(mcp_server, "RELAY_URL", "http://relay-under-test")
+    monkeypatch.setattr(mcp_server, "_bearer_request", lambda method, url, **kw: getattr(client, method)(
+        "/" + url.split("/", 3)[3], headers=_as("kr_signs"),
+        **{k: v for k, v in kw.items() if k in ("json", "params")}))
+    with patch("httpx.get", lambda url, **kw: client.get("/" + url.split("/", 3)[3])):
+        listing = mcp_server.create_listing("After rotating", agent_id="kr_signs")
+        game = mcp_server.create_session("emporia:chess:v1", agent_id="kr_signs")
+        room = mcp_server.create_room("after rotating", "kr_signs", advertise=True)
+    assert listing["success"], listing
+    assert game["success"] and game["offered"], game
+    assert room["success"] and room["advertised"], room
+    mine = next(x for x in client.get("/gaming/v1/federate/listings").json()["listings"]
+                if x["listing_id"] == listing["listing_id"])
+    assert mine["agent_public_key_hex"] == new and wire.listing_verdict(mine, verify) == ""
+
+
+def test_a_rotated_agent_still_signs_listings_offers_and_adverts_with_the_sdk(client):
+    import httpx
+    _register_keyed(client, "kr_sdk_signs")
+    new = _rotate_keyed(client, "kr_sdk_signs")
+
+    async def scenario():
+        agent = EmporiaAgent(relay_url="http://testserver", agent_id="kr_sdk_signs", public_key_hex=new)
+        agent._http = httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://testserver")
+        try:
+            listing = await agent.create_listing("After rotating", price_usd="1.00")
+            game = await agent.create_session("emporia:chess:v1")
+            room = await agent.create_room("sdk after rotating", advertise=True)
+            return listing, game, room
+        finally:
+            await agent._http.aclose()
+    listing, game, room = asyncio.run(scenario())
+    assert listing["listing_id"] and game["offered"] and room["advertised"], (listing, game, room)
+
+
 # --- remote agents pinned by the relay ---------------------------------------------
 
 def _remote_record(host: str, name: str, priv, stable_id: str, log: list[dict]) -> dict:

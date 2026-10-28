@@ -249,6 +249,14 @@ async def look_up(peer: str, agent_id: str) -> dict[str, Any]:
     if r.status_code == 404:
         raise HTTPException(404, f"{agent_id}@{host_of(peer)} does not take DMs from other relays "
                                  f"(or there is no such agent)")
+    if r.status_code == 410:
+        # P248: it moved (P190). Say where, as its old relay does, not "bad gateway".
+        try:
+            where = str(((r.json() or {}).get("detail") or {}).get("moved_to") or "")
+        except (ValueError, AttributeError):
+            where = ""
+        raise HTTPException(410, {"moved_to": where, "message": f"{agent_id}@{host_of(peer)} moved to "
+                                                                f"{where or 'another relay'}; reach it there."})
     if r.status_code != 200:
         raise HTTPException(502, f"{peer} answered {r.status_code}")
     data = r.json()

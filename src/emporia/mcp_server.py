@@ -556,15 +556,21 @@ def move_home(old: str, agent_id: str = "") -> dict[str, Any]:
     if out["old_relay"] == "answering":
         try:
             # The same signed list the new home now serves — the old relay can check it alone.
-            listed = httpx.get(f"{RELAY_URL}/agents/{aid}/card", timeout=10).json()["card"]
-            body = {**{k: listed["relay_list"][k] for k in ("home", "visits", "a2a_url", "updated_at")},
-                    "signature": listed["relay_list_signature"]}
+            body = _relay_list_body(httpx.get(f"{RELAY_URL}/agents/{aid}/card", timeout=10).json()["card"])
             r = httpx.post(f"{old}/agents/{aid}/relay-list", json=body, timeout=10,
                            headers=_dashboard_bearer_headers(relay_url=old, agent_id=aid))
             out["old_relay_told"] = r.status_code == 200
         except Exception as e:  # noqa: BLE001
             out["old_relay_told"] = f"no: {e}"
     return {"success": True, **out}
+
+
+def _relay_list_body(card: dict[str, Any]) -> dict[str, Any]:
+    """The body that publishes the relay list a card carries on another relay: every field the agent
+    signed - backups too, or the signature would not match - and the signature (P248)."""
+    listed = card["relay_list"]
+    return {**{k: listed[k] for k in ("home", "visits", "backups", "a2a_url", "updated_at")},
+            "signature": card["relay_list_signature"]}
 
 
 def _publish_relay_list(aid: str) -> str:
@@ -1169,6 +1175,22 @@ def create_room(
         return {"error": str(e), "success": False}
 
 
+def _signing_identity(aid: str) -> str:
+    """The stable id this agent signs listings, offers and adverts as (P248): the one its relay
+    holds, which stays the hash of its first key after a rotation (P245) - not the hash of the key
+    it holds now, which only an agent that never rotated shares. With no answer from the relay,
+    the hash of the key it holds."""
+    from emporia.identity import get_public_key_hex
+    from emporia.wire import stable_id_for
+    try:
+        r = _bearer_request("get", f"{_base()}/agents/{aid}", agent_id=aid, timeout=10)
+        if r.status_code == 200 and r.json().get("stable_id"):
+            return r.json()["stable_id"]
+    except Exception:  # noqa: BLE001
+        logger.info("could not ask the relay for this agent's stable id", exc_info=True)
+    return stable_id_for(get_public_key_hex(aid))
+
+
 def _advertise(aid: str, kind: str, ident: str) -> bool:
     """P247: sign a room's or public topic's settings as the relay stored them
     and advertise it for other relays' agents. False when not advertised — an
@@ -1180,14 +1202,12 @@ def _set_advert(aid: str, kind: str, ident: str, on: bool) -> tuple[bool, str]:
     """(advertised now, why not) after advertising or withdrawing a room or topic.
     The relay's own refusal is passed on in words, so the agent can tell a
     private room from a key that does not match."""
-    from emporia.identity import get_public_key_hex
     from emporia.identity import sign as ed25519_sign
     from emporia.wire import (
         ROOM_ADVERT_FIELDS,
         TOPIC_ADVERT_FIELDS,
         signed_room_advert_payload,
         signed_topic_advert_payload,
-        stable_id_for,
     )
     path = f"/rooms/{ident}/advertise" if kind == "room" else f"/agoras/topics/{ident}/advertise"
     try:
@@ -1197,7 +1217,7 @@ def _set_advert(aid: str, kind: str, ident: str, on: bool) -> tuple[bool, str]:
         origin = httpx.get(f"{_base()}/health", timeout=10).json().get("relay_url")
         if not origin:
             return False, "the relay did not say which address it is served from"
-        who = stable_id_for(get_public_key_hex(aid))
+        who = _signing_identity(aid)
         base = "rooms" if kind == "room" else "agoras/topics"
         got = _bearer_request("get", f"{_base()}/{base}/{ident}", agent_id=aid, timeout=10)
         if got.status_code != 200:
@@ -3328,15 +3348,14 @@ def _offer_session(aid: str, session_id: str) -> bool:
     """P241: sign this game's terms, as the relay stored them, and offer it in
     the lobby other relays' agents read. False when it is not offered — a
     private game, or a relay that refuses — which is not an error."""
-    from emporia.identity import get_public_key_hex
     from emporia.identity import sign as ed25519_sign
-    from emporia.wire import signed_open_session_payload, stable_id_for
+    from emporia.wire import signed_open_session_payload
     try:
         origin = httpx.get(f"{_base()}/health", timeout=10).json().get("relay_url")
         s = _bearer_request("get", f"{_base()}/sessions/{session_id}", agent_id=aid, timeout=10).json()
         if not origin or s.get("status") != "waiting":
             return False
-        signed = signed_open_session_payload(stable_id_for(get_public_key_hex(aid)), origin, session_id,
+        signed = signed_open_session_payload(_signing_identity(aid), origin, session_id,
                                              s["module_type"], s.get("config") or {}, s.get("payment_rules") or {})
         r = _bearer_request("post", f"{_base()}/sessions/{session_id}/offer", agent_id=aid,
                             json={"signature": ed25519_sign(signed, aid)}, timeout=10)
@@ -4266,19 +4285,17 @@ def _signed_listing_body(
     """P240: a `POST /listings` body this agent has signed, for the relay it is
     posting to — named by the URL the relay gives for itself, which can differ
     from the one this agent reaches it at (a container, a proxy)."""
-    from emporia.identity import get_public_key_hex
     from emporia.identity import sign as ed25519_sign
     from emporia.wire import (
         listing_expires_at,
         new_message_nonce,
         signed_listing_payload,
-        stable_id_for,
     )
     origin = httpx.get(f"{_base()}/health", timeout=10).json().get("relay_url")
     if not origin:
         raise RuntimeError("this relay does not say its own URL — it predates signed listings; upgrade it")
     nonce, expires_at = new_message_nonce(), listing_expires_at(expires_in_hours)
-    signed = signed_listing_payload(stable_id_for(get_public_key_hex(aid)), origin, nonce, title,
+    signed = signed_listing_payload(_signing_identity(aid), origin, nonce, title,
                                     description, listing_type, payment_mode, price_usd, module_type,
                                     metadata, expires_at)
     return {"title": title, "description": description, "listing_type": listing_type,

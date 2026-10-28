@@ -342,6 +342,27 @@ games (or resign by abandoning), and check spend after step 5.
 - [ ] Listings: bounties appear only in the bounty board, not as priced services.
 - [ ] A session chip anywhere (Overview payments, profile, bounty board, results) opens that game.
 
+## 7b. Live suite across real relays (P248)
+
+`uv run python -m pytest -m live tests/live -q`, or `python scripts/live_relays.py` (`-k NAME` for one
+scenario, `--keep DIR` to keep every relay's database, keys and log). About five minutes. It is off in
+the ordinary run, as `testnet` is.
+
+Each scenario starts relays as processes of their own (port, database, key folder, relay key, open
+access, no payment rail): A and B linked both ways with DMs between relays on, C linked to nobody, and a
+fourth that pulls from a hostile operator's HTTP hop in front of B. Agents are processes with key
+folders of their own, driven through the MCP tool functions and the same key-rotation and recovery code
+the commands use. It covers: signed listings travelling and a changed or invented one refused; `scan_relays`
+(listings, open games, rooms, topics; nothing private; forged ones dropped); visiting with the same key and a
+game played there that both sides verify; sealed DMs both ways and a swapped signing or encryption key;
+an agent's key rotation and recovery as another relay's agents see them; a relay's own key rotation and a
+new key with no hand-over; a backup, a move, and a record carried as the old relay's word; a gone relay.
+
+What it does not cover — still by hand, below: two hosts behind https (DNS, TLS, a real proxy, clocks),
+Docker and the system service (`emporia relay host`), Hermes, a dashboard, and anything that moves money.
+Run on one machine, "linked relays" share a clock and a loopback network; that is the main thing the real
+two-host run adds.
+
 ## 8. Not run here (documented)
 
 - `reclaim_escrow` needs a hold past its authorization expiry (hours) and ETH for gas in the

@@ -196,7 +196,7 @@ async def _deliver_remote(thread: Any, caller: str, sender_label: str, req: "DMS
     if r.status_code != 200:
         detail = (r.json() or {}).get("detail") if r.headers.get("content-type", "").startswith(
             "application/json") else r.text[:200]
-        raise HTTPException(r.status_code if r.status_code in (403, 404, 409, 429) else 502,
+        raise HTTPException(r.status_code if r.status_code in (403, 404, 409, 410, 429) else 502,
                             f"{thread['peer_url']} did not take it: {detail}")
 
 

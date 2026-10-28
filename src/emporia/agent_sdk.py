@@ -365,12 +365,10 @@ class EmporiaAgent:
     ) -> dict[str, Any]:
         """P240: signed by this agent, for the relay's own URL (its `/health`
         `relay_url`), so relays that pull the listing can check it was."""
-        from emporia.identity import get_public_key_hex
         from emporia.wire import (
             listing_expires_at,
             new_message_nonce,
             signed_listing_payload,
-            stable_id_for,
         )
         health = await self._client().get(f"{self.relay_url}/health")
         health.raise_for_status()
@@ -380,7 +378,7 @@ class EmporiaAgent:
         meta = metadata or {}
         nonce, expires_at = new_message_nonce(), listing_expires_at(expires_in_hours)
         signed = signed_listing_payload(
-            stable_id_for(get_public_key_hex(self.profile_id)), origin, nonce, title, description,
+            await self._signing_identity(), origin, nonce, title, description,
             listing_type, payment_mode, price_usd, module_type, meta, expires_at)
         resp = await self._bearer_request(
             "post", f"{self.relay_url}/listings",
@@ -453,18 +451,31 @@ class EmporiaAgent:
         made["offered"] = not (config or {}).get("opponent") and await self._offer_session(made.get("session_id", ""))
         return made
 
+    async def _signing_identity(self) -> str:
+        """The stable id this agent signs listings, offers and adverts as (P248): the one its
+        relay holds, which stays the hash of its first key after a rotation (P245). With no
+        answer from the relay, the hash of the key it holds."""
+        from emporia.identity import get_public_key_hex
+        from emporia.wire import stable_id_for
+        try:
+            r = await self._bearer_request("get", f"{self.relay_url}/agents/{self.agent_id}")
+            if r.status_code == 200 and r.json().get("stable_id"):
+                return r.json()["stable_id"]
+        except Exception:  # noqa: BLE001 - no answer: sign as the key it holds
+            pass
+        return stable_id_for(get_public_key_hex(self.profile_id))
+
     async def _offer_session(self, session_id: str) -> bool:
         """P241: sign this game's terms as the relay stored them and offer it
         in the lobby. False when not offered (private, or refused)."""
-        from emporia.identity import get_public_key_hex
-        from emporia.wire import signed_open_session_payload, stable_id_for
+        from emporia.wire import signed_open_session_payload
         try:
             origin = (await self._client().get(f"{self.relay_url}/health")).json().get("relay_url")
             s = (await self._bearer_request("get", f"{self.relay_url}/sessions/{session_id}")).json()
             if not origin or s.get("status") != "waiting":
                 return False
             signed = signed_open_session_payload(
-                stable_id_for(get_public_key_hex(self.profile_id)), origin, session_id, s["module_type"],
+                await self._signing_identity(), origin, session_id, s["module_type"],
                 s.get("config") or {}, s.get("payment_rules") or {})
             r = await self._bearer_request("post", f"{self.relay_url}/sessions/{session_id}/offer",
                                            json={"signature": self._sign(signed)})
@@ -1887,13 +1898,11 @@ class EmporiaAgent:
         A public open room and a paid room may be advertised; an invite-only room
         never, nor a private or invite-only topic. Joining and paying stay on this
         relay. The mirror of the MCP tool `advertise`."""
-        from emporia.identity import get_public_key_hex
         from emporia.wire import (
             ROOM_ADVERT_FIELDS,
             TOPIC_ADVERT_FIELDS,
             signed_room_advert_payload,
             signed_topic_advert_payload,
-            stable_id_for,
         )
         if kind not in ("room", "topic"):
             raise ValueError("kind must be 'room' or 'topic'")
@@ -1912,7 +1921,7 @@ class EmporiaAgent:
             origin = (await self._client().get(f"{self.relay_url}/health")).json().get("relay_url")
             if not origin:
                 return {"advertised": False, "why": "the relay did not say which address it is served from"}
-            who = stable_id_for(get_public_key_hex(self.profile_id))
+            who = await self._signing_identity()
             base = "rooms" if kind == "room" else "agoras/topics"
             got = await self._bearer_request("get", f"{self.relay_url}/{base}/{ident}")
             if got.status_code != 200:

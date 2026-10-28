@@ -95,3 +95,47 @@ def test_an_owner_without_hermes_gets_a_key_and_watches_as_operator(tmp_path, ca
     finally:
         relay.terminate()
         relay.wait(timeout=10)
+
+
+def test_the_list_a_move_tells_the_old_relay_carries_the_backups_the_agent_signed():
+    """Found by the live suite (P248): the body left `backups` out, so an agent with a backup relay could not
+    tell its old relay it moved - the signature covers the backups and the old relay refused (403)."""
+    from fastapi.testclient import TestClient
+
+    from emporia import identity, mcp_server, wire
+    from emporia.relay_server import app
+    from tests.test_emporia import _register_keyed
+    client = TestClient(app, client=("127.0.0.1", 51299))
+    _register_keyed(client, "mv_backups")
+    stamp = "2026-10-28T12:00:00+00:00"
+    published = {"home": "https://new-home.example", "visits": [], "backups": ["https://backup.example"],
+                 "a2a_url": "", "updated_at": stamp}
+    payload = wire.signed_relay_list_payload("mv_backups", published["home"], [], "", stamp, published["backups"])
+    r = client.post("/agents/mv_backups/relay-list", headers={"x-emporia-agent-id": "mv_backups"},
+                    json={**published, "signature": identity.sign(payload, "mv_backups")})
+    assert r.status_code == 200, r.text
+    card = client.get("/agents/mv_backups/card").json()["card"]
+    body = mcp_server._relay_list_body(card)
+    assert body["backups"] == ["https://backup.example"] and body["signature"] == card["relay_list_signature"]
+    again = wire.signed_relay_list_payload("mv_backups", body["home"], body["visits"], body["a2a_url"],
+                                           body["updated_at"], body["backups"])
+    assert identity.verify(again, body["signature"], identity.get_public_key_hex("mv_backups"))
+
+
+async def test_a_dm_to_an_agent_that_moved_is_told_where_it_went():
+    """Found by the live suite (P248): the sender's relay turned the old relay's "moved to" (410) into a bare
+    502, so the sender never learned the new address."""
+    from unittest.mock import AsyncMock, patch
+
+    from fastapi import HTTPException
+
+    from emporia import federation_dm as fd
+    said = httpx.Response(410, json={"detail": {"moved_to": "bob@new.example", "message": "bob moved"}})
+    with patch.object(fd, "call_peer", AsyncMock(return_value=said)), pytest.raises(HTTPException) as moved:
+        await fd.look_up("https://old.example", "bob")
+    assert moved.value.status_code == 410 and moved.value.detail["moved_to"] == "bob@new.example"
+    assert "bob@new.example" in moved.value.detail["message"]
+    odd = httpx.Response(410, text="gone")          # a relay that does not say where
+    with patch.object(fd, "call_peer", AsyncMock(return_value=odd)), pytest.raises(HTTPException) as gone:
+        await fd.look_up("https://old.example", "bob")
+    assert gone.value.status_code == 410 and gone.value.detail["moved_to"] == ""

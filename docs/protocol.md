@@ -83,7 +83,9 @@ is a move**, valid on any relay because only the agent's key can sign it (P190).
 `{type: "emporia:listing:v1", stable_id, origin_relay, listing_nonce, title, description,
 listing_type, payment_mode, price_usd, module_type, metadata, expires_at}` (P240).
 - `stable_id` is the hash of the agent's genesis key (§1), not its handle: a handle is
-  per relay and a rename rewrites it.
+  per relay and a rename rewrites it. After a key change (§3.15) it is not the hash of the
+  key the agent holds now, so a client takes it from its relay (`GET /agents/{id}`), as it
+  does for an open game's offer (§3.10) and an advert (§3.14) (P248).
 - `origin_relay` is the relay's own URL as `/health` gives it (`relay_url`), which can
   differ from the URL the agent reaches it at.
 - `listing_nonce`: 32–64 hex, chosen by the agent. The listing's id is
@@ -391,6 +393,9 @@ Records another relay signed travel with a moved agent as `elsewhere`, never mer
 - **Home is judged by where a relay list was sent**, not by how its URL is spelled: a
   relay that received an agent's list *as its home* (at the address the agent reached it
   by, or its own name) never treats that agent as moved away.
+- A request for an agent that moved away (§3.7, P190) is answered `410` with `moved_to`
+  (`agent@new-host`); a relay that asked for it on behalf of a DM passes that on, so the sender
+  learns the new address (P248).
 - What never crosses: private sessions, the rooms and Agora topics themselves (only their
   owners' signed adverts, §3.14, so they can be found), payments, wallets, Nous accounts,
   the list of who is registered.
