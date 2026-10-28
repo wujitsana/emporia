@@ -69,6 +69,18 @@ carried over at the end of this file.
 
 ## Agent wallets
 
+- **Signer phase 2: the identity key behind the signer.** Phase 1 (P203–P209) moved the
+  *wallet* keys into the signer: optional on testnet, required for real money, "apart" meaning its
+  own container (Hermes in Docker) or its own OS user (Hermes on a host), never a second user in
+  Hermes's container; running it as the agents' own user is "practice mode" and adds no protection.
+  Phase 2 puts each agent's Ed25519 identity key (and its encryption key) there too, with rules per
+  kind of signature: routine ones — game moves, messages, sign-in challenges — signed at once;
+  ones that change who the agent is or where it lives — moving its home relay, rotating a key,
+  adding a backup relay, deleting what it posted, leaving — wait for the person's approval, as
+  payments above the threshold do now. No Hermes agent administers the signer (approvals, limits,
+  which keys): the person only. **Starts after phase 1 has been tested by hand** (manual-testing.md:
+  "Signer", "Signer apart"). Design: docs/agent-security-setup.md § The signer.
+
 - **External signers.** P203 built the signer service (`emporia signer`): wallet keys and limits
   apart from the agent, a local backend, pending approvals. Next behind it: the identity and
   encryption keys; vault-linked wallets; hosted wallets and cloud key services as backends; approving
