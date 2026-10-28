@@ -30,6 +30,25 @@ def _ui_dir() -> Path:
     return Path(__file__).resolve().parents[3] / "dashboard" / "dist-console"
 
 
+def _exit_with_parent(every_s: float = 5.0) -> None:
+    """P239: the dashboard's console lives as long as the dashboard that started
+    it. It used to outlive a restart (it runs in its own session, and the
+    dashboard's exit hook does not run when it is killed), keep answering on its
+    socket, and serve the code of whenever it was first started: the room-opening
+    route a dashboard update added answered 404 for a day."""
+    import threading
+    import time
+
+    parent = os.getppid()
+
+    def watch() -> None:
+        while True:
+            time.sleep(every_s)
+            if os.getppid() != parent:
+                os._exit(0)
+    threading.Thread(target=watch, daemon=True, name="exit-with-parent").start()
+
+
 def main(argv: list[str] | None = None) -> int:
     import uvicorn
 
@@ -60,6 +79,7 @@ def main(argv: list[str] | None = None) -> int:
         if sock.exists():
             sock.unlink()
         console = Console(key_dirs, args.relay_url, session_token=None)
+        _exit_with_parent()
         print(f"Emporia console on {sock} for {', '.join(sorted(found))} → {args.relay_url}",
               file=sys.stderr)
         uvicorn.run(build_app(console), uds=str(sock), log_level="warning")

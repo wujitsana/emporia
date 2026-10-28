@@ -184,3 +184,33 @@ def test_the_console_opens_an_encrypted_rooms_messages_for_a_member(client):
          "content": json.dumps(env)}]})
     assert r.status_code == 200 and r.json()["opened"] == {"m1": "hello room"}
     assert c.post("/room/p238_a/open", json={}).status_code == 400
+
+
+def test_the_dashboards_console_exits_when_the_dashboard_does(tmp_path):
+    """P239: a console that outlived its dashboard served day-old code."""
+    import subprocess
+    import sys
+    import time
+    from pathlib import Path
+    if not Path("/proc/self/status").exists():
+        pytest.skip("needs /proc")
+    repo = Path(__file__).resolve().parents[1]
+    marker = tmp_path / "child.pid"
+    parent = subprocess.Popen([sys.executable, "-c", f"""
+import os, subprocess, sys, time
+child = subprocess.Popen([sys.executable, "-c",
+    "import time\\nfrom emporia.console.__main__ import _exit_with_parent\\n_exit_with_parent(0.2)\\ntime.sleep(30)"],
+    cwd={str(repo)!r}, start_new_session=True)
+open({str(marker)!r}, "w").write(str(child.pid))
+time.sleep(0.5)
+"""], cwd=str(repo))
+    parent.wait(timeout=20)
+    pid = int(marker.read_text())
+    status = Path(f"/proc/{pid}/status")
+    for _ in range(50):
+        # gone, or a zombie nobody has reaped yet (a container's init may not)
+        if not status.exists() or "\nState:\tZ" in status.read_text():
+            break
+        time.sleep(0.1)
+    else:
+        raise AssertionError("the console kept running after its parent exited")
