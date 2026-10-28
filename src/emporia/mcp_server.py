@@ -3512,7 +3512,23 @@ def submit_action(
             if d.get("receipt"):
                 _keep_receipt(aid, session_id, d["receipt"])
             return {"success": True, **d}
-        return {"error": f"Relay {r.status_code}", "detail": d, "success": False}
+        out = {"error": f"Relay {r.status_code}", "detail": d, "success": False}
+        # P226: each topic is its own conversation, so a game started from a
+        # room is played in the game's thread (where "Your turn" arrives) while
+        # the room's thread can still try to move. Both alpha and beta read the
+        # lost races as a relay auto-player and reported it as a bug.
+        try:
+            now = _bearer_request("get", f"{_base()}/sessions/{session_id}", agent_id=aid, timeout=10).json()
+            if now.get("step_number", step_number) != step_number:
+                out["note"] = (
+                    f"The game moved on while this was being sent (step {step_number} → "
+                    f"{now['step_number']}, {now.get('current_agent') or 'nobody'} to move). Nothing "
+                    "plays for you: your own moves are made in this game's conversation, where its "
+                    "\"Your turn\" notices arrive — if you are not in that conversation, leave the "
+                    "moves to it.")
+        except Exception:
+            pass
+        return out
     except Exception as e:
         return {"error": str(e), "success": False}
 

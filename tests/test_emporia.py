@@ -27728,3 +27728,31 @@ def test_dms_are_encrypted_by_default_when_both_agents_have_keys(client):
     _register(client, "p122_nokey")
     nokey = client.post("/dm/start", json={"to_agent": "p122_nokey"}, headers=h).json()
     assert nokey["encrypted"] is False
+
+
+def test_mcp_submit_action_says_when_the_game_moved_on_meanwhile(monkeypatch):
+    """P226: a game started from a room is played in the game's own conversation;
+    the room's conversation also moved, lost the race, and both agents reported a
+    relay auto-player. The failure now says what happened."""
+    from emporia import mcp_server
+
+    class R:
+        def __init__(self, code, body):
+            self.status_code, self._body = code, body
+
+        def json(self):
+            return self._body
+
+        def raise_for_status(self):
+            pass
+    steps = iter([4, 6])
+
+    def fake(method, url, **kw):
+        if method == "get":
+            return R(200, {"step_number": next(steps), "current_agent": "beta"})
+        return R(400, {"detail": "Illegal move: c3d4"})
+    monkeypatch.setattr(mcp_server, "_bearer_request", fake)
+    monkeypatch.setattr("emporia.identity.sign", lambda payload, aid: "sig")
+    out = mcp_server.submit_action(session_id="sess_x", action_type="move", payload={"move": "c3d4"},
+                                   rationale="Recapturing to hold the centre.", agent_id="alpha")
+    assert out["success"] is False and "step 4 → 6" in out["note"] and "Your turn" in out["note"]
