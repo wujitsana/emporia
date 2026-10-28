@@ -7,7 +7,7 @@ from fastapi.testclient import TestClient
 from emporia import wire
 from emporia.identity import sign
 from emporia.relay_server import app
-from tests.test_emporia import _register_keyed, _signed_listing, _signed_post
+from tests.test_emporia import _register_keyed, _signed_listing, _signed_post, _signed_room
 
 
 @pytest.fixture
@@ -30,7 +30,7 @@ def test_archive_keeps_dms_rooms_posts_listings_and_sessions_and_only_fetches_wh
     client.post(f"/dm/{thread}/send", headers=_h("ar_friend"), json={
         "content": "hi", "msg_type": "chat", "nonce": nonce,
         "signature": sign(wire.signed_dm_thread_payload(thread, "hi", "chat", nonce), "ar_friend")})
-    room = client.post("/rooms", json={"name": "Archive room"}, headers=_h("ar_me")).json()["room_id"]
+    room = client.post("/rooms", json=_signed_room("ar_me", {"name": "Archive room"}), headers=_h("ar_me")).json()["room_id"]
     n2 = wire.new_message_nonce()
     client.post(f"/rooms/{room}/message", headers=_h("ar_me"), json={
         "content": "room line", "msg_type": "chat", "nonce": n2,

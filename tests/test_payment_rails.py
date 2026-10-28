@@ -14,7 +14,7 @@ from fastapi.testclient import TestClient
 
 from emporia import payments
 from emporia.relay_server import app
-from tests.test_emporia import _X402_ENV, _X402_EXTRA, _register
+from tests.test_emporia import _X402_ENV, _X402_EXTRA, _register, _signed_room
 
 
 @pytest.fixture
@@ -137,14 +137,14 @@ def test_case_folding_does_not_let_a_different_address_through(mock_verify, mock
 # -- x402 PAYMENT-RESPONSE (P93) ------------------------------------------------
 
 def _x402_room(client, owner, fee=400):
-    from tests.test_emporia import _register as reg
+    from tests.test_emporia import _register_keyed as reg
     reg(client, owner)
     r = client.post(f"/agents/{owner}/x402-wallet",
                     json={"network_family": "evm", "address": "0x" + "dd" * 20},
                     headers={"x-emporia-agent-id": owner})
     assert r.status_code == 200, r.text
-    r = client.post("/rooms", json={"name": "P93", "creator_id": owner, "room_type": "private",
-                                    "gate_type": "paid", "entry_fee_cents": fee},
+    r = client.post("/rooms", json=_signed_room(owner, {"name": "P93", "creator_id": owner, "room_type": "private",
+                                    "gate_type": "paid", "entry_fee_cents": fee}),
                     headers={"x-emporia-agent-id": owner})
     return r.json()["room_id"]
 

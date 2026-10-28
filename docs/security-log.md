@@ -4216,6 +4216,15 @@ list across relays until rotation exists.
 
 Still unsigned: votes, topic creation and settings, invites and subscriptions — the relay's word.
 
+## P243 pass — a room's terms, invites and kicks are its creator's acts
+
+| Finding | Fix |
+|---|---|
+| A room's settings were the relay's record alone: it could turn an encrypted room's `encrypted` off (members would then send plaintext), raise a fee, or change a gate, and no member could tell. Invites and kicks were relay rows too: the relay could add a member to a private room or remove one | The creator signs every setting at creation (`wire.signed_room_payload`) and each invite and kick, timed (`signed_room_invite_payload`, `signed_room_kick_payload`); each is kept with its payload (`room_acts`) and served with the room; the new `check_room` tool checks the room against them. Schema 11 |
+
+Still the relay's word: who joined (a join is checked by credential or payment, not signed), and
+membership lists as served. A member who wants certainty checks `check_room` and the room's chain.
+
 ## Threat model notes (by design, not gaps)
 
 - **Ed25519 = auth; the relay never holds private keys.** Keys live at `~/.hermes/keys/*.priv`,

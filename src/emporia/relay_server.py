@@ -1205,6 +1205,20 @@ def init_db() -> None:
                 used INTEGER NOT NULL DEFAULT 0
             );
 
+            -- P243: a room's signed acts — its creation (with every setting), invites,
+            -- kicks — each kept with the payload its author signed.
+            CREATE TABLE IF NOT EXISTS room_acts (
+                act_id TEXT PRIMARY KEY,
+                room_id TEXT NOT NULL,
+                act TEXT NOT NULL,
+                target TEXT,
+                by_agent TEXT NOT NULL,
+                at TEXT NOT NULL,
+                nonce TEXT UNIQUE,
+                payload_json TEXT NOT NULL,
+                signature TEXT NOT NULL
+            );
+
             -- P241: a game's creator's signed offer of it to other relays' agents.
             CREATE TABLE IF NOT EXISTS session_offers (
                 session_id TEXT PRIMARY KEY,
@@ -3218,6 +3232,9 @@ _RENAME_COLUMNS: tuple[tuple[str, str], ...] = (
     # column is the human-readable handle beside it and is rewritten like
     # every other reference.
     ("x402_settle_intents", "payer_id"),
+    # P243: who did a signed room act, and to whom. The signed payload beside
+    # them is a record and keeps the handle it was signed with.
+    ("room_acts", "by_agent"), ("room_acts", "target"),
     ("authorized_agents", "agent_id"),
 )
 
@@ -3344,6 +3361,8 @@ _NON_AGENT_COLUMNS: frozenset[tuple[str, str]] = frozenset({
     ("session_offers", "offered_at"),
     ("agora_posts", "nonce"), ("agora_posts", "signature"),
     ("agora_comments", "nonce"), ("agora_comments", "signature"),
+    ("room_acts", "act_id"), ("room_acts", "room_id"), ("room_acts", "act"), ("room_acts", "at"),
+    ("room_acts", "nonce"), ("room_acts", "payload_json"), ("room_acts", "signature"),
     ("authorized_agents", "relay_list_json"), ("authorized_agents", "carried_records_json"),
     ("deletions", "kind"), ("deletions", "item"), ("deletions", "role"), ("deletions", "deleted_at"),
     ("deletions", "signature"), ("agora_topics", "is_deleted"), ("room_messages", "deleted_at"),
@@ -5124,6 +5143,9 @@ class CreateRoomRequest(BaseModel):
     # (default) = no expiry — access lasts as long as the room does. Ignored for
     # non-paid rooms (membership there was never entitlement-gated).
     access_duration_days: int | None = None
+    # P243: signed by the creator over every setting (wire.signed_room_payload).
+    nonce: str
+    signature: str
 
 
 class JoinRoomRequest(BaseModel):
@@ -5133,6 +5155,9 @@ class JoinRoomRequest(BaseModel):
 
 class InviteToRoomRequest(BaseModel):
     invitee_id: str
+    # P243: signed by the room's creator (wire.signed_room_invite_payload).
+    at: str
+    signature: str
 
 
 class SendRoomMessageRequest(BaseModel):
@@ -5154,6 +5179,9 @@ class KickFromRoomRequest(BaseModel):
     # P2-7: the kicker's choice, per join — defaults to False so a kick alone
     # never moves money. Revocation (P2-6) happens regardless of this flag.
     refund: bool = False
+    # P243: signed by the room's creator (wire.signed_room_kick_payload).
+    at: str
+    signature: str
 
 
 # ============================================================================

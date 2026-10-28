@@ -1115,11 +1115,65 @@ def create_room(
         "access_duration_days": access_duration_days,
     }
     try:
+        body.update(_signed_room_fields(creator_id, body))   # P243: every setting, signed
         r = _bearer_request("post", f"{_base()}/rooms", agent_id=creator_id, json=body, timeout=15)
         d = r.json()
         if r.status_code == 200:
             return {"success": True, "room": d}
         return {"error": f"Relay {r.status_code}", "detail": d, "success": False}
+    except Exception as e:
+        return {"error": str(e), "success": False}
+
+
+def _signed_room_fields(creator: str, body: dict[str, Any]) -> dict[str, Any]:
+    """P243: a nonce and the creator's signature over every room setting."""
+    from emporia.identity import sign as ed25519_sign
+    from emporia.wire import new_message_nonce, signed_room_payload
+    nonce = new_message_nonce()
+    signed = signed_room_payload(nonce, body["name"], body["description"], body["room_type"], body["gate_type"],
+                                 body["entry_fee_cents"], body["currency"], body["max_members"], body["encrypted"],
+                                 body["linked_session_id"], body["access_duration_days"])
+    return {"nonce": nonce, "signature": ed25519_sign(signed, creator)}
+
+
+def _signed_room_act(creator: str, act: str, room_id: str, target: str, *, refund: bool = False) -> dict[str, Any]:
+    """P243: an invite or kick body, signed by the room's creator just now."""
+    from datetime import UTC, datetime
+
+    from emporia.identity import sign as ed25519_sign
+    from emporia.wire import signed_room_invite_payload, signed_room_kick_payload
+    at = datetime.now(UTC).isoformat()
+    if act == "invite":
+        return {"invitee_id": target, "at": at,
+                "signature": ed25519_sign(signed_room_invite_payload(room_id, target, at), creator)}
+    return {"target_agent_id": target, "refund": refund, "at": at,
+            "signature": ed25519_sign(signed_room_kick_payload(room_id, target, refund, at), creator)}
+
+
+@mcp.tool()
+def check_room(room_id: str, agent_id: str = "") -> dict[str, Any]:
+    """Check a room against its creator's own signatures (P243), rather than
+    taking the relay's word for it.
+
+    `settings` is True when the room's name, gate, fee, encryption and other
+    settings are exactly the ones its creator signed; False when the relay
+    shows different ones (or the signature fails) — treat the room as
+    tampered with; None for a room made before rooms were signed. `acts`
+    lists each invite and kick, each `verified` True only if the creator
+    signed it.
+    """
+    from emporia.identity import verify_room_acts
+    aid = agent_id or AGENT_ID
+    if not aid:
+        return {"error": "agent_id required (or set EMPORIA_AGENT_ID)", "success": False}
+    try:
+        r = _bearer_request("get", f"{_base()}/rooms/{room_id}", agent_id=aid, timeout=10)
+        if r.status_code != 200:
+            return {"error": f"Relay {r.status_code}", "detail": r.text, "success": False}
+        room = r.json()
+        creator = room.get("creator_id", "")
+        return {"success": True, "room_id": room_id, "creator_id": creator,
+                **verify_room_acts(room, _sender_public_key(aid, creator))}
     except Exception as e:
         return {"error": str(e), "success": False}
 
@@ -1997,7 +2051,7 @@ def invite_to_room(room_id: str, agent_id: str, invited_by: str) -> dict[str, An
         r = _bearer_request(
             "post", f"{_base()}/rooms/{room_id}/invite",
             agent_id=invited_by,
-            json={"invitee_id": agent_id},
+            json=_signed_room_act(invited_by, "invite", room_id, agent_id),   # P243
             timeout=10,
         )
         if r.status_code == 200:
@@ -2038,7 +2092,7 @@ def kick_from_room(
         r = _bearer_request(
             "post", f"{_base()}/rooms/{room_id}/kick",
             agent_id=creator_id,
-            json={"target_agent_id": target_agent_id, "refund": refund},
+            json=_signed_room_act(creator_id, "kick", room_id, target_agent_id, refund=refund),   # P243
             timeout=15,
         )
         d = r.json()

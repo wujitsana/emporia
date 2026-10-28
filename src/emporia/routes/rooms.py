@@ -9,6 +9,8 @@ from __future__ import annotations
 
 import json
 import sqlite3
+import uuid
+from datetime import UTC, datetime
 from typing import Any
 
 from fastapi import APIRouter, HTTPException, Request
@@ -19,8 +21,44 @@ from emporia import entitlements
 from emporia import relay_server as rs
 from emporia import rooms as rooms_db
 from emporia.identity import federation_signable_bytes, get_relay_public_key_hex, sign_raw_relay
+from emporia.wire import (
+    ERR_DUPLICATE_NONCE,
+    signed_room_invite_payload,
+    signed_room_kick_payload,
+    signed_room_payload,
+)
 
 router = APIRouter()
+
+
+def _require_creator_signed(creator: str, signed: dict, at: str, signature: str) -> None:
+    """P243: an invite or kick is the creator's signed act, made just now."""
+    from emporia.deletion import FRESH
+    try:
+        when = datetime.fromisoformat(at)
+    except ValueError as e:
+        raise HTTPException(400, "at must be an ISO 8601 time") from e
+    if when.tzinfo is None or abs(datetime.now(UTC) - when) > FRESH:
+        raise HTTPException(400, "at must be in UTC, within 10 minutes of the relay's clock")
+    if not rs.AGENT_REGISTRY.verify_signature(creator, signed, signature):
+        raise HTTPException(403, "signature does not match the room creator's key")
+
+
+def _record_act(room_id: str, act: str, target: str | None, by: str, at: str, signed: dict,
+                signature: str, *, nonce: str | None = None) -> None:
+    with rs.DB_LOCK, rs.get_db() as conn:
+        conn.execute("INSERT INTO room_acts (act_id, room_id, act, target, by_agent, at, nonce, payload_json, "
+                     "signature) VALUES (?,?,?,?,?,?,?,?,?)",
+                     (f"act_{uuid.uuid4().hex[:16]}", room_id, act, target, by, at, nonce, json.dumps(signed),
+                      signature))
+
+
+def _acts(room_id: str) -> list[dict]:
+    with rs.DB_LOCK, rs.get_db() as conn:
+        rows = conn.execute("SELECT act, target, by_agent, at, payload_json, signature FROM room_acts "
+                            "WHERE room_id = ? ORDER BY rowid", (room_id,)).fetchall()
+    return [{"act": r["act"], "target": r["target"], "by": r["by_agent"], "at": r["at"],
+             "payload": json.loads(r["payload_json"]), "signature": r["signature"]} for r in rows]
 
 
 @router.post("/rooms")
@@ -30,6 +68,17 @@ async def create_room_endpoint(req: rs.CreateRoomRequest, request: Request):
         raise HTTPException(401, "Authentication required")
     rs._require_registered(caller)
     rs._enforce_agent_rate_limit(caller)
+    # P243: the creator's signature over every setting, before the guardrails scan.
+    if not rs._NONCE_RE.fullmatch(req.nonce):
+        raise HTTPException(400, "nonce must be 32-64 hex characters")
+    signed = signed_room_payload(
+        req.nonce, req.name, req.description, req.room_type, req.gate_type, req.entry_fee_cents,
+        req.currency, req.max_members, req.encrypted, req.linked_session_id, req.access_duration_days)
+    if not rs.AGENT_REGISTRY.verify_signature(caller, signed, req.signature):
+        raise HTTPException(403, "room signature does not match its settings and this agent's key")
+    with rs.DB_LOCK, rs.get_db() as conn:
+        if conn.execute("SELECT 1 FROM room_acts WHERE nonce = ?", (req.nonce,)).fetchone():
+            raise HTTPException(409, {"code": ERR_DUPLICATE_NONCE, "message": "a room with this nonce exists"})
     # P21-5 (B5): name/description bounded automatically — see
     # _require_payload_content_within_limit.
     try:
@@ -75,6 +124,8 @@ async def create_room_endpoint(req: rs.CreateRoomRequest, request: Request):
             access_duration_days=req.access_duration_days,
             db_path=rs.DATABASE_PATH,
         )
+        _record_act(room.room_id, "create", None, caller, room.created_at, signed, req.signature,
+                    nonce=req.nonce)
         if req.room_type == "public":
             await rs.broadcast_global({
                 "type": "room_created",
@@ -110,7 +161,8 @@ async def get_room_endpoint(room_id: str, request: Request):
         raise HTTPException(404, "Room not found")
     if room.room_type == "private" and not rooms_db.is_member(room_id, viewer_id or "", db_path=rs.DATABASE_PATH):
         raise HTTPException(403, "Private room — not a member")
-    return room.to_dict(viewer_id=viewer_id, db_path=rs.DATABASE_PATH)
+    # P243: the creator's signed acts, for a member to check the room against.
+    return {**room.to_dict(viewer_id=viewer_id, db_path=rs.DATABASE_PATH), "signed_acts": _acts(room_id)}
 @router.post("/rooms/{room_id}/join")
 async def join_room(room_id: str, req: rs.JoinRoomRequest, request: Request):
     identity_verified = rs._require_caller_unless_mpp_payment(req.agent_id, request)
@@ -276,7 +328,10 @@ async def invite_to_room(room_id: str, req: rs.InviteToRoomRequest, request: Req
     if room.gate_type == "open":
         raise HTTPException(400, "Open rooms don't use invites")
     rs._require_registered(req.invitee_id)
+    signed = signed_room_invite_payload(room_id, req.invitee_id, req.at)
+    _require_creator_signed(room.creator_id, signed, req.at, req.signature)
     rooms_db.add_invite(room_id, req.invitee_id, room.creator_id, db_path=rs.DATABASE_PATH)
+    _record_act(room_id, "invite", req.invitee_id, room.creator_id, req.at, signed, req.signature)
     await rs.broadcast_to_agent(req.invitee_id, {
         "type": "room_invite",
         "room_id": room_id,
@@ -319,9 +374,12 @@ async def kick_from_room(room_id: str, req: rs.KickFromRoomRequest, request: Req
     rs._enforce_agent_rate_limit(room.creator_id)
     if req.target_agent_id == room.creator_id:
         raise HTTPException(400, "Creator cannot kick themselves")
+    signed = signed_room_kick_payload(room_id, req.target_agent_id, req.refund, req.at)
+    _require_creator_signed(room.creator_id, signed, req.at, req.signature)
     removed = rooms_db.remove_member(room_id, req.target_agent_id, db_path=rs.DATABASE_PATH)
     if not removed:
         raise HTTPException(404, f"Agent not in room: {req.target_agent_id}")
+    _record_act(room_id, "kick", req.target_agent_id, room.creator_id, req.at, signed, req.signature)
     entitlements.record_removal("room", room_id, req.target_agent_id, reason="kicked",
                                  removed_by=room.creator_id, db_path=rs.DATABASE_PATH)
     entitlements.revoke("room", room_id, req.target_agent_id, reason="kicked",

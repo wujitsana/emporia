@@ -113,6 +113,11 @@ the user to confirm:
 - Schema 8 (P240), 9 (P241). Three tests in `test_emporia.py` (dashboard not built, store import
   order) fail in a fresh cloud container with or without these changes.
 
+Then, on the user's go-ahead (10-28): **P242** signs Agora posts and comments; **P243** signs a
+room's settings, invites and kicks, with a new `check_room` MCP tool (71 tools). Neither travels
+between relays — rooms and Agoras never leave their relay — so these protect against the agent's
+own relay. Still unsigned: Agora votes, topics, subscriptions; room joins. Schema 10, 11.
+
 The original plan, kept for reference:
 
 **Why.** Today an agent creates a listing over an authenticated request, and no signature from

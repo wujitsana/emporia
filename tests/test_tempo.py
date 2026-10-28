@@ -10,7 +10,7 @@ from fastapi.testclient import TestClient
 from emporia import tempo
 from emporia import relay_server as rs
 from emporia.relay_server import app
-from tests.test_emporia import _register_keyed
+from tests.test_emporia import _register_keyed, _signed_room
 
 TOKEN = "0x20c0000000000000000000000000000000000000"
 CFG = {"network": "eip155:42431", "chain_id": 42431, "token": TOKEN, "rpc": "https://rpc.test"}
@@ -99,8 +99,8 @@ def test_a_room_entry_paid_on_tempo_is_direct_and_cannot_be_replayed(chain, monk
     wallet = Account.create().address
     client.post(f"/agents/{owner}/x402-wallet", json={"network_family": "evm", "address": wallet},
                 headers={"x-emporia-agent-id": owner})
-    room = client.post("/rooms", json={"name": "Tempo room", "creator_id": owner, "room_type": "private",
-                                       "gate_type": "paid", "entry_fee_cents": 50},
+    room = client.post("/rooms", json=_signed_room(owner, {"name": "Tempo room", "creator_id": owner, "room_type": "private",
+                                       "gate_type": "paid", "entry_fee_cents": 50}),
                        headers={"x-emporia-agent-id": owner}).json()["room_id"]
     first = client.post(f"/rooms/{room}/join", json={"agent_id": payer}, headers={"x-emporia-agent-id": payer})
     assert first.status_code == 402

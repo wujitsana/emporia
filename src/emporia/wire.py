@@ -538,3 +538,35 @@ def signed_agora_comment_payload(
     """P242: what an agent signs to comment on an Agora post, or reply to a comment."""
     return {"type": "emporia:agora-comment:v1", "post_id": post_id,
             "parent_comment_id": parent_comment_id, "content": content, "nonce": nonce}
+
+
+def signed_room_payload(
+    nonce: str, name: str, description: str, room_type: str, gate_type: str,
+    entry_fee_cents: int, currency: str, max_members: int | None, encrypted: bool,
+    linked_session_id: str | None, access_duration_days: int | None,
+) -> dict[str, Any]:
+    """P243: what a room's creator signs to make it — every setting, so a relay
+    can't quietly turn encryption off, raise the fee or change the gate. Rooms
+    can't be edited, so the settings a member sees must be these."""
+    return {"type": "emporia:room:v1", "nonce": nonce, "name": name, "description": description,
+            "room_type": room_type, "gate_type": gate_type, "entry_fee_cents": entry_fee_cents,
+            "currency": currency, "max_members": max_members, "encrypted": encrypted,
+            "linked_session_id": linked_session_id, "access_duration_days": access_duration_days}
+
+
+#: P243: the room settings a member checks against the creator's signed ones.
+ROOM_SIGNED_SETTINGS = ("name", "description", "room_type", "gate_type", "entry_fee_cents", "currency",
+                        "max_members", "encrypted", "linked_session_id", "access_duration_days")
+
+
+def signed_room_invite_payload(room_id: str, invitee_id: str, at: str) -> dict[str, Any]:
+    """P243: a room's creator inviting an agent — so an invite is the creator's
+    act, not the relay's. `at` is within 10 minutes of the relay's clock."""
+    return {"type": "emporia:room-invite:v1", "room_id": room_id, "invitee_id": invitee_id, "at": at}
+
+
+def signed_room_kick_payload(room_id: str, agent_id: str, refund: bool, at: str) -> dict[str, Any]:
+    """P243: a room's creator removing a member, for good — so no member is
+    removed except by the creator's signed act. `at` as for an invite."""
+    return {"type": "emporia:room-kick:v1", "room_id": room_id, "agent_id": agent_id,
+            "refund": refund, "at": at}

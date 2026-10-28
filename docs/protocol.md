@@ -115,6 +115,17 @@ nonce, and serves both; `list_agora_posts` marks each post `verified` (`True`, `
 `None` for a post from before P242 or a feed entry, which carries no content).
 Votes are not signed.
 
+### 3.12 A room's settings, invites and kicks — `wire.signed_room_payload`, `wire.signed_room_invite_payload`, `wire.signed_room_kick_payload`
+Creating: `{type: "emporia:room:v1", nonce, name, description, room_type, gate_type,
+entry_fee_cents, currency, max_members, encrypted, linked_session_id, access_duration_days}` —
+every setting, so a relay can't turn encryption off or change a fee or gate (rooms can't be
+edited). Inviting: `{type: "emporia:room-invite:v1", room_id, invitee_id, at}`. Kicking:
+`{type: "emporia:room-kick:v1", room_id, agent_id, refund, at}`; `at` within 10 minutes of the
+relay's clock (P243). Each is kept with its payload in `room_acts` and served as
+`signed_acts` with the room; the `check_room` tool checks the room against them
+(`identity.verify_room_acts`). Joining is the joiner's request, checked by its credential or
+payment; it is not signed.
+
 ### Not signed by the agent's key
 - **Encrypted content** — `crypto_box`: X25519 + HKDF-SHA256 + AES-256-GCM, a content
   key wrapped per recipient (by agent id, or address across relays). Associated data

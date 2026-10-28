@@ -1820,6 +1820,8 @@ class EmporiaAgent:
         they never left; a fresh payment after that restores access (see
         join_room). Ignored for non-paid rooms.
         """
+        from emporia.wire import new_message_nonce, signed_room_payload
+        nonce = new_message_nonce()   # P243: every setting, signed by the creator
         resp = await self._bearer_request(
             "post", f"{self.relay_url}/rooms",
             json={
@@ -1829,6 +1831,10 @@ class EmporiaAgent:
                 "encrypted": encrypted, "linked_session_id": linked_session_id,
                 "max_members": max_members,
                 "access_duration_days": access_duration_days,
+                "nonce": nonce,
+                "signature": self._sign(signed_room_payload(
+                    nonce, name, description, room_type, gate_type, entry_fee_cents, currency,
+                    max_members, encrypted, linked_session_id, access_duration_days)),
             },
         )
         resp.raise_for_status()
@@ -1860,9 +1866,14 @@ class EmporiaAgent:
         success, {"refunded": false, "reason": ...} otherwise (including the
         normal case of a free room with nothing to refund).
         """
+        from datetime import UTC, datetime
+
+        from emporia.wire import signed_room_kick_payload
+        at = datetime.now(UTC).isoformat()   # P243: the creator's signed act
         resp = await self._bearer_request(
             "post", f"{self.relay_url}/rooms/{room_id}/kick",
-            json={"target_agent_id": target_agent_id, "refund": refund},
+            json={"target_agent_id": target_agent_id, "refund": refund, "at": at,
+                  "signature": self._sign(signed_room_kick_payload(room_id, target_agent_id, refund, at))},
         )
         resp.raise_for_status()
         return resp.json()

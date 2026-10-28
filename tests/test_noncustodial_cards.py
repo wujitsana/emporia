@@ -16,7 +16,7 @@ from unittest.mock import patch
 import pytest
 
 from emporia import relay_server as rs
-from tests.test_emporia import _register_keyed
+from tests.test_emporia import _register_keyed, _signed_room
 from tests.test_stake_models import FakeStripe, _resp, client, stripe  # noqa: F401  (fixtures)
 from tests.test_x402_wager import _play
 
@@ -76,8 +76,8 @@ def _agents(client, n, prefix="nc"):
 
 
 def _paid_room(client, owner, fee=100):
-    r = client.post("/rooms", json={"name": "NC room", "creator_id": owner, "room_type": "private",
-                                    "gate_type": "paid", "entry_fee_cents": fee}, headers=_hdr(owner))
+    r = client.post("/rooms", json=_signed_room(owner, {"name": "NC room", "creator_id": owner, "room_type": "private",
+                                    "gate_type": "paid", "entry_fee_cents": fee}), headers=_hdr(owner))
     assert r.status_code == 200, r.text
     return r.json()["room_id"]
 

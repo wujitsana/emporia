@@ -432,6 +432,31 @@ def verify_dm_message(
     )
 
 
+def verify_room_acts(room: dict[str, Any], creator_public_key_hex: str) -> dict[str, Any]:
+    """P243: check a room, as `GET /rooms/{id}` serves it, against its creator's
+    signed acts. `settings`: True when the creator signed exactly the settings
+    shown, False when the relay shows others or the signature fails, None when
+    the room has no signed creation (made before P243). Each invite and kick is
+    marked `verified` the same way."""
+    from emporia.wire import ROOM_SIGNED_SETTINGS
+    acts = room.get("signed_acts") or []
+    create = next((a for a in acts if a.get("act") == "create"), None)
+    settings: bool | None = None
+    if create and creator_public_key_hex:
+        payload = create.get("payload") or {}
+        settings = (verify(payload, create.get("signature", ""), creator_public_key_hex)
+                    and all(payload.get(k) == room.get(k) for k in ROOM_SIGNED_SETTINGS))
+    checked = []
+    for a in acts:
+        if a.get("act") == "create":
+            continue
+        payload = a.get("payload") or {}
+        checked.append({"act": a.get("act"), "target": a.get("target"), "at": a.get("at"),
+                        "verified": bool(creator_public_key_hex) and payload.get("room_id") == room.get("room_id")
+                        and verify(payload, a.get("signature", ""), creator_public_key_hex)})
+    return {"settings": settings, "acts": checked}
+
+
 def verify_agora_post(topic_slug: str, post: dict[str, Any], author_public_key_hex: str) -> bool | None:
     """P242: whether an Agora post is its author's signed word. `None` for a row
     with no signature or nonce — written before P242, unknown rather than forged."""

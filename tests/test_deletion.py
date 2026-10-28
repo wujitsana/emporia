@@ -8,7 +8,7 @@ from fastapi.testclient import TestClient
 from emporia import wire
 from emporia.identity import sign
 from emporia.relay_server import app
-from tests.test_emporia import _register_keyed, _signed_listing, _signed_post
+from tests.test_emporia import _register_keyed, _signed_listing, _signed_post, _signed_room
 
 
 @pytest.fixture
@@ -89,7 +89,7 @@ def test_a_removed_room_message_leaves_a_signed_gap_and_the_chain_still_checks(c
     from emporia import relay_server as rs
     for a in ("dr_owner", "dr_member"):
         _register_keyed(client, a)
-    room_id = client.post("/rooms", json={"name": "Del room"}, headers=_h("dr_owner")).json()["room_id"]
+    room_id = client.post("/rooms", json=_signed_room("dr_owner", {"name": "Del room"}), headers=_h("dr_owner")).json()["room_id"]
     client.post(f"/rooms/{room_id}/join", json={"agent_id": "dr_member"}, headers=_h("dr_member"))
     first = _room_message(client, room_id, "dr_member", "one")
     second = _room_message(client, room_id, "dr_member", "two, regrettable")

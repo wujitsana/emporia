@@ -944,6 +944,41 @@ def _register_keyed(client, agent_id: str) -> None:
     client.post("/agents/register", json={"agent_id": agent_id, "public_key_hex": pub_hex})
 
 
+def _signed_room(agent_id: str, body: dict) -> dict:
+    """P243: a `POST /rooms` body signed by its creator over every setting (with
+    the relay's defaults filled in, as the relay verifies them)."""
+    from emporia.identity import sign
+    from emporia.wire import new_message_nonce, signed_room_payload
+    b = {"description": "", "room_type": "public", "gate_type": "open", "entry_fee_cents": 0, "currency": "USD",
+         "max_members": None, "encrypted": False, "linked_session_id": None, "access_duration_days": None, **body}
+    nonce = new_message_nonce()
+    return {**b, "nonce": nonce, "signature": sign(signed_room_payload(
+        nonce, b["name"], b["description"], b["room_type"], b["gate_type"], b["entry_fee_cents"], b["currency"],
+        b["max_members"], b["encrypted"], b["linked_session_id"], b["access_duration_days"]), agent_id)}
+
+
+def _signed_invite(agent_id: str, room_id: str, body: dict) -> dict:
+    """P243: an invite signed by the room's creator, just now."""
+    from datetime import UTC, datetime
+
+    from emporia.identity import sign
+    from emporia.wire import signed_room_invite_payload
+    at = datetime.now(UTC).isoformat()
+    return {**body, "at": at, "signature": sign(signed_room_invite_payload(room_id, body["invitee_id"], at), agent_id)}
+
+
+def _signed_kick(agent_id: str, room_id: str, body: dict) -> dict:
+    """P243: a kick signed by the room's creator, just now."""
+    from datetime import UTC, datetime
+
+    from emporia.identity import sign
+    from emporia.wire import signed_room_kick_payload
+    at = datetime.now(UTC).isoformat()
+    refund = bool(body.get("refund", False))
+    return {**body, "refund": refund, "at": at, "signature": sign(signed_room_kick_payload(
+        room_id, body["target_agent_id"], refund, at), agent_id)}
+
+
 def _signed_post(agent_id: str, slug: str, body: dict) -> dict:
     """P242: an Agora post body signed by `agent_id` (registered with _register_keyed)."""
     from emporia.identity import sign
@@ -1528,13 +1563,13 @@ def test_mpp_payment_path_does_not_rate_limit_unproven_identity(client):
     confirming the fix didn't just disable rate-limiting for the route altogether."""
     from emporia import relay_server as rs
 
-    _register(client, "room_creator_mpp")
+    _register_keyed(client, "room_creator_mpp")
     _register(client, "victim_agent_mpp")
     _register(client, "control_agent_mpp")
 
     def _open_room(name: str) -> str:
         r = client.post(
-            "/rooms", json={"name": name},
+            "/rooms", json=_signed_room("room_creator_mpp", {"name": name}),
             headers={"x-emporia-agent-id": "room_creator_mpp"},
         )
         assert r.status_code == 200, r.text
@@ -1865,7 +1900,7 @@ def test_session_visibility_room_inheritance_overrides_module_default(client):
     """A linked room's type wins over the module's own DEFAULT_VISIBILITY in both
     directions: a public room makes an otherwise-participants-only session readable by
     anyone, and a private room makes an otherwise-public session participants-only."""
-    _register(client, "vis_room_owner")
+    _register_keyed(client, "vis_room_owner")
     _register(client, "vis_room_other")
 
     # service (participants-only default) + public linked room -> public
@@ -1875,11 +1910,11 @@ def test_session_visibility_room_inheritance_overrides_module_default(client):
     },
         headers={"x-emporia-agent-id": "vis_room_owner"})
     svc_session_id = r.json()["session_id"]
-    client.post("/rooms", json={
+    client.post("/rooms", json=_signed_room("vis_room_owner", {
         "name": "Public Linked Room", "creator_id": "vis_room_owner",
         "room_type": "public", "gate_type": "open",
         "linked_session_id": svc_session_id,
-    },
+    }),
         headers={"x-emporia-agent-id": "vis_room_owner"})
     assert client.get(f"/sessions/{svc_session_id}").status_code == 200
 
@@ -1889,11 +1924,11 @@ def test_session_visibility_room_inheritance_overrides_module_default(client):
     },
         headers={"x-emporia-agent-id": "vis_room_owner"})
     chess_session_id = r.json()["session_id"]
-    client.post("/rooms", json={
+    client.post("/rooms", json=_signed_room("vis_room_owner", {
         "name": "Private Linked Room", "creator_id": "vis_room_owner",
         "room_type": "private", "gate_type": "invite",
         "linked_session_id": chess_session_id,
-    },
+    }),
         headers={"x-emporia-agent-id": "vis_room_owner"})
     assert client.get(f"/sessions/{chess_session_id}").status_code == 403
     r = client.get(
@@ -3019,7 +3054,7 @@ def test_delete_session_clears_linked_room_without_deleting_it(client):
     linked_session_id still pointing at the deleted session."""
     from emporia.relay_server import load_session
 
-    _register(client, "p5_2_room_owner")
+    _register_keyed(client, "p5_2_room_owner")
     _register(client, "p5_2_room_op")
 
     r = client.post("/sessions", json={
@@ -3029,11 +3064,11 @@ def test_delete_session_clears_linked_room_without_deleting_it(client):
         headers={"x-emporia-agent-id": "p5_2_room_owner"})
     session_id = r.json()["session_id"]
 
-    r = client.post("/rooms", json={
+    r = client.post("/rooms", json=_signed_room("p5_2_room_owner", {
         "name": "P5-2 Linked Room", "creator_id": "p5_2_room_owner",
         "room_type": "public", "gate_type": "open",
         "linked_session_id": session_id,
-    },
+    }),
         headers={"x-emporia-agent-id": "p5_2_room_owner"})
     assert r.status_code == 200, r.text
     room_id = r.json()["room_id"]
@@ -3909,14 +3944,14 @@ def test_room_join_payout_idempotency_key_unaffected_by_paymentref_rail_tag(
     from emporia.payments import settlement_dedupe_key
 
     owner, payer = "p3_l1_owner", "p3_l1_payer"
-    _register(client, owner)
+    _register_keyed(client, owner)
     _register(client, payer)
     mock_payout.return_value = {"transfer_id": "tr_p3_l1"}
 
-    r = client.post("/rooms", json={
+    r = client.post("/rooms", json=_signed_room(owner, {
         "name": "P3 L1 Room", "creator_id": owner,
         "room_type": "private", "gate_type": "paid", "entry_fee_cents": 100,
-    },
+    }),
         headers={"x-emporia-agent-id": owner})
     assert r.status_code == 200, r.text
     room_id = r.json()["room_id"]
@@ -3953,14 +3988,14 @@ def test_room_join_persists_rail_to_all_three_tables(mock_verify, mock_payout, c
     from emporia import rooms as rooms_db
 
     owner, payer = "p3_rail_owner", "p3_rail_payer"
-    _register(client, owner)
+    _register_keyed(client, owner)
     _register(client, payer)
     mock_payout.return_value = {"transfer_id": "tr_p3_rail"}
 
-    r = client.post("/rooms", json={
+    r = client.post("/rooms", json=_signed_room(owner, {
         "name": "P3 Rail Room", "creator_id": owner,
         "room_type": "private", "gate_type": "paid", "entry_fee_cents": 100,
-    },
+    }),
         headers={"x-emporia-agent-id": owner})
     assert r.status_code == 200, r.text
     room_id = r.json()["room_id"]
@@ -4130,15 +4165,15 @@ def test_join_room_rejects_uncaptured_payment_intent(mock_verify, mock_confirm, 
     remote call is mocked into a no-op and `verify_payment_intent` keeps
     returning `requires_capture`.
     """
-    _register(client, "room_owner")
+    _register_keyed(client, "room_owner")
     _register(client, "room_joiner")
-    r = client.post("/rooms", json={
+    r = client.post("/rooms", json=_signed_room("room_owner", {
         "name": "Paid Room",
         "creator_id": "room_owner",
         "room_type": "private",
         "gate_type": "paid",
         "entry_fee_cents": 100,
-    },
+    }),
         headers={"x-emporia-agent-id": "room_owner"})
     room_id = r.json()["room_id"]
     mock_verify.return_value = {
@@ -4163,15 +4198,15 @@ def test_join_room_rejects_uncaptured_payment_intent(mock_verify, mock_confirm, 
 def test_join_room_accepts_bound_payment_intent(mock_verify, client):
     """Happy path through _verify_and_confirm_payment for a paid room — full join with a
     valid, correctly-bound PaymentIntent should succeed, add the member, and settle."""
-    _register(client, "paidroom_owner")
+    _register_keyed(client, "paidroom_owner")
     _register(client, "paidroom_joiner")
-    r = client.post("/rooms", json={
+    r = client.post("/rooms", json=_signed_room("paidroom_owner", {
         "name": "Paid Room 2",
         "creator_id": "paidroom_owner",
         "room_type": "private",
         "gate_type": "paid",
         "entry_fee_cents": 100,
-    },
+    }),
         headers={"x-emporia-agent-id": "paidroom_owner"})
     room_id = r.json()["room_id"]
     mock_verify.return_value = {
@@ -4256,12 +4291,12 @@ def test_join_room_rejects_payment_intent_from_different_payer(mock_verify, clie
     exploit built on this gap. Both PI-minting paths already stamp
     metadata[buyer_agent_id]; this is the first check that reads it."""
     _register(client, "payer_owner")
-    _register(client, "payer_owner2")
+    _register_keyed(client, "payer_owner2")
     _register(client, "payer_impersonator")
-    r = client.post("/rooms", json={
+    r = client.post("/rooms", json=_signed_room("payer_owner2", {
         "name": "Payer Binding Room", "creator_id": "payer_owner2", "room_type": "private",
         "gate_type": "paid", "entry_fee_cents": 100,
-    },
+    }),
         headers={"x-emporia-agent-id": "payer_owner2"})
     room_id = r.json()["room_id"]
     mock_verify.return_value = {
@@ -4291,12 +4326,12 @@ def test_join_room_rejects_payment_intent_missing_payer_metadata(mock_verify, cl
     """P1a-1 (R1): a PI with no buyer_agent_id at all must be rejected when a payer is
     expected, not waved through as if unclaimed metadata were trustworthy. Emporia
     stamps this field on every PI it accepts — "absent" means "not ours.\""""
-    _register(client, "no_payer_meta_owner")
+    _register_keyed(client, "no_payer_meta_owner")
     _register(client, "no_payer_meta_joiner")
-    r = client.post("/rooms", json={
+    r = client.post("/rooms", json=_signed_room("no_payer_meta_owner", {
         "name": "No Payer Metadata Room", "creator_id": "no_payer_meta_owner",
         "room_type": "private", "gate_type": "paid", "entry_fee_cents": 100,
-    },
+    }),
         headers={"x-emporia-agent-id": "no_payer_meta_owner"})
     room_id = r.json()["room_id"]
     mock_verify.return_value = {
@@ -4430,17 +4465,17 @@ def test_join_room_payment_intent_replay_returns_402(mock_verify, client):
     POST /rooms/{id}/join — a captured PI replayed against a second paid room. See that
     test's docstring for why joiner2 is now caught by the P1a-1 payer-binding check
     rather than record_payment()'s own dedupe-by-id defense."""
-    _register(client, "n42_room_owner1")
-    _register(client, "n42_room_owner2")
+    _register_keyed(client, "n42_room_owner1")
+    _register_keyed(client, "n42_room_owner2")
     _register(client, "n42_room_joiner1")
     _register(client, "n42_room_joiner2")
 
     room_ids = []
     for owner in ("n42_room_owner1", "n42_room_owner2"):
-        r = client.post("/rooms", json={
+        r = client.post("/rooms", json=_signed_room(owner, {
             "name": "Paid Room", "creator_id": owner, "room_type": "private",
             "gate_type": "paid", "entry_fee_cents": 100,
-        },
+        }),
             headers={"x-emporia-agent-id": owner})
         room_ids.append(r.json()["room_id"])
 
@@ -4662,14 +4697,14 @@ def test_join_room_retry_does_not_double_pay(mock_verify, mock_payout, client):
     payout left the retry free to re-pass the gate and pay out again. The fix moves
     add_member before the payout, so the existing short-circuit now actually closes
     the window — see _fail_once_on for how the crash is simulated."""
-    _register(client, "n53_room_owner")
+    _register_keyed(client, "n53_room_owner")
     _register(client, "n53_room_payer")
     mock_payout.return_value = {"transfer_id": "tr_n53_room"}
 
-    r = client.post("/rooms", json={
+    r = client.post("/rooms", json=_signed_room("n53_room_owner", {
         "name": "N53 Room Retry Room", "creator_id": "n53_room_owner",
         "room_type": "private", "gate_type": "paid", "entry_fee_cents": 100,
-    },
+    }),
         headers={"x-emporia-agent-id": "n53_room_owner"})
     assert r.status_code == 200, r.text
     room_id = r.json()["room_id"]
@@ -4727,15 +4762,15 @@ def test_rejoin_after_entitlement_expires_charges_again_with_its_own_settlement(
     import sqlite3
     from datetime import UTC, datetime, timedelta
 
-    _register(client, "p24_expiry_owner")
+    _register_keyed(client, "p24_expiry_owner")
     _register(client, "p24_expiry_payer")
     mock_payout.return_value = {"transfer_id": "tr_p24_expiry"}
 
-    r = client.post("/rooms", json={
+    r = client.post("/rooms", json=_signed_room("p24_expiry_owner", {
         "name": "P2-4 Expiry Room", "creator_id": "p24_expiry_owner",
         "room_type": "private", "gate_type": "paid", "entry_fee_cents": 100,
         "access_duration_days": 1,
-    },
+    }),
         headers={"x-emporia-agent-id": "p24_expiry_owner"})
     assert r.status_code == 200, r.text
     room_id = r.json()["room_id"]
@@ -4821,14 +4856,14 @@ def test_rejoin_within_entitlement_window_is_free_and_pays_out_once(mock_verify,
     from emporia.relay_server import get_db, DATABASE_PATH
     from emporia import rooms as rooms_db
 
-    _register(client, "p24_free_owner")
+    _register_keyed(client, "p24_free_owner")
     _register(client, "p24_free_payer")
     mock_payout.return_value = {"transfer_id": "tr_p24_free"}
 
-    r = client.post("/rooms", json={
+    r = client.post("/rooms", json=_signed_room("p24_free_owner", {
         "name": "P2-4 Free Rejoin Room", "creator_id": "p24_free_owner",
         "room_type": "private", "gate_type": "paid", "entry_fee_cents": 100,
-    },
+    }),
         headers={"x-emporia-agent-id": "p24_free_owner"})
     assert r.status_code == 200, r.text
     room_id = r.json()["room_id"]
@@ -4884,14 +4919,14 @@ def test_rejoin_within_entitlement_window_ignores_a_replayed_payment_intent(
     from emporia.relay_server import get_db, DATABASE_PATH
     from emporia import rooms as rooms_db
 
-    _register(client, "p24_replay_owner")
+    _register_keyed(client, "p24_replay_owner")
     _register(client, "p24_replay_payer")
     mock_payout.return_value = {"transfer_id": "tr_p24_replay"}
 
-    r = client.post("/rooms", json={
+    r = client.post("/rooms", json=_signed_room("p24_replay_owner", {
         "name": "P2-4 Replay Rejoin Room", "creator_id": "p24_replay_owner",
         "room_type": "private", "gate_type": "paid", "entry_fee_cents": 100,
-    },
+    }),
         headers={"x-emporia-agent-id": "p24_replay_owner"})
     assert r.status_code == 200, r.text
     room_id = r.json()["room_id"]
@@ -5187,15 +5222,15 @@ def test_expired_room_entitlement_blocks_private_room_read_over_http(mock_verify
     from emporia.relay_server import DATABASE_PATH
     from datetime import UTC, datetime, timedelta
 
-    _register(client, "p25_room_owner")
+    _register_keyed(client, "p25_room_owner")
     _register(client, "p25_room_payer")
     mock_payout.return_value = {"transfer_id": "tr_p25_room"}
 
-    r = client.post("/rooms", json={
+    r = client.post("/rooms", json=_signed_room("p25_room_owner", {
         "name": "P2-5 Expiry Room", "creator_id": "p25_room_owner",
         "room_type": "private", "gate_type": "paid", "entry_fee_cents": 100,
         "access_duration_days": 1,
-    },
+    }),
         headers={"x-emporia-agent-id": "p25_room_owner"})
     assert r.status_code == 200, r.text
     room_id = r.json()["room_id"]
@@ -5246,15 +5281,15 @@ def test_expired_room_entitlement_drops_out_of_room_listing_and_roster(
     import sqlite3
     from datetime import UTC, datetime, timedelta
 
-    _register(client, "p2r4_owner")
+    _register_keyed(client, "p2r4_owner")
     _register(client, "p2r4_payer")
     mock_payout.return_value = {"transfer_id": "tr_p2r4_list"}
 
-    r = client.post("/rooms", json={
+    r = client.post("/rooms", json=_signed_room("p2r4_owner", {
         "name": "P2r-4 Listing Room", "creator_id": "p2r4_owner",
         "room_type": "private", "gate_type": "paid", "entry_fee_cents": 100,
         "access_duration_days": 1,
-    },
+    }),
         headers={"x-emporia-agent-id": "p2r4_owner"})
     assert r.status_code == 200, r.text
     room_id = r.json()["room_id"]
@@ -5301,14 +5336,14 @@ def test_current_member_and_creator_unaffected_by_listing_expiry_check(
     """P2r-4: sibling regression guard — an active (non-expired) member and
     the room's creator must still see the private paid room in GET /rooms
     with its full roster, both before and after the P2r-4 fix."""
-    _register(client, "p2r4_scope_owner")
+    _register_keyed(client, "p2r4_scope_owner")
     _register(client, "p2r4_scope_payer")
     mock_payout.return_value = {"transfer_id": "tr_p2r4_scope"}
 
-    r = client.post("/rooms", json={
+    r = client.post("/rooms", json=_signed_room("p2r4_scope_owner", {
         "name": "P2r-4 Scope Room", "creator_id": "p2r4_scope_owner",
         "room_type": "private", "gate_type": "paid", "entry_fee_cents": 100,
-    },
+    }),
         headers={"x-emporia-agent-id": "p2r4_scope_owner"})
     assert r.status_code == 200, r.text
     room_id = r.json()["room_id"]
@@ -5339,17 +5374,17 @@ def test_current_member_and_creator_unaffected_by_listing_expiry_check(
 def test_free_room_member_unaffected_by_listing_expiry_check(client):
     """P2r-4: an open (free) room's membership has no entitlement concept at
     all — the listing/roster fix must not touch it."""
-    _register(client, "p2r4_free_owner")
+    _register_keyed(client, "p2r4_free_owner")
     _register(client, "p2r4_free_member")
 
-    r = client.post("/rooms", json={
+    r = client.post("/rooms", json=_signed_room("p2r4_free_owner", {
         "name": "P2r-4 Free Room", "creator_id": "p2r4_free_owner",
         "room_type": "private", "gate_type": "invite",
-    },
+    }),
         headers={"x-emporia-agent-id": "p2r4_free_owner"})
     assert r.status_code == 200, r.text
     room_id = r.json()["room_id"]
-    client.post(f"/rooms/{room_id}/invite", json={"invitee_id": "p2r4_free_member"},
+    client.post(f"/rooms/{room_id}/invite", json=_signed_invite("p2r4_free_owner", room_id, {"invitee_id": "p2r4_free_member"}),
         headers={"x-emporia-agent-id": "p2r4_free_owner"})
     joined = client.post(f"/rooms/{room_id}/join", json={"agent_id": "p2r4_free_member"},
         headers={"x-emporia-agent-id": "p2r4_free_member"})
@@ -5432,15 +5467,15 @@ def test_expired_room_entitlement_drops_settlement_session_view_but_keeps_own_re
     from emporia.relay_server import DATABASE_PATH
     from datetime import UTC, datetime, timedelta
 
-    _register(client, "p25_view_owner")
+    _register_keyed(client, "p25_view_owner")
     _register(client, "p25_view_payer")
     mock_payout.return_value = {"transfer_id": "tr_p25_view"}
 
-    r = client.post("/rooms", json={
+    r = client.post("/rooms", json=_signed_room("p25_view_owner", {
         "name": "P2-5 Settlement View Room", "creator_id": "p25_view_owner",
         "room_type": "private", "gate_type": "paid", "entry_fee_cents": 100,
         "access_duration_days": 1,
-    },
+    }),
         headers={"x-emporia-agent-id": "p25_view_owner"})
     assert r.status_code == 200, r.text
     room_id = r.json()["room_id"]
@@ -5488,15 +5523,15 @@ def test_kicked_room_member_can_still_read_own_receipt(mock_verify, mock_payout,
     the theoretical membership-based path. Now joins through `payments` too, which
     has a real agent_id column populated by every recorded payment regardless of
     current membership."""
-    _register(client, "n54_room_owner")
+    _register_keyed(client, "n54_room_owner")
     _register(client, "n54_room_payer")
     _register(client, "n54_room_stranger")
     mock_payout.return_value = {"transfer_id": "tr_n54_room"}
 
-    r = client.post("/rooms", json={
+    r = client.post("/rooms", json=_signed_room("n54_room_owner", {
         "name": "N54 Room Receipt Room", "creator_id": "n54_room_owner",
         "room_type": "private", "gate_type": "paid", "entry_fee_cents": 100,
-    },
+    }),
         headers={"x-emporia-agent-id": "n54_room_owner"})
     room_id = r.json()["room_id"]
 
@@ -5516,7 +5551,7 @@ def test_kicked_room_member_can_still_read_own_receipt(mock_verify, mock_payout,
         )
     assert r2.status_code == 200, r2.text
 
-    kicked = client.post(f"/rooms/{room_id}/kick", json={"target_agent_id": "n54_room_payer"},
+    kicked = client.post(f"/rooms/{room_id}/kick", json=_signed_kick("n54_room_owner", room_id, {"target_agent_id": "n54_room_payer"}),
         headers={"x-emporia-agent-id": "n54_room_owner"})
     assert kicked.status_code == 200, kicked.text
 
@@ -5543,14 +5578,14 @@ def test_kicked_payer_cannot_rejoin_with_a_fresh_payment(mock_verify, mock_payou
     fires a second payout."""
     from emporia.relay_server import get_db
 
-    _register(client, "p26_kick_owner")
+    _register_keyed(client, "p26_kick_owner")
     _register(client, "p26_kick_payer")
     mock_payout.return_value = {"transfer_id": "tr_p26_kick"}
 
-    r = client.post("/rooms", json={
+    r = client.post("/rooms", json=_signed_room("p26_kick_owner", {
         "name": "P2-6 Kick Room", "creator_id": "p26_kick_owner",
         "room_type": "private", "gate_type": "paid", "entry_fee_cents": 100,
-    },
+    }),
         headers={"x-emporia-agent-id": "p26_kick_owner"})
     assert r.status_code == 200, r.text
     room_id = r.json()["room_id"]
@@ -5570,7 +5605,7 @@ def test_kicked_payer_cannot_rejoin_with_a_fresh_payment(mock_verify, mock_payou
         assert r1.status_code == 200, r1.text
 
         kicked = client.post(f"/rooms/{room_id}/kick",
-            json={"target_agent_id": "p26_kick_payer"},
+            json=_signed_kick("p26_kick_owner", room_id, {"target_agent_id": "p26_kick_payer"}),
             headers={"x-emporia-agent-id": "p26_kick_owner"})
         assert kicked.status_code == 200, kicked.text
 
@@ -5603,19 +5638,19 @@ def test_kicked_invitee_cannot_rejoin_with_the_stale_invite(client):
     never consumed, so a kicked invitee's has_invite() check still passed on
     rejoin. Must fail pre-fix: the second join succeeds using the original
     invite."""
-    _register(client, "p26_invite_owner")
+    _register_keyed(client, "p26_invite_owner")
     _register(client, "p26_invite_target")
 
-    r = client.post("/rooms", json={
+    r = client.post("/rooms", json=_signed_room("p26_invite_owner", {
         "name": "P2-6 Invite Kick Room", "creator_id": "p26_invite_owner",
         "room_type": "private", "gate_type": "invite",
-    },
+    }),
         headers={"x-emporia-agent-id": "p26_invite_owner"})
     assert r.status_code == 200, r.text
     room_id = r.json()["room_id"]
 
     invited = client.post(f"/rooms/{room_id}/invite",
-        json={"invitee_id": "p26_invite_target"},
+        json=_signed_invite("p26_invite_owner", room_id, {"invitee_id": "p26_invite_target"}),
         headers={"x-emporia-agent-id": "p26_invite_owner"})
     assert invited.status_code == 200, invited.text
 
@@ -5624,7 +5659,7 @@ def test_kicked_invitee_cannot_rejoin_with_the_stale_invite(client):
     assert r1.status_code == 200, r1.text
 
     kicked = client.post(f"/rooms/{room_id}/kick",
-        json={"target_agent_id": "p26_invite_target"},
+        json=_signed_kick("p26_invite_owner", room_id, {"target_agent_id": "p26_invite_target"}),
         headers={"x-emporia-agent-id": "p26_invite_owner"})
     assert kicked.status_code == 200, kicked.text
 
@@ -5642,13 +5677,13 @@ def test_kicked_agent_cannot_rejoin_a_free_open_room(client):
     through: is_revoked() stayed False forever, since nothing was ever
     revoked. Must fail pre-fix: the second join returns 200
     {"status": "joined"}."""
-    _register(client, "p2r1_open_owner")
+    _register_keyed(client, "p2r1_open_owner")
     _register(client, "p2r1_open_target")
 
-    r = client.post("/rooms", json={
+    r = client.post("/rooms", json=_signed_room("p2r1_open_owner", {
         "name": "P2r-1 Open Kick Room", "creator_id": "p2r1_open_owner",
         "room_type": "public", "gate_type": "open",
-    },
+    }),
         headers={"x-emporia-agent-id": "p2r1_open_owner"})
     assert r.status_code == 200, r.text
     room_id = r.json()["room_id"]
@@ -5658,7 +5693,7 @@ def test_kicked_agent_cannot_rejoin_a_free_open_room(client):
     assert r1.status_code == 200, r1.text
 
     kicked = client.post(f"/rooms/{room_id}/kick",
-        json={"target_agent_id": "p2r1_open_target"},
+        json=_signed_kick("p2r1_open_owner", room_id, {"target_agent_id": "p2r1_open_target"}),
         headers={"x-emporia-agent-id": "p2r1_open_owner"})
     assert kicked.status_code == 200, kicked.text
 
@@ -5671,14 +5706,14 @@ def test_non_kicked_agent_can_still_join_a_free_open_room(client):
     """P2r-1: sibling of the P2-6 scope test, for the open-room ban path
     specifically — kicking one agent from a free room must not lock out
     anyone else."""
-    _register(client, "p2r1_open_scope_owner")
+    _register_keyed(client, "p2r1_open_scope_owner")
     _register(client, "p2r1_open_scope_kicked")
     _register(client, "p2r1_open_scope_other")
 
-    r = client.post("/rooms", json={
+    r = client.post("/rooms", json=_signed_room("p2r1_open_scope_owner", {
         "name": "P2r-1 Open Scope Room", "creator_id": "p2r1_open_scope_owner",
         "room_type": "public", "gate_type": "open",
-    },
+    }),
         headers={"x-emporia-agent-id": "p2r1_open_scope_owner"})
     assert r.status_code == 200, r.text
     room_id = r.json()["room_id"]
@@ -5686,7 +5721,7 @@ def test_non_kicked_agent_can_still_join_a_free_open_room(client):
     client.post(f"/rooms/{room_id}/join", json={"agent_id": "p2r1_open_scope_kicked"},
         headers={"x-emporia-agent-id": "p2r1_open_scope_kicked"})
     client.post(f"/rooms/{room_id}/kick",
-        json={"target_agent_id": "p2r1_open_scope_kicked"},
+        json=_signed_kick("p2r1_open_scope_owner", room_id, {"target_agent_id": "p2r1_open_scope_kicked"}),
         headers={"x-emporia-agent-id": "p2r1_open_scope_owner"})
 
     r2 = client.post(f"/rooms/{room_id}/join", json={"agent_id": "p2r1_open_scope_other"},
@@ -5699,15 +5734,15 @@ def test_non_kicked_agent_can_still_join_a_free_open_room(client):
 def test_non_kicked_agent_can_still_join_the_room(mock_verify, mock_payout, client):
     """P2-6: the ban check must be scoped to the specific (room, agent) pair —
     kicking one agent must not lock out anyone else."""
-    _register(client, "p26_scope_owner")
+    _register_keyed(client, "p26_scope_owner")
     _register(client, "p26_scope_kicked")
     _register(client, "p26_scope_other")
     mock_payout.return_value = {"transfer_id": "tr_p26_scope"}
 
-    r = client.post("/rooms", json={
+    r = client.post("/rooms", json=_signed_room("p26_scope_owner", {
         "name": "P2-6 Scope Room", "creator_id": "p26_scope_owner",
         "room_type": "private", "gate_type": "paid", "entry_fee_cents": 100,
-    },
+    }),
         headers={"x-emporia-agent-id": "p26_scope_owner"})
     assert r.status_code == 200, r.text
     room_id = r.json()["room_id"]
@@ -5726,7 +5761,7 @@ def test_non_kicked_agent_can_still_join_the_room(mock_verify, mock_payout, clie
             headers={"x-emporia-agent-id": "p26_scope_kicked"})
         assert r1.status_code == 200, r1.text
 
-        client.post(f"/rooms/{room_id}/kick", json={"target_agent_id": "p26_scope_kicked"},
+        client.post(f"/rooms/{room_id}/kick", json=_signed_kick("p26_scope_owner", room_id, {"target_agent_id": "p26_scope_kicked"}),
             headers={"x-emporia-agent-id": "p26_scope_owner"})
 
         mock_verify.return_value = {
@@ -5748,14 +5783,14 @@ def _p27_paid_room_with_kicked_payer(client, mock_verify, mock_payout, *, suffix
     create a paid room, join (transfer succeeds), return the ids the
     test needs. Not a fixture — needs mock_verify/mock_payout already active."""
     owner, payer = f"p27_owner_{suffix}", f"p27_payer_{suffix}"
-    _register(client, owner)
+    _register_keyed(client, owner)
     _register(client, payer)
     mock_payout.return_value = {"transfer_id": f"tr_p27_{suffix}"}
 
-    r = client.post("/rooms", json={
+    r = client.post("/rooms", json=_signed_room(owner, {
         "name": f"P2-7 Room {suffix}", "creator_id": owner,
         "room_type": "private", "gate_type": "paid", "entry_fee_cents": 100,
-    },
+    }),
         headers={"x-emporia-agent-id": owner})
     assert r.status_code == 200, r.text
     room_id = r.json()["room_id"]
@@ -5793,7 +5828,7 @@ def test_kick_with_refund_reverses_transfer_then_refunds_payment(
         mock_refund.return_value = {"payment_intent_id": pi_id, "refund_id": "re_p27_refund"}
 
         kicked = client.post(f"/rooms/{room_id}/kick",
-            json={"target_agent_id": payer, "refund": True},
+            json=_signed_kick(owner, room_id, {"target_agent_id": payer, "refund": True}),
             headers={"x-emporia-agent-id": owner})
     assert kicked.status_code == 200, kicked.text
     body = kicked.json()
@@ -5881,7 +5916,7 @@ def test_kick_refund_survives_a_db_write_failure_after_stripe_succeeds(
             side_effect=lambda: _FailingConn(real_get_db()),
         ):
             kicked = client.post(f"/rooms/{room_id}/kick",
-                json={"target_agent_id": payer, "refund": True},
+                json=_signed_kick(owner, room_id, {"target_agent_id": payer, "refund": True}),
                 headers={"x-emporia-agent-id": owner})
 
     assert kicked.status_code == 200, kicked.text
@@ -5918,14 +5953,14 @@ def test_kick_refund_ids_redacted_for_a_co_payer(client):
     owner = "p2r3_redact_owner"
     payer_a = "p2r3_redact_payer_a"
     payer_b = "p2r3_redact_payer_b"
-    _register(client, owner)
+    _register_keyed(client, owner)
     _register(client, payer_a)
     _register(client, payer_b)
 
-    r = client.post("/rooms", json={
+    r = client.post("/rooms", json=_signed_room(owner, {
         "name": "P2r-3 Redact Room", "creator_id": owner,
         "room_type": "private", "gate_type": "paid", "entry_fee_cents": 100,
-    },
+    }),
         headers={"x-emporia-agent-id": owner})
     assert r.status_code == 200, r.text
     room_id = r.json()["room_id"]
@@ -5980,7 +6015,7 @@ def test_kick_refund_partial_failure_records_reversal_without_refund(
         )
         mock_reverse.return_value = {"transfer_id": transfer_id, "reversal_id": "trr_p2r3_partial"}
         kicked = client.post(f"/rooms/{room_id}/kick",
-            json={"target_agent_id": payer, "refund": True},
+            json=_signed_kick(owner, room_id, {"target_agent_id": payer, "refund": True}),
             headers={"x-emporia-agent-id": owner})
     assert kicked.status_code == 200, kicked.text
     assert kicked.json()["refund"]["refunded"] is False
@@ -6014,7 +6049,7 @@ def test_kick_without_refund_flag_moves_no_money(
             client, mock_verify, mock_payout, suffix="noref"
         )
         kicked = client.post(f"/rooms/{room_id}/kick",
-            json={"target_agent_id": payer},
+            json=_signed_kick(owner, room_id, {"target_agent_id": payer}),
             headers={"x-emporia-agent-id": owner})
     assert kicked.status_code == 200, kicked.text
     assert kicked.json()["refund"] is None
@@ -6043,7 +6078,7 @@ def test_kick_refund_failure_still_leaves_agent_kicked_and_revoked(
             client, mock_verify, mock_payout, suffix="fail"
         )
         kicked = client.post(f"/rooms/{room_id}/kick",
-            json={"target_agent_id": payer, "refund": True},
+            json=_signed_kick(owner, room_id, {"target_agent_id": payer, "refund": True}),
             headers={"x-emporia-agent-id": owner})
     assert kicked.status_code == 200, kicked.text
     assert kicked.json()["refund"]["refunded"] is False
@@ -6059,13 +6094,13 @@ def test_kick_with_refund_on_free_room_member_is_a_clean_noop(client):
     not attempt any Stripe call or 500 — there is no settlement row to refund
     against, and that's a legitimate, common case (most rooms aren't paid),
     not an error."""
-    _register(client, "p27_free_owner")
+    _register_keyed(client, "p27_free_owner")
     _register(client, "p27_free_member")
 
-    r = client.post("/rooms", json={
+    r = client.post("/rooms", json=_signed_room("p27_free_owner", {
         "name": "P2-7 Free Room", "creator_id": "p27_free_owner",
         "room_type": "public", "gate_type": "open",
-    },
+    }),
         headers={"x-emporia-agent-id": "p27_free_owner"})
     assert r.status_code == 200, r.text
     room_id = r.json()["room_id"]
@@ -6075,7 +6110,7 @@ def test_kick_with_refund_on_free_room_member_is_a_clean_noop(client):
     assert joined.status_code == 200, joined.text
 
     kicked = client.post(f"/rooms/{room_id}/kick",
-        json={"target_agent_id": "p27_free_member", "refund": True},
+        json=_signed_kick("p27_free_owner", room_id, {"target_agent_id": "p27_free_member", "refund": True}),
         headers={"x-emporia-agent-id": "p27_free_owner"})
     assert kicked.status_code == 200, kicked.text
     assert kicked.json()["refund"] == {"refunded": False, "reason": "no_payment_found"}
@@ -6239,7 +6274,7 @@ def _settlement_matrix_room(client, room_type, gate_type):
     owner = f"n6mat_rm_{tag}_owner"
     payer = f"n6mat_rm_{tag}_payer"
     stranger = f"n6mat_rm_{tag}_stranger"
-    _register(client, owner)
+    _register_keyed(client, owner)
     _register(client, payer)
     _register(client, stranger)
     entry_fee = 100 if gate_type == "paid" else 0
@@ -6247,7 +6282,7 @@ def _settlement_matrix_room(client, room_type, gate_type):
         "gate_type": gate_type}
     if entry_fee:
         body["entry_fee_cents"] = entry_fee
-    r = client.post("/rooms", json=body, headers={"x-emporia-agent-id": owner})
+    r = client.post("/rooms", json=_signed_room(owner, body), headers={"x-emporia-agent-id": owner})
     assert r.status_code == 200, r.text
     room_id = r.json()["room_id"]
     if gate_type == "open":
@@ -6498,14 +6533,14 @@ def test_settlement_co_payer_cannot_see_others_payment_intent_ids_room(client):
     owner = "n6co_room_owner"
     payer_a = "n6co_room_payer_a"
     payer_b = "n6co_room_payer_b"
-    _register(client, owner)
+    _register_keyed(client, owner)
     _register(client, payer_a)
     _register(client, payer_b)
 
-    r = client.post("/rooms", json={
+    r = client.post("/rooms", json=_signed_room(owner, {
         "name": "N6 Co-Payer Room", "creator_id": owner,
         "room_type": "private", "gate_type": "paid", "entry_fee_cents": 100,
-    },
+    }),
         headers={"x-emporia-agent-id": owner})
     assert r.status_code == 200, r.text
     room_id = r.json()["room_id"]
@@ -6571,14 +6606,14 @@ def test_settlement_payer_id_redacted_for_non_owned_rows(client):
     owner = "n8pid_room_owner"
     payer_a = "n8pid_room_payer_a"
     payer_b = "n8pid_room_payer_b"
-    _register(client, owner)
+    _register_keyed(client, owner)
     _register(client, payer_a)
     _register(client, payer_b)
 
-    r = client.post("/rooms", json={
+    r = client.post("/rooms", json=_signed_room(owner, {
         "name": "N8 Redaction Room", "creator_id": owner,
         "room_type": "private", "gate_type": "paid", "entry_fee_cents": 100,
-    },
+    }),
         headers={"x-emporia-agent-id": owner})
     assert r.status_code == 200, r.text
     room_id = r.json()["room_id"]
@@ -6770,14 +6805,14 @@ def test_settlement_row_dict_never_leaks_internal_columns_to_a_co_payer(client):
     owner = "p1r3_leak_owner"
     payer_a = "p1r3_leak_payer_a"
     payer_b = "p1r3_leak_payer_b"
-    _register(client, owner)
+    _register_keyed(client, owner)
     _register(client, payer_a)
     _register(client, payer_b)
 
-    r = client.post("/rooms", json={
+    r = client.post("/rooms", json=_signed_room(owner, {
         "name": "P1r3 Leak Room", "creator_id": owner,
         "room_type": "private", "gate_type": "paid", "entry_fee_cents": 100,
-    },
+    }),
         headers={"x-emporia-agent-id": owner})
     assert r.status_code == 200, r.text
     room_id = r.json()["room_id"]
@@ -6824,13 +6859,13 @@ def test_settlements_agent_id_and_unfiltered_branches_never_return_internal_colu
 
     owner = "p2_2_leak_owner"
     payer = "p2_2_leak_payer"
-    _register(client, owner)
+    _register_keyed(client, owner)
     _register(client, payer)
 
-    r = client.post("/rooms", json={
+    r = client.post("/rooms", json=_signed_room(owner, {
         "name": "P2-2 Leak Room", "creator_id": owner,
         "room_type": "private", "gate_type": "paid", "entry_fee_cents": 100,
-    },
+    }),
         headers={"x-emporia-agent-id": owner})
     assert r.status_code == 200, r.text
     room_id = r.json()["room_id"]
@@ -6883,13 +6918,13 @@ def test_settlements_agent_id_and_unfiltered_branches_return_refund_ids_in_plain
 
     owner = "s2_pub_owner"
     payer = "s2_pub_payer"
-    _register(client, owner)
+    _register_keyed(client, owner)
     _register(client, payer)
 
-    r = client.post("/rooms", json={
+    r = client.post("/rooms", json=_signed_room(owner, {
         "name": "S2 Public Refund Ids Room", "creator_id": owner,
         "room_type": "private", "gate_type": "paid", "entry_fee_cents": 100,
-    },
+    }),
         headers={"x-emporia-agent-id": owner})
     assert r.status_code == 200, r.text
     room_id = r.json()["room_id"]
@@ -7093,13 +7128,13 @@ def test_settlement_agent_id_query_does_not_drop_owned_rows_past_candidate_limit
 
     owner = "n7lim_room_owner"
     payer_self = "n7lim_room_payer_self"
-    _register(client, owner)
+    _register_keyed(client, owner)
     _register(client, payer_self)
 
-    r = client.post("/rooms", json={
+    r = client.post("/rooms", json=_signed_room(owner, {
         "name": "N7 Limit Room", "creator_id": owner,
         "room_type": "private", "gate_type": "paid", "entry_fee_cents": 100,
-    },
+    }),
         headers={"x-emporia-agent-id": owner})
     assert r.status_code == 200, r.text
     room_id = r.json()["room_id"]
@@ -7945,11 +7980,11 @@ def test_settlement_reads_report_has_more(client):
     from emporia.relay_server import record_settlement
 
     owner = "n7page_room_owner"
-    _register(client, owner)
-    r = client.post("/rooms", json={
+    _register_keyed(client, owner)
+    r = client.post("/rooms", json=_signed_room(owner, {
         "name": "N7 Page Room", "creator_id": owner,
         "room_type": "private", "gate_type": "paid", "entry_fee_cents": 100,
-    },
+    }),
         headers={"x-emporia-agent-id": owner})
     assert r.status_code == 200, r.text
     room_id = r.json()["room_id"]
@@ -8134,14 +8169,14 @@ def test_settlement_redaction_does_not_blind_the_operator(client):
     owner = "n6op_room_owner"
     payer_a = "n6op_room_payer_a"
     payer_b = "n6op_room_payer_b"
-    _register(client, owner)
+    _register_keyed(client, owner)
     _register(client, payer_a)
     _register(client, payer_b)
 
-    r = client.post("/rooms", json={
+    r = client.post("/rooms", json=_signed_room(owner, {
         "name": "N6 Operator Audit Room", "creator_id": owner,
         "room_type": "private", "gate_type": "paid", "entry_fee_cents": 100,
-    },
+    }),
         headers={"x-emporia-agent-id": owner})
     assert r.status_code == 200, r.text
     room_id = r.json()["room_id"]
@@ -8184,15 +8219,15 @@ def test_payment_records_redacts_other_payers_in_room(mock_verify, mock_payout, 
     owner = "n6pr_room_owner"
     payer_a = "n6pr_room_payer_a"
     payer_b = "n6pr_room_payer_b"
-    _register(client, owner)
+    _register_keyed(client, owner)
     _register(client, payer_a)
     _register(client, payer_b)
     mock_payout.return_value = {"transfer_id": "tr_n6pr_room"}
 
-    r = client.post("/rooms", json={
+    r = client.post("/rooms", json=_signed_room(owner, {
         "name": "N6 Payment Records Room", "creator_id": owner,
         "room_type": "private", "gate_type": "paid", "entry_fee_cents": 100,
-    },
+    }),
         headers={"x-emporia-agent-id": owner})
     assert r.status_code == 200, r.text
     room_id = r.json()["room_id"]
@@ -8776,12 +8811,12 @@ def test_linked_session_id(rooms_db_path):
 # ============================================================================
 
 def test_room_create_list_get(client):
-    _register(client, "room_alice")
-    r = client.post("/rooms", json={
+    _register_keyed(client, "room_alice")
+    r = client.post("/rooms", json=_signed_room("room_alice", {
         "name": "Test Room",
         "creator_id": "room_alice",
         "room_type": "public",
-    },
+    }),
         headers={"x-emporia-agent-id": "room_alice"})
     assert r.status_code == 200
     room = r.json()
@@ -8804,39 +8839,39 @@ def test_room_gate_type_stripe_payment_is_rejected_paid_is_the_spelling(client):
     compatibility needed for this rename). The old spelling must now 400,
     not silently normalize or keep working. Must fail pre-fix: pre-rename
     code accepts 'stripe_payment' and rejects 'paid'."""
-    _register(client, "p3_gate_owner")
+    _register_keyed(client, "p3_gate_owner")
 
-    old_spelling = client.post("/rooms", json={
+    old_spelling = client.post("/rooms", json=_signed_room("p3_gate_owner", {
         "name": "Old Spelling Room", "creator_id": "p3_gate_owner",
         "room_type": "private", "gate_type": "stripe_payment", "entry_fee_cents": 100,
-    },
+    }),
         headers={"x-emporia-agent-id": "p3_gate_owner"})
     assert old_spelling.status_code == 400, old_spelling.text
     assert "paid" in old_spelling.json()["detail"], \
         f"error message must name the current spelling — got {old_spelling.json()['detail']!r}"
 
-    new_spelling = client.post("/rooms", json={
+    new_spelling = client.post("/rooms", json=_signed_room("p3_gate_owner", {
         "name": "New Spelling Room", "creator_id": "p3_gate_owner",
         "room_type": "private", "gate_type": "paid", "entry_fee_cents": 100,
-    },
+    }),
         headers={"x-emporia-agent-id": "p3_gate_owner"})
     assert new_spelling.status_code == 200, new_spelling.text
     assert new_spelling.json()["gate_type"] == "paid"
 
     # gate_type='paid' still requires a positive entry fee — the rename must not
     # have loosened this validation.
-    no_fee = client.post("/rooms", json={
+    no_fee = client.post("/rooms", json=_signed_room("p3_gate_owner", {
         "name": "No Fee Paid Room", "creator_id": "p3_gate_owner",
         "room_type": "private", "gate_type": "paid", "entry_fee_cents": 0,
-    },
+    }),
         headers={"x-emporia-agent-id": "p3_gate_owner"})
     assert no_fee.status_code == 400, no_fee.text
 
 
 def test_room_join_open(client):
-    _register(client, "room_owner")
+    _register_keyed(client, "room_owner")
     _register(client, "room_joiner")
-    r = client.post("/rooms", json={"name": "Open Room", "creator_id": "room_owner"},
+    r = client.post("/rooms", json=_signed_room("room_owner", {"name": "Open Room", "creator_id": "room_owner"}),
         headers={"x-emporia-agent-id": "room_owner"})
     room_id = r.json()["room_id"]
 
@@ -8849,12 +8884,12 @@ def test_room_join_open(client):
 
 
 def test_room_join_invite_gate_no_invite(client):
-    _register(client, "inv_owner")
+    _register_keyed(client, "inv_owner")
     _register(client, "inv_nobody")
-    r = client.post("/rooms", json={
+    r = client.post("/rooms", json=_signed_room("inv_owner", {
         "name": "Invite Room", "creator_id": "inv_owner",
         "room_type": "private", "gate_type": "invite",
-    },
+    }),
         headers={"x-emporia-agent-id": "inv_owner"})
     room_id = r.json()["room_id"]
     r2 = client.post(
@@ -8865,16 +8900,16 @@ def test_room_join_invite_gate_no_invite(client):
 
 
 def test_room_invite_then_join(client):
-    _register(client, "inv2_owner")
+    _register_keyed(client, "inv2_owner")
     _register(client, "inv2_guest")
-    r = client.post("/rooms", json={
+    r = client.post("/rooms", json=_signed_room("inv2_owner", {
         "name": "Invite2 Room", "creator_id": "inv2_owner",
         "room_type": "private", "gate_type": "invite",
-    },
+    }),
         headers={"x-emporia-agent-id": "inv2_owner"})
     room_id = r.json()["room_id"]
     r2 = client.post(
-        f"/rooms/{room_id}/invite", json={"invitee_id": "inv2_guest"},
+        f"/rooms/{room_id}/invite", json=_signed_invite("inv2_owner", room_id, {"invitee_id": "inv2_guest"}),
         headers={"x-emporia-agent-id": "inv2_owner"},
     )
     assert r2.status_code == 200
@@ -8891,7 +8926,7 @@ def test_room_send_message(client):
     from emporia.wire import new_message_nonce
     _register_keyed(client, "msg_alice")
     _register(client, "msg_bob")
-    r = client.post("/rooms", json={"name": "Chat", "creator_id": "msg_alice"},
+    r = client.post("/rooms", json=_signed_room("msg_alice", {"name": "Chat", "creator_id": "msg_alice"}),
         headers={"x-emporia-agent-id": "msg_alice"})
     room_id = r.json()["room_id"]
     client.post(
@@ -8921,9 +8956,9 @@ def test_room_send_message(client):
 
 
 def test_room_kick(client):
-    _register(client, "kick_owner")
+    _register_keyed(client, "kick_owner")
     _register(client, "kick_target")
-    r = client.post("/rooms", json={"name": "Kickable", "creator_id": "kick_owner"},
+    r = client.post("/rooms", json=_signed_room("kick_owner", {"name": "Kickable", "creator_id": "kick_owner"}),
         headers={"x-emporia-agent-id": "kick_owner"})
     room_id = r.json()["room_id"]
     client.post(
@@ -8932,7 +8967,7 @@ def test_room_kick(client):
     )
 
     r2 = client.post(
-        f"/rooms/{room_id}/kick", json={"target_agent_id": "kick_target"},
+        f"/rooms/{room_id}/kick", json=_signed_kick("kick_owner", room_id, {"target_agent_id": "kick_target"}),
         headers={"x-emporia-agent-id": "kick_owner"},
     )
     assert r2.status_code == 200
@@ -8956,7 +8991,7 @@ def test_room_guardrails_blocks_injection(client):
     from emporia.identity import sign
 
     _register_keyed(client, "injection_sender")
-    r = client.post("/rooms", json={"name": "Clean Room", "creator_id": "injection_sender"},
+    r = client.post("/rooms", json=_signed_room("injection_sender", {"name": "Clean Room", "creator_id": "injection_sender"}),
         headers={"x-emporia-agent-id": "injection_sender"})
     room_id = r.json()["room_id"]
 
@@ -8984,14 +9019,14 @@ def test_room_encrypted_skips_guardrails(client):
     the scan spy is never called — a stronger statement than the status code alone,
     since a 200 could also mean the scan ran and passed."""
     _enc_agents(client, "enc_alice", "enc_bob")
-    r = client.post("/rooms", json={
+    r = client.post("/rooms", json=_signed_room("enc_alice", {
         "name": "Encrypted Room", "creator_id": "enc_alice",
         "room_type": "private", "gate_type": "invite", "encrypted": True,
-    },
+    }),
         headers={"x-emporia-agent-id": "enc_alice"})
     room_id = r.json()["room_id"]
     client.post(
-        f"/rooms/{room_id}/invite", json={"invitee_id": "enc_bob"},
+        f"/rooms/{room_id}/invite", json=_signed_invite("enc_alice", room_id, {"invitee_id": "enc_bob"}),
         headers={"x-emporia-agent-id": "enc_alice"},
     )
     client.post(
@@ -9012,12 +9047,12 @@ def test_room_private_not_visible_to_non_member(client):
     """viewer_id used to be a bare, unauthenticated query param — this now proves the
     replacement (_dashboard_agent_id(request)) actually distinguishes member from
     stranger from anonymous, not just that a stranger who never had access still doesn't."""
-    _register(client, "priv_owner")
+    _register_keyed(client, "priv_owner")
     _register(client, "priv_stranger")
-    client.post("/rooms", json={
+    client.post("/rooms", json=_signed_room("priv_owner", {
         "name": "Secret Room", "creator_id": "priv_owner",
         "room_type": "private", "gate_type": "invite",
-    },
+    }),
         headers={"x-emporia-agent-id": "priv_owner"})
 
     r = client.get("/rooms")
@@ -9142,7 +9177,7 @@ def test_room_message_caller_must_be_sender(prod_client):
     _register_keyed(prod_client, "rmsg_owner")
     _register_keyed(prod_client, "rmsg_member")
 
-    r = prod_client.post("/rooms", json={"name": "N2-4 T1 Room", "creator_id": "rmsg_owner"},
+    r = prod_client.post("/rooms", json=_signed_room("rmsg_owner", {"name": "N2-4 T1 Room", "creator_id": "rmsg_owner"}),
         headers=bearer_for(prod_client, "rmsg_owner"))
     room_id = r.json()["room_id"]
     prod_client.post(
@@ -9464,7 +9499,7 @@ def test_room_message_rejects_prose_msg_type(prod_client):
     from emporia.identity import sign
     _register_keyed(prod_client, "p14_room_scan_owner")
     room_id = prod_client.post(
-        "/rooms", json={"name": "P14 scan room", "creator_id": "p14_room_scan_owner"},
+        "/rooms", json=_signed_room("p14_room_scan_owner", {"name": "P14 scan room", "creator_id": "p14_room_scan_owner"}),
         headers=bearer_for(prod_client, "p14_room_scan_owner"),
     ).json()["room_id"]
 
@@ -9567,7 +9602,7 @@ def test_room_message_rejects_invalid_and_server_owned_msg_type(prod_client):
     from emporia.identity import sign
     _register_keyed(prod_client, "p15_room_enum_owner")
     room_id = prod_client.post(
-        "/rooms", json={"name": "P15 enum room", "creator_id": "p15_room_enum_owner"},
+        "/rooms", json=_signed_room("p15_room_enum_owner", {"name": "P15 enum room", "creator_id": "p15_room_enum_owner"}),
         headers=bearer_for(prod_client, "p15_room_enum_owner"),
     ).json()["room_id"]
     content = "P15 enum test"
@@ -9745,24 +9780,24 @@ def test_room_invite_requires_caller_be_creator(prod_client):
     _register_keyed(prod_client, "rinv_impostor")
     _register_keyed(prod_client, "rinv_guest")
 
-    r = prod_client.post("/rooms", json={
+    r = prod_client.post("/rooms", json=_signed_room("rinv_creator", {
         "name": "N2-4 T2 Invite Room", "creator_id": "rinv_creator",
         "room_type": "private", "gate_type": "invite",
-    },
+    }),
         headers=bearer_for(prod_client, "rinv_creator"))
     room_id = r.json()["room_id"]
 
-    r = prod_client.post(f"/rooms/{room_id}/invite", json={"invitee_id": "rinv_guest"})
+    r = prod_client.post(f"/rooms/{room_id}/invite", json=_signed_invite("rinv_creator", room_id, {"invitee_id": "rinv_guest"}))
     assert r.status_code == 403
 
     r = prod_client.post(
-        f"/rooms/{room_id}/invite", json={"invitee_id": "rinv_guest"},
+        f"/rooms/{room_id}/invite", json=_signed_invite("rinv_impostor", room_id, {"invitee_id": "rinv_guest"}),
         headers=bearer_for(prod_client, "rinv_impostor"),
     )
     assert r.status_code == 403
 
     r = prod_client.post(
-        f"/rooms/{room_id}/invite", json={"invitee_id": "rinv_guest"},
+        f"/rooms/{room_id}/invite", json=_signed_invite("rinv_creator", room_id, {"invitee_id": "rinv_guest"}),
         headers=bearer_for(prod_client, "rinv_creator"),
     )
     assert r.status_code == 200
@@ -9779,7 +9814,7 @@ def test_room_kick_requires_caller_be_creator(prod_client):
     _register_keyed(prod_client, "rkick_impostor")
     _register_keyed(prod_client, "rkick_target")
 
-    r = prod_client.post("/rooms", json={"name": "Room Alpha Beta", "creator_id": "rkick_creator"},
+    r = prod_client.post("/rooms", json=_signed_room("rkick_creator", {"name": "Room Alpha Beta", "creator_id": "rkick_creator"}),
         headers=bearer_for(prod_client, "rkick_creator"))
     room_id = r.json()["room_id"]
     prod_client.post(
@@ -9787,17 +9822,17 @@ def test_room_kick_requires_caller_be_creator(prod_client):
         headers=bearer_for(prod_client, "rkick_target"),
     )
 
-    r = prod_client.post(f"/rooms/{room_id}/kick", json={"target_agent_id": "rkick_target"})
+    r = prod_client.post(f"/rooms/{room_id}/kick", json=_signed_kick("rkick_creator", room_id, {"target_agent_id": "rkick_target"}))
     assert r.status_code == 403
 
     r = prod_client.post(
-        f"/rooms/{room_id}/kick", json={"target_agent_id": "rkick_target"},
+        f"/rooms/{room_id}/kick", json=_signed_kick("rkick_impostor", room_id, {"target_agent_id": "rkick_target"}),
         headers=bearer_for(prod_client, "rkick_impostor"),
     )
     assert r.status_code == 403
 
     r = prod_client.post(
-        f"/rooms/{room_id}/kick", json={"target_agent_id": "rkick_target"},
+        f"/rooms/{room_id}/kick", json=_signed_kick("rkick_creator", room_id, {"target_agent_id": "rkick_target"}),
         headers=bearer_for(prod_client, "rkick_creator"),
     )
     assert r.status_code == 200
@@ -9859,7 +9894,7 @@ def test_join_and_subscribe_reject_impersonated_agent_id(prod_client):
     )
     assert r.status_code == 403
 
-    r = prod_client.post("/rooms", json={"name": "N2-4 T2 Join Room", "creator_id": "impj_real"},
+    r = prod_client.post("/rooms", json=_signed_room("impj_real", {"name": "N2-4 T2 Join Room", "creator_id": "impj_real"}),
         headers=bearer_for(prod_client, "impj_real"))
     room_id = r.json()["room_id"]
     r = prod_client.post(
@@ -9920,10 +9955,10 @@ def test_attributed_content_creation_requires_authentication(prod_client):
     )
     assert r.status_code in (200, 201)
 
-    r = prod_client.post("/rooms", json={"name": "Forged Room"})
+    r = prod_client.post("/rooms", json=_signed_room("attr_real", {"name": "Forged Room"}))
     assert r.status_code == 401
     r = prod_client.post(
-        "/rooms", json={"name": "Real Room"},
+        "/rooms", json=_signed_room("attr_real", {"name": "Real Room"}),
         headers=bearer_for(prod_client, "attr_real"),
     )
     assert r.status_code == 200
@@ -10097,7 +10132,7 @@ def test_room_message_signature_mandatory(prod_client):
     from emporia.wire import new_message_nonce
     _register_keyed(prod_client, "sig_room_owner")
     r = prod_client.post(
-        "/rooms", json={"name": "Signature Test Room", "creator_id": "sig_room_owner"},
+        "/rooms", json=_signed_room("sig_room_owner", {"name": "Signature Test Room", "creator_id": "sig_room_owner"}),
         headers=bearer_for(prod_client, "sig_room_owner"),
     )
     room_id = r.json()["room_id"]
@@ -10154,11 +10189,11 @@ def test_room_message_signature_not_replayable_across_rooms(prod_client):
     _register_keyed(prod_client, "replay_owner")
 
     room_a = prod_client.post(
-        "/rooms", json={"name": "Room A", "creator_id": "replay_owner"},
+        "/rooms", json=_signed_room("replay_owner", {"name": "Room A", "creator_id": "replay_owner"}),
         headers=bearer_for(prod_client, "replay_owner"),
     ).json()["room_id"]
     room_b = prod_client.post(
-        "/rooms", json={"name": "Room B", "creator_id": "replay_owner"},
+        "/rooms", json=_signed_room("replay_owner", {"name": "Room B", "creator_id": "replay_owner"}),
         headers=bearer_for(prod_client, "replay_owner"),
     ).json()["room_id"]
 
@@ -11120,7 +11155,7 @@ def test_relay_room_message_omitted_msg_type_resolves_from_wire_py(prod_client):
 
     _register_keyed(prod_client, "p12_msgtype_owner")
     r = prod_client.post(
-        "/rooms", json={"name": "P12 msg_type test room", "creator_id": "p12_msgtype_owner"},
+        "/rooms", json=_signed_room("p12_msgtype_owner", {"name": "P12 msg_type test room", "creator_id": "p12_msgtype_owner"}),
         headers=bearer_for(prod_client, "p12_msgtype_owner"),
     )
     assert r.status_code == 200, r.text
@@ -11589,10 +11624,10 @@ def test_mcp_send_room_message_uses_shared_wire_contract_and_relay_accepts_it(pr
 
     _register_keyed(prod_client, "p6_5_mcp_sender")
 
-    r = prod_client.post("/rooms", json={
+    r = prod_client.post("/rooms", json=_signed_room("p6_5_mcp_sender", {
         "name": "P6-5 MCP Wire Room", "creator_id": "p6_5_mcp_sender",
         "room_type": "public", "gate_type": "open",
-    },
+    }),
         headers=bearer_for(prod_client, "p6_5_mcp_sender"))
     assert r.status_code == 200, r.text
     room_id = r.json()["room_id"]
@@ -12618,7 +12653,8 @@ def test_agent_sdk_kick_from_room_posts_to_the_relay_kick_endpoint():
 
     assert agent._http.post.call_args.args[0] == "http://fake.invalid/rooms/room_1/kick"
     body = agent._http.post.call_args.kwargs["json"]
-    assert body == {"target_agent_id": "sdk_kick_target", "refund": True}
+    assert {k: body[k] for k in ("target_agent_id", "refund")} == {"target_agent_id": "sdk_kick_target", "refund": True}
+    assert body["at"] and body["signature"]    # P243: the creator's signed act
     agent._bearer_headers.assert_awaited()
     assert result["status"] == "kicked"
 
@@ -13013,13 +13049,13 @@ def test_room_join_402_is_byte_identical_when_x402_unconfigured(client):
     zero difference."""
     owner = "p1b4_off_owner"
     payer = "p1b4_off_payer"
-    _register(client, owner)
+    _register_keyed(client, owner)
     _register(client, payer)
 
-    r = client.post("/rooms", json={
+    r = client.post("/rooms", json=_signed_room(owner, {
         "name": "P1b-4 Off Room", "creator_id": owner,
         "room_type": "private", "gate_type": "paid", "entry_fee_cents": 250,
-    },
+    }),
         headers={"x-emporia-agent-id": owner})
     assert r.status_code == 200, r.text
     room_id = r.json()["room_id"]
@@ -13052,7 +13088,7 @@ def test_room_join_402_offers_x402_alongside_mpp_when_configured(client):
 
     owner = "p1b4_on_owner"
     payer = "p1b4_on_payer"
-    _register(client, owner)
+    _register_keyed(client, owner)
     _register(client, payer)
 
     wallet = client.post(f"/agents/{owner}/x402-wallet",
@@ -13060,10 +13096,10 @@ def test_room_join_402_offers_x402_alongside_mpp_when_configured(client):
         headers={"x-emporia-agent-id": owner})
     assert wallet.status_code == 200, wallet.text
 
-    r = client.post("/rooms", json={
+    r = client.post("/rooms", json=_signed_room(owner, {
         "name": "P1b-4 On Room", "creator_id": owner,
         "room_type": "private", "gate_type": "paid", "entry_fee_cents": 250,
-    },
+    }),
         headers={"x-emporia-agent-id": owner})
     assert r.status_code == 200, r.text
     room_id = r.json()["room_id"]
@@ -13121,13 +13157,13 @@ def test_x402_credential_declined_explicitly_when_x402_disabled(mock_verify, moc
     get to override that choice."""
     owner = "p1br1_off_owner"
     payer = "p1br1_off_payer"
-    _register(client, owner)
+    _register_keyed(client, owner)
     _register(client, payer)
 
-    r = client.post("/rooms", json={
+    r = client.post("/rooms", json=_signed_room(owner, {
         "name": "P1br-1 Off Room", "creator_id": owner,
         "room_type": "private", "gate_type": "paid", "entry_fee_cents": 250,
-    },
+    }),
         headers={"x-emporia-agent-id": owner})
     assert r.status_code == 200, r.text
     room_id = r.json()["room_id"]
@@ -13214,14 +13250,14 @@ def test_x402_credential_declined_explicitly_when_creator_has_no_wallet(mock_ver
     which would leave the agent with no visible way to retry."""
     owner = "p1br1_nowallet_owner"
     payer = "p1br1_nowallet_payer"
-    _register(client, owner)
+    _register_keyed(client, owner)
     _register(client, payer)
     # no wallet registered for owner
 
-    r = client.post("/rooms", json={
+    r = client.post("/rooms", json=_signed_room(owner, {
         "name": "P1br-1 No Wallet Room", "creator_id": owner,
         "room_type": "private", "gate_type": "paid", "entry_fee_cents": 250,
-    },
+    }),
         headers={"x-emporia-agent-id": owner})
     assert r.status_code == 200, r.text
     room_id = r.json()["room_id"]
@@ -13260,16 +13296,16 @@ def test_x402_credential_declined_explicitly_for_non_usd_currency(mock_verify, m
     reachable field (default "USD"), so this is not a hypothetical."""
     owner = "p1brr2_eur_owner"
     payer = "p1brr2_eur_payer"
-    _register(client, owner)
+    _register_keyed(client, owner)
     _register(client, payer)
     from emporia.relay_server import AGENT_REGISTRY
     AGENT_REGISTRY.set_x402_pay_to(owner, "evm", "0x" + "aa" * 20)
 
-    r = client.post("/rooms", json={
+    r = client.post("/rooms", json=_signed_room(owner, {
         "name": "P1brr-2 EUR Room", "creator_id": owner,
         "room_type": "private", "gate_type": "paid", "entry_fee_cents": 250,
         "currency": "eur",
-    },
+    }),
         headers={"x-emporia-agent-id": owner})
     assert r.status_code == 200, r.text
     room_id = r.json()["room_id"]
@@ -13302,13 +13338,13 @@ def test_x402_no_credential_challenge_has_no_declined_key(client):
     header) must stay exactly as P1b-4 shipped it, with no new key."""
     owner = "p1brr2_nocred_owner"
     payer = "p1brr2_nocred_payer"
-    _register(client, owner)
+    _register_keyed(client, owner)
     _register(client, payer)
 
-    r = client.post("/rooms", json={
+    r = client.post("/rooms", json=_signed_room(owner, {
         "name": "P1brr-2 No Credential Room", "creator_id": owner,
         "room_type": "private", "gate_type": "paid", "entry_fee_cents": 250,
-    },
+    }),
         headers={"x-emporia-agent-id": owner})
     assert r.status_code == 200, r.text
     room_id = r.json()["room_id"]
@@ -13611,13 +13647,13 @@ def test_x402_offer_skips_wallet_lookup_when_disabled(client):
 
     owner = "p4_1_disabled_owner"
     payer = "p4_1_disabled_payer"
-    _register(client, owner)
+    _register_keyed(client, owner)
     _register(client, payer)
 
-    r = client.post("/rooms", json={
+    r = client.post("/rooms", json=_signed_room(owner, {
         "name": "P4-1 Disabled Room", "creator_id": owner,
         "room_type": "private", "gate_type": "paid", "entry_fee_cents": 250,
-    },
+    }),
         headers={"x-emporia-agent-id": owner})
     assert r.status_code == 200, r.text
     room_id = r.json()["room_id"]
@@ -14210,7 +14246,7 @@ def test_room_join_via_x402_credential_persists_rail_x402(mock_verify, mock_sett
     assertions (fee/payout semantics) are item 6's job, not this one's."""
     owner = "p1b5_e2e_owner"
     payer = "p1b5_e2e_payer"
-    _register(client, owner)
+    _register_keyed(client, owner)
     _register(client, payer)
 
     wallet = client.post(f"/agents/{owner}/x402-wallet",
@@ -14218,10 +14254,10 @@ def test_room_join_via_x402_credential_persists_rail_x402(mock_verify, mock_sett
         headers={"x-emporia-agent-id": owner})
     assert wallet.status_code == 200, wallet.text
 
-    r = client.post("/rooms", json={
+    r = client.post("/rooms", json=_signed_room(owner, {
         "name": "P1b-5 E2E Room", "creator_id": owner,
         "room_type": "private", "gate_type": "paid", "entry_fee_cents": 250,
-    },
+    }),
         headers={"x-emporia-agent-id": owner})
     assert r.status_code == 200, r.text
     room_id = r.json()["room_id"]
@@ -14262,7 +14298,7 @@ def test_x402_room_join_settlement_is_non_custodial_direct_no_fee(mock_verify, m
     attempting one that happens to no-op."""
     owner = "p1b6_owner"
     payer = "p1b6_payer"
-    _register(client, owner)
+    _register_keyed(client, owner)
     _register(client, payer)
 
     wallet = client.post(f"/agents/{owner}/x402-wallet",
@@ -14270,10 +14306,10 @@ def test_x402_room_join_settlement_is_non_custodial_direct_no_fee(mock_verify, m
         headers={"x-emporia-agent-id": owner})
     assert wallet.status_code == 200, wallet.text
 
-    r = client.post("/rooms", json={
+    r = client.post("/rooms", json=_signed_room(owner, {
         "name": "P1b-6 Room", "creator_id": owner,
         "room_type": "private", "gate_type": "paid", "entry_fee_cents": 400,
-    },
+    }),
         headers={"x-emporia-agent-id": owner})
     assert r.status_code == 200, r.text
     room_id = r.json()["room_id"]
@@ -14380,24 +14416,25 @@ def test_inbox_empty_by_default(client):
 def test_inbox_receives_room_invite(client):
     """Room invite fires broadcast_to_agent which persists to inbox."""
     # Register creator and invitee
-    for aid in ("ibx_creator", "ibx_invitee"):
+    _register_keyed(client, "ibx_creator")
+    for aid in ("ibx_invitee",):
         client.post("/agents/register", json={
             "agent_id": aid, "public_key_hex": _test_pubkey(aid), "display_name": aid
         })
     # Creator makes a private room
-    r = client.post("/rooms", json={
+    r = client.post("/rooms", json=_signed_room("ibx_creator", {
         "name": "Inbox Test Room",
         "creator_id": "ibx_creator",
         "room_type": "private",
         "gate_type": "invite",
-    },
+    }),
         headers={"x-emporia-agent-id": "ibx_creator"})
     assert r.status_code == 200
     room_id = r.json()["room_id"]
 
     # Invite fires broadcast_to_agent → persists to ibx_invitee inbox
     ri = client.post(
-        f"/rooms/{room_id}/invite", json={"invitee_id": "ibx_invitee"},
+        f"/rooms/{room_id}/invite", json=_signed_invite("ibx_creator", room_id, {"invitee_id": "ibx_invitee"}),
         headers={"x-emporia-agent-id": "ibx_creator"},
     )
     assert ri.status_code == 200
@@ -14650,17 +14687,17 @@ def test_ws_agent_channel_rejects_mismatched_identity(client):
 def test_ws_room_private_requires_membership(client):
     """/ws/rooms/{id} must reject non-members of a private room, but stay open to anyone
     for a public room."""
-    _register(client, "wsroom_owner")
+    _register_keyed(client, "wsroom_owner")
     _register(client, "wsroom_member")
     _register(client, "wsroom_stranger")
-    r = client.post("/rooms", json={
+    r = client.post("/rooms", json=_signed_room("wsroom_owner", {
         "name": "WS Private Room", "creator_id": "wsroom_owner",
         "room_type": "private", "gate_type": "invite",
-    },
+    }),
         headers={"x-emporia-agent-id": "wsroom_owner"})
     room_id = r.json()["room_id"]
     client.post(
-        f"/rooms/{room_id}/invite", json={"invitee_id": "wsroom_member"},
+        f"/rooms/{room_id}/invite", json=_signed_invite("wsroom_owner", room_id, {"invitee_id": "wsroom_member"}),
         headers={"x-emporia-agent-id": "wsroom_owner"},
     )
     client.post(
@@ -14682,7 +14719,7 @@ def test_ws_room_private_requires_membership(client):
         assert frame["type"] == "room_init"
 
     # Public room — open to anyone, no identity required
-    r2 = client.post("/rooms", json={"name": "WS Public Room", "creator_id": "wsroom_owner"},
+    r2 = client.post("/rooms", json=_signed_room("wsroom_owner", {"name": "WS Public Room", "creator_id": "wsroom_owner"}),
         headers={"x-emporia-agent-id": "wsroom_owner"})
     pub_room_id = r2.json()["room_id"]
     with client.websocket_connect(f"/ws/rooms/{pub_room_id}") as ws:
@@ -15001,7 +15038,7 @@ def test_all_limit_params_are_clamped(client):
         client, "climit_owner", "t", hours=24, description="d", module_type="emporia:chess:v1"),
         headers={"x-emporia-agent-id": "climit_owner"})
 
-    r = client.post("/rooms", json={"name": "Clamp Room", "creator_id": "climit_owner"},
+    r = client.post("/rooms", json=_signed_room("climit_owner", {"name": "Clamp Room", "creator_id": "climit_owner"}),
                      headers={"x-emporia-agent-id": "climit_owner"})
     room_id = r.json()["room_id"]
     client.post(f"/rooms/{room_id}/message", json={
@@ -16897,7 +16934,7 @@ def test_oversized_content_is_rejected_with_a_field_specific_400(client):
     assert r.status_code == 400, r.status_code
     assert "content" in r.text and str(MAX_CONTENT_BYTES) in r.text
 
-    room = client.post("/rooms", json={"name": "p18 len room", "description": ""},
+    room = client.post("/rooms", json=_signed_room("p18_len_a", {"name": "p18 len room", "description": ""}),
                        headers={"X-Emporia-Agent-Id": "p18_len_a"}).json()["room_id"]
     from emporia.identity import sign
     from emporia.wire import new_message_nonce, room_message_envelope, signed_room_message_payload
@@ -16951,10 +16988,10 @@ def test_content_limit_now_covers_every_content_bearing_route(client):
     _register_keyed(client, "p19_lim_a")
     big = "z" * (MAX_CONTENT_BYTES + 1)
 
-    r = client.post("/rooms", json={"name": "ok", "description": big},
+    r = client.post("/rooms", json=_signed_room("p19_lim_a", {"name": "ok", "description": big}),
                     headers={"X-Emporia-Agent-Id": "p19_lim_a"})
     assert r.status_code == 400 and "description" in r.text, r.text
-    r = client.post("/rooms", json={"name": big, "description": ""},
+    r = client.post("/rooms", json=_signed_room("p19_lim_a", {"name": big, "description": ""}),
                     headers={"X-Emporia-Agent-Id": "p19_lim_a"})
     assert r.status_code == 400 and "name" in r.text, r.text
 
@@ -17016,7 +17053,7 @@ def test_413_and_429_short_circuits_carry_cors_headers(client):
 
     with patch.object(relay_server, "MAX_REQUEST_BYTES", 10):
         r = client.post(
-            "/rooms", json={"name": "x" * 100, "description": ""},
+            "/rooms", json=_signed_room("p19_cors_a", {"name": "x" * 100, "description": ""}),
             headers={"X-Emporia-Agent-Id": "p19_cors_a", "Origin": origin},
         )
     assert r.status_code == 413, r.status_code
@@ -17241,7 +17278,7 @@ def test_duplicate_room_nonce_over_http_is_409_not_500(client):
     above — UNIQUE(room_id, nonce) plus the route's except sqlite3.IntegrityError
     means a captured room POST replayed verbatim is a 409, not an unhandled 500."""
     _register_keyed(client, "p19_rdup_a")
-    room_id = client.post("/rooms", json={"name": "p19 dup room", "description": ""},
+    room_id = client.post("/rooms", json=_signed_room("p19_rdup_a", {"name": "p19 dup room", "description": ""}),
                           headers={"X-Emporia-Agent-Id": "p19_rdup_a"}).json()["room_id"]
 
     same_nonce = "d" * 32
@@ -17268,7 +17305,7 @@ def test_room_nonce_shape_is_validated(client):
     """P19-5 (M3 parity): the room route's nonce gets the same hex/32-64-char
     bound the DM route has had since P19."""
     _register_keyed(client, "p19_rshape_a")
-    room_id = client.post("/rooms", json={"name": "p19 shape room", "description": ""},
+    room_id = client.post("/rooms", json=_signed_room("p19_rshape_a", {"name": "p19 shape room", "description": ""}),
                           headers={"X-Emporia-Agent-Id": "p19_rshape_a"}).json()["room_id"]
 
     for bad_nonce in ("not-hex-at-all!!", "short", "g" * 32, "a" * 200):
@@ -17285,7 +17322,7 @@ def test_room_nonce_is_bound_into_the_signature(client):
     from emporia.wire import room_message_envelope, signed_room_message_payload
 
     _register_keyed(client, "p19_rnb_a")
-    room_id = client.post("/rooms", json={"name": "p19 nb room", "description": ""},
+    room_id = client.post("/rooms", json=_signed_room("p19_rnb_a", {"name": "p19 nb room", "description": ""}),
                           headers={"X-Emporia-Agent-Id": "p19_rnb_a"}).json()["room_id"]
 
     body = room_message_envelope(
@@ -17304,7 +17341,7 @@ def test_room_message_missing_nonce_is_rejected(client):
     from emporia.wire import signed_room_message_payload
 
     _register_keyed(client, "p19_rnm_a")
-    room_id = client.post("/rooms", json={"name": "p19 nm room", "description": ""},
+    room_id = client.post("/rooms", json=_signed_room("p19_rnm_a", {"name": "p19 nm room", "description": ""}),
                           headers={"X-Emporia-Agent-Id": "p19_rnm_a"}).json()["room_id"]
     body = {"content": "hello", "msg_type": "chat",
             "signature": sign(signed_room_message_payload(room_id, "hello", "chat", ""), "p19_rnm_a")}
@@ -17324,7 +17361,7 @@ def test_replayed_room_row_is_rejected_by_the_database(client):
     from emporia.relay_server import DB_LOCK, get_db
 
     _register_keyed(client, "p19_rrp_a")
-    room_id = client.post("/rooms", json={"name": "p19 rrp room", "description": ""},
+    room_id = client.post("/rooms", json=_signed_room("p19_rrp_a", {"name": "p19 rrp room", "description": ""}),
                           headers={"X-Emporia-Agent-Id": "p19_rrp_a"}).json()["room_id"]
     assert _send_room_raw(client, room_id, "p19_rrp_a", "transfer 100").status_code == 200
     assert _send_room_raw(client, room_id, "p19_rrp_a", "ignore that").status_code == 200
@@ -17658,7 +17695,7 @@ def test_room_encryption_keys_returns_every_member(client):
     from emporia import identity
 
     _enc_agents(client, "p18_rk_a", "p18_rk_b", "p18_rk_c")
-    room = client.post("/rooms", json={"name": "p18 keys", "description": "", "encrypted": True},
+    room = client.post("/rooms", json=_signed_room("p18_rk_a", {"name": "p18 keys", "description": "", "encrypted": True}),
                        headers={"X-Emporia-Agent-Id": "p18_rk_a"}).json()["room_id"]
     for a in ("p18_rk_b", "p18_rk_c"):
         assert client.post(f"/rooms/{room}/join", json={"agent_id": a},
@@ -17682,8 +17719,8 @@ def test_room_encryption_keys_is_one_query_not_two_per_member(client):
     from emporia import relay_server
 
     _enc_agents(client, "p19_rkq_a", "p19_rkq_b", "p19_rkq_c")
-    room = client.post("/rooms", json={"name": "p19 keys query", "description": "",
-                                       "encrypted": True},
+    room = client.post("/rooms", json=_signed_room("p19_rkq_a", {"name": "p19 keys query", "description": "",
+                                       "encrypted": True}),
                        headers={"X-Emporia-Agent-Id": "p19_rkq_a"}).json()["room_id"]
     for a in ("p19_rkq_b", "p19_rkq_c"):
         assert client.post(f"/rooms/{room}/join", json={"agent_id": a},
@@ -17705,11 +17742,11 @@ def test_encrypted_negotiation_room_refuses_the_broker(client):
     bypassing validate_envelope_for() entirely. Now it refuses cleanly, and
     nothing — encrypted or not — gets written."""
     _enc_agents(client, "p19_neg_a", "p19_neg_b")
-    room = client.post("/rooms", json={
+    room = client.post("/rooms", json=_signed_room("p19_neg_a", {
         "name": "p19 neg room", "description": "", "room_type": "private",
         "gate_type": "invite", "encrypted": True,
-    }, headers={"X-Emporia-Agent-Id": "p19_neg_a"}).json()["room_id"]
-    client.post(f"/rooms/{room}/invite", json={"invitee_id": "p19_neg_b"},
+    }), headers={"X-Emporia-Agent-Id": "p19_neg_a"}).json()["room_id"]
+    client.post(f"/rooms/{room}/invite", json=_signed_invite("p19_neg_a", room, {"invitee_id": "p19_neg_b"}),
                headers={"X-Emporia-Agent-Id": "p19_neg_a"})
     assert client.post(f"/rooms/{room}/join", json={"agent_id": "p19_neg_b"},
                        headers={"X-Emporia-Agent-Id": "p19_neg_b"}).status_code == 200
@@ -17727,8 +17764,8 @@ def test_encrypted_negotiation_room_refuses_the_broker(client):
 
 def test_room_encryption_keys_is_members_only(client):
     _enc_agents(client, "p18_rko_a", "p18_rko_b")
-    room = client.post("/rooms", json={"name": "p18 keys private", "description": "",
-                                       "room_type": "private", "encrypted": True},
+    room = client.post("/rooms", json=_signed_room("p18_rko_a", {"name": "p18 keys private", "description": "",
+                                       "room_type": "private", "encrypted": True}),
                        headers={"X-Emporia-Agent-Id": "p18_rko_a"}).json()["room_id"]
     r = client.get(f"/rooms/{room}/encryption-keys", headers={"X-Emporia-Agent-Id": "p18_rko_b"})
     assert r.status_code == 403
@@ -17738,7 +17775,7 @@ def test_creating_an_encrypted_room_requires_a_published_key(client):
     """Same rule DMs already have: an encrypted room whose creator cannot be
     encrypted to is a room where nothing can ever be sent."""
     _register_keyed(client, "p18_nokey_creator")
-    r = client.post("/rooms", json={"name": "p18 nokey", "description": "", "encrypted": True},
+    r = client.post("/rooms", json=_signed_room("p18_nokey_creator", {"name": "p18 nokey", "description": "", "encrypted": True}),
                     headers={"X-Emporia-Agent-Id": "p18_nokey_creator"})
     assert r.status_code == 409
     assert "encryption key" in r.text
@@ -17786,8 +17823,8 @@ def _send_encrypted_room(client, room_id: str, sender: str, members: list[str], 
 
 
 def _encrypted_room(client, creator: str, joiners: list[str]) -> str:
-    room = client.post("/rooms", json={"name": "p18 enc room", "description": "",
-                                       "encrypted": True},
+    room = client.post("/rooms", json=_signed_room(creator, {"name": "p18 enc room", "description": "",
+                                       "encrypted": True}),
                        headers={"X-Emporia-Agent-Id": creator}).json()["room_id"]
     for a in joiners:
         assert client.post(f"/rooms/{room}/join", json={"agent_id": a},
@@ -17884,7 +17921,7 @@ def test_encrypted_room_requires_explicit_msg_type(client):
 
 def test_plaintext_room_rejects_an_envelope(client):
     _enc_agents(client, "p18_pre_a", "p18_pre_b")
-    room = client.post("/rooms", json={"name": "p18 plain room", "description": ""},
+    room = client.post("/rooms", json=_signed_room("p18_pre_a", {"name": "p18 plain room", "description": ""}),
                        headers={"X-Emporia-Agent-Id": "p18_pre_a"}).json()["room_id"]
     sealed = _seal_room(room, "p18_pre_a", ["p18_pre_a"], "hi")
     assert _send_room_raw(client, room, "p18_pre_a", sealed).status_code == 400
@@ -17904,7 +17941,7 @@ def test_plaintext_rooms_are_completely_unchanged(client):
     """Everything here is opt-in; a room that never opts in behaves as before."""
     _register_keyed(client, "p18_pu_a")
     _register_keyed(client, "p18_pu_b")
-    room = client.post("/rooms", json={"name": "p18 unchanged", "description": ""},
+    room = client.post("/rooms", json=_signed_room("p18_pu_a", {"name": "p18 unchanged", "description": ""}),
                        headers={"X-Emporia-Agent-Id": "p18_pu_a"}).json()["room_id"]
     assert client.post(f"/rooms/{room}/join", json={"agent_id": "p18_pu_b"},
                        headers={"X-Emporia-Agent-Id": "p18_pu_b"}).status_code == 200
@@ -18403,7 +18440,7 @@ def test_room_message_nonce_shape_check_runs_before_the_guardrails_scan(client):
     obviously-injected plaintext room message must reject on the nonce, and
     the scan must never run at all."""
     _register_keyed(client, "p20_order_a")
-    room_id = client.post("/rooms", json={"name": "p20 order room", "description": ""},
+    room_id = client.post("/rooms", json=_signed_room("p20_order_a", {"name": "p20 order room", "description": ""}),
                           headers={"X-Emporia-Agent-Id": "p20_order_a"}).json()["room_id"]
 
     with patch("emporia.relay_server._assert_payload_safe_counted", new=AsyncMock()) as spy:
@@ -18672,7 +18709,7 @@ def test_room_message_invalid_signature_is_rejected_before_the_guardrails_scan(c
 
     _register_keyed(client, "p21_sigorder_a")
     room_id = client.post(
-        "/rooms", json={"name": "p21 sig order room", "description": ""},
+        "/rooms", json=_signed_room("p21_sigorder_a", {"name": "p21 sig order room", "description": ""}),
         headers={"X-Emporia-Agent-Id": "p21_sigorder_a"},
     ).json()["room_id"]
 
@@ -18763,7 +18800,7 @@ def test_room_message_409s_carry_a_structured_code(client):
 
     # Duplicate nonce: same nonce, unencrypted room, sent twice.
     plain_room = client.post(
-        "/rooms", json={"name": "p21 code plain room", "description": ""},
+        "/rooms", json=_signed_room("p21_code_a", {"name": "p21 code plain room", "description": ""}),
         headers={"X-Emporia-Agent-Id": "p21_code_a"},
     ).json()["room_id"]
     from emporia.wire import new_message_nonce
@@ -18938,7 +18975,7 @@ def test_room_chain_route_is_signed_and_verified_for_a_clean_room(client):
 
     _register_keyed(client, "p21_chain_a")
     room_id = client.post(
-        "/rooms", json={"name": "p21 chain room", "description": ""},
+        "/rooms", json=_signed_room("p21_chain_a", {"name": "p21 chain room", "description": ""}),
         headers={"X-Emporia-Agent-Id": "p21_chain_a"},
     ).json()["room_id"]
     _send_room_raw(client, room_id, "p21_chain_a", "hello")
@@ -18966,7 +19003,7 @@ def test_room_chain_route_reports_unverified_for_a_tampered_room(client):
 
     _register_keyed(client, "p21_chain_tamper_a")
     room_id = client.post(
-        "/rooms", json={"name": "p21 chain tamper room", "description": ""},
+        "/rooms", json=_signed_room("p21_chain_tamper_a", {"name": "p21 chain tamper room", "description": ""}),
         headers={"X-Emporia-Agent-Id": "p21_chain_tamper_a"},
     ).json()["room_id"]
     _send_room_raw(client, room_id, "p21_chain_tamper_a", "hello")
@@ -18992,8 +19029,8 @@ def test_room_chain_route_requires_membership_for_a_private_room(client):
     _register_keyed(client, "p21_chain_priv_owner")
     _register_keyed(client, "p21_chain_priv_outsider")
     room_id = client.post(
-        "/rooms", json={"name": "p21 private chain room", "description": "",
-                        "room_type": "private", "gate_type": "invite"},
+        "/rooms", json=_signed_room("p21_chain_priv_owner", {"name": "p21 private chain room", "description": "",
+                        "room_type": "private", "gate_type": "invite"}),
         headers={"X-Emporia-Agent-Id": "p21_chain_priv_owner"},
     ).json()["room_id"]
 
@@ -20125,13 +20162,13 @@ def test_settle_access_payment_skips_transfer_when_creator_stripe_status_not_act
     from emporia.relay_server import get_db
 
     owner, payer = "p25_pending_owner", "p25_pending_payer"
-    _register(client, owner)
+    _register_keyed(client, owner)
     _register(client, payer)
 
-    r = client.post("/rooms", json={
+    r = client.post("/rooms", json=_signed_room(owner, {
         "name": "P25 Pending Room", "creator_id": owner,
         "room_type": "private", "gate_type": "paid", "entry_fee_cents": 100,
-    },
+    }),
         headers={"x-emporia-agent-id": owner})
     assert r.status_code == 200, r.text
     room_id = r.json()["room_id"]
@@ -20656,11 +20693,11 @@ def test_ws_agent_logs_reject_for_mismatched_identity(client, caplog):
 
 
 def test_ws_room_logs_connect_disconnect_and_reject(client, caplog):
-    _register(client, "p23_ws_room_owner")
-    r = client.post("/rooms", json={
+    _register_keyed(client, "p23_ws_room_owner")
+    r = client.post("/rooms", json=_signed_room("p23_ws_room_owner", {
         "name": "p23 ws room", "creator_id": "p23_ws_room_owner",
         "room_type": "public", "gate_type": "open",
-    }, headers={"x-emporia-agent-id": "p23_ws_room_owner"})
+    }), headers={"x-emporia-agent-id": "p23_ws_room_owner"})
     assert r.status_code == 200, r.text
     room_id = r.json()["room_id"]
     with caplog.at_level(logging.INFO, logger="emporia.relay"):
@@ -21635,15 +21672,15 @@ def test_p28_a_full_paid_room_refuses_before_taking_the_money(
     from emporia.relay_server import DATABASE_PATH, get_db
 
     owner, payer = "p28_full_owner", "p28_full_payer"
-    _register(client, owner)
+    _register_keyed(client, owner)
     _register(client, payer)
     mock_payout.return_value = {"transfer_id": "tr_p28_full"}
 
-    r = client.post("/rooms", json={
+    r = client.post("/rooms", json=_signed_room(owner, {
         "name": "P28 Full Room", "creator_id": owner,
         "room_type": "private", "gate_type": "paid", "entry_fee_cents": 100,
         "max_members": 1,  # creator only -- already full
-    },
+    }),
         headers={"x-emporia-agent-id": owner})
     assert r.status_code == 200, r.text
     room_id = r.json()["room_id"]
@@ -23489,7 +23526,7 @@ def test_payer_credential_satisfies_the_relays_own_402(mock_verify, mock_settle,
     from emporia.x402_payer import sign_challenge
 
     owner, payer = "p45_loop_owner", "p45_loop_payer"
-    _register(client, owner)
+    _register_keyed(client, owner)
     _register(client, payer)
 
     pay_to = "0x" + "bb" * 20
@@ -23498,10 +23535,10 @@ def test_payer_credential_satisfies_the_relays_own_402(mock_verify, mock_settle,
         headers={"x-emporia-agent-id": owner})
     assert wallet.status_code == 200, wallet.text
 
-    r = client.post("/rooms", json={
+    r = client.post("/rooms", json=_signed_room(owner, {
         "name": "P45 payer loop", "creator_id": owner,
         "room_type": "private", "gate_type": "paid", "entry_fee_cents": 250,
-    }, headers={"x-emporia-agent-id": owner})
+    }), headers={"x-emporia-agent-id": owner})
     assert r.status_code == 200, r.text
     room_id = r.json()["room_id"]
 
@@ -23652,7 +23689,7 @@ def test_testnet_paid_room_join_settles_on_chain(client, monkeypatch):
     from emporia.x402_payer import payer_address, sign_challenge
 
     owner, payer = "p45_testnet_owner", "p45_testnet_payer"
-    _register(client, owner)
+    _register_keyed(client, owner)
     _register(client, payer)
 
     # The creator is paid at the payer's own address — this test spends real
@@ -23664,10 +23701,10 @@ def test_testnet_paid_room_join_settles_on_chain(client, monkeypatch):
         headers={"x-emporia-agent-id": owner})
     assert wallet.status_code == 200, wallet.text
 
-    r = client.post("/rooms", json={
+    r = client.post("/rooms", json=_signed_room(owner, {
         "name": "P45 testnet room", "creator_id": owner,
         "room_type": "private", "gate_type": "paid", "entry_fee_cents": 1,
-    }, headers={"x-emporia-agent-id": owner})
+    }), headers={"x-emporia-agent-id": owner})
     assert r.status_code == 200, r.text
     room_id = r.json()["room_id"]
 
@@ -23756,16 +23793,16 @@ def test_sdk_pays_a_room_402_with_x402_when_asked(mock_verify, mock_settle, clie
     seen: list[dict[str, str]] = []
 
     owner = "p45_sdk_owner"
-    _register(client, owner)
+    _register_keyed(client, owner)
     pay_to = "0x" + "ee" * 20
     assert client.post(f"/agents/{owner}/x402-wallet",
         json={"network_family": "evm", "address": pay_to},
         headers={"x-emporia-agent-id": owner}).status_code == 200
 
-    r = client.post("/rooms", json={
+    r = client.post("/rooms", json=_signed_room(owner, {
         "name": "P45 SDK room", "creator_id": owner,
         "room_type": "private", "gate_type": "paid", "entry_fee_cents": 250,
-    }, headers={"x-emporia-agent-id": owner})
+    }), headers={"x-emporia-agent-id": owner})
     assert r.status_code == 200, r.text
     room_id = r.json()["room_id"]
 
@@ -23816,14 +23853,14 @@ def test_sdk_x402_retry_gives_up_after_one_attempt(mock_verify, client):
     from emporia.agent_sdk import PaymentRequiredError
 
     owner = "p45_once_owner"
-    _register(client, owner)
+    _register_keyed(client, owner)
     assert client.post(f"/agents/{owner}/x402-wallet",
         json={"network_family": "evm", "address": "0x" + "ee" * 20},
         headers={"x-emporia-agent-id": owner}).status_code == 200
-    r = client.post("/rooms", json={
+    r = client.post("/rooms", json=_signed_room(owner, {
         "name": "P45 once room", "creator_id": owner,
         "room_type": "private", "gate_type": "paid", "entry_fee_cents": 250,
-    }, headers={"x-emporia-agent-id": owner})
+    }), headers={"x-emporia-agent-id": owner})
     room_id = r.json()["room_id"]
 
     mock_verify.return_value = {"isValid": False, "invalidReason": "insufficient_funds"}
@@ -23864,14 +23901,14 @@ def test_sdk_does_not_spend_unless_the_call_asks(client):
     from emporia.agent_sdk import PaymentRequiredError
 
     owner = "p45_nospend_owner"
-    _register(client, owner)
+    _register_keyed(client, owner)
     assert client.post(f"/agents/{owner}/x402-wallet",
         json={"network_family": "evm", "address": "0x" + "ee" * 20},
         headers={"x-emporia-agent-id": owner}).status_code == 200
-    r = client.post("/rooms", json={
+    r = client.post("/rooms", json=_signed_room(owner, {
         "name": "P45 no-spend room", "creator_id": owner,
         "room_type": "private", "gate_type": "paid", "entry_fee_cents": 250,
-    }, headers={"x-emporia-agent-id": owner})
+    }), headers={"x-emporia-agent-id": owner})
     room_id = r.json()["room_id"]
 
     async def scenario():
@@ -23900,14 +23937,14 @@ def test_sdk_x402_retry_respects_the_payers_own_network_allowlist(client):
     from emporia.x402_payer import X402PayerError
 
     owner = "p45_allowlist_owner"
-    _register(client, owner)
+    _register_keyed(client, owner)
     assert client.post(f"/agents/{owner}/x402-wallet",
         json={"network_family": "evm", "address": "0x" + "ee" * 20},
         headers={"x-emporia-agent-id": owner}).status_code == 200
-    r = client.post("/rooms", json={
+    r = client.post("/rooms", json=_signed_room(owner, {
         "name": "P45 allowlist room", "creator_id": owner,
         "room_type": "private", "gate_type": "paid", "entry_fee_cents": 250,
-    }, headers={"x-emporia-agent-id": owner})
+    }), headers={"x-emporia-agent-id": owner})
     room_id = r.json()["room_id"]
 
     async def scenario():
@@ -23940,14 +23977,14 @@ def test_sdk_x402_retry_without_a_key_still_reports_the_challenge(client):
     from emporia.agent_sdk import PaymentRequiredError
 
     owner = "p45_nokey_owner"
-    _register(client, owner)
+    _register_keyed(client, owner)
     assert client.post(f"/agents/{owner}/x402-wallet",
         json={"network_family": "evm", "address": "0x" + "ee" * 20},
         headers={"x-emporia-agent-id": owner}).status_code == 200
-    r = client.post("/rooms", json={
+    r = client.post("/rooms", json=_signed_room(owner, {
         "name": "P45 no-key room", "creator_id": owner,
         "room_type": "private", "gate_type": "paid", "entry_fee_cents": 250,
-    }, headers={"x-emporia-agent-id": owner})
+    }), headers={"x-emporia-agent-id": owner})
     room_id = r.json()["room_id"]
 
     async def scenario():
@@ -24179,13 +24216,13 @@ def test_testnet_paid_room_join_settles_through_stripe(client, monkeypatch):
     monkeypatch.setenv("STRIPE_SECRET_KEY", _TESTNET_STRIPE_KEY)
 
     owner, payer = "p46_stripe_owner", "p46_stripe_payer"
-    _register(client, owner)
+    _register_keyed(client, owner)
     _register(client, payer)
 
-    r = client.post("/rooms", json={
+    r = client.post("/rooms", json=_signed_room(owner, {
         "name": "P46 Stripe room", "creator_id": owner,
         "room_type": "private", "gate_type": "paid", "entry_fee_cents": 100,
-    }, headers={"x-emporia-agent-id": owner})
+    }), headers={"x-emporia-agent-id": owner})
     assert r.status_code == 200, r.text
     room_id = r.json()["room_id"]
 
@@ -24250,13 +24287,13 @@ def test_testnet_paid_room_join_settles_through_mpp_spt(client, monkeypatch):
     assert spt.startswith("spt_"), spt
 
     owner, payer = "p46_mpp_owner", "p46_mpp_payer"
-    _register(client, owner)
+    _register_keyed(client, owner)
     _register(client, payer)
 
-    r = client.post("/rooms", json={
+    r = client.post("/rooms", json=_signed_room(owner, {
         "name": "P46 MPP room", "creator_id": owner,
         "room_type": "private", "gate_type": "paid", "entry_fee_cents": 100,
-    }, headers={"x-emporia-agent-id": owner})
+    }), headers={"x-emporia-agent-id": owner})
     assert r.status_code == 200, r.text
     room_id = r.json()["room_id"]
 
@@ -24529,14 +24566,14 @@ def _p47_agent_with_data(client, agent_id: str) -> dict[str, str]:
     other = f"{agent_id}_peer"
     _register(client, other)
 
-    room = client.post("/rooms", json={
+    room = client.post("/rooms", json=_signed_room(agent_id, {
         "name": f"{agent_id} room", "creator_id": agent_id,
         "room_type": "private", "gate_type": "invite",
-    }, headers={"x-emporia-agent-id": agent_id})
+    }), headers={"x-emporia-agent-id": agent_id})
     assert room.status_code == 200, room.text
     room_id = room.json()["room_id"]
 
-    invite = client.post(f"/rooms/{room_id}/invite", json={"invitee_id": other},
+    invite = client.post(f"/rooms/{room_id}/invite", json=_signed_invite(agent_id, room_id, {"invitee_id": other}),
         headers={"x-emporia-agent-id": agent_id})
     assert invite.status_code == 200, invite.text
 
@@ -25183,17 +25220,17 @@ def test_the_intent_retires_when_the_entitlement_it_bought_exists(
     from emporia.relay_server import AGENT_REGISTRY, DB_LOCK, get_db
 
     creator, payer = "p48_retire_creator", "p48_retire_payer"
-    _register(client, creator)
+    _register_keyed(client, creator)
     _register(client, payer)
     AGENT_REGISTRY.set_x402_pay_to(creator, "evm", "0x" + "aa" * 20)
     mock_verify.return_value = {"isValid": True}
     mock_settle.return_value = {"success": True, "transaction": "0xretire"}
 
     with patch.dict(os.environ, _P48_ENV, clear=False):
-        r = client.post("/rooms", json={
+        r = client.post("/rooms", json=_signed_room(creator, {
             "name": "P48 Retire Room", "creator_id": creator,
             "room_type": "private", "gate_type": "paid", "entry_fee_cents": 100,
-        }, headers={"x-emporia-agent-id": creator})
+        }), headers={"x-emporia-agent-id": creator})
         assert r.status_code == 200, r.text
         room_id = r.json()["room_id"]
 
@@ -25242,7 +25279,7 @@ def test_the_crash_window_survives_a_real_join_request_not_just_a_direct_call(
     from emporia.relay_server import AGENT_REGISTRY
 
     creator, payer = "p48_route_creator", "p48_route_payer"
-    _register(client, creator)
+    _register_keyed(client, creator)
     _register(client, payer)
     AGENT_REGISTRY.set_x402_pay_to(creator, "evm", "0x" + "aa" * 20)
     mock_verify.return_value = {"isValid": True}
@@ -25260,10 +25297,10 @@ def test_the_crash_window_survives_a_real_join_request_not_just_a_direct_call(
         )
 
     with patch.dict(os.environ, _P48_ENV, clear=False):
-        r = client.post("/rooms", json={
+        r = client.post("/rooms", json=_signed_room(creator, {
             "name": "P48 Route Room", "creator_id": creator,
             "room_type": "private", "gate_type": "paid", "entry_fee_cents": 100,
-        }, headers={"x-emporia-agent-id": creator})
+        }), headers={"x-emporia-agent-id": creator})
         assert r.status_code == 200, r.text
         room_id = r.json()["room_id"]
 
@@ -25506,15 +25543,15 @@ def test_a_paid_room_join_that_crashes_at_the_grant_is_repaired_by_the_retry(
     from emporia import entitlements
     from emporia.relay_server import DATABASE_PATH, get_db
 
-    _register(client, "p50_room_owner")
+    _register_keyed(client, "p50_room_owner")
     _register(client, "p50_room_payer")
     mock_payout.return_value = {"transfer_id": "tr_p50_room"}
 
-    r = client.post("/rooms", json={
+    r = client.post("/rooms", json=_signed_room("p50_room_owner", {
         "name": "P50 Room", "creator_id": "p50_room_owner",
         "room_type": "private", "gate_type": "paid", "entry_fee_cents": 100,
         "access_duration_days": 1,
-    }, headers={"x-emporia-agent-id": "p50_room_owner"})
+    }), headers={"x-emporia-agent-id": "p50_room_owner"})
     assert r.status_code == 200, r.text
     room_id = r.json()["room_id"]
 
@@ -25672,15 +25709,15 @@ def test_an_ordinary_repeat_join_settles_nothing_a_second_time(
     from emporia import entitlements
     from emporia.relay_server import DATABASE_PATH, get_db
 
-    _register(client, "p50_repeat_owner")
+    _register_keyed(client, "p50_repeat_owner")
     _register(client, "p50_repeat_payer")
     mock_payout.return_value = {"transfer_id": "tr_p50_repeat"}
 
-    r = client.post("/rooms", json={
+    r = client.post("/rooms", json=_signed_room("p50_repeat_owner", {
         "name": "P50 Repeat Room", "creator_id": "p50_repeat_owner",
         "room_type": "private", "gate_type": "paid", "entry_fee_cents": 100,
         "access_duration_days": 7,
-    }, headers={"x-emporia-agent-id": "p50_repeat_owner"})
+    }), headers={"x-emporia-agent-id": "p50_repeat_owner"})
     assert r.status_code == 200, r.text
     room_id = r.json()["room_id"]
 
@@ -25750,7 +25787,7 @@ def test_the_x402_intent_retires_when_the_retry_finishes_the_purchase(
     from emporia.relay_server import AGENT_REGISTRY, DATABASE_PATH, DB_LOCK, get_db
 
     creator, payer = "p50_x402_creator", "p50_x402_payer"
-    _register(client, creator)
+    _register_keyed(client, creator)
     _register(client, payer)
     AGENT_REGISTRY.set_x402_pay_to(creator, "evm", "0x" + "aa" * 20)
     mock_verify.return_value = {"isValid": True}
@@ -25769,11 +25806,11 @@ def test_the_x402_intent_retires_when_the_retry_finishes_the_purchase(
         )
 
     with patch.dict(os.environ, _P48_ENV, clear=False):
-        r = client.post("/rooms", json={
+        r = client.post("/rooms", json=_signed_room(creator, {
             "name": "P50 x402 Room", "creator_id": creator,
             "room_type": "private", "gate_type": "paid", "entry_fee_cents": 100,
             "access_duration_days": 30,
-        }, headers={"x-emporia-agent-id": creator})
+        }), headers={"x-emporia-agent-id": creator})
         assert r.status_code == 200, r.text
         room_id = r.json()["room_id"]
 
@@ -25836,15 +25873,15 @@ def test_a_crash_after_the_grant_is_finished_without_issuing_a_second_receipt(
     from emporia import entitlements, relay_server
     from emporia.relay_server import DATABASE_PATH, get_db
 
-    _register(client, "p50_payout_owner")
+    _register_keyed(client, "p50_payout_owner")
     _register(client, "p50_payout_payer")
     mock_payout.return_value = {"transfer_id": "tr_p50_payout"}
 
-    r = client.post("/rooms", json={
+    r = client.post("/rooms", json=_signed_room("p50_payout_owner", {
         "name": "P50 Payout Room", "creator_id": "p50_payout_owner",
         "room_type": "private", "gate_type": "paid", "entry_fee_cents": 100,
         "access_duration_days": 30,
-    }, headers={"x-emporia-agent-id": "p50_payout_owner"})
+    }), headers={"x-emporia-agent-id": "p50_payout_owner"})
     assert r.status_code == 200, r.text
     room_id = r.json()["room_id"]
 
@@ -25939,15 +25976,15 @@ def test_a_repurchase_after_expiry_gets_the_entitlement_it_paid_for(
     from emporia import entitlements
     from emporia.relay_server import DATABASE_PATH, get_db
 
-    _register(client, "p50_renew_owner")
+    _register_keyed(client, "p50_renew_owner")
     _register(client, "p50_renew_payer")
     mock_payout.return_value = {"transfer_id": "tr_p50_renew"}
 
-    r = client.post("/rooms", json={
+    r = client.post("/rooms", json=_signed_room("p50_renew_owner", {
         "name": "P50 Renewal Room", "creator_id": "p50_renew_owner",
         "room_type": "private", "gate_type": "paid", "entry_fee_cents": 100,
         "access_duration_days": 1,
-    }, headers={"x-emporia-agent-id": "p50_renew_owner"})
+    }), headers={"x-emporia-agent-id": "p50_renew_owner"})
     assert r.status_code == 200, r.text
     room_id = r.json()["room_id"]
 
@@ -26037,14 +26074,14 @@ def test_a_creator_who_onboards_after_their_first_sale_is_still_owed_it(
     from emporia.relay_server import get_db
 
     owner, payer = "p51_late_owner", "p51_late_payer"
-    _register(client, owner)
+    _register_keyed(client, owner)
     _register(client, payer)
     mock_payout.return_value = {"transfer_id": "tr_p51_late"}
 
-    r = client.post("/rooms", json={
+    r = client.post("/rooms", json=_signed_room(owner, {
         "name": "P51 Late Onboarding Room", "creator_id": owner,
         "room_type": "private", "gate_type": "paid", "entry_fee_cents": 100,
-    }, headers={"x-emporia-agent-id": owner})
+    }), headers={"x-emporia-agent-id": owner})
     assert r.status_code == 200, r.text
     room_id = r.json()["room_id"]
 
@@ -26096,12 +26133,12 @@ def test_a_creator_who_onboards_after_their_first_sale_is_still_owed_it(
 def _p51_strand_a_sale(client, mock_verify, *, owner, payer, pi_id, fee_cents=100):
     """A completed paid join whose payout was correctly skipped, leaving the
     creator owed. Returns the room id."""
-    _register(client, owner)
+    _register_keyed(client, owner)
     _register(client, payer)
-    r = client.post("/rooms", json={
+    r = client.post("/rooms", json=_signed_room(owner, {
         "name": f"P51 {owner}", "creator_id": owner,
         "room_type": "private", "gate_type": "paid", "entry_fee_cents": fee_cents,
-    }, headers={"x-emporia-agent-id": owner})
+    }), headers={"x-emporia-agent-id": owner})
     assert r.status_code == 200, r.text
     room_id = r.json()["room_id"]
     mock_verify.return_value = {
@@ -27324,7 +27361,7 @@ def test_the_membership_rule_is_written_in_exactly_one_place():
 # P61 — the schema has a version, and the version has to stay honest
 # ---------------------------------------------------------------------------
 
-# 32 tables, 297 columns, at SCHEMA_VERSION 10. Recomputed by the test below;
+# 33 tables, 306 columns, at SCHEMA_VERSION 11. Recomputed by the test below;
 # when it fails, read *why* before touching this string.
 #
 # V1 -> V2 (P72-4): `bounty_entries` and its UNIQUE (listing_id, nous_user_id)
@@ -27357,7 +27394,10 @@ def test_the_membership_rule_is_written_in_exactly_one_place():
 #
 # V9 -> V10 (P242): `agora_posts`/`agora_comments` `nonce` and `signature` —
 # each post and comment its author's signed word.
-_SCHEMA_FINGERPRINT_V10 = "4064ea2687399167f8749918cc49453bcabde4a025f85edcd4fb898b888af465"
+#
+# V10 -> V11 (P243): `room_acts`, a room's creation, invites and kicks, each as
+# its creator signed it.
+_SCHEMA_FINGERPRINT_V11 = "368ad7dad97f7de75cc1fa88cb823558f27df4dfa81678a7a756193c11255112"
 
 
 def _schema_fingerprint(db_path) -> tuple[str, int, int]:
@@ -27397,9 +27437,9 @@ def test_a_schema_change_requires_a_version_bump():
     from emporia.relay_server import SCHEMA_VERSION
 
     fingerprint, tables, columns = _schema_fingerprint(_test_db)
-    assert (SCHEMA_VERSION, fingerprint) == (10, _SCHEMA_FINGERPRINT_V10), (
+    assert (SCHEMA_VERSION, fingerprint) == (11, _SCHEMA_FINGERPRINT_V11), (
         f"the schema changed ({tables} tables, {columns} columns) or the version "
-        f"moved. Bump SCHEMA_VERSION *and* update _SCHEMA_FINGERPRINT_V10 — in "
+        f"moved. Bump SCHEMA_VERSION *and* update _SCHEMA_FINGERPRINT_V11 — in "
         f"that order, and never the fingerprint alone.\n"
         f"  code version: {SCHEMA_VERSION}\n  fingerprint:  {fingerprint}"
     )

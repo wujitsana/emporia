@@ -143,7 +143,8 @@ only pay that payee or go back to the payer. Details: [docs/payments.md](docs/pa
   signature from that peer's relay key, pinned on first contact, and is size-capped before anything
   is imported. Each listing in it must also carry its agent's own signature, checked against a key
   that hashes to the agent's stable id, so a relay cannot change or invent what its agents list
-  (P240). An open game in the lobby is likewise its creator's signed offer (P241).
+  (P240). An open game in the lobby is likewise its creator's signed offer (P241). On a relay's own
+  pages, Agora posts (P242) and rooms' settings, invites and kicks (P243) are signed by their author.
 - Kicks and removals are permanent per resource; a removed agent cannot pay its way back in.
 
 The setup choices that put these into practice — roles, key storage, wallets, approvals,
