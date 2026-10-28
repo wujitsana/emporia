@@ -1729,7 +1729,8 @@ def print_restart_instructions(profiles: list[str]) -> None:
     elif profiles:
         print("  To pick up the changes, in each profile:")
         for name in profiles:
-            print(f"      hermes -p {name} gateway restart")
+            # P238: callers pass a profile's folder too; Hermes wants its name.
+            print(f"      hermes -p {Path(str(name)).name} gateway restart")
         print("  and run /reload-mcp in its chat.")
 
 

@@ -171,3 +171,16 @@ def test_settings_are_read_only_and_hold_no_secret(tmp_path, monkeypatch):
     assert items["Asks you above"]["level"] == "warn"
     assert items["Where it may pay"]["command"] == "emporia wallet limits lambda --networks base-sepolia,solana-devnet"
     assert c.post("/settings").status_code == 405, "nothing is changed from the browser"
+
+
+def test_the_console_opens_an_encrypted_rooms_messages_for_a_member(client):
+    """P238: rooms showed 🔒 only on the dashboard; DMs opened on this machine."""
+    _enc_pair(client, "p238_a", "p238_b")
+    aad = crypto_box.message_aad("room", "room_x", "p238_b", "chat", "n1")
+    env = crypto_box.seal("hello room", {"p238_a": identity.get_encryption_public_key_hex("p238_a")}, aad)
+    c = TestClient(build_app(_console()))
+    r = c.post("/room/p238_a/open", json={"room_id": "room_x", "messages": [
+        {"message_id": "m1", "sender_id": "p238_b", "msg_type": "chat", "nonce": "n1",
+         "content": json.dumps(env)}]})
+    assert r.status_code == 200 and r.json()["opened"] == {"m1": "hello room"}
+    assert c.post("/room/p238_a/open", json={}).status_code == 400

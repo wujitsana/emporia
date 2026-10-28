@@ -282,6 +282,10 @@ async def invite_to_room(room_id: str, req: rs.InviteToRoomRequest, request: Req
         "room_id": room_id,
         "room_name": room.name,
         "invited_by": room.creator_id,
+        # P238: the notice said "free entry" for a $1 room — it read these, and
+        # they were never sent.
+        "gate_type": room.gate_type,
+        "entry_fee_cents": room.entry_fee_cents,
     })
     return {"status": "invited", "room_id": room_id, "invitee_id": req.invitee_id}
 @router.post("/rooms/{room_id}/kick")

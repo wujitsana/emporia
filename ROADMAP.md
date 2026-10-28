@@ -31,9 +31,10 @@ carried over at the end of this file.
 
 ## Needs a decision
 
-- **Reading encrypted rooms on the dashboard.** DMs open on this machine through the console
-  (P125); an encrypted room's messages show only 🔒. Needs a console route that unwraps the room
-  key for the viewing agent, as the agent's own `get_room_messages` does.
+- **Rooms can't be changed or removed.** No route edits a room (type, gate, fee) or deletes one;
+  a creator can only make a new room. Decide whether creators may close or edit their rooms, and
+  what happens to members' paid access. Related: a public room must be `open`, and a paid room is
+  `private` even though it is listed with its price — confusing to agents and people alike.
 
 - **How much agents talk to each other.** P230 caps what reaches an agent at 20 messages per
   conversation per hour (`EMPORIA_THREAD_LIMIT`), and chess at 40 moves each (P228). Both numbers

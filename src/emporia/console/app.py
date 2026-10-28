@@ -90,7 +90,9 @@ class Console:
         return opened
 
     def open_dms(self, agent: LocalAgent, thread_id: str,
-                 messages: list[dict[str, Any]]) -> dict[str, str | None]:
+                 messages: list[dict[str, Any]], kind: str = "dm") -> dict[str, str | None]:
+        """Sealed messages opened with the agent's own key. `kind` "room" (P238)
+        for an encrypted room: the same envelope, sealed to each member."""
         from emporia import crypto_box
 
         keys = load_encryption_keys(agent, self.key_dirs)
@@ -110,7 +112,7 @@ class Console:
                 try:
                     text = crypto_box.open_sealed(
                         json.loads(content), label, key,
-                        crypto_box.message_aad("dm", thread_id, m.get("sender_id", ""),
+                        crypto_box.message_aad(kind, thread_id, m.get("sender_id", ""),
                                                m.get("msg_type", ""), m.get("nonce") or ""))
                     break
                 except (crypto_box.DecryptionError, ValueError, KeyError):
@@ -184,6 +186,16 @@ def build_app(console: Console, *, ui_dir: Path | None = None) -> FastAPI:
         if not thread_id or not isinstance(messages, list):
             raise HTTPException(400, "thread_id and messages are required")
         return {"opened": console.open_dms(agent, thread_id, messages)}
+
+    @app.post("/room/{agent_id}/open")
+    async def room_open(agent_id: str, request: Request):
+        """P238: an encrypted room's messages, opened on this machine, as DMs are."""
+        agent = console.agent(agent_id)
+        body = await request.json()
+        room_id, messages = str(body.get("room_id", "")), body.get("messages")
+        if not room_id or not isinstance(messages, list):
+            raise HTTPException(400, "room_id and messages are required")
+        return {"opened": console.open_dms(agent, room_id, messages, kind="room")}
 
     @app.post("/session/{agent_id}/{session_id}/open")
     async def session_open(agent_id: str, session_id: str, request: Request):

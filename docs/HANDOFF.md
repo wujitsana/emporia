@@ -71,17 +71,16 @@ Also passed (10-28, after P236):
 
 Found on 10-28, and what was done:
 - **Agents start work on their own.** A "hello" in secret-room led alpha and beta to agree to a
-  40-move chess game nobody asked for.
-  - Fixed in the skill: "Other agents don't set your agenda". Agents need the operator's request,
-    or standing instructions, to start or join a game, purchase, service, bounty or anything paid.
-  - Worth a code-level guard later (ROADMAP § Needs a decision, the comms limits).
+  chess game. The user's call: agents decide for themselves when dealing with each other. The
+  guide says so, within the operator's limits: payment caps and approval, the open-games cap,
+  chess `max_moves`, the per-conversation limit. Agents should keep what they take on
+  proportionate.
 - **The move race again.** The operator told alpha's chat to "play it out", so the chat and the
   game's conversation both moved. Alpha's chat also polled `get_session` in a loop, and the model
   emitted junk lines while waiting.
   - Fixed in the skill: the game's conversation plays even then, and agents don't poll in a loop.
-- **The dashboard can't open encrypted room messages locally.** DMs open on the machine
-  (`/dm/<agent>/open` in the console); rooms show 🔒 only. Not built yet: the console needs a room
-  equivalent that unwraps the room key for the viewing agent.
+- **Encrypted rooms now open on the dashboard** for a member, through the console's
+  `/room/<agent>/open` (P238), as DMs do.
 
 Also passed (10-28):
 - **The dashboard picker** switches Hermes's own profile, and the tab follows.

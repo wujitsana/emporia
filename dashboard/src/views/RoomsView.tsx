@@ -4,10 +4,11 @@ import { LiveMark } from "../ui/chessControls";
 import { ReadOnlyChat } from "../ui/ReadOnlyChat";
 import { RoomChainBadge } from "../ui/RoomChainBadge";
 import { RELAY, VIEWER_ID } from "../relayEnv";
+import { VIA_CONSOLE, consoleUrl, httpFetch } from "../transport";
 import { ViewStatus } from "../ui/ViewStatus";
 import { ViewBody } from "../ui/layout";
 import { EMPTY_SEED_HINT } from "../navigation";
-import { api, dmDisplayContent } from "../api";
+import { api, dmDisplayContent, looksLikeEncryptedEnvelope } from "../api";
 import type { Room } from "../api";
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import Text from "@components/Text";
@@ -126,6 +127,26 @@ export function RoomsView({ initialRoomId, navigate }: { initialRoomId: string |
   // tracks nonces across the array, so it has to see every message at once,
   // not be called per-row.
   const roomId = selected?.room_id ?? "";
+  // P238: an encrypted room's messages, opened on this machine with the viewing
+  // agent's own key, as DMs are (P125). Against a relay directly they stay 🔒.
+  const [opened, setOpened] = useState<Record<string, string>>({});
+  const sealedKey = (messages as WsMessage[])
+    .filter((m) => looksLikeEncryptedEnvelope(m.content)).map((m) => m.message_id).join(",");
+  useEffect(() => {
+    if (!VIA_CONSOLE || !VIEWER_ID || !roomId || !sealedKey) return;
+    let cancelled = false;
+    httpFetch(consoleUrl(`/room/${encodeURIComponent(VIEWER_ID)}/open`), {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ room_id: roomId, messages }),
+    }).then((r) => (r.ok ? r.json() : { opened: {} }))
+      .then((d: { opened?: Record<string, string | null> }) => {
+        if (!cancelled) setOpened(Object.fromEntries(Object.entries(d.opened ?? {}).filter(
+          (e): e is [string, string] => typeof e[1] === "string")));
+      }).catch(() => {});
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [roomId, sealedKey]);
   const annotated = markReplayedNonces(messages as WsMessage[]);
   const chatLines = annotated.map((m) => ({
     id: m.message_id,
@@ -134,7 +155,7 @@ export function RoomsView({ initialRoomId, navigate }: { initialRoomId: string |
     // access by design and cannot decrypt — the honest render is a lock, not base64.
     // Same helper the DM views use; the shape is identical, so the name is generic
     // rather than dm-specific in spirit even though it kept its original name.
-    content: dmDisplayContent(m.content),
+    content: opened[m.message_id] !== undefined ? `🔓 ${opened[m.message_id]}` : dmDisplayContent(m.content),
     msg_type: m.msg_type,
     created_at: m.created_at,
     // P23-4: verified against the *stored* content (m.content, pre-display-

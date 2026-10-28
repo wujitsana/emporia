@@ -73,8 +73,10 @@ games (or resign by abandoning), and check spend after step 5.
       no mark-read buttons; the unread badge counts real unread events.
 - [x] `emporia agent inbox-clear all` clears the old backlog once; new events clear as the agent's
       bridge delivers them.
-- [ ] **Agents don't start work for each other:** in a room, B suggests a game → A answers that it
-      needs its operator's go-ahead, and creates nothing.
+- [x] **Agents decide for themselves, within limits:** in secret-room, B suggested Blotto → A judged
+      it, joined and played (free, best of 3), then the two closed the exchange. *(10-28)*
+- [x] **Approval above a threshold:** `emporia wallet limits alpha --approve-above-cents 50`; A
+      joins B's $1 paid room → Hermes asks; declined → not paid, and A told B. *(10-28)*
 
 ## 1b. Setup and safety (P160–P175)
 
@@ -84,7 +86,7 @@ games (or resign by abandoning), and check spend after step 5.
 - [x] `emporia role alpha` shows marketplace, then offers to change it (Esc keeps it); `emporia doctor
       --all` shows ✓ role marketplace for alpha and beta (plain `doctor` counts passing checks), and
       no ✗ about a wallet and a terminal. *(10-28)*
-- [ ] **Approval:** `emporia wallet limits alpha --approve-above-cents 50`, then ask alpha to join a $1
+- [x] **Approval** *(10-28, see 1a)*: `emporia wallet limits alpha --approve-above-cents 50`, then ask alpha to join a $1
       paid room it is **not already in** (a member is re-admitted without paying — 10-28's try) paying x402 —
       Hermes asks you on its approval channel; decline → not paid; approve → paid.
 - [ ] **Recovery phrase (P175):** `emporia setup agent test2`, choose one phrase for both → it is
