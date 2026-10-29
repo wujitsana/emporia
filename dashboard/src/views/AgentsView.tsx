@@ -28,6 +28,7 @@ import { SegmentTabs } from "../ui/SegmentTabs";
 import { useInterval } from "../hooks";
 import { recordLines, type AgentRecord } from "../settings";
 import { Leaderboard } from "../ui/Leaderboard";
+import { keyChanges } from "../keyLog";
 
 // P42: not exported — used only by TrustBadge below. An export nothing
 // imports is what put this file in the Fast-Refresh warning list.
@@ -113,6 +114,16 @@ export function AgentDetailPanel({ agent, navigate }: { agent: AgentProfile; nav
         <Text className="e-faint" style={{ fontSize: 11 }}>
           {a.address ?? a.agent_id}
           {a.fingerprint ? ` · key ${a.fingerprint}` : ""}
+          {(() => {
+            // P254: a key that changed says when and how; peers follow it, and what
+            // the old key signed still checks.
+            const changes = keyChanges(a.key_log);
+            const last = changes[changes.length - 1];
+            return last
+              ? ` · key ${last.how} ${last.at.slice(0, 16).replace("T", " ")} UTC`
+                + (changes.length > 1 ? ` (${changes.length} changes)` : "")
+              : "";
+          })()}
         </Text>
       </div>
       <Divider />

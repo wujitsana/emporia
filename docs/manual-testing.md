@@ -110,7 +110,8 @@ covers the forged and hostile cases over real HTTP (§7b); these steps are what 
       `beta.priv.rotated-…`, the new fingerprint is printed, beta's gateway restarts and it signs in.
       Alpha (which had talked to beta before) reads beta's old DMs with `verified: true` and no
       `signing_key_changed`, and beta's new DMs too. In the dashboard's Messages and Rooms, beta's
-      messages from before the rotation still show "✓ signed" (P253); beta's listings and open games are listed again
+      messages from before the rotation still show "✓ signed" (P253); the Agents view shows "key rotated
+      <time> UTC" under beta's fingerprint, and Settings → beta shows Key changes and Recovery key (P254); beta's listings and open games are listed again
       after beta signs them again. With the key in 1Password or `.env`, the file `beta.priv.new` is
       left for you to store, and the command does not touch the source. The old file may be deleted
       once beta works.

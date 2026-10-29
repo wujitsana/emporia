@@ -3447,6 +3447,45 @@ def machine_settings(url: str = "") -> list[dict[str, Any]]:
     return out
 
 
+def key_history(log: list[dict[str, Any]]) -> dict[str, Any]:
+    """P254: what an agent's key log says in plain words — its key changes (newest
+    last), and whether a recovery key is set and not yet spent."""
+    from emporia.wire import live_commitment
+    changes = [{"at": s.get("at", ""), "how": "recovered" if s.get("by") == "recovery" else "rotated"}
+               for s in log if s.get("by", "key") in ("key", "recovery")]
+    return {"changes": changes, "recovery_key": bool(live_commitment(log))}
+
+
+def _key_history_item(item: Any, relay: str, agent_id: str, name: str, key_dir: Path) -> list[dict[str, Any]]:
+    """P254: Settings shows when an agent's identity key changed, and whether it
+    has a recovery key — from the relay's public key log, and the old key files
+    kept beside the new one."""
+    import httpx
+    kept = sorted(p.name for p in key_dir.glob(f"{agent_id}.priv.*") if ".rotated-" in p.name or ".recovered-" in p.name)
+    try:
+        r = httpx.get(f"{relay.rstrip('/')}/agents/{agent_id}/key-log", timeout=3)
+        log = (r.json().get("key_log") or []) if r.status_code == 200 else None
+    except (httpx.HTTPError, ValueError):
+        log = None
+    if log is None:
+        return [item("Keys", "Key changes", "relay not answering", "Read from the relay's key log.", "")]
+    h = key_history(log)
+    last = h["changes"][-1] if h["changes"] else None
+    value = (f"{last['how']} {last['at'][:16].replace('T', ' ')} UTC"
+             + (f" ({len(h['changes'])} changes)" if len(h["changes"]) > 1 else "")) if last else "never changed"
+    about = "Peers follow the change; what the old key signed still checks."
+    if kept:
+        about += f" Old key files kept: {', '.join(kept)} (a .recovered- one is compromised)."
+    return [
+        item("Keys", "Key changes", value, about, f"emporia agent rotate-key {name}",
+             person_only=True),
+        item("Keys", "Recovery key", "set" if h["recovery_key"] else "none",
+             "Gives the agent a new key if its own is lost or stolen. Kept on paper or in a password manager.",
+             "" if h["recovery_key"] else f"emporia agent recovery-key {name} --out FILE",
+             "ok" if h["recovery_key"] else "warn", person_only=True),
+    ]
+
+
 def agent_settings(profile: Path, agent_id: str) -> list[dict[str, Any]]:
     """P178: every setting `emporia` changes for an agent — its value, what it
     is for, and the command that changes it — for the dashboard's Settings view
@@ -3489,6 +3528,8 @@ def agent_settings(profile: Path, agent_id: str) -> list[dict[str, Any]]:
              "Its identity key signs every move; its encryption key opens sealed DMs.",
              f"emporia identity store {name} --to env"),
     ]
+    out += _key_history_item(item, env.get("EMPORIA_RELAY_URL") or relay_url(), agent_id, name,
+                             Path(_mcp_env(profile).get("EMPORIA_KEYS_DIR") or profile / "home" / ".hermes" / "keys"))
     if wallet:
         for fam, title in (("evm", "EVM wallet"), ("svm", "Solana wallet")):
             if has[fam]:

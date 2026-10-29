@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { verifyMessageSignature } from "./integrityCheck";
-import { keyAt, keyLogWindows, senderKeyFrom, whenOf } from "./keyLog";
+import { keyAt, keyChanges, keyLogWindows, senderKeyFrom, whenOf } from "./keyLog";
 // Made by scripts/keylog_vectors.py, i.e. by the Python side (identity.sign_payload, wire.key_log_windows, identity.verify_dm_message):
 // a rotation, a recovery commitment, a thief's rotation and a recovery that undoes it, and a DM
 // signed in each key's time, with Python's own verdict on each.
@@ -48,5 +48,12 @@ describe("an agent's key log, read as the Python side reads it (P253)", () => {
     expect(whenOf("not a time")).toBeNull();
     expect(keyAt(vectors.windows, "")).toBe(vectors.current);
     expect(keyAt(vectors.windows, "1999-01-01T00:00:00")).toBe(vectors.windows[0].key);
+  });
+});
+
+describe("key changes in plain words (P254)", () => {
+  it("names each rotation and recovery, not the commitment", () => {
+    expect(keyChanges(vectors.key_log).map((c) => c.how)).toEqual(["rotated", "rotated", "recovered"]);
+    expect(keyChanges(undefined)).toEqual([]);
   });
 });

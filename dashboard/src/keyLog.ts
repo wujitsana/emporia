@@ -170,3 +170,14 @@ export function signingKeyFor(sender: SenderKey | string, when: unknown): string
   if (typeof sender === "string") return sender;
   return sender.windows.length ? keyAt(sender.windows, when) : sender.key;
 }
+
+/** P254: an agent's key changes in plain words, newest last — "rotated" (its
+ *  old key signed the change) or "recovered" (its recovery key did, after the
+ *  old key was lost or stolen). Read from the steps as served; the signatures
+ *  are what `keyLogWindows` checks. */
+export function keyChanges(log: unknown): { at: string; how: "rotated" | "recovered" }[] {
+  if (!Array.isArray(log)) return [];
+  return log
+    .filter((s): s is Step => !!s && typeof s === "object" && ((s as Step).by ?? "key") !== "commit")
+    .map((s) => ({ at: String(s.at ?? ""), how: s.by === "recovery" ? "recovered" as const : "rotated" as const }));
+}
