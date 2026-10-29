@@ -733,6 +733,18 @@ class KeyRotationRequest(BaseModel):
 _ROTATION_AHEAD = timedelta(minutes=2)
 
 
+def _log_key_change(event: str, agent_id: str, stable_id: str, log: list[dict[str, Any]], **detail: Any) -> None:
+    """P255: one line in the relay's log for each change to an agent's key — a
+    rotation, a recovery, a recovery key set — with how many changes its key has
+    had in all, so several in a row stand out. A stolen key rotated away from its
+    owner shows here first; the log itself is what peers check."""
+    changes = sum(1 for s in log if s.get("by", "key") in ("key", "recovery"))
+    for k in ("old", "new"):
+        if detail.get(k):
+            detail[k] = fingerprint(detail[k])
+    rs.logger.warning(event, extra={"agent_id": agent_id, "stable_id": stable_id, "key_changes": changes, **detail})
+
+
 @router.post("/agents/{agent_id}/key-rotations")
 async def rotate_agent_key(agent_id: str, req: KeyRotationRequest, request: Request):
     """P245: an agent changes its Ed25519 key, keeping its identity. The step
@@ -767,6 +779,7 @@ async def rotate_agent_key(agent_id: str, req: KeyRotationRequest, request: Requ
         rs.AGENT_REGISTRY.rotate_key(agent_id, new, step)
     except ValueError as e:
         raise HTTPException(409, str(e)) from e
+    _log_key_change("agent_key_rotated", agent_id, row["stable_id"], [*log, step], old=old, new=new)
     return {"agent_id": agent_id, "stable_id": row["stable_id"], "public_key_hex": new,
             "fingerprint": fingerprint(new), "key_log": [*log, step]}
 
@@ -829,6 +842,7 @@ async def commit_recovery_key(agent_id: str, req: RecoveryCommitmentRequest, req
         full = rs.AGENT_REGISTRY.add_recovery_commitment(agent_id, step)
     except ValueError as e:
         raise HTTPException(409, str(e)) from e
+    _log_key_change("agent_recovery_key_set", agent_id, row["stable_id"], full)
     return {"agent_id": agent_id, "stable_id": row["stable_id"], "key_log": full}
 
 
@@ -880,6 +894,8 @@ async def recover_agent_key(agent_id: str, req: KeyRecoveryRequest):
         done = rs.AGENT_REGISTRY.recover_key(agent_id, step)
     except ValueError as e:
         raise HTTPException(409, str(e)) from e
+    _log_key_change("agent_key_recovered", agent_id, row["stable_id"], done.get("key_log") or [], old=old, new=new,
+                    compromised_since=since, undone=len(done.get("superseded") or []))
     return {**done, "fingerprint": fingerprint(new)}
 
 

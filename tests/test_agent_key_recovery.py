@@ -303,7 +303,9 @@ def test_a_second_commitment_while_one_is_live_is_refused(client, tmp_path):
     assert wire.live_commitment(_profile(client, "kc_other")["key_log"]) == ""
 
 
-def test_a_thiefs_rotation_after_the_loss_is_undone_and_only_later_signatures_stop_checking(client, tmp_path):
+def test_a_thiefs_rotation_after_the_loss_is_undone_and_only_later_signatures_stop_checking(client, tmp_path, caplog):
+    import logging
+    caplog.set_level(logging.INFO)
     old = _agent(client, tmp_path, "kc_thief")
     recovery, r = _commit(client, "kc_thief", old)
     assert r.status_code == 200, r.text
@@ -327,6 +329,12 @@ def test_a_thiefs_rotation_after_the_loss_is_undone_and_only_later_signatures_st
     assert body["key_log"][-1]["compromised_since"] == since
     assert [(s["old"], s["new"]) for s in body["key_log_superseded"]] == [(_hex(old), _hex(thief_key))]
     assert r.json()["superseded"] == body["key_log_superseded"]
+    # P255: the relay's log has each change: the recovery key set, the thief's rotation, the recovery
+    seen = [(r.getMessage(), r.key_changes) for r in caplog.records if getattr(r, "agent_id", "") == "kc_thief"
+            and r.getMessage().startswith("agent_")]
+    assert seen == [("agent_recovery_key_set", 0), ("agent_key_rotated", 1), ("agent_key_recovered", 1)]
+    recovered = next(r for r in caplog.records if r.getMessage() == "agent_key_recovered")
+    assert recovered.undone == 1 and recovered.compromised_since == since
     windows = _windows(stable, body["key_log"])
     key = identity.SigningKey(_hex(new), windows)
     # what the old key signed before the loss still checks; after, it does not — nor does the thief's key

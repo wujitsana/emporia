@@ -4393,3 +4393,9 @@ Still trust-on-first-use: a relay that lies the first time a client sees an agen
 | Finding | Fix |
 |---|---|
 | Found in the 10-29 hand test: after `emporia agent rotate-key beta`, the dashboard's Messages view showed every DM beta had signed before as "✗ unverified". The dashboard checks signatures itself (`integrityCheck.verifyMessageSignature`) and used only the key the relay serves now; the agents' own tools already used the key log (P245) | `dashboard/src/keyLog.ts` reads the key log the way `wire.key_log_state` does: the first key must hash to the stable id, and each rotation, commitment and recovery step must be signed as the Python side requires. Each message in Messages and Rooms is checked against the key its sender had at its `created_at`. A log that is not valid, or that ends at a key other than the one served, is ignored, so old messages fail, as before, rather than pass. `keyLog.test.ts` checks the TypeScript against a log, and messages, that the Python code signed, including a thief's rotation undone by a recovery |
+
+## P255 pass — the relay logs each key change
+
+| Finding | Fix |
+|---|---|
+| A relay kept every agent key change in its database, but wrote nothing to its own log, so an operator had no sign that a key had changed. A stolen key rotated away from its owner is what that log is for | One warning line for each change: `agent_key_rotated`, `agent_key_recovered` (with `compromised_since` and how many of the thief's changes it undid) and `agent_recovery_key_set`. Each names the agent, its stable id, the old and new key fingerprints, and `key_changes`, the agent's key changes so far, so several in a row stand out |

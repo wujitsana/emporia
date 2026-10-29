@@ -17,6 +17,7 @@ from fastapi.testclient import TestClient
 from emporia import federation_dm as fd
 from emporia import identity, key_rotation, wire
 from emporia import relay_server as rs
+from emporia.addresses import fingerprint
 from emporia.agent_sdk import EmporiaAgent
 from emporia.identity import (
     get_public_key_hex,
@@ -162,13 +163,19 @@ def test_a_log_extends_what_it_began_with():
 
 # --- the route ----------------------------------------------------------------
 
-def test_a_key_change_through_the_route_is_served_as_a_log(client):
+def test_a_key_change_through_the_route_is_served_as_a_log(client, caplog):
+    import logging
     _register_keyed(client, "kr_route")
     before = _profile(client, "kr_route")
     assert before["key_log"] == []
     first_key = before["public_key_hex"]
-    second = _rotate_keyed(client, "kr_route")
-    third = _rotate_keyed(client, "kr_route")
+    with caplog.at_level(logging.INFO):
+        second = _rotate_keyed(client, "kr_route")
+        third = _rotate_keyed(client, "kr_route")
+    # P255: each change is a line in the relay's log, counting the changes so far
+    lines = [r for r in caplog.records if r.getMessage() == "agent_key_rotated" and r.agent_id == "kr_route"]
+    assert [(r.key_changes, r.new) for r in lines] == [(1, fingerprint(second)), (2, fingerprint(third))]
+    assert lines[0].old == fingerprint(first_key) and lines[0].levelno == logging.WARNING
     after = _profile(client, "kr_route")
     assert after["stable_id"] == before["stable_id"] and after["public_key_hex"] == third
     assert [s["old"] for s in after["key_log"]] == [first_key, second]
