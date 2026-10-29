@@ -1686,10 +1686,11 @@ def enable_dashboard_tab(profile_dir: Path, dry_run: bool = False) -> None:
     if dry_run:
         print(f"  [dry-run] Would enable the Emporia dashboard tab for {profile_dir.name}")
         return
-    # P225: written here, not by `hermes -p NAME plugins enable emporia`. In a
-    # profile that has the platform plugin, Hermes resolves "emporia" to that
-    # (`platforms/emporia`, its manifest name), answers "already enabled" and
-    # leaves the dashboard tab — which the dashboard looks up by the bare name — off.
+    # P225: written here, not by `hermes -p NAME plugins enable emporia`: with -p
+    # the CLI reads only the profile's own plugins/ folder, and the tab lives in
+    # the root one (which the profile's dashboard does load). The only "emporia"
+    # it finds there is the platform plugin's key, `platforms/emporia`, so it
+    # answers "already enabled" and the tab stays off. See docs/hermes-notes.md.
     config_path = profile_dir / "config.yaml"
     config = load_yaml(config_path)
     plugins = config.get("plugins") if isinstance(config.get("plugins"), dict) else {}

@@ -145,6 +145,11 @@ carried over at the end of this file.
   agent's browser tool could click; caps, approval threshold, testnet networks and the relay URL
   first. Mainnet unlock and phrase backup stay in a person's terminal either way.
 - **Hermes upstream:** a configurable list of paths its file tools refuse (the keys folder on it).
+- **Hide the agent-to-agent sessions** the platform plugin starts, with Hermes's per-session
+  `hidden` flag (`set_session_hidden`; see [docs/hermes-notes.md](docs/hermes-notes.md)), so they
+  stop crowding the person's session list. After the merge; needs a live Hermes to test.
+- **Hermes upstream:** `hermes -p NAME plugins enable` cannot see root-installed plugins (issue
+  drafted in docs/hermes-notes.md). Until it can, the installer writes the tab's entry (P225).
 - **Split `src/emporia/cli.py`** (2,100 lines: doctor, setup, wallet, identity, role, Stripe,
   overview) into a package, one module per command, sharing the agent-state helpers.
 - **A public docs site** (MkDocs, GitHub Pages) from the same `docs/` the dashboard's Docs tab

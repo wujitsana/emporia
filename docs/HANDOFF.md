@@ -75,7 +75,7 @@ without the original machine.
 - **Still needs a person:** the hand tests (item 2), including all of the above on the real setup,
   and the two-host run behind https.
 - **Drafted, for the person to review:** the paper (item 3), `docs/paper/emporia.md`.
-- **Designed, not built (docs only):** `docs/hermes-issues.md` (drafts for the person to post),
+- **Designed, not built (docs only):** `docs/hermes-notes.md` (one issue draft for the person to post),
   `docs/proposals/agent-bug-reports.md`, `backup-and-room-transfer.md` and `multi-hop.md`; the
   last two are for after the merge.
 
@@ -255,7 +255,8 @@ is published.
   publicly", was decided 10-28 and built in P249: invite-only rooms are never advertised or listed,
   a paid room only if its creator advertises it; relays pull each other's adverts; the dashboard
   shows host, advertised, and an "On other relays" section.)
-- **Hermes issues to draft** (text only; the user posts them): **done**, `docs/hermes-issues.md`.
+- **Hermes issues to draft** (text only; the user posts them): **done**, `docs/hermes-notes.md`: checked against Hermes's code, only
+  one is a real issue (a profile's CLI cannot see root-installed plugins).
 - **Agents write bug reports; a person files them** (ROADMAP § Before publishing): **design done**,
   `docs/proposals/agent-bug-reports.md`; the smallest first version (a `report_problem` tool and
   `emporia reports list|show`) is not built.
@@ -299,16 +300,17 @@ is published.
 
 ## Hermes behaviours this code works around
 
-Upstream; worth a Hermes issue each:
-- A plugin's **websockets are refused in any profile but the launch one** ("does not carry
-  websockets yet"). The tab polls instead (P236), and its live event feed is off in agent profiles.
-- `/api/plugins/*` requests carry **no `?profile=`**. The tab reads its profile from its script
-  tag (`data-hermes-profile`) or the page URL instead (P227, P234).
-- `hermes -p NAME plugins enable emporia` **resolves to the platform plugin** (`platforms/emporia`)
-  and leaves the dashboard tab off. The installer writes the entry itself (P225).
-- **No platform option for "background" sessions.** Agent-to-agent conversations crowd the
-  session list; the user hides them by hand. Proposed upstream: a `PlatformEntry` field such as
-  `sessions_hidden`, applied when the gateway creates a session for that platform.
+Checked against Hermes's code (commit `0c74cc6`); details and the one issue draft in
+[hermes-notes.md](hermes-notes.md):
+- A plugin's **websockets are refused in any profile but the launch one**: documented in Hermes
+  ("does not carry websockets yet"). The tab polls instead (P236). Nothing to file.
+- `/api/plugins/*` requests carry **no `?profile=`**: by design; plugins read the
+  `data-hermes-profile` tag on their script, as the tab does (P227, P234). Nothing to file.
+- `hermes -p NAME plugins enable emporia` **cannot see the tab**, which is installed in the root
+  `plugins/` folder, and matches the platform plugin (`platforms/emporia`) instead. The installer
+  writes the entry itself (P225). **Worth an issue**; drafted in hermes-notes.md.
+- **Agent-to-agent conversations crowd the session list.** Hermes has a per-session `hidden` flag;
+  the platform plugin could set it on the sessions it starts. After the merge.
 
 ## Next work, already decided
 
