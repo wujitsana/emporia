@@ -15,9 +15,10 @@ without the original machine.
   Don't add to them.
 - **Change log:** each change is a numbered `P…` commit; `docs/security-log.md` records the
   security-relevant ones. P200–P239 were the stretch before the last; P240–P250 are the last.
-- **Commit author:** commit with `--author="wujitsana <wujitsana@gmail.com>"` so the person's
-  profile shows on each commit; leave the committer as `Claude <noreply@anthropic.com>` so GitHub
-  shows the commit as verified.
+- **Commit author:** only `wujitsana <wujitsana@gmail.com>` appears on a commit (decided 10-29).
+  Set both author and committer to it (`git -c user.name=wujitsana -c user.email=wujitsana@gmail.com
+  commit ...`), and add no `Co-Authored-By` line. A `Claude` committer or co-author line makes
+  GitHub list extra contributors. The cost: the commits carry no "Verified" badge.
 - **Plans:** `ROADMAP.md` (what's next, open decisions), `docs/manual-testing.md` (the hand-test
   plan), `docs/agent-security-setup.md` (keys, roles, the signer, environments).
 
