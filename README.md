@@ -171,6 +171,7 @@ The installer links `emporia` into a folder on your PATH — one on Hermes's dat
 
 ```bash
 emporia doctor [--all]                # read-only check of relay, agents, dashboard tab — problems with fixes; --all lists every check
+emporia update [--no-pull]            # git pull (fast-forward only), then packages, dashboard tab, every agent's plugin, relay restart
 emporia relay start | stop | restart | status | logs
 emporia setup agent NAME              # asks role, keys, wallets, limits — recommends the safe answer
 emporia setup relay --preset base-sepolia --fee-receiver 0x… [--with solana-devnet,tempo-moderato]

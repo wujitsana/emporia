@@ -3072,6 +3072,83 @@ def cmd_doctor(args: argparse.Namespace) -> int:
 
 # ─── login ───────────────────────────────────────────────────────────────────
 
+def _run(argv: list[str], cwd: Path, timeout: int = 900) -> bool:
+    """One step of `emporia update`, its output shown as it runs."""
+    print(f"  $ {' '.join(argv)}")
+    try:
+        return subprocess.run(argv, cwd=cwd, timeout=timeout).returncode == 0
+    except (OSError, subprocess.TimeoutExpired) as e:
+        print(f"  failed: {e}")
+        return False
+
+
+def cmd_update(args: argparse.Namespace) -> int:
+    """P252: `emporia update` — this checkout brought up to date, and everything
+    that runs from it: the Python packages, the dashboard tab, each profile's
+    plugin and the relay. It pulls only the branch already checked out, and only
+    when that is a fast-forward with no local changes. Hermes's gateway and
+    dashboard are restarted by the person, as the last lines say."""
+    import shutil
+    if not args.no_pull:
+        git = shutil.which("git")
+        if not git or not (REPO / ".git").exists():
+            print(f"update: {REPO} is not a git checkout — update it the way it was installed, "
+                  f"then run `emporia update --no-pull`")
+            return 1
+        dirty = subprocess.run([git, "status", "--porcelain", "--untracked-files=no"], cwd=REPO,
+                               capture_output=True, text=True).stdout.strip()
+        if dirty:
+            print("update: this checkout has changes of its own; commit or stash them first:\n" + dirty)
+            return 1
+        before = subprocess.run([git, "rev-parse", "HEAD"], cwd=REPO, capture_output=True, text=True).stdout.strip()
+        if not _run([git, "pull", "--ff-only"], REPO):
+            print("update: the pull did not go through (see above); nothing else was changed")
+            return 1
+        after = subprocess.run([git, "rev-parse", "HEAD"], cwd=REPO, capture_output=True, text=True).stdout.strip()
+        if before == after:
+            print("  already up to date with its branch")
+        # The rest runs as the code just pulled, not as this process's copy of it.
+        return subprocess.run([sys.executable, "-m", "emporia.cli", "update", "--no-pull"]).returncode
+
+    uv = shutil.which("uv")
+    in_repo_venv = Path(sys.prefix).resolve() == (REPO / ".venv").resolve()
+    ok = (_run([uv, "sync", "--frozen"], REPO) if uv and in_repo_venv and (REPO / "uv.lock").exists()
+          else _run([sys.executable, "-m", "pip", "install", "-q", "-e", str(REPO)], REPO))
+    if not ok:
+        print("update: the Python packages did not install (see above); stopping here")
+        return 1
+
+    inst = installer()
+    tab = hermes_home() / "plugins" / "emporia" / "dashboard" / "emporia.json"
+    if tab.exists():
+        npm = shutil.which("npm")
+        if not npm:
+            print("  dashboard tab: npm not found, so the tab keeps its old build "
+                  "(install Node.js, then run `emporia update --no-pull`)")
+        elif _run([npm, "ci" if (REPO / "dashboard" / "package-lock.json").exists() else "install"],
+                  REPO / "dashboard"):
+            # Reinstalled with the settings it has now: its relay and its profiles.
+            conf = json.loads(tab.read_text())
+            profile = Path(conf["runtime_dir"]).parents[2]
+            inst.install_dashboard_plugin(profile, conf.get("relay_url") or relay_url(), hermes_home())
+        else:
+            print("  dashboard tab: npm failed (see above), so the tab keeps its old build")
+
+    if any(profiles_root().glob("*/plugins/platforms/emporia")):
+        cmd_agent_refresh("all")
+
+    pid_file, _ = _relay_files()
+    if pid_file.exists():
+        cmd_relay(argparse.Namespace(action="restart"))
+    elif health():
+        print(f"  relay: one is answering at {relay_url()}, not started by `emporia relay start`; "
+              f"restart it where it was started so it runs the new code")
+    inst.print_restart_instructions([])
+    print("Then: hermes gateway restart (or `hermes -p NAME gateway restart` and /reload-mcp in each), "
+          "and `emporia doctor`.")
+    return 0
+
+
 def cmd_login(args: argparse.Namespace) -> int:
     """Nous sign-in for one Hermes profile — `hermes -p NAME auth add nous` —
     then confirm Hermes now hands that profile a current token (P114)."""
@@ -5088,6 +5165,11 @@ def build_parser() -> argparse.ArgumentParser:
     d.add_argument("--profiles-root", default="")
     d.add_argument("--all", action="store_true", help="every check, not just a count of those that pass")
     d.set_defaults(func=cmd_doctor)
+
+    up = sub.add_parser("update", help="pull this checkout and bring the packages, dashboard tab, plugins and "
+                                       "relay up to date")
+    up.add_argument("--no-pull", action="store_true", help="skip `git pull`; update from the code already here")
+    up.set_defaults(func=cmd_update)
 
     r = sub.add_parser("relay", help="start, stop or inspect this machine's relay; `use` moves agents to another; "
                                      "`host` runs one for other machines, in Docker behind https")

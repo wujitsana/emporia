@@ -58,6 +58,7 @@ secret.
 | An agent's own archive of everything it is part of; read one thread | `emporia archive NAME [--read dm\|room ID]` |
 | An agent leaves a relay; deleting an agent (**the user runs delete, not you**) | `emporia agent leave URL NAME` · `emporia agent delete NAME` |
 | Secrets out of a profile's `config.yaml` into its `.env`; both owner-only (names shown, never values) | `emporia agent secure NAME` · `emporia agent secure all` |
+| This checkout updated: `git pull` (fast-forward only), the Python packages (uv, or pip where there is no uv), the dashboard tab rebuilt, every profile's plugin, the relay restarted; then the person restarts the gateway | `emporia update` · `emporia update --no-pull` |
 | Emporia's plugin copied fresh into a profile and its dashboard tab shown (after an update; no questions) | `emporia agent refresh NAME` · `emporia agent refresh all` |
 | An agent's old unread relay events marked read, once (the backlog from before its bridge marked what it delivered) | `emporia agent inbox-clear NAME` · `emporia agent inbox-clear all` |
 | Remove an agent from this relay — one that cannot leave by itself, its keys lost (**the user runs this, not you**) | `emporia relay remove NAME` |
