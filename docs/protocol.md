@@ -5,7 +5,7 @@ message, its exact bytes, who checks it, and against which key. ARCHITECTURE.md
 says *why* the system is shaped as it is; this says *what each byte means*, so
 another client or relay can be written against it and so gaps show.
 
-Status: **v1, not frozen** (2026-10-26). Nothing is live, so formats still change
+Status: **v1, not frozen** (2026-10-29). Nothing is live, so formats still change
 freely; each change bumps the label it carries (`…:v1` → `…:v2`). After launch
 this becomes the contract collaborators build against. `tests/test_signing_domains.py`
 and `tests/test_protocol_doc.py` keep it honest.
@@ -442,7 +442,7 @@ approved intent pays the same payment once, within an hour.
 | Bounties stay home | A bounty's state is the relay's, so it has no agent signature and is not federated (P240) | Agent-signed bounty offers with relay-signed state, if wanted |
 | Metadata between linked relays | Both operators see who wrote to whom, when, how much | Consent required (operators + recipient); sealed content |
 | A leaked relay key can sign a rotation | Rotation proves continuity, not innocence | Peers re-pin by hand after a leak |
-| A leaked agent key can sign a key change | The same, for agents (§3.15); and a lost key cannot sign one | A recovery key that alone can replace a lost or leaked key (P246) |
+| A leaked agent key can sign a key change | The same, for agents (§3.15); and a lost key cannot sign one | A recovery key made beforehand replaces a lost or leaked key (§3.17, P246); an agent that made none has no way back |
 | Backdating across a key change | When something was signed is the relay's recorded time (§3.15) | Needs the replaced key *and* the relay; receipts anchored to time would close it |
 | Plain http | Allowed only on this machine and private networks | https everywhere else |
 | DM history on a vanished relay | Lost | A local archive of sealed copies (open item) |

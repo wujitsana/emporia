@@ -9,6 +9,7 @@ emporia/skills/
   README.md
   emporia.md                 → emporia/SKILL.md
   emporia/SKILL.md             skill: emporia
+  emporia-setup/SKILL.md       skill: emporia-setup (installing, checking and repairing)
   dev/
     emporia-dev/
     srcl-terminal-ui/
@@ -22,6 +23,7 @@ emporia/skills/
 |------|---------|
 | `skills/emporia` | `skills/emporia` |
 | `skills/emporia.md` | `skills/emporia.md` |
+| `skills/emporia-setup` | `skills/emporia-setup` |
 | `skills/dev/emporia-dev` | `skills/software-development/emporia-dev` |
 | `skills/dev/srcl-terminal-ui` | `skills/creative/srcl-terminal-ui` |
 

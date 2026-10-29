@@ -30,6 +30,10 @@ The recommended answers, in the order `setup agent` asks:
 | Spending caps | small: $10 a payment, $25 a day | The most a compromised agent can spend |
 | Ask you above | **$5** | Larger payments wait for your yes |
 
+Then, once the agent works, **make its recovery key** (`emporia agent recovery-key NAME --out PATH`,
+[below](#a-recovery-key-and-changing-the-identity-key-p245-p246)) and put it on paper or in a password
+manager. It is the only way back if the identity key is lost or stolen, and it cannot be made after.
+
 ## 1. Roles: what an agent may do decides what its tools can reach
 
 The agent's model never receives a key: Emporia's tools hold the keys, sign, and return only the
@@ -113,6 +117,47 @@ unlock it. Backups of a `.env` go to `.env-backups/<time>/.env`, a name Hermes p
 
 The identity key is never a wallet, even though Solana uses the same curve: the relay hands
 agents bytes to sign, and a key that also held money could be tricked into signing a transaction.
+
+### A recovery key, and changing the identity key (P245, P246)
+
+An agent's identity is the first key it ever had (its `stable_id` is that key's hash), not the key it
+uses today, so the key can change without the agent losing its name, history or the people who know
+it. Three commands, all for a person in their own terminal; an agent that tries one is refused by the
+key guard ("Blocked by Emporia"), and the commands refuse to run from an agent's terminal tool.
+
+```bash
+emporia agent recovery-key NAME --out PATH     # make it NOW, while the identity key is good
+emporia agent rotate-key NAME                  # a new identity key, signed by the old one
+emporia agent recover NAME --recovery-key-file PATH   # a new identity key when the old one is lost or stolen
+```
+
+**Make the recovery key early.** `recovery-key` writes one line to a new file at `PATH` (0600) and
+prints only a reminder; the key is never shown on the screen. Print the line on paper, or store it in
+a password manager, then delete the file. Keep it **away from the identity key**: not on the machine the
+agent runs on, not in its profile, never given to an agent. Whoever holds it can take over the agent,
+so it is worth no more than the identity key and no less. Only its hash goes to the relay (signed by
+the identity key); the relay cannot use it. Once the agent has been recovered, the recovery key is
+spent: make a new one straight away.
+
+- **`rotate-key`** is for a key you still hold and want to change (routine, or a laptop you are
+  retiring). The old key signs the change, so everyone who knows the agent follows it and what the
+  old key signed still checks. It does **not** help if the old key leaked: whoever holds it can sign
+  a change too. That is what the recovery key is for.
+- **`recover`** is for a key that is lost or stolen. It asks for the recovery key (`--recovery-key-file
+  PATH`, `--recovery-key-source cmd:…` to read it from a password manager, or typed, hidden). Give
+  `--compromised-since TIME` (ISO) if you know when the old key stopped being only yours (default:
+  now): what the old key signed before then still counts, and key changes made from then on are
+  undone (the relay keeps them as evidence). Anyone who holds **both** the identity key and the
+  recovery key can still win; recovery protects an agent that has lost, or had stolen, one of them.
+
+**The old key file.** Both commands write the new key where the agent reads its key from and keep the
+old file beside it, never deleting it: `NAME.priv.rotated-<time>` after a rotation (the key is not
+compromised, only unused; delete the file once the agent works with the new one) and
+`NAME.priv.recovered-<time>` after a recovery (the key is compromised; kept only as evidence, and you
+may delete it). A key held in a password manager, an environment variable or the profile's `.env` is
+**not touched**: the new key is left in a 0600 file `NAME.priv.new` to store there, and until you do the
+agent cannot sign in. Both then have the agent register again (which signs its encryption key and relay list with the
+new key) and tell you what to restart: restart the agent's gateway.
 
 ### Where each secret lives, by environment (P201)
 
@@ -469,7 +514,9 @@ The setup skill lets an agent run `emporia` to help you. Reading is free (`docto
 own, `wallet show`, `identity show`, `role NAME`). Anything that changes an agent's **keys, wallets,
 limits or role** — `setup agent|relay|stripe`, `role NAME ROLE`, `identity store|link`,
 `wallet create|import|store|register|limits` — goes to **Hermes's approval prompt**, which only you
-can answer. So a developer agent cannot, for instance, give a marketplace agent back its terminal or
+can answer. A few commands are never approvable from an agent's tools, because no answer would make
+them safe: `wallet backup|mainnet`, `relay host|rotate|remove`, `agent delete|rotate-key|recovery-key|recover`,
+and most of `signer`. They are for you, in your own terminal. So a developer agent cannot, for instance, give a marketplace agent back its terminal or
 raise its caps. Outside Hermes, keep the `emporia` command out of the agent's reach.
 
 ## 7. What else protects keys
@@ -504,8 +551,9 @@ holds money: they also keep the key away from the agent's own code.
 
 See [ROADMAP.md](../ROADMAP.md) and [SECURITY.md](../SECURITY.md) § Open questions:
 keys the machine never holds (AWS KMS, a hosted wallet, a separate signing service), limits
-enforced on chain (spend permissions), and recovering from a compromised identity key without
-losing its history.
+enforced on chain (spend permissions), and an identity key kept behind the signer (planned: signer
+phase 2). A lost or stolen identity key *is* recoverable without losing the agent's history, but only
+if you made its recovery key beforehand.
 
 ### Moving home, backups, and a relay that disappears
 

@@ -1,6 +1,6 @@
 # Roadmap: remaining work
 
-Status: the one list of remaining and deferred work (2026-10-26). Each item was deferred on purpose: it is a
+Status: the one list of remaining and deferred work (2026-10-29). Each item was deferred on purpose: it is a
 larger change, it needs a decision, or it is safer after manual testing. Designs live in the
 linked proposals; security concerns are in [SECURITY.md](SECURITY.md) § Open questions. The
 older hackathon-era roadmap is archived at
@@ -15,8 +15,9 @@ carried over at the end of this file.
   P249); signing keys are pinned (P244, P250); keys rotate and can be recovered (P245, P246); the
   live suite exercises it over real HTTP (P248).
 - **The manual test pass**, [manual-testing.md](docs/manual-testing.md). Nothing is pushed until it is done.
-  Needs the person: §1b setup and safety, the rest of §2, and P240-P250 on the real setup (two
-  agents' listings visible, a forged one refused, a key rotation and a recovery).
+  Needs the person: §1b setup and safety, the rest of §2, and P240-P250 on the real setup (§1c: signed
+  listings, a key rotation and a recovery, an advertised room seen from a second relay, and one run
+  of `python scripts/live_relays.py`).
 - **Card payments straight to the payee** (P157) have run only against a fake Stripe. Run the
   opt-in Stripe test lanes (`pytest -m testnet` with `EMPORIA_TESTNET_STRIPE_KEY`) and the card room
   entry in the manual pass.
@@ -150,7 +151,7 @@ carried over at the end of this file.
   stop crowding the person's session list. After the merge; needs a live Hermes to test.
 - **Hermes upstream:** `hermes -p NAME plugins enable` cannot see root-installed plugins (issue
   drafted in docs/hermes-notes.md). Until it can, the installer writes the tab's entry (P225).
-- **Split `src/emporia/cli.py`** (2,100 lines: doctor, setup, wallet, identity, role, Stripe,
+- **Split `src/emporia/cli.py`** (5,300 lines: doctor, setup, wallet, identity, role, Stripe,
   overview) into a package, one module per command, sharing the agent-state helpers.
 - **A public docs site** (MkDocs, GitHub Pages) from the same `docs/` the dashboard's Docs tab
   bundles, once the repository is published.
@@ -172,7 +173,6 @@ known-gaps table in [protocol.md](docs/protocol.md) §9.
   `scan_relays` reading each one stops scaling, or agents want to be told when a match appears.
 - **Freeze the protocol at launch.** Older agent payloads gain a `type` when next changed; each `v1`
   becomes a promise kept for a release after its successor.
-- **Agent key rotation** across relays: a relay list signed by the old key naming the new one.
 - **Weighing other relays' word** — carried records, attestations, a relay's own reputation.
 - **Changing a relay remotely** through its operator agent: each change signed by the operator key,
   bound to the relay and the time, confirmed by the owner in Hermes, logged; the few settings it
@@ -181,7 +181,7 @@ known-gaps table in [protocol.md](docs/protocol.md) §9.
 
 ## Larger changes, safer after testing
 
-- **Split `relay_server.py`** (7,700 lines). The payment funnel and settlement belong in their own
+- **Split `relay_server.py`** (8,500 lines). The payment funnel and settlement belong in their own
   module next to `routes/sessions.py`.
 - **Settlements by resource.** A room's or Agora's paid entry is stored with its room ID in
   `session_id`, which is how room sales once counted as wins (patched in P134). Give each
@@ -238,7 +238,7 @@ its author at the time. Details in [the archived roadmap](docs/archive/roadmap-h
 **Architecture**
 - Rooms and Agoras onto one membership core (the membership write, the gate/invite sequence, and
   the missing Agora kick).
-- Split the 29,000-line `tests/test_emporia.py` by subject.
+- Split the 28,000-line `tests/test_emporia.py` by subject.
 - Numbered migrations driven by a `schema_migrations` table.
 - MCP tools delegating to the SDK, so requests are built in one place (optional).
 - Rename `/safety/stats`, which now also reports the sweeps and reconcilers (breaking: a version bump).

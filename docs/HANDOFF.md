@@ -1,4 +1,4 @@
-# Handoff — `post-hackathon`, 2026-10-28
+# Handoff — `post-hackathon` and `claude/handoff-4rte3l`, 2026-10-29
 
 For whoever picks this branch up next (a cloud coding agent, or a person). It says where the work
 stands, what was tested by hand, what is left before `main`, and what can and cannot be done
@@ -6,13 +6,15 @@ without the original machine.
 
 ## Where things are
 
-- **Branch:** `post-hackathon`, ~530 commits ahead of `main`. Not merged. Aim: merge by the end of
-  the week of 10-26 so others can test.
-- **Tests:** `pytest` (≈1,700, ~3½ min) and the dashboard's `cd dashboard && npx vitest run` (≈180)
-  all pass. `npx tsc -b` reports 35 errors, all pre-existing (srcl's types, `vite.config.ts`).
+- **Branch:** `post-hackathon`, ~530 commits ahead of `main`, plus P240–P250 on
+  `claude/handoff-4rte3l` (16 more commits, not yet on `post-hackathon`). Not merged. Aim: merge by
+  the end of the week of 10-26 so others can test.
+- **Tests:** `pytest` (1,854 unit tests; the full run takes about 10 minutes in a cloud container),
+  the live suite `pytest -m live tests/live` (10 scenarios, about 5 minutes; off by default), and
+  the dashboard's `cd dashboard && npx vitest run` (189). All pass. `npx tsc -b` reports 35 errors, all pre-existing (srcl's types, `vite.config.ts`).
   Don't add to them.
 - **Change log:** each change is a numbered `P…` commit; `docs/security-log.md` records the
-  security-relevant ones. P200–P239 were this last stretch.
+  security-relevant ones. P200–P239 were the stretch before the last; P240–P250 are the last.
 - **Commit author:** commit with `--author="wujitsana <wujitsana@gmail.com>"` so the person's
   profile shows on each commit; leave the committer as `Claude <noreply@anthropic.com>` so GitHub
   shows the commit as verified.
@@ -36,11 +38,11 @@ without the original machine.
   - Headings, and a calmer `doctor` (`--all` for every check).
   - New verbs:
     - `relay restart`;
-    - `relay remove NAME` (an operator retires a dead agent);
+    - `relay remove NAME` (an operator removes a dead agent);
     - `agent refresh NAME|all` (a fresh plugin copy and the dashboard tab);
     - `agent inbox-clear NAME|all` (a one-off backlog clear).
 - **Agents:**
-  - `invite_to_room` (MCP tool count is now 70).
+  - `invite_to_room` (70 MCP tools then; 72 now, see below).
   - DM notices ask for the last 5 messages, not the whole thread.
   - A failed chess move says when another of the agent's own conversations moved first (P226).
   - Chess `max_moves` (default 40 each; reaching it is a draw).
@@ -60,9 +62,9 @@ without the original machine.
   `docs/security-log.md`):
   - listings (P240) and open games (P241), which travel between relays;
   - Agora posts and comments (P242);
-  - a room's settings, invites and kicks, with the `check_room` tool (P243; 71 MCP tools);
+  - a room's settings, invites and kicks, with the `check_room` tool (P243);
   - room and Agora-topic adverts (P247, P249): paid rooms can be advertised by their creator, and
-    relays pull each other's adverts.
+    relays pull each other's adverts. The `advertise` tool is the 72nd MCP tool.
 - **Keys:**
   - clients pin other agents' signing keys (P244), and an encryption key's binding is checked
     against the pinned signing key (P250);
@@ -143,7 +145,7 @@ the user to confirm:
   order) fail in a fresh cloud container with or without these changes.
 
 Then, on the user's go-ahead (10-28): **P242** signs Agora posts and comments; **P243** signs a
-room's settings, invites and kicks, with a new `check_room` MCP tool (71 tools). Neither travels
+room's settings, invites and kicks, with a new `check_room` MCP tool (71 tools then). Neither travels
 between relays — rooms and Agoras never leave their relay — so these protect against the agent's
 own relay. Still unsigned: Agora votes, topics, subscriptions; room joins. Schema 10, 11.
 
@@ -217,8 +219,10 @@ this", not that A said it: on listings, a relay is trusted to speak for its agen
 
 ### 2. Remaining hand tests before the merge **(machine)**
 
-`docs/manual-testing.md` §1b (setup and safety, the signer in practice mode) and the rest of §2.
-Also item 1 above, on the real setup: two agents' listings visible, and a forged one refused.
+`docs/manual-testing.md` §1b (setup and safety, the signer in practice mode), the rest of §2, and
+"New since 10-28 (P240–P250)" (signed listings, key rotation and recovery, adverts, two linked
+relays, `python scripts/live_relays.py` once on the machine). A forged listing is refused in the
+live suite, not by hand.
 
 ### 3. The paper — after item 1 lands
 

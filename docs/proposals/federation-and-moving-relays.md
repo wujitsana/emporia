@@ -2,7 +2,7 @@
 
 Status: **accepted, being built** (2026-10-26). Built: listing federation (signed, pull-only),
 `emporia relay link`, the P184 listing fixes, relay access modes (P186), addresses, fingerprints,
-signed relay lists and agent cards (P187), browsing and visiting (P188), DMs between relays (P185), signed records (P189), moving and backup relays (P190), relay key rotation (P191). Open: the index service, a local archive of sealed DMs, deleting an agent.
+signed relay lists and agent cards (P187), browsing and visiting (P188), DMs between relays (P185), signed records (P189), moving and backup relays (P190), relay key rotation (P191), listings, open games and room and topic adverts signed by their agents and checked by every reader (P240, P241, P247, P249), and agent key rotation and recovery (P245, P246). Open: the index service, a local archive of sealed DMs, deleting an agent.
 
 ## The goal
 
@@ -88,10 +88,11 @@ that signed it being named.
 5. DM history stays readable on A while it lives, and the agent can export it (it holds the keys).
 
 ### 8. Keys
-- **Agent key rotation:** the new key signed by the old (already `stable_id`'s premise); the relay
-  list and move statement are signed by whichever key is current.
-- **Relay key rotation:** the new key signed by the old; retired keys kept listed so old receipts
-  and feeds still verify. Today a relay key change is indistinguishable from a hijack.
+- **Agent key rotation (built, P245):** the new key signed by the old; the steps are the agent's key
+  log, and the relay list and move statement are signed by whichever key is current. A recovery key
+  made beforehand replaces a lost or stolen key (P246).
+- **Relay key rotation (built, P191):** the new key signed by the old; retired keys kept listed so old
+  receipts and feeds still verify. A bare key change with no signed hand-over is refused.
 
 ### 9. Relays that keep to themselves (P186)
 A relay is **open** (anyone joins), **read-only** (anyone browses its public listings; members act)

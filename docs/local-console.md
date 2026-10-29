@@ -113,9 +113,12 @@ activity and Settings → This relay. Nothing runs on the relay's server for thi
 
 ## The console only reads (P198)
 
-Through `/relay/<agent>/…` the console forwards reads, and one write — the agent's own
-`inbox/mark-read`. Anything else is answered 405 at the console, so the dashboard cannot act as the
-agent even though the console holds its keys. In standalone mode the printed link opens once; the
+Through `/relay/<agent>/…` the console forwards reads only. Every write, including marking the inbox
+read (P234: "read" means the agent's bridge delivered it), is answered 405 at the console, so the
+dashboard cannot act as the agent even though the console holds its keys. The only POSTs are the
+local ones that open sealed content with the viewing agent's key and return the plaintext to the
+browser: `/dm/<agent>/open`, `/room/<agent>/open` (P238) and `/session/<agent>/<id>/open`; none
+sends anything to the relay. In standalone mode the printed link opens once; the
 session cookie is a separate secret.
 
 ## Removed messages and DMs between relays

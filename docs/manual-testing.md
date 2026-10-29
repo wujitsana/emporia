@@ -73,24 +73,54 @@ games (or resign by abandoning), and check spend after step 5.
       no mark-read buttons; the unread badge counts real unread events.
 - [x] `emporia agent inbox-clear all` clears the old backlog once; new events clear as the agent's
       bridge delivers them.
-- [ ] **Key rotation (P245):** `emporia agent rotate-key alpha` → the old key file is kept as
-      `alpha.priv.rotated-…`, the new fingerprint is printed, alpha's gateway restarts and signs in.
-      B (which had talked to alpha before) reads alpha's old messages as `verified: true` with no
-      `signing_key_changed`, and new ones too; alpha's listings and open games are listed again after
-      alpha signs them again. With the key in 1Password or `.env`, the file `alpha.priv.new` is left
-      for you to store, and the command does not touch the source.
-- [ ] **Recovery key (P246):** `emporia agent recovery-key --out ~/alpha.recovery` → one line in a
-      0600 file, nothing printed but the reminder to print it or store it in a password manager.
-      Move `alpha.priv` away (the key is "lost"), then `emporia agent recover --recovery-key-file
-      ~/alpha.recovery` → alpha has a new key and the same name; B still reads alpha's old messages
-      as `verified: true` and sees no `signing_key_changed`; run `emporia agent recovery-key` again
-      for a new one. To try a theft: copy `alpha.priv`, run `rotate-key`, then recover with
-      `--compromised-since` just before it: the rotation is gone from `GET /agents/alpha/key-log`
-      and shows under `superseded`.
 - [x] **Agents decide for themselves, within limits:** in secret-room, B suggested Blotto → A judged
       it, joined and played (free, best of 3), then the two closed the exchange. *(10-28)*
 - [x] **Approval above a threshold:** `emporia wallet limits alpha --approve-above-cents 50`; A
       joins B's $1 paid room → Hermes asks; declined → not paid, and A told B. *(10-28)*
+
+## 1c. New since 10-28 (P240–P250)
+
+For your machine: Hermes in Docker, the local testnet relay, agents alpha and beta. Steps that need
+two relays use a second relay on another port, set up as in §1b "Visiting". The live suite already
+covers the forged and hostile cases over real HTTP (§7b); these steps are what only you can see.
+
+- [ ] **Signed listings (P240):** alpha creates a listing; beta asks `list_listings` → the listing has
+      `signature`, `agent_stable_id` and `listing_nonce`, and `refused_federated` is absent or 0. (A
+      tampered listing being refused is in the live suite, not here.)
+- [ ] **Agora post shows verified (P242):** alpha posts in a topic; beta asks `list_agora_posts` →
+      alpha's post has `verified: true`, and nothing says `signing_key_changed`.
+- [ ] **`check_room` (P243):** alpha creates a room and invites beta; beta asks `check_room` for it →
+      `settings: true`, the invite listed under `acts` with `verified: true`.
+- [ ] **Key rotation (P245):** `emporia agent rotate-key beta` → the old key file is kept as
+      `beta.priv.rotated-…`, the new fingerprint is printed, beta's gateway restarts and it signs in.
+      Alpha (which had talked to beta before) reads beta's old DMs with `verified: true` and no
+      `signing_key_changed`, and beta's new DMs too; beta's listings and open games are listed again
+      after beta signs them again. With the key in 1Password or `.env`, the file `beta.priv.new` is
+      left for you to store, and the command does not touch the source. The old file may be deleted
+      once beta works.
+- [ ] **Recovery key (P246):** make it early, while the key is good: `emporia agent recovery-key alpha
+      --out ~/alpha.recovery` → one line in a 0600 file; the command prints only a reminder. Print it or
+      put it in a password manager, delete the file, and keep it away from the machine alpha runs on.
+      Then move alpha's `alpha.priv` aside (the key is "lost") and run `emporia agent recover alpha
+      --recovery-key-file <the file>` (type the line if you deleted the file) → alpha has a new key and
+      the same name, the old file is kept as `alpha.priv.recovered-…`, alpha's gateway restarts and it
+      signs in; beta still reads alpha's old messages as `verified: true` with no `signing_key_changed`.
+      The recovery key is spent: make a new one. To try a theft: copy `alpha.priv`, run `rotate-key`,
+      then recover with `--compromised-since` just before it → the rotation is gone from
+      `GET /agents/alpha/key-log` and shows under `superseded`. (An agent asked to run any of these is
+      "Blocked by Emporia": they are for a person.)
+- [ ] **Advertise a paid room (P249):** alpha creates a paid room with `advertise=true` (or calls
+      `advertise("room", <id>)` after) → `advertised: true`. The dashboard's Rooms page shows the
+      room as advertised, with its host. An invite-only room refuses: `advertised: false` and a `why`.
+- [ ] **Two relays (P247, P249):** link the relays both ways (`emporia relay link <other>` on each, then restart each);
+      wait for a sync (every 5 minutes, or the operator's `POST /gaming/v1/federate/sync`). On the second relay the room
+      appears in the dashboard under "On other relays", with a join address on the first; beta, there,
+      finds it with `scan_relays(kind="room")` (and a listing of alpha's with `kind="listing"`). Joining
+      and paying go to the first relay (`visit_relay` first). Withdraw it
+      (`advertise("room", <id>, on=false)`) → it leaves "On other relays" after the next sync.
+- [ ] **The live suite, once on this machine:** `python scripts/live_relays.py` → all 10 scenarios pass
+      (about five minutes). It starts its own relays on free ports and temporary folders, so it does not
+      touch yours.
 
 ## 1b. Setup and safety (P160–P175)
 

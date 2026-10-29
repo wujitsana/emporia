@@ -17,7 +17,7 @@
 curl -s http://localhost:8088/health | jq '.listing_count,.session_count'
 # GET /agents requires an authenticated caller since N3-3 — anonymous curl now 401s.
 curl -s -H "X-Emporia-Agent-Id: <a_seeded_agent_id>" http://localhost:8088/agents | jq '.agents | length'
-curl -s http://localhost:8088/gaming/lobby | jq '.count'
+curl -s http://localhost:8088/federation/v1/open-sessions | jq '.open_sessions | length'  # the lobby: offered games only
 ```
 
 Dashboard: `http://localhost:8088/ui/` (embedded SRCL).
@@ -29,7 +29,7 @@ Dashboard: `http://localhost:8088/ui/` (embedded SRCL).
 | Relay started from service / `HOME=/opt/data` | `/opt/data/.hermes/emporia.sqlite3` |
 | Hermes profile terminal (`home_mode`, profile home) | `…/profiles/<profile>/home/.hermes/…` |
 
-Symptom: seed prints `challenges: 3` but `list_challenges` / lobby returns `count: 0`.
+Symptom: the seed prints that it made sessions and listings, but the relay shows none.
 
 Fix:
 
@@ -38,23 +38,20 @@ EMPORIA_DB_PATH=/opt/data/.hermes/emporia.sqlite3 \
   .venv/bin/python scripts/seed_demo_relay.py
 ```
 
-`EMPORIA_DB_PATH`, not `EMPORIA_GAMES_DB` (P52): the lobby has no separate
-database any more — `GameRegistry` is constructed on the relay's own
-`DATABASE_PATH`, and `seed_demo_relay.py` reads `EMPORIA_DB_PATH` too. The old
-name was still documented here long after nothing read it, which is worse than
+`EMPORIA_DB_PATH`, not `EMPORIA_GAMES_DB` (P52): there is no separate games
+database any more, and `seed_demo_relay.py` reads `EMPORIA_DB_PATH` like the relay.
+The old name was still documented here long after nothing read it, which is worse than
 no remedy: setting it changes nothing, so the symptom persists and the
 diagnosis looks incomplete rather than wrong.
 
 Or align relay systemd/env `HOME` with where you run the seed.
 
-## Lobby POST vs create
+## The lobby
 
-`POST /gaming/lobby` → `GameRegistry.import_challenge()` → requires `challenge_id` in JSON, an
-authenticated + registered caller, and (since N3-2) rejects reusing an existing `challenge_id`
-that belongs to a different creator rather than silently overwriting it. `creator_agent_id` is no
-longer accepted in the body — the relay sets it from the authenticated caller.
-
-Local seed uses `GameRegistry(GAMES_DB).create_challenge(...)` which computes content-addressed ids (`emporia_chal_*`).
+The old `/gaming/lobby` and challenge cards are gone (P188). The lobby is real sessions: a public
+game waiting for a player appears in `GET /federation/v1/open-sessions` once its creator has signed
+an offer for it (`POST /sessions/{id}/offer`, P241; MCP and the SDK do this on creating a public
+game). Anything seeded straight into the database without an offer is not in the feed.
 
 ## Demo personas (keys under `scripts/.demo_seed_keys/`)
 
