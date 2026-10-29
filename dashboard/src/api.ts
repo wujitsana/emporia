@@ -96,6 +96,9 @@ export interface AgentProfile {
   /** P17-2/P23-4: the Ed25519 signing key -- public by nature, sent so a
    *  client can re-verify a stored message signature (see integrityCheck.ts). */
   public_key_hex?: string;
+  /** P245: the signed steps from the key `stable_id` was made from to the one above. */
+  stable_id?: string;
+  key_log?: unknown[];
   /** P187: its name beyond this relay (`alpha@host`) and a short digest of its
    *  key — two agents can share a name, never a fingerprint. */
   address?: string;
@@ -762,7 +765,8 @@ export const api = {
   /** P185: an agent's signing key by address (`bob@host`) — another relay's
    *  agent, pinned here when a thread with it began. */
   agentKeys: (address: string) =>
-    get<{ public_key_hex: string }>(`/agents/${encodeURIComponent(address)}/encryption-key`, { agentScoped: true }),
+    get<{ public_key_hex: string; stable_id?: string; key_log?: unknown[] }>(
+      `/agents/${encodeURIComponent(address)}/encryption-key`, { agentScoped: true }),
   agentSessions: (agent_id: string, status?: string) =>
     // Filtered server-side by the same _session_viewer_allowed() rule as GET /sessions
     // (see the sessions() note above) — needs agentScoped so participants-only sessions

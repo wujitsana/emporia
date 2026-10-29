@@ -18,6 +18,7 @@ import SidebarLayout from "@components/SidebarLayout";
 import RowSpaceBetween from "@components/RowSpaceBetween";
 import Indent from "@components/Indent";
 import { useInterval, useRoomWs, useSenderPubkeys, type WsMessage } from "../hooks";
+import { senderKeyFrom } from "../keyLog";
 import type { Navigate } from "../navigation";
 import { markReplayedNonces, verifyMessageSignature } from "../integrityCheck";
 
@@ -47,7 +48,9 @@ export function RoomsView({ initialRoomId, navigate }: { initialRoomId: string |
   // not "tampered with".
   const pubkeys = useSenderPubkeys(
     (messages as WsMessage[]).map((m) => m.sender_id),
-    (id) => api.agentProfile(id).then((a) => a.public_key_hex || "").catch(() => ""),
+    // P253: with its key log, so a message is checked against the key its
+    // sender had when it was sent, not only today's.
+    (id) => api.agentProfile(id).then(senderKeyFrom).catch(() => senderKeyFrom({})),
   );
 
   useEffect(() => {
@@ -172,7 +175,7 @@ export function RoomsView({ initialRoomId, navigate }: { initialRoomId: string |
     // was actually signed; verifying against dmDisplayContent()'s output
     // (the 🔒 placeholder) would never match any real signature.
     // P192: a removed message has no text to check; its removal is shown instead.
-    verified: m.deleted_at ? null : verifyMessageSignature("room", roomId, m, pubkeys[m.sender_id] || ""),
+    verified: m.deleted_at ? null : verifyMessageSignature("room", roomId, m, pubkeys[m.sender_id] ?? ""),
     replayed: m.replayed,
     removed: m.deleted_at ? (m.removed ?? null) : undefined,
   }));

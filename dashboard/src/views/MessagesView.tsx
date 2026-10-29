@@ -29,6 +29,7 @@ import { markReplayedNonces, verifyMessageSignature } from "../integrityCheck";
 import { DmChainBadge } from "../ui/DmChainBadge";
 import { inBox, splitInbox, unreadActivity } from "../messagesModel";
 import { VIA_CONSOLE, consoleUrl, httpFetch } from "../transport";
+import { type SenderKey, senderKeyFrom } from "../keyLog";
 
 /** P126: sealed DMs opened by the local console, with the viewer's own key, on
  *  this machine. Directly against a relay there is no key, and they stay 🔒. */
@@ -157,7 +158,7 @@ export function ThreadPane({
   const [messages, setMessages] = useState<DMMessage[]>([]);
   const [opened, setOpened] = useState<Record<string, string>>({});
   const [readerError, setReaderError] = useState<string | null>(null);
-  const [pubkeys, setPubkeys] = useState<Record<string, string>>({});
+  const [pubkeys, setPubkeys] = useState<Record<string, SenderKey>>({});
   const bottomRef = useRef<HTMLDivElement | null>(null);
 
   const loadMsgs = useCallback(async () => {
@@ -195,7 +196,7 @@ export function ThreadPane({
     Promise.all(
       ids.map((id) =>
         (id.includes("@") ? api.agentKeys(id) : api.agentProfile(id))
-          .then((a) => [id, a.public_key_hex || ""] as const).catch(() => [id, ""] as const),
+          .then((a) => [id, senderKeyFrom(a)] as const).catch(() => [id, senderKeyFrom({})] as const),
       ),
     ).then((pairs) => { if (!cancelled) setPubkeys(Object.fromEntries(pairs)); });
     return () => { cancelled = true; };
@@ -211,7 +212,7 @@ export function ThreadPane({
       ? `🔓 ${opened[m.message_id]}`
       : dmDisplayContent(m.content),
     created_at: m.created_at,
-    verified: m.deleted_at ? null : verifyMessageSignature("dm", thread.thread_id, m, pubkeys[m.sender_id] || ""),
+    verified: m.deleted_at ? null : verifyMessageSignature("dm", thread.thread_id, m, pubkeys[m.sender_id] ?? ""),
     replayed: m.replayed,
     removed: m.deleted_at ? (m.removed ?? null) : undefined,
   }));

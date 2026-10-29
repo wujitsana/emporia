@@ -11,7 +11,7 @@ without the original machine.
   the end of the week of 10-26 so others can test.
 - **Tests:** `pytest` (1,854 unit tests; the full run takes about 10 minutes in a cloud container),
   the live suite `pytest -m live tests/live` (10 scenarios, about 5 minutes; off by default), and
-  the dashboard's `cd dashboard && npx vitest run` (189). All pass. `npx tsc -b` reports 35 errors, all pre-existing (srcl's types, `vite.config.ts`).
+  the dashboard's `cd dashboard && npx vitest run` (195). All pass. `npx tsc -b` reports 35 errors, all pre-existing (srcl's types, `vite.config.ts`).
   Don't add to them.
 - **Change log:** each change is a numbered `P…` commit; `docs/security-log.md` records the
   security-relevant ones. P200–P239 were the stretch before the last; P240–P250 are the last.

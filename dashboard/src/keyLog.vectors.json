@@ -1,0 +1,102 @@
+{
+ "stable_id": "ba493a1e70cbef5d3bb7d2539665ad396e741f14a7624123825c81fd591eaad2",
+ "current": "24a1f28e9b3ecd46bfa4e178365fe5f587e82eb65aeb3a4e24c59801012fd33f",
+ "key_log": [
+  {
+   "by": "key",
+   "old": "fabc4196a015720d6f042bd056bdeb73d318c08fafc33ba456886b1fefc482ab",
+   "new": "18fe1edaa16f4a9f55174d8bb8113cb2ef73ef922a7dd223bb534da63d4a5419",
+   "at": "2026-10-01T10:00:00.000001+00:00",
+   "signature": "2keggUvVU5EJx2lGZw53VTRhdTpK2d8xuRhosOBCUMwOSRGWnSM6-mx-c0kNu5G81FWi9AOMF2C4Na97HRVjCw"
+  },
+  {
+   "by": "commit",
+   "commitment": "185b5f01467fe9a1597ffe0fa7b24e69e9b2c6a6b79c173a4da0474d145b2f84",
+   "at": "2026-10-02T10:00:00+00:00",
+   "signature": "F1-ZwV7i33PIFKOQhy5_X57OadOAAwJohckh0DK2_StqZAdR-Vl5dNZ1ByMbGwWdt7AS-Rvk2CPq2lNu4qO2Bw"
+  },
+  {
+   "by": "key",
+   "old": "18fe1edaa16f4a9f55174d8bb8113cb2ef73ef922a7dd223bb534da63d4a5419",
+   "new": "a044be29f6aed04c43b101842b9b275115004fd18bd5479fd8a3b8b36c32fbb1",
+   "at": "2026-10-04T10:00:00+00:00",
+   "signature": "zkwk0zs_Q8nZv1eFNQKg9e6rS4LWJgpEkFPyb8otabrcpPb8VEzpsanfhFpftgLh2dMDRMPxa0BzYqJFRuULDQ"
+  },
+  {
+   "by": "recovery",
+   "old": "18fe1edaa16f4a9f55174d8bb8113cb2ef73ef922a7dd223bb534da63d4a5419",
+   "new": "24a1f28e9b3ecd46bfa4e178365fe5f587e82eb65aeb3a4e24c59801012fd33f",
+   "recovery_public_key": "c61b72d52d7365893e279b3b3dc1959849e01853e2a93347829a669b554dca9d",
+   "compromised_since": "2026-10-03T10:00:00.250000+00:00",
+   "at": "2026-10-05T10:00:00+00:00",
+   "signature": "NrDuuedhphfV7uT7uF3QGOY6--W4mkN7MQfRdE529BhHo8hcn2ZtlUw6f6lY_4Xrx3iiKUiQOFazVrXirC8hBA"
+  }
+ ],
+ "windows": [
+  {
+   "key": "fabc4196a015720d6f042bd056bdeb73d318c08fafc33ba456886b1fefc482ab",
+   "from": "",
+   "until": "2026-10-01T10:00:00.000001+00:00"
+  },
+  {
+   "key": "18fe1edaa16f4a9f55174d8bb8113cb2ef73ef922a7dd223bb534da63d4a5419",
+   "from": "2026-10-01T10:00:00.000001+00:00",
+   "until": "2026-10-03T10:00:00.250000+00:00"
+  },
+  {
+   "key": "24a1f28e9b3ecd46bfa4e178365fe5f587e82eb65aeb3a4e24c59801012fd33f",
+   "from": "2026-10-05T10:00:00+00:00",
+   "until": ""
+  }
+ ],
+ "messages": [
+  {
+   "content": "\u00e9 from the genesis key, before the rotation",
+   "msg_type": "text",
+   "nonce": "abababababababababababababababab",
+   "signature": "M2v_5e9lJ4IW_mXrnIbq3mLnqFwJ9irQXH-SFjDwnEAjjTyeoJSxAFmxgI9AbblNN7Njrg8o9eU9krH0EsN6Bg",
+   "created_at": "2026-09-30T09:00:00",
+   "python_verified": true
+  },
+  {
+   "content": "genesis key, after it handed over",
+   "msg_type": "text",
+   "nonce": "abababababababababababababababab",
+   "signature": "tf2hTpmb5SoL7LofOfZAiPxC99dPfNWJpGKfsAADmk8vQ-4Bw3vkk6BZnAwsJEi4GFTxMuB-w8WkJIFsl5IOBg",
+   "created_at": "2026-10-01T11:00:00+00:00",
+   "python_verified": false
+  },
+  {
+   "content": "second key, in its time",
+   "msg_type": "text",
+   "nonce": "abababababababababababababababab",
+   "signature": "glnch9Is-YvjFJpbnPAidLE4eJ_joCfhLPUAwnPlRnCfWu2s64PT1UvIDIEq5fBE6J8s8EQFKrxSPD9GE027BQ",
+   "created_at": "2026-10-02T12:00:00+00:00",
+   "python_verified": true
+  },
+  {
+   "content": "second key, after compromised_since",
+   "msg_type": "text",
+   "nonce": "abababababababababababababababab",
+   "signature": "-MrQMp8Y-IcuMIk2PzcsdC4ttGy049EFyfv3G-E5nic71Z2zIfiYNeJoRhIMYRKtSiU1OZyJIcR3dWspmWRHCw",
+   "created_at": "2026-10-03T10:00:00.250001+00:00",
+   "python_verified": false
+  },
+  {
+   "content": "the thief's key, undone",
+   "msg_type": "text",
+   "nonce": "abababababababababababababababab",
+   "signature": "WWKXlf_rPTsDbQ0RcF2ss0wmaYoQje4MNCnzdXyYXapXtPeDJuo1w3IzR1DJagB-9BQI40LCRVdPl0S4idPFDQ",
+   "created_at": "2026-10-04T12:00:00+00:00",
+   "python_verified": false
+  },
+  {
+   "content": "the recovered key",
+   "msg_type": "text",
+   "nonce": "abababababababababababababababab",
+   "signature": "gbflGpkH-Q0WgAGxCTT_6YjRbJweXePPzT_NOQxp-MaYJamituxJJWTZYVbrKZ8y11iHUngFA0xqZ-vPnySVBA",
+   "created_at": "2026-10-06T00:00:00Z",
+   "python_verified": true
+  }
+ ]
+}

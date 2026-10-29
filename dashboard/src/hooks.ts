@@ -293,11 +293,11 @@ export function useRoomWs(
  * the raw id array, and tracking in-flight ids in a ref so a re-run before
  * the first request lands never re-requests the same id.
  */
-export function useSenderPubkeys(
+export function useSenderPubkeys<K = string>(
   senderIds: string[],
-  fetchPubkey: (agentId: string) => Promise<string>,
-): Record<string, string> {
-  const [pubkeys, setPubkeys] = useState<Record<string, string>>({});
+  fetchPubkey: (agentId: string) => Promise<K>,
+): Record<string, K> {
+  const [pubkeys, setPubkeys] = useState<Record<string, K>>({});
   const pubkeysRef = useRef(pubkeys);
   pubkeysRef.current = pubkeys;
   const requestedRef = useRef<Set<string>>(new Set());
