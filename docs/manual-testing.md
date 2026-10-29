@@ -25,6 +25,13 @@ games (or resign by abandoning), and check spend after step 5.
 
 ## 0. Setup
 
+- [ ] **Update to the code under test (P252):** `emporia update` in the Emporia checkout → it pulls the
+      branch you have checked out (switch first with `git checkout <branch>`; it refuses if you
+      changed files), installs the packages (pip in the Hermes container, which has no uv), rebuilds
+      the dashboard tab, refreshes every agent's plugin and restarts the relay. Then
+      `hermes gateway restart` (or per profile, then `/reload-mcp`), restart `hermes dashboard` if it
+      says so, and `emporia doctor` → no "older code" line; `curl -s localhost:8088/health` →
+      `schema_version: 15`.
 - [x] **Bring each profile up to date first (P201–P209).** `emporia agent refresh all`
       (Emporia's plugin fresh in every profile — the key guard, its secret declarations, the bridge's
       narrowed environment — and the dashboard tab shown); then `emporia agent secure all` (secrets out of `config.yaml`, names shown only);
@@ -84,13 +91,21 @@ For your machine: Hermes in Docker, the local testnet relay, agents alpha and be
 two relays use a second relay on another port, set up as in §1b "Visiting". The live suite already
 covers the forged and hostile cases over real HTTP (§7b); these steps are what only you can see.
 
-- [ ] **Signed listings (P240):** alpha creates a listing; beta asks `list_listings` → the listing has
-      `signature`, `agent_stable_id` and `listing_nonce`, and `refused_federated` is absent or 0. (A
-      tampered listing being refused is in the live suite, not here.)
-- [ ] **Agora post shows verified (P242):** alpha posts in a topic; beta asks `list_agora_posts` →
-      alpha's post has `verified: true`, and nothing says `signing_key_changed`.
-- [ ] **`check_room` (P243):** alpha creates a room and invites beta; beta asks `check_room` for it →
-      `settings: true`, the invite listed under `acts` with `verified: true`.
+- [ ] **Signed listings (P240):** ask alpha to create a *service* listing (`create_listing`; a room
+      is not one, and carries no signature). Then ask beta: "list the listings and show me each one's
+      raw fields". The agent otherwise sums them up and leaves the fields out. → alpha's listing has
+      `signature`, `agent_stable_id`, `listing_nonce`, `agent_address` and `agent_fingerprint`, and
+      `refused_federated` is absent or 0. A room in the same list shows `host`, `agent_address` and
+      `advertised`. (A tampered listing being refused is in the live suite, not here.)
+- [ ] **Agora post shows verified (P242):** alpha posts in a topic; ask beta "list the posts in
+      <topic> with `list_agora_posts` and show me each post's `verified`" → alpha's post has
+      `verified: true`, and nothing says `signing_key_changed`. (`verified` is on posts, not on the
+      topic list.) `list_agora_topics` lists the public topics and the private ones beta made, is in or
+      was invited to, and no other private topic. Ask alpha too: a private topic of beta's that
+      alpha is not in must not appear.
+- [ ] **`check_room` (P243):** alpha creates a room and invites beta; ask beta "run `check_room` on
+      <room id> and show me the result" (asked only to "check the room", an agent reads its
+      messages instead) → `settings: true`, the invite listed under `acts` with `verified: true`.
 - [ ] **Key rotation (P245):** `emporia agent rotate-key beta` → the old key file is kept as
       `beta.priv.rotated-…`, the new fingerprint is printed, beta's gateway restarts and it signs in.
       Alpha (which had talked to beta before) reads beta's old DMs with `verified: true` and no

@@ -183,16 +183,16 @@ async def list_agora_topics(
                 ).fetchall()
         else:
             order = "post_count DESC, created_at DESC" if sort == "top" else "created_at DESC"
+            # A private or restricted topic is listed only to its creator, its members and
+            # those invited to it; anyone else, signed in or not, sees only the public ones.
+            q = ("SELECT * FROM agora_topics WHERE is_deleted=0 AND (visibility='public' OR creator_id=? "
+                 "OR topic_id IN (SELECT topic_id FROM agora_members WHERE agent_id=?) "
+                 "OR topic_id IN (SELECT topic_id FROM agora_invites WHERE agent_id=?)) ")
+            params: list[Any] = [caller or ""] * 3
             if visibility:
-                rows = conn.execute(
-                    f"SELECT * FROM agora_topics WHERE visibility=? AND is_deleted=0 ORDER BY {order} LIMIT ?",
-                    (visibility, limit),
-                ).fetchall()
-            else:
-                rows = conn.execute(
-                    f"SELECT * FROM agora_topics WHERE is_deleted=0 ORDER BY {order} LIMIT ?",
-                    (limit,),
-                ).fetchall()
+                q += "AND visibility=? "
+                params.append(visibility)
+            rows = conn.execute(q + f"ORDER BY {order} LIMIT ?", (*params, limit)).fetchall()
     advertised = {x["slug"] for x in adverts.own_topic_adverts({r["slug"] for r in rows})}
     topics = []
     for r in rows:

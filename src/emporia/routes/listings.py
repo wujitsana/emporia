@@ -151,7 +151,11 @@ async def get_listings(
         # P249: a paid room is shown only when its creator advertised it — and then as
         # terms and a head count. An invite-only room is never shown.
         from emporia import adverts
-        paid_private = [r for r, _ in adverts.own_room_adverts() if r.room_type == "private"]
+        own_adverts = adverts.own_room_adverts()
+        advertised = {r.room_id for r, _ in own_adverts}
+        paid_private = [r for r, _ in own_adverts if r.room_type == "private"]
+        from emporia.addresses import address
+        here_host = rs._own_host()
         for room in room_list + paid_private:
             if not adverts.room_may_be_advertised(room.room_type, room.gate_type):
                 continue
@@ -161,6 +165,9 @@ async def get_listings(
                 "title": room.name,
                 "description": room.description,
                 "agent_id": room.creator_id,
+                "agent_address": address(room.creator_id, here_host),
+                "host": here_host,
+                "advertised": room.room_id in advertised,
                 "room_type": room.room_type,
                 "gate_type": room.gate_type,
                 "entry_fee_cents": room.entry_fee_cents if room.gate_type == "paid" else 0,

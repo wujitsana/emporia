@@ -2481,9 +2481,9 @@ def list_agora_topics(
             params["visibility"] = visibility
         if subscribed_by:
             params["subscribed_by"] = subscribed_by
-            r = _bearer_request("get", f"{_base()}/agoras/topics", agent_id=subscribed_by, params=params, timeout=10)
-        else:
-            r = httpx.get(f"{_base()}/agoras/topics", params=params, timeout=10)
+        # Signed in, so the private topics this agent may see are listed too; the
+        # relay shows a caller it doesn't know only the public ones.
+        r = _bearer_request("get", f"{_base()}/agoras/topics", agent_id=subscribed_by, params=params, timeout=10)
         return r.json() if r.status_code == 200 else {"error": f"Relay {r.status_code}"}
     except Exception as e:
         return {"error": str(e)}
@@ -2591,9 +2591,11 @@ def list_agora_posts(
     topic_slug: str = "",
     agent_id: str = "",
     sort: str = "new",
-    limit: int = 50,
+    limit: int = 20,
+    flair: str = "",
 ) -> dict[str, Any]:
     """List posts in a topic (topic_slug) or feed for an agent (agent_id). sort: new | top.
+    limit: how many (default 20, at most 200); flair: only posts with that flair (topic only).
 
     Each post carries `verified` (P242): True when its author's signature checks
     out here, False when it does not (the relay changed or wrote it), None when
@@ -2606,6 +2608,8 @@ def list_agora_posts(
             )
         elif topic_slug:
             params: dict[str, Any] = {"sort": sort, "limit": limit}
+            if flair:
+                params["flair"] = flair
             r = _bearer_request(
                 "get", f"{_base()}/agoras/topics/{topic_slug}/posts",
                 agent_id=agent_id, params=params, timeout=10,

@@ -148,6 +148,9 @@ def test_responses_say_where_things_live_and_whether_they_are_advertised(client)
     assert by_id[adv]["advertised"] is True and by_id[plain]["advertised"] is False
     assert by_id[adv]["host"] == by_id[plain]["host"] != ""
     assert client.get(f"/rooms/{plain}", headers=_as("ra_where2")).json()["advertised"] is False
+    listed = {x["listing_id"]: x for x in client.get("/listings?listing_type=room&limit=200").json()["listings"]}
+    assert listed[adv]["advertised"] is True and listed[plain]["advertised"] is False
+    assert listed[adv]["host"] == by_id[adv]["host"] and listed[adv]["agent_address"].startswith("ra_where2@")
     pub, other = _topic(client, "ra_where2", "wh-pub"), _topic(client, "ra_where2", "wh-plain")
     client.post(f"/agoras/topics/{pub}/advertise", json=_topic_advert(client, "ra_where2", pub),
                 headers=_as("ra_where2"))
@@ -442,8 +445,30 @@ def test_the_advertise_tool_and_the_elsewhere_lists(client, monkeypatch):
         assert {x["room_id"]: x["advertised"] for x in listed}[pid] is True
         assert [t["advertised"] for t in mcp_server.list_agora_topics()["topics"]
                 if t["slug"] == topic["slug"]] == [True]
+        hidden = mcp_server.create_agora_topic("Tool private", "ra_tool", slug="ra-tool-private",
+                                               visibility="private")
+        assert hidden["slug"] in {t["slug"] for t in mcp_server.list_agora_topics()["topics"]}
+        assert hidden["slug"] not in {t["slug"] for t in client.get("/agoras/topics").json()["topics"]}
         assert mcp_server.list_rooms(viewer_id="ra_tool", elsewhere=True)["rooms"] == []
         off = mcp_server.advertise("room", pid, on=False, agent_id="ra_tool")
         assert off["advertised"] is False and off["success"] is True
         assert mcp_server.advertise("sky", "x", agent_id="ra_tool")["success"] is False
     assert pid not in {x["room_id"] for x in _rooms(client)["rooms"]}
+
+
+def test_a_private_topic_is_listed_only_to_those_in_it(client):
+    for who in ("pt_owner", "pt_guest", "pt_stranger"):
+        _register_keyed(client, who)
+    r = client.post("/agoras/topics", json={"name": "Inner", "description": "x", "slug": "pt-inner",
+                                            "visibility": "private", "gate_type": "invite"}, headers=_as("pt_owner"))
+    assert r.status_code == 200, r.text
+    assert client.post("/agoras/topics/pt-inner/invite", json={"invitee_id": "pt_guest"},
+                       headers=_as("pt_owner")).status_code == 200
+
+    def listed(headers: dict) -> set[str]:
+        return {t["slug"] for t in client.get("/agoras/topics?limit=200", headers=headers).json()["topics"]}
+
+    assert "pt-inner" in listed(_as("pt_owner")) and "pt-inner" in listed(_as("pt_guest"))
+    assert "pt-inner" not in listed(_as("pt_stranger")) and "pt-inner" not in listed({})
+    stranger_private = client.get("/agoras/topics?visibility=private&limit=200", headers=_as("pt_stranger"))
+    assert "pt-inner" not in {t["slug"] for t in stranger_private.json()["topics"]}
