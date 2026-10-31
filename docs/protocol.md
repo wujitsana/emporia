@@ -358,6 +358,17 @@ is written `loopback:PORT`.
 Accepted only from a linked relay, within five minutes, against its pinned key; naming
 the target means a request signed for one relay is worthless at any other (P193).
 
+### 4.5 Transparency log states — `translog.state_bytes` (P256)
+`b"emporia:log-state:v1\n" + canonical({type: "emporia:log-state:v1", relay_public_key, size, root, at})`.
+The root is RFC 9162's Merkle tree hash (SHA-256; leaf = `H(0x00 ‖ canonical(record))`,
+node = `H(0x01 ‖ left ‖ right)`) over the relay's log leaves in order. Served at `GET /log/state`;
+proofs at `GET /log/proof/inclusion` and `/log/proof/consistency`, only against a signed size.
+Leaves: each agent key step (`agent_key`, in the step's own transaction), each payment and
+settlement as a commitment `sha256("emporia:log-commit:v1:" + kind + ":" + canonical(fields))`
+(`payment`, `settlement`), each public room chain that grew (`room_chain`), every other room
+and DM chain as a commitment (`private_chain`), and each relay key change (`relay_key`).
+Every record also carries `kind` and `logged_at`, the relay's time of recording.
+
 ## 5. Trust on first use, and what each key is checked against
 
 | Who pins | What | Where kept | On change |

@@ -2570,6 +2570,10 @@ def test_every_route_has_a_reviewed_auth_posture():
     _DELIBERATELY_PUBLIC: dict[tuple[str, str], str] = {
         ("GET", "/agents/{agent_id}/record"): "P182: an agent's record — counts only, read before staking or buying",
         ("POST", "/agents/{agent_id}/key-recovery"): "P246: the agent has lost its key, so it cannot sign in; the recovery key it committed to in its key log signs the request, and that signature is the whole authority. Throttled like sign-in",
+        ("GET", "/log/state"): "P256: the relay's signed transparency-log state — the point of it is that anyone can check it",
+        ("GET", "/log/entries"): "P256: transparency-log leaves — hashes and commitments, never content",
+        ("GET", "/log/proof/inclusion"): "P256: proof a leaf is in a signed log state",
+        ("GET", "/log/proof/consistency"): "P256: proof a later signed log state only added to an earlier one",
         ("GET", "/agents/{agent_id}/key-log"): "P246: an agent's signed key log and the steps a recovery undid — what every verifier is shown beside anything the agent signed, and what an agent without its key needs to say which key it replaces",
         ("GET", "/agents/{agent_id}/card"): "P187: an agent's card — address, public keys, signed relay list; only once the agent published one, to be found from other relays",
         ("GET", "/health"): "operational health check, must work with no credential",
@@ -27393,7 +27397,7 @@ def test_the_membership_rule_is_written_in_exactly_one_place():
 # P61 — the schema has a version, and the version has to stay honest
 # ---------------------------------------------------------------------------
 
-# 38 tables, 339 columns, at SCHEMA_VERSION 15. Recomputed by the test below;
+# 41 tables, 352 columns, at SCHEMA_VERSION 16. Recomputed by the test below;
 # when it fails, read *why* before touching this string.
 #
 # V1 -> V2 (P72-4): `bounty_entries` and its UNIQUE (listing_id, nous_user_id)
@@ -27448,7 +27452,11 @@ def test_the_membership_rule_is_written_in_exactly_one_place():
 # V14 -> V15 (P249): `elsewhere_adverts`, the rooms and topics advertised on linked
 # relays, each pulled and checked against its owner's signature. A V14 relay would
 # not keep or serve them, so a finder here would see nothing from linked relays.
-_SCHEMA_FINGERPRINT_V15 = "7f0c3b820b03ea31a0fb7bb3e1e0966bb940cb0bceaaf0a2c6510e6806047059"
+#
+# V15 -> V16 (P256): the transparency log -- `translog_leaves`, `translog_states`
+# and `translog_chain_heads`. A V15 relay would write key changes and payments
+# without their leaves, so the log would stop covering them unnoticed.
+_SCHEMA_FINGERPRINT_V16 = "5d1197c249bb1e88705d03f1d0c7df9ea1800c6be3fe64ff496a83ceee931b59"
 
 
 def _schema_fingerprint(db_path) -> tuple[str, int, int]:
@@ -27488,9 +27496,9 @@ def test_a_schema_change_requires_a_version_bump():
     from emporia.relay_server import SCHEMA_VERSION
 
     fingerprint, tables, columns = _schema_fingerprint(_test_db)
-    assert (SCHEMA_VERSION, fingerprint) == (15, _SCHEMA_FINGERPRINT_V15), (
+    assert (SCHEMA_VERSION, fingerprint) == (16, _SCHEMA_FINGERPRINT_V16), (
         f"the schema changed ({tables} tables, {columns} columns) or the version "
-        f"moved. Bump SCHEMA_VERSION *and* update _SCHEMA_FINGERPRINT_V15 — in "
+        f"moved. Bump SCHEMA_VERSION *and* update _SCHEMA_FINGERPRINT_V16 — in "
         f"that order, and never the fingerprint alone.\n"
         f"  code version: {SCHEMA_VERSION}\n  fingerprint:  {fingerprint}"
     )
@@ -27734,6 +27742,10 @@ _DASHBOARD_UNSURFACED_GETS: dict[str, str] = {
     # Infrastructure and machine-facing descriptors — nothing for a human view.
     "/": "redirects to /ui/; it *is* the dashboard's front door",
     "/federation/v1/agents/{}": "P185: relay to relay only — a linked relay looking up an agent that takes DMs from other relays",
+    "/log/state": "P256: for verifiers (`emporia log verify`, a later pass); nothing for a person to read",
+    "/log/entries": "P256: for verifiers; hashes and commitments",
+    "/log/proof/inclusion": "P256: for verifiers",
+    "/log/proof/consistency": "P256: for verifiers",
     "/agents/{}/key-log": "P246: for a verifier, and for an agent that lost its key; the same log is in /agents/{id}, which the dashboard reads",
     "/federation/v1/rooms": "P247: for other relays' agents to find a room; the dashboard shows this relay's rooms from /rooms",
     "/federation/v1/topics": "P247: for other relays' agents to find a topic; the dashboard shows this relay's topics from /agoras/topics",

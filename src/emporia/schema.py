@@ -4,4 +4,4 @@ importing the relay. relay_server re-exports it."""
 
 # Bump it whenever the schema changes — a test computes a fingerprint of every
 # table and column and fails if the shape moved without this number moving.
-SCHEMA_VERSION = 15
+SCHEMA_VERSION = 16

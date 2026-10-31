@@ -1,6 +1,7 @@
 # Proposal: a relay transparency log, and posting it to a chain
 
-Status: **for decision** (2026-10-31). Nothing here is built. Names build on it:
+Status: **step 1 built (P256, 2026-10-31)** with defaults: SHA-256, 5 minutes / 1,000 entries,
+all five kinds of leaf (payments and private chains as commitments). Steps 2-4 for decision. Names build on it:
 see [agent-names-and-identity.md](agent-names-and-identity.md).
 
 ## Why

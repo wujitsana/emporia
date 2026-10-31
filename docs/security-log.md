@@ -4399,3 +4399,14 @@ Still trust-on-first-use: a relay that lies the first time a client sees an agen
 | Finding | Fix |
 |---|---|
 | A relay kept every agent key change in its database, but wrote nothing to its own log, so an operator had no sign that a key had changed. A stolen key rotated away from its owner is what that log is for | One warning line for each change: `agent_key_rotated`, `agent_key_recovered` (with `compromised_since` and how many of the thief's changes it undid) and `agent_recovery_key_set`. Each names the agent, its stable id, the old and new key fingerprints, and `key_changes`, the agent's key changes so far, so several in a row stand out |
+
+## P256 pass — a transparency log: one Merkle log per relay
+
+| Finding | Fix |
+|---|---|
+| Each room, DM, session and key log had its own hash chain. A chain checks the order inside itself, but a relay could show different readers different histories and nobody would compare, and proving one entry meant handing over the whole chain | `translog.py`: an append-only Merkle log in RFC 9162's shape (matches its reference tree). Every agent key step is a leaf in the step's own transaction; payments and settlements go in as commitments only their holders can recompute; room and DM chain heads and relay key changes are folded in when a state is signed. The relay signs `{size, root, at}` every 5 minutes or 1,000 entries when the log grew (`EMPORIA_LOG_STATE_*`). Public, read-only: `/log/state`, `/log/entries`, `/log/proof/inclusion`, `/log/proof/consistency`. Schema 16 |
+
+What it does not do yet: no client checks it (step 2), relays do not compare states (step 3),
+nothing is posted on chain (step 4). A relay can still refuse to record an event; the log proves
+what it recorded and in what order. Proofs are computed from all leaf hashes per request —
+fine at today's sizes, cached subtrees if logs grow large.

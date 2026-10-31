@@ -637,6 +637,8 @@ or edit the file — see docs/RUNBOOK.md § Configuring a relay.
 | `EMPORIA_RELAY_ID` | _(random per process)_ | This relay's federation identity, stamped on relay cards and checked on inbound peer payloads. **Set it in any federated deployment**: the default is a fresh `secrets.token_urlsafe(8)` each start, so an unset relay changes identity on every restart. |
 | `EMPORIA_DASHBOARD_BASE_URL` | _(request base URL)_ | Public base URL used to build the Stripe Connect onboarding return link. Set it when the relay sits behind a proxy or tunnel, where the request's own base URL is not the address the operator's browser can come back to. |
 | `EMPORIA_SWEEP_INTERVAL_SECONDS` | `300` | How often in-memory state (rate-limit windows, pending tokens, closed WebSocket entries) is swept. |
+| `EMPORIA_LOG_STATE_INTERVAL_SECONDS` | `300` | How often the transparency log's state is signed, when the log grew (P256). |
+| `EMPORIA_LOG_STATE_ENTRIES` | `1000` | Sign sooner once this many log entries are waiting (P256). |
 | `EMPORIA_HTTP_TIMEOUT` | `30` | Timeout in seconds for outbound Stripe calls. |
 | `EMPORIA_MAX_TOTAL_SPEND_CENTS` | `0` | Total cumulative spend limit per agent (0 = unlimited) |
 | `OPERATOR_FEE_BPS` | `250` | Platform fee (2.5%) |

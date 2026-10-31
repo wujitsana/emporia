@@ -104,6 +104,7 @@ from emporia.module_sdk import (
 from emporia import __version__
 from emporia import rooms as rooms_db
 from emporia import entitlements
+from emporia import translog
 from emporia.env_config import env_int
 from emporia.logging_config import configure_logging, configure_sentry, request_id_ctx
 
@@ -1383,6 +1384,8 @@ def init_db() -> None:
         # Access entitlements (P2-3): what a payment actually buys — see
         # entitlements.py's module docstring
         entitlements.init_entitlements_schema(conn)
+        # P256: the transparency log (translog.py)
+        translog.init_schema(conn)
         _assert_not_pre_p3_schema(conn)
         _stamp_schema_version(conn)
 
@@ -2964,6 +2967,16 @@ async def _verify_and_confirm_payment(
     return _no_credential_402(challenge_message, _x402_offer())
 
 
+def payment_log_fields(payment_id: str, agent_id: str, amount_cents: int, currency: str, payment_type: str,
+                       session_id: str | None, room_id: str | None, rail: str, created_at: str) -> dict[str, Any]:
+    """P256: the fields a payment's log commitment covers — recompute
+    `translog.commitment("payment", these)` from the payment record and look it up
+    with `GET /log/entries?ref=`."""
+    return {"payment_id": payment_id, "agent_id": agent_id, "amount_cents": amount_cents, "currency": currency,
+            "payment_type": payment_type, "session_id": session_id, "room_id": room_id, "rail": rail,
+            "created_at": created_at}
+
+
 def record_payment(
     payment_intent_id: str,
     agent_id: str,
@@ -3017,6 +3030,10 @@ def record_payment(
             (payment_id, session_id, room_id, agent_id, amount_cents, currency,
              payment_intent_id, payment_type, created_at, rail),
         )
+        # P256: a commitment, not the payment: who paid whom is not public
+        c = translog.commitment("payment", payment_log_fields(
+            payment_id, agent_id, amount_cents, currency, payment_type, session_id, room_id, rail, created_at))
+        translog.append(conn, "payment", c, {"commitment": c})
         return {
             "payment_id": payment_id,
             "session_id": session_id,
@@ -3210,7 +3227,7 @@ def record_settlement(settlement: dict[str, Any]) -> None:
         session_id, payer_id, settlement.get("payment_intent_ids", [])
     )
     with DB_LOCK, get_db() as conn:
-        conn.execute(
+        cur = conn.execute(
             "INSERT INTO settlements "
             "(settlement_id, session_id, winner_id, total_stake_cents, platform_fee_cents, "
             "winner_payout_cents, platform_fee_bps, payment_intent_ids, "
@@ -3242,6 +3259,12 @@ def record_settlement(settlement: dict[str, Any]) -> None:
                 _atomic_str(settlement.get("winner_payout_atomic")),
             ),
         )
+        if cur.rowcount:
+            c = translog.commitment("settlement", {
+                "settlement_id": settlement_id, "session_id": session_id, "winner_id": settlement.get("winner_id"),
+                "payer_id": payer_id, "total_stake_cents": settlement.get("total_stake_cents", 0),
+                "winner_payout_cents": settlement.get("winner_payout_cents", 0), "rail": rail})
+            translog.append(conn, "settlement", c, {"commitment": c})
 
 
 # ============================================================================
@@ -3474,6 +3497,13 @@ _NON_AGENT_COLUMNS: frozenset[tuple[str, str]] = frozenset({
     ("topic_adverts", "signature"), ("topic_adverts", "advertised_at"),
     ("elsewhere_adverts", "kind"), ("elsewhere_adverts", "peer_url"), ("elsewhere_adverts", "ident"),
     ("elsewhere_adverts", "item_json"), ("elsewhere_adverts", "pulled_at"),
+    # P256: the transparency log is append-only and never rewritten — a rename
+    # changing a leaf would break every proof. Its records name agents by stable_id.
+    ("translog_leaves", "idx"), ("translog_leaves", "kind"), ("translog_leaves", "ref"),
+    ("translog_leaves", "record_json"), ("translog_leaves", "leaf_hash"), ("translog_leaves", "at"),
+    ("translog_states", "size"), ("translog_states", "root"), ("translog_states", "at"),
+    ("translog_states", "relay_public_key"), ("translog_states", "signature"),
+    ("translog_chain_heads", "chain"), ("translog_chain_heads", "count"),
     ("agora_posts", "nonce"), ("agora_posts", "signature"),
     ("agora_comments", "nonce"), ("agora_comments", "signature"),
     ("room_acts", "act_id"), ("room_acts", "room_id"), ("room_acts", "act"), ("room_acts", "at"),
@@ -3645,6 +3675,10 @@ def _write_key_log_step(conn: Any, stable_id: str, step_no: int, step: dict[str,
         (stable_id, step_no, step.get("old", ""), step.get("new", ""), step["at"], step.get("by", "key"),
          step["signature"], step.get("commitment", ""), step.get("recovery_public_key", ""),
          step.get("compromised_since", ""), time.time()))
+    # P256: every key step, in the transparency log, in the same transaction.
+    # A recovery deletes the steps it undoes from agent_key_log; their leaves stay.
+    translog.append(conn, "agent_key", f"agent_key:{stable_id}:{step_no}:{step['at']}",
+                    {"stable_id": stable_id, "step_no": step_no, "step": step})
 
 
 #: P246: when each agent's last recovery was recorded, by handle. A bearer token
@@ -4541,6 +4575,7 @@ async def lifespan(app: FastAPI):
     _require_stripe_webhook_secret_if_needed()
     global _SWEEP_TASK, _FEDERATION_SYNC_TASK, _PAYOUT_RECONCILE_TASK
     _SWEEP_TASK = asyncio.create_task(_sweep_loop())
+    globals()["_LOG_STATE_TASK"] = asyncio.create_task(_log_state_loop())
     # P51: money the relay owes a creator but never moved. Runs unconditionally
     # — unlike the federation loop, which is gated on peers being configured,
     # there is no deployment where "a payout could be owed" is knowably false.
@@ -4565,6 +4600,12 @@ async def lifespan(app: FastAPI):
             with suppress(asyncio.CancelledError):
                 await _PAYOUT_RECONCILE_TASK
             _PAYOUT_RECONCILE_TASK = None
+        _log_task = globals().get("_LOG_STATE_TASK")
+        if _log_task is not None:
+            _log_task.cancel()
+            with suppress(asyncio.CancelledError):
+                await _log_task
+            globals()["_LOG_STATE_TASK"] = None
         _bounty_task = globals().get("_BOUNTY_RECONCILE_TASK")
         if _bounty_task is not None:
             _bounty_task.cancel()
@@ -5008,6 +5049,42 @@ def _sweep_expired_state() -> dict[str, int]:
             removed["agent_rate_limits"] += 1
 
     return removed
+
+
+# P256: how often the transparency log's state is signed — every
+# EMPORIA_LOG_STATE_INTERVAL_SECONDS, or sooner once EMPORIA_LOG_STATE_ENTRIES
+# leaves are waiting, and only when the log grew.
+_LOG_STATE_INTERVAL_SECONDS = float(os.getenv("EMPORIA_LOG_STATE_INTERVAL_SECONDS", "300"))
+_LOG_STATE_ENTRIES = int(os.getenv("EMPORIA_LOG_STATE_ENTRIES", "1000"))
+_LOG_STATE_TASK: asyncio.Task | None = None
+
+
+def sign_log_state() -> dict[str, Any] | None:
+    """Fold chain heads and relay key changes into the log and sign its state."""
+    from emporia import identity
+    with DB_LOCK, get_db() as conn:
+        state = translog.sign_state(conn, identity.sign_raw_relay, identity.get_relay_public_key_hex(),
+                                    identity.relay_key_history())
+    if state:
+        logger.info("log_state_signed", extra={"size": state["size"], "root": state["root"]})
+    return state
+
+
+async def _log_state_loop() -> None:
+    last = time.monotonic()
+    while True:
+        await asyncio.sleep(min(30.0, _LOG_STATE_INTERVAL_SECONDS))
+        try:
+            with DB_LOCK, get_db() as conn:
+                held = translog.latest_state(conn)
+                waiting = translog.size(conn) - (held["size"] if held else 0)
+            if waiting >= _LOG_STATE_ENTRIES or time.monotonic() - last >= _LOG_STATE_INTERVAL_SECONDS:
+                await asyncio.to_thread(sign_log_state)
+                last = time.monotonic()
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            logger.exception("Signing the log state failed — will retry")
 
 
 async def _sweep_loop() -> None:
@@ -8484,6 +8561,7 @@ from emporia.routes import federation as _federation_routes  # noqa: E402
 from emporia.routes import listings as _listings_routes  # noqa: E402
 from emporia.routes import rooms as _room_routes  # noqa: E402
 from emporia.routes import sessions as _session_routes  # noqa: E402
+from emporia.routes import translog as _translog_routes  # noqa: E402
 
 app.include_router(_listings_routes.router)
 app.include_router(_events_routes.router)
@@ -8496,3 +8574,4 @@ app.include_router(_agent_routes.router)
 app.include_router(_bounty_routes.router)
 app.include_router(_standing_routes.router)
 app.include_router(_deletion_routes.router)
+app.include_router(_translog_routes.router)
