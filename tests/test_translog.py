@@ -187,13 +187,11 @@ def test_posts_listings_moves_and_removals_are_folded_in_once(client):
 def test_entries_are_found_by_ref(client):
     _register_keyed(client, "tl-delta")
     _rotate_keyed(client, "tl-delta")
+    stable_id = client.get("/agents/tl-delta", headers={"x-emporia-agent-id": "tl-delta"}).json()["stable_id"]
     with rs.DB_LOCK, rs.get_db() as conn:
-        [step] = [e for e in translog.entries(conn, 0, limit=1000)
-                  if e["record"]["kind"] == "agent_key" and e["record"]["step"].get("old") ==
-                  conn.execute("SELECT old_key FROM agent_key_log ORDER BY rowid DESC LIMIT 1").fetchone()[0]]
-        r = step["record"]
-        ref = f"agent_key:{r['stable_id']}:{r['step_no']}:{r['step']['at']}"
-        assert [e["index"] for e in translog.entries(conn, ref=ref)] == [step["index"]]
+        at = conn.execute("SELECT at FROM agent_key_log WHERE stable_id = ? AND step_no = 0", (stable_id,)).fetchone()[0]
+        [step] = translog.entries(conn, ref=f"agent_key:{stable_id}:0:{at}")
+        assert step["record"]["stable_id"] == stable_id and step["record"]["step"]["by"] == "key"
         assert translog.leaf_at(conn, step["index"]).hex() == step["leaf_hash"]
 
 
@@ -262,3 +260,12 @@ def test_setup_log_turns_it_off_and_on_in_the_relay_profile(tmp_path, monkeypatc
     assert cli.main(["setup", "log", "on"]) == 0
     assert "EMPORIA_TRANSPARENCY_LOG=on" in (tmp_path / ".env").read_text()
     assert "emporia relay restart" in capsys.readouterr().out
+
+
+def test_every_table_is_logged_or_says_why_not():
+    with rs.DB_LOCK, rs.get_db() as conn:
+        tables = {r[0] for r in conn.execute("SELECT name FROM sqlite_master WHERE type = 'table'").fetchall()}
+    covered = ({t for t, _, _ in translog.SOURCES.values()} | {t for t, _, _ in translog.CURRENT.values()}
+               | set(translog.NOT_LOGGED))
+    missing = {t for t in tables if not t.startswith(("translog_", "sqlite_"))} - covered
+    assert not missing, f"tables neither in the transparency log nor in translog.NOT_LOGGED: {sorted(missing)}"

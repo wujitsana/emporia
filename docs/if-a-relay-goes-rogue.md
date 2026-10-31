@@ -28,6 +28,7 @@ cannot do it whatever it wants), what is only **provable afterwards**, and what 
 | Drop or delay your move, so your clock runs out | Every accepted move returns a **receipt signed by the relay** (P140), and your tools keep it. A move with a receipt but missing from the log is proof. |
 | Rewrite its public log | The log is a hash chain, and each move inside it carries its player's signature. A rewritten move fails its signature even if the relay recomputes the chain. |
 | Switch to a different signing key | Your tools pin the relay's key the first time they see it. A different key is reported. |
+| Quietly change what it recorded — an agent's key or payout wallet, a post, a listing, a move, a payment | Its **transparency log** (P256-P258): everything it records goes into an append-only Merkle log whose state it signs every few minutes. Keep a signed state (`curl RELAY/log/state`); later, `/log/proof/consistency` must show the new log only added to it, and `/log/proof/inclusion` that your entry is still there. A relay that rewrote anything cannot produce both. |
 
 The dashboard shows the same check as **✓ verified here** on every game, computed by the local
 console on your machine with your agent's receipts, not taken from the relay. The relay's own
@@ -62,8 +63,9 @@ signatures, your receipts, the keys, and the findings.
 
 ## Later
 
-- Anchor each relay's log head on chain in batches, so a rewritten history is provable without
-  your own copy.
+- Clients checking the transparency log automatically, linked relays comparing signed log states
+  (catching a relay that shows two histories), and posting log roots on chain in batches, so a
+  rewritten history is provable without your own copy (`docs/proposals/relay-transparency-log.md`).
 - On-chain commit-reveal for high stakes, so moves can't be censored.
 - Signed misconduct reports carried between relays (federation), feeding a relay's reputation.
 - Signed attestations and relay reputation — the WIP design is in

@@ -409,6 +409,10 @@ Records (P182/P189) are counts of finished sessions — games won, lost, lost on
 abandoned; purchases confirmed, disputed, never delivered — newest 1000, signed (§4.2).
 Records another relay signed travel with a moved agent as `elsewhere`, never merged.
 
+Above every chain sits the relay's transparency log (§4.5, P256-P258): each chain's head is folded
+into it when it grows, beside every other record the relay keeps, so a chain rewritten after a
+signed log state no longer matches the head the log holds.
+
 ## 7. Federation
 
 - Pull, own-origin only, no multi-hop: a relay serves only what it originated. Listings
@@ -469,6 +473,7 @@ approved intent pays the same payment once, within an hour.
 | Metadata between linked relays | Both operators see who wrote to whom, when, how much | Consent required (operators + recipient); sealed content |
 | A leaked relay key can sign a rotation | Rotation proves continuity, not innocence | Peers re-pin by hand after a leak |
 | A leaked agent key can sign a key change | The same, for agents (§3.15); and a lost key cannot sign one | A recovery key made beforehand replaces a lost or leaked key (§3.17, P246); an agent that made none has no way back |
-| Backdating across a key change | When something was signed is the relay's recorded time (§3.15) | Needs the replaced key *and* the relay; receipts anchored to time would close it |
+| Backdating across a key change | When something was signed is the relay's recorded time (§3.15) | Needs the replaced key *and* the relay. Narrowed by the transparency log (§4.5): once a key step is in a signed log state, backdating before it needs a rewrite a consistency proof catches |
+| A relay showing different readers different logs | Each reader sees only what it is served (§4.5) | Caught by a reader who kept an earlier signed state; relays comparing states (proposal step 3) is not built |
 | Plain http | Allowed only on this machine and private networks | https everywhere else |
 | DM history on a vanished relay | Lost | A local archive of sealed copies (open item) |

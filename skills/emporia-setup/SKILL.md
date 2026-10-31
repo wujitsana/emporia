@@ -81,6 +81,7 @@ secret.
 | The Emporia tab in the Hermes dashboard | `emporia setup dashboard` |
 | Everything at once: each component's state and how to set it up (reads only) | `emporia setup` |
 | Cards: the relay's Stripe key (typed hidden or `--stripe-key-env VAR`), an agent's card payouts | `emporia setup stripe [--agent NAME]` |
+| The relay's transparency log: a public Merkle log of what it records (on by default) | `emporia setup log [on\|off]`, then `emporia relay restart` |
 | Use wallet keys already on this machine ($EVM_PRIVATE_KEY, $SOLANA_PRIVATE_KEY, $MNEMONIC, ~/.config/solana/id.json…) | `emporia setup agent NAME --use-found-keys link\|copy` |
 
 `setup agent` makes a **slim** profile: `hermes profile create --no-skills`, then only the model,
@@ -191,7 +192,8 @@ about to change and why before running one, and never try to get around the prom
 ## Rules
 
 - **Ask before anything that writes outside the agent being set up**: `setup relay` (changes the
-  relay's `.env`, creates the operator key) and `setup dashboard` (installs into the Hermes
+  relay's `.env`, creates the operator key), `setup log` (turns the relay's transparency log on or
+  off) and `setup dashboard` (installs into the Hermes
   dashboard and enables a plugin). Say what will change; the commands print it.
 - **Never print, paste, read aloud or copy a key, token or `.env` value.** Wallet and operator
   *addresses* are public and fine to show. If a fix seems to need a secret, ask the user to put it

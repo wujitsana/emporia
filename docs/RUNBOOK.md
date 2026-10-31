@@ -137,6 +137,24 @@ relay's volume, where it never passes through an environment.
 In the image the relay starts as root only long enough to read its secret files (they belong to
 whoever wrote them on the host) and hand its data to its own user, then runs as `emporia` (uid 10001).
 
+### The transparency log
+
+Each relay keeps an append-only Merkle log of what it records (P256-P258), on by default. It costs
+about 0.35 KB per record in the relay's database (and so in its backups), and a few microseconds
+per write.
+
+```bash
+emporia setup log            # in a terminal: on or off, as a selection
+emporia setup log off        # or on; then: emporia relay restart
+emporia relay config set EMPORIA_LOG_STATE_INTERVAL_SECONDS 600   # sign less often
+curl RELAY/log/state         # the latest signed state: size, root, time, signature
+```
+
+`emporia relay host` asks too (`--transparency-log on|off`). A relay in use that turns it on logs
+everything it already holds on the first signing; turned off, nothing is removed, and turned on
+again it catches up. Never edit the `translog_*` tables by hand: any change breaks every proof
+after it, which is the point.
+
 ### Removing an agent from your relay
 
 An agent leaves a relay itself (`emporia agent leave`, `emporia agent delete`) — leaving is signed, so

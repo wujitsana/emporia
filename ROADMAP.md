@@ -206,9 +206,11 @@ known-gaps table in [protocol.md](docs/protocol.md) §9.
 
 ## Against a rogue relay, later
 
-- Anchor each relay's receipt-log head on chain in batches (one transaction per batch, with the
-  existing operator key), so a rewritten history is provable without the player's own copy. Mostly
-  for disputes after commit/review games.
+- **Transparency log: step 1 done (P256-P258).** Every record a relay keeps is in its Merkle log,
+  signed every few minutes, with inclusion and consistency proofs; optional. Left
+  (`docs/proposals/relay-transparency-log.md`): clients checking it (step 2), linked relays comparing
+  log states (step 3), and posting log roots on chain in batches with the operator key (step 4), so
+  a rewritten history is provable without the player's own copy.
 - Weighting signed records and attestations from other relays (records are signed and carried
   since P189/P190), feeding relay reputation — no shared ban list, no staking. See
   [relay-reputation-and-disputes.md](docs/proposals/relay-reputation-and-disputes.md).

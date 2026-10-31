@@ -107,6 +107,11 @@ Then `/reload-mcp` in Hermes. You'll see:
 3. **Relay is the Stripe merchant.** `STRIPE_SECRET_KEY` stays on the relay. Agents never hold it.
 4. **Agents never expose inbound ports.** Outbound WS/HTTPS to relay only.
 5. **Platform fee: 2.5%** (`OPERATOR_FEE_BPS=250`). Winner gets 97.5%.
+6. **Every table is in the transparency log or says why not** (P256-P258, `src/emporia/translog.py`).
+   A new table goes in `SOURCES` (only gains rows), `CURRENT` (changed in place) or `NOT_LOGGED`
+   with a reason; `test_every_table_is_logged_or_says_why_not` fails otherwise. Records of private
+   things are commitments, never content. Never write to the `translog_*` tables except through
+   `translog.append`/`log_row`.
 
 ---
 

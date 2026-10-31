@@ -633,6 +633,22 @@ CURRENT: dict[str, tuple[str, str, Callable]] = {
     "event": ("events", "event_id", _event),
 }
 
+#: tables deliberately not in the log, and why
+NOT_LOGGED: dict[str, str] = {
+    "room_messages": "content; each room's chain head is logged instead (fold_chain_heads)",
+    "dm_messages": "content; each conversation's chain head is logged instead, as a commitment",
+    "dm_threads": "who talks to whom; the chain heads cover the conversations",
+    "rooms": "a room's creation, settings, invites and kicks are its signed room_acts",
+    "agora_votes": "tallies the relay keeps, not anyone's signed statement",
+    "agent_inbox": "delivery bookkeeping",
+    "reg_challenges": "short-lived sign-in nonces",
+    "remote_agents": "agents of other relays, pinned here; in their own relay's log",
+    "elsewhere_adverts": "adverts pulled from linked relays; in their own relay's log",
+    "x402_settle_intents": "short-lived payment bookkeeping; the payment itself is logged",
+    "agent_key_log_superseded": "copies of key steps a recovery undid; the steps were logged when made",
+    "schema_migrations": "the database's own bookkeeping",
+}
+
 _FOLD_BATCH = 5000
 
 

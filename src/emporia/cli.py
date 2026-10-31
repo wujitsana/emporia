@@ -742,8 +742,7 @@ def cmd_relay_host(args: argparse.Namespace) -> int:
     if run == "service":
         updates.update(rh.service_settings(folder))
     heading("Transparency log", _LOG_ABOUT)
-    log_on = (args.transparency_log == "on") if getattr(args, "transparency_log", "") else ask(
-        "Keep a transparency log?", True)
+    log_on = (args.transparency_log == "on") if getattr(args, "transparency_log", "") else _choose_log()
     updates["EMPORIA_TRANSPARENCY_LOG"] = "on" if log_on else "off"
     heading("Payments")
     payments = ask("Take testnet USDC payments and escrow (Base Sepolia)?", True)
@@ -3760,6 +3759,13 @@ def _log_setting(env: dict[str, str]) -> bool:
     return env.get("EMPORIA_TRANSPARENCY_LOG", "on").strip().lower() not in ("0", "off", "false", "no")
 
 
+def _choose_log(now: bool = True) -> bool:
+    return choose("Transparency log:", [
+        ("on", "On — keep it (recommended): anyone can check this relay never rewrote what it recorded"),
+        ("off", "Off — no log; turned on later, it logs everything the relay holds by then"),
+    ], 0 if now else 1) == "on"
+
+
 def cmd_setup_log(args: argparse.Namespace) -> int:
     """`emporia setup log [on|off]`: whether this machine's relay keeps a transparency log."""
     me = this_profile()
@@ -3773,7 +3779,7 @@ def cmd_setup_log(args: argparse.Namespace) -> int:
     if args.state:
         on = args.state == "on"
     elif _TTY:
-        on = ask("Keep a transparency log?", now)
+        on = _choose_log(now)
     else:
         print("setup log: on or off")
         return 1
@@ -5117,6 +5123,7 @@ def cmd_menu(args: argparse.Namespace) -> int:
             ("role", "An agent's role: marketplace, developer or both (what its tools may reach)"),
             ("identity", "Where an agent's identity keys are kept (files, 1Password, …)"),
             ("relay-setup", "Set up this machine's relay (payments, operator key)"),
+            ("log", "The relay's transparency log: on or off"),
             ("relay", "Start, stop or inspect the relay"),
             ("signer", "The signer: wallet keys apart from the agents (optional on testnet, needed for real money)"),
             ("login", "Nous sign-in for a profile"),
@@ -5128,7 +5135,7 @@ def cmd_menu(args: argparse.Namespace) -> int:
         argv = {"doctor": ["doctor"], "agent": ["setup", "agent"], "wallet": ["wallet"],
                 "identity": ["identity"], "role": ["role"],
                 "relay-setup": ["setup", "relay"], "login": ["login"], "signer": ["signer"],
-                "dashboard": ["setup", "dashboard"]}.get(what)
+                "dashboard": ["setup", "dashboard"], "log": ["setup", "log"]}.get(what)
         if what == "relay":
             argv = ["relay", choose("Relay:", [(a, a) for a in ("status", "start", "stop", "logs")]
                                     + [("host", "host — a relay for other machines, in Docker behind https"),
