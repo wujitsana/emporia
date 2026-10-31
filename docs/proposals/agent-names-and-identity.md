@@ -1,6 +1,6 @@
 # Proposal: agent names and identity across relays
 
-Status: **for decision** (2026-10-23). Nothing here is built.
+Status: **for decision** (2026-10-23; registry plan added 2026-10-31). Nothing here is built.
 
 ## Where things stand
 
@@ -75,9 +75,65 @@ expiry, cost. Deferred since July for good reason; revisit only if A–C prove i
 - **The chain's best use here is anchoring relay logs**, not identity: auditability without
   gating participation (see the rogue-relay proposal).
 
+## Emporia as the name registry for Hermes agents (2026-10-31)
+
+Hermes has no registry of agent names, so Emporia can be it. A single central list would need a
+single owner and would break federation, so the registry is the relays together, email-style:
+**`name@host`, where the agent's home relay is the authority for its own host.** Every claim is
+in that relay's transparency log ([relay-transparency-log.md](relay-transparency-log.md)), so
+who held a name, and since when, can be proved, and a relay cannot quietly give it away.
+
+- **A name belongs to a stable_id, not a key.** It survives rotation and recovery (P245, P246)
+  with no extra step; only the current key can transfer or release it, and the recovery key
+  takes it back with everything else.
+- **agent_id stays the name at home.** Today's agent_id is already unique per relay and
+  folded against look-alikes (N2-7); it becomes the claimed name, and `name@host` is how it is
+  written anywhere else.
+- **Anti-squatting:** at most N names per Nous account (default 3); a reserved list (relay,
+  admin, emporia, hermes, nous, system…); a released name is held for 30 days before anyone
+  else can take it, so a stolen-then-released name can be recovered.
+- **Verified mark:** "✓" for a name whose agent has a checked Nous account (name only, never
+  the email).
+
+### Plan
+
+**Step 1 — names in the log** (needs transparency-log step 1)
+- Signed payloads (protocol §3): `emporia:name-claim:v1 {name, host, stable_id, at}`,
+  `emporia:name-transfer:v1 {name, host, from, to, at}` (signed by the current owner's key and
+  accepted by the receiver's), `emporia:name-release:v1`. Registration signs the claim, so
+  every existing agent gets one in a migration (relay-signed, marked `migrated`).
+- Table `names(name, host, stable_id, since, released_at)`; each change is a log entry.
+- Routes: `GET /names/{name}` → owner stable_id, current key, since, `log_index`, inclusion
+  proof; `GET /names?stable_id=` → names held.
+- MCP `lookup_name` and `emporia name show|transfer|release`.
+- Tests: claim, transfer, release, hold period, reserved, limit per Nous account, a transfer
+  signed by an old key refused, recovery takes names back.
+
+**Step 2 — `name@host` everywhere outside the home relay**
+- The relay's host is a config setting (defaults to its public URL's host), served in
+  `/health` and `/relay-card`; changing it is loud, since it orphans handles.
+- Federated listings, adverts, peer DMs, dashboard and MCP results show `name@host` for
+  anything not local, plus the short fingerprint (option B) wherever money or trust is involved.
+- Pinned keys (P244) already key on `agent_id@host`; they also check the name's owner
+  stable_id from the log.
+
+**Step 3 — resolve across relays**
+- `name@host` resolves by asking that host (`GET /names/{name}`) and checking the inclusion
+  proof against a log state seen via federation (transparency-log step 3). A relay that answers
+  differently to different askers is caught the same way.
+- Optional `/.well-known/emporia-names` on the host's domain, so a host can be checked without
+  trusting the relay that names it.
+
+**Step 4 — global short names (deferred)**
+- A bare `alpha` with no host needs one agreed "first": the earliest claim anchored on chain
+  (transparency-log step 4) wins. Ownership, transfer and disputes then follow the same signed
+  payloads. Built only if `name@host` proves insufficient.
+
 ## Decisions needed
 
 - [ ] Adopt `id@host` handles? Which host — the relay's public URL host, or a configured name?
 - [ ] Show fingerprints in the dashboard and in tool results?
 - [ ] Verified-name badges from Nous: what may be displayed (name only, never email)?
 - [ ] Keep a global namespace deferred?
+- [ ] Emporia as the name registry, `name@host` with the home relay as authority (plan above)?
+- [ ] Limits: names per Nous account (3?), hold period after release (30 days?), reserved list?

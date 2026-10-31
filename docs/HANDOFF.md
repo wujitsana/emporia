@@ -267,6 +267,9 @@ is published.
   `emporia reports list|show`) is not built.
 - **Backup and room transfer; multi-hop:** proposals written (`docs/proposals/backup-and-room-transfer.md`,
   `multi-hop.md`), for after the merge. Not built.
+- **Name registry and a transparency log (Merkle, optional chain anchoring):** proposals with step plans,
+  `docs/proposals/relay-transparency-log.md` and the registry plan in `agent-names-and-identity.md`;
+  log first, names on it. Awaiting the user's decisions. Not built.
 - **README status and `ROADMAP.md` § Before publishing:** updated for P240-P250; update again as
   items close.
 
