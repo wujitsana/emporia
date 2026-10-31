@@ -16,7 +16,7 @@ from typing import Any
 from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import JSONResponse
 
-from emporia import adverts, entitlements
+from emporia import adverts, entitlements, translog
 from emporia import relay_server as rs
 from emporia.routes.rooms import AdvertRequest, advertiser_identity
 from emporia.wire import (
@@ -141,7 +141,8 @@ async def withdraw_agora_topic_advert(slug: str, request: Request):
             raise HTTPException(404, "Topic not found")
         if row["creator_id"] != caller:
             raise HTTPException(403, "only the topic's owner withdraws its advert")
-        conn.execute("DELETE FROM topic_adverts WHERE topic_id = ?", (row["topic_id"],))
+        if conn.execute("DELETE FROM topic_adverts WHERE topic_id = ?", (row["topic_id"],)).rowcount:
+            translog.withdrawn(conn, "topic_advert", row["topic_id"])
     return {"slug": slug, "advertised": False}
 
 

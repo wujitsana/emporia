@@ -131,3 +131,57 @@ def test_chain_heads_are_folded_in_once_per_change_public_by_id_private_by_commi
 def test_proofs_are_only_given_against_a_signed_state(client):
     assert client.get("/log/proof/inclusion", params={"index": 0, "size": 999_999}).status_code == 404
     assert client.get("/log/state", params={"size": 999_999}).status_code == 404
+
+
+# --- P257: everything else, and proofs from stored nodes ----------------------
+
+def test_stored_nodes_give_the_same_root_and_proofs_as_the_whole_tree(tmp_path):
+    import sqlite3
+    conn = sqlite3.connect(tmp_path / "log.db")
+    conn.row_factory = sqlite3.Row
+    translog.init_schema(conn)
+    for i in range(37):
+        translog.append(conn, "test", f"t:{i}", {"i": i})
+    leaves = translog.leaves(conn, 37)
+    for n in (1, 2, 5, 8, 16, 33, 37):
+        assert translog.stored_root(conn, n) == translog.root(leaves[:n])
+        for i in range(n):
+            assert translog.stored_inclusion_proof(conn, i, n) == translog.inclusion_proof(i, leaves[:n])
+        for m in range(1, n + 1):
+            assert translog.stored_consistency_proof(conn, m, n) == translog.consistency_proof(m, leaves[:n])
+    # a log from before stored nodes gets them on start
+    conn.execute("DELETE FROM translog_nodes")
+    translog.init_schema(conn)
+    assert translog.stored_root(conn, 37) == translog.root(leaves)
+
+
+def test_posts_listings_moves_and_removals_are_folded_in_once(client):
+    _register_keyed(client, "tl-gamma")
+    slug = client.post("/agoras/topics", json={"name": "tl gamma topic", "visibility": "public"},
+                       headers={"x-emporia-agent-id": "tl-gamma"}).json()["slug"]
+    now = "2026-10-31T00:00:00+00:00"
+    with rs.DB_LOCK, rs.get_db() as conn:
+        topic_id = conn.execute("SELECT topic_id FROM agora_topics WHERE slug = ?", (slug,)).fetchone()[0]
+        conn.execute("INSERT INTO agora_posts (post_id, topic_id, author_id, title, content, created_at) "
+                     "VALUES ('post_tl', ?, 'tl-gamma', 'hello', 'world', ?)", (topic_id, now))
+        conn.execute("INSERT INTO actions (action_id, session_id, agent_id, action_type, payload_json, created_at) "
+                     "VALUES ('act_tl', 'sess_tl', 'tl-gamma', 'move', '{\"bid\": 3}', ?)", (now,))
+        conn.execute("INSERT INTO deletions (kind, item, deleted_by, role, deleted_at, signature) "
+                     "VALUES ('post', 'post_tl_old', 'tl-gamma', 'author', ?, '')", (now,))
+        before = translog.size(conn)
+        translog.fold_records(conn)
+        added = translog.entries(conn, before, limit=1000)
+        translog.fold_records(conn)
+        assert translog.size(conn) == before + len(added)
+    refs = {e["ref"] for e in added}
+    assert f"agora_topic:{topic_id}" in refs and "agora_post:post_tl" in refs
+    [post] = [e for e in added if e["ref"] == "agora_post:post_tl"]
+    assert post["record"]["content_hash"] == translog.content_hash("hello", "world")
+    assert "world" not in str(post)
+    move = translog.commitment("session_action", {
+        "action_id": "act_tl", "session_id": "sess_tl", "agent_id": "tl-gamma", "action_type": "move",
+        "payload_hash": translog.content_hash('{"bid": 3}'), "created_at": now})
+    assert move in refs and "sess_tl" not in str(added)
+    assert f"deletion:{translog.content_hash('post', 'post_tl_old')}" in refs and "post_tl_old" not in str(added)
+    state = _state(client)
+    _check_in_log(client, post["index"], state)

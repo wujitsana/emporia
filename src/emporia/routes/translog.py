@@ -46,11 +46,10 @@ async def log_inclusion_proof(index: int, size: int | None = None):
     """Proof that leaf `index` is in the log of `size` (default: the latest signed state)."""
     with rs.DB_LOCK, rs.get_db() as conn:
         n = _sized(conn, size)
-        leaves = translog.leaves(conn, n)
-    if not 0 <= index < n:
-        raise HTTPException(400, f"index must be between 0 and {n - 1}")
-    return {"index": index, "size": n, "leaf_hash": leaves[index].hex(),
-            "proof": [h.hex() for h in translog.inclusion_proof(index, leaves)]}
+        if not 0 <= index < n:
+            raise HTTPException(400, f"index must be between 0 and {n - 1}")
+        return {"index": index, "size": n, "leaf_hash": translog.leaf_at(conn, index).hex(),
+                "proof": [h.hex() for h in translog.stored_inclusion_proof(conn, index, n)]}
 
 
 @router.get("/log/proof/consistency")
@@ -60,7 +59,7 @@ async def log_consistency_proof(first: int, second: int | None = None):
         n = _sized(conn, second)
         if translog.state_at(conn, first) is None:
             raise HTTPException(404, "no log state signed at the first size")
-        leaves = translog.leaves(conn, n)
-    if not 0 < first <= n:
-        raise HTTPException(400, "first must be between 1 and second")
-    return {"first": first, "second": n, "proof": [h.hex() for h in translog.consistency_proof(first, leaves)]}
+        if not 0 < first <= n:
+            raise HTTPException(400, "first must be between 1 and second")
+        return {"first": first, "second": n,
+                "proof": [h.hex() for h in translog.stored_consistency_proof(conn, first, n)]}

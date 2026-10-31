@@ -368,6 +368,13 @@ settlement as a commitment `sha256("emporia:log-commit:v1:" + kind + ":" + canon
 (`payment`, `settlement`), each public room chain that grew (`room_chain`), every other room
 and DM chain as a commitment (`private_chain`), and each relay key change (`relay_key`).
 Every record also carries `kind` and `logged_at`, the relay's time of recording.
+P257 folds in, when a state is signed, every new row of: Agora topics, posts and comments
+(public topics by id, with `content_hash` and the author's signature; private ones as
+commitments), the relay's own listings, room acts (public rooms by id), room and topic
+adverts and game offers (each re-signing is a new entry; a withdrawal is `*_withdrawn`),
+removals (`deletion`, the item's id hashed), and every game move and table-talk message
+(always commitments: a move may be a sealed bid). `content_hash` =
+`sha256(canonical([parts…]))`; the fields of each kind are in `translog.SOURCES`.
 
 ## 5. Trust on first use, and what each key is checked against
 

@@ -73,16 +73,22 @@ def _split(n: int) -> int:
 
 
 class _Tree:
-    """Merkle tree hashes over a list of leaf hashes, memoised per subtree."""
+    """Merkle tree hashes, memoised per subtree. `node(level, i)`, when given,
+    answers a complete subtree — leaves [i·2^level, (i+1)·2^level) — from storage,
+    so a root or proof reads O(log² n) stored hashes instead of every leaf."""
 
-    def __init__(self, leaves: list[bytes]):
+    def __init__(self, leaves: list[bytes] | None = None,
+                 node: Callable[[int, int], bytes] | None = None):
         self.leaves = leaves
+        self.node = node
         self._memo: dict[tuple[int, int], bytes] = {}
 
     def mth(self, lo: int, hi: int) -> bytes:
         n = hi - lo
         if n == 0:
             return _sha(b"")
+        if self.node is not None and n & (n - 1) == 0 and lo % n == 0:
+            return self.node(n.bit_length() - 1, lo // n)
         if n == 1:
             return self.leaves[lo]
         got = self._memo.get((lo, hi))
@@ -206,15 +212,30 @@ CREATE TABLE IF NOT EXISTS translog_chain_heads (
     chain TEXT PRIMARY KEY,
     count INTEGER NOT NULL
 );
+CREATE TABLE IF NOT EXISTS translog_nodes (
+    level INTEGER NOT NULL,
+    idx INTEGER NOT NULL,
+    hash TEXT NOT NULL,
+    PRIMARY KEY (level, idx)
+);
+CREATE TABLE IF NOT EXISTS translog_sources (
+    source TEXT PRIMARY KEY,
+    last_rowid INTEGER NOT NULL
+);
 """
 
 
 def init_schema(conn: Any) -> None:
     conn.executescript(SCHEMA)
+    # P257: a log written before stored nodes gets them now, once
+    n = size(conn)
+    if n and not conn.execute("SELECT 1 FROM translog_nodes LIMIT 1").fetchone():
+        for i, (h,) in enumerate(conn.execute("SELECT leaf_hash FROM translog_leaves ORDER BY idx").fetchall()):
+            _store_nodes(conn, i, bytes.fromhex(h))
 
 
 def size(conn: Any) -> int:
-    return conn.execute("SELECT COUNT(*) FROM translog_leaves").fetchone()[0]
+    return conn.execute("SELECT COALESCE(MAX(idx) + 1, 0) FROM translog_leaves").fetchone()[0]   # not COUNT(*): a scan
 
 
 def append(conn: Any, kind: str, ref: str, record: dict[str, Any]) -> int:
@@ -223,9 +244,55 @@ def append(conn: Any, kind: str, ref: str, record: dict[str, Any]) -> int:
     at = datetime.now(UTC).isoformat()
     full = {**record, "kind": kind, "logged_at": at}
     idx = size(conn)
+    leaf = record_leaf_hash(full)
     conn.execute("INSERT INTO translog_leaves (idx, kind, ref, record_json, leaf_hash, at) VALUES (?,?,?,?,?,?)",
-                 (idx, kind, ref, canonical(full).decode(), record_leaf_hash(full).hex(), at))
+                 (idx, kind, ref, canonical(full).decode(), leaf.hex(), at))
+    _store_nodes(conn, idx, leaf)
     return idx
+
+
+def _store_nodes(conn: Any, idx: int, leaf: bytes) -> None:
+    """P257: each complete subtree the new leaf finishes, stored once — at most
+    log₂ n hashes per leaf, and never changed after."""
+    level, i, h = 0, idx, leaf
+    while i & 1:
+        h = node_hash(_node(conn, level, i - 1), h)
+        level, i = level + 1, i >> 1
+        conn.execute("INSERT OR REPLACE INTO translog_nodes (level, idx, hash) VALUES (?,?,?)", (level, i, h.hex()))
+
+
+def _node(conn: Any, level: int, i: int) -> bytes:
+    if level == 0:
+        row = conn.execute("SELECT leaf_hash FROM translog_leaves WHERE idx = ?", (i,)).fetchone()
+    else:
+        row = conn.execute("SELECT hash FROM translog_nodes WHERE level = ? AND idx = ?", (level, i)).fetchone()
+    if row is None:
+        raise LookupError(f"log node {level}/{i} is missing")
+    return bytes.fromhex(row[0])
+
+
+def stored_tree(conn: Any) -> _Tree:
+    return _Tree(node=lambda level, i: _node(conn, level, i))
+
+
+def stored_root(conn: Any, upto: int) -> bytes:
+    return stored_tree(conn).mth(0, upto)
+
+
+def stored_inclusion_proof(conn: Any, index: int, upto: int) -> list[bytes]:
+    if not 0 <= index < upto:
+        raise ValueError("index is not in the log")
+    return stored_tree(conn).path(index, 0, upto)
+
+
+def stored_consistency_proof(conn: Any, old_size: int, upto: int) -> list[bytes]:
+    if not 0 < old_size <= upto:
+        raise ValueError("old size must be between 1 and the log's size")
+    return stored_tree(conn).subproof(old_size, 0, upto, True)
+
+
+def leaf_at(conn: Any, index: int) -> bytes:
+    return _node(conn, 0, index)
 
 
 def leaves(conn: Any, upto: int) -> list[bytes]:
@@ -318,13 +385,144 @@ def sign_state(conn: Any, sign: Callable[[bytes], str], relay_public_key: str,
     or return None when the log has not grown since the last one."""
     fold_relay_keys(conn, list(relay_key_history))
     fold_chain_heads(conn)
+    fold_records(conn)
     n = size(conn)
     last = latest_state(conn)
     if n == 0 or (last and last["size"] == n):
         return None
     state = {"type": STATE_TYPE, "relay_public_key": relay_public_key, "size": n,
-             "root": root(leaves(conn, n)).hex(), "at": datetime.now(UTC).isoformat()}
+             "root": stored_root(conn, n).hex(), "at": datetime.now(UTC).isoformat()}
     state["signature"] = sign(state_bytes(state))
     conn.execute("INSERT INTO translog_states (size, root, at, relay_public_key, signature) VALUES (?,?,?,?,?)",
                  (n, state["root"], state["at"], relay_public_key, state["signature"]))
     return state
+
+
+# ─── P257: records folded in by table ─────────────────────────────────────────
+# Each source is read from where the last fold stopped (its rowid). A row
+# written again with INSERT OR REPLACE gets a new rowid, so it is logged again —
+# a changed advert or offer is a new entry. Public items go in by id with a hash
+# of their content and the author's signature; anything not public goes in as a
+# commitment over the fields listed here, which those who hold the record can
+# recompute (`commitment(kind, fields)`) and find with `GET /log/entries?ref=`.
+
+def content_hash(*parts: Any) -> str:
+    return hashlib.sha256(canonical(list(parts))).hexdigest()
+
+
+def _topic_public(conn: Any, topic_id: str) -> bool:
+    r = conn.execute("SELECT visibility FROM agora_topics WHERE topic_id = ?", (topic_id,)).fetchone()
+    return bool(r) and r[0] == "public"
+
+
+def _room_public(conn: Any, room_id: str) -> bool:
+    r = conn.execute("SELECT room_type, encrypted FROM rooms WHERE room_id = ?", (room_id,)).fetchone()
+    return bool(r) and r[0] == "public" and not r[1]
+
+
+def _agora_topic(conn, r):
+    return r["visibility"] == "public", r["topic_id"], {
+        "topic_id": r["topic_id"], "slug": r["slug"], "creator_id": r["creator_id"],
+        "content_hash": content_hash(r["name"], r["description"]), "created_at": r["created_at"]}
+
+
+def _agora_post(conn, r):
+    return _topic_public(conn, r["topic_id"]), r["post_id"], {
+        "post_id": r["post_id"], "topic_id": r["topic_id"], "author_id": r["author_id"],
+        "content_hash": content_hash(r["title"], r["content"]), "signature": r["signature"] or "",
+        "created_at": r["created_at"]}
+
+
+def _agora_comment(conn, r):
+    post = conn.execute("SELECT topic_id FROM agora_posts WHERE post_id = ?", (r["post_id"],)).fetchone()
+    return bool(post) and _topic_public(conn, post[0]), r["comment_id"], {
+        "comment_id": r["comment_id"], "post_id": r["post_id"], "author_id": r["author_id"],
+        "content_hash": content_hash(r["content"]), "signature": r["signature"] or "", "created_at": r["created_at"]}
+
+
+def _listing(conn, r):
+    return True, r["listing_id"], {
+        "listing_id": r["listing_id"], "agent_id": r["agent_id"], "agent_stable_id": r["agent_stable_id"] or "",
+        "listing_type": r["listing_type"], "content_hash": content_hash(r["title"], r["description"]),
+        "signature": r["signature"] or "", "created_at": r["created_at"]}
+
+
+def _room_act(conn, r):
+    return _room_public(conn, r["room_id"]), r["act_id"], {
+        "act_id": r["act_id"], "room_id": r["room_id"], "act": r["act"], "by_agent": r["by_agent"],
+        "payload_hash": content_hash(r["payload_json"]), "signature": r["signature"] or "", "at": r["at"]}
+
+
+def _advert(id_col: str, at_col: str):
+    def build(conn, r):
+        return True, r[id_col], {id_col: r[id_col], "stable_id": r["stable_id"], "signature": r["signature"],
+                                 at_col: r[at_col]}
+    return build
+
+
+def _deletion(conn, r):
+    # the removed item's id is hashed: a removal is on record, not what was removed
+    return True, content_hash(r["kind"], r["item"]), {
+        "kind": r["kind"], "item_hash": content_hash(r["kind"], r["item"]), "role": r["role"],
+        "deleted_at": r["deleted_at"], "signature": r["signature"] or ""}
+
+
+def _action(conn, r):
+    # a move can be a sealed bid or a low-entropy choice: always a commitment
+    return False, r["action_id"], {
+        "action_id": r["action_id"], "session_id": r["session_id"], "agent_id": r["agent_id"],
+        "action_type": r["action_type"], "payload_hash": content_hash(r["payload_json"]),
+        "created_at": r["created_at"]}
+
+
+def _game_chat(conn, r):
+    return False, r["message_id"], {
+        "message_id": r["message_id"], "session_id": r["session_id"], "agent_id": r["agent_id"],
+        "content_hash": content_hash(r["content"]), "created_at": r["created_at"]}
+
+
+#: kind -> (table, extra WHERE, builder)
+SOURCES: dict[str, tuple[str, str, Callable]] = {
+    "agora_topic": ("agora_topics", "", _agora_topic),
+    "agora_post": ("agora_posts", "", _agora_post),
+    "agora_comment": ("agora_comments", "", _agora_comment),
+    "listing": ("listings", "AND federated_from IS NULL", _listing),   # a peer's listings are in its own log
+    "room_act": ("room_acts", "", _room_act),
+    "room_advert": ("room_adverts", "", _advert("room_id", "advertised_at")),
+    "topic_advert": ("topic_adverts", "", _advert("topic_id", "advertised_at")),
+    "session_offer": ("session_offers", "", _advert("session_id", "offered_at")),
+    "deletion": ("deletions", "", _deletion),
+    "session_action": ("actions", "", _action),
+    "game_chat": ("game_chat", "", _game_chat),
+}
+
+_FOLD_BATCH = 5000
+
+
+def fold_records(conn: Any) -> None:
+    tables = {r[0] for r in conn.execute("SELECT name FROM sqlite_master WHERE type = 'table'").fetchall()}
+    for kind, (table, where, build) in SOURCES.items():
+        if table not in tables:
+            continue
+        seen = conn.execute("SELECT last_rowid FROM translog_sources WHERE source = ?", (kind,)).fetchone()
+        last = seen[0] if seen else 0
+        while True:
+            rows = conn.execute(f"SELECT rowid AS _r, * FROM {table} WHERE rowid > ? {where} "  # noqa: S608
+                                "ORDER BY rowid LIMIT ?", (last, _FOLD_BATCH)).fetchall()
+            for r in rows:
+                public, ident, fields = build(conn, r)
+                if public:
+                    append(conn, kind, f"{kind}:{ident}", fields)
+                else:
+                    c = commitment(kind, fields)
+                    append(conn, kind, c, {"commitment": c})
+                last = r["_r"]
+            if len(rows) < _FOLD_BATCH:
+                break
+        conn.execute("INSERT INTO translog_sources (source, last_rowid) VALUES (?, ?) "
+                     "ON CONFLICT(source) DO UPDATE SET last_rowid = excluded.last_rowid", (kind, last))
+
+
+def withdrawn(conn: Any, kind: str, ident: str) -> None:
+    """A withdrawn advert or offer is a DELETE, which no fold sees: logged here, in its transaction."""
+    append(conn, f"{kind}_withdrawn", f"{kind}_withdrawn:{ident}", {"id": ident})

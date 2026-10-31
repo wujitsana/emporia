@@ -4410,3 +4410,13 @@ What it does not do yet: no client checks it (step 2), relays do not compare sta
 nothing is posted on chain (step 4). A relay can still refuse to record an event; the log proves
 what it recorded and in what order. Proofs are computed from all leaf hashes per request —
 fine at today's sizes, cached subtrees if logs grow large.
+
+## P257 pass — the rest of the relay's records in the log, and proofs that stay cheap
+
+| Finding | Fix |
+|---|---|
+| P256 logged key changes, payments and room and DM chains, but not Agora topics, posts or comments, listings, room acts, adverts, game offers, removals, or games' moves and table talk | `translog.fold_records`: when a state is signed, each table's new rows (by rowid) become leaves — public items by id with a content hash and the author's signature, the rest as commitments. Moves and table talk are always commitments (a sealed bid or a rock-paper-scissors choice would be guessable from a plain hash). Advert withdrawals are logged in their own transaction |
+| P256 proofs read every leaf hash per request: about a second per proof at a million entries, and a public route anyone could call in a loop | Complete subtrees are stored once as each leaf is written (`translog_nodes`); a root or proof reads O(log² n) stored hashes. Measured at 200,000 entries: 31 µs to write an entry, 0.3 ms for a root, 0.2-0.3 ms per proof. Schema 17 |
+
+Not covered: in-place updates (a bounty's status, vote counts) are relay bookkeeping, not
+signed statements, and are not logged. Storage is about 0.5 KB per entry.

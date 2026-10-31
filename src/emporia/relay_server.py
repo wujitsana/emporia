@@ -3504,6 +3504,8 @@ _NON_AGENT_COLUMNS: frozenset[tuple[str, str]] = frozenset({
     ("translog_states", "size"), ("translog_states", "root"), ("translog_states", "at"),
     ("translog_states", "relay_public_key"), ("translog_states", "signature"),
     ("translog_chain_heads", "chain"), ("translog_chain_heads", "count"),
+    ("translog_nodes", "level"), ("translog_nodes", "idx"), ("translog_nodes", "hash"),
+    ("translog_sources", "source"), ("translog_sources", "last_rowid"),
     ("agora_posts", "nonce"), ("agora_posts", "signature"),
     ("agora_comments", "nonce"), ("agora_comments", "signature"),
     ("room_acts", "act_id"), ("room_acts", "room_id"), ("room_acts", "act"), ("room_acts", "at"),

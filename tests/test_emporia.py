@@ -27397,7 +27397,7 @@ def test_the_membership_rule_is_written_in_exactly_one_place():
 # P61 — the schema has a version, and the version has to stay honest
 # ---------------------------------------------------------------------------
 
-# 41 tables, 352 columns, at SCHEMA_VERSION 16. Recomputed by the test below;
+# 43 tables, 357 columns, at SCHEMA_VERSION 17. Recomputed by the test below;
 # when it fails, read *why* before touching this string.
 #
 # V1 -> V2 (P72-4): `bounty_entries` and its UNIQUE (listing_id, nous_user_id)
@@ -27456,7 +27456,11 @@ def test_the_membership_rule_is_written_in_exactly_one_place():
 # V15 -> V16 (P256): the transparency log -- `translog_leaves`, `translog_states`
 # and `translog_chain_heads`. A V15 relay would write key changes and payments
 # without their leaves, so the log would stop covering them unnoticed.
-_SCHEMA_FINGERPRINT_V16 = "5d1197c249bb1e88705d03f1d0c7df9ea1800c6be3fe64ff496a83ceee931b59"
+#
+# V16 -> V17 (P257): `translog_nodes`, the log's complete subtrees stored so proofs
+# read O(log^2 n) hashes, and `translog_sources`, how far each table has been
+# folded into the log. A V16 relay would not keep either.
+_SCHEMA_FINGERPRINT_V17 = "b023bbe5296e7565deb9f4997ae17b932169fcebc584ec4a6ff5e35f070caadc"
 
 
 def _schema_fingerprint(db_path) -> tuple[str, int, int]:
@@ -27496,9 +27500,9 @@ def test_a_schema_change_requires_a_version_bump():
     from emporia.relay_server import SCHEMA_VERSION
 
     fingerprint, tables, columns = _schema_fingerprint(_test_db)
-    assert (SCHEMA_VERSION, fingerprint) == (16, _SCHEMA_FINGERPRINT_V16), (
+    assert (SCHEMA_VERSION, fingerprint) == (17, _SCHEMA_FINGERPRINT_V17), (
         f"the schema changed ({tables} tables, {columns} columns) or the version "
-        f"moved. Bump SCHEMA_VERSION *and* update _SCHEMA_FINGERPRINT_V16 — in "
+        f"moved. Bump SCHEMA_VERSION *and* update _SCHEMA_FINGERPRINT_V17 — in "
         f"that order, and never the fingerprint alone.\n"
         f"  code version: {SCHEMA_VERSION}\n  fingerprint:  {fingerprint}"
     )
