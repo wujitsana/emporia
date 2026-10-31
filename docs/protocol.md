@@ -375,6 +375,14 @@ adverts and game offers (each re-signing is a new entry; a withdrawal is `*_with
 removals (`deletion`, the item's id hashed), and every game move and table-talk message
 (always commitments: a move may be a sealed bid). `content_hash` =
 `sha256(canonical([parts…]))`; the fields of each kind are in `translog.SOURCES`.
+P258 adds records changed in place, logged when their logged fields change (`translog.CURRENT`):
+each agent's profile (`agent`: agent_id, stable_id, key and `profile_hash` over its keys, payout
+wallets, relays and name — a quiet wallet swap shows), adverts and offers, escrow holds, sessions
+(status) and events; a row that goes is `<kind>_gone` with its id hashed. Also folded: access
+grants and removals, bounty entries, game participants, Agora members and invites, room
+invites and session messages — all as commitments. `EMPORIA_TRANSPARENCY_LOG=off` turns the
+log off (`/log/*` answer 404, `/health` says `transparency_log: false`); turned on, every table
+is folded in from where it stopped, so a relay in use starts its log with everything it holds.
 
 ## 5. Trust on first use, and what each key is checked against
 

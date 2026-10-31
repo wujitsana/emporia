@@ -2967,16 +2967,6 @@ async def _verify_and_confirm_payment(
     return _no_credential_402(challenge_message, _x402_offer())
 
 
-def payment_log_fields(payment_id: str, agent_id: str, amount_cents: int, currency: str, payment_type: str,
-                       session_id: str | None, room_id: str | None, rail: str, created_at: str) -> dict[str, Any]:
-    """P256: the fields a payment's log commitment covers — recompute
-    `translog.commitment("payment", these)` from the payment record and look it up
-    with `GET /log/entries?ref=`."""
-    return {"payment_id": payment_id, "agent_id": agent_id, "amount_cents": amount_cents, "currency": currency,
-            "payment_type": payment_type, "session_id": session_id, "room_id": room_id, "rail": rail,
-            "created_at": created_at}
-
-
 def record_payment(
     payment_intent_id: str,
     agent_id: str,
@@ -3022,7 +3012,7 @@ def record_payment(
 
         payment_id = f"pay_{uuid.uuid4().hex[:16]}"
         created_at = datetime.now(UTC).isoformat()
-        conn.execute(
+        cur = conn.execute(
             "INSERT INTO payments "
             "(payment_id, session_id, room_id, agent_id, amount_cents, currency, "
             "payment_intent_id, payment_type, status, created_at, rail) "
@@ -3030,10 +3020,8 @@ def record_payment(
             (payment_id, session_id, room_id, agent_id, amount_cents, currency,
              payment_intent_id, payment_type, created_at, rail),
         )
-        # P256: a commitment, not the payment: who paid whom is not public
-        c = translog.commitment("payment", payment_log_fields(
-            payment_id, agent_id, amount_cents, currency, payment_type, session_id, room_id, rail, created_at))
-        translog.append(conn, "payment", c, {"commitment": c})
+        # P256: in the log now, as a commitment: who paid whom is not public
+        translog.log_row(conn, "payment", cur.lastrowid)
         return {
             "payment_id": payment_id,
             "session_id": session_id,
@@ -3260,11 +3248,7 @@ def record_settlement(settlement: dict[str, Any]) -> None:
             ),
         )
         if cur.rowcount:
-            c = translog.commitment("settlement", {
-                "settlement_id": settlement_id, "session_id": session_id, "winner_id": settlement.get("winner_id"),
-                "payer_id": payer_id, "total_stake_cents": settlement.get("total_stake_cents", 0),
-                "winner_payout_cents": settlement.get("winner_payout_cents", 0), "rail": rail})
-            translog.append(conn, "settlement", c, {"commitment": c})
+            translog.log_row(conn, "settlement", cur.lastrowid)
 
 
 # ============================================================================
@@ -3499,13 +3483,11 @@ _NON_AGENT_COLUMNS: frozenset[tuple[str, str]] = frozenset({
     ("elsewhere_adverts", "item_json"), ("elsewhere_adverts", "pulled_at"),
     # P256: the transparency log is append-only and never rewritten — a rename
     # changing a leaf would break every proof. Its records name agents by stable_id.
-    ("translog_leaves", "idx"), ("translog_leaves", "kind"), ("translog_leaves", "ref"),
-    ("translog_leaves", "record_json"), ("translog_leaves", "leaf_hash"), ("translog_leaves", "at"),
+    ("translog_leaves", "idx"), ("translog_leaves", "ref_key"), ("translog_leaves", "record"),
     ("translog_states", "size"), ("translog_states", "root"), ("translog_states", "at"),
     ("translog_states", "relay_public_key"), ("translog_states", "signature"),
-    ("translog_chain_heads", "chain"), ("translog_chain_heads", "count"),
     ("translog_nodes", "level"), ("translog_nodes", "idx"), ("translog_nodes", "hash"),
-    ("translog_sources", "source"), ("translog_sources", "last_rowid"),
+    ("translog_seen", "key"), ("translog_seen", "digest"),
     ("agora_posts", "nonce"), ("agora_posts", "signature"),
     ("agora_comments", "nonce"), ("agora_comments", "signature"),
     ("room_acts", "act_id"), ("room_acts", "room_id"), ("room_acts", "act"), ("room_acts", "at"),
@@ -3671,7 +3653,7 @@ def agent_key_log_superseded(conn: Any, stable_id: str | None) -> list[dict[str,
 
 
 def _write_key_log_step(conn: Any, stable_id: str, step_no: int, step: dict[str, Any]) -> None:
-    conn.execute(
+    cur = conn.execute(
         "INSERT INTO agent_key_log (stable_id, step_no, old_key, new_key, at, signed_by, signature, commitment, "
         "recovery_public_key, compromised_since, recorded_at) VALUES (?,?,?,?,?,?,?,?,?,?,?)",
         (stable_id, step_no, step.get("old", ""), step.get("new", ""), step["at"], step.get("by", "key"),
@@ -3679,8 +3661,7 @@ def _write_key_log_step(conn: Any, stable_id: str, step_no: int, step: dict[str,
          step.get("compromised_since", ""), time.time()))
     # P256: every key step, in the transparency log, in the same transaction.
     # A recovery deletes the steps it undoes from agent_key_log; their leaves stay.
-    translog.append(conn, "agent_key", f"agent_key:{stable_id}:{step_no}:{step['at']}",
-                    {"stable_id": stable_id, "step_no": step_no, "step": step})
+    translog.log_row(conn, "agent_key", cur.lastrowid)
 
 
 #: P246: when each agent's last recovery was recorded, by handle. A bearer token
@@ -4577,7 +4558,8 @@ async def lifespan(app: FastAPI):
     _require_stripe_webhook_secret_if_needed()
     global _SWEEP_TASK, _FEDERATION_SYNC_TASK, _PAYOUT_RECONCILE_TASK
     _SWEEP_TASK = asyncio.create_task(_sweep_loop())
-    globals()["_LOG_STATE_TASK"] = asyncio.create_task(_log_state_loop())
+    if translog.enabled():   # P258: EMPORIA_TRANSPARENCY_LOG=off turns it off
+        globals()["_LOG_STATE_TASK"] = asyncio.create_task(_log_state_loop())
     # P51: money the relay owes a creator but never moved. Runs unconditionally
     # — unlike the federation loop, which is gated on peers being configured,
     # there is no deployment where "a payout could be owed" is knowably false.
@@ -5630,6 +5612,7 @@ async def health(request: Request):
         # P139: lets `emporia doctor` tell a relay running older code than the
         # checkout (restart it) from one that is current.
         "schema_version": SCHEMA_VERSION,
+        "transparency_log": translog.enabled(),   # P258
         # P144: the key the relay signs action receipts and federation batches
         # with — agents pin it at first sight to check receipts against.
         "relay_public_key": get_relay_public_key_hex(),

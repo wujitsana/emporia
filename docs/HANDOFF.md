@@ -269,8 +269,8 @@ is published.
   `multi-hop.md`), for after the merge. Not built.
 - **Name registry and a transparency log (Merkle, optional chain anchoring):** proposals with step plans,
   `docs/proposals/relay-transparency-log.md` and the registry plan in `agent-names-and-identity.md`;
-  log first, names on it. Log step 1 built (P256-P257: `translog.py`, `/log/*`, every
-  record kind, stored subtrees, schema 17); the rest awaits
+  log first, names on it. Log step 1 built (P256-P258: `translog.py`, `/log/*`, every
+  record kind, stored subtrees, optional via `emporia setup log`, schema 18); the rest awaits
   the user's decisions.
 - **README status and `ROADMAP.md` § Before publishing:** updated for P240-P250; update again as
   items close.

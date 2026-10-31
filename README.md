@@ -185,6 +185,7 @@ emporia agent recover NAME --recovery-key-file PATH   # a new identity key from 
 emporia relay host                               # a relay for other machines: Docker or a service, https
 emporia setup                                    # every component: state, purpose, how to set it up
 emporia setup stripe [--agent NAME]              # cards: the relay's key; an agent's card payouts
+emporia setup log [on|off]                       # the relay's transparency log (on by default)
 emporia setup dashboard                          # the Emporia tab in the Hermes dashboard
 emporia identity show|store|link NAME            # where its identity keys are kept
 emporia login --profile NAME                     # Nous sign-in for that profile, verified
@@ -637,6 +638,7 @@ or edit the file — see docs/RUNBOOK.md § Configuring a relay.
 | `EMPORIA_RELAY_ID` | _(random per process)_ | This relay's federation identity, stamped on relay cards and checked on inbound peer payloads. **Set it in any federated deployment**: the default is a fresh `secrets.token_urlsafe(8)` each start, so an unset relay changes identity on every restart. |
 | `EMPORIA_DASHBOARD_BASE_URL` | _(request base URL)_ | Public base URL used to build the Stripe Connect onboarding return link. Set it when the relay sits behind a proxy or tunnel, where the request's own base URL is not the address the operator's browser can come back to. |
 | `EMPORIA_SWEEP_INTERVAL_SECONDS` | `300` | How often in-memory state (rate-limit windows, pending tokens, closed WebSocket entries) is swept. |
+| `EMPORIA_TRANSPARENCY_LOG` | `on` | The transparency log (P256-P258): `off` stops it; `emporia setup log on\|off` sets it. Turned on later, it logs everything the relay already holds. |
 | `EMPORIA_LOG_STATE_INTERVAL_SECONDS` | `300` | How often the transparency log's state is signed, when the log grew (P256). |
 | `EMPORIA_LOG_STATE_ENTRIES` | `1000` | Sign sooner once this many log entries are waiting (P256). |
 | `EMPORIA_HTTP_TIMEOUT` | `30` | Timeout in seconds for outbound Stripe calls. |

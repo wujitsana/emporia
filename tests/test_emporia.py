@@ -27397,7 +27397,7 @@ def test_the_membership_rule_is_written_in_exactly_one_place():
 # P61 — the schema has a version, and the version has to stay honest
 # ---------------------------------------------------------------------------
 
-# 43 tables, 357 columns, at SCHEMA_VERSION 17. Recomputed by the test below;
+# 42 tables, 352 columns, at SCHEMA_VERSION 18. Recomputed by the test below;
 # when it fails, read *why* before touching this string.
 #
 # V1 -> V2 (P72-4): `bounty_entries` and its UNIQUE (listing_id, nous_user_id)
@@ -27460,7 +27460,12 @@ def test_the_membership_rule_is_written_in_exactly_one_place():
 # V16 -> V17 (P257): `translog_nodes`, the log's complete subtrees stored so proofs
 # read O(log^2 n) hashes, and `translog_sources`, how far each table has been
 # folded into the log. A V16 relay would not keep either.
-_SCHEMA_FINGERPRINT_V17 = "b023bbe5296e7565deb9f4997ae17b932169fcebc584ec4a6ff5e35f070caadc"
+#
+# V17 -> V18 (P258): the log kept small -- a leaf is its index, an 8-byte ref key
+# and its record (`translog_leaves.ref_key`, `record`); subtree hashes as raw
+# bytes; `translog_seen` replaces `translog_chain_heads` and `translog_sources`.
+# A V17 log is dropped and folded in again from every table.
+_SCHEMA_FINGERPRINT_V18 = "866055b6e0d6ecb493063fff07251e067c65427dd183e1a30f23168a5208ed85"
 
 
 def _schema_fingerprint(db_path) -> tuple[str, int, int]:
@@ -27500,9 +27505,9 @@ def test_a_schema_change_requires_a_version_bump():
     from emporia.relay_server import SCHEMA_VERSION
 
     fingerprint, tables, columns = _schema_fingerprint(_test_db)
-    assert (SCHEMA_VERSION, fingerprint) == (17, _SCHEMA_FINGERPRINT_V17), (
+    assert (SCHEMA_VERSION, fingerprint) == (18, _SCHEMA_FINGERPRINT_V18), (
         f"the schema changed ({tables} tables, {columns} columns) or the version "
-        f"moved. Bump SCHEMA_VERSION *and* update _SCHEMA_FINGERPRINT_V17 — in "
+        f"moved. Bump SCHEMA_VERSION *and* update _SCHEMA_FINGERPRINT_V18 — in "
         f"that order, and never the fingerprint alone.\n"
         f"  code version: {SCHEMA_VERSION}\n  fingerprint:  {fingerprint}"
     )

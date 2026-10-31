@@ -18,7 +18,7 @@ from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 from starlette.concurrency import run_in_threadpool
 
-from emporia import adverts, entitlements, translog
+from emporia import adverts, entitlements
 from emporia import relay_server as rs
 from emporia import rooms as rooms_db
 from emporia.identity import federation_signable_bytes, get_relay_public_key_hex, sign_raw_relay
@@ -117,8 +117,7 @@ async def withdraw_room_advert(room_id: str, request: Request):
     if room.creator_id != caller:
         raise HTTPException(403, "only the room's creator withdraws its advert")
     with rs.DB_LOCK, rs.get_db() as conn:
-        if conn.execute("DELETE FROM room_adverts WHERE room_id = ?", (room_id,)).rowcount:
-            translog.withdrawn(conn, "room_advert", room_id)
+        conn.execute("DELETE FROM room_adverts WHERE room_id = ?", (room_id,))
     return {"room_id": room_id, "advertised": False}
 
 

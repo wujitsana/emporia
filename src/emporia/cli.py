@@ -741,6 +741,10 @@ def cmd_relay_host(args: argparse.Namespace) -> int:
         print(f"  {len(keys)} member(s); add more any time: emporia relay members add NAME|KEY --dir {folder}")
     if run == "service":
         updates.update(rh.service_settings(folder))
+    heading("Transparency log", _LOG_ABOUT)
+    log_on = (args.transparency_log == "on") if getattr(args, "transparency_log", "") else ask(
+        "Keep a transparency log?", True)
+    updates["EMPORIA_TRANSPARENCY_LOG"] = "on" if log_on else "off"
     heading("Payments")
     payments = ask("Take testnet USDC payments and escrow (Base Sepolia)?", True)
     if payments:
@@ -3432,6 +3436,11 @@ def machine_settings(url: str = "") -> list[dict[str, Any]]:
                     "emporia setup relay"),
                 row("Cards", (h or {}).get("stripe_mode") or "off", "The relay's Stripe key, typed hidden.",
                     "emporia setup stripe")]
+    if h and "transparency_log" in h and local:
+        out.append(row("Transparency log", "on" if h["transparency_log"] else "off",
+                       "Public proof of what this relay recorded, and that it never rewrote it.",
+                       "emporia setup log " + ("off" if h["transparency_log"] else "on"),
+                       "ok" if h["transparency_log"] else "warn"))
     if h and h.get("access") and local:
         out.append(row("Who may use it", h["access"], "open: any agent. read-only: anyone browses, members "
                        "act. closed: members only — personal.", "emporia relay access"))
@@ -3736,6 +3745,46 @@ def cmd_setup_relay(args: argparse.Namespace) -> int:
         print("  ! STRIPE_SECRET_KEY is a live key — use an sk_test_ key for testing.")
     print(f"  Fund the operator {address} with a little Base Sepolia ETH for gas.")
     print("  Restart the relay: emporia relay restart")
+    return 0
+
+
+# ─── P258: the transparency log ──────────────────────────────────────────────
+
+_LOG_ABOUT = ("A public, append-only record of what this relay recorded and when — key changes, posts, "
+              "listings, moves, payments (private things only as fingerprints). Anyone can check the relay "
+              "never rewrote it. About 0.35 KB a record; a relay already in use logs everything it holds on "
+              "its first run.")
+
+
+def _log_setting(env: dict[str, str]) -> bool:
+    return env.get("EMPORIA_TRANSPARENCY_LOG", "on").strip().lower() not in ("0", "off", "false", "no")
+
+
+def cmd_setup_log(args: argparse.Namespace) -> int:
+    """`emporia setup log [on|off]`: whether this machine's relay keeps a transparency log."""
+    me = this_profile()
+    if me is None:
+        print("setup log: run it from the relay profile's emporia checkout")
+        return 1
+    env_path = me / ".env"
+    now = _log_setting(installer().harvest_env(me) if env_path.exists() else {})
+    heading("Transparency log", _LOG_ABOUT)
+    print(f"  Now: {'on' if now else 'off'}")
+    if args.state:
+        on = args.state == "on"
+    elif _TTY:
+        on = ask("Keep a transparency log?", now)
+    else:
+        print("setup log: on or off")
+        return 1
+    if on == now and env_path.exists() and "EMPORIA_TRANSPARENCY_LOG" in installer().harvest_env(me):
+        print("  Nothing to change.")
+        return 0
+    wizard_commit()
+    merge_env_file(env_path, {"EMPORIA_TRANSPARENCY_LOG": "on" if on else "off"})
+    print(f"  Transparency log {'on' if on else 'off'} in {env_path}. Restart the relay: emporia relay restart")
+    if not on:
+        print("  What is already in the log stays; turned on again, it logs what it missed.")
     return 0
 
 
@@ -5129,6 +5178,9 @@ def setup_overview() -> None:
     line("✓" if "localhost" not in public and "127.0.0.1" not in public else "·", "Reachable from outside",
          public if "localhost" not in public else "local only — agents on other machines cannot connect",
          "" if "localhost" not in public else "set EMPORIA_RELAY_URL to its public https URL behind a TLS proxy (README § Deployment)")
+    tlog = h.get("transparency_log") if h and "transparency_log" in h else _log_setting(relay_env)
+    line("✓" if tlog else "·", "Transparency log", "on — public proof of what this relay recorded" if tlog
+         else "off (optional)", "" if tlog else "emporia setup log on")
     peers = [x for x in relay_env.get("FEDERATED_RELAYS", "").split(",") if x.strip()]
     line("✓" if peers else "·", "Federation", f"{len(peers)} peer relay(s)" if peers else "none (optional)",
          "" if peers else "FEDERATED_RELAYS in the relay's .env (optional)")
@@ -5187,6 +5239,7 @@ def cmd_setup_menu(args: argparse.Namespace) -> int:
         ("agent", "An agent — role, keys, wallets, limits, card payouts"),
         ("relay", "This relay's USDC payments (x402, escrow; Solana, Tempo) and operator key"),
         ("stripe", "Cards (Stripe) — the relay's key, and agents' card payouts"),
+        ("log", "The transparency log — public proof of what this relay recorded (on or off)"),
         ("dashboard", "The Emporia tab in the Hermes dashboard"),
         ("done", "Nothing now"),
     ])
@@ -5231,6 +5284,8 @@ def build_parser() -> argparse.ArgumentParser:
                    help="host: who may use it (default: asks; open for a public relay)")
     r.add_argument("--run", choices=["docker", "service"], default="",
                    help="host: in Docker, or as a system service on a server kept for it")
+    r.add_argument("--transparency-log", choices=["on", "off"], default="",
+                   help="host: keep a transparency log (default on)")
     r.set_defaults(func=cmd_relay)
 
     ag2 = sub.add_parser("agent", help="an agent leaves a relay, is deleted from this machine, has its "
@@ -5355,6 +5410,9 @@ def build_parser() -> argparse.ArgumentParser:
                     help="also take payments on: solana-devnet, tempo-moderato (comma-separated)")
     rl.add_argument("--yes", action="store_true", help="write without asking")
     rl.set_defaults(func=cmd_setup_relay)
+    lg = ss.add_parser("log", help="the transparency log: on (default) or off")
+    lg.add_argument("state", nargs="?", default="", choices=["", "on", "off"])
+    lg.set_defaults(func=cmd_setup_log)
     rp = sub.add_parser("role", help="what an agent may do: marketplace, developer or both")
     rp.add_argument("name", nargs="?", default="")
     rp.add_argument("role", nargs="?", default="", choices=["", "marketplace", "developer", "both"])

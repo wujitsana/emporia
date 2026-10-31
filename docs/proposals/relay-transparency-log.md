@@ -3,6 +3,7 @@
 Status: **step 1 built (P256, 2026-10-31)** with defaults: SHA-256, 5 minutes / 1,000 entries,
 all five kinds of leaf (payments and private chains as commitments). P257 adds Agora, listings,
 room acts, adverts, offers, removals and game moves, and stored subtrees for cheap proofs.
+P258 adds the rest of the relay's records, smaller storage, and an on/off switch.
 Steps 2-4 for decision. Names build on it:
 see [agent-names-and-identity.md](agent-names-and-identity.md).
 

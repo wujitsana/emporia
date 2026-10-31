@@ -845,7 +845,7 @@ def test_relay_host_writes_its_own_folder_and_refuses_an_agent(profiles, monkeyp
     folder = tmp_path / "emporia-relay"
     _typing(monkeypatch, "", "y", "0x" + "ab" * 20)              # Nous · payments · fee address
     assert cli.main(["relay", "host", "--run", "docker", "--dir", str(folder), "--domain", "relay.example.com",
-                     "--admin", "keeper", "--access", "open"]) == 0
+                     "--admin", "keeper", "--access", "open", "--transparency-log", "on"]) == 0
     out = capsys.readouterr().out
     assert "On the host" in out and "docker compose --profile admin up -d" in out
     compose = yaml.safe_load((folder / "compose.yaml").read_text())
@@ -856,7 +856,7 @@ def test_relay_host_writes_its_own_folder_and_refuses_an_agent(profiles, monkeyp
     assert "reverse_proxy relay:8088" in (folder / "Caddyfile").read_text()
     env = _env_of(folder)
     assert env["EMPORIA_RELAY_URL"] == "https://relay.example.com" and env["EMPORIA_REQUIRE_NOUS"] == "1"
-    assert env["EMPORIA_ESCROW_FEE_RECEIVER"] == "0x" + "ab" * 20
+    assert env["EMPORIA_ESCROW_FEE_RECEIVER"] == "0x" + "ab" * 20 and env["EMPORIA_TRANSPARENCY_LOG"] == "on"
     assert env["EMPORIA_AGENT_ID"] and oct((folder / ".env").stat().st_mode)[-3:] == "600"
     assert _env_of(root / "keeper")["EMPORIA_RELAY_URL"] == "http://relay:8088"
     assert "EMPORIA_ESCROW_FEE_RECEIVER" not in _env_of(root / "keeper")      # the relay's, in its own folder
@@ -887,7 +887,7 @@ def test_relay_host_as_a_service_on_a_server_of_its_own(profiles, monkeypatch, c
     monkeypatch.setattr("shutil.which", lambda _: None)            # nothing runs here: commands are shown
     monkeypatch.setattr("emporia.relay_host.in_container", lambda: False)   # this test may run in one
     folder = tmp_path / "emporia-relay"
-    _typing(monkeypatch, "", "n")                                  # Nous · no payments
+    _typing(monkeypatch, "", "n", "n")                             # Nous · no transparency log · no payments
     assert cli.main(["relay", "host", "--run", "service", "--dir", str(folder), "--domain", "relay.example.com",
                      "--admin", "warden", "--access", "closed"]) == 0
     out = capsys.readouterr().out
@@ -898,6 +898,7 @@ def test_relay_host_as_a_service_on_a_server_of_its_own(profiles, monkeypatch, c
     assert "reverse_proxy 127.0.0.1:8089" in (folder / "Caddyfile").read_text()
     env = _env_of(folder)
     assert env["EMPORIA_NO_DOTENV"] == "1" and env["EMPORIA_RELAY_HOST"] == "127.0.0.1"
+    assert env["EMPORIA_TRANSPARENCY_LOG"] == "off"
     assert env["EMPORIA_KEYS_DIR"] == str(folder / "data" / "keys") and env["EMPORIA_AGENT_ID"]
     assert env["EMPORIA_RELAY_ACCESS"] == "closed" and len(env["EMPORIA_RELAY_MEMBERS"]) == 64   # warden
     assert _env_of(root / "warden")["EMPORIA_RELAY_URL"] == "http://127.0.0.1:8089"

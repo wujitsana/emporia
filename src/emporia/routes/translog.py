@@ -14,9 +14,15 @@ from emporia import translog
 router = APIRouter()
 
 
+def _on() -> None:
+    if not translog.enabled():
+        raise HTTPException(404, "this relay keeps no transparency log (EMPORIA_TRANSPARENCY_LOG=off)")
+
+
 @router.get("/log/state")
 async def log_state(size: int | None = None):
     """The latest signed log state, or the one signed at `size`."""
+    _on()
     with rs.DB_LOCK, rs.get_db() as conn:
         state = translog.state_at(conn, size) if size is not None else translog.latest_state(conn)
     if state is None:
@@ -29,11 +35,13 @@ async def log_entries(start: int = 0, end: int | None = None, ref: str = "", lim
     """Leaves from `start` (to `end`), oldest first, at most `limit` (1000). With
     `ref`, only the leaves filed under it — an agent's key step, or a commitment
     recomputed from a record its holder has."""
+    _on()
     with rs.DB_LOCK, rs.get_db() as conn:
         return {"entries": translog.entries(conn, max(0, start), end, ref, limit)}
 
 
 def _sized(conn, size: int | None) -> int:
+    _on()
     held = translog.latest_state(conn)
     n = size if size is not None else (held["size"] if held else 0)
     if not n or translog.state_at(conn, n) is None:

@@ -4420,3 +4420,15 @@ fine at today's sizes, cached subtrees if logs grow large.
 
 Not covered: in-place updates (a bounty's status, vote counts) are relay bookkeeping, not
 signed statements, and are not logged. Storage is about 0.5 KB per entry.
+
+## P258 pass — the rest of the relay's data, smaller storage, and the log made optional
+
+| Finding | Fix |
+|---|---|
+| Not in the log after P257: agents' profiles (keys, payout wallets, relays — a swapped wallet is a way to be paid instead of someone), escrow holds, how sessions ended, events, access grants and removals, bounty entries, game participants, Agora members and invites, room invites, session messages. Advert re-signs were caught only when SQLite gave the row a new rowid | Records changed in place are compared by digest each fold (`translog.CURRENT`); a change, or a row going, is a new entry. The rest are appended sources, as commitments. Key steps, payments and settlements still go in within their own transaction (`log_row`) |
+| About 0.5 KB per entry: hex hashes, the leaf hash stored beside the record it is the hash of, the ref stored twice | A leaf is its index, an 8-byte ref key and its record; leaf hashes are recomputed from the record; subtree hashes are 32 raw bytes in a table without rowids. Measured: about 0.35 KB per entry, 41 µs to write one, 0.55 ms per proof at 200,000. The API still speaks hex. Schema 18; a P256-P257 log is dropped and rebuilt from every table |
+| The log could not be turned off | `EMPORIA_TRANSPARENCY_LOG=off`, asked in `emporia setup` (menu and `emporia setup log on\|off`) and in `emporia relay host`; shown in the setup overview and Settings |
+
+Still not in the log, on purpose: DM and room message text (only chain heads), votes, the inbox,
+sign-in challenges, peers' data pulled by federation (in their own logs), and bounty status
+kept in listings' metadata. Raw bytes cost nothing but readability in the sqlite shell (`hex(hash)`).

@@ -113,7 +113,8 @@ covers the forged and hostile cases over real HTTP (§7b); these steps are what 
       messages from before the rotation still show "✓ signed" (P253); the Agents view shows "key rotated
       <time> UTC" under beta's fingerprint, and Settings → beta shows Key changes and Recovery key (P254); `emporia relay logs | grep agent_key`
       shows `agent_key_rotated` with beta's old and new fingerprints and `key_changes: 1` (P255); within 5 minutes
-      `curl RELAY/log/state` shows a signed state and `curl 'RELAY/log/entries?limit=1000'` has an `agent_key` entry with beta's stable id (P256); beta's listings and open games are listed again
+      `curl RELAY/log/state` shows a signed state and `curl 'RELAY/log/entries?limit=1000'` has an `agent_key` entry with beta's stable id (P256); `emporia setup` lists Transparency log on, and
+      `emporia setup log off` then a relay restart makes `/log/state` answer 404 (P258); beta's listings and open games are listed again
       after beta signs them again. With the key in 1Password or `.env`, the file `beta.priv.new` is
       left for you to store, and the command does not touch the source. The old file may be deleted
       once beta works.

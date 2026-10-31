@@ -190,17 +190,24 @@ def state_bytes(state: dict[str, Any]) -> bytes:
 
 
 # ─── storage (the relay database) ─────────────────────────────────────────────
+# P258: kept small. A leaf is its index, its record (canonical JSON) and an
+# 8-byte key of its ref; its hash is recomputed from the record when a proof
+# needs it (a microsecond). Subtree hashes are 32 raw bytes, in a table without
+# rowids. About 0.25 KB an entry, most of it the record itself.
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS translog_leaves (
     idx INTEGER PRIMARY KEY,
-    kind TEXT NOT NULL,
-    ref TEXT NOT NULL,
-    record_json TEXT NOT NULL,
-    leaf_hash TEXT NOT NULL,
-    at TEXT NOT NULL
+    ref_key INTEGER NOT NULL,
+    record TEXT NOT NULL
 );
-CREATE INDEX IF NOT EXISTS idx_translog_ref ON translog_leaves(ref);
+CREATE INDEX IF NOT EXISTS idx_translog_ref ON translog_leaves(ref_key);
+CREATE TABLE IF NOT EXISTS translog_nodes (
+    level INTEGER NOT NULL,
+    idx INTEGER NOT NULL,
+    hash BLOB NOT NULL,
+    PRIMARY KEY (level, idx)
+) WITHOUT ROWID;
 CREATE TABLE IF NOT EXISTS translog_states (
     size INTEGER PRIMARY KEY,
     root TEXT NOT NULL,
@@ -208,46 +215,52 @@ CREATE TABLE IF NOT EXISTS translog_states (
     relay_public_key TEXT NOT NULL,
     signature TEXT NOT NULL
 );
-CREATE TABLE IF NOT EXISTS translog_chain_heads (
-    chain TEXT PRIMARY KEY,
-    count INTEGER NOT NULL
-);
-CREATE TABLE IF NOT EXISTS translog_nodes (
-    level INTEGER NOT NULL,
-    idx INTEGER NOT NULL,
-    hash TEXT NOT NULL,
-    PRIMARY KEY (level, idx)
-);
-CREATE TABLE IF NOT EXISTS translog_sources (
-    source TEXT PRIMARY KEY,
-    last_rowid INTEGER NOT NULL
-);
+CREATE TABLE IF NOT EXISTS translog_seen (
+    key TEXT PRIMARY KEY,
+    digest TEXT NOT NULL
+) WITHOUT ROWID;
 """
+
+_OLD_TABLES = ("translog_chain_heads", "translog_sources")
+
+
+def enabled() -> bool:
+    """P258: the log is on unless the operator turned it off (EMPORIA_TRANSPARENCY_LOG=off)."""
+    import os
+    return os.getenv("EMPORIA_TRANSPARENCY_LOG", "on").strip().lower() not in ("0", "off", "false", "no")
 
 
 def init_schema(conn: Any) -> None:
+    """The log's tables. A log in the P256-P257 shape is dropped and rebuilt:
+    every source is folded in again from the start, so nothing the relay holds
+    is lost — only the old signed states, which nobody outside could check yet."""
+    cols = {r[1] for r in conn.execute("PRAGMA table_info(translog_leaves)").fetchall()}
+    if "record_json" in cols:
+        for t in ("translog_leaves", "translog_nodes", "translog_states", *_OLD_TABLES):
+            conn.execute(f"DROP TABLE IF EXISTS {t}")  # noqa: S608
     conn.executescript(SCHEMA)
-    # P257: a log written before stored nodes gets them now, once
-    n = size(conn)
-    if n and not conn.execute("SELECT 1 FROM translog_nodes LIMIT 1").fetchone():
-        for i, (h,) in enumerate(conn.execute("SELECT leaf_hash FROM translog_leaves ORDER BY idx").fetchall()):
-            _store_nodes(conn, i, bytes.fromhex(h))
+
+
+def ref_key(ref: str) -> int:
+    """The 8-byte key a ref is filed under (signed, as SQLite stores integers)."""
+    return int.from_bytes(hashlib.sha256(ref.encode()).digest()[:8], "big", signed=True)
 
 
 def size(conn: Any) -> int:
     return conn.execute("SELECT COALESCE(MAX(idx) + 1, 0) FROM translog_leaves").fetchone()[0]   # not COUNT(*): a scan
 
 
-def append(conn: Any, kind: str, ref: str, record: dict[str, Any]) -> int:
-    """Add one leaf, in the caller's transaction, and return its index. The
-    record gains `kind` and `logged_at`, this relay's time of recording."""
-    at = datetime.now(UTC).isoformat()
-    full = {**record, "kind": kind, "logged_at": at}
+def append(conn: Any, kind: str, ref: str, record: dict[str, Any]) -> int | None:
+    """Add one leaf, in the caller's transaction, and return its index (None
+    when the log is off). The record gains `kind` and `logged_at`, this relay's
+    time of recording."""
+    if not enabled():
+        return None
+    full = {**record, "kind": kind, "logged_at": datetime.now(UTC).isoformat()}
     idx = size(conn)
-    leaf = record_leaf_hash(full)
-    conn.execute("INSERT INTO translog_leaves (idx, kind, ref, record_json, leaf_hash, at) VALUES (?,?,?,?,?,?)",
-                 (idx, kind, ref, canonical(full).decode(), leaf.hex(), at))
-    _store_nodes(conn, idx, leaf)
+    data = canonical(full)
+    conn.execute("INSERT INTO translog_leaves (idx, ref_key, record) VALUES (?,?,?)", (idx, ref_key(ref), data.decode()))
+    _store_nodes(conn, idx, leaf_hash(data))
     return idx
 
 
@@ -258,17 +271,19 @@ def _store_nodes(conn: Any, idx: int, leaf: bytes) -> None:
     while i & 1:
         h = node_hash(_node(conn, level, i - 1), h)
         level, i = level + 1, i >> 1
-        conn.execute("INSERT OR REPLACE INTO translog_nodes (level, idx, hash) VALUES (?,?,?)", (level, i, h.hex()))
+        conn.execute("INSERT OR REPLACE INTO translog_nodes (level, idx, hash) VALUES (?,?,?)", (level, i, h))
 
 
 def _node(conn: Any, level: int, i: int) -> bytes:
     if level == 0:
-        row = conn.execute("SELECT leaf_hash FROM translog_leaves WHERE idx = ?", (i,)).fetchone()
+        row = conn.execute("SELECT record FROM translog_leaves WHERE idx = ?", (i,)).fetchone()
+        if row is not None:
+            return leaf_hash(row[0].encode())
     else:
         row = conn.execute("SELECT hash FROM translog_nodes WHERE level = ? AND idx = ?", (level, i)).fetchone()
-    if row is None:
-        raise LookupError(f"log node {level}/{i} is missing")
-    return bytes.fromhex(row[0])
+        if row is not None:
+            return bytes(row[0])
+    raise LookupError(f"log node {level}/{i} is missing")
 
 
 def stored_tree(conn: Any) -> _Tree:
@@ -296,21 +311,21 @@ def leaf_at(conn: Any, index: int) -> bytes:
 
 
 def leaves(conn: Any, upto: int) -> list[bytes]:
-    return [bytes.fromhex(r[0]) for r in conn.execute(
-        "SELECT leaf_hash FROM translog_leaves WHERE idx < ? ORDER BY idx", (upto,)).fetchall()]
+    return [leaf_hash(r[0].encode()) for r in conn.execute(
+        "SELECT record FROM translog_leaves WHERE idx < ? ORDER BY idx", (upto,)).fetchall()]
 
 
 def entries(conn: Any, start: int = 0, end: int | None = None, ref: str = "", limit: int = 100) -> list[dict]:
-    q, args = "SELECT idx, ref, record_json, leaf_hash FROM translog_leaves WHERE idx >= ?", [start]
+    q, args = "SELECT idx, record FROM translog_leaves WHERE idx >= ?", [start]
     if end is not None:
         q += " AND idx < ?"
         args.append(end)
     if ref:
-        q += " AND ref = ?"
-        args.append(ref)
+        q += " AND ref_key = ?"
+        args.append(ref_key(ref))
     q += " ORDER BY idx LIMIT ?"
     args.append(max(1, min(limit, 1000)))
-    return [{"index": r["idx"], "ref": r["ref"], "record": json.loads(r["record_json"]), "leaf_hash": r["leaf_hash"]}
+    return [{"index": r["idx"], "record": json.loads(r["record"]), "leaf_hash": leaf_hash(r["record"].encode()).hex()}
             for r in conn.execute(q, args).fetchall()]
 
 
@@ -329,22 +344,30 @@ def state_at(conn: Any, at_size: int) -> dict[str, Any] | None:
     return _state_row(r) if r else None
 
 
-# ─── what is folded in when a state is signed ─────────────────────────────────
+def _seen(conn: Any, key: str) -> str | None:
+    r = conn.execute("SELECT digest FROM translog_seen WHERE key = ?", (key,)).fetchone()
+    return r[0] if r else None
 
-def _fold_chain(conn: Any, chain: str, ident: str, head: str | None, count: int, public: bool) -> None:
-    key = f"{chain}:{ident}"
-    seen = conn.execute("SELECT count FROM translog_chain_heads WHERE chain = ?", (key,)).fetchone()
-    if not head or (seen and seen[0] == count):
-        return
-    fields = {"chain": chain, "id": ident, "head": head, "count": count}
+
+def _mark(conn: Any, key: str, digest: str) -> None:
+    conn.execute("INSERT INTO translog_seen (key, digest) VALUES (?, ?) "
+                 "ON CONFLICT(key) DO UPDATE SET digest = excluded.digest", (key, digest))
+
+
+def _log(conn: Any, kind: str, public: bool, ident: str, fields: dict[str, Any]) -> None:
+    """Public: by id. Otherwise a commitment, filed under itself."""
     if public:
-        append(conn, f"{chain}_chain", key, fields)
+        append(conn, kind, f"{kind}:{ident}", fields)
     else:
-        c = commitment(f"{chain}_chain", fields)
-        append(conn, "private_chain", c, {"commitment": c})
-    conn.execute("INSERT INTO translog_chain_heads (chain, count) VALUES (?, ?) "
-                 "ON CONFLICT(chain) DO UPDATE SET count = excluded.count", (key, count))
+        c = commitment(kind, fields)
+        append(conn, kind, c, {"commitment": c})
 
+
+def content_hash(*parts: Any) -> str:
+    return hashlib.sha256(canonical(list(parts))).hexdigest()
+
+
+# ─── what is folded in when a state is signed ─────────────────────────────────
 
 def _last_head(conn: Any, table: str, column: str, ident: str) -> str | None:
     row = conn.execute(f"SELECT chain_hash FROM {table} WHERE {column} = ? AND chain_hash IS NOT NULL "  # noqa: S608
@@ -352,40 +375,58 @@ def _last_head(conn: Any, table: str, column: str, ident: str) -> str | None:
     return row[0] if row else None
 
 
+def _fold_chain(conn: Any, chain: str, ident: str, count: int, public: bool, table: str, column: str) -> None:
+    key = f"{chain}:{ident}"
+    if _seen(conn, key) == str(count):
+        return
+    head = _last_head(conn, table, column, ident)
+    if not head:
+        return
+    fields = {"chain": chain, "id": ident, "head": head, "count": count}
+    if public:
+        append(conn, f"{chain}_chain", key, fields)
+    else:
+        c = commitment(f"{chain}_chain", fields)
+        append(conn, "private_chain", c, {"commitment": c})
+    _mark(conn, key, str(count))
+
+
 def fold_chain_heads(conn: Any) -> None:
     """One leaf for each room or DM chain that grew since it was last logged:
     public rooms by id and head, everything else as a commitment that the
     participants (who hold the id, head and count) can recompute."""
-    tables = {r[0] for r in conn.execute("SELECT name FROM sqlite_master WHERE type = 'table'").fetchall()}
+    tables = _tables(conn)
     if "room_messages" in tables and "rooms" in tables:
         for r in conn.execute(
                 "SELECT m.room_id, COUNT(*) n, r.room_type, r.encrypted FROM room_messages m "
                 "JOIN rooms r ON r.room_id = m.room_id WHERE m.chain_hash IS NOT NULL GROUP BY m.room_id").fetchall():
-            public = r["room_type"] == "public" and not r["encrypted"]
-            _fold_chain(conn, "room", r["room_id"], _last_head(conn, "room_messages", "room_id", r["room_id"]),
-                        r["n"], public)
+            _fold_chain(conn, "room", r["room_id"], r["n"], r["room_type"] == "public" and not r["encrypted"],
+                        "room_messages", "room_id")
     if "dm_messages" in tables:
         for r in conn.execute("SELECT thread_id, COUNT(*) n FROM dm_messages WHERE chain_hash IS NOT NULL "
                               "GROUP BY thread_id").fetchall():
-            _fold_chain(conn, "dm", r["thread_id"], _last_head(conn, "dm_messages", "thread_id", r["thread_id"]),
-                        r["n"], False)
+            _fold_chain(conn, "dm", r["thread_id"], r["n"], False, "dm_messages", "thread_id")
 
 
 def fold_relay_keys(conn: Any, history: list[dict[str, str]]) -> None:
     """A leaf for each change of the relay's own key not yet logged."""
     for step in history:
-        ref = f"relay_key:{step.get('at', '')}"
-        if not conn.execute("SELECT 1 FROM translog_leaves WHERE ref = ?", (ref,)).fetchone():
-            append(conn, "relay_key", ref, {k: step.get(k, "") for k in ("old", "new", "at", "signature")})
+        key = f"relay_key:{step.get('at', '')}"
+        if _seen(conn, key) is None:
+            append(conn, "relay_key", key, {k: step.get(k, "") for k in ("old", "new", "at", "signature")})
+            _mark(conn, key, "1")
 
 
 def sign_state(conn: Any, sign: Callable[[bytes], str], relay_public_key: str,
                relay_key_history: list[dict[str, str]] = ()) -> dict[str, Any] | None:
-    """Fold in chain heads and relay key changes, then sign the log's state —
-    or return None when the log has not grown since the last one."""
+    """Fold everything in, then sign the log's state — or return None when the
+    log is off or has not grown since the last one."""
+    if not enabled():
+        return None
     fold_relay_keys(conn, list(relay_key_history))
     fold_chain_heads(conn)
     fold_records(conn)
+    fold_current(conn)
     n = size(conn)
     last = latest_state(conn)
     if n == 0 or (last and last["size"] == n):
@@ -398,16 +439,18 @@ def sign_state(conn: Any, sign: Callable[[bytes], str], relay_public_key: str,
     return state
 
 
-# ─── P257: records folded in by table ─────────────────────────────────────────
-# Each source is read from where the last fold stopped (its rowid). A row
-# written again with INSERT OR REPLACE gets a new rowid, so it is logged again —
-# a changed advert or offer is a new entry. Public items go in by id with a hash
-# of their content and the author's signature; anything not public goes in as a
-# commitment over the fields listed here, which those who hold the record can
-# recompute (`commitment(kind, fields)`) and find with `GET /log/entries?ref=`.
+# ─── P257-P258: records, by table ─────────────────────────────────────────────
+# Two kinds of source. **Appended** tables only gain rows: each is read from the
+# rowid where the last fold stopped. **Current** tables are changed in place (an
+# agent's wallet, an advert re-signed or withdrawn, a game finishing): each row's
+# digest is compared with the one last logged, and a change — or the row going —
+# is a new entry. Public items go in by id with a hash of their content and the
+# signer's signature; anything else as a commitment over the fields listed here,
+# which those holding the record can recompute (`commitment(kind, fields)`) and
+# find with `GET /log/entries?ref=`.
 
-def content_hash(*parts: Any) -> str:
-    return hashlib.sha256(canonical(list(parts))).hexdigest()
+def _tables(conn: Any) -> set[str]:
+    return {r[0] for r in conn.execute("SELECT name FROM sqlite_master WHERE type = 'table'").fetchall()}
 
 
 def _topic_public(conn: Any, topic_id: str) -> bool:
@@ -418,6 +461,43 @@ def _topic_public(conn: Any, topic_id: str) -> bool:
 def _room_public(conn: Any, room_id: str) -> bool:
     r = conn.execute("SELECT room_type, encrypted FROM rooms WHERE room_id = ?", (room_id,)).fetchone()
     return bool(r) and r[0] == "public" and not r[1]
+
+
+def _row(r: Any) -> dict[str, Any]:
+    return {k: r[k] for k in r.keys() if k != "_r"}
+
+
+def _whole_row(id_col: str):
+    """A commitment over the whole row: what the relay can later show it held, and when."""
+    def build(conn, r):
+        return False, str(r[id_col]), _row(r)
+    return build
+
+
+def _agent_key(conn, r):
+    by = r["signed_by"]
+    if by == "commit":
+        step = {"by": "commit", "commitment": r["commitment"], "at": r["at"], "signature": r["signature"]}
+    elif by == "recovery":
+        step = {"by": "recovery", "old": r["old_key"], "new": r["new_key"], "recovery_public_key": r["recovery_public_key"],
+                "compromised_since": r["compromised_since"], "at": r["at"], "signature": r["signature"]}
+    else:
+        step = {"old": r["old_key"], "new": r["new_key"], "at": r["at"], "by": by, "signature": r["signature"]}
+    return True, f"{r['stable_id']}:{r['step_no']}:{r['at']}", {
+        "stable_id": r["stable_id"], "step_no": r["step_no"], "step": step}
+
+
+PAYMENT_FIELDS = ("payment_id", "agent_id", "amount_cents", "currency", "payment_type", "session_id", "room_id",
+                  "rail", "created_at")
+SETTLEMENT_FIELDS = ("settlement_id", "session_id", "winner_id", "payer_id", "total_stake_cents",
+                     "winner_payout_cents", "rail", "created_at")
+
+
+def _fields(names: tuple[str, ...], id_col: str):
+    def build(conn, r):
+        # who paid whom is not public: always a commitment
+        return False, r[id_col], {k: r[k] for k in names}
+    return build
 
 
 def _agora_topic(conn, r):
@@ -453,13 +533,6 @@ def _room_act(conn, r):
         "payload_hash": content_hash(r["payload_json"]), "signature": r["signature"] or "", "at": r["at"]}
 
 
-def _advert(id_col: str, at_col: str):
-    def build(conn, r):
-        return True, r[id_col], {id_col: r[id_col], "stable_id": r["stable_id"], "signature": r["signature"],
-                                 at_col: r[at_col]}
-    return build
-
-
 def _deletion(conn, r):
     # the removed item's id is hashed: a removal is on record, not what was removed
     return True, content_hash(r["kind"], r["item"]), {
@@ -481,48 +554,137 @@ def _game_chat(conn, r):
         "content_hash": content_hash(r["content"]), "created_at": r["created_at"]}
 
 
-#: kind -> (table, extra WHERE, builder)
+def _session_message(conn, r):
+    return False, r["message_id"], {
+        "message_id": r["message_id"], "from_agent": r["from_agent"], "to_agent": r["to_agent"],
+        "session_id": r["session_id"], "payload_hash": content_hash(r["payload_json"]),
+        "signature": r["signature"] or "", "created_at": r["created_at"]}
+
+
+#: appended tables — kind -> (table, extra WHERE, builder)
 SOURCES: dict[str, tuple[str, str, Callable]] = {
+    "agent_key": ("agent_key_log", "", _agent_key),
+    "payment": ("payments", "", _fields(PAYMENT_FIELDS, "payment_id")),
+    "settlement": ("settlements", "", _fields(SETTLEMENT_FIELDS, "settlement_id")),
     "agora_topic": ("agora_topics", "", _agora_topic),
     "agora_post": ("agora_posts", "", _agora_post),
     "agora_comment": ("agora_comments", "", _agora_comment),
     "listing": ("listings", "AND federated_from IS NULL", _listing),   # a peer's listings are in its own log
     "room_act": ("room_acts", "", _room_act),
-    "room_advert": ("room_adverts", "", _advert("room_id", "advertised_at")),
-    "topic_advert": ("topic_adverts", "", _advert("topic_id", "advertised_at")),
-    "session_offer": ("session_offers", "", _advert("session_id", "offered_at")),
     "deletion": ("deletions", "", _deletion),
     "session_action": ("actions", "", _action),
     "game_chat": ("game_chat", "", _game_chat),
+    "session_message": ("messages", "", _session_message),
+    "access_grant": ("access_entitlements", "", _whole_row("entitlement_id")),
+    "access_removal": ("access_removals", "", _whole_row("removal_id")),
+    "bounty_entry": ("bounty_entries", "", _whole_row("listing_id")),
+    "participant": ("participants", "", _whole_row("session_id")),
+    "agora_member": ("agora_members", "", _whole_row("topic_id")),
+    "agora_invite": ("agora_invites", "", _whole_row("topic_id")),
+    "room_invite": ("room_invites", "", _whole_row("room_id")),
+}
+
+
+def _agent(conn, r):
+    # the profile others act on: keys, payout wallets, relays, name — hashed, so a
+    # verifier compares it with /agents/{id} and a quiet change shows
+    return True, r["stable_id"] or r["agent_id"], {
+        "agent_id": r["agent_id"], "stable_id": r["stable_id"] or "", "public_key_hex": r["public_key_hex"],
+        "profile_hash": content_hash(*(r[k] for k in AGENT_PROFILE_FIELDS))}
+
+
+AGENT_PROFILE_FIELDS = ("agent_id", "public_key_hex", "display_name", "is_active", "x402_pay_to_json",
+                        "stripe_account_id", "encryption_public_key", "encryption_key_signature", "stable_id",
+                        "accepts_remote_dms", "relay_list_json")
+
+
+def _signed_by_owner(id_col: str, at_col: str):
+    def build(conn, r):
+        return True, r[id_col], {id_col: r[id_col], "stable_id": r["stable_id"], "signature": r["signature"],
+                                 at_col: r[at_col]}
+    return build
+
+
+def _escrow(conn, r):
+    return False, r["hold_hash"], {k: r[k] for k in ("hold_hash", "session_id", "payer_agent_id", "receiver_agent_id",
+                                                     "network", "amount_atomic", "state", "authorize_tx",
+                                                     "capture_tx", "void_tx", "updated_at")}
+
+
+def _session(conn, r):
+    return False, r["session_id"], {k: r[k] for k in ("session_id", "module_type", "status", "participants_json",
+                                                      "created_at")}
+
+
+def _event(conn, r):
+    return True, r["event_id"], {"event_id": r["event_id"], "organizer_id": r["organizer_id"], "status": r["status"],
+                                 "content_hash": content_hash(r["title"], r["description"], r["bracket_json"])}
+
+
+#: current tables — kind -> (table, id column, builder). The digest is the
+#: built record's hash, so only what is logged counts as a change.
+CURRENT: dict[str, tuple[str, str, Callable]] = {
+    "agent": ("authorized_agents", "agent_id", _agent),
+    "room_advert": ("room_adverts", "room_id", _signed_by_owner("room_id", "advertised_at")),
+    "topic_advert": ("topic_adverts", "topic_id", _signed_by_owner("topic_id", "advertised_at")),
+    "session_offer": ("session_offers", "session_id", _signed_by_owner("session_id", "offered_at")),
+    "escrow_hold": ("escrow_holds", "hold_hash", _escrow),
+    "session": ("sessions", "session_id", _session),
+    "event": ("events", "event_id", _event),
 }
 
 _FOLD_BATCH = 5000
 
 
+def log_row(conn: Any, kind: str, rowid: int | None) -> None:
+    """Log one row of an appended source now, in the caller's transaction — for
+    key changes and money, which should never wait for the next fold."""
+    if not enabled() or rowid is None:
+        return
+    table, _where, build = SOURCES[kind]
+    r = conn.execute(f"SELECT rowid AS _r, * FROM {table} WHERE rowid = ?", (rowid,)).fetchone()  # noqa: S608
+    if r is None:
+        return
+    _log(conn, kind, *build(conn, r))
+    key = f"source:{kind}"
+    if int(_seen(conn, key) or 0) < rowid:
+        _mark(conn, key, str(rowid))
+
+
 def fold_records(conn: Any) -> None:
-    tables = {r[0] for r in conn.execute("SELECT name FROM sqlite_master WHERE type = 'table'").fetchall()}
+    tables = _tables(conn)
     for kind, (table, where, build) in SOURCES.items():
         if table not in tables:
             continue
-        seen = conn.execute("SELECT last_rowid FROM translog_sources WHERE source = ?", (kind,)).fetchone()
-        last = seen[0] if seen else 0
+        key = f"source:{kind}"
+        last = int(_seen(conn, key) or 0)
         while True:
             rows = conn.execute(f"SELECT rowid AS _r, * FROM {table} WHERE rowid > ? {where} "  # noqa: S608
                                 "ORDER BY rowid LIMIT ?", (last, _FOLD_BATCH)).fetchall()
             for r in rows:
-                public, ident, fields = build(conn, r)
-                if public:
-                    append(conn, kind, f"{kind}:{ident}", fields)
-                else:
-                    c = commitment(kind, fields)
-                    append(conn, kind, c, {"commitment": c})
+                _log(conn, kind, *build(conn, r))
                 last = r["_r"]
             if len(rows) < _FOLD_BATCH:
                 break
-        conn.execute("INSERT INTO translog_sources (source, last_rowid) VALUES (?, ?) "
-                     "ON CONFLICT(source) DO UPDATE SET last_rowid = excluded.last_rowid", (kind, last))
+        _mark(conn, key, str(last))
 
 
-def withdrawn(conn: Any, kind: str, ident: str) -> None:
-    """A withdrawn advert or offer is a DELETE, which no fold sees: logged here, in its transaction."""
-    append(conn, f"{kind}_withdrawn", f"{kind}_withdrawn:{ident}", {"id": ident})
+def fold_current(conn: Any) -> None:
+    tables = _tables(conn)
+    for kind, (table, id_col, build) in CURRENT.items():
+        if table not in tables:
+            continue
+        prefix = f"{kind}:"
+        held = {r[0][len(prefix):]: r[1] for r in conn.execute(
+            "SELECT key, digest FROM translog_seen WHERE key >= ? AND key < ?", (prefix, prefix + "￿")).fetchall()}
+        for r in conn.execute(f"SELECT * FROM {table}").fetchall():  # noqa: S608
+            ident = str(r[id_col])
+            public, _, fields = build(conn, r)
+            digest = content_hash(fields)
+            if held.pop(ident, None) != digest:
+                _log(conn, kind, public, ident, fields)
+                _mark(conn, prefix + ident, digest)
+        for ident in held:           # gone since it was last logged: withdrawn or removed
+            gone = content_hash(kind, ident)
+            append(conn, f"{kind}_gone", f"{kind}_gone:{gone}", {"id_hash": gone})
+            conn.execute("DELETE FROM translog_seen WHERE key = ?", (prefix + ident,))
