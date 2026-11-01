@@ -1,4 +1,4 @@
-# Handoff — `post-hackathon` and `claude/handoff-4rte3l`, 2026-10-29
+# Handoff — `post-hackathon` and `claude/handoff-4rte3l`, 2026-11-01
 
 For whoever picks this branch up next (a cloud coding agent, or a person). It says where the work
 stands, what was tested by hand, what is left before `main`, and what can and cannot be done
@@ -6,8 +6,8 @@ without the original machine.
 
 ## Where things are
 
-- **Branch:** `post-hackathon`, ~530 commits ahead of `main`, plus P240–P250 on
-  `claude/handoff-4rte3l` (16 more commits, not yet on `post-hackathon`). Not merged. Aim: merge by
+- **Branch:** `post-hackathon`, ~530 commits ahead of `main`, plus P240–P260 on
+  `claude/handoff-4rte3l` (not yet on `post-hackathon`; no merge until the user says). Not merged. Aim: merge by
   the end of the week of 10-26 so others can test.
 - **Tests:** `pytest` (1,854 unit tests; the full run takes about 10 minutes in a cloud container),
   the live suite `pytest -m live tests/live` (10 scenarios, about 5 minutes; off by default), and
@@ -81,6 +81,52 @@ without the original machine.
 - **Designed, not built (docs only):** `docs/hermes-notes.md` (one issue draft for the person to post),
   `docs/proposals/agent-bug-reports.md`, `backup-and-room-transfer.md` and `multi-hop.md`; the
   last two are for after the merge.
+
+## Latest stretch (P251–P260, 10-29 to 11-01) — none of it tested by hand yet
+
+- **P251:** fixes from the 10-29 hand test (private topics, room listings, Agora posts).
+- **P252:** `emporia update` — pull, then packages, dashboard tab, plugins and relay.
+- **P253–P255:** the dashboard checks a message against the key its sender had then, says when
+  a key changed and whether a recovery key exists; the relay logs every key change.
+- **P256–P259, the transparency log** (schema 18; `src/emporia/translog.py`,
+  `routes/translog.py`, `tests/test_translog.py`; plan in
+  `docs/proposals/relay-transparency-log.md`, step 1 of 4):
+  - one RFC 9162 Merkle log per relay; every table is either logged (public records by id,
+    private ones as commitments, chain heads, relay key) or listed in `translog.NOT_LOGGED`
+    with the reason — a test enforces this;
+  - signed log states every 5 min / 1,000 entries; public read-only `/log/state`,
+    `/log/entries`, `/log/proof/inclusion`, `/log/proof/consistency`;
+  - optional: `EMPORIA_TRANSPARENCY_LOG=on|off` (default on), chosen in `emporia setup log`,
+    `emporia relay host` and the menus. Turned on later, it backfills everything;
+  - ~353 bytes and ~41 µs per entry; a proof at 200k entries ~0.5 ms. A VPS is fine.
+  - Docs updated: README, ARCHITECTURE, SECURITY, paper §3.7, protocol §4.5/§6/§9, RUNBOOK,
+    ROADMAP, skills.
+- **P260:** research only — `docs/proposals/robinhood-chain.md` (testnet `eip155:46630`, USDG
+  not USDC; x402 blocked on a facilitator and the official token address/EIP-712 details).
+- **Proposals for decision:** `docs/proposals/agent-names-and-identity.md` (Emporia as the
+  name registry, `name@host`).
+
+### Rough edges, not yet fixed
+- The first fold on a large relay holds `DB_LOCK` and can pause requests briefly; fix: batch it.
+- P256–P259 have had no code review. The full test suite was last run before one test fix in
+  P259 (that test passes on its own).
+
+### Questions waiting on the user
+- **Names:** adopt `name@host`? Which host (public URL host, or a configured name)? Names per
+  Nous account (3?), hold after release (30 days?), the reserved list, a ✓ for Nous-verified?
+- **Anchoring the log on a chain (step 4):** which chain (Base Sepolia suggested, or Robinhood
+  testnet), a plain transaction with the root in calldata or a small contract, how often
+  (hourly?), spend cap, operator pays. Any transaction needs the user's say-so.
+- **Robinhood Chain:** add it once the token address and a facilitator are confirmed?
+- Note NIP-77 (set reconciliation) in the federation proposal? It could fit Agora/listing sync
+  later; it does not fit logs or chains.
+
+### Next steps, in order
+1. The user hand-tests §1c of `docs/manual-testing.md` (includes the log checks); fix failures.
+2. Transparency log step 2: clients check it (`emporia log verify`, `log_verified` in MCP/SDK,
+   dashboard; seen states kept in `HERMES_HOME`'s `log_states.json`).
+3. Names step 1 (after the decisions above), then log steps 3 (relays compare states) and 4
+   (chain anchor).
 
 ## Tested by hand on 10-27/28 (the user's machine: Hermes in Docker, local testnet relay)
 
