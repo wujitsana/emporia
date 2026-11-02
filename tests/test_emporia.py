@@ -2569,6 +2569,7 @@ def test_every_route_has_a_reviewed_auth_posture():
         ("GET", "/agents/{agent_id}/record"): "P182: an agent's record — counts only, read before staking or buying",
         ("POST", "/agents/{agent_id}/key-recovery"): "P246: the agent has lost its key, so it cannot sign in; the recovery key it committed to in its key log signs the request, and that signature is the whole authority. Throttled like sign-in",
         ("GET", "/log/state"): "P256: the relay's signed transparency-log state — the point of it is that anyone can check it",
+        ("GET", "/log/epochs"): "P269: every log the relay has kept and the signed hand-overs between them — public like the log",
         ("GET", "/log/entries"): "P256: transparency-log leaves — hashes and commitments, never content",
         ("GET", "/log/proof/inclusion"): "P256: proof a leaf is in a signed log state",
         ("GET", "/log/proof/consistency"): "P256: proof a later signed log state only added to an earlier one",
@@ -27384,7 +27385,11 @@ def test_the_membership_rule_is_written_in_exactly_one_place():
 # and its record (`translog_leaves.ref_key`, `record`); subtree hashes as raw
 # bytes; `translog_seen` replaces `translog_chain_heads` and `translog_sources`.
 # A V17 log is dropped and folded in again from every table.
-_SCHEMA_FINGERPRINT_V21 = "d15910bfc891fb9b408014fb3b59eee281107e89c4143cf4f16fdd72a5874be4"
+#
+# V21 -> V22 (P269): `translog_epochs`, one row per log the relay has kept (a
+# rebuild starts a new one, with the old log's last state and a signed hand-over),
+# and `translog_states.epoch`.
+_SCHEMA_FINGERPRINT_V22 = "1afdf643aa2b7510157057c509af9fc61dcb1f3044713ab09d59043fbc27e67d"
 
 
 def _schema_fingerprint(db_path) -> tuple[str, int, int]:
@@ -27424,9 +27429,9 @@ def test_a_schema_change_requires_a_version_bump():
     from emporia.relay_server import SCHEMA_VERSION
 
     fingerprint, tables, columns = _schema_fingerprint(_test_db)
-    assert (SCHEMA_VERSION, fingerprint) == (21, _SCHEMA_FINGERPRINT_V21), (
+    assert (SCHEMA_VERSION, fingerprint) == (22, _SCHEMA_FINGERPRINT_V22), (
         f"the schema changed ({tables} tables, {columns} columns) or the version "
-        f"moved. Bump SCHEMA_VERSION *and* update _SCHEMA_FINGERPRINT_V21 — in "
+        f"moved. Bump SCHEMA_VERSION *and* update _SCHEMA_FINGERPRINT_V22 — in "
         f"that order, and never the fingerprint alone.\n"
         f"  code version: {SCHEMA_VERSION}\n  fingerprint:  {fingerprint}"
     )
@@ -27674,6 +27679,7 @@ _DASHBOARD_UNSURFACED_GETS: dict[str, str] = {
     "/log/entries": "P256: for verifiers; hashes and commitments",
     "/log/proof/inclusion": "P256: for verifiers",
     "/log/proof/consistency": "P256: for verifiers",
+    "/log/epochs": "P269: for verifiers",
     "/agents/{}/key-log": "P246: for a verifier, and for an agent that lost its key; the same log is in /agents/{id}, which the dashboard reads",
     "/federation/v1/rooms": "P247: for other relays' agents to find a room; the dashboard shows this relay's rooms from /rooms",
     "/federation/v1/topics": "P247: for other relays' agents to find a topic; the dashboard shows this relay's topics from /agoras/topics",

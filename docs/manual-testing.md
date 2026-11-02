@@ -148,13 +148,14 @@ covers the forged and hostile cases over real HTTP (§7b); these steps are what 
 ## 1d. New since 11-02 (P261–P268, the audit fixes)
 
 Update first (`emporia update`, then restart the relay and the gateway). The relay migrates to
-schema 21: it drops payout wallets registered before P262 (they were unsigned) and rebuilds the
+schema 22: it drops payout wallets registered before P262 (they were unsigned) and rebuilds the
 transparency log once from what it holds. Nothing else is lost.
 
 *Already run by script on 11-02 (scratch relays on free ports, not 8088):* a relay written by the
-pre-audit code (6b3b409, schema 18) restarted on this branch: backup written, schema 21, the
+pre-audit code (6b3b409, schema 18) restarted on this branch: backup written, schema 22, the
 unsigned wallet dropped and logged, the log rebuilt (13 entries backfilled, every leaf, inclusion
-and consistency proof checked from outside), a new game logged one `session_action` per move, a
+and consistency proof checked from outside; P269: the old log's last signed state kept in
+`/log/epochs` with the relay's signed hand-over), a new game logged one `session_action` per move, a
 signed wallet re-registered, a real 402 carrying the payee that the payer's check accepts and a
 swapped address it refuses; the old DM and game intact. The standalone console against a relay:
 one-time link, HttpOnly/SameSite=Strict cookie, other Host refused, DMs opened only locally,

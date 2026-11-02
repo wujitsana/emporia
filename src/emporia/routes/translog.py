@@ -71,3 +71,13 @@ async def log_consistency_proof(first: int, second: int | None = None):
             raise HTTPException(400, "first must be between 1 and second")
         return {"first": first, "second": n,
                 "proof": [h.hex() for h in translog.stored_consistency_proof(conn, first, n)]}
+
+
+@router.get("/log/epochs")
+async def log_epochs():
+    """P269: every log this relay has kept. A rebuild starts a new one; its entry
+    carries the old log's last signed state and the relay's signed hand-over, so a
+    client that kept an old state sees a new log, named and signed, not a rewrite."""
+    _on()
+    with rs.DB_LOCK, rs.get_db() as conn:
+        return {"epoch": translog.epoch(conn), "epochs": translog.epochs(conn)}

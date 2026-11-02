@@ -3463,6 +3463,9 @@ _NON_AGENT_COLUMNS: frozenset[tuple[str, str]] = frozenset({
     ("translog_states", "relay_public_key"), ("translog_states", "signature"),
     ("translog_nodes", "level"), ("translog_nodes", "idx"), ("translog_nodes", "hash"),
     ("translog_seen", "key"), ("translog_seen", "digest"),
+    # P269: one row per log kept; states and hand-overs name the relay's key, never an agent
+    ("translog_states", "epoch"), ("translog_epochs", "epoch"), ("translog_epochs", "started_at"),
+    ("translog_epochs", "reason"), ("translog_epochs", "previous"), ("translog_epochs", "handover"),
     # P263/P268: the log's outbox — row keys and room/thread ids waiting to be folded in (a key can hold
     # an agent_id, but the outbox is drained within minutes and a rename queues the old and new keys)
     ("translog_outbox", "seq"), ("translog_outbox", "kind"), ("translog_outbox", "ref"),

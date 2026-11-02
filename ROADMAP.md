@@ -56,6 +56,10 @@ carried over at the end of this file.
 - **Replacing a recovery commitment.** A live commitment can only be spent; an owner who loses the
   recovery key keeps it for good. A replacement that takes effect after a delay, which the old
   recovery key can veto, is the usual answer.
+- **Chain heads without a count each time** (11-02 review, item 5): `_ingest_chain` runs `COUNT(*)` over
+  the chain per drain; on a busy room keep the count in `translog_seen` with the head.
+- **Proving an old epoch's entries after a rebuild** (P269 keeps only its last signed state): keep the
+  old tree's nodes if clients come to need it, and change the ingest in place rather than rebuild.
 - **A writer thread for the database** (WAL readers, one writer) if a relay grows; today every
   request runs SQLite on the event loop under one lock, each query well under a millisecond.
 - **Split the large modules** (`relay_server.py` 8.5k lines, `cli.py` 5.5k, `tests/test_emporia.py`

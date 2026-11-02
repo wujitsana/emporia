@@ -411,3 +411,108 @@ def test_a_renamed_agent_is_the_old_record_gone_and_a_new_one(tmp_path):
     conn.execute("UPDATE authorized_agents SET agent_id = 'new_name' WHERE agent_id = 'old_name'")
     translog.fold_all(conn)
     assert sorted(e["record"]["kind"] for e in translog.entries(conn, n)) == ["agent", "agent_gone"]
+
+
+_LISTINGS = ("CREATE TABLE listings (listing_id TEXT PRIMARY KEY, agent_id, agent_stable_id, listing_type, title, "
+             "description, signature, created_at, federated_from);")
+_SESSIONS = "CREATE TABLE sessions (session_id TEXT PRIMARY KEY, module_type, status, participants_json, created_at);"
+
+
+def test_a_rebuild_is_a_new_epoch_handed_over_and_signed_with_the_same_secret(tmp_path):
+    """P269: a rebuild (a new ingest) used to wipe the log, its signed states and the
+    commit secret. Now the secret is kept (a private record's salt never changes),
+    the old log's last state is kept, and the new log's first state signs a
+    hand-over naming it."""
+    from cryptography.hazmat.primitives.asymmetric import ed25519
+    key = ed25519.Ed25519PrivateKey.generate()
+    pub = key.public_key().public_bytes_raw().hex()
+    sign = lambda b: key.sign(b).hex()                                   # noqa: E731
+    conn = _fresh_log(tmp_path, _LISTINGS + _SESSIONS)
+    conn.execute("INSERT INTO listings VALUES ('l1', 'a', 's', 'service', 't', 'd', 'sig', 'now', NULL)")
+    conn.execute("INSERT INTO sessions VALUES ('s1', 'chess', 'active', '[]', 'now')")
+    first = translog.sign_state(conn, sign, pub)
+    assert first["epoch"] == 1 and identity.verify_raw(translog.state_bytes(first), first["signature"], pub)
+    salt = translog.record_salt(conn, "session", "s1")
+    conn.execute("UPDATE translog_seen SET digest = 'outbox-v1' WHERE key = 'ingest'")    # as P268b found it
+    translog.init_schema(conn)
+    assert translog.record_salt(conn, "session", "s1") == salt
+    second = translog.sign_state(conn, sign, pub)
+    assert second["epoch"] == 2 and translog.latest_state(conn) == second
+    [one, two] = translog.epochs(conn)
+    assert one["epoch"] == 1 and one["handover"] is None
+    assert two["previous"] == first and "outbox-v1 -> " in two["reason"]
+    h = two["handover"]
+    assert h["previous"]["root"] == first["root"] and h["first"]["root"] == second["root"]
+    assert identity.verify_raw(translog.handover_bytes(h), h["signature"], pub)
+    translog.init_schema(conn)                                           # not rebuilt again: same epoch
+    assert translog.epoch(conn) == 2 and len(translog.epochs(conn)) == 2
+
+
+def test_a_log_kept_from_before_epochs_keeps_its_states_as_signed(tmp_path):
+    conn = _fresh_log(tmp_path, _LISTINGS)
+    conn.execute("INSERT INTO listings VALUES ('l1', 'a', 's', 'service', 't', 'd', 'sig', 'now', NULL)")
+    state = translog.sign_state(conn, lambda b: "sig", "ab" * 32)
+    conn.execute("UPDATE translog_states SET epoch = NULL")             # signed before P269
+    conn.execute("DELETE FROM translog_epochs")
+    translog.init_schema(conn)
+    assert "epoch" not in translog.latest_state(conn)
+    assert {k: v for k, v in state.items() if k != "epoch"} == translog.latest_state(conn)
+    assert translog.epochs(conn)[0]["reason"] == "kept from before epochs were recorded"
+
+
+def test_a_row_removed_while_the_log_was_off_is_logged_gone_when_it_is_on_again(tmp_path, monkeypatch):
+    conn = _fresh_log(tmp_path, _LISTINGS)
+    conn.execute("INSERT INTO listings VALUES ('l1', 'a', 's', 'service', 't', 'd', 'sig', 'now', NULL)")
+    conn.execute("INSERT INTO listings VALUES ('l2', 'a', 's', 'service', 't', 'd', 'sig', 'now', NULL)")
+    translog.fold_all(conn)
+    n = translog.size(conn)
+    monkeypatch.setenv("EMPORIA_TRANSPARENCY_LOG", "off")
+    translog.init_schema(conn)
+    conn.execute("DELETE FROM listings WHERE listing_id = 'l1'")         # no trigger saw this
+    monkeypatch.setenv("EMPORIA_TRANSPARENCY_LOG", "on")
+    translog.init_schema(conn)
+    translog.fold_all(conn)
+    assert _kinds(conn, n) == ["listing_gone"]                         # l2, unchanged, adds nothing
+
+
+def test_a_row_with_no_key_is_refused_not_silently_left_out(tmp_path):
+    """P269: SQLite lets a TEXT PRIMARY KEY hold NULL, and NULL || anything is NULL,
+    so such a row would never reach the log. The log's trigger refuses it."""
+    import sqlite3
+    conn = _fresh_log(tmp_path, _LISTINGS)
+    with pytest.raises(sqlite3.IntegrityError, match="no key"):
+        conn.execute("INSERT INTO listings VALUES (NULL, 'a', 's', 'service', 't', 'd', 'sig', 'now', NULL)")
+
+
+def test_every_logged_key_column_is_guarded_on_the_relays_own_schema():
+    """Every SOURCES key column is NOT NULL in the relay's schema or caught by the trigger."""
+    import sqlite3
+    with rs.DB_LOCK, rs.get_db() as conn:
+        for kind, (table, _b, _c, cols) in translog.SOURCES.items():
+            info = {r[1]: r for r in conn.execute(f"PRAGMA table_info({table})")}
+            assert all(c in info for c in cols), (kind, cols)
+            if any(not info[c][3] for c in cols):                       # nullable: the trigger must refuse it
+                sql = conn.execute("SELECT sql FROM sqlite_master WHERE name = ?",
+                                   (f"translog_{kind}_insert",)).fetchone()[0]
+                assert "RAISE(ABORT" in sql and all(f"NEW.{c} IS NULL" in sql for c in cols), kind
+    assert sqlite3   # imported for the type above
+
+
+def test_a_private_records_removal_is_salted_a_public_ones_is_not(tmp_path):
+    conn = _fresh_log(tmp_path, _LISTINGS + _SESSIONS)
+    conn.execute("INSERT INTO listings VALUES ('l1', 'a', 's', 'service', 't', 'd', 'sig', 'now', NULL)")
+    conn.execute("INSERT INTO sessions VALUES ('s1', 'chess', 'active', '[]', 'now')")
+    translog.fold_all(conn)
+    n = translog.size(conn)
+    conn.execute("DELETE FROM listings")
+    conn.execute("DELETE FROM sessions")
+    translog.fold_all(conn)
+    gone = {e["record"]["kind"]: e["record"]["id_hash"] for e in translog.entries(conn, n)}
+    assert gone["listing_gone"] == translog.content_hash("listing", "l1")        # public: anyone can check
+    assert gone["session_gone"] != translog.content_hash("session", "s1")        # private: not from a guess
+    assert gone["session_gone"] == translog.content_hash("session", "s1", translog.record_salt(conn, "session", "s1"))
+
+
+def test_the_epochs_route(client):
+    r = client.get("/log/epochs")
+    assert r.status_code == 200 and r.json()["epoch"] >= 1 and r.json()["epochs"]

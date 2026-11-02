@@ -34,6 +34,8 @@ LEAF_PREFIX = b"\x00"
 NODE_PREFIX = b"\x01"
 STATE_TYPE = "emporia:log-state:v1"
 STATE_LABEL = b"emporia:log-state:v1\n"
+HANDOVER_TYPE = "emporia:log-handover:v1"
+HANDOVER_LABEL = b"emporia:log-handover:v1\n"
 COMMIT_LABEL = "emporia:log-commit:v2:"
 
 
@@ -195,6 +197,11 @@ def state_bytes(state: dict[str, Any]) -> bytes:
     return STATE_LABEL + canonical({k: v for k, v in state.items() if k != "signature"})
 
 
+def handover_bytes(handover: dict[str, Any]) -> bytes:
+    """P269: what a hand-over's signature covers: its fields minus the signature."""
+    return HANDOVER_LABEL + canonical({k: v for k, v in handover.items() if k != "signature"})
+
+
 # ─── storage (the relay database) ─────────────────────────────────────────────
 # P258: kept small. A leaf is its index, its record (canonical JSON) and an
 # 8-byte key of its ref; its hash is recomputed from the record when a proof
@@ -219,7 +226,16 @@ CREATE TABLE IF NOT EXISTS translog_states (
     root TEXT NOT NULL,
     at TEXT NOT NULL,
     relay_public_key TEXT NOT NULL,
-    signature TEXT NOT NULL
+    signature TEXT NOT NULL,
+    epoch INTEGER
+);
+-- P269: one row per log this relay has kept; never dropped by a rebuild
+CREATE TABLE IF NOT EXISTS translog_epochs (
+    epoch INTEGER PRIMARY KEY,
+    started_at TEXT NOT NULL,
+    reason TEXT NOT NULL,
+    previous TEXT,
+    handover TEXT
 );
 CREATE TABLE IF NOT EXISTS translog_seen (
     key TEXT PRIMARY KEY,
@@ -259,16 +275,40 @@ def init_schema(conn: Any) -> None:
     has_seen = conn.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='translog_seen'").fetchone()
     ingest = (conn.execute("SELECT digest FROM translog_seen WHERE key = 'ingest'").fetchone()
               if has_seen else None)
-    if old_shape or (cols and (ingest is None or ingest[0] != INGEST)):
+    rebuild = old_shape or (cols and (ingest is None or ingest[0] != INGEST))
+    secret, last = None, None
+    if rebuild:
+        # P269: a rebuild keeps the commit secret (so a private record's salt never
+        # changes) and the old log's last signed state, which the new log's first
+        # state hands over from — loud, signed, and never passed off as the same log.
+        if has_seen:
+            secret = conn.execute("SELECT digest FROM translog_seen WHERE key = 'commit_secret'").fetchone()
+        if not old_shape and conn.execute(
+                "SELECT 1 FROM sqlite_master WHERE type='table' AND name='translog_states'").fetchone():
+            last = conn.execute("SELECT * FROM translog_states ORDER BY size DESC LIMIT 1").fetchone()
         for t in ("translog_leaves", "translog_nodes", "translog_states", "translog_seen", "translog_outbox",
                   *_OLD_TABLES):
             conn.execute(f"DROP TABLE IF EXISTS {t}")  # noqa: S608
     conn.executescript(SCHEMA)
+    if "epoch" not in {r[1] for r in conn.execute("PRAGMA table_info(translog_states)").fetchall()}:
+        conn.execute("ALTER TABLE translog_states ADD COLUMN epoch INTEGER")
+    if secret:
+        _mark(conn, "commit_secret", secret[0])
+    held = conn.execute("SELECT MAX(epoch) FROM translog_epochs").fetchone()[0]
+    if rebuild or held is None:
+        reason = ("a new log" if not cols else
+                  f"rebuilt: ingest {ingest[0] if ingest else 'unmarked'} -> {INGEST}" if rebuild else
+                  "kept from before epochs were recorded")
+        conn.execute("INSERT INTO translog_epochs (epoch, started_at, reason, previous) VALUES (?,?,?,?)",
+                     ((held or 0) + 1, datetime.now(UTC).isoformat(), reason,
+                      json.dumps(_state_row(last)) if last else None))
+        # a log kept as it is keeps its states as signed: without an epoch field
     _mark(conn, "ingest", INGEST)
     if not conn.execute("SELECT 1 FROM translog_seen WHERE key = 'commit_secret'").fetchone():
         import secrets
         _mark(conn, "commit_secret", secrets.token_hex(32))
     if enabled():
+        drop_triggers(conn)                            # P269: always the current triggers (the NULL-key guard)
         install_triggers(conn)
         if _seen(conn, "backfilled") is None:
             backfill(conn)
@@ -368,8 +408,25 @@ def entries(conn: Any, start: int = 0, end: int | None = None, ref: str = "", li
 
 
 def _state_row(r: Any) -> dict[str, Any]:
-    return {"type": STATE_TYPE, "relay_public_key": r["relay_public_key"], "size": r["size"], "root": r["root"],
-            "at": r["at"], "signature": r["signature"]}
+    out = {"type": STATE_TYPE, "relay_public_key": r["relay_public_key"], "size": r["size"], "root": r["root"],
+           "at": r["at"], "signature": r["signature"]}
+    if "epoch" in r.keys() and r["epoch"] is not None:
+        out["epoch"] = r["epoch"]
+    return out
+
+
+def epoch(conn: Any) -> int:
+    """P269: the number of the log this relay keeps now (1 for its first)."""
+    return conn.execute("SELECT COALESCE(MAX(epoch), 1) FROM translog_epochs").fetchone()[0]
+
+
+def epochs(conn: Any) -> list[dict[str, Any]]:
+    """Every log this relay has kept, oldest first: when it started, why, the last
+    signed state of the one before it, and the signed hand-over between them."""
+    return [{"epoch": r["epoch"], "started_at": r["started_at"], "reason": r["reason"],
+             "previous": json.loads(r["previous"]) if r["previous"] else None,
+             "handover": json.loads(r["handover"]) if r["handover"] else None}
+            for r in conn.execute("SELECT * FROM translog_epochs ORDER BY epoch").fetchall()]
 
 
 def latest_state(conn: Any) -> dict[str, Any] | None:
@@ -646,8 +703,12 @@ def _trigger_sql(name: str, table: str, kind: str, cond: str, cols: tuple[str, .
     """Insert: the new key. Delete: the old. Update: both — a changed key (a
     rename) is the old record gone and a new one."""
     out = []
+    # P269: SQLite lets a TEXT PRIMARY KEY hold NULL, and NULL || anything is NULL:
+    # such a row would never reach the log. Refused here instead, loudly.
+    guard = (f"SELECT RAISE(ABORT, 'translog: a {table} row with no key ({', '.join(cols)})') WHERE "
+             + " OR ".join(f"NEW.{c} IS NULL" for c in cols) + ";")
     for when, rows in (("INSERT", ("NEW",)), ("UPDATE", ("OLD", "NEW")), ("DELETE", ("OLD",))):
-        body = " ".join(
+        body = (guard + " " if when != "DELETE" else "") + " ".join(
             f"INSERT INTO translog_outbox (kind, ref) SELECT '{kind}', {_key_sql(row, cols)}"
             + (f" WHERE {cond.format(row=row)};" if cond else ";") for row in rows)
         out.append(f"CREATE TRIGGER IF NOT EXISTS translog_{name}_{when.lower()} AFTER {when} ON {table} "
@@ -688,6 +749,12 @@ def backfill(conn: Any) -> None:
         if table in tables:
             conn.execute(f"INSERT INTO translog_outbox (kind, ref) SELECT DISTINCT ?, {column} FROM {table}",  # noqa: S608
                          (f"{chain}_chain",))
+    # P269: and every row the log already holds, so one removed while the log was
+    # off is logged as gone (one still there is found unchanged and adds nothing)
+    for (key,) in conn.execute("SELECT key FROM translog_seen WHERE key LIKE '%#%'").fetchall():
+        kind, _, ref = key.partition("#")
+        if kind in SOURCES and SOURCES[kind][0] in tables:
+            conn.execute("INSERT INTO translog_outbox (kind, ref, backfill) VALUES (?, ?, 1)", (kind, ref))
 
 
 def _held(conn: Any, key: str) -> dict[str, str] | None:
@@ -706,7 +773,10 @@ def _ingest_row(conn: Any, kind: str, ref: str, backfilled: bool = False) -> Non
         r = None                                   # replaced by a peer's row: ours has gone
     if r is None:
         if held:
-            gone = content_hash(kind, held["id"])
+            # P269: a private record's removal is salted like the record was, so an
+            # id someone can guess does not tell them it was removed. Public: by id.
+            gone = (content_hash(kind, held["id"]) if held.get("p") else
+                    content_hash(kind, held["id"], record_salt(conn, kind, held["id"])))
             append(conn, f"{kind}_gone", f"{kind}_gone:{gone}", {"id_hash": gone})
             conn.execute("DELETE FROM translog_seen WHERE key = ?", (key,))
         return
@@ -715,7 +785,7 @@ def _ingest_row(conn: Any, kind: str, ref: str, backfilled: bool = False) -> Non
     if held and held["d"] == digest:
         return
     _log(conn, kind, public, ident, fields, {"backfilled": True} if backfilled else None)
-    _mark(conn, key, json.dumps({"id": ident, "d": digest}))
+    _mark(conn, key, json.dumps({"id": ident, "d": digest, "p": bool(public)}))
 
 
 def _ingest_chain(conn: Any, chain: str, ident: str) -> None:
@@ -810,9 +880,19 @@ def sign_state(conn: Any, sign: Callable[[bytes], str], relay_public_key: str,
     last = latest_state(conn)
     if n == 0 or (last and last["size"] == n):
         return None
+    ep = epoch(conn)
     state = {"type": STATE_TYPE, "relay_public_key": relay_public_key, "size": n,
-             "root": stored_root(conn, n).hex(), "at": datetime.now(UTC).isoformat()}
+             "root": stored_root(conn, n).hex(), "at": datetime.now(UTC).isoformat(), "epoch": ep}
     state["signature"] = sign(state_bytes(state))
-    conn.execute("INSERT INTO translog_states (size, root, at, relay_public_key, signature) VALUES (?,?,?,?,?)",
-                 (n, state["root"], state["at"], relay_public_key, state["signature"]))
+    conn.execute("INSERT INTO translog_states (size, root, at, relay_public_key, signature, epoch) "
+                 "VALUES (?,?,?,?,?,?)", (n, state["root"], state["at"], relay_public_key, state["signature"], ep))
+    row = conn.execute("SELECT previous, handover, reason FROM translog_epochs WHERE epoch = ?", (ep,)).fetchone()
+    if row and row["previous"] and not row["handover"]:
+        prev = json.loads(row["previous"])
+        handover = {"type": HANDOVER_TYPE, "epoch": ep, "reason": row["reason"],
+                    "previous": {k: prev.get(k) for k in ("epoch", "size", "root", "at", "relay_public_key")},
+                    "first": {k: state[k] for k in ("size", "root", "at")},
+                    "relay_public_key": relay_public_key, "at": state["at"]}
+        handover["signature"] = sign(handover_bytes(handover))
+        conn.execute("UPDATE translog_epochs SET handover = ? WHERE epoch = ?", (json.dumps(handover), ep))
     return state

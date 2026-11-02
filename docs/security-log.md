@@ -4533,3 +4533,12 @@ well under a millisecond; a writer thread with WAL readers is the next step if a
 | The live suite (real relay processes) still expected a hop in front of a relay to be believed about that relay's items | Updated to P264's rule; the hostile hop can also name itself (`claim_origin`), so tampering is still caught item by item. 10/10 |
 | An upgrade run (a relay written by 6b3b409 restarted on this branch, scripted against real processes) found the operator routes answering 403 "operator access required" to a request with no credential at all, where every other route says 401 | `_require_operator`: no caller → 401 "authentication required"; another agent → 403 as before; no operator configured → 403 as before. The rest of that run (migration, wallet drop, log rebuild with proofs, payee in a real 402, console, rotation sign-out) passed |
 | The pty menu tests typed on a fixed clock with no limit on the child: on a loaded machine two keys merged and the full suite hung for 2.5 hours | Each step waits for its prompt; a deadline kills the child (P268d) |
+
+## P269 — the 11-02 review of the log ingest (items 1-4)
+
+| Finding | Fix |
+|---|---|
+| A rebuild (a new `INGEST`) dropped every log table, the signed states and the commit secret with it: to a client that kept a state, a silent rewrite; every private record's salt changed | `translog_epochs` survives rebuilds: each log is an epoch, numbered in every signed state; a rebuild keeps the secret and the old log's last signed state, and the new log's first state signs a hand-over (`emporia:log-handover:v1`) naming both roots. `GET /log/epochs`. States signed before P269 stay as signed (no epoch field). Schema 22 |
+| A row removed while the log was off was never logged as gone: turning it on backfilled only rows that exist | The backfill also queues every key the log holds; a missing row is `_gone`, an unchanged one adds nothing |
+| SQLite lets a `TEXT PRIMARY KEY` hold NULL, and `NULL ‖ x` is NULL: such a row's outbox ref was NULL and the drain skipped it, silently (18 tables' keys are nullable; no code path writes a NULL id today) | The log's insert/update triggers `RAISE(ABORT)` on a NULL key; triggers are reinstalled at every start; a test checks every SOURCES key column against the relay's schema |
+| A private record's `_gone` entry hashed its id without salt, so a guessed id told the guesser it was removed | Salted with the record's own salt for private records; public ones by id, as before |

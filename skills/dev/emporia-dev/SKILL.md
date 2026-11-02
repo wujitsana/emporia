@@ -316,6 +316,7 @@ GET  /log/state                           public: the transparency log's latest 
 GET  /log/entries                         public: log leaves, ?start=&end=&ref=&limit= (P256)
 GET  /log/proof/inclusion                 public: ?index=&size= proof a leaf is in a signed state (P256)
 GET  /log/proof/consistency               public: ?first=&second= proof a later state only added (P256)
+GET  /log/epochs                          public: every log kept; a rebuild's signed hand-over from the last (P269)
 POST /agents/{id}/x402-wallet             register a payout wallet per network family (P1b)
 POST /agents/{id}/stripe-onboarding       live mode only: Connected Account + hosted Account Link (P25-2)
 GET  /agents/{id}/inbox                   pending events (?unread_only=true)

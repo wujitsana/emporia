@@ -374,12 +374,14 @@ Accepted only from a linked relay, within five minutes, against its pinned key; 
 the target means a request signed for one relay is worthless at any other (P193).
 
 ### 4.5 Transparency log states — `translog.state_bytes` (P256)
-`b"emporia:log-state:v1\n" + canonical({type: "emporia:log-state:v1", relay_public_key, size, root, at})`.
+`b"emporia:log-state:v1\n" + canonical({type: "emporia:log-state:v1", relay_public_key, size, root, at, epoch})`
+(`epoch` from P269; states signed before it have none and are served as signed).
 The root is RFC 9162's Merkle tree hash (SHA-256; leaf = `H(0x00 ‖ canonical(record))`,
 node = `H(0x01 ‖ left ‖ right)`) over the relay's log leaves in order. Served at `GET /log/state`;
 proofs at `GET /log/proof/inclusion` and `/log/proof/consistency`, only against a signed size.
 Leaves: each agent key step (`agent_key`, in the step's own transaction), each payment and
-settlement as a commitment `sha256("emporia:log-commit:v1:" + kind + ":" + canonical(fields))`
+settlement as a commitment `sha256("emporia:log-commit:v2:" + kind + ":" + salt + ":" + canonical(fields))`
+(P263: `salt` per record, an HMAC of the relay's log secret, `translog.record_salt`)
 (`payment`, `settlement`), each public room chain that grew (`room_chain`), every other room
 and DM chain as a commitment (`private_chain`), and each relay key change (`relay_key`).
 Every record also carries `kind` and `logged_at`, the relay's time of recording.
@@ -390,6 +392,16 @@ adverts and game offers (each re-signing is a new entry; a withdrawal is `*_with
 removals (`deletion`, the item's id hashed), and every game move and table-talk message
 (always commitments: a move may be a sealed bid). `content_hash` =
 `sha256(canonical([parts…]))`; the fields of each kind are in `translog.SOURCES`.
+A removed row is `<kind>_gone` with `id_hash`: `content_hash(kind, id)` for a public record,
+`content_hash(kind, id, salt)` for a private one (P269).
+
+**Epochs and hand-overs (P269).** A relay that rebuilds its log (a new ingest) starts a new
+epoch; the log secret, and so every salt, is kept. `GET /log/epochs` lists each epoch with the
+previous log's last signed state and, once the new log's first state is signed, a hand-over
+`b"emporia:log-handover:v1\n" + canonical({type: "emporia:log-handover:v1", epoch, reason,
+previous: {epoch, size, root, at, relay_public_key}, first: {size, root, at}, relay_public_key, at})`
+signed by the relay key. A client that kept a state of an earlier epoch reads a new epoch as
+loud and named, not as the same log rewritten; entries of the old log are not provable after it.
 P258 adds records changed in place, logged when their logged fields change (`translog.CURRENT`):
 each agent's profile (`agent`: agent_id, stable_id, key and `profile_hash` over its keys, payout
 wallets, relays and name — a quiet wallet swap shows), adverts and offers, escrow holds, sessions

@@ -105,9 +105,13 @@ item in `docs/security-log.md` (P261–P268). Unit suite 1,927 passed, live suit
 - **Not run here:** the dashboard's `tsc`/`vitest` (npm refuses the git-sourced `srcl` package on
   this machine). Later items from the audit: ROADMAP § From the 11-02 audit.
 
-## Review of P261–P268 (11-02, a short read of the log ingest) — plan, nothing changed
+## Review of P261–P268 (11-02, a short read of the log ingest) — items 1-4 fixed in P269
 
-A spot check of `translog.py` after the audit; not a full review. In priority order:
+A spot check of `translog.py` after the audit; not a full review. In priority order. **P269 (11-02)
+fixed 1-4** as planned, with two differences: the epoch is a number (1, 2, …) in every signed state
+rather than a hash of the first state, and NULL keys (3) are refused by the log's trigger rather than
+by a schema migration of 18 tables (`test_every_logged_key_column_is_guarded_on_the_relays_own_schema`).
+Schema 22. 5 is in ROADMAP. The plan as written:
 
 1. **A rebuild wipes the log (fix before clients check it, step 2).** `init_schema` drops every
    `translog_*` table when `INGEST` changes (it has, twice), so leaves, signed states and the

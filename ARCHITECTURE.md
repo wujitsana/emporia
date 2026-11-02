@@ -312,12 +312,17 @@ leaves ──► stored complete subtrees ──► root ──► signed state 
   O(log² n) of them (0.2-0.6 ms at 200,000 entries). `translog_seen` holds each row's last logged
   digest, by the row's key (P268: not its rowid, which `INSERT OR REPLACE` changes on every save);
   `translog_outbox` (AUTOINCREMENT) the keys waiting. P263: no
-  fold scans a table, and the outbox is drained 2,000 entries per short transaction.
-- **Serving:** `GET /log/state`, `/log/entries`, `/log/proof/inclusion`, `/log/proof/consistency`;
-  public and read-only, proofs only against a signed size.
+  fold scans a table, and the outbox is drained 500 entries per short transaction (P266). A row
+  whose key is NULL (SQLite allows it in a TEXT PRIMARY KEY) is refused by the trigger (P269).
+- **Serving:** `GET /log/state`, `/log/entries`, `/log/proof/inclusion`, `/log/proof/consistency`,
+  `/log/epochs`; public and read-only, proofs only against a signed size.
+- **Epochs (P269):** a rebuild (a new ingest) is a new epoch, not a silent rewrite: the log secret
+  is kept, `translog_epochs` keeps the old log's last signed state, and the new log's first state
+  signs a hand-over from it. Every state names its epoch.
 - **Optional:** `EMPORIA_TRANSPARENCY_LOG=off` (the triggers are taken out). Turned on later, every
   table is folded in from the start — unchanged rows add nothing — so a relay in use starts its log
-  with everything it holds.
+  with everything it holds; P269: every row the log held is checked again too, so one removed while
+  the log was off is logged as gone.
 - **Next** (`docs/proposals/relay-transparency-log.md`): clients checking it, relays comparing
   signed states, posting the root on chain.
 
