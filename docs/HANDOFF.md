@@ -21,7 +21,8 @@ until the user says). Unit suite 1,937, live 10/10. None of P251–P269 is teste
 - Chain anchoring (log step 4): which chain (Base Sepolia, or Robinhood testnet once its token
   and a facilitator are confirmed, `docs/proposals/robinhood-chain.md`), how often, spend cap.
   Any transaction needs the user's say-so.
-- NIP-77 note in the federation proposal: yes/no.
+- Note range-based set reconciliation (syncing two relays' Agora and listings by exchanging
+  fingerprints of ranges, not whole lists) in the federation proposal: yes/no.
 
 **3. Build, in order (next sessions):**
 1. Fixes from the hand tests.
@@ -207,7 +208,7 @@ Schema 22. 5 is in ROADMAP. The plan as written:
   testnet), a plain transaction with the root in calldata or a small contract, how often
   (hourly?), spend cap, operator pays. Any transaction needs the user's say-so.
 - **Robinhood Chain:** add it once the token address and a facilitator are confirmed?
-- Note NIP-77 (set reconciliation) in the federation proposal? It could fit Agora/listing sync
+- Note range-based set reconciliation in the federation proposal? It could fit Agora/listing sync
   later; it does not fit logs or chains.
 
 ### Next steps, in order
