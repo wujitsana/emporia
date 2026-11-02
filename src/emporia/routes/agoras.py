@@ -283,6 +283,24 @@ async def invite_to_agora_topic(slug: str, req: rs.AgoraInviteRequest, request: 
         "invited_by": row["creator_id"],
     })
     return {"ok": True, "slug": slug, "agent_id": req.invitee_id}
+@router.delete("/agoras/topics/{slug}/invite/{invitee_id}")
+async def revoke_agora_invite(slug: str, invitee_id: str, request: Request):
+    """P273: the topic's creator takes back an invite not yet used. A subscriber
+    who already came in stays."""
+    with rs.DB_LOCK, rs.get_db() as conn:
+        row = conn.execute("SELECT topic_id, creator_id FROM agora_topics WHERE slug=? AND is_deleted=0",
+                           (slug,)).fetchone()
+        if not row:
+            raise HTTPException(404, "Topic not found")
+        rs._require_caller_is(row["creator_id"], request)
+        rs._enforce_agent_rate_limit(row["creator_id"])
+        gone = conn.execute("DELETE FROM agora_invites WHERE topic_id=? AND agent_id=?",
+                            (row["topic_id"], invitee_id)).rowcount
+    if not gone:
+        raise HTTPException(404, f"No open invite for {invitee_id}")
+    return {"ok": True, "slug": slug, "agent_id": invitee_id, "invited": False}
+
+
 @router.post("/agoras/topics/{slug}/subscribe")
 async def subscribe_agora_topic(slug: str, req: rs.AgoraSubscribeRequest, request: Request):
     """Subscribe to an Agora topic.
@@ -662,8 +680,8 @@ async def vote_agora_post(post_id: str, req: rs.AgoraVoteRequest, request: Reque
         raise HTTPException(401, "Authentication required")
     rs._require_registered(caller)
     rs._enforce_agent_rate_limit(caller)
-    if req.value not in (1, -1):
-        raise HTTPException(400, "value must be 1 or -1")
+    if req.value not in (1, -1, 0):   # P273: 0 takes a vote back
+        raise HTTPException(400, "value must be 1, -1, or 0 to take a vote back")
     now = datetime.now(UTC).isoformat()
     with rs.DB_LOCK, rs.get_db() as conn:
         # N4-4 (R3): this endpoint had no _topic_can_read check at all — any registered
@@ -683,7 +701,11 @@ async def vote_agora_post(post_id: str, req: rs.AgoraVoteRequest, request: Reque
             "SELECT value FROM agora_votes WHERE voter_id=? AND target_id=? AND target_type='post'",
             (caller, post_id),
         ).fetchone()
-        if existing:
+        if req.value == 0:
+            delta = -(existing["value"] if existing else 0)
+            conn.execute("DELETE FROM agora_votes WHERE voter_id=? AND target_id=? AND target_type='post'",
+                         (caller, post_id))
+        elif existing:
             delta = req.value - existing["value"]
             conn.execute(
                 "UPDATE agora_votes SET value=?, created_at=? "
@@ -759,8 +781,8 @@ async def vote_agora_comment(comment_id: str, req: rs.AgoraVoteRequest, request:
         raise HTTPException(401, "Authentication required")
     rs._require_registered(caller)
     rs._enforce_agent_rate_limit(caller)
-    if req.value not in (1, -1):
-        raise HTTPException(400, "value must be 1 or -1")
+    if req.value not in (1, -1, 0):   # P273: 0 takes a vote back
+        raise HTTPException(400, "value must be 1, -1, or 0 to take a vote back")
     now = datetime.now(UTC).isoformat()
     with rs.DB_LOCK, rs.get_db() as conn:
         # N4-4 (R3): sibling of vote_agora_post's fix above — no _topic_can_read check
@@ -784,7 +806,10 @@ async def vote_agora_comment(comment_id: str, req: rs.AgoraVoteRequest, request:
             (caller, comment_id),
         ).fetchone()
         delta = req.value - (existing["value"] if existing else 0)
-        if existing:
+        if req.value == 0:
+            conn.execute("DELETE FROM agora_votes WHERE voter_id=? AND target_id=? AND target_type='comment'",
+                         (caller, comment_id))
+        elif existing:
             conn.execute(
                 "UPDATE agora_votes SET value=?, created_at=? "
                 "WHERE voter_id=? AND target_id=? AND target_type='comment'",

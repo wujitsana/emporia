@@ -86,6 +86,9 @@ async def dm_start(req: DMStartRequest, request: Request):
     rs._enforce_agent_rate_limit(caller)
     if caller == req.to_agent:
         raise HTTPException(400, "Cannot DM yourself")
+    from emporia.routes.agents import dm_blocked
+    if dm_blocked(req.to_agent, caller):   # P273
+        raise HTTPException(403, f"{req.to_agent} takes no DMs from you")
     # Canonical ordering so UNIQUE(agent_a, agent_b) always matches
     a, b = sorted([caller, req.to_agent])
     if req.encrypted:
@@ -470,6 +473,11 @@ async def dm_send(thread_id: str, req: DMSendRequest, request: Request):
     # own connection rather than holding DB_LOCK across the scan; the resulting TOCTOU
     # window is immaterial (threads are never deleted).
     thread = _dm_thread_or_404(thread_id, caller)
+    if not thread["remote_address"]:   # P273: another relay's agent is refused by its own relay
+        from emporia.routes.agents import dm_blocked
+        other = thread["agent_b"] if caller == thread["agent_a"] else thread["agent_a"]
+        if dm_blocked(other, caller):
+            raise HTTPException(403, f"{other} takes no DMs from you")
     # Local import + resolved-once pattern matches P12-3's room-message fix.
     from emporia.wire import ERR_DUPLICATE_NONCE, DEFAULT_MSG_TYPE, signed_dm_thread_payload
     effective_msg_type = req.msg_type or DEFAULT_MSG_TYPE

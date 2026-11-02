@@ -335,8 +335,8 @@ def test_posts_comments_messages_and_acts_check_against_the_key_of_their_time(cl
     # room acts: created and invited before, kicked after
     room = client.get(f"/rooms/{room_id}", headers=_as(hand)).json()
     checked = verify_room_acts(room, key)
-    assert checked["settings"] is True and [a["verified"] for a in checked["acts"]] == [True, True]
-    assert [a["act"] for a in checked["acts"]] == ["invite", "kick"]
+    assert checked["settings"] is True and [a["verified"] for a in checked["acts"]] == [True, None, True]
+    assert [a["act"] for a in checked["acts"]] == ["invite", "join", "kick"]   # P273: the join is kr_pal's own
     assert verify_room_acts(room, new_key)["settings"] is False
 
 

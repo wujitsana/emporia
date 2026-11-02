@@ -734,12 +734,15 @@ def verify_dm_message(
     )
 
 
-def verify_room_acts(room: dict[str, Any], creator_public_key_hex: str) -> dict[str, Any]:
+def verify_room_acts(room: dict[str, Any], creator_public_key_hex: str, key_of: Any = None) -> dict[str, Any]:
     """P243: check a room, as `GET /rooms/{id}` serves it, against its creator's
     signed acts. `settings`: True when the creator signed exactly the settings
     shown, False when the relay shows others or the signature fails, None when
     the room has no signed creation (made before P243). Each invite and kick is
-    marked `verified` the same way."""
+    marked `verified` the same way. P273: a join or leave is its member's own
+    act, checked against `key_of(member)` — `verified` None without one.
+    `unproven_members` names anyone the relay lists that no signed act puts
+    in the room (`room_members_by_acts`); None without `key_of`."""
     from emporia.wire import ROOM_SIGNED_SETTINGS
     acts = room.get("signed_acts") or []
     create = next((a for a in acts if a.get("act") == "create"), None)
@@ -754,11 +757,127 @@ def verify_room_acts(room: dict[str, Any], creator_public_key_hex: str) -> dict[
         if a.get("act") == "create":
             continue
         payload = a.get("payload") or {}
-        key = signing_key_for(creator_public_key_hex, a.get("at"))
+        own = a.get("act") in ("join", "leave")
+        signer = key_of(str(payload.get("agent_id") or "")) if own and key_of else creator_public_key_hex
+        key = signing_key_for(signer, a.get("at"))
+        ok = (bool(key) and payload.get("room_id") == room.get("room_id")
+              and verify(payload, a.get("signature", ""), key))
         checked.append({"act": a.get("act"), "target": a.get("target"), "at": a.get("at"),
-                        "verified": bool(key) and payload.get("room_id") == room.get("room_id")
-                        and verify(payload, a.get("signature", ""), key)})
-    return {"settings": settings, "acts": checked}
+                        "verified": None if own and not key_of else ok})
+    unproven = None
+    if key_of:
+        def keys(agent: str) -> Any:
+            return creator_public_key_hex if agent == room.get("creator_id") else key_of(agent)
+        unproven = sorted(set(room.get("members") or []) - room_members_by_acts(room, keys))
+    return {"settings": settings, "acts": checked, "unproven_members": unproven}
+
+
+class RoomMembershipUnproven(ValueError):
+    """P273: a relay lists a room member no signed act puts there."""
+
+
+def room_members_by_acts(room: dict[str, Any], key_of: Any) -> set[str]:
+    """P273: the members a room's signed acts put in it — what a sender seals to,
+    rather than the relay's list. `room` is `GET /rooms/{id}` (with its
+    `signed_acts`); `key_of(agent_id)` is the signing key this client pinned for
+    that agent (a `SigningKey`, so an act is checked against the key it was
+    signed with).
+
+    The creator is in by its signed creation. Anyone else is in by its own
+    signed join — in an invite room only if the creator signed an invite for
+    it — and out again by its own later signed leave, or for good by the
+    creator's signed kick. A relay can still withhold an act (a kick or a
+    leave); the log (P269) is what makes that visible. In an open or paid room
+    a relay can make an agent of its own and have it join — as anyone can, by
+    the room's own terms; what it cannot do is put one in an invite room, or
+    list an agent that never asked to join."""
+    from emporia.wire import (
+        signed_room_invite_payload,
+        signed_room_join_payload,
+        signed_room_kick_payload,
+        signed_room_leave_payload,
+        when_of,
+    )
+    room_id = room.get("room_id", "")
+    creator = room.get("creator_id", "")
+    acts = room.get("signed_acts") or []
+
+    def signed_by(agent: str, act: dict, expected: dict) -> bool:
+        key = signing_key_for(key_of(agent), act.get("at"))
+        return bool(key) and act.get("payload") == expected and verify(expected, act.get("signature", ""), key)
+
+    create = next((a for a in acts if a.get("act") == "create"), None)
+    if not create or not signed_by(creator, create, create.get("payload") or {}):
+        return set()
+    gate = (create.get("payload") or {}).get("gate_type")
+    invited: set[str] = set()
+    kicked: set[str] = set()
+    own: dict[str, list[tuple[Any, str]]] = {}
+    for a in acts:
+        p, at = a.get("payload") or {}, str(a.get("at") or "")
+        kind = a.get("act")
+        if kind == "invite" and signed_by(creator, a, signed_room_invite_payload(room_id, str(p.get("invitee_id")), at)):
+            invited.add(str(p.get("invitee_id")))
+        elif kind == "kick" and signed_by(creator, a, signed_room_kick_payload(
+                room_id, str(p.get("agent_id")), bool(p.get("refund")), at)):
+            kicked.add(str(p.get("agent_id")))
+        elif kind in ("join", "leave"):
+            who = str(p.get("agent_id") or "")
+            make = signed_room_join_payload if kind == "join" else signed_room_leave_payload
+            if who and when_of(at) is not None and signed_by(who, a, make(room_id, who, at)):
+                own.setdefault(who, []).append((when_of(at), kind))
+    members = {creator}
+    for who, steps in own.items():
+        # An agent's joins and leaves are ordered by its own signed times. An
+        # invite need not come first — two clocks — only exist.
+        if who == creator or who in kicked or (gate == "invite" and who not in invited):
+            continue
+        if max(steps)[1] == "join":
+            members.add(who)
+    return members
+
+
+def room_recipients(room: dict[str, Any], bundle: dict[str, Any], me: str, profile_id: str,
+                    relay_url: str) -> dict[str, str]:
+    """`{member: encryption key}` to seal a room message to, from the relay's
+    key bundle (`GET /rooms/{id}/encryption-keys`) and the room with its signed
+    acts (`GET /rooms/{id}`). Both clients call this one function.
+
+    Every peer key goes through `trust_peer_encryption_key()`, as on the DM
+    path. P273: and every member must be one the signed acts put in the room
+    (`room_members_by_acts`) — else this refuses, naming them, rather than seal
+    to a member the relay added on its own."""
+    recipients: dict[str, str] = {}
+    for member, entry in bundle.items():
+        if member == me:
+            recipients[member] = get_encryption_public_key_hex(profile_id)
+            continue
+        recipients[member] = trust_peer_encryption_key(
+            member, entry.get("encryption_public_key", ""), entry.get("signature", ""),
+            entry.get("public_key_hex", ""), relay_url, entry.get("stable_id", ""), entry.get("key_log"),
+            at=entry.get("at", ""),
+        )
+    own = get_public_key_hex(profile_id)
+    keys: dict[str, Any] = {}
+
+    def key_of(agent: str) -> Any:
+        if agent not in keys:
+            entry = bundle.get(agent) or {}
+            served = str(entry.get("public_key_hex") or "").lower()
+            if agent == me and served != own:
+                keys[agent] = SigningKey(own)              # never this agent's key on the relay's word
+            else:
+                keys[agent] = pinned_signing_key(agent, relay_url, served, entry.get("stable_id", ""),
+                                                 None, entry.get("key_log"))
+        return keys[agent]
+    unproven = sorted(set(recipients) - room_members_by_acts(room, key_of))
+    if unproven:
+        raise RoomMembershipUnproven(
+            f"the relay lists {', '.join(unproven)} as members of room {room.get('room_id')}, but no signed "
+            f"act puts them there (each joins by its own signed join, and an invite room needs the creator's "
+            f"signed invite) — refusing to seal to them. A member from before joins were signed can sign one "
+            f"now by calling join_room again.")
+    return recipients
 
 
 def verify_agora_post(topic_slug: str, post: dict[str, Any], author_public_key_hex: str) -> bool | None:

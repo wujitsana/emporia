@@ -1141,6 +1141,13 @@ async def join_session(session_id: str, req: rs.JoinSessionRequest, request: Req
             session_id, req.agent_id, req.at), req.signature):
         raise HTTPException(403, "the join's signature does not verify against this agent's key")
     identity_verified = True
+    # P273: a join signed before the agent's last leave of this game is an old
+    # one replayed — it would seat again a player who left.
+    with rs.DB_LOCK, rs.get_db() as conn:
+        left = conn.execute("SELECT at FROM session_leaves WHERE session_id = ? AND agent_id = ? "
+                            "ORDER BY left_at DESC LIMIT 1", (session_id, req.agent_id)).fetchone()
+    if left and (wire.when_of(req.at) or datetime.min.replace(tzinfo=UTC)) <= wire.when_of(left["at"]):
+        raise HTTPException(409, "this join was signed before you left this game — sign a new one")
     if s["status"] != "waiting":
         raise HTTPException(400, f"Session not joinable: {s['status']}")
     if req.agent_id in s["participants"]:
@@ -1706,6 +1713,57 @@ async def dispute_delivery(session_id: str, req: rs.DisputeDeliveryRequest, requ
             signature=req.signature,
         ),
     )
+class LeaveSessionRequest(BaseModel):
+    at: str
+    signature: str   # Ed25519 over wire.signed_session_leave_payload()
+
+
+@router.post("/sessions/{session_id}/leave")
+async def leave_session(session_id: str, req: LeaveSessionRequest, request: Request):
+    """P273: a player leaves a game that has not started, by its own signed
+    act, and its stake is released — the game stays open for the others.
+    The creator ends a game it made with /abandon; once a game has started,
+    leaving it is abandoning it."""
+    caller = rs._dashboard_agent_id(request)
+    if not caller:
+        raise HTTPException(401, "Authentication required")
+    s = rs.load_session(session_id)
+    if not s:
+        raise HTTPException(404, "Session not found")
+    rs._enforce_agent_rate_limit(caller)
+    if caller not in s["participants"]:
+        raise HTTPException(404, "Not a player in this session")
+    if caller == s["participants"][0]:
+        raise HTTPException(400, "The creator ends a game it made with /abandon")
+    if s["status"] != "waiting":
+        raise HTTPException(409, f"This game is {s['status']}: only one not yet started can be left; "
+                                 "/abandon ends it for everyone")
+    from emporia import wire
+    from emporia.routes.agents import _signed_at
+    _signed_at(req.at)
+    if not rs.AGENT_REGISTRY.verify_signature(caller, wire.signed_session_leave_payload(session_id, caller, req.at),
+                                              req.signature):
+        raise HTTPException(403, "the leave's signature does not verify against this agent's key")
+    now = datetime.now(UTC).isoformat()
+    # Read and written under one lock, from the row as it is now: a join or a
+    # start that landed since the load above is kept, not written over.
+    with rs.DB_LOCK, rs.get_db() as conn:
+        row = conn.execute("SELECT status, participants_json FROM sessions WHERE session_id = ?",
+                           (session_id,)).fetchone()
+        players = json.loads(row["participants_json"] or "[]") if row else []
+        if not row or row["status"] != "waiting" or caller not in players:
+            raise HTTPException(409, "The session changed meanwhile — load it again.")
+        conn.execute("UPDATE sessions SET participants_json = ?, updated_at = ? WHERE session_id = ?",
+                     (json.dumps([p for p in players if p != caller]), now, session_id))
+        conn.execute("DELETE FROM participants WHERE session_id = ? AND agent_id = ?", (session_id, caller))
+        conn.execute("INSERT INTO session_leaves (session_id, agent_id, at, signature, left_at) "
+                     "VALUES (?,?,?,?,?)", (session_id, caller, req.at, req.signature, now))
+    released = [await _release_hold(p) for p in rs.get_session_payments(session_id)
+                if p.get("agent_id") == caller and p.get("payment_intent_id")]
+    await rs.broadcast_to_session(session_id, {"type": "participant_left", "agent_id": caller})
+    return {"status": "left", "session_id": session_id, "stake_released": released}
+
+
 @router.post("/sessions/{session_id}/abandon")
 async def abandon_session(session_id: str, request: Request, req: dict = None):
     """Mark a session abandoned and release all escrowed stake holds.

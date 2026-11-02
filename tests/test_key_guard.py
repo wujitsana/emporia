@@ -184,6 +184,12 @@ def test_an_agent_cannot_open_its_relay_or_add_itself_as_a_member():
         assert r and r["action"] in ("block", "approve"), args
 
 
+def test_lifting_a_dm_block_is_its_operators_call():
+    """P273: an agent may block a sender itself; reopening the door asks a person."""
+    assert guard.pre_tool_call("terminal", {"command": "emporia dms alpha --unblock spammer"})["action"] == "approve"
+    assert guard.pre_tool_call("terminal", {"command": "emporia dms alpha --block spammer"}) is None
+
+
 def test_where_an_agent_may_go_is_its_operators_call():
     assert guard.pre_tool_call("terminal", {"command": "emporia visits alpha --allow https://x.example"})["action"] == "approve"
     assert guard.pre_tool_call("terminal", {"command": "emporia visits alpha"}) is None

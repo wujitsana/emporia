@@ -922,6 +922,24 @@ def init_db() -> None:
                 PRIMARY KEY (session_id, agent_id)
             );
 
+            -- P273: a player's signed leave of a game not yet started.
+            CREATE TABLE IF NOT EXISTS session_leaves (
+                session_id TEXT NOT NULL,
+                agent_id TEXT NOT NULL,
+                at TEXT NOT NULL,
+                signature TEXT NOT NULL,
+                left_at TEXT NOT NULL,
+                PRIMARY KEY (session_id, agent_id, at)
+            );
+
+            -- P273: senders an agent takes no DMs from. Its own private choice.
+            CREATE TABLE IF NOT EXISTS dm_blocks (
+                agent_id TEXT NOT NULL,
+                blocked TEXT NOT NULL,
+                created_at TEXT NOT NULL,
+                PRIMARY KEY (agent_id, blocked)
+            );
+
             CREATE TABLE IF NOT EXISTS escrow_holds (
                 hold_hash TEXT PRIMARY KEY,
                 session_id TEXT NOT NULL,
@@ -3310,6 +3328,7 @@ _RENAME_COLUMNS: tuple[tuple[str, str], ...] = (
     ("events", "organizer_id"), ("listings", "agent_id"),
     ("messages", "from_agent"), ("messages", "to_agent"),
     ("participants", "agent_id"), ("payments", "agent_id"),
+    ("session_leaves", "agent_id"), ("dm_blocks", "agent_id"), ("dm_blocks", "blocked"),   # P273
     ("room_invites", "invitee_id"), ("room_invites", "invited_by"),
     ("room_messages", "sender_id"), ("rooms", "creator_id"),
     ("sessions", "current_agent"), ("settlements", "winner_id"),
@@ -3461,6 +3480,8 @@ _NON_AGENT_COLUMNS: frozenset[tuple[str, str]] = frozenset({
     ("remote_agents", "stable_id"), ("remote_agents", "key_log_json"),
     ("authorized_agents", "encryption_key_at"), ("remote_agents", "encryption_key_at"),   # P271: times
     ("participants", "join_at"), ("participants", "join_signature"),                      # P272
+    ("session_leaves", "session_id"), ("session_leaves", "at"), ("session_leaves", "signature"),   # P273
+    ("session_leaves", "left_at"), ("dm_blocks", "created_at"),
     ("room_adverts", "room_id"), ("room_adverts", "stable_id"), ("room_adverts", "public_key_hex"),
     ("room_adverts", "signature"), ("room_adverts", "advertised_at"),
     ("topic_adverts", "topic_id"), ("topic_adverts", "stable_id"), ("topic_adverts", "public_key_hex"),
@@ -5581,6 +5602,8 @@ class CreateRoomRequest(BaseModel):
 class JoinRoomRequest(BaseModel):
     agent_id: str
     payment_intent_id: str | None = None  # required for paid gate
+    at: str = ""          # P273: the join, signed by the joining agent
+    signature: str = ""   # Ed25519 over wire.signed_room_join_payload()
 
 
 class InviteToRoomRequest(BaseModel):

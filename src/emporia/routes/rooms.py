@@ -26,8 +26,11 @@ from emporia.wire import (
     ERR_DUPLICATE_NONCE,
     signed_room_advert_payload,
     signed_room_invite_payload,
+    signed_room_join_payload,
     signed_room_kick_payload,
+    signed_room_leave_payload,
     signed_room_payload,
+    signed_room_uninvite_payload,
 )
 
 router = APIRouter()
@@ -35,6 +38,25 @@ router = APIRouter()
 
 def _require_creator_signed(creator: str, signed: dict, at: str, signature: str) -> None:
     """P243: an invite or kick is the creator's signed act, made just now."""
+    _require_signed_by(creator, signed, at, signature, "the room creator's")
+
+
+def _last_own_act(room_id: str, agent_id: str) -> tuple[str, str]:
+    """P273: ("join" or "leave", its signed time) — the last an agent signed in
+    this room, or ("", "")."""
+    with rs.DB_LOCK, rs.get_db() as conn:
+        row = conn.execute("SELECT act, at FROM room_acts WHERE room_id = ? AND by_agent = ? "
+                           "AND act IN ('join','leave') ORDER BY rowid DESC LIMIT 1", (room_id, agent_id)).fetchone()
+    return (row["act"], row["at"]) if row else ("", "")
+
+
+def _when(at: str) -> datetime:
+    from emporia.wire import when_of
+    return when_of(at) or datetime.min.replace(tzinfo=UTC)
+
+
+def _require_signed_by(agent_id: str, signed: dict, at: str, signature: str, whose: str) -> None:
+    """A room act signed by `agent_id`, made just now (within 10 minutes)."""
     from emporia.deletion import FRESH
     try:
         when = datetime.fromisoformat(at)
@@ -42,8 +64,8 @@ def _require_creator_signed(creator: str, signed: dict, at: str, signature: str)
         raise HTTPException(400, "at must be an ISO 8601 time") from e
     if when.tzinfo is None or abs(datetime.now(UTC) - when) > FRESH:
         raise HTTPException(400, "at must be in UTC, within 10 minutes of the relay's clock")
-    if not rs.AGENT_REGISTRY.verify_signature(creator, signed, signature):
-        raise HTTPException(403, "signature does not match the room creator's key")
+    if not rs.AGENT_REGISTRY.verify_signature(agent_id, signed, signature):
+        raise HTTPException(403, f"signature does not match {whose} key")
 
 
 def _record_act(room_id: str, act: str, target: str | None, by: str, at: str, signed: dict,
@@ -276,6 +298,20 @@ async def join_room(room_id: str, req: rs.JoinRoomRequest, request: Request):
     if not room:
         raise HTTPException(404, "Room not found")
     rs._require_registered(req.agent_id)
+    # P273: the joining agent signs its join, kept as a room act — a member a
+    # relay lists with no signed join is one a sender refuses to seal to. On a
+    # join paid with a payment token alone (no sign-in) it is what proves who.
+    if not req.signature or not req.at:
+        raise HTTPException(401, "a join is signed by the joining agent (at, signature over "
+                                 "wire.signed_room_join_payload)")
+    joined = signed_room_join_payload(room_id, req.agent_id, req.at)
+    _require_signed_by(req.agent_id, joined, req.at, req.signature, "the joining agent's")
+    identity_verified = True
+    # A join signed before the agent's last act here is an old one replayed —
+    # after a leave it would put back someone who left.
+    last_act, last_at = _last_own_act(room_id, req.agent_id)
+    if last_at and _when(req.at) <= _when(last_at):
+        raise HTTPException(409, "this join was signed before your last join or leave here — sign a new one")
     # N12-5 (R5): identity_verified is False on the MPP-payment branch, where agent_id is
     # an unproven claim — don't spend someone else's write budget on the strength of it.
     if identity_verified:
@@ -290,6 +326,10 @@ async def join_room(room_id: str, req: rs.JoinRoomRequest, request: Request):
             payer_id=req.agent_id, creator_id=room.creator_id,
             access_duration_days=room.access_duration_days,
         )
+        # P273: a member from before joins were signed, or one whose join a
+        # crash cut short, signs it now — and so is one a sender can seal to.
+        if last_act != "join":
+            _record_act(room_id, "join", req.agent_id, req.agent_id, req.at, joined, req.signature)
         return {"status": "already_member", "room_id": room_id}
     # P18-4: joining an encrypted room without a published key would make every
     # subsequent message in that room fail coverage validation — one member with no
@@ -405,6 +445,7 @@ async def join_room(room_id: str, req: rs.JoinRoomRequest, request: Request):
         rooms_db.add_member(room_id, req.agent_id, db_path=rs.DATABASE_PATH)
     except ValueError as e:
         raise HTTPException(403, str(e))
+    _record_act(room_id, "join", req.agent_id, req.agent_id, req.at, joined, req.signature)
 
     if room.gate_type == "paid" and confirmed_pi:
         await rs._settle_access_payment(
@@ -510,6 +551,61 @@ async def kick_from_room(room_id: str, req: rs.KickFromRoomRequest, request: Req
         "room_name": room.name,
     })
     return {"status": "kicked", "agent_id": req.target_agent_id, "refund": refund_result}
+class SignedActRequest(BaseModel):
+    at: str
+    signature: str
+
+
+class UninviteRequest(BaseModel):
+    invitee_id: str
+    at: str
+    signature: str
+
+
+@router.post("/rooms/{room_id}/leave")
+async def leave_room(room_id: str, req: SignedActRequest, request: Request):
+    """P273: a member leaves, by its own signed act. Not a kick: an invite or a
+    paid access window still stands, so joining again is a new signed join.
+    The creator cannot leave the room they made."""
+    caller = rs._dashboard_agent_id(request)
+    if not caller:
+        raise HTTPException(401, "Authentication required")
+    room = rooms_db.get_room(room_id, db_path=rs.DATABASE_PATH)
+    if not room:
+        raise HTTPException(404, "Room not found")
+    rs._enforce_agent_rate_limit(caller)
+    if caller == room.creator_id:
+        raise HTTPException(400, "The creator cannot leave the room they made")
+    signed = signed_room_leave_payload(room_id, caller, req.at)
+    _require_signed_by(caller, signed, req.at, req.signature, "the leaving agent's")
+    if not rooms_db.remove_member(room_id, caller, db_path=rs.DATABASE_PATH):
+        raise HTTPException(404, "Not a member of this room")
+    _record_act(room_id, "leave", caller, caller, req.at, signed, req.signature)
+    await rs.broadcast_to_session(f"room:{room_id}", {"type": "member_left", "room_id": room_id,
+                                                      "agent_id": caller})
+    return {"status": "left", "room_id": room_id}
+
+
+@router.post("/rooms/{room_id}/invite/revoke")
+async def revoke_room_invite(room_id: str, req: UninviteRequest, request: Request):
+    """P273: the creator takes back an invite not yet used, by a signed act. An
+    invitee who already joined stays a member — removing one is a kick."""
+    room = rooms_db.get_room(room_id, db_path=rs.DATABASE_PATH)
+    if not room:
+        raise HTTPException(404, "Room not found")
+    rs._require_caller_is(room.creator_id, request)
+    rs._enforce_agent_rate_limit(room.creator_id)
+    signed = signed_room_uninvite_payload(room_id, req.invitee_id, req.at)
+    _require_creator_signed(room.creator_id, signed, req.at, req.signature)
+    if req.invitee_id in room.members:
+        raise HTTPException(409, f"{req.invitee_id} has already joined; removing a member is a kick")
+    if not rooms_db.has_invite(room_id, req.invitee_id, db_path=rs.DATABASE_PATH):
+        raise HTTPException(404, f"No open invite for {req.invitee_id}")
+    rooms_db.remove_invite(room_id, req.invitee_id, db_path=rs.DATABASE_PATH)
+    _record_act(room_id, "uninvite", req.invitee_id, room.creator_id, req.at, signed, req.signature)
+    return {"status": "invite_revoked", "room_id": room_id, "invitee_id": req.invitee_id}
+
+
 @router.post("/rooms/{room_id}/message")
 async def send_room_message(room_id: str, req: rs.SendRoomMessageRequest, request: Request):
     caller = rs._dashboard_agent_id(request)

@@ -1133,3 +1133,17 @@ def test_who_funded_a_bounty_and_its_payment_never_leave_the_relay(client):
         text = json.dumps(mine)
         assert nous not in text and "payment_intent_id" not in text and "metadata_json" not in text
         assert mine["metadata"]["prize_cents"] == 5000          # what an entrant needs stays
+
+
+def test_an_entry_can_be_withdrawn_while_the_bounty_is_open(client):
+    """P273: before the contest starts an entrant may take its entry back."""
+    funder = _mk_agent(client, nous_id="nous_funder_" + uuid.uuid4().hex[:6])
+    entrant = _mk_agent(client, nous_id="nous_entrant_" + uuid.uuid4().hex[:6])
+    listing_id = _post_bounty(client, funder).json()["listing_id"]
+    assert client.delete(f"/bounties/{listing_id}/enter", headers=_hdr(entrant)).status_code == 404
+    assert client.post(f"/bounties/{listing_id}/enter", headers=_hdr(entrant)).status_code == 200
+    r = client.delete(f"/bounties/{listing_id}/enter", headers=_hdr(entrant))
+    assert r.status_code == 200 and r.json()["entered"] is False
+    board = client.get("/bounties").json()["bounties"]
+    assert next(b for b in board if b["listing_id"] == listing_id)["entrant_count"] == 0
+    assert client.post(f"/bounties/{listing_id}/enter", headers=_hdr(entrant)).status_code == 200   # and back

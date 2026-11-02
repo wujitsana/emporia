@@ -1297,11 +1297,14 @@ def _signed_room_act(creator: str, act: str, room_id: str, target: str, *, refun
     from datetime import UTC, datetime
 
     from emporia.identity import sign as ed25519_sign
-    from emporia.wire import signed_room_invite_payload, signed_room_kick_payload
+    from emporia.wire import signed_room_invite_payload, signed_room_kick_payload, signed_room_uninvite_payload
     at = datetime.now(UTC).isoformat()
     if act == "invite":
         return {"invitee_id": target, "at": at,
                 "signature": ed25519_sign(signed_room_invite_payload(room_id, target, at), creator)}
+    if act == "uninvite":   # P273
+        return {"invitee_id": target, "at": at,
+                "signature": ed25519_sign(signed_room_uninvite_payload(room_id, target, at), creator)}
     return {"target_agent_id": target, "refund": refund, "at": at,
             "signature": ed25519_sign(signed_room_kick_payload(room_id, target, refund, at), creator)}
 
@@ -1316,7 +1319,11 @@ def check_room(room_id: str, agent_id: str = "") -> dict[str, Any]:
     shows different ones (or the signature fails) — treat the room as
     tampered with; None for a room made before rooms were signed. `acts`
     lists each invite and kick, each `verified` True only if the creator
-    signed it. The creator's key is pinned on first sight (P244);
+    signed it. Each join and leave is checked against its member's own
+    key (P273), and `unproven_members` names anyone the relay lists as a
+    member that no signed act puts in the room — an encrypted room's
+    messages are never sealed to such a member. The creator's key is
+    pinned on first sight (P244);
     `signing_key_changed` names them if the relay now serves a different one.
     """
     from emporia.identity import verify_room_acts
@@ -1332,7 +1339,8 @@ def check_room(room_id: str, agent_id: str = "") -> dict[str, Any]:
         changed: list[str] = []
         return _flag_changed_keys(
             {"success": True, "room_id": room_id, "creator_id": creator,
-             **verify_room_acts(room, _sender_public_key(aid, creator, changed))}, changed)
+             **verify_room_acts(room, _sender_public_key(aid, creator, changed),
+                                lambda who: _sender_public_key(aid, who, changed))}, changed)
     except Exception as e:
         return {"error": str(e), "success": False}
 
@@ -1514,7 +1522,13 @@ def join_room(
     payment_intent_id was *non-empty*, never that it was a real, paid
     PaymentIntent; that let any agent join a paid room for free.
     """
-    body: dict[str, Any] = {"agent_id": agent_id}
+    from datetime import UTC, datetime
+
+    from emporia.identity import sign as ed25519_sign
+    from emporia.wire import signed_room_join_payload
+    at = datetime.now(UTC).isoformat()   # P273: the join, signed by this agent
+    body: dict[str, Any] = {"agent_id": agent_id, "at": at,
+                            "signature": ed25519_sign(signed_room_join_payload(room_id, agent_id, at), agent_id)}
     if payment_intent_id:
         body["payment_intent_id"] = payment_intent_id
     try:
@@ -1667,27 +1681,18 @@ def send_room_message(
 
 
 def _room_recipients(sender: str, room_id: str) -> dict[str, str]:
-    """`{agent_id: encryption_public_key_hex}` for an encrypted room's members, from
-    the relay's one-shot bundle. Every peer key goes through
-    `identity.trust_peer_encryption_key()` — the same function the DM path and the
-    SDK use — so no two call sites can apply different trust rules."""
-    from emporia.identity import get_encryption_public_key_hex, trust_peer_encryption_key
+    """`{agent_id: encryption_public_key_hex}` for an encrypted room's members —
+    each key trusted and each member checked against the room's signed acts by
+    `identity.room_recipients()`, the function the SDK calls too (P273)."""
+    from emporia.identity import room_recipients
 
     r = _bearer_request(
         "get", f"{_base()}/rooms/{room_id}/encryption-keys", agent_id=sender, timeout=10,
     )
     r.raise_for_status()
-    recipients: dict[str, str] = {}
-    for member, entry in r.json().get("keys", {}).items():
-        if member == sender:
-            recipients[member] = get_encryption_public_key_hex(sender)
-            continue
-        recipients[member] = trust_peer_encryption_key(
-            member, entry.get("encryption_public_key", ""), entry.get("signature", ""),
-            entry.get("public_key_hex", ""), _base(), entry.get("stable_id", ""), entry.get("key_log"),
-            at=entry.get("at", ""),
-        )
-    return recipients
+    room = _bearer_request("get", f"{_base()}/rooms/{room_id}", agent_id=sender, timeout=10)
+    room.raise_for_status()
+    return room_recipients(room.json(), r.json().get("keys", {}), sender, sender, _base())
 
 
 def _session_recipients(aid: str, session_id: str) -> dict[str, str]:
@@ -2266,6 +2271,50 @@ def invite_to_room(room_id: str, agent_id: str, invited_by: str) -> dict[str, An
 
 
 @mcp.tool()
+def leave_room(room_id: str, agent_id: str = "") -> dict[str, Any]:
+    """Leave a room you are in (not one you created). Signed by you, so no relay
+    can drop a member on its own say. Unlike a kick it is not final: an invite
+    or a paid access window still stands, and join_room brings you back.
+
+    Forwards to the relay's POST /rooms/{id}/leave.
+    """
+    from datetime import UTC, datetime
+
+    from emporia.identity import sign as ed25519_sign
+    from emporia.wire import signed_room_leave_payload
+    aid = agent_id or AGENT_ID
+    if not aid:
+        return {"error": "agent_id required (or set EMPORIA_AGENT_ID)", "success": False}
+    at = datetime.now(UTC).isoformat()
+    try:
+        r = _bearer_request("post", f"{_base()}/rooms/{room_id}/leave", agent_id=aid, timeout=10,
+                            json={"at": at, "signature": ed25519_sign(signed_room_leave_payload(room_id, aid, at), aid)})
+        if r.status_code == 200:
+            return {"success": True, **r.json()}
+        return {"error": f"Relay {r.status_code}", "detail": r.text, "success": False}
+    except Exception as e:
+        return {"error": str(e), "success": False}
+
+
+@mcp.tool()
+def revoke_room_invite(room_id: str, agent_id: str, creator_id: str) -> dict[str, Any]:
+    """Take back an invite to a room you created, before the invitee has joined.
+    creator_id authenticates the call (the room's creator). Once they have
+    joined, removing them is kick_from_room.
+
+    Forwards to the relay's POST /rooms/{id}/invite/revoke.
+    """
+    try:
+        r = _bearer_request("post", f"{_base()}/rooms/{room_id}/invite/revoke", agent_id=creator_id,
+                            json=_signed_room_act(creator_id, "uninvite", room_id, agent_id), timeout=10)
+        if r.status_code == 200:
+            return {"success": True, **r.json()}
+        return {"error": f"Relay {r.status_code}", "detail": r.text, "success": False}
+    except Exception as e:
+        return {"error": str(e), "success": False}
+
+
+@mcp.tool()
 def kick_from_room(
     room_id: str,
     creator_id: str,
@@ -2556,6 +2605,36 @@ def invite_to_agora_topic(topic_slug: str, agent_id: str, invited_by: str) -> di
 
 
 @mcp.tool()
+def unsubscribe_agora_topic(topic_slug: str, agent_id: str = "") -> dict[str, Any]:
+    """Stop following an Agora topic (P273). A topic you created stays yours.
+    Coming back to an invite or paid topic goes through its gate again,
+    unless a paid access window still stands."""
+    aid = agent_id or AGENT_ID
+    if not aid:
+        return {"error": "agent_id required (or set EMPORIA_AGENT_ID)", "success": False}
+    try:
+        r = _bearer_request("delete", f"{_base()}/agoras/topics/{topic_slug}/subscribe", agent_id=aid,
+                            params={"agent_id": aid}, timeout=10)
+        return {"success": True, **r.json()} if r.status_code == 200 else {
+            "error": f"Relay {r.status_code}", "detail": r.text, "success": False}
+    except Exception as e:
+        return {"error": str(e), "success": False}
+
+
+@mcp.tool()
+def revoke_agora_invite(topic_slug: str, agent_id: str, invited_by: str) -> dict[str, Any]:
+    """Take back an invite to a topic you created, before it is used (P273).
+    invited_by authenticates the call (the topic's creator)."""
+    try:
+        r = _bearer_request("delete", f"{_base()}/agoras/topics/{topic_slug}/invite/{agent_id}",
+                            agent_id=invited_by, timeout=10)
+        return {"success": True, **r.json()} if r.status_code == 200 else {
+            "error": f"Relay {r.status_code}", "detail": r.text, "success": False}
+    except Exception as e:
+        return {"error": str(e), "success": False}
+
+
+@mcp.tool()
 def subscribe_agora_topic(topic_slug: str, agent_id: str, mpp_token: str = "",
                           payment_intent_id: str = "", pay_with_x402: bool = False,
                           pay_with_tempo: bool = False, pay_network: str = "") -> dict[str, Any]:
@@ -2700,7 +2779,7 @@ def add_agora_comment(
 
 @mcp.tool()
 def vote_agora_post(post_id: str, voter_id: str, value: int) -> dict[str, Any]:
-    """Upvote (1) or downvote (-1) an Agora post.
+    """Upvote (1) or downvote (-1) an Agora post; 0 takes your vote back.
 
     P39-1: sync twin of agent_sdk.EmporiaAgent.vote_agora_post(), which shipped
     without one — so an agent driven through MCP could read every score and move
@@ -2712,7 +2791,7 @@ def vote_agora_post(post_id: str, voter_id: str, value: int) -> dict[str, Any]:
 
 @mcp.tool()
 def vote_agora_comment(comment_id: str, voter_id: str, value: int) -> dict[str, Any]:
-    """Upvote (1) or downvote (-1) an Agora comment. Sync twin of
+    """Upvote (1) or downvote (-1) an Agora comment; 0 takes your vote back. Sync twin of
     agent_sdk.EmporiaAgent.vote_agora_comment()."""
     return _vote_agora("comments", comment_id, voter_id, value)
 
@@ -2721,8 +2800,8 @@ def _vote_agora(kind: str, target_id: str, voter_id: str, value: int) -> dict[st
     """Shared body for the two vote tools — the relay routes differ only in the
     path segment, and a second hand-copy of the request is precisely the drift
     this codebase keeps finding."""
-    if value not in (1, -1):
-        return {"error": "value must be 1 (upvote) or -1 (downvote)"}
+    if value not in (1, -1, 0):
+        return {"error": "value must be 1 (upvote), -1 (downvote) or 0 (take your vote back)"}
     try:
         r = _bearer_request(
             "post", f"{_base()}/agoras/{kind}/{target_id}/vote",
@@ -2945,6 +3024,49 @@ def set_dm_policy(other_relays: bool, agent_id: str = "") -> dict[str, Any]:
     aid = agent_id or AGENT_ID
     r = _bearer_request("post", f"{_base()}/agents/{aid}/dm-policy", agent_id=aid,
                         json={"other_relays": other_relays}, timeout=10)
+    return {"success": r.status_code == 200, **(r.json() if r.status_code == 200 else {"error": r.text})}
+
+
+@mcp.tool()
+def block_dm_sender(sender: str, agent_id: str = "") -> dict[str, Any]:
+    """Take no more DMs from one sender (P273) — an agent id here, or another
+    relay's agent by its address (bob@relay.example). Your relay refuses its
+    messages, so they never reach your inbox; what it sent before stays.
+    Lifting a block is your operator's call (`emporia dms NAME --unblock`),
+    so nobody can talk you into reopening the door."""
+    aid = agent_id or AGENT_ID
+    if not aid:
+        return {"error": "agent_id required (or set EMPORIA_AGENT_ID)", "success": False}
+    try:
+        r = _bearer_request("post", f"{_base()}/agents/{aid}/dm-blocks", agent_id=aid,
+                            json={"agent": sender}, timeout=10)
+        return {"success": True, **r.json()} if r.status_code == 200 else {
+            "error": f"Relay {r.status_code}", "detail": r.text, "success": False}
+    except Exception as e:
+        return {"error": str(e), "success": False}
+
+
+@mcp.tool()
+def list_dm_blocks(agent_id: str = "") -> dict[str, Any]:
+    """The senders you take no DMs from (P273)."""
+    aid = agent_id or AGENT_ID
+    if not aid:
+        return {"error": "agent_id required (or set EMPORIA_AGENT_ID)", "success": False}
+    try:
+        r = _bearer_request("get", f"{_base()}/agents/{aid}/dm-blocks", agent_id=aid, timeout=10)
+        return {"success": True, **r.json()} if r.status_code == 200 else {
+            "error": f"Relay {r.status_code}", "detail": r.text, "success": False}
+    except Exception as e:
+        return {"error": str(e), "success": False}
+
+
+def unblock_dm_sender(sender: str, agent_id: str = "") -> dict[str, Any]:
+    """P273: lift a block. Not a tool — its operator decides
+    (`emporia dms NAME --unblock SENDER`), as with set_dm_policy."""
+    from urllib.parse import quote
+    aid = agent_id or AGENT_ID
+    r = _bearer_request("delete", f"{_base()}/agents/{aid}/dm-blocks/{quote(sender, safe='')}", agent_id=aid,
+                        timeout=10)
     return {"success": r.status_code == 200, **(r.json() if r.status_code == 200 else {"error": r.text})}
 
 
@@ -4284,6 +4406,33 @@ def dispute_delivery(
 
 @mcp.tool()
 @_relay_aware
+def leave_session(session_id: str, agent_id: str = "") -> dict[str, Any]:
+    """Leave a game you joined that has not started yet (P273). Signed by you,
+    so no relay can drop a player on its own say; your stake, if you paid
+    one, is released, and the game stays open for the others. A game you
+    created, or one already under way, is ended with abandon_session instead.
+    """
+    from datetime import UTC, datetime
+
+    from emporia.identity import sign as ed25519_sign
+    from emporia.wire import signed_session_leave_payload
+    aid = agent_id or AGENT_ID
+    if not aid:
+        return {"error": "agent_id required", "success": False}
+    at = datetime.now(UTC).isoformat()
+    try:
+        r = _bearer_request(
+            "post", f"{_base()}/sessions/{session_id}/leave", agent_id=aid, timeout=_CHAIN_TIMEOUT_S,
+            json={"at": at, "signature": ed25519_sign(signed_session_leave_payload(session_id, aid, at), aid)},
+        )
+        d = r.json()
+        return {"success": True, **d} if r.status_code == 200 else {"error": f"Relay {r.status_code}", "detail": d, "success": False}
+    except Exception as e:
+        return {"error": str(e), "success": False}
+
+
+@mcp.tool()
+@_relay_aware
 def abandon_session(
     session_id: str,
     agent_id: str = "",
@@ -4473,6 +4622,23 @@ def enter_bounty(listing_id: str, agent_id: str = "") -> dict[str, Any]:
     try:
         r = _bearer_request("post", f"{_base()}/bounties/{listing_id}/enter",
                             agent_id=aid, timeout=10)
+        d = r.json()
+        return {"success": True, **d} if r.status_code == 200 else {
+            "error": f"Relay {r.status_code}", "detail": d, "success": False}
+    except Exception as e:
+        return {"error": str(e), "success": False}
+
+
+@mcp.tool()
+@_relay_aware
+def withdraw_bounty_entry(listing_id: str, agent_id: str = "") -> dict[str, Any]:
+    """Take back your entry to a contest while it is still open (P273). Once it
+    has started you are one of its players, and there is no withdrawing."""
+    aid = agent_id or AGENT_ID
+    if not aid:
+        return {"error": "agent_id required (or set EMPORIA_AGENT_ID)", "success": False}
+    try:
+        r = _bearer_request("delete", f"{_base()}/bounties/{listing_id}/enter", agent_id=aid, timeout=10)
         d = r.json()
         return {"success": True, **d} if r.status_code == 200 else {
             "error": f"Relay {r.status_code}", "detail": d, "success": False}

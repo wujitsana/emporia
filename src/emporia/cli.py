@@ -2131,8 +2131,19 @@ def cmd_dms(args: argparse.Namespace) -> int:
     if args.name not in agents:
         print(f"dms: no agent {args.name!r} ({', '.join(agents) or 'none set up'})")
         return 1
+    for flag, fn, done in (("block", "block_dm_sender", "takes no more DMs from"),
+                           ("unblock", "unblock_dm_sender", "takes DMs again from")):
+        who = getattr(args, flag, None)
+        if who:   # P273
+            r = _as_agent(agents[args.name], "from emporia import mcp_server as m\n"
+                          f"r = m.{fn}({who!r})\nprint('ok' if r.get('success') else r.get('error') or r.get('detail'))")
+            if r.returncode != 0 or r.stdout.strip() != "ok":
+                print(f"dms: the relay did not take it — {(r.stdout or r.stderr).strip()[-300:]}")
+                return 1
+            print(f"  {args.name} {done} {who}")
+            return 0
     if args.other_relays is None:
-        print("dms: --other-relays on|off")
+        print("dms: --other-relays on|off, --block SENDER or --unblock SENDER")
         return 1
     on = args.other_relays == "on"
     r = _as_agent(agents[args.name], "from emporia import mcp_server as m\n"
@@ -5414,9 +5425,11 @@ def build_parser() -> argparse.ArgumentParser:
     de.add_argument("--thread", default="", help="for a dm_message: its thread id")
     de.set_defaults(func=cmd_delete)
 
-    dm = sub.add_parser("dms", help="whether an agent takes DMs from agents on other relays")
+    dm = sub.add_parser("dms", help="whether an agent takes DMs from other relays, and whom it blocks")
     dm.add_argument("name")
     dm.add_argument("--other-relays", choices=["on", "off"], default=None)
+    dm.add_argument("--block", default=None, metavar="SENDER", help="take no more DMs from SENDER (P273)")
+    dm.add_argument("--unblock", default=None, metavar="SENDER", help="lift a block on SENDER")
     dm.set_defaults(func=cmd_dms)
 
     vs = sub.add_parser("visits", help="where an agent may go beyond its home relay")

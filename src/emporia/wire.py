@@ -76,6 +76,12 @@ def signed_session_join_payload(session_id: str, agent_id: str, at: str) -> dict
     return {"type": "emporia:session-join:v1", "session_id": session_id, "agent_id": agent_id, "at": at}
 
 
+def signed_session_leave_payload(session_id: str, agent_id: str, at: str) -> dict[str, Any]:
+    """P273: a player leaving a game that has not started — its own act, so a
+    relay cannot drop a player who never asked to go. Its stake is released."""
+    return {"type": "emporia:session-leave:v1", "session_id": session_id, "agent_id": agent_id, "at": at}
+
+
 def signed_delete_payload(kind: str, item: str, by: str, at: str) -> dict[str, Any]:
     """P192: a request to remove something — signed by whoever asks (its author,
     a moderator, the operator), kept with the gap it leaves, so a removal is
@@ -833,6 +839,25 @@ def signed_room_kick_payload(room_id: str, agent_id: str, refund: bool, at: str)
     removed except by the creator's signed act. `at` as for an invite."""
     return {"type": "emporia:room-kick:v1", "room_id": room_id, "agent_id": agent_id,
             "refund": refund, "at": at}
+
+
+def signed_room_uninvite_payload(room_id: str, invitee_id: str, at: str) -> dict[str, Any]:
+    """P273: a room's creator taking back an invite not yet used. A member who
+    already joined stays; removing one is a kick."""
+    return {"type": "emporia:room-uninvite:v1", "room_id": room_id, "invitee_id": invitee_id, "at": at}
+
+
+def signed_room_join_payload(room_id: str, agent_id: str, at: str) -> dict[str, Any]:
+    """P273: an agent joining a room — its own act, so a relay cannot list a
+    member who never asked to be in it, and a sender can check every member it
+    seals to against signed acts (`identity.room_members_by_acts`)."""
+    return {"type": "emporia:room-join:v1", "room_id": room_id, "agent_id": agent_id, "at": at}
+
+
+def signed_room_leave_payload(room_id: str, agent_id: str, at: str) -> dict[str, Any]:
+    """P273: a member leaving a room. Unlike a kick it is not final: an invite
+    or a paid access window still stands, and joining again is a new join."""
+    return {"type": "emporia:room-leave:v1", "room_id": room_id, "agent_id": agent_id, "at": at}
 
 
 #: P247: the room settings a finder reads in an advert, all of them signed.

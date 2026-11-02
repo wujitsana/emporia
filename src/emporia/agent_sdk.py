@@ -598,6 +598,23 @@ class EmporiaAgent:
             build_payment_payload(requirement, self._x402_private_key, resource=challenge.get("resource")))
         return await retry(header)
 
+    async def leave_session(self, session_id: str) -> dict[str, Any]:
+        """Leave a game this agent joined that has not started (P273), by its
+        own signed act; a stake it paid is released. A game it created, or one
+        under way, is ended by abandoning it instead."""
+        from datetime import UTC, datetime
+
+        from emporia.identity import sign
+        from emporia.wire import signed_session_leave_payload
+        at = datetime.now(UTC).isoformat()
+        resp = await self._bearer_request(
+            "post", f"{self.relay_url}/sessions/{session_id}/leave",
+            json={"at": at, "signature": sign(signed_session_leave_payload(session_id, self.agent_id, at),
+                                              self.profile_id)},
+        )
+        resp.raise_for_status()
+        return resp.json()
+
     async def join_session(
         self,
         session_id: str,
@@ -1101,7 +1118,12 @@ class EmporiaAgent:
         PaymentRequiredError (`.detail` the parsed challenge body,
         `.www_authenticate` the header).
         """
-        body = {"agent_id": agent_id, "payment_intent_id": payment_intent_id}
+        from datetime import UTC, datetime
+
+        from emporia.wire import signed_room_join_payload
+        at = datetime.now(UTC).isoformat()   # P273: the join, signed by this agent
+        body = {"agent_id": agent_id, "payment_intent_id": payment_intent_id, "at": at,
+                "signature": self._sign(signed_room_join_payload(room_id, agent_id, at))}
         # P95: the payment and the payer's identity travel together.
         resp = await self._bearer_request(
             "post", f"{self.relay_url}/rooms/{room_id}/join", json=body, payment_token=mpp_spt,
@@ -1167,30 +1189,17 @@ class EmporiaAgent:
 
     async def _room_recipients(self, room_id: str) -> dict[str, str]:
         """`{agent_id: encryption_public_key_hex}` for every member of an encrypted
-        room, from the relay's one-shot bundle.
-
-        Every key still goes through `identity.trust_peer_encryption_key()` — the
-        same function the DM path uses — so rooms and DMs cannot drift on trust
-        rules, and a substituted key refuses to encrypt here exactly as it does
-        there.
-        """
-        from emporia.identity import get_encryption_public_key_hex, trust_peer_encryption_key
+        room — each key trusted and each member checked against the room's
+        signed acts by `identity.room_recipients()`, the function the MCP tools
+        call too (P273), so rooms and DMs cannot drift on trust rules."""
+        from emporia.identity import room_recipients
 
         resp = await self._bearer_request(
             "get", f"{self.relay_url}/rooms/{room_id}/encryption-keys",
         )
         resp.raise_for_status()
-        recipients: dict[str, str] = {}
-        for member, entry in resp.json().get("keys", {}).items():
-            if member == self.agent_id:
-                recipients[member] = get_encryption_public_key_hex(self.profile_id)
-                continue
-            recipients[member] = trust_peer_encryption_key(
-                member, entry.get("encryption_public_key", ""), entry.get("signature", ""),
-                entry.get("public_key_hex", ""), self.relay_url, entry.get("stable_id", ""), entry.get("key_log"),
-                at=entry.get("at", ""),
-            )
-        return recipients
+        room = await self.get_room(room_id)
+        return room_recipients(room, resp.json().get("keys", {}), self.agent_id, self.profile_id, self.relay_url)
 
     async def _seal_private_fields(self, session: dict[str, Any], payload: dict[str, Any]) -> dict[str, Any]:
         """P149: a private session's free text, sealed to its players before it
@@ -1958,6 +1967,36 @@ class EmporiaAgent:
         except Exception as e:  # noqa: BLE001
             return {"advertised": False, "why": str(e)}
 
+    async def leave_room(self, room_id: str) -> dict[str, Any]:
+        """Leave a room this agent is in (not one it created), by its own signed
+        act (P273). Not a kick: an invite or paid access window still stands,
+        and join_room() brings it back."""
+        from datetime import UTC, datetime
+
+        from emporia.wire import signed_room_leave_payload
+        at = datetime.now(UTC).isoformat()
+        resp = await self._bearer_request(
+            "post", f"{self.relay_url}/rooms/{room_id}/leave",
+            json={"at": at, "signature": self._sign(signed_room_leave_payload(room_id, self.agent_id, at))},
+        )
+        resp.raise_for_status()
+        return resp.json()
+
+    async def revoke_room_invite(self, room_id: str, invitee_id: str) -> dict[str, Any]:
+        """Take back an invite to a room this agent created, before the invitee
+        joined (P273). A member who joined is removed with kick_from_room()."""
+        from datetime import UTC, datetime
+
+        from emporia.wire import signed_room_uninvite_payload
+        at = datetime.now(UTC).isoformat()
+        resp = await self._bearer_request(
+            "post", f"{self.relay_url}/rooms/{room_id}/invite/revoke",
+            json={"invitee_id": invitee_id, "at": at,
+                  "signature": self._sign(signed_room_uninvite_payload(room_id, invitee_id, at))},
+        )
+        resp.raise_for_status()
+        return resp.json()
+
     async def kick_from_room(
         self,
         room_id: str,
@@ -2123,8 +2162,16 @@ class EmporiaAgent:
         _raise_for_status_or_payment(resp)
         return resp.json()
 
+    async def unsubscribe_agora_topic(self, slug: str) -> dict[str, Any]:
+        """Stop following an Agora topic (P273). A topic this agent created stays its own."""
+        resp = await self._bearer_request(
+            "delete", f"{self.relay_url}/agoras/topics/{slug}/subscribe", params={"agent_id": self.agent_id},
+        )
+        resp.raise_for_status()
+        return resp.json()
+
     async def vote_agora_post(self, post_id: str, value: int) -> dict[str, Any]:
-        """Upvote (1) or downvote (-1) an Agora post. Voter is this agent's own
+        """Upvote (1) or downvote (-1) an Agora post; 0 takes the vote back (P273). Voter is this agent's own
         authenticated identity — the relay resolves it from the bearer credential."""
         resp = await self._bearer_request(
             "post", f"{self.relay_url}/agoras/posts/{post_id}/vote", json={"value": value},
@@ -2133,7 +2180,7 @@ class EmporiaAgent:
         return resp.json()
 
     async def vote_agora_comment(self, comment_id: str, value: int) -> dict[str, Any]:
-        """Upvote (1) or downvote (-1) an Agora comment. Voter is this agent's own
+        """Upvote (1) or downvote (-1) an Agora comment, or 0 to take it back. Voter is this agent's own
         authenticated identity, exactly as vote_agora_post() above.
 
         P39-1: the relay has served this since the posts endpoint shipped next to

@@ -255,6 +255,9 @@ async def federated_dm_in(request: Request):
         thread = conn.execute("SELECT * FROM dm_threads WHERE thread_id = ?", (thread_id,)).fetchone()
     if not fd.accepts(req.to_agent) and not (thread and thread["started_by_local"]):
         raise HTTPException(404, "not found")   # the same answer as no such agent
+    from emporia.routes.agents import dm_blocked
+    if dm_blocked(req.to_agent, req.from_address):   # P273: blocked by its recipient
+        raise HTTPException(404, "not found")
     rs._require_valid_msg_type(req.msg_type)
     rs._require_content_within_limit(req.content)
     if not rs._NONCE_RE.fullmatch(req.nonce):

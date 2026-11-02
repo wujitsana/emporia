@@ -1600,14 +1600,19 @@ def test_mpp_payment_path_does_not_rate_limit_unproven_identity(client):
     room1 = _open_room("test room two")
     room2 = _open_room("test room three")
 
+    from conftest import header_shim_off
     with patch.object(rs.AGENT_REGISTRY, "max_per_minute", 1):
-        for _ in range(5):
-            r = client.post(
-                f"/rooms/{victim_room}/join",
-                json={"agent_id": "victim_agent_mpp"},
-                headers={"Authorization": "Payment fake_spt_test_token"},
-            )
-            assert r.status_code == 200, r.text
+        # P273: a join is now signed by the joining agent, so one naming the
+        # victim without its signature is refused before it reaches the
+        # victim's budget — as often as it is tried, never a 429.
+        with header_shim_off():
+            for _ in range(5):
+                r = client.post(
+                    f"/rooms/{victim_room}/join",
+                    json={"agent_id": "victim_agent_mpp"},
+                    headers={"Authorization": "Payment fake_spt_test_token"},
+                )
+                assert r.status_code == 401, r.text
 
         r = client.post(
             f"/rooms/{room1}/join",
@@ -2241,6 +2246,9 @@ def test_no_new_identity_as_proof_params():
         ("GET", "/agents/{agent_id}/card"),  # P187: whose card; public once the agent published a relay list
         ("POST", "/agents/{agent_id}/relay-list"),  # P187: _require_caller_is-checked, and signed by the agent
         ("POST", "/agents/{agent_id}/dm-policy"),  # P185: _require_caller_is-checked
+        ("POST", "/agents/{agent_id}/dm-blocks"),  # P273: _require_caller_is-checked
+        ("DELETE", "/agents/{agent_id}/dm-blocks/{blocked}"),  # P273: _require_caller_is-checked
+        ("GET", "/agents/{agent_id}/dm-blocks"),  # P273: _require_caller_is-checked
         ("POST", "/agents/{agent_id}/carried-record"),  # P190: _require_caller_is-checked; the record is signed
         ("POST", "/agents/{agent_id}/leave"),  # P195: _require_caller_is-checked
         ("POST", "/agents/{agent_id}/key-rotations"),  # P245: _require_caller_is-checked, and signed by the current key
@@ -2489,6 +2497,11 @@ def test_every_route_has_a_reviewed_auth_posture():
         ("POST", "/rooms/{room_id}/join"),
         ("POST", "/rooms/{room_id}/invite"),
         ("POST", "/rooms/{room_id}/kick"),
+        # P273: leaving, taking back and blocking — each needs its own agent's sign-in
+        ("POST", "/rooms/{room_id}/leave"), ("POST", "/rooms/{room_id}/invite/revoke"),
+        ("POST", "/sessions/{session_id}/leave"), ("DELETE", "/agoras/topics/{slug}/invite/{invitee_id}"),
+        ("DELETE", "/bounties/{listing_id}/enter"), ("POST", "/agents/{agent_id}/dm-blocks"),
+        ("DELETE", "/agents/{agent_id}/dm-blocks/{blocked}"), ("GET", "/agents/{agent_id}/dm-blocks"),
         ("POST", "/rooms/{room_id}/advertise"),  # P247: the creator only
         ("DELETE", "/rooms/{room_id}/advertise"),
         ("GET", "/rooms/elsewhere"),  # P249: a caller; rooms linked relays advertised, each checked again as served
@@ -9226,7 +9239,7 @@ def test_room_message_caller_must_be_sender(prod_client):
         headers=bearer_for(prod_client, "rmsg_owner"))
     room_id = r.json()["room_id"]
     prod_client.post(
-        f"/rooms/{room_id}/join", json={"agent_id": "rmsg_member"},
+        f"/rooms/{room_id}/join", json=__import__("conftest").signed_room_join_body(room_id, "rmsg_member"),
         headers=bearer_for(prod_client, "rmsg_member"),
     )
 
@@ -9863,7 +9876,7 @@ def test_room_kick_requires_caller_be_creator(prod_client):
         headers=bearer_for(prod_client, "rkick_creator"))
     room_id = r.json()["room_id"]
     prod_client.post(
-        f"/rooms/{room_id}/join", json={"agent_id": "rkick_target"},
+        f"/rooms/{room_id}/join", json=__import__("conftest").signed_room_join_body(room_id, "rkick_target"),
         headers=bearer_for(prod_client, "rkick_target"),
     )
 
@@ -9948,7 +9961,7 @@ def test_join_and_subscribe_reject_impersonated_agent_id(prod_client):
     )
     assert r.status_code == 403
     r = prod_client.post(
-        f"/rooms/{room_id}/join", json={"agent_id": "impj_real"},
+        f"/rooms/{room_id}/join", json=__import__("conftest").signed_room_join_body(room_id, "impj_real"),
         headers=bearer_for(prod_client, "impj_real"),
     )
     assert r.status_code == 200
@@ -13720,10 +13733,12 @@ def test_x402_offer_skips_wallet_lookup_when_disabled(client):
     # 1 expected call is _require_registered() -> AGENT_REGISTRY.is_authorized()
     # (unrelated to x402), confirmed by tracing get_db()'s call stack directly.
     # Pre-fix this was 2: that call plus one unconditional wallet-lookup read
-    # from _x402_pay_to_by_network() inside _x402_offer().
-    assert call_count["n"] == 1, (
-        "expected exactly one get_db() call (agent-registration check only, "
-        f"no wallet resolution) on a disabled relay, got {call_count['n']}"
+    # from _x402_pay_to_by_network() inside _x402_offer(). P273 adds two that
+    # are not wallet lookups: the joiner's key, to check its signed join, and
+    # its last own act in the room, so an old join cannot be replayed.
+    assert call_count["n"] == 3, (
+        "expected exactly three get_db() calls (registration, the join's signature, "
+        f"the replay check — no wallet resolution) on a disabled relay, got {call_count['n']}"
     )
 
 
@@ -27398,7 +27413,10 @@ def test_the_membership_rule_is_written_in_exactly_one_place():
 #
 # V23 -> V24 (P272): `participants.join_at` and `join_signature`, the join the
 # agent signed.
-_SCHEMA_FINGERPRINT_V24 = "4b09fd84cd97035f227f21fac76e9d55fe540af4acea85f78b2ca40cb1923c84"
+#
+# V24 -> V25 (P273): `session_leaves`, a player's signed leave of a game not
+# yet started; `dm_blocks`, the senders an agent takes no DMs from.
+_SCHEMA_FINGERPRINT_V25 = "54b620ab12dede6be09cf3e5bf6f66189a46dac179ec44a40a073a0340892805"
 
 
 def _schema_fingerprint(db_path) -> tuple[str, int, int]:
@@ -27438,9 +27456,9 @@ def test_a_schema_change_requires_a_version_bump():
     from emporia.relay_server import SCHEMA_VERSION
 
     fingerprint, tables, columns = _schema_fingerprint(_test_db)
-    assert (SCHEMA_VERSION, fingerprint) == (24, _SCHEMA_FINGERPRINT_V24), (
+    assert (SCHEMA_VERSION, fingerprint) == (25, _SCHEMA_FINGERPRINT_V25), (
         f"the schema changed ({tables} tables, {columns} columns) or the version "
-        f"moved. Bump SCHEMA_VERSION *and* update _SCHEMA_FINGERPRINT_V24 — in "
+        f"moved. Bump SCHEMA_VERSION *and* update _SCHEMA_FINGERPRINT_V25 — in "
         f"that order, and never the fingerprint alone.\n"
         f"  code version: {SCHEMA_VERSION}\n  fingerprint:  {fingerprint}"
     )
@@ -27679,6 +27697,7 @@ def test_a_blocked_live_relay_is_told_every_way_out():
 # marketplace — so *writes* are out of scope by design and are not listed here.
 # A GET that is neither called nor classified is a real gap and fails the test.
 _DASHBOARD_UNSURFACED_GETS: dict[str, str] = {
+    "/agents/{}/dm-blocks": "P273: whom an agent blocks — its own tool and its operator's command",
     "/sessions/{}/encryption-keys": "P149: the players' key bundle a player's tools seal private text with — machine-facing; the dashboard only opens, through the local console",
     "/bounties/{}/promise-status": "P79: per-bounty funder-payment record. The board already flags a promised prize; this is the detail behind one, reached from a bounty rather than browsed — surfacing it as its own page would be a view of one row.",
     # Infrastructure and machine-facing descriptors — nothing for a human view.

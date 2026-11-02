@@ -74,7 +74,9 @@ def test_invites_and_kicks_are_the_creators_signed_acts(client):
     check = verify_room_acts(room, get_public_key_hex("sr_owner"))
     assert check["settings"] is True
     assert [(a["act"], a["target"], a["verified"]) for a in check["acts"]] == [
-        ("invite", "sr_guest", True), ("kick", "sr_guest", True)]
+        ("invite", "sr_guest", True), ("join", "sr_guest", None), ("kick", "sr_guest", True)]
+    keyed = verify_room_acts(room, get_public_key_hex("sr_owner"), get_public_key_hex)   # P273: the joiner's own key
+    assert [a["verified"] for a in keyed["acts"]] == [True, True, True] and keyed["unproven_members"] == []
 
 
 def test_the_check_room_tool_and_the_signing_tools(client, monkeypatch):

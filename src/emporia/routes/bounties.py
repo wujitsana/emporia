@@ -655,6 +655,30 @@ async def enter_bounty(listing_id: str, request: Request):
     return {"listing_id": listing_id, "agent_id": caller, "entered": True}
 
 
+@router.delete("/bounties/{listing_id}/enter")
+async def withdraw_bounty_entry(listing_id: str, request: Request):
+    """P273: take back an entry while the contest is still open. Once it has
+    started the entrants are its players, and leaving is forfeiting."""
+    caller = rs._dashboard_agent_id(request)
+    if not caller:
+        raise HTTPException(401, "Authentication required")
+    rs._enforce_agent_rate_limit(caller)
+    with rs.DB_LOCK, rs.get_db() as conn:
+        row = conn.execute("SELECT * FROM listings WHERE listing_id = ? AND listing_type = ?",
+                           (listing_id, rules.BOUNTY_LISTING_TYPE)).fetchone()
+        if not row:
+            raise HTTPException(404, "No such bounty")
+        _require_hosted_here(row)
+        state = json.loads(row["metadata_json"] or "{}").get("state", "open")
+        if state != "open":
+            raise HTTPException(409, f"This bounty is {state}; an entry can be withdrawn only while it is open.")
+        gone = conn.execute("DELETE FROM bounty_entries WHERE listing_id = ? AND agent_id = ?",
+                            (listing_id, caller)).rowcount
+    if not gone:
+        raise HTTPException(404, "You have not entered this bounty")
+    return {"listing_id": listing_id, "agent_id": caller, "entered": False}
+
+
 def _mark_awaiting_payment(conn, listing_id: str, meta: dict, winner_id: str, now: datetime) -> dict:
     """A promised contest has resolved: the funder now owes the winner."""
     meta |= {

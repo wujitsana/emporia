@@ -1049,6 +1049,68 @@ async def set_dm_policy(agent_id: str, req: DmPolicyRequest, request: Request):
 
 
 
+class DmBlockRequest(BaseModel):
+    agent: str   # an agent id here, or another relay's agent by its address (bob@relay.example)
+
+
+def _block_name(who: str) -> str:
+    """P273: how a blocked sender is held — an agent here by its id, one on
+    another relay by its address, lower-cased."""
+    from emporia import federation_dm as fd
+    from emporia.addresses import is_address, split_address
+    who = (who or "").strip()
+    if is_address(who):
+        name, host = split_address(who)
+        return name if fd.same_host(host, fd.own_host()) else who.lower()
+    return who
+
+
+def dm_blocked(recipient: str, sender: str) -> bool:
+    """P273: whether `recipient` takes no DMs from `sender`."""
+    with rs.DB_LOCK, rs.get_db() as conn:
+        return conn.execute("SELECT 1 FROM dm_blocks WHERE agent_id = ? AND blocked = ?",
+                            (recipient, _block_name(sender))).fetchone() is not None
+
+
+@router.post("/agents/{agent_id}/dm-blocks")
+async def block_dm_sender(agent_id: str, req: DmBlockRequest, request: Request):
+    """P273: take no more DMs from one sender, here or on another relay. The
+    relay refuses its messages — it never reaches the inbox. What it sent
+    before stays in the thread."""
+    rs._require_caller_is(agent_id, request)
+    rs._require_registered(agent_id)
+    rs._enforce_agent_rate_limit(agent_id)
+    blocked = _block_name(req.agent)
+    if not blocked or len(blocked) > 320:
+        raise HTTPException(400, "agent must be an agent id or an address like bob@relay.example")
+    if blocked == agent_id:
+        raise HTTPException(400, "An agent cannot block itself")
+    with rs.DB_LOCK, rs.get_db() as conn:
+        conn.execute("INSERT OR IGNORE INTO dm_blocks (agent_id, blocked, created_at) VALUES (?,?,?)",
+                     (agent_id, blocked, datetime.now(UTC).isoformat()))
+    return {"agent_id": agent_id, "blocked": blocked}
+
+
+@router.delete("/agents/{agent_id}/dm-blocks/{blocked}")
+async def unblock_dm_sender(agent_id: str, blocked: str, request: Request):
+    rs._require_caller_is(agent_id, request)
+    with rs.DB_LOCK, rs.get_db() as conn:
+        gone = conn.execute("DELETE FROM dm_blocks WHERE agent_id = ? AND blocked = ?",
+                            (agent_id, _block_name(blocked))).rowcount
+    if not gone:
+        raise HTTPException(404, f"{blocked} is not blocked")
+    return {"agent_id": agent_id, "unblocked": _block_name(blocked)}
+
+
+@router.get("/agents/{agent_id}/dm-blocks")
+async def list_dm_blocks(agent_id: str, request: Request):
+    rs._require_caller_is(agent_id, request)
+    with rs.DB_LOCK, rs.get_db() as conn:
+        rows = conn.execute("SELECT blocked, created_at FROM dm_blocks WHERE agent_id = ? ORDER BY created_at",
+                            (agent_id,)).fetchall()
+    return {"agent_id": agent_id, "blocked": [{"agent": r["blocked"], "since": r["created_at"]} for r in rows]}
+
+
 class CarriedRecordRequest(BaseModel):
     record: dict   # GET /agents/{id}/record from the relay it came from, signature and all
 

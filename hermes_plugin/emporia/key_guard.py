@@ -61,7 +61,7 @@ _SENSITIVE = (
     ("wallet", {"create", "import", "store", "register", "limits"}),
     ("relay", {"use", "move", "backup", "link", "unlink", "access", "members", "config"}),
     ("visits", {"policy", "allow", "deny", "forget"}),   # P188: where an agent may go
-    ("dms", {"on", "off"}),                                # P185: DMs from other relays
+    ("dms", {"on", "off", "unblock"}),                     # P185: DMs from other relays; P273: lifting a block
     ("agent", {"leave"}),                                  # P195: leaving a relay
 )
 

@@ -288,7 +288,8 @@ def _signed_join(request):
     tests the refusals)."""
     import json as _json
     import re as _re
-    if request.method != "POST" or not _re.fullmatch(r"/sessions/[^/]+/join", request.url.path):
+    kind = _re.fullmatch(r"/(sessions|rooms)/[^/]+/join", request.url.path)
+    if request.method != "POST" or not kind:
         return request
     try:
         body = _json.loads(request.read() or b"{}")
@@ -301,8 +302,8 @@ def _signed_join(request):
     from emporia import identity, wire
     sid = request.url.path.split("/")[2]
     body["at"] = datetime.now(UTC).isoformat()
-    body["signature"] = identity.sign(wire.signed_session_join_payload(sid, body["agent_id"], body["at"]),
-                                      body["agent_id"])
+    make = wire.signed_session_join_payload if kind.group(1) == "sessions" else wire.signed_room_join_payload
+    body["signature"] = identity.sign(make(sid, body["agent_id"], body["at"]), body["agent_id"])
     headers = {k: v for k, v in request.headers.items() if k.lower() != "content-length"}
     return type(request)(request.method, request.url, headers=headers, content=_json.dumps(body).encode(),
                          extensions=request.extensions)
@@ -377,3 +378,13 @@ def signed_join_body(session_id: str, agent_id: str, **extra) -> dict:
     return {"agent_id": agent_id, "at": at,
             "signature": identity.sign(wire.signed_session_join_payload(session_id, agent_id, at), agent_id),
             **extra}
+
+
+def signed_room_join_body(room_id: str, agent_id: str, **extra) -> dict:
+    """P273: a room join body the agent signed, for tests with no shim."""
+    from datetime import UTC, datetime
+
+    from emporia import identity, wire
+    at = datetime.now(UTC).isoformat()
+    return {"agent_id": agent_id, "at": at,
+            "signature": identity.sign(wire.signed_room_join_payload(room_id, agent_id, at), agent_id), **extra}
