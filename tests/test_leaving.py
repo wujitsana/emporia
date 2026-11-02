@@ -262,3 +262,111 @@ def test_an_old_join_replayed_after_a_leave_is_refused(client):
     assert client.post(f"/sessions/{sid}/leave", json=_signed(wire.signed_session_leave_payload, sid, "rp273_guest"),
                        headers=_as("rp273_guest")).status_code == 200
     assert client.post(f"/sessions/{sid}/join", json=seat, headers=_as("rp273_guest")).status_code == 409
+
+
+def _private_purchase(client, buyer: str, seller: str) -> str:
+    from tests.test_emporia import _enc_pair
+    _enc_pair(client, buyer, seller)
+    sid = client.post("/sessions", json={"module_type": "emporia:service:v1", "creator_agent_id": buyer,
+                                         "config": {"description": "write the report"},
+                                         "payment_rules": {"mode": "free", "stake_per_participant": "0"}},
+                      headers=_as(buyer)).json()["session_id"]
+    assert client.post(f"/sessions/{sid}/join", json={"agent_id": seller}, headers=_as(seller)).status_code == 200
+    return sid
+
+
+def _players(client, sid: str, me: str) -> dict:
+    served = client.get(f"/sessions/{sid}/encryption-keys", headers=_as(me)).json()
+    return identity.session_recipients(sid, served, me, me, RELAY)
+
+
+def test_a_player_seals_only_to_players_their_own_signed_joins_seat(client):
+    """P274: as for rooms — a relay that seats a player on its own is refused."""
+    sid = _private_purchase(client, "pp274_buyer", "pp274_seller")
+    assert set(_players(client, sid, "pp274_buyer")) == {"pp274_buyer", "pp274_seller"}
+    assert set(_players(client, sid, "pp274_seller")) == {"pp274_buyer", "pp274_seller"}
+    _keyed(client, "pp274_mole")
+    s = rs.load_session(sid)
+    with rs.DB_LOCK, rs.get_db() as conn:      # the relay seats a player who never asked
+        conn.execute("UPDATE sessions SET participants_json = ? WHERE session_id = ?",
+                     (__import__("json").dumps(s["participants"] + ["pp274_mole"]), sid))
+    with pytest.raises(identity.SessionMembershipUnproven, match="pp274_mole"):
+        _players(client, sid, "pp274_buyer")
+    # a join signature for another game does not seat it either
+    other = wire.signed_session_join_payload("sess_elsewhere", "pp274_mole", at := datetime.now(UTC).isoformat())
+    rs.add_participant(sid, "pp274_mole", join_at=at, join_signature=identity.sign(other, "pp274_mole"))
+    with pytest.raises(identity.SessionMembershipUnproven, match="pp274_mole"):
+        _players(client, sid, "pp274_seller")
+
+
+def test_a_player_who_signed_a_leave_is_not_sealed_to(client):
+    """P274: a relay that keeps a player listed after its signed leave is refused."""
+    import json as _json
+    for a in ("lv274_host", "lv274_a"):
+        _keyed(client, a)
+    sid = client.post("/sessions", json={"module_type": "emporia:two-thirds:v1", "config": {},
+                                         "payment_rules": {"mode": "free"}},
+                      headers=_as("lv274_host")).json()["session_id"]
+    from conftest import signed_join_body
+    seat = signed_join_body(sid, "lv274_a")
+    assert client.post(f"/sessions/{sid}/join", json=seat, headers=_as("lv274_a")).status_code == 200
+    assert client.post(f"/sessions/{sid}/leave", json=_signed(wire.signed_session_leave_payload, sid, "lv274_a"),
+                       headers=_as("lv274_a")).status_code == 200
+    with rs.DB_LOCK, rs.get_db() as conn:      # the relay puts it back, with its old join
+        conn.execute("UPDATE sessions SET participants_json = ? WHERE session_id = ?",
+                     (_json.dumps(["lv274_host", "lv274_a"]), sid))
+    rs.add_participant(sid, "lv274_a", join_at=seat["at"], join_signature=seat["signature"])
+    served = client.get(f"/sessions/{sid}/encryption-keys", headers=_as("lv274_host")).json()
+    assert identity.session_players_by_acts(sid, served, identity.get_public_key_hex) == {"lv274_host"}
+
+
+def test_a_topic_creator_removes_a_subscriber_for_good(client):
+    """P274: as a room kick — even a public topic, which anyone may read, takes
+    no more posts, comments or votes from the removed agent."""
+    from tests.test_emporia import _signed_comment, _signed_post
+    for a in ("tk274_owner", "tk274_pest", "tk274_other"):
+        _register_keyed(client, a)
+    slug = client.post("/agoras/topics", json={"name": "tk274 topic", "description": "d", "visibility": "public",
+                                               "gate_type": "open", "creator_id": "tk274_owner"},
+                       headers=_as("tk274_owner")).json()["slug"]
+    assert client.post(f"/agoras/topics/{slug}/subscribe", json={"agent_id": "tk274_pest"},
+                       headers=_as("tk274_pest")).status_code == 200
+    post = client.post(f"/agoras/topics/{slug}/posts", json=_signed_post("tk274_owner", slug, {"title": "t", "content": "c"}),
+                       headers=_as("tk274_owner")).json()["post_id"]
+    assert client.post(f"/agoras/topics/{slug}/kick", json={"target_agent_id": "tk274_pest"},
+                       headers=_as("tk274_other")).status_code == 403
+    assert client.post(f"/agoras/topics/{slug}/kick", json={"target_agent_id": "tk274_owner"},
+                       headers=_as("tk274_owner")).status_code == 400
+    r = client.post(f"/agoras/topics/{slug}/kick", json={"target_agent_id": "tk274_pest"}, headers=_as("tk274_owner"))
+    assert r.status_code == 200 and r.json()["was_member"] is True
+    assert client.post(f"/agoras/topics/{slug}/subscribe", json={"agent_id": "tk274_pest"},
+                       headers=_as("tk274_pest")).status_code == 403
+    assert client.post(f"/agoras/topics/{slug}/posts", json=_signed_post("tk274_pest", slug, {"title": "x", "content": "y"}),
+                       headers=_as("tk274_pest")).status_code == 403
+    assert client.post(f"/agoras/posts/{post}/comments", json=_signed_comment("tk274_pest", post, {"content": "z"}),
+                       headers=_as("tk274_pest")).status_code == 403
+    assert client.post(f"/agoras/posts/{post}/vote", json={"value": -1}, headers=_as("tk274_pest")).status_code == 403
+    assert client.get(f"/agoras/posts/{post}", headers=_as("tk274_pest")).status_code == 200      # public: still readable
+    assert client.post(f"/agoras/posts/{post}/vote", json={"value": 1}, headers=_as("tk274_other")).status_code == 200
+
+
+def test_a_block_follows_the_sender_to_another_relay(client):
+    """P274: a block holds the sender's stable id, so the same agent writing
+    from another relay after a move is still refused; a block made before the
+    id was known learns it from the sender's next message."""
+    from emporia.routes.agents import dm_blocked
+    _register_keyed(client, "bm274_me")
+    assert client.post("/agents/bm274_me/dm-blocks", json={"agent": "pest@old.example"},
+                       headers=_as("bm274_me")).json()["stable_id"] == ""
+    sid = "sid_bm274_pest"
+    assert dm_blocked("bm274_me", "pest@old.example", sid)          # its message arrives: refused, id learnt
+    assert dm_blocked("bm274_me", "pest@new.example", sid)          # moved: same identity, still refused
+    assert not dm_blocked("bm274_me", "pest@new.example", "sid_someone_else")
+    assert not dm_blocked("bm274_me", "friend@new.example")
+    # a local agent is blocked by its identity from the start
+    _register_keyed(client, "bm274_local")
+    held = client.post("/agents/bm274_me/dm-blocks", json={"agent": "bm274_local"}, headers=_as("bm274_me")).json()
+    with rs.DB_LOCK, rs.get_db() as conn:
+        want = conn.execute("SELECT stable_id FROM authorized_agents WHERE agent_id = 'bm274_local'").fetchone()[0]
+    assert held["stable_id"] == want and want
+    assert dm_blocked("bm274_me", "bm274_local@elsewhere.example", want)

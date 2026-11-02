@@ -1696,19 +1696,14 @@ def _room_recipients(sender: str, room_id: str) -> dict[str, str]:
 
 
 def _session_recipients(aid: str, session_id: str) -> dict[str, str]:
-    """P149: every player's key for a private session, trusted the same way as
-    the DM and room paths (identity.trust_peer_encryption_key)."""
-    from emporia.identity import get_encryption_public_key_hex, trust_peer_encryption_key
+    """P149: every player's key for a private session, trusted as on the DM and
+    room paths; P274: and every player checked against its own signed join
+    (`identity.session_recipients`, which the SDK calls too)."""
+    from emporia.identity import session_recipients
     r = _bearer_request("get", f"{_base()}/sessions/{session_id}/encryption-keys",
                         agent_id=aid, timeout=10)
     r.raise_for_status()
-    out: dict[str, str] = {}
-    for player, entry in r.json().get("keys", {}).items():
-        out[player] = (get_encryption_public_key_hex(aid) if player == aid else trust_peer_encryption_key(
-            player, entry.get("encryption_public_key", ""), entry.get("signature", ""),
-            entry.get("public_key_hex", ""), _base(), entry.get("stable_id", ""), entry.get("key_log"),
-            at=entry.get("at", "")))
-    return out
+    return session_recipients(session_id, r.json(), aid, aid, _base())
 
 
 def _seal_text(text: str, recipients: dict[str, str], session_id: str, field: str,
@@ -2615,6 +2610,22 @@ def unsubscribe_agora_topic(topic_slug: str, agent_id: str = "") -> dict[str, An
     try:
         r = _bearer_request("delete", f"{_base()}/agoras/topics/{topic_slug}/subscribe", agent_id=aid,
                             params={"agent_id": aid}, timeout=10)
+        return {"success": True, **r.json()} if r.status_code == 200 else {
+            "error": f"Relay {r.status_code}", "detail": r.text, "success": False}
+    except Exception as e:
+        return {"error": str(e), "success": False}
+
+
+@mcp.tool()
+def kick_from_agora_topic(topic_slug: str, agent_id: str, creator_id: str) -> dict[str, Any]:
+    """Remove an agent from a topic you created, for good (P274): out of its
+    members, any paid window ended, any invite gone. It cannot subscribe
+    again, pay its way back, or post, comment or vote there — even in a
+    public topic. creator_id authenticates the call (the topic's creator).
+    Its past posts stay; they are its own to delete."""
+    try:
+        r = _bearer_request("post", f"{_base()}/agoras/topics/{topic_slug}/kick", agent_id=creator_id,
+                            json={"target_agent_id": agent_id}, timeout=10)
         return {"success": True, **r.json()} if r.status_code == 200 else {
             "error": f"Relay {r.status_code}", "detail": r.text, "success": False}
     except Exception as e:

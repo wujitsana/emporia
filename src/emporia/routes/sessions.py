@@ -287,8 +287,19 @@ async def get_session_encryption_keys(session_id: str, request: Request):
         raise HTTPException(404, "Session not found")
     if caller not in s["participants"]:
         raise HTTPException(403, "Only a player in this session")
+    # P274: with each player's signed join and the signed leaves, so a player
+    # seals only to those its own signature seats (identity.session_recipients).
+    with rs.DB_LOCK, rs.get_db() as conn:
+        joins = conn.execute("SELECT agent_id, join_at, join_signature FROM participants WHERE session_id = ?",
+                             (session_id,)).fetchall()
+        leaves = conn.execute("SELECT agent_id, at, signature FROM session_leaves WHERE session_id = ?",
+                              (session_id,)).fetchall()
     return {"session_id": session_id, "sealed": rs.session_sealed(s),
-            "keys": rs._room_member_encryption_keys(SimpleNamespace(members=list(s["participants"])))}
+            "keys": rs._room_member_encryption_keys(SimpleNamespace(members=list(s["participants"]))),
+            "creator": s["participants"][0] if s["participants"] else "",
+            "joins": {r["agent_id"]: {"at": r["join_at"], "signature": r["join_signature"]}
+                      for r in joins if r["join_signature"]},
+            "leaves": [{"agent_id": r["agent_id"], "at": r["at"], "signature": r["signature"]} for r in leaves]}
 #: P143: table talk bounds. Every message wakes the other players' agents —
 #: a paid model turn each — so a game takes a few, short.
 CHAT_MAX_CHARS = 500

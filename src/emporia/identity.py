@@ -772,8 +772,17 @@ def verify_room_acts(room: dict[str, Any], creator_public_key_hex: str, key_of: 
     return {"settings": settings, "acts": checked, "unproven_members": unproven}
 
 
-class RoomMembershipUnproven(ValueError):
+class MembershipUnproven(ValueError):
+    """A relay lists a member (of a room, or a player of a game) no signed act
+    puts there — so nothing is sealed to it."""
+
+
+class RoomMembershipUnproven(MembershipUnproven):
     """P273: a relay lists a room member no signed act puts there."""
+
+
+class SessionMembershipUnproven(MembershipUnproven):
+    """P274: a relay lists a player who never signed a join, or who left."""
 
 
 def room_members_by_acts(room: dict[str, Any], key_of: Any) -> set[str]:
@@ -837,6 +846,37 @@ def room_members_by_acts(room: dict[str, Any], key_of: Any) -> set[str]:
     return members
 
 
+def _trusted_bundle(bundle: dict[str, Any], me: str, profile_id: str, relay_url: str) -> dict[str, str]:
+    """`{member: encryption key}` from a relay's key bundle, every peer key
+    through `trust_peer_encryption_key()`, as on the DM path."""
+    out: dict[str, str] = {}
+    for member, entry in bundle.items():
+        out[member] = (get_encryption_public_key_hex(profile_id) if member == me else trust_peer_encryption_key(
+            member, entry.get("encryption_public_key", ""), entry.get("signature", ""),
+            entry.get("public_key_hex", ""), relay_url, entry.get("stable_id", ""), entry.get("key_log"),
+            at=entry.get("at", "")))
+    return out
+
+
+def _bundle_key_of(bundle: dict[str, Any], me: str, profile_id: str, relay_url: str) -> Any:
+    """`key_of(agent)`: the signing key this client pinned for each member of a
+    key bundle — and for itself its own key, never the relay's word for it."""
+    own = get_public_key_hex(profile_id)
+    keys: dict[str, Any] = {}
+
+    def key_of(agent: str) -> Any:
+        if agent not in keys:
+            entry = bundle.get(agent) or {}
+            served = str(entry.get("public_key_hex") or "").lower()
+            if agent == me and served != own:
+                keys[agent] = SigningKey(own)
+            else:
+                keys[agent] = pinned_signing_key(agent, relay_url, served, entry.get("stable_id", ""),
+                                                 None, entry.get("key_log"))
+        return keys[agent]
+    return key_of
+
+
 def room_recipients(room: dict[str, Any], bundle: dict[str, Any], me: str, profile_id: str,
                     relay_url: str) -> dict[str, str]:
     """`{member: encryption key}` to seal a room message to, from the relay's
@@ -847,29 +887,8 @@ def room_recipients(room: dict[str, Any], bundle: dict[str, Any], me: str, profi
     path. P273: and every member must be one the signed acts put in the room
     (`room_members_by_acts`) — else this refuses, naming them, rather than seal
     to a member the relay added on its own."""
-    recipients: dict[str, str] = {}
-    for member, entry in bundle.items():
-        if member == me:
-            recipients[member] = get_encryption_public_key_hex(profile_id)
-            continue
-        recipients[member] = trust_peer_encryption_key(
-            member, entry.get("encryption_public_key", ""), entry.get("signature", ""),
-            entry.get("public_key_hex", ""), relay_url, entry.get("stable_id", ""), entry.get("key_log"),
-            at=entry.get("at", ""),
-        )
-    own = get_public_key_hex(profile_id)
-    keys: dict[str, Any] = {}
-
-    def key_of(agent: str) -> Any:
-        if agent not in keys:
-            entry = bundle.get(agent) or {}
-            served = str(entry.get("public_key_hex") or "").lower()
-            if agent == me and served != own:
-                keys[agent] = SigningKey(own)              # never this agent's key on the relay's word
-            else:
-                keys[agent] = pinned_signing_key(agent, relay_url, served, entry.get("stable_id", ""),
-                                                 None, entry.get("key_log"))
-        return keys[agent]
+    recipients = _trusted_bundle(bundle, me, profile_id, relay_url)
+    key_of = _bundle_key_of(bundle, me, profile_id, relay_url)
     unproven = sorted(set(recipients) - room_members_by_acts(room, key_of))
     if unproven:
         raise RoomMembershipUnproven(
@@ -877,6 +896,53 @@ def room_recipients(room: dict[str, Any], bundle: dict[str, Any], me: str, profi
             f"act puts them there (each joins by its own signed join, and an invite room needs the creator's "
             f"signed invite) — refusing to seal to them. A member from before joins were signed can sign one "
             f"now by calling join_room again.")
+    return recipients
+
+
+def session_players_by_acts(session_id: str, served: dict[str, Any], key_of: Any) -> set[str]:
+    """P274: the players a private game's signed acts seat — what a player seals
+    to, rather than the relay's list. `served` is `GET /sessions/{id}/encryption-keys`:
+    `creator`, each player's signed `joins` (`{agent: {at, signature}}`) and
+    the signed `leaves`. The creator is the one every joiner chose to play when
+    it joined, so it is taken as served; anyone else is seated by its own
+    signed join, unless its own signed leave came later."""
+    from emporia.wire import signed_session_join_payload, signed_session_leave_payload, when_of
+
+    def signed(agent: str, payload: dict, at: Any, signature: str) -> bool:
+        key = signing_key_for(key_of(agent), at)
+        return bool(key) and verify(payload, signature or "", key)
+    creator = str(served.get("creator") or "")
+    seated = {creator} if creator else set()
+    left: dict[str, Any] = {}
+    for leave in served.get("leaves") or []:
+        who, at = str(leave.get("agent_id") or ""), str(leave.get("at") or "")
+        if who and when_of(at) and signed(who, signed_session_leave_payload(session_id, who, at), at,
+                                          leave.get("signature", "")):
+            left[who] = max(left.get(who, when_of(at)), when_of(at))
+    for who, join in (served.get("joins") or {}).items():
+        at = str((join or {}).get("at") or "")
+        when = when_of(at)
+        if who == creator or not when or not signed(who, signed_session_join_payload(session_id, who, at), at,
+                                                    (join or {}).get("signature", "")):
+            continue
+        if who not in left or when > left[who]:
+            seated.add(who)
+    return seated
+
+
+def session_recipients(session_id: str, served: dict[str, Any], me: str, profile_id: str,
+                       relay_url: str) -> dict[str, str]:
+    """P274: `{player: encryption key}` to seal a private game's text to. Every
+    key trusted as on the DM path, and every player one its own signed join
+    seats (`session_players_by_acts`) — else this refuses, naming them."""
+    bundle = served.get("keys") or {}
+    recipients = _trusted_bundle(bundle, me, profile_id, relay_url)
+    unproven = sorted(set(recipients) - session_players_by_acts(
+        session_id, served, _bundle_key_of(bundle, me, profile_id, relay_url)))
+    if unproven:
+        raise SessionMembershipUnproven(
+            f"the relay lists {', '.join(unproven)} as players of game {session_id}, but no signed join of "
+            f"theirs seats them (or they signed a leave since) — refusing to seal to them.")
     return recipients
 
 

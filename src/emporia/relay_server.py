@@ -937,6 +937,7 @@ def init_db() -> None:
                 agent_id TEXT NOT NULL,
                 blocked TEXT NOT NULL,
                 created_at TEXT NOT NULL,
+                blocked_stable_id TEXT NOT NULL DEFAULT '',   -- P274: the identity, so a block follows a move
                 PRIMARY KEY (agent_id, blocked)
             );
 
@@ -1930,6 +1931,7 @@ def _migrate_key_logs(conn: Any) -> None:
                              ("remote_agents", "encryption_key_at", "TEXT NOT NULL DEFAULT ''"),   # P271
                              ("participants", "join_at", "TEXT NOT NULL DEFAULT ''"),              # P272
                              ("participants", "join_signature", "TEXT NOT NULL DEFAULT ''"),
+                             ("dm_blocks", "blocked_stable_id", "TEXT NOT NULL DEFAULT ''"),   # P274
                              ("agent_key_log", "commitment", "TEXT NOT NULL DEFAULT ''"),
                              ("agent_key_log", "recovery_public_key", "TEXT NOT NULL DEFAULT ''"),
                              ("agent_key_log", "compromised_since", "TEXT NOT NULL DEFAULT ''"),
@@ -3481,7 +3483,7 @@ _NON_AGENT_COLUMNS: frozenset[tuple[str, str]] = frozenset({
     ("authorized_agents", "encryption_key_at"), ("remote_agents", "encryption_key_at"),   # P271: times
     ("participants", "join_at"), ("participants", "join_signature"),                      # P272
     ("session_leaves", "session_id"), ("session_leaves", "at"), ("session_leaves", "signature"),   # P273
-    ("session_leaves", "left_at"), ("dm_blocks", "created_at"),
+    ("session_leaves", "left_at"), ("dm_blocks", "created_at"), ("dm_blocks", "blocked_stable_id"),
     ("room_adverts", "room_id"), ("room_adverts", "stable_id"), ("room_adverts", "public_key_hex"),
     ("room_adverts", "signature"), ("room_adverts", "advertised_at"),
     ("topic_adverts", "topic_id"), ("topic_adverts", "stable_id"), ("topic_adverts", "public_key_hex"),

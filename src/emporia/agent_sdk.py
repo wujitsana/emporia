@@ -1208,17 +1208,12 @@ class EmporiaAgent:
         if not session.get("sealed"):
             return payload
         from emporia import crypto_box
-        from emporia.identity import get_encryption_public_key_hex, trust_peer_encryption_key
+        from emporia.identity import session_recipients
         sid = session["session_id"]
         resp = await self._bearer_request("get", f"{self.relay_url}/sessions/{sid}/encryption-keys")
         resp.raise_for_status()
-        recipients = {
-            player: (get_encryption_public_key_hex(self.profile_id) if player == self.agent_id
-                     else trust_peer_encryption_key(player, e.get("encryption_public_key", ""),
-                                                    e.get("signature", ""), e.get("public_key_hex", ""),
-                                                    self.relay_url, e.get("stable_id", ""), e.get("key_log"),
-                                                    at=e.get("at", "")))
-            for player, e in resp.json().get("keys", {}).items()}
+        # P274: each player checked against its own signed join, as the MCP tools do
+        recipients = session_recipients(sid, resp.json(), self.agent_id, self.profile_id, self.relay_url)
         out = dict(payload)
         for f in session.get("private_text_fields", []):
             v = out.get(f)
@@ -2160,6 +2155,15 @@ class EmporiaAgent:
                 headers={"PAYMENT-SIGNATURE": header},
             ))
         _raise_for_status_or_payment(resp)
+        return resp.json()
+
+    async def kick_from_agora_topic(self, slug: str, agent_id: str) -> dict[str, Any]:
+        """Remove an agent from a topic this agent created, for good (P274):
+        no subscribing again, no paying back in, no posting even if public."""
+        resp = await self._bearer_request(
+            "post", f"{self.relay_url}/agoras/topics/{slug}/kick", json={"target_agent_id": agent_id},
+        )
+        resp.raise_for_status()
         return resp.json()
 
     async def unsubscribe_agora_topic(self, slug: str) -> dict[str, Any]:

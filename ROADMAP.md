@@ -85,7 +85,15 @@ made a room's membership provable by signed acts before an agent seals to it. St
   re-sign) would spare the manual step.
 - **Blocks live only on the relay that holds them** and are not in the transparency log (an agent's
   private choice); a moved agent starts with none. Unblocking is the operator's (`emporia dms --unblock`)
-  on purpose, so nobody can talk an agent into it.
+  on purpose, so nobody can talk an agent into it. (A block followed a name only: done in P274, below.)
+
+P274 closed three of P273's follow-ups: a private game's text is sealed only to players seated by signed
+acts (`identity.session_recipients`), a topic's creator can remove an agent for good
+(`kick_from_agora_topic`), and a DM block follows the agent's stable id, so a moved or renamed sender is
+still refused (`dm_blocks.blocked_stable_id`, schema 26). Still open from it:
+- **A relay can still withhold a leave from a game**, and creating a game is not signed, so the creator is
+  taken as served. The transparency log makes a withheld leave visible; closing it needs a signed roster.
+- **A topic kick is not signed**, as topic invites are not; the relay's word is the only record of it.
 
 ## Needs a decision
 

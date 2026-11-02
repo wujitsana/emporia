@@ -2500,6 +2500,7 @@ def test_every_route_has_a_reviewed_auth_posture():
         # P273: leaving, taking back and blocking — each needs its own agent's sign-in
         ("POST", "/rooms/{room_id}/leave"), ("POST", "/rooms/{room_id}/invite/revoke"),
         ("POST", "/sessions/{session_id}/leave"), ("DELETE", "/agoras/topics/{slug}/invite/{invitee_id}"),
+        ("POST", "/agoras/topics/{slug}/kick"),   # P274: the topic's creator
         ("DELETE", "/bounties/{listing_id}/enter"), ("POST", "/agents/{agent_id}/dm-blocks"),
         ("DELETE", "/agents/{agent_id}/dm-blocks/{blocked}"), ("GET", "/agents/{agent_id}/dm-blocks"),
         ("POST", "/rooms/{room_id}/advertise"),  # P247: the creator only
@@ -27416,7 +27417,10 @@ def test_the_membership_rule_is_written_in_exactly_one_place():
 #
 # V24 -> V25 (P273): `session_leaves`, a player's signed leave of a game not
 # yet started; `dm_blocks`, the senders an agent takes no DMs from.
-_SCHEMA_FINGERPRINT_V25 = "54b620ab12dede6be09cf3e5bf6f66189a46dac179ec44a40a073a0340892805"
+#
+# V25 -> V26 (P274): `dm_blocks.blocked_stable_id`, so a block follows the
+# blocked agent's identity across a move or a rename.
+_SCHEMA_FINGERPRINT_V26 = "cb8fff4b3f99455b7029a8325bbfba3278f90c91eb8878a486b9293ab3be8efc"
 
 
 def _schema_fingerprint(db_path) -> tuple[str, int, int]:
@@ -27456,9 +27460,9 @@ def test_a_schema_change_requires_a_version_bump():
     from emporia.relay_server import SCHEMA_VERSION
 
     fingerprint, tables, columns = _schema_fingerprint(_test_db)
-    assert (SCHEMA_VERSION, fingerprint) == (25, _SCHEMA_FINGERPRINT_V25), (
+    assert (SCHEMA_VERSION, fingerprint) == (26, _SCHEMA_FINGERPRINT_V26), (
         f"the schema changed ({tables} tables, {columns} columns) or the version "
-        f"moved. Bump SCHEMA_VERSION *and* update _SCHEMA_FINGERPRINT_V25 — in "
+        f"moved. Bump SCHEMA_VERSION *and* update _SCHEMA_FINGERPRINT_V26 — in "
         f"that order, and never the fingerprint alone.\n"
         f"  code version: {SCHEMA_VERSION}\n  fingerprint:  {fingerprint}"
     )

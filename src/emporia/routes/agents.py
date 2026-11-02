@@ -1065,11 +1065,33 @@ def _block_name(who: str) -> str:
     return who
 
 
-def dm_blocked(recipient: str, sender: str) -> bool:
-    """P273: whether `recipient` takes no DMs from `sender`."""
+def _stable_id_of(name: str) -> str:
+    """P274: the stable id (P245) this relay holds for a sender — an agent here,
+    or one on another relay it has pinned — or "" when it holds none yet."""
     with rs.DB_LOCK, rs.get_db() as conn:
-        return conn.execute("SELECT 1 FROM dm_blocks WHERE agent_id = ? AND blocked = ?",
-                            (recipient, _block_name(sender))).fetchone() is not None
+        row = (conn.execute("SELECT stable_id FROM remote_agents WHERE address = ?", (name,)).fetchone()
+               if "@" in name else
+               conn.execute("SELECT stable_id FROM authorized_agents WHERE agent_id = ?", (name,)).fetchone())
+    return (row["stable_id"] or "") if row else ""
+
+
+def dm_blocked(recipient: str, sender: str, sender_stable_id: str = "") -> bool:
+    """P273: whether `recipient` takes no DMs from `sender`. P274: matched by the
+    sender's stable id as well as its name, so a blocked agent that moves to
+    another relay, or is renamed, is still blocked; a block made before its
+    stable id was known learns it from the first message that arrives."""
+    name = _block_name(sender)
+    sid = sender_stable_id or _stable_id_of(name)
+    with rs.DB_LOCK, rs.get_db() as conn:
+        if sid and conn.execute("SELECT 1 FROM dm_blocks WHERE agent_id = ? AND blocked_stable_id = ?",
+                                (recipient, sid)).fetchone():
+            return True
+        hit = conn.execute("SELECT blocked_stable_id FROM dm_blocks WHERE agent_id = ? AND blocked = ?",
+                           (recipient, name)).fetchone()
+        if hit and sid and not hit["blocked_stable_id"]:
+            conn.execute("UPDATE dm_blocks SET blocked_stable_id = ? WHERE agent_id = ? AND blocked = ?",
+                         (sid, recipient, name))
+        return hit is not None
 
 
 @router.post("/agents/{agent_id}/dm-blocks")
@@ -1085,10 +1107,11 @@ async def block_dm_sender(agent_id: str, req: DmBlockRequest, request: Request):
         raise HTTPException(400, "agent must be an agent id or an address like bob@relay.example")
     if blocked == agent_id:
         raise HTTPException(400, "An agent cannot block itself")
+    sid = _stable_id_of(blocked)
     with rs.DB_LOCK, rs.get_db() as conn:
-        conn.execute("INSERT OR IGNORE INTO dm_blocks (agent_id, blocked, created_at) VALUES (?,?,?)",
-                     (agent_id, blocked, datetime.now(UTC).isoformat()))
-    return {"agent_id": agent_id, "blocked": blocked}
+        conn.execute("INSERT OR IGNORE INTO dm_blocks (agent_id, blocked, created_at, blocked_stable_id) "
+                     "VALUES (?,?,?,?)", (agent_id, blocked, datetime.now(UTC).isoformat(), sid))
+    return {"agent_id": agent_id, "blocked": blocked, "stable_id": sid}
 
 
 @router.delete("/agents/{agent_id}/dm-blocks/{blocked}")

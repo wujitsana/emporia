@@ -15,6 +15,7 @@ from typing import Any
 
 from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import JSONResponse
+from pydantic import BaseModel
 
 from emporia import adverts, entitlements
 from emporia import relay_server as rs
@@ -37,6 +38,48 @@ def _require_author_signed(caller: str, nonce: str, signature: str, signed: dict
         raise HTTPException(400, "nonce must be 32-64 hex characters")
     if not rs.AGENT_REGISTRY.verify_signature(caller, signed, signature):
         raise HTTPException(403, "signature does not match this agent's key")
+
+
+def _require_not_removed(topic_id: str, agent_id: str) -> None:
+    """P274: an agent the topic's creator removed takes no further part in it —
+    no post, comment or vote, even where a public topic lets anyone read."""
+    if entitlements.is_removed("agora", topic_id, agent_id, reason="kicked", db_path=rs.DATABASE_PATH):
+        raise HTTPException(403, "Removed from this topic")
+
+
+class TopicKickRequest(BaseModel):
+    target_agent_id: str
+
+
+@router.post("/agoras/topics/{slug}/kick")
+async def kick_from_agora_topic(slug: str, req: TopicKickRequest, request: Request):
+    """P274: the topic's creator removes an agent, for good, as a room kick
+    does: out of its members, any paid window ended, any invite gone, and no
+    way back — not by subscribing again, paying again, or posting to a public
+    topic. Its past posts stay, and are its own to delete."""
+    with rs.DB_LOCK, rs.get_db() as conn:
+        row = conn.execute("SELECT topic_id, creator_id FROM agora_topics WHERE slug=? AND is_deleted=0",
+                           (slug,)).fetchone()
+        if not row:
+            raise HTTPException(404, "Topic not found")
+        rs._require_caller_is(row["creator_id"], request)
+        rs._enforce_agent_rate_limit(row["creator_id"])
+        if req.target_agent_id == row["creator_id"]:
+            raise HTTPException(400, "The creator cannot remove themselves")
+        rs._require_registered(req.target_agent_id)
+        gone = conn.execute("DELETE FROM agora_members WHERE topic_id=? AND agent_id=? AND role != 'owner'",
+                            (row["topic_id"], req.target_agent_id)).rowcount
+        if gone:
+            conn.execute("UPDATE agora_topics SET subscriber_count=MAX(0,subscriber_count-1) WHERE topic_id=?",
+                         (row["topic_id"],))
+        conn.execute("DELETE FROM agora_invites WHERE topic_id=? AND agent_id=?", (row["topic_id"], req.target_agent_id))
+    topic_id = row["topic_id"]
+    if not entitlements.is_removed("agora", topic_id, req.target_agent_id, reason="kicked", db_path=rs.DATABASE_PATH):
+        entitlements.record_removal("agora", topic_id, req.target_agent_id, reason="kicked",
+                                    removed_by=row["creator_id"], db_path=rs.DATABASE_PATH)
+    entitlements.revoke("agora", topic_id, req.target_agent_id, reason="kicked", db_path=rs.DATABASE_PATH)
+    await rs.broadcast_to_agent(req.target_agent_id, {"type": "removed_from_topic", "slug": slug})
+    return {"ok": True, "slug": slug, "agent_id": req.target_agent_id, "removed": True, "was_member": bool(gone)}
 
 
 @router.post("/agoras/topics")
@@ -554,6 +597,7 @@ async def create_agora_post(slug: str, req: rs.CreateAgoraPostRequest, request: 
             row["visibility"], row["gate_type"], row["entry_fee_cents"], caller, row["topic_id"], conn,
         ):
             raise HTTPException(403, "Private topic — must be a member to post")
+        _require_not_removed(row["topic_id"], caller)   # P274: removed by the topic's creator
         try:
             conn.execute(
                 "INSERT INTO agora_posts (post_id, topic_id, author_id, title, content, "
@@ -697,6 +741,7 @@ async def vote_agora_post(post_id: str, req: rs.AgoraVoteRequest, request: Reque
             post["visibility"], post["gate_type"], post["entry_fee_cents"], caller, post["topic_id"], conn,
         ):
             raise HTTPException(403, "Private topic")
+        _require_not_removed(post["topic_id"], caller)   # P274
         existing = conn.execute(
             "SELECT value FROM agora_votes WHERE voter_id=? AND target_id=? AND target_type='post'",
             (caller, post_id),
@@ -761,6 +806,7 @@ async def add_agora_comment(post_id: str, req: rs.AddAgoraCommentRequest, reques
             raise HTTPException(403, "Private topic")
         if p["is_locked"]:
             raise HTTPException(403, "Post is locked")
+        _require_not_removed(p["topic_id"], caller)   # P274: removed by the topic's creator
         try:
             conn.execute(
                 "INSERT INTO agora_comments (comment_id, post_id, parent_comment_id, "
@@ -801,6 +847,7 @@ async def vote_agora_comment(comment_id: str, req: rs.AgoraVoteRequest, request:
             caller, comment["topic_id"], conn,
         ):
             raise HTTPException(403, "Private topic")
+        _require_not_removed(comment["topic_id"], caller)   # P274
         existing = conn.execute(
             "SELECT value FROM agora_votes WHERE voter_id=? AND target_id=? AND target_type='comment'",
             (caller, comment_id),
