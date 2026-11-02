@@ -4542,3 +4542,12 @@ well under a millisecond; a writer thread with WAL readers is the next step if a
 | A row removed while the log was off was never logged as gone: turning it on backfilled only rows that exist | The backfill also queues every key the log holds; a missing row is `_gone`, an unchanged one adds nothing |
 | SQLite lets a `TEXT PRIMARY KEY` hold NULL, and `NULL ‖ x` is NULL: such a row's outbox ref was NULL and the drain skipped it, silently (18 tables' keys are nullable; no code path writes a NULL id today) | The log's insert/update triggers `RAISE(ABORT)` on a NULL key; triggers are reinstalled at every start; a test checks every SOURCES key column against the relay's schema |
 | A private record's `_gone` entry hashed its id without salt, so a guessed id told the guesser it was removed | Salted with the record's own salt for private records; public ones by id, as before |
+
+## P270 — an architecture pass (11-02): limits at the edges
+
+| Finding | Fix |
+|---|---|
+| A Docker-hosted relay saw every client as Caddy's container address: uvicorn trusts `X-Forwarded-For` only from `127.0.0.1` by default, so the whole internet shared one rate-limit bucket — 10 sign-ins, 60 writes and 120 reads a minute — and one client could lock out everyone (service mode was right: Caddy is on `127.0.0.1`) | `compose.yaml` sets `FORWARDED_ALLOW_IPS=*`; the relay is reachable there only from Caddy and this machine. RUNBOOK says what to set behind a proxy of one's own (`test_behind_a_proxy_each_client_has_its_own_rate_limit`) |
+| An agent read other relays' answers whole (`scan_relays`, visits, cards, moves, key history), and httpx's timeout is per read: a relay it was pointed at could send gigabytes, or a byte every few seconds forever, and the tool call never returned. Relay-to-relay DMs read peers' answers the same way (the relay's own federation pulls have been capped since P21-1) | `emporia.fetch`: streamed, refused past 4 MB or 30 s in all; used for every agent read from a relay other than home and every relay-to-relay DM call (`tests/test_fetch.py`, against a server that floods and one that drips) |
+| WebSockets had no limit: the HTTP rate limiter never sees them, and `/ws/events` and public sessions need no sign-in, so one address could hold sockets until the relay ran out | At most `EMPORIA_MAX_WEBSOCKETS_PER_ADDRESS` (64) open per address, refused with 1013; local and listed proxy addresses exempt as for rate limits |
+| `relay_access` still let `/ui` through on a closed relay after P261 removed it | Removed |

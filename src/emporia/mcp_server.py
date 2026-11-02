@@ -68,6 +68,8 @@ from pathlib import Path
 from typing import Any
 
 import httpx
+
+from emporia import fetch  # P270: other relays' answers, read within limits
 from fastmcp import FastMCP
 
 from emporia.engine.guardrails import assert_payload_safe
@@ -535,7 +537,7 @@ def move_home(old: str, agent_id: str = "") -> dict[str, Any]:
         return {"success": False, "error": f"{RELAY_URL} did not register it: {registered.get('error')}"}
     record = None
     try:
-        r = httpx.get(f"{old}/agents/{aid}/record", timeout=10)
+        r = fetch.get(f"{old}/agents/{aid}/record", timeout=10)
         record = r.json() if r.status_code == 200 else None
         out["old_relay"] = "answering"
     except Exception:  # noqa: BLE001
@@ -641,7 +643,7 @@ def _trusted_relay_keys(relay: str, current: str | None,
         return chain, False
     if history is None:
         try:
-            history = httpx.get(f"{relay}/health", timeout=10).json().get("relay_key_history") or []
+            history = fetch.get(f"{relay}/health", timeout=10).json().get("relay_key_history") or []
         except Exception:  # noqa: BLE001
             history = []
     chain = follows_rotation(pinned, current, history)
@@ -661,7 +663,7 @@ def _linked_relays() -> list[str]:
 def _read_feed(relay: str, path: str, key: str) -> tuple[list[dict], str]:
     """A relay's signed public feed, checked against its key as first seen. ("" or why not.)"""
     from emporia.identity import federation_signable_bytes, verify_raw
-    data = httpx.get(f"{relay}{path}", timeout=10).json()
+    data = fetch.get(f"{relay}{path}", timeout=10).json()
     items = data.get(key) or []
     pinned, changed = _pin_relay_key_for(relay, data.get("origin_public_key_hex"))
     if changed:
@@ -710,7 +712,7 @@ def scan_relays(
             skipped[relay] = "on this agent's deny list"
             continue
         try:
-            h = httpx.get(f"{relay}/health", timeout=5).json()
+            h = fetch.get(f"{relay}/health", timeout=5).json()
         except Exception as e:  # noqa: BLE001
             skipped[relay] = f"not answering ({type(e).__name__})"
             continue
@@ -851,7 +853,7 @@ def visit_relay(relay: str, agent_id: str = "") -> dict[str, Any]:
         return {"success": True, "relay": url, "note": "already visiting"}
     try:
         needs_yes = visits.visit_needs_yes(url, _linked_relays())
-        h = httpx.get(f"{url}/health", timeout=10).json()
+        h = fetch.get(f"{url}/health", timeout=10).json()
     except PermissionError as e:
         return {"error": str(e), "success": False}
     except Exception as e:  # noqa: BLE001
@@ -920,7 +922,7 @@ def agent_card(agent: str) -> dict[str, Any]:
     agent_id, host = split_address(agent) if is_address(agent) else (agent, "")
     relay = base_url(host) if host else RELAY_URL
     try:
-        r = httpx.get(f"{relay}/agents/{agent_id}/card", timeout=10)
+        r = fetch.get(f"{relay}/agents/{agent_id}/card", timeout=10)
     except Exception as e:
         # P190: its relay is gone or down — ask the backups and visits its own
         # signed list named, the last time this agent looked it up.
@@ -991,7 +993,7 @@ def _card_from_elsewhere(agent: str) -> dict[str, Any] | None:
     agent_id, _ = split_address(agent)
     for relay in [*(listed.get("backups") or []), *(listed.get("visits") or [])]:
         try:
-            card = httpx.get(f"{relay}/agents/{agent_id}/card", timeout=10).json()["card"]
+            card = fetch.get(f"{relay}/agents/{agent_id}/card", timeout=10).json()["card"]
         except Exception:  # noqa: BLE001
             continue
         if card.get("public_key_hex") == known.get("public_key_hex") and _relay_list_ok(card) \

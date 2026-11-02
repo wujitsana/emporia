@@ -4850,6 +4850,41 @@ class GuardedCORSMiddleware(CORSMiddleware):
 # stored dashboard JWT/cookie against this relay — keep this an explicit allowlist.
 # Registered last so it wraps outermost — see the ordering note above the rate
 # limiter: this is what makes its headers land on a 413/429 short-circuit too.
+# P270: open WebSockets per client address. The HTTP rate limiter never sees a
+# WebSocket (it is an "http" middleware), and /ws/events and public sessions
+# need no sign-in, so without this one address could hold sockets open until
+# the relay ran out of them. Counted after uvicorn's forwarded-address handling,
+# so behind the hosted relay's proxy it is each client, not the proxy.
+_WS_PER_ADDRESS = env_int("EMPORIA_MAX_WEBSOCKETS_PER_ADDRESS", 64)
+_WS_OPEN: dict[str, int] = defaultdict(int)
+
+
+class WebSocketLimit:
+    def __init__(self, inner):
+        self.inner = inner
+
+    async def __call__(self, scope, receive, send):
+        if scope["type"] != "websocket":
+            return await self.inner(scope, receive, send)
+        ip = (scope.get("client") or ("unknown", 0))[0]
+        if ip in _RATE_LIMIT_EXEMPT_HOSTS or ip == "testclient":
+            return await self.inner(scope, receive, send)
+        if _WS_OPEN[ip] >= _WS_PER_ADDRESS:
+            await receive()                                   # the connect, then refuse it
+            logger.warning("ws_refused_too_many", extra={"open": _WS_OPEN[ip], "limit": _WS_PER_ADDRESS})
+            await send({"type": "websocket.close", "code": 1013})   # try again later
+            return
+        _WS_OPEN[ip] += 1
+        try:
+            await self.inner(scope, receive, send)
+        finally:
+            _WS_OPEN[ip] -= 1
+            if _WS_OPEN[ip] <= 0:
+                _WS_OPEN.pop(ip, None)
+
+
+app.add_middleware(WebSocketLimit)
+
 _CORS_ORIGINS = {RELAY_BASE_URL, "http://localhost:8088", "http://localhost:5173"}
 _CORS_ORIGINS.update(
     o.strip() for o in os.getenv("EMPORIA_CORS_ORIGINS", "").split(",") if o.strip()

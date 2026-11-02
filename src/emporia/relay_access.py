@@ -27,9 +27,8 @@ MODES = ("open", "read-only", "closed")
 SETTING = "EMPORIA_RELAY_ACCESS"
 MEMBERS = "EMPORIA_RELAY_MEMBERS"
 
-# Always reachable: the health check, signing in, and the dashboard's own files.
+# Always reachable: the health check and signing in (P261: the relay serves no dashboard files).
 _ALWAYS = ("/health", "/agents/challenge", "/agents/register", "/dashboard/")
-_UI = "/ui"
 
 
 _live: dict[str, object] = {"path": None, "mtime": None, "values": {}}
@@ -100,7 +99,7 @@ def is_member(agent_id: str | None) -> bool:
 def refusal(method: str, path: str, caller: str | None) -> str:
     """Why this request may not proceed under the relay's access mode; "" if it may."""
     current = mode()
-    if current == "open" or path.startswith(_ALWAYS) or path == _UI or path.startswith(_UI + "/"):
+    if current == "open" or path.startswith(_ALWAYS):
         return ""
     if method == "OPTIONS":
         return ""

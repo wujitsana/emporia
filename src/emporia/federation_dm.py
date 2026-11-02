@@ -142,9 +142,8 @@ async def verified_peer(request: Request, body: bytes) -> str:
         _REPIN_TRIED[peer] = time.monotonic()
         h = None
         try:
-            import httpx
-            async with httpx.AsyncClient(timeout=10) as client:
-                h = (await client.get(f"{peer}/health")).json()
+            from emporia import fetch
+            h = (await fetch.request("GET", f"{peer}/health", timeout=10)).json()
         except Exception:  # noqa: BLE001
             h = None
         new = (h or {}).get("relay_public_key", "")
@@ -154,11 +153,10 @@ async def verified_peer(request: Request, body: bytes) -> str:
 
 
 async def call_peer(peer: str, method: str, path: str, payload: dict | None = None) -> Any:
-    import httpx
+    from emporia import fetch      # P270: a peer's answer read within limits
     body = json.dumps(payload).encode() if payload is not None else b""
-    async with httpx.AsyncClient(timeout=15) as client:
-        return await client.request(method, f"{peer}{path}", content=body or None,
-                                    headers=signed_headers(method, host_of(peer), path, body))
+    return await fetch.request(method, f"{peer}{path}", content=body or None,
+                               headers=signed_headers(method, host_of(peer), path, body), timeout=15)
 
 
 # ─── agents on other relays ──────────────────────────────────────────────────

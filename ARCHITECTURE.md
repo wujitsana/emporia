@@ -71,7 +71,7 @@ their own, separate handlers rather than this turn-processing pipeline.
 
 ## Background tasks
 
-One: a periodic sweep (`_sweep_loop()`, `EMPORIA_SWEEP_INTERVAL_SECONDS`, default 300s), started
+A periodic sweep (`_sweep_loop()`, `EMPORIA_SWEEP_INTERVAL_SECONDS`, default 300s), started
 in `lifespan()` and cancelled + awaited on shutdown. Evicts empty/expired keys from the relay's
 unbounded in-memory dicts (`_RATE_WINDOWS`, `_PENDING_TOKENS`, `ws_connections`,
 `AGENT_REGISTRY.rate_limits`) — see `docs/security-log.md`'s N11 pass (R3). A single failed sweep no longer
@@ -79,9 +79,8 @@ ends the task for the rest of the process's life (N12-1, R1): each run is wrappe
 is logged and counted rather than propagated, while `asyncio.CancelledError` (shutdown) still
 propagates normally. Outcomes (run count, last run/error timestamps, consecutive-failure count,
 cumulative evictions per dict) are process-lifetime counters in `SWEEP_STATS`, surfaced read-only
-via `GET /safety/stats` — see `docs/security-log.md`'s N12 pass (R6). Nothing else runs in the background;
-federation sync is pull-on-demand (`POST /gaming/v1/federate/sync`, MCP tools), not scheduled by
-the relay itself.
+via `GET /safety/stats` — see `docs/security-log.md`'s N12 pass (R6). Federation sync can also be
+run on demand (`POST /gaming/v1/federate/sync`).
 
 Also: the payout and bounty reconcilers, the federation pull when peers are linked, and (P256-P258)
 the transparency log's signer (`_log_state_loop()`): every 30 s it checks whether

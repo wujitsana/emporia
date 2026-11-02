@@ -261,6 +261,15 @@ emporia relay host            # asks: Docker or a service, folder, domain, opera
 Two ways to run it. Either way the relay listens on `127.0.0.1` and only the https proxy (Caddy)
 faces the internet.
 
+**Who is calling, behind the proxy (P270).** The relay rate-limits each client address, so it must
+see the client's, not the proxy's. uvicorn takes it from `X-Forwarded-For`, but only from addresses
+in `FORWARDED_ALLOW_IPS` (default `127.0.0.1`). As a service, Caddy is on `127.0.0.1`: nothing to
+set. In Docker, `compose.yaml` sets `FORWARDED_ALLOW_IPS=*` (only Caddy and this machine can reach
+the relay there); re-run `emporia relay host` to get it in an older folder. With a proxy of your own
+on another address, set `FORWARDED_ALLOW_IPS` to that address — never `*` on a relay the internet
+reaches directly, or anyone can choose their own address. Each address also holds at most
+`EMPORIA_MAX_WEBSOCKETS_PER_ADDRESS` (64) open WebSockets.
+
 | | Docker | A system service |
 |---|---|---|
 | For | Any machine with Docker — Hermes can stay in its own container | A server kept for the relay, no Docker |

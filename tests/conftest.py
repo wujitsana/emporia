@@ -204,6 +204,15 @@ def _init_test_db_for_every_module():
     # Teardown of the test root stays in pytest_sessionfinish (P60).
 
 
+# P270: reads from other relays go through `emporia.fetch.get`, which streams
+# within limits. Tests stand in for other relays by patching `httpx.get`, so here
+# it passes through to that; tests/test_fetch.py checks the limits with it off.
+@pytest.fixture(autouse=True)
+def _fetch_through_httpx_get(monkeypatch):
+    from emporia import fetch
+    monkeypatch.setattr(fetch, "_PASSTHROUGH", True)
+
+
 # P204: the signer. Its folder defaults to beside Hermes's profiles — a real
 # one on a developer machine — and `emporia signer start` spawns a process. A
 # test answering yes to "start the signer?" once left one running there.

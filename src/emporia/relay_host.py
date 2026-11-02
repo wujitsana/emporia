@@ -109,6 +109,11 @@ services:
       - "127.0.0.1:{LOCAL_PORT}:8088"
     environment:
       - EMPORIA_RELAY_ENV_FILE=/app/relay.env
+      # P270: believe X-Forwarded-For from whoever reaches it. Only Caddy (or your
+      # proxy, through the port above, bound to this machine) and this stack can;
+      # without it every client counts as the proxy's address and shares one
+      # rate limit (10 sign-ins a minute for the whole internet).
+      - FORWARDED_ALLOW_IPS=*
     volumes:
       - emporia-data:/data     # its identity, operator key and database: never delete
       - ./.env:/app/relay.env:ro   # who may use it, re-read when it changes
