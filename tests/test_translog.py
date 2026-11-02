@@ -99,7 +99,11 @@ def test_a_later_state_is_consistent_with_an_earlier_one(client):
 
 def test_a_payment_goes_in_as_a_commitment_its_holder_can_find(client):
     pay = rs.record_payment("pi_tl_1", "tl-payer", 250, "room_entry", room_id="room_tl", rail="stripe")
-    c = translog.commitment("payment", {k: pay[k] for k in translog.PAYMENT_FIELDS})
+    with rs.DB_LOCK, rs.get_db() as conn:
+        row = conn.execute("SELECT * FROM payments WHERE payment_id = ?", (pay["payment_id"],)).fetchone()
+        c = translog.commitment_for(conn, "payment", pay["payment_id"], {k: row[k] for k in translog.PAYMENT_FIELDS})
+    # P263: salted — the fields alone, which a guesser could know, do not give it
+    assert translog.commitment("payment", {k: row[k] for k in translog.PAYMENT_FIELDS}) != c
     [entry] = client.get("/log/entries", params={"ref": c}).json()["entries"]
     assert entry["record"] == {"commitment": c, "kind": "payment", "logged_at": entry["record"]["logged_at"]}
     assert "tl-payer" not in str(entry)
@@ -116,13 +120,16 @@ def test_chain_heads_are_folded_in_once_per_change_public_by_id_private_by_commi
             conn.execute("INSERT INTO room_messages (message_id, room_id, sender_id, content, chain_hash, created_at) "
                          "VALUES (?, ?, 'x', 'hi', ?, ?)", (f"m_{rid}", rid, "ab" * 32, now))
         before = translog.size(conn)
-        translog.fold_chain_heads(conn)
-        added = translog.entries(conn, before)
-        translog.fold_chain_heads(conn)
-        assert translog.size(conn) == before + len(added)            # unchanged chains add nothing
+        translog.fold_all(conn)
+        added = translog.entries(conn, before, limit=1000)
+        n = translog.size(conn)
+        translog.backfill(conn)                                      # every chain again: unchanged ones add nothing
+        translog.fold_all(conn)
+        assert translog.size(conn) == n
+        secret = translog.commitment_for(conn, "room_chain", "room_tl_priv",
+                                         {"chain": "room", "id": "room_tl_priv", "head": "ab" * 32, "count": 1})
     pub = [e for e in added if e["record"].get("id") == "room_tl_pub"]
     assert pub and pub[0]["record"]["head"] == "ab" * 32
-    secret = translog.commitment("room_chain", {"chain": "room", "id": "room_tl_priv", "head": "ab" * 32, "count": 1})
     assert [e["record"]["kind"] for e in added if e["record"].get("commitment") == secret] == ["private_chain"]
     assert "room_tl_priv" not in str(added)
 
@@ -164,18 +171,20 @@ def test_posts_listings_moves_and_removals_are_folded_in_once(client):
         conn.execute("INSERT INTO deletions (kind, item, deleted_by, role, deleted_at, signature) "
                      "VALUES ('post', 'post_tl_old', 'tl-gamma', 'author', ?, '')", (now,))
         before = translog.size(conn)
-        translog.fold_records(conn)
+        translog.fold_all(conn)
         added = translog.entries(conn, before, limit=1000)
-        translog.fold_records(conn)
-        assert translog.size(conn) == before + len(added)
+        n = translog.size(conn)
+        translog.backfill(conn)
+        translog.fold_all(conn)
+        assert translog.size(conn) == n                              # folded in once
+        move = translog.commitment_for(conn, "session_action", "act_tl", {
+            "action_id": "act_tl", "session_id": "sess_tl", "agent_id": "tl-gamma", "action_type": "move",
+            "payload_hash": translog.content_hash('{"bid": 3}'), "created_at": now})
     refs = {e["record"].get("commitment") or e["record"].get("item_hash") or e["record"]["kind"] for e in added}
     assert {"agora_topic", "agora_post"} <= refs
     [post] = [e for e in added if e["record"].get("post_id") == "post_tl"]
     assert post["record"]["content_hash"] == translog.content_hash("hello", "world")
     assert "world" not in str(post)
-    move = translog.commitment("session_action", {
-        "action_id": "act_tl", "session_id": "sess_tl", "agent_id": "tl-gamma", "action_type": "move",
-        "payload_hash": translog.content_hash('{"bid": 3}'), "created_at": now})
     assert move in refs and "sess_tl" not in str(added)
     assert translog.content_hash("post", "post_tl_old") in refs and "post_tl_old" not in str(added)
     state = _state(client)
@@ -201,14 +210,15 @@ def test_a_changed_profile_and_a_withdrawn_advert_are_new_entries():
                      "VALUES ('tl-eps', ?, 'sid_eps', '2026-10-31')", ("cd" * 32,))
         conn.execute("INSERT INTO room_adverts (room_id, stable_id, public_key_hex, signature, advertised_at) "
                      "VALUES ('room_tl_ad', 'sid_eps', ?, 'sig', '2026-10-31')", ("cd" * 32,))
-        translog.fold_current(conn)
+        translog.fold_all(conn)
         before = translog.size(conn)
-        translog.fold_current(conn)
+        translog.backfill(conn)
+        translog.fold_all(conn)
         assert translog.size(conn) == before                                  # nothing changed, nothing added
         conn.execute("UPDATE authorized_agents SET x402_pay_to_json = '{\"base\": \"0xthief\"}' "
                      "WHERE agent_id = 'tl-eps'")
         conn.execute("DELETE FROM room_adverts WHERE room_id = 'room_tl_ad'")
-        translog.fold_current(conn)
+        translog.fold_all(conn)
         kinds = [e["record"]["kind"] for e in translog.entries(conn, before)]
     assert sorted(kinds) == ["agent", "room_advert_gone"]
 
@@ -265,7 +275,86 @@ def test_setup_log_turns_it_off_and_on_in_the_relay_profile(tmp_path, monkeypatc
 def test_every_table_is_logged_or_says_why_not():
     with rs.DB_LOCK, rs.get_db() as conn:
         tables = {r[0] for r in conn.execute("SELECT name FROM sqlite_master WHERE type = 'table'").fetchall()}
-    covered = ({t for t, _, _ in translog.SOURCES.values()} | {t for t, _, _ in translog.CURRENT.values()}
+    covered = ({t for t, _, _ in translog.SOURCES.values()} | {t for t, _ in translog.CHAINS.values()}
                | set(translog.NOT_LOGGED))
     missing = {t for t in tables if not t.startswith(("translog_", "sqlite_"))} - covered
     assert not missing, f"tables neither in the transparency log nor in translog.NOT_LOGGED: {sorted(missing)}"
+
+
+# --- P263: one ingest for rows added, changed and removed ---------------------
+
+def _fresh_log(tmp_path, ddl: str):
+    import sqlite3
+    conn = sqlite3.connect(tmp_path / "p263.db")
+    conn.row_factory = sqlite3.Row
+    conn.executescript(ddl)
+    translog.init_schema(conn)
+    return conn
+
+
+def _kinds(conn, start=0):
+    return [e["record"]["kind"] for e in translog.entries(conn, start, limit=1000)]
+
+
+def test_a_row_taking_a_removed_rows_rowid_is_still_logged(tmp_path):
+    """The audit's case: delete the newest listing, add one, fold. Before P263 the
+    new one took the old rowid and was never logged."""
+    conn = _fresh_log(tmp_path, "CREATE TABLE listings (listing_id TEXT PRIMARY KEY, agent_id, agent_stable_id, "
+                                "listing_type, title, description, signature, created_at, federated_from);")
+    def add(i):
+        conn.execute("INSERT INTO listings VALUES (?, 'a', 's', 'service', ?, 'd', 'sig', 'now', NULL)", (i, i))
+    add("L1"); add("L2")
+    translog.fold_all(conn)
+    conn.execute("DELETE FROM listings WHERE listing_id = 'L2'")
+    add("L3")
+    translog.fold_all(conn)
+    logged = [e["record"].get("listing_id") for e in translog.entries(conn, 0) if e["record"]["kind"] == "listing"]
+    assert logged == ["L1", "L2", "L3"] and _kinds(conn).count("listing_gone") == 1
+
+
+def test_a_refund_is_a_new_entry_not_a_silent_edit(tmp_path):
+    conn = _fresh_log(tmp_path, "CREATE TABLE payments (payment_id, agent_id, amount_cents, currency, payment_type, "
+                                "session_id, room_id, rail, status, created_at);")
+    conn.execute("INSERT INTO payments VALUES ('pay1', 'a', 500, 'usd', 'room_entry', NULL, 'r', 'stripe', "
+                 "'confirmed', 'now')")
+    translog.fold_all(conn)
+    first = translog.size(conn)
+    conn.execute("UPDATE payments SET status = 'refunded' WHERE payment_id = 'pay1'")
+    translog.fold_all(conn)
+    assert translog.size(conn) == first + 1 and _kinds(conn, first) == ["payment"]
+    conn.execute("UPDATE payments SET status = 'refunded' WHERE payment_id = 'pay1'")    # no change: nothing
+    translog.fold_all(conn)
+    assert translog.size(conn) == first + 1
+
+
+def test_a_chain_rewritten_to_the_same_length_is_logged_again(tmp_path):
+    """P258 compared a chain's count, so replacing the last message kept it out."""
+    conn = _fresh_log(tmp_path, "CREATE TABLE dm_messages (message_id, thread_id, chain_hash, created_at);")
+    conn.execute("INSERT INTO dm_messages VALUES ('m1', 'dm_x', 'h1', '2026-11-01')")
+    translog.fold_all(conn)
+    n = translog.size(conn)
+    conn.execute("UPDATE dm_messages SET chain_hash = 'h1-edited' WHERE message_id = 'm1'")
+    translog.fold_all(conn)
+    assert translog.size(conn) == n + 1 and _kinds(conn, n) == ["private_chain"]
+
+
+def test_a_large_backlog_is_folded_in_batches(tmp_path):
+    conn = _fresh_log(tmp_path, "CREATE TABLE deletions (kind, item, role, deleted_at, signature);")
+    conn.executemany("INSERT INTO deletions VALUES ('post', ?, 'author', 'now', '')", [(f"p{i}",) for i in range(4500)])
+    assert translog.waiting(conn) == 4500
+    assert translog.drain(conn) == 2000 and translog.waiting(conn) == 2500
+    translog.fold_all(conn)
+    assert translog.waiting(conn) == 0 and translog.size(conn) == 4500
+
+
+def test_a_log_from_the_scanning_ingest_is_rebuilt_once(tmp_path):
+    conn = _fresh_log(tmp_path, "CREATE TABLE deletions (kind, item, role, deleted_at, signature);")
+    conn.execute("INSERT INTO deletions VALUES ('post', 'p1', 'author', 'now', '')")
+    translog.fold_all(conn)
+    conn.execute("UPDATE translog_seen SET digest = 'scan-v0' WHERE key = 'ingest'")   # as P258-P262 left it
+    translog.init_schema(conn)
+    translog.fold_all(conn)
+    assert _kinds(conn) == ["deletion"]                       # rebuilt from what the relay holds, once
+    translog.init_schema(conn)
+    translog.fold_all(conn)
+    assert _kinds(conn) == ["deletion"]

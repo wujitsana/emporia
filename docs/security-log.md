@@ -4460,3 +4460,21 @@ Left: on first contact a hostile relay can name an agent of its own as a listing
 first use, as for every key. Buying from a listing could pass the listing's signed `stable_id` as
 `expected_stable_id`; not wired yet. Stripe destination charges name a Stripe account the relay
 created, outside this check.
+
+## P263 pass — one ingest for the transparency log: triggers, an outbox, salted commitments
+
+From the 11-02 audit of P256-P259 (their first review).
+
+| Finding | Fix |
+|---|---|
+| Appended tables were folded by rowid high-water mark, and SQLite gives a new row the rowid of a deleted newest one: delete the newest listing, add another, and the new one never entered the log (reproduced). Topic leaves, invite revokes and session cleanup hit it too | SQLite triggers (insert, update, delete) on every logged table queue the row in `translog_outbox`, numbered by AUTOINCREMENT; the fold drains it and compares each row's record with the one last logged for that row. A reused rowid holding another row logs the old one as gone and the new one as new (`test_a_row_taking_a_removed_rows_rowid_is_still_logged`) |
+| "Appended" tables were changed in place after logging — payments released or refunded, settlements reversed and refunded, entitlements revoked — and none of it reached the log | One mechanism for added and changed rows; payment and settlement records carry their status (`test_a_refund_is_a_new_entry_not_a_silent_edit`) |
+| A chain's head was re-logged only when its message count changed, so a rewritten last message kept the old head in the log | Compared by head (`test_a_chain_rewritten_to_the_same_length_is_logged_again`) |
+| Commitments were plain SHA-256 over the fields, hiding them only where some field was unguessable. A public game's participant row is its public session id, an agent id from a short list and a join time a few minutes wide (the leaf's own `logged_at` bounds it): minutes on a GPU | Salted per record with an HMAC of the relay's log secret (`record_salt`, `commitment_for`); the salt is stored nowhere and will be handed to a record's parties with the record when clients check the log (step 2) |
+| Every fold scanned every changed-in-place table in full and grouped every room and DM message, holding `DB_LOCK` — which async handlers take on the event loop — so each fold stalled the whole relay for time growing with its size, and the first fold on a large relay for longer | No fold scans a table: the outbox says what changed. `sign_log_state` drains it 2,000 entries per short transaction, releasing the lock between (`test_a_large_backlog_is_folded_in_batches`) |
+| Logged though nobody relies on it: table talk, topic memberships and invites, room invites (already signed room acts) — space, and activity timing for the public | In `NOT_LOGGED`, with the reason |
+
+A log written by the scanning ingest is dropped and rebuilt once from everything the relay holds
+(schema 20, `translog.INGEST`); its signed states go, as P258's did — no client checked them yet.
+Still open: private chain heads are one leaf each per change, so the public can count active private
+conversations per fold; folding them into one leaf per state is for client checks (step 2).

@@ -327,16 +327,19 @@ reproduces the RFC's reference tree (`tests/test_translog.py:test_roots_match_th
 
 **What goes in.** Every kind of record a relay keeps that someone signed or that moves money: key
 steps, agents' profiles (keys, payout wallets, relays), Agora topics, posts and comments, listings,
-room acts, adverts and game offers, removals, moves, table talk, session messages, sessions'
-status, events, payments, settlements, escrow holds, access grants, invites and memberships, and
-the heads of room and DM chains. Message text never goes in. A public item goes in by id with a
-hash of its content and its author's signature. Anything private goes in as a commitment over its
-fields, which only those holding the record can recompute and look up. Moves are always
+room acts, adverts and game offers, removals, moves, session messages, sessions' status, events,
+payments and settlements with their status, escrow holds, access grants, game participants, and the
+heads of room and DM chains. Message text and table talk never go in. A public item goes in by id
+with a hash of its content and its author's signature. Anything private goes in as a commitment over
+its fields and a per-record salt, so knowing the fields is not enough to find it; the record's
+parties will get the salt with the record when clients check the log (section 9). Moves are always
 commitments, because a plain hash of a sealed bid or a rock-paper-scissors choice could be guessed.
-Key changes and money are logged in the same database transaction as the event; everything else is
-folded in when the relay next signs, appended tables by position and records changed in place
-(a payout wallet, an advert, a game finishing) by digest, so a change or a removal is a new entry
-(`test_a_changed_profile_and_a_withdrawn_advert_are_new_entries`).
+Key changes and money are logged in the same database transaction as the event. Everything else
+reaches the log through database triggers: each row added, changed or removed is queued, and when
+the relay next signs, a row whose record differs from the one last logged is a new entry and a row
+that has gone is a removal entry — a refund, a swapped payout wallet or a withdrawn advert included
+(`test_a_refund_is_a_new_entry_not_a_silent_edit`,
+`test_a_changed_profile_and_a_withdrawn_advert_are_new_entries`).
 
 **What a relay signs.** Every five minutes, or sooner after 1,000 entries, and only when the log
 grew, the relay signs `{size, root, at}` with its key (`docs/protocol.md` section 4.5). Public routes

@@ -3443,6 +3443,8 @@ _NON_AGENT_COLUMNS: frozenset[tuple[str, str]] = frozenset({
     ("translog_states", "relay_public_key"), ("translog_states", "signature"),
     ("translog_nodes", "level"), ("translog_nodes", "idx"), ("translog_nodes", "hash"),
     ("translog_seen", "key"), ("translog_seen", "digest"),
+    # P263: the log's outbox — rowids and room/thread ids waiting to be folded in, never a handle
+    ("translog_outbox", "seq"), ("translog_outbox", "kind"), ("translog_outbox", "rid"), ("translog_outbox", "ref"),
     ("agora_posts", "nonce"), ("agora_posts", "signature"),
     ("agora_comments", "nonce"), ("agora_comments", "signature"),
     ("room_acts", "act_id"), ("room_acts", "room_id"), ("room_acts", "act"), ("room_acts", "at"),
@@ -5027,8 +5029,16 @@ _LOG_STATE_TASK: asyncio.Task | None = None
 
 
 def sign_log_state() -> dict[str, Any] | None:
-    """Fold chain heads and relay key changes into the log and sign its state."""
+    """Fold what changed into the log and sign its state. P263: the outbox is
+    drained in batches, each its own short transaction, so a large backlog (a
+    relay's first fold) never holds the database for long."""
     from emporia import identity
+    if not translog.enabled():
+        return None
+    while True:
+        with DB_LOCK, get_db() as conn:
+            if translog.drain(conn) < 2000:
+                break
     with DB_LOCK, get_db() as conn:
         state = translog.sign_state(conn, identity.sign_raw_relay, identity.get_relay_public_key_hex(),
                                     identity.relay_key_history())
@@ -5044,7 +5054,7 @@ async def _log_state_loop() -> None:
         try:
             with DB_LOCK, get_db() as conn:
                 held = translog.latest_state(conn)
-                waiting = translog.size(conn) - (held["size"] if held else 0)
+                waiting = translog.size(conn) - (held["size"] if held else 0) + translog.waiting(conn)
             if waiting >= _LOG_STATE_ENTRIES or time.monotonic() - last >= _LOG_STATE_INTERVAL_SECONDS:
                 await asyncio.to_thread(sign_log_state)
                 last = time.monotonic()

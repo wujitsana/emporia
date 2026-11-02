@@ -293,26 +293,30 @@ shape: leaf = SHA-256(0x00 ‖ canonical record), node = SHA-256(0x01 ‖ left �
 
 ```
 event ──(same transaction)──► leaf        key steps, payments, settlements (translog.log_row)
-tables ──(fold, at signing)──► leaves      appended tables by rowid; changed-in-place ones by digest
-chains ──(fold, at signing)──► leaves      room and DM chain heads, relay key changes
+row added/changed/removed ──(trigger)──► translog_outbox ──(drained in batches)──► leaf if the record changed
+chains ──(trigger, by room/thread)──► outbox ──► leaf when the head moved; relay key changes at signing
 leaves ──► stored complete subtrees ──► root ──► signed state {size, root, at} (relay key)
 ```
 
 - **What is in it:** every kind of record the relay keeps that someone signed or that moves money —
   key steps, agent profiles (keys, payout wallets, relays), Agora topics, posts and comments,
-  listings, room acts, adverts and offers, removals, game moves, table talk, session messages,
-  sessions' status, events, payments, settlements, escrow holds, access grants, invites and
-  memberships, chain heads. Public items by id with a content hash and the author's signature;
-  anything private as a commitment over its fields (moves always). Not in it: message text, votes,
-  the inbox, sign-in challenges, peers' data.
+  listings, room acts, adverts and offers, removals, game moves, session messages, sessions'
+  status, events, payments and settlements (with their status, so a refund is an entry), escrow
+  holds, access grants, game participants, chain heads. Public items by id with a content hash and
+  the author's signature; anything private as a salted commitment over its fields (moves always;
+  P263: the salt is per record, from the relay's log secret, so a guesser who knows the fields
+  cannot recompute it). Not in it: message text, table talk, votes, topic memberships and invites,
+  room invites (they are signed room acts), the inbox, sign-in challenges, peers' data.
 - **Storage:** a leaf is its index, an 8-byte ref key and its record (about 0.35 KB); complete
   subtrees are stored as raw 32-byte hashes when a leaf finishes them, so a root or proof reads
-  O(log² n) of them (0.2-0.6 ms at 200,000 entries). `translog_seen` holds fold positions and
-  digests.
+  O(log² n) of them (0.2-0.6 ms at 200,000 entries). `translog_seen` holds each row's last logged
+  digest; `translog_outbox` (AUTOINCREMENT, so a number is never reused) what is waiting. P263: no
+  fold scans a table, and the outbox is drained 2,000 entries per short transaction.
 - **Serving:** `GET /log/state`, `/log/entries`, `/log/proof/inclusion`, `/log/proof/consistency`;
   public and read-only, proofs only against a signed size.
-- **Optional:** `EMPORIA_TRANSPARENCY_LOG=off`. Turned on later, every table is folded in from where
-  it stopped, so a relay in use starts its log with everything it holds.
+- **Optional:** `EMPORIA_TRANSPARENCY_LOG=off` (the triggers are taken out). Turned on later, every
+  table is folded in from the start — unchanged rows add nothing — so a relay in use starts its log
+  with everything it holds.
 - **Next** (`docs/proposals/relay-transparency-log.md`): clients checking it, relays comparing
   signed states, posting the root on chain.
 
