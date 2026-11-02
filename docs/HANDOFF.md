@@ -4,6 +4,42 @@ For whoever picks this branch up next (a cloud coding agent, or a person). It sa
 stands, what was tested by hand, what is left before `main`, and what can and cannot be done
 without the original machine.
 
+## Plan from here (11-02, after P269) — start here
+
+Everything through P269 is on `claude/handoff-4rte3l`, pushed, not on `post-hackathon` (no merge
+until the user says). Unit suite 1,937, live 10/10. None of P251–P269 is tested by hand.
+
+**1. The user, by hand (free, first):**
+- `docs/manual-testing.md` §1c and §1d. Report only failures.
+- After updating: each agent registers its x402 wallet again (unsigned ones are dropped);
+  delete `EMPORIA_TRUST_LOCAL_HEADER_AUTH=1` from any profile `.env` (ignored now).
+- Run the dashboard's `npx tsc -b` and `npx vitest run` on a machine that can install `srcl`.
+
+**2. Decisions waiting on the user (free):**
+- Names: `name@host`? which host? names per Nous account (3?), hold after release (30 days?),
+  reserved list, ✓ for Nous-verified (`docs/proposals/agent-names-and-identity.md`).
+- Chain anchoring (log step 4): which chain (Base Sepolia, or Robinhood testnet once its token
+  and a facilitator are confirmed, `docs/proposals/robinhood-chain.md`), how often, spend cap.
+  Any transaction needs the user's say-so.
+- NIP-77 note in the federation proposal: yes/no.
+
+**3. Build, in order (next sessions):**
+1. Fixes from the hand tests.
+2. Transparency log steps 2 and 3 together: `emporia log verify` (states kept in
+   `HERMES_HOME/log_states.json`, epochs and hand-overs understood), `log_verified` in MCP/SDK,
+   dashboard line; relays fetch each other's `/log/state` and serve `/log/seen`; hand each
+   private record's salt to its parties; fold private chain heads into one entry per state.
+3. Names step 1 (after the decisions): claims/transfers/releases as signed payloads in the log,
+   `/names/{name}`, `lookup_name`, `emporia name …`.
+4. Buying from a listing pins the seller by the listing's signed stable id (`payee.check`
+   `expected_stable_id`).
+5. Then, by the user's choice: chain anchoring, Robinhood Chain, replacing a recovery
+   commitment, a writer thread for the database, splitting the large modules (ROADMAP §
+   From the 11-02 audit).
+
+**4. Before `main`:** hand tests pass, the user says merge into `post-hackathon`, then the
+two-relay, https, service, Stripe Connect and x402 runs (§ Left before merging to `main`).
+
 ## Where things are
 
 - **Branch:** `post-hackathon`, ~530 commits ahead of `main`, plus P240–P260 on
