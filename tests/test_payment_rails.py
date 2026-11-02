@@ -91,7 +91,7 @@ def test_an_evm_address_matches_in_any_letter_case(mock_verify, mock_settle, cli
     creator = "p88_case_creator"
     _register(client, creator)
     wallet = "0x52908400098527886e0f7030069857d2e4169ee7"
-    AGENT_REGISTRY.set_x402_pay_to(creator, "evm", wallet)
+    __import__("conftest").give_wallet(creator, "evm", wallet)
     mock_verify.return_value = {"isValid": True}
     mock_settle.return_value = {"success": True, "transaction": "0xtx_case"}
 
@@ -117,7 +117,7 @@ def test_case_folding_does_not_let_a_different_address_through(mock_verify, mock
 
     creator = "p88_case_creator_2"
     _register(client, creator)
-    AGENT_REGISTRY.set_x402_pay_to(creator, "evm", "0x" + "aa" * 20)
+    __import__("conftest").give_wallet(creator, "evm", "0x" + "aa" * 20)
     with patch.dict(os.environ, _X402_ENV, clear=False):
         with pytest.raises(HTTPException) as e:
             asyncio.run(_verify_x402_payment(
@@ -140,7 +140,7 @@ def _x402_room(client, owner, fee=400):
     from tests.test_emporia import _register_keyed as reg
     reg(client, owner)
     r = client.post(f"/agents/{owner}/x402-wallet",
-                    json={"network_family": "evm", "address": "0x" + "dd" * 20},
+                    json=__import__("conftest").signed_wallet_body(owner, "evm", "0x" + "dd" * 20),
                     headers={"x-emporia-agent-id": owner})
     assert r.status_code == 200, r.text
     r = client.post("/rooms", json=_signed_room(owner, {"name": "P93", "creator_id": owner, "room_type": "private",
@@ -198,3 +198,18 @@ def test_a_failed_settlement_returns_its_reason(mock_verify, mock_settle, client
 
 def test_no_receipt_where_nothing_settled(client):
     assert "PAYMENT-RESPONSE" not in client.get("/health").headers
+
+
+def test_an_x402_challenge_names_its_payee_in_their_own_signed_words(client):
+    """P262: the 402 carries the payee's signed wallets, and its payTo is one of them."""
+    from emporia import payee
+    room = _x402_room(client, "p262_owner")
+    from tests.test_emporia import _register as reg
+    reg(client, "p262_payer")
+    with patch.dict(os.environ, _X402_ENV, clear=False):
+        r = client.post(f"/rooms/{room}/join", json={"agent_id": "p262_payer"},
+                        headers={"x-emporia-agent-id": "p262_payer"})
+    assert r.status_code == 402, r.text
+    body = r.json()
+    [req] = body["x402"]["accepts"]
+    assert payee.check(body["payee"], "evm", req["payTo"]).startswith("p262_owner")

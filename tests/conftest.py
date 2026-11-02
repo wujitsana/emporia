@@ -288,3 +288,46 @@ def _install_header_shim():
 
 
 _install_header_shim()
+
+
+# --- P262: payout wallets are signed by their agent ---------------------------
+def signed_wallet_body(agent_id: str, network_family: str, address: str, *, key_profile: str = "") -> dict:
+    """The `POST /agents/{id}/x402-wallet` body, signed with the agent's test key
+    (or `key_profile`'s) over `wire.signed_payout_wallet_payload`."""
+    from datetime import UTC, datetime
+
+    from emporia import identity, relay_server as rs, wire
+    with rs.DB_LOCK, rs.get_db() as conn:
+        row = conn.execute("SELECT stable_id FROM authorized_agents WHERE agent_id = ?", (agent_id,)).fetchone()
+    at = datetime.now(UTC).isoformat()
+    payload = wire.signed_payout_wallet_payload(row["stable_id"] if row else "", network_family, address, at)
+    return {"network_family": network_family, "address": address, "at": at,
+            "signature": identity.sign(payload, key_profile or agent_id)}
+
+
+def give_wallet(agent_id: str, network_family: str, address: str) -> None:
+    """Store a payout wallet with its agent's signature, as the route would."""
+    from emporia import relay_server as rs
+    body = signed_wallet_body(agent_id, network_family, address)
+    rs.AGENT_REGISTRY.set_x402_pay_to(agent_id, network_family, address,
+                                      {"at": body["at"], "signature": body["signature"]})
+
+
+def payee_for(agent_id: str = "", **wallets: str) -> dict:
+    """A payee statement as a relay serves it with an offer (P262), signed by a
+    fresh in-memory key: `payee_for(evm="0x…")`. A fresh name each call unless
+    one is given, so a payer's pin (P244) never sees two keys under one name."""
+    import uuid
+    from datetime import UTC, datetime
+
+    from cryptography.hazmat.primitives.asymmetric import ed25519
+
+    from emporia import identity, wire
+    priv = ed25519.Ed25519PrivateKey.generate()
+    pub = priv.public_key().public_bytes_raw().hex()
+    sid, at = wire.stable_id_for(pub), datetime.now(UTC).isoformat()
+    return {"agent_id": agent_id or f"payee_{uuid.uuid4().hex[:8]}", "stable_id": sid, "public_key_hex": pub,
+            "key_log": [], "wallets": {
+                f: {"address": a, "at": at,
+                    "signature": identity.sign_payload(priv, wire.signed_payout_wallet_payload(sid, f, a, at))}
+                for f, a in wallets.items()}}

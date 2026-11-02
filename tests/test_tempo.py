@@ -97,7 +97,7 @@ def test_a_room_entry_paid_on_tempo_is_direct_and_cannot_be_replayed(chain, monk
     for a in (owner, payer, other):
         _register_keyed(client, a)
     wallet = Account.create().address
-    client.post(f"/agents/{owner}/x402-wallet", json={"network_family": "evm", "address": wallet},
+    client.post(f"/agents/{owner}/x402-wallet", json=__import__("conftest").signed_wallet_body(owner, "evm", wallet),
                 headers={"x-emporia-agent-id": owner})
     room = client.post("/rooms", json=_signed_room(owner, {"name": "Tempo room", "creator_id": owner, "room_type": "private",
                                        "gate_type": "paid", "entry_fee_cents": 50}),

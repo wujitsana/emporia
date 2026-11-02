@@ -98,7 +98,7 @@ def _purchase(client):
     _register_keyed(client, buyer)
     _register_keyed(client, seller)
     r = client.post(f"/agents/{seller}/x402-wallet",
-                    json={"network_family": "evm", "address": SELLER_WALLET}, headers=_hdr(seller))
+                    json=__import__("conftest").signed_wallet_body(seller, "evm", SELLER_WALLET), headers=_hdr(seller))
     assert r.status_code == 200, r.text
     sid = client.post("/sessions", json={"module_type": "emporia:service:v1",
                                          "creator_agent_id": buyer, "config": {"description": "x"},
@@ -151,6 +151,9 @@ def test_the_offer_names_the_seller_the_amount_and_the_fee(client, chain):
     assert (int(info["min_fee_bps"]), int(info["max_fee_bps"])) == (250, 250)
     assert info["fee_receiver"] == FEE_RECEIVER
     assert info["payer"] == escrow.ZERO_ADDRESS, "the payer fills in their own address"
+    # P262: and who the receiver is, in the seller's own signed words
+    from emporia import payee
+    assert payee.check(offer["payee"], "evm", info["receiver"]).startswith(seller)
 
 
 def test_a_signed_hold_is_authorized_and_starts_the_session(client, chain):

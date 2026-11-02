@@ -40,6 +40,7 @@ import time
 from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Any
 
 from emporia import identity
 from emporia.operator_signer import _git_ignores, _git_work_tree
@@ -567,6 +568,16 @@ def _charge_daily(agent_id: str, amount_atomic: int) -> None:
         identity._write_secret_atomically(path, json.dumps(entries).encode())
 
 
+def _payee_label(statement: Any, family: str, address: Any) -> str:
+    """P262: refuse unless `address` is a wallet its payee signed (`payee.check`);
+    the payee's name for the approval prompt. Runs here so the signer checks too."""
+    from emporia import payee
+    try:
+        return payee.check(statement, family, str(address or ""))
+    except payee.PayeeError as e:
+        raise AgentWalletError(f"not paid: {e}") from None
+
+
 def sign_exact(agent_id: str, body: dict, network: str = "") -> str:
     """A relay's x402 402 body in, the PAYMENT-SIGNATURE value out — after the
     network allowlist and the per-payment cap.
@@ -602,9 +613,13 @@ def sign_exact(agent_id: str, body: dict, network: str = "") -> str:
             f"the relay asks for {amount / 1e6:.2f} USDC, above this agent's "
             f"{cap / 1e6:.2f} USDC per-payment cap (EMPORIA_X402_MAX_PAYMENT_CENTS)")
     from emporia.networks import label
+    from emporia.payments import x402_network_family
+    # P262: the address is the payee's own, signed by it — not just the relay's word.
+    payee = _payee_label(body.get("payee") if isinstance(body, dict) else None,
+                         x402_network_family(requirement.get("network") or "") or "evm", requirement.get("payTo"))
     # P206: the whole payee and what is bought — an approval (the signer's) is for exactly this payment.
     require_approval(agent_id, amount, f"USDC on {label(requirement.get('network') or '')} to "
-                                       f"{requirement.get('payTo')} for "
+                                       f"{payee}, {requirement.get('payTo')}, for "
                                        f"{(challenge.get('resource') or {}).get('url') or 'a resource'}")
     from emporia.payments import x402_network_family
     if x402_network_family(requirement.get("network") or "") == "svm":
@@ -639,8 +654,9 @@ def pay_tempo(agent_id: str, offer: dict) -> str:
             f"the relay asks for {amount / 1e6:.2f}, above this agent's {cap / 1e6:.2f} "
             f"per-payment cap (EMPORIA_X402_MAX_PAYMENT_CENTS)")
     from emporia.networks import label
+    payee = _payee_label(offer.get("payee"), "evm", offer["request"].get("recipient"))   # P262
     require_approval(agent_id, amount, f"in stablecoin on {label(network)} to "
-                                       f"{offer['request'].get('recipient')}")
+                                       f"{payee}, {offer['request'].get('recipient')}")
     key = load_key(agent_id)
     _charge_daily(agent_id, amount)
     return tempo.pay(offer, key)
@@ -658,9 +674,11 @@ def sign_escrow(agent_id: str, offer: dict, *, expected_amount: int) -> str:
             f"the hold is {expected_amount / 1e6:.2f} USDC, above this agent's per-payment cap")
     key, networks = load_key(agent_id), allowed_networks()
     from emporia.networks import label
+    receiver = (offer.get("payment_info") or {}).get("receiver")
+    payee = _payee_label(offer.get("payee"), "evm", receiver)   # P262
     require_approval(agent_id, expected_amount, f"USDC into an escrow hold on "
                                                 f"{label(offer.get('network') or '')} (contract {offer.get('escrow')}, "
-                                                f"for {(offer.get('payment_info') or {}).get('receiver')})")
+                                                f"for {payee}, {receiver})")
     _charge_daily(agent_id, expected_amount)
     return escrow.sign_offer(offer, key, expected_amount=expected_amount,
                              allowed_networks=networks)

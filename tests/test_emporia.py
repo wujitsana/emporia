@@ -7835,32 +7835,32 @@ def test_set_x402_wallet_validates_format_and_requires_caller_match(client):
     payTo address is unrecoverable money, so it must fail loudly, not silently
     accept. A valid address for one family doesn't clobber a different
     family's address for the same agent (they're independent key spaces)."""
-    _register(client, "p1b2_owner")
+    _register_keyed(client, "p1b2_owner")   # P262: it signs its wallets
     _register(client, "p1b2_other")
 
     wrong_caller = client.post("/agents/p1b2_owner/x402-wallet",
-        json={"network_family": "evm", "address": "0x" + "ab" * 20},
+        json=__import__("conftest").signed_wallet_body('p1b2_owner', "evm", "0x" + "ab" * 20),
         headers={"x-emporia-agent-id": "p1b2_other"})
     assert wrong_caller.status_code == 403, wrong_caller.text
 
     unknown_family = client.post("/agents/p1b2_owner/x402-wallet",
-        json={"network_family": "bitcoin", "address": "irrelevant"},
+        json=__import__("conftest").signed_wallet_body('p1b2_owner', "bitcoin", "irrelevant"),
         headers={"x-emporia-agent-id": "p1b2_owner"})
     assert unknown_family.status_code == 400, unknown_family.text
 
     bad_evm = client.post("/agents/p1b2_owner/x402-wallet",
-        json={"network_family": "evm", "address": "not-an-address"},
+        json=__import__("conftest").signed_wallet_body('p1b2_owner', "evm", "not-an-address"),
         headers={"x-emporia-agent-id": "p1b2_owner"})
     assert bad_evm.status_code == 400, bad_evm.text
 
     bad_svm = client.post("/agents/p1b2_owner/x402-wallet",
-        json={"network_family": "svm", "address": "short"},
+        json=__import__("conftest").signed_wallet_body('p1b2_owner', "svm", "short"),
         headers={"x-emporia-agent-id": "p1b2_owner"})
     assert bad_svm.status_code == 400, bad_svm.text
 
     evm_addr = "0x" + "ab" * 20
     good_evm = client.post("/agents/p1b2_owner/x402-wallet",
-        json={"network_family": "evm", "address": evm_addr},
+        json=__import__("conftest").signed_wallet_body('p1b2_owner', "evm", evm_addr),
         headers={"x-emporia-agent-id": "p1b2_owner"})
     assert good_evm.status_code == 200, good_evm.text
 
@@ -7870,7 +7870,7 @@ def test_set_x402_wallet_validates_format_and_requires_caller_match(client):
 
     svm_addr = "1" * 32  # valid base58 shape (Solana's real System Program id)
     good_svm = client.post("/agents/p1b2_owner/x402-wallet",
-        json={"network_family": "svm", "address": svm_addr},
+        json=__import__("conftest").signed_wallet_body('p1b2_owner', "svm", svm_addr),
         headers={"x-emporia-agent-id": "p1b2_owner"})
     assert good_svm.status_code == 200, good_svm.text
     assert AGENT_REGISTRY.get_x402_pay_to("p1b2_owner", "evm") == evm_addr, \
@@ -13128,7 +13128,7 @@ def test_room_join_402_offers_x402_alongside_mpp_when_configured(client):
     _register(client, payer)
 
     wallet = client.post(f"/agents/{owner}/x402-wallet",
-        json={"network_family": "evm", "address": "0x" + "cd" * 20},
+        json=__import__("conftest").signed_wallet_body(owner, "evm", "0x" + "cd" * 20),
         headers={"x-emporia-agent-id": owner})
     assert wallet.status_code == 200, wallet.text
 
@@ -13335,7 +13335,7 @@ def test_x402_credential_declined_explicitly_for_non_usd_currency(mock_verify, m
     _register_keyed(client, owner)
     _register(client, payer)
     from emporia.relay_server import AGENT_REGISTRY
-    AGENT_REGISTRY.set_x402_pay_to(owner, "evm", "0x" + "aa" * 20)
+    __import__("conftest").give_wallet(owner, "evm", "0x" + "aa" * 20)
 
     r = client.post("/rooms", json=_signed_room(owner, {
         "name": "P1brr-2 EUR Room", "creator_id": owner,
@@ -13458,7 +13458,7 @@ def test_x402_challenge_output_round_trips_through_verification_without_mismatch
 
     creator = "p1br2_roundtrip_creator"
     _register(client, creator)
-    AGENT_REGISTRY.set_x402_pay_to(creator, "evm", "0x" + "aa" * 20)
+    __import__("conftest").give_wallet(creator, "evm", "0x" + "aa" * 20)
     mock_verify.return_value = {"isValid": True, "payer": "0x" + "11" * 20}
     mock_settle.return_value = {
         "success": True, "transaction": "0xroundtrip", "network": "eip155:8453",
@@ -13758,7 +13758,7 @@ def test_x402_pay_to_by_network_excludes_unconfigured_or_walletless_networks(cli
 
     creator = "p1b4_resolve_creator"
     _register(client, creator)
-    AGENT_REGISTRY.set_x402_pay_to(creator, "evm", "0x" + "ef" * 20)
+    __import__("conftest").give_wallet(creator, "evm", "0x" + "ef" * 20)
 
     with patch.dict(os.environ, {"EMPORIA_X402_NETWORKS": "eip155:8453,solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp"}):
         result = _x402_pay_to_by_network(creator)
@@ -13789,8 +13789,8 @@ def test_x402_pay_to_by_network_reads_wallets_once_not_per_network(client):
 
     creator = "p1brr3_walletcount_creator"
     _register(client, creator)
-    AGENT_REGISTRY.set_x402_pay_to(creator, "evm", "0x" + "ab" * 20)
-    AGENT_REGISTRY.set_x402_pay_to(creator, "svm", "5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp")
+    __import__("conftest").give_wallet(creator, "evm", "0x" + "ab" * 20)
+    __import__("conftest").give_wallet(creator, "svm", "5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp")
 
     call_count = {"n": 0}
     original_get_db = relay_server.get_db
@@ -13850,7 +13850,7 @@ def test_verify_x402_payment_rejects_wrong_payto_before_any_facilitator_call(moc
 
     creator = "p1b5_payto_creator"
     _register(client, creator)
-    AGENT_REGISTRY.set_x402_pay_to(creator, "evm", "0x" + "aa" * 20)
+    __import__("conftest").give_wallet(creator, "evm", "0x" + "aa" * 20)
 
     with patch.dict(os.environ, _X402_ENV, clear=False):
         with pytest.raises(HTTPException) as exc_info:
@@ -13882,7 +13882,7 @@ def test_verify_x402_payment_rejects_tampered_amount(mock_verify, mock_settle, c
 
     creator = "p1b5_amount_creator"
     _register(client, creator)
-    AGENT_REGISTRY.set_x402_pay_to(creator, "evm", "0x" + "aa" * 20)
+    __import__("conftest").give_wallet(creator, "evm", "0x" + "aa" * 20)
 
     with patch.dict(os.environ, _X402_ENV, clear=False):
         with pytest.raises(HTTPException) as exc_info:
@@ -13946,7 +13946,7 @@ def test_verify_x402_payment_rejects_when_facilitator_says_invalid(mock_verify, 
 
     creator = "p1b5_invalid_creator"
     _register(client, creator)
-    AGENT_REGISTRY.set_x402_pay_to(creator, "evm", "0x" + "aa" * 20)
+    __import__("conftest").give_wallet(creator, "evm", "0x" + "aa" * 20)
     mock_verify.return_value = {"isValid": False, "invalidReason": "insufficient_funds"}
 
     with patch.dict(os.environ, _X402_ENV, clear=False):
@@ -13979,7 +13979,7 @@ def test_verify_x402_payment_rejects_when_settlement_fails(mock_verify, mock_set
 
     creator = "p1b5_settlefail_creator"
     _register(client, creator)
-    AGENT_REGISTRY.set_x402_pay_to(creator, "evm", "0x" + "aa" * 20)
+    __import__("conftest").give_wallet(creator, "evm", "0x" + "aa" * 20)
     mock_verify.return_value = {"isValid": True, "payer": "0x" + "11" * 20}
     mock_settle.return_value = {"success": False, "errorReason": "expired"}
 
@@ -14012,7 +14012,7 @@ def test_verify_x402_payment_happy_path_returns_payment_ref(mock_verify, mock_se
 
     creator = "p1b5_happy_creator"
     _register(client, creator)
-    AGENT_REGISTRY.set_x402_pay_to(creator, "evm", "0x" + "aa" * 20)
+    __import__("conftest").give_wallet(creator, "evm", "0x" + "aa" * 20)
     mock_verify.return_value = {"isValid": True, "payer": "0x" + "11" * 20}
     mock_settle.return_value = {"success": True, "transaction": "0xdeadbeef", "network": "eip155:8453"}
 
@@ -14153,7 +14153,7 @@ async def test_x402_verify_payment_facilitator_error_surfaces_as_402(client):
 
     creator = "p1brr4_facerr_creator"
     _register(client, creator)
-    AGENT_REGISTRY.set_x402_pay_to(creator, "evm", "0x" + "aa" * 20)
+    __import__("conftest").give_wallet(creator, "evm", "0x" + "aa" * 20)
 
     with patch.dict(os.environ, _X402_ENV, clear=False):
         with patch("httpx.AsyncClient.post", new_callable=AsyncMock) as mock_post:
@@ -14203,7 +14203,7 @@ async def test_verify_x402_payment_forwards_relay_computed_requirements_not_clie
 
     creator = "p1brr4_forward_creator"
     _register(client, creator)
-    AGENT_REGISTRY.set_x402_pay_to(creator, "evm", "0x" + "aa" * 20)
+    __import__("conftest").give_wallet(creator, "evm", "0x" + "aa" * 20)
 
     accepted = {
         "scheme": "exact", "network": "eip155:8453", "amount": "2500000",
@@ -14286,7 +14286,7 @@ def test_room_join_via_x402_credential_persists_rail_x402(mock_verify, mock_sett
     _register(client, payer)
 
     wallet = client.post(f"/agents/{owner}/x402-wallet",
-        json={"network_family": "evm", "address": "0x" + "bb" * 20},
+        json=__import__("conftest").signed_wallet_body(owner, "evm", "0x" + "bb" * 20),
         headers={"x-emporia-agent-id": owner})
     assert wallet.status_code == 200, wallet.text
 
@@ -14338,7 +14338,7 @@ def test_x402_room_join_settlement_is_non_custodial_direct_no_fee(mock_verify, m
     _register(client, payer)
 
     wallet = client.post(f"/agents/{owner}/x402-wallet",
-        json={"network_family": "evm", "address": "0x" + "dd" * 20},
+        json=__import__("conftest").signed_wallet_body(owner, "evm", "0x" + "dd" * 20),
         headers={"x-emporia-agent-id": owner})
     assert wallet.status_code == 200, wallet.text
 
@@ -15734,7 +15734,7 @@ def test_reregistering_no_longer_wipes_the_x402_wallet(client):
     _register_keyed(client, "wipe_agent")
     r = client.post(
         "/agents/wipe_agent/x402-wallet",
-        json={"network_family": "evm", "address": "0x" + "ab" * 20},
+        json=__import__("conftest").signed_wallet_body('wipe_agent', "evm", "0x" + "ab" * 20),
         headers={"X-Emporia-Agent-Id": "wipe_agent"},
     )
     assert r.status_code == 200
@@ -23531,7 +23531,7 @@ def test_payer_credential_satisfies_the_relays_own_402(mock_verify, mock_settle,
 
     pay_to = "0x" + "bb" * 20
     wallet = client.post(f"/agents/{owner}/x402-wallet",
-        json={"network_family": "evm", "address": pay_to},
+        json=__import__("conftest").signed_wallet_body(owner, "evm", pay_to),
         headers={"x-emporia-agent-id": owner})
     assert wallet.status_code == 200, wallet.text
 
@@ -23697,7 +23697,7 @@ def test_testnet_paid_room_join_settles_on_chain(client, monkeypatch):
     # third-party address every run.
     pay_to = payer_address(_TESTNET_PAYER_KEY)
     wallet = client.post(f"/agents/{owner}/x402-wallet",
-        json={"network_family": "evm", "address": pay_to},
+        json=__import__("conftest").signed_wallet_body(owner, "evm", pay_to),
         headers={"x-emporia-agent-id": owner})
     assert wallet.status_code == 200, wallet.text
 
@@ -23796,7 +23796,7 @@ def test_sdk_pays_a_room_402_with_x402_when_asked(mock_verify, mock_settle, clie
     _register_keyed(client, owner)
     pay_to = "0x" + "ee" * 20
     assert client.post(f"/agents/{owner}/x402-wallet",
-        json={"network_family": "evm", "address": pay_to},
+        json=__import__("conftest").signed_wallet_body(owner, "evm", pay_to),
         headers={"x-emporia-agent-id": owner}).status_code == 200
 
     r = client.post("/rooms", json=_signed_room(owner, {
@@ -23855,7 +23855,7 @@ def test_sdk_x402_retry_gives_up_after_one_attempt(mock_verify, client):
     owner = "p45_once_owner"
     _register_keyed(client, owner)
     assert client.post(f"/agents/{owner}/x402-wallet",
-        json={"network_family": "evm", "address": "0x" + "ee" * 20},
+        json=__import__("conftest").signed_wallet_body(owner, "evm", "0x" + "ee" * 20),
         headers={"x-emporia-agent-id": owner}).status_code == 200
     r = client.post("/rooms", json=_signed_room(owner, {
         "name": "P45 once room", "creator_id": owner,
@@ -23903,7 +23903,7 @@ def test_sdk_does_not_spend_unless_the_call_asks(client):
     owner = "p45_nospend_owner"
     _register_keyed(client, owner)
     assert client.post(f"/agents/{owner}/x402-wallet",
-        json={"network_family": "evm", "address": "0x" + "ee" * 20},
+        json=__import__("conftest").signed_wallet_body(owner, "evm", "0x" + "ee" * 20),
         headers={"x-emporia-agent-id": owner}).status_code == 200
     r = client.post("/rooms", json=_signed_room(owner, {
         "name": "P45 no-spend room", "creator_id": owner,
@@ -23939,7 +23939,7 @@ def test_sdk_x402_retry_respects_the_payers_own_network_allowlist(client):
     owner = "p45_allowlist_owner"
     _register_keyed(client, owner)
     assert client.post(f"/agents/{owner}/x402-wallet",
-        json={"network_family": "evm", "address": "0x" + "ee" * 20},
+        json=__import__("conftest").signed_wallet_body(owner, "evm", "0x" + "ee" * 20),
         headers={"x-emporia-agent-id": owner}).status_code == 200
     r = client.post("/rooms", json=_signed_room(owner, {
         "name": "P45 allowlist room", "creator_id": owner,
@@ -23979,7 +23979,7 @@ def test_sdk_x402_retry_without_a_key_still_reports_the_challenge(client):
     owner = "p45_nokey_owner"
     _register_keyed(client, owner)
     assert client.post(f"/agents/{owner}/x402-wallet",
-        json={"network_family": "evm", "address": "0x" + "ee" * 20},
+        json=__import__("conftest").signed_wallet_body(owner, "evm", "0x" + "ee" * 20),
         headers={"x-emporia-agent-id": owner}).status_code == 200
     r = client.post("/rooms", json=_signed_room(owner, {
         "name": "P45 no-key room", "creator_id": owner,
@@ -24591,7 +24591,7 @@ def _p47_agent_with_data(client, agent_id: str) -> dict[str, str]:
     assert vote.status_code == 200, vote.text
 
     wallet = client.post(f"/agents/{agent_id}/x402-wallet",
-        json={"network_family": "evm", "address": "0x" + "77" * 20},
+        json=__import__("conftest").signed_wallet_body(agent_id, "evm", "0x" + "77" * 20),
         headers={"x-emporia-agent-id": agent_id})
     assert wallet.status_code == 200, wallet.text
 
@@ -24978,7 +24978,7 @@ def test_one_purchase_settles_once_even_when_the_retry_signs_a_fresh_nonce(
     creator, payer = "p48_once_creator", "p48_once_payer"
     _register(client, creator)
     _register(client, payer)
-    AGENT_REGISTRY.set_x402_pay_to(creator, "evm", "0x" + "aa" * 20)
+    __import__("conftest").give_wallet(creator, "evm", "0x" + "aa" * 20)
     mock_verify.return_value = {"isValid": True}
     mock_settle.return_value = {"success": True, "transaction": "0xfirstsettle"}
 
@@ -25026,7 +25026,7 @@ def test_an_interrupted_settlement_is_never_retried_on_an_unknown_chain_state(
     creator, payer = "p48_unknown_creator", "p48_unknown_payer"
     _register(client, creator)
     _register(client, payer)
-    AGENT_REGISTRY.set_x402_pay_to(creator, "evm", "0x" + "aa" * 20)
+    __import__("conftest").give_wallet(creator, "evm", "0x" + "aa" * 20)
     mock_verify.return_value = {"isValid": True}
     # The settle that "crashed": it raises, so the intent is left `settling`
     # with no transaction recorded — the exact state a killed process leaves.
@@ -25091,7 +25091,7 @@ def test_an_interrupted_settlement_the_chain_says_landed_is_recovered_not_repaid
     creator, payer = "p48_recover_creator", "p48_recover_payer"
     _register(client, creator)
     _register(client, payer)
-    AGENT_REGISTRY.set_x402_pay_to(creator, "evm", "0x" + "aa" * 20)
+    __import__("conftest").give_wallet(creator, "evm", "0x" + "aa" * 20)
     mock_verify.return_value = {"isValid": True}
     mock_settle.side_effect = RuntimeError("killed mid-settle")
 
@@ -25143,7 +25143,7 @@ def test_an_unspent_authorization_is_only_retried_once_it_can_no_longer_land(
     creator, payer = "p48_interlock_creator", "p48_interlock_payer"
     _register(client, creator)
     _register(client, payer)
-    AGENT_REGISTRY.set_x402_pay_to(creator, "evm", "0x" + "aa" * 20)
+    __import__("conftest").give_wallet(creator, "evm", "0x" + "aa" * 20)
     mock_verify.return_value = {"isValid": True}
     mock_used.return_value = False
 
@@ -25213,7 +25213,7 @@ def test_the_intent_retires_when_the_entitlement_it_bought_exists(
     creator, payer = "p48_retire_creator", "p48_retire_payer"
     _register_keyed(client, creator)
     _register(client, payer)
-    AGENT_REGISTRY.set_x402_pay_to(creator, "evm", "0x" + "aa" * 20)
+    __import__("conftest").give_wallet(creator, "evm", "0x" + "aa" * 20)
     mock_verify.return_value = {"isValid": True}
     mock_settle.return_value = {"success": True, "transaction": "0xretire"}
 
@@ -25272,7 +25272,7 @@ def test_the_crash_window_survives_a_real_join_request_not_just_a_direct_call(
     creator, payer = "p48_route_creator", "p48_route_payer"
     _register_keyed(client, creator)
     _register(client, payer)
-    AGENT_REGISTRY.set_x402_pay_to(creator, "evm", "0x" + "aa" * 20)
+    __import__("conftest").give_wallet(creator, "evm", "0x" + "aa" * 20)
     mock_verify.return_value = {"isValid": True}
     mock_settle.return_value = {"success": True, "transaction": "0xroutefirst"}
 
@@ -25780,7 +25780,7 @@ def test_the_x402_intent_retires_when_the_retry_finishes_the_purchase(
     creator, payer = "p50_x402_creator", "p50_x402_payer"
     _register_keyed(client, creator)
     _register(client, payer)
-    AGENT_REGISTRY.set_x402_pay_to(creator, "evm", "0x" + "aa" * 20)
+    __import__("conftest").give_wallet(creator, "evm", "0x" + "aa" * 20)
     mock_verify.return_value = {"isValid": True}
     mock_settle.return_value = {"success": True, "transaction": "0xp50first"}
     mock_payout.return_value = {"transfer_id": "tr_p50_x402"}
@@ -27379,7 +27379,7 @@ def test_the_membership_rule_is_written_in_exactly_one_place():
 # and its record (`translog_leaves.ref_key`, `record`); subtree hashes as raw
 # bytes; `translog_seen` replaces `translog_chain_heads` and `translog_sources`.
 # A V17 log is dropped and folded in again from every table.
-_SCHEMA_FINGERPRINT_V18 = "866055b6e0d6ecb493063fff07251e067c65427dd183e1a30f23168a5208ed85"
+_SCHEMA_FINGERPRINT_V19 = "7d3b72d456f50ca55c39ee5b51f1ab9ab1abfb83c0104c1e86c758b2226ef360"
 
 
 def _schema_fingerprint(db_path) -> tuple[str, int, int]:
@@ -27419,9 +27419,9 @@ def test_a_schema_change_requires_a_version_bump():
     from emporia.relay_server import SCHEMA_VERSION
 
     fingerprint, tables, columns = _schema_fingerprint(_test_db)
-    assert (SCHEMA_VERSION, fingerprint) == (18, _SCHEMA_FINGERPRINT_V18), (
+    assert (SCHEMA_VERSION, fingerprint) == (19, _SCHEMA_FINGERPRINT_V19), (
         f"the schema changed ({tables} tables, {columns} columns) or the version "
-        f"moved. Bump SCHEMA_VERSION *and* update _SCHEMA_FINGERPRINT_V18 — in "
+        f"moved. Bump SCHEMA_VERSION *and* update _SCHEMA_FINGERPRINT_V19 — in "
         f"that order, and never the fingerprint alone.\n"
         f"  code version: {SCHEMA_VERSION}\n  fingerprint:  {fingerprint}"
     )

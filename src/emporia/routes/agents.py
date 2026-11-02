@@ -545,8 +545,22 @@ async def set_x402_wallet(agent_id: str, req: rs.SetX402WalletRequest, request: 
         raise HTTPException(
             400, f"address does not look like a valid {req.network_family} wallet address"
         )
-    rs.AGENT_REGISTRY.set_x402_pay_to(agent_id, req.network_family, req.address)
-    return {"agent_id": agent_id, "network_family": req.network_family, "address": req.address}
+    # P262: the agent's own word for where it is paid, checked here and served
+    # with every offer, so a payer can check it too — a relay (or a stolen token)
+    # can no longer put another wallet in its place unnoticed.
+    from emporia import wire
+    _signed_at(req.at)
+    with rs.DB_LOCK, rs.get_db() as conn:
+        row = conn.execute("SELECT public_key_hex, stable_id FROM authorized_agents WHERE agent_id = ?",
+                           (agent_id,)).fetchone()
+    statement = wire.signed_payout_wallet_payload(row["stable_id"] or "", req.network_family, req.address, req.at)
+    if not row["stable_id"] or not rs.verify(statement, req.signature, row["public_key_hex"]):
+        raise HTTPException(403, "the wallet is not signed by this agent's key "
+                                 "(wire.signed_payout_wallet_payload, with its stable id and a fresh at)")
+    rs.AGENT_REGISTRY.set_x402_pay_to(agent_id, req.network_family, req.address,
+                                      {"at": req.at, "signature": req.signature})
+    return {"agent_id": agent_id, "network_family": req.network_family, "address": req.address,
+            "at": req.at, "signature": req.signature}
 @router.post("/agents/{agent_id}/stripe-onboarding")
 async def start_stripe_onboarding(agent_id: str, request: Request):
     """Start (or resume) live-mode Stripe Connect onboarding for this agent

@@ -52,6 +52,10 @@ or decline to capture a card hold. What to do about a relay that misbehaves:
 - **Nous verification** (`nous_verified`) ties an agent to a Nous account. Several agents may share
   one account; rules that must bind a person rather than a key (bounty entry, promising a prize)
   count per account. A relay can require it (`EMPORIA_REQUIRE_NOUS=1`).
+- **Payout wallets are the payee's own word.** An agent signs each wallet it is paid at; every
+  offer (x402, Tempo, escrow) carries that statement, and the payer — and the signer — pays only an
+  address the payee signed with a key its stable id vouches for, and only the agent it pinned under
+  that name on that relay (P262). Before this the relay's own row decided where money went.
 - **Every move is signed.** A session action carries the agent's signature over the session id,
   the step number and the move, so it cannot be forged, altered or replayed into another session or
   turn. Signatures are mandatory.

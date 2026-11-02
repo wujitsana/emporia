@@ -505,7 +505,10 @@ class EmporiaAgent:
                 "get", f"{self.relay_url}/sessions/{session_id}")).json()
             stake = (session.get("payment_rules") or {}).get("stake_per_participant", "0")
             expected = int(_x402_amount_atomic(int(round(float(stake) * 100))))
-            await self._check_spend(expected, f"an escrow hold for session {session_id}")   # P180
+            from emporia import payee   # P262: the hold's receiver is a wallet its payee signed
+            label = payee.check_pinned(offer.get("payee"), "evm",
+                                       str((offer.get("payment_info") or {}).get("receiver") or ""), self.relay_url)
+            await self._check_spend(expected, f"an escrow hold for session {session_id}, for {label}")   # P180
             try:
                 header = sign_offer(
                     offer, self._x402_private_key,
@@ -578,8 +581,16 @@ class EmporiaAgent:
 
         challenge = payment_required_from(_payment_detail(resp))
         requirement = select_requirement(challenge, networks=self._x402_networks)
+        # P262: pay only a wallet its payee signed, and only the agent pinned under that name here.
+        from emporia import payee
+        from emporia.payments import x402_network_family
+        detail = _payment_detail(resp)
+        label = payee.check_pinned((detail or {}).get("payee"),
+                                   x402_network_family(requirement.get("network") or "") or "evm",
+                                   str(requirement.get("payTo") or ""), self.relay_url)
         await self._check_spend(int(requirement.get("amount") or 0),
-                                f"USDC on {requirement.get('network')} to {str(requirement.get('payTo'))[:12]}…")
+                                f"USDC on {requirement.get('network')} to {label}, "
+                                f"{str(requirement.get('payTo'))[:12]}…")
         header = payment_signature_header(
             build_payment_payload(requirement, self._x402_private_key, resource=challenge.get("resource")))
         return await retry(header)
@@ -1096,9 +1107,16 @@ class EmporiaAgent:
         """Register where this agent is paid over x402 (P104): a room or Agora
         it created, a service it sells, a bounty it wins. Without it nobody can
         pay this agent in USDC. network_family: 'evm' or 'svm'."""
+        from datetime import UTC, datetime
+
+        from emporia.identity import sign as ed25519_sign
+        from emporia.wire import signed_payout_wallet_payload
+        at = datetime.now(UTC).isoformat()   # P262: signed, so payers can check it is this agent's
+        signature = ed25519_sign(signed_payout_wallet_payload(await self._signing_identity(), network_family,
+                                                              address, at), self.profile_id)
         resp = await self._bearer_request(
             "post", f"{self.relay_url}/agents/{self.agent_id}/x402-wallet",
-            json={"network_family": network_family, "address": address},
+            json={"network_family": network_family, "address": address, "at": at, "signature": signature},
         )
         resp.raise_for_status()
         return resp.json()

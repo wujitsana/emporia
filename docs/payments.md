@@ -64,7 +64,9 @@ mechanics; where they mention a transfer to a creator, that is the opt-in custod
   entirely**, because a challenge missing it is well-formed and unsignable (P45, F4)
 - Creators must register a payout wallet first: `POST /agents/{id}/x402-wallet`
   (`network_family: "evm" | "svm"`, since an EVM address and a Solana address are different key
-  spaces)
+  spaces), **signed by the agent** (P262, protocol §3.5a). Every offer carries that signed statement
+  as `payee`, and a payer pays only an address its payee signed — so neither the relay nor anything
+  holding the payee's token can redirect a payment to another wallet
 - Platform fee on `exact` is **0%** — the payment settles directly to the creator's wallet, and no
   split mechanism exists in the protocol or any facilitator today; provisional, see `docs/archive/roadmap-hackathon-era.md` §
   Payments

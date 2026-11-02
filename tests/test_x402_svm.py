@@ -77,8 +77,9 @@ def wallet_env(tmp_path):
 
 
 def _challenge(amount):
+    from conftest import payee_for
     return {"x402": {"x402Version": 2, "resource": {"url": "http://relay/rooms/r1/join"},
-                     "accepts": [_requirement(amount)]}}
+                     "accepts": [_requirement(amount)]}, "payee": payee_for(svm=PAY_TO)}
 
 
 def test_an_agent_with_a_solana_wallet_pays_on_solana_within_its_caps(wallet_env):

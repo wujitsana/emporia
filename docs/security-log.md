@@ -4446,3 +4446,17 @@ No Host allow-list was added: with no ambient authority left on the relay, a reb
 nothing an internet client lacks, and an allow-list would break agents reaching a relay by
 container name. The tests still name their caller with the header; `tests/conftest.py` turns it
 into a real token before the app sees it (`header_shim_off()` for the tests about it being refused).
+
+## P262 pass — payout wallets signed by their agent, checked by the payer
+
+From the 11-02 audit.
+
+| Finding | Fix |
+|---|---|
+| An agent's payout wallet (`authorized_agents.x402_pay_to_json`) was set over a bearer-token request with no signature of the agent's, and every offer took its address from that row: the x402 `payTo`, the Tempo `recipient`, the escrow hold's `receiver`. A hostile relay, its database, or anything holding the agent's token (header trust, before P261) could put its own wallet there and be paid instead — "the relay holds nobody's money" did not cover the relay choosing whose wallet it was | The agent signs each wallet (`wire.signed_payout_wallet_payload`: stable id, family, address, `at` near the relay's clock); `POST /agents/{id}/x402-wallet` refuses one not signed by the agent's key, and stores the signature (`x402_pay_to_proofs_json`, schema 19). Every offer carries the statement as `payee` (`AGENT_REGISTRY.payee_statement`). The payer refuses unless the address it is asked to pay is the one the payee signed, with the key it held at `at` (a wallet signed before a rotation stays good; one signed by a key a recovery cut off does not) — `payee.check`, run in `agent_wallet` so the signer checks too — and unless the payee is the agent the payer pinned under that name on that relay (`payee.check_pinned`, MCP and SDK). The payee's name and stable-id prefix are in the approval prompt |
+| Wallets registered before this carry no signature | Dropped by the upgrade, loudly (`payout_wallets_dropped_unsigned`); each agent runs `register_x402_wallet` again, which signs |
+
+Left: on first contact a hostile relay can name an agent of its own as a listing's seller — trust on
+first use, as for every key. Buying from a listing could pass the listing's signed `stable_id` as
+`expected_stable_id`; not wired yet. Stripe destination charges name a Stripe account the relay
+created, outside this check.

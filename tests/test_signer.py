@@ -164,7 +164,8 @@ def test_setup_offers_to_start_the_signer_and_keep_the_new_wallet_there(profiles
 
 
 def test_an_approval_is_for_that_payee_only_and_every_outcome_is_audited(held):
-    """P206: an address sharing the approved one's first characters is not approved."""
+    """P206: an address sharing the approved one's first characters is not approved. P262: it is
+    not even put to the operator — it is not the wallet the payee signed."""
     import json
     with pytest.raises(agent_wallet.AgentWalletError) as e:
         agent_wallet.sign_exact(AGENT, _challenge_for(400))
@@ -172,13 +173,13 @@ def test_an_approval_is_for_that_payee_only_and_every_outcome_is_audited(held):
     signer_client.Admin("unix:///x", signer.admin_token()).decide(intent, True)
     lookalike = _challenge_for(400)
     lookalike["x402"]["accepts"][0]["payTo"] = "0x" + "11" * 10 + "99" * 10      # same first 12 characters
-    with pytest.raises(agent_wallet.AgentWalletError, match="int_"):
+    with pytest.raises(agent_wallet.AgentWalletError, match="not the evm wallet its payee signed"):
         agent_wallet.sign_exact(AGENT, lookalike)
     assert agent_wallet.sign_exact(AGENT, _challenge_for(400))                    # the approved one pays
     with pytest.raises(agent_wallet.AgentWalletError, match="per-payment cap"):
         agent_wallet.sign_exact(AGENT, _challenge_for(600))
     rows = [json.loads(ln) for ln in (signer.signer_dir() / "audit.jsonl").read_text().splitlines()]
-    assert [r["result"] for r in rows] == ["waiting", "waiting", "signed", "refused"]
+    assert [r["result"] for r in rows] == ["waiting", "refused", "signed", "refused"]
     assert rows[2]["amount_atomic"] == 400 * 10_000 and oct((signer.signer_dir() / "audit.jsonl").stat().st_mode)[-3:] == "600"
 
 

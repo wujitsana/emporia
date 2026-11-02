@@ -126,9 +126,7 @@ async def _purchase(live, seller_wallet, *, dispute):
                EmporiaAgent(url, seller_id, get_public_key_hex(seller_id)) as seller:
         await buyer.register()
         await seller.register()
-        r = await seller._bearer_request("post", f"{url}/agents/{seller_id}/x402-wallet",
-                                         json={"network_family": "evm", "address": seller_wallet})
-        r.raise_for_status()
+        await seller.register_x402_wallet(seller_wallet)   # P262: signed by the seller
         sid = (await buyer.create_session(
             "emporia:service:v1", config={"description": "live escrow lane"},
             payment_rules={"mode": "stripe_link", "stake_per_participant": "1.00",

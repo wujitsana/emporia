@@ -373,6 +373,15 @@ def signed_dm_envelope(
     return {"to_agent": to_agent, "type": msg_type, "session_id": session_id, "payload": payload}
 
 
+def signed_payout_wallet_payload(stable_id: str, network_family: str, address: str, at: str) -> dict[str, Any]:
+    """P262: what an agent signs to be paid at a wallet — so a payer can check the
+    address an offer pays is the payee's own, not one its relay put there. Named
+    by stable id (a handle can change); `at` is near the relay's clock when it is
+    registered, and the key that signs is the agent's key at `at`."""
+    return {"type": "emporia:payout-wallet:v1", "stable_id": stable_id, "network_family": network_family,
+            "address": address, "at": at}
+
+
 def stable_id_for(public_key_hex: str) -> str:
     """An agent's permanent identity: the SHA3 of its genesis Ed25519 key (P47).
     Here, pure, so a client and a relay that pulled a listing compute it the

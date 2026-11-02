@@ -27,16 +27,18 @@ NET = "eip155:84532"
 
 
 def _challenge(amount_atomic: int, network: str = NET) -> dict:
+    from conftest import payee_for
+    pay_to = Account.create().address
     return {"x402": {
         "x402Version": 2,
         "resource": {"url": "http://relay/rooms/r1/join"},
         "accepts": [{
             "scheme": "exact", "network": network, "amount": str(amount_atomic),
             "asset": "0x036CbD53842c5426634e7929541eC2318f3dCF7e",
-            "payTo": Account.create().address, "maxTimeoutSeconds": 300,
+            "payTo": pay_to, "maxTimeoutSeconds": 300,
             "extra": {"name": "USDC", "version": "2"},
         }],
-    }}
+    }, "payee": payee_for(evm=pay_to)}
 
 
 @pytest.fixture
@@ -197,8 +199,12 @@ def test_mcp_x402_wallet_info_returns_no_key_material(wallet_env):
 
 
 def test_mcp_fund_session_signs_the_escrow_offer_for_the_sessions_stake(wallet_env):
+    from conftest import payee_for
     agent_wallet.generate("buyer")
     seen = {}
+    receiver = "0x" + "ee" * 20
+    the_offer = {"scheme": "emporia-escrow-v1", "payment_info": {"receiver": receiver},
+                 "payee": payee_for(evm=receiver)}
 
     class Relay:
         calls: list[dict] = []
@@ -207,7 +213,7 @@ def test_mcp_fund_session_signs_the_escrow_offer_for_the_sessions_stake(wallet_e
             self.calls.append(dict(headers or {}))
             if "PAYMENT-ESCROW" in (headers or {}):
                 return _Resp(200, {"status": "active"})
-            return _Resp(402, {"escrow": {"scheme": "emporia-escrow-v1"}})
+            return _Resp(402, {"escrow": the_offer})
 
         def get(self, url, headers=None, **kw):
             return _Resp(200, {"payment_rules": {"stake_per_participant": "1.25"}})
@@ -221,12 +227,12 @@ def test_mcp_fund_session_signs_the_escrow_offer_for_the_sessions_stake(wallet_e
          patch.object(mcp_server, "_dashboard_bearer_headers", return_value={}), \
          patch.object(agent_wallet, "sign_escrow", fake_sign):
         out = mcp_server.fund_session(session_id="s1", agent_id="buyer", pay_with_x402=True)
-    assert seen == {"aid": "buyer", "offer": {"scheme": "emporia-escrow-v1"}, "amount": 1_250_000}
+    assert seen == {"aid": "buyer", "offer": the_offer, "amount": 1_250_000}
     assert relay.calls[-1]["PAYMENT-ESCROW"] == "signed-escrow"
     assert out.get("status") == "active" or out.get("success") is True, out
     # P145: the hold as signed is kept, so the payer can reclaim it alone.
     [held] = (identity.KEY_DIR / "holds").glob("buyer.s1.json")
-    assert json.loads(held.read_text())["offer"] == {"scheme": "emporia-escrow-v1"}
+    assert json.loads(held.read_text())["offer"] == the_offer
 
 
 def test_the_daily_cap_counts_every_signature_in_24_hours(wallet_env):

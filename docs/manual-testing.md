@@ -55,6 +55,9 @@ games (or resign by abandoning), and check spend after step 5.
       ["eip155:84532"]`, `max_payment_cents: 1000`, `max_daily_cents: 2500`,
       `spent_today_cents: 0`, no key material. Each holds 5 USDC on Basescan.
 - [ ] Ask A and B: *"register your x402 wallet"* → success; `GET /agents/<id>` lists the wallet.
+      P262: the schema-19 upgrade drops every wallet registered before it (they were unsigned), so
+      this is needed once after updating. A payment to an agent that has not done it is refused by
+      the payer with "does not say who is paid" / "not the evm wallet its payee signed".
 - [x] Dashboard Overview loads; Agents shows three agents.
 
 ## 1. Messages

@@ -1261,6 +1261,7 @@ def init_db() -> None:
         _migrate_listings_federated_from(conn)
         _migrate_listings_agent_key(conn)
         _migrate_listings_agent_signature(conn)
+        _migrate_payout_wallet_proofs(conn)
         _migrate_relay_list(conn)
         _migrate_carried_records(conn)
         _drop_challenge_lobby(conn)
@@ -1807,6 +1808,21 @@ def _migrate_listings_agent_signature(conn: Any) -> None:
     # Rows pulled from linked relays before this were taken on their relay's
     # word alone; they go, and come back on the next pull only if signed.
     conn.execute("DELETE FROM listings WHERE federated_from IS NOT NULL")
+
+
+def _migrate_payout_wallet_proofs(conn: Any) -> None:
+    """P262: each payout wallet with the agent's signature over it, which payers
+    check. Wallets registered before this carry none; they are dropped, loudly,
+    and the agent registers them again (register_x402_wallet signs)."""
+    cols = {r[1] for r in conn.execute("PRAGMA table_info(authorized_agents)").fetchall()}
+    if "x402_pay_to_proofs_json" in cols:
+        return
+    conn.execute("ALTER TABLE authorized_agents ADD COLUMN x402_pay_to_proofs_json TEXT NOT NULL DEFAULT '{}'")
+    dropped = conn.execute("UPDATE authorized_agents SET x402_pay_to_json = '{}' "
+                           "WHERE x402_pay_to_json NOT IN ('', '{}')").rowcount
+    if dropped:
+        logger.warning("payout_wallets_dropped_unsigned", extra={
+            "agents": dropped, "fix": "each agent runs register_x402_wallet again (it signs now)"})
 
 
 def _migrate_agora_signatures(conn: Any) -> None:
@@ -2765,6 +2781,12 @@ async def _verify_and_confirm_payment(
         tempo_offer = _tempo_offer()
         if tempo_offer:
             content["tempo"] = tempo_offer   # P156
+        if (offer or tempo_offer) and creator_id:
+            # P262: who is paid, in their own signed words — the payer checks it.
+            payee = AGENT_REGISTRY.payee_statement(creator_id)
+            content["payee"] = payee
+            if tempo_offer:
+                tempo_offer["payee"] = payee
         return JSONResponse(status_code=402, content=content, headers=challenge_headers)
 
     tempo_credential = request.headers.get("PAYMENT-TEMPO")
@@ -3368,7 +3390,8 @@ _NON_AGENT_COLUMNS: frozenset[tuple[str, str]] = frozenset({
     ("authorized_agents", "registered_at"), ("authorized_agents", "is_active"),
     ("authorized_agents", "stripe_account_id"), ("authorized_agents", "nous_user_id"),
     ("authorized_agents", "trust_level"), ("authorized_agents", "identity_providers_json"),
-    ("authorized_agents", "x402_pay_to_json"), ("authorized_agents", "encryption_public_key"),
+    ("authorized_agents", "x402_pay_to_json"), ("authorized_agents", "x402_pay_to_proofs_json"),
+    ("authorized_agents", "encryption_public_key"),
     ("authorized_agents", "encryption_key_signature"),
     ("authorized_agents", "stripe_account_status"),
     ("authorized_agents", "stripe_account_mode"), ("authorized_agents", "stable_id"),
@@ -4131,18 +4154,47 @@ class AgentRegistry:
         except Exception:
             return {}
 
-    def set_x402_pay_to(self, agent_id: str, network_family: str, address: str) -> None:
+    def set_x402_pay_to(self, agent_id: str, network_family: str, address: str,
+                        proof: dict[str, str] | None = None) -> None:
+        """P262: `proof` is the agent's `{at, signature}` over the wallet
+        (`wire.signed_payout_wallet_payload`) — what payers check. The route
+        always passes one; a wallet stored without one is offered, and every
+        payer refuses to pay it."""
         with DB_LOCK, get_db() as conn:
             row = conn.execute(
-                "SELECT x402_pay_to_json FROM authorized_agents WHERE agent_id = ?",
+                "SELECT x402_pay_to_json, x402_pay_to_proofs_json FROM authorized_agents WHERE agent_id = ?",
                 (agent_id,),
             ).fetchone()
             wallets = json.loads(row["x402_pay_to_json"] or "{}") if row else {}
+            proofs = json.loads(row["x402_pay_to_proofs_json"] or "{}") if row else {}
             wallets[network_family] = address
+            if proof:
+                proofs[network_family] = {"address": address, "at": proof["at"], "signature": proof["signature"]}
+            else:
+                proofs.pop(network_family, None)
             conn.execute(
-                "UPDATE authorized_agents SET x402_pay_to_json = ? WHERE agent_id = ?",
-                (json.dumps(wallets), agent_id),
+                "UPDATE authorized_agents SET x402_pay_to_json = ?, x402_pay_to_proofs_json = ? WHERE agent_id = ?",
+                (json.dumps(wallets), json.dumps(proofs), agent_id),
             )
+
+    def payee_statement(self, agent_id: str) -> dict[str, Any] | None:
+        """P262: who an offer pays, in the payee's own words — its signed payout
+        wallets, its keys and key log — for the payer to check
+        (`payee.check`). None for an unknown agent."""
+        try:
+            with DB_LOCK, get_db() as conn:
+                row = conn.execute(
+                    "SELECT agent_id, public_key_hex, stable_id, x402_pay_to_proofs_json FROM authorized_agents "
+                    "WHERE agent_id = ?", (agent_id,)).fetchone()
+                if not row:
+                    return None
+                log = agent_key_log(conn, row["stable_id"])
+            proofs = json.loads(row["x402_pay_to_proofs_json"] or "{}")
+        except Exception:
+            return None
+        return {"agent_id": row["agent_id"], "stable_id": row["stable_id"] or "",
+                "public_key_hex": row["public_key_hex"], "key_log": log,
+                "wallets": proofs if isinstance(proofs, dict) else {}}
 
     def get_encryption_key(self, agent_id: str) -> tuple[str, str]:
         """P16: this agent's published X25519 public key and the Ed25519 signature
@@ -5311,6 +5363,8 @@ class RegisterAgentRequest(BaseModel):
 class SetX402WalletRequest(BaseModel):
     network_family: str  # "evm" | "svm"
     address: str
+    at: str           # P262: near this relay's clock
+    signature: str    # Ed25519, by the agent's key, over wire.signed_payout_wallet_payload()
 
 
 class SetEncryptionKeyRequest(BaseModel):

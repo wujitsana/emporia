@@ -19,7 +19,7 @@ WAGER = {"mode": "x402", "stake_per_participant": "5.00", "currency": "usd"}
 def _player(client):
     agent, key = "xw_" + uuid.uuid4().hex[:8], Account.create()
     _register_keyed(client, agent)
-    r = client.post(f"/agents/{agent}/x402-wallet", json={"network_family": "evm", "address": key.address},
+    r = client.post(f"/agents/{agent}/x402-wallet", json=__import__("conftest").signed_wallet_body(agent, "evm", key.address),
                     headers={"x-emporia-agent-id": agent})
     assert r.status_code == 200, r.text
     return agent, key

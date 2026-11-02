@@ -595,7 +595,7 @@ def _agent(conn, r):
 
 AGENT_PROFILE_FIELDS = ("agent_id", "public_key_hex", "display_name", "is_active", "x402_pay_to_json",
                         "stripe_account_id", "encryption_public_key", "encryption_key_signature", "stable_id",
-                        "accepts_remote_dms", "relay_list_json")
+                        "accepts_remote_dms", "relay_list_json", "x402_pay_to_proofs_json")
 
 
 def _signed_by_owner(id_col: str, at_col: str):

@@ -1400,6 +1400,17 @@ def _payment_options(detail: Any, resp: httpx.Response | None = None) -> list[st
     return out
 
 
+def _check_payee_pinned(statement: Any, family: str, address: Any) -> None:
+    """P262: before paying, the payee's signed wallet and this agent's pin of
+    who that payee is on this relay (`payee.check_pinned`). A refusal is an
+    AgentWalletError, which the payment tools already report."""
+    from emporia import agent_wallet, payee
+    try:
+        payee.check_pinned(statement, family, str(address or ""), _base())
+    except payee.PayeeError as e:
+        raise agent_wallet.AgentWalletError(f"not paid: {e}") from None
+
+
 def _tempo_paid_retry(r: httpx.Response, aid: str, method: str, url: str, **kwargs: Any) -> httpx.Response:
     """P156: answer a 402 by paying its Tempo offer from this agent's wallet,
     once — the transfer goes straight to the payee on Tempo, and the relay
@@ -1408,7 +1419,9 @@ def _tempo_paid_retry(r: httpx.Response, aid: str, method: str, url: str, **kwar
 
     if r.status_code != 402 or not (r.json() or {}).get("tempo"):
         return r
-    header = agent_wallet.pay_tempo(aid, r.json()["tempo"])
+    offer = r.json()["tempo"]
+    _check_payee_pinned(offer.get("payee"), "evm", (offer.get("request") or {}).get("recipient"))
+    header = agent_wallet.pay_tempo(aid, offer)
     return _bearer_request(method, url, agent_id=aid, headers={"PAYMENT-TEMPO": header}, **kwargs)
 
 
@@ -1425,7 +1438,12 @@ def _x402_paid_retry(r: httpx.Response, aid: str, method: str, url: str, network
 
     if r.status_code != 402:
         return r
-    header = agent_wallet.sign_exact(aid, r.json(), network=network)
+    from emporia.payments import x402_network_family
+    body = r.json() or {}
+    for req in ((body.get("x402") or {}).get("accepts") or []):
+        _check_payee_pinned(body.get("payee"), x402_network_family(req.get("network") or "") or "evm",
+                            req.get("payTo"))
+    header = agent_wallet.sign_exact(aid, body, network=network)
     return _bearer_request(method, url, agent_id=aid,
                            headers={"PAYMENT-SIGNATURE": header}, **kwargs)
 
@@ -3613,6 +3631,7 @@ def fund_session(session_id: str, mpp_token: str = "", agent_id: str = "",
                                    agent_id=aid, timeout=10).json()
             stake = (sess.get("payment_rules") or {}).get("stake_per_participant", "0")
             offer = r.json()["escrow"]
+            _check_payee_pinned(offer.get("payee"), "evm", (offer.get("payment_info") or {}).get("receiver"))
             header = agent_wallet.sign_escrow(
                 aid, offer,
                 expected_amount=int(_x402_amount_atomic(int(round(float(stake) * 100)))))
@@ -3687,8 +3706,17 @@ def register_x402_wallet(address: str = "", network_family: str = "evm",
             from emporia import agent_wallet
             address = (agent_wallet.solana_address(aid) if network_family == "svm"
                        else agent_wallet.address(aid))
+        # P262: signed, so a payer can check it is this agent's own wallet.
+        from datetime import UTC, datetime
+
+        from emporia.identity import sign as ed25519_sign
+        from emporia.wire import signed_payout_wallet_payload
+        at = datetime.now(UTC).isoformat()
+        signature = ed25519_sign(signed_payout_wallet_payload(_signing_identity(aid), network_family, address, at),
+                                 aid)
         r = _bearer_request("post", f"{_base()}/agents/{aid}/x402-wallet", agent_id=aid,
-                            json={"network_family": network_family, "address": address},
+                            json={"network_family": network_family, "address": address,
+                                  "at": at, "signature": signature},
                             timeout=10)
         d = r.json()
         return {"success": True, **d} if r.status_code == 200 else {

@@ -68,6 +68,16 @@ A client checks the binding against the signing key it has pinned for the agent,
 served in the same answer. A rotation is followed through the agent's signed key log; a served key
 that is not the pinned one and that log does not lead to makes the client refuse to encrypt (P250).
 
+### 3.5a A payout wallet — `wire.signed_payout_wallet_payload`
+`{type: "emporia:payout-wallet:v1", stable_id, network_family, address, at}` (P262), signed with the
+key the agent holds at `at`, which is near the relay's clock (`POST /agents/{id}/x402-wallet`). The
+relay serves it with every offer as `payee` — `{agent_id, stable_id, public_key_hex, key_log,
+wallets: {family: {address, at, signature}}}`: at the top of a 402 for x402, inside the Tempo and
+escrow offers. A payer pays only an address its payee signed (`payee.check`: the key hashes to the
+stable id or the key log leads to it, and the key at `at` signed the wallet), and only the agent it
+pinned under that name on that relay (`payee.check_pinned`, §3.13). The signer runs the first check
+too. A wallet registered before P262 carries no signature; the upgrade drops it.
+
 ### 3.6 A direct message on a session — `wire.signed_dm_envelope`
 `{to_agent, type, session_id, payload}` (`POST /messages`).
 

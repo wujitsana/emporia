@@ -773,7 +773,7 @@ def _escrow_rail(seller: str):
     return cfg, signer, wallet
 
 
-def _escrow_offer(rail, amount_cents: int, fee_bps: int | None = None) -> dict[str, Any]:
+def _escrow_offer(rail, amount_cents: int, fee_bps: int | None = None, *, payee: str) -> dict[str, Any]:
     """The x402 escrow half of a 402: the PaymentInfo the payer completes and
     signs. `payer` is left zero — the payer fills in their own address, and the
     signature does not cover it (the nonce is payer-agnostic) — and every other
@@ -797,6 +797,8 @@ def _escrow_offer(rail, amount_cents: int, fee_bps: int | None = None) -> dict[s
         "escrow": cfg.contract, "collector": cfg.collector, "token": cfg.token,
         "token_name": cfg.token_name, "token_version": cfg.token_version,
         "payment_info": info.to_json(), "header": ESCROW_HEADER,
+        # P262: the receiver's own signed word for its wallet, for the payer to check.
+        "payee": rs.AGENT_REGISTRY.payee_statement(payee),
         "sign": ("Set payment_info.payer to your address, sign the ERC-3009 "
                  "ReceiveWithAuthorization it implies, and retry with header "
                  f"{ESCROW_HEADER}: base64(JSON {{payment_info, signature}})."),
@@ -930,7 +932,7 @@ async def _fund_wager(request: Request, s: dict[str, Any], session_id: str, call
                     "resource": f"emporia:session:{session_id}",
                     "message": (f"Stake this wager: an x402 escrow hold paid to {opponent} if you "
                                 f"lose, voided back to you if you win or draw."),
-                    "escrow": _escrow_offer(escrow, amount_cents, fee_bps=2 * OPERATOR_FEE_BPS),
+                    "escrow": _escrow_offer(escrow, amount_cents, fee_bps=2 * OPERATOR_FEE_BPS, payee=opponent),
                 })
             await _fund_with_escrow(request, rs.load_session(session_id) or s, session_id, caller,
                                     escrow, amount_cents, receiver_agent=opponent,
@@ -1064,7 +1066,7 @@ async def fund_session(session_id: str, request: Request):
         ))
 
     if not stripe_ok:
-        offer = _escrow_offer(escrow_rail, amount_cents)
+        offer = _escrow_offer(escrow_rail, amount_cents, payee=seller)
         return JSONResponse(status_code=402, content={
             "error": "payment_required", "amount_cents": amount_cents,
             "resource": f"emporia:session:{session_id}",
@@ -1100,7 +1102,7 @@ async def fund_session(session_id: str, request: Request):
         if escrow_rail:
             # Offer the escrow alongside Stripe's challenge, same 402.
             body = json.loads(paid.body)
-            body["escrow"] = _escrow_offer(escrow_rail, amount_cents)
+            body["escrow"] = _escrow_offer(escrow_rail, amount_cents, payee=seller)
             headers = {k: v for k, v in paid.headers.items() if k.lower() != "content-length"}
             return JSONResponse(status_code=402, content=body, headers=headers)
         return paid
