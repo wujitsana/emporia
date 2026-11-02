@@ -723,7 +723,11 @@ def _ingest_chain(conn: Any, chain: str, ident: str) -> None:
     _mark(conn, key, head)
 
 
-def drain(conn: Any, limit: int = 2000) -> int:
+#: P266: entries per drain transaction — about 45 ms of DB_LOCK on a small server.
+DRAIN_BATCH = 500
+
+
+def drain(conn: Any, limit: int = DRAIN_BATCH) -> int:
     """Fold up to `limit` outbox entries into the log, oldest first, and return
     how many were taken — fewer than `limit` means the outbox is empty. Called
     in batches so a large backlog never holds the database for long."""
@@ -753,7 +757,7 @@ def waiting(conn: Any) -> int:
 
 def fold_all(conn: Any) -> None:
     """Drain the whole outbox in one go (tests, and a log signed by hand)."""
-    while drain(conn) == 2000:
+    while drain(conn) == DRAIN_BATCH:
         pass
 
 

@@ -4499,3 +4499,17 @@ From the 11-02 audit.
 | Finding | Fix |
 |---|---|
 | The signer matches an operator's approval on the approval message. For an escrow hold the message named the contract, the receiver and the amount, but not who may capture the hold (the operator address) or what fee it may take and to whom — so a prompt-injected agent could have one hold approved and pay another with the same message and a different capturer or fee receiver. The x402 message left out the token, and every message rounded the amount to two decimals | The message carries a hash of the terms that decide where the money goes (`agent_wallet.terms_digest`): for x402 the network, token, payee, exact amount, EIP-712 domain and resource; for Tempo the network, token, recipient, amount and chain; for escrow the network, chain, contract, token, collector, receiver, operator, fee receiver, maximum and fee range (not the salt or times, which every fresh offer changes, so the agent's retry still matches). The escrow prompt names the capturer and the fee; amounts are shown to the last unit (`test_an_approval_is_for_the_holds_terms_not_just_how_it_reads`) |
+
+## P266 pass — the database layer: short lock holds, closed connections
+
+From the 11-02 audit. Checked first: no coroutine awaits inside a `DB_LOCK` block (an `RLock` held by
+the event-loop thread would let a second coroutine in), and no relay route runs in the thread pool,
+so the only thread contending with the event loop for the lock is the log signer.
+
+| Finding | Fix |
+|---|---|
+| The log signer held `DB_LOCK` for its whole fold, from a worker thread, while every request takes it on the event loop: the relay stalled for the length of the fold | P263 made the fold incremental; it now drains 500 entries per transaction (`translog.DRAIN_BATCH`, about 45 ms measured), releasing the lock between |
+| `with get_db() as conn` ends the transaction but does not close the connection, and each one re-ran `PRAGMA journal_mode=WAL` | Connections close at the end of the block (`_Connection`); WAL is set once in `init_db` (it stays with the file); a 5 s busy timeout lets another process's write (the `emporia` command) be waited for rather than fail |
+
+Not changed: requests still run SQLite on the event loop under one lock. At today's sizes a query is
+well under a millisecond; a writer thread with WAL readers is the next step if a relay grows.

@@ -847,10 +847,24 @@ CHAIN_VERIFY_LIMIT = int(os.getenv("EMPORIA_CHAIN_VERIFY_LIMIT", "1000"))
 # Database
 # ============================================================================
 
+class _Connection(sqlite3.Connection):
+    """P266: `with get_db() as conn:` commits (or rolls back) *and closes*. A
+    plain sqlite3 connection's `with` only ends the transaction, so every
+    request left a connection for the garbage collector to close."""
+
+    def __exit__(self, *exc):
+        try:
+            return super().__exit__(*exc)
+        finally:
+            self.close()
+
+
 def get_db() -> sqlite3.Connection:
-    conn = sqlite3.connect(DATABASE_PATH)
+    # P266: WAL is a property of the database file, set once in init_db, not on
+    # every connection. A writer in another process (the `emporia` command, a
+    # second relay worker) makes this one wait a little rather than fail.
+    conn = sqlite3.connect(DATABASE_PATH, factory=_Connection, timeout=5.0)
     conn.row_factory = sqlite3.Row
-    conn.execute("PRAGMA journal_mode=WAL")
     return conn
 
 
@@ -861,6 +875,7 @@ def init_db() -> None:
         # P61: before anything is created or migrated.
         _assert_schema_not_from_the_future(conn)
         _snapshot_before_upgrade(conn)
+        conn.execute("PRAGMA journal_mode=WAL")      # P266: once; it stays with the file
         conn.executescript("""
             CREATE TABLE IF NOT EXISTS authorized_agents (
                 agent_id TEXT PRIMARY KEY,
@@ -5037,7 +5052,7 @@ def sign_log_state() -> dict[str, Any] | None:
         return None
     while True:
         with DB_LOCK, get_db() as conn:
-            if translog.drain(conn) < 2000:
+            if translog.drain(conn) < translog.DRAIN_BATCH:
                 break
     with DB_LOCK, get_db() as conn:
         state = translog.sign_state(conn, identity.sign_raw_relay, identity.get_relay_public_key_hex(),

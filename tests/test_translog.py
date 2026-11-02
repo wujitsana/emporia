@@ -342,7 +342,7 @@ def test_a_large_backlog_is_folded_in_batches(tmp_path):
     conn = _fresh_log(tmp_path, "CREATE TABLE deletions (kind, item, role, deleted_at, signature);")
     conn.executemany("INSERT INTO deletions VALUES ('post', ?, 'author', 'now', '')", [(f"p{i}",) for i in range(4500)])
     assert translog.waiting(conn) == 4500
-    assert translog.drain(conn) == 2000 and translog.waiting(conn) == 2500
+    assert translog.drain(conn) == translog.DRAIN_BATCH and translog.waiting(conn) == 4500 - translog.DRAIN_BATCH
     translog.fold_all(conn)
     assert translog.waiting(conn) == 0 and translog.size(conn) == 4500
 
