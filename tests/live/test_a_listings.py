@@ -39,6 +39,7 @@ def test_a_signed_listing_travels_and_a_hostile_hop_cannot_change_or_invent_one(
         return [*cheaper, made_up, forged]
 
     rogue.rewrite["listings"] = tamper
+    rogue.claim_origin = True        # P264: a hop may speak only for itself, so it names itself
     record = victim.sync()["peers"][rogue.url]
     assert record["ok"] and record["imported"] == 0, record            # the batch itself was fine ...
     assert record["refused"] == 3, record                              # ... every listing in it was not
@@ -46,10 +47,13 @@ def test_a_signed_listing_travels_and_a_hostile_hop_cannot_change_or_invent_one(
                                           "its id is not the one its agent's nonce makes"}, record
     assert _pulled(victim) == []
 
-    # the same hop, no longer tampering, is believed: bob's listing arrives as bob signed it
+    # P264: the same hop, no longer tampering, is still not believed about B's listings. Naming
+    # itself, bob's (signed for B) is "put up on another relay"; naming B, the batch is not its to send.
+    rogue.rewrite.clear()
+    record = victim.sync()["peers"][rogue.url]
+    assert record["imported"] == 0 and record["refused_why"] == {
+        "it was put up on another relay than the one serving it": 1}, record
     rogue.reset()
     record = victim.sync()["peers"][rogue.url]
-    assert record["ok"] and record["imported"] == 1, record
-    [got] = _pulled(victim)
-    assert got["title"] == "Go lessons" and float(got["price_usd"]) == 5.0
-    assert got["agent_public_key_hex"] == bob.public_key and wire.listing_verdict(got, identity.verify) == ""
+    assert not record["ok"] and "not the relay linked" in record["error"], record
+    assert _pulled(victim) == []        # (a listing pulled from its own relay is the first half above)

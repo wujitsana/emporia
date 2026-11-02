@@ -314,6 +314,8 @@ class RogueRelay:
         self.rewrite_card: Callable[[dict], dict] | None = None
         self.swap_signing_keys = False
         self.swap_encryption_keys = False
+        #: P264: name itself, not the relay behind it, as the feeds' origin
+        self.claim_origin = False
         self.served: list[str] = []
         rogue = self
 
@@ -353,6 +355,7 @@ class RogueRelay:
         self.rewrite.clear()
         self.rewrite_card = None
         self.swap_signing_keys = self.swap_encryption_keys = False
+        self.claim_origin = False
 
     def forward(self, method: str, path: str, headers: dict[str, str], body: bytes) -> tuple[int, str, bytes]:
         self.served.append(f"{method} {path}")
@@ -371,6 +374,8 @@ class RogueRelay:
             key = FEEDS[route]
             items = self.rewrite[key](data[key]) if key in self.rewrite else data[key]
             data[key] = items
+            if self.claim_origin:
+                data["origin_relay"] = self.url
             data["origin_public_key_hex"] = self.public_key
             data["signature"] = self.key.sign(federation_signable_bytes(data["origin_relay"], key, items)).hex()
             return 200, ctype, json.dumps(data).encode()

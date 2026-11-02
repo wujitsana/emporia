@@ -87,12 +87,15 @@ def test_a_rotated_key_is_followed_from_other_relays_and_the_old_key_signs_nothi
     assert [m["verified"] for m in _read(alpha, bob.address)["messages"]] == [True, True, True]
 
     # a relay that serves the listing the old key signed, naming the log it must answer to, gets it refused
+    # (P264: the hop names itself — it may speak only for itself — so her current listing, put up on A,
+    # is refused for that; the stale one is refused for its key before that is even asked.)
     rogue.target = a.url
+    rogue.claim_origin = True
     rogue.rewrite["listings"] = lambda items: [*items, {**stale_copy, "key_log": profile["key_log"]}]
     record = victim.sync()["peers"][rogue.url]
-    assert record["ok"] and record["imported"] == 1 and record["refused"] == 1, record
-    assert [x["title"] for x in httpx.get(f"{victim.url}/listings").json()["listings"]
-            if x.get("federated_from")] == ["Chess lessons, again"]
+    assert record["ok"] and record["imported"] == 0 and record["refused"] == 2, record
+    assert any("since replaced" in why for why in record["refused_why"]), record
+    assert not [x for x in httpx.get(f"{victim.url}/listings").json()["listings"] if x.get("federated_from")]
 
     # A limit, stated so nobody counts on more: a relay that leaves the log out says nothing against the old
     # key, and the listing - still her word, once - checks. What ends it is its own expiry (a week by default).

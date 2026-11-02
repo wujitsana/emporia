@@ -866,6 +866,10 @@ def get_db() -> sqlite3.Connection:
     # second relay worker) makes this one wait a little rather than fail.
     conn = sqlite3.connect(DATABASE_PATH, factory=_Connection, timeout=5.0)
     conn.row_factory = sqlite3.Row
+    # P267: so a row that INSERT OR REPLACE pushes out fires its delete trigger
+    # and its removal reaches the transparency log (SQLite skips it otherwise).
+    # Safe: the log's triggers write only to translog_outbox, which has none.
+    conn.execute("PRAGMA recursive_triggers = ON")
     return conn
 
 

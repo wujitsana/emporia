@@ -85,17 +85,13 @@ def test_scan_relays_finds_signed_offers_on_other_relays_and_drops_forged_or_pri
         assert paid["name"] in feeds, f"{relay.name}'s advertised paid room is missing from its feeds"
     assert not [x for x in named["results"] if "secret" in (x["title"] or "")]
 
-    # an operator in front of B: scanned through it, untouched, B's offers all arrive (the rogue's own relay key signs the feeds)
+    # an operator in front of B, scanned through: P264 — a relay speaks only for itself, so B's
+    # offers, signed as put up on B, are not shown as found on the hop (untouched or not); each is
+    # counted. (The join link is built from the signed origin either way, asserted above.)
     scan = lambda: alpha.tool("scan_relays", relays=[rogue.url])   # noqa: E731
     first = scan()
-    assert not first.get("refused_unsigned_or_forged"), first
-    assert set(_by_kind(first, rogue.url)) == {"listing", "game", "room", "paid room", "topic"}
-
-    # the join link is not signed, so a hop that rewrites only that changes nothing: the link is built from the signed origin
-    rogue.rewrite["rooms"] = lambda items: [{**x, "join_url": "http://evil.example/rooms/x/join"} for x in items]
-    room = _by_kind(scan(), rogue.url)["room"]
-    assert room["join_url"].startswith(b.url + "/rooms/"), room
-    rogue.reset()
+    assert not [x for x in first["results"] if x["relay"] == rogue.url], first
+    assert first["refused_unsigned_or_forged"] == {rogue.url: 5}, first
 
     # ... then it lowers a price, changes a game's terms, a room's fee and a topic's description,
     # and adds one made-up item to each feed. Every one is dropped and counted; the genuine ones are not shown changed.
@@ -121,10 +117,10 @@ def test_scan_relays_finds_signed_offers_on_other_relays_and_drops_forged_or_pri
     assert forged["success"] and not [x for x in forged["results"] if x["relay"] == rogue.url], forged
     assert forged["refused_unsigned_or_forged"] == {rogue.url: 8}, forged
 
-    # a relay that shows its offers altered is not the only way to lie: the real relay, scanned directly, is still believed
+    # the real relay, scanned directly, is still believed
     rogue.reset()
-    again = alpha.tool("scan_relays", relays=[rogue.url])
-    assert set(_by_kind(again, rogue.url)) == {"listing", "game", "room", "paid room", "topic"}
+    again = alpha.tool("scan_relays", relays=[b.url])
+    assert set(_by_kind(again, b.url)) == {"listing", "game", "room", "paid room", "topic"}
     assert not again.get("refused_unsigned_or_forged"), again
 
 

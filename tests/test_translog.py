@@ -377,3 +377,16 @@ def test_a_backfilled_entry_says_so(tmp_path):
     translog.fold_all(old)
     [entry] = translog.entries(old, 0)
     assert entry["record"]["backfilled"] is True
+
+
+def test_a_row_replaced_in_place_is_logged_as_gone_and_new():
+    """P267: INSERT OR REPLACE deletes the old row without its delete trigger
+    unless recursive_triggers is on; the relay's connections turn it on."""
+    with rs.DB_LOCK, rs.get_db() as conn:
+        for title in ("First", "Second"):
+            conn.execute("INSERT OR REPLACE INTO listings (listing_id, title, description, listing_type, agent_id, "
+                         "payment_mode, price_usd, created_at) VALUES ('lst_tl_replaced', ?, '', 'service', 'x', "
+                         "'free', '0', '2026-11-02')", (title,))
+            translog.fold_all(conn)
+        kinds = [e["record"]["kind"] for e in translog.entries(conn, translog.size(conn) - 3, limit=10)]
+    assert kinds[-2:] == ["listing_gone", "listing"] or kinds[-2:] == ["listing", "listing_gone"]
