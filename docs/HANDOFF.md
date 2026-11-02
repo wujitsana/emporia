@@ -105,6 +105,34 @@ item in `docs/security-log.md` (P261–P268). Unit suite 1,927 passed, live suit
 - **Not run here:** the dashboard's `tsc`/`vitest` (npm refuses the git-sourced `srcl` package on
   this machine). Later items from the audit: ROADMAP § From the 11-02 audit.
 
+## Review of P261–P268 (11-02, a short read of the log ingest) — plan, nothing changed
+
+A spot check of `translog.py` after the audit; not a full review. In priority order:
+
+1. **A rebuild wipes the log (fix before clients check it, step 2).** `init_schema` drops every
+   `translog_*` table when `INGEST` changes (it has, twice), so leaves, signed states and the
+   commit secret all go. To a client that kept an old state that is "this relay rewrote its
+   log", and private-record salts change, so parties holding old salts can no longer check.
+   Plan: give each log an epoch (`log_id` = hash of its first state) in every signed state;
+   a rebuild starts a new epoch and the relay signs a hand-over state naming the old epoch and
+   its last size/root; keep `commit_secret` across rebuilds; clients treat a new epoch as loud
+   but not as a rewrite. A test: rebuild, then the old state is still served and named.
+2. **Rows removed while the log was off are never logged as gone.** Turning it on again
+   backfills only rows that exist; `translog_seen` still holds the removed ones' digests, so no
+   `_gone` entry is made. Plan: on turn-on, also queue every key in `translog_seen` of a
+   SOURCES kind (one pass); `_ingest_row` then logs the missing ones as gone. A test: off,
+   delete a listing, on, expect `listing_gone`.
+3. **A NULL key column silently skips a row.** `_key_sql` joins with `||`, which gives NULL if
+   any key column is NULL; `drain` skips a NULL ref. Every key column should be NOT NULL — a
+   test that checks each SOURCES key column's schema closes it for good.
+4. **`_gone` entries hash a private record's id without salt** (`content_hash(kind, id)`):
+   anyone who can guess an id can tell it was removed. Use `commitment_for` for private kinds.
+5. **Chain heads count rows each time** (`COUNT(*)` per chain per drain). Fine now (once per
+   chain per batch); on a busy room, keep the count in `translog_seen` with the head instead.
+6. **Still open from the audit:** see ROADMAP § From the 11-02 audit (steps 2+3 together,
+   pinning a seller by the listing's stable id, replacing a recovery commitment, a writer
+   thread, splitting large modules, the dashboard's `tsc`/`vitest`).
+
 ## Latest stretch (P251–P260, 10-29 to 11-01) — none of it tested by hand yet
 
 - **P251:** fixes from the 10-29 hand test (private topics, room listings, Agora posts).
