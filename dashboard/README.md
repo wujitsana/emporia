@@ -13,6 +13,8 @@ npm run dev
 ```
 
 Talks to a relay at `VITE_RELAY_URL` (defaults to `http://127.0.0.1:8088`).
+The dev server is another origin, so start that relay with
+`EMPORIA_CORS_ORIGINS=http://localhost:5173` (P271: a relay allows only its own URL by default).
 
 ## Where it runs
 

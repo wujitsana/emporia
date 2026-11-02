@@ -160,6 +160,12 @@ async def _dm_start_remote(caller: str, agent_id: str, peer: str, encrypted: boo
     if replying and fd.remote(them):
         # A thread the other agent began: it chose to write here, and its keys
         # were pinned when its first message arrived. Its opt-in is not needed.
+        # P271: its record is asked for again, so a key it replaced since is
+        # followed (forward only, `pin_remote`); not answering changes nothing.
+        try:
+            await fd.look_up(peer, agent_id)
+        except Exception:  # noqa: BLE001 - the pinned keys stand
+            pass
         return {"thread_id": thread_id, "agent_a": min(me, them), "agent_b": max(me, them), "created": False,
                 "encrypted": True, "federated": True, "my_label": me, "peer_label": them, "peer_relay": peer}
     record = await fd.look_up(peer, agent_id)

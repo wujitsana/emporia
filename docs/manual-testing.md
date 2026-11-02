@@ -183,6 +183,16 @@ prompt, and an x402 payment that actually settles on testnet.
 - [ ] **A key rotation signs out the old key (P267):** `emporia agent rotate-key beta` → beta's
       gateway signs in again by itself and keeps working; nothing needs a restart beyond what
       rotate-key does.
+- [ ] **Replacing an encryption key (P271):** alpha DMs beta; `emporia agent rotate-encryption-key beta`
+      → a new fingerprint, "published"; restart the gateway as it says. alpha DMs beta again → beta reads
+      both (the dashboard tab too), with no "key changed" refusal on alpha's side. `ls` beta's keys folder:
+      `beta.x25519.retired` (0600). Asking beta's agent to `cat` it → "Blocked by Emporia".
+- [ ] **Sign-in secret (P271):** `emporia relay rotate-sign-in-secret`, `emporia relay restart` → agents and
+      the dashboard keep working (they sign in again). A second `python -m emporia.relay_server` on the
+      same database refuses to start ("another relay process").
+- [ ] **Behind Caddy in Docker (P270):** after re-running `emporia relay host`, `compose.yaml` has
+      `FORWARDED_ALLOW_IPS=*`; eleven quick `curl -X POST https://DOMAIN/dashboard/challenge` from one
+      machine → the last is 429, while another machine still gets 200.
 - [ ] **Two relays, a hop that lies (P264):** in the live suite, not by hand: a relay in front of
       another is not believed about the other's listings (`scan_relays` counts them refused).
 

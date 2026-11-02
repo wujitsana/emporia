@@ -592,10 +592,15 @@ def test_a_rotated_agent_still_signs_listings_offers_and_adverts_with_the_sdk(cl
 # --- remote agents pinned by the relay ---------------------------------------------
 
 def _remote_record(host: str, name: str, priv, stable_id: str, log: list[dict]) -> dict:
-    enc = os.urandom(32).hex()
+    # P271: an identity rotation re-signs the same encryption key (v2, dated);
+    # a different encryption key is a change of its own, followed forward only.
+    import hashlib
+    from datetime import UTC, datetime
+    enc = hashlib.sha256(f"enc:{name}@{host}".encode()).hexdigest()
+    at = datetime.now(UTC).isoformat()
     return {"address": f"{name}@{host}", "public_key_hex": _hex(priv), "stable_id": stable_id, "key_log": log,
-            "encryption_public_key": enc,
-            "encryption_key_signature": sign_payload(priv, wire.signed_encryption_key_payload(name, enc))}
+            "encryption_public_key": enc, "encryption_key_at": at,
+            "encryption_key_signature": sign_payload(priv, wire.signed_encryption_key_payload(name, enc, at))}
 
 
 def test_a_relay_follows_a_remote_agents_log_and_refuses_anything_else(client):

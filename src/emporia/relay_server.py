@@ -894,7 +894,8 @@ def init_db() -> None:
                 identity_providers_json TEXT NOT NULL DEFAULT '[]',
                 x402_pay_to_json TEXT NOT NULL DEFAULT '{}',
                 encryption_public_key TEXT NOT NULL DEFAULT '',
-                encryption_key_signature TEXT NOT NULL DEFAULT ''
+                encryption_key_signature TEXT NOT NULL DEFAULT '',
+                encryption_key_at TEXT NOT NULL DEFAULT ''
             );
 
             CREATE TABLE IF NOT EXISTS sessions (
@@ -1893,7 +1894,8 @@ def _migrate_federated_dms(conn: Any) -> None:
         encryption_key_signature TEXT NOT NULL,
         updated_at TEXT NOT NULL,
         stable_id TEXT NOT NULL DEFAULT '',
-        key_log_json TEXT NOT NULL DEFAULT '[]')""")
+        key_log_json TEXT NOT NULL DEFAULT '[]',
+        encryption_key_at TEXT NOT NULL DEFAULT '')""")
     conn.execute("CREATE INDEX IF NOT EXISTS idx_dm_threads_local ON dm_threads(local_agent, last_message_at)")
 
 
@@ -1905,6 +1907,7 @@ def _migrate_key_logs(conn: Any) -> None:
     for table, col, decl in (("listings", "agent_key_log_json", "TEXT"),
                              ("remote_agents", "stable_id", "TEXT NOT NULL DEFAULT ''"),
                              ("remote_agents", "key_log_json", "TEXT NOT NULL DEFAULT '[]'"),
+                             ("remote_agents", "encryption_key_at", "TEXT NOT NULL DEFAULT ''"),   # P271
                              ("agent_key_log", "commitment", "TEXT NOT NULL DEFAULT ''"),
                              ("agent_key_log", "recovery_public_key", "TEXT NOT NULL DEFAULT ''"),
                              ("agent_key_log", "compromised_since", "TEXT NOT NULL DEFAULT ''"),
@@ -2051,6 +2054,8 @@ def _migrate_authorized_agents(conn: Any) -> None:
         # branch on, not a missing migration — so no backfill, only the columns.
         ("encryption_public_key", "TEXT NOT NULL DEFAULT ''"),
         ("encryption_key_signature", "TEXT NOT NULL DEFAULT ''"),
+        # P271: when the agent signed the binding (v2); '' for a v1 binding
+        ("encryption_key_at", "TEXT NOT NULL DEFAULT ''"),
         # P25-2: 'none' (no Connected Account) / 'pending' (created, capabilities
         # not yet active) / 'active' (transfers capability active).
         #
@@ -3450,6 +3455,7 @@ _NON_AGENT_COLUMNS: frozenset[tuple[str, str]] = frozenset({
     ("agent_key_log_superseded", "stable_id"), ("agent_key_log_superseded", "seq"),
     ("agent_key_log_superseded", "step_json"), ("agent_key_log_superseded", "superseded_at"),
     ("remote_agents", "stable_id"), ("remote_agents", "key_log_json"),
+    ("authorized_agents", "encryption_key_at"), ("remote_agents", "encryption_key_at"),   # P271: times
     ("room_adverts", "room_id"), ("room_adverts", "stable_id"), ("room_adverts", "public_key_hex"),
     ("room_adverts", "signature"), ("room_adverts", "advertised_at"),
     ("topic_adverts", "topic_id"), ("topic_adverts", "stable_id"), ("topic_adverts", "public_key_hex"),
@@ -3957,7 +3963,8 @@ class AgentRegistry:
             _write_key_log_step(conn, sid, len(kept), step)
             conn.execute(
                 "UPDATE authorized_agents SET public_key_hex = ?, encryption_public_key = '', "
-                "encryption_key_signature = '', relay_list_json = NULL WHERE agent_id = ?", (new, agent_id))
+                "encryption_key_signature = '', encryption_key_at = '', relay_list_json = NULL WHERE agent_id = ?",
+                (new, agent_id))
             _SESSION_FLOOR[agent_id] = time.time()
         return {"agent_id": agent_id, "stable_id": sid, "public_key_hex": new, "key_log": rewritten,
                 "superseded": undone}
@@ -4247,13 +4254,20 @@ class AgentRegistry:
         except Exception:
             return "", ""
 
-    def set_encryption_key(self, agent_id: str, public_key_hex: str, signature: str) -> None:
+    def set_encryption_key(self, agent_id: str, public_key_hex: str, signature: str, at: str = "") -> None:
         with DB_LOCK, get_db() as conn:
             conn.execute(
                 "UPDATE authorized_agents SET encryption_public_key = ?, "
-                "encryption_key_signature = ? WHERE agent_id = ?",
-                (public_key_hex, signature, agent_id),
+                "encryption_key_signature = ?, encryption_key_at = ? WHERE agent_id = ?",
+                (public_key_hex, signature, at, agent_id),
             )
+
+    def encryption_key_at(self, agent_id: str) -> str:
+        """P271: when the agent signed its published encryption key's binding ('' for v1)."""
+        with DB_LOCK, get_db() as conn:
+            row = conn.execute("SELECT encryption_key_at FROM authorized_agents WHERE agent_id = ?",
+                               (agent_id,)).fetchone()
+        return (row["encryption_key_at"] or "") if row else ""
 
     def is_authorized(self, agent_id: str) -> bool:
         try:
@@ -4563,8 +4577,38 @@ async def broadcast_to_agent(agent_id: str, message: dict[str, Any]) -> None:
 # FastAPI App
 # ============================================================================
 
+_PROCESS_LOCK: Any = None
+
+
+def _hold_the_database() -> None:
+    """P271: one relay process per database. Rate windows, sign-in floors,
+    WebSocket registries and the log's signer live in this process's memory, so
+    a second worker (`--workers 2`) or a second relay on the same file would
+    split them silently: limits halved, a rotated key's old tokens still good in
+    the other process. The lock is the file's, held for the process's life."""
+    global _PROCESS_LOCK
+    if _PROCESS_LOCK is not None:
+        return
+    try:
+        import fcntl
+    except ImportError:            # not POSIX: nothing to hold
+        return
+    path = DATABASE_PATH.with_name(DATABASE_PATH.name + ".lock")
+    path.parent.mkdir(parents=True, exist_ok=True)
+    handle = open(path, "a")       # noqa: SIM115 - held until the process ends
+    try:
+        fcntl.flock(handle, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except BlockingIOError:
+        handle.close()
+        raise RuntimeError(f"another relay process is already serving {DATABASE_PATH} — a relay runs as one "
+                           "process (its limits and sign-ins live in memory): stop the other, or do not "
+                           "start it with more than one worker") from None
+    _PROCESS_LOCK = handle
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    _hold_the_database()
     init_db()
     notice = _stripe_mpp_admin_notice()
     if notice:
@@ -4885,7 +4929,10 @@ class WebSocketLimit:
 
 app.add_middleware(WebSocketLimit)
 
-_CORS_ORIGINS = {RELAY_BASE_URL, "http://localhost:8088", "http://localhost:5173"}
+# P271: since P261 nothing reads the relay from a browser (the console and the
+# Hermes tab call it from their own process), so only its own URL by default;
+# a dashboard served elsewhere (or `npm run dev`) is added with EMPORIA_CORS_ORIGINS.
+_CORS_ORIGINS = {RELAY_BASE_URL}
 _CORS_ORIGINS.update(
     o.strip() for o in os.getenv("EMPORIA_CORS_ORIGINS", "").split(",") if o.strip()
 )
@@ -5431,6 +5478,7 @@ class RegisterAgentRequest(BaseModel):
     # an agent that doesn't do encrypted DMs sends neither field.
     encryption_public_key_hex: str = ""
     encryption_key_signature: str = ""
+    encryption_key_at: str = ""      # P271: the v2 binding's time
 
 
 class SetX402WalletRequest(BaseModel):
@@ -5443,6 +5491,7 @@ class SetX402WalletRequest(BaseModel):
 class SetEncryptionKeyRequest(BaseModel):
     encryption_public_key_hex: str
     signature: str  # Ed25519 over wire.signed_encryption_key_payload()
+    at: str = ""    # P271: the v2 binding's time; a changed key needs one newer than the last
 
 
 class CreateSessionRequest(BaseModel):
@@ -6197,7 +6246,7 @@ async def stripe_webhook(request: Request):
     return {"received": True}
 
 
-def _validated_encryption_key(agent_id: str, public_key_hex: str, signature: str) -> str:
+def _validated_encryption_key(agent_id: str, public_key_hex: str, signature: str, at: str = "") -> str:
     """Shared by `POST /agents/{id}/encryption-key` and the inline field on
     registration, so the two paths cannot end up applying different rules to the
     same key.
@@ -6243,13 +6292,26 @@ def _validated_encryption_key(agent_id: str, public_key_hex: str, signature: str
     # verify_signature() also returns False when no Ed25519 key is registered for
     # this agent, which is the correct answer for an unregistered publisher.
     if not AGENT_REGISTRY.verify_signature(
-        agent_id, signed_encryption_key_payload(agent_id, key), signature,
+        agent_id, signed_encryption_key_payload(agent_id, key, at), signature,
     ):
         raise HTTPException(
             403,
             "encryption key signature does not verify against this agent's Ed25519 "
             "key — the key must be signed by the identity publishing it",
         )
+    # P271: a key replaced is replaced forward only. A different key needs a v2
+    # binding newer than the one held, so an old binding replayed here (a leaked
+    # key's, say) cannot put that key back. The same key may be signed again.
+    from emporia import wire
+    from emporia.routes.agents import _signed_at
+    if at:
+        _signed_at(at)              # near this relay's clock, as a wallet statement is
+    held, _sig = AGENT_REGISTRY.get_encryption_key(agent_id)
+    if held and held != key:
+        held_at = wire.when_of(AGENT_REGISTRY.encryption_key_at(agent_id))
+        if not at or (held_at is not None and wire.when_of(at) <= held_at):
+            raise HTTPException(409, "a new encryption key needs a binding signed after the current one's "
+                                     "(emporia agent rotate-encryption-key does this)")
     return key
 
 
@@ -8204,7 +8266,7 @@ def _room_member_encryption_keys(room: Any) -> dict[str, dict[str, str]]:
     placeholders = ",".join("?" * len(room.members))
     with DB_LOCK, get_db() as conn:
         rows = conn.execute(
-            "SELECT agent_id, encryption_public_key, encryption_key_signature, "
+            "SELECT agent_id, encryption_public_key, encryption_key_signature, encryption_key_at, "
             f"public_key_hex, stable_id FROM authorized_agents WHERE agent_id IN ({placeholders})",
             room.members,
         ).fetchall()
@@ -8212,13 +8274,15 @@ def _room_member_encryption_keys(room: Any) -> dict[str, dict[str, str]]:
             row["agent_id"]: {
                 "encryption_public_key": row["encryption_public_key"] or "",
                 "signature": row["encryption_key_signature"] or "",
+                "at": row["encryption_key_at"] or "",          # P271
                 "public_key_hex": row["public_key_hex"] or "",
                 "stable_id": row["stable_id"] or "",
                 "key_log": agent_key_log(conn, row["stable_id"]),
             }
             for row in rows
         }
-    empty = {"encryption_public_key": "", "signature": "", "public_key_hex": "", "stable_id": "", "key_log": []}
+    empty = {"encryption_public_key": "", "signature": "", "at": "", "public_key_hex": "", "stable_id": "",
+             "key_log": []}
     return {member: found.get(member, empty) for member in room.members}
 
 

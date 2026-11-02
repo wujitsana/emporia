@@ -454,6 +454,8 @@ def cmd_relay(args: argparse.Namespace) -> int:
         return cmd_relay_backup(args)
     if args.action == "rotate-key":
         return cmd_relay_rotate_key(args)
+    if args.action == "rotate-sign-in-secret":
+        return cmd_relay_rotate_sign_in_secret(args)
     if args.action == "config":
         return cmd_relay_config(args)
     if args.action == "overview":
@@ -1134,13 +1136,13 @@ def cmd_archive(args: argparse.Namespace) -> int:
     code = f"""import json
 from pathlib import Path
 from emporia import message_read, mcp_server as m
-from emporia.identity import KEY_DIR, generate_or_load_encryption_keypair
+from emporia.identity import KEY_DIR, encryption_private_keys
 hits = list((KEY_DIR / "archive").glob("*/{'dms' if kind == 'dm' else 'rooms'}/{item}.jsonl"))
 if not hits:
     print(json.dumps({{"error": "not in the archive — run: emporia archive {args.name}"}}))
 else:
     msgs = [json.loads(x) for x in hits[0].read_text().splitlines() if x.strip()]
-    priv, _ = generate_or_load_encryption_keypair(m.AGENT_ID)
+    priv = encryption_private_keys(m.AGENT_ID)
     me = next((x.get("sender_id") for x in msgs if x.get("sender_id", "").startswith(m.AGENT_ID + "@")), m.AGENT_ID)
     message_read.annotate_messages(msgs, kind={kind!r}, scope_id={item!r}, viewer_agent_id=me, private_key=priv,
                                    pubkeys={{}}, verify=lambda msg, pk: None)
@@ -2318,6 +2320,61 @@ def cmd_relay_rotate_key(args: argparse.Namespace) -> int:
     step = identity.rotate_relay_key()
     print(f"  old {step['old'][:16]}… → new {step['new'][:16]}…, signed by the old key.")
     print("  Restart the relay to sign with it: emporia relay restart")
+    return 0
+
+
+def cmd_relay_rotate_sign_in_secret(args: argparse.Namespace) -> int:
+    """P271: `emporia relay rotate-sign-in-secret` — a new secret for the tokens the
+    relay issues at sign-in. For one that may have leaked: whoever holds it can
+    mint a token for any agent. Every client signs in again on its own; nothing
+    else changes. Run where the relay's keys are; restart the relay after."""
+    from emporia import identity
+    if not _persons_terminal():
+        print("relay rotate-sign-in-secret: only a person runs this, in their own terminal.")
+        return 1
+    print(f"This replaces the relay's sign-in secret in {identity.KEY_DIR}. Every session token it issued stops\n"
+          "working; agents and dashboards sign in again by themselves. Tempo offers not yet paid are refused.")
+    if not (args.yes or ask("Replace the sign-in secret?", False)):
+        return 1
+    identity.rotate_relay_jwt_secret()
+    print("  Done. Restart the relay to use it: emporia relay restart"
+          " (in Docker: docker compose restart relay)")
+    return 0
+
+
+def cmd_agent_rotate_encryption_key(name: str, yes: bool = False) -> int:
+    """P271: `emporia agent rotate-encryption-key NAME` — a new X25519 key for an
+    agent's DMs and encrypted rooms. DMs have no forward secrecy, so this is what
+    to do when the key may have leaked. The new key is published with a binding
+    signed by the identity key and dated after the old one, so peers follow it
+    and a relay cannot put the old key back. The old private key is kept here
+    (retired) to open earlier messages; nothing new is sealed to it."""
+    found = _agent_to_change("rotate-encryption-key", name)
+    if not found:
+        return 1
+    profile, agent_id, *_ = found
+    print(f"This gives {agent_id} a new encryption key. Peers follow it on their next message; messages "
+          "already sealed to the old key\nstay readable here (the old key is kept, retired). If the old key "
+          "LEAKED, whoever has it can still read those earlier\nmessages: this protects what comes after.")
+    if not (yes or ask(f"Replace {agent_id}'s encryption key?", False)):
+        return 1
+    r = _as_agent(profile, "import json\nfrom emporia import identity, mcp_server as m\n"
+                  "old, new = identity.rotate_encryption_keypair(m.AGENT_ID)\n"
+                  "reg = m.register_agent(m.AGENT_ID)\n"
+                  "print(json.dumps({'old': identity.encryption_key_fingerprint(old), "
+                  "'new': identity.encryption_key_fingerprint(new), 'published': bool(reg.get('success')), "
+                  "'error': reg.get('error', '')}))", EMPORIA_NO_ARCHIVE="1")
+    try:
+        out = json.loads(r.stdout.strip().splitlines()[-1])
+    except (ValueError, IndexError):
+        print(f"agent rotate-encryption-key: failed — {(r.stderr or r.stdout).strip()[-300:]}")
+        return 1
+    print(f"  {agent_id}: new encryption key {out['new']} (was {out['old']}).")
+    if out["published"]:
+        print("  Published on its relay, signed by its identity key.")
+    else:
+        print(f"  Not published yet ({out['error'][:160]}); it is when the agent next starts.")
+    installer().print_restart_instructions([profile])
     return 0
 
 
@@ -5276,7 +5333,7 @@ def build_parser() -> argparse.ArgumentParser:
     r = sub.add_parser("relay", help="start, stop or inspect this machine's relay; `use` moves agents to another; "
                                      "`host` runs one for other machines, in Docker behind https")
     r.add_argument("action", choices=["start", "stop", "restart", "status", "logs", "use", "host", "link", "unlink", "links",
-                                      "access", "members", "move", "backup", "rotate-key",
+                                      "access", "members", "move", "backup", "rotate-key", "rotate-sign-in-secret",
                                       "config", "overview", "owner-key", "remove"])
     r.add_argument("url", nargs="?", default="", help="use, link, unlink: the other relay's URL")
     r.add_argument("names", nargs="*", help="use: the agents that move to it")
@@ -5301,13 +5358,13 @@ def build_parser() -> argparse.ArgumentParser:
                                        "or its identity key changed (rotate-key), given a recovery key "
                                        "(recovery-key) or replaced with it when lost (recover)")
     ag2.add_argument("action", choices=["leave", "delete", "secure", "refresh", "inbox-clear", "rotate-key",
-                                        "recovery-key", "recover"])
+                                        "rotate-encryption-key", "recovery-key", "recover"])
     ag2.add_argument("url_or_name", nargs="?", default="",
                      help="leave: the relay's URL; delete, secure, refresh, inbox-clear, rotate-key: "
                           "the agent (secure, refresh, inbox-clear: or all)")
     ag2.add_argument("name", nargs="?", default="", help="leave: the agent")
     ag2.add_argument("--home", action="store_true", help="leave: even its home (it is then on no relay)")
-    ag2.add_argument("--yes", action="store_true", help="rotate-key, recover: do not ask first")
+    ag2.add_argument("--yes", action="store_true", help="rotate-key, rotate-encryption-key, recover: do not ask first")
     ag2.add_argument("--agent", default="", help="recovery-key, recover: the agent (default: this profile's)")
     ag2.add_argument("--out", default="", help="recovery-key: the file to write the recovery key to (0600)")
     ag2.add_argument("--recovery-key-file", default="", help="recover: a file holding the recovery key")
@@ -5319,6 +5376,7 @@ def build_parser() -> argparse.ArgumentParser:
     ag2.set_defaults(func=lambda a: cmd_agent_secure(a.url_or_name) if a.action == "secure" else
                      cmd_agent_refresh(a.url_or_name) if a.action == "refresh" else
                      cmd_agent_rotate_key(a.url_or_name, a.yes) if a.action == "rotate-key" else
+                     cmd_agent_rotate_encryption_key(a.url_or_name, a.yes) if a.action == "rotate-encryption-key" else
                      cmd_agent_recovery_key(a.agent or a.url_or_name, a.out) if a.action == "recovery-key" else
                      cmd_agent_recover(a.agent or a.url_or_name, a.recovery_key_file, a.recovery_key_source,
                                        a.compromised_since, a.yes) if a.action == "recover" else

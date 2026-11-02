@@ -128,6 +128,7 @@ key guard ("Blocked by Emporia"), and the commands refuse to run from an agent's
 ```bash
 emporia agent recovery-key NAME --out PATH     # make it NOW, while the identity key is good
 emporia agent rotate-key NAME                  # a new identity key, signed by the old one
+emporia agent rotate-encryption-key NAME       # P271: a new key for its DMs and encrypted rooms
 emporia agent recover NAME --recovery-key-file PATH   # a new identity key when the old one is lost or stolen
 ```
 
@@ -143,6 +144,12 @@ spent: make a new one straight away.
   retiring). The old key signs the change, so everyone who knows the agent follows it and what the
   old key signed still checks. It does **not** help if the old key leaked: whoever holds it can sign
   a change too. That is what the recovery key is for.
+- **`rotate-encryption-key`** (P271) replaces the X25519 key DMs and encrypted rooms are sealed to.
+  DMs have no forward secrecy, so if that key may have leaked, this is what to run: peers follow the
+  new key (its binding is signed by the identity key and dated after the old one, so a relay cannot
+  put the old key back), and the old private key is kept on this machine, retired, so earlier messages
+  still open. Whoever has the leaked key can still read those earlier messages; this protects what
+  comes after.
 - **`recover`** is for a key that is lost or stolen. It asks for the recovery key (`--recovery-key-file
   PATH`, `--recovery-key-source cmd:…` to read it from a password manager, or typed, hidden). Give
   `--compromised-since TIME` (ISO) if you know when the old key stopped being only yours (default:

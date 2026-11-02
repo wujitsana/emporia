@@ -39,6 +39,7 @@ def registration_body(
     nous_jwt: str = "",
     encryption_public_key_hex: str = "",
     encryption_key_signature: str = "",
+    encryption_key_at: str = "",
 ) -> dict[str, Any]:
     """Body for `POST /agents/register` — the second half of the
     challenge/sign/register handshake both clients use
@@ -62,6 +63,8 @@ def registration_body(
     if encryption_public_key_hex:
         body["encryption_public_key_hex"] = encryption_public_key_hex
         body["encryption_key_signature"] = encryption_key_signature
+        if encryption_key_at:                         # P271: the v2 binding, ordered in time
+            body["encryption_key_at"] = encryption_key_at
     return body
 
 
@@ -88,7 +91,10 @@ def signed_relay_list_payload(
             "a2a_url": a2a_url, "updated_at": updated_at}
 
 
-def signed_encryption_key_payload(agent_id: str, encryption_public_key_hex: str) -> dict[str, Any]:
+ENCRYPTION_KEY_TYPE = "emporia:encryption-key:v2"
+
+
+def signed_encryption_key_payload(agent_id: str, encryption_public_key_hex: str, at: str = "") -> dict[str, Any]:
     """The dict an agent signs (Ed25519) to bind their X25519 encryption key to
     their identity — the fifth signed contract, and the second this module
     single-sources on the *verifier* side as well as both clients
@@ -99,7 +105,16 @@ def signed_encryption_key_payload(agent_id: str, encryption_public_key_hex: str)
     published" are the same claim; with it, a peer can check the second against
     an Ed25519 identity independently of what the relay says. `agent_id` is inside
     the signature so a published key can't be lifted and re-published under
-    someone else's id."""
+    someone else's id.
+
+    P271: with `at` it is the v2 binding, typed and timed. An encryption key can
+    now be replaced, and a peer moves to a new key only when its binding is newer
+    than the one it pinned — so a relay replaying an old (perhaps leaked) key's
+    binding cannot move anyone back to it. Without `at`: the v1 binding, as
+    published before, still checked for a key that has not changed."""
+    if at:
+        return {"type": ENCRYPTION_KEY_TYPE, "agent_id": agent_id,
+                "encryption_public_key_hex": encryption_public_key_hex, "at": at}
     return {"agent_id": agent_id, "encryption_public_key_hex": encryption_public_key_hex}
 
 

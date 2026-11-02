@@ -261,6 +261,79 @@ def generate_or_load_encryption_keypair(profile_id: str) -> tuple[Any, bytes]:
     return priv, priv.public_key().public_bytes_raw()
 
 
+# P271: an encryption key can be replaced. DMs have no forward secrecy (a fresh
+# content key per message, wrapped to a long-lived X25519 key), so a leaked key
+# would otherwise read every past and future message for good. The replaced keys
+# are kept here only to open what was sealed to them; nothing new is sealed to one.
+RETIRED_ENC_KEYS_VAR = "EMPORIA_ENCRYPTION_RETIRED_KEYS"     # env-kept keys: comma-separated hex
+
+
+def _retired_enc_path(profile_id: str) -> Path:
+    return KEY_DIR / f"{_keyfile_stem(profile_id)}.x25519.retired"     # not *.priv: never read as an agent key
+
+
+def _parse_retired(text: str) -> list[str]:
+    return [h.strip().lower() for h in text.replace(",", "\n").splitlines()
+            if len(h.strip()) == 64 and all(c in "0123456789abcdefABCDEF" for c in h.strip())]
+
+
+def retired_encryption_key_hexes(profile_id: str, env: dict[str, str] | None = None,
+                                 key_dir: Path | None = None) -> list[str]:
+    """The private keys this agent's encryption key replaced, newest first."""
+    path = (key_dir / _retired_enc_path(profile_id).name) if key_dir else _retired_enc_path(profile_id)
+    out = _parse_retired(path.read_text()) if path.is_file() else []
+    out += _parse_retired((env if env is not None else os.environ).get(RETIRED_ENC_KEYS_VAR, ""))
+    return list(dict.fromkeys(out))
+
+
+def encryption_private_keys(profile_id: str) -> list[Any]:
+    """Every key a message to this agent may have been sealed to: the current one
+    first, then those it replaced. What every reader passes to `open_sealed`."""
+    from cryptography.hazmat.primitives.asymmetric.x25519 import X25519PrivateKey
+    current, _ = generate_or_load_encryption_keypair(profile_id)
+    return [current] + [X25519PrivateKey.from_private_bytes(bytes.fromhex(h))
+                        for h in retired_encryption_key_hexes(profile_id)]
+
+
+def rotate_encryption_keypair(profile_id: str) -> tuple[str, str]:
+    """Replace this agent's encryption key; return (old public hex, new public hex).
+
+    The old private key is kept as retired before the new one is written, so a
+    crash between the two loses nothing. A key kept in the profile .env stays
+    there (and its retired ones with it, out of the model's sight); a key from a
+    password manager (`cmd:`) is replaced in the manager, not here."""
+    from cryptography.hazmat.primitives.asymmetric.x25519 import X25519PrivateKey
+
+    from emporia import key_source
+    source = os.environ.get(ENCRYPTION_KEY_SOURCE_VAR, "").strip()
+    if source.startswith("cmd:"):
+        raise ValueError("this agent's encryption key comes from a password manager (cmd:): put a new key "
+                         f"there, and the old one in {RETIRED_ENC_KEYS_VAR} so earlier messages still open")
+    old_priv, old_pub = generate_or_load_encryption_keypair(profile_id)
+    old_hex = old_priv.private_bytes_raw().hex()
+    new = X25519PrivateKey.generate()
+    new_hex = new.private_bytes_raw().hex()
+    if source.startswith("env:"):
+        path = key_source.dotenv_path()
+        if not path:
+            raise ValueError("this agent's encryption key is in its environment, but no profile .env is known "
+                             "(EMPORIA_DOTENV) to keep a new one in")
+        retired = [old_hex] + retired_encryption_key_hexes(profile_id)
+        name = source[4:].strip()
+        key_source.set_env_lines(path, {RETIRED_ENC_KEYS_VAR: ",".join(dict.fromkeys(retired))})
+        key_source.set_env_lines(path, {name: new_hex})
+        os.environ[RETIRED_ENC_KEYS_VAR] = ",".join(dict.fromkeys(retired))
+        os.environ[name] = new_hex
+        _LINKED.pop(source, None)
+    else:
+        KEY_DIR.mkdir(mode=0o700, parents=True, exist_ok=True)
+        retired = [old_hex] + retired_encryption_key_hexes(profile_id)
+        _write_secret_atomically(_retired_enc_path(profile_id),
+                                 ("\n".join(dict.fromkeys(retired)) + "\n").encode())
+        _write_secret_atomically(_enc_key_path(profile_id), new.private_bytes_raw())
+    return old_pub.hex(), new.public_key().public_bytes_raw().hex()
+
+
 def get_encryption_public_key_hex(profile_id: str) -> str:
     """The hex X25519 public key to publish to the relay, generating on first use."""
     _, pub_bytes = generate_or_load_encryption_keypair(profile_id)
@@ -751,9 +824,16 @@ def trust_peer_encryption_key(
     relay_url: str,
     stable_id: str = "",
     key_log: Any = None,
+    at: str = "",
 ) -> str:
     """Validate a peer's encryption key as served by a relay, then pin it. Returns
     the key to seal to.
+
+    P271: `at` is the time in the peer's v2 binding. A served key other than the
+    pinned one is followed only when its binding verifies under the peer's pinned
+    signing key and was signed after the pinned one's — so an agent can replace a
+    leaked key and its peers follow, while a relay replaying an older binding
+    (the leaked key's) cannot move anyone back.
 
     One function both clients call, so `mcp_server.py` and `agent_sdk.py` cannot
     end up applying different trust rules to the same key material — the same
@@ -794,13 +874,56 @@ def trust_peer_encryption_key(
             f"key log does not lead to it — refusing to encrypt"
         )
     if not signing_key or not verify(
-        signed_encryption_key_payload(bound_id, key), signature, str(signing_key),
+        signed_encryption_key_payload(bound_id, key, at), signature, str(signing_key),
     ):
         raise PeerKeyMismatch(
             f"the encryption key served for '{agent_id}' is not signed by their "
             f"Ed25519 identity — refusing to encrypt to it"
         )
-    return pin_peer_encryption_key(agent_id, key)
+    from emporia.wire import when_of
+    pins, times = load_peer_encryption_keys(), _load_peer_enc_times()
+    existing = pins.get(agent_id)
+    if existing and existing != key:
+        new_t, held_t = (when_of(at) if at else None), (when_of(times.get(agent_id, "")) if times.get(agent_id) else None)
+        if new_t is None or (held_t is not None and new_t <= held_t):
+            raise PeerKeyMismatch(
+                f"the encryption key served for '{agent_id}' is not the one pinned "
+                f"(pinned {encryption_key_fingerprint(existing)}, served {encryption_key_fingerprint(key)}), "
+                f"and its binding is not newer than the pinned one's — refusing to encrypt. A replaced key "
+                f"comes with a newer signed binding; if they say they rotated, compare fingerprints out of band "
+                f"and call trust_new_encryption_key('{agent_id}', ...)."
+            )
+        import logging
+        logging.getLogger("emporia.identity").info(
+            "peer_encryption_key_followed", extra={"peer": agent_id, "old": encryption_key_fingerprint(existing),
+                                                   "new": encryption_key_fingerprint(key)})
+        pins[agent_id] = key
+        save_peer_encryption_keys(pins)
+    else:
+        pin_peer_encryption_key(agent_id, key)
+    new_t = when_of(at) if at else None
+    held_t = when_of(times[agent_id]) if times.get(agent_id) else None
+    if new_t is not None and (held_t is None or new_t > held_t):
+        times[agent_id] = at
+        _save_peer_enc_times(times)
+    return key
+
+
+_PEER_ENC_TIMES_FILE_NAME = "peer_encryption_key_times.json"
+
+
+def _load_peer_enc_times() -> dict[str, str]:
+    """P271: when each pinned encryption key's binding was signed ('' or absent: v1)."""
+    try:
+        data = json.loads((KEY_DIR / _PEER_ENC_TIMES_FILE_NAME).read_text())
+        return data if isinstance(data, dict) else {}
+    except (FileNotFoundError, json.JSONDecodeError, OSError):
+        return {}
+
+
+def _save_peer_enc_times(times: dict[str, str]) -> None:
+    KEY_DIR.mkdir(mode=0o700, parents=True, exist_ok=True)
+    _write_secret_atomically(KEY_DIR / _PEER_ENC_TIMES_FILE_NAME, json.dumps(times, sort_keys=True).encode())
 
 
 def trust_new_encryption_key(agent_id: str, public_key_hex: str) -> None:
@@ -975,6 +1098,18 @@ def load_or_generate_relay_jwt_secret() -> bytes:
             _write_secret_atomically(path, secret)
             _RELAY_JWT_SECRET_CACHE = secret
     return _RELAY_JWT_SECRET_CACHE
+
+
+def rotate_relay_jwt_secret() -> None:
+    """P271: a new sign-in secret for this relay. Every bearer token it issued
+    stops verifying (each client signs in again with its key, unasked), and so do
+    Tempo offers not yet paid. For a secret that may have leaked: whoever holds it
+    can mint a token for any agent. The running relay keeps the old one cached
+    until it restarts."""
+    global _RELAY_JWT_SECRET_CACHE
+    KEY_DIR.mkdir(mode=0o700, parents=True, exist_ok=True)
+    _write_secret_atomically(KEY_DIR / _JWT_SECRET_FILE_NAME, secrets.token_bytes(32))
+    _RELAY_JWT_SECRET_CACHE = None
 
 
 # ============================================================================

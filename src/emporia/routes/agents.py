@@ -105,9 +105,10 @@ async def register_agent(req: rs.RegisterAgentRequest):
     # encrypted DMs.
     if req.encryption_public_key_hex:
         enc_key = rs._validated_encryption_key(
-            canonical_id, req.encryption_public_key_hex, req.encryption_key_signature,
+            canonical_id, req.encryption_public_key_hex, req.encryption_key_signature, req.encryption_key_at,
         )
-        rs.AGENT_REGISTRY.set_encryption_key(canonical_id, enc_key, req.encryption_key_signature)
+        rs.AGENT_REGISTRY.set_encryption_key(canonical_id, enc_key, req.encryption_key_signature,
+                                             req.encryption_key_at)
 
     # Auto-provision a Stripe Connected Account in test mode so the agent can
     # receive real (test) payouts without manual Stripe onboarding.
@@ -678,8 +679,8 @@ async def set_encryption_key(agent_id: str, req: rs.SetEncryptionKeyRequest, req
     rs._require_caller_is(agent_id, request)
     rs._require_registered(agent_id)
     rs._enforce_agent_rate_limit(agent_id)
-    key = rs._validated_encryption_key(agent_id, req.encryption_public_key_hex, req.signature)
-    rs.AGENT_REGISTRY.set_encryption_key(agent_id, key, req.signature)
+    key = rs._validated_encryption_key(agent_id, req.encryption_public_key_hex, req.signature, req.at)
+    rs.AGENT_REGISTRY.set_encryption_key(agent_id, key, req.signature, req.at)
     return {"agent_id": agent_id, "encryption_public_key": key}
 @router.get("/agents/{agent_id}/encryption-key")
 async def get_encryption_key(agent_id: str, request: Request):
@@ -705,6 +706,7 @@ async def get_encryption_key(agent_id: str, request: Request):
                 raise HTTPException(404, f"Agent not found: {agent_id}")
             return {"agent_id": agent_id, "encryption_public_key": pinned["encryption_public_key"],
                     "signature": pinned["encryption_key_signature"], "public_key_hex": pinned["public_key_hex"],
+                    "at": pinned["encryption_key_at"] or "",
                     "stable_id": pinned["stable_id"], "key_log": json.loads(pinned["key_log_json"] or "[]")}
         agent_id = name
     if not rs.AGENT_REGISTRY.is_authorized(agent_id):
@@ -726,6 +728,7 @@ async def get_encryption_key(agent_id: str, request: Request):
         "agent_id": agent_id,
         "encryption_public_key": key,
         "signature": signature,
+        "at": rs.AGENT_REGISTRY.encryption_key_at(agent_id),     # P271: the binding's time ('' for v1)
         "public_key_hex": row["public_key_hex"] if row else "",
         # P245: with its stable id and key log, so a client can follow a rotation
         # from the key it pinned (`identity.pinned_signing_key`).
@@ -1001,7 +1004,7 @@ async def agent_card(agent_id: str):
     with rs.DB_LOCK, rs.get_db() as conn:
         row = conn.execute(
             "SELECT agent_id, display_name, public_key_hex, stable_id, encryption_public_key, "
-            "encryption_key_signature, relay_list_json FROM authorized_agents "
+            "encryption_key_signature, encryption_key_at, relay_list_json FROM authorized_agents "
             "WHERE agent_id = ? AND is_active = 1", (agent_id,)).fetchone()
         key_log = rs.agent_key_log(conn, row["stable_id"]) if row else []
     if not row or not row["relay_list_json"]:
@@ -1017,6 +1020,7 @@ async def agent_card(agent_id: str):
         "key_log": key_log,
         "encryption_public_key": row["encryption_public_key"] or "",
         "encryption_key_signature": row["encryption_key_signature"] or "",
+        "encryption_key_at": row["encryption_key_at"] or "",       # P271
         "relay_list": published["list"],
         "relay_list_signature": published["signature"],
         "a2a_url": published["list"].get("a2a_url", ""),

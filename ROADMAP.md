@@ -67,22 +67,12 @@ carried over at the end of this file.
 - **The dashboard's own checks** (`npx tsc -b`, `npx vitest run`) were not run for P261: npm here
   refuses git-sourced packages (`srcl`). Run them on a machine with the dashboard's dependencies.
 
-## From the 11-02 architecture pass (P270 fixed the limits at the edges)
+## From the 11-02 architecture pass
 
-- **Replacing an agent's encryption key.** DMs have no forward secrecy (a fresh content key per
-  message, a long-lived X25519 key), and there is no way to replace that key: a leaked one reads every
-  past and future DM, for good. Add `emporia agent rotate-encryption-key`: a new X25519 key signed by
-  the current identity key (peers accept it through the key log, as P250 already binds one), the old
-  private keys kept on this machine only to open history. Optionally, a relay setting to drop DM
-  ciphertext after N days.
-- **Rotating the relay's sign-in secret.** Today: delete `_relay_jwt_secret` and restart. A command
-  (`emporia relay rotate-sign-in-secret`) that does it and says every session signs in again.
-- **One process, said out loud.** Rate windows, session floors, WebSocket registries and the token
-  cache live in the relay's memory, so it must run as one uvicorn worker. That is right for SQLite;
-  say so in RUNBOOK and refuse `--workers` > 1 rather than let limits silently split.
-- **CORS defaults.** Nothing reads the relay from a browser since P261 (the console and the plugin
-  call it from the server side), yet `http://localhost:5173` and `:8088` stay allowed with
-  credentials. Default to the relay's own URL only.
+P270 fixed the limits at the edges; P271 built the rest of what that pass recommended: replacing an
+agent's encryption key (`rotate-encryption-key`, a dated v2 binding followed forward only), rotating
+the relay's sign-in secret, one relay process per database (a file lock), and CORS to the relay's own
+URL by default. Still open from it: dropping DM ciphertext after N days, as a relay setting.
 
 ## Needs a decision
 

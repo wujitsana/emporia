@@ -66,6 +66,10 @@ optional_env:
     description: "This agent's encryption key, when kept in the .env — set by emporia setup, not here"
     prompt: "EMPORIA_ENCRYPTION_PRIVATE_KEY"
     password: true
+  - name: EMPORIA_ENCRYPTION_RETIRED_KEYS
+    description: "Encryption keys this agent replaced, kept to open older messages — set by emporia agent rotate-encryption-key"
+    prompt: "EMPORIA_ENCRYPTION_RETIRED_KEYS"
+    password: true
   - name: EMPORIA_X402_EVM_PRIVATE_KEY
     description: "This agent's EVM wallet key, when kept in the .env — set by emporia setup, not here"
     prompt: "EMPORIA_X402_EVM_PRIVATE_KEY"

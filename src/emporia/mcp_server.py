@@ -419,7 +419,9 @@ def register_agent(
         from emporia.identity import sign as ed25519_sign
         from emporia.wire import signed_encryption_key_payload
         enc_pub = get_encryption_public_key_hex(agent_id)
-        enc_sig = ed25519_sign(signed_encryption_key_payload(agent_id, enc_pub), agent_id)
+        from datetime import UTC, datetime
+        enc_at = datetime.now(UTC).isoformat()          # P271: the v2 binding, ordered in time
+        enc_sig = ed25519_sign(signed_encryption_key_payload(agent_id, enc_pub, enc_at), agent_id)
     except Exception as e:
         return {"error": f"challenge failed: {e}", "success": False}
 
@@ -442,6 +444,7 @@ def register_agent(
         ch["challenge_id"], sig_hex, nous_jwt=jwt,
         encryption_public_key_hex=enc_pub,
         encryption_key_signature=enc_sig,
+        encryption_key_at=enc_at,
     )
     try:
         r = httpx.post(f"{_base()}/agents/register", json=payload, timeout=5)
@@ -1682,6 +1685,7 @@ def _room_recipients(sender: str, room_id: str) -> dict[str, str]:
         recipients[member] = trust_peer_encryption_key(
             member, entry.get("encryption_public_key", ""), entry.get("signature", ""),
             entry.get("public_key_hex", ""), _base(), entry.get("stable_id", ""), entry.get("key_log"),
+            at=entry.get("at", ""),
         )
     return recipients
 
@@ -1697,7 +1701,8 @@ def _session_recipients(aid: str, session_id: str) -> dict[str, str]:
     for player, entry in r.json().get("keys", {}).items():
         out[player] = (get_encryption_public_key_hex(aid) if player == aid else trust_peer_encryption_key(
             player, entry.get("encryption_public_key", ""), entry.get("signature", ""),
-            entry.get("public_key_hex", ""), _base(), entry.get("stable_id", ""), entry.get("key_log")))
+            entry.get("public_key_hex", ""), _base(), entry.get("stable_id", ""), entry.get("key_log"),
+            at=entry.get("at", "")))
     return out
 
 
@@ -1714,10 +1719,10 @@ def _seal_text(text: str, recipients: dict[str, str], session_id: str, field: st
 def _open_text(aid: str, session_id: str, value: Any, fields: list[str]) -> str | None:
     """Plaintext of a sealed session field this agent can read, else None."""
     from emporia import crypto_box
-    from emporia.identity import generate_or_load_encryption_keypair
+    from emporia.identity import encryption_private_keys
     if not isinstance(value, str) or not crypto_box.looks_like_any_envelope(value):
         return None
-    priv, _ = generate_or_load_encryption_keypair(aid)
+    priv = encryption_private_keys(aid)          # P271: and the keys it replaced
     for field in fields:
         try:
             return crypto_box.open_sealed(json.loads(value), aid, priv,
@@ -1769,7 +1774,7 @@ def get_room_messages(room_id: str, agent_id: str = "", limit: int = 50) -> dict
     if not aid:
         return {"error": "agent_id required (or set EMPORIA_AGENT_ID)", "success": False}
     from emporia import message_read
-    from emporia.identity import generate_or_load_encryption_keypair, verify_room_message
+    from emporia.identity import encryption_private_keys, verify_room_message
     try:
         r = _bearer_request(
             "get", f"{_base()}/rooms/{room_id}/messages",
@@ -1779,7 +1784,7 @@ def get_room_messages(room_id: str, agent_id: str = "", limit: int = 50) -> dict
             return {"error": f"Relay {r.status_code}", "detail": r.text, "success": False}
         body = r.json()
         messages = body.get("messages", [])
-        priv, _ = generate_or_load_encryption_keypair(aid)
+        priv = encryption_private_keys(aid)      # P271: and the keys it replaced
         # P21-4: the only I/O the old inline loop did — resolved once per
         # distinct sender before handing off to the shared, pure
         # annotate_messages().
@@ -2818,6 +2823,7 @@ def _dm_recipients(sender: str, thread_id: str) -> dict[str, str]:
         recipients[participant] = trust_peer_encryption_key(
             participant, body.get("encryption_public_key", ""), body.get("signature", ""),
             body.get("public_key_hex", ""), _base(), body.get("stable_id", ""), body.get("key_log"),
+            at=body.get("at", ""),
         )
     return recipients
 
@@ -3073,7 +3079,7 @@ def read_archive(kind: str, item: str, agent_id: str = "") -> dict[str, Any]:
     or a message was removed there. kind: 'dm' (a thread_id) or 'room' (a
     room_id). Only this agent's own archive."""
     from emporia import message_read
-    from emporia.identity import KEY_DIR, generate_or_load_encryption_keypair
+    from emporia.identity import KEY_DIR, encryption_private_keys
     aid = agent_id or AGENT_ID
     if kind not in ("dm", "room") or not item.replace("_", "").isalnum():
         return {"error": "kind is 'dm' or 'room', and item its id", "success": False}
@@ -3081,7 +3087,7 @@ def read_archive(kind: str, item: str, agent_id: str = "") -> dict[str, Any]:
     if not hits:
         return {"error": "not in the archive — run archive_now first", "success": False}
     msgs = [json.loads(x) for x in hits[0].read_text().splitlines() if x.strip()]
-    priv, _ = generate_or_load_encryption_keypair(aid)
+    priv = encryption_private_keys(aid)
     me = next((x.get("sender_id") for x in msgs if str(x.get("sender_id", "")).startswith(aid + "@")), aid)
     message_read.annotate_messages(msgs, kind=kind, scope_id=item, viewer_agent_id=me, private_key=priv,
                                    pubkeys={}, verify=lambda msg, pk: None)
@@ -3226,7 +3232,7 @@ def get_dm_messages(thread_id: str, agent_id: str = "", limit: int = 50) -> dict
     if not aid:
         return {"error": "agent_id required (or set EMPORIA_AGENT_ID)", "success": False}
     from emporia import message_read
-    from emporia.identity import generate_or_load_encryption_keypair, verify_dm_message
+    from emporia.identity import encryption_private_keys, verify_dm_message
     try:
         r = _bearer_request(
             "get", f"{_base()}/dm/{thread_id}/messages",
@@ -3236,7 +3242,7 @@ def get_dm_messages(thread_id: str, agent_id: str = "", limit: int = 50) -> dict
             return {"error": f"Relay {r.status_code}", "detail": r.text, "success": False}
         body = r.json()
         messages = body.get("messages", [])
-        priv, _ = generate_or_load_encryption_keypair(aid)
+        priv = encryption_private_keys(aid)      # P271: and the keys it replaced
         # P21-4: the only I/O the old inline loop did — resolved once per
         # distinct sender before handing off to the shared, pure
         # annotate_messages().

@@ -608,12 +608,13 @@ def _agent(conn, r):
     # verifier compares it with /agents/{id} and a quiet change shows
     return True, r["stable_id"] or r["agent_id"], {
         "agent_id": r["agent_id"], "stable_id": r["stable_id"] or "", "public_key_hex": r["public_key_hex"],
-        "profile_hash": content_hash(*(r[k] for k in AGENT_PROFILE_FIELDS))}
+        "profile_hash": content_hash(*(r[k] if k in r.keys() else "" for k in AGENT_PROFILE_FIELDS))}
 
 
 AGENT_PROFILE_FIELDS = ("agent_id", "public_key_hex", "display_name", "is_active", "x402_pay_to_json",
                         "stripe_account_id", "encryption_public_key", "encryption_key_signature", "stable_id",
-                        "accepts_remote_dms", "relay_list_json", "x402_pay_to_proofs_json")
+                        "accepts_remote_dms", "relay_list_json", "x402_pay_to_proofs_json",
+                        "encryption_key_at")       # P271: a replaced encryption key is a changed profile
 
 
 def _signed_by_owner(id_col: str, at_col: str):

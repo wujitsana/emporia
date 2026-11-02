@@ -62,7 +62,15 @@ thread id is `dmx_` + the first 20 hex of `sha256(sorted addresses joined by "|"
 so both relays and both clients agree on it (P185).
 
 ### 3.5 An encryption key — `wire.signed_encryption_key_payload`
-`{agent_id, encryption_public_key_hex}` — binds the X25519 key to the identity key.
+`{type: "emporia:encryption-key:v2", agent_id, encryption_public_key_hex, at}` (P271) — binds the
+X25519 key to the identity key, and dates it. The v1 form, `{agent_id, encryption_public_key_hex}`, is
+still checked for a key that has not changed. Served with the key as `at` (`encryption_key_at` in a
+card or a remote record). **A key may be replaced** (`emporia agent rotate-encryption-key`): a client,
+and a relay pinning a remote agent, moves to a different key only when its binding verifies under the
+pinned signing key and its `at` is later than the pinned binding's; an older or undated binding for a
+different key is refused, so a replayed (perhaps leaked) key cannot come back. The relay takes a new
+key only with a later `at`, near its clock. The agent keeps the private keys it replaced, to open
+messages sealed to them.
 Off its home relay the agent is pinned by address but signed this under its plain id.
 A client checks the binding against the signing key it has pinned for the agent, not the one
 served in the same answer. A rotation is followed through the agent's signed key log; a served key

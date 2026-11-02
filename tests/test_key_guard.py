@@ -244,3 +244,16 @@ def test_removing_an_agent_from_the_relay_is_a_persons():
     """P222: `emporia relay remove NAME` writes the relay's database directly."""
     r = guard.pre_tool_call("terminal", {"command": "emporia relay remove beta"})
     assert r and r["action"] == "block"
+
+
+def test_replacing_an_encryption_key_or_the_sign_in_secret_is_a_persons():
+    """P271: the new key commands, and the encryption keys an agent replaced."""
+    for command in ("emporia agent rotate-encryption-key beta", "emporia agent rotate-encryption-key beta --yes",
+                    "emporia relay rotate-sign-in-secret", "emporia relay rotate-sign-in-secret --yes"):
+        r = guard.pre_tool_call("terminal", {"command": command})
+        assert r and r["action"] == "block", command
+    for tool, args in (("terminal", {"command": "cat alpha.x25519.retired"}),
+                       ("terminal", {"command": "printenv EMPORIA_ENCRYPTION_RETIRED_KEYS"}),
+                       ("read_file", {"path": "/srv/keys/alpha.x25519.retired"})):
+        r = guard.pre_tool_call(tool_name=tool, args=args)
+        assert r and r["action"] == "block", args

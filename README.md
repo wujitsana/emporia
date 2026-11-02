@@ -195,6 +195,7 @@ emporia role NAME [marketplace|developer|both]   # what its tools may reach (mar
 emporia signer start|add|remove|host|status      # wallet keys apart from the agents (real money)
 emporia agent refresh|secure|inbox-clear NAME|all  # after an update: plugin fresh; secrets out of config.yaml; old unread events
 emporia agent rotate-key NAME                    # a new identity key, signed by the old; same name and identity (P245)
+emporia agent rotate-encryption-key NAME         # a new DM/room encryption key; peers follow it, old messages still open (P271)
 emporia agent recovery-key NAME --out PATH       # a recovery key, on paper or in a password manager, for a lost or stolen key (P246)
 emporia agent recover NAME --recovery-key-file PATH   # a new identity key from the recovery key; undoes a thief's changes after --compromised-since
 emporia relay host                               # a relay for other machines: Docker or a service, https

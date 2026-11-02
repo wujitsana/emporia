@@ -106,4 +106,9 @@ def load_encryption_keys(agent: LocalAgent, others: list[Path]) -> list:
                 keys.append(X25519PrivateKey.from_private_bytes(p.read_bytes()))
             except ValueError:
                 continue
+    # P271: the keys it replaced, for messages sealed before
+    from emporia.identity import retired_encryption_key_hexes
+    for d in [agent.key_dir] + [d for d in others if d != agent.key_dir]:
+        for h in retired_encryption_key_hexes(agent.agent_id, env=_profile_env(d), key_dir=d):
+            keys.append(X25519PrivateKey.from_private_bytes(bytes.fromhex(h)))
     return keys

@@ -303,13 +303,16 @@ class EmporiaAgent:
         from emporia.identity import get_encryption_public_key_hex, sign
         from emporia.wire import signed_encryption_key_payload
         enc_pub = get_encryption_public_key_hex(self.profile_id)
+        from datetime import UTC, datetime
+        enc_at = datetime.now(UTC).isoformat()          # P271: the v2 binding, ordered in time
         body = registration_body(
             self.agent_id, self.public_key_hex, display_name or self.agent_id,
             ch["challenge_id"], sig_hex, nous_jwt=nous_jwt,
             encryption_public_key_hex=enc_pub,
             encryption_key_signature=sign(
-                signed_encryption_key_payload(self.agent_id, enc_pub), self.profile_id,
+                signed_encryption_key_payload(self.agent_id, enc_pub, enc_at), self.profile_id,
             ),
+            encryption_key_at=enc_at,
         )
         resp = await self._client().post(f"{self.relay_url}/agents/register", json=body)
         resp.raise_for_status()
@@ -846,6 +849,7 @@ class EmporiaAgent:
         return trust_peer_encryption_key(
             agent_id, body.get("encryption_public_key", ""), body.get("signature", ""),
             body.get("public_key_hex", ""), self.relay_url, body.get("stable_id", ""), body.get("key_log"),
+            at=body.get("at", ""),
         )
 
     async def _thread_recipients(self, thread: dict[str, Any]) -> dict[str, str]:
@@ -927,7 +931,7 @@ class EmporiaAgent:
         unreadable, which is what an exception here would mean.
         """
         from emporia import message_read
-        from emporia.identity import generate_or_load_encryption_keypair, verify_dm_message
+        from emporia.identity import encryption_private_keys, verify_dm_message
 
         resp = await self._bearer_request(
             "get", f"{self.relay_url}/dm/{thread_id}/messages",
@@ -936,7 +940,7 @@ class EmporiaAgent:
         resp.raise_for_status()
         body = resp.json()
         messages = body.get("messages", [])
-        priv, _ = generate_or_load_encryption_keypair(self.profile_id)
+        priv = encryption_private_keys(self.profile_id)      # P271: and the keys it replaced
         # P21-4: the only I/O the old inline loop did — resolved once per distinct
         # sender before handing off to the shared, pure annotate_messages().
         pubkeys: dict[str, str] = {}
@@ -1177,6 +1181,7 @@ class EmporiaAgent:
             recipients[member] = trust_peer_encryption_key(
                 member, entry.get("encryption_public_key", ""), entry.get("signature", ""),
                 entry.get("public_key_hex", ""), self.relay_url, entry.get("stable_id", ""), entry.get("key_log"),
+                at=entry.get("at", ""),
             )
         return recipients
 
@@ -1195,7 +1200,8 @@ class EmporiaAgent:
             player: (get_encryption_public_key_hex(self.profile_id) if player == self.agent_id
                      else trust_peer_encryption_key(player, e.get("encryption_public_key", ""),
                                                     e.get("signature", ""), e.get("public_key_hex", ""),
-                                                    self.relay_url, e.get("stable_id", ""), e.get("key_log")))
+                                                    self.relay_url, e.get("stable_id", ""), e.get("key_log"),
+                                                    at=e.get("at", "")))
             for player, e in resp.json().get("keys", {}).items()}
         out = dict(payload)
         for f in session.get("private_text_fields", []):
@@ -1221,14 +1227,14 @@ class EmporiaAgent:
         back `encrypted: True, decrypted: False` rather than raising.
         """
         from emporia import message_read
-        from emporia.identity import generate_or_load_encryption_keypair, verify_room_message
+        from emporia.identity import encryption_private_keys, verify_room_message
 
         resp = await self._bearer_request(
             "get", f"{self.relay_url}/rooms/{room_id}/messages", params={"limit": limit},
         )
         resp.raise_for_status()
         messages = resp.json().get("messages", [])
-        priv, _ = generate_or_load_encryption_keypair(self.profile_id)
+        priv = encryption_private_keys(self.profile_id)      # P271: and the keys it replaced
         # P21-4: the only I/O the old inline loop did — resolved once per distinct
         # sender before handing off to the shared, pure annotate_messages().
         pubkeys: dict[str, str] = {}

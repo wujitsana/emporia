@@ -248,14 +248,31 @@ def seal(plaintext: str, recipients: dict[str, str], aad: bytes) -> dict[str, An
 
 
 def open_sealed(
-    envelope: dict[str, Any], agent_id: str, private_key: X25519PrivateKey, aad: bytes,
+    envelope: dict[str, Any], agent_id: str, private_key: Any, aad: bytes,
 ) -> str:
     """Recover the plaintext `agent_id` was sealed to, or raise `DecryptionError`.
 
     Takes the private key as an object rather than loading it, so this module
-    stays free of key-file I/O (`identity.generate_or_load_encryption_keypair()`
-    is the loader).
+    stays free of key-file I/O (`identity.encryption_private_keys()` is the
+    loader). P271: `private_key` may also be a list — the agent's current key
+    and those it replaced — and each is tried, newest first, so a message
+    sealed before a key was replaced still opens.
     """
+    if isinstance(private_key, (list, tuple)):
+        if not private_key:
+            raise DecryptionError("no encryption key to open this message with")
+        for key in private_key[:-1]:
+            try:
+                return _open_sealed_one(envelope, agent_id, key, aad)
+            except DecryptionError:
+                continue
+        return _open_sealed_one(envelope, agent_id, private_key[-1], aad)
+    return _open_sealed_one(envelope, agent_id, private_key, aad)
+
+
+def _open_sealed_one(
+    envelope: dict[str, Any], agent_id: str, private_key: X25519PrivateKey, aad: bytes,
+) -> str:
     if not isinstance(envelope, dict):
         raise DecryptionError("malformed envelope")
     if envelope.get("v") != ENVELOPE_VERSION or envelope.get("alg") != ENVELOPE_ALG:

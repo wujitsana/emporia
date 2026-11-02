@@ -17079,7 +17079,7 @@ def test_413_and_429_short_circuits_carry_cors_headers(client):
     actually sent. CORS is now registered last (outermost) so it wraps both."""
     from emporia import relay_server
 
-    origin = "http://localhost:5173"  # in the default _CORS_ORIGINS allowlist
+    origin = relay_server.RELAY_BASE_URL  # P271: the default _CORS_ORIGINS allowlist is the relay itself
 
     with patch.object(relay_server, "MAX_REQUEST_BYTES", 10):
         r = client.post(
@@ -18357,7 +18357,7 @@ def test_cors_preflight_is_rate_limited_and_size_checked(client):
     to CORSMiddleware's own preflight handling."""
     from emporia import relay_server
 
-    origin = "http://localhost:5173"  # in the default _CORS_ORIGINS allowlist
+    origin = relay_server.RELAY_BASE_URL  # P271: the default _CORS_ORIGINS allowlist is the relay itself
     preflight_headers = {"Origin": origin, "Access-Control-Request-Method": "POST"}
 
     # A normal preflight, under every limit, is unaffected -- still answered by
@@ -18711,7 +18711,7 @@ def test_cors_preflight_denial_carries_cors_headers(client):
     the same Access-Control-Allow-Origin header a normal 413/429 does."""
     from emporia import relay_server
 
-    origin = "http://localhost:5173"  # in the default _CORS_ORIGINS allowlist
+    origin = relay_server.RELAY_BASE_URL  # P271: the default _CORS_ORIGINS allowlist is the relay itself
     preflight_headers = {"Origin": origin, "Access-Control-Request-Method": "POST"}
     non_exempt = TestClient(app, client=("203.0.113.12", 4321))
 
@@ -27389,7 +27389,11 @@ def test_the_membership_rule_is_written_in_exactly_one_place():
 # V21 -> V22 (P269): `translog_epochs`, one row per log the relay has kept (a
 # rebuild starts a new one, with the old log's last state and a signed hand-over),
 # and `translog_states.epoch`.
-_SCHEMA_FINGERPRINT_V22 = "1afdf643aa2b7510157057c509af9fc61dcb1f3044713ab09d59043fbc27e67d"
+#
+# V22 -> V23 (P271): `authorized_agents.encryption_key_at` and
+# `remote_agents.encryption_key_at`, when the agent signed its encryption key's
+# (v2) binding, so a replaced key is followed forward only.
+_SCHEMA_FINGERPRINT_V23 = "fb72cbacbe5c7999d553d629cd3e1f15540187ead26915eb2446a670a9d23642"
 
 
 def _schema_fingerprint(db_path) -> tuple[str, int, int]:
@@ -27429,9 +27433,9 @@ def test_a_schema_change_requires_a_version_bump():
     from emporia.relay_server import SCHEMA_VERSION
 
     fingerprint, tables, columns = _schema_fingerprint(_test_db)
-    assert (SCHEMA_VERSION, fingerprint) == (22, _SCHEMA_FINGERPRINT_V22), (
+    assert (SCHEMA_VERSION, fingerprint) == (23, _SCHEMA_FINGERPRINT_V23), (
         f"the schema changed ({tables} tables, {columns} columns) or the version "
-        f"moved. Bump SCHEMA_VERSION *and* update _SCHEMA_FINGERPRINT_V22 — in "
+        f"moved. Bump SCHEMA_VERSION *and* update _SCHEMA_FINGERPRINT_V23 — in "
         f"that order, and never the fingerprint alone.\n"
         f"  code version: {SCHEMA_VERSION}\n  fingerprint:  {fingerprint}"
     )

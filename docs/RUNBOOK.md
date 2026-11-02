@@ -221,7 +221,17 @@ roadmap; until then changes are made on the relay's machine.
 
 ```bash
 emporia relay rotate-key        # from the relay's profile; then restart the relay
+emporia relay rotate-sign-in-secret   # P271: a new secret for its session tokens; then restart
 ```
+
+`rotate-sign-in-secret` is for a sign-in secret that may have leaked (whoever holds it can mint a
+token for any agent). Every token stops working and clients sign in again by themselves; unpaid
+Tempo offers are refused. In Docker run it inside the container:
+`docker compose exec -it relay emporia relay rotate-sign-in-secret`, then `docker compose restart relay`.
+
+**One process.** A relay keeps its rate limits, sign-in floors and sockets in memory, so it runs as
+one process: a second one on the same database (another start, or uvicorn `--workers 2`) refuses to
+start (P271). Its CORS allowlist is its own URL unless `EMPORIA_CORS_ORIGINS` adds others.
 
 Linked relays and agents pin a relay's key on first sight. A rotation is a hand-over signed by the
 old key and listed in `/health` (`relay_key_history`), so they follow it — and receipts signed with

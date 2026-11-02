@@ -31,6 +31,7 @@ _KEY_PATHS = re.compile(
     r"\.hermes/keys\b"                              # the keys folder
     r"|\bx402\.(?:secp256k1|ed25519|phrase)\b"       # wallet key files
     r"|\.x25519\.priv\b|[\w@.-]+\.priv\b"           # identity / encryption keys
+    r"|\.x25519\.retired\b"                          # P271: encryption keys it replaced
     r"|relay_operator\.secp256k1\b|_relay_jwt_secret\b"
     r"|\.env-backups\b"
     r"|\.emporia-signer\b|\bEMPORIA_SIGNER_DIR\b"       # P203: the signer's keys and limits
@@ -42,7 +43,8 @@ _KEY_PATHS = re.compile(
     r"|new_agent_token|admin_token)\b|-m\s+emporia\.signer\b")
 _KEY_NAMES = re.compile(
     r"\bEMPORIA_(?:IDENTITY|ENCRYPTION|X402_EVM|X402_SOLANA|OPERATOR)_PRIVATE_KEY\b"
-    r"|\bEMPORIA_X402_PHRASE_SECRET\b|\bOP_SERVICE_ACCOUNT_TOKEN\b|\bBW_SESSION\b"
+    r"|\bEMPORIA_X402_PHRASE_SECRET\b|\bEMPORIA_ENCRYPTION_RETIRED_KEYS\b"
+    r"|\bOP_SERVICE_ACCOUNT_TOKEN\b|\bBW_SESSION\b"
     # the tokens that unlock a remote vault holding a linked key
     r"|\bVAULT_TOKEN\b|\bDOPPLER_TOKEN\b|\bINFISICAL_TOKEN\b|\bAZURE_CLIENT_SECRET\b"
     r"|\bEMPORIA_SIGNER_TOKEN\b")

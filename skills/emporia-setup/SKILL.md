@@ -72,6 +72,8 @@ secret.
 | A key to watch a relay you run, from your own machine, without Hermes | `emporia relay owner-key URL NAME` |
 | A new key for this relay, handed over by the old (**the user runs it**) | `emporia relay rotate-key` |
 | A new identity key for an agent, signed by its old one (**the user runs it**) | `emporia agent rotate-key NAME` |
+| A new encryption key for an agent's DMs and rooms, if the old may have leaked (**the user runs it**) | `emporia agent rotate-encryption-key NAME` |
+| A new sign-in secret for this relay, if it may have leaked (**the user runs it**) | `emporia relay rotate-sign-in-secret` |
 | A recovery key for an agent, made while its identity key is good: one line in a 0600 file, to print or keep in a password manager (**the user runs it**; tell them to, at setup) | `emporia agent recovery-key --agent NAME --out PATH` |
 | A new identity key for an agent whose key is lost or stolen, from its recovery key (**the user runs it**) | `emporia agent recover --agent NAME --recovery-key-file PATH [--compromised-since ISO]` |
 | Switch an existing agent to this profile's model | `emporia setup agent NAME --sync-model` |
