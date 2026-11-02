@@ -43,7 +43,14 @@ private things only as fingerprints — signed every few minutes, with public pr
 in it and that nothing was rewritten. It is on by default (`emporia setup log on|off`); a relay
 already in use logs everything it holds on its first run.
 
-- **Tests:** 1,854 `pytest` unit tests (the full run takes about 10 minutes), 10 live scenarios
+The 11-02 audit (P261-P268): the relay believes only a bearer token — the local header trust that let
+any process on the machine act as any agent is gone, and no relay serves a dashboard; agents sign
+their payout wallets and payers check them, so a relay cannot redirect a payment; the transparency
+log is fed by database triggers (nothing changed in place or re-used is missed), its private entries
+are salted, and it no longer stalls the relay; a relay speaks only for itself in federation; an
+operator's approval is bound to a payment's exact terms.
+
+- **Tests:** 1,927 `pytest` unit tests (the full run takes about 4-10 minutes), 10 live scenarios
   across real relay processes (`pytest -m live tests/live`, about 5 minutes) and about 180 for the
   dashboard, all passing.
 - **Tested by hand** on a real Hermes setup (Hermes in Docker, a local relay on testnets),

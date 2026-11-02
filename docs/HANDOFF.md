@@ -1,4 +1,4 @@
-# Handoff — `post-hackathon` and `claude/handoff-4rte3l`, 2026-11-01
+# Handoff — `post-hackathon` and `claude/handoff-4rte3l`, 2026-11-02
 
 For whoever picks this branch up next (a cloud coding agent, or a person). It says where the work
 stands, what was tested by hand, what is left before `main`, and what can and cannot be done
@@ -82,6 +82,29 @@ without the original machine.
   `docs/proposals/agent-bug-reports.md`, `backup-and-room-transfer.md` and `multi-hop.md`; the
   last two are for after the merge.
 
+## The 11-02 audit (P261–P268, on `claude/handoff-4rte3l`) — not tested by hand yet
+
+An audit of the branch (security and design), then fixes, each a commit with tests; details per
+item in `docs/security-log.md` (P261–P268). Unit suite 1,927 passed, live suite 10/10.
+- **P261** no header trust: identity is only a bearer token; the relay serves no dashboard (`/ui/`
+  and `EMPORIA_SERVE_UI` gone). The Hermes tab and the standalone console both sign in with the key.
+- **P262** payout wallets signed by their agent; every offer carries the payee's statement, and
+  payers (and the signer) pay only a signed address, of the agent pinned under that name.
+- **P263/P268** the transparency log fed by SQLite triggers into an outbox, rows followed by key;
+  status changes (refunds) logged; salted commitments; no full-table scans; drained in 500-entry
+  batches. Table talk, memberships, room invites out of it. Schema 21; the log is rebuilt once.
+- **P264** federation: a relay speaks only for itself (origin = the linked URL; `scan_relays`
+  holds a relay to the host it was reached at).
+- **P265** an operator's approval is bound to a hash of the payment's terms.
+- **P266** shorter `DB_LOCK` holds; connections closed; WAL set once.
+- **P267** rotation ends the old key's sign-ins; `?token=` redacted from logs; re-pin attempts
+  rate-limited; backfilled log entries marked; a test keeps untagged signed payloads distinct.
+- **To do by hand:** `docs/manual-testing.md` §1d. After updating, each agent registers its x402
+  wallet again (the upgrade drops unsigned ones). `EMPORIA_TRUST_LOCAL_HEADER_AUTH=1` in a profile
+  `.env` is ignored now; delete it.
+- **Not run here:** the dashboard's `tsc`/`vitest` (npm refuses the git-sourced `srcl` package on
+  this machine). Later items from the audit: ROADMAP § From the 11-02 audit.
+
 ## Latest stretch (P251–P260, 10-29 to 11-01) — none of it tested by hand yet
 
 - **P251:** fixes from the 10-29 hand test (private topics, room listings, Agora posts).
@@ -106,10 +129,8 @@ without the original machine.
 - **Proposals for decision:** `docs/proposals/agent-names-and-identity.md` (Emporia as the
   name registry, `name@host`).
 
-### Rough edges, not yet fixed
-- The first fold on a large relay holds `DB_LOCK` and can pause requests briefly; fix: batch it.
-- P256–P259 have had no code review. The full test suite was last run before one test fix in
-  P259 (that test passes on its own).
+### Rough edges — fixed in the 11-02 audit
+- The first fold holding `DB_LOCK`: batched (P263, P266). P256–P259 reviewed (P263, P268).
 
 ### Questions waiting on the user
 - **Names:** adopt `name@host`? Which host (public URL host, or a configured name)? Names per

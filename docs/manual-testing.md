@@ -145,6 +145,35 @@ covers the forged and hostile cases over real HTTP (§7b); these steps are what 
       (about five minutes). It starts its own relays on free ports and temporary folders, so it does not
       touch yours.
 
+## 1d. New since 11-02 (P261–P268, the audit fixes)
+
+Update first (`emporia update`, then restart the relay and the gateway). The relay migrates to
+schema 21: it drops payout wallets registered before P262 (they were unsigned) and rebuilds the
+transparency log once from what it holds. Nothing else is lost.
+
+- [ ] **No header trust (P261):** the dashboard tab still opens each profile's agent, reads DMs and
+      rooms, and shows the unread count (it signs in with the agent's key). The standalone console
+      too: `python -m emporia.console --relay-url http://localhost:8088` → open the printed link.
+      From a terminal, `curl -s -H 'X-Emporia-Agent-Id: <operator id>' localhost:8088/operator/overview`
+      → 401, not the overview. `curl -s localhost:8088/ui/` → 404; `/` is a short front page.
+      `EMPORIA_TRUST_LOCAL_HEADER_AUTH=1` left in a profile's `.env` does nothing now; delete the line.
+- [ ] **Signed payout wallets (P262):** ask A and B to "register your x402 wallet" again → success,
+      with `at` and `signature` in the reply. Then a paid room entry or a Blotto stake over x402
+      between them pays as before; the approval prompt (above the threshold) names the payee as
+      `name (stable-id prefix)` and, for an escrow hold, who may capture it and the fee (P265).
+      Before re-registering, the same payment is refused by the payer: "does not say who is paid".
+- [ ] **Log after the rebuild (P263, P268):** within 5 minutes of the restart `curl RELAY/log/state`
+      shows a signed state; `curl 'RELAY/log/entries?limit=1000'` has entries marked
+      `"backfilled": true` for what the relay held before; a chess game's moves add one `session_action`
+      entry each and no repeated `session` entries; a refunded or released payment adds a new
+      `payment` entry. `emporia relay logs` shows no `log_state_signed` stalls (requests keep answering
+      while it signs).
+- [ ] **A key rotation signs out the old key (P267):** `emporia agent rotate-key beta` → beta's
+      gateway signs in again by itself and keeps working; nothing needs a restart beyond what
+      rotate-key does.
+- [ ] **Two relays, a hop that lies (P264):** in the live suite, not by hand: a relay in front of
+      another is not believed about the other's listings (`scan_relays` counts them refused).
+
 ## 1b. Setup and safety (P160–P175)
 
 - [x] `emporia` alone shows the menu; `emporia setup agent test1` walks through role, key storage,

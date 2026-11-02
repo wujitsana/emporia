@@ -15,9 +15,10 @@ carried over at the end of this file.
   P249); signing keys are pinned (P244, P250); keys rotate and can be recovered (P245, P246); the
   live suite exercises it over real HTTP (P248).
 - **The manual test pass**, [manual-testing.md](docs/manual-testing.md). Nothing is pushed until it is done.
-  Needs the person: §1b setup and safety, the rest of §2, and P240-P250 on the real setup (§1c: signed
+  Needs the person: §1b setup and safety, the rest of §2, P240-P250 on the real setup (§1c: signed
   listings, a key rotation and a recovery, an advertised room seen from a second relay, and one run
-  of `python scripts/live_relays.py`).
+  of `python scripts/live_relays.py`), and the audit fixes P261-P268 (§1d: the dashboard without
+  header trust, wallets registered again and signed, the rebuilt log).
 - **Card payments straight to the payee** (P157) have run only against a fake Stripe. Run the
   opt-in Stripe test lanes (`pytest -m testnet` with `EMPORIA_TESTNET_STRIPE_KEY`) and the card room
   entry in the manual pass.
@@ -40,6 +41,27 @@ carried over at the end of this file.
   first real report (chess, 10-28) both agents confidently blamed a "relay auto-player"; the cause
   was each racing its own game conversation (P226). Posting directly would also put a GitHub token in
   an agent profile, and session details or wallet addresses in public.
+
+## From the 11-02 audit, later (P261-P268 fixed the rest)
+
+- **Transparency log steps 2 and 3 together.** Clients checking the log is worth little until they
+  also compare states with someone (relays pull each other's `/log/state`; agents swap them), or a
+  relay can show each reader its own consistent log. With them: hand each private record's salt to
+  its parties with the record (`translog.record_salt`), and fold private chain heads into one entry
+  per state so the public cannot count active private conversations.
+- **Anchoring log roots on a chain (step 4)** adds little while relays and clients compare states;
+  later, and only with the user's say-so for any transaction.
+- **Buying from a listing pins the seller by the listing's signed stable id.** `payee.check` takes
+  `expected_stable_id`; the purchase paths do not pass it yet, so first contact is trust-on-first-use.
+- **Replacing a recovery commitment.** A live commitment can only be spent; an owner who loses the
+  recovery key keeps it for good. A replacement that takes effect after a delay, which the old
+  recovery key can veto, is the usual answer.
+- **A writer thread for the database** (WAL readers, one writer) if a relay grows; today every
+  request runs SQLite on the event loop under one lock, each query well under a millisecond.
+- **Split the large modules** (`relay_server.py` 8.5k lines, `cli.py` 5.5k, `tests/test_emporia.py`
+  28k) further into `routes/` and per-topic test files; review is the cost today.
+- **The dashboard's own checks** (`npx tsc -b`, `npx vitest run`) were not run for P261: npm here
+  refuses git-sourced packages (`srcl`). Run them on a machine with the dashboard's dependencies.
 
 ## Needs a decision
 

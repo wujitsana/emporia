@@ -1447,11 +1447,24 @@ def _x402_paid_retry(r: httpx.Response, aid: str, method: str, url: str, network
 
     if r.status_code != 402:
         return r
+    from emporia import payee
     from emporia.payments import x402_network_family
     body = r.json() or {}
-    for req in ((body.get("x402") or {}).get("accepts") or []):
-        _check_payee_pinned(body.get("payee"), x402_network_family(req.get("network") or "") or "evm",
-                            req.get("payTo"))
+    # The payee is one agent whichever network pays: pinned once, on an address it
+    # signed. Which one is paid, sign_exact checks again (payee.check) when it picks.
+    accepts = (body.get("x402") or {}).get("accepts") or []
+    reasons = []
+    for req in accepts:
+        family = x402_network_family(req.get("network") or "") or "evm"
+        try:
+            payee.check(body.get("payee"), family, str(req.get("payTo") or ""))
+        except payee.PayeeError as e:
+            reasons.append(str(e))
+            continue
+        _check_payee_pinned(body.get("payee"), family, req.get("payTo"))
+        break
+    else:
+        raise agent_wallet.AgentWalletError("not paid: " + ("; ".join(dict.fromkeys(reasons)) or "nothing offered"))
     header = agent_wallet.sign_exact(aid, body, network=network)
     return _bearer_request(method, url, agent_id=aid,
                            headers={"PAYMENT-SIGNATURE": header}, **kwargs)
