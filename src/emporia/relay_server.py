@@ -3463,8 +3463,10 @@ _NON_AGENT_COLUMNS: frozenset[tuple[str, str]] = frozenset({
     ("translog_states", "relay_public_key"), ("translog_states", "signature"),
     ("translog_nodes", "level"), ("translog_nodes", "idx"), ("translog_nodes", "hash"),
     ("translog_seen", "key"), ("translog_seen", "digest"),
-    # P263: the log's outbox — rowids and room/thread ids waiting to be folded in, never a handle
-    ("translog_outbox", "seq"), ("translog_outbox", "kind"), ("translog_outbox", "rid"), ("translog_outbox", "ref"),
+    # P263/P268: the log's outbox — row keys and room/thread ids waiting to be folded in (a key can hold
+    # an agent_id, but the outbox is drained within minutes and a rename queues the old and new keys)
+    ("translog_outbox", "seq"), ("translog_outbox", "kind"), ("translog_outbox", "ref"),
+    ("translog_outbox", "backfill"),
     ("agora_posts", "nonce"), ("agora_posts", "signature"),
     ("agora_comments", "nonce"), ("agora_comments", "signature"),
     ("room_acts", "act_id"), ("room_acts", "room_id"), ("room_acts", "act"), ("room_acts", "at"),

@@ -228,14 +228,14 @@ CREATE TABLE IF NOT EXISTS translog_seen (
 CREATE TABLE IF NOT EXISTS translog_outbox (
     seq INTEGER PRIMARY KEY AUTOINCREMENT,
     kind TEXT NOT NULL,
-    rid INTEGER,
-    ref TEXT
+    ref TEXT,
+    backfill INTEGER NOT NULL DEFAULT 0
 );
 """
 
 #: P263: what translog_seen says about the ingest it was written by. A log
 #: written by another (P256-P262 folded by scans) is rebuilt once.
-INGEST = "outbox-v1"
+INGEST = "outbox-v2"     # P268: rows by their key, not their rowid
 
 _OLD_TABLES = ("translog_chain_heads", "translog_sources")
 
@@ -582,30 +582,33 @@ def _event(conn, r):
                                  "content_hash": content_hash(r["title"], r["description"], r["bracket_json"])}
 
 
-#: logged tables — kind -> (table, builder, trigger condition on the row or "")
-SOURCES: dict[str, tuple[str, Callable, str]] = {
-    "agent_key": ("agent_key_log", _agent_key, ""),
-    "payment": ("payments", _fields(PAYMENT_FIELDS, "payment_id"), ""),
-    "settlement": ("settlements", _fields(SETTLEMENT_FIELDS, "settlement_id"), ""),
-    "agora_topic": ("agora_topics", _agora_topic, ""),
-    "agora_post": ("agora_posts", _agora_post, ""),
-    "agora_comment": ("agora_comments", _agora_comment, ""),
-    "listing": ("listings", _listing, "{row}.federated_from IS NULL"),   # a peer's listings are in its own log
-    "room_act": ("room_acts", _room_act, ""),
-    "deletion": ("deletions", _deletion, ""),
-    "session_action": ("actions", _action, ""),
-    "session_message": ("messages", _session_message, ""),
-    "access_grant": ("access_entitlements", _whole_row("entitlement_id"), ""),
-    "access_removal": ("access_removals", _whole_row("removal_id"), ""),
-    "bounty_entry": ("bounty_entries", _whole_row("listing_id"), ""),
-    "participant": ("participants", _whole_row("session_id"), ""),
-    "agent": ("authorized_agents", _agent, ""),
-    "room_advert": ("room_adverts", _signed_by_owner("room_id", "advertised_at"), ""),
-    "topic_advert": ("topic_adverts", _signed_by_owner("topic_id", "advertised_at"), ""),
-    "session_offer": ("session_offers", _signed_by_owner("session_id", "offered_at"), ""),
-    "escrow_hold": ("escrow_holds", _escrow, ""),
-    "session": ("sessions", _session, ""),
-    "event": ("events", _event, ""),
+#: logged tables — kind -> (table, builder, trigger condition on the row or "", key columns).
+#: P268: a row is followed by its key, not its rowid: `INSERT OR REPLACE` (a
+#: session is saved so on every move) gives the same row a new rowid each time.
+SOURCES: dict[str, tuple[str, Callable, str, tuple[str, ...]]] = {
+    "agent_key": ("agent_key_log", _agent_key, "", ("stable_id", "step_no")),
+    "payment": ("payments", _fields(PAYMENT_FIELDS, "payment_id"), "", ("payment_id",)),
+    "settlement": ("settlements", _fields(SETTLEMENT_FIELDS, "settlement_id"), "", ("settlement_id",)),
+    "agora_topic": ("agora_topics", _agora_topic, "", ("topic_id",)),
+    "agora_post": ("agora_posts", _agora_post, "", ("post_id",)),
+    "agora_comment": ("agora_comments", _agora_comment, "", ("comment_id",)),
+    # a peer's listings are in its own log
+    "listing": ("listings", _listing, "{row}.federated_from IS NULL", ("listing_id",)),
+    "room_act": ("room_acts", _room_act, "", ("act_id",)),
+    "deletion": ("deletions", _deletion, "", ("kind", "item")),
+    "session_action": ("actions", _action, "", ("action_id",)),
+    "session_message": ("messages", _session_message, "", ("message_id",)),
+    "access_grant": ("access_entitlements", _whole_row("entitlement_id"), "", ("entitlement_id",)),
+    "access_removal": ("access_removals", _whole_row("removal_id"), "", ("removal_id",)),
+    "bounty_entry": ("bounty_entries", _whole_row("listing_id"), "", ("listing_id", "agent_id")),
+    "participant": ("participants", _whole_row("session_id"), "", ("session_id", "agent_id")),
+    "agent": ("authorized_agents", _agent, "", ("agent_id",)),
+    "room_advert": ("room_adverts", _signed_by_owner("room_id", "advertised_at"), "", ("room_id",)),
+    "topic_advert": ("topic_adverts", _signed_by_owner("topic_id", "advertised_at"), "", ("topic_id",)),
+    "session_offer": ("session_offers", _signed_by_owner("session_id", "offered_at"), "", ("session_id",)),
+    "escrow_hold": ("escrow_holds", _escrow, "", ("hold_hash",)),
+    "session": ("sessions", _session, "", ("session_id",)),
+    "event": ("events", _event, "", ("event_id",)),
 }
 
 #: chains — name -> (messages table, the column naming the chain)
@@ -632,26 +635,35 @@ NOT_LOGGED: dict[str, str] = {
 }
 
 
-def _trigger_sql(name: str, table: str, kind: str, cond: str, column: str = "") -> list[str]:
+_SEP = "\x1f"     # between the columns of a key
+
+
+def _key_sql(row: str, cols: tuple[str, ...]) -> str:
+    return " || char(31) || ".join(f"{row}.{c}" for c in cols)
+
+
+def _trigger_sql(name: str, table: str, kind: str, cond: str, cols: tuple[str, ...]) -> list[str]:
+    """Insert: the new key. Delete: the old. Update: both — a changed key (a
+    rename) is the old record gone and a new one."""
     out = []
-    for when, row in (("INSERT", "NEW"), ("UPDATE", "NEW"), ("DELETE", "OLD")):
-        where = f" WHEN {cond.format(row=row)}" if cond else ""
-        value = f"{row}.{column}" if column else "NULL"
-        rid = "NULL" if column else f"{row}.rowid"
-        out.append(f"CREATE TRIGGER IF NOT EXISTS translog_{name}_{when.lower()} AFTER {when} ON {table}{where} "
-                   f"BEGIN INSERT INTO translog_outbox (kind, rid, ref) VALUES ('{kind}', {rid}, {value}); END")
+    for when, rows in (("INSERT", ("NEW",)), ("UPDATE", ("OLD", "NEW")), ("DELETE", ("OLD",))):
+        body = " ".join(
+            f"INSERT INTO translog_outbox (kind, ref) SELECT '{kind}', {_key_sql(row, cols)}"
+            + (f" WHERE {cond.format(row=row)};" if cond else ";") for row in rows)
+        out.append(f"CREATE TRIGGER IF NOT EXISTS translog_{name}_{when.lower()} AFTER {when} ON {table} "
+                   f"BEGIN {body} END")
     return out
 
 
 def install_triggers(conn: Any) -> None:
     tables = _tables(conn)
-    for kind, (table, _build, cond) in SOURCES.items():
+    for kind, (table, _build, cond, cols) in SOURCES.items():
         if table in tables:
-            for sql in _trigger_sql(kind, table, kind, cond):
+            for sql in _trigger_sql(kind, table, kind, cond, cols):
                 conn.execute(sql)
     for chain, (table, column) in CHAINS.items():
         if table in tables:
-            for sql in _trigger_sql(f"{chain}_chain", table, f"{chain}_chain", "", column):
+            for sql in _trigger_sql(f"{chain}_chain", table, f"{chain}_chain", "", (column,)):
                 conn.execute(sql)
 
 
@@ -663,14 +675,14 @@ def drop_triggers(conn: Any) -> None:
 
 def backfill(conn: Any) -> None:
     """Every row the relay already holds, into the outbox — for a log that
-    starts on a relay already in use, or is turned on again."""
+    starts on a relay already in use, or is turned on again. P267: marked, so an
+    entry for a row held before the log began does not read as recorded when it
+    happened (its `logged_at` is now)."""
     tables = _tables(conn)
-    for kind, (table, _build, cond) in SOURCES.items():
+    for kind, (table, _build, cond, cols) in SOURCES.items():
         if table in tables:
             where = f" WHERE {cond.format(row=table)}" if cond else ""
-            # P267: marked, so an entry for a row the relay held before its log
-            # does not read as recorded when it happened (its `logged_at` is now)
-            conn.execute(f"INSERT INTO translog_outbox (kind, rid, ref) SELECT ?, rowid, 'backfill' "  # noqa: S608
+            conn.execute(f"INSERT INTO translog_outbox (kind, ref, backfill) SELECT ?, {_key_sql(table, cols)}, 1 "  # noqa: S608
                          f"FROM {table}{where} ORDER BY rowid", (kind,))
     for chain, (table, column) in CHAINS.items():
         if table in tables:
@@ -683,11 +695,13 @@ def _held(conn: Any, key: str) -> dict[str, str] | None:
     return json.loads(raw) if raw else None
 
 
-def _ingest_row(conn: Any, kind: str, rid: int, backfilled: bool = False) -> None:
-    table, build, _cond = SOURCES[kind]
-    key = f"{kind}#{rid}"
+def _ingest_row(conn: Any, kind: str, ref: str, backfilled: bool = False) -> None:
+    table, build, _cond, cols = SOURCES[kind]
+    key = f"{kind}#{ref}"
     held = _held(conn, key)
-    r = conn.execute(f"SELECT rowid AS _r, * FROM {table} WHERE rowid = ?", (rid,)).fetchone()  # noqa: S608
+    values = ref.split(_SEP)
+    r = (conn.execute(f"SELECT * FROM {table} WHERE " + " AND ".join(f"{c} = ?" for c in cols),  # noqa: S608
+                      values).fetchone() if len(values) == len(cols) else None)
     if r is not None and kind == "listing" and r["federated_from"] is not None:
         r = None                                   # replaced by a peer's row: ours has gone
     if r is None:
@@ -698,10 +712,6 @@ def _ingest_row(conn: Any, kind: str, rid: int, backfilled: bool = False) -> Non
         return
     public, ident, fields = build(conn, r)
     ident, digest = str(ident), content_hash(fields)
-    if held and held["id"] != ident:               # the rowid now holds another row
-        gone = content_hash(kind, held["id"])
-        append(conn, f"{kind}_gone", f"{kind}_gone:{gone}", {"id_hash": gone})
-        held = None
     if held and held["d"] == digest:
         return
     _log(conn, kind, public, ident, fields, {"backfilled": True} if backfilled else None)
@@ -735,22 +745,22 @@ def drain(conn: Any, limit: int = DRAIN_BATCH) -> int:
     """Fold up to `limit` outbox entries into the log, oldest first, and return
     how many were taken — fewer than `limit` means the outbox is empty. Called
     in batches so a large backlog never holds the database for long."""
-    rows = conn.execute("SELECT seq, kind, rid, ref FROM translog_outbox ORDER BY seq LIMIT ?", (limit,)).fetchall()
+    rows = conn.execute("SELECT seq, kind, ref, backfill FROM translog_outbox ORDER BY seq LIMIT ?",
+                        (limit,)).fetchall()
     if not rows:
         return 0
     done: set[tuple[str, Any]] = set()
     tables = _tables(conn)
-    for _seq, kind, rid, ref in rows:
-        chain = kind[:-6] if kind.endswith("_chain") and kind[:-6] in CHAINS else ""
-        item = (kind, ref if chain else rid)
-        if item in done:
+    for _seq, kind, ref, backfilled in rows:
+        if ref is None or (kind, ref) in done:
             continue
-        done.add(item)
+        done.add((kind, ref))
+        chain = kind[:-6] if kind.endswith("_chain") and kind[:-6] in CHAINS else ""
         if chain:
             if CHAINS[chain][0] in tables:
                 _ingest_chain(conn, chain, str(ref))
         elif kind in SOURCES and SOURCES[kind][0] in tables:
-            _ingest_row(conn, kind, int(rid), backfilled=ref == "backfill")
+            _ingest_row(conn, kind, str(ref), backfilled=bool(backfilled))
     conn.execute("DELETE FROM translog_outbox WHERE seq <= ?", (rows[-1][0],))
     return len(rows)
 
@@ -779,8 +789,12 @@ def log_row(conn: Any, kind: str, rowid: int | None) -> None:
     """Log one row now, in the caller's transaction — for key changes and money,
     which should never wait for the next fold. Its outbox entry then finds it
     already logged."""
-    if enabled() and rowid is not None:
-        _ingest_row(conn, kind, rowid)
+    if not enabled() or rowid is None:
+        return
+    table, _build, _cond, cols = SOURCES[kind]
+    r = conn.execute(f"SELECT {', '.join(cols)} FROM {table} WHERE rowid = ?", (rowid,)).fetchone()  # noqa: S608
+    if r is not None and all(v is not None for v in r):
+        _ingest_row(conn, kind, _SEP.join(str(v) for v in r))
 
 
 def sign_state(conn: Any, sign: Callable[[bytes], str], relay_public_key: str,

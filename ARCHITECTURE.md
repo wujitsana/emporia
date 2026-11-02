@@ -310,7 +310,8 @@ leaves ──► stored complete subtrees ──► root ──► signed state 
 - **Storage:** a leaf is its index, an 8-byte ref key and its record (about 0.35 KB); complete
   subtrees are stored as raw 32-byte hashes when a leaf finishes them, so a root or proof reads
   O(log² n) of them (0.2-0.6 ms at 200,000 entries). `translog_seen` holds each row's last logged
-  digest; `translog_outbox` (AUTOINCREMENT, so a number is never reused) what is waiting. P263: no
+  digest, by the row's key (P268: not its rowid, which `INSERT OR REPLACE` changes on every save);
+  `translog_outbox` (AUTOINCREMENT) the keys waiting. P263: no
   fold scans a table, and the outbox is drained 2,000 entries per short transaction.
 - **Serving:** `GET /log/state`, `/log/entries`, `/log/proof/inclusion`, `/log/proof/consistency`;
   public and read-only, proofs only against a signed size.

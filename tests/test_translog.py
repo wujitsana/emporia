@@ -275,7 +275,7 @@ def test_setup_log_turns_it_off_and_on_in_the_relay_profile(tmp_path, monkeypatc
 def test_every_table_is_logged_or_says_why_not():
     with rs.DB_LOCK, rs.get_db() as conn:
         tables = {r[0] for r in conn.execute("SELECT name FROM sqlite_master WHERE type = 'table'").fetchall()}
-    covered = ({t for t, _, _ in translog.SOURCES.values()} | {t for t, _ in translog.CHAINS.values()}
+    covered = ({t for t, _, _, _ in translog.SOURCES.values()} | {t for t, _ in translog.CHAINS.values()}
                | set(translog.NOT_LOGGED))
     missing = {t for t in tables if not t.startswith(("translog_", "sqlite_"))} - covered
     assert not missing, f"tables neither in the transparency log nor in translog.NOT_LOGGED: {sorted(missing)}"
@@ -379,14 +379,35 @@ def test_a_backfilled_entry_says_so(tmp_path):
     assert entry["record"]["backfilled"] is True
 
 
-def test_a_row_replaced_in_place_is_logged_as_gone_and_new():
-    """P267: INSERT OR REPLACE deletes the old row without its delete trigger
-    unless recursive_triggers is on; the relay's connections turn it on."""
+def test_a_row_saved_again_by_replace_is_one_record_that_changed_or_did_not():
+    """P268: a session is saved with INSERT OR REPLACE on every move, which gives
+    the row a new rowid each time. Followed by its key, an unchanged record adds
+    nothing and a changed one is one new entry — never a "gone" and a "new"."""
     with rs.DB_LOCK, rs.get_db() as conn:
-        for title in ("First", "Second"):
+        def save(title):
             conn.execute("INSERT OR REPLACE INTO listings (listing_id, title, description, listing_type, agent_id, "
                          "payment_mode, price_usd, created_at) VALUES ('lst_tl_replaced', ?, '', 'service', 'x', "
                          "'free', '0', '2026-11-02')", (title,))
             translog.fold_all(conn)
-        kinds = [e["record"]["kind"] for e in translog.entries(conn, translog.size(conn) - 3, limit=10)]
-    assert kinds[-2:] == ["listing_gone", "listing"] or kinds[-2:] == ["listing", "listing_gone"]
+        save("First")
+        n = translog.size(conn)
+        for _ in range(5):
+            save("First")                                   # a move that changed nothing logged
+        assert translog.size(conn) == n
+        save("Second")
+        assert [e["record"]["kind"] for e in translog.entries(conn, n)] == ["listing"]
+        conn.execute("DELETE FROM listings WHERE listing_id = 'lst_tl_replaced'")
+        translog.fold_all(conn)
+        assert [e["record"]["kind"] for e in translog.entries(conn, n)] == ["listing", "listing_gone"]
+
+
+def test_a_renamed_agent_is_the_old_record_gone_and_a_new_one(tmp_path):
+    conn = _fresh_log(tmp_path, "CREATE TABLE authorized_agents (agent_id TEXT PRIMARY KEY, public_key_hex, stable_id, "
+                                "display_name, is_active, x402_pay_to_json, stripe_account_id, encryption_public_key, "
+                                "encryption_key_signature, accepts_remote_dms, relay_list_json, x402_pay_to_proofs_json);")
+    conn.execute("INSERT INTO authorized_agents (agent_id, public_key_hex, stable_id) VALUES ('old_name', 'k', 's')")
+    translog.fold_all(conn)
+    n = translog.size(conn)
+    conn.execute("UPDATE authorized_agents SET agent_id = 'new_name' WHERE agent_id = 'old_name'")
+    translog.fold_all(conn)
+    assert sorted(e["record"]["kind"] for e in translog.entries(conn, n)) == ["agent", "agent_gone"]

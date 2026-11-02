@@ -4523,3 +4523,11 @@ well under a millisecond; a writer thread with WAL readers is the next step if a
 | A relay-to-relay DM request with a bad signature made the relay fetch the claimed peer's `/health` to look for a key rotation, unauthenticated and unlimited | At most once a minute per peer (`federation_dm._REPIN_TRIED`) |
 | Entries for rows a relay held before its log began carry `logged_at` = when they were folded in, indistinguishable from fresh ones | Marked `backfilled: true` (`test_a_backfilled_entry_says_so`) |
 | Five signed payloads carry no `type` tag (moves, room and DM messages, `/messages`, an encryption key), so one could pass for another only if two had the same fields | Not re-tagged: every message stored on a relay and checked by the dashboard is signed in the current shape, and none shares its fields with another. A test now holds that (`test_no_two_untagged_signed_payloads_share_their_fields`) |
+
+## P268 pass — second pass over P261-P267
+
+| Finding | Fix |
+|---|---|
+| P263 followed each logged row by its rowid. A session is saved with `INSERT OR REPLACE` on every move, which gives the row a new rowid each time: every move logged the session again as new, unchanged, and left the old rowid's digest behind for good | Rows are followed by their key (`SOURCES`' key columns: a session id, a listing id, `(session_id, agent_id)` for a participant). An update queues the old and the new key, so a rename is the old record gone and a new one (`test_a_row_saved_again_by_replace_is_one_record_that_changed_or_did_not`, `test_a_renamed_agent_is_the_old_record_gone_and_a_new_one`). Schema 21; the log is rebuilt once (`INGEST = outbox-v2`) |
+| SQLite does not run delete triggers for a row `INSERT OR REPLACE` pushes out unless `recursive_triggers` is on | On for every relay connection; safe, since the log's triggers write only to the outbox, which has none |
+| The live suite (real relay processes) still expected a hop in front of a relay to be believed about that relay's items | Updated to P264's rule; the hostile hop can also name itself (`claim_origin`), so tampering is still caught item by item. 10/10 |

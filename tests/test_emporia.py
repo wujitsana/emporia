@@ -27379,7 +27379,7 @@ def test_the_membership_rule_is_written_in_exactly_one_place():
 # and its record (`translog_leaves.ref_key`, `record`); subtree hashes as raw
 # bytes; `translog_seen` replaces `translog_chain_heads` and `translog_sources`.
 # A V17 log is dropped and folded in again from every table.
-_SCHEMA_FINGERPRINT_V20 = "3b89f44952b4a9a3fd665719e4d9a0fb9cfd70edca84af273b5f8a026c1ee776"
+_SCHEMA_FINGERPRINT_V21 = "d15910bfc891fb9b408014fb3b59eee281107e89c4143cf4f16fdd72a5874be4"
 
 
 def _schema_fingerprint(db_path) -> tuple[str, int, int]:
@@ -27419,9 +27419,9 @@ def test_a_schema_change_requires_a_version_bump():
     from emporia.relay_server import SCHEMA_VERSION
 
     fingerprint, tables, columns = _schema_fingerprint(_test_db)
-    assert (SCHEMA_VERSION, fingerprint) == (20, _SCHEMA_FINGERPRINT_V20), (
+    assert (SCHEMA_VERSION, fingerprint) == (21, _SCHEMA_FINGERPRINT_V21), (
         f"the schema changed ({tables} tables, {columns} columns) or the version "
-        f"moved. Bump SCHEMA_VERSION *and* update _SCHEMA_FINGERPRINT_V20 — in "
+        f"moved. Bump SCHEMA_VERSION *and* update _SCHEMA_FINGERPRINT_V21 — in "
         f"that order, and never the fingerprint alone.\n"
         f"  code version: {SCHEMA_VERSION}\n  fingerprint:  {fingerprint}"
     )
