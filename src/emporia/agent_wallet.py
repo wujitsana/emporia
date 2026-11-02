@@ -526,13 +526,32 @@ def approval_threshold_cents() -> int | None:
     return int(raw) if raw else None
 
 
-def require_approval(agent_id: str, amount_atomic: int, what: str) -> None:
+def _exact(amount_atomic: int) -> str:
+    """An amount in whole units, to the last atomic unit (6 decimals for USDC) —
+    an approval prompt never rounds 5.004 to 5.00."""
+    text = f"{amount_atomic / 1e6:.6f}"
+    while text.endswith("0") and len(text.split(".")[1]) > 2:
+        text = text[:-1]
+    return text
+
+
+def terms_digest(terms: dict) -> str:
+    """P265: a short hash of the terms that decide where a payment's money goes.
+    It is in the approval message, and the signer matches an approval on the
+    message, so an approval is for these terms exactly — not for another
+    payment that reads the same."""
+    import hashlib
+    return hashlib.sha256(json.dumps(terms, sort_keys=True, separators=(",", ":")).encode()).hexdigest()[:16]
+
+
+def require_approval(agent_id: str, amount_atomic: int, what: str, terms: dict | None = None) -> None:
     """Ask the operator before a payment above EMPORIA_PAYMENT_APPROVAL_CENTS.
     Runs after the caps, so nothing above a cap is ever put to them."""
     limit = approval_threshold_cents()
     if limit is None or amount_atomic <= limit * _USDC_ATOMIC_PER_CENT:
         return
-    message = (f"Emporia: {agent_id} wants to pay {amount_atomic / 1e6:.2f} {what}. "
+    bound = f" Terms {terms_digest(terms)}." if terms else ""
+    message = (f"Emporia: {agent_id} wants to pay {_exact(amount_atomic)} {what}.{bound} "
                f"Above your ${limit / 100:.2f} approval threshold. Approve this payment?")
     s = _SCOPE.get()
     approver = s.approver if s is not None else APPROVER
@@ -618,10 +637,12 @@ def sign_exact(agent_id: str, body: dict, network: str = "") -> str:
     payee = _payee_label(body.get("payee") if isinstance(body, dict) else None,
                          x402_network_family(requirement.get("network") or "") or "evm", requirement.get("payTo"))
     # P206: the whole payee and what is bought — an approval (the signer's) is for exactly this payment.
+    resource = (challenge.get("resource") or {}).get("url") or "a resource"
     require_approval(agent_id, amount, f"USDC on {label(requirement.get('network') or '')} to "
-                                       f"{payee}, {requirement.get('payTo')}, for "
-                                       f"{(challenge.get('resource') or {}).get('url') or 'a resource'}")
-    from emporia.payments import x402_network_family
+                                       f"{payee}, {requirement.get('payTo')}, for {resource}",
+                     {"rail": "x402", "network": requirement.get("network"), "asset": requirement.get("asset"),
+                      "pay_to": str(requirement.get("payTo") or "").lower(), "amount": str(amount),
+                      "extra": requirement.get("extra"), "resource": resource})
     if x402_network_family(requirement.get("network") or "") == "svm":
         # P155: Solana — a partially signed transaction, the facilitator pays fees.
         from emporia import x402_svm
@@ -655,8 +676,12 @@ def pay_tempo(agent_id: str, offer: dict) -> str:
             f"per-payment cap (EMPORIA_X402_MAX_PAYMENT_CENTS)")
     from emporia.networks import label
     payee = _payee_label(offer.get("payee"), "evm", offer["request"].get("recipient"))   # P262
-    require_approval(agent_id, amount, f"in stablecoin on {label(network)} to "
-                                       f"{payee}, {offer['request'].get('recipient')}")
+    request = offer["request"]
+    require_approval(agent_id, amount, f"in stablecoin {request.get('currency')} on {label(network)} to "
+                                       f"{payee}, {request.get('recipient')}",
+                     {"rail": "tempo", "network": network, "currency": request.get("currency"),
+                      "recipient": str(request.get("recipient") or "").lower(), "amount": str(amount),
+                      "chain_id": (request.get("methodDetails") or {}).get("chainId")})
     key = load_key(agent_id)
     _charge_daily(agent_id, amount)
     return tempo.pay(offer, key)
@@ -674,11 +699,21 @@ def sign_escrow(agent_id: str, offer: dict, *, expected_amount: int) -> str:
             f"the hold is {expected_amount / 1e6:.2f} USDC, above this agent's per-payment cap")
     key, networks = load_key(agent_id), allowed_networks()
     from emporia.networks import label
-    receiver = (offer.get("payment_info") or {}).get("receiver")
+    info = offer.get("payment_info") or {}
+    receiver = info.get("receiver")
     payee = _payee_label(offer.get("payee"), "evm", receiver)   # P262
-    require_approval(agent_id, expected_amount, f"USDC into an escrow hold on "
-                                                f"{label(offer.get('network') or '')} (contract {offer.get('escrow')}, "
-                                                f"for {payee}, {receiver})")
+    # P265: who may capture it and what fee it may take decide where the money goes:
+    # in the prompt and in the terms the approval is for (not the salt or times,
+    # which every fresh offer changes).
+    require_approval(agent_id, expected_amount,
+                     f"USDC into an escrow hold on {label(offer.get('network') or '')} (contract "
+                     f"{offer.get('escrow')}, for {payee}, {receiver}; capture by {info.get('operator')}, "
+                     f"fee {info.get('min_fee_bps')}-{info.get('max_fee_bps')} bps to {info.get('fee_receiver')})",
+                     {"rail": "escrow", "network": offer.get("network"), "chain_id": offer.get("chain_id"),
+                      "escrow": str(offer.get("escrow") or "").lower(), "token": str(offer.get("token") or "").lower(),
+                      "collector": str(offer.get("collector") or "").lower(),
+                      **{k: str(info.get(k) or "").lower() for k in ("receiver", "operator", "fee_receiver")},
+                      **{k: str(info.get(k) or "") for k in ("max_amount", "min_fee_bps", "max_fee_bps")}})
     _charge_daily(agent_id, expected_amount)
     return escrow.sign_offer(offer, key, expected_amount=expected_amount,
                              allowed_networks=networks)

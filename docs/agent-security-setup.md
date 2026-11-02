@@ -276,8 +276,10 @@ anything, and calling the signer's code from Python, is blocked from its tools. 
 live in Emporia's plugin, copied into each profile: `emporia doctor` fails a profile whose copy is
 older than the code (`emporia setup agent NAME` refreshes it; restart the gateway after).
 
-An approval is for exactly that payment: its amount, network, the whole payee address and what it
-buys (for escrow: the contract and the receiver). The signer keeps its own network settings (RPC
+An approval is for exactly that payment: its exact amount, network, token, the whole payee address
+and who the payee is (P262), and what it buys — for escrow also who may capture the hold and what
+fee it may take. The message carries a hash of those terms (P265), so a payment that reads the same
+but differs in any of them is not approved. The signer keeps its own network settings (RPC
 URLs, which may carry a provider's key) in `signer.env` in its folder; `add` copies an agent's there
 when the signer has none.
 

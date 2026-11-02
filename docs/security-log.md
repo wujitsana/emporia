@@ -4491,3 +4491,11 @@ From the 11-02 audit.
 Not done: a signed withdrawal. With one hop enforced, a peer drops a listing when its origin stops
 serving it; an origin that keeps serving one its agent withdrew is on record by the agent's signed
 removal (P192) in that relay's own log.
+
+## P265 pass — an approval is for a payment's terms, not how it reads
+
+From the 11-02 audit.
+
+| Finding | Fix |
+|---|---|
+| The signer matches an operator's approval on the approval message. For an escrow hold the message named the contract, the receiver and the amount, but not who may capture the hold (the operator address) or what fee it may take and to whom — so a prompt-injected agent could have one hold approved and pay another with the same message and a different capturer or fee receiver. The x402 message left out the token, and every message rounded the amount to two decimals | The message carries a hash of the terms that decide where the money goes (`agent_wallet.terms_digest`): for x402 the network, token, payee, exact amount, EIP-712 domain and resource; for Tempo the network, token, recipient, amount and chain; for escrow the network, chain, contract, token, collector, receiver, operator, fee receiver, maximum and fee range (not the salt or times, which every fresh offer changes, so the agent's retry still matches). The escrow prompt names the capturer and the fee; amounts are shown to the last unit (`test_an_approval_is_for_the_holds_terms_not_just_how_it_reads`) |

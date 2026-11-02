@@ -348,3 +348,25 @@ def test_the_emporia_link_goes_on_the_data_volume_and_is_relative(tmp_path, monk
     link = inst.link_cli()
     assert link == hermes / ".local" / "bin" / "emporia" and not os.path.isabs(os.readlink(link))
     assert link.resolve() == (checkout / ".venv" / "bin" / "emporia").resolve()
+
+
+def test_an_approval_is_for_the_holds_terms_not_just_how_it_reads(held, monkeypatch):
+    """P265: two escrow holds can read the same and differ in who may capture
+    them; the approval message carries a hash of the terms, so approving one
+    does not pay the other."""
+    seen = []
+    monkeypatch.setattr(agent_wallet, "approval_threshold_cents", lambda: 100)
+    base = {"network": "eip155:84532", "chain_id": 84532, "escrow": "0x" + "e1" * 20, "token": "0x" + "70" * 20,
+            "collector": "0x" + "c0" * 20,
+            "payment_info": {"receiver": "0x" + "11" * 20, "operator": "0x" + "0a" * 20,
+                             "fee_receiver": "0x" + "fe" * 20, "max_amount": "5000000",
+                             "min_fee_bps": "250", "max_fee_bps": "250"}}
+    other = {**base, "payment_info": {**base["payment_info"], "operator": "0x" + "66" * 20}}
+    with agent_wallet.scope(agent_wallet.Scope(env={}, key_dir=held, approver=lambda m: seen.append(m) or None)):
+        for offer in (base, other):
+            with pytest.raises(agent_wallet.AgentWalletError):
+                agent_wallet.require_approval("a", 5_000_000, "into a hold", {
+                    "rail": "escrow", **{k: offer[k] for k in ("network", "escrow", "token")},
+                    **offer["payment_info"]})
+    assert len(seen) == 2 and seen[0] != seen[1] and all("Terms " in m for m in seen)
+    assert agent_wallet._exact(5_004_000) == "5.004" and agent_wallet._exact(6_000_000) == "6.00"
