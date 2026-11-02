@@ -193,13 +193,15 @@ def test_the_mcp_tool_signs_and_a_pulling_relay_accepts_it(client, monkeypatch):
     with rs.DB_LOCK, rs.get_db() as conn:
         conn.execute("DELETE FROM listings WHERE listing_id = ?", (out["listing_id"],))
 
+    seller_relay = rs.normalize_peer_url(feed["origin_relay"])   # P264: pulled from the relay it names
+
     async def pull():
-        rs._FEDERATION_PEER_PUBKEYS.pop(PEER, None)
+        rs._FEDERATION_PEER_PUBKEYS.pop(seller_relay, None)
         with patch("emporia.relay_server._fetch_federation_batch", new_callable=AsyncMock,
                    return_value=json.loads(json.dumps(feed))), \
              patch("emporia.relay_server.RELAY_BASE_URL", "https://the-puller.example"), \
              patch("emporia.relay_server.get_relay_public_key_hex", return_value="00" * 32):
-            return await rs._pull_federated_listings(PEER)
+            return await rs._pull_federated_listings(seller_relay)
     assert asyncio.run(pull()) >= 1
     assert _stored(out["listing_id"])["signature"] == mine["signature"]
 
@@ -236,3 +238,13 @@ def test_the_sdk_signs_and_drops_a_forged_federated_listing(client):
     assert made["listing_id"] in seen and forged["listing_id"] not in seen
     row = _stored(made["listing_id"])
     assert row["signature"] and row["agent_stable_id"] == wire.stable_id_for(get_public_key_hex("sl_sdk"))
+
+
+def test_a_peer_cannot_serve_another_relays_listings_as_if_it_were_that_relay():
+    """P264: the batch is signed by the peer, and every listing in it genuinely
+    by its agent for relay R — but the peer was linked as PEER, so it may speak
+    only for PEER. Before, the origin was the peer's own claim."""
+    listing = _peer_listing("https://honest-r.example", "Relayed")
+    assert asyncio.run(_pull([listing], origin="https://honest-r.example")) == 0
+    assert "not the relay linked" in rs._FEDERATION_LAST_SYNC[PEER]["error"]
+    assert _stored(listing["listing_id"]) is None

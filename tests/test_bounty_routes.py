@@ -1093,7 +1093,8 @@ def test_a_peer_cannot_overwrite_another_peers_listing_by_claiming_its_origin(cl
     # Even the agent's own re-signed words, served by a relay that does not own the row.
     forged = _resigned(listing, metadata={"state": "defaulted"})
     assert impostor.push([forged], origin=honest.url) == 0
-    assert rs._FEDERATION_LAST_SYNC[impostor.url]["rejected_not_owner"] == 1
+    # P264: refused before ownership is even asked — a peer speaks only for itself
+    assert "not the relay linked" in rs._FEDERATION_LAST_SYNC[impostor.url]["error"]
     row = _stored(listing["listing_id"])
     assert json.loads(row["metadata_json"])["state"] == "open"
     assert row["federated_from"] == honest.url

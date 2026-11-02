@@ -4478,3 +4478,16 @@ A log written by the scanning ingest is dropped and rebuilt once from everything
 (schema 20, `translog.INGEST`); its signed states go, as P258's did — no client checked them yet.
 Still open: private chain heads are one leaf each per change, so the public can count active private
 conversations per fold; folding them into one leaf per state is for client checks (step 2).
+
+## P264 pass — a relay speaks only for itself
+
+From the 11-02 audit.
+
+| Finding | Fix |
+|---|---|
+| The listing pull checked each listing's `origin_relay` against the origin the peer's batch named for itself, and nothing tied that to the URL the peer was linked and fetched at. A linked relay could name another relay R as its origin and re-serve R's agent-signed listings — authentic, but "one hop" was not enforced, and a listing R had stopped serving (withdrawn, sold) could be kept up elsewhere until it expired, up to 30 days | The pull refuses a batch whose origin is not the linked URL (`normalize_peer_url(origin) != peer_url`), the rule the advert pull already had (`test_a_peer_cannot_serve_another_relays_listings_as_if_it_were_that_relay`) |
+| `scan_relays` took a scanned relay's `relay_url` and `host` from its own `/health`, so a relay could claim to be another and its re-served listings, games and adverts passed as put up there | Believed only from the agent's home relay (reachable by a container name) or when they name the host the agent reached; otherwise the contacted URL is the origin every item must name (`test_a_relay_claiming_another_relays_url_is_held_to_the_host_it_was_reached_at`) |
+
+Not done: a signed withdrawal. With one hop enforced, a peer drops a listing when its origin stops
+serving it; an origin that keeps serving one its agent withdrew is on record by the agent's signed
+removal (P192) in that relay's own log.

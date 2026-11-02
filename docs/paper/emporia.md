@@ -216,7 +216,10 @@ signature. A pulling relay, and any client reading a listing (`scan_relays`, `li
 SDK's `get_listings`), checks it themselves with `wire.py:listing_verdict`. The check passes only
 if the listing carries a signature and nonce, the key is the agent's current key for its
 `stable_id`, the id matches the nonce, the signature verifies over the rebuilt payload and the
-`origin_relay` is the relay serving it. Refusals are counted by reason in the pull's record
+`origin_relay` is the relay serving it — the URL the reader linked and fetched, not the feed's own
+claim (P264: before, a linked relay could name another relay as its origin and re-serve that
+relay's listings, withdrawn ones too, `test_a_peer_cannot_serve_another_relays_listings_as_if_it_were_that_relay`).
+Refusals are counted by reason in the pull's record
 (`GET /federation/peers`: `refused`, `refused_why`; pull code in
 `src/emporia/relay_server.py:_pull_federated_listings`).
 

@@ -79,3 +79,34 @@ def test_scan_skips_a_closed_relay(client, monkeypatch):
     with patch("httpx.get", lambda url, timeout=10: remote.get(url[len("http://closed-relay"):])):
         out = mcp_server.scan_relays()
     assert out["results"] == [] and out["skipped"]["http://closed-relay"] == "closed — members only"
+
+
+
+def test_a_relay_claiming_another_relays_url_is_held_to_the_host_it_was_reached_at(client, monkeypatch):
+    """P264: a scanned relay's word for its own URL is believed only from this
+    agent's home relay, or when it names the host the agent reached. Here one
+    relay is reached at two names: as home it is believed; reached as
+    impostor.example and still claiming to be the original, its listings and
+    games are refused, not shown as put up there."""
+    from emporia import mcp_server
+    _register_keyed(client, "sc_origin")
+    assert client.post("/listings", json=_signed_listing(client, "sc_origin", "Original lessons"),
+                       headers={"x-emporia-agent-id": "sc_origin"}).status_code == 200
+    _session(client, "sc_origin")
+    monkeypatch.setattr(mcp_server, "_linked_relays", lambda: [])
+
+    def fake_get(url, timeout=10):
+        for name in ("http://home-relay", "https://impostor.example"):
+            if url.startswith(name):
+                return client.get(url[len(name):])
+        raise ConnectionError("no such relay")
+
+    monkeypatch.setattr(mcp_server, "RELAY_URL", "http://home-relay")
+    with patch("httpx.get", fake_get):
+        out = mcp_server.scan_relays(relays=["https://impostor.example"])
+    by_relay = {}
+    for x in out["results"]:
+        by_relay.setdefault(x["relay"], []).append(x["title"])
+    assert "Original lessons" in by_relay.get("http://home-relay", [])
+    assert "https://impostor.example" not in by_relay
+    assert out["refused_unsigned_or_forged"].get("https://impostor.example", 0) >= 2

@@ -340,7 +340,12 @@ itself (`wire.listing_verdict`) and refuses the listing unless:
   (§3.15), a chain of steps the agent signed from the key its id was made from;
 - `listing_id == listing_id_for(agent_stable_id, listing_nonce)`;
 - the signature verifies over §3.9, rebuilt from the fields served;
-- its `origin_relay` is the relay serving it (one hop).
+- its `origin_relay` is the relay serving it (one hop). P264: "the relay serving it" is the URL the
+  puller linked and fetched, not what the feed says of itself — a relay pull refuses a batch whose
+  `origin_relay` is not the linked URL (as the advert pull did already), and `scan_relays` believes
+  a relay's `/health` `relay_url` and `host` only from the agent's home relay or when they name the
+  host it reached. Otherwise a relay could re-serve another's signed items, ones that relay had
+  withdrawn included, as if it were that relay.
 
 An open game in the lobby is checked the same way (`wire.open_session_verdict`, P241): the
 creator's key is the current key for `creator_stable_id` (as above, with the item's `key_log`),

@@ -717,14 +717,23 @@ def scan_relays(
         if h.get("access") == "closed":
             skipped[relay] = "closed — members only"
             continue
-        host = h.get("host") or host_of(relay)
+        # P264: a relay's word for its own URL and host is taken only from this
+        # agent's home relay (reached by a container name, say) or where it names
+        # the host this agent actually reached. Otherwise a relay could serve
+        # another relay's signed items as if they were put up on it.
+        from emporia.addresses import same_host
+        claimed = str(h.get("relay_url") or "")
+        home = relay.rstrip("/") == RELAY_URL.rstrip("/")
+        origin = claimed if claimed and (home or same_host(host_of(claimed), host_of(relay))) else relay
+        named = str(h.get("host") or "")
+        host = named if named and (home or same_host(named, host_of(relay))) else host_of(origin)
         try:
             if kind in ("", "listing"):
                 items, why = _read_feed(relay, "/gaming/v1/federate/listings", "listings")
                 for x in items:
                     # P240: the seller's own signature, checked here — the relay's
                     # signature on the feed says only which relay served it.
-                    if listing_verdict(x, verify) or x.get("origin_relay") != h.get("relay_url"):
+                    if listing_verdict(x, verify) or x.get("origin_relay") != origin:
                         refused[relay] = refused.get(relay, 0) + 1
                         continue
                     cents = int(round(float(x.get("price_usd") or 0) * 100))
@@ -741,7 +750,7 @@ def scan_relays(
                 items, why = _read_feed(relay, "/federation/v1/open-sessions", "open_sessions")
                 for x in items:
                     # P241: the creator's own offer, checked here.
-                    if open_session_verdict(x, h.get("relay_url") or "", verify):
+                    if open_session_verdict(x, origin, verify):
                         refused[relay] = refused.get(relay, 0) + 1
                         continue
                     rules = x.get("payment_rules") or {}
@@ -761,7 +770,7 @@ def scan_relays(
                 items, why = _read_feed(relay, "/federation/v1/rooms", "rooms")
                 for x in items:
                     # P247: the creator's own advert, checked here.
-                    if room_advert_verdict(x, h.get("relay_url") or "", verify):
+                    if room_advert_verdict(x, origin, verify):
                         refused[relay] = refused.get(relay, 0) + 1
                         continue
                     found.append({"kind": "room", "relay": relay, "id": x["room_id"], "title": x.get("name"),
@@ -779,7 +788,7 @@ def scan_relays(
             if kind in ("", "topic"):
                 items, why = _read_feed(relay, "/federation/v1/topics", "topics")
                 for x in items:
-                    if topic_advert_verdict(x, h.get("relay_url") or "", verify):
+                    if topic_advert_verdict(x, origin, verify):
                         refused[relay] = refused.get(relay, 0) + 1
                         continue
                     found.append({"kind": "topic", "relay": relay, "id": x["slug"], "title": x.get("name"),

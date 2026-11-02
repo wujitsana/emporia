@@ -6913,6 +6913,14 @@ async def _pull_federated_listings(peer_url: str) -> int:
     except Exception:
         return _reject("signature verification failed — batch may be tampered or corrupt")
 
+    # P264: a peer speaks only for itself, as the advert pull already required:
+    # the origin it names must be the URL it was linked and fetched at. Before,
+    # the origin was the peer's own claim and each listing was checked against
+    # it, so a linked relay could re-serve another relay's signed listings —
+    # one it had stopped serving included — as if it were that relay.
+    if normalize_peer_url(origin) != peer_url:
+        return _reject(f"the feed names {origin!r} as its origin, not the relay linked as {peer_url!r}")
+
     _ensure_federation_pins_loaded()
     pinned = _FEDERATION_PEER_PUBKEYS.get(peer_url)
     if pinned and pinned != pubkey_hex and await _repin_if_rotated(peer_url, pubkey_hex):
