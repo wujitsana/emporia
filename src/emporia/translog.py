@@ -405,13 +405,15 @@ def commitment_for(conn: Any, kind: str, ident: str, fields: dict[str, Any]) -> 
     return commitment(kind, fields, record_salt(conn, kind, ident))
 
 
-def _log(conn: Any, kind: str, public: bool, ident: str, fields: dict[str, Any]) -> None:
-    """Public: by id. Otherwise a salted commitment, filed under itself."""
+def _log(conn: Any, kind: str, public: bool, ident: str, fields: dict[str, Any],
+         extra: dict[str, Any] | None = None) -> None:
+    """Public: by id. Otherwise a salted commitment, filed under itself. `extra`
+    is about the entry, not the record (P267: `backfilled`)."""
     if public:
-        append(conn, kind, f"{kind}:{ident}", fields)
+        append(conn, kind, f"{kind}:{ident}", {**fields, **(extra or {})})
     else:
         c = commitment_for(conn, kind, ident, fields)
-        append(conn, kind, c, {"commitment": c})
+        append(conn, kind, c, {"commitment": c, **(extra or {})})
 
 
 def content_hash(*parts: Any) -> str:
@@ -666,8 +668,10 @@ def backfill(conn: Any) -> None:
     for kind, (table, _build, cond) in SOURCES.items():
         if table in tables:
             where = f" WHERE {cond.format(row=table)}" if cond else ""
-            conn.execute(f"INSERT INTO translog_outbox (kind, rid) SELECT ?, rowid FROM {table}{where} "  # noqa: S608
-                         "ORDER BY rowid", (kind,))
+            # P267: marked, so an entry for a row the relay held before its log
+            # does not read as recorded when it happened (its `logged_at` is now)
+            conn.execute(f"INSERT INTO translog_outbox (kind, rid, ref) SELECT ?, rowid, 'backfill' "  # noqa: S608
+                         f"FROM {table}{where} ORDER BY rowid", (kind,))
     for chain, (table, column) in CHAINS.items():
         if table in tables:
             conn.execute(f"INSERT INTO translog_outbox (kind, ref) SELECT DISTINCT ?, {column} FROM {table}",  # noqa: S608
@@ -679,7 +683,7 @@ def _held(conn: Any, key: str) -> dict[str, str] | None:
     return json.loads(raw) if raw else None
 
 
-def _ingest_row(conn: Any, kind: str, rid: int) -> None:
+def _ingest_row(conn: Any, kind: str, rid: int, backfilled: bool = False) -> None:
     table, build, _cond = SOURCES[kind]
     key = f"{kind}#{rid}"
     held = _held(conn, key)
@@ -700,7 +704,7 @@ def _ingest_row(conn: Any, kind: str, rid: int) -> None:
         held = None
     if held and held["d"] == digest:
         return
-    _log(conn, kind, public, ident, fields)
+    _log(conn, kind, public, ident, fields, {"backfilled": True} if backfilled else None)
     _mark(conn, key, json.dumps({"id": ident, "d": digest}))
 
 
@@ -737,15 +741,16 @@ def drain(conn: Any, limit: int = DRAIN_BATCH) -> int:
     done: set[tuple[str, Any]] = set()
     tables = _tables(conn)
     for _seq, kind, rid, ref in rows:
-        item = (kind, rid if ref is None else ref)
+        chain = kind[:-6] if kind.endswith("_chain") and kind[:-6] in CHAINS else ""
+        item = (kind, ref if chain else rid)
         if item in done:
             continue
         done.add(item)
-        if kind.endswith("_chain") and kind[:-6] in CHAINS:
-            if CHAINS[kind[:-6]][0] in tables:
-                _ingest_chain(conn, kind[:-6], str(ref))
+        if chain:
+            if CHAINS[chain][0] in tables:
+                _ingest_chain(conn, chain, str(ref))
         elif kind in SOURCES and SOURCES[kind][0] in tables:
-            _ingest_row(conn, kind, int(rid))
+            _ingest_row(conn, kind, int(rid), backfilled=ref == "backfill")
     conn.execute("DELETE FROM translog_outbox WHERE seq <= ?", (rows[-1][0],))
     return len(rows)
 

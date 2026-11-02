@@ -33,3 +33,21 @@ def test_every_relay_signed_batch_kind_is_in_the_spec():
         kinds |= set(re.findall(r'federation_signable_bytes\([^,]+,\s*"([a-z_-]+)"', path.read_text()))
     missing = [k for k in kinds if f"`{k}`" not in SPEC]
     assert not missing, f"relay-signed batch kinds not in docs/protocol.md: {missing}"
+
+
+def test_no_two_untagged_signed_payloads_share_their_fields():
+    """P267: five payloads carry no `type` (moves, room and DM messages, /messages,
+    an encryption key) — old signatures cover them as they are. What keeps one
+    from passing for another is that no two have the same fields; this holds it."""
+    import inspect
+
+    from emporia import wire
+    shapes = {}
+    for name, fn in inspect.getmembers(wire, inspect.isfunction):
+        if not name.startswith("signed_"):
+            continue
+        params = inspect.signature(fn).parameters
+        out = fn(*["x"] * len([p for p in params.values() if p.default is p.empty]))
+        if "type" not in out:
+            shapes.setdefault(frozenset(out), []).append(name)
+    assert all(len(v) == 1 for v in shapes.values()), shapes

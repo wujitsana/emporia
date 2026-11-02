@@ -105,7 +105,7 @@ from emporia import rooms as rooms_db
 from emporia import entitlements
 from emporia import translog
 from emporia.env_config import env_int
-from emporia.logging_config import configure_logging, configure_sentry, request_id_ctx
+from emporia.logging_config import configure_logging, configure_sentry, redact_tokens_in, request_id_ctx
 
 if TYPE_CHECKING:
     # Type-only — every real (runtime) reference to emporia.payments stays a
@@ -141,6 +141,7 @@ BRAND = "Emporia"
 # Configuring here is the only way that covers every real invocation path.
 configure_logging()
 configure_sentry()
+redact_tokens_in("uvicorn.error", "uvicorn.access", "emporia.relay")   # P267: no ?token= in a log
 logger = logging.getLogger("emporia.relay")
 
 RELAY_PORT = int(os.getenv("EMPORIA_RELAY_PORT", "8088"))
@@ -3636,8 +3637,8 @@ def _write_key_log_step(conn: Any, stable_id: str, step_no: int, step: dict[str,
     translog.log_row(conn, "agent_key", cur.lastrowid)
 
 
-#: P246: when each agent's last recovery was recorded, by handle. A bearer token
-#: issued before then was issued to a key the agent no longer has.
+#: P246: when each agent's last recovery (P267: or key change) was recorded, by
+#: handle. A bearer token issued before then was issued to a key it no longer has.
 _SESSION_FLOOR: dict[str, float] = {}
 
 
@@ -3645,7 +3646,7 @@ def _load_session_floors(conn: Any) -> None:
     _SESSION_FLOOR.clear()
     for r in conn.execute(
             "SELECT a.agent_id, MAX(l.recorded_at) AS t FROM authorized_agents a JOIN agent_key_log l "
-            "ON l.stable_id = a.stable_id WHERE l.signed_by = 'recovery' GROUP BY a.agent_id").fetchall():
+            "ON l.stable_id = a.stable_id WHERE l.signed_by IN ('recovery', 'key') GROUP BY a.agent_id").fetchall():
         _SESSION_FLOOR[r["agent_id"]] = r["t"]
 
 
@@ -3878,6 +3879,9 @@ class AgentRegistry:
                 "UPDATE authorized_agents SET public_key_hex = ? WHERE agent_id = ?",
                 (new_public_key_hex, agent_id),
             )
+            # P267: a key changed because the old one may have leaked takes the
+            # old key's sign-ins with it, as a recovery does (P246).
+            _SESSION_FLOOR[agent_id] = time.time()
         return {"agent_id": agent_id, "stable_id": row["stable_id"],
                 "public_key_hex": new_public_key_hex}
 

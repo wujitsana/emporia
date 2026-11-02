@@ -358,3 +358,22 @@ def test_a_log_from_the_scanning_ingest_is_rebuilt_once(tmp_path):
     translog.init_schema(conn)
     translog.fold_all(conn)
     assert _kinds(conn) == ["deletion"]
+
+
+def test_a_backfilled_entry_says_so(tmp_path):
+    """P267: a row the relay held before its log began is logged with `backfilled`,
+    so its `logged_at` (now) does not pass for when it happened."""
+    conn = _fresh_log(tmp_path, "CREATE TABLE deletions (kind, item, role, deleted_at, signature);")
+    conn.execute("INSERT INTO deletions VALUES ('post', 'p_new', 'author', 'now', '')")
+    translog.fold_all(conn)
+    [entry] = translog.entries(conn, 0)
+    assert "backfilled" not in entry["record"]
+    import sqlite3
+    old = sqlite3.connect(tmp_path / "old.db")
+    old.row_factory = sqlite3.Row
+    old.executescript("CREATE TABLE deletions (kind, item, role, deleted_at, signature);")
+    old.execute("INSERT INTO deletions VALUES ('post', 'p_old', 'author', '2025-01-01', '')")
+    translog.init_schema(old)
+    translog.fold_all(old)
+    [entry] = translog.entries(old, 0)
+    assert entry["record"]["backfilled"] is True

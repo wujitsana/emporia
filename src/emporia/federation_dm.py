@@ -42,6 +42,8 @@ from emporia.addresses import address, canonical_host, host_of, own_host, same_h
 from emporia.identity import federation_signable_bytes, follow_key_log, normalize_peer_url, sign_raw_relay, verify_raw
 
 SETTING = "EMPORIA_FEDERATED_DMS"
+#: P267: when each peer's key was last re-checked after a bad signature
+_REPIN_TRIED: dict[str, float] = {}
 WINDOW_SECONDS = 300
 _HOST_RE = re.compile(r"^[a-z0-9.-]+(?::\d{1,5})?$")
 
@@ -132,7 +134,12 @@ async def verified_peer(request: Request, body: bytes) -> str:
     signed = _request_bytes(request.method, own_host(), request.url.path, ts, body)
     if not verify_raw(signed, sig, await peer_key(peer)):
         # P191: it may have rotated its key — follow its signed hand-over, never a bare change.
+        # P267: at most once a minute per peer: anyone can send a badly signed
+        # request naming a linked relay, and each would make this one call it.
         from emporia import relay_server as rs
+        if time.monotonic() - _REPIN_TRIED.get(peer, -1e9) < 60:
+            raise HTTPException(401, "relay request signature does not match the relay's pinned key")
+        _REPIN_TRIED[peer] = time.monotonic()
         h = None
         try:
             import httpx

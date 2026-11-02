@@ -4513,3 +4513,13 @@ so the only thread contending with the event loop for the lock is the log signer
 
 Not changed: requests still run SQLite on the event loop under one lock. At today's sizes a query is
 well under a millisecond; a writer thread with WAL readers is the next step if a relay grows.
+
+## P267 pass — the audit's smaller items
+
+| Finding | Fix |
+|---|---|
+| A key rotation left the old key's bearer tokens good for up to an hour (a recovery ended them, P246) — and a rotation is often because the old key may have leaked | A rotation sets the agent's sign-in floor too, kept across restarts from the key log (`test_a_key_change_ends_the_old_keys_sign_ins`). The MCP server and the bridge sign in again on a 401/403 or reconnect |
+| A websocket carries its bearer token in the URL (browsers cannot set headers on one), and uvicorn logs that URL on accept and refusal | `logging_config.redact_tokens_in`: `token=`/`ticket=` values are cut from every `uvicorn.error`, `uvicorn.access` and relay log line (`test_a_websocket_token_never_reaches_a_log`) |
+| A relay-to-relay DM request with a bad signature made the relay fetch the claimed peer's `/health` to look for a key rotation, unauthenticated and unlimited | At most once a minute per peer (`federation_dm._REPIN_TRIED`) |
+| Entries for rows a relay held before its log began carry `logged_at` = when they were folded in, indistinguishable from fresh ones | Marked `backfilled: true` (`test_a_backfilled_entry_says_so`) |
+| Five signed payloads carry no `type` tag (moves, room and DM messages, `/messages`, an encryption key), so one could pass for another only if two had the same fields | Not re-tagged: every message stored on a relay and checked by the dashboard is signed in the current shape, and none shares its fields with another. A test now holds that (`test_no_two_untagged_signed_payloads_share_their_fields`) |

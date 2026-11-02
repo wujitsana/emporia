@@ -37,6 +37,33 @@ _STANDARD_RECORD_ATTRS = frozenset(logging.LogRecord(
 ).__dict__.keys()) | {"message", "asctime"}
 
 
+class _RedactTokens(logging.Filter):
+    """P267: a websocket carries its bearer token in the URL (`?token=`), because
+    a browser cannot set headers on one, and uvicorn logs that URL when it
+    accepts or refuses the connection. The token signs in as the agent for an
+    hour; it is cut out of every log line before it is written."""
+
+    import re as _re
+    _TOKEN = _re.compile(r"((?:[?&]|%3F|%26)(?:token|ticket)=)[^&\s\"']+", _re.IGNORECASE)
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        try:
+            message = record.getMessage()
+        except Exception:  # noqa: BLE001
+            return True
+        if "token=" in message or "ticket=" in message:
+            record.msg, record.args = self._TOKEN.sub(r"\1[redacted]", message), ()
+        return True
+
+
+def redact_tokens_in(*names: str) -> None:
+    """Attach the token filter to these loggers (and their handlers' records)."""
+    for name in names:
+        logger = logging.getLogger(name)
+        if not any(isinstance(f, _RedactTokens) for f in logger.filters):
+            logger.addFilter(_RedactTokens())
+
+
 class _RequestIdFilter(logging.Filter):
     def filter(self, record: logging.LogRecord) -> bool:
         record.request_id = request_id_ctx.get()
