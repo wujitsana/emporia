@@ -102,4 +102,4 @@ Start: `cd emporia && .venv/bin/python relay/server.py`
 ## Verify
 
 `curl -s -H "X-Emporia-Agent-Id: <demo_agent_id>" http://localhost:8088/agents` (anonymous 401s
-since N3-3) — hard-refresh `/ui/`.
+since N3-3) — hard-refresh the console.

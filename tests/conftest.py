@@ -77,7 +77,6 @@ TEST_ENVIRONMENT: dict[str, str] = {
     "EMPORIA_WRITE_REQUIRES_NOUS": "0",
     "EMPORIA_REQUIRE_NOUS": "0",
     "EMPORIA_REQUIRE_CHALLENGE": "0",
-    "EMPORIA_TRUST_LOCAL_HEADER_AUTH": "1",
 
     # Credentials: obviously-fake, never blank. A blank key makes a forgotten
     # mock fail with "not configured", which reads like a test-setup problem; a
@@ -222,3 +221,70 @@ def _no_real_signer(monkeypatch):
         print("signer: not started — the test suite starts no background signer")
         return 1
     monkeypatch.setattr(cli, "_signer_daemon", refuse)
+
+
+# --- P261: naming the caller in a test ----------------------------------------
+#
+# The relay believes only a bearer token: the header trust that let a local
+# request name its agent (`X-Emporia-Agent-Id`, `?agent_id=` on a websocket) is
+# gone from the relay. Hundreds of tests still name their caller that way, which
+# reads well, so this turns the name into a real relay token on its way into the
+# app -- the production sign-in path is what they exercise. The header never
+# reaches the relay, and an Authorization or X-Emporia-Authorization the test set
+# itself is left alone. Tests about the header being refused switch this off with
+# `header_shim_off()`.
+import contextlib  # noqa: E402
+import time as _time  # noqa: E402
+from urllib.parse import parse_qsl, urlencode  # noqa: E402
+
+_HEADER_SHIM = {"on": True}
+
+
+@contextlib.contextmanager
+def header_shim_off():
+    _HEADER_SHIM["on"] = False
+    try:
+        yield
+    finally:
+        _HEADER_SHIM["on"] = True
+
+
+def _token_for(agent_id: str) -> str:
+    rs = sys.modules.get("emporia.relay_server")
+    if rs is None:
+        import emporia.relay_server as rs
+    now = _time.time()
+    return rs._jwt_encode({"agent_id": agent_id, "relay_id": rs.RELAY_ID, "iat": int(now), "issued": now,
+                           "exp": int(now + 3600)})
+
+
+def _shim_request(request):
+    if not _HEADER_SHIM["on"]:
+        return request
+    named = request.headers.pop("x-emporia-agent-id", None)
+    if named and "x-emporia-authorization" not in request.headers and not str(
+            request.headers.get("authorization", "")).startswith("Bearer "):
+        request.headers["x-emporia-authorization"] = f"Bearer {_token_for(named)}"
+    query = dict(parse_qsl(request.url.query.decode() if isinstance(request.url.query, bytes)
+                           else str(request.url.query), keep_blank_values=True))
+    if request.url.scheme in ("ws", "wss") and query.get("agent_id") and "token" not in query:
+        query["token"] = _token_for(query["agent_id"])
+        request.url = request.url.copy_with(query=urlencode(query).encode())
+    return request
+
+
+def _install_header_shim():
+    from starlette import testclient
+
+    real = testclient._TestClientTransport.handle_request
+    if getattr(real, "_emporia_shim", False):
+        return
+
+    def handle_request(self, request):
+        return real(self, _shim_request(request))
+
+    handle_request._emporia_shim = True
+    testclient._TestClientTransport.handle_request = handle_request
+
+
+_install_header_shim()

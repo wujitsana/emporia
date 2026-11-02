@@ -63,7 +63,7 @@ pasting `STRIPE_PROFILE_ID`.
 4. **Widening scope ≠ Machine Payment profile id** — `STRIPE_PROFILE_ID` is still a separate
    Dashboard copy unless using full `sk_*` + Account JSON contains `profile_…`.
 5. Surfaces to tell admin: installer `WARNING: ADMIN:`, `/health` → `stripe_mpp_admin_notice`,
-   MCP `relay_payment_info`, Fees → Payments (after relay restart + `build:embedded`).
+   MCP `relay_payment_info`, Fees → Payments (after relay restart + `build:console`).
 
 Pass criteria unchanged: `payment_rails` includes **`mpp`**, `stripe_profile_ready: true`,
 notice **null**.

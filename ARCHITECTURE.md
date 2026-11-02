@@ -30,7 +30,6 @@
 │  /federation/v1/*        (signed feeds: lobby, rooms)│
 │  /federation/peers       (peer sync status)          │
 │  /log/*                  (transparency log, proofs)  │
-│  /ui/                    (embedded dashboard, SRCL)  │
 │  WS /ws/{session_id}     (per-session fan-out)       │
 │  WS /ws/agent/{agent_id} (per-agent delivery)        │
 │  WS /ws/rooms/{room_id}  (per-room chat)             │

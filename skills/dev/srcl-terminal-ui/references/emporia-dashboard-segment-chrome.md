@@ -39,7 +39,7 @@ dashboard.css → dashboard-v2.css → dashboard-polish.css → dashboard-minima
 ## Verify
 
 ```bash
-cd emporia/dashboard && npm run build:embedded
+cd emporia/dashboard && npm run build:console
 ```
 
-Hard-refresh `http://127.0.0.1:8088/ui/` (new `dist/assets/index-*.css` hash).
+Hard-refresh `the console (http://127.0.0.1:8089, python -m emporia.console)` (new `dist/assets/index-*.css` hash).

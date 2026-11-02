@@ -198,9 +198,8 @@ class EmporiaAgent:
             return None
 
     async def _bearer_headers(self) -> dict[str, str]:
-        """{"Authorization": "Bearer <jwt>"} via _bearer_token_value(). On a relay
-        running with EMPORIA_TRUST_LOCAL_HEADER_AUTH off (the shipped default), this
-        is the only credential that authenticates a REST read — without it, reading
+        """{"Authorization": "Bearer <jwt>"} via _bearer_token_value(). The only
+        credential that authenticates a REST read (P261) — without it, reading
         a participants-only session (any research/service/code-review session — the
         paid modules) this agent is itself participating in 403s, including the
         pre-fetch submit_action() needs to sign its own turn. Returns {} on any
@@ -210,18 +209,11 @@ class EmporiaAgent:
         return {"Authorization": f"Bearer {token}"} if token else {}
 
     async def _ws_auth_params(self) -> dict[str, str]:
-        """Query params for a WS connect URL: `agent_id` (satisfies the relay's
-        localhost-trust tier — co-located deployment) plus `token` when a bearer
-        JWT is obtainable (works on any config, including the shipped default of
-        EMPORIA_TRUST_LOCAL_HEADER_AUTH=0, where `agent_id` alone is ignored — N6
-        review R4: listen_session/listen_agent sent only `agent_id`, so a
-        participants-only session was unreachable from the SDK on a default
-        install despite N5-7 adding the param)."""
-        params = {"agent_id": self.agent_id}
+        """Query params for a WS connect URL: `token`, the bearer JWT, when one is
+        obtainable. P261: the relay believes nothing else, so a bare `agent_id`
+        is no longer sent."""
         token = await self._bearer_token_value()
-        if token:
-            params["token"] = token
-        return params
+        return {"token": token} if token else {}
 
     def _invalidate_bearer(self) -> None:
         """Drop the cached token so the next _bearer_headers() call re-authenticates.
@@ -237,9 +229,7 @@ class EmporiaAgent:
         exception (network error, relay-side auth outage, etc.) — a bare
         _invalidate_bearer() call followed by a failed re-mint would leave the
         cache empty, and every subsequent _ws_auth_params() call would then omit
-        `token` entirely, sending `agent_id` alone. `agent_id` alone is inert on
-        the shipped default config (EMPORIA_TRUST_LOCAL_HEADER_AUTH=0 — N6 review
-        R4), so a failed re-mint would turn a WS auth failure into something
+        `token` entirely, which authenticates nothing (P261), so a failed re-mint would turn a WS auth failure into something
         strictly worse than doing nothing, exactly in the plausible case that the
         relay's own auth service is what's actually down. Restoring the old
         token on failure means a rejected-but-still-real credential keeps being
@@ -2226,12 +2216,8 @@ class EmporiaAgent:
     ) -> None:
         """Listen to the per-agent WS channel. Reconnects with backoff.
 
-        See _ws_auth_params(): sends both `agent_id` (satisfies the relay's
-        localhost-trust tier for /ws/agent/{id} — see relay_server.py's
-        _ws_agent_id() — covers the co-located deployment this SDK targets) and
-        `token` (a bearer JWT via the Ed25519 dashboard-challenge flow, which works
-        on any config — N6 review R4: `agent_id` alone did nothing on the shipped
-        default of EMPORIA_TRUST_LOCAL_HEADER_AUTH=0). N7 review R5: rebuilt fresh
+        See _ws_auth_params(): sends `token` (a bearer JWT via the Ed25519
+        dashboard-challenge flow; P261: the relay's only WS credential). N7 review R5: rebuilt fresh
         on every reconnect attempt rather than once before the loop, so a token
         that expired between the original connect and a later reconnect gets
         refreshed instead of replayed dead — see listen_session's docstring."""

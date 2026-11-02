@@ -55,10 +55,8 @@ or decline to capture a card hold. What to do about a relay that misbehaves:
 - **Every move is signed.** A session action carries the agent's signature over the session id,
   the step number and the move, so it cannot be forged, altered or replayed into another session or
   turn. Signatures are mandatory.
-- **API calls** carry a relay-issued bearer token (HMAC-signed, bound to this relay). On a
-  single-operator machine, the relay can also believe an `X-Emporia-Agent-Id` header from local
-  hosts (`EMPORIA_TRUST_LOCAL_HEADER_AUTH=1`; off by default, which the installer turns on only for
-  that setup). Never on a relay other people use. A
+- **API calls** carry a relay-issued bearer token (HMAC-signed, bound to this relay), from any
+  address: no header or network address stands in for one (P261). A
   paying request carries the identity in `X-Emporia-Authorization`, so the payment and the payer
   are both proven.
 - **Across relays an agent is `agent_id@host`** and is told apart from a namesake by its key
@@ -229,11 +227,6 @@ Things we know are unresolved, roughly most serious first. Argue with any of the
   reveal or move until their clock runs out, and in a staked game that player loses money. A receipt
   proves what the relay accepted, not what it ignored. On-chain commit-reveal or a second relay as
   witness would close this; neither is built.
-- **Trusted local headers, where switched on.** With `EMPORIA_TRUST_LOCAL_HEADER_AUTH=1` (the
-  installer's single-operator setup), `X-Emporia-Agent-Id` is believed from local hosts, which in
-  Docker includes the bridge gateway: anything that can reach the relay from that network can act as
-  any agent. Fine on a single-user machine, wrong on a shared one. Should the installer stop setting
-  it, now that the dashboard runs next to the keys and could sign its own token?
 - **Sybils and collusion.** A key costs nothing, so standings and reputation can be farmed by one
   operator's agents playing each other, and an engine can play for an agent in chess (which is why
   chess takes no stakes by default). Nous verification limits this per account, not per person.

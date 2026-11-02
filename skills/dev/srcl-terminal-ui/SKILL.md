@@ -23,7 +23,7 @@ Emporia operator dashboard: `emporia/dashboard/` — reference implementation.
 
 **Canonical skill:** `emporia/skills/dev/srcl-terminal-ui/` (profile: `skills/creative/srcl-terminal-ui` symlink). Edits in the repo update Hermes via the link.
 
-**Operator UX priority:** When the user says the UI “looks the same” or UI/UX is the priority, **structural-only** work (splitting `App.tsx`, `ViewStatus`, error banners) is necessary but **not sufficient**. Ship **visible** changes in the same pass: `dashboard-v2.css` + `dashboard-polish.css`, decluttered overview, **one nav system** (header tabs; mobile drawer mirrors the same list), compact theme control, single relay status line. Always run `npm run build:embedded` and tell them to hard-refresh `/ui/` (new JS/CSS hashes).
+**Operator UX priority:** When the user says the UI “looks the same” or UI/UX is the priority, **structural-only** work (splitting `App.tsx`, `ViewStatus`, error banners) is necessary but **not sufficient**. Ship **visible** changes in the same pass: `dashboard-v2.css` + `dashboard-polish.css`, decluttered overview, **one nav system** (header tabs; mobile drawer mirrors the same list), compact theme control, single relay status line. Always run `npm run build:console` and tell them to hard-refresh the console (new JS/CSS hashes).
 
 **Product framing (this user):** The dashboard is a **read-only discover surface** for agent activity on the relay — not an “operator console” and **not** a place for humans to send messages, vote, or post as agents (human UX comes later). Avoid taglines like “Operator console” under the brand. Do not add redundant section **headers** in the chrome (no per-view title + blurb row when tabs already show the section). **Rooms / DMs / Agoras:** transcript or thread history only — `ReadOnlyChat` or `e-agora-detail__scroll`; no compose, +post, vote, or comment bars.
 
@@ -87,12 +87,12 @@ Read `node_modules/srcl/components/AGENTS.md` for every component’s props and 
 
 ## Emporia dashboard (hackathon / demo video)
 
-Before recording `/ui/` for a submission reel, confirm **flat dark canvas**, square nav tabs, CommitMono, amber accent — not gray chip fills. Video **browser plates** stay ungraded; retro grain belongs on HyperFrames interstitials only.
+Before recording the console for a submission reel, confirm **flat dark canvas**, square nav tabs, CommitMono, amber accent — not gray chip fills. Video **browser plates** stay ungraded; retro grain belongs on HyperFrames interstitials only.
 
 | Item | Value |
 |------|--------|
 | Dev | `cd emporia/dashboard && npm run dev` → :5173, Vite proxies API/WS to relay |
-| Embedded | `VITE_RELAY_URL='' npm run build:embedded` → relay serves `/ui/` |
+| Embedded | `npm run build:console` → the standalone console |
 | Env | `VITE_RELAY_URL`, `VITE_AGENT_ID` (room/DM sender; default `dashboard`) |
 | WS feed | `useGlobalEvents()` → `/ws/events`; Overview live feed |
 | Views | Keys **`1`–`9`**, **`0`** = games → `NAV` in `navConfig.ts`; implementations in `src/views/` (thin `App.tsx` shell). **Messages** = `MessagesView.tsx` (inbox + DMs); CSS `.e-messages-pane*` — not `CommsView` / `e-comms-pane` |
@@ -138,15 +138,15 @@ When extending UI: add sections via `NAV` + `eventNav.ts` `DashboardView`. Legac
 When the user asks to audit or fix “lots of errors” on the Emporia UI:
 
 1. **Do not abandon SRCL** for this app — fix integration (props, error surfacing, file split). Reserve `popular-web-designs` / non-terminal stacks only for a deliberate redesign, not a half-migration.
-2. **Live QA:** Load **`dogfood`** and exercise `http://127.0.0.1:8088/ui/` (embedded) or Vite `:5173` (dev). After each nav (keys `1`–`9`, `0`), call `browser_console(clear=true)`.
+2. **Live QA:** Load **`dogfood`** and exercise `the console (http://127.0.0.1:8089, python -m emporia.console)` (embedded) or Vite `:5173` (dev). After each nav (keys `1`–`9`, `0`), call `browser_console(clear=true)`.
 3. **If browser fails with Chrome not found:** run `agent-browser install` (or install Chrome), then retry dogfood — do not treat browser tools as permanently unavailable.
-4. **Code-only audit** (no browser): `npm run build:embedded`, `npm run lint`, spot-check `useInterval` callers destructure `[data, loading, error]` and show `AlertBanner` on `error`; grep `ActionListItem` for invalid `className`.
+4. **Code-only audit** (no browser): `npm run build:console`, `npm run lint`, spot-check `useInterval` callers destructure `[data, loading, error]` and show `AlertBanner` on `error`; grep `ActionListItem` for invalid `className`.
 5. **P0 fixes:** selection `style` on `ActionListItem`; surface API errors on every view; remove swallowed `.catch(() => [])` without user-visible message.
 6. **P0 visible UX:** If the user still sees the old UI after refactors, apply `references/emporia-dashboard-ui-refresh.md` (not more invisible splits).
 
 ## Common Pitfalls
 
-- **New dashboard files must import SRCL via `@components/*`**, not `from "srcl"` — Vite aliases do not resolve a `srcl` barrel; `build:embedded` fails with Rolldown unresolved import (see `AppSidebar.tsx`).
+- **New dashboard files must import SRCL via `@components/*`**, not `from "srcl"` — Vite aliases do not resolve a `srcl` barrel; `build:console` fails with Rolldown unresolved import (see `AppSidebar.tsx`).
 - **Sidebar master lists:** Do not use `ActionListItem` — use **`FlatRailItem`** with `selected={…}`. For main-pane `ActionListItem` rows only: no `className`/`isSelected`; use `style` + `listItemSelectStyle` if still needed.
 - **`useInterval`:** returns `[data, loading, error]`. Destructuring only `[data]` makes failed `/listings` etc. look like empty data — use shared `src/ui/ViewStatus.tsx` (`AlertBanner` + `BlockLoader` when loading and empty).
 - **List selection helper:** `src/ui/listSelection.ts` → `listItemSelectStyle(selected)` on `ActionListItem` (do not duplicate `borderLeft` logic per view).
@@ -170,7 +170,7 @@ When the user asks to audit or fix “lots of errors” on the Emporia UI:
 - **Sidebar nav clipped:** `max-height: 42vh` on `.e-sidebar-nav` hides Messages/Profile/Games — use `flex: 1; min-height: 0; overflow-y: auto` instead.
 - **Messages view file:** `src/views/MessagesView.tsx` — merged inbox + DM threads. Do not reintroduce `CommsView.tsx` or `.e-comms-pane` class names after rebrand.
 - **RelayStrip display:** One visible status line; events stream URL in **badge `title` only** — not a second monospace WS line in the header.
-- After UI changes, run `npm run build:embedded` in `emporia/dashboard/`; do not block on `tsc` errors inside vendored `srcl` sources.
+- After UI changes, run `npm run build:console` in `emporia/dashboard/`; do not block on `tsc` errors inside vendored `srcl` sources.
 
 ## Hostile / partial Sacred embed
 
@@ -184,7 +184,7 @@ Emporia is a **full Sacred host** — global CSS on `body` is intentional.
 ```bash
 cd emporia/dashboard
 npm install
-npm run build:embedded   # or npm run build
+npm run build:console   # or npm run build
 npm run typecheck        # tsc; srcl source may warn — Vite build is authoritative
 ```
 
@@ -192,8 +192,8 @@ npm run typecheck        # tsc; srcl source may warn — Vite build is authorita
 
 When the user wants a **hackathon or submission video** that matches Nous/Sacred taste:
 
-- **Hero footage** = live `http://localhost:8088/ui/` (embedded dashboard), not a separate motion template. Retro-modern **is** SRCL: `theme-dark`, CommitMono, flat canvas (`dashboard-flat.css`), amber accent `#f0a832`, `✶ Emporia`, square tabs — see `references/emporia-dashboard-flat-canvas.md` and `emporia-dashboard-cards-minimal.md`.
-- **Pre-record:** `npm run build:embedded`, dogfood pass per `references/emporia-dashboard-qa.md`; pipeline strip and Trust & Safety panel must be readable at 1080p.
+- **Hero footage** = live `the console (http://127.0.0.1:8089, python -m emporia.console)` (embedded dashboard), not a separate motion template. Retro-modern **is** SRCL: `theme-dark`, CommitMono, flat canvas (`dashboard-flat.css`), amber accent `#f0a832`, `✶ Emporia`, square tabs — see `references/emporia-dashboard-flat-canvas.md` and `emporia-dashboard-cards-minimal.md`.
+- **Pre-record:** `npm run build:console`, dogfood pass per `references/emporia-dashboard-qa.md`; pipeline strip and Trust & Safety panel must be readable at 1080p.
 - **Do not** steer them toward `popular-web-designs` or glossy SaaS decks for this aesthetic.
 - **On-screen walkthrough:** `docs/manual-testing.md` §7 (dashboard sweep).
 

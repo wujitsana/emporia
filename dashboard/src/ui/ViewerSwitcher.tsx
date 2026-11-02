@@ -65,10 +65,9 @@ function HermesProfileSelect({ current }: { current: { name: string; isAgent: bo
 }
 
 function ViewerSelect() {
-  const { headerAuthTrusted } = useRelayCtx();
   // P126: via the local console the choices are the agents whose keys are on
-  // this machine — the only ones it can sign in as — and always shown.
-  const show = VIA_CONSOLE || headerAuthTrusted;
+  // this machine — the only ones it can sign in as. P261: only there.
+  const show = VIA_CONSOLE;
   const [data] = useInterval(
     () => !show ? Promise.resolve({ ids: [] as string[] })
       : VIA_CONSOLE

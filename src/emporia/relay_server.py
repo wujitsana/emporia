@@ -65,9 +65,8 @@ from typing import TYPE_CHECKING, Any
 import httpx
 import uvicorn
 from fastapi import FastAPI, HTTPException, Request, WebSocket, WebSocketDisconnect
-from fastapi.responses import HTMLResponse, RedirectResponse
+from fastapi.responses import HTMLResponse
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 from starlette.datastructures import Headers
 from starlette.responses import JSONResponse
@@ -489,30 +488,6 @@ def _require_stripe_webhook_secret_if_needed() -> None:
         )
 
 
-def _docker_gateway_ip() -> str | None:
-    """Return this container's default-route gateway IP, if any.
-
-    In a Docker deployment, browser traffic to the dashboard is proxied in by
-    the host (e.g. Hermes's gateway process) and arrives at the relay with
-    the container's bridge gateway as the source IP — not 127.0.0.1. That
-    traffic never left the Docker host, so it's the correct "local" trust
-    boundary for this container, same as 127.0.0.1 is for a bare-metal
-    deployment. Determined from /proc/net/route (not guessed/hardcoded) so it
-    tracks whatever bridge network this container actually has.
-    """
-    try:
-        with open("/proc/net/route") as f:
-            for line in f.readlines()[1:]:
-                fields = line.split()
-                if len(fields) >= 3 and fields[1] == "00000000":  # default route
-                    import socket
-                    import struct
-                    return socket.inet_ntoa(struct.pack("<L", int(fields[2], 16)))
-    except Exception:
-        pass
-    return None
-
-
 _LOCALHOST_HOSTS = {"127.0.0.1", "::1", "localhost"}
 
 # Rate-limit exemption is a much lower-stakes bypass than identity trust below — "don't
@@ -524,29 +499,13 @@ _RATE_LIMIT_EXEMPT_HOSTS.update(
     h.strip() for h in os.getenv("EMPORIA_TRUSTED_LOCAL_HOSTS", "").split(",") if h.strip()
 )
 
-# Header-based identity trust (X-Emporia-Agent-Id on REST, ?agent_id= on WS) must never be
-# inferred from a network address alone. Two ways that bites:
-#   1. Docker's default userland-proxy rewrites a *published* port's external traffic to
-#      arrive at the container with the bridge gateway as its source IP — indistinguishable
-#      from genuinely co-located traffic.
-#   2. A same-host TLS reverse proxy (nginx/Caddy in front of the relay on one VPS, the
-#      standard production topology) makes every internet request arrive from 127.0.0.1 —
-#      indistinguishable from a co-located dashboard/agent.
-# So this set requires an explicit operator opt-in and, with the flag off, is EMPTY —
-# header auth is fully dead regardless of network topology, including bare loopback. The
-# single-operator co-located deployment (dashboard's agent + relay on one host, not exposed
-# to untrusted traffic) sets the flag deliberately; a public relay never should.
-_TRUST_LOCAL_HEADER_AUTH = os.getenv("EMPORIA_TRUST_LOCAL_HEADER_AUTH", "0").strip() == "1"
-_HEADER_AUTH_TRUSTED_HOSTS: set[str] = set()
-if _TRUST_LOCAL_HEADER_AUTH:
-    _HEADER_AUTH_TRUSTED_HOSTS.update(_LOCALHOST_HOSTS)
-    _docker_gw = _docker_gateway_ip()
-    if _docker_gw:
-        _HEADER_AUTH_TRUSTED_HOSTS.add(_docker_gw)
-        _RATE_LIMIT_EXEMPT_HOSTS.add(_docker_gw)
-    _HEADER_AUTH_TRUSTED_HOSTS.update(
-        h.strip() for h in os.getenv("EMPORIA_TRUSTED_LOCAL_HOSTS", "").split(",") if h.strip()
-    )
+# P261: identity is only ever a relay-issued bearer token (or a signature). The
+# header trust that let a local request name its agent (`X-Emporia-Agent-Id`,
+# EMPORIA_TRUST_LOCAL_HEADER_AUTH) is gone: on a machine with several agents any
+# one of them -- or a web page reaching 127.0.0.1 by DNS rebinding -- could claim
+# to be any other agent or the operator. The dashboards sign in with the agent's
+# key instead (the local console; the challenge for a dashboard reaching a relay
+# directly).
 
 # ─── Dashboard JWT (HMAC-SHA256, stdlib only) ────────────────────────────────
 import base64
@@ -588,26 +547,11 @@ def _jwt_decode(token: str) -> dict | None:
     return payload
 
 
-def _is_header_auth_trusted(request: Request) -> bool:
-    """True when the TCP connection is from a peer allowed to claim identity via header.
-
-    Always reads request.client.host (the real TCP peer), never forwarded headers — so
-    X-Forwarded-For: 127.0.0.1 from a remote client is ignored. Checks
-    _HEADER_AUTH_TRUSTED_HOSTS, not bare loopback: with EMPORIA_TRUST_LOCAL_HEADER_AUTH off
-    (the default), this set is empty and every peer — including 127.0.0.1 — is untrusted for
-    header auth. See that flag's definition for why bare loopback isn't safe to trust
-    unconditionally (a same-host reverse proxy makes every request arrive from it).
-    """
-    host = request.client.host if request.client else ""
-    return host in _HEADER_AUTH_TRUSTED_HOSTS
-
-
 def _dashboard_agent_id(request: Request) -> str | None:
     """
     Resolve the requesting agent for dashboard REST calls.
 
-    Trust model:
-      - trusted host + X-Emporia-Agent-Id header → trusted (co-located, EMPORIA_TRUST_LOCAL_HEADER_AUTH=1)
+    Trust model (P261: a bearer token, nothing else):
       - Authorization: Bearer <jwt>                → verified via HMAC-SHA256 JWT
       - X-Emporia-Authorization: Bearer <jwt>      → the same, when Authorization
                                                      carries a payment (P95)
@@ -622,10 +566,6 @@ def _dashboard_agent_id(request: Request) -> str | None:
     all, so a held bounty had never been postable through it. The identity now
     has its own header when the payment needs that one.
     """
-    if _is_header_auth_trusted(request):
-        header_id = request.headers.get("x-emporia-agent-id")
-        if header_id:
-            return header_id
     for name in ("authorization", "x-emporia-authorization"):
         auth = request.headers.get(name, "")
         if auth.startswith("Bearer "):
@@ -639,19 +579,11 @@ def _ws_agent_id(ws: WebSocket) -> str | None:
     """
     Resolve the connecting agent's identity for a WebSocket upgrade.
 
-    Same trust tiers as _dashboard_agent_id(), adapted for WS: browsers cannot set
-    custom headers (Authorization, X-Emporia-Agent-Id) on a WS handshake, so both
-    tiers are carried as query params instead:
-      - trusted host + ?agent_id=<id>  → trusted (co-located, EMPORIA_TRUST_LOCAL_HEADER_AUTH=1)
-      - ?token=<jwt>                    → verified via the same HMAC-SHA256 JWT used for
-                                           dashboard REST auth
-      - neither                         → None (unauthenticated)
+    As _dashboard_agent_id(), for WS: browsers cannot set headers on a WS
+    handshake, so the token comes as a query param:
+      - ?token=<jwt>  → verified via the same HMAC-SHA256 JWT used for REST
+      - otherwise     → None (unauthenticated). P261: a bare ?agent_id= proves nothing.
     """
-    host = ws.client.host if ws.client else ""
-    if host in _HEADER_AUTH_TRUSTED_HOSTS:
-        qp_agent = ws.query_params.get("agent_id")
-        if qp_agent:
-            return qp_agent
     token = ws.query_params.get("token")
     if token:
         payload = _jwt_decode(token)
@@ -4644,9 +4576,8 @@ def _check_rate_limit(request: Request) -> JSONResponse | None:
     # If behind a trusted reverse proxy (nginx, Caddy), set TRUSTED_PROXY=1 and the proxy
     # must rewrite the source IP at TCP level or strip/replace the X-Real-IP header server-side.
     ip = (request.client.host if request.client else "unknown")
-    # Localhost, operator-listed proxy IPs, and test client: no rate limiting. Separate from
-    # _HEADER_AUTH_TRUSTED_HOSTS — exempting an IP from throttling is a much lower-stakes
-    # bypass than trusting it to claim any agent identity.
+    # Localhost, operator-listed proxy IPs, and test client: no rate limiting. Exempting an
+    # IP from throttling grants nothing to act on; no address is trusted with an identity (P261).
     if ip in _RATE_LIMIT_EXEMPT_HOSTS or ip == "testclient":
         return None
     path = request.url.path
@@ -4852,7 +4783,7 @@ app.add_middleware(
     # before it ever reaches the route. PAYMENT-RESPONSE must be exposed for
     # the same reason a JS client would otherwise be unable to read it off a
     # cross-origin response at all.
-    allow_headers=["Content-Type", "Authorization", "X-Emporia-Agent-Id", "PAYMENT-SIGNATURE",
+    allow_headers=["Content-Type", "Authorization", "PAYMENT-SIGNATURE",
                    "X-Emporia-Authorization", "PAYMENT-ESCROW"],
     # P22: X-Request-Id is set by request_context (below), registered *after*
     # this middleware so it wraps outside CORS and adds the header once CORS
@@ -5807,13 +5738,6 @@ async def ui_config(request: Request):
         "require_nous": REQUIRE_NOUS,
         "write_requires_nous": WRITE_REQUIRES_NOUS,
         "require_challenge": REQUIRE_CHALLENGE,
-        # P36-5: whether THIS connection may claim an identity with the
-        # X-Emporia-Agent-Id header. The dashboard used to infer it from the
-        # relay URL looking local, which is the wrong question: header auth is
-        # off unless EMPORIA_TRUST_LOCAL_HEADER_AUTH=1, so a co-located relay
-        # rejects the header too, and the dashboard hid its sign-in panel anyway
-        # and left every agent-scoped view showing a bare 401.
-        "header_auth_trusted": _is_header_auth_trusted(request),
         "agent_count": agent_count,
         "active_session_count": active_session_count,
         # P36-2: was a hardcoded "2.0.0" — undocumented, present since the initial
@@ -6620,8 +6544,7 @@ async def list_settlements(
             raise HTTPException(
                 401,
                 "Agent settlements require authentication. "
-                "Access from localhost with X-Emporia-Agent-Id header, "
-                "or use the get_settlements MCP tool."
+                "Sign in (a bearer token), or use the get_settlements MCP tool."
             )
         if dashboard_id != agent_id and dashboard_id != owner:
             raise HTTPException(403, "Cannot view another agent's settlements")
@@ -8392,30 +8315,6 @@ async def broadcast_global(event: dict[str, Any]) -> None:
     await broadcast_to_session("__global__", event)
 
 
-# ============================================================================
-# Dashboard static files — served at /ui/ from the relay itself
-# Build once with: cd dashboard && VITE_RELAY_URL="" npm run build
-# Then access at http://localhost:8088/ui/
-# ============================================================================
-
-_DASHBOARD_DIST = Path(__file__).parent.parent.parent / "dashboard" / "dist"
-
-
-def serves_dashboard() -> bool:
-    """P196: the dashboard runs next to the agents' keys — the local console,
-    a Hermes dashboard tab — never as a public page on a relay. A relay serves
-    its built-in copy only where no one else can reach it — when it listens on
-    127.0.0.1 (development) — or when its operator says so (EMPORIA_SERVE_UI=1).
-    A relay others use listens on every address, so serves none."""
-    if os.getenv("EMPORIA_SERVE_UI", "").strip() == "1":
-        return True
-    return RELAY_HOST in _LOOPBACK
-
-
-if _DASHBOARD_DIST.exists() and serves_dashboard():
-    app.mount("/ui", StaticFiles(directory=_DASHBOARD_DIST, html=True), name="dashboard")
-
-
 _RELAY_FRONT_PAGE_HTML = """<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Emporia relay</title>
@@ -8426,40 +8325,12 @@ watches it from their own dashboard, on their own machine, next to its keys.</p>
 <p><a href="/health">/health</a></p></body></html>"""
 
 
-_DASHBOARD_NOT_BUILT_HTML = """<!doctype html>
-<html lang="en"><head><meta charset="utf-8">
-<title>Emporia relay — dashboard not built</title>
-<style>body{font:14px/1.6 system-ui,sans-serif;margin:3rem auto;max-width:44rem;padding:0 1rem}
-code{background:#eee;padding:.15rem .35rem;border-radius:3px}</style></head><body>
-<h1>Emporia relay is running</h1>
-<p>The operator dashboard has not been built, so there is nothing to serve at
-<code>/ui/</code> yet. Build it once:</p>
-<pre><code>cd dashboard &amp;&amp; npm install &amp;&amp; VITE_RELAY_URL="" npm run build</code></pre>
-<p>then reload this page. The relay itself is up and serving the API —
-<a href="/health">/health</a>, <a href="/docs">/docs</a>.</p>
-</body></html>"""
-
-
 @app.get("/")
-async def root_redirect():
-    """P53: only redirect somewhere that exists.
-
-    `/ui` is mounted at import time and only when `dashboard/dist` is present,
-    but this redirect used to fire unconditionally — so on a relay installed by
-    the documented two-step (pip install, then build the dashboard), the first
-    URL anyone opens 307'd into a bare `{"detail":"Not Found"}`. The relay was
-    healthy; its front door led nowhere and said nothing.
-
-    Checked per request rather than at import so the page starts working the
-    moment the build lands, without a restart. `payments._x402_enabled()` is
-    the same principle one rail over: a partly configured thing should behave
-    like a configured-off thing, not fail halfway.
-    """
-    if not serves_dashboard():
-        return HTMLResponse(_RELAY_FRONT_PAGE_HTML, status_code=200)     # P196
-    if not _DASHBOARD_DIST.exists():
-        return HTMLResponse(_DASHBOARD_NOT_BUILT_HTML, status_code=200)
-    return RedirectResponse(url="/ui/")
+async def front_page():
+    """P196/P261: a relay serves no dashboard. Each operator watches their agents
+    from their own machine, next to the keys -- the Hermes dashboard tab or the
+    standalone console -- so the front door says that and links /health."""
+    return HTMLResponse(_RELAY_FRONT_PAGE_HTML, status_code=200)
 
 
 # DM moved to emporia/routes/dm.py (P57). Router included at the bottom.

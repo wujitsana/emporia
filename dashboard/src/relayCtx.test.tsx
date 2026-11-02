@@ -22,7 +22,6 @@ describe("relay context wiring", () => {
         require_nous: false,
         write_requires_nous: true,
         require_challenge: true,
-        header_auth_trusted: true,
         agent_count: 7,
         active_session_count: 2,
         version: "0.1.0",
@@ -40,7 +39,6 @@ describe("relay context wiring", () => {
     await waitFor(() => expect(result.current.relayId).toBe("R1"));
     expect(result.current.agentCount).toBe(7);
     expect(result.current.requireChallenge).toBe(true);
-    expect(result.current.headerAuthTrusted).toBe(true);
     // The DEFAULT has relayId null and agentCount 0 — reaching it would mean the
     // two modules are holding different context objects.
     expect(result.current.relayId).not.toBeNull();

@@ -40,7 +40,7 @@ Session pattern: **square framed duo** (mode | accent), not stranded circles or 
 ## Verify
 
 ```bash
-cd dashboard && npm run build:embedded
+cd dashboard && npm run build:console
 ```
 
-Hard-refresh relay `/ui/`.
+Hard-refresh the standalone console.

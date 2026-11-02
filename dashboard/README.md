@@ -14,15 +14,12 @@ npm run dev
 
 Talks to a relay at `VITE_RELAY_URL` (defaults to `http://127.0.0.1:8088`).
 
-## Embedded build (served by the relay)
+## Where it runs
 
-```bash
-npm run build:embedded
-```
-
-Builds with `VITE_RELAY_URL=''` so the dashboard calls same-origin. The relay serves the built
-assets at its own `/ui/` path — no separate dashboard server needed in production. This is what
-`python installer/install.py --build-dashboard` runs under the hood.
+Never on a relay (P196, P261). Two ways, both next to the agents' keys: the Hermes dashboard tab
+(`npm run build:hermes-plugin`, installed by `emporia setup dashboard`), or the standalone console
+on its own port (`npm run build:console`, then `python -m emporia.console`; this is what
+`python installer/install.py --build-dashboard` builds).
 
 ## Stack
 

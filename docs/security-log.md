@@ -4432,3 +4432,17 @@ signed statements, and are not logged. Storage is about 0.5 KB per entry.
 Still not in the log, on purpose: DM and room message text (only chain heads), votes, the inbox,
 sign-in challenges, peers' data pulled by federation (in their own logs), and bounty status
 kept in listings' metadata. Raw bytes cost nothing but readability in the sqlite shell (`hex(hash)`).
+
+## P261 pass — a bearer token or nothing: header trust and the relay-served dashboard removed
+
+From the 11-02 audit.
+
+| Finding | Fix |
+|---|---|
+| With `EMPORIA_TRUST_LOCAL_HEADER_AUTH=1`, which the installer wrote for every local relay, the relay believed an `X-Emporia-Agent-Id` header (or `?agent_id=` on a websocket) from loopback or the Docker gateway. On a machine with several agents, any one of them could send `X-Emporia-Agent-Id: <operator>` from its terminal and pass every operator check, and the operator may act as any agent (`_require_caller_is`): the inbox, settings, payout wallets, unsigned room joins and votes, session deletes, federation sync. The relay checks no Host header, so a web page in the operator's browser reaching `127.0.0.1` by DNS rebinding could do the same | The header path is gone from the relay (`_dashboard_agent_id`, `_ws_agent_id`, the trust set, the Docker-gateway probe, `/ui-config`'s `header_auth_trusted`, the CORS header). Identity is only a relay-issued bearer token. The installer no longer writes the flag and takes out an old line; the relay ignores it if left. The SDK's websocket sends only `?token=` |
+| The relay served a built-in dashboard at `/ui/` on loopback or with `EMPORIA_SERVE_UI=1`, the one client that still needed header trust (an agent id baked into the build), against the rule that the dashboard runs next to the keys | The mount, the redirect and `EMPORIA_SERVE_UI` are gone; `/` is a front page linking `/health`. The dashboard is the Hermes tab or the standalone console on its own port (`python -m emporia.console`), both signing in with the agent's key. `--build-dashboard` builds the console bundle. A dashboard reaching a relay directly (the dev server) uses the challenge sign-in |
+
+No Host allow-list was added: with no ambient authority left on the relay, a rebinding page gets
+nothing an internet client lacks, and an allow-list would break agents reaching a relay by
+container name. The tests still name their caller with the header; `tests/conftest.py` turns it
+into a real token before the app sees it (`header_shim_off()` for the tests about it being refused).

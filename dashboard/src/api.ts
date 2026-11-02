@@ -1,14 +1,12 @@
 import type { AgentRecord, OperatorOverview } from "./settings";
-import { SESSION_TOKEN_KEY, VIEWER_ID } from "./relayEnv";
+import { SESSION_TOKEN_KEY } from "./relayEnv";
 import { VIA_CONSOLE, httpFetch, relayHttpBase } from "./transport";
 
 // P126: the relay directly, or the local console signed in as the viewer.
 const BASE = relayHttpBase();
 
-// Sent on requests that scope data to the current agent.
-// Local relay: X-Emporia-Agent-Id header trusted on localhost.
-// Remote relay: Authorization: Bearer <jwt> from the dashboard/challenge flow.
-const AGENT_ID_HEADER = VIEWER_ID;
+// Sent on requests that scope data to the current agent: Authorization: Bearer
+// <jwt> from the dashboard/challenge flow. P261: the relay believes nothing else.
 
 /** The dashboard's JWT, if any — for callers that need it outside a fetch() header
  * (e.g. WebSocket handshakes, which can't set custom headers from browser JS). */
@@ -21,7 +19,6 @@ function agentHeaders(): HeadersInit {
   // P126: via the console, identity is the console's signed session for the
   // viewer — nothing to send, and anything sent would be dropped.
   if (VIA_CONSOLE) return headers;
-  if (AGENT_ID_HEADER) headers["x-emporia-agent-id"] = AGENT_ID_HEADER;
   const jwt = dashboardToken();
   if (jwt) headers["authorization"] = `Bearer ${jwt}`;
   return headers;
@@ -294,9 +291,6 @@ export interface UiConfig {
   require_nous: boolean;
   write_requires_nous: boolean;
   require_challenge: boolean;
-  /** P36-5: may this connection claim an identity by header? Decides whether
-   *  the dashboard must offer the challenge/sign flow. */
-  header_auth_trusted: boolean;
   agent_count: number;
   active_session_count: number;
   version: string;

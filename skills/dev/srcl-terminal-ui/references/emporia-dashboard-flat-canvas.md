@@ -48,12 +48,12 @@ Scoped to **`.e-dashboard-shell`**:
 | Gray sidebar **list rows** (striped) | SRCL `ActionListItem` button-bg + icon gutter | **`FlatRailItem`** + `dashboard-rail.css` — see `references/emporia-dashboard-left-rail.md` |
 | Gray chat bubbles | `--theme-border` fill on `.bubble` | Flat outline-only override |
 | Header still tinted | `e-app-top` `emporia-surface` in polish | flat `!important` on top/header |
-| “Fixed” but UI unchanged | Stale `/ui/` assets | `npm run build:embedded` + hard-refresh |
+| “Fixed” but UI unchanged | Stale the console assets | `npm run build:console` + hard-refresh |
 
 ## Verify
 
 ```bash
-cd emporia/dashboard && npm run build:embedded
+cd emporia/dashboard && npm run build:console
 ```
 
 Spot-check: Overview, Sessions (sidebar + detail), Rooms messages, Listings table **header row** still gray, body flat.

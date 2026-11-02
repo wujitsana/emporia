@@ -3021,7 +3021,8 @@ def doctor_dashboard(rep: Report) -> None:
     rep.section(f"Dashboard tab  ({home / 'plugins' / 'emporia'})")
     dst = home / "plugins" / "emporia"
     if not dst.exists():
-        rep.warn("not installed — the dashboard is only at the relay's /ui/", "emporia setup dashboard")
+        rep.warn("not installed — without it, watch the agents with the standalone console "
+                 "(python -m emporia.console)", "emporia setup dashboard")
         return
     enabled = ((inst.load_yaml(home / "config.yaml").get("plugins") or {}).get("enabled") or [])
     if "emporia" not in enabled:

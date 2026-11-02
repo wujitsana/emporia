@@ -48,12 +48,13 @@ uv sync                    # preferred
 # or: .venv/bin/pip install -e .
 ```
 
-### 2. Dashboard (on this machine's relay at `/ui/`, for development)
+### 2. Dashboard (next to the agents' keys — a relay serves none, P261)
+
+The Hermes dashboard tab (`emporia setup dashboard`), or the standalone console on its own port:
 
 ```bash
-cd dashboard
-npm install
-npm run build:embedded     # empty VITE_RELAY_URL → same-origin /ui/ on relay
+cd dashboard && npm install && npm run build:console
+python -m emporia.console --relay-url http://127.0.0.1:8088   # 127.0.0.1:8089, prints a one-time link
 ```
 
 Dev server (hot reload, separate port):
@@ -64,7 +65,7 @@ VITE_RELAY_URL=http://127.0.0.1:8088 npm run dev
 # → http://localhost:5173
 ```
 
-`installer/install.py --install-profile` writes `dashboard/.env.local` (`VITE_AGENT_ID`, `VITE_RELAY_URL`) for **remote** or **dev** builds; embedded demo uses `build:embedded`.
+`installer/install.py --install-profile` writes `dashboard/.env.local` (`VITE_AGENT_ID`, `VITE_RELAY_URL`) for **dev** builds; the dev server signs in with the agent's challenge, like any dashboard.
 
 ### 3. Relay
 
@@ -111,7 +112,7 @@ place: edit it by hand, or let `emporia relay config` check values first (P199):
 emporia relay config                      # in a terminal: pick a setting, see it, change it
 emporia relay config show                 # every setting, its value, now or at restart
 emporia relay config set OPERATOR_FEE_BPS 300
-emporia relay config unset EMPORIA_SERVE_UI
+emporia relay config unset OPERATOR_FEE_BPS
 emporia relay config --dir ~/emporia-relay   # a hosted relay's folder
 ```
 
@@ -190,8 +191,7 @@ testing, never for a relay other people's agents use.
 
 ### Watching a relay you host
 
-A relay serves no public dashboard (P196): its built-in copy is served only when it listens on
-`127.0.0.1` (development — nothing else can reach it) or with `EMPORIA_SERVE_UI=1`. How its owner
+A relay serves no dashboard at all (P196, P261). How its owner
 watches and runs it depends on what they have — no agent, and no Hermes, needed:
 
 | You have | Watch it with | Change it with |
@@ -308,7 +308,7 @@ curl -s http://127.0.0.1:8088/health | python3 -m json.tool
 # chess_lib: true  → restart relay after uv sync if false
 ```
 
-Open dashboard: **http://127.0.0.1:8088/ui/**
+Open the dashboard: the Hermes tab, or `python -m emporia.console` (it prints a link).
 
 ### Your relay's settings and activity
 
@@ -378,7 +378,7 @@ Use **bootstrap** once per machine for hackathon judges. Use **seed** when you o
 
 | Symptom | Fix |
 |---------|-----|
-| `/ui/` 404 or stale UI | `python installer/install.py --build-dashboard`, hard-refresh browser |
+| Console shows a stale UI | `python installer/install.py --build-dashboard`, restart the console, hard-refresh |
 | Chess board replay flat, `chess_lib: false` | `uv sync`, **restart relay**, re-seed |
 | Seed OK but sessions empty | `EMPORIA_DB_PATH` / `HOME` mismatch — the seed wrote to a different database than the relay reads. See `skills/dev/emporia-dev/references/demo-relay-seed.md` |
 | MCP not registering | `/reload-mcp`, check `config.yaml` `mcp_servers.emporia` and profile `.env` `EMPORIA_AGENT_ID` |

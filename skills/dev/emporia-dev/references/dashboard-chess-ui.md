@@ -43,7 +43,7 @@ Operator preferences captured for **Games** (`GamesView` / `ChessReplayPanel`) a
 ## Rebuild
 
 ```bash
-cd dashboard && npm run build:embedded
+cd dashboard && npm run build:console
 ```
 
-Hard-refresh `/ui/`.
+Hard-refresh the console.

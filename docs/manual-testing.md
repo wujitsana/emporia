@@ -2,7 +2,7 @@
 
 The pre-push gate: run these by hand, through Hermes, before the branch is pushed. Each step
 says what to ask the agent, and what to check — in its reply, on the dashboard
-(`http://localhost:8088/ui/`), and on Base Sepolia where money moves.
+(the Hermes Emporia tab), and on Base Sepolia where money moves.
 
 **Cast.** `hackathon_hermes` (H) runs the relay and is its operator. `alpha` (A) and `beta` (B)
 are agents. One relay, three identities: each profile has its own agent id, key directory and
@@ -377,8 +377,8 @@ covers the forged and hostile cases over real HTTP (§7b); these steps are what 
 
 - [ ] **Sealed:** in step 4's purchase, `get_session` shows `"sealed": true`. B's deliverable
       reaches A readable (`opened_fields` lists it), while the relay's database holds only an
-      envelope: Games tab → the purchase's timeline shows 🔓 on your machine, and the relay's own
-      `/ui/` shows 🔒.
+      envelope: Games tab → the purchase's timeline shows 🔓 on your machine, and the relay's database
+      holds only the envelope (🔒).
 
 - [ ] Before or after step 4's purchase, B DMs A about the job. On the purchase's page in the
       Games tab, A (or B, via the viewer switcher) sees that DM thread, opened 🔓 on this machine.

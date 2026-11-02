@@ -24,4 +24,4 @@ Uniform `div.e-stat-strip__item` for all KPIs including WS `live` — not mix of
 
 ## Verify
 
-`npm run build:embedded`; hard-refresh `8088/ui/`.
+`npm run build:console`; hard-refresh the console.

@@ -56,12 +56,12 @@ Toolbar live: `<LiveMark live />` from `ui/chessControls.tsx`.
 | Amber column on hover at row left edge | Still `ActionListItem` — swap to `FlatRailItem` |
 | Gray row background | `--theme-button-background` on `.text` — FlatRailItem + rail CSS |
 | Segment tabs look like boxes in sidebar | OK if outline-only; ensure `dashboard-chrome.css` loaded |
-| UI unchanged after fix | `npm run build:embedded` + hard-refresh `/ui/` |
+| UI unchanged after fix | `npm run build:console` + hard-refresh the console |
 
 ## Verify
 
 ```bash
-cd emporia/dashboard && npm run build:embedded
+cd emporia/dashboard && npm run build:console
 ```
 
 Spot-check: Games (chess type + live/history + session rows), Agents, DMs thread list — flat canvas, selected row = **left bar only**.

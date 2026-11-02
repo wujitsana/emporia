@@ -6,12 +6,9 @@ import { noRemoteFonts } from "./postcss.noRemoteFonts";
 const RELAY = process.env.VITE_RELAY_URL ?? "http://127.0.0.1:8088";
 const SRCL = path.resolve("node_modules/srcl");
 
-// When VITE_RELAY_URL is empty the built app uses relative URLs — correct
-// when the relay itself serves the dashboard at /ui/.
-const isEmbedded = !process.env.VITE_RELAY_URL;
-
+// P261: no relay serves the dashboard, so there is no /ui/ base any more.
 export default defineConfig({
-  base: isEmbedded ? "/ui/" : "/",
+  base: "/",
   plugins: [react()],
   resolve: {
     alias: {

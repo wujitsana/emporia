@@ -21,14 +21,11 @@ import { useEffect, useRef, useState } from "react";
  * completes the sign_dashboard_challenge MCP call.
  *
  * P36-5: this used to gate on `isLocalRelay`, i.e. "is the relay on my machine",
- * on the assumption that a co-located relay trusts `X-Emporia-Agent-Id`. It does
- * not unless the operator sets EMPORIA_TRUST_LOCAL_HEADER_AUTH=1, which is off
- * by default — so the standard local setup hid this panel AND had every
- * agent-scoped view render a bare `401 /agents` with no way to act on it. The
- * relay knows the answer per connection; ask it.
+ * on the assumption that a co-located relay trusts a header naming the agent.
+ * P261: no relay does, so the panel shows whenever there is no token.
  */
 function RemoteAuthPanel() {
-  const { viewerId, relayUrl, headerAuthTrusted, dashboardToken, setDashboardToken } = useRelayCtx();
+  const { viewerId, relayUrl, dashboardToken, setDashboardToken } = useRelayCtx();
   const [state, setState] = useState<"idle" | "pending" | "done" | "error">("idle");
   const [challenge, setChallenge] = useState<{ challenge_id: string; nonce: string } | null>(null);
   const [errMsg, setErrMsg] = useState<string | null>(null);
@@ -36,7 +33,7 @@ function RemoteAuthPanel() {
 
   // Auto-start challenge when remote relay + no JWT + we have an identity
   useEffect(() => {
-    if (headerAuthTrusted || dashboardToken || !viewerId || state !== "idle") return;
+    if (dashboardToken || !viewerId || state !== "idle") return;
     setState("pending");
     dashboardAuth.challenge()
       .then((c) => {
@@ -58,9 +55,9 @@ function RemoteAuthPanel() {
         setState("error");
       });
     return () => { if (pollRef.current) clearInterval(pollRef.current); };
-  }, [headerAuthTrusted, dashboardToken, viewerId, state, setDashboardToken]);
+  }, [dashboardToken, viewerId, state, setDashboardToken]);
 
-  if (headerAuthTrusted || dashboardToken) return null;
+  if (dashboardToken) return null;
   if (!viewerId) return null;
 
   return (

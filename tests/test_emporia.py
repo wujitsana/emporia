@@ -65,24 +65,17 @@ def _custodial_cards(monkeypatch):
 
 @pytest.fixture
 def client():
-    # client=("127.0.0.1", ...) makes _is_header_auth_trusted() True for these requests
-    # (EMPORIA_TRUST_LOCAL_HEADER_AUTH=1 in this test env), matching the real co-located
-    # single-operator deployment so X-Emporia-Agent-Id header trust applies — tests for the
-    # unauthenticated/cross-agent-rejected paths still pass no header.
+    # P261: a test names its caller with X-Emporia-Agent-Id; conftest's shim turns that
+    # into a real relay token on the way in. Unauthenticated paths pass no header.
     return TestClient(app, client=("127.0.0.1", 51216))
 
 
 @pytest.fixture
 def prod_client():
-    """Simulates the real shipped-default production topology: header-auth trust is OFF
-    (EMPORIA_TRUST_LOCAL_HEADER_AUTH=0 is the default outside this test suite — see
-    test_header_auth_not_trusted_when_flag_off), so X-Emporia-Agent-Id is never trusted and
-    the *only* way to authenticate is the /dashboard/challenge -> Bearer JWT flow (bearer_for
-    below). Tests written against `client` alone exercise a permissive dev-loop configuration
-    that most of the codebase's real security properties never actually run under — this is
-    what closed that gap (see N1 review, "the suite tests a configuration we don't ship")."""
-    from emporia import relay_server
-    with patch.object(relay_server, "_HEADER_AUTH_TRUSTED_HOSTS", set()):
+    """No shortcut at all: conftest's header shim off, so the *only* way to authenticate is
+    the /dashboard/challenge -> Bearer JWT flow (bearer_for below), as for every real caller."""
+    from conftest import header_shim_off
+    with header_shim_off():
         yield TestClient(app, client=("127.0.0.1", 51216))
 
 
@@ -1411,7 +1404,7 @@ def test_dashboard_jwt_survives_simulated_relay_restart():
     cache cleared, forcing a reload from disk) still verifies after."""
     from emporia import identity, relay_server
 
-    with patch.object(relay_server, "_HEADER_AUTH_TRUSTED_HOSTS", set()):
+    with __import__("conftest").header_shim_off():
         client = TestClient(app, client=("127.0.0.1", 51216))
         _register_keyed(client, "restart_jwt_owner")
         token = _dashboard_jwt(client, "restart_jwt_owner")
@@ -12792,10 +12785,9 @@ def test_listen_session_retries_on_rejected_handshake_then_raises_runtime_error(
     asyncio.run(_run())
 
 
-def test_listen_session_sends_agent_id_credential():
-    """N5 review R6: listen_session sent no credential at all, unlike its sibling
-    listen_agent (which appends ?agent_id=) — a participants-only session was
-    unreachable from here regardless of the caller's actual participation."""
+def test_listen_session_sends_no_bare_agent_id():
+    """N5 review R6 had listen_session send ?agent_id=; P261: the relay believes
+    only ?token=, so with no token obtainable nothing at all is sent."""
     import asyncio
     from emporia.agent_sdk import EmporiaAgent
 
@@ -12814,7 +12806,7 @@ def test_listen_session_sends_agent_id_credential():
                     max_retries=0, initial_backoff=0.01)
 
     asyncio.run(_run())
-    assert "agent_id=sdk_ws_creds" in captured_url["url"], captured_url
+    assert "agent_id=" not in captured_url["url"], captured_url
 
 
 def test_listen_session_sends_bearer_token_when_available():
@@ -12844,7 +12836,7 @@ def test_listen_session_sends_bearer_token_when_available():
                     max_retries=0, initial_backoff=0.01)
 
     asyncio.run(_run())
-    assert "agent_id=sdk_ws_token" in captured_url["url"], captured_url
+    assert "agent_id=" not in captured_url["url"], captured_url
     assert "token=jwt.fake.token" in captured_url["url"], captured_url
 
 
@@ -14551,27 +14543,16 @@ def test_inbox_rejects_cross_agent_access(client):
     assert r.status_code == 403
 
 
-def test_header_auth_not_trusted_when_flag_off():
-    """No peer — not the Docker gateway, not even bare loopback — gets header-auth trust
-    when EMPORIA_TRUST_LOCAL_HEADER_AUTH is off.
+def test_a_header_naming_an_agent_is_never_believed():
+    """P261: the relay believes only a bearer token. With header trust, any
+    process on the machine -- another agent, a web page reaching 127.0.0.1 by
+    DNS rebinding -- could claim any agent or the operator. From loopback, from
+    anywhere, the header is now nothing."""
+    from conftest import header_shim_off
 
-    Regression for a real bypass: Docker's userland-proxy rewrites a published port's
-    *external* traffic to arrive at the container with the bridge gateway as its source IP,
-    and (separately) a same-host TLS reverse proxy — the standard production topology — makes
-    every internet request arrive from 127.0.0.1. Either one, trusted unconditionally, means
-    any internet request to an exposed relay is treated as a trusted co-located peer for
-    X-Emporia-Agent-Id header auth. This test suite sets EMPORIA_TRUST_LOCAL_HEADER_AUTH=1
-    globally (so the `client` fixture's co-located-deployment simulation works for every other
-    test), so the off state is simulated directly here via patching
-    _HEADER_AUTH_TRUSTED_HOSTS rather than read from the (now-on) ambient env — a more precise
-    test of the invariant than depending on module import order.
-    """
-    from emporia import relay_server
-
-    gw = relay_server._docker_gateway_ip()
-    for i, source_ip in enumerate(filter(None, [gw, "127.0.0.1"])):
-        agent_id = f"gw_victim_{i}"
-        with patch.object(relay_server, "_HEADER_AUTH_TRUSTED_HOSTS", set()):
+    for i, source_ip in enumerate(["127.0.0.1", "172.17.0.1", "10.0.0.5"]):
+        agent_id = f"hdr_victim_{i}"
+        with header_shim_off():
             client = TestClient(app, client=(source_ip, 51216))
             client.post("/agents/register", json={
                 "agent_id": agent_id, "public_key_hex": _test_pubkey(agent_id), "display_name": agent_id
@@ -14580,13 +14561,12 @@ def test_header_auth_not_trusted_when_flag_off():
             assert r.status_code == 403, f"source_ip={source_ip}"
 
 
-def test_ws_agent_channel_header_auth_also_gated_by_flag():
-    """The same flag-off simulation must also block WS header-style trust (?agent_id=),
-    not just REST — _ws_agent_id() shares _HEADER_AUTH_TRUSTED_HOSTS with _dashboard_agent_id()."""
-    from emporia import relay_server
+def test_a_websocket_agent_id_param_is_never_believed():
+    """P261: the same for a websocket: `?agent_id=` proves nothing; only `?token=`."""
+    from conftest import header_shim_off
 
     _register(TestClient(app, client=("127.0.0.1", 51216)), "ws_flag_owner")
-    with patch.object(relay_server, "_HEADER_AUTH_TRUSTED_HOSTS", set()):
+    with header_shim_off():
         client = TestClient(app, client=("127.0.0.1", 51216))
         with pytest.raises(WebSocketDisconnect):
             with client.websocket_connect("/ws/agent/ws_flag_owner?agent_id=ws_flag_owner"):
@@ -14626,7 +14606,7 @@ def test_dashboard_jwt_round_trip_authenticates_with_header_auth_off():
     """
     from emporia import relay_server
 
-    with patch.object(relay_server, "_HEADER_AUTH_TRUSTED_HOSTS", set()):
+    with __import__("conftest").header_shim_off():
         client = TestClient(app, client=("127.0.0.1", 51216))
         _register_keyed(client, "jwt_owner")
         token = _dashboard_jwt(client, "jwt_owner")
@@ -14641,7 +14621,7 @@ def test_dashboard_jwt_round_trip_authenticates_with_header_auth_off():
 def test_dashboard_jwt_rejects_wrong_key_signature():
     from emporia import relay_server
 
-    with patch.object(relay_server, "_HEADER_AUTH_TRUSTED_HOSTS", set()):
+    with __import__("conftest").header_shim_off():
         client = TestClient(app, client=("127.0.0.1", 51216))
         _register_keyed(client, "jwt_victim")
         from emporia.identity import sign_challenge_nonce
@@ -14660,7 +14640,7 @@ def test_dashboard_jwt_scoped_to_issuing_relay():
     different relay process (or a differently-configured test run) must not verify here."""
     from emporia import relay_server
 
-    with patch.object(relay_server, "_HEADER_AUTH_TRUSTED_HOSTS", set()):
+    with __import__("conftest").header_shim_off():
         client = TestClient(app, client=("127.0.0.1", 51216))
         _register_keyed(client, "jwt_cross_relay")
         token = _dashboard_jwt(client, "jwt_cross_relay")
@@ -21229,41 +21209,16 @@ def test_dashboard_signposts_the_delivery_actions():
         assert tool in src, f"the session panel does not signpost {tool}"
 
 
-def test_ui_config_reports_whether_header_auth_is_trusted():
-    """P36-5: the dashboard hid its sign-in panel whenever the relay looked
-    local (`if (isLocalRelay || dashboardToken) return null`), on the assumption
-    that a co-located relay trusts the `X-Emporia-Agent-Id` header. It does not
-    by default: `EMPORIA_TRUST_LOCAL_HEADER_AUTH` defaults to "0", which leaves
-    `_HEADER_AUTH_TRUSTED_HOSTS` empty so that even 127.0.0.1 is untrusted.
-
-    The out-of-the-box local result was a dashboard with no way to authenticate
-    and no hint that it needed to: every agent-scoped view rendered a raw
-    `401 /agents` banner, forever. The relay knows the answer per-connection and
-    simply never told anyone, so `/ui-config` now says."""
+def test_ui_config_no_longer_speaks_of_header_auth():
+    """P261: there is no header auth to report, so /ui-config does not, and the
+    dashboard's sign-in no longer waits on it."""
     from emporia.relay_server import app
 
     body = TestClient(app).get("/ui-config").json()
-    assert "header_auth_trusted" in body, (
-        "/ui-config must report whether this connection may claim identity by "
-        "header -- it is the only way the dashboard can know to offer sign-in"
-    )
-    assert isinstance(body["header_auth_trusted"], bool)
-
-
-def test_dashboard_gates_signin_on_header_auth_not_on_locality():
-    """P36-5, the client half. `isLocalRelay` answers "is this relay on my
-    machine", which is not the question; the question is "will this relay accept
-    my header". Pinning that the sign-in gate reads the relay's own answer."""
-    src = (
-        Path(__file__).parent.parent / "dashboard" / "src" / "ProfileView.tsx"
-    ).read_text()
-    assert "headerAuthTrusted" in src, (
-        "ProfileView no longer consults the relay's header-auth answer"
-    )
-    assert "if (isLocalRelay || dashboardToken) return null;" not in src, (
-        "the sign-in panel is gated on relay locality again -- that is the P36-5 "
-        "defect: a local relay does not trust header auth by default"
-    )
+    assert "header_auth_trusted" not in body
+    src = (Path(__file__).parent.parent / "dashboard" / "src" / "ProfileView.tsx").read_text()
+    assert "headerAuthTrusted" not in src
+    assert "if (isLocalRelay || dashboardToken) return null;" not in src
 
 
 def test_dashboard_game_types_match_the_relay_module_registry():
@@ -26736,47 +26691,6 @@ def test_one_unreconcilable_row_does_not_take_the_rest_of_the_sweep_with_it(
 # failing halfway through building a 402 challenge". These are the places that
 # don't.
 # ---------------------------------------------------------------------------
-
-
-def test_the_front_door_explains_itself_when_the_dashboard_is_not_built(client):
-    """`GET /` is the first URL anyone opens against a new relay, and it
-    redirected — unconditionally — to `/ui/`, which is only mounted when
-    `dashboard/dist` exists. The documented install is two steps ("Build once
-    with: cd dashboard && npm run build"), so between them the relay is healthy,
-    serving, and its front door 307s into a bare `{"detail":"Not Found"}`.
-
-    Reproduced by starting a real relay with `dist` moved aside. Pinned here at
-    the handler, because the mount itself is decided at import time and the
-    redirect is the half that can still answer usefully at request time.
-    """
-    from pathlib import Path as _Path
-
-    from emporia import relay_server as rs
-
-    # P196: a relay serves its dashboard only on this machine; this suite may
-    # itself run in a container, where it would not.
-    monkeypatch_serves = patch.object(rs, "serves_dashboard", return_value=True)
-    monkeypatch_serves.start()
-    try:
-        r = client.get("/", follow_redirects=False)
-    finally:
-        monkeypatch_serves.stop()
-    assert r.status_code in (307, 308), r.text
-    assert r.headers["location"] == "/ui/", r.headers
-
-    with patch.object(rs, "_DASHBOARD_DIST", _Path("/nonexistent/dashboard/dist")), \
-         patch.object(rs, "serves_dashboard", return_value=True):
-        r = client.get("/", follow_redirects=False)
-    assert r.status_code == 200, (
-        f"with no dashboard build there is nothing to redirect *to* — answering "
-        f"307 sends the operator to a 404 that explains nothing; got {r.status_code}"
-    )
-    body = r.text.lower()
-    assert "npm run build" in body, (
-        f"the response has to name the command that fixes it, or it is just a "
-        f"prettier dead end: {r.text[:200]}"
-    )
-    assert "/health" in r.text, "and point at what does work, so the relay reads as alive"
 
 
 def test_an_unreachable_identity_provider_degrades_instead_of_500ing():

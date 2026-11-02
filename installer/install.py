@@ -18,7 +18,7 @@ Usage (run from emporia repo root or inside a Hermes profile):
 
     python installer/install.py --seed-only          # re-populate demo content (starts relay if needed)
     python installer/install.py --start-relay        # uv sync + background uvicorn
-    python installer/install.py --build-dashboard    # npm install + build:embedded → /ui/
+    python installer/install.py --build-dashboard    # npm install + build:console (python -m emporia.console)
 
     # ── Other ──
     python installer/install.py --create-profile scout_agent
@@ -1052,12 +1052,9 @@ def install_into_profile(
     env_lines, c4 = _set_env_line(env_lines, "EMPORIA_DB_PATH", db_path)
     env_lines, c5 = _set_env_line(env_lines, "EMPORIA_KEYS_DIR", runtime_env["EMPORIA_KEYS_DIR"])
     env_lines, _ = _set_env_line(env_lines, "EMPORIA_DOTENV", str(profile_dir / ".env"))  # P109
-    if _is_local_relay(relay_url):
-        # Single-operator co-located deployment — the case EMPORIA_TRUST_LOCAL_HEADER_AUTH
-        # exists for. Without it, the embedded dashboard's baked-in VITE_AGENT_ID header auth
-        # (write_dashboard_env(), below) gets refused by the relay's default-off trust set.
-        # Never written for a remote relay_url — that's someone else's relay to configure.
-        env_lines, _ = _set_env_line(env_lines, "EMPORIA_TRUST_LOCAL_HEADER_AUTH", "1")
+    # P261: and no EMPORIA_TRUST_LOCAL_HEADER_AUTH any more — the relay believes
+    # only a bearer token; an older line is taken out.
+    env_lines = [ln for ln in env_lines if not ln.startswith("EMPORIA_TRUST_LOCAL_HEADER_AUTH=")]
     env_lines, _ = _set_env_line(env_lines, "STRIPE_API_VERSION", stripe_api_version or os.getenv("STRIPE_API_VERSION", "2026-04-22.preview"))
     if stripe_secret_key:
         env_lines, _ = _set_env_line(env_lines, "STRIPE_SECRET_KEY", stripe_secret_key)
@@ -1423,29 +1420,25 @@ def link_cli(bin_dir: Path | None = None) -> Path | None:
     return link
 
 
-def _build_dashboard_embedded(*, dry_run: bool = False, relay_url: str = "") -> None:
-    """npm install + build:embedded so relay serves /ui/."""
+def _build_dashboard_console(*, dry_run: bool = False) -> None:
+    """npm install + build:console for the standalone console (P261: a relay
+    serves no dashboard; the console runs next to the agents' keys)."""
     dash = _EMPORIA_DIR / "dashboard"
     if not dash.is_dir():
         print("  dashboard/ not found — skip build")
         return
     if dry_run:
-        print("  [dry-run] Would run: cd dashboard && npm install && npm run build:embedded")
+        print("  [dry-run] Would run: cd dashboard && npm install && npm run build:console")
         return
     npm = shutil.which("npm")
     if not npm:
-        print("  npm not on PATH — install Node.js or run: cd dashboard && npm run build:embedded")
+        print("  npm not on PATH — install Node.js or run: cd dashboard && npm run build:console")
         return
-    print("Building embedded dashboard (relay /ui/)…")
+    print("Building the console dashboard…")
     subprocess.run([npm, "install"], cwd=str(dash), check=False)
-    r = subprocess.run([npm, "run", "build:embedded"], cwd=str(dash), check=False)
+    r = subprocess.run([npm, "run", "build:console"], cwd=str(dash), check=False)
     if r.returncode == 0:
-        # P64: the URL the caller asked for, not the default. `--local-demo
-        # --relay-url http://127.0.0.1:8099` printed "open http://localhost:8088/ui/"
-        # and then, three lines later, the correct 8099 — so the first thing an
-        # operator reads is the one address that does not work.
-        print("  Dashboard built → open {}/ui/ after relay is up".format(
-            (relay_url or DEFAULT_RELAY_URL).rstrip("/")))
+        print("  Dashboard built → run: python -m emporia.console (it prints a link)")
     else:
         print("  Dashboard build failed — see output above")
 
@@ -1880,7 +1873,7 @@ def main() -> None:
     parser.add_argument("--start-relay", action="store_true",
                         help="Sync Python deps and start local relay (background uvicorn)")
     parser.add_argument("--build-dashboard", action="store_true",
-                        help="npm install + build:embedded for relay /ui/")
+                        help="npm install + build:console for the standalone console")
     parser.add_argument("--x402-pay-networks", default="",
                         help="With --create-profile: CAIP-2 networks the agent's x402 wallet may "
                              "pay on, e.g. eip155:84532 (unset = pays on none)")
@@ -1955,13 +1948,13 @@ def main() -> None:
         if not args.dry_run:
             _ensure_project_dependencies(dry_run=False)
         if args.build_dashboard:
-            _build_dashboard_embedded(dry_run=args.dry_run, relay_url=args.relay_url)
+            _build_dashboard_console(dry_run=args.dry_run)
         if args.start_relay:
             if args.dry_run:
                 print("  [dry-run] Would start relay")
             elif _start_relay(args.relay_url):
                 print(f"  Relay ready: {args.relay_url.rstrip('/')}/health")
-                print(f"  Dashboard:   {args.relay_url.rstrip('/')}/ui/")
+                print(f"  Dashboard:   python -m emporia.console --relay-url {args.relay_url.rstrip('/')}")
             else:
                 print("  Relay failed to start")
                 sys.exit(1)

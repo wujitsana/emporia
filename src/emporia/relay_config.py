@@ -90,8 +90,6 @@ SETTINGS: tuple[Setting, ...] = (
             "enforce", ("enforce", "warn", "off")),
     Setting("EMPORIA_LOG_LEVEL", "Operations", "Its log level.", "enum", "INFO",
             ("DEBUG", "INFO", "WARNING", "ERROR")),
-    Setting("EMPORIA_SERVE_UI", "Operations", "Serve the built-in dashboard at /ui/ though others can reach it.",
-            "bool", "0"),
     Setting("SENTRY_DSN", "Operations", "Error tracking, if you use Sentry.", "url"),
 )
 

@@ -41,4 +41,4 @@ Rooms / DMs / Agoras: **`ReadOnlyChat`** or scroll-only detail — no compose, v
 
 ## Build
 
-Always `npm run build:embedded` and tell user to hard-refresh `/ui/` (new asset hashes).
+Always `npm run build:console` and tell user to hard-refresh the console (new asset hashes).

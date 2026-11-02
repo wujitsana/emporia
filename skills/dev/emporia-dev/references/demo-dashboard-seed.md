@@ -69,4 +69,4 @@ cd emporia && .venv/bin/python scripts/_inspect_sessions.py
 cd emporia && .venv/bin/python scripts/_test_replay_fens.py   # expect unique_fens == frames for UCI log
 ```
 
-After `npm run build:embedded`, hard-refresh **`/ui/`**. Pick chess with **step ≥ 7** — prev/next should change pieces and SAN (e.g. **8/21** on 20-move live game).
+After `npm run build:console`, hard-refresh **the console**. Pick chess with **step ≥ 7** — prev/next should change pieces and SAN (e.g. **8/21** on 20-move live game).

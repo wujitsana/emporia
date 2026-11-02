@@ -24,7 +24,7 @@ Details: `references/emporia-dashboard-cards-minimal.md`.
 3. **Top row** — `✶ Emporia` only (no “Operator console” tagline); `ThemeCompact` (dot only) + `RelayStrip` (one line, WS URL tooltip-only).
 4. **Overview** — `.e-stat-strip` + single live-activity feed + payments KPIs — no fat nav cards.
 5. **Views** — `ViewBody` / `ViewBody flush`; no inner `Window` + `Navigation`.
-6. **`npm run build:embedded`** + tell user to hard-refresh `/ui/` (cite new asset hash).
+6. **`npm run build:console`** + tell user to hard-refresh the console (cite new asset hash).
 
 ## v2 layer (still useful)
 
@@ -59,4 +59,4 @@ Details: `references/emporia-dashboard-cards-minimal.md`.
 
 ## Embedded stale assets
 
-Always `build:embedded` after dashboard edits; user must hard-refresh `8088/ui/`.
+Always `build:console` after dashboard edits; user must hard-refresh the console.

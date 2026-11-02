@@ -6,7 +6,7 @@ Pair with **`dogfood`** (browser) and **`srcl-terminal-ui`** SKILL.md. Path: `em
 
 | Mode | URL | Notes |
 |------|-----|--------|
-| Embedded (typical) | `http://127.0.0.1:8088/ui/` | After `npm run build:embedded`; relay mounts `dashboard/dist` (no copy step) |
+| Embedded (typical) | `the console (http://127.0.0.1:8089, python -m emporia.console)` | After `npm run build:console`; relay mounts `dashboard/dist` (no copy step) |
 | Vite dev | `http://127.0.0.1:5173/` | `npm run dev`; proxy to relay |
 
 ## Dogfood sitemap (load bundled `dogfood` skill)
@@ -27,7 +27,7 @@ After each section: `browser_console(clear=true)`. If Chrome missing: `agent-bro
 
 ```bash
 cd emporia/dashboard
-npm run build:embedded
+npm run build:console
 npm run lint
 curl -s http://127.0.0.1:8088/health | jq .
 for p in /listings /sessions /rooms /events /agents /agoras/topics '/dm?agent_id=dashboard'; do
@@ -68,8 +68,8 @@ Mechanical extract script pitfall: when regex-replacing `function Foo` → `expo
 
 After UX work, confirm **perceptible** change:
 
-1. `npm run build:embedded` — note new `dist/assets/index-*.js` and `index-*.css` filenames.
-2. Hard-refresh `http://127.0.0.1:8088/ui/` (or private window).
+1. `npm run build:console` — note new `dist/assets/index-*.js` and `index-*.css` filenames.
+2. Hard-refresh `the console (http://127.0.0.1:8089, python -m emporia.console)` (or private window).
 3. Overview: hero stat row + panel cards + grouped sidebar with count pills — if missing, load `references/emporia-dashboard-ui-refresh.md` and apply v2 checklist (structural-only fixes are insufficient).
 
 | Pri | Item | Status |

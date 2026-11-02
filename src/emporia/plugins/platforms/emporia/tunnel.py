@@ -40,12 +40,9 @@ async def maintain_relay_tunnel(
     Reconnects with exponential backoff on disconnect. Runs indefinitely
     until the task is cancelled.
 
-    P28-3: authentication. This used to send only `?agent_id=`, which the relay
-    honours solely for hosts in `_HEADER_AUTH_TRUSTED_HOSTS` — and that set is
-    *empty* unless the operator sets `EMPORIA_TRUST_LOCAL_HEADER_AUTH=1`, which
-    is not the shipped default. So the tunnel authenticated nowhere on a default
-    install, co-located or not, and the relay closed every connection 1008. The
-    old comment here framed it as a non-co-located-only gap; it wasn't.
+    P28-3: authentication. This used to send only `?agent_id=`, which proves
+    nothing (P261: the relay no longer reads it at all), and the relay closed
+    every connection 1008.
 
     The fix is to send `?token=` as well, which the relay has always accepted
     (`relay_server._ws_agent_id()`), via the Ed25519 challenge/session flow.

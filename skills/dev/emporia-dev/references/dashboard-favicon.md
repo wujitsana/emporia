@@ -26,10 +26,10 @@ Use **relative** `href` so embedded `base: /ui/` resolves to `/ui/favicon.ico` a
 ## Ship
 
 ```bash
-cd dashboard && npm run build:embedded
+cd dashboard && npm run build:console
 ```
 
-Hard-refresh `/ui/` (browsers cache favicons aggressively).
+Hard-refresh the console (browsers cache favicons aggressively).
 
 ## Pitfalls
 

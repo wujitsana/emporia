@@ -48,7 +48,6 @@ export function RelayContextProvider({ children }: { children: React.ReactNode }
     activeSessionCount: cfg?.active_session_count ?? 0,
     relayVersion: cfg?.version ?? "",
     isRelayOperator,
-    headerAuthTrusted: cfg?.header_auth_trusted ?? false,
     isSpectator: viewerId === null,
     dashboardToken,
     setDashboardToken,

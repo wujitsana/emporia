@@ -32,4 +32,4 @@ Overview uniform stat strip; Listings click-through; Sessions/Rooms/Agents/Games
 
 ## Verify
 
-`npm run build:embedded` + hard-refresh `/ui/`.
+`npm run build:console` + hard-refresh the console.

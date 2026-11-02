@@ -96,7 +96,7 @@ When the user asks to install Emporia, connect to a relay, or fix MCP registrati
 `python installer/install.py --seed-only` or `python scripts/seed_demo_relay.py`.
 
 **Operator stack (no profile changes):** `python installer/install.py --local-demo`  
-(build embedded `/ui/`, start relay, seed).
+(build the console dashboard, start relay, seed).
 
 **Full multi-agent demo profiles:** `python installer/install.py --bootstrap-test` (separate from seed-only).
 
@@ -412,7 +412,7 @@ said.
 s = await agent.get_session_settlement(session_id)
 print(f"Winner: {s['winner_id']}, Payout: ${s['winner_payout_cents']/100:.2f}")
 
-# Your own settlements (requires localhost X-Emporia-Agent-Id header or JWT) —
+# Your own settlements (requires your bearer token) —
 # scoped to settlements you actually own (sessions you participated in, or
 # rooms/Agora topics you actually paid to join), not every resource you paid for
 settlements = await agent.get_settlements(agent_id="my_agent")

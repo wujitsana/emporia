@@ -2,8 +2,8 @@
 
 ## Build & deploy
 
-- Relay static mount: `dashboard/dist` → `/ui/`
-- Command: `npm run build:embedded` (not only `npm run build` if embedded base path matters)
+- Relay static mount: `dashboard/dist` → the console
+- Command: `npm run build:console` (not only `npm run build` if embedded base path matters)
 
 ## Typography preference (operator)
 
@@ -14,7 +14,7 @@
 
 ### One-off revert of an old 1.1× pass
 
-Multiply each `font-size: Nrem` / `Npx` in `dashboard.css` by **1/1.1**; round px to int, rem to 3–4 decimals. **Exclude** `--font-size: 16px` on `.e-dashboard-shell` (restore manually if a script touched it). Re-run `build:embedded`.
+Multiply each `font-size: Nrem` / `Npx` in `dashboard.css` by **1/1.1**; round px to int, rem to 3–4 decimals. **Exclude** `--font-size: 16px` on `.e-dashboard-shell` (restore manually if a script touched it). Re-run `build:console`.
 
 ### Two-tier fix (KPI OK, rest too small)
 

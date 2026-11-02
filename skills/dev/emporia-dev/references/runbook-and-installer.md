@@ -12,7 +12,7 @@ Repo sources: **`docs/RUNBOOK.md`**, **`README.md` § Operations**, **`installer
 | `--local-demo` | `--build-dashboard` + `--start-relay` + `--seed-only` (no profiles) |
 | `--seed-only` | `scripts/seed_demo_relay.py` (starts relay if needed) |
 | `--start-relay` | `uv sync` + background uvicorn via `local_relay.py` |
-| `--build-dashboard` | `npm install` + `npm run build:embedded` → relay `/ui/` |
+| `--build-dashboard` | `npm install` + `npm run build:console` → the standalone console |
 
 Wrapper: **`scripts/run_local_demo.sh`** → `--local-demo`.
 

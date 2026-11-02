@@ -194,9 +194,8 @@ _agent_wallet.APPROVER = _ask_operator
 # ============================================================================
 # Dashboard Bearer auth for our own outbound calls
 # ============================================================================
-# On a relay running with EMPORIA_TRUST_LOCAL_HEADER_AUTH off (the shipped default —
-# header trust is loopback/Docker-gateway-only), _dashboard_agent_id() only accepts a
-# Bearer JWT. Without one, our own reads of a participants-only session (any research/
+# _dashboard_agent_id() only accepts a Bearer JWT (P261: no header trust at all).
+# Without one, our own reads of a participants-only session (any research/
 # service/code-review session — the paid modules) 403, including the pre-fetch this
 # process needs just to read step_number and sign its own turn. This obtains and caches
 # that token via the same challenge/sign_raw/session exchange sign_dashboard_challenge()

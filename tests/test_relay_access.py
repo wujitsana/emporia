@@ -138,16 +138,12 @@ def test_an_older_database_is_copied_aside_before_it_is_upgraded(tmp_path, monke
     assert rs._snapshot_before_upgrade(conn) is None                # current: nothing to keep
 
 
-def test_a_hosted_relay_serves_no_dashboard(client, monkeypatch):
-    """P196: the dashboard runs next to the agents' keys, never as a public page."""
-    from emporia import relay_server as rs
-    monkeypatch.setattr(rs, "RELAY_HOST", "0.0.0.0")               # as in the Docker image
-    monkeypatch.delenv("EMPORIA_SERVE_UI", raising=False)
-    assert not rs.serves_dashboard()
+def test_a_relay_serves_no_dashboard(client):
+    """P196/P261: the dashboard runs next to the agents' keys -- the Hermes tab or
+    the standalone console -- never from a relay, on any address."""
     r = client.get("/", follow_redirects=False)
     assert r.status_code == 200 and "no page to browse" in r.text
-    monkeypatch.setenv("EMPORIA_SERVE_UI", "1")
-    assert rs.serves_dashboard()
+    assert client.get("/ui/").status_code == 404
 
 
 def test_a_relay_taking_real_money_keeps_its_keys_out_of_every_agents_profile(tmp_path, monkeypatch):

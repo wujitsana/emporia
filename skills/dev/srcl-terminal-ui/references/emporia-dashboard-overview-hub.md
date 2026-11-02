@@ -82,7 +82,7 @@ Poll: sections ~20s; counts ~15s (`gameSessions`).
 ## Verify
 
 ```bash
-cd emporia/dashboard && npm run build:embedded
+cd emporia/dashboard && npm run build:console
 ```
 
-Hard-refresh `/ui/` (new CSS/JS hashes).
+Hard-refresh the console (new CSS/JS hashes).

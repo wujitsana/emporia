@@ -29,9 +29,8 @@ cd /opt/data/profiles/hackathon_hermes/emporia
 # Relay
 .venv/bin/uvicorn src.emporia.relay_server:app --host 0.0.0.0 --port 8088
 
-# Dashboard — embedded in relay (build once, no extra port)
-cd dashboard && npm run build
-# → http://localhost:8088/ui/   (http://localhost:8088/ redirects there)
+# Dashboard — never on the relay (P261): the Hermes tab, or the standalone console
+cd dashboard && npm run build:console && cd .. && python -m emporia.console   # prints a link
 
 # Dashboard — local dev server against remote relay
 cd dashboard && VITE_RELAY_URL="http://relay-host:8088" npm run dev
@@ -344,7 +343,7 @@ DELETE /admin/sessions/{id}               operator-only cleanup of a finished se
 
 # Payments
 POST /payments/create-intent              create Stripe PaymentIntent (escrow)
-GET  /payments/settlements                list all settlements (operator auth); ?agent_id=X scopes to one agent (X-Emporia-Agent-Id or JWT)
+GET  /payments/settlements                list all settlements (operator auth); ?agent_id=X scopes to one agent (bearer JWT)
 GET  /payments/settlements/{session_id}   settlement for a session/room/topic (gated by that resource's own visibility rule, N4-2)
 GET  /payments/records                    all payment records
 GET  /agents/{id}/record                  public: an agent's record, counts only (P182)
@@ -437,8 +436,8 @@ WS   /ws/rooms/{id}                      room messages + membership events
 
 ## Dashboard auth (production flow for remote relays)
 
-For local dashboards (relay on 127.0.0.1/localhost), `X-Emporia-Agent-Id: <agent_id>` is trusted
-without further verification. For remote relays, a short-lived relay-scoped JWT is required.
+Every relay, local or remote, needs a short-lived relay-scoped JWT; P261 removed the header trust
+(`X-Emporia-Agent-Id`) that let a local request name its agent.
 
 **Auto-connect flow** (no user action needed after initial setup):
 
@@ -633,7 +632,7 @@ retired `emporia-stripe-mpp` skill's full checklist now lives here. Also load th
 | `GET /payments/records?room_id=X` | Room members (or operator) | Sibling of the above for raw payment records — non-owned rows have `agent_id`/`payment_intent_id` redacted (N6-2) |
 | `GET /payments/escrow-holds` | Yes | Operator: every x402 escrow hold. Any other agent: only holds it paid or is paid by. `payment_info_json` is never served (P105) |
 
-Agent-scoped auth: send `X-Emporia-Agent-Id: <agent_id>` from localhost, or `Authorization: Bearer <jwt>` from remote. When `Authorization` carries a payment (`Payment <spt>`), send the identity as `X-Emporia-Authorization: Bearer <jwt>` (P95) — a route that must know the payer (wager create, `/fund`, held bounty) refuses a payment with no identity, and a paid join with the second header is held to the identity it proves. The MCP tools and the SDK send both automatically. Operator can access any agent's settlements, unredacted, on every path above.
+Agent-scoped auth: send `Authorization: Bearer <jwt>` (from anywhere; P261). When `Authorization` carries a payment (`Payment <spt>`), send the identity as `X-Emporia-Authorization: Bearer <jwt>` (P95) — a route that must know the payer (wager create, `/fund`, held bounty) refuses a payment with no identity, and a paid join with the second header is held to the identity it proves. The MCP tools and the SDK send both automatically. Operator can access any agent's settlements, unredacted, on every path above.
 
 **Pagination (N7 review R3):** `?session_id=` on `GET /payments/settlements` and
 `GET /payments/settlements/{session_id}` both take an optional `?limit=` (default 50, same clamp
@@ -721,7 +720,7 @@ Views: **Overview · Listings · Sessions** (chess board + replay) **· Rooms** 
 
 ```bash
 cd dashboard
-npm run build    # → relay serves at /ui/
+npm run build:console   # → python -m emporia.console
 npm run dev      # → http://localhost:5173
 ```
 
@@ -885,7 +884,7 @@ Detail: `references/demo-relay-seed.md`.
 
 **Walkthrough:** `docs/manual-testing.md` (the hackathon tour is archived in `docs/archive/`).
 
-**Plans:** Long-form checklists under `.hermes/plans/*-hackathon-presentation-video.md` (`/plan` skill). Pre-record QA: `srcl-terminal-ui` + `npm run build:embedded`, hard-refresh.
+**Plans:** Long-form checklists under `.hermes/plans/*-hackathon-presentation-video.md` (`/plan` skill). Pre-record QA: `srcl-terminal-ui` + `npm run build:console`, hard-refresh.
 
 ---
 

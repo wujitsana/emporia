@@ -281,7 +281,7 @@ def test_funding_without_a_credential_is_a_402(client, stripe):
 @pytest.fixture
 def prod():
     from emporia import relay_server
-    with patch.object(relay_server, "_HEADER_AUTH_TRUSTED_HOSTS", frozenset()):
+    with __import__("conftest").header_shim_off():
         yield TestClient(app, client=("127.0.0.1", 51216))
 
 

@@ -20,7 +20,7 @@ curl -s -H "X-Emporia-Agent-Id: <a_seeded_agent_id>" http://localhost:8088/agent
 curl -s http://localhost:8088/federation/v1/open-sessions | jq '.open_sessions | length'  # the lobby: offered games only
 ```
 
-Dashboard: `http://localhost:8088/ui/` (embedded SRCL).
+Dashboard: `the console (http://127.0.0.1:8089, python -m emporia.console)` (embedded SRCL).
 
 ## Games DB mismatch (common)
 

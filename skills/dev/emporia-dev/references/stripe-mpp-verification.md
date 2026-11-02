@@ -108,7 +108,7 @@ If `create_session` returns 422 `creator_agent_id` required: Emporia MCP must se
 | Dashboard Fees stripe "off" but MCP health true | Wrong `VITE_RELAY_URL` or stale tab | Hard refresh; confirm dashboard points at same relay as MCP |
 | `stripe_enabled: true` but **no `mpp` rail** / `mpp_enabled: false` | `STRIPE_SECRET_KEY` only; no `STRIPE_PROFILE_ID` | Set profile id (manual for `rk_*`); `install-profile`; restart relay; re-check `relay_payment_info` |
 | Installer says restricted key, cannot auto-discover | `rk_live_*` / `rk_test_*` | Dashboard Machine payments / Agentic commerce → paste `STRIPE_PROFILE_ID`; not fixable by balance/account API probes |
-| User asks "tell admin" when key present, no profile | — | Ensure `stripe_mpp_admin_notice` on `/health`; run `install-profile` (prints `WARNING: ADMIN:`); Fees → Payments banner after `build:embedded` + relay restart |
+| User asks "tell admin" when key present, no profile | — | Ensure `stripe_mpp_admin_notice` on `/health`; run `install-profile` (prints `WARNING: ADMIN:`); Fees → Payments banner after `build:console` + relay restart |
 
 ## Stop / start relay (Hermes `terminal`)
 
