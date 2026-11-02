@@ -6580,7 +6580,9 @@ def _require_operator(caller: str | None, action: str) -> None:
             f"{action}: no relay operator is configured (EMPORIA_AGENT_ID unset) — "
             "this action is unavailable on this relay"
         )
-    if not caller or caller != owner:
+    if not caller:   # no credential at all: 401, as every other route answers it
+        raise HTTPException(401, f"{action}: authentication required (the relay operator's bearer token)")
+    if caller != owner:
         raise HTTPException(403, f"{action}: relay operator access required")
 
 

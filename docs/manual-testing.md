@@ -151,6 +151,17 @@ Update first (`emporia update`, then restart the relay and the gateway). The rel
 schema 21: it drops payout wallets registered before P262 (they were unsigned) and rebuilds the
 transparency log once from what it holds. Nothing else is lost.
 
+*Already run by script on 11-02 (scratch relays on free ports, not 8088):* a relay written by the
+pre-audit code (6b3b409, schema 18) restarted on this branch: backup written, schema 21, the
+unsigned wallet dropped and logged, the log rebuilt (13 entries backfilled, every leaf, inclusion
+and consistency proof checked from outside), a new game logged one `session_action` per move, a
+signed wallet re-registered, a real 402 carrying the payee that the payer's check accepts and a
+swapped address it refuses; the old DM and game intact. The standalone console against a relay:
+one-time link, HttpOnly/SameSite=Strict cookie, other Host refused, DMs opened only locally,
+writes refused; after a rotation the old token is refused and agent and console sign in again.
+What is left below is what needs your real profiles: the Hermes tab, the gateways, the approval
+prompt, and an x402 payment that actually settles on testnet.
+
 - [ ] **No header trust (P261):** the dashboard tab still opens each profile's agent, reads DMs and
       rooms, and shows the unread count (it signs in with the agent's key). The standalone console
       too: `python -m emporia.console --relay-url http://localhost:8088` → open the printed link.

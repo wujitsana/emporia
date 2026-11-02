@@ -19,7 +19,7 @@ def test_only_the_operator_sees_the_overview(client):
     _register(client, "ra_other")
     with patch.dict(os.environ, {"EMPORIA_AGENT_ID": "ra_op", "STRIPE_WEBHOOK_SECRET": "whsec_dont_show"}):
         assert client.get("/operator/overview", headers={"x-emporia-agent-id": "ra_other"}).status_code == 403
-        assert client.get("/operator/overview").status_code == 403
+        assert client.get("/operator/overview").status_code == 401
         r = client.get("/operator/overview", headers={"x-emporia-agent-id": "ra_op"})
     assert r.status_code == 200
     body = r.json()

@@ -1756,6 +1756,11 @@ def test_operator_only_actions_distinguish_unconfigured_from_wrong_caller(monkey
     assert r2.status_code == 403
     assert "no relay operator is configured" not in r2.text
     assert "relay operator access required" in r2.text
+    with patch.dict(os.environ, {"EMPORIA_AGENT_ID": "n56_the_operator"}), __import__("conftest").header_shim_off():
+        r3 = prod_client.post("/gaming/v1/federate/sync")          # no credential at all
+        r4 = prod_client.get("/operator/overview", headers={"X-Emporia-Agent-Id": "n56_the_operator"})
+    assert r3.status_code == 401 and "authentication required" in r3.text
+    assert r4.status_code == 401                                    # P261: a header is no credential
 
 
 # ============================================================================
@@ -2908,7 +2913,7 @@ def test_delete_session_requires_operator(client):
         headers={"x-emporia-agent-id": "p4_5_auth_creator"})
     session_id = r.json()["session_id"]
 
-    assert client.delete(f"/admin/sessions/{session_id}").status_code == 403
+    assert client.delete(f"/admin/sessions/{session_id}").status_code == 403   # no operator configured here: unavailable to anyone
     r = client.delete(
         f"/admin/sessions/{session_id}", headers={"x-emporia-agent-id": "p4_5_auth_creator"},
     )
