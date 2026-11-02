@@ -21,30 +21,55 @@ print("FILTER=" + cli.choose("Find it", opts, 0))
 '''
 
 
-def _drive(down: str) -> dict:
-    steps = [down + down + "\r", "\x1b", "y", down + " \r", "/10\r"]
+def _pty_run(script: str, steps: list[tuple[str, str]], deadline: float = 20.0) -> str:
+    """Run `script` under a pseudo-terminal; for each (prompt, keys) wait until
+    `prompt` is on screen, then type `keys`. Waiting for the prompt rather than a
+    fixed delay keeps two keys from arriving as one (Esc then y read as Alt-y)
+    on a loaded machine; the deadline makes a missed key fail, not hang."""
     pid, fd = pty.fork()
     if pid == 0:
         os.environ.update(TERM="xterm", EMPORIA_NO_DOTENV="1")
         os.environ.pop("EMPORIA_PLAIN_MENUS", None)
-        os.execv(sys.executable, [sys.executable, "-c", SCRIPT])
-    out = b""
+        os.execv(sys.executable, [sys.executable, "-c", script])
+    out, seen, end = b"", 0, time.time() + deadline
 
-    def drain(seconds):
+    def read(wait=0.05) -> bool:
         nonlocal out
-        end = time.time() + seconds
+        if select.select([fd], [], [], wait)[0]:
+            try:
+                out += os.read(fd, 65536)
+            except OSError:
+                return False
+        return True
+
+    try:
+        for prompt, keys in steps:
+            while prompt.encode() not in out[seen:]:
+                if time.time() > end or not read():
+                    pytest.fail(f"never saw {prompt!r}; screen ended: {out[-400:].decode(errors='replace')!r}")
+            seen = out.index(prompt.encode(), seen) + len(prompt)
+            time.sleep(0.15)                  # let the menu finish drawing and start reading
+            os.write(fd, keys.encode())
         while time.time() < end:
-            if select.select([fd], [], [], 0.05)[0]:
-                try:
-                    out += os.read(fd, 65536)
-                except OSError:
-                    return
-    for keys in steps:
-        drain(0.6)
-        os.write(fd, keys.encode())
-    drain(1.5)
-    os.waitpid(pid, 0)
-    lines = out.decode(errors="replace").replace("\r", "\n").split("\n")
+            if os.waitpid(pid, os.WNOHANG)[0]:
+                while select.select([fd], [], [], 0.05)[0] and read(0):
+                    pass
+                return out.decode(errors="replace")
+            read()
+        pytest.fail(f"the menu never exited; screen ended: {out[-400:].decode(errors='replace')!r}")
+    finally:
+        try:
+            os.kill(pid, 9)
+            os.waitpid(pid, 0)
+        except (ProcessLookupError, ChildProcessError):
+            pass
+        os.close(fd)
+
+
+def _drive(down: str) -> dict:
+    text = _pty_run(SCRIPT, [("Which one?", down + down + "\r"), ("Again?", "\x1b"), ("Sure?", "y"),
+                             ("Which ones?", down + " \r"), ("Find it", "/10\r")])
+    lines = text.replace("\r", "\n").split("\n")
     return dict(ln.strip().split("=", 1) for ln in lines if ln.strip().split("=", 1)[0] in
                 ("PICK", "BACK", "YES", "MANY", "FILTER"))
 
@@ -88,30 +113,8 @@ print("SEEN=" + repr(seen))
 
 def test_esc_in_a_wizard_goes_back_a_question_with_the_answer_kept():
     """P213: Esc on "Sure?" returns to "Colour?" with Green preselected; ↓ makes it Blue."""
-    pid, fd = pty.fork()
-    if pid == 0:
-        os.environ.update(TERM="xterm", EMPORIA_NO_DOTENV="1")
-        os.environ.pop("EMPORIA_PLAIN_MENUS", None)
-        os.execv(sys.executable, [sys.executable, "-c", WIZARD])
-    out = b""
-    for keys in ["\x1bOB\r", "\x1b", "\x1bOB\r", "y"]:      # Green · Esc · (Green)↓Blue · yes
-        end = time.time() + 0.7
-        while time.time() < end:
-            if select.select([fd], [], [], 0.05)[0]:
-                try:
-                    out += os.read(fd, 65536)
-                except OSError:
-                    break
-        os.write(fd, keys.encode())
-    end = time.time() + 1.5
-    while time.time() < end:
-        if select.select([fd], [], [], 0.05)[0]:
-            try:
-                out += os.read(fd, 65536)
-            except OSError:
-                break
-    os.waitpid(pid, 0)
-    text = out.decode(errors="replace")
+    text = _pty_run(WIZARD, [("Colour?", "\x1bOB\r"), ("Sure?", "\x1b"),       # Green · Esc
+                             ("Colour?", "\x1bOB\r"), ("Sure?", "y")])        # (Green)↓Blue · yes
     assert "SEEN=[('blue', True)]" in text, text[-400:]
     assert "← back" in text
     assert text.count("HEADER-LINE") == 1                    # P216: not printed again on going back
@@ -156,26 +159,6 @@ cli._TTY = True
 print("EARLIER OUTPUT")
 cli.choose("Pick one", [("a", "Alpha"), ("b", "Beta")])
 '''
-    pid, fd = pty.fork()
-    if pid == 0:
-        os.environ.update(TERM="xterm", EMPORIA_NO_DOTENV="1")
-        os.environ.pop("EMPORIA_PLAIN_MENUS", None)
-        os.execv(sys.executable, [sys.executable, "-c", script])
-    out = b""
-    for keys in ["\x1b[B\r"]:
-        end = time.time() + 0.7
-        while time.time() < end:
-            if select.select([fd], [], [], 0.05)[0]:
-                out += os.read(fd, 65536)
-        os.write(fd, keys.encode())
-    end = time.time() + 1.0
-    while time.time() < end:
-        if select.select([fd], [], [], 0.05)[0]:
-            try:
-                out += os.read(fd, 65536)
-            except OSError:
-                break
-    os.waitpid(pid, 0)
-    text = out.decode(errors="replace")
+    text = _pty_run(script, [("Pick one", "\x1b[B\r")])
     assert "\x1b[?1049h" not in text and "\x1b[2J" not in text          # no full-screen takeover
     assert "EARLIER OUTPUT" in text and "Pick one → Beta" in text
