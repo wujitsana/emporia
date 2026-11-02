@@ -619,10 +619,17 @@ class EmporiaAgent:
         a spending key: an autonomous agent should have to say, at each site,
         that this particular request is worth money.
         """
+        from datetime import UTC, datetime
+
+        from emporia.identity import sign
+        from emporia.wire import signed_session_join_payload
+        at = datetime.now(UTC).isoformat()       # P272: the join, signed by this agent
         body = {
             "agent_id": self.agent_id,
             "agent_gateway_url": gateway_url,
             "payment_intent_id": payment_intent_id,
+            "at": at,
+            "signature": sign(signed_session_join_payload(session_id, self.agent_id, at), self.profile_id),
         }
         # P95: the payment and the payer's identity travel together.
         resp = await self._bearer_request(

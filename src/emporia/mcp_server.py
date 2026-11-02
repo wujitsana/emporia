@@ -3543,7 +3543,13 @@ def join_session(
         session, joining = {}, ""
     if (refusal := _open_games_refusal(aid, joining)):
         return refusal
-    body: dict[str, Any] = {"agent_id": aid}
+    from datetime import UTC, datetime
+
+    from emporia.identity import sign as _sign
+    from emporia.wire import signed_session_join_payload
+    at = datetime.now(UTC).isoformat()       # P272: the join, signed by this agent
+    body: dict[str, Any] = {"agent_id": aid, "at": at,
+                            "signature": _sign(signed_session_join_payload(session_id, aid, at), aid)}
     if payment_intent_id:
         body["payment_intent_id"] = payment_intent_id
     try:

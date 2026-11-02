@@ -917,6 +917,8 @@ def init_db() -> None:
                 agent_id TEXT NOT NULL,
                 joined_at TEXT NOT NULL,
                 stake_paid INTEGER NOT NULL DEFAULT 0,
+                join_at TEXT NOT NULL DEFAULT '',
+                join_signature TEXT NOT NULL DEFAULT '',
                 PRIMARY KEY (session_id, agent_id)
             );
 
@@ -1908,6 +1910,8 @@ def _migrate_key_logs(conn: Any) -> None:
                              ("remote_agents", "stable_id", "TEXT NOT NULL DEFAULT ''"),
                              ("remote_agents", "key_log_json", "TEXT NOT NULL DEFAULT '[]'"),
                              ("remote_agents", "encryption_key_at", "TEXT NOT NULL DEFAULT ''"),   # P271
+                             ("participants", "join_at", "TEXT NOT NULL DEFAULT ''"),              # P272
+                             ("participants", "join_signature", "TEXT NOT NULL DEFAULT ''"),
                              ("agent_key_log", "commitment", "TEXT NOT NULL DEFAULT ''"),
                              ("agent_key_log", "recovery_public_key", "TEXT NOT NULL DEFAULT ''"),
                              ("agent_key_log", "compromised_since", "TEXT NOT NULL DEFAULT ''"),
@@ -3456,6 +3460,7 @@ _NON_AGENT_COLUMNS: frozenset[tuple[str, str]] = frozenset({
     ("agent_key_log_superseded", "step_json"), ("agent_key_log_superseded", "superseded_at"),
     ("remote_agents", "stable_id"), ("remote_agents", "key_log_json"),
     ("authorized_agents", "encryption_key_at"), ("remote_agents", "encryption_key_at"),   # P271: times
+    ("participants", "join_at"), ("participants", "join_signature"),                      # P272
     ("room_adverts", "room_id"), ("room_adverts", "stable_id"), ("room_adverts", "public_key_hex"),
     ("room_adverts", "signature"), ("room_adverts", "advertised_at"),
     ("topic_adverts", "topic_id"), ("topic_adverts", "stable_id"), ("topic_adverts", "public_key_hex"),
@@ -4505,12 +4510,13 @@ def load_session(session_id: str) -> dict[str, Any] | None:
     return _session_row_to_dict(row) if row else None
 
 
-def add_participant(session_id: str, agent_id: str, stake_paid: bool = False) -> None:
+def add_participant(session_id: str, agent_id: str, stake_paid: bool = False,
+                    join_at: str = "", join_signature: str = "") -> None:
     with DB_LOCK, get_db() as conn:
         conn.execute(
-            "INSERT OR REPLACE INTO participants (session_id, agent_id, joined_at, stake_paid) "
-            "VALUES (?, ?, ?, ?)",
-            (session_id, agent_id, datetime.now(UTC).isoformat(), int(stake_paid)),
+            "INSERT OR REPLACE INTO participants (session_id, agent_id, joined_at, stake_paid, join_at, "
+            "join_signature) VALUES (?, ?, ?, ?, ?, ?)",
+            (session_id, agent_id, datetime.now(UTC).isoformat(), int(stake_paid), join_at, join_signature),
         )
 
 
@@ -5508,6 +5514,8 @@ class JoinSessionRequest(BaseModel):
     agent_id: str
     agent_gateway_url: str = ""
     payment_intent_id: str | None = None
+    at: str = ""          # P272: the join, signed by the joining agent
+    signature: str = ""   # Ed25519 over wire.signed_session_join_payload()
 
 
 class SubmitActionRequest(BaseModel):

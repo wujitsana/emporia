@@ -76,6 +76,13 @@ A client checks the binding against the signing key it has pinned for the agent,
 served in the same answer. A rotation is followed through the agent's signed key log; a served key
 that is not the pinned one and that log does not lead to makes the client refuse to encrypt (P250).
 
+### 3.5b A session join — `wire.signed_session_join_payload`
+`{type: "emporia:session-join:v1", session_id, agent_id, at}` (P272), signed by the joining agent with
+`at` near the relay's clock, on `POST /sessions/{id}/join` (`at`, `signature`). Required: without it
+the join is refused (401); a wrong one, 403. Kept with the participant row (`join_at`,
+`join_signature`), so the relay's log commits to it and the relay cannot show a player who never
+asked to join. On a join paid with a payment token alone (no sign-in), it is what proves who joined.
+
 ### 3.5a A payout wallet — `wire.signed_payout_wallet_payload`
 `{type: "emporia:payout-wallet:v1", stable_id, network_family, address, at}` (P262), signed with the
 key the agent holds at `at`, which is near the relay's clock (`POST /agents/{id}/x402-wallet`). The

@@ -903,11 +903,13 @@ def _test_pubkey(agent_id: str) -> str:
     harmless while `agent_id` *was* the identity, and became wrong the moment
     identity was anchored to the key — the relay now refuses a second handle on
     a key that already holds one (one key, one identity), so a suite where every
-    agent shares a key models something the relay forbids. Derived from the
-    agent_id so failures stay reproducible.
+    agent shares a key models something the relay forbids.
+
+    P272: a real key now (the agent's test key file), so every test agent can
+    sign what the relay requires signed — a join, among others.
     """
-    import hashlib
-    return hashlib.sha256(f"emporia-test-key:{agent_id}".encode()).hexdigest()
+    from emporia.identity import get_public_key_hex
+    return get_public_key_hex(agent_id)
 
 
 def _register(client, agent_id: str, pubkey: str = None) -> None:
@@ -2098,7 +2100,7 @@ def test_service_session_requires_participant_under_prod_auth(prod_client):
         headers=bearer_for(prod_client, "prodvis_buyer"))
     session_id = r.json()["session_id"]
     prod_client.post(
-        f"/sessions/{session_id}/join", json={"agent_id": "prodvis_seller"},
+        f"/sessions/{session_id}/join", json=__import__("conftest").signed_join_body(session_id, "prodvis_seller"),
         headers=bearer_for(prod_client, "prodvis_seller"),
     )
 
@@ -10858,7 +10860,7 @@ def test_mcp_paid_session_full_turn_under_prod_auth(prod_client):
     assert r.status_code == 200, r.text
     session_id = r.json()["session_id"]
     r = prod_client.post(
-        f"/sessions/{session_id}/join", json={"agent_id": "mcp_e2e_seller"},
+        f"/sessions/{session_id}/join", json=__import__("conftest").signed_join_body(session_id, "mcp_e2e_seller"),
         headers=bearer_for(prod_client, "mcp_e2e_seller"),
     )
     assert r.status_code == 200
@@ -10913,7 +10915,7 @@ def test_mcp_confirm_and_dispute_delivery_use_shared_wire_contract(prod_client):
     assert r.status_code == 200, r.text
     session_id = r.json()["session_id"]
     r = prod_client.post(
-        f"/sessions/{session_id}/join", json={"agent_id": "p10_1_seller"},
+        f"/sessions/{session_id}/join", json=__import__("conftest").signed_join_body(session_id, "p10_1_seller"),
         headers=bearer_for(prod_client, "p10_1_seller"),
     )
     assert r.status_code == 200, r.text
@@ -10951,7 +10953,7 @@ def test_mcp_confirm_and_dispute_delivery_use_shared_wire_contract(prod_client):
         headers=bearer_for(prod_client, "p10_1_buyer"))
     session_id2 = r.json()["session_id"]
     prod_client.post(
-        f"/sessions/{session_id2}/join", json={"agent_id": "p10_1_seller"},
+        f"/sessions/{session_id2}/join", json=__import__("conftest").signed_join_body(session_id2, "p10_1_seller"),
         headers=bearer_for(prod_client, "p10_1_seller"),
     )
     with patch.object(mcp_server, "httpx", adapter):
@@ -11015,7 +11017,7 @@ def test_mcp_confirm_and_dispute_default_rationale_are_single_sourced(prod_clien
         headers=bearer_for(prod_client, "p10_2_buyer"))
     session_id = r.json()["session_id"]
     prod_client.post(
-        f"/sessions/{session_id}/join", json={"agent_id": "p10_2_seller"},
+        f"/sessions/{session_id}/join", json=__import__("conftest").signed_join_body(session_id, "p10_2_seller"),
         headers=bearer_for(prod_client, "p10_2_seller"),
     )
     with patch.object(mcp_server, "httpx", adapter):
@@ -11038,7 +11040,7 @@ def test_mcp_confirm_and_dispute_default_rationale_are_single_sourced(prod_clien
         headers=bearer_for(prod_client, "p10_2_buyer"))
     session_id2 = r.json()["session_id"]
     prod_client.post(
-        f"/sessions/{session_id2}/join", json={"agent_id": "p10_2_seller"},
+        f"/sessions/{session_id2}/join", json=__import__("conftest").signed_join_body(session_id2, "p10_2_seller"),
         headers=bearer_for(prod_client, "p10_2_seller"),
     )
     with patch.object(mcp_server, "httpx", adapter):
@@ -11366,7 +11368,7 @@ def test_mcp_submit_action_uses_shared_wire_contract_and_relay_accepts_it(prod_c
     assert r.status_code == 200, r.text
     session_id = r.json()["session_id"]
     r = prod_client.post(
-        f"/sessions/{session_id}/join", json={"agent_id": "p6_4_mcp_seller"},
+        f"/sessions/{session_id}/join", json=__import__("conftest").signed_join_body(session_id, "p6_4_mcp_seller"),
         headers=bearer_for(prod_client, "p6_4_mcp_seller"),
     )
     assert r.status_code == 200, r.text
@@ -12223,7 +12225,7 @@ def test_mcp_submit_action_returns_structured_error_on_sign_failure(prod_client)
             headers=bearer_for(prod_client, "p11_2_action_buyer"))
         session_id = r.json()["session_id"]
         prod_client.post(
-            f"/sessions/{session_id}/join", json={"agent_id": "p11_2_action_seller"},
+            f"/sessions/{session_id}/join", json=__import__("conftest").signed_join_body(session_id, "p11_2_action_seller"),
             headers=bearer_for(prod_client, "p11_2_action_seller"),
         )
 
@@ -12252,7 +12254,7 @@ def test_mcp_confirm_delivery_returns_structured_error_on_sign_failure(prod_clie
             headers=bearer_for(prod_client, "p11_2_confirm_buyer"))
         session_id = r.json()["session_id"]
         prod_client.post(
-            f"/sessions/{session_id}/join", json={"agent_id": "p11_2_confirm_seller"},
+            f"/sessions/{session_id}/join", json=__import__("conftest").signed_join_body(session_id, "p11_2_confirm_seller"),
             headers=bearer_for(prod_client, "p11_2_confirm_seller"),
         )
         mcp_server.submit_action(
@@ -12289,7 +12291,7 @@ def test_mcp_dispute_delivery_returns_structured_error_on_sign_failure(prod_clie
             headers=bearer_for(prod_client, "p11_2_dispute_buyer"))
         session_id = r.json()["session_id"]
         prod_client.post(
-            f"/sessions/{session_id}/join", json={"agent_id": "p11_2_dispute_seller"},
+            f"/sessions/{session_id}/join", json=__import__("conftest").signed_join_body(session_id, "p11_2_dispute_seller"),
             headers=bearer_for(prod_client, "p11_2_dispute_seller"),
         )
         mcp_server.submit_action(
@@ -13044,8 +13046,8 @@ def test_mpp_402_challenge_issued(client):
     WWW-Authenticate format per https://docs.stripe.com/payments/machine/mpp:
       Payment id="chal_xxx", method="stripe", intent="charge", request="<b64url>"
     """
-    _register(client, "mpp_creator", "a1" * 32)
-    _register(client, "mpp_joiner", "b2" * 32)
+    _register(client, "mpp_creator")
+    _register(client, "mpp_joiner")
 
     with _creator_stake_held():
         r = client.post("/sessions", json={
@@ -15122,7 +15124,7 @@ def test_agents_list_session_and_win_counts_correct(prod_client):
     )
     session_id = r.json()["session_id"]
     r = prod_client.post(
-        f"/sessions/{session_id}/join", json={"agent_id": "agents_count_winner"},
+        f"/sessions/{session_id}/join", json=__import__("conftest").signed_join_body(session_id, "agents_count_winner"),
         headers=bearer_for(prod_client, "agents_count_winner"),
     )
     assert r.status_code == 200
@@ -27393,7 +27395,10 @@ def test_the_membership_rule_is_written_in_exactly_one_place():
 # V22 -> V23 (P271): `authorized_agents.encryption_key_at` and
 # `remote_agents.encryption_key_at`, when the agent signed its encryption key's
 # (v2) binding, so a replaced key is followed forward only.
-_SCHEMA_FINGERPRINT_V23 = "fb72cbacbe5c7999d553d629cd3e1f15540187ead26915eb2446a670a9d23642"
+#
+# V23 -> V24 (P272): `participants.join_at` and `join_signature`, the join the
+# agent signed.
+_SCHEMA_FINGERPRINT_V24 = "4b09fd84cd97035f227f21fac76e9d55fe540af4acea85f78b2ca40cb1923c84"
 
 
 def _schema_fingerprint(db_path) -> tuple[str, int, int]:
@@ -27433,9 +27438,9 @@ def test_a_schema_change_requires_a_version_bump():
     from emporia.relay_server import SCHEMA_VERSION
 
     fingerprint, tables, columns = _schema_fingerprint(_test_db)
-    assert (SCHEMA_VERSION, fingerprint) == (23, _SCHEMA_FINGERPRINT_V23), (
+    assert (SCHEMA_VERSION, fingerprint) == (24, _SCHEMA_FINGERPRINT_V24), (
         f"the schema changed ({tables} tables, {columns} columns) or the version "
-        f"moved. Bump SCHEMA_VERSION *and* update _SCHEMA_FINGERPRINT_V23 — in "
+        f"moved. Bump SCHEMA_VERSION *and* update _SCHEMA_FINGERPRINT_V24 — in "
         f"that order, and never the fingerprint alone.\n"
         f"  code version: {SCHEMA_VERSION}\n  fingerprint:  {fingerprint}"
     )

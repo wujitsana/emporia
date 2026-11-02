@@ -279,7 +279,33 @@ def _shim_request(request):
     if request.url.scheme in ("ws", "wss") and query.get("agent_id") and "token" not in query:
         query["token"] = _token_for(query["agent_id"])
         request.url = request.url.copy_with(query=urlencode(query).encode())
-    return request
+    return _signed_join(request)
+
+
+def _signed_join(request):
+    """P272: a join is signed by the joining agent. A test that joins without
+    signing has it signed here with the agent's test key (header_shim_off()
+    tests the refusals)."""
+    import json as _json
+    import re as _re
+    if request.method != "POST" or not _re.fullmatch(r"/sessions/[^/]+/join", request.url.path):
+        return request
+    try:
+        body = _json.loads(request.read() or b"{}")
+    except ValueError:
+        return request
+    if not isinstance(body, dict) or body.get("signature") or not body.get("agent_id"):
+        return request
+    from datetime import UTC, datetime
+
+    from emporia import identity, wire
+    sid = request.url.path.split("/")[2]
+    body["at"] = datetime.now(UTC).isoformat()
+    body["signature"] = identity.sign(wire.signed_session_join_payload(sid, body["agent_id"], body["at"]),
+                                      body["agent_id"])
+    headers = {k: v for k, v in request.headers.items() if k.lower() != "content-length"}
+    return type(request)(request.method, request.url, headers=headers, content=_json.dumps(body).encode(),
+                         extensions=request.extensions)
 
 
 def _install_header_shim():
@@ -340,3 +366,14 @@ def payee_for(agent_id: str = "", **wallets: str) -> dict:
                 f: {"address": a, "at": at,
                     "signature": identity.sign_payload(priv, wire.signed_payout_wallet_payload(sid, f, a, at))}
                 for f, a in wallets.items()}}
+
+
+def signed_join_body(session_id: str, agent_id: str, **extra) -> dict:
+    """P272: a join body the agent signed, for tests with no shim (prod_client)."""
+    from datetime import UTC, datetime
+
+    from emporia import identity, wire
+    at = datetime.now(UTC).isoformat()
+    return {"agent_id": agent_id, "at": at,
+            "signature": identity.sign(wire.signed_session_join_payload(session_id, agent_id, at), agent_id),
+            **extra}

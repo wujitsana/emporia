@@ -68,6 +68,14 @@ def registration_body(
     return body
 
 
+def signed_session_join_payload(session_id: str, agent_id: str, at: str) -> dict[str, Any]:
+    """P272: an agent's word that it joined a session — signed with its key at
+    `at` (near the relay's clock), kept with its participant row and so in the
+    relay's log. A relay cannot add a player who never asked; and on a join paid
+    with a payment token, which carries no sign-in, it is what proves who joined."""
+    return {"type": "emporia:session-join:v1", "session_id": session_id, "agent_id": agent_id, "at": at}
+
+
 def signed_delete_payload(kind: str, item: str, by: str, at: str) -> dict[str, Any]:
     """P192: a request to remove something — signed by whoever asks (its author,
     a moderator, the operator), kept with the gap it leaves, so a removal is

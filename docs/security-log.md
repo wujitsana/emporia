@@ -4560,3 +4560,9 @@ well under a millisecond; a writer thread with WAL readers is the next step if a
 | No way to rotate the relay's sign-in secret short of deleting a file | `emporia relay rotate-sign-in-secret` |
 | A relay keeps its limits, sign-in floors and sockets in memory; a second process on the same database (`--workers 2`, a second start) would split them silently | A file lock on the database at startup: the second process refuses to start |
 | CORS allowed `localhost:5173` and `:8088` with credentials, though nothing reads the relay from a browser with a credential since P261 | The relay's own URL by default; `EMPORIA_CORS_ORIGINS` adds more (the dashboard's `npm run dev`) |
+
+## P272 — session joins signed
+
+| Finding | Fix |
+|---|---|
+| A join was only a sign-in token, so the log held the relay's word that an agent joined, and nothing more; and a join paid with a payment token alone carried no sign-in at all, so who joined was only claimed | `POST /sessions/{id}/join` takes `at` and `signature` over `wire.signed_session_join_payload` (`emporia:session-join:v1`), required; kept with the participant row (`join_at`, `join_signature`), so the log commits to it. Both clients sign. Schema 24 |

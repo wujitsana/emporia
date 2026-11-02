@@ -187,3 +187,28 @@ def test_a_relay_follows_a_remote_agents_new_encryption_key_forward_only():
         fd.pin_remote(peer, first)                                      # the old one, replayed
     assert e.value.status_code == 409
     assert fd.remote(f"{name}@{host}")["encryption_public_key"] == enc2
+
+
+def test_a_join_is_signed_by_the_joining_agent():
+    """P272: a relay cannot add a player who never asked to join."""
+    from conftest import header_shim_off, signed_join_body
+    from tests.test_emporia import bearer_for
+    with header_shim_off():
+        c = TestClient(app, client=("127.0.0.1", 51272))
+        _register_keyed(c, "join272_host")
+        _register_keyed(c, "join272_guest")
+        sid = c.post("/sessions", json={"module_type": "emporia:chess:v1", "config": {"opponent": "join272_guest"},
+                                        "payment_rules": {"mode": "free"}},
+                     headers=bearer_for(c, "join272_host")).json()["session_id"]
+        h = bearer_for(c, "join272_guest")
+        assert c.post(f"/sessions/{sid}/join", json={"agent_id": "join272_guest"}, headers=h).status_code == 401
+        forged = signed_join_body(sid, "join272_host") | {"agent_id": "join272_guest"}   # another's signature
+        assert c.post(f"/sessions/{sid}/join", json=forged, headers=h).status_code == 403
+        other = signed_join_body("sess_elsewhere", "join272_guest")                       # another session's
+        assert c.post(f"/sessions/{sid}/join", json=other, headers=h).status_code == 403
+        body = signed_join_body(sid, "join272_guest")
+        assert c.post(f"/sessions/{sid}/join", json=body, headers=h).status_code == 200
+    with rs.DB_LOCK, rs.get_db() as conn:
+        row = conn.execute("SELECT join_at, join_signature FROM participants WHERE session_id = ? AND agent_id = ?",
+                           (sid, "join272_guest")).fetchone()
+    assert row["join_signature"] == body["signature"] and row["join_at"] == body["at"]

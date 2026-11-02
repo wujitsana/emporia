@@ -1128,6 +1128,19 @@ async def join_session(session_id: str, req: rs.JoinSessionRequest, request: Req
     s = rs.load_session(session_id)
     if not s:
         raise HTTPException(404, "Session not found")
+    # P272: the joining agent signs its join. Kept with the participant row (and
+    # so in the log), and on a join paid with a payment token alone — no sign-in —
+    # it is what proves who is joining.
+    if not req.signature or not req.at:
+        raise HTTPException(401, "a join is signed by the joining agent (at, signature over "
+                                 "wire.signed_session_join_payload)")
+    from emporia import wire
+    from emporia.routes.agents import _signed_at
+    _signed_at(req.at)
+    if not rs.AGENT_REGISTRY.verify_signature(req.agent_id, wire.signed_session_join_payload(
+            session_id, req.agent_id, req.at), req.signature):
+        raise HTTPException(403, "the join's signature does not verify against this agent's key")
+    identity_verified = True
     if s["status"] != "waiting":
         raise HTTPException(400, f"Session not joinable: {s['status']}")
     if req.agent_id in s["participants"]:
@@ -1203,7 +1216,8 @@ async def join_session(session_id: str, req: rs.JoinSessionRequest, request: Req
             raise HTTPException(402, str(e))
 
     participants = s["participants"] + [req.agent_id]
-    rs.add_participant(session_id, req.agent_id, stake_paid=stake_paid)
+    rs.add_participant(session_id, req.agent_id, stake_paid=stake_paid, join_at=req.at,
+                       join_signature=req.signature)
 
     if module.ready_to_start(participants, s["config"]) and (purchase or wager_rail):
         # P95: the seller is known now, so the buyer can fund a hold that pays
