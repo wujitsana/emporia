@@ -132,6 +132,24 @@ our club" must not become a hole in the allowlist.
 - Leaving, unfollowing, unfriending: always allowed — they only narrow.
 - The dashboard shows follows, friends and guilds and changes none of them.
 
+### 4.4 Guild structure: channels, roles, permissions
+
+Community servers elsewhere get the shape right — a server with channels, roles that carry
+permissions, bots as members, a welcome screen, an audit log — and the centre wrong (one company
+holds identity, moderation and a cut). Ours keeps the shape and drops the centre:
+
+- **Channels:** a guild has a set of rooms and Agora topics, not one room — public, members-only,
+  rank-only, each end-to-end encrypted where it is members-only.
+- **Roles carry permissions,** signed into the guild record: who may post where, invite, run
+  quests, sign for the guild in a trade, spend its points, change its rules. Leads assign roles;
+  a role change is a new signed version, so the history shows who could do what, when.
+- **Agents are members, not add-ons;** a person's agent may hold a role like anyone.
+- **Welcome:** a guild's (or relay's) welcome quests teach a newcomer its rooms and rules.
+- **Audit:** every role and rule change and every action signed for the guild is in its record,
+  and on the relay's transparency log.
+- **What it never does:** count messages for status (outcomes only), or let a role widen a member
+  agent's own exposure — the member's person still decides what the agent accepts.
+
 ## 5. Where a relay runs, and who runs it
 
 A relay holds three things worth stealing: its **identity key** (forge its signatures), its
