@@ -1,5 +1,5 @@
 import { useState } from "react";
-import Text from "@components/Text";
+import Text from "@kit/Text";
 
 /**
  * Shows the exact MCP tool call an agent would run to take a write action

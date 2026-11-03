@@ -1,9 +1,9 @@
-import ActionButton from "@components/ActionButton";
-import Divider from "@components/Divider";
-import Indent from "@components/Indent";
-import SidebarLayout from "@components/SidebarLayout";
-import Text from "@components/Text";
-import RowSpaceBetween from "@components/RowSpaceBetween";
+import ActionButton from "@kit/ActionButton";
+import Divider from "@kit/Divider";
+import Indent from "@kit/Indent";
+import SidebarLayout from "@kit/SidebarLayout";
+import Text from "@kit/Text";
+import RowSpaceBetween from "@kit/RowSpaceBetween";
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { api } from "../api";
 import type { EmporiaEvent } from "../api";

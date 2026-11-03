@@ -1,4 +1,4 @@
-import Text from "@components/Text";
+import Text from "@kit/Text";
 import { useInterval } from "../hooks";
 import { consoleUrl, httpFetch, VIA_CONSOLE } from "../transport";
 import { VIEWER_ID } from "../relayEnv";

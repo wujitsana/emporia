@@ -1,6 +1,6 @@
-import Text from "@components/Text";
+import Text from "@kit/Text";
 import { AcceptsTag } from "../ui/PayTag";
-import Indent from "@components/Indent";
+import Indent from "@kit/Indent";
 import type { ReactElement } from "react";
 import { api } from "../api";
 import type { Listing, OpenSession } from "../api";

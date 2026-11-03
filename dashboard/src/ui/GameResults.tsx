@@ -1,4 +1,4 @@
-import Text from "@components/Text";
+import Text from "@kit/Text";
 import { PaidByTag } from "./PayTag";
 import { useInterval } from "../hooks";
 import { api } from "../api";

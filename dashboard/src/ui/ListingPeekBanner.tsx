@@ -1,4 +1,4 @@
-import Text from "@components/Text";
+import Text from "@kit/Text";
 import type { NavOpts } from "../eventNav";
 import { McpCommandHint } from "./McpCommandHint";
 import { VIEWER_ID } from "../relayEnv";

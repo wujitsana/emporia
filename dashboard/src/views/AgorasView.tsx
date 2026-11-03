@@ -1,10 +1,10 @@
-import ActionButton from "@components/ActionButton";
+import ActionButton from "@kit/ActionButton";
 import { AcceptsTag } from "../ui/PayTag";
-import Divider from "@components/Divider";
-import Indent from "@components/Indent";
-import RowSpaceBetween from "@components/RowSpaceBetween";
-import SidebarLayout from "@components/SidebarLayout";
-import Text from "@components/Text";
+import Divider from "@kit/Divider";
+import Indent from "@kit/Indent";
+import RowSpaceBetween from "@kit/RowSpaceBetween";
+import SidebarLayout from "@kit/SidebarLayout";
+import Text from "@kit/Text";
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { api } from "../api";
 import type { AgoraPost, AgoraTopic } from "../api";

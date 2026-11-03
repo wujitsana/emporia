@@ -3,10 +3,9 @@
 // tsconfig.json is solution-style (`"files": []` + `references`), and under
 // `--noEmit` (as opposed to `--build`) tsc honors that and exits 0 having
 // looked at zero files. This runs the real project config directly and fails
-// on any first-party (src/) error, while treating pre-existing errors in the
-// vendored `node_modules/srcl` raw TypeScript as informational — that source
-// isn't ours to fix and a `npm install` can overwrite it; see
-// tsconfig.app.json's trailing comment for why vite still builds fine anyway.
+// on any first-party (src/) error, while treating errors inside node_modules as
+// informational. (Until P283 those were the 34 in srcl's raw TypeScript; with the
+// kit in src/ui/kit, `npm run typecheck` passes outright.)
 import { spawnSync } from "node:child_process";
 
 const result = spawnSync(
@@ -44,8 +43,7 @@ if (firstPartyBlocks.length > 0) {
 
 if (vendorBlocks.length > 0) {
   console.log(
-    `typecheck:src passed (${vendorBlocks.length} pre-existing vendored ` +
-    `node_modules/srcl error(s) ignored — see tsconfig.app.json).`
+    `typecheck:src passed (${vendorBlocks.length} error(s) in node_modules ignored).`
   );
 } else {
   console.log("typecheck:src passed (0 errors).");

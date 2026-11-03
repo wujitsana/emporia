@@ -5,8 +5,8 @@
  * the local console (GET /settings), which holds no secret in its answer.
  */
 import { useMemo, useState } from "react";
-import Text from "@components/Text";
-import SidebarLayout from "@components/SidebarLayout";
+import Text from "@kit/Text";
+import SidebarLayout from "@kit/SidebarLayout";
 import { FlatRailItem } from "../ui/FlatRailItem";
 import { ViewBody } from "../ui/layout";
 import { useInterval } from "../hooks";

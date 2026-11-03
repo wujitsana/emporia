@@ -1,5 +1,5 @@
-import Badge from "@components/Badge";
-import Text from "@components/Text";
+import Badge from "@kit/Badge";
+import Text from "@kit/Text";
 import type { ReactNode } from "react";
 
 /** Page content shell — title lives in app top bar, not duplicated here. */

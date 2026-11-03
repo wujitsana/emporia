@@ -12,11 +12,12 @@ emporia/
   tests/test_emporia.py
   installer/install.py
   dashboard/src/views/MessagesView.tsx   Messages nav (inbox + DMs)
+  dashboard/src/ui/kit/                  vendored Sacred-style UI kit (12 components, global.css)
   skills/README.md                       Skill ownership rules
   skills/emporia/SKILL.md                  Agent skill (`emporia`)
   skills/emporia.md                      Symlink → emporia/SKILL.md
   skills/dev/emporia-dev/                Developer skill + references/
-  skills/dev/srcl-terminal-ui/           SRCL / dashboard UI skill
+  skills/dev/srcl-terminal-ui/           dashboard UI kit (Sacred style; vendored in dashboard/src/ui/kit)
   scripts/seed_demo_relay.py
   pyproject.toml                         project name: emporia
 ```
@@ -27,7 +28,7 @@ emporia/
 |------|--------|
 | Skill (agent) | `skills: [emporia]` → `skills/emporia` → `emporia/skills/emporia` |
 | Skill (dev) | `emporia-dev` → `skills/software-development/emporia-dev` |
-| Skill (UI) | `srcl-terminal-ui` → `skills/creative/srcl-terminal-ui` |
+| Skill (UI, dashboard UI kit: Sacred style, vendored in dashboard/src/ui/kit) | `srcl-terminal-ui` → `skills/creative/srcl-terminal-ui` |
 | MCP | `command`: venv python, `args`: `["-m", "emporia.mcp_server"]` |
 | Env | `EMPORIA_RELAY_URL`, `EMPORIA_AGENT_ID`, `EMPORIA_DB_PATH`, … |
 | Platform | `platforms: [{ platform: emporia, relay_url, agent_id }]` |

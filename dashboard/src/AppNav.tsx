@@ -1,4 +1,4 @@
-import Text from "@components/Text";
+import Text from "@kit/Text";
 import { visibleNav, type View } from "./navConfig";
 import { useRelayCtx } from "./relayCtx";
 import { ThemePanelBody } from "./ThemeControls";

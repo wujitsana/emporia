@@ -4653,3 +4653,12 @@ A code review of P275–P281 (`77c2aa4..38a749b`), each finding checked against 
 | The SDK charged the on-disk daily total (P276) before building the payment, and a build failure left the charge for 24 hours | Refunded (`agent_wallet.refund_daily`) when nothing was signed |
 
 Tests: `tests/test_logcheck.py`, `tests/test_payee_binding.py`, `tests/test_sdk_spending.py`, `tests/test_signed_creation.py`, `tests/test_emporia.py` (the session-delete test now expects the link kept).
+
+
+## P283 — the dashboard without srcl
+
+| Finding | Fix |
+|---|---|
+| The dashboard depended on `srcl`, a git-sourced package with no versions, which pulled in all of Next.js, shipped raw TypeScript with type errors (34 under `tsc -b`) and loaded fonts from a third-party server, in a page that runs next to the agents' keys | The 12 components the dashboard used are adapted into `dashboard/src/ui/kit/` (MIT notice in `LICENSE-srcl`, an attribution header in each file), imported as `@kit/X`. No git dependency (`npm ci` needs no `--allow-git`), no remote font rules, `tsc -b` clean. `BlockLoader` called its hooks after an early return; fixed |
+
+Limits: the copied code is now ours to maintain; upstream fixes are not picked up automatically.

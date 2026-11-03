@@ -1,4 +1,4 @@
-import Text from "@components/Text";
+import Text from "@kit/Text";
 import { useInterval } from "./hooks";
 import { api } from "./api";
 import { SlimCard } from "./ui/cards";

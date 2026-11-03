@@ -1,7 +1,7 @@
-import Badge from "@components/Badge";
+import Badge from "@kit/Badge";
 import { SessionLink } from "./chips";
 import type { Navigate } from "../navigation";
-import Text from "@components/Text";
+import Text from "@kit/Text";
 import { useInterval } from "../hooks";
 import { api } from "../api";
 import { bountyStateLabel } from "../paymentFormat";

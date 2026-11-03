@@ -1,6 +1,6 @@
 ---
 name: srcl-terminal-ui
-description: Use when building or extending terminal-aesthetic React UIs with SRCL (www-sacred) — Vite wiring, theming, component catalog, and the Emporia operator dashboard conventions specifically.
+description: Use when building or extending terminal-aesthetic React UIs in the Sacred (SRCL) style — Emporia's dashboard uses a vendored kit (dashboard/src/ui/kit), plus theming, component patterns and the dashboard conventions.
 version: 1.22.0
 author: Hermes Agent
 license: MIT
@@ -13,11 +13,13 @@ metadata:
 
 # SRCL (Sacred) terminal UI
 
-**Upstream:** [internet-development/www-sacred](https://github.com/internet-development/www-sacred) (npm package `srcl`)  
+**The Emporia dashboard has NO srcl dependency** (P283). It uses a vendored kit in `dashboard/src/ui/kit/`. Upstream srcl is a design reference for the look and a source to adapt new components from.
+
+**Upstream (reference only):** [internet-development/www-sacred](https://github.com/internet-development/www-sacred) (npm package `srcl`)  
 **Live catalog:** https://sacred.computer — kitchen sink at `/`  
 **Agent docs (no clone):** https://sacred.computer/llm/AGENTS.md  
 **Component source:** `https://sacred.computer/llm/components/<Name>.tsx.txt`  
-**Porting skills (upstream):** `node_modules/srcl/skills/port-sacred-terminal-ui-to-*/SKILL.md`
+**Porting skills:** `skills/port-sacred-terminal-ui-to-*/SKILL.md` in the upstream repo (not installed locally)
 
 Emporia operator dashboard: `emporia/dashboard/` — reference implementation.
 
@@ -27,63 +29,56 @@ Emporia operator dashboard: `emporia/dashboard/` — reference implementation.
 
 **Product framing (this user):** The dashboard is a **read-only discover surface** for agent activity on the relay — not an “operator console” and **not** a place for humans to send messages, vote, or post as agents (human UX comes later). Avoid taglines like “Operator console” under the brand. Do not add redundant section **headers** in the chrome (no per-view title + blurb row when tabs already show the section). **Rooms / DMs / Agoras:** transcript or thread history only — `ReadOnlyChat` or `e-agora-detail__scroll`; no compose, +post, vote, or comment bars.
 
-## Install in a Vite + React app
+## Vendored kit (Emporia wiring)
+
+No npm dependency on `srcl` (it was a git dep with no versions, pulled in Next.js, shipped type errors and remote font CSS). The 12 components the dashboard uses are copied and adapted (MIT; notice `dashboard/src/ui/kit/LICENSE-srcl`, one-line attribution header per file) into `dashboard/src/ui/kit/`:
+
+`Text`, `Indent`, `SidebarLayout`, `RowSpaceBetween`, `Divider`, `Badge`, `ActionButton`, `AlertBanner`, `BlockLoader`, `SimpleTable`, `Input`, `Chessboard` — each `X.tsx` + `X.module.css` — plus `utilities.ts` (`classNames`, `isEmpty`, `findNextFocusable`) and `global.css` (srcl theme tokens + base styles, unchanged).
+
+```ts
+// vite.config.ts, vite.plugin.config.ts, vitest.config.ts
+resolve: { alias: { "@kit": path.resolve(__dirname, "src/ui/kit") } }
+```
 
 ```json
-"dependencies": {
-  "srcl": "github:internet-development/www-sacred"
-}
+// tsconfig.app.json paths
+"@kit/*": ["./src/ui/kit/*"]
 ```
 
-```ts
-// vite.config.ts — alias @components to srcl (same as Emporia)
-const SRCL = path.resolve("node_modules/srcl");
-resolve: {
-  alias: {
-    "@components": path.join(SRCL, "components"),
-    "@common": path.join(SRCL, "common"),
-    "@modules": path.join(SRCL, "modules"),
-  },
-},
-```
+- Import as `@kit/X` (e.g. `import ActionButton from "@kit/ActionButton"`); `App.tsx` imports `./ui/kit/global.css`.
+- Gone: `srcl/global-fonts.css` (only remote `@font-face` rules, already stripped by the P126 postcss plugin), `Providers` (hotkeys + modal context; unused), and the `@components/*`, `@common/*`, `@modules/*` aliases.
+- Any other srcl component is **not available**. To add one, adapt it from upstream into `src/ui/kit/` with the same attribution header, typed and lint-clean (`npm run typecheck`, `npm run lint`).
+- The copied code is ours to maintain; upstream fixes are not picked up automatically.
 
-```ts
-// tsconfig paths (mirror vite)
-"@components/*": ["./node_modules/srcl/components/*"],
-"@common/*": ["./node_modules/srcl/common/*"],
-"@modules/*": ["./node_modules/srcl/modules/*"]
-```
-
-## App entry (full Sacred host — Emporia pattern)
+## App entry (Emporia pattern)
 
 ```tsx
-import "srcl/global.css";
-import "srcl/global-fonts.css";
-import Providers from "@components/Providers";
-import Window from "@components/Window";
+import "./ui/kit/global.css";
+import Text from "@kit/Text";
 // SidebarLayout: use inside master–detail *views* (Sessions, Rooms, DMs), not always at App root
 ```
 
-- Wrap tree in `<Providers>` for hotkey scope support.
 - Apply theme on `document.body`: `theme-dark` | `theme-light`, optional `tint-*`, `font-use-CommitMono`.
 - Accent only in app CSS via `--theme-focused-foreground` (Emporia uses amber `#f0a832`).
 - **Responsive shell:** `.e-app-shell--header-nav` — **desktop: full-width main**, primary nav = **horizontal tabs** under `✶ Emporia`. **≤900px:** `.e-app-top` hidden; `.e-mobile-top` (menu + brand + theme dot + compact relay) opens **`.e-app-drawer`** with the **same** `SectionTabs` list (`variant="drawer"`). Do not maintain a second nav IA (sidebar groups + tabs + overview section list).
 
 ## Layout primitives (prefer these over raw divs)
 
-| Pattern | SRCL components |
+In `src/ui/kit/` today: `Text`, `Indent`, `SidebarLayout`, `RowSpaceBetween`, `Divider`, `Badge`, `ActionButton`, `AlertBanner`, `BlockLoader`, `SimpleTable`, `Input`, `Chessboard`. Others named below (`Card`, `ActionListItem`, `Window`, `Navigation`, …) are **not** in the kit; adapt them in first, or use the dashboard's own `ui/` components, which are preferred where noted.
+
+| Pattern | Components |
 |--------|------------------|
 | Page chrome | **`AppNav.tsx`** `SectionTabs` (desktop header) + **`ViewBody`** in views — **no** per-view `Window` + `Navigation`; **no** duplicate section title/blurb under the brand |
 | Master–detail shell | `ViewBody` with `flush` for full-width `SidebarLayout`; optional `toolbar` (live badge, thread title) |
-| Master–detail | `SidebarLayout` + **`FlatRailItem`** (`ui/FlatRailItem.tsx`) for **left-rail lists**; selection = `selected` prop + left accent bar — **not** SRCL `ActionListItem` (gray/amber row stripes). `ActionListItem` OK in main-pane feeds only until migrated |
-| Section title | Prefer **`SlimCard`** from `ui/cards.tsx`; SRCL `Card` only if you need Sacred left-rail title chrome |
+| Master–detail | `SidebarLayout` + **`FlatRailItem`** (`ui/FlatRailItem.tsx`) for **left-rail lists**; selection = `selected` prop + left accent bar — **not** srcl `ActionListItem` (gray/amber row stripes; not in the kit) |
+| Section title | Prefer **`SlimCard`** from `ui/cards.tsx`; srcl `Card` (not in the kit; adapt first) only if you need Sacred left-rail title chrome |
 | Data grid | `SimpleTable` — `data: string[][]`, first row = header; status cells `ACTIVE`/`OPEN` auto-tint |
 | Actions | `ActionButton` with `hotkey` (CLI parity), not generic `Button` |
 | Status strip | `Badge`, `BlockLoader` for live indicators |
 | Warnings | `AlertBanner` |
 | Rows | `RowSpaceBetween`, `Divider`, `Text` |
 
-Read `node_modules/srcl/components/AGENTS.md` for every component’s props and `--theme-*` tokens.
+For a kit component's props read its `src/ui/kit/X.tsx`; for components not yet adapted, upstream `components/AGENTS.md` (https://sacred.computer/llm/AGENTS.md) lists props and `--theme-*` tokens.
 
 ## Emporia dashboard (hackathon / demo video)
 
@@ -137,7 +132,7 @@ When extending UI: add sections via `NAV` + `eventNav.ts` `DashboardView`. Legac
 
 When the user asks to audit or fix “lots of errors” on the Emporia UI:
 
-1. **Do not abandon SRCL** for this app — fix integration (props, error surfacing, file split). Reserve `popular-web-designs` / non-terminal stacks only for a deliberate redesign, not a half-migration.
+1. **Do not abandon the Sacred kit** for this app — fix integration (props, error surfacing, file split). Reserve `popular-web-designs` / non-terminal stacks only for a deliberate redesign, not a half-migration.
 2. **Live QA:** Load **`dogfood`** and exercise `the console (http://127.0.0.1:8089, python -m emporia.console)` (embedded) or Vite `:5173` (dev). After each nav (keys `1`–`9`, `0`), call `browser_console(clear=true)`.
 3. **If browser fails with Chrome not found:** run `agent-browser install` (or install Chrome), then retry dogfood — do not treat browser tools as permanently unavailable.
 4. **Code-only audit** (no browser): `npm run build:console`, `npm run lint`, spot-check `useInterval` callers destructure `[data, loading, error]` and show `AlertBanner` on `error`; grep `ActionListItem` for invalid `className`.
@@ -146,7 +141,7 @@ When the user asks to audit or fix “lots of errors” on the Emporia UI:
 
 ## Common Pitfalls
 
-- **New dashboard files must import SRCL via `@components/*`**, not `from "srcl"` — Vite aliases do not resolve a `srcl` barrel; `build:console` fails with Rolldown unresolved import (see `AppSidebar.tsx`).
+- **Import kit components via `@kit/X`**, never `from "srcl"` or `@components/*` (both gone). A component not in `src/ui/kit/` must be adapted in first.
 - **Sidebar master lists:** Do not use `ActionListItem` — use **`FlatRailItem`** with `selected={…}`. For main-pane `ActionListItem` rows only: no `className`/`isSelected`; use `style` + `listItemSelectStyle` if still needed.
 - **`useInterval`:** returns `[data, loading, error]`. Destructuring only `[data]` makes failed `/listings` etc. look like empty data — use shared `src/ui/ViewStatus.tsx` (`AlertBanner` + `BlockLoader` when loading and empty).
 - **List selection helper:** `src/ui/listSelection.ts` → `listItemSelectStyle(selected)` on `ActionListItem` (do not duplicate `borderLeft` logic per view).
@@ -170,22 +165,24 @@ When the user asks to audit or fix “lots of errors” on the Emporia UI:
 - **Sidebar nav clipped:** `max-height: 42vh` on `.e-sidebar-nav` hides Messages/Profile/Games — use `flex: 1; min-height: 0; overflow-y: auto` instead.
 - **Messages view file:** `src/views/MessagesView.tsx` — merged inbox + DM threads. Do not reintroduce `CommsView.tsx` or `.e-comms-pane` class names after rebrand.
 - **RelayStrip display:** One visible status line; events stream URL in **badge `title` only** — not a second monospace WS line in the header.
-- After UI changes, run `npm run build:console` in `emporia/dashboard/`; do not block on `tsc` errors inside vendored `srcl` sources.
+- After UI changes, run `npm run build:console` in `emporia/dashboard/`, then `npm run typecheck` (clean: zero errors; no srcl sources to excuse).
 
 ## Hostile / partial Sacred embed
 
 If the host already has its own design system, use upstream skill  
 `port-sacred-terminal-ui-to-hostile-react-codebase` — scope under `.sacred-root`, do **not** import `global.css` on `body`.
 
-Emporia is a **full Sacred host** — global CSS on `body` is intentional.
+Emporia is a **full Sacred host** — the kit's `global.css` on `body` is intentional.
 
 ## Verify
 
 ```bash
 cd emporia/dashboard
-npm install
+npm ci                   # no git deps, no --allow-git needed
 npm run build:console   # or npm run build
-npm run typecheck        # tsc; srcl source may warn — Vite build is authoritative
+npm run typecheck        # tsc -b, zero errors
+npm run lint
+npx vitest run
 ```
 
 ## Submission / demo video (Nous retro-modern)

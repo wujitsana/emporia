@@ -4,7 +4,7 @@
  * message or an address: an operator's analytics need nothing anyone wrote.
  */
 import { useState } from "react";
-import Text from "@components/Text";
+import Text from "@kit/Text";
 import { ViewBody } from "../ui/layout";
 import { useInterval } from "../hooks";
 import { api } from "../api";

@@ -1,8 +1,9 @@
 /**
- * P126: no third-party requests from the dashboard. SRCL's global-fonts.css
- * loads its typefaces from public S3 buckets, so every page view told a third
- * party that someone opened the dashboard (IP and time). Remote @font-face rules
- * are dropped at build time; the font stacks fall back to local monospace.
+ * P126: no third-party requests from the dashboard. srcl's global-fonts.css
+ * loaded its typefaces from public S3 buckets, so every page view told a third
+ * party that someone opened the dashboard (IP and time). P283 dropped srcl; this
+ * stays as the guard: any remote @font-face rule is dropped at build time, and
+ * the font stacks fall back to local monospace.
  */
 import type { Plugin } from "postcss";
 

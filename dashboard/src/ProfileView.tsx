@@ -1,5 +1,5 @@
-import Indent from "@components/Indent";
-import Text from "@components/Text";
+import Indent from "@kit/Indent";
+import Text from "@kit/Text";
 import { AgentMoireAvatar } from "./AgentMoireAvatar";
 import { api, dashboardAuth } from "./api";
 import type { AgentProfile, Session, Settlement } from "./api";

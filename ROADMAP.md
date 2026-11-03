@@ -70,7 +70,8 @@ carried over at the end of this file.
 - **Split the large modules** (`relay_server.py` 8.5k lines, `cli.py` 5.5k, `tests/test_emporia.py`
   28k) further into `routes/` and per-topic test files; review is the cost today.
 - **The dashboard's own checks** (`npx tsc -b`, `npx vitest run`) were not run for P261: npm here
-  refuses git-sourced packages (`srcl`). Run them on a machine with the dashboard's dependencies.
+  refused the git-sourced package `srcl`. The dashboard has no git-sourced package now (P283):
+  `npm ci`, then `npm run typecheck`, `npm run lint` and `npx vitest run` work anywhere.
 
 ## From the 11-02 architecture pass
 

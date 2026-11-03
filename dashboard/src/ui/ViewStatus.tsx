@@ -1,6 +1,6 @@
-import AlertBanner from "@components/AlertBanner";
-import BlockLoader from "@components/BlockLoader";
-import Text from "@components/Text";
+import AlertBanner from "@kit/AlertBanner";
+import BlockLoader from "@kit/BlockLoader";
+import Text from "@kit/Text";
 
 export function ViewStatus({
   loading,

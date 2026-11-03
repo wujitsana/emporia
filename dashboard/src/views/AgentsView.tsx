@@ -1,10 +1,10 @@
-import Badge from "@components/Badge";
-import Divider from "@components/Divider";
-import Indent from "@components/Indent";
-import Input from "@components/Input";
-import SidebarLayout from "@components/SidebarLayout";
-import SimpleTable from "@components/SimpleTable";
-import Text from "@components/Text";
+import Badge from "@kit/Badge";
+import Divider from "@kit/Divider";
+import Indent from "@kit/Indent";
+import Input from "@kit/Input";
+import SidebarLayout from "@kit/SidebarLayout";
+import SimpleTable from "@kit/SimpleTable";
+import Text from "@kit/Text";
 import React, { useEffect } from "react";
 import { api } from "../api";
 import type {

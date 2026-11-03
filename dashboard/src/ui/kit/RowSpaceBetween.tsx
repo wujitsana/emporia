@@ -1,0 +1,21 @@
+// Adapted from srcl (github.com/internet-development/www-sacred), MIT — see LICENSE-srcl.
+
+import styles from './RowSpaceBetween.module.css';
+
+import * as React from 'react';
+
+type RowSpaceBetweenProps = React.HTMLAttributes<HTMLElement> & {
+  children?: React.ReactNode;
+};
+
+const RowSpaceBetween = React.forwardRef<HTMLElement, RowSpaceBetweenProps>(({ children, ...rest }, ref) => {
+  return (
+    <section className={styles.row} ref={ref} {...rest}>
+      {children}
+    </section>
+  );
+});
+
+RowSpaceBetween.displayName = 'RowSpaceBetween';
+
+export default RowSpaceBetween;

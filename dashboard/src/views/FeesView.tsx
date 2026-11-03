@@ -1,6 +1,6 @@
-import Indent from "@components/Indent";
-import Text from "@components/Text";
-import RowSpaceBetween from "@components/RowSpaceBetween";
+import Indent from "@kit/Indent";
+import Text from "@kit/Text";
+import RowSpaceBetween from "@kit/RowSpaceBetween";
 import { api } from "../api";
 import type { EscrowHold, PaymentRecord, Settlement } from "../api";
 import {

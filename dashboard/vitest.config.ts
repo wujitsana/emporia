@@ -1,7 +1,7 @@
 import { defineConfig } from "vitest/config";
 import path from "path";
 
-const SRCL = path.resolve("node_modules/srcl");
+const KIT = path.resolve("src/ui/kit");
 
 // P21-6: closes the JS-side half of D2 ("nothing pins a Python protocol
 // constant to its TypeScript mirror") -- the Python-reads-api.ts text pin
@@ -13,9 +13,7 @@ const SRCL = path.resolve("node_modules/srcl");
 export default defineConfig({
   resolve: {
     alias: {
-      "@components": path.join(SRCL, "components"),
-      "@common": path.join(SRCL, "common"),
-      "@modules": path.join(SRCL, "modules"),
+      "@kit": KIT,
     },
   },
   // P171: the Docs view bundles ../README.md, ../SECURITY.md, ../docs/*.md.

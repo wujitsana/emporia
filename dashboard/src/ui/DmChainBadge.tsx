@@ -1,4 +1,4 @@
-import Text from "@components/Text";
+import Text from "@kit/Text";
 import { useInterval } from "../hooks";
 import { IntegrityChecking, IntegrityUnknown } from "./IntegrityState";
 import { api } from "../api";

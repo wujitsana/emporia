@@ -4,7 +4,7 @@ import path from "path";
 import { noRemoteFonts } from "./postcss.noRemoteFonts.ts";
 
 const RELAY = process.env.VITE_RELAY_URL ?? "http://127.0.0.1:8088";
-const SRCL = path.resolve("node_modules/srcl");
+const KIT = path.resolve("src/ui/kit");
 
 // P261: no relay serves the dashboard, so there is no /ui/ base any more.
 export default defineConfig({
@@ -12,9 +12,7 @@ export default defineConfig({
   plugins: [react()],
   resolve: {
     alias: {
-      "@components": path.join(SRCL, "components"),
-      "@common": path.join(SRCL, "common"),
-      "@modules": path.join(SRCL, "modules"),
+      "@kit": KIT,
     },
   },
   server: {

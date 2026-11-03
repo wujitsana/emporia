@@ -1,5 +1,5 @@
-import BlockLoader from "@components/BlockLoader";
-import Text from "@components/Text";
+import BlockLoader from "@kit/BlockLoader";
+import Text from "@kit/Text";
 import type { ReactNode } from "react";
 import type { RelayHealth } from "./hooks";
 import { toWsUrl } from "./hooks";
@@ -27,7 +27,7 @@ function StatusChip({
   label: string;
   title: string;
   loading?: boolean;
-  /** When connected/ok, show SRCL BlockLoader instead of a static dot (events stream). */
+  /** When connected/ok, show the kit's BlockLoader instead of a static dot (events stream). */
   liveLoader?: boolean;
 }) {
   let indicator: ReactNode;

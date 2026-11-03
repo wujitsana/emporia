@@ -1,4 +1,4 @@
-import Text from "@components/Text";
+import Text from "@kit/Text";
 
 /**
  * The third state every integrity badge has and none of them rendered (P68).

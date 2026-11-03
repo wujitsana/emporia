@@ -7,9 +7,9 @@
 
 ## Typography preference (operator)
 
-- Keep SRCL at **100%** (16px root on `html, body`).
+- Keep the kit's `global.css` tokens (from srcl) at **100%** (16px root on `html, body`).
 - **Current preference:** no global ~1.1× “comfort bump” across all `dashboard.css` rules — tune individual sections (KPI strips, nav labels) if needed.
-- **Never** use `html { font-size: 110% }` as the primary fix (competes with SRCL tokens and fixed `px` literals).
+- **Never** use `html { font-size: 110% }` as the primary fix (competes with the kit's `global.css` tokens (from srcl) and fixed `px` literals).
 - Shell: `.e-dashboard-shell { --font-size: 16px; }` and **both** `e-app-shell` + `e-dashboard-shell` on the root div in `App.tsx`.
 
 ### One-off revert of an old 1.1× pass
@@ -44,7 +44,7 @@ Do **not** multiply KPI rules again — that recreates “fees/payments/trust to
 - **Do not add a second live strip:** omit `ViewBody` `toolbar` (`live · N`, `LiveMark`). Operator: live count is **already** on Games **SegmentTabs** (`live · {length}`) — only remove the extra toolbar/header to stop vertical shift.
 - **No header above board:** drop session-id / live / move `RowSpaceBetween` above the chessboard; use `ChessReplayStatus` (and optional `AuditBadge`) in `ChessTransport` `status` on the right of `.e-chess-ctrl-row`.
 - **Toolbar:** four icon buttons in `.e-chess-ctrl-icons` — prev/next chevrons, play/stop toggle (replay), refresh-to-latest. Words only in `aria-label`/`title`.
-- **Chrome:** `.e-chess-icon-btn__glyph` — **padding ~8px** + inset `box-shadow` 1px border (SRCL ActionButton-like), not borderless oversized SVGs alone. `.e-chess-svg` ~**1.25rem** inside glyph.
+- **Chrome:** `.e-chess-icon-btn__glyph` — **padding ~8px** + inset `box-shadow` 1px border (the kit's ActionButton-like), not borderless oversized SVGs alone. `.e-chess-svg` ~**1.25rem** inside glyph.
 - **Relay header:** `RelayStrip` events live indicator — pulsing `●` with fixed width, **not** `BlockLoader` (prevents nav tab horizontal jump).
 
 ## Horizontal scroll fix checklist

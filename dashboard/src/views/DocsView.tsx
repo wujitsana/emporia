@@ -3,8 +3,8 @@
  * (see docs.ts), rendered without injecting HTML (see markdown.tsx).
  */
 import { useEffect, useMemo, useRef, useState } from "react";
-import Text from "@components/Text";
-import SidebarLayout from "@components/SidebarLayout";
+import Text from "@kit/Text";
+import SidebarLayout from "@kit/SidebarLayout";
 import { FlatRailItem } from "../ui/FlatRailItem";
 import { ViewBody } from "../ui/layout";
 import { DOCS, resolveDocLink, searchDocs } from "../docs";

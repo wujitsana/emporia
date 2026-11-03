@@ -17,9 +17,7 @@
 
     /* Path aliases — mirror vite.config.ts aliases for type resolution */
     "paths": {
-      "@components/*": ["./node_modules/srcl/components/*"],
-      "@common/*": ["./node_modules/srcl/common/*"],
-      "@modules/*": ["./node_modules/srcl/modules/*"]
+      "@kit/*": ["./src/ui/kit/*"]
     },
     "baseUrl": ".",
     "ignoreDeprecations": "6.0",
@@ -32,7 +30,4 @@
   },
   "include": ["src"],
   "exclude": ["node_modules"]
-  /* Note: skipLibCheck only skips .d.ts files, not raw .ts source in node_modules/srcl.
-     Vite still bundles everything correctly; only tsc type-checking is affected.
-     The build uses vite (no tsc emit), so TS errors in node_modules/srcl/common don't block runtime. */
 }

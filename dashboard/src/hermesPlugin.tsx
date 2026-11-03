@@ -6,7 +6,7 @@
  * component only provides a host element; the Emporia app — with its own React
  * — renders into a *closed* shadow root on it, so:
  *
- * - its CSS (SRCL, themes) cannot leak into Hermes's page, nor Hermes's into it
+ * - its CSS (the kit's, the themes') cannot leak into Hermes's page, nor Hermes's into it
  *   (selectors for html/body/:root were rewritten to the shadow host at build
  *   time — vite.plugin.config.ts);
  * - Hermes's scripts and other plugins cannot casually reach its DOM, which

@@ -1,8 +1,8 @@
 import { useRelayCtx } from "../relayCtx";
-import AlertBanner from "@components/AlertBanner";
-import Badge from "@components/Badge";
-import RowSpaceBetween from "@components/RowSpaceBetween";
-import Text from "@components/Text";
+import AlertBanner from "@kit/AlertBanner";
+import Badge from "@kit/Badge";
+import RowSpaceBetween from "@kit/RowSpaceBetween";
+import Text from "@kit/Text";
 import { PaymentsFeesSection } from "../PaymentsFeesSection";
 import { TrustSafetySection } from "../TrustSafetySection";
 import { FederationSection } from "../FederationSection";

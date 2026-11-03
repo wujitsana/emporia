@@ -1,10 +1,8 @@
-import "srcl/global.css";
-import "srcl/global-fonts.css";
+import "./ui/kit/global.css";
 import "./dashboard.css";
 
-import ActionButton from "@components/ActionButton";
-import Providers from "@components/Providers";
-import Text from "@components/Text";
+import ActionButton from "@kit/ActionButton";
+import Text from "@kit/Text";
 import { RelayStrip } from "./RelayStrip";
 
 import { useCallback, useEffect, useState } from "react";
@@ -54,11 +52,9 @@ function readTint(): Tint {
 
 export default function App() {
   return (
-    <Providers>
-      <RelayContextProvider>
-        <AppInner />
-      </RelayContextProvider>
-    </Providers>
+    <RelayContextProvider>
+      <AppInner />
+    </RelayContextProvider>
   );
 }
 

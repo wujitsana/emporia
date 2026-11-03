@@ -1,4 +1,4 @@
-import Text from "@components/Text";
+import Text from "@kit/Text";
 import type { ReactNode } from "react";
 import { AgentMoireAvatar } from "../AgentMoireAvatar";
 import { whenText } from "../relayFormat";

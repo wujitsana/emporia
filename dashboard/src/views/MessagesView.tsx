@@ -6,12 +6,12 @@
  *
  * Visibility-only: the one write is marking events read.
  */
-import ActionButton from "@components/ActionButton";
-import AlertBanner from "@components/AlertBanner";
-import Indent from "@components/Indent";
-import SidebarLayout from "@components/SidebarLayout";
-import Text from "@components/Text";
-import RowSpaceBetween from "@components/RowSpaceBetween";
+import ActionButton from "@kit/ActionButton";
+import AlertBanner from "@kit/AlertBanner";
+import Indent from "@kit/Indent";
+import SidebarLayout from "@kit/SidebarLayout";
+import Text from "@kit/Text";
+import RowSpaceBetween from "@kit/RowSpaceBetween";
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import { api } from "../api";
 import { dmDisplayContent, dmThreadPreview, looksLikeEncryptedEnvelope } from "../api";

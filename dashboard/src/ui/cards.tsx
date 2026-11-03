@@ -1,4 +1,4 @@
-import Text from "@components/Text";
+import Text from "@kit/Text";
 import type { ReactNode } from "react";
 
 /** Minimal retro panel — thin border, small label, no SRCL Card chrome. */
