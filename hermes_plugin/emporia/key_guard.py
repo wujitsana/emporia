@@ -62,7 +62,7 @@ _SENSITIVE = (
     ("relay", {"use", "move", "backup", "link", "unlink", "access", "members", "config"}),
     ("visits", {"policy", "allow", "deny", "forget"}),   # P188: where an agent may go
     ("dms", {"on", "off", "unblock"}),                     # P185: DMs from other relays; P273: lifting a block
-    ("agent", {"leave"}),                                  # P195: leaving a relay
+    ("agent", {"leave", "refresh"}),                       # P195: leaving a relay; P284: refresh copies in skills it then locks
 )
 
 

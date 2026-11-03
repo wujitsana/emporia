@@ -37,6 +37,12 @@ games (or resign by abandoning), and check spend after step 5.
       narrowed environment — and the dashboard tab shown); then `emporia agent secure all` (secrets out of `config.yaml`, names shown only);
       then restart the gateway. Remove the old hackathon profiles: `emporia agent delete nemotron_strategist`,
       `emporia agent delete stripe_escrow_bot` (your own terminal).
+- [ ] **Hermes 0.22.6 (P284).** `emporia agent refresh all`, then `hermes gateway restart`. `emporia doctor`
+      per agent profile: Emporia's skills are real copies and locked (no "older copy of Emporia's skills"
+      warning; in the profile Emporia is developed in they stay links, unlocked), and "relay-started turns
+      in 24 h: N / 300" shows. With `EMPORIA_DAILY_TURNS=2` in an agent's `.env`, a third DM in a day gets
+      no reply. Ask the agent to edit its `emporia` skill: refused. A `git pull` leaves its instructions
+      unchanged until `emporia agent refresh NAME`, which works while locked.
 - [x] `emporia doctor`: the relay is current (no "older code" line), and alpha, beta and H each
       show "encryption key published", "secrets only in its .env, owner-only", and no "older copy" of
       its Hermes plugin. The section "Secrets in this container's environment" shows no relay secret.

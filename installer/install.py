@@ -1798,16 +1798,79 @@ def install_platform_plugin(profile_dir: Path, dry_run: bool = False) -> None:
         print(f"  + {env_file}: EMPORIA_PYTHON, EMPORIA_ALLOWED_USERS")
 
 
+# P284: Emporia's own skills — copied into an agent profile and locked there.
+# The skill names are what `hermes curator lock` takes; emporia.md is a plain file.
+EMPORIA_SKILLS: tuple[str, ...] = ("emporia", "emporia-setup")
+EMPORIA_SKILL_FILES: tuple[str, ...] = (*EMPORIA_SKILLS, "emporia.md")
+_SKILL_COPIES = ".emporia-copies.json"     # in skills/: which of them Emporia copied there
+
+
+def is_dev_profile(profile_dir: Path) -> bool:
+    """The profile Emporia is developed in: the repo sits inside it, and its skills stay links."""
+    try:
+        return _EMPORIA_DIR.resolve().is_relative_to(profile_dir.resolve())
+    except OSError:
+        return False
+
+
+def skill_copies(skills_dir: Path) -> set[str]:
+    """Names Emporia copied into this skills dir (and so may replace)."""
+    try:
+        data = json.loads((skills_dir / _SKILL_COPIES).read_text())
+        return {str(n) for n in data} if isinstance(data, list) else set()
+    except (OSError, ValueError):
+        return set()
+
+
+def skill_copy_current(src: Path, dst: Path) -> bool:
+    """Whether the profile's copy of a skill matches Emporia's."""
+    if dst.is_symlink() or not dst.exists():
+        return False
+    if src.is_file():
+        return dst.is_file() and dst.read_bytes() == src.read_bytes()
+    return _tree_digest(src) == _tree_digest(dst)
+
+
+def _copy_skill(src: Path, dst: Path, *, dry_run: bool = False) -> None:
+    skills_dir = dst.parent
+    copies = skill_copies(skills_dir)
+    if dst.exists() and not dst.is_symlink() and dst.name not in copies:
+        # A real folder Emporia did not put there (a hub install, the operator's own): leave it.
+        print(f"  ! skill {dst} is not Emporia's copy — left alone")
+        return
+    if skill_copy_current(src, dst):
+        return
+    if dry_run:
+        print(f"  [dry-run] Would copy skill: {src} → {dst}")
+        return
+    skills_dir.mkdir(exist_ok=True)
+    if dst.is_symlink() or dst.is_file():
+        dst.unlink()
+    elif dst.exists():
+        shutil.rmtree(dst)
+    if src.is_file():
+        shutil.copy2(src, dst)
+    else:
+        shutil.copytree(src, dst, ignore=shutil.ignore_patterns("__pycache__"))
+    (skills_dir / _SKILL_COPIES).write_text(json.dumps(sorted(copies | {dst.name})))
+    print(f"  + skill: {dst} (copied from {src})")
+
+
 def _install_skill_link(
     profile_dir: Path,
     dry_run: bool = False,
     *,
     dev_skills: bool = False,
 ) -> None:
-    """Symlink Emporia skills from the repo into the profile skills dir.
+    """Put Emporia's skills into the profile skills dir.
 
-    Profile paths are symlinks to the repo — edits under emporia/skills/ are visible
-    to Hermes immediately (no re-copy). Re-run installer to fix broken links after moves.
+    P284: an agent profile gets a real copy of Emporia's own skills (`emporia`,
+    `emporia-setup`, `emporia.md`), so `hermes curator lock` can lock them —
+    Hermes does not see a symlinked skill folder when it locks or enforces a
+    lock. The copy changes when setup or `emporia agent refresh` runs, not when
+    the repo does. The profile Emporia is developed in (the repo sits inside
+    it) keeps symlinks, so edits under emporia/skills/ show at once there.
+    Payment and dev skills stay symlinks.
 
     Always links the agent skill (`emporia`) plus the payment skills Emporia needs
     (mpp-agent, stripe-link-cli, stripe-projects) — self-heals on `--install-profile` too.
@@ -1831,8 +1894,13 @@ def _install_skill_link(
             links.append(
                 (_EMPORIA_DIR / "skills" / src_rel, skills_dir / dst_rel),
             )
+    own = {skills_dir / name for name in EMPORIA_SKILL_FILES}
+    copy_own = not is_dev_profile(profile_dir)
     for skill_src, skill_dst in links:
         if not skill_src.exists():
+            continue
+        if copy_own and skill_dst in own:
+            _copy_skill(skill_src, skill_dst, dry_run=dry_run)
             continue
         if dry_run:
             print(f"  [dry-run] Would link skill: {skill_dst} → {skill_src}")

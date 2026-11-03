@@ -1820,14 +1820,15 @@ def cmd_agent_secure(name: str) -> int:
         any_moved = any_moved or bool(moved)
         print(f"  {profile.name}: " + (f"moved to .env — {', '.join(moved)}" if moved else "nothing in config.yaml")
               + "; config.yaml and .env owner-only")
+        lock_emporia_skill(profile)
     if any_moved:
         print("Restart the gateway so each profile's MCP servers are started again.")
     return 0
 
 
 def cmd_agent_refresh(name: str) -> int:
-    """P224: `emporia agent refresh NAME|all` — the Emporia plugin copied fresh
-    into each profile that has one, and the dashboard tab shown in its
+    """P224: `emporia agent refresh NAME|all` — the Emporia plugin (and, P284, its
+    skills, locked) copied fresh into each profile that has one, and the dashboard tab shown in its
     dashboard. No questions: what doctor's "older copy" and "tab does not show"
     warnings ask for, without walking the whole setup wizard again."""
     root = profiles_root()
@@ -1842,7 +1843,9 @@ def cmd_agent_refresh(name: str) -> int:
         print(f"  {profile.name}:")
         inst.install_platform_plugin(profile)
         inst.enable_dashboard_tab(profile)
-    print("Restart the gateway so each agent loads the new plugin: hermes gateway restart")
+        inst._install_skill_link(profile)          # P284: Emporia's skills copied fresh, then locked
+        lock_emporia_skill(profile)
+    print("Restart the gateway so each agent loads the new plugin and skills: hermes gateway restart")
     return 0
 
 
@@ -2892,6 +2895,7 @@ def doctor_agent(rep: Report, profile: Path, entry: dict, relay_up: bool) -> Non
                  f"{name} --to env` so Hermes hides the key from its tools")
     else:
         rep.ok(f"developer role, sandboxed ({backend}), no wallet")
+    doctor_agent_hardening(rep, profile, dotenv)
     plugin = profile / "plugins" / "platforms" / "emporia"
     repo_digest = inst._tree_digest(REPO / "hermes_plugin" / "emporia")
     if not plugin.exists():
@@ -2931,6 +2935,129 @@ def doctor_agent(rep: Report, profile: Path, entry: dict, relay_up: bool) -> Non
             rep.warn("not registered on this relay yet",
                      f"start its gateway or MCP (`hermes -p {name} gateway restart`)")
     doctor_a2a(rep, profile, has["evm"] or has["svm"])
+
+
+def skill_locked(profile: Path, skill: str) -> bool:
+    """Hermes (0.22.6+) keeps `hermes curator lock` in the profile's skills/.usage.json;
+    read it directly so doctor needs no Hermes call. Unreadable counts as not locked."""
+    try:
+        data = json.loads((profile / "skills" / ".usage.json").read_text(encoding="utf-8-sig"))
+        rec = data.get(skill) if isinstance(data, dict) else None
+        return bool(rec.get("locked")) if isinstance(rec, dict) else False
+    except (OSError, ValueError):
+        return False
+
+
+def lock_emporia_skill(profile: Path) -> bool:
+    """P284: lock Emporia's skills in an agent profile, so neither the agent's own tools nor
+    Hermes's background review and curator rewrite its instructions. The profile Emporia is
+    developed in keeps them as links, unlocked. Prints a warning, never raises."""
+    inst = installer()
+    if inst.is_dev_profile(profile):
+        print("  Skills: linked to the repo (Emporia is developed in this profile) — not locked.")
+        return True
+    import shutil
+    hermes = os.getenv("EMPORIA_HERMES_BIN", "").strip() or shutil.which("hermes")
+    ok = True
+    for skill in inst.EMPORIA_SKILLS:
+        if skill_locked(profile, skill):
+            continue
+        if (profile / "skills" / skill).is_symlink():
+            print(f"  ! Skill {skill!r} is a link, which Hermes cannot lock. Run: emporia agent refresh {profile.name}")
+            ok = False
+            continue
+        try:
+            if not hermes:
+                raise OSError("hermes not found")
+            r = subprocess.run([hermes, "-p", profile.name, "curator", "lock", skill],
+                               capture_output=True, text=True, timeout=30)
+            if r.returncode == 0:
+                print(f"  Skill {skill!r} locked: the agent can no longer change it "
+                      f"(you still can; undo: hermes -p {profile.name} curator unlock {skill}).")
+                continue
+            why = (r.stdout.strip() or r.stderr.strip()).splitlines()[-1:] or [f"exit {r.returncode}"]
+        except (OSError, subprocess.TimeoutExpired) as e:
+            why = [str(e)]
+        print(f"  ! Could not lock skill {skill!r} ({why[0][:160]}). "
+              f"Run: hermes -p {profile.name} curator lock {skill}")
+        ok = False
+    return ok
+
+
+def doctor_skills(rep: Report, profile: Path) -> None:
+    """P284: Emporia's skills in an agent profile are a current copy, locked."""
+    inst = installer()
+    name = profile.name
+    if inst.is_dev_profile(profile):
+        rep.ok("Emporia's skills linked to the repo (it is developed here) — not locked")
+        return
+    src_root = REPO / "skills"
+    linked = [s for s in inst.EMPORIA_SKILL_FILES if (profile / "skills" / s).is_symlink()]
+    stale = [s for s in inst.EMPORIA_SKILL_FILES if (src_root / s).exists() and s not in linked
+             and not inst.skill_copy_current(src_root / s, profile / "skills" / s)]
+    unlocked = [s for s in inst.EMPORIA_SKILLS if not skill_locked(profile, s)]
+    if linked:
+        rep.warn(f"Emporia's skills are links ({', '.join(linked)}) — Hermes cannot lock a link, so the "
+                 "agent or Hermes's background review could rewrite them", f"emporia agent refresh {name}")
+    elif stale:
+        rep.warn(f"older copy of Emporia's skills ({', '.join(stale)}) than this Emporia",
+                 f"emporia agent refresh {name}")
+    if unlocked and not linked:
+        rep.warn(f"skills not locked ({', '.join(unlocked)}) — the agent or Hermes's background review "
+                 "could rewrite its instructions", f"emporia agent refresh {name}")
+    if not (linked or stale or unlocked):
+        rep.ok("Emporia's skills current and locked — the agent cannot rewrite them")
+
+
+def api_server_host(profile: Path, dotenv: dict[str, str]) -> str | None:
+    """The host Hermes's api_server listens on for this profile, or None when it is off.
+    On when config.yaml enables it (platforms.api_server, or under gateway.), or when
+    API_SERVER_ENABLED is set, or a usable API_SERVER_KEY (16+ characters) is in the .env
+    (Hermes switches it on from the key alone) — unless the config says enabled: false."""
+    cfg = installer().load_yaml(profile / "config.yaml")
+    api = None
+    for plats in (cfg.get("platforms"), (cfg.get("gateway") or {}).get("platforms")):
+        if isinstance(plats, dict) and isinstance(plats.get("api_server"), dict):
+            api = plats["api_server"]
+            break
+    api = api or {}
+    explicit = api.get("enabled")
+    from_env = (str(dotenv.get("API_SERVER_ENABLED", "")).strip().lower() in ("1", "true", "yes", "on")
+                or len(dotenv.get("API_SERVER_KEY", "")) >= 16)
+    if not (explicit is True or (explicit is None and from_env)):
+        return None
+    host = (api.get("extra") or {}).get("host") or dotenv.get("API_SERVER_HOST") or "127.0.0.1"
+    return str(host).strip()
+
+
+def turns_in_24h(profile: Path) -> int:
+    """Relay-started agent turns in the last 24 h, from the plugin's emporia_turns.json."""
+    import time
+    try:
+        raw = (json.loads((profile / "emporia_turns.json").read_text()) or {}).get("turns") or []
+        cutoff = time.time() - 86400
+        return sum(1 for t in raw if isinstance(t, (int, float)) and t > cutoff)
+    except (OSError, ValueError, AttributeError):
+        return 0
+
+
+def doctor_agent_hardening(rep: Report, profile: Path, dotenv: dict[str, str]) -> None:
+    name = profile.name
+    doctor_skills(rep, profile)
+    host = api_server_host(profile, dotenv)
+    if host is not None and host.lower().strip("[]") not in ("127.0.0.1", "::1", "localhost"):
+        rep.warn(f"api_server listens on {host} — anyone with API_SERVER_KEY can make {name} act and pay "
+                 "within its caps; bind it to 127.0.0.1 or don't enable api_server on an Emporia agent",
+                 "set API_SERVER_HOST=127.0.0.1 in its .env")
+    raw = dotenv.get("EMPORIA_DAILY_TURNS", "").strip()
+    cap = int(raw) if raw.isdigit() else 300
+    n = turns_in_24h(profile)
+    shown = f"relay-started turns in 24 h: {n} / {cap if cap else 'no cap'}"
+    if cap and n >= cap:
+        rep.warn(shown + " — at the cap, so relay events no longer start turns",
+                 "raise EMPORIA_DAILY_TURNS in its .env (0 = no cap) once you know why it is busy")
+    else:
+        rep.ok(shown)
 
 
 def a2a_state(profile: Path) -> tuple[bool, bool]:
@@ -3482,6 +3609,7 @@ def cmd_setup_agent(args: argparse.Namespace) -> int:
         _agent_stripe(profile, name)
     # P168: the role decides its tools; then say plainly what was set up.
     apply_role(profile, role)
+    lock_emporia_skill(profile)
     _setup_summary(profile, name, role)
     inst.print_restart_instructions(list(inst._TOUCHED_PROFILES))
     return 0

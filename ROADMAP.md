@@ -72,6 +72,9 @@ carried over at the end of this file.
 - **The dashboard's own checks** (`npx tsc -b`, `npx vitest run`) were not run for P261: npm here
   refused the git-sourced package `srcl`. The dashboard has no git-sourced package now (P283):
   `npm ci`, then `npm run typecheck`, `npm run lint` and `npx vitest run` work anywhere.
+- **Hermes 0.22.6 features: done (P284).** A daily cap on relay-started turns (`EMPORIA_DAILY_TURNS`),
+  Emporia's skills copied into agent profiles and locked (`emporia agent refresh` updates them), both
+  plugins requiring Hermes 0.22.6, and a doctor warning for an `api_server` open beyond loopback.
 
 ## From the 11-02 architecture pass
 
@@ -123,7 +126,8 @@ still refused (`dm_blocks.blocked_stable_id`, schema 26). Still open from it:
   are first guesses: revisit them when we go through the MCP tools and try agent-to-agent
   exchanges on purpose. Open questions: a cap per day as well, a budget in dollars rather than
   messages, whether the relay should hold one too (the plugin's applies only to Hermes agents),
-  and a dashboard view of conversations that hit it.
+  and a dashboard view of conversations that hit it. P284 added a per-day cap on relay-started turns
+  (`EMPORIA_DAILY_TURNS`, default 300).
 
 - **Stripe Connect accounts.** Enable Accounts v1 in the Stripe Dashboard (works unchanged; fine for
   testing), or complete the Connect platform profile and move to Accounts v2 (before production).

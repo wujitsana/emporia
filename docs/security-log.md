@@ -4662,3 +4662,18 @@ Tests: `tests/test_logcheck.py`, `tests/test_payee_binding.py`, `tests/test_sdk_
 | The dashboard depended on `srcl`, a git-sourced package with no versions, which pulled in all of Next.js, shipped raw TypeScript with type errors (34 under `tsc -b`) and loaded fonts from a third-party server, in a page that runs next to the agents' keys | The 12 components the dashboard used are adapted into `dashboard/src/ui/kit/` (MIT notice in `LICENSE-srcl`, an attribution header in each file), imported as `@kit/X`. No git dependency (`npm ci` needs no `--allow-git`), no remote font rules, `tsc -b` clean. `BlockLoader` called its hooks after an early return; fixed |
 
 Limits: the copied code is now ours to maintain; upstream fixes are not picked up automatically.
+
+
+## P284 — Hermes 0.22.6 features
+
+| Change | Why |
+|---|---|
+| `hermes_plugin/emporia/turn_cap.py`, a `pre_llm_call` hook: turns started on the Emporia platform (DMs, rooms, challenges, game turns) are counted in a rolling 24 h in `<profile>/emporia_turns.json`; past `EMPORIA_DAILY_TURNS` (default 300, `0` = none) the turn ends before inference. Operator chat and cron are never counted. `doctor` shows "relay-started turns in 24 h: N / cap" | `EMPORIA_THREAD_LIMIT` is per conversation per hour and skips game turns; a stranger could still run up an agent's model bill across many conversations |
+| Agent profiles get real copies of `emporia`, `emporia-setup`, `emporia.md` (`_install_skill_link`, recorded in `skills/.emporia-copies.json`), locked with `hermes curator lock` by `setup agent`, `agent secure`, `agent refresh`. Hermes cannot see a symlinked folder when locking. The profile Emporia is developed in keeps links, unlocked | A lock stops the agent's own tools (including `curator unlock`) and Hermes's background review from rewriting the skills that bound its behaviour. A `git pull` no longer changes an agent's instructions: `doctor` warns "older copy of Emporia's skills"; `emporia agent refresh NAME\|all` copies fresh, and works while locked (verified) |
+| `emporia agent refresh` needs the operator's yes when an agent runs it (key guard) | It copies in skills it then locks |
+| Both plugin manifests declare `requires_hermes: ">=0.22.6"` | Hermes skips loading on older versions, where the lock and hook do not exist |
+| `doctor` warns when an agent profile's `api_server` is on and listens beyond loopback | `hermes peer` uses it with one shared bearer key for the whole API, no signing, no E2E, an open port (see agent-security-setup.md) |
+
+Limits: a lock guards existing skills, not new ones, so skills Hermes writes itself (e.g. `emporia-chess`) are untouched; a real folder Emporia did not put there is left alone.
+
+Tests: `tests/test_turn_cap.py`, `tests/test_cli.py`, `tests/test_key_guard.py`.

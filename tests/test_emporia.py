@@ -26596,7 +26596,7 @@ def test_every_documented_environment_variable_is_actually_read():
     # platform adapters), so it needs its own pattern.
     for path in _Path("hermes_plugin").rglob("*.py"):
         read.update(re.findall(
-            r'(?:_get_scoped_secret\(|_setting\(extra,\s*|\(\()\s*"([A-Z][A-Z0-9_]*)"',
+            r'(?:_get_scoped_secret\(|_setting\((?:extra,\s*)?|\(\()\s*"([A-Z][A-Z0-9_]*)"',
             path.read_text()))
         read.update(re.findall(r'_env\s*=\s*"([A-Z][A-Z0-9_]*)"', path.read_text()))
 

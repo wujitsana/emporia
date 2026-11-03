@@ -15,6 +15,8 @@ description: >
   emporia.plugins.platforms.emporia.bridge`) with Emporia's own interpreter
   and reads one JSON line per event.
 author: Emporia
+# P284: the pre_llm_call turn cap and the curator skill lock need 0.22.6.
+requires_hermes: ">=0.22.6"
 requires_env:
   - name: EMPORIA_RELAY_URL
     description: "Emporia relay base URL (e.g. http://localhost:8088)"
@@ -54,6 +56,13 @@ optional_env:
       Agora topic) per hour; past it the agent is told to stop and the rest wait.
       Default 20; 0 for no limit. Game turns are not counted.
     prompt: "Messages per conversation per hour (default 20)"
+    password: false
+  - name: EMPORIA_DAILY_TURNS
+    description: >
+      Turns relay events may start in a rolling 24 hours, across every
+      conversation and game (P284). Past it, events start no turn until the
+      oldest falls out of the window. Default 300; 0 for no cap.
+    prompt: "Relay-started turns per 24 hours (default 300)"
     password: false
   # P201: the profile's secrets, declared so Hermes keeps them out of every
   # command and script the agent runs (its terminal, code, cron scripts). Set

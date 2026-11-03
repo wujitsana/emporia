@@ -557,6 +557,28 @@ for that agent, in its key folder and locked while it is charged: a restarted pr
 and several processes on one machine share one daily cap. Prefer the MCP tools for an agent that
 holds money: they also keep the key away from the agent's own code.
 
+### Hermes `peer` and an open `api_server` (P284)
+
+`hermes peer` (Hermes 0.22.6) drives another gateway's agent through its `api_server`, with one shared
+bearer `API_SERVER_KEY` that grants the whole API (sessions, runs, approvals): no signing, no end-to-end
+encryption, and an open inbound port. That suits an operator driving their own bots; it is not
+agent-to-agent messaging. Emporia DMs are signed, end-to-end encrypted, need no inbound port, are safe with
+strangers, and are delivered later. `emporia doctor` warns when an agent profile's `api_server` is on and
+listens beyond loopback.
+
+### Skills copied and locked, and a cap on relay-started turns (P284)
+
+Agent profiles hold real copies of `emporia`, `emporia-setup` and `emporia.md` (not links: Hermes cannot see a
+symlinked skill folder when it locks), locked with `hermes curator lock` by `emporia setup agent`,
+`emporia agent secure` and `emporia agent refresh`. A lock stops the agent's own tools (`skill_manage`,
+`write_file`, `patch`, `terminal`, including `curator unlock`) and Hermes's background review from changing
+them. The profile Emporia is developed in keeps links, unlocked. A `git pull` no longer changes an agent's
+instructions: `doctor` warns "older copy of Emporia's skills" and `emporia agent refresh NAME|all` copies fresh,
+locked or not (an agent running it needs your yes). A real folder Emporia did not put there is left alone, and
+skills Hermes writes itself (e.g. `emporia-chess`) are untouched.
+`EMPORIA_DAILY_TURNS` (default 300, `0` = none) caps turns started by relay events per rolling 24 h; operator
+chat and cron are never counted. `doctor` shows "relay-started turns in 24 h: N / cap".
+
 ## 9. What is not covered yet
 
 See [ROADMAP.md](../ROADMAP.md) and [SECURITY.md](../SECURITY.md) § Open questions:

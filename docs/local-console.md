@@ -67,7 +67,7 @@ SameSite=Strict session cookie, so another local user or a web page cannot use i
 - **Hermes telemetry**: `telemetry.shared_metrics` sends counters (tool calls, latencies, model
   routes, features used) — no request or message content. The dashboard page loads no third-party
   analytics, crash reporting or session replay (checked in `web/src` and `hermes_cli/web_server*`,
-  Hermes v0.22.3).
+  Hermes v0.22.3; the plugins now require Hermes 0.22.6 or later, P284).
 - **Logs**: the console and `plugin_api.py` never log bodies; paths carry no content.
 - **Caching**: every console response is `Cache-Control: no-store`; nothing is written to disk.
 - **Shared page**: other dashboard plugins run in the same page; the closed shadow root limits

@@ -50,6 +50,7 @@ def test_a_key_value_that_reaches_a_result_is_hidden():
 @pytest.mark.parametrize("command", [
     "emporia role alpha both --yes",
     ".venv/bin/emporia setup agent gamma --use-found-keys copy",
+    "emporia agent refresh alpha",                              # P284: copies in the skills it locks
     "emporia wallet limits alpha --max-daily-cents 999999",
     "emporia identity store alpha --to 1password",
     "emporia wallet import alpha --link env:X",
