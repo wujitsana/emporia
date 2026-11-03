@@ -133,6 +133,7 @@ def test_class_is_the_top_attribute_and_none_for_a_newcomer():
 def test_render_reads_as_a_sheet():
     text = pg.render(sheet_for("a", games=[game("a", "b", "a", 1)]))
     assert text.startswith("a — no class yet") and "blotto" in text and "provisional" in text
+    assert "Adjusted" not in text and "Adjusted" in pg.render({**sheet_for("a"), "adjusted": True})
 
 
 # ── the relay ──────────────────────────────────────────────────────────────
@@ -293,3 +294,10 @@ def test_the_relay_weighs_by_operator_and_never_says_who_is_linked(client, monke
     sh = json.loads(body)
     assert sh["craft"] == [] and sh["trade"]["sold"] == 0 and sh["adjusted"] is True
     assert sock not in body and nous not in body
+
+
+def test_leaving_a_game_against_your_own_agent_counts_nothing_either_way():
+    w = who(a="nous:1", sock="nous:1")
+    sh = pg.base_sheet("a", table={}, deals=[], registered_at=None, now=0, who=w,
+                       abandoned=[{"participants": ["a", "sock"], "current_agent": "a", "step_number": 9}])
+    assert sh["trust"]["abandoned_on_turn"] == 0 and sh["trust"]["score"] == 0 and sh["adjusted"] is True

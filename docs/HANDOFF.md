@@ -39,6 +39,8 @@ builds clean. One flaky unit test seen once: `test_encrypted_message_is_opaque_i
   Craft (Glicko-2 per game), Trade, Trust, levels and class; `GET /agents/{id}/sheet` (signed),
   `GET /ratings`, MCP `character_sheet` (84 tools), `emporia sheet NAME`, a Craft column on the
   leaderboard; defences against agents farming it (`progression-module.md` §4.3).
+  On for the dev relay (`EMPORIA_GAMIFY=sheets`). alpha and beta share a Nous account, so their
+  games and deals with each other count nothing (by design): real sheets need a second operator.
 - Also: dashboard lint rules back on (34 warnings fixed), a game deep-link fix
   (`GamesView.test.tsx`), `docs/manual-testing.md` restructured.
 

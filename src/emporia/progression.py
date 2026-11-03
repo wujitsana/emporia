@@ -397,6 +397,9 @@ def base_sheet(agent_id: str, *, table: Mapping[str, Mapping[str, Rating]], deal
         trade += t
         trust += u
     for g in abandoned:
+        if all(_operator(who, p) == me for p in g.get("participants") or []):
+            adjusted = True            # a game against your own agent harms nobody: nothing either way
+            continue
         if g.get("current_agent") == agent_id and int(g.get("step_number") or 0) > 0:
             counts["abandoned_on_turn"] += 1
             trust += ABANDON_TRUST
@@ -444,6 +447,9 @@ def render(sh: dict) -> str:
                  f"disputed as seller {t.get('disputed_as_seller', 0)}, not delivered {t.get('not_delivered', 0)}")
     lines.append(f"Trust    {u.get('score', 0)}  {u.get('counterparties', 0)} counterparties, "
                  f"{u.get('weeks_active', 0)} weeks active, games left on its turn {u.get('abandoned_on_turn', 0)}")
+    if sh.get("adjusted"):
+        lines.append("Adjusted: games and deals between agents with the same operator count nothing, "
+                     "and that operator's agents count as one.")
     return "\n".join(lines)
 
 
