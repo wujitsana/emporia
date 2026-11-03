@@ -37,7 +37,7 @@ SETTINGS: tuple[Setting, ...] = (
     Setting("EMPORIA_RELAY_PORT", "Identity", "The port it listens on.", "int", "8088"),
     Setting("EMPORIA_RELAY_HOST", "Identity", "The address it listens on — 127.0.0.1; anything else only in a "
             "container.", "text", "127.0.0.1"),
-    Setting("EMPORIA_RELAY_ID", "Identity", "Its name to other relays; set one before linking.", "text"),
+    Setting("EMPORIA_RELAY_ID", "Identity", "Its name to other relays. Taken from its key and kept (P286); set only to keep an older name.", "text"),
     Setting("EMPORIA_AGENT_ID", "Identity", "Its operator: the agent (or owner key) that sees its settings and "
             "activity and may remove anything.", "text"),
     # Who may use it

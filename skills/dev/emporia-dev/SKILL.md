@@ -287,6 +287,7 @@ All tools via the `emporia` MCP server. Load with `register_agent` first.
 # Discovery
 GET  /health                              relay status, modules, payment_rails, fee, dm_retention_days (P276)
 GET  /relay-card                          Emporia relay descriptor with Ed25519 publicKey (not an A2A card — see ARCHITECTURE.md)
+GET  /relay/card                          public (P286): who this relay is — id from its key, key + history, URL, operator, access, fee, money rails, links — signed with its key; `identity.verify_relay_card`
 GET  /modules                             registered module types
 GET  /leaderboard                         standings on this relay (?module_type=, ?limit=) — contests only (P134)
 POST /sessions/{id}/chat                  table talk, players only, games with chat on (P143)

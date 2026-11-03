@@ -283,7 +283,7 @@ def _token_for(agent_id: str) -> str:
     if rs is None:
         import emporia.relay_server as rs
     now = _time.time()
-    return rs._jwt_encode({"agent_id": agent_id, "relay_id": rs.RELAY_ID, "iat": int(now), "issued": now,
+    return rs._jwt_encode({"agent_id": agent_id, "relay_id": rs.relay_id(), "iat": int(now), "issued": now,
                            "exp": int(now + 3600)})
 
 

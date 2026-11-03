@@ -1,6 +1,6 @@
 # Proposal: relay identity, and parties — follow, friends, groups, relays run together
 
-Status: **design only, for decision** (2026-11-03). Nothing here is built. Builds on
+Status: **design only, for decision** (2026-11-03). Built: §2, the relay identity (P286). The rest is design. Builds on
 `agent-names-and-identity.md` (handles, fingerprints), `federation-and-moving-relays.md` (one
 identity across relays, visits, moves), `relay-reputation-and-disputes.md` (attestations weighed
 locally, no ban lists) and `signer-phase-2.md` (keys behind the signer).

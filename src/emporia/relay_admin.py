@@ -52,9 +52,10 @@ def settings() -> list[dict[str, Any]]:
         _item("Identity", "Operator agent", rs._relay_operator_id() or "not set",
               "The agent that may see this page, payment records and operator actions.",
               f"EMPORIA_AGENT_ID — {_RESTART}", "ok" if rs._relay_operator_id() else "warn"),
-        _item("Identity", "Relay id", rs.RELAY_ID if os.getenv("EMPORIA_RELAY_ID") else "random each start",
-              "Its name to other relays. Set one before linking relays.", f"EMPORIA_RELAY_ID — {_RESTART}",
-              "ok" if os.getenv("EMPORIA_RELAY_ID") or not rs.FEDERATED_RELAYS else "warn"),
+        _item("Identity", "Relay id", rs.relay_id() + ("" if os.getenv("EMPORIA_RELAY_ID") else " (from its key)"),
+              "Its name to other relays, taken from its key and kept across restarts and key rotations "
+              "(P286). Override only to keep a name a relay linked under.", f"EMPORIA_RELAY_ID — {_RESTART}",
+              "ok"),
         _item("Identity", "Public address", os.getenv("EMPORIA_DASHBOARD_BASE_URL") or "not set",
               "Its https address, behind a TLS proxy, for anyone off this machine.",
               f"EMPORIA_DASHBOARD_BASE_URL — {_RESTART} (README § Deployment)"),

@@ -21,6 +21,8 @@ and `tests/test_protocol_doc.py` keep it honest.
 | **Fingerprint** | `sha256(raw public key)`, first 8 hex digits shown `3f9a·c21e`. For people; tools compare whole keys. |
 | **stable_id** | `sha3_256(b"emporia:agent:v1:" + genesis public key)` — survives key rotation (§3.15). |
 | **Relay key** | Ed25519, the relay's own (`_relay_identity.priv`), distinct from every agent's. Signs receipts, feeds, records, cards, relay-to-relay requests. |
+| **Relay id** | P286: 16 lowercase base32 characters of SHA-256(the relay's key) at first start, kept beside the key (`_relay_id.txt`), unchanged by a key rotation; `EMPORIA_RELAY_ID` overrides it. Its name to other relays, and what every sign-in token is bound to, so tokens survive a restart. |
+| **Relay card** | P286: `GET /relay/card` — id, key and key history, URL, host, operator, access, fee, money rails, links, transparency log, software version, time — signed by the relay key over `emporia-relay-card:v1:` + canonical JSON. `identity.verify_relay_card` checks it, and whether the id is the one taken from the relay's first key. |
 
 ## 2. Encodings — two rules
 

@@ -1225,6 +1225,56 @@ def get_relay_public_key_hex() -> str:
     return pub_bytes.hex()
 
 
+# P286: the relay's id — its name to other relays, and what every sign-in token is
+# bound to. It was random on each start, so a restart signed every agent out and a
+# linked peer saw a new relay. Now: taken from the relay's key the first time, kept
+# beside it, and unchanged by a key rotation (the rotation chain says which key
+# speaks for it now).
+_RELAY_ID_FILE_NAME = "_relay_id.txt"
+_RELAY_ID_CACHE: str | None = None
+
+
+def relay_id_from_key(public_key_hex: str) -> str:
+    """16 lowercase base32 characters of SHA-256(public key) — 80 bits, no padding."""
+    return base64.b32encode(hashlib.sha256(bytes.fromhex(public_key_hex)).digest()).decode().lower()[:16]
+
+
+def relay_card_bytes(card: dict) -> bytes:
+    """The bytes a relay card's signature covers: its fields minus the signature, canonical
+    JSON, with a domain prefix so it can never be replayed as another kind of signature."""
+    fields = {k: v for k, v in card.items() if k != "signature"}
+    return b"emporia-relay-card:v1:" + json.dumps(fields, sort_keys=True, separators=(",", ":")).encode()
+
+
+def verify_relay_card(card: dict) -> dict:
+    """P286: check a relay card anyone handed over. {"ok": signed by the key it names,
+    "id_from_key": its id is the one taken from its first key (not an override)}."""
+    key = str(card.get("relay_public_key") or "")
+    ok = bool(key) and verify_raw(relay_card_bytes(card), str(card.get("signature") or ""), key)
+    history = card.get("relay_key_history") or []
+    first = history[0].get("old", key) if history and isinstance(history[0], dict) else key
+    try:
+        from_key = card.get("relay_id") == relay_id_from_key(first)
+    except ValueError:
+        from_key = False
+    return {"ok": ok, "id_from_key": ok and from_key}
+
+
+def load_or_derive_relay_id() -> str:
+    global _RELAY_ID_CACHE
+    if _RELAY_ID_CACHE is None:
+        path = KEY_DIR / _RELAY_ID_FILE_NAME
+        kept = path.read_text().strip() if path.exists() else ""
+        if not re.fullmatch(r"[a-z2-7]{16}", kept):
+            history = relay_key_history()        # a relay that rotated before P286: its first key
+            first = history[0].get("old") if history and isinstance(history[0], dict) else None
+            kept = relay_id_from_key(first or get_relay_public_key_hex())
+            KEY_DIR.mkdir(mode=0o700, parents=True, exist_ok=True)
+            _write_secret_atomically(path, kept.encode())
+        _RELAY_ID_CACHE = kept
+    return _RELAY_ID_CACHE
+
+
 # ─── P191: relay key rotation ────────────────────────────────────────────────
 # Peers and agents pin a relay's key on first sight, so a new key used to look
 # exactly like a hijack. A rotation is now a statement — "key OLD hands over to

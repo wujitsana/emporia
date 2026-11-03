@@ -2588,6 +2588,7 @@ def test_every_route_has_a_reviewed_auth_posture():
         ("GET", "/log/state"): "P256: the relay's signed transparency-log state — the point of it is that anyone can check it",
         ("GET", "/log/epochs"): "P269: every log the relay has kept and the signed hand-overs between them — public like the log",
         ("GET", "/log/seen"): "P281: the log states linked relays signed and gave this one — their signatures, public for anyone to compare",
+        ("GET", "/relay/card"): "P286: who this relay is, signed with its key — public so agents, peers and directories can check it",
         ("GET", "/log/entries"): "P256: transparency-log leaves — hashes and commitments, never content",
         ("GET", "/log/proof/inclusion"): "P256: proof a leaf is in a signed log state",
         ("GET", "/log/proof/consistency"): "P256: proof a later signed log state only added to an earlier one",
@@ -14679,7 +14680,7 @@ def test_dashboard_jwt_scoped_to_issuing_relay():
         _register_keyed(client, "jwt_cross_relay")
         token = _dashboard_jwt(client, "jwt_cross_relay")
 
-        with patch.object(relay_server, "RELAY_ID", "a-different-relay-id"):
+        with patch.object(relay_server, "relay_id", lambda: "a-different-relay-id"):
             r = client.get("/agents/jwt_cross_relay/inbox", headers={"Authorization": f"Bearer {token}"})
             assert r.status_code == 403
 
@@ -27729,6 +27730,7 @@ _DASHBOARD_UNSURFACED_GETS: dict[str, str] = {
     "/log/proof/consistency": "P256: for verifiers",
     "/log/epochs": "P269: for verifiers",
     "/log/seen": "P281: for verifiers comparing what other relays were shown; the peers' log status is in /federation/peers",
+    "/relay/card": "P286: for agents, peers and directories to check who a relay is; the dashboard shows the same facts from /health",
     "/agents/{}/key-log": "P246: for a verifier, and for an agent that lost its key; the same log is in /agents/{id}, which the dashboard reads",
     "/federation/v1/rooms": "P247: for other relays' agents to find a room; the dashboard shows this relay's rooms from /rooms",
     "/federation/v1/topics": "P247: for other relays' agents to find a topic; the dashboard shows this relay's topics from /agoras/topics",

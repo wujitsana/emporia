@@ -90,6 +90,7 @@ from emporia.identity import (
     load_federation_peer_pubkeys,
     save_federation_peer_pubkeys,
     load_or_generate_relay_jwt_secret,
+    load_or_derive_relay_id,
     build_relay_descriptor,
     federation_signable_bytes,
     normalize_peer_url,
@@ -222,7 +223,12 @@ if _refusal := bind_refusal(_uvicorn_host()) or (
         if _uvicorn_host() or "uvicorn" in Path(sys.argv[0]).name else ""):
     raise SystemExit(_refusal)
 RELAY_BASE_URL = os.getenv("EMPORIA_RELAY_URL", f"http://localhost:{RELAY_PORT}")
-RELAY_ID = os.getenv("EMPORIA_RELAY_ID", secrets.token_urlsafe(8))
+def relay_id() -> str:
+    """P286: this relay's id — EMPORIA_RELAY_ID if set (a relay that linked under a name
+    keeps it), else the one taken from its key and kept beside it."""
+    return os.getenv("EMPORIA_RELAY_ID", "").strip() or load_or_derive_relay_id()
+
+
 # Set EMPORIA_REQUIRE_NOUS=1 to reject registrations without a verified Nous identity.
 REQUIRE_NOUS = os.getenv("EMPORIA_REQUIRE_NOUS", "0").strip() == "1"
 # Set EMPORIA_WRITE_REQUIRES_NOUS=1 to restrict key_only agents to read-only (GET) access.
@@ -571,7 +577,7 @@ def _dashboard_agent_id(request: Request) -> str | None:
         auth = request.headers.get(name, "")
         if auth.startswith("Bearer "):
             payload = _jwt_decode(auth[7:])
-            if payload and payload.get("relay_id") == RELAY_ID:
+            if payload and payload.get("relay_id") == relay_id():
                 return payload.get("agent_id") or None
     return None
 
@@ -588,7 +594,7 @@ def _ws_agent_id(ws: WebSocket) -> str | None:
     token = ws.query_params.get("token")
     if token:
         payload = _jwt_decode(token)
-        if payload and payload.get("relay_id") == RELAY_ID:
+        if payload and payload.get("relay_id") == relay_id():
             return payload.get("agent_id") or None
     return None
 
@@ -5823,7 +5829,7 @@ async def health(request: Request):
         "host": _own_host(),
         # P240: this relay's own URL — what an agent signs as a listing's origin.
         "relay_url": RELAY_BASE_URL,
-        "relay_id": RELAY_ID,
+        "relay_id": relay_id(),
         "version": __version__,
         # P139: lets `emporia doctor` tell a relay running older code than the
         # checkout (restart it) from one that is current.
@@ -5935,6 +5941,39 @@ async def operator_overview(request: Request):
     return await asyncio.to_thread(collect)
 
 
+@app.get("/relay/card")
+async def relay_identity_card(request: Request):
+    """P286: who this relay is, signed with its key — what an agent card is for an agent.
+    Cached and passed on by agents, peers and directories, and checkable by anyone
+    (`identity.verify_relay_card`): the URL is where it is, the key and id are who it is.
+    A closed relay shows it only on this machine, as /health does."""
+    from emporia import relay_access
+    access = relay_access.mode()
+    if access == "closed" and (request.client.host if request.client else "") not in ("127.0.0.1", "::1"):
+        raise HTTPException(404, "closed relay")
+    from emporia.payments import _x402_networks
+    card = {
+        "kind": "emporia-relay-card", "version": 1,
+        "relay_id": relay_id(),
+        "relay_public_key": get_relay_public_key_hex(),
+        "relay_key_history": relay_key_history(),
+        "relay_url": RELAY_BASE_URL, "host": _own_host(),
+        "operator": _relay_operator_id() or None,
+        "access": access,
+        "operator_fee_bps": OPERATOR_FEE_BPS,
+        "money": {"x402": sorted(_x402_networks()), "x402_escrow": _escrow_network(),
+                  "tempo": (_tempo_cfg() or {}).get("network"),
+                  "cards": _stripe_key_mode() if os.getenv("STRIPE_SECRET_KEY") else None},
+        "transparency_log": translog.enabled(),
+        "links": sorted(FEDERATED_RELAYS),
+        "software": __version__,
+        "at": datetime.now(UTC).isoformat(timespec="seconds"),
+    }
+    from emporia.identity import relay_card_bytes, sign_raw_relay
+    card["signature"] = sign_raw_relay(relay_card_bytes(card))
+    return card
+
+
 @app.get("/relay-card")
 async def relay_card():
     """Serve the owner agent's relay descriptor when EMPORIA_AGENT_ID is set.
@@ -6020,7 +6059,7 @@ async def ui_config(request: Request):
         ).fetchone()[0]
     return {
         "owner_agent_id": owner or None,
-        "relay_id": RELAY_ID,
+        "relay_id": relay_id(),
         "relay_url": RELAY_BASE_URL,
         "require_nous": REQUIRE_NOUS,
         "write_requires_nous": WRITE_REQUIRES_NOUS,
@@ -6062,7 +6101,7 @@ async def dashboard_challenge(request: Request):
         "challenge_id": challenge_id,
         "nonce": nonce,
         "expires_in": int(_CHALLENGE_TTL),
-        "relay_id": RELAY_ID,
+        "relay_id": relay_id(),
         "instructions": (
             "Sign this nonce with your Ed25519 key via: "
             "sign_dashboard_challenge(relay_url=..., challenge_id=..., nonce=...) "
@@ -6104,7 +6143,7 @@ async def dashboard_session(req: DashboardSessionRequest):
     now = time.time()
     jwt = _jwt_encode({
         "agent_id": req.agent_id,
-        "relay_id": RELAY_ID,
+        "relay_id": relay_id(),
         "iat": int(now),
         "issued": now,
         "exp": int(now + _JWT_TTL_SECONDS),

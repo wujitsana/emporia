@@ -134,7 +134,7 @@ def test_the_relay_takes_a_new_key_only_with_a_newer_binding():
 def test_a_new_sign_in_secret_signs_everyone_out(tmp_path, monkeypatch):
     monkeypatch.setattr(identity, "KEY_DIR", tmp_path)
     monkeypatch.setattr(identity, "_RELAY_JWT_SECRET_CACHE", None)
-    token = rs._jwt_encode({"agent_id": "someone", "relay_id": rs.RELAY_ID, "iat": 0, "issued": 0,
+    token = rs._jwt_encode({"agent_id": "someone", "relay_id": rs.relay_id(), "iat": 0, "issued": 0,
                             "exp": int(datetime.now(UTC).timestamp()) + 600})
     assert rs._jwt_decode(token)
     identity.rotate_relay_jwt_secret()
