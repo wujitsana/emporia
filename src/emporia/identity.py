@@ -1281,6 +1281,46 @@ def follows_rotation(pinned: str, current: str, history: list[dict[str, str]]) -
     return chain if key == current else []
 
 
+def trusted_relay_keys(relay: str, current: str | None, history: list[dict[str, str]] | None = None,
+                       fetch_history: Any = None) -> tuple[list[str], bool]:
+    """(every key of this relay this agent trusts, oldest first; whether the one
+    it presents now is NOT among them). A rotation is followed only when signed
+    by the key it replaces, all the way from the pin. The pins are kept in
+    relay_pins.json; the MCP server, the SDK and `emporia log verify` share
+    them (P281)."""
+    path = KEY_DIR / "relay_pins.json"
+    pins = json.loads(path.read_text()) if path.exists() else {}
+    pinned = pins.get(relay)
+
+    def save(key: str) -> None:
+        pins[relay] = key
+        KEY_DIR.mkdir(parents=True, exist_ok=True)
+        fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+        with os.fdopen(fd, "w") as f:
+            json.dump(pins, f)
+
+    if pinned is None:
+        if current:
+            save(current)
+        return ([current] if current else []), False
+    if not current or current == pinned:
+        # Every earlier key that handed over, in a signed chain, to the pinned one.
+        chain, key = [pinned], pinned
+        for step in reversed(history or []):
+            if step.get("new") == key and verify_raw(rotation_bytes(step.get("old", ""), key, step.get("at", "")),
+                                                     step.get("signature", ""), step.get("old", "")):
+                key = step["old"]
+                chain.insert(0, key)
+        return chain, False
+    if history is None:
+        history = fetch_history() if fetch_history else []
+    chain = follows_rotation(pinned, current, history)
+    if not chain:
+        return [pinned], True
+    save(current)
+    return chain, False
+
+
 def receipt_bytes(body: dict) -> bytes:
     """The bytes an action receipt's signature covers (P140): its fields, minus
     the signature, as canonical JSON with a domain prefix so a receipt

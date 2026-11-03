@@ -616,45 +616,16 @@ def _pin_relay_key_for(relay: str, current: str | None) -> tuple[str | None, boo
 
 def _trusted_relay_keys(relay: str, current: str | None,
                         history: list[dict[str, str]] | None = None) -> tuple[list[str], bool]:
-    """(every key of this relay this agent trusts, oldest first; whether the one
-    it presents now is NOT among them). A rotation is followed only when signed
-    by the key it replaces, all the way from the pin."""
-    from emporia.identity import KEY_DIR, follows_rotation
-    path = KEY_DIR / "relay_pins.json"
-    pins = json.loads(path.read_text()) if path.exists() else {}
-    pinned = pins.get(relay)
+    """`identity.trusted_relay_keys`, fetching the relay's key history from
+    /health when the caller has none in hand."""
+    from emporia.identity import trusted_relay_keys
 
-    def save(key: str) -> None:
-        pins[relay] = key
-        KEY_DIR.mkdir(parents=True, exist_ok=True)
-        fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
-        with os.fdopen(fd, "w") as f:
-            json.dump(pins, f)
-
-    if pinned is None:
-        if current:
-            save(current)
-        return ([current] if current else []), False
-    if not current or current == pinned:
-        # Every earlier key that handed over, in a signed chain, to the pinned one.
-        from emporia.identity import rotation_bytes, verify_raw
-        chain, key = [pinned], pinned
-        for step in reversed(history or []):
-            if step.get("new") == key and verify_raw(rotation_bytes(step.get("old", ""), key, step.get("at", "")),
-                                                     step.get("signature", ""), step.get("old", "")):
-                key = step["old"]
-                chain.insert(0, key)
-        return chain, False
-    if history is None:
+    def _history() -> list[dict[str, str]]:
         try:
-            history = fetch.get(f"{relay}/health", timeout=10).json().get("relay_key_history") or []
+            return fetch.get(f"{relay}/health", timeout=10).json().get("relay_key_history") or []
         except Exception:  # noqa: BLE001
-            history = []
-    chain = follows_rotation(pinned, current, history)
-    if not chain:
-        return [pinned], True
-    save(current)
-    return chain, False
+            return []
+    return trusted_relay_keys(relay, current, history, _history)
 
 
 def _linked_relays() -> list[str]:
@@ -4178,6 +4149,32 @@ def _pinned_relay_key(current: str | None) -> tuple[str | None, bool]:
     first key seen is pinned; a relay that later signs with another key is
     reported, not silently trusted (P144)."""
     return _pin_relay_key_for(_base(), current)
+
+
+@mcp.tool()
+@_relay_aware
+def check_relay_log(compare_with: str = "") -> dict[str, Any]:
+    """Check the relay's transparency log without trusting the relay (P281).
+
+    Its latest signed state must only add to the one you kept from last time
+    (a consistency proof), the key changes you followed for agents there must be
+    in it, and the relays it links to (or `compare_with`, comma-separated URLs)
+    must have been shown the same log. `ok: false` with `problems` means the
+    relay rewrote what it recorded or showed someone else another history: stop
+    trusting it with money, and keep the evidence (log_states.json in your keys
+    folder). A relay that keeps no log says so (`status: off`); that is its
+    operator's choice, not a failure."""
+    from emporia import logcheck
+    others = [u.strip().rstrip("/") for u in compare_with.split(",") if u.strip()] or None
+    return logcheck.verify_relay(_base(), compare_with=others, may_ask=_may_ask_relay)
+
+
+def _may_ask_relay(url: str) -> bool:
+    """P281: whether this agent may read another relay's public log route —
+    never one its operator denied, and under `listed` only an allowed one."""
+    from emporia import visits
+    url = url.rstrip("/")
+    return url not in visits.denied() and (visits.policy() != "listed" or url in visits.allowed())
 
 
 @mcp.tool()

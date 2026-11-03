@@ -1548,6 +1548,18 @@ class EmporiaAgent:
         identity.save_room_chain_heads(pins)
         return result
 
+    async def check_relay_log(self, compare_with: list[str] | None = None) -> dict[str, Any]:
+        """P281: the MCP tool `check_relay_log` — this relay's log only grew since
+        the state kept from last time, holds the key changes followed, and matches
+        what other relays were shown. Shares the MCP server's pins and kept states."""
+        from emporia import logcheck, visits
+
+        def may_ask(url: str) -> bool:      # the operator's visit rules (P188), as the MCP server applies them
+            url = url.rstrip("/")
+            return url not in visits.denied() and (visits.policy() != "listed" or url in visits.allowed())
+        return await asyncio.to_thread(logcheck.verify_relay, self.relay_url, compare_with=compare_with,
+                                       may_ask=may_ask)
+
     async def verify_room_chain(
         self, room_id: str, *, max_messages: int | None = None, ignore_pin: bool = False,
     ) -> dict[str, Any]:

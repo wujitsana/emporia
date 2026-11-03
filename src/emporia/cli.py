@@ -3257,6 +3257,39 @@ def _mcp_env(profile: Path) -> dict[str, str]:
     return {k: str(v) for k, v in (entry.get("env") or {}).items() if k != "EMPORIA_NOUS_JWT"}
 
 
+def cmd_log_verify(args: argparse.Namespace) -> int:
+    """P281: `emporia log verify NAME [--compare-with URL ...]` — check the relay
+    agent NAME uses: its log only grew since NAME last checked, the key changes
+    NAME followed are in it, and other relays were shown the same log. Run as
+    the agent, with its own pins; exits 1 on anything caught."""
+    import json as _json
+    agents = {p.name: p for p, _ in _agent_profiles(profiles_root())}
+    if args.name not in agents:
+        print(f"log verify: no agent {args.name!r} ({', '.join(agents) or 'none set up'})")
+        return 1
+    others = [u.rstrip("/") for u in (args.compare_with or [])]
+    code = ("import json, os\nfrom emporia import logcheck\n"
+            f"print(json.dumps(logcheck.verify_relay(os.environ['EMPORIA_RELAY_URL'].rstrip('/'), "
+            f"compare_with={others!r} or None)))")
+    done = _as_agent(agents[args.name], code)
+    try:
+        out = _json.loads(done.stdout.strip().splitlines()[-1])
+    except (ValueError, IndexError):
+        print(f"log verify: the check did not run\n{done.stderr.strip()[-2000:]}")
+        return 1
+    print(f"{args.name}'s relay: {out.get('detail', '')}")
+    steps = out.get("key_steps")
+    if steps:
+        print(f"  key changes followed: {steps['logged']} in the log, {steps['pending']} not yet signed into it")
+    for c in out.get("compared_with") or []:
+        print(f"  as {c['relay']} was shown it: {c['detail']}")
+    if out.get("problems"):
+        print("\n  ! " + "\n  ! ".join(out["problems"]))
+        print("  The evidence is kept in the agent's log_states.json. Do not trust this relay with money.")
+        return 1
+    return 0
+
+
 def _as_agent(profile: Path, code: str, **env_over: str) -> subprocess.CompletedProcess:
     """Run `code` the way the agent's MCP server runs: its own env, nothing else."""
     env = {"PATH": os.defpath, "HOME": str(Path.home()), **_mcp_env(profile), **env_over}
@@ -3833,13 +3866,13 @@ _LOG_ABOUT = ("A public, append-only record of what this relay recorded and when
 
 
 def _log_setting(env: dict[str, str]) -> bool:
-    return env.get("EMPORIA_TRANSPARENCY_LOG", "on").strip().lower() not in ("0", "off", "false", "no")
+    return env.get("EMPORIA_TRANSPARENCY_LOG", "off").strip().lower() not in ("0", "off", "false", "no")
 
 
-def _choose_log(now: bool = True) -> bool:
+def _choose_log(now: bool = False) -> bool:
     return choose("Transparency log:", [
-        ("on", "On — keep it (recommended): anyone can check this relay never rewrote what it recorded"),
-        ("off", "Off — no log; turned on later, it logs everything the relay holds by then"),
+        ("on", "On — keep it: agents and linked relays check this relay never rewrote what it recorded"),
+        ("off", "Off (default) — no log; turned on later, it logs everything the relay holds by then"),
     ], 0 if now else 1) == "on"
 
 
@@ -5449,6 +5482,15 @@ def build_parser() -> argparse.ArgumentParser:
     vs.add_argument("--forget", action="append", help="take a relay off both lists")
     vs.set_defaults(func=cmd_visits)
 
+    tl = sub.add_parser("log", help="check a relay's transparency log, as one of your agents")
+    tls = tl.add_subparsers(dest="what", required=True)
+    tv = tls.add_parser("verify", help="the relay's log only grew, holds the key changes followed, "
+                                       "and matches what other relays were shown")
+    tv.add_argument("name", help="the agent whose relay, pins and kept states are used")
+    tv.add_argument("--compare-with", action="append", metavar="URL",
+                    help="another relay to ask what it was shown (default: the relays it links to)")
+    tv.set_defaults(func=cmd_log_verify)
+
     lg = sub.add_parser("login", help="Nous sign-in for a Hermes profile, verified")
     lg.add_argument("--profile", default="", help="default: the profile holding this checkout")
     lg.set_defaults(func=cmd_login)
@@ -5497,7 +5539,7 @@ def build_parser() -> argparse.ArgumentParser:
                     help="also take payments on: solana-devnet, tempo-moderato (comma-separated)")
     rl.add_argument("--yes", action="store_true", help="write without asking")
     rl.set_defaults(func=cmd_setup_relay)
-    lg = ss.add_parser("log", help="the transparency log: on (default) or off")
+    lg = ss.add_parser("log", help="the transparency log: on or off (default)")
     lg.add_argument("state", nargs="?", default="", choices=["", "on", "off"])
     lg.set_defaults(func=cmd_setup_log)
     rp = sub.add_parser("role", help="what an agent may do: marketplace, developer or both")

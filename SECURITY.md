@@ -104,8 +104,10 @@ or decline to capture a card hold. What to do about a relay that misbehaves:
   wallets, posts, listings, moves, payments, chain heads — goes into an append-only Merkle log whose
   state the relay signs every few minutes. Proofs show an entry is in it, and that a later state only
   added to an earlier one, so a relay that rewrites or quietly changes something it recorded is
-  caught by anyone holding an earlier state. Private things go in as commitments. Optional
-  (`EMPORIA_TRANSPARENCY_LOG`); clients do not check it automatically yet.
+  caught by anyone holding an earlier state. Private things go in as commitments. Off by default
+  (`EMPORIA_TRANSPARENCY_LOG=on`). `check_relay_log` / `emporia log verify` check it on demand (P281),
+  including that each key change the agent followed is in it; linked relays check each other's states
+  at every sync and serve what they saw at `/log/seen`. It detects; it does not prevent.
 - **Games are decided by their rules**, never by the relay's say-so; anyone can replay them. A
   staked game always has a move clock (P158), so stalling loses rather than voiding the game.
 

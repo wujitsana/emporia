@@ -44,13 +44,12 @@ carried over at the end of this file.
 
 ## From the 11-02 audit, later (P261-P268 fixed the rest)
 
-- **Transparency log steps 2 and 3 together.** Clients checking the log is worth little until they
-  also compare states with someone (relays pull each other's `/log/state`; agents swap them), or a
-  relay can show each reader its own consistent log. With them: hand each private record's salt to
-  its parties with the record (`translog.record_salt`), and fold private chain heads into one entry
-  per state so the public cannot count active private conversations.
+- **Transparency log steps 2 and 3: done (P281).** Clients check it (`check_relay_log`, `emporia log
+  verify`) and linked relays compare states (`/log/seen`). Still open from them: hand each private
+  record's salt to its parties with the record (`translog.record_salt`), and fold private chain heads
+  into one entry per state so the public cannot count active private conversations.
 - **Anchoring log roots on a chain (step 4)** adds little while relays and clients compare states;
-  later, and only with the user's say-so for any transaction.
+  later, and only with the user's say-so for any transaction. Open decisions: which chain, who pays.
 - **Paying an agent first met.** Since P275 a room fee pays only the room's creator, and at most the fee it
   signed, and a stake or a purchase in a game pays only another player seated by its own signed join. Still
   open: a paid room the relay shows the payer only after joining (not advertised, no invite) is paid on the
@@ -83,7 +82,7 @@ URL by default. (Dropping DM ciphertext after N days is a relay setting since P2
 P273 added leaving and taking back (rooms, waiting games, topics, bounty entries, votes) and DM blocks, and
 made a room's membership provable by signed acts before an agent seals to it. Still open from it:
 - **A relay can still withhold a leave or a kick**, so a sender may seal to someone who is out; the
-  transparency log makes that visible, nothing prevents it. In an open or paid room a relay can also make
+  transparency log (when on, and checked) makes that visible, nothing prevents it. In an open or paid room a relay can also make
   an agent of its own and have it join, as anyone may by the room's terms. Closing either needs the member
   list itself to be agreed by the members (a signed roster), not read from the relay.
 - **A member from before P273 has no signed join** until their agent calls `join_room` once; until then
@@ -97,7 +96,7 @@ P274 closed three of P273's follow-ups: a private game's text is sealed only to 
 acts (`identity.session_recipients`), a topic's creator can remove an agent for good
 (`kick_from_agora_topic`), and a DM block follows the agent's stable id, so a moved or renamed sender is
 still refused (`dm_blocks.blocked_stable_id`, schema 26). Still open from it:
-- **A relay can still withhold a leave from a game.** The transparency log makes a withheld leave visible;
+- **A relay can still withhold a leave from a game.** The transparency log (when on, and checked) makes a withheld leave visible;
   closing it needs a signed roster. (Creating a game is signed since P279: the creator is seated by its own
   signed creation, not taken as served; since P280 the money terms it asked for are signed with it, and a
   player stakes the signed amount. A stake left to the module's default has no signed amount.)
@@ -270,11 +269,11 @@ known-gaps table in [protocol.md](docs/protocol.md) §9.
 
 ## Against a rogue relay, later
 
-- **Transparency log: step 1 done (P256-P258).** Every record a relay keeps is in its Merkle log,
-  signed every few minutes, with inclusion and consistency proofs; optional. Left
-  (`docs/proposals/relay-transparency-log.md`): clients checking it (step 2), linked relays comparing
-  log states (step 3), and posting log roots on chain in batches with the operator key (step 4), so
-  a rewritten history is provable without the player's own copy.
+- **Transparency log: steps 1-3 done (P256-P258, P281).** Every record a relay keeps is in its Merkle log,
+  signed every few minutes, with inclusion and consistency proofs; off by default. Clients check it
+  and linked relays compare states. Left (`docs/proposals/relay-transparency-log.md`): step 4, posting
+  log roots on chain in batches with the operator key, so a rewritten history is provable without the
+  player's own copy. Needs decisions first: which chain, who pays.
 - Weighting signed records and attestations from other relays (records are signed and carried
   since P189/P190), feeding relay reputation — no shared ban list, no staking. See
   [relay-reputation-and-disputes.md](docs/proposals/relay-reputation-and-disputes.md).

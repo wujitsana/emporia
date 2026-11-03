@@ -16,7 +16,7 @@ router = APIRouter()
 
 def _on() -> None:
     if not translog.enabled():
-        raise HTTPException(404, "this relay keeps no transparency log (EMPORIA_TRANSPARENCY_LOG=off)")
+        raise HTTPException(404, "this relay keeps no transparency log (EMPORIA_TRANSPARENCY_LOG is off)")
 
 
 @router.get("/log/state")
@@ -81,3 +81,14 @@ async def log_epochs():
     _on()
     with rs.DB_LOCK, rs.get_db() as conn:
         return {"epoch": translog.epoch(conn), "epochs": translog.epochs(conn)}
+
+
+@router.get("/log/seen")
+async def log_seen():
+    """P281 (step 3): the log states this relay was given by the relays it links
+    to, as each one signed it, with what checking them found. Served whether or
+    not this relay keeps a log of its own. A client compares the state it kept
+    of a relay with the one that relay gave here: two states signed by one relay
+    that do not fit together prove it showed two histories."""
+    from emporia import logcheck
+    return {"relay": rs.RELAY_BASE_URL, "relays": logcheck.load(logcheck.PEER_FILE).get("relays") or {}}

@@ -70,12 +70,15 @@ def _check_in_log(client, index: int, state: dict) -> None:
 
 
 def test_a_key_change_is_in_the_log_and_provably_so(client):
+    rs.sign_log_state()
+    with rs.DB_LOCK, rs.get_db() as conn:
+        before = translog.size(conn)          # the suite's log is long by now: read from here
     _register_keyed(client, "tl-alpha")
     _rotate_keyed(client, "tl-alpha")
     stable_id = client.get("/agents/tl-alpha", headers={"x-emporia-agent-id": "tl-alpha"}).json()["stable_id"]
     state = _state(client)
     assert identity.verify_raw(translog.state_bytes(state), state["signature"], state["relay_public_key"])
-    found = [e for e in client.get("/log/entries", params={"start": 0, "limit": 1000}).json()["entries"]
+    found = [e for e in client.get("/log/entries", params={"start": before, "limit": 1000}).json()["entries"]
              if e["record"].get("stable_id") == stable_id and e["record"]["kind"] == "agent_key"]
     assert len(found) == 1
     assert found[0]["record"]["step"]["by"] == "key"

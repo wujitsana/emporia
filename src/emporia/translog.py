@@ -257,9 +257,9 @@ _OLD_TABLES = ("translog_chain_heads", "translog_sources")
 
 
 def enabled() -> bool:
-    """P258: the log is on unless the operator turned it off (EMPORIA_TRANSPARENCY_LOG=off)."""
+    """P281: the log is off unless the operator turned it on (EMPORIA_TRANSPARENCY_LOG=on)."""
     import os
-    return os.getenv("EMPORIA_TRANSPARENCY_LOG", "on").strip().lower() not in ("0", "off", "false", "no")
+    return os.getenv("EMPORIA_TRANSPARENCY_LOG", "off").strip().lower() not in ("0", "off", "false", "no")
 
 
 def init_schema(conn: Any) -> None:

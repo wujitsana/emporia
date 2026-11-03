@@ -105,6 +105,9 @@ TEST_ENVIRONMENT: dict[str, str] = {
     # mechanics, so the suite opts in to stakes on engine-decided games the way
     # an operator would. test_engine_games.py clears it to test the refusal.
     "EMPORIA_ENGINE_GAME_STAKES": "1",
+    # P281: the transparency log is off by default; the suite keeps it on so every
+    # write path is still tested with its leaf. test_translog checks the default.
+    "EMPORIA_TRANSPARENCY_LOG": "on",
     # P106: named in the docstring above and never actually pinned, so the
     # profile .env's value reached the suite — and the live SPT lane sent it.
     "STRIPE_API_VERSION": "2026-04-22.preview",

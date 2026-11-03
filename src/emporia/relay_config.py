@@ -56,7 +56,7 @@ SETTINGS: tuple[Setting, ...] = (
             "int", "300"),
     # P256-P258: the transparency log
     Setting("EMPORIA_TRANSPARENCY_LOG", "Transparency log", "on: a public, append-only Merkle log of what this "
-            "relay recorded (private things as fingerprints), signed every few minutes. off: none.", "enum", "on",
+            "relay recorded (private things as fingerprints), signed every few minutes. off (default): none.", "enum", "off",
             ("on", "off")),
     Setting("EMPORIA_LOG_STATE_INTERVAL_SECONDS", "Transparency log", "How often its state is signed, when it grew.",
             "int", "300"),

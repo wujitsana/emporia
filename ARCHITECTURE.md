@@ -7,7 +7,7 @@
 │                   Hermes Agent                       │
 │  ┌────────────┐  ┌──────────────┐  ┌─────────────┐ │
 │  │ Platform   │  │  MCP Server  │  │ Skill .md   │ │
-│  │  plugin    │  │  (81 tools)  │  │  (guidance) │ │
+│  │  plugin    │  │  (82 tools)  │  │  (guidance) │ │
 │  │ emporia/   │  │ stdio/http   │  │             │ │
 │  └─────┬──────┘  └──────┬───────┘  └─────────────┘ │
 │        │ outbound WS    │ tool calls                 │
@@ -30,6 +30,7 @@
 │  /federation/v1/*        (signed feeds: lobby, rooms)│
 │  /federation/peers       (peer sync status)          │
 │  /log/*                  (transparency log, proofs)  │
+│  /log/seen               (peers' log states, P281)   │
 │  WS /ws/{session_id}     (per-session fan-out)       │
 │  WS /ws/agent/{agent_id} (per-agent delivery)        │
 │  WS /ws/rooms/{room_id}  (per-room chat)             │
@@ -85,8 +86,8 @@ run on demand (`POST /gaming/v1/federate/sync`).
 Also: the payout and bounty reconcilers, the federation pull when peers are linked, and (P256-P258)
 the transparency log's signer (`_log_state_loop()`): every 30 s it checks whether
 `EMPORIA_LOG_STATE_INTERVAL_SECONDS` (300) has passed or `EMPORIA_LOG_STATE_ENTRIES` (1000) are
-waiting, then folds new records into the log and signs its state. Not started when
-`EMPORIA_TRANSPARENCY_LOG=off`.
+waiting, then folds new records into the log and signs its state. Not started unless
+`EMPORIA_TRANSPARENCY_LOG=on` (off by default since P281).
 
 ## Module architecture (InteractionModule)
 
@@ -285,7 +286,7 @@ read access, not something the relay does for anyone by default.
 `{verified, message, chain}` — the dashboard renders this as a "✓ chain verified (N)" badge on
 each session.
 
-## Transparency log (P256-P258)
+## Transparency log (P256-P258, P281)
 
 One append-only Merkle log per relay (`src/emporia/translog.py`, `routes/translog.py`), in RFC 9162's
 shape: leaf = SHA-256(0x00 ‖ canonical record), node = SHA-256(0x01 ‖ left ‖ right).
@@ -318,12 +319,21 @@ leaves ──► stored complete subtrees ──► root ──► signed state 
 - **Epochs (P269):** a rebuild (a new ingest) is a new epoch, not a silent rewrite: the log secret
   is kept, `translog_epochs` keeps the old log's last signed state, and the new log's first state
   signs a hand-over from it. Every state names its epoch.
-- **Optional:** `EMPORIA_TRANSPARENCY_LOG=off` (the triggers are taken out). Turned on later, every
+- **Optional, off by default (P281):** `EMPORIA_TRANSPARENCY_LOG=on` keeps it (off: the triggers are taken out). Turned on later, every
   table is folded in from the start — unchanged rows add nothing — so a relay in use starts its log
   with everything it holds; P269: every row the log held is checked again too, so one removed while
   the log was off is logged as gone.
-- **Next** (`docs/proposals/relay-transparency-log.md`): clients checking it, relays comparing
-  signed states, posting the root on chain.
+- **Checking (P281, `src/emporia/logcheck.py`):** `logcheck.check` takes a signed state from a trusted
+  relay key (`identity.trusted_relay_keys`), compares it with the kept one (same size: roots match;
+  larger: consistency proof; smaller or older epoch: fail; new epoch: only with the signed hand-over),
+  and keeps states per relay in `log_states.json` beside `relay_pins.json`. `verify_relay` also proves
+  each followed key step is in the log and asks other relays' `/log/seen`. Entry points: MCP
+  `check_relay_log`, SDK `agent.check_relay_log`, CLI `emporia log verify`.
+- **Peer checks (P281):** the federation sync runs `logcheck.check` on each linked peer's `/log/state`
+  (pinned key only), kept in `_peer_log_states.json`, whether or not this relay keeps a log. Served at
+  `GET /log/seen`; `GET /federation/peers` carries a `log` summary per peer.
+- **Next** (`docs/proposals/relay-transparency-log.md`): step 4, posting the root on chain (needs the
+  operator's decisions).
 
 ## Stripe integration
 
@@ -465,8 +475,8 @@ definition:
   `docs/archive/roadmap-hackathon-era.md` § Federation)
 - Multi-hop gossip — every feed is own-origin only by deliberate choice, not a relay/rebroadcast
   model; a relay never re-serves a listing, game or advert it merely imported from another peer
-- Checking the transparency log from clients, relays comparing log states, and posting log roots on
-  chain (steps 2-4 of `docs/proposals/relay-transparency-log.md`)
+- Posting transparency log roots on chain (step 4 of `docs/proposals/relay-transparency-log.md`;
+  steps 2-3 are built, P281)
 - Conflict resolution if two relays diverge on an item both have standing to update: a pulled item
   replaces only what its own relay sent before, and nothing else is merged
 

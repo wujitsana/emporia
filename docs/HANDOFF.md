@@ -26,9 +26,8 @@ until the user says). Unit suite 1,937, live 10/10. None of P251–P269 is teste
 
 **3. Build, in order (next sessions):**
 1. Fixes from the hand tests.
-2. Transparency log steps 2 and 3 together: `emporia log verify` (states kept in
-   `HERMES_HOME/log_states.json`, epochs and hand-overs understood), `log_verified` in MCP/SDK,
-   dashboard line; relays fetch each other's `/log/state` and serve `/log/seen`; hand each
+2. Transparency log steps 2 and 3: DONE (P281): `emporia log verify`, `check_relay_log` in MCP/SDK,
+   relays check peers' `/log/state` and serve `/log/seen`. Left: a dashboard line; hand each
    private record's salt to its parties; fold private chain heads into one entry per state.
 3. Names step 1 (after the decisions): claims/transfers/releases as signed payloads in the log,
    `/names/{name}`, `lookup_name`, `emporia name …`.
@@ -188,7 +187,7 @@ Schema 22. 5 is in ROADMAP. The plan as written:
     with the reason — a test enforces this;
   - signed log states every 5 min / 1,000 entries; public read-only `/log/state`,
     `/log/entries`, `/log/proof/inclusion`, `/log/proof/consistency`;
-  - optional: `EMPORIA_TRANSPARENCY_LOG=on|off` (default on), chosen in `emporia setup log`,
+  - optional: `EMPORIA_TRANSPARENCY_LOG=on|off` (default off since P281), chosen in `emporia setup log`,
     `emporia relay host` and the menus. Turned on later, it backfills everything;
   - ~353 bytes and ~41 µs per entry; a proof at 200k entries ~0.5 ms. A VPS is fine.
   - Docs updated: README, ARCHITECTURE, SECURITY, paper §3.7, protocol §4.5/§6/§9, RUNBOOK,
@@ -213,10 +212,8 @@ Schema 22. 5 is in ROADMAP. The plan as written:
 
 ### Next steps, in order
 1. The user hand-tests §1c of `docs/manual-testing.md` (includes the log checks); fix failures.
-2. Transparency log step 2: clients check it (`emporia log verify`, `log_verified` in MCP/SDK,
-   dashboard; seen states kept in `HERMES_HOME`'s `log_states.json`).
-3. Names step 1 (after the decisions above), then log steps 3 (relays compare states) and 4
-   (chain anchor).
+2. Transparency log steps 2 and 3: done (P281; `src/emporia/logcheck.py`, `tests/test_logcheck.py`).
+3. Names step 1 (after the decisions above), then log step 4 (chain anchor; needs which chain, who pays).
 
 ## Tested by hand on 10-27/28 (the user's machine: Hermes in Docker, local testnet relay)
 
@@ -405,7 +402,7 @@ is published.
   `multi-hop.md`), for after the merge. Not built.
 - **Name registry and a transparency log (Merkle, optional chain anchoring):** proposals with step plans,
   `docs/proposals/relay-transparency-log.md` and the registry plan in `agent-names-and-identity.md`;
-  log first, names on it. Log step 1 built (P256-P258: `translog.py`, `/log/*`, every
+  log first, names on it. Log steps 2-3 built (P281). Log step 1 built (P256-P258: `translog.py`, `/log/*`, every
   record kind, stored subtrees, optional via `emporia setup log`, schema 18); the rest awaits
   the user's decisions.
 - **README status and `ROADMAP.md` § Before publishing:** updated for P240-P250; update again as

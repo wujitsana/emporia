@@ -4668,6 +4668,8 @@ async def lifespan(app: FastAPI):
     _SWEEP_TASK = asyncio.create_task(_sweep_loop())
     if translog.enabled():   # P258: EMPORIA_TRANSPARENCY_LOG=off turns it off
         globals()["_LOG_STATE_TASK"] = asyncio.create_task(_log_state_loop())
+    else:
+        _warn_if_log_left_off()
     # P51: money the relay owes a creator but never moved. Runs unconditionally
     # — unlike the federation loop, which is gated on peers being configured,
     # there is no deployment where "a payout could be owed" is knowably false.
@@ -5189,6 +5191,33 @@ def _sweep_expired_state() -> dict[str, int]:
 _LOG_STATE_INTERVAL_SECONDS = float(os.getenv("EMPORIA_LOG_STATE_INTERVAL_SECONDS", "300"))
 _LOG_STATE_ENTRIES = int(os.getenv("EMPORIA_LOG_STATE_ENTRIES", "1000"))
 _LOG_STATE_TASK: asyncio.Task | None = None
+
+
+def _warn_if_log_left_off() -> str:
+    """P281: the log is off by default now. A relay that kept one under the old
+    default, and never set EMPORIA_TRANSPARENCY_LOG, would stop it without a
+    word, and agents that kept its states would see it gone. Say so, loudly."""
+    try:
+        with DB_LOCK, get_db() as conn:
+            size = conn.execute("SELECT MAX(size) FROM translog_states").fetchone()[0]
+            # a log rebuilt on upgrade (P269) keeps its last signed state in the epoch it handed over to
+            prev = conn.execute("SELECT previous FROM translog_epochs WHERE previous IS NOT NULL "
+                                "ORDER BY epoch DESC LIMIT 1").fetchone()
+    except sqlite3.Error:
+        return ""
+    if not size and prev:
+        try:
+            size = json.loads(prev[0]).get("size")
+        except (ValueError, AttributeError):
+            size = None
+    if not size:
+        return ""
+    row = (size,)
+    notice = (f"this relay kept a transparency log ({row[0]} entries signed) but it is off now: since P281 the "
+              "log is off unless EMPORIA_TRANSPARENCY_LOG=on. Set it (emporia setup log on) to keep it; "
+              "agents and linked relays that check it will see it gone until then")
+    logger.warning("transparency_log_left_off", extra={"signed_size": row[0], "detail": notice})
+    return notice
 
 
 def sign_log_state() -> dict[str, Any] | None:
@@ -7385,6 +7414,10 @@ async def _sync_all_federated_peers() -> dict[str, int]:
             await _pull_federated_adverts(peer)
         except Exception:
             logger.exception("federation_advert_pull_raised_unexpectedly", extra={"peer_url": peer})
+        try:   # P281: and its log's state, checked against the one kept from last time
+            await asyncio.to_thread(_check_peer_log, normalize_peer_url(peer))
+        except Exception:
+            logger.exception("federation_log_check_raised_unexpectedly", extra={"peer_url": peer})
         return imported
 
     listing_results = await asyncio.gather(*(_pull_peer(p) for p in peers), return_exceptions=True)
@@ -7403,6 +7436,33 @@ async def _sync_all_federated_peers() -> dict[str, int]:
         return counts
 
     return _coerce(listing_results)
+
+
+def _peer_log_get(peer_url: str):
+    """A `logcheck.Get` for a linked relay (tests replace it)."""
+    def get(path: str, params: dict) -> tuple[int, Any]:
+        with httpx.Client(timeout=10) as client:
+            r = client.get(f"{peer_url}{path}", params=params or None)
+        try:
+            return r.status_code, r.json()
+        except ValueError:
+            return r.status_code, None
+    return get
+
+
+def _check_peer_log(peer_url: str) -> dict[str, Any] | None:
+    """P281 (transparency log, step 3): fetch a linked relay's signed log state
+    and check it only added to the one this relay kept. A failure is kept as
+    evidence — two states it signed that cannot both be true — and served in
+    GET /log/seen and /federation/peers for anyone to check."""
+    from emporia import logcheck
+    pinned = _FEDERATION_PEER_PUBKEYS.get(peer_url)
+    if not pinned:
+        return None
+    out = logcheck.check_and_keep(peer_url, _peer_log_get(peer_url), [pinned], name=logcheck.PEER_FILE)
+    if not out["ok"] and out["status"] != "unreachable":
+        logger.warning("federation_peer_log_failed", extra={"peer_url": peer_url, "detail": out["detail"]})
+    return out
 
 
 def drop_unlinked_federated_rows() -> int:

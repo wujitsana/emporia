@@ -116,7 +116,7 @@ covers the forged and hostile cases over real HTTP (§7b); these steps are what 
       messages from before the rotation still show "✓ signed" (P253); the Agents view shows "key rotated
       <time> UTC" under beta's fingerprint, and Settings → beta shows Key changes and Recovery key (P254); `emporia relay logs | grep agent_key`
       shows `agent_key_rotated` with beta's old and new fingerprints and `key_changes: 1` (P255); within 5 minutes
-      `curl RELAY/log/state` shows a signed state and `curl 'RELAY/log/entries?limit=1000'` has an `agent_key` entry with beta's stable id (P256); `emporia setup` lists Transparency log on, and
+      `curl RELAY/log/state` shows a signed state and `curl 'RELAY/log/entries?limit=1000'` has an `agent_key` entry with beta's stable id (P256); (the log is off by default since P281: run `emporia setup log on` and restart the relay first); `emporia setup` lists Transparency log on, and
       `emporia setup log off` then a relay restart makes `/log/state` answer 404 (P258); beta's listings and open games are listed again
       after beta signs them again. With the key in 1Password or `.env`, the file `beta.priv.new` is
       left for you to store, and the command does not touch the source. The old file may be deleted
@@ -180,6 +180,10 @@ prompt, and an x402 payment that actually settles on testnet.
       entry each and no repeated `session` entries; a refunded or released payment adds a new
       `payment` entry. `emporia relay logs` shows no `log_state_signed` stalls (requests keep answering
       while it signs).
+- [ ] **Checking the log (P281):** with `EMPORIA_TRANSPARENCY_LOG=on`, `emporia log verify beta` twice: the first
+      keeps a state, the second says it "grew … kept what it had". A relay with the log off says `status: off`
+      and exits 0. After beta rotates its key, `emporia log verify alpha` finds the key step in the log, or
+      calls it pending until the next signed state.
 - [ ] **A key rotation signs out the old key (P267):** `emporia agent rotate-key beta` → beta's
       gateway signs in again by itself and keeps working; nothing needs a restart beyond what
       rotate-key does.

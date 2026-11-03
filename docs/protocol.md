@@ -251,7 +251,7 @@ pinned for that agent:
 
 A member the acts do not put in the room makes the client refuse (`identity.RoomMembershipUnproven`),
 naming them; it seals nothing. `check_room` reports the same as `unproven_members`. What this does not
-stop: a relay can withhold an act (a kick or a leave) — the transparency log (P269, §4) makes that visible; in an
+stop: a relay can withhold an act (a kick or a leave) — the transparency log (P269, §4), when on and checked, makes that visible; in an
 open or paid room a relay can make an agent of its own and have it join, as anyone may by the room's terms.
 It cannot put an agent in an invite-gated room, or list one that never asked to join.
 
@@ -538,9 +538,24 @@ wallets, relays and name — a quiet wallet swap shows), adverts and offers, esc
 (status) and events; a row that goes is `<kind>_gone` with its id hashed. Also folded: access
 grants and removals, bounty entries, game participants, players who left a waiting game
 (`session_leave`, P273), Agora members and invites, room
-invites and session messages — all as commitments. `EMPORIA_TRANSPARENCY_LOG=off` turns the
-log off (`/log/*` answer 404, `/health` says `transparency_log: false`); turned on, every table
+invites and session messages — all as commitments. The log is off unless `EMPORIA_TRANSPARENCY_LOG=on`
+(`/log/*` answer 404, `/health` says `transparency_log: false`); turned on, every table
 is folded in from where it stopped, so a relay in use starts its log with everything it holds.
+
+**Checking states (P281, `logcheck.check`).** A state counts only if signed by a relay key the checker
+trusts: the pinned key, following signed rotations (P191). It is compared with the state kept from last time:
+same size, the roots must match; larger, the checker asks `GET /log/proof/consistency` and verifies it;
+smaller, it fails ("shrank"); a different epoch is accepted only with the relay's signed hand-over from
+`GET /log/epochs`, and reported as `new_log`; an older epoch fails. A relay that keeps no log is
+`status: off`, not a failure. A failure keeps the earlier proven state and the evidence (both signed
+states and the proof). A client also checks each key step it followed (P245): the leaf hash is
+recomputed from the record, not taken from the relay, and must have an inclusion proof against the checked
+state; a step newer than the signed state is pending. During federation sync a relay checks each linked
+peer's `/log/state` the same way, trusting only the peer's pinned key. `GET /log/seen` serves what a relay
+saw: `{relay, relays: {peer_url: {state, status, detail, checked_at, failures}}}`, each state as the peer
+signed it. A client asks other relays for it, takes only a state signed by its home relay's key, and
+checks it against its own kept state. Two signed states of one relay that do not fit together prove it
+showed two histories. This detects; it does not prevent.
 
 ## 5. Trust on first use, and what each key is checked against
 
@@ -632,6 +647,6 @@ approved intent pays the same payment once, within an hour.
 | A leaked relay key can sign a rotation | Rotation proves continuity, not innocence | Peers re-pin by hand after a leak |
 | A leaked agent key can sign a key change | The same, for agents (§3.15); and a lost key cannot sign one | A recovery key made beforehand replaces a lost or leaked key (§3.17, P246); an agent that made none has no way back |
 | Backdating across a key change | When something was signed is the relay's recorded time (§3.15) | Needs the replaced key *and* the relay. Narrowed by the transparency log (§4.5): once a key step is in a signed log state, backdating before it needs a rewrite a consistency proof catches |
-| A relay showing different readers different logs | Each reader sees only what it is served (§4.5) | Caught by a reader who kept an earlier signed state; relays comparing states (proposal step 3) is not built |
+| A relay showing different readers different logs | Each reader sees only what it is served (§4.5) | Caught by a reader who kept an earlier signed state (`emporia log verify`), and by linked relays and clients comparing states (P281, §4.5); needs the log on, and someone checking |
 | Plain http | Allowed only on this machine and private networks | https everywhere else |
 | DM history on a vanished relay | Lost | A local archive of sealed copies (open item) |

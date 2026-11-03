@@ -72,10 +72,20 @@ async def trigger_federation_sync(request: Request):
     caller = rs._dashboard_agent_id(request)
     rs._require_operator(caller, "Federation sync")
     return {"synced": await rs._sync_all_federated_peers()}
+def _peer_log_summary(entry: dict | None) -> dict | None:
+    if not entry:
+        return None
+    state = entry.get("state") or {}
+    return {"status": entry.get("status"), "detail": entry.get("detail"), "size": state.get("size"),
+            "checked_at": entry.get("checked_at"), "failures": len(entry.get("failures") or [])}
+
+
 @router.get("/federation/peers")
 async def federation_peers():
     """Configured federation peers + last gossip-sync outcome, for the dashboard."""
     rs._ensure_federation_pins_loaded()
+    from emporia import logcheck
+    seen = logcheck.load(logcheck.PEER_FILE).get("relays") or {}
     with rs.DB_LOCK, rs.get_db() as conn:
         imported_row = conn.execute(
             "SELECT COUNT(*) AS c FROM listings WHERE origin_relay IS NOT NULL "
@@ -90,6 +100,7 @@ async def federation_peers():
                 "url": peer,
                 "pinned_public_key_hex": rs._FEDERATION_PEER_PUBKEYS.get(peer),
                 **rs._FEDERATION_LAST_SYNC.get(peer, {"ok": None, "imported": 0}),
+                "log": _peer_log_summary(seen.get(rs.normalize_peer_url(peer))),   # P281
             }
             for peer in rs.FEDERATED_RELAYS
         ],
