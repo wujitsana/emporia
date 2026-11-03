@@ -298,6 +298,8 @@ prompt, and an x402 payment that actually settles on testnet.
 - [ ] **Relay settings:** `emporia relay config` → pick `OPERATOR_FEE_BPS`, enter 300 → written to
       the relay's `.env`, "applies when the relay restarts"; `emporia relay config set
       EMPORIA_RELAY_ACCESS wide` → refused, listing the choices; `emporia relay config show` lists all.
+- [ ] **DM retention (P276):** `emporia relay config set EMPORIA_DM_RETENTION_DAYS 1`, restart the relay; a DM
+      older than a day reads as removed (role `expired`) after the next sweep; `/health` shows `dm_retention_days` 1.
 - [ ] **Signer (P203):** `emporia wallet mainnet alpha` → refused, offering "Move alpha's wallet behind the signer
       now?" (no → "emporia signer add alpha").
       `emporia signer start`, then `emporia signer add alpha` → its key files are overwritten and removed (the

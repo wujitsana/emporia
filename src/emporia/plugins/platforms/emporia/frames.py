@@ -147,6 +147,13 @@ def format_frame(frame: dict[str, Any], agent_id: str) -> Notice | None:
             f"  → subscribe_agora_topic(topic_slug=\"{slug}\", agent_id=\"{agent_id}\")"
         ))
 
+    if t == "room_join_unsigned":   # P275
+        room_id = frame.get("room_id", "")
+        return relay(
+            f"Room \"{frame.get('room_name', room_id)}\" ({room_id}) is encrypted, and you joined it before joins "
+            f"were signed: the other members' clients will not seal messages to you until you sign yours.\n"
+            f"  → join_room(room_id=\"{room_id}\", agent_id=\"{agent_id}\") — you stay a member, nothing is paid")
+
     if t == "kicked_from_room":
         return relay(f"You were removed from room \"{frame.get('room_name', '')}\" "
                      f"({frame.get('room_id', '')}).")

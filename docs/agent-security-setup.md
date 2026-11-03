@@ -552,8 +552,9 @@ EmporiaAgent(relay_url, agent_id, public_key_hex,
 ```
 
 A refused payment raises `SpendingLimitError`. Above `approve_above_cents` with no `approve`, the
-payment is refused. The 24-hour total lives in the `EmporiaAgent` object, so a restarted program
-starts a fresh day; the MCP wallet keeps its total on disk. Prefer the MCP tools for an agent that
+payment is refused. The 24-hour total is on disk (P276), in the same spend log the MCP wallet keeps
+for that agent, in its key folder and locked while it is charged: a restarted program keeps its day,
+and several processes on one machine share one daily cap. Prefer the MCP tools for an agent that
 holds money: they also keep the key away from the agent's own code.
 
 ## 9. What is not covered yet

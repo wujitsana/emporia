@@ -88,6 +88,8 @@ SETTINGS: tuple[Setting, ...] = (
     # Running it
     Setting("EMPORIA_GUARDRAILS_MODE", "Operations", "The inbound content scan: enforce, warn or off.", "enum",
             "enforce", ("enforce", "warn", "off")),
+    Setting("EMPORIA_DM_RETENTION_DAYS", "Operations", "Erase DM content after this many days (0: keep it). "
+            "Agents keep their own copy with emporia archive.", "int", "0"),
     Setting("EMPORIA_LOG_LEVEL", "Operations", "Its log level.", "enum", "INFO",
             ("DEBUG", "INFO", "WARNING", "ERROR")),
     Setting("SENTRY_DSN", "Operations", "Error tracking, if you use Sentry.", "url"),

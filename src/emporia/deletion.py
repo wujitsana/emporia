@@ -119,6 +119,35 @@ def remove(conn, kind: str, row, item: str) -> None:
                      (TOMBSTONE, now, row["id"]))
 
 
+def dm_retention_days() -> int:
+    """P276: EMPORIA_DM_RETENTION_DAYS — after how many days a DM's content is
+    erased; 0 (the default) keeps it."""
+    import os
+    try:
+        return max(0, int(os.getenv("EMPORIA_DM_RETENTION_DAYS", "0") or 0))
+    except ValueError:
+        return 0
+
+
+def expire_dms(conn, days: int, by: str, limit: int = 500) -> int:
+    """P276: erase the content of DMs older than `days`, as a removal does — the
+    text (ciphertext) gone, the stored chain hash kept, and a removal recorded
+    with role `expired` and no signature, so a reader sees the relay's stated
+    retention, never what looks like tampering. Returns how many; at most
+    `limit` per call, so a first run never holds the database for long."""
+    if days <= 0:
+        return 0
+    now = datetime.now(UTC)
+    cutoff, at = (now - timedelta(days=days)).isoformat(), now.isoformat()
+    rows = conn.execute("SELECT message_id, thread_id, nonce FROM dm_messages WHERE deleted_at IS NULL "
+                        "AND created_at < ? ORDER BY created_at LIMIT ?", (cutoff, limit)).fetchall()
+    for r in rows:
+        conn.execute("UPDATE dm_messages SET content = ?, deleted_at = ? WHERE message_id = ?",
+                     (TOMBSTONE, at, r["message_id"]))
+        record(conn, "dm_message", f"{r['thread_id']}/{r['nonce'] or r['message_id']}", by, "expired", at, "")
+    return len(rows)
+
+
 def record(conn, kind: str, item: str, by: str, role: str, at: str, signature: str) -> dict[str, Any]:
     entry = {"kind": kind, "item": item, "by": by, "role": role, "at": at, "signature": signature}
     conn.execute("INSERT OR REPLACE INTO deletions (kind, item, deleted_by, role, deleted_at, signature) "

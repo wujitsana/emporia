@@ -85,6 +85,33 @@ def _acts(room_id: str) -> list[dict]:
              "payload": json.loads(r["payload_json"]), "signature": r["signature"]} for r in rows]
 
 
+def ask_unsigned_members_to_sign() -> int:
+    """P275: since P273 a sender seals an encrypted room's messages only to members
+    a signed act puts there, so a member from before P273 — no signed join of its
+    own — is left out, and its own messages are refused until it signs. Told once,
+    in its inbox (`room_join_unsigned`), to join again, which signs its
+    membership. Run when the relay starts; returns how many were told."""
+    from datetime import UTC, datetime
+    import uuid
+    told = 0
+    with rs.DB_LOCK, rs.get_db() as conn:
+        signed = {(r[0], r[1]) for r in conn.execute("SELECT room_id, by_agent FROM room_acts WHERE act = 'join'")}
+        already = {(r[0], json.loads(r[1] or "{}").get("room_id")) for r in conn.execute(
+            "SELECT agent_id, payload_json FROM agent_inbox WHERE event_type = 'room_join_unsigned'")}
+        now = datetime.now(UTC).isoformat()
+        for room in conn.execute("SELECT room_id, name, creator_id, members_json FROM rooms WHERE encrypted = 1"):
+            for member in json.loads(room["members_json"] or "[]"):
+                if member == room["creator_id"] or (room["room_id"], member) in signed or (
+                        member, room["room_id"]) in already:
+                    continue
+                notice = {"type": "room_join_unsigned", "room_id": room["room_id"], "room_name": room["name"]}
+                conn.execute("INSERT INTO agent_inbox (inbox_id, agent_id, event_type, payload_json, created_at) "
+                             "VALUES (?, ?, ?, ?, ?)", (f"ibx_{uuid.uuid4().hex[:12]}", member,
+                                                        "room_join_unsigned", json.dumps(notice), now))
+                told += 1
+    return told
+
+
 class AdvertRequest(BaseModel):
     signature: str
 

@@ -370,3 +370,35 @@ def test_a_block_follows_the_sender_to_another_relay(client):
         want = conn.execute("SELECT stable_id FROM authorized_agents WHERE agent_id = 'bm274_local'").fetchone()[0]
     assert held["stable_id"] == want and want
     assert dm_blocked("bm274_me", "bm274_local@elsewhere.example", want)
+
+
+def test_a_member_from_before_signed_joins_is_asked_once_to_sign(client):
+    """P276: a member of an encrypted room with no signed join of its own — one from
+    before P273 — is told once, in its inbox, to join again; joining signs it."""
+    from conftest import signed_room_join_body
+
+    from emporia.plugins.platforms.emporia.frames import format_frame
+    from emporia.routes.rooms import ask_unsigned_members_to_sign
+    _keyed(client, "nudge_host", "nudge_old", "nudge_new")
+    room_id = _room(client, "nudge_host", encrypted=True)
+    assert client.post(f"/rooms/{room_id}/join", json=signed_room_join_body(room_id, "nudge_new"),
+                       headers=_as("nudge_new")).status_code == 200
+    rooms_db.add_member(room_id, "nudge_old", db_path=rs.DATABASE_PATH)      # as P272 and before left it
+
+    def notices(agent):
+        with rs.get_db() as conn:
+            return [r[0] for r in conn.execute("SELECT payload_json FROM agent_inbox WHERE agent_id = ? AND "
+                                               "event_type = 'room_join_unsigned'", (agent,))]
+    ask_unsigned_members_to_sign()
+    assert len(notices("nudge_old")) == 1 and not notices("nudge_new") and not notices("nudge_host")
+    ask_unsigned_members_to_sign()
+    assert len(notices("nudge_old")) == 1, "told once"
+    import json
+    shown = format_frame(json.loads(notices("nudge_old")[0]), "nudge_old")
+    assert room_id in shown.text and "join_room" in shown.text
+
+    assert client.post(f"/rooms/{room_id}/join", json=signed_room_join_body(room_id, "nudge_old"),
+                       headers=_as("nudge_old")).json()["status"] == "already_member"
+    room = client.get(f"/rooms/{room_id}", headers=_as("nudge_host")).json()
+    keys = {a: identity.get_public_key_hex(a) for a in ("nudge_host", "nudge_old", "nudge_new")}
+    assert identity.room_members_by_acts(room, keys.get) >= {"nudge_old", "nudge_new"}

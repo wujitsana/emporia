@@ -40,7 +40,6 @@ class SpendingLimitError(RuntimeError):
 
 
 _USDC_ATOMIC_PER_CENT = 10_000      # 6 decimals
-_DAY_S = 24 * 3600
 
 
 class PaymentRequiredError(httpx.HTTPStatusError):
@@ -139,14 +138,13 @@ class EmporiaAgent:
                              if is_testnet(n)]
         self._x402_networks = x402_networks
         # P180: the same limits an MCP agent's wallet applies, before anything
-        # is signed: a per-payment cap, a 24-hour total (kept for this object's
-        # lifetime), and above `approve_above_cents` your `approve(cents, what)`
+        # is signed: a per-payment cap, a 24-hour total (P275: in the spend log on
+        # disk the MCP wallet keeps for this agent, under its key folder), and above `approve_above_cents` your `approve(cents, what)`
         # must say yes — with no `approve` given, such a payment is refused.
         self._max_payment_cents = max_payment_cents
         self._max_daily_cents = max_daily_cents
         self._approve_above_cents = approve_above_cents
         self._approve = approve
-        self._spent: list[tuple[float, int]] = []
         self._bearer_token: str | None = None
         self._bearer_exp: float = 0.0
 
@@ -520,7 +518,8 @@ class EmporiaAgent:
                     allowed_networks=self._x402_networks,
                 )
             except Exception:
-                self._spent.pop()      # refused by the offer checks: nothing was signed
+                from emporia import agent_wallet   # refused by the offer checks: nothing was signed
+                agent_wallet.refund_daily(self.profile_id, expected)
                 raise
             resp = await self._bearer_request("post", url, headers={"PAYMENT-ESCROW": header})
         _raise_for_status_or_payment(resp)
@@ -531,24 +530,28 @@ class EmporiaAgent:
         """P180: refuse (SpendingLimitError) a payment above the cap, past the
         24-hour total, or above the approval threshold without a yes; else
         record it. Called just before signing."""
-        import time as _time
-
         cents = -(-amount_atomic // _USDC_ATOMIC_PER_CENT)
         if amount_atomic > self._max_payment_cents * _USDC_ATOMIC_PER_CENT:
             raise SpendingLimitError(f"{what}: ${cents / 100:.2f} is above this agent's "
                                      f"${self._max_payment_cents / 100:.2f} per-payment cap")
-        now = _time.time()
-        self._spent = [(t, a) for t, a in self._spent if now - t < _DAY_S]
-        if sum(a for _, a in self._spent) + amount_atomic > self._max_daily_cents * _USDC_ATOMIC_PER_CENT:
-            raise SpendingLimitError(f"{what}: would take this agent past its "
-                                     f"${self._max_daily_cents / 100:.2f} in 24 hours")
+        # P275: the 24-hour total is the spend log on disk the MCP wallet keeps for
+        # this agent, so a restart does not reset it and both share one cap.
+        from emporia import agent_wallet
+        cap = self._max_daily_cents * _USDC_ATOMIC_PER_CENT
+        past = SpendingLimitError(f"{what}: would take this agent past its "
+                                  f"${self._max_daily_cents / 100:.2f} in 24 hours")
+        if agent_wallet.ledger_spent(self.profile_id) + amount_atomic > cap:
+            raise past
         if self._approve_above_cents is not None and cents > self._approve_above_cents:
             answer = self._approve(cents, what) if self._approve else False
             if asyncio.iscoroutine(answer) or isinstance(answer, Awaitable):
                 answer = await answer
             if answer is not True:
                 raise SpendingLimitError(f"{what}: ${cents / 100:.2f} needs approval and was not approved")
-        self._spent.append((now, amount_atomic))
+        try:      # again, held: another process may have paid while the person decided
+            agent_wallet.charge_daily(self.profile_id, amount_atomic, cap)
+        except agent_wallet.AgentWalletError:
+            raise past from None
 
     async def _pay_and_retry_x402(
         self,

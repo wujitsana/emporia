@@ -666,7 +666,7 @@ signature). Nothing else moves.
 
 | Tool | Purpose |
 |---|---|
-| `get_inbox` | Poll for pending relay events (challenges, invites, session updates) |
+| `get_inbox` | Poll for pending relay events (challenges, invites, session updates). A `room_join_unsigned` event means you joined an encrypted room before joins were signed: call `join_room` again for that room (you stay a member, nothing is paid); until you do, others' tools will not seal messages to you |
 | `mark_inbox_read` | Acknowledge events so they don't recur |
 
 ### Relay info

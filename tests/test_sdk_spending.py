@@ -6,8 +6,10 @@ import pytest
 from emporia.agent_sdk import EmporiaAgent, SpendingLimitError
 
 
-def _agent(**kw):
-    return EmporiaAgent("http://relay.test", "sdk_spender", "00", **kw)
+def _agent(name: str = "", **kw):
+    # P275: the daily total is on disk, per agent — a fresh name per test unless one is shared on purpose.
+    import uuid
+    return EmporiaAgent("http://relay.test", name or f"sdk_spender_{uuid.uuid4().hex[:8]}", "00", **kw)
 
 
 def test_the_per_payment_cap_and_the_daily_total():
@@ -39,3 +41,46 @@ def test_an_async_approver_is_awaited():
     async def approve(cents, what):
         return True
     asyncio.run(_agent(approve_above_cents=0, approve=approve)._check_spend(10_000, "x"))
+
+
+def test_the_daily_total_outlives_the_agent_object():
+    """P275: a new EmporiaAgent for the same agent — a restarted script — still
+    counts what the last one signed today."""
+    _agent("sdk_restarted", max_daily_cents=800)
+    asyncio.run(_agent("sdk_restarted", max_daily_cents=800)._check_spend(5_000_000, "x"))
+    with pytest.raises(SpendingLimitError, match="in 24 hours"):
+        asyncio.run(_agent("sdk_restarted", max_daily_cents=800)._check_spend(4_000_000, "x"))
+
+
+def test_the_sdk_and_the_mcp_wallet_share_one_daily_total():
+    from unittest.mock import patch
+
+    from emporia import agent_wallet
+    with patch.dict("os.environ", {"EMPORIA_X402_MAX_DAILY_CENTS": "800"}):
+        agent_wallet._charge_daily("sdk_and_mcp", 5_000_000)            # the MCP server paid $5
+        with pytest.raises(SpendingLimitError, match="in 24 hours"):
+            asyncio.run(_agent("sdk_and_mcp", max_daily_cents=800)._check_spend(4_000_000, "x"))
+        asyncio.run(_agent("sdk_and_mcp", max_daily_cents=800)._check_spend(3_000_000, "x"))
+        with pytest.raises(agent_wallet.AgentWalletError, match="daily cap"):
+            agent_wallet._charge_daily("sdk_and_mcp", 10_000)             # and the MCP side sees the SDK's
+
+
+def test_a_charge_refused_before_signing_is_taken_back():
+    from emporia import agent_wallet
+    a = _agent("sdk_refunded", max_daily_cents=800)
+    asyncio.run(a._check_spend(5_000_000, "x"))
+    agent_wallet.refund_daily("sdk_refunded", 5_000_000)
+    assert agent_wallet.ledger_spent("sdk_refunded") == 0
+
+
+def test_two_processes_paying_for_one_agent_never_pass_the_cap_together(tmp_path):
+    """The log is held across processes: four paying at once, $3 each against
+    an $8 cap — exactly two are charged."""
+    import subprocess
+    import sys
+    code = ("import sys\nfrom emporia import agent_wallet as w\n"
+            "try:\n    w.charge_daily('sdk_racing', 3_000_000, 8_000_000); print('ok')\n"
+            "except w.AgentWalletError:\n    print('refused')\n")
+    procs = [subprocess.Popen([sys.executable, "-c", code], stdout=subprocess.PIPE, text=True) for _ in range(4)]
+    outs = [p.communicate(timeout=60)[0].strip() for p in procs]
+    assert sorted(outs) == ["ok", "ok", "refused", "refused"], outs

@@ -4656,6 +4656,9 @@ async def lifespan(app: FastAPI):
     # relay (the common case) shouldn't spin a task that does nothing every
     # EMPORIA_FEDERATION_SYNC_INTERVAL_SECONDS forever.
     drop_unlinked_federated_rows()
+    from emporia.routes.rooms import ask_unsigned_members_to_sign
+    if told := ask_unsigned_members_to_sign():   # P275: members from before signed joins
+        logger.info("room_members_asked_to_sign", extra={"count": told})
     from emporia import relay_access
     if FEDERATED_RELAYS and relay_access.federates():
         _FEDERATION_SYNC_TASK = asyncio.create_task(_federation_sync_loop())
@@ -5203,6 +5206,20 @@ async def _log_state_loop() -> None:
             logger.exception("Signing the log state failed — will retry")
 
 
+def _expire_dm_content() -> int:
+    """P276: with EMPORIA_DM_RETENTION_DAYS set, erase DM content past it, in
+    batches of 500 per sweep (`deletion.expire_dms`)."""
+    from emporia import deletion
+    days = deletion.dm_retention_days()
+    if not days:
+        return 0
+    with DB_LOCK, get_db() as conn:
+        gone = deletion.expire_dms(conn, days, _relay_operator_id() or "relay")
+    if gone:
+        logger.info("dm_content_expired", extra={"count": gone, "days": days})
+    return gone
+
+
 async def _sweep_loop() -> None:
     """Runs _sweep_expired_state() on EMPORIA_SWEEP_INTERVAL_SECONDS (default 300s).
     Started in lifespan() below; cancelled there on shutdown.
@@ -5219,6 +5236,7 @@ async def _sweep_loop() -> None:
         await asyncio.sleep(_SWEEP_INTERVAL_SECONDS)
         try:
             removed = _sweep_expired_state()
+            _expire_dm_content()
         except asyncio.CancelledError:
             raise
         except Exception:
@@ -5738,6 +5756,7 @@ async def health(request: Request):
     stripe_enabled = bool(os.getenv("STRIPE_SECRET_KEY"))
     stripe_profile_ready = _stripe_profile_ready()
     payment_rails, payment_methods = _payment_rails()
+    from emporia import deletion
     from emporia.payments import _x402_enabled, _x402_facilitator_url, _x402_networks
     return {
         "status": "ok",
@@ -5753,6 +5772,8 @@ async def health(request: Request):
         # checkout (restart it) from one that is current.
         "schema_version": SCHEMA_VERSION,
         "transparency_log": translog.enabled(),   # P258
+        # P276: DM content older than this many days is erased here (0: kept) — archive before then.
+        "dm_retention_days": deletion.dm_retention_days(),
         # P144: the key the relay signs action receipts and federation batches
         # with — agents pin it at first sight to check receipts against.
         "relay_public_key": get_relay_public_key_hex(),

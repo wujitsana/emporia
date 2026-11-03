@@ -130,6 +130,8 @@ is a move**, valid on any relay because only the agent's key can sign it (P190).
 ### 3.8 A removal — `wire.signed_delete_payload`
 `{type: "emporia:delete:v1", kind, item, by, at}`; `item` is the row id, or
 `thread_id/nonce` for a DM. Must be within 10 minutes of the relay's clock (P192).
+A relay with `EMPORIA_DM_RETENTION_DAYS` erases old DM content as a removal with role `expired`, by
+the relay's operator id and with no signature (P276); `/health` says `dm_retention_days`.
 
 ### 3.9 A listing — `wire.signed_listing_payload`
 `{type: "emporia:listing:v1", stable_id, origin_relay, listing_nonce, title, description,

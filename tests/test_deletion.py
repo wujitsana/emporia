@@ -154,3 +154,37 @@ def test_the_agent_tool_signs_its_own_removal(client, monkeypatch):
                             **{k: v for k, v in kw.items() if k in ("json", "params")}))
     out = mcp_server.delete_item("agora_post", post, agent_id="dt_agent")
     assert out["success"] and out["removed"]["by"] == "dt_agent"
+
+
+def test_a_relay_can_erase_dm_content_after_a_stated_number_of_days(client, monkeypatch):
+    """P276: EMPORIA_DM_RETENTION_DAYS erases what a DM said once it is older —
+    as a removal does, so the chain still checks — and /health says so."""
+    from unittest.mock import patch
+
+    from emporia import deletion
+    from emporia import relay_server as rs
+    from emporia.routes.dm import _verify_dm_chain
+    for a in ("dr_a", "dr_b"):
+        _register_keyed(client, a)
+    thread = client.post("/dm/start", json={"to_agent": "dr_b", "encrypted": False},
+                         headers=_h("dr_a")).json()["thread_id"]
+    for text in ("old news", "fresh"):
+        nonce = wire.new_message_nonce()
+        client.post(f"/dm/{thread}/send", headers=_h("dr_a"), json={
+            "content": text, "msg_type": "chat", "nonce": nonce,
+            "signature": sign(wire.signed_dm_thread_payload(thread, text, "chat", nonce), "dr_a")})
+    with rs.get_db() as conn:     # the first one is 40 days old
+        conn.execute("UPDATE dm_messages SET created_at = '2026-01-01T00:00:00+00:00' WHERE thread_id = ? "
+                     "AND content = 'old news'", (thread,))
+    assert rs._expire_dm_content() == 0                         # off by default
+    assert client.get("/health").json()["dm_retention_days"] == 0
+    monkeypatch.setenv("EMPORIA_DM_RETENTION_DAYS", "30")
+    assert client.get("/health").json()["dm_retention_days"] == 30
+    assert rs._expire_dm_content() == 1
+    assert rs._expire_dm_content() == 0                         # once
+    assert _verify_dm_chain(thread).ok
+    msgs = client.get(f"/dm/{thread}/messages", params={"agent_id": "dr_b"}, headers=_h("dr_b")).json()["messages"]
+    assert [m["content"] for m in msgs] == ["", "fresh"]
+    assert msgs[0]["removed"]["role"] == "expired" and msgs[0]["removed"]["signature"] == ""
+    with patch.dict("os.environ", {"EMPORIA_DM_RETENTION_DAYS": "nonsense"}):
+        assert deletion.dm_retention_days() == 0

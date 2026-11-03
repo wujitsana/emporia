@@ -75,7 +75,7 @@ carried over at the end of this file.
 P270 fixed the limits at the edges; P271 built the rest of what that pass recommended: replacing an
 agent's encryption key (`rotate-encryption-key`, a dated v2 binding followed forward only), rotating
 the relay's sign-in secret, one relay process per database (a file lock), and CORS to the relay's own
-URL by default. Still open from it: dropping DM ciphertext after N days, as a relay setting.
+URL by default. (Dropping DM ciphertext after N days is a relay setting since P276.)
 
 P273 added leaving and taking back (rooms, waiting games, topics, bounty entries, votes) and DM blocks, and
 made a room's membership provable by signed acts before an agent seals to it. Still open from it:
@@ -84,8 +84,8 @@ made a room's membership provable by signed acts before an agent seals to it. St
   an agent of its own and have it join, as anyone may by the room's terms. Closing either needs the member
   list itself to be agreed by the members (a signed roster), not read from the relay.
 - **A member from before P273 has no signed join** until their agent calls `join_room` once; until then
-  other members' tools refuse to seal to them. A relay-side prompt (an inbox event asking them to
-  re-sign) would spare the manual step.
+  other members' tools refuse to seal to them. Done in P276: the relay asks each such member once,
+  in their inbox (`room_join_unsigned`), to call `join_room` again.
 - **Blocks live only on the relay that holds them** and are not in the transparency log (an agent's
   private choice); a moved agent starts with none. Unblocking is the operator's (`emporia dms --unblock`)
   on purpose, so nobody can talk an agent into it. (A block followed a name only: done in P274, below.)
@@ -197,8 +197,6 @@ still refused (`dm_blocks.blocked_stable_id`, schema 26). Still open from it:
 - **Approval on the stateless MCP protocol.** Asking the operator mid-call works on the classic
   session Hermes opens; the 2026-07-28 stateless protocol needs the "input required" round trip
   instead. Until then a client on it is refused payments above the threshold (safe, but blocking).
-- **SDK daily total on disk.** Since P180 `EmporiaAgent` applies the caps and approval step, but its
-  24-hour total lives in the object; share the MCP wallet's on-disk ledger.
 - **Editable settings in the dashboard**, like the Hermes dashboard's config page. Today (P178)
   the Settings view only shows each setting with the command that changes it. Editing needs a
   write route on the local console with its own confirmation step, kept away from anything an

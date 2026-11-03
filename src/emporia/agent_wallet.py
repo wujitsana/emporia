@@ -501,12 +501,7 @@ def spent_today_atomic(agent_id: str) -> int:
     """USDC (atomic) this agent has signed for in the last 24 hours."""
     if (r := remote()) is not None:
         return r.wallet(fresh=True)["spent_today_atomic"]
-    try:
-        entries = json.loads(_ledger_path(agent_id).read_text())
-    except (OSError, ValueError):
-        return 0
-    now = time.time()
-    return sum(a for t, a in entries if now - t < _DAY_S)
+    return ledger_spent(agent_id)
 
 
 def _ledger_path(agent_id: str) -> Path:
@@ -565,26 +560,70 @@ def require_approval(agent_id: str, amount_atomic: int, what: str, terms: dict |
         raise AgentWalletError("your operator declined this payment. Not paid; don't retry it.")
 
 
-def _charge_daily(agent_id: str, amount_atomic: int) -> None:
-    """Refuse if this payment would take the last 24 hours' signed total past
-    the daily cap; otherwise record it. Called just before signing."""
-    cap = max_daily_cents() * _USDC_ATOMIC_PER_CENT
+@contextlib.contextmanager
+def _ledger_held(agent_id: str):
+    """The 24-hour spend log, held against this process's threads and (P275)
+    every other process on this machine that pays for the same agent — its MCP
+    server and an SDK script share one daily cap. The lock is on the key
+    folder, so no lock file sits among the wallet's key files."""
     path = _ledger_path(agent_id)
     with _LEDGER_LOCK:
+        fd = None
         try:
-            entries = json.loads(path.read_text()) if path.exists() else []
-        except (OSError, ValueError):
-            entries = []
-        now = time.time()
-        entries = [[t, a] for t, a in entries if now - t < _DAY_S]
+            import fcntl
+            fd = os.open(path.parent, os.O_RDONLY)
+            fcntl.flock(fd, fcntl.LOCK_EX)
+        except (ImportError, OSError):     # no flock here (Windows), or no folder yet: this process only
+            if fd is not None:
+                os.close(fd)
+            fd = None
+        try:
+            try:
+                entries = json.loads(path.read_text()) if path.exists() else []
+            except (OSError, ValueError):
+                entries = []
+            now = time.time()
+            yield path, [[t, a] for t, a in entries if now - t < _DAY_S]
+        finally:
+            if fd is not None:
+                os.close(fd)          # closing the descriptor releases the lock
+
+
+def ledger_spent(agent_id: str) -> int:
+    """P275: what the spend log on this machine says was signed in 24 hours —
+    the in-process total, with no signer asked (the SDK's)."""
+    with _ledger_held(agent_id) as (_, entries):
+        return sum(a for _, a in entries)
+
+
+def charge_daily(agent_id: str, amount_atomic: int, cap_atomic: int) -> None:
+    """Refuse (AgentWalletError) if this payment would take the last 24 hours'
+    signed total past `cap_atomic`; otherwise record it. Called just before
+    signing, by the MCP wallet and (P275) the SDK."""
+    with _ledger_held(agent_id) as (path, entries):
         spent = sum(a for _, a in entries)
-        if spent + amount_atomic > cap:
+        if spent + amount_atomic > cap_atomic:
             raise AgentWalletError(
                 f"this payment ({amount_atomic / 1e6:.2f} USDC) would take today's signed total "
-                f"past this agent's {cap / 1e6:.2f} USDC daily cap "
+                f"past this agent's {cap_atomic / 1e6:.2f} USDC daily cap "
                 f"({spent / 1e6:.2f} already; EMPORIA_X402_MAX_DAILY_CENTS)")
-        entries.append([now, amount_atomic])
+        entries.append([time.time(), amount_atomic])
         identity._write_secret_atomically(path, json.dumps(entries).encode())
+
+
+def refund_daily(agent_id: str, amount_atomic: int) -> None:
+    """P275: take back the newest charge of `amount_atomic` — the payment was
+    refused after it was charged, before anything was signed."""
+    with _ledger_held(agent_id) as (path, entries):
+        for i in range(len(entries) - 1, -1, -1):
+            if entries[i][1] == amount_atomic:
+                del entries[i]
+                identity._write_secret_atomically(path, json.dumps(entries).encode())
+                return
+
+
+def _charge_daily(agent_id: str, amount_atomic: int) -> None:
+    charge_daily(agent_id, amount_atomic, max_daily_cents() * _USDC_ATOMIC_PER_CENT)
 
 
 def _payee_label(statement: Any, family: str, address: Any) -> str:
