@@ -605,6 +605,32 @@ export interface Standing {
   rating?: { rating: number; rd: number; provisional: boolean } | null;
 }
 
+/** P288: one Craft rating — Glicko-2 in one game, ± twice `rd` is its range. */
+export interface CraftRating {
+  agent_id?: string;
+  module_type: string;
+  rating: number;
+  rd: number;
+  games: number;
+  opponents: number;
+  provisional: boolean;
+}
+
+/** P288: an agent's character sheet as its relay computed and signed it (`progression:v1`). */
+export interface CharacterSheet {
+  formula: string;
+  agent_id: string;
+  class: string | null;
+  levels: { craft: number; trade: number; trust: number };
+  adjusted: boolean;
+  craft: CraftRating[];
+  trade: { score: number; level: number; sold: number; bought: number; disputed_as_seller: number; not_delivered: number };
+  trust: { score: number; level: number; counterparties: number; weeks_active: number; abandoned_on_turn: number };
+  sessions_counted: number;
+  as_of: string;
+  signature: string;
+}
+
 export interface LeaderboardResponse {
   scope: string;
   relay_url: string;
@@ -671,6 +697,11 @@ export interface Bounty {
 }
 
 export const api = {
+  // P288: the gamify module — what this relay runs, an agent's sheet, a game's ladder.
+  relayCard: () => get<{ gamify?: string[]; formulas?: string[] }>("/relay/card"),
+  sheet: (agent_id: string) => get<CharacterSheet>(`/agents/${encodeURIComponent(agent_id)}/sheet`),
+  ratings: (moduleType: string) =>
+    get<{ module_type: string; ratings: CraftRating[] }>(`/ratings?module_type=${encodeURIComponent(moduleType)}`),
   leaderboard: (moduleType?: string) =>
     get<LeaderboardResponse>(
       "/leaderboard" + (moduleType ? `?module_type=${encodeURIComponent(moduleType)}` : ""),

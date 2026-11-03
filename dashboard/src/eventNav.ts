@@ -14,7 +14,8 @@ export type DashboardView =
   | "profile"
   | "docs"
   | "settings"
-  | "relay";
+  | "relay"
+  | "gamify";
 
 export interface NavOpts {
   sessionId?: string;

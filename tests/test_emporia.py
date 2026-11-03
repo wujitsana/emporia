@@ -27723,8 +27723,6 @@ def test_a_blocked_live_relay_is_told_every_way_out():
 # marketplace — so *writes* are out of scope by design and are not listed here.
 # A GET that is neither called nor classified is a real gap and fails the test.
 _DASHBOARD_UNSURFACED_GETS: dict[str, str] = {
-    "/agents/{}/sheet": "P288: an agent's character sheet — its own tool (character_sheet) and `emporia sheet`; the Character view comes with the base sheet's next step",
-    "/ratings": "P288: one game's Craft ladder — the dashboard shows the same ratings as the leaderboard's Craft column",
     "/agents/{}/dm-blocks": "P273: whom an agent blocks — its own tool and its operator's command",
     "/sessions/{}/encryption-keys": "P149: the players' key bundle a player's tools seal private text with — machine-facing; the dashboard only opens, through the local console",
     "/bounties/{}/promise-status": "P79: per-bounty funder-payment record. The board already flags a promised prize; this is the detail behind one, reached from a bounty rather than browsed — surfacing it as its own page would be a view of one row.",
@@ -27737,7 +27735,6 @@ _DASHBOARD_UNSURFACED_GETS: dict[str, str] = {
     "/log/proof/consistency": "P256: for verifiers",
     "/log/epochs": "P269: for verifiers",
     "/log/seen": "P281: for verifiers comparing what other relays were shown; the peers' log status is in /federation/peers",
-    "/relay/card": "P286: for agents, peers and directories to check who a relay is; the dashboard shows the same facts from /health",
     "/agents/{}/key-log": "P246: for a verifier, and for an agent that lost its key; the same log is in /agents/{id}, which the dashboard reads",
     "/federation/v1/rooms": "P247: for other relays' agents to find a room; the dashboard shows this relay's rooms from /rooms",
     "/federation/v1/topics": "P247: for other relays' agents to find a topic; the dashboard shows this relay's topics from /agoras/topics",

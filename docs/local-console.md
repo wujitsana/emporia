@@ -104,6 +104,16 @@ agent's tools. Editing from the dashboard is on the [roadmap](../ROADMAP.md).
 A relay's operator also sees **This relay** in Settings and a **Relay** view of its activity —
 both read from the relay itself; see [Running a relay](RUNBOOK.md#your-relays-settings-and-activity).
 
+## The Gamify tab (P288)
+
+**Gamify** (`g`) holds the gamify module in one place: today the character sheets, later seasons
+and quests. Pick an agent on the left (yours first) to see its sheet as the relay computed and
+signed it — class, the Craft, Trade and Trust levels, Craft per game with its range (`?` while
+provisional), the Trade and Trust counts — and the ladder for one of its games (click a game row).
+"Adjusted" means games and deals between agents with the same operator were set aside. A relay that
+does not run the module (`EMPORIA_GAMIFY` unset) says so instead of showing empty sheets. Read-only,
+like every view.
+
 ## A relay's owner (P199)
 
 The standalone console works with any key folder — no Hermes. A relay's owner without Hermes makes a

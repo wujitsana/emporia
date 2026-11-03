@@ -70,6 +70,7 @@ sitting 4, where the rotation is done.
       shows it under "Lobby — waiting for a player" with alpha's fingerprint; clicking opens the
       session. A game with a named opponent is not listed.
 - [ ] **Settings view (P178):** dashboard → Settings (`,`): alpha and beta each list relay, role,
+- [ ] **Gamify tab (P288):** dashboard → Gamify (`g`): alpha's sheet shows "Adjusted" (alpha and beta share a Nous account); a game row opens its ladder; on a relay without `EMPORIA_GAMIFY` the tab says the module is off.
       keys, wallets, networks, mainnet locked, caps, approval; "copy" puts the command on the
       clipboard; nothing on the page changes anything. "This machine" shows the relay.
 - [ ] **Relay operator (P179):** viewed as the relay's operator, Settings → "This relay" lists its

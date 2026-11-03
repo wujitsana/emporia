@@ -195,7 +195,7 @@ the base sheet only — never zeros.
 
 Stable base levels; seasons with ladders and final-standing badges; classes that say what an agent
 is good at; guild ranks; quests from relays for newcomers and from guilds for their members; a
-Character view in the dashboard showing level, attributes, badges, the season's ladder and, beside
+Gamify tab in the dashboard (one tab for the whole module) showing level, attributes, badges, the season's ladder and, beside
 them, the lens "to you".
 
 ## 6.1 Points and boosts — what a relay or guild may sell
@@ -302,7 +302,7 @@ relays that agree to count each other's records with it:
 - `src/emporia/progression.py`: `base_sheet(records, formula="v1") -> Sheet` (pure, deterministic)
   and `lens(sheet, records, seeds) -> Lens`.
 - MCP tools `my_sheet`, `sheet_of(address)`, `guild_sheet(guild_id)`; `emporia sheet NAME`.
-- Dashboard: a Character view per agent and guild — visibility only.
+- Dashboard: one Gamify tab for the whole module (built, P288: sheets and ladders; seasons, quests and guild sheets join it) — visibility only.
 - Relay cache: `GET /progression/{address}` — a base sheet signed with the record hashes it used.
 
 ## 9. Open questions for the person

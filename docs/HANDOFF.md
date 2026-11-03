@@ -15,7 +15,7 @@ builds clean. One flaky unit test seen once: `test_encrypted_message_is_opaque_i
 
 **1. Waiting on the user:**
 - Push `post-hackathon`.
-- The 33 manual checks: `docs/manual-testing.md` "Before main", 8 sittings. Sitting 0 (the live
+- The 34 manual checks: `docs/manual-testing.md` "Before main", 8 sittings. Sitting 0 (the live
   suite) is done, 14 passed; sittings 1-8 are a person's. 63 items moved to "Covered by the
   automated suites".
 - The agent-driven money run (needs credits; beta needs a USDC top-up).
@@ -38,7 +38,7 @@ builds clean. One flaky unit test seen once: `test_encrypted_message_is_opaque_i
 - P288: the gamify module's character sheet (progression steps 1-2) behind `EMPORIA_GAMIFY=sheets`:
   Craft (Glicko-2 per game), Trade, Trust, levels and class; `GET /agents/{id}/sheet` (signed),
   `GET /ratings`, MCP `character_sheet` (84 tools), `emporia sheet NAME`, a Craft column on the
-  leaderboard; defences against agents farming it (`progression-module.md` §4.3).
+  leaderboard, and a Gamify tab in the dashboard (sheets now; seasons and quests later); defences against agents farming it (`progression-module.md` §4.3).
   On for the dev relay (`EMPORIA_GAMIFY=sheets`). alpha and beta share a Nous account, so their
   games and deals with each other count nothing (by design): real sheets need a second operator.
 - Also: dashboard lint rules back on (34 warnings fixed), a game deep-link fix
@@ -68,7 +68,7 @@ builds clean. One flaky unit test seen once: `test_encrypted_message_is_opaque_i
 1. Fixes from the hand tests.
 2. Dashboard Stats view (needs a small local endpoint to read Hermes `state.db`).
 3. Count room/topic entry fees as the creator's earnings in stats.
-4. The dashboard Character view; seasons and ladders (progression step 3).
+4. Seasons and ladders (progression step 3), in the Gamify tab.
 5. Friends and follow (guilds proposal step 2), once naming and defaults are decided.
 6. Names step 1 after its decisions; a listing purchase pinning the seller by its signed stable id
    (`payee.check` `expected_stable_id`); log leftovers (a dashboard line, salts to parties, private

@@ -24,6 +24,8 @@ export const NAV: NavItem[] = [
   { id: "docs", label: "Docs", hotkey: "?", icon: "?", blurb: "Setup, security, payments, games — the guides" },
   // P179: the relay operator's activity view — shown to the relay's operator only.
   { id: "relay", label: "Relay", hotkey: ".", icon: "◈", blurb: "Your relay's activity: agents, games, messages, money" },
+  // P288: the gamify module — character sheets now; seasons and quests join this tab later.
+  { id: "gamify", label: "Gamify", hotkey: "g", icon: "★", blurb: "Character sheets: Craft per game, Trade, Trust, levels and class" },
   // P178: every setting and the command that changes it (read-only).
   { id: "settings", label: "Settings", hotkey: ",", icon: "⚙", blurb: "Each agent's settings and the command that changes each" },
 ];
@@ -59,7 +61,7 @@ export const NAV_GROUPS: { title: string; ids: DashboardView[] }[] = [
   { title: "HOME", ids: ["overview"] },
   { title: "MARKET", ids: ["listings", "sessions", "rooms"] },
   { title: "OPS", ids: ["events", "fees", "relay"] },
-  { title: "NETWORK", ids: ["agents", "agoras", "messages", "profile"] },
+  { title: "NETWORK", ids: ["agents", "agoras", "messages", "profile", "gamify"] },
   { title: "HELP", ids: ["settings", "docs"] },
 ];
 
