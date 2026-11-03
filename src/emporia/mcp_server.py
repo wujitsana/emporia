@@ -65,6 +65,7 @@ import os
 import time
 from importlib import import_module
 from pathlib import Path
+from collections.abc import Collection
 from typing import Any
 
 import httpx
@@ -1422,18 +1423,49 @@ def _payment_options(detail: Any, resp: httpx.Response | None = None) -> list[st
     return out
 
 
-def _check_payee_pinned(statement: Any, family: str, address: Any) -> None:
+def _check_payee_pinned(statement: Any, family: str, address: Any, payees: Collection[str] = ()) -> None:
     """P262: before paying, the payee's signed wallet and this agent's pin of
-    who that payee is on this relay (`payee.check_pinned`). A refusal is an
-    AgentWalletError, which the payment tools already report."""
+    who that payee is on this relay (`payee.check_pinned`); P275: and, given
+    `payees`, that it is one of them. A refusal is an AgentWalletError, which
+    the payment tools already report."""
     from emporia import agent_wallet, payee
     try:
-        payee.check_pinned(statement, family, str(address or ""), _base())
+        payee.check_pinned(statement, family, str(address or ""), _base(), expected_agents=payees)
     except payee.PayeeError as e:
         raise agent_wallet.AgentWalletError(f"not paid: {e}") from None
 
 
-def _tempo_paid_retry(r: httpx.Response, aid: str, method: str, url: str, **kwargs: Any) -> httpx.Response:
+def _room_terms(aid: str, room_id: str) -> tuple[set[str], int | None]:
+    """P275: `payee.room_terms` for a room on this relay — its creator, and the
+    fee it signed. Refuses (AgentWalletError) when the relay shows terms the
+    creator did not sign, or will not show them."""
+    from emporia import payee
+    from emporia.agent_wallet import AgentWalletError
+    r = _bearer_request("get", f"{_base()}/rooms/{room_id}", agent_id=aid, timeout=10)
+    room = r.json() if r.status_code == 200 else None
+    changed: list[str] = []
+    try:
+        return payee.room_terms(room, _sender_public_key(aid, str((room or {}).get("creator_id") or ""), changed)
+                                if room else "", bool(changed))
+    except payee.PayeeError as e:
+        raise AgentWalletError(f"not paid: {e}") from None
+
+
+def _game_payees(aid: str, session_id: str) -> set[str]:
+    """P275: the other players of a game, each seated by its own signed join
+    (`identity.seated_players`) — whom a stake or a purchase in it may pay."""
+    from emporia.agent_wallet import AgentWalletError
+    from emporia.identity import seated_players
+    r = _bearer_request("get", f"{_base()}/sessions/{session_id}/encryption-keys", agent_id=aid, timeout=10)
+    others = seated_players(session_id, r.json(), aid, aid, _base()) - {aid} if r.status_code == 200 else set()
+    if not others:
+        raise AgentWalletError(f"not paid: no other player of {session_id} is seated by a join of its own "
+                               f"signing, so nobody here may be paid")
+    return others
+
+
+def _tempo_paid_retry(r: httpx.Response, aid: str, method: str, url: str, payees: Collection[str] = (),
+                      **kwargs: Any) -> httpx.Response:
     """P156: answer a 402 by paying its Tempo offer from this agent's wallet,
     once — the transfer goes straight to the payee on Tempo, and the relay
     checks the receipt. A 402 without a Tempo offer is returned as it is."""
@@ -1442,12 +1474,13 @@ def _tempo_paid_retry(r: httpx.Response, aid: str, method: str, url: str, **kwar
     if r.status_code != 402 or not (r.json() or {}).get("tempo"):
         return r
     offer = r.json()["tempo"]
-    _check_payee_pinned(offer.get("payee"), "evm", (offer.get("request") or {}).get("recipient"))
+    _check_payee_pinned(offer.get("payee"), "evm", (offer.get("request") or {}).get("recipient"), payees)
     header = agent_wallet.pay_tempo(aid, offer)
     return _bearer_request(method, url, agent_id=aid, headers={"PAYMENT-TEMPO": header}, **kwargs)
 
 
 def _x402_paid_retry(r: httpx.Response, aid: str, method: str, url: str, network: str = "",
+                     payees: Collection[str] = (), max_cents: int | None = None,
                      **kwargs: Any) -> httpx.Response:
     """P104: answer a 402 by paying with this agent's x402 wallet, once.
 
@@ -1455,7 +1488,8 @@ def _x402_paid_retry(r: httpx.Response, aid: str, method: str, url: str, network
     a refusal raises AgentWalletError, which the tool reports. A second 402 is
     returned, not re-signed — the relay has said no to a valid signature.
     `network` (P160): the CAIP-2 network to pay on; default, the agent's first
-    allowed network the relay offers."""
+    allowed network the relay offers. P275: `payees`, whom it may pay; `max_cents`,
+    the most it may ask (the fee its payee signed)."""
     from emporia import agent_wallet
 
     if r.status_code != 402:
@@ -1470,11 +1504,14 @@ def _x402_paid_retry(r: httpx.Response, aid: str, method: str, url: str, network
     for req in accepts:
         family = x402_network_family(req.get("network") or "") or "evm"
         try:
-            payee.check(body.get("payee"), family, str(req.get("payTo") or ""))
+            payee.check(body.get("payee"), family, str(req.get("payTo") or ""), expected_agents=payees)
         except payee.PayeeError as e:
             reasons.append(str(e))
             continue
-        _check_payee_pinned(body.get("payee"), family, req.get("payTo"))
+        if why := payee.within_signed_fee(int(req.get("amount") or 0), max_cents):
+            reasons.append(why)
+            continue
+        _check_payee_pinned(body.get("payee"), family, req.get("payTo"), payees)
         break
     else:
         raise agent_wallet.AgentWalletError("not paid: " + ("; ".join(dict.fromkeys(reasons)) or "nothing offered"))
@@ -1540,10 +1577,13 @@ def join_room(
         url = f"{_base()}/rooms/{room_id}/join"
         r = _bearer_request("post", url, agent_id=agent_id, payment_token=mpp_token,
                             json=body, timeout=15)
-        if pay_with_x402:
-            r = _x402_paid_retry(r, agent_id, "post", url, network=pay_network, json=body, timeout=30)
-        elif pay_with_tempo:   # P156: stablecoin on Tempo, straight to the creator
-            r = _tempo_paid_retry(r, agent_id, "post", url, json=body, timeout=30)
+        if r.status_code == 402 and (pay_with_x402 or pay_with_tempo):
+            payees, fee = _room_terms(agent_id, room_id)   # P275: only its creator, at most its signed fee
+            if pay_with_x402:
+                r = _x402_paid_retry(r, agent_id, "post", url, network=pay_network, payees=payees, max_cents=fee,
+                                     json=body, timeout=30)
+            else:   # P156: stablecoin on Tempo, straight to the creator
+                r = _tempo_paid_retry(r, agent_id, "post", url, payees=payees, json=body, timeout=30)
         d = r.json()
         if r.status_code == 200:
             return {"success": True, **d}
@@ -3800,7 +3840,8 @@ def fund_session(session_id: str, mpp_token: str = "", agent_id: str = "",
                                    agent_id=aid, timeout=10).json()
             stake = (sess.get("payment_rules") or {}).get("stake_per_participant", "0")
             offer = r.json()["escrow"]
-            _check_payee_pinned(offer.get("payee"), "evm", (offer.get("payment_info") or {}).get("receiver"))
+            _check_payee_pinned(offer.get("payee"), "evm", (offer.get("payment_info") or {}).get("receiver"),
+                                _game_payees(aid, session_id))   # P275: another player, seated by its own join
             header = agent_wallet.sign_escrow(
                 aid, offer,
                 expected_amount=int(_x402_amount_atomic(int(round(float(stake) * 100)))))

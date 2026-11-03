@@ -15,7 +15,7 @@ from __future__ import annotations
 import asyncio
 import json
 import urllib.parse
-from collections.abc import Awaitable, Callable
+from collections.abc import Awaitable, Callable, Collection
 from typing import Any, AsyncIterator
 
 import httpx
@@ -510,7 +510,8 @@ class EmporiaAgent:
             expected = int(_x402_amount_atomic(int(round(float(stake) * 100))))
             from emporia import payee   # P262: the hold's receiver is a wallet its payee signed
             label = payee.check_pinned(offer.get("payee"), "evm",
-                                       str((offer.get("payment_info") or {}).get("receiver") or ""), self.relay_url)
+                                       str((offer.get("payment_info") or {}).get("receiver") or ""), self.relay_url,
+                                       expected_agents=await self._game_payees(session_id))   # P275
             await self._check_spend(expected, f"an escrow hold for session {session_id}, for {label}")   # P180
             try:
                 header = sign_offer(
@@ -553,6 +554,8 @@ class EmporiaAgent:
         self,
         resp: httpx.Response,
         retry: Callable[[str], Awaitable[httpx.Response]],
+        payees: Collection[str] = (),
+        max_cents: int | None = None,
     ) -> httpx.Response:
         """Turn one 402 into a paid retry. Shared by all three paid-entry
         methods rather than written into each — the relay's own history is full
@@ -590,7 +593,9 @@ class EmporiaAgent:
         detail = _payment_detail(resp)
         label = payee.check_pinned((detail or {}).get("payee"),
                                    x402_network_family(requirement.get("network") or "") or "evm",
-                                   str(requirement.get("payTo") or ""), self.relay_url)
+                                   str(requirement.get("payTo") or ""), self.relay_url, expected_agents=payees)
+        if why := payee.within_signed_fee(int(requirement.get("amount") or 0), max_cents):   # P275
+            raise payee.PayeeError(why)
         await self._check_spend(int(requirement.get("amount") or 0),
                                 f"USDC on {requirement.get('network')} to {label}, "
                                 f"{str(requirement.get('payTo'))[:12]}…")
@@ -1128,11 +1133,12 @@ class EmporiaAgent:
         resp = await self._bearer_request(
             "post", f"{self.relay_url}/rooms/{room_id}/join", json=body, payment_token=mpp_spt,
         )
-        if pay_with_x402:
+        if pay_with_x402 and resp.status_code == 402:
+            payees, fee = await self._room_terms(room_id)   # P275: only its creator, at most its signed fee
             resp = await self._pay_and_retry_x402(resp, lambda header: self._bearer_request(
                 "post", f"{self.relay_url}/rooms/{room_id}/join", json=body,
                 headers={"PAYMENT-SIGNATURE": header},
-            ))
+            ), payees=payees, max_cents=fee)
         _raise_for_status_or_payment(resp)
         return resp.json()
 
@@ -1186,6 +1192,28 @@ class EmporiaAgent:
         resp = await self._bearer_request("get", f"{self.relay_url}/rooms/{room_id}")
         resp.raise_for_status()
         return resp.json()
+
+    async def _room_terms(self, room_id: str) -> tuple[set[str], int | None]:
+        """P275: who a room's fee may pay and the fee its creator signed
+        (`payee.room_terms`, which the MCP tools call too)."""
+        from emporia import payee
+        resp = await self._bearer_request("get", f"{self.relay_url}/rooms/{room_id}")
+        room = resp.json() if resp.status_code == 200 else None
+        changed: list[str] = []
+        key = await self._sender_public_key(str((room or {}).get("creator_id") or ""), changed) if room else ""
+        return payee.room_terms(room, key, bool(changed))
+
+    async def _game_payees(self, session_id: str) -> set[str]:
+        """P275: the other players of a game, each seated by its own signed join."""
+        from emporia import payee
+        from emporia.identity import seated_players
+        resp = await self._bearer_request("get", f"{self.relay_url}/sessions/{session_id}/encryption-keys")
+        others = seated_players(session_id, resp.json(), self.agent_id, self.profile_id, self.relay_url) - {
+            self.agent_id} if resp.status_code == 200 else set()
+        if not others:
+            raise payee.PayeeError(f"no other player of {session_id} is seated by a join of its own signing, "
+                                   f"so nobody here may be paid")
+        return others
 
     async def _room_recipients(self, room_id: str) -> dict[str, str]:
         """`{agent_id: encryption_public_key_hex}` for every member of an encrypted

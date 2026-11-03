@@ -112,7 +112,11 @@ def test_a_tester_adds_an_agent_to_the_signer_and_removes_it(profiles, tmp_path,
     assert not list((prof / "home" / ".hermes" / "keys").glob("taster.x402.*"))       # out of the profile
     assert signer.policy("taster")["env"]["EMPORIA_X402_MAX_DAILY_CENTS"] == "700"      # its limits went too
     assert "token" not in capsys.readouterr().out.lower().replace("its own token", "")
+    with agent_wallet.scope(signer._scope("taster")):
+        held_ledger = agent_wallet._ledger_path("taster")
+    held_ledger.write_text(json.dumps(json.loads(held_ledger.read_text()) + [[time.time(), 40_000]]))
     assert cli.main(["signer", "remove", "taster"]) == 0
+    assert sum(a for _, a in json.loads(ledger.read_text())) == 1_270_000   # and back again, with what it spent there
     assert set(keys) <= {p.name for p in (prof / "home" / ".hermes" / "keys").glob("taster.x402.*")}
     back = _env_of(prof)
     assert "EMPORIA_SIGNER_URL" not in back and back.get("EMPORIA_X402_MAX_DAILY_CENTS") == before.get(

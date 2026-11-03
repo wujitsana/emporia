@@ -20,14 +20,25 @@ too. `check_pinned()` adds the client's pin (P244): the payee's handle on this
 relay must still be the agent first seen under it, so a relay cannot swap in
 an agent of its own under a known name.
 
+P275: the payee must also be the agent behind what is bought, by that agent's
+own signature: a room fee pays the room's creator, whose signed settings must
+check out (and the fee may not exceed the one it signed); a stake or a purchase
+in a game pays another player seated by its own signed join. Callers pass them
+as `expected_agents`; with the shared pin store a handle is one key, so a relay
+cannot name an agent of its own as the payee of somebody else's room or game.
+
 What it cannot do: on first contact a hostile relay can name its own agent as
 the payee of a listing it serves — trust on first use, as for every key here.
 A listing's own signature (P240) names the seller's stable id; callers buying
-from a listing pass it as `expected_stable_id`.
+from a listing pass it as `expected_stable_id`. A paid Agora topic's creation
+is not signed, so its payee is the relay's word for its creator; a paid room
+the relay shows the payer only once it has joined (not advertised, no invite)
+is paid on the payee's pin alone.
 """
 
 from __future__ import annotations
 
+from collections.abc import Collection
 from typing import Any
 
 
@@ -40,9 +51,11 @@ def _norm(family: str, address: str) -> str:
     return a.lower() if family == "evm" else a
 
 
-def check(payee: Any, family: str, address: str, *, expected_stable_id: str = "") -> str:
-    """Raise PayeeError unless `address` is the `family` wallet `payee` signed.
-    Returns a label for approval prompts: `agent_id (stable id prefix)`."""
+def check(payee: Any, family: str, address: str, *, expected_stable_id: str = "",
+          expected_agents: Collection[str] = ()) -> str:
+    """Raise PayeeError unless `address` is the `family` wallet `payee` signed
+    (and, given `expected_agents`, `payee` is one of them). Returns a label for
+    approval prompts: `agent_id (stable id prefix)`."""
     from emporia import identity, wire
 
     if not isinstance(payee, dict):
@@ -52,6 +65,10 @@ def check(payee: Any, family: str, address: str, *, expected_stable_id: str = ""
     key = str(payee.get("public_key_hex") or "").lower()
     if expected_stable_id and stable_id != expected_stable_id:
         raise PayeeError("the offer pays a different agent than the one you are dealing with")
+    if expected_agents and str(payee.get("agent_id") or "") not in set(expected_agents):
+        raise PayeeError(f"the offer pays {payee.get('agent_id') or 'an unnamed agent'}, not "
+                         f"{' or '.join(sorted(expected_agents))}, whose own signature stands behind what you "
+                         f"are paying for")
     if why := wire.key_verdict(stable_id, key, payee.get("key_log") or [], identity.verify):
         raise PayeeError(f"the payee's key does not check out: {why}")
     wallet = ((payee.get("wallets") or {}).get(family)) or {}
@@ -71,14 +88,14 @@ def check(payee: Any, family: str, address: str, *, expected_stable_id: str = ""
 
 
 def check_pinned(payee: Any, family: str, address: str, relay_url: str, *,
-                 expected_stable_id: str = "") -> str:
+                 expected_stable_id: str = "", expected_agents: Collection[str] = ()) -> str:
     """`check()`, then the payer's pin of the payee's handle on this relay: the
     first agent seen under a handle is pinned, and a later offer naming a
     different one under it is refused unless its own signed key log explains
     the change (`identity.pinned_signing_key`)."""
     from emporia import identity
 
-    label = check(payee, family, address, expected_stable_id=expected_stable_id)
+    label = check(payee, family, address, expected_stable_id=expected_stable_id, expected_agents=expected_agents)
     changed: list[str] = []
     agent_id = str(payee.get("agent_id") or "")
     identity.pinned_signing_key(agent_id, relay_url, str(payee.get("public_key_hex") or ""),
@@ -87,3 +104,32 @@ def check_pinned(payee: Any, family: str, address: str, relay_url: str, *,
         raise PayeeError(f"{agent_id} on this relay is not the agent first seen under that name — "
                          f"refusing to pay; check its fingerprint with its operator")
     return label
+
+
+def room_terms(room: Any, creator_key: str, key_changed: bool = False) -> tuple[set[str], int | None]:
+    """P275: who a room's fee may pay — its creator — and, when the creator's
+    signed settings check out, the fee it signed (None for a room made before
+    rooms were signed, P243). `room` is `GET /rooms/{id}`, or None when the
+    relay would not show it (a private room neither advertised nor inviting the
+    payer): then nothing is expected. `creator_key` is the creator's pinned
+    key. Raises PayeeError when the relay shows terms the creator did not
+    sign. MCP and SDK both call this."""
+    from emporia.identity import verify_room_acts
+    if not isinstance(room, dict):
+        # A private room neither advertised nor inviting this payer is hidden from it (P249): paid on the
+        # payee's own pin, as before.
+        return set(), None
+    creator = str(room.get("creator_id") or "")
+    settings = verify_room_acts(room, creator_key)["settings"]
+    if settings is False:
+        raise PayeeError(f"the relay shows room {room.get('room_id')} with terms {creator or 'its creator'} did not "
+                         f"sign" + (f" (and a different key for {creator} than the one pinned)" if key_changed else ""))
+    return {creator}, (int(room.get("entry_fee_cents") or 0) if settings else None)
+
+
+def within_signed_fee(amount_atomic: int, max_cents: int | None) -> str:
+    """P275: "" when an x402 amount (USDC, 6 decimals) is no more than the fee its
+    payee signed, else why not."""
+    if max_cents is None or amount_atomic <= max_cents * 10_000:
+        return ""
+    return f"it asks {amount_atomic / 1e6:.2f} USDC, more than the {max_cents / 100:.2f} its payee signed"

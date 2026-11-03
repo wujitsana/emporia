@@ -51,6 +51,13 @@ _src = str(Path(__file__).parent.parent / "src")
 if _src not in sys.path:
     sys.path.insert(0, _src)
 
+# P275: imported as `tests.conftest` this module would run a second time — a
+# second TEST_ROOT, with os.environ pointed at it — and later tests then read
+# and write a different database than the one the suite set up (three tests in
+# test_emporia found it empty). Import it as `conftest`, as every test does.
+if __name__ != "conftest":
+    raise ImportError("import the suite's conftest as `conftest`, not as " + repr(__name__))
+
 # One throwaway root for every artifact this run writes (logs, audit, DB),
 # honouring TMPDIR so CI sandboxes and hosts without a writable /tmp both work.
 TEST_ROOT = Path(tempfile.mkdtemp(prefix="emporia_test_"))

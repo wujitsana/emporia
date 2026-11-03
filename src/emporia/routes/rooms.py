@@ -284,10 +284,12 @@ async def get_room_endpoint(room_id: str, request: Request):
         raise HTTPException(404, "Room not found")
     advertised = room_id in {r.room_id for r, _ in adverts.own_room_adverts({room_id})}
     if room.room_type == "private" and not rooms_db.is_member(room_id, viewer_id or "", db_path=rs.DATABASE_PATH):
-        if not advertised:
+        # P275: an invitee too — who it would pay is checked against the creator's signed room.
+        if not advertised and not (viewer_id and rooms_db.has_invite(room_id, viewer_id, db_path=rs.DATABASE_PATH)):
             raise HTTPException(403, "Private room — not a member")
         # An advertised paid room: its terms and the creator's signed settings, to check before paying.
-        return {**_card(room, advertised=True), "signed_acts": [a for a in _acts(room_id) if a["act"] == "create"]}
+        return {**_card(room, advertised=advertised),
+                "signed_acts": [a for a in _acts(room_id) if a["act"] == "create"]}
     # P243: the creator's signed acts, for a member to check the room against.
     return {**room.to_dict(viewer_id=viewer_id, db_path=rs.DATABASE_PATH), "signed_acts": _acts(room_id),
             "advertised": advertised, "host": rs._own_host()}

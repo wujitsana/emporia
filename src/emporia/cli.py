@@ -1574,8 +1574,10 @@ def _signer_remove(args: argparse.Namespace) -> int:
     key_dir = Path(_mcp_env(profile).get("EMPORIA_KEYS_DIR") or profile / "home" / ".hermes" / "keys")
     with agent_wallet.scope(agent_wallet.Scope(env={}, key_dir=held / "keys")):
         sources = {"evm": agent_wallet.wallet_path(name), "svm": agent_wallet.solana_wallet_path(name)}
+        spent = agent_wallet._ledger_path(name)
     with agent_wallet.scope(agent_wallet.Scope(env={}, key_dir=key_dir)):
         targets = {"evm": agent_wallet.wallet_path(name), "svm": agent_wallet.solana_wallet_path(name)}
+        spent_here = agent_wallet._ledger_path(name)
     if any(targets[f].exists() for f in sources if sources[f].exists()):
         print(f"signer remove: {name} already has wallet key files in {key_dir}; not replaced.")
         return 1
@@ -1593,6 +1595,12 @@ def _signer_remove(args: argparse.Namespace) -> int:
             if os.getuid() == 0:   # P209: from the signer's admin container — the agent's own files are its user's
                 owner = profile.stat()
                 os.chown(targets[fam], owner.st_uid, owner.st_gid)
+    if spent.exists():   # the 24-hour spend log comes back too, or a move out would reset the daily cap
+        key_dir.mkdir(mode=0o700, parents=True, exist_ok=True)
+        _write_secret_atomically(spent_here, spent.read_bytes())
+        if os.getuid() == 0:
+            owner = profile.stat()
+            os.chown(spent_here, owner.st_uid, owner.st_gid)
     unset_env_lines(profile / ".env", ["EMPORIA_SIGNER_URL", "EMPORIA_SIGNER_TOKEN"])
     merge_env_file(profile / ".env", {k: v for k, v in env.items() if k != "EMPORIA_X402_MAINNET"})
     trash = signer.signer_dir() / "released" / f"{held.name}-{time.strftime('%Y%m%dT%H%M%S')}"

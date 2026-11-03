@@ -750,8 +750,10 @@ def verify_room_acts(room: dict[str, Any], creator_public_key_hex: str, key_of: 
     if create and creator_public_key_hex:
         payload = create.get("payload") or {}
         key = signing_key_for(creator_public_key_hex, create.get("at"))   # P245: the key it had at the time
+        # A paid room's card, shown before joining (P249), leaves out the game it is tied to.
+        shown = [k for k in ROOM_SIGNED_SETTINGS if not (room.get("listing_only") and k == "linked_session_id")]
         settings = (bool(key) and verify(payload, create.get("signature", ""), key)
-                    and all(payload.get(k) == room.get(k) for k in ROOM_SIGNED_SETTINGS))
+                    and all(payload.get(k) == room.get(k) for k in shown))
     checked = []
     for a in acts:
         if a.get("act") == "create":
@@ -928,6 +930,13 @@ def session_players_by_acts(session_id: str, served: dict[str, Any], key_of: Any
         if who not in left or when > left[who]:
             seated.add(who)
     return seated
+
+
+def seated_players(session_id: str, served: dict[str, Any], me: str, profile_id: str, relay_url: str) -> set[str]:
+    """P275: `session_players_by_acts` with each player's key trusted as on the DM
+    path — the players a stake or a purchase in this game may pay."""
+    return session_players_by_acts(session_id, served,
+                                   _bundle_key_of(served.get("keys") or {}, me, profile_id, relay_url))
 
 
 def session_recipients(session_id: str, served: dict[str, Any], me: str, profile_id: str,

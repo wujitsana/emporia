@@ -127,6 +127,13 @@ class _FakeHttpx:
             return _Resp(200, {"room_id": "r1", "joined": True})
         return _Resp(402, self.challenge)
 
+    def get(self, url, headers=None, **kwargs):
+        # P275: the room, read before paying — made before rooms were signed, by the payee.
+        if url.endswith("/rooms/r1"):
+            return _Resp(200, {"room_id": "r1", "creator_id": self.challenge["payee"]["agent_id"],
+                               "signed_acts": []})
+        return _Resp(404, {})
+
 
 def test_mcp_join_room_pays_once_with_identity_and_signature(wallet_env):
     agent_wallet.generate("mcp_payer")
@@ -216,6 +223,8 @@ def test_mcp_fund_session_signs_the_escrow_offer_for_the_sessions_stake(wallet_e
             return _Resp(402, {"escrow": the_offer})
 
         def get(self, url, headers=None, **kw):
+            if url.endswith("/encryption-keys"):   # P275: the seller, the game's creator as the buyer chose it
+                return _Resp(200, {"creator": the_offer["payee"]["agent_id"], "keys": {}, "joins": {}, "leaves": []})
             return _Resp(200, {"payment_rules": {"stake_per_participant": "1.25"}})
 
     def fake_sign(aid, offer, *, expected_amount):

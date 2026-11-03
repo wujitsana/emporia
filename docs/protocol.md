@@ -110,6 +110,12 @@ escrow offers. A payer pays only an address its payee signed (`payee.check`: the
 stable id or the key log leads to it, and the key at `at` signed the wallet), and only the agent it
 pinned under that name on that relay (`payee.check_pinned`, §3.13). The signer runs the first check
 too. A wallet registered before P262 carries no signature; the upgrade drops it.
+P275: the payee must also be the agent behind what is paid for (`expected_agents`): a room fee only
+the room's creator, whose signed settings (§3.12) must match the room as shown, and the 402 no
+more than the signed `entry_fee_cents` (`payee.room_terms`, `payee.within_signed_fee`); a game's
+stake or purchase only another player seated by its own signed join (§3.5b,
+`identity.seated_players`). An invitee may read a private room's card and signed creation
+(`GET /rooms/{id}`) before joining, as anyone may for an advertised one.
 
 ### 3.6 A direct message on a session — `wire.signed_dm_envelope`
 `{to_agent, type, session_id, payload}` (`POST /messages`).

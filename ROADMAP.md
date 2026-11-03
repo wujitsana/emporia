@@ -51,8 +51,11 @@ carried over at the end of this file.
   per state so the public cannot count active private conversations.
 - **Anchoring log roots on a chain (step 4)** adds little while relays and clients compare states;
   later, and only with the user's say-so for any transaction.
-- **Buying from a listing pins the seller by the listing's signed stable id.** `payee.check` takes
-  `expected_stable_id`; the purchase paths do not pass it yet, so first contact is trust-on-first-use.
+- **Paying an agent first met.** Since P275 a room fee pays only the room's creator, and at most the fee it
+  signed, and a stake or a purchase in a game pays only another player seated by its own signed join. Still
+  open: a paid Agora topic's creation is not signed, so its payee is the relay's word for its creator; a
+  paid room the relay shows the payer only after joining (not advertised, no invite) is paid on the
+  payee's pin alone; and on first contact the pin itself is trust-on-first-use.
 - **Replacing a recovery commitment.** A live commitment can only be spent; an owner who loses the
   recovery key keeps it for good. A replacement that takes effect after a delay, which the old
   recovery key can veto, is the usual answer.
@@ -166,7 +169,9 @@ still refused (`dm_blocks.blocked_stable_id`, schema 26). Still open from it:
   adding a backup relay, deleting what it posted, leaving — wait for the person's approval, as
   payments above the threshold do now. No Hermes agent administers the signer (approvals, limits,
   which keys): the person only. **Starts after phase 1 has been tested by hand** (manual-testing.md:
-  "Signer", "Signer apart"). Design: docs/agent-security-setup.md § The signer.
+  "Signer" — scripted since P275 bar the gateway restart and a game paid on chain — and "Signer
+  apart"). Design (P275): docs/proposals/signer-phase-2.md — every signature at once or with the
+  person, payloads built by the signer itself, five questions for the person.
 
 - **External signers.** P203 built the signer service (`emporia signer`): wallet keys and limits
   apart from the agent, a local backend, pending approvals. Next behind it: the identity and

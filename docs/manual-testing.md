@@ -298,12 +298,18 @@ prompt, and an x402 payment that actually settles on testnet.
 - [ ] **Relay settings:** `emporia relay config` → pick `OPERATOR_FEE_BPS`, enter 300 → written to
       the relay's `.env`, "applies when the relay restarts"; `emporia relay config set
       EMPORIA_RELAY_ACCESS wide` → refused, listing the choices; `emporia relay config show` lists all.
-- [ ] **Signer (P203):** `emporia wallet mainnet alpha` → refused, "emporia signer add alpha".
-      `emporia signer start`, then `emporia signer add alpha` → its key files go to `profiles/.deleted/alpha-wallet-…`, its `.env` gets
+- [ ] **Signer (P203):** `emporia wallet mainnet alpha` → refused, offering "Move alpha's wallet behind the signer
+      now?" (no → "emporia signer add alpha").
+      `emporia signer start`, then `emporia signer add alpha` → its key files are overwritten and removed (the
+      signer's copy is the only one), its `.env` gets
       `EMPORIA_SIGNER_URL`/`TOKEN`; restart the gateway; alpha pays a testnet game as before. Set
       `emporia signer policy alpha set EMPORIA_PAYMENT_APPROVAL_CENTS 0`: its next payment says "intent int_…";
       `emporia signer approve int_…`; its retry pays. `emporia signer status` warns while it runs as the same user.
-      `emporia signer remove alpha` → its key files and limits back in its profile; restart; it pays in-process again.
+      `emporia signer remove alpha` → its key files, limits and the day's spending back in its profile; restart; it
+      pays in-process again.
+      *Scripted (P275, `pytest -m live tests/live/test_l_signer.py`): every step above against a real signer
+      process, the agent paying from a process of its own — but with the payment signed, not settled, and no
+      gateway. Left by hand: the gateway restart and a game paid on Base Sepolia.*
 - [ ] **Signer apart (P207):** `emporia signer host` (from Hermes's container) → writes `compose.yaml` and `.env`;
       on the host: set `HERMES_DATA`, `docker compose up -d --build signer`, add the two socket-volume lines to Hermes's
       compose and recreate it; `docker compose run --rm admin add alpha`; restart the gateway. From Hermes:
