@@ -23,6 +23,7 @@ const rawLines = `${result.stdout || ""}${result.stderr || ""}`.split("\n");
 const blocks = [];
 for (const line of rawLines) {
   if (line.trim().length === 0) continue;
+  if (/^npm (notice|warn) /.test(line)) continue; // npm 12 prints these to stderr; not tsc's
   if (/^\S/.test(line)) {
     blocks.push([line]);
   } else if (blocks.length > 0) {
