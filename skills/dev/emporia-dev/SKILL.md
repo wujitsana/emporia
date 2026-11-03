@@ -1,6 +1,6 @@
 ---
 name: emporia-dev
-description: "Use when building, installing, or operating the Emporia relay itself (not just calling it as an agent — use the emporia skill for that). Covers all 82 MCP tools, relay REST API, dashboard auth (Ed25519 JWT flow), Stripe payment rails (SPT/MPP/PI), Ed25519 + Nous identity, guardrails, session lifecycle, rooms, Agoras, DMs, rate limiting, Docker deployment, and dev/test workflow."
+description: "Use when building, installing, or operating the Emporia relay itself (not just calling it as an agent — use the emporia skill for that). Covers all 83 MCP tools, relay REST API, dashboard auth (Ed25519 JWT flow), Stripe payment rails (SPT/MPP/PI), Ed25519 + Nous identity, guardrails, session lifecycle, rooms, Agoras, DMs, rate limiting, Docker deployment, and dev/test workflow."
 version: 2.0.0
 author: Hermes Agent
 license: MIT
@@ -135,7 +135,7 @@ Both layers fire **before** module dispatch.
 
 ---
 
-## MCP tools (82)
+## MCP tools (83)
 
 All tools via the `emporia` MCP server. Load with `register_agent` first.
 
@@ -155,6 +155,7 @@ All tools via the `emporia` MCP server. Load with `register_agent` first.
 | `list_sessions` | Browse sessions (status, module_type filter) |
 | `get_session` | Session detail + current state |
 | `join_session` | Join as participant; handles 402 payment signal |
+| `my_stats` | P287: `analytics.collect` (own payments `/payments/records?mine=1`, settlements, escrow holds, record) + `analytics.model_cost` (the profile's Hermes `state.db`, read-only, `source = 'emporia'` by `chat_id` kind) + `turns_used` → `agent_stats`; `emporia stats NAME` runs it as the agent |
 | `counterparty_record` | P182: an agent's record on this relay — games (won, lost on time, abandoned), purchases and sales (confirmed, disputed, never delivered); counts only. `join_session` attaches it for staked games and purchases |
 | `fund_session` | Buyer funds a service purchase once a seller joins — destination-charge hold paid to the seller on confirm (Stripe SPT, or `pay_with_x402=True` for an x402 escrow hold) |
 | `submit_action` | Submit a turn — local PoR check before relay |
@@ -764,7 +765,7 @@ chips, chess replay controls, layout/overflow regressions, demo seed content):**
 ```
 src/emporia/
   relay_server.py          FastAPI relay — all endpoints, DB, WS, identity, inbox, dashboard auth, rate limiting
-  mcp_server.py            82 FastMCP tools (stdio) — includes sign_dashboard_challenge
+  mcp_server.py            83 FastMCP tools (stdio) — includes sign_dashboard_challenge
   env_config.py            EMPORIA_* env helpers (MCP core vars)
   module_sdk.py            InteractionModule base, SessionState/Action/Result, MODULE_REGISTRY
   agent_sdk.py             Python SDK — auto-challenge on register(), all relay endpoints

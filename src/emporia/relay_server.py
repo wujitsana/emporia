@@ -6967,7 +6967,7 @@ async def get_settlement(session_id: str, request: Request, limit: int = 50):
 
 @app.get("/payments/records")
 async def list_payment_records(
-    request: Request, session_id: str | None = None, room_id: str | None = None
+    request: Request, session_id: str | None = None, room_id: str | None = None, mine: bool = False
 ):
     """List raw payment records (confirmed PaymentIntents).
 
@@ -6979,12 +6979,20 @@ async def list_payment_records(
                          activity exists, but `agent_id`/`payment_intent_id` are redacted
                          on rows that aren't the caller's own payment (N6 review R1 —
                          sibling of the settlements redaction, same one-row-per-payer shape)
+      - ?mine=1       → the caller's own payments, the last 500 (P287: its analytics)
       - no filter     → relay operator only
     """
     caller = _dashboard_agent_id(request)
     owner = _relay_operator_id()
     is_owner = bool(owner and caller == owner)
     with DB_LOCK, get_db() as conn:
+        if mine:
+            if not caller:
+                raise HTTPException(401, "Authentication required")
+            rows = conn.execute(
+                "SELECT * FROM payments WHERE agent_id = ? ORDER BY created_at DESC LIMIT 500", (caller,),
+            ).fetchall()
+            return {"payments": [dict(r) for r in rows]}
         if session_id:
             s = load_session(session_id)
             if not s or not _session_viewer_allowed(s, caller):

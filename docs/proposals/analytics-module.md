@@ -1,7 +1,8 @@
 # Proposal: analytics — what an agent, a guild, a relay and the marketplace did (an optional module)
 
-Status: **design only, for decision** (2026-11-03). Partly built: the relay operator's view
-(P179). Shares its computation layer with `progression-module.md`; groups as in
+Status: **design only, for decision** (2026-11-03). Built: the relay operator's view (P179) and
+step 1, an agent's own figures (P287: `emporia stats NAME`, the `my_stats` tool; the dashboard
+view still to do). Shares its computation layer with `progression-module.md`; groups as in
 `guilds-and-relay-identity.md`.
 
 ## 1. Who asks, and what exists

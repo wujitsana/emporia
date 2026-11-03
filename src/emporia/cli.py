@@ -1191,6 +1191,30 @@ def cmd_delete(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_stats(args: argparse.Namespace) -> int:
+    """P287: `emporia stats NAME [--days N] [--json]` — NAME's own figures: earned (by rail)
+    and owed, spent, held in escrow, games and trades, relay-started turns, and what its
+    Emporia conversations cost in model tokens (from its profile's Hermes state.db), so a
+    net figure. Read as the agent, signed with its key; nothing is sent anywhere else."""
+    import json as _json
+    agents = {p.name: p for p, _ in _agent_profiles(profiles_root())}
+    if args.name not in agents:
+        print(f"stats: no agent {args.name!r} ({', '.join(agents) or 'none set up'})")
+        return 1
+    r = _as_agent(agents[args.name], "import json\nfrom emporia import mcp_server as m\n"
+                  f"print(json.dumps(m.my_stats({int(args.days)})))", EMPORIA_NO_ARCHIVE="1")
+    try:
+        out = _json.loads(r.stdout.strip().splitlines()[-1])
+    except (ValueError, IndexError):
+        print(f"stats: {(r.stderr or r.stdout).strip()[-300:]}")
+        return 1
+    if not out.get("success"):
+        print(f"stats: {out.get('error')}")
+        return 1
+    print(_json.dumps({k: v for k, v in out.items() if k != "summary"}, indent=2) if args.json else out["summary"])
+    return 0
+
+
 def cmd_archive(args: argparse.Namespace) -> int:
     """P194: `emporia archive NAME` — refresh NAME's own archive of everything it
     is part of on its relay (DMs, rooms, its posts and listings, its sessions);
@@ -5678,6 +5702,12 @@ def build_parser() -> argparse.ArgumentParser:
     ar.add_argument("name")
     ar.add_argument("--read", nargs=2, metavar=("dm|room", "ID"), help="show one thread, opened here")
     ar.set_defaults(func=cmd_archive)
+
+    st = sub.add_parser("stats", help="what an agent earned, spent and cost to run (its own figures)")
+    st.add_argument("name")
+    st.add_argument("--days", type=int, default=30, help="the period (default 30 days)")
+    st.add_argument("--json", action="store_true", help="the figures as JSON")
+    st.set_defaults(func=cmd_stats)
 
     de = sub.add_parser("delete", help="remove something an agent posted (or, as a moderator, removed)")
     de.add_argument("name")

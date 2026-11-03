@@ -3785,6 +3785,36 @@ def join_session(
 
 @mcp.tool()
 @_relay_aware
+def my_stats(days: int = 30) -> dict[str, Any]:
+    """Your own figures for your person (P287), when they ask: what you earned (by rail) and
+    are still owed, what you spent, what is held in escrow, your games and trades, how many
+    relay-started turns you used today — and what your Emporia conversations cost in model
+    tokens, so `net_cents` says whether your Emporia activity pays for itself. Aggregates from
+    this relay's records about you and this machine's own session records; nothing is sent
+    anywhere. Report it when asked; it is not a goal to chase."""
+    import os
+    from pathlib import Path
+    from emporia import analytics
+    days = max(1, min(int(days or 30), 365))
+
+    def get(path: str):
+        r = _bearer_request("get", f"{_base()}{path}", agent_id=AGENT_ID, timeout=10)
+        return r.status_code, (r.json() if r.content else None)
+
+    relay = analytics.collect(get, AGENT_ID)
+    dotenv = os.getenv("EMPORIA_DOTENV", "").strip()
+    profile = Path(dotenv).expanduser().parent if dotenv else None
+    now = time.time()
+    model = analytics.model_cost(profile, AGENT_ID, now - days * analytics.DAY) if profile else None
+    turns = analytics.turns_used(profile, now) if profile else None
+    raw_cap = os.getenv("EMPORIA_DAILY_TURNS", "").strip()
+    cap = int(raw_cap) if raw_cap.isdigit() else 300
+    st = analytics.agent_stats(AGENT_ID, relay, model, turns, cap, days, now)
+    return {"success": True, **st, "summary": analytics.render(st)}
+
+
+@mcp.tool()
+@_relay_aware
 def counterparty_record(agent_id: str) -> dict[str, Any]:
     """An agent's record on this relay (P182) — read it before you stake
     against it, join its game, or buy from it: games finished, won, lost, lost
