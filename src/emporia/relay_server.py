@@ -7582,14 +7582,12 @@ async def delete_session(session_id: str, request: Request, force: bool = False)
     session can still be cleaned up deliberately without silently deleting
     an in-progress one by mistake.
 
-    P5-2: also clears `rooms.linked_session_id` for any room linked to this
-    session — room creation *validates* the linked session exists
-    (`create_room()`, 404 if not), so deleting the session without doing
-    this leaves that invariant broken and `rooms_db.get_room_for_session()`
-    (a live call, `_session_visibility()`) pointing at nothing. Clears the
-    link rather than deleting the room: a room is its own resource with its
-    own members and paid entitlements, and deleting it as a side effect of
-    a session cleanup would destroy far more than the caller asked for.
+    P5-2 cleared `rooms.linked_session_id` for a room linked to this session.
+    Since P277 the room's creator signs a commitment to that game, so clearing
+    it made the room look tampered with and refused its fee (review of P277).
+    The link stays, reported as `rooms_still_linked`; nothing loads a deleted
+    game by it (`_session_visibility()` runs only for a game that exists). The
+    room itself is never deleted: it has its own members and paid entitlements.
     `rooms` lives in the same physical `EMPORIA_DB_PATH` file as `sessions`
     (rooms.py's own `ROOM_DB_PATH` resolves the same env var) — updated on
     this same connection so it's part of the one transaction, not a second
@@ -7660,7 +7658,7 @@ async def delete_session(session_id: str, request: Request, force: bool = False)
         "session_id": session_id,
         "deleted": deleted,
         "retained": retained,
-        "unlinked": unlinked,
+        "rooms_still_linked": unlinked,
     })
 
     # Re-check counts, not just existence: a narrow TOCTOU window exists
@@ -7690,10 +7688,8 @@ async def delete_session(session_id: str, request: Request, force: bool = False)
         if recheck_unlinked != unlinked or recheck_deleted != deleted:
             mismatch = (recheck_unlinked, recheck_deleted)
         else:
-            conn.execute(
-                "UPDATE rooms SET linked_session_id = NULL WHERE linked_session_id = ?",
-                (session_id,),
-            )
+            # Review of P277: a room keeps its link — its creator signed a commitment to that game,
+            # and clearing it made the room look tampered with. Nothing loads a deleted game by it.
             conn.execute("DELETE FROM participants WHERE session_id = ?", (session_id,))
             conn.execute("DELETE FROM actions WHERE session_id = ?", (session_id,))
             conn.execute("DELETE FROM messages WHERE session_id = ?", (session_id,))
@@ -7718,8 +7714,8 @@ async def delete_session(session_id: str, request: Request, force: bool = False)
                 "reason": "concurrent_modification",
                 "operator": caller,
                 "session_id": session_id,
-                "expected": {"unlinked": unlinked, "deleted": deleted},
-                "observed": {"unlinked": recheck_unlinked, "deleted": recheck_deleted},
+                "expected": {"rooms_still_linked": unlinked, "deleted": deleted},
+                "observed": {"rooms_still_linked": recheck_unlinked, "deleted": recheck_deleted},
             })
         except OSError as e:
             raise HTTPException(
@@ -7736,7 +7732,7 @@ async def delete_session(session_id: str, request: Request, force: bool = False)
         "session_id": session_id,
         "deleted": deleted,
         "retained": retained,
-        "unlinked": unlinked,
+        "rooms_still_linked": unlinked,
         "message": "Payments and settlements are never deleted — see this endpoint's docstring.",
     }
 

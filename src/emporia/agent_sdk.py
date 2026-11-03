@@ -610,8 +610,14 @@ class EmporiaAgent:
         await self._check_spend(int(requirement.get("amount") or 0),
                                 f"USDC on {requirement.get('network')} to {label}, "
                                 f"{str(requirement.get('payTo'))[:12]}…")
-        header = payment_signature_header(
-            build_payment_payload(requirement, self._x402_private_key, resource=challenge.get("resource")))
+        try:
+            header = payment_signature_header(
+                build_payment_payload(requirement, self._x402_private_key, resource=challenge.get("resource")))
+        except Exception:
+            # Nothing was signed: take the charge back off the daily total (review of P276)
+            from emporia.agent_wallet import refund_daily
+            refund_daily(self.profile_id, int(requirement.get("amount") or 0))
+            raise
         return await retry(header)
 
     async def leave_session(self, session_id: str) -> dict[str, Any]:
@@ -1552,13 +1558,8 @@ class EmporiaAgent:
         """P281: the MCP tool `check_relay_log` — this relay's log only grew since
         the state kept from last time, holds the key changes followed, and matches
         what other relays were shown. Shares the MCP server's pins and kept states."""
-        from emporia import logcheck, visits
-
-        def may_ask(url: str) -> bool:      # the operator's visit rules (P188), as the MCP server applies them
-            url = url.rstrip("/")
-            return url not in visits.denied() and (visits.policy() != "listed" or url in visits.allowed())
-        return await asyncio.to_thread(logcheck.verify_relay, self.relay_url, compare_with=compare_with,
-                                       may_ask=may_ask)
+        from emporia import logcheck   # the operator's visit rules (P188) apply, as in the MCP tool
+        return await asyncio.to_thread(logcheck.verify_relay, self.relay_url, compare_with=compare_with)
 
     async def verify_room_chain(
         self, room_id: str, *, max_messages: int | None = None, ignore_pin: bool = False,

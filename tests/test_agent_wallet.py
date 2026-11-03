@@ -128,10 +128,25 @@ class _FakeHttpx:
         return _Resp(402, self.challenge)
 
     def get(self, url, headers=None, **kwargs):
-        # P275: the room, read before paying — made before rooms were signed, by the payee.
+        # P275: the room, read before paying — signed by the payee, at the fee the 402 asks (review of
+        # P275: a room without its signed creation is not paid), and the payee's key to check it with.
+        from datetime import UTC, datetime
+
+        from conftest import PAYEE_KEYS
+
+        from emporia import identity, wire
+        payee = self.challenge["payee"]
         if url.endswith("/rooms/r1"):
-            return _Resp(200, {"room_id": "r1", "creator_id": self.challenge["payee"]["agent_id"],
-                               "signed_acts": []})
+            fee = -(-int(self.challenge["x402"]["accepts"][0]["amount"]) // 10_000)
+            settings = {"name": "r", "description": "", "room_type": "private", "gate_type": "paid",
+                        "entry_fee_cents": fee, "currency": "USD", "max_members": None, "encrypted": False,
+                        "linked_session_id": None, "access_duration_days": None}
+            signed = wire.signed_room_payload(wire.new_message_nonce(), *settings.values())
+            return _Resp(200, {"room_id": "r1", "creator_id": payee["agent_id"], **settings, "signed_acts": [
+                {"act": "create", "at": datetime.now(UTC).isoformat(), "payload": signed,
+                 "signature": identity.sign_payload(PAYEE_KEYS[payee["agent_id"]], signed)}]})
+        if url.endswith(f"/agents/{payee['agent_id']}"):
+            return _Resp(200, {k: payee.get(k) for k in ("public_key_hex", "stable_id", "key_log")})
         return _Resp(404, {})
 
 

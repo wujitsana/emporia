@@ -1442,16 +1442,23 @@ def _game_payees(aid: str, session_id: str) -> tuple[set[str], str | None]:
 
 
 def _tempo_paid_retry(r: httpx.Response, aid: str, method: str, url: str, payees: Collection[str] = (),
-                      **kwargs: Any) -> httpx.Response:
+                      max_cents: int | None = None, **kwargs: Any) -> httpx.Response:
     """P156: answer a 402 by paying its Tempo offer from this agent's wallet,
     once — the transfer goes straight to the payee on Tempo, and the relay
-    checks the receipt. A 402 without a Tempo offer is returned as it is."""
-    from emporia import agent_wallet
+    checks the receipt. A 402 without a Tempo offer is returned as it is.
+    `max_cents`: the fee its payee signed, as for x402 (6-decimal stablecoin)."""
+    from emporia import agent_wallet, payee
 
     if r.status_code != 402 or not (r.json() or {}).get("tempo"):
         return r
     offer = r.json()["tempo"]
     _check_payee_pinned(offer.get("payee"), "evm", (offer.get("request") or {}).get("recipient"), payees)
+    try:
+        amount = int((offer.get("request") or {}).get("amount") or 0)
+    except (TypeError, ValueError):
+        raise agent_wallet.AgentWalletError("the Tempo offer's amount is not a number") from None
+    if why := payee.within_signed_fee(amount, max_cents):
+        raise payee.PayeeError(why)
     header = agent_wallet.pay_tempo(aid, offer)
     return _bearer_request(method, url, agent_id=aid, headers={"PAYMENT-TEMPO": header}, **kwargs)
 
@@ -1560,7 +1567,7 @@ def join_room(
                 r = _x402_paid_retry(r, agent_id, "post", url, network=pay_network, payees=payees, max_cents=fee,
                                      json=body, timeout=30)
             else:   # P156: stablecoin on Tempo, straight to the creator
-                r = _tempo_paid_retry(r, agent_id, "post", url, payees=payees, json=body, timeout=30)
+                r = _tempo_paid_retry(r, agent_id, "post", url, payees=payees, max_cents=fee, json=body, timeout=30)
         d = r.json()
         if r.status_code == 200:
             return {"success": True, **d}
@@ -2730,7 +2737,7 @@ def subscribe_agora_topic(topic_slug: str, agent_id: str, mpp_token: str = "",
                 r = _x402_paid_retry(r, agent_id, "post", url, network=pay_network, payees=payees, max_cents=fee,
                                      json=body, timeout=30)
             else:   # P156: stablecoin on Tempo, straight to the creator
-                r = _tempo_paid_retry(r, agent_id, "post", url, payees=payees, json=body, timeout=30)
+                r = _tempo_paid_retry(r, agent_id, "post", url, payees=payees, max_cents=fee, json=body, timeout=30)
         if r.status_code == 402:
             return {
                 "error": "payment_required", "options": _payment_options(r.json(), r),
@@ -4166,15 +4173,8 @@ def check_relay_log(compare_with: str = "") -> dict[str, Any]:
     operator's choice, not a failure."""
     from emporia import logcheck
     others = [u.strip().rstrip("/") for u in compare_with.split(",") if u.strip()] or None
-    return logcheck.verify_relay(_base(), compare_with=others, may_ask=_may_ask_relay)
+    return logcheck.verify_relay(_base(), compare_with=others)   # the operator's visit rules apply
 
-
-def _may_ask_relay(url: str) -> bool:
-    """P281: whether this agent may read another relay's public log route —
-    never one its operator denied, and under `listed` only an allowed one."""
-    from emporia import visits
-    url = url.rstrip("/")
-    return url not in visits.denied() and (visits.policy() != "listed" or url in visits.allowed())
 
 
 @mcp.tool()

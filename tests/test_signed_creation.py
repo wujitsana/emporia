@@ -92,9 +92,14 @@ def test_the_creator_signs_the_stake_and_a_relay_that_raises_it_is_caught():
     raised = client.get(f"/sessions/{sid}/encryption-keys", headers={"x-emporia-agent-id": "st_joiner"}).json()
     with pytest.raises(ValueError, match="5.00, not the 2.00"):
         identity.game_terms(sid, raised, "st_joiner", "st_joiner", RELAY)
-    # And its signed terms changed too: then the creator is not seated at all.
+    # And its signed terms changed too: then the creation does not verify, and the game is refused
+    # (review of P280: before, the stake fell back to the relay's word).
     forged = {**raised, "terms": {**raised["terms"], "stake_per_participant": "5.00"}}
-    assert identity.game_terms(sid, forged, "st_joiner", "st_joiner", RELAY) == (set(), None)
+    with pytest.raises(ValueError, match="no creation signed by st_maker"):
+        identity.game_terms(sid, forged, "st_joiner", "st_joiner", RELAY)
+    stripped = {**served, "joins": {k: v for k, v in served["joins"].items() if k != "st_maker"}}
+    with pytest.raises(ValueError, match="no creation signed"):
+        identity.game_terms(sid, stripped, "st_joiner", "st_joiner", RELAY)
     # A game whose stake the creator left to the module: nothing signed to hold it to.
     sid2 = client.post("/sessions", json={"module_type": "emporia:service:v1", "config": {"description": "w"}},
                        headers={"x-emporia-agent-id": "st_maker"}).json()["session_id"]

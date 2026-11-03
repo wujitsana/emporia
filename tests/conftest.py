@@ -415,6 +415,9 @@ def give_wallet(agent_id: str, network_family: str, address: str) -> None:
                                       {"at": body["at"], "signature": body["signature"]})
 
 
+PAYEE_KEYS: dict = {}
+
+
 def payee_for(agent_id: str = "", **wallets: str) -> dict:
     """A payee statement as a relay serves it with an offer (P262), signed by a
     fresh in-memory key: `payee_for(evm="0x…")`. A fresh name each call unless
@@ -428,7 +431,9 @@ def payee_for(agent_id: str = "", **wallets: str) -> dict:
     priv = ed25519.Ed25519PrivateKey.generate()
     pub = priv.public_key().public_bytes_raw().hex()
     sid, at = wire.stable_id_for(pub), datetime.now(UTC).isoformat()
-    return {"agent_id": agent_id or f"payee_{uuid.uuid4().hex[:8]}", "stable_id": sid, "public_key_hex": pub,
+    agent_id = agent_id or f"payee_{uuid.uuid4().hex[:8]}"
+    PAYEE_KEYS[agent_id] = priv          # so a test's fake relay can sign as this payee too
+    return {"agent_id": agent_id, "stable_id": sid, "public_key_hex": pub,
             "key_log": [], "wallets": {
                 f: {"address": a, "at": at,
                     "signature": identity.sign_payload(priv, wire.signed_payout_wallet_payload(sid, f, a, at))}

@@ -982,15 +982,19 @@ def game_terms(session_id: str, served: dict[str, Any], me: str, profile_id: str
     """P280: whom a stake or purchase in this game may pay (the other players its
     signed acts seat) and the stake its creator signed (None if it left that to
     the module's default). Raises ValueError when the relay keeps terms other
-    than the creator signed."""
+    than the creator signed, or shows no signed creation at all."""
     from emporia.wire import stake_mismatch
     seated = seated_players(session_id, served, me, profile_id, relay_url)
     creator = str(served.get("creator") or "")
     terms = served.get("terms") or {}
-    if creator in seated and (why := stake_mismatch(terms, served.get("payment_rules"))):
+    if creator not in seated:
+        # Review of P280: every game since P279 is made by a signed creation (the creator stays seated
+        # by it even after a leave). Without one, the stake would be the relay's word: refused.
+        raise ValueError(f"game {session_id} carries no creation signed by {creator or 'its creator'} "
+                         f"over the terms shown — refusing to pay into it")
+    if why := stake_mismatch(terms, served.get("payment_rules")):
         raise ValueError(f"the relay keeps game {session_id} on other terms than its creator signed: {why}")
-    stake = terms.get("stake_per_participant") if creator in seated else None
-    return seated - {me}, stake
+    return seated - {me}, terms.get("stake_per_participant")
 
 
 def session_recipients(session_id: str, served: dict[str, Any], me: str, profile_id: str,

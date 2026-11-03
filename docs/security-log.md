@@ -4633,3 +4633,23 @@ well under a millisecond; a writer thread with WAL readers is the next step if a
 A relay that kept a log under the old default and never set the variable would have stopped it without a word; it now warns at start (`transparency_log_left_off`, naming how many entries it had signed and `emporia setup log on`).
 
 Limits: this detects; it does not prevent. A relay can still refuse to record something, which is what receipts are for. Cross-checks need at least one other relay that links to the one checked. Clients check key steps only; other records are not checked by clients yet. Step 4 (posting roots to a chain) is not built: it needs the operator's decisions (which chain, who pays) and on-chain spending. Tests: `tests/test_logcheck.py` (10), live `tests/live/test_m_transparency_log.py` (an agent and a linked relay check one real relay's log), and the upgrade check (an upgraded relay's log is off, with the warning, until turned on).
+
+
+## P282 — review of P275–P281
+
+A code review of P275–P281 (`77c2aa4..38a749b`), each finding checked against the code before fixing. All ten held.
+
+| Finding | Fix |
+|---|---|
+| A room or topic served with no signed creation (or whose creator's key could not be fetched) was paid at the relay's fee: `room_terms` / `topic_terms` returned no cap, and the payee was whoever the relay named as creator | Refused: `payee.room_terms` / `topic_terms` raise when the settings are not verified (no backcompat for rooms before P243 or topics before P278) |
+| On the Tempo rail, `join_room` and `subscribe_agora_topic` fetched the signed fee and never used it | `_tempo_paid_retry` takes `max_cents` and refuses an offer above the signed fee (`payee.within_signed_fee`), as x402 does |
+| `identity.game_terms` fell back to the relay's stake when the creator's signed creation did not verify (stripped, or terms changed), so a relay could raise a stake by removing the signature | A game with no verified creation is refused (every game since P279 has one; the creator stays seated by it after a leave) |
+| A relay checked its peers' logs in parallel threads, each rewriting `_peer_log_states.json` through one `.tmp` path: a peer's kept state and its evidence could be lost | `logcheck._held`: a thread lock plus `fcntl.flock`, the file reloaded under it, and one temp file per writer |
+| A relay that turned its log off after an agent kept a state passed every later check | `stopped`, not ok: it can no longer be checked against what it signed (no evidence recorded — it is not a proof) |
+| A 429 or 5xx on a consistency proof or the epochs list was recorded as evidence that the relay showed two histories | Only 400/404 counts as a refusal; anything else is `unreachable` |
+| A key step not yet folded into the log (made after the last signed state) was reported missing, accusing an honest relay | A step newer than the state (less two minutes for clocks) is `pending` |
+| `emporia log verify` asked relays the operator had denied | `logcheck.visit_rules_allow` (`visits.may_read`) is the default for all three entry points |
+| Deleting a game cleared `rooms.linked_session_id`, which broke the creator's signed commitment (P277): the room then looked tampered with and its fee was refused | The link is kept (`rooms_still_linked` in the reply); nothing loads a deleted game by it |
+| The SDK charged the on-disk daily total (P276) before building the payment, and a build failure left the charge for 24 hours | Refunded (`agent_wallet.refund_daily`) when nothing was signed |
+
+Tests: `tests/test_logcheck.py`, `tests/test_payee_binding.py`, `tests/test_sdk_spending.py`, `tests/test_signed_creation.py`, `tests/test_emporia.py` (the session-delete test now expects the link kept).

@@ -3140,13 +3140,13 @@ def test_delete_session_clears_linked_room_without_deleting_it(client):
             headers={"x-emporia-agent-id": "p5_2_room_op"},
         )
     assert r.status_code == 200, r.text
-    assert r.json()["unlinked"] == {"rooms": 1}
+    assert r.json()["rooms_still_linked"] == {"rooms": 1}
     assert load_session(session_id) is None, "sanity: session itself must still be deleted"
 
     r = client.get(f"/rooms/{room_id}")
     assert r.status_code == 200, "the room itself must NOT be deleted"
-    assert r.json()["linked_session_id"] is None, (
-        "the link to the now-deleted session must be cleared, not left dangling"
+    assert r.json()["linked_session_id"] == session_id, (
+        "review of P277: the link its creator signed a commitment to is kept, or the room looks tampered with"
     )
 
 

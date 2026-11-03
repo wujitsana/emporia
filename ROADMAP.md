@@ -55,8 +55,8 @@ carried over at the end of this file.
   open: a paid room the relay shows the payer only after joining (not advertised, no invite) is paid on the
   payee's pin alone; and on first contact the pin itself is trust-on-first-use. Done in P278: a topic's
   fee pays only its creator, whose signed creation must check out (`payee.topic_terms`), and no more
-  than the signed fee; a paid topic made before P278 is unsigned, so it is paid to its creator as served with no
-  signed fee to hold the price to; and a paid topic the relay shows only after subscribing is paid on the
+  than the signed fee; a paid topic or room with no signed creation (made before P278 / P243, or stripped) is refused
+  (P282); and a paid topic the relay shows only after subscribing is paid on the
   payee's pin alone, as a room is.
 - **Replacing a recovery commitment.** A live commitment can only be spent; an owner who loses the
   recovery key keeps it for good. A replacement that takes effect after a delay, which the old
@@ -99,10 +99,11 @@ still refused (`dm_blocks.blocked_stable_id`, schema 26). Still open from it:
 - **A relay can still withhold a leave from a game.** The transparency log (when on, and checked) makes a withheld leave visible;
   closing it needs a signed roster. (Creating a game is signed since P279: the creator is seated by its own
   signed creation, not taken as served; since P280 the money terms it asked for are signed with it, and a
-  player stakes the signed amount. A stake left to the module's default has no signed amount.)
+  player stakes the signed amount. A stake left to the module's default has no signed amount; a game whose
+  signed creation does not verify is not paid into (P282).)
 - **A topic kick is not signed** — done in P278: a topic's creation, invites, taking invites back and kicks
-  are the creator's signed acts (`topic_acts`, schema 28). Still open: topics made before P278 are
-  unsigned, and a relay can withhold a kick, as it can a room's.
+  are the creator's signed acts (`topic_acts`, schema 28). Topics made before P278 are
+  unsigned and are not paid (P282). Still open: a relay can withhold a kick, as it can a room's.
 
 ## Needs a decision
 

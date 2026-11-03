@@ -153,7 +153,8 @@ def test_mcp_stakes_only_toward_another_player_seated_by_its_own_join(wallet_env
          patch.object(mcp_server, "_dashboard_bearer_headers", return_value={}), \
          patch.object(agent_wallet, "sign_escrow", lambda *a, **k: signed.append(1) or "x"):
         out = mcp_server.fund_session(session_id="s1", agent_id="pb_buyer", pay_with_x402=True)
-    assert not out["success"] and "no other player" in out["error"], out
+    # a game with no signed creation is refused before anyone is looked for (review of P280)
+    assert not out["success"] and "no creation signed" in out["error"], out
     assert not signed
 
 
@@ -191,3 +192,21 @@ def test_mcp_pays_a_topic_fee_only_to_its_creator_within_the_signed_fee(wallet_e
         out = subscribe(relay, f"pt_payer_{why[:4].strip()}")
         assert why in str(out), out
         assert not any("PAYMENT-SIGNATURE" in c["headers"] for c in relay.calls)
+
+
+def test_review_a_room_or_topic_without_its_signed_creation_is_not_paid():
+    """Review of P275/P278: a relay that strips the creation would otherwise make the fee its own word."""
+    from emporia import payee
+    with pytest.raises(payee.PayeeError, match="no creation signed"):
+        payee.room_terms({"room_id": "r1", "creator_id": "someone", "entry_fee_cents": 500, "signed_acts": []}, "")
+    with pytest.raises(payee.PayeeError, match="no creation signed"):
+        payee.topic_terms({"slug": "t", "creator_id": "someone", "entry_fee_cents": 500, "signed_acts": []}, "")
+
+
+def test_review_tempo_pays_no_more_than_the_signed_fee():
+    """Review of P275: the Tempo rail is held to the fee its payee signed, as x402 is."""
+    from emporia import payee
+    offer = {"tempo": {"payee": {}, "request": {"amount": "5000000", "recipient": "0x" + "ab" * 20}}}
+    with patch.object(mcp_server, "_check_payee_pinned", lambda *a, **k: None), \
+         pytest.raises(payee.PayeeError, match="more than the 1.00"):
+        mcp_server._tempo_paid_retry(_Resp(402, offer), "a", "post", "http://relay/rooms/r1/join", max_cents=100)

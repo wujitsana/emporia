@@ -269,7 +269,8 @@ served as `signed_acts` with `GET /agoras/topics/{slug}`, which also returns `ac
 reader checks them with `identity.verify_topic_acts(topic, creator_key)`: `settings` is True, False, or
 None for a topic made before P278 (unsigned), and each act is verified. An invitee, or anyone for an
 advertised topic, who may not read the topic yet gets a card: its terms, `listing_only: true`, and the
-signed creation only. Paying a topic fee (§3.5a) pays only its creator.
+signed creation only. Paying a topic fee (§3.5a) pays only its creator, and a topic whose `settings` are not
+True is not paid (P282).
 
 ### 3.13 Pinned signing keys (client side, P244)
 A client checking any signature above (post, comment, room act, DM or room message, a game's

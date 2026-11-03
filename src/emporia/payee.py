@@ -108,9 +108,9 @@ def check_pinned(payee: Any, family: str, address: str, relay_url: str, *,
 
 
 def room_terms(room: Any, creator_key: str, key_changed: bool = False) -> tuple[set[str], int | None]:
-    """P275: who a room's fee may pay — its creator — and, when the creator's
-    signed settings check out, the fee it signed (None for a room made before
-    rooms were signed, P243). `room` is `GET /rooms/{id}`, or None when the
+    """P275: who a room's fee may pay — its creator — and the fee it signed. A
+    room with no signed creation (made before P243, or stripped by the relay)
+    is refused: its fee would be the relay's word. `room` is `GET /rooms/{id}`, or None when the
     relay would not show it (a private room neither advertised nor inviting the
     payer): then nothing is expected. `creator_key` is the creator's pinned
     key. Raises PayeeError when the relay shows terms the creator did not
@@ -125,12 +125,17 @@ def room_terms(room: Any, creator_key: str, key_changed: bool = False) -> tuple[
     if settings is False:
         raise PayeeError(f"the relay shows room {room.get('room_id')} with terms {creator or 'its creator'} did not "
                          f"sign" + (f" (and a different key for {creator} than the one pinned)" if key_changed else ""))
-    return {creator}, (int(room.get("entry_fee_cents") or 0) if settings else None)
+    if settings is None:
+        # Review of P275: no signed creation, or no key for its creator, is what a relay that stripped
+        # the act would serve too — and the fee would then be the relay's word. Refused, not trusted.
+        raise PayeeError(f"room {room.get('room_id')} carries no creation signed by {creator or 'its creator'} "
+                         f"(or {creator or 'its creator'}'s key could not be fetched) — refusing to pay its fee")
+    return {creator}, int(room.get("entry_fee_cents") or 0)
 
 
 def topic_terms(topic: Any, creator_key: str, key_changed: bool = False) -> tuple[set[str], int | None]:
     """P278: `room_terms` for an Agora topic — its creator, and the fee it
-    signed (None for a topic made before topics were signed); nothing expected
+    signed (an unsigned topic is refused); nothing expected
     when the relay would not show it. Raises PayeeError for terms the creator
     did not sign."""
     from emporia.identity import verify_topic_acts
@@ -141,7 +146,10 @@ def topic_terms(topic: Any, creator_key: str, key_changed: bool = False) -> tupl
     if settings is False:
         raise PayeeError(f"the relay shows topic {topic.get('slug')} with terms {creator or 'its creator'} did not "
                          f"sign" + (f" (and a different key for {creator} than the one pinned)" if key_changed else ""))
-    return {creator}, (int(topic.get("entry_fee_cents") or 0) if settings else None)
+    if settings is None:   # as for a room: an unsigned topic's fee would be the relay's word
+        raise PayeeError(f"topic {topic.get('slug')} carries no creation signed by {creator or 'its creator'} "
+                         f"(or {creator or 'its creator'}'s key could not be fetched) — refusing to pay its fee")
+    return {creator}, int(topic.get("entry_fee_cents") or 0)
 
 
 def within_signed_fee(amount_atomic: int, max_cents: int | None) -> str:

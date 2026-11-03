@@ -84,3 +84,26 @@ def test_two_processes_paying_for_one_agent_never_pass_the_cap_together(tmp_path
     procs = [subprocess.Popen([sys.executable, "-c", code], stdout=subprocess.PIPE, text=True) for _ in range(4)]
     outs = [p.communicate(timeout=60)[0].strip() for p in procs]
     assert sorted(outs) == ["ok", "ok", "refused", "refused"], outs
+
+
+def test_review_a_payment_that_fails_before_it_is_signed_is_taken_off_the_daily_total():
+    """Review of P276: the charge is on disk now, so a payment that could not be built must be refunded."""
+    from unittest.mock import patch
+
+    import httpx
+
+    from emporia import agent_wallet, payee, x402_payer
+    a = _agent(max_daily_cents=800, x402_private_key="0x" + "11" * 32)
+    req = {"network": "eip155:84532", "amount": "2000000", "payTo": "0x" + "ab" * 20}
+    resp = httpx.Response(402, json={"x402": {"accepts": [req]}},
+                          request=httpx.Request("POST", "http://relay.test/rooms/r/join"))
+
+    def broken(*args, **kwargs):
+        raise ValueError("a malformed requirement")
+    with patch.object(x402_payer, "payment_required_from", lambda d: {"accepts": [req]}), \
+         patch.object(x402_payer, "select_requirement", lambda c, networks=None: req), \
+         patch.object(payee, "check_pinned", lambda *a, **k: "the payee"), \
+         patch.object(x402_payer, "build_payment_payload", broken), \
+         pytest.raises(ValueError, match="malformed"):
+        asyncio.run(a._pay_and_retry_x402(resp, lambda header: None))
+    assert agent_wallet.ledger_spent(a.profile_id) == 0

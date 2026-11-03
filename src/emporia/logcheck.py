@@ -25,6 +25,8 @@ from __future__ import annotations
 
 import json
 import os
+import threading
+from contextlib import contextmanager
 from pathlib import Path
 from typing import Any, Callable
 
@@ -71,6 +73,9 @@ def compare(a: dict, b: dict, get: Get) -> dict[str, Any]:
         code, body = get("/log/proof/consistency", {"first": small["size"], "second": big["size"]})
     except Exception as e:  # noqa: BLE001
         return _result("unreachable", f"could not ask for the consistency proof: {e}", b)
+    if code not in (200, 400, 404):
+        # busy (429) or down (5xx): no answer is not a refusal (review of P281)
+        return _result("unreachable", f"the consistency proof did not load ({code})", b)
     if code != 200 or not isinstance(body, dict):
         return _result("fail", f"the relay signed logs of {small['size']} and {big['size']} entries and will not "
                                f"prove one grew from the other ({code})", b, evidence=evidence)
@@ -96,6 +101,8 @@ def _new_log(held: dict, served: dict, get: Get, trusted_keys: list[str] | tuple
         code, body = get("/log/epochs", {})
     except Exception as e:  # noqa: BLE001
         return _result("unreachable", f"could not fetch the relay's logs: {e}", served)
+    if code not in (200, 404):
+        return _result("unreachable", f"the relay's list of logs did not load ({code})", served)
     by_epoch = {e.get("epoch"): e for e in (body.get("epochs") or [])} if code == 200 and isinstance(body, dict) else {}
     reasons = []
     for ep in range(held.get("epoch", 1) + 1, served.get("epoch", 1) + 1):
@@ -123,8 +130,13 @@ def check(get: Get, trusted_keys: list[str] | tuple[str, ...], held: dict | None
     except Exception as e:  # noqa: BLE001
         return _result("unreachable", f"could not fetch the log state: {e}", held)
     if code == 404:
-        return _result("off", "this relay keeps no transparency log" + (
-            " now, though it did before" if held else ""), held)
+        if held:
+            # Review of P281: a relay that stops the log it kept can no longer be checked against what it
+            # signed — which is also what a relay that rewrote it would do. Not a proof; not a pass.
+            return _result("stopped", f"this relay no longer serves the transparency log it kept "
+                                      f"({held['size']} entries when last checked): what it showed can no "
+                                      f"longer be checked", held)
+        return _result("off", "this relay keeps no transparency log", held)
     if code != 200:
         return _result("unreachable", f"the log state did not load ({code})", held)
     if not state_signed(state, trusted_keys):
@@ -194,11 +206,32 @@ def load(name: str = CLIENT_FILE) -> dict[str, Any]:
 def save(data: dict[str, Any], name: str = CLIENT_FILE) -> None:
     path = _path(name)
     path.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
-    tmp = path.with_suffix(".tmp")
+    tmp = path.with_name(f"{path.name}.{os.getpid()}.{threading.get_ident()}.tmp")   # one per writer
     fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
     with os.fdopen(fd, "w") as f:
         json.dump(data, f, indent=1, sort_keys=True)
     os.replace(tmp, path)
+
+
+_LOCK = threading.Lock()
+
+
+@contextmanager
+def _held(name: str):
+    """Review of P281: one writer at a time — a relay checks its peers in
+    parallel threads, and an agent's MCP server and CLI may check at once. Yields
+    the file's current contents; whatever the caller leaves in it is saved."""
+    import fcntl
+    path = _path(name)
+    path.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
+    with _LOCK, open(path.with_name(path.name + ".lock"), "a") as lock:
+        fcntl.flock(lock, fcntl.LOCK_EX)
+        try:
+            data = load(name)
+            yield data
+            save(data, name)
+        finally:
+            fcntl.flock(lock, fcntl.LOCK_UN)
 
 
 def check_and_keep(relay: str, get: Get, trusted_keys: list[str] | tuple[str, ...],
@@ -206,17 +239,27 @@ def check_and_keep(relay: str, get: Get, trusted_keys: list[str] | tuple[str, ..
     """`check`, then keep the state it proved; a failure keeps the earlier
     state and records the evidence, which never leaves the file once there."""
     from datetime import UTC, datetime
-    data = load(name)
-    entry = (data.get("relays") or {}).get(relay) or {}
-    out = check(get, trusted_keys, entry.get("state"))
+    entry = (load(name).get("relays") or {}).get(relay) or {}
+    out = check(get, trusted_keys, entry.get("state"))        # the network, outside the lock
     now = datetime.now(UTC).isoformat()
-    kept = {"state": out["state"], "status": out["status"], "detail": out["detail"], "checked_at": now,
-            "failures": entry.get("failures") or []}
-    if out.get("evidence"):
-        kept["failures"] = [*kept["failures"], {"at": now, "detail": out["detail"], "evidence": out["evidence"]}][-20:]
-    data.setdefault("relays", {})[relay] = kept
-    save(data, name)
+    with _held(name) as data:
+        entry = data.setdefault("relays", {}).get(relay) or {}
+        kept = {"state": out["state"], "status": out["status"], "detail": out["detail"], "checked_at": now,
+                "failures": entry.get("failures") or []}
+        if out.get("evidence"):
+            kept["failures"] = [*kept["failures"],
+                                {"at": now, "detail": out["detail"], "evidence": out["evidence"]}][-20:]
+        data["relays"][relay] = kept
     return {**out, "failures": len(kept["failures"])}
+
+
+def _after(step_at: Any, state_at: Any, margin_seconds: int = 120) -> bool:
+    """Whether a step's time is after a state's (less a margin for the two clocks), or either is unreadable."""
+    from datetime import timedelta
+
+    from emporia.wire import when_of
+    step, state = when_of(step_at), when_of(state_at)
+    return step is None or state is None or step > state - timedelta(seconds=margin_seconds)
 
 
 def key_steps_logged(relay: str, get: Get, state: dict, pins: dict[str, Any]) -> dict[str, Any]:
@@ -237,6 +280,8 @@ def key_steps_logged(relay: str, get: Get, state: dict, pins: dict[str, Any]) ->
             seen = included(get, state, f"agent_key:{sid}:{i}:{step.get('at')}",
                             lambda r, want=want: r.get("stable_id") == sid and isinstance(r.get("step"), dict)
                             and all(r["step"].get(k) == v for k, v in want.items()))
+            if seen is False and _after(step.get("at"), state.get("at")):
+                seen = None      # made after the state was signed: maybe not folded in yet (review of P281)
             if seen is True:
                 out["logged"] += 1
             elif seen is None:
@@ -278,9 +323,18 @@ def fetch_getter(base: str, timeout: float = 15.0) -> Get:
     return get
 
 
+def visit_rules_allow(url: str) -> bool:
+    """Whether this agent's operator lets it read another relay (P188): a public
+    route is browsing, allowed anywhere but the deny list (`visits.may_read`).
+    The MCP tool, the SDK and `emporia log verify` all ask this before
+    comparing with a relay."""
+    from emporia import visits
+    return visits.may_read(url)
+
+
 def verify_relay(relay: str, get_for: Callable[[str], Get] = fetch_getter,
                  compare_with: list[str] | tuple[str, ...] | None = None,
-                 may_ask: Callable[[str], bool] = lambda url: True) -> dict[str, Any]:
+                 may_ask: Callable[[str], bool] = visit_rules_allow) -> dict[str, Any]:
     """Everything a client checks of a relay's log, in one call (the MCP tool
     `check_relay_log`, the SDK's `check_relay_log()`, `emporia log verify`):
 
@@ -331,11 +385,10 @@ def verify_relay(relay: str, get_for: Callable[[str], Get] = fetch_getter,
             out["compared_with"].append({"relay": other, "status": r["status"], "detail": r["detail"]})
             if r["status"] == "fail":
                 problems.append(f"{other} was shown another history: {r['detail']}")
-                data = load()
-                entry = data.setdefault("relays", {}).setdefault(relay, {})
-                entry["failures"] = [*(entry.get("failures") or []),
-                                     {"detail": r["detail"], "via": other, "evidence": r.get("evidence")}][-20:]
-                save(data)
+                with _held(CLIENT_FILE) as data:
+                    entry = data.setdefault("relays", {}).setdefault(relay, {})
+                    entry["failures"] = [*(entry.get("failures") or []),
+                                         {"detail": r["detail"], "via": other, "evidence": r.get("evidence")}][-20:]
     out["problems"] = problems
     out["ok"] = not problems
     return out

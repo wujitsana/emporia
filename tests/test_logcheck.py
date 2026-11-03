@@ -142,10 +142,14 @@ def test_the_key_changes_a_client_followed_must_be_in_the_log(client):
                      "key_log": card["key_log"]}}
     assert logcheck.key_steps_logged("http://testserver", _get(client), state, pins) == \
         {"logged": 1, "pending": 0, "missing": []}
-    # a key step the relay showed this client, but never logged
+    # a key step the relay showed this client, but never logged: pending while the state is as new as the
+    # step (it may not be folded in yet), missing once a state signed well after it does not hold it
     shown = [{**card["key_log"][0], "signature": "ee" * 64}]
     pins[pin_id]["key_log"] = shown
-    assert logcheck.key_steps_logged("http://testserver", _get(client), state, pins)["missing"] == ["lc-keys"]
+    assert logcheck.key_steps_logged("http://testserver", _get(client), state, pins) == \
+        {"logged": 0, "pending": 1, "missing": []}
+    later = {**state, "at": "2099-01-01T00:00:00+00:00"}
+    assert logcheck.key_steps_logged("http://testserver", _get(client), later, pins)["missing"] == ["lc-keys"]
 
 
 def test_a_linked_relay_keeps_its_peers_states_and_the_evidence(client, monkeypatch):
@@ -203,3 +207,36 @@ def test_a_relay_that_kept_a_log_says_loudly_when_it_is_left_off(client, monkeyp
     _grow(client, "lc-left")
     monkeypatch.setenv("EMPORIA_TRANSPARENCY_LOG", "off")
     assert "EMPORIA_TRANSPARENCY_LOG=on" in rs._warn_if_log_left_off()
+
+
+def test_review_a_log_that_stops_or_a_busy_relay_is_told_apart_from_a_rewrite(client, monkeypatch):
+    """Review of P281: a relay that stops a log someone kept is not a pass; a 429 or 5xx is not a refusal."""
+    _grow(client, "lc-review")
+    held = logcheck.check(_get(client), TRUSTED, None)["state"]
+    gone = logcheck.check(_serving(client, **{"/log/state": lambda p: (404, {})}), TRUSTED, held)
+    assert gone["status"] == "stopped" and not gone["ok"] and "evidence" not in gone
+    bigger = _forged(held, size=held["size"] + 1, root="cd" * 32)
+    for code in (429, 502):
+        out = logcheck.check(_serving(client, **{"/log/state": bigger,
+                                                 "/log/proof/consistency": lambda p, c=code: (c, None)}), TRUSTED, held)
+        assert out["status"] == "unreachable" and "evidence" not in out, out
+
+
+def test_review_parallel_peer_checks_keep_every_peer(client, monkeypatch):
+    """Review of P281: a relay checks its peers in parallel threads; none of their states is lost."""
+    import threading
+    _grow(client, "lc-par")
+    get = _get(client)
+    threads = [threading.Thread(target=logcheck.check_and_keep, args=(f"http://p{i}.test", get, TRUSTED),
+                                kwargs={"name": logcheck.PEER_FILE}) for i in range(8)]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join()
+    assert len(logcheck.load(logcheck.PEER_FILE)["relays"]) == 8
+
+
+def test_review_the_cli_and_tools_ask_only_relays_the_operator_allows(monkeypatch):
+    monkeypatch.setenv("EMPORIA_VISIT_DENY", "http://evil.test")
+    assert not logcheck.visit_rules_allow("http://evil.test/")
+    assert logcheck.visit_rules_allow("http://fine.test")
