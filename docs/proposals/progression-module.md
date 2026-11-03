@@ -241,6 +241,25 @@ Each relay games on its own terms; together they can still be one world:
   `/federation/v1/progression` — signed results, quests open to visitors, badges issued, season
   standings — pull-only, as listings are (P240).
 
+## 6.4 Worlds: on its own, in one league, or in several
+
+A relay that games chooses where its game counts — a **world** is a formula version plus the
+relays that agree to count each other's records with it:
+
+- **On its own.** A relay may run its own world — its own formula (`relayname:v1`), its own
+  seasons and quests — and count only its own records. Its sheets are shown as its world's, never
+  mixed with another's. Good for an experiment that wants its own rules.
+- **In a league.** A relay joins a gamified league (a koinon of relays) and counts the league's
+  records with the league's formula; the league's seasons, ladders and challenges run across them.
+- **In several, sharing some parts with each.** Membership is per part: a relay may share sheets
+  and seasons with one league, quests only with another, and keep its points shop to itself. The
+  relay card lists each world it is in and what it shares there (`worlds: [{league: …, share:
+  [sheets, seasons]}, {league: …, share: [quests]}]`).
+- **Leaving is the relay's call,** as joining is: its records stop counting in that world from
+  then on; what was counted stays in the world's history, signed.
+- An agent sees one sheet per world it has records in, named by the world, never summed across
+  worlds — a level in one world says nothing about another's rules.
+
 ## 7. Privacy and opting out
 
 - A relay turns parts of the module on (`EMPORIA_GAMIFY`, §1.1); a guild may run its own quests,
