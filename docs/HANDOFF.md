@@ -1,54 +1,84 @@
-# Handoff — `post-hackathon` and `claude/handoff-4rte3l`, 2026-11-02
+# Handoff — `post-hackathon`, 2026-11-03
 
 For whoever picks this branch up next (a cloud coding agent, or a person). It says where the work
 stands, what was tested by hand, what is left before `main`, and what can and cannot be done
 without the original machine.
 
-## Plan from here (11-02, after P269) — start here
+## Plan from here (11-03, after P287) — start here
 
-Everything through P269 is on `claude/handoff-4rte3l`, pushed, not on `post-hackathon` (no merge
-until the user says). Unit suite 1,937, live 10/10. None of P251–P269 is tested by hand.
+`claude/handoff-4rte3l` was fast-forwarded into `post-hackathon` on 2026-11-03 (commit `1c32360`,
+through P285) at the user's approval. Work continues on `post-hackathon`, now about 19 commits
+ahead of `origin` and **not pushed** (the push waits for the user). `main` waits for the manual gate.
+Unit suite 2,018 passed (1 skipped); live suite 14 passed; dashboard 200 tests, typecheck, lint and
+builds clean. One flaky unit test seen once: `test_encrypted_message_is_opaque_in_the_database`
+(fixed agent names in a shared database).
 
-**1. The user, by hand (free, first):**
-- `docs/manual-testing.md` §1c and §1d. Report only failures.
-- After updating: each agent registers its x402 wallet again (unsigned ones are dropped);
-  delete `EMPORIA_TRUST_LOCAL_HEADER_AUTH=1` from any profile `.env` (ignored now).
-- Run the dashboard's `npx tsc -b` and `npx vitest run` on a machine that can install `srcl`.
+**1. Waiting on the user:**
+- Push `post-hackathon`.
+- The 33 manual checks: `docs/manual-testing.md` "Before main", 8 sittings. Sitting 0 (the live
+  suite) is done, 14 passed; sittings 1-8 are a person's. 63 items moved to "Covered by the
+  automated suites".
+- The agent-driven money run (needs credits; beta needs a USDC top-up).
+- The signer apart, on the host.
+- Answers to the open questions in the proposals below.
 
-**2. Decisions waiting on the user (free):**
-- Names: `name@host`? which host? names per Nous account (3?), hold after release (30 days?),
-  reserved list, ✓ for Nous-verified (`docs/proposals/agent-names-and-identity.md`).
-- Chain anchoring (log step 4): which chain (Base Sepolia, or Robinhood testnet once its token
-  and a facilitator are confirmed, `docs/proposals/robinhood-chain.md`), how often, spend cap.
-  Any transaction needs the user's say-so.
-- Note range-based set reconciliation (syncing two relays' Agora and listings by exchanging
-  fingerprints of ranges, not whole lists) in the federation proposal: yes/no.
+**2. New since 11-02 (P281-P287):**
+- P281: transparency log off by default; clients and linked relays check it (`logcheck.py`).
+- P282: review fixes.
+- P283: the dashboard's own UI kit (`dashboard/src/ui/kit`) replaces `srcl`.
+- P284: Hermes 0.22.6 — `EMPORIA_DAILY_TURNS` cap (a `pre_llm_call` hook); Emporia's skills copied
+  into agent profiles and locked with `hermes curator lock` (`emporia agent refresh`/`update`);
+  `requires_hermes >=0.22.6`; doctor warns on an exposed `api_server`.
+- P285: the local relay is brought back by each agent's bridge after a container restart or crash;
+  `relay stop` / `signer stop` check the pid is theirs.
+- P286: relay id from the relay's key, kept across restarts and rotations (sign-ins survive
+  restarts); signed `GET /relay/card`.
+- P287: an agent's own analytics: `emporia stats NAME`, MCP `my_stats` (83 MCP tools),
+  `/payments/records?mine=1`.
+- Also: dashboard lint rules back on (34 warnings fixed), a game deep-link fix
+  (`GamesView.test.tsx`), `docs/manual-testing.md` restructured.
 
-**3. Build, in order (next sessions):**
+**3. Proposals for decision (design only):**
+- [guilds-and-relay-identity.md](proposals/guilds-and-relay-identity.md) — decentralized agentic
+  experimentation and one big marketplace of guilds; follow, friends, guilds; leagues of relays;
+  signed `koinon` records underneath (naming open, §9.8); where a relay runs (practice / apart /
+  remote tiers, the operator agent); co-op relays; directories, not a registry. §3 (relay
+  identity) is built as P286.
+- [progression-module.md](proposals/progression-module.md) — the gamify module, every part optional
+  per relay (`EMPORIA_GAMIFY=sheets,seasons,quests,points,boosts,anchor`); attributes
+  Craft/Trade/Trust; quests with non-money rewards; points and boosts a relay or guild may sell
+  (attributes never for sale); on-chain options undecided; "worlds": a relay on its own, in one
+  league, or in several.
+- [analytics-module.md](proposals/analytics-module.md) — four audiences; step 1 built as P287;
+  dashboard Stats view next.
+- Still open: [agent-names-and-identity.md](proposals/agent-names-and-identity.md) (names per Nous
+  account, hold after release, reserved list, verified mark),
+  [relay-transparency-log.md](proposals/relay-transparency-log.md) step 4 and
+  [robinhood-chain.md](proposals/robinhood-chain.md) (which chain, how often, spend cap; any
+  transaction needs the user's say-so), range-based set reconciliation in the federation proposal
+  (yes/no).
+
+**4. Build next, in order:**
 1. Fixes from the hand tests.
-2. Transparency log steps 2 and 3: DONE (P281): `emporia log verify`, `check_relay_log` in MCP/SDK,
-   relays check peers' `/log/state` and serve `/log/seen`. Left: a dashboard line; hand each
-   private record's salt to its parties; fold private chain heads into one entry per state.
-3. Names step 1 (after the decisions): claims/transfers/releases as signed payloads in the log,
-   `/names/{name}`, `lookup_name`, `emporia name …`.
-4. Buying from a listing pins the seller by the listing's signed stable id (`payee.check`
-   `expected_stable_id`).
-5. Then, by the user's choice: chain anchoring, Robinhood Chain, replacing a recovery
-   commitment, a writer thread for the database, splitting the large modules (ROADMAP §
-   From the 11-02 audit).
+2. Dashboard Stats view (needs a small local endpoint to read Hermes `state.db`).
+3. Count room/topic entry fees as the creator's earnings in stats.
+4. Glicko-2 Craft ratings (progression step 1).
+5. Friends and follow (guilds proposal step 2), once naming and defaults are decided.
+6. Names step 1 after its decisions; a listing purchase pinning the seller by its signed stable id
+   (`payee.check` `expected_stable_id`); log leftovers (a dashboard line, salts to parties, private
+   chain heads folded per state). Then by the user's choice: chain anchoring, Robinhood Chain, a
+   writer thread for the database, splitting the large modules (ROADMAP § From the 11-02 audit).
 
-**4. Before `main`:** hand tests pass, the user says merge into `post-hackathon`, then the
-two-relay, https, service, Stripe Connect and x402 runs (§ Left before merging to `main`).
+**5. Before `main`:** the manual checks pass, then the two-relay, https, service, Stripe Connect
+and x402 runs (§ Left before merging to `main`).
 
 ## Where things are
 
-- **Branch:** `post-hackathon`, ~530 commits ahead of `main`, plus P240–P260 on
-  `claude/handoff-4rte3l` (not yet on `post-hackathon`; no merge until the user says). Not merged. Aim: merge by
-  the end of the week of 10-26 so others can test.
-- **Tests:** `pytest` (1,854 unit tests; the full run takes about 10 minutes in a cloud container),
-  the live suite `pytest -m live tests/live` (10 scenarios, about 5 minutes; off by default), and
-  the dashboard's `cd dashboard && npx vitest run` (196). All pass. `npx tsc -b` reports 35 errors, all pre-existing (srcl's types, `vite.config.ts`).
-  Don't add to them.
+- **Branch:** `post-hackathon`, many commits ahead of `main` (P240–P285 came in from
+  `claude/handoff-4rte3l` on 11-03), ~19 ahead of `origin`, not pushed. Not merged to `main`.
+- **Tests:** `pytest` (2,018 unit tests; the full run takes about 10 minutes in a cloud container),
+  the live suite `pytest -m live tests/live` (14 tests, about 5 minutes; off by default), and
+  the dashboard's `cd dashboard && npx vitest run` (200). All pass; typecheck and lint are clean.
 - **Change log:** each change is a numbered `P…` commit; `docs/security-log.md` records the
   security-relevant ones. P200–P239 were the stretch before the last; P240–P250 are the last.
 - **Commit author:** only `wujitsana <wujitsana@gmail.com>` appears on a commit (decided 10-29).

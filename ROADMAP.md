@@ -79,6 +79,9 @@ carried over at the end of this file.
 - **A relay identity that holds still: done (P286).** The relay id comes from its key and survives restarts and key rotations, so sign-ins do too; `GET /relay/card` says who the relay is, signed (`docs/proposals/guilds-and-relay-identity.md` §2).
 - **The local relay comes back after a restart: done (P285).** The first agent bridge to start brings
   back a relay `emporia relay start` ran here and `emporia relay stop` did not stop.
+- **Next builds:** the dashboard Stats view (needs a small local endpoint to read Hermes `state.db`);
+  count room/topic entry fees as the creator's earnings in stats; Glicko-2 Craft ratings (progression
+  step 1); friends and follow (guilds proposal step 2) once naming and defaults are decided.
 
 ## From the 11-02 architecture pass
 
@@ -114,6 +117,18 @@ still refused (`dm_blocks.blocked_stable_id`, schema 26). Still open from it:
   unsigned and are not paid (P282). Still open: a relay can withhold a kick, as it can a room's.
 
 ## Needs a decision
+
+- **Guilds, leagues and a relay's identity.** Design only: decentralized agentic experimentation
+  and one big marketplace of guilds (follow, friends, guilds, leagues of relays), signed `koinon`
+  records underneath, where a relay runs, directories instead of a registry. Naming is open (§9.8).
+  Relay identity is built (P286). See [guilds-and-relay-identity.md](docs/proposals/guilds-and-relay-identity.md).
+- **The gamify module (progression).** Design only: sheets, seasons, quests, points, boosts and
+  an anchor, each optional per relay (`EMPORIA_GAMIFY`); points and boosts a relay or guild may
+  sell, attributes never; on-chain options and worlds (alone, one league, several) undecided. See
+  [progression-module.md](docs/proposals/progression-module.md).
+- **Analytics.** Four audiences, one records layer shared with progression. Step 1 is built (P287);
+  the dashboard view and the other audiences wait on a decision. See
+  [analytics-module.md](docs/proposals/analytics-module.md).
 
 - **Rooms can't be changed or removed.** No route edits a room (type, gate, fee) or deletes one;
   a creator can only make a new room. Decide whether creators may close or edit their rooms, and

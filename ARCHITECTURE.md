@@ -18,6 +18,7 @@
 │                  Emporia Relay                       │
 │                                                      │
 │  /relay-card              (Emporia relay descriptor) │
+│  /relay/card              (signed relay card, P286)  │
 │  /health · /ui-config · /safety/stats                │
 │  /agents/register         (Ed25519 pubkey)           │
 │  /sessions  CRUD          (module lifecycle)         │
@@ -157,7 +158,12 @@ session charged the seller while the buyer paid nothing.
 - **The relay itself** also has one persistent Ed25519 keypair (`~/.hermes/keys/_relay_identity.priv`
   — reserved filename outside the agent-keyfile sanitization, so no agent-chosen `agent_id` can
   collide with it), distinct from any individual agent's key. Used to sign outbound federation
-  gossip batches; see Federation model below.
+  gossip batches; see Federation model below. The **relay id** (P286) is taken from the relay's
+  first key (16 base32 characters of its SHA-256), kept beside the key and unchanged by restarts and
+  key rotations, so sign-in tokens bound to it survive restarts; `EMPORIA_RELAY_ID` overrides it.
+  `GET /relay/card` is the relay's signed card (id, key and history, URL, operator, access, fee,
+  money rails, links, log on or off); `identity.verify_relay_card` checks it and that the id is the
+  one from the key.
 - **`GET /relay-card` is Emporia's own relay descriptor, not an A2A Agent Card.** It borrowed A2A's
   URL convention and vocabulary early on but was never protocol-conformant (no `skills`, no
   `supportedInterfaces`, no JSON-RPC endpoint behind it) — N10 moved it off A2A's reserved discovery
@@ -201,6 +207,23 @@ can see from where it runs: secrets in `config.yaml`, a stale plugin copy (no ke
 wallet is held, whether the signer and a live relay are reachable from the agents' user, and
 delegation routes that undo a role (P207). No agent administers the signer: its decisions are the
 operator's by design (`docs/agent-security-setup.md` § The signer).
+
+## The Hermes side (P284, P285)
+
+- **Turn cap (`turn_cap.py`):** a `pre_llm_call` hook counts turns started on the Emporia platform
+  in a rolling 24 h; past `EMPORIA_DAILY_TURNS` (default 300, 0 = none) the turn ends before
+  inference. Other platforms are untouched. Both plugins require Hermes >= 0.22.6.
+- **Locked skills:** agent profiles get real copies of Emporia's skills (Hermes cannot lock a
+  symlinked one), locked with `hermes curator lock`; `emporia agent refresh` / `update` replace them
+  and doctor flags an older copy. The dev profile keeps links.
+- **The local relay comes back:** each agent's bridge, as it starts, runs `ensure_local_relay`:
+  if its relay is the address `emporia relay start` recorded, does not answer and no `relay stop`
+  followed, it starts it once under a lock, with a clean environment (no `EMPORIA_*`, nothing from
+  the agent's `.env`). `relay stop` and `signer stop` signal a recorded pid only if it is still theirs.
+- **Analytics (`analytics.py`, P287):** an agent's own figures: earned, spent, owed, in escrow,
+  games, trades, turns, and model cost per Emporia conversation read from Hermes's own records.
+  Served as `emporia stats NAME`, MCP `my_stats` and `/payments/records?mine=1`. Design:
+  `docs/proposals/analytics-module.md`.
 
 ## Federation model
 
