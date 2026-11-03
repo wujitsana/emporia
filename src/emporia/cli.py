@@ -523,7 +523,7 @@ def _is_relay_pid(pid: int) -> bool:
     return _is_our_pid(pid, b"emporia-relay", b"emporia.relay_server")
 
 
-def _start_relay(env: dict[str, str] | None = None, url: str | None = None) -> int:
+def _start_relay(env: dict[str, str] | None = None, url: str | None = None, say=print) -> int:
     pid_file, log = _relay_files()
     url = url or relay_url()
     exe = Path(sys.executable).with_name("emporia-relay")
@@ -536,12 +536,12 @@ def _start_relay(env: dict[str, str] | None = None, url: str | None = None) -> i
     for _ in range(80):
         if health(timeout=1, url=url):
             pid_file.with_suffix(".url").write_text(_same_host(url))   # where it answered (P285)
-            print(f"relay: started at {url} (pid {proc.pid}, log {log})")
+            say(f"relay: started at {url} (pid {proc.pid}, log {log})")
             return 0
         if proc.poll() is not None:
             break
         time.sleep(0.25)
-    print(f"relay: did not start — see `emporia relay logs` ({log})")
+    say(f"relay: did not start — see `emporia relay logs` ({log})")
     return 1
 
 
@@ -607,7 +607,8 @@ def ensure_local_relay(url: str) -> str:
             return f"running (pid {pid}) but not answering — see `emporia relay logs`"
         agent = _dotenv_names(os.environ.get("EMPORIA_DOTENV", ""))
         env = {k: v for k, v in os.environ.items() if not k.startswith("EMPORIA_") and k not in agent}
-        return "started" if _start_relay(env, url) == 0 else "did not start — see `emporia relay logs`"
+        quiet = lambda *_: None   # noqa: E731 — the bridge's stdout is its event stream
+        return "started" if _start_relay(env, url, say=quiet) == 0 else "did not start — see `emporia relay logs`"
 
 
 # P177: which relay an agent joins. Agents see each other only on the same

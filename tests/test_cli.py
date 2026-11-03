@@ -242,7 +242,7 @@ def relay_here(tmp_path, monkeypatch):
     state = {"up": False, "started": []}
     monkeypatch.setattr(cli, "health", lambda timeout=3.0, url="": {"status": "ok"} if state["up"] else None)
 
-    def start(env=None, url=None):
+    def start(env=None, url=None, say=print):
         state["started"].append(env)
         state["up"] = True
         return 0

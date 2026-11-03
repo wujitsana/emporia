@@ -93,10 +93,36 @@ async def run(relay_url: str, agent_id: str, profile_id: str | None,
                 tunnels.pop(url).cancel()
             if tunnels[home].done():
                 return
+            await asyncio.to_thread(_check_local_relay, home)      # P285: a relay that crashed comes back
             await asyncio.sleep(poll_seconds)
     finally:
         for task in tunnels.values():
             task.cancel()
+
+
+_RELAY_RETRY_SECONDS = 300
+_relay_tried = {"at": 0.0}
+
+
+def _check_local_relay(relay_url: str) -> str:
+    """P285: bring back the relay this machine runs (`emporia relay start`) when it does not
+    answer — at the gateway's start, and while it runs (a relay that crashed). A start that
+    failed is retried at most every five minutes. Never keeps the agent from its events."""
+    import time
+    try:
+        from emporia.cli import ensure_local_relay
+        if time.monotonic() - _relay_tried["at"] < _RELAY_RETRY_SECONDS and _relay_tried["at"]:
+            from emporia.cli import health
+            return "up" if health(timeout=2, url=relay_url) else "waiting to retry"
+        what = ensure_local_relay(relay_url)
+    except Exception as e:
+        logger.warning("local relay check failed: %s", e)
+        return "check failed"
+    if what not in ("up", "not on this machine") and not what.startswith(("not started here", "not the relay")):
+        logger.info("local relay: %s", what)
+        if what != "started":
+            _relay_tried["at"] = time.monotonic()
+    return what
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -107,13 +133,7 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
     logging.basicConfig(stream=sys.stderr, level=logging.INFO,
                         format="%(asctime)s %(levelname)s %(name)s %(message)s")
-    try:   # P285: the relay this machine runs comes back with the gateway (a restart stops it)
-        from contextlib import redirect_stdout
-        from emporia.cli import ensure_local_relay
-        with redirect_stdout(sys.stderr):           # stdout is the event stream
-            logger.info("local relay: %s", ensure_local_relay(args.relay_url))
-    except Exception as e:                           # never keep the agent from its events
-        logger.warning("local relay check failed: %s", e)
+    _check_local_relay(args.relay_url)   # P285: the relay this machine runs comes back with the gateway
     try:
         asyncio.run(run(args.relay_url, args.agent_id, args.profile_id))
     except KeyboardInterrupt:

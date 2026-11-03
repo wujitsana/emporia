@@ -227,6 +227,16 @@ def _fetch_through_httpx_get(monkeypatch):
 # one on a developer machine — and `emporia signer start` spawns a process. A
 # test answering yes to "start the signer?" once left one running there.
 @pytest.fixture(autouse=True)
+def _no_real_relay_restart(monkeypatch, tmp_path):
+    """P285: a bridge brings back the relay `emporia relay start` ran here. In the suite its
+    pid file is a temporary one, so no test can start (or find) the real relay."""
+    from emporia import cli
+    folder = tmp_path / "relay-files"
+    folder.mkdir()
+    monkeypatch.setattr(cli, "_relay_files", lambda: (folder / "emporia-relay.pid", folder / ".relay.log"))
+
+
+@pytest.fixture(autouse=True)
 def _no_real_signer(monkeypatch):
     monkeypatch.setenv("EMPORIA_SIGNER_DIR", str(TEST_ROOT / "signer"))
     monkeypatch.delenv("EMPORIA_SIGNER_SOCKET", raising=False)

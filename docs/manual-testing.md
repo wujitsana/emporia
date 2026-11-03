@@ -39,7 +39,7 @@ checked steps are under "Already done by hand".
 
 ### 0. Scripts first (about 15 minutes, no person judgement)
 
-- [ ] **The live suite, once on this machine:** `python scripts/live_relays.py` → all 13 scenarios pass
+- [x] **The live suite, once on this machine:** `python scripts/live_relays.py` → all 13 scenarios pass (2026-11-03: 14 tests passed)
       (about five minutes). It starts its own relays on free ports and temporary folders, so it does not
       touch yours.
 

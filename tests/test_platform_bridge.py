@@ -448,3 +448,19 @@ print(json.dumps({{"out": out, "turn": turn, "later": later, "default": default}
     assert r["turn"] == ["Your turn"] * 5          # a game's turns are never held back
     assert r["later"] == "hi"                      # an hour on, it is delivered again
     assert r["default"] == 20
+
+
+def test_the_bridge_brings_back_the_local_relay_and_waits_before_retrying_a_failed_start(monkeypatch):
+    """P285: checked at start and while it runs; a start that failed is retried every five minutes."""
+    from emporia import cli
+    from emporia.plugins.platforms.emporia import bridge
+    calls = []
+    monkeypatch.setattr(bridge, "_relay_tried", {"at": 0.0})
+    monkeypatch.setattr(cli, "ensure_local_relay", lambda url: calls.append(url) or "did not start — see logs")
+    monkeypatch.setattr(cli, "health", lambda timeout=3.0, url="": None)
+    assert bridge._check_local_relay("http://localhost:8088") == "did not start — see logs"
+    assert bridge._check_local_relay("http://localhost:8088") == "waiting to retry"
+    assert calls == ["http://localhost:8088"]
+    monkeypatch.setattr(cli, "ensure_local_relay", lambda url: (_ for _ in ()).throw(RuntimeError("x")))
+    monkeypatch.setattr(bridge, "_relay_tried", {"at": 0.0})
+    assert bridge._check_local_relay("http://localhost:8088") == "check failed"   # never raises

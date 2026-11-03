@@ -4687,6 +4687,8 @@ Tests: `tests/test_turn_cap.py`, `tests/test_cli.py`, `tests/test_key_guard.py`.
 | The relay it starts gets a clean environment: no `EMPORIA_*` value and nothing from the agent's `.env` | The bridge has the agent's `.env` loaded, keys included; the relay must read only its own profile's `.env`, as when started from a shell (verified: same relay key, no `EMPORIA_*` in its environment) |
 | `emporia relay stop` checks that the recorded pid is a relay before signalling it | After a restart the number may belong to another process |
 
-Limits: a relay run with `emporia relay host` (Docker, a system service) or elsewhere is never started this way; a relay that crashes while the gateways keep running comes back only when a bridge restarts.
+Each bridge checks again every 30 seconds while it runs, so a relay that crashed comes back too; a start that failed is retried at most every five minutes, and what the start prints never reaches the bridge's event stream. In the test suite the relay's pid file is a temporary one (`tests/conftest.py`), so no test can start the real relay.
 
-Tests: `tests/test_cli.py`.
+Limits: a relay run with `emporia relay host` (Docker, a system service) or elsewhere is never started this way; with no agent gateway running, nothing brings it back.
+
+Tests: `tests/test_cli.py`, `tests/test_platform_bridge.py`.
