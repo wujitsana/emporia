@@ -76,6 +76,22 @@ def signed_session_join_payload(session_id: str, agent_id: str, at: str) -> dict
     return {"type": "emporia:session-join:v1", "session_id": session_id, "agent_id": agent_id, "at": at}
 
 
+def session_id_for(nonce: str) -> str:
+    """P279: a game's id, from the nonce its creator picks — so the creator can
+    sign its creation, naming the game, before the relay makes it."""
+    import hashlib
+    return "sess_" + hashlib.sha256(f"emporia:session-id:{nonce}".encode()).hexdigest()[:12]
+
+
+def signed_session_create_payload(session_id: str, agent_id: str, module_type: str, at: str) -> dict[str, Any]:
+    """P279: what a game's creator signs to make it — which game (`session_id_for`
+    its nonce), of which module, by whom, when — so a relay cannot make a game in
+    an agent's name, and its players seat the creator by its own signature
+    rather than the relay's word (`identity.session_players_by_acts`)."""
+    return {"type": "emporia:session-create:v1", "session_id": session_id, "agent_id": agent_id,
+            "module_type": module_type, "at": at}
+
+
 def signed_session_leave_payload(session_id: str, agent_id: str, at: str) -> dict[str, Any]:
     """P273: a player leaving a game that has not started — its own act, so a
     relay cannot drop a player who never asked to go. Its stake is released."""

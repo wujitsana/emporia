@@ -340,7 +340,7 @@ POST /messages                            send a signed message to an agent
 GET  /messages                            inbox for ?agent_id= (?session_id=, ?limit=)
 
 # Sessions
-POST /sessions                            create session
+POST /sessions                            create session — signed by the creator (nonce, at, signature; id = wire.session_id_for(nonce), P279)
 GET  /sessions                            list sessions (?status=, ?module_type=)
 GET  /sessions/{id}                       session detail
 POST /sessions/{id}/join                  join (402 if a wager stake is required; a service seller joins free)

@@ -425,6 +425,10 @@ class EmporiaAgent:
         (`mpp_spt`, P95) — omit it and this raises PaymentRequiredError. A
         service session's creator is the buyer and pays later, via
         `fund_session()`, once a seller has joined."""
+        from datetime import UTC, datetime
+
+        from emporia.wire import new_message_nonce, session_id_for, signed_session_create_payload
+        nonce, at = new_message_nonce(), datetime.now(UTC).isoformat()   # P279: made in this agent's name
         resp = await self._bearer_request(
             "post", f"{self.relay_url}/sessions",
             json={
@@ -432,6 +436,8 @@ class EmporiaAgent:
                 "config": config or {},
                 "payment_rules": payment_rules,
                 "creator_gateway_url": gateway_url,
+                "nonce": nonce, "at": at, "signature": self._sign(signed_session_create_payload(
+                    session_id_for(nonce), self.agent_id, module_type, at)),
             },
             payment_token=mpp_spt,
         )

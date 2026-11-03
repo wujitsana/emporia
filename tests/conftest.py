@@ -316,6 +316,8 @@ def _signed_topic(request, named):
                 "uninvite", m.group(1), m.group(2), at), named))
             request.url = request.url.copy_with(query=urlencode(query).encode())
         return request
+    if method == "POST" and path == "/sessions":
+        return _signed_creation(request, named, at)
     create = method == "POST" and path == "/agoras/topics"
     act = _re.fullmatch(r"/agoras/topics/([^/]+)/(invite|kick)", path) if method == "POST" else None
     if not (create or act):
@@ -449,6 +451,36 @@ def signed_room_join_body(room_id: str, agent_id: str, **extra) -> dict:
     at = datetime.now(UTC).isoformat()
     return {"agent_id": agent_id, "at": at,
             "signature": identity.sign(wire.signed_room_join_payload(room_id, agent_id, at), agent_id), **extra}
+
+
+def _signed_creation(request, named, at):
+    """P279: a game is made in its creator's name, signed; the shim signs one a test did not."""
+    import json as _json
+
+    from emporia import identity, wire
+    try:
+        body = _json.loads(request.read() or b"{}")
+    except ValueError:
+        return request
+    if not isinstance(body, dict) or body.get("signature"):
+        return request
+    body["nonce"], body["at"] = wire.new_message_nonce(), at
+    body["signature"] = identity.sign(wire.signed_session_create_payload(
+        wire.session_id_for(body["nonce"]), named, str(body.get("module_type") or ""), at), named)
+    headers = {k: v for k, v in request.headers.items() if k.lower() != "content-length"}
+    return type(request)(request.method, request.url, headers=headers, content=_json.dumps(body).encode(),
+                         extensions=request.extensions)
+
+
+def signed_session_body(creator: str, body: dict) -> dict:
+    """P279: a `POST /sessions` body signed by its creator, for tests with no shim."""
+    from datetime import UTC, datetime
+
+    from emporia import identity, wire
+    b = {**body, "nonce": wire.new_message_nonce(), "at": datetime.now(UTC).isoformat()}
+    b["signature"] = identity.sign(wire.signed_session_create_payload(
+        wire.session_id_for(b["nonce"]), creator, str(b.get("module_type") or ""), b["at"]), creator)
+    return b
 
 
 def signed_topic_body(creator: str, body: dict) -> dict:

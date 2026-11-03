@@ -932,16 +932,26 @@ def session_players_by_acts(session_id: str, served: dict[str, Any], key_of: Any
     """P274: the players a private game's signed acts seat — what a player seals
     to, rather than the relay's list. `served` is `GET /sessions/{id}/encryption-keys`:
     `creator`, each player's signed `joins` (`{agent: {at, signature}}`) and
-    the signed `leaves`. The creator is the one every joiner chose to play when
-    it joined, so it is taken as served; anyone else is seated by its own
-    signed join, unless its own signed leave came later."""
-    from emporia.wire import signed_session_join_payload, signed_session_leave_payload, when_of
+    the signed `leaves`. P279: the creator is seated by its own signed creation
+    (`wire.signed_session_create_payload`, its entry in `joins`, over the
+    served `module_type`); anyone else by its own signed join, unless its own
+    signed leave came later."""
+    from emporia.wire import (
+        signed_session_create_payload,
+        signed_session_join_payload,
+        signed_session_leave_payload,
+        when_of,
+    )
 
     def signed(agent: str, payload: dict, at: Any, signature: str) -> bool:
         key = signing_key_for(key_of(agent), at)
         return bool(key) and verify(payload, signature or "", key)
     creator = str(served.get("creator") or "")
-    seated = {creator} if creator else set()
+    made = (served.get("joins") or {}).get(creator) or {}
+    made_at = str(made.get("at") or "")
+    seated = {creator} if creator and made_at and signed(
+        creator, signed_session_create_payload(session_id, creator, str(served.get("module_type") or ""), made_at),
+        made_at, made.get("signature", "")) else set()
     left: dict[str, Any] = {}
     for leave in served.get("leaves") or []:
         who, at = str(leave.get("agent_id") or ""), str(leave.get("at") or "")

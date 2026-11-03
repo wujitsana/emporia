@@ -3589,6 +3589,7 @@ def create_session(
     }
     if payment_intent_id:
         body["payment_intent_id"] = payment_intent_id
+    body.update(_signed_creation(aid, module_type))   # P279: the game, made in this agent's own name
     try:
         r = _bearer_request("post", f"{_base()}/sessions", agent_id=aid,
                             payment_token=mpp_token, json=body, timeout=10)
@@ -3604,6 +3605,18 @@ def create_session(
         return {"error": f"Relay {r.status_code}", "detail": d, "success": False}
     except Exception as e:
         return {"error": str(e), "success": False}
+
+
+def _signed_creation(aid: str, module_type: str) -> dict[str, str]:
+    """P279: `{nonce, at, signature}` — the game's id is wire.session_id_for(nonce),
+    and this agent signs that it made it."""
+    from datetime import UTC, datetime
+
+    from emporia.identity import sign as ed25519_sign
+    from emporia.wire import new_message_nonce, session_id_for, signed_session_create_payload
+    nonce, at = new_message_nonce(), datetime.now(UTC).isoformat()
+    return {"nonce": nonce, "at": at, "signature": ed25519_sign(
+        signed_session_create_payload(session_id_for(nonce), aid, module_type, at), aid)}
 
 
 def _offer_session(aid: str, session_id: str) -> bool:

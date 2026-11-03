@@ -205,13 +205,30 @@ def test_mcp_x402_wallet_info_returns_no_key_material(wallet_env):
         assert mcp_server.x402_wallet_info(agent_id="info_agent")["registered_on_relay"] == addr
 
 
+def _signed_seller(name: str, receiver: str) -> tuple[dict, dict]:
+    """A seller with a real key: its signed payee statement, and the game bundle
+    (`/sessions/s1/encryption-keys`) seating it by its own signed creation (P279)."""
+    from datetime import UTC, datetime
+
+    from emporia import wire
+    pub = identity.get_public_key_hex(name)
+    sid, at = wire.stable_id_for(pub), datetime.now(UTC).isoformat()
+    statement = {"agent_id": name, "stable_id": sid, "public_key_hex": pub, "key_log": [],
+                 "wallets": {"evm": {"address": receiver, "at": at, "signature": identity.sign(
+                     wire.signed_payout_wallet_payload(sid, "evm", receiver, at), name)}}}
+    bundle = {"creator": name, "module_type": "emporia:service:v1",
+              "keys": {name: {"public_key_hex": pub, "stable_id": sid}}, "leaves": [],
+              "joins": {name: {"at": at, "signature": identity.sign(wire.signed_session_create_payload(
+                  "s1", name, "emporia:service:v1", at), name)}}}
+    return statement, bundle
+
+
 def test_mcp_fund_session_signs_the_escrow_offer_for_the_sessions_stake(wallet_env):
-    from conftest import payee_for
     agent_wallet.generate("buyer")
     seen = {}
     receiver = "0x" + "ee" * 20
-    the_offer = {"scheme": "emporia-escrow-v1", "payment_info": {"receiver": receiver},
-                 "payee": payee_for(evm=receiver)}
+    statement, bundle = _signed_seller("the_seller", receiver)
+    the_offer = {"scheme": "emporia-escrow-v1", "payment_info": {"receiver": receiver}, "payee": statement}
 
     class Relay:
         calls: list[dict] = []
@@ -223,8 +240,8 @@ def test_mcp_fund_session_signs_the_escrow_offer_for_the_sessions_stake(wallet_e
             return _Resp(402, {"escrow": the_offer})
 
         def get(self, url, headers=None, **kw):
-            if url.endswith("/encryption-keys"):   # P275: the seller, the game's creator as the buyer chose it
-                return _Resp(200, {"creator": the_offer["payee"]["agent_id"], "keys": {}, "joins": {}, "leaves": []})
+            if url.endswith("/encryption-keys"):   # P275/P279: the seller, seated by its signed creation
+                return _Resp(200, bundle)
             return _Resp(200, {"payment_rules": {"stake_per_participant": "1.25"}})
 
     def fake_sign(aid, offer, *, expected_amount):

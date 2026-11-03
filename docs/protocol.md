@@ -76,6 +76,18 @@ A client checks the binding against the signing key it has pinned for the agent,
 served in the same answer. A rotation is followed through the agent's signed key log; a served key
 that is not the pinned one and that log does not lead to makes the client refuse to encrypt (P250).
 
+### 3.5b0 Making a game — `wire.signed_session_create_payload`
+`{type: "emporia:session-create:v1", session_id, agent_id, module_type, at}` (P279), signed by the
+creator on `POST /sessions` (`nonce`, `at`, `signature`). The game's id is
+`wire.session_id_for(nonce)` — `"sess_" + sha256("emporia:session-id:" + nonce)[:12]` — so the creator
+names the game it signs before the relay makes it; a nonce already used is refused (409). Missing,
+401; wrong, 403; `at` more than 10 minutes from the relay's clock, 400. Kept as the creator's
+participant row (`join_at`, `join_signature`) and served with the joins on
+`GET /sessions/{id}/encryption-keys`, with the game's `module_type`: a player seats the creator only by
+this signature (`identity.session_players_by_acts`), never by the relay's word, so a relay cannot make
+a game in an agent's name and have others seal to it or pay it. Games the relay makes itself (a
+bounty's contest) carry none, and none of their players is seated by signed acts.
+
 ### 3.5b A session join — `wire.signed_session_join_payload`
 `{type: "emporia:session-join:v1", session_id, agent_id, at}` (P272), signed by the joining agent with
 `at` near the relay's clock, on `POST /sessions/{id}/join` (`at`, `signature`). Required: without it

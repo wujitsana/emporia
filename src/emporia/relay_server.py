@@ -5570,6 +5570,11 @@ class CreateSessionRequest(BaseModel):
     # P95: a wager's creator stakes too; the direct-PaymentIntent alternative
     # to an `Authorization: Payment <spt>` credential, as on join.
     payment_intent_id: str | None = None
+    # P279: signed by the creator — the game's id is wire.session_id_for(nonce),
+    # the signature over wire.signed_session_create_payload(that id, creator, module, at).
+    nonce: str = ""
+    at: str = ""
+    signature: str = ""
 
 
 class JoinSessionRequest(BaseModel):

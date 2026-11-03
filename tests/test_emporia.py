@@ -2098,11 +2098,11 @@ def test_service_session_requires_participant_under_prod_auth(prod_client):
     _register_keyed(prod_client, "prodvis_buyer")
     _register_keyed(prod_client, "prodvis_seller")
     _register_keyed(prod_client, "prodvis_stranger")
-    r = prod_client.post("/sessions", json={
+    r = prod_client.post("/sessions", json=__import__("conftest").signed_session_body("prodvis_buyer", {
         "module_type": "emporia:service:v1", "creator_agent_id": "prodvis_buyer",
         "config": {"description": "Confidential work"},
         "payment_rules": {"mode": "free"},
-    },
+    }),
         headers=bearer_for(prod_client, "prodvis_buyer"))
     session_id = r.json()["session_id"]
     prod_client.post(
@@ -2121,10 +2121,10 @@ def test_service_session_requires_participant_under_prod_auth(prod_client):
 def test_ws_session_requires_participant_under_prod_auth(prod_client):
     _register_keyed(prod_client, "prodws_buyer")
     _register_keyed(prod_client, "prodws_stranger")
-    r = prod_client.post("/sessions", json={
+    r = prod_client.post("/sessions", json=__import__("conftest").signed_session_body("prodws_buyer", {
         "module_type": "emporia:service:v1", "creator_agent_id": "prodws_buyer",
         "config": {"description": "d"}, "payment_rules": {"mode": "free"},
-    },
+    }),
         headers=bearer_for(prod_client, "prodws_buyer"))
     session_id = r.json()["session_id"]
 
@@ -9949,10 +9949,10 @@ def test_join_and_subscribe_reject_impersonated_agent_id(prod_client):
     _register_keyed(prod_client, "impj_real")
     _register_keyed(prod_client, "impj_victim")
 
-    r = prod_client.post("/sessions", json={
+    r = prod_client.post("/sessions", json=__import__("conftest").signed_session_body("impj_real", {
         "module_type": "emporia:chess:v1", "creator_agent_id": "impj_real",
         "config": {}, "payment_rules": {"mode": "free"},
-    },
+    }),
         headers=bearer_for(prod_client, "impj_real"))
     session_id = r.json()["session_id"]
     r = prod_client.post(
@@ -10071,7 +10071,7 @@ def test_attributed_content_creation_requires_authentication(prod_client):
     assert r.status_code == 401
     r = prod_client.post(
         "/sessions",
-        json={"module_type": "emporia:chess:v1", "config": {}, "payment_rules": {"mode": "free"}},
+        json=__import__("conftest").signed_session_body("attr_real", {"module_type": "emporia:chess:v1", "config": {}, "payment_rules": {"mode": "free"}}),
         headers=bearer_for(prod_client, "attr_real"),
     )
     assert r.status_code == 200
@@ -10131,10 +10131,10 @@ def test_create_payment_intent_requires_authentication(prod_client):
 
     r = prod_client.post(
         "/sessions",
-        json={
+        json=__import__("conftest").signed_session_body("pi_auth_creator", {
             "module_type": "emporia:service:v1", "config": {},
             "payment_rules": {"mode": "stripe_link", "stake_per_participant": "1.00", "currency": "usd"},
-        },
+        }),
         headers=bearer_for(prod_client, "pi_auth_creator"),
     )
     session_id = r.json()["session_id"]
@@ -10877,12 +10877,12 @@ def test_mcp_paid_session_full_turn_under_prod_auth(prod_client):
     _register_keyed(prod_client, "mcp_e2e_buyer")
     _register_keyed(prod_client, "mcp_e2e_seller")
 
-    r = prod_client.post("/sessions", json={
+    r = prod_client.post("/sessions", json=__import__("conftest").signed_session_body("mcp_e2e_buyer", {
         "module_type": "emporia:service:v1",
         "creator_agent_id": "mcp_e2e_buyer",
         "config": {"description": "Write a haiku about distributed systems"},
         "payment_rules": {"mode": "free"},
-    },
+    }),
         headers=bearer_for(prod_client, "mcp_e2e_buyer"))
     assert r.status_code == 200, r.text
     session_id = r.json()["session_id"]
@@ -10934,10 +10934,10 @@ def test_mcp_confirm_and_dispute_delivery_use_shared_wire_contract(prod_client):
     adapter = _ASGIHttpxAdapter(prod_client, mcp_server.RELAY_URL)
 
     # confirm_delivery
-    r = prod_client.post("/sessions", json={
+    r = prod_client.post("/sessions", json=__import__("conftest").signed_session_body("p10_1_buyer", {
         "module_type": "emporia:service:v1", "creator_agent_id": "p10_1_buyer",
         "config": {"description": "P10-1 confirm test"}, "payment_rules": {"mode": "free"},
-    },
+    }),
         headers=bearer_for(prod_client, "p10_1_buyer"))
     assert r.status_code == 200, r.text
     session_id = r.json()["session_id"]
@@ -10973,10 +10973,10 @@ def test_mcp_confirm_and_dispute_delivery_use_shared_wire_contract(prod_client):
         )
 
     # dispute_delivery — a second session, since the first is now terminal
-    r = prod_client.post("/sessions", json={
+    r = prod_client.post("/sessions", json=__import__("conftest").signed_session_body("p10_1_buyer", {
         "module_type": "emporia:service:v1", "creator_agent_id": "p10_1_buyer",
         "config": {"description": "P10-1 dispute test"}, "payment_rules": {"mode": "free"},
-    },
+    }),
         headers=bearer_for(prod_client, "p10_1_buyer"))
     session_id2 = r.json()["session_id"]
     prod_client.post(
@@ -11037,10 +11037,10 @@ def test_mcp_confirm_and_dispute_default_rationale_are_single_sourced(prod_clien
     _register_keyed(prod_client, "p10_2_seller")
     adapter = _ASGIHttpxAdapter(prod_client, mcp_server.RELAY_URL)
 
-    r = prod_client.post("/sessions", json={
+    r = prod_client.post("/sessions", json=__import__("conftest").signed_session_body("p10_2_buyer", {
         "module_type": "emporia:service:v1", "creator_agent_id": "p10_2_buyer",
         "config": {"description": "P10-2 confirm rationale test"}, "payment_rules": {"mode": "free"},
-    },
+    }),
         headers=bearer_for(prod_client, "p10_2_buyer"))
     session_id = r.json()["session_id"]
     prod_client.post(
@@ -11060,10 +11060,10 @@ def test_mcp_confirm_and_dispute_default_rationale_are_single_sourced(prod_clien
             result = mcp_server.confirm_delivery(session_id=session_id, agent_id="p10_2_buyer")
     assert result.get("success") is True, result
 
-    r = prod_client.post("/sessions", json={
+    r = prod_client.post("/sessions", json=__import__("conftest").signed_session_body("p10_2_buyer", {
         "module_type": "emporia:service:v1", "creator_agent_id": "p10_2_buyer",
         "config": {"description": "P10-2 dispute rationale test"}, "payment_rules": {"mode": "free"},
-    },
+    }),
         headers=bearer_for(prod_client, "p10_2_buyer"))
     session_id2 = r.json()["session_id"]
     prod_client.post(
@@ -11387,10 +11387,10 @@ def test_mcp_submit_action_uses_shared_wire_contract_and_relay_accepts_it(prod_c
     _register_keyed(prod_client, "p6_4_mcp_buyer")
     _register_keyed(prod_client, "p6_4_mcp_seller")
 
-    r = prod_client.post("/sessions", json={
+    r = prod_client.post("/sessions", json=__import__("conftest").signed_session_body("p6_4_mcp_buyer", {
         "module_type": "emporia:service:v1", "creator_agent_id": "p6_4_mcp_buyer",
         "config": {"description": "P6-4 wire contract test"}, "payment_rules": {"mode": "free"},
-    },
+    }),
         headers=bearer_for(prod_client, "p6_4_mcp_buyer"))
     assert r.status_code == 200, r.text
     session_id = r.json()["session_id"]
@@ -12245,10 +12245,10 @@ def test_mcp_submit_action_returns_structured_error_on_sign_failure(prod_client)
     adapter = _ASGIHttpxAdapter(prod_client, mcp_server.RELAY_URL)
 
     with patch.object(mcp_server, "httpx", adapter):
-        r = prod_client.post("/sessions", json={
+        r = prod_client.post("/sessions", json=__import__("conftest").signed_session_body("p11_2_action_buyer", {
             "module_type": "emporia:service:v1", "creator_agent_id": "p11_2_action_buyer",
             "config": {"description": "P11-2 sign failure test"}, "payment_rules": {"mode": "free"},
-        },
+        }),
             headers=bearer_for(prod_client, "p11_2_action_buyer"))
         session_id = r.json()["session_id"]
         prod_client.post(
@@ -12274,10 +12274,10 @@ def test_mcp_confirm_delivery_returns_structured_error_on_sign_failure(prod_clie
     adapter = _ASGIHttpxAdapter(prod_client, mcp_server.RELAY_URL)
 
     with patch.object(mcp_server, "httpx", adapter):
-        r = prod_client.post("/sessions", json={
+        r = prod_client.post("/sessions", json=__import__("conftest").signed_session_body("p11_2_confirm_buyer", {
             "module_type": "emporia:service:v1", "creator_agent_id": "p11_2_confirm_buyer",
             "config": {"description": "P11-2 confirm sign failure test"}, "payment_rules": {"mode": "free"},
-        },
+        }),
             headers=bearer_for(prod_client, "p11_2_confirm_buyer"))
         session_id = r.json()["session_id"]
         prod_client.post(
@@ -12311,10 +12311,10 @@ def test_mcp_dispute_delivery_returns_structured_error_on_sign_failure(prod_clie
     adapter = _ASGIHttpxAdapter(prod_client, mcp_server.RELAY_URL)
 
     with patch.object(mcp_server, "httpx", adapter):
-        r = prod_client.post("/sessions", json={
+        r = prod_client.post("/sessions", json=__import__("conftest").signed_session_body("p11_2_dispute_buyer", {
             "module_type": "emporia:service:v1", "creator_agent_id": "p11_2_dispute_buyer",
             "config": {"description": "P11-2 dispute sign failure test"}, "payment_rules": {"mode": "free"},
-        },
+        }),
             headers=bearer_for(prod_client, "p11_2_dispute_buyer"))
         session_id = r.json()["session_id"]
         prod_client.post(
@@ -12367,10 +12367,10 @@ def test_mcp_get_settlements_authenticates_under_prod_auth(prod_client):
     from emporia.relay_server import record_settlement
 
     _register_keyed(prod_client, "mcpsettle_buyer")
-    r = prod_client.post("/sessions", json={
+    r = prod_client.post("/sessions", json=__import__("conftest").signed_session_body("mcpsettle_buyer", {
         "module_type": "emporia:service:v1", "creator_agent_id": "mcpsettle_buyer",
         "config": {"description": "d"}, "payment_rules": {"mode": "free"},
-    },
+    }),
         headers=bearer_for(prod_client, "mcpsettle_buyer"))
     session_id = r.json()["session_id"]
     record_settlement({
@@ -12405,12 +12405,12 @@ def test_mcp_join_session_surfaces_x402_declined_reason(prod_client):
     _register_keyed(prod_client, "p4_3_mcp_joiner")
 
     with _creator_stake_held():
-        r = prod_client.post("/sessions", json={
+        r = prod_client.post("/sessions", json=__import__("conftest").signed_session_body("p4_3_mcp_creator", {
             "module_type": "emporia:chess:v1",
             "creator_agent_id": "p4_3_mcp_creator",
             "config": {"description": "P4-3 session decline test"},
             "payment_rules": {"mode": "stripe_link", "stake_per_participant": "1.00", "currency": "usd"},
-        },
+        }),
             headers=bearer_for(prod_client, "p4_3_mcp_creator"))
         assert r.status_code == 200, r.text
     session_id = r.json()["session_id"]
@@ -15144,7 +15144,7 @@ def test_agents_list_session_and_win_counts_correct(prod_client):
 
     r = prod_client.post(
         "/sessions",
-        json={"module_type": "emporia:chess:v1", "config": {}, "payment_rules": {"mode": "free"}},
+        json=__import__("conftest").signed_session_body("agents_count_creator", {"module_type": "emporia:chess:v1", "config": {}, "payment_rules": {"mode": "free"}}),
         headers=bearer_for(prod_client, "agents_count_creator"),
     )
     session_id = r.json()["session_id"]

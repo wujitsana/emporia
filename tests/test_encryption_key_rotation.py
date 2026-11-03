@@ -197,8 +197,8 @@ def test_a_join_is_signed_by_the_joining_agent():
         c = TestClient(app, client=("127.0.0.1", 51272))
         _register_keyed(c, "join272_host")
         _register_keyed(c, "join272_guest")
-        sid = c.post("/sessions", json={"module_type": "emporia:chess:v1", "config": {"opponent": "join272_guest"},
-                                        "payment_rules": {"mode": "free"}},
+        sid = c.post("/sessions", json=__import__("conftest").signed_session_body("join272_host", {"module_type": "emporia:chess:v1", "config": {"opponent": "join272_guest"},
+                                        "payment_rules": {"mode": "free"}}),
                      headers=bearer_for(c, "join272_host")).json()["session_id"]
         h = bearer_for(c, "join272_guest")
         assert c.post(f"/sessions/{sid}/join", json={"agent_id": "join272_guest"}, headers=h).status_code == 401

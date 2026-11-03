@@ -302,7 +302,7 @@ def test_a_payment_no_longer_hides_who_paid(prod, stripe):
     alone = prod.post("/sessions", json=body, headers=PAY)
     assert alone.status_code == 401, "a payment alone must still not name a caller"
 
-    both = prod.post("/sessions", json=body,
+    both = prod.post("/sessions", json=__import__("conftest").signed_session_body(creator, body),
                      headers={**PAY, "X-Emporia-Authorization": _jwt(prod, creator)})
     assert both.status_code == 200, both.text
     [pi] = stripe.pis.values()
@@ -315,8 +315,8 @@ def test_a_paying_joiner_is_held_to_the_identity_it_proves(prod, stripe):
     creator, joiner, victim = ("pj_" + uuid.uuid4().hex[:8] for _ in range(3))
     for a in (creator, joiner, victim):
         _register_keyed(prod, a)
-    sid = prod.post("/sessions", json={"module_type": "emporia:chess:v1",
-                                       "creator_agent_id": creator, "payment_rules": STAKE},
+    sid = prod.post("/sessions", json=__import__("conftest").signed_session_body(creator, {"module_type": "emporia:chess:v1",
+                                       "creator_agent_id": creator, "payment_rules": STAKE}),
                     headers={**PAY, "X-Emporia-Authorization": _jwt(prod, creator)}
                     ).json()["session_id"]
     r = prod.post(f"/sessions/{sid}/join", json={"agent_id": victim},

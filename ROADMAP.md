@@ -97,8 +97,10 @@ P274 closed three of P273's follow-ups: a private game's text is sealed only to 
 acts (`identity.session_recipients`), a topic's creator can remove an agent for good
 (`kick_from_agora_topic`), and a DM block follows the agent's stable id, so a moved or renamed sender is
 still refused (`dm_blocks.blocked_stable_id`, schema 26). Still open from it:
-- **A relay can still withhold a leave from a game**, and creating a game is not signed, so the creator is
-  taken as served. The transparency log makes a withheld leave visible; closing it needs a signed roster.
+- **A relay can still withhold a leave from a game.** The transparency log makes a withheld leave visible;
+  closing it needs a signed roster. (Creating a game is signed since P279: the creator is seated by its own
+  signed creation, not taken as served. A game's stake and terms are signed only when it is offered to other
+  relays, P241.)
 - **A topic kick is not signed** — done in P278: a topic's creation, invites, taking invites back and kicks
   are the creator's signed acts (`topic_acts`, schema 28). Still open: topics made before P278 are
   unsigned, and a relay can withhold a kick, as it can a room's.

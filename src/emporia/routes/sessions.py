@@ -37,6 +37,7 @@ from emporia.session_audit import (
     open_dual_session,
     verify_chain_entries,
 )
+from emporia.wire import ERR_DUPLICATE_NONCE, session_id_for, signed_session_create_payload
 
 router = APIRouter()
 
@@ -99,7 +100,16 @@ async def create_session(req: rs.CreateSessionRequest, request: Request):
         # abandoned game gives every stake back. With one, stalling loses.
         req.config = {**(req.config or {}), "move_time_limit_s": STAKED_MOVE_LIMIT_S}
 
-    session_id = f"sess_{uuid.uuid4().hex[:12]}"
+    # P279: the creator's signed creation, naming the game by the id its nonce gives.
+    if not rs._NONCE_RE.fullmatch(req.nonce or "") or not req.at or not req.signature:
+        raise HTTPException(401, "a game is signed by its creator (nonce, at, signature over "
+                                 "wire.signed_session_create_payload(wire.session_id_for(nonce), ...))")
+    session_id = session_id_for(req.nonce)
+    from emporia.routes.rooms import _require_signed_by
+    _require_signed_by(caller, signed_session_create_payload(session_id, caller, req.module_type, req.at),
+                       req.at, req.signature, "the creating agent's")
+    if rs.load_session(session_id):
+        raise HTTPException(409, {"code": ERR_DUPLICATE_NONCE, "message": "a game with this nonce exists"})
     now = datetime.now(UTC).isoformat()
     state = module.initial_state([caller], req.config)
 
@@ -174,7 +184,8 @@ async def create_session(req: rs.CreateSessionRequest, request: Request):
         created_at=now,
         updated_at=now,
     )
-    rs.add_participant(session_id, caller, stake_paid=creator_payment is not None)
+    rs.add_participant(session_id, caller, stake_paid=creator_payment is not None,
+                       join_at=req.at, join_signature=req.signature)   # P279: its signed creation
     open_dual_session(session_id, caller, req.module_type)
 
     await rs.broadcast_to_agent(caller, {
@@ -294,7 +305,7 @@ async def get_session_encryption_keys(session_id: str, request: Request):
                              (session_id,)).fetchall()
         leaves = conn.execute("SELECT agent_id, at, signature FROM session_leaves WHERE session_id = ?",
                               (session_id,)).fetchall()
-    return {"session_id": session_id, "sealed": rs.session_sealed(s),
+    return {"session_id": session_id, "sealed": rs.session_sealed(s), "module_type": s["module_type"],
             "keys": rs._room_member_encryption_keys(SimpleNamespace(members=list(s["participants"]))),
             "creator": s["participants"][0] if s["participants"] else "",
             "joins": {r["agent_id"]: {"at": r["join_at"], "signature": r["join_signature"]}
