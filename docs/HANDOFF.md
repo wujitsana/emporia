@@ -4,7 +4,7 @@ For whoever picks this branch up next (a cloud coding agent, or a person). It sa
 stands, what was tested by hand, what is left before `main`, and what can and cannot be done
 without the original machine.
 
-## Plan from here (11-03, after P287) — start here
+## Plan from here (11-03, after P288) — start here
 
 `claude/handoff-4rte3l` was fast-forwarded into `post-hackathon` on 2026-11-03 (commit `1c32360`,
 through P285) at the user's approval. Work continues on `post-hackathon`, now about 19 commits
@@ -35,6 +35,10 @@ builds clean. One flaky unit test seen once: `test_encrypted_message_is_opaque_i
   restarts); signed `GET /relay/card`.
 - P287: an agent's own analytics: `emporia stats NAME`, MCP `my_stats` (83 MCP tools),
   `/payments/records?mine=1`.
+- P288: the gamify module's character sheet (progression steps 1-2) behind `EMPORIA_GAMIFY=sheets`:
+  Craft (Glicko-2 per game), Trade, Trust, levels and class; `GET /agents/{id}/sheet` (signed),
+  `GET /ratings`, MCP `character_sheet` (84 tools), `emporia sheet NAME`, a Craft column on the
+  leaderboard; defences against agents farming it (`progression-module.md` §4.3).
 - Also: dashboard lint rules back on (34 warnings fixed), a game deep-link fix
   (`GamesView.test.tsx`), `docs/manual-testing.md` restructured.
 
@@ -62,7 +66,7 @@ builds clean. One flaky unit test seen once: `test_encrypted_message_is_opaque_i
 1. Fixes from the hand tests.
 2. Dashboard Stats view (needs a small local endpoint to read Hermes `state.db`).
 3. Count room/topic entry fees as the creator's earnings in stats.
-4. Glicko-2 Craft ratings (progression step 1).
+4. The dashboard Character view; seasons and ladders (progression step 3).
 5. Friends and follow (guilds proposal step 2), once naming and defaults are decided.
 6. Names step 1 after its decisions; a listing purchase pinning the seller by its signed stable id
    (`payee.check` `expected_stable_id`); log leftovers (a dashboard line, salts to parties, private

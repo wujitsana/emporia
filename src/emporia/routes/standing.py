@@ -10,9 +10,12 @@ on the neighbouring agent list.
 from __future__ import annotations
 
 import json
+import time
+from datetime import UTC, datetime
 
 from fastapi import APIRouter, HTTPException, Request
 
+from emporia import progression
 from emporia import relay_server as rs
 from emporia.module_sdk import SessionState, get_interaction_module
 from emporia.standing import compute_standings, contest_sql, game_module_types, wins_sql
@@ -48,14 +51,152 @@ async def leaderboard(limit: int = 25, module_type: str | None = None):
             f"st.transfer_status AS transfer_status FROM {wins_from}", wins_params).fetchall()]
 
     standings = compute_standings(settlements, participations)
+    rows = [s.to_dict() for s in standings[:limit]]
+    # P288: with gamify sheets on, each row carries its Craft rating in this module.
+    if module_type and "sheets" in progression.gamify_parts():
+        board = {r["agent_id"]: r for r in progression.ladder(_craft_table()[0], module_type, time.time())}
+        for row in rows:
+            c = board.get(row["agent_id"])
+            row["rating"] = {"rating": c["rating"], "rd": c["rd"], "provisional": c["provisional"]} if c else None
     return {
         "scope": "this_relay",
         "relay_url": rs.RELAY_BASE_URL,
         "module_type": module_type,
         "count": len(standings),
-        "standings": [s.to_dict() for s in standings[:limit]],
+        "standings": rows,
     }
 
+
+def _craft_games() -> list[dict]:
+    """P288: every finished public game on this relay, as progression reads it.
+    Public only: a base sheet must be checkable by anyone, and a private game is
+    not. Bounty contests on the service module are not a game's Craft."""
+    games = set(game_module_types())
+    marks = ",".join("?" * len(games)) or "NULL"
+    with rs.DB_LOCK, rs.get_db() as conn:
+        rows = conn.execute(f"SELECT * FROM sessions WHERE status IN ('completed', 'abandoned') "
+                            f"AND module_type IN ({marks}) ORDER BY updated_at", sorted(games)).fetchall()
+    out = []
+    for r in rows:
+        sess = rs._session_row_to_dict(r)
+        if rs._session_visibility(sess) != "public":
+            continue
+        if sess["status"] == "abandoned":
+            # Walking away is a loss: a started game left on a player's own turn.
+            if int(sess.get("step_number") or 0) > 0 and sess.get("current_agent") in sess["participants"]:
+                out.append({"session_id": sess["session_id"], "module_type": sess["module_type"],
+                            "participants": sess["participants"], "abandoned_by": sess["current_agent"],
+                            "ended_at": sess["updated_at"]})
+            continue
+        try:
+            module = get_interaction_module(sess["module_type"])
+            _, outcome = module.is_terminal(SessionState.from_dict(sess["state"]))
+        except Exception:  # noqa: BLE001 — a record that cannot be read is not a result; one bad row must not sink the sheet
+            continue
+        out.append({"session_id": sess["session_id"], "module_type": sess["module_type"],
+                    "participants": sess["participants"], "winner": outcome.get("winner"),
+                    "termination": outcome.get("termination"), "tied": outcome.get("tied"),
+                    "stake_per_participant": (sess.get("payment_rules") or {}).get("stake_per_participant"),
+                    "ended_at": sess["updated_at"]})
+    return out
+
+
+def _who() -> dict[str, progression.Who]:
+    """P288: each agent's standing as progression weighs it — its operator (a Nous
+    account; agents sharing one are one voice), whether verified, and its age.
+    Used inside the computation only: no response says which agents are linked."""
+    with rs.DB_LOCK, rs.get_db() as conn:
+        rows = conn.execute("SELECT agent_id, nous_user_id, registered_at FROM authorized_agents").fetchall()
+    out = {}
+    for r in rows:
+        try:
+            at = datetime.fromisoformat(str(r["registered_at"]).replace("Z", "+00:00")).timestamp()
+        except ValueError:
+            at = None
+        nous = (r["nous_user_id"] or "").strip()
+        out[r["agent_id"]] = progression.Who(operator=f"nous:{nous}" if nous else r["agent_id"],
+                                             verified=bool(nous), registered_at=at)
+    return out
+
+
+_TABLE_CACHE: dict = {"key": None, "value": None}
+
+
+def _craft_table() -> tuple[dict, list[dict], dict]:
+    """(ratings, games, who), recomputed only when sessions or agents changed —
+    so reading sheets cannot be used to make the relay redo the whole history."""
+    with rs.DB_LOCK, rs.get_db() as conn:
+        key = (tuple(conn.execute("SELECT COUNT(*), MAX(updated_at) FROM sessions").fetchone()),
+               tuple(conn.execute("SELECT COUNT(*), COUNT(nous_user_id) FROM authorized_agents").fetchone()))
+    if _TABLE_CACHE["key"] != key:
+        games, who = _craft_games(), _who()
+        _TABLE_CACHE.update(key=key, value=(progression.craft_ratings(games, who), games, who))
+    return _TABLE_CACHE["value"]
+
+
+def _sheets_on() -> None:
+    if "sheets" not in progression.gamify_parts():
+        raise HTTPException(404, "this relay does not run gamify sheets (EMPORIA_GAMIFY)")
+
+
+@router.get("/ratings")
+async def ratings(module_type: str, limit: int = 25):
+    """P288: one game's Craft ladder on this relay — Glicko-2 from its finished
+    public games (`progression:v1/craft`). Computed on each read, never issued:
+    anyone with the same /results gets the same numbers."""
+    _sheets_on()
+    rows = progression.ladder(_craft_table()[0], module_type, time.time())
+    return {"scope": "this_relay", "formula": progression.FORMULA, "module_type": module_type,
+            "count": len(rows), "ratings": rows[:rs._clamp_limit(limit)]}
+
+
+@router.get("/agents/{agent_id}/sheet")
+async def agent_sheet(agent_id: str):
+    """P288: an agent's base sheet on this relay — Craft (a rating per game), Trade,
+    Trust, a level for each and its class (`progression:v1`). Signed by this relay
+    with a hash of the sessions it was computed from. Craft uses public games only;
+    Trade and Trust use deal and game *outcomes* this relay already publishes in the
+    agent's record (P182), never their content."""
+    _sheets_on()
+    with rs.DB_LOCK, rs.get_db() as conn:
+        reg = conn.execute("SELECT registered_at FROM authorized_agents WHERE agent_id = ?",
+                           (agent_id,)).fetchone()
+        if reg is None:
+            raise HTTPException(404, f"no agent {agent_id!r} on this relay")
+        rows = conn.execute(
+            "SELECT * FROM sessions WHERE participants_json LIKE ? AND status IN ('completed', 'abandoned') "
+            "ORDER BY updated_at DESC LIMIT ?", (f'%"{agent_id}"%', _RECORD_LIMIT)).fetchall()
+    table, games, who = _craft_table()
+    used = [g["session_id"] for g in games if agent_id in g["participants"]]
+    game_types = set(game_module_types())
+    deals, abandoned = [], []
+    for row in rows:
+        sess = rs._session_row_to_dict(row)
+        if agent_id not in sess["participants"]:
+            continue
+        if sess["module_type"] in game_types and sess["status"] == "abandoned":
+            abandoned.append({"participants": sess["participants"], "current_agent": sess["current_agent"],
+                              "step_number": sess["step_number"]})
+            used.append(sess["session_id"])
+        elif sess["module_type"] == "emporia:service:v1" and sess["status"] == "completed":
+            try:
+                _, out = get_interaction_module(sess["module_type"]).is_terminal(SessionState.from_dict(sess["state"]))
+            except Exception:  # noqa: BLE001 — as in _craft_games
+                continue
+            data = (sess.get("state") or {}).get("data") or {}
+            deals.append({"session_id": sess["session_id"], "buyer": data.get("buyer"),
+                          "seller": data.get("seller"), "status": out.get("status"),
+                          "paid": bool(rs.session_paid_by(sess["session_id"])),
+                          "ended_at": sess["updated_at"]})
+            used.append(sess["session_id"])
+    sheet = {**progression.base_sheet(agent_id, table=table, deals=deals, abandoned=abandoned,
+                                      registered_at=reg["registered_at"], now=time.time(), who=who),
+             "scope": "this_relay", "sessions_counted": len(set(used)),
+             "records_hash": progression.records_hash(used),
+             "as_of": datetime.now(UTC).isoformat(timespec="seconds")}
+    from emporia.identity import federation_signable_bytes, get_relay_public_key_hex, sign_raw_relay
+    return {**sheet, "relay": rs.RELAY_BASE_URL, "relay_public_key": get_relay_public_key_hex(),
+            "signature": sign_raw_relay(federation_signable_bytes(rs.RELAY_BASE_URL, "sheet", [sheet]))}
 
 def _result_of(s: dict) -> dict:
     """One finished game, as a reader (or an opponent studying a player) needs

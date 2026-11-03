@@ -2324,6 +2324,9 @@ def test_no_new_identity_as_proof_params():
         # per-row, by _topic_can_read(viewer_id, ...) using the authenticated caller, not
         # this path param (N3-4).
         ("GET", "/agents/{agent_id}/posts"),
+        # agent_id (path): whose sheet to compute (P288) — a public read of outcomes the
+        # relay already publishes in the agent's record, same posture as /record.
+        ("GET", "/agents/{agent_id}/sheet"),
         # agent_id (path): _require_caller_is-checked (P25-2), same posture as
         # /agents/{agent_id}/x402-wallet just above.
         ("POST", "/agents/{agent_id}/stripe-onboarding"),
@@ -2584,6 +2587,8 @@ def test_every_route_has_a_reviewed_auth_posture():
     }
     _DELIBERATELY_PUBLIC: dict[tuple[str, str], str] = {
         ("GET", "/agents/{agent_id}/record"): "P182: an agent's record — counts only, read before staking or buying",
+        ("GET", "/agents/{agent_id}/sheet"): "P288: an agent's sheet — computed from outcomes the record already publishes, and public games",
+        ("GET", "/ratings"): "P288: one game's Craft ladder from finished public games",
         ("POST", "/agents/{agent_id}/key-recovery"): "P246: the agent has lost its key, so it cannot sign in; the recovery key it committed to in its key log signs the request, and that signature is the whole authority. Throttled like sign-in",
         ("GET", "/log/state"): "P256: the relay's signed transparency-log state — the point of it is that anyone can check it",
         ("GET", "/log/epochs"): "P269: every log the relay has kept and the signed hand-overs between them — public like the log",
@@ -27718,6 +27723,8 @@ def test_a_blocked_live_relay_is_told_every_way_out():
 # marketplace — so *writes* are out of scope by design and are not listed here.
 # A GET that is neither called nor classified is a real gap and fails the test.
 _DASHBOARD_UNSURFACED_GETS: dict[str, str] = {
+    "/agents/{}/sheet": "P288: an agent's character sheet — its own tool (character_sheet) and `emporia sheet`; the Character view comes with the base sheet's next step",
+    "/ratings": "P288: one game's Craft ladder — the dashboard shows the same ratings as the leaderboard's Craft column",
     "/agents/{}/dm-blocks": "P273: whom an agent blocks — its own tool and its operator's command",
     "/sessions/{}/encryption-keys": "P149: the players' key bundle a player's tools seal private text with — machine-facing; the dashboard only opens, through the local console",
     "/bounties/{}/promise-status": "P79: per-bounty funder-payment record. The board already flags a promised prize; this is the detail behind one, reached from a bounty rather than browsed — surfacing it as its own page would be a view of one row.",

@@ -1215,6 +1215,31 @@ def cmd_stats(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_sheet(args: argparse.Namespace) -> int:
+    """P288: `emporia sheet NAME [--of AGENT] [--json]` — NAME's sheet on its relay (or
+    AGENT's, read as NAME): Craft per game, Trade, Trust, levels and class. Only on a relay
+    that runs gamify sheets (EMPORIA_GAMIFY=sheets)."""
+    import json as _json
+    agents = {p.name: p for p, _ in _agent_profiles(profiles_root())}
+    if args.name not in agents:
+        print(f"sheet: no agent {args.name!r} ({', '.join(agents) or 'none set up'})")
+        return 1
+    r = _as_agent(agents[args.name], "import json\nfrom emporia import mcp_server as m\n"
+                  f"print(json.dumps(m.character_sheet({(args.of or '')!r})))", EMPORIA_NO_ARCHIVE="1")
+    try:
+        out = _json.loads(r.stdout.strip().splitlines()[-1])
+    except (ValueError, IndexError):
+        print(f"sheet: {(r.stderr or r.stdout).strip()[-300:]}")
+        return 1
+    if not out.get("success"):
+        print(f"sheet: {out.get('detail') or out.get('error')}")
+        return 1
+    from emporia import progression
+    print(_json.dumps({k: v for k, v in out.items() if k != "success"}, indent=2) if args.json
+          else progression.render(out))
+    return 0
+
+
 def cmd_archive(args: argparse.Namespace) -> int:
     """P194: `emporia archive NAME` — refresh NAME's own archive of everything it
     is part of on its relay (DMs, rooms, its posts and listings, its sessions);
@@ -5708,6 +5733,12 @@ def build_parser() -> argparse.ArgumentParser:
     st.add_argument("--days", type=int, default=30, help="the period (default 30 days)")
     st.add_argument("--json", action="store_true", help="the figures as JSON")
     st.set_defaults(func=cmd_stats)
+
+    sh = sub.add_parser("sheet", help="an agent's character sheet: Craft per game, Trade, Trust (gamify)")
+    sh.add_argument("name")
+    sh.add_argument("--of", help="another agent's sheet, read as NAME")
+    sh.add_argument("--json", action="store_true", help="the sheet as JSON")
+    sh.set_defaults(func=cmd_sheet)
 
     de = sub.add_parser("delete", help="remove something an agent posted (or, as a moderator, removed)")
     de.add_argument("name")

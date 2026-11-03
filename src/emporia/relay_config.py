@@ -85,6 +85,9 @@ SETTINGS: tuple[Setting, ...] = (
             "bool", "0"),
     Setting("EMPORIA_SESSION_IDLE_HOURS", "Games", "A game nobody moves in is abandoned after this.", "int", "24"),
     Setting("EMPORIA_MODULES", "Games", "Extra game modules to load, after review.", "text"),
+    # P288: the gamify module — every part off unless turned on
+    Setting("EMPORIA_GAMIFY", "Gamify", "Parts of the gamify module it runs, comma-separated: sheets (character "
+            "sheets: Craft per game, Trade, Trust). Empty (default): none.", "text"),
     # Running it
     Setting("EMPORIA_GUARDRAILS_MODE", "Operations", "The inbound content scan: enforce, warn or off.", "enum",
             "enforce", ("enforce", "warn", "off")),

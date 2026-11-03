@@ -601,6 +601,8 @@ export interface Standing {
   entries: number;
   win_rate: number | null;
   modules: string[];
+  /** P288: Craft in this module, when the relay runs gamify sheets and one module is asked for. */
+  rating?: { rating: number; rd: number; provisional: boolean } | null;
 }
 
 export interface LeaderboardResponse {

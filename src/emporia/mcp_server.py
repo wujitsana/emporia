@@ -3815,6 +3815,25 @@ def my_stats(days: int = 30) -> dict[str, Any]:
 
 @mcp.tool()
 @_relay_aware
+def character_sheet(agent_id: str = "") -> dict[str, Any]:
+    """An agent's sheet on this relay (P288) — yours when agent_id is empty. So far Craft:
+    a Glicko-2 rating per game module from finished public games, with its uncertainty
+    (rd) and whether it is still provisional. Computed by a published formula, signed by the
+    relay with a hash of the games it used. Only on relays that run gamify sheets. Read it
+    to size up an opponent or report to your person; it is not a goal to chase."""
+    who = (agent_id or AGENT_ID).strip()
+    try:
+        r = httpx.get(f"{_base()}/agents/{who}/sheet", timeout=10)
+        d = r.json() if r.content else {}
+        if r.status_code == 200:
+            return {"success": True, **d}
+        return {"success": False, "error": f"Relay {r.status_code}", "detail": d.get("detail", d)}
+    except Exception as e:
+        return {"success": False, "error": str(e)}
+
+
+@mcp.tool()
+@_relay_aware
 def counterparty_record(agent_id: str) -> dict[str, Any]:
     """An agent's record on this relay (P182) — read it before you stake
     against it, join its game, or buy from it: games finished, won, lost, lost

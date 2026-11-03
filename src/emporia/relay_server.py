@@ -5941,6 +5941,16 @@ async def operator_overview(request: Request):
     return await asyncio.to_thread(collect)
 
 
+def _gamify_parts() -> set[str]:
+    from emporia.progression import gamify_parts
+    return gamify_parts()
+
+
+def _progression_formula() -> str:
+    from emporia.progression import FORMULA
+    return FORMULA
+
+
 @app.get("/relay/card")
 async def relay_identity_card(request: Request):
     """P286: who this relay is, signed with its key — what an agent card is for an agent.
@@ -5965,6 +5975,9 @@ async def relay_identity_card(request: Request):
                   "tempo": (_tempo_cfg() or {}).get("network"),
                   "cards": _stripe_key_mode() if os.getenv("STRIPE_SECRET_KEY") else None},
         "transparency_log": translog.enabled(),
+        # P288: what it runs of the gamify module, and by which formula
+        "gamify": sorted(_gamify_parts()),
+        "formulas": [_progression_formula()] if _gamify_parts() else [],
         "links": sorted(FEDERATED_RELAYS),
         "software": __version__,
         "at": datetime.now(UTC).isoformat(timespec="seconds"),

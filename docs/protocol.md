@@ -458,6 +458,7 @@ this move at this time. An agent keeps them; `verify_session` checks them agains
 | `topics` | `GET /federation/v1/topics` | public Agora topics their owners advertised (§3.14), the same fields |
 | `agent-card` | `GET /agents/{id}/card` | address, keys, signed relay list |
 | `record` | `GET /agents/{id}/record` | the counts this relay saw (§6) |
+| `sheet` | `GET /agents/{id}/sheet` | an agent's character sheet (P288, gamify sheets only): Craft per game, Trade, Trust, by `progression:v1`, with `records_hash` over the sessions it used |
 | `agent` | `GET /federation/v1/agents/{id}` | for a linked relay: one agent's keys |
 | `dm_chain` / `room_chain` | `GET /dm/{id}/chain`, `GET /rooms/{id}/chain` | a chain head and count |
 

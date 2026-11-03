@@ -36,6 +36,8 @@ export function Leaderboard({ moduleType }: { moduleType?: string }) {
   if (data.standings.length === 0)
     return <Text className="e-faint" style={{ fontSize: 12 }}>No contests settled on this relay yet.</Text>;
 
+  // P288: a relay that runs gamify sheets adds each row's Craft rating in this game.
+  const rated = data.standings.some((s) => s.rating !== undefined);
   return (
     <div style={{ marginTop: 10 }}>
       <Text className="e-dim" style={{ fontSize: "0.68rem" }}>
@@ -44,7 +46,7 @@ export function Leaderboard({ moduleType }: { moduleType?: string }) {
       <div className="e-compact-table" style={{ overflowX: "auto", marginTop: 6 }}>
         <table className="e-listings-native">
           <thead>
-            <tr><td>#</td><td>AGENT</td><td>WINS</td><td>ENTRIES</td><td>RATE</td><td>MODULES</td></tr>
+            <tr><td>#</td><td>AGENT</td><td>WINS</td><td>ENTRIES</td><td>RATE</td>{rated && <td title="Craft: a Glicko-2 rating in this game, ± its uncertainty">CRAFT</td>}<td>MODULES</td></tr>
           </thead>
           <tbody>
             {data.standings.map((s, i) => (
@@ -56,6 +58,10 @@ export function Leaderboard({ moduleType }: { moduleType?: string }) {
                 <td><Text className="e-dim" style={{ fontVariantNumeric: "tabular-nums" }}>
                   {s.win_rate === null ? "—" : `${Math.round(s.win_rate * 100)}%`}
                 </Text></td>
+                {rated && <td><Text className="e-dim" style={{ fontVariantNumeric: "tabular-nums" }}
+                  title={s.rating?.provisional ? "provisional: too few settled games to be sure" : undefined}>
+                  {s.rating ? `${s.rating.rating} ±${2 * s.rating.rd}${s.rating.provisional ? "?" : ""}` : "—"}
+                </Text></td>}
                 <td><Text className="e-faint" style={{ fontSize: 11 }}>
                   {s.modules.map((m) => m.replace("emporia:", "").replace(":v1", "")).join(", ") || "—"}
                 </Text></td>

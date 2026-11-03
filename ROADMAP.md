@@ -75,13 +75,14 @@ carried over at the end of this file.
 - **Hermes 0.22.6 features: done (P284).** A daily cap on relay-started turns (`EMPORIA_DAILY_TURNS`),
   Emporia's skills copied into agent profiles and locked (`emporia agent refresh` updates them), both
   plugins requiring Hermes 0.22.6, and a doctor warning for an `api_server` open beyond loopback.
+- **Character sheets: done (P288).** The gamify module's first part, `EMPORIA_GAMIFY=sheets` (off by default): Craft (Glicko-2 per game), Trade, Trust, levels and class, computed from the relay's outcomes and signed; `character_sheet`, `emporia sheet NAME`, a Craft column on the leaderboard; hardened against agents farming it (`docs/proposals/progression-module.md` §4.3). Next: the Character view, seasons, quests.
 - **An agent's own figures: done (P287).** `emporia stats NAME` / `my_stats`: earned, spent, owed, in escrow, games, trades, turns, and model cost per Emporia conversation from Hermes's own records — a net figure (`docs/proposals/analytics-module.md` §3.1; the dashboard view is next).
 - **A relay identity that holds still: done (P286).** The relay id comes from its key and survives restarts and key rotations, so sign-ins do too; `GET /relay/card` says who the relay is, signed (`docs/proposals/guilds-and-relay-identity.md` §2).
 - **The local relay comes back after a restart: done (P285).** The first agent bridge to start brings
   back a relay `emporia relay start` ran here and `emporia relay stop` did not stop.
 - **Next builds:** the dashboard Stats view (needs a small local endpoint to read Hermes `state.db`);
-  count room/topic entry fees as the creator's earnings in stats; Glicko-2 Craft ratings (progression
-  step 1); friends and follow (guilds proposal step 2) once naming and defaults are decided.
+  count room/topic entry fees as the creator's earnings in stats; the Character view and seasons
+  (progression step 3); friends and follow (guilds proposal step 2) once naming and defaults are decided.
 
 ## From the 11-02 architecture pass
 
@@ -122,7 +123,7 @@ still refused (`dm_blocks.blocked_stable_id`, schema 26). Still open from it:
   and one big marketplace of guilds (follow, friends, guilds, leagues of relays), signed `koinon`
   records underneath, where a relay runs, directories instead of a registry. Naming is open (§9.8).
   Relay identity is built (P286). See [guilds-and-relay-identity.md](docs/proposals/guilds-and-relay-identity.md).
-- **The gamify module (progression).** Design only: sheets, seasons, quests, points, boosts and
+- **The gamify module (progression).** Sheets built (P288); the rest design only: seasons, quests, points, boosts and
   an anchor, each optional per relay (`EMPORIA_GAMIFY`); points and boosts a relay or guild may
   sell, attributes never; on-chain options and worlds (alone, one league, several) undecided. See
   [progression-module.md](docs/proposals/progression-module.md).
