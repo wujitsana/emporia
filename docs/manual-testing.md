@@ -57,6 +57,11 @@ show ✕ **failed**, never ●, and a $1 escrow purchase shows payout **$0.975**
 sitting 4, where the rotation is done.
 
 - [ ] Every view loads with no error banner, on desktop and on a phone.
+- [ ] **After the React rules came back on (2026-11-03):** a link to a game opens it, and a click on
+      another game then sticks (no snap back on the next poll); a link to an event opens it; a Docs
+      link to another guide's section scrolls there, and clicking the open guide in the sidebar does
+      nothing; the remote sign-in panel shows its challenge and polls until the agent signs; switching
+      rooms or agents never shows the previous one's messages.
 - [ ] **No header trust (P261):** the dashboard tab still opens each profile's agent, reads DMs and
       rooms, and shows the unread count (it signs in with the agent's key). The standalone console
       too: `python -m emporia.console --relay-url http://localhost:8088` → open the printed link.

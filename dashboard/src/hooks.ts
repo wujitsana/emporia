@@ -125,29 +125,38 @@ export function useAgentWs(relayUrl: string, agentId: string | null): AgentWsSta
   const [eventCount, setEventCount] = useState(0);
   const wsRef = useRef<WebSocket | null>(null);
 
-  useEffect(() => {
+  // Reset on a new connection target while rendering (the "previous props in
+  // state" pattern) rather than from inside the connection effect.
+  const target = `${relayUrl}\n${agentId ?? ""}`;
+  const [prevTarget, setPrevTarget] = useState(target);
+  if (prevTarget !== target) {
+    setPrevTarget(target);
     setConnected(false);
     setLast(null);
     setEventCount(0);
+  }
+
+  useEffect(() => {
     if (!agentId) return;
 
-    let closed = false;
+    const lifetime = new AbortController();
+    const isClosed = () => lifetime.signal.aborted;
     let retryMs = 1_000;
 
     const connect = () => {
-      if (closed) return;
+      if (isClosed()) return;
       const params = new URLSearchParams({ agent_id: agentId });
       const token = dashboardToken();
       if (token) params.set("token", token);
       void relaySocket(`/ws/agent/${encodeURIComponent(agentId)}`, params).then((ws) => {
-      if (closed) { ws.close(); return; }
+      if (isClosed()) { ws.close(); return; }
       wsRef.current = ws;
 
       ws.onopen = () => { setConnected(true); retryMs = 1_000; };
       ws.onclose = () => {
         setConnected(false);
         wsRef.current = null;
-        if (!closed) setTimeout(connect, (retryMs = Math.min(retryMs * 2, 30_000)));
+        if (!isClosed()) setTimeout(connect, (retryMs = Math.min(retryMs * 2, 30_000)));
       };
       ws.onmessage = (e) => {
         let frame: AgentEvent;
@@ -162,7 +171,7 @@ export function useAgentWs(relayUrl: string, agentId: string | null): AgentWsSta
         setLast({ ...frame });
         setEventCount((n) => n + 1);
       };
-      }).catch(() => { if (!closed) setTimeout(connect, (retryMs = Math.min(retryMs * 2, 30_000))); });
+      }).catch(() => { if (!isClosed()) setTimeout(connect, (retryMs = Math.min(retryMs * 2, 30_000))); });
     };
 
     connect();
@@ -172,7 +181,7 @@ export function useAgentWs(relayUrl: string, agentId: string | null): AgentWsSta
     }, 20_000);
 
     return () => {
-      closed = true;
+      lifetime.abort();
       clearInterval(pingId);
       wsRef.current?.close();
       wsRef.current = null;
@@ -197,7 +206,7 @@ export function useRoomWs(
   const [connected, setConnected] = useState(false);
   const wsRef = useRef<WebSocket | null>(null);
   const fetchRef = useRef(fetchHistory);
-  fetchRef.current = fetchHistory;
+  useEffect(() => { fetchRef.current = fetchHistory; });
 
   // P236: the messages by plain request whenever the socket is not open. In a
   // Hermes profile other than the one the dashboard was launched as, Hermes
@@ -205,31 +214,39 @@ export function useRoomWs(
   // opened there showed no messages at all.
   useEffect(() => {
     if (!roomId || connected || !fetchRef.current) return;
-    let cancelled = false;
+    const lifetime = new AbortController();
     const load = () => fetchRef.current?.(roomId)
-      .then((m) => { if (!cancelled) setMessages(m); }).catch(() => {});
+      .then((m) => { if (!lifetime.signal.aborted) setMessages(m); }).catch(() => {});
     load();
     const id = setInterval(load, 5_000);
-    return () => { cancelled = true; clearInterval(id); };
+    return () => { lifetime.abort(); clearInterval(id); };
   }, [roomId, connected]);
 
-  useEffect(() => {
-    // P24-5 (W5, F2): clear unconditionally on every roomId change, not just
-    // the falsy transition -- otherwise a room->room switch renders the old
-    // room's messages against the new room's verification context until the
-    // new room's room_init frame arrives, producing a false "unverified" chip.
+  // P24-5 (W5, F2): clear unconditionally on every roomId change, not just
+  // the falsy transition -- otherwise a room->room switch renders the old
+  // room's messages against the new room's verification context until the
+  // new room's room_init frame arrives, producing a false "unverified" chip.
+  // Done while rendering (the "previous props in state" pattern), so the old
+  // room's messages are never painted against the new room.
+  const target = `${relayUrl}\n${roomId ?? ""}\n${agentId ?? ""}`;
+  const [prevTarget, setPrevTarget] = useState(target);
+  if (prevTarget !== target) {
+    setPrevTarget(target);
     setMessages([]);
     setConnected(false);
+  }
 
+  useEffect(() => {
     if (!roomId) {
       return;
     }
 
-    let closed = false;
+    const lifetime = new AbortController();
+    const isClosed = () => lifetime.signal.aborted;
     let retryMs = 1_000;
 
     const connect = () => {
-      if (closed) return;
+      if (isClosed()) return;
       // agent_id is trusted only for co-located (localhost) connections; a remote relay
       // authenticates private-room access via the dashboard JWT instead — see
       // relay_server.py's _ws_agent_id().
@@ -240,14 +257,14 @@ export function useRoomWs(
       const token = dashboardToken();
       if (token) params.set("token", token);
       void relaySocket(`/ws/rooms/${roomId}`, params).then((ws) => {
-      if (closed) { ws.close(); return; }
+      if (isClosed()) { ws.close(); return; }
       wsRef.current = ws;
 
       ws.onopen = () => { setConnected(true); retryMs = 1_000; };
       ws.onclose = () => {
         setConnected(false);
         wsRef.current = null;
-        if (!closed) setTimeout(connect, (retryMs = Math.min(retryMs * 2, 30_000)));
+        if (!isClosed()) setTimeout(connect, (retryMs = Math.min(retryMs * 2, 30_000)));
       };
       ws.onmessage = (e) => {
         const frame = JSON.parse(e.data);
@@ -258,7 +275,7 @@ export function useRoomWs(
           setMessages((prev) => [...prev, frame]);
         }
       };
-      }).catch(() => { if (!closed) setTimeout(connect, (retryMs = Math.min(retryMs * 2, 30_000))); });
+      }).catch(() => { if (!isClosed()) setTimeout(connect, (retryMs = Math.min(retryMs * 2, 30_000))); });
     };
 
     connect();
@@ -268,7 +285,7 @@ export function useRoomWs(
     }, 20_000);
 
     return () => {
-      closed = true;
+      lifetime.abort();
       clearInterval(pingId);
       wsRef.current?.close();
       wsRef.current = null;
@@ -299,10 +316,10 @@ export function useSenderPubkeys<K = string>(
 ): Record<string, K> {
   const [pubkeys, setPubkeys] = useState<Record<string, K>>({});
   const pubkeysRef = useRef(pubkeys);
-  pubkeysRef.current = pubkeys;
+  useEffect(() => { pubkeysRef.current = pubkeys; });
   const requestedRef = useRef<Set<string>>(new Set());
   const fetchRef = useRef(fetchPubkey);
-  fetchRef.current = fetchPubkey;
+  useEffect(() => { fetchRef.current = fetchPubkey; });
   // A request for id X, once started, must be allowed to land no matter which
   // later effect run's closure it resolves in -- requestedRef's dedup is only
   // sound if a landed result is never dropped, so unmount (not "this effect

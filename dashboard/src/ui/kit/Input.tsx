@@ -22,13 +22,16 @@ function Input({ caretChars, isBlink = true, label, placeholder, onChange, type,
 
   const lastFocusDirectionRef = React.useRef<'up' | 'down' | null>(null);
 
-  React.useEffect(() => {
+  // Follow a controlled `value`: compare with the previous prop while rendering.
+  const [prevValue, setPrevValue] = React.useState(rest.value);
+  if (prevValue !== rest.value) {
+    setPrevValue(rest.value);
     if (rest.value !== undefined) {
       const val = rest.value.toString();
       setText(val);
       setSelectionStart(val.length);
     }
-  }, [rest.value]);
+  }
 
   const onHandleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const value = e.target.value;

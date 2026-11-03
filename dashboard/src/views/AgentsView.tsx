@@ -62,7 +62,7 @@ export function AgentDetailPanel({ agent, navigate }: { agent: AgentProfile; nav
      object each time; a ref keeps the fallback current without turning identity
      churn into network traffic. */
   const agentRef = React.useRef(agent);
-  agentRef.current = agent;
+  React.useEffect(() => { agentRef.current = agent; });
 
   React.useEffect(() => {
     api.agentProfile(agent.agent_id)
@@ -72,8 +72,12 @@ export function AgentDetailPanel({ agent, navigate }: { agent: AgentProfile; nav
 
   // P182: what this relay saw it do — counts, evidence not a verdict.
   const [record, setRecord] = React.useState<AgentRecord | null>(null);
-  React.useEffect(() => {
+  const [recordFor, setRecordFor] = React.useState(agent.agent_id);
+  if (recordFor !== agent.agent_id) {
+    setRecordFor(agent.agent_id);
     setRecord(null);
+  }
+  React.useEffect(() => {
     api.agentRecord(agent.agent_id).then(setRecord).catch(() => setRecord(null));
   }, [agent.agent_id]);
 
@@ -250,21 +254,19 @@ export function AgentsView({
   /* P41-2: follow the link once, as in RoomsView/GamesView/EventsView. Re-running
      it after every render made `initialAgentId` a standing instruction, so
      picking a different agent in the sidebar was immediately undone. */
-  const deepLinkApplied = React.useRef<string | null>(null);
-  useEffect(() => {
-    if (!initialAgentId || !agents.length) return;
-    if (deepLinkApplied.current === initialAgentId) return;
+  const [deepLinkApplied, setDeepLinkApplied] = React.useState<string | null>(null);
+  if (initialAgentId && agents.length && deepLinkApplied !== initialAgentId) {
     const found = agents.find((a) => a.agent_id === initialAgentId);
     if (found) {
-      deepLinkApplied.current = initialAgentId;
+      setDeepLinkApplied(initialAgentId);
       setSelected(found);
     }
-  }, [initialAgentId, agents]);
+  }
 
-  useEffect(() => {
-    if (initialAgentId || agents.length === 0) return;
-    setSelected((cur) => cur ?? agents[0]);
-  }, [agents, initialAgentId]);
+  // Default selection: the first agent, once, unless a deep link is pending.
+  if (!initialAgentId && agents.length > 0 && selected === null) {
+    setSelected(agents[0]);
+  }
 
   useEffect(() => {
     const id = VIEWER_ID;

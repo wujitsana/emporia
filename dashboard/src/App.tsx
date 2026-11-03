@@ -110,13 +110,16 @@ function AppInner() {
      identity changes exactly once per event and never collides — and it is a
      plain variable, which is what the dependency checker needs to see. */
   const latestEvent = events[0] ?? null;
-  useEffect(() => {
-    if (!latestEvent) return;
-    if (latestEvent.type === "session_created" || latestEvent.type === "session_completed")
-      setSessionsRefresh((n) => n + 1);
-    if (latestEvent.type === "listing_created") setListingsRefresh((n) => n + 1);
-    if (latestEvent.type === "event_created") setEventsRefresh((n) => n + 1);
-  }, [latestEvent]);
+  const [seenEvent, setSeenEvent] = useState(latestEvent);
+  if (seenEvent !== latestEvent) {
+    setSeenEvent(latestEvent);
+    if (latestEvent) {
+      if (latestEvent.type === "session_created" || latestEvent.type === "session_completed")
+        setSessionsRefresh((n) => n + 1);
+      if (latestEvent.type === "listing_created") setListingsRefresh((n) => n + 1);
+      if (latestEvent.type === "event_created") setEventsRefresh((n) => n + 1);
+    }
+  }
 
   useEffect(() => {
     applyTheme(theme, tint);

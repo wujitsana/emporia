@@ -12,9 +12,6 @@
       {
         "allowConstantExport": true
       }
-    ],
-    "react/set-state-in-effect": "off",
-    "react/immutability": "off",
-    "react/refs": "off"
+    ]
   }
 }

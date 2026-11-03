@@ -94,8 +94,15 @@ export function AgorasView({ navigate }: { navigate?: Navigate } = {}) {
   const [elsewhere, elsewhereLoading, elsewhereError] = useInterval(() => api.agoraTopicsElsewhere(), 30_000);
   const elsewhereRows = useMemo(() => (elsewhere?.topics ?? []).map(topicRow), [elsewhere]);
 
-  const loadTopics = useCallback(() => {
+  // Loading starts over whenever the visibility filter changes (state starts
+  // true for the first load); compared while rendering, not set from an effect.
+  const [loadedFilter, setLoadedFilter] = useState(visFilter);
+  if (loadedFilter !== visFilter) {
+    setLoadedFilter(visFilter);
     setLoadingTopics(true);
+  }
+
+  const loadTopics = useCallback(() => {
     api
       .agoraTopics(visFilter ? { visibility: visFilter } : {})
       .then((d) => {
@@ -113,19 +120,18 @@ export function AgorasView({ navigate }: { navigate?: Navigate } = {}) {
     loadTopics();
   }, [loadTopics]);
 
-  useEffect(() => {
-    if (topics.length === 0) return;
-    setSelectedSlug((cur) => {
-      // P40-2: FEED_SLUG is not in `topics`, so without this the auto-select
-      // below would drop the viewer back onto a topic every time the topic list
-      // reloaded — on a visibility-filter change, or any refetch.
-      if (cur === FEED_SLUG) return cur;
-      if (cur && topics.some((t) => t.slug === cur)) return cur;
-      const pick =
-        topics.find((t) => t.visibility === "public") ?? topics[0];
-      return pick.slug;
-    });
-  }, [topics, visFilter]);
+  // Keep a valid topic selected whenever the list is non-empty. Derived while
+  // rendering; it settles after one pass.
+  if (topics.length > 0) {
+    // P40-2: FEED_SLUG is not in `topics`, so without this check the auto-select
+    // would drop the viewer back onto a topic every time the topic list
+    // reloaded — on a visibility-filter change, or any refetch.
+    const keep = selectedSlug === FEED_SLUG || (selectedSlug !== null && topics.some((t) => t.slug === selectedSlug));
+    if (!keep) {
+      const pick = topics.find((t) => t.visibility === "public") ?? topics[0];
+      setSelectedSlug(pick.slug);
+    }
+  }
 
   const loadPosts = useCallback(
     (slug: string) => {
@@ -152,10 +158,17 @@ export function AgorasView({ navigate }: { navigate?: Navigate } = {}) {
     [sort],
   );
 
+  // Switching topic (or sort) closes the open post; with no topic there are no posts.
+  const postsKey = `${selectedSlug ?? ""}\n${sort}`;
+  const [prevPostsKey, setPrevPostsKey] = useState(postsKey);
+  if (prevPostsKey !== postsKey) {
+    setPrevPostsKey(postsKey);
+    if (!selectedSlug) setPosts([]);
+    setSelectedPost(null);
+  }
+
   useEffect(() => {
     if (selectedSlug) loadPosts(selectedSlug);
-    else setPosts([]);
-    setSelectedPost(null);
   }, [selectedSlug, loadPosts]);
 
   const openPost = (post_id: string) => {

@@ -287,14 +287,19 @@ function outcomeLabel(result: SessionAction["result"]): string | null {
 
 export function NonChessSessionPanel({ session }: { session: Session }) {
   const [actions, setActions] = React.useState<SessionAction[]>([]);
-  const [loading, setLoading] = React.useState(false);
+  const [loading, setLoading] = React.useState(true);
+  // A different session starts loading again (compared while rendering).
+  const [loadedSessionId, setLoadedSessionId] = React.useState(session.session_id);
+  if (loadedSessionId !== session.session_id) {
+    setLoadedSessionId(session.session_id);
+    setLoading(true);
+  }
 
   const moduleKind = session.module_type.replace("emporia:", "").replace(/:v\d$/, "");
   const showDelivery = shouldShowDeliveryActions(session, VIEWER_ID);
 
   const [opened, setOpened] = React.useState<Record<string, string>>({});
   useEffect(() => {
-    setLoading(true);
     api.sessionActions(session.session_id)
       .then((r) => {
         setActions(r.actions);
@@ -416,6 +421,19 @@ export function NonChessSessionPanel({ session }: { session: Session }) {
   );
 }
 
+/**
+ * True on the first render and on any render where `deps` differ from the
+ * previous render's. Lets a view apply "when X changes, adjust my state"
+ * during render (React's recommended alternative to an effect that only calls
+ * setState), without a ref.
+ */
+function useChanged(deps: readonly unknown[]): boolean {
+  const [prev, setPrev] = React.useState<readonly unknown[] | null>(null);
+  const changed = prev === null || prev.length !== deps.length || deps.some((d, i) => !Object.is(d, prev[i]));
+  if (changed) setPrev(deps);
+  return changed;
+}
+
 export function GamesView({
   initialSessionId,
   initialGameModule,
@@ -463,20 +481,25 @@ export function GamesView({
     ...(liveSessions?.sessions ?? []).filter(chessSessionPlayable),
     ...(fundingSessions?.sessions ?? []),
   ], [liveSessions, fundingSessions]);
-  const history = (historySessions?.sessions ?? []).filter(chessSessionPlayable);
+  const history = React.useMemo(
+    () => (historySessions?.sessions ?? []).filter(chessSessionPlayable),
+    [historySessions],
+  );
   const shown = liveTab === "live" ? live : history;
   const isChessSelected = selected?.module_type.includes("chess");
   const pollLoading = liveTab === "live" ? liveLoading : histLoading;
   const pollErr = liveTab === "live" ? liveErr : histErr;
 
-  React.useEffect(() => {
-    if (!initialGameModule) return;
+  // The selection rules below run while rendering, when their inputs change
+  // (see useChanged) — they only set this view's own state from its props and
+  // polled lists, so they are derived here rather than synced from effects.
+  if (useChanged([initialGameModule]) && initialGameModule) {
     const mod = initialGameModule.toLowerCase();
     const id =
       GAME_TYPES.find((g) => g.id && mod.includes(g.id.replace("emporia:", "")))?.id ??
       (mod.includes("chess") ? "emporia:chess:v1" : "");
     if (id) setGameType(id);
-  }, [initialGameModule]);
+  }
 
   /* P36-3: resolve a deep-linked session against BOTH lists and follow it to the
      right tab. This used to search `shown` — the current tab's list, already
@@ -489,48 +512,59 @@ export function GamesView({
   const deepLinkFetched = React.useRef<string | null>(null);
   const [deepLinkMiss, setDeepLinkMiss] = React.useState<string | null>(null);
 
-  React.useEffect(() => {
-    if (!initialSessionId) return;
+  // A deep link is followed once: after that, a click on another session sticks
+  // (polls rebuild `live`/`history`; re-applying on each would snap back to it).
+  const [deepLinkDone, setDeepLinkDone] = React.useState<string | null>(null);
+  const deepLinkInputsChanged = useChanged([initialSessionId, live, history]);
+  if (deepLinkInputsChanged && initialSessionId && deepLinkDone !== initialSessionId) {
     const hit = resolveDeepLinkedSession(initialSessionId, live, history);
     if (hit) {
       setLiveTab(hit.tab);
       setSelected(hit.session);
       setDeepLinkMiss(null);
-      return;
+      setDeepLinkDone(initialSessionId);
     }
+  }
+
+  React.useEffect(() => {
+    if (!initialSessionId || deepLinkDone === initialSessionId) return;
+    if (resolveDeepLinkedSession(initialSessionId, live, history)) return;
     if (liveLoading || histLoading) return;          // lists not in yet
     if (deepLinkFetched.current === initialSessionId) return;
     deepLinkFetched.current = initialSessionId;
-    let cancelled = false;
+    const lifetime = new AbortController();
     api.session(initialSessionId)
       .then((s) => {
-        if (cancelled) return;
+        if (lifetime.signal.aborted) return;
         setGameType("");                              // the rail was hiding it
         setLiveTab(s.status === "active" ? "live" : "history");
         setSelected(s);
         setDeepLinkMiss(null);
+        setDeepLinkDone(initialSessionId);
       })
-      .catch(() => { if (!cancelled) setDeepLinkMiss(initialSessionId); });
-    return () => { cancelled = true; };
-  }, [initialSessionId, live, history, liveLoading, histLoading]);
+      .catch(() => { if (!lifetime.signal.aborted) setDeepLinkMiss(initialSessionId); });
+    return () => lifetime.abort();
+  }, [initialSessionId, live, history, liveLoading, histLoading, deepLinkDone]);
 
-  React.useEffect(() => {
-    if (!listingPeek || shown.length === 0) return;
+  // Likewise a listing peek picks its session once, not again on every poll.
+  const [peekDone, setPeekDone] = React.useState<typeof listingPeek | null>(null);
+  if (listingPeek && peekDone !== listingPeek && shown.length > 0) {
     const agent = listingPeek.agentId;
     const match =
       shown.find((s) => s.participants.some((p) => p === agent || p.includes(agent.slice(-8)))) ??
       shown.find((s) => listingPeek.moduleType && s.module_type === listingPeek.moduleType);
     if (match) setSelected(match);
-  }, [listingPeek, shown]);
+    setPeekDone(listingPeek);
+  }
 
-  React.useEffect(() => {
-    if (initialSessionId || listingPeek || board) return;
+  if (useChanged([shown, liveTab, gameType, initialSessionId, listingPeek, board])
+    && !initialSessionId && !listingPeek && !board) {
     setSelected((cur) => {
       // Keep current selection only if it's still in the visible list
       if (cur && shown.some((s) => s.session_id === cur.session_id)) return cur;
       return shown.length > 0 ? shown[0] : null;
     });
-  }, [shown, liveTab, gameType, initialSessionId, listingPeek, board]);
+  }
 
   const sidebar = (
     <div>

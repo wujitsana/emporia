@@ -161,9 +161,9 @@ export function ThreadPane({
   const [pubkeys, setPubkeys] = useState<Record<string, SenderKey>>({});
   const bottomRef = useRef<HTMLDivElement | null>(null);
 
-  const loadMsgs = useCallback(async () => {
-    try {
-      const msgs = (await api.dmMessages(thread.thread_id, viewer)).messages;
+  const loadMsgs = useCallback(() => {
+    api.dmMessages(thread.thread_id, viewer).then((r) => {
+      const msgs = r.messages;
       setMessages(msgs);
       // P125: sealed messages, opened on this machine by the local reader.
       if (VIA_CONSOLE && msgs.some((m) => looksLikeEncryptedEnvelope(m.content))) {
@@ -171,7 +171,7 @@ export function ThreadPane({
           .then((o) => { setOpened(o); setReaderError(null); })
           .catch((e: unknown) => setReaderError(String(e)));
       }
-    } catch { /* keep old */ }
+    }).catch(() => { /* keep old */ });
   }, [thread.thread_id, viewer]);
 
   // P38-1: the relay pushes `dm_received`; the interval is only the safety net
@@ -189,7 +189,7 @@ export function ThreadPane({
   // P23-4: pubkeys for verifyMessageSignature() — the two participants.
   const senders = [...new Set(messages.map((m) => m.sender_id))].sort().join("|");
   useEffect(() => {
-    let cancelled = false;
+    const lifetime = new AbortController();
     // P185: in a thread with another relay's agent, both sides sign as their
     // address (`alpha@host`); an address's key comes from where it is pinned.
     const ids = [...new Set([viewer, thread.other_agent, ...senders.split("|").filter(Boolean)])];
@@ -198,8 +198,8 @@ export function ThreadPane({
         (id.includes("@") ? api.agentKeys(id) : api.agentProfile(id))
           .then((a) => [id, senderKeyFrom(a)] as const).catch(() => [id, senderKeyFrom({})] as const),
       ),
-    ).then((pairs) => { if (!cancelled) setPubkeys(Object.fromEntries(pairs)); });
-    return () => { cancelled = true; };
+    ).then((pairs) => { if (!lifetime.signal.aborted) setPubkeys(Object.fromEntries(pairs)); });
+    return () => lifetime.abort();
   }, [thread.other_agent, viewer, senders]);
 
   // P23-4: markReplayedNonces() needs the whole page at once.
@@ -299,22 +299,18 @@ export function MessagesView({
   // actions in the dashboard are deferred.
 
   // Default selection: the newest conversation, else Activity.
-  useEffect(() => {
-    if (selected === null && (threads.length > 0 || !loading)) {
-      setSelected(threads[0]?.thread_id ?? ACTIVITY);
-    }
-  }, [selected, threads, loading]);
+  if (selected === null && (threads.length > 0 || !loading)) {
+    setSelected(threads[0]?.thread_id ?? ACTIVITY);
+  }
 
 
   // P126: start on "all" when nothing is waiting — otherwise the conversation
   // opened by default sits in a list that shows "nothing here".
   const [boxChosen, setBoxChosen] = useState(false);
-  useEffect(() => {
-    if (!boxChosen && box === "inbox" && threads.length > 0
-        && !threads.some((t) => inBox("inbox", t, viewer ?? "", unreadByThread[t.thread_id]?.length ?? 0))) {
-      setBox("all");
-    }
-  }, [boxChosen, box, threads, viewer, unreadByThread]);
+  if (!boxChosen && box === "inbox" && threads.length > 0
+      && !threads.some((t) => inBox("inbox", t, viewer ?? "", unreadByThread[t.thread_id]?.length ?? 0))) {
+    setBox("all");
+  }
 
   // P35-1: a spectator has no inbox or DMs to show.
   if (!viewer) {

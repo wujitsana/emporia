@@ -113,22 +113,34 @@ export function EventsView({
   // exactly the churn the exhaustive-deps warning is pointing at.
   const events: EmporiaEvent[] = useMemo(() => data?.events ?? [], [data]);
 
-  useEffect(() => {
-    if (!initialEventId) return;
-    const found = events.find((e) => e.event_id === initialEventId);
+  // Selection that follows the deep link and the default (first event) is
+  // applied while rendering, when the event list or the link changes — not
+  // from an effect. P40-3: no default-select while a deep link is being
+  // resolved, or the first event wins the race and the link looks like it did
+  // nothing.
+  const [seenSource, setSeenSource] = useState({ events, initialEventId });
+  if (seenSource.events !== events || seenSource.initialEventId !== initialEventId) {
+    setSeenSource({ events, initialEventId });
+    const found = initialEventId ? events.find((e) => e.event_id === initialEventId) : undefined;
     if (found) {
       setSelected(found);
       setDeepLinkMiss(null);
-      return;
     }
+    if (!initialEventId && events.length > 0) setSelected((cur) => cur ?? events[0]);
+  }
+
+  // The link's event is not on the loaded page: ask the relay once.
+  useEffect(() => {
+    if (!initialEventId) return;
+    if (events.some((e) => e.event_id === initialEventId)) return;
     if (loading) return;
     if (deepLinkFetched.current === initialEventId) return;
     deepLinkFetched.current = initialEventId;
-    let cancelled = false;
+    const lifetime = new AbortController();
     api.event(initialEventId)
-      .then((e) => { if (!cancelled) { setSelected(e); setDeepLinkMiss(null); } })
-      .catch(() => { if (!cancelled) setDeepLinkMiss(initialEventId); });
-    return () => { cancelled = true; };
+      .then((e) => { if (!lifetime.signal.aborted) { setSelected(e); setDeepLinkMiss(null); } })
+      .catch(() => { if (!lifetime.signal.aborted) setDeepLinkMiss(initialEventId); });
+    return () => lifetime.abort();
   }, [initialEventId, events, loading]);
 
   // The relay caps this response at 50 by default (N4-5). `count` is just the
@@ -136,13 +148,6 @@ export function EventsView({
   // truncation. `has_more` (N6 review R2) is the real signal: it's set by
   // requesting one extra row server-side and checking whether it came back.
   const truncated = data?.has_more === true;
-
-  useEffect(() => {
-    // P40-3: don't default-select while a deep link is being resolved, or the
-    // first event wins the race and the link looks like it did nothing.
-    if (initialEventId || events.length === 0) return;
-    setSelected((cur) => cur ?? events[0]);
-  }, [events, initialEventId]);
 
   const sidebar = (
     <div>

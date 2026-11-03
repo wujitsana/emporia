@@ -26,15 +26,17 @@ import { useEffect, useRef, useState } from "react";
  */
 function RemoteAuthPanel() {
   const { viewerId, relayUrl, dashboardToken, setDashboardToken } = useRelayCtx();
-  const [state, setState] = useState<"idle" | "pending" | "done" | "error">("idle");
+  // "idle" doubles as "challenge issued, waiting for the agent to sign".
+  const [state, setState] = useState<"idle" | "done" | "error">("idle");
+  const startedRef = useRef(false);
   const [challenge, setChallenge] = useState<{ challenge_id: string; nonce: string } | null>(null);
   const [errMsg, setErrMsg] = useState<string | null>(null);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   // Auto-start challenge when remote relay + no JWT + we have an identity
   useEffect(() => {
-    if (dashboardToken || !viewerId || state !== "idle") return;
-    setState("pending");
+    if (dashboardToken || !viewerId || startedRef.current) return;
+    startedRef.current = true;
     dashboardAuth.challenge()
       .then((c) => {
         setChallenge({ challenge_id: c.challenge_id, nonce: c.nonce });
@@ -55,14 +57,14 @@ function RemoteAuthPanel() {
         setState("error");
       });
     return () => { if (pollRef.current) clearInterval(pollRef.current); };
-  }, [dashboardToken, viewerId, state, setDashboardToken]);
+  }, [dashboardToken, viewerId, setDashboardToken]);
 
   if (dashboardToken) return null;
   if (!viewerId) return null;
 
   return (
     <SlimCard title="Relay sign-in">
-      {state === "pending" && challenge ? (
+      {state === "idle" && challenge ? (
         <div>
           <Text className="e-dim" style={{ marginBottom: 8 }}>
             Run this MCP tool to authenticate, then this panel will auto-complete:
@@ -129,12 +131,13 @@ function SettlementRow({ s, viewerId, navigate }: { s: Settlement; viewerId: str
 
 export function ProfileView({ navigate }: { navigate?: Navigate } = {}) {
   const { viewerId, relayOwner, relayId, relayUrl, requireNous, writeRequiresNous, requireChallenge, isRelayOperator, isSpectator, agentCount, activeSessionCount, relayVersion } = useRelayCtx();
-  const [profile, setProfile] = useState<AgentProfile | null>(null);
+  const [loadedProfile, setProfile] = useState<AgentProfile | null>(null);
+  const profile = viewerId ? loadedProfile : null;
   const [mySessions, setMySessions] = useState<Session[]>([]);
   const [mySettlements, setMySettlements] = useState<Settlement[]>([]);
 
   useEffect(() => {
-    if (!viewerId) { setProfile(null); return; }
+    if (!viewerId) return;
     api.agentProfile(viewerId).then(setProfile).catch(() => setProfile(null));
   }, [viewerId]);
 
