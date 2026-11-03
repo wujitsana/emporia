@@ -233,7 +233,9 @@ Where the relay runs decides where its keys live, and whether it may take real m
 For trying Emporia and developing it: `emporia relay start` runs the relay from a Hermes profile,
 next to your agents. Testnets only — the relay's keys share that profile's disk with its agent,
 and a relay taking real money refuses to start there. For a viewer on another machine, tunnel
-rather than open a port: `ssh -L 8088:localhost:8088 user@host`.
+rather than open a port: `ssh -L 8088:localhost:8088 user@host`. A relay started this way comes
+back on its own when the machine or container restarts: the first agent whose gateway starts
+brings it up. `emporia relay stop` keeps it stopped.
 
 ### 2. A relay others use (Docker or a system service)
 

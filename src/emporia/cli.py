@@ -491,6 +491,9 @@ def cmd_relay(args: argparse.Namespace) -> int:
     if args.action == "stop":
         try:
             pid = int(pid_file.read_text())
+            if not _is_relay_pid(pid):        # P285: after a reboot the number may be another process's
+                pid_file.unlink(missing_ok=True)
+                raise ProcessLookupError(pid)
             os.kill(pid, signal.SIGTERM)
         except (OSError, ValueError):
             print("relay: no relay started by `emporia relay start` is running"
@@ -503,22 +506,108 @@ def cmd_relay(args: argparse.Namespace) -> int:
     if health():
         print(f"relay: already up at {relay_url()}")
         return 0
+    return _start_relay()
+
+
+def _is_our_pid(pid: int, *marks: bytes) -> bool:
+    """Whether `pid` runs a command containing one of `marks` (not a number reused after a reboot)."""
+    try:
+        cmd = Path(f"/proc/{pid}/cmdline").read_bytes().replace(b"\0", b" ")
+    except OSError:
+        return False
+    return any(m in cmd for m in marks)
+
+
+def _is_relay_pid(pid: int) -> bool:
+    """Whether `pid` is a relay `emporia relay start` started."""
+    return _is_our_pid(pid, b"emporia-relay", b"emporia.relay_server")
+
+
+def _start_relay(env: dict[str, str] | None = None, url: str | None = None) -> int:
+    pid_file, log = _relay_files()
+    url = url or relay_url()
     exe = Path(sys.executable).with_name("emporia-relay")
     argv = [str(exe)] if exe.exists() else [sys.executable, "-m", "emporia.relay_server"]
     pid_file.parent.mkdir(parents=True, exist_ok=True)
     with open(log, "ab") as out:
-        proc = subprocess.Popen(argv, cwd=REPO, stdout=out, stderr=out,
+        proc = subprocess.Popen(argv, cwd=REPO, stdout=out, stderr=out, env=env,
                                 stdin=subprocess.DEVNULL, start_new_session=True)
     pid_file.write_text(str(proc.pid))
     for _ in range(80):
-        if health(timeout=1):
-            print(f"relay: started at {relay_url()} (pid {proc.pid}, log {log})")
+        if health(timeout=1, url=url):
+            pid_file.with_suffix(".url").write_text(_same_host(url))   # where it answered (P285)
+            print(f"relay: started at {url} (pid {proc.pid}, log {log})")
             return 0
         if proc.poll() is not None:
             break
         time.sleep(0.25)
     print(f"relay: did not start — see `emporia relay logs` ({log})")
     return 1
+
+
+def _same_host(url: str) -> str:
+    """A loopback URL in one spelling, so localhost and 127.0.0.1 compare equal."""
+    import urllib.parse
+    u = urllib.parse.urlparse(url.strip().rstrip("/"))
+    host = "127.0.0.1" if (u.hostname or "").lower() in ("localhost", "127.0.0.1", "::1") else (u.hostname or "")
+    return f"{u.scheme}://{host}:{u.port or (443 if u.scheme == 'https' else 80)}"
+
+
+def _dotenv_names(path: str) -> set[str]:
+    names = set()
+    try:
+        for line in Path(path).expanduser().read_text().splitlines():
+            line = line.strip().removeprefix("export ").strip()
+            if line and not line.startswith("#") and "=" in line:
+                names.add(line.split("=", 1)[0].strip())
+    except OSError:
+        pass
+    return names
+
+
+def ensure_local_relay(url: str) -> str:
+    """P285: bring back the relay this machine runs, after a container or machine restart.
+
+    Called by each agent's bridge when its gateway starts. Starts the relay only when the
+    agent's relay is on this machine, does not answer, and `emporia relay start` was used
+    here and not followed by `emporia relay stop` (its pid file is still there) — so a relay
+    the operator stopped stays stopped, and one run elsewhere is never touched. Under a lock,
+    so several agents coming up together start it once. The relay gets a clean environment:
+    nothing of the agent's (its .env holds the agent's keys); it reads its own profile's .env,
+    as when started from a shell. Returns what it did, for the bridge's log."""
+    import urllib.parse
+    host = (urllib.parse.urlparse(url).hostname or "").lower()
+    if host not in ("localhost", "127.0.0.1", "::1"):
+        return "not on this machine"
+    pid_file, _ = _relay_files()
+    if health(timeout=2, url=url):
+        return "up"
+    if not pid_file.exists():
+        return "not started here (run `emporia relay start` once)"
+    try:
+        served = pid_file.with_suffix(".url").read_text().strip()
+    except OSError:
+        served = ""
+    if served != _same_host(url):            # another relay on this machine (a test's, another port)
+        return "not the relay `emporia relay start` runs here"
+    import fcntl
+    with open(pid_file.with_suffix(".lock"), "a") as held:
+        fcntl.flock(held, fcntl.LOCK_EX)
+        if health(timeout=2, url=url):
+            return "up"
+        try:
+            pid = int(pid_file.read_text())
+        except (OSError, ValueError):
+            return "stopped (no pid file)"
+        if _is_relay_pid(pid):                 # running but not answering yet: give it time
+            for _ in range(40):
+                if health(timeout=1, url=url):
+                    return "up"
+                time.sleep(0.25)
+            return f"running (pid {pid}) but not answering — see `emporia relay logs`"
+        agent = _dotenv_names(os.environ.get("EMPORIA_DOTENV", ""))
+        env = {k: v for k, v in os.environ.items() if not k.startswith("EMPORIA_") and k not in agent}
+        return "started" if _start_relay(env, url) == 0 else "did not start — see `emporia relay logs`"
 
 
 # P177: which relay an agent joins. Agents see each other only on the same
@@ -1509,6 +1598,9 @@ def _signer_daemon(args: argparse.Namespace, url: str) -> int:
     if args.action == "stop":
         try:
             pid = int(pid_file.read_text())
+            if not _is_our_pid(pid, b"signer serve"):   # P285: after a reboot the number may be another's
+                pid_file.unlink(missing_ok=True)
+                raise ProcessLookupError(pid)
             os.kill(pid, signal.SIGTERM)
         except (OSError, ValueError):
             print("signer: none started by `emporia signer start` is running")

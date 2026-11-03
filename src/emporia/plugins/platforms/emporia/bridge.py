@@ -107,6 +107,13 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
     logging.basicConfig(stream=sys.stderr, level=logging.INFO,
                         format="%(asctime)s %(levelname)s %(name)s %(message)s")
+    try:   # P285: the relay this machine runs comes back with the gateway (a restart stops it)
+        from contextlib import redirect_stdout
+        from emporia.cli import ensure_local_relay
+        with redirect_stdout(sys.stderr):           # stdout is the event stream
+            logger.info("local relay: %s", ensure_local_relay(args.relay_url))
+    except Exception as e:                           # never keep the agent from its events
+        logger.warning("local relay check failed: %s", e)
     try:
         asyncio.run(run(args.relay_url, args.agent_id, args.profile_id))
     except KeyboardInterrupt:

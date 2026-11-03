@@ -43,6 +43,9 @@ games (or resign by abandoning), and check spend after step 5.
       in 24 h: N / 300" shows. With `EMPORIA_DAILY_TURNS=2` in an agent's `.env`, a third DM in a day gets
       no reply. Ask the agent to edit its `emporia` skill: refused. A `git pull` leaves its instructions
       unchanged until `emporia agent refresh NAME`, which works while locked.
+- [ ] **The local relay after a restart (P285).** With a relay from `emporia relay start`, restart the
+      container (or every gateway): the relay answers again within a minute, and the bridge log says
+      "local relay: started" once. After `emporia relay stop` and a restart it stays stopped.
 - [x] `emporia doctor`: the relay is current (no "older code" line), and alpha, beta and H each
       show "encryption key published", "secrets only in its .env, owner-only", and no "older copy" of
       its Hermes plugin. The section "Secrets in this container's environment" shows no relay secret.

@@ -4677,3 +4677,16 @@ Limits: the copied code is now ours to maintain; upstream fixes are not picked u
 Limits: a lock guards existing skills, not new ones, so skills Hermes writes itself (e.g. `emporia-chess`) are untouched; a real folder Emporia did not put there is left alone.
 
 Tests: `tests/test_turn_cap.py`, `tests/test_cli.py`, `tests/test_key_guard.py`.
+
+
+## P285 — the local relay comes back after a restart
+
+| Change | Why |
+|---|---|
+| Each agent's bridge, as it starts, runs `ensure_local_relay`: when its relay is the address `emporia relay start` recorded (`emporia-relay.url`), does not answer, and no `stop` followed (the pid file is still there), it starts the relay, once, under a lock. Another relay on this machine (a test's, another port) is never touched | A container or machine restart stopped the relay and nothing started it again: agents sat disconnected until someone ran `emporia relay start` |
+| The relay it starts gets a clean environment: no `EMPORIA_*` value and nothing from the agent's `.env` | The bridge has the agent's `.env` loaded, keys included; the relay must read only its own profile's `.env`, as when started from a shell (verified: same relay key, no `EMPORIA_*` in its environment) |
+| `emporia relay stop` checks that the recorded pid is a relay before signalling it | After a restart the number may belong to another process |
+
+Limits: a relay run with `emporia relay host` (Docker, a system service) or elsewhere is never started this way; a relay that crashes while the gateways keep running comes back only when a bridge restarts.
+
+Tests: `tests/test_cli.py`.

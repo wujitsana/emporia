@@ -231,3 +231,70 @@ def test_agent_skills_are_copied_and_refreshed_but_the_dev_profile_keeps_links(t
 
     dev = inst._EMPORIA_DIR.parent                                # the profile the repo sits in
     assert inst.is_dev_profile(dev) and not inst.is_dev_profile(prof)
+
+
+# -- P285: the relay this machine runs comes back with the gateway ----------------
+
+@pytest.fixture
+def relay_here(tmp_path, monkeypatch):
+    pid_file = tmp_path / "emporia-relay.pid"
+    monkeypatch.setattr(cli, "_relay_files", lambda: (pid_file, tmp_path / ".relay.log"))
+    state = {"up": False, "started": []}
+    monkeypatch.setattr(cli, "health", lambda timeout=3.0, url="": {"status": "ok"} if state["up"] else None)
+
+    def start(env=None, url=None):
+        state["started"].append(env)
+        state["up"] = True
+        return 0
+    monkeypatch.setattr(cli, "_start_relay", start)
+    return pid_file, state
+
+
+def test_a_relay_started_here_comes_back_once_with_a_clean_environment(relay_here, tmp_path, monkeypatch):
+    pid_file, state = relay_here
+    agent_env = tmp_path / "alpha.env"
+    agent_env.write_text("EMPORIA_IDENTITY_PRIVATE_KEY=secret\nOPENROUTER_API_KEY=k\n# c\nexport NOUS_X=1\n")
+    monkeypatch.setenv("EMPORIA_DOTENV", str(agent_env))
+    monkeypatch.setenv("OPENROUTER_API_KEY", "k")
+    monkeypatch.setenv("NOUS_X", "1")
+    monkeypatch.setenv("EMPORIA_KEYS_DIR", "/agent/keys")
+    monkeypatch.setenv("PATH_FOR_TEST", "kept")
+    pid_file.write_text("999999999")                      # left by a relay that died with the container
+    pid_file.with_suffix(".url").write_text("http://127.0.0.1:8088")
+    assert cli.ensure_local_relay("http://localhost:8088") == "started"
+    env = state["started"][0]
+    assert env["PATH_FOR_TEST"] == "kept"
+    assert not [k for k in env if k.startswith("EMPORIA_")]
+    assert "OPENROUTER_API_KEY" not in env and "NOUS_X" not in env   # nothing of the agent's .env
+    assert cli.ensure_local_relay("http://localhost:8088") == "up"     # the next agent finds it up
+    assert len(state["started"]) == 1
+
+
+def test_a_stopped_or_remote_relay_is_left_alone(relay_here):
+    pid_file, state = relay_here
+    assert "not started here" in cli.ensure_local_relay("http://localhost:8088")   # no pid file: stopped
+    pid_file.write_text("999999999")
+    assert cli.ensure_local_relay("https://relay.example.com") == "not on this machine"
+    pid_file.with_suffix(".url").write_text("http://127.0.0.1:8088")
+    assert cli.ensure_local_relay("http://127.0.0.1:18321") == "not the relay `emporia relay start` runs here"
+    assert state["started"] == []
+
+
+def test_stop_does_not_kill_a_reused_pid(tmp_path, monkeypatch, capsys):
+    import os
+    pid_file = tmp_path / "emporia-relay.pid"
+    pid_file.write_text(str(os.getpid()))                 # this test process: not a relay
+    monkeypatch.setattr(cli, "_relay_files", lambda: (pid_file, tmp_path / ".relay.log"))
+    monkeypatch.setattr(cli, "health", lambda timeout=3.0, url="": None)
+    killed = []
+    monkeypatch.setattr(cli.os, "kill", lambda *a: killed.append(a))
+    assert cli.main(["relay", "stop"]) == 1
+    assert killed == [] and not pid_file.exists()
+
+
+def test_a_reused_pid_is_not_taken_for_the_signer_or_relay():
+    """P285: `signer stop` and `relay stop` signal only their own process (the live suite stops a real one)."""
+    import os
+    assert not cli._is_our_pid(os.getpid(), b"signer serve")
+    assert not cli._is_relay_pid(os.getpid()) and not cli._is_relay_pid(999999999)
+    assert cli._is_our_pid(os.getpid(), b"pytest")
