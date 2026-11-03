@@ -195,3 +195,37 @@ def test_the_operator_removes_an_agent_that_cannot_leave(client, monkeypatch, ca
     assert cli.main(["relay", "remove", "ra_lost_keys"]) == 0 and "already gone" in capsys.readouterr().out
     monkeypatch.setattr(cli, "_persons_terminal", lambda: False)
     assert cli.main(["relay", "remove", "ra_viewer"]) == 1               # an agent's tools cannot
+
+
+def test_the_cli_sets_the_mode_and_removes_a_member_in_the_relays_env_file(tmp_path, monkeypatch, capsys):
+    """P186: `emporia relay access MODE` and `relay members add|remove KEY` write the relay's
+    .env, and the relay applies it from there without a restart."""
+    from emporia import cli, relay_access
+    env = tmp_path / ".env"
+    env.write_text("OPERATOR_FEE_BPS=300\n")
+    monkeypatch.setenv("EMPORIA_RELAY_ENV_FILE", str(env))
+    monkeypatch.setattr(cli, "_agent_profiles", lambda _root: [])
+    alpha, beta = "a1" * 32, "b2" * 32
+    dirs = ["--dir", str(tmp_path)]
+    assert cli.main(["relay", "members", "add", alpha, beta, *dirs]) == 0
+    assert cli.main(["relay", "access", "closed", *dirs]) == 0
+    out = capsys.readouterr().out
+    assert "This relay is now closed" in out and "emporia relay restart" in out
+    assert relay_access.mode() == "closed" and relay_access.is_member_key(alpha) and relay_access.is_member_key(beta)
+    assert "OPERATOR_FEE_BPS=300" in env.read_text(), "the other settings stay"
+
+    assert cli.main(["relay", "members", "remove", beta, *dirs]) == 0
+    assert "removed" in capsys.readouterr().out
+    import os
+    import time
+    os.utime(env, (time.time() + 10, time.time() + 10))
+    assert relay_access.is_member_key(alpha) and not relay_access.is_member_key(beta), "no restart needed"
+
+    assert cli.main(["relay", "access", "read-only", *dirs]) == 0
+    os.utime(env, (time.time() + 20, time.time() + 20))
+    assert relay_access.mode() == "read-only"
+    assert cli.main(["relay", "access", "wide", *dirs]) == 1, "an unknown mode is refused"
+    assert "one of open, read-only, closed" in capsys.readouterr().out
+    assert cli.main(["relay", "access", "open", *dirs]) == 0
+    os.utime(env, (time.time() + 30, time.time() + 30))
+    assert relay_access.mode() == "open"

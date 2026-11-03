@@ -841,6 +841,26 @@ def test_the_relay_listens_beyond_this_machine_only_in_a_container(monkeypatch):
     assert relay_server.bind_refusal("0.0.0.0") == ""
 
 
+def test_the_relay_starts_listening_on_this_machine_and_refuses_to_start_on_another_address(monkeypatch):
+    from emporia import relay_server
+    served = []
+    monkeypatch.setattr(relay_server.uvicorn, "run", lambda app, **kw: served.append(kw))
+    monkeypatch.setattr(relay_server, "in_container", lambda: False)
+    monkeypatch.setattr(relay_server, "live_money_refusal", lambda _keys: "")
+    monkeypatch.setattr(relay_server, "drop_root", lambda: "")
+    monkeypatch.setattr(relay_server, "RELAY_HOST", "127.0.0.1")
+    relay_server.main()
+    assert [kw["host"] for kw in served] == ["127.0.0.1"], "the address uvicorn is given is this machine's"
+    monkeypatch.setattr(relay_server, "RELAY_HOST", "0.0.0.0")
+    with pytest.raises(SystemExit) as refused:
+        relay_server.main()
+    assert "emporia relay host" in str(refused.value)
+    assert len(served) == 1, "nothing was started on 0.0.0.0"
+    monkeypatch.setattr(relay_server, "in_container", lambda: True)
+    relay_server.main()
+    assert [kw["host"] for kw in served] == ["127.0.0.1", "0.0.0.0"], "only a container may listen beyond"
+
+
 def test_relay_host_writes_its_own_folder_and_refuses_an_agent(profiles, monkeypatch, capsys, tmp_path):
     import yaml
     root, _ = profiles

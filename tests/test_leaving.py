@@ -181,6 +181,41 @@ def test_a_player_leaves_a_game_not_yet_started(client):
     assert client.post(f"/sessions/{sid}/join", json={"agent_id": "sl273_a"}, headers=_as("sl273_a")).status_code == 200
 
 
+def test_a_player_who_leaves_a_waiting_game_gets_the_stake_held_for_it_back(client, monkeypatch):
+    import uuid
+
+    from emporia import payments
+    for a in ("sh273_host", "sh273_a", "sh273_b"):
+        _register_keyed(client, a)
+    sid = client.post("/sessions", json={"module_type": "emporia:two-thirds:v1", "config": {"players": 4},
+                                         "payment_rules": {"mode": "free"}},
+                      headers=_as("sh273_host")).json()["session_id"]
+    for a in ("sh273_a", "sh273_b"):
+        assert client.post(f"/sessions/{sid}/join", json={"agent_id": a}, headers=_as(a)).status_code == 200
+    with rs.DB_LOCK, rs.get_db() as conn:
+        for who in ("sh273_a", "sh273_b"):
+            conn.execute(
+                "INSERT INTO payments (payment_id, session_id, agent_id, amount_cents, currency, "
+                "payment_intent_id, payment_type, status, created_at, rail) "
+                "VALUES (?, ?, ?, 100, 'usd', ?, 'session_stake', 'confirmed', ?, 'stripe')",
+                (uuid.uuid4().hex, sid, who, f"pi_{sid}_{who}", datetime.now(UTC).isoformat()))
+    cancelled = []
+
+    async def cancel(pi):
+        cancelled.append(pi)
+        return {"payment_intent_id": pi, "status": "canceled"}
+    monkeypatch.setattr(payments, "cancel_payment_hold", cancel)
+
+    r = client.post(f"/sessions/{sid}/leave", json=_signed(wire.signed_session_leave_payload, sid, "sh273_a"),
+                    headers=_as("sh273_a"))
+    assert r.status_code == 200, r.text
+    assert cancelled == [f"pi_{sid}_sh273_a"], "only the leaver's hold is cancelled"
+    assert [x["status"] for x in r.json()["stake_released"]] == ["canceled"]
+    status = {p["agent_id"]: p["status"] for p in rs.get_session_payments(sid)}
+    assert status == {"sh273_a": "released", "sh273_b": "confirmed"}, "the other player's stake stays held"
+    assert client.get(f"/sessions/{sid}", headers=_as("sh273_host")).json()["status"] == "waiting"
+
+
 def test_a_vote_can_be_taken_back(client):
     _register_keyed(client, "v273_author")
     _register_keyed(client, "v273_voter")
