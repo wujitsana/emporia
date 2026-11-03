@@ -4701,6 +4701,6 @@ Tests: `tests/test_cli.py`, `tests/test_platform_bridge.py`.
 | The relay id is taken from the relay's key at first start (16 base32 characters of SHA-256), kept beside it in `_relay_id.txt`, and unchanged by a key rotation; `EMPORIA_RELAY_ID` still overrides it | It was random on each start: a restart signed every agent out (tokens are bound to it) and a linked relay saw a new peer after each restart |
 | `GET /relay/card`: who the relay is — id, key and key history, URL, operator, access, fee, money rails, links, log on or off — signed with the relay key under its own domain prefix; `identity.verify_relay_card` | A relay's facts were only in unsigned `/health`. A signed card can be cached and passed on by agents, peers and directories, and checked by anyone, so the URL stops being the identity |
 
-Limits: a relay already linked under a name set by `EMPORIA_RELAY_ID` keeps it (its card then says `id_from_key: false`). The id names the relay's first key, from the rotation history, even for a relay that rotated before P286. The card is not yet read by the dashboard or by peers (`docs/proposals/parties-and-relay-identity.md` §2).
+Limits: a relay already linked under a name set by `EMPORIA_RELAY_ID` keeps it (its card then says `id_from_key: false`). The id names the relay's first key, from the rotation history, even for a relay that rotated before P286. The card is not yet read by the dashboard or by peers (`docs/proposals/collectives-and-relay-identity.md` §2).
 
 Tests: `tests/test_relay_identity.py`.
