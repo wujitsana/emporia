@@ -1,7 +1,6 @@
 import React from "react";
 import { api } from "../api";
 import { useInterval } from "../hooks";
-import { useRelayCtx } from "../relayCtx";
 import { VIEWER_ID, VIEWER_KEY } from "../relayEnv";
 import { VIA_CONSOLE, consoleUrl, hermesProfile, httpFetch } from "../transport";
 
