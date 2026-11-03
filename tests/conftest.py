@@ -286,7 +286,61 @@ def _shim_request(request):
     if request.url.scheme in ("ws", "wss") and query.get("agent_id") and "token" not in query:
         query["token"] = _token_for(query["agent_id"])
         request.url = request.url.copy_with(query=urlencode(query).encode())
-    return _signed_join(request)
+    return _signed_topic(_signed_join(request), named)
+
+
+def _signed_topic(request, named):
+    """P278: a topic's creation, invites, uninvites and kicks are its creator's
+    signed acts. A test that names its caller and does not sign has them signed
+    here with that agent's test key (header_shim_off() tests the refusals)."""
+    import json as _json
+    import re as _re
+    if not named:      # signed in with a token: the agent it names
+        auth = request.headers.get("x-emporia-authorization") or request.headers.get("authorization") or ""
+        if auth.startswith("Bearer "):
+            rs = sys.modules.get("emporia.relay_server")
+            claims = rs._jwt_decode(auth[7:]) if rs else None
+            named = (claims or {}).get("agent_id")
+    if not named:
+        return request
+    path, method = request.url.path, request.method
+    from datetime import UTC, datetime
+
+    from emporia import identity, wire
+    at = datetime.now(UTC).isoformat()
+    if method == "DELETE" and (m := _re.fullmatch(r"/agoras/topics/([^/]+)/invite/([^/]+)", path)):
+        query = dict(parse_qsl(request.url.query.decode() if isinstance(request.url.query, bytes)
+                               else str(request.url.query), keep_blank_values=True))
+        if "signature" not in query:
+            query.update(at=at, signature=identity.sign(wire.signed_topic_act_payload(
+                "uninvite", m.group(1), m.group(2), at), named))
+            request.url = request.url.copy_with(query=urlencode(query).encode())
+        return request
+    create = method == "POST" and path == "/agoras/topics"
+    act = _re.fullmatch(r"/agoras/topics/([^/]+)/(invite|kick)", path) if method == "POST" else None
+    if not (create or act):
+        return request
+    try:
+        body = _json.loads(request.read() or b"{}")
+    except ValueError:
+        return request
+    if not isinstance(body, dict) or body.get("signature"):
+        return request
+    if create:
+        body["slug"] = wire.topic_slug(body.get("name", ""), body.get("slug"))
+        body["nonce"] = wire.new_message_nonce()
+        body["signature"] = identity.sign(wire.signed_agora_topic_payload(
+            body["nonce"], body["slug"], body.get("name", ""), body.get("description", ""),
+            body.get("visibility", "public"), body.get("gate_type", "open"), body.get("entry_fee_cents", 0),
+            body.get("flair_options") or [], body.get("access_duration_days")), named)
+    else:
+        target = body.get("invitee_id") if act.group(2) == "invite" else body.get("target_agent_id")
+        body["at"] = at
+        body["signature"] = identity.sign(wire.signed_topic_act_payload(act.group(2), act.group(1), target or "", at),
+                                          named)
+    headers = {k: v for k, v in request.headers.items() if k.lower() != "content-length"}
+    return type(request)(request.method, request.url, headers=headers, content=_json.dumps(body).encode(),
+                         extensions=request.extensions)
 
 
 def _signed_join(request):
@@ -395,3 +449,23 @@ def signed_room_join_body(room_id: str, agent_id: str, **extra) -> dict:
     at = datetime.now(UTC).isoformat()
     return {"agent_id": agent_id, "at": at,
             "signature": identity.sign(wire.signed_room_join_payload(room_id, agent_id, at), agent_id), **extra}
+
+
+def signed_topic_body(creator: str, body: dict) -> dict:
+    """P278: a `POST /agoras/topics` body signed by its creator, for tests with no shim."""
+    from emporia import identity, wire
+    b = {**body, "slug": wire.topic_slug(body.get("name", ""), body.get("slug")), "nonce": wire.new_message_nonce()}
+    b["signature"] = identity.sign(wire.signed_agora_topic_payload(
+        b["nonce"], b["slug"], b.get("name", ""), b.get("description", ""), b.get("visibility", "public"),
+        b.get("gate_type", "open"), b.get("entry_fee_cents", 0), b.get("flair_options") or [],
+        b.get("access_duration_days")), creator)
+    return b
+
+
+def signed_topic_act(act: str, slug: str, target: str, creator: str) -> dict:
+    """P278: `{at, signature}` for a topic creator's invite, uninvite or kick, for tests with no shim."""
+    from datetime import UTC, datetime
+
+    from emporia import identity, wire
+    at = datetime.now(UTC).isoformat()
+    return {"at": at, "signature": identity.sign(wire.signed_topic_act_payload(act, slug, target, at), creator)}

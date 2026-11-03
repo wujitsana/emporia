@@ -19,13 +19,16 @@ from pydantic import BaseModel
 
 from emporia import adverts, entitlements
 from emporia import relay_server as rs
-from emporia.routes.rooms import AdvertRequest, advertiser_identity
+from emporia.routes.rooms import AdvertRequest, _require_signed_by, advertiser_identity
 from emporia.wire import (
     ERR_DUPLICATE_NONCE,
     TOPIC_ADVERT_FIELDS,
     signed_agora_comment_payload,
     signed_agora_post_payload,
+    signed_agora_topic_payload,
+    signed_topic_act_payload,
     signed_topic_advert_payload,
+    topic_slug,
 )
 
 router = APIRouter()
@@ -47,8 +50,36 @@ def _require_not_removed(topic_id: str, agent_id: str) -> None:
         raise HTTPException(403, "Removed from this topic")
 
 
+def _record_topic_act(conn, topic_id: str, act: str, target: str | None, by: str, at: str, signed: dict,
+                      signature: str, *, nonce: str | None = None) -> None:
+    """P278: a topic creator's signed act, kept with the payload it signed."""
+    conn.execute("INSERT INTO topic_acts (act_id, topic_id, act, target, by_agent, at, nonce, payload_json, "
+                 "signature) VALUES (?,?,?,?,?,?,?,?,?)",
+                 (f"tact_{uuid.uuid4().hex[:16]}", topic_id, act, target, by, at, nonce, json.dumps(signed),
+                  signature))
+
+
+def _topic_acts(conn, topic_id: str, only_create: bool = False) -> list[dict]:
+    rows = conn.execute("SELECT act, target, by_agent, at, payload_json, signature FROM topic_acts WHERE topic_id = ?"
+                        + (" AND act = 'create'" if only_create else "") + " ORDER BY rowid", (topic_id,)).fetchall()
+    return [{"act": r["act"], "target": r["target"], "by": r["by_agent"], "at": r["at"],
+             "payload": json.loads(r["payload_json"]), "signature": r["signature"]} for r in rows]
+
+
+def _require_topic_act(creator: str, act: str, slug: str, agent_id: str, at: str, signature: str) -> dict:
+    """P278: an invite, taking one back, or a kick is the topic creator's signed act, made just now."""
+    if not at or not signature:
+        raise HTTPException(401, f"a topic {act} is signed by the topic's creator (at, signature over "
+                                 f"wire.signed_topic_act_payload)")
+    signed = signed_topic_act_payload(act, slug, agent_id, at)
+    _require_signed_by(creator, signed, at, signature, "the topic creator's")
+    return signed
+
+
 class TopicKickRequest(BaseModel):
     target_agent_id: str
+    at: str = ""            # P278: signed by the topic's creator
+    signature: str = ""
 
 
 @router.post("/agoras/topics/{slug}/kick")
@@ -67,6 +98,9 @@ async def kick_from_agora_topic(slug: str, req: TopicKickRequest, request: Reque
         if req.target_agent_id == row["creator_id"]:
             raise HTTPException(400, "The creator cannot remove themselves")
         rs._require_registered(req.target_agent_id)
+        signed = _require_topic_act(row["creator_id"], "kick", slug, req.target_agent_id, req.at, req.signature)
+        _record_topic_act(conn, row["topic_id"], "kick", req.target_agent_id, row["creator_id"], req.at, signed,
+                          req.signature)
         gone = conn.execute("DELETE FROM agora_members WHERE topic_id=? AND agent_id=? AND role != 'owner'",
                             (row["topic_id"], req.target_agent_id)).rowcount
         if gone:
@@ -113,7 +147,15 @@ async def create_agora_topic(req: rs.CreateAgoraTopicRequest, request: Request):
     if req.access_duration_days is not None and req.access_duration_days <= 0:
         raise HTTPException(400, "access_duration_days must be a positive integer or omitted")
     topic_id = f"tpc_{uuid.uuid4().hex[:12]}"
-    slug = req.slug or rs._slugify(req.name)
+    slug = topic_slug(req.name, req.slug)
+    # P278: the creator's signature over every setting, as for a room (P243).
+    if not rs._NONCE_RE.fullmatch(req.nonce or ""):
+        raise HTTPException(401, "a topic is signed by its creator (nonce, signature over "
+                                 "wire.signed_agora_topic_payload)")
+    signed = signed_agora_topic_payload(req.nonce, slug, req.name, req.description, req.visibility, req.gate_type,
+                                        req.entry_fee_cents, req.flair_options, req.access_duration_days)
+    if not rs.AGENT_REGISTRY.verify_signature(caller, signed, req.signature):
+        raise HTTPException(403, "topic signature does not match its settings and this agent's key")
     now = datetime.now(UTC).isoformat()
     with rs.DB_LOCK, rs.get_db() as conn:
         try:
@@ -131,7 +173,10 @@ async def create_agora_topic(req: rs.CreateAgoraTopicRequest, request: Request):
                 "INSERT INTO agora_members (topic_id, agent_id, role, joined_at) VALUES (?,?,?,?)",
                 (topic_id, caller, "owner", now),
             )
+            _record_topic_act(conn, topic_id, "create", None, caller, now, signed, req.signature, nonce=req.nonce)
         except Exception as exc:
+            if "topic_acts.nonce" in str(exc):
+                raise HTTPException(409, {"code": ERR_DUPLICATE_NONCE, "message": "a topic with this nonce exists"})
             if "UNIQUE" in str(exc):
                 raise HTTPException(409, f"Slug '{slug}' already taken")
             raise
@@ -266,10 +311,25 @@ async def get_agora_topic(slug: str, request: Request):
         row = conn.execute("SELECT * FROM agora_topics WHERE slug=? AND is_deleted=0", (slug,)).fetchone()
         if not row:
             raise HTTPException(404, "Topic not found")
+        advertised = bool(adverts.own_topic_adverts({slug}))
+        card = {   # P278: what anyone shown the topic may check before paying, against its creator's signature
+            "topic_id": row["topic_id"], "slug": row["slug"], "name": row["name"],
+            "description": row["description"], "visibility": row["visibility"],
+            "gate_type": row["gate_type"], "entry_fee_cents": row["entry_fee_cents"],
+            "creator_id": row["creator_id"], "created_at": row["created_at"],
+            "flair_options": json.loads(row["flair_options"] or "[]"),
+            "access_duration_days": row["access_duration_days"],
+            "advertised": advertised, "host": rs._own_host(),
+        }
         if not rs._topic_can_read(
             row["visibility"], row["gate_type"], row["entry_fee_cents"], viewer_id, row["topic_id"], conn,
         ):
-            raise HTTPException(403, "Private topic — subscribe to access")
+            invited = bool(viewer_id) and conn.execute(
+                "SELECT 1 FROM agora_invites WHERE topic_id=? AND agent_id=?", (row["topic_id"], viewer_id)).fetchone()
+            if not (advertised or invited):
+                raise HTTPException(403, "Private topic — subscribe to access")
+            return {**card, "listing_only": True, "signed_acts": _topic_acts(conn, row["topic_id"], only_create=True)}
+        acts = _topic_acts(conn, row["topic_id"])
         member_role = None
         if viewer_id:
             mr = conn.execute(
@@ -278,14 +338,8 @@ async def get_agora_topic(slug: str, request: Request):
             ).fetchone()
             member_role = mr["role"] if mr else None
     return {
-        "topic_id": row["topic_id"], "slug": row["slug"], "name": row["name"],
-        "description": row["description"], "visibility": row["visibility"],
-        "gate_type": row["gate_type"], "entry_fee_cents": row["entry_fee_cents"],
-        "creator_id": row["creator_id"], "created_at": row["created_at"],
-        "post_count": row["post_count"], "subscriber_count": row["subscriber_count"],
-        "flair_options": json.loads(row["flair_options"] or "[]"),
-        "viewer_role": member_role,
-        "advertised": bool(adverts.own_topic_adverts({slug})), "host": rs._own_host(),
+        **card, "post_count": row["post_count"], "subscriber_count": row["subscriber_count"],
+        "viewer_role": member_role, "signed_acts": acts,
     }
 @router.post("/agoras/topics/{slug}/invite")
 async def invite_to_agora_topic(slug: str, req: rs.AgoraInviteRequest, request: Request):
@@ -306,6 +360,9 @@ async def invite_to_agora_topic(slug: str, req: rs.AgoraInviteRequest, request: 
         gate = row["gate_type"] if "gate_type" in row.keys() else "open"
         if gate not in ("invite", "paid_invite"):
             raise HTTPException(400, f"Topic gate_type is '{gate}' — invites only apply to invite or paid_invite topics")
+        signed = _require_topic_act(row["creator_id"], "invite", slug, req.invitee_id, req.at, req.signature)
+        _record_topic_act(conn, row["topic_id"], "invite", req.invitee_id, row["creator_id"], req.at, signed,
+                          req.signature)
         # Upsert invite
         existing = conn.execute(
             "SELECT 1 FROM agora_invites WHERE topic_id=? AND agent_id=?",
@@ -327,9 +384,10 @@ async def invite_to_agora_topic(slug: str, req: rs.AgoraInviteRequest, request: 
     })
     return {"ok": True, "slug": slug, "agent_id": req.invitee_id}
 @router.delete("/agoras/topics/{slug}/invite/{invitee_id}")
-async def revoke_agora_invite(slug: str, invitee_id: str, request: Request):
+async def revoke_agora_invite(slug: str, invitee_id: str, request: Request, at: str = "", signature: str = ""):
     """P273: the topic's creator takes back an invite not yet used. A subscriber
-    who already came in stays."""
+    who already came in stays. P278: signed by the creator (`at`, `signature`
+    in the query, over wire.signed_topic_act_payload("uninvite", ...))."""
     with rs.DB_LOCK, rs.get_db() as conn:
         row = conn.execute("SELECT topic_id, creator_id FROM agora_topics WHERE slug=? AND is_deleted=0",
                            (slug,)).fetchone()
@@ -337,8 +395,11 @@ async def revoke_agora_invite(slug: str, invitee_id: str, request: Request):
             raise HTTPException(404, "Topic not found")
         rs._require_caller_is(row["creator_id"], request)
         rs._enforce_agent_rate_limit(row["creator_id"])
+        signed = _require_topic_act(row["creator_id"], "uninvite", slug, invitee_id, at, signature)
         gone = conn.execute("DELETE FROM agora_invites WHERE topic_id=? AND agent_id=?",
                             (row["topic_id"], invitee_id)).rowcount
+        if gone:
+            _record_topic_act(conn, row["topic_id"], "uninvite", invitee_id, row["creator_id"], at, signed, signature)
     if not gone:
         raise HTTPException(404, f"No open invite for {invitee_id}")
     return {"ok": True, "slug": slug, "agent_id": invitee_id, "invited": False}

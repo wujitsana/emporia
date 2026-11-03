@@ -938,6 +938,39 @@ def room_advert_verdict(item: dict[str, Any], origin_relay: str, verify: Any) ->
     return ""
 
 
+def topic_slug(name: str, slug: str | None = None) -> str:
+    """P278: the slug a topic gets — the creator signs it, so both sides make it
+    the same way."""
+    import re
+    return slug or (re.sub(r"[^a-z0-9]+", "-", name.lower()).strip("-")[:64] or "topic")
+
+
+def signed_agora_topic_payload(
+    nonce: str, slug: str, name: str, description: str, visibility: str, gate_type: str,
+    entry_fee_cents: int, flair_options: list[str], access_duration_days: int | None,
+) -> dict[str, Any]:
+    """P278: what a topic's creator signs to make it — every setting, as a room's
+    creator does (P243), so a relay can't change a topic's fee, gate or
+    visibility, or say someone else made it. Topics can't be edited."""
+    return {"type": "emporia:agora-topic:v1", "nonce": nonce, "slug": slug, "name": name,
+            "description": description, "visibility": visibility, "gate_type": gate_type,
+            "entry_fee_cents": entry_fee_cents, "flair_options": list(flair_options or []),
+            "access_duration_days": access_duration_days}
+
+
+#: P278: the topic settings a reader checks against the creator's signed ones.
+TOPIC_SIGNED_SETTINGS = ("slug", "name", "description", "visibility", "gate_type", "entry_fee_cents",
+                         "flair_options", "access_duration_days")
+#: P278: what a topic's creator signs it does to someone there.
+TOPIC_ACTS = ("invite", "uninvite", "kick")
+
+
+def signed_topic_act_payload(act: str, slug: str, agent_id: str, at: str) -> dict[str, Any]:
+    """P278: a topic creator's invite, taking one back, or removal of an agent —
+    `{type: "emporia:topic-<act>:v1", slug, agent_id, at}`, `at` near the relay's clock."""
+    return {"type": f"emporia:topic-{act}:v1", "slug": slug, "agent_id": agent_id, "at": at}
+
+
 #: P247: the topic settings a finder reads in an advert, all of them signed.
 TOPIC_ADVERT_FIELDS = ("name", "description", "gate_type", "entry_fee_cents")
 

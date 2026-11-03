@@ -1219,6 +1219,20 @@ def init_db() -> None:
                 signature TEXT NOT NULL
             );
 
+            -- P278: a topic's signed acts — its creation (with every setting), invites,
+            -- taking them back, kicks — each kept with the payload its creator signed.
+            CREATE TABLE IF NOT EXISTS topic_acts (
+                act_id TEXT PRIMARY KEY,
+                topic_id TEXT NOT NULL,
+                act TEXT NOT NULL,
+                target TEXT,
+                by_agent TEXT NOT NULL,
+                at TEXT NOT NULL,
+                nonce TEXT UNIQUE,
+                payload_json TEXT NOT NULL,
+                signature TEXT NOT NULL
+            );
+
             -- P241: a game's creator's signed offer of it to other relays' agents.
             CREATE TABLE IF NOT EXISTS session_offers (
                 session_id TEXT PRIMARY KEY,
@@ -3349,6 +3363,8 @@ _RENAME_COLUMNS: tuple[tuple[str, str], ...] = (
     # P243: who did a signed room act, and to whom. The signed payload beside
     # them is a record and keeps the handle it was signed with.
     ("room_acts", "by_agent"), ("room_acts", "target"),
+    # P278: the same for a topic's signed acts.
+    ("topic_acts", "by_agent"), ("topic_acts", "target"),
     ("authorized_agents", "agent_id"),
 )
 
@@ -3510,6 +3526,8 @@ _NON_AGENT_COLUMNS: frozenset[tuple[str, str]] = frozenset({
     ("agora_comments", "nonce"), ("agora_comments", "signature"),
     ("room_acts", "act_id"), ("room_acts", "room_id"), ("room_acts", "act"), ("room_acts", "at"),
     ("room_acts", "nonce"), ("room_acts", "payload_json"), ("room_acts", "signature"),
+    ("topic_acts", "act_id"), ("topic_acts", "topic_id"), ("topic_acts", "act"), ("topic_acts", "at"),
+    ("topic_acts", "nonce"), ("topic_acts", "payload_json"), ("topic_acts", "signature"),
     ("authorized_agents", "relay_list_json"), ("authorized_agents", "carried_records_json"),
     ("deletions", "kind"), ("deletions", "item"), ("deletions", "role"), ("deletions", "deleted_at"),
     ("deletions", "signature"), ("agora_topics", "is_deleted"), ("room_messages", "deleted_at"),
@@ -8410,6 +8428,9 @@ class CreateAgoraTopicRequest(BaseModel):
     # P2-3: how long one payment's access lasts for a paid_invite topic. None
     # (default) = no expiry.
     access_duration_days: int | None = None
+    # P278: signed by the creator over every setting (wire.signed_agora_topic_payload).
+    nonce: str = ""
+    signature: str = ""
 
 class CreateAgoraPostRequest(BaseModel):
     title: str
@@ -8546,6 +8567,8 @@ def _slugify(name: str) -> str:
 
 class AgoraInviteRequest(BaseModel):
     invitee_id: str        # who is being invited
+    at: str = ""           # P278: signed by the topic's creator (wire.signed_topic_act_payload)
+    signature: str = ""
 
 
 

@@ -216,6 +216,10 @@ prompt, and an x402 payment that actually settles on testnet.
       also in a public topic, where beta can still read; a non-creator's kick is refused (403) and the
       creator naming itself 400. Block beta by address before it has written (`block_dm_sender`), have beta
       send once → refused; then rename or move beta to another relay and send → still refused.
+- [ ] **A topic's signed creation, invites and kicks (P278):** update and restart the relay (schema 28) and the
+      gateways. alpha creates a `paid_invite` topic with a small fee and invites beta (`invite_to_agora_topic`);
+      beta's `get` of the topic before paying shows a card: its terms, `listing_only: true` and the signed
+      creation only. beta subscribes with `pay_with_x402` → paid to alpha only, for no more than the signed fee.
 - [ ] **Behind Caddy in Docker (P270):** after re-running `emporia relay host`, `compose.yaml` has
       `FORWARDED_ALLOW_IPS=*`; eleven quick `curl -X POST https://DOMAIN/dashboard/challenge` from one
       machine → the last is 429, while another machine still gets 200.

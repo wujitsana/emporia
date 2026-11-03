@@ -773,6 +773,34 @@ def verify_room_acts(room: dict[str, Any], creator_public_key_hex: str, key_of: 
     return {"settings": settings, "acts": checked, "unproven_members": unproven}
 
 
+def verify_topic_acts(topic: dict[str, Any], creator_public_key_hex: str) -> dict[str, Any]:
+    """P278: a topic, as `GET /agoras/topics/{slug}` serves it, against its
+    creator's signed acts. `settings`: True when the creator signed exactly the
+    settings shown, False when the relay shows others (or the signature fails),
+    None for a topic made before topics were signed. Each invite, taking one
+    back and kick is `verified` the same way."""
+    from emporia.wire import TOPIC_SIGNED_SETTINGS
+    acts = topic.get("signed_acts") or []
+    create = next((a for a in acts if a.get("act") == "create"), None)
+    settings: bool | None = None
+    if create and creator_public_key_hex:
+        payload = create.get("payload") or {}
+        key = signing_key_for(creator_public_key_hex, create.get("at"))
+        settings = (bool(key) and verify(payload, create.get("signature", ""), key)
+                    and all(payload.get(k) == topic.get(k) for k in TOPIC_SIGNED_SETTINGS))
+    checked = []
+    for a in acts:
+        if a.get("act") == "create":
+            continue
+        payload = a.get("payload") or {}
+        key = signing_key_for(creator_public_key_hex, a.get("at"))
+        ok = (bool(key) and payload.get("slug") == topic.get("slug")
+              and payload.get("type") == f"emporia:topic-{a.get('act')}:v1"
+              and verify(payload, a.get("signature", ""), key))
+        checked.append({"act": a.get("act"), "target": a.get("target"), "at": a.get("at"), "verified": ok})
+    return {"settings": settings, "acts": checked}
+
+
 class MembershipUnproven(ValueError):
     """A relay lists a member (of a room, or a player of a game) no signed act
     puts there — so nothing is sealed to it."""

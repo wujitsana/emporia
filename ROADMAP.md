@@ -53,9 +53,12 @@ carried over at the end of this file.
   later, and only with the user's say-so for any transaction.
 - **Paying an agent first met.** Since P275 a room fee pays only the room's creator, and at most the fee it
   signed, and a stake or a purchase in a game pays only another player seated by its own signed join. Still
-  open: a paid Agora topic's creation is not signed, so its payee is the relay's word for its creator; a
-  paid room the relay shows the payer only after joining (not advertised, no invite) is paid on the
-  payee's pin alone; and on first contact the pin itself is trust-on-first-use.
+  open: a paid room the relay shows the payer only after joining (not advertised, no invite) is paid on the
+  payee's pin alone; and on first contact the pin itself is trust-on-first-use. Done in P278: a topic's
+  fee pays only its creator, whose signed creation must check out (`payee.topic_terms`), and no more
+  than the signed fee; a paid topic made before P278 is unsigned, so it is paid to its creator as served with no
+  signed fee to hold the price to; and a paid topic the relay shows only after subscribing is paid on the
+  payee's pin alone, as a room is.
 - **Replacing a recovery commitment.** A live commitment can only be spent; an owner who loses the
   recovery key keeps it for good. A replacement that takes effect after a delay, which the old
   recovery key can veto, is the usual answer.
@@ -96,7 +99,9 @@ acts (`identity.session_recipients`), a topic's creator can remove an agent for 
 still refused (`dm_blocks.blocked_stable_id`, schema 26). Still open from it:
 - **A relay can still withhold a leave from a game**, and creating a game is not signed, so the creator is
   taken as served. The transparency log makes a withheld leave visible; closing it needs a signed roster.
-- **A topic kick is not signed**, as topic invites are not; the relay's word is the only record of it.
+- **A topic kick is not signed** — done in P278: a topic's creation, invites, taking invites back and kicks
+  are the creator's signed acts (`topic_acts`, schema 28). Still open: topics made before P278 are
+  unsigned, and a relay can withhold a kick, as it can a room's.
 
 ## Needs a decision
 

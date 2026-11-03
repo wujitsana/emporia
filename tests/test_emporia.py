@@ -9908,10 +9908,11 @@ def test_agora_invite_requires_caller_be_creator(prod_client):
     _register_keyed(prod_client, "ainv_impostor")
     _register_keyed(prod_client, "ainv_guest")
 
-    r = prod_client.post("/agoras/topics", json={
+    from conftest import signed_topic_act, signed_topic_body
+    r = prod_client.post("/agoras/topics", json=signed_topic_body("ainv_creator", {
         "name": "N2-4 T2 Topic", "description": "d", "visibility": "private",
         "gate_type": "invite", "creator_id": "ainv_creator",
-    },
+    }),
         headers=bearer_for(prod_client, "ainv_creator"))
     slug = r.json()["slug"]
 
@@ -9926,6 +9927,12 @@ def test_agora_invite_requires_caller_be_creator(prod_client):
 
     r = prod_client.post(
         f"/agoras/topics/{slug}/invite", json={"invitee_id": "ainv_guest"},
+        headers=bearer_for(prod_client, "ainv_creator"),
+    )
+    assert r.status_code == 401, "P278: an invite is the creator's signed act"
+    r = prod_client.post(
+        f"/agoras/topics/{slug}/invite",
+        json={"invitee_id": "ainv_guest", **signed_topic_act("invite", slug, "ainv_guest", "ainv_creator")},
         headers=bearer_for(prod_client, "ainv_creator"),
     )
     assert r.status_code == 200
@@ -9968,10 +9975,11 @@ def test_join_and_subscribe_reject_impersonated_agent_id(prod_client):
     )
     assert r.status_code == 200
 
-    r = prod_client.post("/agoras/topics", json={
+    from conftest import signed_topic_body
+    r = prod_client.post("/agoras/topics", json=signed_topic_body("impj_real", {
         "name": "N2-4 T2 Sub Topic", "description": "d", "visibility": "public",
         "gate_type": "open", "creator_id": "impj_real",
-    },
+    }),
         headers=bearer_for(prod_client, "impj_real"))
     slug = r.json()["slug"]
     r = prod_client.post(
@@ -10026,8 +10034,9 @@ def test_attributed_content_creation_requires_authentication(prod_client):
 
     r = prod_client.post("/agoras/topics", json={"name": "Forged Topic", "description": "d"})
     assert r.status_code == 401
+    from conftest import signed_topic_body
     r = prod_client.post(
-        "/agoras/topics", json={"name": "Real Topic", "description": "d"},
+        "/agoras/topics", json=signed_topic_body("attr_real", {"name": "Real Topic", "description": "d"}),
         headers=bearer_for(prod_client, "attr_real"),
     )
     assert r.status_code == 200
@@ -10086,7 +10095,8 @@ def test_vote_ballot_stuffing_closed(prod_client):
     _register_keyed(prod_client, "vote_caller")
 
     r = prod_client.post(
-        "/agoras/topics", json={"name": "Vote Topic", "description": "d"},
+        "/agoras/topics", json=__import__("conftest").signed_topic_body(
+            "vote_author", {"name": "Vote Topic", "description": "d"}),
         headers=bearer_for(prod_client, "vote_author"),
     )
     slug = r.json()["slug"]
@@ -10352,9 +10362,11 @@ def test_agora_subscribed_by_requires_caller_match(prod_client):
     _register_keyed(prod_client, "subby_victim")
     _register_keyed(prod_client, "subby_stranger")
 
+    from conftest import signed_topic_body
     r = prod_client.post(
         "/agoras/topics",
-        json={"name": "Subby Private Topic", "description": "d", "visibility": "private", "gate_type": "open"},
+        json=signed_topic_body("subby_victim", {"name": "Subby Private Topic", "description": "d",
+                                                "visibility": "private", "gate_type": "open"}),
         headers=bearer_for(prod_client, "subby_victim"),
     )
     slug = r.json()["slug"]
@@ -12596,11 +12608,7 @@ def test_agent_sdk_subscribe_agora_topic_surfaces_402_detail_via_payment_require
             )
             slug = topic["slug"]
 
-            invite_resp = await owner._bearer_request(
-                "post", f"{owner.relay_url}/agoras/topics/{slug}/invite",
-                json={"invitee_id": "p8_2_sdk_topic_joiner"},
-            )
-            invite_resp.raise_for_status()
+            await owner.invite_to_agora_topic(slug, "p8_2_sdk_topic_joiner")   # P278: signed
 
             with pytest.raises(PaymentRequiredError) as exc_info:
                 await joiner.subscribe_agora_topic(slug)
@@ -14693,7 +14701,7 @@ def test_agora_topics_visibility_rejects_sql_injection(client):
 
 
 def test_agora_topics_unauthenticated_caller_never_sees_private_metadata(client):
-    _register(client, "secret_owner", pubkey="e" * 64)
+    _register_keyed(client, "secret_owner")   # P278: a topic is signed by its creator
     r = client.post("/agoras/topics", json={
         "name": "Secret Topic", "description": "shh", "visibility": "private",
         "gate_type": "invite", "creator_id": "secret_owner",
@@ -27424,7 +27432,10 @@ def test_the_membership_rule_is_written_in_exactly_one_place():
 #
 # V26 -> V27 (P277): `rooms.linked_session_salt`, the salt of a room's signed
 # commitment to its game, so its card can carry the signed settings unlinked.
-_SCHEMA_FINGERPRINT_V27 = "23249eb2775a7b5c2fc121a54a64d64a8fa3367e521a72f63669e982ce4b2f32"
+#
+# V27 -> V28 (P278): `topic_acts`, an Agora topic's signed acts — its creation
+# with every setting, invites, taking them back, kicks.
+_SCHEMA_FINGERPRINT_V28 = "8260958657fee288058301b04cebf52aa89dc00c9cda7257e2919dec52f1eeec"
 
 
 def _schema_fingerprint(db_path) -> tuple[str, int, int]:
@@ -27464,9 +27475,9 @@ def test_a_schema_change_requires_a_version_bump():
     from emporia.relay_server import SCHEMA_VERSION
 
     fingerprint, tables, columns = _schema_fingerprint(_test_db)
-    assert (SCHEMA_VERSION, fingerprint) == (27, _SCHEMA_FINGERPRINT_V27), (
+    assert (SCHEMA_VERSION, fingerprint) == (28, _SCHEMA_FINGERPRINT_V28), (
         f"the schema changed ({tables} tables, {columns} columns) or the version "
-        f"moved. Bump SCHEMA_VERSION *and* update _SCHEMA_FINGERPRINT_V27 — in "
+        f"moved. Bump SCHEMA_VERSION *and* update _SCHEMA_FINGERPRINT_V28 — in "
         f"that order, and never the fingerprint alone.\n"
         f"  code version: {SCHEMA_VERSION}\n  fingerprint:  {fingerprint}"
     )

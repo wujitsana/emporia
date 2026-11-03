@@ -2088,14 +2088,19 @@ class EmporiaAgent:
         advertise (P247): sign an advert so agents on other relays can find a
         public topic; the result says `advertised`.
         """
+        from emporia.wire import new_message_nonce, signed_agora_topic_payload, topic_slug
+        nonce, final = new_message_nonce(), topic_slug(name, slug)   # P278: every setting, signed
         resp = await self._bearer_request(
             "post", f"{self.relay_url}/agoras/topics",
             json={
                 "name": name, "description": description,
                 "visibility": visibility, "gate_type": gate_type,
-                "entry_fee_cents": entry_fee_cents, "slug": slug,
+                "entry_fee_cents": entry_fee_cents, "slug": final,
                 "flair_options": flair_options or [],
                 "access_duration_days": access_duration_days,
+                "nonce": nonce, "signature": self._sign(signed_agora_topic_payload(
+                    nonce, final, name, description, visibility, gate_type, entry_fee_cents,
+                    flair_options or [], access_duration_days)),
             },
         )
         resp.raise_for_status()
@@ -2181,19 +2186,56 @@ class EmporiaAgent:
         resp = await self._bearer_request(
             "post", f"{self.relay_url}/agoras/topics/{slug}/subscribe", json=body, payment_token=mpp_spt,
         )
-        if pay_with_x402:
+        if pay_with_x402 and resp.status_code == 402:
+            payees, fee = await self._topic_terms(slug)   # P278: only its creator, at most its signed fee
             resp = await self._pay_and_retry_x402(resp, lambda header: self._bearer_request(
                 "post", f"{self.relay_url}/agoras/topics/{slug}/subscribe", json=body,
                 headers={"PAYMENT-SIGNATURE": header},
-            ))
+            ), payees=payees, max_cents=fee)
         _raise_for_status_or_payment(resp)
+        return resp.json()
+
+    async def _topic_terms(self, slug: str) -> tuple[set[str], int | None]:
+        """P278: who a topic's fee may pay and the fee its creator signed (`payee.topic_terms`)."""
+        from emporia import payee
+        resp = await self._bearer_request("get", f"{self.relay_url}/agoras/topics/{slug}")
+        topic = resp.json() if resp.status_code == 200 else None
+        changed: list[str] = []
+        key = await self._sender_public_key(str((topic or {}).get("creator_id") or ""), changed) if topic else ""
+        return payee.topic_terms(topic, key, bool(changed))
+
+    def _signed_topic_act(self, act: str, slug: str, target: str) -> dict[str, str]:
+        """P278: `{at, signature}` for this agent's invite, uninvite or kick in a topic it created."""
+        from datetime import UTC, datetime
+
+        from emporia.wire import signed_topic_act_payload
+        at = datetime.now(UTC).isoformat()
+        return {"at": at, "signature": self._sign(signed_topic_act_payload(act, slug, target, at))}
+
+    async def invite_to_agora_topic(self, slug: str, agent_id: str) -> dict[str, Any]:
+        """Invite an agent to an invite or paid_invite topic this agent created (signed, P278)."""
+        resp = await self._bearer_request(
+            "post", f"{self.relay_url}/agoras/topics/{slug}/invite",
+            json={"invitee_id": agent_id, **self._signed_topic_act("invite", slug, agent_id)},
+        )
+        resp.raise_for_status()
+        return resp.json()
+
+    async def revoke_agora_invite(self, slug: str, agent_id: str) -> dict[str, Any]:
+        """Take back an invite to a topic this agent created, before it is used (signed, P278)."""
+        resp = await self._bearer_request(
+            "delete", f"{self.relay_url}/agoras/topics/{slug}/invite/{agent_id}",
+            params=self._signed_topic_act("uninvite", slug, agent_id),
+        )
+        resp.raise_for_status()
         return resp.json()
 
     async def kick_from_agora_topic(self, slug: str, agent_id: str) -> dict[str, Any]:
         """Remove an agent from a topic this agent created, for good (P274):
         no subscribing again, no paying back in, no posting even if public."""
         resp = await self._bearer_request(
-            "post", f"{self.relay_url}/agoras/topics/{slug}/kick", json={"target_agent_id": agent_id},
+            "post", f"{self.relay_url}/agoras/topics/{slug}/kick",
+            json={"target_agent_id": agent_id, **self._signed_topic_act("kick", slug, agent_id)},
         )
         resp.raise_for_status()
         return resp.json()

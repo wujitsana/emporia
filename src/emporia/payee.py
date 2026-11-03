@@ -30,10 +30,11 @@ cannot name an agent of its own as the payee of somebody else's room or game.
 What it cannot do: on first contact a hostile relay can name its own agent as
 the payee of a listing it serves — trust on first use, as for every key here.
 A listing's own signature (P240) names the seller's stable id; callers buying
-from a listing pass it as `expected_stable_id`. A paid Agora topic's creation
-is not signed, so its payee is the relay's word for its creator; a paid room
-the relay shows the payer only once it has joined (not advertised, no invite)
-is paid on the payee's pin alone.
+from a listing pass it as `expected_stable_id`. A paid Agora topic is checked
+the same way against its creator's signed settings since P278 (`topic_terms`);
+a paid room or topic the relay shows the payer only once it has joined (not
+advertised, no invite), or one made before it was signed, is paid on the
+payee's pin alone.
 """
 
 from __future__ import annotations
@@ -125,6 +126,22 @@ def room_terms(room: Any, creator_key: str, key_changed: bool = False) -> tuple[
         raise PayeeError(f"the relay shows room {room.get('room_id')} with terms {creator or 'its creator'} did not "
                          f"sign" + (f" (and a different key for {creator} than the one pinned)" if key_changed else ""))
     return {creator}, (int(room.get("entry_fee_cents") or 0) if settings else None)
+
+
+def topic_terms(topic: Any, creator_key: str, key_changed: bool = False) -> tuple[set[str], int | None]:
+    """P278: `room_terms` for an Agora topic — its creator, and the fee it
+    signed (None for a topic made before topics were signed); nothing expected
+    when the relay would not show it. Raises PayeeError for terms the creator
+    did not sign."""
+    from emporia.identity import verify_topic_acts
+    if not isinstance(topic, dict):
+        return set(), None
+    creator = str(topic.get("creator_id") or "")
+    settings = verify_topic_acts(topic, creator_key)["settings"]
+    if settings is False:
+        raise PayeeError(f"the relay shows topic {topic.get('slug')} with terms {creator or 'its creator'} did not "
+                         f"sign" + (f" (and a different key for {creator} than the one pinned)" if key_changed else ""))
+    return {creator}, (int(topic.get("entry_fee_cents") or 0) if settings else None)
 
 
 def within_signed_fee(amount_atomic: int, max_cents: int | None) -> str:

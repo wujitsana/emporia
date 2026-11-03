@@ -575,6 +575,12 @@ def _room_act(conn, r):
         "payload_hash": content_hash(r["payload_json"]), "signature": r["signature"] or "", "at": r["at"]}
 
 
+def _topic_act(conn, r):
+    return _topic_public(conn, r["topic_id"]), r["act_id"], {
+        "act_id": r["act_id"], "topic_id": r["topic_id"], "act": r["act"], "by_agent": r["by_agent"],
+        "payload_hash": content_hash(r["payload_json"]), "signature": r["signature"] or "", "at": r["at"]}
+
+
 def _deletion(conn, r):
     # the removed item's id is hashed: a removal is on record, not what was removed
     return True, content_hash(r["kind"], r["item"]), {
@@ -653,6 +659,7 @@ SOURCES: dict[str, tuple[str, Callable, str, tuple[str, ...]]] = {
     # a peer's listings are in its own log
     "listing": ("listings", _listing, "{row}.federated_from IS NULL", ("listing_id",)),
     "room_act": ("room_acts", _room_act, "", ("act_id",)),
+    "topic_act": ("topic_acts", _topic_act, "", ("act_id",)),   # P278
     "deletion": ("deletions", _deletion, "", ("kind", "item")),
     "session_action": ("actions", _action, "", ("action_id",)),
     "session_message": ("messages", _session_message, "", ("message_id",)),
@@ -683,7 +690,7 @@ NOT_LOGGED: dict[str, str] = {
     "dm_blocks": "an agent's private choice of whom it takes no DMs from",
     "agora_votes": "tallies the relay keeps, not anyone's signed statement",
     "agora_members": "who follows a topic: bookkeeping, and nobody's signed statement",
-    "agora_invites": "bookkeeping of a topic owner's invites, not signed",
+    "agora_invites": "an invite, or taking one back, is a signed topic_act, logged as one",
     "game_chat": "table talk; the moves are logged",
     "agent_inbox": "delivery bookkeeping",
     "reg_challenges": "short-lived sign-in nonces",

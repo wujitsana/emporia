@@ -2566,6 +2566,11 @@ def create_agora_topic(
       never are). To advertise or withdraw later, use `advertise`.
     """
     try:
+        from emporia.identity import sign as ed25519_sign
+        from emporia.wire import new_message_nonce, signed_agora_topic_payload, topic_slug
+        nonce, final = new_message_nonce(), topic_slug(name, slug or None)   # P278: every setting, signed
+        signed = signed_agora_topic_payload(nonce, final, name, description, visibility, gate_type,
+                                            entry_fee_cents, flair_options or [], access_duration_days)
         r = _bearer_request(
             "post", f"{_base()}/agoras/topics",
             agent_id=creator_id,
@@ -2573,9 +2578,10 @@ def create_agora_topic(
                 "name": name, "description": description,
                 "visibility": visibility, "gate_type": gate_type,
                 "entry_fee_cents": entry_fee_cents,
-                "slug": slug or None,
+                "slug": final,
                 "flair_options": flair_options or [],
                 "access_duration_days": access_duration_days,
+                "nonce": nonce, "signature": ed25519_sign(signed, creator_id),
             },
             timeout=10,
         )
@@ -2633,7 +2639,7 @@ def invite_to_agora_topic(topic_slug: str, agent_id: str, invited_by: str) -> di
         r = _bearer_request(
             "post", f"{_base()}/agoras/topics/{topic_slug}/invite",
             agent_id=invited_by,
-            json={"invitee_id": agent_id},
+            json={"invitee_id": agent_id, **_signed_topic_act("invite", topic_slug, agent_id, invited_by)},
             timeout=10,
         )
         return r.json() if r.status_code == 200 else {"error": f"Relay {r.status_code}", "detail": r.text}
@@ -2658,6 +2664,31 @@ def unsubscribe_agora_topic(topic_slug: str, agent_id: str = "") -> dict[str, An
         return {"error": str(e), "success": False}
 
 
+def _signed_topic_act(act: str, slug: str, target: str, creator: str) -> dict[str, str]:
+    """P278: `{at, signature}` for a topic creator's invite, uninvite or kick."""
+    from datetime import UTC, datetime
+
+    from emporia.identity import sign as ed25519_sign
+    from emporia.wire import signed_topic_act_payload
+    at = datetime.now(UTC).isoformat()
+    return {"at": at, "signature": ed25519_sign(signed_topic_act_payload(act, slug, target, at), creator)}
+
+
+def _topic_terms(aid: str, slug: str) -> tuple[set[str], int | None]:
+    """P278: `payee.topic_terms` for a topic on this relay — its creator, and
+    the fee it signed; nothing expected when the relay will not show it."""
+    from emporia import payee
+    from emporia.agent_wallet import AgentWalletError
+    r = _bearer_request("get", f"{_base()}/agoras/topics/{slug}", agent_id=aid, timeout=10)
+    topic = r.json() if r.status_code == 200 else None
+    changed: list[str] = []
+    try:
+        return payee.topic_terms(topic, _sender_public_key(aid, str((topic or {}).get("creator_id") or ""), changed)
+                                 if topic else "", bool(changed))
+    except payee.PayeeError as e:
+        raise AgentWalletError(f"not paid: {e}") from None
+
+
 @mcp.tool()
 def kick_from_agora_topic(topic_slug: str, agent_id: str, creator_id: str) -> dict[str, Any]:
     """Remove an agent from a topic you created, for good (P274): out of its
@@ -2667,7 +2698,8 @@ def kick_from_agora_topic(topic_slug: str, agent_id: str, creator_id: str) -> di
     Its past posts stay; they are its own to delete."""
     try:
         r = _bearer_request("post", f"{_base()}/agoras/topics/{topic_slug}/kick", agent_id=creator_id,
-                            json={"target_agent_id": agent_id}, timeout=10)
+                            json={"target_agent_id": agent_id,
+                                  **_signed_topic_act("kick", topic_slug, agent_id, creator_id)}, timeout=10)
         return {"success": True, **r.json()} if r.status_code == 200 else {
             "error": f"Relay {r.status_code}", "detail": r.text, "success": False}
     except Exception as e:
@@ -2680,7 +2712,8 @@ def revoke_agora_invite(topic_slug: str, agent_id: str, invited_by: str) -> dict
     invited_by authenticates the call (the topic's creator)."""
     try:
         r = _bearer_request("delete", f"{_base()}/agoras/topics/{topic_slug}/invite/{agent_id}",
-                            agent_id=invited_by, timeout=10)
+                            agent_id=invited_by, params=_signed_topic_act("uninvite", topic_slug, agent_id, invited_by),
+                            timeout=10)
         return {"success": True, **r.json()} if r.status_code == 200 else {
             "error": f"Relay {r.status_code}", "detail": r.text, "success": False}
     except Exception as e:
@@ -2716,10 +2749,13 @@ def subscribe_agora_topic(topic_slug: str, agent_id: str, mpp_token: str = "",
         url = f"{_base()}/agoras/topics/{topic_slug}/subscribe"
         r = _bearer_request("post", url, agent_id=agent_id, payment_token=mpp_token,
                             json=body, timeout=10)
-        if pay_with_x402:
-            r = _x402_paid_retry(r, agent_id, "post", url, network=pay_network, json=body, timeout=30)
-        elif pay_with_tempo:   # P156: stablecoin on Tempo, straight to the creator
-            r = _tempo_paid_retry(r, agent_id, "post", url, json=body, timeout=30)
+        if r.status_code == 402 and (pay_with_x402 or pay_with_tempo):
+            payees, fee = _topic_terms(agent_id, topic_slug)   # P278: only its creator, at most its signed fee
+            if pay_with_x402:
+                r = _x402_paid_retry(r, agent_id, "post", url, network=pay_network, payees=payees, max_cents=fee,
+                                     json=body, timeout=30)
+            else:   # P156: stablecoin on Tempo, straight to the creator
+                r = _tempo_paid_retry(r, agent_id, "post", url, payees=payees, json=body, timeout=30)
         if r.status_code == 402:
             return {
                 "error": "payment_required", "options": _payment_options(r.json(), r),

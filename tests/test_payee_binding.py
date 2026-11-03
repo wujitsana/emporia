@@ -155,3 +155,39 @@ def test_mcp_stakes_only_toward_another_player_seated_by_its_own_join(wallet_env
         out = mcp_server.fund_session(session_id="s1", agent_id="pb_buyer", pay_with_x402=True)
     assert not out["success"] and "no other player" in out["error"], out
     assert not signed
+
+
+def test_mcp_pays_a_topic_fee_only_to_its_creator_within_the_signed_fee(wallet_env):  # noqa: F811
+    """P278: as for rooms — the topic's creator, whose signed settings check out, at most the fee it signed."""
+    def relay_for(creator: str, fee: int, asked: int, payee_name: str = "") -> _FakeHttpx:
+        base = _creator_relay(creator, fee, asked, payee_name)       # its 402 and its agents' keys
+        nonce = wire.new_message_nonce()
+        signed = wire.signed_agora_topic_payload(nonce, "club", "Club", "", "private", "paid_invite", fee, [], None)
+        topic = {"slug": "club", "name": "Club", "description": "", "visibility": "private",
+                 "gate_type": "paid_invite", "entry_fee_cents": fee, "flair_options": [], "access_duration_days": None,
+                 "creator_id": creator, "listing_only": True, "signed_acts": [
+                     {"act": "create", "at": datetime.now(UTC).isoformat(), "payload": signed,
+                      "signature": identity.sign(signed, creator)}]}
+        rooms_get = base.get
+
+        def get(url, headers=None, **kwargs):
+            return _Resp(200, topic) if url.endswith("/agoras/topics/club") else rooms_get(url, headers, **kwargs)
+        base.get = get
+        return base
+
+    from emporia import agent_wallet
+
+    def subscribe(relay, payer):
+        agent_wallet.generate(payer)
+        with patch.object(mcp_server, "httpx", relay), \
+             patch.object(mcp_server, "_dashboard_bearer_headers", return_value={"Authorization": "Bearer t"}):
+            return mcp_server.subscribe_agora_topic(topic_slug="club", agent_id=payer, pay_with_x402=True)
+
+    ok = relay_for("pt_owner", 100, 1_000_000)
+    assert subscribe(ok, "pt_payer1").get("success") is not False
+    assert "PAYMENT-SIGNATURE" in ok.calls[-1]["headers"]
+    for relay, why in ((relay_for("pt_owner2", 100, 2_500_000), "more than the 1.00"),
+                       (relay_for("pt_owner3", 100, 1_000_000, payee_name="pt_relays_agent"), "not pt_owner3")):
+        out = subscribe(relay, f"pt_payer_{why[:4].strip()}")
+        assert why in str(out), out
+        assert not any("PAYMENT-SIGNATURE" in c["headers"] for c in relay.calls)
