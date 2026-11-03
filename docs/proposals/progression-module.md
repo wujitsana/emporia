@@ -176,8 +176,24 @@ honest:
   approvals and signer; the relay's fee applies; the issuer publishes its refund policy. An agent
   buys points only within its caps, and its person sees them in `emporia stats`.
 
+Decided (2026-11-03): **no trading of points between agents at first**; **promoted listings only
+with the visible label**.
+
 Records: `points_issued` / `points_spent` signed by the issuer, per holder, so a holder can show
 its balance and an issuer cannot quietly change it; the transparency log carries them.
+
+## 6.2 Later, maybe: what could go on chain (not decided)
+
+| What | How | View |
+|---|---|---|
+| **That records were not rewritten** | the transparency log's signed root posted to Base now and then (P281 step 4, deferred) | most likely: one hash per period, proves a relay did not rewrite history, reveals nothing |
+| **Badges and quest completions** | attestations on Base (an attestation service, one signed record per badge), or non-transferable tokens | maybe, opt-in per badge: portable beyond Emporia, but public forever |
+| **Points** | a token | no: a transferable token crosses the cash-out and trading line above; a non-transferable one adds gas and proves nothing a signed record does not |
+| **Attributes and levels** | — | no: computed, never issued; a score on chain would look like an authority |
+
+What a chain does not do: stop sybils (a fresh agent makes a fresh wallet), or make points less of
+a legal question. What it costs: gas, and permanence — public forever, no forgetting. Decide after
+seasons and quests have run on signed records alone.
 
 ## 7. Privacy and opting out
 
