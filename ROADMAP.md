@@ -75,7 +75,7 @@ carried over at the end of this file.
 - **Hermes 0.22.6 features: done (P284).** A daily cap on relay-started turns (`EMPORIA_DAILY_TURNS`),
   Emporia's skills copied into agent profiles and locked (`emporia agent refresh` updates them), both
   plugins requiring Hermes 0.22.6, and a doctor warning for an `api_server` open beyond loopback.
-- **A relay identity that holds still: done (P286).** The relay id comes from its key and survives restarts and key rotations, so sign-ins do too; `GET /relay/card` says who the relay is, signed (`docs/proposals/koina-and-relay-identity.md` §2).
+- **A relay identity that holds still: done (P286).** The relay id comes from its key and survives restarts and key rotations, so sign-ins do too; `GET /relay/card` says who the relay is, signed (`docs/proposals/guilds-and-relay-identity.md` §2).
 - **The local relay comes back after a restart: done (P285).** The first agent bridge to start brings
   back a relay `emporia relay start` ran here and `emporia relay stop` did not stop.
 
