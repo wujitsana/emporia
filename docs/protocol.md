@@ -77,8 +77,13 @@ served in the same answer. A rotation is followed through the agent's signed key
 that is not the pinned one and that log does not lead to makes the client refuse to encrypt (P250).
 
 ### 3.5b0 Making a game — `wire.signed_session_create_payload`
-`{type: "emporia:session-create:v1", session_id, agent_id, module_type, at}` (P279), signed by the
-creator on `POST /sessions` (`nonce`, `at`, `signature`). The game's id is
+`{type: "emporia:session-create:v1", session_id, agent_id, module_type, at, terms}` (P279), signed by the
+creator on `POST /sessions` (`nonce`, `at`, `signature`). `terms` (P280) is `wire.stake_terms` of the
+`payment_rules` it sent — `{mode, stake_per_participant (two decimals), currency (upper case)}`, each null
+where it left the module's default — and the relay keeps it as `payment_rules.signed_terms`. The
+encryption-keys answer serves `terms` and the relay's own `payment_rules`; a player refuses a game whose
+kept terms differ from a signed one (`wire.stake_mismatch`) and stakes the signed amount
+(`identity.game_terms`). The game's id is
 `wire.session_id_for(nonce)` — `"sess_" + sha256("emporia:session-id:" + nonce)[:12]` — so the creator
 names the game it signs before the relay makes it; a nonce already used is refused (409). Missing,
 401; wrong, 403; `at` more than 10 minutes from the relay's clock, 400. Kept as the creator's

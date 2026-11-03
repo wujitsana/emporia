@@ -1453,17 +1453,21 @@ def _room_terms(aid: str, room_id: str) -> tuple[set[str], int | None]:
         raise AgentWalletError(f"not paid: {e}") from None
 
 
-def _game_payees(aid: str, session_id: str) -> set[str]:
-    """P275: the other players of a game, each seated by its own signed join
-    (`identity.seated_players`) — whom a stake or a purchase in it may pay."""
+def _game_payees(aid: str, session_id: str) -> tuple[set[str], str | None]:
+    """P275: the other players of a game, each seated by its own signed join or
+    creation (`identity.game_terms`) — whom a stake or a purchase in it may pay;
+    P280: and the stake its creator signed, if it set one."""
     from emporia.agent_wallet import AgentWalletError
-    from emporia.identity import seated_players
+    from emporia.identity import game_terms
     r = _bearer_request("get", f"{_base()}/sessions/{session_id}/encryption-keys", agent_id=aid, timeout=10)
-    others = seated_players(session_id, r.json(), aid, aid, _base()) - {aid} if r.status_code == 200 else set()
+    try:
+        others, stake = game_terms(session_id, r.json(), aid, aid, _base()) if r.status_code == 200 else (set(), None)
+    except ValueError as e:
+        raise AgentWalletError(f"not paid: {e}") from None
     if not others:
         raise AgentWalletError(f"not paid: no other player of {session_id} is seated by a join of its own "
                                f"signing, so nobody here may be paid")
-    return others
+    return others, stake
 
 
 def _tempo_paid_retry(r: httpx.Response, aid: str, method: str, url: str, payees: Collection[str] = (),
@@ -3589,7 +3593,7 @@ def create_session(
     }
     if payment_intent_id:
         body["payment_intent_id"] = payment_intent_id
-    body.update(_signed_creation(aid, module_type))   # P279: the game, made in this agent's own name
+    body.update(_signed_creation(aid, module_type, body["payment_rules"]))   # P279/P280: made in its own name
     try:
         r = _bearer_request("post", f"{_base()}/sessions", agent_id=aid,
                             payment_token=mpp_token, json=body, timeout=10)
@@ -3607,16 +3611,16 @@ def create_session(
         return {"error": str(e), "success": False}
 
 
-def _signed_creation(aid: str, module_type: str) -> dict[str, str]:
+def _signed_creation(aid: str, module_type: str, payment_rules: dict[str, Any] | None) -> dict[str, str]:
     """P279: `{nonce, at, signature}` — the game's id is wire.session_id_for(nonce),
-    and this agent signs that it made it."""
+    and this agent signs that it made it, with the money terms it asked for (P280)."""
     from datetime import UTC, datetime
 
     from emporia.identity import sign as ed25519_sign
-    from emporia.wire import new_message_nonce, session_id_for, signed_session_create_payload
+    from emporia.wire import new_message_nonce, session_id_for, signed_session_create_payload, stake_terms
     nonce, at = new_message_nonce(), datetime.now(UTC).isoformat()
-    return {"nonce": nonce, "at": at, "signature": ed25519_sign(
-        signed_session_create_payload(session_id_for(nonce), aid, module_type, at), aid)}
+    return {"nonce": nonce, "at": at, "signature": ed25519_sign(signed_session_create_payload(
+        session_id_for(nonce), aid, module_type, at, stake_terms(payment_rules)), aid)}
 
 
 def _offer_session(aid: str, session_id: str) -> bool:
@@ -3889,10 +3893,11 @@ def fund_session(session_id: str, mpp_token: str = "", agent_id: str = "",
 
             sess = _bearer_request("get", f"{_base()}/sessions/{session_id}",
                                    agent_id=aid, timeout=10).json()
-            stake = (sess.get("payment_rules") or {}).get("stake_per_participant", "0")
             offer = r.json()["escrow"]
-            _check_payee_pinned(offer.get("payee"), "evm", (offer.get("payment_info") or {}).get("receiver"),
-                                _game_payees(aid, session_id))   # P275: another player, seated by its own join
+            payees, signed_stake = _game_payees(aid, session_id)   # P275: another player, seated by its own act
+            # P280: the stake its creator signed, where it set one — not the relay's word for it.
+            stake = signed_stake or (sess.get("payment_rules") or {}).get("stake_per_participant", "0")
+            _check_payee_pinned(offer.get("payee"), "evm", (offer.get("payment_info") or {}).get("receiver"), payees)
             header = agent_wallet.sign_escrow(
                 aid, offer,
                 expected_amount=int(_x402_amount_atomic(int(round(float(stake) * 100)))))

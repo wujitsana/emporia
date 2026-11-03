@@ -216,10 +216,10 @@ def _signed_seller(name: str, receiver: str) -> tuple[dict, dict]:
     statement = {"agent_id": name, "stable_id": sid, "public_key_hex": pub, "key_log": [],
                  "wallets": {"evm": {"address": receiver, "at": at, "signature": identity.sign(
                      wire.signed_payout_wallet_payload(sid, "evm", receiver, at), name)}}}
-    bundle = {"creator": name, "module_type": "emporia:service:v1",
+    bundle = {"creator": name, "module_type": "emporia:service:v1", "terms": wire.stake_terms(None),
               "keys": {name: {"public_key_hex": pub, "stable_id": sid}}, "leaves": [],
               "joins": {name: {"at": at, "signature": identity.sign(wire.signed_session_create_payload(
-                  "s1", name, "emporia:service:v1", at), name)}}}
+                  "s1", name, "emporia:service:v1", at, wire.stake_terms(None)), name)}}}
     return statement, bundle
 
 

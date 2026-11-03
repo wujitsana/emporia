@@ -37,7 +37,7 @@ from emporia.session_audit import (
     open_dual_session,
     verify_chain_entries,
 )
-from emporia.wire import ERR_DUPLICATE_NONCE, session_id_for, signed_session_create_payload
+from emporia.wire import ERR_DUPLICATE_NONCE, session_id_for, signed_session_create_payload, stake_terms
 
 router = APIRouter()
 
@@ -106,7 +106,8 @@ async def create_session(req: rs.CreateSessionRequest, request: Request):
                                  "wire.signed_session_create_payload(wire.session_id_for(nonce), ...))")
     session_id = session_id_for(req.nonce)
     from emporia.routes.rooms import _require_signed_by
-    _require_signed_by(caller, signed_session_create_payload(session_id, caller, req.module_type, req.at),
+    terms = stake_terms(req.payment_rules)   # P280: the money terms it asked for, signed with it
+    _require_signed_by(caller, signed_session_create_payload(session_id, caller, req.module_type, req.at, terms),
                        req.at, req.signature, "the creating agent's")
     if rs.load_session(session_id):
         raise HTTPException(409, {"code": ERR_DUPLICATE_NONCE, "message": "a game with this nonce exists"})
@@ -175,7 +176,7 @@ async def create_session(req: rs.CreateSessionRequest, request: Request):
         session_id=session_id,
         module_type=req.module_type,
         config=req.config,
-        payment_rules=payment_rules,
+        payment_rules={**payment_rules, "signed_terms": terms},   # P280: served to its players
         state=state,
         current_agent=state.current_agent,
         step_number=0,
@@ -305,7 +306,11 @@ async def get_session_encryption_keys(session_id: str, request: Request):
                              (session_id,)).fetchall()
         leaves = conn.execute("SELECT agent_id, at, signature FROM session_leaves WHERE session_id = ?",
                               (session_id,)).fetchall()
+    rules = s["payment_rules"] or {}
     return {"session_id": session_id, "sealed": rs.session_sealed(s), "module_type": s["module_type"],
+            # P280: the terms its creator signed, and the ones the relay keeps, for a player to compare.
+            "terms": rules.get("signed_terms"),
+            "payment_rules": {k: rules.get(k) for k in ("mode", "stake_per_participant", "currency")},
             "keys": rs._room_member_encryption_keys(SimpleNamespace(members=list(s["participants"]))),
             "creator": s["participants"][0] if s["participants"] else "",
             "joins": {r["agent_id"]: {"at": r["join_at"], "signature": r["join_signature"]}

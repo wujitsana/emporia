@@ -950,7 +950,8 @@ def session_players_by_acts(session_id: str, served: dict[str, Any], key_of: Any
     made = (served.get("joins") or {}).get(creator) or {}
     made_at = str(made.get("at") or "")
     seated = {creator} if creator and made_at and signed(
-        creator, signed_session_create_payload(session_id, creator, str(served.get("module_type") or ""), made_at),
+        creator, signed_session_create_payload(session_id, creator, str(served.get("module_type") or ""), made_at,
+                                               served.get("terms")),
         made_at, made.get("signature", "")) else set()
     left: dict[str, Any] = {}
     for leave in served.get("leaves") or []:
@@ -974,6 +975,22 @@ def seated_players(session_id: str, served: dict[str, Any], me: str, profile_id:
     path — the players a stake or a purchase in this game may pay."""
     return session_players_by_acts(session_id, served,
                                    _bundle_key_of(served.get("keys") or {}, me, profile_id, relay_url))
+
+
+def game_terms(session_id: str, served: dict[str, Any], me: str, profile_id: str,
+               relay_url: str) -> tuple[set[str], str | None]:
+    """P280: whom a stake or purchase in this game may pay (the other players its
+    signed acts seat) and the stake its creator signed (None if it left that to
+    the module's default). Raises ValueError when the relay keeps terms other
+    than the creator signed."""
+    from emporia.wire import stake_mismatch
+    seated = seated_players(session_id, served, me, profile_id, relay_url)
+    creator = str(served.get("creator") or "")
+    terms = served.get("terms") or {}
+    if creator in seated and (why := stake_mismatch(terms, served.get("payment_rules"))):
+        raise ValueError(f"the relay keeps game {session_id} on other terms than its creator signed: {why}")
+    stake = terms.get("stake_per_participant") if creator in seated else None
+    return seated - {me}, stake
 
 
 def session_recipients(session_id: str, served: dict[str, Any], me: str, profile_id: str,

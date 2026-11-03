@@ -427,7 +427,7 @@ class EmporiaAgent:
         `fund_session()`, once a seller has joined."""
         from datetime import UTC, datetime
 
-        from emporia.wire import new_message_nonce, session_id_for, signed_session_create_payload
+        from emporia.wire import new_message_nonce, session_id_for, signed_session_create_payload, stake_terms
         nonce, at = new_message_nonce(), datetime.now(UTC).isoformat()   # P279: made in this agent's name
         resp = await self._bearer_request(
             "post", f"{self.relay_url}/sessions",
@@ -437,7 +437,7 @@ class EmporiaAgent:
                 "payment_rules": payment_rules,
                 "creator_gateway_url": gateway_url,
                 "nonce": nonce, "at": at, "signature": self._sign(signed_session_create_payload(
-                    session_id_for(nonce), self.agent_id, module_type, at)),
+                    session_id_for(nonce), self.agent_id, module_type, at, stake_terms(payment_rules))),
             },
             payment_token=mpp_spt,
         )
@@ -510,12 +510,14 @@ class EmporiaAgent:
 
             session = (await self._bearer_request(
                 "get", f"{self.relay_url}/sessions/{session_id}")).json()
-            stake = (session.get("payment_rules") or {}).get("stake_per_participant", "0")
+            payees, signed_stake = await self._game_payees(session_id)   # P275
+            # P280: the stake its creator signed, where it set one — not the relay's word for it.
+            stake = signed_stake or (session.get("payment_rules") or {}).get("stake_per_participant", "0")
             expected = int(_x402_amount_atomic(int(round(float(stake) * 100))))
             from emporia import payee   # P262: the hold's receiver is a wallet its payee signed
             label = payee.check_pinned(offer.get("payee"), "evm",
                                        str((offer.get("payment_info") or {}).get("receiver") or ""), self.relay_url,
-                                       expected_agents=await self._game_payees(session_id))   # P275
+                                       expected_agents=payees)
             await self._check_spend(expected, f"an escrow hold for session {session_id}, for {label}")   # P180
             try:
                 header = sign_offer(
@@ -1212,17 +1214,21 @@ class EmporiaAgent:
         key = await self._sender_public_key(str((room or {}).get("creator_id") or ""), changed) if room else ""
         return payee.room_terms(room, key, bool(changed))
 
-    async def _game_payees(self, session_id: str) -> set[str]:
-        """P275: the other players of a game, each seated by its own signed join."""
+    async def _game_payees(self, session_id: str) -> tuple[set[str], str | None]:
+        """P275: the other players of a game, each seated by its own signed act;
+        P280: and the stake its creator signed, if it set one (`identity.game_terms`)."""
         from emporia import payee
-        from emporia.identity import seated_players
+        from emporia.identity import game_terms
         resp = await self._bearer_request("get", f"{self.relay_url}/sessions/{session_id}/encryption-keys")
-        others = seated_players(session_id, resp.json(), self.agent_id, self.profile_id, self.relay_url) - {
-            self.agent_id} if resp.status_code == 200 else set()
+        try:
+            others, stake = game_terms(session_id, resp.json(), self.agent_id, self.profile_id,
+                                       self.relay_url) if resp.status_code == 200 else (set(), None)
+        except ValueError as e:
+            raise payee.PayeeError(str(e)) from None
         if not others:
             raise payee.PayeeError(f"no other player of {session_id} is seated by a join of its own signing, "
                                    f"so nobody here may be paid")
-        return others
+        return others, stake
 
     async def _room_recipients(self, room_id: str) -> dict[str, str]:
         """`{agent_id: encryption_public_key_hex}` for every member of an encrypted

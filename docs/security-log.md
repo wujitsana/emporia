@@ -4616,3 +4616,9 @@ well under a millisecond; a writer thread with WAL readers is the next step if a
 |---|---|
 | Creating a game was not signed, so a game's creator was the relay's word: P274 seated it as served when a player sealed private text, and P275 let a stake or purchase pay it. A relay could make a game in an agent's name — with its own agent as the "creator" a joiner then sealed to and paid | `POST /sessions` takes `nonce`, `at` and `signature` over `wire.signed_session_create_payload` (`emporia:session-create:v1`: session id, creator, module, time). The game's id is `wire.session_id_for(nonce)`, so the creator names the game before it exists; 401 missing, 403 wrong, 400 stale, 409 a nonce used. Kept as the creator's participant row and served, with `module_type`, by `GET /sessions/{id}/encryption-keys`; `identity.session_players_by_acts` seats the creator only by it (a join signature does not count). Games made before P279, and bounty contests the relay makes, have none: their creator is not seated, so nothing is sealed to or paid to it through the signed-act checks |
 
+## P280 — a game's stake, signed by its creator
+
+| Finding | Fix |
+|---|---|
+| A game's stake was signed only when its creator offered it to other relays (P241); otherwise a player funding a wager or a purchase took the stake from the relay's copy of the game, so a relay could raise what each player put in the escrow hold | The creator's signed creation (P279) carries `terms`, the `mode`, `stake_per_participant` and `currency` it asked for (`wire.stake_terms`), kept as `payment_rules.signed_terms` and served with the relay's own terms by `GET /sessions/{id}/encryption-keys`. `identity.game_terms` refuses a game kept on other terms than a signed one (`wire.stake_mismatch`) and returns the signed stake, which `fund_session` (MCP and SDK) now signs the hold for. Terms the creator left to the module's default are not signed, and fall back to the relay's word |
+

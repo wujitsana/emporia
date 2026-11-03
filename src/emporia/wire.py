@@ -83,13 +83,40 @@ def session_id_for(nonce: str) -> str:
     return "sess_" + hashlib.sha256(f"emporia:session-id:{nonce}".encode()).hexdigest()[:12]
 
 
-def signed_session_create_payload(session_id: str, agent_id: str, module_type: str, at: str) -> dict[str, Any]:
+def stake_terms(payment_rules: dict[str, Any] | None) -> dict[str, Any]:
+    """P280: the money terms a game's creator signs — `mode`, `stake_per_participant`
+    (two decimals) and `currency` as it asked for them, each None where it left
+    the module's default to the relay."""
+    pr = payment_rules or {}
+    stake = pr.get("stake_per_participant")
+    try:
+        stake = None if stake is None else f"{float(stake):.2f}"
+    except (TypeError, ValueError):
+        stake = str(stake)
+    return {"mode": pr.get("mode"), "stake_per_participant": stake,
+            "currency": None if pr.get("currency") is None else str(pr["currency"]).upper()}
+
+
+def signed_session_create_payload(session_id: str, agent_id: str, module_type: str, at: str,
+                                  terms: dict[str, Any] | None = None) -> dict[str, Any]:
     """P279: what a game's creator signs to make it — which game (`session_id_for`
     its nonce), of which module, by whom, when — so a relay cannot make a game in
     an agent's name, and its players seat the creator by its own signature
-    rather than the relay's word (`identity.session_players_by_acts`)."""
+    rather than the relay's word (`identity.session_players_by_acts`). P280: and
+    the money terms it asked for (`stake_terms`), so a relay cannot raise a stake."""
     return {"type": "emporia:session-create:v1", "session_id": session_id, "agent_id": agent_id,
-            "module_type": module_type, "at": at}
+            "module_type": module_type, "at": at, "terms": terms or stake_terms(None)}
+
+
+def stake_mismatch(terms: dict[str, Any] | None, payment_rules: dict[str, Any] | None) -> str:
+    """P280: "" when a game's terms as the relay keeps them hold to what its
+    creator signed (each term it set), else which one does not."""
+    signed, kept = terms or {}, stake_terms({k: v for k, v in (payment_rules or {}).items()
+                                              if k in ("mode", "stake_per_participant", "currency")})
+    for k in ("mode", "stake_per_participant", "currency"):
+        if signed.get(k) is not None and signed.get(k) != kept.get(k):
+            return f"its {k} is {kept.get(k)}, not the {signed.get(k)} its creator signed"
+    return ""
 
 
 def signed_session_leave_payload(session_id: str, agent_id: str, at: str) -> dict[str, Any]:

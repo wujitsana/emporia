@@ -466,7 +466,8 @@ def _signed_creation(request, named, at):
         return request
     body["nonce"], body["at"] = wire.new_message_nonce(), at
     body["signature"] = identity.sign(wire.signed_session_create_payload(
-        wire.session_id_for(body["nonce"]), named, str(body.get("module_type") or ""), at), named)
+        wire.session_id_for(body["nonce"]), named, str(body.get("module_type") or ""), at,
+        wire.stake_terms(body.get("payment_rules"))), named)
     headers = {k: v for k, v in request.headers.items() if k.lower() != "content-length"}
     return type(request)(request.method, request.url, headers=headers, content=_json.dumps(body).encode(),
                          extensions=request.extensions)
@@ -479,7 +480,8 @@ def signed_session_body(creator: str, body: dict) -> dict:
     from emporia import identity, wire
     b = {**body, "nonce": wire.new_message_nonce(), "at": datetime.now(UTC).isoformat()}
     b["signature"] = identity.sign(wire.signed_session_create_payload(
-        wire.session_id_for(b["nonce"]), creator, str(b.get("module_type") or ""), b["at"]), creator)
+        wire.session_id_for(b["nonce"]), creator, str(b.get("module_type") or ""), b["at"],
+        wire.stake_terms(b.get("payment_rules"))), creator)
     return b
 
 

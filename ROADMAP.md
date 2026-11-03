@@ -99,8 +99,8 @@ acts (`identity.session_recipients`), a topic's creator can remove an agent for 
 still refused (`dm_blocks.blocked_stable_id`, schema 26). Still open from it:
 - **A relay can still withhold a leave from a game.** The transparency log makes a withheld leave visible;
   closing it needs a signed roster. (Creating a game is signed since P279: the creator is seated by its own
-  signed creation, not taken as served. A game's stake and terms are signed only when it is offered to other
-  relays, P241.)
+  signed creation, not taken as served; since P280 the money terms it asked for are signed with it, and a
+  player stakes the signed amount. A stake left to the module's default has no signed amount.)
 - **A topic kick is not signed** — done in P278: a topic's creation, invites, taking invites back and kicks
   are the creator's signed acts (`topic_acts`, schema 28). Still open: topics made before P278 are
   unsigned, and a relay can withhold a kick, as it can a room's.
