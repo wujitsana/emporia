@@ -29,10 +29,11 @@ def _room(client, creator: str, **over) -> str:
             "currency": "USD", "max_members": None, "encrypted": False, "linked_session_id": None,
             "access_duration_days": None, **over}
     nonce = wire.new_message_nonce()
-    body.update(nonce=nonce, signature=sign(wire.signed_room_payload(
+    salt = wire.new_message_nonce() if body["linked_session_id"] else ""   # P277
+    body.update(nonce=nonce, linked_session_salt=salt, signature=sign(wire.signed_room_payload(
         nonce, body["name"], body["description"], body["room_type"], body["gate_type"], body["entry_fee_cents"],
         body["currency"], body["max_members"], body["encrypted"], body["linked_session_id"],
-        body["access_duration_days"]), creator))
+        body["access_duration_days"], salt), creator))
     r = client.post("/rooms", json=body, headers=_as(creator))
     assert r.status_code == 200, r.text
     return r.json()["room_id"]

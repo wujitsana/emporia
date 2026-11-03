@@ -24,6 +24,7 @@ from emporia import rooms as rooms_db
 from emporia.identity import federation_signable_bytes, get_relay_public_key_hex, sign_raw_relay
 from emporia.wire import (
     ERR_DUPLICATE_NONCE,
+    ROOM_TYPE_V1,
     signed_room_advert_payload,
     signed_room_invite_payload,
     signed_room_join_payload,
@@ -180,11 +181,15 @@ async def create_room_endpoint(req: rs.CreateRoomRequest, request: Request):
     # P243: the creator's signature over every setting, before the guardrails scan.
     if not rs._NONCE_RE.fullmatch(req.nonce):
         raise HTTPException(400, "nonce must be 32-64 hex characters")
+    if req.linked_session_id and not rs._NONCE_RE.fullmatch(req.linked_session_salt or ""):
+        raise HTTPException(400, "a room tied to a game needs linked_session_salt, 32-64 hex characters (P277)")
     signed = signed_room_payload(
         req.nonce, req.name, req.description, req.room_type, req.gate_type, req.entry_fee_cents,
-        req.currency, req.max_members, req.encrypted, req.linked_session_id, req.access_duration_days)
+        req.currency, req.max_members, req.encrypted, req.linked_session_id, req.access_duration_days,
+        req.linked_session_salt if req.linked_session_id else "")
     if not rs.AGENT_REGISTRY.verify_signature(caller, signed, req.signature):
-        raise HTTPException(403, "room signature does not match its settings and this agent's key")
+        raise HTTPException(403, "room signature does not match its settings and this agent's key "
+                                 "(rooms are signed as emporia:room:v2 since P277)")
     with rs.DB_LOCK, rs.get_db() as conn:
         if conn.execute("SELECT 1 FROM room_acts WHERE nonce = ?", (req.nonce,)).fetchone():
             raise HTTPException(409, {"code": ERR_DUPLICATE_NONCE, "message": "a room with this nonce exists"})
@@ -230,6 +235,7 @@ async def create_room_endpoint(req: rs.CreateRoomRequest, request: Request):
             max_members=req.max_members,
             encrypted=req.encrypted,
             linked_session_id=req.linked_session_id,
+            linked_session_salt=req.linked_session_salt if req.linked_session_id else None,
             access_duration_days=req.access_duration_days,
             db_path=rs.DATABASE_PATH,
         )
@@ -315,8 +321,10 @@ async def get_room_endpoint(room_id: str, request: Request):
         if not advertised and not (viewer_id and rooms_db.has_invite(room_id, viewer_id, db_path=rs.DATABASE_PATH)):
             raise HTTPException(403, "Private room — not a member")
         # An advertised paid room: its terms and the creator's signed settings, to check before paying.
+        # P277: a room signed before then names its game in its signed settings — not shown.
         return {**_card(room, advertised=advertised),
-                "signed_acts": [a for a in _acts(room_id) if a["act"] == "create"]}
+                "signed_acts": [a for a in _acts(room_id) if a["act"] == "create" and not (
+                    room.linked_session_id and a["payload"].get("type") == ROOM_TYPE_V1)]}
     # P243: the creator's signed acts, for a member to check the room against.
     return {**room.to_dict(viewer_id=viewer_id, db_path=rs.DATABASE_PATH), "signed_acts": _acts(room_id),
             "advertised": advertised, "host": rs._own_host()}

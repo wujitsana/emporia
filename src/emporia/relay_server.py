@@ -1512,6 +1512,8 @@ def _migrate_rooms(conn: Any) -> None:
     room_cols = {r[1] for r in conn.execute("PRAGMA table_info(rooms)").fetchall()}
     if "access_duration_days" not in room_cols:
         conn.execute("ALTER TABLE rooms ADD COLUMN access_duration_days INTEGER")
+    if "linked_session_salt" not in room_cols:   # P277: a room's signed link to its game is salted
+        conn.execute("ALTER TABLE rooms ADD COLUMN linked_session_salt TEXT")
     # P19-5: the sender-chosen per-message nonce that closes room replay, mirroring
     # dm_messages.nonce (P18-2, migrated the identical way here). Before this,
     # signed_room_message_payload() and the room AAD bound nothing unique to a
@@ -3541,6 +3543,7 @@ _NON_AGENT_COLUMNS: frozenset[tuple[str, str]] = frozenset({
     ("rooms", "gate_type"), ("rooms", "entry_fee_cents"), ("rooms", "currency"),
     ("rooms", "max_members"), ("rooms", "encrypted"), ("rooms", "linked_session_id"),
     ("rooms", "created_at"), ("rooms", "updated_at"), ("rooms", "access_duration_days"),
+    ("rooms", "linked_session_salt"),
     # schema_migrations
     ("schema_migrations", "key"), ("schema_migrations", "applied_at"),
     # sessions
@@ -5610,6 +5613,8 @@ class CreateRoomRequest(BaseModel):
     max_members: int | None = None
     encrypted: bool = False           # True → relay stores opaque ciphertext, skips guardrails
     linked_session_id: str | None = None  # link room to a game session
+    # P277: the creator's salt for the signed commitment to that session (wire.linked_session_commitment).
+    linked_session_salt: str = ""
     # P2-3: how long one payment's access lasts for a paid room. None
     # (default) = no expiry — access lasts as long as the room does. Ignored for
     # non-paid rooms (membership there was never entitlement-gated).

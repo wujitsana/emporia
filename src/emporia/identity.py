@@ -743,17 +743,16 @@ def verify_room_acts(room: dict[str, Any], creator_public_key_hex: str, key_of: 
     act, checked against `key_of(member)` — `verified` None without one.
     `unproven_members` names anyone the relay lists that no signed act puts
     in the room (`room_members_by_acts`); None without `key_of`."""
-    from emporia.wire import ROOM_SIGNED_SETTINGS
+    from emporia.wire import ROOM_SIGNED_SETTINGS, room_link_matches
     acts = room.get("signed_acts") or []
     create = next((a for a in acts if a.get("act") == "create"), None)
     settings: bool | None = None
     if create and creator_public_key_hex:
         payload = create.get("payload") or {}
         key = signing_key_for(creator_public_key_hex, create.get("at"))   # P245: the key it had at the time
-        # A paid room's card, shown before joining (P249), leaves out the game it is tied to.
-        shown = [k for k in ROOM_SIGNED_SETTINGS if not (room.get("listing_only") and k == "linked_session_id")]
         settings = (bool(key) and verify(payload, create.get("signature", ""), key)
-                    and all(payload.get(k) == room.get(k) for k in shown))
+                    and all(payload.get(k) == room.get(k) for k in ROOM_SIGNED_SETTINGS)
+                    and room_link_matches(payload, room))
     checked = []
     for a in acts:
         if a.get("act") == "create":

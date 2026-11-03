@@ -1287,10 +1287,12 @@ def _signed_room_fields(creator: str, body: dict[str, Any]) -> dict[str, Any]:
     from emporia.identity import sign as ed25519_sign
     from emporia.wire import new_message_nonce, signed_room_payload
     nonce = new_message_nonce()
+    salt = new_message_nonce() if body.get("linked_session_id") else ""   # P277: the game, committed to
     signed = signed_room_payload(nonce, body["name"], body["description"], body["room_type"], body["gate_type"],
                                  body["entry_fee_cents"], body["currency"], body["max_members"], body["encrypted"],
-                                 body["linked_session_id"], body["access_duration_days"])
-    return {"nonce": nonce, "signature": ed25519_sign(signed, creator)}
+                                 body["linked_session_id"], body["access_duration_days"], salt)
+    return {"nonce": nonce, "signature": ed25519_sign(signed, creator),
+            **({"linked_session_salt": salt} if salt else {})}
 
 
 def _signed_room_act(creator: str, act: str, room_id: str, target: str, *, refund: bool = False) -> dict[str, Any]:

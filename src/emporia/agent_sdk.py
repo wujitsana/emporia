@@ -1921,6 +1921,7 @@ class EmporiaAgent:
         """
         from emporia.wire import new_message_nonce, signed_room_payload
         nonce = new_message_nonce()   # P243: every setting, signed by the creator
+        salt = new_message_nonce() if linked_session_id else ""   # P277: the game, committed to
         resp = await self._bearer_request(
             "post", f"{self.relay_url}/rooms",
             json={
@@ -1930,10 +1931,10 @@ class EmporiaAgent:
                 "encrypted": encrypted, "linked_session_id": linked_session_id,
                 "max_members": max_members,
                 "access_duration_days": access_duration_days,
-                "nonce": nonce,
+                "nonce": nonce, "linked_session_salt": salt,
                 "signature": self._sign(signed_room_payload(
                     nonce, name, description, room_type, gate_type, entry_fee_cents, currency,
-                    max_members, encrypted, linked_session_id, access_duration_days)),
+                    max_members, encrypted, linked_session_id, access_duration_days, salt)),
             },
         )
         resp.raise_for_status()

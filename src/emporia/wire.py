@@ -809,23 +809,53 @@ def signed_agora_comment_payload(
             "parent_comment_id": parent_comment_id, "content": content, "nonce": nonce}
 
 
+ROOM_TYPE = "emporia:room:v2"
+ROOM_TYPE_V1 = "emporia:room:v1"
+
+
+def linked_session_commitment(linked_session_id: str | None, salt: str) -> str | None:
+    """P277: what a room's creator signs for the game it is tied to — a salted
+    hash, not the id, so the card anyone may read before paying (P249) can
+    carry the signed settings without saying which game. Members are served
+    the id and the salt and check the one against the other."""
+    if not linked_session_id:
+        return None
+    import hashlib
+    return hashlib.sha256(f"emporia:linked-session:{salt}:{linked_session_id}".encode()).hexdigest()
+
+
 def signed_room_payload(
     nonce: str, name: str, description: str, room_type: str, gate_type: str,
     entry_fee_cents: int, currency: str, max_members: int | None, encrypted: bool,
-    linked_session_id: str | None, access_duration_days: int | None,
+    linked_session_id: str | None, access_duration_days: int | None, linked_session_salt: str = "",
 ) -> dict[str, Any]:
     """P243: what a room's creator signs to make it — every setting, so a relay
     can't quietly turn encryption off, raise the fee or change the gate. Rooms
-    can't be edited, so the settings a member sees must be these."""
-    return {"type": "emporia:room:v1", "nonce": nonce, "name": name, "description": description,
+    can't be edited, so the settings a member sees must be these. P277 (v2): the
+    linked game as `linked_session_commitment`, with a salt the creator picks."""
+    return {"type": ROOM_TYPE, "nonce": nonce, "name": name, "description": description,
             "room_type": room_type, "gate_type": gate_type, "entry_fee_cents": entry_fee_cents,
             "currency": currency, "max_members": max_members, "encrypted": encrypted,
-            "linked_session_id": linked_session_id, "access_duration_days": access_duration_days}
+            "linked_session": linked_session_commitment(linked_session_id, linked_session_salt),
+            "access_duration_days": access_duration_days}
 
 
-#: P243: the room settings a member checks against the creator's signed ones.
+#: P243: the room settings a member checks against the creator's signed ones; the
+#: linked game is checked apart (`room_link_matches`), since the card leaves it out.
 ROOM_SIGNED_SETTINGS = ("name", "description", "room_type", "gate_type", "entry_fee_cents", "currency",
-                        "max_members", "encrypted", "linked_session_id", "access_duration_days")
+                        "max_members", "encrypted", "access_duration_days")
+
+
+def room_link_matches(payload: dict[str, Any], room: dict[str, Any]) -> bool:
+    """P277: whether a room as shown is tied to the game its creator signed. A
+    card (`listing_only`) shows no game, so there is nothing to compare; a v1
+    room (before P277) signed the id itself."""
+    if room.get("listing_only"):
+        return True
+    if payload.get("type") == ROOM_TYPE_V1:
+        return payload.get("linked_session_id") == room.get("linked_session_id")
+    return payload.get("linked_session") == linked_session_commitment(
+        room.get("linked_session_id"), str(room.get("linked_session_salt") or ""))
 
 
 def signed_room_invite_payload(room_id: str, invitee_id: str, at: str) -> dict[str, Any]:

@@ -85,7 +85,8 @@ CREATE TABLE IF NOT EXISTS rooms (
     linked_session_id TEXT,
     created_at TEXT NOT NULL,
     updated_at TEXT NOT NULL,
-    access_duration_days INTEGER
+    access_duration_days INTEGER,
+    linked_session_salt TEXT
 );
 
 CREATE TABLE IF NOT EXISTS room_invites (
@@ -148,6 +149,8 @@ class Room:
     created_at: str
     updated_at: str
     access_duration_days: int | None = None
+    # P277: the creator's salt for the signed commitment to `linked_session_id`.
+    linked_session_salt: str | None = None
 
     def to_dict(self, *, viewer_id: str | None = None, db_path: Path | None = None) -> dict[str, Any]:
         d = asdict(self)
@@ -229,6 +232,7 @@ def _row_to_room(row: sqlite3.Row) -> Room:
         created_at=row["created_at"],
         updated_at=row["updated_at"],
         access_duration_days=row["access_duration_days"],
+        linked_session_salt=row["linked_session_salt"] if "linked_session_salt" in row.keys() else None,
     )
 
 
@@ -422,6 +426,7 @@ def create_room(
     linked_session_id: str | None = None,
     access_duration_days: int | None = None,
     db_path: Path | None = None,
+    linked_session_salt: str | None = None,
 ) -> Room:
     if room_type == "public" and gate_type != "open":
         raise ValueError("Public rooms must use gate_type='open'")
@@ -448,12 +453,12 @@ def create_room(
             "INSERT INTO rooms (room_id, name, description, room_type, gate_type, "
             "entry_fee_cents, currency, creator_id, members_json, max_members, "
             "encrypted, linked_session_id, created_at, updated_at, "
-            "access_duration_days) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            "access_duration_days, linked_session_salt) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             (room_id, name, description, room_type, gate_type,
              entry_fee_cents, currency, creator_id, json.dumps(members),
              max_members, int(encrypted), linked_session_id, now, now,
-             access_duration_days),
+             access_duration_days, linked_session_salt),
         )
         row = conn.execute("SELECT * FROM rooms WHERE room_id = ?", (room_id,)).fetchone()
     return _row_to_room(row)

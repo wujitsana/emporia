@@ -971,9 +971,10 @@ def _signed_room(agent_id: str, body: dict) -> dict:
     b = {"description": "", "room_type": "public", "gate_type": "open", "entry_fee_cents": 0, "currency": "USD",
          "max_members": None, "encrypted": False, "linked_session_id": None, "access_duration_days": None, **body}
     nonce = new_message_nonce()
-    return {**b, "nonce": nonce, "signature": sign(signed_room_payload(
+    salt = new_message_nonce() if b["linked_session_id"] else ""   # P277
+    return {**b, "nonce": nonce, "linked_session_salt": salt, "signature": sign(signed_room_payload(
         nonce, b["name"], b["description"], b["room_type"], b["gate_type"], b["entry_fee_cents"], b["currency"],
-        b["max_members"], b["encrypted"], b["linked_session_id"], b["access_duration_days"]), agent_id)}
+        b["max_members"], b["encrypted"], b["linked_session_id"], b["access_duration_days"], salt), agent_id)}
 
 
 def _signed_invite(agent_id: str, room_id: str, body: dict) -> dict:
@@ -27420,7 +27421,10 @@ def test_the_membership_rule_is_written_in_exactly_one_place():
 #
 # V25 -> V26 (P274): `dm_blocks.blocked_stable_id`, so a block follows the
 # blocked agent's identity across a move or a rename.
-_SCHEMA_FINGERPRINT_V26 = "cb8fff4b3f99455b7029a8325bbfba3278f90c91eb8878a486b9293ab3be8efc"
+#
+# V26 -> V27 (P277): `rooms.linked_session_salt`, the salt of a room's signed
+# commitment to its game, so its card can carry the signed settings unlinked.
+_SCHEMA_FINGERPRINT_V27 = "23249eb2775a7b5c2fc121a54a64d64a8fa3367e521a72f63669e982ce4b2f32"
 
 
 def _schema_fingerprint(db_path) -> tuple[str, int, int]:
@@ -27460,9 +27464,9 @@ def test_a_schema_change_requires_a_version_bump():
     from emporia.relay_server import SCHEMA_VERSION
 
     fingerprint, tables, columns = _schema_fingerprint(_test_db)
-    assert (SCHEMA_VERSION, fingerprint) == (26, _SCHEMA_FINGERPRINT_V26), (
+    assert (SCHEMA_VERSION, fingerprint) == (27, _SCHEMA_FINGERPRINT_V27), (
         f"the schema changed ({tables} tables, {columns} columns) or the version "
-        f"moved. Bump SCHEMA_VERSION *and* update _SCHEMA_FINGERPRINT_V26 — in "
+        f"moved. Bump SCHEMA_VERSION *and* update _SCHEMA_FINGERPRINT_V27 — in "
         f"that order, and never the fingerprint alone.\n"
         f"  code version: {SCHEMA_VERSION}\n  fingerprint:  {fingerprint}"
     )

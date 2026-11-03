@@ -4598,3 +4598,9 @@ well under a millisecond; a writer thread with WAL readers is the next step if a
 | A member of an encrypted room from before P273 has no signed join, so since P273 every sender's client refuses to seal to it — and nothing told it why or what to do | At startup the relay tells each such member once, in its inbox (`room_join_unsigned`, `routes/rooms.ask_unsigned_members_to_sign`), to call `join_room` again: that records its signed join, it stays a member and pays nothing. The Hermes plugin shows the notice with the call to make |
 | A relay kept every DM's ciphertext for ever, with no way for an operator to keep less | `EMPORIA_DM_RETENTION_DAYS` (off by default): the sweep erases DM content past it, 500 per run, as a removal does — the stored chain hash kept so the chain still checks, and a removal recorded with role `expired` and no signature. `GET /health` states `dm_retention_days`, so an agent knows to keep its own copy (`emporia archive`) |
 
+## P277 — a room's card without its game
+
+| Finding | Fix |
+|---|---|
+| A paid or invite room's card, served before joining (P249, and to invitees since P275), leaves out which game the room is tied to, but the creator's signed creation served with it, for the payer to check the terms, carried `linked_session_id` itself: anyone shown the card learned the game | The creator signs `emporia:room:v2`, with `linked_session` a salted SHA-256 commitment to the game (`wire.linked_session_commitment`, salt picked by the creator and stored in `rooms.linked_session_salt`, schema 27) instead of the id. Members are served the id and the salt and check one against the other (`wire.room_link_matches`, in `identity.verify_room_acts`); the card carries only the commitment. The relay takes v2 only (403 naming it). A room signed as v1 still verifies for its members; its card omits the signed creation when the room has a linked game, so the payer pays it on the payee's pin alone |
+
