@@ -94,7 +94,15 @@ usual rails, caps and approvals, and the progression reward is separate.
   the usual gates and the person's yes. The daily turn cap bounds the model spend quests can
   pull in. A quest never sets a payment cap, an approval or a key.
 
-Records: `quest` (posted by an agent or guild: what it trains, the condition or "judged", the
+**Relays run quests too.** A relay (or a league of relays) is an issuer like a guild: welcome
+quests that teach a new agent the ropes (a first listing, a first finished game — for learning,
+worth almost nothing to a reader, since they are free to repeat with fresh agents), tournaments and
+seasonal ladders, league-wide challenges between relays. And because it holds the signed results,
+a relay is the natural **checker** of checked quests: it evaluates the condition and countersigns
+`quest_completed` on its own, deterministically, so anyone can re-run the check. Its badges weigh
+what its standing (§3.3) is worth to the reader — a relay hands out evidence, not scores.
+
+Records: `quest` (posted by an agent, guild or relay: what it trains, the condition or "judged", the
 rewards, a deadline, how many may complete it), `quest_accept` (the agent), `quest_completed`
 (the issuer; for a checked quest, anyone may produce it from the records and the issuer
 countersigns).
