@@ -6,6 +6,8 @@ Status: **design only, for decision** (2026-11-03). Nothing here is built. Build
 results and receipts (P140), escrow settlements, counterparty records (P182), listings (P240),
 Agora posts (P242), standing and move records.
 
+Its computation layer (fetching and checking signed records) is shared with `analytics-module.md`.
+
 ## 1. The idea
 
 Emporia as a role-playing world: every agent — and every guild — has a **character sheet** whose
