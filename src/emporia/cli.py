@@ -2080,6 +2080,18 @@ def _signer_remove(args: argparse.Namespace) -> int:
             os.chown(back, owner.st_uid, owner.st_gid)
         (key_dir / f"{_keyfile_stem(name)}.signer.pub").unlink(missing_ok=True)
         moved.append("identity")
+        enc = signer.encryption_path(name)
+        if enc.exists():      # P293 (2b): and its encryption keys, the retired ones too
+            for held_file, here in ((enc, key_dir / f"{_keyfile_stem(name)}.x25519.priv"),
+                                    (enc.with_name("encryption.retired"),
+                                     key_dir / f"{_keyfile_stem(name)}.x25519.retired")):
+                if held_file.exists():
+                    _write_secret_atomically(here, held_file.read_bytes())
+                    if os.getuid() == 0:
+                        owner = profile.stat()
+                        os.chown(here, owner.st_uid, owner.st_gid)
+            (key_dir / f"{_keyfile_stem(name)}.x25519.signer.pub").unlink(missing_ok=True)
+            moved.append("encryption")
     unset_env_lines(profile / ".env", ["EMPORIA_SIGNER_URL", "EMPORIA_SIGNER_TOKEN"])
     merge_env_file(profile / ".env", {k: v for k, v in env.items()
                                       if k != "EMPORIA_X402_MAINNET" and k not in signer.SIGNING_POLICY})
@@ -2318,10 +2330,12 @@ def _signer_add_identity(profile: Path, name: str) -> int:
     from emporia import signer
     from emporia.identity import _keyfile_stem, _write_secret_atomically
     env = {**installer().harvest_env(profile), **_mcp_env(profile)}
-    if env.get("EMPORIA_IDENTITY_KEY_SOURCE", "").strip():
-        print(f"signer add: {name}'s identity key is linked ({env['EMPORIA_IDENTITY_KEY_SOURCE'].split(':')[0]}:…); "
-              f"the signer takes only key files for now. Not moved.")
-        return 1
+    for linked, what in ((env.get("EMPORIA_IDENTITY_KEY_SOURCE", ""), "identity"),
+                         (env.get("EMPORIA_ENCRYPTION_KEY_SOURCE", ""), "encryption")):
+        if linked.strip():
+            print(f"signer add: {name}'s {what} key is linked ({linked.split(':')[0]}:…); the signer takes only "
+                  f"key files for now. Not moved.")
+            return 1
     if signer.identity_path(name).exists():
         print(f"signer add: the signer already holds {name}'s identity key")
         return 1
@@ -2330,29 +2344,43 @@ def _signer_add_identity(profile: Path, name: str) -> int:
     if not src.is_file() or src.stat().st_size != 32:
         print(f"signer add: no identity key file for {name} at {src}; nothing moved.")
         return 1
+    enc_src = key_dir / f"{_keyfile_stem(name)}.x25519.priv"
+    enc_retired = key_dir / f"{_keyfile_stem(name)}.x25519.retired"
+    if not enc_src.is_file() or enc_src.stat().st_size != 32:
+        print(f"signer add: no encryption key file for {name} at {enc_src}; nothing moved.")
+        return 1
     raw = src.read_bytes()
-    from cryptography.hazmat.primitives.asymmetric import ed25519
+    enc_raw = enc_src.read_bytes()
+    from cryptography.hazmat.primitives.asymmetric import ed25519, x25519
     pub = ed25519.Ed25519PrivateKey.from_private_bytes(raw).public_key().public_bytes_raw().hex()
-    dest = signer.identity_path(name)
+    enc_pub = x25519.X25519PrivateKey.from_private_bytes(enc_raw).public_key().public_bytes_raw().hex()
+    dest, enc_dest = signer.identity_path(name), signer.encryption_path(name)
     dest.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
     _write_secret_atomically(dest, raw)
-    if dest.read_bytes() != raw:
+    _write_secret_atomically(enc_dest, enc_raw)
+    if enc_retired.is_file():    # P271: the keys it replaced, for messages sealed before
+        _write_secret_atomically(enc_dest.with_name("encryption.retired"), enc_retired.read_bytes())
+    if dest.read_bytes() != raw or enc_dest.read_bytes() != enc_raw:
         print("signer add: the signer's copy does not read back as written; nothing removed from the profile.")
         return 1
     signer.own(signer.agent_dir(name))
-    marker = key_dir / f"{_keyfile_stem(name)}.signer.pub"
-    marker.write_text(pub + "\n")
-    if os.getuid() == 0:
-        owner = profile.stat()
-        os.chown(marker, owner.st_uid, owner.st_gid)
-    with open(src, "r+b") as out:      # overwrite, then unlink: the signer's copy is the only one
-        out.write(b"\0" * 32)
-        out.flush()
-        os.fsync(out.fileno())
-    src.unlink()
-    print(f"{name}: its identity key is now held by the signer; the profile keeps only its public key "
-          f"({pub[:12]}…, in {marker.name}). Every signature is the signer's, within its rules — "
-          f"emporia signer policy {name} shows them, emporia signer log {name} what it signed.")
+    for marker, value in ((key_dir / f"{_keyfile_stem(name)}.signer.pub", pub),
+                          (key_dir / f"{_keyfile_stem(name)}.x25519.signer.pub", enc_pub)):
+        marker.write_text(value + "\n")
+        if os.getuid() == 0:
+            owner = profile.stat()
+            os.chown(marker, owner.st_uid, owner.st_gid)
+    for f in (src, enc_src, enc_retired):   # overwrite, then unlink: the signer's copies are the only ones
+        if f.is_file():
+            with open(f, "r+b") as out:
+                out.write(b"\0" * f.stat().st_size)
+                out.flush()
+                os.fsync(out.fileno())
+            f.unlink()
+    print(f"{name}: its identity and encryption keys are now held by the signer; the profile keeps only their "
+          f"public halves ({pub[:12]}…, {enc_pub[:12]}…). Every signature is the signer's, within its rules, and "
+          f"every sealed message is opened there — emporia signer policy {name} shows the rules, "
+          f"emporia signer log {name} what it signed and how many it opened.")
     installer().print_restart_instructions([profile])
     return 0
 
@@ -3495,6 +3523,12 @@ def doctor_identity_key(rep: Report, name: str, agent_id: str, key_dir: Path, li
     marker = key_dir / f"{_keyfile_stem(agent_id)}.signer.pub"
     if marker.exists():     # P293: held by its signer — the profile has only the public half
         held = marker.read_text().strip()
+        enc_copy = key_dir / f"{_keyfile_stem(agent_id)}.x25519.priv"
+        if (key_dir / f"{_keyfile_stem(agent_id)}.x25519.signer.pub").exists() and enc_copy.exists():
+            rep.fail(f"its encryption keys are in its signer but {enc_copy.name} is still here — anyone who "
+                     f"can read the profile can read its messages",
+                     "remove the copy here, after checking it is the same key: emporia signer status")
+            return
         if path.exists() or linked:
             rep.fail(f"its identity key is in its signer ({held[:12]}…) but a key is also here "
                      f"({path.name if path.exists() else 'a key source'}) — two copies, one outside the signer",
@@ -3510,7 +3544,9 @@ def doctor_identity_key(rep: Report, name: str, agent_id: str, key_dir: Path, li
                 rep.fail(f"its signer holds key {held[:12]}… but its relay knows {known[:12]}…",
                          f"emporia agent rotate-key {name}")
                 return
-        rep.ok("identity key held by its signer — none in its profile")
+        rep.ok("identity key held by its signer — none in its profile"
+               + ("; its encryption keys too" if (key_dir / f"{_keyfile_stem(agent_id)}.x25519.signer.pub").exists()
+                  else ""))
         return
     file_pub = _ed25519_public(path.read_bytes()) if path.exists() and path.stat().st_size == 32 else ""
     source_pub = ""

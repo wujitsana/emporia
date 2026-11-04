@@ -18,7 +18,14 @@ in § 9.
       outlives a restart;
     - `emporia signer log` says what it signed and refused;
     - `emporia signer alerts telegram` sends its alerts.
-- **Still to build:** 2b (opening) and 2c (keys made inside the signer).
+- **Built (2b):**
+  - `--identity` also moves the encryption keys, the retired ones included;
+  - the signer opens each sealed message (`/v1/open`), so neither the agent nor the console ever
+    holds the key;
+  - openings are counted per minute, never what they said;
+  - a burst is alerted (300 in 10 minutes by default, `EMPORIA_SIGNER_OPEN_ALERT`), and a cap can be
+    set (`EMPORIA_SIGNER_OPEN_PER_MIN`).
+- **Still to build:** 2c (keys made inside the signer).
 - **Phase 1's hand sittings** (manual-testing.md "Signer" and "Signer apart") include trying
   `--identity`.
 
@@ -228,7 +235,12 @@ and it loses everything new once it is gone.
 
    Moving the identity key is opt-in (`--identity`) until 2b and 2c are built; then `signer add`
    moves everything. **The delay (§ 4.2) is not built yet.**
-3. **2b:** opening, with the encryption keys moved.
+3. **2b (built, P293):** opening, with the encryption keys moved.
+   - **How it works:** `identity.encryption_private_keys` gives an opener (`signer_client.Opener`).
+     `crypto_box.open_sealed` hands it the envelope and the context it was sealed to, so the ~20
+     places that read messages are unchanged.
+   - **The console** finds an agent behind its signer by its `*.signer.pub` markers, signs in and
+     opens through it.
 4. **2c:** keys made in the signer (rotation, replacement).
 5. **Tests:**
    - unit tests per rule;

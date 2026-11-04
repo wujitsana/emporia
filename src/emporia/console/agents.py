@@ -34,6 +34,35 @@ class LocalAgent:
     def encryption_key(self) -> Path:
         return self.key_dir / f"{_stem(self.agent_id)}.x25519.priv"
 
+    @property
+    def in_signer(self) -> bool:
+        """P293: its keys are held by its signer; the profile has only their public halves."""
+        return (self.key_dir / f"{_stem(self.agent_id)}.signer.pub").is_file()
+
+
+def _signer_client(agent: LocalAgent):
+    """The agent's own signer, as its profile names it — so the console asks it,
+    as the agent would, and never holds a key."""
+    from emporia import signer_client
+    env = _profile_env(agent.key_dir)
+    if not env.get("EMPORIA_SIGNER_URL") or not env.get("EMPORIA_SIGNER_TOKEN"):
+        raise RuntimeError(f"{agent.agent_id}'s keys are in its signer, but its profile does not say where")
+    return signer_client.Client(env["EMPORIA_SIGNER_URL"], env["EMPORIA_SIGNER_TOKEN"],
+                                env.get("EMPORIA_AGENT_ID") or agent.agent_id)
+
+
+class _SignsInThroughItsSigner:
+    """Stands in for the identity key where only a sign-in is ever signed."""
+
+    def __init__(self, agent: LocalAgent):
+        self.agent = agent
+
+    def sign(self, data: bytes) -> bytes:
+        from emporia.identity import CHALLENGE_PREFIX
+        if not data.startswith(CHALLENGE_PREFIX):
+            raise RuntimeError("the console signs nothing but a sign-in through an agent's signer")
+        return bytes.fromhex(_signer_client(self.agent).sign_in(data[len(CHALLENGE_PREFIX):].decode()))
+
 
 def _stem(agent_id: str) -> str:
     from emporia.identity import _keyfile_stem
@@ -68,10 +97,11 @@ def discover(key_dirs: list[Path]) -> dict[str, LocalAgent]:
             agent_id = env.get("EMPORIA_AGENT_ID") or profile
             found[agent_id] = LocalAgent(agent_id, d, env[IDENTITY_KEY_SOURCE_VAR],
                                          env.get(ENCRYPTION_KEY_SOURCE_VAR, ""))
-        for f in sorted(d.glob("*.priv")):
+        held = [(f, f.name.removesuffix(".signer.pub")) for f in sorted(d.glob("*.signer.pub"))
+                if not f.name.endswith(".x25519.signer.pub")]      # P293: keys in its signer
+        for f, agent_id in [(f, f.name.removesuffix(".priv")) for f in sorted(d.glob("*.priv"))] + held:
             if f.name.endswith(".x25519.priv") or f.name.startswith(_RESERVED_PREFIX):
                 continue
-            agent_id = f.name.removesuffix(".priv")
             own = agent_id == profile
             if (agent_id not in found or own) and not (found.get(agent_id) and found[agent_id].identity_source):
                 found[agent_id] = LocalAgent(agent_id, d, "", env.get(ENCRYPTION_KEY_SOURCE_VAR, "") if own else "")
@@ -80,6 +110,8 @@ def discover(key_dirs: list[Path]) -> dict[str, LocalAgent]:
 
 def load_identity_key(agent: LocalAgent):
     from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
+    if agent.in_signer:
+        return _SignsInThroughItsSigner(agent)
     if agent.identity_source:
         from emporia.key_source import key32
         return Ed25519PrivateKey.from_private_bytes(key32(agent.identity_source, _profile_env(agent.key_dir)))
@@ -88,8 +120,12 @@ def load_identity_key(agent: LocalAgent):
 
 def load_encryption_keys(agent: LocalAgent, others: list[Path]) -> list:
     """The agent's X25519 key, then any other copy on file. A message opens with
-    whichever key it was sealed to; order only saves work."""
+    whichever key it was sealed to; order only saves work. Behind a signer (P293),
+    its opener: the signer opens each message, and no key comes here."""
     from cryptography.hazmat.primitives.asymmetric.x25519 import X25519PrivateKey
+    if (agent.key_dir / f"{_stem(agent.agent_id)}.x25519.signer.pub").is_file():
+        from emporia import signer_client
+        return [signer_client.Opener(_signer_client(agent))]
     paths = [agent.encryption_key] + [d / agent.encryption_key.name for d in others
                                       if d != agent.key_dir]
     keys = []

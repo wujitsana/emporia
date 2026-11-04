@@ -257,7 +257,15 @@ def open_sealed(
     loader). P271: `private_key` may also be a list — the agent's current key
     and those it replaced — and each is tried, newest first, so a message
     sealed before a key was replaced still opens.
+
+    P293 (signer phase 2b): `private_key` may instead be an **opener**, an object
+    with `open_sealed(envelope, agent_id, aad)`: the agent's signer, which holds
+    the keys and opens the message itself. The caller never sees a key.
     """
+    if isinstance(private_key, (list, tuple)) and len(private_key) == 1 and hasattr(private_key[0], "open_sealed"):
+        private_key = private_key[0]
+    if hasattr(private_key, "open_sealed"):
+        return private_key.open_sealed(envelope, agent_id, aad)
     if isinstance(private_key, (list, tuple)):
         if not private_key:
             raise DecryptionError("no encryption key to open this message with")

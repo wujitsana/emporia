@@ -21,6 +21,11 @@ def held(tmp_path, monkeypatch):
     pub = priv.public_key().public_bytes_raw().hex()
     signer.identity_path(AGENT).parent.mkdir(parents=True)
     identity._write_secret_atomically(signer.identity_path(AGENT), priv.private_bytes_raw())
+    from cryptography.hazmat.primitives.asymmetric import x25519
+    enc = x25519.X25519PrivateKey.generate()
+    old_enc = x25519.X25519PrivateKey.generate()                          # one it replaced (P271)
+    identity._write_secret_atomically(signer.encryption_path(AGENT), enc.private_bytes_raw())
+    signer.encryption_path(AGENT).with_name("encryption.retired").write_text(old_enc.private_bytes_raw().hex() + "\n")
     signer.save_policy(AGENT, {"EMPORIA_RELAY_URL": "https://home.example"})
     token = signer.new_agent_token(AGENT)
     app = TestClient(signer.app, base_url="http://signer")
@@ -28,16 +33,18 @@ def held(tmp_path, monkeypatch):
     keys = tmp_path / "agent-keys"
     keys.mkdir()
     (keys / f"{AGENT}.signer.pub").write_text(pub + "\n")
+    (keys / f"{AGENT}.x25519.signer.pub").write_text(enc.public_key().public_bytes_raw().hex() + "\n")
+    monkeypatch.setattr(signer, "_OPENS", {})
     sent = []
     monkeypatch.setattr("emporia.signer_alerts.notify", lambda a, e, d: sent.append((a, e, d)))
     agent_side = {"EMPORIA_SIGNER_URL": "unix:///x/signer.sock", "EMPORIA_SIGNER_TOKEN": token,
                   "EMPORIA_AGENT_ID": AGENT, "EMPORIA_RELAY_URL": "https://home.example"}
     with patch.object(identity, "KEY_DIR", keys), patch.dict(os.environ, agent_side):
-        yield pub, app, sent
+        yield pub, app, sent, enc, old_enc
 
 
 def test_the_agent_signs_through_the_signer_with_no_key_of_its_own(held):
-    pub, _, _ = held
+    pub, *_ = held
     args = ("room-1", "hello", "chat", "n" * 32)
     p, sig = signing.signed(AGENT, "room-message", *args)
     assert p == wire.signed_room_message_payload(*args)
@@ -52,7 +59,7 @@ def test_the_agent_signs_through_the_signer_with_no_key_of_its_own(held):
 
 
 def test_the_signers_rules_hold_whatever_the_agent_says_about_itself(held, monkeypatch):
-    _, _, sent = held
+    _, _, sent, *_ = held
     monkeypatch.setenv("EMPORIA_PAYOUT_ADDRESSES", "0x" + "ee" * 20)      # the agent widening its own list
     with pytest.raises(signing.Refused, match="the signer: not signed"):
         signing.sign(AGENT, "payout-wallet", "sid", "evm", "0x" + "ee" * 20, "2026-11-04T00:00:00+00:00")
@@ -74,7 +81,7 @@ def test_limits_are_counted_by_the_signer_and_outlive_a_restart(held):
 
 
 def test_a_new_home_or_backup_is_the_persons_and_a_change_is_told(held):
-    _, _, sent = held
+    _, _, sent, *_ = held
     signing.sign(AGENT, "relay-list", AGENT, "https://home.example", [], "", "2026-11-04T00:00:00+00:00", [])
     with pytest.raises(signing.Refused):
         signing.sign(AGENT, "relay-list", AGENT, "https://evil.example", [], "", "2026-11-04T00:00:01+00:00", [])
@@ -86,7 +93,7 @@ def test_a_new_home_or_backup_is_the_persons_and_a_change_is_told(held):
 
 
 def test_the_log_says_what_was_signed_and_refused_never_what_it_said(held):
-    _, app, _ = held
+    _, app, *_ = held
     signing.sign(AGENT, "room-message", "room-1", "a secret plan", "chat", "n" * 32)
     with pytest.raises(signing.Refused):                                  # asked of the signer directly,
         signer_client.Client.from_env().sign("key-rotation", ["sid", "a", "b", "t"], {})   # past the agent's copy
@@ -99,7 +106,7 @@ def test_the_log_says_what_was_signed_and_refused_never_what_it_said(held):
 
 
 def test_a_wrong_token_or_unknown_kind_is_refused(held):
-    _, app, _ = held
+    _, app, *_ = held
     r = app.post("/v1/sign", json={"kind": "room-message", "args": []},
                  headers={"authorization": "Bearer nope", "x-emporia-agent": AGENT})
     assert r.status_code == 401
@@ -120,6 +127,10 @@ def test_a_person_moves_the_identity_key_in_and_back(profiles, tmp_path, monkeyp
     priv = keys / "ident.priv"
     if not priv.exists():
         identity._write_secret_atomically(priv, ed25519.Ed25519PrivateKey.generate().private_bytes_raw())
+    if not (keys / "ident.x25519.priv").exists():
+        from cryptography.hazmat.primitives.asymmetric import x25519
+        identity._write_secret_atomically(keys / "ident.x25519.priv",
+                                          x25519.X25519PrivateKey.generate().private_bytes_raw())
     raw = priv.read_bytes()
     assert cli.main(["signer", "add", "ident", "--url", "unix:///run/s.sock", "--identity"]) == 0
     assert not priv.exists() and signer.identity_path("ident").read_bytes() == raw
@@ -129,5 +140,70 @@ def test_a_person_moves_the_identity_key_in_and_back(profiles, tmp_path, monkeyp
     # its person moving its home changes the signer's copy of the rule too
     cli.merge_env_file(prof / ".env", {"EMPORIA_BACKUP_RELAYS": "https://b.example"})
     assert signer.policy("ident")["env"]["EMPORIA_BACKUP_RELAYS"] == "https://b.example"
+    enc_priv = keys / "ident.x25519.priv"
+    assert not enc_priv.exists() and (keys / "ident.x25519.signer.pub").exists()   # 2b: the encryption key went too
+    assert signer.encryption_path("ident").exists()
     assert cli.main(["signer", "remove", "ident"]) == 0
     assert priv.read_bytes() == raw and not (keys / "ident.signer.pub").exists()
+    assert enc_priv.exists() and not (keys / "ident.x25519.signer.pub").exists()
+
+
+# ── 2b: the encryption keys in the signer, which opens what is sealed to them ──
+
+def _seal(text, pub_hex, aad):
+    from emporia import crypto_box
+    return crypto_box.seal(text, {AGENT: pub_hex}, aad)
+
+
+def test_the_signer_opens_what_is_sealed_to_the_agent_and_no_key_comes_out(held):
+    from emporia import crypto_box
+    _, _, _, enc, old_enc = held
+    aad = crypto_box.message_aad("room", "room-1", "bob", "chat", "n1")
+    envelope = _seal("meet at noon", enc.public_key().public_bytes_raw().hex(), aad)
+    keys = identity.encryption_private_keys(AGENT)
+    assert len(keys) == 1 and not hasattr(keys[0], "exchange")           # an opener, not a key
+    assert crypto_box.open_sealed(envelope, AGENT, keys, aad) == "meet at noon"
+    old = _seal("from before the rotation", old_enc.public_key().public_bytes_raw().hex(), aad)
+    assert crypto_box.open_sealed(old, AGENT, keys, aad) == "from before the rotation"
+    with pytest.raises(crypto_box.DecryptionError):                       # moved to another room: refused
+        crypto_box.open_sealed(envelope, AGENT, keys, crypto_box.message_aad("room", "room-2", "bob", "chat", "n1"))
+    assert identity.get_encryption_public_key_hex(AGENT) == enc.public_key().public_bytes_raw().hex()
+    assert not list(identity.KEY_DIR.glob("*.x25519.priv"))
+    with pytest.raises(identity.IdentityInSigner):
+        identity.generate_or_load_encryption_keypair(AGENT)              # never a new key in its place
+
+
+def test_a_burst_of_openings_is_alerted_and_a_cap_holds(held, monkeypatch):
+    from emporia import crypto_box
+    _, _, sent, enc, _ = held
+    aad = crypto_box.message_aad("dm", "dm_1", "bob", "chat", "n")
+    envelope = _seal("hi", enc.public_key().public_bytes_raw().hex(), aad)
+    keys = identity.encryption_private_keys(AGENT)
+    monkeypatch.setattr(signer, "OPEN_ALERT_PER_10_MIN", 3)
+    for _ in range(3):
+        crypto_box.open_sealed(envelope, AGENT, keys, aad)
+    assert sent[-1][1] == "open-burst"
+    signer.save_policy(AGENT, {**signer.policy(AGENT)["env"], "EMPORIA_SIGNER_OPEN_PER_MIN": "3"})
+    with pytest.raises(crypto_box.DecryptionError, match="at most 3 messages a minute"):
+        crypto_box.open_sealed(envelope, AGENT, keys, aad)
+
+
+def test_the_audit_counts_openings_never_what_they_said(held):
+    lines = []
+    import emporia.signer as sg
+    orig = sg.audit
+    sg.audit = lines.append
+    try:
+        sg._OPEN_COUNTS.pop(AGENT, None)
+        for t in (60.0, 61.0, 62.0):
+            sg._count_open(AGENT, True, t)
+        sg._count_open(AGENT, False, 125.0)                               # the next minute: the last one written
+    finally:
+        sg.audit = orig
+    assert lines == [{"agent": AGENT, "op": "open", "result": "counted", "opened": 3, "failed": 0, "minute": 60}]
+
+
+def test_the_console_finds_an_agent_behind_its_signer_and_opens_through_it(held, tmp_path):
+    from emporia.console import agents as console_agents
+    found = console_agents.discover([identity.KEY_DIR])
+    assert AGENT in found and found[AGENT].in_signer

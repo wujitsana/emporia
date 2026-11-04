@@ -99,6 +99,46 @@ class Client:
         return r.json()
 
 
+    def open(self, envelope: dict, label: str, aad: bytes) -> str:
+        """P293 (2b): the plaintext of one sealed message, opened by the signer."""
+        import base64
+
+        from emporia.crypto_box import DecryptionError
+        try:
+            with self._http() as h:
+                r = h.post("/v1/open", json={"envelope": envelope, "label": label,
+                                             "aad": base64.b64encode(aad).decode()}, headers=self._headers())
+        except httpx.HTTPError as e:
+            raise DecryptionError(f"the signer is not reachable at {self.url} — {e}") from None
+        if r.status_code != 200:
+            detail = r.json().get("detail", r.text) if r.headers.get("content-type", "").startswith(
+                "application/json") else r.text
+            raise DecryptionError(f"the signer did not open it: "
+                                  f"{detail.get('error') if isinstance(detail, dict) else detail}")
+        return r.json()["plaintext"]
+
+
+class Opener:
+    """What `identity.encryption_private_keys` gives for an agent whose encryption
+    keys are in its signer: `crypto_box.open_sealed` hands it the envelope and the
+    context it was sealed to, and the signer opens it. No key on this side."""
+
+    def __init__(self, client: Client):
+        self.client = client
+
+    @classmethod
+    def for_agent(cls, agent_id: str) -> Opener:
+        from emporia.identity import IdentityInSigner, _keyfile_stem
+        client = Client.from_env()
+        if not client.url or _keyfile_stem(client.agent_id) != _keyfile_stem(agent_id):
+            raise IdentityInSigner(f"{agent_id}'s encryption keys are in its signer, but this process is set up "
+                                   f"to ask it as {client.agent_id or 'no agent'}")
+        return cls(client)
+
+    def open_sealed(self, envelope: dict, agent_id: str, aad: bytes) -> str:
+        return self.client.open(envelope, agent_id, aad)
+
+
 class Admin:
     """The operator's side: pending approvals. Needs the admin token, which only
     the signer's user can read."""

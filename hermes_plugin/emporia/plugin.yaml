@@ -17,6 +17,12 @@ description: >
 author: Emporia
 # P284: the pre_llm_call turn cap and the curator skill lock need 0.22.6.
 requires_hermes: ">=0.22.6"
+# key_guard (pre_tool_call, transform_tool_result) keeps the agent off its own
+# keys and signer; turn_cap (pre_llm_call) caps turns started by relay events.
+provides_hooks:
+  - pre_llm_call
+  - pre_tool_call
+  - transform_tool_result
 requires_env:
   - name: EMPORIA_RELAY_URL
     description: "Emporia relay base URL (e.g. http://localhost:8088)"

@@ -242,6 +242,21 @@ def _enc_key_path(profile_id: str) -> Path:
     return KEY_DIR / f"{_keyfile_stem(profile_id)}.x25519.priv"
 
 
+def _enc_signer_pub_path(profile_id: str) -> Path:
+    return KEY_DIR / f"{_keyfile_stem(profile_id)}.x25519.signer.pub"
+
+
+def encryption_in_signer(profile_id: str) -> str | None:
+    """P293 (signer phase 2b): the X25519 public key (hex) when this agent's
+    encryption keys were moved into its signer, else None. The signer opens what
+    is sealed to it; nothing here can."""
+    try:
+        pub = _enc_signer_pub_path(profile_id).read_text().strip()
+    except OSError:
+        return None
+    return pub if re.fullmatch(r"[0-9a-f]{64}", pub) else None
+
+
 def generate_or_load_encryption_keypair(profile_id: str) -> tuple[Any, bytes]:
     """Return (X25519 private key, public key bytes), generating and persisting
     on first use.
@@ -256,6 +271,9 @@ def generate_or_load_encryption_keypair(profile_id: str) -> tuple[Any, bytes]:
     """
     from cryptography.hazmat.primitives.asymmetric.x25519 import X25519PrivateKey
 
+    if encryption_in_signer(profile_id):
+        raise IdentityInSigner(f"{profile_id}'s encryption keys are held by its signer — messages are opened "
+                               "there (crypto_box.open_sealed with identity.encryption_private_keys)")
     linked = linked_key(ENCRYPTION_KEY_SOURCE_VAR)   # P164
     if linked is not None:
         priv = X25519PrivateKey.from_private_bytes(linked)
@@ -314,8 +332,12 @@ def retired_encryption_key_hexes(profile_id: str, env: dict[str, str] | None = N
 
 def encryption_private_keys(profile_id: str) -> list[Any]:
     """Every key a message to this agent may have been sealed to: the current one
-    first, then those it replaced. What every reader passes to `open_sealed`."""
+    first, then those it replaced. What every reader passes to `open_sealed`.
+    Behind a signer (P293), the signer's opener instead: the keys stay there."""
     from cryptography.hazmat.primitives.asymmetric.x25519 import X25519PrivateKey
+    if encryption_in_signer(profile_id):
+        from emporia import signer_client
+        return [signer_client.Opener.for_agent(profile_id)]
     current, _ = generate_or_load_encryption_keypair(profile_id)
     return [current] + [X25519PrivateKey.from_private_bytes(bytes.fromhex(h))
                         for h in retired_encryption_key_hexes(profile_id)]
@@ -362,6 +384,8 @@ def rotate_encryption_keypair(profile_id: str) -> tuple[str, str]:
 
 def get_encryption_public_key_hex(profile_id: str) -> str:
     """The hex X25519 public key to publish to the relay, generating on first use."""
+    if pub := encryption_in_signer(profile_id):
+        return pub
     _, pub_bytes = generate_or_load_encryption_keypair(profile_id)
     return pub_bytes.hex()
 

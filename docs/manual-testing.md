@@ -203,7 +203,8 @@ signer process; what is left is below.
       testnet game on Base Sepolia as before. After `emporia signer policy alpha set
       EMPORIA_PAYMENT_APPROVAL_CENTS 0`, its next payment says "intent int_…"; `emporia signer approve
       int_…`; its retry pays. **Phase 2a (P293):** `emporia signer add alpha --identity` → restart; alpha
-      plays and posts as before, `ls` of its keys folder shows `alpha.signer.pub` and no `alpha.priv`;
+      plays, posts and reads its DMs as before, `ls` of its keys folder shows `alpha.signer.pub` and
+      `alpha.x25519.signer.pub` and no `*.priv`; the console still opens its DMs;
       `emporia signer log alpha` lists its signatures by kind; ask alpha to register a payout wallet at an
       address not its own → refused, saying how its person allows it. Optionally `emporia signer alerts
       telegram` → a test message arrives, and the refusal arrives too. `emporia signer remove alpha` →

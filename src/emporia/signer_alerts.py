@@ -26,7 +26,7 @@ import httpx
 
 from emporia import identity, signer
 
-EVENTS = ("refused", "payout-wallet", "home-or-backups", "encryption-key", "test")
+EVENTS = ("refused", "payout-wallet", "home-or-backups", "encryption-key", "open-burst", "test")
 MAX_PER_HOUR = 20
 DETAIL_MAX = 300
 _TOKEN_RE = re.compile(r"^\d+:[A-Za-z0-9_-]{35,}$")

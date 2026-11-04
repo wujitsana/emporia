@@ -53,8 +53,10 @@ POLICY_NAMES = ("EMPORIA_X402_PAY_NETWORKS", "EMPORIA_X402_MAX_PAYMENT_CENTS", "
                 "EMPORIA_PAYMENT_APPROVAL_CENTS", "EMPORIA_X402_MAINNET",
                 # P293 (phase 2a): what its signatures may say — signing.py's rules read these
                 *("EMPORIA_SIGN_LIMITS", "EMPORIA_PAYOUT_ADDRESSES", "EMPORIA_RELAY_URL",
-                  "EMPORIA_BACKUP_RELAYS", "EMPORIA_VISIT_RELAYS"))
-SIGNING_POLICY = POLICY_NAMES[5:]
+                  "EMPORIA_BACKUP_RELAYS", "EMPORIA_VISIT_RELAYS"),
+                # P293 (2b): a cap on openings a minute, off unless set
+                "EMPORIA_SIGNER_OPEN_PER_MIN")
+SIGNING_POLICY = POLICY_NAMES[5:10]
 _LOCK = threading.Lock()
 
 
@@ -319,6 +321,69 @@ def sign_in(agent_id: str, nonce: str) -> str:
     return priv.sign(identity.challenge_bytes(nonce)).hex()
 
 
+# ─── P293 (signer phase 2b): the encryption keys, and opening ─────────────────
+
+def encryption_path(agent_id: str) -> Path:
+    return agent_dir(agent_id) / "keys" / "encryption.x25519"
+
+
+def encryption_keys(agent_id: str) -> list:
+    """The agent's X25519 key and the ones it replaced (newest first), as the signer holds them."""
+    from cryptography.hazmat.primitives.asymmetric.x25519 import X25519PrivateKey
+    path = encryption_path(agent_id)
+    if not path.exists():
+        return []
+    keys = [X25519PrivateKey.from_private_bytes(path.read_bytes())]
+    retired = path.with_name("encryption.retired")
+    if retired.exists():
+        keys += [X25519PrivateKey.from_private_bytes(bytes.fromhex(h))
+                 for h in identity._parse_retired(retired.read_text())]
+    return keys
+
+
+# A burst of openings is how a takeover reading the backlog shows: alerted, and
+# optionally capped (EMPORIA_SIGNER_OPEN_PER_MIN in its policy; off by default).
+OPEN_ALERT_PER_10_MIN = int(os.getenv("EMPORIA_SIGNER_OPEN_ALERT", "300"))
+_OPENS: dict[str, list[float]] = {}
+_OPEN_COUNTS: dict[str, dict] = {}
+
+
+def _count_open(agent_id: str, ok: bool, now: float) -> None:
+    """One audit line per agent per minute — how many it opened, never what."""
+    c = _OPEN_COUNTS.setdefault(agent_id, {"minute": int(now // 60), "opened": 0, "failed": 0})
+    if c["minute"] != int(now // 60):
+        if c["opened"] or c["failed"]:
+            audit({"agent": agent_id, "op": "open", "result": "counted", "opened": c["opened"],
+                   "failed": c["failed"], "minute": c["minute"] * 60})
+        c.update(minute=int(now // 60), opened=0, failed=0)
+    c["opened" if ok else "failed"] += 1
+
+
+def open_for(agent_id: str, envelope: dict, label: str, aad: bytes) -> str:
+    from emporia import crypto_box, signing
+    keys = encryption_keys(agent_id)
+    if not keys:
+        raise signing.Refused(f"this signer does not hold {agent_id}'s encryption keys")
+    now = time.time()
+    with _LOCK:
+        recent = [t for t in _OPENS.get(agent_id, []) if t > now - 600]
+        cap = policy(agent_id).get("env", {}).get("EMPORIA_SIGNER_OPEN_PER_MIN", "")
+        if cap.isdigit() and int(cap) and sum(1 for t in recent if t > now - 60) >= int(cap):
+            raise signing.Limited(f"not opened: at most {cap} messages a minute", 60)
+        recent.append(now)
+        _OPENS[agent_id] = recent
+        if len(recent) == OPEN_ALERT_PER_10_MIN:
+            _alert(agent_id, "open-burst", f"{len(recent)} messages opened in 10 minutes — if that was not you "
+                                           f"reading old threads, its process may be reading the backlog")
+    try:
+        text = crypto_box.open_sealed(envelope, label, keys, aad)
+    except crypto_box.DecryptionError:
+        _count_open(agent_id, False, now)
+        raise
+    _count_open(agent_id, True, now)
+    return text
+
+
 def log(agent_id: str = "", limit: int = 50) -> list[dict]:
     """The audit's last entries, for one agent or all: kinds, results, reasons — never content."""
     path = signer_dir() / "audit.jsonl"
@@ -457,7 +522,9 @@ def get_identity(request: Request) -> dict:
     priv = identity_key(aid)
     if priv is None:
         raise HTTPException(404, "this signer does not hold its identity key")
-    return {"agent_id": aid, "public_key": priv.public_key().public_bytes_raw().hex()}
+    enc = encryption_keys(aid)
+    return {"agent_id": aid, "public_key": priv.public_key().public_bytes_raw().hex(),
+            "encryption_public_key": enc[0].public_key().public_bytes_raw().hex() if enc else None}
 
 
 @app.post("/v1/sign")
@@ -474,6 +541,28 @@ async def sign(request: Request) -> dict:
 async def post_sign_in(request: Request) -> dict:
     body = await request.json()
     return _signing_call(request, "sign-in", lambda aid: sign_in(aid, str(body.get("nonce", ""))))
+
+
+@app.post("/v1/open")
+async def post_open(request: Request) -> dict:
+    import base64
+
+    from emporia import crypto_box, signing
+    aid = _agent(request)
+    body = await request.json()
+    envelope, label = body.get("envelope"), str(body.get("label") or aid)
+    try:
+        aad = base64.b64decode(str(body.get("aad", "")), validate=True)
+    except ValueError:
+        raise HTTPException(400, {"error": "aad is base64"}) from None
+    try:
+        return {"plaintext": open_for(aid, envelope, label, aad)}
+    except signing.Limited as e:
+        raise HTTPException(429, {"error": str(e), "retry_after": e.retry_after}) from None
+    except signing.Refused as e:
+        raise HTTPException(403, {"error": str(e)}) from None
+    except crypto_box.DecryptionError as e:
+        raise HTTPException(422, {"error": str(e)}) from None
 
 
 @app.get("/admin/log")

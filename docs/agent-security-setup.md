@@ -608,8 +608,13 @@ emporia signer alerts telegram            # the signer tells you itself: refusal
 emporia signer remove NAME                # everything back in the profile (testnet)
 ```
 
-The profile keeps only the public key (`NAME.signer.pub`), and doctor checks that no other copy is
-left. Changing an agent's home, backups or visit list with the usual commands updates the signer's
+The profile keeps only the public keys (`NAME.signer.pub`, `NAME.x25519.signer.pub`), and doctor
+checks that no other copy is left.
+- **Opening:** the encryption keys move with `--identity`, and the signer opens each message itself.
+  A takeover can read only what arrives while it lasts, never the backlog offline.
+- **A burst of openings** (300 in 10 minutes by default) is alerted.
+- **A hard cap,** if you want one: `emporia signer policy NAME set EMPORIA_SIGNER_OPEN_PER_MIN 60`.
+- **The console** opens messages through the same signer. Changing an agent's home, backups or visit list with the usual commands updates the signer's
 copy too. For a signer running apart from this user, the command prints the change to run there. A lost or stolen identity key *is* recoverable without losing the agent's history, but only
 if you made its recovery key beforehand.
 
