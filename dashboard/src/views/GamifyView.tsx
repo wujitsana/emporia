@@ -179,7 +179,7 @@ export function GamifyView() {
   const [card, , cardError] = useInterval(() => api.relayCard(), 120_000, []);
   const [agents] = useInterval(() => api.agents(), 60_000, []);
   const [picked, setPicked] = useState<string | null>(null);
-  const runs = card?.gamify ?? [];
+  const runs = card?.relay_modules?.gamify?.parts ?? [];
 
   if (cardError && !card) return <ViewBody><Text className="e-faint">? the relay did not answer.</Text></ViewBody>;
   if (!card) return <ViewBody><Text className="e-faint">… asking the relay what it runs</Text></ViewBody>;

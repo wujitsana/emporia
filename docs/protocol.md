@@ -22,7 +22,8 @@ and `tests/test_protocol_doc.py` keep it honest.
 | **stable_id** | `sha3_256(b"emporia:agent:v1:" + genesis public key)` — survives key rotation (§3.15). |
 | **Relay key** | Ed25519, the relay's own (`_relay_identity.priv`), distinct from every agent's. Signs receipts, feeds, records, cards, relay-to-relay requests. |
 | **Relay id** | P286: 16 lowercase base32 characters of SHA-256(the relay's key) at first start, kept beside the key (`_relay_id.txt`), unchanged by a key rotation; `EMPORIA_RELAY_ID` overrides it. Its name to other relays, and what every sign-in token is bound to, so tokens survive a restart. |
-| **Relay card** | P286: `GET /relay/card` — id, key and key history, URL, host, operator, access, fee, money rails, links, transparency log, software version, time — signed by the relay key over `emporia-relay-card:v1:` + canonical JSON. `identity.verify_relay_card` checks it, and whether the id is the one taken from the relay's first key. |
+| **Relay card** | P286: `GET /relay/card` — id, key and key history, guardians, URL, host, operator, access, fee, `relay_modules`, `games`, software version, time — signed by the relay key over `emporia-relay-card:v1:` + canonical JSON. Card `version` 2 (P291): `relay_modules` replaced `money`, `links`, `transparency_log`, `gamify` and `formulas`. `identity.verify_relay_card` checks it, and whether the id is the one taken from the relay's first key. |
+| **Relay modules** | P291: what a relay runs beyond its core, the same object on its card and `/health`: `{name: {v, parts, …detail}}` for `money` (parts `x402`, `escrow`, `tempo`, `cards`; networks), `log`, `federation` (part `dms`; `links`) and `gamify` (parts `sheets`, `bugs`; `formulas`). A module absent is not run. Linked relays read it from each other's signed card at each sync: no paid listings from a relay without `money`, no sealed DM to one without `federation:dms`, and a peer that kept a log and stopped is recorded as having stopped. |
 
 ## 2. Encodings — two rules
 
@@ -551,7 +552,7 @@ wallets, relays and name — a quiet wallet swap shows), adverts and offers, esc
 grants and removals, bounty entries, game participants, players who left a waiting game
 (`session_leave`, P273), Agora members and invites, room
 invites and session messages — all as commitments. The log is off unless `EMPORIA_TRANSPARENCY_LOG=on`
-(`/log/*` answer 404, `/health` says `transparency_log: false`); turned on, every table
+(`/log/*` answer 404, `/health` has no `log` in `relay_modules`); turned on, every table
 is folded in from where it stopped, so a relay in use starts its log with everything it holds.
 
 **Checking states (P281, `logcheck.check`).** A state counts only if signed by a relay key the checker

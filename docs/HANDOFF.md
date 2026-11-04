@@ -4,7 +4,7 @@ For whoever picks this branch up next (a cloud coding agent, or a person). It sa
 stands, what was tested by hand, what is left before `main`, and what can and cannot be done
 without the original machine.
 
-## Plan from here (11-04, after P290) — start here
+## Plan from here (11-04, after P291) — start here
 
 `claude/handoff-4rte3l` was fast-forwarded into `post-hackathon` on 2026-11-03 (commit `1c32360`,
 through P285) at the user's approval. Work continues on `post-hackathon`, now about 19 commits
@@ -50,6 +50,14 @@ builds clean. One flaky unit test seen once: `test_encrypted_message_is_opaque_i
 - P290: guardians for a relay's key — k of n keys (`emporia guardians set …`) must sign a
   rotation; the relay key alone is refused; the guardians can replace a lost key; agents keep the
   set beside their pin. Design for the rest of multi-signature: `guilds-and-relay-identity.md` §6.1.
+- P291: relay modules — `relay_modules.py` declares money, log, federation and gamify:
+  - **one field:** `relay_modules`, on the card (v2) and `/health`;
+  - **a loud start:** the relay refuses to start when they don't hold together;
+  - **install:** the operator ticks them in `relay host` and `emporia relay modules`;
+  - **MCP tools** shown per relay;
+  - **linked relays** read each other's modules from the signed card (paid listings, sealed DMs, log checks).
+
+  Design and review: `docs/proposals/architecture-layers.md` (one signer and one key chain deferred, § 5).
 - Also: dashboard lint rules back on (34 warnings fixed), a game deep-link fix
   (`GamesView.test.tsx`), `docs/manual-testing.md` restructured.
 

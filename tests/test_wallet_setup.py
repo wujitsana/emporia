@@ -869,7 +869,7 @@ def test_relay_host_writes_its_own_folder_and_refuses_an_agent(profiles, monkeyp
     monkeypatch.setattr(cli, "this_profile", lambda: root / "keeper")
     monkeypatch.setattr("shutil.which", lambda _: None)            # no Docker here
     folder = tmp_path / "emporia-relay"
-    _typing(monkeypatch, "", "y", "0x" + "ab" * 20)              # Nous · payments · fee address
+    _typing(monkeypatch, "", "1,2", "0x" + "ab" * 20)            # Nous · modules: money, log · fee address
     assert cli.main(["relay", "host", "--run", "docker", "--dir", str(folder), "--domain", "relay.example.com",
                      "--admin", "keeper", "--access", "open", "--transparency-log", "on"]) == 0
     out = capsys.readouterr().out
@@ -913,7 +913,7 @@ def test_relay_host_as_a_service_on_a_server_of_its_own(profiles, monkeypatch, c
     monkeypatch.setattr("shutil.which", lambda _: None)            # nothing runs here: commands are shown
     monkeypatch.setattr("emporia.relay_host.in_container", lambda: False)   # this test may run in one
     folder = tmp_path / "emporia-relay"
-    _typing(monkeypatch, "", "2", "n")                             # Nous · transparency log off · no payments
+    _typing(monkeypatch, "", "")                                   # Nous · modules: none ticked
     assert cli.main(["relay", "host", "--run", "service", "--dir", str(folder), "--domain", "relay.example.com",
                      "--admin", "warden", "--access", "closed"]) == 0
     out = capsys.readouterr().out

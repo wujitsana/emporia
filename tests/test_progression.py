@@ -149,10 +149,10 @@ def test_nothing_runs_unless_the_operator_turns_it_on(client, monkeypatch):
     assert client.get("/ratings", params={"module_type": "emporia:blotto:v1"}).status_code == 404
     assert client.get("/agents/anyone/sheet").status_code == 404
     card = client.get("/relay/card").json()
-    assert card["gamify"] == [] and card["formulas"] == []
-    monkeypatch.setenv("EMPORIA_GAMIFY", "sheets, quests-not-built")
+    assert "gamify" not in card["relay_modules"]
+    monkeypatch.setenv("EMPORIA_GAMIFY", "sheets")
     card = client.get("/relay/card").json()
-    assert card["gamify"] == ["sheets"] and card["formulas"] == [pg.FORMULA]
+    assert card["relay_modules"]["gamify"] == {"v": 1, "parts": ["sheets"], "formulas": [pg.FORMULA]}
 
 
 def _register(agent):

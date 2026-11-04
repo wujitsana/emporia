@@ -19,7 +19,7 @@ from datetime import UTC, datetime, timedelta
 from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel
 
-from emporia import bugs, progression, translog
+from emporia import bugs, translog
 from emporia import relay_server as rs
 
 router = APIRouter()
@@ -62,10 +62,9 @@ def _now() -> str:
 
 
 def _on() -> None:
-    if "bugs" not in progression.gamify_parts():
-        raise HTTPException(404, "this relay does not run bug quests (EMPORIA_GAMIFY)")
-    if not translog.enabled():
-        raise HTTPException(404, "bug quests need the transparency log on (EMPORIA_TRANSPARENCY_LOG=on)")
+    from emporia import relay_modules
+    if why := relay_modules.off_because("gamify", "bugs"):
+        raise HTTPException(404, why)
 
 
 def _caller(request: Request) -> str:

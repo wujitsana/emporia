@@ -119,6 +119,19 @@ emporia relay config --dir ~/emporia-relay   # a hosted relay's folder
 Who may use it and its members apply within seconds; everything else at the next restart (the
 command says which).
 
+**Its modules (P291).** What it runs beyond its core: `money`, `log`, `federation` and `gamify`. Each is
+optional and chosen in `emporia relay host`, or later:
+
+```bash
+emporia relay modules                     # what it runs; in a terminal, a tick-list to change it
+emporia relay modules --modules log,gamify --yes   # the same, for scripts
+emporia relay modules --dir ~/emporia-relay        # a hosted relay's folder
+```
+
+The relay refuses to start when its modules don't hold together, and names each fault and the command
+that fixes it. Examples: bug quests without the log, x402 switched on but not set up, sealed DMs with
+nothing linked. `/health` and the card list what runs under `relay_modules`.
+
 **Secrets are not settings** (P200). `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET` and
 `EMPORIA_OPERATOR_PRIVATE_KEY` are never typed on a command line, where shell history keeps them:
 `emporia relay config set STRIPE_SECRET_KEY` (no value) asks for it hidden and checks it. Where it

@@ -84,10 +84,10 @@ def test_off_unless_turned_on_and_never_without_the_log(client, monkeypatch):
     monkeypatch.setenv("EMPORIA_GAMIFY", "bugs")
     monkeypatch.setenv("EMPORIA_TRANSPARENCY_LOG", "off")
     r = client.get("/bugs")
-    assert r.status_code == 404 and "transparency log" in r.json()["detail"]
-    assert "bugs" not in client.get("/relay/card").json()["gamify"]
+    assert r.status_code == 404 and "needs the log module" in r.json()["detail"]
+    assert "gamify" not in client.get("/relay/card").json()["relay_modules"]
     monkeypatch.setenv("EMPORIA_TRANSPARENCY_LOG", "on")
-    assert "bugs" in client.get("/relay/card").json()["gamify"]
+    assert client.get("/relay/card").json()["relay_modules"]["gamify"]["parts"] == ["bugs"]
 
 
 def test_a_sealed_report_shows_only_its_commitment_until_revealed(client, monkeypatch):

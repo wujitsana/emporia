@@ -15,7 +15,7 @@ from datetime import UTC, datetime
 
 from fastapi import APIRouter, HTTPException, Request
 
-from emporia import progression
+from emporia import progression, relay_modules
 from emporia import relay_server as rs
 from emporia.module_sdk import SessionState, get_interaction_module
 from emporia.standing import compute_standings, contest_sql, game_module_types, wins_sql
@@ -53,7 +53,7 @@ async def leaderboard(limit: int = 25, module_type: str | None = None):
     standings = compute_standings(settlements, participations)
     rows = [s.to_dict() for s in standings[:limit]]
     # P288: with gamify sheets on, each row carries its Craft rating in this module.
-    if module_type and "sheets" in progression.gamify_parts():
+    if module_type and relay_modules.on("gamify", "sheets"):
         board = {r["agent_id"]: r for r in progression.ladder(_craft_table()[0], module_type, time.time())}
         for row in rows:
             c = board.get(row["agent_id"])
@@ -135,8 +135,9 @@ def _craft_table() -> tuple[dict, list[dict], dict]:
 
 
 def _sheets_on() -> None:
-    if "sheets" not in progression.gamify_parts():
-        raise HTTPException(404, "this relay does not run gamify sheets (EMPORIA_GAMIFY)")
+    from emporia import relay_modules
+    if why := relay_modules.off_because("gamify", "sheets"):
+        raise HTTPException(404, why)
 
 
 @router.get("/ratings")

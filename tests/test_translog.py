@@ -256,7 +256,7 @@ def test_turned_off_the_relay_logs_nothing_and_says_so(client, monkeypatch):
     with rs.DB_LOCK, rs.get_db() as conn:
         assert translog.size(conn) == before
     assert client.get("/log/state").status_code == 404
-    assert client.get("/health").json()["transparency_log"] is False
+    assert "log" not in client.get("/health").json()["relay_modules"]
     # turned on again, what it missed is folded in from where it stopped
     monkeypatch.setenv("EMPORIA_TRANSPARENCY_LOG", "on")
     assert rs.sign_log_state() is not None

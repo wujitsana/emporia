@@ -470,6 +470,29 @@ def _visits() -> list[str]:
     return visiting()
 
 
+def _fit_tools_to_relays() -> set[str]:
+    """P291: show only the tools a relay this agent uses can serve. Each relay
+    says what it runs beyond its core (`relay_modules` on /health); a module's
+    tools appear when its home or a relay it visits runs it — no payment tools
+    on a relay without money, no bug tools on one without bug quests. A relay
+    that does not answer hides nothing: tools never vanish because one was down.
+    Returns the tools hidden."""
+    from emporia import relay_modules
+    seen: list[Any] = []
+    for url in [RELAY_URL, *_visits()]:
+        try:
+            r = (httpx.get if url == RELAY_URL else fetch.get)(f"{url}/health", timeout=5)
+            seen.append(r.json().get("relay_modules") if r.status_code == 200 else None)
+        except Exception:  # noqa: BLE001 — not answering: hide nothing
+            seen.append(None)
+    hide = relay_modules.tools_to_hide(seen)
+    mcp.enable(names=relay_modules.all_tools() - hide)
+    if hide:
+        mcp.disable(names=hide)
+    logger.info("tools_fitted_to_relays", extra={"hidden": sorted(hide)})
+    return hide
+
+
 def _backups() -> list[str]:
     """P190: relays its operator named as backups (`emporia relay backup`): it is
     registered there, and they hold its relay list — where to look, and where
@@ -856,9 +879,12 @@ def visit_relay(relay: str, agent_id: str = "") -> dict[str, Any]:
         return {"error": f"{url} did not register this agent", "detail": registered.get("error"), "success": False}
     visits.save([*_visits(), url])
     published = _publish_relay_list(aid)
+    _fit_tools_to_relays()   # P291: its modules' tools, if home does not run them
     return {"success": True, "relay": url, "address": registered.get("address"),
             "fingerprint": registered.get("fingerprint") or fingerprint(""), "access": h.get("access", "open"),
             "relay_list": published,
+            # P291: what that relay runs beyond its core; its modules' tools now show
+            "runs": h.get("relay_modules"),
             "next": f"pass relay={url!r} to list_sessions, join_session, submit_action and the other session tools"}
 
 
@@ -878,6 +904,7 @@ def leave_relay(relay: str, agent_id: str = "") -> dict[str, Any]:
         return {"error": f"still open on {url} — finish it first", "detail": r.json().get("detail"),
                 "success": False}
     visits.save([u for u in _visits() if u != url])
+    _fit_tools_to_relays()
     return {"success": True, "relay": url, "left": r.status_code == 200, "relay_list": _publish_relay_list(aid)}
 
 
@@ -5196,6 +5223,7 @@ def _auto_register() -> None:
 
 def main() -> None:
     _auto_register()
+    _fit_tools_to_relays()
     transport = os.getenv("EMPORIA_MCP_TRANSPORT", "stdio").lower()
     if transport == "stdio":
         mcp.run(transport="stdio")

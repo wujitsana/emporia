@@ -458,6 +458,8 @@ def cmd_relay(args: argparse.Namespace) -> int:
         return cmd_relay_rotate_sign_in_secret(args)
     if args.action == "config":
         return cmd_relay_config(args)
+    if args.action == "modules":
+        return cmd_relay_modules(args)
     if args.action == "overview":
         return cmd_relay_overview(args)
     if args.action == "owner-key":
@@ -756,7 +758,6 @@ def cmd_relay_host(args: argparse.Namespace) -> int:
     Docker, or as a system service on a server kept for it. Only a person runs
     it: it opens a relay to the internet. Its settings live in its own folder,
     never in a Hermes profile."""
-    import re
     import shutil
 
     from emporia import relay_host as rh
@@ -833,19 +834,14 @@ def cmd_relay_host(args: argparse.Namespace) -> int:
         print(f"  {len(keys)} member(s); add more any time: emporia relay members add NAME|KEY --dir {folder}")
     if run == "service":
         updates.update(rh.service_settings(folder))
-    heading("Transparency log", _LOG_ABOUT)
-    log_on = (args.transparency_log == "on") if getattr(args, "transparency_log", "") else _choose_log()
-    updates["EMPORIA_TRANSPARENCY_LOG"] = "on" if log_on else "off"
-    heading("Payments")
-    payments = ask("Take testnet USDC payments and escrow (Base Sepolia)?", True)
-    if payments:
-        fee = args.fee_receiver or prompt("Address that receives your fee (a wallet you control, ideally a Safe)")
-        if not re.fullmatch(r"0x[0-9a-fA-F]{40}", fee or ""):
-            print("  Not an address (0x and 40 hex) — no payments for now; re-run to add them.")
-            payments = False
-        else:
-            updates.update(_BASE_SEPOLIA)
-            updates["EMPORIA_ESCROW_FEE_RECEIVER"] = fee
+    # P291: what it runs beyond its core — every module optional, each asked its own questions
+    existing = installer().harvest_env(folder) if (folder / ".env").exists() else {}
+    asked = _ask_modules(args, existing, ask_money=True)
+    if asked is None:
+        return 1
+    module_updates, modules = asked
+    updates.update(module_updates)
+    payments = "money" in modules
     if admin:
         updates["EMPORIA_AGENT_ID"] = installer().harvest_env(admin).get("EMPORIA_AGENT_ID") or admin_name
     env_path = folder / ".env"
@@ -985,6 +981,155 @@ def _links_of(env_path: Path) -> list[str]:
     from emporia.identity import normalize_peer_url
     raw = installer().harvest_env(env_path.parent).get("FEDERATED_RELAYS", "") if env_path.exists() else ""
     return [normalize_peer_url(u) for u in raw.split(",") if u.strip()]
+
+
+def _modules_line(mods: dict) -> str:
+    from emporia import relay_modules
+    return relay_modules.describe(mods)
+
+
+_GAMIFY_PARTS_ABOUT = [
+    ("sheets", "sheets — character sheets: Craft per game, Trade, Trust, levels and class"),
+    ("bugs", "bugs   — points for bugs agents find in the relay, logged in the transparency log"),
+]
+
+
+def _ask_modules(args: argparse.Namespace, env: dict[str, str], *, ask_money: bool) -> tuple[dict[str, str], set[str]] | None:
+    """P291: which modules a relay runs — the tick-list, then each ticked
+    module's own questions. Returns (settings to write, the modules wanted), or
+    None when an answer was refused. `ask_money` False: the caller runs money's
+    own setup (`setup relay`, which also makes the operator key)."""
+    import re
+
+    from emporia import relay_modules as rm
+    from emporia.identity import normalize_peer_url
+
+    now = rm.chosen(env)
+    given = getattr(args, "modules", "") or ""
+    if given:
+        want = {m.strip().lower() for m in given.split(",") if m.strip()}
+        if unknown := sorted(want - set(rm.BY_NAME)):
+            print(f"  no module called {', '.join(unknown)} — the modules: {', '.join(rm.BY_NAME)}")
+            return None
+    else:
+        ticked = set(now)
+        if getattr(args, "transparency_log", "") in ("on", "off"):
+            (ticked.add if args.transparency_log == "on" else ticked.discard)("log")
+        if getattr(args, "fee_receiver", ""):
+            ticked.add("money")
+        heading("Modules", "What this relay runs beyond its core (agents, games, listings, rooms, agoras, DMs). "
+                "Each is optional; change them any time with `emporia relay modules`.")
+        want = set(choose_many("Tick what it runs:", [(m.name, f"{m.name:<10} {m.about}") for m in rm.MODULES],
+                               ticked))
+    out: dict[str, str] = {}
+
+    # gamify first: bug quests decide whether the log is needed
+    gamify: set[str] = set()
+    if "gamify" in want:
+        gamify = set(now.get("gamify") or ({"sheets", "bugs"} if "log" in want else {"sheets"}))
+        if _TTY and not given:
+            gamify = set(choose_many("Gamify — which parts:", _GAMIFY_PARTS_ABOUT, gamify))
+        if "bugs" in gamify and "log" not in want:
+            if ask("Bug quests need the transparency log (each report and verdict is an entry in it). "
+                   "Turn the log on too?", True):
+                want.add("log")
+            else:
+                gamify.discard("bugs")
+                print("  bug quests left off")
+        if not gamify:
+            want.discard("gamify")
+    out["EMPORIA_GAMIFY"] = ",".join(p for p, _ in _GAMIFY_PARTS_ABOUT if p in gamify)
+
+    if "log" in want and "log" not in now and not given:
+        print(f"  The log: {_LOG_ABOUT}")
+    out["EMPORIA_TRANSPARENCY_LOG"] = "on" if "log" in want else "off"
+
+    links = [normalize_peer_url(u) for u in env.get("FEDERATED_RELAYS", "").split(",") if u.strip()]
+    if "federation" in want:
+        if not links and _TTY and not given:
+            for raw in prompt("Relays to link (https URLs, comma-separated; blank: none yet)", "").split(","):
+                if raw.strip() and (url := _check_relay_url(normalize_peer_url(raw.strip()))):
+                    links.append(normalize_peer_url(url))
+        if not links:
+            print("  No relay linked, so federation stays off until one is: emporia relay link URL")
+            want.discard("federation")
+        else:
+            dms = ask("Sealed DMs with relays linked both ways (each agent still opts in)?",
+                      "dms" in now.get("federation", set()))
+            out["EMPORIA_FEDERATED_DMS"] = "1" if dms else "0"
+            out["FEDERATED_RELAYS"] = ",".join(dict.fromkeys(links))
+    elif "federation" in now:
+        out["FEDERATED_RELAYS"], out["EMPORIA_FEDERATED_DMS"] = "", "0"
+        print("  Federation off: its links are removed; linked relays drop this one's listings at their next sync.")
+
+    if "money" in want and "money" not in now and ask_money:
+        fee = getattr(args, "fee_receiver", "") or prompt(
+            "Testnet USDC and escrow (Base Sepolia). Address that receives your fee (a wallet you control, ideally a Safe)")
+        if not re.fullmatch(r"0x[0-9a-fA-F]{40}", fee or ""):
+            print("  Not an address (0x and 40 hex) — money left off for now; `emporia relay modules` adds it.")
+            want.discard("money")
+        else:
+            out.update(_BASE_SEPOLIA)
+            out["EMPORIA_ESCROW_FEE_RECEIVER"] = fee
+    elif "money" in now and "money" not in want:
+        out.update({"EMPORIA_X402_ENABLED": "0", "EMPORIA_ESCROW_NETWORK": "", "EMPORIA_TEMPO_NETWORK": ""})
+        if env.get("STRIPE_SECRET_KEY"):
+            print("  Cards stay on while its Stripe key is set: emporia relay config unset STRIPE_SECRET_KEY")
+    # only what changes; a module turned off keeps its data, only unmounted
+    return {k: v for k, v in out.items() if str(env.get(k, "")) != v and (v or k in env)}, want
+
+
+def cmd_relay_modules(args: argparse.Namespace) -> int:
+    """P291: `emporia relay modules` — what this relay runs beyond its core, and
+    (in a terminal, or with --modules a,b) a change to it. Writes its .env,
+    after showing every change; the relay applies it at its next start, and
+    refuses to start, saying why, if the modules do not hold together."""
+    from emporia import relay_modules as rm
+
+    env_path = _relay_env_path(args)
+    if env_path is None:
+        print("relay modules: run it from the relay profile's emporia checkout, or give --dir for a hosted relay")
+        return 1
+    hosted = bool(getattr(args, "dir", ""))
+    env = installer().harvest_env(env_path.parent) if env_path.exists() else {}
+    h = None if hosted else health(timeout=3)
+    live = (h or {}).get("relay_modules")
+    heading("Relay modules")
+    print(f"  Runs now:   {_modules_line(live) or 'the core only'}" if live is not None else
+          f"  Set up:     {_modules_line(rm.chosen(env)) or 'the core only'}  (the relay is not answering)")
+    if not _TTY and not args.modules:
+        for m in rm.MODULES:
+            print(f"  {m.name:<10} {m.about} — {m.change}")
+        return 0
+    asked = _ask_modules(args, env, ask_money=hosted)
+    if asked is None:
+        return 1
+    updates, want = asked
+    money_here = not hosted and "money" in want and "money" not in rm.chosen(env)
+    if not updates and not money_here:
+        print("  Nothing to change.")
+        return 0
+    if updates:
+        print(f"  Will set in {env_path}:")
+        for k, v in updates.items():
+            print(f"    {k}={v}" if v else f"    {k} (cleared)")
+        if not args.yes and not ask("Write these?", True):
+            return 1
+        wizard_commit()
+        try:
+            merge_env_file(env_path, updates)
+        except PermissionError:
+            print(f"relay modules: {env_path} belongs to root (a relay run as a service) — set these there with sudo")
+            return 1
+    if money_here:
+        print("  Money: its own setup, next (networks, fee address, operator key).")
+        rc = cmd_setup_relay(argparse.Namespace(preset="base-sepolia", with_networks="", fee_receiver=args.fee_receiver,
+                                                yes=args.yes))
+        if rc:
+            return rc
+    print("  Restart the relay to apply it: emporia relay restart"
+          + ("  (or `docker compose restart relay` in its folder)" if hosted else ""))
+    return 0
 
 
 def cmd_relay_links(args: argparse.Namespace) -> int:
@@ -4061,11 +4206,11 @@ def machine_settings(url: str = "") -> list[dict[str, Any]]:
                     "emporia setup relay"),
                 row("Cards", (h or {}).get("stripe_mode") or "off", "The relay's Stripe key, typed hidden.",
                     "emporia setup stripe")]
-    if h and "transparency_log" in h and local:
-        out.append(row("Transparency log", "on" if h["transparency_log"] else "off",
-                       "Public proof of what this relay recorded, and that it never rewrote it.",
-                       "emporia setup log " + ("off" if h["transparency_log"] else "on"),
-                       "ok" if h["transparency_log"] else "warn"))
+    if h and "relay_modules" in h and local:
+        mods = h["relay_modules"] or {}
+        out.append(row("Modules", _modules_line(mods) or "the core only",
+                       "What it runs beyond the core: money, log, federation, gamify.",
+                       "emporia relay modules", "ok"))
     if h and h.get("access") and local:
         out.append(row("Who may use it", h["access"], "open: any agent. read-only: anyone browses, members "
                        "act. closed: members only — personal.", "emporia relay access"))
@@ -5811,7 +5956,7 @@ def setup_overview() -> None:
     line("✓" if "localhost" not in public and "127.0.0.1" not in public else "·", "Reachable from outside",
          public if "localhost" not in public else "local only — agents on other machines cannot connect",
          "" if "localhost" not in public else "set EMPORIA_RELAY_URL to its public https URL behind a TLS proxy (README § Deployment)")
-    tlog = h.get("transparency_log") if h and "transparency_log" in h else _log_setting(relay_env)
+    tlog = "log" in (h.get("relay_modules") or {}) if h and "relay_modules" in h else _log_setting(relay_env)
     line("✓" if tlog else "·", "Transparency log", "on — public proof of what this relay recorded" if tlog
          else "off (optional)", "" if tlog else "emporia setup log on")
     peers = [x for x in relay_env.get("FEDERATED_RELAYS", "").split(",") if x.strip()]
@@ -5902,7 +6047,7 @@ def build_parser() -> argparse.ArgumentParser:
                                      "`host` runs one for other machines, in Docker behind https")
     r.add_argument("action", choices=["start", "stop", "restart", "status", "logs", "use", "host", "link", "unlink", "links",
                                       "access", "members", "move", "backup", "rotate-key", "rotate-sign-in-secret",
-                                      "config", "overview", "owner-key", "remove"])
+                                      "config", "modules", "overview", "owner-key", "remove"])
     r.add_argument("url", nargs="?", default="", help="use, link, unlink: the other relay's URL")
     r.add_argument("names", nargs="*", help="use: the agents that move to it")
     r.add_argument("--lines", type=int, default=40)
@@ -5918,7 +6063,10 @@ def build_parser() -> argparse.ArgumentParser:
     r.add_argument("--run", choices=["docker", "service"], default="",
                    help="host: in Docker, or as a system service on a server kept for it")
     r.add_argument("--transparency-log", choices=["on", "off"], default="",
-                   help="host: keep a transparency log (default on)")
+                   help="host: keep a transparency log")
+    r.add_argument("--modules", default="",
+                   help="host, modules: the modules it runs, comma-separated (money,log,federation,gamify); "
+                        "without it, a tick-list asks")
     r.set_defaults(func=cmd_relay)
 
     ag2 = sub.add_parser("agent", help="an agent leaves a relay, is deleted from this machine, has its "

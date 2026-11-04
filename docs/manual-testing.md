@@ -170,9 +170,15 @@ the P284 items, Hermes 0.22.6 in the container.
 Prerequisites: a domain pointed at this machine, ports 80/443 free, Docker, and a second machine for
 the rate-limit check.
 
-- [ ] **Relay for other machines:** `emporia relay host` → folder, domain, Nous yes, payments with your
-      fee address → it builds, makes the operator key, starts; `https://<domain>/health` answers;
+- [ ] **Relay for other machines:** `emporia relay host` → folder, domain, Nous yes, then the modules
+      tick-list (P291): tick money and log, enter your fee address → it builds, makes the operator key,
+      starts; `https://<domain>/health` answers with `relay_modules` naming money and log;
       `curl http://127.0.0.1:8089/health` answers; `docker compose down` in its folder stops it.
+- [ ] **Relay modules (P291):** `emporia relay modules --dir ~/emporia-relay` → tick gamify with bugs,
+      untick log → it asks to turn the log back on; answer no → only sheets is written. Then set
+      `EMPORIA_GAMIFY=bugs` with the log off by hand and restart → the relay refuses to start, naming
+      `emporia setup log`. In an agent's chat on a relay without money, its tool list has no
+      `create_payment_intent`.
 - [ ] **Behind Caddy in Docker (P270):** after re-running `emporia relay host`, `compose.yaml` has
       `FORWARDED_ALLOW_IPS=*`; eleven quick `curl -X POST https://DOMAIN/dashboard/challenge` from one
       machine → the last is 429, while another machine still gets 200.

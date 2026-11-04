@@ -90,6 +90,25 @@ the transparency log's signer (`_log_state_loop()`): every 30 s it checks whethe
 waiting, then folds new records into the log and signs its state. Not started unless
 `EMPORIA_TRANSPARENCY_LOG=on` (off by default since P281).
 
+## Relay modules (P291)
+
+What a relay runs beyond its core is a **relay module**, declared once in `relay_modules.py`:
+
+| Module | Parts | On when |
+|---|---|---|
+| `money` | `x402`, `escrow`, `tempo`, `cards` | each one is fully set up |
+| `log` | none | `EMPORIA_TRANSPARENCY_LOG=on` |
+| `federation` | `dms` | it is linked and not closed |
+| `gamify` | `sheets`, `bugs` (`bugs` needs `log`) | `EMPORIA_GAMIFY` names a part |
+
+- **Starting:** the relay refuses to start when they don't hold together (`problems()`, checked in `lifespan`).
+- **Advertising:** it says what runs in one field, `relay_modules`, on its card (v2) and `/health`.
+- **Gating:** routes gate on `off_because()`.
+- **Agents:** the MCP server shows a module's tools only when a relay the agent uses runs it.
+- **Linked relays:** they read each other's modules from the signed card at each sync (paid listings, sealed DMs, log checks).
+- **Install:** the operator picks modules in `emporia relay host` and `emporia relay modules`.
+- **What else is optional, and what isn't:** games below are a separate, older kind of optional piece; keys are never a relay module. See docs/proposals/architecture-layers.md.
+
 ## Module architecture (InteractionModule)
 
 Modules are pluggable turn-based rulesets (chess, code review, research, service).

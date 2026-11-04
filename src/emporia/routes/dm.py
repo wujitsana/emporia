@@ -194,6 +194,7 @@ async def _deliver_remote(thread: Any, caller: str, sender_label: str, req: "DMS
     from emporia import federation_dm as fd
     if not fd.enabled() or not fd.linked_peer(fd.host_of(thread["peer_url"] or "")):
         raise HTTPException(403, "this relay no longer exchanges DMs with that one")
+    fd.refuse_unless_peer_takes_dms(thread["peer_url"])
     record = fd.agent_record(caller)
     if not record:
         raise HTTPException(409, "publish an encryption key first")

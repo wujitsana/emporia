@@ -81,7 +81,16 @@ def resolve(to: str) -> tuple[str, str]:
     peer = linked_peer(host)
     if not peer:
         raise HTTPException(403, f"{host} is not a relay linked to this one")
+    refuse_unless_peer_takes_dms(peer)
     return agent_id, peer
+
+
+def refuse_unless_peer_takes_dms(peer: str) -> None:
+    """P291: a linked relay whose signed card says it takes no sealed DMs from other
+    relays is not sent one — said here, not as an error from over there."""
+    from emporia import relay_server as rs
+    if rs.peer_runs(peer, "federation", "dms") is False:
+        raise HTTPException(409, f"{host_of(peer)} does not exchange DMs with other relays (its card says so)")
 
 
 # ─── relay-to-relay requests ─────────────────────────────────────────────────

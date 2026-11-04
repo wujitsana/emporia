@@ -6,7 +6,11 @@ import type { CharacterSheet } from "../api";
 import { BugList, GamifyView, Sheet } from "./GamifyView";
 
 // P288: the gamify tab says when a relay does not run the module, and shows a sheet as signed.
-const card = { current: { gamify: [] as string[] } };
+const card = { current: cardOf([]) };
+
+function cardOf(parts: string[]) {
+  return { relay_modules: parts.length ? { gamify: { v: 1, parts } } : {} } as { relay_modules: Record<string, { v: number; parts: string[] }> };
+}
 vi.mock("../hooks", () => ({
   useInterval: (fn: () => unknown) => {
     const src = String(fn);
@@ -40,13 +44,13 @@ const sheet: CharacterSheet = {
 
 describe("gamify tab", () => {
   it("says so when the relay does not run the module", () => {
-    card.current = { gamify: [] };
+    card.current = cardOf([]);
     render(<GamifyView />);
     expect(screen.getByText(/does not run the gamify module/)).toBeTruthy();
   });
 
   it("lists the agents when sheets are on", () => {
-    card.current = { gamify: ["sheets"] };
+    card.current = cardOf(["sheets"]);
     render(<GamifyView />);
     expect(screen.getByText("you")).toBeTruthy();
     expect(screen.getByText(/This relay runs: sheets/)).toBeTruthy();
@@ -64,14 +68,14 @@ describe("gamify tab", () => {
 
 describe("gamify tab, bug quests", () => {
   it("adds bug reports and incidents to the rail when the relay runs them", () => {
-    card.current = { gamify: ["sheets", "bugs"] };
+    card.current = cardOf(["sheets", "bugs"]);
     render(<GamifyView />);
     expect(screen.getByText("Bug reports")).toBeTruthy();
     expect(screen.getByText("Security incidents")).toBeTruthy();
   });
 
   it("is not in the rail without them", () => {
-    card.current = { gamify: ["sheets"] };
+    card.current = cardOf(["sheets"]);
     render(<GamifyView />);
     expect(screen.queryByText("Bug reports")).toBeNull();
   });

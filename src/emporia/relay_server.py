@@ -262,6 +262,19 @@ FEDERATED_RELAYS: list[str] = [
 # Last federation sync outcome per peer, for the dashboard's Federation panel.
 # {peer_url: {"ok": bool, "imported": int, "synced_at": iso8601}}
 _FEDERATION_LAST_SYNC: dict[str, dict[str, Any]] = {}
+# P291: what each linked relay runs beyond its core, from its signed card, read at
+# each sync. Absent: not known yet (never synced, or an older relay with no card).
+_FEDERATION_PEER_MODULES: dict[str, dict[str, Any]] = {}
+
+
+def peer_runs(peer_url: str, module: str, part: str = "") -> bool | None:
+    """P291: does this linked relay run `module` (or its `part`), by its last signed
+    card? None when not known — the caller then does what it did before it could ask."""
+    mods = _FEDERATION_PEER_MODULES.get(normalize_peer_url(peer_url))
+    if mods is None:
+        return None
+    entry = mods.get(module)
+    return isinstance(entry, dict) and (not part or part in (entry.get("parts") or []))
 
 # Same shape, for lobby-challenge gossip (N11-5) — kept separate from the listings
 # sync record above since the two feeds are pulled and can fail independently.
@@ -4704,8 +4717,21 @@ def _hold_the_database() -> None:
     _PROCESS_LOCK = handle
 
 
+class RelayModulesWrong(RuntimeError):
+    """P291: the relay's modules do not hold together; it does not start that way."""
+
+
+def _check_relay_modules() -> None:
+    from emporia import relay_modules
+    wrong = relay_modules.problems(FEDERATED_RELAYS)
+    if wrong:
+        raise RelayModulesWrong("this relay's modules are set up wrong — fix these, then start it again:\n  "
+                                + "\n  ".join(wrong))
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    _check_relay_modules()   # P291: before anything is opened or started
     _hold_the_database()
     init_db()
     notice = _stripe_mpp_admin_notice()
@@ -5876,7 +5902,8 @@ async def health(request: Request):
         # P139: lets `emporia doctor` tell a relay running older code than the
         # checkout (restart it) from one that is current.
         "schema_version": SCHEMA_VERSION,
-        "transparency_log": translog.enabled(),   # P258
+        # P291: what it runs beyond the core, the same field as on its card
+        "relay_modules": _relay_modules(),
         # P276: DM content older than this many days is erased here (0: kept) — archive before then.
         "dm_retention_days": deletion.dm_retention_days(),
         # P144: the key the relay signs action receipts and federation batches
@@ -5988,16 +6015,10 @@ def _relay_guardians() -> dict | None:
     return relay_guardians()
 
 
-def _gamify_parts() -> set[str]:
-    """P288/P289: what it runs; bug quests count only with the transparency log on."""
-    from emporia.progression import gamify_parts
-    parts = gamify_parts()
-    return parts if translog.enabled() else parts - {"bugs"}
-
-
-def _progression_formula() -> str:
-    from emporia.progression import FORMULA
-    return FORMULA
+def _relay_modules() -> dict[str, dict]:
+    """P291: the modules this relay runs and their parts — card and /health alike."""
+    from emporia import relay_modules
+    return relay_modules.advertise(FEDERATED_RELAYS)
 
 
 @app.get("/relay/card")
@@ -6010,9 +6031,8 @@ async def relay_identity_card(request: Request):
     access = relay_access.mode()
     if access == "closed" and (request.client.host if request.client else "") not in ("127.0.0.1", "::1"):
         raise HTTPException(404, "closed relay")
-    from emporia.payments import _x402_networks
     card = {
-        "kind": "emporia-relay-card", "version": 1,
+        "kind": "emporia-relay-card", "version": 2,
         "relay_id": relay_id(),
         "relay_public_key": get_relay_public_key_hex(),
         "relay_key_history": relay_key_history(),
@@ -6022,14 +6042,10 @@ async def relay_identity_card(request: Request):
         "operator": _relay_operator_id() or None,
         "access": access,
         "operator_fee_bps": OPERATOR_FEE_BPS,
-        "money": {"x402": sorted(_x402_networks()), "x402_escrow": _escrow_network(),
-                  "tempo": (_tempo_cfg() or {}).get("network"),
-                  "cards": _stripe_key_mode() if os.getenv("STRIPE_SECRET_KEY") else None},
-        "transparency_log": translog.enabled(),
-        # P288: what it runs of the gamify module, and by which formula
-        "gamify": sorted(_gamify_parts()),
-        "formulas": [_progression_formula()] if _gamify_parts() else [],
-        "links": sorted(FEDERATED_RELAYS),
+        # P291 (card v2): what it runs beyond the core — money and its rails, the log,
+        # federation and its links, gamify and its formulas — one field, as on /health
+        "relay_modules": _relay_modules(),
+        "games": list(MODULE_REGISTRY.keys()),
         "software": __version__,
         "at": datetime.now(UTC).isoformat(timespec="seconds"),
     }
@@ -7519,6 +7535,12 @@ async def _sync_all_federated_peers() -> dict[str, int]:
     drop_unlinked_federated_rows()
     async def _pull_peer(peer: str) -> int:
         imported = await _pull_federated_listings(peer)
+        # P291: then what it runs, from its card signed by the key the listings pinned —
+        # what is kept from it below, and what is offered to it, follows that
+        try:
+            await _pull_peer_modules(normalize_peer_url(peer))
+        except Exception:
+            logger.exception("federation_modules_pull_raised_unexpectedly", extra={"peer_url": peer})
         # P249: the adverts come after the listings, which pin the peer's key; a failure
         # here never fails the sync, and one peer's slowness holds up only that peer.
         try:
@@ -7526,7 +7548,10 @@ async def _sync_all_federated_peers() -> dict[str, int]:
         except Exception:
             logger.exception("federation_advert_pull_raised_unexpectedly", extra={"peer_url": peer})
         try:   # P281: and its log's state, checked against the one kept from last time
-            await asyncio.to_thread(_check_peer_log, normalize_peer_url(peer))
+            if peer_runs(peer, "log") is False:
+                _note_peer_log_off(normalize_peer_url(peer))
+            else:
+                await asyncio.to_thread(_check_peer_log, normalize_peer_url(peer))
         except Exception:
             logger.exception("federation_log_check_raised_unexpectedly", extra={"peer_url": peer})
         return imported
@@ -7547,6 +7572,55 @@ async def _sync_all_federated_peers() -> dict[str, int]:
         return counts
 
     return _coerce(listing_results)
+
+
+async def _pull_peer_modules(peer_url: str) -> dict[str, Any] | None:
+    """P291: read a linked relay's signed card and keep what it runs. Believed only
+    when signed by the key this relay pinned for it; otherwise nothing is kept
+    and the peer is treated as before (`peer_runs` → None). Then:
+
+    * paid listings from a relay that takes no payments go — nobody could buy them;
+    * whether it links back (federation, both ways) goes in its sync record,
+      since sealed DMs need both ways.
+    """
+    from emporia import fetch
+    from emporia.identity import verify_relay_card
+    pinned = _FEDERATION_PEER_PUBKEYS.get(peer_url)
+    sync = _FEDERATION_LAST_SYNC.setdefault(peer_url, {"ok": None, "imported": 0})
+    try:
+        card = (await fetch.request("GET", f"{peer_url}/relay/card", timeout=10)).json()
+    except Exception as e:  # noqa: BLE001 — not answering, or an older relay
+        sync["relay_modules_error"] = f"its card did not come: {str(e)[:160]}"
+        return None
+    if not (isinstance(card, dict) and pinned and card.get("relay_public_key") == pinned
+            and verify_relay_card(card)["ok"] and isinstance(card.get("relay_modules"), dict)):
+        sync["relay_modules_error"] = "its card is not signed by the key pinned for it, or names no modules"
+        return None
+    mods = card["relay_modules"]
+    _FEDERATION_PEER_MODULES[peer_url] = mods
+    sync.pop("relay_modules_error", None)
+    sync["relay_modules"] = mods
+    back = (mods.get("federation") or {}).get("links") or []
+    sync["links_back"] = normalize_peer_url(RELAY_BASE_URL) in {normalize_peer_url(u) for u in back}
+    if "money" not in mods:
+        with DB_LOCK, get_db() as conn:
+            gone = conn.execute("DELETE FROM listings WHERE federated_from = ? AND payment_mode != 'free'",
+                                (peer_url,)).rowcount
+        if gone:
+            sync["listings_unpayable"] = gone
+    return mods
+
+
+def _note_peer_log_off(peer_url: str) -> None:
+    """P291: a linked relay that runs no log is not checked — but one that kept a log
+    and stopped is said to have, since its last signed state is still kept here."""
+    from emporia import logcheck
+    held = (((logcheck.load(logcheck.PEER_FILE).get("relays") or {}).get(peer_url)) or {}).get("state")
+    sync = _FEDERATION_LAST_SYNC.setdefault(peer_url, {"ok": None, "imported": 0})
+    sync["log"] = ("stopped: it kept a log and no longer runs one; its last signed state is kept here"
+                   if held else "not run there")
+    if held:
+        logger.warning("federation_peer_log_stopped", extra={"peer_url": peer_url})
 
 
 def _peer_log_get(peer_url: str):

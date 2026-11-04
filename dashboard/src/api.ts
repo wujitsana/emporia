@@ -737,7 +737,8 @@ export interface Bounty {
 
 export const api = {
   // P288: the gamify module — what this relay runs, an agent's sheet, a game's ladder.
-  relayCard: () => get<{ gamify?: string[]; formulas?: string[] }>("/relay/card"),
+  // P291: what the relay runs beyond its core — one field, as on /health
+  relayCard: () => get<{ relay_modules?: Record<string, RelayModule> }>("/relay/card"),
   sheet: (agent_id: string) => get<CharacterSheet>(`/agents/${encodeURIComponent(agent_id)}/sheet`),
   // P289: bug quests and security incidents (gamify `bugs`, with the transparency log).
   bugs: () => get<{ reports: BugReport[] }>("/bugs"),
@@ -944,3 +945,11 @@ export const api = {
   sessionAudit: (session_id: string) =>
     get<SessionAudit>(`/sessions/${session_id}/audit`, { agentScoped: true }),
 };
+
+/** P291: one module a relay runs, as its card says (`relay_modules`). */
+export interface RelayModule {
+  v: number;
+  parts: string[];
+  formulas?: string[];
+  [detail: string]: unknown;
+}

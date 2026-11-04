@@ -12,7 +12,7 @@ carried over at the end of this file.
 The order the proposals get built in. Three rules shape it:
 
 - **Ship what is built before building more.** Every feature since the merge added hand checks
-  (35 now). Until `main`: fixes, and what the gate itself needs — nothing new, with one exception:
+  (36 now). Until `main`: fixes, and what the gate itself needs — nothing new, with one exception:
   signer phase 2, which is a security fix more than a feature (below).
 - **A second operator makes everything else real.** Alpha and beta share a Nous account, so their
   sheets are empty by design, and guilds, leagues and federation have nobody to be between. The
@@ -24,9 +24,15 @@ Each phase starts when its evidence is there, not on a date. A proposal not name
 
 **Phase A — secure it, then ship it** (now)
 
-*On hold (11-04) for the architecture pass:*
-- [architecture-layers](docs/proposals/architecture-layers.md) (P291): five layers, relay modules a relay installs and advertises, one signer, one key chain. It is design only until the person marks it up.
-- If taken, its § 7 order runs first and signer phase 2 lands on top of it. That breaks the "ship before building" rule above, on purpose: the person chose to simplify before more is built on the current shape.
+*The architecture pass (11-04), done:* [architecture-layers](docs/proposals/architecture-layers.md) (P291) built relay modules:
+- one registry (money, log, federation, gamify);
+- one `relay_modules` field on the card and `/health`;
+- a refusal to start when modules don't hold together;
+- the install's tick-list and `emporia relay modules`;
+- MCP tools shown per relay;
+- linked relays that read each other's modules.
+
+The one-signer and one-key-chain ideas were deferred on review (§ 5), so the order below stands.
 
 1. **The signer sittings first:** manual-testing.md "Signer" and "Signer apart" — phase 1 tested by
    hand, which phase 2 builds on. The person answers phase 2's five questions
