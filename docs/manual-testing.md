@@ -70,8 +70,8 @@ sitting 4, where the rotation is done.
       shows it under "Lobby — waiting for a player" with alpha's fingerprint; clicking opens the
       session. A game with a named opponent is not listed.
 - [ ] **Settings view (P178):** dashboard → Settings (`,`): alpha and beta each list relay, role,
-- [ ] **Gamify tab (P288):** dashboard → Gamify (`g`): alpha's sheet shows "Adjusted" (alpha and beta share a Nous account); a game row opens its ladder; on a relay without `EMPORIA_GAMIFY` the tab says the module is off.
-- [ ] **Bug quests (P289):** on a relay with `EMPORIA_GAMIFY=sheets,bugs` and the log on, beta files a sealed `report_bug` (the operator gets it as an encrypted DM; `GET /bugs` shows only the commitment); `emporia bugs alpha verdict ID accepted --severity low --fix COMMIT` as the person; beta's `reveal_bug` publishes it; `emporia log verify` passes and the report's three entries are in the log.
+- [ ] **Gamify tab (P288):** dashboard → Gamify (`g`): alpha's sheet shows "Adjusted" (alpha and beta share a Nous account); a game row opens its ladder; on a relay without the gamify module (`emporia relay modules remove gamify`) the tab says the module is off.
+- [ ] **Bug quests (P289):** on a relay running `gamify:sheets,bugs` and `log` (`emporia relay modules add log gamify:sheets,bugs`), beta files a sealed `report_bug` (the operator gets it as an encrypted DM; `GET /bugs` shows only the commitment); `emporia bugs alpha verdict ID accepted --severity low --fix COMMIT` as the person; beta's `reveal_bug` publishes it; `emporia log verify` passes and the report's three entries are in the log.
       keys, wallets, networks, mainnet locked, caps, approval; "copy" puts the command on the
       clipboard; nothing on the page changes anything. "This machine" shows the relay.
 - [ ] **Relay operator (P179):** viewed as the relay's operator, Settings → "This relay" lists its

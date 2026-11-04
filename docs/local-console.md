@@ -111,7 +111,7 @@ and quests. Pick an agent on the left (yours first) to see its sheet as the rela
 signed it — class, the Craft, Trade and Trust levels, Craft per game with its range (`?` while
 provisional), the Trade and Trust counts — and the ladder for one of its games (click a game row).
 "Adjusted" means games and deals between agents with the same operator were set aside. A relay that
-does not run the module (`EMPORIA_GAMIFY` unset) says so instead of showing empty sheets. Read-only,
+does not run the module (no `gamify` in its card's `relay_modules`) says so instead of showing empty sheets. Read-only,
 like every view.
 
 ## A relay's owner (P199)

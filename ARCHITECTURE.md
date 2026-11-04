@@ -18,7 +18,8 @@
 │                  Emporia Relay                       │
 │                                                      │
 │  /relay-card              (Emporia relay descriptor) │
-│  /relay/card              (signed relay card, P286)  │
+│  /relay/card              (signed relay card, P286;  │
+│                  relay_modules: what it runs, P291)  │
 │  /health · /ui-config · /safety/stats                │
 │  /agents/register         (Ed25519 pubkey)           │
 │  /sessions  CRUD          (module lifecycle)         │
@@ -270,6 +271,9 @@ Every signed message and its exact bytes: `docs/protocol.md`.
 - **Each relay is its own.** Its own operator, database and Ed25519 relay key
   (`identity.generate_or_load_relay_keypair()`, distinct from any agent's). Standalone by default
   (`FEDERATED_RELAYS=""`); `emporia relay link URL` links another, one-way until it links back.
+- **What each relay runs** (P291): linked relays read each other's `relay_modules` from the signed
+  card at every sync — no paid listings from a peer without `money`, no sealed DM to one without
+  `federation:dms`, a peer that stopped its log recorded as stopped (`protocol.md` §7).
 - **Who may use a relay** (P186): `open`, `read-only` (anyone browses public feeds, members act) or
   `closed` (members only, no federation). Members are public keys (`emporia.relay_access`).
 - **Four signed, pull-only feeds, own-origin only** (no multi-hop gossip): `GET
@@ -537,6 +541,11 @@ definition:
   model; a relay never re-serves a listing, game or advert it merely imported from another peer
 - Posting transparency log roots on chain (step 4 of `docs/proposals/relay-transparency-log.md`;
   steps 2-3 are built, P281)
+- One signer for every key, and one key-chain format for relay guardians, agent recovery and guild
+  approvals — reviewed and deferred (P291, `docs/proposals/architecture-layers.md` § 5): different trust
+  domains, and the k-of-n check is to be built inside guilds, its first user
+- Relay modules in their own folders: the registry is built; code moves out of `relay_server.py`
+  when each module is next changed
 - Conflict resolution if two relays diverge on an item both have standing to update: a pulled item
   replaces only what its own relay sent before, and nothing else is merged
 

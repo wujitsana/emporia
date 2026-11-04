@@ -7,10 +7,10 @@ without the original machine.
 ## Plan from here (11-04, after P291) — start here
 
 `claude/handoff-4rte3l` was fast-forwarded into `post-hackathon` on 2026-11-03 (commit `1c32360`,
-through P285) at the user's approval. Work continues on `post-hackathon`, now about 19 commits
+through P285) at the user's approval. Work continues on `post-hackathon`, now about 33 commits
 ahead of `origin` and **not pushed** (the push waits for the user). `main` waits for the manual gate.
-Unit suite 2,018 passed (1 skipped); live suite 14 passed; dashboard 200 tests, typecheck, lint and
-builds clean. One flaky unit test seen once: `test_encrypted_message_is_opaque_in_the_database`
+Unit suite 2,107 passed (1 skipped, after P291); live suite 14 passed (last run before P286); dashboard
+208 tests, typecheck and lint clean. One flaky unit test seen once: `test_encrypted_message_is_opaque_in_the_database`
 (fixed agent names in a shared database).
 
 **1. Waiting on the user:**

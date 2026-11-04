@@ -618,6 +618,21 @@ signed log state no longer matches the head the log holds.
 - What never crosses: private sessions, the rooms and Agora topics themselves (only their
   owners' signed adverts, §3.14, so they can be found), payments, wallets, Nous accounts,
   the list of who is registered.
+- **Each side reads what the other runs (P291).** At each sync, after the listings pull has
+  pinned or checked a peer's key, the relay fetches the peer's `/relay/card` and keeps its
+  `relay_modules` only when the card is signed by that pinned key (`identity.verify_relay_card`).
+  An unsigned, differently signed or older card leaves the peer "not known", and nothing changes.
+  When it is known:
+  - **No `money` at the peer:** its paid listings (`payment_mode` ≠ `free`) are dropped, and come back when
+    it takes payments again.
+  - **No `federation:dms` at the peer:** no sealed DM is started or sent to an agent there (409, "its
+    card says so").
+  - **No `log` at the peer:** its log state isn't checked. If a state it signed was kept here, it is
+    recorded as having **stopped** its log.
+  - **Links back:** `links_back` records whether this relay is among the peer's `federation.links`.
+  - **Gamify:** sheets and bug quests are never synced; they are about one relay.
+
+  All of it is shown per peer in `/federation/peers`.
 
 ## 8. Versioning
 
@@ -627,6 +642,8 @@ signed log state no longer matches the head the log holds.
   standing choice). After launch, a version is supported until its successor has been
   out for one release.
 - The relay's database schema has its own version (`schema.SCHEMA_VERSION`).
+- The relay card has its own `version` (2 since P291, when `relay_modules` replaced five fields), and
+  each module in `relay_modules` has its own `v`. A client reads only the versions it knows.
 
 ## 8a. The signer (P203)
 

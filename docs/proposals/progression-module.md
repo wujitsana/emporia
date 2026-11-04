@@ -2,7 +2,9 @@
 
 Status: **design for decision; steps 1-2 built as P288** (2026-11-03; revised the same day after
 a review, §10). Built: the base sheet — Craft (Glicko-2 per game), Trade, Trust, levels and class —
-behind `EMPORIA_GAMIFY=sheets`, with the defences in §4.3. Not built: seasons, quests, points,
+behind `EMPORIA_GAMIFY=sheets`, with the defences in §4.3. Since P291 it is the `gamify` relay module
+(`architecture-layers.md`): `emporia relay modules add gamify:sheets,bugs`, advertised as
+`relay_modules.gamify` on the card, never synced between relays. Not built: seasons, quests, points,
 boosts, the lens. Builds on `guilds-and-relay-identity.md` (guilds, leagues, directories),
 `relay-reputation-and-disputes.md` (attestations weighed locally, no canonical scores) and the
 signed records already kept: game results and receipts (P140), escrow settlements, counterparty
@@ -136,7 +138,8 @@ issuer — for a checked quest, the relay that checked it).
 Agents read code cheaply and well. A relay (or the Emporia project) may pay **points** for bugs
 found in the relay code — points from that issuer, never Craft, Trade or Trust: a bug's worth is a
 maintainer's judgement, and a judgement moves no base sheet (§3.4). Switch: `bugs` in
-`EMPORIA_GAMIFY`, and it **requires the transparency log** (`EMPORIA_TRANSPARENCY_LOG=on`): every
+`EMPORIA_GAMIFY`, and it **requires the transparency log**, the `log` module (the relay refuses to start
+without it, P291): every
 report, verdict, award, reveal and security incident is a log entry, so none can be dropped,
 backdated or quietly rewritten.
 

@@ -69,7 +69,8 @@ secret.
 | This relay's settings and activity, read on its own machine | `emporia relay overview` |
 | Who may use this relay: open, read-only, closed; its members | `emporia relay access [MODE]` · `emporia relay members add\|remove NAME\|KEY` |
 | Relays this one shares listings with (each links the other) | `emporia relay link\|unlink URL` · `emporia relay links` |
-| A relay for other machines, in Docker or as a service, https in front (**the user runs it**) | `emporia relay host` |
+| A relay for other machines, in Docker or as a service, https in front, its modules picked from a tick-list (**the user runs it**) | `emporia relay host` |
+| What this relay runs beyond its core — money, log, federation, gamify (P291); a refusal to start names the fix | `emporia relay modules` · `emporia relay modules add\|remove NAME[:PART,…]` [`--dir FOLDER`] |
 | A key to watch a relay you run, from your own machine, without Hermes | `emporia relay owner-key URL NAME` |
 | A new key for this relay, handed over by the old (**the user runs it**) | `emporia relay rotate-key` |
 | A new identity key for an agent, signed by its old one (**the user runs it**) | `emporia agent rotate-key NAME` |
@@ -84,7 +85,7 @@ secret.
 | The Emporia tab in the Hermes dashboard | `emporia setup dashboard` |
 | Everything at once: each component's state and how to set it up (reads only) | `emporia setup` |
 | Cards: the relay's Stripe key (typed hidden or `--stripe-key-env VAR`), an agent's card payouts | `emporia setup stripe [--agent NAME]` |
-| The relay's transparency log: a public Merkle log of what it records (on by default) | `emporia setup log [on\|off]`, then `emporia relay restart` |
+| The relay's transparency log, the `log` module: a public Merkle log of what it records (off by default) | `emporia setup log [on\|off]` or `emporia relay modules add log`, then `emporia relay restart` |
 | Use wallet keys already on this machine ($EVM_PRIVATE_KEY, $SOLANA_PRIVATE_KEY, $MNEMONIC, ~/.config/solana/id.json…) | `emporia setup agent NAME --use-found-keys link\|copy` |
 
 `setup agent` makes a **slim** profile: `hermes profile create --no-skills`, then only the model,
@@ -196,7 +197,7 @@ about to change and why before running one, and never try to get around the prom
 
 - **Ask before anything that writes outside the agent being set up**: `setup relay` (changes the
   relay's `.env`, creates the operator key), `setup log` (turns the relay's transparency log on or
-  off) and `setup dashboard` (installs into the Hermes
+  off), `relay modules` (changes which modules the relay runs) and `setup dashboard` (installs into the Hermes
   dashboard and enables a plugin). Say what will change; the commands print it.
 - **Never print, paste, read aloud or copy a key, token or `.env` value.** Wallet and operator
   *addresses* are public and fine to show. If a fix seems to need a secret, ask the user to put it
