@@ -22,7 +22,7 @@ import httpx
 import websockets
 from websockets.exceptions import ConnectionClosedError, InvalidHandshake
 
-from emporia.identity import sign as ed25519_sign
+from emporia import signing
 from emporia.wire import DEFAULT_MSG_TYPE, ERR_DUPLICATE_NONCE, error_code
 
 
@@ -162,8 +162,11 @@ class EmporiaAgent:
             raise RuntimeError("Use 'async with EmporiaAgent(...) as agent' context manager")
         return self._http
 
-    def _sign(self, payload: dict[str, Any]) -> str:
-        return ed25519_sign(payload, self.profile_id)
+    def _sign(self, kind: str, *args: Any, **kwargs: Any) -> str:
+        return signing.sign(self.profile_id, kind, *args, **kwargs)
+
+    def _signed(self, kind: str, *args: Any, **kwargs: Any) -> tuple[dict[str, Any], str]:
+        return signing.signed(self.profile_id, kind, *args, **kwargs)
 
     async def _bearer_token_value(self) -> str | None:
         """The raw JWT from the dashboard challenge/session flow, cached until near
@@ -177,12 +180,11 @@ class EmporiaAgent:
         if self._bearer_token and self._bearer_exp > now + 30:
             return self._bearer_token
         try:
-            from emporia.identity import sign_challenge_nonce
             from emporia.wire import dashboard_session_body
             ch_resp = await self._client().post(f"{self.relay_url}/dashboard/challenge")
             ch_resp.raise_for_status()
             ch = ch_resp.json()
-            sig_hex = sign_challenge_nonce(ch["nonce"], self.profile_id)
+            sig_hex = signing.sign_in(self.profile_id, ch["nonce"])
             resp = await self._client().post(
                 f"{self.relay_url}/dashboard/session",
                 json=dashboard_session_body(self.agent_id, ch["challenge_id"], sig_hex),
@@ -287,19 +289,17 @@ class EmporiaAgent:
     # ------------------------------------------------------------------ #
 
     async def register(self, display_name: str = "", nous_jwt: str = "") -> dict[str, Any]:
-        from emporia.identity import sign_challenge_nonce
         from emporia.wire import registration_body
         # Always request a challenge to prove private-key possession
         ch_resp = await self._client().post(f"{self.relay_url}/agents/challenge")
         ch_resp.raise_for_status()
         ch = ch_resp.json()
-        sig_hex = sign_challenge_nonce(ch["nonce"], self.profile_id)
+        sig_hex = signing.sign_in(self.profile_id, ch["nonce"])
 
         # P16: publish the X25519 encryption key in the same round trip. Not a
         # separate opt-in call: an agent whose client forgot it looks, to every
         # peer, exactly like one who chose not to do encrypted DMs.
-        from emporia.identity import get_encryption_public_key_hex, sign
-        from emporia.wire import signed_encryption_key_payload
+        from emporia.identity import get_encryption_public_key_hex
         enc_pub = get_encryption_public_key_hex(self.profile_id)
         from datetime import UTC, datetime
         enc_at = datetime.now(UTC).isoformat()          # P271: the v2 binding, ordered in time
@@ -307,9 +307,7 @@ class EmporiaAgent:
             self.agent_id, self.public_key_hex, display_name or self.agent_id,
             ch["challenge_id"], sig_hex, nous_jwt=nous_jwt,
             encryption_public_key_hex=enc_pub,
-            encryption_key_signature=sign(
-                signed_encryption_key_payload(self.agent_id, enc_pub, enc_at), self.profile_id,
-            ),
+            encryption_key_signature=self._sign("encryption-key", self.agent_id, enc_pub, enc_at),
             encryption_key_at=enc_at,
         )
         resp = await self._client().post(f"{self.relay_url}/agents/register", json=body)
@@ -359,7 +357,6 @@ class EmporiaAgent:
         from emporia.wire import (
             listing_expires_at,
             new_message_nonce,
-            signed_listing_payload,
         )
         health = await self._client().get(f"{self.relay_url}/health")
         health.raise_for_status()
@@ -368,8 +365,8 @@ class EmporiaAgent:
             raise RuntimeError("this relay does not say its own URL — it predates signed listings; upgrade it")
         meta = metadata or {}
         nonce, expires_at = new_message_nonce(), listing_expires_at(expires_in_hours)
-        signed = signed_listing_payload(
-            await self._signing_identity(), origin, nonce, title, description,
+        signature = self._sign(
+            "listing", await self._signing_identity(), origin, nonce, title, description,
             listing_type, payment_mode, price_usd, module_type, meta, expires_at)
         resp = await self._bearer_request(
             "post", f"{self.relay_url}/listings",
@@ -383,7 +380,7 @@ class EmporiaAgent:
                 "expires_at": expires_at,
                 "metadata": meta,
                 "listing_nonce": nonce,
-                "signature": self._sign(signed),
+                "signature": signature,
             },
         )
         resp.raise_for_status()
@@ -427,7 +424,7 @@ class EmporiaAgent:
         `fund_session()`, once a seller has joined."""
         from datetime import UTC, datetime
 
-        from emporia.wire import new_message_nonce, session_id_for, signed_session_create_payload, stake_terms
+        from emporia.wire import new_message_nonce, session_id_for, stake_terms
         nonce, at = new_message_nonce(), datetime.now(UTC).isoformat()   # P279: made in this agent's name
         resp = await self._bearer_request(
             "post", f"{self.relay_url}/sessions",
@@ -436,8 +433,8 @@ class EmporiaAgent:
                 "config": config or {},
                 "payment_rules": payment_rules,
                 "creator_gateway_url": gateway_url,
-                "nonce": nonce, "at": at, "signature": self._sign(signed_session_create_payload(
-                    session_id_for(nonce), self.agent_id, module_type, at, stake_terms(payment_rules))),
+                "nonce": nonce, "at": at, "signature": self._sign(
+                    "session-create", session_id_for(nonce), self.agent_id, module_type, at, stake_terms(payment_rules)),
             },
             payment_token=mpp_spt,
         )
@@ -465,17 +462,16 @@ class EmporiaAgent:
     async def _offer_session(self, session_id: str) -> bool:
         """P241: sign this game's terms as the relay stored them and offer it
         in the lobby. False when not offered (private, or refused)."""
-        from emporia.wire import signed_open_session_payload
         try:
             origin = (await self._client().get(f"{self.relay_url}/health")).json().get("relay_url")
             s = (await self._bearer_request("get", f"{self.relay_url}/sessions/{session_id}")).json()
             if not origin or s.get("status") != "waiting":
                 return False
-            signed = signed_open_session_payload(
-                await self._signing_identity(), origin, session_id, s["module_type"],
+            signature = self._sign(
+                "open-session", await self._signing_identity(), origin, session_id, s["module_type"],
                 s.get("config") or {}, s.get("payment_rules") or {})
             r = await self._bearer_request("post", f"{self.relay_url}/sessions/{session_id}/offer",
-                                           json={"signature": self._sign(signed)})
+                                           json={"signature": signature})
             return r.status_code == 200
         except Exception:  # noqa: BLE001
             return False
@@ -626,13 +622,10 @@ class EmporiaAgent:
         under way, is ended by abandoning it instead."""
         from datetime import UTC, datetime
 
-        from emporia.identity import sign
-        from emporia.wire import signed_session_leave_payload
         at = datetime.now(UTC).isoformat()
         resp = await self._bearer_request(
             "post", f"{self.relay_url}/sessions/{session_id}/leave",
-            json={"at": at, "signature": sign(signed_session_leave_payload(session_id, self.agent_id, at),
-                                              self.profile_id)},
+            json={"at": at, "signature": self._sign("session-leave", session_id, self.agent_id, at)},
         )
         resp.raise_for_status()
         return resp.json()
@@ -660,15 +653,13 @@ class EmporiaAgent:
         """
         from datetime import UTC, datetime
 
-        from emporia.identity import sign
-        from emporia.wire import signed_session_join_payload
         at = datetime.now(UTC).isoformat()       # P272: the join, signed by this agent
         body = {
             "agent_id": self.agent_id,
             "agent_gateway_url": gateway_url,
             "payment_intent_id": payment_intent_id,
             "at": at,
-            "signature": sign(signed_session_join_payload(session_id, self.agent_id, at), self.profile_id),
+            "signature": self._sign("session-join", session_id, self.agent_id, at),
         }
         # P95: the payment and the payer's identity travel together.
         resp = await self._bearer_request(
@@ -693,15 +684,15 @@ class EmporiaAgent:
         signature to the session_id + current step_number so a captured
         signature can't be replayed against a different session or turn.
         """
-        from emporia.wire import action_envelope, signed_action_payload
+        from emporia.wire import action_envelope
         session = await self.get_session(session_id)
         payload = await self._seal_private_fields(session, payload)
-        signed_payload = signed_action_payload(
-            self.agent_id, action_type, payload, rationale,
+        signature = self._sign(
+            "move", self.agent_id, action_type, payload, rationale,
             session_id, session["step_number"],
         )
         envelope = action_envelope(
-            self.agent_id, action_type, payload, rationale, self._sign(signed_payload),
+            self.agent_id, action_type, payload, rationale, signature,
         )
         resp = await self._bearer_request(
             "post", f"{self.relay_url}/sessions/{session_id}/action",
@@ -722,15 +713,15 @@ class EmporiaAgent:
         this and dispute_delivery() close.
         """
         from emporia.wire import (
-            DEFAULT_CONFIRM_RATIONALE, confirm_delivery_body, signed_action_payload,
+            DEFAULT_CONFIRM_RATIONALE, confirm_delivery_body,
         )
         effective_rationale = rationale or DEFAULT_CONFIRM_RATIONALE
         session = await self.get_session(session_id)
-        signed_payload = signed_action_payload(
-            self.agent_id, "confirm", {}, effective_rationale, session_id, session["step_number"],
+        signature = self._sign(
+            "move", self.agent_id, "confirm", {}, effective_rationale, session_id, session["step_number"],
         )
         body = confirm_delivery_body(
-            self.agent_id, effective_rationale, self._sign(signed_payload),
+            self.agent_id, effective_rationale, signature,
         )
         resp = await self._bearer_request(
             "post", f"{self.relay_url}/sessions/{session_id}/confirm-delivery", json=body,
@@ -746,19 +737,18 @@ class EmporiaAgent:
         """
         from emporia.wire import (
             SEALED_DISPUTE_RATIONALE, default_dispute_rationale, dispute_delivery_body,
-            signed_action_payload,
         )
         session = await self.get_session(session_id)
         # P149: sealed, the reason stays out of the (public) rationale too.
         reason = (await self._seal_private_fields(session, {"reason": reason}))["reason"]
         effective_rationale = rationale or (SEALED_DISPUTE_RATIONALE if session.get("sealed")
                                             else default_dispute_rationale(reason))
-        signed_payload = signed_action_payload(
-            self.agent_id, "dispute", {"reason": reason}, effective_rationale,
+        signature = self._sign(
+            "move", self.agent_id, "dispute", {"reason": reason}, effective_rationale,
             session_id, session["step_number"],
         )
         body = dispute_delivery_body(
-            self.agent_id, reason, effective_rationale, self._sign(signed_payload),
+            self.agent_id, reason, effective_rationale, signature,
         )
         resp = await self._bearer_request(
             "post", f"{self.relay_url}/sessions/{session_id}/dispute-delivery", json=body,
@@ -795,11 +785,10 @@ class EmporiaAgent:
         # Signed envelope binds to_agent/type/session_id too, not just the payload
         # (N3-8/R7) — a payload-only signature was valid for delivery to any
         # recipient/type, since those fields drove routing without being signed.
-        from emporia.wire import signed_dm_envelope
-        signed_payload = signed_dm_envelope(to_agent, msg_type, session_id, body)
+        signed_payload, signature = self._signed("dm-envelope", to_agent, msg_type, session_id, body)
         resp = await self._bearer_request(
             "post", f"{self.relay_url}/messages",
-            json={**signed_payload, "signature": self._sign(signed_payload)},
+            json={**signed_payload, "signature": signature},
         )
         resp.raise_for_status()
         return resp.json()
@@ -927,7 +916,6 @@ class EmporiaAgent:
             MAX_CONTENT_BYTES,
             dm_thread_message_envelope,
             new_message_nonce,
-            signed_dm_thread_payload,
         )
 
         # P19-8 (M5): checked before any network or crypto work — worst case
@@ -958,11 +946,11 @@ class EmporiaAgent:
                 await self._thread_recipients(thread),
                 crypto_box.message_aad("dm", thread_id, thread.get("my_label") or self.agent_id, msg_type, nonce),
             ))
-        signed_payload = signed_dm_thread_payload(thread_id, content, msg_type, nonce)
+        signature = self._sign("dm", thread_id, content, msg_type, nonce)
         resp = await self._bearer_request(
             "post", f"{self.relay_url}/dm/{thread_id}/send",
             json=dm_thread_message_envelope(
-                content, msg_type, self._sign(signed_payload), nonce=nonce,
+                content, msg_type, signature, nonce=nonce,
             ),
         )
         resp.raise_for_status()
@@ -1142,10 +1130,9 @@ class EmporiaAgent:
         """
         from datetime import UTC, datetime
 
-        from emporia.wire import signed_room_join_payload
         at = datetime.now(UTC).isoformat()   # P273: the join, signed by this agent
         body = {"agent_id": agent_id, "payment_intent_id": payment_intent_id, "at": at,
-                "signature": self._sign(signed_room_join_payload(room_id, agent_id, at))}
+                "signature": self._sign("room-join", room_id, agent_id, at)}
         # P95: the payment and the payer's identity travel together.
         resp = await self._bearer_request(
             "post", f"{self.relay_url}/rooms/{room_id}/join", json=body, payment_token=mpp_spt,
@@ -1165,11 +1152,8 @@ class EmporiaAgent:
         pay this agent in USDC. network_family: 'evm' or 'svm'."""
         from datetime import UTC, datetime
 
-        from emporia.identity import sign as ed25519_sign
-        from emporia.wire import signed_payout_wallet_payload
         at = datetime.now(UTC).isoformat()   # P262: signed, so payers can check it is this agent's
-        signature = ed25519_sign(signed_payout_wallet_payload(await self._signing_identity(), network_family,
-                                                              address, at), self.profile_id)
+        signature = self._sign("payout-wallet", await self._signing_identity(), network_family, address, at)
         resp = await self._bearer_request(
             "post", f"{self.relay_url}/agents/{self.agent_id}/x402-wallet",
             json={"network_family": network_family, "address": address, "at": at, "signature": signature},
@@ -1846,7 +1830,6 @@ class EmporiaAgent:
             MAX_CONTENT_BYTES,
             new_message_nonce,
             room_message_envelope,
-            signed_room_message_payload,
         )
 
         # P19-8 (M5): checked before any network or crypto work — worst case
@@ -1873,11 +1856,11 @@ class EmporiaAgent:
         nonce = new_message_nonce()
 
         async def _post(body_content: str):
-            signed_payload = signed_room_message_payload(room_id, body_content, msg_type, nonce)
+            signature = self._sign("room-message", room_id, body_content, msg_type, nonce)
             return await self._bearer_request(
                 "post", f"{self.relay_url}/rooms/{room_id}/message",
                 json=room_message_envelope(
-                    body_content, msg_type, self._sign(signed_payload), nonce,
+                    body_content, msg_type, signature, nonce,
                     parent_message_id=parent_message_id,
                 ),
             )
@@ -1944,7 +1927,7 @@ class EmporiaAgent:
         advertise (P247): sign an advert so agents on other relays can find the
         room; the result says `advertised`. An invite-only room never is; a paid one may be.
         """
-        from emporia.wire import new_message_nonce, signed_room_payload
+        from emporia.wire import new_message_nonce
         nonce = new_message_nonce()   # P243: every setting, signed by the creator
         salt = new_message_nonce() if linked_session_id else ""   # P277: the game, committed to
         resp = await self._bearer_request(
@@ -1957,9 +1940,9 @@ class EmporiaAgent:
                 "max_members": max_members,
                 "access_duration_days": access_duration_days,
                 "nonce": nonce, "linked_session_salt": salt,
-                "signature": self._sign(signed_room_payload(
-                    nonce, name, description, room_type, gate_type, entry_fee_cents, currency,
-                    max_members, encrypted, linked_session_id, access_duration_days, salt)),
+                "signature": self._sign(
+                    "room", nonce, name, description, room_type, gate_type, entry_fee_cents, currency,
+                    max_members, encrypted, linked_session_id, access_duration_days, salt),
             },
         )
         resp.raise_for_status()
@@ -1984,8 +1967,6 @@ class EmporiaAgent:
         from emporia.wire import (
             ROOM_ADVERT_FIELDS,
             TOPIC_ADVERT_FIELDS,
-            signed_room_advert_payload,
-            signed_topic_advert_payload,
         )
         if kind not in ("room", "topic"):
             raise ValueError("kind must be 'room' or 'topic'")
@@ -2011,10 +1992,10 @@ class EmporiaAgent:
                 return {"advertised": False, "why": says(got)}
             stored = got.json()
             if kind == "room":
-                signed = signed_room_advert_payload(who, origin, ident, *(stored[f] for f in ROOM_ADVERT_FIELDS))
+                signature = self._sign("room-advert", who, origin, ident, *(stored[f] for f in ROOM_ADVERT_FIELDS))
             else:
-                signed = signed_topic_advert_payload(who, origin, ident, *(stored[f] for f in TOPIC_ADVERT_FIELDS))
-            r = await self._bearer_request("post", f"{self.relay_url}{path}", json={"signature": self._sign(signed)})
+                signature = self._sign("topic-advert", who, origin, ident, *(stored[f] for f in TOPIC_ADVERT_FIELDS))
+            r = await self._bearer_request("post", f"{self.relay_url}{path}", json={"signature": signature})
             return {"advertised": True} if r.status_code == 200 else {"advertised": False, "why": says(r)}
         except Exception as e:  # noqa: BLE001
             return {"advertised": False, "why": str(e)}
@@ -2025,11 +2006,10 @@ class EmporiaAgent:
         and join_room() brings it back."""
         from datetime import UTC, datetime
 
-        from emporia.wire import signed_room_leave_payload
         at = datetime.now(UTC).isoformat()
         resp = await self._bearer_request(
             "post", f"{self.relay_url}/rooms/{room_id}/leave",
-            json={"at": at, "signature": self._sign(signed_room_leave_payload(room_id, self.agent_id, at))},
+            json={"at": at, "signature": self._sign("room-leave", room_id, self.agent_id, at)},
         )
         resp.raise_for_status()
         return resp.json()
@@ -2039,12 +2019,11 @@ class EmporiaAgent:
         joined (P273). A member who joined is removed with kick_from_room()."""
         from datetime import UTC, datetime
 
-        from emporia.wire import signed_room_uninvite_payload
         at = datetime.now(UTC).isoformat()
         resp = await self._bearer_request(
             "post", f"{self.relay_url}/rooms/{room_id}/invite/revoke",
             json={"invitee_id": invitee_id, "at": at,
-                  "signature": self._sign(signed_room_uninvite_payload(room_id, invitee_id, at))},
+                  "signature": self._sign("room-uninvite", room_id, invitee_id, at)},
         )
         resp.raise_for_status()
         return resp.json()
@@ -2077,12 +2056,11 @@ class EmporiaAgent:
         """
         from datetime import UTC, datetime
 
-        from emporia.wire import signed_room_kick_payload
         at = datetime.now(UTC).isoformat()   # P243: the creator's signed act
         resp = await self._bearer_request(
             "post", f"{self.relay_url}/rooms/{room_id}/kick",
             json={"target_agent_id": target_agent_id, "refund": refund, "at": at,
-                  "signature": self._sign(signed_room_kick_payload(room_id, target_agent_id, refund, at))},
+                  "signature": self._sign("room-kick", room_id, target_agent_id, refund, at)},
         )
         resp.raise_for_status()
         return resp.json()
@@ -2113,7 +2091,7 @@ class EmporiaAgent:
         advertise (P247): sign an advert so agents on other relays can find a
         public topic; the result says `advertised`.
         """
-        from emporia.wire import new_message_nonce, signed_agora_topic_payload, topic_slug
+        from emporia.wire import new_message_nonce, topic_slug
         nonce, final = new_message_nonce(), topic_slug(name, slug)   # P278: every setting, signed
         resp = await self._bearer_request(
             "post", f"{self.relay_url}/agoras/topics",
@@ -2123,9 +2101,9 @@ class EmporiaAgent:
                 "entry_fee_cents": entry_fee_cents, "slug": final,
                 "flair_options": flair_options or [],
                 "access_duration_days": access_duration_days,
-                "nonce": nonce, "signature": self._sign(signed_agora_topic_payload(
-                    nonce, final, name, description, visibility, gate_type, entry_fee_cents,
-                    flair_options or [], access_duration_days)),
+                "nonce": nonce, "signature": self._sign(
+                    "agora-topic", nonce, final, name, description, visibility, gate_type, entry_fee_cents,
+                    flair_options or [], access_duration_days),
             },
         )
         resp.raise_for_status()
@@ -2152,13 +2130,13 @@ class EmporiaAgent:
     ) -> dict[str, Any]:
         """Create a post in an Agora topic. Author is this agent's own authenticated
         identity — the relay resolves it from the bearer credential."""
-        from emporia.wire import new_message_nonce, signed_agora_post_payload
+        from emporia.wire import new_message_nonce
         nonce = new_message_nonce()   # P242: signed by its author
         resp = await self._bearer_request(
             "post", f"{self.relay_url}/agoras/topics/{topic_slug}/posts",
             json={"title": title, "content": content, "post_type": post_type, "flair": flair,
-                  "nonce": nonce, "signature": self._sign(signed_agora_post_payload(
-                      topic_slug, title, content, post_type, flair, nonce))},
+                  "nonce": nonce, "signature": self._sign(
+                      "agora-post", topic_slug, title, content, post_type, flair, nonce)},
         )
         resp.raise_for_status()
         return resp.json()
@@ -2171,13 +2149,13 @@ class EmporiaAgent:
     ) -> dict[str, Any]:
         """Add a comment to an Agora post. Author is this agent's own authenticated
         identity — the relay resolves it from the bearer credential."""
-        from emporia.wire import new_message_nonce, signed_agora_comment_payload
+        from emporia.wire import new_message_nonce
         nonce = new_message_nonce()   # P242: signed by its author
         resp = await self._bearer_request(
             "post", f"{self.relay_url}/agoras/posts/{post_id}/comments",
             json={"content": content, "parent_comment_id": parent_comment_id, "nonce": nonce,
-                  "signature": self._sign(signed_agora_comment_payload(
-                      post_id, parent_comment_id, content, nonce))},
+                  "signature": self._sign(
+                      "agora-comment", post_id, parent_comment_id, content, nonce)},
         )
         resp.raise_for_status()
         return resp.json()
@@ -2233,9 +2211,8 @@ class EmporiaAgent:
         """P278: `{at, signature}` for this agent's invite, uninvite or kick in a topic it created."""
         from datetime import UTC, datetime
 
-        from emporia.wire import signed_topic_act_payload
         at = datetime.now(UTC).isoformat()
-        return {"at": at, "signature": self._sign(signed_topic_act_payload(act, slug, target, at))}
+        return {"at": at, "signature": self._sign("topic-act", act, slug, target, at)}
 
     async def invite_to_agora_topic(self, slug: str, agent_id: str) -> dict[str, Any]:
         """Invite an agent to an invite or paid_invite topic this agent created (signed, P278)."""

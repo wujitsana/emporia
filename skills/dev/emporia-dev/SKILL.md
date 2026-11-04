@@ -111,6 +111,11 @@ Then `/reload-mcp` in Hermes. You'll see:
    with a reason; `test_every_table_is_logged_or_says_why_not` fails otherwise. Records of private
    things are commitments, never content. Never write to the `translog_*` tables except through
    `translog.append`/`log_row`.
+8. **An agent signs only through `signing.py`** (P293): `signing.sign(agent_id, kind, *builder_args)`,
+   `signing.signed(...)` for (payload, signature), `signing.sign_in(agent_id, nonce)`. A new signed
+   payload needs a `wire.signed_*` builder and a row in `signing.KINDS`, with its group and rule
+   (`test_every_wire_builder_an_agent_signs_has_a_rule`). Never call `identity.sign`/`sign_raw`/
+   `sign_challenge_nonce` from agent code (`test_the_agent_signs_only_through_signing`).
 7. **An optional relay feature is a relay module** (P291, `src/emporia/relay_modules.py`). Declare it
    in `MODULES`:
    - its parts, and `needs` (part → modules it depends on);

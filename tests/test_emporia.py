@@ -9790,6 +9790,16 @@ def test_mcp_send_dm_uses_shared_wire_contract_and_relay_accepts_it(prod_client)
     assert calls[0] == calls[1], calls
 
 
+@contextmanager
+def _wire_spy(name: str, kind: str):
+    """Spy `wire.<name>` for both the relay's verifier and the signer (P293: signing.KINDS[kind]
+    names the builder and looks it up when it signs, so patching wire covers both)."""
+    from emporia import signing, wire
+    assert signing.KINDS[kind].builder == name
+    with patch.object(wire, name, wraps=getattr(wire, name)) as spy:
+        yield spy
+
+
 def test_agent_sdk_send_dm_uses_shared_wire_contract_and_relay_accepts_it():
     """agent_sdk.EmporiaAgent.send_dm() now signs via wire.signed_dm_thread_payload(),
     the same function relay_server.dm_send() uses to verify — spy-proof both sides
@@ -9822,9 +9832,7 @@ def test_agent_sdk_send_dm_uses_shared_wire_contract_and_relay_accepts_it():
             thread = await alice.start_dm("p13_dm_sdk_bob")
             thread_id = thread["thread_id"]
 
-            with patch.object(
-                wire, "signed_dm_thread_payload", wraps=wire.signed_dm_thread_payload,
-            ) as spy:
+            with _wire_spy("signed_dm_thread_payload", "dm") as spy:
                 result = await alice.send_dm(thread_id, "hi via sdk")
 
             assert "message_id" in result, result
@@ -11485,9 +11493,7 @@ def test_agent_sdk_submit_action_uses_shared_wire_contract_and_relay_accepts_it(
             session_id = session["session_id"]
             await seller.join_session(session_id)
 
-            with patch.object(
-                wire, "signed_action_payload", wraps=wire.signed_action_payload,
-            ) as payload_spy, patch.object(
+            with _wire_spy("signed_action_payload", "move") as payload_spy, patch.object(
                 wire, "action_envelope", wraps=wire.action_envelope,
             ) as envelope_spy:
                 result = await seller.submit_action(
@@ -11561,9 +11567,7 @@ def test_agent_sdk_confirm_delivery_and_dispute_delivery_use_shared_wire_contrac
                 session_id, "deliver", {"deliverable": "done"}, "Delivered — P13-2 test.",
             )
 
-            with patch.object(
-                wire, "signed_action_payload", wraps=wire.signed_action_payload,
-            ) as spy:
+            with _wire_spy("signed_action_payload", "move") as spy:
                 result = await buyer.confirm_delivery(session_id)
             assert result["is_terminal"] is True, result
             assert spy.call_count == 2, spy.call_args_list
@@ -11583,9 +11587,7 @@ def test_agent_sdk_confirm_delivery_and_dispute_delivery_use_shared_wire_contrac
                 session_id2, "deliver", {"deliverable": "done"}, "Delivered — P13-2 test.",
             )
 
-            with patch.object(
-                wire, "signed_action_payload", wraps=wire.signed_action_payload,
-            ) as spy2:
+            with _wire_spy("signed_action_payload", "move") as spy2:
                 result2 = await buyer.dispute_delivery(session_id2, "not as described")
             assert result2["is_terminal"] is True, result2
             assert spy2.call_count == 2, spy2.call_args_list
@@ -11781,9 +11783,7 @@ def test_agent_sdk_send_room_message_uses_shared_wire_contract_and_relay_accepts
             )
             room_id = room["room_id"]
 
-            with patch.object(
-                wire, "signed_room_message_payload", wraps=wire.signed_room_message_payload,
-            ) as payload_spy, patch.object(
+            with _wire_spy("signed_room_message_payload", "room-message") as payload_spy, patch.object(
                 wire, "room_message_envelope", wraps=wire.room_message_envelope,
             ) as envelope_spy:
                 result = await sender.send_room_message(room_id, "hello from P6-5 SDK")
@@ -11854,9 +11854,7 @@ def test_relay_server_verifies_signed_action_and_room_message_via_wire_contract(
             session_id = session["session_id"]
             await seller.join_session(session_id)
 
-            with patch.object(
-                wire, "signed_action_payload", wraps=wire.signed_action_payload,
-            ) as action_spy:
+            with _wire_spy("signed_action_payload", "move") as action_spy:
                 result = await seller.submit_action(
                     session_id, "accept", {}, "Accepting — P10-3 verifier test.",
                 )
@@ -11872,9 +11870,7 @@ def test_relay_server_verifies_signed_action_and_room_message_via_wire_contract(
                 name="P10-3 Room", room_type="public", gate_type="open",
             )
             room_id = room["room_id"]
-            with patch.object(
-                wire, "signed_room_message_payload", wraps=wire.signed_room_message_payload,
-            ) as msg_spy:
+            with _wire_spy("signed_room_message_payload", "room-message") as msg_spy:
                 msg_result = await buyer.send_room_message(room_id, "hello P10-3")
             assert msg_result.get("message_id", "").startswith("rmsg_")
             assert msg_spy.call_count >= 2
@@ -11923,9 +11919,7 @@ def test_relay_server_verifies_dm_signature_via_wire_contract():
             await sender.register()
             await recipient.register()
 
-            with patch.object(
-                wire, "signed_dm_envelope", wraps=wire.signed_dm_envelope,
-            ) as dm_spy:
+            with _wire_spy("signed_dm_envelope", "dm-envelope") as dm_spy:
                 result = await sender.send_message(
                     "p10_3_dm_recipient", "chat", {"text": "hi from P10-3"},
                 )

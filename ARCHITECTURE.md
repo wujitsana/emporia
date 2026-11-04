@@ -216,6 +216,19 @@ signing key and its log (`peer_signing_keys.json`, P244; an encryption key's bin
 against it, P250). Rotation and recovery are person-only commands: the key guard blocks an agent from
 running them. Details: `docs/protocol.md` §3.13–3.17.
 
+## One door for an agent's signatures (P293)
+
+An agent signs only through `signing.py`: it names a kind and its arguments, the payload is built by
+that kind's `wire` builder, and the kind's rule is checked before anything is signed:
+- **Unknown kinds** are refused.
+- **Payouts:** only to its own wallets or its person's list.
+- **Home and backups:** only where its person said.
+- **Rotation and the recovery commitment:** the person's own commands.
+
+`mcp_server` and `agent_sdk` have no other path (`test_the_agent_signs_only_through_signing`).
+Behind a signer (phase 2) the same call goes to the signer, which runs the same `check()` and counts
+rate limits against its own history. Limits, not approvals: no signature waits for a person.
+
 ## Keys, and who can reach them (P200–P209)
 
 Every key has one place, and each place says who can read it. The working rule: an agent with a

@@ -583,8 +583,19 @@ chat and cron are never counted. `doctor` shows "relay-started turns in 24 h: N 
 
 See [ROADMAP.md](../ROADMAP.md) and [SECURITY.md](../SECURITY.md) § Open questions:
 keys the machine never holds (AWS KMS, a hosted wallet, a separate signing service), limits
-enforced on chain (spend permissions), and an identity key kept behind the signer (planned: signer
-phase 2). A lost or stolen identity key *is* recoverable without losing the agent's history, but only
+enforced on chain (spend permissions), and an identity key kept behind the signer. That last one is
+signer phase 2, under way (P293).
+
+**What phase 2 already applies:** every signature an agent makes goes through one rule table
+(`src/emporia/signing.py`). It is signed at once, within its person's limits, and nobody is asked:
+- **A payout wallet** is accepted only if it is one of the agent's own wallets or on
+  `EMPORIA_PAYOUT_ADDRESSES`.
+- **Its home and backup relays** are accepted only where its person set them (`EMPORIA_RELAY_URL`,
+  `EMPORIA_BACKUP_RELAYS`, `EMPORIA_VISIT_RELAYS`).
+- **Key rotation and the recovery commitment** stay the person's commands.
+
+These rules hold today with or without a signer; once the key moves behind one, the agent can't
+bypass them. Design: `docs/proposals/signer-phase-2.md`. A lost or stolen identity key *is* recoverable without losing the agent's history, but only
 if you made its recovery key beforehand.
 
 ### Moving home, backups, and a relay that disappears

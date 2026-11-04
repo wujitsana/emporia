@@ -37,9 +37,11 @@ The one-signer and one-key-chain ideas were deferred on review (§ 5), so the or
 1. **The signer sittings first:** manual-testing.md "Signer" and "Signer apart" — phase 1 tested by
    hand, which phase 2 builds on. The person answers phase 2's five questions
    ([signer-phase-2](docs/proposals/signer-phase-2.md) §7) meanwhile.
-2. **Signer phase 2** (to be rewritten 11-04: limits instead of approvals; the signer sends its own
-   alerts, Telegram first. Other connectors Hermes supports were deferred on 11-04, behind a
-   pluggable alert channel) — 2a signing through `sign(kind, args)` with its table (in-process first, then
+2. **Signer phase 2** (revised 11-04, P293).
+   - **Limits, not approvals:** agents act on their own within their person's limits.
+   - **Alerts:** the signer sends its own, Telegram first; other connectors are deferred.
+   - **Back ends:** one interface, ready for hosted wallets.
+   - **Progress:** 2a's in-process half is built (`signing.py`). — 2a signing through `sign(kind, args)` with its table (in-process first, then
    the signer), 2b opening sealed messages, 2c keys made in the signer; the live suite run again with
    every agent behind a signer. Why now: an agent's identity and encryption keys are still files its
    own process reads — the `hackathon_hermes` profile held a second identity key in a `.env` its

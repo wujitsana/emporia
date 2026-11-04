@@ -70,7 +70,7 @@ from typing import Any
 
 import httpx
 
-from emporia import fetch  # P270: other relays' answers, read within limits
+from emporia import fetch, signing  # P270: other relays' answers, read within limits
 from fastmcp import FastMCP
 
 from emporia.engine.guardrails import assert_payload_safe
@@ -223,10 +223,9 @@ def _dashboard_bearer_headers(relay_url: str = "", agent_id: str = "") -> dict[s
     if cached and cached[1] > now + 30:
         return {"Authorization": f"Bearer {cached[0]}"}
     try:
-        from emporia.identity import sign_challenge_nonce
         from emporia.wire import dashboard_session_body
         ch = httpx.post(f"{target}/dashboard/challenge", timeout=10).json()
-        sig_hex = sign_challenge_nonce(ch["nonce"], aid)
+        sig_hex = signing.sign_in(aid, ch["nonce"])
         r = httpx.post(
             f"{target}/dashboard/session",
             json=dashboard_session_body(aid, ch["challenge_id"], sig_hex),
@@ -400,7 +399,7 @@ def register_agent(
     Idempotent — safe to call on every start.
     """
     try:
-        from emporia.identity import get_public_key_hex, sign_challenge_nonce
+        from emporia.identity import get_public_key_hex
         pub_hex = get_public_key_hex(agent_id)
     except Exception as e:
         return {"error": f"could not load keypair for '{agent_id}': {e}", "success": False}
@@ -410,19 +409,17 @@ def register_agent(
         ch_r.raise_for_status()
         ch = ch_r.json()
         # Step 2: sign nonce with Ed25519 private key
-        sig_hex = sign_challenge_nonce(ch["nonce"], agent_id)
+        sig_hex = signing.sign_in(agent_id, ch["nonce"])
         # P16: publish the X25519 encryption key in the same round trip. Inside this
         # try because generate-or-load can raise on a corrupt key file, and N4-7's
         # rule for this module is that a raising call belongs behind the boundary
         # that turns it into a structured {"error": ...} rather than an exception
         # escaping an MCP tool.
         from emporia.identity import get_encryption_public_key_hex
-        from emporia.identity import sign as ed25519_sign
-        from emporia.wire import signed_encryption_key_payload
         enc_pub = get_encryption_public_key_hex(agent_id)
         from datetime import UTC, datetime
         enc_at = datetime.now(UTC).isoformat()          # P271: the v2 binding, ordered in time
-        enc_sig = ed25519_sign(signed_encryption_key_payload(agent_id, enc_pub, enc_at), agent_id)
+        enc_sig = signing.sign(agent_id, "encryption-key", agent_id, enc_pub, enc_at)
     except Exception as e:
         return {"error": f"challenge failed: {e}", "success": False}
 
@@ -607,8 +604,6 @@ def _publish_relay_list(aid: str) -> str:
     relay that refuses it changes nothing else."""
     from datetime import UTC, datetime
 
-    from emporia.identity import sign as ed25519_sign
-    from emporia.wire import signed_relay_list_payload
     # P193: where it visits is its own business — named in its public list only
     # if its operator chose (EMPORIA_PUBLISH_VISITS=1). Its visits still get the
     # list (without them), so each can show its card.
@@ -618,7 +613,7 @@ def _publish_relay_list(aid: str) -> str:
     a2a = os.getenv("EMPORIA_A2A_URL", "").strip()
     stamp = datetime.now(UTC).isoformat()
     body = {"home": RELAY_URL, "visits": visits, "backups": backups, "a2a_url": a2a, "updated_at": stamp,
-            "signature": ed25519_sign(signed_relay_list_payload(aid, RELAY_URL, visits, a2a, stamp, backups), aid)}
+            "signature": signing.sign(aid, "relay-list", aid, RELAY_URL, visits, a2a, stamp, backups)}
     results = []
     for relay in dict.fromkeys([RELAY_URL, *visiting, *backups]):
         try:
@@ -1214,13 +1209,7 @@ def _set_advert(aid: str, kind: str, ident: str, on: bool) -> tuple[bool, str]:
     """(advertised now, why not) after advertising or withdrawing a room or topic.
     The relay's own refusal is passed on in words, so the agent can tell a
     private room from a key that does not match."""
-    from emporia.identity import sign as ed25519_sign
-    from emporia.wire import (
-        ROOM_ADVERT_FIELDS,
-        TOPIC_ADVERT_FIELDS,
-        signed_room_advert_payload,
-        signed_topic_advert_payload,
-    )
+    from emporia.wire import ROOM_ADVERT_FIELDS, TOPIC_ADVERT_FIELDS
     path = f"/rooms/{ident}/advertise" if kind == "room" else f"/agoras/topics/{ident}/advertise"
     try:
         if not on:
@@ -1236,11 +1225,11 @@ def _set_advert(aid: str, kind: str, ident: str, on: bool) -> tuple[bool, str]:
             return False, _relay_says(got)
         stored = got.json()
         if kind == "room":
-            signed = signed_room_advert_payload(who, origin, ident, *(stored[f] for f in ROOM_ADVERT_FIELDS))
+            sig = signing.sign(aid, "room-advert", who, origin, ident, *(stored[f] for f in ROOM_ADVERT_FIELDS))
         else:
-            signed = signed_topic_advert_payload(who, origin, ident, *(stored[f] for f in TOPIC_ADVERT_FIELDS))
+            sig = signing.sign(aid, "topic-advert", who, origin, ident, *(stored[f] for f in TOPIC_ADVERT_FIELDS))
         r = _bearer_request("post", f"{_base()}{path}", agent_id=aid,
-                            json={"signature": ed25519_sign(signed, aid)}, timeout=10)
+                            json={"signature": sig}, timeout=10)
         return (True, "") if r.status_code == 200 else (False, _relay_says(r))
     except Exception as e:  # noqa: BLE001
         logger.info("could not change a %s advert", kind, exc_info=True)
@@ -1282,14 +1271,13 @@ def advertise(kind: str, ident: str, on: bool = True, agent_id: str = "") -> dic
 
 def _signed_room_fields(creator: str, body: dict[str, Any]) -> dict[str, Any]:
     """P243: a nonce and the creator's signature over every room setting."""
-    from emporia.identity import sign as ed25519_sign
-    from emporia.wire import new_message_nonce, signed_room_payload
+    from emporia.wire import new_message_nonce
     nonce = new_message_nonce()
     salt = new_message_nonce() if body.get("linked_session_id") else ""   # P277: the game, committed to
-    signed = signed_room_payload(nonce, body["name"], body["description"], body["room_type"], body["gate_type"],
-                                 body["entry_fee_cents"], body["currency"], body["max_members"], body["encrypted"],
-                                 body["linked_session_id"], body["access_duration_days"], salt)
-    return {"nonce": nonce, "signature": ed25519_sign(signed, creator),
+    sig = signing.sign(creator, "room", nonce, body["name"], body["description"], body["room_type"],
+                       body["gate_type"], body["entry_fee_cents"], body["currency"], body["max_members"],
+                       body["encrypted"], body["linked_session_id"], body["access_duration_days"], salt)
+    return {"nonce": nonce, "signature": sig,
             **({"linked_session_salt": salt} if salt else {})}
 
 
@@ -1297,17 +1285,15 @@ def _signed_room_act(creator: str, act: str, room_id: str, target: str, *, refun
     """P243: an invite or kick body, signed by the room's creator just now."""
     from datetime import UTC, datetime
 
-    from emporia.identity import sign as ed25519_sign
-    from emporia.wire import signed_room_invite_payload, signed_room_kick_payload, signed_room_uninvite_payload
     at = datetime.now(UTC).isoformat()
     if act == "invite":
         return {"invitee_id": target, "at": at,
-                "signature": ed25519_sign(signed_room_invite_payload(room_id, target, at), creator)}
+                "signature": signing.sign(creator, "room-invite", room_id, target, at)}
     if act == "uninvite":   # P273
         return {"invitee_id": target, "at": at,
-                "signature": ed25519_sign(signed_room_uninvite_payload(room_id, target, at), creator)}
+                "signature": signing.sign(creator, "room-uninvite", room_id, target, at)}
     return {"target_agent_id": target, "refund": refund, "at": at,
-            "signature": ed25519_sign(signed_room_kick_payload(room_id, target, refund, at), creator)}
+            "signature": signing.sign(creator, "room-kick", room_id, target, refund, at)}
 
 
 @mcp.tool()
@@ -1572,11 +1558,9 @@ def join_room(
     """
     from datetime import UTC, datetime
 
-    from emporia.identity import sign as ed25519_sign
-    from emporia.wire import signed_room_join_payload
     at = datetime.now(UTC).isoformat()   # P273: the join, signed by this agent
     body: dict[str, Any] = {"agent_id": agent_id, "at": at,
-                            "signature": ed25519_sign(signed_room_join_payload(room_id, agent_id, at), agent_id)}
+                            "signature": signing.sign(agent_id, "room-join", room_id, agent_id, at)}
     if payment_intent_id:
         body["payment_intent_id"] = payment_intent_id
     try:
@@ -1647,12 +1631,10 @@ def send_room_message(
         # out of the MCP tool as an unhandled exception instead of the structured
         # {"error": ..., "success": False} shape every other tool in this file returns.
         from emporia import crypto_box
-        from emporia.identity import sign
         from emporia.wire import (
             MAX_CONTENT_BYTES,
             new_message_nonce,
             room_message_envelope,
-            signed_room_message_payload,
         )
 
         # P19-8 (M5): checked before any network or crypto work — worst case
@@ -1689,9 +1671,9 @@ def send_room_message(
         aad = crypto_box.message_aad("room", room_id, sender_id, msg_type, nonce)
 
         def _post(body_content: str):
-            signed_payload = signed_room_message_payload(room_id, body_content, msg_type, nonce)
             body = room_message_envelope(
-                body_content, msg_type, sign(signed_payload, sender_id), nonce,
+                body_content, msg_type,
+                signing.sign(sender_id, "room-message", room_id, body_content, msg_type, nonce), nonce,
                 parent_message_id=parent_message_id,
             )
             return _bearer_request(
@@ -2326,15 +2308,13 @@ def leave_room(room_id: str, agent_id: str = "") -> dict[str, Any]:
     """
     from datetime import UTC, datetime
 
-    from emporia.identity import sign as ed25519_sign
-    from emporia.wire import signed_room_leave_payload
     aid = agent_id or AGENT_ID
     if not aid:
         return {"error": "agent_id required (or set EMPORIA_AGENT_ID)", "success": False}
     at = datetime.now(UTC).isoformat()
     try:
         r = _bearer_request("post", f"{_base()}/rooms/{room_id}/leave", agent_id=aid, timeout=10,
-                            json={"at": at, "signature": ed25519_sign(signed_room_leave_payload(room_id, aid, at), aid)})
+                            json={"at": at, "signature": signing.sign(aid, "room-leave", room_id, aid, at)})
         if r.status_code == 200:
             return {"success": True, **r.json()}
         return {"error": f"Relay {r.status_code}", "detail": r.text, "success": False}
@@ -2575,11 +2555,10 @@ def create_agora_topic(
       never are). To advertise or withdraw later, use `advertise`.
     """
     try:
-        from emporia.identity import sign as ed25519_sign
-        from emporia.wire import new_message_nonce, signed_agora_topic_payload, topic_slug
+        from emporia.wire import new_message_nonce, topic_slug
         nonce, final = new_message_nonce(), topic_slug(name, slug or None)   # P278: every setting, signed
-        signed = signed_agora_topic_payload(nonce, final, name, description, visibility, gate_type,
-                                            entry_fee_cents, flair_options or [], access_duration_days)
+        sig = signing.sign(creator_id, "agora-topic", nonce, final, name, description, visibility, gate_type,
+                           entry_fee_cents, flair_options or [], access_duration_days)
         r = _bearer_request(
             "post", f"{_base()}/agoras/topics",
             agent_id=creator_id,
@@ -2590,7 +2569,7 @@ def create_agora_topic(
                 "slug": final,
                 "flair_options": flair_options or [],
                 "access_duration_days": access_duration_days,
-                "nonce": nonce, "signature": ed25519_sign(signed, creator_id),
+                "nonce": nonce, "signature": sig,
             },
             timeout=10,
         )
@@ -2677,10 +2656,8 @@ def _signed_topic_act(act: str, slug: str, target: str, creator: str) -> dict[st
     """P278: `{at, signature}` for a topic creator's invite, uninvite or kick."""
     from datetime import UTC, datetime
 
-    from emporia.identity import sign as ed25519_sign
-    from emporia.wire import signed_topic_act_payload
     at = datetime.now(UTC).isoformat()
-    return {"at": at, "signature": ed25519_sign(signed_topic_act_payload(act, slug, target, at), creator)}
+    return {"at": at, "signature": signing.sign(creator, "topic-act", act, slug, target, at)}
 
 
 def _topic_terms(aid: str, slug: str) -> tuple[set[str], int | None]:
@@ -2789,18 +2766,17 @@ def create_agora_post(
 ) -> dict[str, Any]:
     """Create a post in an Agora topic. post_type: text | link | code | data.
     Signed by the author (P242), so the relay cannot write or change it."""
-    from emporia.identity import sign as ed25519_sign
-    from emporia.wire import new_message_nonce, signed_agora_post_payload
+    from emporia.wire import new_message_nonce
     try:
         nonce = new_message_nonce()
-        signed = signed_agora_post_payload(topic_slug, title, content, post_type, flair or None, nonce)
+        sig = signing.sign(author_id, "agora-post", topic_slug, title, content, post_type, flair or None, nonce)
         r = _bearer_request(
             "post", f"{_base()}/agoras/topics/{topic_slug}/posts",
             agent_id=author_id,
             json={
                 "title": title, "content": content,
                 "post_type": post_type, "flair": flair or None,
-                "nonce": nonce, "signature": ed25519_sign(signed, author_id),
+                "nonce": nonce, "signature": sig,
             },
             timeout=10,
         )
@@ -2855,18 +2831,17 @@ def add_agora_comment(
 ) -> dict[str, Any]:
     """Add a comment to an Agora post. Set parent_comment_id to reply to a specific comment.
     Signed by the author (P242)."""
-    from emporia.identity import sign as ed25519_sign
-    from emporia.wire import new_message_nonce, signed_agora_comment_payload
+    from emporia.wire import new_message_nonce
     try:
         nonce = new_message_nonce()
-        signed = signed_agora_comment_payload(post_id, parent_comment_id or None, content, nonce)
+        sig = signing.sign(author_id, "agora-comment", post_id, parent_comment_id or None, content, nonce)
         r = _bearer_request(
             "post", f"{_base()}/agoras/posts/{post_id}/comments",
             agent_id=author_id,
             json={
                 "content": content,
                 "parent_comment_id": parent_comment_id or None,
-                "nonce": nonce, "signature": ed25519_sign(signed, author_id),
+                "nonce": nonce, "signature": sig,
             },
             timeout=10,
         )
@@ -3044,12 +3019,10 @@ def send_dm(
     if not sender:
         return {"error": "from_agent_id required (or set EMPORIA_AGENT_ID)", "success": False}
     from emporia import crypto_box
-    from emporia.identity import sign as ed25519_sign
     from emporia.wire import (
         MAX_CONTENT_BYTES,
         dm_thread_message_envelope,
         new_message_nonce,
-        signed_dm_thread_payload,
     )
     # P19-8 (M5): checked before any network or crypto work — worst case
     # without this is an encrypted thread doing a full seal and *then* eating
@@ -3093,12 +3066,11 @@ def send_dm(
                 crypto_box.message_aad("dm", thread_id, me, msg_type, nonce),
             ))
         # Send the message
-        signed_payload = signed_dm_thread_payload(thread_id, content, msg_type, nonce)
         send_r = _bearer_request(
             "post", f"{_base()}/dm/{thread_id}/send",
             agent_id=sender,
             json=dm_thread_message_envelope(
-                content, msg_type, ed25519_sign(signed_payload, sender), nonce=nonce,
+                content, msg_type, signing.sign(sender, "dm", thread_id, content, msg_type, nonce), nonce=nonce,
             ),
             timeout=10,
         )
@@ -3381,8 +3353,6 @@ def delete_item(kind: str, item: str, thread_id: str = "", agent_id: str = "") -
     """
     from datetime import UTC, datetime
 
-    from emporia.identity import sign as ed25519_sign
-    from emporia.wire import signed_delete_payload
     aid = agent_id or AGENT_ID
     by = aid
     if kind == "dm_message":
@@ -3401,7 +3371,7 @@ def delete_item(kind: str, item: str, thread_id: str = "", agent_id: str = "") -
     try:
         r = _bearer_request("post", f"{_base()}/delete", agent_id=aid, timeout=15, json={
             "kind": kind, "item": item, "by": by, "at": at,
-            "signature": ed25519_sign(signed_delete_payload(kind, item, by, at), aid)})
+            "signature": signing.sign(aid, "removal", kind, item, by, at)})
     except Exception as e:
         return {"error": str(e), "success": False}
     if r.status_code != 200:
@@ -3621,28 +3591,25 @@ def _signed_creation(aid: str, module_type: str, payment_rules: dict[str, Any] |
     and this agent signs that it made it, with the money terms it asked for (P280)."""
     from datetime import UTC, datetime
 
-    from emporia.identity import sign as ed25519_sign
-    from emporia.wire import new_message_nonce, session_id_for, signed_session_create_payload, stake_terms
+    from emporia.wire import new_message_nonce, session_id_for, stake_terms
     nonce, at = new_message_nonce(), datetime.now(UTC).isoformat()
-    return {"nonce": nonce, "at": at, "signature": ed25519_sign(signed_session_create_payload(
-        session_id_for(nonce), aid, module_type, at, stake_terms(payment_rules)), aid)}
+    return {"nonce": nonce, "at": at, "signature": signing.sign(
+        aid, "session-create", session_id_for(nonce), aid, module_type, at, stake_terms(payment_rules))}
 
 
 def _offer_session(aid: str, session_id: str) -> bool:
     """P241: sign this game's terms, as the relay stored them, and offer it in
     the lobby other relays' agents read. False when it is not offered — a
     private game, or a relay that refuses — which is not an error."""
-    from emporia.identity import sign as ed25519_sign
-    from emporia.wire import signed_open_session_payload
     try:
         origin = httpx.get(f"{_base()}/health", timeout=10).json().get("relay_url")
         s = _bearer_request("get", f"{_base()}/sessions/{session_id}", agent_id=aid, timeout=10).json()
         if not origin or s.get("status") != "waiting":
             return False
-        signed = signed_open_session_payload(_signing_identity(aid), origin, session_id,
-                                             s["module_type"], s.get("config") or {}, s.get("payment_rules") or {})
+        sig = signing.sign(aid, "open-session", _signing_identity(aid), origin, session_id,
+                           s["module_type"], s.get("config") or {}, s.get("payment_rules") or {})
         r = _bearer_request("post", f"{_base()}/sessions/{session_id}/offer", agent_id=aid,
-                            json={"signature": ed25519_sign(signed, aid)}, timeout=10)
+                            json={"signature": sig}, timeout=10)
         return r.status_code == 200
     except Exception:  # noqa: BLE001
         logger.info("could not offer a session", exc_info=True)
@@ -3778,11 +3745,9 @@ def join_session(
         return refusal
     from datetime import UTC, datetime
 
-    from emporia.identity import sign as _sign
-    from emporia.wire import signed_session_join_payload
     at = datetime.now(UTC).isoformat()       # P272: the join, signed by this agent
     body: dict[str, Any] = {"agent_id": aid, "at": at,
-                            "signature": _sign(signed_session_join_payload(session_id, aid, at), aid)}
+                            "signature": signing.sign(aid, "session-join", session_id, aid, at)}
     if payment_intent_id:
         body["payment_intent_id"] = payment_intent_id
     try:
@@ -4160,11 +4125,8 @@ def register_x402_wallet(address: str = "", network_family: str = "evm",
         # P262: signed, so a payer can check it is this agent's own wallet.
         from datetime import UTC, datetime
 
-        from emporia.identity import sign as ed25519_sign
-        from emporia.wire import signed_payout_wallet_payload
         at = datetime.now(UTC).isoformat()
-        signature = ed25519_sign(signed_payout_wallet_payload(_signing_identity(aid), network_family, address, at),
-                                 aid)
+        signature = signing.sign(aid, "payout-wallet", _signing_identity(aid), network_family, address, at)
         r = _bearer_request("post", f"{_base()}/agents/{aid}/x402-wallet", agent_id=aid,
                             json={"network_family": network_family, "address": address,
                                   "at": at, "signature": signature},
@@ -4284,8 +4246,7 @@ def submit_action(
             return {"error": f"rationale contains forbidden fingerprint '{fp}'", "success": False}
     # Signature is mandatory — bound to session_id + current step_number so it
     # can't be replayed against a different session or turn.
-    from emporia.identity import sign as ed25519_sign
-    from emporia.wire import action_envelope, signed_action_payload
+    from emporia.wire import action_envelope
     try:
         sess_r = _bearer_request("get", f"{_base()}/sessions/{session_id}", agent_id=aid, timeout=10)
         sess_r.raise_for_status()
@@ -4306,11 +4267,10 @@ def submit_action(
                     action_payload[f] = _seal_text(v, recipients, session_id, f, aid)
             if say:
                 say = _seal_text(say, recipients, session_id, "chat", aid)
-        signed_payload = signed_action_payload(
-            aid, action_type, action_payload, rationale, session_id, step_number, say=say,
-        )
         body = action_envelope(
-            aid, action_type, action_payload, rationale, ed25519_sign(signed_payload, aid), say=say,
+            aid, action_type, action_payload, rationale,
+            signing.sign(aid, "move", aid, action_type, action_payload, rationale, session_id, step_number, say=say),
+            say=say,
         )
         # P110: a final move or a service's terminal action settles too.
         r = _bearer_request("post", f"{_base()}/sessions/{session_id}/action", agent_id=aid, json=body, timeout=_CHAIN_TIMEOUT_S)
@@ -4646,8 +4606,7 @@ def confirm_delivery(
     aid = agent_id or AGENT_ID
     if not aid:
         return {"error": "agent_id required", "success": False}
-    from emporia.identity import sign as ed25519_sign
-    from emporia.wire import DEFAULT_CONFIRM_RATIONALE, confirm_delivery_body, signed_action_payload
+    from emporia.wire import DEFAULT_CONFIRM_RATIONALE, confirm_delivery_body
     effective_rationale = rationale or DEFAULT_CONFIRM_RATIONALE
     try:
         sess_r = _bearer_request("get", f"{_base()}/sessions/{session_id}", agent_id=aid, timeout=10)
@@ -4656,9 +4615,9 @@ def confirm_delivery(
     except Exception as e:
         return {"error": f"could not load session for signing: {e}", "success": False}
     try:
-        signed_payload = signed_action_payload(aid, "confirm", {}, effective_rationale, session_id, step_number)
         body: dict[str, Any] = confirm_delivery_body(
-            aid, effective_rationale, ed25519_sign(signed_payload, aid),
+            aid, effective_rationale,
+            signing.sign(aid, "move", aid, "confirm", {}, effective_rationale, session_id, step_number),
         )
         # P110: settles on chain for an escrow purchase; the relay waits up
         # to escrow_chain._RECEIPT_TIMEOUT_S for the receipt. 15s reported a
@@ -4686,8 +4645,7 @@ def dispute_delivery(
     aid = agent_id or AGENT_ID
     if not aid:
         return {"error": "agent_id required", "success": False}
-    from emporia.identity import sign as ed25519_sign
-    from emporia.wire import default_dispute_rationale, dispute_delivery_body, signed_action_payload
+    from emporia.wire import default_dispute_rationale, dispute_delivery_body
     try:
         sess_r = _bearer_request("get", f"{_base()}/sessions/{session_id}", agent_id=aid, timeout=10)
         sess_r.raise_for_status()
@@ -4703,11 +4661,9 @@ def dispute_delivery(
     else:
         effective_rationale = rationale or default_dispute_rationale(reason)
     try:
-        signed_payload = signed_action_payload(
-            aid, "dispute", {"reason": reason}, effective_rationale, session_id, step_number,
-        )
         body: dict[str, Any] = dispute_delivery_body(
-            aid, reason, effective_rationale, ed25519_sign(signed_payload, aid),
+            aid, reason, effective_rationale,
+            signing.sign(aid, "move", aid, "dispute", {"reason": reason}, effective_rationale, session_id, step_number),
         )
         r = _bearer_request("post", f"{_base()}/sessions/{session_id}/dispute-delivery", agent_id=aid, json=body, timeout=_CHAIN_TIMEOUT_S)
         d = r.json()
@@ -4726,8 +4682,6 @@ def leave_session(session_id: str, agent_id: str = "") -> dict[str, Any]:
     """
     from datetime import UTC, datetime
 
-    from emporia.identity import sign as ed25519_sign
-    from emporia.wire import signed_session_leave_payload
     aid = agent_id or AGENT_ID
     if not aid:
         return {"error": "agent_id required", "success": False}
@@ -4735,7 +4689,7 @@ def leave_session(session_id: str, agent_id: str = "") -> dict[str, Any]:
     try:
         r = _bearer_request(
             "post", f"{_base()}/sessions/{session_id}/leave", agent_id=aid, timeout=_CHAIN_TIMEOUT_S,
-            json={"at": at, "signature": ed25519_sign(signed_session_leave_payload(session_id, aid, at), aid)},
+            json={"at": at, "signature": signing.sign(aid, "session-leave", session_id, aid, at)},
         )
         d = r.json()
         return {"success": True, **d} if r.status_code == 200 else {"error": f"Relay {r.status_code}", "detail": d, "success": False}
@@ -4813,23 +4767,21 @@ def _signed_listing_body(
     """P240: a `POST /listings` body this agent has signed, for the relay it is
     posting to — named by the URL the relay gives for itself, which can differ
     from the one this agent reaches it at (a container, a proxy)."""
-    from emporia.identity import sign as ed25519_sign
     from emporia.wire import (
         listing_expires_at,
         new_message_nonce,
-        signed_listing_payload,
     )
     origin = httpx.get(f"{_base()}/health", timeout=10).json().get("relay_url")
     if not origin:
         raise RuntimeError("this relay does not say its own URL — it predates signed listings; upgrade it")
     nonce, expires_at = new_message_nonce(), listing_expires_at(expires_in_hours)
-    signed = signed_listing_payload(_signing_identity(aid), origin, nonce, title,
-                                    description, listing_type, payment_mode, price_usd, module_type,
-                                    metadata, expires_at)
+    sig = signing.sign(aid, "listing", _signing_identity(aid), origin, nonce, title,
+                       description, listing_type, payment_mode, price_usd, module_type,
+                       metadata, expires_at)
     return {"title": title, "description": description, "listing_type": listing_type,
             "payment_mode": payment_mode, "price_usd": price_usd, "module_type": module_type,
             "metadata": metadata, "expires_at": expires_at, "listing_nonce": nonce,
-            "signature": ed25519_sign(signed, aid)}
+            "signature": sig}
 
 
 @mcp.tool()
@@ -5154,8 +5106,7 @@ def sign_dashboard_challenge(challenge_id: str, nonce: str, relay_url: str = "")
     """
     target = relay_url or _base()
     try:
-        from emporia.identity import sign_challenge_nonce
-        sig_hex = sign_challenge_nonce(nonce, AGENT_ID)
+        sig_hex = signing.sign_in(AGENT_ID, nonce)
     except Exception as e:
         return {"error": f"could not sign nonce: {e}"}
 
