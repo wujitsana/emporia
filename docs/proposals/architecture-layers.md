@@ -107,7 +107,10 @@ Every module is the operator's choice. Nothing beyond the core is on unless they
 **`emporia relay modules`** offers the same tick-list later, for this profile's relay or a hosted one (`--dir`):
 - **Before writing:** it shows only the settings that change, then asks "Write these?".
 - **Money on this machine:** it runs `emporia setup relay` (networks, fee address, operator key).
-- **Without a terminal:** `--modules money,log,gamify` does the same, and with neither it just lists what runs.
+- **By name:** `emporia relay modules add log gamify:sheets,bugs` and `remove gamify:bugs` (a part) or `remove gamify` (the whole module). They change only what they name.
+  - **Dependencies:** a change that would leave a part without its dependency is refused, e.g. removing the log while bug quests are on.
+  - **Money's parts:** its ways to pay are added by their own setup commands, not by name.
+- **Without a terminal:** `--modules money,log,gamify` sets exactly that list, and with neither it just lists what runs.
 - **Turning a module off clears its switch only.** Its data stays and comes back when it is turned on again. Cards stay on while a Stripe key is set, and the command says how to remove it.
 
 **The old wizards remain:** `setup relay`, `setup stripe` and `setup log` are each one module's own questions.

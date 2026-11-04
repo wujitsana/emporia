@@ -148,6 +148,7 @@ def test_bug_quests_bring_the_log_or_stay_off(tmp_path, monkeypatch):
     (op / ".env").write_text("EMPORIA_GAMIFY=sheets,bugs\n")
     monkeypatch.setattr(cli, "this_profile", lambda: op)
     monkeypatch.setattr(cli, "health", lambda timeout=3.0: None)
+    monkeypatch.setattr(cli, "_TTY", True)
     monkeypatch.setattr(cli, "ask", lambda q, default: False)                # "no, not the log"
     assert cli.main(["relay", "modules", "--modules", "gamify", "--yes"]) == 0
     assert "EMPORIA_GAMIFY=sheets\n" in (op / ".env").read_text()
@@ -268,3 +269,34 @@ def test_a_relay_that_stops_its_log_is_said_to_have(peer, monkeypatch):
     monkeypatch.setattr(logcheck, "load", lambda name=None: {})
     rs._note_peer_log_off(PEER)
     assert rs._FEDERATION_LAST_SYNC[PEER]["log"] == "not run there"
+
+
+def test_add_and_remove_modules_by_name(tmp_path, monkeypatch):
+    op = tmp_path / "op"
+    op.mkdir()
+    (op / ".env").write_text("FEDERATED_RELAYS=https://peer.example\n")
+    monkeypatch.setattr(cli, "this_profile", lambda: op)
+    monkeypatch.setattr(cli, "health", lambda timeout=3.0: None)
+
+    def env():
+        return dict(line.split("=", 1) for line in (op / ".env").read_text().splitlines() if "=" in line)
+    assert cli.main(["relay", "modules", "add", "log", "gamify:sheets,bugs", "--yes"]) == 0
+    assert env()["EMPORIA_TRANSPARENCY_LOG"] == "on" and env()["EMPORIA_GAMIFY"] == "sheets,bugs"
+    assert env()["FEDERATED_RELAYS"] == "https://peer.example", "what was not named is kept"
+    assert cli.main(["relay", "modules", "remove", "gamify:bugs", "--yes"]) == 0
+    assert env()["EMPORIA_GAMIFY"] == "sheets" and env()["EMPORIA_TRANSPARENCY_LOG"] == "on"
+    assert cli.main(["relay", "modules", "add", "federation:dms", "--yes"]) == 0
+    assert env()["EMPORIA_FEDERATED_DMS"] == "1"
+    assert cli.main(["relay", "modules", "remove", "federation:dms", "--yes"]) == 0
+    assert env()["EMPORIA_FEDERATED_DMS"] == "0" and env()["FEDERATED_RELAYS"] == "https://peer.example"
+    assert cli.main(["relay", "modules", "remove", "gamify", "--yes"]) == 0
+    assert env()["EMPORIA_GAMIFY"] == ""
+    # refused, nothing written: a missing dependency, a module or part that does not exist, money's parts
+    before = (op / ".env").read_text()
+    assert cli.main(["relay", "modules", "remove", "log", "--yes"]) == 0          # nothing needs it now
+    (op / ".env").write_text(before)
+    assert cli.main(["relay", "modules", "add", "gamify:bugs", "--yes"]) == 0    # the log is on
+    assert cli.main(["relay", "modules", "remove", "log", "--yes"]) == 1         # bug quests need it
+    for bad in (["add", "chat"], ["add", "gamify:quests"], ["add", "money:cards"], ["add"], ["drop", "log"]):
+        assert cli.main(["relay", "modules", *bad, "--yes"]) == 1, bad
+    assert "EMPORIA_TRANSPARENCY_LOG=on" in (op / ".env").read_text()

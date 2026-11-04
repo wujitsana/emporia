@@ -124,7 +124,9 @@ optional and chosen in `emporia relay host`, or later:
 
 ```bash
 emporia relay modules                     # what it runs; in a terminal, a tick-list to change it
-emporia relay modules --modules log,gamify --yes   # the same, for scripts
+emporia relay modules add log gamify:sheets,bugs   # add modules, or parts of one
+emporia relay modules remove gamify:bugs           # remove a part, or a whole module (remove gamify)
+emporia relay modules --modules log,gamify --yes   # exactly these, for scripts
 emporia relay modules --dir ~/emporia-relay        # a hosted relay's folder
 ```
 

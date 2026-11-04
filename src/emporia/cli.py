@@ -994,9 +994,34 @@ _GAMIFY_PARTS_ABOUT = [
 ]
 
 
-def _ask_modules(args: argparse.Namespace, env: dict[str, str], *, ask_money: bool) -> tuple[dict[str, str], set[str]] | None:
-    """P291: which modules a relay runs — the tick-list, then each ticked
-    module's own questions. Returns (settings to write, the modules wanted), or
+def _module_items(items: list[str]) -> dict[str, set[str]] | None:
+    """`gamify:sheets,bugs log` → {"gamify": {"sheets", "bugs"}, "log": set()}; None (said why) if
+    a module or part does not exist. Money's parts come from its own setup, not from here."""
+    from emporia import relay_modules as rm
+    out: dict[str, set[str]] = {}
+    for item in items:
+        name, _, raw = item.strip().lower().partition(":")
+        if name not in rm.BY_NAME:
+            print(f"  no module called {name!r} — the modules: {', '.join(rm.BY_NAME)}")
+            return None
+        parts = {p.strip() for p in raw.split(",") if p.strip()}
+        if parts and name == "money":
+            print("  money's parts are its ways to pay, set up by their own commands: "
+                  "emporia setup relay (x402, escrow, Tempo) · emporia setup stripe (cards)")
+            return None
+        if bad := sorted(parts - set(rm.BY_NAME[name].parts)):
+            print(f"  {name} has no part called {', '.join(bad)} — its parts: {', '.join(rm.BY_NAME[name].parts) or 'none'}")
+            return None
+        out[name] = out.get(name, set()) | parts
+    return out
+
+
+def _ask_modules(args: argparse.Namespace, env: dict[str, str], *, ask_money: bool,
+                 want: set[str] | None = None,
+                 parts: dict[str, set[str]] | None = None) -> tuple[dict[str, str], set[str]] | None:
+    """P291: which modules a relay runs — the tick-list (or `want`, given), then
+    each module's own questions. `parts`: parts named on the command line, which
+    are not asked again. Returns (settings to write, the modules wanted), or
     None when an answer was refused. `ask_money` False: the caller runs money's
     own setup (`setup relay`, which also makes the operator key)."""
     import re
@@ -1005,12 +1030,15 @@ def _ask_modules(args: argparse.Namespace, env: dict[str, str], *, ask_money: bo
     from emporia.identity import normalize_peer_url
 
     now = rm.chosen(env)
+    parts = parts or {}
     given = getattr(args, "modules", "") or ""
-    if given:
-        want = {m.strip().lower() for m in given.split(",") if m.strip()}
-        if unknown := sorted(want - set(rm.BY_NAME)):
-            print(f"  no module called {', '.join(unknown)} — the modules: {', '.join(rm.BY_NAME)}")
+    if want is not None:
+        want, given = set(want), given or "command"
+    elif given:
+        named = _module_items([m for m in given.split(",") if m.strip()])
+        if named is None:
             return None
+        want = set(named)
     else:
         ticked = set(now)
         if getattr(args, "transparency_log", "") in ("on", "off"):
@@ -1026,10 +1054,13 @@ def _ask_modules(args: argparse.Namespace, env: dict[str, str], *, ask_money: bo
     # gamify first: bug quests decide whether the log is needed
     gamify: set[str] = set()
     if "gamify" in want:
-        gamify = set(now.get("gamify") or ({"sheets", "bugs"} if "log" in want else {"sheets"}))
+        gamify = set(parts.get("gamify") or now.get("gamify") or ({"sheets", "bugs"} if "log" in want else {"sheets"}))
         if _TTY and not given:
             gamify = set(choose_many("Gamify — which parts:", _GAMIFY_PARTS_ABOUT, gamify))
         if "bugs" in gamify and "log" not in want:
+            if not _TTY:
+                print("  bug quests need the log module: add it too — emporia relay modules add log gamify:bugs")
+                return None
             if ask("Bug quests need the transparency log (each report and verdict is an entry in it). "
                    "Turn the log on too?", True):
                 want.add("log")
@@ -1054,8 +1085,9 @@ def _ask_modules(args: argparse.Namespace, env: dict[str, str], *, ask_money: bo
             print("  No relay linked, so federation stays off until one is: emporia relay link URL")
             want.discard("federation")
         else:
-            dms = ask("Sealed DMs with relays linked both ways (each agent still opts in)?",
-                      "dms" in now.get("federation", set()))
+            dms = ("dms" in parts["federation"]) if "federation" in parts else ask(
+                "Sealed DMs with relays linked both ways (each agent still opts in)?",
+                "dms" in now.get("federation", set()))
             out["EMPORIA_FEDERATED_DMS"] = "1" if dms else "0"
             out["FEDERATED_RELAYS"] = ",".join(dict.fromkeys(links))
     elif "federation" in now:
@@ -1081,9 +1113,16 @@ def _ask_modules(args: argparse.Namespace, env: dict[str, str], *, ask_money: bo
 
 def cmd_relay_modules(args: argparse.Namespace) -> int:
     """P291: `emporia relay modules` — what this relay runs beyond its core, and
-    (in a terminal, or with --modules a,b) a change to it. Writes its .env,
-    after showing every change; the relay applies it at its next start, and
-    refuses to start, saying why, if the modules do not hold together."""
+    a change to it:
+
+        emporia relay modules                       what runs; in a terminal, a tick-list
+        emporia relay modules add log gamify:bugs   add modules, or parts of one
+        emporia relay modules remove gamify:bugs    remove a part, or a whole module
+        emporia relay modules --modules log,gamify  exactly these, for scripts
+
+    Writes its .env after showing every change; the relay applies it at its
+    next start, and refuses to start, saying why, if the modules do not hold
+    together."""
     from emporia import relay_modules as rm
 
     env_path = _relay_env_path(args)
@@ -1097,11 +1136,37 @@ def cmd_relay_modules(args: argparse.Namespace) -> int:
     heading("Relay modules")
     print(f"  Runs now:   {_modules_line(live) or 'the core only'}" if live is not None else
           f"  Set up:     {_modules_line(rm.chosen(env)) or 'the core only'}  (the relay is not answering)")
-    if not _TTY and not args.modules:
+    verb = (args.url or "").strip().lower()
+    want, parts = None, None
+    if verb:
+        if verb not in ("add", "remove") or not args.names:
+            print("relay modules: add NAME[:PART,…]… or remove NAME[:PART,…]… — e.g. emporia relay modules add "
+                  "log gamify:sheets,bugs")
+            return 1
+        named = _module_items(args.names)
+        if named is None:
+            return 1
+        now = rm.chosen(env)
+        want, parts = set(now), {}
+        for name, ps in named.items():
+            if verb == "add":
+                want.add(name)
+                if ps:
+                    parts[name] = now.get(name, set()) | ps
+            elif ps:                                    # remove some parts; the module goes with its last
+                left = now.get(name, set()) - ps
+                if left or not rm.BY_NAME[name].parts or name == "federation":
+                    parts[name] = left
+                else:
+                    want.discard(name)
+            else:
+                want.discard(name)
+    elif not _TTY and not args.modules:
         for m in rm.MODULES:
             print(f"  {m.name:<10} {m.about} — {m.change}")
+        print("  Change: emporia relay modules add|remove NAME[:PART,…]")
         return 0
-    asked = _ask_modules(args, env, ask_money=hosted)
+    asked = _ask_modules(args, env, ask_money=hosted, want=want, parts=parts)
     if asked is None:
         return 1
     updates, want = asked
@@ -6048,8 +6113,8 @@ def build_parser() -> argparse.ArgumentParser:
     r.add_argument("action", choices=["start", "stop", "restart", "status", "logs", "use", "host", "link", "unlink", "links",
                                       "access", "members", "move", "backup", "rotate-key", "rotate-sign-in-secret",
                                       "config", "modules", "overview", "owner-key", "remove"])
-    r.add_argument("url", nargs="?", default="", help="use, link, unlink: the other relay's URL")
-    r.add_argument("names", nargs="*", help="use: the agents that move to it")
+    r.add_argument("url", nargs="?", default="", help="use, link, unlink: the other relay's URL; modules: add or remove")
+    r.add_argument("names", nargs="*", help="use: the agents that move to it; modules add|remove: NAME[:PART,…]…")
     r.add_argument("--lines", type=int, default=40)
     r.add_argument("--dir", default="", help="host: its folder (default ~/emporia-relay); link: a hosted relay's folder")
     r.add_argument("--domain", default="", help="host: the domain others reach it on (https)")
