@@ -1611,8 +1611,10 @@ def cmd_signer(args: argparse.Namespace) -> int:
         return _signer_daemon(args, url)
     if args.action == "host":
         return _signer_host(args)
-    if args.action == "audit":
+    if args.action in ("audit", "log"):
         return _signer_audit(args.name)
+    if args.action == "alerts":
+        return _signer_alerts(args)
     if args.action == "remove":
         return _signer_remove(args)
     if args.action == "status":
@@ -1897,6 +1899,48 @@ def _signer_host(args: argparse.Namespace) -> int:
     return 0
 
 
+def _signer_alerts(args: argparse.Namespace) -> int:
+    """P293: `emporia signer alerts [show|telegram|test|off]` — where the signer tells its
+    person what it refused and what changed who an agent is. The signer sends them itself,
+    never through an agent's chat. Its person's, in their own terminal."""
+    import getpass
+
+    from emporia import signer_alerts
+    what = args.name or "show"
+    if what == "show":
+        d = signer_alerts.describe()
+        print("  Alerts: " + (", ".join(f"{c} ({v.get('chat_id', '')})" for c, v in d.get("channels", {}).items())
+                              if d.get("channels") else "none — emporia signer alerts telegram"))
+        return 0
+    if not _persons_terminal():
+        print("signer alerts: only a person sets where the signer's alerts go, in their own terminal.")
+        return 1
+    if what == "telegram":
+        print("  A Telegram bot of yours: its token from @BotFather, and your chat id (message the bot, then "
+              "https://api.telegram.org/bot<token>/getUpdates shows it). Kept in the signer's folder only.")
+        token = getpass.getpass("  Bot token (hidden): ").strip() if _TTY else ""
+        chat = (args.rest[0] if args.rest else prompt("  Chat id", "")).strip()
+        try:
+            signer_alerts.set_telegram(token, chat)
+        except ValueError as e:
+            print(f"signer alerts: {e}")
+            return 1
+        results = signer_alerts.notify_sync("signer", "test", "alerts are on")
+        print("  " + "; ".join(f"{c}: {'sent' if ok else why}" for c, ok, why in results))
+        return 0 if all(ok for _, ok, _ in results) else 1
+    if what == "test":
+        results = signer_alerts.notify_sync("signer", "test", "a test alert")
+        print("  " + ("; ".join(f"{c}: {'sent' if ok else why}" for c, ok, why in results) or "no channel set"))
+        return 0 if results and all(ok for _, ok, _ in results) else 1
+    if what == "off":
+        for c in signer_alerts.channels():
+            signer_alerts.clear(c)
+        print("  Alerts off.")
+        return 0
+    print("signer alerts: show, telegram, test or off")
+    return 1
+
+
 def _signer_audit(name: str = "") -> int:
     """What the signer signed, refused and held for approval — newest last."""
     import json as _json
@@ -1908,8 +1952,9 @@ def _signer_audit(name: str = "") -> int:
     for r in rows:
         detail = (f"{r['amount_atomic'] / 1e6:.2f} USDC" if r.get("result") == "signed" and r.get("amount_atomic")
                   else r.get("intent") or r.get("why", ""))
+        op = f"{r.get('op', '')}:{r['kind']}" if r.get("kind") else r.get("op", "")
         print(f"  {time.strftime('%m-%d %H:%M:%S', time.localtime(r['at']))}  {r.get('agent', ''):16} "
-              f"{r.get('op', ''):8} {r.get('result', ''):8} {detail}")
+              f"{op:22} {r.get('result', ''):8} {detail}")
     print(f"{len(rows)} shown ({path})" if rows else "signer: nothing signed or refused yet")
     return 0
 
@@ -2021,8 +2066,23 @@ def _signer_remove(args: argparse.Namespace) -> int:
         if os.getuid() == 0:
             owner = profile.stat()
             os.chown(spent_here, owner.st_uid, owner.st_gid)
+    ident = signer.identity_path(name)
+    if ident.exists():      # P293: the identity key comes back too, and the marker goes
+        from emporia.identity import _keyfile_stem
+        back = key_dir / f"{_keyfile_stem(name)}.priv"
+        if back.exists():
+            print(f"signer remove: {name} already has an identity key file at {back}; not replaced.")
+            return 1
+        key_dir.mkdir(mode=0o700, parents=True, exist_ok=True)
+        _write_secret_atomically(back, ident.read_bytes())
+        if os.getuid() == 0:
+            owner = profile.stat()
+            os.chown(back, owner.st_uid, owner.st_gid)
+        (key_dir / f"{_keyfile_stem(name)}.signer.pub").unlink(missing_ok=True)
+        moved.append("identity")
     unset_env_lines(profile / ".env", ["EMPORIA_SIGNER_URL", "EMPORIA_SIGNER_TOKEN"])
-    merge_env_file(profile / ".env", {k: v for k, v in env.items() if k != "EMPORIA_X402_MAINNET"})
+    merge_env_file(profile / ".env", {k: v for k, v in env.items()
+                                      if k != "EMPORIA_X402_MAINNET" and k not in signer.SIGNING_POLICY})
     trash = signer.signer_dir() / "released" / f"{held.name}-{time.strftime('%Y%m%dT%H%M%S')}"
     trash.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
     shutil.move(str(held), str(trash))
@@ -2034,6 +2094,8 @@ def _signer_remove(args: argparse.Namespace) -> int:
 
 
 def _signer_policy(args: argparse.Namespace) -> int:
+    import re
+
     from emporia import relay_config, signer
     from emporia.networks import is_testnet, mainnet_unlocked, resolve_list
     name = args.name
@@ -2100,6 +2162,23 @@ def _signer_policy(args: argparse.Namespace) -> int:
               f"; mainnet with `emporia signer policy {name} mainnet`")
         return 1
     _, key, value = rest
+    if key in signer.SIGNING_POLICY:
+        from emporia import signing
+        try:
+            if key == "EMPORIA_SIGN_LIMITS":
+                signing.limits({key: value})
+            elif key in ("EMPORIA_RELAY_URL", "EMPORIA_BACKUP_RELAYS", "EMPORIA_VISIT_RELAYS"):
+                value = relay_config.check(relay_config.Setting(key, "", "", "urls"), value) if value else ""
+            elif not all(re.fullmatch(r"0x[0-9a-fA-F]{40}|[1-9A-HJ-NP-Za-km-z]{32,44}", a.strip())
+                         for a in value.split(",") if a.strip()):
+                raise ValueError("EVM (0x…) or Solana addresses, comma-separated")
+        except ValueError as e:
+            print(f"signer policy: {key}: {e}")
+            return 1
+        env[key] = value
+        signer.save_policy(name, env)
+        print(f"  {name}: {key}={value} (applies to its next signature)")
+        return 0
     if key == "EMPORIA_X402_PAY_NETWORKS":
         from emporia.networks import NETWORKS
         try:
@@ -2146,7 +2225,11 @@ def _signer_add(args: argparse.Namespace, url: str) -> int:
         return 1
     dotenv = installer().harvest_env(profile)
     if dotenv.get("EMPORIA_SIGNER_URL"):
-        print(f"signer add: {name} is already behind the signer at {dotenv['EMPORIA_SIGNER_URL']}")
+        if getattr(args, "identity", False):
+            return _signer_add_identity(profile, name)
+        print(f"signer add: {name} is already behind the signer at {dotenv['EMPORIA_SIGNER_URL']}"
+              + ("" if (signer.identity_path(name)).exists() else
+                 f" — its identity key can follow: emporia signer add {name} --identity"))
         return 1
     if any(str(dotenv.get(v, "")).startswith("cmd:") for v in ("EMPORIA_X402_EVM_KEY_SOURCE",
                                                                "EMPORIA_X402_SOLANA_KEY_SOURCE")):
@@ -2181,7 +2264,8 @@ def _signer_add(args: argparse.Namespace, url: str) -> int:
         targets["evm"].parent.mkdir(mode=0o700, parents=True, exist_ok=True)
         for fam, hexkey in keys.items():
             _write_secret_atomically(targets[fam], bytes.fromhex(hexkey))
-    signer.save_policy(name, {k: dotenv.get(k, "") for k in signer.POLICY_NAMES if k != "EMPORIA_X402_MAINNET"})
+    rules = {**dotenv, **{k: v for k, v in _mcp_env(profile).items() if k in signer.SIGNING_POLICY}}
+    signer.save_policy(name, {k: rules.get(k, "") for k in signer.POLICY_NAMES if k != "EMPORIA_X402_MAINNET"})
     token = signer.new_agent_token(name)
     if added := signer.add_settings(dotenv):   # P206: the RPCs it paid through
         print(f"  The signer takes {name}'s network settings: {', '.join(added)} (in {signer.settings_path()})")
@@ -2220,6 +2304,55 @@ def _signer_add(args: argparse.Namespace, url: str) -> int:
         print(f"  Its old key files in the profile were destroyed ({len(old)}); the signer's copy is the only one.")
     print(f"  For real money the signer runs as its own user (or container): check with emporia signer status. "
           f"Then, as the signer's user: emporia signer policy {name} mainnet")
+    if getattr(args, "identity", False):
+        return _signer_add_identity(profile, name)
+    print(f"  Its identity key can follow (signer phase 2): emporia signer add {name} --identity")
+    installer().print_restart_instructions([profile])
+    return 0
+
+
+def _signer_add_identity(profile: Path, name: str) -> int:
+    """P293 (signer phase 2a): the agent's identity key moves into the signer;
+    the profile keeps only its public half (`<agent>.signer.pub`). From then on
+    every signature is the signer's, under its rules (docs/proposals/signer-phase-2.md)."""
+    from emporia import signer
+    from emporia.identity import _keyfile_stem, _write_secret_atomically
+    env = {**installer().harvest_env(profile), **_mcp_env(profile)}
+    if env.get("EMPORIA_IDENTITY_KEY_SOURCE", "").strip():
+        print(f"signer add: {name}'s identity key is linked ({env['EMPORIA_IDENTITY_KEY_SOURCE'].split(':')[0]}:…); "
+              f"the signer takes only key files for now. Not moved.")
+        return 1
+    if signer.identity_path(name).exists():
+        print(f"signer add: the signer already holds {name}'s identity key")
+        return 1
+    key_dir = Path(env.get("EMPORIA_KEYS_DIR") or profile / "home" / ".hermes" / "keys")
+    src = key_dir / f"{_keyfile_stem(name)}.priv"
+    if not src.is_file() or src.stat().st_size != 32:
+        print(f"signer add: no identity key file for {name} at {src}; nothing moved.")
+        return 1
+    raw = src.read_bytes()
+    from cryptography.hazmat.primitives.asymmetric import ed25519
+    pub = ed25519.Ed25519PrivateKey.from_private_bytes(raw).public_key().public_bytes_raw().hex()
+    dest = signer.identity_path(name)
+    dest.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
+    _write_secret_atomically(dest, raw)
+    if dest.read_bytes() != raw:
+        print("signer add: the signer's copy does not read back as written; nothing removed from the profile.")
+        return 1
+    signer.own(signer.agent_dir(name))
+    marker = key_dir / f"{_keyfile_stem(name)}.signer.pub"
+    marker.write_text(pub + "\n")
+    if os.getuid() == 0:
+        owner = profile.stat()
+        os.chown(marker, owner.st_uid, owner.st_gid)
+    with open(src, "r+b") as out:      # overwrite, then unlink: the signer's copy is the only one
+        out.write(b"\0" * 32)
+        out.flush()
+        os.fsync(out.fileno())
+    src.unlink()
+    print(f"{name}: its identity key is now held by the signer; the profile keeps only its public key "
+          f"({pub[:12]}…, in {marker.name}). Every signature is the signer's, within its rules — "
+          f"emporia signer policy {name} shows them, emporia signer log {name} what it signed.")
     installer().print_restart_instructions([profile])
     return 0
 
@@ -3359,6 +3492,26 @@ def doctor_identity_key(rep: Report, name: str, agent_id: str, key_dir: Path, li
 
     from emporia.key_source import KeySourceError, key32
     path = key_dir / f"{_keyfile_stem(agent_id)}.priv"
+    marker = key_dir / f"{_keyfile_stem(agent_id)}.signer.pub"
+    if marker.exists():     # P293: held by its signer — the profile has only the public half
+        held = marker.read_text().strip()
+        if path.exists() or linked:
+            rep.fail(f"its identity key is in its signer ({held[:12]}…) but a key is also here "
+                     f"({path.name if path.exists() else 'a key source'}) — two copies, one outside the signer",
+                     "remove the copy here, after checking it is the same key: emporia signer status")
+            return
+        if relay_up:
+            try:
+                r = httpx.get(f"{relay.rstrip('/')}/agents/{agent_id}/record", timeout=5)
+                known = (r.json() or {}).get("public_key_hex", "") if r.status_code == 200 else ""
+            except (httpx.HTTPError, ValueError):
+                known = ""
+            if known and known != held:
+                rep.fail(f"its signer holds key {held[:12]}… but its relay knows {known[:12]}…",
+                         f"emporia agent rotate-key {name}")
+                return
+        rep.ok("identity key held by its signer — none in its profile")
+        return
     file_pub = _ed25519_public(path.read_bytes()) if path.exists() and path.stat().st_size == 32 else ""
     source_pub = ""
     if linked and not linked.strip().startswith("env:"):
@@ -4515,7 +4668,39 @@ def merge_env_file(path: Path, updates: dict[str, str]) -> list[str]:
             backup.chmod(0o600)
         path.write_text("\n".join(lines) + "\n")
         path.chmod(0o600)
+        _signer_follows(path, {k: updates[k] for k in changed})
     return changed
+
+
+def _signer_follows(path: Path, changed: dict[str, str]) -> None:
+    """P293: an agent behind a signer is held to the signer's copy of its rules
+    (home, backups, the relays it may visit, payout addresses). When a person
+    changes them in its profile, the signer's copy follows — here, if this user
+    can write the signer's folder (practice mode); otherwise it says what to run."""
+    from emporia import signer
+    names = {k: v for k, v in changed.items() if k in signer.SIGNING_POLICY}
+    if not names or path.name != ".env" or not (path.parent / "config.yaml").exists():
+        return
+    agent = path.parent.name
+    try:
+        held = (signer.agent_dir(agent) / "policy.json").exists()
+    except OSError:
+        held = False
+    behind = "EMPORIA_SIGNER_URL" in (path.read_text() if path.exists() else "")
+    if not behind:
+        return
+    if held:
+        try:
+            env = dict(signer.policy(agent).get("env", {}))
+            env.update(names)
+            signer.save_policy(agent, env)
+            print(f"  The signer holds {agent}'s rules too: {', '.join(names)} changed there.")
+            return
+        except OSError:
+            pass
+    sets = " ".join(f"set {k} {v!r}" for k, v in names.items())
+    print(f"  {agent} is behind a signer apart from this user: change it there too — "
+          f"docker compose run --rm admin policy {agent} {sets}")
 
 
 @wizard
@@ -6169,7 +6354,7 @@ def build_parser() -> argparse.ArgumentParser:
                                        "optional on testnet (start, add NAME; remove NAME undoes it)")
     sg.add_argument("action", nargs="?", default="",
                     choices=["", "start", "stop", "logs", "serve", "host", "status", "add", "remove", "policy",
-                             "pending", "approve", "deny", "audit"])
+                             "pending", "approve", "deny", "audit", "log", "alerts"])
     sg.add_argument("--run", choices=["docker", "service"], default="",
                     help="host: its own container beside Hermes's, or a system service under its own user")
     sg.add_argument("name", nargs="?", default="", help="add, remove, policy: the agent; approve, deny: the intent")
@@ -6180,6 +6365,8 @@ def build_parser() -> argparse.ArgumentParser:
     sg.add_argument("--socket", default="", help="its Unix socket (default $EMPORIA_SIGNER_SOCKET, or beside its "
                                                  "folder); outside the folder, so other users can reach it")
     sg.add_argument("--lock", action="store_true", help="policy mainnet: lock it again")
+    sg.add_argument("--identity", action="store_true",
+                    help="add: move its identity key into the signer too (signer phase 2)")
     sg.set_defaults(func=cmd_signer)
 
     ar = sub.add_parser("archive", help="an agent's own copy of everything it is part of on its relay")

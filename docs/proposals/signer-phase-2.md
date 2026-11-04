@@ -8,10 +8,19 @@ review that cost the agents their autonomy for little gain (§ 4). Its five ques
 in § 9.
 
 **Progress:**
-- **Built:** the first half of 2a, in-process. `src/emporia/signing.py` is the one way an agent
-  signs: a rule per kind, and the same refusals with or without a signer.
-- **Waiting:** the half that runs in the signer waits for phase 1's hand sittings
-  (manual-testing.md "Signer" and "Signer apart").
+- **Built:** 2a, both halves.
+  - **In-process:** `src/emporia/signing.py` is the one way an agent signs: a rule per kind, and
+    the same refusals with or without a signer.
+  - **In the signer:**
+    - `emporia signer add NAME --identity` moves the identity key, and the profile keeps only its
+      public half;
+    - the signer signs by kind under its own copy of the rules, and counts limits in a file that
+      outlives a restart;
+    - `emporia signer log` says what it signed and refused;
+    - `emporia signer alerts telegram` sends its alerts.
+- **Still to build:** 2b (opening) and 2c (keys made inside the signer).
+- **Phase 1's hand sittings** (manual-testing.md "Signer" and "Signer apart") include trying
+  `--identity`.
 
 ## 1. Why
 
@@ -208,12 +217,17 @@ and it loses everything new once it is gone.
 ## 10. Build order
 
 1. **2a, in-process (built, P293).** The table and the rules, with every call site moved onto them.
-2. **2a, in the signer** (after the phase 1 sittings):
-   - `/v1/sign` and `/v1/sign-in`;
-   - the signer's history and policy (`emporia signer policy NAME set …` for limits, the payout
-     list and the delay);
-   - its log;
-   - alerts to Telegram.
+2. **2a, in the signer (built, P293):**
+   - `/v1/identity`, `/v1/sign` and `/v1/sign-in`;
+   - the signer's history (`sign_history.json`) and policy (`emporia signer policy NAME set
+     EMPORIA_SIGN_LIMITS|EMPORIA_PAYOUT_ADDRESSES|EMPORIA_RELAY_URL|EMPORIA_BACKUP_RELAYS|EMPORIA_VISIT_RELAYS`);
+   - its log (`/admin/log`, `emporia signer log`);
+   - alerts (`signer_alerts.py`, Telegram);
+   - a person's change to an agent's home, backups or visit list in its profile reaches the signer's
+     copy too (`cli._signer_follows`).
+
+   Moving the identity key is opt-in (`--identity`) until 2b and 2c are built; then `signer add`
+   moves everything. **The delay (§ 4.2) is not built yet.**
 3. **2b:** opening, with the encryption keys moved.
 4. **2c:** keys made in the signer (rotation, replacement).
 5. **Tests:**

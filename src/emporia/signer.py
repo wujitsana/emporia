@@ -50,7 +50,11 @@ NETWORK_SETTINGS = ("EMPORIA_X402_RPC_URL", "EMPORIA_X402_SOLANA_RPC_URL", "EMPO
                     "EMPORIA_TEMPO_NETWORK", "EMPORIA_TEMPO_TOKEN")
 # The rules a signer keeps per agent — the agent_wallet settings, nothing else.
 POLICY_NAMES = ("EMPORIA_X402_PAY_NETWORKS", "EMPORIA_X402_MAX_PAYMENT_CENTS", "EMPORIA_X402_MAX_DAILY_CENTS",
-                "EMPORIA_PAYMENT_APPROVAL_CENTS", "EMPORIA_X402_MAINNET")
+                "EMPORIA_PAYMENT_APPROVAL_CENTS", "EMPORIA_X402_MAINNET",
+                # P293 (phase 2a): what its signatures may say — signing.py's rules read these
+                *("EMPORIA_SIGN_LIMITS", "EMPORIA_PAYOUT_ADDRESSES", "EMPORIA_RELAY_URL",
+                  "EMPORIA_BACKUP_RELAYS", "EMPORIA_VISIT_RELAYS"))
+SIGNING_POLICY = POLICY_NAMES[5:]
 _LOCK = threading.Lock()
 
 
@@ -230,6 +234,111 @@ def decide(intent_id: str, approve: bool) -> dict:
         return item
 
 
+# ─── P293 (signer phase 2a): the identity key, and signatures by kind ────────
+
+def identity_path(agent_id: str) -> Path:
+    return agent_dir(agent_id) / "keys" / "identity.ed25519"
+
+
+def identity_key(agent_id: str):
+    """The agent's Ed25519 identity key, if the signer holds it (`signer add NAME --identity`)."""
+    from cryptography.hazmat.primitives.asymmetric import ed25519
+    path = identity_path(agent_id)
+    if not path.exists():
+        return None
+    return ed25519.Ed25519PrivateKey.from_private_bytes(path.read_bytes())
+
+
+class FileHistory:
+    """signing.History, kept on disk per agent: a restart must not reset a limit."""
+
+    def __init__(self, agent_id: str):
+        self.path = agent_dir(agent_id) / "sign_history.json"
+
+    def take(self, agent_id: str, group: str, limit: tuple[int, float], now: float) -> float:
+        count, window = limit
+        with _LOCK:
+            seen = _read_json(self.path, {})
+            times = [t for t in seen.get(group, []) if t > now - window]
+            if len(times) >= count:
+                return times[0] + window - now
+            seen[group] = [*times, now]
+            _write_json(self.path, seen)
+            return 0.0
+
+
+def _alert(agent_id: str, event: str, detail: str) -> None:
+    try:
+        from emporia import signer_alerts
+        signer_alerts.notify(agent_id, event, detail)
+    except Exception:  # noqa: BLE001 — an alert never stands between an agent and its signature
+        pass
+
+
+def _changes(agent_id: str, kind: str, payload: dict) -> tuple[str, str] | None:
+    """(event, detail) when a signature changes who the agent is or where it is paid."""
+    if kind == "payout-wallet":
+        return "payout-wallet", f"paid at {payload.get('address')} ({payload.get('network_family')}) from now on"
+    if kind == "encryption-key":
+        return "encryption-key", "a new encryption key binding — what it is sent is sealed to it"
+    if kind == "relay-list":
+        path = agent_dir(agent_id) / "last_relay_list.json"
+        last = _read_json(path, {})
+        now = {"home": payload.get("home"), "backups": sorted(payload.get("backups") or [])}
+        _write_json(path, now)
+        if last and last != now:
+            return "home-or-backups", f"home {now['home']}, backups {', '.join(now['backups']) or 'none'}"
+    return None
+
+
+def sign_kind(agent_id: str, kind: str, args: list, kwargs: dict) -> str:
+    """Build the payload from the kind and arguments, apply its rule with this
+    signer's history and the person's policy, sign with the key held here."""
+    from emporia import signing
+    priv = identity_key(agent_id)
+    if priv is None:
+        raise signing.Refused(f"this signer does not hold {agent_id}'s identity key — "
+                              f"emporia signer add {agent_id} --identity moves it here")
+    p = signing.payload(kind, *args, **kwargs)
+    env = dict(policy(agent_id).get("env", {}))
+    with agent_wallet.scope(_scope(agent_id)):        # its own wallets, as the signer holds them
+        signing.check(kind, p, signing.Context(agent_id, env=env), history=FileHistory(agent_id))
+    sig = identity.sign_payload(priv, p)
+    if change := _changes(agent_id, kind, p):
+        _alert(agent_id, *change)
+    return sig
+
+
+def sign_in(agent_id: str, nonce: str) -> str:
+    from emporia import signing
+    priv = identity_key(agent_id)
+    if priv is None:
+        raise signing.Refused(f"this signer does not hold {agent_id}'s identity key")
+    signing.check("sign-in", {"nonce": nonce}, signing.Context(agent_id, env=dict(policy(agent_id).get("env", {}))),
+                  history=FileHistory(agent_id))
+    return priv.sign(identity.challenge_bytes(nonce)).hex()
+
+
+def log(agent_id: str = "", limit: int = 50) -> list[dict]:
+    """The audit's last entries, for one agent or all: kinds, results, reasons — never content."""
+    path = signer_dir() / "audit.jsonl"
+    try:
+        lines = path.read_text().splitlines()
+    except OSError:
+        return []
+    out = []
+    for line in reversed(lines):
+        try:
+            e = json.loads(line)
+        except ValueError:
+            continue
+        if not agent_id or e.get("agent") == agent_id:
+            out.append(e)
+            if len(out) >= limit:
+                break
+    return list(reversed(out))
+
+
 # ─── the service ──────────────────────────────────────────────────────────────
 
 app = FastAPI(title="Emporia signer", docs_url=None, redoc_url=None, openapi_url=None)
@@ -320,6 +429,57 @@ async def sign_escrow(request: Request) -> dict:
 async def reclaim(request: Request) -> dict:
     body = await request.json()
     return _run(request, lambda aid: agent_wallet.reclaim_escrow(aid, body["hold"]))
+
+
+def _signing_call(request: Request, kind: str, fn):
+    from emporia import signing
+    aid = _agent(request)
+    try:
+        out = fn(aid)
+    except signing.Limited as e:
+        audit({"agent": aid, "op": "sign", "kind": kind, "result": "limited", "why": str(e)[:300]})
+        _alert(aid, "refused", str(e))
+        raise HTTPException(429, {"error": str(e), "retry_after": e.retry_after}) from None
+    except signing.Refused as e:
+        audit({"agent": aid, "op": "sign", "kind": kind, "result": "refused", "why": str(e)[:300]})
+        _alert(aid, "refused", f"{kind}: {e}")
+        raise HTTPException(403, {"error": str(e)}) from None
+    except Exception as e:   # wrong arguments for the kind: say so, never a traceback
+        audit({"agent": aid, "op": "sign", "kind": kind, "result": "error", "why": f"{type(e).__name__}: {e}"[:300]})
+        raise HTTPException(400, {"error": f"{type(e).__name__}: {e}"}) from None
+    audit({"agent": aid, "op": "sign", "kind": kind, "result": "signed"})
+    return {"signature": out}
+
+
+@app.get("/v1/identity")
+def get_identity(request: Request) -> dict:
+    aid = _agent(request)
+    priv = identity_key(aid)
+    if priv is None:
+        raise HTTPException(404, "this signer does not hold its identity key")
+    return {"agent_id": aid, "public_key": priv.public_key().public_bytes_raw().hex()}
+
+
+@app.post("/v1/sign")
+async def sign(request: Request) -> dict:
+    body = await request.json()
+    kind = str(body.get("kind", ""))
+    args, kwargs = body.get("args") or [], body.get("kwargs") or {}
+    if not isinstance(args, list) or not isinstance(kwargs, dict):
+        raise HTTPException(400, {"error": "args is a list and kwargs an object"})
+    return _signing_call(request, kind, lambda aid: sign_kind(aid, kind, args, kwargs))
+
+
+@app.post("/v1/sign-in")
+async def post_sign_in(request: Request) -> dict:
+    body = await request.json()
+    return _signing_call(request, "sign-in", lambda aid: sign_in(aid, str(body.get("nonce", ""))))
+
+
+@app.get("/admin/log")
+def admin_log(request: Request, agent: str = "", limit: int = 50) -> dict:
+    _admin(request)
+    return {"entries": log(agent, max(1, min(limit, 500)))}
 
 
 @app.get("/admin/intents")

@@ -67,6 +67,38 @@ class Client:
         return r.json()
 
 
+    # ─── P293 (signer phase 2a): signatures, by kind ─────────────────────────
+
+    def _signing(self, path: str, body: dict) -> dict:
+        from emporia import signing
+        try:
+            with self._http() as h:
+                r = h.post(path, json=body, headers=self._headers())
+        except httpx.HTTPError as e:
+            raise signing.Refused(f"the signer is not reachable at {self.url} — {e}") from None
+        detail = r.json().get("detail", r.text) if r.headers.get("content-type", "").startswith(
+            "application/json") else r.text
+        msg = detail.get("error") if isinstance(detail, dict) else str(detail)
+        if r.status_code == 429:
+            raise signing.Limited(f"the signer: {msg}", float((detail or {}).get("retry_after", 60)))
+        if r.status_code != 200:
+            raise signing.Refused(f"the signer: {msg}")
+        return r.json()
+
+    def sign(self, kind: str, args: list, kwargs: dict) -> str:
+        return self._signing("/v1/sign", {"kind": kind, "args": args, "kwargs": kwargs})["signature"]
+
+    def sign_in(self, nonce: str) -> str:
+        return self._signing("/v1/sign-in", {"nonce": nonce})["signature"]
+
+    def identity(self) -> dict:
+        with self._http() as h:
+            r = h.get("/v1/identity", headers=self._headers())
+        if r.status_code != 200:
+            self._fail("identity", r.json().get("detail", r.text))
+        return r.json()
+
+
 class Admin:
     """The operator's side: pending approvals. Needs the admin token, which only
     the signer's user can read."""
@@ -79,6 +111,14 @@ class Admin:
             r = h.get("/admin/intents", headers={"authorization": f"Bearer {self.client.token}"})
         r.raise_for_status()
         return r.json()["intents"]
+
+    def log(self, agent_id: str = "", limit: int = 50) -> list[dict]:
+        """P293: what the signer signed and refused — kinds, results, reasons; never content."""
+        with self.client._http() as h:
+            r = h.get("/admin/log", params={"agent": agent_id, "limit": limit},
+                      headers={"authorization": f"Bearer {self.client.token}"})
+        r.raise_for_status()
+        return r.json()["entries"]
 
     def decide(self, intent_id: str, approve: bool) -> dict:
         with self.client._http() as h:

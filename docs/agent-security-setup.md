@@ -595,7 +595,22 @@ signer phase 2, under way (P293).
 - **Key rotation and the recovery commitment** stay the person's commands.
 
 These rules hold today with or without a signer; once the key moves behind one, the agent can't
-bypass them. Design: `docs/proposals/signer-phase-2.md`. A lost or stolen identity key *is* recoverable without losing the agent's history, but only
+bypass them. Design: `docs/proposals/signer-phase-2.md`.
+
+**Moving the identity key into the signer** (testnet, opt-in for now):
+
+```bash
+emporia signer add NAME --identity        # with its wallet, or after it
+emporia signer policy NAME                # its rules there: limits, payout addresses, home, backups, visits
+emporia signer policy NAME set EMPORIA_PAYOUT_ADDRESSES 0x…   # allow a payout wallet that isn't its own
+emporia signer log NAME                   # what it signed and refused, by kind; never content
+emporia signer alerts telegram            # the signer tells you itself: refusals, a new home or payout wallet
+emporia signer remove NAME                # everything back in the profile (testnet)
+```
+
+The profile keeps only the public key (`NAME.signer.pub`), and doctor checks that no other copy is
+left. Changing an agent's home, backups or visit list with the usual commands updates the signer's
+copy too. For a signer running apart from this user, the command prints the change to run there. A lost or stolen identity key *is* recoverable without losing the agent's history, but only
 if you made its recovery key beforehand.
 
 ### Moving home, backups, and a relay that disappears

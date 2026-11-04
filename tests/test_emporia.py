@@ -26523,6 +26523,8 @@ _ENV_READ_RE = re.compile(
     r'''(?:os\.)?getenv\(\s*["']([A-Z][A-Z0-9_]*)["']'''
     r'''|environ\[\s*["']([A-Z][A-Z0-9_]*)["']'''
     r'''|environ\.get\(\s*["']([A-Z][A-Z0-9_]*)["']'''
+    # P293: read from an env mapping a function was given (os.environ by default), as signing.py does
+    r'''|\benv\.get\(\s*["']([A-Z][A-Z0-9_]*)["']'''
 )
 
 # Variables read only from an env name the code *builds* (e.g.
@@ -26539,7 +26541,7 @@ def _env_vars_read_by_source() -> dict[str, set[str]]:
     found: dict[str, set[str]] = {}
     for path in sorted(_Path("src/emporia").rglob("*.py")):
         for m in _ENV_READ_RE.finditer(path.read_text()):
-            name = m.group(1) or m.group(2) or m.group(3)
+            name = next(g for g in m.groups() if g)
             found.setdefault(name, set()).add(str(path))
     return found
 
@@ -26601,7 +26603,7 @@ def test_every_documented_environment_variable_is_actually_read():
     for extra in ("scripts", "installer"):
         for path in _Path(extra).rglob("*.py"):
             for m in _ENV_READ_RE.finditer(path.read_text()):
-                read.add(m.group(1) or m.group(2) or m.group(3))
+                read.add(next(g for g in m.groups() if g))
     # P92: so is the Hermes platform plugin, which reads through Hermes's
     # profile-scoped secret helper rather than os.environ (Hermes's rule for
     # platform adapters), so it needs its own pattern.
@@ -26902,7 +26904,7 @@ def test_every_key_the_installer_writes_into_a_users_config_is_read_by_something
             continue
         for path in base.rglob("*.py"):
             for m in _ENV_READ_RE.finditer(path.read_text()):
-                read.add(m.group(1) or m.group(2) or m.group(3))
+                read.add(next(g for g in m.groups() if g))
 
     written = {k for k in _installer_written_env_keys()
                if k.startswith(("EMPORIA_", "STRIPE_", "NVIDIA_"))}

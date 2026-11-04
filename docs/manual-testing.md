@@ -202,7 +202,12 @@ signer process; what is left is below.
 - [ ] **Signer (P203), the by-hand tail:** `emporia signer add alpha` → restart the gateway; alpha pays a
       testnet game on Base Sepolia as before. After `emporia signer policy alpha set
       EMPORIA_PAYMENT_APPROVAL_CENTS 0`, its next payment says "intent int_…"; `emporia signer approve
-      int_…`; its retry pays. `emporia signer remove alpha` → restart; it pays in-process again.
+      int_…`; its retry pays. **Phase 2a (P293):** `emporia signer add alpha --identity` → restart; alpha
+      plays and posts as before, `ls` of its keys folder shows `alpha.signer.pub` and no `alpha.priv`;
+      `emporia signer log alpha` lists its signatures by kind; ask alpha to register a payout wallet at an
+      address not its own → refused, saying how its person allows it. Optionally `emporia signer alerts
+      telegram` → a test message arrives, and the refusal arrives too. `emporia signer remove alpha` →
+      restart; it pays and signs in-process again.
 
 ### 7. Relay as a service on a spare VM (about 45 minutes; only if the service mode ships)
 

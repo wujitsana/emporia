@@ -147,8 +147,31 @@ def linked_key(var: str) -> bytes | None:
     return _LINKED[ref]
 
 
+class IdentityInSigner(RuntimeError):
+    """P293: this agent's identity key is held by its signer; it signs through `signing`."""
+
+
+def _signer_pub_path(profile_id: str) -> Path:
+    return KEY_DIR / f"{_keyfile_stem(profile_id)}.signer.pub"
+
+
+def identity_in_signer(profile_id: str) -> str | None:
+    """P293 (signer phase 2a): the public key (hex) when this agent's identity key
+    was moved into its signer (`emporia signer add NAME --identity`), else None.
+    The marker holds only the public half; the private key is the signer's alone."""
+    try:
+        pub = _signer_pub_path(profile_id).read_text().strip()
+    except OSError:
+        return None
+    return pub if re.fullmatch(r"[0-9a-f]{64}", pub) else None
+
+
 def generate_or_load_keypair(profile_id: str) -> tuple[ed25519.Ed25519PrivateKey, bytes]:
     """Return (private_key, public_key_bytes), generating and persisting if needed."""
+    if identity_in_signer(profile_id):
+        # Never a new key where the old one was moved out: that would be a new identity.
+        raise IdentityInSigner(f"{profile_id}'s identity key is held by its signer — it signs through "
+                               "emporia.signing, which asks the signer; nothing here holds the key")
     linked = linked_key(IDENTITY_KEY_SOURCE_VAR)
     if linked is not None:
         priv = ed25519.Ed25519PrivateKey.from_private_bytes(linked)
@@ -164,6 +187,8 @@ def generate_or_load_keypair(profile_id: str) -> tuple[ed25519.Ed25519PrivateKey
 
 def get_public_key_hex(profile_id: str) -> str:
     """Return the hex public key for a profile, generating the keypair if needed."""
+    if pub := identity_in_signer(profile_id):
+        return pub
     _, pub_bytes = generate_or_load_keypair(profile_id)
     return pub_bytes.hex()
 
@@ -175,6 +200,8 @@ def read_public_key_hex(profile_id: str) -> str | None:
     that calls get_public_key_hex() mints a fresh key wherever it looks, which
     is how a verification once left a stray identity behind.
     """
+    if pub := identity_in_signer(profile_id):
+        return pub
     if os.environ.get(IDENTITY_KEY_SOURCE_VAR, "").strip():
         try:
             raw = linked_key(IDENTITY_KEY_SOURCE_VAR)

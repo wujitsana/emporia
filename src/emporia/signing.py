@@ -76,8 +76,8 @@ class Context:
     own_wallets: Callable[[str], set[str]] = lambda agent_id: _own_wallets(agent_id)
 
 
-def _csv(env: Mapping[str, str], name: str) -> set[str]:
-    return {u.strip().rstrip("/") for u in str(env.get(name, "")).split(",") if u.strip()}
+def _csv(raw: Any) -> set[str]:
+    return {u.strip().rstrip("/") for u in str(raw or "").split(",") if u.strip()}
 
 
 def _own_wallets(agent_id: str) -> set[str]:
@@ -94,7 +94,7 @@ def _own_wallets(agent_id: str) -> set[str]:
 
 def _payout_ok(p: dict[str, Any], ctx: Context) -> str:
     address = str(p.get("address") or "")
-    allowed = ctx.own_wallets(ctx.agent_id) | _csv(ctx.env, "EMPORIA_PAYOUT_ADDRESSES")
+    allowed = ctx.own_wallets(ctx.agent_id) | _csv(ctx.env.get("EMPORIA_PAYOUT_ADDRESSES"))
     if address in allowed or address.lower() in {a.lower() for a in allowed if a.startswith("0x")}:
         return ""
     return (f"{address} is not one of this agent's own wallets, nor on its person's list — they add it "
@@ -103,8 +103,8 @@ def _payout_ok(p: dict[str, Any], ctx: Context) -> str:
 
 def _relay_list_ok(p: dict[str, Any], ctx: Context) -> str:
     home_now = {str(ctx.env.get("EMPORIA_RELAY_URL", "") or "http://localhost:8088").rstrip("/")}
-    listed = _csv(ctx.env, "EMPORIA_VISIT_RELAYS")
-    backups_now = _csv(ctx.env, "EMPORIA_BACKUP_RELAYS")
+    listed = _csv(ctx.env.get("EMPORIA_VISIT_RELAYS"))
+    backups_now = _csv(ctx.env.get("EMPORIA_BACKUP_RELAYS"))
     home = str(p.get("home") or "").rstrip("/")
     if home and home not in home_now | listed:
         return (f"{home} as its home: its home is its person's choice — they move it with "
@@ -175,7 +175,7 @@ def limits(env: Mapping[str, str] | None = None) -> dict[str, tuple[int, float]]
     A malformed entry is refused loudly, never ignored."""
     env = os.environ if env is None else env
     out = dict(DEFAULT_LIMITS)
-    for item in [i.strip() for i in str(env.get("EMPORIA_SIGN_LIMITS", "")).split(",") if i.strip()]:
+    for item in [i.strip() for i in str(env.get("EMPORIA_SIGN_LIMITS") or "").split(",") if i.strip()]:
         group, _, rate = item.partition("=")
         count, _, per = rate.partition("/")
         if group.strip() not in DEFAULT_LIMITS or not count.strip().isdigit() or per.strip() not in _WINDOWS:
@@ -234,10 +234,29 @@ def payload(kind: str, *args: Any, **kwargs: Any) -> dict[str, Any]:
     return getattr(wire, k.builder)(*args, **kwargs)
 
 
+def _signer_for(agent_id: str):
+    """The signer client when this agent's identity key is held by its signer, else None."""
+    from emporia import identity
+    if identity.identity_in_signer(agent_id) is None:
+        return None
+    from emporia import signer_client
+    client = signer_client.Client.from_env()
+    if not client.url or identity._keyfile_stem(client.agent_id) != identity._keyfile_stem(agent_id):
+        raise Refused(f"{agent_id}'s identity key is in its signer, but this process is set up to ask the signer "
+                      f"as {client.agent_id or 'no agent'} (EMPORIA_SIGNER_URL / EMPORIA_AGENT_ID)")
+    return client
+
+
 def signed(agent_id: str, kind: str, *args: Any, **kwargs: Any) -> tuple[dict[str, Any], str]:
-    """(payload, signature): build, check, sign. The one way an agent signs."""
+    """(payload, signature): build, check, sign. The one way an agent signs.
+
+    Behind a signer the signer builds the same payload from the same arguments,
+    runs the same check with its own history and its person's policy, and signs;
+    the rules are checked here first too, so a refusal costs no round trip."""
     p = payload(kind, *args, **kwargs)
     check(kind, p, Context(agent_id))
+    if client := _signer_for(agent_id):
+        return p, client.sign(kind, list(args), kwargs)
     from emporia import identity
     return p, identity.sign(p, agent_id)
 
@@ -250,5 +269,7 @@ def sign(agent_id: str, kind: str, *args: Any, **kwargs: Any) -> str:
 def sign_in(agent_id: str, nonce: str) -> str:
     """A relay's sign-in challenge (hex), the only raw signature an agent makes."""
     check("sign-in", {"nonce": nonce}, Context(agent_id))
+    if client := _signer_for(agent_id):
+        return client.sign_in(nonce)
     from emporia import identity
     return identity.sign_challenge_nonce(nonce, agent_id)

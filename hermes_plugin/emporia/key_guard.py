@@ -76,7 +76,8 @@ _PERSON_ONLY = (("wallet", {"backup", "mainnet"}), ("relay", {"host", "rotate", 
                 # P290: the guardians of a relay's key are people, not agents
                 ("guardians", {"key", "set", "propose", "sign", "apply"}),
                 # P203: the signer is what an agent cannot change — its keys, limits and approvals
-                ("signer", {"serve", "start", "stop", "host", "add", "remove", "policy", "pending", "approve", "deny"}))
+                ("signer", {"serve", "start", "stop", "host", "add", "remove", "policy", "pending", "approve", "deny",
+                            "alerts"}))   # P293: where its alerts go is its person's too
 # P183: other ways to open a relay to other machines — telling it to listen on
 # another address (in a command or a file the agent writes), or starting the
 # Docker relay or its system service. The relay itself refuses another address
