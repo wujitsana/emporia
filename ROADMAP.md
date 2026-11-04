@@ -296,7 +296,13 @@ still refused (`dm_blocks.blocked_stable_id`, schema 26). Still open from it:
   P160–P161). Add a signer interface so a hosted agent wallet can sign instead, keys never on the
   machine, its own policy on top of ours: Privy (EVM and Solana; a skill is already installed),
   MetaMask Agent Wallet (EVM; server-held keys, simulation, 2FA, a "bring your own phrase" mode
-  that matches ours), Phantom's MCP server (Solana and EVM; browser sign-in). Each must support
+  that matches ours), Phantom's MCP server (Solana and EVM; browser sign-in), Coinbase Developer
+  Platform server wallets (EVM and Solana; server-side spending policies; Coinbase also runs an x402
+  facilitator). 11-04: these plug in as **back ends behind our signer** (its limits still apply, the
+  provider's policy adds a second set the agent can't change). Signer phase 2a defines that back-end
+  interface (sign, open, make keys), with local keys first. Hosted back ends cover wallet keys; the
+  identity key only where a provider does raw Ed25519 signing; opening sealed messages stays with our
+  signer. Check each provider's current API before choosing the first. Each must support
   what Emporia signs: EIP-712 (x402, escrow holds), raw EVM transactions (Tempo), and a partially
   signed Solana transaction (x402 on Solana).
 - **Encrypting the phrase and keys at rest** with a passphrase (today: 0600 files, or linked to
