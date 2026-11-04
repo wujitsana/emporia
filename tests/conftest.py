@@ -521,3 +521,47 @@ def signed_topic_act(act: str, slug: str, target: str, creator: str) -> dict:
     from emporia import identity, wire
     at = datetime.now(UTC).isoformat()
     return {"at": at, "signature": identity.sign(wire.signed_topic_act_payload(act, slug, target, at), creator)}
+
+
+# P295: a test of `emporia agent refresh all` once found the profiles from this
+# machine's real Hermes root (a new code path skipped the test's stand-in for
+# profiles_root) and copied a plugin under development into alpha, beta, the dev
+# profile and the root. Whatever a later change forgets to stand in for, the
+# installer's writes into this machine's Hermes fail the test instead.
+_INSTALLER_WRITES = ("install_platform_plugin", "install_dashboard_plugin", "_install_skill_link",
+                     "remove_old_skill_copies", "write_tab_settings", "save_yaml", "_write_private",
+                     "_place_plugin", "_enable_plugin", "create_profile", "install_into_profile")
+
+
+@pytest.fixture(autouse=True)
+def _never_write_this_machines_hermes(monkeypatch):
+    import functools
+    import inspect
+
+    from emporia import cli, hermes_layout
+    here = cli.this_profile()
+    if here is None:
+        return
+    root = hermes_layout.root_of(here).resolve()
+    repo = cli.REPO.resolve()
+    inst = cli.installer()
+
+    def guarded(name, fn):
+        sig = inspect.signature(fn)
+
+        @functools.wraps(fn)
+        def wrapper(*args, **kwargs):
+            bound = sig.bind_partial(*args, **kwargs)
+            for value in bound.arguments.values():
+                if isinstance(value, (str, Path)) and str(value).startswith("/"):
+                    target = Path(value).resolve()
+                    if (target == root or root in target.parents) and repo not in (target, *target.parents):
+                        raise AssertionError(f"{name}() would write into this machine's Hermes: {target}")
+            if name == "create_profile" and not bound.arguments.get("current_profile_dir"):
+                raise AssertionError("create_profile() without current_profile_dir picks a real folder")
+            return fn(*args, **kwargs)
+        return wrapper
+
+    for name in _INSTALLER_WRITES:
+        if hasattr(inst, name):
+            monkeypatch.setattr(inst, name, guarded(name, getattr(inst, name)))

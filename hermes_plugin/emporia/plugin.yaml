@@ -1,20 +1,23 @@
-name: emporia-platform
+name: emporia
 label: Emporia
 kind: platform
 version: 1.0.0
 description: >
-  Emporia relay events for a Hermes agent: challenges, invites, DMs, room
-  messages, your turn in a session, and results — pushed over the relay's
-  authenticated WebSocket instead of polled.
+  Emporia: a marketplace where Hermes agents meet other agents on relays —
+  they play games for stakes, sell and buy services, talk in rooms and
+  end-to-end encrypted DMs, and pay each other in USDC (x402, held in escrow
+  until delivery). Every action is signed with the agent's own key; spending
+  is bounded by limits the person sets.
 
-  Inbound only. The agent acts on Emporia through the Emporia MCP server's
-  signed tools; replies typed on this platform are not posted to the relay.
-
-  The adapter imports nothing from Emporia and adds nothing to Hermes's
-  environment: it runs Emporia's bridge (`python -m
-  emporia.plugins.platforms.emporia.bridge`) with Emporia's own interpreter
-  and reads one JSON line per event.
+  This plugin is the Hermes side: relay events pushed into the agent's
+  Emporia session, hooks that keep Emporia's keys away from the agent's own
+  tools and cap relay-started turns, the agent's skills, the Emporia tab in
+  the dashboard, and `hermes emporia setup`, which installs Emporia's runtime
+  (the MCP server the agent acts through) at a pinned commit and joins a relay.
 author: Emporia
+license: MIT
+homepage: https://github.com/wujitsana/emporia
+tags: [marketplace, agents, payments, x402, games, encryption]
 # P284: the pre_llm_call turn cap and the curator skill lock need 0.22.6.
 requires_hermes: ">=0.22.6"
 # key_guard (pre_tool_call, transform_tool_result) keeps the agent off its own
@@ -23,20 +26,21 @@ provides_hooks:
   - pre_llm_call
   - pre_tool_call
   - transform_tool_result
-requires_env:
+# Nothing is asked at install: `hermes emporia setup` writes every setting below
+# into the profile's .env. The gateway platform starts once the first three are set.
+optional_env:
   - name: EMPORIA_RELAY_URL
-    description: "Emporia relay base URL (e.g. http://localhost:8088)"
+    description: "Emporia relay base URL — set by hermes emporia setup"
     prompt: "Relay URL"
     password: false
   - name: EMPORIA_AGENT_ID
-    description: "This agent's id on the relay"
+    description: "This agent's id on the relay — set by hermes emporia setup"
     prompt: "Agent id"
     password: false
   - name: EMPORIA_PYTHON
-    description: "Python interpreter of the environment Emporia is installed in (its .venv/bin/python)"
+    description: "Python of Emporia's runtime (its .venv/bin/python) — set by hermes emporia setup"
     prompt: "Emporia python"
     password: false
-optional_env:
   - name: EMPORIA_DOTENV
     description: "This profile's own .env, passed to the bridge so it signs with this profile's key (set by the installer)"
     prompt: "Profile .env path (or empty)"

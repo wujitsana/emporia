@@ -253,6 +253,9 @@ spec.loader.exec_module(mod)
 from gateway.platform_registry import PlatformEntry, platform_registry
 class Ctx:
     def register_platform(self, **kw): platform_registry.register(PlatformEntry(**kw))
+    def register_hook(self, *a, **kw): pass
+    def register_skill(self, *a, **kw): pass
+    def register_cli_command(self, *a, **kw): pass
 mod.register(Ctx())
 from gateway.config import PlatformConfig
 from emporia_platform.adapter import EmporiaAdapter
@@ -304,6 +307,9 @@ spec.loader.exec_module(mod)
 from gateway.platform_registry import PlatformEntry, platform_registry
 class Ctx:
     def register_platform(self, **kw): platform_registry.register(PlatformEntry(**kw))
+    def register_hook(self, *a, **kw): pass
+    def register_skill(self, *a, **kw): pass
+    def register_cli_command(self, *a, **kw): pass
 mod.register(Ctx())
 from gateway.config import PlatformConfig
 from emporia_platform.adapter import EmporiaAdapter
@@ -425,6 +431,9 @@ spec.loader.exec_module(mod)
 from gateway.platform_registry import PlatformEntry, platform_registry
 class Ctx:
     def register_platform(self, **kw): platform_registry.register(PlatformEntry(**kw))
+    def register_hook(self, *a, **kw): pass
+    def register_skill(self, *a, **kw): pass
+    def register_cli_command(self, *a, **kw): pass
 mod.register(Ctx())
 from gateway.config import PlatformConfig
 from emporia_platform.adapter import EmporiaAdapter

@@ -1,5 +1,4 @@
 """P252: `emporia update` — pull, then bring everything that runs from the checkout up to date."""
-import json
 import shutil
 import subprocess
 import sys
@@ -42,7 +41,8 @@ def calls(monkeypatch, tmp_path):
     monkeypatch.setattr(cli, "profiles_root", lambda: tmp_path / "hermes" / "profiles")
     monkeypatch.setattr(cli, "health", lambda **kw: None)
     monkeypatch.setattr(cli, "installer", lambda: type("Inst", (), {
-        "install_dashboard_plugin": lambda self, *a: None, "print_restart_instructions": lambda self, p: None})())
+        "install_dashboard_plugin": lambda self, *a: None, "print_restart_instructions": lambda self, p: None,
+        "from_catalog": lambda self: False, "load_yaml": lambda self, p: {}})())
     rec = _Calls()
     monkeypatch.setattr(subprocess, "run", rec)
     return rec
@@ -67,21 +67,22 @@ def test_after_the_pull_the_rest_runs_as_the_new_code(calls):
     assert [sys.executable, "-m", "emporia.cli", "update", "--no-pull"] in calls.argv
 
 
-def test_no_pull_updates_packages_tab_plugins_and_relay(calls, monkeypatch, tmp_path, capsys):
-    tab = tmp_path / "hermes" / "plugins" / "emporia" / "dashboard"
-    tab.mkdir(parents=True)
+def test_no_pull_updates_packages_agents_plugins_and_relay(calls, monkeypatch, tmp_path, capsys):
+    """P295: each agent's plugin carries the dashboard tab, so refreshing the agents updates it;
+    no npm, and nothing written to a profile that is not an Emporia agent."""
     profile = tmp_path / "hermes" / "profiles" / "alpha"
-    (tab / "emporia.json").write_text(json.dumps({
-        "relay_url": "http://relay.test:8088", "runtime_dir": str(profile / "home" / ".hermes" / "emporia-console")}))
-    (profile / "plugins" / "platforms" / "emporia").mkdir(parents=True)
     pid = tmp_path / "relay.pid"
     pid.write_text("1")
     monkeypatch.setattr(cli, "_relay_files", lambda: (pid, tmp_path / "relay.log"))
+    monkeypatch.setattr(cli, "_agent_profiles", lambda root: [(profile, {})])
     seen: dict = {}
 
     class Inst:
-        def install_dashboard_plugin(self, profile_dir, relay, home):
-            seen["tab"] = (profile_dir, relay, home)
+        def from_catalog(self):
+            return False
+
+        def install_dashboard_plugin(self, *a):
+            seen["tab"] = a
 
         def print_restart_instructions(self, profiles):
             seen["restart"] = True
@@ -91,11 +92,9 @@ def test_no_pull_updates_packages_tab_plugins_and_relay(calls, monkeypatch, tmp_
     monkeypatch.setattr(cli, "cmd_relay", lambda a: seen.setdefault("relay", a.action) and 0)
 
     assert cli.main(["update", "--no-pull"]) == 0
-    assert not calls.ran("git")
+    assert not calls.ran("git") and not calls.ran("npm")
     assert calls.ran("pip", "install", "-e") or calls.ran("uv", "sync")
-    assert calls.ran("npm", "install")
-    assert seen == {"tab": (profile, "http://relay.test:8088", tmp_path / "hermes"),
-                    "refresh": "all", "relay": "restart", "restart": True}
+    assert seen == {"refresh": "all", "relay": "restart", "restart": True}
     assert "gateway restart" in capsys.readouterr().out
 
 

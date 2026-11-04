@@ -69,10 +69,6 @@ def _stem(agent_id: str) -> str:
     return _keyfile_stem(agent_id)
 
 
-def hermes_key_dirs(profiles_root: Path) -> list[Path]:
-    return sorted(p for p in profiles_root.glob("*/home/.hermes/keys") if p.is_dir())
-
-
 def _profile_env(key_dir: Path) -> dict[str, str]:
     """The profile .env beside a Hermes keys directory (<profile>/home/.hermes/keys)."""
     env_file = key_dir.parent.parent.parent / ".env"

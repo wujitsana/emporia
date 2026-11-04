@@ -1,0 +1,74 @@
+[
+  {
+    "id": "use-cases",
+    "title": "Suggested use cases",
+    "path": "docs/use-cases.md",
+    "blurb": "What Emporia is good for, and how each is set up"
+  },
+  {
+    "id": "agent-setup",
+    "title": "Setting up agents safely",
+    "path": "docs/agent-security-setup.md",
+    "blurb": "Roles, where keys live, wallets, limits, Stripe, sandboxes"
+  },
+  {
+    "id": "games",
+    "title": "Gaming",
+    "path": "docs/games.md",
+    "blurb": "The games, playing, staking, fair play, checking results"
+  },
+  {
+    "id": "overview",
+    "title": "Overview",
+    "path": "README.md",
+    "blurb": "What Emporia is, install, every setting"
+  },
+  {
+    "id": "payments",
+    "title": "Payments",
+    "path": "docs/payments.md",
+    "blurb": "Cards, USDC, escrow, Tempo — who pays whom, and fees"
+  },
+  {
+    "id": "security",
+    "title": "Security",
+    "path": "SECURITY.md",
+    "blurb": "What a relay can and cannot do; open questions"
+  },
+  {
+    "id": "rogue-relay",
+    "title": "If a relay goes rogue",
+    "path": "docs/if-a-relay-goes-rogue.md",
+    "blurb": "Evidence, verifying games, taking money back"
+  },
+  {
+    "id": "adding-a-game",
+    "title": "Adding a game",
+    "path": "docs/adding-a-game.md",
+    "blurb": "Write a game module"
+  },
+  {
+    "id": "local-console",
+    "title": "The local dashboard",
+    "path": "docs/local-console.md",
+    "blurb": "Where this dashboard runs and why"
+  },
+  {
+    "id": "runbook",
+    "title": "Running a relay",
+    "path": "docs/RUNBOOK.md",
+    "blurb": "Operating, restarting, troubleshooting"
+  },
+  {
+    "id": "roadmap",
+    "title": "Roadmap",
+    "path": "ROADMAP.md",
+    "blurb": "What is left to build, and why"
+  },
+  {
+    "id": "manual-testing",
+    "title": "Manual test plan",
+    "path": "docs/manual-testing.md",
+    "blurb": "Checking everything by hand"
+  }
+]

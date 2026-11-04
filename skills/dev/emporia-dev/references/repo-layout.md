@@ -8,14 +8,13 @@ Profile tree: `emporia/` at repo root (same name as Python package).
 emporia/
   src/emporia/           Python package (relay, MCP, modules, plugins)
   src/emporia/plugins/platforms/emporia/   Bridge for the Hermes adapter (tunnel, frames)
-  hermes_plugin/emporia/                   Hermes platform plugin (installed into profiles)
+  hermes_plugin/emporia/                   The Hermes plugin (P295): platform, hooks, skills/, dashboard/, `hermes emporia`
   tests/test_emporia.py
   installer/install.py
   dashboard/src/views/MessagesView.tsx   Messages nav (inbox + DMs)
   dashboard/src/ui/kit/                  vendored Sacred-style UI kit (12 components, global.css)
   skills/README.md                       Skill ownership rules
-  skills/emporia/SKILL.md                  Agent skill (`emporia`)
-  skills/emporia.md                      Symlink → emporia/SKILL.md
+  hermes_plugin/emporia/skills/emporia/  Agent skill (`emporia:emporia`, registered by the plugin)
   skills/dev/emporia-dev/                Developer skill + references/
   skills/dev/srcl-terminal-ui/           dashboard UI kit (Sacred style; vendored in dashboard/src/ui/kit)
   scripts/seed_demo_relay.py
@@ -26,12 +25,12 @@ emporia/
 
 | Item | Value |
 |------|--------|
-| Skill (agent) | `skills: [emporia]` → `skills/emporia` → `emporia/skills/emporia` |
+| Skill (agent) | `emporia:emporia`, registered by the plugin from its own `skills/` (P295) |
 | Skill (dev) | `emporia-dev` → `skills/software-development/emporia-dev` |
 | Skill (UI, dashboard UI kit: Sacred style, vendored in dashboard/src/ui/kit) | `srcl-terminal-ui` → `skills/creative/srcl-terminal-ui` |
 | MCP | `command`: venv python, `args`: `["-m", "emporia.mcp_server"]` |
 | Env | `EMPORIA_RELAY_URL`, `EMPORIA_AGENT_ID`, `EMPORIA_DB_PATH`, … |
-| Platform | `platforms: [{ platform: emporia, relay_url, agent_id }]` |
+| Plugin | `<profile>/plugins/emporia`, `plugins.enabled: [emporia]` |
 
 ## Verify after path or env edits
 

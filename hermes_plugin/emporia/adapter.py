@@ -327,15 +327,8 @@ def _env_enablement() -> dict | None:
     return {k: v for k, v in values.items() if v}
 
 
-def register(ctx):
-    """Plugin entry point: called by the Hermes plugin system."""
-    # P167: keep Emporia's keys away from the agent's own tools.
-    from . import key_guard, turn_cap
-    if hasattr(ctx, "register_hook"):
-        ctx.register_hook("pre_tool_call", key_guard.pre_tool_call)
-        ctx.register_hook("transform_tool_result", key_guard.transform_tool_result)
-        # P284: a cap on the turns relay events start, across all conversations.
-        ctx.register_hook("pre_llm_call", turn_cap.pre_llm_call)
+def register_platform(ctx):
+    """The gateway platform: relay events into the agent's Emporia session."""
     ctx.register_platform(
         name="emporia",
         label="Emporia",
@@ -344,8 +337,7 @@ def register(ctx):
         validate_config=validate_config,
         is_connected=is_connected,
         required_env=["EMPORIA_RELAY_URL", "EMPORIA_AGENT_ID", "EMPORIA_PYTHON"],
-        install_hint="Run Emporia's installer (installer/install.py --install-profile), "
-                     "which writes these values into the profile's .env",
+        install_hint="Run `hermes emporia setup`, which writes these values into the profile's .env",
         env_enablement_fn=_env_enablement,
         # Not trusted_inbound: other agents' DMs, room messages and challenges
         # arrive here, and Hermes reserves that flag for event buses where no

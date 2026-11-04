@@ -11,7 +11,7 @@ def test_every_key_emporia_can_keep_in_a_profile_env_is_declared_secret():
     command and script the agent runs; nothing else of Emporia's is on its list."""
     from emporia.key_source import ENV_KEY_NAMES
     manifest = yaml.safe_load(MANIFEST.read_text())
-    entries = manifest["requires_env"] + manifest["optional_env"]
+    entries = manifest.get("requires_env", []) + manifest["optional_env"]
     secret = {e["name"] for e in entries if e.get("password") is True}
     expected = set(ENV_KEY_NAMES.values()) | {"EMPORIA_NOUS_JWT", "EMPORIA_OPERATOR_PRIVATE_KEY",
                                               "STRIPE_SECRET_KEY", "STRIPE_WEBHOOK_SECRET",
@@ -52,9 +52,9 @@ def test_doctor_fails_an_older_copy_of_the_plugin(tmp_path, capsys):
 
     from emporia import cli
     profile = tmp_path / "profiles" / "oldcopy"
-    installed = profile / "plugins" / "platforms" / "emporia"
+    installed = profile / "plugins" / "emporia"
     shutil.copytree(MANIFEST.parent, installed, ignore=shutil.ignore_patterns("__pycache__"))
-    (profile / "config.yaml").write_text("{}")
+    (profile / "config.yaml").write_text("plugins:\n  enabled: [emporia]\n")
     rep = cli.Report()
     cli.doctor_profile_secrets(rep, profile, {})
     assert not rep.failed
@@ -71,14 +71,17 @@ def test_agent_refresh_all_brings_every_copy_up_to_date(tmp_path, monkeypatch, c
     from emporia import cli
     root = tmp_path / "profiles"
     for name in ("alpha", "beta"):
-        installed = root / name / "plugins" / "platforms" / "emporia"
+        installed = root / name / "plugins" / "platforms" / "emporia"         # before P295
         shutil.copytree(MANIFEST.parent, installed, ignore=shutil.ignore_patterns("__pycache__"))
         (installed / "key_guard.py").write_text("# old\n")
-        (root / name / "config.yaml").write_text("{}")
-    (tmp_path / "plugins" / "emporia").mkdir(parents=True)               # the dashboard tab, installed
-    (tmp_path / "plugins" / "emporia" / "plugin.yaml").write_text("name: emporia\n")
+        (root / name / "config.yaml").write_text(
+            "plugins:\n  enabled: [platforms/emporia]\nmcp_servers:\n  emporia: {command: x}\n")
     (root / "plain").mkdir()
     (root / "plain" / "config.yaml").write_text("{}")             # never set up for Emporia: left alone
+    tab_only = tmp_path / "plugins" / "emporia"                   # P295: a root that only shows the tab
+    tab_only.mkdir(parents=True)
+    (tab_only / "plugin.yaml").write_text("name: emporia\n")
+    (tmp_path / "config.yaml").write_text("plugins:\n  enabled: [emporia]\n")
     monkeypatch.setattr(cli, "profiles_root", lambda: root)
     assert cli.main(["agent", "refresh", "all"]) == 0
     assert "gateway restart" in capsys.readouterr().out
@@ -86,9 +89,12 @@ def test_agent_refresh_all_brings_every_copy_up_to_date(tmp_path, monkeypatch, c
         rep = cli.Report()
         cli.doctor_profile_secrets(rep, root / name, {})
         assert not rep.failed
-        # P225: the bare name, which the dashboard looks up — not platforms/emporia alone
-        assert "emporia" in yaml.safe_load((root / name / "config.yaml").read_text())["plugins"]["enabled"]
+        # P295: one plugin under one key, the old one gone
+        assert yaml.safe_load((root / name / "config.yaml").read_text())["plugins"]["enabled"] == ["emporia"]
+        assert not (root / name / "plugins" / "platforms" / "emporia").exists()
     assert not (root / "plain" / "plugins").exists()
+    assert (tab_only / "plugin.yaml").read_text() == "name: emporia\n", "a root that is no agent is left alone"
+    assert not (tmp_path / "plugin-data").exists()
     assert cli.main(["agent", "refresh", "nobody"]) == 1
 
 

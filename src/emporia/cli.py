@@ -26,11 +26,14 @@ import importlib.util
 import json
 import io
 import os
+import re
 import signal
 import subprocess
 import sys
 import time
 from pathlib import Path
+
+from emporia import hermes_layout
 from typing import Any
 
 from emporia import __version__
@@ -60,16 +63,25 @@ def installer():
 
 
 def this_profile() -> Path | None:
-    """The Hermes profile holding this checkout: .../profiles/<name>/emporia."""
-    for parent in REPO.parents:
-        if (parent / "config.yaml").exists():
-            return parent
-    return None
+    """The Hermes profile holding this checkout: .../profiles/<name>/emporia, or
+    (P295, installed by `hermes emporia setup`) <home>/plugin-data/emporia/runtime."""
+    return hermes_layout.containing_profile(REPO)
+
+
+def hermes_root() -> Path:
+    """The Hermes root (the `default` profile's home) this Emporia belongs to."""
+    p = this_profile()
+    return hermes_layout.root_of(p) if p else hermes_home()
 
 
 def profiles_root() -> Path:
-    p = this_profile()
-    return p.parent if p else Path.home()
+    """The folder of named profiles (<root>/profiles)."""
+    return hermes_root() / "profiles"
+
+
+def profile_dir(name: str) -> Path:
+    """A profile by Hermes's name for it: `default` is the root itself."""
+    return hermes_root() if name == hermes_layout.DEFAULT else profiles_root() / name
 
 
 def relay_url() -> str:
@@ -794,7 +806,7 @@ def cmd_relay_host(args: argparse.Namespace) -> int:
     heading("Its operator", f"The agent that sees its settings and activity. A Hermes agent can run it {where}: "
             "name that agent's profile, or leave it blank.")
     admin_name = (args.admin if args.admin is not None else prompt("Agent profile to run it", "")).strip()
-    admin = profiles_root() / admin_name if admin_name else None
+    admin = profile_dir(admin_name) if admin_name else None
     if admin and not (admin / "config.yaml").exists():
         print(f"relay host: no Hermes profile at {admin}")
         return 1
@@ -2022,7 +2034,7 @@ def _signer_remove(args: argparse.Namespace) -> int:
     from emporia.identity import _write_secret_atomically
     from emporia.key_source import unset_env_lines
     name = args.name
-    profile = profiles_root() / name
+    profile = profile_dir(name)
     held = signer.agent_dir(name)
     if not name or not (held / "policy.json").exists() or not (profile / "config.yaml").exists():
         print(f"signer remove: the signer holds no agent {name!r} here")
@@ -2135,7 +2147,7 @@ def _signer_policy(args: argparse.Namespace) -> int:
         # P206: real money needs the signer apart from the agent. As the same
         # user, the agent's own processes can read the signer's folder — and so
         # approve its own payments or raise its limits.
-        profile = profiles_root() / name
+        profile = profile_dir(name)
         # P209: judged where the agents run. In the signer's admin container (root,
         # Hermes's data mounted) this machine is not theirs: Hermes's own
         # `emporia signer status` and doctor judge it there.
@@ -2228,7 +2240,7 @@ def _signer_add(args: argparse.Namespace, url: str) -> int:
     from emporia.identity import _write_secret_atomically
     from emporia.key_source import unset_env_lines
     name = args.name
-    profile = profiles_root() / name
+    profile = profile_dir(name)
     if not name or not (profile / "config.yaml").exists():
         print(f"signer add: no agent profile {name!r}")
         return 1
@@ -2401,31 +2413,34 @@ def cmd_agent_secure(name: str) -> int:
         any_moved = any_moved or bool(moved)
         print(f"  {profile.name}: " + (f"moved to .env — {', '.join(moved)}" if moved else "nothing in config.yaml")
               + "; config.yaml and .env owner-only")
-        lock_emporia_skill(profile)
     if any_moved:
         print("Restart the gateway so each profile's MCP servers are started again.")
     return 0
 
 
 def cmd_agent_refresh(name: str) -> int:
-    """P224: `emporia agent refresh NAME|all` — the Emporia plugin (and, P284, its
-    skills, locked) copied fresh into each profile that has one, and the dashboard tab shown in its
-    dashboard. No questions: what doctor's "older copy" and "tab does not show"
-    warnings ask for, without walking the whole setup wizard again."""
-    root = profiles_root()
-    targets = (sorted(p.parent.parent.parent for p in root.glob("*/plugins/platforms/emporia"))
-               if name == "all" else [root / name])
+    """P224: `emporia agent refresh NAME|all` — the Emporia plugin copied fresh into
+    each profile that has one (P295: the one plugin, carrying its skills and the
+    dashboard tab), the old copies of its skills removed. No questions: what
+    doctor's "older copy" warnings ask for, without the whole setup wizard.
+    Installed from the catalog, the plugin is the catalog's: `hermes plugins update emporia`."""
+    # Only profiles that are Emporia agents (an `emporia` MCP server in their config):
+    # never one that merely shows the dashboard tab, like a Hermes root left alone.
+    root = profiles_root().parent
+    targets = ([p for p, _ in _agent_profiles(profiles_root())] if name == "all" else [profile_dir(name)])
     if not targets or not (targets[0] / "config.yaml").exists():
         print(f"agent refresh: no profile {name!r} under {root}" if name != "all"
               else f"agent refresh: no profile under {root} has the Emporia plugin")
         return 1
     inst = installer()
+    if inst.from_catalog():
+        print("agent refresh: this Emporia came with the catalog plugin — update both with "
+              "`hermes plugins update emporia`, then `hermes emporia update`")
+        return 1
     for profile in targets:
         print(f"  {profile.name}:")
         inst.install_platform_plugin(profile)
-        inst.enable_dashboard_tab(profile)
-        inst._install_skill_link(profile)          # P284: Emporia's skills copied fresh, then locked
-        lock_emporia_skill(profile)
+        inst._install_skill_link(profile)
     print("Restart the gateway so each agent loads the new plugin and skills: hermes gateway restart")
     return 0
 
@@ -3390,7 +3405,11 @@ def _agent_profiles(root: Path) -> list[tuple[Path, dict]]:
     """Hermes profiles wired to Emporia: (dir, its mcp_servers.emporia entry)."""
     inst = installer()
     out = []
-    for cfg in sorted(root.glob("*/config.yaml")):
+    # P295: the root profile too, when Emporia is set up there (`hermes emporia setup` in ~/.hermes).
+    cfgs = sorted(root.glob("*/config.yaml"))
+    if root.name == "profiles" and (root.parent / "config.yaml").exists():
+        cfgs.insert(0, root.parent / "config.yaml")
+    for cfg in cfgs:
         entry = (inst.load_yaml(cfg).get("mcp_servers") or {}).get("emporia")
         if isinstance(entry, dict):
             out.append((cfg.parent, entry))
@@ -3683,15 +3702,18 @@ def doctor_agent(rep: Report, profile: Path, entry: dict, relay_up: bool) -> Non
     else:
         rep.ok(f"developer role, sandboxed ({backend}), no wallet")
     doctor_agent_hardening(rep, profile, dotenv)
-    plugin = profile / "plugins" / "platforms" / "emporia"
+    plugin = profile / "plugins" / "emporia"
     repo_digest = inst._tree_digest(REPO / "hermes_plugin" / "emporia")
-    if not plugin.exists():
-        rep.warn("no Emporia platform plugin — relay events (DMs, your turn) won't reach the agent",
-                 f"emporia setup agent {name}")
-    elif inst._tree_digest(plugin) != repo_digest:
-        pass        # P224: the secrets section names the files that differ and the fix, once
-    else:
-        rep.ok("platform plugin current")
+    if (profile / "plugins" / "platforms" / "emporia").exists():
+        rep.fail("the Emporia plugin is the old one (plugins/platforms/emporia, before P295)",
+                 f"emporia agent refresh {name}, then restart the gateway")
+    elif not (plugin / "plugin.yaml").exists():
+        rep.warn("no Emporia plugin — relay events (DMs, your turn) won't reach the agent",
+                 "hermes plugins install emporia, then hermes emporia setup" if inst.from_catalog()
+                 else f"emporia setup agent {name}")
+    elif inst.from_catalog() or inst._tree_digest(plugin) == repo_digest:
+        rep.ok("Emporia plugin " + ("installed from the catalog" if inst.from_catalog() else "current"))
+    # else: P224, the secrets section names the files that differ and the fix, once
     if relay_up:
         status, profile_json = _signed_get(agent_id, key_dir, f"agents/{agent_id}")
         if status == 200 and isinstance(profile_json, dict):
@@ -3724,76 +3746,16 @@ def doctor_agent(rep: Report, profile: Path, entry: dict, relay_up: bool) -> Non
     doctor_a2a(rep, profile, has["evm"] or has["svm"])
 
 
-def skill_locked(profile: Path, skill: str) -> bool:
-    """Hermes (0.22.6+) keeps `hermes curator lock` in the profile's skills/.usage.json;
-    read it directly so doctor needs no Hermes call. Unreadable counts as not locked."""
-    try:
-        data = json.loads((profile / "skills" / ".usage.json").read_text(encoding="utf-8-sig"))
-        rec = data.get(skill) if isinstance(data, dict) else None
-        return bool(rec.get("locked")) if isinstance(rec, dict) else False
-    except (OSError, ValueError):
-        return False
-
-
-def lock_emporia_skill(profile: Path) -> bool:
-    """P284: lock Emporia's skills in an agent profile, so neither the agent's own tools nor
-    Hermes's background review and curator rewrite its instructions. The profile Emporia is
-    developed in keeps them as links, unlocked. Prints a warning, never raises."""
-    inst = installer()
-    if inst.is_dev_profile(profile):
-        print("  Skills: linked to the repo (Emporia is developed in this profile) — not locked.")
-        return True
-    import shutil
-    hermes = os.getenv("EMPORIA_HERMES_BIN", "").strip() or shutil.which("hermes")
-    ok = True
-    for skill in inst.EMPORIA_SKILLS:
-        if skill_locked(profile, skill):
-            continue
-        if (profile / "skills" / skill).is_symlink():
-            print(f"  ! Skill {skill!r} is a link, which Hermes cannot lock. Run: emporia agent refresh {profile.name}")
-            ok = False
-            continue
-        try:
-            if not hermes:
-                raise OSError("hermes not found")
-            r = subprocess.run([hermes, "-p", profile.name, "curator", "lock", skill],
-                               capture_output=True, text=True, timeout=30)
-            if r.returncode == 0:
-                print(f"  Skill {skill!r} locked: the agent can no longer change it "
-                      f"(you still can; undo: hermes -p {profile.name} curator unlock {skill}).")
-                continue
-            why = (r.stdout.strip() or r.stderr.strip()).splitlines()[-1:] or [f"exit {r.returncode}"]
-        except (OSError, subprocess.TimeoutExpired) as e:
-            why = [str(e)]
-        print(f"  ! Could not lock skill {skill!r} ({why[0][:160]}). "
-              f"Run: hermes -p {profile.name} curator lock {skill}")
-        ok = False
-    return ok
-
-
 def doctor_skills(rep: Report, profile: Path) -> None:
-    """P284: Emporia's skills in an agent profile are a current copy, locked."""
+    """P295: Emporia's skills are the plugin's (`emporia:emporia`, `emporia:emporia-setup`),
+    read-only to the agent and to Hermes's background review. No older copies beside them."""
     inst = installer()
-    name = profile.name
-    if inst.is_dev_profile(profile):
-        rep.ok("Emporia's skills linked to the repo (it is developed here) — not locked")
-        return
-    src_root = REPO / "skills"
-    linked = [s for s in inst.EMPORIA_SKILL_FILES if (profile / "skills" / s).is_symlink()]
-    stale = [s for s in inst.EMPORIA_SKILL_FILES if (src_root / s).exists() and s not in linked
-             and not inst.skill_copy_current(src_root / s, profile / "skills" / s)]
-    unlocked = [s for s in inst.EMPORIA_SKILLS if not skill_locked(profile, s)]
-    if linked:
-        rep.warn(f"Emporia's skills are links ({', '.join(linked)}) — Hermes cannot lock a link, so the "
-                 "agent or Hermes's background review could rewrite them", f"emporia agent refresh {name}")
-    elif stale:
-        rep.warn(f"older copy of Emporia's skills ({', '.join(stale)}) than this Emporia",
-                 f"emporia agent refresh {name}")
-    if unlocked and not linked:
-        rep.warn(f"skills not locked ({', '.join(unlocked)}) — the agent or Hermes's background review "
-                 "could rewrite its instructions", f"emporia agent refresh {name}")
-    if not (linked or stale or unlocked):
-        rep.ok("Emporia's skills current and locked — the agent cannot rewrite them")
+    old = inst.old_skill_copies(profile)
+    if old:
+        rep.warn(f"older copies of Emporia's skills in its skills/ ({', '.join(o.name for o in old)}), "
+                 "beside the plugin's own", f"emporia agent refresh {profile.name}")
+    else:
+        rep.ok("Emporia's skills come from its plugin, read-only (emporia:emporia, emporia:emporia-setup)")
 
 
 def api_server_host(profile: Path, dotenv: dict[str, str]) -> str | None:
@@ -3871,17 +3833,15 @@ def doctor_profile_secrets(rep: Report, profile: Path, dotenv: dict[str, str]) -
         rep.warn(f"{' and '.join(loose)} readable by other users", f"emporia agent secure {profile.name}")
     else:
         rep.ok("secrets only in its .env, owner-only")
-    # P221: the dashboard tab, when installed, shown in this profile's dashboard too.
-    root = hermes_home()
-    if (root / "plugins" / "emporia" / "plugin.yaml").exists() and profile.parent.name == "profiles":
-        enabled = (inst.load_yaml(profile / "config.yaml").get("plugins") or {}).get("enabled") or []
-        if "emporia" not in enabled:
-            rep.warn("the Emporia dashboard tab does not show in this profile's dashboard",
-                     f"emporia agent refresh {profile.name}   (or: hermes -p {profile.name} plugins enable emporia)")
+    # P295: one plugin, enabled — relay events, the key guard and the dashboard tab all depend on it.
+    enabled = (inst.load_yaml(profile / "config.yaml").get("plugins") or {}).get("enabled") or []
+    if (profile / "plugins" / "emporia" / "plugin.yaml").exists() and "emporia" not in enabled:
+        rep.fail("the Emporia plugin is installed but not enabled: no relay events, key guard or dashboard tab",
+                 f"hermes -p {hermes_layout.name_of(profile)} plugins enable emporia")
     # P206: the plugin is copied into each profile; an old copy lacks the key
     # guard, the secret declarations and the narrowed bridge — compare files.
-    installed, source = profile / "plugins" / "platforms" / "emporia", REPO / "hermes_plugin" / "emporia"
-    if installed.is_dir():
+    installed, source = profile / "plugins" / "emporia", REPO / "hermes_plugin" / "emporia"
+    if installed.is_dir() and not inst.from_catalog():
         stale = sorted(f.name for f in [*source.glob("*.py"), source / "plugin.yaml"]
                        if not (installed / f.name).exists() or (installed / f.name).read_bytes() != f.read_bytes())
         if stale:
@@ -4020,9 +3980,11 @@ def doctor_dashboard(rep: Report) -> None:
                  "hermes plugins enable emporia")
     else:
         rep.ok("installed and enabled")
-    built = REPO / "dashboard" / "dist-plugin"
-    if built.exists() and inst._tree_digest(built) != inst._tree_digest(dst / "dashboard" / "dist"):
-        rep.warn("installed bundle differs from this checkout's build",
+    if not (home / "plugin-data" / "emporia" / "emporia.json").exists():
+        rep.fail("its settings are missing (plugin-data/emporia/emporia.json)", "emporia setup dashboard")
+    src = REPO / "hermes_plugin" / "emporia"
+    if not inst.from_catalog() and inst._tree_digest(src) != inst._tree_digest(dst):
+        rep.warn("an older copy of the plugin than this checkout's",
                  "emporia setup dashboard, then restart the Hermes dashboard")
 
 
@@ -4113,22 +4075,14 @@ def cmd_update(args: argparse.Namespace) -> int:
         return 1
 
     inst = installer()
-    tab = hermes_home() / "plugins" / "emporia" / "dashboard" / "emporia.json"
-    if tab.exists():
-        npm = shutil.which("npm")
-        if not npm:
-            print("  dashboard tab: npm not found, so the tab keeps its old build "
-                  "(install Node.js, then run `emporia update --no-pull`)")
-        elif _run([npm, "ci" if (REPO / "dashboard" / "package-lock.json").exists() else "install"],
-                  REPO / "dashboard"):
-            # Reinstalled with the settings it has now: its relay and its profiles.
-            conf = json.loads(tab.read_text())
-            profile = Path(conf["runtime_dir"]).parents[2]
-            inst.install_dashboard_plugin(profile, conf.get("relay_url") or relay_url(), hermes_home())
-        else:
-            print("  dashboard tab: npm failed (see above), so the tab keeps its old build")
-
-    if any(profiles_root().glob("*/plugins/platforms/emporia")):
+    if inst.from_catalog():
+        print("update: this Emporia came with the catalog plugin — `hermes plugins update emporia`, "
+              "then `hermes emporia update`")
+        return 1
+    # P295: each agent profile's plugin carries the dashboard tab (its bundle
+    # committed), so refreshing the agents' plugins updates the tab too. Nothing
+    # else is touched: a profile that is not an Emporia agent is left alone.
+    if _agent_profiles(profiles_root()):
         cmd_agent_refresh("all")
 
     pid_file, _ = _relay_files()
@@ -4149,7 +4103,7 @@ def cmd_login(args: argparse.Namespace) -> int:
     from emporia import nous_token
 
     name = args.profile or (this_profile().name if this_profile() else "")
-    profile = profiles_root() / name
+    profile = profile_dir(name)
     if not name or not (profile / "config.yaml").exists():
         print(f"login: no Hermes profile {name!r} under {profiles_root()}")
         return 1
@@ -4211,6 +4165,36 @@ def _as_agent(profile: Path, code: str, **env_over: str) -> subprocess.Completed
                           timeout=120)
 
 
+# The relay's own rule (relay_server._AGENT_ID_RE), checked here before anything is written.
+_AGENT_ID_RE = re.compile(r"^[a-z0-9][a-z0-9_-]{1,62}[a-z0-9]$")
+
+
+def _choose_agent_id(args: argparse.Namespace, name: str, profile: Path, existing: bool) -> str:
+    """P295: its name on the relay. An existing agent keeps its own. A new one
+    takes the profile's name — except the root profile, whose name `default`
+    every Hermes user shares, so the person picks one (suggested: their login)."""
+    if existing and (current := _mcp_env(profile).get("EMPORIA_AGENT_ID")):
+        if args.agent_id and args.agent_id != current:
+            print(f"  It is {current!r} on its relay; a new name there would be a new agent. Kept {current!r}.")
+        return current
+    wanted = (args.agent_id or "").strip().lower()
+    if not wanted and name == hermes_layout.DEFAULT:
+        import getpass
+        suggestion = re.sub(r"[^a-z0-9_-]", "", getpass.getuser().lower()) or "agent"
+        if not _TTY:
+            print("setup agent: the default profile needs --agent-id NAME (its name on the relay, "
+                  "unique there)")
+            return ""
+        wanted = prompt("Its name on the relay (others see it; lowercase, digits, - or _)", suggestion).strip().lower()
+    if not wanted:
+        return name       # the profile's name, as before P295
+    if not _AGENT_ID_RE.match(wanted):
+        print(f"setup agent: {wanted!r} is not a name the relay takes (3-64 of a-z, 0-9, - and _, "
+              "starting and ending with a letter or digit)")
+        return ""
+    return wanted
+
+
 @wizard
 def cmd_setup_agent(args: argparse.Namespace) -> int:
     inst = installer()
@@ -4219,7 +4203,7 @@ def cmd_setup_agent(args: argparse.Namespace) -> int:
     if not name:
         print("setup agent: a name is required")
         return 1
-    profile = profiles_root() / name
+    profile = profile_dir(name)
     existing = (profile / "config.yaml").exists()
     heading(f"{'Update' if existing else 'New'} agent: {name}",
             "Its model and API key, and Emporia: its tools, skill, platform plugin and its own keys.")
@@ -4315,11 +4299,14 @@ def cmd_setup_agent(args: argparse.Namespace) -> int:
         args.max_daily_cents = prompt_cents("Most it may spend in 24 hours", args.max_daily_cents)
         args.approve_above_cents = prompt_cents(
             "Ask you before any single payment above (0 = always ask)", args.approve_above_cents)
+    agent_id = _choose_agent_id(args, name, profile, existing)
+    if not agent_id:
+        return 1
     wizard_commit()        # P213: from here it writes the profile
     heading("Saving")
     inst.create_profile(
         name=name, relay_url=chosen_relay, current_profile_dir=me, inherit_env=args.inherit_env,
-        sync_model=bool(sync_model), x402_pay_networks=networks,
+        sync_model=bool(sync_model), x402_pay_networks=networks, agent_id=agent_id,
         x402_max_payment_cents=args.max_payment_cents if wallet else None,
         x402_max_daily_cents=args.max_daily_cents if wallet else None,
     )
@@ -4396,7 +4383,6 @@ def cmd_setup_agent(args: argparse.Namespace) -> int:
         _agent_stripe(profile, name)
     # P168: the role decides its tools; then say plainly what was set up.
     apply_role(profile, role)
-    lock_emporia_skill(profile)
     _setup_summary(profile, name, role)
     inst.print_restart_instructions(list(inst._TOUCHED_PROFILES))
     return 0
@@ -4917,7 +4903,7 @@ def cmd_setup_stripe(args: argparse.Namespace) -> int:
         print(f"  {len(changed)} Stripe setting(s) written to {me / '.env'} (values not shown)")
         print("  Restart the relay: emporia relay restart")
     for name in ([args.agent] if args.agent else []):
-        _agent_stripe(profiles_root() / name, name)
+        _agent_stripe(profile_dir(name), name)
     return 0
 
 
@@ -4973,7 +4959,7 @@ def cmd_setup_dashboard(args: argparse.Namespace) -> int:
 # overwritten, mode 0600, and never printed; addresses and balances are public.
 
 def _agent(name: str) -> tuple[Path, str, dict[str, str]]:
-    profile = profiles_root() / name
+    profile = profile_dir(name)
     env = _mcp_env(profile) if (profile / "config.yaml").exists() else {}
     return profile, env.get("EMPORIA_AGENT_ID") or name, env
 
@@ -6506,6 +6492,9 @@ def build_parser() -> argparse.ArgumentParser:
     ag.add_argument("--pay-networks", default="",
                     help="where it may pay, e.g. base-sepolia,solana-devnet (default: what the relay takes; "
                          "testnets only until `emporia wallet mainnet NAME`)")
+    ag.add_argument("--agent-id", default="",
+                    help="its name on the relay, unique there (default: the profile's name; asked for "
+                         "the default profile)")
     ag.add_argument("--relay-url", default="",
                     help="the relay it joins (default: asked; without a terminal, its current one or "
                          "$EMPORIA_RELAY_URL)")

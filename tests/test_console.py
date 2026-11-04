@@ -214,3 +214,14 @@ time.sleep(0.5)
         time.sleep(0.1)
     else:
         raise AssertionError("the console kept running after its parent exited")
+
+
+def test_the_console_serves_the_listed_docs_and_nothing_else():
+    """P295: the Hermes tab's bundle carries no doc text (the catalog's install scan
+    reads a bundled doc as one line); its console serves the dashboard's docs."""
+    c = TestClient(build_app(_console()))
+    r = c.get("/docs/docs/payments.md")
+    assert r.status_code == 200 and r.text.startswith("#") and "markdown" in r.headers["content-type"]
+    assert c.get("/docs/README.md").status_code == 200
+    for path in ("docs/security-log.md", "pyproject.toml", "../README.md", ".env"):
+        assert c.get(f"/docs/{path}").status_code == 404, path

@@ -1,1 +1,0 @@
-emporia/SKILL.md

@@ -1143,8 +1143,15 @@ def create_profile(
     x402_max_payment_cents: int | None = None,
     x402_max_daily_cents: int | None = None,
     sync_model: bool = False,
+    agent_id: str = "",
 ) -> None:
-    """Create a new Hermes agent profile with emporia pre-wired.
+    """Create a new Hermes agent profile with emporia pre-wired, or wire an
+    existing one (P295: `default` is the Hermes root itself, set up by
+    `hermes emporia setup` there). An existing profile keeps its other MCP
+    servers, toolsets and terminal; only Emporia's entry is written.
+
+    `agent_id` is its name on the relay (default: the profile's name), which
+    must be unique there — a public relay has other people's `default`s.
 
     Takes no Stripe settings (P107): those belong to the relay's profile, never
     an agent's — see _RELAY_ONLY_ENV_KEYS."""
@@ -1155,8 +1162,11 @@ def create_profile(
     else:
         profiles_base = _profile_base_dirs()[0] if _profile_base_dirs() else Path.cwd()
 
-    profile_dir = profiles_base / name
+    from emporia import hermes_layout
+    profile_dir = (hermes_layout.root_of(current_profile_dir) if name == hermes_layout.DEFAULT and current_profile_dir
+                   else profiles_base / name)
     config_path = profile_dir / "config.yaml"
+    aid = agent_id or name
 
     updating = config_path.exists()
     print(f"\n{'Updating' if updating else 'Creating'} profile: {profile_dir}")
@@ -1168,7 +1178,7 @@ def create_profile(
 
     # Keypair
     pub_hex, _ = generate_keypair(
-        name, dry_run=dry_run,
+        aid, dry_run=dry_run,
         keys_dir=Path(_profile_runtime_env(profile_dir)["EMPORIA_KEYS_DIR"]),
     )
 
@@ -1208,15 +1218,18 @@ def create_profile(
         if not updating:
             print(f"  + model: {model_block.get('default', model_block.get('provider', '?'))}")
 
+    servers = existing_config.get("mcp_servers") if isinstance(existing_config.get("mcp_servers"), dict) else {}
     config["mcp_servers"] = {
+        **servers,
         # P109: profile_dir, so the entry carries this profile's key dir,
         # database and .env. Without it the MCP server fell back to the .env
         # beside the code — another profile's.
-        MCP_TOOL_NAME: _mcp_entry(relay_url, agent_id=name, profile_dir=profile_dir),
+        MCP_TOOL_NAME: _mcp_entry(relay_url, agent_id=aid, profile_dir=profile_dir),
     }
-    config["toolsets"] = ["hermes-cli"]
-    config["agent"] = {"max_turns": 150}
-    config["terminal"] = {"backend": "local", "home_mode": "auto"}
+    if not updating:     # a new, slim agent profile; an existing one keeps its own
+        config["toolsets"] = ["hermes-cli"]
+        config["agent"] = {"max_turns": 150}
+        config["terminal"] = {"backend": "local", "home_mode": "auto"}
 
     # Env block. P217: the relay's own profile (set up from itself) keeps the
     # relay's settings — they are what an *agent* profile must not hold. Setting
@@ -1224,7 +1237,7 @@ def create_profile(
     own_relay = current_profile_dir is not None and profile_dir.resolve() == current_profile_dir.resolve()
     env_block: dict[str, str] = {**inherited_env}
     env_block["EMPORIA_RELAY_URL"] = relay_url
-    env_block["EMPORIA_AGENT_ID"] = name
+    env_block["EMPORIA_AGENT_ID"] = aid
     for k in () if own_relay else _RELAY_ONLY_ENV_KEYS:
         env_block.pop(k, None)
     if max_budget_cents is not None and max_budget_cents > 0:
@@ -1258,10 +1271,10 @@ def create_profile(
     env_path = profile_dir / ".env"
     safe_env_lines = [
         f"EMPORIA_RELAY_URL={relay_url}",
-        f"EMPORIA_AGENT_ID={name}",
+        f"EMPORIA_AGENT_ID={aid}",
         f"EMPORIA_DB_PATH={runtime_env['EMPORIA_DB_PATH']}",
         f"EMPORIA_KEYS_DIR={runtime_env['EMPORIA_KEYS_DIR']}",
-        f"HERMES_AGENT_ID={name}",
+        f"HERMES_AGENT_ID={aid}",
         # P109: for the platform bridge, which inherits the gateway's env.
         f"EMPORIA_DOTENV={env_path}",
     ]
@@ -1297,7 +1310,7 @@ def create_profile(
             safe_env_lines.append(f"{k}={v}")
 
     # Export to current process so subsequent steps see the vars immediately
-    os.environ["EMPORIA_AGENT_ID"] = name
+    os.environ["EMPORIA_AGENT_ID"] = aid
     os.environ["EMPORIA_RELAY_URL"] = relay_url
     os.environ["EMPORIA_DB_PATH"] = runtime_env["EMPORIA_DB_PATH"]
     os.environ["EMPORIA_KEYS_DIR"] = runtime_env["EMPORIA_KEYS_DIR"]
@@ -1318,14 +1331,13 @@ def create_profile(
     # Install agent skill so it loads on start (dev skills optional)
     _install_skill_link(profile_dir, dry_run=dry_run, dev_skills=dev_skills)
     install_platform_plugin(profile_dir, dry_run=dry_run)
-    enable_dashboard_tab(profile_dir, dry_run=dry_run)
 
-    print(f"\n  Agent ID : {name}")
+    print(f"\n  Agent ID : {aid}")
     print(f"  Relay    : {relay_url}")
     print(f"  Profile  : {profile_dir}")
     if model_block:
         print(f"  Model    : {model_block.get('default', model_block.get('provider', '?'))}")
-    print(f"  The agent registers as '{name}' when its MCP server starts.")
+    print(f"  The agent registers as '{aid}' when its MCP server starts.")
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -1566,9 +1578,10 @@ def _hermes_optional_skills_root() -> Path | None:
     return candidate if candidate.is_dir() else None
 
 
-# The Hermes platform plugin key: user plugins under `plugins/platforms/<dir>`
-# are keyed `platforms/<dir>`, which is what `plugins.enabled` lists.
-PLATFORM_PLUGIN_KEY = "platforms/emporia"
+# P295: one plugin, `<home>/plugins/emporia`, keyed `emporia` in plugins.enabled.
+# Before, the platform plugin alone sat in `plugins/platforms/emporia`, keyed so.
+PLUGIN_KEY = "emporia"
+LEGACY_PLATFORM_KEY = "platforms/emporia"
 # The relay's own reports (your turn, results) are attributed to this sender by
 # frames.RELAY_SENDER; it is allowlisted so they reach the agent. Other agents'
 # messages pass only if the operator adds them (or sets EMPORIA_ALLOW_ALL_USERS).
@@ -1613,85 +1626,96 @@ def _git_exclude(repo_child: Path) -> str | None:
     return pattern
 
 
-def install_dashboard_plugin(profile_dir: Path, relay_url: str, hermes_home: Path,
-                             dry_run: bool = False) -> None:
-    """The Emporia tab in the Hermes dashboard (P126; docs/local-console.md).
+def from_catalog() -> bool:
+    """P295: this Emporia was installed by `hermes emporia setup` (its runtime in
+    <home>/plugin-data/emporia/runtime), so the catalog owns the plugin's files:
+    the installer never copies over them."""
+    return _EMPORIA_DIR.parent.name == "emporia" and _EMPORIA_DIR.parent.parent.name == "plugin-data"
 
-    Copies hermes_plugin/emporia_dashboard and the built bundle
-    (dashboard/dist-plugin, from `npm run build:hermes-plugin`) to
-    <hermes_home>/plugins/emporia, writes its emporia.json (this venv's python,
-    the relay, where the profiles' keys are, a 0700 runtime directory for the
-    console's socket), keeps it out of any git repo it lands in, and enables it
-    with `hermes plugins enable` — Hermes runs a user plugin's backend only once
-    it is enabled. No port: the tab is served by the Hermes dashboard itself.
-    """
-    global _DASHBOARD_RESTART_NEEDED
-    src = _EMPORIA_DIR / "hermes_plugin" / "emporia_dashboard"
-    bundle = _EMPORIA_DIR / "dashboard" / "dist-plugin"
-    dst = hermes_home / "plugins" / "emporia"
+
+def write_tab_settings(home: Path, profile_dir: Path, relay_url: str, dry_run: bool = False) -> Path:
+    """The dashboard tab's settings, in <home>/plugin-data/emporia/emporia.json
+    (P295: plugin-data, never the plugin's folder): this runtime's python, the
+    relay, the Hermes root whose profiles hold the agents, and a 0700 directory
+    for the console's socket."""
+    from emporia import hermes_layout
+    path = home / "plugin-data" / "emporia" / "emporia.json"
     if dry_run:
-        print(f"  [dry-run] Would install the Emporia dashboard tab at {dst}")
-        return
-    npm = shutil.which("npm")
-    if npm:
-        subprocess.run([npm, "run", "-s", "build:hermes-plugin"], cwd=_EMPORIA_DIR / "dashboard",
-                       check=True, capture_output=True, timeout=600)
-    if not (bundle / "index.js").exists():
-        raise SystemExit("  The dashboard bundle is missing: run `npm run build:hermes-plugin` in "
-                         "dashboard/ (npm was not found), then re-run the installer.")
+        print(f"  [dry-run] Would write {path}")
+        return path
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps({
+        "python": _venv_python(),
+        "relay_url": relay_url,
+        "hermes_root": str(hermes_layout.root_of(profile_dir)),
+        "runtime_dir": str(profile_dir / "home" / ".hermes" / "emporia-console"),
+    }, indent=2) + "\n")
+    return path
+
+
+def _place_plugin(dst: Path, dry_run: bool = False) -> bool:
+    """Copy hermes_plugin/emporia to `dst` from this checkout; True if it changed.
+    Copied, not symlinked: Hermes's plugin scan applies containment rules a link
+    out of the profile could fail. Nothing when the catalog installed it."""
+    if from_catalog():
+        return False
+    src = _EMPORIA_DIR / "hermes_plugin" / "emporia"
+    if dry_run:
+        print(f"  [dry-run] Would install the Emporia plugin at {dst}")
+        return False
     before = _tree_digest(dst)
     if dst.exists():
         shutil.rmtree(dst)
+    dst.parent.mkdir(parents=True, exist_ok=True)
     shutil.copytree(src, dst, ignore=shutil.ignore_patterns("__pycache__"))
-    shutil.copytree(bundle, dst / "dashboard" / "dist")
-    runtime = profile_dir / "home" / ".hermes" / "emporia-console"
-    (dst / "dashboard" / "emporia.json").write_text(json.dumps({
-        "python": _venv_python(),
-        "relay_url": relay_url,
-        "profiles_root": str(profile_dir.parent),
-        "runtime_dir": str(runtime),
-    }, indent=2) + "\n")
-    if _tree_digest(dst) != before:
-        _DASHBOARD_RESTART_NEEDED = True
-    print(f"  + Hermes dashboard tab: {dst}")
-    pattern = _git_exclude(dst)
-    if pattern:
-        print(f"  + kept out of git via .git/info/exclude: {pattern}")
-    env = {**os.environ, "HERMES_HOME": str(hermes_home)}
-    r = subprocess.run(["hermes", "plugins", "enable", "emporia"], env=env,
-                       capture_output=True, text=True, timeout=60)
-    print("  + plugins.enabled: emporia" if r.returncode == 0
-          else f"  WARNING: `hermes plugins enable emporia` failed: {(r.stderr or r.stdout)[-300:]}")
+    return _tree_digest(dst) != before
 
 
-def enable_dashboard_tab(profile_dir: Path, dry_run: bool = False) -> None:
-    """P221: the Emporia dashboard tab, shown in this profile's dashboard too.
-    Hermes lists a plugin for a profile only when that profile's own config
-    enables it; the tab was enabled for the root profile alone, so it showed
-    only there. It is the same tab — every agent on this machine — from any of
-    them. Nothing when the tab is not installed."""
-    root = hermes_home_of(profile_dir)
-    if profile_dir == root or not (root / "plugins" / "emporia" / "plugin.yaml").exists():
-        return
-    enabled = ((load_yaml(profile_dir / "config.yaml").get("plugins") or {}).get("enabled") or [])
-    if "emporia" in enabled:
-        return
-    if dry_run:
-        print(f"  [dry-run] Would enable the Emporia dashboard tab for {profile_dir.name}")
-        return
-    # P225: written here, not by `hermes -p NAME plugins enable emporia`: with -p
-    # the CLI reads only the profile's own plugins/ folder, and the tab lives in
-    # the root one (which the profile's dashboard does load). The only "emporia"
-    # it finds there is the platform plugin's key, `platforms/emporia`, so it
-    # answers "already enabled" and the tab stays off. See docs/hermes-notes.md.
+def _enable_plugin(profile_dir: Path) -> None:
+    """`emporia` in plugins.enabled (and out of disabled); the old key
+    `platforms/emporia` (P92-P294, the platform plugin alone) out of both."""
     config_path = profile_dir / "config.yaml"
-    config = load_yaml(config_path)
+    config = load_yaml(config_path) if config_path.exists() else {}
     plugins = config.get("plugins") if isinstance(config.get("plugins"), dict) else {}
-    plugins["enabled"] = [*enabled, "emporia"]
-    plugins["disabled"] = [d for d in plugins.get("disabled") or [] if d != "emporia"]
-    config["plugins"] = plugins
-    save_yaml(config_path, config)
-    print(f"  + dashboard tab shown for {profile_dir.name}")
+    enabled = [e for e in (plugins.get("enabled") or []) if e != LEGACY_PLATFORM_KEY]
+    disabled = [d for d in (plugins.get("disabled") or []) if d not in (PLUGIN_KEY, LEGACY_PLATFORM_KEY)]
+    if PLUGIN_KEY not in enabled:
+        enabled.append(PLUGIN_KEY)
+    if enabled != plugins.get("enabled") or disabled != (plugins.get("disabled") or []):
+        plugins["enabled"] = enabled
+        if disabled or "disabled" in plugins:
+            plugins["disabled"] = disabled
+        config["plugins"] = plugins
+        save_yaml(config_path, config)
+        print(f"  + plugins.enabled: {PLUGIN_KEY}")
+
+
+def install_dashboard_plugin(profile_dir: Path, relay_url: str, hermes_home: Path,
+                             dry_run: bool = False) -> None:
+    """The Emporia tab in the Hermes dashboard run from `hermes_home` (P126;
+    docs/local-console.md). It is the same plugin each agent profile has (P295):
+    the tab is its dashboard/ folder, its bundle committed there. Here it is
+    placed in that home's plugins/, its settings written to that home's
+    plugin-data, and enabled — Hermes runs a user plugin's backend only once it
+    is. No port: the tab is served by the Hermes dashboard itself."""
+    global _DASHBOARD_RESTART_NEEDED
+    dst = hermes_home / "plugins" / PLUGIN_KEY
+    if _place_plugin(dst, dry_run):
+        _DASHBOARD_RESTART_NEEDED = True
+        print(f"  + Emporia plugin (the dashboard tab): {dst}")
+        pattern = _git_exclude(dst)
+        if pattern:
+            print(f"  + kept out of git via .git/info/exclude: {pattern}")
+    write_tab_settings(hermes_home, profile_dir, relay_url, dry_run)
+    if dry_run:
+        return
+    if hermes_home.resolve() != profile_dir.resolve():
+        # P295: the old tab's own folder name was this key too; the platform's
+        # copy under platforms/ in that home is gone with it.
+        old = hermes_home / "plugins" / "platforms" / "emporia"
+        if old.exists():
+            shutil.rmtree(old)
+    _enable_plugin(hermes_home)
 
 
 def print_safety_next_steps(name: str) -> None:
@@ -1735,44 +1759,29 @@ def print_restart_instructions(profiles: list[str]) -> None:
 
 
 def install_platform_plugin(profile_dir: Path, dry_run: bool = False) -> None:
-    """Install the Hermes platform adapter into a profile (P92).
-
-    P63 removed the inert `platforms: - platform: emporia` entry and recorded
-    what a real adapter needs: a `plugin.yaml`, `register(ctx)`, and a
-    `BasePlatformAdapter` subclass. `hermes_plugin/emporia/` is that; this puts
-    it where Hermes's discovery looks for a profile's own plugins, enables it,
-    and writes the three settings it reads from the profile's `.env`.
-
-    Copied, not symlinked: Hermes's plugin scan applies containment rules a link
-    out of the profile could fail. Re-running the installer refreshes the copy.
-    """
-    src = _EMPORIA_DIR / "hermes_plugin" / "emporia"
-    dst = profile_dir / "plugins" / "platforms" / "emporia"
+    """The Emporia plugin in an agent profile (P92; one plugin since P295): its
+    gateway platform, hooks, skills, `hermes emporia` and the dashboard tab, in
+    <profile>/plugins/emporia, enabled, with the settings it reads from the
+    profile's `.env`. From a checkout it is copied there (re-running refreshes
+    the copy); installed from the catalog it is already there."""
+    dst = profile_dir / "plugins" / PLUGIN_KEY
     if dry_run:
-        print(f"  [dry-run] Would install the Emporia platform plugin at {dst}")
+        print(f"  [dry-run] Would install the Emporia plugin at {dst}")
         return
     global _GATEWAY_RESTART_NEEDED
     if profile_dir.name not in _TOUCHED_PROFILES:
         _TOUCHED_PROFILES.append(profile_dir.name)
-    before = _tree_digest(dst)
-    if dst.exists():
-        shutil.rmtree(dst)
-    shutil.copytree(src, dst, ignore=shutil.ignore_patterns("__pycache__"))
-    if _tree_digest(dst) != before:
+    legacy = profile_dir / "plugins" / "platforms" / "emporia"
+    changed = _place_plugin(dst)
+    if legacy.exists():                       # P295: the platform plugin alone, before
+        shutil.rmtree(legacy)
+        changed = True
+    if changed:
         _GATEWAY_RESTART_NEEDED = True
-        print(f"  + Hermes platform plugin: {dst} (new or changed — needs a gateway restart)")
-    else:
-        print(f"  = Hermes platform plugin: {dst} (unchanged)")
-
-    config_path = profile_dir / "config.yaml"
-    config = load_yaml(config_path) if config_path.exists() else {}
-    plugins = config.setdefault("plugins", {})
-    enabled = plugins.get("enabled")
-    enabled = list(enabled) if isinstance(enabled, list) else []
-    if PLATFORM_PLUGIN_KEY not in enabled:
-        plugins["enabled"] = [*enabled, PLATFORM_PLUGIN_KEY]
-        save_yaml(config_path, config)
-        print(f"  + plugins.enabled: {PLATFORM_PLUGIN_KEY}")
+        print(f"  + Emporia plugin: {dst} (new or changed — needs a gateway restart)")
+    elif not from_catalog():
+        print(f"  = Emporia plugin: {dst} (unchanged)")
+    _enable_plugin(profile_dir)
 
     env_file = profile_dir / ".env"
     lines = env_file.read_text().splitlines() if env_file.exists() else []
@@ -1796,64 +1805,43 @@ def install_platform_plugin(profile_dir: Path, dry_run: bool = False) -> None:
     if changed:
         env_file.write_text("\n".join(lines) + "\n")
         print(f"  + {env_file}: EMPORIA_PYTHON, EMPORIA_ALLOWED_USERS")
+    # The tab, in this profile's own dashboard (P221: every agent on this machine, from any of them).
+    write_tab_settings(profile_dir, profile_dir, values.get("EMPORIA_RELAY_URL", ""))
 
 
-# P284: Emporia's own skills — copied into an agent profile and locked there.
-# The skill names are what `hermes curator lock` takes; emporia.md is a plain file.
-EMPORIA_SKILLS: tuple[str, ...] = ("emporia", "emporia-setup")
-EMPORIA_SKILL_FILES: tuple[str, ...] = (*EMPORIA_SKILLS, "emporia.md")
+# P284 copied Emporia's own skills into each agent profile and locked them there.
+# P295: they ship in the plugin (hermes_plugin/emporia/skills), which registers
+# them read-only as `emporia:emporia` and `emporia:emporia-setup`; what the
+# installer once put in a profile's skills/ is removed.
+OLD_SKILL_FILES: tuple[str, ...] = ("emporia", "emporia-setup", "emporia.md")
 _SKILL_COPIES = ".emporia-copies.json"     # in skills/: which of them Emporia copied there
 
 
-def is_dev_profile(profile_dir: Path) -> bool:
-    """The profile Emporia is developed in: the repo sits inside it, and its skills stay links."""
-    try:
-        return _EMPORIA_DIR.resolve().is_relative_to(profile_dir.resolve())
-    except OSError:
-        return False
-
-
-def skill_copies(skills_dir: Path) -> set[str]:
-    """Names Emporia copied into this skills dir (and so may replace)."""
+def old_skill_copies(profile_dir: Path) -> list[Path]:
+    """Emporia's skills where an installer before P295 put them: its links into
+    the repo, and the copies it recorded. A folder of the operator's own is not one."""
+    skills_dir = profile_dir / "skills"
     try:
         data = json.loads((skills_dir / _SKILL_COPIES).read_text())
-        return {str(n) for n in data} if isinstance(data, list) else set()
+        copies = {str(n) for n in data} if isinstance(data, list) else set()
     except (OSError, ValueError):
-        return set()
+        copies = set()
+    return [d for n in OLD_SKILL_FILES if (d := skills_dir / n).is_symlink() or (d.exists() and n in copies)]
 
 
-def skill_copy_current(src: Path, dst: Path) -> bool:
-    """Whether the profile's copy of a skill matches Emporia's."""
-    if dst.is_symlink() or not dst.exists():
-        return False
-    if src.is_file():
-        return dst.is_file() and dst.read_bytes() == src.read_bytes()
-    return _tree_digest(src) == _tree_digest(dst)
-
-
-def _copy_skill(src: Path, dst: Path, *, dry_run: bool = False) -> None:
-    skills_dir = dst.parent
-    copies = skill_copies(skills_dir)
-    if dst.exists() and not dst.is_symlink() and dst.name not in copies:
-        # A real folder Emporia did not put there (a hub install, the operator's own): leave it.
-        print(f"  ! skill {dst} is not Emporia's copy — left alone")
-        return
-    if skill_copy_current(src, dst):
-        return
-    if dry_run:
-        print(f"  [dry-run] Would copy skill: {src} → {dst}")
-        return
-    skills_dir.mkdir(exist_ok=True)
-    if dst.is_symlink() or dst.is_file():
-        dst.unlink()
-    elif dst.exists():
-        shutil.rmtree(dst)
-    if src.is_file():
-        shutil.copy2(src, dst)
-    else:
-        shutil.copytree(src, dst, ignore=shutil.ignore_patterns("__pycache__"))
-    (skills_dir / _SKILL_COPIES).write_text(json.dumps(sorted(copies | {dst.name})))
-    print(f"  + skill: {dst} (copied from {src})")
+def remove_old_skill_copies(profile_dir: Path, dry_run: bool = False) -> None:
+    for old in old_skill_copies(profile_dir):
+        if dry_run:
+            print(f"  [dry-run] Would remove {old} (the plugin carries Emporia's skills now)")
+            continue
+        if old.is_symlink() or old.is_file():
+            old.unlink()
+        else:
+            shutil.rmtree(old)
+        print(f"  - {old} (the plugin carries Emporia's skills now: emporia:{old.stem})")
+    marker = profile_dir / "skills" / _SKILL_COPIES
+    if marker.exists() and not dry_run:
+        marker.unlink()
 
 
 def _install_skill_link(
@@ -1862,27 +1850,15 @@ def _install_skill_link(
     *,
     dev_skills: bool = False,
 ) -> None:
-    """Put Emporia's skills into the profile skills dir.
+    """The skills Emporia needs beside its own (P295: its own are the plugin's).
 
-    P284: an agent profile gets a real copy of Emporia's own skills (`emporia`,
-    `emporia-setup`, `emporia.md`), so `hermes curator lock` can lock them —
-    Hermes does not see a symlinked skill folder when it locks or enforces a
-    lock. The copy changes when setup or `emporia agent refresh` runs, not when
-    the repo does. The profile Emporia is developed in (the repo sits inside
-    it) keeps symlinks, so edits under emporia/skills/ show at once there.
-    Payment and dev skills stay symlinks.
-
-    Always links the agent skill (`emporia`) plus the payment skills Emporia needs
-    (mpp-agent, stripe-link-cli, stripe-projects) — self-heals on `--install-profile` too.
-    Dev skills only when dev_skills=True (--dev-skills).
+    Links the payment skills (mpp-agent, stripe-link-cli, stripe-projects) from
+    the Hermes install's optional-skills catalog, and with dev_skills the repo's
+    dev skills. Removes the copies of Emporia's own skills older installs made.
     """
+    remove_old_skill_copies(profile_dir, dry_run=dry_run)
     skills_dir = profile_dir / "skills"
-    links: list[tuple[Path, Path]] = [
-        (_EMPORIA_DIR / "skills" / "emporia.md", skills_dir / "emporia.md"),
-        (_EMPORIA_DIR / "skills" / "emporia", skills_dir / "emporia"),
-        # P127: how to install, check and repair Emporia (the `emporia` command).
-        (_EMPORIA_DIR / "skills" / "emporia-setup", skills_dir / "emporia-setup"),
-    ]
+    links: list[tuple[Path, Path]] = []
     optional_root = _hermes_optional_skills_root()
     if optional_root:
         for skill_name in _PAYMENT_SKILL_NAMES:
@@ -1894,20 +1870,14 @@ def _install_skill_link(
             links.append(
                 (_EMPORIA_DIR / "skills" / src_rel, skills_dir / dst_rel),
             )
-    own = {skills_dir / name for name in EMPORIA_SKILL_FILES}
-    copy_own = not is_dev_profile(profile_dir)
     for skill_src, skill_dst in links:
         if not skill_src.exists():
-            continue
-        if copy_own and skill_dst in own:
-            _copy_skill(skill_src, skill_dst, dry_run=dry_run)
             continue
         if dry_run:
             print(f"  [dry-run] Would link skill: {skill_dst} → {skill_src}")
             continue
         skills_dir.mkdir(exist_ok=True)
-        if skill_dst.parent != skills_dir:
-            skill_dst.parent.mkdir(parents=True, exist_ok=True)
+        skill_dst.parent.mkdir(parents=True, exist_ok=True)
         if skill_dst.exists() or skill_dst.is_symlink():
             if skill_dst.is_symlink() and skill_dst.resolve() == skill_src.resolve():
                 continue

@@ -59,6 +59,5 @@ def test_a_broken_file_starts_over(home):
 
 def test_the_plugin_registers_the_hook_and_requires_the_hermes_that_has_it():
     root = Path(__file__).resolve().parents[1] / "hermes_plugin"
-    assert 'register_hook("pre_llm_call", turn_cap.pre_llm_call)' in (root / "emporia" / "adapter.py").read_text()
-    for name in ("emporia", "emporia_dashboard"):
-        assert 'requires_hermes: ">=0.22.6"' in (root / name / "plugin.yaml").read_text()
+    assert 'register_hook("pre_llm_call", turn_cap.pre_llm_call)' in (root / "emporia" / "__init__.py").read_text()
+    assert 'requires_hermes: ">=0.22.6"' in (root / "emporia" / "plugin.yaml").read_text()

@@ -303,7 +303,7 @@ Both are tracked in `docs/archive/roadmap-hackathon-era.md`.
 | MCP server | `src/emporia/mcp_server.py` | 88 tools via stdio — full session lifecycle, listings, lobby, rooms, Agoras, DMs, inbox, payments, dashboard auth |
 | Skill (dev) | `/load emporia-dev` | Dev guide: tools, payment flows, REST API, anti-cheat, workflow |
 | Skill (agent) | `/load emporia` | Runtime agent reference — flows and tool usage |
-| Platform plugin | `hermes_plugin/emporia/` (Hermes side) + `src/emporia/plugins/platforms/emporia/` (bridge) | Relay events — challenges, DMs, your turn, results — pushed into the agent's Hermes session; installed and enabled by `--install-profile` |
+| Hermes plugin | `hermes_plugin/emporia/` (Hermes side) + `src/emporia/plugins/platforms/emporia/` (bridge) | P295, one plugin: relay events (challenges, DMs, your turn, results) pushed into the agent's Hermes session; the key guard and turn cap; the skills `emporia:emporia` and `emporia:emporia-setup`; the dashboard tab; `hermes emporia setup`. From the catalog (`hermes plugins install emporia`) or from a checkout (`--install-profile`) |
 | REST + SDK | `relay_server.py` + `agent_sdk.py` | Direct access for scripts and tests |
 
 **Interaction modules** (`MODULE_REGISTRY`; a relay can add its own, see

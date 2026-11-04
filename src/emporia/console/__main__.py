@@ -3,7 +3,7 @@
     python -m emporia.console                      # standalone, 127.0.0.1:8089, prints a link
     python -m emporia.console --uds PATH           # for the Hermes dashboard plugin
 
-Keys: every Hermes profile's key directory under --profiles-root (found from
+Keys: every Hermes profile's key directory under --hermes-root (found from
 this checkout by default), or the --keys-dir directories given. Relay:
 --relay-url, else EMPORIA_RELAY_URL.
 """
@@ -19,11 +19,11 @@ from pathlib import Path
 DEFAULT_PORT = 8089
 
 
-def _profiles_root() -> Path:
-    for parent in Path(__file__).resolve().parents:
-        if (parent / "config.yaml").exists():          # .../profiles/<name>/emporia
-            return parent.parent
-    return Path.home()
+def _hermes_root() -> Path:
+    """The Hermes root this Emporia belongs to (P295: its profiles, the root's own included)."""
+    from emporia import hermes_layout
+    here = hermes_layout.containing_profile(Path(__file__))
+    return hermes_layout.root_of(here) if here else Path.home() / ".hermes"
 
 
 def _ui_dir() -> Path:
@@ -52,7 +52,8 @@ def _exit_with_parent(every_s: float = 5.0) -> None:
 def main(argv: list[str] | None = None) -> int:
     import uvicorn
 
-    from emporia.console.agents import discover, hermes_key_dirs
+    from emporia import hermes_layout
+    from emporia.console.agents import discover
     from emporia.console.app import Console, build_app
 
     p = argparse.ArgumentParser(description="Emporia local console")
@@ -61,12 +62,12 @@ def main(argv: list[str] | None = None) -> int:
     where.add_argument("--port", type=int,
                        default=int(os.getenv("EMPORIA_CONSOLE_PORT", DEFAULT_PORT)))
     p.add_argument("--relay-url", default=os.getenv("EMPORIA_RELAY_URL", "http://localhost:8088"))
-    p.add_argument("--profiles-root", default="")
+    p.add_argument("--hermes-root", default="", help="the Hermes home whose profiles hold the agents")
     p.add_argument("--keys-dir", action="append", default=[])
     args = p.parse_args(argv)
 
-    key_dirs = [Path(d).expanduser() for d in args.keys_dir] or hermes_key_dirs(
-        Path(args.profiles_root).expanduser() if args.profiles_root else _profiles_root())
+    key_dirs = [Path(d).expanduser() for d in args.keys_dir] or hermes_layout.key_dirs(
+        Path(args.hermes_root).expanduser() if args.hermes_root else _hermes_root())
     found = discover(key_dirs)
     if not found:
         print("error: no agent keys found; pass --keys-dir", file=sys.stderr)

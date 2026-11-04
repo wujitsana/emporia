@@ -133,27 +133,25 @@ def _doctor(root, capsys, monkeypatch):
     return capsys.readouterr().out
 
 
-def test_doctor_checks_skill_lock_api_server_and_turn_cap(profiles, capsys, monkeypatch):
+def test_doctor_checks_old_skill_copies_api_server_and_turn_cap(profiles, capsys, monkeypatch):
     import json
     import time
     root, _ = profiles
     prof = _agent_profile(root, env="API_SERVER_KEY=" + "k" * 20 + "\nAPI_SERVER_HOST=0.0.0.0\nEMPORIA_DAILY_TURNS=2\n")
     now = time.time()
     (prof / "emporia_turns.json").write_text(json.dumps({"turns": [now - 10, now - 100, now - 90000], "notified": 0}))
+    (prof / "skills" / "emporia").mkdir(parents=True)                 # P284's copy, before P295
+    (prof / "skills" / ".emporia-copies.json").write_text(json.dumps(["emporia"]))
     out = _doctor(root, capsys, monkeypatch)
-    assert "skills not locked (emporia, emporia-setup)" in out and "emporia agent refresh zed" in out
+    assert "older copies of Emporia's skills in its skills/ (emporia)" in out and "emporia agent refresh zed" in out
     assert "api_server listens on 0.0.0.0" in out and "make zed act and pay" in out
     assert "relay-started turns in 24 h: 2 / 2 — at the cap" in out
     assert "k" * 20 not in out
 
-    inst = cli.installer()                                    # P284: real copies, not links (the fixture stubs the installer's)
-    for n in inst.EMPORIA_SKILL_FILES:
-        inst._copy_skill(inst._EMPORIA_DIR / "skills" / n, prof / "skills" / n)
-    assert not (prof / "skills" / "emporia").is_symlink() and (prof / "skills" / "emporia" / "SKILL.md").exists()
-    (prof / "skills" / ".usage.json").write_text(json.dumps({"emporia": {"locked": True}, "emporia-setup": {"locked": True}}))
+    cli.installer().remove_old_skill_copies(prof)
     (prof / ".env").write_text("API_SERVER_KEY=" + "k" * 20 + "\n")   # key alone: enabled, loopback default
     out = _doctor(root, capsys, monkeypatch)
-    assert "Emporia's skills current and locked" in out
+    assert "Emporia's skills come from its plugin, read-only" in out
     assert "api_server listens" not in out
     assert "relay-started turns in 24 h: 2 / 300" in out
 
@@ -171,66 +169,75 @@ def test_doctor_api_server_off_or_loopback_is_quiet(profiles, capsys, monkeypatc
     assert "api_server listens" not in _doctor(root, capsys, monkeypatch)
 
 
-def test_lock_emporia_skill_runs_hermes_for_the_profile_and_only_warns_on_failure(tmp_path, monkeypatch, capsys):
-    import subprocess
-    prof = tmp_path / "zed"
-    prof.mkdir()
-    monkeypatch.setenv("EMPORIA_HERMES_BIN", "/x/hermes")
-    calls = []
-
-    def fake(argv, **kw):
-        calls.append(argv)
-        return subprocess.CompletedProcess(argv, 0, "locked\n", "")
-    monkeypatch.setattr(cli.subprocess, "run", fake)
-    assert cli.lock_emporia_skill(prof) is True
-    assert calls == [["/x/hermes", "-p", "zed", "curator", "lock", s] for s in ("emporia", "emporia-setup")]
-
-    monkeypatch.setattr(cli.subprocess, "run", lambda *a, **k: subprocess.CompletedProcess(a[0], 1, "no skill named\n", ""))
-    assert cli.lock_emporia_skill(prof) is False
-    assert "Could not lock" in capsys.readouterr().out
-
-    def boom(*a, **k):
-        raise FileNotFoundError("nope")
-    monkeypatch.setattr(cli.subprocess, "run", boom)
-    assert cli.lock_emporia_skill(prof) is False
-    assert "hermes -p zed curator lock emporia" in capsys.readouterr().out
-
-
-def test_setup_agent_and_secure_lock_the_skill(profiles, monkeypatch):
-    root, _ = profiles
-    locked = []
-    monkeypatch.setattr(cli, "lock_emporia_skill", lambda profile, *a: locked.append(profile.name) or True)
-    with patch.dict(os.environ):
-        assert cli.main(["setup", "agent", "gamma", "--keys", "files"]) == 0
-    assert cli.main(["agent", "secure", "gamma"]) == 0
-    assert locked == ["gamma", "gamma"]
-
-
-def test_agent_skills_are_copied_and_refreshed_but_the_dev_profile_keeps_links(tmp_path, capsys):
-    """P284: Hermes cannot lock a symlinked skill, so an agent profile gets a copy."""
+def test_old_copies_of_emporias_skills_are_removed_and_the_operators_own_kept(tmp_path, capsys):
+    """P295: the skills ship in the plugin, so what installers since P284 put in a
+    profile's skills/ — a link into the repo, or a recorded copy — goes; a folder
+    Emporia did not put there stays."""
+    import json
     inst = cli.installer()
     prof = tmp_path / "zed"
-    (prof / "skills").mkdir(parents=True)
-    (prof / "skills" / "emporia").symlink_to(inst._EMPORIA_DIR / "skills" / "emporia")   # an older install
+    (prof / "skills" / "emporia-setup").mkdir(parents=True)
+    (prof / "skills" / "emporia.md").symlink_to(tmp_path / "gone")             # an older link
+    (prof / "skills" / ".emporia-copies.json").write_text(json.dumps(["emporia-setup"]))
+    (prof / "skills" / "emporia").mkdir()                                      # not recorded: the operator's
     inst._install_skill_link(prof)
-    for name in inst.EMPORIA_SKILL_FILES:
-        dst = prof / "skills" / name
-        assert dst.exists() and not dst.is_symlink(), name
-        assert inst.skill_copy_current(inst._EMPORIA_DIR / "skills" / name, dst)
-    (prof / "skills" / "emporia" / "SKILL.md").write_text("tampered")
-    assert not inst.skill_copy_current(inst._EMPORIA_DIR / "skills" / "emporia", prof / "skills" / "emporia")
-    inst._install_skill_link(prof)                                # refresh puts Emporia's back
-    assert inst.skill_copy_current(inst._EMPORIA_DIR / "skills" / "emporia", prof / "skills" / "emporia")
+    assert not (prof / "skills" / "emporia-setup").exists() and not (prof / "skills" / "emporia.md").is_symlink()
+    assert (prof / "skills" / "emporia").is_dir() and not (prof / "skills" / ".emporia-copies.json").exists()
+    assert "the plugin carries Emporia's skills now" in capsys.readouterr().out
 
-    other = tmp_path / "other"
-    (other / "skills" / "emporia").mkdir(parents=True)            # a folder Emporia did not put there
-    (other / "skills" / "emporia" / "SKILL.md").write_text("theirs")
-    inst._install_skill_link(other)
-    assert (other / "skills" / "emporia" / "SKILL.md").read_text() == "theirs"
-    assert "not Emporia's copy" in capsys.readouterr().out
 
-    dev = inst._EMPORIA_DIR.parent                                # the profile the repo sits in
-    assert inst.is_dev_profile(dev) and not inst.is_dev_profile(prof)
+def test_the_plugin_passes_the_catalogs_own_validation_and_registers_everything(tmp_path):
+    """P295: `hermes plugins validate` is the catalog's CI gate — manifest, load,
+    declared hooks against registrations, security scan, no core override. Then,
+    under Hermes's interpreter, what register() hands Hermes."""
+    import json
+    import shutil
+    import subprocess
+    hermes, hermes_python = shutil.which("hermes"), Path("/opt/hermes/.venv/bin/python")
+    if not hermes or not hermes_python.exists():
+        pytest.skip("Hermes is not installed here")
+    plugin = cli.REPO / "hermes_plugin" / "emporia"
+    out = subprocess.run([hermes, "plugins", "validate", str(plugin)], capture_output=True, text=True,
+                         timeout=300, env={**os.environ, "HERMES_HOME": str(tmp_path)})
+    assert out.returncode == 0 and "Validation passed" in out.stdout, out.stdout[-3000:]
+    probe = f"""
+import importlib.util, json, sys
+spec = importlib.util.spec_from_file_location("emporia_plugin", {str(plugin / "__init__.py")!r},
+                                              submodule_search_locations=[{str(plugin)!r}])
+m = importlib.util.module_from_spec(spec); sys.modules["emporia_plugin"] = m; spec.loader.exec_module(m)
+got = {{}}
+class Ctx:
+    def register_hook(self, name, fn): got.setdefault("hooks", []).append(name)
+    def register_platform(self, **kw): got["platform"] = kw["name"]
+    def register_skill(self, name, path, description=""):
+        assert path.is_file() and description, name
+        got.setdefault("skills", []).append(name)
+    def register_cli_command(self, **kw): got["cli"] = kw["name"]
+m.register(Ctx())
+print(json.dumps(got))
+"""
+    out = subprocess.run([str(hermes_python), "-c", probe], cwd="/opt/hermes", capture_output=True, text=True,
+                         timeout=60, env={**os.environ, "HERMES_HOME": str(tmp_path), "PYTHONPATH": "/opt/hermes"})
+    assert out.returncode == 0, out.stderr[-2000:]
+    assert json.loads(out.stdout.strip().splitlines()[-1]) == {
+        "hooks": ["pre_tool_call", "transform_tool_result", "pre_llm_call"], "platform": "emporia",
+        "skills": ["emporia", "emporia-setup"], "cli": "emporia"}
+
+
+def test_the_agent_id_is_the_profile_name_except_for_the_default_profile(tmp_path, monkeypatch, capsys):
+    """P295: every Hermes user's root profile is called `default`, so on a public relay
+    its agent needs a name of its own; an existing agent keeps the one it has."""
+    import argparse
+    monkeypatch.setattr(cli, "_mcp_env", lambda profile: {})
+    a = argparse.Namespace(agent_id="")
+    assert cli._choose_agent_id(a, "alpha", tmp_path, False) == "alpha"
+    monkeypatch.setattr(cli, "_TTY", False)
+    assert cli._choose_agent_id(a, "default", tmp_path, False) == ""
+    assert "needs --agent-id" in capsys.readouterr().out
+    assert cli._choose_agent_id(argparse.Namespace(agent_id="Mira-Bot"), "default", tmp_path, False) == "mira-bot"
+    assert cli._choose_agent_id(argparse.Namespace(agent_id="x!"), "default", tmp_path, False) == ""
+    monkeypatch.setattr(cli, "_mcp_env", lambda profile: {"EMPORIA_AGENT_ID": "kept"})
+    assert cli._choose_agent_id(argparse.Namespace(agent_id="other"), "default", tmp_path, True) == "kept"
 
 
 # -- P285: the relay this machine runs comes back with the gateway ----------------

@@ -1,13 +1,14 @@
 /**
- * P171: Emporia's documentation, inside the dashboard. Bundled at build time
- * (see docs.ts), rendered without injecting HTML (see markdown.tsx).
+ * P171: Emporia's documentation, inside the dashboard. Bundled at build time, or
+ * in the Hermes tab fetched from its console (see docs.ts); rendered without
+ * injecting HTML (see markdown.tsx).
  */
 import { useCallback, useEffect, useMemo, useState } from "react";
 import Text from "@kit/Text";
 import SidebarLayout from "@kit/SidebarLayout";
 import { FlatRailItem } from "../ui/FlatRailItem";
 import { ViewBody } from "../ui/layout";
-import { DOCS, resolveDocLink, searchDocs } from "../docs";
+import { DOCS, docsReady, resolveDocLink, searchDocs } from "../docs";
 import { renderMarkdown } from "../markdown";
 
 /** `#/docs?doc=payments` — so a document can be linked to and bookmarked. */
@@ -34,11 +35,18 @@ export function DocsView({ initialDocId }: { initialDocId?: string | null }) {
     }
   }, [docId]);
   const [query, setQuery] = useState("");
+  // P295: in the Hermes tab the texts come from the console; render again once they have.
+  const [loaded, setLoaded] = useState(0);
+  useEffect(() => {
+    let live = true;
+    void docsReady.then(() => { if (live) setLoaded((n) => n + 1); });
+    return () => { live = false; };
+  }, []);
   // State, not a ref object: the scroll helpers are handed to the markdown
   // renderer inside a memo, and need the element as a value.
   const [mainEl, setMainEl] = useState<HTMLDivElement | null>(null);
   const doc = DOCS.find((d) => d.id === docId) ?? DOCS[0];
-  const shown = useMemo(() => searchDocs(query), [query]);
+  const shown = useMemo(() => searchDocs(query), [query, loaded]);
 
   const scrollTo = useCallback((anchor: string) => {
     const el = mainEl?.querySelector(`[id="${CSS.escape(anchor)}"]`);
@@ -57,7 +65,7 @@ export function DocsView({ initialDocId }: { initialDocId?: string | null }) {
       if (id === doc.id) { if (anchor) scrollTo(anchor); } else setNav({ id, anchor: anchor ?? null });
     },
     onAnchor: scrollTo,
-  }), [doc, scrollTo]);
+  }), [doc, scrollTo, loaded]);
 
   const sidebar = (
     <div className="e-docs-rail">

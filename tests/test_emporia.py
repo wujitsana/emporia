@@ -22605,10 +22605,10 @@ def test_p31_room_chain_walk_survives_a_created_at_tie_at_a_page_boundary():
 
 _DOC_ROOT = Path(__file__).parent.parent
 
-#: Docs that must name every MCP tool. `skills/emporia.md` is a symlink to the
-#: first of these, not a fifth surface.
+#: Docs that must name every MCP tool. The agent's skill (P295: shipped in the plugin) is the
+#: first of these.
 _TOOL_INVENTORY_DOCS = (
-    "skills/emporia/SKILL.md",
+    "hermes_plugin/emporia/skills/emporia/SKILL.md",
     "skills/dev/emporia-dev/SKILL.md",
     "README.md",
 )
@@ -22624,7 +22624,7 @@ _TOOL_COUNT_RE = re.compile(
 _COUNTED_DOCS = (
     "README.md",
     "ARCHITECTURE.md",
-    "skills/emporia/SKILL.md",
+    "hermes_plugin/emporia/skills/emporia/SKILL.md",
     "skills/dev/emporia-dev/SKILL.md",
 )
 
@@ -22662,7 +22662,7 @@ def _tool_inventory_section(text: str) -> str:
 def test_docs_name_every_mcp_tool():
     """P43-1: a tool absent from the skill is a tool no agent will ever call.
 
-    `skills/emporia/SKILL.md` is the file a Hermes agent loads to learn what it
+    `hermes_plugin/emporia/skills/emporia/SKILL.md` is the file a Hermes agent loads to learn what it
     can do. Seven tools -- including both chain verifiers, the feature this repo
     spent P21/P24/P30 building -- were shipped and listed in no doc at all."""
     tools = _registered_mcp_tools()

@@ -31,7 +31,7 @@ from pathlib import Path
 from typing import Any
 
 from fastapi import FastAPI, HTTPException, Request, WebSocket, WebSocketDisconnect
-from fastapi.responses import JSONResponse, RedirectResponse, Response
+from fastapi.responses import JSONResponse, PlainTextResponse, RedirectResponse, Response
 from fastapi.staticfiles import StaticFiles
 
 from emporia.console.agents import LocalAgent, discover, load_encryption_keys
@@ -130,6 +130,16 @@ def _authorized(console: Console, cookies: dict[str, str], host: str) -> bool:
     return secrets.compare_digest(cookies.get(COOKIE, ""), console.cookie_secret)
 
 
+_REPO = Path(__file__).resolve().parents[3]
+
+
+def _doc_paths() -> set[str]:
+    try:
+        return {d["path"] for d in json.loads((_REPO / "dashboard" / "src" / "docList.json").read_text())}
+    except (OSError, ValueError, KeyError, TypeError):
+        return set()
+
+
 def build_app(console: Console, *, ui_dir: Path | None = None) -> FastAPI:
     @asynccontextmanager
     async def lifespan(_app: FastAPI):
@@ -163,6 +173,16 @@ def build_app(console: Console, *, ui_dir: Path | None = None) -> FastAPI:
     @app.get("/agents")
     async def agents():
         return {"agents": sorted(console.agents())}
+
+    @app.get("/docs/{path:path}")
+    async def doc(path: str):
+        """P295: a doc's text for the Hermes tab, whose bundle carries none. Only the
+        docs the dashboard lists (dashboard/src/docList.json), read from this Emporia."""
+        listed = _doc_paths()
+        if path not in listed:
+            raise HTTPException(404, "not a document the dashboard shows")
+        return PlainTextResponse((_REPO / path).read_text(encoding="utf-8"),
+                                 media_type="text/markdown; charset=utf-8")
 
     @app.api_route("/relay/{agent_id}/{path:path}",
                    methods=["GET", "POST", "PUT", "PATCH", "DELETE"])

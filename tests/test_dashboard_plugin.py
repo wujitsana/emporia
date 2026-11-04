@@ -9,7 +9,7 @@ import pytest
 
 REPO = Path(__file__).resolve().parents[1]
 HERMES_PYTHON = Path("/opt/hermes/.venv/bin/python")
-PLUGIN = REPO / "hermes_plugin" / "emporia_dashboard" / "dashboard"
+PLUGIN = REPO / "hermes_plugin" / "emporia" / "dashboard"
 
 
 @pytest.mark.skipif(not HERMES_PYTHON.exists(), reason="Hermes is not installed here")
@@ -17,7 +17,9 @@ def test_the_plugin_forwards_to_the_console_and_never_its_hermes_credentials(tmp
     runtime = tmp_path / "rt"
     plugin = tmp_path / "plugin"
     subprocess.run(["cp", "-r", str(PLUGIN), str(plugin)], check=True)
-    (plugin / "emporia.json").write_text(json.dumps(
+    data = tmp_path / "home" / "plugin-data" / "emporia"     # P295: settings in plugin-data, not the plugin
+    data.mkdir(parents=True)
+    (data / "emporia.json").write_text(json.dumps(
         {"python": "/nonexistent", "relay_url": "http://relay.test", "runtime_dir": str(runtime)}))
     harness = tmp_path / "harness.py"
     harness.write_text(f'''
@@ -76,3 +78,31 @@ print(json.dumps({{"status": r.status_code, "echo": r.json(), "here": here,
     assert result["ws_refused"], "a websocket without Hermes's credential is refused"
     assert oct(runtime.stat().st_mode)[-3:] == "700"
     assert result["here"] == {"profile": "beta"}, "P227: the tab learns which profile it is open in"
+
+
+def _source_digest() -> str:
+    """dashboard/vite.plugin.config.ts sourceDigest(), in Python."""
+    import hashlib
+    dash = REPO / "dashboard"
+    inputs = ["src", "vite.plugin.config.ts", "package-lock.json", "postcss.noRemoteFonts.ts"]
+    files = []
+    for rel in inputs:
+        p = dash / rel
+        found = sorted(p.rglob("*")) if p.is_dir() else [p]
+        files += [f.relative_to(dash).as_posix() for f in found
+                  if f.is_file() and not f.name.endswith((".test.ts", ".test.tsx"))]
+    h = hashlib.sha256()
+    for f in sorted(files):
+        h.update(f.encode() + b"\n")
+        h.update((dash / f).read_bytes())
+    return h.hexdigest()
+
+
+def test_the_committed_tab_bundle_is_built_from_the_dashboard_as_it_is():
+    """P295: a catalog install is the plugin folder alone, so the tab's bundle is
+    committed there. Changing dashboard/ without `npm run build:hermes-plugin`
+    would ship the old tab."""
+    dist = PLUGIN / "dist"
+    assert (dist / "index.js").is_file() and (dist / "style.css").is_file()
+    assert (dist / "SOURCE").read_text().strip() == _source_digest(), (
+        "the tab's bundle is older than dashboard/: run `npm run build:hermes-plugin` in dashboard/")

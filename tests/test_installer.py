@@ -170,17 +170,25 @@ def test_the_testnet_runner_refuses_a_mainnet_chain_id():
 def test_the_platform_plugin_is_installed_enabled_and_configured(tmp_path):
     profile = tmp_path / "profile"
     profile.mkdir()
-    (profile / "config.yaml").write_text("plugins:\n  enabled: [other/plugin]\n")
-    (profile / ".env").write_text("EMPORIA_ALLOWED_USERS=trusted_agent\nOTHER=1\n")
+    (profile / "config.yaml").write_text("plugins:\n  enabled: [other/plugin, platforms/emporia]\n")
+    (profile / ".env").write_text("EMPORIA_ALLOWED_USERS=trusted_agent\nOTHER=1\nEMPORIA_RELAY_URL=http://r.test\n")
+    legacy = profile / "plugins" / "platforms" / "emporia"     # the platform plugin alone, before P295
+    legacy.mkdir(parents=True)
+    (legacy / "plugin.yaml").write_text("name: emporia-platform\n")
 
     installer.install_platform_plugin(profile)
     installer.install_platform_plugin(profile)   # idempotent
 
-    dst = profile / "plugins" / "platforms" / "emporia"
-    assert (dst / "plugin.yaml").exists() and (dst / "adapter.py").exists()
-    assert not (dst / "__pycache__").exists()
+    dst = profile / "plugins" / "emporia"
+    for part in ("plugin.yaml", "adapter.py", "setup_cli.py", "skills/emporia/SKILL.md",
+                 "dashboard/manifest.json", "dashboard/dist/index.js"):
+        assert (dst / part).exists(), part
+    assert not (dst / "__pycache__").exists() and not legacy.exists()
     config = installer.load_yaml(profile / "config.yaml")
-    assert config["plugins"]["enabled"] == ["other/plugin", "platforms/emporia"]
+    assert config["plugins"]["enabled"] == ["other/plugin", "emporia"]
+    import json
+    tab = json.loads((profile / "plugin-data" / "emporia" / "emporia.json").read_text())
+    assert tab["relay_url"] == "http://r.test" and tab["python"] == installer._venv_python()
     env = dict(ln.split("=", 1) for ln in (profile / ".env").read_text().splitlines())
     assert env["EMPORIA_ALLOWED_USERS"] == "trusted_agent,emporia:relay", (
         "the operator's own allowlist entries must survive"
@@ -214,7 +222,7 @@ def test_hermes_discovers_the_installed_plugin(tmp_path):
         env={**os.environ, "HERMES_HOME": str(home), "PYTHONPATH": "/opt/hermes"},
     )
     assert out.returncode == 0, out.stderr[-1500:]
-    assert ["platforms/emporia", "platform"] in json.loads(out.stdout.strip().splitlines()[-1])
+    assert ["emporia", "platform"] in json.loads(out.stdout.strip().splitlines()[-1])
 
 
 # P102 -- one key directory and one database per profile ----------------------

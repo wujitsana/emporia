@@ -56,6 +56,8 @@ pip-delete-this-directory.txt
 target/
 build/
 dist/
+# P295: the dashboard tab's bundle ships in the plugin folder (a catalog install is that folder alone)
+!hermes_plugin/emporia/dashboard/dist/
 out/
 .next/
 .nuxt/

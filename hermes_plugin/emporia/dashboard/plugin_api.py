@@ -33,8 +33,7 @@ from fastapi.responses import JSONResponse, Response
 router = APIRouter()
 log = logging.getLogger("emporia.dashboard_plugin")
 
-_HERE = Path(__file__).resolve().parent
-_CONFIG_FILE = _HERE / "emporia.json"        # written by Emporia's installer
+CONFIG_NAME = "emporia.json"     # in <HERMES_HOME>/plugin-data/emporia/, written by `emporia setup agent`
 _CONSOLE_START_S = 25.0
 _DROP_HEADERS = {"host", "cookie", "authorization", "connection", "content-length",
                  "accept-encoding", "transfer-encoding", "upgrade", "te", "keep-alive"}
@@ -53,13 +52,18 @@ def _stop_console() -> None:
 
 def _config() -> dict:
     try:
-        return json.loads(_CONFIG_FILE.read_text())
-    except (OSError, ValueError):
+        from plugins.plugin_storage import plugin_data_dir
+        return json.loads((plugin_data_dir("emporia") / CONFIG_NAME).read_text())
+    except (ImportError, OSError, ValueError):
         return {}
 
 
 def _socket() -> Path:
-    return Path(_config().get("runtime_dir", str(_HERE / ".runtime"))) / "console.sock"
+    runtime = _config().get("runtime_dir")
+    if not runtime:
+        from plugins.plugin_storage import plugin_data_dir
+        runtime = plugin_data_dir("emporia") / "console"
+    return Path(runtime) / "console.sock"
 
 
 async def _console_up(sock: Path) -> bool:
@@ -84,7 +88,7 @@ async def _ensure_console() -> Path:
             return sock
         cfg = _config()
         if not cfg.get("python"):
-            raise RuntimeError("emporia.json is missing — re-run Emporia's installer")
+            raise RuntimeError("Emporia is not set up in this profile — run `hermes emporia setup`")
         if _proc is not None and _proc.poll() is None:
             _proc.terminate()
         runtime = sock.parent
@@ -92,8 +96,8 @@ async def _ensure_console() -> Path:
         os.chmod(runtime, 0o700)
         argv = [cfg["python"], "-m", "emporia.console", "--uds", str(sock),
                 "--relay-url", cfg.get("relay_url", "http://localhost:8088")]
-        if cfg.get("profiles_root"):
-            argv += ["--profiles-root", cfg["profiles_root"]]
+        if cfg.get("hermes_root"):
+            argv += ["--hermes-root", cfg["hermes_root"]]
         for d in cfg.get("keys_dirs", []):
             argv += ["--keys-dir", d]
         # Only what the console needs: no Hermes secrets in its environment, and
