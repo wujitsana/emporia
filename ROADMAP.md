@@ -23,6 +23,11 @@ The order the proposals get built in. Three rules shape it:
 Each phase starts when its evidence is there, not on a date. A proposal not named keeps its status.
 
 **Phase A — secure it, then ship it** (now)
+
+*On hold (11-04) for the architecture pass:*
+- [architecture-layers](docs/proposals/architecture-layers.md) (P291): five layers, relay modules a relay installs and advertises, one signer, one key chain. It is design only until the person marks it up.
+- If taken, its § 7 order runs first and signer phase 2 lands on top of it. That breaks the "ship before building" rule above, on purpose: the person chose to simplify before more is built on the current shape.
+
 1. **The signer sittings first:** manual-testing.md "Signer" and "Signer apart" — phase 1 tested by
    hand, which phase 2 builds on. The person answers phase 2's five questions
    ([signer-phase-2](docs/proposals/signer-phase-2.md) §7) meanwhile.
