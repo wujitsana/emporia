@@ -89,13 +89,31 @@ def source() -> dict:
     return data if isinstance(data, dict) else {}
 
 
+def _is_emporia(path: Path) -> bool:
+    return (path / "src" / "emporia" / "cli.py").is_file() and (path / "pyproject.toml").is_file()
+
+
 def runtime() -> Path | None:
-    """The Emporia runtime in use: the checkout, else the installed one."""
+    """The Emporia runtime this profile runs: the checkout this plugin sits in;
+    else the one its EMPORIA_PYTHON belongs to (a profile `setup` made shares
+    the runtime of the profile that made it; a profile set up from a checkout
+    runs that checkout); else the one in this profile's plugin-data."""
     found = checkout()
     if found:
         return found
+    py = _setting("EMPORIA_PYTHON")
+    if py:
+        venv_root = Path(py).parent.parent.parent              # <runtime>/.venv/bin/python
+        if _is_emporia(venv_root):
+            return venv_root
     rt = runtime_dir()
-    return rt if (rt / "src" / "emporia" / "cli.py").is_file() else None
+    return rt if _is_emporia(rt) else None
+
+
+def from_catalog(rt: Path) -> bool:
+    """A runtime `hermes emporia setup` installed (in some profile's plugin-data),
+    which follows this plugin's pinned commit — not a checkout someone develops in."""
+    return rt.parent.name == "emporia" and rt.parent.parent.name == "plugin-data"
 
 
 def python_of(rt: Path) -> Path:
@@ -128,13 +146,14 @@ def _git_head(rt: Path) -> str:
         return ""
 
 
-def install_runtime(say=print) -> Path:
-    """Clone (or move) the runtime to the pinned commit and sync its venv."""
+def install_runtime(say=print, target: Path | None = None) -> Path:
+    """Clone (or move) the runtime to the pinned commit and sync its venv: the
+    one this profile already runs (`target`), else this profile's plugin-data."""
     src = source()
     repo, sha = src.get("repo", ""), src.get("sha", "")
-    if not (repo.startswith("https://") and len(sha) == 40):
+    if not (repo.startswith("https://") and len(sha) == 40 and all(c in "0123456789abcdef" for c in sha)):
         raise SetupFailed(f"{SOURCE_FILE.name} names no pinned commit (repo {repo!r}, sha {sha!r})")
-    rt = runtime_dir()
+    rt = target if target is not None and from_catalog(target) else runtime_dir()
     if not (rt / ".git").is_dir():
         if rt.exists():
             shutil.rmtree(rt)
@@ -196,14 +215,15 @@ def choose_profile(args: argparse.Namespace, here: str, tty: bool, ask=input) ->
         print("  Lowercase letters, digits, - and _, starting with a letter or digit (not `default`).")
 
 
-def _install_plugin_into(name: str) -> bool:
-    """The catalog plugin into a profile setup just created, through Hermes's own installer."""
+def _install_plugin_into(name: str, plugin_source: str = "emporia") -> bool:
+    """The plugin into a profile setup just created, through Hermes's own installer:
+    the catalog entry, or `--plugin-source` (a git URL, `<url>#hermes_plugin/emporia`)."""
     hermes = shutil.which("hermes")
     if not hermes:
         print(f"  ✗ hermes is not on PATH: run `hermes -p {name} plugins install emporia --enable` yourself")
         return False
-    print(f"  Installing the Emporia plugin into {name}")
-    r = subprocess.run([hermes, "-p", name, "plugins", "install", "emporia", "--enable", "--yes-deps"],
+    print(f"  Installing the Emporia plugin into {name} ({plugin_source})")
+    r = subprocess.run([hermes, "-p", name, "plugins", "install", plugin_source, "--enable"],
                        stdin=subprocess.DEVNULL, timeout=_TIMEOUT_S)
     return r.returncode == 0
 
@@ -221,15 +241,15 @@ def cmd_setup(args: argparse.Namespace) -> int:
     name, new = chosen
     try:
         rt = runtime()
-        if rt is None or (checkout() is None and _git_head(rt) != source().get("sha")):
-            rt = install_runtime()
+        if rt is None or (from_catalog(rt) and _git_head(rt) != source().get("sha")):
+            rt = install_runtime(target=rt)
         if not python_of(rt).exists():
             raise SetupFailed(f"{rt} has no virtualenv: run `uv sync` there")
     except SetupFailed as exc:
         print(f"  ✗ {exc}")
         print("  Needs git, and uv or python3 with venv. No profile was changed.")
         return 1
-    print(f"  Runtime: {rt}" + ("  (this checkout)" if rt == checkout() else ""))
+    print(f"  Runtime: {rt}" + ("" if from_catalog(rt) else "  (a checkout)"))
     print(f"  Agent profile: {name}" + ("  (new)" if new else ""))
     extra = list(args.rest or [])
     if extra[:1] == ["--"]:
@@ -237,7 +257,7 @@ def cmd_setup(args: argparse.Namespace) -> int:
     if args.relay:
         extra = ["--relay-url", args.relay, *extra]
     code = _emporia(rt, "setup", "agent", name, *extra)
-    if code == 0 and new and checkout() is None and not _install_plugin_into(name):
+    if code == 0 and new and from_catalog(rt) and not _install_plugin_into(name, args.plugin_source):
         return 1
     return code
 
@@ -250,7 +270,7 @@ def cmd_status(_args: argparse.Namespace) -> int:
         return 1
     head = _git_head(rt)
     pinned = src.get("sha", "")
-    note = ("this checkout" if rt == checkout()
+    note = ("a checkout" if not from_catalog(rt)
             else "pinned" if head == pinned else f"not the pinned {pinned[:12]}: run `hermes emporia update`")
     print(f"Runtime : {rt} @ {head[:12] or '?'} ({note})")
     agent, relay = _setting("EMPORIA_AGENT_ID"), _setting("EMPORIA_RELAY_URL")
@@ -271,11 +291,12 @@ def cmd_doctor(_args: argparse.Namespace) -> int:
 
 
 def cmd_update(_args: argparse.Namespace) -> int:
-    if checkout():
-        print("This plugin runs from an Emporia checkout: update it with `emporia update`.")
+    rt = runtime()
+    if rt is not None and not from_catalog(rt):
+        print(f"This profile runs the Emporia checkout at {rt}: update it with `emporia update` there.")
         return 0
     try:
-        install_runtime()
+        install_runtime(target=rt)
     except SetupFailed as exc:
         print(f"  ✗ {exc}")
         return 1
@@ -290,6 +311,9 @@ def register_cli(parser: argparse.ArgumentParser) -> None:
     where.add_argument("--profile", help="The profile to set up as the agent; made if it does not exist")
     where.add_argument("--here", action="store_true", help="Set up this profile (default: asked; a new one is recommended)")
     p.add_argument("--relay", help="The relay to join (https URL)")
+    p.add_argument("--plugin-source", default="emporia",
+                   help="Where a new profile's plugin comes from (default: the catalog entry; before it is "
+                        "listed: https://github.com/wujitsana/emporia#hermes_plugin/emporia)")
     p.add_argument("rest", nargs=argparse.REMAINDER,
                    help="After --: options for `emporia setup agent` (--role, --keys, --wallet, …)")
     sub.add_parser("status", help="Where the runtime is, and this agent on its relay")

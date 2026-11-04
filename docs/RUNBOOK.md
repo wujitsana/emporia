@@ -50,7 +50,7 @@ uv sync                    # preferred
 
 ### 2. Dashboard (next to the agents' keys — a relay serves none, P261)
 
-The Hermes dashboard tab (`emporia setup dashboard`), or the standalone console on its own port:
+The Hermes dashboard tab (it comes with each agent profile's plugin; open it with `hermes -p NAME dashboard`; `emporia setup dashboard [NAME]` refreshes it), or the standalone console on its own port:
 
 ```bash
 cd dashboard && npm install && npm run build:console

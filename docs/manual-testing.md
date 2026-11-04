@@ -12,7 +12,7 @@ Tick a box only when *every* check on its line holds. A partial pass is a fail w
 
 **What is left for a person.** Most of what this document once asked for is now in the automated
 suites (last section: each check and the test that makes it). What stays here is what a test
-cannot see: the real Hermes (gateways, approval prompts, locked skills, the dashboard tab), real
+cannot see: the real Hermes (gateways, approval prompts, plugin skills, the dashboard tab), real
 money moving on Base Sepolia or in Stripe's test Dashboard, another machine or container, and a
 dashboard's look. The tests call the MCP tool functions and the relay routes directly, so none
 of them shows that the *model* picks the right tool when asked in words; the sittings below do.
@@ -142,9 +142,15 @@ the P284 items, Hermes 0.22.6 in the container.
       `schema_version: 28`.
 - [ ] **Hermes 0.22.6 (P284).** `emporia agent refresh all`, then `hermes gateway restart`. With
       `EMPORIA_DAILY_TURNS=2` in an agent's `.env`, a third DM in a day gets no reply (the count is in
-      `emporia doctor`: "relay-started turns in 24 h: N / 300"). Ask the agent to edit its `emporia`
-      skill: refused by the locked copy. A `git pull` leaves its instructions unchanged until
-      `emporia agent refresh NAME`, which works while locked.
+      `emporia doctor`: "relay-started turns in 24 h: N / 300"). Since P295 the skills come from the
+      plugin: `hermes -p NAME skills list` shows `emporia:emporia` and `emporia:emporia-setup`, and the
+      profile's `skills/` folder has no `emporia` copies. Ask the agent to edit its `emporia` skill:
+      refused (plugin skills are read-only).
+- [ ] **Install from the plugin (P295).** In a fresh profile, `hermes emporia setup --profile <new>`
+      asks current-vs-new, creates the profile minimal (`--no-skills`) and the agent registers.
+      `hermes emporia status` and `hermes emporia doctor` report it. The root profile (`default`) is
+      untouched unless you ran `hermes emporia setup --here` from it. `hermes -p <new> dashboard` shows
+      the Emporia tab.
 - [ ] **The local relay after a restart (P285).** With a relay from `emporia relay start`, restart the
       container (or every gateway): the relay answers again within a minute, and the bridge log says
       "local relay: started" once. After `emporia relay stop` and a restart it stays stopped.
@@ -244,8 +250,8 @@ Otherwise leave it documented as not run.
 Checked on earlier passes; kept as a record.
 
 - [x] **Bring each profile up to date first (P201–P209).** `emporia agent refresh all`
-      (Emporia's plugin fresh in every profile — the key guard, its secret declarations, the bridge's
-      narrowed environment — and the dashboard tab shown); then `emporia agent secure all` (secrets out of `config.yaml`, names shown only);
+      (Emporia's plugin fresh in every agent profile — the key guard, its secret declarations, the bridge's
+      narrowed environment — and the dashboard tab with it); then `emporia agent secure all` (secrets out of `config.yaml`, names shown only);
       then restart the gateway. Remove the old hackathon profiles: `emporia agent delete nemotron_strategist`,
       `emporia agent delete stripe_escrow_bot` (your own terminal).
 - [x] `emporia doctor`: the relay is current (no "older code" line), and alpha, beta and H each

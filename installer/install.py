@@ -1119,13 +1119,20 @@ def _merge_profile_env(env_path: Path, managed_lines: list[str], keep_relay: boo
     profile must not hold, are still dropped (_RELAY_ONLY_ENV_KEYS)."""
     managed = {ln.split("=", 1)[0].strip() for ln in managed_lines if "=" in ln}
     kept: list[str] = []
+    dropped: list[str] = []
     if env_path.exists():
         for line in env_path.read_text().splitlines():
             key = line.split("=", 1)[0].strip() if "=" in line and not line.lstrip().startswith("#") else ""
-            if key and (key in managed or (key in _RELAY_ONLY_ENV_KEYS and not keep_relay)):
+            if key and key in _RELAY_ONLY_ENV_KEYS and not keep_relay and key not in managed:
+                dropped.append(key)
+                continue
+            if key and key in managed:
                 continue
             if line.strip():
                 kept.append(line)
+    if dropped:     # P295: said, never silent — it may be someone's own profile
+        print(f"  - removed from {env_path}: {', '.join(dropped)} (a relay's setting; an agent's tools "
+              "could reach it there)")
     return managed_lines + kept
 
 
@@ -1144,6 +1151,7 @@ def create_profile(
     x402_max_daily_cents: int | None = None,
     sync_model: bool = False,
     agent_id: str = "",
+    profile_path: Path | None = None,
 ) -> None:
     """Create a new Hermes agent profile with emporia pre-wired, or wire an
     existing one (P295: `default` is the Hermes root itself, set up by
@@ -1152,6 +1160,7 @@ def create_profile(
 
     `agent_id` is its name on the relay (default: the profile's name), which
     must be unique there — a public relay has other people's `default`s.
+    `profile_path` is where the profile is (default: beside the current one).
 
     Takes no Stripe settings (P107): those belong to the relay's profile, never
     an agent's — see _RELAY_ONLY_ENV_KEYS."""
@@ -1162,9 +1171,9 @@ def create_profile(
     else:
         profiles_base = _profile_base_dirs()[0] if _profile_base_dirs() else Path.cwd()
 
-    from emporia import hermes_layout
-    profile_dir = (hermes_layout.root_of(current_profile_dir) if name == hermes_layout.DEFAULT and current_profile_dir
-                   else profiles_base / name)
+    # P295: `emporia setup agent` passes the profile's path (hermes_layout): from a
+    # Hermes root, a new profile goes in its profiles/, not beside it.
+    profile_dir = profile_path or profiles_base / name
     config_path = profile_dir / "config.yaml"
     aid = agent_id or name
 
@@ -1609,23 +1618,6 @@ _TOUCHED_PROFILES: list[str] = []
 _DASHBOARD_RESTART_NEEDED = False
 
 
-def _git_exclude(repo_child: Path) -> str | None:
-    """Exclude `repo_child` via its git repo's local .git/info/exclude — never a
-    tracked file — when it sits inside one. Returns the pattern added, if any."""
-    try:
-        top = subprocess.run(["git", "-C", str(repo_child.parent), "rev-parse", "--show-toplevel"],
-                             capture_output=True, text=True, timeout=10, check=True).stdout.strip()
-    except (OSError, subprocess.SubprocessError):
-        return None
-    pattern = "/" + str(repo_child.resolve().relative_to(Path(top).resolve())) + "/"
-    exclude = Path(top) / ".git" / "info" / "exclude"
-    lines = exclude.read_text().splitlines() if exclude.exists() else []
-    if pattern not in lines:
-        exclude.parent.mkdir(parents=True, exist_ok=True)
-        exclude.write_text("\n".join([*lines, pattern]) + "\n")
-    return pattern
-
-
 def from_catalog() -> bool:
     """P295: this Emporia was installed by `hermes emporia setup` (its runtime in
     <home>/plugin-data/emporia/runtime), so the catalog owns the plugin's files:
@@ -1690,34 +1682,6 @@ def _enable_plugin(profile_dir: Path) -> None:
         print(f"  + plugins.enabled: {PLUGIN_KEY}")
 
 
-def install_dashboard_plugin(profile_dir: Path, relay_url: str, hermes_home: Path,
-                             dry_run: bool = False) -> None:
-    """The Emporia tab in the Hermes dashboard run from `hermes_home` (P126;
-    docs/local-console.md). It is the same plugin each agent profile has (P295):
-    the tab is its dashboard/ folder, its bundle committed there. Here it is
-    placed in that home's plugins/, its settings written to that home's
-    plugin-data, and enabled — Hermes runs a user plugin's backend only once it
-    is. No port: the tab is served by the Hermes dashboard itself."""
-    global _DASHBOARD_RESTART_NEEDED
-    dst = hermes_home / "plugins" / PLUGIN_KEY
-    if _place_plugin(dst, dry_run):
-        _DASHBOARD_RESTART_NEEDED = True
-        print(f"  + Emporia plugin (the dashboard tab): {dst}")
-        pattern = _git_exclude(dst)
-        if pattern:
-            print(f"  + kept out of git via .git/info/exclude: {pattern}")
-    write_tab_settings(hermes_home, profile_dir, relay_url, dry_run)
-    if dry_run:
-        return
-    if hermes_home.resolve() != profile_dir.resolve():
-        # P295: the old tab's own folder name was this key too; the platform's
-        # copy under platforms/ in that home is gone with it.
-        old = hermes_home / "plugins" / "platforms" / "emporia"
-        if old.exists():
-            shutil.rmtree(old)
-    _enable_plugin(hermes_home)
-
-
 def print_safety_next_steps(name: str) -> None:
     """P172: the installer wires a profile; the choices that keep its keys out
     of its own tools' reach are made by `emporia setup agent`. Say so."""
@@ -1741,9 +1705,9 @@ def print_restart_instructions(profiles: list[str]) -> None:
     except ImportError:
         print()
     if _DASHBOARD_RESTART_NEEDED:
-        print("  RESTART THE HERMES DASHBOARD — the Emporia tab was installed or changed.")
-        print("  It loads plugins only when it starts: restart the `hermes dashboard` process,")
-        print("  then open the dashboard and pick the Emporia tab.")
+        print("  RESTART THE HERMES DASHBOARD — the Emporia tab (in the agent's plugin) changed.")
+        print("  It loads plugins only when it starts: restart `hermes -p NAME dashboard`,")
+        print("  then pick the Emporia tab.")
     if _GATEWAY_RESTART_NEEDED:
         print("  RESTART REQUIRED — the Emporia gateway plugin was installed or changed.")
         print("  Hermes loads plugins only when the gateway process starts, and one process")
@@ -1768,7 +1732,7 @@ def install_platform_plugin(profile_dir: Path, dry_run: bool = False) -> None:
     if dry_run:
         print(f"  [dry-run] Would install the Emporia plugin at {dst}")
         return
-    global _GATEWAY_RESTART_NEEDED
+    global _GATEWAY_RESTART_NEEDED, _DASHBOARD_RESTART_NEEDED
     if profile_dir.name not in _TOUCHED_PROFILES:
         _TOUCHED_PROFILES.append(profile_dir.name)
     legacy = profile_dir / "plugins" / "platforms" / "emporia"
@@ -1777,7 +1741,7 @@ def install_platform_plugin(profile_dir: Path, dry_run: bool = False) -> None:
         shutil.rmtree(legacy)
         changed = True
     if changed:
-        _GATEWAY_RESTART_NEEDED = True
+        _GATEWAY_RESTART_NEEDED = _DASHBOARD_RESTART_NEEDED = True     # the tab is in it too
         print(f"  + Emporia plugin: {dst} (new or changed — needs a gateway restart)")
     elif not from_catalog():
         print(f"  = Emporia plugin: {dst} (unchanged)")
@@ -1922,11 +1886,6 @@ def main() -> None:
     parser.add_argument("--sync-model", action="store_true",
                         help="With --create-profile on an existing profile: switch it to this "
                              "profile's model (a new profile always copies it)")
-    parser.add_argument("--hermes-dashboard", action="store_true",
-                        help="Install or refresh the Emporia tab in the Hermes dashboard (P126)")
-    parser.add_argument("--hermes-home", default="",
-                        help="With --hermes-dashboard: the Hermes home the dashboard runs from "
-                             "(default: $HERMES_HOME, else ~/.hermes)")
     parser.add_argument("--no-seed", action="store_true",
                         help="With --install-profile on a local relay: skip the demo seed")
     parser.add_argument("--local-demo", action="store_true",
@@ -1970,8 +1929,7 @@ def main() -> None:
         args.seed_only = True
 
     ops_mode = any([args.seed_only, args.start_relay, args.build_dashboard])
-    profile_mode = any([args.install_profile, args.create_profile, args.bootstrap_test,
-                        args.hermes_dashboard])
+    profile_mode = any([args.install_profile, args.create_profile, args.bootstrap_test])
 
     if not ops_mode and not profile_mode:
         parser.print_help()
@@ -2125,12 +2083,6 @@ def main() -> None:
             dev_skills=args.dev_skills,
         )
 
-    if args.hermes_dashboard:
-        home = Path(args.hermes_home or os.getenv("HERMES_HOME") or Path.home() / ".hermes")
-        profile = current_profile_dir or find_profile_dir_from_cwd()
-        if profile is None:
-            raise SystemExit("  --hermes-dashboard needs the profile holding this checkout")
-        install_dashboard_plugin(profile, args.relay_url, home, dry_run=args.dry_run)
     if not args.dry_run:   # P172: the safety choices live in `emporia setup agent`
         wired = ([args.create_profile] if args.create_profile else []) + (
             [current_profile_dir.name] if args.install_profile and current_profile_dir else [])

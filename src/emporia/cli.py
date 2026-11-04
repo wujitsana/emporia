@@ -5,7 +5,7 @@
     emporia login [--profile NAME]     Nous sign-in for that Hermes profile, verified
     emporia setup agent NAME           a slim agent profile (model + its key + Emporia)
     emporia setup relay                this machine's relay: x402/escrow preset, operator key
-    emporia setup dashboard            the Emporia tab in the Hermes dashboard
+    emporia setup dashboard [NAME]     refresh an agent's plugin and its dashboard tab
     emporia role NAME [marketplace|developer|both]  what its tools may reach (marketplace for money)
     emporia identity show|store|link NAME  where its identity and encryption keys are kept
     emporia wallet show|create|import|register|limits NAME
@@ -3965,27 +3965,19 @@ def doctor_hermes_plugins(rep: Report) -> None:
                  f"move it aside: mv {shadow.parent} {shadow.parent}.old")
 
 
-def doctor_dashboard(rep: Report) -> None:
-    inst = installer()
-    home = hermes_home()
-    rep.section(f"Dashboard tab  ({home / 'plugins' / 'emporia'})")
-    dst = home / "plugins" / "emporia"
-    if not dst.exists():
-        rep.warn("not installed — without it, watch the agents with the standalone console "
-                 "(python -m emporia.console)", "emporia setup dashboard")
-        return
-    enabled = ((inst.load_yaml(home / "config.yaml").get("plugins") or {}).get("enabled") or [])
-    if "emporia" not in enabled:
-        rep.fail("installed but not enabled — Hermes will not run its backend",
-                 "hermes plugins enable emporia")
-    else:
-        rep.ok("installed and enabled")
-    if not (home / "plugin-data" / "emporia" / "emporia.json").exists():
-        rep.fail("its settings are missing (plugin-data/emporia/emporia.json)", "emporia setup dashboard")
-    src = REPO / "hermes_plugin" / "emporia"
-    if not inst.from_catalog() and inst._tree_digest(src) != inst._tree_digest(dst):
-        rep.warn("an older copy of the plugin than this checkout's",
-                 "emporia setup dashboard, then restart the Hermes dashboard")
+def doctor_dashboard(rep: Report, agents: list[Path]) -> None:
+    """P295: the Emporia tab comes with each agent profile's plugin; it needs that
+    profile's tab settings (plugin-data/emporia/emporia.json) and shows in the
+    dashboard opened as that profile (`hermes -p NAME dashboard`)."""
+    rep.section("Dashboard tab")
+    missing = [p for p in agents if (p / "plugins" / "emporia" / "plugin.yaml").exists()
+               and not (p / "plugin-data" / "emporia" / "emporia.json").exists()]
+    for profile in missing:
+        rep.fail(f"{hermes_layout.name_of(profile)}: the tab's settings are missing "
+                 "(plugin-data/emporia/emporia.json)", f"emporia setup dashboard {hermes_layout.name_of(profile)}")
+    if agents and not missing:
+        names = ", ".join(hermes_layout.name_of(p) for p in agents)
+        rep.ok(f"comes with each agent's plugin — open it with `hermes -p NAME dashboard` ({names})")
 
 
 # P174: each Nous check asks Hermes in a process of its own (~0.7s); doctor asks
@@ -4012,7 +4004,7 @@ def cmd_doctor(args: argparse.Namespace) -> int:
     h = doctor_relay(rep)
     for profile, entry in agents:
         doctor_agent(rep, profile, entry, relay_up=h is not None)
-    doctor_dashboard(rep)
+    doctor_dashboard(rep, [p for p, _ in agents])
     doctor_hermes_plugins(rep)
     doctor_machine_secrets(rep)
     import shutil
@@ -4306,7 +4298,7 @@ def cmd_setup_agent(args: argparse.Namespace) -> int:
     heading("Saving")
     inst.create_profile(
         name=name, relay_url=chosen_relay, current_profile_dir=me, inherit_env=args.inherit_env,
-        sync_model=bool(sync_model), x402_pay_networks=networks, agent_id=agent_id,
+        sync_model=bool(sync_model), x402_pay_networks=networks, agent_id=agent_id, profile_path=profile,
         x402_max_payment_cents=args.max_payment_cents if wallet else None,
         x402_max_daily_cents=args.max_daily_cents if wallet else None,
     )
@@ -4461,8 +4453,8 @@ def machine_settings(url: str = "") -> list[dict[str, Any]]:
     out += [row("Everything at once", "", "Each component's state and how to set it up; changes nothing.",
                 "emporia setup"),
             row("Checks", "", "✓ / ! / ✗ for every agent, with the fix under each problem.", "emporia doctor"),
-            row("This tab", "", "Install or refresh the Emporia tab in the Hermes dashboard.",
-                "emporia setup dashboard")]
+            row("This tab", "", "Refresh an agent's plugin and this tab's settings.",
+                "emporia setup dashboard NAME")]
     return out
 
 
@@ -4943,13 +4935,24 @@ def _agent_stripe(profile: Path, name: str) -> None:
 
 
 def cmd_setup_dashboard(args: argparse.Namespace) -> int:
-    inst = installer()
-    me = this_profile()
-    if me is None:
-        print("setup dashboard: run it from a profile's emporia checkout")
+    """P295: the Emporia tab is part of each agent profile's plugin. This refreshes
+    that plugin and the tab's settings for one agent and says how to open it. It
+    never places the plugin in a profile that is not an Emporia agent (the Hermes
+    root of a machine whose agents are named profiles stays as it is)."""
+    name = args.name or (hermes_layout.name_of(this_profile()) if this_profile() else "")
+    profile = profile_dir(name) if name else None
+    if profile is None or not any(p == profile for p, _ in _agent_profiles(profiles_root())):
+        print(f"setup dashboard: {name or 'this profile'!r} is not an Emporia agent. The tab comes with an "
+              "agent's plugin: `emporia setup agent NAME` (or `hermes emporia setup`), then "
+              "`hermes -p NAME dashboard`.")
         return 1
-    inst.install_dashboard_plugin(me, relay_url(), Path(args.hermes_home) if args.hermes_home
-                                  else hermes_home())
+    inst = installer()
+    if not inst.from_catalog():
+        inst.install_platform_plugin(profile)
+    else:
+        env = _mcp_env(profile)
+        inst.write_tab_settings(profile, profile, env.get("EMPORIA_RELAY_URL") or relay_url())
+    print(f"  The Emporia tab: hermes -p {hermes_layout.name_of(profile)} dashboard, then the Emporia tab.")
     inst.print_restart_instructions([])
     return 0
 
@@ -6267,9 +6270,10 @@ def setup_overview() -> None:
             how = ""
         line("!" if how else "✓", name, ", ".join(bits), how)
     print("\nDashboard")
-    dash = hermes_home() / "plugins" / "emporia"
-    line("✓" if dash.exists() else "·", "Emporia tab", "installed" if dash.exists() else "not installed",
-         "" if dash.exists() else "emporia setup dashboard")
+    tabbed = [hermes_layout.name_of(p) for p, _ in _agent_profiles(profiles_root())
+              if (p / "plugin-data" / "emporia" / "emporia.json").exists()]
+    line("✓" if tabbed else "·", "Emporia tab", f"with {', '.join(tabbed)}: hermes -p NAME dashboard" if tabbed
+         else "comes with an agent's plugin", "" if tabbed else "emporia setup agent NAME")
     print("\nNot available yet (see ROADMAP.md)")
     for name, what in (("AWS KMS signer", "wallet and operator keys the machine never holds"),
                        ("Hosted wallets", "Privy, MetaMask Agent Wallet, Coinbase — limits on their servers"),
@@ -6568,8 +6572,8 @@ def build_parser() -> argparse.ArgumentParser:
     sp.add_argument("--stripe-webhook-env", default="", help="read the webhook secret from this env var")
     sp.add_argument("--stripe-profile-id", default="")
     sp.set_defaults(func=cmd_setup_stripe)
-    db = ss.add_parser("dashboard", help="the Emporia tab in the Hermes dashboard")
-    db.add_argument("--hermes-home", default="")
+    db = ss.add_parser("dashboard", help="the Emporia tab in an agent's Hermes dashboard")
+    db.add_argument("name", nargs="?", default="", help="the agent profile (default: this one)")
     db.set_defaults(func=cmd_setup_dashboard)
     return p
 

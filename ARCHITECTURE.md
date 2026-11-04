@@ -250,14 +250,24 @@ wallet is held, whether the signer and a live relay are reachable from the agent
 delegation routes that undo a role (P207). No agent administers the signer: its decisions are the
 operator's by design (`docs/agent-security-setup.md` § The signer).
 
-## The Hermes side (P284, P285)
+## The Hermes side (P284, P285, P295)
+
+- **One plugin (P295):** `hermes_plugin/emporia/` is the whole Hermes side. It holds the gateway
+  platform (relay events), the hooks (key guard, turn cap), the agent's skills, the dashboard tab
+  (`dashboard/`, built bundle committed in `dashboard/dist/`) and the command `hermes emporia
+  setup|status|doctor|update`. In a profile it lives at `<profile>/plugins/emporia`, enabled under key
+  `emporia`; the tab's settings are in `<profile>/plugin-data/emporia/emporia.json`. Design:
+  `docs/proposals/hermes-plugin-product.md`.
 
 - **Turn cap (`turn_cap.py`):** a `pre_llm_call` hook counts turns started on the Emporia platform
   in a rolling 24 h; past `EMPORIA_DAILY_TURNS` (default 300, 0 = none) the turn ends before
-  inference. Other platforms are untouched. Both plugins require Hermes >= 0.22.6.
-- **Locked skills:** agent profiles get real copies of Emporia's skills (Hermes cannot lock a
-  symlinked one), locked with `hermes curator lock`; `emporia agent refresh` / `update` replace them
-  and doctor flags an older copy. The dev profile keeps links.
+  inference. Other platforms are untouched. The plugin requires Hermes >= 0.22.6.
+- **Plugin skills:** the skills ship inside the plugin and are registered read-only as
+  `emporia:emporia` and `emporia:emporia-setup`, so neither the agent nor Hermes's background review
+  can change them. They are no longer copied into profiles or locked with `hermes curator lock`.
+  `emporia agent refresh` copies the plugin fresh and removes old skill copies; doctor warns about
+  old copies. Bulk commands (`agent refresh all`, `update`) touch only profiles with an `emporia`
+  MCP server in config.yaml.
 - **The local relay comes back:** each agent's bridge, as it starts, runs `ensure_local_relay`:
   if its relay is the address `emporia relay start` recorded, does not answer and no `relay stop`
   followed, it starts it once under a lock, with a clean environment (no `EMPORIA_*`, nothing from

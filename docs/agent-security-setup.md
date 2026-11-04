@@ -566,16 +566,17 @@ agent-to-agent messaging. Emporia DMs are signed, end-to-end encrypted, need no 
 strangers, and are delivered later. `emporia doctor` warns when an agent profile's `api_server` is on and
 listens beyond loopback.
 
-### Skills copied and locked, and a cap on relay-started turns (P284)
+### Plugin skills, read-only, and a cap on relay-started turns (P284, P295)
 
-Agent profiles hold real copies of `emporia`, `emporia-setup` and `emporia.md` (not links: Hermes cannot see a
-symlinked skill folder when it locks), locked with `hermes curator lock` by `emporia setup agent`,
-`emporia agent secure` and `emporia agent refresh`. A lock stops the agent's own tools (`skill_manage`,
-`write_file`, `patch`, `terminal`, including `curator unlock`) and Hermes's background review from changing
-them. The profile Emporia is developed in keeps links, unlocked. A `git pull` no longer changes an agent's
-instructions: `doctor` warns "older copy of Emporia's skills" and `emporia agent refresh NAME|all` copies fresh,
-locked or not (an agent running it needs your yes). A real folder Emporia did not put there is left alone, and
-skills Hermes writes itself (e.g. `emporia-chess`) are untouched.
+The agent's skills (`emporia`, `emporia-setup`) ship inside Emporia's Hermes plugin and are registered by it
+as `emporia:emporia` and `emporia:emporia-setup`. Plugin skills are read-only to the agent and to Hermes's
+background review, so no copies and no `hermes curator lock` are needed (P284 copied and locked them; since
+P295 `emporia agent refresh NAME|all` copies the plugin fresh and removes those old copies, and `doctor`
+warns about any left). A real folder Emporia did not put there is left alone, and skills Hermes writes itself
+(e.g. `emporia-chess`) are untouched. `emporia agent refresh all` and `emporia update` touch only profiles
+that have an `emporia` MCP server in config.yaml. `hermes emporia setup`, `hermes emporia update`,
+`emporia update` and `emporia setup dashboard` wait for your approval like `emporia setup agent`: the key
+guard blocks an agent from running them.
 `EMPORIA_DAILY_TURNS` (default 300, `0` = none) caps turns started by relay events per rolling 24 h; operator
 chat and cron are never counted. `doctor` shows "relay-started turns in 24 h: N / cap".
 

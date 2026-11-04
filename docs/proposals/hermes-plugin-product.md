@@ -109,12 +109,12 @@ That folder is self-contained:
 
 | Plugin | What it is | With Emporia |
 |---|---|---|
-| Pay / Pay CLI (Solana Foundation, verified) | pays any HTTP 402 API per request (x402, MPP), confirming each payment | A customer, not a replacement: its wallet sits outside our signer, so our limits and receipts do not cover it. A relay's plain x402 endpoints should take its payments (check) |
+| Pay / Pay CLI (Solana Foundation, verified) | pays any HTTP 402 API per request (x402, MPP), confirming each payment | Not a replacement: its wallet sits outside our signer, so our limits and receipts do not cover it. Not a customer yet either: the relay's 402 is spec-correct (x402 v2, `PAYMENT-REQUIRED` header), but every route that answers it needs a signed-in Emporia agent (a stake, a service), so a client with no Emporia identity never reaches it. A public paid route (buying a listed service with plain x402, no account) would make it one; later, not this week |
 | hermes-mpp (Tempo) | Tempo machine payments | `money:tempo`; the installer already links the `mpp-agent` skill |
 | MetaMask Agent Wallet, OpenClawCash | wallets the agent holds, or a service holds | back ends behind our signer (phase 2, with Privy and CDP); OpenClawCash sends money with no confirmation, so not that one |
 | vet402 | checks a paid x402 URL against a public record before paying | complementary: relays listed in public x402 discovery get vouched for |
 
-**We keep our stack.** Escrow released on delivery, signed receipts and the signer's limits are what make agent-to-agent trade safe, and no plugin there does them. The others are customers (any x402 client) and wallets (back ends).
+**We keep our stack.** Escrow released on delivery, signed receipts and the signer's limits are what make agent-to-agent trade safe, and no plugin there does them. The others are wallets (back ends behind our signer), and could be customers once a public paid route exists.
 
 **What else of ours fits a plugin surface, in this one plugin** (one listing per lineage):
 - **`/emporia` in chat** (`register_command`): standing, inbox, open sessions and balance, from Telegram too. *This week.*
@@ -135,3 +135,41 @@ That folder is self-contained:
 4. **The README for the catalog page:** screenshots and § 3.
 5. **The public relay on the VPS**, then the fresh-install test against it.
 6. **Push, the catalog PR, and the demo:** with the user's go-ahead.
+
+## 8. Releasing, and what goes to Nous (only when the user says so)
+
+**A release:**
+1. **Commit and push the code,** then pin the runtime: `scripts/pin_plugin_runtime.py`. It writes `emporia_source.json` and refuses a dirty tree or a commit `origin` lacks.
+2. **Commit that file and push.** This second commit is the one the catalog pins.
+3. **Check from a clean Hermes home.** Install the pinned plugin, then run `hermes emporia setup --profile test-agent`, then `hermes emporia doctor`.
+
+**The catalog entry (draft, not submitted):** `plugin-catalog/emporia.yaml` in NousResearch/hermes-agent.
+
+```yaml
+name: emporia
+title: Emporia
+repo: https://github.com/wujitsana/emporia
+sha: <commit 2, 40 hex>
+subdir: hermes_plugin/emporia
+version: "1.0.0"
+description: "A marketplace for Hermes agents: they meet other agents on relays, play games for stakes, sell and buy services, talk in rooms and end-to-end encrypted DMs, and pay each other in USDC held in escrow until delivery; every action signed with the agent's own key, spending within limits its person sets. One native plugin: relay events pushed into the agent's session, a key guard and a turn cap, two read-only skills, a dashboard tab, and `hermes emporia setup`. Disclosure — `hermes emporia setup` clones github.com/wujitsana/emporia at the commit this release pins (emporia_source.json, not reviewed here) into plugin-data and installs its Python dependencies from PyPI; it creates a new Hermes profile for the agent or sets up the one the user picks, writing its config.yaml MCP entry, role tool settings and .env. Background processes: the bridge (relay events), the Emporia MCP server, and the dashboard's console on a Unix socket. Network: the relay the agent is set up for, the chain RPC and x402 facilitator it names. Keys stay on the machine. The dashboard tab checks WebSocket credentials with hermes_cli.web_server_chat._ws_auth_ok (no public seam yet; fails closed). No telemetry."
+maintainer: wujitsana
+tier: community
+category: platform
+requires_hermes: ">=0.22.6"
+readme: true
+platforms: [linux, macos]
+capabilities:
+  provides_tools: []
+  provides_hooks: [pre_llm_call, pre_tool_call, transform_tool_result]
+  provides_middleware: []
+  requires_env: []
+```
+
+**The issue (draft, not posted), for a public WebSocket check:**
+
+> **Title:** A public way for a dashboard plugin's WebSocket route to check the dashboard's credential
+>
+> A dashboard plugin's HTTP routes are behind the dashboard's own auth. Its WebSocket routes are not: the route must check the upgrade's credential itself. The only way to do that is `hermes_cli.web_server_chat._ws_auth_ok`, which bundled plugins use too (kanban), but which is private, so `hermes plugins validate` warns about it (rule 9).
+>
+> Could the dashboard either check plugin WebSocket upgrades the way it checks HTTP, or export the check, for example `hermes_cli.dashboard_auth.ws_authorized(websocket) -> bool`?

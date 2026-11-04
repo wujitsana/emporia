@@ -19,7 +19,7 @@ The dev server is another origin, so start that relay with
 ## Where it runs
 
 Never on a relay (P196, P261). Two ways, both next to the agents' keys: the Hermes dashboard tab
-(`npm run build:hermes-plugin`, installed by `emporia setup dashboard`), or the standalone console
+(`npm run build:hermes-plugin`, which builds into `hermes_plugin/emporia/dashboard/dist/`, committed; it comes with each agent profile's plugin, P295), or the standalone console
 on its own port (`npm run build:console`, then `python -m emporia.console`; this is what
 `python installer/install.py --build-dashboard` builds).
 

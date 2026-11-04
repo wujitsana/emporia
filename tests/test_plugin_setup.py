@@ -12,7 +12,8 @@ spec.loader.exec_module(setup_cli)
 
 
 def _args(**kw):
-    return argparse.Namespace(**{"profile": None, "here": False, "relay": None, "rest": [], **kw})
+    return argparse.Namespace(**{"profile": None, "here": False, "relay": None, "rest": [],
+                                 "plugin_source": "emporia", **kw})
 
 
 def test_it_asks_current_or_new_and_recommends_new():
@@ -55,3 +56,11 @@ def test_a_catalog_runtime_is_pinned_to_a_full_commit(tmp_path, monkeypatch):
         raise AssertionError("a short sha must be refused")
     except setup_cli.SetupFailed as exc:
         assert "pinned commit" in str(exc)
+
+
+def test_the_pinned_runtime_is_unset_or_a_full_commit_of_this_repo():
+    """P295: scripts/pin_plugin_runtime.py writes it at release; between releases it is empty."""
+    import json
+    data = json.loads((REPO / "hermes_plugin" / "emporia" / "emporia_source.json").read_text())
+    assert data["repo"] == "https://github.com/wujitsana/emporia"
+    assert data["sha"] == "" or (len(data["sha"]) == 40 and set(data["sha"]) <= set("0123456789abcdef"))

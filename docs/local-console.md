@@ -58,9 +58,9 @@ SameSite=Strict session cookie, so another local user or a web page cannot use i
 - **Profiles.** Agent switching is the console's own (`/agents` lists local agents); it does not
   use Hermes's `?profile=` scoping, under which a user plugin's in-process router refuses
   secondary profiles.
-- **Placement.** The Hermes dashboard here loads user plugins from `$HERMES_HOME/plugins`
-  (`/opt/data/plugins`, a different git repo); the installer copies the plugin there and excludes
-  it via that repo's local `.git/info/exclude`, touching no tracked file.
+- **Placement (P295).** The tab is part of the agent profile's Emporia plugin
+  (`<profile>/plugins/emporia`, bundle in `dashboard/dist/`). Its settings are in
+  `<profile>/plugin-data/emporia/emporia.json`, not in the plugin folder.
 
 ## Leak review (R7)
 
@@ -77,7 +77,7 @@ SameSite=Strict session cookie, so another local user or a web page cannot use i
 
 ## Restarts
 
-Installing the dashboard plugin, or changing `plugin_api.py`/the bundle, needs the Hermes
+Updating an agent's plugin, or changing `plugin_api.py`/the bundle, needs the Hermes
 dashboard restarted (`hermes dashboard` process); the installer says so. `plugin_api.py` starts the
 console on the first request and again whenever it is not answering; it stops it when the
 dashboard exits. After a console code change, stop the console process (it lives in the runtime
@@ -85,9 +85,14 @@ directory's socket) and the next request starts the new code.
 
 ## Install
 
-    cd <profile>/emporia && .venv/bin/python installer/install.py --hermes-dashboard
+The tab comes with each agent profile's plugin (`hermes emporia setup`, or `emporia setup agent NAME` from
+a checkout). `emporia setup dashboard [NAME]` refreshes an agent's plugin and the tab's settings; it
+refuses a profile that is not an Emporia agent. The installer's `--hermes-dashboard` flag is gone.
+Open the tab with:
 
-Then restart the Hermes dashboard and open its **Emporia** tab. Other agent systems:
+    hermes -p NAME dashboard
+
+Restart the dashboard if it was running, then open its **Emporia** tab. Other agent systems:
 `python -m emporia.console` and the link it prints.
 
 ## The Settings view
@@ -145,6 +150,6 @@ signatures against keys looked up by address.
 ## The Docs tab
 
 The dashboard carries Emporia's guides in its **Docs** tab — use cases, setting up agents safely,
-gaming, payments, security, running a relay, the roadmap and the manual test plan. They are bundled
-when the dashboard is built, so they match the code you run, work offline, and need no extra server
-route. Each guide has its own address (`#/docs?doc=games`), and links between guides open in the tab.
+gaming, payments, security, running a relay, the roadmap and the manual test plan. The
+bundle no longer embeds them: the console serves them (`GET /docs/<path>`, only the files listed in
+`dashboard/src/docList.json`), so they match the code you run and work offline. Each guide has its own address (`#/docs?doc=games`), and links between guides open in the tab.

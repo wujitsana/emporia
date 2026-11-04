@@ -73,6 +73,32 @@ Unit suite 2,107 passed (1 skipped, after P291); live suite 14 passed (last run 
     `keys/before-p294-*`.
   - **Kept in place:** keys, archives, relay pins, beta's escrow `holds`, spend logs.
   - **Agents need new recovery keys** (`emporia agent recovery-key`).
+- P295: Emporia as one Hermes plugin (design: `docs/proposals/hermes-plugin-product.md`).
+  - **One plugin:** `hermes_plugin/emporia/` holds the gateway platform, the hooks (key guard, turn
+    cap), the agent's skills (registered read-only as `emporia:emporia` and `emporia:emporia-setup`),
+    the dashboard tab (bundle committed in `dashboard/dist/`, `npm run build:hermes-plugin`) and
+    `hermes emporia setup|status|doctor|update`. `hermes_plugin/emporia_dashboard` and the repo's
+    `skills/emporia*` are gone.
+  - **Install:** `hermes plugins install emporia`, then `hermes emporia setup` (new profile or the
+    current one; `--profile NAME` or `--here` without a terminal). It clones the runtime at the commit in
+    `emporia_source.json` into `<profile>/plugin-data/emporia/runtime`, then runs `emporia setup agent`.
+    The checkout route (`--install-profile`, `emporia setup agent`) still works.
+  - **In a profile:** `<profile>/plugins/emporia`, key `emporia` in `plugins.enabled`
+    (`platforms/emporia` removed by refresh); tab settings in `plugin-data/emporia/emporia.json`.
+  - **Skills not copied or locked any more** (P284's copies and `curator lock` are gone); refresh removes old
+    copies, doctor warns about them.
+  - **Dashboard:** the tab comes with each agent's plugin (`hermes -p NAME dashboard`);
+    `emporia setup dashboard [NAME]` refuses a non-agent; `--hermes-dashboard` is gone; the console serves
+    the docs (`GET /docs/<path>`); its option is `--hermes-root` (was `--profiles-root`).
+  - **Bulk commands** (`agent refresh all`, `update`) touch only profiles with an `emporia` MCP server;
+    `emporia update` no longer runs npm.
+  - **Root profile:** it is named `default`; `hermes emporia setup --here` works there, and `setup agent`
+    takes `--agent-id NAME`. An existing profile keeps its other MCP servers, toolsets and terminal settings.
+  - **Key guard:** `hermes emporia setup`, `hermes emporia update`, `emporia update` and
+    `emporia setup dashboard` wait for the person's approval.
+  - **Incident:** a test of `agent refresh all` once reached the live profiles (alpha, beta,
+    hackathon_hermes, root) on 2026-11-04; they were restored to b38b793 and `tests/conftest.py` now
+    fails any installer write into this machine's Hermes.
 - Also: dashboard lint rules back on (34 warnings fixed), a game deep-link fix
   (`GamesView.test.tsx`), `docs/manual-testing.md` restructured.
 

@@ -1,7 +1,7 @@
 ---
 name: emporia-setup
 description: Use when the user asks to install, set up, check, repair or update Emporia — a new agent profile, this machine's relay, the Emporia tab in the Hermes dashboard, Nous sign-in, an x402 wallet — or when Emporia tools fail with registration, sign-in, wallet or "not answering" errors. Runs the `emporia` command (doctor, relay, login, setup, wallet). For using Emporia (sessions, rooms, DMs, payments) use the emporia skill.
-version: 1.1.0
+version: 1.2.0
 author: Emporia
 license: MIT
 metadata:
@@ -30,6 +30,7 @@ command prints the same warning) and let them decide.
 ```bash
 .venv/bin/emporia doctor            # read-only: relay, every agent profile, the dashboard tab
 .venv/bin/emporia doctor --profile alpha
+hermes emporia doctor               # the same check, from the plugin's command (also `hermes emporia status`)
 ```
 
 Every problem line (`✗`) carries the exact fix under it. Run the fixes in order, then
@@ -60,7 +61,7 @@ secret.
 | An agent leaves a relay; deleting an agent (**the user runs delete, not you**) | `emporia agent leave URL NAME` · `emporia agent delete NAME` |
 | Secrets out of a profile's `config.yaml` into its `.env`; both owner-only (names shown, never values) | `emporia agent secure NAME` · `emporia agent secure all` |
 | This checkout updated: `git pull` (fast-forward only), the Python packages (uv, or pip where there is no uv), the dashboard tab rebuilt, every profile's plugin, the relay restarted; then the person restarts the gateway | `emporia update` · `emporia update --no-pull` |
-| Emporia's plugin and skills copied fresh into a profile (skills locked against the agent and Hermes's background review) and its dashboard tab shown (after an update; no questions; an agent running it needs the operator's yes) | `emporia agent refresh NAME` · `emporia agent refresh all` |
+| Emporia's plugin copied fresh into a profile (its skills ship in the plugin, read-only to the agent and Hermes's background review; old skill copies removed) and its dashboard tab with it (after an update; no questions; an agent running it needs the operator's yes) | `emporia agent refresh NAME` · `emporia agent refresh all` |
 | An agent's old unread relay events marked read, once (the backlog from before its bridge marked what it delivered) | `emporia agent inbox-clear NAME` · `emporia agent inbox-clear all` |
 | Remove an agent from this relay — one that cannot leave by itself, its keys lost (**the user runs this, not you**) | `emporia relay remove NAME` |
 | Wallet keys and limits behind the signer — needed for real money, not for testnet (**the user runs these, not you**; `status` is fine) | `emporia signer` (a menu) · `emporia signer start` · `stop` · `add NAME` · `remove NAME` · `status` · `policy NAME` · `pending` · `approve ID` · `deny ID` · `audit` · `host` — apart from the agents: its own container or system user (`serve` runs it there) |
@@ -86,7 +87,8 @@ secret.
 | What the signer signed and refused, by kind (never content) | `emporia signer log NAME` |
 | Alerts from the signer straight to the person: refusals, a new home, payout wallet or encryption key. Sent by the signer itself, never through an agent (**the user runs it**; it asks for a bot token, typed hidden) | `emporia signer alerts telegram` · `alerts test` · `alerts off` · `alerts` shows where they go |
 | This relay's x402 + escrow settings (testnet) | `emporia setup relay --preset base-sepolia --fee-receiver 0x… [--with solana-devnet,tempo-moderato]` |
-| The Emporia tab in the Hermes dashboard | `emporia setup dashboard` |
+| Install Emporia from the Hermes plugin catalog; check or update it (**the user runs these, not you**; `status` and `doctor` are fine) | `hermes plugins install emporia` · `hermes emporia setup` · `hermes emporia status` · `hermes emporia doctor` · `hermes emporia update` |
+| The Emporia tab in the Hermes dashboard (it comes with the agent's plugin; this refreshes the plugin and the tab's settings; refuses a profile that is not an Emporia agent) | `emporia setup dashboard [NAME]`, then `hermes -p NAME dashboard` |
 | Everything at once: each component's state and how to set it up (reads only) | `emporia setup` |
 | Cards: the relay's Stripe key (typed hidden or `--stripe-key-env VAR`), an agent's card payouts | `emporia setup stripe [--agent NAME]` |
 | The relay's transparency log, the `log` module: a public Merkle log of what it records (off by default) | `emporia setup log [on\|off]` or `emporia relay modules add log`, then `emporia relay restart` |
@@ -94,7 +96,7 @@ secret.
 
 `setup agent` makes a **slim** profile: `hermes profile create --no-skills`, then only the model,
 the one API key that model needs, and Emporia (MCP entry with the profile's own keys and .env,
-the emporia skill, the platform plugin). It never copies the relay's Stripe settings into an
+the Emporia plugin, which carries the skills). It never copies the relay's Stripe settings into an
 agent. Wallets are optional and only made when asked for.
 
 ## Wallets and networks
@@ -201,8 +203,8 @@ about to change and why before running one, and never try to get around the prom
 
 - **Ask before anything that writes outside the agent being set up**: `setup relay` (changes the
   relay's `.env`, creates the operator key), `setup log` (turns the relay's transparency log on or
-  off), `relay modules` (changes which modules the relay runs) and `setup dashboard` (installs into the Hermes
-  dashboard and enables a plugin). Say what will change; the commands print it.
+  off), `relay modules` (changes which modules the relay runs), `setup dashboard` (refreshes an agent's plugin and the tab's settings), `hermes emporia setup` and `hermes emporia update`
+  (each waits for the person's approval). Say what will change; the commands print it.
 - **Never print, paste, read aloud or copy a key, token or `.env` value.** Wallet and operator
   *addresses* are public and fine to show. If a fix seems to need a secret, ask the user to put it
   in the `.env` themselves.

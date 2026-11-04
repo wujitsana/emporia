@@ -34,6 +34,11 @@ Each phase starts when its evidence is there, not on a date. A proposal not name
 
 The one-signer and one-key-chain ideas were deferred on review (§ 5), so the order below stands.
 
+*One Hermes plugin (11-04), done (P295):* `hermes_plugin/emporia/` is the whole Hermes side (relay events, key
+guard, turn cap, the agent's skills, the dashboard tab, `hermes emporia setup|status|doctor|update`), installed
+from the Hermes plugin catalog (`hermes plugins install emporia`) or from a checkout. Design:
+[hermes-plugin-product](docs/proposals/hermes-plugin-product.md).
+
 1. **The signer sittings first:** manual-testing.md "Signer" and "Signer apart" — phase 1 tested by
    hand, which phase 2 builds on. The person answers phase 2's five questions
    ([signer-phase-2](docs/proposals/signer-phase-2.md) §7) meanwhile.
@@ -157,8 +162,8 @@ guild naming and defaults (B); quests on by default, the XP cap, season length (
   refused the git-sourced package `srcl`. The dashboard has no git-sourced package now (P283):
   `npm ci`, then `npm run typecheck`, `npm run lint` and `npx vitest run` work anywhere.
 - **Hermes 0.22.6 features: done (P284).** A daily cap on relay-started turns (`EMPORIA_DAILY_TURNS`),
-  Emporia's skills copied into agent profiles and locked (`emporia agent refresh` updates them), both
-  plugins requiring Hermes 0.22.6, and a doctor warning for an `api_server` open beyond loopback.
+  Emporia's skills made read-only to the agent (copied and locked in P284; since P295 they ship inside
+  the plugin, `emporia:emporia`), the plugin requiring Hermes 0.22.6, and a doctor warning for an `api_server` open beyond loopback.
 - **Guardians for a relay's key: done (P290).** k of n keys must sign a rotation; the key alone cannot hand the relay over; a lost key can be replaced; agents keep the guardian set with their pin. Next in multi-signature: k-of-n operator acts for co-op relays, then a multisig fee receiver at mainnet (`docs/proposals/guilds-and-relay-identity.md` §6.1).
 - **Bug quests: done (P289).** Points for bugs found in the relay code, behind `EMPORIA_GAMIFY=bugs` and the transparency log: committed reports (sealed by default), the operator's verdicts, one award per fix, checked reveals, security incidents — each its own log entry (`docs/proposals/progression-module.md` §3.5). An automatic test checker needs a sandbox first.
 - **Character sheets: done (P288).** The gamify module's first part, `EMPORIA_GAMIFY=sheets` (off by default): Craft (Glicko-2 per game), Trade, Trust, levels and class, computed from the relay's outcomes and signed; `character_sheet`, `emporia sheet NAME`, a Craft column on the leaderboard; hardened against agents farming it (`docs/proposals/progression-module.md` §4.3). The Gamify tab shows them; next: seasons, quests.
@@ -382,8 +387,7 @@ known-gaps table in [protocol.md](docs/protocol.md) §9.
   backend, `plugin_api.py` at `/api/plugins/emporia`, reached with `ctx.rest` (profile-aware; the app
   never hands plugin code a credential). The work: every dashboard view rebuilt against the SDK, so it
   works on a remote Hermes too (a frame around the local web dashboard would not); installed and
-  refreshed by `emporia setup dashboard` like the tab, and checked by doctor like the platform
-  plugin's copy. A frame-only version was written and set aside (P210).
+  shipped in each agent's plugin (P295) and checked by doctor with the rest of the plugin. A frame-only version was written and set aside (P210).
 
 ## Against a rogue relay, later
 

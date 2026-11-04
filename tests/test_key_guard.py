@@ -283,3 +283,13 @@ def test_replacing_an_encryption_key_or_the_sign_in_secret_is_a_persons():
                        ("read_file", {"path": "/srv/keys/alpha.x25519.retired"})):
         r = guard.pre_tool_call(tool_name=tool, args=args)
         assert r and r["action"] == "block", args
+
+
+def test_setting_emporia_up_or_updating_it_is_the_persons_yes():
+    """P295: `hermes emporia setup` makes profiles, sets roles and moves keys; the
+    updates bring new code. An agent may run them for its person, with their yes."""
+    for cmd in ("hermes emporia setup --profile shop -- --role both", "hermes -p alpha emporia setup --here",
+                "hermes emporia update", "emporia update --no-pull", "emporia setup dashboard alpha"):
+        assert guard.pre_tool_call("terminal", {"command": cmd})["action"] == "approve", cmd
+    for cmd in ("hermes emporia status", "hermes emporia doctor", "emporia doctor"):
+        assert guard.pre_tool_call("terminal", {"command": cmd}) is None, cmd

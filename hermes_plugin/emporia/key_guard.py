@@ -55,14 +55,16 @@ _KEY_NAMES = re.compile(
 # argparse takes options anywhere — and however emporia is started.
 _EMPORIA_CLI = re.compile(r"(?:\bemporia\b(?![._/-])|\bemporia\.cli\b|\bemporia/cli\.py\b)")
 _SENSITIVE = (
-    ("setup", {"agent", "relay", "stripe"}),
+    ("setup", {"agent", "relay", "stripe", "dashboard",
+               "hermes"}),                                 # P295: `hermes emporia setup` — profiles, roles, keys
+    ("update", {"emporia", "hermes"}),                     # P295: new code for the runtime and the plugin
     ("role", {"marketplace", "developer", "both"}),
     ("identity", {"store", "link"}),
     ("wallet", {"create", "import", "store", "register", "limits"}),
     ("relay", {"use", "move", "backup", "link", "unlink", "access", "members", "config"}),
     ("visits", {"policy", "allow", "deny", "forget"}),   # P188: where an agent may go
     ("dms", {"on", "off", "unblock"}),                     # P185: DMs from other relays; P273: lifting a block
-    ("agent", {"leave", "refresh"}),                       # P195: leaving a relay; P284: refresh copies in skills it then locks
+    ("agent", {"leave", "refresh"}),                       # P195: leaving a relay; P224: refresh copies the plugin in
 )
 
 
