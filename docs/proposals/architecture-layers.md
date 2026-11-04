@@ -60,7 +60,8 @@ A module's settings stay in their `relay_config` group, so `emporia relay config
 - a part whose dependency is off (bug quests without the log);
 - `EMPORIA_X402_ENABLED` on with no facilitator or network;
 - card options on with no Stripe key;
-- sealed DMs on with nothing linked;
+- (sealed DMs on with nothing linked was refused at first; the live suite showed it is just an order
+  of setting up, so since 11-04 federation simply isn't running until a relay is linked)
 - an unknown gamify part.
 
 Before, each of these quietly turned the part off.

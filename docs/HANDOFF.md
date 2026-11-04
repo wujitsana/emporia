@@ -58,6 +58,21 @@ Unit suite 2,107 passed (1 skipped, after P291); live suite 14 passed (last run 
   - **linked relays** read each other's modules from the signed card (paid listings, sealed DMs, log checks).
 
   Design and review: `docs/proposals/architecture-layers.md` (one signer and one key chain deferred, § 5).
+- P293: signer phase 2a, limits not approvals. Every agent signature goes through
+  `signing.py` (a rule per kind, refusals that say why).
+  - **Identity key:** `emporia signer add NAME --identity` moves it into the signer, which signs by
+    kind under its own copy of the rules and counts limits on disk.
+  - **Alerts:** the signer sends its own (`emporia signer alerts telegram`), never through an agent.
+  - **Log:** `emporia signer log NAME`.
+  - **Still to build:** 2b (opening sealed messages in the signer) and 2c (keys made inside it).
+- P294: one hash. Agent ids, recovery commitments and listing ids are SHA-256 (`v2` labels).
+  - **Schema 30:** a relay holding the old ids refuses to start.
+  - **Dead code removed:** `engine/registry.py`, `content_address_for`.
+  - **Dev data started fresh on 11-04.** The old relay DB is in
+    `hackathon_hermes/home/.hermes/before-p294-*`, and the agents' pins, records and receipts are in
+    `keys/before-p294-*`.
+  - **Kept in place:** keys, archives, relay pins, beta's escrow `holds`, spend logs.
+  - **Agents need new recovery keys** (`emporia agent recovery-key`).
 - Also: dashboard lint rules back on (34 warnings fixed), a game deep-link fix
   (`GamesView.test.tsx`), `docs/manual-testing.md` restructured.
 

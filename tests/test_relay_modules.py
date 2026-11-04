@@ -53,13 +53,12 @@ def test_a_part_without_its_dependency_is_off_and_the_relay_refuses_to_start(cor
 def test_half_set_up_money_and_federation_are_refused_by_name(core):
     core.setenv("EMPORIA_X402_ENABLED", "1")            # no facilitator, no network
     core.setenv("EMPORIA_CARD_GAME_STAKES", "1")        # no Stripe key
-    core.setenv("EMPORIA_FEDERATED_DMS", "1")           # nothing linked
+    core.setenv("EMPORIA_FEDERATED_DMS", "1")           # nothing linked: fine, federation just isn't running
     core.setenv("EMPORIA_GAMIFY", "sheets,quests")
     wrong = "\n".join(rm.problems())
-    for said in ("EMPORIA_X402_ENABLED is on", "EMPORIA_CARD_GAME_STAKES is on", "no relay is linked",
-                 "no part called quests"):
+    for said in ("EMPORIA_X402_ENABLED is on", "EMPORIA_CARD_GAME_STAKES is on", "no part called quests"):
         assert said in wrong
-    assert "money" not in rm.running()
+    assert "money" not in rm.running() and "no relay is linked" not in wrong
 
 
 def test_a_closed_relay_does_not_federate(core):

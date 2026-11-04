@@ -121,8 +121,8 @@ def _federation_detail(links: list[str], parts: set[str]) -> dict[str, Any]:
 
 
 def _federation_wrong(links: list[str]) -> list[str]:
-    if _on("EMPORIA_FEDERATED_DMS") and not links:
-        return ["federation: EMPORIA_FEDERATED_DMS is on, but no relay is linked — `emporia relay link URL`"]
+    # Sealed DMs switched on before any relay is linked is an order of setting up, not a
+    # fault: nothing is silently off, federation simply is not running yet. Not refused.
     return []
 
 
