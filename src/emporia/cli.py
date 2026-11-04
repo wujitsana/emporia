@@ -1240,6 +1240,70 @@ def cmd_sheet(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_bugs(args: argparse.Namespace) -> int:
+    """P289: `emporia bugs NAME` — the bug reports on NAME's relay and NAME's points.
+    As the relay's operator, a person (refused from an agent's tools):
+    `emporia bugs NAME verdict ID accepted --severity high --fix COMMIT` (or `duplicate
+    --of ID`, or `invalid`), `emporia bugs NAME incident "SUMMARY" [--affected …]
+    [--report ID]`, `emporia bugs NAME fixed INCIDENT_ID`. Each is an entry in the relay's
+    transparency log."""
+    import json as _json
+    agents = {p.name: p for p, _ in _agent_profiles(profiles_root())}
+    if args.name not in agents:
+        print(f"bugs: no agent {args.name!r} ({', '.join(agents) or 'none set up'})")
+        return 1
+    act = args.act or "list"
+    if act == "list":
+        code = "import json\nfrom emporia import mcp_server as m\nprint(json.dumps(m.bug_reports()))"
+    else:
+        if act == "verdict":
+            if len(args.rest) < 2:
+                print("bugs: verdict ID accepted|duplicate|invalid")
+                return 1
+            path, body = f"/bugs/{args.rest[0]}/verdict", {
+                "verdict": args.rest[1], "severity": args.severity or "", "fix_commit": args.fix or "",
+                "duplicate_of": getattr(args, "of", None) or ""}
+        elif act == "incident":
+            if not args.rest:
+                print('bugs: incident "what happened"')
+                return 1
+            path, body = "/security/incidents", {"summary": " ".join(args.rest), "affected": args.affected or "",
+                                                 "report_id": args.report or ""}
+        elif act == "fixed":
+            if not args.rest:
+                print("bugs: fixed INCIDENT_ID")
+                return 1
+            path, body = f"/security/incidents/{args.rest[0]}/fixed", {}
+        else:
+            print("bugs: list, verdict, incident or fixed")
+            return 1
+        code = ("import json\nfrom emporia import mcp_server as m\n"
+                f"r = m._bearer_request('post', m._base() + {path!r}, agent_id=m.AGENT_ID, json={body!r}, timeout=15)\n"
+                "d = r.json() if r.content else {}\n"
+                "print(json.dumps({'success': r.status_code == 200, **(d if r.status_code == 200 else "
+                "{'error': d.get('detail', d)})}))")
+    r = _as_agent(agents[args.name], code, EMPORIA_NO_ARCHIVE="1")
+    try:
+        out = _json.loads(r.stdout.strip().splitlines()[-1])
+    except (ValueError, IndexError):
+        print(f"bugs: {(r.stderr or r.stdout).strip()[-300:]}")
+        return 1
+    if not out.get("success"):
+        print(f"bugs: {out.get('detail') or out.get('error')}")
+        return 1
+    if args.json or act != "list":
+        print(_json.dumps({k: v for k, v in out.items() if k != "success"}, indent=2))
+        return 0
+    pts = out.get("points") or {}
+    print(f"{args.name}: {pts.get('points', 0)} points · {pts.get('accepted', 0)} accepted, "
+          f"{pts.get('open', 0)} open, {pts.get('duplicate', 0)} duplicate, {pts.get('invalid', 0)} invalid")
+    for b in out.get("reports") or []:
+        what = "sealed" if b["sealed"] and not b["revealed"] else (b.get("title") or "")
+        print(f"  {b['report_id']}  {b['status']:<9} {b.get('severity') or b['severity_claimed']:<8} "
+              f"{b['points']:>3} pts  {b['reporter_id']:<12} {b['commit'][:10]}  {what}")
+    return 0
+
+
 def cmd_archive(args: argparse.Namespace) -> int:
     """P194: `emporia archive NAME` — refresh NAME's own archive of everything it
     is part of on its relay (DMs, rooms, its posts and listings, its sessions);
@@ -5739,6 +5803,18 @@ def build_parser() -> argparse.ArgumentParser:
     sh.add_argument("--of", help="another agent's sheet, read as NAME")
     sh.add_argument("--json", action="store_true", help="the sheet as JSON")
     sh.set_defaults(func=cmd_sheet)
+
+    bg = sub.add_parser("bugs", help="bug reports and points on an agent's relay; the operator's verdicts (gamify)")
+    bg.add_argument("name")
+    bg.add_argument("act", nargs="?", choices=["list", "verdict", "incident", "fixed"])
+    bg.add_argument("rest", nargs="*")
+    bg.add_argument("--severity", choices=["low", "medium", "high", "critical"])
+    bg.add_argument("--fix", help="verdict accepted: the commit that fixes it")
+    bg.add_argument("--of", help="verdict duplicate: the earlier report")
+    bg.add_argument("--affected", help="incident: what was affected")
+    bg.add_argument("--report", help="incident: the report that found it")
+    bg.add_argument("--json", action="store_true")
+    bg.set_defaults(func=cmd_bugs)
 
     de = sub.add_parser("delete", help="remove something an agent posted (or, as a moderator, removed)")
     de.add_argument("name")

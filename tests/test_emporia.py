@@ -2327,6 +2327,8 @@ def test_no_new_identity_as_proof_params():
         # agent_id (path): whose sheet to compute (P288) — a public read of outcomes the
         # relay already publishes in the agent's record, same posture as /record.
         ("GET", "/agents/{agent_id}/sheet"),
+        # agent_id (path): whose bug-quest points to count (P289) — a public read.
+        ("GET", "/agents/{agent_id}/points"),
         # agent_id (path): _require_caller_is-checked (P25-2), same posture as
         # /agents/{agent_id}/x402-wallet just above.
         ("POST", "/agents/{agent_id}/stripe-onboarding"),
@@ -2421,6 +2423,11 @@ def test_every_route_has_a_reviewed_auth_posture():
     """
 
     _AUTHENTICATED: set[tuple[str, str]] = {
+        ("POST", "/bugs"),  # P289: the reporter, signed in
+        ("POST", "/bugs/{report_id}/verdict"),  # P289: the relay operator only
+        ("POST", "/bugs/{report_id}/reveal"),  # P289: the reporter or the operator
+        ("POST", "/security/incidents"),  # P289: the relay operator only
+        ("POST", "/security/incidents/{incident_id}/fixed"),  # P289: the relay operator only
         ("POST", "/agents/{agent_id}/leave"),  # P195: the agent itself
         ("POST", "/delete"),  # P192: the caller, signing its removal
         ("POST", "/federation/v1/dm-delete"),  # P192: a linked relay, signed with its pinned key
@@ -2589,6 +2596,10 @@ def test_every_route_has_a_reviewed_auth_posture():
         ("GET", "/agents/{agent_id}/record"): "P182: an agent's record — counts only, read before staking or buying",
         ("GET", "/agents/{agent_id}/sheet"): "P288: an agent's sheet — computed from outcomes the record already publishes, and public games",
         ("GET", "/ratings"): "P288: one game's Craft ladder from finished public games",
+        ("GET", "/bugs"): "P289: bug reports — a sealed one shows only its commitment until revealed",
+        ("GET", "/bugs/{report_id}"): "P289: one bug report, as public as the list",
+        ("GET", "/agents/{agent_id}/points"): "P289: an agent's bug-quest points — counts only",
+        ("GET", "/security/incidents"): "P289: a relay's security incidents, public on purpose: on the record",
         ("POST", "/agents/{agent_id}/key-recovery"): "P246: the agent has lost its key, so it cannot sign in; the recovery key it committed to in its key log signs the request, and that signature is the whole authority. Throttled like sign-in",
         ("GET", "/log/state"): "P256: the relay's signed transparency-log state — the point of it is that anyone can check it",
         ("GET", "/log/epochs"): "P269: every log the relay has kept and the signed hand-overs between them — public like the log",
@@ -27442,7 +27453,7 @@ def test_the_membership_rule_is_written_in_exactly_one_place():
 #
 # V27 -> V28 (P278): `topic_acts`, an Agora topic's signed acts — its creation
 # with every setting, invites, taking them back, kicks.
-_SCHEMA_FINGERPRINT_V28 = "8260958657fee288058301b04cebf52aa89dc00c9cda7257e2919dec52f1eeec"
+_SCHEMA_FINGERPRINT_V29 = "9b11a3a272e8399e090bea236d2ec1d14d4db4461fb415f1363f9bb776f22de0"  # P289: bug_reports, security_incidents
 
 
 def _schema_fingerprint(db_path) -> tuple[str, int, int]:
@@ -27482,9 +27493,9 @@ def test_a_schema_change_requires_a_version_bump():
     from emporia.relay_server import SCHEMA_VERSION
 
     fingerprint, tables, columns = _schema_fingerprint(_test_db)
-    assert (SCHEMA_VERSION, fingerprint) == (28, _SCHEMA_FINGERPRINT_V28), (
+    assert (SCHEMA_VERSION, fingerprint) == (29, _SCHEMA_FINGERPRINT_V29), (
         f"the schema changed ({tables} tables, {columns} columns) or the version "
-        f"moved. Bump SCHEMA_VERSION *and* update _SCHEMA_FINGERPRINT_V28 — in "
+        f"moved. Bump SCHEMA_VERSION *and* update _SCHEMA_FINGERPRINT_V29 — in "
         f"that order, and never the fingerprint alone.\n"
         f"  code version: {SCHEMA_VERSION}\n  fingerprint:  {fingerprint}"
     )
@@ -27725,6 +27736,7 @@ def test_a_blocked_live_relay_is_told_every_way_out():
 _DASHBOARD_UNSURFACED_GETS: dict[str, str] = {
     "/agents/{}/dm-blocks": "P273: whom an agent blocks — its own tool and its operator's command",
     "/sessions/{}/encryption-keys": "P149: the players' key bundle a player's tools seal private text with — machine-facing; the dashboard only opens, through the local console",
+    "/bugs/{}": "P289: one bug report — the Gamify tab lists them all, with the same fields",
     "/bounties/{}/promise-status": "P79: per-bounty funder-payment record. The board already flags a promised prize; this is the detail behind one, reached from a bounty rather than browsed — surfacing it as its own page would be a view of one row.",
     # Infrastructure and machine-facing descriptors — nothing for a human view.
     "/": "redirects to /ui/; it *is* the dashboard's front door",

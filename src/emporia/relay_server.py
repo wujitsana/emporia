@@ -1379,6 +1379,39 @@ def init_db() -> None:
         # Access entitlements (P2-3): what a payment actually buys — see
         # entitlements.py's module docstring
         entitlements.init_entitlements_schema(conn)
+        # P289: bug quests and security incidents — both in the transparency log
+        conn.executescript("""
+            CREATE TABLE IF NOT EXISTS bug_reports (
+                report_id TEXT PRIMARY KEY,
+                reporter_id TEXT NOT NULL,
+                operator_key TEXT NOT NULL,
+                code_commit TEXT NOT NULL,
+                commitment TEXT NOT NULL,
+                sealed INTEGER NOT NULL DEFAULT 1,
+                severity_claimed TEXT NOT NULL,
+                content_json TEXT NOT NULL DEFAULT '',
+                status TEXT NOT NULL DEFAULT 'open',
+                severity TEXT NOT NULL DEFAULT '',
+                points INTEGER NOT NULL DEFAULT 0,
+                fix_commit TEXT NOT NULL DEFAULT '',
+                duplicate_of TEXT NOT NULL DEFAULT '',
+                decided_by TEXT NOT NULL DEFAULT '',
+                created_at TEXT NOT NULL,
+                decided_at TEXT NOT NULL DEFAULT '',
+                revealed_at TEXT NOT NULL DEFAULT ''
+            );
+            CREATE INDEX IF NOT EXISTS idx_bug_reports_operator ON bug_reports(operator_key, status, created_at);
+            CREATE TABLE IF NOT EXISTS security_incidents (
+                incident_id TEXT PRIMARY KEY,
+                summary TEXT NOT NULL,
+                affected TEXT NOT NULL DEFAULT '',
+                report_id TEXT NOT NULL DEFAULT '',
+                detected_at TEXT NOT NULL,
+                fixed_at TEXT NOT NULL DEFAULT '',
+                recorded_by TEXT NOT NULL,
+                recorded_at TEXT NOT NULL
+            );
+        """)
         # P256: the transparency log (translog.py)
         translog.init_schema(conn)
         _assert_not_pre_p3_schema(conn)
@@ -3372,6 +3405,8 @@ _RENAME_COLUMNS: tuple[tuple[str, str], ...] = (
     # P278: the same for a topic's signed acts.
     ("topic_acts", "by_agent"), ("topic_acts", "target"),
     ("authorized_agents", "agent_id"),
+    # P289: who filed a bug report, who judged it, who recorded an incident.
+    ("bug_reports", "reporter_id"), ("bug_reports", "decided_by"), ("security_incidents", "recorded_by"),
 )
 
 # Agent ids inside JSON arrays. Not rewritable in SQL, and deliberately not
@@ -3388,6 +3423,13 @@ _RENAME_JSON_COLUMNS: tuple[tuple[str, str], ...] = (
 # id, not a handle; `agora_votes.target_id` is a post or comment id;
 # `access_*.resource_id` is a room or topic id.
 _NON_AGENT_COLUMNS: frozenset[tuple[str, str]] = frozenset({
+    # P289: bug reports and incidents. `operator_key` is a Nous account or a stable id
+    # (the cap's key), never a handle — so a rename does not reset an operator's cap.
+    *(("bug_reports", c) for c in ("report_id", "operator_key", "code_commit", "commitment", "sealed",
+                                   "severity_claimed", "content_json", "status", "severity", "points", "fix_commit",
+                                   "duplicate_of", "created_at", "decided_at", "revealed_at")),
+    *(("security_incidents", c) for c in ("incident_id", "summary", "affected", "report_id", "detected_at",
+                                          "fixed_at", "recorded_at")),
     # bounty_entries (P72-4) — `agent_id` is a handle and lives in
     # _RENAME_COLUMNS above. `nous_user_id` deliberately does NOT: it is an
     # identity-provider subject, not an Emporia handle, and rewriting it on
@@ -5942,8 +5984,10 @@ async def operator_overview(request: Request):
 
 
 def _gamify_parts() -> set[str]:
+    """P288/P289: what it runs; bug quests count only with the transparency log on."""
     from emporia.progression import gamify_parts
-    return gamify_parts()
+    parts = gamify_parts()
+    return parts if translog.enabled() else parts - {"bugs"}
 
 
 def _progression_formula() -> str:
@@ -8813,6 +8857,7 @@ def main():
 from emporia.routes import agents as _agent_routes
 from emporia.routes import bounties as _bounty_routes
 from emporia.routes import standing as _standing_routes  # noqa: E402
+from emporia.routes import bugs as _bug_routes  # noqa: E402
 from emporia.routes import deletion as _deletion_routes  # noqa: E402
 from emporia.routes import agoras as _agora_routes  # noqa: E402
 from emporia.routes import dm as _dm_routes  # noqa: E402
@@ -8833,5 +8878,6 @@ app.include_router(_session_routes.router)
 app.include_router(_agent_routes.router)
 app.include_router(_bounty_routes.router)
 app.include_router(_standing_routes.router)
+app.include_router(_bug_routes.router)
 app.include_router(_deletion_routes.router)
 app.include_router(_translog_routes.router)

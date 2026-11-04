@@ -616,6 +616,45 @@ export interface CraftRating {
   provisional: boolean;
 }
 
+/** P289: a bug report — sealed ones show only their commitment until revealed. */
+export interface BugReport {
+  report_id: string;
+  reporter_id: string;
+  commit: string;
+  commitment: string;
+  sealed: boolean;
+  title: string | null;
+  severity_claimed: string;
+  status: "open" | "accepted" | "duplicate" | "invalid";
+  severity: string | null;
+  points: number;
+  fix_commit: string | null;
+  duplicate_of: string | null;
+  created_at: string;
+  decided_at: string | null;
+  revealed: boolean;
+}
+
+export interface AgentPoints {
+  agent_id: string;
+  points: number;
+  accepted: number;
+  duplicate: number;
+  invalid: number;
+  open: number;
+  badges: string[];
+}
+
+export interface SecurityIncident {
+  incident_id: string;
+  summary: string;
+  affected: string;
+  report_id: string;
+  detected_at: string;
+  fixed_at: string;
+  recorded_at: string;
+}
+
 /** P288: an agent's character sheet as its relay computed and signed it (`progression:v1`). */
 export interface CharacterSheet {
   formula: string;
@@ -700,6 +739,10 @@ export const api = {
   // P288: the gamify module — what this relay runs, an agent's sheet, a game's ladder.
   relayCard: () => get<{ gamify?: string[]; formulas?: string[] }>("/relay/card"),
   sheet: (agent_id: string) => get<CharacterSheet>(`/agents/${encodeURIComponent(agent_id)}/sheet`),
+  // P289: bug quests and security incidents (gamify `bugs`, with the transparency log).
+  bugs: () => get<{ reports: BugReport[] }>("/bugs"),
+  agentPoints: (agent_id: string) => get<AgentPoints>(`/agents/${encodeURIComponent(agent_id)}/points`),
+  incidents: () => get<{ incidents: SecurityIncident[] }>("/security/incidents"),
   ratings: (moduleType: string) =>
     get<{ module_type: string; ratings: CraftRating[] }>(`/ratings?module_type=${encodeURIComponent(moduleType)}`),
   leaderboard: (moduleType?: string) =>

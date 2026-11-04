@@ -71,6 +71,8 @@ _SENSITIVE = (
 # `wallet mainnet` lets an agent pay real money, `relay host` (P183) opens a
 # relay to other machines.
 _PERSON_ONLY = (("wallet", {"backup", "mainnet"}), ("relay", {"host", "rotate", "remove"}), ("agent", {"delete", "rotate", "recovery", "recover"}),
+                # P289: a bug verdict gives points, an incident is on the record for good — a person's
+                ("bugs", {"verdict", "incident", "fixed"}),
                 # P203: the signer is what an agent cannot change — its keys, limits and approvals
                 ("signer", {"serve", "start", "stop", "host", "add", "remove", "policy", "pending", "approve", "deny"}))
 # P183: other ways to open a relay to other machines — telling it to listen on

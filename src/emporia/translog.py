@@ -641,6 +641,23 @@ def _session(conn, r):
                                                       "created_at")}
 
 
+def _bug_report(conn, r):
+    # P289: public by id. A sealed report's entry holds its commitment and who filed it
+    # when — never what it found; after the reveal, the hash of what it said.
+    revealed = content_hash(r["content_json"]) if r["content_json"] else ""
+    return True, r["report_id"], {k: r[k] for k in (
+        "report_id", "reporter_id", "code_commit", "commitment", "sealed", "severity_claimed", "status",
+        "severity", "points", "fix_commit", "duplicate_of", "decided_by", "created_at", "decided_at",
+        "revealed_at")} | {"content_hash": revealed}
+
+
+def _incident(conn, r):
+    # P289: a security incident on this relay, on the record for good
+    return True, r["incident_id"], {k: r[k] for k in (
+        "incident_id", "affected", "report_id", "detected_at", "fixed_at", "recorded_by", "recorded_at")} \
+        | {"summary_hash": content_hash(r["summary"]), "summary": r["summary"]}
+
+
 def _event(conn, r):
     return True, r["event_id"], {"event_id": r["event_id"], "organizer_id": r["organizer_id"], "status": r["status"],
                                  "content_hash": content_hash(r["title"], r["description"], r["bracket_json"])}
@@ -675,6 +692,8 @@ SOURCES: dict[str, tuple[str, Callable, str, tuple[str, ...]]] = {
     "escrow_hold": ("escrow_holds", _escrow, "", ("hold_hash",)),
     "session": ("sessions", _session, "", ("session_id",)),
     "event": ("events", _event, "", ("event_id",)),
+    "bug_report": ("bug_reports", _bug_report, "", ("report_id",)),            # P289
+    "security_incident": ("security_incidents", _incident, "", ("incident_id",)),
 }
 
 #: chains — name -> (messages table, the column naming the chain)

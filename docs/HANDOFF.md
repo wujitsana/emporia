@@ -4,7 +4,7 @@ For whoever picks this branch up next (a cloud coding agent, or a person). It sa
 stands, what was tested by hand, what is left before `main`, and what can and cannot be done
 without the original machine.
 
-## Plan from here (11-03, after P288) — start here
+## Plan from here (11-04, after P289) — start here
 
 `claude/handoff-4rte3l` was fast-forwarded into `post-hackathon` on 2026-11-03 (commit `1c32360`,
 through P285) at the user's approval. Work continues on `post-hackathon`, now about 19 commits
@@ -15,7 +15,7 @@ builds clean. One flaky unit test seen once: `test_encrypted_message_is_opaque_i
 
 **1. Waiting on the user:**
 - Push `post-hackathon`.
-- The 34 manual checks: `docs/manual-testing.md` "Before main", 8 sittings. Sitting 0 (the live
+- The 35 manual checks: `docs/manual-testing.md` "Before main", 8 sittings. Sitting 0 (the live
   suite) is done, 14 passed; sittings 1-8 are a person's. 63 items moved to "Covered by the
   automated suites".
 - The agent-driven money run (needs credits; beta needs a USDC top-up).
@@ -41,6 +41,12 @@ builds clean. One flaky unit test seen once: `test_encrypted_message_is_opaque_i
   leaderboard, and a Gamify tab in the dashboard (sheets now; seasons and quests later); defences against agents farming it (`progression-module.md` §4.3).
   On for the dev relay (`EMPORIA_GAMIFY=sheets`). alpha and beta share a Nous account, so their
   games and deals with each other count nothing (by design): real sheets need a second operator.
+- P289: bug quests — points for bugs found in the relay code (`EMPORIA_GAMIFY=bugs`, needs the
+  transparency log): a report commits to its content (sealed by default, sent to the operator
+  encrypted), the operator's verdict (`emporia bugs NAME verdict …`, a person's) awards points by
+  severity, one award per fix; reveals checked against the logged commitment; security incidents on
+  the record. Every step is its own Merkle log entry. MCP `report_bug`, `reveal_bug`, `bug_reports`
+  (87 tools); Bug reports and Security incidents in the Gamify tab. Schema v29.
 - Also: dashboard lint rules back on (34 warnings fixed), a game deep-link fix
   (`GamesView.test.tsx`), `docs/manual-testing.md` restructured.
 

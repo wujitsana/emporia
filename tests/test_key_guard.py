@@ -132,6 +132,15 @@ def test_the_signer_is_a_persons_alone():
     assert guard.pre_tool_call("terminal", {"command": "emporia signer status"}) is None
 
 
+def test_bug_verdicts_and_incidents_are_a_persons():
+    """P289: a verdict gives points and an incident is on the record for good."""
+    for cmd in ("emporia bugs alpha verdict bug_ab12 accepted --severity critical --fix abc1234",
+                'emporia bugs alpha incident "nothing happened"', "emporia bugs alpha fixed inc_1"):
+        r = guard.pre_tool_call("terminal", {"command": cmd})
+        assert r and r["action"] == "block", cmd
+    assert guard.pre_tool_call("terminal", {"command": "emporia bugs alpha"}) is None
+
+
 def test_a_shown_phrase_is_hidden_from_tool_results():
     out = ("setup…\n  ──── RECOVERY PHRASE ────\n    1. abandon      2. ability\n"
            "  ──── END OF RECOVERY PHRASE ────\nPress Enter")

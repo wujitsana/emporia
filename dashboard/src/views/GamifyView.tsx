@@ -1,6 +1,7 @@
 /**
- * P288: the gamify module, under one tab — character sheets now (Craft per game,
- * Trade, Trust, levels and class); seasons and quests will join it here.
+ * P288: the gamify module, under one tab — character sheets (Craft per game,
+ * Trade, Trust, levels and class) and P289's bug quests and security incidents;
+ * seasons and quests will join it here.
  *
  * Visibility only, like every view: it shows what the relay computed and signed,
  * and changes nothing. A relay that does not run the module says so, rather
@@ -13,6 +14,10 @@ import { FlatRailItem } from "../ui/FlatRailItem";
 import { ViewBody } from "../ui/layout";
 import { useInterval } from "../hooks";
 import { api, type CharacterSheet, type CraftRating } from "../api";
+
+const BUGS = "__bugs__";
+const INCIDENTS = "__incidents__";
+const short = (s: string | null | undefined, n = 10) => (s ? s.slice(0, n) : "—");
 import { VIEWER_ID } from "../relayEnv";
 
 const game = (m: string) => m.replace("emporia:", "").replace(":v1", "");
@@ -95,11 +100,79 @@ export function Sheet({ sheet }: { sheet: CharacterSheet }) {
   );
 }
 
-function SheetOf({ agentId }: { agentId: string }) {
+function Points({ agentId }: { agentId: string }) {
+  const [p] = useInterval(() => api.agentPoints(agentId), 60_000, [agentId]);
+  if (!p) return null;
+  return (
+    <div className="e-split-main" style={{ paddingTop: 0 }}>
+      <Text className="e-dim">BUG QUESTS · {p.points} points{p.badges.length ? ` · ${p.badges.join(", ")}` : ""}</Text>
+      <Text className="e-faint" style={num}>
+        {p.accepted} accepted · {p.open} open · {p.duplicate} duplicate · {p.invalid} invalid — this relay's points
+      </Text>
+    </div>
+  );
+}
+
+function SheetOf({ agentId, bugs }: { agentId: string; bugs: boolean }) {
   const [data, , error] = useInterval(() => api.sheet(agentId), 60_000, [agentId]);
   if (error && !data) return <Text className="e-faint">? the sheet did not load — {error}</Text>;
   if (!data) return <Text className="e-faint">… loading {agentId}'s sheet</Text>;
-  return <Sheet sheet={data} />;
+  return <><Sheet sheet={data} />{bugs && <Points agentId={agentId} />}</>;
+}
+
+export function BugList() {
+  const [data, , error] = useInterval(() => api.bugs(), 60_000, []);
+  if (error && !data) return <Text className="e-faint">? the reports did not load — not an empty list.</Text>;
+  if (!data) return <Text className="e-faint">… loading the reports</Text>;
+  return (
+    <div className="e-split-main">
+      <Text className="e-dim">BUG REPORTS — this relay, every step in its transparency log</Text>
+      <Text className="e-faint" style={{ fontSize: 12 }}>
+        A sealed report shows only its commitment until it is judged, fixed and revealed. Points are this relay's,
+        for accepted reports.
+      </Text>
+      {data.reports.length === 0 ? <Text className="e-faint">No reports yet.</Text> : (
+        <table className="e-listings-native">
+          <thead><tr><td>REPORT</td><td>STATUS</td><td>SEVERITY</td><td>POINTS</td><td>BY</td><td>COMMIT</td><td>WHAT</td></tr></thead>
+          <tbody>
+            {data.reports.map((b) => (
+              <tr key={b.report_id}>
+                <td><Text className="e-faint">{b.report_id}</Text></td>
+                <td><Text>{b.status}</Text></td>
+                <td><Text className="e-dim">{b.severity ?? `${b.severity_claimed} (claimed)`}</Text></td>
+                <td><Text style={num}>{b.points}</Text></td>
+                <td><Text className="e-dim">{b.reporter_id}</Text></td>
+                <td><Text className="e-faint" title={b.fix_commit ? `fixed in ${b.fix_commit}` : undefined}>{short(b.commit)}</Text></td>
+                <td><Text className="e-faint" title={b.commitment}>
+                  {b.sealed && !b.revealed ? `sealed · ${short(b.commitment, 12)}…` : b.title}
+                </Text></td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
+    </div>
+  );
+}
+
+export function IncidentList() {
+  const [data, , error] = useInterval(() => api.incidents(), 60_000, []);
+  if (error && !data) return <Text className="e-faint">? the incidents did not load — not an empty list.</Text>;
+  if (!data) return <Text className="e-faint">… loading</Text>;
+  return (
+    <div className="e-split-main">
+      <Text className="e-dim">SECURITY INCIDENTS — this relay, on the record in its transparency log</Text>
+      {data.incidents.length === 0 ? <Text className="e-faint">None recorded.</Text> : data.incidents.map((i) => (
+        <div key={i.incident_id} style={{ marginTop: 8 }}>
+          <Text>{i.summary}</Text>
+          <Text className="e-faint" style={{ fontSize: 12 }}>
+            {i.affected ? `${i.affected} · ` : ""}found {i.detected_at} · {i.fixed_at ? `fixed ${i.fixed_at}` : "not fixed yet"}
+            {i.report_id ? ` · from ${i.report_id}` : ""}
+          </Text>
+        </div>
+      ))}
+    </div>
+  );
 }
 
 export function GamifyView() {
@@ -110,7 +183,7 @@ export function GamifyView() {
 
   if (cardError && !card) return <ViewBody><Text className="e-faint">? the relay did not answer.</Text></ViewBody>;
   if (!card) return <ViewBody><Text className="e-faint">… asking the relay what it runs</Text></ViewBody>;
-  if (!runs.includes("sheets"))
+  if (!runs.includes("sheets") && !runs.includes("bugs"))
     return (
       <ViewBody>
         <Text className="e-faint">
@@ -123,8 +196,19 @@ export function GamifyView() {
   const ids = (agents?.agents ?? []).map((a) => a.agent_id);
   const list = VIEWER_ID && !ids.includes(VIEWER_ID) ? [VIEWER_ID, ...ids] : ids;
   const selected = picked ?? (VIEWER_ID || list[0] || null);
+  const bugs = runs.includes("bugs");
   const sidebar = (
     <div>
+      {bugs && (
+        <>
+          <FlatRailItem selected={selected === BUGS} onClick={() => setPicked(BUGS)}>
+            <div className="e-docs-rail-item"><Text>Bug reports</Text><Text className="e-faint">points for bugs found</Text></div>
+          </FlatRailItem>
+          <FlatRailItem selected={selected === INCIDENTS} onClick={() => setPicked(INCIDENTS)}>
+            <div className="e-docs-rail-item"><Text>Security incidents</Text><Text className="e-faint">on the record</Text></div>
+          </FlatRailItem>
+        </>
+      )}
       {list.map((id) => (
         <FlatRailItem key={id} selected={id === selected} onClick={() => setPicked(id)}>
           <div className="e-docs-rail-item"><Text>{id}</Text>{id === VIEWER_ID && <Text className="e-faint">you</Text>}</div>
@@ -135,7 +219,10 @@ export function GamifyView() {
   return (
     <ViewBody flush toolbar={<Text className="e-faint">This relay runs: {runs.join(", ")} · read-only · computed from outcomes, never issued</Text>}>
       <SidebarLayout sidebar={sidebar} defaultSidebarWidth={22}>
-        {selected ? <SheetOf agentId={selected} /> : <Text className="e-faint">No agents on this relay yet.</Text>}
+        {selected === BUGS ? <BugList /> : selected === INCIDENTS ? <IncidentList />
+          : !selected ? <Text className="e-faint">No agents on this relay yet.</Text>
+          : runs.includes("sheets") ? <SheetOf agentId={selected} bugs={bugs} />
+          : <Points agentId={selected} />}
       </SidebarLayout>
     </ViewBody>
   );

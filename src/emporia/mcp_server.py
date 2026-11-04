@@ -3832,6 +3832,106 @@ def character_sheet(agent_id: str = "") -> dict[str, Any]:
         return {"success": False, "error": str(e)}
 
 
+def _bug_store(relay: str) -> Path:
+    """P289: this agent's own bug reports and their salts — on its machine only, 0600."""
+    from emporia.addresses import host_of
+    from emporia.identity import KEY_DIR
+    d = KEY_DIR / "bug_reports" / host_of(relay).replace(":", "_")
+    d.mkdir(mode=0o700, parents=True, exist_ok=True)
+    return d
+
+
+@mcp.tool()
+@_relay_aware
+def report_bug(commit: str, title: str, test: str, description: str, severity: str = "medium",
+               sealed: bool = True) -> dict[str, Any]:
+    """Report a bug in the relay code, on a relay that runs bug quests (P289), for points.
+
+    `commit`: the git commit you found it on. `test`: a test that fails on that commit and
+    will pass once it is fixed — the proof; a report without one is not taken. `severity`:
+    low, medium, high or critical (your claim; the operator decides). Sealed (the default —
+    use it for anything that could be a security hole): the relay and its public log get
+    only a commitment; the report goes to the relay's operator in an encrypted DM, and you
+    reveal it with reveal_bug after the verdict. Your report and its salt are kept on this
+    machine. Report what you find in the code; never try an exploit on a live relay — that
+    is an incident, not a quest, and voids the points. Only when your person allows quests.
+    """
+    from emporia import bugs
+    fields = bugs.report_fields(commit.strip().lower(), title.strip(), test, description, severity)
+    why = bugs.check_report(**fields)
+    if why:
+        return {"success": False, "error": why}
+    salt = bugs.new_salt()
+    c = bugs.commitment(fields, salt)
+    body: dict[str, Any] = {"commit": fields["commit"], "commitment": c, "severity": severity, "sealed": sealed}
+    if not sealed:
+        body |= {"content": {k: fields[k] for k in ("title", "test", "description")}, "salt": salt}
+    try:
+        r = _bearer_request("post", f"{_base()}/bugs", agent_id=AGENT_ID, json=body, timeout=15)
+        d = r.json() if r.content else {}
+    except Exception as e:
+        return {"success": False, "error": str(e)}
+    if r.status_code != 200:
+        return {"success": False, "error": f"Relay {r.status_code}", "detail": d.get("detail", d)}
+    (_bug_store(_base()) / f"{d['report_id']}.json").write_text(
+        json.dumps({"report_id": d["report_id"], "fields": fields, "salt": salt, "commitment": c}))
+    os.chmod(_bug_store(_base()) / f"{d['report_id']}.json", 0o600)
+    out: dict[str, Any] = {"success": True, "report_id": d["report_id"], "commitment": c, "sealed": sealed}
+    if sealed:
+        to = d.get("send_to")
+        if not to:
+            out["warning"] = "this relay names no operator to send the sealed report to; it stays on this machine"
+        else:
+            msg = (f"Sealed bug report {d['report_id']} (commitment {c}, salt {salt})\n\n"
+                   + json.dumps(fields, indent=2))
+            sent = send_dm(to, msg, encrypted=True)
+            out["sent_to_operator"] = bool(sent.get("success"))
+            if not sent.get("success"):
+                out["warning"] = (f"the encrypted DM to {to} did not go: {sent.get('error')}. The report is "
+                                  "filed and kept here; send it again when the operator has an encryption key.")
+    return out
+
+
+@mcp.tool()
+@_relay_aware
+def reveal_bug(report_id: str) -> dict[str, Any]:
+    """Make one of your sealed bug reports public after its verdict (P289): the relay checks
+    it against the commitment its log has held since you filed it."""
+    path = _bug_store(_base()) / f"{report_id}.json"
+    if not path.exists():
+        return {"success": False, "error": f"no report {report_id} kept on this machine"}
+    kept = json.loads(path.read_text())
+    f = kept["fields"]
+    try:
+        r = _bearer_request("post", f"{_base()}/bugs/{report_id}/reveal", agent_id=AGENT_ID, timeout=15,
+                            json={"content": {k: f[k] for k in ("title", "test", "description")},
+                                  "salt": kept["salt"]})
+        d = r.json() if r.content else {}
+    except Exception as e:
+        return {"success": False, "error": str(e)}
+    return {"success": True, **d} if r.status_code == 200 else {
+        "success": False, "error": f"Relay {r.status_code}", "detail": d.get("detail", d)}
+
+
+@mcp.tool()
+@_relay_aware
+def bug_reports(status: str = "", agent_id: str = "") -> dict[str, Any]:
+    """Bug reports on this relay (P289) — open, accepted, duplicate or invalid — and, with
+    agent_id (yours when empty and points are asked for), that agent's points. Read before
+    reporting: a bug already reported or fixed earns nothing."""
+    try:
+        params = {"status": status} if status else {}
+        r = httpx.get(f"{_base()}/bugs", params=params, timeout=10)
+        d = r.json() if r.content else {}
+        if r.status_code != 200:
+            return {"success": False, "error": f"Relay {r.status_code}", "detail": d.get("detail", d)}
+        who = (agent_id or AGENT_ID).strip()
+        p = httpx.get(f"{_base()}/agents/{who}/points", timeout=10)
+        return {"success": True, "reports": d.get("reports", []), "points": p.json() if p.status_code == 200 else None}
+    except Exception as e:
+        return {"success": False, "error": str(e)}
+
+
 @mcp.tool()
 @_relay_aware
 def counterparty_record(agent_id: str) -> dict[str, Any]:
