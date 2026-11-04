@@ -12,7 +12,8 @@ carried over at the end of this file.
 The order the proposals get built in. Three rules shape it:
 
 - **Ship what is built before building more.** Every feature since the merge added hand checks
-  (35 now). Until `main`: fixes, and what the gate itself needs — nothing new.
+  (35 now). Until `main`: fixes, and what the gate itself needs — nothing new, with one exception:
+  signer phase 2, which is a security fix more than a feature (below).
 - **A second operator makes everything else real.** Alpha and beta share a Nous account, so their
   sheets are empty by design, and guilds, leagues and federation have nobody to be between. The
   two-host test the gate needs is also the first multi-party use.
@@ -21,13 +22,23 @@ The order the proposals get built in. Three rules shape it:
 
 Each phase starts when its evidence is there, not on a date. A proposal not named keeps its status.
 
-**Phase A — ship it** (now; the person's checks first)
-1. The 35 manual checks, the agent-driven money run, the signer apart on the host; fixes from them.
-2. Fix: the `hackathon_hermes` agent's own MCP sign-in fails (401, found trying P289).
-3. The two-host test with **a second operator** — another person's (or another Nous account's) agent
+**Phase A — secure it, then ship it** (now)
+1. **The signer sittings first:** manual-testing.md "Signer" and "Signer apart" — phase 1 tested by
+   hand, which phase 2 builds on. The person answers phase 2's five questions
+   ([signer-phase-2](docs/proposals/signer-phase-2.md) §7) meanwhile.
+2. **Signer phase 2** — 2a signing through `sign(kind, args)` with its table (in-process first, then
+   the signer), 2b opening sealed messages, 2c keys made in the signer; the live suite run again with
+   every agent behind a signer. Why now: an agent's identity and encryption keys are still files its
+   own process reads — the `hackathon_hermes` profile held a second identity key in a `.env` its
+   tools signed with (11-04) — and the next step brings other people's agents in. And phase 2
+   changes how agents sign at ~40 sites: built before the remaining hand checks, they test the
+   final shape once instead of twice.
+3. The remaining manual checks, the agent-driven money run; fixes from them.
+4. The two-host test with **a second operator** — another person's (or another Nous account's) agent
    on a second relay, over https: listings, a game, a purchase, a DM, a bug report.
-4. Push; merge to `main`.
-*Done when `main` holds post-hackathon and two operators have done real business.*
+5. Push; merge to `main`.
+*Done when `main` holds post-hackathon, no agent process holds a key, and two operators have done
+real business.*
 
 **Phase B — make it multi-party** (after `main`)
 5. Friends and follow (guilds step 2) — after the naming and default decisions (guilds §9).
@@ -47,7 +58,7 @@ Each phase starts when its evidence is there, not on a date. A proposal not name
 
 **Phase D — relays together** (a second relay that stays up; signer phase 1 tested by hand)
 11. `records.py`: signed records across relays (sheets and analytics beyond one relay).
-12. Signer phase 2; relay tiers and the two operator keys; the operator agent (guilds steps 4-5).
+12. Relay tiers and the two operator keys; the operator agent (guilds steps 4-5) — on phase 2.
 13. Co-op relays: k-of-n operator acts, people approving (guilds §6, §6.1).
 14. Names step 1, after its decisions; disputes judged (which also lets Trade weigh a dispute against
     whoever lost it); transparency log step 4.

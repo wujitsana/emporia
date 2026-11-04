@@ -74,8 +74,9 @@ builds clean. One flaky unit test seen once: `test_encrypted_message_is_opaque_i
   (yes/no).
 
 **4. Build next:** the priority plan at the top of [ROADMAP.md](../ROADMAP.md) (11-04). Phase A
-first: ship what is built — the hand checks, the `hackathon_hermes` MCP sign-in fix, the two-host
-test with a second operator, `main` — and nothing new until then. Then multi-party (friends, guilds
+first: the signer sittings (phase 1 by hand), then **signer phase 2** (no key left in any agent's
+process — a security fix, so it comes before the remaining hand checks, which then test its final
+shape), then the other checks, the two-host test with a second operator, and `main`. Then multi-party (friends, guilds
 with k-of-n approvals), then gamify once there is activity, relays together, many relays, money.
 
 **5. Before `main`:** the manual checks pass, then the two-relay, https, service, Stripe Connect
