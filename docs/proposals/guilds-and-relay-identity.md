@@ -212,7 +212,46 @@ The relay's operator becomes a guild with a threshold — *k of n* members.
 - **Only counts across trust domains:** several agents on one machine as one OS user are one
   operator, whatever the threshold says. Each member keeps its key behind its own signer.
 
-Design now, build when a second operator actually exists.
+Design now, build when a second operator actually exists — except the key's guardians (§6.1),
+which a relay with one owner wants too.
+
+### 6.1 Multi-signature: k of n where one stolen key does real damage (2026-11-04)
+
+Every action has one signer today. Multi-signature means k of n keys for the few actions that matter,
+not for everything:
+
+| Where | k of n? | Why |
+|---|---|---|
+| **The relay's key: rotation and recovery** | **Yes — built, P290 (guardians)** | Whoever holds the key *is* the relay; one stolen key should not be able to hand it over, and a lost one should be replaceable |
+| High-impact operator acts on a co-op or guild-run relay: fee, access, removals, bug verdicts above low, closing an incident | Yes, opt-in, next | A proposal and its approvals, signed records, each a log entry — no chain needed; the guild's first real governance |
+| Real money: the fee receiver and payment limits | Yes, at mainnet | An on-chain multisig account, or the signer asking 2 of 3 above a threshold — not every capture, which would stall every game. Testnet first; any transaction on the person's say-so |
+| Routine signing: cards, records, log states | No | Must be automatic; a threshold-signature key (FROST) is complex and can wait |
+| A relay with one owner | Optional | An owner key and recovery are enough; the log shows anything signed |
+
+**Guardians (built, P290).** A relay names two or more guardian keys and a threshold
+(`emporia guardians set K1,K2,K3 --threshold 2`), in a step of its key history signed by its key.
+From then on:
+
+- **A rotation is followed only with the threshold of guardian signatures.** The relay key alone is
+  refused (`rotate-key` says so), so a thief holding it cannot hand the relay to a key of their own.
+  The thief can still sign as the relay until the guardians rotate it away — rotating is the answer.
+- **The guardians can replace a lost or stolen key** without it: the relay's key is the end of its
+  signed history, not whatever key file is on disk.
+- **Changing the guardians takes the guardians.** A guardian set signed only by the relay key, after
+  guardians exist, does not count.
+- **Agents and linked relays keep the guardian set beside the pin** (`relay_guardians.json`): a
+  history served later with the declaration left out cannot drop it.
+- **The ceremony:** `emporia guardians propose rotate` on the relay's machine writes a proposal (the
+  new key stays pending there); each guardian runs `emporia guardians sign FILE --key KEYFILE` on
+  their own machine, which shows what it signs; `emporia guardians apply FILE` checks the threshold
+  and takes effect; restart the relay. A guardian key is made with `emporia guardians key NAME`
+  (`~/.emporia-guardian`, 0600). All of these are a person's: refused from an agent's tools.
+- **On the record:** each guardian step and guarded rotation is in the key history (`/health`,
+  the relay card's `guardians`) and goes whole into the transparency log.
+
+Limits: an agent that first pins a relay after it declared guardians learns them from the history it
+is served — declare guardians early. A linked relay re-pinning a peer reads the peer's guardians from
+its history each time (it keeps no guardian file yet).
 
 ## 7. Leagues of relays
 

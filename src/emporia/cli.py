@@ -2549,10 +2549,128 @@ def cmd_relay_rotate_key(args: argparse.Namespace) -> int:
           "the old key signs — so if that key LEAKED, rotating does not help: tell your peers to re-pin.")
     if not (args.yes or ask("Rotate the relay key?", False)):
         return 1
-    step = identity.rotate_relay_key()
+    try:
+        step = identity.rotate_relay_key()
+    except identity.GuardiansRequired as e:
+        print(f"relay rotate-key: {e}")
+        return 1
     print(f"  old {step['old'][:16]}… → new {step['new'][:16]}…, signed by the old key.")
     print("  Restart the relay to sign with it: emporia relay restart")
     return 0
+
+
+def _describe_proposal(p: dict) -> str:
+    if p.get("kind") == "rotate":
+        return f"hand the relay's key {p['old'][:16]}… over to a new key {p['new'][:16]}… (proposed {p['at']})"
+    return (f"make {p['threshold']} of these {len(p['guardians'])} keys the relay's guardians: "
+            + ", ".join(k[:12] + "…" for k in p["guardians"]) + f" (proposed {p['at']})")
+
+
+def cmd_guardians(args: argparse.Namespace) -> int:
+    """P290: `emporia guardians …` — keys that must agree, k of n, before this relay's
+    key changes. A person's commands, in their own terminal:
+      key NAME [--keys-dir DIR]            make a guardian key (on the guardian's machine)
+      show                                  the relay's guardians
+      set KEY,KEY,KEY --threshold 2         name the first guardians (signed by the relay's key)
+      propose rotate | guardians KEY,… --threshold N   a change for them to sign
+      sign FILE --key KEYFILE               a guardian signs a proposal
+      apply FILE                            make a signed proposal take effect
+    Run show, set, propose and apply where the relay's keys are."""
+    import json as _json
+    from emporia import identity
+    act = args.act or "show"
+    if act != "show" and not _persons_terminal():
+        print(f"guardians {act}: only a person runs this, in their own terminal.")
+        return 1
+    if act == "key":
+        if not args.rest:
+            print("guardians key NAME [--keys-dir DIR]")
+            return 1
+        folder = Path(args.keys_dir or Path.home() / ".emporia-guardian").expanduser()
+        folder.mkdir(mode=0o700, parents=True, exist_ok=True)
+        path = folder / f"{args.rest[0]}.key"
+        if not path.exists():
+            from cryptography.hazmat.primitives.asymmetric import ed25519
+            identity._write_secret_atomically(path, ed25519.Ed25519PrivateKey.generate().private_bytes_raw())
+        from cryptography.hazmat.primitives.asymmetric import ed25519
+        pub = ed25519.Ed25519PrivateKey.from_private_bytes(path.read_bytes()).public_key().public_bytes_raw().hex()
+        print(f"  guardian key: {path} (0600) — keep it on this machine, apart from the relay")
+        print(f"  public key, to give the relay's owner: {pub}")
+        return 0
+    if act == "show":
+        state = identity.relay_guardians()
+        if not state:
+            print("This relay has no guardians: its key changes with its own signature (emporia relay rotate-key).")
+            return 0
+        print(f"This relay's key changes only with {state['threshold']} of these {len(state['keys'])} guardians:")
+        for k in state["keys"]:
+            print(f"  {k}")
+        return 0
+    if act == "set":
+        if not args.rest or not args.threshold:
+            print("guardians set KEY,KEY,KEY --threshold 2")
+            return 1
+        keys = [k.strip().lower() for k in args.rest[0].split(",") if k.strip()]
+        try:
+            identity.declare_relay_guardians(keys, args.threshold)
+        except (identity.GuardiansRequired, ValueError) as e:
+            print(f"guardians set: {e}")
+            return 1
+        print(f"  Done: {args.threshold} of {len(set(keys))} guardians must now sign any change of this relay's key.")
+        print("  Agents and linked relays keep this beside their pin. Restart the relay to serve it: emporia relay restart")
+        return 0
+    if act == "propose":
+        kind = args.rest[0] if args.rest else ""
+        try:
+            if kind == "rotate":
+                p = identity.propose("rotate")
+            elif kind == "guardians" and len(args.rest) > 1 and args.threshold:
+                p = identity.propose("guardians", [k.strip().lower() for k in args.rest[1].split(",") if k.strip()],
+                                     args.threshold)
+            else:
+                print("guardians propose rotate | guardians KEY,KEY,KEY --threshold N")
+                return 1
+        except ValueError as e:
+            print(f"guardians propose: {e}")
+            return 1
+        out = Path(args.out or identity.KEY_DIR / "proposals" / f"{p['kind']}-{p['at'][:19].replace(':', '')}.json")
+        out.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
+        out.write_text(_json.dumps(p, indent=1))
+        print(f"  Proposal: {_describe_proposal(p)}")
+        print(f"  Written to {out}. It needs {p['needs']} guardian signatures: each guardian runs")
+        print(f"    emporia guardians sign {out.name} --key ~/.emporia-guardian/NAME.key")
+        print(f"  on their own machine, then bring it back here: emporia guardians apply {out}")
+        return 0
+    if act == "sign":
+        if not args.rest or not args.key:
+            print("guardians sign FILE --key KEYFILE")
+            return 1
+        path = Path(args.rest[0])
+        p = _json.loads(path.read_text())
+        print(f"  This proposal would {_describe_proposal(p)}.")
+        if not (args.yes or ask("Sign it?", False)):
+            return 1
+        signed = identity.sign_proposal(p, Path(args.key).expanduser().read_bytes())
+        path.write_text(_json.dumps(signed, indent=1))
+        print(f"  Signed: {len(signed['signatures'])} signature(s) of the {p.get('needs')} needed.")
+        return 0
+    if act == "apply":
+        if not args.rest:
+            print("guardians apply FILE")
+            return 1
+        p = _json.loads(Path(args.rest[0]).read_text())
+        print(f"  This would {_describe_proposal(p)}.")
+        if not (args.yes or ask("Apply it?", False)):
+            return 1
+        try:
+            identity.apply_proposal(p)
+        except ValueError as e:
+            print(f"guardians apply: {e}")
+            return 1
+        print("  Done, and in the relay's key history. Restart the relay: emporia relay restart")
+        return 0
+    print("guardians: key, show, set, propose, sign or apply")
+    return 1
 
 
 def cmd_relay_rotate_sign_in_secret(args: argparse.Namespace) -> int:
@@ -5811,6 +5929,16 @@ def build_parser() -> argparse.ArgumentParser:
     sh.add_argument("--of", help="another agent's sheet, read as NAME")
     sh.add_argument("--json", action="store_true", help="the sheet as JSON")
     sh.set_defaults(func=cmd_sheet)
+
+    gd = sub.add_parser("guardians", help="keys that must agree, k of n, before the relay's key changes (P290)")
+    gd.add_argument("act", nargs="?", choices=["key", "show", "set", "propose", "sign", "apply"])
+    gd.add_argument("rest", nargs="*")
+    gd.add_argument("--threshold", type=int)
+    gd.add_argument("--keys-dir", help="key: where to keep the guardian key (default ~/.emporia-guardian)")
+    gd.add_argument("--key", help="sign: the guardian's key file")
+    gd.add_argument("--out", help="propose: where to write the proposal")
+    gd.add_argument("--yes", action="store_true")
+    gd.set_defaults(func=cmd_guardians)
 
     bg = sub.add_parser("bugs", help="bug reports and points on an agent's relay; the operator's verdicts (gamify)")
     bg.add_argument("name")

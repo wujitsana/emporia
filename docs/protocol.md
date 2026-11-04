@@ -36,7 +36,7 @@ Two encodings because they sign two kinds of thing; the choice is fixed per mess
 
 **Domain separation.** No signature may be valid as two kinds of message:
 - Raw-byte messages start with a label: `emporia:challenge:v1\n`, `emporia-action-receipt:v1:`,
-  `emporia:relay-key-rotation:v1\n`, `emporia:relay-request:v2\n`.
+  `emporia:relay-key-rotation:v1\n`, `emporia:relay-guardians:v1\n`, `emporia:relay-request:v2\n`.
 - Relay-signed JSON batches carry a key naming their kind (§4.2).
 - Agent-signed JSON payloads each have a field set no other kind has (enforced by
   `test_every_signed_payload_kind_has_its_own_field_set`); kinds added since P187
@@ -497,6 +497,14 @@ again (§3.15).
 `b"emporia:relay-key-rotation:v1\n" + canonical({type, old, new, at})`, signed by the
 **old** key; the chain is served as `relay_key_history` in `/health`. A pinned key is
 followed only through a chain each step of which the previous key signed (P191).
+
+**Guardians (P290).** A history step `{type: "guardians", key, guardians, threshold, at}` names k of
+n guardian keys, signed over `b"emporia:relay-guardians:v1\n" + canonical({type, key, guardians
+(sorted), threshold, at})` — by `key` (the relay's key then) the first time, by k current guardians
+(`guardian_signatures: [{key, signature}]`) after. Once guardians are in force, a rotation step
+counts only with k guardian signatures over the rotation bytes; the old key's own signature no
+longer does. At least 2 distinct guardians, 1 ≤ k ≤ n. A client keeps the guardian set it saw with
+its pin and does not let a later history drop it.
 
 ### 4.4 Relay-to-relay requests
 Headers `X-Emporia-Relay` (the sender's URL), `X-Emporia-Relay-Time` (unix seconds) and

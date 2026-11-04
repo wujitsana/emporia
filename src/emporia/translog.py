@@ -880,7 +880,9 @@ def fold_relay_keys(conn: Any, history: list[dict[str, str]]) -> None:
     for step in history:
         key = f"relay_key:{step.get('at', '')}"
         if _seen(conn, key) is None:
-            append(conn, "relay_key", key, {k: step.get(k, "") for k in ("old", "new", "at", "signature")})
+            # P290: a guardian step, or a rotation the guardians signed, goes in whole
+            fields = ("type", "key", "guardians", "threshold", "old", "new", "at", "signature", "guardian_signatures")
+            append(conn, "relay_key", key, {k: step[k] for k in fields if k in step})
             _mark(conn, key, "1")
 
 

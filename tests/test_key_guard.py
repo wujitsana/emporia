@@ -141,6 +141,16 @@ def test_bug_verdicts_and_incidents_are_a_persons():
     assert guard.pre_tool_call("terminal", {"command": "emporia bugs alpha"}) is None
 
 
+def test_a_relays_guardians_are_people():
+    """P290: making, naming, proposing, signing and applying are a person's."""
+    for cmd in ("emporia guardians key anna", "emporia guardians set a,b,c --threshold 2",
+                "emporia guardians propose rotate", "emporia guardians sign p.json --key g.key",
+                "emporia guardians apply p.json"):
+        r = guard.pre_tool_call("terminal", {"command": cmd})
+        assert r and r["action"] == "block", cmd
+    assert guard.pre_tool_call("terminal", {"command": "emporia guardians show"}) is None
+
+
 def test_a_shown_phrase_is_hidden_from_tool_results():
     out = ("setup…\n  ──── RECOVERY PHRASE ────\n    1. abandon      2. ability\n"
            "  ──── END OF RECOVERY PHRASE ────\nPress Enter")

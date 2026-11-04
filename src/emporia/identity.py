@@ -1251,8 +1251,8 @@ def verify_relay_card(card: dict) -> dict:
     "id_from_key": its id is the one taken from its first key (not an override)}."""
     key = str(card.get("relay_public_key") or "")
     ok = bool(key) and verify_raw(relay_card_bytes(card), str(card.get("signature") or ""), key)
-    history = card.get("relay_key_history") or []
-    first = history[0].get("old", key) if history and isinstance(history[0], dict) else key
+    history = [s for s in card.get("relay_key_history") or [] if isinstance(s, dict)]
+    first = history_start(history, key)
     try:
         from_key = card.get("relay_id") == relay_id_from_key(first)
     except ValueError:
@@ -1267,8 +1267,7 @@ def load_or_derive_relay_id() -> str:
         kept = path.read_text().strip() if path.exists() else ""
         if not re.fullmatch(r"[a-z2-7]{16}", kept):
             history = relay_key_history()        # a relay that rotated before P286: its first key
-            first = history[0].get("old") if history and isinstance(history[0], dict) else None
-            kept = relay_id_from_key(first or get_relay_public_key_hex())
+            kept = relay_id_from_key(history_start(history, get_relay_public_key_hex()))
             KEY_DIR.mkdir(mode=0o700, parents=True, exist_ok=True)
             _write_secret_atomically(path, kept.encode())
         _RELAY_ID_CACHE = kept
@@ -1300,21 +1299,47 @@ def relay_key_history() -> list[dict[str, str]]:
         return []
 
 
+def _save_relay_history(history: list[dict]) -> None:
+    hist_path = KEY_DIR / _RELAY_KEY_HISTORY_NAME
+    tmp = hist_path.with_suffix(".tmp")
+    tmp.write_text(json.dumps(history, indent=1))
+    os.replace(tmp, hist_path)
+
+
+def history_key() -> str:
+    """The relay's key by its signed history — the end of its chain. Not the key
+    file: a lost key file is replaced by a fresh one on load, which no history
+    hands over to; the guardians rotate from the history's key."""
+    history = relay_key_history()
+    if not history:
+        return get_relay_public_key_hex()
+    return walk_relay_history(history, history_start(history, get_relay_public_key_hex()))[0][-1]
+
+
+def relay_guardians() -> dict | None:
+    """P290: the guardian set in force for this relay's key, or None."""
+    return guardians_at(relay_key_history(), history_key())
+
+
+class GuardiansRequired(RuntimeError):
+    """This relay has guardians: its key changes only with their signatures."""
+
+
 def rotate_relay_key() -> dict[str, str]:
     """Replace this relay's key with a new one, the hand-over signed by the old.
-    The running relay keeps signing with the old key until it restarts."""
+    The running relay keeps signing with the old key until it restarts. P290:
+    refused once the relay has guardians — they sign a rotation instead."""
     from datetime import UTC, datetime
+    if relay_guardians():
+        raise GuardiansRequired("this relay has guardians: propose the rotation and have them sign it "
+                                "(emporia guardians propose rotate)")
     old_priv, old_pub = generate_or_load_relay_keypair()
     new_priv = ed25519.Ed25519PrivateKey.generate()
     new_hex = new_priv.public_key().public_bytes_raw().hex()
     at = datetime.now(UTC).isoformat()
     step = {"old": old_pub.hex(), "new": new_hex, "at": at,
             "signature": old_priv.sign(rotation_bytes(old_pub.hex(), new_hex, at)).hex()}
-    history = [*relay_key_history(), step]
-    hist_path = KEY_DIR / _RELAY_KEY_HISTORY_NAME
-    tmp = hist_path.with_suffix(".tmp")
-    tmp.write_text(json.dumps(history, indent=1))
-    os.replace(tmp, hist_path)
+    _save_relay_history([*relay_key_history(), step])
     key_path = KEY_DIR / _RELAY_KEY_PATH_NAME
     key_path.unlink()            # the old private key goes; its public half stays in the history
     _write_secret_atomically(key_path, new_priv.private_bytes_raw())
@@ -1323,56 +1348,250 @@ def rotate_relay_key() -> dict[str, str]:
     return step
 
 
-def follows_rotation(pinned: str, current: str, history: list[dict[str, str]]) -> list[str]:
-    """The keys from `pinned` to `current`, each handed over by the one before —
-    or [] when the history does not lead there."""
-    chain, key = [pinned], pinned
-    for step in history:
-        if step.get("old") == key and verify_raw(rotation_bytes(step["old"], step.get("new", ""), step.get("at", "")),
-                                                 step.get("signature", ""), key):
-            key = step["new"]
+# ─── P290: guardians — k of n keys that must agree to change the relay's key ──
+# A relay may name guardian keys (held by other people or machines) and a
+# threshold, in a step of its key history signed by its key at the time. From
+# then on a rotation is followed only when that many guardians signed it — the
+# old key's signature alone is not enough, so a stolen relay key cannot hand the
+# relay to its thief; and the guardians can rotate without the old key, so a lost
+# or stolen key can be replaced. Changing the guardians takes the guardians.
+# Clients keep the guardian set they saw beside the pin (relay_guardians.json),
+# so a history served later without the declaration does not drop it.
+
+def guardians_bytes(key: str, guardians: list[str], threshold: int, at: str) -> bytes:
+    body = {"type": "emporia:relay-guardians:v1", "key": key, "guardians": sorted(guardians),
+            "threshold": int(threshold), "at": at}
+    return b"emporia:relay-guardians:v1\n" + json.dumps(body, sort_keys=True, separators=(",", ":")).encode()
+
+
+def guardians_ok(data: bytes, signatures: list[dict[str, str]] | None, state: dict | None) -> bool:
+    """At least the threshold of distinct guardians in `state` signed `data`."""
+    if not state:
+        return False
+    keys, signed = set(state.get("keys") or []), set()
+    for s in signatures or []:
+        k = str(s.get("key") or "")
+        if k in keys and k not in signed and verify_raw(data, str(s.get("signature") or ""), k):
+            signed.add(k)
+    return len(signed) >= int(state.get("threshold") or 0) > 0
+
+
+def _valid_guardian_set(guardians: list[str], threshold: int) -> bool:
+    keys = set(guardians or [])
+    return len(keys) >= 2 and 1 <= int(threshold) <= len(keys) and all(re.fullmatch(r"[0-9a-f]{64}", k) for k in keys)
+
+
+def _history_steps(history: list[dict], start: str, guardians: dict | None = None):
+    """(key, guardian set) after each step of a relay's key history, from `start`.
+    A step that does not follow the rules changes nothing."""
+    key, state = start, guardians
+    yield key, state
+    for step in history or []:
+        if step.get("type") == "guardians":
+            g, t = list(step.get("guardians") or []), int(step.get("threshold") or 0)
+            if step.get("key") == key and _valid_guardian_set(g, t):
+                data = guardians_bytes(key, g, t, str(step.get("at") or ""))
+                if (guardians_ok(data, step.get("guardian_signatures"), state) if state
+                        else verify_raw(data, str(step.get("signature") or ""), key)):
+                    state = {"keys": sorted(set(g)), "threshold": t}
+        elif step.get("old") == key:
+            data = rotation_bytes(key, str(step.get("new") or ""), str(step.get("at") or ""))
+            if (guardians_ok(data, step.get("guardian_signatures"), state) if state
+                    else verify_raw(data, str(step.get("signature") or ""), key)):
+                key = step["new"]
+        yield key, state
+
+
+def walk_relay_history(history: list[dict], start: str, guardians: dict | None = None) -> tuple[list[str], dict | None]:
+    """Follow a relay's key history from `start`: (the keys, each validly handed
+    over to by the one before; the guardian set in force at the end)."""
+    chain, state = [], guardians
+    for key, state in _history_steps(history, start, guardians):
+        if not chain or chain[-1] != key:
             chain.append(key)
-    return chain if key == current else []
+    return chain, state
+
+
+def history_start(history: list[dict], current: str) -> str:
+    """The relay's first key, as its history tells it (its current key if it never changed)."""
+    for step in history or []:
+        first = step.get("key") if step.get("type") == "guardians" else step.get("old")
+        if first:
+            return first
+    return current
+
+
+def guardians_at(history: list[dict], key: str) -> dict | None:
+    """The guardian set in force while `key` was the relay's key, by its history
+    walked from the start (the last one seen while `key` held)."""
+    found = None
+    for k, state in _history_steps(history, history_start(history, key)):
+        if k == key:
+            found = state
+    return found
+
+
+_PENDING_KEY_NAME = "_relay_identity.pending"
+
+
+def declare_relay_guardians(guardians: list[str], threshold: int) -> dict:
+    """P290: name this relay's first guardians, signed by its key. Once it has
+    guardians, changing them is a proposal they sign (`propose`)."""
+    from datetime import UTC, datetime
+    if relay_guardians():
+        raise GuardiansRequired("this relay already has guardians: changing them takes their signatures")
+    g = sorted(set(guardians))
+    if not _valid_guardian_set(g, threshold):
+        raise ValueError("guardians: at least 2 distinct public keys (64 hex), and a threshold from 1 to their number")
+    priv, pub = generate_or_load_relay_keypair()
+    at = datetime.now(UTC).isoformat()
+    step = {"type": "guardians", "key": pub.hex(), "guardians": g, "threshold": int(threshold), "at": at,
+            "signature": priv.sign(guardians_bytes(pub.hex(), g, threshold, at)).hex()}
+    _save_relay_history([*relay_key_history(), step])
+    return step
+
+
+def propose(kind: str, guardians: list[str] | None = None, threshold: int = 0) -> dict:
+    """P290: a change for the guardians to sign — `rotate` (a new key, made now and
+    kept pending here until applied) or `guardians` (a new guardian set). Works
+    whether or not the current key is still at hand: guardians can replace a lost
+    or stolen one."""
+    from datetime import UTC, datetime
+    state = relay_guardians()
+    if not state:
+        raise ValueError("this relay has no guardians: name them first (emporia guardians set …)")
+    current = history_key()
+    at = datetime.now(UTC).isoformat()
+    if kind == "rotate":
+        new_priv = ed25519.Ed25519PrivateKey.generate()
+        new_hex = new_priv.public_key().public_bytes_raw().hex()
+        _write_secret_atomically(KEY_DIR / _PENDING_KEY_NAME, new_priv.private_bytes_raw())
+        body = {"kind": "rotate", "old": current, "new": new_hex, "at": at}
+    elif kind == "guardians":
+        g = sorted(set(guardians or []))
+        if not _valid_guardian_set(g, threshold):
+            raise ValueError("guardians: at least 2 distinct public keys (64 hex), and a threshold from 1 to their number")
+        body = {"kind": "guardians", "key": current, "guardians": g, "threshold": int(threshold), "at": at}
+    else:
+        raise ValueError("propose: rotate or guardians")
+    return {**body, "needs": state["threshold"], "of": state["keys"], "signatures": []}
+
+
+def proposal_bytes(p: dict) -> bytes:
+    if p.get("kind") == "rotate":
+        return rotation_bytes(p["old"], p["new"], p["at"])
+    return guardians_bytes(p["key"], p["guardians"], p["threshold"], p["at"])
+
+
+def sign_proposal(p: dict, guardian_private_key: bytes) -> dict:
+    """A guardian's signature, added to the proposal (it says exactly what it signs)."""
+    priv = ed25519.Ed25519PrivateKey.from_private_bytes(guardian_private_key)
+    pub = priv.public_key().public_bytes_raw().hex()
+    sigs = [s for s in p.get("signatures") or [] if s.get("key") != pub]
+    return {**p, "signatures": [*sigs, {"key": pub, "signature": priv.sign(proposal_bytes(p)).hex()}]}
+
+
+def apply_proposal(p: dict) -> dict:
+    """Make a signed proposal take effect: checked against the guardians in force,
+    added to the history, and for a rotation the pending key becomes the relay's
+    key (restart the relay to sign with it)."""
+    state = relay_guardians()
+    if not guardians_ok(proposal_bytes(p), p.get("signatures"), state):
+        have = len({s.get("key") for s in p.get("signatures") or []} & set((state or {}).get("keys") or []))
+        raise ValueError(f"not enough guardian signatures: {have} of the {(state or {}).get('threshold')} needed")
+    current = history_key()
+    if p["kind"] == "rotate":
+        if p["old"] != current:
+            raise ValueError("this proposal hands over a key that is no longer the relay's")
+        pending = KEY_DIR / _PENDING_KEY_NAME
+        if not pending.exists():
+            raise ValueError("the new key this proposal names is not here (it is kept where it was proposed)")
+        new_priv = ed25519.Ed25519PrivateKey.from_private_bytes(pending.read_bytes())
+        if new_priv.public_key().public_bytes_raw().hex() != p["new"]:
+            raise ValueError("the pending key is not the one this proposal names")
+        step = {"old": p["old"], "new": p["new"], "at": p["at"], "guardian_signatures": p["signatures"]}
+        _save_relay_history([*relay_key_history(), step])
+        key_path = KEY_DIR / _RELAY_KEY_PATH_NAME
+        if key_path.exists():
+            key_path.unlink()
+        os.replace(pending, key_path)
+        global _RELAY_KEYPAIR_CACHE
+        _RELAY_KEYPAIR_CACHE = None
+        return step
+    if p["key"] != current:
+        raise ValueError("this proposal is for a key that is no longer the relay's")
+    step = {"type": "guardians", "key": p["key"], "guardians": p["guardians"], "threshold": p["threshold"],
+            "at": p["at"], "guardian_signatures": p["signatures"]}
+    _save_relay_history([*relay_key_history(), step])
+    return step
+
+
+def follows_rotation(pinned: str, current: str, history: list[dict[str, str]],
+                     guardians: dict | None = None) -> list[str]:
+    """The keys from `pinned` to `current`, each handed over by the one before —
+    by the old key, or by the guardians once the relay has them — or [] when the
+    history does not lead there. `guardians`: the set known while `pinned` was the
+    key (the client's own record, else what the history says)."""
+    state = guardians if guardians is not None else guardians_at(history, pinned)
+    chain, _ = walk_relay_history(history, pinned, state)
+    return chain if chain[-1] == current else []
 
 
 def trusted_relay_keys(relay: str, current: str | None, history: list[dict[str, str]] | None = None,
                        fetch_history: Any = None) -> tuple[list[str], bool]:
     """(every key of this relay this agent trusts, oldest first; whether the one
     it presents now is NOT among them). A rotation is followed only when signed
-    by the key it replaces, all the way from the pin. The pins are kept in
-    relay_pins.json; the MCP server, the SDK and `emporia log verify` share
-    them (P281)."""
+    by the key it replaces — or, once the relay has guardians (P290), by enough of
+    them — all the way from the pin. The pins are kept in relay_pins.json; the
+    MCP server, the SDK and `emporia log verify` share them (P281). The guardian
+    set seen is kept beside them (relay_guardians.json), so a history served
+    later without its declaration cannot drop it."""
     path = KEY_DIR / "relay_pins.json"
+    gpath = KEY_DIR / "relay_guardians.json"
     pins = json.loads(path.read_text()) if path.exists() else {}
+    known = json.loads(gpath.read_text()) if gpath.exists() else {}
     pinned = pins.get(relay)
+
+    def _write(p: Path, data: dict) -> None:
+        KEY_DIR.mkdir(parents=True, exist_ok=True)
+        fd = os.open(p, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+        with os.fdopen(fd, "w") as f:
+            json.dump(data, f)
 
     def save(key: str) -> None:
         pins[relay] = key
-        KEY_DIR.mkdir(parents=True, exist_ok=True)
-        fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
-        with os.fdopen(fd, "w") as f:
-            json.dump(pins, f)
+        _write(path, pins)
+
+    def keep_guardians(state: dict | None) -> None:
+        if state and known.get(relay) != state:
+            known[relay] = state
+            _write(gpath, known)
+
+    def full_chain(hist: list[dict], upto: str) -> list[str]:
+        """Every earlier key that handed over, by the rules, to `upto`."""
+        chain = walk_relay_history(hist, history_start(hist, upto))[0]
+        return chain[:chain.index(upto) + 1] if upto in chain else [upto]
 
     if pinned is None:
         if current:
             save(current)
+            if history is None and fetch_history:
+                history = fetch_history()
+            keep_guardians(guardians_at(history or [], current))
         return ([current] if current else []), False
     if not current or current == pinned:
-        # Every earlier key that handed over, in a signed chain, to the pinned one.
-        chain, key = [pinned], pinned
-        for step in reversed(history or []):
-            if step.get("new") == key and verify_raw(rotation_bytes(step.get("old", ""), key, step.get("at", "")),
-                                                     step.get("signature", ""), step.get("old", "")):
-                key = step["old"]
-                chain.insert(0, key)
-        return chain, False
+        if history:
+            keep_guardians(known.get(relay) or guardians_at(history, pinned))
+        return full_chain(history or [], pinned), False
     if history is None:
         history = fetch_history() if fetch_history else []
-    chain = follows_rotation(pinned, current, history)
-    if not chain:
+    state = known.get(relay) or guardians_at(history, pinned)
+    chain, end_state = walk_relay_history(history, pinned, state)
+    if chain[-1] != current:
         return [pinned], True
     save(current)
-    return chain, False
+    keep_guardians(end_state)
+    return [*full_chain(history, pinned)[:-1], *chain], False
 
 
 def receipt_bytes(body: dict) -> bytes:

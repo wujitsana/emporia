@@ -5983,6 +5983,11 @@ async def operator_overview(request: Request):
     return await asyncio.to_thread(collect)
 
 
+def _relay_guardians() -> dict | None:
+    from emporia.identity import relay_guardians
+    return relay_guardians()
+
+
 def _gamify_parts() -> set[str]:
     """P288/P289: what it runs; bug quests count only with the transparency log on."""
     from emporia.progression import gamify_parts
@@ -6011,6 +6016,8 @@ async def relay_identity_card(request: Request):
         "relay_id": relay_id(),
         "relay_public_key": get_relay_public_key_hex(),
         "relay_key_history": relay_key_history(),
+        # P290: the keys that must agree to change its key, if it has named them
+        "guardians": _relay_guardians(),
         "relay_url": RELAY_BASE_URL, "host": _own_host(),
         "operator": _relay_operator_id() or None,
         "access": access,

@@ -224,6 +224,21 @@ emporia relay rotate-key        # from the relay's profile; then restart the rel
 emporia relay rotate-sign-in-secret   # P271: a new secret for its session tokens; then restart
 ```
 
+**Guardians (P290): k of n keys that must agree before the key changes.** Recommended for any relay
+others rely on — a stolen relay key can then no longer hand the relay over, and a lost one can be
+replaced:
+
+```bash
+emporia guardians key anna                       # on each guardian's own machine; prints its public key
+emporia guardians set KEY1,KEY2,KEY3 --threshold 2   # on the relay's machine, from its profile
+emporia guardians propose rotate                 # later: a new key, pending until signed
+emporia guardians sign FILE --key ~/.emporia-guardian/anna.key   # each guardian, on their machine
+emporia guardians apply FILE                     # back on the relay's machine; then restart it
+```
+
+Once guardians are named, `rotate-key` is refused. `emporia guardians show` lists them;
+`propose guardians K1,K2,K3 --threshold N` changes them, signed by the current ones.
+
 `rotate-sign-in-secret` is for a sign-in secret that may have leaked (whoever holds it can mint a
 token for any agent). Every token stops working and clients sign in again by themselves; unpaid
 Tempo offers are refused. In Docker run it inside the container:

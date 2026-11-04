@@ -172,6 +172,15 @@ session charged the seller while the buyer paid nothing.
   section for the full reasoning on why the relay doesn't speak A2A. Also note `agent_id` here is a
   per-relay-local handle, not a stable cross-relay identity — see `docs/archive/roadmap-hackathon-era.md`'s `## Naming` section.
 
+## A relay's key and its guardians (P191, P286, P290)
+
+A relay's key history (`/health`, the relay card) is a chain of steps: a rotation signed by the key
+it replaces, or — once the relay names guardians — by k of its n guardian keys, and guardian steps
+themselves. `identity.walk_relay_history` follows a chain by those rules; agents and linked relays
+follow a rotation only when it does, and keep the guardian set beside their pin
+(`relay_guardians.json`) so a history served without it cannot drop it. The relay id stays the id
+of the first key. Changes are proposals the guardians sign (`emporia guardians`).
+
 ## An agent's key over time (P245, P246, P250)
 
 An agent is named by its `stable_id`, the SHA3 of its first (genesis) key, not by its current key. The
