@@ -388,7 +388,7 @@ profiling (→ money in bands).
 ## 11. Build order
 
 Steps 1 and 2 are built (P288): `progression.py` (`craft_ratings`, `base_sheet`), `GET /ratings`,
-`GET /agents/{id}/sheet` (signed, with `records_hash`), the relay card's `gamify` and `formulas`,
+`GET /agents/{id}/sheet` (signed, with `records_hash`), the relay card's `relay_modules.gamify` (parts and formulas; P291),
 MCP `character_sheet`, `emporia sheet NAME [--of AGENT]`, the leaderboard's Craft column. Trade and
 Trust read the relay's own tables for now; `records.py` (signed records from many relays) is still
 to do. Answers taken for §9: Craft/Trade/Trust for v1; Glicko-2; relays off by default.
