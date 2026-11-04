@@ -298,3 +298,51 @@ def test_a_reused_pid_is_not_taken_for_the_signer_or_relay():
     assert not cli._is_our_pid(os.getpid(), b"signer serve")
     assert not cli._is_relay_pid(os.getpid()) and not cli._is_relay_pid(999999999)
     assert cli._is_our_pid(os.getpid(), b"pytest")
+
+
+def test_doctor_finds_two_identity_keys_and_names_the_one_the_relay_knows(tmp_path, monkeypatch):
+    """11-04: a key source in the .env won over the key file, so the agent's tools signed with
+    one key and the console with another — and the relay knew only the file's."""
+    from cryptography.hazmat.primitives.asymmetric import ed25519
+    from emporia import cli
+    from emporia.identity import _keyfile_stem
+
+    file_key, env_key = (ed25519.Ed25519PrivateKey.generate() for _ in range(2))
+    (tmp_path / f"{_keyfile_stem('ag')}.priv").write_bytes(file_key.private_bytes_raw())
+    pub = lambda k: k.public_key().public_bytes_raw().hex()  # noqa: E731
+
+    class Resp:
+        status_code = 200
+
+        def __init__(self, key):
+            self.key = key
+
+        def json(self):
+            return {"public_key_hex": self.key}
+
+    lines = []
+
+    class Rep:
+        def ok(self, m, *a): lines.append(("ok", m))
+        def fail(self, m, *a): lines.append(("fail", m, *a))
+        def warn(self, m, *a): lines.append(("warn", m))
+
+    dotenv = {"EMPORIA_IDENTITY_PRIVATE_KEY": env_key.private_bytes_raw().hex()}
+    monkeypatch.setattr("httpx.get", lambda *a, **k: Resp(pub(file_key)))
+    cli.doctor_identity_key(Rep(), "ag", "ag", tmp_path, "env:EMPORIA_IDENTITY_PRIVATE_KEY", dotenv,
+                            "http://r", True)
+    [(kind, msg, fix)] = lines
+    assert kind == "fail" and "two identity keys" in msg and "the key file is the one its relay knows" in msg
+    assert "remove EMPORIA_IDENTITY_KEY_SOURCE" in fix
+    assert env_key.private_bytes_raw().hex() not in msg + fix                       # public halves only
+
+    lines.clear()                                                                    # one key, the relay's
+    cli.doctor_identity_key(Rep(), "ag", "ag", tmp_path, "", {}, "http://r", True)
+    assert lines[0][0] == "ok"
+    lines.clear()                                                                    # one key, not the relay's
+    monkeypatch.setattr("httpx.get", lambda *a, **k: Resp(pub(env_key)))
+    cli.doctor_identity_key(Rep(), "ag", "ag", tmp_path, "", {}, "http://r", True)
+    assert lines[0][0] == "fail" and "does not know" in lines[0][1]
+    lines.clear()                                                                    # a command source is not run
+    cli.doctor_identity_key(Rep(), "ag", "ag", tmp_path, "cmd:op read x", {}, "http://r", True)
+    assert lines[0][0] == "ok" and "does not open" in lines[0][1]

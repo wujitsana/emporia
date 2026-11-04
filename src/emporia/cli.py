@@ -3132,6 +3132,60 @@ def doctor_federation(rep: Report, h: dict) -> None:
                  "fine behind a proxy; otherwise set EMPORIA_RELAY_URL in the relay's .env to the address others use")
 
 
+def _ed25519_public(raw: bytes) -> str:
+    from cryptography.hazmat.primitives.asymmetric import ed25519
+    return ed25519.Ed25519PrivateKey.from_private_bytes(raw).public_key().public_bytes_raw().hex()
+
+
+def doctor_identity_key(rep: Report, name: str, agent_id: str, key_dir: Path, linked: str,
+                        dotenv: dict, relay: str, relay_up: bool) -> None:
+    """The key the agent signs with is the one its relay knows — and there is only one.
+    A key source (EMPORIA_IDENTITY_KEY_SOURCE) wins over the key file, so a profile
+    holding both, different, has two identities: its own tools sign with one and the
+    console with the other, and one of them is refused (seen 11-04: 403 on sign-in).
+    Only public halves are compared or shown."""
+    from emporia.identity import _keyfile_stem
+    import httpx
+
+    from emporia.key_source import KeySourceError, key32
+    path = key_dir / f"{_keyfile_stem(agent_id)}.priv"
+    file_pub = _ed25519_public(path.read_bytes()) if path.exists() and path.stat().st_size == 32 else ""
+    source_pub = ""
+    if linked and not linked.strip().startswith("env:"):
+        # a command or file source may prompt or unlock something: doctor does not run it
+        rep.ok("identity key from a source doctor does not open — not compared with its relay")
+        return
+    if linked:
+        try:
+            source_pub = _ed25519_public(key32(linked, dotenv))
+        except (KeySourceError, OSError, ValueError) as e:
+            rep.fail(f"its identity key source gives no key: {e}", f"emporia setup agent {name}")
+            return
+    signs = source_pub or file_pub
+    known = ""
+    if relay_up:
+        try:
+            r = httpx.get(f"{relay.rstrip('/')}/agents/{agent_id}/record", timeout=5)
+            known = (r.json() or {}).get("public_key_hex", "") if r.status_code == 200 else ""
+        except (httpx.HTTPError, ValueError):
+            known = ""
+    if source_pub and file_pub and source_pub != file_pub:
+        which = ("the key file is the one its relay knows" if known == file_pub
+                 else "its key source is the one its relay knows" if known == source_pub else "")
+        fix = ("remove EMPORIA_IDENTITY_KEY_SOURCE from its .env, keeping the key file"
+               if known == file_pub else f"move {path.name} aside (the key source is its identity)"
+               if known == source_pub else f"emporia agent rotate-key {name} (after deciding which to keep)")
+        rep.fail(f"two identity keys: its key source ({source_pub[:12]}…) and its key file ({file_pub[:12]}…) "
+                 f"differ — its tools sign with the first, the console with the second"
+                 + (f"; {which}" if which else ""), fix)
+        return
+    if known and signs and known != signs:
+        rep.fail(f"signs with a key its relay does not know ({signs[:12]}…; the relay has {known[:12]}…)",
+                 f"emporia agent rotate-key {name}   (or restore the key the relay knows)")
+    elif known and signs:
+        rep.ok(f"identity key {signs[:12]}… is the one its relay knows")
+
+
 def doctor_agent(rep: Report, profile: Path, entry: dict, relay_up: bool) -> None:
     inst = installer()
     name = profile.name
@@ -3153,6 +3207,8 @@ def doctor_agent(rep: Report, profile: Path, entry: dict, relay_up: bool) -> Non
         rep.fail("no identity key", "it is created when the agent's MCP server first starts")
         return
     dotenv = inst.harvest_env(profile)
+    doctor_identity_key(rep, name, agent_id, key_dir, linked_identity, dotenv,
+                        env.get("EMPORIA_RELAY_URL") or relay_url(), relay_up)
     cfg_env = inst.load_yaml(profile / "config.yaml").get("env") or {}
     leaked = [k for k in _RELAY_ONLY if k in dotenv or k in cfg_env]
     if leaked and profile != this_profile():
