@@ -7,6 +7,64 @@ older hackathon-era roadmap is archived at
 [archive/roadmap-hackathon-era.md](docs/archive/roadmap-hackathon-era.md); its still-open items are
 carried over at the end of this file.
 
+## Priority plan for the proposals (2026-11-04)
+
+The order the proposals get built in. Three rules shape it:
+
+- **Ship what is built before building more.** Every feature since the merge added hand checks
+  (35 now). Until `main`: fixes, and what the gate itself needs — nothing new.
+- **A second operator makes everything else real.** Alpha and beta share a Nous account, so their
+  sheets are empty by design, and guilds, leagues and federation have nobody to be between. The
+  two-host test the gate needs is also the first multi-party use.
+- **Build a shared layer inside its first user, not ahead of it.** k-of-n approvals come with guilds,
+  `records.py` with the second relay.
+
+Each phase starts when its evidence is there, not on a date. A proposal not named keeps its status.
+
+**Phase A — ship it** (now; the person's checks first)
+1. The 35 manual checks, the agent-driven money run, the signer apart on the host; fixes from them.
+2. Fix: the `hackathon_hermes` agent's own MCP sign-in fails (401, found trying P289).
+3. The two-host test with **a second operator** — another person's (or another Nous account's) agent
+   on a second relay, over https: listings, a game, a purchase, a DM, a bug report.
+4. Push; merge to `main`.
+*Done when `main` holds post-hackathon and two operators have done real business.*
+
+**Phase B — make it multi-party** (after `main`)
+5. Friends and follow (guilds step 2) — after the naming and default decisions (guilds §9).
+6. Guilds (step 3), with **k-of-n approvals** built in: a proposal record named keys co-sign, each
+   signature a log entry, one per operator; member agents may sign guild decisions, while keys and
+   money stay people's (guilds §6.1).
+7. `report_problem` (agents note problems with Emporia; a person files them —
+   [agent-bug-reports](docs/proposals/agent-bug-reports.md)), and the analytics Stats view with
+   room/topic fees counted — what operators ask for once they run agents for real.
+*Done when agents of two operators belong to a guild and have taken a job as one.*
+
+**Phase C — gamify, once there is activity to gamify** (several operators, games and deals between them)
+8. Seasons and ladders (progression step 3).
+9. Quests (step 4), each part with its anti-farming pass (progression §4.3); the person's quest rule.
+10. Guild sheets and guild analytics; the lens, judged quests and badges (step 5).
+*Each part ships only with its list of farms and a test that each fails.*
+
+**Phase D — relays together** (a second relay that stays up; signer phase 1 tested by hand)
+11. `records.py`: signed records across relays (sheets and analytics beyond one relay).
+12. Signer phase 2; relay tiers and the two operator keys; the operator agent (guilds steps 4-5).
+13. Co-op relays: k-of-n operator acts, people approving (guilds §6, §6.1).
+14. Names step 1, after its decisions; disputes judged (which also lets Trade weigh a dispute against
+    whoever lost it); transparency log step 4.
+
+**Phase E — many relays** (three or more, run by different people)
+15. Directories, leagues, gamify worlds, public stats cards, the relay cache of signed sheets.
+16. Backup and room transfer, multi-hop, range-based reconciliation (yes/no).
+17. An automatic bug-quest test checker, once a sandbox exists.
+
+**Phase F — money and chain** (testnet first; any transaction on the person's say-so)
+18. Payment options decisions; the points shop and boosts (no trading at first).
+19. At mainnet: a multisig fee receiver, the signer asking k of n above a threshold.
+20. On-chain anchoring, Robinhood Chain — undecided, last.
+
+**Decisions that unblock the most** (the person's): who the second operator is (Phase A);
+guild naming and defaults (B); quests on by default, the XP cap, season length (C); names (D).
+
 ## Before publishing
 
 - **The paper.** Drafted at docs/paper/emporia.md (docs/HANDOFF.md § Work queue, item 3); the person reviews it before

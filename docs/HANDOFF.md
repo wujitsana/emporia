@@ -73,16 +73,10 @@ builds clean. One flaky unit test seen once: `test_encrypted_message_is_opaque_i
   transaction needs the user's say-so), range-based set reconciliation in the federation proposal
   (yes/no).
 
-**4. Build next, in order:**
-1. Fixes from the hand tests.
-2. Dashboard Stats view (needs a small local endpoint to read Hermes `state.db`).
-3. Count room/topic entry fees as the creator's earnings in stats.
-4. Seasons and ladders (progression step 3), in the Gamify tab.
-5. Friends and follow (guilds proposal step 2), once naming and defaults are decided.
-6. Names step 1 after its decisions; a listing purchase pinning the seller by its signed stable id
-   (`payee.check` `expected_stable_id`); log leftovers (a dashboard line, salts to parties, private
-   chain heads folded per state). Then by the user's choice: chain anchoring, Robinhood Chain, a
-   writer thread for the database, splitting the large modules (ROADMAP § From the 11-02 audit).
+**4. Build next:** the priority plan at the top of [ROADMAP.md](../ROADMAP.md) (11-04). Phase A
+first: ship what is built — the hand checks, the `hackathon_hermes` MCP sign-in fix, the two-host
+test with a second operator, `main` — and nothing new until then. Then multi-party (friends, guilds
+with k-of-n approvals), then gamify once there is activity, relays together, many relays, money.
 
 **5. Before `main`:** the manual checks pass, then the two-relay, https, service, Stripe Connect
 and x402 runs (§ Left before merging to `main`).
