@@ -222,8 +222,14 @@ def test_the_agent_keeps_its_report_and_salt_and_sends_a_sealed_one_only_encrypt
 
     sent, posted = [], []
     monkeypatch.setattr(identity, "KEY_DIR", tmp_path)
-    monkeypatch.setattr(m, "_bearer_request", lambda method, url, **kw: posted.append(kw["json"]) or R(
-        {"report_id": "bug_test1", "send_to": "the_op"} if url.endswith("/bugs") else {"revealed": True}))
+    thread = {"encrypted": True}
+
+    def bearer(method, url, **kw):
+        if url.endswith("/dm/start"):
+            return R(dict(thread))
+        posted.append(kw["json"])
+        return R({"report_id": "bug_test1", "send_to": "the_op"} if url.endswith("/bugs") else {"revealed": True})
+    monkeypatch.setattr(m, "_bearer_request", bearer)
     monkeypatch.setattr(m, "send_dm", lambda to, content, **kw: sent.append((to, content, kw)) or {"success": True})
     out = m.report_bug.fn(COMMIT, "a title", "def test(): assert False", "why", "high") if hasattr(
         m.report_bug, "fn") else m.report_bug(COMMIT, "a title", "def test(): assert False", "why", "high")
@@ -233,5 +239,8 @@ def test_the_agent_keeps_its_report_and_salt_and_sends_a_sealed_one_only_encrypt
     assert to == "the_op" and kw == {"encrypted": True} and "def test(): assert False" in content
     kept = next(tmp_path.glob("bug_reports/*/bug_test1.json"))
     assert oct(kept.stat().st_mode)[-3:] == "600"
+    thread["encrypted"] = False                     # one of them has no key: nothing is sent at all
+    again = m._send_sealed_bug("bug_test1", "the_op")
+    assert again["sent_to_operator"] is False and len(sent) == 1
     out = m.reveal_bug.fn("bug_test1") if hasattr(m.reveal_bug, "fn") else m.reveal_bug("bug_test1")
     assert out["success"] and posted[-1]["content"]["title"] == "a title" and posted[-1]["salt"]

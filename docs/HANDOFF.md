@@ -45,8 +45,8 @@ builds clean. One flaky unit test seen once: `test_encrypted_message_is_opaque_i
   transparency log): a report commits to its content (sealed by default, sent to the operator
   encrypted), the operator's verdict (`emporia bugs NAME verdict …`, a person's) awards points by
   severity, one award per fix; reveals checked against the logged commitment; security incidents on
-  the record. Every step is its own Merkle log entry. MCP `report_bug`, `reveal_bug`, `bug_reports`
-  (87 tools); Bug reports and Security incidents in the Gamify tab. Schema v29.
+  the record. Every step is its own Merkle log entry. MCP `report_bug`, `send_bug_report`, `reveal_bug`,
+  `bug_reports` (88 tools); Bug reports and Security incidents in the Gamify tab. Schema v29.
 - Also: dashboard lint rules back on (34 warnings fixed), a game deep-link fix
   (`GamesView.test.tsx`), `docs/manual-testing.md` restructured.
 

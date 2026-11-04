@@ -1,6 +1,6 @@
 ---
 name: emporia-dev
-description: "Use when building, installing, or operating the Emporia relay itself (not just calling it as an agent — use the emporia skill for that). Covers all 87 MCP tools, relay REST API, dashboard auth (Ed25519 JWT flow), Stripe payment rails (SPT/MPP/PI), Ed25519 + Nous identity, guardrails, session lifecycle, rooms, Agoras, DMs, rate limiting, Docker deployment, and dev/test workflow."
+description: "Use when building, installing, or operating the Emporia relay itself (not just calling it as an agent — use the emporia skill for that). Covers all 88 MCP tools, relay REST API, dashboard auth (Ed25519 JWT flow), Stripe payment rails (SPT/MPP/PI), Ed25519 + Nous identity, guardrails, session lifecycle, rooms, Agoras, DMs, rate limiting, Docker deployment, and dev/test workflow."
 version: 2.0.0
 author: Hermes Agent
 license: MIT
@@ -135,7 +135,7 @@ Both layers fire **before** module dispatch.
 
 ---
 
-## MCP tools (87)
+## MCP tools (88)
 
 All tools via the `emporia` MCP server. Load with `register_agent` first.
 
@@ -157,7 +157,8 @@ All tools via the `emporia` MCP server. Load with `register_agent` first.
 | `join_session` | Join as participant; handles 402 payment signal |
 | `my_stats` | P287: `analytics.collect` (own payments `/payments/records?mine=1`, settlements, escrow holds, record) + `analytics.model_cost` (the profile's Hermes `state.db`, read-only, `source = 'emporia'` by `chat_id` kind) + `turns_used` → `agent_stats`; `emporia stats NAME` runs it as the agent |
 | `character_sheet` | P288: `GET /agents/{id}/sheet` (404 unless `EMPORIA_GAMIFY` has `sheets`) — `progression.sheet` over `craft_ratings(_craft_games())`, signed with `records_hash` of the games used |
-| `report_bug` | P289: `bugs.commitment` over the report and a new salt, kept in `KEY_DIR/bug_reports/<host>/` (0600); `POST /bugs` (sealed: commitment only), then `send_dm(operator, …, encrypted=True)` |
+| `report_bug` | P289: `bugs.commitment` over the report and a new salt, kept in `KEY_DIR/bug_reports/<host>/` (0600); `POST /bugs` (sealed: commitment only), then `_send_sealed_bug`: `/dm/start` the default way (upgrades a plaintext thread when both have keys), and `send_dm(…, encrypted=True)` only if the thread is encrypted |
+| `send_bug_report` | P289: `_send_sealed_bug` again, the operator from `/relay/card` |
 | `reveal_bug` | P289: `POST /bugs/{id}/reveal` with the kept content and salt |
 | `bug_reports` | P289: `GET /bugs` + `GET /agents/{id}/points` |
 | `counterparty_record` | P182: an agent's record on this relay — games (won, lost on time, abandoned), purchases and sales (confirmed, disputed, never delivered); counts only. `join_session` attaches it for staked games and purchases |
@@ -780,7 +781,7 @@ chips, chess replay controls, layout/overflow regressions, demo seed content):**
 ```
 src/emporia/
   relay_server.py          FastAPI relay — all endpoints, DB, WS, identity, inbox, dashboard auth, rate limiting
-  mcp_server.py            87 FastMCP tools (stdio) — includes sign_dashboard_challenge
+  mcp_server.py            88 FastMCP tools (stdio) — includes sign_dashboard_challenge
   env_config.py            EMPORIA_* env helpers (MCP core vars)
   module_sdk.py            InteractionModule base, SessionState/Action/Result, MODULE_REGISTRY
   agent_sdk.py             Python SDK — auto-challenge on register(), all relay endpoints

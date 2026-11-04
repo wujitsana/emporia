@@ -3878,18 +3878,49 @@ def report_bug(commit: str, title: str, test: str, description: str, severity: s
     os.chmod(_bug_store(_base()) / f"{d['report_id']}.json", 0o600)
     out: dict[str, Any] = {"success": True, "report_id": d["report_id"], "commitment": c, "sealed": sealed}
     if sealed:
-        to = d.get("send_to")
-        if not to:
-            out["warning"] = "this relay names no operator to send the sealed report to; it stays on this machine"
-        else:
-            msg = (f"Sealed bug report {d['report_id']} (commitment {c}, salt {salt})\n\n"
-                   + json.dumps(fields, indent=2))
-            sent = send_dm(to, msg, encrypted=True)
-            out["sent_to_operator"] = bool(sent.get("success"))
-            if not sent.get("success"):
-                out["warning"] = (f"the encrypted DM to {to} did not go: {sent.get('error')}. The report is "
-                                  "filed and kept here; send it again when the operator has an encryption key.")
+        out |= _send_sealed_bug(d["report_id"], d.get("send_to") or "")
     return out
+
+
+def _send_sealed_bug(report_id: str, to: str) -> dict[str, Any]:
+    """P289: send a kept sealed report to the relay operator — encrypted, or not at all.
+    The thread is opened the default way, which upgrades an old plaintext thread one-way
+    when both have keys; the report goes only if the thread then says it is encrypted."""
+    path = _bug_store(_base()) / f"{report_id}.json"
+    if not path.exists():
+        return {"sent_to_operator": False, "warning": f"no report {report_id} kept on this machine"}
+    if not to:
+        return {"sent_to_operator": False,
+                "warning": "this relay names no operator to send the sealed report to; it stays on this machine"}
+    kept = json.loads(path.read_text())
+    try:
+        start = _bearer_request("post", f"{_base()}/dm/start", agent_id=AGENT_ID, json={"to_agent": to}, timeout=10)
+        encrypted = start.status_code in (200, 201) and bool(start.json().get("encrypted"))
+    except Exception as e:
+        return {"sent_to_operator": False, "warning": f"could not reach {to}: {e}"}
+    if not encrypted:
+        return {"sent_to_operator": False, "warning": f"no encrypted thread with {to} (one of you has no "
+                "encryption key); the report stays here — send it with send_bug_report once there is one"}
+    msg = (f"Sealed bug report {report_id} (commitment {kept['commitment']}, salt {kept['salt']})\n\n"
+           + json.dumps(kept["fields"], indent=2))
+    sent = send_dm(to, msg, encrypted=True)
+    if sent.get("success"):
+        return {"sent_to_operator": True}
+    return {"sent_to_operator": False, "warning": f"the encrypted DM to {to} did not go: {sent.get('error')}; "
+            "the report stays here — try send_bug_report again"}
+
+
+@mcp.tool()
+@_relay_aware
+def send_bug_report(report_id: str) -> dict[str, Any]:
+    """Send one of your sealed bug reports (P289) to the relay's operator again — encrypted,
+    or not at all — when report_bug could not."""
+    try:
+        operator = httpx.get(f"{_base()}/relay/card", timeout=10).json().get("operator") or ""
+    except Exception as e:
+        return {"success": False, "error": str(e)}
+    out = _send_sealed_bug(report_id, operator)
+    return {"success": out["sent_to_operator"], **out}
 
 
 @mcp.tool()

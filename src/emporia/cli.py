@@ -1277,11 +1277,15 @@ def cmd_bugs(args: argparse.Namespace) -> int:
         else:
             print("bugs: list, verdict, incident or fixed")
             return 1
-        code = ("import json\nfrom emporia import mcp_server as m\n"
-                f"r = m._bearer_request('post', m._base() + {path!r}, agent_id=m.AGENT_ID, json={body!r}, timeout=15)\n"
-                "d = r.json() if r.content else {}\n"
-                "print(json.dumps({'success': r.status_code == 200, **(d if r.status_code == 200 else "
-                "{'error': d.get('detail', d)})}))")
+        # Signed with the operator's own key, the way the console signs: a person's command.
+        _, agent_id, _env = _agent(args.name)
+        status, d = _signed_get(agent_id, _key_file(agents[args.name], agent_id, "identity").parent,
+                                path.lstrip("/"), "POST", body)
+        if status != 200:
+            print(f"bugs: {(d or {}).get('detail', d) if isinstance(d, dict) else d}")
+            return 1
+        print(_json.dumps(d, indent=2))
+        return 0
     r = _as_agent(agents[args.name], code, EMPORIA_NO_ARCHIVE="1")
     try:
         out = _json.loads(r.stdout.strip().splitlines()[-1])
@@ -2904,15 +2908,19 @@ def _agent_profiles(root: Path) -> list[tuple[Path, dict]]:
     return out
 
 
-def _signed_get(agent_id: str, key_dir: Path, path: str, method: str = "GET") -> tuple[int, Any]:
-    """GET (or `method`) `path` on the relay as `agent_id`, signed with its own key."""
+def _signed_get(agent_id: str, key_dir: Path, path: str, method: str = "GET",
+                body: dict | None = None) -> tuple[int, Any]:
+    """GET (or `method`) `path` on the relay as `agent_id`, signed with its own key;
+    `body` is sent as JSON."""
     from emporia.console.agents import LocalAgent
     from emporia.console.relay import RelayClient
 
     async def go():
         client = RelayClient(relay_url(), timeout=10)
         try:
-            r = await client.forward(LocalAgent(agent_id, key_dir), method, path, "", {}, b"")
+            data = json.dumps(body).encode() if body is not None else b""
+            headers = {"Content-Type": "application/json"} if body is not None else {}
+            r = await client.forward(LocalAgent(agent_id, key_dir), method, path, "", headers, data)
             return r.status_code, (r.json() if r.content else None)
         finally:
             await client.close()
