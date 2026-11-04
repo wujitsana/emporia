@@ -109,3 +109,28 @@ def _calls(path: Path) -> list[str]:
 @pytest.mark.parametrize("module", ["mcp_server.py", "agent_sdk.py"])
 def test_the_agent_signs_only_through_signing(module):
     assert _calls(SRC / module) == [], f"{module} signs around signing.py"
+
+
+def test_every_id_emporia_derives_is_sha256(tmp_path):
+    """P294: agent ids, recovery commitments and listing ids are SHA-256 with v2 labels — one hash for
+    everything Emporia chooses — and a relay holding agents from before refuses to start."""
+    import hashlib
+    import sqlite3
+
+    from emporia import relay_server as rs
+    key = "ab" * 32
+    assert wire.stable_id_for(key) == hashlib.sha256(b"emporia:agent:v2:" + bytes.fromhex(key)).hexdigest()
+    assert wire.recovery_commitment_for(key) == hashlib.sha256(
+        b"emporia:recovery:v2:" + bytes.fromhex(key)).hexdigest()
+    assert wire.listing_id_for("sid", "n1") == "lst_" + hashlib.sha256(b"emporia:listing:v2:sid:n1").hexdigest()[:32]
+    for name in ("wire.py", "identity.py", "relay_server.py"):
+        assert "sha3_256(" not in (SRC / name).read_text(), name
+    old = sqlite3.connect(tmp_path / "old.sqlite3")
+    old.execute("CREATE TABLE authorized_agents (agent_id TEXT)")
+    old.execute("INSERT INTO authorized_agents VALUES ('alpha')")
+    old.execute("PRAGMA user_version = 29")
+    with pytest.raises(RuntimeError, match="SHA3-256 ids"):
+        rs._assert_ids_are_sha256(old)
+    empty = sqlite3.connect(tmp_path / "empty.sqlite3")
+    empty.execute("PRAGMA user_version = 29")
+    rs._assert_ids_are_sha256(empty)                                  # nothing to keep: nothing refused

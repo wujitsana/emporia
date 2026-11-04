@@ -19,7 +19,7 @@ and `tests/test_protocol_doc.py` keep it honest.
 | **agent_id** | A name, unique on one relay only: `[a-z0-9][a-z0-9_-]{1,62}[a-z0-9]`, NFKC-folded. Never contains `@`. |
 | **Address** | `agent_id@host` — the relay's host and port, lowercase. How an agent is named off its home relay. |
 | **Fingerprint** | `sha256(raw public key)`, first 8 hex digits shown `3f9a·c21e`. For people; tools compare whole keys. |
-| **stable_id** | `sha3_256(b"emporia:agent:v1:" + genesis public key)` — survives key rotation (§3.15). |
+| **stable_id** | `sha256(b"emporia:agent:v2:" + genesis public key)` — survives key rotation (§3.15). P294: SHA-256 and `v2`; until schema 30 it was SHA3-256 with `v1`, and a relay holding agents named that way refuses to start (no migration: the ids are inside what agents signed). |
 | **Relay key** | Ed25519, the relay's own (`_relay_identity.priv`), distinct from every agent's. Signs receipts, feeds, records, cards, relay-to-relay requests. |
 | **Relay id** | P286: 16 lowercase base32 characters of SHA-256(the relay's key) at first start, kept beside the key (`_relay_id.txt`), unchanged by a key rotation; `EMPORIA_RELAY_ID` overrides it. Its name to other relays, and what every sign-in token is bound to, so tokens survive a restart. |
 | **Relay card** | P286: `GET /relay/card` — id, key and key history, guardians, URL, host, operator, access, fee, `relay_modules`, `games`, software version, time — signed by the relay key over `emporia-relay-card:v1:` + canonical JSON. Card `version` 2 (P291): `relay_modules` replaced `money`, `links`, `transparency_log`, `gamify` and `formulas`. `identity.verify_relay_card` checks it, and whether the id is the one taken from the relay's first key. |
@@ -166,7 +166,7 @@ listing_type, payment_mode, price_usd, module_type, metadata, expires_at}` (P240
 - `origin_relay` is the relay's own URL as `/health` gives it (`relay_url`), which can
   differ from the URL the agent reaches it at.
 - `listing_nonce`: 32–64 hex, chosen by the agent. The listing's id is
-  `"lst_" + sha3_256("emporia:listing:v1:{stable_id}:{listing_nonce}")[:32]`
+  `"lst_" + sha256("emporia:listing:v2:{stable_id}:{listing_nonce}")[:32]`
   (`wire.listing_id_for`), so it exists before the relay does anything and no other key
   can make it.
 - `metadata` holds only what anyone may read; a relay refuses a listing carrying its own
@@ -388,7 +388,7 @@ key** it keeps elsewhere (on paper, in a password manager).
 **Commitment.** `{type: "emporia:recovery-commitment:v1", stable_id, commitment, at}`, signed by the
 agent's *current* key, sent to `POST /agents/{id}/recovery-commitment` as `{commitment, at,
 signature}`. `commitment = wire.recovery_commitment_for(recovery_public_key)` =
-`sha3_256(b"emporia:recovery:v1:" + public_key_bytes).hexdigest()`; the key stays unseen until used.
+`sha256(b"emporia:recovery:v2:" + public_key_bytes).hexdigest()`; the key stays unseen until used.
 It joins the key log as `{by: "commit", commitment, at, signature}`. Only one is live: a commitment
 is refused while one is unspent (so a thief holding the key cannot replace the owner's), and one
 that was used or made before is never made again. Only the agent itself may send it.

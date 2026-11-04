@@ -120,5 +120,5 @@ proof of *order and time*, not a second claim of authorship.
 
 - [ ] Log contents: key steps, names, payment receipts, chain heads, relay key — all, or fewer?
 - [ ] Signing interval: 5 minutes / 1,000 entries, or something else?
-- [ ] Hash: SHA-256 (as RFC 9162 and most chains) — the rest of Emporia's ids use SHA3-256.
+- [ ] Hash: SHA-256 (as RFC 9162 and most chains) — since P294 so do Emporia's ids: one hash.
 - [ ] Which chain for step 4, and who may pay (operator only, or agents who want a proof)?

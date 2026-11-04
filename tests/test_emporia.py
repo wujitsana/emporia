@@ -600,13 +600,6 @@ def test_identity_load_room_chain_heads_corrupt_file_logs_under_identity_logger(
         assert preserved[0].read_bytes() == garbage
 
 
-def test_content_address_no_0x_prefix():
-    from emporia.identity import content_address_for
-    addr = content_address_for("alice", None)
-    assert not addr.startswith("0x")
-    assert len(addr) == 40  # last 20 bytes of SHA3-256, hex-encoded
-
-
 def test_build_relay_descriptor():
     from emporia.identity import build_relay_descriptor
     card = build_relay_descriptor(
@@ -3606,26 +3599,6 @@ def test_audit_chain_detects_tampering():
                     log_path.write_text("\n".join(lines) + "\n")
                     ok, msg = verify_chain(sid)
                     assert not ok
-
-
-# ============================================================================
-# Identity registry deduplication
-# ============================================================================
-
-def test_nous_user_id_deduplication():
-    from emporia.engine.registry import IdentityRegistry
-    with tempfile.NamedTemporaryFile(suffix=".sqlite3", delete=False) as f:
-        db_path = f.name
-    try:
-        reg = IdentityRegistry(db_path=db_path)
-        pid1 = reg.register("alice", gateway_url="http://machine1:8088",
-                             public_key_hex="a" * 64, nous_user_id="nous_user_001")
-        pid2 = reg.register("alice_machine2", gateway_url="http://machine2:8088",
-                             public_key_hex="b" * 64, nous_user_id="nous_user_001")
-        # Same nous_user_id → same player_id regardless of machine name
-        assert pid1 == pid2
-    finally:
-        os.unlink(db_path)
 
 
 # ============================================================================
@@ -24410,7 +24383,7 @@ def test_stable_id_is_derived_from_the_genesis_key_not_the_handle():
     from emporia.relay_server import stable_id_for
 
     key = _p47_pubkey("p47_genesis")
-    expected = hashlib.sha3_256(b"emporia:agent:v1:" + bytes.fromhex(key)).hexdigest()
+    expected = hashlib.sha256(b"emporia:agent:v2:" + bytes.fromhex(key)).hexdigest()
     assert stable_id_for(key) == expected
     assert stable_id_for(key) == stable_id_for(key.upper()), \
         "hex case is not identity — the same key must not yield two ids"
@@ -27449,7 +27422,7 @@ def test_the_membership_rule_is_written_in_exactly_one_place():
 #
 # V27 -> V28 (P278): `topic_acts`, an Agora topic's signed acts — its creation
 # with every setting, invites, taking them back, kicks.
-_SCHEMA_FINGERPRINT_V29 = "9b11a3a272e8399e090bea236d2ec1d14d4db4461fb415f1363f9bb776f22de0"  # P289: bug_reports, security_incidents
+_SCHEMA_FINGERPRINT_V30 = "9b11a3a272e8399e090bea236d2ec1d14d4db4461fb415f1363f9bb776f22de0"  # P289: bug_reports, security_incidents; P294: ids SHA-256 (no table change)
 
 
 def _schema_fingerprint(db_path) -> tuple[str, int, int]:
@@ -27489,9 +27462,9 @@ def test_a_schema_change_requires_a_version_bump():
     from emporia.relay_server import SCHEMA_VERSION
 
     fingerprint, tables, columns = _schema_fingerprint(_test_db)
-    assert (SCHEMA_VERSION, fingerprint) == (29, _SCHEMA_FINGERPRINT_V29), (
+    assert (SCHEMA_VERSION, fingerprint) == (30, _SCHEMA_FINGERPRINT_V30), (
         f"the schema changed ({tables} tables, {columns} columns) or the version "
-        f"moved. Bump SCHEMA_VERSION *and* update _SCHEMA_FINGERPRINT_V29 — in "
+        f"moved. Bump SCHEMA_VERSION *and* update _SCHEMA_FINGERPRINT_V30 — in "
         f"that order, and never the fingerprint alone.\n"
         f"  code version: {SCHEMA_VERSION}\n  fingerprint:  {fingerprint}"
     )

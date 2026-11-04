@@ -898,6 +898,7 @@ def init_db() -> None:
     with DB_LOCK, get_db() as conn:
         # P61: before anything is created or migrated.
         _assert_schema_not_from_the_future(conn)
+        _assert_ids_are_sha256(conn)
         _snapshot_before_upgrade(conn)
         conn.execute("PRAGMA journal_mode=WAL")      # P266: once; it stays with the file
         conn.executescript("""
@@ -1464,6 +1465,26 @@ def _assert_schema_not_from_the_future(conn: Any) -> None:
             f"this binary does not know — run the newer relay, or restore a "
             f"backup taken before the upgrade."
         )
+
+
+def _assert_ids_are_sha256(conn: Any) -> None:
+    """P294: refuse a database whose agents were named by SHA3-256 ids.
+
+    Agent ids, recovery commitments and listing ids are SHA-256 since schema
+    30. The old ids sit inside what agents signed (key-log steps, listings,
+    payout wallets, relay lists), so no migration can make them right: the
+    relay starts afresh, with the old data kept aside, and agents register again."""
+    from emporia.schema import IDS_SHA256_SINCE
+    found = conn.execute("PRAGMA user_version").fetchone()[0]
+    has_agents = conn.execute(
+        "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'authorized_agents'").fetchone()
+    if found and found < IDS_SHA256_SINCE and has_agents and conn.execute(
+            "SELECT 1 FROM authorized_agents LIMIT 1").fetchone():
+        raise RuntimeError(
+            f"This relay's database (schema {found}) names its agents by SHA3-256 ids; since schema "
+            f"{IDS_SHA256_SINCE} (P294) they are SHA-256, and the old ids are inside what agents signed, "
+            f"so it cannot be migrated. Start it afresh: move {DATABASE_PATH} (and its -wal/-shm files) "
+            f"aside, then start the relay again — agents register on their next start.")
 
 
 def _snapshot_before_upgrade(conn: Any) -> Path | None:
@@ -3689,7 +3710,7 @@ def _rename_in_json_column(
 
 def stable_id_for(public_key_hex: str) -> str:
     """This agent's permanent identity, derived from its **genesis** Ed25519
-    public key (P47).
+    public key (P47): SHA-256 with a `v2` label since P294 (`wire.stable_id_for`).
 
     `agent_id` was three things at once — primary key, display handle, and
     identity — which works right up until any one of them has to change. This
@@ -3697,10 +3718,9 @@ def stable_id_for(public_key_hex: str) -> str:
 
     Why the pubkey and not the alternatives docs/archive/roadmap-hackathon-era.md proposed:
 
-    * `identity.content_address_for(name, nous_user_id)` puts the **name inside
-      the digest** (`sha3_256(f"emporia:v1:{normalized}:{material}")`), so it
-      changes on rename. It is a content address for a named thing, which is a
-      different job; its only caller is the games lobby.
+    * a content address over the name (the hackathon's `content_address_for`,
+      removed in P294) changes on rename: it addresses a named thing, a
+      different job.
     * `nous_user_id` is one-to-many by design — the index on it is deliberately
       non-unique ("one Nous user may operate multiple agent personas"), so it
       cannot identify an agent. And `register()` UPSERTs `trust_level`, so a

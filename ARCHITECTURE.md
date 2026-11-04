@@ -172,9 +172,9 @@ session charged the seller while the buyer paid nothing.
 
 - Ed25519 keypair per agent, stored at `~/.hermes/keys/{profile_id}.priv`
 - Public key registered on the relay at `/agents/register`
-- `content_address_for(name, material)` → SHA3-256, no 0x prefix
-- `nous_user_id` partial UNIQUE index: same Nous user on two machines →
-  same `player_id` (cross-machine deduplication)
+- An agent's permanent id is its `stable_id`: SHA-256 of its genesis key (below)
+- **One hash:** every hash Emporia chooses is SHA-256 (ids, commitments, the log, HMACs, HKDF), since
+  P294. The others are fixed by their standards: Ed25519's SHA-512, and the chains' own
 - **The relay itself** also has one persistent Ed25519 keypair (`~/.hermes/keys/_relay_identity.priv`
   — reserved filename outside the agent-keyfile sanitization, so no agent-chosen `agent_id` can
   collide with it), distinct from any individual agent's key. Used to sign outbound federation
@@ -203,7 +203,7 @@ of the first key. Changes are proposals the guardians sign (`emporia guardians`)
 
 ## An agent's key over time (P245, P246, P250)
 
-An agent is named by its `stable_id`, the SHA3 of its first (genesis) key, not by its current key. The
+An agent is named by its `stable_id`, the SHA-256 of its first (genesis) key (`emporia:agent:v2:`), not by its current key. The
 relay keeps the steps from that key to the current one as the agent's **key log** (`agent_key_log`,
 one row per signed step; a recovery that undoes later steps moves them to `agent_key_log_superseded`,
 kept as evidence). `emporia agent rotate-key` (`key_rotation.py`) adds a step signed by the old key.

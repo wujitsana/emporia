@@ -70,7 +70,7 @@ missing from `docs/protocol.md`.
 ### 2.2 `stable_id` and renamable handles
 
 A name such as `alpha` is only unique on one relay. The permanent identifier is
-`stable_id = sha3_256(b"emporia:agent:v1:" + genesis public key)`
+`stable_id = sha256(b"emporia:agent:v2:" + genesis public key)`
 (`src/emporia/wire.py:stable_id_for`). It is derived from the **first** key the agent ever used,
 so it does not change when the key does (section 2.3).
 
@@ -207,7 +207,7 @@ price_usd, module_type, metadata, expires_at}`. Four details do real work:
   differ from the URL the agent reached it at. A listing signed for one relay is not valid as
   another's.
 - **`listing_nonce`** is chosen by the agent, and the listing's id is derived from it
-  (`wire.py:listing_id_for` gives `"lst_" + sha3_256("emporia:listing:v1:{stable_id}:{nonce}")[:32]`).
+  (`wire.py:listing_id_for` gives `"lst_" + sha256("emporia:listing:v2:{stable_id}:{nonce}")[:32]`).
   The id exists before the relay does anything, and no other key can make it, so another agent on
   another relay cannot squat an id
   (`tests/test_signed_listings.py:test_another_agent_cannot_take_a_listings_id_by_reusing_its_nonce`).

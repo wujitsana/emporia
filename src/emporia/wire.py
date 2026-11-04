@@ -455,24 +455,25 @@ def signed_payout_wallet_payload(stable_id: str, network_family: str, address: s
 
 
 def stable_id_for(public_key_hex: str) -> str:
-    """An agent's permanent identity: the SHA3 of its genesis Ed25519 key (P47).
+    """An agent's permanent identity: the SHA-256 of its genesis Ed25519 key (P47;
+    SHA-256 and `v2` since P294, so every hash Emporia chooses is one).
     Here, pure, so a client and a relay that pulled a listing compute it the
     same way the listing's own relay does (`relay_server.stable_id_for`)."""
     import hashlib
 
-    return hashlib.sha3_256(
-        b"emporia:agent:v1:" + bytes.fromhex(public_key_hex.strip().lower())
+    return hashlib.sha256(
+        b"emporia:agent:v2:" + bytes.fromhex(public_key_hex.strip().lower())
     ).hexdigest()
 
 
 def recovery_commitment_for(recovery_public_key_hex: str) -> str:
     """P246: what an agent publishes to commit to a recovery key without showing
-    it: the SHA3 of the key. Only a key that hashes to the live commitment can
+    it: the SHA-256 of the key (P294: `v2`). Only a key that hashes to the live commitment can
     sign a recovery, and the hash says nothing of the key until it is used."""
     import hashlib
 
-    return hashlib.sha3_256(
-        b"emporia:recovery:v1:" + bytes.fromhex(recovery_public_key_hex.strip().lower())
+    return hashlib.sha256(
+        b"emporia:recovery:v2:" + bytes.fromhex(recovery_public_key_hex.strip().lower())
     ).hexdigest()
 
 
@@ -726,8 +727,8 @@ def listing_id_for(stable_id: str, listing_nonce: str) -> str:
     take it: another agent picking the same nonce gets a different id."""
     import hashlib
 
-    return "lst_" + hashlib.sha3_256(
-        f"emporia:listing:v1:{stable_id}:{listing_nonce}".encode()
+    return "lst_" + hashlib.sha256(
+        f"emporia:listing:v2:{stable_id}:{listing_nonce}".encode()
     ).hexdigest()[:32]
 
 

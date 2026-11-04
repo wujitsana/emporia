@@ -467,7 +467,7 @@ curl -u $STRIPE_SECRET_KEY: https://api.stripe.com/v1/test_helpers/shared_paymen
 
 **`stable_id` vs `agent_id` (P47).** `agent_id` is the *handle* — lowercase, NFKC-normalized,
 first-come, and now renameable via `POST /agents/{id}/rename`. `stable_id` is the *identity*:
-`sha3_256("emporia:agent:v1:" + genesis Ed25519 pubkey)`, allocated once at registration and stored
+`sha256("emporia:agent:v2:" + genesis Ed25519 pubkey)` (P294), allocated once at registration and stored
 thereafter, so it survives a key rotation, a trust upgrade and a rename. A client that wants to
 remember *who* someone is stores `stable_id`; `agent_id` answers only what they are called today.
 

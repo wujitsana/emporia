@@ -368,7 +368,7 @@ this", not that A said it: on listings, a relay is trusted to speak for its agen
 5. **Federation in** (the importer in `relay_server.py` around the P83/P87 ownership checks).
    Per listing, refuse it unless:
    - the agent's signature verifies against `agent_public_key_hex`; and
-   - `stable_id_for(agent_public_key_hex) == stable_id`. The `stable_id` is the SHA3 of the
+   - `stable_id_for(agent_public_key_hex) == stable_id`. The `stable_id` is the SHA-256 of the
      genesis key (P47), so the key vouches for itself, and a relay can't substitute a key it
      made up.
 
@@ -412,7 +412,7 @@ A short technical paper, `docs/paper/` (Markdown is fine), on what is unusual he
 pointing to its code and tests:
 - **Chain of custody for listings across independently run relays** (item 1). Why one hop was
   the safe default, and what end-to-end signatures allow.
-- **Self-certifying agent identity:** `stable_id` = SHA3 of the genesis key, and handles that
+- **Self-certifying agent identity:** `stable_id` = SHA-256 of the genesis key, and handles that
   can be renamed (P47).
 - **Non-custodial payments across chains:** x402 direct and escrow holds (Base, Solana), Tempo,
   Stripe destination charges. The relay holds nobody's money; an escrow hold is reclaimable

@@ -33,7 +33,6 @@ from cryptography.hazmat.primitives.asymmetric import ed25519
 from emporia import config as _config  # noqa: E402,F401
 
 KEY_DIR = Path(os.getenv("EMPORIA_KEYS_DIR", "~/.hermes/keys")).expanduser()
-_HANDLE_RE = re.compile(r"[^a-z0-9]+")
 # P113: key files keep `-`. The relay accepts `[a-z0-9_-]` in an agent id, and
 # mapping `-` to `_` here sent `my-agent` and `my_agent` — two identities on the
 # relay — to one key file (and one x402 wallet) in a shared key directory.
@@ -2000,17 +1999,3 @@ def build_relay_descriptor(
     }
 
 
-# ============================================================================
-# Content-addressed ID derivation
-# ============================================================================
-
-def content_address_for(name: str, nous_user_id: str | None = None) -> str:
-    """Derive a deterministic 20-byte content address (no 0x prefix).
-
-    Uses nous_user_id as identity material when available, enabling the same
-    Nous user to resolve to the same player_id across machines.
-    """
-    normalized = _HANDLE_RE.sub("_", name.strip().lower()).strip("_") or "player"
-    material = nous_user_id.strip() if nous_user_id else normalized
-    digest = hashlib.sha3_256(f"emporia:v1:{normalized}:{material}".encode()).hexdigest()
-    return digest[-40:]  # 20 bytes, no 0x prefix
