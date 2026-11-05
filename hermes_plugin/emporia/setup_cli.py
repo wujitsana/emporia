@@ -126,10 +126,20 @@ class SetupFailed(Exception):
     pass
 
 
+def _clean_env() -> dict[str, str]:
+    """This process's environment without what the `hermes` launcher sets for Hermes's own
+    interpreter (P296, found by the end-to-end run: with Hermes's PYTHONPATH, pip took
+    Hermes's packages as Emporia's dependencies and skipped them, and Emporia's Python
+    imported Hermes's copies)."""
+    return {k: v for k, v in os.environ.items()
+            if k not in ("PYTHONPATH", "PYTHONHOME", "VIRTUAL_ENV", "PYTHONSTARTUP")
+            and not k.startswith(("PIP_", "UV_PROJECT", "UV_PYTHON"))}
+
+
 def _run(argv: list[str], cwd: Path | None = None) -> str:
     try:
         out = subprocess.run(argv, cwd=cwd, capture_output=True, text=True, timeout=_TIMEOUT_S,
-                             stdin=subprocess.DEVNULL)
+                             stdin=subprocess.DEVNULL, env=_clean_env())
     except FileNotFoundError as exc:
         raise SetupFailed(f"{argv[0]} is not installed") from exc
     except subprocess.TimeoutExpired as exc:
@@ -202,7 +212,7 @@ def install_runtime(say=print, target: Path | None = None, pin: tuple[str, str] 
 
 def _emporia(rt: Path, *args: str) -> int:
     """Run the runtime's `emporia` CLI for this profile, attached to this terminal."""
-    env = {**os.environ, "HERMES_HOME": str(hermes_home())}
+    env = {**_clean_env(), "HERMES_HOME": str(hermes_home())}
     return subprocess.call([str(python_of(rt)), "-m", "emporia.cli", *args], env=env)
 
 
@@ -248,7 +258,7 @@ def _install_plugin_into(name: str, plugin_source: str = "emporia") -> bool:
         return False
     print(f"  Installing the Emporia plugin into {name} ({plugin_source})")
     r = subprocess.run([hermes, "-p", name, "plugins", "install", plugin_source, "--enable"],
-                       stdin=subprocess.DEVNULL, timeout=_TIMEOUT_S)
+                       stdin=subprocess.DEVNULL, timeout=_TIMEOUT_S, env=_clean_env())
     return r.returncode == 0
 
 

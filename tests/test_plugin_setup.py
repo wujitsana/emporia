@@ -122,3 +122,13 @@ def test_a_fresh_clone_is_checked_out_even_when_its_head_is_the_pinned_commit(tm
     monkeypatch.setattr(setup_cli.shutil, "which", lambda name: "/usr/bin/uv" if name == "uv" else None)
     setup_cli.install_runtime(say=lambda *a: None, pin=("https://example.test/e", sha))
     assert any(a[3:5] == ["checkout", "--quiet"] for a in ran), ran
+
+
+def test_hermess_own_python_settings_never_reach_emporias_processes(monkeypatch):
+    """P296, found by the end-to-end run: the `hermes` launcher exports PYTHONPATH to its own
+    packages; pip then skipped Emporia's dependencies, and Emporia's Python imported Hermes's."""
+    monkeypatch.setenv("PYTHONPATH", "/opt/hermes:/opt/hermes/site")
+    monkeypatch.setenv("PIP_TARGET", "/somewhere")
+    monkeypatch.setenv("PATH", "/usr/bin")
+    env = setup_cli._clean_env()
+    assert "PYTHONPATH" not in env and "PIP_TARGET" not in env and env["PATH"] == "/usr/bin"

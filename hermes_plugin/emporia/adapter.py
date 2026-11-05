@@ -79,6 +79,10 @@ def parse_line(raw: str) -> Optional[dict[str, Any]]:
 # (_TOKEN, _SECRET, _KEY, _PASSWORD) plus JWTs, phrases and private keys.
 _SECRET_NAME = re.compile(r"(_TOKEN|_SECRET|_KEY|_PASSWORD|_JWT|_JSON)$|SECRET|PRIVATE|PHRASE", re.IGNORECASE)
 
+
+# What the `hermes` launcher sets for its own interpreter, kept from Emporia's processes.
+_HERMES_PYTHON_VARS = frozenset({"PYTHONPATH", "PYTHONHOME", "VIRTUAL_ENV", "PYTHONSTARTUP"})
+
 class EmporiaAdapter(BasePlatformAdapter):
     """Runs Emporia's bridge and dispatches each notice into the gateway."""
 
@@ -124,6 +128,8 @@ class EmporiaAdapter(BasePlatformAdapter):
             return f"{self.chat_id}:{topic}", f"Emporia ({self.agent_id}) {topic}"
         return self.chat_id, f"Emporia ({self.agent_id})"
 
+    # P296: the `hermes` launcher exports PYTHONPATH to Hermes's own packages; the bridge
+    # runs Emporia's interpreter, which must import its own (found by the end-to-end run).
     def _bridge_env(self) -> dict[str, str]:
         """The gateway's environment minus every EMPORIA_* value, plus this
         profile's .env. A multiplexed gateway's os.environ is the *launching*
@@ -135,7 +141,7 @@ class EmporiaAdapter(BasePlatformAdapter):
         key docker-compose gave the container. The bridge reads its own from
         this profile's .env."""
         env = {k: v for k, v in os.environ.items()
-               if not k.startswith("EMPORIA_") and not _SECRET_NAME.search(k)}
+               if not k.startswith("EMPORIA_") and not _SECRET_NAME.search(k) and k not in _HERMES_PYTHON_VARS}
         if self.dotenv:
             env["EMPORIA_DOTENV"] = self.dotenv
         return env

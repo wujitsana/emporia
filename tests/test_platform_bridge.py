@@ -324,7 +324,8 @@ print(json.dumps({{"dotenv": env.get("EMPORIA_DOTENV"),
                    "emporia": sorted(k for k in env if k.startswith("EMPORIA_")),
                    "secrets": sorted(k for k in ("TELEGRAM_BOT_TOKEN", "OPENROUTER_API_KEY",
                                                  "GROKBOT_FEEDBACK_HEADER_SECRET", "SOME_PRIVATE_THING") if k in env),
-                   "plain": "LANG_PLAIN" in env and "PATH" in env}}))
+                   "plain": "LANG_PLAIN" in env and "PATH" in env,
+                   "hermes_python": "PYTHONPATH" in env}}))
 ''')
     out = subprocess.run([str(HERMES_PYTHON), str(harness)], cwd="/opt/hermes",
                          env={**os.environ, "HERMES_HOME": str(tmp_path / "home"),
@@ -333,7 +334,9 @@ print(json.dumps({{"dotenv": env.get("EMPORIA_DOTENV"),
     assert out.returncode == 0, out.stderr[-2000:]
     result = json.loads(out.stdout.strip().splitlines()[-1])
     # P201: and none of the gateway's secrets — a bot token, a model key, docker-compose's.
-    assert result == {"dotenv": "/profiles/alpha/.env", "emporia": ["EMPORIA_DOTENV"], "secrets": [], "plain": True}
+    # P296: nor Hermes's PYTHONPATH — the bridge runs Emporia's own interpreter and packages.
+    assert result == {"dotenv": "/profiles/alpha/.env", "emporia": ["EMPORIA_DOTENV"], "secrets": [], "plain": True,
+                      "hermes_python": False}
 
 
 def test_an_idle_game_is_abandoned_and_every_stake_released(client, monkeypatch):
