@@ -234,3 +234,104 @@ def test_hermes_emporia_runs_the_runtimes_command_with_every_word(monkeypatch, t
                    ("setup", "relay", "--preset", "base-sepolia")]
     monkeypatch.setattr(setup_cli, "runtime", lambda: None)
     assert setup_cli.dispatch(parser.parse_args(["wallet", "create", "shop"])) == 1
+
+
+def _catalog_setup(monkeypatch, tmp_path, sha="a" * 40):
+    rt = tmp_path / "hh" / "profiles" / "judge" / "plugin-data" / "emporia" / "runtime"
+    monkeypatch.setattr(setup_cli, "hermes_home", lambda: tmp_path / "hh" / "profiles" / "judge")
+    monkeypatch.setattr(setup_cli, "profile_name", lambda home=None: "judge")
+    monkeypatch.setattr(setup_cli, "runtime", lambda: rt)
+    monkeypatch.setattr(setup_cli, "from_catalog", lambda r: True)
+    monkeypatch.setattr(setup_cli, "_git_head", lambda r: sha)
+    monkeypatch.setattr(setup_cli, "source", lambda: {"repo": "https://x.test/e", "sha": sha})
+    monkeypatch.setattr(setup_cli, "python_of", lambda r: Path(sys.executable))
+    return rt
+
+
+def test_a_build_that_pins_no_release_says_so_and_how_to_go_on(monkeypatch, tmp_path, capsys):
+    """Found by the end-to-end run: with no pinned commit it said "Needs git, and uv or
+    python3 with venv", which sends people after tools they have."""
+    monkeypatch.setattr(setup_cli, "runtime", lambda: None)
+    monkeypatch.setattr(setup_cli, "source", lambda: {"repo": "https://github.com/wujitsana/emporia", "sha": ""})
+    monkeypatch.setattr(setup_cli, "_create_profile", lambda n: pytest.fail("no profile before a runtime"))
+    assert setup_cli.cmd_setup(_args(profile="shop")) == 1
+    out = capsys.readouterr().out
+    assert "pins no release yet; use --runtime-from REPO@SHA" in out and "Needs git" not in out
+
+
+def test_an_existing_profile_is_not_called_new(monkeypatch, tmp_path, capsys):
+    """Found by the end-to-end run: "(new)" was said of every profile but the current one."""
+    _catalog_setup(monkeypatch, tmp_path)
+    plugin = tmp_path / "hh" / "profiles" / "alpha" / "plugins" / "emporia"
+    plugin.mkdir(parents=True)
+    (plugin / "plugin.yaml").write_text("name: emporia\n")
+    ran = []
+    monkeypatch.setattr(setup_cli, "_create_profile", lambda n: pytest.fail("it exists"))
+    monkeypatch.setattr(setup_cli, "_install_plugin_into", lambda n, s: pytest.fail("it has the plugin"))
+    monkeypatch.setattr(setup_cli, "_emporia", lambda r, *a: ran.append(a) or 0)
+    assert setup_cli.cmd_setup(_args(profile="alpha")) == 0
+    out = capsys.readouterr().out
+    assert "Agent profile: alpha  (existing)" in out and "(new)" not in out
+    assert "--new-profile" not in ran[0]
+
+
+@pytest.mark.parametrize("fails", ["plugin", "setup agent"])
+def test_a_profile_made_for_a_setup_that_failed_is_not_left_behind(monkeypatch, tmp_path, capsys, fails):
+    _catalog_setup(monkeypatch, tmp_path)
+    removed = []
+    monkeypatch.setattr(setup_cli, "_create_profile", lambda n: "made")
+    monkeypatch.setattr(setup_cli, "_install_plugin_into", lambda n, s: fails != "plugin")
+    monkeypatch.setattr(setup_cli, "_emporia", lambda r, *a: 1)
+    monkeypatch.setattr(setup_cli, "_remove_profile", lambda n: removed.append(n))
+    assert setup_cli.cmd_setup(_args(profile="shop")) == 1
+    assert removed == ["shop"]
+
+
+def test_removing_a_failed_profile_never_removes_an_agent(monkeypatch, tmp_path):
+    _catalog_setup(monkeypatch, tmp_path)
+    prof = tmp_path / "hh" / "profiles" / "shop"
+    (prof / "home" / ".hermes" / "keys").mkdir(parents=True)
+    (prof / "config.yaml").write_text("model: {}\n")
+    ran = []
+    monkeypatch.setattr(setup_cli.shutil, "which", lambda name: "/x/hermes")
+    monkeypatch.setattr(setup_cli.subprocess, "run", lambda argv, **kw: ran.append(argv) or
+                        argparse.Namespace(returncode=0))
+    setup_cli._remove_profile("shop")
+    assert ran == [["/x/hermes", "profile", "delete", "shop", "--yes"]]
+    (prof / "home" / ".hermes" / "keys" / "shop.priv").write_bytes(b"k" * 32)
+    setup_cli._remove_profile("shop")
+    (prof / "home" / ".hermes" / "keys" / "shop.priv").unlink()
+    (prof / "config.yaml").write_text("mcp_servers:\n  emporia:\n    args: [-m, emporia.mcp_server]\n")
+    setup_cli._remove_profile("shop")
+    assert len(ran) == 1, "a profile holding an agent's keys or MCP entry stays"
+
+
+def test_update_with_nothing_to_do_says_so_and_names_each_profile_to_restart(monkeypatch, tmp_path, capsys):
+    """Found by the end-to-end run: update said "first time: a minute or two" and "restart the
+    gateway" when nothing had changed, and its restart hint named no profile."""
+    sha = "a" * 40
+    rt = _catalog_setup(monkeypatch, tmp_path, sha)
+    py = rt / ".venv" / "bin" / "python"
+    monkeypatch.setattr(setup_cli, "python_of", lambda r: py)
+    for name in ("judge", "shop", "other"):
+        (tmp_path / "hh" / "profiles" / name).mkdir(parents=True, exist_ok=True)
+    for name in ("shop", "judge"):
+        (tmp_path / "hh" / "profiles" / name / "config.yaml").write_text(f"mcp_servers:\n  emporia:\n    command: {py}\n")
+    (tmp_path / "hh" / "profiles" / "other" / "config.yaml").write_text("model: {}\n")
+    ran = []
+    monkeypatch.setattr(setup_cli, "_run", lambda argv, cwd=None: ran.append(argv) or "")
+    (rt / ".git").mkdir(parents=True)
+    monkeypatch.setattr(setup_cli, "_is_emporia", lambda r: True)
+    py.parent.mkdir(parents=True)
+    py.write_text("")
+    parser = argparse.ArgumentParser()
+    setup_cli.register_cli(parser)
+    assert setup_cli.dispatch(parser.parse_args(["update"])) == 0           # first: installs, then restarts
+    out = capsys.readouterr().out
+    assert "hermes -p judge gateway restart" in out and "hermes -p shop gateway restart" in out
+    assert "other" not in out and "first time" not in out
+    installs = len(ran)
+    assert setup_cli.dispatch(parser.parse_args(["update"])) == 0           # again: nothing to do
+    out = capsys.readouterr().out
+    assert "nothing to do" in out and "restart" not in out and "Installing" not in out
+    assert all("install" not in " ".join(a) and "sync" not in a for a in ran[installs:]), ran[installs:]

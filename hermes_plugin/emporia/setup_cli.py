@@ -126,6 +126,10 @@ class SetupFailed(Exception):
     pass
 
 
+class NoRelease(SetupFailed):
+    """This plugin build pins no commit of the runtime (a build before its first release)."""
+
+
 def _clean_env() -> dict[str, str]:
     """This process's environment without what the `hermes` launcher sets for Hermes's own
     interpreter (P296, found by the end-to-end run: with Hermes's PYTHONPATH, pip took
@@ -182,9 +186,20 @@ def install_runtime(say=print, target: Path | None = None, pin: tuple[str, str] 
     (`target`), else this profile's plugin-data."""
     src = source()
     repo, sha = pin or (src.get("repo", ""), src.get("sha", ""))
+    if not pin and not sha:
+        # Found by the end-to-end run: this said "Needs git, and uv or python3", which
+        # sent people after tools they had.
+        raise NoRelease("this plugin build pins no release yet; use --runtime-from REPO@SHA "
+                        "(an Emporia repo on this machine, or its https URL, at a full commit)")
     if not (repo.startswith(("https://", "file://") if pin else "https://") and _is_sha(sha)):
         raise SetupFailed(f"{SOURCE_FILE.name} names no pinned commit (repo {repo!r}, sha {sha!r})")
-    rt = target if target is not None and from_catalog(target) else runtime_dir()
+    return _sync_runtime(say, target if target is not None and from_catalog(target) else runtime_dir(), repo, sha)
+
+
+_INSTALLED = "emporia-installed"      # in the runtime's .venv: the commit its packages were installed for
+
+
+def _sync_runtime(say, rt: Path, repo: str, sha: str) -> Path:
     if not (rt / ".git").is_dir():
         if rt.exists():
             shutil.rmtree(rt)
@@ -197,15 +212,21 @@ def install_runtime(say=print, target: Path | None = None, pin: tuple[str, str] 
         # its HEAD is already the pinned commit (a release's commit is its branch's tip).
         _run(["git", "-C", str(rt), "checkout", "--quiet", "--detach", sha])
     _run(["git", "-C", str(rt), "remote", "set-url", "origin", repo])   # where it came from, for status
-    say("  Installing its Python packages (first time: a minute or two)")
+    marker = rt / ".venv" / _INSTALLED
+    first = not python_of(rt).exists()
+    if not first and marker.is_file() and marker.read_text().strip() == sha:
+        return rt                      # its packages are already this commit's: nothing to install
+    say("  Installing its Python packages" + (" (first time: a minute or two)" if first else ""))
     uv = shutil.which("uv")
     if uv:
         _run([uv, "sync", "--quiet", "--frozen", "--no-dev", "--extra", "x402"], cwd=rt)
     else:
         py = shutil.which("python3") or sys.executable
-        if not python_of(rt).exists():
+        if first:
             _run([py, "-m", "venv", str(rt / ".venv")])
         _run([str(python_of(rt)), "-m", "pip", "install", "--quiet", "-e", f"{rt}[x402]"])
+    marker.parent.mkdir(parents=True, exist_ok=True)
+    marker.write_text(sha + "\n")
     return rt
 
 
@@ -263,6 +284,39 @@ def _install_plugin_into(name: str, plugin_source: str = "emporia") -> bool:
     return r.returncode == 0
 
 
+def _hermes_root() -> Path:
+    home = hermes_home()
+    return home.parent.parent if home.parent.name == "profiles" else home
+
+
+def _profile_exists(name: str) -> bool:
+    return name == "default" or (_hermes_root() / "profiles" / name).is_dir()
+
+
+def _has_agent(name: str) -> bool:
+    """Whether setup agent wrote anything of the agent's into the profile (its MCP entry, its keys)."""
+    prof = _hermes_root() / "profiles" / name
+    try:
+        if "emporia.mcp_server" in (prof / "config.yaml").read_text():
+            return True
+    except OSError:
+        pass
+    keys = prof / "home" / ".hermes" / "keys"
+    return keys.is_dir() and any(keys.iterdir())
+
+
+def _remove_profile(name: str) -> None:
+    """A profile this setup made a moment ago and could not finish, through Hermes's own delete,
+    so no half-made empty profile is left behind. Never one that holds an agent."""
+    hermes = shutil.which("hermes")
+    if not hermes or _has_agent(name):
+        return
+    r = subprocess.run([hermes, "profile", "delete", name, "--yes"], stdin=subprocess.DEVNULL,
+                       capture_output=True, text=True, timeout=_TIMEOUT_S, env=_clean_env())
+    print(f"  Removed the profile {name} this setup had just made" if r.returncode == 0
+          else f"  ! The profile {name} was made but not finished: hermes profile delete {name}")
+
+
 def _create_profile(name: str) -> str:
     """A new, minimal Hermes profile (`--no-skills`: it gets Emporia's own), unless it exists:
     "made", "there" (it existed), or "" when it could not be made."""
@@ -306,12 +360,17 @@ def cmd_setup(args: argparse.Namespace) -> int:
             rt = install_runtime(target=rt, pin=pin)
         if not python_of(rt).exists():
             raise SetupFailed(f"{rt} has no virtualenv: run `uv sync` there")
+    except NoRelease as exc:
+        print(f"  ✗ {exc}. No profile was changed.")
+        return 1
     except SetupFailed as exc:
         print(f"  ✗ {exc}")
         print("  Needs git, and uv or python3 with venv. No profile was changed.")
         return 1
+    # Found by the end-to-end run: "(new)" was said of any profile but this one, made or not.
+    new = new and not _profile_exists(name)
     print(f"  Runtime: {rt}" + ("" if from_catalog(rt) else "  (a checkout)"))
-    print(f"  Agent profile: {name}" + ("  (new)" if new else ""))
+    print(f"  Agent profile: {name}" + ("  (new)" if new else "  (existing)" if name != here else ""))
     extra = list(args.rest or [])
     if extra[:1] == ["--"]:
         extra = extra[1:]
@@ -319,18 +378,29 @@ def cmd_setup(args: argparse.Namespace) -> int:
         extra = ["--relay-url", args.relay, *extra]
     # P296: a new profile gets the plugin before the agent is set up, so the restart
     # setup asks for last is the only one needed, and comes after everything it covers.
+    made = ""
     if new and from_catalog(rt):
         made = _create_profile(name)
-        if not made or not _install_plugin_into(name, args.plugin_source):
+        if not made:
+            return 1
+        if not _install_plugin_into(name, args.plugin_source):
+            if made == "made":
+                _remove_profile(name)
             return 1
         if made == "made":
             # Found by the end-to-end run: the profile made just now has a config.yaml,
             # so setup agent took it for an existing one — role from its full tools
             # (developer), keys left in files. It is a new agent.
             extra = ["--new-profile", *extra]
+    elif from_catalog(rt) and name != here and not (_hermes_root() / "profiles" / name / "plugins" / "emporia"
+                                                    / "plugin.yaml").is_file():
+        if not _install_plugin_into(name, args.plugin_source):       # an existing profile without it
+            return 1
     code = _emporia(rt, "setup", "agent", name, *extra)
     if code == 0:
         _next_steps(name)
+    elif made == "made":
+        _remove_profile(name)          # only if setup agent stopped before writing the agent
     return code
 
 
@@ -418,13 +488,43 @@ def cmd_update(args: argparse.Namespace) -> int:
         return 0
     try:
         pin = parse_runtime_from(args.runtime_from) if getattr(args, "runtime_from", None) else None
-        install_runtime(target=rt, pin=pin)
+        before = _state(rt)
+        rt = install_runtime(target=rt, pin=pin)
     except SetupFailed as exc:
         print(f"  ✗ {exc}")
         return 1
     sha = pin[1] if pin else source().get("sha", "")
-    print(f"Runtime at {sha[:12]}. Restart the gateway to use it: hermes gateway restart")
+    if _state(rt) == before:
+        # Found by the end-to-end run: it said "restart the gateway" when nothing had changed.
+        print(f"Runtime already at {sha[:12]}: nothing to do.")
+        return 0
+    print(f"Runtime at {sha[:12]}. Restart each profile that runs it to use it:")
+    for name in _profiles_running(rt) or [profile_name()]:
+        print(f"    hermes {'' if name == 'default' else f'-p {name} '}gateway restart")
     return 0
+
+
+def _state(rt: Path | None) -> tuple[str, str]:
+    """The runtime's commit and the commit its packages were installed for."""
+    if rt is None:
+        return "", ""
+    try:
+        installed = (rt / ".venv" / _INSTALLED).read_text().strip()
+    except OSError:
+        installed = ""
+    return _git_head(rt), installed
+
+
+def _profiles_running(rt: Path) -> list[str]:
+    """The profiles whose Emporia MCP server is this runtime's python."""
+    py, root, names = str(python_of(rt)), _hermes_root(), []
+    for cfg in [root / "config.yaml", *sorted((root / "profiles").glob("*/config.yaml"))]:
+        try:
+            if py in cfg.read_text():
+                names.append("default" if cfg.parent == root else cfg.parent.name)
+        except OSError:
+            continue
+    return names
 
 
 # The runtime's own CLI commands, passed through for this profile: `hermes emporia wallet …`
