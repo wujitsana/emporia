@@ -4161,6 +4161,12 @@ def cmd_update(args: argparse.Namespace) -> int:
     when that is a fast-forward with no local changes. Hermes's gateway and
     dashboard are restarted by the person, as the last lines say."""
     import shutil
+    # Catalog rule 3: a runtime the catalog plugin installed follows that plugin's pinned
+    # commit only. It is never pulled, synced or refreshed here — before anything is done.
+    if installer().from_catalog():
+        print("update: this Emporia came with the catalog plugin, and moves only with it: "
+              "`hermes plugins update emporia`, then `hermes emporia update`. Nothing was changed.")
+        return 1
     if not args.no_pull:
         git = shutil.which("git")
         if not git or not (REPO / ".git").exists():
@@ -4190,11 +4196,6 @@ def cmd_update(args: argparse.Namespace) -> int:
         print("update: the Python packages did not install (see above); stopping here")
         return 1
 
-    inst = installer()
-    if inst.from_catalog():
-        print("update: this Emporia came with the catalog plugin — `hermes plugins update emporia`, "
-              "then `hermes emporia update`")
-        return 1
     # P295: each agent profile's plugin carries the dashboard tab (its bundle
     # committed), so refreshing the agents' plugins updates the tab too. Nothing
     # else is touched: a profile that is not an Emporia agent is left alone.
@@ -4207,7 +4208,7 @@ def cmd_update(args: argparse.Namespace) -> int:
     elif health():
         print(f"  relay: one is answering at {relay_url()}, not started by `emporia relay start`; "
               f"restart it where it was started so it runs the new code")
-    inst.print_restart_instructions([])
+    installer().print_restart_instructions([])
     print("Then: hermes gateway restart (or `hermes -p NAME gateway restart` and /reload-mcp in each), "
           "and `emporia doctor`.")
     return 0

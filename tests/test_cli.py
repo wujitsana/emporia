@@ -460,3 +460,17 @@ def test_doctor_says_where_the_plugin_came_from(tmp_path):
     assert cli._plugin_origin(tmp_path) == "installed from file:///src/emporia#hermes_plugin/emporia"
     meta.write_text(json.dumps({"emporia": {"source": "https://x", "catalog": {"name": "emporia"}}}))
     assert cli._plugin_origin(tmp_path) == "installed from the catalog"
+
+
+def test_a_catalog_runtime_is_never_pulled_or_synced_by_emporia_update(monkeypatch, capsys):
+    """Catalog rule 3: the runtime the catalog plugin installed moves only with the plugin's pin.
+    `emporia update` (git pull, uv/pip sync, plugin refresh) refuses it before doing anything."""
+    import argparse
+    ran = []
+    monkeypatch.setattr(cli.installer(), "from_catalog", lambda: True)
+    monkeypatch.setattr(cli, "_run", lambda argv, cwd=None, timeout=None: ran.append(argv) or True)
+    monkeypatch.setattr(cli.subprocess, "run", lambda *a, **k: ran.append(a) or None)
+    assert cli.cmd_update(argparse.Namespace(no_pull=False)) == 1
+    assert cli.cmd_update(argparse.Namespace(no_pull=True)) == 1
+    assert ran == []
+    assert "moves only with it" in capsys.readouterr().out

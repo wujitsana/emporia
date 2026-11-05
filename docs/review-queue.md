@@ -37,7 +37,7 @@ grid, green on white, with the kaleidoscope run and the quests ending. To decide
 3. The agents' names: ledger and magpie?
 4. The opening: the chat event (recommended), or a montage.
 5. The install shot: the catalog name after the PR merges, or the git-URL form now.
-6. Pin `emporia_source.json` and push, or use `--runtime-from` off camera.
+6. Pin `emporia_source.json` and push (`--runtime-from` is gone: catalog rule 3).
 7. Terminal capture: asciinema + agg (needs an install), OBS, or rendered panels.
 8. Post the 30 s teaser too?
 

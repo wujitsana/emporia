@@ -15,7 +15,7 @@ spec.loader.exec_module(setup_cli)
 
 def _args(**kw):
     return argparse.Namespace(**{"profile": None, "here": False, "relay": None, "rest": [],
-                                 "plugin_source": "emporia", "runtime_from": None, **kw})
+                                 "plugin_source": "emporia", **kw})
 
 
 def test_it_asks_current_or_new_and_recommends_new():
@@ -63,46 +63,95 @@ def test_a_catalog_runtime_is_pinned_to_a_full_commit(tmp_path, monkeypatch):
 
 
 def test_the_pinned_runtime_is_unset_or_a_full_commit_of_this_repo():
-    """P295: scripts/pin_plugin_runtime.py writes it at release; between releases it is empty."""
+    """P295: scripts/pin_plugin_runtime.py writes it at release; between releases it is empty.
+    Catalog rule 3: with the commit, the tree it holds."""
     import json
     data = json.loads((REPO / "hermes_plugin" / "emporia" / "emporia_source.json").read_text())
     assert data["repo"] == "https://github.com/wujitsana/emporia"
-    assert data["sha"] == "" or (len(data["sha"]) == 40 and set(data["sha"]) <= set("0123456789abcdef"))
+    full = set("0123456789abcdef")
+    assert data["sha"] == "" or (len(data["sha"]) == 40 and set(data["sha"]) <= full)
+    assert data["tree"] == "" or (len(data["tree"]) == 40 and set(data["tree"]) <= full)
+    assert bool(data["sha"]) == bool(data["tree"])
 
 
-def test_a_release_can_be_tried_from_this_machine_before_it_is_pushed(tmp_path, monkeypatch):
-    """P296: `--runtime-from REPO[@SHA]` clones the runtime from a repo here instead of the
-    pinned GitHub commit; the pinned source itself stays https-only. Catalog rule 3: a repo
-    on this machine only, never a network URL."""
+def test_the_catalog_build_has_no_way_to_run_another_runtime():
+    """Catalog rule 3: `--runtime-from` is gone from setup and update; the runtime comes only
+    from the https source and commit emporia_source.json pins."""
+    import inspect
+    parser = argparse.ArgumentParser()
+    setup_cli.register_cli(parser)
+    for argv in (["setup", "--runtime-from", "/somewhere"], ["update", "--runtime-from", "/somewhere"]):
+        with pytest.raises(SystemExit):
+            parser.parse_args(argv)
+    assert list(inspect.signature(setup_cli.install_runtime).parameters) == ["say", "target"]
+    src = (REPO / "hermes_plugin" / "emporia" / "setup_cli.py").read_text()
+    assert "runtime-from" not in src and "runtime_from" not in src
+
+
+def test_the_pin_script_records_the_commit_and_its_tree(tmp_path, monkeypatch):
+    """Catalog rule 3: scripts/pin_plugin_runtime.py writes the commit and the tree it holds,
+    which setup checks after checkout."""
+    import json
     import subprocess
-    head = subprocess.run(["git", "-C", str(REPO), "rev-parse", "HEAD"], capture_output=True,
-                          text=True).stdout.strip()
-    assert setup_cli.parse_runtime_from(str(REPO)) == (f"file://{REPO}", head)
-    assert setup_cli.parse_runtime_from(f"file://{REPO}@{head}") == (f"file://{REPO}", head)
-    monkeypatch.chdir(REPO.parent)
-    assert setup_cli.parse_runtime_from(REPO.name) == (f"file://{REPO}", head)      # a relative path here
-    for bad in (f"https://example.test/e@{head}", f"http://example.test/e@{head}", f"ssh://h/e@{head}",
-                "https://example.test/e", "ftp://x@" + head, "relative/path"):
-        try:
-            setup_cli.parse_runtime_from(bad)
-            raise AssertionError(bad)
-        except setup_cli.SetupFailed:
-            pass
-    ran = []
-    monkeypatch.setattr(setup_cli, "_run", lambda argv, cwd=None: ran.append(argv) or "")
-    monkeypatch.setattr(setup_cli, "runtime_dir", lambda: tmp_path / "plugin-data" / "emporia" / "runtime")
-    monkeypatch.setattr(setup_cli.shutil, "which", lambda name: "/usr/bin/uv" if name == "uv" else None)
-    setup_cli.install_runtime(say=lambda *a: None, pin=(f"file://{REPO}", head))
-    assert ran[0][:2] == ["git", "clone"] and f"file://{REPO}" in ran[0]
-    assert ["git", "-C", str(tmp_path / "plugin-data" / "emporia" / "runtime"), "checkout", "--quiet",
-            "--detach", head] in ran
-    monkeypatch.setattr(setup_cli, "SOURCE_FILE", tmp_path / "s.json")
-    (tmp_path / "s.json").write_text(f'{{"repo": "file://{REPO}", "sha": "{head}"}}')
-    try:
-        setup_cli.install_runtime(say=lambda *a: None)
-        raise AssertionError("the pinned source must be https")
-    except setup_cli.SetupFailed:
-        pass
+    spec = importlib.util.spec_from_file_location("pin_script", REPO / "scripts" / "pin_plugin_runtime.py")
+    pin = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(pin)
+    sha, tree = "1" * 40, "2" * 40
+    answers = {("status", "--porcelain", "--untracked-files=no"): "", ("rev-parse", "HEAD"): sha,
+               ("rev-parse", f"{sha}^{{tree}}"): tree}
+    monkeypatch.setattr(pin, "git", lambda *a: answers[a])
+    monkeypatch.setattr(pin.subprocess, "run",
+                        lambda *a, **k: subprocess.CompletedProcess(a, 0, stdout="origin/main\n", stderr=""))
+    source = tmp_path / "emporia_source.json"
+    source.write_text('{"repo": "https://github.com/wujitsana/emporia", "sha": "", "tree": ""}\n')
+    monkeypatch.setattr(pin, "SOURCE", source)
+    assert pin.main([]) == 0
+    assert json.loads(source.read_text()) == {"repo": "https://github.com/wujitsana/emporia", "sha": sha,
+                                              "tree": tree}
+
+
+def _repo(tmp_path):
+    """A small git repo with one commit: (path, sha, tree)."""
+    import subprocess
+    repo = tmp_path / "src-repo"
+    repo.mkdir()
+    run = lambda *a: subprocess.run(["git", "-C", str(repo), *a], capture_output=True, text=True,  # noqa: E731
+                                    check=True).stdout.strip()
+    run("init", "-q")
+    (repo / "code.py").write_text("print('reviewed')\n")
+    run("add", "code.py")
+    run("-c", "user.name=t", "-c", "user.email=t@t", "commit", "-qm", "one")
+    return repo, run("rev-parse", "HEAD"), run("rev-parse", "HEAD^{tree}")
+
+
+def test_the_runtime_is_verified_against_the_pinned_commit_and_tree(tmp_path):
+    """Catalog rule 3: after checkout, HEAD is the pinned commit, its tree is the recorded tree,
+    and no tracked file was changed; anything else refuses to run."""
+    repo, sha, tree = _repo(tmp_path)
+    setup_cli.verify_runtime(repo, sha, tree)                                   # exactly the pin
+    setup_cli.verify_runtime(repo, sha)                                         # no tree recorded yet
+    with pytest.raises(setup_cli.SetupFailed, match="not the pinned"):
+        setup_cli.verify_runtime(repo, "b" * 40, tree)
+    with pytest.raises(setup_cli.SetupFailed, match="tree"):
+        setup_cli.verify_runtime(repo, sha, "c" * 40)
+    (repo / "code.py").write_text("print('changed here')\n")
+    with pytest.raises(setup_cli.SetupFailed, match="differ from the pinned commit"):
+        setup_cli.verify_runtime(repo, sha, tree)
+
+
+def test_status_says_when_the_runtime_is_not_the_verified_pin(tmp_path, monkeypatch):
+    repo, sha, tree = _repo(tmp_path)
+    rt = tmp_path / "home" / "plugin-data" / "emporia" / "runtime"
+    rt.parent.mkdir(parents=True)
+    repo.rename(rt)
+    src = {"repo": "https://github.com/wujitsana/emporia", "sha": sha, "tree": tree}
+    monkeypatch.setattr(setup_cli, "_origin", lambda r: src["repo"])
+    assert setup_cli.runtime_note(rt, src) == "pinned, verified"
+    (rt / "code.py").write_text("print('changed here')\n")
+    assert "not the pinned" in setup_cli.runtime_note(rt, src) and "hermes emporia update" in setup_cli.runtime_note(rt, src)
+    monkeypatch.setattr(setup_cli, "_origin", lambda r: "file:///elsewhere")
+    assert "not the pinned source" in setup_cli.runtime_note(rt, src)
+    assert "pins no runtime" in setup_cli.runtime_note(rt, {**src, "sha": ""})
 
 
 def test_status_says_whether_the_relay_has_the_agent(monkeypatch, capsys):
@@ -119,19 +168,23 @@ def test_status_says_whether_the_relay_has_the_agent(monkeypatch, capsys):
 
 def test_a_fresh_clone_is_checked_out_even_when_its_head_is_the_pinned_commit(tmp_path, monkeypatch):
     """P296, found by the end-to-end run: a --no-checkout clone has no files yet, and a
-    release's pinned commit is its branch's tip, so HEAD already matches."""
-    sha = "a" * 40
-    ran = []
+    release's pinned commit is its branch's tip, so HEAD already matches. Catalog rule 3: the
+    checkout is forced (a changed tracked file is put back) and verified before and after the
+    packages are installed."""
+    sha, tree = "a" * 40, "b" * 40
+    ran, verified = [], []
     monkeypatch.setattr(setup_cli, "_run", lambda argv, cwd=None: ran.append(argv) or "")
     monkeypatch.setattr(setup_cli, "_git_head", lambda rt: sha)
+    monkeypatch.setattr(setup_cli, "verify_runtime", lambda rt, s, t="": verified.append((s, t)))
     monkeypatch.setattr(setup_cli, "runtime_dir", lambda: tmp_path / "plugin-data" / "emporia" / "runtime")
     monkeypatch.setattr(setup_cli.shutil, "which", lambda name: "/usr/bin/uv" if name == "uv" else None)
-    monkeypatch.setattr(setup_cli, "source", lambda: {"repo": "https://example.test/e", "sha": sha})
+    monkeypatch.setattr(setup_cli, "source", lambda: {"repo": "https://example.test/e", "sha": sha, "tree": tree})
     setup_cli.install_runtime(say=lambda *a: None)
-    assert any(a[3:5] == ["checkout", "--quiet"] for a in ran), ran
-    # Catalog rule 3: a --runtime-from pin is a repo on this machine, never the network.
-    with pytest.raises(setup_cli.SetupFailed, match="on this machine"):
-        setup_cli.install_runtime(say=lambda *a: None, pin=("https://example.test/e", sha))
+    assert any(a[3:7] == ["checkout", "--quiet", "--force", "--detach"] for a in ran), ran
+    assert verified == [(sha, tree), (sha, tree)]
+    monkeypatch.setattr(setup_cli, "source", lambda: {"repo": "file:///local", "sha": sha})
+    with pytest.raises(setup_cli.SetupFailed, match="pinned commit"):
+        setup_cli.install_runtime(say=lambda *a: None)
 
 
 def test_hermess_own_python_settings_never_reach_emporias_processes(monkeypatch):
@@ -187,6 +240,7 @@ def test_a_new_profile_gets_the_plugin_before_its_agent_is_set_up(monkeypatch, t
     monkeypatch.setattr(setup_cli, "runtime", lambda: rt)
     monkeypatch.setattr(setup_cli, "from_catalog", lambda r: True)
     monkeypatch.setattr(setup_cli, "_git_head", lambda r: "a" * 40)
+    monkeypatch.setattr(setup_cli, "verify_runtime", lambda *a, **k: None)   # its own tests: above
     monkeypatch.setattr(setup_cli, "source", lambda: {"repo": "https://x.test/e", "sha": "a" * 40})
     monkeypatch.setattr(setup_cli, "python_of", lambda r: Path(sys.executable))
     monkeypatch.setattr(setup_cli, "_create_profile", lambda n: order.append(("create", n)) or True)
@@ -194,24 +248,6 @@ def test_a_new_profile_gets_the_plugin_before_its_agent_is_set_up(monkeypatch, t
     monkeypatch.setattr(setup_cli, "_emporia", lambda r, *a: order.append(("setup", a[2])) or 0)
     assert setup_cli.cmd_setup(_args(profile="shop")) == 0
     assert order == [("create", "shop"), ("plugin", "shop"), ("setup", "shop")]
-
-
-def test_status_says_where_a_runtime_came_from(monkeypatch, tmp_path):
-    """P296: a --runtime-from runtime is not "not the pinned"; it says where it is from."""
-    sha, other = "a" * 40, "b" * 40
-    monkeypatch.setattr(setup_cli, "from_catalog", lambda r: True)
-    state = {"head": sha, "origin": "https://github.com/wujitsana/emporia"}
-    monkeypatch.setattr(setup_cli, "_git_head", lambda r: state["head"])
-    monkeypatch.setattr(setup_cli, "_origin", lambda r: state["origin"])
-    src = {"repo": "https://github.com/wujitsana/emporia", "sha": sha}
-    assert setup_cli.runtime_note(tmp_path, src) == "pinned"
-    state.update(head=other, origin="file:///home/me/emporia")
-    note = setup_cli.runtime_note(tmp_path, src)
-    assert note.startswith("from --runtime-from file:///home/me/emporia") and "update" in note
-    assert setup_cli.runtime_note(tmp_path, {**src, "sha": ""}).startswith("from --runtime-from")
-    state["origin"] = src["repo"]
-    assert "not the pinned" in setup_cli.runtime_note(tmp_path, src)
-    assert "pins no release" in setup_cli.runtime_note(tmp_path, {**src, "sha": ""})
 
 
 @pytest.mark.parametrize("made,flag", [("made", True), ("there", False)])
@@ -224,6 +260,7 @@ def test_setup_agent_hears_that_the_profile_was_made_just_now(monkeypatch, tmp_p
     monkeypatch.setattr(setup_cli, "runtime", lambda: rt)
     monkeypatch.setattr(setup_cli, "from_catalog", lambda r: True)
     monkeypatch.setattr(setup_cli, "_git_head", lambda r: "a" * 40)
+    monkeypatch.setattr(setup_cli, "verify_runtime", lambda *a, **k: None)   # its own tests: above
     monkeypatch.setattr(setup_cli, "source", lambda: {"repo": "https://x.test/e", "sha": "a" * 40})
     monkeypatch.setattr(setup_cli, "python_of", lambda r: Path(sys.executable))
     monkeypatch.setattr(setup_cli, "_create_profile", lambda n: made)
