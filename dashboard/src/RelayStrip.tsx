@@ -5,6 +5,7 @@ import type { RelayHealth } from "./hooks";
 import { toWsUrl } from "./hooks";
 import { resolveRelayUrl } from "./relayEnv";
 import { relayHost } from "./relayFormat";
+import { MODE } from "./transport";
 
 // P42: internal to this file — see the note on trustBadge in AgentsView.
 function relayWsOrigin(httpRelay?: string): string {
@@ -79,7 +80,8 @@ export function RelayStrip({
 }) {
   const online = health?.status === "ok";
   const resolved = relayUrl && relayUrl.length > 0 ? relayUrl : resolveRelayUrl();
-  const host = relayHost(resolved);
+  // The Desktop page has no address of its own: it reaches the relay through Hermes.
+  const host = MODE === "desktop" ? "via Hermes" : relayHost(resolved);
   const wsEvents = relayEventsWsUrl(resolved);
 
   const meta = [health?.version ? `v${health.version}` : null, health?.guardrails_mode]

@@ -184,6 +184,18 @@ def build_app(console: Console, *, ui_dir: Path | None = None) -> FastAPI:
         return PlainTextResponse((_REPO / path).read_text(encoding="utf-8"),
                                  media_type="text/markdown; charset=utf-8")
 
+    @app.get("/doc-texts")
+    async def doc_texts():
+        """Every listed doc's text in one JSON answer, for the Hermes tab and the
+        Desktop page (whose `ctx.rest` carries JSON only). The same list as /docs."""
+        texts = {}
+        for path in sorted(_doc_paths()):
+            try:
+                texts[path] = (_REPO / path).read_text(encoding="utf-8")
+            except OSError:
+                continue
+        return {"texts": texts}
+
     @app.api_route("/relay/{agent_id}/{path:path}",
                    methods=["GET", "POST", "PUT", "PATCH", "DELETE"])
     async def relay(agent_id: str, path: str, request: Request):

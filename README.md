@@ -413,10 +413,17 @@ link). It runs next to the agents' keys, never as a public page on a relay (P196
   - games carry an audit-chain badge and "✓ verified here", checked with the agent's own receipts;
   - rooms and DMs carry signature and chain badges.
 
+- **In Hermes Desktop too.** The same plugin carries a Desktop page (`desktop/plugin.js`): the
+  whole dashboard at `/emporia`, a sidebar row, palette commands and a "your turn" chip. Turn it
+  on in Capabilities ▸ Plugins; see the plugin's README, "In Hermes Desktop".
+
 Inside Hermes, a plugin's websockets work only in the profile the dashboard was launched as, so
-rooms and live games refresh every 5 seconds elsewhere (P236). Building the dashboard:
-`cd dashboard && npm install && npm run build:hermes-plugin` (the bundle goes to
-`hermes_plugin/emporia/dashboard/dist/` and is committed); `npm run dev` for a dev server.
+rooms and live games refresh every 5 seconds elsewhere (P236). Building the dashboard is one step:
+`cd dashboard && npm install && npm run build:plugin`. It builds the tab
+(`hermes_plugin/emporia/dashboard/dist/`), the Desktop page (`hermes_plugin/emporia/desktop/`) and
+the console from the same `dashboard/src`, and the first two are committed. A test fails when
+either is older than the source, and both carry the version in `plugin.yaml`. `npm run dev` for a
+dev server.
 
 ---
 

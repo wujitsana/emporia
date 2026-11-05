@@ -103,29 +103,95 @@ print(json.dumps({{"status": r.status_code, "body": r.json()}}))
     assert "hermes emporia setup" in result["body"]["detail"]
 
 
-def _source_digest() -> str:
-    """dashboard/vite.plugin.config.ts sourceDigest(), in Python."""
+DASH = REPO / "dashboard"
+DESKTOP = REPO / "hermes_plugin" / "emporia" / "desktop"
+
+
+def _inputs(config: str) -> list[str]:
+    """The inputs a bundle is built from: buildMeta.ts SHARED_INPUTS plus the bundle's own config."""
+    import re
+    shared = re.search(r"SHARED_INPUTS = \[([^\]]*)\]", (DASH / "buildMeta.ts").read_text())
+    assert shared, "buildMeta.ts names the shared inputs"
+    return re.findall(r'"([^"]+)"', shared.group(1)) + [config]
+
+
+def _source_digest(config: str = "vite.plugin.config.ts") -> str:
+    """dashboard/buildMeta.ts sourceDigest(), in Python."""
     import hashlib
-    dash = REPO / "dashboard"
-    inputs = ["src", "vite.plugin.config.ts", "package-lock.json", "postcss.noRemoteFonts.ts"]
     files = []
-    for rel in inputs:
-        p = dash / rel
+    for rel in _inputs(config):
+        p = DASH / rel
         found = sorted(p.rglob("*")) if p.is_dir() else [p]
-        files += [f.relative_to(dash).as_posix() for f in found
+        files += [f.relative_to(DASH).as_posix() for f in found
                   if f.is_file() and not f.name.endswith((".test.ts", ".test.tsx"))]
     h = hashlib.sha256()
     for f in sorted(files):
         h.update(f.encode() + b"\n")
-        h.update((dash / f).read_bytes())
+        h.update((DASH / f).read_bytes())
     return h.hexdigest()
+
+
+REBUILD = "run `npm run build:plugin` in dashboard/ (it builds the tab and the Desktop page together)"
 
 
 def test_the_committed_tab_bundle_is_built_from_the_dashboard_as_it_is():
     """P295: a catalog install is the plugin folder alone, so the tab's bundle is
-    committed there. Changing dashboard/ without `npm run build:hermes-plugin`
-    would ship the old tab."""
+    committed there. Changing dashboard/ without rebuilding would ship the old tab."""
     dist = PLUGIN / "dist"
     assert (dist / "index.js").is_file() and (dist / "style.css").is_file()
-    assert (dist / "SOURCE").read_text().strip() == _source_digest(), (
-        "the tab's bundle is older than dashboard/: run `npm run build:hermes-plugin` in dashboard/")
+    assert (dist / "SOURCE").read_text().strip() == _source_digest(), f"the tab's bundle is older than dashboard/: {REBUILD}"
+
+
+def test_the_committed_desktop_page_is_built_from_the_dashboard_as_it_is():
+    """The Desktop half is built from the same dashboard/src: forgetting to rebuild
+    it (or the tab) fails here, so the two never drift apart."""
+    assert (DESKTOP / "plugin.js").is_file()
+    assert (DESKTOP / "SOURCE").read_text().strip() == _source_digest("vite.desktop.config.ts"), (
+        f"the Desktop page is older than dashboard/: {REBUILD}")
+
+
+def _plugin_version() -> str:
+    import re
+    m = re.search(r"^version:\s*(\S+)\s*$", (PLUGIN.parent / "plugin.yaml").read_text(), re.M)
+    assert m
+    return m.group(1).strip("\"'")
+
+
+def test_one_version_for_the_tab_the_desktop_page_and_the_plugin():
+    """plugin.yaml is the one place the version is written; both bundles carry it."""
+    version = _plugin_version()
+    assert json.loads((PLUGIN / "manifest.json").read_text())["version"] == version
+    for bundle in (PLUGIN / "dist" / "index.js", DESKTOP / "plugin.js"):
+        text = bundle.read_text()
+        assert f'EMPORIA_VERSION = "{version}";' in text, bundle
+
+
+def test_the_desktop_page_imports_only_the_host_modules_and_no_react_dom():
+    """The Desktop loader refuses any import but the SDK and the host's React; react-dom's
+    internals read as script injection to the catalog lint (rule 8)."""
+    import re
+    js = (DESKTOP / "plugin.js").read_text()
+    specs = set(re.findall(r'^import [^;]*?from "([^"]+)";$', js, re.M))
+    assert specs == {"@hermes/plugin-sdk", "react", "react/jsx-runtime"}, specs
+    assert "react-dom" not in js and "createRoot" not in js
+    assert "__EMPORIA_DESKTOP_CSS__" not in js, "the stylesheet is inlined"
+    assert re.search(r"^export \{.*plugin as default.*\};$", js, re.M)
+
+
+@pytest.mark.skipif(not HERMES_PYTHON.exists(), reason="Hermes is not installed here")
+def test_hermes_own_desktop_surface_lint_finds_nothing_in_the_page():
+    """Catalog rule 8, checked with the lint `hermes plugins validate` runs
+    (hermes_cli/plugin_validate_desktop.py): no refusals, and no review cues."""
+    code = (
+        "import json, sys\n"
+        "from pathlib import Path\n"
+        "from hermes_cli.plugin_validate_desktop import desktop_surface_hits, desktop_review_findings\n"
+        "d = Path(sys.argv[1])\n"
+        "print(json.dumps({'hits': desktop_surface_hits(d),"
+        " 'cues': desktop_surface_hits(d, desktop_review_findings)}))\n"
+    )
+    out = subprocess.run([str(HERMES_PYTHON), "-c", code, str(PLUGIN.parent)], cwd="/opt/hermes",
+                         env={**os.environ, "PYTHONPATH": "/opt/hermes"}, capture_output=True, text=True, timeout=120)
+    assert out.returncode == 0, out.stderr[-2000:]
+    result = json.loads(out.stdout.strip().splitlines()[-1])
+    assert result == {"hits": [], "cues": []}, result

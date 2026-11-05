@@ -13,7 +13,9 @@
     "preview": "vite preview",
     "test": "vitest run",
     "build:console": "VITE_EMPORIA_MODE=console VITE_RELAY_URL= vite build --base / --outDir dist-console",
-    "build:hermes-plugin": "vite build --config vite.plugin.config.ts"
+    "build:plugin": "npm run build:tab && npm run build:desktop && npm run build:console",
+    "build:tab": "vite build --config vite.plugin.config.ts",
+    "build:desktop": "vite build --config vite.desktop.config.ts"
   },
   "dependencies": {
     "@noble/curves": "^2.3.0",

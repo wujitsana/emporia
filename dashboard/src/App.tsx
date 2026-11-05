@@ -14,9 +14,8 @@ import { RelayContextProvider } from "./relayContext";
 import { useRelayCtx } from "./relayCtx";
 import { ViewerSwitcher } from "./ui/ViewerSwitcher";
 import { NotAnAgentNote } from "./ui/NotAnAgentNote";
-import { hermesProfile } from "./transport";
-
-const hermesNonAgent = hermesProfile()?.isAgent === false;
+import { hermesProfile, MODE } from "./transport";
+import { readPref, writePref } from "./prefs";
 import { RelayHealthCtx } from "./healthCtx";
 import { applyTheme, nextTint, toggleTheme, THEMES, TINTS, type Theme, type Tint } from "./themeConfig";
 import { useAgentWs, useGlobalEvents, useInterval } from "./hooks";
@@ -37,7 +36,7 @@ import {
   FeesView, DocsView, SettingsView, RelayView, GamifyView,
 } from "./views";
 import { VIEWER_ID } from "./relayEnv";
-import { routeFromHash, syncHash } from "./dashboardRoute";
+import { currentHash, onRouteChange, routeFromHash, syncHash } from "./dashboardRoute";
 import { CAPTURE, PARAM_THEME, PARAM_TINT } from "./capture";
 
 const LS_THEME = "emporia_theme";
@@ -47,13 +46,13 @@ const LS_TINT = "emporia_tint";
 function readTheme(): Theme {
   if (PARAM_THEME) return PARAM_THEME;
   if (CAPTURE) return "theme-light";
-  const v = localStorage.getItem(LS_THEME);
+  const v = readPref(LS_THEME);
   return (THEMES as readonly string[]).includes(v ?? "") ? (v as Theme) : "theme-light";
 }
 function readTint(): Tint {
   if (PARAM_TINT !== null) return PARAM_TINT;
   if (CAPTURE) return "tint-green";
-  const v = localStorage.getItem(LS_TINT);
+  const v = readPref(LS_TINT);
   return (TINTS as readonly string[]).includes(v ?? "") ? (v as Tint) : "";
 }
 
@@ -67,6 +66,8 @@ export default function App() {
 
 function AppInner() {
   const { isRelayOperator, isSpectator } = useRelayCtx();
+  // P234: inside Hermes, a profile that is no agent shows nothing of the relay.
+  const hermesNonAgent = hermesProfile()?.isAgent === false;
   const [view, setView] = useState<View>(() => routeFromHash().view);
   const [theme, setTheme] = useState<Theme>(readTheme);
   const [tint, setTint] = useState<Tint>(readTint);
@@ -107,10 +108,12 @@ function AppInner() {
     poll();
     // The interval is the safety net for a dropped socket now, not the way the
     // badge stays current — the `agentWs.last` dep is. Every event type the
-    // relay sends on this channel also lands in the agent's inbox.
-    const t = setInterval(poll, 60_000);
+    // relay sends on this channel also lands in the agent's inbox. With no
+    // socket (a Hermes profile that cannot carry one, the Desktop Webapp) the
+    // poll is all there is, so it runs more often.
+    const t = setInterval(poll, agentWs.connected ? 60_000 : 15_000);
     return () => clearInterval(t);
-  }, [agentWs.last]);
+  }, [agentWs.last, agentWs.connected]);
   const relayHealth = healthPoll ?? seed;
 
   /* P41-2: keyed on the newest event's identity rather than on
@@ -141,11 +144,11 @@ function AppInner() {
 
   const setThemeAndApply = (t: Theme) => {
     setTheme(t);
-    if (!CAPTURE) localStorage.setItem(LS_THEME, t);
+    if (!CAPTURE) writePref(LS_THEME, t);
   };
   const setTintAndApply = (t: Tint) => {
     setTint(t);
-    if (!CAPTURE) localStorage.setItem(LS_TINT, t);
+    if (!CAPTURE) writePref(LS_TINT, t);
   };
 
   const applyView = useCallback((id: View, sessionId?: string | null) => {
@@ -153,7 +156,8 @@ function AppInner() {
     syncHash(id, sessionId);
   }, []);
 
-  // A route that names a session (`#/games/<id>`) opens it — on load and on a hash change.
+  // A route that names a session (`#/games/<id>`) opens it — on load and on a
+  // route change (a hash change; on the Desktop page, a palette command).
   useEffect(() => {
     const onHash = () => {
       const r = routeFromHash();
@@ -162,9 +166,9 @@ function AppInner() {
       setNavOpen(false);
     };
     onHash();
-    window.addEventListener("hashchange", onHash);
-    if (!window.location.hash) syncHash(routeFromHash().view);
-    return () => window.removeEventListener("hashchange", onHash);
+    const off = onRouteChange(onHash);
+    if (!currentHash()) syncHash(routeFromHash().view);
+    return off;
   }, []);
 
   const goToView = useCallback(
@@ -211,18 +215,20 @@ function AppInner() {
       }
       // In the Hermes tab (closed shadow root) e.target is the host; isTyping asks the app's own root.
       if (isTyping(e, shellRef.current) || e.metaKey || e.ctrlKey || e.altKey) return;
+      // On the Desktop page the window is the whole app's: only keys pressed in this page count.
+      if (MODE === "desktop" && !(e.target instanceof Node && shellRef.current?.contains(e.target))) return;
       // t: next tint, T: light ↔ dark — instant, for a capture script on the beat.
       // Saved like the picker's choice, except in capture mode.
       if (e.key === "t" || e.key === "T") {
         instantNext.current = true;
         if (e.key === "t") setTint((cur) => {
           const next = nextTint(cur);
-          if (!CAPTURE) localStorage.setItem(LS_TINT, next);
+          if (!CAPTURE) writePref(LS_TINT, next);
           return next;
         });
         else setTheme((cur) => {
           const next = toggleTheme(cur);
-          if (!CAPTURE) localStorage.setItem(LS_THEME, next);
+          if (!CAPTURE) writePref(LS_THEME, next);
           return next;
         });
         return;

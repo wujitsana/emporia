@@ -1,6 +1,6 @@
 import { defineConfig } from "vitest/config";
 import path from "path";
-import { cssModuleName } from "./src/cssModuleName";
+import { cssModuleName } from "./src/cssModuleName.ts";
 
 const KIT = path.resolve("src/ui/kit");
 
@@ -15,6 +15,8 @@ export default defineConfig({
   resolve: {
     alias: {
       "@kit": KIT,
+      // The Desktop page's host SDK, which only Hermes Desktop provides (testing/hermesSdkStub.tsx).
+      "@hermes/plugin-sdk": path.resolve("testing/hermesSdkStub.tsx"),
     },
   },
   css: { modules: { localsConvention: "camelCase", generateScopedName: cssModuleName } },

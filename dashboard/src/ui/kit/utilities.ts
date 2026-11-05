@@ -28,7 +28,9 @@ const FOCUSABLE = ["a[href]", "button", "input", "select", "textarea", '[tabinde
 
 export function findNextFocusable(element: Element | null, direction: "next" | "previous" = "next"): HTMLElement | null {
   if (!element) return null;
-  const all = Array.from(document.querySelectorAll<HTMLElement>(FOCUSABLE));
+  // Only the app's own controls: inside a Hermes host (`.e-host-body`) the rest of the page is Hermes's.
+  const scope: ParentNode = element.closest(".e-host-body") ?? document;
+  const all = Array.from(scope.querySelectorAll<HTMLElement>(FOCUSABLE));
   const i = all.indexOf(element as HTMLElement);
   if (i === -1) return null;
   return all[direction === "next" ? (i + 1) % all.length : (i - 1 + all.length) % all.length];

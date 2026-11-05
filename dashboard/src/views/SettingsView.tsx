@@ -12,6 +12,7 @@ import { ViewBody } from "../ui/layout";
 import { useInterval } from "../hooks";
 import { consoleUrl, httpFetch, VIA_CONSOLE } from "../transport";
 import { VIEWER_ID } from "../relayEnv";
+import { EMPORIA_VERSION } from "../buildInfo";
 import { groupItems, type SettingItem, type SettingsReport } from "../settings";
 import { api } from "../api";
 import { useRelayCtx } from "../relayCtx";
@@ -127,7 +128,7 @@ export function SettingsView() {
   );
 
   return (
-    <ViewBody flush toolbar={<Text className="e-faint">Read-only · change a setting by running its command in your own terminal</Text>}>
+    <ViewBody flush toolbar={<Text className="e-faint">Read-only · change a setting by running its command in your own terminal · plugin {EMPORIA_VERSION}</Text>}>
       <SidebarLayout sidebar={sidebar} defaultSidebarWidth={24}>
         <div className="e-split-main e-settings">
           {error && !report && <Text className="e-status-txt">Could not read the settings: {error}</Text>}

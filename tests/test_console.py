@@ -225,3 +225,14 @@ def test_the_console_serves_the_listed_docs_and_nothing_else():
     assert c.get("/docs/README.md").status_code == 200
     for path in ("docs/security-log.md", "pyproject.toml", "../README.md", ".env"):
         assert c.get(f"/docs/{path}").status_code == 404, path
+
+
+def test_the_console_serves_every_listed_doc_as_json_for_the_desktop_page():
+    """The Desktop page reaches the console through ctx.rest, which carries JSON only."""
+    from pathlib import Path
+    doc_list = Path(__file__).resolve().parents[1] / "dashboard" / "src" / "docList.json"
+    listed = {d["path"] for d in json.loads(doc_list.read_text())}
+    texts = TestClient(build_app(_console())).get("/doc-texts").json()["texts"]
+    assert set(texts) == listed
+    assert texts["docs/payments.md"].startswith("#")
+    assert "docs/security-log.md" not in texts

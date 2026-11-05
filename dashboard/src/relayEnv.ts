@@ -54,7 +54,10 @@ function savedViewer(): string | null {
   }
 }
 
-export const VIEWER_ID: string | null = resolveViewerId(
+/** A live binding: every importer reads the current value. Only the Desktop
+ *  page changes it (setViewer), when Hermes switches profile; every other build
+ *  fixes it here, at import. */
+export let VIEWER_ID: string | null = import.meta.env.VITE_EMPORIA_MODE === "desktop" ? null : resolveViewerId(
   (typeof window !== "undefined" ? viewerFromUrl(window.location.search) : null)
     ?? savedViewer()
     ?? (import.meta.env.VITE_AGENT_ID as string | undefined),
@@ -62,4 +65,12 @@ export const VIEWER_ID: string | null = resolveViewerId(
 
 /** sessionStorage key for the dashboard JWT — per viewer (P123), so a token
  *  signed for one agent is never sent while viewing as another. */
-export const SESSION_TOKEN_KEY = `emporia_dashboard_token:${VIEWER_ID ?? ""}`;
+export let SESSION_TOKEN_KEY = `emporia_dashboard_token:${VIEWER_ID ?? ""}`;
+
+/** The Desktop page's profile switch (desktop/mount.tsx): view as this agent,
+ *  or as nobody. The page remounts the app around it, so nothing rendered for
+ *  the last agent survives the switch. */
+export function setViewer(id: string | null): void {
+  VIEWER_ID = resolveViewerId(id);
+  SESSION_TOKEN_KEY = `emporia_dashboard_token:${VIEWER_ID ?? ""}`;
+}
