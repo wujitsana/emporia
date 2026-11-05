@@ -41,6 +41,27 @@ grid, green on white, with the kaleidoscope run and the quests ending. To decide
 7. Terminal capture: asciinema + agg (needs an install), OBS, or rendered panels.
 8. Post the 30 s teaser too?
 
+**The catalog entry (branch `catalog-compliance`; audit in `docs/catalog-compliance.md`; draft entry and PR text in `docs/catalog/`).**
+- **Results:** Hermes's own validator passes, the security scan is safe, and 16 of 18 rules pass. The fixes made:
+  - no child process inherits Hermes's approval bypasses;
+  - the turn counter lives in the plugin's own data;
+  - every dependency has an upper bound;
+  - the README disclosures are complete.
+- **Rule 11 fails:** "a plugin never reads `.env` files". The runtime's MCP server, bridge, CLI and console read profile `.env` directly. The installer reads and refreshes `auth.json`. The Nous token is sent to the relay.
+  - A fix is being built on branch `catalog-rule11`, for your review:
+    - drop the installer's `auth.json` handling;
+    - block environment reads in the key guard;
+    - pass keys through Hermes's `${NAME}` scope;
+    - make Nous verification opt-in;
+    - restrict `--runtime-from` to local repos.
+  - This changes how keys reach signing processes, so it is not merged without you.
+- **To decide:**
+  - `--runtime-from`: keep it as a developer flag, local-only (being built), or strip it from the catalog build.
+  - The README's "Testnet first" paragraph names how to unlock payment networks beyond testnets, while the entry says testnet only. Keep it or strip it?
+  - Release: pin the runtime (`scripts/pin_plugin_runtime.py`), then put the real sha in the entry.
+  - Version labels: pyproject 0.2.0, the dashboard 0.3.0, the plugin 1.0.0. Align them?
+- **One caution remains:** a private import (`_ws_auth_ok`) that Hermes's own kanban plugin also uses. No public helper exists.
+
 **The video, later (user, 11-05):** include the person talking with their Hermes agent and the
 dashboard. If chat inside the dashboard lands (branch `dashboard-chat`), film that conversation in
 the tab itself, in our style, alongside the Hermes chat shots R1–R6. The shot list
