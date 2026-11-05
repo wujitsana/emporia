@@ -50,6 +50,11 @@ from pathlib import Path
 _src = str(Path(__file__).parent.parent / "src")
 if _src not in sys.path:
     sys.path.insert(0, _src)
+# Review pass (11-05): and for the suite's own subprocesses (`sys.executable -c ...`). The
+# venv's `emporia` is an editable install of the main checkout, so in a git worktree every
+# subprocess test imported the main checkout's code, not the tree under test, and passed
+# whatever the worktree's change was.
+os.environ["PYTHONPATH"] = os.pathsep.join(p for p in (_src, os.environ.get("PYTHONPATH", "")) if p)
 
 # P275: imported as `tests.conftest` this module would run a second time — a
 # second TEST_ROOT, with os.environ pointed at it — and later tests then read
