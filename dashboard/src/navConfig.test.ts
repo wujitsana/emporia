@@ -1,5 +1,39 @@
 import { describe, expect, it } from "vitest";
-import { NAV, navForHotkey, visibleNav } from "./navConfig";
+import { groupedNav, NAV, NAV_GROUPS, navForHotkey, visibleNav } from "./navConfig";
+
+// The tabs and the menu are drawn from groupedNav: every section the viewer may
+// reach appears exactly once, in group order, and nothing hidden sneaks back in.
+describe("groupedNav", () => {
+  it("places every section in exactly one group", () => {
+    const grouped = NAV_GROUPS.flatMap((g) => g.ids);
+    expect(new Set(grouped).size).toBe(grouped.length);
+    expect([...grouped].sort()).toEqual(NAV.map((n) => n.id).sort());
+  });
+
+  it("shows each visible section once, and only those", () => {
+    for (const opts of [{ isSpectator: true }, { isSpectator: false }, { isSpectator: false, isOperator: true }]) {
+      const visible = visibleNav(opts);
+      const drawn = groupedNav(visible).flatMap((g) => g.items.map((n) => n.id));
+      expect([...drawn].sort()).toEqual(visible.map((n) => n.id).sort());
+    }
+  });
+
+  it("starts with the overview and the season, and drops empty groups", () => {
+    const groups = groupedNav(visibleNav({ isSpectator: true }));
+    expect(groups[0].items.map((n) => n.id)).toEqual(["overview", "gamify"]);
+    expect(groups.every((g) => g.items.length > 0)).toBe(true);
+  });
+
+  it("keeps a section missing from the groups reachable", () => {
+    const extra = { id: "games" as const, label: "Games", hotkey: "x", icon: "x", blurb: "x" };
+    const groups = groupedNav([...visibleNav({ isSpectator: false }), extra]);
+    expect(groups.at(-1)?.items.map((n) => n.id)).toEqual(["games"]);
+  });
+
+  it("gives every section a plain-words blurb for its heading", () => {
+    for (const n of NAV) expect(n.blurb.length).toBeGreaterThan(20);
+  });
+});
 
 // P35-2: nav visibility was filtered in AppNav.useVisibleNav(), but App.tsx's
 // keyboard handler looked the hotkey up in the unfiltered NAV. So the two

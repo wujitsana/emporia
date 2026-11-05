@@ -440,19 +440,6 @@ body.theme-light {
 .e-rail-item:focus-visible { outline: none; }
 .e-rail-item:focus-visible { color: var(--theme-focused-foreground); }
 
-/* Legacy ActionListItem in sidebar — flatten it */
-.e-dashboard-shell [class*="SidebarLayout_sidebar"] [class*="ActionListItem_icon"] { display: none !important; }
-.e-dashboard-shell [class*="SidebarLayout_sidebar"] [class*="ActionListItem_text"] {
-  background: transparent !important;
-  padding: 6px 8px 6px 10px !important;
-}
-.e-dashboard-shell [class*="SidebarLayout_sidebar"] [class*="ActionListItem_item"] {
-  border-bottom: 1px solid var(--theme-border-subdued, rgba(255,255,255,0.05));
-}
-.e-dashboard-shell [class*="SidebarLayout_sidebar"] [class*="ActionListItem_item"]:hover [class*="ActionListItem_icon"],
-.e-dashboard-shell [class*="SidebarLayout_sidebar"] [class*="ActionListItem_item"]:focus [class*="ActionListItem_icon"] {
-  background: transparent !important;
-}
 .e-dashboard-shell [class*="SidebarLayout_sidebar"] [class*="Badge_root"] {
   background: transparent !important;
   padding: 0 !important;
@@ -1736,13 +1723,24 @@ body.theme-light {
   padding: 8px 12px;
   border-bottom: 1px solid var(--theme-border-subdued, rgba(255,255,255,0.08));
 }
+/* The kit Input draws its text in a display layer and puts the real <input>
+   (which gets this class) transparent on top. So the box lives on the display
+   layer, and the input just covers it exactly — styling the input itself drew
+   a second, empty box under the placeholder. */
+.e-search-row > [class*="Input_root"] { flex: 1; min-width: 0; }
+.e-search-row [class*="Input_displayed"] {
+  display: flex;
+  align-items: center;
+  min-height: 40px;
+  padding: 0 12px;
+  box-sizing: border-box;
+}
 .e-search-bar {
-  flex: 1;
-  min-width: 0;
-  font-size: 1.045rem !important;
-  padding: 8px 10px !important;
-  border: 1px solid var(--theme-border, rgba(255,255,255,0.2)) !important;
-  background: var(--theme-background) !important;
+  height: 100%;
+  padding: 0 12px !important;
+  box-sizing: border-box;
+  border: 0 !important;
+  background: transparent !important;
 }
 
 /* ─── 19. ACTION TIMELINE ────────────────────────────────────────────────── */
@@ -1812,18 +1810,6 @@ body.theme-light {
 
 /* ─── 22. SRCL COMPONENT OVERRIDES ──────────────────────────────────────── */
 
-/* Window panels — flat */
-.e-dashboard-shell [class*="Window_window"] {
-  background: var(--theme-background) !important;
-  box-shadow: none !important;
-}
-
-/* Navigation component */
-.e-dashboard-shell [class*="Navigation_root"] {
-  background: transparent !important;
-  border-bottom: 1px solid var(--theme-border-subdued, rgba(255,255,255,0.06));
-}
-
 /* ActionButton — outline style, no fills */
 .e-dashboard-shell [class*="ActionButton_content"] {
   background: transparent !important;
@@ -1845,33 +1831,11 @@ body.theme-light {
 .e-dashboard-shell [class*="ActionButton_root"]:focus,
 .e-dashboard-shell [class*="ActionButton_root"]:active { background: transparent !important; }
 
-/* ActionListItem rows */
-.e-dashboard-shell [class*="ActionListItem_text"] { background: transparent !important; }
-.e-dashboard-shell [class*="ActionListItem_icon"] { background: transparent !important; }
-
 /* Badges — square */
 .e-dashboard-shell [class*="Badge_root"] { border-radius: 0 !important; }
 
-/* Select / Input */
-.e-dashboard-shell [class*="Select_root"],
+/* Input */
 .e-dashboard-shell [class*="Input_root"] input { background: transparent !important; }
-.e-dashboard-shell [class*="Select_display"] {
-  background: transparent !important;
-  border: 1px solid var(--theme-border-subdued, rgba(255,255,255,0.12)) !important;
-  padding-left: 8px !important;
-  border-radius: 2px;
-}
-.e-dashboard-shell [class*="Select_display"]:hover,
-.e-dashboard-shell [class*="Select_display"]:focus {
-  background: transparent !important;
-  color: var(--theme-focused-foreground) !important;
-  border-color: var(--theme-focused-foreground) !important;
-}
-.e-dashboard-shell [class*="Select_control"]         { background: transparent !important; }
-.e-dashboard-shell [class*="Select_control"].focused {
-  background: transparent !important;
-  color: var(--theme-focused-foreground) !important;
-}
 
 /* Kill all surfaces from panels and stat blocks */
 .e-dashboard-shell .e-app-top,
@@ -1925,17 +1889,8 @@ body.theme-light {
   }
 }
 
-/* Stack SidebarLayout vertically on narrow screens */
-@media (max-width: 700px) {
-  .e-view [class*="SidebarLayout_root"] { flex-direction: column !important; align-items: stretch !important; }
-  .e-view [class*="SidebarLayout_sidebar"] {
-    width: 100% !important;
-    max-width: 100% !important;
-    border-bottom: 1px solid var(--theme-border-subdued, rgba(255,255,255,0.08));
-    max-height: 38vh;
-    overflow-y: auto;
-  }
-}
+/* Narrow screens: SidebarLayout itself (kit module CSS) turns rail-beside-detail
+   into list-then-detail with a back control — see ui/kit/SidebarLayout.tsx. */
 
 @media (min-width: 901px) {
   .e-hero-stats { grid-template-columns: repeat(4, 1fr); }
@@ -2026,3 +1981,289 @@ body.theme-light {
 .e-relay-table { border-collapse: collapse; font-size: 0.94em; margin: 4px 0 10px 0; font-variant-numeric: tabular-nums; }
 .e-relay-table th, .e-relay-table td { text-align: left; padding: 4px 10px;
   border: 1px solid color-mix(in srgb, currentColor 22%, transparent); }
+
+/* ─── 24. RETROMOD ───────────────────────────────────────────────────────────
+   The terminal look, kept and made consistent: monospace, hairline boxes, the
+   theme's accent as the one highlight. Modern where it helps reading and
+   touching: smooth type, clear focus, one heading per section, 44px targets on
+   a phone, list-then-detail split views, tables that scroll in their own box.
+   ──────────────────────────────────────────────────────────────────────────── */
+
+.e-dashboard-shell {
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
+  --e-rule: var(--theme-border-subdued, rgba(128, 128, 128, 0.22));
+  --e-accent-wash: color-mix(in srgb, var(--theme-focused-foreground) 9%, transparent);
+}
+
+/* One focus ring, everywhere — keyboard users always see where they are. */
+.e-dashboard-shell :focus-visible,
+.e-dashboard-shell .e-rail-item:focus-visible,
+.e-dashboard-shell .e-theme-circle:focus-visible {
+  outline: 2px solid var(--theme-focused-foreground);
+  outline-offset: 2px;
+}
+.e-dashboard-shell .e-rail-item:focus-visible { outline-offset: -2px; }
+
+/* Section heading: ▍Name, then the plain-words line on what it shows. */
+.e-page-head {
+  padding: 14px 24px 12px;
+  border-bottom: 1px solid var(--e-rule);
+  max-width: min(1440px, 100%);
+  margin: 0 auto;
+  box-sizing: border-box;
+}
+.e-page-head__title {
+  margin: 0;
+  display: flex;
+  align-items: baseline;
+  gap: 1ch;
+  font: inherit;
+  font-size: 1.05rem;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  line-height: 1.3;
+}
+.e-page-head__icon { color: var(--theme-focused-foreground); }
+.e-page-head__blurb {
+  margin: 4px 0 0;
+  font-size: 0.82rem;
+  line-height: 1.5;
+  opacity: 0.62;
+  max-width: 80ch;
+}
+
+/* Sub-heading inside a view: CAPS label with a box-drawing rule after it. */
+.e-subhead {
+  display: flex;
+  align-items: center;
+  gap: 1ch;
+  margin: 18px 0 6px;
+  font-size: 0.72rem;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  opacity: 0.7;
+}
+.e-subhead::after {
+  content: "";
+  flex: 1;
+  height: 1px;
+  background: var(--e-rule);
+}
+.e-subhead:first-child { margin-top: 4px; }
+.e-note { font-size: 0.8rem; line-height: 1.5; opacity: 0.6; margin: 2px 0 0; }
+
+/* Grouped header tabs: a quiet rule between groups. */
+.e-section-group { display: contents; }
+.e-section-group__rule {
+  align-self: stretch;
+  width: 1px;
+  margin: 6px 6px;
+  background: var(--e-rule);
+}
+.e-section-tabs--horizontal { align-items: center; }
+.e-section-tab.is-active { background: var(--e-accent-wash) !important; }
+
+/* The menu: grouped list, a head with a close control, viewer + theme at the foot. */
+.e-section-tabs--drawer .e-section-group { display: flex; flex-direction: column; gap: 2px; }
+.e-section-tabs--drawer .e-section-group + .e-section-group { margin-top: 10px; }
+.e-section-group__title {
+  padding: 6px 14px 4px;
+  font-size: 0.66rem;
+  letter-spacing: 0.16em;
+  opacity: 0.5;
+}
+.e-section-tabs--drawer .e-section-tab { min-height: 44px; }
+/* The whole menu scrolls as one, so the foot never covers the last sections. */
+.e-section-tabs--drawer { flex: none; overflow: visible; }
+.e-mobile-drawer { overflow-y: auto; overscroll-behavior: contain; box-sizing: border-box; width: 100%; }
+.e-mobile-drawer__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--e-rule);
+}
+.e-mobile-drawer__foot {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+  padding-top: 12px;
+  border-top: 1px solid var(--e-rule);
+}
+.e-icon-button,
+.e-menu-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-width: 44px;
+  min-height: 44px;
+  padding: 0 10px;
+  border: 1px solid var(--e-rule);
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  font-size: 1.1rem;
+  cursor: pointer;
+}
+.e-icon-button:hover,
+.e-menu-button:hover { border-color: var(--theme-focused-foreground); color: var(--theme-focused-foreground); }
+.e-menu-button .e-nav-badge { margin-left: 0; }
+
+/* Phone top bar: one row — menu, where you are, relay state. */
+.e-mobile-top { flex-wrap: nowrap !important; gap: 10px; padding: 6px 12px; }
+/* Brand above, the section you are in below it — both always fit. */
+.e-mobile-top__where {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 1px;
+  overflow: hidden;
+  white-space: nowrap;
+}
+.e-mobile-top__where .e-brand-title { font-size: 0.8rem !important; line-height: 1.2; opacity: 0.75; }
+.e-mobile-top__section {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-size: 0.85rem;
+  line-height: 1.25;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--theme-focused-foreground);
+}
+.e-mobile-top__section::before { content: "▸ "; opacity: 0.6; }
+.e-mobile-top .e-relay-status__host { display: none; }
+.e-mobile-top .e-relay-status__chips { gap: 6px; }
+.e-mobile-top .e-status-chip { padding: 4px 6px; }
+
+/* A label above a run of rail rows ("Which game", "Character sheets"). */
+.e-rail-label {
+  padding: 12px 12px 4px;
+  font-size: 0.66rem;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  opacity: 0.5;
+}
+
+/* Rail rows: room to breathe, the selected one washed in the accent. */
+.e-rail-item { padding: 8px 10px 8px 12px; min-height: 40px; }
+.e-rail-item.is-selected { background: var(--e-accent-wash); }
+.e-dashboard-shell [class*="SidebarLayout_sidebar"] {
+  border-right: 1px solid var(--e-rule);
+  box-sizing: border-box;
+}
+.e-dashboard-shell [class*="SidebarLayout_content"] > .e-split-main { padding: 12px 16px 24px 20px; }
+.e-dashboard-shell [class*="SidebarLayout_content"] > .e-split-main:has(.e-chess-main) { padding-left: 8px; }
+
+/* What-you-are-looking-at box on the Overview. */
+.e-intro {
+  border: 1px solid var(--e-rule);
+  border-left: 3px solid var(--theme-focused-foreground);
+  padding: 12px 16px 14px;
+  margin-bottom: 16px;
+  line-height: 1.55;
+}
+.e-intro__title {
+  font-size: 0.72rem;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  opacity: 0.6;
+  margin: 0 0 6px;
+}
+.e-intro__text { margin: 0; font-size: 0.9rem; max-width: 78ch; }
+.e-intro__go { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
+.e-intro__link {
+  flex: 1 1 13rem;
+  display: inline-flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  min-height: 44px;
+  padding: 6px 12px;
+  border: 1px solid var(--e-rule);
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.e-intro__link:hover { border-color: var(--theme-focused-foreground); }
+.e-intro__link-label { color: var(--theme-focused-foreground); font-size: 0.85rem; }
+.e-intro__link-hint { font-size: 0.72rem; opacity: 0.6; }
+
+/* The toolbar line above a split view is context, not content — keep it small. */
+.e-view-body--flush .e-view-toolbar,
+.e-view-body--flush .e-view-toolbar p { font-size: 0.78rem; line-height: 1.45; }
+
+/* Leaderboard-style tables size to their content instead of spreading three
+   short columns across a wide screen. */
+.e-listings-native.e-board { width: auto; min-width: min(100%, 34rem); }
+
+/* Replay status line (ply, started, audit, verify) wraps instead of running off the edge. */
+.e-chess-replay-status { display: inline-flex; flex-wrap: wrap; align-items: baseline; gap: 4px 12px; min-width: 0; }
+
+/* ─── 25. PHONE (≤ 700px) ───────────────────────────────────────────────── */
+
+@media (max-width: 700px) {
+  .e-page-head { padding: 12px 16px 10px; }
+  .e-page-head__blurb { font-size: 0.78rem; }
+  .e-view-toolbar { justify-content: flex-start; }
+  .e-view-body { padding: 12px 16px 24px; }
+  .e-dashboard-shell [class*="SidebarLayout_sidebar"] { border-right: 0; }
+  .e-dashboard-shell [class*="SidebarLayout_content"] > .e-split-main { padding: 12px 16px 24px; }
+
+  /* Tables scroll inside their own box; short cells stay on one line. */
+  .e-listings-native,
+  .e-relay-table,
+  .e-compact-table table {
+    display: block;
+    max-width: 100%;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+  .e-listings-native td,
+  .e-relay-table td,
+  .e-relay-table th { white-space: nowrap; }
+  .e-listings-native td.e-cell-wrap,
+  .e-listings-native td:has(> .e-cell-wrap) { white-space: normal; min-width: 18ch; }
+
+  /* Comfortable targets. */
+  .e-rail-item { min-height: 48px; padding: 10px 16px; }
+  /* Filters (data-keep-list) become a row of chips, so the list itself is near the top. */
+  .e-rail-item[data-keep-list] {
+    display: inline-flex;
+    align-items: center;
+    width: auto;
+    min-height: 40px;
+    margin: 4px 0 4px 8px;
+    padding: 6px 12px !important;
+    border: 1px solid var(--e-rule) !important;
+  }
+  .e-rail-item[data-keep-list].is-selected { border-color: var(--theme-focused-foreground) !important; }
+  .e-segment-tab { min-height: 40px; padding: 6px 12px; }
+  .e-dashboard-shell [class*="ActionButton_root"] { min-height: 40px; }
+  .e-search-row [class*="Input_displayed"] { min-height: 44px; }
+  .e-theme-duo { padding: 12px 14px; }
+  .e-theme-circle { width: 20px; height: 20px; }
+  .e-theme-duo__rule { margin: 0 12px; }
+  .e-viewer-switch select { min-height: 40px; font-size: 14px; }
+  .e-meta-grid__row { grid-template-columns: 6rem 1fr; }
+}
+
+@media (pointer: coarse) {
+  .e-section-tab { min-height: 44px; }
+  .e-rail-item { min-height: 48px; }
+  .e-segment-tab { min-height: 40px; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .e-dashboard-shell *,
+  .e-app-drawer { transition: none !important; animation: none !important; }
+}

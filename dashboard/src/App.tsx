@@ -1,11 +1,10 @@
 import "./ui/kit/global.css";
 import "./dashboard.css";
 
-import ActionButton from "@kit/ActionButton";
 import Text from "@kit/Text";
 import { RelayStrip } from "./RelayStrip";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { api } from "./api";
 import { MobileNavDrawer, SectionTabs } from "./AppNav";
 import { ThemeCompact } from "./ThemeControls";
@@ -21,7 +20,9 @@ const hermesNonAgent = hermesProfile()?.isAgent === false;
 import { RelayHealthCtx } from "./healthCtx";
 import { applyTheme, THEMES, TINTS, type Theme, type Tint } from "./themeConfig";
 import { useAgentWs, useGlobalEvents, useInterval } from "./hooks";
-import { navForHotkey, type View } from "./navConfig";
+import { navById, navForHotkey, type View } from "./navConfig";
+import { PageHeading, ViewBoundary } from "./ui/layout";
+import { isTyping } from "./keyTarget";
 import type { NavOpts } from "./eventNav";
 import type { Navigate } from "./navigation";
 import {
@@ -64,6 +65,7 @@ function AppInner() {
   const [theme, setTheme] = useState<Theme>(readTheme);
   const [tint, setTint] = useState<Tint>(readTint);
   const [navOpen, setNavOpen] = useState(false);
+  const shellRef = useRef<HTMLDivElement>(null);
 
   const [selectedSessionId, setSelectedSessionId] = useState<string | null>(null);
   const [selectedRoomId, setSelectedRoomId] = useState<string | null>(null);
@@ -145,7 +147,10 @@ function AppInner() {
   }, []);
 
   useEffect(() => {
-    const onHash = () => applyView(viewFromHash());
+    const onHash = () => {
+      applyView(viewFromHash());
+      setNavOpen(false);
+    };
     window.addEventListener("hashchange", onHash);
     if (!window.location.hash) syncHash(viewFromHash());
     return () => window.removeEventListener("hashchange", onHash);
@@ -176,7 +181,12 @@ function AppInner() {
 
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
-      if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return;
+      if (e.key === "Escape") {
+        setNavOpen(false);
+        return;
+      }
+      // In the Hermes tab (closed shadow root) e.target is the host; isTyping asks the app's own root.
+      if (isTyping(e, shellRef.current) || e.metaKey || e.ctrlKey || e.altKey) return;
       // P35-2: `navForHotkey` applies the same visibility rule the rendered
       // nav does. Searching the unfiltered NAV here is what let a spectator
       // reach the two sections the nav hides.
@@ -190,13 +200,16 @@ function AppInner() {
     // setter is already on the context).
   }, [goToView, isSpectator, isRelayOperator]);
 
+  const currentNav = navById(view === "games" ? "sessions" : view);
+
   return (
     <RelayHealthCtx.Provider value={relayHealth}>
-    <div className={`e-app-shell e-dashboard-shell e-app-shell--header-nav${navOpen ? " is-nav-open" : ""}`}>
-        <aside className="e-app-drawer" aria-label="Menu">
+    <div ref={shellRef} className={`e-app-shell e-dashboard-shell e-app-shell--header-nav${navOpen ? " is-nav-open" : ""}`}>
+        <aside className="e-app-drawer" aria-label="Menu" inert={!navOpen}>
           <MobileNavDrawer
             view={view}
             onGo={goToView}
+            onClose={() => setNavOpen(false)}
             theme={theme}
             tint={tint}
             onTheme={setThemeAndApply}
@@ -236,18 +249,22 @@ function AppInner() {
               badges={inboxUnread > 0 ? { messages: inboxUnread } : undefined}
             />
           </header>
+          {/* Phone: one row — the menu (sections, viewer, theme), where you are, and the relay's state. */}
           <div className="e-mobile-top">
-            <ActionButton hotkey="☰" onClick={() => setNavOpen(true)}>
-              menu
-            </ActionButton>
-            <Text className="e-brand-title">✶ Emporia</Text>
-            <ThemeCompact
-              theme={theme}
-              tint={tint}
-              onTheme={setThemeAndApply}
-              onTint={setTintAndApply}
-            />
-            <ViewerSwitcher />
+            <button
+              type="button"
+              className="e-menu-button"
+              onClick={() => setNavOpen(true)}
+              aria-expanded={navOpen}
+              aria-label="Open menu"
+            >
+              <span aria-hidden>☰</span>
+              {inboxUnread > 0 && <span className="e-nav-badge">{inboxUnread > 99 ? "99+" : inboxUnread}</span>}
+            </button>
+            <span className="e-mobile-top__where">
+              <Text className="e-brand-title">✶ Emporia</Text>
+              {currentNav && <span className="e-mobile-top__section">{currentNav.label}</span>}
+            </span>
             <RelayStrip
               relayUrl={RELAY}
               wsConnected={wsConnected}
@@ -257,8 +274,9 @@ function AppInner() {
           </div>
           <div className="e-view">
             <NotAnAgentNote />
+            {!hermesNonAgent && <PageHeading item={currentNav} />}
             {/* P234: a Hermes profile that is no agent shows nothing of the relay. */}
-            {!hermesNonAgent && (<>
+            {!hermesNonAgent && (<ViewBoundary key={view} name={currentNav?.label ?? "This section"}>
             {view === "overview" && (
               <OverviewView
                 events={events}
@@ -300,7 +318,7 @@ function AppInner() {
             {view === "settings" && <SettingsView />}
             {view === "relay" && isRelayOperator && <RelayView />}
             {view === "gamify" && <GamifyView />}
-            </>)}
+            </ViewBoundary>)}
           </div>
         </main>
     </div>

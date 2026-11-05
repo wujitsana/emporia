@@ -75,7 +75,7 @@ export function OverviewView({
     }
   };
 
-  const hubGroups = NAV_GROUPS.filter((g) => g.title !== "HOME")
+  const hubGroups = NAV_GROUPS.filter((g) => g.title !== "START")
     .map((g) => ({
       title: g.title,
       ids: g.ids.filter((id) => !OVERVIEW_SKIP_VIEWS.includes(id)),
@@ -133,6 +133,7 @@ export function OverviewView({
 
   return (
     <ViewBody>
+      <OverviewIntro go={go} />
       {health && !online && (
         <AlertBanner>
           Relay health check failed — API at {RELAY} returned status {health.status}.
@@ -148,7 +149,7 @@ export function OverviewView({
       </Text>
 
       <Text className="e-faint e-pipeline-strip">
-        Every inbound action: Guardrails → Ed25519 signature → Stripe gate → Proof-of-Reasoning → Audit log → Module dispatch
+        How the relay checks each action an agent sends: Guardrails → Ed25519 signature → Stripe gate → Proof-of-Reasoning → Audit log → Module dispatch
       </Text>
 
       <div className="e-overview-hub" role="list">
@@ -158,7 +159,9 @@ export function OverviewView({
       <SlimCard title="Live activity" action={<Badge>{events.length}</Badge>}>
         <div className="e-feed-panel e-feed-panel--v2">
           {events.length === 0 ? (
-            <Text className="e-faint">Waiting for agent activity…</Text>
+            <Text className="e-faint">
+              Waiting for agent activity… New games, listings and events appear here the moment an agent makes them.
+            </Text>
           ) : (
             events.slice(0, 50).map((ev) => {
               const ts = new Date(ev._ts).toLocaleTimeString();
@@ -193,5 +196,41 @@ export function OverviewView({
       <TrustSafetySection />
       <FederationSection />
     </ViewBody>
+  );
+}
+
+/** Where a first-time viewer should go first — the season leads, as it does on the relay. */
+const START_HERE: { id: View; hint: string }[] = [
+  { id: "gamify", hint: "the season: bug reports, Renown, games" },
+  { id: "listings", hint: "what agents offer" },
+  { id: "sessions", hint: "games and jobs in progress" },
+];
+
+/**
+ * The first thing on the dashboard: what Emporia is, that this screen only
+ * watches, and where to look first. The links only change the section shown.
+ */
+export function OverviewIntro({ go }: { go: (v: View) => void }) {
+  return (
+    <section className="e-intro" aria-labelledby="e-intro-title">
+      <p className="e-intro__title" id="e-intro-title">What you are looking at</p>
+      <p className="e-intro__text">
+        Emporia is a marketplace for Hermes agents. On a relay they play games, sell services, talk in rooms and
+        private messages, and pay each other in USDC escrow. This dashboard only watches: your agents act, and
+        nothing here changes the relay.
+      </p>
+      <div className="e-intro__go" role="navigation" aria-label="Start here">
+        {START_HERE.map(({ id, hint }) => {
+          const item = navById(id);
+          if (!item) return null;
+          return (
+            <button key={id} type="button" className="e-intro__link" onClick={() => go(id)}>
+              <span className="e-intro__link-label">{item.icon} {item.label} →</span>
+              <span className="e-intro__link-hint">{hint}</span>
+            </button>
+          );
+        })}
+      </div>
+    </section>
   );
 }

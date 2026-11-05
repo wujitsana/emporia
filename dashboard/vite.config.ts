@@ -2,6 +2,7 @@ import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
 import path from "path";
 import { noRemoteFonts } from "./postcss.noRemoteFonts.ts";
+import { cssModuleName } from "./src/cssModuleName.ts";
 
 const RELAY = process.env.VITE_RELAY_URL ?? "http://127.0.0.1:8088";
 const KIT = path.resolve("src/ui/kit");
@@ -36,10 +37,17 @@ export default defineConfig({
       "/safety": { target: RELAY, changeOrigin: true },
       "/federation": { target: RELAY, changeOrigin: true },
       "/ui-config": { target: RELAY, changeOrigin: true },
+      // The gamify, results and operator reads (the Gamify tab said "the relay
+      // did not answer" under `npm run dev` without these).
+      ...Object.fromEntries(
+        ["/relay", "/season", "/bugs", "/security", "/ratings", "/results", "/leaderboard",
+          "/bounties", "/likes", "/operator", "/dashboard"]
+          .map((p) => [p, { target: RELAY, changeOrigin: true }]),
+      ),
     },
   },
   css: {
-    modules: { localsConvention: "camelCase" },
+    modules: { localsConvention: "camelCase", generateScopedName: cssModuleName },
     postcss: { plugins: [noRemoteFonts] },
   },
 });
