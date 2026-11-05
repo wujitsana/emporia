@@ -39,6 +39,26 @@ def test_vault_linked_keys_are_a_known_issue_in_the_entry_and_the_readme():
     assert "cmd:" in known and "password manager" in known
 
 
+def test_screenshots_are_raw_github_urls_pinned_to_the_entrys_sha():
+    """The submission guide: up to 6, on a GitHub host, pinned to the entry's commit; the PR
+    description shows the same pictures."""
+    shots = ENTRY["screenshots"]
+    assert 1 <= len(shots) <= 6
+    prefix = f"https://raw.githubusercontent.com/wujitsana/emporia/{ENTRY['sha']}/docs/catalog/screenshots/"
+    assert all(s.startswith(prefix) and s.endswith(".png") for s in shots), shots
+    pr = (REPO / "docs" / "catalog" / "PR.md").read_text()
+    assert "## Screenshots" in pr
+    for s in shots:
+        assert s.rsplit("/", 1)[1] in pr
+
+
+def test_the_pr_explains_rule_3_and_the_one_validator_warning():
+    pr = (REPO / "docs" / "catalog" / "PR.md").read_text()
+    assert "## Why the runtime is not a self-updater" in pr
+    assert "_ws_auth_ok" in pr and "kanban" in pr and "not a core override" in pr
+    assert "runtime-from" not in pr
+
+
 def test_the_entry_and_pr_say_testnet_and_keep_to_the_repos_wording():
     pr = (REPO / "docs" / "catalog" / "PR.md").read_text()
     for text in (ENTRY["description"], pr):

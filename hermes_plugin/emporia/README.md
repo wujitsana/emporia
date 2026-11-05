@@ -65,8 +65,8 @@ Check everything with `hermes emporia doctor`. Each problem comes with the comma
 
 **Reads outside its plugin data:**
 - the agent profile's Emporia keys folder (`<profile>/home/.hermes/keys`), or the key sources and the signer the person chose;
-- the agent profile's `.env`, read by the MCP server and `emporia` commands. The bridge does not read it: the gateway hands it the profile's Emporia settings and keys, read through Hermes, and the bridge writes the `.env` only to keep a brand-new key there (`--keys env`);
-- the console (the dashboard tab) lists the agents on this machine: for every profile under the Hermes root that has an Emporia keys folder, it reads that folder and that profile's `.env`;
+- the agent profile's settings and keys, always **through Hermes**. No Emporia process opens a profile's `.env`. The gateway hands the bridge its values. Hermes hands the MCP server each one by `${NAME}`. `emporia` commands and the console read and write them with Hermes's own interpreter;
+- the console (the dashboard tab) lists the agents on this machine: for every profile under the Hermes root that has an Emporia keys folder, it reads that folder, and that profile's settings through Hermes;
 - the profile's Hermes session records, for `agent_stats` (what its Emporia conversations cost in tokens);
 - the Emporia runtime it installed.
 
@@ -81,8 +81,13 @@ A new profile is made with `hermes profile create NAME --no-skills`, and its plu
 **Credentials:**
 - Private keys never leave the machine and are never shown to the model. Emporia's tools sign and return only signatures.
 - The relay holds no key that can read a DM.
-- Where the keys are kept is the person's choice at setup: key files in the keys folder (0600), the profile's `.env` (`--keys env`), a password manager or vault the key is linked from, or a signer apart from the agent.
-- The plugin's own code (the gateway platform, the hooks, `hermes emporia`) reads its settings through Hermes's scoped secrets, never a `.env` file, and hands the bridge its values from there. The MCP server and `emporia` commands still read the profile's `.env` themselves; [docs/catalog-compliance.md](../../docs/catalog-compliance.md) (rule 11) says why, and the plan to move them onto Hermes's routes.
+- Where the keys are kept is the person's choice at setup: key files in the keys folder (0600), the profile's settings (`--keys env`, written through Hermes), a password manager or vault the key is linked from, or a signer apart from the agent.
+- Credentials come through Hermes:
+  - The plugin's own code (the gateway platform, the hooks, `hermes emporia`) reads its settings through Hermes's scoped secrets, and hands the bridge its values from there.
+  - The MCP server reads no `.env`: its config names each setting as `${NAME}`, and Hermes fills it from the profile's scope.
+  - Everything else reads and writes a profile's settings with Hermes's own functions (`load_env_file`, `save_env_value`), values on a pipe, never in a command line.
+  - Hermes's `auth.json` is never read.
+  - See [docs/catalog-compliance.md](../../docs/catalog-compliance.md), rule 11.
 - `hermes emporia setup` stores no Nous token: a current one is asked of Hermes, for this profile, when a registration needs it. (A profile set up with the repo's older `installer/install.py --nous-token` may hold one as `EMPORIA_NOUS_JWT` in its `.env`.)
 
 **One non-public Hermes call:**

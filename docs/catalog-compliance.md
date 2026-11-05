@@ -1,48 +1,57 @@
 # Emporia and the Hermes plugin catalog
 
 An audit of the Emporia Hermes plugin (`hermes_plugin/emporia/`) against the 18 admission
-rules in Hermes's `plugin-catalog/README.md` (Hermes 0.22.6), with file:line evidence, the
-validator's output, and what is left to decide.
+rules in Hermes's `plugin-catalog/README.md` (Hermes 0.22.6) and its submission guide, with
+evidence, the validator's output, and how each rule is met.
 
 - The draft entry is in [`docs/catalog/emporia.yaml`](catalog/emporia.yaml).
 - The draft PR text is in [`docs/catalog/PR.md`](catalog/PR.md).
-- Line numbers are those of the `catalog-compliance` branch.
+- The draft Hermes issue for a public WebSocket check is in
+  [`docs/catalog/hermes-issue-ws-auth.md`](catalog/hermes-issue-ws-auth.md).
+- Everything here is on branch `catalog-rule11`, which is built on `catalog-compliance`.
 
-**What the plugin is.** A `kind: platform` plugin. It registers three hooks, a gateway platform
-(`emporia`), two skills, the `hermes emporia` CLI command and a dashboard tab. The agent's
-Emporia tools are not registered by the plugin: they are an MCP server, `emporia.mcp_server`,
-with 91 tools. That server lives in Emporia's *runtime* (`src/emporia`), which
-`hermes emporia setup` clones at a pinned commit of this same repo into
-`<HERMES_HOME>/plugin-data/emporia/runtime`, and adds to the profile's `config.yaml`.
-A reviewer therefore reads two things at the pin: the plugin subdir, and the runtime it installs.
+**What the plugin is.** A `kind: platform` plugin. It registers:
+- three hooks;
+- a gateway platform (`emporia`);
+- two skills;
+- the `hermes emporia` CLI command;
+- a dashboard tab.
+
+The agent's Emporia tools are not plugin registrations. They are an MCP server,
+`emporia.mcp_server` (91 tools), in Emporia's *runtime* (`src/emporia`).
+`hermes emporia setup` installs that runtime from this same repo, at a pinned commit, into
+`<HERMES_HOME>/plugin-data/emporia/runtime`, and adds the server to the profile's
+`config.yaml`. A reviewer therefore reads two things at the pin: the plugin subdir, and the
+runtime it installs.
 
 ## Summary
 
-| # | Rule | Verdict | In one line |
-|---|------|---------|-------------|
-| 1 | Human-merged gate | pass | A PR to hermes-agent, nothing automated. |
-| 2 | Exact SHA pins | risk | The entry's sha is a placeholder until release; `emporia_source.json` has an empty sha at this commit. |
-| 3 | No self-updating code | risk | The runtime is fetched at a pinned SHA from inside the reviewed tree: defensible. `--runtime-from` lets a person point it anywhere. |
-| 4 | SHA bumps are new PRs | pass | A runtime bump is a plugin commit too, so it can only reach users through a new entry PR. |
-| 5 | Owner submissions | pass | Submitted by the repo owner (wujitsana). |
-| 6 | Capabilities match | pass | Generated from Hermes's own probe: 3 hooks, no tools, no middleware, 3 env vars. |
-| 7 | Install scanner | pass | `security scan — safe`. |
-| 8 | Desktop SDK surface | n/a | No `desktop/plugin.js`. The tab is a web-dashboard plugin. |
-| 9 | No core overrides | pass, 1 caution | No rebinds. One private import (`hermes_cli.web_server_chat._ws_auth_ok`), the same one the bundled kanban plugin uses. |
-| 10 | Dependency policy | pass (fixed) | The plugin declares no Python deps. The runtime's had bare floors; now each has an upper bound. |
-| 11 | Credentials through Hermes | **fail, narrowed** | The plugin's own code is clean. On `catalog-rule11`: `auth.json` is gone, the bridge gets its values through Hermes, Nous verification is opt-in, and env reads are blocked. The MCP server and the runtime CLI still read the `.env`. Status below. |
-| 12 | Approvals, unattended runs | pass (fixed) | Children no longer inherit YOLO or pre-accepted hooks. The runtime's CLI never waits on a dead stdin. |
-| 13 | Disclosure | pass (fixed), 1 decision | The README now covers the Nous token, cross-profile reads, the local relay restart and default hosts. One wording decision is for the owner. |
-| 14 | Compatibility metadata | pass | `requires_hermes: ">=0.22.6"` in plugin.yaml and the entry (= the current release); `version: "1.0.0"`. |
+| # | Rule | Verdict | How it is met |
+|---|------|---------|---------------|
+| 1 | Human-merged gate | pass | Submitted as a PR to hermes-agent by the owner; nothing automated. |
+| 2 | Exact SHA pins | pass | The entry pins a full sha at release, and the plugin pins its runtime by commit and tree (release procedure below). |
+| 3 | No self-updating code | pass | Nothing fetches or installs code by itself. The runtime comes only from the pin, verified by commit and tree after every checkout. `--runtime-from` is gone. |
+| 4 | SHA bumps are new PRs | pass | The runtime pin lives in the plugin tree, so it moves only with a new entry PR. |
+| 5 | Owner submissions | pass | Submitted by the repo owner. |
+| 6 | Capabilities match | pass | Generated from Hermes's own probe, and kept in step with the manifest by a test. |
+| 7 | Install scanner | pass | `security scan — safe`, with no findings. |
+| 8 | Desktop SDK surface | pass (n/a) | No `desktop/plugin.js`. |
+| 9 | No core overrides | pass | No rebinds. One reviewer warning (a private import): no public route exists, the bundled kanban plugin is precedent, it fails closed, and an issue is drafted. |
+| 10 | Dependency policy | pass | The plugin declares no Python dependencies. The runtime's are bounded and locked (`uv lock --check` passes). |
+| 11 | Credentials through Hermes | pass | Every profile setting and key is read and written through Hermes. The MCP server gets them as `${NAME}`. Nothing opens a profile's `.env` or `auth.json`. Nous verification is opt-in. |
+| 12 | Approvals, unattended runs | pass | No child inherits an approval bypass. Nothing waits on a terminal that is not there. |
+| 13 | Disclosure | pass | The README and PR text disclose network calls, background processes, reads outside plugin-data, shell commands and stored credentials. |
+| 14 | Compatibility metadata | pass | `requires_hermes: ">=0.22.6"` in both places (the current release); `version` matches. |
 | 15 | No skins/forks of bundled | pass | Not a bundled plugin. |
 | 16 | One listing per lineage | pass | Original work. |
-| 17 | No unscannable payloads | pass | No binaries or bytecode in the tree. The dashboard bundle is unminified JS built from `dashboard/src`, with a source digest a test checks. |
-| 18 | Password managers from vendor | n/a | No `register_login_backend`. |
+| 17 | No unscannable payloads | pass | No binaries or bytecode. The dashboard bundle is unminified source with a checked digest. |
+| 18 | Password managers from vendor | pass (n/a) | No `register_login_backend`. |
 
 ## Validator
 
-`hermes plugins validate hermes_plugin/emporia`, at a `git archive` of HEAD, in a throwaway
-`HERMES_HOME` and `HOME`:
+`hermes plugins validate hermes_plugin/emporia`, run on a `git archive` of each HEAD in a
+throwaway `HERMES_HOME` and `HOME`. It gave the same output before this work
+(`hackathon-v2`) and after it (`catalog-rule11`):
 
 ```
 ✓ manifest — plugin.yaml parses
@@ -60,321 +69,172 @@ A reviewer therefore reads two things at the pin: the plugin subdir, and the run
 ✓ built-in tool collisions — no tools to check
 ✓ security scan — safe
 ✓ no core override — no runtime rebinds of Hermes core
-⚠ private core imports (catalog rule 9: public surfaces only; these can break on any release):
-  dashboard/plugin_api.py:131 hermes_cli.web_server_chat. ...
-◇ Isolation — in-process only: kind 'platform': gateway platform adapters run in the Hermes process; ...
+⚠ private core imports (catalog rule 9 ...): dashboard/plugin_api.py:131 hermes_cli.web_server_chat.
+◇ Isolation — in-process only: kind 'platform' ...
 Validation passed.
 ```
 
-The output was the same before and after the fixes on this branch: they changed no check's
-result. `--install-deps` is a no-op for this plugin, because it declares no Python
-dependencies (`python dependencies — none declared`). It also syncs Hermes's own environment,
-so it was not run against the shared Hermes install.
-
-**What is left, and why:**
-- **The private import** is a caution, not a failure. Hermes has no public WebSocket-auth
-  helper for dashboard plugins. The bundled kanban plugin
-  (`plugins/kanban/dashboard/plugin_api.py`) uses the same function. If it is missing, the tab
-  refuses the socket (`plugin_api.py:130-137`, fail closed). The right fix is a Hermes issue
-  asking for a public helper.
-- **Isolation** is `in-process only` because platform adapters cannot run in the plugin host.
-  That is a note, not a check.
+- **No failures.** Two lines remain, both explained in the PR text:
+  - the rule 9 warning (below);
+  - the isolation note, which every platform adapter gets (platform adapters run in the gateway
+    process).
+- **`--install-deps`** (what the catalog CI runs) has nothing to install. Hermes's own reader
+  (`pm.plugin_declarations.read_python_declaration`) reports no `pyproject.toml` and no
+  requirements for the plugin dir. It was not run here: it syncs the Hermes install's own
+  environment, which is shared with the live gateway.
+- `scripts/validate_plugin_catalog.py docs/catalog/emporia.yaml` passes.
 
 ## Rule by rule
 
-### 2. Exact SHA pins — risk
-- `hermes_plugin/emporia/emporia_source.json:3` is `"sha": ""` at this commit, so
-  `hermes emporia setup` from a catalog install would refuse (`setup_cli.py:195`, "names no
-  pinned commit").
-- **A release is two commits** (`scripts/pin_plugin_runtime.py`):
-  1. the code, pushed;
-  2. `emporia_source.json` naming commit 1.
-- The entry pins commit 2. Commit 2 differs from commit 1 only in `emporia_source.json`, so the
-  runtime the plugin installs is the reviewed tree minus that one line. The PR text tells the
-  reviewer how to check it: `git diff <runtime-sha> <entry-sha> --stat` shows one file.
+### 2. Exact SHA pins — pass
+A release is two commits (`scripts/pin_plugin_runtime.py`):
+1. The code, pushed.
+2. `hermes_plugin/emporia/emporia_source.json` naming commit 1, by its `sha` and its `tree`.
 
-### 3. No self-updating code — risk, defensible
-- **What happens.** `setup_cli.install_runtime` (`setup_cli.py:188-218`) clones this repo
-  (`:201`) and checks out the sha in `emporia_source.json`. It then installs dependencies with
-  `uv sync --frozen` (`:212`), or `pip install -e` within the pyproject bounds (`:217`).
-  `hermes emporia update` (`cmd_update`, `:426`) re-runs the same install at the sha the
-  installed plugin pins.
-- **Why it is not a self-updater.**
-  - It never touches the plugin's own files.
-  - It never chooses a commit itself: the sha is inside the reviewed commit.
-  - It moves only when `hermes plugins update emporia` brings a new reviewed pin. That needs a
-    new catalog PR (rule 4).
-  - `status` says when the runtime is not the pinned one (`runtime_note`, `:365-378`).
-- **What a reviewer will still notice.**
-  - **Code that runs is fetched at setup time.** The scanner reads only the subdir. The answer:
-    the fetched code is the same repo at an ancestor of the pin, so it is in the tree the
-    reviewer already has.
-  - **`--runtime-from REPO@SHA`** (`parse_runtime_from`; setup and update) lets a person
-    install a runtime from another commit. On branch `catalog-rule11` it takes **only a repo on
-    this machine** (a path or `file://`); a network URL is refused, both by `parse_runtime_from`
-    and by `install_runtime`. It is manual and never automatic. From an agent's terminal it
-    needs the person's approval: `key_guard._SENSITIVE` puts `setup` and `update` under
-    Hermes's approval prompt (`key_guard.py:57-60`), and an unattended run denies it.
-- **How to present it** (in the PR text): "Setup installs Emporia's runtime from this repo at
-  the commit `emporia_source.json` names. That commit is an ancestor of the pinned one and
-  differs from it only in that file. The runtime moves only when a new catalog pin does.
-  `--runtime-from` is a developer flag for trying a release before it is pushed."
-- **Done on `catalog-rule11`:** local repos only. That keeps "try a release before it is
-  pushed", and drops fetching unreviewed code over the network. Stripping the flag from the
-  catalog build entirely remains an option.
+The entry pins commit 2. Between releases the pins are empty, and
+`tests/test_plugin_setup.py` checks they are either empty or full 40-character hashes. The
+draft entry's sha is a quoted placeholder, which the entry validator accepts and the release
+replaces.
+
+### 3. No self-updating code — pass
+- **Nothing fetches or installs code by itself.**
+  - The gateway's adapter starts only the bridge.
+  - The bridge may restart a relay this machine runs, from the installed code (`Popen` of
+    `emporia.relay_server`), and installs nothing.
+  - The dashboard API starts only the console.
+  - The hooks, the MCP server and the console start no installer.
+  - The plugin registers no cron job.
+  - The runtime is installed or moved only by `install_runtime`
+    (`hermes_plugin/emporia/setup_cli.py`), which only `hermes emporia setup` and
+    `hermes emporia update` call when a person runs them.
+- **Only the pin.** `install_runtime` takes no source but the https repo and commit in
+  `emporia_source.json`. `--runtime-from` is removed from setup and update, and a test checks
+  it cannot come back.
+- **Verified.** After a forced checkout, and again after the packages are installed,
+  `verify_runtime` checks three things, and refuses to run anything otherwise:
+  - HEAD is the pinned commit (a full sha names one commit; no branch, tag or ref is followed);
+  - that commit's tree is the recorded tree;
+  - no tracked file differs.
+
+  `hermes emporia status` says "pinned, verified" or what differs.
+- **The runtime's own `emporia update`** (git pull, sync) refuses a catalog runtime before it
+  does anything.
+- Tests: `tests/test_plugin_setup.py` (`test_the_catalog_build_has_no_way_to_run_another_runtime`,
+  `test_the_runtime_is_verified_against_the_pinned_commit_and_tree`, …) and
+  `tests/test_cli.py::test_a_catalog_runtime_is_never_pulled_or_synced_by_emporia_update`.
 
 ### 6. Declared capabilities — pass
-Generated from Hermes's own probe (`hermes_cli.plugin_validate._run_capability_probe`), not
-written by hand:
+Hermes's probe records hooks `pre_tool_call`, `transform_tool_result` and `pre_llm_call`, no
+tools, no middleware, and the `emporia` command. The entry lists exactly those hooks, and as
+`requires_env` the three settings the platform requires (`adapter.py`, `required_env`).
+`tests/test_catalog_entry.py` keeps the entry, the manifest and `register()` in step.
 
-```json
-{"hooks": ["pre_tool_call", "transform_tool_result", "pre_llm_call"], "tools": [],
- "middleware": [], "commands": ["emporia"], "providers": [], "trusted_inbound": []}
-```
+### 9. No core overrides — pass, one reviewer warning
+- `no core override` passes.
+- The warning is `dashboard/plugin_api.py:131`, an import of
+  `hermes_cli.web_server_chat._ws_auth_ok`, used to authenticate the tab's WebSocket.
+- Hermes offers no public way to check a socket's credential:
+  - `hermes_cli.dashboard_auth` has ticket helpers, not the full check;
+  - `PluginApiWebSocketGate` refuses disabled plugins but leaves the credential to the route.
+- The bundled kanban plugin imports the same function.
+- If the import fails, the tab refuses the socket (fail closed).
+- `docs/catalog/hermes-issue-ws-auth.md` drafts the issue asking for a public helper.
+- Re-implementing the check from the ticket helpers would risk drifting from core's own rules,
+  which is worse.
 
-- The hooks match `plugin.yaml:25-28`, registered at `__init__.py:43-46`.
-- `requires_env` in the entry lists the three variables the gateway platform requires
-  (`adapter.py:350`): `EMPORIA_RELAY_URL`, `EMPORIA_AGENT_ID`, `EMPORIA_PYTHON`. setup writes
-  them. The manifest declares them under `optional_env` rather than `requires_env`, so the
-  install itself asks nothing.
-- The 91 MCP tools are not plugin registrations. The entry's description and the PR say where
-  they come from.
-
-### 7. Install scanner — pass
-`security scan — safe`, with no findings.
-
-### 9. No core overrides — pass, one caution
-`no core override — no runtime rebinds of Hermes core`. The one private import is covered above.
-The other Hermes imports are on the validator's public list:
-- `gateway.platforms._shared`, `.base`, `.event`, `.helpers`;
-- `gateway.config`;
-- `plugins.plugin_storage`;
-- `hermes_constants`.
-
-### 10. Dependency policy — pass (fixed)
-- The plugin declares no Python dependencies; it runs on what Hermes ships.
-- The runtime's `pyproject.toml` had bare floors. Each now has an upper bound: the next major
-  (0.x: the next minor) above the version `uv.lock` pins. The lock's own copy of the project's
-  requirements says the same.
-- `tests/test_dependency_bounds.py` keeps every runtime dependency bounded, and the locked
+### 10. Dependency policy — pass
+- The plugin declares no Python dependencies.
+- The runtime's `pyproject.toml` gives every dependency a floor and an upper bound.
+- `uv.lock` was regenerated with uv 0.13.5. It includes the `solana` extra, and
+  `uv lock --check` passes.
+- The installer's own `uv sync --frozen --no-dev --extra x402` installs into a fresh copy of the
+  tree.
+- `tests/test_dependency_bounds.py` keeps every runtime dependency bounded and the locked
   versions inside the ranges.
-- **Left for the owner:**
-  - The floors were not re-tested at their oldest versions.
-  - `uv.lock` was regenerated with uv 0.13.5. It now includes the `solana` extra, and
-    `uv lock --check` passes. The installer's own `uv sync --frozen --no-dev --extra x402`
-    installs into a fresh copy of the tree.
-  - A release quarantine (`uv lock --exclude-newer`) in CI is recommended by the rule.
 
-### 11. Credentials come through Hermes — fail, proposal below
-- **The plugin's own in-process code is compliant:**
-  - the platform's settings: `adapter.py:57` and `:333`;
-  - `hermes emporia`: `setup_cli.py:74-80`;
-  - the turn cap: `turn_cap.py:40-49`.
-- All three read through `gateway.platforms._shared.get_scoped_secret`, the platform-adapter
-  wrapper around `agent.secret_scope.get_secret`. It honours the active profile, and the
-  default profile's startup.
-- The `os.environ` fallbacks in `setup_cli.py:80` and `turn_cap.py:49` run only when Hermes's
-  module cannot be imported.
-- The runtime processes the plugin starts, or that setup configures, are not compliant:
+### 11. Credentials come through Hermes — pass
+- **The plugin's in-process code** reads its settings with
+  `gateway.platforms._shared.get_scoped_secret`, the platform wrapper around
+  `agent.secret_scope.get_secret`. This covers the adapter, `hermes emporia` and the turn cap.
+- **The bridge** (started by the plugin) gets the profile's settings, keys and vault variables
+  from the adapter, read through Hermes inside the profile's scope, with `EMPORIA_NO_DOTENV=1`.
+- **The MCP server** (started by Hermes) reads no `.env`.
+  - Its `mcp_servers.emporia.env` carries a `${NAME}` for every setting and key it may read,
+    and Hermes fills each from the profile's scope.
+  - `emporia.agent_env` holds the names, and `tests/test_agent_env.py` scans the source and
+    fails on a missing one, so no setting can silently miss the server.
+  - `emporia doctor` names anything not handed over, and `emporia agent refresh` adds it.
+- **The runtime CLI** (`hermes emporia …`), **the console** and **the installer** never open a
+  profile's `.env`. `emporia.profile_env` is the one place that reads or writes one, and it does
+  so through Hermes's own interpreter with Hermes's public functions:
+  - read: `agent.secret_scope.load_env_file`;
+  - write: `hermes_cli.config.save_env_value` / `remove_env_value`, under the profile's
+    `HERMES_HOME`.
 
-| Where | What it reads or does | Started by |
-|-------|-----------------------|------------|
-| `adapter.py:104`, `:151` → `src/emporia/config.py:110-112` | The bridge gets `EMPORIA_DOTENV` (the profile's `.env` path) and merges that file into its environment. | the plugin (gateway) |
-| `src/emporia/config.py:114-121` | With no `EMPORIA_DOTENV`, it walks up from the runtime's own location to the first `config.yaml` and reads the `.env` beside it. For a runtime in `plugin-data`, that is the profile's `.env`. | every runtime process |
-| `installer/install.py:798` → `config.py:110` | The MCP server's `config.yaml` env names the `.env`; the server merges it. | Hermes (as setup configured) |
-| `plugin_api.py:101-111` → `src/emporia/console/agents.py:72-82` | The console runs with `EMPORIA_NO_DOTENV=1`, but lists agents by reading the `.env` of **every profile under the Hermes root** that has an Emporia keys folder. | the plugin (dashboard) |
-| `src/emporia/relay_access.py:37-45` | Re-reads the `.env` while running (a relay's access settings). | a relay process |
-| `installer/install.py:566` (`harvest_env`), used by `cli.py:3694`, `:3700` and others | `emporia doctor`, setup and others read profile `.env` files directly. | `hermes emporia …` |
-| `installer/install.py:605-625` (`collect_upstream_env`), `:517-550` | Reads the `.env` of every ancestor directory, the Hermes root's included. Copies Stripe settings and a model-provider key from another profile's `.env` into a new one. | `hermes emporia setup` |
-| `src/emporia/key_source.py:123-162` | Writes keys into the profile's `.env` (`--keys env`). | runtime |
-| `src/emporia/key_source.py:43-57` | `cmd:` key sources run a password manager's CLI with the token kept in the `.env` (`OP_SERVICE_ACCOUNT_TOKEN`, `BW_SESSION`, …). | runtime |
-| `src/emporia/nous_token.py:28`, `:72-90` → `mcp_server.py:435`, `:447` | Runs Hermes's interpreter on `hermes_cli.auth.resolve_nous_access_token` (an internal API). The person's **Nous access token** goes to the relay at registration. | MCP server, CLI |
-| `installer/install.py:122-205` | Reads `auth.json` (including a fixed data-root path, `:144`). Refreshes the Nous OAuth token as client `hermes-cli`, and **writes the new tokens back to `auth.json`** (`:201`). Reached only by `python installer/install.py` (`:1980`) and `scripts/seed_demo_relay.py`, not by `hermes emporia setup`, but it is in the pinned tree. | the repo's own installer script |
+  Values travel on stdin and a pipe, never in argv. A runtime installed from the catalog with
+  no Hermes fails closed. Only a relay's own folder, or a checkout used without Hermes, is a
+  plain file. `tests/test_profile_env.py` checks the routing, that no other module opens a
+  `.env`, and a real round trip through the installed Hermes.
+- **`auth.json`:** never read, refreshed or written. The installer and the seed script ask
+  Hermes (`nous_token.from_hermes`).
+- **Nous verification** (sending the person's Nous access token to the relay) is off by default
+  (`EMPORIA_NOUS_VERIFY`). Hermes has no route for proving a sign-in to a third party, so it is
+  documented as an opt-in outside the catalog's guarantees.
+- **Key protection.** Keys in a child's environment are behind `key_guard`, which blocks
+  `/proc/<pid>/environ` and `ps e` for the agent's own tools.
+- **Linked keys** (a `cmd:` key source run with a vault CLI) are a disclosed known issue, and
+  off unless the person links one.
+- **The console** lists agents through Hermes's reads. Branch `console-scope` (another agent's
+  work) narrows it to the dashboard's own profile. Merge that branch after this one: it touches
+  the same `_profile_env`, which here only changes how it reads.
 
-**Hermes's sanctioned routes:**
-- **In-process code:** `agent.secret_scope.get_secret(NAME)`, or for a platform
-  `get_scoped_secret`, for names declared in `requires_env` / `optional_env` / `config_schema`.
-  Already used.
-- **MCP servers:** Hermes renders `${NAME}` in `mcp_servers.<name>.env` from the active
-  profile's secret scope (`tools/mcp_tool_config.py`, `_interpolate_env_vars` → `get_secret`).
-  It spawns the server with a filtered environment (`_build_safe_env`), and drops an entry that
-  is one unset `${NAME}`. So the MCP server can be handed exactly its settings and keys, from
-  Hermes, without reading any file.
-- **A subprocess the plugin starts itself** (the bridge, the console): read the values with
-  `get_scoped_secret` in the gateway or dashboard process, and pass them in the child's
-  environment. That is what Hermes does for MCP servers.
-- **Writing a setting:** `hermes_cli.gateway_setup_wizard:save_env_values`, a public helper for
-  platform plugins.
-- **A third party verifying a Nous sign-in:** no route. `credentialed_provider_request` attaches
-  a token to the provider's own hosts; a relay is not one. Per the rule, this is a Hermes issue
-  (an audience-bound identity assertion), not a workaround.
+### 12. Approvals and unattended runs — pass
+- No child of `hermes emporia` or of the bridge inherits `HERMES_YOLO_MODE`, `HERMES_YOLO`,
+  `HERMES_ACCEPT_HOOKS` or `HERMES_ACP_AUTO_APPROVE`.
+- Without a terminal, the runtime's CLI gets `/dev/null` as stdin.
+- Setup asks nothing without a terminal.
+- Every child has a timeout.
+- `key_guard` sends commands that change keys, wallets, limits or roles to Hermes's approval
+  prompt, which an unattended run denies.
+- A payment above the person's threshold asks through MCP elicitation, which Hermes routes to
+  its approvals.
 
-**Key protection if values move into a child's environment:**
-- **Today.** A key merged into the bridge's or MCP server's `os.environ` after start does not
-  show in `/proc/<pid>/environ`. The `.env` file itself is on disk, and `key_guard` blocks
-  commands and paths that name the key variables or the keys folder.
-- **After.** With `${NAME}` or env passing, the keys are in the child's initial environment,
-  visible in `/proc/<pid>/environ` to the same user.
-  - Hermes's file tool already refuses `/proc/*/environ` (`tools/file_tools.py:130-133`).
-  - The agent's terminal does not.
-  - So **before** any key moves into an environment, `key_guard._KEY_PATHS` should also block
-    `/proc/<pid>/environ` (and `self`), and `ps e` / `ps eww`. That is a one-regex change with
-    a test.
-- **The wall is unchanged:** a sandboxed terminal backend, or the signer apart from the agent.
+### 13. Disclosure — pass
+The plugin README (it renders on the catalog page at the pin) and the PR text disclose:
+- network calls: the clone, PyPI, the relay and the relays it visits, the testnet RPCs, the
+  facilitator, opt-in Nous verification, and Telegram or Stripe only if set up;
+- background processes: the bridge, the MCP server and the console;
+- reads outside plugin-data: the keys folder, the profile's settings through Hermes, the
+  console's agent list, and session records;
+- shell commands;
+- stored credentials;
+- no telemetry;
+- known issues: linked keys, and Linux and macOS only.
 
-**Options, smallest first:**
-
-1. **Remove the `auth.json` path** (small; recommended in any case). Delete
-   `_find_auth_json` / `_try_refresh_nous` from `installer/install.py`, and have its
-   `resolve_nous_token` use `nous_token.from_hermes`. It races Hermes's own rotating refresh
-   token, which `nous_token.py`'s docstring itself names as the hazard. This also drops the
-   fixed data-root path. About 80 lines removed, and `tests/test_installer.py:315` changes.
-2. **Settings and keys through Hermes for the processes the plugin starts** (medium):
-   - **Setup writes `${NAME}` references.** `mcp_servers.emporia.env` lists every Emporia
-     setting and key name the profile uses as `${NAME}`, plus `EMPORIA_NO_DOTENV=1`, and drops
-     `EMPORIA_DOTENV` (`installer/install.py:786-808`).
-   - **The bridge gets its values from the gateway.** `adapter._bridge_env` reads those names
-     with `get_scoped_secret` and passes them with `EMPORIA_NO_DOTENV=1`.
-   - **The console stops reading `.env` files.** Each agent's setup records its key-source
-     references (they are references, not keys) in that profile's
-     `plugin-data/emporia/emporia.json`. The tab passes the dashboard profile's own values,
-     read with `get_scoped_secret`. Seeing *other* profiles' agents goes through Hermes's
-     `?profile=` scope (`_plugin_route_secret_scope`), one profile per request, instead of a
-     file walk.
-   - **`config.py`'s parent-directory walk is removed** for a runtime in `plugin-data`.
-   - **The `key_guard` `/proc` rule lands first.**
-   - **What stays:** the runtime's CLI, run by a person as `hermes emporia …`, still reads and
-     writes the profile's `.env` for setup and doctor. The rule is about the plugin, and that
-     is the person's own command. Writes can move to `save_env_values`.
-   - Estimate: 1-2 days with tests, mostly in `installer/install.py`, `config.py`,
-     `console/agents.py` and `adapter.py`.
-3. **Nous verification** (a decision first):
-   - **(a)** Make it opt-in (`EMPORIA_NOUS_VERIFY=1`), off by default in the catalog build,
-     and disclose it.
-   - **(b)** Drop it from the catalog build until Hermes has an identity-assertion route, and
-     open that issue.
-   - Either way, stop calling `hermes_cli.auth` from a subprocess.
-   - Today it hands a bearer token for the person's Nous account to a relay operator.
-4. **Linked keys** (`cmd:` sources). Move them onto Hermes's secret-source plugins, so a vault
-   token is not kept in the `.env`, or list them as known issues. `key_source.py:12-14` explains
-   why they were kept apart: a Hermes password-manager unlock is per chat session, and an agent
-   signs unattended. That is a fair Hermes issue to open.
-
-**Status on branch `catalog-rule11`** (built on `catalog-compliance`; not merged):
-
-| Item | Status | Commit's test |
-|------|--------|---------------|
-| 1. The installer's `auth.json` path | **done.** `_find_auth_json` and `_try_refresh_nous` are gone; `resolve_nous_token` and the seed script ask Hermes (`nous_token.from_hermes`). | `test_installer.py::test_the_nous_token_comes_from_hermes_never_from_auth_json` |
-| The `key_guard` `/proc` rule | **done**, landed before any key moves. It blocks `/proc/<pid>/environ` (any pid, `self`, `*`, `$(…)`, `task/`) and `ps e` / `eww` / `auxe` / `['ps','eww']`. | `test_key_guard.py::test_reading_a_processs_environment_is_blocked` |
-| 2. The bridge | **done.** The adapter reads the profile's `EMPORIA_*` and vault values through `get_scoped_secret`, inside the profile's scope, and hands them over with `EMPORIA_NO_DOTENV=1`. | `test_platform_bridge.py::test_the_bridge_gets_this_profiles_env_not_the_gateways` |
-| 2. The MCP server | **not done.** See "Where it stopped". | — |
-| 2. The runtime CLI under `hermes emporia …` | **not done.** See "Where it stopped". | — |
-| 2. The console | **not touched.** Branch `console-scope` (another agent) scopes the console; it overlaps with this item. | — |
-| 3. Nous verification | **done: opt-in.** `EMPORIA_NOUS_VERIFY`, off by default; `emporia login` turns it on. | `test_nous_verify_opt_in.py` |
-| 4. Linked keys | **disclosed** as a known issue (README, entry). Not moved. | `test_catalog_entry.py` |
-| Rule 3, `--runtime-from` | **done:** local repos only. | `test_plugin_setup.py` |
-
-**Where it stopped, and why.**
-
-*The MCP server* still runs with `EMPORIA_DOTENV` and merges the profile's `.env`
-(`config.py:110-112`). The intended change: setup writes `${NAME}` for each setting into
-`mcp_servers.emporia.env` (`installer/install.py`, `_mcp_entry` and the update path beside it),
-plus `EMPORIA_NO_DOTENV=1`. It was not made, for three reasons:
-- Unlike the adapter, a `config.yaml` entry cannot enumerate the scope. Every name must be
-  written in advance, and Hermes silently drops a `${NAME}` that is unset.
-- The runtime reads about 137 distinct `EMPORIA_*` names. Some are built at runtime (per-network
-  settings, per-family key names), so a static list can miss one.
-- The process that pays reads its **spending limits and payment networks** from these settings.
-  A name missing from the list would silently drop a limit.
-
-A safe version needs:
-- a catalogue of every name the agent-side runtime reads, with a test that greps `src/emporia` and
-  fails on an unlisted literal;
-- the runtime-built names enumerated explicitly;
-- setup and `emporia agent refresh` writing the references;
-- `doctor` failing when a name in the profile's `.env` has no reference;
-- ideally, the MCP server failing closed when a limit setting is absent.
-
-That is a design review for the owner, not a mechanical change.
-
-*The runtime CLI* (`hermes emporia …` → `emporia.cli`) still reads profile `.env` files. Moving it
-means handing the CLI its values from `setup_cli`, which does run in Hermes's process and can call
-`get_scoped_secret`. But the CLI also *edits* the `.env` (setup, `wallet limits`, `login`,
-`signer add`), and acts on other profiles by name (`doctor --all`, `agent refresh NAME`). Neither
-has a Hermes route from outside Hermes (`save_env_values` is for code inside Hermes). It is the
-person's own command, but it is still in the pinned tree.
-
-**Direct `.env` reads that remain, each with no Hermes route today:**
-- **`key_source.set_env_lines` / `unset_env_lines`** (read-modify-write). They keep a brand-new key
-  or a changed setting in the profile's `.env`. Used by the bridge (a new key only), the MCP server
-  and the CLI.
-- **`config.load_profile_dotenv`**, in the MCP server and the CLI, until the `${NAME}` change above.
-- **`installer.harvest_env` and `collect_upstream_env`**, in the CLI's setup and doctor. The
-  latter also walks ancestor directories: remove that walk when the CLI moves.
-- **`relay_access._env_file`**, in relay processes only: a relay's own settings, not a plugin's.
-- **`console/agents.py:_profile_env`**: the console, being scoped on `console-scope`.
-
-### 12. Approvals and unattended runs — pass (fixed)
-- **Fixed: no approval bypass reaches a child.** `setup_cli._clean_env` (`setup_cli.py:133-145`)
-  and `adapter._bridge_env` (`adapter.py:87-89`, `:147-149`) no longer pass on
-  `HERMES_YOLO_MODE`, `HERMES_YOLO`, `HERMES_ACCEPT_HOOKS` or `HERMES_ACP_AUTO_APPROVE`. The
-  children are git, pip, `hermes -p NAME plugins install`, `hermes profile create`, the
-  runtime's CLI and the `hermes` commands it runs, and the bridge with the relay it may start.
-  Tests: `tests/test_plugin_setup.py`, `tests/test_platform_bridge.py`.
-- **Fixed: no hang on a dead stdin.** `setup_cli._emporia` (`:223-229`) gives the runtime's CLI
-  `/dev/null` as stdin when there is no terminal, so a question ends at once instead of waiting
-  on a pipe. Test: `test_the_runtimes_cli_never_waits_on_a_stdin_nobody_writes_to`.
-- **Already so:**
-  - Setup without a terminal asks nothing and exits 2 with the flags to pass (`:304-308`).
-  - Every `hermes` / git / pip child has `stdin=DEVNULL` and a 900 s timeout (`:151`, `:274`,
-    `:285`).
-  - `key_guard.pre_tool_call` returns Hermes's `approve` action for commands that change keys,
-    wallets, limits or roles (`key_guard.py:181-192`), and `block` for person-only ones. Hermes
-    denies an approval in cron and other unattended runs.
-  - A payment above the agent's threshold asks through MCP elicitation, which Hermes routes to
-    its approval prompts (`mcp_server.py:171-192`). It returns "no answer" when it cannot ask.
-  - The turn cap blocks relay-started turns past the daily cap (`turn_cap.py`).
-  - The plugin never auto-approves anything.
-
-### 13. Disclosure — pass (fixed), one decision
-- **Corrected in `hermes_plugin/emporia/README.md`** (it renders on the catalog page at the pin):
-  - the Nous access token sent to the relay at registration;
-  - the console reading every Emporia agent profile's keys folder and `.env` under the Hermes
-    root;
-  - the bridge restarting a local relay;
-  - the default facilitator and testnet RPC hosts;
-  - Telegram and Stripe, only when set up;
-  - the console's socket folder;
-  - the turn counter, now in `plugin-data` (`turn_cap.py`; it was at the profile root);
-  - an honest line on which code reads `.env` files;
-  - `--runtime-from`.
-- The PR text carries the same as disclosure lines.
-- **Decision for the owner:** the README's "Testnet first" paragraph names the person-only
-  command that unlocks payment networks beyond testnets. The entry and PR text say testnet only.
-  Either keep that paragraph, which is truthful, or strip the unlock from the catalog build.
+Payments are on testnets. Any other payment network is a person-only unlock in the person's own
+terminal, which the key guard blocks from the agent; the README says so.
 
 ### 14. Compatibility metadata — pass
-- `plugin.yaml:22` and the entry both say `requires_hermes: ">=0.22.6"`. The `pre_llm_call`
-  block the turn cap relies on needs it, and it is the current release, not newer.
-- `version: "1.0.0"` is `plugin.yaml:4`.
-- The runtime package (`pyproject.toml`, 0.2.0) and the dashboard tab (`manifest.json`, 0.3.0)
-  carry their own labels. Aligning them before release would spare a reviewer the question.
+- `requires_hermes: ">=0.22.6"` is in `plugin.yaml` and the entry. It is the current Hermes
+  release, and the turn cap's `pre_llm_call` block needs it.
+- The entry's `version: "1.0.0"` is `plugin.yaml`'s.
 
 ### 17. No unscannable payloads — pass
 - A header scan of every tracked file found no ELF, Mach-O, PE, wasm, archive or bytecode. The
-  only non-text files are three images in `dashboard/`, outside the plugin.
-- `dashboard/dist/index.js` and `style.css` are a **built** bundle, but readable source:
-  - not minified (`dashboard/vite.plugin.config.ts:80`, `minify: false`);
-  - one IIFE with its own React;
-  - built from `dashboard/src` in the same repo by `npm run build:hermes-plugin`.
-- `dashboard/dist/SOURCE` is a digest of the inputs. `tests/test_dashboard_plugin.py:128-130`
-  fails when `dashboard/` changes without a rebuild.
-- A source map is not needed, because the output is not minified.
-- **Recommended:** a short build note in the PR (Node version, `npm ci`, the command), and a CI
-  job that rebuilds and diffs `dist/`. The digest proves the bundle matches the inputs as of the
-  last build, not that the build reproduces byte for byte.
+  only binaries are three images outside the plugin.
+- `dashboard/dist` is an unminified IIFE built from `dashboard/src`
+  (`npm ci && npm run build:hermes-plugin`). `dist/SOURCE` is a digest of its inputs, and
+  `tests/test_dashboard_plugin.py` fails when they change without a rebuild.
+- No source map is needed, because the output is not minified.
 
-### 1, 4, 5, 8, 15, 16, 18
-- **1, 4, 5:** process rules; the entry is prepared locally and submitted by the owner.
+### 1, 4, 5, 8, 15, 16, 18 — pass
+- **1, 4, 5:** process rules. The owner submits, and a re-pin is a new PR.
 - **8, 18:** do not apply. There is no Desktop plugin and no login backend.
-- **15, 16:** pass. Emporia is not a bundled plugin, and not a fork.
+- **15, 16:** Emporia is not a bundled plugin, and not a fork.
+
+## What a release still needs
+1. Push `catalog-rule11` (after review) and run `scripts/pin_plugin_runtime.py`: one commit
+   naming the runtime's sha and tree.
+2. Put that commit's sha in the entry, and the screenshots at `docs/catalog/screenshots/`
+   (from branch `retromod-ux`, once the UI merges), at URLs pinned to that sha.
+3. Re-run `hermes plugins validate` at that commit, and open the PR with `docs/catalog/PR.md`.
