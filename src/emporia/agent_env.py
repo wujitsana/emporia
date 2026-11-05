@@ -28,6 +28,12 @@ from collections.abc import Mapping
 LITERAL_IN_ENTRY = ("EMPORIA_RELAY_URL", "EMPORIA_AGENT_ID", "EMPORIA_DISPLAY_NAME", "EMPORIA_MCP_TRANSPORT",
                     "EMPORIA_KEYS_DIR", "EMPORIA_DB_PATH", "EMPORIA_DOTENV", "EMPORIA_HERMES_BIN",
                     "EMPORIA_NO_DOTENV")
+# The gateway adapter's own settings (plugin.yaml's optional_env), which no runtime process
+# reads: setup writes them to the profile after the MCP entry, and they are not the server's to
+# be handed (found by the end-to-end run: doctor called them "not handed"). Kept off the
+# server's list; tests/test_agent_env.py checks the runtime reads none of them.
+GATEWAY_ONLY = ("EMPORIA_PYTHON", "EMPORIA_PROFILE_ID", "EMPORIA_ALLOWED_USERS", "EMPORIA_ALLOW_ALL_USERS",
+                "EMPORIA_THREAD_LIMIT")
 # What a linked key's vault CLI reads besides EMPORIA_* (as the plugin's adapter._VAULT_PREFIXES).
 VAULT_PREFIXES = ("OP_", "BW_", "VAULT_", "DOPPLER_", "INFISICAL_", "AWS_", "AZURE_")
 VAULT_NAMES = ("OP_SERVICE_ACCOUNT_TOKEN", "OP_CONNECT_HOST", "OP_CONNECT_TOKEN", "BW_SESSION",
@@ -109,7 +115,7 @@ def names(values: Mapping[str, str] | None = None) -> list[str]:
     out = known()
     out |= {m.group(1) for v in values.values() if (m := _ENV_REF.match(str(v)))}
     out |= {k for k in values if k.startswith("EMPORIA_") or k.startswith(VAULT_PREFIXES)}
-    return sorted(n for n in out if n not in LITERAL_IN_ENTRY and not n.endswith("_"))
+    return sorted(n for n in out if n not in LITERAL_IN_ENTRY and n not in GATEWAY_ONLY and not n.endswith("_"))
 
 
 def mcp_env(values: Mapping[str, str] | None = None) -> dict[str, str]:
@@ -122,4 +128,5 @@ def unreferenced(values: Mapping[str, str], entry_env: Mapping[str, str]) -> lis
     a reference (doctor names it; `emporia agent refresh` adds it)."""
     want = set(names(values)) | {m.group(1) for v in values.values() if (m := _ENV_REF.match(str(v)))}
     have = set(entry_env)
-    return sorted(n for n in want if n in values and n not in have and n not in LITERAL_IN_ENTRY)
+    return sorted(n for n in want if n in values and n not in have and n not in LITERAL_IN_ENTRY
+                  and n not in GATEWAY_ONLY)

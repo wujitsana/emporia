@@ -38,6 +38,18 @@ def test_every_name_the_runtime_reads_is_handed_to_its_mcp_server():
                          f"agent_env.LITERAL_NAMES: {missing}")
 
 
+def test_the_gateways_own_settings_are_not_the_servers_and_the_runtime_reads_none():
+    """Found by the end-to-end run: setup writes the adapter's settings (its python, allowed
+    senders) after the MCP entry, and doctor said the server was "not handed" them. They are
+    the gateway's: off the server's list — safe only while no runtime code reads one."""
+    assert not set(agent_env.GATEWAY_ONLY) & _named_in_source()
+    values = {"EMPORIA_PYTHON": "/rt/.venv/bin/python", "EMPORIA_ALLOWED_USERS": "emporia:relay",
+              "EMPORIA_X402_MAX_DAILY_CENTS": "300"}
+    env = agent_env.mcp_env(values)
+    assert not set(agent_env.GATEWAY_ONLY) & set(env)
+    assert agent_env.unreferenced(values, {}) == ["EMPORIA_X402_MAX_DAILY_CENTS"]
+
+
 def test_names_built_from_a_network_id_are_there_for_every_network():
     from emporia.networks import NETWORKS
     built = set(agent_env.network_names())
