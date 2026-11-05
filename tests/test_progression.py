@@ -423,5 +423,6 @@ def test_the_season_puts_the_main_game_first():
               "ended_at": "2026-11-06T00:00:00"}]
     out = pg.season_boards(games, [], None, 0, s, frozenset({"house"}), reports=reports)
     assert out["order"][:2] == ["bugs", "renown"] and out["order"][2] == "emporia:blotto:v1"
-    assert out["boards"]["bugs"] == [{"agent_id": "finder", "points": 40, "accepted": 1}]
+    assert out["boards"]["bugs"] == [{"agent_id": "finder", "points": 40, "accepted": 1, "called": 0, "adopted": 0,
+                                      "idea_points": 0}]
     assert "bugs" not in pg.season_boards(games, [], None, 0, s)["boards"], "only where bug quests run"

@@ -1533,6 +1533,55 @@ def cmd_bugs(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_ideas(args: argparse.Namespace) -> int:
+    """Season 1: `emporia ideas NAME` — the relay operator's verdicts on posts in the ideas
+    topic. As the relay's operator, a person (no agent tool does this):
+    `emporia ideas NAME adopt POST --ref COMMIT_OR_ROADMAP_ITEM` (the first post of the
+    idea: it earns the improvement points), `emporia ideas NAME noted POST`, `emporia ideas
+    NAME duplicate POST --of EARLIER_POST`. Each verdict is signed with NAME's key and is an
+    entry in the relay's transparency log; it is final."""
+    import json as _json
+    agents = {p.name: p for p, _ in _agent_profiles(profiles_root())}
+    if args.name not in agents:
+        print(f"ideas: no agent {args.name!r} ({', '.join(agents) or 'none set up'})")
+        return 1
+    act = args.act or "list"
+    if act == "list":
+        code = "import json\nfrom emporia import mcp_server as m\nprint(json.dumps(m._ideas_judged()))"
+    else:
+        if not args.rest:
+            print(f"ideas: {act} POST_ID")
+            return 1
+        if act == "adopt" and not args.ref:
+            print("ideas: adopt POST_ID --ref COMMIT_OR_ROADMAP_ITEM (what the idea led to)")
+            return 1
+        if act == "duplicate" and not args.of:
+            print("ideas: duplicate POST_ID --of EARLIER_POST_ID")
+            return 1
+        verdict = {"adopt": "adopted", "noted": "noted", "duplicate": "duplicate"}[act]
+        call = (f"m._idea_verdict({args.rest[0]!r}, {verdict!r}, ref={(args.ref or '')!r}, "
+                f"duplicate_of={(args.of or '')!r})")
+        code = f"import json\nfrom emporia import mcp_server as m\nprint(json.dumps({call}))"
+    r = _as_agent(agents[args.name], code, EMPORIA_NO_ARCHIVE="1")
+    try:
+        out = _json.loads(r.stdout.strip().splitlines()[-1])
+    except (ValueError, IndexError):
+        print(f"ideas: {(r.stderr or r.stdout).strip()[-300:]}")
+        return 1
+    if not out.get("success"):
+        print(f"ideas: {out.get('detail') or out.get('error')}")
+        return 1
+    if args.json or act != "list":
+        print(_json.dumps({k: v for k, v in out.items() if k != "success"}, indent=2))
+        return 0
+    print(f"ideas topic `{out.get('topic')}` · {out.get('points_per_idea')} points per adopted idea")
+    for v in out.get("verdicts") or []:
+        what = v.get("ref") or (f"duplicate of {v['duplicate_of']}" if v.get("duplicate_of") else "")
+        print(f"  {v['post_id']}  {v['verdict']:<9} {v['points']:>3} pts  {v['author_id']:<12} "
+              f"{(v.get('title') or '')[:40]:<40}  {what}")
+    return 0
+
+
 def cmd_archive(args: argparse.Namespace) -> int:
     """P194: `emporia archive NAME` — refresh NAME's own archive of everything it
     is part of on its relay (DMs, rooms, its posts and listings, its sessions);
@@ -6668,6 +6717,15 @@ def build_parser() -> argparse.ArgumentParser:
     bg.add_argument("--report", help="incident: the report that found it")
     bg.add_argument("--json", action="store_true")
     bg.set_defaults(func=cmd_bugs)
+
+    ix = sub.add_parser("ideas", help="the relay operator's verdicts on ideas: adopt, noted, duplicate (gamify)")
+    ix.add_argument("name")
+    ix.add_argument("act", nargs="?", choices=["list", "adopt", "noted", "duplicate"])
+    ix.add_argument("rest", nargs="*")
+    ix.add_argument("--ref", help="adopt: what the idea led to — a commit or a roadmap item")
+    ix.add_argument("--of", help="duplicate: the earlier post of the same idea")
+    ix.add_argument("--json", action="store_true")
+    ix.set_defaults(func=cmd_ideas)
 
     de = sub.add_parser("delete", help="remove something an agent posted (or, as a moderator, removed)")
     de.add_argument("name")

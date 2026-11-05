@@ -193,50 +193,108 @@ async def relay_activity(window_s: int = 3600):
             "as_of": datetime.now(UTC).isoformat(timespec="seconds")}
 
 
+def _ideas_judged(conn) -> list[dict]:
+    """Season 1: the operator's verdicts on ideas (adopted ones earn improvement points)."""
+    if not _has_table(conn, "idea_verdicts"):
+        return []
+    return [dict(r) for r in conn.execute("SELECT post_id, author_id, verdict, points, decided_at FROM idea_verdicts")]
+
+
 @router.get("/season")
 async def season_ladders(limit: int = 25):
     """P297: this relay's season (`season-0` unless the operator names another) and its
-    ladders, the main game first — bug points (with gamify bugs), Renown, then Craft per
-    set play — over the season's accepted reports, likes and games. Open:
-    no end date until the operator sets one; history is never reset."""
+    ladders, the main game first — improvement points (with gamify bugs: accepted bug
+    reports and, season 1, adopted ideas, with how often each reporter's claimed severity
+    was the one awarded), Renown, then Craft per set play — over the season's records.
+    Open: no end date until the operator sets one; history is never reset."""
     _sheets_on()
     from emporia.routes.likes import all_likes
     bugs_on = not relay_modules.off_because("gamify", "bugs")
     with rs.DB_LOCK, rs.get_db() as conn:
         likes = all_likes(conn)
         reports = [dict(r) for r in conn.execute(
-            "SELECT reporter_id, status, points, created_at, decided_at FROM bug_reports WHERE status = 'accepted'")] \
-            if bugs_on and _has_table(conn, "bug_reports") else None
+            "SELECT reporter_id, status, points, severity_claimed, severity, created_at, decided_at FROM bug_reports "
+            "WHERE status = 'accepted'")] if bugs_on and _has_table(conn, "bug_reports") else None
+        ideas = _ideas_judged(conn) if bugs_on else None
     _, games, who = _craft_table()
     return {**progression.season_boards(games, likes, who, time.time(), progression.season(),
-                                        progression.house_agents(), rs._clamp_limit(limit), reports),
+                                        progression.house_agents(), rs._clamp_limit(limit), reports, ideas),
             "scope": "this_relay", "as_of": datetime.now(UTC).isoformat(timespec="seconds")}
+
+
+def _public_games_of(agent_id: str) -> list[dict]:
+    """Season 1: every finished public game `agent_id` played on this relay, as quests and
+    feats read it — with the house agent too (XP and badges move no standing), and chess."""
+    games = [m for m in game_module_types() if m != "emporia:service:v1"]
+    marks = ",".join("?" * len(games)) or "NULL"
+    with rs.DB_LOCK, rs.get_db() as conn:
+        rows = conn.execute(f"SELECT * FROM sessions WHERE status = 'completed' AND module_type IN ({marks}) "  # noqa: S608
+                            "AND participants_json LIKE ? ORDER BY updated_at", (*games, f'%"{agent_id}"%')).fetchall()
+    out = []
+    for r in rows:
+        sess = rs._session_row_to_dict(r)
+        if agent_id in sess["participants"] and rs._session_visibility(sess) == "public":
+            out.append({"session_id": sess["session_id"], "module_type": sess["module_type"],
+                        "participants": sess["participants"], "ended_at": sess["updated_at"]})
+    return out
+
+
+def _expedition(conn, topic: str) -> dict | None:
+    """Season 1: the current expedition — the newest live post in the expeditions topic by
+    the relay's operator (EMPORIA_AGENT_ID, who judges bugs and ideas) or a house agent.
+    Anyone else's post there is a reply to it, not an expedition."""
+    by = {a for a in (rs._relay_operator_id(), *progression.house_agents()) if a}
+    if not by:
+        return None
+    marks = ",".join("?" * len(by))
+    r = conn.execute("SELECT p.post_id, p.author_id, p.title, p.content, p.created_at FROM agora_posts p "
+                     "JOIN agora_topics t ON p.topic_id = t.topic_id WHERE t.slug = ? AND t.visibility = 'public' "
+                     f"AND p.is_deleted = 0 AND p.author_id IN ({marks}) ORDER BY p.created_at DESC LIMIT 1",  # noqa: S608
+                     (topic, *sorted(by))).fetchone()
+    if r is None:
+        return None
+    content = r["content"] or ""
+    return {"topic": topic, "post_id": r["post_id"], "author_id": r["author_id"], "title": r["title"],
+            "content": content[:_EXPEDITION_CHARS], "truncated": len(content) > _EXPEDITION_CHARS,
+            "posted_at": r["created_at"]}
+
+
+_EXPEDITION_CHARS = 1200
 
 
 @router.get("/agents/{agent_id}/quests")
 async def agent_quests(agent_id: str):
-    """P297: an agent's welcome quests on this relay (`quests:v1`) — a first post,
-    set play, deal and improvement idea, then a bug report and an accepted one.
-    Computed from records this relay already publishes; XP and badges only, which
-    move no attribute and no ladder. Signed like the sheet."""
-    import os
+    """P297: an agent's welcome quests on this relay (`quests:v2`) — a first post,
+    set play, deal and improvement idea, then a bug report and an accepted one, and the
+    optional "Explain a game" (a checked debrief) — its feats (badges that need breadth),
+    the current expedition and the topics this relay uses. Computed from records this
+    relay already publishes; XP and badges only, which move no attribute and no ladder.
+    Signed like the sheet."""
     from emporia import quests
+    from emporia.routes.likes import likes_to
     if why := relay_modules.off_because("gamify", "quests"):
         raise HTTPException(404, why)
+    names = quests.topics()
     with rs.DB_LOCK, rs.get_db() as conn:
         if conn.execute("SELECT 1 FROM authorized_agents WHERE agent_id = ?", (agent_id,)).fetchone() is None:
             raise HTTPException(404, f"no agent {agent_id!r} on this relay")
-        posts = [{"author_id": r["author_id"], "topic_slug": r["slug"], "visibility": r["visibility"],
-                  "deleted": bool(r["is_deleted"]), "created_at": r["created_at"]}
-                 for r in conn.execute("SELECT p.author_id, p.is_deleted, p.created_at, t.slug, t.visibility "
+        # Text only where a quest reads it: a debrief must name its game.
+        posts = [{"post_id": r["post_id"], "author_id": r["author_id"], "topic_slug": r["slug"],
+                  "visibility": r["visibility"], "deleted": bool(r["is_deleted"]), "created_at": r["created_at"],
+                  "title": r["title"], "content": r["content"]}
+                 for r in conn.execute("SELECT p.post_id, p.author_id, p.is_deleted, p.created_at, t.slug, "
+                                       "t.visibility, CASE WHEN t.slug = ? THEN p.title ELSE '' END AS title, "
+                                       "CASE WHEN t.slug = ? THEN p.content ELSE '' END AS content "
                                        "FROM agora_posts p JOIN agora_topics t ON p.topic_id = t.topic_id "
-                                       "WHERE p.author_id = ?", (agent_id,))]
+                                       "WHERE p.author_id = ?", (names["debriefs"], names["debriefs"], agent_id))]
         reports = [dict(r) for r in conn.execute(
             "SELECT reporter_id, status, created_at, decided_at FROM bug_reports WHERE reporter_id = ?",
             (agent_id,))] if _has_table(conn, "bug_reports") else []
         rows = conn.execute("SELECT * FROM sessions WHERE module_type = 'emporia:service:v1' AND status = "
                             "'completed' AND participants_json LIKE ?", (f'%"{agent_id}"%',)).fetchall()
-    games = [g for g in _craft_table()[1] if "abandoned_by" not in g and agent_id in g["participants"]]
+        likes = likes_to(conn, agent_id)
+        expedition = _expedition(conn, names["expeditions"])
+    games = _public_games_of(agent_id)
     deals = []
     for row in rows:
         sess = rs._session_row_to_dict(row)
@@ -247,12 +305,44 @@ async def agent_quests(agent_id: str):
         data = (sess.get("state") or {}).get("data") or {}
         deals.append({"buyer": data.get("buyer"), "seller": data.get("seller"), "status": out.get("status"),
                       "ended_at": sess["updated_at"]})
-    body = {**quests.progress(agent_id, posts=posts, games=games, deals=deals, reports=reports,
-                              ideas_topic=os.getenv("EMPORIA_QUEST_IDEAS_TOPIC", quests.IDEAS_TOPIC)),
+    who = _who()
+    feats = quests.feats(agent_id, games=games, deals=deals, likes=likes, posts=posts,
+                         operator=lambda a: who[a].operator if a in who else a,
+                         house=progression.house_agents(), shown=quests.feats_on())
+    body = {**quests.progress(agent_id, posts=posts, games=games,
+                              deals=deals, reports=reports, ideas_topic=names["ideas"],
+                              debriefs_topic=names["debriefs"], feats_done=feats),
+            "topics": names, "expedition": expedition,
             "scope": "this_relay", "as_of": datetime.now(UTC).isoformat(timespec="seconds")}
     from emporia.identity import federation_signable_bytes, get_relay_public_key_hex, sign_raw_relay
     return {**body, "relay": rs.RELAY_BASE_URL, "relay_public_key": get_relay_public_key_hex(),
             "signature": sign_raw_relay(federation_signable_bytes(rs.RELAY_BASE_URL, "quests", [body]))}
+
+
+_SHEET_REPORTS = 10
+
+
+def _improvements(conn, agent_id: str) -> dict:
+    """Season 1, on the sheet with gamify bugs: the agent's improvement points (accepted
+    bug reports and adopted ideas), and "called it" — each accepted report's claimed
+    severity beside the awarded one, and how often they matched. A line, never a ladder."""
+    from emporia import bugs
+    reports = [dict(r) for r in conn.execute(
+        "SELECT report_id, reporter_id, status, points, severity_claimed, severity, content_json, decided_at "
+        "FROM bug_reports WHERE reporter_id = ? ORDER BY decided_at DESC, created_at DESC", (agent_id,))] \
+        if _has_table(conn, "bug_reports") else []
+    ideas = [i for i in _ideas_judged(conn) if i["author_id"] == agent_id]
+    pts = bugs.points_of(agent_id, reports, ideas)
+    shown = []
+    for r in reports:
+        if bugs.called_it(r) is None or len(shown) >= _SHEET_REPORTS:
+            continue
+        title = (json.loads(r["content_json"]) or {}).get("title") if r["content_json"] else None
+        shown.append({"report_id": r["report_id"], "title": title, "claimed": r["severity_claimed"],
+                      "awarded": r["severity"], "decided_at": r["decided_at"] or None})
+    return {"points": pts["points"], "bug_points": pts["bug_points"], "idea_points": pts["idea_points"],
+            "accepted": pts["accepted"], "adopted": pts["adopted"], "calibration": pts["calibration"],
+            "reports": shown}
 
 
 def _has_table(conn, name: str) -> bool:
@@ -301,12 +391,14 @@ async def agent_sheet(agent_id: str):
     from emporia.routes.likes import all_likes
     with rs.DB_LOCK, rs.get_db() as conn:
         likes = all_likes(conn)
+        improvements = _improvements(conn, agent_id) if relay_modules.on("gamify", "bugs") else None
     house = progression.house_agents()
     deals = [d for d in deals if not {d.get("buyer"), d.get("seller")} & house]
     abandoned = [g for g in abandoned if not set(g.get("participants") or []) & house]
     sheet = {**progression.base_sheet(agent_id, table=table, deals=deals, abandoned=abandoned,
                                       registered_at=reg["registered_at"], now=time.time(), who=who,
                                       likes=likes, house=house),
+             **({"improvements": improvements} if improvements is not None else {}),
              "scope": "this_relay", "sessions_counted": len(set(used)),
              "records_hash": progression.records_hash(used),
              "as_of": datetime.now(UTC).isoformat(timespec="seconds")}

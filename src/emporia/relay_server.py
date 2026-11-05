@@ -1427,6 +1427,19 @@ def init_db() -> None:
                 revealed_at TEXT NOT NULL DEFAULT ''
             );
             CREATE INDEX IF NOT EXISTS idx_bug_reports_operator ON bug_reports(operator_key, status, created_at);
+            CREATE TABLE IF NOT EXISTS idea_verdicts (
+                post_id TEXT PRIMARY KEY,
+                author_id TEXT NOT NULL,
+                operator_key TEXT NOT NULL,
+                verdict TEXT NOT NULL,
+                ref TEXT NOT NULL DEFAULT '',
+                duplicate_of TEXT NOT NULL DEFAULT '',
+                points INTEGER NOT NULL DEFAULT 0,
+                decided_by TEXT NOT NULL,
+                decided_at TEXT NOT NULL,
+                signature TEXT NOT NULL
+            );
+            CREATE INDEX IF NOT EXISTS idx_idea_verdicts_ref ON idea_verdicts(ref);
             CREATE TABLE IF NOT EXISTS security_incidents (
                 incident_id TEXT PRIMARY KEY,
                 summary TEXT NOT NULL,
@@ -3455,6 +3468,8 @@ _RENAME_COLUMNS: tuple[tuple[str, str], ...] = (
     ("bug_reports", "reporter_id"), ("bug_reports", "decided_by"), ("security_incidents", "recorded_by"),
     # P297: who liked, and whose thing it was. The signature beside them keeps the handle it was signed with.
     ("likes", "agent_id"), ("likes", "to_agent"),
+    # Season 1: whose idea was judged, and by whom. The signature keeps the handle it was signed with.
+    ("idea_verdicts", "author_id"), ("idea_verdicts", "decided_by"),
 )
 
 # Agent ids inside JSON arrays. Not rewritable in SQL, and deliberately not
@@ -3473,6 +3488,9 @@ _RENAME_JSON_COLUMNS: tuple[tuple[str, str], ...] = (
 _NON_AGENT_COLUMNS: frozenset[tuple[str, str]] = frozenset({
     # P297: a like's thing (a post, comment, message or session id), its kind, when, and its signature.
     *(("likes", c) for c in ("kind", "target_id", "liked", "at", "signature")),
+    # Season 1: an idea's verdict — the post, the author's operator key (as bug_reports'), what it led to.
+    *(("idea_verdicts", c) for c in ("post_id", "operator_key", "verdict", "ref", "duplicate_of", "points",
+                                     "decided_at", "signature")),
     # P289: bug reports and incidents. `operator_key` is a Nous account or a stable id
     # (the cap's key), never a handle — so a rename does not reset an operator's cap.
     *(("bug_reports", c) for c in ("report_id", "operator_key", "code_commit", "commitment", "sealed",
@@ -8975,6 +8993,7 @@ from emporia.routes import agents as _agent_routes
 from emporia.routes import bounties as _bounty_routes
 from emporia.routes import standing as _standing_routes  # noqa: E402
 from emporia.routes import bugs as _bug_routes  # noqa: E402
+from emporia.routes import ideas as _idea_routes  # noqa: E402
 from emporia.routes import likes as _like_routes  # noqa: E402
 from emporia.routes import deletion as _deletion_routes  # noqa: E402
 from emporia.routes import agoras as _agora_routes  # noqa: E402
@@ -8997,6 +9016,7 @@ app.include_router(_agent_routes.router)
 app.include_router(_bounty_routes.router)
 app.include_router(_standing_routes.router)
 app.include_router(_bug_routes.router)
+app.include_router(_idea_routes.router)
 app.include_router(_like_routes.router)
 app.include_router(_deletion_routes.router)
 app.include_router(_translog_routes.router)

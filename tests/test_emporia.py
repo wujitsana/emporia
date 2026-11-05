@@ -2422,6 +2422,7 @@ def test_every_route_has_a_reviewed_auth_posture():
         ("GET", "/likes/whose"),  # P297: signed in; a game's or deal's other side only to who was in it
         ("POST", "/bugs"),  # P289: the reporter, signed in
         ("POST", "/bugs/{report_id}/verdict"),  # P289: the relay operator only
+        ("POST", "/ideas/{post_id}/verdict"),  # season 1: the relay operator only, and its signature
         ("POST", "/bugs/{report_id}/reveal"),  # P289: the reporter or the operator
         ("POST", "/security/incidents"),  # P289: the relay operator only
         ("POST", "/security/incidents/{incident_id}/fixed"),  # P289: the relay operator only
@@ -2600,6 +2601,7 @@ def test_every_route_has_a_reviewed_auth_posture():
         ("GET", "/ratings"): "P288: one game's Craft ladder from finished public games",
         ("GET", "/bugs"): "P289: bug reports — a sealed one shows only its commitment until revealed",
         ("GET", "/bugs/{report_id}"): "P289: one bug report, as public as the list",
+        ("GET", "/ideas"): "season 1: the operator's verdicts on public posts in the ideas topic — signed and logged, public like bug verdicts",
         ("GET", "/agents/{agent_id}/points"): "P289: an agent's bug-quest points — counts only",
         ("GET", "/security/incidents"): "P289: a relay's security incidents, public on purpose: on the record",
         ("POST", "/agents/{agent_id}/key-recovery"): "P246: the agent has lost its key, so it cannot sign in; the recovery key it committed to in its key log signs the request, and that signature is the whole authority. Throttled like sign-in",
@@ -27431,7 +27433,9 @@ def test_the_membership_rule_is_written_in_exactly_one_place():
 #
 # V27 -> V28 (P278): `topic_acts`, an Agora topic's signed acts — its creation
 # with every setting, invites, taking them back, kicks.
-_SCHEMA_FINGERPRINT_V31 = "5c11d7de26ace1f236637c58423ac325d81528f0b325b063a8a5d6dcfb761e01"  # P297: likes
+#
+# V31 -> V32 (season 1): `idea_verdicts`, the operator's signed verdict on an idea.
+_SCHEMA_FINGERPRINT_V32 = "d7aac0ca456eddd503a6ec428c4d6fb7ecb1e769a745a959dcce433d46ac8040"  # season 1: idea verdicts
 
 
 def _schema_fingerprint(db_path) -> tuple[str, int, int]:
@@ -27471,9 +27475,9 @@ def test_a_schema_change_requires_a_version_bump():
     from emporia.relay_server import SCHEMA_VERSION
 
     fingerprint, tables, columns = _schema_fingerprint(_test_db)
-    assert (SCHEMA_VERSION, fingerprint) == (31, _SCHEMA_FINGERPRINT_V31), (
+    assert (SCHEMA_VERSION, fingerprint) == (32, _SCHEMA_FINGERPRINT_V32), (
         f"the schema changed ({tables} tables, {columns} columns) or the version "
-        f"moved. Bump SCHEMA_VERSION *and* update _SCHEMA_FINGERPRINT_V31 — in "
+        f"moved. Bump SCHEMA_VERSION *and* update _SCHEMA_FINGERPRINT_V32 — in "
         f"that order, and never the fingerprint alone.\n"
         f"  code version: {SCHEMA_VERSION}\n  fingerprint:  {fingerprint}"
     )
