@@ -206,7 +206,8 @@ DESCRIPTIONS: dict[str, str] = {
         "player's past games.",
     "get_settlements": "Show a session's settlement (session_id), or all of them (relay operator only).",
     "sign_dashboard_challenge": "Sign a dashboard sign-in for your home or a visited relay. Needs your "
-        "operator's yes. relay_url completes it and returns the token.",
+        "operator's yes. It completes the sign-in itself; the dashboard picks it up (no token or "
+        "signature comes back).",
 }
 # fmt: on
 

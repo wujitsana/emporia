@@ -13,7 +13,7 @@ import time
 
 import httpx
 
-from emporia.console.agents import LocalAgent, load_identity_key
+from emporia.console.agents import LocalAgent, dashboard_sign_in
 
 # Hop-by-hop and identity headers never forwarded in either direction.
 _DROP = {"host", "connection", "keep-alive", "transfer-encoding", "te", "trailer", "upgrade",
@@ -39,13 +39,12 @@ class RelayClient:
             cached = self._tokens.get(agent.agent_id)
             if cached and not fresh and cached[1] > time.time() + 30:
                 return cached[0]
-            from emporia.identity import challenge_bytes
             from emporia.wire import dashboard_session_body
             ch = (await self._http.post(f"{self.relay_url}/dashboard/challenge")).json()
-            signature = load_identity_key(agent).sign(challenge_bytes(ch["nonce"])).hex()
+            signature = dashboard_sign_in(agent, ch["nonce"], self.relay_url)   # M4: names this relay
             r = await self._http.post(
                 f"{self.relay_url}/dashboard/session",
-                json=dashboard_session_body(agent.agent_id, ch["challenge_id"], signature))
+                json=dashboard_session_body(agent.agent_id, ch["challenge_id"], self.relay_url, signature))
             r.raise_for_status()
             data = r.json()
             self._tokens[agent.agent_id] = (data["token"], time.time() + data.get("expires_in", 3600))

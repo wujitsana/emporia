@@ -26,7 +26,7 @@ from typing import Any
 import httpx
 
 from emporia.cli_hints import localize  # `hermes emporia …` where the plugin installed this runtime
-from emporia import fetch, signing  # P270: other relays' answers, read within limits
+from emporia import fetch, signing, wire  # P270: other relays' answers, read within limits
 from fastmcp import FastMCP
 
 from emporia.engine.guardrails import assert_payload_safe
@@ -179,12 +179,10 @@ def _dashboard_bearer_headers(relay_url: str = "", agent_id: str = "") -> dict[s
     if cached and cached[1] > now + 30:
         return {"Authorization": f"Bearer {cached[0]}"}
     try:
-        from emporia.wire import dashboard_session_body
         ch = httpx.post(f"{target}/dashboard/challenge", timeout=10).json()
-        sig_hex = signing.sign_in(aid, ch["nonce"])
         r = httpx.post(
             f"{target}/dashboard/session",
-            json=dashboard_session_body(aid, ch["challenge_id"], sig_hex),
+            json=signing.dashboard_session_body(aid, ch, target),   # M4: names `target`
             timeout=10,
         )
         r.raise_for_status()
@@ -5575,26 +5573,31 @@ def get_settlements(session_id: str = "") -> dict[str, Any]:
 
 @mcp.tool()
 def sign_dashboard_challenge(challenge_id: str, nonce: str, relay_url: str = "") -> dict:
-    """Sign a dashboard auth challenge with this agent's Ed25519 private key.
+    """Sign this agent in to a dashboard that showed a challenge.
 
-    Full flow for remote relay access:
-      1. Browser dashboard calls POST <relay>/dashboard/challenge → gets challenge_id + nonce
-      2. Agent calls this tool with those values
-      3. This tool returns { agent_id, challenge_id, signature_hex }
-      4. Browser calls POST <relay>/dashboard/session with that JSON → gets a Bearer JWT
-      5. Browser stores JWT in sessionStorage; sends as Authorization: Bearer on requests
+    Flow:
+      1. The dashboard calls POST <relay>/dashboard/challenge → challenge_id + nonce,
+         and shows this call with them.
+      2. This tool signs the nonce *and the relay's origin* (`dashboard-sign-in`,
+         emporia:dashboard-sign-in:v2) and sends POST <relay>/dashboard/session itself.
+      3. The dashboard polls GET <relay>/dashboard/poll and picks the token up.
 
-    The JWT is relay-scoped and expires in 1 hour. For localhost dashboards,
-    this flow is unnecessary (localhost trust handles it automatically).
+    Review follow-up M4: the answer carries neither the signature nor the token —
+    nothing a stranger could talk out of the model — only whether it worked. The
+    signature names the relay, so it is good there alone. The JWT is relay-scoped
+    and expires in 1 hour.
     """
-    # MCP review: a sign-in signature is a session as this agent on whichever relay issued
-    # the nonce (it names no relay), so it goes only to this agent's own relays, and only
-    # with its operator's yes. Before, relay_url could be any URL: one call, prompted by a
+    # MCP review: only this agent's own relays (home, or one it visits), and only with
+    # its operator's yes. Before, relay_url could be any URL: one call, prompted by a
     # stranger with a nonce taken from this agent's home, handed that stranger a token for it.
     target = (relay_url or _base()).strip().rstrip("/")
     if target not in {RELAY_URL.rstrip("/"), *_visits()}:
         return {"error": f"refused: {target} is not this agent's home or a relay it visits — a "
-                         "sign-in signature goes to no other", "success": False}
+                         "sign-in goes to no other", "success": False}
+    try:
+        wire.signed_dashboard_sign_in_payload(nonce, target)     # a nonce, and a relay URL, or nothing
+    except ValueError as e:
+        return {"error": f"not signed: {e}", "success": False}
     answer = _ask_operator(f"Sign {AGENT_ID} in to a dashboard on {target}? Whoever holds the "
                            "resulting token acts as this agent there for an hour. Allow only if you "
                            "opened that dashboard yourself.", title="Allow a dashboard sign-in")
@@ -5602,36 +5605,19 @@ def sign_dashboard_challenge(challenge_id: str, nonce: str, relay_url: str = "")
         return {"error": "not signed: " + ("its operator said no" if answer is False else
                                            "its operator could not be asked here"), "success": False}
     try:
-        sig_hex = signing.sign_in(AGENT_ID, nonce)
+        body = signing.dashboard_session_body(AGENT_ID, {"nonce": nonce, "challenge_id": challenge_id}, target)
     except Exception as e:
-        return {"error": f"could not sign nonce: {e}"}
-
-    # Optionally complete the exchange directly if relay_url provided
-    if relay_url:
-        try:
-            r = httpx.post(
-                f"{target}/dashboard/session",
-                json={"agent_id": AGENT_ID, "challenge_id": challenge_id, "signature_hex": sig_hex},
-                timeout=5,
-            )
-            if r.status_code == 200:
-                data = r.json()
-                return {
-                    "agent_id": AGENT_ID,
-                    "token": data["token"],
-                    "expires_in": data["expires_in"],
-                    "instructions": "Paste this token into the dashboard auth dialog as a Bearer token.",
-                }
-            return {"error": f"relay rejected: {r.text}", "success": False}
-        except Exception as e:
-            return {"error": str(e), "success": False}
-
-    return {
-        "agent_id": AGENT_ID,
-        "challenge_id": challenge_id,
-        "signature_hex": sig_hex,
-        "next_step": f"POST {target}/dashboard/session with this JSON body",
-    }
+        return {"error": f"could not sign the sign-in: {e}", "success": False}
+    try:
+        r = httpx.post(f"{target}/dashboard/session", json=body, timeout=5)
+    except Exception as e:
+        return {"error": f"not signed in: {target} did not answer ({type(e).__name__})", "success": False}
+    if r.status_code != 200:
+        return {"error": f"not signed in: {target} refused it ({r.status_code}: {r.text[:300]})",
+                "success": False}
+    return {"success": True, "agent_id": AGENT_ID, "relay": target,
+            "expires_in": (r.json() or {}).get("expires_in"),
+            "next": "the dashboard that showed this challenge picks the sign-in up by itself"}
 
 
 def _apply_agent_surface() -> None:

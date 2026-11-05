@@ -769,7 +769,7 @@ signature). Nothing else moves.
 
 | Tool | Purpose |
 |---|---|
-| `sign_dashboard_challenge` | Sign a dashboard sign-in for your home or a relay you visit — never any other — and only with your operator's yes (the token acts as you). `relay_url` completes the flow |
+| `sign_dashboard_challenge` | Sign a dashboard sign-in for your home or a relay you visit — never any other — and only with your operator's yes (the token acts as you). It completes the sign-in itself, and returns no token or signature |
 
 ---
 

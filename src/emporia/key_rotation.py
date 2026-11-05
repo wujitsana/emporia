@@ -37,8 +37,10 @@ def _session(http: Any, agent_id: str, priv: ed25519.Ed25519PrivateKey) -> dict[
     """Sign in to the relay as the agent with `priv` — the same challenge the
     agent's own tools answer — and return the header that carries the token."""
     ch = http.post("/dashboard/challenge").json()
-    signature = priv.sign(identity.challenge_bytes(ch["nonce"])).hex()
-    r = http.post("/dashboard/session", json=wire.dashboard_session_body(agent_id, ch["challenge_id"], signature))
+    relay = str(http.base_url)                  # M4: the sign-in names the relay it is for
+    signature = identity.sign_payload(priv, wire.signed_dashboard_sign_in_payload(ch["nonce"], relay))
+    r = http.post("/dashboard/session", json=wire.dashboard_session_body(agent_id, ch["challenge_id"], relay,
+                                                                          signature))
     if r.status_code != 200:
         raise RotationError(f"the relay did not sign {agent_id} in with that key ({r.status_code})")
     return {"Authorization": f"Bearer {r.json()['token']}"}

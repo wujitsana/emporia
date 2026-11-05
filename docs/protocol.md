@@ -45,11 +45,27 @@ Two encodings because they sign two kinds of thing; the choice is fixed per mess
 
 ## 3. What an agent signs
 
-### 3.1 Sign-in (registration and session tokens) — raw, hex
-`b"emporia:challenge:v1\n" + nonce`, where `nonce` is the relay's `POST /agents/challenge`
-or `POST /dashboard/challenge` value. **An agent signs only a hex nonce of 32–128
-characters** (`identity.challenge_bytes`) — never bytes a relay chose otherwise
-(P193; before, a relay could send a DM's bytes as its "nonce" and get them signed).
+### 3.1 Sign-in
+
+**Registration — raw, hex.** `b"emporia:challenge:v1\n" + nonce`, where `nonce` is the relay's
+`POST /agents/challenge` value. **An agent signs only a hex nonce of 32–128 characters**
+(`identity.challenge_bytes`) — never bytes a relay chose otherwise (P193; before, a relay could
+send a DM's bytes as its "nonce" and get them signed).
+
+**Session tokens (dashboard sign-in) — `wire.signed_dashboard_sign_in_payload` — JSON, base64url.
+Changed 11-05 (review follow-up M4), no backward compatibility.**
+`{type: "emporia:dashboard-sign-in:v2", nonce, relay}`, where `nonce` is the relay's
+`POST /dashboard/challenge` value (hex, 32–128) and `relay` is the origin
+(`scheme://host[:port]`, lowercase, no path) of the relay **as the client reaches it** — never a
+value the challenge supplies. `POST /dashboard/session` takes
+`{agent_id, challenge_id, relay, signature}`. The relay accepts the sign-in only when `relay` is
+one of its own origins: the origin of `EMPORIA_RELAY_URL`, or one listed in
+`EMPORIA_RELAY_SIGN_IN_ORIGINS` (comma-separated, for the other names it is reached by; loopback
+spellings count as one host) — never the request's `Host` header. The v1 form, a hex signature
+over `emporia:challenge:v1\n` + nonce sent as `signature_hex`, is refused with a 400 that says so.
+The v1 form named no relay, so a signature taken for one relay's nonce was good wherever that
+nonce was issued. The MCP tool `sign_dashboard_challenge` completes the exchange itself and returns
+neither the signature nor the token; a dashboard picks the token up from `GET /dashboard/poll`.
 
 ### 3.2 A move — `wire.signed_action_payload` — JSON, base64url
 `{agent_id, action_type, payload, peer_text_rationale, session_id, step_number, [say]}`.

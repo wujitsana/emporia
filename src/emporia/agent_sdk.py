@@ -185,14 +185,12 @@ class EmporiaAgent:
         if self._bearer_token and self._bearer_exp > now + 30:
             return self._bearer_token
         try:
-            from emporia.wire import dashboard_session_body
             ch_resp = await self._client().post(f"{self.relay_url}/dashboard/challenge")
             ch_resp.raise_for_status()
             ch = ch_resp.json()
-            sig_hex = signing.sign_in(self.profile_id, ch["nonce"])
             resp = await self._client().post(
-                f"{self.relay_url}/dashboard/session",
-                json=dashboard_session_body(self.agent_id, ch["challenge_id"], sig_hex),
+                f"{self.relay_url}/dashboard/session",   # M4: signed for this relay alone
+                json=signing.dashboard_session_body(self.agent_id, ch, self.relay_url, key=self.profile_id),
             )
             resp.raise_for_status()
             data = resp.json()

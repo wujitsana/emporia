@@ -9731,6 +9731,20 @@ def test_dm_send_rejects_non_participant_before_running_guardrails(prod_client):
     assert not scan_spy.called, "guardrails scan ran for a caller who isn't in the thread"
 
 
+def _key_unreadable_but_for_sign_in():
+    """`identity.sign` failing as with an unreadable key, for everything but a dashboard
+    sign-in (M4: that is a signed JSON payload now too), so the call under test gets as
+    far as signing its own payload."""
+    from emporia import identity, wire
+    real_sign = identity.sign
+
+    def sign(payload, *a, **k):
+        if payload.get("type") == wire.DASHBOARD_SIGN_IN:
+            return real_sign(payload, *a, **k)
+        raise RuntimeError("key unreadable")
+    return sign
+
+
 def test_mcp_send_dm_returns_structured_error_on_sign_failure(prod_client):
     """send_dm() now signs — a local signing failure (missing/unreadable key)
     must return the structured {"error": ...} shape rather than raising, same
@@ -9743,7 +9757,7 @@ def test_mcp_send_dm_returns_structured_error_on_sign_failure(prod_client):
     adapter = _ASGIHttpxAdapter(prod_client, mcp_server.RELAY_URL)
 
     with patch.object(mcp_server, "httpx", adapter):
-        with patch("emporia.identity.sign", side_effect=RuntimeError("key unreadable")):
+        with patch("emporia.identity.sign", side_effect=_key_unreadable_but_for_sign_in()):
             result = mcp_server.send_dm(
                 to_agent_id="p13_dm_sign_fail_recipient", content="hi",
                 from_agent_id="p13_dm_sign_fail_sender",
@@ -11300,12 +11314,14 @@ def test_agent_sdk_bearer_token_value_uses_shared_wire_contract():
     session_resp.json.return_value = {"token": "jwt.test.token", "expires_in": 3600}
     agent._http.post = AsyncMock(side_effect=[ch_resp, session_resp])
 
-    with patch("emporia.identity.sign_raw", return_value="deadbeef"), \
+    with patch("emporia.signing.sign", return_value="c2ln") as signed, \
          patch.object(wire, "dashboard_session_body", wraps=wire.dashboard_session_body) as spy:
         token = asyncio.run(agent._bearer_token_value())
 
     assert token == "jwt.test.token"
-    spy.assert_called_once_with("sdk_wire_agent", "ch_test", "deadbeef")
+    # M4: signed as a dashboard sign-in for the relay this client talks to
+    signed.assert_called_once_with("sdk_wire_agent", "dashboard-sign-in", "ab" * 32, "http://fake.invalid")
+    spy.assert_called_once_with("sdk_wire_agent", "ch_test", "http://fake.invalid", "c2ln")
 
 
 def test_mcp_register_agent_uses_shared_wire_contract(prod_client):
@@ -12216,7 +12232,7 @@ def test_mcp_send_room_message_returns_structured_error_on_sign_failure(prod_cli
         r = mcp_server.create_room(name="N47 Test Room", creator_id="n47_sign_fail_owner")
         room_id = r["room"]["room_id"]
 
-        with patch("emporia.identity.sign", side_effect=RuntimeError("key unreadable")):
+        with patch("emporia.identity.sign", side_effect=_key_unreadable_but_for_sign_in()):
             result = mcp_server.send_room_message(
                 room_id=room_id, sender_id="n47_sign_fail_owner", content="hi",
             )
@@ -12250,7 +12266,7 @@ def test_mcp_submit_action_returns_structured_error_on_sign_failure(prod_client)
             headers=bearer_for(prod_client, "p11_2_action_seller"),
         )
 
-        with patch("emporia.identity.sign", side_effect=RuntimeError("key unreadable")):
+        with patch("emporia.identity.sign", side_effect=_key_unreadable_but_for_sign_in()):
             result = mcp_server.submit_action(
                 session_id=session_id, action_type="accept", payload={},
                 rationale="Accepting — P11-2 sign failure test.", agent_id="p11_2_action_seller",
@@ -12287,7 +12303,7 @@ def test_mcp_confirm_delivery_returns_structured_error_on_sign_failure(prod_clie
             rationale="Delivered — P11-2 test.", agent_id="p11_2_confirm_seller",
         )
 
-        with patch("emporia.identity.sign", side_effect=RuntimeError("key unreadable")):
+        with patch("emporia.identity.sign", side_effect=_key_unreadable_but_for_sign_in()):
             result = mcp_server.confirm_delivery(
                 session_id=session_id, agent_id="p11_2_confirm_buyer",
                 rationale="Confirming — P11-2 sign failure test.",
@@ -12324,7 +12340,7 @@ def test_mcp_dispute_delivery_returns_structured_error_on_sign_failure(prod_clie
             rationale="Delivered — P11-2 test.", agent_id="p11_2_dispute_seller",
         )
 
-        with patch("emporia.identity.sign", side_effect=RuntimeError("key unreadable")):
+        with patch("emporia.identity.sign", side_effect=_key_unreadable_but_for_sign_in()):
             result = mcp_server.dispute_delivery(
                 session_id=session_id, reason="not as described", agent_id="p11_2_dispute_buyer",
             )
@@ -14606,16 +14622,12 @@ def test_a_websocket_agent_id_param_is_never_believed():
 # ============================================================================
 
 def _dashboard_jwt(client, agent_id: str) -> str:
-    """Full /dashboard/challenge -> sign_raw -> /dashboard/session round trip, returning
-    the issued Bearer token, exactly as sign_dashboard_challenge (mcp_server.py) does it."""
-    from emporia.identity import sign_challenge_nonce
+    """Full /dashboard/challenge -> sign -> /dashboard/session round trip, returning
+    the issued Bearer token, exactly as sign_dashboard_challenge (mcp_server.py) does it
+    (M4: the signature names the relay)."""
+    from emporia import signing
     ch = client.post("/dashboard/challenge").json()
-    sig_hex = sign_challenge_nonce(ch["nonce"], agent_id)
-    r = client.post("/dashboard/session", json={
-        "agent_id": agent_id,
-        "challenge_id": ch["challenge_id"],
-        "signature_hex": sig_hex,
-    })
+    r = client.post("/dashboard/session", json=signing.dashboard_session_body(agent_id, ch, "http://testserver"))
     assert r.status_code == 200, r.text
     return r.json()["token"]
 
@@ -14651,14 +14663,10 @@ def test_dashboard_jwt_rejects_wrong_key_signature():
     with __import__("conftest").header_shim_off():
         client = TestClient(app, client=("127.0.0.1", 51216))
         _register_keyed(client, "jwt_victim")
-        from emporia.identity import sign_challenge_nonce
+        from emporia import signing
         ch = client.post("/dashboard/challenge").json()
-        wrong_sig = sign_challenge_nonce(ch["nonce"], "jwt_attacker")
-        r = client.post("/dashboard/session", json={
-            "agent_id": "jwt_victim",
-            "challenge_id": ch["challenge_id"],
-            "signature_hex": wrong_sig,
-        })
+        body = signing.dashboard_session_body("jwt_victim", ch, "http://testserver", key="jwt_attacker")
+        r = client.post("/dashboard/session", json=body)
         assert r.status_code == 403
 
 

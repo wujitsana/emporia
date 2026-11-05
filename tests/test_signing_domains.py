@@ -41,6 +41,7 @@ def test_every_signed_payload_kind_has_its_own_field_set():
         "encryption_key": wire.signed_encryption_key_payload("a", "k"),
         "relay_list": wire.signed_relay_list_payload("a", "h", [], "", "t"),
         "delete": wire.signed_delete_payload("k", "i", "b", "t"),
+        "dashboard_sign_in": wire.signed_dashboard_sign_in_payload("ab" * 16, "http://relay.test"),
     }
     field_sets = [frozenset(p) for p in kinds.values()]
     assert len(set(field_sets)) == len(field_sets)

@@ -56,12 +56,40 @@ def agent_ref(value: Any, *, bare_only: bool = False) -> str:
     return value
 
 
-def dashboard_session_body(agent_id: str, challenge_id: str, signature_hex: str) -> dict[str, Any]:
+DASHBOARD_SIGN_IN = "emporia:dashboard-sign-in:v2"
+_SIGN_IN_NONCE = re.compile(r"[0-9a-f]{32,128}")
+
+
+def relay_origin(url: str) -> str:
+    """`scheme://host[:port]` of a relay URL, lowercased, with no path — the relay a
+    dashboard sign-in names. Raises `ValueError` for anything that is not an http(s) URL."""
+    from urllib.parse import urlsplit
+    parts = urlsplit(str(url or "").strip())
+    host = plain_host(parts.netloc)
+    if parts.scheme.lower() not in ("http", "https") or not host:
+        raise ValueError(f"not a relay URL: {url!r}")
+    return f"{parts.scheme.lower()}://{host}"
+
+
+def signed_dashboard_sign_in_payload(nonce: str, relay: str) -> dict[str, Any]:
+    """Review follow-up M4: what an agent signs to sign in to a relay's dashboard
+    session — the relay's nonce *and the relay it is for* (its origin, as the agent
+    reaches it). The v1 sign-in signed the nonce alone: a signature taken for one
+    relay's nonce was good wherever that nonce was issued. The relay accepts only its
+    own origin."""
+    if not isinstance(nonce, str) or not _SIGN_IN_NONCE.fullmatch(nonce):
+        raise ValueError("a sign-in challenge is a hex nonce — refusing to sign anything else")
+    return {"type": DASHBOARD_SIGN_IN, "nonce": nonce, "relay": relay_origin(relay)}
+
+
+def dashboard_session_body(agent_id: str, challenge_id: str, relay: str, signature: str) -> dict[str, Any]:
     """Body for `POST /dashboard/session` — the second half of the
-    challenge/sign/session handshake both clients use to mint a bearer JWT
-    for their own outbound calls (mcp_server.py's
-    `_dashboard_bearer_headers()`, agent_sdk.py's `_bearer_token_value()`)."""
-    return {"agent_id": agent_id, "challenge_id": challenge_id, "signature_hex": signature_hex}
+    challenge/sign/session handshake every client uses to mint a bearer JWT
+    (mcp_server.py's `_dashboard_bearer_headers()` and `sign_dashboard_challenge`,
+    agent_sdk.py's `_bearer_token_value()`, the console, key rotation). M4: v2 —
+    `signature` (base64url) over `signed_dashboard_sign_in_payload(nonce, relay)`."""
+    return {"agent_id": agent_id, "challenge_id": challenge_id, "relay": relay_origin(relay),
+            "signature": signature}
 
 
 def registration_body(

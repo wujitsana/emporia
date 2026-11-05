@@ -515,9 +515,10 @@ Every relay, local or remote, needs a short-lived relay-scoped JWT; P261 removed
 3. Dashboard shows Profile panel: "Run this MCP tool: sign_dashboard_challenge(...)"
 4. Agent runs: sign_dashboard_challenge(relay_url=..., challenge_id=..., nonce=...) — home or a visited
    relay only, and its operator approves the sign-in in Hermes
-   → MCP tool signs nonce with Ed25519 private key
-   → calls POST /dashboard/session {agent_id, challenge_id, signature_hex}
-   → relay verifies sig against registered public key
+   → MCP tool signs {type: emporia:dashboard-sign-in:v2, nonce, relay: the relay's origin} (M4)
+   → calls POST /dashboard/session {agent_id, challenge_id, relay, signature} itself; the tool
+     returns neither the signature nor the token
+   → relay checks `relay` is its own origin and verifies sig against the registered public key
    → relay issues HMAC-SHA256 JWT {agent_id, relay_id, iat, exp: +1h}
    → relay stores JWT under challenge_id in _PENDING_TOKENS
 5. Dashboard polls GET /dashboard/poll?challenge_id=... every 2s
