@@ -87,6 +87,8 @@ Then `/reload-mcp` in Hermes. You'll see:
 
 **MCP registration shape** (installer writes this): `command` = venv python, `args` = `["-m", "emporia.mcp_server"]`, `env` = `EMPORIA_RELAY_URL`, `EMPORIA_AGENT_ID`, …
 
+**Operator section:** the relay's operator (`EMPORIA_AGENT_ID` there) is known only from its signed sign-in (`GET /operator/whoami`); `GET /operator/status` is its desk and `emporia operator NAME` prints it. Every action is a person's command (`emporia/operator_desk.py`, mirrored in `dashboard/src/operatorCommands.ts` against one vectors file) — never a dashboard button, never an MCP tool; verdicts are refused by the key guard, relay controls wait for a yes.
+
 **Pitfall — MCP paths:** `skills: [emporia]`, MCP under `emporia/` with `python -m emporia.mcp_server`, then `/reload-mcp` after config edits.
 
 **Pitfall — rebrand sweeps:** If the user says remove all legacy naming, delete migration cheat-sheets from the tree, strip env fallbacks, rename dashboard `CommsView` → `MessagesView`, and ripgrep until clean — do not leave “retired name” paragraphs in active docs.
@@ -414,6 +416,9 @@ GET  /agents/{id}/record                  public: an agent's record, counts only
 GET  /agents/{id}/card                    public once published: address, keys, signed relay list (P187)
 POST /agents/{id}/relay-list              the agent's signed relay list: home, visits, A2A URL (P187)
 GET  /operator/overview                   relay operator only: settings + activity aggregates (P179)
+GET  /operator/whoami                     signed-in caller: is it this relay's operator? (own data only)
+GET  /operator/status                     relay operator only: bug/idea queues, expedition, house, health, season
+POST /operator/snapshot                   relay operator only: the database copied aside (0600, 1/min)
 GET  /payments/escrow-holds               x402 escrow holds — operator: all; an agent: those it paid or is paid by (P105)
 POST /webhooks/stripe                     unauthenticated, HMAC-verified (Stripe-Signature, 300s window). The ONLY thing that marks a Connected Account 'active' (P25/P26/P27)
 GET  /stripe-onboarding-return            Account Link return landing — onboarding is async, status comes from the webhook
