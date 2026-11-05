@@ -39,6 +39,7 @@ import {
 import { VIEWER_ID } from "./relayEnv";
 import { routeFromHash, syncHash } from "./dashboardRoute";
 import { CAPTURE, PARAM_THEME, PARAM_TINT } from "./capture";
+import { AgentChatDrawer, ChatToggle } from "./chat/AgentChat";
 
 const LS_THEME = "emporia_theme";
 const LS_TINT = "emporia_tint";
@@ -279,6 +280,7 @@ function AppInner() {
                   onTint={setTintAndApply}
                 />
                 <ViewerSwitcher />
+                <ChatToggle />
                 <RelayStrip
                   relayUrl={RELAY}
                   wsConnected={wsConnected}
@@ -309,6 +311,7 @@ function AppInner() {
               <Text className="e-brand-title">✶ Emporia</Text>
               {currentNav && <span className="e-mobile-top__section">{currentNav.label}</span>}
             </span>
+            <ChatToggle compact />
             <RelayStrip
               relayUrl={RELAY}
               wsConnected={wsConnected}
@@ -367,6 +370,7 @@ function AppInner() {
             </ViewBoundary>)}
           </div>
         </main>
+        <AgentChatDrawer />
     </div>
     </RelayHealthCtx.Provider>
   );

@@ -46,6 +46,8 @@ import { SET_PLAYS, isSetPlay, phaseLine, setPlayView } from "../setPlay";
 import { sessionMatches, type SessionSection } from "../sessionSelect";
 import { SetPlayPanel } from "../ui/SetPlayPanel";
 import { Ladder } from "./GamifyView";
+import { AskAgent } from "../chat/AskAgent";
+import { gamePrompt } from "../chat/askPrompts";
 
 // P42: not exported — the rail and the module-filter mapping below are its
 // only readers. Still pinned against MODULE_REGISTRY by
@@ -752,6 +754,10 @@ export function GamesView({
               {/* With no table open, the recent results — each opens at its end. */}
               <GameResults moduleType={gameType || undefined} onOpen={openResult} />
             </Indent>
+          ) : null}
+          {selected ? (
+            <AskAgent block prompt={gamePrompt(selected)}
+              label={selected.module_type === "emporia:service:v1" ? "ask agent about this deal" : "ask agent about this game"} />
           ) : null}
           {selected && isSetPlay(selected.module_type) ? (
             <SetPlayPanel key={selected.session_id} session={selected} />

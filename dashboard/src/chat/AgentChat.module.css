@@ -1,0 +1,17 @@
+.toggle {
+  font-size: 0.85rem !important;
+  letter-spacing: 0.04em;
+}
+
+.glyph {
+  color: var(--theme-focused-foreground);
+}
+
+.label {
+  text-transform: lowercase;
+}
+
+.on {
+  border-color: var(--theme-focused-foreground) !important;
+  background: var(--e-accent-wash, transparent) !important;
+}
