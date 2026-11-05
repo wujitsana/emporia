@@ -71,14 +71,18 @@ def test_the_pinned_runtime_is_unset_or_a_full_commit_of_this_repo():
 
 
 def test_a_release_can_be_tried_from_this_machine_before_it_is_pushed(tmp_path, monkeypatch):
-    """P296: `--runtime-from REPO[@SHA]` clones the runtime from a repo here (or a URL)
-    instead of the pinned GitHub commit; the pinned source itself stays https-only."""
+    """P296: `--runtime-from REPO[@SHA]` clones the runtime from a repo here instead of the
+    pinned GitHub commit; the pinned source itself stays https-only. Catalog rule 3: a repo
+    on this machine only, never a network URL."""
     import subprocess
     head = subprocess.run(["git", "-C", str(REPO), "rev-parse", "HEAD"], capture_output=True,
                           text=True).stdout.strip()
     assert setup_cli.parse_runtime_from(str(REPO)) == (f"file://{REPO}", head)
-    assert setup_cli.parse_runtime_from(f"https://example.test/e@{head}") == ("https://example.test/e", head)
-    for bad in ("https://example.test/e", "ftp://x@" + head, "relative/path"):
+    assert setup_cli.parse_runtime_from(f"file://{REPO}@{head}") == (f"file://{REPO}", head)
+    monkeypatch.chdir(REPO.parent)
+    assert setup_cli.parse_runtime_from(REPO.name) == (f"file://{REPO}", head)      # a relative path here
+    for bad in (f"https://example.test/e@{head}", f"http://example.test/e@{head}", f"ssh://h/e@{head}",
+                "https://example.test/e", "ftp://x@" + head, "relative/path"):
         try:
             setup_cli.parse_runtime_from(bad)
             raise AssertionError(bad)
@@ -122,8 +126,12 @@ def test_a_fresh_clone_is_checked_out_even_when_its_head_is_the_pinned_commit(tm
     monkeypatch.setattr(setup_cli, "_git_head", lambda rt: sha)
     monkeypatch.setattr(setup_cli, "runtime_dir", lambda: tmp_path / "plugin-data" / "emporia" / "runtime")
     monkeypatch.setattr(setup_cli.shutil, "which", lambda name: "/usr/bin/uv" if name == "uv" else None)
-    setup_cli.install_runtime(say=lambda *a: None, pin=("https://example.test/e", sha))
+    monkeypatch.setattr(setup_cli, "source", lambda: {"repo": "https://example.test/e", "sha": sha})
+    setup_cli.install_runtime(say=lambda *a: None)
     assert any(a[3:5] == ["checkout", "--quiet"] for a in ran), ran
+    # Catalog rule 3: a --runtime-from pin is a repo on this machine, never the network.
+    with pytest.raises(setup_cli.SetupFailed, match="on this machine"):
+        setup_cli.install_runtime(say=lambda *a: None, pin=("https://example.test/e", sha))
 
 
 def test_hermess_own_python_settings_never_reach_emporias_processes(monkeypatch):

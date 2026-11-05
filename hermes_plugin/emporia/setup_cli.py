@@ -171,13 +171,21 @@ def _is_sha(sha: str) -> bool:
 
 def parse_runtime_from(spec: str) -> tuple[str, str]:
     """`--runtime-from REPO[@SHA]`, for trying a release before it is pushed: an
-    Emporia repo on this machine (a path or file:// URL) or an https one, at a
-    commit (default: that local repo's HEAD). Never used unless asked for."""
+    Emporia repo **on this machine** (a path or file:// URL), at a commit (default:
+    its HEAD). Never used unless a person asks for it.
+
+    Catalog rule 3: never a network URL. A runtime from the network at a commit no
+    catalog pin names would be code nobody reviewed; a release to try from elsewhere is
+    cloned here first, where the person can read it."""
     repo, _, sha = spec.partition("@")
+    if not repo.startswith(("/", "file://", "https://", "http://", "ssh://", "git@")) and Path(repo).is_dir():
+        repo = str(Path(repo).resolve())                     # a relative path to a repo here
     if repo.startswith("/"):
         repo = "file://" + repo
-    if not repo.startswith(("https://", "file://")):
-        raise SetupFailed(f"--runtime-from: {repo!r} is neither an https URL nor a path on this machine")
+    if not repo.startswith("file://"):
+        raise SetupFailed(f"--runtime-from: {repo!r} is not a repo on this machine. It takes a local "
+                          "path or file:// URL only; clone a release you want to try first, then point "
+                          "it at the clone")
     if not sha and repo.startswith("file://"):
         sha = _run(["git", "-C", repo[len("file://"):], "rev-parse", "HEAD"]).strip()
     if not _is_sha(sha):
@@ -191,8 +199,11 @@ def install_runtime(say=print, target: Path | None = None, pin: tuple[str, str] 
     (`target`), else this profile's plugin-data."""
     src = source()
     repo, sha = pin or (src.get("repo", ""), src.get("sha", ""))
-    if not (repo.startswith(("https://", "file://") if pin else "https://") and _is_sha(sha)):
-        raise SetupFailed(f"{SOURCE_FILE.name} names no pinned commit (repo {repo!r}, sha {sha!r})")
+    # The pinned source is the catalog's (https, from emporia_source.json); a `pin` is
+    # --runtime-from's, which is only ever a repo on this machine (rule 3).
+    if not (repo.startswith("file://" if pin else "https://") and _is_sha(sha)):
+        raise SetupFailed(f"{SOURCE_FILE.name} names no pinned commit (repo {repo!r}, sha {sha!r})" if not pin
+                          else f"--runtime-from takes a repo on this machine, not {repo!r}")
     rt = target if target is not None and from_catalog(target) else runtime_dir()
     if not (rt / ".git").is_dir():
         if rt.exists():
@@ -474,7 +485,8 @@ def register_cli(parser: argparse.ArgumentParser) -> None:
                    help="Where a new profile's plugin comes from (default: the catalog entry; before it is "
                         "listed: https://github.com/wujitsana/emporia#hermes_plugin/emporia)")
     _runtime_from = dict(metavar="REPO[@SHA]", help="Testing a release before it is pushed: take the runtime "
-                         "from this Emporia repo (a path here, or a URL) at this commit, not the pinned one")
+                         "from this Emporia repo on this machine (a path or file:// URL; never a network "
+                         "URL) at this commit, not the pinned one")
     p.add_argument("--runtime-from", **_runtime_from)
     p.add_argument("rest", nargs=argparse.REMAINDER,
                    help="After --: options for `emporia setup agent` (--role, --keys, --wallet, …)")

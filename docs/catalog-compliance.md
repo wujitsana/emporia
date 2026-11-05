@@ -109,21 +109,19 @@ so it was not run against the shared Hermes install.
   - **Code that runs is fetched at setup time.** The scanner reads only the subdir. The answer:
     the fetched code is the same repo at an ancestor of the pin, so it is in the tree the
     reviewer already has.
-  - **`--runtime-from REPO@SHA`** (`parse_runtime_from`, `:172-185`; setup and update) lets a
-    person install a runtime from any https or local repo at any commit. It is manual and never
-    automatic. From an agent's terminal it needs the person's approval: `key_guard._SENSITIVE`
-    puts `setup` and `update` under Hermes's approval prompt (`key_guard.py:57-60`), and an
-    unattended run denies it. It is still a way to run code nobody reviewed.
+  - **`--runtime-from REPO@SHA`** (`parse_runtime_from`; setup and update) lets a person
+    install a runtime from another commit. On branch `catalog-rule11` it takes **only a repo on
+    this machine** (a path or `file://`); a network URL is refused, both by `parse_runtime_from`
+    and by `install_runtime`. It is manual and never automatic. From an agent's terminal it
+    needs the person's approval: `key_guard._SENSITIVE` puts `setup` and `update` under
+    Hermes's approval prompt (`key_guard.py:57-60`), and an unattended run denies it.
 - **How to present it** (in the PR text): "Setup installs Emporia's runtime from this repo at
   the commit `emporia_source.json` names. That commit is an ancestor of the pinned one and
   differs from it only in that file. The runtime moves only when a new catalog pin does.
   `--runtime-from` is a developer flag for trying a release before it is pushed."
-- **Options for `--runtime-from`** (owner's choice, not changed here):
-  - **(a)** Keep it, presented as above.
-  - **(b)** Accept only local repos (a path or `file://`). That keeps "try a release before it
-    is pushed" and drops fetching unreviewed code over the network.
-  - **(c)** Strip it from the catalog build.
-- (b) is a few lines in `parse_runtime_from` plus one test.
+- **Done on `catalog-rule11`:** local repos only. That keeps "try a release before it is
+  pushed", and drops fetching unreviewed code over the network. Stripping the flag from the
+  catalog build entirely remains an option.
 
 ### 6. Declared capabilities — pass
 Generated from Hermes's own probe (`hermes_cli.plugin_validate._run_capability_probe`), not

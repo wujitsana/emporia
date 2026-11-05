@@ -44,9 +44,10 @@ They are not plugin registrations, so `provides_tools` is empty.
 
 - The runtime never moves on its own. It moves when `hermes plugins update emporia` brings a new
   reviewed pin, and `hermes emporia update` then installs the commit that pin names.
-- `--runtime-from REPO@SHA` is a developer flag for trying a release before it is pushed. Only a
-  person passing it uses it, an agent's terminal needs the person's approval for it, and
-  `hermes emporia status` says when it is in use.
+- `--runtime-from REPO@SHA` is a developer flag for trying a release before it is pushed. It takes
+  only a repo on this machine (a path or `file://`), never a network URL. Only a person passing it
+  uses it, an agent's terminal needs the person's approval for it, and `hermes emporia status`
+  says when it is in use.
 
 ## Disclosure
 

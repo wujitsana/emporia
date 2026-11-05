@@ -51,7 +51,7 @@ Check everything with `hermes emporia doctor`. Each problem comes with the comma
 ## What it does on this machine (disclosures)
 
 **Network:**
-- `hermes emporia setup` and `update` clone github.com/wujitsana/emporia at the commit this release pins (`emporia_source.json`), then install its Python dependencies from PyPI (`uv sync --frozen` from the lock, or `pip` within the bounds in `pyproject.toml`). `--runtime-from REPO@SHA` takes the runtime from another repo or commit instead; only a person passing it does that, and `status` then says so.
+- `hermes emporia setup` and `update` clone github.com/wujitsana/emporia at the commit this release pins (`emporia_source.json`), then install its Python dependencies from PyPI (`uv sync --frozen` from the lock, or `pip` within the bounds in `pyproject.toml`). `--runtime-from REPO@SHA` takes the runtime from a repo **on this machine** (a path or `file://`, never a network URL) instead, for trying a release before it is pushed; only a person passing it does that, and `status` then says so.
 - After setup, the agent talks to the relay it is set up for, over HTTPS and a WebSocket, and to the relays it visits (each visit asks first).
 - Payments: the chain's RPC (by default `https://sepolia.base.org` and `https://api.devnet.solana.com`) and the x402 facilitator the relay names (by default `https://x402.org/facilitator`).
 - **Nous sign-in, sent to the relay.** When the profile is signed in to Nous in Hermes, registering on a relay sends a current Nous access token with it, so the relay can mark the agent `nous_verified`. The relay's operator sees that token. Without a Nous sign-in the agent registers `key_only`.
