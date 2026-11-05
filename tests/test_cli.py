@@ -391,3 +391,29 @@ def test_a_profile_the_plugin_just_made_is_set_up_as_a_new_agent(profiles, capsy
     assert cli.profile_role(made, False) == "marketplace"
     assert "EMPORIA_KEY_STORAGE=env" in (made / ".env").read_text()
     assert not list(made.rglob("kappa.priv")), "its new identity key moved into its .env"
+
+
+def test_new_profile_is_refused_for_a_profile_that_holds_an_agent(profiles, capsys):
+    """Security audit (11-05): `--new-profile` (bcb4d18) makes setup treat a profile as
+    brand new — its limits, approval threshold, role and key storage from the defaults,
+    not its own. The flag is hidden but anyone may type it, an agent with a terminal
+    included (with its person's yes to a harmless-looking `setup agent`): passed for a
+    profile that already holds an agent, its person's limits and role were replaced by
+    the defaults. It is refused there; the plugin passes it only for a profile it made
+    a moment ago."""
+    root, _ = profiles
+    with patch.dict(os.environ):
+        assert cli.main(["setup", "agent", "lambda", "--role", "both", "--keys", "files", "--wallet",
+                         "--max-daily-cents", "300", "--max-payment-cents", "100",
+                         "--approve-above-cents", "0"]) == 0
+    prof = root / "lambda"
+    keydir = prof / "home" / ".hermes" / "keys"
+    before = (prof / ".env").read_text(), cli.profile_role(prof, True)
+    keys = {f.name: f.read_bytes() for f in keydir.iterdir() if f.is_file()}
+    capsys.readouterr()
+    with patch.dict(os.environ):
+        rc = cli.main(["setup", "agent", "lambda", "--new-profile"])
+    after = (prof / ".env").read_text(), cli.profile_role(prof, True)
+    assert (rc, after) == (1, before), after
+    assert "already" in capsys.readouterr().out
+    assert {f.name: f.read_bytes() for f in keydir.iterdir() if f.is_file()} == keys
