@@ -45,8 +45,9 @@ export function nextTint(current: Tint): Tint {
   return TINTS[next];
 }
 
-// P126: inside the Hermes dashboard the app lives in a shadow root, and theme
-// classes go on its own container — never on Hermes's <body>.
+// P126: inside the Hermes dashboard the app lives in a shadow root, and on the
+// Desktop page in a scoped container; theme classes go on that container —
+// never on Hermes's <body>.
 let themeRoot: HTMLElement | null = null;
 
 export function setThemeRoot(el: HTMLElement | null) {
@@ -70,7 +71,9 @@ const fadeTimers = new WeakMap<HTMLElement, ReturnType<typeof setTimeout>>();
  * `fade: false` (the capture hotkeys, capture mode) switches instantly.
  */
 export function applyTheme(theme: Theme, tint: Tint, opts: { fade?: boolean; capture?: boolean } = {}) {
-  const b = themeRoot ?? document.body;
+  // On the Desktop page the body is the app's: the theme goes on our own root or nowhere.
+  const b = themeRoot ?? (import.meta.env.VITE_EMPORIA_MODE === "desktop" ? null : document.body);
+  if (!b) return;
   b.classList.toggle("e-capture", !!opts.capture);
   const had = THEMES.some((t) => b.classList.contains(t));
   const changed = had && (!b.classList.contains(theme) || (tint ? !b.classList.contains(tint) : TINTS.some((t) => t && b.classList.contains(t))));

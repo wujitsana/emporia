@@ -11547,6 +11547,7 @@
 	*/
 	function applyTheme(theme, tint, opts = {}) {
 		const b = themeRoot ?? document.body;
+		if (!b) return;
 		b.classList.toggle("e-capture", !!opts.capture);
 		const changed = THEMES.some((t) => b.classList.contains(t)) && (!b.classList.contains(theme) || (tint ? !b.classList.contains(tint) : TINTS.some((t) => t && b.classList.contains(t))));
 		if (opts.fade === false) {
@@ -11808,19 +11809,120 @@
 		VIEWER_ID = resolveViewerId((typeof window !== "undefined" ? viewerFromUrl(window.location.search) : null) ?? savedViewer() ?? void 0);
 		SESSION_TOKEN_KEY = `emporia_dashboard_token:${VIEWER_ID ?? ""}`;
 	}));
+	// src/desktop/bridge.ts
+	function desktopBridge() {
+		return current$1;
+	}
+	var current$1;
+	var init_bridge = __esmMin((() => {
+		current$1 = null;
+	}));
+	// src/desktop/restShim.ts
+	function jsonResponse(status, text) {
+		return new Response(text, {
+			status,
+			headers: {
+				"content-type": "application/json",
+				"cache-control": "no-store"
+			}
+		});
+	}
+	/**
+	* The HTTP status a failed `ctx.rest` call carries, and the body after it, or
+	* null for a failure with no status (timeout, no bridge, HTML for JSON). The
+	* main process sets `statusCode`; its message is "<status>: <body>", and across
+	* IPC only the message survives, behind Electron's own prefix. The Webapp
+	* throws the same "<status>: <body>" message.
+	*/
+	function statusOf(e) {
+		const message = e instanceof Error ? e.message : String(e ?? "");
+		const m = /\b([45]\d\d): ([\s\S]*)$/.exec(message);
+		const coded = Number(e?.statusCode);
+		const status = Number.isInteger(coded) && coded >= 400 && coded <= 599 ? coded : m ? Number(m[1]) : NaN;
+		if (!Number.isFinite(status)) return null;
+		return {
+			status,
+			body: m && Number(m[1]) === status ? m[2] : JSON.stringify({ detail: message })
+		};
+	}
+	function requestBody(body) {
+		if (body === void 0 || body === null) return void 0;
+		if (typeof body !== "string") throw new TypeError("the Desktop page sends JSON bodies only");
+		try {
+			return JSON.parse(body);
+		} catch {
+			throw new TypeError("the Desktop page sends JSON bodies only");
+		}
+	}
+	/**
+	* `fetch(url, init)` over `ctx.rest`. Only URLs in the plugin's own namespace
+	* exist here; anything else is a 404, never a request. A 2xx answer becomes a
+	* 200 with its JSON; an HTTP error becomes that status with its body, so the
+	* 503 `{"setup_needed": true}` reads exactly as it does in the tab. A failure
+	* with no status rejects, as a network error rejects `fetch`.
+	*/
+	async function restFetch(bridge, url, init = {}) {
+		if (!url.startsWith(`/api/plugins/emporia/`)) return jsonResponse(404, JSON.stringify({ detail: `not in the plugin's namespace: ${url}` }));
+		const path = url.slice(20);
+		const method = (init.method ?? "GET").toUpperCase();
+		const body = requestBody(init.body);
+		try {
+			const data = await bridge.rest(path, body === void 0 ? { method } : {
+				method,
+				body
+			});
+			return jsonResponse(200, JSON.stringify(data ?? null));
+		} catch (e) {
+			const failed = statusOf(e);
+			if (!failed) throw e;
+			return jsonResponse(failed.status, failed.body);
+		}
+	}
+	var PLUGIN_BASE, PluginSocket;
+	var init_restShim = __esmMin((() => {
+		PLUGIN_BASE = "/api/plugins/emporia";
+		PluginSocket = class PluginSocket {
+			static CONNECTING = 0;
+			static OPEN = 1;
+			static CLOSED = 3;
+			readyState = PluginSocket.CONNECTING;
+			onopen = null;
+			onclose = null;
+			onerror = null;
+			onmessage = null;
+			dispose;
+			constructor(bridge, path) {
+				this.dispose = bridge.socket(path, (data) => {
+					if (this.readyState === PluginSocket.CLOSED) return;
+					if (this.readyState !== PluginSocket.OPEN) {
+						this.readyState = PluginSocket.OPEN;
+						this.onopen?.(new Event("open"));
+					}
+					this.onmessage?.(new MessageEvent("message", { data: typeof data === "string" ? data : JSON.stringify(data) }));
+				});
+			}
+			send(_data) {}
+			close() {
+				if (this.readyState === PluginSocket.CLOSED) return;
+				this.readyState = PluginSocket.CLOSED;
+				this.dispose();
+			}
+		};
+	}));
 	// src/transport.ts
 	/** Set by the Hermes plugin entry before the app loads (hermesPlugin.tsx). */
 	function hermesSdk() {
 		return typeof window !== "undefined" ? window.__EMPORIA_HERMES_SDK__ ?? null : null;
 	}
-	/** P231: inside the Hermes dashboard, the Hermes profile the tab is open in —
-	*  the tab views as that profile's agent and offers no switcher. Null elsewhere. */
+	/** P231: inside Hermes, the Hermes profile the tab or page is open in — the
+	*  app views as that profile's agent and offers no switcher. Null elsewhere. */
 	function hermesProfile() {
+		if (MODE === "desktop") return desktopProfile;
 		return typeof window !== "undefined" ? window.__EMPORIA_HERMES_PROFILE__ ?? null : null;
 	}
 	/** The console's own endpoints (`/agents`, `/dm/<agent>/open`), by mode. */
 	function consoleUrl(path) {
-		return (MODE === "hermes" ? PLUGIN_BASE : "") + path;
+		return (IN_HERMES ? PLUGIN_BASE : "") + path;
 	}
 	/** Base URL for relay REST calls. Via the console it names the viewer, whom the
 	*  console signs in as; directly, it is the relay. */
@@ -11829,6 +11931,10 @@
 		return consoleUrl(`/relay/${encodeURIComponent(viewer ?? "")}`);
 	}
 	function httpFetch(url, init = {}) {
+		if (MODE === "desktop") {
+			const bridge = desktopBridge();
+			return bridge ? restFetch(bridge, url, init) : Promise.reject(/* @__PURE__ */ new Error("the Desktop plugin is not loaded"));
+		}
 		const sdk = hermesSdk();
 		if (sdk) return sdk.authedFetch(url, init);
 		return fetch(url, {
@@ -11844,7 +11950,8 @@
 	* Open a relay websocket (`/ws/agent/<id>`, `/ws/rooms/<id>`, `/ws/events`,
 	* `/ws/<session>`). Async because the Hermes SDK mints a single-use ticket per
 	* socket. Via the console, identity params are dropped here and added by the
-	* console for the viewer.
+	* console for the viewer. On Desktop the socket only receives (see
+	* desktop/restShim.ts PluginSocket).
 	*/
 	async function relaySocket(path, params = new URLSearchParams()) {
 		if (!VIA_CONSOLE) {
@@ -11855,17 +11962,25 @@
 		params.delete("token");
 		params.delete("agent_id");
 		const viewer = encodeURIComponent(VIEWER_ID ?? "");
+		const q = params.toString();
+		if (MODE === "desktop") {
+			const bridge = desktopBridge();
+			if (!bridge) throw new Error("the Desktop plugin is not loaded");
+			return new PluginSocket(bridge, `/ws/${viewer}${path}${q ? `?${q}` : ""}`);
+		}
 		const sdk = hermesSdk();
 		if (sdk) return new WebSocket(await sdk.buildWsUrl(`${PLUGIN_BASE}/ws/${viewer}${path}`, Object.fromEntries(params)));
-		const q = params.toString();
 		return new WebSocket(`${wsOrigin()}/ws/${viewer}${path}${q ? `?${q}` : ""}`);
 	}
-	var MODE, VIA_CONSOLE, PLUGIN_BASE;
+	var MODE, IN_HERMES, desktopProfile, VIA_CONSOLE;
 	var init_transport = __esmMin((() => {
 		init_relayEnv();
+		init_bridge();
+		init_restShim();
 		MODE = hermesSdk() ? "hermes" : "relay";
+		IN_HERMES = MODE === "hermes" || MODE === "desktop";
+		desktopProfile = null;
 		VIA_CONSOLE = MODE !== "relay";
-		PLUGIN_BASE = "/api/plugins/emporia";
 	}));
 	// src/api.ts
 	/** The dashboard's JWT, if any — for callers that need it outside a fetch() header
@@ -11881,12 +11996,12 @@
 		return headers;
 	}
 	async function get(path, opts) {
-		const r = await httpFetch(`${BASE$1}${path}`, { headers: opts?.agentScoped ? agentHeaders() : {} });
+		const r = await httpFetch(`${base$1()}${path}`, { headers: opts?.agentScoped ? agentHeaders() : {} });
 		if (!r.ok) throw new Error(`${r.status} ${path}`);
 		return r.json();
 	}
 	async function post(path, body) {
-		const r = await httpFetch(`${BASE$1}${path}`, {
+		const r = await httpFetch(`${base$1()}${path}`, {
 			method: "POST",
 			headers: {
 				"Content-Type": "application/json",
@@ -11941,11 +12056,11 @@
 		if (thread.encrypted || looksLikeEncryptedEnvelope(thread.last_content)) return `${SEALED_TAG} encrypted`;
 		return (thread.last_content ?? "—").slice(0, 36);
 	}
-	var BASE$1, dashboardAuth, SEALED_TAG, OPENED_TAG, ENCRYPTED_PLACEHOLDER, api;
+	var base$1, dashboardAuth, SEALED_TAG, OPENED_TAG, ENCRYPTED_PLACEHOLDER, api;
 	var init_api = __esmMin((() => {
 		init_relayEnv();
 		init_transport();
-		BASE$1 = relayHttpBase();
+		base$1 = () => relayHttpBase();
 		dashboardAuth = {
 			challenge: () => post("/dashboard/challenge", {}),
 			session: (agent_id, challenge_id, signature_hex) => post("/dashboard/session", {
@@ -12438,7 +12553,7 @@
 	function RelayStrip({ relayUrl, wsConnected, health, compact = false, showWs = false }) {
 		const online = health?.status === "ok";
 		const resolved = relayUrl && relayUrl.length > 0 ? relayUrl : resolveRelayUrl();
-		const host = relayHost(resolved);
+		const host = MODE === "desktop" ? "via Hermes" : relayHost(resolved);
 		const wsEvents = relayEventsWsUrl(resolved);
 		const meta = [health?.version ? `v${health.version}` : null, health?.guardrails_mode].filter(Boolean).join(" · ");
 		const restTitle = online ? `Relay is up — its API answers (${resolved}/health)` : health ? `Relay HTTP unreachable (${resolved})` : `Checking relay health…`;
@@ -12492,6 +12607,7 @@
 		init_hooks();
 		init_relayEnv();
 		init_relayFormat();
+		init_transport();
 		import_jsx_runtime$67 = require_jsx_runtime();
 	}));
 	// src/navConfig.ts
@@ -12776,6 +12892,18 @@
 	*/
 	function ViewerSwitcher() {
 		const hermes = hermesProfile();
+		if (hermes && MODE === "desktop") return /* @__PURE__ */ (0, import_jsx_runtime$65.jsxs)("span", {
+			className: "e-viewer-switch",
+			title: "The Hermes profile this page shows; switch it in Hermes",
+			children: [
+				/* @__PURE__ */ (0, import_jsx_runtime$65.jsx)("span", {
+					className: "e-faint",
+					children: "as"
+				}),
+				" ",
+				/* @__PURE__ */ (0, import_jsx_runtime$65.jsx)("span", { children: hermes.isAgent ? hermes.name : `${hermes.name} (no agent)` })
+			]
+		});
 		return hermes ? /* @__PURE__ */ (0, import_jsx_runtime$65.jsx)(HermesProfileSelect, { current: hermes }) : /* @__PURE__ */ (0, import_jsx_runtime$65.jsx)(ViewerSelect, {});
 	}
 	/**
@@ -13156,6 +13284,37 @@
 		return isTypingTarget(e.target) || isTypingTarget(focusedWithin(appNode));
 	}
 	var init_keyTarget = __esmMin((() => {}));
+	// src/prefs.ts
+	function desktopStorage() {
+		return MODE === "desktop" ? desktopBridge()?.storage ?? null : null;
+	}
+	function readPref(key) {
+		const store = desktopStorage();
+		try {
+			if (store) {
+				const v = store.get(key, null);
+				return typeof v === "string" ? v : null;
+			}
+			return localStorage.getItem(key);
+		} catch {
+			return null;
+		}
+	}
+	function writePref(key, value) {
+		const store = desktopStorage();
+		try {
+			if (store) {
+				if (value === null) store.remove(key);
+				else store.set(key, value);
+			} else if (value === null) localStorage.removeItem(key);
+			else localStorage.setItem(key, value);
+		} catch {}
+	}
+	var init_prefs = __esmMin((() => {
+		init_transport();
+		init_bridge();
+	}));
+	var init_shadowScope = __esmMin((() => {}));
 	// src/styleMode.ts
 	/** `?style=animatic` → "animatic"; `default` → the default; anything else → null. */
 	function styleFromParam(raw) {
@@ -13165,6 +13324,10 @@
 		return STYLES.includes(v) ? v : null;
 	}
 	function localStore() {
+		if (MODE === "desktop") return {
+			getItem: readPref,
+			setItem: writePref
+		};
 		try {
 			return typeof localStorage !== "undefined" ? localStorage : null;
 		} catch {
@@ -13209,10 +13372,18 @@
 			return false;
 		}
 	}
-	/** Put the style's class on the root and take every other style's off. */
-	function applyStyle(style, root = themeRootEl()) {
+	/**
+	* Put the style's class on the root and take every other style's off. On the
+	* Desktop page the body is the app's: before the page's own root is up, nowhere.
+	*/
+	function applyStyle(style, root = desktopSafeRoot()) {
+		if (!root) return;
 		for (const s of STYLES) if (STYLE_CLASS[s]) root.classList.remove(STYLE_CLASS[s]);
 		if (STYLE_CLASS[style]) root.classList.add(STYLE_CLASS[style]);
+	}
+	function desktopSafeRoot() {
+		const root = themeRootEl();
+		return MODE === "desktop" && root === document.body ? null : root;
 	}
 	function nextStyle(current) {
 		return STYLES[(STYLES.indexOf(current) + 1) % STYLES.length];
@@ -13226,11 +13397,11 @@
 		current = style;
 		const oneOff = CAPTURE || styleFromParam(new URLSearchParams(search()).get("style")) !== null;
 		if (opts.save ?? !oneOff) saveStyle(style);
-		listeners$1.forEach((l) => l());
+		listeners$2.forEach((l) => l());
 	}
 	function subscribe(l) {
-		listeners$1.add(l);
-		return () => listeners$1.delete(l);
+		listeners$2.add(l);
+		return () => listeners$2.delete(l);
 	}
 	/** The current style and its setter, for any component. */
 	function useStyleMode() {
@@ -13259,6 +13430,7 @@
 			const onKey = (e) => {
 				if (e.key !== "s" || e.metaKey || e.ctrlKey || e.altKey) return;
 				if (isTyping(e, appNode.current)) return;
+				if (MODE === "desktop" && !(e.target instanceof Element && e.target.closest(`.e-desktop-root`))) return;
 				setStyle(nextStyle(getStyle()));
 			};
 			window.addEventListener("keydown", onKey);
@@ -13275,12 +13447,15 @@
 		}
 		return out;
 	}
-	var import_react$30, STYLES, DEFAULT_STYLE, STYLE_LABELS, STYLE_ABOUT, STYLE_CLASS, LS_STYLE, current, listeners$1, GLYPHS;
+	var import_react$30, STYLES, DEFAULT_STYLE, STYLE_LABELS, STYLE_ABOUT, STYLE_CLASS, LS_STYLE, current, listeners$2, GLYPHS;
 	var init_styleMode = __esmMin((() => {
 		import_react$30 = /* @__PURE__ */ __toESM(require_react(), 1);
 		init_capture();
 		init_keyTarget();
 		init_themeConfig();
+		init_transport();
+		init_prefs();
+		init_shadowScope();
 		STYLES = ["retromod", "animatic"];
 		DEFAULT_STYLE = "retromod";
 		STYLE_LABELS = {
@@ -13297,7 +13472,7 @@
 		};
 		LS_STYLE = "emporia_style";
 		current = null;
-		listeners$1 = /* @__PURE__ */ new Set();
+		listeners$2 = /* @__PURE__ */ new Set();
 		GLYPHS = "#!%&*+=?<>/\\0123456789ABCDEFGHJKLMNPQRSTUVWXYZ";
 	}));
 	// src/ui/AnimaticChrome.tsx
@@ -13895,7 +14070,8 @@
 	}
 	function findNextFocusable(element, direction = "next") {
 		if (!element) return null;
-		const all = Array.from(document.querySelectorAll(FOCUSABLE));
+		const scope = element.closest(".e-host-body") ?? document;
+		const all = Array.from(scope.querySelectorAll(FOCUSABLE));
 		const i = all.indexOf(element);
 		if (i === -1) return null;
 		return all[direction === "next" ? (i + 1) % all.length : (i - 1 + all.length) % all.length];
@@ -14511,7 +14687,9 @@
 		const p = window.__EMPORIA_HERMES_PROFILE__;
 		return p?.name ? p.name : null;
 	}
+	/** Never on the Desktop page: Desktop's own chat is the agent's, so the page has no drawer. */
 	function chatAvailable() {
+		if (MODE === "desktop") return false;
 		return !!sdk() && !!chatProfile();
 	}
 	/** A gateway for this tab's profile, over Hermes's own chat socket. */
@@ -14534,18 +14712,19 @@
 	}
 	/** Open the chat with `text` in the composer. The person reads it and sends it — or not. */
 	function askAgent(text) {
-		listeners.forEach((fn) => fn(text));
+		listeners$1.forEach((fn) => fn(text));
 	}
 	function onAsk(fn) {
-		listeners.add(fn);
-		return () => listeners.delete(fn);
+		listeners$1.add(fn);
+		return () => listeners$1.delete(fn);
 	}
-	var open$1, openSubs, listeners;
+	var open$1, openSubs, listeners$1;
 	var init_chatAccess = __esmMin((() => {
 		init_gateway();
+		init_transport();
 		open$1 = false;
 		openSubs = /* @__PURE__ */ new Set();
-		listeners = /* @__PURE__ */ new Set();
+		listeners$1 = /* @__PURE__ */ new Set();
 	}));
 	// src/chat/AskAgent.tsx
 	/**
@@ -18817,7 +18996,10 @@
 				className: "e-dim",
 				children: [
 					hermes.name,
-					" is not an Emporia agent. Pick an agent above to switch to its profile, or add this one: ",
+					" is not an Emporia agent.",
+					" ",
+					MODE === "desktop" ? "Switch Hermes to an agent's profile" : "Pick an agent above to switch to its profile",
+					", or add this one: ",
 					/* @__PURE__ */ (0, import_jsx_runtime$41.jsxs)("code", { children: ["emporia setup agent ", hermes.name] })
 				]
 			})
@@ -21015,15 +21197,7 @@
 		return typeof v === "object" && v !== null && !Array.isArray(v) && typeof v.chain_head === "string" && typeof v.origin_public_key_hex === "string";
 	}
 	function getPinnedRoomChainHead(pinKey) {
-		let raw;
-		try {
-			raw = localStorage.getItem(PIN_STORAGE_PREFIX + pinKey);
-		} catch {
-			return {
-				pin: null,
-				corrupt: false
-			};
-		}
+		const raw = readPref(PIN_STORAGE_PREFIX + pinKey);
 		if (!raw) return {
 			pin: null,
 			corrupt: false
@@ -21046,9 +21220,7 @@
 		};
 	}
 	function setPinnedRoomChainHead(pinKey, pin) {
-		try {
-			localStorage.setItem(PIN_STORAGE_PREFIX + pinKey, JSON.stringify(pin));
-		} catch {}
+		writePref(PIN_STORAGE_PREFIX + pinKey, JSON.stringify(pin));
 	}
 	function verifyRaw(dataBytes, sigHex, pubkeyHex) {
 		try {
@@ -21359,6 +21531,7 @@
 		init_encoding();
 		init_pyJson();
 		init_keyLog();
+		init_prefs();
 		PIN_STORAGE_PREFIX = "emporia.room_chain_pin.";
 	}));
 	// src/ui/IntegrityState.tsx
@@ -29147,18 +29320,29 @@
 	}));
 	// src/docTexts.plugin.ts
 	async function fetchDocTexts() {
-		const out = {};
-		await Promise.all(docList_default.map(async (d) => {
-			const r = await httpFetch(consoleUrl(`/docs/${d.path}`)).catch(() => null);
-			out[d.path] = r && r.ok ? await r.text() : `This document did not load (${r ? r.status : "no answer"}).`;
+		const r = await httpFetch(consoleUrl("/doc-texts")).catch(() => null);
+		const texts = r && r.ok ? (await r.json().catch(() => ({}))).texts ?? {} : {};
+		const why = `This document did not load (${r ? r.status : "no answer"}).`;
+		return Object.fromEntries(docList_default.map((d) => {
+			const t = texts[d.path];
+			return [d.path, typeof t === "string" ? t : why];
 		}));
-		return out;
 	}
 	var init_docTexts_plugin = __esmMin((() => {
 		init_docList();
 		init_transport();
 	}));
 	// src/docs.ts
+	/** Resolves once every doc has its text (at once when bundled). Fetched on the
+	*  first call, not at import: the Desktop page has no transport until it registers. */
+	function docsReady() {
+		loading ??= fetchDocTexts().then((texts) => {
+			for (const d of DOCS) d.text = texts[d.path] ?? "";
+		}, () => {
+			loading = null;
+		});
+		return loading;
+	}
 	/** Normalise `../docs/x.md`, `./x.md`, `x.md` against the linking doc's folder. */
 	function joinPath(fromPath, href) {
 		const parts = fromPath.split("/").slice(0, -1);
@@ -29194,7 +29378,7 @@
 			return words.every((w) => hay.includes(w));
 		});
 	}
-	var DOCS, docsReady, BY_PATH;
+	var DOCS, loading, BY_PATH;
 	var init_docs = __esmMin((() => {
 		init_docList();
 		init_docTexts_plugin();
@@ -29202,10 +29386,64 @@
 			...d,
 			text: ""
 		}));
-		docsReady = fetchDocTexts().then((texts) => {
-			for (const d of DOCS) d.text = texts[d.path] ?? "";
-		});
+		loading = null;
 		BY_PATH = new Map(DOCS.map((d) => [d.path, d]));
+	}));
+	// src/dashboardRoute.ts
+	/** The current route string, `#/<view>[/<id>][?…]`. */
+	function currentHash() {
+		return IN_MEMORY ? memoryHash : window.location.hash;
+	}
+	/** Record the route without announcing it (the app already shows it). */
+	function replaceHash(next) {
+		if (IN_MEMORY) {
+			memoryHash = next;
+			return;
+		}
+		if (window.location.hash === next) return;
+		window.history.replaceState(null, "", `${window.location.pathname}${window.location.search}${next}`);
+	}
+	/** Called on every route change from outside the app; returns the unsubscribe. */
+	function onRouteChange(fn) {
+		if (IN_MEMORY) {
+			listeners.add(fn);
+			return () => {
+				listeners.delete(fn);
+			};
+		}
+		window.addEventListener("hashchange", fn);
+		return () => window.removeEventListener("hashchange", fn);
+	}
+	/** Hash route: `#/games`, `#/games/<session_id>`, `#/season`, … Anything else opens the Overview. */
+	function routeFromHash(hash = currentHash()) {
+		const [rawView, rawId] = hash.replace(/^#\/?/, "").split("?")[0].trim().split("/");
+		const view = (rawView ?? "").toLowerCase();
+		if (!rawView || !VIEW_IDS.has(view)) return {
+			view: "overview",
+			sessionId: null
+		};
+		const id = rawId ? decodeURIComponent(rawId) : "";
+		return {
+			view,
+			sessionId: SESSION_ROUTES.has(view) && /^[A-Za-z0-9_.:-]{1,128}$/.test(id) ? id : null
+		};
+	}
+	function hashForView(view, sessionId) {
+		return sessionId && SESSION_ROUTES.has(view) ? `#/${view}/${encodeURIComponent(sessionId)}` : `#/${view}`;
+	}
+	function syncHash(view, sessionId) {
+		replaceHash(hashForView(view, sessionId));
+	}
+	var VIEW_IDS, SESSION_ROUTES, IN_MEMORY, DEFAULT_ROUTE, memoryHash, listeners;
+	var init_dashboardRoute = __esmMin((() => {
+		init_navConfig();
+		init_transport();
+		VIEW_IDS = new Set(NAV.map((n) => n.id));
+		SESSION_ROUTES = /* @__PURE__ */ new Set(["games", "deals"]);
+		IN_MEMORY = MODE === "desktop";
+		DEFAULT_ROUTE = "#/overview";
+		memoryHash = DEFAULT_ROUTE;
+		listeners = /* @__PURE__ */ new Set();
 	}));
 	// src/markdown.tsx
 	/** GitHub-style heading slug, so `#some-heading` links land. */
@@ -29377,7 +29615,7 @@
 	// src/views/DocsView.tsx
 	/** `#/docs?doc=payments` — so a document can be linked to and bookmarked. */
 	function docFromHash() {
-		const query = window.location.hash.split("?")[1] ?? "";
+		const query = currentHash().split("?")[1] ?? "";
 		return new URLSearchParams(query).get("doc");
 	}
 	function DocsView({ initialDocId }) {
@@ -29394,14 +29632,13 @@
 			anchor: null
 		});
 		(0, import_react$6.useEffect)(() => {
-			const next = `#/docs?doc=${docId}`;
-			if (window.location.hash !== next) window.history.replaceState(null, "", `${window.location.pathname}${window.location.search}${next}`);
+			replaceHash(`#/docs?doc=${docId}`);
 		}, [docId]);
 		const [query, setQuery] = (0, import_react$6.useState)("");
 		const [loaded, setLoaded] = (0, import_react$6.useState)(0);
 		(0, import_react$6.useEffect)(() => {
 			let live = true;
-			docsReady.then(() => {
+			docsReady().then(() => {
 				if (live) setLoaded((n) => n + 1);
 			});
 			return () => {
@@ -29501,8 +29738,14 @@
 		init_FlatRailItem();
 		init_layout();
 		init_docs();
+		init_dashboardRoute();
 		init_markdown();
 		import_jsx_runtime$7 = require_jsx_runtime();
+	}));
+	// src/buildInfo.ts
+	var EMPORIA_VERSION;
+	var init_buildInfo = __esmMin((() => {
+		EMPORIA_VERSION = "1.0.0";
 	}));
 	// src/ui/StyleSwitch.tsx
 	/**
@@ -29697,9 +29940,9 @@
 		});
 		return /* @__PURE__ */ (0, import_jsx_runtime$5.jsx)(ViewBody, {
 			flush: true,
-			toolbar: /* @__PURE__ */ (0, import_jsx_runtime$5.jsx)(Text, {
+			toolbar: /* @__PURE__ */ (0, import_jsx_runtime$5.jsxs)(Text, {
 				className: "e-faint",
-				children: "Read-only · change a setting by running its command in your own terminal"
+				children: ["Read-only · change a setting by running its command in your own terminal · plugin ", EMPORIA_VERSION]
 			}),
 			children: /* @__PURE__ */ (0, import_jsx_runtime$5.jsx)(SidebarLayout, {
 				sidebar,
@@ -29742,6 +29985,7 @@
 		init_hooks();
 		init_transport();
 		init_relayEnv();
+		init_buildInfo();
 		init_settings();
 		init_api();
 		init_relayCtx();
@@ -30054,35 +30298,6 @@
 		init_SettingsView();
 		init_RelayView();
 		init_GamifyView();
-	}));
-	// src/dashboardRoute.ts
-	/** Hash route: `#/games`, `#/games/<session_id>`, `#/season`, … Anything else opens the Overview. */
-	function routeFromHash(hash = window.location.hash) {
-		const [rawView, rawId] = hash.replace(/^#\/?/, "").split("?")[0].trim().split("/");
-		const view = (rawView ?? "").toLowerCase();
-		if (!rawView || !VIEW_IDS.has(view)) return {
-			view: "overview",
-			sessionId: null
-		};
-		const id = rawId ? decodeURIComponent(rawId) : "";
-		return {
-			view,
-			sessionId: SESSION_ROUTES.has(view) && /^[A-Za-z0-9_.:-]{1,128}$/.test(id) ? id : null
-		};
-	}
-	function hashForView(view, sessionId) {
-		return sessionId && SESSION_ROUTES.has(view) ? `#/${view}/${encodeURIComponent(sessionId)}` : `#/${view}`;
-	}
-	function syncHash(view, sessionId) {
-		const next = hashForView(view, sessionId);
-		if (window.location.hash === next) return;
-		window.history.replaceState(null, "", `${window.location.pathname}${window.location.search}${next}`);
-	}
-	var VIEW_IDS, SESSION_ROUTES;
-	var init_dashboardRoute = __esmMin((() => {
-		init_navConfig();
-		VIEW_IDS = new Set(NAV.map((n) => n.id));
-		SESSION_ROUTES = /* @__PURE__ */ new Set(["games", "deals"]);
 	}));
 	// src/chat/AgentChat.module.css
 	var toggle, glyph, label, menuItem, on, AgentChat_module_default;
@@ -31733,13 +31948,13 @@
 	function readTheme() {
 		if (PARAM_THEME) return PARAM_THEME;
 		if (CAPTURE) return "theme-light";
-		const v = localStorage.getItem(LS_THEME);
+		const v = readPref(LS_THEME);
 		return THEMES.includes(v ?? "") ? v : "theme-light";
 	}
 	function readTint() {
 		if (PARAM_TINT !== null) return PARAM_TINT;
 		if (CAPTURE) return "tint-green";
-		const v = localStorage.getItem(LS_TINT);
+		const v = readPref(LS_TINT);
 		return TINTS.includes(v ?? "") ? v : "";
 	}
 	function App() {
@@ -31747,6 +31962,7 @@
 	}
 	function AppInner() {
 		const { isRelayOperator, isSpectator } = useRelayCtx();
+		const hermesNonAgent = hermesProfile()?.isAgent === false;
 		const [view, setView] = (0, import_react.useState)(() => routeFromHash().view);
 		const [theme, setTheme] = (0, import_react.useState)(readTheme);
 		const [tint, setTint] = (0, import_react.useState)(readTint);
@@ -31771,9 +31987,9 @@
 			if (!viewer) return;
 			const poll = () => api.agentInbox(viewer, true, 1).then((d) => setInboxUnread(d.unread_total ?? d.count)).catch(() => {});
 			poll();
-			const t = setInterval(poll, 6e4);
+			const t = setInterval(poll, agentWs.connected ? 6e4 : 15e3);
 			return () => clearInterval(t);
-		}, [agentWs.last]);
+		}, [agentWs.last, agentWs.connected]);
 		const relayHealth = healthPoll ?? seed;
 		const latestEvent = events[0] ?? null;
 		const [seenEvent, setSeenEvent] = (0, import_react.useState)(latestEvent);
@@ -31795,11 +32011,11 @@
 		}, [theme, tint]);
 		const setThemeAndApply = (t) => {
 			setTheme(t);
-			if (!CAPTURE) localStorage.setItem(LS_THEME, t);
+			if (!CAPTURE) writePref(LS_THEME, t);
 		};
 		const setTintAndApply = (t) => {
 			setTint(t);
-			if (!CAPTURE) localStorage.setItem(LS_TINT, t);
+			if (!CAPTURE) writePref(LS_TINT, t);
 		};
 		const applyView = (0, import_react.useCallback)((id, sessionId) => {
 			setView(id);
@@ -31813,9 +32029,9 @@
 				setNavOpen(false);
 			};
 			onHash();
-			window.addEventListener("hashchange", onHash);
-			if (!window.location.hash) syncHash(routeFromHash().view);
-			return () => window.removeEventListener("hashchange", onHash);
+			const off = onRouteChange(onHash);
+			if (!currentHash()) syncHash(routeFromHash().view);
+			return off;
 		}, []);
 		const goToView = (0, import_react.useCallback)((id) => {
 			applyView(id);
@@ -31849,16 +32065,17 @@
 					return;
 				}
 				if (isTyping(e, shellRef.current) || e.metaKey || e.ctrlKey || e.altKey) return;
+				if (MODE === "desktop" && !(e.target instanceof Element && e.target.closest(`.e-desktop-root`))) return;
 				if (e.key === "t" || e.key === "T") {
 					instantNext.current = true;
 					if (e.key === "t") setTint((cur) => {
 						const next = nextTint(cur);
-						if (!CAPTURE) localStorage.setItem(LS_TINT, next);
+						if (!CAPTURE) writePref(LS_TINT, next);
 						return next;
 					});
 					else setTheme((cur) => {
 						const next = toggleTheme(cur);
-						if (!CAPTURE) localStorage.setItem(LS_THEME, next);
+						if (!CAPTURE) writePref(LS_THEME, next);
 						return next;
 					});
 					return;
@@ -32046,7 +32263,7 @@
 			})
 		});
 	}
-	var import_react, import_jsx_runtime$1, hermesNonAgent, LS_THEME, LS_TINT;
+	var import_react, import_jsx_runtime$1, LS_THEME, LS_TINT;
 	var init_App = __esmMin((() => {
 		init_global();
 		init_dashboard();
@@ -32064,7 +32281,8 @@
 		init_ViewerSwitcher();
 		init_NotAnAgentNote();
 		init_transport();
-		import_jsx_runtime$1 = require_jsx_runtime();
+		init_prefs();
+		init_shadowScope();
 		init_healthCtx();
 		init_themeConfig();
 		init_hooks();
@@ -32078,7 +32296,7 @@
 		init_styleMode();
 		init_AnimaticChrome();
 		init_AgentChat();
-		hermesNonAgent = hermesProfile()?.isAgent === false;
+		import_jsx_runtime$1 = require_jsx_runtime();
 		LS_THEME = "emporia_theme";
 		LS_TINT = "emporia_tint";
 	}));

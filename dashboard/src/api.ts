@@ -2,8 +2,9 @@ import type { AgentRecord, OperatorOverview } from "./settings";
 import { SESSION_TOKEN_KEY } from "./relayEnv";
 import { VIA_CONSOLE, httpFetch, relayHttpBase } from "./transport";
 
-// P126: the relay directly, or the local console signed in as the viewer.
-const BASE = relayHttpBase();
+// P126: the relay directly, or the local console signed in as the viewer — read
+// per request, because the Desktop page's viewer follows Hermes's profile.
+const base = () => relayHttpBase();
 
 // Sent on requests that scope data to the current agent: Authorization: Bearer
 // <jwt> from the dashboard/challenge flow. P261: the relay believes nothing else.
@@ -25,7 +26,7 @@ function agentHeaders(): HeadersInit {
 }
 
 async function get<T>(path: string, opts?: { agentScoped?: boolean }): Promise<T> {
-  const r = await httpFetch(`${BASE}${path}`, {
+  const r = await httpFetch(`${base()}${path}`, {
     headers: opts?.agentScoped ? agentHeaders() : {},
   });
   if (!r.ok) throw new Error(`${r.status} ${path}`);
@@ -33,7 +34,7 @@ async function get<T>(path: string, opts?: { agentScoped?: boolean }): Promise<T
 }
 
 async function post<T>(path: string, body: unknown): Promise<T> {
-  const r = await httpFetch(`${BASE}${path}`, {
+  const r = await httpFetch(`${base()}${path}`, {
     method: "POST",
     headers: { "Content-Type": "application/json", ...agentHeaders() },
     body: JSON.stringify(body),

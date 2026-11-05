@@ -23,10 +23,17 @@ export interface Doc {
 
 export const DOCS: Doc[] = LIST.map((d) => ({ ...d, text: BUNDLED_TEXTS?.[d.path] ?? "" }));
 
-/** Resolves once every doc has its text (at once when bundled). */
-export const docsReady: Promise<void> = BUNDLED_TEXTS
-  ? Promise.resolve()
-  : fetchDocTexts().then((texts) => { for (const d of DOCS) d.text = texts[d.path] ?? ""; });
+let loading: Promise<void> | null = null;
+
+/** Resolves once every doc has its text (at once when bundled). Fetched on the
+ *  first call, not at import: the Desktop page has no transport until it registers. */
+export function docsReady(): Promise<void> {
+  loading ??= BUNDLED_TEXTS
+    ? Promise.resolve()
+    : fetchDocTexts().then((texts) => { for (const d of DOCS) d.text = texts[d.path] ?? ""; },
+      () => { loading = null; });
+  return loading;
+}
 
 const BY_PATH = new Map(DOCS.map((d) => [d.path, d]));
 

@@ -8,6 +8,7 @@
  * so it shows no chat (docs/proposals/dashboard-chat.md).
  */
 import { ChatGateway } from "./gateway";
+import { MODE } from "../transport";
 
 interface HermesSdkLike {
   buildWsUrl: (path: string, params?: Record<string, string>) => Promise<string>;
@@ -32,7 +33,9 @@ export function chatProfile(): string | null {
   return p?.name ? p.name : null;
 }
 
+/** Never on the Desktop page: Desktop's own chat is the agent's, so the page has no drawer. */
 export function chatAvailable(): boolean {
+  if (MODE === "desktop") return false;
   return !!sdk() && !!chatProfile();
 }
 

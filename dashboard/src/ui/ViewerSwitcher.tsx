@@ -2,7 +2,7 @@ import React from "react";
 import { api } from "../api";
 import { useInterval } from "../hooks";
 import { VIEWER_ID, VIEWER_KEY } from "../relayEnv";
-import { VIA_CONSOLE, consoleUrl, hermesProfile, httpFetch } from "../transport";
+import { MODE, VIA_CONSOLE, consoleUrl, hermesProfile, httpFetch } from "../transport";
 
 /**
  * P123: view the dashboard as another agent on this relay — alpha, beta, the
@@ -16,6 +16,14 @@ import { VIA_CONSOLE, consoleUrl, hermesProfile, httpFetch } from "../transport"
  */
 export function ViewerSwitcher() {
   const hermes = hermesProfile();
+  // On the Desktop page, Desktop's own profile picker switches; the page follows it.
+  if (hermes && MODE === "desktop") {
+    return (
+      <span className="e-viewer-switch" title="The Hermes profile this page shows; switch it in Hermes">
+        <span className="e-faint">as</span> <span>{hermes.isAgent ? hermes.name : `${hermes.name} (no agent)`}</span>
+      </span>
+    );
+  }
   return hermes ? <HermesProfileSelect current={hermes} /> : <ViewerSelect />;
 }
 

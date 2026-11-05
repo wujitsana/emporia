@@ -9,11 +9,12 @@ import SidebarLayout from "@kit/SidebarLayout";
 import { FlatRailItem } from "../ui/FlatRailItem";
 import { ViewBody } from "../ui/layout";
 import { DOCS, docsReady, resolveDocLink, searchDocs } from "../docs";
+import { currentHash, replaceHash } from "../dashboardRoute";
 import { renderMarkdown } from "../markdown";
 
 /** `#/docs?doc=payments` — so a document can be linked to and bookmarked. */
 function docFromHash(): string | null {
-  const query = window.location.hash.split("?")[1] ?? "";
+  const query = currentHash().split("?")[1] ?? "";
   return new URLSearchParams(query).get("doc");
 }
 
@@ -28,18 +29,13 @@ export function DocsView({ initialDocId }: { initialDocId?: string | null }) {
   });
   const docId = nav.id;
   const openDoc = (id: string) => setNav((cur) => (cur.id === id ? cur : { id, anchor: null }));
-  useEffect(() => {
-    const next = `#/docs?doc=${docId}`;
-    if (window.location.hash !== next) {
-      window.history.replaceState(null, "", `${window.location.pathname}${window.location.search}${next}`);
-    }
-  }, [docId]);
+  useEffect(() => { replaceHash(`#/docs?doc=${docId}`); }, [docId]);
   const [query, setQuery] = useState("");
   // P295: in the Hermes tab the texts come from the console; render again once they have.
   const [loaded, setLoaded] = useState(0);
   useEffect(() => {
     let live = true;
-    void docsReady.then(() => { if (live) setLoaded((n) => n + 1); });
+    void docsReady().then(() => { if (live) setLoaded((n) => n + 1); });
     return () => { live = false; };
   }, []);
   // State, not a ref object: the scroll helpers are handed to the markdown

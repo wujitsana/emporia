@@ -264,3 +264,14 @@ def test_the_standalone_console_sends_a_strict_content_security_policy(tmp_path)
     (ui / "index.html").write_text('<!doctype html><script type="module" src="/assets/a.js"></script>')
     plain = TestClient(build_app(_console(), ui_dir=ui)).get("/").headers["content-security-policy"]
     assert "script-src 'self';" in plain and "style-src 'self';" in plain
+
+
+def test_the_console_serves_every_listed_doc_as_json_for_the_desktop_page():
+    """The Desktop page reaches the console through ctx.rest, which carries JSON only."""
+    from pathlib import Path
+    doc_list = Path(__file__).resolve().parents[1] / "dashboard" / "src" / "docList.json"
+    listed = {d["path"] for d in json.loads(doc_list.read_text())}
+    texts = TestClient(build_app(_console())).get("/doc-texts").json()["texts"]
+    assert set(texts) == listed
+    assert texts["docs/payments.md"].startswith("#")
+    assert "docs/security-log.md" not in texts

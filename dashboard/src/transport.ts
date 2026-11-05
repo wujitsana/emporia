@@ -10,12 +10,19 @@
  * - **hermes**: the same console, reached through the Hermes dashboard's
  *   plugin API (`/api/plugins/emporia/…`), behind Hermes's sign-in. Requests
  *   go through the Hermes plugin SDK, which carries that sign-in.
+ * - **desktop**: the same plugin API, from the Hermes Desktop page (and the
+ *   browser Webapp, which runs the same renderer). Requests go through
+ *   `ctx.rest`, which carries Desktop's sign-in and profile; sockets through
+ *   `ctx.socket` (desktop/restShim.ts). Fixed at build time
+ *   (vite.desktop.config.ts), because the page is one module evaluated once.
  *
  * See docs/local-console.md.
  */
 import { resolveRelayUrl, VIEWER_ID } from "./relayEnv";
+import { desktopBridge } from "./desktop/bridge";
+import { PLUGIN_BASE, PluginSocket, restFetch } from "./desktop/restShim";
 
-export type Mode = "relay" | "console" | "hermes";
+export type Mode = "relay" | "console" | "hermes" | "desktop";
 
 interface HermesSdk {
   authedFetch: (url: string, init?: RequestInit) => Promise<Response>;
@@ -33,27 +40,42 @@ function hermesSdk(): HermesSdk | null {
   return typeof window !== "undefined" ? window.__EMPORIA_HERMES_SDK__ ?? null : null;
 }
 
-export const MODE: Mode = hermesSdk()
-  ? "hermes"
-  : import.meta.env.VITE_EMPORIA_MODE === "console" ? "console" : "relay";
+export const MODE: Mode = import.meta.env.VITE_EMPORIA_MODE === "desktop"
+  ? "desktop"
+  : hermesSdk()
+    ? "hermes"
+    : import.meta.env.VITE_EMPORIA_MODE === "console" ? "console" : "relay";
 
-/** P231: inside the Hermes dashboard, the Hermes profile the tab is open in —
- *  the tab views as that profile's agent and offers no switcher. Null elsewhere. */
-export function hermesProfile(): { name: string; isAgent: boolean } | null {
+/** Inside a Hermes host (the dashboard tab or the Desktop page): the app is the profile's. */
+export const IN_HERMES = MODE === "hermes" || MODE === "desktop";
+
+export interface HostProfile {
+  name: string;
+  isAgent: boolean;
+}
+
+let desktopProfile: HostProfile | null = null;
+
+/** The Desktop page sets the profile it is showing (desktop/mount.tsx). */
+export function setDesktopProfile(p: HostProfile | null): void {
+  desktopProfile = p;
+}
+
+/** P231: inside Hermes, the Hermes profile the tab or page is open in — the
+ *  app views as that profile's agent and offers no switcher. Null elsewhere. */
+export function hermesProfile(): HostProfile | null {
+  if (MODE === "desktop") return desktopProfile;
   return typeof window !== "undefined"
-    ? (window as { __EMPORIA_HERMES_PROFILE__?: { name: string; isAgent: boolean } | null })
-      .__EMPORIA_HERMES_PROFILE__ ?? null
+    ? (window as { __EMPORIA_HERMES_PROFILE__?: HostProfile | null }).__EMPORIA_HERMES_PROFILE__ ?? null
     : null;
 }
 
 /** Whether the local console is in front: local agents, signed requests, DMs opened. */
 export const VIA_CONSOLE = MODE !== "relay";
 
-const PLUGIN_BASE = "/api/plugins/emporia";
-
 /** The console's own endpoints (`/agents`, `/dm/<agent>/open`), by mode. */
 export function consoleUrl(path: string): string {
-  return (MODE === "hermes" ? PLUGIN_BASE : "") + path;
+  return (IN_HERMES ? PLUGIN_BASE : "") + path;
 }
 
 /** Base URL for relay REST calls. Via the console it names the viewer, whom the
@@ -64,6 +86,10 @@ export function relayHttpBase(viewer: string | null = VIEWER_ID): string {
 }
 
 export function httpFetch(url: string, init: RequestInit = {}): Promise<Response> {
+  if (MODE === "desktop") {
+    const bridge = desktopBridge();
+    return bridge ? restFetch(bridge, url, init) : Promise.reject(new Error("the Desktop plugin is not loaded"));
+  }
   const sdk = hermesSdk();
   if (sdk) return sdk.authedFetch(url, init);
   return fetch(url, { credentials: "same-origin", ...init });
@@ -78,7 +104,8 @@ function wsOrigin(): string {
  * Open a relay websocket (`/ws/agent/<id>`, `/ws/rooms/<id>`, `/ws/events`,
  * `/ws/<session>`). Async because the Hermes SDK mints a single-use ticket per
  * socket. Via the console, identity params are dropped here and added by the
- * console for the viewer.
+ * console for the viewer. On Desktop the socket only receives (see
+ * desktop/restShim.ts PluginSocket).
  */
 export async function relaySocket(path: string, params = new URLSearchParams()): Promise<WebSocket> {
   if (!VIA_CONSOLE) {
@@ -89,11 +116,16 @@ export async function relaySocket(path: string, params = new URLSearchParams()):
   params.delete("token");
   params.delete("agent_id");
   const viewer = encodeURIComponent(VIEWER_ID ?? "");
+  const q = params.toString();
+  if (MODE === "desktop") {
+    const bridge = desktopBridge();
+    if (!bridge) throw new Error("the Desktop plugin is not loaded");
+    return new PluginSocket(bridge, `/ws/${viewer}${path}${q ? `?${q}` : ""}`) as unknown as WebSocket;
+  }
   const sdk = hermesSdk();
   if (sdk) {
     return new WebSocket(await sdk.buildWsUrl(`${PLUGIN_BASE}/ws/${viewer}${path}`,
       Object.fromEntries(params)));
   }
-  const q = params.toString();
   return new WebSocket(`${wsOrigin()}/ws/${viewer}${path}${q ? `?${q}` : ""}`);
 }

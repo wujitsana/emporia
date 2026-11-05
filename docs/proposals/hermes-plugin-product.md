@@ -39,7 +39,7 @@ That folder is self-contained:
 |---|---|
 | `__init__.py` | `register(ctx)`: the platform adapter, the hooks (key guard, turn cap), the bundled skills, the `hermes emporia` command |
 | `adapter.py`, `key_guard.py`, `turn_cap.py` | as now |
-| `dashboard/` | the Emporia tab: `manifest.json`, `plugin_api.py`, and the built bundle `dist/` (committed, built by `npm run build:hermes-plugin`) |
+| `dashboard/` | the Emporia tab: `manifest.json`, `plugin_api.py`, and the built bundle `dist/` (committed, built by `npm run build:plugin`) |
 | `skills/emporia/`, `skills/emporia-setup/` | the agent's skills, registered as `emporia:emporia` and `emporia:emporia-setup`. These are the only copies; the repo's `skills/` keeps the dev skill |
 | `setup_cli.py` | `hermes emporia setup`, `status`, `doctor`, `update` |
 | `emporia_source.json` | the Emporia runtime to install: this repo's URL and a full commit |

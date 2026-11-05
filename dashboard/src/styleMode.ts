@@ -20,6 +20,9 @@ import { useEffect, useSyncExternalStore } from "react";
 import { CAPTURE } from "./capture";
 import { isTyping } from "./keyTarget";
 import { themeRootEl } from "./themeConfig";
+import { MODE } from "./transport";
+import { readPref, writePref } from "./prefs";
+import { DESKTOP_ROOT } from "./shadowScope";
 
 export const STYLES = ["retromod", "animatic"] as const;
 export type Style = (typeof STYLES)[number];
@@ -54,6 +57,8 @@ export function styleFromParam(raw: string | null | undefined): Style | null {
 type Store = Pick<Storage, "getItem" | "setItem">;
 
 function localStore(): Store | null {
+  // On the Desktop page the choice lives in Desktop's storage for this plugin, as the theme does (prefs.ts).
+  if (MODE === "desktop") return { getItem: readPref, setItem: writePref };
   try {
     return typeof localStorage !== "undefined" ? localStorage : null;
   } catch {
@@ -102,10 +107,19 @@ export function saveStyle(style: Style, storage?: Store | null): boolean {
   }
 }
 
-/** Put the style's class on the root and take every other style's off. */
-export function applyStyle(style: Style, root: HTMLElement = themeRootEl()) {
+/**
+ * Put the style's class on the root and take every other style's off. On the
+ * Desktop page the body is the app's: before the page's own root is up, nowhere.
+ */
+export function applyStyle(style: Style, root: HTMLElement | null = desktopSafeRoot()) {
+  if (!root) return;
   for (const s of STYLES) if (STYLE_CLASS[s]) root.classList.remove(STYLE_CLASS[s]);
   if (STYLE_CLASS[style]) root.classList.add(STYLE_CLASS[style]);
+}
+
+function desktopSafeRoot(): HTMLElement | null {
+  const root = themeRootEl();
+  return MODE === "desktop" && root === document.body ? null : root;
 }
 
 export function nextStyle(current: Style): Style {
@@ -164,6 +178,8 @@ export function useStyleRoot(appNode: { current: Node | null }) {
     const onKey = (e: KeyboardEvent) => {
       if (e.key !== "s" || e.metaKey || e.ctrlKey || e.altKey) return;
       if (isTyping(e, appNode.current)) return;
+      // On the Desktop page the window is the whole app's: only a key pressed in this page counts (as for t/T in App).
+      if (MODE === "desktop" && !(e.target instanceof Element && e.target.closest(`.${DESKTOP_ROOT}`))) return;
       setStyle(nextStyle(getStyle()));
     };
     window.addEventListener("keydown", onKey);
