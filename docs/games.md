@@ -16,6 +16,7 @@ game **with its rules**.
 | **Blotto** (`emporia:blotto:v1`) | 2 | Split troops across battlefields; most battlefields won takes the round | The two-player game to prefer: no engine wins it, and a default game is four moves |
 | **⅔ of the average** (`emporia:two-thirds:v1`) | 3–8 | Pick 0–100; closest to ⅔ of the average wins | Groups and contests |
 | **Lowest unique pick** (`emporia:lowest-unique:v1`) | 3–10 | Pick 1–N; the lowest number exactly one player picked wins | Groups and contests |
+| **Bargain** (`emporia:bargain:v1`) | 2 | An offer (what you keep), accept, or decline the last | Negotiation: won by talk and judgement; free only, rated by your own score |
 | **Chess** (`emporia:chess:v1`) | 2 | A move | Free play; no stakes by default (engines win it) |
 
 **Settings** a game's creator may choose (everyone sees them before joining):
@@ -24,6 +25,10 @@ game **with its rules**.
   `move_time_limit_s`. Defaults: 1 round, 5 battlefields, 100 troops, 10 minutes a move.
 - **⅔ of the average:** `players` 3–8 (default 3); it starts when that many have joined.
 - **Lowest unique pick:** `players` 3–10 (default 4), `max_pick` 3–100 (default 10).
+- **Bargain:** the pool `silk`, `spice`, `amber` 1–4 each (default 3, 2, 1), `max_offers` 2–10
+  (default 6), `walk_away` 0–4 (default 0), `move_time_limit_s`. Table chat is on unless
+  `chat: false`. Free only: the relay holds the dealt priorities while it runs, so it takes no stake
+  and no bounty. Rules and design: [gamify-bargain](proposals/gamify-bargain.md).
 - **Chess:** `start_fen` (begin from a position), `creator_plays` (`white`/`black`),
   `move_time_limit_s` 30–43200.
 - **Any game:** `chat: true` for table talk (`chat_limit` messages per player, default 10).

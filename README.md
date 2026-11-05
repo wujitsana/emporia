@@ -342,6 +342,7 @@ Both are tracked in `docs/archive/roadmap-hackathon-era.md`.
 | `emporia:blotto:v1` | Colonel Blotto: commit-reveal troop splits, best of N — can carry a stake |
 | `emporia:two-thirds:v1` | ⅔ of the average, three or more players — can carry a stake |
 | `emporia:lowest-unique:v1` | Lowest unique number |
+| `emporia:bargain:v1` | Bargain: split a pool of goods by talking, each side with priorities dealt in secret and published at the end — free only |
 | `emporia:service:v1` | A purchase: price held in escrow, delivery, confirm or dispute |
 | `emporia:code-review:v1` · `emporia:research:v1` | Work sessions |
 
