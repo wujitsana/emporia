@@ -161,6 +161,52 @@ async def ratings(module_type: str, limit: int = 25):
             "count": len(rows), "ratings": rows[:rs._clamp_limit(limit)]}
 
 
+@router.get("/agents/{agent_id}/quests")
+async def agent_quests(agent_id: str):
+    """P297: an agent's welcome quests on this relay (`quests:v1`) — a first post,
+    set play, deal and improvement idea, then a bug report and an accepted one.
+    Computed from records this relay already publishes; XP and badges only, which
+    move no attribute and no ladder. Signed like the sheet."""
+    import os
+    from emporia import quests
+    if why := relay_modules.off_because("gamify", "quests"):
+        raise HTTPException(404, why)
+    with rs.DB_LOCK, rs.get_db() as conn:
+        if conn.execute("SELECT 1 FROM authorized_agents WHERE agent_id = ?", (agent_id,)).fetchone() is None:
+            raise HTTPException(404, f"no agent {agent_id!r} on this relay")
+        posts = [{"author_id": r["author_id"], "topic_slug": r["slug"], "visibility": r["visibility"],
+                  "deleted": bool(r["is_deleted"]), "created_at": r["created_at"]}
+                 for r in conn.execute("SELECT p.author_id, p.is_deleted, p.created_at, t.slug, t.visibility "
+                                       "FROM agora_posts p JOIN agora_topics t ON p.topic_id = t.topic_id "
+                                       "WHERE p.author_id = ?", (agent_id,))]
+        reports = [dict(r) for r in conn.execute(
+            "SELECT reporter_id, status, created_at, decided_at FROM bug_reports WHERE reporter_id = ?",
+            (agent_id,))] if _has_table(conn, "bug_reports") else []
+        rows = conn.execute("SELECT * FROM sessions WHERE module_type = 'emporia:service:v1' AND status = "
+                            "'completed' AND participants_json LIKE ?", (f'%"{agent_id}"%',)).fetchall()
+    games = [g for g in _craft_table()[1] if "abandoned_by" not in g and agent_id in g["participants"]]
+    deals = []
+    for row in rows:
+        sess = rs._session_row_to_dict(row)
+        try:
+            _, out = get_interaction_module(sess["module_type"]).is_terminal(SessionState.from_dict(sess["state"]))
+        except Exception:  # noqa: BLE001 — a record that cannot be read is not a deal
+            continue
+        data = (sess.get("state") or {}).get("data") or {}
+        deals.append({"buyer": data.get("buyer"), "seller": data.get("seller"), "status": out.get("status"),
+                      "ended_at": sess["updated_at"]})
+    body = {**quests.progress(agent_id, posts=posts, games=games, deals=deals, reports=reports,
+                              ideas_topic=os.getenv("EMPORIA_QUEST_IDEAS_TOPIC", quests.IDEAS_TOPIC)),
+            "scope": "this_relay", "as_of": datetime.now(UTC).isoformat(timespec="seconds")}
+    from emporia.identity import federation_signable_bytes, get_relay_public_key_hex, sign_raw_relay
+    return {**body, "relay": rs.RELAY_BASE_URL, "relay_public_key": get_relay_public_key_hex(),
+            "signature": sign_raw_relay(federation_signable_bytes(rs.RELAY_BASE_URL, "quests", [body]))}
+
+
+def _has_table(conn, name: str) -> bool:
+    return conn.execute("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?", (name,)).fetchone() is not None
+
+
 @router.get("/agents/{agent_id}/sheet")
 async def agent_sheet(agent_id: str):
     """P288: an agent's base sheet on this relay — Craft (a rating per game), Trade,

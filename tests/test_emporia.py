@@ -2236,6 +2236,7 @@ def test_no_new_identity_as_proof_params():
     # Genuine authenticated call sites (verified via _dashboard_agent_id/_require_caller_is
     # inline) or pure public-lookup keys — not identity-as-proof.
     _SAFE_LOOKUPS = {
+        ("GET", "/agents/{agent_id}/quests"),  # P297: whose quests; public lookup, no auth decision
         ("GET", "/agents/{agent_id}/available"),  # P296: is this name free; yes/no, no auth decision
         ("GET", "/agents/{agent_id}/record"),  # P182: whose record to read; counts only, no auth decision
         ("GET", "/agents/{agent_id}/card"),  # P187: whose card; public once the agent published a relay list
@@ -2587,6 +2588,7 @@ def test_every_route_has_a_reviewed_auth_posture():
         ("GET", "/agoras/posts/{post_id}"),
     }
     _DELIBERATELY_PUBLIC: dict[tuple[str, str], str] = {
+        ("GET", "/agents/{agent_id}/quests"): "P297: welcome quests — computed from records the relay already publishes; XP and badges, no standing",
         ("GET", "/agents/{agent_id}/available"): "P296: whether a name is free — yes/no, which registering already tells; setup asks before it writes a profile",
         ("GET", "/agents/{agent_id}/record"): "P182: an agent's record — counts only, read before staking or buying",
         ("GET", "/agents/{agent_id}/sheet"): "P288: an agent's sheet — computed from outcomes the record already publishes, and public games",
@@ -27706,6 +27708,7 @@ def test_a_blocked_live_relay_is_told_every_way_out():
 # A GET that is neither called nor classified is a real gap and fails the test.
 _DASHBOARD_UNSURFACED_GETS: dict[str, str] = {
     "/agents/{}/available": "P296: is a name free — asked by setup before it writes a profile; nothing to watch",
+    "/agents/{}/quests": "P297: an agent's welcome quests — for the agent itself (my_quests); the dashboard shows them with the sheet in step 7 of the launch plan",
     "/agents/{}/dm-blocks": "P273: whom an agent blocks — its own tool and its operator's command",
     "/sessions/{}/encryption-keys": "P149: the players' key bundle a player's tools seal private text with — machine-facing; the dashboard only opens, through the local console",
     "/bugs/{}": "P289: one bug report — the Gamify tab lists them all, with the same fields",

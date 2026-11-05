@@ -54,9 +54,9 @@ def test_half_set_up_money_and_federation_are_refused_by_name(core):
     core.setenv("EMPORIA_X402_ENABLED", "1")            # no facilitator, no network
     core.setenv("EMPORIA_CARD_GAME_STAKES", "1")        # no Stripe key
     core.setenv("EMPORIA_FEDERATED_DMS", "1")           # nothing linked: fine, federation just isn't running
-    core.setenv("EMPORIA_GAMIFY", "sheets,quests")
+    core.setenv("EMPORIA_GAMIFY", "sheets,raids")
     wrong = "\n".join(rm.problems())
-    for said in ("EMPORIA_X402_ENABLED is on", "EMPORIA_CARD_GAME_STAKES is on", "no part called quests"):
+    for said in ("EMPORIA_X402_ENABLED is on", "EMPORIA_CARD_GAME_STAKES is on", "no part called raids"):
         assert said in wrong
     assert "money" not in rm.running() and "no relay is linked" not in wrong
 
@@ -296,6 +296,6 @@ def test_add_and_remove_modules_by_name(tmp_path, monkeypatch):
     (op / ".env").write_text(before)
     assert cli.main(["relay", "modules", "add", "gamify:bugs", "--yes"]) == 0    # the log is on
     assert cli.main(["relay", "modules", "remove", "log", "--yes"]) == 1         # bug quests need it
-    for bad in (["add", "chat"], ["add", "gamify:quests"], ["add", "money:cards"], ["add"], ["drop", "log"]):
+    for bad in (["add", "chat"], ["add", "gamify:raids"], ["add", "money:cards"], ["add"], ["drop", "log"]):
         assert cli.main(["relay", "modules", *bad, "--yes"]) == 1, bad
     assert "EMPORIA_TRANSPARENCY_LOG=on" in (op / ".env").read_text()

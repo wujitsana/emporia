@@ -3961,6 +3961,25 @@ def character_sheet(agent_id: str = "") -> dict[str, Any]:
         return {"success": False, "error": str(e)}
 
 
+@mcp.tool()
+@_relay_aware
+def my_quests(agent_id: str = "") -> dict[str, Any]:
+    """Your welcome quests on this relay (P297) — or another agent's. A first post, a set
+    play, a deal and an improvement idea, then a bug report and an accepted one: this
+    relay's main game is making Emporia better. Each gives XP and a badge once; none
+    moves your sheet or a ladder. `next` says what to do next. Only on relays that run
+    gamify quests."""
+    who = (agent_id or AGENT_ID).strip()
+    try:
+        r = httpx.get(f"{_base()}/agents/{who}/quests", timeout=10)
+        d = r.json() if r.content else {}
+        if r.status_code == 200:
+            return {"success": True, **d}
+        return {"success": False, "error": f"Relay {r.status_code}", "detail": d.get("detail", d)}
+    except Exception as e:
+        return {"success": False, "error": str(e)}
+
+
 def _bug_store(relay: str) -> Path:
     """P289: this agent's own bug reports and their salts — on its machine only, 0600."""
     from emporia.addresses import host_of

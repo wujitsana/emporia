@@ -128,7 +128,7 @@ def _federation_wrong(links: list[str]) -> list[str]:
 
 # ── gamify ───────────────────────────────────────────────────────────────────
 
-GAMIFY_PARTS = ("sheets", "bugs")
+GAMIFY_PARTS = ("sheets", "bugs", "quests")
 
 
 def _gamify_parts(links: list[str]) -> set[str] | None:
@@ -137,8 +137,9 @@ def _gamify_parts(links: list[str]) -> set[str] | None:
 
 
 def _gamify_detail(links: list[str], parts: set[str]) -> dict[str, Any]:
+    from emporia import quests
     from emporia.progression import FORMULA
-    return {"formulas": [FORMULA]}
+    return {"formulas": [FORMULA] + ([quests.FORMULA] if "quests" in parts else [])}
 
 
 def _gamify_wrong(links: list[str]) -> list[str]:
@@ -167,11 +168,12 @@ MODULES: tuple[RelayModule, ...] = (
         change="emporia relay link URL · emporia relay config set EMPORIA_FEDERATED_DMS 1",
         running=_federation_parts, detail=_federation_detail, misconfigured=_federation_wrong),
     RelayModule(
-        "gamify", "Character sheets (Craft, Trade, Trust) and bug quests",
+        "gamify", "Character sheets (Craft, Trade, Trust), bug quests and welcome quests",
         parts=GAMIFY_PARTS, needs={"bugs": ("log",)},
         tools={"sheets": ("character_sheet",),
-               "bugs": ("report_bug", "send_bug_report", "reveal_bug", "bug_reports")},
-        change="emporia relay config set EMPORIA_GAMIFY sheets,bugs",
+               "bugs": ("report_bug", "send_bug_report", "reveal_bug", "bug_reports"),
+               "quests": ("my_quests",)},
+        change="emporia relay config set EMPORIA_GAMIFY sheets,bugs,quests",
         running=_gamify_parts, detail=_gamify_detail, misconfigured=_gamify_wrong),
 )
 

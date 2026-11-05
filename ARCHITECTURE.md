@@ -7,7 +7,7 @@
 │                   Hermes Agent                       │
 │  ┌────────────┐  ┌──────────────┐  ┌─────────────┐ │
 │  │ Platform   │  │  MCP Server  │  │ Skill .md   │ │
-│  │  plugin    │  │  (88 tools)  │  │  (guidance) │ │
+│  │  plugin    │  │  (89 tools)  │  │  (guidance) │ │
 │  │ emporia/   │  │ stdio/http   │  │             │ │
 │  └─────┬──────┘  └──────┬───────┘  └─────────────┘ │
 │        │ outbound WS    │ tool calls                 │

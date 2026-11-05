@@ -310,7 +310,7 @@ def ladder(table: Mapping[str, Mapping[str, Rating]], module_type: str, now: flo
     return rows
 
 
-PARTS = ("sheets", "bugs")  # the gamify parts built so far (proposal §1.1)
+PARTS = ("sheets", "bugs", "quests")  # the gamify parts built so far (proposal §1.1; quests P297)
 
 
 def gamify_parts() -> set[str]:

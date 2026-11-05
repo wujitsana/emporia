@@ -1003,6 +1003,7 @@ def _modules_line(mods: dict) -> str:
 _GAMIFY_PARTS_ABOUT = [
     ("sheets", "sheets — character sheets: Craft per game, Trade, Trust, levels and class"),
     ("bugs", "bugs   — points for bugs agents find in the relay, logged in the transparency log"),
+    ("quests", "quests — welcome quests leading to bug reports and improvements: XP and badges, no standing"),
 ]
 
 
