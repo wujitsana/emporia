@@ -12,7 +12,9 @@
 Two ways to reach it, and nothing else:
 
 * **socket** — a Unix socket in a 0700 directory; the Hermes dashboard plugin
-  proxies to it after Hermes's own sign-in. File permissions are the gate.
+  proxies to it after Hermes's own sign-in. One console per Hermes profile, serving
+  that profile's agents only, and every request carries the secret the plugin gave
+  it at start (`SECRET_HEADER`): the folder's permissions are not the only gate.
 * **standalone** — 127.0.0.1 only, for agent systems without a dashboard of
   their own. A one-time link sets an HttpOnly, SameSite=Strict cookie; every
   request needs it, and a Host other than localhost is refused (DNS rebinding).
@@ -47,10 +49,14 @@ class Console:
     """What the routes share: the key directories, the relay, the session secret."""
 
     def __init__(self, key_dirs: list[Path], relay_url: str, *, session_token: str | None,
-                 transport=None):
+                 socket_secret: str | None = None, transport=None):
         self.key_dirs = key_dirs
         self.relay = RelayClient(relay_url, transport=transport)
         self.session_token = session_token     # None in socket mode
+        # Console scope: in socket mode, the per-start secret the dashboard plugin gave this
+        # process on stdin and presents on every request (SECRET_HEADER). None: no secret
+        # is asked (tests that build the app directly).
+        self.socket_secret = socket_secret
         # P198: the printed link works once; the cookie it sets is a separate
         # secret, so a link seen again (logs, shell history) opens nothing.
         self.link_key: str | None = session_token
@@ -122,9 +128,14 @@ class Console:
         return opened
 
 
-def _authorized(console: Console, cookies: dict[str, str], host: str) -> bool:
+#: Console scope: the header carrying the per-start socket secret (socket mode).
+SECRET_HEADER = "x-emporia-console-secret"
+
+
+def _authorized(console: Console, cookies: dict[str, str], host: str, secret: str = "") -> bool:
     if console.session_token is None:
-        return True                                   # socket mode: the filesystem is the gate
+        # Socket mode: the 0700 folder, and the secret its plugin was given at this start.
+        return console.socket_secret is None or secrets.compare_digest(secret, console.socket_secret)
     name = host.split("]")[0] + "]" if host.startswith("[") else host.rsplit(":", 1)[0]
     if name not in _LOCAL_HOSTS:
         return False
@@ -184,7 +195,8 @@ def build_app(console: Console, *, ui_dir: Path | None = None) -> FastAPI:
     async def gate(request: Request, call_next):
         if request.url.path == "/session":
             response = await call_next(request)
-        elif not _authorized(console, dict(request.cookies), request.headers.get("host", "")):
+        elif not _authorized(console, dict(request.cookies), request.headers.get("host", ""),
+                             request.headers.get(SECRET_HEADER, "")):
             response = JSONResponse({"detail": "open the console with the link it printed"}, status_code=401)
         else:
             response = await call_next(request)
@@ -334,7 +346,8 @@ def build_app(console: Console, *, ui_dir: Path | None = None) -> FastAPI:
     async def ws(socket: WebSocket, agent_id: str, path: str):
         import websockets
 
-        if not _authorized(console, dict(socket.cookies), socket.headers.get("host", "")):
+        if not _authorized(console, dict(socket.cookies), socket.headers.get("host", ""),
+                           socket.headers.get(SECRET_HEADER, "")):
             await socket.close(code=1008)
             return
         agent = console.agents().get(agent_id)
