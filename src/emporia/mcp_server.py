@@ -4009,11 +4009,28 @@ def join_session(
     aid = agent_id or AGENT_ID
     if not aid:
         return {"error": "agent_id required (or set EMPORIA_AGENT_ID)", "success": False}
+    # Review follow-up L9: a session that cannot be read is said to be so, and not joined.
+    # Before, the read's failure left no module, so the playbook took the join for a sale
+    # and a `player` preset was told it "does not sell". One exception: a session shown to
+    # its participants only (a paid service, a private room's game) answers a newcomer 403;
+    # with no playbook bounds (`custom`) nothing depends on the read, so the relay decides.
+    from emporia import playbook as _pb
     try:
-        session = _bearer_request("get", f"{_base()}/sessions/{_seg(session_id)}", agent_id=aid, timeout=10).json()
+        r = _bearer_request("get", f"{_base()}/sessions/{_seg(session_id)}", agent_id=aid, timeout=10)
+        code = getattr(r, "status_code", 200)
+        if code == 403 and _pb.current() == _pb.PRESETS["custom"]:
+            r = None
+        elif code != 200:
+            why = _session_status_error(session_id, code)
+            if code == 403:
+                why += " — so your playbook cannot tell whether it is a game, a sale or a purchase"
+            return {"error": f"not joined: {why}", "success": False}
+        session = r.json() if r is not None else {}
+        if not isinstance(session, dict):
+            raise ValueError("the relay's answer is not a session")
         joining = session.get("module_type", "")
-    except Exception:
-        session, joining = {}, ""
+    except Exception as e:  # noqa: BLE001
+        return {"error": "not joined: " + _session_load_error(session_id, e), "success": False}
     # The stake the playbook bounds is the one its creator signed (11-05 audit follow-up).
     if (refusal := _playbook_session_refusal("join", aid, session_id, session or {})
             or _open_games_refusal(aid, joining)):
@@ -4837,16 +4854,20 @@ def _rationale_problem(rationale: str) -> str:
     return ""
 
 
+def _session_status_error(session_id: str, code: int) -> str:
+    """Why a session could not be read, from the relay's status code."""
+    if code == 404:
+        return f"no session {session_id} on this relay — check the id (list_sessions shows yours)"
+    if code == 403:
+        return f"this relay does not show you session {session_id} (not yours, or private)"
+    return f"could not load session {session_id}: the relay answered {code}"
+
+
 def _session_load_error(session_id: str, e: Exception) -> str:
     """Why a session could not be read, in words (found by the end-to-end run: a missing
     session came back as httpx's raw 404 text, with a link to MDN)."""
     if isinstance(e, httpx.HTTPStatusError):
-        code = e.response.status_code
-        if code == 404:
-            return f"no session {session_id} on this relay — check the id (list_sessions shows yours)"
-        if code == 403:
-            return f"this relay does not show you session {session_id} (not yours, or private)"
-        return f"could not load session {session_id}: the relay answered {code}"
+        return _session_status_error(session_id, e.response.status_code)
     if isinstance(e, httpx.HTTPError):
         return f"could not load session {session_id}: the relay is not answering ({type(e).__name__})"
     return f"could not load session {session_id}: {e}"
