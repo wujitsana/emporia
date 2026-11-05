@@ -340,6 +340,8 @@ def test_update_with_nothing_to_do_says_so_and_names_each_profile_to_restart(mon
     ran = []
     monkeypatch.setattr(setup_cli, "_run", lambda argv, cwd=None: ran.append(argv) or "")
     (rt / ".git").mkdir(parents=True)
+    (rt / setup_cli.LOCKED_REQUIREMENTS).parent.mkdir(parents=True)       # a runtime's own export, for
+    (rt / setup_cli.LOCKED_REQUIREMENTS).write_text("")                   # a machine with no uv
     monkeypatch.setattr(setup_cli, "_is_emporia", lambda r: True)
     py.parent.mkdir(parents=True)
     py.write_text("")
@@ -354,3 +356,80 @@ def test_update_with_nothing_to_do_says_so_and_names_each_profile_to_restart(mon
     out = capsys.readouterr().out
     assert "nothing to do" in out and "restart" not in out and "Installing" not in out
     assert all("install" not in " ".join(a) and "sync" not in a for a in ran[installs:]), ran[installs:]
+
+
+def test_without_uv_pip_installs_the_hash_locked_requirements(monkeypatch, tmp_path):
+    """Security follow-up (11-05 audit): with no uv, the runtime was installed by
+    `pip install -e <runtime>[x402]`, which resolves every dependency afresh from PyPI —
+    whatever versions are newest that day, unchecked. pip now installs the requirements
+    exported from uv.lock, every file by its hash (`--require-hashes`, `--no-deps`: nothing
+    resolved), then Emporia itself without dependencies. A runtime without the file is
+    refused rather than installed unpinned."""
+    sha = "b" * 40
+    rt = tmp_path / "plugin-data" / "emporia" / "runtime"
+    ran = []
+    monkeypatch.setattr(setup_cli, "_run", lambda argv, cwd=None: ran.append(argv) or "")
+    monkeypatch.setattr(setup_cli, "_git_head", lambda r: sha)
+    monkeypatch.setattr(setup_cli, "_is_emporia", lambda r: True)
+    monkeypatch.setattr(setup_cli, "runtime_dir", lambda: rt)
+    monkeypatch.setattr(setup_cli.shutil, "which", lambda name: "/usr/bin/python3" if name == "python3" else None)
+    (rt / ".git").mkdir(parents=True)
+    with pytest.raises(setup_cli.SetupFailed, match="hash-locked"):
+        setup_cli.install_runtime(say=lambda *a: None, pin=("https://example.test/e", sha))
+    assert not any("pip" in a for a in ran), "nothing installed unpinned"
+    locked = rt / setup_cli.LOCKED_REQUIREMENTS
+    locked.parent.mkdir(parents=True)
+    locked.write_text("idna==3.10 \\\n    --hash=sha256:" + "0" * 64 + "\n")
+    setup_cli.install_runtime(say=lambda *a: None, pin=("https://example.test/e", sha))
+    pips = [a for a in ran if a[1:4] == ["-m", "pip", "install"]]
+    assert len(pips) == 2, ran
+    deps, own = pips
+    assert "--require-hashes" in deps and "--no-deps" in deps and deps[-2:] == ["-r", str(locked)]
+    assert "--no-deps" in own and own[-2:] == ["-e", str(rt)], "Emporia itself: no dependency resolved"
+    assert not any("[x402]" in x for a in pips for x in a)
+
+
+def test_the_hash_locked_requirements_are_in_step_with_uv_lock():
+    """The committed export names exactly uv.lock's packages for the runtime (no dev, the
+    x402 extra), at uv.lock's versions, with only uv.lock's hashes."""
+    import re
+    import tomllib
+    lock = {(p["name"], p["version"]): p for p in tomllib.loads((REPO / "uv.lock").read_text())["package"]}
+    text = (REPO / setup_cli.LOCKED_REQUIREMENTS).read_text()
+    pinned = re.findall(r"^([a-z0-9][a-z0-9._-]*)==([^ ;\\\n]+)", text, re.M)
+    assert pinned and "eth-account" in dict(pinned) and "emporia" not in dict(pinned)
+    for name, version in pinned:
+        assert (name, version) in lock, (name, version)   # some carry two versions, by Python version
+        pkg = lock[(name, version)]
+        files = [*(pkg.get("wheels") or []), *([pkg["sdist"]] if "sdist" in pkg else [])]
+        known = {f["hash"] for f in files}
+        block = ("\n" + text).split(f"\n{name}=={version}", 1)[1].split("\n    # via", 1)[0]
+        hashes = set(re.findall(r"--hash=(sha256:[0-9a-f]{64})", block))
+        assert hashes and hashes <= known, name
+    for dev_only in ("pytest", "ruff"):
+        assert dev_only not in dict(pinned), dev_only
+
+
+def test_the_release_pin_refuses_an_export_out_of_step_with_uv_lock(monkeypatch, tmp_path, capsys):
+    """scripts/pin_plugin_runtime.py exports uv.lock (`--export`) and refuses to pin a commit
+    whose committed export is not what uv.lock at that commit exports."""
+    spec = importlib.util.spec_from_file_location("pin_plugin_runtime", REPO / "scripts" / "pin_plugin_runtime.py")
+    pin = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(pin)
+    head = "c" * 40
+    committed = {"x": "idna==3.10 \\\n    --hash=sha256:" + "1" * 64 + "\n"}
+    monkeypatch.setattr(pin, "git", lambda *a: {("status", "--porcelain", "--untracked-files=no"): "",
+                                                ("rev-parse", "HEAD"): head}.get(a, ""))
+    monkeypatch.setattr(pin, "_on_origin", lambda sha: True)
+    monkeypatch.setattr(pin, "committed_requirements", lambda sha: committed["x"])
+    monkeypatch.setattr(pin, "export_requirements", lambda sha=None: "idna==3.11 \\\n    --hash=sha256:" + "2" * 64 + "\n")
+    monkeypatch.setattr(pin, "SOURCE", tmp_path / "emporia_source.json")
+    (tmp_path / "emporia_source.json").write_text('{"repo": "https://x.test/e", "sha": ""}')
+    assert pin.main([]) == 1
+    assert "out of step with uv.lock" in capsys.readouterr().out
+    assert '"sha": ""' in (tmp_path / "emporia_source.json").read_text(), "not pinned"
+    committed["x"] = pin.export_requirements()
+    assert pin.main([]) == 0 and head in (tmp_path / "emporia_source.json").read_text()
+    out = tmp_path / "req.txt"
+    monkeypatch.setattr(pin, "REQUIREMENTS", out)
+    assert pin.main(["--export"]) == 0 and out.read_text() == committed["x"]

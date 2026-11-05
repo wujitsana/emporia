@@ -25,6 +25,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import re
 import secrets
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -140,6 +141,29 @@ def _doc_paths() -> set[str]:
         return set()
 
 
+_INLINE_SCRIPT = re.compile(r"<script\b(?![^>]*\bsrc\s*=)[^>]*>(.*?)</script\s*>", re.I | re.S)
+_INLINE_STYLE = re.compile(r"<style\b[^>]*>(.*?)</style\s*>", re.I | re.S)
+
+
+def content_security_policy(index_html: str = "") -> str:
+    """Security follow-up (11-05 audit): the console's CSP. This origin only — the bundle's
+    scripts, styles, fonts and images, and its fetches and websockets to the console — no
+    frames, plugins or base changes; an inline script or style only by the hash of what the
+    served index.html holds (the built bundle has none), never 'unsafe-inline'."""
+    import base64
+    import hashlib
+
+    def hashes(pattern: re.Pattern[str]) -> str:
+        found = dict.fromkeys(
+            "'sha256-" + base64.b64encode(hashlib.sha256(m.encode()).digest()).decode() + "'"
+            for m in pattern.findall(index_html))
+        return "".join(f" {h}" for h in found)
+    return ("default-src 'none'; "
+            f"script-src 'self'{hashes(_INLINE_SCRIPT)}; style-src 'self'{hashes(_INLINE_STYLE)}; "
+            "img-src 'self'; font-src 'self'; connect-src 'self'; manifest-src 'self'; "
+            "base-uri 'none'; form-action 'self'; frame-ancestors 'none'; object-src 'none'")
+
+
 def build_app(console: Console, *, ui_dir: Path | None = None) -> FastAPI:
     @asynccontextmanager
     async def lifespan(_app: FastAPI):
@@ -148,16 +172,24 @@ def build_app(console: Console, *, ui_dir: Path | None = None) -> FastAPI:
 
     app = FastAPI(title="Emporia console", docs_url=None, redoc_url=None, openapi_url=None,
                   lifespan=lifespan)
+    index = ui_dir / "index.html" if ui_dir is not None else None
+    security_headers = {
+        "Content-Security-Policy": content_security_policy(
+            index.read_text(encoding="utf-8") if index is not None and index.is_file() else ""),
+        "X-Content-Type-Options": "nosniff",
+        "Referrer-Policy": "no-referrer",
+    }
 
     @app.middleware("http")
     async def gate(request: Request, call_next):
         if request.url.path == "/session":
-            return await call_next(request)
-        if not _authorized(console, dict(request.cookies), request.headers.get("host", "")):
-            return JSONResponse({"detail": "open the console with the link it printed"},
-                                status_code=401, headers={"Cache-Control": "no-store"})
-        response = await call_next(request)
+            response = await call_next(request)
+        elif not _authorized(console, dict(request.cookies), request.headers.get("host", "")):
+            response = JSONResponse({"detail": "open the console with the link it printed"}, status_code=401)
+        else:
+            response = await call_next(request)
         response.headers["Cache-Control"] = "no-store"
+        response.headers.update(security_headers)
         return response
 
     @app.get("/session")

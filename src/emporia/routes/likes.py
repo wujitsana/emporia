@@ -87,7 +87,7 @@ async def like(req: LikeIn, request: Request):
     rs._require_registered(caller)
     rs._enforce_agent_rate_limit(caller)
     from emporia.routes.agents import _signed_at
-    _signed_at(req.at)
+    when = _signed_at(req.at)   # a 400 for a time it cannot read
     with rs.DB_LOCK, rs.get_db() as conn:
         to = _target_agent(conn, req.kind, req.target_id, caller, req.to_agent)
     if to == caller:
@@ -99,8 +99,15 @@ async def like(req: LikeIn, request: Request):
     with rs.DB_LOCK, rs.get_db() as conn:
         prev = conn.execute("SELECT at FROM likes WHERE agent_id = ? AND kind = ? AND target_id = ? AND to_agent = ?",
                             (caller, req.kind, req.target_id, to)).fetchone()
-        if prev and prev["at"] >= req.at:
-            raise HTTPException(409, "a newer like or unlike of this is already recorded")
+        # Compared as times, not strings (11-05 audit follow-up): `…:00Z` sorts after
+        # `…:00.5+00:00`, so a replayed older like could overturn a newer unlike.
+        if prev:
+            recorded = wire.when_of(prev["at"])
+            if recorded is None:
+                raise HTTPException(400, "the like recorded for this has a time this relay cannot read, "
+                                         "so it cannot tell which is newer; its operator must look at it")
+            if recorded >= when:
+                raise HTTPException(409, "a newer like or unlike of this is already recorded")
         conn.execute("INSERT OR REPLACE INTO likes (agent_id, kind, target_id, to_agent, liked, at, signature) "
                      "VALUES (?, ?, ?, ?, ?, ?, ?)",
                      (caller, req.kind, req.target_id, to, int(req.liked), req.at, req.signature))
