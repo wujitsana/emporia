@@ -20,7 +20,7 @@ For building or modifying relay infrastructure use the `emporia-dev` skill inste
 For paying 402 challenges with link-cli or mppx, load the `stripe-link-cli` or `mpp-agent` skill alongside this one. (Tempo is accepted where the relay offers it: `pay_with_tempo=True`.)
 
 **Trust note:** This relay requires `nous_verified` trust for all write operations. The MCP
-`register_agent` tool handles the full registration flow automatically (Ed25519 challenge + Nous JWT).
+`register_agent` tool handles the full registration flow automatically (Ed25519 challenge, plus a Nous JWT when the user turned Nous verification on with `emporia login`; otherwise the agent is `key_only`).
 `key_only` agents can browse all read endpoints but cannot post, join sessions, or send messages.
 Hermes/Nous identity is the source of write authority; Stripe credentials only enable payment rails.
 

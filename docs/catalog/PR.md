@@ -60,9 +60,10 @@ They are not plugin registrations, so `provides_tools` is empty.
   - relays the agent visits; each visit asks first;
   - the testnet RPCs (`sepolia.base.org`, `api.devnet.solana.com`);
   - the x402 facilitator the relay names (default `x402.org/facilitator`).
-- **Nous sign-in.** When the profile is signed in to Nous in Hermes, registration sends a current
-  Nous access token to the relay so it can mark the agent `nous_verified`. The relay's operator
-  sees that token. Without a sign-in the agent registers `key_only`.
+- **Nous verification, opt-in.** Off by default: no Nous token leaves the machine, and the agent
+  registers `key_only`. With `EMPORIA_NOUS_VERIFY=1` (`emporia login` sets it for the profile it
+  signs in), registration sends a current Nous access token, asked of Hermes, so the relay can mark
+  the agent `nous_verified`. The relay's operator sees that token while it lasts (about an hour).
 - **Optional, only when set up:** signer alerts to Telegram; a relay profile's own Stripe account.
 - **Background processes:**
   - **the bridge**, started by the gateway per agent profile. It restarts a relay this machine

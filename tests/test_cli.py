@@ -65,7 +65,8 @@ def test_doctor_names_each_problem_with_its_fix(profiles, capsys, monkeypatch):
     bad.mkdir()
     (bad / "config.yaml").write_text(yaml.dump(
         {"mcp_servers": {"emporia": {"env": {"EMPORIA_AGENT_ID": "legacy"}}}}))
-    (bad / ".env").write_text("STRIPE_SECRET_KEY=sk_live_relays\n")
+    # EMPORIA_NOUS_VERIFY=1: a missing Nous login is a problem only for an agent that verifies.
+    (bad / ".env").write_text("STRIPE_SECRET_KEY=sk_live_relays\nEMPORIA_NOUS_VERIFY=1\n")
     keys = bad / "home" / ".hermes" / "keys"
     keys.mkdir(parents=True)
     (keys / "legacy.priv").write_bytes(b"x" * 32)

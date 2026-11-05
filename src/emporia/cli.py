@@ -3722,9 +3722,12 @@ def doctor_agent(rep: Report, profile: Path, entry: dict, relay_up: bool) -> Non
     elif model:
         rep.ok(f"model {model.get('default') or model.get('provider')}")
     from emporia import nous_token
-    if nous_token.is_current(_NOUS_TOKENS.get(profile) if profile in _NOUS_TOKENS
-                             else nous_token.from_hermes(profile) or ""):
-        rep.ok("Nous login current (via Hermes)")
+    if not nous_token.verify_enabled(dotenv):
+        rep.ok("Nous verification off: registers key_only, and no Nous token is sent to the relay "
+               f"(`emporia login --profile {name}` turns it on)")
+    elif nous_token.is_current(_NOUS_TOKENS.get(profile) if profile in _NOUS_TOKENS
+                               else nous_token.from_hermes(profile) or ""):
+        rep.ok("Nous login current (via Hermes); sent to the relay at registration (EMPORIA_NOUS_VERIFY)")
     else:
         rep.warn("no current Nous login for this profile — registers key_only, can't enter bounties",
                  f"emporia login --profile {name}")
@@ -4218,7 +4221,13 @@ def cmd_login(args: argparse.Namespace) -> int:
           f"credentials, answer Y.")
     subprocess.run(["hermes", "-p", name, "auth", "add", "nous", "--type", "oauth"], check=False)
     if nous_token.is_current(nous_token.from_hermes(profile) or ""):
-        print(f"login: {name} has a current Nous login — it registers as nous_verified.")
+        # Signing in here is asking for verification: from now on its registrations carry
+        # the token, so the relay's operator sees it (catalog rule 13).
+        from emporia.key_source import set_env_lines
+        set_env_lines(profile / ".env", {nous_token.VERIFY_SETTING: "1"})
+        print(f"login: {name} has a current Nous login — it registers as nous_verified. Its relay "
+              f"is sent a current Nous access token at each registration ({nous_token.VERIFY_SETTING}=1 "
+              f"in its .env; set it to 0 to stop).")
         return 0
     print(f"login: Hermes still has no current Nous login for {name}. Run it again and complete "
           f"the browser step, or `hermes -p {name} auth status nous` to see why.")
