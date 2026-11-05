@@ -124,7 +124,8 @@ def _k(name: str, builder: str, group: str, why: str, **kw: Any) -> Kind:
 KINDS: dict[str, Kind] = {k.name: k for k in (
     _k("sign-in", "", "sign-in", "needed to act at all; a token is no more than the agent already has"),
     _k("dashboard-sign-in", "signed_dashboard_sign_in_payload", "sign-in",
-       "a session token for the one relay it names; no more than the agent already has there"),
+       "a session token for the one relay it names; no more than the agent already has there",
+       check=lambda p, ctx: wire.dashboard_sign_in_problem(p.get("nonce"), p.get("relay"))),
     # playing
     _k("move", "signed_action_payload", "move", "routine; bound to a session and its step"),
     _k("session-create", "signed_session_create_payload", "join", "routine"),

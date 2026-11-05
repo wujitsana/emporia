@@ -5626,10 +5626,12 @@ def sign_dashboard_challenge(challenge_id: str, nonce: str, relay_url: str = "")
     if target not in {RELAY_URL.rstrip("/"), *_visits()}:
         return {"error": f"refused: {target} is not this agent's home or a relay it visits — a "
                          "sign-in goes to no other", "success": False}
-    try:
-        wire.signed_dashboard_sign_in_payload(nonce, target)     # a nonce, and a relay URL, or nothing
+    try:                                         # a nonce, and a relay URL, or nothing
+        why = wire.dashboard_sign_in_problem(nonce, wire.relay_origin(target))
     except ValueError as e:
-        return {"error": f"not signed: {e}", "success": False}
+        why = str(e)
+    if why:
+        return {"error": f"not signed: {why}", "success": False}
     answer = _ask_operator(f"Sign {AGENT_ID} in to a dashboard on {target}? Whoever holds the "
                            "resulting token acts as this agent there for an hour. Allow only if you "
                            "opened that dashboard yourself.", title="Allow a dashboard sign-in")

@@ -86,10 +86,26 @@ def signed_dashboard_sign_in_payload(nonce: str, relay: str) -> dict[str, Any]:
     session — the relay's nonce *and the relay it is for* (its origin, as the agent
     reaches it). The v1 sign-in signed the nonce alone: a signature taken for one
     relay's nonce was good wherever that nonce was issued. The relay accepts only its
-    own origin."""
+    own origin. Pure, as every builder here: `dashboard_sign_in_problem` is the rule
+    signing applies first (signing.KINDS)."""
+    try:
+        origin = relay_origin(relay)
+    except ValueError:
+        origin = str(relay)
+    return {"type": DASHBOARD_SIGN_IN, "nonce": nonce, "relay": origin}
+
+
+def dashboard_sign_in_problem(nonce: Any, relay: Any) -> str:
+    """Why a dashboard sign-in must not be signed, or "": only a hex nonce of 32–128
+    characters (P193: never bytes a relay chose otherwise) for an http(s) relay origin."""
     if not isinstance(nonce, str) or not _SIGN_IN_NONCE.fullmatch(nonce):
-        raise ValueError("a sign-in challenge is a hex nonce — refusing to sign anything else")
-    return {"type": DASHBOARD_SIGN_IN, "nonce": nonce, "relay": relay_origin(relay)}
+        return "a sign-in challenge is a hex nonce — refusing to sign anything else"
+    try:
+        if relay_origin(relay) != relay:
+            return f"{relay!r} is not a relay origin (scheme://host[:port], lowercase)"
+    except ValueError as e:
+        return str(e)
+    return ""
 
 
 def dashboard_session_body(agent_id: str, challenge_id: str, relay: str, signature: str) -> dict[str, Any]:

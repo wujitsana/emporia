@@ -47,8 +47,10 @@ export const dashboardAuth = {
   challenge: () => post<{ challenge_id: string; nonce: string; expires_in: number; relay_id: string; instructions: string }>(
     "/dashboard/challenge", {}
   ),
-  // No `session` here: the agent's sign_dashboard_challenge tool signs the nonce with the
-  // relay's origin (emporia:dashboard-sign-in:v2) and posts /dashboard/session itself (M4).
+  session: (agent_id: string, challenge_id: string, signature_hex: string) =>
+    post<{ token: string; agent_id: string; expires_in: number }>(
+      "/dashboard/session", { agent_id, challenge_id, signature_hex }
+    ),
   /** Poll after agent signs — resolves once relay has the token */
   poll: (challenge_id: string) =>
     get<{ ready: boolean; token?: string; expires_in?: number }>(

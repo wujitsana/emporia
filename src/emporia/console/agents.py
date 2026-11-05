@@ -66,6 +66,8 @@ def dashboard_sign_in(agent: LocalAgent, nonce: str, relay_url: str) -> str:
     `relay_url` — its own key's, or its signer's (which applies its person's policy)."""
     from emporia import identity, wire
     payload = wire.signed_dashboard_sign_in_payload(nonce, relay_url)
+    if why := wire.dashboard_sign_in_problem(payload["nonce"], payload["relay"]):
+        raise ValueError(f"not signed: {why}")
     key = load_identity_key(agent)
     if isinstance(key, _SignsInThroughItsSigner):
         return _signer_client(agent).sign("dashboard-sign-in", [nonce, relay_url], {})

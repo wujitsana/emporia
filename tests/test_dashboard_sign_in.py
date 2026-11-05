@@ -9,6 +9,8 @@ the sign-in itself, returning neither signature nor token."""
 import json
 from unittest.mock import patch
 
+import pytest
+
 from emporia import identity, signing, wire
 from tests import test_emporia
 from tests.test_emporia import _ASGIHttpxAdapter, _register_keyed
@@ -77,6 +79,13 @@ def test_the_sign_in_tool_refuses_a_nonce_before_asking_anyone(monkeypatch):
     monkeypatch.setattr(mcp_server, "_ask_operator", lambda *a, **k: (_ for _ in ()).throw(AssertionError))
     out = mcp_server.sign_dashboard_challenge("ch_x", '{"content":"x"}')
     assert out["success"] is False and "hex nonce" in out["error"]
+
+
+@pytest.mark.parametrize("nonce, relay", [('{"content":"x"}', "https://relay.example"),
+                                          ("ab" * 32, "not a relay"), ("ab" * 32, "ftp://relay.example")])
+def test_the_signing_rule_signs_only_a_hex_nonce_for_a_relay_origin(nonce, relay):
+    with pytest.raises(signing.Refused, match="not signed"):
+        signing.sign("m4_rule", "dashboard-sign-in", nonce, relay)
 
 
 def test_the_payload_is_its_own_kind():

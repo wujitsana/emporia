@@ -222,6 +222,10 @@ class Run:
             EMPORIA_X402_ENABLED="0", RATE_LIMIT_PER_MINUTE="5000",
             EMPORIA_GAMIFY="sheets,quests", EMPORIA_HOUSE_AGENTS=self.house_agent)
         py = self.repo / ".venv" / "bin" / "python"
+        # The relay runs --repo's code even under another checkout's interpreter (a git worktree
+        # has no .venv; the fallback's editable install is the main checkout): found by the review
+        # follow-ups, where the relay ran the main checkout's sign-in and every agent was refused.
+        env["PYTHONPATH"] = os.pathsep.join(p for p in (str(self.repo / "src"), env.get("PYTHONPATH", "")) if p)
         out = (r / "relay.log").open("ab")
         # The interpreter itself, no shell in between: the PID recorded is the relay's.
         proc = subprocess.Popen([str(py if py.exists() else sys.executable), "-m", "emporia.relay_server"],
