@@ -253,6 +253,8 @@ async def reveal_bug(report_id: str, request: Request, req: RevealIn):
                                     str(c.get("description") or ""), row["severity_claimed"])
         if not bugs.matches(row["commitment"], fields, str(body.get("salt") or "")):
             raise HTTPException(422, "the content and salt do not match the logged commitment")
+        if why := bugs.check_report(**fields):      # P298: a sealed report's content is first seen here
+            raise HTTPException(422, why)
         conn.execute("UPDATE bug_reports SET content_json = ?, revealed_at = ? WHERE report_id = ?",
                      (json.dumps(fields), _now(), report_id))
         _log_now(conn, "bug_report", "bug_reports", "report_id", report_id)

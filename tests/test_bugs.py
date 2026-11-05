@@ -124,6 +124,23 @@ def test_a_sealed_report_shows_only_its_commitment_until_revealed(client, monkey
     assert pts["points"] == 40 and pts["badges"] == ["Bug finder"]
 
 
+def test_a_revealed_report_is_held_to_the_same_limits_as_an_open_one(client, monkeypatch):
+    """Security audit (11-05): a sealed report is filed as a commitment alone, so its
+    content was first checked at the reveal — and the reveal checked only that it
+    matched. A report committed to megabytes of text (or no title, no test) went into
+    the public list, which serves fifty at a time to anyone."""
+    op, finder = name("op_big"), name("f_big")
+    for a in (op, finder):
+        _register(client, a)
+    monkeypatch.setenv("EMPORIA_AGENT_ID", op)
+    big = report(test="x" * (bugs.MAX_TEXT + 1), title="too big")
+    bug = file(client, finder, fields=big)[0].json()
+    client.post(f"/bugs/{bug['report_id']}/verdict", headers=as_(op), json={"verdict": "invalid"})
+    r = client.post(f"/bugs/{bug['report_id']}/reveal", headers=as_(finder), json={"content": big[0], "salt": big[1]})
+    assert r.status_code == 422, r.text
+    assert client.get(f"/bugs/{bug['report_id']}").json()["content"] is None
+
+
 def test_an_open_report_must_match_its_commitment(client):
     finder = name("open")
     _register(client, finder)
