@@ -109,3 +109,16 @@ def test_status_says_whether_the_relay_has_the_agent(monkeypatch, capsys):
     monkeypatch.setattr(setup_cli, "_registered", lambda relay, agent: True)
     assert setup_cli.cmd_status(_args()) == 0
     assert "Relay   : registered" in capsys.readouterr().out
+
+
+def test_a_fresh_clone_is_checked_out_even_when_its_head_is_the_pinned_commit(tmp_path, monkeypatch):
+    """P296, found by the end-to-end run: a --no-checkout clone has no files yet, and a
+    release's pinned commit is its branch's tip, so HEAD already matches."""
+    sha = "a" * 40
+    ran = []
+    monkeypatch.setattr(setup_cli, "_run", lambda argv, cwd=None: ran.append(argv) or "")
+    monkeypatch.setattr(setup_cli, "_git_head", lambda rt: sha)
+    monkeypatch.setattr(setup_cli, "runtime_dir", lambda: tmp_path / "plugin-data" / "emporia" / "runtime")
+    monkeypatch.setattr(setup_cli.shutil, "which", lambda name: "/usr/bin/uv" if name == "uv" else None)
+    setup_cli.install_runtime(say=lambda *a: None, pin=("https://example.test/e", sha))
+    assert any(a[3:5] == ["checkout", "--quiet"] for a in ran), ran

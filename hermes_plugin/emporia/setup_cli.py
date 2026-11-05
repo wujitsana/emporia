@@ -182,6 +182,9 @@ def install_runtime(say=print, target: Path | None = None, pin: tuple[str, str] 
         _run(["git", "clone", "--quiet", "--filter=blob:none", "--no-checkout", repo, str(rt)])
     if _git_head(rt) != sha:
         _run(["git", "-C", str(rt), "fetch", "--quiet", repo, sha])
+    if _git_head(rt) != sha or not _is_emporia(rt):
+        # P296: always after a --no-checkout clone, whose files are not there yet even when
+        # its HEAD is already the pinned commit (a release's commit is its branch's tip).
         _run(["git", "-C", str(rt), "checkout", "--quiet", "--detach", sha])
     say("  Installing its Python packages (first time: a minute or two)")
     uv = shutil.which("uv")
