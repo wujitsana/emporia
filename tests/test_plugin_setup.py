@@ -136,6 +136,40 @@ def test_hermess_own_python_settings_never_reach_emporias_processes(monkeypatch)
     assert "PYTHONPATH" not in env and "PIP_TARGET" not in env and env["PATH"] == "/usr/bin"
 
 
+def test_no_child_of_hermes_emporia_inherits_an_approval_bypass(monkeypatch):
+    """Catalog rule 12: `hermes -p NAME plugins install`, `hermes profile create` and the
+    runtime's CLI (and the `hermes` commands it runs) never inherit YOLO or pre-accepted hooks."""
+    for name in ("HERMES_YOLO_MODE", "HERMES_YOLO", "HERMES_ACCEPT_HOOKS", "HERMES_ACP_AUTO_APPROVE"):
+        monkeypatch.setenv(name, "1")
+    monkeypatch.setenv("HERMES_HOME", "/somewhere/home")
+    env = setup_cli._clean_env()
+    assert not setup_cli.APPROVAL_BYPASS_VARS & set(env)
+    assert env["HERMES_HOME"] == "/somewhere/home"
+
+
+@pytest.mark.parametrize("tty", [True, False])
+def test_the_runtimes_cli_never_waits_on_a_stdin_nobody_writes_to(monkeypatch, tmp_path, tty):
+    """Catalog rule 12: under cron or the gateway (no terminal) a question from the runtime's
+    CLI ends at once on /dev/null instead of hanging; at a terminal it is asked as before."""
+    seen = {}
+
+    class Stdin:
+        def isatty(self):
+            return tty
+
+    def call(argv, env=None, stdin=None):
+        seen.update(argv=argv, env=env, stdin=stdin)
+        return 0
+
+    monkeypatch.setenv("HERMES_YOLO_MODE", "1")
+    monkeypatch.setattr(setup_cli.sys, "stdin", Stdin())
+    monkeypatch.setattr(setup_cli.subprocess, "call", call)
+    assert setup_cli._emporia(tmp_path, "wallet", "status") == 0
+    assert seen["argv"][-3:] == ["emporia.cli", "wallet", "status"]
+    assert seen["stdin"] is (None if tty else setup_cli.subprocess.DEVNULL)
+    assert "HERMES_YOLO_MODE" not in seen["env"]
+
+
 def test_a_new_profile_gets_the_plugin_before_its_agent_is_set_up(monkeypatch, tmp_path):
     """P296, found by the end-to-end run: the plugin install came after setup's "restart"
     advice, so that advice was printed before everything it covered."""

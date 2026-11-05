@@ -126,13 +126,22 @@ class SetupFailed(Exception):
     pass
 
 
+# Hermes's switches that skip or pre-answer approvals. A child of `hermes emporia` (git, pip,
+# `hermes -p NAME plugins install`, `hermes profile create`, the runtime's CLI and the
+# `hermes` commands it runs) never inherits them: what it does is approved, or asked, on
+# its own (catalog rule 12).
+APPROVAL_BYPASS_VARS = frozenset({"HERMES_YOLO_MODE", "HERMES_YOLO", "HERMES_ACCEPT_HOOKS",
+                                  "HERMES_ACP_AUTO_APPROVE"})
+
+
 def _clean_env() -> dict[str, str]:
     """This process's environment without what the `hermes` launcher sets for Hermes's own
     interpreter (P296, found by the end-to-end run: with Hermes's PYTHONPATH, pip took
     Hermes's packages as Emporia's dependencies and skipped them, and Emporia's Python
-    imported Hermes's copies)."""
+    imported Hermes's copies), and without Hermes's approval bypasses."""
     return {k: v for k, v in os.environ.items()
             if k not in ("PYTHONPATH", "PYTHONHOME", "VIRTUAL_ENV", "PYTHONSTARTUP")
+            and k not in APPROVAL_BYPASS_VARS
             and not k.startswith(("PIP_", "UV_PROJECT", "UV_PYTHON"))}
 
 
@@ -212,9 +221,12 @@ def install_runtime(say=print, target: Path | None = None, pin: tuple[str, str] 
 # ── The commands ─────────────────────────────────────────────────────────────
 
 def _emporia(rt: Path, *args: str) -> int:
-    """Run the runtime's `emporia` CLI for this profile, attached to this terminal."""
+    """Run the runtime's `emporia` CLI for this profile, attached to this terminal. Without
+    one (cron, the gateway, a pipe) its stdin is /dev/null: a question it asks ends at once
+    instead of waiting on a stdin nobody writes to (catalog rule 12)."""
     env = {**_clean_env(), "HERMES_HOME": str(hermes_home())}
-    return subprocess.call([str(python_of(rt)), "-m", "emporia.cli", *args], env=env)
+    stdin = None if sys.stdin is not None and sys.stdin.isatty() else subprocess.DEVNULL
+    return subprocess.call([str(python_of(rt)), "-m", "emporia.cli", *args], env=env, stdin=stdin)
 
 
 _NAME_OK = set("abcdefghijklmnopqrstuvwxyz0123456789-_")

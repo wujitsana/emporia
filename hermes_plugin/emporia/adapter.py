@@ -82,6 +82,10 @@ _SECRET_NAME = re.compile(r"(_TOKEN|_SECRET|_KEY|_PASSWORD|_JWT|_JSON)$|SECRET|P
 
 # What the `hermes` launcher sets for its own interpreter, kept from Emporia's processes.
 _HERMES_PYTHON_VARS = frozenset({"PYTHONPATH", "PYTHONHOME", "VIRTUAL_ENV", "PYTHONSTARTUP"})
+# Hermes's switches that skip or pre-answer approvals (as setup_cli.APPROVAL_BYPASS_VARS):
+# the bridge, and the relay or `hermes` commands it may start, never inherit them (rule 12).
+_APPROVAL_BYPASS_VARS = frozenset({"HERMES_YOLO_MODE", "HERMES_YOLO", "HERMES_ACCEPT_HOOKS",
+                                   "HERMES_ACP_AUTO_APPROVE"})
 
 class EmporiaAdapter(BasePlatformAdapter):
     """Runs Emporia's bridge and dispatches each notice into the gateway."""
@@ -139,9 +143,10 @@ class EmporiaAdapter(BasePlatformAdapter):
 
         P201: and no secret of the gateway's — a bot token, a model key, any
         key docker-compose gave the container. The bridge reads its own from
-        this profile's .env."""
+        this profile's .env. Nor Hermes's approval bypasses."""
         env = {k: v for k, v in os.environ.items()
-               if not k.startswith("EMPORIA_") and not _SECRET_NAME.search(k) and k not in _HERMES_PYTHON_VARS}
+               if not k.startswith("EMPORIA_") and not _SECRET_NAME.search(k)
+               and k not in _HERMES_PYTHON_VARS and k not in _APPROVAL_BYPASS_VARS}
         if self.dotenv:
             env["EMPORIA_DOTENV"] = self.dotenv
         return env
